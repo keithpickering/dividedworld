@@ -9,7 +9,8 @@
  * function re-checks what it can.
  */
 import type { ActKind, Alignment, EconomyRead, Hundredths, Quadrant, Settings, Span } from './types.ts';
-import { safeColor } from '../bbcode/parse.ts';
+import { parse, safeColor } from '../bbcode/parse.ts';
+import { visibleText } from '../bbcode/visible.ts';
 
 /**
  * Where a card can land (the card mechanic's design, section 7): a post, a character, a thread or a
@@ -29,11 +30,28 @@ export type CardTarget =
     readonly kind: ActKind;
     /** The length of the post's current text, in characters. */
     readonly length: number;
+    /**
+     * The post's current visible text (engine/bbcode/visible.ts): its own words, with a separator where a quote, code, a link or
+     * an image stands. A card that works on a post's words reads these, at the offsets the renderer's text layers use.
+     */
+    readonly text: string;
+    /**
+     * Which version of the post this is (card_target, 0070): its latest edit's id, or the post's own before any edit. The server
+     * reads it with the post and hands it back to play_card, which refuses a play decided against an older one. A screen's
+     * preview has none.
+     */
+    readonly version?: string;
   }
   | { readonly reach: 'character'; readonly character: string }
   | { readonly reach: 'thread'; readonly thread: string }
   | { readonly reach: 'board'; readonly board: string };
 export type PostTarget = Extract<CardTarget, { reach: 'post' }>;
+
+/** A post as a card's rules see it, from its current body: its length in characters and its visible text, and its version where the server read one. */
+export function postTarget(act: string, kind: PostTarget['kind'], body: unknown, version?: string): PostTarget {
+  const words = typeof body === 'string' ? body : '';
+  return { reach: 'post', act, kind, length: [...words].length, text: visibleText(parse(words)), ...(version ? { version } : {}) };
+}
 
 /**
  * An effect already on a target: a card played there before. A ward carries the rarity it turns
@@ -149,7 +167,12 @@ export interface CardRules<Config = unknown> {
    * trap that strikes is given the struck card's configuration, which is what it carries.
    */
   playPrice(settings: Settings, target: CardTarget, config: Config): Hundredths;
-  canApply(target: CardTarget, effectsOnTarget: readonly CardEffect[]): Verdict;
+  /**
+   * Whether it lands on this target, given the effects already there. A Cast or a Use is also given its configuration as
+   * `validateConfig` returned it, where that accepted it, so a card that works on the post's words can refuse a phrase that is
+   * not there; the screens' offer of a card on a post (before any configuration) and a Set give none.
+   */
+  canApply(target: CardTarget, effectsOnTarget: readonly CardEffect[], config?: Config): Verdict;
   /** Checks a caster's configuration and returns it in the card's own shape. */
   validateConfig(config: unknown): Verdict<Config>;
   /** For a card whose effect holds state (Whoops!'s strokes): checks a state to be saved. */
@@ -178,9 +201,10 @@ export const refuse = (why: string): Verdict<never> => ({ ok: false, why });
 
 /** What every play of a card decides: whether it lands, its configuration, the caster's message, its price. */
 function decided(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown): Verdict<{ price: Hundredths; config: unknown; message: string }> {
-  const lands = rules.canApply(target, effects);
-  if (!lands.ok) return lands;
+  // The configuration is checked first so the landing can read it, and the landing's refusal is still said first.
   const checked = rules.validateConfig(config);
+  const lands = rules.canApply(target, effects, checked.ok ? checked.value : undefined);
+  if (!lands.ok) return lands;
   if (!checked.ok) return checked;
   const said = casterMessage(message);
   if (!said.ok) return said;

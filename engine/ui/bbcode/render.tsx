@@ -12,8 +12,10 @@
  * screen's to say, so the screen hands a `quoteLink` that returns the link for an Act's id. With none,
  * the quote is still a quote, without a link.
  */
-import { memo, useMemo, type ReactNode } from 'react';
+import { Fragment, memo, useMemo, type ReactNode } from 'react';
 import { parse, type BbNode } from '../../bbcode/parse.ts';
+import { visibleWalk } from '../../bbcode/visible.ts';
+import { stretchesOf, useTextLayers, type Stretch } from './layers.tsx';
 import { Link } from '../router.tsx';
 import './bbcode.css';
 
@@ -30,21 +32,58 @@ function altFor(src: string): string {
   try { return `Image from ${new URL(src).hostname}`; } catch { return 'Image from another site'; }
 }
 
-function nodes(list: readonly BbNode[], quoteLink: BbCodeProps['quoteLink']): ReactNode[] {
-  return list.map((n, i) => node(n, i, quoteLink));
+/**
+ * The text layers over this post's words (layers.tsx), where any are: the visible text and each text node's offset in it
+ * (engine/bbcode/visible.ts), the stretches each run draws, and the replace stretches already drawn in this render.
+ */
+interface Layered {
+  readonly text: string;
+  readonly offsets: ReadonlyMap<BbNode, number>;
+  readonly stretches: readonly Stretch[];
+  readonly drawn: Set<Stretch>;
 }
 
-function node(n: BbNode, key: number, quoteLink: BbCodeProps['quoteLink']): ReactNode {
+/** The first stretch that ends after `at`; the stretches are in order and cover the text end to end. */
+function firstAfter(stretches: readonly Stretch[], at: number): number {
+  let [lo, hi] = [0, stretches.length];
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (stretches[mid]!.end <= at) lo = mid + 1; else hi = mid; }
+  return lo;
+}
+
+/** A text node's words under the layers: plain where no run is, each wrap piece by its run, a replace stretch once where it starts. */
+function layeredText(n: Extract<BbNode, { type: 'text' }>, key: number, layered: Layered): ReactNode {
+  const at = layered.offsets.get(n);
+  if (at === undefined || !n.text) return n.text;
+  const end = at + n.text.length;
+  const out: ReactNode[] = [];
+  for (let i = firstAfter(layered.stretches, at); i < layered.stretches.length && layered.stretches[i]!.start < end; i++) {
+    const st = layered.stretches[i]!;
+    const [from, to] = [Math.max(st.start, at), Math.min(st.end, end)];
+    if (!st.run) out.push(n.text.slice(from - at, to - at));
+    else if (st.run.mode === 'wrap') out.push(st.run.render({ text: n.text.slice(from - at, to - at), key: `${st.run.key}@${from}` }));
+    else if (!layered.drawn.has(st)) {
+      layered.drawn.add(st);
+      out.push(st.run.render({ text: layered.text.slice(st.start, st.end), key: `${st.run.key}@${st.start}` }));
+    }
+  }
+  return <Fragment key={key}>{out}</Fragment>;
+}
+
+function nodes(list: readonly BbNode[], quoteLink: BbCodeProps['quoteLink'], layered?: Layered): ReactNode[] {
+  return list.map((n, i) => node(n, i, quoteLink, layered));
+}
+
+function node(n: BbNode, key: number, quoteLink: BbCodeProps['quoteLink'], layered?: Layered): ReactNode {
   switch (n.type) {
-    case 'text': return n.text;
-    case 'bold': return <strong key={key}>{nodes(n.children, quoteLink)}</strong>;
-    case 'italic': return <em key={key}>{nodes(n.children, quoteLink)}</em>;
-    case 'underline': return <u key={key}>{nodes(n.children, quoteLink)}</u>;
-    case 'strike': return <s key={key}>{nodes(n.children, quoteLink)}</s>;
-    case 'color': return <span key={key} style={{ color: n.color }}>{nodes(n.children, quoteLink)}</span>;
-    case 'size': return <span key={key} className={`kb-bb-size-${n.size}`}>{nodes(n.children, quoteLink)}</span>;
+    case 'text': return layered ? layeredText(n, key, layered) : n.text;
+    case 'bold': return <strong key={key}>{nodes(n.children, quoteLink, layered)}</strong>;
+    case 'italic': return <em key={key}>{nodes(n.children, quoteLink, layered)}</em>;
+    case 'underline': return <u key={key}>{nodes(n.children, quoteLink, layered)}</u>;
+    case 'strike': return <s key={key}>{nodes(n.children, quoteLink, layered)}</s>;
+    case 'color': return <span key={key} style={{ color: n.color }}>{nodes(n.children, quoteLink, layered)}</span>;
+    case 'size': return <span key={key} className={`kb-bb-size-${n.size}`}>{nodes(n.children, quoteLink, layered)}</span>;
     case 'url': {
-      const inside = nodes(n.children, quoteLink);
+      const inside = nodes(n.children, quoteLink, layered);
       /* A path on this site moves within the app; every other address leaves it. */
       return n.href.startsWith('/')
         ? <Link key={key} to={n.href} rel={REL} referrerPolicy="no-referrer">{inside}</Link>
@@ -63,7 +102,7 @@ function node(n: BbNode, key: number, quoteLink: BbCodeProps['quoteLink']): Reac
       );
     case 'code': return <pre key={key} className="kb-bb-code"><code>{n.text}</code></pre>;
     case 'list': {
-      const items = n.items.map((item, i) => <li key={i}>{nodes(item, quoteLink)}</li>);
+      const items = n.items.map((item, i) => <li key={i}>{nodes(item, quoteLink, layered)}</li>);
       return n.ordered ? <ol key={key}>{items}</ol> : <ul key={key}>{items}</ul>;
     }
   }
@@ -72,5 +111,12 @@ function node(n: BbNode, key: number, quoteLink: BbCodeProps['quoteLink']): Reac
 /** A post's, a signature's or a preview's words as the page shows them. Parsed once per text. */
 export const BbCode = memo(function BbCode({ text, quoteLink }: BbCodeProps) {
   const tree = useMemo(() => parse(text), [text]);
-  return <div className="kb-bb">{nodes(tree, quoteLink)}</div>;
+  const runs = useTextLayers();
+  // Only a post with layers over it is walked; one with none draws exactly as it always has. The walk reads the tree alone, so
+  // it is kept while layers come and go, and only made again when the words change or the first layer arrives.
+  const layeredOn = runs.length > 0;
+  const walk = useMemo(() => (layeredOn ? visibleWalk(tree) : null), [tree, layeredOn]);
+  const stretches = useMemo(() => (walk ? stretchesOf(walk.text.length, runs) : []), [walk, runs]);
+  const layered = walk ? { text: walk.text, offsets: walk.offsets, stretches, drawn: new Set<Stretch>() } : undefined;
+  return <div className="kb-bb">{nodes(tree, quoteLink, layered)}</div>;
 });

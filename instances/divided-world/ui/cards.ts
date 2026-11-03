@@ -25,6 +25,10 @@ import glitterBombFace from './cards/glitter-bomb.svg?url';
 import glitterBombMark from './cards/glitter-bomb-mark.svg?url';
 import mainEventFace from './cards/main-event.svg?url';
 import mainEventMark from './cards/main-event-mark.svg?url';
+import autocorrectFace from './cards/autocorrect.svg?url';
+import autocorrectMark from './cards/autocorrect-mark.svg?url';
+import { AutocorrectEffect } from '../cards/autocorrect/Effect.tsx';
+import { ConfigForm as AutocorrectConfigForm } from '../cards/autocorrect/ConfigForm.tsx';
 import feelinFabFace from './cards/feelin-fab.svg?url';
 import feelinFabMark from './cards/feelin-fab-mark.svg?url';
 import { FeelinFabEffect } from './feelin-fab/Effect.tsx';
@@ -111,6 +115,33 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     summary: 'Set face down on your post. Looks like a trap, and does nothing.',
     describe: (settings: Settings) =>
       `A Pepperoni card, common, set face down on one of your own posts. Everyone sees a card back there, the same as a Trap Card's. It does nothing, and ends by itself after ${settings.setLasts.count} ${settings.setLasts.unit}${settings.setLasts.count === 1 ? '' : 's'} with nothing revealed. It costs ${orbs(settings.economy['bluff.price'] ?? 0)} to buy, and nothing more to set.`,
+  },
+  /*
+   * Autocorrect (docs/plans/2026-11-03-autocorrect-design.md): Pepperoni's color, as Bluff and Glitter Bomb are. Its face is a strip
+   * of label tape, typed on.
+   */
+  {
+    key: 'autocorrect',
+    art: { color: '#d24a2c', ink: '#1a0602', image: autocorrectFace, mark: autocorrectMark, tagline: 'Tape over a word, everywhere.' },
+    summary: 'Covers a phrase everywhere it appears in a post with words of your choosing.',
+    hint: 'Drag a strip off to read what is under it.',
+    Effect: AutocorrectEffect,
+    ConfigForm: AutocorrectConfigForm,
+    surcharge: (settings: Settings) => {
+      const e = settings.economy;
+      return `Covers a lot, +${orbs(e['autocorrect.perVolume'] ?? 0)} per ${e['autocorrect.volumeStep'] ?? 0} characters covered`;
+    },
+    describe: (settings: Settings) => {
+      const e = settings.economy;
+      return `A Pepperoni card, common. You type a phrase and the words to cover it with, and every place the phrase appears in the post's own words, as whole words in any case, gets a strip of tape with your words on it. Any reader can peel a strip off on their own screen; only the post's author can peel them for everyone, and the author's words are always under the tape and in the post's History. Up to three can stack on one post. It costs ${orbs(e['autocorrect.price'] ?? 0)} to buy, and playing it costs ${orbs(e['autocorrect.perVolume'] ?? 0)} more for every ${e['autocorrect.volumeStep'] ?? 0} characters it covers, ${orbs(e['autocorrect.mostInAll'] ?? 0)} at most in all.`;
+    },
+    logPlay: (config) => (typeof config.phrase === 'string' && typeof config.replacement === 'string' ? `It covers “${config.phrase}” with “${config.replacement}”.` : undefined),
+    logSave: (state: unknown) => {
+      const { peeled, clean } = (typeof state === 'object' && state !== null ? state : {}) as { peeled?: unknown; clean?: unknown };
+      if (clean === true) return { what: 'Peeled clean', said: 'You peeled every strip; it covers nothing now.' };
+      const n = Array.isArray(peeled) ? peeled.length : 0;
+      return n ? { what: 'Strips peeled', said: `You peeled ${n} of its strips.` } : undefined;
+    },
   },
   /*
    * The first cards beyond a post (docs/plans/2026-11-01-card-mechanic-design.md, section 8). Glitter Bomb is Pepperoni's color, as

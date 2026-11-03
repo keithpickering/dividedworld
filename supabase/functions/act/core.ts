@@ -14,7 +14,7 @@
  */
 import { decide } from '../../../engine/rules/actions.ts';
 import { hintFor, windowStart, type HintSettings, type QuadrantCounts } from '../../../engine/rules/hints.ts';
-import { basePrice, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type CardEffect, type CardTarget, type EffectsAbove, type Reach } from '../../../engine/rules/cards.ts';
+import { basePrice, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, postTarget, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../../engine/rules/cards.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
 import { DatabaseError, TransportError, postgrest, type Db } from '../_shared/rpc.ts';
 import type { Broadcast } from '../_shared/broadcast.ts';
@@ -143,7 +143,9 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
         { reach, target: decision.args.target, ...(decision.args.from_post ? { from_post: decision.args.from_post } : {}) });
       if (!read) return refused('target', `there is no such ${reach}`);
       const { effects: own, above = {}, ...said } = read;
-      const target = { ...said, reach } as CardTarget;
+      // A post is given to its card's rules with its visible words, read from its current body, and the version that body is.
+      const post = said as { act: string; kind: PostTarget['kind']; body?: unknown; version?: string };
+      const target = reach === 'post' ? postTarget(post.act, post.kind, post.body, post.version) : { ...said, reach } as CardTarget;
       const effects = effectsOnTarget(target, own ?? [], above);
       const rules = instance.cards.find((c) => c.key === decision.args.card)!;
       if (decision.play === 'set') {
@@ -160,6 +162,8 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
           : decidePlay(rules, tuned.settings, target, effects, decision.args.config, said.value, { nameOf });
         if (!play.ok) return refused('config', play.why);
         args = { ...args, config: play.value.config, message: play.value.message, price: play.value.price };
+        // The version the play was decided against goes back with it; play_card refuses it once the post has another (0070).
+        if (target.reach === 'post' && target.version) args = { ...args, reach: 'post', from_post: null, version: target.version };
       }
     }
     if (decision.needsCardOfPlay) {
