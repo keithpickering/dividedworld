@@ -24,7 +24,9 @@
  * writes the phrase in earlier in the post moves which occurrence a saved peel names; that is the design's choice.
  *
  * Screen readers. A strip is a button named "Autocorrected text: “Luigi”. Hold Enter or Space to peel", and the words under it
- * are hidden from them as from the eye; once peeled, the author's words are read as any words are.
+ * are hidden from them as from the eye; once peeled, the author's words are read as any words are, and the status region says
+ * what was under it. A strip peeled while focused hands focus to the next strip on the post, or to the post itself, so a
+ * keyboard reader keeps their place. A peel the author made just before leaving the post is still sent.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { parse } from '../../../../engine/bbcode/parse.ts';
@@ -61,7 +63,7 @@ interface StripProps {
   readonly strip: Strip;
   readonly covered: string;
   readonly peelMs: number;
-  readonly onPeel: (strip: Strip, el: HTMLElement, corner: Corner) => void;
+  readonly onPeel: (strip: Strip, el: HTMLElement, corner: Corner, covered: string) => void;
   readonly onMeet: () => void;
 }
 
@@ -90,10 +92,12 @@ function StripButton({ strip, covered, peelMs, onPeel, onMeet }: StripProps) {
     held.current = {
       at,
       tick: setInterval(() => setShare(holdShare(Date.now() - at, peelMs)), 50),
-      timer: setTimeout(() => { letGo(); if (ref.current) onPeel(strip, ref.current, 'right'); }, peelMs),
+      timer: setTimeout(() => { letGo(); if (ref.current) onPeel(strip, ref.current, 'right', covered); }, peelMs),
     };
   };
   const onPointerDown = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    /* Only the main button pulls tape; a right or middle click is the browser's. */
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
     onMeet();
     drag.current = { x: e.clientX, y: e.clientY, id: e.pointerId };
     e.currentTarget.setPointerCapture?.(e.pointerId);
@@ -109,7 +113,7 @@ function StripButton({ strip, covered, peelMs, onPeel, onMeet }: StripProps) {
     setPull(null);
     const [dx, dy] = [e.clientX - start.x, e.clientY - start.y];
     const height = ref.current?.getBoundingClientRect().height || 16;
-    if (e.type === 'pointerup' && dragPeels(dx, dy, height) && ref.current) onPeel(strip, ref.current, dx < 0 ? 'left' : 'right');
+    if (e.type === 'pointerup' && dragPeels(dx, dy, height) && ref.current) onPeel(strip, ref.current, dx < 0 ? 'left' : 'right', covered);
   };
 
   const style = {
@@ -125,7 +129,7 @@ function StripButton({ strip, covered, peelMs, onPeel, onMeet }: StripProps) {
       ref={ref} type="button" className={`dw-ac-strip${long ? ' dw-ac-long' : ''}`} style={style}
       data-kb-strip={strip.key} data-kb-pulling={pull ? 'true' : undefined} data-kb-holding={share > 0 ? 'true' : undefined}
       aria-label={`Autocorrected text: “${strip.replacement}”. Hold Enter or Space to peel`}
-      onKeyDown={onKeyDown} onKeyUp={letGo} onBlur={letGo}
+      onKeyDown={onKeyDown} onKeyUp={(e) => { if (e.key === 'Enter' || e.key === ' ') letGo(); }} onBlur={letGo}
       onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerEnd} onPointerCancel={onPointerEnd}
     >
       {!long && <span className="dw-ac-covered" aria-hidden="true">{covered}</span>}
@@ -143,7 +147,11 @@ export function AutocorrectEffect({ post, plays, states, reader, save, show, met
   /* This reader's own peels, by strip key, never sent; and the author's peels on their way to being saved, by play. */
   const [local, setLocal] = useState<ReadonlySet<string>>(() => new Set());
   const [sending, setSending] = useState<Readonly<Record<string, readonly number[]>>>({});
-  const [report, setReport] = useState('');
+  /* A refused save's words, by play, and what the last peel uncovered, for the status region a screen reader hears. */
+  const [refusals, setRefusals] = useState<Readonly<Record<string, string>>>({});
+  const [uncovered, setUncovered] = useState('');
+  const report = Object.values(refusals).filter(Boolean).join(' ');
+  const box = useRef<HTMLDivElement>(null);
 
   const configs = useMemo(() => plays.flatMap((p) => {
     const { phrase, replacement } = p.config as { phrase?: unknown; replacement?: unknown };
@@ -165,11 +173,14 @@ export function AutocorrectEffect({ post, plays, states, reader, save, show, met
   const inFlight = useRef(new Set<string>());
   const dirty = useRef(new Set<string>());
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
-  useEffect(() => () => { for (const t of timers.current.values()) clearTimeout(t); }, []);
+  /* Once the post has gone nothing is set and nothing retried, as Whoops! does; a peel still waiting on its debounce is sent at once. */
+  const gone = useRef(false);
   const flush = useCallback(async (play: string, attempt = 0): Promise<void> => {
     if (inFlight.current.has(play)) { dirty.current.add(play); return; }
     dirty.current.delete(play);
-    const places = [...savedPeels(now.current.states[play]?.state), ...(now.current.sending[play] ?? [])];
+    timers.current.delete(play);
+    const batch = [...(now.current.sending[play] ?? [])];
+    const places = [...savedPeels(now.current.states[play]?.state), ...batch];
     if (!places.length) return;
     const state = savedAfterPeel(places, places[places.length - 1]!, now.current.total[play] ?? 0);
     inFlight.current.add(play);
@@ -181,18 +192,34 @@ export function AutocorrectEffect({ post, plays, states, reader, save, show, met
     }
     inFlight.current.delete(play);
     if (answer.ok) {
-      setReport('');
+      if (!gone.current) setRefusals((was) => (was[play] ? { ...was, [play]: '' } : was));
       if (dirty.current.has(play)) await flush(play);
       return;
     }
+    if (gone.current) return;
     if (answer.uncertain && attempt < MAX_SAVE_RETRIES) {
       timers.current.set(play, setTimeout(() => { void flush(play, attempt + 1); }, RETRY_AFTER_MS * 2 ** attempt));
       return;
     }
     dirty.current.delete(play);
-    setReport(answer.error);
-    setSending((was) => { const { [play]: _, ...rest } = was; now.current.sending = rest; return rest; });
+    setRefusals((was) => ({ ...was, [play]: answer.error }));
+    /* Only the places this save carried come back; any peeled since wait for their own. */
+    setSending((was) => {
+      const left = (was[play] ?? []).filter((i) => !batch.includes(i));
+      const next = { ...was, [play]: left };
+      now.current.sending = next;
+      return next;
+    });
   }, []);
+  useEffect(() => {
+    gone.current = false;
+    return () => {
+      gone.current = true;
+      const waiting = [...timers.current.entries()];
+      timers.current.clear();
+      for (const [play, t] of waiting) { clearTimeout(t); void flush(play); }
+    };
+  }, [flush]);
   const queue = useCallback((play: string) => {
     const was = timers.current.get(play);
     if (was) clearTimeout(was);
@@ -202,7 +229,14 @@ export function AutocorrectEffect({ post, plays, states, reader, save, show, met
   const meet = useRef(met);
   meet.current = met;
   const onMeet = useCallback(() => meet.current(), []);
-  const onPeel = useCallback((strip: Strip, el: HTMLElement, corner: Corner) => {
+  const onPeel = useCallback((strip: Strip, el: HTMLElement, corner: Corner, covered: string) => {
+    /* A strip peeled while focused takes the reader's place with it: focus goes to the next strip on the post, or to the post. */
+    if (el === document.activeElement) {
+      const strips = [...(box.current?.querySelectorAll<HTMLElement>('.dw-ac-strip') ?? [])];
+      const next = strips[strips.indexOf(el) + 1] ?? strips.find((x) => x !== el) ?? box.current;
+      next?.focus();
+    }
+    setUncovered(`Peeled. Under it: “${covered}”.`);
     dropStrip(el, { corner, reduced, seed: strip.key });
     if (reader.author) {
       setSending((was) => {
@@ -244,9 +278,9 @@ export function AutocorrectEffect({ post, plays, states, reader, save, show, met
   useEffect(() => { show(viewNow.current); }, [viewKey, show]);
 
   return (
-    <div className="dw-ac" data-kb-autocorrect="">
+    <div ref={box} className="dw-ac" data-kb-autocorrect="" tabIndex={-1}>
       <TextLayer runs={runs}>{children}</TextLayer>
-      <p className="kb-visually-hidden" role="status" data-kb-report>{report}</p>
+      <p className="kb-visually-hidden" role="status" data-kb-report>{report || uncovered}</p>
     </div>
   );
 }

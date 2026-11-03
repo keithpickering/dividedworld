@@ -185,6 +185,42 @@ describe('Autocorrect', () => {
     expect(save).toHaveBeenLastCalledWith('k1', { peeled: [0, 1, 2], clean: true });
   });
 
+  test('an author\'s peel made just before leaving the post is still saved', async () => {
+    vi.useFakeTimers();
+    const m = mount({ author: true });
+    fireEvent.pointerDown(strips()[0]!, { clientX: 0, clientY: 0, pointerId: 1, button: 0 });
+    fireEvent.pointerUp(strips()[0]!, { clientX: 80, clientY: 0, pointerId: 1, button: 0 });
+    expect(m.save).not.toHaveBeenCalled();
+    m.unmount();
+    expect(m.save).toHaveBeenCalledWith('k1', { peeled: [0] });
+  });
+
+  test('peeling the focused strip by keyboard keeps the reader\'s place: focus goes to the next strip, or to the post, and the peel is said', async () => {
+    vi.useFakeTimers();
+    mount({ body: 'Mario and Mario' });
+    strips()[0]!.focus();
+    await hold(strips()[0]!, 700);
+    expect(document.activeElement).toBe(strips()[0]);
+    expect(screen.getAllByRole('status').at(-1)).toHaveTextContent('Peeled. Under it: “Mario”.');
+    await hold(strips()[0]!, 700);
+    expect(strips()).toHaveLength(0);
+    expect(document.activeElement).toBe(document.querySelector('[data-kb-autocorrect]'));
+  });
+
+  test('letting go of another key does not end a hold, and a right-button drag peels nothing', async () => {
+    vi.useFakeTimers();
+    mount();
+    fireEvent.keyDown(strips()[0]!, { key: 'Enter' });
+    await act(async () => { vi.advanceTimersByTime(300); });
+    fireEvent.keyUp(strips()[0]!, { key: 'Shift' });
+    await act(async () => { vi.advanceTimersByTime(400); });
+    expect(strips()).toHaveLength(2);
+    const s = strips()[0]!;
+    fireEvent.pointerDown(s, { clientX: 0, clientY: 0, pointerId: 2, button: 2, pointerType: 'mouse' });
+    fireEvent.pointerUp(s, { clientX: 90, clientY: 0, pointerId: 2, button: 2, pointerType: 'mouse' });
+    expect(strips()).toHaveLength(2);
+  });
+
   test('a save that got no answer is sent again, later; one the card refuses is said, and the strip comes back', async () => {
     vi.useFakeTimers();
     const answers = [{ ok: false, error: 'lost', uncertain: true }, { ok: true, value: { play: 'k1', savedAt: '' } }];
