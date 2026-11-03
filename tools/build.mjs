@@ -91,6 +91,8 @@ export const STEPS = [
   'npm run build:web',
   'node tools/test-web-bundle.mjs',
   'node tools/check-web-bundle.mjs',
+  'node tools/test-icons.mjs',
+  'node tools/check-icons.mjs',
 ];
 
 /**
@@ -98,16 +100,16 @@ export const STEPS = [
  * steps after it read, and every step whose file asserts an absolute wall-clock bound, which a
  * loaded pool could trip. A subset of STEPS, checked by `problems()`. test:engine times the
  * settlement at a busy instance's scale (engine/rules/settle.scale.test.ts). build:web writes
- * web/dist/, which check-web-bundle reads, so the two run in that order, alone.
+ * web/dist/, which check-web-bundle and check-icons read, so the three run in that order, alone.
  */
-export const SERIAL = new Set(['npm run test:engine', 'npm run build:web', 'node tools/check-web-bundle.mjs']);
+export const SERIAL = new Set(['npm run test:engine', 'npm run build:web', 'node tools/check-web-bundle.mjs', 'node tools/check-icons.mjs']);
 
 /**
  * Steps that read what another step wrote: each key must come after its value in STEPS, and both
  * must be SERIAL, since the pool runs in parallel with no order. Checked by `problems()`.
- * check-web-bundle reads web/dist/, which build:web writes.
+ * check-web-bundle and check-icons read web/dist/, which build:web writes.
  */
-export const AFTER = { 'node tools/check-web-bundle.mjs': 'npm run build:web' };
+export const AFTER = { 'node tools/check-web-bundle.mjs': 'npm run build:web', 'node tools/check-icons.mjs': 'npm run build:web' };
 
 /**
  * `check-*.mjs` and `test-*.mjs` files in tools/ that are deliberately not in STEPS, each
