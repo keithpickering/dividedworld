@@ -182,10 +182,10 @@ begin
 
   -- A structural hold that is not set is an error, not a hold of zero: unset raises, and so does a JSON null (which would drop the hold in silence).
   m9 := (begin_meeting(slot1 + interval '21 days') ->> 'meeting')::bigint;
-  update settings set value = 'null' where key = 'structuralHoldHours';
+  -- A JSON null is no longer writable (settings_held, 0074 refuses it), so the hold cannot be dropped in silence from the table.
   denied := false;
-  begin perform apply_meeting(m9, pg_temp.payload('mt-boss', '[]', 'no hold')); exception when sqlstate '22023' then denied := true; end;
-  if not denied then raise exception 'a meeting was applied with a null structuralHoldHours'; end if;
+  begin update settings set value = 'null' where key = 'structuralHoldHours'; exception when check_violation then denied := true; end;
+  if not denied then raise exception 'a null structuralHoldHours was written'; end if;
   delete from settings where key = 'structuralHoldHours';
   denied := false;
   begin perform apply_meeting(m9, pg_temp.payload('mt-boss', '[]', 'no hold')); exception when sqlstate 'P0002' then denied := true; end;
