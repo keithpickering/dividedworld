@@ -706,7 +706,8 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   const readNow = view && lineKeys ? lineKeys.filter((_, i) => !view.covered[i]) : null;
   const readKey = readNow === null ? null : `${anyLive ? 'live' : 'plain'}\u0001${readNow.join('\u0001')}`;
   useEffect(() => {
-    if (!view || !readNow) return;
+    /* A moment says nothing as news: nothing in it is uncovered by a reader. */
+    if (!view || !readNow || still) return;
     const before = readBefore.current;
     readBefore.current = new Set(readNow);
     if (!before || !anyLive) return;

@@ -1170,10 +1170,15 @@ describe('in a moment, still', () => {
     expect(met).not.toHaveBeenCalled();
   });
 
-  test('a layer saved clean is not drawn, and nothing fades', () => {
+  test('a layer saved clean is not drawn, and nothing fades, even when the clean state arrives after it is drawn', () => {
     const { root } = mount({ still: true, layers: 2, states: { 'play-1': { state: { strokes: [], clean: true }, savedAt: at } } });
     expect(states(root)).toEqual(['clean', 'live']);
     expect(root).not.toHaveAttribute('data-kb-fading');
+    const later = mount({ still: true, layers: 2 });
+    expect(states(later.root)).toEqual(['live', 'live']);
+    later.hear({ 'play-2': { state: { strokes: [], clean: true }, savedAt: at } });
+    expect(states(later.root)).toEqual(['live', 'clean']);
+    expect(later.root).not.toHaveAttribute('data-kb-fading');
   });
 
   test('its words: one layer as its caster\'s ink and share washed, three top first, a clean one "washed clean"', () => {
