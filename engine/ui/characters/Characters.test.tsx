@@ -483,6 +483,30 @@ describe('Reveal: choosing a thread', () => {
     expect(within(dialog).queryByRole('button', { name: 'Show older threads' })).toBeNull();
   });
 
+  test('a page of older threads that comes after the board was changed is not added to the new board\'s list', async () => {
+    const w = world();
+    for (let i = 1; i <= 25; i++) w.fake.seed.thread('general', w.stranger, `Thread ${String(i).padStart(2, '0')}`, 'x', { at: T0 + i * 1000 });
+    const threads = w.fake.threads.bind(w.fake);
+    let release: () => void = () => {};
+    vi.spyOn(w.fake, 'threads').mockImplementation(async (board, page) => {
+      const answer = await threads(board, page);
+      if ((page?.offset ?? 0) > 0) await new Promise<void>((done) => { release = done; });
+      return answer;
+    });
+    open(w);
+    await ready();
+    const dialog = await openReveal();
+    await userEvent.selectOptions(within(dialog).getByLabelText('Board'), 'General');
+    const select = await within(dialog).findByLabelText('Thread');
+    await waitFor(() => expect(within(select).getAllByRole('option')).toHaveLength(21));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Show older threads' }));
+    await userEvent.selectOptions(within(dialog).getByLabelText('Board'), 'Off Topic');
+    expect(await within(dialog).findByText('No threads on this board yet; choose another board.')).toBeInTheDocument();
+    await act(async () => { release(); });
+    expect(within(select).getAllByRole('option')).toHaveLength(1);
+    expect(within(dialog).getByText('No threads on this board yet; choose another board.')).toBeInTheDocument();
+  });
+
   test('says plainly when a board has no threads', async () => {
     const w = world();
     open(w);

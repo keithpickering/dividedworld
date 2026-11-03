@@ -5,7 +5,7 @@
  * board and a thread, and the preview shows the character's own post as the thread will draw it.
  * The rules of a reveal are reveal.ts's, shared with the board's dialog (RevealModal.tsx).
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Board, MyCharacter, ThreadSummary } from '../data/api.ts';
 import { Overlay } from '../glass/Overlay.tsx';
@@ -34,6 +34,8 @@ export function RevealOverlay({ character, onClose, onDone, returnFocusTo }: Rev
   const [total, setTotal] = useState<number | null>(null);
   const [more, setMore] = useState(false);
   const [chosen, setChosen] = useState('');
+  /* The board whose threads are listed now, so a page asked for under another one is dropped. */
+  const listed = useRef('');
 
   useEffect(() => {
     let live = true;
@@ -45,23 +47,30 @@ export function RevealOverlay({ character, onClose, onDone, returnFocusTo }: Rev
     setThreads([]);
     setTotal(null);
     setChosen('');
+    setMore(false);
+    listed.current = board;
     if (!board) return;
     let live = true;
     void api.threads(board, { offset: 0, limit: PAGE }).then((t) => { if (live) { setThreads(t.threads); setTotal(t.total); } }, () => { if (live) setRefusal('That board’s threads could not be loaded. Choose it again.'); });
     return () => { live = false; };
   }, [api, board, setRefusal]);
 
-  /* The next page, appended: a thread that moved onto an earlier page meanwhile is not listed twice. */
+  /*
+   * The next page, appended: a thread that moved onto an earlier page meanwhile is not listed
+   * twice, and a page that comes after the board was changed is dropped, as the effects drop theirs.
+   */
   const older = async () => {
+    const of = board;
     setMore(true);
     try {
-      const t = await api.threads(board, { offset: threads.length, limit: PAGE });
+      const t = await api.threads(of, { offset: threads.length, limit: PAGE });
+      if (listed.current !== of) return;
       setThreads((have) => [...have, ...t.threads.filter((x) => !have.some((h) => h.id === x.id))]);
       setTotal(t.total);
     } catch {
-      setRefusal('Older threads could not be loaded. Try again.');
+      if (listed.current === of) setRefusal('Older threads could not be loaded. Try again.');
     } finally {
-      setMore(false);
+      if (listed.current === of) setMore(false);
     }
   };
 

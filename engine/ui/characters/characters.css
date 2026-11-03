@@ -810,6 +810,12 @@
   margin: 0;
 }
 
+/* A character's own words and a thread's title are free text: a long unbroken run wraps in its box. */
+.kb-preview-side,
+.kb-preview-lines p {
+  overflow-wrap: anywhere;
+}
+
 /* ---- the Turn, on the Turn board's grid ---- */
 
 /* The Turn board's modal fills the window under the menu bar, 27px under it, 24px from each side. */
@@ -1157,7 +1163,10 @@
 /* The reveal's words on the sheet, and its two pickers side by side where there is room. */
 .kb-reveal-line {
   margin: 0;
+  max-width: 680px;
   font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
   color: var(--kb-glass-text);
 }
 
