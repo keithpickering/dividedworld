@@ -300,8 +300,10 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
      reads the owner's answer 3. A card whose kind the instance has since retired has no
      alignment, and holds nothing. Built once; the acts are already in time order. */
   /* The alignment each play reads as this window (the Autocorrect design, section 8): a Pepperoni card's by the lean of the
-     other players' votes on it here, positive quadrants against negative, tidied as every sum is; a tie stays Pepperoni. Its
-     own player's votes never move it, as they never lift its target. A play from an earlier window reads by this window's votes. */
+     votes on it here, each a share of one vote, positive quadrants against negative, tidied as every sum is; a tie stays
+     Pepperoni. They are the votes `votesOn` counts as the card's draw: other players' and staff's. A player's votes on their own
+     Acts are never paid (payVotes), and the owner check below says so again, as `targetAfter`'s does. A play from an earlier
+     window reads by this window's votes, so one the room has stopped reacting to stays Pepperoni here. */
   const readsAsOf = new Map<string, Alignment>();
   const readsAs = (a: { id: string; character: string; card?: string }): Alignment => {
     const own = alignmentOf.get(a.card!)!;

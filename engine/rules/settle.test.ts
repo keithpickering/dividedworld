@@ -365,6 +365,10 @@ test('a Pepperoni play reads as the room leans on it in the window: Salty, Sweet
   assert.deepEqual(reads([]), ['pepperoni', 'pepperoni', 'pepperoni'], 'no reactions: Pepperoni');
   assert.deepEqual(reads([react('k1', 'cat', 'cat-1', 'zzz', at)]), ['pepperoni', 'pepperoni', 'pepperoni'], 'the caster\'s own player never moves the lean');
   assert.deepEqual(reads([react('k1', 'ann', 'ann-fan', 'zzz', at)], 'sugar'), ['sweet', 'sweet', 'sweet'], 'a Sweet card reads as Sweet whatever the room does');
+  // Each player weighs one vote, split across their quadrants: Dee's cheer, groan and heat are a third each (-1/3 in all), Ann's
+  // cheer is whole (+1), so the room leans Sweet; counted by reactions, not shares, it would be a tie.
+  assert.deepEqual(reads([react('k1', 'dee', 'dee-1', 'fire', at), react('k1', 'dee', 'dee-1', 'zzz', at + 1), react('k1', 'dee', 'dee-1', 'tomato', at + 2), react('k1', 'ann', 'ann-fan', 'fire', at)]),
+    ['pepperoni', 'sweet', 'sweet'], 'shares, not reactions');
 });
 
 test('a Pepperoni play that reads as Sweet shares the Sweet hold: one player\'s two cards on a post pay what one would', () => {
