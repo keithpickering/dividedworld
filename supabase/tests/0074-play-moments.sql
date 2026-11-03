@@ -134,10 +134,17 @@ begin
   if (select count(*) from play_moments) is distinct from before_moments or (select count(*) from play_moment_layers) is distinct from before_layers then
     raise exception 'a play beyond a post took a moment, or was copied as a layer';
   end if;
-  -- And a later cast on the post a character play sits on does not count that play as a layer.
+  -- And a later cast on the post the character and thread plays sit on (the thread's first post, and the character play's postbit's)
+  -- does not count them as layers: its layers are the post's own, the back and the spring and the caught play.
+  if (select count(*) from acts where target_act_id = p_cast and kind = 'card' and payload ? 'reach') is distinct from 2::bigint then
+    raise exception 'the character and thread plays sit on the post cast on below';
+  end if;
   perform pg_temp.hand(bob, 'sweetie');
-  perform play_card(bob, 'sweetie', b, p_reply, '{}', 0, '');
-  if exists (select 1 from play_moment_layers where layer in (on_char, on_thread, on_board)) then raise exception 'a play beyond a post is no layer'; end if;
+  caught := play_card(bob, 'sweetie', b, p_cast, '{}', 0, '');
+  if (select array_agg(layer order by layer) from play_moment_layers where play = (caught ->> 'id')::uuid)
+     is distinct from (select array_agg(x order by x) from unnest(array[set_cast, spring, (select id from acts where kind = 'card' and target_act_id = p_cast and payload ? 'caught')]) x) then
+    raise exception 'a play beyond a post is no layer: %', (select array_agg(layer) from play_moment_layers where play = (caught ->> 'id')::uuid);
+  end if;
 end $$;
 
 -- ---- Both tables are written once and never changed, and a visitor reads neither ----
@@ -225,6 +232,8 @@ begin
     raise exception 'the version is the post with the edit''s words: %', got -> 'version';
   end if;
   if got -> 'version' -> 'payload' is distinct from '{"body": "Edit me first."}'::jsonb then raise exception 'the post''s own payload is kept: %', got -> 'version'; end if;
+  -- Edited 30 minutes after it was written, past the grace: "Last edited" says so, as it did then.
+  if (got -> 'version' ->> 'shown_edited_at')::timestamptz is distinct from now() - interval '30 minutes' then raise exception 'the version shows its edit as acts_public did: %', got -> 'version'; end if;
 
   -- A Set's moment, and a card back in another's moment, show no card.
   set_p := (set_card(bob, 'snare', b, q, '{}', 0) ->> 'id')::uuid;
@@ -329,7 +338,7 @@ declare
   t uuid := tests.thread('Moments scale');
   lone uuid := tests.post(b, t, 'One layer.', now() - interval '1 day');
   stacked_post uuid := tests.post(b, t, 'A full stack.', now() - interval '1 day');
-  one_play uuid; top uuid; small bigint; big bigint; stacked bigint;
+  one_play uuid; top uuid; small bigint; big bigint; stacked bigint; aged bigint;
 begin
   perform pg_temp.cards();
   insert into card_kinds (key, name, alignment, price_setting, play) values ('bluffy', 'Bluffy', 'pepperoni', 'sweetie.price', 'set') on conflict (key) do nothing;
@@ -349,5 +358,18 @@ begin
   raise notice 'play_moment touched % buffers in a thread of 200 posts, % in one of 2,000, and % on a post with its stack full', small, big, stacked;
   if big > small + 5 then raise exception 'play_moment touches % buffers in a thread of 200 posts and % in one of 2,000; it is a few probes', small, big; end if;
   -- A full stack reads its few more layers, a probe each, and nothing that grows: at most a stack's worth (five layers) over one layer.
+  -- An old play: 2,000 plays on its post's author began after it, each still live then and since. The read is the plays live then.
+  set local session_replication_role = replica;
+  with later as (
+    insert into acts (character, kind, thread, target_act_id, payload, created_at)
+    select a, 'card', t, lone, jsonb_build_object('card', 'glint', 'reach', 'character', 'character', b), now() + make_interval(secs => i)
+    from generate_series(1, 2000) i returning id, created_at)
+  insert into play_reach (play, reach, character, ends_at) select id, 'character', b, created_at + interval '7 days' from later;
+  set local session_replication_role = origin;
+  analyze play_reach;
+  analyze acts;
+  aged := pg_temp.buffers_of(format('select play_moment(%L)', one_play));
+  raise notice 'play_moment touched % buffers for a play with 2,000 later plays on its author', aged;
+  if aged > big + 5 then raise exception 'play_moment touches % buffers for a play and % once 2,000 plays began after it; it reads the plays live then', big, aged; end if;
   if stacked > small + 40 then raise exception 'play_moment touches % buffers on a post with one layer and % with its stack full; it is a probe per layer', small, stacked; end if;
 end $$;

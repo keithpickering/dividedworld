@@ -17,7 +17,9 @@
 -- set or not. A card back's layer carries the Set's saved state, which is none.
 --
 -- A busy instance (design, section 8): a landing copies at most the post's other layers (a few rows: a stack of three of one card and
--- one of each other card), each at most 256KB, through acts_target and effect_state's primary key. Storage grows with plays, which are
+-- one of each other card), each at most 256KB, through acts_layers below and effect_state's primary key. acts_target would read every
+-- Act aimed at the post (each reply quoting it, each play beyond a post sitting on it) before keeping the layers, which grows with how
+-- much the post is quoted; acts_layers holds the layers alone. Storage grows with plays, which are
 -- paid, and never with washes. Both tables are append-only, as play_reach is, and the trigger is an ordinary one, not `enable always`,
 -- so an import written as a replica (tools/import-instance.mjs) writes the exported moments as they were and takes none of its own.
 --
@@ -60,6 +62,10 @@ grant select on play_moments, play_moment_layers to authenticated;
 create policy read on play_moments for select to authenticated using (true);
 create policy read on play_moment_layers for select to authenticated using (true);
 
+-- A post's layers (LAYER_KINDS on the post's own reach), by post: the trigger's one probe. Its predicate is the trigger's own, word for
+-- word, so the planner uses it.
+create index acts_layers on acts (target_act_id) where kind in ('card', 'set', 'spring') and coalesce(payload ->> 'reach', 'post') = 'post';
+
 -- The moment of the play just written: the post's version, and every other layer on the post with what it had saved.
 create function take_play_moment() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -70,8 +76,8 @@ begin
   insert into play_moment_layers (play, layer, state, saved_at)
   select new.id, k.id, s.state, s.saved_at
   from acts k left join effect_state s on s.play = k.id
-  where k.target_act_id = new.target_act_id and k.kind in ('card', 'set', 'spring') and k.id <> new.id
-    and coalesce(k.payload ->> 'reach', 'post') = 'post';
+  where k.target_act_id = new.target_act_id and k.kind in ('card', 'set', 'spring') and coalesce(k.payload ->> 'reach', 'post') = 'post'
+    and k.id <> new.id;
   return null;
 end $$;
 revoke execute on function take_play_moment(), play_moments_append_only() from public, anon, authenticated;
@@ -92,8 +98,8 @@ create trigger acts_take_play_moment after insert on acts for each row
 --             History orders it) and itself alone
 -- The same bytes to every caller: nothing here reads face_down or who is asking, so a Set's moment and a card back in another's moment
 -- show no card, for its setter as for anyone. Its cost is probes: the play and its post by primary key, the snapshot by play, its
--- layers by play_moment_layers' key, the version by id (or one probe of acts_edits), and play_reach's three indexes; it does not grow
--- with the thread, the board or the instance (supabase/tests/0074-play-moments.sql measures it).
+-- layers by play_moment_layers' key, the version by id (or one probe of acts_edits), and play_reach's three indexes, each bounded to
+-- the plays live then; it does not grow with the thread, the board, the instance or the plays made since (supabase/tests/0074-play-moments.sql measures it).
 create function play_moment(play uuid) returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
@@ -103,6 +109,11 @@ declare
   recorded boolean;
   on_board uuid;
   grace interval := coalesce(span_interval((select g.value from settings g where g.key = 'editGrace')), interval '0');
+  -- A play beyond a post that began before this one ends at most its reach's reachLasts after it began (play_card), so before this
+  -- play's time plus that bound: each probe of play_reach reads the plays live then and none begun since, however old the play is.
+  -- (An instance that lowers reachLasts later bounds an older moment by the lower span; a play that outlived it is left off that
+  -- moment's list of plays above, which is words on the frame.)
+  bound record;
 begin
   select * into k from acts a where a.id = play_moment.play;
   if k.id is not null and k.kind in ('card', 'set', 'spring') and k.target_act_id is not null and coalesce(k.payload ->> 'reach', 'post') = 'post' then
@@ -117,6 +128,8 @@ begin
     if v.id is null then v := on_post; end if;
   end if;
   select t.board into on_board from threads t where t.id = on_post.thread;
+  select span_interval(setting('reachLasts') -> 'character') as character, span_interval(setting('reachLasts') -> 'thread') as thread,
+         span_interval(setting('reachLasts') -> 'board') as board into bound;
   return jsonb_build_object(
     'version', act_projection(on_post.id) || jsonb_build_object(
       'current_payload', v.payload,
@@ -129,11 +142,11 @@ begin
       select jsonb_agg(jsonb_build_object('play', r.play, 'reach', r.reach, 'target', coalesce(r.character, r.thread, r.board), 'ends_at', r.ends_at, 'act', to_jsonb(a))
                        order by a.created_at, a.id)
       from (
-        select x.* from play_reach x where x.character = on_post.character and x.ends_at > k.created_at
+        select x.* from play_reach x where x.character = on_post.character and x.ends_at > k.created_at and x.ends_at <= k.created_at + bound.character
         union all
-        select x.* from play_reach x where x.thread = on_post.thread and x.ends_at > k.created_at
+        select x.* from play_reach x where x.thread = on_post.thread and x.ends_at > k.created_at and x.ends_at <= k.created_at + bound.thread
         union all
-        select x.* from play_reach x where x.board = on_board and x.ends_at > k.created_at
+        select x.* from play_reach x where x.board = on_board and x.ends_at > k.created_at and x.ends_at <= k.created_at + bound.board
       ) r join acts_public a on a.id = r.play
       where a.created_at < k.created_at), '[]'::jsonb),
     'recorded', recorded);
