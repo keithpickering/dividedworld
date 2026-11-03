@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RARITIES, atOrBelow, refusalTime, spanMs, decidePlay, decideSet, decideUse, effectsOnTarget, landsOn, ok, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
+import { RARITIES, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideUse, effectsOnTarget, landsOn, ok, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
 import type { Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
@@ -176,4 +176,18 @@ test('a ward on a character turns away a cast on that character', () => {
   const ward: CardEffect = { card: 'shield', act: 'w', ward: 'legendary', ends: soon, reach: 'character' };
   const onCharacter = reaching('sparkle', ['character']);
   assert.deepEqual(decidePlay(onCharacter, settings, character, [ward], {}, '', { nameOf: names }), { ok: false, why: 'this character\'s Test Shield turns away cards up to legendary' });
+});
+
+// A moment draws a card still when its effect can change after it lands (docs/plans/2026-11-03-effect-history-design.md, section 3).
+test('drawnInMoment holds for a card that saves state, stacks or ends by time, and fails for a cast that does none', () => {
+  const washes: Pick<CardRules, 'validateState' | 'stack' | 'lasts'> = { stack: 3, validateState: (s) => ok(s) };
+  assert.equal(drawnInMoment(washes), true);
+  assert.equal(drawnInMoment({ validateState: (s) => ok(s) }), true);
+  assert.equal(drawnInMoment({ stack: 2 }), true);
+  assert.equal(drawnInMoment(shield), true);
+  assert.equal(drawnInMoment({ lasts: { unit: 'day', count: 1 } }), true);
+  // A hold that never changes once cast, stacking one: named in words, never drawn.
+  assert.equal(drawnInMoment(plain), false);
+  assert.equal(drawnInMoment({ stack: 1 }), false);
+  assert.equal(drawnInMoment(bluff), false);
 });

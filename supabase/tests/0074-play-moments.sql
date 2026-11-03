@@ -329,7 +329,7 @@ declare
   t uuid := tests.thread('Moments scale');
   lone uuid := tests.post(b, t, 'One layer.', now() - interval '1 day');
   stacked_post uuid := tests.post(b, t, 'A full stack.', now() - interval '1 day');
-  one_play uuid; top uuid; small bigint; big bigint; one bigint; stacked bigint;
+  one_play uuid; top uuid; small bigint; big bigint; stacked bigint;
 begin
   perform pg_temp.cards();
   insert into card_kinds (key, name, alignment, price_setting, play) values ('bluffy', 'Bluffy', 'pepperoni', 'sweetie.price', 'set') on conflict (key) do nothing;
@@ -348,5 +348,6 @@ begin
   stacked := pg_temp.buffers_of(format('select play_moment(%L)', top));
   raise notice 'play_moment touched % buffers in a thread of 200 posts, % in one of 2,000, and % on a post with its stack full', small, big, stacked;
   if big > small + 5 then raise exception 'play_moment touches % buffers in a thread of 200 posts and % in one of 2,000; it is a few probes', small, big; end if;
-  if stacked > 150 then raise exception 'play_moment touches % buffers on a post with its stack full; it is a probe per layer', stacked; end if;
+  -- A full stack reads its few more layers, a probe each, and nothing that grows: at most a stack's worth (five layers) over one layer.
+  if stacked > small + 40 then raise exception 'play_moment touches % buffers on a post with one layer and % with its stack full; it is a probe per layer', small, stacked; end if;
 end $$;

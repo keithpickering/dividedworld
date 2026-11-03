@@ -97,6 +97,8 @@ interface Options {
   readonly nameOf?: EffectProps['nameOf'];
   /** The instance's share washed that counts as clean; null is an instance whose settings carry none. */
   readonly clean?: number | null;
+  /** Drawn in a play's moment (`EffectProps.still`). */
+  readonly still?: boolean;
 }
 
 function mount(o: Options = {}) {
@@ -107,7 +109,7 @@ function mount(o: Options = {}) {
   const show: EffectProps['show'] = (view) => { shown.push(view); say(view); };
   const props: EffectProps = {
     post: POST, plays: plays(o.layers ?? 1), states: o.states ?? {}, released: new Set(), reader: { author: o.author ?? false, caster: false },
-    place: 'thread', reach: 'post', save, release: async (play) => ({ ok: true, value: { play, releasedAt: '' } }), show, met: o.met ?? (() => {}), holdScreen: () => {}, marks: null, nameOf: o.nameOf ?? ((c) => CASTERS[c ?? ''] ?? 'A character'), children: <p>{textOf(layoutLines)}</p>,
+    place: 'thread', reach: 'post', still: o.still ?? false, save, release: async (play) => ({ ok: true, value: { play, releasedAt: '' } }), show, met: o.met ?? (() => {}), holdScreen: () => {}, marks: null, nameOf: o.nameOf ?? ((c) => CASTERS[c ?? ''] ?? 'A character'), children: <p>{textOf(layoutLines)}</p>,
   };
   /* The saved states arrive from outside, as another device's save is heard: the host holds them and lets a test push a new set. */
   let push: (next: Record<string, EffectState>) => void = () => {};

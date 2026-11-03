@@ -132,6 +132,17 @@ export interface EffectProps {
    * (engine/ui/tips/store.ts); the engine clears it when the effect is gone.
    */
   readonly holdScreen: (held: boolean) => void;
+  /**
+   * Drawn in a play's moment (docs/plans/2026-11-03-effect-history-design.md, sections 3 and 5), not live. A card whose rules say its
+   * effect can change after it lands (`drawnInMoment`) honors it, and a test of each such card asserts it:
+   * - it draws `states` as given, as they stood then, and nothing the reader did since; it takes no input (no pointer, key or scroll
+   *   handler is bound), starts no animation, lifts nothing, and makes nothing inert;
+   * - its `show` gives the words the moment's frame shows for it (the view's `state`, "Gloomba's yellow, 40% washed"): the moment's
+   *   words, which a reader can read as well as see;
+   * - `save` and `release` refuse without asking, `met` does nothing, `holdScreen` does nothing, and `marks` is null.
+   * False on every live post.
+   */
+  readonly still: boolean;
   /** The post's marks, drawn where the card's effect puts them (a takeover's only; null for every other card). */
   readonly marks: ReactNode;
   /**
