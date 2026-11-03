@@ -74,7 +74,7 @@ function Body({ act, name, person, editing, onDone, marks }: { readonly marks: R
           {origin && <Origin summary={summary} />}
           {editing
             ? <EditPost act={act} seq={act.seq!} onDone={onDone} onSaved={changed} />
-            : <PostEffects plays={plays} post={act} place="thread" marks={marks} nameOf={casterName}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>}
+            : <PostEffects plays={plays} post={act} place="thread" marks={marks} nameOf={casterName} bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteLink={quoteLink} />}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>}
           <LastEdited act={act} />
           <Reactions act={act.id} author={act.character} authorName={name} tallies={tallies} mine={mine} />
           {person && <Signature text={person.character.signature} />}

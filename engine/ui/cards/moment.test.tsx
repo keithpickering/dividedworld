@@ -4,7 +4,7 @@
  * the order PostEffects wraps them; every other play on the post then, and every play above it, named in words. The cards are the
  * engine's own test cards, never an instance's.
  */
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { useEffect } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { landsOn, ok, type CardRules } from '../../rules/cards.ts';
@@ -12,6 +12,7 @@ import type { Instance } from '../../rules/types.ts';
 import { KayfaProvider, type Kayfa } from '../context.tsx';
 import type { Act, EffectState, PlayMoment } from '../data/api.ts';
 import { buildWorld, testInstance } from '../test-world.tsx';
+import { CalloutProvider } from './Callout.tsx';
 import { MomentEffects, momentParts } from './Effects.tsx';
 import type { CardUi, EffectProps } from './types.ts';
 
@@ -48,8 +49,8 @@ const moment = (layers: PlayMoment['layers'], above: PlayMoment['above'] = []): 
 function draw(m: PlayMoment, onWords = vi.fn()) {
   const api = buildWorld({}, instance);
   const kayfa = { api, instance, ui: { cards, glass: {} }, settings: {} } as unknown as Kayfa;
-  const spies = { save: vi.spyOn(api, 'saveEffect'), release: vi.spyOn(api, 'releaseEffect'), faces: vi.spyOn(api, 'myFaceDown') };
-  const view = render(<KayfaProvider value={kayfa}><MomentEffects moment={m} place="thread" nameOf={(c) => (c === 'c-spritey' ? 'Spritey' : 'someone')} onWords={onWords}><span data-kb-words>then</span></MomentEffects></KayfaProvider>);
+  const spies = { api, meets: vi.spyOn(api, 'meetCard'), save: vi.spyOn(api, 'saveEffect'), release: vi.spyOn(api, 'releaseEffect'), faces: vi.spyOn(api, 'myFaceDown') };
+  const view = render(<KayfaProvider value={kayfa}><CalloutProvider met={[]}><MomentEffects moment={m} place="thread" nameOf={(c) => (c === 'c-spritey' ? 'Spritey' : 'someone')} onWords={onWords}><span data-kb-words>then</span></MomentEffects></CalloutProvider></KayfaProvider>);
   return { ...view, spies, onWords };
 }
 const chain = () => {
@@ -64,15 +65,20 @@ afterEach(() => { seen.length = 0; vi.restoreAllMocks(); });
 describe('a moment draws still', () => {
   test('each drawn card is given still, its state as saved then, and a save, a release and a met that do nothing', async () => {
     const calls: unknown[] = [];
+    const strokes = vi.fn();
+    /* A card that saves, releases, meets and takes strokes whenever it is drawn, and binds its strokes only when it is live. */
     const Busy = ({ children, still, save, release, met }: EffectProps) => {
       useEffect(() => { met(); void save('k1', { washed: 1 }).then((a) => calls.push(a)); void release('k1').then((a) => calls.push(a)); }, [met, save, release]);
-      return <div data-kb-wrap="busy" data-kb-still={String(still)}>{children}</div>;
+      return <div data-kb-wrap="busy" data-kb-still={String(still)} onPointerDown={still ? undefined : strokes}>{children}</div>;
     };
-    cards[0] = ui('smear', { Effect: Busy });
+    cards[0] = ui('smear', { Effect: Busy, hint: 'Smear smears.' });
     try {
       const { spies } = draw(moment([{ act: card('k1', 'smear', 5), state: null }]));
       await vi.waitFor(() => expect(calls).toHaveLength(2));
       expect(document.querySelector('[data-kb-wrap="busy"]')!.getAttribute('data-kb-still')).toBe('true');
+      fireEvent.pointerDown(document.querySelector('[data-kb-wrap="busy"]')!);
+      expect(strokes).not.toHaveBeenCalled();
+      expect(spies.meets).not.toHaveBeenCalled();
       expect(calls.every((a) => (a as { ok: boolean }).ok === false)).toBe(true);
       expect(spies.save).not.toHaveBeenCalled();
       expect(spies.release).not.toHaveBeenCalled();

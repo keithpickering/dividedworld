@@ -21,6 +21,8 @@ import type { Act, EffectState, Id, PlayAbove, PlayMoment } from '../data/api.ts
 import { usePlayer } from '../player.tsx';
 import { useMeet } from './Callout.tsx';
 import { useHoldScreen } from '../tips/Tips.tsx';
+import { useLensStore } from './Lens.tsx';
+import { MomentView, useShownMoment } from './Moment.tsx';
 import { createPlays, inPlayOrder, livePlays, nextEnd, playOf, usePlays, type Plays } from './plays.ts';
 import { drawnInMoment, type CardRules, type Reach } from '../../rules/cards.ts';
 import type { CardPlay, CardUi, CardView, EffectPlace, EffectProps } from './types.ts';
@@ -32,8 +34,13 @@ const NOT_AUTHOR = 'only the post\'s author saves what is on it';
  * card mechanic's design, section 7): the board's innermost, then the thread's, then its author's, then the post's own, as a card's
  * rules see them (effectsOnTarget), with every takeover outermost. A play beyond a post stops wrapping at its end, by itself.
  */
-export function PostEffects({ plays, post, board = null, place, marks = null, nameOf, children }: {
+export function PostEffects({ plays, post, board = null, place, marks = null, nameOf, bodyOf, children }: {
   readonly plays: Plays; readonly post: Act; readonly place: EffectPlace;
+  /**
+   * How the screen draws a version of the post's words (as it draws `children` from the post now): a play's moment (As it landed,
+   * Moment.tsx) draws the version it names with it, in place of `children` and every effect but a takeover. None draws no moment.
+   */
+  readonly bodyOf?: (version: Act) => ReactNode;
   /** The board the post's thread is on, whose live board card wraps it; none where the screen does not know it. */
   readonly board?: Id | null;
   /** The post's marks, as the post's date row draws them: given to a takeover's effect alone. */
@@ -44,6 +51,8 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   const { api, ui } = useKayfa();
   const { actingCharacters, writingCharacters } = usePlayer();
   const here = usePlays(plays, post.id);
+  const lens = useLensStore();
+  const moment = useShownMoment(lens);
   const onBoard = usePlays(plays, board ?? '');
   const onThread = usePlays(plays, post.thread);
   const onAuthor = usePlays(plays, post.character ?? '');
@@ -76,13 +85,26 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
     ...above.map((l) => ({ reach: l.reach as Reach, acting: livePlays(l.drawn, now), of: l.of })),
     { reach: 'post' as Reach, acting: here.plays.filter((p) => !p.caught && !p.faceDown && !p.reach), of: here },
   ];
-  if (layers.every((l) => l.acting.length === 0)) return <>{children}</>;
+  /*
+   * A play's moment shown here (As it landed): it replaces the post's words and every effect inside the takeovers, which keep wrapping
+   * it, so a held post stays held. Nothing the reader does reaches the live effects while it shows: they are not drawn.
+   */
+  const momentAct = moment !== null && bodyOf ? here.plays.find((p) => p.id === moment) : undefined;
+  if (layers.every((l) => l.acting.length === 0) && !momentAct) return <>{children}</>;
   const takes = (key: string) => ui.cards.find((c) => c.key === key)?.takeover === true;
   /* Each layer's cards in the order each was first played there, the first innermost; every takeover after all of them. */
   const wraps = layers.flatMap((l) => [...new Set(l.acting.map((p) => p.card))].map((key) => ({ ...l, key })));
   const ordered = [...wraps.filter((w) => !takes(w.key)), ...wraps.filter((w) => takes(w.key))];
   let wrapped = children;
-  for (const { key, reach, acting, of } of ordered) {
+  if (momentAct && bodyOf) {
+    wrapped = (
+      <MomentView
+        play={momentAct} place={place} nameOf={nameOf} bodyOf={bodyOf} now={children}
+        back={() => lens.showMoment(null)}
+      />
+    );
+  }
+  for (const { key, reach, acting, of } of momentAct ? ordered.filter((w) => takes(w.key)) : ordered) {
     const card = ui.cards.find((c) => c.key === key);
     if (!card?.Effect) continue;
     const mine = acting.filter((p) => p.card === key);

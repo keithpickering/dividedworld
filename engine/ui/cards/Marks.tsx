@@ -238,8 +238,10 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, re
  * first kind it hides, and the same mark again closes it. One Lens is open on a page, so a strip subscribes to whether it is
  * the one and is redrawn for its own opening and closing alone.
  */
-export function PostMarks({ post, plays, to, nameOf, tallies, mine, ghost, reachAt, where = reachAt?.reach ?? 'post', compare = true, onSpin }: {
+export function PostMarks({ post, plays, to, nameOf, tallies, mine, ghost, reachAt, where = reachAt?.reach ?? 'post', compare = true, moments = true, onSpin }: {
   readonly post: Id; readonly ghost?: Act; readonly reachAt?: ReachAt; readonly where?: string; readonly compare?: boolean; readonly plays: Plays; readonly to: string | null; readonly nameOf: (character: Id | null) => string;
+  /** Whether a play's Lens row offers As it landed: not in an ORIGIN box that already draws the play's moment. */
+  readonly moments?: boolean;
   readonly tallies: Tallies; readonly mine: Mine;
   /** Spin a thread from a play: the Lens has closed, and the post opens its spin form for it, giving focus back to `opener` when the form closes. */
   readonly onSpin: (play: CardPlay, name: string, opener: HTMLElement) => void;
@@ -255,7 +257,7 @@ export function PostMarks({ post, plays, to, nameOf, tallies, mine, ghost, reach
   return (
     <span className="kb-marks-anchor" ref={anchor}>
       <MarkStrip post={post} plays={plays} tallies={tallies} ghost={ghost} reachAt={reachAt} where={where} compare={compare} open={open?.card ?? null} onOpen={onOpen} nameOf={nameOf} />
-      {open && <Lens open={open} store={store} post={post} plays={plays} tallies={tallies} mine={mine} compare={compare} to={to} nameOf={nameOf} strip={strip} onSpin={onSpin} where={where} />}
+      {open && <Lens open={open} store={store} post={post} plays={plays} tallies={tallies} mine={mine} compare={compare} to={to} nameOf={nameOf} strip={strip} onSpin={onSpin} where={where} moments={moments} />}
     </span>
   );
 }
