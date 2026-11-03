@@ -223,4 +223,10 @@ export interface CardUi {
    * gives none, or answers undefined, for a save that is not (a stroke washed away). Out of character and true.
    */
   readonly logSave?: (state: unknown) => { readonly what: string; readonly said: string } | undefined;
+  /**
+   * What a play of this card did, in a sentence, for the caster's played line and the author's "a card on your post" line, read
+   * from the play's configuration ("It covers “Mario” with “Luigi”."). A card that gives none, or answers undefined, adds nothing.
+   * Out of character and true.
+   */
+  readonly logPlay?: (config: Readonly<Record<string, unknown>>) => string | undefined;
 }

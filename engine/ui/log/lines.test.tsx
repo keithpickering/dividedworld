@@ -311,3 +311,35 @@ describe('a play beyond a post, in the caster\'s and the target\'s logs', () => 
     expect(text(row!)).toBe('Main Event was played on a thread.');
   });
 });
+
+/* A card may say in the log what a play of it did (CardUi.logPlay; docs/plans/2026-11-03-autocorrect-plan.md, Task 7). */
+describe('a card\'s own words for a play', () => {
+  const key = testInstance.cards[0]!.key;
+  const w: Words = { ...words, ui: { ...words.ui, cards: [{ key, art: { color: '#000', ink: '#fff' }, describe: () => '', logPlay: (config) => (typeof config.phrase === 'string' ? `It covers “${config.phrase}” with “${config.replacement}”.` : undefined) }] } };
+  const at = '2026-11-03T10:00:00.000Z';
+  const act = (id: string, kind: Act['kind'], character: string | null, over: Partial<Act> = {}): Act =>
+    ({ id, kind, character, thread: 'th', targetActId: null, seq: null, createdAt: at, payload: {}, currentPayload: {}, editedAt: null, shownEditedAt: null, ...over });
+  const text = (r: { details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
+  const post = act('post3', 'post', 'a', { seq: 3 });
+  const play = act('k1', 'card', 'c', { targetActId: 'post3', payload: { card: key, config: { phrase: 'mario', replacement: 'Luigi' } } });
+
+  test('the caster\'s played row says it', () => {
+    const log = { ...empty, cards: [{ card: key, kind: 'played' as const, act: 'k1', price: 25, at }] };
+    const [row] = logRows(data({ log, mine: [char('c', 'Spritey', 'heel')], acts: new Map([post, play].map((a) => [a.id, a])) }), w, 600, null);
+    expect(text(row!)).toContain('It covers “mario” with “Luigi”.');
+  });
+
+  test('the author\'s "a card on your post" row says it', () => {
+    const log = { ...empty, playsOnMine: [{ play: 'k1', post: 'post3', at, reach: 'post' as const }] };
+    const [row] = logRows(data({ log, mine: [char('a', 'Pipewrench', 'jabroni')], acts: new Map([post, play].map((a) => [a.id, a])), names: new Map([['c', 'Spritey']]) }), w, 600, null);
+    expect(row!.kind).toBe('onMine');
+    expect(text(row!)).toContain('It covers “mario” with “Luigi”.');
+  });
+
+  test('a card that says nothing adds nothing', () => {
+    const quiet: Words = { ...words, ui: { ...words.ui, cards: [{ key, art: { color: '#000', ink: '#fff' }, describe: () => '' }] } };
+    const log = { ...empty, cards: [{ card: key, kind: 'played' as const, act: 'k1', price: 25, at }] };
+    const [row] = logRows(data({ log, mine: [char('c', 'Spritey', 'heel')], acts: new Map([post, play].map((a) => [a.id, a])) }), quiet, 600, null);
+    expect(text(row!)).not.toContain('covers');
+  });
+});
