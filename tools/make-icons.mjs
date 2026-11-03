@@ -2,7 +2,7 @@
  * Makes an instance's served icons from its two sources, and the record of what they were made from.
  *
  *   node tools/make-icons.mjs <icon folder> <public folder>
- *   (Divided World's: node tools/make-icons.mjs instances/divided-world/ui/icon instances/divided-world/ui/public)
+ *   (for an instance: node tools/make-icons.mjs instances/<name>/ui/icon instances/<name>/ui/public)
  *
  * The design is docs/plans/2026-11-02-favicon-design.md. The icon folder holds `coin-16.png`, the
  * owner's 16px sprite, and `coin.svg`, the vector every larger size is drawn from. This writes, to
