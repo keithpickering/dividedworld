@@ -3,6 +3,8 @@
 -- each good is accepted. engine/rules/settings-held.test.ts reads the two lists (one row per line) and checks them against
 -- the TypeScript rules, so the two sides cannot drift. presencePollSeconds = 5 and presenceNames = 0 are the issue's own cases.
 -- The economy good is the fixtures' value, not test-world's: the card kinds this database holds each need a price in it (0006).
+-- Earlier files commit card kinds of their own (a race needs committed rows), so the economy good is written over the row
+-- already there: the good's prices, and the price the database already holds for every other kind.
 
 create temp table poisons (key text, value text);
 insert into poisons (key, value) values
@@ -498,11 +500,12 @@ declare r record; refused boolean; seen integer; first_good text;
 begin
   -- Every key has a row to update: the first good of each is written (an insert or an update; the hold accepts it).
   for r in select distinct on (key) key, value from goods order by key, ctid loop
-    insert into settings (key, value) values (r.key, r.value::jsonb) on conflict (key) do update set value = excluded.value;
+    insert into settings (key, value) values (r.key, r.value::jsonb)
+      on conflict (key) do update set value = case when settings.key = 'economy' then settings.value || excluded.value else excluded.value end;
   end loop;
 
   for r in select * from goods loop
-    update settings set value = r.value::jsonb where key = r.key;
+    update settings set value = case when key = 'economy' then value || r.value::jsonb else r.value::jsonb end where key = r.key;
     get diagnostics seen = row_count;
     if seen <> 1 then raise exception '% = % : the good had no row to update', r.key, r.value; end if;
   end loop;
