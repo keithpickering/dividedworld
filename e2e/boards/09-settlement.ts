@@ -55,7 +55,7 @@ const manifest: BoardManifest = {
     {
       id: 'line-thunder', role: 'text', within: 'wallet', box: 'none',
       name: 'Stole thunder: your Whoops! on Spritey\'s post #41 drew more reactions than the post.',
-      buildName: 'Stole the thunder: its Salty card on another\'s post drew more than the post',
+      buildName: 'Stole the thunder: its Salty card on another\'s post drew more votes than the post this window',
     },
     {
       id: 'line-shrug', role: 'text', within: 'wallet', box: 'none',

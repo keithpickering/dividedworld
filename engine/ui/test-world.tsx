@@ -75,7 +75,7 @@ export const testGlass = {
 /** A reason's words as an instance gives them: its name, then what it pays for (the log names each by the part before the colon). */
 const REASONS: Readonly<Record<string, string>> = {
   'heel.drewHeat': 'Drew heat: excited, negative reactions to its posts and cards',
-  'heel.stoleThunder': 'Stole the thunder: its Salty card on another\'s post drew more than the post',
+  'heel.stoleThunder': 'Stole the thunder: its Salty card on another\'s post drew more votes than the post this window',
   'heel.shrugged': 'Shrugged off: calm, positive reactions to its posts and cards',
   'face.cheered': 'Cheered: excited, positive reactions to its posts and cards',
 };

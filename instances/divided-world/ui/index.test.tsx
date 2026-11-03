@@ -100,6 +100,9 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(ac.logSave!({ peeled: [0], clean: true })).toEqual({ what: 'Peeled clean', said: 'You peeled every strip; it covers nothing now.' });
     expect(ac.logSave!({ peeled: [] })).toBeUndefined();
   });
+  test('"Stole the thunder" names what it counted and when: votes, this window (#111)', () => {
+    for (const reason of ['face.stoleThunder', 'heel.stoleThunder']) expect(instanceUi.reasonWords(reason)).toContain('more votes than the post this window');
+  });
   test('every pip style has images', () => {
     for (const p of instance.pipStyles) expect(instanceUi.pips[p.key], p.key).toBeDefined();
   });
