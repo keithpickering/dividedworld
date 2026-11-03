@@ -140,7 +140,9 @@ export interface EffectProps {
    * Drawn in a play's moment (docs/plans/2026-11-03-effect-history-design.md, sections 3 and 5), not live. A card whose rules say its
    * effect can change after it lands (`drawnInMoment`) honors it, and a test of each such card asserts it:
    * - it draws `states` as given, as they stood then, and nothing the reader did since; it takes no input (no pointer, key or scroll
-   *   handler is bound), starts no animation, lifts nothing, and makes nothing inert;
+   *   handler is bound), starts no animation that changes what it shows (a fade, a snap-back, a strip's fall), lifts nothing, and
+   *   makes nothing inert. A decoration that loops over the same state (a rainbow that cycles at the stack the moment caught) still
+   *   moves, and holds under reduced motion as it does live: a moment holds the state, not the motion;
    * - its `show` gives the words the moment's frame shows for it (the view's `state`, "Gloomba's yellow, 40% washed"): the moment's
    *   words, which a reader can read as well as see;
    * - `save` and `release` refuse without asking, `met` does nothing, `holdScreen` does nothing, and `marks` is null.

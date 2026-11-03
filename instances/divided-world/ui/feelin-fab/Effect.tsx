@@ -74,9 +74,10 @@ export function stopsAreReadable(
   return failures;
 }
 
-export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
-  /* In a play's moment (`still`) it is drawn as reduced motion draws it: held, starting no animation. */
-  const moving = !useMotionReduced() && !still;
+export function FeelinFabEffect({ post, plays, children }: EffectProps) {
+  /* A play's moment (`still`) draws it as live: the level is the count of plays the moment caught, and the rainbow's motion is
+     decoration that changes no state, so it runs there too. Reduced motion holds it in a moment as it does on a live post. */
+  const moving = !useMotionReduced();
   const box = useRef<HTMLDivElement>(null);
   const running = useInView(box);
   const level = Math.max(1, Math.min(MOST, plays.length));
