@@ -44,7 +44,7 @@ import type {
 
 export interface SupabaseApiOptions {
   readonly url: string;
-  readonly anonKey: string;
+  readonly publishableKey: string;
   /** The instance's compiled defaults: used for a key screen_settings does not hold. */
   readonly settingsFallback: ScreenSettings;
   /** For tests; the platform's `fetch` otherwise. */
@@ -289,11 +289,11 @@ function toEstimate(r: Row): Estimate {
 type Res = { data: unknown; error: { message: string; hint?: string | null } | null; status: number };
 
 export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
-  const { url, anonKey, settingsFallback } = options;
+  const { url, publishableKey, settingsFallback } = options;
   const doFetch: typeof fetch = options.fetch ?? ((...a) => globalThis.fetch(...a));
   const client: SupabaseClient =
     options.client ??
-    createClient(url, anonKey, {
+    createClient(url, publishableKey, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
       global: { fetch: doFetch },
     });
@@ -333,12 +333,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     }
   };
 
-  /** The bearer: the session's access token, or the anon key signed out. */
-  async function bearer(): Promise<string> {
+  /** The bearer: the session's access token, or null signed out, when the publishable key in apikey is the whole of the call's credentials. */
+  async function bearer(): Promise<string | null> {
     try {
-      return (await client.auth.getSession()).data.session?.access_token ?? anonKey;
+      return (await client.auth.getSession()).data.session?.access_token ?? null;
     } catch {
-      return anonKey;
+      return null;
     }
   }
 
@@ -354,7 +354,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
         const res = await doFetch(`${url}/functions/v1/${fn}`, {
           method: 'POST',
-          headers: { apikey: anonKey, authorization: `Bearer ${token}`, ...(isForm ? {} : { 'content-type': 'application/json' }) },
+          headers: { apikey: publishableKey, ...(token ? { authorization: `Bearer ${token}` } : {}), ...(isForm ? {} : { 'content-type': 'application/json' }) },
           body: isForm ? (body as FormData) : JSON.stringify(body),
         });
         return { status: res.status, text: await res.text() };

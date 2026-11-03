@@ -20,11 +20,15 @@ import { fallbackSettings } from './settings.ts';
 
 export async function createBackend(): Promise<KayfaApi> {
   const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+  const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
   const e2e = import.meta.env.MODE === 'e2e';
-  if (!e2e && url && anonKey) return createSupabaseApi({ url, anonKey, settingsFallback: fallbackSettings });
+  // The functions refuse a legacy key in the same words (supabase/functions/_shared/serve.ts), and by its name, never its value.
+  if (!e2e && publishableKey?.startsWith('eyJ')) {
+    throw new Error('VITE_SUPABASE_PUBLISHABLE_KEY is a legacy JWT key; KayfaBB takes the publishable and secret keys (sb_publishable_…, sb_secret_…)');
+  }
+  if (!e2e && url && publishableKey) return createSupabaseApi({ url, publishableKey, settingsFallback: fallbackSettings });
   if (import.meta.env.PROD && !e2e) {
-    throw new Error('This build names no Supabase project: set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY when building.');
+    throw new Error('This build names no Supabase project: set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY when building.');
   }
   const params = e2e ? new URLSearchParams(globalThis.location?.search) : null;
   const named = params?.get('fixture') ?? null;

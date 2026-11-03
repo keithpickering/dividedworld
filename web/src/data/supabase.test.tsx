@@ -13,7 +13,7 @@ import { createSupabaseApi } from './supabase.ts';
 /* Built in pieces on purpose: the web-reads guard refuses a path it cannot read to its end. */
 const REST = ['', 'rest', 'v1'].join('/');
 const URL_ = 'https://proj.supabase.co';
-const ANON = 'anon-key';
+const PUBLISHABLE = 'sb_publishable_test0123456789';
 const FALLBACK: ScreenSettings = {
   postsPerPage: 20,
   hotReplies: 5,
@@ -76,7 +76,7 @@ function harness(router: Router) {
     if (reply instanceof Error) throw reply;
     return reply;
   }) as typeof fetch;
-  const api = createSupabaseApi({ url: URL_, anonKey: ANON, settingsFallback: FALLBACK, fetch: fetchFake });
+  const api = createSupabaseApi({ url: URL_, publishableKey: PUBLISHABLE, settingsFallback: FALLBACK, fetch: fetchFake });
   const rest = () => log.filter((r) => r.url.pathname.startsWith(`${REST}/`));
   const to = (name: string) => log.filter((r) => r.url.pathname === `${REST}/${name}`);
   return { api, log, rest, to };
@@ -689,7 +689,7 @@ describe('failures', () => {
 describe('writes through the act function', () => {
   const act = (h: ReturnType<typeof harness>) => h.log.filter((r) => r.url.pathname === '/functions/v1/act');
 
-  it('sends each action as its own JSON body with the bearer and the anon key', async () => {
+  it('sends each action as its own JSON body with the publishable key in apikey, and no Authorization signed out', async () => {
     const h = harness((r) => {
       if (r.url.pathname === '/functions/v1/act') {
         const a = (r.body as { action: string }).action;
@@ -714,8 +714,8 @@ describe('writes through the act function', () => {
     ]);
     for (const r of act(h)) {
       expect(r.method).toBe('POST');
-      expect(r.headers.get('apikey')).toBe(ANON);
-      expect(r.headers.get('authorization')).toBe(`Bearer ${ANON}`);
+      expect(r.headers.get('apikey')).toBe(PUBLISHABLE);
+      expect(r.headers.get('authorization')).toBeNull();
       expect(r.url.search).toBe('');
     }
   });
@@ -890,7 +890,7 @@ describe('the estimate across sessions', () => {
       const auth = new Headers(init?.headers).get('authorization') ?? '';
       return new Promise<Response>((resolve) => asked.push({ who: auth.replace('Bearer token-', ''), release: resolve }));
     }) as typeof fetch;
-    const api = createSupabaseApi({ url: URL_, anonKey: ANON, settingsFallback: FALLBACK, client: client as never, fetch: fetchFake });
+    const api = createSupabaseApi({ url: URL_, publishableKey: PUBLISHABLE, settingsFallback: FALLBACK, client: client as never, fetch: fetchFake });
     const become = (id: string | null, event = 'SIGNED_IN') => {
       user = id;
       notify(event, id ? { access_token: `token-${id}`, user: { id } } : null);
@@ -985,7 +985,8 @@ describe('the avatar', () => {
     expect(JSON.parse(form.get('frames') as string)).toEqual({ square: { x: 0.1, y: 0.1, w: 0.5, h: 0.5 }, portrait: { x: 0, y: 0, w: 1, h: 1 } });
     expect((form.get('square') as File).size).toBe(2);
     expect(req?.headers.get('content-type') ?? '').not.toContain('application/json');
-    expect(req?.headers.get('authorization')).toBe(`Bearer ${ANON}`);
+    expect(req?.headers.get('apikey')).toBe(PUBLISHABLE);
+    expect(req?.headers.get('authorization')).toBeNull();
     expect(r.ok && r.value.avatarSquare).toBe(`${URL_}/storage/v1/object/public/avatars/sq.webp`);
   });
 
@@ -1019,7 +1020,7 @@ describe('live', () => {
       },
       removeChannel: vi.fn(async (c: unknown) => { removed.push(String((c as { topic?: string }).topic ?? 'x')); return 'ok'; }),
     };
-    const api = createSupabaseApi({ url: URL_, anonKey: ANON, settingsFallback: FALLBACK, client: client as never });
+    const api = createSupabaseApi({ url: URL_, publishableKey: PUBLISHABLE, settingsFallback: FALLBACK, client: client as never });
     return { api, channels, client, order, removed };
   }
   const settle = () => new Promise((r) => setTimeout(r, 0));
