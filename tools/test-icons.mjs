@@ -168,6 +168,7 @@ const faultsOf = (dir) => iconFaults({
 });
 const run = (dir) => spawnSync(process.execPath, [script, '--root', dir], { encoding: 'utf8' });
 
+/* A fault names its file by a path joined with the platform's separator, so a pattern that spells a folder reads `[\\/]`. */
 /** One poison: the function names it (matching `want`), and the command exits 1 saying so. */
 function red(name, poison, want) {
   const dir = repo(name.replace(/\W+/g, '-'), poison);
@@ -192,7 +193,7 @@ try {
 
   /* ---- (1) a file missing ---- */
   red('a missing icons.json is named', (f, { ui }) => { f[`${ui}/icon/icons.json`] = null; }, /icons\.json.*missing/);
-  red('a missing apple-touch-icon.png is named', (f, { ui }) => { f[`${ui}/public/apple-touch-icon.png`] = null; }, /public\/apple-touch-icon\.png.*missing/);
+  red('a missing apple-touch-icon.png is named', (f, { ui }) => { f[`${ui}/public/apple-touch-icon.png`] = null; }, /public[\\/]apple-touch-icon\.png.*missing/);
 
   /* ---- (2) the ICO's images ---- */
   red('an ICO with only 16 and 32', (f, { ui, coin16 }) => { f[`${ui}/public/favicon.ico`] = writeIco([coin16, square(32)]); }, /favicon\.ico.*16, 32, 48/);
@@ -257,8 +258,8 @@ try {
   }
 
   /* ---- (7) the build served them ---- */
-  red('a dist whose favicon.ico differs from the instance\'s', (f, { coin16 }) => { f['web/dist/favicon.ico'] = writeIco([coin16, square(32, { seed: 8 }), square(48)]); }, /dist\/favicon\.ico.*not.*public/);
-  red('a dist without apple-touch-icon.png', (f) => { f['web/dist/apple-touch-icon.png'] = null; }, /dist\/apple-touch-icon\.png.*missing/);
+  red('a dist whose favicon.ico differs from the instance\'s', (f, { coin16 }) => { f['web/dist/favicon.ico'] = writeIco([coin16, square(32, { seed: 8 }), square(48)]); }, /dist[\\/]favicon\.ico.*not.*public/);
+  red('a dist without apple-touch-icon.png', (f) => { f['web/dist/apple-touch-icon.png'] = null; }, /dist[\\/]apple-touch-icon\.png.*missing/);
   red('an empty dist', (f) => { for (const k of Object.keys(f)) if (k.startsWith('web/dist/')) f[k] = null; }, /nothing built/);
 
   /* ---- two instances: the build serves one of them ---- */

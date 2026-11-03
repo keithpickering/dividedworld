@@ -93,7 +93,9 @@ describe('Write an update', () => {
     expect(within(form()).getAllByRole('textbox', { name: /^Change \d+ text$/u })).toHaveLength(1);
     await userEvent.click(within(form()).getByRole('button', { name: 'Remove change 1' }));
     expect(within(form()).getByRole('textbox', { name: 'Change 1 text' })).toHaveValue('');
-  });
+    /* About sixty clicks on a form of up to thirty rows: a second alone, several on a machine running the whole build at once, past the
+       default five. A test that overruns keeps clicking into the next test's form and fails it too, so this one is given room. */
+  }, 20_000);
 
   test('counts the words against what a post may hold, and holds the button while there is nothing to post or too much', async () => {
     renderIn(world(), <WriteUpdate />, { instance });

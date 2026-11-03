@@ -9,8 +9,9 @@
  * ("A test that builds its own subject cannot tell you the subject is missing"). That refusal
  * is a guard, and the suite itself is outside the build, which has no database; this file is
  * in the build so the refusal is driven red on every push. Each case runs the real suite with
- * a `psql` on PATH that only records that it was called: a refused URL must exit 2 with
- * nothing recorded, so the refusal is shown to come before any SQL, not merely to happen.
+ * a `psql` that only records that it was called: a refused URL must exit 2 with nothing
+ * recorded, so the refusal is shown to come before any SQL, not merely to happen. The stand-in
+ * is a Node script named by KAYFABB_PSQL_SHIM, so it runs on every platform the build does.
  *
  * The suite's bounds are held here too: every connection to the scratch database must start with
  * lock_timeout and statement_timeout, set on the database before the first connection to it, and a psql
@@ -32,13 +33,14 @@ function check(name, condition, detail = '') {
 
 const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'kayfabb-psql-'));
 const marker = path.join(bin, 'called');
-fs.writeFileSync(path.join(bin, 'psql'), `#!/bin/sh\necho "$@" >> "${marker}"\n`, { mode: 0o755 });
+const recorder = path.join(bin, 'psql.mjs');
+fs.writeFileSync(recorder, `import fs from 'node:fs';\nfs.appendFileSync(${JSON.stringify(marker)}, process.argv.slice(2).join(' ') + '\\n');\n`);
 
 /** Runs the suite with the recording psql; returns its status, stderr and whether psql ran. */
 function suite(url) {
   fs.rmSync(marker, { force: true });
   /** @type {Record<string, string | undefined>} */
-  const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+  const env = { ...process.env, KAYFABB_PSQL_SHIM: recorder };
   if (url === undefined) delete env.DATABASE_URL; else env.DATABASE_URL = url;
   const r = spawnSync(process.execPath, ['tools/test-sql.mjs'], { env, encoding: 'utf8' });
   return { status: r.status, stderr: r.stderr, psqlRan: fs.existsSync(marker) };
@@ -86,18 +88,19 @@ check('a select whose comparison is not right after it is not refused', nullBlin
 const bounded = fs.mkdtempSync(path.join(os.tmpdir(), 'kayfabb-psql-bounds-'));
 const calls = path.join(bounded, 'calls');
 const hung = path.join(bounded, 'hung');
-fs.writeFileSync(path.join(bounded, 'psql'), `#!/bin/sh
-sql=$(cat)
-printf '%s\\n%s\\n\\036\\n' "$*" "$sql" >> "${calls}"
-case "$sql" in
-  "begin;"*) if [ -n "$HANG" ] && [ ! -e "${hung}" ]; then : > "${hung}"; exec sleep 60; fi ;;
-esac
-exit 0
-`, { mode: 0o755 });
+const hanger = path.join(bounded, 'psql.mjs');
+fs.writeFileSync(hanger, `import fs from 'node:fs';
+const sql = fs.readFileSync(0, 'utf8');
+fs.appendFileSync(${JSON.stringify(calls)}, process.argv.slice(2).join(' ') + '\\n' + sql + '\\n\\x1e\\n');
+if (sql.startsWith('begin;') && process.env.HANG && !fs.existsSync(${JSON.stringify(hung)})) {
+  fs.writeFileSync(${JSON.stringify(hung)}, '');
+  setTimeout(() => {}, 60_000);
+}
+`);
 function boundedSuite(hang, timeoutMs = '1500') {
   fs.rmSync(calls, { force: true });
   fs.rmSync(hung, { force: true });
-  const env = { ...process.env, PATH: `${bounded}${path.delimiter}${process.env.PATH}`, DATABASE_URL: 'postgres://postgres:pg@localhost:5432/postgres', KAYFABB_SQL_FILE_TIMEOUT_MS: timeoutMs, HANG: hang ? '1' : '' };
+  const env = { ...process.env, KAYFABB_PSQL_SHIM: hanger, DATABASE_URL: 'postgres://postgres:pg@localhost:5432/postgres', KAYFABB_SQL_FILE_TIMEOUT_MS: timeoutMs, HANG: hang ? '1' : '' };
   const began = Date.now();
   /* The suite's own end-to-end files would try the scratch database this psql never made; a bound keeps a slip here from hanging the build. */
   const r = spawnSync(process.execPath, ['tools/test-sql.mjs'], { env, encoding: 'utf8', timeout: 120_000 });
