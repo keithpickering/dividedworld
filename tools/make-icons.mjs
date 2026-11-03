@@ -46,11 +46,13 @@ img { display: block; position: absolute; left: ${margin}px; top: ${margin}px; w
 
 async function draw(browser, svg, { size, coin = size, ground }) {
   const page = await browser.newPage({ viewport: { width: size, height: size }, deviceScaleFactor: 1 });
-  await page.setContent(pageHtml(svg, size, coin, ground));
-  await page.locator('img').evaluate((img) => img.decode());
-  const png = await page.screenshot({ type: 'png', omitBackground: !ground, clip: { x: 0, y: 0, width: size, height: size } });
-  await page.close();
-  return png;
+  try {
+    await page.setContent(pageHtml(svg, size, coin, ground));
+    await page.locator('img').evaluate((img) => img.decode());
+    return await page.screenshot({ type: 'png', omitBackground: !ground, clip: { x: 0, y: 0, width: size, height: size } });
+  } finally {
+    await page.close();
+  }
 }
 
 /** An object with its keys sorted, so the record's text does not depend on the order written. */
@@ -61,6 +63,12 @@ async function main() {
   if (!iconDir || !publicDir) {
     console.error('usage: node tools/make-icons.mjs <icon folder> <public folder>');
     process.exit(2);
+  }
+  for (const f of ['coin-16.png', 'coin.svg']) {
+    if (!fs.existsSync(path.join(iconDir, f))) {
+      console.error(`  make-icons: ${path.join(iconDir, f)} is missing; the icon folder holds the sprite (coin-16.png) and the vector (coin.svg)`);
+      process.exit(1);
+    }
   }
   const sprite = fs.readFileSync(path.join(iconDir, 'coin-16.png'));
   const svg = fs.readFileSync(path.join(iconDir, 'coin.svg'));
@@ -96,4 +104,9 @@ async function main() {
   for (const [f, bytes] of [...written, [recordFile, recordText]]) console.log(`  wrote ${f} (${bytes.length} bytes)`);
 }
 
-await main();
+try {
+  await main();
+} catch (e) {
+  console.error(`  make-icons: ${e.message}`);
+  process.exit(1);
+}

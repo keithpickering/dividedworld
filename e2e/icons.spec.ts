@@ -3,8 +3,8 @@ import { expect, test } from '@playwright/test';
 /**
  * The site's icons are served as files, not as the single-page app (docs/plans/2026-11-02-favicon-design.md
  * §3, §5). An instance's ui/public/ is the site's root (web/vite.config.ts), so the build copies
- * favicon.ico and apple-touch-icon.png there; without them a request for either is answered with
- * index.html, which is what browsers and other clients ask for /favicon.ico unprompted would get.
+ * favicon.ico and apple-touch-icon.png there. Without them a request for either is answered with
+ * index.html, and browsers and other clients ask for /favicon.ico unprompted.
  */
 test('/favicon.ico is an ICO, not the page', async ({ request }) => {
   const res = await request.get('/favicon.ico');
