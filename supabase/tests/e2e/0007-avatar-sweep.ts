@@ -193,7 +193,7 @@ test('the sweep sends its secret key in apikey alone, and refuses a legacy key b
     assert.notEqual(legacy.status, 0, 'a sweep with a legacy key');
     assert.match(legacy.stdout + legacy.stderr, /KAYFABB_STORAGE_KEY is a legacy JWT key; KayfaBB takes the publishable and secret keys/);
     assert.ok(!(legacy.stdout + legacy.stderr).includes('eyJ'), 'the output holds no key');
-    assert.deepEqual(store.seen, [], 'nothing was fetched');
+    assert.equal(store.seen.length, 0, `nothing was fetched: ${store.seen.join(', ')}`);
     const swept = await run(['--from', scratchUrl(), '--storage', store.url]);
     assert.equal(swept.status, 0, swept.stderr + swept.stdout);
     assert.ok(store.seen.length > 0 && store.seen.every((r) => r.endsWith(' keyed')), store.seen.join('\n'));

@@ -240,7 +240,7 @@ test('an instance exported and imported into a fresh database is the same instan
     assert.notEqual(legacy.status, 0, 'an export with a legacy key');
     assert.match(legacy.stdout + legacy.stderr, /KAYFABB_STORAGE_KEY is a legacy JWT key; KayfaBB takes the publishable and secret keys/);
     assert.ok(!(legacy.stdout + legacy.stderr).includes(LEGACY_KEY) && !(legacy.stdout + legacy.stderr).includes('eyJ'), 'the output holds no key');
-    assert.deepEqual(oldStore.seen, [], 'nothing was fetched');
+    assert.equal(oldStore.seen.length, 0, `nothing was fetched: ${oldStore.seen.join(', ')}`);
     fs.rmSync(path.join(dir, 'legacy'), { recursive: true, force: true });
     // Storage that is down a moment, and then silent a moment, is asked again.
     oldStore.trouble.push('unavailable', 'silent');
