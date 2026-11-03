@@ -425,7 +425,7 @@ test('the estimate\'s Pepperoni lean can recognize only the caller: the author\'
   const play: InputAct = { id: 'k1', character: 'cat-1', kind: 'card', at: FROM + 7 * H, thread: 't1', target: 'p1', card: 'pep' };
   const at = FROM + 8 * H;
   const readsAs = () => inputs.flatMap((i) => [...i.cardsPlayed, ...i.cardsLanded]).find((c) => c.act === 'k1')!.readsAs;
-  // Asked by Ann, the author: her own groan is hers, under her own key, and left out, as before.
+  // Asked by Ann, the author: her own groan is hers, under her own key, and now left out as the author's (until #170 only the caster's was).
   inputs.length = 0;
   estimateForOwner({ ...b, acts: [...b.acts, play], reactions: [...b.reactions, react('k1', 'ann', 'ann-quiet', 'zzz', at)] }, world, 'ann');
   assert.equal(readsAs(), 'pepperoni');
