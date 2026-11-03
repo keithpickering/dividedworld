@@ -21,7 +21,7 @@ const read = (p: string) => fs.readFileSync(path.resolve(here, p), 'utf8');
 const post: Act = { id: 'p1', character: 'c1', kind: 'post', thread: 't1', targetActId: null, seq: 1, createdAt: '2026-11-02T12:00:00Z', payload: { body: 'hi' }, currentPayload: { body: 'hi' }, editedAt: null, shownEditedAt: null };
 const playOf = (n: number): CardPlay => ({ id: `f${n}`, card: 'feelin-fab', layer: n, caster: 'c2', message: '', config: {}, playedAt: '2026-11-02T12:00:00Z', post: 'p1' });
 const props = (level: number): EffectProps => ({
-  post, plays: Array.from({ length: level }, (_, i) => playOf(i + 1)), states: {}, released: new Set(), reader: { author: false, caster: false }, place: 'thread', reach: 'post',
+  post, plays: Array.from({ length: level }, (_, i) => playOf(i + 1)), states: {}, released: new Set(), reader: { author: false, caster: false }, place: 'thread', reach: 'post', still: false,
   show: () => {}, met: () => {}, holdScreen: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: async () => ({ ok: false, error: 'no' }), nameOf: () => 'Spritey',
   children: <p data-kb-words>Hello there.</p>,
 });
@@ -109,6 +109,23 @@ describe("Feelin' Fab", () => {
     expect(box()).toHaveAttribute('data-kb-moving', 'true');
     expect(box().style.getPropertyValue('--dw-fab-still')).toBe('');
     for (const t of box().querySelectorAll<HTMLElement>('.dw-fab-twinkle')) expect(t.style.animationName).toBe('');
+  });
+
+  test('in a play\'s moment (still) the rainbow still moves, at the level the moment caught: a moment holds its state, not its decoration', () => {
+    for (const level of [1, 2, 3]) {
+      const { unmount } = render(<FeelinFabEffect {...props(level)} still />);
+      expect(box()).toHaveAttribute('data-kb-moving', 'true');
+      expect(box()).toHaveAttribute('data-kb-level', String(level));
+      expect(box()).not.toHaveAttribute('data-kb-still');
+      unmount();
+    }
+  });
+
+  test('in a play\'s moment, reduced motion holds it still as it does live', () => {
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    render(<FeelinFabEffect {...props(1)} still />);
+    expect(box()).toHaveAttribute('data-kb-moving', 'false');
+    expect(box()).toHaveAttribute('data-kb-still');
   });
 
   test('reduced motion holds still: level 1 sits on one of the stops chosen at random on each load, levels 2 and 3 stay gradients, twinkles stay', () => {

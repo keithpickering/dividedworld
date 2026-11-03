@@ -615,3 +615,165 @@ describe('the page\'s one Lens', () => {
 });
 
 export type { World };
+
+/*
+ * As it landed (docs/plans/2026-11-03-effect-history-plan.md, Task 5): a play's moment drawn in the post's body, in a glass frame,
+ * one on the page at a time and gone with its Lens. Card 1 stacks, so a moment draws it still from what it had saved then; Card 2 is
+ * a takeover that lifts the post, which a moment never replaces.
+ */
+describe('As it landed', () => {
+  const strokes = vi.fn();
+  function Washy({ plays, states, still, show, children }: EffectProps) {
+    const washed = plays.map((p) => (states[p.id]?.state as { washed?: number } | undefined)?.washed ?? 0);
+    useEffect(() => { show({ progress: null, state: `washed ${washed.join(', ')}`, yours: false, controls: [], notes: {} }); }, [show, washed.join()]);
+    return <div data-kb-washy={still ? 'still' : 'live'} data-kb-washed={washed.join()} onPointerDown={still ? undefined : strokes}>{children}</div>;
+  }
+  const Lift = ({ children }: EffectProps) => <div data-kb-lift>{children}</div>;
+  const lifted = cards.map((c) => (c.key === 'k1' ? { ...c, Effect: Washy } : c.key === 'k2' ? { ...c, Effect: Lift, takeover: true } : c));
+
+  /* Card 1 lands on post 2 over nothing, is saved at 40%, then the post is edited, Card 2 lifts it, and the wash is finished. */
+  async function landed(before?: (w: World) => void) {
+    width(false);
+    const w = world();
+    before?.(w);
+    const k1 = w.play('k1');
+    w.fake.signInAs(w.other);
+    const saved = await w.fake.saveEffect(k1, w.spritey, { washed: 0.4 });
+    w.fake.clock.advance(60_000);
+    const k1b = w.play('k1', w.gloomba, w.second, 2);
+    await w.fake.edit(w.second, w.spritey, 'post 2, edited');
+    w.play('k2');
+    await w.fake.saveEffect(k1, w.spritey, { washed: 1 });
+    w.fake.signInAs(w.me);
+    expect(saved.ok).toBe(true);
+    open(w, lifted);
+    await userEvent.click(await markOf(2, 'Card 1'));
+    await userEvent.click(whoButton());
+    return { w, k1, k1b };
+  }
+  const landedButton = (play: Id) => within(lens().querySelector<HTMLElement>(`[data-kb-play="${play}"]`)!).getByRole('button', { name: 'As it landed' });
+  const frame = async () => within(await article(2)).findByRole('group', { name: /^As it landed/u });
+
+  test('draws the moment\'s version in place of the live body, still, inside the takeover\'s lift', async () => {
+    const { k1b } = await landed();
+    const button = landedButton(k1b);
+    expect(button).toHaveAttribute('aria-pressed', 'false');
+    await userEvent.click(button);
+    expect(button).toHaveAttribute('aria-pressed', 'true');
+    const post = await article(2);
+    const box = await frame();
+    expect(box.closest('[data-kb-lift]')).not.toBeNull();
+    /* The words as they read then, and the wash as it was saved then: the first layer at 40%, the second as it landed. */
+    expect(within(box).getByText('post 2')).toBeInTheDocument();
+    expect(within(post).queryByText('post 2, edited')).toBeNull();
+    await waitFor(() => expect(box.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washed', '0.4,0'));
+    expect(box.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washy', 'still');
+    expect(post.querySelector('[data-kb-washy="live"]')).toBeNull();
+    /* The tag, and the frame's words: the still card's own, and what is named. */
+    expect(within(box).getByText(/^As it landed/u)).toBeInTheDocument();
+    expect(await within(box).findByText(/washed 0\.4, 0/u)).toBeInTheDocument();
+    /* Pressed again, it is gone. */
+    await userEvent.click(button);
+    expect(within(await article(2)).queryByRole('group', { name: /^As it landed/u })).toBeNull();
+    expect(within(await article(2)).getByText('post 2, edited')).toBeInTheDocument();
+  });
+
+  test('a moment taken before Card 2 names nothing of it, and one taken over Card 1 lists what else was there', async () => {
+    const { k1 } = await landed();
+    await userEvent.click(landedButton(k1));
+    const box = await frame();
+    expect(within(box).queryByText(/Also on the post then/u)).toBeNull();
+    await waitFor(() => expect(box.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washed', '0'));
+  });
+
+  test('Esc, the ×, another post\'s Lens and Back to now each bring the live body back', async () => {
+    const { k1b } = await landed((w) => { w.play('k3', w.spritey, w.third); });
+    const back = async () => {
+      await userEvent.click(await markOf(2, 'Card 1'));
+      if (!within(lens()).queryByRole('button', { name: 'As it landed' })) await userEvent.click(whoButton());
+      await userEvent.click(landedButton(k1b));
+      await frame();
+    };
+    const live = async () => waitFor(async () => {
+      expect(within(await article(2)).queryByRole('group', { name: /^As it landed/u })).toBeNull();
+      expect(within(await article(2)).getByText('post 2, edited')).toBeInTheDocument();
+    });
+    await userEvent.click(landedButton(k1b));
+    await frame();
+    await userEvent.keyboard('{Escape}');
+    await live();
+    await back();
+    await userEvent.click(within(lens()).getByRole('button', { name: 'Close' }));
+    await live();
+    await back();
+    await userEvent.click(await markOf(3, 'Card 3'));
+    await live();
+    await userEvent.click(within(lens()).getByRole('button', { name: 'Close' }));
+    await back();
+    await userEvent.click(within(await frame()).getByRole('button', { name: 'Back to now' }));
+    await live();
+    expect(lens()).toBeInTheDocument();
+  });
+
+  test('while a moment shows, the marks stay pressable and no stroke reaches the live effect', async () => {
+    const { k1b } = await landed();
+    await userEvent.click(landedButton(k1b));
+    const box = await frame();
+    fireEvent.pointerDown(box.querySelector('[data-kb-washy]')!);
+    fireEvent.pointerDown(within(box).getByText('post 2'));
+    expect(strokes).not.toHaveBeenCalled();
+    const mark = await markOf(2, 'Card 2');
+    await userEvent.click(mark);
+    expect(tab('Card 2')).toHaveAttribute('aria-selected', 'true');
+  });
+
+  test('a moment that does not load says so plainly, with Try again, and Back to now still works', async () => {
+    const { w, k1b } = await landed();
+    const read = vi.spyOn(w.fake, 'playMoment').mockRejectedValueOnce(new Error('offline'));
+    await userEvent.click(landedButton(k1b));
+    const box = await frame();
+    expect(await within(box).findByText('The moment did not load.')).toBeInTheDocument();
+    await userEvent.click(within(box).getByRole('button', { name: 'Try again' }));
+    expect(await within(box).findByText('post 2')).toBeInTheDocument();
+    expect(read).toHaveBeenCalledTimes(2);
+    read.mockRejectedValueOnce(new Error('offline'));
+    await userEvent.click(within(box).getByRole('button', { name: 'Back to now' }));
+    expect(within(await article(2)).queryByRole('group', { name: /^As it landed/u })).toBeNull();
+  });
+
+  test('Back to now gives focus back to the play\'s As it landed, and works while the moment has not loaded', async () => {
+    const { w, k1b } = await landed();
+    vi.spyOn(w.fake, 'playMoment').mockRejectedValue(new Error('offline'));
+    await userEvent.click(landedButton(k1b));
+    const box = await frame();
+    expect(await within(box).findByText('The moment did not load.')).toBeInTheDocument();
+    await userEvent.click(within(box).getByRole('button', { name: 'Back to now' }));
+    expect(within(await article(2)).queryByRole('group', { name: /^As it landed/u })).toBeNull();
+    await waitFor(() => expect(landedButton(k1b)).toHaveFocus());
+    expect(landedButton(k1b)).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  test('a read on its way is not sent again, and its answer is kept though the moment was hidden meanwhile', async () => {
+    const { w, k1b } = await landed();
+    let answer: (m: Awaited<ReturnType<typeof w.fake.playMoment>>) => void = () => {};
+    const real = w.fake.playMoment.bind(w.fake);
+    const read = vi.spyOn(w.fake, 'playMoment').mockImplementationOnce((id) => new Promise((resolve) => { answer = resolve; void real(id); }));
+    await userEvent.click(landedButton(k1b));
+    await userEvent.click(landedButton(k1b));
+    await userEvent.click(landedButton(k1b));
+    await act(async () => { answer(await real(k1b)); });
+    expect(await within(await frame()).findByText('post 2')).toBeInTheDocument();
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  test('a moment is read once for the page, however often it is shown', async () => {
+    const { w, k1b } = await landed();
+    const read = vi.spyOn(w.fake, 'playMoment');
+    await userEvent.click(landedButton(k1b));
+    await frame();
+    await userEvent.click(landedButton(k1b));
+    await userEvent.click(landedButton(k1b));
+    await frame();
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+});

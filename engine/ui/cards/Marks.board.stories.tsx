@@ -5,7 +5,7 @@
  * its marks: `OnePlay` (the fixture's one play, its card met before so no callout hangs), `Callout` (the same for a reader who has
  * never met the card, so its one-line callout hangs off the mark), `SixKinds` (six kinds of card on one post: four marks and
  * "+2"), and `Armed` (Whoops! armed the way pressing its card in the hand arms it: the dashed ghost mark ends the strip of every post it
- * can land on, #41 and #42 among them). No board draws these. Open each at 1440 by 1120, and its `Phone` twin at 390 by 844.
+ * can land on, #41 and #42 among them), and `AsItLanded` (the fixture's play's moment shown in #41's body, from its Lens's As it landed). No board draws these. Open each at 1440 by 1120, and its `Phone` twin at 390 by 844.
  *
  * The story names no instance: the cards are the instance's own, in its order, and the kinds past them are keys no card has, which a
  * mark draws as a swatch under the key's name, so six kinds are six distinct cards on the post.
@@ -86,13 +86,45 @@ function Look() {
   return null;
 }
 
-function Marked({ kinds, armed, quiet }: { readonly kinds: Kinds; readonly armed: boolean; readonly quiet: boolean }) {
+/**
+ * Opens #41's Lens from its first mark, unfolds Who and presses the first play's As it landed, as a reader would: #41's body is then
+ * that play's moment, in its frame, over the post's live layer as it stands.
+ */
+function Landed() {
+  useEffect(() => {
+    let step = 0;
+    const timer = setInterval(() => {
+      const article = document.getElementById('post-41');
+      if (step === 0) {
+        const mark = article?.querySelector<HTMLElement>('.kb-mark[data-kb-card]');
+        if (!mark) return;
+        mark.click();
+        step = 1;
+      } else if (step === 1) {
+        const fold = document.querySelector<HTMLElement>('.kb-lens-fold');
+        if (!fold) return;
+        if (fold.getAttribute('aria-expanded') === 'false') fold.click();
+        step = 2;
+      } else {
+        const landed = [...document.querySelectorAll<HTMLElement>('.kb-lens-row button')].find((b) => b.textContent === 'As it landed');
+        if (!landed) return;
+        clearInterval(timer);
+        landed.click();
+      }
+    }, 100);
+    return () => clearInterval(timer);
+  }, []);
+  return null;
+}
+
+function Marked({ kinds, armed, quiet, landed = false }: { readonly kinds: Kinds; readonly armed: boolean; readonly quiet: boolean; readonly landed?: boolean }) {
   /* The thread the moment opens on (`/t/<thread>`). */
   const thread = /^\/t\/([^/]+)/u.exec(useLocation().path)?.[1] ?? null;
   const ready = useSeeded(thread, kinds, quiet);
   return (
     <Frame>
       {armed && <Arm />}
+      {landed && <Landed />}
       <Look />
       {thread && ready ? <ThreadScreen thread={thread} /> : <div aria-busy="true" />}
     </Frame>
@@ -121,3 +153,6 @@ export const OnePlayPhone: Story = { args: { kinds: 1, armed: false, quiet: true
 export const CalloutPhone: Story = { args: { kinds: 1, armed: false, quiet: false }, ...phone };
 export const SixKindsPhone: Story = { args: { kinds: 6, armed: false, quiet: true }, ...phone };
 export const ArmedPhone: Story = { args: { kinds: 1, armed: true, quiet: true }, ...phone };
+/** As it landed (docs/plans/2026-11-03-effect-history-plan.md, Task 5): #41's play's moment in its frame and tag, the Lens open beside it. */
+export const AsItLanded: Story = { args: { kinds: 1, armed: false, quiet: true, landed: true } };
+export const AsItLandedPhone: Story = { args: { kinds: 1, armed: false, quiet: true, landed: true }, ...phone };

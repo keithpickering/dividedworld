@@ -790,6 +790,22 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       for (const r of rows) out[r['play']] = { state: r['state'], savedAt: r['saved_at'] };
       return out;
     },
+    async playMoment(play) {
+      /* One read of the moment (play_moment, 0071); an id that is no play on a post is refused in words, which is null here. */
+      if (!idOk(play)) return null;
+      const r = await read(async () => {
+        const x = (await client.rpc('play_moment', { play })) as Res;
+        return x.error?.hint === 'kayfabb.refusal' ? { data: null, error: null, status: 200 } : x;
+      });
+      const m = r.data as Row | null;
+      if (!m) return null;
+      return {
+        version: toAct(m['version']),
+        layers: (m['layers'] as Row[]).map((l) => ({ act: toAct(l['act']), state: l['savedAt'] == null ? null : { state: l['state'], savedAt: l['savedAt'] } })),
+        above: (m['above'] as Row[]).map((x): PlayAbove => ({ play: x['play'], reach: x['reach'], target: x['target'], endsAt: x['ends_at'], act: toAct(x['act']) })),
+        recorded: m['recorded'] === true,
+      };
+    },
     async myReleases(plays) {
       const wanted = [...new Set(plays)].filter(idOk);
       if (wanted.length === 0) return [];

@@ -107,7 +107,7 @@ describe('what the adapter may request', () => {
     });
     const api = h.api;
     await Promise.allSettled([
-      api.settings(), api.boards(), api.board('general'), api.board(C), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.actsById([A]), api.history(A), api.spunFrom(A), api.spunFromMany([A], 10), api.cardsOn(A, 10), api.cardsOnMany([A], 10), api.effectStates([A]), api.myReleases([A]), api.releaseEffect(A),
+      api.settings(), api.boards(), api.board('general'), api.board(C), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.actsById([A]), api.history(A), api.spunFrom(A), api.spunFromMany([A], 10), api.cardsOn(A, 10), api.cardsOnMany([A], 10), api.effectStates([A]), api.playMoment(A), api.myReleases([A]), api.releaseEffect(A),
       api.characters([B]), api.characterCounts(B), api.characterStats([B]), api.standingAmounts([B]), api.standingPlace(B), api.characterActs(B, ['post'], { offset: 0, limit: 5 }), api.characterReveals(B), api.standingsCount(), api.standingsPage(0, 5), api.tallies([A]), api.viewCounts([T]), api.season(),
       api.boardNames(), api.moveNotice(A), api.movesLog('director'), api.movesLog('director', { at: '2026-10-01T10:00:00+00:00', act: A }), api.staffProfile('director'), api.adminQueue(), api.holdMove(1), api.reverseMove(A), api.updates(), api.updates('2026-10-01T10:00:00+00:00'), api.postUpdate('T', 'B', []),
       api.lastSettledAt(), api.classReveals([B]), api.turnsAnnounced([B]), api.nextSettlementAt(), api.myCharacters(), api.wallet(),
@@ -1361,6 +1361,29 @@ describe('reads by many ids', () => {
     const times = above.map((p) => p.act.createdAt);
     expect(times).toEqual([...times].sort());
     expect(await h.api.effectsAbove([], null, null)).toEqual([]);
+  });
+
+  it('playMoment asks play_moment once, reads its version, layers and plays above, and reads a refusal as null', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname !== `${REST}/rpc/play_moment`) return undefined;
+      if ((r.body as { play: string }).play === B) return json({ code: 'P0002', message: 'that is no play on a post', hint: 'kayfabb.refusal' }, 400);
+      return json({
+        version: { ...ACT_ROW, current_payload: { body: 'then' } },
+        layers: [{ act: { ...ACT_ROW, id: A, kind: 'card' }, state: null, savedAt: null }, { act: { ...ACT_ROW, id: C, kind: 'card' }, state: { washed: 0.4 }, savedAt: '2026-10-01T10:00:00+00:00' }],
+        above: [{ play: T, reach: 'thread', target: T, ends_at: '2099-01-01T00:00:00+00:00', act: { ...ACT_ROW, id: T, kind: 'card' } }],
+        recorded: true,
+      });
+    });
+    const m = await h.api.playMoment(A);
+    expect(h.to('rpc/play_moment')).toHaveLength(1);
+    expect(h.to('rpc/play_moment')[0]!.body).toEqual({ play: A });
+    expect(m?.version.currentPayload).toEqual({ body: 'then' });
+    expect(m?.layers.map((l) => [l.act.id, l.state])).toEqual([[A, null], [C, { state: { washed: 0.4 }, savedAt: '2026-10-01T10:00:00+00:00' }]]);
+    expect(m?.above).toMatchObject([{ play: T, reach: 'thread', target: T, endsAt: '2099-01-01T00:00:00+00:00', act: { id: T } }]);
+    expect(m?.recorded).toBe(true);
+    expect(await h.api.playMoment(B)).toBeNull();
+    expect(await h.api.playMoment('not an id')).toBeNull();
+    expect(h.to('rpc/play_moment')).toHaveLength(2);
   });
 
   it('pinnedThreads asks pinned_threads once for the board, and reads each row\'s thread, play and end', async () => {

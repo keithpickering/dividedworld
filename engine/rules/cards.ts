@@ -325,6 +325,15 @@ export const listed = (reaches: readonly Reach[]): string => {
 };
 
 /**
+ * Whether a card is drawn in a play's moment (docs/plans/2026-11-03-effect-history-design.md, section 3): when its effect can change
+ * after it lands, because it saves state (`validateState`), stacks (`stack` above 1), or ends by time (`lasts`). Such a card is drawn
+ * still, as it stood then; any other is named in words. Read from the card's rules, so a card sets nothing.
+ */
+export function drawnInMoment(rules: Pick<CardRules, 'validateState' | 'stack' | 'lasts'>): boolean {
+  return rules.validateState !== undefined || (rules.stack ?? 1) > 1 || rules.lasts !== undefined;
+}
+
+/**
  * What every card holds to unless it says otherwise: it lands on a reach it lists (a post unless it says), and its target
  * carries at most its stack of it (one unless the card says more) that are still up, each its own play, counting only the
  * effects on that same target, never those above it. A board carries one board card at a time, of any card, until it ends.

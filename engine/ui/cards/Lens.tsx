@@ -28,7 +28,7 @@ import {
   type CSSProperties, type KeyboardEvent, type ReactNode,
 } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { Id } from '../data/api.ts';
+import type { Id, PlayMoment } from '../data/api.ts';
 import { Float, type FloatPlace } from '../glass/Float.tsx';
 import { tabbables } from '../modal.tsx';
 import { usePlayer } from '../player.tsx';
@@ -64,15 +64,35 @@ export interface LensStore {
   /** Move the open Lens to another tab. */
   select(card: string): void;
   close(): void;
+  /**
+   * The play whose moment the page shows (As it landed), or null. One shows on a page at a time, and it goes with its Lens: every
+   * change of the open Lens (another strip's, or closed) clears it.
+   */
+  moment(): Id | null;
+  /** Show this play's moment in its post's body, in place of another's; null shows the post as it is now (Back to now). */
+  showMoment(play: Id | null): void;
+  /** A moment read for the page, by play (undefined while it is not read): read once, since a moment never changes. */
+  kept(play: Id): PlayMoment | null | undefined;
+  /**
+   * Read a play's moment for the page with `load`, once: a read already on its way is not sent again, and its answer is kept even if
+   * the moment was hidden meanwhile. A failed read keeps nothing, and the promise rejects, so it can be asked again.
+   */
+  readMoment(play: Id, load: () => Promise<PlayMoment | null>): Promise<void>;
 }
 
 function createLensStore(): LensStore {
   let open: LensOpen | null = null;
+  let shown: Id | null = null;
+  const moments = new Map<Id, PlayMoment | null>();
+  const reading = new Map<Id, Promise<void>>();
   const listeners = new Set<() => void>();
+  const wake = () => { for (const l of [...listeners]) l(); };
   const set = (next: LensOpen | null) => {
     if (next === open) return;
+    /* Another strip's Lens, or none: the moment goes with the Lens it was shown from. A tab of the same Lens keeps it. */
+    if (next === null || next.owner !== open?.owner) shown = null;
     open = next;
-    for (const l of [...listeners]) l();
+    wake();
   };
   return {
     get: () => open,
@@ -80,6 +100,17 @@ function createLensStore(): LensStore {
     toggle(next) { set(open?.owner === next.owner && open.card === next.card ? null : next); },
     select(card) { if (open && open.card !== card) set({ ...open, card }); },
     close() { set(null); },
+    moment: () => shown,
+    showMoment(play) { if (play !== shown) { shown = play; wake(); } },
+    kept: (play) => moments.get(play),
+    readMoment(play, load) {
+      if (moments.has(play)) return Promise.resolve();
+      const was = reading.get(play);
+      if (was) return was;
+      const read = load().then((m) => { moments.set(play, m); wake(); }).finally(() => reading.delete(play));
+      reading.set(play, read);
+      return read;
+    },
   };
 }
 
@@ -238,6 +269,8 @@ interface RowProps {
   /** The post the play landed on, where Go to post leads; none where it cannot be found. */
   readonly to: string | null;
   readonly onSpin: (play: CardPlay, name: string) => void;
+  /** Whether each play on a post offers As it landed: not where the moment is already the content (a play-spun ORIGIN box). */
+  readonly moments: boolean;
 }
 
 /**
@@ -247,7 +280,21 @@ interface RowProps {
  * nothing here says a play "outdraws" anything, or that anyone won. The reader's own play says "Your play" in place of React
  * (decided on the reader's screen from their own characters, as the post's reactions decide it).
  */
-function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, onSpin }: RowProps) {
+/**
+ * As it landed: shows the play's moment in its post's body, in place of the live body, and pressed again shows the post as it is now
+ * (docs/plans/2026-11-03-effect-history-design.md, section 4). One moment shows on the page, and it goes with this Lens.
+ */
+function AsItLanded({ play }: { readonly play: Id }) {
+  const store = useLensStore();
+  const pressed = useSyncExternalStore(store.subscribe, () => store.moment() === play, () => false);
+  return (
+    <button type="button" className="kb-kit-tile kb-lens-action" aria-pressed={pressed} onClick={() => store.showMoment(pressed ? null : play)}>
+      <span className="kb-kit-tile-label">As it landed</span>
+    </button>
+  );
+}
+
+function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, moments, onSpin }: RowProps) {
   const { characters } = usePlayer();
   const name = playName(caster, card);
   const note = view.notes[play.id];
@@ -268,6 +315,7 @@ function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, on
           {hosted
             ? <p className="kb-lens-note">Spin a thread from this play once you are free of the hold.</p>
             : <button type="button" className="kb-kit-tile kb-lens-action" onClick={() => onSpin(play, name)}><span className="kb-kit-tile-label">Spin thread</span></button>}
+          {moments && !play.reach && <AsItLanded play={play.id} />}
           {to && <Link className="kb-kit-tile kb-lens-action" to={to}><span className="kb-kit-tile-label">Go to post</span></Link>}
         </div>
       </div>
@@ -318,9 +366,11 @@ export interface LensProps {
   readonly strip?: () => HTMLElement | null;
   /** Spin a thread from a play: the Lens has closed. */
   readonly onSpin: (play: CardPlay, name: string, opener: HTMLElement) => void;
+  /** Whether a play's row offers As it landed (true but where the moment is already shown: a play-spun ORIGIN box). */
+  readonly moments?: boolean;
 }
 
-export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, strip, onSpin, where = 'post' }: LensProps) {
+export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, strip, onSpin, where = 'post', moments = true }: LensProps) {
   const { instance, ui } = useKayfa();
   const here = usePlays(plays, post);
   const narrow = useNarrow();
@@ -441,7 +491,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
           <div className="kb-lens-section kb-lens-act"><Kit card={name} controls={view.controls} ink={ink} /></div>
         )}
         <Who
-          plays={rowPlays} inkOfPlay={(p) => inkOf(ui, p, [...ofKind].sort(inPlayOrder))} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} card={name} view={view} tallies={tallies} mine={mine} compare={compare} to={to}
+          plays={rowPlays} inkOfPlay={(p) => inkOf(ui, p, [...ofKind].sort(inPlayOrder))} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} card={name} view={view} tallies={tallies} mine={mine} compare={compare} to={to} moments={moments}
           onSpin={(play, spinName) => { store.close(); onSpin(play, spinName, open.opener); }}
         />
       </div>

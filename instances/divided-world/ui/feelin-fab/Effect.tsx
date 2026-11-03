@@ -75,12 +75,14 @@ export function stopsAreReadable(
 }
 
 export function FeelinFabEffect({ post, plays, children }: EffectProps) {
+  /* A play's moment (`still`) draws it as live: the level is the count of plays the moment caught, and the rainbow's motion is
+     decoration that changes no state, so it runs there too. Reduced motion holds it in a moment as it does on a live post. */
   const moving = !useMotionReduced();
   const box = useRef<HTMLDivElement>(null);
   const running = useInView(box);
   const level = Math.max(1, Math.min(MOST, plays.length));
   /* Chosen in this browser on each load, never stored or sent; read only when level 1 is held still. */
-  const [still] = useState(() => 1 + Math.floor(Math.random() * FAB_STOPS.light.length));
+  const [stop] = useState(() => 1 + Math.floor(Math.random() * FAB_STOPS.light.length));
   const seed = `${post.id}:${plays.map((p) => p.id).join(',')}`;
   const twinkles = useMemo(() => {
     const next = seeded(seed);
@@ -96,8 +98,8 @@ export function FeelinFabEffect({ post, plays, children }: EffectProps) {
     <div
       ref={box} className={`dw-fab dw-fab-${SHAPE[level]}`} data-kb-fab="" data-kb-level={level}
       data-kb-moving={moving ? 'true' : 'false'} data-kb-running={running ? 'true' : 'false'}
-      data-kb-still={held ? still : undefined}
-      style={(held ? { ...PALETTE, '--dw-fab-still': String(still) } : PALETTE) as CSSProperties}
+      data-kb-still={held ? stop : undefined}
+      style={(held ? { ...PALETTE, '--dw-fab-still': String(stop) } : PALETTE) as CSSProperties}
     >
       <span className="dw-fab-ground" aria-hidden="true">
         <span className="dw-fab-layer" />

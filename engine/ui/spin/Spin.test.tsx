@@ -1,10 +1,12 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { Swapper, openThread, threadWorld } from '../composer/support.tsx';
 import { useLocation } from '../router.tsx';
 import type { Act, ThreadListener } from '../data/api.ts';
-import { renderIn } from '../test-world.tsx';
+import { renderIn, testInstance } from '../test-world.tsx';
+import type { CardUi, EffectProps } from '../cards/types.ts';
 import { ThreadScreen } from '../thread/Thread.tsx';
 
 beforeEach(() => {
@@ -443,6 +445,115 @@ describe('the ORIGIN box', () => {
     expect(asked).toHaveBeenCalledWith(w.ids[1], 21);
     await waitFor(() => expect(box.querySelector('.kb-mark')).not.toBeNull());
     expect(Number(box.querySelector('.kb-mark')!.getAttribute('data-kb-plays'))).toBeLessThanOrEqual(20);
+  });
+});
+
+/*
+ * A thread spun from a card play on a post draws that play's moment in its ORIGIN box (docs/plans/2026-11-03-effect-history-plan.md,
+ * Task 6): the post as it read when the play landed, each play under it as it stood, drawn still, under the mark the box shows. The
+ * test instance's Whoops! here stacks three (so a moment draws it), and its Stick Around lifts the post (so a moment names it).
+ */
+describe('the ORIGIN box of a play-spun thread', () => {
+  const momentInstance = {
+    ...testInstance,
+    cards: [{ ...testInstance.cards[0]!, stack: 3 }, { ...testInstance.cards[0]!, key: 'stick-around', name: 'Stick Around' }],
+  };
+  function Washy({ plays, states, still, show, children }: EffectProps) {
+    const washed = plays.map((p) => (states[p.id]?.state as { washed?: number } | undefined)?.washed ?? 0).join();
+    useEffect(() => { show({ progress: null, state: `washed ${washed}`, yours: false, controls: [], notes: {} }); }, [show, washed]);
+    return <div data-kb-washy={still ? 'still' : 'live'} data-kb-washed={washed}>{children}</div>;
+  }
+  const Lift = ({ children }: EffectProps) => <div data-kb-lift>{children}</div>;
+  const momentCards: CardUi[] = [
+    { key: 'whoops', art: { color: '#000000', ink: '#ffffff' }, describe: () => 'x', Effect: Washy },
+    { key: 'stick-around', art: { color: '#000000', ink: '#ffffff' }, describe: () => 'x', Effect: Lift, takeover: true },
+  ];
+  /* Post 2 is the reader's own: its Whoops! washed 40% and saved, then Stick Around cast on it, and a thread spun from that. */
+  async function spunFromHold() {
+    const w = threadWorld(3);
+    const wash = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
+    const saved = await w.fake.saveEffect(wash, w.pipe, { washed: 0.4 });
+    if (!saved.ok) throw new Error(saved.error);
+    w.fake.clock.advance(60_000);
+    const hold = w.fake.seed.card(w.spritey, w.ids[1]!, 'stick-around', { message: 'read it' });
+    const spun = await spinFrom(w, hold, 'About that hold');
+    return { w, wash, hold, spun };
+  }
+  const openWith = (w: ReturnType<typeof threadWorld>, thread: string) =>
+    renderIn(w.fake, <ThreadScreen thread={thread} />, { path: `/t/${thread}`, instance: momentInstance, cards: momentCards });
+
+  test('draws the play\'s moment under its mark: the Whoops! still at its 40%, and Stick Around named', async () => {
+    const { w, spun } = await spunFromHold();
+    openWith(w, spun);
+    const box = await origin();
+    const frame = await within(box).findByRole('group', { name: /^As it landed/u });
+    await waitFor(() => expect(frame.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washed', '0.4'));
+    expect(frame.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washy', 'still');
+    expect(within(frame).getByText('post 2')).toBeInTheDocument();
+    expect(within(frame).getByText('Also on the post then: Stick Around')).toBeInTheDocument();
+    expect(within(frame).queryByRole('button', { name: 'Back to now' })).toBeNull();
+    /* The mark is the box's one, and its Go to post still leads to the post as it is now. */
+    expect(marks(box)).toEqual(['stick-around:1']);
+  });
+
+  test('a later wash on the live post leaves the box as it was, read once', async () => {
+    const { w, wash, spun } = await spunFromHold();
+    const read = vi.spyOn(w.fake, 'playMoment');
+    openWith(w, spun);
+    const frame = await within(await origin()).findByRole('group', { name: /^As it landed/u });
+    await waitFor(() => expect(frame.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washed', '0.4'));
+    await w.fake.saveEffect(wash, w.pipe, { washed: 1 });
+    w.fake.seed.effect(w.thread, wash);
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+    expect(frame.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washed', '0.4');
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  test('a moment that does not load says so in the box, with Try again, and no way out is needed: the mark still leads to the post', async () => {
+    const { w, spun } = await spunFromHold();
+    const read = vi.spyOn(w.fake, 'playMoment').mockRejectedValueOnce(new Error('offline'));
+    openWith(w, spun);
+    const box = await origin();
+    const frame = await within(box).findByRole('group', { name: /^As it landed/u });
+    expect(await within(frame).findByText('The moment did not load.')).toBeInTheDocument();
+    await userEvent.click(within(frame).getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(frame.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washed', '0.4'));
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  test('a thread spun from a play beyond a post keeps today\'s box, with no moment read or drawn', async () => {
+    const w = threadWorld(3);
+    const glint = w.fake.seed.reach(w.spritey, 'character', w.pipe, 'whoops', { post: w.ids[1]!, ends: Date.now() + 86_400_000 });
+    const read = vi.spyOn(w.fake, 'playMoment');
+    const spun = await spinFrom(w, glint, 'About that glint');
+    openWith(w, spun);
+    const box = await origin();
+    /* Today's box: the play's Act read, and no moment drawn or read for it. */
+    await waitFor(() => expect(box.querySelector('[aria-busy="true"]')).toBeNull());
+    expect(within(box).queryByRole('group', { name: /^As it landed/u })).toBeNull();
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  test('a thread spun from a post keeps its live box, with no moment', async () => {
+    const { w } = await spunFromHold();
+    const spun = await spinFrom(w, w.ids[1]!, 'About the post');
+    openWith(w, spun);
+    const box = await origin();
+    await waitFor(() => expect(box.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washy', 'live'));
+    expect(within(box).queryByRole('group', { name: /^As it landed/u })).toBeNull();
+  });
+
+  test('the box\'s mark opens a Lens that makes nothing inert and offers no As it landed, since the box shows it (#105)', async () => {
+    const { w, spun } = await spunFromHold();
+    openWith(w, spun);
+    const box = await origin();
+    await within(box).findByRole('group', { name: /^As it landed/u });
+    await userEvent.click(await within(box).findByRole('button', { name: /^Stick Around, 1 play/u }));
+    const lens = screen.getByRole('dialog', { name: 'Cards on this post' });
+    await userEvent.click(within(lens).getByRole('button', { name: /^1 play · Spritey/u }));
+    expect(document.querySelector('[inert]')).toBeNull();
+    expect(within(lens).queryByRole('button', { name: 'As it landed' })).toBeNull();
+    expect(within(lens).getByRole('button', { name: 'React' })).toBeEnabled();
   });
 });
 

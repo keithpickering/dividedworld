@@ -33,6 +33,11 @@
  * Screen readers. A line of text under ink is hidden from them as from the eye (the body is `inert`
  * while any line is covered) and the lines clear of it are read out from a hidden copy, each once it is
  * uncovered. A post with no ink left is plain again.
+ *
+ * In a play's moment (`still`, docs/plans/2026-11-03-effect-history-design.md, section 5), each layer is drawn from its saved state
+ * alone: no pointer or sweep is taken, nothing is saved or met, a layer saved clean is absent with no fade, the body is not inert, and
+ * the view's state is the moment's words for the frame, each layer top first ("Gloomba's yellow, 40% washed; Spritey's cyan, washed
+ * clean"), with no controls.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import { motionReduced } from '../../../../engine/ui/appearance.ts';
@@ -134,7 +139,7 @@ interface View {
   readonly fading: boolean;
 }
 
-export function Effect({ post, plays, states, reader, save, place, show, met, nameOf, children }: EffectProps) {
+export function Effect({ post, plays, states, reader, save, place, show, met, nameOf, still, children }: EffectProps) {
   const { settings } = useKayfa();
   const layers = useMemo<readonly Layer[]>(() => plays.map((play) => ({ play, color: inkOf(play), seed: seedOf(play) })), [plays]);
   const [size, setSize] = useState({ frame: 0, height: 0, above: 0, cell: 0 });
@@ -172,6 +177,9 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   /* What the handlers read: the latest of everything, so a handler made once is never stale. */
   const now = useRef({ layers, states, reader, save, tool, threshold: (settings.cardSettings['whoops.clean'] ?? DEFAULT_CLEAN) / 100, size, near });
   now.current = { layers, states, reader, save, tool, threshold: (settings.cardSettings['whoops.clean'] ?? DEFAULT_CLEAN) / 100, size, near };
+  /** Drawn in a play's moment: as the saved states say, taking no input, saving, meeting and fading nothing. */
+  const stillNow = useRef(still);
+  stillNow.current = still;
   const inks = useRef<LayerInk[]>([]);
   /** The strokes made on this screen, by play: a reader's, which are never saved, and the author's not yet saved. */
   const mine = useRef(new Map<string, Stroke[]>());
@@ -282,7 +290,8 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     if (inks.current.length !== all.length) return;
     const clean = all.map((_, i) => cleanOf(i));
     const before = wasClean.current;
-    clean.forEach((c, i) => { if (c && !(before?.[i] ?? true)) cleanedAt.current.set(all[i]!.play.id, performance.now()); });
+    /* Drawn still (a moment), a layer saved clean is simply absent: nothing fades. */
+    if (!stillNow.current) clean.forEach((c, i) => { if (c && !(before?.[i] ?? true)) cleanedAt.current.set(all[i]!.play.id, performance.now()); });
     wasClean.current = clean;
     const lines = textLines.current;
     const fading = !motionReduced() && [...cleanedAt.current.values()].some((t) => performance.now() - t < FADE_MS);
@@ -618,7 +627,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   }, [checkClean, closeSweepStroke, refresh, schedulePaint]);
 
   const startSweep = useCallback(() => {
-    if (sweeping.current || !built || inks.current.length !== now.current.layers.length) return;
+    if (stillNow.current || sweeping.current || !built || inks.current.length !== now.current.layers.length) return;
     const rows = bandsOf(now.current.size.height / REF_WIDTH);
     const run = { raf: 0, last: performance.now(), sweep: { row: Math.min(sweepFrom.current, rows.length - 1), x: 0 } as Sweep, row: -1 };
     sweeping.current = run;
@@ -683,7 +692,8 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   const covers = view ? view.covered.some(Boolean) : true;
   /* Until the ink is built the post is treated as covered: nothing is read before the model says what is. */
   const hidden = anyLive && covers;
-  const read = view && hidden ? view.lines.filter((_, i) => !view.covered[i]) : null;
+  /* Drawn still the body is not inert (a moment makes nothing inert), so nothing needs reading out beside it. */
+  const read = view && hidden && !still ? view.lines.filter((_, i) => !view.covered[i]) : null;
   /*
    * What each change of the view uncovered: a line covered before and readable now, known by its words (and which of the same words
    * it is), so a relayout that renumbers the lines says nothing. The first view only sets what was readable, and a post washed clean
@@ -696,7 +706,8 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   const readNow = view && lineKeys ? lineKeys.filter((_, i) => !view.covered[i]) : null;
   const readKey = readNow === null ? null : `${anyLive ? 'live' : 'plain'}\u0001${readNow.join('\u0001')}`;
   useEffect(() => {
-    if (!view || !readNow) return;
+    /* A moment says nothing as news: nothing in it is uncovered by a reader. */
+    if (!view || !readNow || still) return;
     const before = readBefore.current;
     readBefore.current = new Set(readNow);
     if (!before || !anyLive) return;
@@ -715,7 +726,9 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   const percent = (i: number) => percentWashed(view?.washed[i] ?? 0, cleanAt(i));
   const top = layers.reduce((at, _, i) => (cleanAt(i) ? at : i), -1);
   const upper = top >= 0 ? layers[top]! : null;
-  const state = upper === null
+  /* In a moment, each layer top first, as it stood: "Gloomba's yellow, 40% washed; Spritey's cyan, washed clean". */
+  const stillWords = layers.map((l, i) => `${nameOf(l.play.caster)}'s ${inkName(l.color)}, ${cleanAt(i) ? 'washed clean' : `${percent(i)}% washed`}`).reverse().join('; ');
+  const state = still ? stillWords : upper === null
     ? 'Washed clean'
     : `${layers.length} ${layers.length === 1 ? 'layer' : 'layers'} · top: ${nameOf(upper.play.caster)}'s ${inkName(upper.color)}, ${percent(top)}% washed`;
   /* A share that is not a number counts as nothing washed, so the view and the key it is published on agree (JSON turns NaN into null). */
@@ -733,16 +746,16 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
    */
   const chooseTool = useCallback((value: string) => setTool(value === 'ink' ? 'ink' : 'wash'), []);
   const controls = useMemo<readonly KitControl[]>(() => {
-    if (!anyLive) return [];
+    if (!anyLive || still) return [];
     const hold: KitControl = { kind: 'hold', label: 'Hold to scrub', describe: HOLD_HELP, start: startSweep, stop: stopSweep };
     if (!author) return [hold];
     return [hold, { kind: 'choose', label: 'Your tool', options: TOOLS, value: tool, choose: chooseTool }];
-  }, [anyLive, author, tool, startSweep, stopSweep, chooseTool]);
+  }, [anyLive, still, author, tool, startSweep, stopSweep, chooseTool]);
   const cardView: CardView = {
-    progress, state, ...(anyLive ? { ends: ENDS } : null), yours: author && anyLive, controls, notes, ...(report ? { report } : null),
+    progress, state, ...(anyLive && !still ? { ends: ENDS } : null), yours: author && anyLive && !still, controls, notes, ...(report ? { report } : null),
   };
   /* Said when it changes: the model's numbers are published at REFRESH_MS while a sweep runs, so this is never more than a frame's work. */
-  const viewKey = JSON.stringify([progress, state, anyLive, author, report, notes]);
+  const viewKey = JSON.stringify([progress, state, anyLive, author, report, notes, still]);
   const viewNow = useRef(cardView);
   viewNow.current = cardView;
   useEffect(() => { show(viewNow.current); }, [viewKey, controls, show]);
@@ -760,11 +773,11 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
       <div
         ref={frameRef} className="kb-whoops-frame"
         style={fixed ? { height: size.height * geo.scale, ...(bleed ? { overflow: 'visible' } : null) } : undefined}
-        onPointerDown={anyLive ? onPointerDown : undefined} onPointerMove={onPointerMove} onPointerUp={onPointerEnd} onPointerCancel={onPointerEnd}
+        onPointerDown={anyLive && !still ? onPointerDown : undefined} onPointerMove={still ? undefined : onPointerMove} onPointerUp={still ? undefined : onPointerEnd} onPointerCancel={still ? undefined : onPointerEnd}
         onClickCapture={(e) => { if (suppress.current) { suppress.current = false; e.preventDefault(); e.stopPropagation(); } }}
       >
         <div
-          ref={layoutRef} className="kb-whoops-layout" inert={hidden}
+          ref={layoutRef} className="kb-whoops-layout" inert={hidden && !still}
           style={fixed ? { width: REF_WIDTH, transform: `translateX(${geo.offset}px) scale(${geo.scale})`, ...(place === 'thread' ? { paddingInline: REF_WIDTH * BODY_GUTTER } : null) } : undefined}
         >
           {children}

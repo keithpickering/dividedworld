@@ -97,6 +97,8 @@ interface Options {
   readonly nameOf?: EffectProps['nameOf'];
   /** The instance's share washed that counts as clean; null is an instance whose settings carry none. */
   readonly clean?: number | null;
+  /** Drawn in a play's moment (`EffectProps.still`). */
+  readonly still?: boolean;
 }
 
 function mount(o: Options = {}) {
@@ -107,7 +109,7 @@ function mount(o: Options = {}) {
   const show: EffectProps['show'] = (view) => { shown.push(view); say(view); };
   const props: EffectProps = {
     post: POST, plays: plays(o.layers ?? 1), states: o.states ?? {}, released: new Set(), reader: { author: o.author ?? false, caster: false },
-    place: 'thread', reach: 'post', save, release: async (play) => ({ ok: true, value: { play, releasedAt: '' } }), show, met: o.met ?? (() => {}), holdScreen: () => {}, marks: null, nameOf: o.nameOf ?? ((c) => CASTERS[c ?? ''] ?? 'A character'), children: <p>{textOf(layoutLines)}</p>,
+    place: 'thread', reach: 'post', still: o.still ?? false, save, release: async (play) => ({ ok: true, value: { play, releasedAt: '' } }), show, met: o.met ?? (() => {}), holdScreen: () => {}, marks: null, nameOf: o.nameOf ?? ((c) => CASTERS[c ?? ''] ?? 'A character'), children: <p>{textOf(layoutLines)}</p>,
   };
   /* The saved states arrive from outside, as another device's save is heard: the host holds them and lets a test push a new set. */
   let push: (next: Record<string, EffectState>) => void = () => {};
@@ -1124,5 +1126,67 @@ describe('what the effect says to a screen reader', () => {
     expect(region).toHaveTextContent(name);
     expect(region).not.toHaveTextContent('L00 alpha beta gamma');
     expect(root.querySelector('[data-kb-uncovered]')).toBe(region);
+  });
+});
+
+/*
+ * Drawn in a play's moment (`EffectProps.still`; docs/plans/2026-11-03-effect-history-plan.md, Task 7): each layer as its saved state
+ * says, nothing the reader does changing it, nothing saved, met or faded, and its words given to the moment's frame.
+ */
+describe('in a moment, still', () => {
+  /** A saved state washing a layer about `share` of the way, as the author's strokes would. */
+  function savedWash(layer: number, share: number): { state: { strokes: Stroke[] }; washed: number } {
+    const ink = new LayerInk(splatFor(layer), [], { minX: 0, maxX: 1, minY: 0, maxY: HEIGHT });
+    const strokes: Stroke[] = [];
+    const { minY, maxY } = ink.splat.bounds;
+    for (let y = minY; y <= maxY && ink.washed < share; y += BRUSH * 0.7) {
+      const row = rowAcross(ink, y);
+      if (row.length < 2) continue;
+      ink.wash(row, BRUSH);
+      strokes.push({ tool: 'wash', width: BRUSH, points: row });
+    }
+    return { state: { strokes }, washed: ink.washed };
+  }
+  const at = '2026-10-29T22:00:00.000Z';
+  const lastView = (shown: readonly (CardView | null)[]) => shown.filter((v): v is CardView => v !== null).at(-1)!;
+
+  test('a saved 40% wash draws as it was saved, with no control', () => {
+    const wash = savedWash(0, 0.4);
+    const { root, shown } = mount({ still: true, states: { 'play-1': { state: wash.state, savedAt: at } } });
+    expect(washed(root)[0]).toBeCloseTo(wash.washed, 2);
+    expect(lastView(shown).controls).toEqual([]);
+  });
+
+  test('a pointer drag changes nothing, and nothing is saved or met', () => {
+    vi.useFakeTimers();
+    const met = vi.fn();
+    const wash = savedWash(0, 0.4);
+    const { root, frame, save } = mount({ still: true, author: true, met, states: { 'play-1': { state: wash.state, savedAt: at } } });
+    const before = washed(root);
+    scrubTo(frame, root, 0, new LayerInk(splatFor(0), []), 0.9);
+    act(() => { vi.advanceTimersByTime(SAVE_AFTER_MS * 4); });
+    expect(washed(root)).toEqual(before);
+    expect(save).not.toHaveBeenCalled();
+    expect(met).not.toHaveBeenCalled();
+  });
+
+  test('a layer saved clean is not drawn, and nothing fades, even when the clean state arrives after it is drawn', () => {
+    const { root } = mount({ still: true, layers: 2, states: { 'play-1': { state: { strokes: [], clean: true }, savedAt: at } } });
+    expect(states(root)).toEqual(['clean', 'live']);
+    expect(root).not.toHaveAttribute('data-kb-fading');
+    const later = mount({ still: true, layers: 2 });
+    expect(states(later.root)).toEqual(['live', 'live']);
+    later.hear({ 'play-2': { state: { strokes: [], clean: true }, savedAt: at } });
+    expect(states(later.root)).toEqual(['live', 'clean']);
+    expect(later.root).not.toHaveAttribute('data-kb-fading');
+  });
+
+  test('its words: one layer as its caster\'s ink and share washed, three top first, a clean one "washed clean"', () => {
+    const wash = savedWash(0, 0.4);
+    const one = mount({ still: true, states: { 'play-1': { state: wash.state, savedAt: at } } });
+    expect(lastView(one.shown).state).toBe(`Mrs. Hooligan's magenta, ${percentWashed(wash.washed, false)}% washed`);
+    one.unmount();
+    const three = mount({ still: true, layers: 3, states: { 'play-2': { state: { strokes: [], clean: true }, savedAt: at } } });
+    expect(lastView(three.shown).state).toBe('Spritey\'s yellow, 0% washed; Gloomba\'s cyan, washed clean; Mrs. Hooligan\'s magenta, 0% washed');
   });
 });

@@ -925,6 +925,53 @@ describe('what a list row shows', () => {
     expect(await fake.saveEffect(play, anaFace, { strokes: [] })).toEqual(refused('sign in to act'));
   });
 
+  test('a play\'s moment: the post as it read when the play landed, each layer as it was saved then, and the plays above live then', async () => {
+    const { fake, anaFace, boFace, thread } = world();
+    const mine = must(await fake.post(thread, anaFace, 'a post to ruin', null));
+    const first = fake.seed.card(boFace, mine.id, 'whoops', { layer: 1 });
+    expect(await fake.playMoment(first)).toEqual({ version: await fake.act(mine.id), layers: [{ act: await fake.act(first), state: null }], above: [], recorded: true });
+    const saved = must(await fake.saveEffect(first, anaFace, { washed: 0.4 }));
+    fake.clock.advance(1000);
+    must(await fake.edit(mine.id, anaFace, 'ruined, then edited'));
+    fake.clock.advance(1000);
+    const onAna = fake.seed.reach(boFace, 'character', anaFace, 'glint', { post: mine.id });
+    fake.clock.advance(1000);
+    const second = fake.seed.card(boFace, mine.id, 'whoops', { layer: 2 });
+    /* What comes after the landing changes nothing in the moment: a later save, a later edit, a play beyond a post begun after. */
+    fake.clock.advance(1000);
+    must(await fake.saveEffect(first, anaFace, { washed: 1 }));
+    must(await fake.edit(mine.id, anaFace, 'edited again'));
+    fake.seed.reach(boFace, 'character', anaFace, 'glint', { post: mine.id });
+    const moment = (await fake.playMoment(second))!;
+    expect(moment.recorded).toBe(true);
+    expect(moment.version.id).toBe(mine.id);
+    expect(moment.version.currentPayload).toEqual({ body: 'ruined, then edited' });
+    expect(moment.version.payload).toEqual({ body: 'a post to ruin' });
+    expect(moment.layers.map((l) => [l.act.id, l.state])).toEqual([[second, null], [first, { state: { washed: 0.4 }, savedAt: saved.savedAt }]]);
+    expect(moment.above.map((a) => a.play)).toEqual([onAna]);
+    /* The first play's own moment is unchanged by what landed over it. */
+    expect((await fake.playMoment(first))!.layers.map((l) => l.act.id)).toEqual([first]);
+    expect((await fake.playMoment(first))!.version.currentPayload).toEqual({ body: 'a post to ruin' });
+  });
+
+  test('a moment is a play on a post\'s alone, and a play the fake was given no snapshot for answers from its time, by itself', async () => {
+    const { fake, anaFace, boFace, thread, opener } = world();
+    const mine = must(await fake.post(thread, anaFace, 'old words', null));
+    const onBo = fake.seed.reach(anaFace, 'character', boFace, 'glint', { post: opener });
+    expect(await fake.playMoment(mine.id)).toBeNull();
+    expect(await fake.playMoment(onBo)).toBeNull();
+    expect(await fake.playMoment('nothing')).toBeNull();
+    const under = fake.seed.card(boFace, mine.id, 'whoops', { layer: 1 });
+    const old = fake.seed.card(boFace, mine.id, 'whoops', { layer: 2, unrecorded: true });
+    fake.clock.advance(1000);
+    must(await fake.edit(mine.id, anaFace, 'edited after'));
+    const moment = (await fake.playMoment(old))!;
+    expect(moment.recorded).toBe(false);
+    expect(moment.version.currentPayload).toEqual({ body: 'old words' });
+    expect(moment.layers.map((l) => l.act.id)).toEqual([old]);
+    expect((await fake.playMoment(under))!.recorded).toBe(true);
+  });
+
   test('releasing from an effect is the player\'s own, kept from the first, and read back only for the plays asked about', async () => {
     const { fake, bo, anaFace, boFace, thread, opener } = world();
     const mine = must(await fake.post(thread, anaFace, 'held', null));
@@ -1582,6 +1629,16 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     expect(on.find((a) => a.kind === 'spring')?.payload).toMatchObject({ card: 'snare', set: set.id, caught: caught.id });
     expect((await fake.myCards()).find((c) => c.card === 'blot')?.held).toBe(1);
     expect(must(await fake.playCard('blot', boFace, opener, {}, '')).payload.caught).toBeUndefined();
+  });
+
+  test('a caught play\'s moment holds the back and the spring, written before it as the server writes them; the spring\'s holds the back', async () => {
+    const { fake, bo, anaFace, boFace, opener } = setup();
+    const set = must(await fake.setCard('snare', anaFace, opener, {}));
+    fake.signInAs(bo);
+    const caught = must(await fake.playCard('blot', boFace, opener, {}, ''));
+    const spring = (await fake.cardsOn(opener, 8)).find((a) => a.kind === 'spring')!;
+    expect((await fake.playMoment(caught.id))!.layers.map((l) => l.act.id).sort()).toEqual([caught.id, set.id, spring.id].sort());
+    expect((await fake.playMoment(spring.id))!.layers.map((l) => l.act.id).sort()).toEqual([spring.id, set.id].sort());
   });
 
   test('a ward on the user\'s own post turns a cast away in its words', async () => {
