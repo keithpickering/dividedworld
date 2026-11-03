@@ -69,10 +69,11 @@ begin
 end $$;
 
 -- ---- A post and a cast by one player, and a post and a strike whose setter is the poster: no deadlock ----
--- Reply passes (0076): every write that may spring locks in one order, a back's face_down row, then the count rows of the writer and of
--- the setters, then the Act it inserts. Today's statement order inserts first and locks after, so each pair below holds one lock the other
--- wants. A trigger that sleeps after the poster's insert makes the interleaving certain rather than likely: the poster holds its count row
--- for the time the other side needs to take the lock it will wait on. Committed rows, since two sessions read them; first, so the
+-- Every write that may spring locks in the one order 0073_trap_locks.sql wrote (a back's face_down row, the thread, then the count rows
+-- of the writer and of the setters, then the Act it inserts), and 0076_reply_passes.sql keeps it while post() locks fewer backs.
+-- Statement order the other way round leaves each pair below holding one lock the other wants. 0077-trap-locks.sql drives the same
+-- pairs in a loop; here a trigger that sleeps after the poster's insert makes the interleaving certain rather than likely: the poster
+-- holds its count row for the time the other side needs to take the lock it will wait on. Committed rows, since two sessions read them; first, so the
 -- rows this block commits wait on nothing this file has written and not committed.
 do $$
 declare
