@@ -14,7 +14,7 @@ export const jabroni: ClassRules = {
   earn: (input, settings) => [
     ...perVote(input, settings, 'boredNegative', 1, 'jabroni.drewTheGroan'),
     ...input.cardsLanded
-      .filter((c) => c.alignment === 'salty')
+      .filter((c) => c.readsAs === 'salty')
       .map((c): Earning => ({ reason: 'jabroni.soldTheL', amount: economyOf(settings, 'jabroni.saltyLanded'), act: c.act })),
     ...perVote(input, settings, 'excitedPositive', -1, 'jabroni.takenSincerely'),
   ],

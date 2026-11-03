@@ -95,7 +95,7 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into invites (code_hash, inviter) values (invite_hash('exported'), ann);
       insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, p, '{"card": "splat", "config": {"color": "red"}}') returning id into play;
       insert into effect_state (play, state, saved_by) values (play, '{"strokes": []}', b);
-      -- A second play over the first (0070): its moment, and the first's save copied into it as a layer, written by the trigger.
+      -- A second play over the first (0071): its moment, and the first's save copied into it as a layer, written by the trigger.
       insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, p, '{"card": "sweetie", "config": {}}');
       -- What the screens keep: a release, reading, the mask read through, view counts, preferences, a profile with an
       -- avatar, and an admin.
@@ -336,7 +336,7 @@ test('an instance exported and imported into a fresh database is the same instan
     const after = contents(fresh.toString());
     assert.deepEqual([...after.keys()], [...before.keys()]);
     for (const [t, rows] of before) assert.equal(after.get(t), rows, `${t} differs after the round trip`);
-    // The moments were carried as written, and the import, a replica's write, took none of its own (0070's trigger stayed silent).
+    // The moments were carried as written, and the import, a replica's write, took none of its own (0071's trigger stayed silent).
     const moments = (url: string) => psqlOn(url, 'select (select count(*) from play_moments) || \'/\' || (select count(*) from play_moment_layers)');
     assert.equal(moments(fresh.toString()), moments(from));
     assert.notEqual(moments(from), '0/0', 'the export carried a moment and a layer');

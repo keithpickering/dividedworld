@@ -13,7 +13,7 @@ export const heel: ClassRules = {
   earn: (input, settings) => [
     ...perVote(input, settings, 'excitedNegative', 1, 'heel.drewHeat'),
     ...input.cardsPlayed
-      .filter((c) => c.alignment === 'salty' && c.onOthers && outdraws(c))
+      .filter((c) => c.readsAs === 'salty' && c.onOthers && outdraws(c))
       .map((c): Earning => ({ reason: 'heel.stoleThunder', amount: economyOf(settings, 'heel.saltyOutdraws'), act: c.act })),
     ...perVote(input, settings, 'calmPositive', -1, 'heel.shrugged'),
   ],

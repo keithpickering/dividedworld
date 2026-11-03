@@ -82,6 +82,24 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(stick.mark).not.toBe(stick.image);
     expect(instanceUi.cards.find((c) => c.key === 'whoops')!.hint).toBe('Drag across the ink to scrub it off your screen.');
   });
+  test('Autocorrect draws its strips and its form, says its rules from the settings, and its log says what a play covered and what was peeled', () => {
+    const ac = instanceUi.cards.find((c) => c.key === 'autocorrect')!;
+    expect(ac.Effect).toBeDefined();
+    expect(ac.ConfigForm).toBeDefined();
+    expect(ac.art.mark).toBeTruthy();
+    expect(ac.hint).toBe('Drag a strip off to read what is under it.');
+    const said = ac.describe(instance.settings);
+    expect(said).toContain('A Pepperoni card');
+    expect(said).toContain('1.00');
+    expect(said).toContain('0.25 more for every 50 characters it covers');
+    expect(ac.describe({ ...instance.settings, economy: { ...instance.settings.economy, 'autocorrect.volumeStep': 40 } })).toContain('every 40 characters');
+    expect(ac.surcharge!(instance.settings)).toBe('Covers a lot, +0.25 per 50 characters covered');
+    expect(ac.logPlay!({ phrase: 'Mario', replacement: 'Luigi' })).toBe('It covers “Mario” with “Luigi”.');
+    expect(ac.logPlay!({})).toBeUndefined();
+    expect(ac.logSave!({ peeled: [0, 2] })).toEqual({ what: 'Strips peeled', said: 'You peeled 2 of its strips.' });
+    expect(ac.logSave!({ peeled: [0], clean: true })).toEqual({ what: 'Peeled clean', said: 'You peeled every strip; it covers nothing now.' });
+    expect(ac.logSave!({ peeled: [] })).toBeUndefined();
+  });
   test('every pip style has images', () => {
     for (const p of instance.pipStyles) expect(instanceUi.pips[p.key], p.key).toBeDefined();
   });

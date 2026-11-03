@@ -22,6 +22,7 @@
     "instances/*/cards/**/*.tsx",
     "instances/*/cards/**/paint.ts",
     "instances/*/cards/**/lines.ts",
+    "instances/*/cards/**/fall.ts",
     "web/**/*.ts",
     "web/**/*.tsx",
     ".storybook/**/*.ts",

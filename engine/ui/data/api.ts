@@ -902,7 +902,7 @@ export interface PlayAbove {
 }
 
 /**
- * A play's moment (play_moment, 0070_play_moments.sql): the post as it read when a play landed on it, with every play on it then, as
+ * A play's moment (play_moment, 0071_play_moments.sql): the post as it read when a play landed on it, with every play on it then, as
  * each stood. `version` is the post with that version's words as its current payload; `layers` is the play itself first, as it landed
  * (no state), then each layer that was on the post, with what it had saved then or null where it had saved none; `above` is each play
  * beyond a post live then on the post's author, its thread or its board. `recorded` is false for a play from before the snapshot,

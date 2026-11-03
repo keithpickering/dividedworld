@@ -357,6 +357,12 @@ export interface PlayedCard {
   readonly act: string;
   readonly card: string;
   readonly alignment: Alignment;
+  /**
+   * The alignment the play reads as this window (the Autocorrect design, section 8): a Sweet or Salty card's own; a Pepperoni
+   * card's by the lean of other players' votes on it in the window, Salty where the negative quadrants outweigh the positive,
+   * Sweet the other way, and Pepperoni on a tie or with none. The class rules that read an alignment read this.
+   */
+  readonly readsAs: Alignment;
   readonly at: number;
   readonly target: string;
   /** The target's author is another player's character. */
@@ -374,6 +380,8 @@ export interface LandedCard {
   readonly act: string;
   readonly card: string;
   readonly alignment: Alignment;
+  /** The alignment the play reads as this window, as `PlayedCard.readsAs`. */
+  readonly readsAs: Alignment;
   readonly at: number;
   readonly on: string;
 }

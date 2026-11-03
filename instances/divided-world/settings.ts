@@ -106,7 +106,7 @@ export const defaults: Settings = deepFreeze<Settings>({
    */
   toastDefaults: ['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'ruling', 'settlement', 'update'],
   /** The numbers a card gives the screens: a Whoops! layer is washed clean at 95%, the last specks not being worth chasing across a phone. */
-  cardSettings: { 'whoops.clean': 95 },
+  cardSettings: { 'whoops.clean': 95, 'autocorrect.peelMs': 700 },
   /** The classes' and cards' own numbers from the same table, each named for what reads it. */
   economy: {
     /** "Early" is among this many first players to react to a post. */
@@ -142,6 +142,11 @@ export const defaults: Settings = deepFreeze<Settings>({
     'whoops.perLength': 25,
     'whoops.lengthStep': 500,
     'whoops.mostInAll': 300,
+    /** Autocorrect: 1.00 to buy, as in Minus World, plus 0.25 per 50 characters it covers when played, at most 3.00 in all. */
+    'autocorrect.price': 100,
+    'autocorrect.perVolume': 25,
+    'autocorrect.volumeStep': 50,
+    'autocorrect.mostInAll': 300,
   },
 });
 

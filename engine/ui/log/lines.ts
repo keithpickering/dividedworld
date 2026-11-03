@@ -319,6 +319,12 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
  */
 function cardRows(data: LogData, words: Words): LogRow[] {
   const { instance, ui } = words;
+  /* What the card says a play of it did (`CardUi.logPlay`), as one more sentence of the line; nothing where it says nothing. */
+  const said = (key: unknown, play: Act | undefined): string[] => {
+    const config = play?.payload.config;
+    const sentence = ui.cards.find((c) => c.key === key)?.logPlay?.(typeof config === 'object' && config !== null ? config as Readonly<Record<string, unknown>> : {});
+    return sentence ? [` ${sentence}`] : [];
+  };
   /* A card the instance no longer has, or a play the log could not read, is said plainly: never a key, never "undefined". */
   const cardName = (key: unknown) => instance.cards.find((c) => c.key === key)?.name ?? 'a card';
   const mine = (id: Id | null | undefined) => id !== null && id !== undefined && data.mine.some((c) => c.id === id);
@@ -384,6 +390,7 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       details: [
         `As ${nameOf(caster, 'one of your characters')}, on `, link ?? 'a post', `${ownOther ? ', a post of one of your own characters' : ''}. `,
         `The card was paid for at the machine; ${e.price > 0 ? `this ${place ? 'play' : 'post'} added ${plain(e.price)}.` : 'this play cost nothing more.'}`,
+        ...said(e.card, play),
       ],
       aura: -e.price, wallet: paid?.balanceAfter ?? null, characters: [caster, ownOther ? post!.character : null].filter((c): c is Id => c !== null),
     });
@@ -418,7 +425,7 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     }
     rows.push({
       key: `onMine:${p.play}`, kind: 'onMine', at: p.at, what: 'A card on your post',
-      details: [`${nameOf(play?.character, 'Someone')} played ${cardName(play?.payload.card)} on `, (post && actLink(post, data, words, post.character ?? undefined)) ?? 'your post', `${message ? `, with the message “${message}”` : ''}.`],
+      details: [`${nameOf(play?.character, 'Someone')} played ${cardName(play?.payload.card)} on `, (post && actLink(post, data, words, post.character ?? undefined)) ?? 'your post', `${message ? `, with the message “${message}”` : ''}.`, ...said(play?.payload.card, play)],
       aura: 0, wallet: null, characters: post?.character ? [post.character] : [],
     });
   }

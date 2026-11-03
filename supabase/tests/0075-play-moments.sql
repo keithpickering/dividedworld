@@ -1,4 +1,4 @@
--- A play's moment (supabase/migrations/0070_play_moments.sql): when a layer Act lands on a post (a card on the post, a Set, a spring),
+-- A play's moment (supabase/migrations/0071_play_moments.sql): when a layer Act lands on a post (a card on the post, a Set, a spring),
 -- the version of the post then and what every other layer on it had saved are copied into play_moments and play_moment_layers, by a
 -- trigger on the Act's insert, so every path that lands a play takes one. docs/plans/2026-11-03-effect-history-plan.md, Task 1. The
 -- cards are the engine's test set, never an instance's: Blot stacks three to a post, as a Whoops! does.
@@ -290,7 +290,7 @@ begin
   k1 := (play_card(ann, 'blot', a, p, '{}', 0, '') ->> 'id')::uuid;
   k2 := (play_card(ann, 'blot', a, p, '{}', 0, '') ->> 'id')::uuid;
   perform tests.act(a, 'edit', t, '{"body": "After the play."}', p, now() + interval '1 hour');
-  -- As if both had landed before 0070: their rows removed, with the guards off in this file's own transaction.
+  -- As if both had landed before 0071: their rows removed, with the guards off in this file's own transaction.
   alter table play_moment_layers disable trigger play_moment_layers_no_update;
   alter table play_moments disable trigger play_moments_no_update;
   delete from play_moment_layers where play in (k1, k2);

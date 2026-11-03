@@ -16,7 +16,7 @@ const striker: CardRules = { ...base, key: 'striker', name: 'Test Striker', rari
 const bluff: CardRules = { ...base, key: 'bluffy', name: 'Test Bluffy', rarity: 'common', play: 'set', canApply: () => ok(undefined) };
 
 const settings = {} as Settings;
-const post: CardTarget = { reach: 'post', act: 'p', kind: 'post', length: 10 };
+const post = { reach: 'post', act: 'p', kind: 'post', length: 10, text: '' } as const satisfies CardTarget;
 const soon = new Date(Date.now() + 86_400_000).toISOString();
 const gone = new Date(Date.now() - 1000).toISOString();
 const names = (key: string) => ({ shield: 'Test Shield' } as Record<string, string>)[key] ?? key;
@@ -190,4 +190,23 @@ test('drawnInMoment holds for a card that saves state, stacks or ends by time, a
   assert.equal(drawnInMoment(plain), false);
   assert.equal(drawnInMoment({ stack: 1 }), false);
   assert.equal(drawnInMoment(bluff), false);
+});
+
+test('a card\'s landing may read its checked configuration, and a landing refusal still comes before a configuration\'s', () => {
+  const said: unknown[] = [];
+  const words: CardRules<{ word: string }> = {
+    key: 'words', name: 'Words', alignment: 'pepperoni', rarity: 'common', priceKey: 'p', playPrice: () => 0,
+    canApply: (target, _effects, config) => {
+      said.push(config);
+      if (target.reach !== 'post' || target.kind !== 'post') return refuse('a post');
+      return config && !target.text.includes(config.word) ? refuse('that word is not in this post') : ok(undefined);
+    },
+    validateConfig: (c) => typeof (c as { word?: unknown })?.word === 'string' ? ok({ word: (c as { word: string }).word.trim() }) : refuse('a word'),
+  };
+  const on = { ...post, text: 'my cats' };
+  assert.deepEqual(decidePlay(words as CardRules, settings, on, [], { word: ' cats ' }, ''), { ok: true, value: { price: 0, config: { word: 'cats' }, message: '' } });
+  assert.deepEqual(said.at(-1), { word: 'cats' }, 'it is given the configuration as the card checked it');
+  assert.deepEqual(decidePlay(words as CardRules, settings, on, [], { word: 'dogs' }, ''), { ok: false, why: 'that word is not in this post' });
+  assert.deepEqual(decidePlay(words as CardRules, settings, { ...on, kind: 'spin' }, [], {}, ''), { ok: false, why: 'a post' }, 'landing first, as before');
+  assert.deepEqual(decidePlay(words as CardRules, settings, on, [], {}, ''), { ok: false, why: 'a word' });
 });

@@ -782,7 +782,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return out;
     },
     async playMoment(play) {
-      /* One read of the moment (play_moment, 0070); an id that is no play on a post is refused in words, which is null here. */
+      /* One read of the moment (play_moment, 0071); an id that is no play on a post is refused in words, which is null here. */
       if (!idOk(play)) return null;
       const r = await read(async () => {
         const x = (await client.rpc('play_moment', { play })) as Res;

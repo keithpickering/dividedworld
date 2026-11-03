@@ -299,9 +299,27 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
      every later vote there counts for, per player and not per mask or class, as the plan's Task B
      reads the owner's answer 3. A card whose kind the instance has since retired has no
      alignment, and holds nothing. Built once; the acts are already in time order. */
+  /* The alignment each play reads as this window (the Autocorrect design, section 8): a Pepperoni card's by the lean of the
+     votes on it here, each a share of one vote, positive quadrants against negative, tidied as every sum is; a tie stays
+     Pepperoni. They are the votes `votesOn` counts as the card's draw: other players' and staff's. A player's votes on their own
+     Acts are never paid (payVotes), and the owner check below says so again, as `targetAfter`'s does. A play from an earlier
+     window reads by this window's votes, so one the room has stopped reacting to stays Pepperoni here. */
+  const readsAsOf = new Map<string, Alignment>();
+  const readsAs = (a: { id: string; character: string; card?: string }): Alignment => {
+    const own = alignmentOf.get(a.card!)!;
+    if (own !== 'pepperoni') return own;
+    let known = readsAsOf.get(a.id);
+    if (known) return known;
+    const player = playerOf(a.character);
+    let lean = 0;
+    for (const v of windowVotesOn.get(a.id) ?? []) if (v.owner !== player) lean += (v.quadrant === 'excitedPositive' || v.quadrant === 'calmPositive' ? 1 : -1) * v.share;
+    known = tidy(lean) > 0 ? 'sweet' : tidy(lean) < 0 ? 'salty' : 'pepperoni';
+    readsAsOf.set(a.id, known);
+    return known;
+  };
   const holder = new Map<string, string>();
   for (const c of [...acts.values()].filter((a) => isPlay(a) && a.reach === undefined && a.target && a.card && alignmentOf.has(a.card)).sort((x, y) => x.at - y.at || cmp(x.id, y.id))) {
-    const k = `${c.target}\u0000${playerOf(c.character)}\u0000${alignmentOf.get(c.card!)}`;
+    const k = `${c.target}\u0000${playerOf(c.character)}\u0000${readsAs(c)}`;
     if (!holder.has(k)) holder.set(k, c.id);
   }
   // A play beyond a post has no target post to outdraw, and lands on no post (the card mechanic's design, section 7): its own
@@ -316,17 +334,17 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     // Each vote after the card counts once per player and alignment: for the earliest of that
     // player's cards of this alignment on the target (an earlier window's included), so two
     // Sweet cards pay what one would (the owner's answer 3, on #4).
-    for (const v of windowVotesOn.get(target.id) ?? []) if (v.at > a.at && v.owner !== player && holder.get(`${target.id}\u0000${player}\u0000${alignmentOf.get(a.card!)}`) === a.id) after[v.quadrant] += v.share;
+    for (const v of windowVotesOn.get(target.id) ?? []) if (v.at > a.at && v.owner !== player && holder.get(`${target.id}\u0000${player}\u0000${readsAs(a)}`) === a.id) after[v.quadrant] += v.share;
     const alignment = alignmentOf.get(a.card!)!;
     const onOthers = target.character === null || playerOf(target.character) !== player;
     const list = played.get(a.character) ?? [];
     // Sums of share differences, tidied as the leaning is, so float dust never decides an outdraw.
     for (const q of QUADRANTS) after[q] = tidy(after[q]);
-    list.push({ act: a.id, card: a.card!, alignment, at: a.at, target: target.id, onOthers, votes: tidy(votesOn.get(a.id) ?? 0), targetVotes: tidy(votesOn.get(target.id) ?? 0), targetAfter: after });
+    list.push({ act: a.id, card: a.card!, alignment, readsAs: readsAs(a), at: a.at, target: target.id, onOthers, votes: tidy(votesOn.get(a.id) ?? 0), targetVotes: tidy(votesOn.get(target.id) ?? 0), targetAfter: after });
     played.set(a.character, list);
     if (onOthers && target.character !== null) {
       const on = landed.get(target.character) ?? [];
-      on.push({ act: a.id, card: a.card!, alignment, at: a.at, on: target.id });
+      on.push({ act: a.id, card: a.card!, alignment, readsAs: readsAs(a), at: a.at, on: target.id });
       landed.set(target.character, on);
     }
   }

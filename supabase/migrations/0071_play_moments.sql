@@ -94,12 +94,12 @@ create trigger acts_take_play_moment after insert on acts for each row
 --   layers    the play's own Act, as it landed, then each layer row's Act with the state it had saved then and when (savedAt)
 --   above     each play beyond a post that was live on the post's author, its thread or its board when the play landed (its Act came
 --             before the play's and it ends after it), as effects_above gives it
---   recorded  whether the snapshot was taken; a play from before 0070 answers with the version current at its time (acts_edits, as
+--   recorded  whether the snapshot was taken; a play from before 0071 answers with the version current at its time (acts_edits, as
 --             History orders it) and itself alone
 -- The same bytes to every caller: nothing here reads face_down or who is asking, so a Set's moment and a card back in another's moment
 -- show no card, for its setter as for anyone. Its cost is probes: the play and its post by primary key, the snapshot by play, its
 -- layers by play_moment_layers' key, the version by id (or one probe of acts_edits), and play_reach's three indexes, each bounded to
--- the plays live then; it does not grow with the thread, the board, the instance or the plays made since (supabase/tests/0074-play-moments.sql measures it).
+-- the plays live then; it does not grow with the thread, the board, the instance or the plays made since (supabase/tests/0075-play-moments.sql measures it).
 create function play_moment(play uuid) returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare

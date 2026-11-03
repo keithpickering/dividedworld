@@ -20,7 +20,7 @@
  */
 import type { Instance, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
-import { atOrBelow, basePrice, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../rules/cards.ts';
+import { atOrBelow, basePrice, postTarget, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
 import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
@@ -147,7 +147,7 @@ export interface Seed {
    * A card play by a character on an Act, in the Act's own thread (what a player's play makes; the cards plan makes the real action).
    * With `paid`, its player's card ledger records the play at that price and the wallet pays it, as `play_card` does (a wallet event
    * where it is more than 0); without, the play is an Act alone, held and paid for nowhere. With `unrecorded`, it is a play from before
-   * moments were snapshotted (0070): its moment is not taken.
+   * moments were snapshotted (0071): its moment is not taken.
    */
   card(character: Id, target: Id, card: string, options?: { message?: string; config?: Readonly<Record<string, unknown>>; at?: number; live?: boolean; layer?: number; paid?: number; caught?: Id; ends?: string; unrecorded?: boolean }): Id;
   /**
@@ -806,7 +806,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** The state a play's effect has saved, as effect_state keeps it: one row per play, the newest save. */
   const effects = new Map<Id, { state: unknown; at: number }>();
   /**
-   * Each play on a post's moment, as play_moments and play_moment_layers keep it (0070): the post's version when it landed, and every
+   * Each play on a post's moment, as play_moments and play_moment_layers keep it (0071): the post's version when it landed, and every
    * other layer then with what it had saved. Taken in `write`, as the trigger takes it on the Act's insert, so every path that lands a
    * play takes one: a cast, a Set, a spring, a seed.
    */
@@ -817,7 +817,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       .map((a) => ({ layer: a.id, saved: effects.has(a.id) ? { ...effects.get(a.id)! } : null }));
     moments.set(play.id, { version: edits(post).at(-1)?.id ?? post.id, layers });
   }
-  /** play_moment (0070): the moment's version as the post shows it then, the play and its layers, and the plays above live then. */
+  /** play_moment (0071): the moment's version as the post shows it then, the play and its layers, and the plays above live then. */
   function playMoment(id: Id): PlayMoment | null {
     const play = acts.get(id);
     if (!play || !(play.kind === 'card' || play.kind === 'set' || play.kind === 'spring') || play.target === null || !onPost(play)) return null;
@@ -930,7 +930,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const rules = instance.cards.find((c) => c.key === card)!;
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
     const effects = effectsOn(target);
-    const decided = decidePlay(rules, settings, { reach: 'post', act: on.id, kind: on.kind as PostTarget['kind'], length: typeof text === 'string' ? [...text].length : 0 }, effects, config, message, { nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k });
+    // Decided and written in one step, with no gap for an edit to land in, so the fake checks no version (play_card does, 0070).
+    const decided = decidePlay(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effects, config, message, { nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k });
     if (!decided.ok) return refuse(decided.why, message !== undefined && !casterMessage(message).ok ? 'message' : 'config');
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -1061,7 +1062,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (!on) return refuse('there is no such post', 'target');
     const rules = instance.cards.find((c) => c.key === card)!;
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
-    const decided = decideSet(rules, settings, { reach: 'post', act: on.id, kind: on.kind as PostTarget['kind'], length: typeof text === 'string' ? [...text].length : 0 }, effectsOn(target), config, instance.cards);
+    const decided = decideSet(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effectsOn(target), config, instance.cards);
     if (!decided.ok) return refuse(decided.why, 'config');
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -1088,7 +1089,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (!on) return refuse('there is no such post', 'target');
     const rules = instance.cards.find((c) => c.key === card)!;
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
-    const decided = decideUse(rules, settings, { reach: 'post', act: on.id, kind: on.kind as PostTarget['kind'], length: typeof text === 'string' ? [...text].length : 0 }, effectsOn(target), config, message);
+    const decided = decideUse(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effectsOn(target), config, message);
     if (!decided.ok) return refuse(decided.why, 'config');
     const c = acting(character);
     if (isRefusal(c)) return c;
