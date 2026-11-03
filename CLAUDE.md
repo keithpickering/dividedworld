@@ -139,7 +139,8 @@ old class. From then that fact, as of its date, is public, and nothing else abou
 
 The one exception is The System's own scoring: it reads who reacted and who owns what to settle, and shows only each
 settled window's sums. In a very quiet stretch a sum can still be read; that is accepted, with no noise added. Nothing
-live, and nothing else, is computed from a private fact.
+live, and nothing else, is computed from a private fact. The live estimate is not that exception: it leaves out only the
+caller's own reactions, counts every other as anyone's, and the settlement is exact.
 
 ## Portable by construction
 
