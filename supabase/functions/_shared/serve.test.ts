@@ -18,9 +18,70 @@ test('sameSecret compares whole strings, of any lengths', () => {
   assert.equal(sameSecret('abc', 'abc'), true);
 });
 
-test('a function with its environment missing says what is missing', () => {
-  assert.throws(() => environment(() => undefined), /SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY/);
-  assert.deepEqual(environment((n) => ({ SUPABASE_URL: 'u', SUPABASE_SERVICE_ROLE_KEY: 'k' })[n]), { url: 'u', key: 'k' });
+const SECRET = 'sb_secret_default0123456789';
+const JOBS = 'sb_secret_jobs0123456789abc';
+const PUBLISHABLE = 'sb_publishable_default0123456';
+const reader = (vars: Record<string, string>) => (name: string) => vars[name];
+const platform = (secrets: Record<string, string>, publishables: Record<string, string> = { default: PUBLISHABLE }) => ({
+  SUPABASE_URL: 'https://p.supabase.co',
+  SUPABASE_SECRET_KEYS: JSON.stringify(secrets),
+  SUPABASE_PUBLISHABLE_KEYS: JSON.stringify(publishables),
+});
+
+/** The message `environment` throws for `vars`, asserted to hold none of the values it was given. */
+function refusal(vars: Record<string, string>): string {
+  let message = '';
+  assert.throws(() => environment(reader(vars)), (e: Error) => { message = e.message; return true; });
+  const values = Object.values(vars).flatMap((v) => {
+    try { const o = JSON.parse(v); return typeof o === 'object' && o ? [v, ...Object.values(o).map(String)] : [v]; } catch { return [v]; }
+  }).filter((v) => v.length > 3);
+  for (const v of values) assert.ok(!message.includes(v), `the message holds a value it was given: ${message}`);
+  return message;
+}
+
+test('on the platform, the keys are read by name from the JSON objects', () => {
+  assert.deepEqual(environment(reader(platform({ default: SECRET, kayfabb_jobs: JOBS }))),
+    { url: 'https://p.supabase.co', secret: SECRET, publishable: PUBLISHABLE, jobs: JOBS });
+});
+
+test('on the platform, jobs is the key named kayfabb_jobs and never default', () => {
+  assert.equal(environment(reader(platform({ default: SECRET }))).jobs, null);
+  assert.equal(environment(reader({ ...platform({ default: SECRET }), SUPABASE_SECRET_KEY: SECRET })).jobs, null,
+    'a single secret key set beside the named ones is not the jobs key');
+});
+
+test('with one key of each, as locally and self-hosted, the secret key is also the jobs key', () => {
+  assert.deepEqual(environment(reader({ SUPABASE_URL: 'http://kong:8000', SUPABASE_SECRET_KEY: SECRET, SUPABASE_PUBLISHABLE_KEY: PUBLISHABLE })),
+    { url: 'http://kong:8000', secret: SECRET, publishable: PUBLISHABLE, jobs: SECRET });
+});
+
+test('a missing key says what to set', () => {
+  const single = { SUPABASE_URL: 'u', SUPABASE_SECRET_KEY: SECRET, SUPABASE_PUBLISHABLE_KEY: PUBLISHABLE };
+  const { SUPABASE_URL: _u, ...noUrl } = single;
+  const { SUPABASE_SECRET_KEY: _s, ...noSecret } = single;
+  const { SUPABASE_PUBLISHABLE_KEY: _p, ...noPublishable } = single;
+  assert.match(refusal(noUrl), /SUPABASE_URL/);
+  assert.match(refusal(noSecret), /make a secret key named default, or set SUPABASE_SECRET_KEY/);
+  assert.match(refusal(noPublishable), /make a publishable key named default, or set SUPABASE_PUBLISHABLE_KEY/);
+  assert.match(refusal(platform({ kayfabb_jobs: JOBS })), /make a secret key named default/);
+  assert.match(refusal(platform({ default: SECRET }, { other: PUBLISHABLE })), /make a publishable key named default/);
+});
+
+test('a key list that is not a JSON object of strings is refused by its name, not its value', () => {
+  for (const bad of ['not json', '["sb_secret_inalist000"]', '{"default": 12345678}', 'null', '"sb_secret_bare000000"']) {
+    assert.match(refusal({ ...platform({ default: SECRET }), SUPABASE_SECRET_KEYS: bad }), /SUPABASE_SECRET_KEYS is not a JSON object of strings/, bad);
+    assert.match(refusal({ ...platform({ default: SECRET }), SUPABASE_PUBLISHABLE_KEYS: bad }), /SUPABASE_PUBLISHABLE_KEYS is not a JSON object of strings/, bad);
+  }
+});
+
+test('a legacy JWT key is refused by name, in each of the four variables', () => {
+  const legacy = 'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYW5vbiJ9.sig';
+  const said = /is a legacy JWT key; KayfaBB takes the publishable and secret keys \(sb_publishable_…, sb_secret_…\)/;
+  assert.match(refusal(platform({ default: legacy, kayfabb_jobs: JOBS })), said);
+  assert.match(refusal(platform({ default: SECRET, kayfabb_jobs: legacy })), said);
+  assert.match(refusal(platform({ default: SECRET }, { default: legacy })), said);
+  assert.match(refusal({ SUPABASE_URL: 'u', SUPABASE_SECRET_KEY: legacy, SUPABASE_PUBLISHABLE_KEY: PUBLISHABLE }), /SUPABASE_SECRET_KEY is a legacy JWT key/);
+  assert.match(refusal({ SUPABASE_URL: 'u', SUPABASE_SECRET_KEY: SECRET, SUPABASE_PUBLISHABLE_KEY: legacy }), /SUPABASE_PUBLISHABLE_KEY is a legacy JWT key/);
 });
 
 test('a body is read as JSON up to a bound, and past it not at all', async () => {
