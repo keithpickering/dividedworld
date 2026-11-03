@@ -1,0 +1,242 @@
+/*
+ * The spotlight (Spotlight.tsx), to the boards docs/research/2026-11-02-onboarding/03-spotlight.html and 04-phone.html: the whole page dimmed and
+ * blurred but for a sharp cut-out round the target, a ring round that, and Gabe's panel beside it or, on a phone, docked above the HUD.
+ * The panel's rules are written `.kb-tips .kb-tips-panel` so they outrank the glass's `.kb-glass-cut-dialog` (engine/ui/glass/base.css) whatever the
+ * order the two sheets load in.
+ * Every color is a glass token; the scrim is the glass's ground at 72%, which the boards draw as rgba(3, 2, 8, .72).
+ */
+.kb-tips {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  overscroll-behavior: contain;
+  font-family: var(--kb-glass-font-body);
+  font-weight: 600;
+  color: var(--kb-glass-text);
+}
+
+.kb-tips-dim {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--kb-glass-ground) 72%, transparent);
+  backdrop-filter: blur(6px) saturate(0.7);
+  -webkit-backdrop-filter: blur(6px) saturate(0.7);
+}
+
+.kb-tips-ring {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid var(--kb-glass-pale);
+  box-shadow: 0 0 0 1px var(--kb-glass-neon), 0 0 26px color-mix(in srgb, var(--kb-glass-neon) 70%, transparent);
+  pointer-events: none;
+}
+
+.kb-tips .kb-tips-panel {
+  --kb-cut: var(--kb-glass-chamfer-1);
+  position: absolute;
+  left: var(--kb-tip-left);
+  top: var(--kb-tip-top, auto);
+  bottom: auto;
+  width: var(--kb-tip-width);
+  box-sizing: border-box;
+  padding: 22px 26px 20px;
+  background: var(--kb-glass-pale);
+  outline: none;
+}
+
+.kb-tips .kb-tips-panel::after {
+  background: var(--kb-glass-sheet);
+}
+
+.kb-tips-who {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.kb-tips-ava {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  overflow: hidden;
+  border: 2px solid var(--kb-glass-pale);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--kb-glass-pale) 50%, transparent);
+}
+
+.kb-tips-ava img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: pixelated;
+}
+
+.kb-tips-ava-none {
+  font-family: var(--kb-glass-font-display);
+  font-size: var(--kb-glass-size-display-s);
+}
+
+.kb-tips-title {
+  margin: 0;
+  font-size: var(--kb-glass-size-title);
+  line-height: 1;
+  letter-spacing: 0.5px;
+  color: var(--kb-glass-text-hi);
+}
+
+.kb-tips-kicker {
+  display: block;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--kb-glass-pale);
+}
+
+.kb-tips-line {
+  margin: 14px 0 0;
+  font-size: var(--kb-glass-size-body);
+  line-height: 1.45;
+  color: var(--kb-glass-text);
+}
+
+.kb-tips-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.kb-tips-step {
+  display: inline-flex;
+  align-items: center;
+  margin-right: auto;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-tips-pips {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: 10px;
+}
+
+.kb-tips-pips i {
+  width: 12px;
+  height: 12px;
+  transform: skewX(var(--kb-glass-skew));
+  border: 1px solid var(--kb-glass-pale);
+}
+
+.kb-tips-pips i[data-on] {
+  background: var(--kb-glass-neon);
+}
+
+.kb-tips-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 52px;
+  padding: 0 20px;
+  border: 1px solid var(--kb-glass-text);
+  background: transparent;
+  color: var(--kb-glass-text);
+  font: inherit;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.kb-tips-go {
+  border-color: var(--kb-glass-neon);
+  background: var(--kb-glass-neon);
+  color: var(--kb-glass-ink-neon);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--kb-glass-neon) 55%, transparent);
+}
+
+.kb-tips-button:focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+}
+
+/* The pointer: a triangle at the cut-out's edge, toward the panel. */
+.kb-tips-arrow {
+  position: absolute;
+  width: 0;
+  height: 0;
+  border-left: 16px solid transparent;
+  border-right: 16px solid transparent;
+  pointer-events: none;
+}
+
+.kb-tips[data-kb-tips-place='above'] .kb-tips-arrow {
+  transform: translate(-50%, -100%);
+  border-top: 18px solid var(--kb-glass-pale);
+}
+
+.kb-tips[data-kb-tips-place='below'] .kb-tips-arrow {
+  transform: translate(-50%, 0);
+  border-bottom: 18px solid var(--kb-glass-pale);
+}
+
+/* The Phone board's layout (data-kb-layout, set from the glass's sizes): the panel docks as a sheet above the HUD, full width, and the pointer goes. */
+:where(:root[data-kb-layout='phone']) .kb-tips .kb-tips-panel {
+  --kb-cut: 14px;
+  left: 8px;
+  right: 8px;
+  top: auto;
+  bottom: calc(var(--kb-hud-measured, 9em) + 8px);
+  width: auto;
+  padding: 16px 16px 14px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-tips-ava {
+  width: 46px;
+  height: 46px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-tips-title {
+  font-size: var(--kb-glass-size-phone-display);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-tips-kicker {
+  font-size: var(--kb-glass-size-phone-small);
+  letter-spacing: 1.2px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-tips-line {
+  margin-top: 10px;
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-tips-step {
+  font-size: var(--kb-glass-size-phone-small);
+  letter-spacing: 1.5px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-tips-acts {
+  gap: 8px;
+  margin-top: 12px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-tips-button {
+  min-height: 48px;
+  padding: 0 12px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-tips-arrow {
+  display: none;
+}
+
+@media (forced-colors: active) {
+  .kb-tips-ring { border-color: CanvasText; }
+  .kb-tips .kb-tips-panel { outline: 1px solid CanvasText; }
+}

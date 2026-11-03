@@ -3,7 +3,7 @@
  * the board's, "Traps now bite board cards", by the instance's developer persona, with its plain What changed list, three reactions and the
  * archive of the three before it. The page is the screen itself (`UpdatesScreen`) in the glass's page shell, as the route /updates puts it
  * (web/src/App.tsx), signed in as a player with a character. The words are the board's, and the persona and its picture are the instance's own
- * (the preview builds the backend from the instance, which names them); the reactions are the instance's, by their place in its list.
+ * (the preview builds the backend from the instance, which names them: Gabe's face is the owner's sprite, drawn pixelated); the reactions are the instance's, by their place in its list.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Page } from '../glass/Page.tsx';

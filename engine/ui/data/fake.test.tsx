@@ -8,6 +8,7 @@ import { describe, expect, test } from 'vitest';
 import type { Instance, Settings } from '../../rules/types.ts';
 import { landsOn, type CardEffect, type CardTarget } from '../../rules/cards.ts';
 import type { Act, Refusal, Tally } from './api.ts';
+import { TIP_KEYS } from '../tips/keys.ts';
 import { createFake, FAKE_BACKEND_MARKER, TEST_CODE } from './fake.ts';
 import { LOG_ROWS, micros } from './log-page.ts';
 import { systemSettings, testSystem } from '../../rules/test-system.ts';
@@ -613,15 +614,15 @@ describe('the account', () => {
   });
   test('preferences have defaults and are set whole or in part', async () => {
     const { fake } = world();
-    const glass = { smoke: 'full', contrast: 'standard', textSize: 100, cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null } as const;
+    const glass = { smoke: 'full', contrast: 'standard', textSize: 100, cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] } as const;
     expect(await fake.preferences()).toEqual({ theme: 'system', postbit: 'side', motion: 'system', ...glass });
     expect(await fake.setPreferences({ motion: 'reduce' })).toEqual({ ok: true, value: { theme: 'system', postbit: 'side', motion: 'reduce', ...glass } });
     expect(await fake.setPreferences({ theme: 'Loud!' })).toEqual(refused('a theme is named in lowercase words joined by hyphens'));
   });
   test('the glass\'s three preferences are set and kept as the server keeps them, and refused in its words', async () => {
     const { fake } = world();
-    expect(await fake.setPreferences({ smoke: 'off' })).toEqual({ ok: true, value: { theme: 'system', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'standard', textSize: 100, cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null } });
-    expect(await fake.setPreferences({ contrast: 'high', textSize: 200 })).toEqual({ ok: true, value: { theme: 'system', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', textSize: 200, cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null } });
+    expect(await fake.setPreferences({ smoke: 'off' })).toEqual({ ok: true, value: { theme: 'system', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'standard', textSize: 100, cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] } });
+    expect(await fake.setPreferences({ contrast: 'high', textSize: 200 })).toEqual({ ok: true, value: { theme: 'system', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', textSize: 200, cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] } });
     /* A fresh read is what the next load sees. */
     expect(await fake.preferences()).toMatchObject({ smoke: 'off', contrast: 'high', textSize: 200 });
     expect(await fake.setPreferences({ smoke: 'thick' as never })).toEqual(refused('the smoke is full, low or off'));
@@ -649,8 +650,54 @@ describe('the account', () => {
     for (let i = 2; i < 64; i++) must(await fake.meetCard(`card-${i}`));
     expect(await fake.meetCard('one-too-many')).toEqual(refused('at most 64 cards are kept as met'));
     expect(must(await fake.meetCard('whoops')).cardsMet).toHaveLength(64);
-    expect(must(await fake.forgetCardsMet()).cardsMet).toEqual([]);
+    must(await fake.seeTip('grid'));
+    must(await fake.skipTips());
+    /* restore_tips forgets every card and tip and turns tips on. */
+    expect(must(await fake.restoreTips())).toMatchObject({ cardsMet: [], tips: 'on', tipsSeen: [] });
     expect((await fake.preferences()).cardsMet).toEqual([]);
+  });
+  test('the tips: the welcome is seen once, a tip once, 64 at most, skipping and restoring and replaying undo each other', async () => {
+    const { fake } = world();
+    expect(await fake.preferences()).toMatchObject({ welcomedAt: null, tips: 'on', tipsSeen: [] });
+    const first = must(await fake.seeWelcome()).welcomedAt;
+    expect(first).not.toBeNull();
+    fake.clock.advance(60_000);
+    expect(must(await fake.seeWelcome()).welcomedAt).toBe(first);
+    expect(must(await fake.seeTip('grid')).tipsSeen).toEqual(['grid']);
+    expect(must(await fake.seeTip('grid')).tipsSeen).toEqual(['grid']);
+    for (const k of ['tour-plate', 'tour-orbs', 'tour-hand']) must(await fake.seeTip(k));
+    must(await fake.meetCard('whoops'));
+    expect(must(await fake.setPreferences({ smoke: 'low' })).tipsSeen).toEqual(['grid', 'tour-plate', 'tour-orbs', 'tour-hand']);
+    expect(must(await fake.skipTips())).toMatchObject({ tips: 'off', tipsSeen: ['grid', 'tour-plate', 'tour-orbs', 'tour-hand'] });
+    expect(must(await fake.replayTour())).toMatchObject({ tips: 'on', tipsSeen: ['grid'], cardsMet: ['whoops'] });
+    must(await fake.skipTips());
+    /* resume_tips turns tips on and forgets nothing. */
+    must(await fake.seeTip('ghost'));
+    expect(must(await fake.resumeTips())).toMatchObject({ tips: 'on', tipsSeen: ['grid', 'ghost'], cardsMet: ['whoops'] });
+    must(await fake.skipTips());
+    expect(must(await fake.restoreTips())).toMatchObject({ welcomedAt: first, tips: 'on', tipsSeen: [], cardsMet: [] });
+    for (const bad of ['Grid', '', '1up', 'a'.repeat(41), 'bad key']) expect(await fake.seeTip(bad)).toEqual(refused('a tip is named in lowercase words joined by hyphens'));
+    for (let i = 0; i < 64; i++) must(await fake.seeTip(`tip-${i}`));
+    expect(await fake.seeTip('one-too-many')).toEqual(refused('at most 64 tips are kept as seen'));
+    expect(must(await fake.seeTip('tip-0')).tipsSeen).toHaveLength(64);
+  });
+  test('a seasoned account has seen the welcome and every tip, keeps tips on, and an unseasoned one has seen none', async () => {
+    const { fake } = world();
+    const vet = fake.seed.account('vet', { seasoned: true });
+    fake.signInAs(vet);
+    expect(await fake.preferences()).toMatchObject({ welcomedAt: '2026-10-01T00:00:00.000Z', tips: 'on', tipsSeen: [...TIP_KEYS] });
+    fake.clock.advance(60_000);
+    expect((await fake.preferences()).welcomedAt).toBe('2026-10-01T00:00:00.000Z');
+    fake.signInAs(fake.seed.account('newcomer'));
+    expect(await fake.preferences()).toMatchObject({ welcomedAt: null, tips: 'on', tipsSeen: [] });
+  });
+  test('replaying the tour marks the welcome seen when it never was, and keeps a first time', async () => {
+    const { fake } = world();
+    expect((await fake.preferences()).welcomedAt).toBeNull();
+    const at = must(await fake.replayTour()).welcomedAt;
+    expect(at).not.toBeNull();
+    fake.clock.advance(60_000);
+    expect(must(await fake.replayTour()).welcomedAt).toBe(at);
   });
   test('the two marks move only forward, refuse what is not a time, and are the account\'s', async () => {
     const { fake } = world();

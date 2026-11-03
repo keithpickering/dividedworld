@@ -25,6 +25,9 @@ import glitterBombFace from './cards/glitter-bomb.svg?url';
 import glitterBombMark from './cards/glitter-bomb-mark.svg?url';
 import mainEventFace from './cards/main-event.svg?url';
 import mainEventMark from './cards/main-event-mark.svg?url';
+import feelinFabFace from './cards/feelin-fab.svg?url';
+import feelinFabMark from './cards/feelin-fab-mark.svg?url';
+import { FeelinFabEffect } from './feelin-fab/Effect.tsx';
 import { GlitterBombEffect } from './glitter-bomb/Effect.tsx';
 import { glitterBomb } from '../cards/glitter-bomb.ts';
 import { mainEvent } from '../cards/main-event.ts';
@@ -127,5 +130,18 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     summary: `Cast on a thread. Pins it to the top of its board for ${spanWords(mainEvent.lasts!)}.`,
     describe: (settings: Settings) =>
       `A Sweet card, ${mainEvent.rarity}, cast on a thread from its title. For ${spanWords(mainEvent.lasts!)}, the thread is pinned above the first page of its board's list, and then it drops back to its place by itself. It takes no other thread's place on the page. It costs ${orbs(settings.economy['mainEvent.price'] ?? 0)} to buy, and nothing more to play.`,
+  },
+  /*
+   * The onboarding's first card (docs/plans/2026-11-02-onboarding-design.md, section 5), the Face's own: Sweet's cyan, as Force Field is.
+   * Its rainbow grows with each Feelin' Fab on the post, up to three.
+   */
+  {
+    key: 'feelin-fab',
+    Effect: FeelinFabEffect,
+    art: { color: '#2ee6ff', ink: '#03141a', image: feelinFabFace, mark: feelinFabMark, tagline: 'Give a post a rainbow.' },
+    hint: "A Feelin' Fab: the more of them on a post, the more it glows.",
+    summary: 'Gives a post a rainbow behind its words. Up to three can stack, and each makes it grander.',
+    describe: (settings: Settings) =>
+      `A Sweet card, common. It gives a post a rainbow behind its words, which stay as readable as ever. One makes the whole post's background drift slowly through the rainbow; two make it an animated rainbow band; three make it an animated radial rainbow, with the colors spreading out from the middle. A few twinkles come with it. Up to three can be on one post, and it stays as long as the post does. It costs ${orbs(settings.economy['feelinFab.price'] ?? 0)} to buy, and nothing more to play.`,
   },
 ] satisfies CardUi[]);

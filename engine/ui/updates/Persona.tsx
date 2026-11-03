@@ -1,3 +1,5 @@
+import './persona.css';
+
 /**
  * The developer persona's mark beside its name: the instance's picture (`InstanceUi.avatars`, by the persona's key) or, where it gave none, the name's
  * first letter. Decoration: the name beside it says who, so it is hidden from a screen reader and carries no alt text.

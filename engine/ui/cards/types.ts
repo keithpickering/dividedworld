@@ -127,6 +127,11 @@ export interface EffectProps {
   readonly show: (view: CardView | null) => void;
   /** The reader has met this card's effect (the first-time callout). */
   readonly met: () => void;
+  /**
+   * Say that this effect holds the reader's screen (a takeover's full-screen view) or lets it go. No tip is shown over a held screen
+   * (engine/ui/tips/store.ts); the engine clears it when the effect is gone.
+   */
+  readonly holdScreen: (held: boolean) => void;
   /** The post's marks, drawn where the card's effect puts them (a takeover's only; null for every other card). */
   readonly marks: ReactNode;
   /**

@@ -10,9 +10,10 @@
  * 16 ms here and a "screen" is 500 px.
  */
 import { act, fireEvent, screen, within } from '@testing-library/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ThreadScreen } from '../../../../engine/ui/thread/Thread.tsx';
+import { TipsProvider, useTipsStore } from '../../../../engine/ui/tips/Tips.tsx';
 
 import { buildWorld, renderIn } from '../../../../engine/ui/test-world.tsx';
 import { instanceUi } from '../index.ts';
@@ -194,6 +195,24 @@ describe('the take-over', () => {
     expect(window.scrollBy).toHaveBeenCalledTimes(1);
     expect(window.scrollTo).not.toHaveBeenCalled();
     Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: 0 });
+  });
+
+  test('while the view holds the reader the screen is held for the tips (no tip is shown over it), and only then', async () => {
+    vi.useRealTimers();
+    const w = world();
+    geometry.post = { top: 5000, bottom: 5320 };
+    function Held() {
+      const tips = useTipsStore();
+      return <p data-testid="held">{useSyncExternalStore(tips.subscribe, tips.holding, tips.holding) ? 'held' : 'free'}</p>;
+    }
+    renderIn(w.fake, <TipsProvider><Held /><ThreadScreen thread={w.thread} /></TipsProvider>, { path: `/t/${w.thread}?page=1`, cards: instanceUi.cards });
+    await screen.findByText(/Please read it this time/u);
+    await new Promise((r) => setTimeout(r, TUNING.settleMs + 60));
+    vi.useFakeTimers();
+    expect(screen.getByTestId('held')).toHaveTextContent('free');
+    await settleOn(geometry.post = { top: 200, bottom: 520 });
+    expect(view()).not.toBeNull();
+    expect(screen.getByTestId('held')).toHaveTextContent('held');
   });
 
   test('a certified release holds after a reload, and the view never opens for the reader again', async () => {
@@ -630,7 +649,7 @@ describe('an effect given more than one play', () => {
     return (
       <HoldStage.Provider value={{ mode: 'view', level: 0 }}>
         <StickAroundEffect
-          post={act1()} plays={plays} states={{}} released={released} reader={{ author: false, caster: false }} place="thread" reach="post" save={vi.fn()} show={() => {}} met={() => {}} marks={null} nameOf={() => 'A character'}
+          post={act1()} plays={plays} states={{}} released={released} reader={{ author: false, caster: false }} place="thread" reach="post" save={vi.fn()} show={() => {}} met={() => {}} holdScreen={() => {}} marks={null} nameOf={() => 'A character'}
           release={async (id) => { setReleased((r) => new Set([...r, id])); return { ok: true, value: { play: id, releasedAt: 'now' } } as never; }}
         >
           <p>the post</p>

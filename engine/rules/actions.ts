@@ -211,7 +211,7 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
     if (typeof kind !== 'string' || !instance.classes.some((c) => c.key === kind)) throw new Refused('class', `there is no class ${JSON.stringify(kind)}`);
     const name = text({ name: typeof r.name === 'string' ? r.name.replace(/^ +| +$/g, '') : r.name }, 'name', NAME_MAX_LENGTH);
     if (NAME_HIDDEN.test(name)) throw new Refused('name', 'can hold letters, marks, digits, symbols and single spaces, nothing hidden');
-    return { rpc: 'create_character', args: { name, class: kind, ...debut(r, { timing: 'tally', loudness: 'announced' }) } };
+    return { rpc: 'create_character', args: { name, class: kind, ...debut(r, { timing: 'now', loudness: 'announced' }) } };
   },
   setDebut: (r) => ({ rpc: 'set_debut', args: { through: id(r, 'character'), ...debut(r) } }),
   createInvite: () => ({ rpc: 'create_invite', args: {} }),

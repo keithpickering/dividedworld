@@ -13,6 +13,7 @@
 import { useMemo, type CSSProperties } from 'react';
 import { useMotionReduced } from '../../../../engine/ui/appearance.ts';
 import type { EffectProps } from '../../../../engine/ui/cards/types.ts';
+import { seeded } from '../seeded.ts';
 import './glitter.css';
 
 /** The glints' inks: Pepperoni's warm gold, a pink and a cyan, each drawn at most at GLITTER_ALPHA behind the words. */
@@ -22,22 +23,11 @@ export const GLITTER_ALPHA = 0.28;
 /** How many glints one post carries. */
 const GLINTS = 22;
 
-/** A small seeded sequence from a play's id: the same id draws the same glints on every screen. */
-function seeded(id: string, post: string): () => number {
-  let h = 2166136261;
-  for (const ch of `${id}:${post}`) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
-  return () => {
-    h = Math.imul(h ^ (h >>> 15), 2246822507);
-    h = Math.imul(h ^ (h >>> 13), 3266489909);
-    return ((h ^= h >>> 16) >>> 0) / 4294967296;
-  };
-}
-
 export function GlitterBombEffect({ post, plays, children }: EffectProps) {
   const moving = !useMotionReduced();
   const play = plays[0]!;
   const glints = useMemo(() => {
-    const next = seeded(play.id, post.id);
+    const next = seeded(`${play.id}:${post.id}`);
     return Array.from({ length: GLINTS }, (_, i) => ({
       left: `${(next() * 96 + 2).toFixed(1)}%`,
       top: `${(next() * 90 + 5).toFixed(1)}%`,

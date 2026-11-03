@@ -25,11 +25,16 @@
  */
 import type { BoardManifest, Landmark } from '../board-match.ts';
 
-/** A row of choices: its label, its radiogroup, each choice's face by its words, and its sentence. */
+/**
+ * A row of choices: its label, its radiogroup, each choice's face by its words, and its sentence. The radiogroup is found by its role and name
+ * and its box is not compared: in the build the row's fieldset is the radiogroup, named by its legend so that the group is named once (the
+ * onboarding plan's Task 7, shared with the welcome page's Before you start), so its box is the whole row, label, choices and sentence, where
+ * the board's is the choices' column alone. The label, each choice and the sentence are compared by their own boxes.
+ */
 function row(id: string, label: string, group: string, choices: readonly string[], sentence: string, buildGroup?: string, buildSentence?: string): Landmark[] {
   return [
     { id: `${id}-label`, role: 'heading', name: label },
-    { id, role: 'radiogroup', name: group, ...(buildGroup ? { buildName: buildGroup } : {}), type: false },
+    { id, role: 'radiogroup', name: group, ...(buildGroup ? { buildName: buildGroup } : {}), type: false, box: 'none' },
     ...choices.map((c): Landmark => ({ id: `${id}-${c.toLowerCase().replace(/\W+/g, '-')}`, role: 'text', name: c, within: id })),
     /* A sentence the build words otherwise runs to its own length: its place and its type are compared. */
     { id: `${id}-sentence`, role: 'text', name: sentence, ...(buildSentence ? { buildName: buildSentence, box: 'position' as const } : {}) },
@@ -89,7 +94,7 @@ const manifest: BoardManifest = {
     { id: 'board-black-on-white', role: 'text', name: 'Black on white', within: 'board', box: 'none', type: false },
     { id: 'board-white-on-black', role: 'text', name: 'White on black', within: 'board', box: 'none' },
 
-    /* The build's Accessibility sections carry a row the board does not (Cards, "Show card tips again", the callout's way back: marks-and-the-lens plan, Task 7), so this line stands 211px lower than the board's: held by its words and type alone. */
+    /* The build's Accessibility sections carry a row the board does not (Tips: its switch, Show tips again and Replay the HUD tour, the onboarding plan's Task 9), so this line stands lower than the board's: held by its words and type alone. */
     { id: 'saves', role: 'text', name: 'Changes save as you make them.', box: 'none' },
   ],
 };

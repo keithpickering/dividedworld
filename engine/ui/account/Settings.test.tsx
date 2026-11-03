@@ -155,35 +155,118 @@ describe('Settings, as board 11 draws it', () => {
     expect(document.documentElement.hasAttribute('data-kb-mode')).toBe(false);
   });
 
-  test('"Show card tips again" is disabled while no card has been met, then clears the set the account holds', async () => {
-    const w = world();
-    open(w.fake);
-    const button = await screen.findByRole('button', { name: 'Show card tips again' });
-    expect(screen.getByRole('heading', { level: 3, name: 'Card tips' })).toBeInTheDocument();
-    expect(button).toHaveAttribute('aria-disabled', 'true');
-    cleanup();
-    await w.fake.meetCard('whoops');
-    await w.fake.meetCard('stick-around');
-    open(w.fake);
-    const enabled = await screen.findByRole('button', { name: 'Show card tips again' });
-    expect(enabled).not.toHaveAttribute('aria-disabled', 'true');
-    enabled.focus();
-    await userEvent.keyboard('{Enter}');
-    await waitFor(async () => expect((await w.fake.preferences()).cardsMet).toEqual([]));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Show card tips again' })).toHaveAttribute('aria-disabled', 'true'));
-    /* Spent, the button stays in the tab order with focus on it: a keyboard player is not dropped to the page. */
-    expect(screen.getByRole('button', { name: 'Show card tips again' })).toHaveFocus();
-    expect(await screen.findByRole('status')).toHaveTextContent('Saved to your account.');
+  test('the Tips row is a switch and two buttons in plain words, the switch on while tips are on', async () => {
+    open(world().fake);
+    const tips = await screen.findByRole('switch', { name: 'Tips' });
+    expect(screen.getByRole('heading', { level: 3, name: 'Tips' })).toBeInTheDocument();
+    expect(tips).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Show tips again' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Replay the HUD tour' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show card tips again' })).toBeNull();
+    /* Plain and true: it says what each control does, including what turning tips on does not bring back. */
+    const says = document.getElementById(tips.getAttribute('aria-describedby')!)!.textContent!;
+    expect(says).toMatch(/Off hides every tip and card note\./u);
+    expect(says).toMatch(/On shows the ones you have not read yet\./u);
+    expect(says).toMatch(/Show tips again also brings back the ones you have read/u);
+    expect(says).toMatch(/Replay the HUD tour shows the three steps of the tour again/u);
   });
 
-  test('a refused "Show card tips again" is said and leaves the button ready', async () => {
+  test('the switch off skips the tips, on resumes them without forgetting, and the screen says it saved', async () => {
     const w = world();
-    await w.fake.meetCard('whoops');
-    w.fake.forgetCardsMet = async () => ({ ok: false, error: 'try again later' });
+    await w.fake.seeTip('grid');
     open(w.fake);
-    await userEvent.click(await screen.findByRole('button', { name: 'Show card tips again' }));
+    const tips = await screen.findByRole('switch', { name: 'Tips' });
+    await userEvent.click(tips);
+    await waitFor(async () => expect(await w.fake.preferences()).toMatchObject({ tips: 'off', tipsSeen: ['grid'] }));
+    expect(tips).not.toBeChecked();
+    expect(await screen.findByRole('status')).toHaveTextContent('Saved to your account.');
+    await userEvent.click(tips);
+    await waitFor(async () => expect(await w.fake.preferences()).toMatchObject({ tips: 'on', tipsSeen: ['grid'] }));
+    expect(tips).toBeChecked();
+  });
+
+  test('"Show tips again" turns tips on and forgets the tips seen and the cards met; "Replay the HUD tour" forgets the tour alone', async () => {
+    const w = world();
+    for (const k of ['grid', 'tour-plate']) await w.fake.seeTip(k);
+    await w.fake.meetCard('whoops');
+    await w.fake.skipTips();
+    open(w.fake);
+    const tips = await screen.findByRole('switch', { name: 'Tips' });
+    expect(tips).not.toBeChecked();
+    await userEvent.click(screen.getByRole('button', { name: 'Replay the HUD tour' }));
+    await waitFor(async () => expect(await w.fake.preferences()).toMatchObject({ tips: 'on', tipsSeen: ['grid'], cardsMet: ['whoops'] }));
+    expect(tips).toBeChecked();
+    await userEvent.click(screen.getByRole('button', { name: 'Show tips again' }));
+    await waitFor(async () => expect(await w.fake.preferences()).toMatchObject({ tips: 'on', tipsSeen: [], cardsMet: [] }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Saved to your account.');
+    /* A spent button stays where it is: a keyboard player is not dropped to the page. */
+    expect(screen.getByRole('button', { name: 'Show tips again' })).not.toHaveAttribute('aria-disabled', 'true');
+  });
+
+  test('a refused tips control is said and leaves the switch where the account has it', async () => {
+    const w = world();
+    w.fake.skipTips = async () => ({ ok: false, error: 'try again later' });
+    open(w.fake);
+    const tips = await screen.findByRole('switch', { name: 'Tips' });
+    await userEvent.click(tips);
     expect(await screen.findByRole('alert')).toHaveTextContent('try again later');
-    expect(screen.getByRole('button', { name: 'Show card tips again' })).not.toHaveAttribute('aria-disabled', 'true');
+    expect(tips).toBeChecked();
+    w.fake.restoreTips = async () => ({ ok: false, error: 'not now' });
+    await userEvent.click(screen.getByRole('button', { name: 'Show tips again' }));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('not now'));
+  });
+
+  test('the switch clicked off and on again with the first save held: the switch shows each click at once and the account ends on', async () => {
+    const w = world();
+    const held: { settle: () => void }[] = [];
+    const skip = w.fake.skipTips.bind(w.fake);
+    w.fake.skipTips = () => new Promise((resolve) => { held.push({ settle: () => resolve(skip()) }); });
+    open(w.fake);
+    const tips = await screen.findByRole('switch', { name: 'Tips' });
+    await userEvent.click(tips);
+    expect(tips).not.toBeChecked();
+    await userEvent.click(tips);
+    expect(tips).toBeChecked();
+    held[0]!.settle();
+    await waitFor(async () => expect(await w.fake.preferences()).toMatchObject({ tips: 'on' }));
+    expect(tips).toBeChecked();
+  });
+
+  test('a choice made while Show tips again is out does not leave the switch off once the account answers on', async () => {
+    const w = world();
+    await w.fake.skipTips();
+    const held: { settle: () => void }[] = [];
+    const restore = w.fake.restoreTips.bind(w.fake);
+    w.fake.restoreTips = () => new Promise((resolve) => { held.push({ settle: () => resolve(restore()) }); });
+    open(w.fake);
+    const tips = await screen.findByRole('switch', { name: 'Tips' });
+    expect(tips).not.toBeChecked();
+    await userEvent.click(screen.getByRole('button', { name: 'Show tips again' }));
+    await userEvent.click(radio('The board', 'White on black'));
+    held[0]!.settle();
+    await waitFor(async () => expect(await w.fake.preferences()).toMatchObject({ tips: 'on' }));
+    await waitFor(() => expect(tips).toBeChecked());
+  });
+
+  test('from the keyboard: Space flips the switch, Enter presses Show tips again and Replay the HUD tour', async () => {
+    const w = world();
+    await w.fake.seeTip('grid');
+    open(w.fake);
+    const tips = await screen.findByRole('switch', { name: 'Tips' });
+    tips.focus();
+    await userEvent.keyboard(' ');
+    await waitFor(async () => expect((await w.fake.preferences()).tips).toBe('off'));
+    expect(tips).not.toBeChecked();
+    const again = screen.getByRole('button', { name: 'Show tips again' });
+    again.focus();
+    await userEvent.keyboard('{Enter}');
+    await waitFor(async () => expect(await w.fake.preferences()).toMatchObject({ tips: 'on', tipsSeen: [] }));
+    await w.fake.seeTip('tour-plate');
+    await w.fake.seeTip('grid');
+    const replay = screen.getByRole('button', { name: 'Replay the HUD tour' });
+    replay.focus();
+    await userEvent.keyboard('{Enter}');
+    await waitFor(async () => expect(await w.fake.preferences()).toMatchObject({ tips: 'on', tipsSeen: ['grid'] }));
   });
 
   /** Text size changed twice before either save is answered: 100, then 125, then 150. */

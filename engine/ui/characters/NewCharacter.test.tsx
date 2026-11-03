@@ -35,19 +35,44 @@ describe('New character', () => {
     await userEvent.click(within(f).getByRole('radio', { name: /^Heel/u }));
     const preview = within(f).getByRole('group', { name: 'What everyone will see' });
     expect(preview).toHaveTextContent('Spritey debuts');
-    expect(preview).toHaveTextContent(/next settlement/u);
+    expect(preview).toHaveTextContent(/At once/u);
+    expect(preview).not.toHaveTextContent(/next settlement/u);
     expect(preview).not.toHaveTextContent(/Heel|Face/u);
     await userEvent.click(within(f).getByRole('radio', { name: /^Silent/u }));
     expect(preview).toHaveTextContent(/Nothing is posted/u);
-    expect(preview).not.toHaveTextContent(/Heel|Face/u);
-    await userEvent.click(within(f).getByRole('radio', { name: /^Drop now/u }));
     expect(preview).toHaveTextContent(/first post is its entrance/u);
+    expect(preview).not.toHaveTextContent(/Heel|Face/u);
+    await userEvent.click(within(f).getByRole('radio', { name: /^Debut at the settlement/u }));
+    expect(preview).toHaveTextContent(/simply appears after the next settlement/u);
     await userEvent.click(within(f).getByRole('radio', { name: /^Announced, with its class/u }));
     expect(preview).toHaveTextContent('Spritey debuts as Heel');
     expect(preview).toHaveTextContent('Spritey revealed: Heel');
   });
 
-  test('makes a character that waits to debut, announced by default, and leaves the player on My characters', async () => {
+  test('opens with Drop now chosen, and announced', async () => {
+    open(world());
+    const f = await form();
+    expect(within(f).getByRole('radio', { name: /^Drop now/u })).toBeChecked();
+    expect(within(f).getByRole('radio', { name: /^Debut at the settlement/u })).not.toBeChecked();
+    expect(within(f).getByRole('radio', { name: /^Announced\./u })).toBeChecked();
+    expect(within(f).getByRole('group', { name: 'What everyone will see' })).toHaveTextContent(/At once/u);
+  });
+
+  test('a character made without touching the timing has debuted and can post at once', async () => {
+    const w = world();
+    open(w);
+    const f = await form();
+    await userEvent.type(within(f).getByLabelText('Name'), 'Spritey');
+    await userEvent.click(within(f).getByRole('radio', { name: /^Heel/u }));
+    await userEvent.click(within(f).getByRole('button', { name: 'Make the character' }));
+    await waitFor(() => expect(window.location.pathname).toBe('/characters'));
+    const made = (await w.fake.myCharacters()).find((c) => c.name === 'Spritey')!;
+    expect(made.debutedAt).not.toBeNull();
+    const thread = await w.fake.startThread('general', made.id, 'A thread', 'Hi.');
+    expect(thread.ok).toBe(true);
+  });
+
+  test('makes a character that waits to debut when the settlement is chosen, announced by default, and leaves the player on My characters', async () => {
     const w = world();
     const create = vi.spyOn(w.fake, 'createCharacter');
     open(w);
@@ -57,6 +82,7 @@ describe('New character', () => {
     await userEvent.type(within(f).getByLabelText('Name'), 'Spritey');
     expect(submit).toBeDisabled();
     await userEvent.click(within(f).getByRole('radio', { name: /^Heel/u }));
+    await userEvent.click(within(f).getByRole('radio', { name: /^Debut at the settlement/u }));
     await userEvent.click(submit);
     await waitFor(() => expect(create).toHaveBeenCalledWith('Spritey', 'heel', 'tally', 'announced'));
     await waitFor(() => expect(window.location.pathname).toBe('/characters'));
@@ -68,14 +94,13 @@ describe('New character', () => {
     expect(window.history.state).toEqual({ character: mine.find((c) => c.name === 'Spritey')!.id });
   });
 
-  test('can drop at once, silently', async () => {
+  test('drops at once, silently, with only the loudness changed', async () => {
     const w = world();
     const create = vi.spyOn(w.fake, 'createCharacter');
     open(w);
     const f = await form();
     await userEvent.type(within(f).getByLabelText('Name'), 'Spritey');
     await userEvent.click(within(f).getByRole('radio', { name: /^Face/u }));
-    await userEvent.click(within(f).getByRole('radio', { name: /^Drop now/u }));
     await userEvent.click(within(f).getByRole('radio', { name: /^Silent/u }));
     await userEvent.click(within(f).getByRole('button', { name: 'Make the character' }));
     await waitFor(() => expect(create).toHaveBeenCalledWith('Spritey', 'face', 'now', 'silent'));

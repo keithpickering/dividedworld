@@ -122,56 +122,6 @@
   clip-path: polygon(0 0, calc(100% - 24px) 0, 100% 24px, 100% 100%, 24px 100%, 0 calc(100% - 24px));
 }
 
-.kb-updates-by {
-  display: flex;
-  gap: 18px;
-  align-items: center;
-}
-
-.kb-updates-ava {
-  display: flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: 76px;
-  height: 76px;
-  overflow: hidden;
-  border: 2px solid var(--kb-glass-pale);
-  background: var(--kb-glass-field);
-  box-shadow: 0 0 16px color-mix(in srgb, var(--kb-glass-pale) 50%, transparent);
-}
-
-.kb-updates-ava img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.kb-updates-ava-none {
-  font-family: var(--kb-glass-font-display);
-  font-size: 2.125rem;
-  line-height: 1;
-  color: var(--kb-glass-text-2);
-}
-
-.kb-updates-name {
-  display: block;
-  font-family: var(--kb-glass-font-display);
-  font-size: 2.125rem;
-  font-weight: 400;
-  line-height: 1;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  color: var(--kb-glass-text);
-}
-
-.kb-updates-tagline {
-  font-size: var(--kb-glass-size-body);
-  font-weight: 600;
-  color: var(--kb-glass-text-2);
-}
-
 .kb-updates-headline {
   margin: 26px 0 6px;
   font-size: 4rem;
@@ -292,7 +242,6 @@
 
 :where(:root[data-kb-layout='phone']) .kb-updates-lede,
 :where(:root[data-kb-layout='phone']) .kb-updates-empty,
-:where(:root[data-kb-layout='phone']) .kb-updates-tagline,
 :where(:root[data-kb-layout='phone']) .kb-updates-time,
 :where(:root[data-kb-layout='phone']) .kb-updates-changes li,
 :where(:root[data-kb-layout='phone']) .kb-updates-note,
@@ -320,14 +269,4 @@
 :where(:root[data-kb-layout='phone']) .kb-updates-headline {
   margin-top: 18px;
   font-size: var(--kb-glass-size-display-m);
-}
-
-:where(:root[data-kb-layout='phone']) .kb-updates-name,
-:where(:root[data-kb-layout='phone']) .kb-updates-ava-none {
-  font-size: var(--kb-glass-size-display-s);
-}
-
-:where(:root[data-kb-layout='phone']) .kb-updates-ava {
-  width: 56px;
-  height: 56px;
 }

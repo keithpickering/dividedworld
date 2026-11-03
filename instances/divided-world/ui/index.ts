@@ -11,8 +11,11 @@ import { cardsUi } from './cards.ts';
 import theme from './theme.css?url';
 import pipFull from './pips/default-full.svg?url';
 import pipEmpty from './pips/default-empty.svg?url';
-import gabe from './avatars/gabe.svg?url';
+import gabe from './avatars/gabe.png?url';
 import { hintWords } from './hint-words.ts';
+import { onboarding } from './onboarding.ts';
+import strategyGuide from '../guide/strategy-guide.md?raw';
+import { hints } from '../guide/hints.ts';
 
 /** The font files, as URLs the bundler gives them, by their path under this folder. */
 const FONT_URLS = import.meta.glob<string>('./fonts/*.woff2', { query: '?url', import: 'default', eager: true });
@@ -94,4 +97,7 @@ export const instanceUi: InstanceUi = Object.freeze({
   avatars: Object.freeze({ gabe }),
   glass,
   cards: cardsUi,
+  onboarding,
+  /* The Strategy Guide's Markdown and Gabe's hint for each class (guide/); tools/check-guide.mjs holds both to the instance. */
+  guide: Object.freeze({ markdown: strategyGuide, hints }),
 });

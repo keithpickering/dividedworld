@@ -20,7 +20,7 @@ const post: Act = { id: 'p1', character: 'c1', kind: 'post', thread: 't1', targe
 const play: CardPlay = { id: 'g1', card: 'glitter-bomb', layer: 1, caster: 'c2', message: '', config: {}, playedAt: '2026-11-01T12:00:00Z', post: 'p1', reach: 'character', on: 'c1', ends: '2099-01-01T00:00:00Z' };
 const props = (): EffectProps => ({
   post, plays: [play], states: {}, released: new Set(), reader: { author: false, caster: false }, place: 'thread', reach: 'character',
-  show: () => {}, met: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: async () => ({ ok: false, error: 'no' }), nameOf: () => 'Spritey',
+  show: () => {}, met: () => {}, holdScreen: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: async () => ({ ok: false, error: 'no' }), nameOf: () => 'Spritey',
   children: <p data-kb-words>Hello there.</p>,
 });
 

@@ -20,6 +20,7 @@ import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
 import { useMeet } from './Callout.tsx';
+import { useHoldScreen } from '../tips/Tips.tsx';
 import { livePlays, nextEnd, usePlays, type Plays } from './plays.ts';
 import type { Reach } from '../../rules/cards.ts';
 import type { CardPlay, CardUi, CardView, EffectPlace, EffectProps } from './types.ts';
@@ -127,7 +128,7 @@ export function useUntil(plays: readonly CardPlay[]): number {
  * not by where the post is drawn: a post is drawn once on a page, in its thread or in the ORIGIN box of a thread spun
  * from it, never both, so the two places never share a key at once.
  */
-function BoundEffect({ Effect, store, marks, ...props }: Omit<EffectProps, 'show' | 'met'> & { readonly Effect: ComponentType<EffectProps>; readonly store: Plays }) {
+function BoundEffect({ Effect, store, marks, ...props }: Omit<EffectProps, 'show' | 'met' | 'holdScreen'> & { readonly Effect: ComponentType<EffectProps>; readonly store: Plays }) {
   const post = props.post.id;
   const card = props.plays[0]!.card;
   /* A view is a post's: an effect above the post, drawn on many posts at once, says none (its mark is its target's). */
@@ -135,7 +136,8 @@ function BoundEffect({ Effect, store, marks, ...props }: Omit<EffectProps, 'show
   const show = useCallback((view: CardView | null) => { if (own) store.setView(post, card, view); }, [store, post, card, own]);
   useEffect(() => () => { if (own) store.setView(post, card, null); }, [store, post, card, own]);
   const met = useMeet(card);
-  return <Effect {...props} show={show} met={met} marks={marks} />;
+  const holdScreen = useHoldScreen();
+  return <Effect {...props} show={show} met={met} holdScreen={holdScreen} marks={marks} />;
 }
 
 /** The thread's narrow width (thread.css's 40em, where a post is stacked): the Lens is a sheet there and a post's marks are fewer. */

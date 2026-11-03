@@ -25,7 +25,7 @@ export function NewCharacter() {
   const signedIn = useSignedIn(api);
   const [name, setName] = useState('');
   const [cls, setCls] = useState<string | null>(null);
-  const [timing, setTiming] = useState<DebutTiming>('tally');
+  const [timing, setTiming] = useState<DebutTiming>('now');
   const [loudness, setLoudness] = useState<DebutLoudness>('announced');
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);

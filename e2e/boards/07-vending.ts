@@ -81,11 +81,10 @@ const manifest: BoardManifest = {
     { id: 'buy', role: 'button', name: 'Buy Whoops! · 1.00' },
     { id: 'price-note', role: 'text', name: 'Playing it on a long post costs up to 2.00 more, never more than 3.00 in all.' },
 
-    /* The line about the empty slots, near them. The board's "In the machine" list is not built: the owner's answer on #75 took it
-       out at every width (it grows with every card added), and each card's slot carries an info button instead. The sealed
-       slots' line stays, so it is compared by size: it stands where the build puts it, in the third column's place. */
-    { id: 'list-empty', role: 'text', name: '4 slots empty', buildName: '1 slot empty', box: 'size' },
-    { id: 'list-empty-says', role: 'text', name: 'More postcards arrive in later seasons.', box: 'size' },
+    /* The board's line about the empty slots ("4 slots empty", "More postcards arrive in later seasons.") is not compared. The instance
+       now stocks every slot (Feelin' Fab took the last, D2: eight cards fill the machine's eight slots), and the engine draws that line only while a slot is
+       empty (Vending.tsx), so a full machine shows none. The board's "In the machine" list is not built either: the owner's answer on #75 took
+       it out at every width (it grows with every card added), and each card's slot carries an info button instead. */
   ],
 };
 

@@ -5,7 +5,10 @@ import { describe, expect, test } from 'vitest';
 import { glassVars } from '../../../engine/ui/glass/apply.ts';
 import { boardSwitch } from '../../../engine/ui/glass/board.ts';
 import { SURFACES } from '../../../tools/check-glass-contrast.mjs';
+import { guideFaults, readInstance } from '../../../tools/check-guide.mjs';
 import { QUADRANTS } from '../../../engine/rules/types.ts';
+import { instanceUiProblems } from '../../../engine/ui/tips/problems.ts';
+import { TIP_KEYS } from '../../../engine/ui/tips/keys.ts';
 import { instance } from '../index.ts';
 import { instanceUi } from './index.ts';
 
@@ -13,6 +16,26 @@ describe('Divided World\'s developer persona', () => {
   test('is Gabe, with his tagline, and his picture is one the UI has', () => {
     expect(instance.developer).toEqual({ name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe' });
     expect(typeof instanceUi.avatars?.[instance.developer!.avatar!], 'the persona\'s avatar key names a picture').toBe('string');
+    expect(instanceUi.avatars!.gabe, 'Gabe\'s face is the sprite\'s PNG').toMatch(/^(data:image\/png|.*gabe.*\.png)/u);
+  });
+});
+
+describe('Divided World\'s onboarding words', () => {
+  test('fill the engine\'s tips exactly, and the check is run against the real instance', () => {
+    expect(instanceUiProblems(instanceUi)).toEqual([]);
+    expect(Object.keys(instanceUi.onboarding.tips).sort()).toEqual([...TIP_KEYS].sort());
+  });
+  test('the letter opens as Gabe\'s welcome does', () => {
+    expect(instanceUi.onboarding.letter).toMatch(/^## After nine years of development/u);
+  });
+});
+
+describe('Divided World\'s Strategy Guide', () => {
+  test('is the guide folder\'s Markdown and hints, and the check holds them to the instance', async () => {
+    expect(instanceUi.guide.markdown).toMatch(/^<!--[\s\S]*?-->\s*## Welcome letter\s+<!-- kayfabb:letter -->/u);
+    expect(Object.keys(instanceUi.guide.hints).sort()).toEqual(instance.classes.map((c) => c.key).sort());
+    const real = await readInstance('divided-world');
+    expect(guideFaults(real)).toEqual([]);
   });
 });
 

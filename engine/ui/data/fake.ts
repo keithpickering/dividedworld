@@ -26,6 +26,7 @@ import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts'
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
+import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
   AdminQueue, BoardName, Demand, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffProfile,
@@ -33,6 +34,12 @@ import type {
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
+
+/** The tour's tips, which `replayTour` forgets alone: the engine's one list, which the SQL's replay_tour is held to (engine/ui/tips/keys.test.ts). */
+const TOUR_TIPS: readonly string[] = TOUR_KEYS;
+
+/** When a seasoned account (`Seed.account`) saw the welcome: fixed, so nothing about it moves with a scene's clock. */
+const SEASONED_WELCOME = '2026-10-01T00:00:00.000Z';
 
 /** The code `verifyCode` accepts for any address. */
 export const TEST_CODE = '123456';
@@ -49,8 +56,12 @@ export interface LiveEvent {
 }
 
 export interface Seed {
-  /** `joinedAt` is when the account was opened (accounts.created_at); a seeded player was here before anything seeded, unless a test says when they joined. */
-  account(name: string, options?: { email?: string; admin?: boolean; joinedAt?: number }): Id;
+  /**
+   * An account. `joinedAt` is when the account was opened (accounts.created_at); a seeded player was here before anything seeded, unless a
+   * test says when they joined. `seasoned` makes its player a veteran of the forum: the welcome seen (at a fixed time, so a scene does not
+   * move with the clock) and every onboarding tip seen, so no spotlight or tour waits on the board. Tips stay 'on'.
+   */
+  account(name: string, options?: { email?: string; admin?: boolean; joinedAt?: number; seasoned?: boolean }): Id;
   admin(account: Id, on?: boolean): void;
   /** A character of an account; debuted unless said otherwise. */
   character(account: Id, name: string, cls: string, options?: { debuted?: boolean; retired?: boolean; loudness?: DebutLoudness; at?: number }): Id;
@@ -1612,8 +1623,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         if (unknown.length) return refuse(`not a kind of alert: ${unknown.join(', ')}`);
         toasts = [...new Set(p.toasts)];
       }
-      /* The set of cards met is no parameter of set_preferences: a stray one in a patch is ignored, as the server would. */
-      const { cardsMet: _ignored, toasts: _toasts, ...choices } = p as PreferencesPatch & { cardsMet?: unknown };
+      /* The set of cards met, the welcome mark and the tips' state are no parameters of set_preferences: a stray one in a patch is ignored, as the server would. */
+      const { cardsMet: _ignored, welcomedAt: _w, tips: _t, tipsSeen: _s, toasts: _toasts, ...choices } = p as PreferencesPatch & { cardsMet?: unknown; welcomedAt?: unknown; tips?: unknown; tipsSeen?: unknown };
       account.prefs = { ...account.prefs, ...choices, toasts };
       return ok(account.prefs);
     },
@@ -1628,10 +1639,46 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       }
       return ok(account.prefs);
     },
-    forgetCardsMet() {
+    seeWelcome() {
       const account = me();
       if (!account) return refuse('sign in with an account first');
-      account.prefs = { ...account.prefs, cardsMet: [] };
+      if (account.prefs.welcomedAt === null) account.prefs = { ...account.prefs, welcomedAt: iso(now()) };
+      return ok(account.prefs);
+    },
+    seeTip(key) {
+      const account = me();
+      if (!account) return refuse('sign in with an account first');
+      if (!/^[a-z][a-z0-9-]{0,39}$/.test(key)) return refuse('a tip is named in lowercase words joined by hyphens');
+      const seen = account.prefs.tipsSeen;
+      if (!seen.includes(key)) {
+        if (seen.length >= 64) return refuse('at most 64 tips are kept as seen');
+        account.prefs = { ...account.prefs, tipsSeen: [...seen, key] };
+      }
+      return ok(account.prefs);
+    },
+    skipTips() {
+      const account = me();
+      if (!account) return refuse('sign in with an account first');
+      account.prefs = { ...account.prefs, tips: 'off' };
+      return ok(account.prefs);
+    },
+    resumeTips() {
+      const account = me();
+      if (!account) return refuse('sign in with an account first');
+      account.prefs = { ...account.prefs, tips: 'on' };
+      return ok(account.prefs);
+    },
+    restoreTips() {
+      const account = me();
+      if (!account) return refuse('sign in with an account first');
+      account.prefs = { ...account.prefs, tips: 'on', tipsSeen: [], cardsMet: [] };
+      return ok(account.prefs);
+    },
+    replayTour() {
+      const account = me();
+      if (!account) return refuse('sign in with an account first');
+      /* The tour waits on the welcome: an account that never saw it gets the mark, as replay_tour (0069) sets it. */
+      account.prefs = { ...account.prefs, tips: 'on', welcomedAt: account.prefs.welcomedAt ?? iso(now()), tipsSeen: account.prefs.tipsSeen.filter((k) => !TOUR_TIPS.includes(k)) };
       return ok(account.prefs);
     },
     seeAlerts(at) {
@@ -1887,6 +1934,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const email = (o?.email ?? `${name.toLowerCase()}@example.test`).toLowerCase();
       const a = addAccount(email, o?.joinedAt ?? -Infinity);
       a.admin = o?.admin === true;
+      if (o?.seasoned === true) a.prefs = { ...a.prefs, welcomedAt: SEASONED_WELCOME, tipsSeen: [...TIP_KEYS] };
       return a.id;
     },
     admin(account, on = true) { accounts.get(account)!.admin = on; },

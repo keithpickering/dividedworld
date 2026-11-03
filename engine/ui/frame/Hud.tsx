@@ -38,7 +38,7 @@
  * at the window's scale below 1440px, and the Phone board's below that width. The glass pages
  * switch at the same width.
  */
-import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import type { Character } from '../data/api.ts';
 import { useKayfa } from '../context.tsx';
 import { usePlayer } from '../player.tsx';
@@ -59,6 +59,8 @@ import { Smoke, useSurfaceStyle } from '../glass/Smoke.tsx';
 import { pageEscape } from '../glass/keys.ts';
 import { GLASS_NAV } from '../glass/nav.ts';
 import { useBoard } from '../glass/useBoard.ts';
+import { useTour } from '../tips/tour.ts';
+import { useTip, useTipsStore } from '../tips/Tips.tsx';
 
 /** The tab's slopes: 28px across, 24px tall, its top 20px wider than the aura each side, as the Main board draws them. */
 const SLOPE = 28;
@@ -84,6 +86,7 @@ export function Hud() {
   const drawer = useRef<HTMLDivElement>(null);
   const section = useRef<HTMLElement>(null);
   const aura = useRef<HTMLDivElement>(null);
+  const plate = useRef<HTMLDivElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
   const picker = useRef<HTMLSelectElement>(null);
   const probe = useRef<HTMLSpanElement>(null);
@@ -112,6 +115,14 @@ export function Hud() {
   const signedIn = player.session.signedIn;
   const feed = useAlertFeed(api, player.session.account, location.path);
   const unread = unreadText(feed.unread);
+
+  /* The welcome is read once by the TipsProvider; the HUD tour's gate is the HUD's acting character (debuted, not retired), narrower than "the account has a character" because the plate and the hand need it. */
+  const tips = useTipsStore();
+  const welcomed = useSyncExternalStore(tips.subscribe, tips.welcomed, tips.welcomed);
+  useTour({ plate, orbs: aura, hand: handButton }, signedIn && player.loaded && hud !== null && welcomed);
+  /* The ghost tip: the first time the orbs show an estimate (a pending amount), pointing at the orbs' box (the legend that says Ghost is
+     in it). Unlike the tour, it is deliberately not gated on the welcome: the plan says the first estimate. */
+  useTip('ghost', aura, { when: signedIn && player.wallet !== null && player.pending !== 0 });
 
   const hudId = hud?.id ?? null;
   useEffect(() => {
@@ -294,7 +305,7 @@ export function Hud() {
             <polyline className="kb-glass-seam-core" points={seam} />
           </svg>
           <div className="kb-hud-bar">
-            <div className={`kb-hud-plate${signedIn && player.loaded && hud ? ' kb-hud-plate--cast kb-calm' : ''}`}>
+            <div ref={plate} className={`kb-hud-plate${signedIn && player.loaded && hud ? ' kb-hud-plate--cast kb-calm' : ''}`}>
               <div className="kb-hud-plate-in">
                 {!signedIn ? (
                   <Link to={signInHref(location.path, searchOf(location.query))} className="kb-hud-sign-in kb-glass-cut-button">Sign in</Link>

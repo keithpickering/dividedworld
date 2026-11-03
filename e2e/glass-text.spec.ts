@@ -107,6 +107,8 @@ const PAGES: readonly Screen[] = [
   { name: 'Season news', path: '/season?tab=news' },
   { name: 'Alerts', path: '/alerts' },
   { name: 'Updates', path: '/updates' },
+  { name: 'Strategy Guide', path: '/guide' },
+  { name: 'Welcome', path: '/welcome' },
   { name: 'My log, before anything has settled', path: '/log' },
   { name: 'The Vending Machine', path: '/vending' },
   { name: 'The hand, open', path: '/b/general', then: async (page) => { await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click(); } },
@@ -147,6 +149,8 @@ const PAGES: readonly Screen[] = [
 const debut = (button: string, dialog: string) => async (page: Page) => {
   await page.getByLabel(/name/iu).first().fill('Waiting Wanda');
   await page.getByRole('radio').first().check();
+  /* Drop now is the default (the onboarding plan's Task 1), so a character that waits chooses the settlement. */
+  await page.getByRole('radio', { name: 'Debut at the settlement' }).check();
   await page.getByRole('button', { name: 'Make the character' }).click();
   await page.getByRole('button', { name: button }).click();
   await expect(page.getByRole('dialog', { name: dialog })).toBeVisible();
@@ -404,7 +408,7 @@ test.describe('the instance\'s drawn art', () => {
 
   test('the poison: a line in a color no token names is named, and the same line marked as the machine\'s art is left alone', async ({ page }) => {
     await open(page, PAGES.find((p) => p.path === '/vending')!);
-    const plantLine = (art: boolean) => page.locator('.kb-vending-empty-line').evaluate((list, marked) => {
+    const plantLine = (art: boolean) => page.locator('.kb-vending-panel').evaluate((list, marked) => {
       document.querySelector('.kb-planted')?.remove();
       const p = document.createElement('p');
       p.className = 'kb-planted kb-calm';

@@ -8,6 +8,12 @@
  * effect reports its first use (`EffectProps.met`); both call `meetCard` once and hide it at once, and a write that fails
  * leaves it hidden for the page and unmet on the account, so the next read shows it again.
  *
+ * The callouts are tips (docs/plans/2026-11-02-onboarding-plan.md, Task 4): they show nothing while the account's tips are off (Skip all
+ * tips), and share the page's one-tip budget with the spotlight, which comes first (engine/ui/tips/store.ts).
+ *
+ * The first callout a player ever sees also carries the `first-card` line (`ui.onboarding.tips`, "the mark opens the Lens") and marks that
+ * tip seen as it shows, so no later callout carries it. The line is fixed when the bubble mounts, so marking it seen does not take it away.
+ *
  * "At a busy instance's scale": one page shows one callout at most, for the kind whose first mark comes first in the
  * page's reading order. Marks do not subscribe to a shared value that wakes every post: each eligible mark (a hint, an
  * unmet kind) registers with the page's store, which keeps the one that is first in document order and tells only the
@@ -15,8 +21,9 @@
  * Nothing in the bubble is in the page's flow (marks.css), and it is no live region and holds no focus: "Got it" is the
  * next control after the mark in tab order, and Escape and every other key are left to the page.
  */
-import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type ReactNode, type RefObject } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react';
 import { useKayfa } from '../context.tsx';
+import { useTipsStore } from '../tips/Tips.tsx';
 import { useLensHost } from './Lens.tsx';
 
 interface Entry { readonly kind: string; readonly el: HTMLElement; readonly held: boolean }
@@ -34,18 +41,21 @@ export interface CalloutStore {
   setMet(met: readonly string[] | null): void;
   /** The page is going (or back): marks withdrawing while it goes need no rescan. */
   closing(closing: boolean): void;
+  /** Whether the tips allow a callout now (`TipsStore.calloutOpen`): tips on, and no spotlight first. A store is open until told. */
+  setOpen(open: boolean): void;
 }
 
 type Meet = (card: string) => Promise<unknown>;
 
-export function createCalloutStore(meetCard: Meet): CalloutStore {
+export function createCalloutStore(meetCard: Meet, shown: () => void = () => {}): CalloutStore {
   const entries = new Map<string, Entry>();
   const listeners = new Map<string, Set<() => void>>();
   let met: ReadonlySet<string> | null = null;
+  let open = true;
   /* Kinds hidden on this page, whether or not the account took the write: a failed write is tried again on the next read. */
   const hidden = new Set<string>();
   let current: string | null = null;
-  const shows = (kind: string) => met !== null && !met.has(kind) && !hidden.has(kind);
+  const shows = (kind: string) => open && met !== null && !met.has(kind) && !hidden.has(kind);
   let closing = false;
   /*
    * Which of two marks holds the callout: a mark in a takeover's view (`held`, Stick Around's hold) over the page's, which
@@ -60,7 +70,7 @@ export function createCalloutStore(meetCard: Meet): CalloutStore {
     return (a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_PRECEDING) !== 0 ? b : a;
   };
   const wake = (id: string | null) => { if (id) for (const l of [...(listeners.get(id) ?? [])]) l(); };
-  const choose = (next: string | null) => { if (next === current) return; const was = current; current = next; wake(was); wake(next); };
+  const choose = (next: string | null) => { if (next === current) return; const was = current; current = next; wake(was); wake(next); if (next !== null) shown(); };
   const scan = () => {
     let best: [string, Entry] | undefined;
     for (const [id, e] of entries) if (shows(e.kind) && (!best || first(best[1], e) === e)) best = [id, e];
@@ -90,6 +100,11 @@ export function createCalloutStore(meetCard: Meet): CalloutStore {
       void Promise.resolve(meetCard(kind)).catch(() => {});
     },
     closing(next) { closing = next; },
+    setOpen(next) {
+      if (open === next) return;
+      open = next;
+      scan();
+    },
     setMet(next) {
       const was = met;
       met = next === null ? null : new Set(next);
@@ -107,7 +122,12 @@ export function CalloutProvider({ met, children }: { readonly met: readonly stri
   const { api } = useKayfa();
   const apiRef = useRef(api);
   apiRef.current = api;
-  const store = useMemo(() => createCalloutStore((card) => apiRef.current.meetCard(card)), []);
+  const tips = useTipsStore();
+  /* The first callout shown spends the page's one-tip budget, which a spotlight shares (tips/store.ts). */
+  const store = useMemo(() => createCalloutStore((card) => apiRef.current.meetCard(card), () => tips.spend('callout')), [tips]);
+  /* Callouts are tips: none while they are off, and a spotlight first. */
+  const open = useSyncExternalStore(tips.subscribe, tips.calloutOpen, tips.calloutOpen);
+  useLayoutEffect(() => { store.setOpen(open); }, [store, open]);
   /* A layout effect runs before any mark's passive one, so a mark registering finds the answer. */
   useLayoutEffect(() => { store.setMet(met); }, [store, met]);
   /* Parents' cleanups run before their children's: the marks leaving with the page do not each rescan it. */
@@ -149,11 +169,18 @@ export function useCallout(kind: string, hint: string | undefined, el: RefObject
  */
 export function Callout({ id, kind, name, hint }: { readonly id: string; readonly kind: string; readonly name: string; readonly hint: string }) {
   const store = useCalloutStore();
+  const tips = useTipsStore();
+  const { ui } = useKayfa();
+  /* A callout only shows with the tips on and read, so the account's answer is known when this mounts. */
+  const [first] = useState(() => tips.unseen('first-card'));
+  useEffect(() => { if (first) tips.note('first-card'); }, [first, tips]);
+  const extra = first ? ui.onboarding.tips['first-card'].line : null;
   const box = useRef<HTMLDivElement>(null);
   const got = () => {
     /* The bubble goes with the press, so focus goes back to the mark it hung from (the sibling before it). */
     const mark = box.current?.previousElementSibling;
     if (mark instanceof HTMLElement) mark.focus();
+    tips.done('first-card');
     store.meet(kind);
   };
   return (
@@ -161,6 +188,7 @@ export function Callout({ id, kind, name, hint }: { readonly id: string; readonl
       <div className="kb-callout-panel kb-glass kb-glass-cut-panel">
         <p className="kb-callout-name kb-glass-display">{name}</p>
         <p className="kb-callout-hint" id={id}>{hint}</p>
+        {extra && <p className="kb-callout-hint kb-callout-first">{extra}</p>}
         <button type="button" className="kb-callout-got kb-glass-skew" onClick={got}><b className="kb-glass-upright">Got it</b></button>
       </div>
     </div>

@@ -56,7 +56,7 @@ declare
 begin
   insert into threads (board, title) values (system_board(), 'The System speaks') returning id into on_system;
   perform tests.become(ann);
-  waiting := (create_character('Not Yet Here', 'alpha') ->> 'id')::uuid;
+  waiting := (create_character('Not Yet Here', 'alpha', 'tally') ->> 'id')::uuid;
   if pg_temp.refusal(format('select unmask(%L, %L, %L)', b, t, '')) is distinct from 'you do not play that character' then raise exception 'another player''s character was unmasked'; end if;
   if pg_temp.refusal(format('select unmask(%L, %L, %L)', waiting, t, '')) is distinct from 'that character debuts at the next settlement' then raise exception 'a waiting character was unmasked'; end if;
   if pg_temp.refusal(format('select unmask(%L, %L, %L)', a, on_system, '')) is distinct from 'only The System posts here; spin a thread from what it said' then raise exception 'a reveal was made on The System''s board'; end if;

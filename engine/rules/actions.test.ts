@@ -151,7 +151,7 @@ test('a character drops now or debuts at the tally, silent or announced; a waiti
 
 test('a character is made with a name and one of the instance\'s classes; invites are made, sent again and spent', () => {
   assert.deepEqual(decide({ action: 'createCharacter', name: 'Masked One', class: 'a' }, instance),
-    { ok: true, rpc: 'create_character', args: { name: 'Masked One', class: 'a', timing: 'tally', loudness: 'announced' } });
+    { ok: true, rpc: 'create_character', args: { name: 'Masked One', class: 'a', timing: 'now', loudness: 'announced' } });
   assert.match(refusal({ action: 'createCharacter', name: 'Masked One', class: 'z' }) ?? '', /^class:/);
   assert.match(refusal({ action: 'createCharacter', name: ' \u200b ', class: 'a' }) ?? '', /^name: is empty/);
   assert.match(refusal({ action: 'createCharacter', name: 'n'.repeat(41), class: 'a' }) ?? '', /^name: is longer than 40/);
@@ -165,7 +165,7 @@ test('a character is made with a name and one of the instance\'s classes; invite
   assert.match(refusal({ action: 'openAccount', invite: 7 }) ?? '', /^invite:/);
   // Trimmed as the database trims it, and held to the same hidden characters.
   assert.deepEqual(decide({ action: 'createCharacter', name: ` ${'n'.repeat(40)}  `, class: 'a' }, instance),
-    { ok: true, rpc: 'create_character', args: { name: 'n'.repeat(40), class: 'a', timing: 'tally', loudness: 'announced' } });
+    { ok: true, rpc: 'create_character', args: { name: 'n'.repeat(40), class: 'a', timing: 'now', loudness: 'announced' } });
   for (const name of ['Mas\u200bk', 'Mask\u00a01', 'Mask  1', 'Mask\u202e1', 'Mask\t1', 'Mask\ufeff1', 'Mask\u3164', 'Mask\u{e0041}', 'Mask\u2800', 'Mask\u{1d173}']) {
     assert.match(refusal({ action: 'createCharacter', name, class: 'a' }) ?? '', /^name: can hold/, JSON.stringify(name));
   }

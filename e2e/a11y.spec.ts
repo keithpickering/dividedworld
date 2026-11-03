@@ -37,7 +37,7 @@ export async function pageViolations(page: Page): Promise<string[]> {
 test.use({ bypassCSP: true });
 
 /* A glass page is ready when its menu bar is; a board page when its Game HUD is. */
-const GLASS = new Set(['/characters', '/characters/new', '/characters/edit', '/settings', '/invites', '/sign-in', '/register', '/season?tab=rankings', '/season?tab=news', '/alerts', '/updates', '/vending']);
+const GLASS = new Set(['/characters', '/characters/new', '/characters/edit', '/settings', '/invites', '/sign-in', '/register', '/season?tab=rankings', '/season?tab=news', '/alerts', '/updates', '/guide', '/vending']);
 const ready = (page: import('@playwright/test').Page, path: string) => (GLASS.has(path)
   ? page.getByRole('navigation', { name: 'Menu' })
   : page.getByRole('region', { name: 'Game HUD' }));
@@ -82,7 +82,7 @@ const ABOVE_SWITCH = SWITCH + 8;
 const BELOW_SWITCH = SWITCH - 8;
 
 const PAGES: readonly [string, string][] = [
-  ['index', '/'], ['board', '/b/general'], ['characters', '/characters'], ['season rankings', '/season?tab=rankings'], ['season news', '/season?tab=news'], ['alerts', '/alerts'], ['updates', '/updates'], ['vending', '/vending'], ['settings', '/settings'], ['invites', '/invites'],
+  ['index', '/'], ['board', '/b/general'], ['characters', '/characters'], ['season rankings', '/season?tab=rankings'], ['season news', '/season?tab=news'], ['alerts', '/alerts'], ['updates', '/updates'], ['guide', '/guide'], ['vending', '/vending'], ['settings', '/settings'], ['invites', '/invites'],
 ];
 
 const STORIES = boardStoryIds();
@@ -238,6 +238,8 @@ for (const scheme of ['light', 'dark'] as const) {
         await page.goto('/characters/new');
         await page.getByLabel(/name/iu).first().fill('Waiting Wanda');
         await page.getByRole('radio').first().check();
+        /* Drop now is the default (the onboarding plan's Task 1), so a character that waits chooses the settlement. */
+        await page.getByRole('radio', { name: 'Debut at the settlement' }).check();
         await page.getByRole('button', { name: 'Make the character' }).click();
         await page.getByRole('button', { name: 'Drop Waiting Wanda now' }).click();
         await expect(page.getByRole('dialog', { name: 'Drop Waiting Wanda now' })).toBeVisible();

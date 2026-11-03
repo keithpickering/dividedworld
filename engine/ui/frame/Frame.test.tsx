@@ -41,6 +41,8 @@ function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b',
       return [{ id: 'g', slug: 'general', name: 'General' }, { id: 's', slug: 'the-system', name: 'The System' }];
     },
     nextSettlementAt: async () => '2026-10-31T08:17:00Z',
+    /* The frame holds the page's tips (engine/ui/tips/Tips.tsx), which read the account's state; these have them off. */
+    preferences: async () => ({ tips: 'off', tipsSeen: [] }),
     alertsUnread: async () => { alerts.reads += 1; return alerts.unread; },
     subscribeAccount: (l: AccountListener) => { alerts.account = l; alerts.subscribed += 1; return () => { alerts.account = null; }; },
     subscribeReach: () => () => {},

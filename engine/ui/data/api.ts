@@ -505,7 +505,7 @@ export interface Preferences {
   readonly textSize: 100 | 125 | 150 | 200;
   /**
    * The card kinds (their keys) this account has met: a kind's first mark on a page shows its callout until the kind is in this
-   * set. Changed only by `meetCard` and `forgetCardsMet`, never by `setPreferences`; at most 64, read by its own account alone.
+   * set. Changed only by `meetCard` and `restoreTips`, never by `setPreferences`; at most 64, read by its own account alone.
    */
   readonly cardsMet: readonly string[];
   /**
@@ -520,16 +520,22 @@ export interface Preferences {
    * they never chose, and the instance's `toastDefaults` hold. Changed by `setPreferences` (null there puts it back); read by its own account alone.
    */
   readonly toasts: readonly AlertKind[] | null;
+  /** When the account saw the welcome (an ISO time), or null if it has not. Changed only by `seeWelcome`, once; read by its own account alone. */
+  readonly welcomedAt: string | null;
+  /** Whether the tips show ("on") or the player skipped them ("off"). Changed by `skipTips`, `resumeTips`, `restoreTips` and `replayTour` alone. */
+  readonly tips: 'on' | 'off';
+  /** The tips (their keys) the account has seen, each shown once; at most 64. Changed by `seeTip`, `restoreTips` and `replayTour` alone. */
+  readonly tipsSeen: readonly string[];
 }
 
 /**
- * What `setPreferences` takes: the choices a player makes in Settings, not the set of cards met (`meetCard`, `forgetCardsMet`) or the two marks.
+ * What `setPreferences` takes: the choices a player makes in Settings, not the set of cards met (`meetCard`, `restoreTips`), the two marks, or the welcome and tips (their own calls).
  * A `toasts` of null puts the choice back to the instance's defaults; a key left out leaves the choice as it is.
  */
-export type PreferencesPatch = Partial<Omit<Preferences, 'cardsMet' | 'alertsSeenAt' | 'settlementSeen'>>;
+export type PreferencesPatch = Partial<Omit<Preferences, 'cardsMet' | 'alertsSeenAt' | 'settlementSeen' | 'welcomedAt' | 'tips' | 'tipsSeen'>>;
 
 /** What an account's preferences are before it has set any (account_preferences' defaults). */
-export const DEFAULT_PREFERENCES: Preferences = { theme: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100, cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null };
+export const DEFAULT_PREFERENCES: Preferences = { theme: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100, cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] };
 
 export interface MyInvite {
   readonly id: number;
@@ -1052,8 +1058,21 @@ export interface KayfaApi {
    * the preferences, the same for any key the server accepts. Refused for a key that is not a card's key or a 65th kind.
    */
   meetCard(card: string): Promise<Answer<Preferences>>;
-  /** Empties the set of cards met, so every first-time callout shows again ("Show card tips again" in Settings). */
-  forgetCardsMet(): Promise<Answer<Preferences>>;
+  /** Marks the welcome seen, once: a second call leaves the first time. Answers the preferences. */
+  seeWelcome(): Promise<Answer<Preferences>>;
+  /** Records that the account has seen the tip `key`, once however often it is called. Refused for a key that is not a tip's key or a 65th. */
+  seeTip(key: string): Promise<Answer<Preferences>>;
+  /** "Skip tips": turns the tips off, keeping what was seen. */
+  skipTips(): Promise<Answer<Preferences>>;
+  /** The Tips switch turned on: turns the tips on and forgets nothing, so what was seen stays seen. */
+  resumeTips(): Promise<Answer<Preferences>>;
+  /** "Show tips again": turns the tips on and forgets the tips seen and the cards met. The welcome stays seen. */
+  restoreTips(): Promise<Answer<Preferences>>;
+  /**
+   * "Replay the HUD tour": forgets the tour's tips alone (`tour-plate`, `tour-orbs`, `tour-hand`), turns the tips on, and marks the welcome
+   * seen if it never was (the tour waits on it), keeping a first time.
+   */
+  replayTour(): Promise<Answer<Preferences>>;
   /**
    * Marks Alerts as opened at `at` (an ISO time) on the account, and answers the mark as it now stands. Only forward: an older time
    * leaves the mark and answers it, and a time past the server's clock is taken as now.

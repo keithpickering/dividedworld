@@ -135,6 +135,8 @@ export const defaults: Settings = deepFreeze<Settings>({
     'bluff.price': 25,
     'glitterBomb.price': 150,
     'mainEvent.price': 300,
+    /** Feelin' Fab, the cheapest card in the shop: 0.20, below a Bluff's 0.25. */
+    'feelinFab.price': 20,
     /** 1.00 to buy, plus 0.25 per 500 characters of the target when played, at most 3.00 in all. */
     'whoops.price': 100,
     'whoops.perLength': 25,
