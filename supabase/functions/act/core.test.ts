@@ -666,3 +666,24 @@ test('a player\'s own call with a session the database does not take is refused 
   assert.deepEqual(calls, ['player:post'], 'the player\'s call is the one made');
   assert.equal(later, 0, 'no drain');
 });
+
+test('a request that names no account schedules nothing after: a body refused before whoami(), or a call the database refuses for having no account', async () => {
+  // A body decide() refuses, under a bearer PostgREST would not take: nothing is read, and nothing is done as the service after.
+  {
+    const { dbs, calls } = gated({ refuse: 'whoami' });
+    let later = 0;
+    const out = await handleAction({ dbs, instance, body: {}, send: async () => {}, drain: async () => {}, after: () => { later++; } });
+    assert.equal(out.status, 400);
+    assert.deepEqual(calls, [], 'nothing is read');
+    assert.equal(later, 0, 'a refused body schedules no drain');
+  }
+  // A player's own call that PostgREST takes and SQL refuses for having no account (28000, as 0005 raises it).
+  {
+    const noAccount: Db = { rpc: async () => { throw new DatabaseError('post: sign in to act', '28000', 401, 'sign in to act', REFUSAL_HINT); } };
+    let later = 0;
+    const out = await handleAction({ dbs: { player: noAccount, service: noAccount }, instance, body: { action: 'post', thread: id, character: id, body: 'Hello.' },
+      send: async () => {}, drain: async () => {}, after: () => { later++; } });
+    assert.deepEqual({ status: out.status, body: out.body }, { status: 401, body: { error: 'sign in to act', code: '28000' } });
+    assert.equal(later, 0, 'a caller with no account schedules no drain');
+  }
+});
