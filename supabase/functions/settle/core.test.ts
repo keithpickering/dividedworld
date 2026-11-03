@@ -29,7 +29,7 @@ const day: SettlementInput = {
 };
 
 /** A database that holds what has been settled, as apply_settlement() does. */
-function fakeDb(input: SettlementInput = day, databaseSettings: Record<string, unknown> = { economy: instance.settings.economy }, failInput: { at?: string } = {}, settledElsewhere: readonly string[] = [], outbox: { id: number; topic: string; event: string; payload: unknown }[] = []) {
+function fakeDb(input: SettlementInput = day, databaseSettings: Record<string, unknown> = { economy: instance.settings.economy }, failInput: { at?: string; claim?: boolean } = {}, settledElsewhere: readonly string[] = [], outbox: { id: number; topic: string; event: string; payload: unknown }[] = []) {
   const settled = new Set<string>();
   const calls: { fn: string; args: Record<string, unknown> }[] = [];
   let lastEnd: string | null = null;
@@ -47,7 +47,10 @@ function fakeDb(input: SettlementInput = day, databaseSettings: Record<string, u
         return { ...input, window: { ...input.window, from: Date.parse(String(args.window_start)), to: Date.parse(String(args.window_end)) } } as T;
       }
       // The run's claim on its window (0072): what a reveal reads while the run is under way.
-      if (fn === 'claim_settlement_window') return null as T;
+      if (fn === 'claim_settlement_window') {
+        if (failInput.claim) throw new DatabaseError('claim_settlement_window: the connection dropped', '08006', 500);
+        return null as T;
+      }
       if (fn === 'instance_settings') return databaseSettings as T;
       if (fn === 'due_broadcasts') return outbox.slice(0, Number(args.most)) as T;
       if (fn === 'broadcasts_sent') { const ids = args.ids as number[]; outbox.splice(0, outbox.length, ...outbox.filter((m) => !ids.includes(m.id))); return ids.length as T; }
@@ -77,6 +80,12 @@ test('a run claims each window it settles, with the window\'s end, before it rea
     ['claim_settlement_window', new Date(TO).toISOString()], ['settlement_input', new Date(TO).toISOString()],
     ['claim_settlement_window', new Date(TO + 24 * H).toISOString()], ['settlement_input', new Date(TO + 24 * H).toISOString()],
   ]);
+});
+
+test('a claim that cannot be written fails the run before it reads or applies the window', async () => {
+  const { db, calls } = fakeDb(day, { economy: instance.settings.economy }, { claim: true });
+  await assert.rejects(runSettlement(db, instance, new Date(TO).toISOString()), /claim_settlement_window/);
+  assert.deepEqual(calls.map((c) => c.fn), ['next_settlement_window', 'claim_settlement_window']);
 });
 
 test('a run settles the next window: reads its input, runs the instance\'s classes, applies their entries', async () => {
