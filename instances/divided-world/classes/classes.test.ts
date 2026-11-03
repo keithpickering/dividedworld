@@ -550,3 +550,23 @@ test('settled whole: a Pepperoni card drawing groans on a Jabroni\'s post sells 
   assert.equal(sold(settle(onJa('zzz'), pepWorld)), 1);
   assert.equal(sold(settle(onJa('fire'), pepWorld)), 0);
 });
+test('a Pepperoni card that stayed Pepperoni (a tie) lifts nothing for a Face', () => {
+  assert.equal(total(face, input({ cardsPlayed: [card({ alignment: 'pepperoni', readsAs: 'pepperoni', targetAfter: { ...none, excitedPositive: 2 } })] }), 'face.liftedAPost'), 0);
+});
+test('settled whole: a Pepperoni card drawing heat that outdraws the post pays a Heel; one cheered pays a Face for the lift after it', () => {
+  const pep = { key: 'pep', name: 'Pep', alignment: 'pepperoni' as const, rarity: 'common' as const, priceKey: 'whoops.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
+  const pepWorld = { ...world, cards: [...world.cards, pep] };
+  const b = board();
+  const cast = (by: string, kind: string, lift: boolean): SettlementInput => ({
+    ...b,
+    acts: [...b.acts, { id: 'jp', character: 'ja', kind: 'post', at: 5 * H, thread: 't' }, { id: 'kp', character: by, kind: 'card', at: 6 * H, thread: 't', target: 'jp', card: 'pep' }],
+    reactions: [...b.reactions,
+      ...[['pl', 'lu'], ['pj', 'ja']].filter(([p]) => p !== b.characters.find((c) => c.id === by)!.player).map(([player, character]) => ({ act: 'kp', player: player!, character: character!, kind, at: 7 * H })),
+      ...(lift ? [{ act: 'jp', player: 'pl', character: 'lu', kind: 'fire', at: 8 * H }] : [])],
+  });
+  const paid = (r: ReturnType<typeof settle>, who: string, reason: string) => r.entries.filter((e) => e.character === who && e.reason === reason).length;
+  assert.equal(paid(settle(cast('he', 'tomato', false), pepWorld), 'he', 'heel.stoleThunder'), 1, 'heat on it, outdrawing the post: Salty, and a Heel is paid');
+  assert.equal(paid(settle(cast('he', 'fire', false), pepWorld), 'he', 'heel.stoleThunder'), 0, 'cheered, it reads as Sweet: no thunder stolen');
+  assert.equal(paid(settle(cast('fa', 'fire', true), pepWorld), 'fa', 'face.liftedAPost'), 1, 'cheered, it reads as Sweet, and the post\'s cheer after it lifts it for a Face');
+  assert.equal(paid(settle(cast('fa', 'zzz', true), pepWorld), 'fa', 'face.liftedAPost'), 0, 'groaned at, it reads as Salty: no lift');
+});
