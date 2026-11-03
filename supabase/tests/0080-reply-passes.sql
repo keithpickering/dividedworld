@@ -192,6 +192,13 @@ begin
   -- At a busy instance's size the planner reads by index; the committed races above leave a table so small and so recently written
   -- that it may choose a scan of every Act instead, which would read a different number of rows each time.
   perform set_config('enable_seqscan', 'off', true);
+  perform set_config('enable_bitmapscan', 'off', true);
+  -- Those settings reach only a plan made from here on. post() runs in this session many times by now (the races above), and plpgsql
+  -- keeps the plan of each statement: after five runs it may keep one generic plan, made when the table was a few rows with no
+  -- statistics, which reads both Acts a join names by a scan of the whole table (a hash join over 10 guessed rows) where a busy
+  -- instance's statistics make it an index probe. Whether a session keeps such a plan depends on its costs, which move with when
+  -- autovacuum last analyzed the table, hence the one failure in five. Dropping the kept plans makes the next post plan afresh, here.
+  execute 'discard plans';
   perform pg_temp.cards();
   perform pg_temp.hand(ann, 'bluffy', 'quoter', 'hook');
   -- The passer's count row exists before the first measurement, or the first post alone would insert it.
@@ -280,6 +287,8 @@ declare
   before bigint[]; seen bigint[]; reads bigint;
 begin
   perform set_config('enable_seqscan', 'off', true);
+  perform set_config('enable_bitmapscan', 'off', true);
+  execute 'discard plans';  -- as the alike block: a plan cached earlier in the session ignores the settings above
   perform pg_temp.cards();
   for i in 1..200 loop
     posted := tests.post(a, t, 'Post ' || i);
