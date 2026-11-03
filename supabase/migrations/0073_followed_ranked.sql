@@ -29,7 +29,8 @@ revoke execute on function my_settlement_moved(bigint) from public, anon;
 grant execute on function my_settlement_moved(bigint) to authenticated;
 
 -- my_followed_threads, ranked before it is counted (design, section 2; #149 F4). 0059 counted up to 100 new posts in every followed
--- thread that had any, then sorted and kept 50: at 300 followed threads with 120 unread posts each, 3,931 buffers. This ranks first.
+-- thread that had any, then sorted and kept 50: at 300 followed threads with 120 unread posts each, written in turn across the threads as a busy
+-- instance writes them, 37,679 buffers, where this reads 7,818 (supabase/tests/0064-follows.sql). This ranks first.
 --
 -- It is the caller's followed threads that have posts past their own place (reading.furthest_seq, 0018) by characters they do not
 -- own, with how many (counted to 100, a cap that keeps a busy thread's count one bounded index range; a screen words 100 as "100+")

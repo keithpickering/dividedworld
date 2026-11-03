@@ -280,6 +280,7 @@ begin
     from generate_series(1, 120) as r(round), generate_series(1, 300) as c(n), lateral (select r.round, c.n) g
     order by g.round, g.n;
   alter table acts enable trigger acts_take_seq;
+  -- Only next_seq is set as the trigger would set it; replies and last_at are left behind, since the view reads neither.
   update threads set next_seq = 122 where id = any (ts);
   analyze acts; analyze threads; analyze reading; analyze thread_follows; analyze characters;
   perform tests.become(hal);
