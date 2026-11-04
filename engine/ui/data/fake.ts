@@ -127,9 +127,9 @@ export interface Seed {
   tally(act: Id, counts: Readonly<Record<string, number>>): void;
   /** A staff character (a Boss or a Mod Bot): debuted, owned by no player, with no class; it acts only through the seed below. */
   staff(key: string, name: string, office: 'boss' | 'mod' | 'member' | 'benched', options?: { title?: string; signature?: string; at?: number; debuted?: boolean }): Id;
-  /** A staff member's in-character profile, a version at `at` (the latest is the one read). */
   /** A staff member's career as `staff_career` would return it (default: none). */
   career(key: string, career: Career): void;
+  /** A staff member's in-character profile, a version at `at` (the latest is the one read). */
   staffProfile(key: string, profile: { interests?: readonly string[]; favorites?: readonly Id[]; mood?: string; signature?: string; at?: number }): void;
   /** A staff character's post in a thread of The System's board, as the Boss posts there. */
   staffPost(staff: Id, thread: Id, body: string, options?: { at?: number }): Id;

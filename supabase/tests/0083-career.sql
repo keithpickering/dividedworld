@@ -21,6 +21,10 @@ begin
       'demands', jsonb_build_array(jsonb_build_object('key', 'postsOnBoard')))));
   insert into admins (account) values (tests.account('cr-admin'));
   update seasons set starts_at = now() - interval '60 days' where ends_at is null;
+  -- The seed wrote its office rows when the first season began, not later.
+  alter table staff_offices disable trigger user;
+  update staff_offices set at = (select starts_at from seasons where ends_at is null) where cause = 'seed';
+  alter table staff_offices enable trigger user;
   update settings set value = '["cr-ann", "cr-bob", "cr-cat", "cr-dot"]'::jsonb where key = 'bossRoster';
 end $$;
 
@@ -91,9 +95,9 @@ begin
   if pg_temp.led_seasons('cr-cat') is distinct from '3' then raise exception 'rotation did not seat the mod: % (boss %)', pg_temp.led_seasons('cr-cat'), (select boss from seasons where ends_at is null); end if;
   c := pg_temp.career('cr-cat');
   if (select string_agg(o ->> 'office' || ':' || (o ->> 'cause'), ',' order by ord) from jsonb_array_elements(c -> 'offices') with ordinality x(o, ord)) is distinct from 'mod:seed' then raise exception 'the mod''s office rows: %', c; end if;
-  if (c -> 'offices' -> 0 -> 'until') is distinct from 'null'::jsonb then
-    -- The Boss's seat is not an office: the mod row stays open while it leads, as the log says.
-    raise exception 'the mod row ended when the persona became Boss: %', c;
+  -- The Boss's seat is not an office, and a persona is not two things at once: the mod row ends where the season it leads begins.
+  if (c -> 'offices' -> 0 ->> 'until')::timestamptz is distinct from (select starts_at from seasons where number = 3) then
+    raise exception 'the mod row did not end where the persona became Boss: % (season 3 began %)', c, (select starts_at from seasons where number = 3);
   end if;
   c := pg_temp.career('cr-bob');
   if pg_temp.led_seasons('cr-bob') is distinct from '2' or (select string_agg(o ->> 'office' || ':' || (o ->> 'cause'), ',') from jsonb_array_elements(c -> 'offices') o) is distinct from 'mod:handover' then raise exception 'the outgoing Boss''s career: %', c; end if;
@@ -112,5 +116,7 @@ begin
   if jsonb_array_length(staff_career('cr-ann') -> 'led') is distinct from 1 then raise exception 'a visitor reads a different career'; end if;
   perform tests.unbecome();
   if (select proconfig from pg_proc where oid = 'staff_career(text)'::regprocedure) is distinct from array['search_path=public, pg_temp'] then raise exception 'search_path is not pinned: %', (select proconfig from pg_proc where oid = 'staff_career(text)'::regprocedure); end if;
-  if staff_career('cr-ann')::text ~ 'admin"' and staff_career('cr-ann')::text ~ '[0-9a-f]{8}-[0-9a-f]{4}-' then raise exception 'a career holds an id'; end if;
+  if staff_career('cr-ann')::text ~ '[0-9a-f]{8}-[0-9a-f]{4}-' or position((select id from auth.users where email = 'cr-admin@test.invalid')::text in staff_career('cr-ann')::text) > 0 then
+    raise exception 'a career holds an id (the cause ''admin'' is a word, not the admin): %', staff_career('cr-ann');
+  end if;
 end $$;

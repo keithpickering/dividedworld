@@ -23,6 +23,18 @@ test('a persona that led two seasons and was a mod between them reads as plain s
   assert.match(lines[2]!, /by rotation/u);
 });
 
+test('a mod who became Boss reads as a mod only until the season it leads began, never "until now" beside Boss "until now"', () => {
+  // As the database returns it: the mod's office row is clipped where the persona's season begins.
+  const lines = careerText({
+    led: [{ season: 3, from: '2026-05-01T00:00:00+00:00', until: null, how: 'rotation' }],
+    offices: [{ office: 'mod', from: '2026-01-01T00:00:00+00:00', until: '2026-05-01T00:00:00+00:00', cause: 'seed' }],
+  });
+  assert.equal(lines.length, 2);
+  assert.match(lines[0]!, /^Boss in Season 3, from 2026-05-01 until now/u);
+  assert.match(lines[1]!, /^Mod Bot from 2026-01-01 to 2026-05-01, from the start/u);
+  assert.equal(lines.filter((l) => l.includes('until now')).length, 1, 'only one entry is open');
+});
+
 test('a member that never served has no career', () => {
   assert.deepEqual(careerText(NEVER), []);
 });
