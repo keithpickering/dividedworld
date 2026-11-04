@@ -367,8 +367,8 @@ test.describe('the poisons, planted in a real page', () => {
   test('an uncalmed line on a recipe too bright for its color', async ({ page }) => {
     /* The owner's answer on #53 lets a line stand bare on a recipe dim enough (the Turn modal's); the characters recipe's full worst, 0.196, is over every body ceiling. */
     await open(page, PAGES.find((p) => p.path === '/characters')!);
-    await page.locator('.kb-characters-lead').evaluate((el) => el.classList.remove('kb-calm'));
-    expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-characters-lead \(surface characters\): stands in no calm and on no panel as solid as the calm \(0\.85\), and its recipe's full worst, 0\.196, is not under the ceiling 0\.1288 for --kb-glass-text-2 as body text on surface characters \(recipe characters\)/u));
+    await page.locator('.kb-page-head-lead').evaluate((el) => el.classList.remove('kb-calm'));
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-page-head-lead \(surface characters\): stands in no calm and on no panel as solid as the calm \(0\.85\), and its recipe's full worst, 0\.196, is not under the ceiling 0\.1288 for --kb-glass-text-2 as body text on surface characters \(recipe characters\)/u));
   });
 
   test('a feather that reaches into the text', async ({ page }) => {

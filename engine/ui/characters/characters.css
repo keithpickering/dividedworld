@@ -24,48 +24,6 @@
   padding-top: 27px;
 }
 
-.kb-characters-head {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px 32px;
-}
-
-.kb-characters-title {
-  flex: none;
-  margin: 0;
-  font-size: var(--kb-glass-size-display-xl);
-  line-height: 1;
-  letter-spacing: 1px;
-  color: var(--kb-glass-text);
-}
-
-/* The count is the heading's, read with it, and drawn smaller beside it. */
-.kb-characters-count {
-  font-size: var(--kb-glass-size-display-m);
-  color: var(--kb-glass-text-2);
-}
-
-.kb-characters-lead {
-  flex: 0 1 540px;
-  min-width: 0;
-  margin: 0 0 8px;
-  font-size: var(--kb-glass-size-body);
-  font-weight: 600;
-  line-height: 1.4;
-  text-align: right;
-  color: var(--kb-glass-text-2);
-}
-
-/* Past 100% text the heading takes more of the row; the lead keeps a readable width and goes under it when there is no room beside it, rather than narrow to a word a line and out of its calm. */
-:where(:root[data-kb-text-size]:not([data-kb-text-size='100'])) .kb-characters-head {
-  flex-wrap: wrap;
-}
-
-:where(:root[data-kb-text-size]:not([data-kb-text-size='100'])) .kb-characters-lead {
-  min-width: min(100%, 18em);
-}
-
 .kb-flash:empty {
   display: none;
 }
@@ -347,16 +305,6 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-.kb-row-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.kb-row-actions > * {
-  flex: 1 1 auto;
 }
 
 /* "only you": a tag on the class, dashed, in the neon's text. */
@@ -1135,13 +1083,6 @@
   content: none;
 }
 
-.kb-turn-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 30px;
-  margin-right: 30px;
-}
-
 .kb-debut,
 .kb-reveal {
   display: flex;
@@ -1174,63 +1115,30 @@
   max-width: 100%;
 }
 
-/* ---- the glass's buttons on these screens ---- */
+/* ---- the Turn button, a roster piece (Task 5 gives the roster its own parts) ---- */
 
-.kb-glass-action,
-.kb-glass-confirm,
 .kb-roster-turn-button {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 54px;
-  padding: 0 26px;
-  box-sizing: border-box;
-  border: 1px solid color-mix(in srgb, var(--kb-glass-text) 60%, transparent);
-  background: transparent;
-  font: inherit;
-  font-size: var(--kb-glass-size-body);
-  font-weight: 800;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  text-decoration: none;
-  color: var(--kb-glass-text);
-  cursor: pointer;
-}
-
-.kb-turn-actions .kb-glass-action {
-  min-height: 60px;
-}
-
-.kb-glass-confirm,
-.kb-roster-turn-button {
   min-height: 60px;
   padding: 0 40px;
+  box-sizing: border-box;
   border: 0;
+  background: var(--kb-glass-neon);
   font-family: var(--kb-glass-font-display);
   font-size: var(--kb-glass-size-display-s);
   font-weight: 400;
   letter-spacing: 0.5px;
-  background: var(--kb-glass-neon);
+  text-transform: uppercase;
+  text-decoration: none;
   color: var(--kb-glass-ink-neon);
   box-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 70%, transparent);
+  cursor: pointer;
 }
 
-/* A Turn that opens later: the neon's text on a dashed edge, not to be pressed. */
+/* A Turn that opens later: the neon's text on a dashed edge, not to be pressed (glass type is opaque, the design, section 4.3). */
 .kb-roster-turn-button:disabled {
-  border: 1px dashed color-mix(in srgb, var(--kb-glass-neon-text) 60%, transparent);
-  background: transparent;
-  color: var(--kb-glass-neon-text);
-  box-shadow: none;
-  cursor: not-allowed;
-}
-
-/*
- * A control that cannot be pressed yet is drawn as a Turn that opens later is, never translucent:
- * glass type is opaque (the design, section 4.3), and the waiting token is the one for words a
- * player cannot use yet.
- */
-.kb-glass-confirm:disabled,
-.kb-glass-action:disabled {
   border: 1px dashed color-mix(in srgb, var(--kb-glass-neon-text) 60%, transparent);
   background: transparent;
   color: var(--kb-glass-neon-text);
@@ -1276,31 +1184,11 @@
   color: var(--kb-glass-text);
 }
 
-.kb-new-back {
-  margin-top: 20px;
-}
-
-.kb-new-back .kb-glass-action {
-  display: inline-flex;
-}
-
 /* ---- the Phone board's layout ---- */
 
 :where(:root[data-kb-layout='phone']) .kb-characters,
 :where(:root[data-kb-layout='phone']) .kb-new-character {
   padding-top: 16px;
-}
-
-:where(:root[data-kb-layout='phone']) .kb-characters-title {
-  font-size: var(--kb-glass-size-display-m);
-}
-
-:where(:root[data-kb-layout='phone']) .kb-characters-count {
-  font-size: var(--kb-glass-size-phone-display);
-}
-
-:where(:root[data-kb-layout='phone']) .kb-characters-lead {
-  text-align: left;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-roster-layout {
@@ -1415,17 +1303,12 @@
   font-size: var(--kb-glass-size-phone-display);
 }
 
-:where(:root[data-kb-layout='phone']) .kb-turn-actions {
-  margin-right: 0;
-  gap: 12px;
-}
-
 :where(:root[data-kb-layout='phone']) :is(.kb-turn-dialog, .kb-debut-dialog, .kb-reveal-dialog) .kb-glass-dialog-kicker {
   font-size: var(--kb-glass-size-phone-small);
   letter-spacing: 2px;
 }
 
-:where(:root[data-kb-layout='phone']) :is(.kb-characters, .kb-new-character, .kb-turn-dialog, .kb-debut-dialog, .kb-reveal-dialog) :is(.kb-reveal-line, .kb-roster-line, .kb-roster-rank, .kb-roster-turn, .kb-roster-facts, .kb-turn-facts, .kb-turn-line, .kb-turn-map, .kb-class-description, .kb-choice-option, .kb-turn-toggle, .kb-characters-lead, .kb-glass-action, .kb-notice, .kb-glass-field, legend, .kb-preview-head, .kb-turn-rank, .kb-characters-empty, .kb-characters-new) {
+:where(:root[data-kb-layout='phone']) :is(.kb-characters, .kb-new-character, .kb-turn-dialog, .kb-debut-dialog, .kb-reveal-dialog) :is(.kb-reveal-line, .kb-roster-line, .kb-roster-rank, .kb-roster-turn, .kb-roster-facts, .kb-turn-facts, .kb-turn-line, .kb-turn-map, .kb-class-description, .kb-choice-option, .kb-turn-toggle, .kb-notice, .kb-glass-field, legend, .kb-preview-head, .kb-turn-rank, .kb-characters-empty, .kb-characters-new) {
   font-size: var(--kb-glass-size-phone-body);
 }
 
@@ -1433,15 +1316,10 @@
   font-size: var(--kb-glass-size-phone-small);
 }
 
-:where(:root[data-kb-layout='phone']) :is(.kb-glass-confirm, .kb-roster-turn-button) {
+:where(:root[data-kb-layout='phone']) .kb-roster-turn-button {
   min-height: 48px;
   padding: 0 20px;
   font-size: var(--kb-glass-size-phone-display);
-}
-
-:where(:root[data-kb-layout='phone']) .kb-glass-action {
-  min-height: 48px;
-  padding: 0 14px;
 }
 
 /* ---- the reveal's board modal (RevealModal.tsx) ---- */

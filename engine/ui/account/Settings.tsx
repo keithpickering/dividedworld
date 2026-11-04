@@ -27,6 +27,8 @@ import { useKayfa } from '../context.tsx';
 import type { Preferences } from '../data/api.ts';
 import { ALERT_KINDS, type AlertKind } from '../../rules/alerts.ts';
 import { toastDefaultKinds } from '../alerts/toast-kinds.ts';
+import { ButtonRow, GlassButton } from '../glass/Button.tsx';
+import { PageHead } from '../glass/PageHead.tsx';
 import { Link, useLocation, useNavigate } from '../router.tsx';
 import { Choice, MotionRow, TextSizeRow, ThemeRow, type Option } from './appearanceRows.tsx';
 import { Invites } from './Invites.tsx';
@@ -123,11 +125,10 @@ function TipsRow({ on, change }: { readonly on: boolean; readonly change: (how: 
           Tips are the small notes that explain the board as you meet it: the HUD tour, the reaction grid, the ghost on your orbs and each card's marks. Off hides every tip and card note. On shows the ones you have not read yet.
           Show tips again also brings back the ones you have read, and turns tips on. Replay the HUD tour shows the three steps of the tour again and turns tips on.
         </p>
-        <p>
-          <button type="button" className="kb-acct-button kb-glass-skew" onClick={() => change('restore')}><b className="kb-glass-upright">Show tips again</b></button>
-          {' '}
-          <button type="button" className="kb-acct-button kb-glass-skew" onClick={() => change('replay')}><b className="kb-glass-upright">Replay the HUD tour</b></button>
-        </p>
+        <ButtonRow>
+          <GlassButton onClick={() => change('restore')}>Show tips again</GlassButton>
+          <GlassButton onClick={() => change('replay')}>Replay the HUD tour</GlassButton>
+        </ButtonRow>
       </div>
     </div>
   );
@@ -137,16 +138,14 @@ function TipsRow({ on, change }: { readonly on: boolean; readonly change: (how: 
 function Frame({ section, children }: { readonly section: Section | null; readonly children: ReactNode }) {
   return (
     <div className="kb-acct kb-settings">
-      <h1 className="kb-acct-title kb-glass-display">Settings</h1>
+      <PageHead title="Settings" />
       <div className="kb-settings-body">
         {section && (
           <nav className="kb-settings-nav kb-calm" data-kb-calm="flush" aria-label="Settings sections">
             <ul>
               {SECTIONS.map((s) => (
                 <li key={s.key}>
-                  <Link to={sectionHref(s.key)} className="kb-settings-tab kb-glass-skew" aria-current={s.key === section ? 'page' : undefined}>
-                    <b className="kb-glass-upright">{s.label}</b>
-                  </Link>
+                  <GlassButton to={sectionHref(s.key)} kind={s.key === section ? 'primary' : 'quiet'} aria-current={s.key === section ? 'page' : undefined}>{s.label}</GlassButton>
                 </li>
               ))}
             </ul>
@@ -206,7 +205,7 @@ export function SettingsScreen() {
   if (section === 'account') {
     return (
       <Frame section={section}>
-        <section className="kb-settings-section kb-calm" aria-labelledby="kb-settings-account">
+        <section className="kb-settings-section kb-calm" data-kb-calm="flush" aria-labelledby="kb-settings-account">
           <h2 id="kb-settings-account" className="kb-acct-section-title kb-glass-display">Account</h2>
           <p className="kb-acct-lead">Out of character: what you sign in with, and who you bring in.</p>
           <Row label="Sign-in address" sentence="The address the code and the link come to. It is not shown to anyone else.">
@@ -217,7 +216,7 @@ export function SettingsScreen() {
           <Row label="Invites"><Invites /></Row>
           {said}
           <Row label="Sign out" sentence="Ends this session on this device. Your characters and settings stay with your account.">
-            <p><button type="button" className="kb-acct-button kb-glass-skew" onClick={() => void signOut()}><b className="kb-glass-upright">Sign out</b></button></p>
+            <ButtonRow><GlassButton onClick={() => void signOut()}>Sign out</GlassButton></ButtonRow>
           </Row>
         </section>
       </Frame>
@@ -230,7 +229,7 @@ export function SettingsScreen() {
     const flip = (kind: AlertKind, on: boolean) => change({ toasts: ALERT_KINDS.filter((k) => (k === kind ? on : keptOn.includes(k))) });
     return (
       <Frame section={section}>
-        <section className="kb-settings-section kb-calm" aria-labelledby="kb-settings-notifications">
+        <section className="kb-settings-section kb-calm" data-kb-calm="flush" aria-labelledby="kb-settings-notifications">
           <h2 id="kb-settings-notifications" className="kb-acct-section-title kb-glass-display">Notifications</h2>
           <p className="kb-acct-lead">Every alert still counts and waits in Alerts. These switches choose which kinds also pop up as a toast while you read.</p>
           <div role="group" aria-label="Which alerts toast">
@@ -239,7 +238,7 @@ export function SettingsScreen() {
             ))}
           </div>
           <Row label="Defaults" sentence={prefs.toasts === null ? 'You have not chosen, so the defaults hold.' : 'You have chosen your own. This puts every switch back to this board\'s defaults.'}>
-            <p><button type="button" className="kb-acct-button kb-glass-skew" aria-disabled={prefs.toasts === null} onClick={() => { if (prefs.toasts !== null) change({ toasts: null }); }}><b className="kb-glass-upright">Reset to defaults</b></button></p>
+            <ButtonRow><GlassButton aria-disabled={prefs.toasts === null} onClick={() => { if (prefs.toasts !== null) change({ toasts: null }); }}>Reset to defaults</GlassButton></ButtonRow>
           </Row>
           {said}
           <p className="kb-acct-foot">Changes save as you make them.</p>
@@ -250,7 +249,7 @@ export function SettingsScreen() {
 
   return (
     <Frame section={section}>
-      <section className="kb-settings-section kb-calm" aria-labelledby="kb-settings-accessibility">
+      <section className="kb-settings-section kb-calm" data-kb-calm="flush" aria-labelledby="kb-settings-accessibility">
         <h2 id="kb-settings-accessibility" className="kb-acct-section-title kb-glass-display">Accessibility</h2>
         <p className="kb-acct-lead">These change how the board and the glass look, read and move. They never change how hard a card is to get through.</p>
         <MotionRow value={prefs.motion} onChange={(v) => change({ motion: v })} />

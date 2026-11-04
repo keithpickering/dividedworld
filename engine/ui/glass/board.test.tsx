@@ -193,11 +193,11 @@ describe('the text size', () => {
   test('finds a px font size planted in a real glass sheet, in the Main board\'s rules and the phone\'s alike', () => {
     const sheet = path.join(UI, 'account', 'account.css');
     const planted = (css: string) => css
-      .replace('.kb-acct-title {\n', '.kb-acct-title {\n  font-size: 112px;\n')
+      .replace('.kb-acct-section-title {\n', '.kb-acct-section-title {\n  font-size: 112px;\n')
       .replace(":where(:root[data-kb-layout='phone']) .kb-acct-value {\n", ":where(:root[data-kb-layout='phone']) .kb-acct-value {\n  font: 700 20px/1.1 sans-serif;\n");
     const found = sizesInPx((s) => (s === sheet ? planted(fs.readFileSync(s, 'utf8')) : fs.readFileSync(s, 'utf8')));
     expect(found).toEqual([
-      'account.css: .kb-acct-title { font-size: 112px }',
+      'account.css: .kb-acct-section-title { font-size: 112px }',
       "account.css: :where(:root[data-kb-layout='phone']) .kb-acct-value { font-size: 20px }",
     ]);
   });

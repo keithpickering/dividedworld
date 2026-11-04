@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { LOST_ANSWER } from '../data/api.ts';
 import { useKayfa } from '../context.tsx';
 import type { MyInvite } from '../data/api.ts';
+import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Ago } from '../mini.tsx';
 import { spanWords } from './words.ts';
 import './account.css';
@@ -98,11 +99,9 @@ export function Invites() {
           : `You hold ${open} of ${cap} open invites${atCap ? ', the most there are' : ''}.`}{' '}
         An invite is one use, and expires {lifetime} after it is made or reissued. {admin ? '' : 'One used or expired frees one.'}
       </p>
-      <p>
-        <button type="button" className="kb-acct-button kb-glass-skew" data-kb-primary="" disabled={busy || atCap} aria-describedby="kb-invite-count" onClick={() => void run(() => api.createInvite(), false)}>
-          <b className="kb-glass-upright">Make an invite</b>
-        </button>
-      </p>
+      <ButtonRow>
+        <GlassButton kind="primary" disabled={busy || atCap} aria-describedby="kb-invite-count" onClick={() => void run(() => api.createInvite(), false)}>Make an invite</GlassButton>
+      </ButtonRow>
       {refusal && <p role="alert" className="kb-acct-refusal">{refusal}</p>}
       <p role="status" className="kb-acct-note">{note}</p>
 
@@ -113,7 +112,7 @@ export function Invites() {
             <span className="kb-acct-field-label">Invite link</span>
             <input ref={linkField} className="kb-acct-input kb-invite-link" readOnly value={shown.link} onFocus={(e) => e.currentTarget.select()} />
           </label>
-          <p><button type="button" className="kb-acct-button kb-glass-skew" onClick={() => void copy()}><b className="kb-glass-upright">Copy the link</b></button></p>
+          <ButtonRow><GlassButton onClick={() => void copy()}>Copy the link</GlassButton></ButtonRow>
           <p className="kb-acct-text">This link will not be shown again. Copy it now and send it to the person you invite; anyone who has it can use it once. If you lose it, reissue the invite for a new one.</p>
         </section>
       )}
@@ -133,7 +132,7 @@ export function Invites() {
                   {!i.used && i.expiresAt && <> <span className="kb-invite-when">{i.expired ? 'since' : 'expires'} <Ago at={i.expiresAt} /></span></>}
                 </td>
                 <td>
-                  {!i.used && <button type="button" className="kb-acct-button kb-glass-skew" disabled={busy} onClick={() => void run(() => api.reissueInvite(i.id), true)}><b className="kb-glass-upright">Reissue<span className="kb-visually-hidden"> invite {i.id}</span></b></button>}
+                  {!i.used && <GlassButton size="s" disabled={busy} onClick={() => void run(() => api.reissueInvite(i.id), true)}>Reissue<span className="kb-visually-hidden"> invite {i.id}</span></GlassButton>}
                 </td>
               </tr>
             ))}

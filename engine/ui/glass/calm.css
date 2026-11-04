@@ -49,6 +49,15 @@
   margin-inline: calc(var(--kb-glass-calm-inset) * -1);
 }
 
+/*
+ * On the phone the inset is wider than the column's gutter (shell.css), so a flush calm at the
+ * column's edge would reach past the window. It reaches only as far as the gutter then, and its
+ * words stand the difference in from the column's edge.
+ */
+:where(:root[data-kb-layout='phone']) .kb-calm.kb-calm.kb-calm[data-kb-calm='flush'] {
+  margin-inline: calc(min(var(--kb-glass-calm-inset), var(--kb-glass-gutter, 16px)) * -1);
+}
+
 .kb-calm::before {
   content: '';
   position: absolute;

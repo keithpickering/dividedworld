@@ -11,9 +11,11 @@
 import { useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { DebutLoudness, DebutTiming } from '../data/api.ts';
+import { ButtonRow, GlassButton } from '../glass/Button.tsx';
+import { PageHead } from '../glass/PageHead.tsx';
 import { SignInPrompt, useSignedIn } from '../mini.tsx';
 import { usePlayer } from '../player.tsx';
-import { Link, useNavigate } from '../router.tsx';
+import { useNavigate } from '../router.tsx';
 import { ClassCards } from './ClassCards.tsx';
 import { DebutChoice } from './DebutChoice.tsx';
 import './characters.css';
@@ -37,11 +39,11 @@ export function NewCharacter() {
   if (active >= settings.charactersPerPlayer) {
     return (
       <div className="kb-new-character">
-        <h1 className="kb-characters-title kb-glass-display">New character</h1>
+        <PageHead title="New character" />
         <p className="kb-notice kb-calm">
           You play {active} of {settings.charactersPerPlayer} characters, the most there are. There is no way to free a slot yet; an admin can retire a character on request, and keeps every Act it made.
         </p>
-        <p className="kb-new-back"><Link to="/characters" className="kb-glass-action kb-glass-skew"><span className="kb-glass-upright">Back to your characters</span></Link></p>
+        <div className="kb-calm" data-kb-calm="flush"><ButtonRow><GlassButton to="/characters">Back to your characters</GlassButton></ButtonRow></div>
       </div>
     );
   }
@@ -67,25 +69,25 @@ export function NewCharacter() {
 
   return (
     <div className="kb-new-character">
-      <div className="kb-characters-head">
-        <h1 className="kb-characters-title kb-glass-display">New character</h1>
-        <p className="kb-characters-lead kb-calm" data-kb-calm="flush">This page is out of character and only you can see it. Nobody else can tell who plays a character.</p>
-      </div>
+      <PageHead title="New character" lead="This page is out of character and only you can see it. Nobody else can tell who plays a character." />
       <form className="kb-new-form" aria-label="New character" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
-        <div className="kb-new-name kb-calm">
+        <div className="kb-new-name kb-calm" data-kb-calm="flush">
           <label className="kb-glass-field">
             <span>Name</span>
             <input className="kb-glass-input" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} autoComplete="off" aria-describedby="new-name-hint" />
           </label>
           <p id="new-name-hint" className="kb-roster-line">1 to 40 characters. Letters, marks, digits and single spaces. Names are unique, look-alikes included.</p>
         </div>
-        <div className="kb-calm"><ClassCards legend="Class" value={cls} onChange={setCls} /></div>
-        <p className="kb-roster-line kb-calm">Only you will know its class, unless you choose to reveal it.</p>
-        <div className="kb-calm"><DebutChoice name={name} className={className} timing={timing} loudness={loudness} onTiming={setTiming} onLoudness={setLoudness} /></div>
+        <div className="kb-calm" data-kb-calm="flush"><ClassCards legend="Class" value={cls} onChange={setCls} /></div>
+        <p className="kb-roster-line kb-calm" data-kb-calm="flush">Only you will know its class, unless you choose to reveal it.</p>
+        <div className="kb-calm" data-kb-calm="flush"><DebutChoice name={name} className={className} timing={timing} loudness={loudness} onTiming={setTiming} onLoudness={setLoudness} /></div>
         {refusal && <p role="alert" className="kb-notice kb-calm" data-kb-tone="refusal">{refusal}</p>}
-        <div className="kb-turn-actions kb-calm">
-          <Link to="/characters" className="kb-glass-action kb-glass-skew"><span className="kb-glass-upright">Cancel</span></Link>
-          <button type="submit" className="kb-glass-confirm kb-glass-skew" disabled={!cls || name.trim() === '' || busy}><span className="kb-glass-upright">Make the character</span></button>
+        {/* In a calm, since "Make the character" waits drawn as text on a dashed edge until a name and a class are chosen. */}
+        <div className="kb-calm" data-kb-calm="flush">
+          <ButtonRow>
+            <GlassButton to="/characters">Cancel</GlassButton>
+            <GlassButton type="submit" kind="primary" disabled={!cls || name.trim() === '' || busy}>Make the character</GlassButton>
+          </ButtonRow>
         </div>
       </form>
     </div>

@@ -10,22 +10,12 @@
  * The words stand in calms (calm.css): the section and the sections' navigation each carry one, as
  * the board draws its two calms behind them; only the Anton headings stand on the full smoke, at
  * large-text size. On the Phone board's layout, which is also the glass's one column past 150% text
- * (engine/ui/glass/board.ts), the rows are one column at the phone's sizes, controls 48px tall, and
- * the calm's feather is clipped at the window's edge so the page never scrolls sideways.
+ * (engine/ui/glass/board.ts), the rows are one column at the phone's sizes and controls 48px tall.
  */
 
 .kb-acct {
   min-width: 0;
-}
-
-.kb-acct-title {
-  width: fit-content;
-  margin: 36px 0 0;
-  font-size: 7rem;
-  line-height: 1;
-  letter-spacing: 1px;
-  color: var(--kb-glass-text);
-  text-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 35%, transparent);
+  padding-top: 27px;
 }
 
 /* The sections' navigation beside the section, at the board's 250px and 56px apart. */
@@ -34,7 +24,7 @@
   grid-template-columns: 250px minmax(0, 920px);
   column-gap: 56px;
   align-items: start;
-  margin-top: 68px;
+  margin-top: 28px;
 }
 
 /* A page with no sections (signed out, or the account screens): the one column, under the heading. */
@@ -45,7 +35,7 @@
 }
 
 .kb-acct-panel {
-  margin-top: 68px;
+  margin-top: 28px;
 }
 
 .kb-settings-nav ul {
@@ -57,31 +47,10 @@
   list-style: none;
 }
 
-.kb-settings-tab {
+/* The tabs are GlassButtons stacked in the column, each the column's full width (the phone lays them in a row below). */
+.kb-settings-nav .kb-glass-button {
   display: flex;
-  align-items: center;
-  line-height: normal;
-  min-height: 52px;
-  padding: 0 20px;
-  box-sizing: border-box;
-  font-size: var(--kb-glass-size-body);
-  font-weight: 800;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  text-decoration: none;
-  color: var(--kb-glass-text-2);
-}
-
-.kb-settings-tab > b,
-.kb-acct-seg-face > b,
-.kb-acct-button > b {
-  font-weight: 800;
-}
-
-.kb-settings-tab[aria-current='page'] {
-  background: var(--kb-glass-neon);
-  color: var(--kb-glass-ink-neon);
-  box-shadow: 0 0 18px color-mix(in srgb, var(--kb-glass-neon) 55%, transparent);
+  justify-content: flex-start;
 }
 
 /* ---- the section ---- */
@@ -106,8 +75,9 @@
 /* Scoped to the screen, so it outranks a glass-wide rule for a fieldset or a legend. */
 .kb-acct .kb-acct-row {
   display: grid;
-  grid-template-columns: 230px minmax(0, 1fr);
-  column-gap: 32px;
+  /* The board's 230px label column and 32px gap, with the column never under ten of the label's own em; the gap gives back the 10px that costs at 100% text, so the controls stay where the board has them (262px in, as .kb-acct-indent keeps). */
+  grid-template-columns: max(230px, calc(var(--kb-glass-size-lead) * 10)) minmax(0, 1fr);
+  column-gap: max(16px, calc(262px - max(230px, calc(var(--kb-glass-size-lead) * 10))));
   min-width: 0;
   margin: 0;
   padding: 24px 0;
@@ -168,8 +138,7 @@
   opacity: 0;
 }
 
-.kb-acct-seg-face,
-.kb-acct-button {
+.kb-acct-seg-face {
   display: inline-flex;
   align-items: center;
   line-height: normal;
@@ -185,8 +154,11 @@
   color: var(--kb-glass-text);
 }
 
-.kb-acct-seg-option > input:checked + .kb-acct-seg-face,
-.kb-acct-button[data-kb-primary] {
+.kb-acct-seg-face > b {
+  font-weight: 800;
+}
+
+.kb-acct-seg-option > input:checked + .kb-acct-seg-face {
   background: var(--kb-glass-neon);
   border-color: var(--kb-glass-neon);
   color: var(--kb-glass-ink-neon);
@@ -196,20 +168,6 @@
 .kb-acct-seg-option > input:focus-visible + .kb-acct-seg-face {
   outline: 3px solid var(--kb-glass-text-hi);
   outline-offset: 3px;
-}
-
-.kb-acct-button {
-  background: transparent;
-  font-family: inherit;
-  cursor: pointer;
-}
-
-.kb-acct-button:disabled {
-  cursor: default;
-  border-style: dashed;
-  background: transparent;
-  color: var(--kb-glass-text-2);
-  box-shadow: none;
 }
 
 .kb-acct-foot {
@@ -242,14 +200,6 @@
 .kb-acct a {
   color: var(--kb-glass-pale);
   text-underline-offset: 4px;
-}
-
-.kb-acct .kb-settings-tab {
-  color: var(--kb-glass-text-2);
-}
-
-.kb-acct .kb-settings-tab[aria-current='page'] {
-  color: var(--kb-glass-ink-neon);
 }
 
 /* A field: its label in the row's label column, the HUD's field beside it. */
@@ -315,13 +265,6 @@
   height: 30px;
   margin: 0;
   accent-color: var(--kb-glass-neon);
-}
-
-.kb-acct-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px 16px;
-  margin: 24px 0 0;
 }
 
 .kb-acct-notice,
@@ -426,14 +369,7 @@
 /* ---- the Phone board's layout, and the one column past 150% text ---- */
 
 :where(:root[data-kb-layout='phone']) .kb-acct {
-  overflow-x: clip;
-  overflow-clip-margin: 16px;
-}
-
-:where(:root[data-kb-layout='phone']) .kb-acct-title {
-  margin-top: 16px;
-  font-size: var(--kb-glass-size-display-l);
-  overflow-wrap: anywhere;
+  padding-top: 16px;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-settings-body {
@@ -451,9 +387,7 @@
   flex-wrap: wrap;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-settings-tab,
-:where(:root[data-kb-layout='phone']) .kb-acct-seg-face,
-:where(:root[data-kb-layout='phone']) .kb-acct-button {
+:where(:root[data-kb-layout='phone']) .kb-acct-seg-face {
   min-height: 48px;
   padding: 0 16px;
   font-size: var(--kb-glass-size-phone-display);

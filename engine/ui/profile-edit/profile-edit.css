@@ -125,8 +125,8 @@
 }
 
 /*
- * On the glass. No board draws the profile editor; it is My characters' own page (its heading and
- * buttons are engine/ui/characters/characters.css's), its words on the glass's text at the body's
+ * On the glass. No board draws the profile editor; it is My characters' own page (its head and
+ * buttons are engine/ui/glass's PageHead and GlassButton), its words on the glass's text at the body's
  * size, its fields the HUD's, the cropper's frames drawn in the glass's light. The signature's
  * preview stays the board's own post, as it will read beside the character's posts.
  */

@@ -18,6 +18,8 @@ import { useEffect, useId, useMemo, useState } from 'react';
 import { rankIndex } from '../../rules/ranks.ts';
 import { useKayfa } from '../context.tsx';
 import type { Character, CharacterCounts, Id, MyCharacter } from '../data/api.ts';
+import { ButtonRow, GlassButton } from '../glass/Button.tsx';
+import { PageHead } from '../glass/PageHead.tsx';
 import { SignInPrompt, useSignedIn } from '../mini.tsx';
 import { usePlayer } from '../player.tsx';
 import { Pips } from '../postbit/Postbit.tsx';
@@ -218,10 +220,10 @@ export function Characters() {
           <p className="kb-turn-pending"><b>Turn waiting</b>: to {className(p.class)}, {named}.</p>
           <p className="kb-roster-line kb-turn-when">Takes effect at the next settlement{when ? `, ${dayAndTime(when)}` : ''}.</p>
           <p className="kb-roster-line kb-turn-note">If its settlement is due, a reveal waits until it has run.</p>
-          <span className="kb-row-actions">
-            <button type="button" className="kb-glass-action kb-glass-skew" data-kb-return="" aria-label={`Change ${c.name}'s Turn`} onClick={() => show({ kind: 'turn', id: c.id })}><span className="kb-glass-upright">Change</span></button>
-            <button type="button" className="kb-glass-action kb-glass-skew" aria-label={`Withdraw ${c.name}'s Turn`} disabled={busy === c.id} onClick={() => void withdraw(c)}><span className="kb-glass-upright">Withdraw</span></button>
-          </span>
+          <ButtonRow>
+            <GlassButton data-kb-return="" aria-label={`Change ${c.name}'s Turn`} onClick={() => show({ kind: 'turn', id: c.id })}>Change</GlassButton>
+            <GlassButton aria-label={`Withdraw ${c.name}'s Turn`} disabled={busy === c.id} onClick={() => void withdraw(c)}>Withdraw</GlassButton>
+          </ButtonRow>
           {problem?.id === c.id && !problem.pip && <p role="alert" className="kb-notice" data-kb-tone="refusal">{problem.text}</p>}
         </div>
       );
@@ -275,10 +277,10 @@ export function Characters() {
               <span>Waiting to debut at the next settlement{next ? `, ${dayAndTime(next)}` : ''}.</span>
               <span> It will debut {LOUD[c.debutLoudness ?? 'announced']}.</span>
             </p>
-            <span className="kb-row-actions">
-              <button type="button" className="kb-glass-action kb-glass-skew" data-kb-return="" aria-label={`Drop ${c.name} now`} onClick={() => show({ kind: 'drop', id: c.id })}><span className="kb-glass-upright">Drop now…</span></button>
-              <button type="button" className="kb-glass-action kb-glass-skew" aria-label={`Change how ${c.name} debuts`} onClick={() => show({ kind: 'debut', id: c.id })}><span className="kb-glass-upright">Change how it debuts…</span></button>
-            </span>
+            <ButtonRow>
+              <GlassButton data-kb-return="" aria-label={`Drop ${c.name} now`} onClick={() => show({ kind: 'drop', id: c.id })}>Drop now…</GlassButton>
+              <GlassButton aria-label={`Change how ${c.name} debuts`} onClick={() => show({ kind: 'debut', id: c.id })}>Change how it debuts…</GlassButton>
+            </ButtonRow>
           </div>
         )}
         <dl className="kb-roster-facts">
@@ -327,10 +329,10 @@ export function Characters() {
         {problem?.id === c.id && problem.pip && <p role="alert" className="kb-notice" data-kb-tone="refusal">{problem.text}</p>}
         <div className="kb-roster-actions">
           {turnCell(c)}
-          {live && <Link to="/characters/edit" state={{ character: c.id }} className="kb-glass-action kb-glass-skew" aria-label="Edit profile"><span className="kb-glass-upright">Edit profile</span></Link>}
+          {live && <GlassButton to="/characters/edit" state={{ character: c.id }} aria-label="Edit profile">Edit profile</GlassButton>}
           {/* Its own tab of My log, chosen by the navigation's state and never the address (engine/ui/log/Log.tsx), as the Roster board draws the link. */}
-          <Link to="/log" state={{ character: c.id }} className="kb-glass-action kb-glass-skew"><span className="kb-glass-upright">{c.name}'s log</span></Link>
-          {live && <button type="button" className="kb-glass-action kb-glass-skew" aria-label={`Reveal ${c.name}'s class`} onClick={() => show({ kind: 'reveal', id: c.id })}><span className="kb-glass-upright">Reveal…</span></button>}
+          <GlassButton to="/log" state={{ character: c.id }}>{c.name}'s log</GlassButton>
+          {live && <GlassButton aria-label={`Reveal ${c.name}'s class`} onClick={() => show({ kind: 'reveal', id: c.id })}>Reveal…</GlassButton>}
         </div>
         <p className="kb-roster-line kb-roster-most">{per} characters at most. To free a slot, ask an admin to retire one; every Act it made stays on the board.</p>
       </section>
@@ -339,10 +341,7 @@ export function Characters() {
 
   return (
     <div className="kb-characters">
-      <div className="kb-characters-head">
-        <h1 className="kb-characters-title kb-glass-display kb-calm" data-kb-calm="flush">Your characters <span className="kb-characters-count">({active.length} of {per})</span></h1>
-        <p className="kb-characters-lead kb-calm" data-kb-calm="flush">This page is out of character and only you can see it. Classes are shown here and nowhere else unless you reveal them.</p>
-      </div>
+      <PageHead title="Your characters" count={`(${active.length} of ${per})`} lead="This page is out of character and only you can see it. Classes are shown here and nowhere else unless you reveal them." />
       <div role="status" className="kb-flash">{flash && <p className="kb-notice kb-calm">{flash}</p>}</div>
 
       {mine.length === 0 && <p className="kb-characters-empty kb-calm">You have no characters yet. <Link to="/characters/new">Make one</Link> to start playing.</p>}

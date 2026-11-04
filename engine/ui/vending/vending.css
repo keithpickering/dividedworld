@@ -513,11 +513,6 @@ button.kb-vending-slot {
   padding-top: 16px;
 }
 
-/* The head's flush calm reaches past the column by the calm's inset, which is wider than the phone's gutter (shell.css): the head takes the difference in, so it stays in the window. */
-:where(:root[data-kb-layout='phone']) .kb-vending-head {
-  padding-inline: max(0px, calc(var(--kb-glass-calm-feather-phone) + var(--kb-glass-calm-pad-phone) - clamp(16px, 4.44vw, 64px)));
-}
-
 :where(:root[data-kb-layout='phone']) .kb-vending-wallet-in {
   padding-inline: 0;
 }
