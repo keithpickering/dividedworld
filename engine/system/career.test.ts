@@ -66,3 +66,25 @@ test('poison: one persona\'s career never holds a season another persona led', (
   assert.match(bob, /Season 2\b/u);
   assert.doesNotMatch(bob, /Season 1\b/u);
 });
+
+test('a season length is true: days below fourteen, whole weeks (rounded down) from there', () => {
+  const len = (days: number): string => {
+    const from = '2026-02-01T00:00:00+00:00';
+    const until = new Date(Date.parse(from) + days * 86_400_000).toISOString();
+    return careerText({ led: [{ season: 1, from, until, how: 'rotation' }], offices: [] })[0]!;
+  };
+  assert.match(len(10), /\(10 days\)/u);
+  assert.match(len(1), /\(1 day\)/u);
+  assert.match(len(13), /\(13 days\)/u);
+  assert.match(len(14), /\(2 weeks\)/u);
+  assert.match(len(20), /\(2 weeks\)/u);
+  assert.match(len(21), /\(3 weeks\)/u);
+});
+
+test('a date is the UTC date whatever offset the timestamp is written in', () => {
+  const [line] = careerText({
+    led: [{ season: 1, from: '2026-02-02T08:00:00+13:00', until: '2026-02-20T11:00:00+13:00', how: 'rotation' }],
+    offices: [],
+  });
+  assert.match(line!, /from 2026-02-01 to 2026-02-19 /u);
+});

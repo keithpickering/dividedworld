@@ -31,11 +31,14 @@ const CAUSE_WORDS: Readonly<Record<string, string>> = {
   admin: 'by an admin',
 };
 
-const day = (iso: string): string => iso.slice(0, 10);
+/** The UTC date of an instant, whatever offset the database wrote it in. */
+const day = (iso: string): string => new Date(iso).toISOString().slice(0, 10);
+/** How long a season ran: days below fourteen, whole weeks (rounded down) from there. */
 const weeks = (from: string, until: string): string => {
   const days = Math.round((Date.parse(until) - Date.parse(from)) / 86_400_000);
-  const w = Math.round(days / 7);
-  return days >= 7 ? `${w} week${w === 1 ? '' : 's'}` : `${days} day${days === 1 ? '' : 's'}`;
+  if (days < 14) return `${days} day${days === 1 ? '' : 's'}`;
+  const w = Math.floor(days / 7);
+  return `${w} weeks`;
 };
 
 /**

@@ -24,7 +24,8 @@ begin
   -- The seed wrote its office rows when the first season began, not later.
   alter table staff_offices disable trigger user;
   update staff_offices set at = (select starts_at from seasons where ends_at is null) where cause = 'seed';
-  alter table staff_offices enable trigger user;
+  alter table staff_offices enable always trigger staff_offices_no_update;
+  alter table staff_offices enable always trigger staff_offices_no_truncate;
   update settings set value = '["cr-ann", "cr-bob", "cr-cat", "cr-dot"]'::jsonb where key = 'bossRoster';
 end $$;
 
@@ -119,4 +120,16 @@ begin
   if staff_career('cr-ann')::text ~ '[0-9a-f]{8}-[0-9a-f]{4}-' or position((select id from auth.users where email = 'cr-admin@test.invalid')::text in staff_career('cr-ann')::text) > 0 then
     raise exception 'a career holds an id (the cause ''admin'' is a word, not the admin): %', staff_career('cr-ann');
   end if;
+end $$;
+
+-- ---- Every instant is UTC whatever the session's time zone ----
+do $$
+declare
+  c jsonb;
+begin
+  set local timezone = 'Pacific/Auckland';
+  c := staff_career('cr-ann');
+  if c -> 'led' -> 0 ->> 'from' !~ 'Z$' then raise exception 'an instant is not UTC under a non-UTC session: %', c; end if;
+  if (c -> 'led' -> 0 ->> 'from')::timestamptz is distinct from (select starts_at from seasons where number = 1) then raise exception 'the instant shifted under a non-UTC session: %', c; end if;
+  if c -> 'led' -> 0 ->> 'from' is distinct from to_char((select starts_at from seasons where number = 1) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') then raise exception 'the instant is not in UTC: %', c; end if;
 end $$;
