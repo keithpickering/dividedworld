@@ -13,6 +13,8 @@ export interface Kayfa {
   readonly instance: Instance;
   readonly ui: InstanceUi;
   readonly settings: ScreenSettings;
+  /** Where a screen draws its chance from (a marquee picked at mount); absent, `Math.random`. A test fixes it. */
+  readonly random?: () => number;
 }
 
 const KayfaContext = createContext<Kayfa | null>(null);

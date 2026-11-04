@@ -42,6 +42,23 @@ const orbSolids = () => [...document.querySelectorAll<HTMLElement>('.kb-vending-
 beforeEach(() => { document.documentElement.setAttribute('data-kb-motion', 'reduce'); });
 afterEach(() => { document.documentElement.removeAttribute('data-kb-motion'); vi.useRealTimers(); });
 
+/* The sign: decoration picked at random when the screen opens; the group is named in plain words (docs/plans/2026-11-04-glass-polish-design.md, section 5). */
+describe('the machine\'s marquee', () => {
+  const sign = () => document.querySelector('.kb-vending-sign')!;
+  const names = ['FIRST NAME', 'SECOND NAME', 'THIRD NAME'];
+  test('draws the entry the random function picks, and the group keeps the shop\'s plain name', async () => {
+    renderIn(seeded(300), <Vending />, { instance: shop, cards: faces, path: '/vending', copy: { shopName: 'Plain Shop', marquees: names }, random: () => 0.5 });
+    expect(await screen.findByRole('group', { name: 'Plain Shop' })).toBeInTheDocument();
+    expect(sign()).toHaveTextContent('SECOND NAME');
+    expect(sign().closest('[aria-hidden="true"]')).not.toBeNull();
+  });
+  test('with no list draws the shop\'s name', async () => {
+    renderIn(seeded(300), <Vending />, { instance: shop, cards: faces, path: '/vending', copy: { shopName: 'Plain Shop' } });
+    await screen.findByRole('group', { name: 'Plain Shop' });
+    expect(sign()).toHaveTextContent('Plain Shop');
+  });
+});
+
 /* #86: an admin tuned a price in the economy row; the machine sells at the server's price, not the compiled one. */
 describe('a price an admin has tuned', () => {
   test('is the price on the face and the buy button, and the price the purchase is charged', async () => {

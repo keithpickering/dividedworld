@@ -95,7 +95,13 @@ button.kb-postcard {
 
 .kb-postcard[data-size='slot'] .kb-postcard-glow { height: 84px; }
 .kb-postcard[data-size='slot'] .kb-postcard-art { left: 14px; top: 16px; width: 64px; height: 60px; }
-.kb-postcard[data-size='slot'] .kb-postcard-name { left: 6px; right: 4px; bottom: 6px; font-size: min(var(--kb-glass-size-display-xs), 21.7cqw); }
+/*
+ * The slot's name is one line in the card's width, whatever its length and the text size: a name of n characters is
+ * laid out at no more than 178cqw / n (the display face runs under half an em a character), so "AUTOCORRECT" and "STICK
+ * AROUND" shrink to fit where "BLUFF" keeps its size. The whole card is then scaled by the machine (vending.css), the
+ * name with it.
+ */
+.kb-postcard[data-size='slot'] .kb-postcard-name { left: 6px; right: 4px; bottom: 6px; white-space: nowrap; font-size: min(var(--kb-glass-size-display-xs), 21.7cqw, calc(178cqw / var(--kb-name-chars, 8))); }
 
 /* ---- the HUD's fan ---- */
 .kb-postcard[data-size='fan'] {

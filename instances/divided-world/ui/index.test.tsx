@@ -32,6 +32,15 @@ describe('Divided World\'s onboarding words', () => {
   });
 });
 
+describe('Divided World\'s Vending Machine words', () => {
+  test('the shop is named plainly, and the sign has the design\'s twelve names, in order, each within the check', () => {
+    expect(instanceUi.copy.shopName).toBe('Vending Machine');
+    expect(instanceUi.copy.marquees).toHaveLength(12);
+    expect(instanceUi.copy.marquees![0]).toBe('[MACHINE NAME]');
+    expect(instanceUiProblems(instanceUi)).toEqual([]);
+  });
+});
+
 describe('Divided World\'s Strategy Guide', () => {
   test('is the guide folder\'s Markdown and hints, and the check holds them to the instance', async () => {
     expect(instanceUi.guide.markdown).toMatch(/^<!--[\s\S]*?-->\s*## Welcome letter\s+<!-- kayfabb:letter -->/u);

@@ -68,8 +68,14 @@ export interface UiCopy {
   /** The banner's name, and the line under it. */
   readonly siteName: string;
   readonly siteTagline: string;
-  /** What the shop is called (the owner names it later; a placeholder until then). */
+  /** What the shop is called, in plain words: the log's line and the machine's group label say it. */
   readonly shopName: string;
+  /**
+   * Names for the machine's sign, decoration only: the Vending screen draws one picked at random each time it mounts. Absent,
+   * the sign shows `shopName`. Each is at most 20 characters (the sign's width at 390px); `instanceUiProblems` refuses an empty
+   * list, an empty entry and a long one.
+   */
+  readonly marquees?: readonly string[];
   /**
    * How a card's effect stays under reduced motion, in Settings' Motion sentence after "A card's
    * effect stays: ", naming the instance's own card the way its players know it (the engine names

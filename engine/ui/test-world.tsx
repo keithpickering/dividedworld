@@ -107,6 +107,10 @@ export interface WorldOptions {
   readonly avatars?: Readonly<Record<string, string>>;
   /** A different Strategy Guide (its Markdown and hints) than the test world's small one. */
   readonly guide?: GuideUi;
+  /** Copy words of the test's own, laid over the test world's (a marquee list). */
+  readonly copy?: Partial<Kayfa['ui']['copy']>;
+  /** The random function the screens draw from (`Kayfa.random`), fixed by a test that picks. */
+  readonly random?: () => number;
 }
 
 /** The backend alone, for a test that must do something asynchronous (a spin) before it renders. */
@@ -117,7 +121,7 @@ export function buildWorld(settingsOverride?: Partial<ScreenSettings>, instance:
 /** Render a screen on a backend made by `buildWorld`. */
 export function renderIn(fake: Fake, element: ReactElement, options: WorldOptions = {}) {
   window.history.replaceState(options.state ?? null, '', options.path ?? '/');
-  const kayfa: Kayfa = { api: fake, instance: options.instance ?? testInstance, ui: options.glass || options.cards || options.classLooks || options.avatars || options.guide ? { ...ui, ...(options.glass ? { glass: options.glass } : {}), ...(options.cards ? { cards: options.cards } : {}), ...(options.classLooks ? { classLooks: options.classLooks } : {}), ...(options.avatars ? { avatars: options.avatars } : {}), ...(options.guide ? { guide: options.guide } : {}) } : ui, settings: { ...settings, ...options.settings } as unknown as ScreenSettings };
+  const kayfa: Kayfa = { api: fake, instance: options.instance ?? testInstance, ui: options.glass || options.cards || options.classLooks || options.avatars || options.guide || options.copy ? { ...ui, ...(options.copy ? { copy: { ...ui.copy, ...options.copy } } : {}), ...(options.glass ? { glass: options.glass } : {}), ...(options.cards ? { cards: options.cards } : {}), ...(options.classLooks ? { classLooks: options.classLooks } : {}), ...(options.avatars ? { avatars: options.avatars } : {}), ...(options.guide ? { guide: options.guide } : {}) } : ui, settings: { ...settings, ...options.settings } as unknown as ScreenSettings, ...(options.random ? { random: options.random } : {}) };
   return {
     fake,
     ...render(

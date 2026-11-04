@@ -56,10 +56,6 @@
   background: rgba(255, 255, 255, 0.05);
 }
 
-.kb-vending-slot {
-  border-bottom: 1px solid rgba(201, 248, 255, 0.35);
-}
-
 /* The picked slot, ringed and lit in its card's color. */
 .kb-vending-slot[aria-pressed='true'] {
   background: color-mix(in srgb, var(--kb-card-color) 10%, transparent);
@@ -77,10 +73,6 @@
   }
 }
 
-.kb-vending-coil path {
-  stroke: #b7afd6;
-}
-
 .kb-vending-slot-code {
   font-family: 'Barlow Condensed', sans-serif;
 }
@@ -90,14 +82,18 @@
   content: attr(data-code);
 }
 
-button.kb-vending-slot .kb-vending-slot-code {
+.kb-vending-cell:has(button.kb-vending-slot) .kb-vending-slot-code {
   padding: 0 6px;
   background: var(--kb-card-color);
   color: var(--kb-card-ink);
 }
 
-.kb-vending-slot--sealed .kb-vending-slot-code {
-  padding: 0;
+/* The shelf edge: a lip of the machine's glass under each slot. */
+.kb-vending-shelf {
+  border-top: 1px solid rgba(201, 248, 255, 0.35);
+}
+
+.kb-vending-cell:has(.kb-vending-slot--sealed) .kb-vending-slot-code {
   font-size: 13px;
   color: #ffd93d;
 }
