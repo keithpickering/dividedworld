@@ -126,7 +126,7 @@ export function Hand({ held, faces, armed = null, onPick, onClose, vendingHref }
             : <><b>{inView.name}.</b> {inView.summary}</>}
         </p>
       )}
-      <div className="kb-hand-vending"><ButtonRow align="center"><GlassButton to={vendingHref}>Vending Machine</GlassButton></ButtonRow></div>
+      <div className="kb-hand-vending kb-calm"><ButtonRow align="center"><GlassButton to={vendingHref}>Vending Machine</GlassButton></ButtonRow></div>
     </>
   );
 }

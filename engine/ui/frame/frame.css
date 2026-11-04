@@ -440,8 +440,6 @@
   font-size: var(--kb-glass-size-label);
   font-weight: 700;
   letter-spacing: 3px;
-  /* The letter spacing after the last letter is no word: the clock's calm (its box) ends at the letters. */
-  margin-right: -3px;
   text-transform: uppercase;
   color: var(--kb-glass-text-2);
 }
