@@ -162,6 +162,39 @@ describe('the ORIGIN box', () => {
     expect(within(head).getByRole('link', { name: 'the update “Traps bite”' })).toHaveAttribute('href', `/updates?update=${encodeURIComponent(update)}`);
   });
 
+  test('with no place, the head reads "an Act" and so does the sentence about the rest of the cards', async () => {
+    const w = threadWorld(3);
+    for (let i = 0; i < 22; i++) w.fake.seed.card(w.zed, w.ids[1]!, 'whoops', { message: `play ${i}` });
+    const spun = await spinFrom(w, w.ids[1]!);
+    const real = w.fake.thread.bind(w.fake);
+    vi.spyOn(w.fake, 'thread').mockImplementation(async (id) => {
+      const got = await real(id);
+      return id === spun && got ? { ...got, origin: null } : got;
+    });
+    openSpun(w, spun);
+    const box = await origin();
+    const head = box.querySelector('.kb-origin-head-text') as HTMLElement;
+    await waitFor(() => expect(head).toHaveTextContent(/^ORIGIN · Spun from an Act$/u));
+    expect(within(head).queryByRole('link')).toBeNull();
+    await waitFor(() => expect(box).toHaveTextContent('the rest are in an Act.'));
+  });
+
+  test('a play on a target that cannot be placed is the words alone, in the head', async () => {
+    const w = threadWorld(3);
+    const card = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
+    const spun = await spinFrom(w, card, 'About that card');
+    const real = w.fake.thread.bind(w.fake);
+    vi.spyOn(w.fake, 'thread').mockImplementation(async (id) => {
+      const got = await real(id);
+      return id === spun && got ? { ...got, origin: { kind: 'play', card: 'whoops', on: null } } : got;
+    });
+    openSpun(w, spun);
+    const box = await origin();
+    const head = box.querySelector('.kb-origin-head-text') as HTMLElement;
+    await waitFor(() => expect(head).toHaveTextContent(/^ORIGIN · Spun from Whoops!$/u));
+    expect(within(head).queryByRole('link')).toBeNull();
+  });
+
   test('shows an edit made to its Act after the spin, in place, with Last edited and a History', async () => {
     const w = threadWorld(3);
     const spun = await spinFrom(w, w.ids[1]!);
@@ -468,6 +501,10 @@ describe('the ORIGIN box', () => {
     expect(asked).toHaveBeenCalledWith(w.ids[1], 21);
     await waitFor(() => expect(box.querySelector('.kb-mark')).not.toBeNull());
     expect(Number(box.querySelector('.kb-mark')!.getAttribute('data-kb-plays'))).toBeLessThanOrEqual(20);
+    /* The rest are in the origin's place, linked as the head links it. */
+    const rest = [...box.querySelectorAll('p')].find((p) => p.textContent?.startsWith('More than 20 cards'))!;
+    expect(rest).toHaveTextContent(/the rest are in #2 in A short thread\.$/u);
+    expect(within(rest as HTMLElement).getByRole('link', { name: '#2 in A short thread' })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`);
   });
 });
 
