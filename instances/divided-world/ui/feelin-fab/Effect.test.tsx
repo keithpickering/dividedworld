@@ -152,10 +152,6 @@ describe("Feelin' Fab", () => {
       expect(twinkles()).toBeGreaterThan(0);
       unmount();
     }
-    const css = read('fab.css').replace(/\/\*[\s\S]*?\*\//gu, '');
-    expect(css).toMatch(/\.dw-fab\[data-kb-moving="false"\][^{]*\{[^}]*animation:\s*none/u);
-    /* The device's setting is read once, by useMotionReduced (the player's override first); no bare media query may stop the animation past a player's "full". */
-    expect(css).not.toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{(?![^{]*:root:not\(\[data-kb-motion=)/u);
   });
 
   test('a player who chose full motion moves under a device that asks for reduced motion', () => {
@@ -166,8 +162,6 @@ describe("Feelin' Fab", () => {
     expect(box().style.getPropertyValue('--dw-fab-still')).toBe('');
     expect(box()).not.toHaveAttribute('data-kb-still');
     for (const t of box().querySelectorAll<HTMLElement>('.dw-fab-twinkle')) expect(t.style.animationName).toBe('');
-    const css = read('fab.css').replace(/\/\*[\s\S]*?\*\//gu, '');
-    expect(css).not.toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{(?![^{]*:root:not\(\[data-kb-motion=)/u);
   });
 
   test('with no choice made, the device\'s reduced motion holds the post still', () => {
@@ -209,8 +203,6 @@ describe("Feelin' Fab", () => {
     expect(boxes.map((b) => b.getAttribute('data-kb-running'))).toEqual(['false', 'true', 'false']);
     await see(boxes[1]!, false);
     expect(boxes[1]).toHaveAttribute('data-kb-running', 'false');
-    const css = read('fab.css').replace(/\/\*[\s\S]*?\*\//gu, '');
-    expect(css).toMatch(/\[data-kb-running="false"\][^{]*\{[^}]*animation-play-state:\s*paused/u);
   });
 
   test('where the browser has no observer the animation runs rather than freezing', () => {
@@ -231,13 +223,9 @@ describe("Feelin' Fab", () => {
     /* The gradient sits on a layer the compositor moves, and a twinkle is a drawn shape, not a clipped box. */
     expect(css).not.toMatch(/background-position/u);
     expect(css).not.toMatch(/clip-path/u);
-    /* The big layer is promoted only on a post that moves (a held one is a flat color); the twinkles stay promoted (see fab.css). */
-    expect(css).not.toMatch(/(^|\n)\.dw-fab-layer\s*\{[^}]*will-change/u);
-    expect(css).toMatch(/\.dw-fab\[data-kb-moving="true"\]\s*\.dw-fab-layer\s*\{[^}]*will-change:\s*transform/u);
+    /* Promotion, pausing and the reduced rule are read from a real browser's computed styles (e2e/fab.spec.ts). */
     expect(css).toMatch(/\.dw-fab-cycle\[data-kb-moving="false"\]\s*\.dw-fab-layer\s*\{[^}]*width:\s*100%/u);
     expect(css).toMatch(/\.dw-fab-twinkle\s*\{[^}]*animation-name:\s*dw-fab-twinkle/u);
-    expect(css).not.toMatch(/(^|\n)\.dw-fab-twinkle\s*\{[^}]*will-change/u);
-    expect(css).toMatch(/\.dw-fab\[data-kb-moving="true"\]\s*\.dw-fab-twinkle\s*\{[^}]*will-change:\s*transform,\s*opacity/u);
     expect(css).toMatch(/\.dw-fab-ground\s*\{[^}]*overflow:\s*hidden/u);
   });
 
@@ -247,10 +235,9 @@ describe("Feelin' Fab", () => {
     expect(box().querySelectorAll('.dw-fab-ground > .dw-fab-twinkle').length).toBeGreaterThan(0);
   });
 
-  test('the words keep a text shadow, are drawn above the rainbow, and take no pointer from the ground', () => {
+  test('the words are drawn above the rainbow, and the ground takes no pointer (the text shadow is read in a browser, e2e/fab.spec.ts)', () => {
     const css = read('fab.css').replace(/\/\*[\s\S]*?\*\//gu, '');
     const rule = (selector: string) => { const at = css.indexOf(`${selector} {`); return at < 0 ? '' : css.slice(at, css.indexOf('}', at)); };
-    expect(rule('.dw-fab-words')).toMatch(/text-shadow:\s*[^;]*var\(--kb-bg\)/u);
     expect(rule('.dw-fab-words')).toMatch(/z-index:\s*1/u);
     expect(rule('.dw-fab-ground')).toMatch(/pointer-events:\s*none/u);
     expect(rule('.dw-fab-ground')).toMatch(/z-index:\s*0/u);
