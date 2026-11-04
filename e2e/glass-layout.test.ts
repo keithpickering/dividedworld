@@ -75,6 +75,8 @@ describe('the layout judgment', () => {
     expect(out[0]).toContain('p.kb-note');
     expect(out[0]).toContain('squeezed');
     expect(out[0]).toContain('358');
+    /* An em or so short of the column is the control's own marker or edge (a radio beside its label), not a sibling's squeeze. */
+    expect(refusals({ blocks: [...clean.blocks, { ...narrow, rect: { ...narrow.rect, width: 100 }, textWidth: 98, column: 120 }] })).toEqual([]);
     /* A pixel short of the column is the column's own rounding. */
     expect(refusals({ blocks: [...clean.blocks, { ...narrow, column: 120.6 }] })).toEqual([]);
   });
@@ -162,6 +164,19 @@ describe('the layout judgment', () => {
     expect(out.join('\n')).toContain('height');
     expect(out.join('\n')).toContain('type size');
     expect(out[0]).toContain(SCREEN);
+  });
+
+  test('a button alone on its line may be taller than its row-mate for a wrapped label; on one line it may not', () => {
+    const row = 'main > div.kb-button-row';
+    const pair = (y: number) => ({
+      path: row, kind: 'button-row' as const,
+      controls: [
+        { path: `${row} > button:nth-child(1)`, rect: { x: 16, y: 140, width: 358, height: 60 }, fontSize: 21, glass: true },
+        { path: `${row} > button:nth-child(2)`, rect: { x: y === 140 ? 200 : 16, y, width: 100, height: 40 }, fontSize: 21, glass: true },
+      ],
+    });
+    expect(refusals({ rows: [pair(208)] })).toEqual([]);
+    expect(refusals({ rows: [pair(140)] })).toHaveLength(1);
   });
 
   test('refuses two adjacent controls of one flex line that differ, and tolerates a pixel of height', () => {

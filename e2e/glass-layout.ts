@@ -17,7 +17,7 @@ import type { Box } from './glass-text.ts';
  *   2. an overflow: anything outside the viewport's width (or a page that scrolls sideways), except
  *      inside an element that scrolls on purpose;
  *   3. a mismatched row: two GlassButtons in one ButtonRow, or two adjacent controls in one flex
- *      line, whose heights (to within 1px) or computed type sizes differ;
+ *      line, whose heights (to within 1px, on one line: a control alone on its line may be taller for a wrapped label) or computed type sizes differ;
  *   4. a cut control: a control whose box crosses into the cut corner of the clip-path polygon of
  *      the panel it sits in;
  *   5. a calm cut: a `.kb-calm` backing whose drawn rect (its feather included) crosses the box
@@ -118,6 +118,8 @@ export const HEIGHT_TOLERANCE = 1;
 /** Other lengths (a rect's edge past a bound, a corner in a cut) are compared to within this. */
 const EDGE = 1;
 const SIZE_TOLERANCE = 0.05;
+/** A block fills its column to within this many ems: the marker, border or gap its own control draws beside it (a radio's, a skewed edge's) is not a sibling's squeeze. */
+const FILL = 1.5;
 
 
 /** A path as a reader wants it: its last four steps, without the child counts. */
@@ -161,7 +163,7 @@ export function judgeLayout(facts: LayoutFacts): string[] {
   for (const b of facts.blocks) {
     const w = b.rect.width;
     if (b.art) continue;
-    if (b.wraps && w < 10 * b.fontSize - EDGE && w < b.column - EDGE) at('squeezed block', b.path, `${px(w)} wide by ${px(b.rect.height)} tall at ${px(b.fontSize)} type, narrower than 10 times its type size, in a column ${px(b.column)} wide that could have given it more`);
+    if (b.wraps && w < 10 * b.fontSize - EDGE && w < b.column - FILL * b.fontSize) at('squeezed block', b.path, `${px(w)} wide by ${px(b.rect.height)} tall at ${px(b.fontSize)} type, narrower than 10 times its type size, in a column ${px(b.column)} wide that could have given it more`);
     else if (b.textWidth > w + EDGE) at('squeezed block', b.path, `${px(w)} wide, its text is ${px(b.textWidth)} wide on one line`);
     else if (w < b.longestWord - EDGE) at('squeezed block', b.path, `${px(w)} wide, narrower than its longest word (${px(b.longestWord)})`);
   }
@@ -182,7 +184,9 @@ export function judgeLayout(facts: LayoutFacts): string[] {
     for (let i = 1; i < cs.length; i++) {
       const a = cs[i - 1]!;
       const b = cs[i]!;
-      if (Math.abs(a.rect.height - b.rect.height) > HEIGHT_TOLERANCE) at('mismatched row', b.path, `height ${px(b.rect.height)} beside ${px(a.rect.height)} (${shortPath(a.path)}) in ${shortPath(row.path)}`);
+      /* Heights are compared on one line only: the row stretches the controls of a line to match, and a control alone on its line may be taller for a wrapped label. */
+      const sameLine = Math.min(a.rect.y + a.rect.height, b.rect.y + b.rect.height) - Math.max(a.rect.y, b.rect.y) > Math.min(a.rect.height, b.rect.height) / 2;
+      if (sameLine && Math.abs(a.rect.height - b.rect.height) > HEIGHT_TOLERANCE) at('mismatched row', b.path, `height ${px(b.rect.height)} beside ${px(a.rect.height)} (${shortPath(a.path)}) in ${shortPath(row.path)}`);
       if (Math.abs(a.fontSize - b.fontSize) > SIZE_TOLERANCE) at('mismatched row', b.path, `type size ${px(b.fontSize)} beside ${px(a.fontSize)} (${shortPath(a.path)}) in ${shortPath(row.path)}`);
     }
   }
