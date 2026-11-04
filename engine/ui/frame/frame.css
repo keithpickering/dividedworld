@@ -425,7 +425,7 @@
   align-items: flex-start;
   /* Ends before the Alerts button, which stands at the right of the same corner (1229px at the board's 1440): the date and time are never drawn under it. */
   max-width: 240px;
-  /* The clock stands where it did: its calm's padding is taken back above and below it, as at its sides (flush, Hud.tsx). */
+  /* On the Main layout the clock's calm pads it, and its margin takes that back (the rule beside the other calms, below). */
   margin: 1.875rem 0 0;
 }
 
@@ -975,8 +975,7 @@
  * whole bar. On the Main board's layout the plate's calm holds the mask picker; on the phone the
  * plate is not drawn (display: contents), so neither is its calm, and the picker and the aura row
  * carry their own.
- */
-/*
+ *
  * Each calm's padding is the room its layout gives it, so a word stands where it did, the glass
  * keeps its height (212px, 124px on the phone) and no box lies past the glass; calm.css's backing
  * is its box, inside.
