@@ -182,10 +182,10 @@
 
 /*
  * A flush calm (a heading, lede or tab strip pulled into the gutter by its negative margin) reaches
- * past the column's edge by the feather and the pad, and an outset calm (the HUD's) by the feather,
- * wider than the phone's 16px gutter, so one on text that runs to the column's edge would push the
- * page sideways. The column clips sideways at its own edge, which is the window's on a phone and
- * past the gutters everywhere else, so no glass page scrolls sideways for them. `clip` makes no scroll container, so nothing
+ * past the column's edge by the feather and the pad, wider than the phone's 16px gutter, so one on
+ * text that runs to the column's edge would push the page sideways. The column clips sideways at
+ * its own edge, which is the window's on a phone and past the gutters everywhere else, so no glass
+ * page scrolls sideways for them. `clip` makes no scroll container, so nothing
  * else about the column changes. (An `overflow-clip-margin` would be ignored here: Chromium reads
  * it only where both axes clip.)
  */

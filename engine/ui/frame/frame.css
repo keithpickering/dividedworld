@@ -136,8 +136,7 @@
 }
 
 /*
- * The outset calms under the HUD's words (the plate's, the aura's, the swap's; calm.css) reach their
- * feather past their blocks, which would darken the page beside the tab and above it. The bar is
+ * The calms under the HUD's words (calm.css) are inside their blocks, but the bar is
  * cut to the glass's own shape, the tab's polygon moved by where the bar starts in the glass
  * (Hud.tsx measures it), so a calm stops where the glass does. On the phone the glass is a plain
  * band and clips what it holds.
@@ -427,9 +426,7 @@
   /* Ends before the Alerts button, which stands at the right of the same corner (1229px at the board's 1440): the date and time are never drawn under it. */
   max-width: 240px;
   /* The clock stands where it did: its calm's padding is taken back above and below it, as at its sides (flush, Hud.tsx). */
-  margin: calc(1.875rem - var(--kb-glass-calm-inset)) 0 calc(var(--kb-glass-calm-inset) * -1);
-  /* Its padding box lies over the Menu and the hand beside it; it holds no control, so it takes no tap. */
-  pointer-events: none;
+  margin: 1.875rem 0 0;
 }
 
 .kb-hud-clock-label {
@@ -979,6 +976,29 @@
  * plate is not drawn (display: contents), so neither is its calm, and the picker and the aura row
  * carry their own.
  */
+/*
+ * Each calm's padding is the room its layout gives it, so a word stands where it did, the glass
+ * keeps its height (212px, 124px on the phone) and no box lies past the glass; calm.css's backing
+ * is its box, inside.
+ * - The plate is a panel with its own border, and its inner box already holds the words 10px in at
+ *   the top and foot and 16px at the right, so its calm takes that for its feather and no padding.
+ * - The aura, the swap and the clock sit on the glass's own ground with their words to their edges
+ *   (the orbs' row is 6px from the phone glass's foot), so there is no room for a soft edge: their
+ *   calm is the box, at full strength, with no feather and no padding.
+ */
+.kb-hud-plate--cast.kb-calm.kb-calm {
+  --kb-calm-feather: 0.625rem;
+  --kb-calm-pad: 0px;
+  padding: 0;
+}
+
+.kb-hud-aura.kb-calm.kb-calm,
+.kb-hud-swap.kb-calm.kb-calm,
+.kb-hud-clock.kb-calm.kb-calm {
+  --kb-calm-feather: 0px;
+  --kb-calm-pad: 0px;
+}
+
 :where(:root:not([data-kb-layout='phone'])) .kb-hud-swap.kb-calm::before,
 :where(:root[data-kb-layout='phone']) .kb-hud-plate--cast.kb-calm::before {
   content: none;

@@ -317,26 +317,27 @@ for (const [label, viewport, padding] of [['1440 wide', { width: 1440, height: 9
 
 /*
  * The HUD's geometry is the one it had before the calm moved inside its box (main at 82599ef, read
- * at 1440 and 390): the calms on its plate, aura and swap are outset, and the clock and the
- * picker's labels take their padding back in negative margins, which must not move a word, change
- * the glass's height or take a tap from the controls beside them.
+ * at 1440 and 390): the calms on its plate, aura, swap and clock take only the room their layout
+ * gives them, so no word moves, the glass keeps its height and no box takes a tap from the
+ * controls beside it. The picker's labels take their padding back in negative margins, which must
+ * not take the kinds' taps either.
  */
 test.describe('the HUD keeps its geometry', () => {
   const read = (page: Page) => page.evaluate(() => {
     const top = document.querySelector('.kb-hud')!.getBoundingClientRect().top;
     const at = (sel: string) => { const b = document.querySelector(sel)!.getBoundingClientRect(); return [b.left, b.top - top, b.width, b.height].map(Math.round); };
-    return { height: Math.round(document.querySelector('.kb-hud')!.getBoundingClientRect().height), avatar: at('.kb-hud-avatar'), select: at('.kb-hud-select'), aura: at('.kb-hud-aura'), orbs: at('.kb-hud-orbs'), clock: at('.kb-hud-clock-time') };
+    return { height: Math.round(document.querySelector('.kb-hud')!.getBoundingClientRect().height), avatar: at('.kb-hud-avatar'), select: at('.kb-hud-select'), aura: at('.kb-hud-aura-legend'), orbs: at('.kb-hud-orbs'), clock: at('.kb-hud-clock-time') };
   });
   test('at 1440', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await open(page, { name: 'HUD', path: '/b/general' });
-    expect(await read(page)).toEqual({ height: 212, avatar: [59, 72, 84, 84], select: [256, 129, 151, 52], aura: [500, 10, 452, 150], orbs: [500, 47, 452, 113], clock: [980, 59, 134, 34] });
+    expect(await read(page)).toEqual({ height: 212, avatar: [59, 72, 84, 84], select: [256, 129, 151, 52], aura: [500, 10, 452, 29], orbs: [500, 47, 452, 113], clock: [980, 59, 134, 34] });
   });
   test('at 390', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await open(page, { name: 'HUD', path: '/b/general' });
     const g = await read(page);
-    expect({ height: g.height, avatar: g.avatar, select: g.select, aura: g.aura, orbs: g.orbs }).toEqual({ height: 124, avatar: [16, 23, 44, 44], select: [70, 32, 96, 48], aura: [16, 88, 358, 30], orbs: [16, 88, 358, 30] });
+    expect({ height: g.height, avatar: g.avatar, select: g.select, orbs: g.orbs }).toEqual({ height: 124, avatar: [16, 23, 44, 44], select: [70, 32, 96, 48], orbs: [16, 88, 358, 30] });
   });
   for (const [label, viewport] of SIZES) {
     test(`a calm's padding box does not take the taps of the Menu control or the picker's kinds, at ${label}`, async ({ page }) => {
