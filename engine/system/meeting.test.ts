@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { systemSettings, testSystem } from '../rules/test-system.ts';
 import { DEMAND_KINDS } from './demands.ts';
-import { DEMAND_ID_ROLES, inheritedText, namedCharacters, repairAnswer, type InheritedMove, type RepairContext } from './meeting.ts';
+import { DEMAND_ID_ROLES, inheritedText, meetingSystemPrompt, namedCharacters, repairAnswer, type InheritedMove, type RepairContext } from './meeting.ts';
 import { phaseAt } from './phases.ts';
 
 const H = 3_600_000;
@@ -108,4 +108,14 @@ test('the inheritance section is in plain words, says reviewing is free and what
   assert.match(text, /Neither costs a move from your bank/);
   assert.match(text, /1 day after the handover/);
   assert.deepEqual(inheritedText([], 3), []);
+});
+
+test('the system prompt carries the Boss\'s career as plain facts, and says so when there is none', () => {
+  const facts = {
+    boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: false, roster: [],
+  };
+  const served = meetingSystemPrompt({ ...facts, career: { led: [{ season: 3, from: '2026-04-01T00:00:00+00:00', until: null, how: 'nomination' }], offices: [] } });
+  assert.ok(served.includes('Your career, as plain facts'), served);
+  assert.ok(served.includes('Boss in Season 3, from 2026-04-01 until now'), served);
+  assert.ok(meetingSystemPrompt({ ...facts, career: { led: [], offices: [] } }).includes('You have held no office before.'));
 });

@@ -59,6 +59,8 @@ interface World {
   boss?: string;
   /** The keys meeting_context() lists as a nomination's candidates (default: the roster but the Boss). */
   successors?: string[];
+  /** What staff_career returns for the Boss (default: it has led nothing). */
+  career?: { led: unknown[]; offices: unknown[] };
 }
 function fakeDb(w: World = {}) {
   const calls: { fn: string; args: Record<string, any> }[] = [];
@@ -79,6 +81,7 @@ function fakeDb(w: World = {}) {
           return { season: { startsAt: NOW - 30 * DAY, endsAt: NOW + (w.endsIn ?? 60 * DAY) }, boss: w.boss ?? BOSS, lastSlot: '2026-10-31T09:23:00.000Z', boards: [{ id: BOARD, name: 'Mario Fan Games' }, { id: BOARD2, name: 'Off Topic' }], successors: w.successors ?? dividedWorld.system.roster.map((b) => b.key).filter((k) => k !== (w.boss ?? BOSS)), ...(w.inheritanceDue ? { inheritanceDue: w.inheritanceDue } : {}) } as T;
         case 'system_digest':
           return { since: args.since, until: args.until, threads: [{ thread: HOT, title: 'Pineapple', board: 'Mario Fan Games', posts: 4, heat: 1, controversy: 0.5, length: 9 }], standings: [], moves: [], quotes: [], bossReactions: [], excerpts: [], characters: [{ id: ANN, name: 'Ann the Great', staff: false }] } as T;
+        case 'staff_career': return (w.career ?? { led: [], offices: [] }) as T;
         case 'staff_memory_latest': return (w.memories?.[String(args.staff)] ?? null) as T;
         case 'bank_now': return (w.bank ?? 5.9) as T;
         case 'public_characters': return (args.ids as string[]).filter((id) => (w.publicIds ?? [ANN, BOB]).includes(id)) as T;
@@ -503,4 +506,20 @@ test('a Boss with no moves banked still keeps its memory and profile', async () 
   assert.equal(p.moves.length, 0);
   assert.equal(p.profile.mood, 'smug');
   assert.ok(out.trims.some((t: any) => t.path === 'moves' && t.after === 0));
+});
+
+test('the Boss\'s career is read for the Boss itself and carried in the system prompt as plain facts', async () => {
+  const served = fakeDb({ career: {
+    led: [{ season: 2, from: '2026-02-01T00:00:00+00:00', until: '2026-03-29T00:00:00+00:00', how: 'rotation' }],
+    offices: [{ office: 'mod', from: '2026-03-29T00:00:00+00:00', until: null, cause: 'handover' }],
+  } });
+  const m = fakeModels(answer([]));
+  await run(served.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.deepEqual(served.calls.filter((c) => c.fn === 'staff_career').map((c) => c.args), [{ of_staff: BOSS }]);
+  const system = m.chats[0]!.system;
+  assert.ok(system.includes('Boss in Season 2, from 2026-02-01 to 2026-03-29'), system);
+  assert.ok(system.includes('Mod Bot from 2026-03-29 until now'), system);
+  const fresh = fakeModels(answer([]));
+  await run(fakeDb().db, fresh.models, quiet, SLOT, clock, noFeeds);
+  assert.ok(fresh.chats[0]!.system.includes('You have held no office before.'), 'a Boss with no career is told so');
 });

@@ -30,9 +30,11 @@ declare
                            -- Season news (0063): the season page's News tab.
                            'season_news(timestampwithtimezone,integer)',
                            -- A play's moment (0072): what was on a post when a play landed.
-                           'play_moment(uuid)'];
+                           'play_moment(uuid)',
+                           -- A persona's career (0081): public facts about staff.
+                           'staff_career(text)'];
   -- What a visitor (anon) may execute, on purpose; each is also in the list above.
-  visitor_callable text[] := array['move_progress(uuid)'];
+  visitor_callable text[] := array['move_progress(uuid)', 'staff_career(text)'];
 begin
   for r in select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
            where n.nspname = 'public' and c.relkind = 'S'

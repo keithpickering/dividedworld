@@ -28,6 +28,7 @@
  * model names are checked against `characters_public`.
  */
 import type { Instance } from '../../../engine/rules/types.ts';
+import type { Career } from '../../../engine/system/career.ts';
 import { DIGEST_MOST, renderDigest, type Digest } from '../../../engine/system/digest.ts';
 import { DUTY_SPECS } from '../../../engine/system/duties.ts';
 import { feedTitles } from '../../../engine/system/feed.ts';
@@ -162,6 +163,8 @@ export async function runMeeting(
     let memory = await db.rpc<Memory | null>('staff_memory_latest', { staff: bossKey });
     if (memory === null && boss.inheritsMemoryOf) memory = await db.rpc<Memory | null>('staff_memory_latest', { staff: boss.inheritsMemoryOf });
 
+    const career = await db.rpc<Career>('staff_career', { of_staff: bossKey });
+
     const bank = await db.rpc<number>('bank_now', { staff: bossKey, weekly_moves: phase.numbers.weeklyMoves, bank_cap: phase.numbers.bankCap });
 
     const { titles, skipped } = await readFeeds(tuned.system.feeds, fetchFeed);
@@ -175,6 +178,7 @@ export async function runMeeting(
       phase,
       bank,
       successorAllowed,
+      career,
       roster: tuned.system.roster.filter((b) => successors.has(b.key)).map((b) => ({ key: b.key, name: b.name })),
     });
     const notes = skipped.map((f) => `The feed "${f.name}" could not be read today (${f.why}).`);

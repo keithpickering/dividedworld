@@ -19,6 +19,7 @@
 import type { Quadrant, Span } from '../../rules/types.ts';
 import type { BeyondPost, Reach } from '../../rules/cards.ts';
 import type { AlertKind } from '../../rules/alerts.ts';
+import type { Career } from '../../system/career.ts';
 
 export type Id = string;
 
@@ -1009,6 +1010,8 @@ export interface KayfaApi {
   movesLog(staff: string, before?: MovesCursor | null): Promise<MovesLog>;
   /** A staff member's latest in-character profile, or null before it has one (a Mod Bot has none until it is asked to write one). */
   staffProfile(staff: string): Promise<StaffProfile | null>;
+  /** A staff member's career (`staff_career`): the seasons it led and the offices it held, plain facts any reader may see. */
+  staffCareer(staff: string): Promise<Career>;
   /** A page of a board's threads, newest first; `total` is the board's thread counter, never a count of the list. */
   threads(board: Id, page: { readonly offset: number; readonly limit: number }): Promise<{ readonly threads: readonly ThreadSummary[]; readonly total: number }>;
   thread(id: Id): Promise<ThreadSummary | null>;

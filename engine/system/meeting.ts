@@ -26,6 +26,7 @@
  * Pure: nothing here reads a clock or a database; the caller passes `now`.
  */
 import type { Persona, Settings, SystemContent } from '../rules/types.ts';
+import { careerText, type Career } from './career.ts';
 import { DEMAND_KINDS, demandProblems } from './demands.ts';
 import { MEMORY_RULE, repairMemory, type Memory } from './memory.ts';
 import { ASKABLE_MOVE_KINDS, UUID, moveKind, moveParamsProblems } from './moves.ts';
@@ -147,6 +148,8 @@ export interface PromptFacts {
   /** Whether this is the meltdown's last week, in which a successor may be named. */
   readonly successorAllowed: boolean;
   readonly roster: readonly { readonly key: string; readonly name: string }[];
+  /** The Boss's own career, from the database (`staff_career`): facts the persona cannot have remembered. */
+  readonly career: Career;
 }
 
 /**
@@ -160,8 +163,10 @@ export function meetingSystemPrompt(f: PromptFacts): string {
     (k) => `- ${k.key}: ${k.label.toLowerCase()}. params: ${fieldsOf(k.params, MODEL_LEAVES)}.${k.structural ? ` It waits at least ${s.structuralHoldHours} hours in the admin queue before it lands, and an admin can hold it.` : ''}`,
   );
   const demands = DEMAND_KINDS.map((d) => `- ${d.key}: params: ${fieldsOf(d.params)}.`);
+  const career = careerText(f.career);
   return [
     f.boss.persona,
+    career.length ? ['Your career, as plain facts (newest first; your memory holds how you feel about it, and these hold what happened):', ...career.map((c) => `- ${c}`)].join('\n') : 'You have held no office before.',
     [
       'This meeting.',
       `Phase: ${phase.phase}. You earn ${phase.numbers.weeklyMoves} moves a week and can bank ${phase.numbers.bankCap}; a move of this phase runs at most ${phase.numbers.moveExpiryMostDays} days.`,

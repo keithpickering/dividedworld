@@ -24,6 +24,7 @@ import { atOrBelow, basePrice, postTarget, casterMessage, decidePlay, decideSet,
 import { sameName } from '../../rules/names.ts';
 import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
+import type { Career } from '../../system/career.ts';
 import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
@@ -127,6 +128,8 @@ export interface Seed {
   /** A staff character (a Boss or a Mod Bot): debuted, owned by no player, with no class; it acts only through the seed below. */
   staff(key: string, name: string, office: 'boss' | 'mod' | 'member' | 'benched', options?: { title?: string; signature?: string; at?: number; debuted?: boolean }): Id;
   /** A staff member's in-character profile, a version at `at` (the latest is the one read). */
+  /** A staff member's career as `staff_career` would return it (default: none). */
+  career(key: string, career: Career): void;
   staffProfile(key: string, profile: { interests?: readonly string[]; favorites?: readonly Id[]; mood?: string; signature?: string; at?: number }): void;
   /** A staff character's post in a thread of The System's board, as the Boss posts there. */
   staffPost(staff: Id, thread: Id, body: string, options?: { at?: number }): Id;
@@ -340,6 +343,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const boards: Board[] = options.instance.boards.map((b) => ({ id: uuid(), slug: b.slug, name: b.name, description: b.description, isSystem: b.system === true, moveAct: null }));
   /* Moves: how each landed move ended, the staff profiles (versions, newest read), and the admin queue's own rows. */
   const moveEnds = new Map<Id, { why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent'; by: string; at: number }>();
+  const careers = new Map<string, Career>();
   const staffProfiles: { key: string; at: number; interests: string[]; favorites: Id[]; mood: string; signature: string }[] = [];
   interface QueueRec { id: number; staff: string; successor?: string; move: SeedMove; why: string; goLiveAt: number; failure: { at: number; text: string } | null; heldAt: number | null; landed: Id | null; replacedAt?: number }
   const queue: QueueRec[] = [];
@@ -1365,6 +1369,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const older: MovesCursor | null = after.length > MOVES_LOG_PAGE && last ? { at: iso(last.at), act: last.id } : null;
       return { rows, older } satisfies MovesLog;
     },
+    staffCareer(staff) {
+      return careers.get(staff) ?? { led: [], offices: [] };
+    },
     staffProfile(staff) {
       const latest = staffProfiles.filter((p) => p.key === staff).sort((a, b) => b.at - a.at).at(0);
       return latest ? ({ staff, at: iso(latest.at), interests: latest.interests, favorites: latest.favorites, mood: latest.mood, signature: latest.signature } satisfies StaffProfile) : null;
@@ -2165,6 +2172,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       };
       characters.set(c.id, c);
       return c.id;
+    },
+    career(key, career) {
+      staffId(key);
+      careers.set(key, career);
     },
     staffProfile(key, p) {
       staffId(key);

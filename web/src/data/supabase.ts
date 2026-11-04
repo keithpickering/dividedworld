@@ -35,6 +35,7 @@ import { readLogPage, type LedgerRow, type ShareRow } from '../../../engine/ui/d
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
 import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
 import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
+import type { Career } from '../../../engine/system/career.ts';
 import type {
   AdminQueue, BoardName, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffProfile,
   Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEvent, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd, FaceDownPass,
@@ -695,6 +696,16 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (!r) return null;
       const texts = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
       return { staff: r['staff'], at: r['at'], interests: texts(r['interests']), favorites: texts(r['favorites']), mood: String(r['mood'] ?? ''), signature: String(r['signature'] ?? '') };
+    },
+    async staffCareer(staff): Promise<Career> {
+      const v = (await read(() => client.rpc('staff_career', { of_staff: staff }))).data;
+      const c = v && typeof v === 'object' && !Array.isArray(v) ? (v as Row) : {};
+      const rows = (x: unknown): Row[] => (Array.isArray(x) ? (x as Row[]) : []);
+      const until = (x: unknown): string | null => (typeof x === 'string' ? x : null);
+      return {
+        led: rows(c['led']).map((r) => ({ season: num(r['season']), from: String(r['from'] ?? ''), until: until(r['until']), how: String(r['how'] ?? '') })),
+        offices: rows(c['offices']).map((r) => ({ office: String(r['office'] ?? ''), from: String(r['from'] ?? ''), until: until(r['until']), cause: String(r['cause'] ?? '') })),
+      };
     },
     async adminQueue(): Promise<AdminQueue> {
       const v = (await read(() => client.rpc('admin_queue'))).data;

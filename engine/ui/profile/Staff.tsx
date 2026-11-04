@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { BoardName, Character, CharacterCounts, MoveLogRow, MovesCursor, StaffProfile as StaffProfileData } from '../data/api.ts';
+import { careerText, type Career } from '../../system/career.ts';
 import { BbCode } from '../bbcode/render.tsx';
 import { MoveSentence } from '../board/MoveSentence.tsx';
 import { endedWords } from '../board/move-words.ts';
@@ -77,9 +78,39 @@ export function StaffProfile({ character: c }: { readonly character: Character }
             <p className="kb-small kb-muted">The interests, favorites, mood and signature are what it says about itself, in character, and it may bluff. The moderation log is a plain record.</p>
           </div>
         </section>
+        <CareerList staff={staff} />
         <ModerationLog staff={staff} bot={c.office === 'mod'} />
       </div>
     </div>
+  );
+}
+
+/**
+ * The career: the seasons it led and the offices it held, as plain facts (`staff_career`, public like "Former Administrator" on a forum),
+ * newest first and cut to the engine's bound with "and N more." This is the glass, not the persona: it never bluffs.
+ */
+function CareerList({ staff }: { readonly staff: string }) {
+  const { api } = useKayfa();
+  const [career, setCareer] = useState<Career | 'failed' | null>(null);
+  useEffect(() => {
+    let live = true;
+    setCareer(null);
+    api.staffCareer(staff).then((c) => { if (live) setCareer(c); }, () => { if (live) setCareer('failed'); });
+    return () => { live = false; };
+  }, [api, staff]);
+  const lines = career && career !== 'failed' ? careerText(career) : null;
+  return (
+    <section className="kb-staff-career" aria-label="Career">
+      <h2 className="kb-heading">Career</h2>
+      {career === 'failed' && <p className="kb-notice" data-kb-tone="refusal">Its career could not be loaded. Reload the page to try again.</p>}
+      {career === null && <p className="kb-muted" aria-busy="true">Loading the career…</p>}
+      {lines !== null && lines.length === 0 && <p>No office held yet.</p>}
+      {lines !== null && lines.length > 0 && (
+        <ul className="kb-career">
+          {lines.map((l, i) => <li key={i}>{l}</li>)}
+        </ul>
+      )}
+    </section>
   );
 }
 

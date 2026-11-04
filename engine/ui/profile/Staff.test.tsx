@@ -82,6 +82,29 @@ describe('a Boss\'s profile', () => {
   });
 });
 
+describe('a staff profile\'s career', () => {
+  const led = (season: number, from: string, until: string | null, how: string) => ({ season, from, until, how });
+  test('lists the seasons it led and the offices it held, newest first, in plain words', async () => {
+    open('director', (f) => f.seed.career('director', {
+      led: [led(2, '2026-02-01T00:00:00+00:00', '2026-03-29T00:00:00+00:00', 'rotation'), led(5, '2026-06-07T00:00:00+00:00', null, 'nomination')],
+      offices: [{ office: 'mod', from: '2026-03-29T00:00:00+00:00', until: '2026-06-07T00:00:00+00:00', cause: 'handover' }],
+    }));
+    const career = await screen.findByRole('region', { name: 'Career' });
+    const items = await within(career).findAllByRole('listitem');
+    expect(items).toHaveLength(3);
+    expect(items[0]).toHaveTextContent('Boss in Season 5, from 2026-06-07 until now, named by the Boss before it.');
+    expect(items[1]).toHaveTextContent('Mod Bot from 2026-03-29 to 2026-06-07, at a handover.');
+    expect(items[2]).toHaveTextContent('Boss in Season 2, from 2026-02-01 to 2026-03-29 (8 weeks), by rotation.');
+  });
+  test('says plainly that a persona that never served has no career, and keeps another persona\'s seasons out of it', async () => {
+    open('bot', (f) => f.seed.career('director', { led: [led(1, '2026-01-01T00:00:00+00:00', null, 'seed')], offices: [] }));
+    const career = await screen.findByRole('region', { name: 'Career' });
+    await waitFor(() => expect(career).toHaveTextContent('No office held yet.'));
+    expect(career).not.toHaveTextContent('Season 1');
+    expect(within(career).queryAllByRole('listitem')).toHaveLength(0);
+  });
+});
+
 describe('a Mod Bot\'s profile', () => {
   test('is the same screen with a MODERATOR badge and its own title, and says plainly that its log is empty until it makes its visits', async () => {
     open('bot');
