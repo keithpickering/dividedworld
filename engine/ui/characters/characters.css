@@ -545,6 +545,11 @@
   gap: 10px;
 }
 
+/* On the phone the title has its calm's box, which the radio (top right) must not lie under: the box ends before it. */
+:where(:root[data-kb-layout='phone']) .kb-class-title {
+  margin-right: 26px;
+}
+
 /* Past 100% text a class's name grows toward the card's radio, top right: it keeps clear of it, and breaks rather than run past the card. */
 :where(:root[data-kb-text-size]:not([data-kb-text-size='100'])) .kb-class-title {
   padding-right: 26px;
@@ -935,6 +940,14 @@
 
 .kb-turn-map {
   margin: 12px 0 0;
+}
+
+/* On the phone past 100% text the class cards' arrows come into the flow and hang 30px below the cards' frame, over the map under it (their calm is their box): the map starts under them. */
+:where(:root[data-kb-layout='phone'][data-kb-text-size]:not([data-kb-text-size='100'])) .kb-turn-map {
+  margin-top: 36px;
+}
+
+.kb-turn-map {
   line-height: normal;
   font-size: var(--kb-glass-size-body);
   font-weight: 600;

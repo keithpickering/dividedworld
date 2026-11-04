@@ -110,7 +110,12 @@ describe('the calm is drawn outside its element', () => {
   });
   test('the mask ramps over the same feather the backing reaches', () => {
     expect(calm).toMatch(/var\(--kb-calm-feather\),/);
-    expect(calm).not.toMatch(/var\(--kb-glass-calm-feather\),/);
+    expect(calm).not.toMatch(/currentColor var\(--kb-glass-calm-feather\)/);
+  });
+  test('a calm in a framed panel (the HUD, a dialog, the hand, the class rail) is its box: no feather', () => {
+    const d = declsOf(calm, '.kb-hud .kb-calm.kb-calm');
+    expect(d['--kb-calm-feather']).toBe('0px');
+    for (const sel of ['.kb-hand-drawer', '.kb-glass-dialog', '.kb-class-rail']) expect(declsOf(calm, `${sel} .kb-calm.kb-calm`)['--kb-calm-feather']).toBe('0px');
   });
   test('each calm resolves its feather from the theme\'s, and on the phone the smaller of it and the column\'s gutter', () => {
     const phone = ':where(:root[data-kb-layout=\'phone\'])';

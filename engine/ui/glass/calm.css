@@ -27,6 +27,20 @@
   --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-gutter, 32px));
 }
 
+/*
+ * A calm inside a framed panel of its own (the HUD's glass, a dialog, the hand's drawer, the class
+ * cards' rail) has no room for a soft edge: the panel clips what lies past it, and its neighbors
+ * (the HUD's controls, a dialog's title and buttons) stand a few px away, where a feather would
+ * lie on them. There the calm is its element's box, at full strength, on the panel's own ground.
+ * The doubled class outranks the phone's rule above.
+ */
+.kb-hud .kb-calm.kb-calm,
+.kb-hand-drawer .kb-calm.kb-calm,
+.kb-glass-dialog .kb-calm.kb-calm,
+.kb-class-rail .kb-calm.kb-calm {
+  --kb-calm-feather: 0px;
+}
+
 .kb-calm::before {
   content: '';
   position: absolute;

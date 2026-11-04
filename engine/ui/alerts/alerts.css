@@ -19,7 +19,7 @@
   flex-wrap: wrap;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 12px 32px;
+  gap: max(12px, var(--kb-glass-calm-room, 32px)) 32px;
 }
 
 .kb-alerts-title {
@@ -72,7 +72,7 @@
 .kb-alerts-empty,
 .kb-alerts-nothing {
   max-width: 720px;
-  margin: 18px 0 0;
+  margin: max(18px, var(--kb-glass-calm-room, 32px)) 0 0;
   font-size: var(--kb-glass-size-body);
   font-weight: 600;
   line-height: 1.5;
@@ -272,7 +272,7 @@
 :where(:root[data-kb-layout='phone']) .kb-alerts-detail,
 :where(:root[data-kb-layout='phone']) .kb-alerts-note,
 :where(:root[data-kb-layout='phone']) .kb-alerts-older {
-  margin-top: 12px;
+  margin-top: max(12px, var(--kb-glass-calm-room, 32px));
   font-size: var(--kb-glass-size-phone-body);
 }
 

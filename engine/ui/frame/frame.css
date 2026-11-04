@@ -431,6 +431,8 @@
   align-items: flex-start;
   /* Ends before the Alerts button, which stands at the right of the same corner (1229px at the board's 1440): the date and time are never drawn under it. */
   max-width: 240px;
+  /* The clock's calm is its box, so the box is its words' width, and the hand's fan lies on nothing of it. */
+  width: fit-content;
   margin: 1.875rem 0 0;
 }
 
@@ -438,6 +440,8 @@
   font-size: var(--kb-glass-size-label);
   font-weight: 700;
   letter-spacing: 3px;
+  /* The letter spacing after the last letter is no word: the clock's calm (its box) ends at the letters. */
+  margin-right: -3px;
   text-transform: uppercase;
   color: var(--kb-glass-text-2);
 }

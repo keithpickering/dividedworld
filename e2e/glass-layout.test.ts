@@ -239,6 +239,31 @@ describe('the layout judgment', () => {
     expect(refusals({ blocks: [...clean.blocks, { ...heading, path: `${other.path} > h2:nth-child(1)` }], calms: [calmed, other] })).toEqual([]);
   });
 
+  test('a heading with something drawn over all of it is not what the calm lies on', () => {
+    expect(refusals({ blocks: [...clean.blocks, { ...heading, seen: null }], calms: [calmed] })).toEqual([]);
+  });
+
+  test('a heading under the part of the feather a clipping ancestor hides is not what the calm lies on', () => {
+    /* The column ends at y 140, so the feather below it is not drawn; the heading at 138 to 168 still meets the drawn part, the one at 145 does not. */
+    const clip = { path: 'main:nth-child(1)', rect: { x: 0, y: 0, width: 390, height: 140 }, x: false, y: true };
+    const over = (blocks: LayoutFacts['blocks']) => refusals({ blocks, calms: [{ ...calmed, clips: [clip] }] }).filter((r) => r.startsWith('calm over'));
+    expect(over([...clean.blocks, heading])).toHaveLength(1);
+    expect(over([...clean.blocks, { ...heading, rect: { ...heading.rect, y: 145 } }])).toEqual([]);
+  });
+
+  test('a heading half covered is judged by the half that is seen', () => {
+    /* The heading spans y 138 to 168; the lower half, from 153, is drawn over by something else, and the feather ends at 146. */
+    expect(refusals({ blocks: [...clean.blocks, { ...heading, seen: { x: 16, y: 138, width: 200, height: 8 } }], calms: [calmed] })).toHaveLength(1);
+    expect(refusals({ blocks: [...clean.blocks, { ...heading, seen: { x: 16, y: 150, width: 200, height: 18 } }], calms: [calmed] })).toEqual([]);
+  });
+
+  test('a calm with another layer drawn over it (a dialog over the HUD) is under that content, not over it', () => {
+    expect(refusals({ blocks: [...clean.blocks, heading], calms: [{ ...calmed, seen: null }] })).toEqual([]);
+    /* Seen only down to y 100, above the heading, which is at 138. */
+    expect(refusals({ blocks: [...clean.blocks, heading], calms: [{ ...calmed, seen: { x: 0, y: 4, width: 390, height: 96 } }] })).toEqual([]);
+    expect(refusals({ blocks: [...clean.blocks, heading], calms: [{ ...calmed, seen: { x: 0, y: 4, width: 390, height: 142 } }] })).toHaveLength(1);
+  });
+
   test('two calms whose feathers overlap are not refused: a staggered backing', () => {
     const other = { path: 'main:nth-child(1) > section:nth-child(2)', element: { x: 16, y: 140, width: 300, height: 60 }, backing: { x: 0, y: 124, width: 332, height: 92 }, clips: [] };
     const para = { path: `${other.path} > p:nth-child(1)`, rect: { x: 16, y: 140, width: 300, height: 60 }, fontSize: 21, longestWord: 60, wraps: true, textWidth: 290 };

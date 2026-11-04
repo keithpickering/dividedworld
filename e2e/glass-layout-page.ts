@@ -124,6 +124,39 @@ function widthOf(text: string, s: CSSStyleDeclaration, zoom: number): number {
   return measuring.measureText(shown).width;
 }
 
+/**
+ * The part of `r` (an element's box) that nothing else is drawn over: the page's own layers (the HUD over the board, a dialog
+ * over its page) cover the rest. Read by sampling a grid of points in the part of the box inside the window, and taking
+ * the bounds of those where the element, something inside it or something holding it is on top. Null when none is; the
+ * whole box when none of it is in the window (the page scrolls to it).
+ */
+function seenOf(el: Element, r: Box): Box | null {
+  const x0 = Math.max(0, r.x);
+  const y0 = Math.max(0, r.y);
+  const x1 = Math.min(innerWidth - 1, r.x + r.width);
+  const y1 = Math.min(innerHeight - 1, r.y + r.height);
+  if (x1 <= x0 || y1 <= y0) return r;
+  const N = 8;
+  let box: Box | null = null;
+  for (let i = 0; i <= N; i++) {
+    for (let j = 0; j <= N; j++) {
+      const x = x0 + ((x1 - x0) * i) / N;
+      const y = y0 + ((y1 - y0) * j) / N;
+      const hit = document.elementFromPoint(x, y);
+      if (hit === null || el.contains(hit) || hit.contains(el)) {
+        const sx = (x1 - x0) / N;
+        const sy = (y1 - y0) / N;
+        /* A cell about the point, kept inside the element's box. */
+        const cx0 = Math.max(r.x, x - sx / 2);
+        const cy0 = Math.max(r.y, y - sy / 2);
+        const b: Box = { x: cx0, y: cy0, width: Math.min(r.x + r.width, x + sx / 2) - cx0, height: Math.min(r.y + r.height, y + sy / 2) - cy0 };
+        box = box === null ? b : { x: Math.min(box.x, b.x), y: Math.min(box.y, b.y), width: Math.max(box.x + box.width, b.x + b.width) - Math.min(box.x, b.x), height: Math.max(box.y + box.height, b.y + b.height) - Math.min(box.y, b.y) };
+      }
+    }
+  }
+  return box;
+}
+
 function blockOf(el: Element): BlockFact | null {
   const own = [...el.childNodes].filter((n): n is Text => n.nodeType === Node.TEXT_NODE && /\S/.test((n as Text).data));
   if (own.length === 0) return null;
@@ -160,7 +193,7 @@ function blockOf(el: Element): BlockFact | null {
   const breaks = s.overflowWrap === 'anywhere' || s.overflowWrap === 'break-word' || s.wordBreak === 'break-all' || s.wordBreak === 'break-word';
   const words = text.split(/[\s­‐-―/-]+/).filter(Boolean).sort((a, b) => b.length - a.length).slice(0, 3);
   const longestWord = breaks ? 0 : Math.max(0, ...words.map((w) => widthOf(w, s, z)));
-  return { path: pathOf(el), rect: content, fontSize, longestWord, wraps, textWidth: widest };
+  return { path: pathOf(el), rect: content, fontSize, longestWord, wraps, textWidth: widest, seen: seenOf(el, content) };
 }
 
 /* ---- controls, rows and panels ---- */
@@ -301,7 +334,7 @@ function calmOf(el: Element): CalmFact | null {
   const ps = getComputedStyle(el, '::before');
   if (!drawn(ps)) return null;
   const { scale: _scale, ...backing } = pseudoBox(el, ps);
-  return { path: pathOf(el), backing, element: toBox(el.getBoundingClientRect()), clips: clipsOf(el) };
+  return { path: pathOf(el), backing, element: toBox(el.getBoundingClientRect()), clips: clipsOf(el), seen: seenOf(el, backing) };
 }
 
 /** Everything the judgment reads, from the page as it stands. */
@@ -328,7 +361,7 @@ export function gather(): Omit<LayoutFacts, 'screen'> {
     if (out) reached.add(el);
     if (isControl(el)) {
       const seen = inView(el);
-      if (seen) controls.push({ path: pathOf(el), rect: toBox(seen.rect), quad: seen.clipped ? undefined : quadOf(el), panel: panelOf(el) });
+      if (seen) controls.push({ path: pathOf(el), rect: toBox(seen.rect), seen: seenOf(el, toBox(seen.rect)), quad: seen.clipped ? undefined : quadOf(el), panel: panelOf(el) });
     }
     if (el.classList.contains('kb-calm')) { const c = calmOf(el); if (c) calms.push(c); }
   }

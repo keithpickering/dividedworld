@@ -62,7 +62,7 @@
 /* ---- what happens next ---- */
 
 .kb-welcome-lede {
-  margin: 20px 0 0;
+  margin: max(20px, var(--kb-glass-calm-room, 32px)) 0 0;
   font-size: var(--kb-glass-size-body);
   font-weight: 600;
   line-height: 1.5;

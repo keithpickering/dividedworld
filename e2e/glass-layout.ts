@@ -19,8 +19,9 @@ import type { Box } from './glass-text.ts';
  *      of an ancestor that clips overflow, on an axis it clips, where the calm's own element lies
  *      inside that box: the feather is cut on a straight line (the phone Settings, on main);
  *   6. a calm over other content: a `.kb-calm` backing whose drawn rect overlaps the box of a text
- *      block or a control that is neither inside this calm nor inside another calm. Two calms'
- *      feathers meeting is a staggered backing and is not refused.
+ *      block or a control (the backing as the clipping ancestors leave it) that is neither inside this calm nor inside another calm, taking
+ *      of that block or control only the part nothing else is drawn over. Two calms' feathers
+ *      meeting is a staggered backing and is not refused.
  *
  * The decisions the gatherer makes, so a reader of a refusal knows what was and was not looked at
  * (they are made in the page, where the styles are; they are written here because they are the
@@ -55,6 +56,8 @@ export interface Located { readonly path: string; readonly rect: Box }
 
 /** A block of text: `rect` is its content box; `longestWord` is the width of its longest word in its own font; `textWidth`, its widest line as laid out. */
 export interface BlockFact extends Located {
+  /** The part of `rect` that nothing else is drawn over (the HUD over the board's page, a dialog over what is under it); null when none is. Absent: all of it. */
+  readonly seen?: Box | null;
   readonly fontSize: number;
   readonly longestWord: number;
   readonly wraps: boolean;
@@ -70,13 +73,13 @@ export interface RowFact { readonly path: string; readonly kind: 'button-row' | 
 export interface PanelFact extends Located { readonly polygon: readonly (readonly [number, number])[] }
 
 /** A control's box, as the bounding rect and, where it is skewed, the four corners it is drawn at; and the nearest panel that clips what is in it. */
-export interface ControlFact extends Located { readonly quad?: readonly (readonly [number, number])[]; readonly panel: PanelFact | null }
+export interface ControlFact extends Located { readonly seen?: Box | null; readonly quad?: readonly (readonly [number, number])[]; readonly panel: PanelFact | null }
 
 /** An ancestor that clips overflow: its box, and the axes it clips on. */
 export interface ClipFact extends Located { readonly x: boolean; readonly y: boolean }
 
 /** A calm: its drawn backing (feather included), its element's border box, and the ancestors that clip it. */
-export interface CalmFact { readonly path: string; readonly backing: Box; readonly element: Box; readonly clips: readonly ClipFact[] }
+export interface CalmFact { readonly path: string; readonly backing: Box; readonly element: Box; readonly clips: readonly ClipFact[]; /** The part of `backing` nothing else is drawn over, as for a block's `seen`. Absent: all of it. */ readonly seen?: Box | null }
 
 export interface LayoutFacts {
   readonly screen: string;
@@ -201,10 +204,26 @@ export function judgeLayout(facts: LayoutFacts): string[] {
   const overlaps = (a: Box, b: Box) => Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x) > EDGE && Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y) > EDGE;
   const others: readonly Located[] = [...facts.blocks, ...facts.controls];
   for (const m of facts.calms) {
+    /* What is drawn: the backing less what an ancestor that clips hides of it (that is refusal 5's to name). */
+    let drawn: Box = m.backing;
+    for (const c of m.clips) {
+      const x0 = c.x ? Math.max(drawn.x, c.rect.x) : drawn.x;
+      const x1 = c.x ? Math.min(drawn.x + drawn.width, c.rect.x + c.rect.width) : drawn.x + drawn.width;
+      const y0 = c.y ? Math.max(drawn.y, c.rect.y) : drawn.y;
+      const y1 = c.y ? Math.min(drawn.y + drawn.height, c.rect.y + c.rect.height) : drawn.y + drawn.height;
+      drawn = { x: x0, y: y0, width: Math.max(0, x1 - x0), height: Math.max(0, y1 - y0) };
+    }
+    /* And what of it the page's other layers leave in view (a dialog drawn over the HUD's calm covers it: the calm is under, not over). */
+    if (m.seen !== undefined) {
+      drawn = m.seen === null ? { ...drawn, width: 0, height: 0 } : { x: Math.max(drawn.x, m.seen.x), y: Math.max(drawn.y, m.seen.y), width: Math.max(0, Math.min(drawn.x + drawn.width, m.seen.x + m.seen.width) - Math.max(drawn.x, m.seen.x)), height: Math.max(0, Math.min(drawn.y + drawn.height, m.seen.y + m.seen.height) - Math.max(drawn.y, m.seen.y)) };
+    }
     for (const o of others) {
       /* Inside this calm, inside another, or holding this calm: the calm is under it or it is under the calm. */
       if (within(o.path, m.path) || within(m.path, o.path) || facts.calms.some((c) => within(o.path, c.path))) continue;
-      if (overlaps(m.backing, o.rect)) at('calm over other content', m.path, `its backing, ${px(m.backing.width)} by ${px(m.backing.height)} with its feather, lies on ${shortPath(o.path)}, which is in no calm`);
+      /* What the player sees of it: the part nothing else is drawn over. */
+      const seen = (o as { seen?: Box | null }).seen;
+      if (seen === null) continue;
+      if (overlaps(drawn, seen ?? o.rect)) at('calm over other content', m.path, `its backing, ${px(drawn.width)} by ${px(drawn.height)} with its feather and as its ancestors leave it, lies on ${shortPath(o.path)}, which is in no calm`);
     }
   }
 
