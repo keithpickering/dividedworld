@@ -122,6 +122,23 @@ describe('the row', () => {
     expect(within(row).getByRole('link', { name: /Thread 001/ })).toHaveAttribute('href', `/t/${w.ids[0]}?page=1#post-2`);
   });
 
+  test('a thread spun from a play on a post says so, and links to that post; one spun from an update links to the Updates page', async () => {
+    const fake = buildWorld();
+    const w = world(fake, { threads: 1 });
+    const target = fake.seed.post(w.ids[0]!, w.spritey, 'a line to play on', { at: T0 + 2 * DAY });
+    const played = fake.seed.card(w.spritey, target, 'whoops');
+    expect((await fake.spin(played, w.mine!, 'From a play', 'x')).ok).toBe(true);
+    const update = fake.seed.update({ title: 'Traps bite', body: 'Hi.' });
+    expect((await fake.spin(update, w.mine!, 'From an update', 'x')).ok).toBe(true);
+    renderIn(fake, <BoardScreen slug="general" />);
+    await screen.findByRole('link', { name: 'From a play' });
+    const play = rowOf('From a play');
+    expect(play).toHaveTextContent(/spun from Whoops! on #2 in Thread 001/u);
+    expect(within(play).getByRole('link', { name: /^Whoops! on #2 in Thread 001$/u })).toHaveAttribute('href', `/t/${w.ids[0]}?page=1#post-2`);
+    const upd = rowOf('From an update');
+    expect(within(upd).getByRole('link', { name: 'the update “Traps bite”' })).toHaveAttribute('href', `/updates?update=${encodeURIComponent(update)}`);
+  });
+
   test('replies count the posts after the first: a thread whose last Act is not a post counts only its posts', async () => {
     const fake = buildWorld();
     const w = world(fake, { threads: 2 });

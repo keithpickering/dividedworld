@@ -139,6 +139,29 @@ describe('the ORIGIN box', () => {
     await waitFor(() => expect(box).toHaveTextContent('Pipewrench'));
   });
 
+  test('the head of a play-spun box names the play and where it landed, linked, and never reads "an Act"', async () => {
+    const w = threadWorld(3);
+    const card = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
+    const fromCard = await spinFrom(w, card, 'About that card');
+    openSpun(w, fromCard);
+    const box = await origin();
+    const head = box.querySelector('.kb-origin-head-text') as HTMLElement;
+    await waitFor(() => expect(head).toHaveTextContent(/^ORIGIN · Spun from Whoops! on #2 in A short thread$/u));
+    expect(head).not.toHaveTextContent('an Act');
+    expect(within(head).getByRole('link', { name: 'Whoops! on #2 in A short thread' })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`);
+  });
+
+  test('the head of an update-spun box reads "the update" with its headline, linked to the Updates page', async () => {
+    const w = threadWorld(3);
+    const update = w.fake.seed.update({ title: 'Traps bite', body: 'Hi.' });
+    const spun = await spinFrom(w, update, 'About the update');
+    openSpun(w, spun);
+    const box = await origin();
+    const head = box.querySelector('.kb-origin-head-text') as HTMLElement;
+    await waitFor(() => expect(head).toHaveTextContent(/Spun from the update “Traps bite”$/u));
+    expect(within(head).getByRole('link', { name: 'the update “Traps bite”' })).toHaveAttribute('href', `/updates?update=${encodeURIComponent(update)}`);
+  });
+
   test('shows an edit made to its Act after the spin, in place, with Last edited and a History', async () => {
     const w = threadWorld(3);
     const spun = await spinFrom(w, w.ids[1]!);
