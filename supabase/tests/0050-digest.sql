@@ -110,7 +110,7 @@ begin
   on conflict (key) do update set value = excluded.value;
   acct_a := tests.account('digest-a'); acct_b := tests.account('digest-b'); acct_c := tests.account('digest-c');
   a := tests.character(acct_a, 'Digest A'); b := tests.character(acct_b, 'Digest B'); cc := tests.character(acct_c, 'Digest C');
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Digest Boss', 'digest-boss', 'boss', now()) returning id into boss;
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Digest Boss', 'digest-boss', 'persona', now()) returning id into boss;
   update seasons set boss = 'digest-boss' where ends_at is null;
 
   t1 := tests.thread('Most posts'); t2 := tests.thread('Two threads alike'); t3 := tests.thread('Two threads alike'); t4 := tests.thread('Quiet');

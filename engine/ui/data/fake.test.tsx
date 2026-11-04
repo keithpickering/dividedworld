@@ -862,7 +862,7 @@ describe('what a list row shows', () => {
     // Beyond a post: a character (its name, null before its debut), a thread and a board.
     const mine = fake.seed.post(thread, anaFace, 'Mine.');
     expect(await place(fake.seed.reach(boFace, 'character', anaFace, 'glint', { post: mine }))).toEqual({ kind: 'play', card: 'glint', on: { kind: 'character', id: anaFace, name: 'Ana Face' } });
-    const unborn = fake.seed.staff('ghost', 'Not Yet', 'bot', { debuted: false });
+    const unborn = fake.seed.staff('ghost', 'Not Yet', 'mod', { debuted: false });
     const sys = fake.seed.thread('the-system', null, 'Notice').thread;
     const theirs = fake.seed.staffPost(unborn, sys, 'Hidden.');
     expect(await place(fake.seed.reach(boFace, 'character', unborn, 'glint', { post: theirs }))).toEqual({ kind: 'play', card: 'glint', on: { kind: 'character', id: unborn, name: null } });
@@ -1522,7 +1522,7 @@ describe('moves, a staff member and the admin queue', () => {
   test('the Director is a staff character in the public projection, and a player\'s character is not', async () => {
     const { fake, director } = world();
     const [boss] = await fake.characters([director]);
-    expect([boss?.staff, boss?.staffKind]).toEqual(['director', 'boss']);
+    expect([boss?.staff, boss?.office]).toEqual(['director', 'boss']);
     fake.signInAs(null);
     expect((await fake.characters([director]))[0]?.staff).toBe('director');
   });
@@ -2030,7 +2030,7 @@ describe('Updates: the developer persona\'s posts (updates, post_update, 0062)',
     expect((await plain.fake.updates())[0]).toMatchObject({ name: 'The developers', tagline: '', avatar: null });
     // The persona is a staff character of its own kind, known to be staff, and no player's.
     const [character] = await w.fake.characters([rows[0]!.character]);
-    expect(character).toMatchObject({ name: 'Gabe', title: 'Made this. Sorry.', staff: 'developer', staffKind: 'developer' });
+    expect(character).toMatchObject({ name: 'Gabe', title: 'Made this. Sorry.', staff: 'developer', office: 'developer' });
   });
 
   test('a page is bounded and pages back by `before`, exclusive', async () => {

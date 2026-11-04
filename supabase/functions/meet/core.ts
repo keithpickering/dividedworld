@@ -85,6 +85,8 @@ interface Context {
   /** The slot of the last meeting that closed ok or failed: where this window starts. Null before the first. */
   readonly lastSlot: string | null;
   readonly boards: readonly { readonly id: string; readonly name: string }[];
+  /** The keys a nomination may name (0080): the roster's unretired personas that are not benched, waiting ones included, without the Boss. */
+  readonly successors?: readonly string[];
   /** The moves of an earlier Boss, still in force and shaping a board, that this Boss has neither kept nor ended (0051); absent from an older database. */
   readonly inheritanceDue?: readonly InheritedMove[];
 }
@@ -145,6 +147,9 @@ export async function runMeeting(
       return { status: 'failed', meeting, error };
     }
 
+    // Who a nomination may name is the database's own list (boss_roster), so the prompt, the repair and the guard agree.
+    const successors = new Set(context.successors ?? []);
+
     const now = clock();
     const phase = phaseAt(context.season, now, settings, boss);
 
@@ -170,7 +175,7 @@ export async function runMeeting(
       phase,
       bank,
       successorAllowed,
-      roster: tuned.system.roster.filter((b) => !tuned.system.firstStaff.includes(b.key)).map((b) => ({ key: b.key, name: b.name })),
+      roster: tuned.system.roster.filter((b) => successors.has(b.key)).map((b) => ({ key: b.key, name: b.name })),
     });
     const notes = skipped.map((f) => `The feed "${f.name}" could not be read today (${f.why}).`);
     const message = [
@@ -224,6 +229,7 @@ export async function runMeeting(
       threads: new Set(digest.threads.slice(0, REFERENCE_MOST.threads).map((t) => t.thread)),
       isPublic: (id) => publicNow.has(id),
       successorAllowed,
+      successors,
       inheritable: context.inheritanceDue ? new Set(due.map((m) => m.act.toLowerCase())) : undefined,
     });
     if (!repaired.ok) {

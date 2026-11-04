@@ -57,6 +57,8 @@ interface World {
   failOn?: string | string[];
   publicIds?: string[];
   boss?: string;
+  /** The keys meeting_context() lists as a nomination's candidates (default: the roster but the Boss). */
+  successors?: string[];
 }
 function fakeDb(w: World = {}) {
   const calls: { fn: string; args: Record<string, any> }[] = [];
@@ -74,7 +76,7 @@ function fakeDb(w: World = {}) {
           return { status: 'begun', meeting: state.meeting } as T;
         case 'fail_meeting': state.failed.push(args); state.closed = true; return { status: 'closed' } as T;
         case 'meeting_context':
-          return { season: { startsAt: NOW - 30 * DAY, endsAt: NOW + (w.endsIn ?? 60 * DAY) }, boss: w.boss ?? BOSS, lastSlot: '2026-10-31T09:23:00.000Z', boards: [{ id: BOARD, name: 'Mario Fan Games' }, { id: BOARD2, name: 'Off Topic' }], ...(w.inheritanceDue ? { inheritanceDue: w.inheritanceDue } : {}) } as T;
+          return { season: { startsAt: NOW - 30 * DAY, endsAt: NOW + (w.endsIn ?? 60 * DAY) }, boss: w.boss ?? BOSS, lastSlot: '2026-10-31T09:23:00.000Z', boards: [{ id: BOARD, name: 'Mario Fan Games' }, { id: BOARD2, name: 'Off Topic' }], successors: w.successors ?? dividedWorld.system.roster.map((b) => b.key).filter((k) => k !== (w.boss ?? BOSS)), ...(w.inheritanceDue ? { inheritanceDue: w.inheritanceDue } : {}) } as T;
         case 'system_digest':
           return { since: args.since, until: args.until, threads: [{ thread: HOT, title: 'Pineapple', board: 'Mario Fan Games', posts: 4, heat: 1, controversy: 0.5, length: 9 }], standings: [], moves: [], quotes: [], bossReactions: [], excerpts: [], characters: [{ id: ANN, name: 'Ann the Great', staff: false }] } as T;
         case 'staff_memory_latest': return (w.memories?.[String(args.staff)] ?? null) as T;
@@ -322,6 +324,21 @@ test('a successor named before the meltdown\'s last week is dropped and recorded
     assert.equal(xo.successor, null, boss);
     assert.ok(xo.trims.some((t: any) => t.path === 'successor.boss'), boss);
   }
+});
+
+test('who a successor may be is the database\'s list, not the roster minus the first staff', async () => {
+  const [staffKey] = dividedWorld.system.firstStaff;
+  // A persona on staff from the start may be named: the Boss may come from any office.
+  const onStaff = fakeDb({ endsIn: 3 * DAY });
+  const so = await run(onStaff.db, fakeModels(answer([], { successor: { boss: staffKey!, why: 'x' } })).models, quiet, SLOT, clock, noFeeds);
+  assert.deepEqual(so.successor, { boss: staffKey, why: 'x' });
+  // One the database leaves out (benched) is refused, and is not offered in the prompt.
+  const benched = fakeDb({ endsIn: 3 * DAY, successors: [OTHER_BOSS] });
+  const bm = fakeModels(answer([], { successor: { boss: staffKey!, why: 'x' } }));
+  const bo = await run(benched.db, bm.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(bo.successor, null);
+  assert.ok(bo.trims.some((t: any) => t.path === 'successor.boss' && t.predicate === 'rosterBoss'), JSON.stringify(bo.trims));
+  assert.ok(!bm.chats[0]!.system.includes(`${staffKey} (`), 'a persona the database leaves out is not offered');
 });
 
 test('inheritance answers are repaired and carried, not acted on', async () => {

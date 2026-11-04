@@ -554,7 +554,7 @@ begin
   perform pg_temp.cards();
   perform pg_temp.hand(ann, 'catcher');
   perform pg_temp.hand(bob, 'sweetie', 'splat');
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Settle Boss', 'settle-boss', 'boss', now()) returning id into boss;
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Settle Boss', 'settle-boss', 'persona', now()) returning id into boss;
   perform set_config('kayfabb.staff_writer', 'on', true);
   insert into acts (character, kind, thread, payload) values (boss, 'post', t, '{"body": "A decree."}') returning id into decree;
   perform set_config('kayfabb.staff_writer', '', true);

@@ -33,7 +33,7 @@ declare
   m8 bigint; m9 bigint;
 begin
   select id into general from boards where slug = 'general';
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Mt Boss', 'mt-boss', 'boss', now()), ('Mt Other', 'mt-other', 'boss', now());
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Mt Boss', 'mt-boss', 'persona', now()), ('Mt Other', 'mt-other', 'persona', now());
   select id into boss_char from characters where staff = 'mt-boss';
   insert into move_kinds (key, structural) values ('renameBoard', true) on conflict (key) do nothing;
   insert into demand_kinds (key) values ('postsOnBoard') on conflict (key) do nothing;
@@ -167,7 +167,7 @@ begin
   if not denied then raise exception 'meetings was truncated'; end if;
 
   -- A favorite, an opinion and a grudge in the memory name debuted public characters only; the database keeps the filter whatever the caller sent.
-  insert into characters (name, staff, staff_kind) values ('Mt Hidden', 'mt-hidden', 'bot');
+  insert into characters (name, staff, staff_kind) values ('Mt Hidden', 'mt-hidden', 'persona');
   select id into hidden from characters where staff = 'mt-hidden';
   m8 := (begin_meeting(slot1 + interval '20 days') ->> 'meeting')::bigint;
   pl := pg_temp.payload('mt-boss', '[]', 'filtered');

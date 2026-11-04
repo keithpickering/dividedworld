@@ -29,6 +29,7 @@ const ctx = (): RepairContext => ({
   threads: new Set([THREAD]),
   isPublic: (id) => id === ANN || id === BOB,
   successorAllowed: false,
+  successors: new Set(['some-boss']),
 });
 const move = (demand: unknown) => ({
   kind: 'renameBoard',

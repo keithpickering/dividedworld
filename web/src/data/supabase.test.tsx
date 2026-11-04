@@ -1668,10 +1668,10 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
   });
 
   it('marks a character as staff from characters_public, and not otherwise', async () => {
-    const h = harness((r) => (r.url.pathname.endsWith('/characters_public') ? rows([{ id: B, name: 'The Director', joined: '2026-10-01', staff: 'director', staff_kind: 'boss' }, { id: C, name: 'Al', joined: '2026-10-01', staff: null, staff_kind: null }]) : rows([])));
+    const h = harness((r) => (r.url.pathname.endsWith('/characters_public') ? rows([{ id: B, name: 'The Director', joined: '2026-10-01', staff: 'director', office: 'boss' }, { id: C, name: 'Al', joined: '2026-10-01', staff: null, office: null }]) : rows([])));
     const [boss, al] = await h.api.characters([B, C]);
-    expect([boss?.staff, boss?.staffKind, al?.staff, al?.staffKind]).toEqual(['director', 'boss', undefined, undefined]);
-    expect(h.to('characters_public')[0]?.url.searchParams.get('select')).toBe('id,name,joined,staff,staff_kind');
+    expect([boss?.staff, boss?.office, al?.staff, al?.office]).toEqual(['director', 'boss', undefined, undefined]);
+    expect(h.to('characters_public')[0]?.url.searchParams.get('select')).toBe('id,name,joined,staff,office');
   });
 
   it('reads the admin queue in its three groups, and holds and reverses through the admin functions', async () => {
@@ -1714,7 +1714,7 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     expect(h.to('moves_log')).toHaveLength(0);
     expect(await h.api.bosses()).toEqual([{ staff: 'hype-man', name: 'Hype Man' }, { staff: 'the-clerk', name: 'The Clerk' }]);
     const roster = h.to('characters_public')[0]!.url.searchParams;
-    expect([roster.get('staff_kind'), roster.get('select')]).toEqual(['eq.boss', 'id,name,staff']);
+    expect([roster.get('office'), roster.get('select')]).toEqual(['neq.developer', 'id,name,staff']);
     expect(await h.api.replaceSuccessor(4, 'hype-man')).toEqual({ ok: true, value: { id: 4, boss: 'hype-man' } });
     expect(h.to('rpc/replace_successor')[0]?.body).toEqual({ id: 4, boss: 'hype-man' });
     const refused = harness(() => json({ code: '55000', message: 'that nomination has already landed; reverse it instead', hint: 'kayfabb.refusal' }, 400));
@@ -1752,12 +1752,12 @@ describe('Updates', () => {
     expect(await lost.api.postUpdate('T', 'B', [])).toMatchObject({ ok: false, uncertain: true });
   });
 
-  it('knows the developer as a staff kind of its own', async () => {
+  it('knows the developer as an office of its own', async () => {
     const h = harness((r) => {
-      if (r.url.pathname.endsWith('/characters_public')) return rows([{ id: B, name: 'Gabe', joined: '2026-10-01', staff: 'developer', staff_kind: 'developer' }], 1);
+      if (r.url.pathname.endsWith('/characters_public')) return rows([{ id: B, name: 'Gabe', joined: '2026-10-01', staff: 'developer', office: 'developer' }], 1);
       return rows([], 0);
     });
-    expect((await h.api.characters([B]))[0]).toMatchObject({ name: 'Gabe', staff: 'developer', staffKind: 'developer' });
+    expect((await h.api.characters([B]))[0]).toMatchObject({ name: 'Gabe', staff: 'developer', office: 'developer' });
   });
 });
 

@@ -23,7 +23,7 @@ begin
       'systemMoveWords', jsonb_build_object('renameBoard', 'the renaming of a board to "{name}"')),
     'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'tk-boss',
-      'staff', jsonb_build_array(jsonb_build_object('key', 'tk-boss', 'name', 'Tick Boss', 'kind', 'boss', 'title', 'Boss', 'signature', 'Hi')),
+      'staff', jsonb_build_array(jsonb_build_object('key', 'tk-boss', 'name', 'Tick Boss', 'title', 'Boss', 'signature', 'Hi')),
       'firstStaff', '[]'::jsonb,
       'moves', jsonb_build_array(jsonb_build_object('key', 'renameBoard', 'structural', true)),
       'demands', jsonb_build_array(jsonb_build_object('key', 'postsOnBoard'), jsonb_build_object('key', 'shout'))));
@@ -306,7 +306,7 @@ declare
   ran jsonb;
   at1 timestamptz;
 begin
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Tk Retired Boss', 'tk-boss-retired', 'boss', now());
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Tk Retired Boss', 'tk-boss-retired', 'persona', now());
   update characters set retired_at = now() where staff = 'tk-boss-retired';
   bad := pg_temp.queued('Bad Boss Bay', now() - interval '2 hours', false, 'tk-boss-retired');
   good := pg_temp.queued('Good Boss Bay', now() - interval '1 hour');

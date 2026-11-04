@@ -30,7 +30,7 @@ import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
   AdminQueue, BoardName, Demand, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffProfile,
-  Act, AccountListener, ActKind, Alert, SeasonNewsItem, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
+  Act, AccountListener, ActKind, Alert, SeasonNewsItem, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
@@ -125,7 +125,7 @@ export interface Seed {
   /** A tally on an Act as if that many others had reacted, kind by kind: no one's reaction (no account or character stands behind it), only the counts every reader sees. */
   tally(act: Id, counts: Readonly<Record<string, number>>): void;
   /** A staff character (a Boss or a Mod Bot): debuted, owned by no player, with no class; it acts only through the seed below. */
-  staff(key: string, name: string, kind: 'boss' | 'bot', options?: { title?: string; signature?: string; at?: number; debuted?: boolean }): Id;
+  staff(key: string, name: string, office: 'boss' | 'mod' | 'member' | 'benched', options?: { title?: string; signature?: string; at?: number; debuted?: boolean }): Id;
   /** A staff member's in-character profile, a version at `at` (the latest is the one read). */
   staffProfile(key: string, profile: { interests?: readonly string[]; favorites?: readonly Id[]; mood?: string; signature?: string; at?: number }): void;
   /** A staff character's post in a thread of The System's board, as the Boss posts there. */
@@ -247,7 +247,7 @@ interface CharRec {
   squareFrame: Frame | null;
   portraitFrame: Frame | null;
   /** Set for a staff character. */
-  staff?: { readonly key: string; readonly kind: 'boss' | 'bot' | 'developer' };
+  staff?: { readonly key: string; readonly office: Office };
 }
 interface ActRec {
   readonly id: Id;
@@ -522,7 +522,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       id: c.id, name: c.name, title: c.title, signature: c.signature, avatarSquare: c.square, avatarPortrait: c.portrait, squareFrame: c.squareFrame,
       portraitFrame: c.portraitFrame, pipStyle: c.pipStyle,
       joined: `${iso(c.debutedAt!).slice(0, 7)}-01`,
-      ...(c.staff ? { staff: c.staff.key, staffKind: c.staff.kind } : {}),
+      ...(c.staff ? { staff: c.staff.key, office: c.staff.office } : {}),
     };
   }
 
@@ -606,7 +606,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const c: CharRec = {
       id: uuid(), owner: '', name: persona.name, createdAt: at, debutedAt: at, retiredAt: null, loudness: 'silent', history: [{ cls: '', at }], pending: null, presenceHidden: false,
       title: persona.tagline.slice(0, 40), signature: '', pipStyle: options.instance.pipStyles[0]?.key ?? 'default',
-      square: null, portrait: null, squareFrame: null, portraitFrame: null, staff: { key: 'developer', kind: 'developer' },
+      square: null, portrait: null, squareFrame: null, portraitFrame: null, staff: { key: 'developer', office: 'developer' },
     };
     characters.set(c.id, c);
     developerId = c.id;
@@ -1406,7 +1406,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         })),
       ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
       return { cap: 100, waiting, inForce: live, ended, more: { waiting: false, inForce: false, ended: false },
-        roster: [...characters.values()].filter((c) => c.staff?.kind === 'boss' && c.retiredAt === null && c.debutedAt !== null).map((c) => ({ staff: c.staff!.key, name: c.name })) } satisfies AdminQueue;
+        roster: [...characters.values()].filter((c) => c.staff && c.staff.office !== 'developer' && c.staff.office !== 'benched' && c.retiredAt === null && c.debutedAt !== null).map((c) => ({ staff: c.staff!.key, name: c.name })) } satisfies AdminQueue;
     },
     holdMove(id) {
       if (!me()?.admin) return refuse('only an admin holds a move');
@@ -1424,14 +1424,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (q.successor === undefined) return refuse('that move names no successor');
       if (q.landed !== null) return refuse('that nomination has already landed; reverse it instead');
       if (q.heldAt !== null) return refuse('that nomination is held');
-      const roster = [...characters.values()].filter((c) => c.staff?.kind === 'boss' && c.retiredAt === null && c.debutedAt !== null);
+      const roster = [...characters.values()].filter((c) => c.staff && c.staff.office !== 'developer' && c.staff.office !== 'benched' && c.retiredAt === null && c.debutedAt !== null);
       if (!roster.some((c) => c.staff?.key === boss)) return refuse('that is not a Boss of the roster');
       if (boss === q.staff) return refuse('a Boss cannot succeed itself');
       q.successor = boss;
       q.replacedAt = now();
       return ok({ id, boss });
     },
-    bosses: () => [...characters.values()].filter((c) => c.staff?.kind === 'boss').map((c) => ({ staff: c.staff!.key, name: c.name })),
+    bosses: () => [...characters.values()].filter((c) => c.staff && c.staff.office !== 'developer' && c.debutedAt !== null).map((c) => ({ staff: c.staff!.key, name: c.name })),
     reverseMove(act) {
       if (!me()?.admin) return refuse('only an admin reverses a move');
       const a = acts.get(act);
@@ -2147,13 +2147,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!acts.has(act)) throw new Error(`no such Act ${act}`);
       for (const [kind, n] of Object.entries(counts)) for (let i = 0; i < n; i++) reactions.push({ act, account: '', character: '', kind });
     },
-    staff(key, name, kind, o) {
+    staff(key, name, office, o) {
       if ([...characters.values()].some((c) => c.staff?.key === key)) throw new Error(`staff member ${key} exists`);
       const at = o?.at ?? now();
       const c: CharRec = {
         id: uuid(), owner: '', name, createdAt: at, debutedAt: o?.debuted === false ? null : at, retiredAt: null, loudness: 'silent', history: [{ cls: '', at }], pending: null, presenceHidden: false,
         title: o?.title ?? '', signature: o?.signature ?? '', pipStyle: options.instance.pipStyles[0]?.key ?? 'default',
-        square: null, portrait: null, squareFrame: null, portraitFrame: null, staff: { key, kind },
+        square: null, portrait: null, squareFrame: null, portraitFrame: null, staff: { key, office },
       };
       characters.set(c.id, c);
       return c.id;

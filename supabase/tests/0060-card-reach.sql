@@ -185,7 +185,7 @@ declare
   bot uuid; t uuid := tests.thread('Staff reach'); p uuid; pl jsonb;
 begin
   perform pg_temp.cards();
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Reach Bot', 'reach-bot', 'bot', now()) returning id into bot;
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Reach Bot', 'reach-bot', 'persona', now()) returning id into bot;
   perform set_config('kayfabb.staff_writer', 'on', true);
   p := tests.post(bot, t, 'Behave.');
   perform set_config('kayfabb.staff_writer', '', true);
@@ -371,7 +371,7 @@ begin
   got := settlement_input(now() - interval '1 day', now() + interval '1 minute');
   if exists (select 1 from jsonb_array_elements(got -> 'acts') e where e ->> 'id' = old::text) then raise exception 'an earlier play beyond a post is no earlier card on the post a reaction touches'; end if;
   -- A character play on a staff mask, from its post, makes that post no unscored target: the play has no target post.
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Settle Bot', 'settle-bot', 'bot', now()) returning id into bot;
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Settle Bot', 'settle-bot', 'persona', now()) returning id into bot;
   perform set_config('kayfabb.staff_writer', 'on', true);
   bot_post := tests.post(bot, t, 'Behave.', now() - interval '2 days');
   perform set_config('kayfabb.staff_writer', '', true);

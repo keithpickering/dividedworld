@@ -280,7 +280,7 @@ export const DEMAND_ID_ROLES: Readonly<Record<string, 'board' | 'thread' | 'char
 export interface RepairContext {
   /** Only the settings the repair reads, so a caller (or a test) need not hold an instance's whole set. */
   readonly settings: Pick<Settings, 'structuralHoldHours' | 'boardNameMaxLength' | 'moveExpiryLeastHours' | 'reactionCap' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'moveExpiryMostDays'>;
-  readonly system: Pick<SystemContent, 'nameStyle' | 'roster' | 'firstStaff'>;
+  readonly system: Pick<SystemContent, 'nameStyle'>;
   /** The season's Boss. */
   readonly boss: string;
   readonly phase: PhaseAt;
@@ -295,6 +295,8 @@ export interface RepairContext {
   /** Whether a character is debuted and public now, from `public_characters`. */
   readonly isPublic: (character: string) => boolean;
   readonly successorAllowed: boolean;
+  /** The keys a nomination may name now, as `meeting_context().successors` lists them (0080): any persona that is not retired or benched, waiting ones included, and not the Boss. */
+  readonly successors: ReadonlySet<string>;
   /** The moves the Boss inherits and was shown (`meeting_context().inheritanceDue`), when it was shown any: an answer naming another is dropped. Omitted: any move is accepted here and the database holds the line. */
   readonly inheritable?: ReadonlySet<string>;
 }
@@ -432,12 +434,12 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     inherited.push({ move_act: act, decision: e['decision'] as 'keep' | 'end' });
   });
 
-  // A successor: only in the meltdown's last week, a roster Boss, not the outgoing one.
+  // A successor: only in the meltdown's last week, one of the database's candidates, which leave out the outgoing one.
   let successor: RepairedAnswer['successor'] = null;
   if (a['successor'] !== undefined) {
     const given = a['successor'] as { boss: string; why: string };
     if (!c.successorAllowed) drop('successor', 'inMeltdownLastWeek');
-    else if (!c.system.roster.some((b) => b.key === given.boss && !c.system.firstStaff.includes(b.key))) drop('successor.boss', 'rosterBoss');
+    else if (!c.successors.has(given.boss)) drop('successor.boss', 'rosterBoss');
     else if (given.boss === c.boss) drop('successor.boss', 'notTheOutgoingBoss');
     else successor = given;
   }

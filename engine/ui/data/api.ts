@@ -205,11 +205,14 @@ export interface Character {
   readonly pipStyle: string;
   /** The first day of the month it debuted, "2026-10-01": the month and never the time ("Joined Oct 2026"). */
   readonly joined: string;
-  /** Set only for a staff character (a Boss or a Mod Bot): the instance's key for it. A staff member is known to be staff, signed in or not. */
+  /** Set only for a staff character (a persona or the developer): the instance's key for it. A staff member is known to be staff, signed in or not. */
   readonly staff?: string;
-  /** A Boss is shown ADMINISTRATOR and a Mod Bot MODERATOR; the developer persona (the Updates page's author) has no badge. Set with `staff`. */
-  readonly staffKind?: 'boss' | 'bot' | 'developer';
+  /** The office a staff character holds now (characters_public). The Boss is shown ADMINISTRATOR and a Mod Bot MODERATOR; a member or a benched persona has no badge, and neither has the developer persona (the Updates page's author). Set with `staff`. */
+  readonly office?: Office;
 }
+
+/** An office a staff character holds (0080). `waiting` is never shown on a character (a persona that has not debuted is in no public list); `developer` is the developer persona's, which holds no office. */
+export type Office = 'boss' | 'mod' | 'member' | 'benched' | 'waiting' | 'developer';
 
 /** A character's season standing and its place, as a page of the standings lists it (standings_page). */
 export interface Standing {

@@ -47,7 +47,7 @@ export function seedMoves(fake: Fake, instance: Instance, options: { readonly si
   const pipewrench = fake.seed.character(me, 'Pipewrench', cls, { at: ago(40) });
   fake.seed.character(admin, 'Admin Alex', cls, { at: ago(40) });
   const director = fake.seed.staff('director', 'The Director', 'boss', { title: 'Head of Board Operations (Toast Division)', signature: '[i]A forum is like a loaf of bread. Somebody has to slice it.[/i]', at: ago(60) });
-  const bot = fake.seed.staff('hall-monitor', 'Hall Monitor', 'bot', { title: 'Keeper of the Hall', signature: 'Walk, do not run.', at: ago(60) });
+  const bot = fake.seed.staff('hall-monitor', 'Hall Monitor', 'mod', { title: 'Keeper of the Hall', signature: 'Walk, do not run.', at: ago(60) });
   fake.seed.staffProfile('director', { interests: ['toast', 'artisanal breads', 'the 1998 film Small Soldiers (since Tuesday)'], favorites: [spritey, pipewrench], mood: 'Disappointed but Hopeful', signature: 'A forum is like a loaf of bread. Somebody has to slice it.', at: ago(1) });
 
   const distinct = (board: string, count: number) => ({ kind: 'distinctCharactersOnBoard', params: { board, count } });

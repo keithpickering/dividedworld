@@ -1,6 +1,6 @@
 -- Staff characters (supabase/migrations/0043_staff.sql; the system plan, Task 4; the seasonal Boss design, section 1; the
 -- staff design, "Staff characters, like Bosses"): a Boss or a Mod Bot is a character with no account behind it, seeded once,
--- written only by write_staff_act, earning nothing, and on staff only as staff_changes says.
+-- written only by write_staff_act, earning nothing, and on staff only as the office log (staff_offices, 0080) says.
 
 -- ---- A seed makes each staff member once, with its profile; a reseed changes nothing an admin wrote ----
 do $$
@@ -8,10 +8,10 @@ declare
   seed jsonb := jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'system', jsonb_build_object(
       'staff', jsonb_build_array(
-        jsonb_build_object('key', 'director', 'name', 'The Director', 'title', 'The System', 'signature', '[i]It is decided.[/i]', 'kind', 'boss'),
-        jsonb_build_object('key', 'bot-one', 'name', 'Bot One', 'title', 'Mod Bot', 'signature', 'Rules are rules.', 'kind', 'bot'),
-        jsonb_build_object('key', 'bot-two', 'name', 'Bot Two', 'title', 'Mod Bot', 'signature', '', 'kind', 'bot')),
-      'firstStaff', jsonb_build_array('bot-one')));
+        jsonb_build_object('key', 'director', 'name', 'The Director', 'title', 'The System', 'signature', '[i]It is decided.[/i]'),
+        jsonb_build_object('key', 'bot-one', 'name', 'Bot One', 'title', 'Mod Bot', 'signature', 'Rules are rules.'),
+        jsonb_build_object('key', 'bot-two', 'name', 'Bot Two', 'title', 'Mod Bot', 'signature', '')),
+      'firstBoss', 'director', 'firstStaff', jsonb_build_array('bot-one')));
   director uuid;
   bot_one uuid;
   made_at timestamptz;
@@ -26,17 +26,20 @@ begin
   select id into bot_one from characters where staff = 'bot-one';
   if director is null or bot_one is null then raise exception 'the seed made no staff character'; end if;
   if (select count(*) from characters where staff is not null) is distinct from 3 then raise exception 'the seed made % staff characters, not 3', (select count(*) from characters where staff is not null); end if;
-  if exists (select 1 from characters where staff is not null and (owner is not null or debuted_at is null)) then raise exception 'a staff character has an owner or has not debuted'; end if;
-  if (select staff_kind from characters where id = director) is distinct from 'boss' or (select staff_kind from characters where id = bot_one) is distinct from 'bot'
+  if exists (select 1 from characters where staff is not null and owner is not null) then raise exception 'a staff character has an owner'; end if;
+  -- The first Boss and the first staff debut at the seed; the rest of the roster waits (0080) until an office debuts it.
+  if (select count(*) from characters where staff is not null and debuted_at is null) is distinct from 1 or (select debuted_at from characters where staff = 'bot-two') is not null then raise exception 'only bot-two should be waiting'; end if;
+  update characters set debuted_at = now() where staff = 'bot-two';
+  if (select staff_kind from characters where id = director) is distinct from 'persona' or (select staff_kind from characters where id = bot_one) is distinct from 'persona'
      or (select name from characters where id = bot_one) is distinct from 'Bot One' then raise exception 'a staff character lost its kind or its name'; end if;
   if (select title from character_profiles where character = director) is distinct from 'The System'
      or (select signature from character_profiles where character = director) is distinct from '[i]It is decided.[/i]' then raise exception 'the Director''s profile is not its seed''s'; end if;
   if (select count(*) from character_profiles where character in (select id from characters where staff is not null)) is distinct from 3 then raise exception 'each staff character gets a profile'; end if;
 
-  -- Who is on staff: the seed's firstStaff, and never a Boss.
+  -- Who is on staff: the seed's firstStaff, and never the Boss.
   if (select string_agg(staff, ',' order by staff) from staff_now) is distinct from 'bot-one' then raise exception 'staff_now should hold bot-one alone: %', (select string_agg(staff, ',') from staff_now); end if;
-  if (select kind from staff_now) is distinct from 'bot' or (select since from staff_now) is null then raise exception 'staff_now should name the kind and since when'; end if;
-  if (select count(*) from staff_changes) is distinct from 1 then raise exception 'the seed wrote % staff_changes rows, not 1', (select count(*) from staff_changes); end if;
+  if (select kind from staff_now) is distinct from 'persona' or (select since from staff_now) is null then raise exception 'staff_now should name the kind and since when'; end if;
+  if (select count(*) from staff_offices) is distinct from 1 then raise exception 'the seed wrote % office rows, not 1', (select count(*) from staff_offices); end if;
 
   -- A reseed after an admin's edits changes none of them.
   update character_profiles set title = 'Edited', signature = 'Edited sig' where character = director;
@@ -47,20 +50,20 @@ begin
      or (select name from characters where id = director) is distinct from 'The Director Renamed' or (select debuted_at from characters where id = director) is distinct from made_at then
     raise exception 'a reseed changed what an admin wrote';
   end if;
-  if (select count(*) from characters where staff is not null) is distinct from 3 or (select count(*) from staff_changes) is distinct from 1 then raise exception 'a reseed made a second staff character or a second row'; end if;
+  if (select count(*) from characters where staff is not null) is distinct from 3 or (select count(*) from staff_offices) is distinct from 1 then raise exception 'a reseed made a second staff character or a second row'; end if;
 
   -- A bot taken off staff stays off through a reseed; one taken off and hired again is on.
-  insert into staff_changes (staff, on_staff) values ('bot-one', false);
+  insert into staff_offices (staff, office, cause) values ('bot-one', 'member', 'admin');
   perform seed_instance(seed);
   if exists (select 1 from staff_now) then raise exception 'a reseed rehired a fired bot: %', (select string_agg(staff, ',') from staff_now); end if;
-  insert into staff_changes (staff, on_staff) values ('bot-one', true), ('bot-two', true);
+  insert into staff_offices (staff, office, cause) values ('bot-one', 'mod', 'admin'), ('bot-two', 'mod', 'admin');
   select count(*) into n from staff_now;
   if n <> 2 then raise exception 'a hired bot is on staff: % on', n; end if;
-  insert into staff_changes (staff, on_staff) values ('bot-two', false);
+  insert into staff_offices (staff, office, cause) values ('bot-two', 'member', 'admin');
   if (select string_agg(staff, ',') from staff_now) is distinct from 'bot-one' then raise exception 'the latest row decides: %', (select string_agg(staff, ',') from staff_now); end if;
 
-  -- A firstStaff key that is no seeded bot is a seed's mistake, said so.
-  begin perform seed_instance(jsonb_set(seed, '{system,firstStaff}', '["director"]')); raise exception 'a Boss was put on staff';
+  -- A firstStaff key that is no seeded persona is a seed's mistake, said so.
+  begin perform seed_instance(jsonb_set(seed, '{system,firstStaff}', '["nobody"]')); raise exception 'a stranger was put on staff';
   exception when invalid_parameter_value then null; end;
 end $$;
 
@@ -71,44 +74,41 @@ declare
   seen text;
 begin
   -- The poison: a staff character with an owner.
-  begin insert into characters (owner, name, staff, staff_kind, debuted_at) values (ann, 'Owned Staff', 'owned', 'bot', now()); raise exception 'a staff character with an owner was made';
+  begin insert into characters (owner, name, staff, staff_kind, debuted_at) values (ann, 'Owned Staff', 'owned', 'persona', now()); raise exception 'a staff character with an owner was made';
   exception when check_violation then null; end;
   -- A character with no owner and no staff key; a staff key with no kind; a kind with no key; a kind outside the two.
   begin insert into characters (name, debuted_at) values ('Nobody''s', now()); raise exception 'a character with no owner and no staff key was made';
   exception when check_violation then null; end;
   begin insert into characters (name, staff, debuted_at) values ('Kindless', 'kindless', now()); raise exception 'a staff key with no kind was made';
   exception when check_violation then null; end;
-  begin insert into characters (owner, name, staff_kind, debuted_at) values (ann, 'Keyless', 'bot', now()); raise exception 'a kind with no staff key was made';
+  begin insert into characters (owner, name, staff_kind, debuted_at) values (ann, 'Keyless', 'persona', now()); raise exception 'a kind with no staff key was made';
   exception when check_violation then null; end;
-  begin insert into characters (name, staff, staff_kind, debuted_at) values ('Odd Kind', 'odd', 'henchman', now()); raise exception 'a kind outside boss and bot was made';
+  begin insert into characters (name, staff, staff_kind, debuted_at) values ('Odd Kind', 'odd', 'henchman', now()); raise exception 'a kind outside persona and developer was made';
   exception when check_violation then null; end;
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Shape Boss', 'shape-boss', 'boss', now());
-  begin insert into characters (name, staff, staff_kind, debuted_at) values ('Shape Twin', 'shape-boss', 'bot', now()); raise exception 'two staff characters shared a key';
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Shape Boss', 'shape-boss', 'persona', now());
+  begin insert into characters (name, staff, staff_kind, debuted_at) values ('Shape Twin', 'shape-boss', 'persona', now()); raise exception 'two staff characters shared a key';
   exception when unique_violation then null; end;
 
-  -- A Boss is never in staff_changes; a row is never changed or removed.
-  begin insert into staff_changes (staff, on_staff) values ('shape-boss', true); raise exception 'a Boss was put in staff_changes';
+  -- The Boss's office is the season's and is never a row; a row is never changed or removed (0082 holds the rest of the log's guards).
+  begin insert into staff_offices (staff, office, cause) values ('shape-boss', 'boss', 'admin'); raise exception 'a Boss was put in the office log';
   exception when check_violation then null; end;
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Shape Bot', 'shape-bot', 'bot', now());
-  insert into staff_changes (staff, on_staff) values ('shape-bot', true);
-  begin update staff_changes set on_staff = false where staff = 'shape-bot'; raise exception 'a staff_changes row was updated';
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Shape Bot', 'shape-bot', 'persona', now());
+  insert into staff_offices (staff, office, cause) values ('shape-bot', 'mod', 'admin');
+  begin update staff_offices set office = 'member' where staff = 'shape-bot'; raise exception 'an office row was updated';
   exception when sqlstate 'P0001' then null; end;
-  begin delete from staff_changes where staff = 'shape-bot'; raise exception 'a staff_changes row was removed';
+  begin delete from staff_offices where staff = 'shape-bot'; raise exception 'an office row was removed';
   exception when sqlstate 'P0001' then null; end;
-  begin truncate staff_changes; raise exception 'staff_changes was truncated';
+  begin truncate staff_offices; raise exception 'the office log was truncated';
   exception when sqlstate 'P0001' then null; end;
-  if (select count(*) from pg_trigger t where t.tgrelid = 'public.staff_changes'::regclass and t.tgname in ('staff_changes_no_update', 'staff_changes_no_truncate') and t.tgenabled = 'A') is distinct from 2 then
-    raise exception 'staff_changes'' append-only triggers must fire always';
-  end if;
-  begin insert into staff_changes (staff, on_staff) values ('nobody-at-all', true); raise exception 'a row named a staff member who is not one';
+  begin insert into staff_offices (staff, office, cause) values ('nobody-at-all', 'mod', 'admin'); raise exception 'a row named a staff member who is not one';
   exception when foreign_key_violation then null; end;
 
-  -- No client reads or writes staff_changes; both read staff_now.
-  if not (select relrowsecurity from pg_class where oid = 'public.staff_changes'::regclass) then raise exception 'staff_changes has no row-level security'; end if;
+  -- No client reads or writes the office log; both read staff_now.
+  if not (select relrowsecurity from pg_class where oid = 'public.staff_offices'::regclass) then raise exception 'staff_offices has no row-level security'; end if;
   foreach seen in array array['anon', 'authenticated'] loop
     perform set_config('role', seen, true);
-    begin perform count(*) from staff_changes; raise exception '% read staff_changes', seen; exception when insufficient_privilege then null; end;
-    begin insert into staff_changes (staff, on_staff) values ('shape-bot', true); raise exception '% wrote staff_changes', seen; exception when insufficient_privilege then null; end;
+    begin perform count(*) from staff_offices; raise exception '% read staff_offices', seen; exception when insufficient_privilege then null; end;
+    begin insert into staff_offices (staff, office, cause) values ('shape-bot', 'mod', 'admin'); raise exception '% wrote staff_offices', seen; exception when insufficient_privilege then null; end;
     if not exists (select 1 from staff_now where staff = 'shape-bot') then raise exception '% could not read staff_now', seen; end if;
     perform tests.unbecome();
   end loop;
@@ -121,7 +121,7 @@ begin
   perform tests.character(ann, 'Capped One');
   update settings set value = '1' where key = 'charactersPerPlayer'; -- 0 is no cap the settings hold (0077), and Capped One fills the one
   -- With no slot to give, a staff character is still made (it takes none), and a player's is still refused.
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Cap Bot', 'cap-bot', 'bot', now());
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Cap Bot', 'cap-bot', 'persona', now());
   begin insert into characters (owner, name) values (ann, 'Capped Two'); raise exception 'the cap did not hold';
   exception when sqlstate 'P0001' then if sqlerrm = 'the cap did not hold' then raise; end if; end;
   update settings set value = '6' where key = 'charactersPerPlayer';
@@ -140,8 +140,8 @@ declare
   said text;
   stmt text;
 begin
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Acts Boss', 'acts-boss', 'boss', now()) returning id into boss;
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Acts Bot', 'acts-bot', 'bot', now());
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Acts Boss', 'acts-boss', 'persona', now()) returning id into boss;
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Acts Bot', 'acts-bot', 'persona', now());
   mine := tests.post(mask, t, 'A player''s post.');
 
   -- The poison: an Act naming a staff character, written by any other path, is refused.
@@ -233,7 +233,7 @@ declare
   input jsonb;
   est jsonb;
 begin
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Pay Boss', 'pay-boss', 'boss', now()) returning id into boss;
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Pay Boss', 'pay-boss', 'persona', now()) returning id into boss;
   -- The Boss's decree, written at a time inside the window as write_staff_act would write it at that time.
   perform set_config('kayfabb.staff_writer', 'on', true);
   insert into acts (character, kind, thread, payload, created_at) values (boss, 'post', t, '{"body": "A decree."}', s + interval '1 hour') returning id into decree;
@@ -299,7 +299,7 @@ declare
   before_count integer := (select coalesce(sum(characters), 0) from debuted_count);
   after_count integer;
 begin
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Stand Boss', 'stand-boss', 'boss', now()) returning id into boss;
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Stand Boss', 'stand-boss', 'persona', now()) returning id into boss;
   select coalesce(sum(characters), 0) into after_count from debuted_count;
   if after_count <> before_count then raise exception 'a staff character was counted among the debuted characters'; end if;
   if exists (select 1 from standings where character = boss) then raise exception 'a staff character has a standing'; end if;
@@ -325,12 +325,12 @@ declare
   ann uuid := tests.account('staff-public');
   seen record;
 begin
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Public Boss', 'public-boss', 'boss', now());
-  insert into characters (name, staff, staff_kind) values ('Waiting Bot', 'waiting-bot', 'bot');
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Public Boss', 'public-boss', 'persona', now());
+  insert into characters (name, staff, staff_kind) values ('Waiting Bot', 'waiting-bot', 'persona');
   perform tests.character(ann, 'Plain Mask');
   perform tests.become(ann);
-  select staff, staff_kind into seen from characters_public where name = 'Public Boss';
-  if seen.staff is distinct from 'public-boss' or seen.staff_kind is distinct from 'boss' then raise exception 'characters_public should name a staff character''s key and kind'; end if;
+  select staff, office into seen from characters_public where name = 'Public Boss';
+  if seen.staff is distinct from 'public-boss' or seen.office is distinct from 'member' then raise exception 'characters_public should name a staff character''s key and office'; end if;
   if exists (select 1 from characters_public where name = 'Waiting Bot') then raise exception 'a staff character that has not debuted is listed'; end if;
   if (select staff from characters_public where name = 'Plain Mask') is not null then raise exception 'a player''s character shows a staff key'; end if;
   if exists (select 1 from characters where staff is not null) then raise exception 'a player read a staff character''s row directly'; end if;
@@ -343,7 +343,7 @@ declare
   ann uuid := tests.account('staff-boss');
   got text;
 begin
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Season Boss', 'season-boss', 'boss', now());
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Season Boss', 'season-boss', 'persona', now());
   -- (The season an earlier block rolled over was seated with a Boss by the handover, 0051; this one is a season opened before any Boss existed.)
   update seasons set boss = null where ends_at is null;
   perform tests.become_service();
@@ -368,7 +368,7 @@ declare
   boss uuid;
 begin
   insert into admins (account) values (admin);
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Retired Boss', 'retired-boss', 'boss', now()) returning id into boss;
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Retired Boss', 'retired-boss', 'persona', now()) returning id into boss;
   perform tests.become(admin);
   perform retire_character(boss);
   perform restore_character(boss);
@@ -406,7 +406,7 @@ declare
   mine uuid;
   n bigint;
 begin
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Log Bot', 'log-bot', 'bot', now());
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Log Bot', 'log-bot', 'persona', now());
   mine := tests.post(mask, t, 'A post the bot plays a card on.');
   perform tests.become_service();
   perform write_staff_act('log-bot', 'card', t, mine, '{"card": "sweetie"}');

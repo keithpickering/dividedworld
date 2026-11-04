@@ -40,9 +40,8 @@ export function instanceSeed(instance: Instance) {
     // prompts stay in the instance module; the meeting reads them in code (chooseInstance), so they are not seeded.
     system: {
       staff: [
-        // `kind` is still what seed_instance (0043) reads; the staff roster plan's Task 2 changes the SQL and drops it. Until then a
-        // roster member on staff from the start seeds as a bot, and any other as a Boss, as the two lists did before.
-        ...instance.system.roster.map((p) => ({ key: p.key, name: p.name, title: p.title, signature: p.signature, kind: instance.system.firstStaff.includes(p.key) ? ('bot' as const) : ('boss' as const) })),
+        // Every persona alike; seed_instance (0080) debuts the first Boss and the first staff and leaves the rest waiting.
+        ...instance.system.roster.map((p) => ({ key: p.key, name: p.name, title: p.title, signature: p.signature })),
       ],
       firstStaff: [...instance.system.firstStaff],
       // The member group every staff character is in, named by the instance.

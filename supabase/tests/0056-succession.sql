@@ -20,10 +20,10 @@ begin
     'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'su-a',
       'staff', jsonb_build_array(
-        jsonb_build_object('key', 'su-a', 'name', 'Su A', 'kind', 'boss', 'title', 'Boss', 'signature', 'a'),
-        jsonb_build_object('key', 'su-b', 'name', 'Su B', 'kind', 'boss', 'title', 'Boss', 'signature', 'b'),
-        jsonb_build_object('key', 'su-c', 'name', 'Su C', 'kind', 'boss', 'title', 'Boss', 'signature', 'c'),
-        jsonb_build_object('key', 'su-d', 'name', 'Su D', 'kind', 'boss', 'title', 'Boss', 'signature', 'd')),
+        jsonb_build_object('key', 'su-a', 'name', 'Su A', 'title', 'Boss', 'signature', 'a'),
+        jsonb_build_object('key', 'su-b', 'name', 'Su B', 'title', 'Boss', 'signature', 'b'),
+        jsonb_build_object('key', 'su-c', 'name', 'Su C', 'title', 'Boss', 'signature', 'c'),
+        jsonb_build_object('key', 'su-d', 'name', 'Su D', 'title', 'Boss', 'signature', 'd')),
       'firstStaff', '[]'::jsonb,
       'moves', jsonb_build_array(jsonb_build_object('key', 'renameBoard', 'structural', true, 'shapesBoard', true), jsonb_build_object('key', 'nameSuccessor', 'structural', true)),
       'demands', jsonb_build_array(jsonb_build_object('key', 'postsOnBoard')))));
@@ -146,7 +146,7 @@ begin
   if (select replaced_by is not null or replaced_at is not null from queued_moves where id = q) then raise exception 'an unreplaced nomination has a replacement on record'; end if;
   perform tests.become(admin);
   perform replace_successor(q, 'su-d');
-  -- The queue shows when it was replaced and nobody's account; its roster offers the Bosses that can take the seat (not retired, debuted).
+  -- The queue shows when it was replaced and nobody's account; its roster offers the personas that can take the seat (not retired, not benched; a waiting one is offered).
   qj := admin_queue();
   perform tests.unbecome();
   if (select params ->> 'boss' from queued_moves where id = q) is distinct from 'su-d' then raise exception 'the nomination was not replaced'; end if;
@@ -156,10 +156,12 @@ begin
   if (select jsonb_agg(r ->> 'staff' order by ord) from jsonb_array_elements(qj -> 'roster') with ordinality x(r, ord)) is distinct from '["su-a", "su-b", "su-c", "su-d"]'::jsonb then raise exception 'the queue offered the roster %', qj -> 'roster'; end if;
   update characters set retired_at = now() where staff = 'su-c';
   update characters set debuted_at = null where staff = 'su-b';
+  insert into staff_offices (staff, office, cause) values ('su-a', 'benched', 'admin');
   perform tests.become(admin); qj := admin_queue(); perform tests.unbecome();
   update characters set retired_at = null where staff = 'su-c';
   update characters set debuted_at = now() where staff = 'su-b';
-  if (select jsonb_agg(r ->> 'staff' order by ord) from jsonb_array_elements(qj -> 'roster') with ordinality x(r, ord)) is distinct from '["su-a", "su-d"]'::jsonb then raise exception 'the queue offered a retired or undebuted Boss: %', qj -> 'roster'; end if;
+  insert into staff_offices (staff, office, cause) values ('su-a', 'mod', 'admin');
+  if (select jsonb_agg(r ->> 'staff' order by ord) from jsonb_array_elements(qj -> 'roster') with ordinality x(r, ord)) is distinct from '["su-b", "su-d"]'::jsonb then raise exception 'the queue offered a retired or benched persona, or left out a waiting one: %', qj -> 'roster'; end if;
   if has_column_privilege('authenticated', 'queued_moves', 'replaced_by', 'select') or has_column_privilege('authenticated', 'queued_moves', 'replaced_at', 'select')
      or has_column_privilege('anon', 'queued_moves', 'replaced_by', 'select') or has_column_privilege('kayfabb_digest', 'queued_moves', 'replaced_by', 'select')
      or has_column_privilege('kayfabb_digest', 'queued_moves', 'replaced_at', 'select') then raise exception 'a client or the digest reads who replaced a nomination'; end if;
@@ -438,7 +440,7 @@ begin
   -- A rotation with nobody to rotate to leaves the season with the outgoing Boss; the reveal and the new season still happen.
   outgoing := pg_temp.boss();
   before_number := (select number from seasons where ends_at is null);
-  update characters set retired_at = now() where staff_kind = 'boss' and staff <> outgoing;
+  update characters set retired_at = now() where staff_kind = 'persona' and staff <> outgoing;
   perform pg_temp.roll();
   if (select number from seasons where ends_at is null) is distinct from before_number + 1 then raise exception 'the new season did not open when the rotation had nobody'; end if;
   if pg_temp.boss() is distinct from outgoing then raise exception 'the season did not keep the outgoing Boss: %', pg_temp.boss(); end if;
@@ -447,7 +449,7 @@ begin
   if not exists (select 1 from seasons where number = before_number and reveal_act is not null) then raise exception 'the reveal did not happen when the rotation failed'; end if;
 
   -- Even the handover itself failing stops neither: the season keeps the outgoing Boss.
-  update characters set retired_at = null where staff_kind = 'boss';
+  update characters set retired_at = null where staff_kind = 'persona';
   before_number := (select number from seasons where ends_at is null);
   create or replace function hand_over(new_season bigint, outgoing text, at timestamptz) returns jsonb language plpgsql as $f$
   begin raise exception 'boom'; end $f$;
@@ -462,7 +464,7 @@ end $$;
 do $$
 declare
   boss text := pg_temp.boss();
-  other text := (select staff from characters where staff_kind = 'boss' and staff is distinct from pg_temp.boss() order by staff limit 1);
+  other text := (select staff from characters where staff_kind = 'persona' and staff is distinct from pg_temp.boss() order by staff limit 1);
   n integer;
 begin
   for i in 1..22 loop perform pg_temp.rename(other, 'Capped ' || i, now() - interval '50 days'); end loop;

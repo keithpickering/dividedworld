@@ -194,11 +194,11 @@ describe('a nomination of a successor', () => {
     expect(within(waiting).getByRole('button', { name: 'Hold: the naming of a successor' })).toBeInTheDocument();
   });
 
-  test('offers REPLACE with the roster\'s other Bosses only, never the Boss that wrote it nor the one it names; replacing changes the nomination and reads the queue again', async () => {
+  test('offers REPLACE with the roster\'s other personas (a Mod Bot too, since the Boss may come from any office), never the Boss that wrote it nor the one it names; replacing changes the nomination and reads the queue again', async () => {
     const { fake } = open({ build: (f) => { nominate(f); } });
     const waiting = await group(/^Waiting to land/u);
     const choice = within(waiting).getByRole('combobox', { name: 'Put another Boss in its place' });
-    expect(within(choice).getAllByRole('option').map((o) => o.textContent)).toEqual(['Choose a Boss', 'Hype Man']);
+    expect(within(choice).getAllByRole('option').map((o) => o.textContent)).toEqual(['Choose a Boss', 'Hall Monitor', 'Hype Man']);
     const replace = within(waiting).getByRole('button', { name: 'Replace the nominated Boss, The Clerk' });
     expect(replace).toBeDisabled();
     await userEvent.selectOptions(choice, 'Hype Man');
@@ -214,16 +214,17 @@ describe('a nomination of a successor', () => {
     expect(waiting).toHaveTextContent('An admin put this Boss in the nomination\'s place on');
   });
 
-  test('offers no Boss that is retired or has not debuted, though their names still read in a sentence', async () => {
+  test('offers no persona that is retired, benched or has not debuted, though their names still read in a sentence', async () => {
     const { fake } = open({ build: (f) => {
       const id = nominate(f);
       f.seed.retire(f.seed.staff('old-timer', 'Old Timer', 'boss'));
       f.seed.staff('newcomer', 'Newcomer', 'boss', { debuted: false });
+      f.seed.staff('shelved', 'Shelved', 'benched');
       void id;
     } });
     const waiting = await group(/^Waiting to land/u);
     const choice = within(waiting).getByRole('combobox', { name: 'Put another Boss in its place' });
-    expect(within(choice).getAllByRole('option').map((o) => o.textContent)).toEqual(['Choose a Boss', 'Hype Man']);
+    expect(within(choice).getAllByRole('option').map((o) => o.textContent)).toEqual(['Choose a Boss', 'Hall Monitor', 'Hype Man']);
     expect((await fake.adminQueue()).roster.map((b) => b.staff)).not.toContain('old-timer');
   });
 

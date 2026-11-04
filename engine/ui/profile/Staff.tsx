@@ -77,7 +77,7 @@ export function StaffProfile({ character: c }: { readonly character: Character }
             <p className="kb-small kb-muted">The interests, favorites, mood and signature are what it says about itself, in character, and it may bluff. The moderation log is a plain record.</p>
           </div>
         </section>
-        <ModerationLog staff={staff} bot={c.staffKind === 'bot'} />
+        <ModerationLog staff={staff} bot={c.office === 'mod'} />
       </div>
     </div>
   );

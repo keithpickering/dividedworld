@@ -148,9 +148,9 @@ test('an instance exported and imported into a fresh database is the same instan
       -- A meeting, the Boss's memory and profile from it, and its move bank (0044); the call above names the meeting.
       insert into meetings (started_at, slot, finished_at, outcome, bank_before, bank_after, record) values (now() - interval '1 minute', now() - interval '1 minute', now(), 'ok', 1, 0, '{"trims": []}');
       perform record_model_call(jsonb_build_object('duty', 'meeting', 'staff', 'director', 'provider', 'anthropic', 'model', 'claude-opus-5-5', 'service_tier', 'standard', 'input_tokens', 1200, 'output_tokens', 300, 'cost_microdollars', 10800, 'outcome', 'rejected', 'predicate', 'atMost(6)', 'trims', '[{"path": "moves", "predicate": "atMost(6)", "before": 7, "after": 6}]'::jsonb, 'retries', 1, 'meeting', (select max(id) from meetings)));
-      -- A Boss and a Mod Bot (0043): characters with no owner, the bot on staff, the Boss named by the season and writing an Act.
-      insert into characters (name, staff, staff_kind, debuted_at) values ('Exported Boss', 'exp-boss', 'boss', now()), ('Exported Bot', 'exp-bot', 'bot', now());
-      insert into staff_changes (staff, on_staff) values ('exp-bot', true);
+      -- A Boss and a Mod Bot (0043, 0080): personas with no owner, the bot an office row's mod, the Boss named by the season and writing an Act.
+      insert into characters (name, staff, staff_kind, debuted_at) values ('Exported Boss', 'exp-boss', 'persona', now()), ('Exported Bot', 'exp-bot', 'persona', now());
+      insert into staff_offices (staff, office, cause) values ('exp-bot', 'mod', 'seed');
       update seasons set boss = 'exp-boss' where ends_at is null;
       insert into staff_memory (staff, meeting, body) select 'exp-boss', max(id), '{"opinions": [], "grudges": []}' from meetings;
       insert into staff_profiles (staff, meeting, interests, favorites, mood, signature) select 'exp-boss', max(id), '{pie}', array[a], 'smug', 'It is decided.' from meetings;
