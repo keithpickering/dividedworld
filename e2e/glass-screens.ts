@@ -103,6 +103,15 @@ export const OVERLAYS: readonly Screen[] = [
     },
   },
   {
+    name: 'The Reveal modal, from My characters',
+    path: '/characters',
+    then: async (page) => {
+      await page.getByRole('list', { name: /^Roster, /u }).getByRole('button', { name: /^Pipewrench/u }).click();
+      await page.getByRole('button', { name: "Reveal Pipewrench's class" }).click();
+      await expect(page.getByRole('dialog', { name: "Reveal Pipewrench's class" })).toBeVisible();
+    },
+  },
+  {
     name: 'The Vending Machine\'s card info, from a slot',
     path: '/vending',
     then: async (page) => {

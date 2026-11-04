@@ -345,7 +345,7 @@ export function Vending() {
 
       {aboutFace && (
         <Overlay title={aboutFace.name} surface="vending" className="kb-vending-about-dialog" onClose={() => setAbout(null)} returnFocusTo={() => aboutButton.current}>
-          <div className="kb-vending-about-body kb-calm" data-kb-calm="flush" data-kb-alignment={aboutFace.alignment}>
+          <div className="kb-vending-about-body kb-calm" data-kb-alignment={aboutFace.alignment}>
             <p className="kb-vending-about-price kb-num">{priceOf(aboutFace)}</p>
             <p className="kb-vending-about-says">{aboutFace.describe}</p>
           </div>

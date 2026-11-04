@@ -41,6 +41,28 @@ function visible(el: Element): boolean {
   return true;
 }
 
+/**
+ * The part of a box a clipping or scrolling ancestor leaves in view, or null when none: a control scrolled out of its row
+ * (the class cards past the visible ones) is not drawn there, so no panel's cut can hide it, and one half in view (a Lens's
+ * tab at the end of its list) is judged by the half that is.
+ */
+function inView(el: Element): { readonly rect: DOMRect; readonly clipped: boolean } | null {
+  let r = el.getBoundingClientRect();
+  let clipped = false;
+  for (let a = el.parentElement; a && a !== document.body && a !== document.documentElement; a = a.parentElement) {
+    const s = getComputedStyle(a);
+    if (s.overflowX === 'visible' && s.overflowY === 'visible') continue;
+    const b = a.getBoundingClientRect();
+    const left = Math.max(r.left, b.left);
+    const right = Math.min(r.right, b.right);
+    const top = Math.max(r.top, b.top);
+    const bottom = Math.min(r.bottom, b.bottom);
+    if (right <= left || bottom <= top) return null;
+    if (left !== r.left || right !== r.right || top !== r.top || bottom !== r.bottom) { r = new DOMRect(left, top, right - left, bottom - top); clipped = true; }
+  }
+  return { rect: r, clipped };
+}
+
 /** Whether a stylesheet rule or the inline style of `el` itself declares `overflow-x: auto|scroll`: a scroll on purpose, as a computed value cannot say (a page that scrolls because a child pushed it wide computes the same). */
 function declaresScroll(el: Element): boolean {
   if (el.hasAttribute('data-kb-scroll')) return true;
@@ -285,7 +307,10 @@ export function gather(): Omit<LayoutFacts, 'screen'> {
       extents.push({ path: pathOf(el), rect: toBox(r) });
     }
     if (out) reached.add(el);
-    if (isControl(el)) controls.push({ path: pathOf(el), rect: toBox(r), quad: quadOf(el), panel: panelOf(el) });
+    if (isControl(el)) {
+      const seen = inView(el);
+      if (seen) controls.push({ path: pathOf(el), rect: toBox(seen.rect), quad: seen.clipped ? undefined : quadOf(el), panel: panelOf(el) });
+    }
     if (el.classList.contains('kb-calm')) { const c = calmOf(el); if (c) calms.push(c); }
   }
   return {

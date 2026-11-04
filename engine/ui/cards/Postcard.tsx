@@ -46,7 +46,7 @@ export function cardLabel(face: CardFace, size: PostcardSize): string {
 }
 
 export function Postcard({ face, size, as: As = 'span', armed = false, className, style, ...rest }: PostcardProps) {
-  const vars = { '--kb-card-color': face.art.color, '--kb-card-ink': face.art.ink, ...(size === 'slot' ? { '--kb-name-chars': face.name.length } : {}), ...style } as CSSProperties;
+  const vars = { '--kb-card-color': face.art.color, '--kb-card-ink': face.art.ink, ...(size !== 'sheet' ? { '--kb-name-chars': face.name.length } : {}), ...style } as CSSProperties;
   return (
     <As
       {...rest}

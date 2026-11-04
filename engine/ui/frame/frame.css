@@ -13,6 +13,7 @@
 
 .kb-banner {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: baseline;
   gap: 0.4em 1.2em;
@@ -28,6 +29,8 @@
 }
 
 .kb-logo {
+  /* The site's name is one line; the banner wraps what is beside it, and the name never wraps in a column too narrow for ten of its ems. */
+  white-space: nowrap;
   font: bold var(--kb-size-logo) / 1.2 var(--kb-font-mono);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -200,6 +203,8 @@
 }
 
 :where(:root:not([data-kb-layout='phone'])) .kb-hud-plate--cast .kb-hud-who {
+  /* The plate is a fixed 420px: the name steps down to fit its width at a larger text size (as a class card's name does), never to an ellipsis. */
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -245,6 +250,7 @@
   align-self: flex-start;
   max-width: 100%;
   font-size: var(--kb-glass-size-title);
+  font-size: min(var(--kb-glass-size-title), calc(205cqw / var(--kb-name-chars, 8)));
   line-height: 1;
   letter-spacing: 0.5px;
   color: var(--kb-glass-text);
@@ -679,7 +685,8 @@
 
 :where(:root:not([data-kb-layout='phone'])) .kb-hand-card {
   position: absolute;
-  left: calc(256px + var(--kb-fan-x));
+  /* The fan's last card stands where its turn leaves it inside the window: 150px wide, and about 18px more a side where it leans. */
+  left: min(calc(256px + var(--kb-fan-x)), calc(100% - 134px));
   top: calc(8.875rem + var(--kb-fan-y));
   z-index: var(--kb-fan-z);
   transform: rotate(var(--kb-fan-turn));
@@ -867,20 +874,7 @@
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hand-vending {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 48px;
   margin: 12px 16px 0;
-  background: var(--kb-glass-panel-strong);
-  border: 1px solid var(--kb-glass-ready);
-  color: var(--kb-glass-ready);
-  text-decoration: none;
-  font-size: var(--kb-glass-size-phone-body);
-  font-weight: 800;
-  letter-spacing: 2px;
-  text-transform: uppercase;
 }
 
 /* ---- below the switch: the Phone board's HUD ---- */

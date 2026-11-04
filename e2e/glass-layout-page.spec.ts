@@ -28,6 +28,13 @@ const FIXTURE = `<!doctype html><meta charset="utf-8"><style>
   .cut { position: relative; width: 300px; height: 100px; background: #444;
     clip-path: polygon(0 0, calc(100% - 24px) 0, 100% 24px, 100% 100%, 0 100%); }
   .cut button.go { position: absolute; right: 0; top: 0; width: 80px; height: 40px; transform: skewX(-10deg); }
+  .cut2 { position: relative; box-sizing: border-box; padding-top: 40px; width: 300px; height: 100px; background: #444;
+    clip-path: polygon(0 0, calc(100% - 24px) 0, 100% 24px, 100% 100%, 0 100%); }
+  .rail { overflow-x: auto; width: 150px; height: 40px; margin: 0 0 0 140px; }
+  .rail .strip2 { position: relative; width: 900px; height: 40px; }
+  .rail button.far { position: absolute; left: 500px; top: 0; width: 80px; height: 40px; }
+  .rail button.half { position: absolute; left: 100px; top: 0; width: 80px; height: 40px; }
+  .cut2 button.hang { position: absolute; left: 290px; top: 60px; width: 80px; height: 30px; }
   .track { overflow-x: auto; width: 200px; height: 30px; }
   .track .strip { width: 600px; height: 20px; }
 </style>
@@ -35,6 +42,7 @@ const FIXTURE = `<!doctype html><meta charset="utf-8"><style>
   <header class="head"><h1>My characters</h1><p class="lead">Every character you have made, and where each one stands.</p></header>
   <section class="panel">A panel</section>
   <div class="cut"><button class="go">Go</button></div>
+  <div class="cut2"><div class="rail"><div class="strip2"><button class="far">Far</button><button class="half">Half</button></div></div><button class="hang">Hang</button></div>
   <div class="track"><div class="strip">strip</div></div>
 </main>`;
 
@@ -49,5 +57,10 @@ test('the gatherer hands the judgment what a clipping column holds, and not a sc
   expect(text).toMatch(/squeezed block: .*p\.lead/u);
   expect(text).toMatch(/overflow: .*section\.panel/u);
   expect(text).toMatch(/cut control: .*button\.go/u);
+  /* A button hanging past the panel's edge is cut; one scrolled out of its rail is not drawn, so nothing cuts it. */
+  expect(text).toMatch(/cut control: .*button\.hang/u);
+  expect(text).not.toMatch(/button\.far/u);
+  /* One half in its rail's view, the other half hidden past the panel's edge, is judged by the half in view: not cut. */
+  expect(text).not.toMatch(/button\.half/u);
   expect(text).not.toMatch(/track|strip/u);
 });

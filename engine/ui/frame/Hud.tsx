@@ -325,7 +325,7 @@ export function Hud() {
                       {face?.avatarSquare ? <img src={face.avatarSquare} alt="" /> : <span className="kb-hud-avatar-none" aria-hidden="true">{hud.name.slice(0, 1)}</span>}
                     </Link>
                     <span className="kb-hud-who">
-                      <span className="kb-hud-name kb-glass-display">{hud.name}</span>
+                      <span className="kb-hud-name kb-glass-display" style={{ '--kb-name-chars': hud.name.length } as CSSProperties}>{hud.name}</span>
                       <span className="kb-hud-class-line">
                         <span className="kb-hud-class kb-glass-skew-tag" style={{ '--kb-hud-class-fill': `var(--kb-glass-class-${hud.class}-fill)`, '--kb-hud-class-ink': `var(--kb-glass-class-${hud.class}-ink)` } as CSSProperties}>
                           {className}

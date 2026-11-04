@@ -12,7 +12,8 @@
   --kb-border: 1px;
   width: 340px;
   max-width: 100%;
-  padding: 8px 14px 12px;
+  /* 12px over and 14px in from the corner put Close past the chamfer's 24px cut. */
+  padding: 12px 14px 12px;
   background: var(--kb-lens-ink);
   color: var(--kb-glass-text);
   font-family: var(--kb-glass-font-body);

@@ -52,6 +52,8 @@ export interface OverlayProps {
    * call `onClose`, which then decides what they mean.
    */
   readonly closeAt?: 'bar' | 'foot' | 'none';
+  /** How Close looks: its word (the default), or a square with a cross, its word kept for its name and hidden (the Turn, Debut, Reveal and play dialogs). */
+  readonly closeLook?: 'word' | 'cross';
   /**
    * Gives an element that stands beside the dialog's box in the overlay, inside the layer's focus scope and outside the box's chamfer:
    * where a takeover hosts the Lens (cards/Lens.tsx `LensHost`), which the clip would cut. Told with null when it is gone.
@@ -117,7 +119,7 @@ function place(box: HTMLElement, anchor: HTMLElement, sheetBelow: number): Place
   return p.side;
 }
 
-export function Overlay({ title, onClose, children, surface, returnFocusTo, label, describedBy, aside, closeAt = 'bar', onBeside, anchor, sheetBelow = 0, onPlace, className, kicker, style, data }: OverlayProps) {
+export function Overlay({ title, onClose, children, surface, returnFocusTo, label, describedBy, aside, closeAt = 'bar', closeLook = 'word', onBeside, anchor, sheetBelow = 0, onPlace, className, kicker, style, data }: OverlayProps) {
   const id = useId();
   const { overlay, box, closeButton, beside } = useModalLayer({ onClose, returnFocusTo });
   const calm = useSurfaceStyle(surface);
@@ -178,7 +180,7 @@ export function Overlay({ title, onClose, children, surface, returnFocusTo, labe
     };
   }, [anchor, box, sheetBelow]);
 
-  const close = <button ref={closeButton} type="button" className="kb-glass-dialog-close kb-glass-cut-button" onClick={onClose}>Close</button>;
+  const close = <button ref={closeButton} type="button" className="kb-glass-dialog-close kb-glass-cut-button" data-kb-look={closeLook} onClick={onClose}><span className={closeLook === 'cross' ? 'kb-visually-hidden' : undefined}>Close</span></button>;
   return createPortal(
     <div
       ref={overlay} className="kb-glass kb-glass-overlay" data-kb-anchored={anchor ? '' : undefined}

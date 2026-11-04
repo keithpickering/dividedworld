@@ -15,6 +15,7 @@ import { useState } from 'react';
 import { rankIndex } from '../../rules/ranks.ts';
 import { useKayfa } from '../context.tsx';
 import type { Character, MyCharacter } from '../data/api.ts';
+import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
 import { usePlayer } from '../player.tsx';
 import { Pips } from '../postbit/Postbit.tsx';
@@ -77,7 +78,7 @@ export function TurnDialog({ character, face, standing, nextSettlement, onClose,
   };
 
   return (
-    <Overlay
+    <Overlay closeLook="cross"
       title={pending ? `Change ${character.name}'s Turn` : `Turn ${character.name}`}
       kicker="My characters › Turn"
       surface="turn"
@@ -151,10 +152,10 @@ export function TurnDialog({ character, face, standing, nextSettlement, onClose,
             Takes effect at the next settlement{when ? `, ${dayAndTime(when)}` : ''}. Until then {character.name} is still {withArticle(now)}, and you can change this Turn or withdraw it.
           </p>
           {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
-          <div className="kb-turn-actions">
-            <button type="button" className="kb-glass-action kb-glass-skew" onClick={onClose}><span className="kb-glass-upright">Cancel</span></button>
-            <button type="submit" className="kb-glass-confirm kb-glass-skew" disabled={!to || busy}><span className="kb-glass-upright">{pending ? 'Change the Turn' : 'Confirm Turn'}</span></button>
-          </div>
+          <ButtonRow>
+            <GlassButton onClick={onClose}>Cancel</GlassButton>
+            <GlassButton type="submit" kind="primary" disabled={!to || busy}>{pending ? 'Change the Turn' : 'Confirm Turn'}</GlassButton>
+          </ButtonRow>
         </div>
       </form>
     </Overlay>

@@ -78,7 +78,8 @@
   justify-content: center;
   box-sizing: border-box;
   min-height: var(--kb-button-height);
-  padding: 0 var(--kb-button-pad);
+  /* A fifth of the type over and under the label, so at 200% text the line's box (taller than the type) stays inside the border and does not touch it. */
+  padding: 0.2em var(--kb-button-pad);
   border: 1px solid transparent;
   background: transparent;
   font: 800 var(--kb-button-size) / 1 var(--kb-glass-font-body);

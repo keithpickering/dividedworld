@@ -442,7 +442,8 @@
  * of view is hidden from anyone: no card is given visibility, display or inert here.
  */
 .kb-class-cards {
-  --kb-class-card-width: 216px;
+  /* 216px, and never under ten times the description's type and the card's padding: past 100% text the card grows and the row scrolls. */
+  --kb-class-card-width: max(216px, calc(10 * var(--kb-glass-size-body) + 44px));
   /* The phone's peek, which its card leaves of the row. */
   --kb-class-peek: 64px;
 }
@@ -512,6 +513,7 @@
 }
 
 .kb-class-count {
+  white-space: nowrap;
   font-size: var(--kb-glass-size-label);
   font-weight: 800;
   line-height: normal;
@@ -614,6 +616,12 @@
   content: none;
 }
 
+/* Bare there, the title's calm holds no room: the name has the card's whole width, which the step-down below measures. */
+:where(:root:not([data-kb-layout='phone'])) .kb-class-title.kb-calm {
+  --kb-calm-feather: 0px;
+  --kb-calm-pad: 0px;
+}
+
 /*
  * A class's name is set at the card's 40px and steps down to fit the card's width less the radio's
  * corner (20px of the content box), never under 70% of it (28px at 100% text). It is a container
@@ -704,7 +712,8 @@
 
 .kb-choice {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  /* As many options across as keep each one's words at ten times their type, the radio and the padding beside it (90px). */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, max(240px, calc(10 * var(--kb-glass-size-body) + 90px))), 1fr));
   gap: 14px;
 }
 
@@ -757,6 +766,11 @@
 
 /* ---- what everyone will see: the board's own post ---- */
 
+.kb-preview {
+  container-type: inline-size;
+  font-size: var(--kb-size-body);
+}
+
 .kb-preview-head {
   margin: 0 0 8px;
   line-height: normal;
@@ -782,7 +796,8 @@
 
 .kb-preview-side {
   flex: none;
-  width: 18%;
+  /* 18% of the post, and never under ten times its small type, so the board's "where" line keeps its measure. */
+  width: max(18%, calc(10em + 16px));
   margin: 0;
   padding: 8px;
   box-sizing: border-box;
@@ -808,6 +823,12 @@
 
 .kb-preview-lines p {
   margin: 0;
+}
+
+/* A post too narrow for its side and ten ems of lines puts the side above them, as a phone's post would. */
+@container (width < 34em) {
+  .kb-preview-post { flex-direction: column; }
+  .kb-preview-side { width: auto; border-right: 0; border-bottom: 1px solid var(--kb-rule); }
 }
 
 /* A character's own words and a thread's title are free text: a long unbroken run wraps in its box. */
@@ -861,7 +882,8 @@
 .kb-debut-dialog .kb-glass-dialog-head,
 .kb-reveal-dialog .kb-glass-dialog-head {
   margin-top: 2px;
-  font-size: 4.25rem;
+  /* The display's large size: past 125% text a 4.25rem title is wider than ten times its type in the bar. */
+  font-size: var(--kb-glass-size-display-l);
   line-height: 1;
   letter-spacing: 1px;
   color: var(--kb-glass-text);
@@ -879,48 +901,17 @@
   color: var(--kb-glass-neon-text);
 }
 
-/*
- * Close, the board's: a 52px square with a cross, its word kept for its name and drawn off the
- * button (the cross is the ::before, two strokes in the text's color).
- */
 .kb-turn-dialog .kb-glass-dialog-close,
 .kb-debut-dialog .kb-glass-dialog-close,
 .kb-reveal-dialog .kb-glass-dialog-close {
-  flex: none;
-  width: 52px;
-  height: 52px;
   margin-right: 24px;
-  padding: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-indent: 52px;
-  clip-path: none;
-  background: color-mix(in srgb, var(--kb-glass-text-hi) 5%, transparent);
-  border: 1px solid color-mix(in srgb, var(--kb-glass-neon-text) 60%, transparent);
-  color: var(--kb-glass-text);
-}
-
-.kb-turn-dialog .kb-glass-dialog-close::after,
-.kb-debut-dialog .kb-glass-dialog-close::after,
-.kb-reveal-dialog .kb-glass-dialog-close::after {
-  display: none;
-}
-
-.kb-turn-dialog .kb-glass-dialog-close::before,
-.kb-debut-dialog .kb-glass-dialog-close::before,
-.kb-reveal-dialog .kb-glass-dialog-close::before {
-  content: '';
-  position: absolute;
-  inset: 16px;
-  background:
-    linear-gradient(45deg, transparent calc(50% - 1px), currentColor calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)),
-    linear-gradient(-45deg, transparent calc(50% - 1px), currentColor calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px));
 }
 
 .kb-turn {
   flex: 1;
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
+  /* The portrait's column is 300px, and never under ten times the line's type, so its lines keep their measure past 100% text. */
+  grid-template-columns: max(300px, calc(10.5 * var(--kb-glass-size-body))) minmax(0, 1fr);
   grid-template-rows: 1fr auto;
   column-gap: 40px;
   row-gap: 24px;
@@ -936,8 +927,8 @@
 .kb-turn-portrait {
   position: relative;
   display: block;
-  width: 300px;
-  height: 420px;
+  width: 100%;
+  aspect-ratio: 5 / 7;
   box-sizing: border-box;
   border: 2px solid var(--kb-glass-neon);
   box-shadow: 0 0 26px color-mix(in srgb, var(--kb-glass-neon) 50%, transparent);
@@ -959,7 +950,8 @@
 
 .kb-turn-portrait-name > span {
   display: block;
-  font-size: 2.75rem;
+  /* The display's medium size: a name at 2.75rem past 125% text is wider than the portrait's column. */
+  font-size: var(--kb-glass-size-display-m);
   line-height: 1;
   letter-spacing: 0.5px;
   color: var(--kb-glass-text-hi);
@@ -970,8 +962,10 @@
 .kb-turn-rank {
   line-height: normal;
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
+  column-gap: 12px;
   font-size: var(--kb-glass-size-body);
   font-weight: 700;
 }
@@ -1008,10 +1002,6 @@
 
 .kb-turn-map-cells {
   text-transform: uppercase;
-}
-
-.kb-turn-loud {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.35fr);
 }
 
 /*
@@ -1182,10 +1172,6 @@
 
 .kb-reveal-where .kb-glass-select {
   max-width: 100%;
-}
-
-.kb-reveal > p:has(> .kb-glass-action) {
-  margin: 0;
 }
 
 /* ---- the glass's buttons on these screens ---- */
@@ -1373,11 +1359,23 @@
 
 /* The phone's row: one card whole and the next peeking under the fade. */
 :where(:root[data-kb-layout='phone']) .kb-class-cards {
-  --kb-class-card-width: calc(100% - var(--kb-class-peek));
+  --kb-class-card-width: max(calc(100% - var(--kb-class-peek)), calc(10 * var(--kb-glass-size-body) + 44px));
 }
 
 :where(:root[data-kb-layout='phone']) .kb-class-card {
   min-height: 0;
+}
+
+/* Past 100% text the count and arrows no longer fit the legend's line on a phone: they stand in the flow, at its right, over the row. */
+:where(:root[data-kb-layout='phone'][data-kb-text-size]:not([data-kb-text-size='100'])) .kb-class-nav {
+  position: static;
+  justify-content: flex-end;
+  margin-top: 30px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-turn-portrait {
+  width: 300px;
+  max-width: 100%;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-class-name {
@@ -1389,13 +1387,14 @@
 :where(:root[data-kb-layout='phone']) .kb-turn-dialog .kb-glass-dialog-head,
 :where(:root[data-kb-layout='phone']) .kb-debut-dialog .kb-glass-dialog-head,
 :where(:root[data-kb-layout='phone']) .kb-reveal-dialog .kb-glass-dialog-head {
-  font-size: var(--kb-glass-size-display-m);
+  font-size: var(--kb-glass-size-phone-display);
 }
 
 :where(:root[data-kb-layout='phone']) .kb-turn-dialog,
 :where(:root[data-kb-layout='phone']) .kb-debut-dialog,
 :where(:root[data-kb-layout='phone']) .kb-reveal-dialog {
-  padding: 20px 16px;
+  /* The top and the foot clear the dialog's cut corners: Close and the buttons stand 40px in from the cut's edges (shell.css). */
+  padding: 32px 12px 40px;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-glass-overlay:has(> .kb-turn-dialog) {
@@ -1421,8 +1420,9 @@
   gap: 12px;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-preview-side {
-  width: 30%;
+:where(:root[data-kb-layout='phone']) :is(.kb-turn-dialog, .kb-debut-dialog, .kb-reveal-dialog) .kb-glass-dialog-kicker {
+  font-size: var(--kb-glass-size-phone-small);
+  letter-spacing: 2px;
 }
 
 :where(:root[data-kb-layout='phone']) :is(.kb-characters, .kb-new-character, .kb-turn-dialog, .kb-debut-dialog, .kb-reveal-dialog) :is(.kb-reveal-line, .kb-roster-line, .kb-roster-rank, .kb-roster-turn, .kb-roster-facts, .kb-turn-facts, .kb-turn-line, .kb-turn-map, .kb-class-description, .kb-choice-option, .kb-turn-toggle, .kb-characters-lead, .kb-glass-action, .kb-notice, .kb-glass-field, legend, .kb-preview-head, .kb-turn-rank, .kb-characters-empty, .kb-characters-new) {

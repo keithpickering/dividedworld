@@ -21,7 +21,7 @@
 import { useId, useState, type CSSProperties } from 'react';
 import type { HeldCard } from '../data/api.ts';
 import { useBoard } from '../glass/useBoard.ts';
-import { Link } from '../router.tsx';
+import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Postcard, cardLabel } from './Postcard.tsx';
 import type { CardFace } from './faces.ts';
 
@@ -120,13 +120,13 @@ export function Hand({ held, faces, armed = null, onPick, onClose, vendingHref }
         </ul>
       )}
       {inView && cards.length > 0 && (
-        <p className="kb-hand-says kb-calm">
+        <p className="kb-hand-says kb-calm" data-kb-calm="flush">
           {armed === inView.key
             ? <>{inView.name} is armed. Every post it can land on now shows a dashed <b>+ mark</b> beside its date, named Play {inView.name} on that post. Press it to play {inView.name} there.</>
             : <><b>{inView.name}.</b> {inView.summary}</>}
         </p>
       )}
-      <Link to={vendingHref} className="kb-hand-vending kb-glass-skew"><span className="kb-glass-upright">Vending Machine</span></Link>
+      <div className="kb-hand-vending"><ButtonRow align="center"><GlassButton to={vendingHref}>Vending Machine</GlassButton></ButtonRow></div>
     </>
   );
 }
