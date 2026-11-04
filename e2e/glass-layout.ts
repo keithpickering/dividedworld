@@ -26,9 +26,9 @@ import type { Box } from './glass-text.ts';
  *     `display` is not `inline` or `contents` (an inline run is laid out by its block, which holds
  *     the words it is part of). `rect` is its content box. `wraps` is true when its words take
  *     more than one line (a single word wider than its box is the longest-word refusal's);
- *     a one-line label is as narrow as its words and is not squeezed by being short ("OK" is not narrower than 10em in any sense that
- *     matters). Decorative art is exempt from refusal 1 only when it truly is art: inside
- *     `aria-hidden="true"` and holding no letter or digit.
+ *     a one-line label is as narrow as its words and is not squeezed by being short ("OK" is not
+ *     narrower than 10em in any sense that matters). Decorative art is exempt from refusal 1 only
+ *     when it truly is art: inside `aria-hidden="true"` and holding no letter or digit.
  *   - A CONTROL is a `button`, `a[href]`, `input`, `select`, `textarea`, or `[role=button|tab|
  *     radio]`. In a flex line only buttons, links and role controls are compared (an input beside
  *     a button is deliberately not the same height).
@@ -88,13 +88,20 @@ export const HEIGHT_TOLERANCE = 1;
 /** Other lengths (a rect's edge past a bound, a corner in a cut) are compared to within this. */
 const EDGE = 1;
 const SIZE_TOLERANCE = 0.05;
-/** How far a skewed control may hang past its panel's edge and still be read against that panel's cut. */
-const OVERHANG = 16;
+
 
 /** A path as a reader wants it: its last four steps, without the child counts. */
 export const shortPath = (path: string): string => path.split(' > ').slice(-4).map((s) => s.replace(/:nth-child\(\d+\)/g, '')).join(' > ');
 
 const px = (n: number) => `${Math.round(n * 10) / 10}px`;
+
+/** Where a point outside the clip lies against the panel's box: past an edge, or in a corner's cut. */
+function where(r: Box, x: number, y: number): string {
+  const h = x < r.x ? 'left' : x > r.x + r.width ? 'right' : '';
+  const v = y < r.y ? 'top' : y > r.y + r.height ? 'bottom' : '';
+  if (h || v) return `past the ${[v, h].filter(Boolean).join(' ')} edge`;
+  return `in the ${y < r.y + r.height / 2 ? 'top' : 'bottom'} ${x < r.x + r.width / 2 ? 'left' : 'right'} cut`;
+}
 
 function insidePolygon(p: readonly [number, number], poly: readonly (readonly [number, number])[]): boolean {
   let inside = false;
@@ -154,14 +161,11 @@ export function judgeLayout(facts: LayoutFacts): string[] {
     const p = c.panel;
     if (!p) continue;
     const r = p.rect;
-    /* A skewed control overhangs its panel's edge by a few px, and the clip cuts that off too: a point just outside the panel is tested at the nearest point on its edge; one far outside is another thing's. */
-    const cut = samples(c)
-      .filter(([x, y]) => x >= r.x - OVERHANG && x <= r.x + r.width + OVERHANG && y >= r.y - OVERHANG && y <= r.y + r.height + OVERHANG)
-      .map(([x, y]): [number, number] => [Math.min(Math.max(x, r.x), r.x + r.width), Math.min(Math.max(y, r.y), r.y + r.height)])
-      .filter((q) => !insidePolygon(q, p.polygon));
+    /* Every sampled point outside the polygon is cut by the clip, whether it hangs past a straight edge or sits in a chamfer. */
+    const cut = samples(c).filter((q) => !insidePolygon(q, p.polygon));
     /* A point exactly on the polygon's edge reads either way: it is cut only when it is more than a pixel inside the cut. */
     const deep = cut.filter(([x, y]) => ![[EDGE, 0], [-EDGE, 0], [0, EDGE], [0, -EDGE]].some(([dx, dy]) => insidePolygon([x + dx!, y + dy!], p.polygon)));
-    if (deep.length > 0) at('cut control', c.path, `its box at ${deep.map(([x, y]) => `${px(x)},${px(y)}`).join(' ')} lies in the cut corner of ${shortPath(p.path)}`);
+    if (deep.length > 0) at('cut control', c.path, `its box at ${deep.map(([x, y]) => `${px(x)},${px(y)} (${where(r, x, y)})`).join(' ')} is cut off by ${shortPath(p.path)}`);
   }
 
   /* 5. a calm outside its box */

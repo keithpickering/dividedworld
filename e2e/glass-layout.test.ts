@@ -146,6 +146,31 @@ describe('the layout judgment', () => {
     expect(out[0]).toContain('cut');
   });
 
+  test('refuses a control 10px past a straight edge of its panel, which the clip cuts off', () => {
+    const panel = clean.controls[0]!.panel!;
+    const out = refusals({ controls: [{ path: 'main > section > button.over', rect: { x: 430, y: 300, width: 80, height: 40 }, panel }] });
+    expect(out).toHaveLength(1);
+    expect(out[0]).toContain('button.over');
+    expect(out[0]).toContain('right');
+  });
+
+  test('refuses a control 30px outside its panel', () => {
+    const panel = clean.controls[0]!.panel!;
+    const out = refusals({ controls: [{ path: 'main > section > button.far', rect: { x: 530, y: 250, width: 80, height: 40 }, panel }] });
+    expect(out).toHaveLength(1);
+    expect(out[0]).toContain('button.far');
+  });
+
+  test('reads a control by the corners it is drawn at: a layout box clear of the chamfer, a skewed corner in it', () => {
+    const panel = clean.controls[0]!.panel!;
+    const rect = { x: 380, y: 210, width: 80, height: 40 };
+    const quad = [[410, 200], [480, 200], [450, 240], [380, 240]] as const;
+    const out = refusals({ controls: [{ path: 'main > section > button.drawn', rect, quad, panel }] });
+    expect(out).toHaveLength(1);
+    expect(out[0]).toContain('button.drawn');
+    expect(refusals({ controls: [{ path: 'main > section > button.drawn', rect, panel }] })).toEqual([]);
+  });
+
   test('refuses a skewed button whose drawn corner lies in the chamfer, though its bounding box corners need not', () => {
     const panel = clean.controls[0]!.panel!;
     /* Skewed by 10 degrees: the top-right corner is drawn 8px right of the box's middle edge; the quad's top-right (496,200) is in the cut. */
