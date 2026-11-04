@@ -20,6 +20,8 @@ export function seedDemo(fake: Fake): Demo {
   const t0 = Date.parse('2026-10-01T12:00:00Z');
   fake.seed.season({ number: 1, startsAt: '2026-10-01T00:00:00Z' });
   const me = fake.seed.account('demo-player', { seasoned: true });
+  /* How players reach the admins, so the Reach a person page (/contact) shows its links in e2e; its unset state is the unit tests'. */
+  fake.seed.contact([{ label: 'Discord', href: 'https://discord.example/users/admin' }, { label: 'Email', href: 'admin@example.test' }]);
   const other = fake.seed.account('demo-other', { seasoned: true });
   const pipewrench = fake.seed.character(me, 'Pipewrench', 'heel', { at: t0 });
   const hooligan = fake.seed.character(me, 'Mrs. Hooligan', 'face', { at: t0 + day });

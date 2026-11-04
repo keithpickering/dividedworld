@@ -1728,6 +1728,28 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
   });
 });
 
+describe('Contact', () => {
+  const LINKS = [{ label: 'Discord', href: 'https://discord.gg/x' }, { label: 'Email', href: 'mailto:a@b.c' }];
+
+  it('reads admin_contact and leaves out a row that is not a link', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/admin_contact') ? json([...LINKS, { label: 'No href' }, { href: 'x' }, null, { label: 5, href: 'y' }]) : undefined));
+    expect(await h.api.adminContact()).toEqual(LINKS);
+    expect(h.to('rpc/admin_contact')).toHaveLength(1);
+    const none = harness((r) => (r.url.pathname.endsWith('/rpc/admin_contact') ? json(null) : undefined));
+    expect(await none.api.adminContact()).toEqual([]);
+  });
+
+  it('writes through set_admin_contact by its parameter name, and answers the links as they read', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/set_admin_contact') ? json(LINKS) : undefined));
+    expect(await h.api.setAdminContact([{ label: 'Discord', href: 'https://discord.gg/x', extra: 1 } as never, LINKS[1]!])).toEqual({ ok: true, value: LINKS });
+    expect(h.to('rpc/set_admin_contact')[0]?.body).toEqual({ links: LINKS });
+    const refused = harness(() => json({ code: '42501', message: 'only an admin sets how to reach one', hint: 'kayfabb.refusal' }, 403));
+    expect(await refused.api.setAdminContact([])).toEqual({ ok: false, error: 'only an admin sets how to reach one' });
+    const lost = harness(() => new Error('network'));
+    expect(await lost.api.setAdminContact([])).toMatchObject({ ok: false, uncertain: true });
+  });
+});
+
 describe('Updates', () => {
   const ROW = {
     act: A, thread: T, character: B, name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe', title: 'Traps bite', body: 'The trap was offended.',
