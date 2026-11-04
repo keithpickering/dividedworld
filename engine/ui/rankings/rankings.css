@@ -34,8 +34,7 @@
 }
 
 .kb-rankings-season {
-  /* The top: its calm's feather reaches up toward the title (and the tabs) above. */
-  margin: 16px 0 12px;
+  margin: 0 0 12px;
   font-size: var(--kb-glass-size-label);
   font-weight: 800;
   letter-spacing: 2px;
@@ -258,7 +257,8 @@
 }
 
 :where(:root[data-kb-layout='phone']) .kb-rankings-season {
-  margin: 16px 0 0;
+  /* The top: its calm's feather reaches up toward the title above, which stands as near as the head's own gap leaves it. */
+  margin: max(0px, calc(var(--kb-glass-calm-room, 32px) - 16px)) 0 0;
   font-size: var(--kb-glass-size-phone-small);
   letter-spacing: 1.5px;
 }
