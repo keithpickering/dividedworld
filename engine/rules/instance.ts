@@ -359,7 +359,7 @@ function reachProblems(c: CardRules, settings: Settings): string[] {
   return out;
 }
 
-/** The longest a Boss's or bot's title and signature may be: what the seed writes into a profile (0043 cuts them in silence). */
+/** The longest a persona's title and signature may be: what the seed writes into a profile (0043 cuts them in silence). */
 export const STAFF_TITLE_MAX = 40;
 export const STAFF_SIGNATURE_MAX = 500;
 

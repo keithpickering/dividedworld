@@ -1,7 +1,7 @@
 /**
  * PLACEHOLDER BOSS. The real roster is written with the owner (2026-10-31: "Placeholder Boss is
  * fine, go ahead. Probably good to test a few to see how the system prompt impacts personality").
- * See bosses/the-clerk.ts. Replace or delete this file when the real Bosses arrive.
+ * See personas/the-clerk.ts. Replace or delete this file when the real Bosses arrive.
  *
  * This one is weary and passive-aggressive: a robot that has seen every thread before and tells
  * you so. It inherits nothing (a fresh Boss with no `inheritsMemoryOf`).

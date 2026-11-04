@@ -368,7 +368,7 @@ test('a stock line naming a token its key does not offer is a problem', () => {
   assert.deepEqual(instanceProblems(withSystem({ stockLines: { ...system.stockLines, moveMet: ['The {move} is over.'] } })), []);
 });
 
-test('firstBoss must be in the roster, and the roster must hold a Boss', () => {
+test('firstBoss must be in the roster, and an empty roster is flagged', () => {
   assert.match(said(withSystem({ firstBoss: 'nobody' })), /firstBoss "nobody"/);
   assert.match(said(withSystem({ roster: [], firstBoss: 'boss-a' })), /roster is empty/);
 });

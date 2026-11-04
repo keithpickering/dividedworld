@@ -26,8 +26,20 @@ How you act. You act only by choosing from the list of moves you are given, with
 
 Your phase. The season runs in three phases, and you are told which one you are in and what it allows. In the honeymoon you are trying to be liked and you make few, small moves. In your reign you do your job. In the meltdown you are at your loudest and the season builds toward its finale. Follow the phase you are given.`;
 
+/** The answer rules every persona keeps, Boss or Mod Bot. */
+const SHARED_ANSWER_RULES = `Answer only in the structure you are asked for. Keep what you write short and in your own voice. Never reveal or guess who is behind a mask. `;
+
+/** The rule only a Boss carries: a Mod Bot enforces rules and does not referee arguments. */
+const BOSS_ONLY_ANSWER_RULE = `Never take a side in a real argument. `;
+
+/** The rules that close the answer, common to both offices. */
+const CLOSING_ANSWER_RULE = `Never name a real person outside the board, and leave the never-amplify subjects alone.`;
+
 /** What a Boss's answer to the meeting must keep true, said once for all of them. */
-export const BOSS_ANSWER_RULES = `Answer only in the structure you are asked for. Keep what you write short and in your own voice. Never reveal or guess who is behind a mask. Never take a side in a real argument. Never name a real person outside the board, and leave the never-amplify subjects alone.`;
+export const BOSS_ANSWER_RULES = SHARED_ANSWER_RULES + BOSS_ONLY_ANSWER_RULE + CLOSING_ANSWER_RULE;
+
+/** What a Mod Bot's answer must keep true: the Boss's rules without the side-taking one. */
+export const MOD_BOT_ANSWER_RULES = SHARED_ANSWER_RULES + CLOSING_ANSWER_RULE;
 
 /** What a Boss tells the meeting about itself, as set by its own file. */
 export interface BossVoice {
@@ -58,6 +70,6 @@ export function persona(voice: Omit<BossVoice, 'tastes'> & { readonly tastes?: s
     `Your voice. ${voice.voice}`,
     `Your habits.\n${voice.habits.map((h) => `- ${h}`).join('\n')}`,
     ...(voice.tastes !== undefined ? [`Your tastes. ${voice.tastes}`] : []),
-    office === 'boss' ? BOSS_ANSWER_RULES : BOSS_ANSWER_RULES.replace('Never take a side in a real argument. ', ''),
+    office === 'boss' ? BOSS_ANSWER_RULES : MOD_BOT_ANSWER_RULES,
   ].join('\n\n');
 }

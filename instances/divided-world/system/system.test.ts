@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { system } from './index.ts';
-import { BOSS_PREMISE } from './persona.ts';
+import { BOSS_PREMISE, MOD_BOT_PREMISE, BOSS_ANSWER_RULES, MOD_BOT_ANSWER_RULES, persona } from './persona.ts';
 import { instanceProblems } from '../../../engine/rules/instance.ts';
 import { instance } from '../index.ts';
 import { PHASE_CAPS } from '../../../engine/system/phases.ts';
@@ -70,4 +70,17 @@ test('feeds are plain https addresses, and the lists are the content the plan na
 
 test('the content is frozen, so no caller edits the roster in place', () => {
   assert.ok(Object.isFrozen(system) && Object.isFrozen(system.roster) && Object.isFrozen(system.roster[0]));
+});
+
+test('a persona is built on its office: the Boss premise and side-taking rule, or the Mod Bot premise without it', () => {
+  const v = { name: 'Test', title: 'Tester', temperament: 't', voice: 'v', habits: ['h'] };
+  const side = 'Never take a side in a real argument. ';
+  const boss = persona(v, 'boss');
+  const bot = persona(v, 'bot');
+  assert.ok(boss.includes(BOSS_PREMISE) && !boss.includes(MOD_BOT_PREMISE));
+  assert.ok(boss.includes(side));
+  assert.ok(bot.includes(MOD_BOT_PREMISE) && !bot.includes(BOSS_PREMISE));
+  assert.ok(!bot.includes(side) && !bot.includes('Never take a side'));
+  assert.ok(bot.endsWith(MOD_BOT_ANSWER_RULES));
+  assert.equal(MOD_BOT_ANSWER_RULES, BOSS_ANSWER_RULES.replace(side, ''));
 });
