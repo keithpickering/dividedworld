@@ -73,4 +73,16 @@ describe('a card\'s rarity and play on its face', () => {
     expect(document.querySelector('.kb-postcard-play')?.textContent).toBe('Cast');
     expect(new Set(RARITIES.map((r) => gemOf(r))).size).toBe(4);
   });
+  test('every word on a face is art to the layout check: aria-hidden and marked data-kb-art, at every size', () => {
+    for (const size of ['fan', 'sheet'] as const) {
+      const { container, unmount } = render(<Postcard face={faceOf(longer, ui, settings)} size={size} />);
+      const words = [...container.querySelectorAll('.kb-postcard > span')].filter((e) => e.textContent?.trim());
+      expect(words.length).toBeGreaterThan(2);
+      for (const w of words) {
+        expect(w.getAttribute('aria-hidden'), w.className).toBe('true');
+        expect(w.hasAttribute('data-kb-art'), w.className).toBe(true);
+      }
+      unmount();
+    }
+  });
 });
