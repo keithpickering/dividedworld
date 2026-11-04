@@ -134,11 +134,25 @@ export interface ThreadSummary {
   /** Null for The System's own Acts. */
   readonly lastCharacter: Id | null;
   readonly repliesThisWeek: number;
-  /** A spun thread's origin, read with the row: the thread of the Act it was spun from, that thread's title and the Act's seq. Null when it was not spun. */
+  /** The thread of the Act a spun thread was spun from, which the ORIGIN box subscribes to. Null when it was not spun, or the Act is in no thread. */
   readonly originThread: Id | null;
-  readonly originTitle: string | null;
-  readonly originSeq: number | null;
+  /** Where the origin Act can be found, read with the row. Null when it was not spun, or the Act has no place to show. */
+  readonly origin: OriginPlace | null;
 }
+
+/** Where an Act a play landed on can be found. */
+export type PlaceOn =
+  | { readonly kind: 'post'; readonly thread: Id; readonly title: string; readonly seq: number }
+  | { readonly kind: 'update'; readonly act: Id; readonly title: string }
+  | { readonly kind: 'character'; readonly id: Id; readonly name: string | null }
+  | { readonly kind: 'thread'; readonly id: Id; readonly title: string }
+  | { readonly kind: 'board'; readonly slug: string; readonly name: string };
+
+/** Where a spun thread's origin can be found: an Act with a place number, an update, or a play and where it landed. */
+export type OriginPlace =
+  | Extract<PlaceOn, { kind: 'post' | 'update' }>
+  /* `card` is the card's key, null for a face-down set. `on` is null when the target cannot be placed. */
+  | { readonly kind: 'play'; readonly card: string | null; readonly on: PlaceOn | null };
 
 export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | 'unmask' | 'move' | 'move_end' | 'move_keep' | 'set' | 'spring' | 'update';
 

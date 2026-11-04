@@ -39,7 +39,7 @@ import type {
   AdminQueue, BoardName, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffProfile,
   Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEvent, CaughtPlay, Character, CharacterCounts, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd, FaceDownPass,
   Alert, EffectState, SeasonNewsItem, SeasonResult, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
-  Tally, StandingPlace, ThreadSummary, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
+  Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
 } from '../../../engine/ui/data/api.ts';
 
 export interface SupabaseApiOptions {
@@ -182,15 +182,48 @@ function toThread(r: Row): ThreadSummary {
     lastCharacter: r['last_character'] ?? null,
     repliesThisWeek: num(r['replies_this_week']),
     originThread: r['origin_thread'] ?? null,
-    originTitle: r['origin_title'] ?? null,
-    originSeq: r['origin_seq'] === null || r['origin_seq'] === undefined ? null : num(r['origin_seq']),
+    origin: toPlace(r['origin_place']),
   };
+}
+
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+const isText = (v: unknown): v is string => typeof v === 'string';
+
+/** A play's target place (origin_place's `on`, 0079): every key's type is checked, and a shape this build does not know reads as null. */
+function toPlaceOn(raw: unknown): PlaceOn | null {
+  if (!isObject(raw)) return null;
+  switch (raw['kind']) {
+    case 'post':
+      return isText(raw['thread']) && isText(raw['title']) && typeof raw['seq'] === 'number' && Number.isFinite(raw['seq'])
+        ? { kind: 'post', thread: raw['thread'], title: raw['title'], seq: raw['seq'] } : null;
+    case 'update':
+      return isText(raw['act']) && isText(raw['title']) ? { kind: 'update', act: raw['act'], title: raw['title'] } : null;
+    case 'character':
+      return isText(raw['id']) && (raw['name'] === null || isText(raw['name'])) ? { kind: 'character', id: raw['id'], name: raw['name'] } : null;
+    case 'thread':
+      return isText(raw['id']) && isText(raw['title']) ? { kind: 'thread', id: raw['id'], title: raw['title'] } : null;
+    case 'board':
+      return isText(raw['slug']) && isText(raw['name']) ? { kind: 'board', slug: raw['slug'], name: raw['name'] } : null;
+    default:
+      return null;
+  }
+}
+
+/** A spun thread's origin_place (thread_open and thread_list, 0079): null for no place, a malformed one or an unknown kind; a play whose `on` is malformed keeps `on: null`. */
+function toPlace(raw: unknown): OriginPlace | null {
+  if (!isObject(raw)) return null;
+  if (raw['kind'] === 'play') {
+    if (!(raw['card'] === null || isText(raw['card']))) return null;
+    return { kind: 'play', card: raw['card'], on: toPlaceOn(raw['on']) };
+  }
+  const place = toPlaceOn(raw);
+  return place !== null && (place.kind === 'post' || place.kind === 'update') ? place : null;
 }
 
 /**
  * The thread an `act` answer carries (it holds no list columns), with its first Act filled in. It
  * does not know a spun thread's origin (the answer names the Act, not its thread's title), so those
- * three are null here; the list reads them with the row.
+ * two are null here; the list reads them with the row.
  */
 function toNewThread(t: Row, first: Act): ThreadSummary {
   return {
@@ -208,8 +241,7 @@ function toNewThread(t: Row, first: Act): ThreadSummary {
     lastCharacter: first.character,
     repliesThisWeek: 0,
     originThread: null,
-    originTitle: null,
-    originSeq: null,
+    origin: null,
   };
 }
 

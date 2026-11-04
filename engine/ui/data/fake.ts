@@ -32,7 +32,7 @@ import type {
   AdminQueue, BoardName, Demand, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffProfile,
   Act, AccountListener, ActKind, Alert, SeasonNewsItem, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
-  Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, TurnAnnounced, Wallet, WalletEvent,
+  Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
 
 /** The tour's tips, which `replayTour` forgets alone: the engine's one list, which the SQL's replay_tour is held to (engine/ui/tips/keys.test.ts). */
@@ -461,13 +461,39 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return out.sort((a, b) => Date.parse(b.newestAt) - Date.parse(a.newestAt)).slice(0, 50);
   }
 
+  /** Where an Act is found, as an Act's own post or update place: an update, else a post with a place number, else nowhere. */
+  const placeOf = (a: ActRec | undefined): Extract<PlaceOn, { kind: 'post' | 'update' }> | null =>
+    !a ? null
+    : a.kind === 'update' ? { kind: 'update', act: a.id, title: String(a.payload['title']) }
+    : a.seq !== null ? { kind: 'post', thread: a.thread, title: threads.get(a.thread)!.title, seq: a.seq }
+    : null;
+
+  /** A spun thread's origin place, by the rules of thread_open's origin_place (0079), in order: none; an update; a play (kind first, so a numbered card is one) with its card (null for a set) and its target; any Act with a place number. */
+  function originPlace(origin: ActRec): OriginPlace | null {
+    if (origin.kind === 'update') return placeOf(origin);
+    if (origin.kind === 'card' || origin.kind === 'set' || origin.kind === 'spring') {
+      const card = origin.kind === 'set' ? null : String(origin.payload['card']);
+      const beyond = reachPlays.get(origin.id);
+      let on: PlaceOn | null;
+      if (beyond) {
+        const named = beyond.reach === 'character' ? characters.get(beyond.target) : undefined;
+        on = beyond.reach === 'character' ? { kind: 'character', id: beyond.target, name: named?.debutedAt != null ? named.name : null }
+          : beyond.reach === 'thread' ? { kind: 'thread', id: beyond.target, title: threads.get(beyond.target)!.title }
+          : { kind: 'board', slug: boards.find((b) => b.id === beyond.target)!.slug, name: boards.find((b) => b.id === beyond.target)!.name };
+      } else {
+        on = onPost(origin) && origin.target !== null ? placeOf(acts.get(origin.target)) : null;
+      }
+      return { kind: 'play', card, on };
+    }
+    return origin.seq !== null ? placeOf(origin) : null;
+  }
+
   function summary(t: ThreadRec): ThreadSummary {
     const all = placed(t.id);
     const first = all[0];
     const last = all.at(-1);
     const week = now() - 7 * DAY;
     const origin = t.origin === null ? undefined : acts.get(t.origin);
-    const from = origin ? threads.get(origin.thread) : undefined;
     // The greatest time of any placed (non-edit) Act, as threads.last_at is; the creation time with none, since lastAt is not null here.
     return {
       id: t.id, board: t.board, title: t.title, originActId: t.origin, createdAt: iso(t.at), lastAt: iso(all.length ? Math.max(...all.map((a) => a.at)) : t.at), lastSeq: t.nextSeq - 1,
@@ -475,7 +501,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       firstAct: first?.id ?? null, firstCharacter: first?.character ?? null, lastAct: last?.id ?? null, lastCharacter: last?.character ?? null,
       // Capped at the hotReplies threshold, as thread_list counts it: a screen only compares it with that.
       repliesThisWeek: Math.min(settings.hotReplies, all.filter((a) => a.kind === 'post' && a.seq! > 1 && a.at > week && a.at <= now()).length),
-      originThread: origin?.thread ?? null, originTitle: from?.title ?? null, originSeq: origin?.seq ?? null,
+      originThread: origin?.thread ?? null, origin: origin ? originPlace(origin) : null,
     };
   }
 
