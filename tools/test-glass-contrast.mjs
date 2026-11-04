@@ -19,7 +19,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CLASS_LARGE, SURFACES, calmOf, ceilingsFile, ceilingsStale, classLargeFaults, contrastRatio, glassCeilings, glassFaults, luminance, readClassLarge, recipeWorsts, treeGlass } from './check-glass-contrast.mjs';
+import { CLASS_LARGE, OVERLAYS, OVERLAY_READINGS, OVERLAY_RULES, SURFACES, calmOf, ceilingsFile, ceilingsStale, classLargeFaults, contrastRatio, glassCeilings, glassFaults, luminance, overlayCeilings, overlayRuleFaults, overlayWorst, readClassLarge, readScrim, recipeWorsts, treeGlass } from './check-glass-contrast.mjs';
 
 let pass = 0;
 const failures = [];
@@ -385,6 +385,77 @@ const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s ===
   check('the same ink in the standard key passes: it asks 4.5:1', named(glassFaults(s), '--kb-glass-ink-neon').length === 0);
 }
 
+
+/*
+ * Overlay sheets (the onboarding follow-ups design, section 3): the spotlight's panel stands on none of the smoke surfaces. It is
+ * `--kb-glass-sheet` over a base (the panel's own `--kb-glass-pale` background, which the sheet's ::after is laid on) and, outside the
+ * panel, a scrim of the ground at N% over whatever page is behind, which can be white. The worst pixel under the text is the sheet
+ * over the brighter of the two bases; the panel's border (pale) is read against the scrim over white. Colors are rounded to bytes at
+ * each composite, as the browser draws them.
+ */
+{
+  const tipsCss = fs.readFileSync(new URL('../engine/ui/tips/tips.css', import.meta.url), 'utf8');
+  const reading = OVERLAY_READINGS.tips;
+  const at = (percent, base = reading?.base) => ({ tips: { percent, base } });
+  const faultsOf = (glass, scrims = at(reading?.percent)) => glassFaults(glass, undefined, scrims);
+
+  check('the engine lists the tips overlay, and the guard has a rule for it', JSON.stringify(OVERLAYS) === '["tips"]' && OVERLAY_RULES.tips !== undefined, JSON.stringify(OVERLAYS));
+  check('the scrim is read from tips.css as 72, and the panel\'s base as --kb-glass-pale', reading?.percent === 72 && reading?.base === '--kb-glass-pale', JSON.stringify(reading));
+  check('readScrim reads the .kb-tips-dim rule\'s color-mix percentage', readScrim(tipsCss, '.kb-tips-dim') === 72);
+  check('readScrim finds no rule when the class is renamed', readScrim(tipsCss.replace('.kb-tips-dim {', '.kb-tips-veil {'), '.kb-tips-dim') === null);
+  check('readScrim finds none when the rule no longer mixes the ground', readScrim(tipsCss.replace('var(--kb-glass-ground) 72%', 'black 72%'), '.kb-tips-dim') === null);
+
+  /* Divided World's numbers, with their arithmetic. Standard key: ground #07050d = (7, 5, 13), sheet rgba(9, 5, 18, 0.92), pale #c9f8ff = (201, 248, 255). */
+  const w = overlayWorst(real, 'standard', 72, '--kb-glass-pale');
+  /* The scrim over white: 255 * 0.28 + ground * 0.72 = (76.44, 75.0, 80.76) -> (76, 75, 81), the border's ground. */
+  check('the scrim over white is rgb(76,75,81)', JSON.stringify(w?.scrim) === '[76,75,81]', JSON.stringify(w?.scrim));
+  /* The sheet over pale: 0.92 * (9, 5, 18) + 0.08 * (201, 248, 255) = (24.36, 24.44, 36.96) -> (24, 24, 37). Over the scrim it would be (14, 11, 23), so pale is the worse base. */
+  check('the sheet over the pale base is rgb(24,24,37), the worst pixel', JSON.stringify(w?.rgb) === '[24,24,37]', JSON.stringify(w?.rgb));
+  check('the worst luminance is 0.0098', near(w?.luminance, 0.0098, 0.00005), String(w?.luminance));
+  const high = overlayWorst(real, 'high', 72, '--kb-glass-pale');
+  check('under the high key the sheet is opaque #090512, so the worst is rgb(9,5,18)', JSON.stringify(high?.rgb) === '[9,5,18]', JSON.stringify(high?.rgb));
+  const ratios = Object.fromEntries(['--kb-glass-text', '--kb-glass-text-hi', '--kb-glass-text-2', '--kb-glass-pale'].map((t) => [t, [contrastRatio(real.keys.standard[t].value, w.rgb), contrastRatio(real.keys.high[t].value, high.rgb)]]));
+  /*
+   * PINNED: contrast on the worst, standard / high, to two places, as (L_fg + 0.05) / (L_bg + 0.05) with the luminances to four places.
+   * Standard, L_bg 0.0098 (rgb(24,24,37)): text #f1ecff 0.8591 -> 0.9091 / 0.0598 = 15.20; text-hi #ffffff 1.0 -> 1.05 / 0.0598 = 17.56;
+   * text-2 #e4def7 0.7545 -> 0.8045 / 0.0598 = 13.45; pale #c9f8ff 0.8677 -> 0.9177 / 0.0598 = 15.34.
+   * High, L_bg 0.0021 (rgb(9,5,18), the opaque sheet): text #ffffff 1.05 / 0.0521 = 20.15; text-hi the same, 20.15; text-2 #f1ecff
+   * 0.9091 / 0.0521 = 17.45; pale 0.9177 / 0.0521 = 17.61.
+   */
+  const pin = { '--kb-glass-text': [15.2, 20.15], '--kb-glass-text-hi': [17.56, 20.15], '--kb-glass-text-2': [13.45, 17.45], '--kb-glass-pale': [15.34, 17.61] };
+  for (const [t, [s2, h2]] of Object.entries(pin)) check(`${t} on the worst is ${s2}:1 standard and ${h2}:1 high`, near(ratios[t][0], s2, 0.006) && near(ratios[t][1], h2, 0.006), JSON.stringify(ratios[t]));
+  /* The border: pale #c9f8ff 0.8677 over the scrim over white rgb(76,75,81), luminance 0.0716: 0.9177 / 0.1216 = 7.55. */
+  check('the border pale on the scrim over white is 7.55:1, over its 3:1', near(contrastRatio(real.keys.standard['--kb-glass-pale'].value, w.scrim), 7.55, 0.006), String(contrastRatio(real.keys.standard['--kb-glass-pale'].value, w.scrim)));
+  check('the real glass passes the overlay rules', named(faultsOf(real), 'overlay').length === 0, text(named(faultsOf(real), 'overlay')));
+
+  /* The poisons, each red before the guard knew overlays. */
+  const half = fresh();
+  half.keys.standard['--kb-glass-sheet'].value = 'rgba(9, 5, 18, 0.5)';
+  const halfFaults = named(faultsOf(half), 'overlay tips', '--kb-glass-text-2');
+  check('a sheet at alpha 0.5 fails --kb-glass-text-2 on the worst', halfFaults.length === 1 && /standard key/.test(halfFaults[0].why) && /needs 4\.5:1/.test(halfFaults[0].why), text(halfFaults));
+  check('the 0.5 sheet would pass over the scrim alone: it is the pale base under the sheet that makes it the worst', overlayWorst(half, 'standard', 72, null).luminance < 0.05 && overlayWorst(half, 'standard', 72, '--kb-glass-pale').luminance > 0.12, '');
+  const thin = faultsOf(real, at(30));
+  check('a scrim read as 30% fails the panel\'s border at 3:1', named(thin, 'overlay tips', 'border').length >= 1 && /needs 3:1/.test(text(named(thin, 'overlay tips', 'border'))), text(thin));
+  const high7 = fresh();
+  high7.keys.high['--kb-glass-sheet'].value = 'rgba(9, 5, 18, 0.5)';
+  check('under the high key a sheet that is not opaque fails text-2 at 7:1', named(faultsOf(high7), 'overlay tips', 'high key', '--kb-glass-text-2', 'needs 7:1').length === 1, text(faultsOf(high7)));
+  const noSheet = fresh();
+  delete noSheet.keys.high['--kb-glass-sheet'];
+  check('a sheet token missing from a key is an error', named(faultsOf(noSheet), 'overlay tips', '--kb-glass-sheet', 'high key').length >= 1, text(faultsOf(noSheet)));
+  const noSheet2 = fresh();
+  noSheet2.keys.standard['--kb-glass-sheet'].value = 'sheet';
+  check('a sheet token that is not a color is an error', named(faultsOf(noSheet2), 'overlay tips', '--kb-glass-sheet', 'standard key').length >= 1, text(faultsOf(noSheet2)));
+
+  check('a GlassOverlay with no rule in the guard is refused', overlayRuleFaults(['tips', 'toast'], OVERLAY_RULES).some((f) => /toast/.test(f.where) && /no rule/.test(f.why)), text(overlayRuleFaults(['tips', 'toast'], OVERLAY_RULES)));
+  check('a rule for an overlay the engine does not list is refused', overlayRuleFaults([], OVERLAY_RULES).some((f) => /tips/.test(f.where) && /does not list/.test(f.why)), text(overlayRuleFaults([], OVERLAY_RULES)));
+  check('the real overlays and rules agree', overlayRuleFaults(OVERLAYS, OVERLAY_RULES).length === 0);
+
+  const c = overlayCeilings(real, OVERLAY_READINGS).tips;
+  check('the ceilings carry the scrim, the worst luminance and each token\'s ceiling', c?.scrim === 72 && near(c.worst, w.luminance, 0.0001)
+    && ['--kb-glass-text', '--kb-glass-text-hi', '--kb-glass-text-2', '--kb-glass-pale'].every((t) => near(c.tokens[t]?.body, (luminance(real.keys.standard[t].value) + 0.05) / 4.5 - 0.05, 0.0001)), JSON.stringify(c));
+  check('the ceilings file for an instance has overlays.tips', glassCeilings(real).overlays?.tips?.scrim === 72);
+}
+
 /* ---- main(): the script itself, run against a scratch tree ---- */
 {
   const here = path.dirname(fileURLToPath(import.meta.url));
@@ -396,7 +467,7 @@ const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s ===
   // output buffer.
   const stage = (dir) => git(dir, 'add', '-A', '-f', '--', '.', ':(exclude)node_modules');
   /** A scratch repository with the guard, the engine's types, and the given glass (null for none), staged. */
-  const scratch = ({ glass, types = true, ceilings = null, apply = null }) => {
+  const scratch = ({ glass, types = true, ceilings = null, apply = null, typesText = null, tipsCss = null }) => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'glass-contrast-'));
     git(dir, 'init', '-q');
     fs.mkdirSync(path.join(dir, 'tools'), { recursive: true });
@@ -405,7 +476,9 @@ const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s ===
     // Developer Mode, and creates a junction for anyone. Node ignores the type everywhere else.
     fs.symlinkSync(path.join(repo, 'node_modules'), path.join(dir, 'node_modules'), 'junction');
     fs.mkdirSync(path.join(dir, 'engine', 'ui'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'engine', 'ui', 'types.ts'), types ? fs.readFileSync(path.join(repo, 'engine', 'ui', 'types.ts'), 'utf8') : 'export type Nothing = never;\n');
+    fs.writeFileSync(path.join(dir, 'engine', 'ui', 'types.ts'), types ? (typesText ?? fs.readFileSync(path.join(repo, 'engine', 'ui', 'types.ts'), 'utf8')) : 'export type Nothing = never;\n');
+    fs.mkdirSync(path.join(dir, 'engine', 'ui', 'tips'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'engine', 'ui', 'tips', 'tips.css'), tipsCss ?? fs.readFileSync(path.join(repo, 'engine', 'ui', 'tips', 'tips.css'), 'utf8'));
     fs.mkdirSync(path.join(dir, 'engine', 'ui', 'glass'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'engine', 'ui', 'glass', 'apply.ts'), apply ?? fs.readFileSync(path.join(repo, 'engine', 'ui', 'glass', 'apply.ts'), 'utf8'));
     if (glass) {
@@ -437,6 +510,20 @@ const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s ===
   check('the script refuses an engine list that names an unknown surface', extra.status === 1 && /lobby/.test(extra.stderr), extra.stderr.slice(0, 400));
   const unread = run(make({ glass: real, apply: 'export const nothing = 1;\n' }));
   check('the script refuses when it cannot find the engine\'s list', unread.status === 1 && /class large text list/.test(unread.stderr), unread.stderr.slice(0, 400));
+
+
+  const realTips = fs.readFileSync(path.join(repo, 'engine', 'ui', 'tips', 'tips.css'), 'utf8');
+  const realTypes = fs.readFileSync(path.join(repo, 'engine', 'ui', 'types.ts'), 'utf8');
+  const renamed = realTips.replace('.kb-tips-dim {', '.kb-tips-veil {');
+  check('the scratch stylesheet with the scrim renamed differs from the real one', renamed !== realTips);
+  const veiled = run(make({ glass: real, tipsCss: renamed }));
+  check('the script refuses a tips.css whose scrim rule is renamed', veiled.status === 1 && /overlay tips/.test(veiled.stderr) && /\.kb-tips-dim/.test(veiled.stderr), veiled.stderr.slice(0, 400));
+  const lighter = run(make({ glass: real, tipsCss: realTips.replace('var(--kb-glass-ground) 72%', 'var(--kb-glass-ground) 30%') }));
+  check('the script refuses a scrim lightened to 30% in the stylesheet, naming the border', lighter.status === 1 && /overlay tips/.test(lighter.stderr) && /border/.test(lighter.stderr), lighter.stderr.slice(0, 400));
+  const typed = realTypes.replace("export type GlassOverlay = 'tips';", "export type GlassOverlay = 'tips' | 'toast';");
+  check('the scratch types with a second overlay differ from the real ones', typed !== realTypes);
+  const ruleless = run(make({ glass: real, typesText: typed }));
+  check('the script refuses a GlassOverlay it has no rule for', ruleless.status === 1 && /toast/.test(ruleless.stderr) && /no rule/.test(ruleless.stderr), ruleless.stderr.slice(0, 400));
 
   const missing = run(make({ glass: real }));
   check('a missing ceilings file exits 1, naming --write', missing.status === 1 && /does not exist/.test(missing.stderr) && /--write/.test(missing.stderr), missing.stderr);

@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { buildSync } from 'esbuild';
 import { expect, test, type Page } from '@playwright/test';
-import { judge, paletteOf, type CeilingsFile, type GlassColors, type TextFact } from './glass-text.ts';
+import { judge, paletteOf, type CeilingsFile, type GlassColors, type SurfaceCeilings, type TextFact } from './glass-text.ts';
+import { signInUnseasonedOnBoard } from './onboarding.ts';
 import type * as Gatherer from './glass-text-page.ts';
 import type { Fake } from '../engine/ui/data/fake.ts';
 import type { Demo } from '../web/src/demo.ts';
@@ -29,7 +30,19 @@ type E2eWindow = typeof globalThis & { readonly __kbFake: Fake; readonly __kbDem
 test.use({ bypassCSP: true, reducedMotion: 'reduce', deviceScaleFactor: 1 });
 
 const glass = JSON.parse(readFileSync(new URL('../instances/divided-world/ui/glass.json', import.meta.url), 'utf8')) as GlassColors;
-const CEILINGS = (JSON.parse(readFileSync(new URL('./glass-ceilings.json', import.meta.url), 'utf8')) as CeilingsFile)['divided-world']!.surfaces;
+const CEILINGS_FILE = (JSON.parse(readFileSync(new URL('./glass-ceilings.json', import.meta.url), 'utf8')) as CeilingsFile)['divided-world']!;
+const CEILINGS = CEILINGS_FILE.surfaces;
+const TIPS = CEILINGS_FILE.overlays.tips!;
+
+/**
+ * The spotlight's panel as the judgment reads a surface: surface `tips`, whose worst pixel is the overlay's (the sheet over its base, which the
+ * guard writes as `overlays.tips`), each token held at 4.5:1 as body text, large or not (a ceiling for large text is the looser, so the
+ * stricter is read for every line); no calm and no panel, so a line stands where the worst is under its ceiling.
+ */
+const TIPS_SURFACE: SurfaceCeilings = {
+  recipe: 'tips', calmAll: false, worst: TIPS.worst, calmedWorst: TIPS.worst,
+  tokens: Object.fromEntries(Object.entries(TIPS.tokens).map(([token, c]) => [token, { body: c.body, large: c.body }])),
+};
 
 const GATHERER = buildSync({
   entryPoints: [new URL('./glass-text-page.ts', import.meta.url).pathname],
@@ -41,8 +54,8 @@ type Bundled = typeof globalThis & { kbGlassText: typeof Gatherer };
 /** How far the window moves between reads: less than its height by more than any line is tall. */
 const OVERLAP = 240;
 
-/** Every line of glass text on the page as it stands, read and judged; [] is clean. */
-async function measure(page: Page): Promise<string[]> {
+/** Every line of glass text on the page as it stands, read and judged; [] is clean. With `panel`, the lines of that overlay panel alone (the spotlight's), read against `overlays.tips`. */
+async function measure(page: Page, panel?: string): Promise<string[]> {
   await page.addScriptTag({ content: GATHERER });
   const { phone, key, height } = await page.evaluate(() => ({
     phone: document.documentElement.dataset.kbLayout === 'phone',
@@ -58,7 +71,7 @@ async function measure(page: Page): Promise<string[]> {
       scroller.scrollTop = top;
       return new Promise<{ top: number; max: number }>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done({ top: scroller.scrollTop, max: scroller.scrollHeight - scroller.clientHeight }))));
     }, y);
-    const lines = await page.evaluate(() => (globalThis as Bundled).kbGlassText.gather());
+    const lines = await page.evaluate((only) => (globalThis as Bundled).kbGlassText.gather(only), panel);
     for (const l of lines) seen.set(l.key, l.name);
     const fresh = lines.filter((l) => l.inView && !facts.has(l.key));
     if (fresh.length) {
@@ -73,9 +86,9 @@ async function measure(page: Page): Promise<string[]> {
       const stats = await page.evaluate(([shot, boxes, without]) => (globalThis as Bundled).kbGlassText.pixels(shot, boxes, without), [png, fresh.map((l) => l.box), bare] as const);
       fresh.forEach((l, i) => facts.set(l.key, { ...l, ...stats[i]! }));
     }
-    if (at.top >= at.max) break;
+    if (panel || at.top >= at.max) break;
   }
-  const faults = [...facts.values()].flatMap((f) => judge(f, { ceilings: CEILINGS[f.surface], palette, phone, high: key === 'high' }));
+  const faults = [...facts.values()].flatMap((f) => judge(f, { ceilings: f.surface === 'tips' ? TIPS_SURFACE : CEILINGS[f.surface], palette, phone, high: key === 'high' }));
   const never = [...seen].filter(([k]) => !facts.has(k)).map(([, name]) => `${name}: never lies wholly in the window, so it is cut off`);
   if (facts.size === 0) faults.push('no glass text was found on the page');
   return [...faults, ...never];
@@ -449,6 +462,51 @@ test.describe('the picked slot and the armed card in forced colors', () => {
     expect((await ring('button.kb-vending-slot[aria-pressed="false"]')).style).not.toBe('solid');
     await page.locator('button.kb-vending-slot > .kb-postcard').first().evaluate((card) => card.setAttribute('data-armed', ''));
     expect(await ring('.kb-postcard[data-armed]')).toEqual({ style: 'solid', width: '3px', highlight: true });
+  });
+});
+
+/*
+ * The spotlight's panel (engine/ui/tips/Spotlight.tsx), the HUD tour's first step as a new account sees it (e2e/onboarding.ts). It stands on
+ * `--kb-glass-sheet` over a scrim over the board, not on smoke, so tools/check-glass-contrast.mjs reads it as an overlay sheet and writes
+ * its worst pixel and each token's ceiling (`overlays.tips`); the lines of the panel are read here against those. One scene is the panel
+ * beside its target over a light board page at 1920×1080, the other the phone's sheet at 390×844 over the board on the phone layout.
+ */
+test.describe('the spotlight\'s first step', () => {
+  const PANEL = '.kb-tips .kb-tips-panel';
+  const open = async (page: Page) => {
+    await signInUnseasonedOnBoard(page);
+    await expect(page.locator(PANEL)).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+  };
+
+  test.describe('beside its target over a light board page at 1920×1080', () => {
+    test.use({ viewport: { width: 1920, height: 1080 }, colorScheme: 'light' });
+
+    test('every line of the panel is legible on the sheet', async ({ page }) => {
+      await open(page);
+      expect(await page.evaluate(() => document.documentElement.dataset.kbLayout)).not.toBe('phone');
+      /* The worst case behind the scrim is white: the body's channels are all high. */
+      expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toMatch(/^rgb\((2[0-5]\d), (2[0-5]\d), (2[0-5]\d)\)$/u);
+      expect(await measure(page, PANEL)).toEqual([]);
+    });
+
+    test('the poison: a sheet drawn at 0.3 is named', async ({ page }) => {
+      await open(page);
+      await plant(page, '.kb-tips { --kb-glass-sheet: rgba(9, 5, 18, 0.3) !important; }');
+      expect(await measure(page, PANEL)).toContainEqual(expect.stringMatching(/\(surface tips\): its brightest pixel, luminance 0\.\d+, is not under the ceiling 0\.\d+ for --kb-glass-[\w-]+ as body text on surface tips \(recipe tips\)$/u));
+    });
+  });
+
+  test.describe('as the phone\'s sheet at 390×844 over the dark board', () => {
+    /* The device's dark: an account with no choice of its own follows the device (e2e/a11y.spec.ts reads both schemes the same way). */
+    test.use({ viewport: { width: 390, height: 844 }, colorScheme: 'dark' });
+
+    test('every line of the panel is legible on the sheet', async ({ page }) => {
+      await open(page);
+      expect(await page.evaluate(() => document.documentElement.dataset.kbLayout)).toBe('phone');
+      expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toMatch(/^rgb\((\d|[1-5]\d), /u);
+      expect(await measure(page, PANEL)).toEqual([]);
+    });
   });
 });
 
