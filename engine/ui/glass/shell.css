@@ -164,18 +164,16 @@
 /* ---- the content column ---- */
 
 .kb-glass-content {
-  /* The column's side gutter; a flush calm (calm.css) reads it to stay inside the window on the phone. */
-  --kb-glass-gutter: clamp(16px, 4.44vw, 64px);
   display: block;
   max-width: 1312px;
   margin: 0 auto;
-  padding: 0 var(--kb-glass-gutter) 64px;
+  padding: 0 clamp(16px, 4.44vw, 64px) 64px;
   zoom: var(--kb-board-scale, 1);
 }
 
 /* On the Main board's layout the column's gutters are the board's own 64px (the menu bar's are its 32px), drawn at its scale with the rest. */
 :where(:root[data-kb-layout='main']) .kb-glass-content {
-  --kb-glass-gutter: 64px;
+  padding-inline: 64px;
 }
 
 .kb-glass-content:focus {
@@ -183,11 +181,10 @@
 }
 
 /*
- * A flush calm (a heading, lede or tab strip pulled into the gutter by its negative margin) reaches
- * past the column's edge by the feather and the pad, wider than the phone's 16px gutter, so one on
- * text that runs to the column's edge would push the page sideways. The column clips sideways at
- * its own edge, which is the window's on a phone and past the gutters everywhere else, so no glass
- * page scrolls sideways for them. `clip` makes no scroll container, so nothing
+ * A calm's feather reaches 32px past its words (calm.css), wider than the phone's 16px gutter, so a
+ * calm on text that runs to the column's edge would push the page sideways. The column clips
+ * sideways at its own edge, which is the window's on a phone and past the gutters everywhere else,
+ * so no glass page scrolls sideways for its feathers. `clip` makes no scroll container, so nothing
  * else about the column changes. (An `overflow-clip-margin` would be ignored here: Chromium reads
  * it only where both axes clip.)
  */

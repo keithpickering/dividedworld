@@ -18,9 +18,9 @@
  * quantized to 8 bits (the browser rounds a matrix's constant color to a byte); opacities and the calm
  * are not. That is the worst pixel. The calmed worst is the same with each layer's opacity scaled by (1 - calm): a calm is
  * the ground laid over the smoke at the calm's opacity under a text block (engine/ui/glass/calm.css),
- * so the smoke shows through at what is left. The calm's feather sits inside its element's box
- * (calm.css draws the backing as the box, and the element's padding is the feather plus a pad), so
- * the text is in the full-strength region and the calmed worst applies to every pixel under it. A recipe's own `calm` (the glass plan,
+ * so the smoke shows through at what is left. The calm's feather sits outside the text's box
+ * (calm.css insets the backing by the feather on every side), so the text is in the full-strength
+ * region and the calmed worst applies to every pixel under it. A recipe's own `calm` (the glass plan,
  * section 6: "the calm's opacity for this surface, default the theme's") is read in the theme's
  * place, and the screen draws that same number on each surface that uses the recipe (surfaceCalm,
  * engine/ui/glass/apply.ts; engine/ui/glass/calm.test.tsx holds the two equal), so it is held, as

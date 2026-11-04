@@ -67,16 +67,16 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
     <>
       <header className="kb-settled-head">
         <div className="kb-settled-top">
-          <p className="kb-settled-when kb-calm" data-kb-calm="flush">Settled {utcWhen(s.endsAt)} UTC</p>
+          <p className="kb-settled-when kb-calm">Settled {utcWhen(s.endsAt)} UTC</p>
           {tabs.length > 0 && (
-            <nav aria-label="Your characters" className="kb-settled-tabs kb-calm" data-kb-calm="flush">
+            <nav aria-label="Your characters" className="kb-settled-tabs kb-calm">
               {tabs.map((c) => (
                 <button key={c.id} type="button" className="kb-settled-tab kb-glass-skew" aria-pressed={c.id === current?.id} onClick={() => onTab(c.id)}><span className="kb-glass-upright">{c.name}</span></button>
               ))}
             </nav>
           )}
         </div>
-        <h1 className="kb-settled-title kb-glass-display kb-calm" data-kb-calm="flush">While you were away</h1>
+        <h1 className="kb-settled-title kb-glass-display kb-calm">While you were away</h1>
       </header>
 
       <div className="kb-settled-body">

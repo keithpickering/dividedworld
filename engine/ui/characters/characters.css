@@ -564,12 +564,6 @@
   content: none;
 }
 
-/* Bare there, the title's calm holds no room: the name has the card's whole width, which the step-down below measures. */
-:where(:root:not([data-kb-layout='phone'])) .kb-class-title.kb-calm {
-  --kb-calm-feather: 0px;
-  --kb-calm-pad: 0px;
-}
-
 /*
  * A class's name is set at the card's 40px and steps down to fit the card's width less the radio's
  * corner (20px of the content box), never under 70% of it (28px at 100% text). It is a container

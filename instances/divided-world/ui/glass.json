@@ -145,7 +145,7 @@
       "settlement": "settlement"
     }
   },
-  "calm": { "opacity": 0.85, "feather": 32, "pad": 12, "featherPhone": 20, "padPhone": 10 },
+  "calm": { "opacity": 0.85, "feather": 32 },
   "controls": {
     "m": { "height": 48, "pad": 22, "size": "body" },
     "s": { "height": 36, "pad": 16, "size": "label" },

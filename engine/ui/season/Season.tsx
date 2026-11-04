@@ -161,7 +161,7 @@ export function News({ items, mine, season, perPage, more, onMore }: NewsProps) 
   const boss = season ? items.find((i) => i.kind === 'bossArrived' && i.season === season.number)?.name ?? null : null;
   return (
     <div className="kb-season-news">
-      <p className="kb-season-lede kb-calm" data-kb-calm="flush">
+      <p className="kb-season-lede kb-calm">
         {season ? `Season ${season.number} began ${dayAndTime(season.startsAt)}.` : ''}
         {boss !== null && ` The Boss this season is ${boss}.`}
         {' '}Everything here is public: results, debuts, Turns, and the Boss coming and going.

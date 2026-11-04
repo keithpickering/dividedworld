@@ -77,9 +77,9 @@ describe('the calm drawn on a surface is the calm the guard reads it at', { time
 });
 
 /*
- * The calm feathers inward (docs/plans/2026-11-04-glass-polish-design.md, section 1): the backing is
- * the element's own box, and the element's padding holds its text inside the feather and a pad past
- * it. jsdom loads no stylesheet, so these read calm.css and tokens.css as text, as base.test.tsx does.
+ * The calm feathers outward: the backing reaches the feather past the element's box, and the element
+ * adds no padding of its own. jsdom loads no stylesheet, so these read calm.css as text, as
+ * base.test.tsx does.
  */
 const here = path.dirname(fileURLToPath(import.meta.url));
 const sheet = (name: string) => fs.readFileSync(path.join(here, name), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
@@ -98,36 +98,18 @@ function declsOf(css: string, selector: string): Record<string, string> {
   return out;
 }
 
-describe('the calm is drawn inside its element', () => {
+describe('the calm is drawn outside its element', () => {
   const calm = sheet('calm.css');
-  const tokens = sheet('tokens.css');
-  const phone = ':where(:root[data-kb-layout=\'phone\'])';
 
-  test('its backing is the element\'s box, not the box grown by the feather', () => {
-    expect(declsOf(calm, '.kb-calm::before').inset).toBe('0');
+  test('its backing reaches the feather past the element\'s box', () => {
+    /* (The rule inside `@supports not (mask-image)` sets inset 0 on the same selector: no feather to reach there.) */
+    expect(squash(calm)).toContain('inset: calc(var(--kb-glass-calm-feather) * -1);');
   });
-  test('the element resolves its own feather and pad, the phone layout\'s on the phone, so no root style outranks them', () => {
-    expect(declsOf(calm, '.kb-calm')['--kb-calm-feather']).toBe('var(--kb-glass-calm-feather)');
-    expect(declsOf(calm, '.kb-calm')['--kb-calm-pad']).toBe('var(--kb-glass-calm-pad)');
-    expect(declsOf(calm, `${phone} .kb-calm`)['--kb-calm-feather']).toBe('var(--kb-glass-calm-feather-phone)');
-    expect(declsOf(calm, `${phone} .kb-calm`)['--kb-calm-pad']).toBe('var(--kb-glass-calm-pad-phone)');
+  test('the element adds no padding of its own', () => {
+    for (const sel of ['.kb-calm', '.kb-calm.kb-calm']) expect(declsOf(calm, sel).padding).toBeUndefined();
   });
-  test('the element\'s padding is the feather plus the pad', () => {
-    const d = declsOf(calm, '.kb-calm.kb-calm');
-    expect(d['--kb-glass-calm-inset']).toBe('calc(var(--kb-calm-feather) + var(--kb-calm-pad))');
-    expect(d.padding).toBe('var(--kb-glass-calm-inset)');
-  });
-  test('the mask ramps over the element\'s feather', () => {
-    expect(calm).not.toMatch(/var\(--kb-glass-calm-feather\)\s*,/);
-  });
-  test('a flush heading takes back the padding in its margin', () => {
-    expect(declsOf(calm, ".kb-calm.kb-calm[data-kb-calm='flush']")['margin-inline']).toBe('calc(var(--kb-glass-calm-inset) * -1)');
-  });
-  test('the tokens: 32px feather and 12px pad; the phone\'s 20px and 10px', () => {
-    const root = declsOf(tokens, ':root');
-    expect(root['--kb-glass-calm-pad']).toBe('12px');
-    expect(root['--kb-glass-calm-feather-phone']).toBe('20px');
-    expect(root['--kb-glass-calm-pad-phone']).toBe('10px');
-    expect(tokens).not.toMatch(/!important/);
+  test('the mask ramps over the same feather the backing reaches', () => {
+    expect(calm).toMatch(/var\(--kb-glass-calm-feather\),/);
+    expect(calm).not.toMatch(/--kb-calm-/);
   });
 });

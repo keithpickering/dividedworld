@@ -9,9 +9,6 @@
  */
 import type { ClassLargeDraw, GlassControls, GlassSurface, GlassTheme } from '../types.ts';
 
-/** The calm's pad past the feather, and the phone layout's feather and pad, in px, where a theme gives none. */
-export const DEFAULT_CALM = { pad: 12, featherPhone: 20, padPhone: 10 } as const;
-
 /** The skewed controls' measure where a theme gives none (the values tokens.css names as plain defaults). */
 export const DEFAULT_CONTROLS: GlassControls = {
   m: { height: 48, pad: 22, size: 'body' },
@@ -38,10 +35,6 @@ export function glassVars(glass: GlassTheme, key: GlassKeyName): Record<string, 
   for (const [name, size] of Object.entries(glass.sizes)) out[`--kb-glass-size-${name}`] = `${size.px / 16}rem`;
   out['--kb-glass-calm-opacity'] = String(glass.calm.opacity);
   out['--kb-glass-calm-feather'] = `${glass.calm.feather}px`;
-  out['--kb-glass-calm-pad'] = `${glass.calm.pad ?? DEFAULT_CALM.pad}px`;
-  /* The phone layout's own names: calm.css and parts.css swap them in on the element, which a rule on the root's inline style could not. */
-  out['--kb-glass-calm-feather-phone'] = `${glass.calm.featherPhone ?? DEFAULT_CALM.featherPhone}px`;
-  out['--kb-glass-calm-pad-phone'] = `${glass.calm.padPhone ?? DEFAULT_CALM.padPhone}px`;
   const c = glass.controls ?? DEFAULT_CONTROLS;
   for (const [suffix, sizes] of [['', c], ['-phone', c.phone]] as const) {
     for (const k of ['m', 's'] as const) {

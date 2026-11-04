@@ -29,6 +29,7 @@
 }
 
 :root[data-kb-contrast='high'] .kb-calm::before {
+  inset: 0;
   background: var(--kb-glass-ground);
   -webkit-mask-image: none;
   mask-image: none;

@@ -64,7 +64,7 @@ export function ProfileEdit({ io }: { readonly io?: PictureIo }) {
   if (signedIn === null || (signedIn && !loaded)) return <div className="kb-profile-edit" aria-busy="true" />;
   if (!signedIn) return <div className="kb-profile-edit"><SignInPrompt /></div>;
 
-  const back = <div className="kb-calm" data-kb-calm="flush"><ButtonRow><GlassButton to="/characters" state={id === null ? undefined : { character: id }}>Back to your characters</GlassButton></ButtonRow></div>;
+  const back = <div className="kb-calm"><ButtonRow><GlassButton to="/characters" state={id === null ? undefined : { character: id }}>Back to your characters</GlassButton></ButtonRow></div>;
   if (!mine || id === null) {
     return (
       <div className="kb-profile-edit">

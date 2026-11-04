@@ -139,10 +139,10 @@
 }
 
 /*
- * The calms under the HUD's words (calm.css) are inside their blocks, but the bar is
- * cut to the glass's own shape, the tab's polygon moved by where the bar starts in the glass
- * (Hud.tsx measures it), so a calm stops where the glass does. On the phone the glass is a plain
- * band and clips what it holds.
+ * The calms under the HUD's words reach their feather past their blocks (calm.css), which would
+ * darken the page beside the tab and above it. The bar is cut to the glass's own shape, the tab's
+ * polygon moved by where the bar starts in the glass (Hud.tsx measures it), so a calm stops where
+ * the glass does. On the phone the glass is a plain band and clips what it holds.
  */
 :where(:root:not([data-kb-layout='phone'])) .kb-hud-bar {
   --kb-hud-cut: var(--kb-hud-bar-shift, 0px);
@@ -431,7 +431,6 @@
   align-items: flex-start;
   /* Ends before the Alerts button, which stands at the right of the same corner (1229px at the board's 1440): the date and time are never drawn under it. */
   max-width: 240px;
-  /* On the Main layout the clock's calm pads it, and its margin takes that back (the rule beside the other calms, below). */
   margin: 1.875rem 0 0;
 }
 
@@ -793,7 +792,10 @@
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hand-head-count {
+  /* The count stands in its own calm, a few px wider than its ink, which the heading's box does not reach. */
   display: inline-block;
+  margin: -4px;
+  padding: 4px;
   font-family: var(--kb-glass-font-body);
   font-size: var(--kb-glass-size-phone-display);
   font-weight: 800;
@@ -969,48 +971,7 @@
  * whole bar. On the Main board's layout the plate's calm holds the mask picker; on the phone the
  * plate is not drawn (display: contents), so neither is its calm, and the picker and the aura row
  * carry their own.
- *
- * Each calm's padding is the room its layout gives it, so a word stands where it did, the glass
- * keeps its height (212px, 124px on the phone) and no box lies past the glass; calm.css's backing
- * is its box, inside.
- * - The plate is a panel with its own border, and its inner box already holds the words 10px in at
- *   the top and foot and 16px at the right, so its calm takes that for its feather and no padding.
- * - On the Main layout the aura and the clock have room all round (the glass is 212px tall and
- *   they sit well in from its sides), so they keep the full feather and pad as padding and take it
- *   back in a negative margin: the box grows outward, the grid and the words stay. Their padding
- *   boxes lie over their neighbors', so they take no tap but for the orbs' link; the glass's tab
- *   is measured from the aura's content box and not its padding box (Hud.tsx). The swap draws no
- *   calm there (its plate's holds it).
- * - On the phone the aura and the swap sit on the glass's own ground with their words to their
- *   edges (the orbs' row is 6px from the 124px glass's foot), so there is no room for a soft edge:
- *   their calm is the box, at full strength, with no feather and no padding.
  */
-.kb-hud-plate--cast.kb-calm.kb-calm {
-  --kb-calm-feather: 0.625rem;
-  --kb-calm-pad: 0px;
-  padding: 0;
-}
-
-:where(:root:not([data-kb-layout='phone'])) .kb-hud-aura.kb-calm.kb-calm {
-  margin: calc(0.625rem - var(--kb-glass-calm-inset)) calc(var(--kb-glass-calm-inset) * -1) calc(var(--kb-glass-calm-inset) * -1);
-  pointer-events: none;
-}
-
-:where(:root:not([data-kb-layout='phone'])) .kb-hud-aura .kb-hud-orbs {
-  pointer-events: auto;
-}
-
-:where(:root:not([data-kb-layout='phone'])) .kb-hud-clock.kb-calm.kb-calm {
-  margin: calc(1.875rem - var(--kb-glass-calm-inset)) calc(var(--kb-glass-calm-inset) * -1) calc(var(--kb-glass-calm-inset) * -1);
-  pointer-events: none;
-}
-
-.kb-hud-swap.kb-calm.kb-calm,
-:where(:root[data-kb-layout='phone']) .kb-hud-aura.kb-calm.kb-calm {
-  --kb-calm-feather: 0px;
-  --kb-calm-pad: 0px;
-}
-
 :where(:root:not([data-kb-layout='phone'])) .kb-hud-swap.kb-calm::before,
 :where(:root[data-kb-layout='phone']) .kb-hud-plate--cast.kb-calm::before {
   content: none;

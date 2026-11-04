@@ -230,18 +230,8 @@ export interface GlassTheme {
     readonly recipes: Readonly<Record<string, SmokeRecipe>>;
     readonly surfaces: Readonly<Record<GlassSurface, string>>;
   };
-  /**
-   * The calm's backing: its opacity, the width of its feathered edge in px, and the solid pad past
-   * the feather; the phone layout has its own feather and pad. Any not given is the engine's
-   * default (DEFAULT_CALM, engine/ui/glass/apply.ts).
-   */
-  readonly calm: {
-    readonly opacity: number;
-    readonly feather: number;
-    readonly pad?: number;
-    readonly featherPhone?: number;
-    readonly padPhone?: number;
-  };
+  /** The calm's backing: its opacity and the width of its feathered edge in px. */
+  readonly calm: { readonly opacity: number; readonly feather: number };
   /** The skewed controls' measure; any not given is the engine's default (DEFAULT_CONTROLS, engine/ui/glass/apply.ts). */
   readonly controls?: GlassControls;
   readonly sizes: Readonly<Record<string, GlassSize>>;

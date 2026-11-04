@@ -69,15 +69,6 @@
   padding: 18px 14px;
 }
 
-/*
- * The wallet's words stand on the panel (its own soft ground), so their calms take no feather of their own: the column is 320px
- * and a line wants room, never narrower than ten of its em. Each keeps a pad, so its words are held in from the panel's edge.
- */
-.kb-vending-wallet-in .kb-calm {
-  --kb-calm-feather: 0px;
-  --kb-calm-pad: 8px;
-}
-
 .kb-vending-label {
   margin: 0;
   line-height: normal;
@@ -421,10 +412,8 @@ button.kb-vending-slot {
 /* The line about the empty slots, near the slots, as the board draws it; the rules of each card are in its info button's overlay. */
 .kb-vending-empty-line.kb-calm {
   --kb-card-color: var(--kb-glass-ready);
-  /* A ringed block: its words are held in by a pad and no feather, so its 300px column is not spent on the calm's. */
-  --kb-calm-feather: 0px;
-  --kb-calm-pad: 16px;
   position: relative;
+  padding: 14px 16px;
 }
 
 /* The info control: an icon GlassButton, as wide as it is tall, outlined in its card's color. */
@@ -515,11 +504,6 @@ button.kb-vending-slot {
 
 :where(:root[data-kb-layout='phone']) .kb-vending-wallet-in {
   padding-inline: 0;
-}
-
-/* At 200% text a line of the phone's 355px column wants nearly all of it: the ringed block holds its words in by 6px. */
-:where(:root[data-kb-layout='phone']) .kb-vending-empty-line.kb-calm {
-  --kb-calm-pad: 6px;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-vending-label {

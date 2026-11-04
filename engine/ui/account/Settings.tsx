@@ -141,7 +141,7 @@ function Frame({ section, children }: { readonly section: Section | null; readon
       <PageHead title="Settings" />
       <div className="kb-settings-body">
         {section && (
-          <nav className="kb-settings-nav kb-calm" data-kb-calm="flush" aria-label="Settings sections">
+          <nav className="kb-settings-nav kb-calm" aria-label="Settings sections">
             <ul>
               {SECTIONS.map((s) => (
                 <li key={s.key}>
@@ -180,7 +180,7 @@ export function SettingsScreen() {
 
   if (session === null) return <div className="kb-acct" aria-busy="true" />;
   if (!session.signedIn || !account) {
-    return <Frame section={null}><p className="kb-acct-lead kb-calm" data-kb-calm="flush"><Link to="/sign-in">Sign in</Link> to change your settings.</p></Frame>;
+    return <Frame section={null}><p className="kb-acct-lead kb-calm"><Link to="/sign-in">Sign in</Link> to change your settings.</p></Frame>;
   }
   if (prefs === null) {
     return <Frame section={section}><div className="kb-settings-section" aria-busy="true">{refusal && <p role="alert" className="kb-acct-refusal kb-calm">{refusal}</p>}</div></Frame>;
@@ -205,7 +205,7 @@ export function SettingsScreen() {
   if (section === 'account') {
     return (
       <Frame section={section}>
-        <section className="kb-settings-section kb-calm" data-kb-calm="flush" aria-labelledby="kb-settings-account">
+        <section className="kb-settings-section kb-calm" aria-labelledby="kb-settings-account">
           <h2 id="kb-settings-account" className="kb-acct-section-title kb-glass-display">Account</h2>
           <p className="kb-acct-lead">Out of character: what you sign in with, and who you bring in.</p>
           <Row label="Sign-in address" sentence="The address the code and the link come to. It is not shown to anyone else.">
@@ -229,7 +229,7 @@ export function SettingsScreen() {
     const flip = (kind: AlertKind, on: boolean) => change({ toasts: ALERT_KINDS.filter((k) => (k === kind ? on : keptOn.includes(k))) });
     return (
       <Frame section={section}>
-        <section className="kb-settings-section kb-calm" data-kb-calm="flush" aria-labelledby="kb-settings-notifications">
+        <section className="kb-settings-section kb-calm" aria-labelledby="kb-settings-notifications">
           <h2 id="kb-settings-notifications" className="kb-acct-section-title kb-glass-display">Notifications</h2>
           <p className="kb-acct-lead">Every alert still counts and waits in Alerts. These switches choose which kinds also pop up as a toast while you read.</p>
           <div role="group" aria-label="Which alerts toast">
@@ -249,7 +249,7 @@ export function SettingsScreen() {
 
   return (
     <Frame section={section}>
-      <section className="kb-settings-section kb-calm" data-kb-calm="flush" aria-labelledby="kb-settings-accessibility">
+      <section className="kb-settings-section kb-calm" aria-labelledby="kb-settings-accessibility">
         <h2 id="kb-settings-accessibility" className="kb-acct-section-title kb-glass-display">Accessibility</h2>
         <p className="kb-acct-lead">These change how the board and the glass look, read and move. They never change how hard a card is to get through.</p>
         <MotionRow value={prefs.motion} onChange={(v) => change({ motion: v })} />

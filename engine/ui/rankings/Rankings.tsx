@@ -88,13 +88,13 @@ export function Rankings({ season, settledAt, standings, reveals, turns, mine, t
     <div className="kb-rankings">
       <div className="kb-rankings-head">
         {!embedded && <h1 className="kb-rankings-title kb-glass-display">Rankings</h1>}
-        <p className="kb-rankings-season kb-calm" data-kb-calm="flush">
+        <p className="kb-rankings-season kb-calm">
           {season ? `Season ${season.number}` : 'This season'}
           {' · '}
           {settledAt ? `Settled ${dayAndTime(settledAt)}` : 'Nothing settled yet'}
         </p>
       </div>
-      <p className="kb-rankings-lead kb-calm" data-kb-calm="flush">
+      <p className="kb-rankings-lead kb-calm">
         The season's standings, as the last settlement left them. Your own characters are marked, with their classes, which
         only you see here. Anyone else's class shows only once its player has revealed it.
       </p>

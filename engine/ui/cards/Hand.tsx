@@ -120,7 +120,7 @@ export function Hand({ held, faces, armed = null, onPick, onClose, vendingHref }
         </ul>
       )}
       {inView && cards.length > 0 && (
-        <p className="kb-hand-says kb-calm" data-kb-calm="flush">
+        <p className="kb-hand-says kb-calm">
           {armed === inView.key
             ? <>{inView.name} is armed. Every post it can land on now shows a dashed <b>+ mark</b> beside its date, named Play {inView.name} on that post. Press it to play {inView.name} there.</>
             : <><b>{inView.name}.</b> {inView.summary}</>}

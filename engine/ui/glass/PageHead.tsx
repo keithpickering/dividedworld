@@ -16,12 +16,12 @@ export function PageHead({ title, eyebrow, lead, actions, count }: {
 }) {
   return (
     <div className="kb-page-head">
-      {eyebrow !== undefined && <p className="kb-page-head-eyebrow kb-calm" data-kb-calm="flush">{eyebrow}</p>}
-      <h1 className="kb-page-head-title kb-glass-display kb-calm" data-kb-calm="flush">
+      {eyebrow !== undefined && <p className="kb-page-head-eyebrow kb-calm">{eyebrow}</p>}
+      <h1 className="kb-page-head-title kb-glass-display kb-calm">
         {title}
         {count !== undefined && <> <span className="kb-page-head-count">{count}</span></>}
       </h1>
-      {lead !== undefined && <p className="kb-page-head-lead kb-calm" data-kb-calm="flush">{lead}</p>}
+      {lead !== undefined && <p className="kb-page-head-lead kb-calm">{lead}</p>}
       {actions !== undefined && <ButtonRow>{actions}</ButtonRow>}
     </div>
   );

@@ -348,7 +348,7 @@ export function Characters() {
 
       <div className="kb-roster-layout">
         <div className="kb-roster-side">
-          <ul className="kb-roster kb-calm" data-kb-calm="flush" aria-label={`Roster, ${active.length} of ${per} slots used`}>
+          <ul className="kb-roster kb-calm" aria-label={`Roster, ${active.length} of ${per} slots used`}>
             {mine.map((c) => {
               const r = rankOf(c);
               return (

@@ -104,7 +104,7 @@ export function Guide() {
       </div>
       <div className="kb-guide-cols">
         <aside className="kb-guide-side">
-          <p className="kb-guide-lede kb-calm" data-kb-calm="flush">
+          <p className="kb-guide-lede kb-calm">
             How the game works, from the people who made it.
             {voice !== undefined && <> The voice is {possessive(voice)}; every fact in it is true, and every number is today&apos;s.</>}
           </p>
