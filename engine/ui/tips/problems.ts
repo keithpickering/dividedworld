@@ -1,8 +1,8 @@
 /**
  * What an instance's UI must fill exactly, checked beside `instanceProblems` (engine/rules/instance.ts), which checks its
  * rules: `onboarding.tips` has every tip key the engine knows and none it does not, each with a title and a line, and the
- * welcome letter is text; `copy.marquees`, when given, is a non-empty list of names of 1 to 20 characters. Pure, so the self-test can plant each defect; the build runs it against the real instance
- * (instances/divided-world/ui/index.test.tsx).
+ * welcome letter is text; `copy.marquees`, when given, is a non-empty list of names of 1 to 20 characters. Pure, so the self-test
+ * can plant each defect; the build runs it against the real instance (instances/divided-world/ui/index.test.tsx).
  */
 import type { InstanceUi } from '../types.ts';
 import { TIP_KEYS } from './keys.ts';

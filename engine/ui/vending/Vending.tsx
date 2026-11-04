@@ -315,7 +315,7 @@ export function Vending() {
             <p className="kb-vending-sum kb-num kb-calm">
               {orbs(balance)}{after !== null ? <> → <b>{orbs(after)}</b></> : null}
             </p>
-            <p className="kb-vending-price-note kb-calm">
+            <p className="kb-vending-fine kb-calm">
               {!picked ? 'Pick a slot to see what it costs.' : picked.extra > 0
                 ? `Playing it on a long post costs up to ${orbs(picked.extra)} more, never more than ${orbs(picked.price + picked.extra)} in all.`
                 : 'Playing it costs nothing more.'}

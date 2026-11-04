@@ -5,7 +5,7 @@
  * (engine/ui/vending/vending.css) and marks each decorative part `data-kb-art`; this gives those
  * parts their colors, their glow and the words printed on them, written in by the stylesheet
  * (`content`) so that nothing printed on the machine is text a screen reader or the type
- * measurement reads. The labels are the board's 13px printing: decoration, outside the type floor.
+ * measurement reads. The sign, the display, the coin slot and the tray's words are the board's printing: decoration, outside the type floor; a slot's code and price are read, and follow the text size (engine/ui/vending/vending.css).
  * What a player reads and presses (the slots' names, the wallet, the list) is the engine's, in the
  * glass's tokens.
  *
@@ -94,7 +94,6 @@
 }
 
 .kb-vending-cell:has(.kb-vending-slot--sealed) .kb-vending-slot-code {
-  font-size: 13px;
   color: #ffd93d;
 }
 

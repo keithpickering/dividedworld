@@ -138,10 +138,17 @@
 
 /* ---- the machine ---- */
 
+/*
+ * The machine is a grid of the board's own measures (its body 620px wide, the marquee 82px, the glass 352 by 632, the panel 190, the
+ * tray 140), and its glass is at least the board's height and grows with what is on its shelves: a code set in a larger text size
+ * makes a taller row, and the panel, the tray and the body (which fills the whole) move down with it.
+ */
 .kb-vending-machine {
   position: relative;
   width: 620px;
-  height: 944px;
+  display: grid;
+  grid-template-columns: 30px 352px 18px 190px 30px;
+  grid-template-rows: 22px 82px 20px auto 20px 140px 28px;
   margin-top: -12px;
 }
 
@@ -151,11 +158,9 @@
 }
 
 .kb-vending-marquee {
-  position: absolute;
-  left: 30px;
-  right: 30px;
-  top: 22px;
-  height: 82px;
+  position: relative;
+  grid-column: 2 / 5;
+  grid-row: 2;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -177,36 +182,35 @@
 }
 
 .kb-vending-front {
-  position: absolute;
-  left: 30px;
-  top: 124px;
-  width: 352px;
-  height: 632px;
+  position: relative;
+  grid-column: 2;
+  grid-row: 4;
+  display: grid;
+  min-height: 632px;
 }
 
 .kb-vending-sheen {
   position: absolute;
   left: 30px;
   top: -10px;
+  bottom: -10px;
   width: 60px;
-  height: 652px;
   transform: skewX(-14deg);
   pointer-events: none;
 }
 
 .kb-vending-slots {
-  position: absolute;
-  inset: 14px;
+  padding: 14px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-auto-rows: minmax(0, 1fr);
+  grid-auto-rows: minmax(max-content, 1fr);
   gap: 6px 14px;
 }
 
 /*
  * A cell is a slot over its shelf edge. The slot is the postcard's face in a fixed box: the face is laid out at the card's
  * own size (postcard.css, 92 by 128) and scaled down as a whole (`zoom`, which the layout check reads as the browser lays it
- * out; a transform would leave its type size and its box at two scales), so its name is as the full card lays
+ * out, where a transform would leave its type size and its box at two scales; Firefox has supported `zoom` since 126, May 2024, and the project names no older floor), so its name is as the full card lays
  * it out and never cut or tagged over its art. The shelf edge, where a real machine prices its rows, holds the code and
  * price and the info control. The two are siblings, since a button holds no button.
  */
@@ -252,9 +256,9 @@ button.kb-vending-slot {
   padding-top: 2px;
 }
 
-/* The code is the machine's printing (art, at the board's 13px whatever the text size), so a shelf's row keeps its height. */
+/* The code and price are what a player reads, so they follow the text size; the shelf wraps and its row grows. A reader gets them from the slot's own name ("Buy Whoops!, 1.00 orb, ..."). */
 .kb-vending-slot-code {
-  font-size: 13px;
+  font-size: var(--kb-glass-size-label);
   font-weight: 800;
   letter-spacing: 1px;
   white-space: nowrap;
@@ -278,11 +282,9 @@ button.kb-vending-slot {
 /* ---- the control panel ---- */
 
 .kb-vending-panel {
-  position: absolute;
-  left: 400px;
-  top: 124px;
-  width: 190px;
-  height: 632px;
+  position: relative;
+  grid-column: 4;
+  grid-row: 4;
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -366,22 +368,12 @@ button.kb-vending-slot {
   text-transform: uppercase;
 }
 
-.kb-vending-price-note {
-  margin: 6px 0 0;
-  font-size: var(--kb-glass-size-body);
-  font-weight: 500;
-  line-height: 1.5;
-  color: var(--kb-glass-text-2);
-}
-
 /* ---- the tray, and the card dropping into it ---- */
 
 .kb-vending-tray {
-  position: absolute;
-  left: 30px;
-  top: 776px;
-  width: 560px;
-  height: 140px;
+  position: relative;
+  grid-column: 2 / 5;
+  grid-row: 6;
 }
 
 .kb-vending-tray-label {
@@ -541,7 +533,6 @@ button.kb-vending-slot {
 
 :where(:root[data-kb-layout='phone']) .kb-vending-sum,
 :where(:root[data-kb-layout='phone']) .kb-vending-fine,
-:where(:root[data-kb-layout='phone']) .kb-vending-price-note,
 :where(:root[data-kb-layout='phone']) .kb-vending-empty-line-says,
 :where(:root[data-kb-layout='phone']) .kb-vending-signin {
   font-size: var(--kb-glass-size-phone-body);
@@ -567,6 +558,7 @@ button.kb-vending-slot {
   margin-top: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: none;
   row-gap: 16px;
   padding: 12px;
 }
@@ -581,6 +573,14 @@ button.kb-vending-slot {
   font-size: min(2rem, calc((100cqw - 3px * var(--kb-sign-chars, 12)) / (var(--kb-sign-chars, 12) * 0.5)));
 }
 
+:where(:root[data-kb-layout='phone']) .kb-vending-marquee,
+:where(:root[data-kb-layout='phone']) .kb-vending-front,
+:where(:root[data-kb-layout='phone']) .kb-vending-panel,
+:where(:root[data-kb-layout='phone']) .kb-vending-tray {
+  grid-column: auto;
+  grid-row: auto;
+}
+
 :where(:root[data-kb-layout='phone']) .kb-vending-front,
 :where(:root[data-kb-layout='phone']) .kb-vending-panel,
 :where(:root[data-kb-layout='phone']) .kb-vending-tray {
@@ -590,8 +590,12 @@ button.kb-vending-slot {
   height: auto;
 }
 
+:where(:root[data-kb-layout='phone']) .kb-vending-front {
+  min-height: 0;
+}
+
 :where(:root[data-kb-layout='phone']) .kb-vending-slots {
-  position: static;
+  padding: 0;
   grid-auto-rows: auto;
 }
 

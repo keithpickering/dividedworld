@@ -180,6 +180,9 @@ function useGlass() {
   }, []);
 }
 
+/** Read once, at load, while the address still names the fixture. At the board match's fixture a screen's chance is fixed (the Vending sign is its first marquee), so a board is compared to the same screen each time. */
+const FIXED_CHANCE: { readonly random?: () => number } = new URLSearchParams(window.location.search).get('fixture') === 'boards' ? { random: () => 0 } : {};
+
 export function App({ api }: { readonly api: KayfaApi }) {
   useGlass();
   const [settings, setSettings] = useState<ScreenSettings | null>(null);
@@ -191,7 +194,7 @@ export function App({ api }: { readonly api: KayfaApi }) {
   if (!settings) return <main className="kb-page" aria-busy="true" />;
   return (
     <RouterProvider onMove={keepPlace}>
-      <KayfaProvider value={{ api, instance, ui: instanceUi, settings }}>
+      <KayfaProvider value={{ api, instance, ui: instanceUi, settings, ...FIXED_CHANCE }}>
         <PlayerProvider api={api}>
           <Appearance api={api} />
           <Shell />
