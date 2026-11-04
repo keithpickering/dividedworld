@@ -107,9 +107,13 @@
   --kb-button-size: var(--kb-glass-control-s-size-phone);
 }
 
-/* Secondary: outlined. */
+/*
+ * Secondary: outlined. A button stands outside every calm, so its edge meets the page's brightest
+ * smoke (about 0.27 luminance), and only the full-strength text-hi reaches 3:1 there; a 60% mix of
+ * any text token does not (about 2:1). parts.test.tsx reads the border against e2e/glass-ceilings.json.
+ */
 .kb-glass-button[data-kb-kind='secondary'] {
-  border-color: color-mix(in srgb, var(--kb-glass-text) 60%, transparent);
+  border-color: var(--kb-glass-text-hi);
   color: var(--kb-glass-text);
 }
 
@@ -133,11 +137,13 @@
 
 /*
  * A control that cannot be pressed yet is drawn as the glass draws a Turn that opens later: the
- * waiting token on a dashed edge (60% of it, past the 3:1 a border needs), never translucent.
+ * waiting token for the words on a dashed edge, never translucent. The edge is text-hi at full
+ * strength, which is what reaches 3:1 on the brightest smoke (see the secondary kind); the dash and
+ * the words' color are what set it apart from an enabled control.
  */
 .kb-glass-button:disabled,
 .kb-glass-button[aria-disabled='true'] {
-  border: 1px dashed color-mix(in srgb, var(--kb-glass-neon-text) 60%, transparent);
+  border: 1px dashed var(--kb-glass-text-hi);
   background: transparent;
   color: var(--kb-glass-neon-text);
   box-shadow: none;

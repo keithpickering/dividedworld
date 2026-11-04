@@ -1,32 +1,41 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode } from 'react';
 import { Link } from '../router.tsx';
 
 export type GlassButtonKind = 'primary' | 'secondary' | 'quiet';
 export type GlassButtonSize = 'm' | 's';
 
-type Props = {
+type Common = {
   readonly kind?: GlassButtonKind;
   readonly size?: GlassButtonSize;
-  /** Set, the control is the router's Link to this path, not a button. */
-  readonly to?: string;
   readonly children?: ReactNode;
-} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'>;
+};
+/** Without `to`, a button and its props. */
+type AsButton = Common & { readonly to?: undefined } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'>;
+/** With `to`, the router's Link and an anchor's props (plus `disabled`, which a link has no attribute for). */
+type AsLink = Common & { readonly to: string; readonly disabled?: boolean } & Omit<AnchorHTMLAttributes<HTMLAnchorElement>, 'children'>;
+export type GlassButtonProps = AsButton | AsLink;
 
 /**
  * The glass's skewed control, the one every screen draws instead of a button of its own. Its
  * measure comes from the control tokens (tokens.css) and its kind from the fills the glass's
  * primary, secondary and quiet controls have always had (parts.css). The label is held upright
- * inside the skew.
+ * inside the skew. A link that is disabled is an anchor with no href: it goes nowhere and leaves
+ * the tab order.
  */
-export function GlassButton({ kind = 'secondary', size = 'm', to, children, className, type, ...rest }: Props) {
+export function GlassButton(props: GlassButtonProps) {
+  const { kind = 'secondary', size = 'm', children, className } = props;
   const cls = `kb-glass-button kb-glass-skew${className ? ` ${className}` : ''}`;
   const label = <span className="kb-glass-upright">{children}</span>;
-  if (to !== undefined) {
-    return (
-      <Link to={to} className={cls} data-kb-kind={kind} data-kb-size={size} aria-disabled={rest['aria-disabled']}>{label}</Link>
-    );
+  if (props.to !== undefined) {
+    const { kind: _k, size: _s, children: _c, className: _n, to, disabled, onClick, ...anchor } = props;
+    if (disabled === true || anchor['aria-disabled'] === true || anchor['aria-disabled'] === 'true') {
+      const { href: _h, target: _t, rel: _r, download: _d, tabIndex: _i, ...rest } = anchor;
+      return <a {...rest} role="link" aria-disabled="true" className={cls} data-kb-kind={kind} data-kb-size={size}>{label}</a>;
+    }
+    return <Link {...anchor} to={to} onClick={onClick} className={cls} data-kb-kind={kind} data-kb-size={size}>{label}</Link>;
   }
-  return <button type={type ?? 'button'} className={cls} data-kb-kind={kind} data-kb-size={size} {...rest}>{label}</button>;
+  const { kind: _k, size: _s, children: _c, className: _n, to: _t, type, ...rest } = props;
+  return <button type={type ?? 'button'} {...rest} className={cls} data-kb-kind={kind} data-kb-size={size}>{label}</button>;
 }
 
 /** Controls side by side: the row breaks between them and never inside one. */
