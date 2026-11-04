@@ -154,8 +154,8 @@ begin
     if new.kind = 'nameSuccessor' then
       if new.demand is not null or new.expires_at is not null then raise exception 'a nomination has no demand and no expiry' using errcode = '23514'; end if;
       if jsonb_typeof(new.params -> 'boss') is distinct from 'string'
-         or not exists (select 1 from characters c where c.staff = new.params ->> 'boss' and c.staff_kind = 'persona') then
-        raise exception 'a nomination names a Boss of the roster' using errcode = '23514';
+         or not (new.params ->> 'boss' = any (boss_roster())) then
+        raise exception 'a nomination names a persona on the Boss roster, not a benched or retired one' using errcode = '23514';
       end if;
       if new.params ->> 'boss' = new.staff then raise exception 'a Boss does not name itself' using errcode = '23514'; end if;
     end if;
@@ -192,8 +192,8 @@ begin
   if q.kind <> 'nameSuccessor' then raise exception 'that move names no successor' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   if q.landed_act is not null then raise exception 'that nomination has already landed; reverse it instead' using hint = 'kayfabb.refusal', errcode = '55000'; end if;
   if q.held_at is not null then raise exception 'that nomination is held' using hint = 'kayfabb.refusal', errcode = '55000'; end if;
-  if boss is null or not exists (select 1 from characters c where c.staff = boss and c.staff_kind = 'persona' and c.retired_at is null) then
-    raise exception 'that is not a Boss of the roster' using hint = 'kayfabb.refusal', errcode = '22023';
+  if boss is null or not (boss = any (boss_roster())) then
+    raise exception 'a successor is a persona on the Boss roster, and that one is benched, retired or no persona' using hint = 'kayfabb.refusal', errcode = '22023';
   end if;
   if boss = q.staff then raise exception 'a Boss cannot succeed itself' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   if boss = q.params ->> 'boss' then raise exception 'that Boss is already the one named' using hint = 'kayfabb.refusal', errcode = '55000'; end if;
@@ -268,13 +268,14 @@ begin
       note := coalesce(note || '; ', '') || 'the bank was not started: ' || sqlerrm;
     end;
     -- The offices (0080): the arriving Boss debuts if it was waiting; the outgoing Boss becomes a member, or a Mod Bot where no persona
-    -- is one now, since the staff is never empty. The Boss's own office is the season's and is never a row. Best effort, as the rest.
+    -- is one now, since the staff is never empty. The Boss's own office is the season's and is never a row, so the two Bosses of this
+    -- handover are left out of the count: the outgoing one's latest row may still read mod, from before it was seated. Best effort, as the rest.
     begin
       perform pg_advisory_xact_lock(hashtext('kayfabb.offices'));
       update characters set debuted_at = at where staff = chosen and debuted_at is null;
       if outgoing is not null then
         insert into staff_offices (staff, office, cause, season)
-        values (outgoing, case when exists (select 1 from staff_office_now o where o.office = 'mod') then 'member' else 'mod' end, 'handover', new_season);
+        values (outgoing, case when exists (select 1 from staff_office_now o where o.office = 'mod' and o.staff is distinct from outgoing and o.staff is distinct from chosen) then 'member' else 'mod' end, 'handover', new_season);
       end if;
     exception when others then
       note := coalesce(note || '; ', '') || 'the offices were not moved: ' || sqlerrm;
@@ -313,7 +314,8 @@ begin
   if held = 'waiting' and set_office.office = 'benched' then
     raise exception 'a waiting persona has not debuted; make it a member or hire it first' using hint = 'kayfabb.refusal', errcode = '55000';
   end if;
-  if held = 'mod' and not exists (select 1 from staff_office_now o where o.office = 'mod' and o.staff <> set_office.staff) then
+  if held = 'mod' and not exists (select 1 from staff_office_now o join characters c on c.staff = o.staff
+                                   where o.office = 'mod' and o.staff <> set_office.staff and c.retired_at is null) then
     raise exception 'that is the last Mod Bot, and the staff is never empty' using hint = 'kayfabb.refusal', errcode = '55000';
   end if;
   if held = 'waiting' then update characters c set debuted_at = now() where c.id = who.id; end if;

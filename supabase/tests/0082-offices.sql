@@ -300,3 +300,60 @@ begin
   if not pg_temp.debuted('of-w4') or pg_temp.office('of-w4') is distinct from 'mod' then raise exception 'a persona the seed seats as a mod is %, debuted %', pg_temp.office('of-w4'), pg_temp.debuted('of-w4'); end if;
   if not exists (select 1 from characters_public where staff = 'of-w4' and office = 'mod') then raise exception 'the seeded mod is not in characters_public'; end if;
 end $$;
+
+-- ---- A handover never counts the outgoing Boss as the mod that keeps the staff from being empty ----
+do $$
+begin
+  -- State: of-mod (a mod before it was seated) is the Boss; of-w2 and of-w4 are mods. The staff is of-w2 alone, then of-w2 succeeds it.
+  perform pg_temp.admin_sets('of-w4', 'member');
+  if pg_temp.boss() is distinct from 'of-mod' or (select string_agg(staff, ',') from staff_now) is distinct from 'of-w2' then
+    raise exception 'the state before the handover: % %', pg_temp.boss(), (select string_agg(staff, ',') from staff_now);
+  end if;
+  update settings set value = '0'::jsonb where key = 'rosterRecentExcluded';
+  update settings set value = '["of-mod", "of-w2", "of-boss", "of-w1", "of-w3", "of-w4"]'::jsonb where key = 'bossRoster';
+  perform pg_temp.roll();
+  if pg_temp.boss() is distinct from 'of-w2' then raise exception 'the only other mod did not succeed: %', pg_temp.boss(); end if;
+  if pg_temp.office('of-mod') is distinct from 'mod' then raise exception 'the outgoing Boss counted itself and became %, leaving the staff empty', pg_temp.office('of-mod'); end if;
+  if not exists (select 1 from staff_now) then raise exception 'staff_now is empty after the handover'; end if;
+end $$;
+
+-- ---- A nomination and a replacement refuse a persona the roster leaves out, benched or retired ----
+do $$
+declare
+  admin uuid := (select id from auth.users where email = 'of-admin@test.invalid');
+  q bigint;
+  said text;
+begin
+  perform pg_temp.admin_sets('of-w3', 'benched');
+  said := pg_temp.refused('select pg_temp.queue_nomination(''of-mod'', ''of-w3'')');
+  if said is null or said !~ 'roster' then raise exception 'a benched persona was nominated: %', said; end if;
+  q := pg_temp.queue_nomination('of-mod', 'of-w1');
+  perform tests.become(admin);
+  said := pg_temp.refused(format('select replace_successor(%s, ''of-w3'')', q));
+  perform tests.unbecome();
+  if said is null or said !~ 'roster' then raise exception 'a benched persona replaced a successor: %', said; end if;
+  update characters set retired_at = now() where staff = 'of-w4';
+  said := pg_temp.refused('select pg_temp.queue_nomination(''of-mod'', ''of-w4'')');
+  if said is null or said !~ 'roster' then raise exception 'a retired persona was nominated: %', said; end if;
+  perform tests.become(admin);
+  said := pg_temp.refused(format('select replace_successor(%s, ''of-w4'')', q));
+  perform tests.unbecome();
+  if said is null or said !~ 'roster' then raise exception 'a retired persona replaced a successor: %', said; end if;
+  if (select params ->> 'boss' from queued_moves where id = q) is distinct from 'of-w1' then raise exception 'a refused replacement changed the nomination'; end if;
+  update characters set retired_at = null where staff = 'of-w4';
+  perform pg_temp.admin_sets('of-w3', 'member');
+end $$;
+
+-- ---- The last-mod check does not count a retired persona ----
+do $$
+declare
+  said text;
+begin
+  -- of-mod is the one live mod; of-w4 is a mod too, but retired.
+  perform pg_temp.admin_sets('of-w4', 'mod');
+  update characters set retired_at = now() where staff = 'of-w4';
+  said := pg_temp.refused('select pg_temp.admin_sets(''of-mod'', ''benched'')');
+  if said is null or said !~ 'last' then raise exception 'the last live mod was benched beside a retired one: %', said; end if;
+  update characters set retired_at = null where staff = 'of-w4';
+  perform pg_temp.admin_sets('of-w4', 'member');
+end $$;
