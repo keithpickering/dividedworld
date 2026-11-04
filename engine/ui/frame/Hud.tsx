@@ -180,8 +180,12 @@ export function Hud() {
       /* A browser that draws zoom but has no currentCSSZoom (older Safari) draws it at the board's scale. */
       const zoom = el.currentCSSZoom ?? scale;
       if (a && a.width > 0) {
-        const left = Math.round((a.left - s.left) / zoom) - TAB_OUT;
-        const right = Math.round((a.left - s.left + a.width) / zoom) + TAB_OUT;
+        /* The tab is the width of the aura's words and orbs: its calm's padding (calm.css), which its margins take back, is not part of it. */
+        const as = getComputedStyle(aura.current!);
+        const inL = parseFloat(as.paddingLeft) || 0;
+        const inR = parseFloat(as.paddingRight) || 0;
+        const left = Math.round((a.left - s.left) / zoom + inL) - TAB_OUT;
+        const right = Math.round((a.left - s.left + a.width) / zoom - inR) + TAB_OUT;
         setTab((t) => (t && t[1] === left && t[2] === right ? t : [left - SLOPE, left, right, right + SLOPE]));
       }
       /* Where the bar starts in the glass, so the bar can cut what it draws to the tab's shape (frame.css). */

@@ -982,9 +982,15 @@
  * is its box, inside.
  * - The plate is a panel with its own border, and its inner box already holds the words 10px in at
  *   the top and foot and 16px at the right, so its calm takes that for its feather and no padding.
- * - The aura, the swap and the clock sit on the glass's own ground with their words to their edges
- *   (the orbs' row is 6px from the phone glass's foot), so there is no room for a soft edge: their
- *   calm is the box, at full strength, with no feather and no padding.
+ * - On the Main layout the aura and the clock have room all round (the glass is 212px tall and
+ *   they sit well in from its sides), so they keep the full feather and pad as padding and take it
+ *   back in a negative margin: the box grows outward, the grid and the words stay. Their padding
+ *   boxes lie over their neighbors', so they take no tap but for the orbs' link; the glass's tab
+ *   is measured from the aura's content box and not its padding box (Hud.tsx). The swap draws no
+ *   calm there (its plate's holds it).
+ * - On the phone the aura and the swap sit on the glass's own ground with their words to their
+ *   edges (the orbs' row is 6px from the 124px glass's foot), so there is no room for a soft edge:
+ *   their calm is the box, at full strength, with no feather and no padding.
  */
 .kb-hud-plate--cast.kb-calm.kb-calm {
   --kb-calm-feather: 0.625rem;
@@ -992,9 +998,22 @@
   padding: 0;
 }
 
-.kb-hud-aura.kb-calm.kb-calm,
+:where(:root:not([data-kb-layout='phone'])) .kb-hud-aura.kb-calm.kb-calm {
+  margin: calc(0.625rem - var(--kb-glass-calm-inset)) calc(var(--kb-glass-calm-inset) * -1) calc(var(--kb-glass-calm-inset) * -1);
+  pointer-events: none;
+}
+
+:where(:root:not([data-kb-layout='phone'])) .kb-hud-aura .kb-hud-orbs {
+  pointer-events: auto;
+}
+
+:where(:root:not([data-kb-layout='phone'])) .kb-hud-clock.kb-calm.kb-calm {
+  margin: calc(1.875rem - var(--kb-glass-calm-inset)) calc(var(--kb-glass-calm-inset) * -1) calc(var(--kb-glass-calm-inset) * -1);
+  pointer-events: none;
+}
+
 .kb-hud-swap.kb-calm.kb-calm,
-.kb-hud-clock.kb-calm.kb-calm {
+:where(:root[data-kb-layout='phone']) .kb-hud-aura.kb-calm.kb-calm {
   --kb-calm-feather: 0px;
   --kb-calm-pad: 0px;
 }

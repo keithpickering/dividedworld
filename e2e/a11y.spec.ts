@@ -51,7 +51,10 @@ type E2eWindow = typeof globalThis & { readonly __kbFake: Fake; readonly __kbDem
  * glass's edge or the window's, whichever is nearer. Measured once the faces have loaded, since the
  * fallback's metrics are not what a player sees. The smoke is drawn wider than the glass on purpose
  * and clipped to it (engine/ui/glass/Smoke.tsx), and the seam runs on past the window's edge (its
- * points end at x = 10000, engine/ui/frame/Hud.tsx), so neither is read.
+ * points end at x = 10000, engine/ui/frame/Hud.tsx), so neither is read. A calm (`kb-calm`) is read
+ * at its content box: its padding is the room its soft backing takes inside its own box, which its
+ * margins take back on the Main layout (frame.css), so the box's edge is no word and no control;
+ * what it holds is read as before, each in its own box.
  */
 async function hudCut(page: Page): Promise<(readonly [string, string, number])[]> {
   return page.evaluate(async () => {
@@ -64,7 +67,11 @@ async function hudCut(page: Page): Promise<(readonly [string, string, number])[]
     return [...hud.querySelectorAll('*')]
       .filter((el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden' && !el.closest('.kb-smoke, .kb-hud-seam'))
       .flatMap((el) => {
-        const box = el.getBoundingClientRect();
+        const raw = el.getBoundingClientRect();
+        const cs = getComputedStyle(el);
+        const calm = el.classList.contains('kb-calm');
+        const pad = (side: string) => (calm ? parseFloat(cs.getPropertyValue(`padding-${side}`)) || 0 : 0);
+        const box = { left: raw.left + pad('left'), right: raw.right - pad('right'), bottom: raw.bottom - pad('bottom') };
         const name = el.getAttribute('class') ?? el.tagName;
         return ([['bottom', box.bottom - floor], ['right', box.right - right], ['left', left - box.left]] as const)
           .map(([side, over]) => [name, side, Math.round(over)] as const);
@@ -72,6 +79,20 @@ async function hudCut(page: Page): Promise<(readonly [string, string, number])[]
       .filter(([, , over]) => over > 0);
   });
 }
+
+/* The check can go red: the aura, a calm, and the orbs in it, each pushed below the glass are named. */
+test.describe('hudCut names what runs past the glass', () => {
+  test.use({ viewport: { width: 1000, height: 800 } });
+  for (const [what, css] of [['a calm', '.kb-hud-aura { position: relative; top: 400px; }'], ['a control in a calm', '.kb-hud-orbs { position: relative; top: 400px; }']] as const) {
+    test(`${what} pushed past the glass's foot`, async ({ page }) => {
+      await page.goto('/b/general');
+      await expect(page.locator('.kb-hud-orbs .kb-orb').first()).toBeVisible();
+      await page.addStyleTag({ content: css });
+      const names = (await hudCut(page)).map(([name, side]) => `${name}:${side}`);
+      expect(names).toContainEqual(what === 'a calm' ? 'kb-hud-aura kb-calm:bottom' : 'kb-hud-orbs:bottom');
+    });
+  }
+});
 
 /*
  * Where the Main board's layout becomes the Phone board's, worked out from Divided World's size
@@ -297,7 +318,10 @@ test.describe('between the boards\' widths', () => {
           el.style.transform = 'none';
           const w = el.getBoundingClientRect().width;
           el.style.transform = was;
-          return w;
+          /* A calm's padding (taken back in its margins) is not the group's width. */
+          const cs = getComputedStyle(el);
+          const zoom = el.offsetWidth > 0 ? w / el.offsetWidth : 1;
+          return el.classList.contains('kb-calm') ? w - (parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight)) * zoom : w;
         };
         return { board: document.documentElement.dataset.kbLayout, plate: width('.kb-hud-plate'), aura: width('.kb-hud-aura'), side: width('.kb-hud-side') };
       });
