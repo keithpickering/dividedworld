@@ -30,7 +30,7 @@ export const placeholderMonitor: Persona = {
   persuadedBy: 'Sincere, polite appeals that cite a rule by its number; it is unmoved by bravado.',
   // DRAFT for the owner: the Boss fields below are placeholders, there so every persona has every field.
   startingHobby: 'DRAFT: clipboards (it collects the ones other people put down)',
-  temperament: 'Earnest, literal and a little proud of its lanyard. It enforces whatever it was told with total sincerity.',
+  temperament: 'DRAFT: Earnest, literal and a little proud of its lanyard. It enforces whatever it was told with total sincerity.',
   persona: persona({
     name,
     title,
