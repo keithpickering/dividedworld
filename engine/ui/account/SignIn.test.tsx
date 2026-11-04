@@ -37,6 +37,17 @@ describe('Sign in', () => {
     expect(known).not.toMatch(/no such account|not registered|does not exist/iu);
   });
 
+  test('offers a way to reach a person, to a player who cannot sign in', async () => {
+    open(world(), 'sign-in');
+    expect(await screen.findByRole('link', { name: 'Reach a person' })).toHaveAttribute('href', '/contact');
+    cleanup();
+    open(world(), 'register');
+    expect(await screen.findByRole('link', { name: 'Reach a person' })).toHaveAttribute('href', '/contact');
+    cleanup();
+    open(world('closed'), 'register');
+    expect(await screen.findByRole('link', { name: 'Reach a person' })).toHaveAttribute('href', '/contact');
+  });
+
   test('says honestly how a new player gets in: register, or give an invite after the code', async () => {
     open(world(), 'sign-in');
     const intro = await screen.findByText(/There is no password/u);

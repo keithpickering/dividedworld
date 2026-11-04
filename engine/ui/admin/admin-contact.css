@@ -1,0 +1,26 @@
+/*
+ * How players reach you (AdminContact.tsx), on the admin screen: the form is Write an update's (write-update.css), a label and an address to a row,
+ * and a refusal stands under the row it names. Sizes are the glass's tokens, never px (engine/ui/glass/board.test.tsx reads this file).
+ */
+.kb-admin-contact {
+  margin: 28px 0 0;
+}
+
+.kb-admin-contact .kb-write-update {
+  margin-bottom: 0;
+}
+
+.kb-admin-contact-line {
+  display: grid;
+  gap: 6px;
+}
+
+.kb-admin-contact-line .kb-write-update-input[aria-invalid='true'] {
+  border-color: var(--kb-glass-loss);
+}
+
+.kb-admin-contact-empty {
+  color: var(--kb-glass-text);
+  padding-left: 14px;
+  border-left: 3px solid var(--kb-glass-neon);
+}

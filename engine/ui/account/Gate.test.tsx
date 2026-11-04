@@ -37,6 +37,13 @@ describe('A player signed in with no account', () => {
     expect(await screen.findByText('The page')).toBeInTheDocument();
   });
 
+  test('can still reach a person: Reach a person (/contact) is let through the gate too', async () => {
+    const fake = await linked();
+    renderIn(fake, <AccountGate><p>The page</p></AccountGate>, { path: '/contact' });
+    expect(await screen.findByText('The page')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sign out' })).toBeNull();
+  });
+
   test('Sign out ends the session', async () => {
     const fake = await linked();
     renderIn(fake, <AccountGate><p>The page</p></AccountGate>, { path: '/' });

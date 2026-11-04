@@ -31,10 +31,14 @@ declare
                            'season_news(timestampwithtimezone,integer)',
                            -- A play's moment (0072): what was on a post when a play landed.
                            'play_moment(uuid)',
+                           -- How players reach an admin (0081): a visitor and a player read the contact, an admin writes it.
+                           'admin_contact()', 'set_admin_contact(jsonb)',
                            -- Pure predicates a CHECK calls, granted to PUBLIC by 0080 so a direct writer is not refused (each reads no table).
                            'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])'];
   -- What a visitor (anon) may execute, on purpose; each is also in the list above.
   visitor_callable text[] := array['move_progress(uuid)',
+                           -- The contact (0081): the player who most needs a person is often one who cannot sign in. One setting, the same for every caller.
+                           'admin_contact()',
                            -- The same three CHECK predicates, which PUBLIC (so anon too) may execute by 0080; pure, reading no table.
                            'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])'];
 begin
