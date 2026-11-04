@@ -94,9 +94,16 @@ to sting); a weight for each card (tedious, and every new card is added to every
 - **The pulls are rolled when the pack is bought**, against the catalog and pull tables as they stand that day, and are
   stored with the pack. One transaction spends the wallet, rolls the pulls on the server, writes the pack row, and
   writes one ledger row per card tagged with that pack.
-- **Opening only reveals them.** Today the opening is the same moment as the purchase. The animation (the pack drops
-  into the tray, tears open, the cards fly to the hand one by one with the hit pull last) shows what is stored. A reload
-  or reduced motion, which shows all five at once, never changes what was bought.
+- **Opening only reveals them.** Today the opening is the same moment as the purchase. The reveal shows what is stored,
+  so a reload or reduced motion never changes what was bought. The owner chose **tap to flip**: "straight out of Pokemon
+  TCG Pocket, a pretty modern reference which works well in the glass".
+  - The pack tears open into a modal of five face-down cards.
+  - The player turns each one over, with the hit pull last, gold-backed, and tagged with its rarity.
+  - "Turn all" skips the rest.
+  - On a phone, the cards are a pile turned with a tap.
+  - The boards are in `docs/research/2026-11-04-booster-packs/`.
+- **The pack is just another slot** (the owner's choice over a shelf of its own or a second machine), placed wherever
+  the admin's order puts it.
 - **A sealed pack is the recorded path for later.** The owner chose to open at once, "with a path for introducing B
   later". The owner on why the pulls are rolled at purchase either way: "a pack purchased in November 2026 has cards
   that were available in November 2026, not a collection of pulls from whenever it's eventually opened. Alongside

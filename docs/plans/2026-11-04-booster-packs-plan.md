@@ -222,7 +222,14 @@ Model: sonnet
 Model: sonnet
 
 **Files:** `engine/ui/vending/Vending.tsx`, `Vending.test.tsx`, `Vending.board.stories.tsx`, `vending.css` in the
-instance, and `engine/ui/vending/PackOpening.tsx` (new).
+instance, and `engine/ui/vending/PackOpening.tsx` (new), with a board story for each of boards 01 to 04.
+
+**The look** is the boards in `docs/research/2026-11-04-booster-packs/`, which the owner confirmed on 2026-11-04 (board
+01 for the machine, 02 to 04 for the reveal). The pack is just another slot, drawn as a foil pack with its name and "5
+CARDS". When a pack is selected, the space beside the slots shows a small row of five card outlines, the last one gold,
+and "Five cards, the last one at least uncommon. It opens as soon as you buy it." The column to the right of the machine
+shows the selected pack's odds as a table, and below it, in plain words, each Boss move in force on the machine. The
+foil, the card back and the rarity gems are placeholders until the owner gives the art.
 
 - **Slots come from `api.machine()`** in their order, in place of `facesOf` over every card (`Vending.tsx:199`). Empty
   slots stay sealed as today (`slotsFor`, :55).
@@ -230,18 +237,34 @@ instance, and `engine/ui/vending/PackOpening.tsx` (new).
   chance in the hit pull.
 - **A sold-out slot** is greyed and says why in plain words: "Sold out" for an admin's choice, or the move's words from
   the design's section 6 for a Pull. A moved price shows the admin's price struck through beside the new one.
-- **Buying a pack** plays the opening: the pack drops into the tray and tears open, and the cards fly to the hand one by
-  one, the hit pull last.
-  - Reduced motion shows all five at once.
-  - A screen reader hears the five cards in one announcement.
-  - What is shown is the answer's `contents`, never a roll on the client.
+- **Buying a pack opens the reveal**, a modal over the machine (boards 02 to 04 in
+  `docs/research/2026-11-04-booster-packs/`). The torn pack sits at the top, with "N OF 5 TURNED OVER" under it.
+  - **The cards** lie face down in a row, in pull order, drawn as the hand draws a postcard (`Postcard.tsx`).
+  - **Turning a card:** the player turns them one at a time, by clicking or tapping a card, with "Turn the next card",
+    or with Space. A card turns over on its vertical axis.
+  - **The hit** is last. Its back is gold. Once turned, it carries a gold tag naming its rarity and card ("RARE · MAIN
+    EVENT"), with a soft gold glow and a few sparkles.
+  - **"Turn all"** turns every card that is left.
+  - **When all five are turned,** the modal offers "Done" and Esc ("Back to the machine"), with the plain line "These five
+    are already in your hand." The cards were in the hand from the moment of purchase, so closing early loses nothing.
+  - **On a phone,** the cards are a pile: the top one turns with a tap or a swipe, and a row of five outlines counts down,
+    the last one gold.
+  - **Reduced motion** shows each card turned with no rotation. Turning stays one at a time; "Turn all" is still there.
+  - **A screen reader** hears each card as it is turned, and the whole pack once all are turned.
+  - **What is shown** is the answer's `contents`, never a roll on the client. The modal holds focus and returns it to the
+    slot.
+- **Rarity is drawn as a gem**, as the card face draws it today: a hollow diamond for common, then cyan for uncommon,
+  gold for rare and pink for legendary. The odds panel uses the same gems.
 - **A refusal** (sold out, or a price changed) shows the server's words and refreshes the machine.
 
 **Tests first** (`Vending.test.tsx`):
 - The machine draws the fake's slots in order, and no hidden slot.
 - A pack's info lists its odds.
-- Buying a pack adds its five cards to the hand, in the answer's order.
-- Reduced motion shows them at once.
+- Buying a pack adds its five cards to the hand, in the answer's order, before any card is turned.
+- The reveal turns one card per Space, click or "Turn the next card", in pull order. "Turn all" turns the rest.
+- The hit's back is marked as the hit, and once turned, its tag names its rarity.
+- Esc before every card is turned closes the reveal, and the hand still holds all five.
+- Reduced motion turns each card with no rotation.
 - A stale price is refused and the machine refreshes.
 - A pulled slot reads its move's words.
 
@@ -263,7 +286,8 @@ Model: sonnet
   left in no on-sale pack, as `reversed` by that admin, in the same transaction. That way the floor holds after the
   Pull has landed too.
 
-The page lists the slots in grid order. Each row has:
+The page is board 05 in `docs/research/2026-11-04-booster-packs/`: a plain glass table under the admin's menu, with
+one "Save changes" for the page. It lists the slots in grid order. Each row has:
 - the item's name;
 - move up and move down buttons;
 - the availability select;
