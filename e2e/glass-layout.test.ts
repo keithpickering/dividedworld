@@ -269,4 +269,30 @@ describe('the layout judgment', () => {
     const para = { path: `${other.path} > p:nth-child(1)`, rect: { x: 16, y: 140, width: 300, height: 60 }, fontSize: 21, longestWord: 60, wraps: true, textWidth: 290 };
     expect(refusals({ blocks: [...clean.blocks, para], calms: [calmed, other] })).toEqual([]);
   });
+
+  /* A calm in a framed panel (the HUD's glass, here) and a heading beside it in the same panel, inside its feather. */
+  const hudCalm = { path: 'main:nth-child(1) > section.kb-hud:nth-child(2) > div.kb-hud-bar:nth-child(1) > div.kb-hud-aura.kb-calm:nth-child(2)', element: el, backing: { x: 0, y: 4, width: 390, height: 142 }, clips: [] };
+  const hudHeading = { ...heading, path: 'main:nth-child(1) > section.kb-hud:nth-child(2) > div.kb-hud-bar:nth-child(1) > span.kb-hud-name:nth-child(1)' };
+  const aboveHud = { ...heading, path: 'main:nth-child(1) > h2:nth-child(3)' };
+
+  test('a calm in a framed panel is not refused for lying on content, the panel\'s own or the page\'s it covers', () => {
+    expect(refusals({ blocks: [hudHeading, aboveHud], calms: [hudCalm] })).toEqual([]);
+    /* The poison: the same geometry outside a framed panel is refused, so the exemption is the panel's and not the geometry's. */
+    expect(refusals({ blocks: [heading], calms: [{ ...hudCalm, path: calmed.path }] })).toHaveLength(1);
+    /* A class that only starts with a panel's name is not a panel. */
+    expect(refusals({ blocks: [heading], calms: [{ ...hudCalm, path: 'main:nth-child(1) > section.kb-hud-extra:nth-child(2) > p.kb-calm:nth-child(1)' }] })).toHaveLength(1);
+  });
+
+  test('a calm cut by the framed panel it stands in, or by a clipper inside it, is not refused; one cut by a clipper outside it still is', () => {
+    const hudClip = { path: 'main:nth-child(1) > section.kb-hud:nth-child(2) > div.kb-hud-glass:nth-child(1)', rect: { x: 16, y: 0, width: 358, height: 900 }, x: true, y: false };
+    const calm = { ...hudCalm, element: { x: 16, y: 20, width: 358, height: 110 }, backing: { x: -16, y: 4, width: 422, height: 142 } };
+    expect(refusals({ calms: [{ ...calm, clips: [hudClip] }] })).toEqual([]);
+    const outside = { ...hudClip, path: 'main:nth-child(1)' };
+    expect(refusals({ calms: [{ ...calm, clips: [outside] }] }).filter((r) => r.startsWith('calm cut'))).toHaveLength(1);
+    /* The overlay a dialog stands in is not "outside": the dialog taller than the window is cut there. */
+    const dlg = { ...calm, path: 'body > div.kb-glass.kb-glass-overlay:nth-child(1) > div.kb-glass-dialog:nth-child(1) > h2:nth-child(1) > span.kb-calm' };
+    const overlay = { path: 'body > div.kb-glass.kb-glass-overlay:nth-child(1)', rect: { x: 16, y: 0, width: 358, height: 900 }, x: true, y: false };
+    expect(refusals({ calms: [{ ...dlg, clips: [overlay] }] })).toEqual([]);
+    expect(refusals({ calms: [{ ...dlg, path: dlg.path.replace('kb-glass-dialog', 'kb-card'), clips: [overlay] }] }).filter((r) => r.startsWith('calm cut'))).toHaveLength(1);
+  });
 });

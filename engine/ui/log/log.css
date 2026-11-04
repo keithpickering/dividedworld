@@ -24,7 +24,7 @@
   flex-wrap: wrap;
   align-items: flex-end;
   justify-content: space-between;
-  gap: max(12px, var(--kb-glass-calm-room, 32px)) 32px;
+  gap: 12px 32px;
 }
 
 .kb-log-title {
@@ -75,7 +75,7 @@
 .kb-log-lead,
 .kb-log-empty {
   max-width: 680px;
-  margin: max(18px, var(--kb-glass-calm-room, 32px)) 0 0;
+  margin: 18px 0 0;
   font-size: var(--kb-glass-size-body);
   font-weight: 600;
   line-height: 1.5;
@@ -335,7 +335,7 @@
 :where(:root[data-kb-layout='phone']) .kb-log-lead,
 :where(:root[data-kb-layout='phone']) .kb-log-empty,
 :where(:root[data-kb-layout='phone']) .kb-log-foot {
-  margin-top: max(16px, var(--kb-glass-calm-room, 32px));
+  margin-top: 16px;
   font-size: var(--kb-glass-size-phone-body);
 }
 
@@ -424,4 +424,10 @@
 
 :where(:root[data-kb-layout='phone']) .kb-log-reason-head {
   grid-template-columns: minmax(0, 1fr) auto;
+}
+
+/* The lead and the tabs stand as near the title as the board sets them, so their feather is no wider than the gap and lies on nothing but it. */
+.kb-log-lead,
+.kb-log-tabs {
+  --kb-calm-feather: 12px;
 }

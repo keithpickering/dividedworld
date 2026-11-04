@@ -166,13 +166,10 @@
 .kb-glass-content {
   /* The column's side gutter; calm.css reads it, so on the phone a calm's feather stays inside the column's clip. */
   --kb-glass-gutter: clamp(16px, 4.44vw, 64px);
-  /* The feather a calm has here: the room a heading or a neighbor leaves above and below one, so its feather lies on nothing that is not a calm. */
-  --kb-glass-calm-room: min(var(--kb-glass-calm-feather), var(--kb-glass-gutter));
   display: block;
   max-width: 1312px;
   margin: 0 auto;
-  /* The 8px at the top: a calm at the head of a page (an eyebrow, a lead, a tab strip) reaches its feather up toward the menu bar, so the column starts a few px under it. */
-  padding: 8px var(--kb-glass-gutter) 64px;
+  padding: 0 var(--kb-glass-gutter) 64px;
   zoom: var(--kb-board-scale, 1);
 }
 

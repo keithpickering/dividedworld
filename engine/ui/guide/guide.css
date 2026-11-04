@@ -58,7 +58,7 @@
 }
 
 .kb-guide-lede {
-  margin: max(20px, var(--kb-glass-calm-room, 32px)) 0 0;
+  margin: 20px 0 0;
   font-size: var(--kb-glass-size-body);
   font-weight: 600;
   line-height: 1.5;
@@ -442,8 +442,8 @@
 
 :where(:root[data-kb-layout='phone']) .kb-guide-cols {
   grid-template-columns: minmax(0, 1fr);
-  gap: max(16px, var(--kb-glass-calm-room, 32px));
-  margin-top: max(8px, var(--kb-glass-calm-room, 32px));
+  gap: 16px;
+  margin-top: 8px;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-guide-side {
@@ -456,8 +456,6 @@
 
 :where(:root[data-kb-layout='phone']) .kb-guide-lede {
   margin-top: 0;
-  /* Its calm's feather reaches down over the contents button under it. */
-  margin-bottom: max(4px, var(--kb-glass-calm-room, 32px));
   font-size: var(--kb-glass-size-phone-body);
 }
 
@@ -540,4 +538,14 @@
 :where(:root[data-kb-layout='phone']) .kb-guide-table thead th,
 :where(:root[data-kb-layout='phone']) .kb-guide-grid th {
   font-size: var(--kb-glass-size-phone-small);
+}
+
+/* The lede stands as near the title and the contents button as the board sets them, so its feather is no wider than the gap and lies on nothing but it. */
+.kb-guide-lede {
+  --kb-calm-feather: 12px;
+}
+
+/* On the phone the lede stands 8px under the title, so its feather is the gap. */
+:where(:root[data-kb-layout='phone']) .kb-guide-lede {
+  --kb-calm-feather: 8px;
 }

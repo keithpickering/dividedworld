@@ -16,7 +16,7 @@
   flex-wrap: wrap;
   align-items: flex-end;
   justify-content: space-between;
-  gap: max(12px, var(--kb-glass-calm-room, 32px)) 32px;
+  gap: 12px 32px;
 }
 
 .kb-season-title {
@@ -67,7 +67,7 @@
 .kb-season-lede,
 .kb-season-empty {
   max-width: 720px;
-  margin: max(20px, var(--kb-glass-calm-room, 32px)) 0 0;
+  margin: 20px 0 0;
   font-size: var(--kb-glass-size-body);
   font-weight: 600;
   line-height: 1.5;
@@ -206,4 +206,10 @@
 
 :where(:root[data-kb-layout='phone']) .kb-season-podium-list {
   grid-template-columns: minmax(0, 1fr);
+}
+
+/* The lede and the tabs stand as near the title as the board sets them (the head's 12px gap), so their feather is no wider than that and lies on nothing but the gap. */
+.kb-season-lede,
+.kb-season-tabs {
+  --kb-calm-feather: 12px;
 }

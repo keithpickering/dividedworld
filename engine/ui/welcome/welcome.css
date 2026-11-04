@@ -62,7 +62,7 @@
 /* ---- what happens next ---- */
 
 .kb-welcome-lede {
-  margin: max(20px, var(--kb-glass-calm-room, 32px)) 0 0;
+  margin: 20px 0 0;
   font-size: var(--kb-glass-size-body);
   font-weight: 600;
   line-height: 1.5;
@@ -255,4 +255,9 @@
   /* The label wraps at large text sizes, and its ink runs past its line boxes, so the fill has room above and below it, in rem to grow with it. */
   padding: 0.5rem 16px;
   font-size: var(--kb-glass-size-display-xs);
+}
+
+/* The lede stands as near the title as the board sets it, so its feather is no wider than the gap and lies on nothing but it. */
+.kb-welcome-lede {
+  --kb-calm-feather: 12px;
 }

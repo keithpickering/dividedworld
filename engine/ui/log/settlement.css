@@ -210,8 +210,6 @@
   flex-direction: column;
   gap: 30px;
   margin-top: -4px;
-  /* The ways' calm (below) reaches its feather up over the cards' words. */
-  margin-bottom: var(--kb-glass-calm-room, 32px);
 }
 
 .kb-settled-rank {
@@ -438,4 +436,9 @@
 
 :where(:root[data-kb-layout='phone']) .kb-settled-rank-was {
   font-size: var(--kb-glass-size-phone-display);
+}
+
+/* The ways stand as near the cards' words as the board sets them, so their feather is no wider than the gap and lies on nothing but it. */
+.kb-settled-ways {
+  --kb-calm-feather: 12px;
 }

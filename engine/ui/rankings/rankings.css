@@ -257,8 +257,7 @@
 }
 
 :where(:root[data-kb-layout='phone']) .kb-rankings-season {
-  /* The top: its calm's feather reaches up toward the title above, which stands as near as the head's own gap leaves it. */
-  margin: max(0px, calc(var(--kb-glass-calm-room, 32px) - 16px)) 0 0;
+  margin: 0;
   font-size: var(--kb-glass-size-phone-small);
   letter-spacing: 1.5px;
 }
@@ -341,4 +340,9 @@
 :where(:root[data-kb-layout='phone']) .kb-rankings-yours {
   margin-left: 6px;
   padding: 0 6px;
+}
+
+/* The season line stands as near the title as the board sets it, so its feather is no wider than the gap and lies on nothing but it. */
+.kb-rankings-season {
+  --kb-calm-feather: 12px;
 }

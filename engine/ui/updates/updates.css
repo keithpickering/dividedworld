@@ -32,7 +32,7 @@
 .kb-updates-lede {
   max-width: 720px;
   /* The board sets the lede 22px under the heading's foot, 20px lower than the post beside it starts. */
-  margin: max(20px, var(--kb-glass-calm-room, 32px)) 0 0;
+  margin: 20px 0 0;
   font-size: var(--kb-glass-size-body);
   font-weight: 600;
   line-height: 1.5;
@@ -41,7 +41,7 @@
 
 .kb-updates-empty {
   max-width: 680px;
-  margin: max(28px, var(--kb-glass-calm-room, 32px)) 0 0;
+  margin: 28px 0 0;
   font-size: var(--kb-glass-size-body);
   font-weight: 600;
   line-height: 1.5;
@@ -232,8 +232,8 @@
 
 :where(:root[data-kb-layout='phone']) .kb-updates-cols {
   grid-template-columns: minmax(0, 1fr);
-  gap: max(16px, var(--kb-glass-calm-room, 32px));
-  margin-top: max(8px, var(--kb-glass-calm-room, 32px));
+  gap: 16px;
+  margin-top: 8px;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-updates-lede {
@@ -269,4 +269,14 @@
 :where(:root[data-kb-layout='phone']) .kb-updates-headline {
   margin-top: 18px;
   font-size: var(--kb-glass-size-display-m);
+}
+
+/* The lede stands as near the title as the board sets it, so its feather is no wider than the gap and lies on nothing but it. */
+.kb-updates-lede {
+  --kb-calm-feather: 12px;
+}
+
+/* On the phone the lede stands 8px under the title, so its feather is the gap. */
+:where(:root[data-kb-layout='phone']) .kb-updates-lede {
+  --kb-calm-feather: 8px;
 }

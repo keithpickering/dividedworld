@@ -112,10 +112,14 @@ describe('the calm is drawn outside its element', () => {
     expect(calm).toMatch(/var\(--kb-calm-feather\),/);
     expect(calm).not.toMatch(/currentColor var\(--kb-glass-calm-feather\)/);
   });
-  test('a calm in a framed panel (the HUD, a dialog, the hand, the class rail) is its box: no feather', () => {
-    const d = declsOf(calm, '.kb-hud .kb-calm.kb-calm');
-    expect(d['--kb-calm-feather']).toBe('0px');
-    for (const sel of ['.kb-hand-drawer', '.kb-glass-dialog', '.kb-class-rail']) expect(declsOf(calm, `${sel} .kb-calm.kb-calm`)['--kb-calm-feather']).toBe('0px');
+  test('a calm in a framed panel (the HUD, a dialog, the hand, the class rail) keeps the soft feather: no override', () => {
+    /* Without a backing the panels' words fail their ceilings, and a hard box shows as a rectangle; the layout check exempts a panel's own content instead. */
+    for (const sel of ['.kb-hud', '.kb-hand-drawer', '.kb-class-rail']) expect(calm).not.toContain(`${sel} .kb-calm`);
+    /* (A dialog on the phone has the 12px its padding gives, below: a fix for a cut at the window, not a harder edge.) */
+  });
+  test('a calm in a dialog has a 12px feather, so it stays inside a dialog that stands against the window\'s or the overlay\'s edge', () => {
+    expect(declsOf(calm, '.kb-glass-dialog .kb-calm')['--kb-calm-feather']).toBe('min(var(--kb-glass-calm-feather), 12px)');
+    expect(declsOf(calm, ":where(:root[data-kb-layout='phone']) .kb-glass-dialog .kb-calm")['--kb-calm-feather']).toBe('min(var(--kb-glass-calm-feather), 12px)');
   });
   test('each calm resolves its feather from the theme\'s, and on the phone the smaller of it and the column\'s gutter', () => {
     const phone = ':where(:root[data-kb-layout=\'phone\'])';

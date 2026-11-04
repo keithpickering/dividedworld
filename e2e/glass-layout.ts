@@ -23,6 +23,16 @@ import type { Box } from './glass-text.ts';
  *      of that block or control only the part nothing else is drawn over. Two calms' feathers
  *      meeting is a staggered backing and is not refused.
  *
+ *   A calm inside a FRAMED PANEL (the HUD's glass, a dialog, the hand's drawer, the class rail) is
+ *   judged by neither 5 nor 6. The panel is a layer of its own: it clips what lies past its edge
+ *   and is drawn over whatever lies under it, so a calm in it is a quiet patch of the panel's
+ *   ground, soft at its edge as the board has it, and its feather cannot lie on page content that
+ *   the panel already covers. Drawing no backing there fails the glass-text ceilings (53 screens
+ *   went red when it was tried), and a hard-edged box shows as a rectangle on the HUD, so the
+ *   feather stays and the judgment steps aside. The exemption is the panel's own: a calm outside
+ *   any panel is judged as ever, and a clipper outside the panel still counts for 5, except the
+ *   overlay a dialog scrolls in (a dialog taller than the window is cut at its edge, as its calm is).
+ *
  * The decisions the gatherer makes, so a reader of a refusal knows what was and was not looked at
  * (they are made in the page, where the styles are; they are written here because they are the
  * check's definition):
@@ -179,11 +189,23 @@ export function judgeLayout(facts: LayoutFacts): string[] {
     if (deep.length > 0) at('cut control', c.path, `its box at ${deep.map(([x, y]) => `${px(x)},${px(y)} (${where(r, x, y)})`).join(' ')} is cut off by ${shortPath(p.path)}`);
   }
 
+  /* The framed panel a path lies in: the path up to its first element whose classes name one (a class that only starts with the name is not one). */
+  const panelOf = (path: string): string | null => {
+    const segs = path.split(' > ');
+    const i = segs.findIndex((g) => /\.(?:kb-hud|kb-hand-drawer|kb-glass-dialog|kb-class-rail)(?![\w-])/.test(g));
+    return i < 0 ? null : segs.slice(0, i + 1).join(' > ');
+  };
+  const inPanel = (path: string, panel: string | null) => panel !== null && (path === panel || path.startsWith(`${panel} > `));
+
   /* 5. a calm cut */
   for (const m of facts.calms) {
     const b = m.backing;
     const e = m.element;
+    const panel5 = panelOf(m.path);
     for (const c of m.clips) {
+      if (inPanel(c.path, panel5)) continue;
+      /* The overlay a dialog scrolls in: a dialog taller than the window is cut at its edge, and so is the calm at the dialog's own edge. */
+      if (panel5 !== null && /\.kb-glass-overlay(?![\w-])[^>]*$/.test(c.path) && panel5.startsWith(`${c.path} > `)) continue;
       const r = c.rect;
       const sides: string[] = [];
       /* Only where the element itself is in the clipper's box on that axis: a calm scrolled out of a track is not drawn there, a cut feather is. */
@@ -217,6 +239,7 @@ export function judgeLayout(facts: LayoutFacts): string[] {
     if (m.seen !== undefined) {
       drawn = m.seen === null ? { ...drawn, width: 0, height: 0 } : { x: Math.max(drawn.x, m.seen.x), y: Math.max(drawn.y, m.seen.y), width: Math.max(0, Math.min(drawn.x + drawn.width, m.seen.x + m.seen.width) - Math.max(drawn.x, m.seen.x)), height: Math.max(0, Math.min(drawn.y + drawn.height, m.seen.y + m.seen.height) - Math.max(drawn.y, m.seen.y)) };
     }
+    if (panelOf(m.path) !== null) continue;
     for (const o of others) {
       /* Inside this calm, inside another, or holding this calm: the calm is under it or it is under the calm. */
       if (within(o.path, m.path) || within(m.path, o.path) || facts.calms.some((c) => within(o.path, c.path))) continue;
