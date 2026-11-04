@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 import type { GlassTheme } from '../types.ts';
 import { testGlass } from '../test-world.tsx';
-import { boardLayout, boardSwitch, FOLD_ABOVE_TEXT_SIZE, MAIN_BOARD_WIDTH } from './board.ts';
+import { boardLayout, boardSwitch, FOLD_FROM_TEXT_SIZE, MAIN_BOARD_WIDTH } from './board.ts';
 
 const sized = (sizes: Record<string, { px: number; phone?: boolean }>) =>
   ({ sizes: Object.fromEntries(Object.entries(sizes).map(([k, s]) => [k, { family: 'F', weight: 400, ...s }])) }) as unknown as GlassTheme;
@@ -45,11 +45,13 @@ describe('boardLayout', () => {
     expect(boardLayout(at - 0.5, glass)).toEqual({ board: 'phone', scale: 1 });
     expect(boardLayout(390, glass)).toEqual({ board: 'phone', scale: 1 });
   });
-  test('above 150% text it is the Phone board\'s at any width, and at 150% or less the width decides', () => {
-    expect(FOLD_ABOVE_TEXT_SIZE).toBe(150);
+  test('from 150% text up it is the Phone board\'s at any width, and below 150% the width decides', () => {
+    expect(FOLD_FROM_TEXT_SIZE).toBe(150);
     expect(boardLayout(1920, glass, 200)).toEqual({ board: 'phone', scale: 1 });
     expect(boardLayout(1280, glass, 200)).toEqual({ board: 'phone', scale: 1 });
-    expect(boardLayout(1920, glass, 150)).toEqual({ board: 'main', scale: 1 });
+    expect(boardLayout(1920, glass, 150)).toEqual({ board: 'phone', scale: 1 });
+    expect(boardLayout(1920, glass, 149)).toEqual({ board: 'main', scale: 1 });
+    expect(boardLayout(1920, glass, 125)).toEqual({ board: 'main', scale: 1 });
     expect(boardLayout(1300, glass, 125)).toEqual({ board: 'main', scale: 1300 / 1440 });
     expect(boardLayout(390, glass, 100)).toEqual({ board: 'phone', scale: 1 });
   });

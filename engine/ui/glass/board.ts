@@ -44,14 +44,14 @@ export function boardSwitch(glass: Pick<GlassTheme, 'sizes'>): number {
 }
 
 /**
- * Past this text size, in percent, the glass is one column at any width (the glass plan, section 8:
- * "at more than 150% text size the page is one column"), and the one column is the Phone board's
+ * From this text size up, in percent, the glass is one column at any width (the glass plan, section 8:
+ * "at 150% text size and more the page is one column"), and the one column is the Phone board's
  * layout, the HUD's with it, so the two still switch together.
  */
-export const FOLD_ABOVE_TEXT_SIZE = 150;
+export const FOLD_FROM_TEXT_SIZE = 150;
 
 /** The board's layout and its scale at a window this wide, with the player's text size in percent. */
 export function boardLayout(width: number, glass: Pick<GlassTheme, 'sizes'>, textSize = 100): BoardLayout {
-  if (textSize > FOLD_ABOVE_TEXT_SIZE || width < boardSwitch(glass)) return { board: 'phone', scale: 1 };
+  if (textSize >= FOLD_FROM_TEXT_SIZE || width < boardSwitch(glass)) return { board: 'phone', scale: 1 };
   return { board: 'main', scale: Math.min(1, width / MAIN_BOARD_WIDTH) };
 }

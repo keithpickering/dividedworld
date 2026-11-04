@@ -186,7 +186,7 @@ async function chooseHighContrast(page: Page) {
 const onTheAccount = (s: Screen): Screen => (s.path.includes('fixture=boards') ? { name: 'The HUD, on a board page', path: '/b/general' } : s);
 
 /*
- * Text size (Settings › Accessibility): the glass's words grow with the player's choice, past 150%
+ * Text size (Settings › Accessibility): the glass's words grow with the player's choice, from 150% up
  * on the Phone board's layout, and every line is held to the same rules at every size, its calm
  * growing with it. Chosen as a player chooses it, by keyboard, and kept by the account across the
  * load that opens each screen; signed-out screens are left out, as no account's size applies there.
