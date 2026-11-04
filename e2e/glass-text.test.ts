@@ -30,13 +30,11 @@ const high = paletteOf(glass, 'high');
 const TEXT: TextFact['color'] = [241, 236, 255, 1]; // --kb-glass-text
 const TEXT_2: TextFact['color'] = [228, 222, 247, 1]; // --kb-glass-text-2
 const LINE = { x: 100, y: 200, width: 400, height: 25 };
-/** A calm around LINE: its backing reaches the feather past the words, so its interior is the words' own block. */
-const calmAround = (box = LINE, feather = 32): TextFact['calm'] => ({
-  backing: { x: box.x - feather, y: box.y - feather, width: box.width + 2 * feather, height: box.height + 2 * feather },
-  feather,
-  box,
-  opacity: 0.85,
-});
+/** A calm around LINE: its backing is its element's own box, the feather in from its edge, so its interior is the words' own block. */
+const calmAround = (box = LINE, feather = 32): TextFact['calm'] => {
+  const backing = { x: box.x - feather, y: box.y - feather, width: box.width + 2 * feather, height: box.height + 2 * feather };
+  return { backing, element: backing, feather, box, opacity: 0.85 };
+};
 
 /** A 21px body line of --kb-glass-text-2 in a calm on the rankings page, over a quiet pixel: it passes. */
 const body: TextFact = {
@@ -115,7 +113,7 @@ describe('the web plan\'s five poisons', () => {
 
   test('a feather that reaches into the text', () => {
     /* The backing drawn on the words' own box: its 32px feather ramps over the words' edges. */
-    const tight = { backing: LINE, feather: 32, box: { x: LINE.x + 32, y: LINE.y + 32, width: LINE.width - 64, height: 0 }, opacity: 0.85 };
+    const tight = { backing: LINE, element: LINE, feather: 32, box: { x: LINE.x + 32, y: LINE.y + 32, width: LINE.width - 64, height: 0 }, opacity: 0.85 };
     const found = judged({ ...body, calm: tight });
     expect(found).toHaveLength(1);
     expect(found[0]).toMatch(/lies outside its calm's interior \(its backing inset by its 32px feather\)/);
