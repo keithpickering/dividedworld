@@ -302,6 +302,7 @@ export function Vending() {
     : `Wallet: ${orbs(balance)} of ${orbs(cap)}`;
 
   return (
+    <div className="kb-vending-frame">
     <div className="kb-vending">
       <div className="kb-vending-head"><PageHead eyebrow="Spend Aura" title="Vending Machine" /></div>
       <aside className="kb-vending-side">
@@ -344,7 +345,7 @@ export function Vending() {
 
       {aboutFace && (
         <Overlay title={aboutFace.name} surface="vending" className="kb-vending-about-dialog" onClose={() => setAbout(null)} returnFocusTo={() => aboutButton.current}>
-          <div className="kb-vending-about-body kb-calm" data-kb-alignment={aboutFace.alignment}>
+          <div className="kb-vending-about-body kb-calm" data-kb-calm="flush" data-kb-alignment={aboutFace.alignment}>
             <p className="kb-vending-about-price kb-num">{priceOf(aboutFace)}</p>
             <p className="kb-vending-about-says">{aboutFace.describe}</p>
           </div>
@@ -357,6 +358,7 @@ export function Vending() {
           <p className="kb-vending-empty-line-says">More postcards arrive in later seasons.</p>
         </div>
       )}
+    </div>
     </div>
   );
 }

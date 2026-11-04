@@ -19,6 +19,29 @@
   padding-top: 36px;
 }
 
+/*
+ * The page answers to its own width in the reader's em, not to the viewport's px: the frame is the container, set in the body's
+ * type size, and the side columns (a line of ten em, at least, plus their padding) need 20em beside the machine's 620px, the
+ * gaps and the paddings. Under that the page stacks (the head, the wallet, the machine, the line about empty slots), the machine
+ * still 620px wide. At 100% and 125% text, on the Main board's 1312px column, it is the three columns it always was.
+ */
+.kb-vending-frame {
+  container-type: inline-size;
+  font-size: var(--kb-glass-size-body);
+}
+
+@container (max-width: calc(20em + 768px)) {
+  .kb-vending {
+    grid-template-columns: minmax(0, 620px);
+    justify-content: center;
+    row-gap: 24px;
+  }
+
+  .kb-vending-machine {
+    margin-top: 0;
+  }
+}
+
 /* ---- the left column ---- */
 
 .kb-vending-side {
@@ -229,8 +252,9 @@ button.kb-vending-slot {
   padding-top: 2px;
 }
 
+/* The code is the machine's printing (art, at the board's 13px whatever the text size), so a shelf's row keeps its height. */
 .kb-vending-slot-code {
-  font-size: var(--kb-glass-size-label);
+  font-size: 13px;
   font-weight: 800;
   letter-spacing: 1px;
   white-space: nowrap;
