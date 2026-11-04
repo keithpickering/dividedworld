@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BRIBE_BOUNDS, DEFAULT_DEVELOPER, deepFreeze, instanceProblems, settingsProblems, withOverrides } from './instance.ts';
-import type { Instance, ModBotPersona, Settings, SystemContent } from './types.ts';
+import type { Instance, Persona, Settings, SystemContent } from './types.ts';
 import { PHASE_CAPS } from '../system/phases.ts';
 import { DUTIES } from '../system/duties.ts';
 import { STOCK_LINE_KEYS } from '../system/stock.ts';
@@ -62,17 +62,19 @@ const settings: Settings = {
   toastDefaults: ['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'ruling', 'settlement', 'update'],
 };
 
-const bot: ModBotPersona = {
-  key: 'bot-a', name: 'Bot A', title: 'Hall monitor', signature: 'Walk.', persona: 'You are a bot.', beats: ['general'], petRules: ['noBump'],
-  strictness: { visitHours: { least: 2, most: 12 }, bands: ['small'] },
+const bossFields = { startingHobby: 'tomatoes', temperament: 'petty' };
+const botFields = {
+  beats: ['general'], petRules: ['noBump'], strictness: { visitHours: { least: 2, most: 12 }, bands: ['small'] },
   weakness: { kind: 'quiz', questions: [{ question: 'Which is a number?', choices: ['one', 'cat'], answer: 'one' }] },
   voice: 'chat', persuadedBy: 'Pedantry.',
-};
+} as const;
+const boss: Persona = { key: 'boss-a', name: 'Boss A', title: 'The Boss', signature: 'Hi.', persona: 'You are a boss.', ...bossFields, ...botFields };
+const bot: Persona = { key: 'bot-a', name: 'Bot A', title: 'Hall monitor', signature: 'Walk.', persona: 'You are a bot.', ...bossFields, ...botFields };
 
 const system: SystemContent = {
-  bosses: [{ key: 'boss-a', name: 'Boss A', title: 'The Boss', signature: 'Hi.', persona: 'You are a boss.', startingHobby: 'tomatoes', temperament: 'petty' }],
+  roster: [boss, bot],
+  staffGroup: { name: 'Test Cores' },
   firstBoss: 'boss-a',
-  modBots: [bot],
   firstStaff: ['bot-a'],
   duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'beat' },
   stockLines: Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as SystemContent['stockLines'],
@@ -338,7 +340,8 @@ test('an instance says The System\'s words, each title naming its season', () =>
 /* ------------------------------------------------------------------------ The System's content ---- */
 
 const withSystem = (change: Partial<SystemContent>): Instance => ({ ...good, system: { ...system, ...change } });
-const withBot = (change: Partial<ModBotPersona>): Instance => withSystem({ modBots: [{ ...bot, ...change }] });
+const withBot = (change: Partial<Persona>): Instance => withSystem({ roster: [boss, { ...bot, ...change }] });
+const withBoss = (change: Partial<Persona>): Instance => withSystem({ roster: [{ ...boss, ...change }, bot] });
 const said = (i: Instance) => instanceProblems(i).join('\n');
 
 test('a duty assigned to a staff key that does not exist is a problem; a key that does, and the beat and the filer, are not', () => {
@@ -367,7 +370,7 @@ test('a stock line naming a token its key does not offer is a problem', () => {
 
 test('firstBoss must be in the roster, and the roster must hold a Boss', () => {
   assert.match(said(withSystem({ firstBoss: 'nobody' })), /firstBoss "nobody"/);
-  assert.match(said(withSystem({ bosses: [], firstBoss: 'boss-a' })), /no Boss/);
+  assert.match(said(withSystem({ roster: [], firstBoss: 'boss-a' })), /roster is empty/);
 });
 
 test('a feed is read over https: a plain http or malformed address is a problem naming the feed', () => {
@@ -380,17 +383,38 @@ test('firstStaff must hold at least one key', () => {
   assert.match(said(withSystem({ firstStaff: [] })), /firstStaff.*at least one/);
 });
 
-test('every firstStaff key must be a Mod Bot, and a Boss\'s key is not', () => {
+test('every firstStaff key must be in the roster, and firstBoss is not among them', () => {
   assert.match(said(withSystem({ firstStaff: ['bot-a', 'ghost'] })), /firstStaff.*"ghost"/);
-  assert.match(said(withSystem({ firstStaff: ['bot-a', 'boss-a'] })), /firstStaff.*"boss-a"/);
+  assert.match(said(withSystem({ firstStaff: ['bot-a', 'boss-a'] })), /firstStaff.*"boss-a".*firstBoss/);
 });
 
-test('a key shared by a Boss and a bot is a problem, and so is one used twice in a roster', () => {
-  assert.match(said(withBot({ key: 'boss-a' })), /"boss-a" is both a Boss and a Mod Bot/);
-  assert.match(said(withSystem({ bosses: [system.bosses[0]!, system.bosses[0]!] })), /Boss key "boss-a" is used twice/);
-  assert.match(said(withSystem({ modBots: [bot, bot] })), /Mod Bot key "bot-a" is used twice/);
-  assert.match(said(withSystem({ bosses: [{ ...system.bosses[0]!, key: 'developer' }] })), /Boss key "developer" is reserved/);
-  assert.match(said(withBot({ key: 'developer' })), /Mod Bot key "developer" is reserved/);
+test('a key used twice in the roster is a problem, and so is the developer\'s key', () => {
+  assert.match(said(withBot({ key: 'boss-a' })), /persona key "boss-a" is used twice/);
+  assert.match(said(withSystem({ roster: [boss, bot, bot] })), /persona key "bot-a" is used twice/);
+  assert.match(said(withBoss({ key: 'developer' })), /persona key "developer" is reserved/);
+  assert.match(said(withBot({ key: 'developer' })), /persona key "developer" is reserved/);
+});
+
+test('a persona has every field: a bot field missing from a Boss and a Boss field missing from a bot are each named', () => {
+  const without = (p: Persona, field: string) => { const { [field as keyof Persona]: _gone, ...rest } = p; return rest as unknown as Persona; };
+  for (const field of ['beats', 'petRules', 'strictness', 'weakness', 'voice', 'persuadedBy']) {
+    assert.match(said(withSystem({ roster: [without(boss, field), bot] })), new RegExp(`persona "boss-a" has no ${field}`), field);
+  }
+  for (const field of ['startingHobby', 'temperament']) {
+    assert.match(said(withSystem({ roster: [boss, without(bot, field)] })), new RegExp(`persona "bot-a" has no ${field}`), field);
+  }
+});
+
+test('a persona with no weakness is reported (poison: today a Boss with none passes)', () => {
+  const { weakness: _w, ...rest } = boss;
+  assert.match(said(withSystem({ roster: [rest as unknown as Persona, bot] })), /persona "boss-a" has no weakness/);
+});
+
+test('the staff group is named, one to 40 characters', () => {
+  assert.match(said(withSystem({ staffGroup: { name: '' } })), /staffGroup.name.*1 to 40/);
+  assert.match(said(withSystem({ staffGroup: { name: 'x'.repeat(41) } })), /staffGroup.name.*1 to 40/);
+  assert.match(said(withSystem({ staffGroup: undefined } as unknown as Partial<SystemContent>)), /staffGroup.name.*1 to 40/);
+  assert.deepEqual(instanceProblems(withSystem({ staffGroup: { name: 'x'.repeat(40) } })), []);
 });
 
 test('a quiz needs a question, and each question\'s answer must be one of its choices', () => {
@@ -417,30 +441,30 @@ test('a distraction needs nothing more', () => {
 });
 
 test('a Boss\'s phase override past a cap is a problem, naming the number; one inside is not', () => {
-  const boss = (phases: NonNullable<SystemContent['bosses'][number]['phases']>) => withSystem({ bosses: [{ ...system.bosses[0]!, phases }] });
-  assert.match(said(boss({ reign: { weeklyMoves: PHASE_CAPS.reign.weeklyMoves + 1 } })), /Boss "boss-a".*reign.*weeklyMoves/);
-  assert.match(said(boss({ reign: { bankCap: 0 } })), /Boss "boss-a".*reign.*bankCap/);
+  const boss = (phases: NonNullable<Persona['phases']>) => withBoss({ phases });
+  assert.match(said(boss({ reign: { weeklyMoves: PHASE_CAPS.reign.weeklyMoves + 1 } })), /persona "boss-a".*reign.*weeklyMoves/);
+  assert.match(said(boss({ reign: { bankCap: 0 } })), /persona "boss-a".*reign.*bankCap/);
   assert.deepEqual(instanceProblems(boss({ reign: { weeklyMoves: PHASE_CAPS.reign.weeklyMoves }, honeymoon: { days: 7 } })), []);
 });
 
-test('a Boss that inherits the memory of a Boss that is not in the roster, or of itself, is a problem', () => {
-  const boss = (inheritsMemoryOf: string) => withSystem({ bosses: [{ ...system.bosses[0]!, inheritsMemoryOf }] });
+test('a persona that inherits the memory of one that is not in the roster, or of itself, is a problem', () => {
+  const boss = (inheritsMemoryOf: string) => withBoss({ inheritsMemoryOf });
   assert.match(said(boss('ghost')), /"boss-a" inherits the memory of "ghost"/);
   assert.match(said(boss('boss-a')), /"boss-a" inherits the memory of "boss-a"/);
 });
 
 test('a title over 40 characters or a signature over 500 is a problem, for a Boss and for a bot (the seed cuts them in silence)', () => {
-  assert.match(said(withSystem({ bosses: [{ ...system.bosses[0]!, title: 'x'.repeat(41) }] })), /Boss "boss-a".*title.*41.*at most 40/);
-  assert.match(said(withSystem({ bosses: [{ ...system.bosses[0]!, signature: 'x'.repeat(501) }] })), /Boss "boss-a".*signature.*501.*at most 500/);
-  assert.match(said(withBot({ title: 'x'.repeat(41) })), /Mod Bot "bot-a".*title/);
-  assert.match(said(withBot({ signature: 'x'.repeat(501) })), /Mod Bot "bot-a".*signature/);
+  assert.match(said(withBoss({ title: 'x'.repeat(41) })), /persona "boss-a".*title.*41.*at most 40/);
+  assert.match(said(withBoss({ signature: 'x'.repeat(501) })), /persona "boss-a".*signature.*501.*at most 500/);
+  assert.match(said(withBot({ title: 'x'.repeat(41) })), /persona "bot-a".*title/);
+  assert.match(said(withBot({ signature: 'x'.repeat(501) })), /persona "bot-a".*signature/);
   assert.deepEqual(instanceProblems(withBot({ title: 'x'.repeat(40), signature: 'x'.repeat(500) })), []);
 });
 
 test('a staff member needs a name, a title and a persona', () => {
-  assert.match(said(withBot({ name: ' ' })), /Mod Bot "bot-a" has no name/);
-  assert.match(said(withBot({ persona: '' })), /Mod Bot "bot-a" has no persona/);
-  assert.match(said(withSystem({ bosses: [{ ...system.bosses[0]!, title: '' }] })), /Boss "boss-a" has no title/);
+  assert.match(said(withBot({ name: ' ' })), /persona "bot-a" has no name/);
+  assert.match(said(withBot({ persona: '' })), /persona "bot-a" has no persona/);
+  assert.match(said(withBoss({ title: '' })), /persona "boss-a" has no title/);
 });
 
 test('the name style must also be said in words for the meeting\'s prompt', () => {
@@ -494,16 +518,16 @@ test('the new settings are checked like the others', () => {
 });
 
 test('a bot voice that is neither chat nor oldVoice is a problem', () => {
-  assert.match(said(withBot({ voice: 'shout' as never })), /Mod Bot "bot-a" has the voice "shout"/);
+  assert.match(said(withBot({ voice: 'shout' as never })), /persona "bot-a" has the voice "shout"/);
 });
 
 test('visit hours with the least above the most, or below 1, are a problem', () => {
-  assert.match(said(withBot({ strictness: { ...bot.strictness, visitHours: { least: 13, most: 12 } } })), /Mod Bot "bot-a" has visit hours/);
-  assert.match(said(withBot({ strictness: { ...bot.strictness, visitHours: { least: 0, most: 12 } } })), /Mod Bot "bot-a" has visit hours/);
+  assert.match(said(withBot({ strictness: { ...bot.strictness, visitHours: { least: 13, most: 12 } } })), /persona "bot-a" has visit hours/);
+  assert.match(said(withBot({ strictness: { ...bot.strictness, visitHours: { least: 0, most: 12 } } })), /persona "bot-a" has visit hours/);
 });
 
 test('a bot with no weakness is a problem', () => {
-  assert.match(said(withBot({ weakness: undefined as never })), /Mod Bot "bot-a" has no weakness/);
+  assert.match(said(withBot({ weakness: undefined as never })), /persona "bot-a" has no weakness/);
 });
 
 test('duties naming a key that is not a duty are a problem', () => {

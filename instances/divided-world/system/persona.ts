@@ -2,11 +2,11 @@
  * The shared premise every Boss and Mod Bot of Divided World is built on (the System design, "The
  * premise" and sections 4, 6, 9 and 13; the seasonal Boss design, section 1). A persona file
  * writes only what makes its Boss different (temperament, voice, tics) and hands it to
- * `bossPersona`, which sets it on this ground, so the roster differs in character and never in
+ * `persona`, which sets it on this ground, so the roster differs in character and never in
  * what the role is.
  *
  * These are prompt texts, exported as constants and small functions. No model call happens here;
- * the meeting (a later task) sends what `bossPersona` returns as the system prompt.
+ * the meeting (a later task) sends what `persona` returns as the system prompt.
  *
  * The rules a persona cannot loosen are the game's (CLAUDE.md), written here as the Boss would
  * need them said: it never knows who is behind a mask, it reads only the digest of public play,
@@ -41,32 +41,23 @@ export interface BossVoice {
   readonly tastes: string;
 }
 
-/** The system prompt for a Boss: the premise, then this Boss. */
-export function bossPersona(boss: BossVoice & { readonly name: string; readonly title: string }): string {
-  return [
-    BOSS_PREMISE,
-    `You are ${boss.name}, ${boss.title}.`,
-    `Your temperament. ${boss.temperament}`,
-    `Your voice. ${boss.voice}`,
-    `Your habits.\n${boss.habits.map((h) => `- ${h}`).join('\n')}`,
-    `Your tastes. ${boss.tastes}`,
-    BOSS_ANSWER_RULES,
-  ].join('\n\n');
-}
-
 /** The ground under every Mod Bot: staff that outlasts Bosses, with a job and a weakness. */
 export const MOD_BOT_PREMISE = `You are a Mod Bot on Divided World, a message board game set in 2003. You are staff: a henchman of the Boss, who is robo-McMahon, a big dumb robot that treats the board as its toybox. Bosses come and go; you stay. You have a beat (the kinds of board you patrol), pet rules you lobby for, and a way of visiting a post that you take seriously. You are not clever either. You enforce rules in the board's world with total sincerity, whatever the rules are, even when two of them contradict each other.
 
 You do not know who is behind any mask and can never find out. You deal with characters only, and every warning, visit and report lands on a mask. You read only what is public. You act only by the fixed verdicts and charges you are given; whatever else you say is read aloud as your voice and never acted on. You may bluff in character. Out-of-character screens are plain and honest, and you are never one of them.`;
 
-/** The system prompt for a Mod Bot: the premise, then this bot. */
-export function modBotPersona(bot: Pick<BossVoice, 'temperament' | 'voice' | 'habits'> & { readonly name: string; readonly title: string }): string {
+/** A duty's office picks the premise a persona's prompt is built on: the Boss's, or a Mod Bot's. */
+export type Office = 'boss' | 'bot';
+
+/** The system prompt for a persona: the premise its office sets, then this persona. */
+export function persona(voice: Omit<BossVoice, 'tastes'> & { readonly tastes?: string; readonly name: string; readonly title: string }, office: Office = 'boss'): string {
   return [
-    MOD_BOT_PREMISE,
-    `You are ${bot.name}, ${bot.title}.`,
-    `Your temperament. ${bot.temperament}`,
-    `Your voice. ${bot.voice}`,
-    `Your habits.\n${bot.habits.map((h) => `- ${h}`).join('\n')}`,
-    BOSS_ANSWER_RULES.replace('Never take a side in a real argument. ', ''),
+    office === 'boss' ? BOSS_PREMISE : MOD_BOT_PREMISE,
+    `You are ${voice.name}, ${voice.title}.`,
+    `Your temperament. ${voice.temperament}`,
+    `Your voice. ${voice.voice}`,
+    `Your habits.\n${voice.habits.map((h) => `- ${h}`).join('\n')}`,
+    ...(voice.tastes !== undefined ? [`Your tastes. ${voice.tastes}`] : []),
+    office === 'boss' ? BOSS_ANSWER_RULES : BOSS_ANSWER_RULES.replace('Never take a side in a real argument. ', ''),
   ].join('\n\n');
 }

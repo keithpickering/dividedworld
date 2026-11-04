@@ -4,7 +4,7 @@
  */
 import { QUADRANTS } from './types.ts';
 import { ALERT_KINDS } from './alerts.ts';
-import type { DeveloperPersona, EconomyRead, Instance, Settings, QuizQuestion, Span, StaffSeed, SystemContent } from './types.ts';
+import type { DeveloperPersona, EconomyRead, Instance, Settings, QuizQuestion, Span, SystemContent } from './types.ts';
 import { DIGEST_MOST } from '../system/digest.ts';
 import { DUTIES } from '../system/duties.ts';
 import { PHASES, PHASE_CAPS, PHASE_KEYS } from '../system/phases.ts';
@@ -368,43 +368,31 @@ function systemProblems(instance: Instance): string[] {
   const sys: SystemContent | undefined = instance.system;
   if (typeof sys !== 'object' || sys === null) return ['the instance has no system content (system)'];
   const out: string[] = [];
-  const bosses = Array.isArray(sys.bosses) ? sys.bosses : [];
-  const bots = Array.isArray(sys.modBots) ? sys.modBots : [];
-  if (!Array.isArray(sys.bosses) || !bosses.length) out.push('the instance has no Boss in its roster (system.bosses)');
-  if (!Array.isArray(sys.modBots) || !bots.length) out.push('the instance has no Mod Bot in its roster (system.modBots)');
-  const staff = (who: string, s: StaffSeed, persona: unknown) => {
-    for (const part of ['name', 'title', 'signature'] as const) if (typeof s[part] !== 'string' || s[part].trim() === '') out.push(`${who} "${s.key}" has no ${part}`);
-    if (typeof persona !== 'string' || persona.trim() === '') out.push(`${who} "${s.key}" has no persona`);
-    if (typeof s.title === 'string' && s.title.length > STAFF_TITLE_MAX) out.push(`${who} "${s.key}" has a title of ${s.title.length} characters; the seed keeps at most ${STAFF_TITLE_MAX} and cuts the rest in silence`);
-    if (typeof s.signature === 'string' && s.signature.length > STAFF_SIGNATURE_MAX) out.push(`${who} "${s.key}" has a signature of ${s.signature.length} characters; the seed keeps at most ${STAFF_SIGNATURE_MAX} and cuts the rest in silence`);
-  };
-  for (const k of duplicates(bosses, (b) => b.key)) out.push(`Boss key "${k}" is used twice`);
-  for (const k of duplicates(bots, (b) => b.key)) out.push(`Mod Bot key "${k}" is used twice`);
-  const bossKeys = new Set(bosses.map((b) => b.key));
-  const botKeys = new Set(bots.map((b) => b.key));
+  const roster = Array.isArray(sys.roster) ? sys.roster : [];
+  if (!roster.length) out.push('the instance\'s roster is empty (system.roster)');
+  const rosterKeys = new Set(roster.map((p) => p.key));
+  for (const k of duplicates(roster, (p) => p.key)) out.push(`persona key "${k}" is used twice`);
   /* The developer persona's staff key is the engine's (0062): a roster member under it would be the character the persona is seeded as, or be left unmade. */
-  if (bossKeys.has(DEVELOPER_STAFF_KEY)) out.push(`Boss key "${DEVELOPER_STAFF_KEY}" is reserved for the developer persona, which a model never plays`);
-  if (botKeys.has(DEVELOPER_STAFF_KEY)) out.push(`Mod Bot key "${DEVELOPER_STAFF_KEY}" is reserved for the developer persona, which a model never plays`);
-  for (const k of bossKeys) if (botKeys.has(k)) out.push(`"${k}" is both a Boss and a Mod Bot; a staff key is one or the other`);
-  for (const b of bosses) {
-    staff('Boss', b, b.persona);
-    if (typeof b.startingHobby !== 'string' || b.startingHobby.trim() === '') out.push(`Boss "${b.key}" has no startingHobby`);
-    if (typeof b.temperament !== 'string' || b.temperament.trim() === '') out.push(`Boss "${b.key}" has no temperament`);
-    if (b.inheritsMemoryOf !== undefined && (b.inheritsMemoryOf === b.key || !bossKeys.has(b.inheritsMemoryOf))) out.push(`Boss "${b.key}" inherits the memory of "${b.inheritsMemoryOf}", who is not another Boss in the roster`);
-    for (const p of PHASES) {
-      const given = b.phases?.[p] as Record<string, unknown> | undefined;
+  if (rosterKeys.has(DEVELOPER_STAFF_KEY)) out.push(`persona key "${DEVELOPER_STAFF_KEY}" is reserved for the developer persona, which a model never plays`);
+  const text = (v: unknown) => typeof v === 'string' && v.trim() !== '';
+  for (const p of roster) {
+    const who = `persona "${p.key}"`;
+    for (const part of ['name', 'title', 'signature', 'persona', 'startingHobby', 'temperament', 'persuadedBy'] as const) if (!text(p[part])) out.push(`${who} has no ${part}`);
+    if (typeof p.title === 'string' && p.title.length > STAFF_TITLE_MAX) out.push(`${who} has a title of ${p.title.length} characters; the seed keeps at most ${STAFF_TITLE_MAX} and cuts the rest in silence`);
+    if (typeof p.signature === 'string' && p.signature.length > STAFF_SIGNATURE_MAX) out.push(`${who} has a signature of ${p.signature.length} characters; the seed keeps at most ${STAFF_SIGNATURE_MAX} and cuts the rest in silence`);
+    for (const list of ['beats', 'petRules'] as const) if (!Array.isArray(p[list])) out.push(`${who} has no ${list}`);
+    if (p.strictness === undefined || p.strictness === null) out.push(`${who} has no strictness`);
+    if (p.inheritsMemoryOf !== undefined && (p.inheritsMemoryOf === p.key || !rosterKeys.has(p.inheritsMemoryOf))) out.push(`${who} inherits the memory of "${p.inheritsMemoryOf}", who is not another persona in the roster`);
+    for (const ph of PHASES) {
+      const given = p.phases?.[ph] as Record<string, unknown> | undefined;
       for (const key of Object.keys(given ?? {})) {
         const n = given![key];
-        const cap = (PHASE_CAPS[p] as unknown as Record<string, number>)[key];
-        if (cap === undefined) out.push(`Boss "${b.key}" overrides ${p} ${key}, which is not a number that phase holds`);
-        else if (!isWhole(n, 1) || n > cap) out.push(`Boss "${b.key}" overrides ${p} ${key} as ${JSON.stringify(n)}; it must be a whole number from 1 to ${cap} (the engine's cap)`);
+        const cap = (PHASE_CAPS[ph] as unknown as Record<string, number>)[key];
+        if (cap === undefined) out.push(`${who} overrides ${ph} ${key}, which is not a number that phase holds`);
+        else if (!isWhole(n, 1) || n > cap) out.push(`${who} overrides ${ph} ${key} as ${JSON.stringify(n)}; it must be a whole number from 1 to ${cap} (the engine's cap)`);
       }
     }
-  }
-  for (const b of bots) {
-    staff('Mod Bot', b, b.persona);
-    const w = b.weakness;
-    const who = `Mod Bot "${b.key}"`;
+    const w = p.weakness;
     if (w?.kind === 'quiz') {
       if (!Array.isArray(w.questions) || !w.questions.length) out.push(`${who} has a quiz with no question; a quiz needs at least one question`);
       else w.questions.forEach((q: QuizQuestion, i: number) => {
@@ -417,18 +405,24 @@ function systemProblems(instance: Instance): string[] {
       if (!isWhole(w.price, BRIBE_BOUNDS.least) || w.price > BRIBE_BOUNDS.most) out.push(`${who} has a bribe with a price of ${JSON.stringify(w.price)}; a price is a whole number of hundredths from ${BRIBE_BOUNDS.least} to ${BRIBE_BOUNDS.most}`);
       else if (typeof instance.settings?.walletCap === 'number' && w.price > instance.settings.walletCap) out.push(`${who} has a bribe priced at ${w.price}, more than a wallet holds (walletCap ${instance.settings.walletCap}); no one could pay it`);
     } else if (w?.kind !== 'distraction') out.push(`${who} has no weakness: a quiz, a bribe or a distraction`);
-    if (b.voice !== 'chat' && b.voice !== 'oldVoice') out.push(`${who} has the voice ${JSON.stringify(b.voice)}; a voice is "chat" or "oldVoice"`);
-    const v = b.strictness?.visitHours;
-    if (!v || !isWhole(v.least, 1) || !isWhole(v.most, 1) || v.least > v.most) out.push(`${who} has visit hours that are not a whole least and most, the least at least 1 and no more than the most`);
+    if (p.voice === undefined) out.push(`${who} has no voice`);
+    else if (p.voice !== 'chat' && p.voice !== 'oldVoice') out.push(`${who} has the voice ${JSON.stringify(p.voice)}; a voice is "chat" or "oldVoice"`);
+    const v = p.strictness?.visitHours;
+    if (p.strictness !== undefined && p.strictness !== null && (!v || !isWhole(v.least, 1) || !isWhole(v.most, 1) || v.least > v.most)) out.push(`${who} has visit hours that are not a whole least and most, the least at least 1 and no more than the most`);
   }
-  if (bosses.length && !bossKeys.has(sys.firstBoss)) out.push(`firstBoss "${sys.firstBoss}" is not a Boss in the roster`);
-  if (!Array.isArray(sys.firstStaff) || !sys.firstStaff.length) out.push('firstStaff names no Mod Bot; at least one bot is on staff from the start');
-  else for (const k of sys.firstStaff) if (!botKeys.has(k)) out.push(`firstStaff names "${k}", which is not a Mod Bot in the roster`);
+  if (roster.length && !rosterKeys.has(sys.firstBoss)) out.push(`firstBoss "${sys.firstBoss}" is not in the roster`);
+  if (!Array.isArray(sys.firstStaff) || !sys.firstStaff.length) out.push('firstStaff names no one; at least one roster member is on staff from the start');
+  else for (const k of sys.firstStaff) {
+    if (!rosterKeys.has(k)) out.push(`firstStaff names "${k}", which is not in the roster`);
+    else if (k === sys.firstBoss) out.push(`firstStaff names "${k}", who is firstBoss; the first season's Boss is not also on staff from the start`);
+  }
+  const groupName = sys.staffGroup?.name;
+  if (typeof groupName !== 'string' || groupName.length < 1 || groupName.length > 40) out.push(`staffGroup.name must be 1 to 40 characters (it is ${typeof groupName === 'string' ? groupName.length : 'missing'})`);
   const duties = sys.duties ?? ({} as SystemContent['duties']);
   for (const d of DUTIES) {
     const who = duties[d];
     if (typeof who !== 'string' || who === '') out.push(`duty "${d}" is assigned to no one`);
-    else if (who !== 'boss' && who !== 'beat' && who !== 'filer' && !bossKeys.has(who) && !botKeys.has(who)) out.push(`duty "${d}" is assigned to "${who}", who is not "boss", "beat", "filer" or a staff member in the roster`);
+    else if (who !== 'boss' && who !== 'beat' && who !== 'filer' && !rosterKeys.has(who)) out.push(`duty "${d}" is assigned to "${who}", who is not "boss", "beat", "filer" or a staff member in the roster`);
   }
   for (const key of Object.keys(duties)) if (!(DUTIES as readonly string[]).includes(key)) out.push(`the duties name "${key}", which is not a duty`);
   for (const key of STOCK_LINE_KEYS) {

@@ -19,14 +19,18 @@ export const systemSettings: Pick<Settings, 'systemEnabled' | 'meetingCron' | 'p
   modelTiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' },
 };
 
+const botFields = {
+  beats: [], petRules: [], strictness: { visitHours: { least: 2, most: 12 }, bands: [] }, weakness: { kind: 'distraction' }, voice: 'chat', persuadedBy: 'Pedantry.',
+} as const;
+
 export const testSystem: SystemContent = {
-  bosses: [{ key: 'boss-a', name: 'Boss A', title: 'The Boss', signature: 'Hi.', persona: 'You are a boss.', startingHobby: 'tomatoes', temperament: 'petty' }],
+  roster: [
+    { key: 'boss-a', name: 'Boss A', title: 'The Boss', signature: 'Hi.', persona: 'You are a boss.', startingHobby: 'tomatoes', temperament: 'petty', ...botFields },
+    { key: 'bot-a', name: 'Bot A', title: 'Hall monitor', signature: 'Walk.', persona: 'You are a bot.', startingHobby: 'clipboards', temperament: 'earnest', ...botFields },
+  ],
+  staffGroup: { name: 'Test Cores' },
   firstBoss: 'boss-a',
   announcementsTitle: 'Announcements',
-  modBots: [{
-    key: 'bot-a', name: 'Bot A', title: 'Hall monitor', signature: 'Walk.', persona: 'You are a bot.', beats: [], petRules: [],
-    strictness: { visitHours: { least: 2, most: 12 }, bands: [] }, weakness: { kind: 'distraction' }, voice: 'chat', persuadedBy: 'Pedantry.',
-  }],
   firstStaff: ['bot-a'],
   duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'boss' },
   stockLines: Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as SystemContent['stockLines'],

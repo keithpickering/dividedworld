@@ -6,20 +6,27 @@
  * This one is a hype-man and showman: everything is the biggest night in the history of the board.
  * It overrides nothing, so it runs on the instance's ordinary curve.
  */
-import type { BossPersona } from '../../../../engine/rules/types.ts';
-import { bossPersona } from '../persona.ts';
+import type { Persona } from '../../../../engine/rules/types.ts';
+import { persona } from '../persona.ts';
 
 const name = 'MEGA-MC 9000 (placeholder)';
 const title = 'Placeholder Boss: the showman';
 
-export const hypeMan: BossPersona = {
+export const hypeMan: Persona = {
   key: 'placeholder-hype-man',
   name,
   title,
   signature: 'THE BIGGEST SIGNATURE IN HISTORY. (Placeholder Boss.)',
   startingHobby: 'pro wrestling pay-per-views (fake ones, with cards that never end)',
   temperament: 'A hype-man who treats every thread as a main event and every post as a promo.',
-  persona: bossPersona({
+  // DRAFT for the owner: the bot fields below are placeholders, there so every persona has every field.
+  beats: ['general'],
+  petRules: [],
+  strictness: { visitHours: { least: 2, most: 12 }, bands: ['small'] },
+  weakness: { kind: 'distraction' },
+  voice: 'chat',
+  persuadedBy: 'DRAFT: a sincere argument made in its own style.',
+  persona: persona({
     name,
     title,
     temperament:

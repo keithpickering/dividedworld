@@ -138,7 +138,7 @@ export async function runMeeting(
       await close('failed', error);
       return { status: 'failed', meeting, error };
     }
-    const boss = tuned.system.bosses.find((b) => b.key === bossKey);
+    const boss = tuned.system.roster.find((b) => b.key === bossKey);
     if (!boss) {
       const error = `the season's Boss "${bossKey}" is not in the instance's roster`;
       await close('failed', error);
@@ -170,7 +170,7 @@ export async function runMeeting(
       phase,
       bank,
       successorAllowed,
-      roster: tuned.system.bosses.map((b) => ({ key: b.key, name: b.name })),
+      roster: tuned.system.roster.filter((b) => !tuned.system.firstStaff.includes(b.key)).map((b) => ({ key: b.key, name: b.name })),
     });
     const notes = skipped.map((f) => `The feed "${f.name}" could not be read today (${f.why}).`);
     const message = [

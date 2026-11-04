@@ -25,7 +25,7 @@
  *
  * Pure: nothing here reads a clock or a database; the caller passes `now`.
  */
-import type { BossPersona, Settings, SystemContent } from '../rules/types.ts';
+import type { Persona, Settings, SystemContent } from '../rules/types.ts';
 import { DEMAND_KINDS, demandProblems } from './demands.ts';
 import { MEMORY_RULE, repairMemory, type Memory } from './memory.ts';
 import { ASKABLE_MOVE_KINDS, UUID, moveKind, moveParamsProblems } from './moves.ts';
@@ -139,7 +139,7 @@ const fieldsOf = (rule: Rule, leave: readonly string[] = []): string =>
     : '';
 
 export interface PromptFacts {
-  readonly boss: BossPersona;
+  readonly boss: Persona;
   readonly system: Pick<SystemContent, 'nameStyleBrief' | 'realWorld'>;
   readonly settings: Pick<Settings, 'structuralHoldHours' | 'boardNameMaxLength' | 'moveExpiryLeastHours' | 'reactionCap' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'moveExpiryMostDays'>;
   readonly phase: PhaseAt;
@@ -280,7 +280,7 @@ export const DEMAND_ID_ROLES: Readonly<Record<string, 'board' | 'thread' | 'char
 export interface RepairContext {
   /** Only the settings the repair reads, so a caller (or a test) need not hold an instance's whole set. */
   readonly settings: Pick<Settings, 'structuralHoldHours' | 'boardNameMaxLength' | 'moveExpiryLeastHours' | 'reactionCap' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'moveExpiryMostDays'>;
-  readonly system: Pick<SystemContent, 'nameStyle' | 'bosses'>;
+  readonly system: Pick<SystemContent, 'nameStyle' | 'roster' | 'firstStaff'>;
   /** The season's Boss. */
   readonly boss: string;
   readonly phase: PhaseAt;
@@ -437,7 +437,7 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
   if (a['successor'] !== undefined) {
     const given = a['successor'] as { boss: string; why: string };
     if (!c.successorAllowed) drop('successor', 'inMeltdownLastWeek');
-    else if (!c.system.bosses.some((b) => b.key === given.boss)) drop('successor.boss', 'rosterBoss');
+    else if (!c.system.roster.some((b) => b.key === given.boss && !c.system.firstStaff.includes(b.key))) drop('successor.boss', 'rosterBoss');
     else if (given.boss === c.boss) drop('successor.boss', 'notTheOutgoingBoss');
     else successor = given;
   }

@@ -13,7 +13,7 @@ const DAY = 24 * H;
 const NOW = Date.parse('2026-11-01T12:00:00Z');
 const SLOT = '2026-11-01T09:23:00.000Z';
 const BOSS = dividedWorld.system.firstBoss;
-const OTHER_BOSS = dividedWorld.system.bosses.find((b) => b.key !== BOSS)!.key;
+const OTHER_BOSS = dividedWorld.system.roster.find((b) => b.key !== BOSS && !dividedWorld.system.firstStaff.includes(b.key))!.key;
 const BOARD = '11111111-1111-4111-8111-111111111111';
 const BOARD2 = '22222222-2222-4222-8222-222222222222';
 const HOT = '33333333-3333-4333-8333-333333333333';
@@ -375,7 +375,7 @@ test('a new Boss reads no memory, unless its persona inherits another Boss\'s', 
   assert.match(fm.chats[0]!.messages[0]!.content, /You are new to this board/);
   assert.doesNotMatch(fm.chats[0]!.messages[0]!.content, /the old boss's hobby/);
 
-  const heir: Instance = { ...quiet, system: { ...quiet.system, bosses: quiet.system.bosses.map((b) => (b.key === BOSS ? { ...b, inheritsMemoryOf: OTHER_BOSS } : b)) } };
+  const heir: Instance = { ...quiet, system: { ...quiet.system, roster: quiet.system.roster.map((b) => (b.key === BOSS ? { ...b, inheritsMemoryOf: OTHER_BOSS } : b)) } };
   const inherited = fakeDb({ memories: { [OTHER_BOSS]: memory('the old boss\'s hobby') } });
   const im = fakeModels(answer());
   await run(inherited.db, im.models, heir, SLOT, clock, noFeeds);

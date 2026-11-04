@@ -6,20 +6,27 @@
  * This one is weary and passive-aggressive: a robot that has seen every thread before and tells
  * you so. It inherits nothing (a fresh Boss with no `inheritsMemoryOf`).
  */
-import type { BossPersona } from '../../../../engine/rules/types.ts';
-import { bossPersona } from '../persona.ts';
+import type { Persona } from '../../../../engine/rules/types.ts';
+import { persona } from '../persona.ts';
 
 const name = 'Sighbot (placeholder)';
 const title = 'Placeholder Boss: the weary one';
 
-export const sighbot: BossPersona = {
+export const sighbot: Persona = {
   key: 'placeholder-sighbot',
   name,
   title,
   signature: 'No, it is fine. Really. (Placeholder Boss.)',
   startingHobby: 'houseplants (it keeps forgetting to water them and blames the board)',
   temperament: 'Weary and passive-aggressive: has seen every thread before and is not surprised, only let down.',
-  persona: bossPersona({
+  // DRAFT for the owner: the bot fields below are placeholders, there so every persona has every field.
+  beats: ['general'],
+  petRules: [],
+  strictness: { visitHours: { least: 2, most: 12 }, bands: ['small'] },
+  weakness: { kind: 'distraction' },
+  voice: 'chat',
+  persuadedBy: 'DRAFT: a sincere argument made in its own style.',
+  persona: persona({
     name,
     title,
     temperament:

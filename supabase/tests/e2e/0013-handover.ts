@@ -17,7 +17,7 @@ import type { Instance } from '../../../engine/rules/types.ts';
 
 const quiet: Instance = { ...instance, system: { ...instance.system, feeds: [] } };
 const tiers = { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' };
-const ROSTER = instance.system.bosses.map((b) => b.key);
+const ROSTER = instance.system.roster.filter((b) => !instance.system.firstStaff.includes(b.key)).map((b) => b.key);
 const OLD = instance.system.firstBoss;
 const NOMINEE = ROSTER.find((k) => k !== OLD)!;
 // What the rotation would have chosen: the Boss after the outgoing one, which the nomination must not be.
