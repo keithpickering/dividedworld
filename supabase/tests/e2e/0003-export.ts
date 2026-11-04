@@ -168,6 +168,9 @@ test('an instance exported and imported into a fresh database is the same instan
       from characters c where c.staff_kind = 'developer';
       perform set_config('kayfabb.staff_writer', '', true);
       perform set_config('kayfabb.update_writer', '', true);
+      -- How players reach an admin (0081): the setting adminContact, written as set_admin_contact stores it, carried across with the rest of settings.
+      insert into settings (key, value) values ('adminContact', '[{"label": "Exported mail", "href": "mailto:admin@export.invalid"}, {"label": "Exported chat", "href": "https://chat.export.invalid/admin"}]')
+      on conflict (key) do update set value = excluded.value;
       -- The moves it can make and the demands it can set (0046, seeded as the engine lists them), a rename ended and one in force with
       -- its queue entry, so that the catalogs, the queue and the moves in force are carried across with the Acts that name them.
       insert into move_kinds (key, structural) values ('renameBoard', true) on conflict (key) do nothing;
@@ -371,6 +374,10 @@ test('an instance exported and imported into a fresh database is the same instan
     const after = contents(fresh.toString());
     assert.deepEqual([...after.keys()], [...before.keys()]);
     for (const [t, rows] of before) assert.equal(after.get(t), rows, `${t} differs after the round trip`);
+    // The contact an admin set is the same contact in the imported instance, as the page's read answers it (0081).
+    const contact = (url: string) => psqlOn(url, `select admin_contact()::text`);
+    assert.match(contact(from), /Exported mail/, 'the exported instance holds the contact');
+    assert.equal(contact(fresh.toString()), contact(from), 'the contact survives the round trip');
     // The set, its spring and the caught card, each carried as it was.
     const trapRows = (url: string) => psqlOn(url, `select (select to_jsonb(f)::text from face_down f where f.play = '${setPlay}') || '|' ||
       (select to_jsonb(a)::text from acts a where a.id = '${springAct}' and a.kind = 'spring') || '|' || (select to_jsonb(a)::text from acts a where a.id = '${caughtAct}' and a.kind = 'card')`);

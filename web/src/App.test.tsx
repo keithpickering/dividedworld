@@ -295,6 +295,20 @@ for (const path of ['/sign-in', '/register']) {
   });
 }
 
+test('/contact, signed out, is a glass page on the settings smoke that shows the admins\' links', async () => {
+  window.history.pushState(null, '', '/contact');
+  const fake = createFake({ instance, settings: fallbackSettings });
+  fake.seed.contact([{ label: 'Email', href: 'admin@example.test' }]);
+  render(<App api={fake} />);
+  expect(await screen.findByRole('heading', { level: 1, name: 'Reach a person' })).toBeInTheDocument();
+  expect(await screen.findByRole('link', { name: 'Email' })).toHaveAttribute('href', 'mailto:admin@example.test');
+  expect(screen.queryByRole('banner')).toBeNull();
+  expect(screen.queryByRole('region', { name: 'Game HUD' })).toBeNull();
+  expect(document.querySelector('.kb-glass-content-panel')).toBeNull();
+  await userEvent.click(within(await screen.findByRole('navigation', { name: 'Menu' })).getByRole('link', { name: 'Back to the board' }));
+  expect(window.location.pathname).toBe('/');
+});
+
 test('/invites opens Settings › Account, where invites now live, and keeps the address working', async () => {
   window.history.pushState(null, '', '/invites');
   const fake = createFake({ instance, settings: fallbackSettings });

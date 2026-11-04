@@ -118,7 +118,7 @@ export function Spotlight({ tipKey, title, line, step, target, persona, onGotIt,
       ref={overlay}
       className="kb-tips"
       data-kb-tips-place={below ? 'below' : 'above'}
-      /* The fade as chosen, said where a test can read it: the inline opacity is gone once Motion finishes, which a slow machine reaches first. */
+      /* The fade as chosen, kept for e2e, where the inline opacity is gone once Motion finishes. The unit tests read the motion itself, from the props below (tour.test.tsx mocks motion.div), not this marker. */
       data-kb-fade={reduced ? 'none' : 'in'}
       initial={reduced ? false : { opacity: 0 }}
       animate={{ opacity: 1 }}

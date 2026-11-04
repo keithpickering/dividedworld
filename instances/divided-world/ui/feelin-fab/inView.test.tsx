@@ -4,6 +4,7 @@
  */
 import { StrictMode, useRef } from 'react';
 import { act, cleanup, render } from '@testing-library/react';
+import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { useInView, watchInView } from './inView.ts';
 
@@ -69,5 +70,12 @@ describe('inView', () => {
     const r = render(<Probe id="a" />);
     expect(r.getByTestId('a')).toHaveAttribute('data-in-view', 'true');
     expect(made).toHaveLength(0);
+  });
+
+  test('a server render, with no IntersectionObserver, is the still state, and the client then becomes in view', () => {
+    vi.stubGlobal('IntersectionObserver', undefined);
+    expect(renderToString(<Probe id="a" />)).toContain('data-in-view="false"');
+    const r = render(<Probe id="a" />);
+    expect(r.getByTestId('a')).toHaveAttribute('data-in-view', 'true');
   });
 });

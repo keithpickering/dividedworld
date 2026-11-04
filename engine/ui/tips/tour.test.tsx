@@ -5,12 +5,28 @@
  */
 import { act, cleanup, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { forwardRef } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { Frame } from '../frame/Frame.tsx';
 import type { Fake } from '../data/fake.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
 
-beforeEach(() => { Element.prototype.scrollIntoView = vi.fn(); localStorage.clear(); });
+/* motion.div renders a plain div and records the initial and transition it was last given, so the tests read the motion itself, not a marker. */
+type Given = { className?: string; initial: unknown; transition: { duration?: number } | undefined };
+const given = vi.hoisted(() => [] as Given[]);
+vi.mock('motion/react', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('motion/react')>();
+  const Div = forwardRef<HTMLDivElement, Record<string, unknown>>(function Div(props, ref) {
+    const { initial, animate: _animate, exit: _exit, transition, ...rest } = props;
+    void _animate; void _exit;
+    given.push({ className: rest['className'] as string | undefined, initial, transition: transition as Given['transition'] });
+    return <div ref={ref} {...rest} />;
+  });
+  return { ...actual, motion: new Proxy(actual.motion, { get: (target, key, receiver) => (key === 'div' ? Div : Reflect.get(target, key, receiver)) }) };
+});
+const overlayMotion = () => given.filter((g) => g.className === 'kb-tips').at(-1);
+
+beforeEach(() => { given.length = 0; Element.prototype.scrollIntoView = vi.fn(); localStorage.clear(); });
 afterEach(() => { cleanup(); document.documentElement.removeAttribute('data-kb-motion'); });
 
 const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 25)); });
@@ -169,17 +185,17 @@ describe('the HUD tour', () => {
     }
   });
 
-  /* The overlay fades in from opacity 0 unless motion is reduced. The pair shows the check can see a fade: the same page, not reduced, has it. */
-  /* Whether the overlay fades in: Spotlight says so on the overlay from the same choice that sets Motion's starting opacity. The inline
-     opacity itself cannot be read reliably, since on a slow machine Motion has finished before the dialog is found. */
-  const startsHidden = (dialog: HTMLElement) => dialog.closest<HTMLElement>('.kb-tips')?.getAttribute('data-kb-fade') === 'in';
-
+  /* The overlay fades in from opacity 0 unless motion is reduced. The pair shows the check can see a fade: the same page, not reduced, has it.
+     The motion is read from the props Motion is given (the mock above); data-kb-fade is kept for e2e and is not what these read. */
   test('without reduced motion the dialog fades in from opacity 0', async () => {
     const fake = await world();
     board(fake);
     const one = await screen.findByRole('dialog', { name: 'Title of tour-plate' });
     expect(one.closest('.kb-tips'), 'the overlay wrapper is found').not.toBeNull();
-    expect(startsHidden(one)).toBe(true);
+    const m = overlayMotion();
+    expect(m, 'the overlay was given motion props').toBeDefined();
+    expect(m!.initial).toEqual({ opacity: 0 });
+    expect(m!.transition?.duration).toBeGreaterThan(0);
   });
 
   test('under reduced motion the dialog appears at once, without a fade', async () => {
@@ -188,8 +204,10 @@ describe('the HUD tour', () => {
     document.documentElement.setAttribute('data-kb-motion', 'reduce');
     board(fake);
     const one = await screen.findByRole('dialog', { name: 'Title of tour-plate' });
-    const wrapper = one.closest<HTMLElement>('.kb-tips');
-    expect(wrapper, 'the overlay wrapper is found, so the check below is not vacuous').not.toBeNull();
-    expect(startsHidden(one)).toBe(false);
+    expect(one.closest('.kb-tips'), 'the overlay wrapper is found, so the check below is not vacuous').not.toBeNull();
+    const m = overlayMotion();
+    expect(m, 'the overlay was given motion props').toBeDefined();
+    expect(m!.initial).toBe(false);
+    expect(m!.transition?.duration).toBe(0);
   });
 });

@@ -25,6 +25,7 @@ import { ProfileEdit } from '../../engine/ui/profile-edit/ProfileEdit.tsx';
 import { Vending } from '../../engine/ui/vending/Vending.tsx';
 import { SeasonScreen, seasonAt } from '../../engine/ui/season/Season.tsx';
 import { AlertsScreen } from '../../engine/ui/alerts/Alerts.tsx';
+import { ContactScreen } from '../../engine/ui/contact/Contact.tsx';
 import { UpdatesScreen } from '../../engine/ui/updates/Updates.tsx';
 import { GuideScreen } from '../../engine/ui/guide/Guide.tsx';
 import { SendToWelcome, WelcomeScreen } from '../../engine/ui/welcome/Welcome.tsx';
@@ -50,6 +51,7 @@ const ROUTES: readonly Route[] = [
   { path: '/alerts', render: () => <AlertsScreen /> },
   { path: '/updates', render: () => <UpdatesScreen /> },
   { path: '/guide', render: () => <GuideScreen /> },
+  { path: '/contact', render: () => <ContactScreen /> },
   { path: '/welcome', render: () => <WelcomeScreen /> },
   { path: '/admin/queue', render: () => <QueueScreen /> },
   { path: '/log', render: () => <LogScreen /> },
@@ -86,6 +88,8 @@ const GLASS: Readonly<Record<string, GlassSurface>> = {
   '/updates': 'settings',
   /* The Strategy Guide stands on the same page smoke, for the same reason. */
   '/guide': 'settings',
+  /* Reach a person stands on the same page smoke, for the same reason, and is readable signed out. */
+  '/contact': 'settings',
   /* The welcome stands on the same page smoke, for the same reason. */
   '/welcome': 'settings',
   /* Alerts stands on the same page smoke as Updates, for the same reason: no surface of its own. */

@@ -253,6 +253,166 @@ export function recipeWorsts(glass) {
   return out;
 }
 
+/* ---- overlay sheets ---- */
+
+/** The engine's closed list of overlay sheets, read from the `GlassOverlay` union in engine/ui/types.ts. */
+function readOverlays() {
+  const source = sourceOf(TYPES_FILE);
+  if (!source) return [];
+  const out = [];
+  for (const st of source.statements) {
+    if (ts.isTypeAliasDeclaration(st) && st.name.text === 'GlassOverlay' && ts.isUnionTypeNode(st.type)) {
+      for (const t of st.type.types) if (ts.isLiteralTypeNode(t) && ts.isStringLiteral(t.literal)) out.push(t.literal.text);
+    }
+    if (ts.isTypeAliasDeclaration(st) && st.name.text === 'GlassOverlay' && ts.isLiteralTypeNode(st.type) && ts.isStringLiteral(st.type.literal)) out.push(st.type.literal.text);
+  }
+  return out;
+}
+export const OVERLAYS = readOverlays();
+
+/** The sheet token every overlay draws, and the text tokens read on it. */
+const SHEET = '--kb-glass-sheet';
+/** The ratio of the panel's border (a non-text boundary) against the scrim over white. */
+const BORDER_NEED = 3;
+
+/**
+ * One rule for each `GlassOverlay`: the stylesheet it is drawn in, the rule whose `color-mix(... var(--kb-glass-ground) N%, transparent)`
+ * is its scrim, the panel's rule whose `background` is the base its sheet is laid on, the text tokens it draws and its border token.
+ * The spotlight's panel (engine/ui/tips/tips.css) is `--kb-glass-pale` (the border) with its `::after` sheet laid inside it, so the sheet
+ * stands on pale, and the panel stands in a scrim of the ground over the page, which can be white.
+ * Each rule is read where it is first declared, after a closing brace: a comment or a grouped selector in front of it makes the reader
+ * refuse the stylesheet by name, and a later rule that overrides the property (a phone layout's, say) is not read.
+ */
+export const OVERLAY_RULES = {
+  tips: {
+    css: 'engine/ui/tips/tips.css',
+    scrim: '.kb-tips-dim',
+    panel: '.kb-tips .kb-tips-panel',
+    tokens: ['--kb-glass-text', '--kb-glass-text-hi', '--kb-glass-text-2', '--kb-glass-pale'],
+    border: '--kb-glass-pale',
+  },
+};
+
+const escapeRe = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** The declaration block of the rule whose whole selector is `selector`, or null. */
+function ruleBody(css, selector) {
+  const re = new RegExp(`(?:^|\\})\\s*${escapeRe(selector)}\\s*\\{([^}]*)\\}`, 'g');
+  for (const m of css.matchAll(re)) return m[1];
+  return null;
+}
+
+/** The scrim's share, read from the `.kb-tips-dim`-like rule's `color-mix(in srgb, var(--kb-glass-ground) N%, transparent)`; null where it is not found. */
+export function readScrim(css, selector) {
+  const body = ruleBody(css, selector);
+  const m = body?.match(/background:\s*color-mix\(\s*in\s+srgb\s*,\s*var\(--kb-glass-ground\)\s+([\d.]+)%\s*,\s*transparent\s*\)/);
+  return m ? parseFloat(m[1]) : null;
+}
+
+/** The token a panel rule's `background` is, as `var(--token)`; null where it is not found. */
+export function readPanelBase(css, selector) {
+  const m = ruleBody(css, selector)?.match(/background:\s*var\((--[\w-]+)\)/);
+  return m ? m[1] : null;
+}
+
+/** What the guard reads of one overlay's stylesheet: `{ percent, base }`, each null where it is not found. */
+export function readOverlay(css, rule) {
+  return { percent: css === null ? null : readScrim(css, rule.scrim), base: css === null ? null : readPanelBase(css, rule.panel) };
+}
+
+const overlayReadings = () => Object.fromEntries(OVERLAYS.filter((o) => o in OVERLAY_RULES).map((o) => {
+  const file = path.join(repoRoot, OVERLAY_RULES[o].css);
+  return [o, readOverlay(fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null, OVERLAY_RULES[o])];
+}));
+export const OVERLAY_READINGS = overlayReadings();
+
+/** Every overlay the engine lists without a rule here, and every rule for one it does not list. */
+export function overlayRuleFaults(overlays = OVERLAYS, rules = OVERLAY_RULES) {
+  const out = [];
+  for (const o of overlays) if (!(o in rules)) out.push({ where: `overlay ${o}`, why: 'has no rule in the guard (OVERLAY_RULES in tools/check-glass-contrast.mjs); the engine lists it (GlassOverlay in engine/ui/types.ts), so the guard says how its sheet is read' });
+  for (const o of Object.keys(rules)) if (!overlays.includes(o)) out.push({ where: `overlay ${o}`, why: 'has a rule in the guard, but the engine does not list it (GlassOverlay in engine/ui/types.ts)' });
+  return out;
+}
+
+/** Every overlay whose stylesheet the guard cannot read: the scrim's rule or the panel's base not found. */
+export function overlayReadFaults(readings = OVERLAY_READINGS, rules = OVERLAY_RULES) {
+  const out = [];
+  for (const [o, r] of Object.entries(readings)) {
+    const rule = rules[o];
+    if (!rule) continue;
+    if (r.percent === null) out.push({ where: `overlay ${o}`, why: `cannot find ${rule.scrim}'s background: color-mix(in srgb, var(--kb-glass-ground) N%, transparent) in ${rule.css}; the scrim's share is what the sheet's worst pixel is read under` });
+    if (r.base === null) out.push({ where: `overlay ${o}`, why: `cannot find ${rule.panel}'s background: var(--token) in ${rule.css}; the base the sheet is laid on is what its worst pixel is read over` });
+  }
+  return out;
+}
+
+const byte = (v) => Math.min(255, Math.max(0, Math.round(v)));
+const mix = (top, a, under) => [0, 1, 2].map((i) => byte(a * top[i] + (1 - a) * under[i]));
+
+/**
+ * The worst pixel under an overlay's panel text in one key: white (the brightest page any theme draws) under the ground at `percent`
+ * (the scrim, `scrim`), and the sheet at its alpha (opaque in the high key) over the brighter of that and the panel's base token
+ * (`base`, null for none), each composite rounded to bytes as the browser draws it. `{ rgb, scrim, luminance }`, or null where the key has
+ * no sheet that is a color. It rounds each layer to bytes, unlike the smoke's `composite()`, because a sheet is two flat layers the
+ * browser stores as bytes; merging the two would move the pinned numbers.
+ */
+export function overlayWorst(glass, keyName, percent, base) {
+  const key = glass.keys?.[keyName] ?? {};
+  const sheet = parseColor(key[SHEET]?.value);
+  if (!sheet) return null;
+  const g = parseColor((key['--kb-glass-ground'] ?? glass.keys?.standard?.['--kb-glass-ground'])?.value) ?? { r: 0, g: 0, b: 0 };
+  const scrim = mix([g.r, g.g, g.b], percent / 100, [255, 255, 255]);
+  const under = [scrim];
+  const b = base ? parseColor(key[base]?.value) : null;
+  if (b) under.push([b.r, b.g, b.b]);
+  const rgb = under.map((u) => mix([sheet.r, sheet.g, sheet.b], sheet.a, u)).sort((x, y) => luminance(y) - luminance(x))[0];
+  return { rgb, scrim, luminance: luminance(rgb) };
+}
+
+/** Every departure of one glass's overlay sheets from the contract, as `{ where, why }`. */
+export function overlayFaults(glass, readings = OVERLAY_READINGS, rules = OVERLAY_RULES) {
+  const out = [];
+  for (const [o, reading] of Object.entries(readings)) {
+    const rule = rules[o];
+    if (!rule || reading.percent === null || reading.base === null) continue;
+    const where = `overlay ${o}`;
+    for (const keyName of ['standard', 'high']) {
+      const key = glass.keys?.[keyName] ?? {};
+      const need = keyName === 'high' ? HIGH : NEED.standard.body;
+      const w = overlayWorst(glass, keyName, reading.percent, reading.base);
+      if (!w) { out.push({ where, why: `${keyName} key: ${SHEET} ${key[SHEET] ? JSON.stringify(key[SHEET].value) + ' is not a color the guard can read' : 'is missing; the overlay\'s sheet is read in every key'}` }); continue; }
+      for (const t of rule.tokens) {
+        const c = parseColor(key[t]?.value);
+        if (!c) { out.push({ where, why: `${keyName} key: ${t} is missing or not a color, and the overlay draws it` }); continue; }
+        const r = contrastRatio([c.r, c.g, c.b], w.rgb);
+        if (r < need) out.push({ where, why: `${keyName} key: ${t} ${key[t].value} on the worst pixel ${rgbText(w.rgb)} (${SHEET} over ${o}'s panel base, ${reading.percent}% scrim) is ${fmt(r, need)}, needs ${need}:1` });
+      }
+      const b = parseColor(key[rule.border]?.value);
+      if (b) {
+        const r = contrastRatio([b.r, b.g, b.b], w.scrim);
+        if (r < BORDER_NEED) out.push({ where, why: `${keyName} key: the border ${rule.border} ${key[rule.border].value} against the scrim over white ${rgbText(w.scrim)} (${reading.percent}%) is ${fmt(r, BORDER_NEED)}, needs ${BORDER_NEED}:1` });
+      }
+    }
+  }
+  return out;
+}
+
+/** For each overlay, the scrim's share, the worst luminance in the standard key and each text token's brightest background at 4.5:1. */
+export function overlayCeilings(glass, readings = OVERLAY_READINGS, rules = OVERLAY_RULES) {
+  const out = {};
+  for (const [o, reading] of Object.entries(readings)) {
+    const rule = rules[o];
+    const w = rule && reading.percent !== null && reading.base !== null ? overlayWorst(glass, 'standard', reading.percent, reading.base) : null;
+    if (!rule || !w) continue;
+    const tokens = {};
+    for (const t of rule.tokens) {
+      const c = parseColor(glass.keys?.standard?.[t]?.value);
+      if (c) tokens[t] = { body: ceilingFor(luminance([c.r, c.g, c.b]), NEED.standard.body) };
+    }
+    out[o] = { scrim: reading.percent, worst: round4(w.luminance), tokens };
+  }
+  return out;
+}
+
 /* ---- the faults ---- */
 
 const textTags = (token) => (token?.tags ?? []).filter((t) => TEXT_TAGS.includes(t));
@@ -268,7 +428,7 @@ const fontFor = (glass, size) => (glass.fonts ?? []).find((f) => f.family === si
  * `glass` is the parsed glass.json (a GlassTheme); it is left untyped here because naming the type
  * would pull the rules' sources into the tools' type check.
  */
-export function glassFaults(glass, classLarge = CLASS_LARGE?.entries ?? {}) {
+export function glassFaults(glass, classLarge = CLASS_LARGE?.entries ?? {}, overlays = OVERLAY_READINGS) {
   const out = [];
   const fault = (where, why) => out.push({ where, why });
   const standard = glass.keys?.standard ?? {};
@@ -423,6 +583,7 @@ export function glassFaults(glass, classLarge = CLASS_LARGE?.entries ?? {}) {
       if (r < HIGH) fault(name, `high key: ${def.value} on the bare ground ${high['--kb-glass-ground'].value} is ${fmt(r, HIGH)}, needs ${HIGH}:1 under high contrast`);
     }
   }
+  out.push(...overlayFaults(glass, overlays));
   return out;
 }
 
@@ -440,7 +601,7 @@ const ceilingFor = (lum, need) => round4((lum + 0.05) / need - 0.05);
  * (`classLarge`, full or calmed) and each class's ceiling at 3:1 (`classes`); a surface that draws
  * none carries neither, so the rendered measurement has no ceiling to pass class large text on.
  */
-export function glassCeilings(glass, classLarge = CLASS_LARGE?.entries ?? {}) {
+export function glassCeilings(glass, classLarge = CLASS_LARGE?.entries ?? {}, overlays = OVERLAY_READINGS) {
   const worsts = recipeWorsts(glass);
   const surfaces = {};
   for (const s of SURFACES) {
@@ -475,7 +636,7 @@ export function glassCeilings(glass, classLarge = CLASS_LARGE?.entries ?? {}) {
       ...(drawn ? { classLarge: draw, classes } : {}),
     };
   }
-  return { surfaces };
+  return { surfaces, overlays: overlayCeilings(glass, overlays) };
 }
 
 /** The ceilings file's text, for each instance by name. */
@@ -509,6 +670,10 @@ function main() {
   }
   let faults = 0;
   /* The engine's list is the engine's, read once whatever the instances. */
+  for (const f of [...overlayRuleFaults(), ...overlayReadFaults()]) {
+    if (faults++ === 0) console.error('  glass-contrast: the glass fails its contrast:');
+    console.error(`    engine: ${f.where}: ${f.why}`);
+  }
   for (const f of classLargeFaults(CLASS_LARGE)) {
     if (faults++ === 0) console.error('  glass-contrast: the glass fails its contrast:');
     console.error(`    engine: ${f.where}: ${f.why}`);

@@ -38,7 +38,7 @@ import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import type {
   AdminQueue, BoardName, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffProfile,
   Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEvent, CaughtPlay, Character, CharacterCounts, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd, FaceDownPass,
-  Alert, EffectState, SeasonNewsItem, SeasonResult, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
+  Alert, ContactLink, EffectState, SeasonNewsItem, SeasonResult, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
 } from '../../../engine/ui/data/api.ts';
 
@@ -143,6 +143,11 @@ function toUpdate(r: Row): Update {
     changes: changes.filter((c) => typeof c?.['text'] === 'string').map((c) => ({ label: typeof c['label'] === 'string' ? c['label'] : '', text: String(c['text']) })),
     at: String(r['at']), seq: num(r['seq']),
   };
+}
+
+/** The contact `admin_contact` answers, or `set_admin_contact` stored: a row that is not a { label, href } of words is no link. */
+function toContact(v: unknown): ContactLink[] {
+  return (Array.isArray(v) ? (v as Row[]) : []).flatMap((e) => (typeof e?.['label'] === 'string' && typeof e['href'] === 'string' ? [{ label: e['label'], href: e['href'] }] : []));
 }
 
 /** The names a tally Act holds under `key`; an entry with no id or name is no line. A class is kept only where the entry says it. */
@@ -718,6 +723,15 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     async postUpdate(title, body, changes) {
       const a = await rpcWrite(() => client.rpc('post_update', { title, body, changes: changes.map((c) => ({ label: c.label, text: c.text })) }));
       return a.ok ? { ok: true, value: toUpdate(a.value) } : a;
+    },
+    /* How players reach the admins (`admin_contact`, 0081): public, one setting, the same for every caller. A row that is not a link is left out. */
+    async adminContact() {
+      const r = await read(() => client.rpc('admin_contact'));
+      return toContact(r.data);
+    },
+    async setAdminContact(links) {
+      const a = await rpcWrite(() => client.rpc('set_admin_contact', { links: links.map((l) => ({ label: l.label, href: l.href })) }));
+      return a.ok ? { ok: true, value: toContact(a.value) } : a;
     },
     async holdMove(id) {
       const a = await rpcWrite(() => client.rpc('hold_move', { id }));

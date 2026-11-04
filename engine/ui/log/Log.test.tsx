@@ -73,7 +73,10 @@ describe('My log', () => {
     expect(tab('Pipewrench')).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByText(/^Everything on this page is true\./u)).toBeInTheDocument();
     expect(screen.getByRole('table', { name: 'Pipewrench\'s log, newest first' })).toBeInTheDocument();
-    expect(screen.getByText('If a line here looks wrong, that is a bug and not the game. Tell an admin.')).toBeInTheDocument();
+    const foot = document.querySelector('.kb-log-foot')!;
+    expect(foot).toHaveTextContent('If a line here looks wrong, that is a bug and not the game. Tell an admin.');
+    /* "Tell an admin" is the way to one: the page that says how (/contact). */
+    expect(within(foot as HTMLElement).getByRole('link', { name: 'Tell an admin' })).toHaveAttribute('href', '/contact');
   });
 
   test('draws each settlement as the board does, its Turn and rank change beside it, newest first, in UTC', async () => {

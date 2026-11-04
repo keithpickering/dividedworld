@@ -720,6 +720,25 @@ export interface Update {
 /** A page of Updates holds at most this many. */
 export const UPDATES_PAGE = 20;
 
+/**
+ * One way to reach an instance's admins (the setting `adminContact`, supabase/migrations/0081_admin_contact.sql): a label and an address,
+ * which is `https:` or `mailto:`. An admin writes the list in the running instance; it names no account and is the same for every reader.
+ */
+export interface ContactLink {
+  readonly label: string;
+  readonly href: string;
+}
+/** The contact holds at most this many links; a label is at most `CONTACT_LABEL_MAX` characters and an address `CONTACT_HREF_MAX` (0081). */
+export const CONTACT_MOST = 5;
+export const CONTACT_LABEL_MAX = 40;
+export const CONTACT_HREF_MAX = 300;
+/**
+ * The one whitespace-or-control set a contact link is trimmed of and an address may not hold, as a regex character-class body. The SQL
+ * (0081) writes the same set, locale-free: ASCII controls and space, the C1 controls (U+0085 too), U+00A0, U+1680, U+2000-U+200A, U+2028,
+ * U+2029, U+202F, U+205F, U+3000, U+FEFF.
+ */
+export const CONTACT_WS = '\\x00-\\x20\\x7f-\\x9f\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff';
+
 /** What a player made public of a character's class in a season (the reveal's `shown`): its reveals and its announced Turns, in order. */
 export interface SeasonShown {
   readonly kind: 'reveal' | 'turn';
@@ -977,6 +996,18 @@ export interface KayfaApi {
    * a label over 80 or more than 30 changes is refused naming which. An admin's alone, and written by no model.
    */
   postUpdate(title: string, body: string, changes: readonly UpdateChange[]): Promise<Answer<Update>>;
+  /**
+   * How players reach the admins (`admin_contact`): the links an admin set, or none. Public, and the same for every caller, signed in or
+   * not, because the player who most needs a person may be the one who cannot sign in. Rejects when it cannot be read.
+   */
+  adminContact(): Promise<readonly ContactLink[]>;
+  /**
+   * An admin's write of the contact (`set_admin_contact`), at most `CONTACT_MOST` links. The words are trimmed, an empty row is dropped
+   * and a bare email becomes `mailto:`; an address that is neither `https:` nor `mailto:`, a label over `CONTACT_LABEL_MAX`, an address over
+   * `CONTACT_HREF_MAX` or more links than `CONTACT_MOST` is refused, naming the row (the refusal's words say "row N"). Answers with what was
+   * stored. An admin's alone.
+   */
+  setAdminContact(links: readonly ContactLink[]): Promise<Answer<readonly ContactLink[]>>;
   /** Holds a move that is waiting: it never lands. An admin's alone, and it cannot be taken back. */
   holdMove(id: number): Promise<Answer<{ readonly id: number; readonly heldAt: string }>>;
   /** Ends a move in force now as reversed by an admin; the old name returns at once. An admin's alone. */

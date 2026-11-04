@@ -98,7 +98,14 @@ export interface SurfaceCeilings {
   readonly classes?: Readonly<Record<string, { readonly large: number }>>;
 }
 
-export type CeilingsFile = Readonly<Record<string, { readonly surfaces: Readonly<Record<string, SurfaceCeilings>> }>>;
+/** One overlay sheet's block of e2e/glass-ceilings.json (tools/check-glass-contrast.mjs): the scrim's share, the worst pixel's luminance and each text token's body ceiling. */
+export interface OverlayCeilings {
+  readonly scrim: number;
+  readonly worst: number;
+  readonly tokens: Readonly<Record<string, { readonly body: number }>>;
+}
+
+export type CeilingsFile = Readonly<Record<string, { readonly surfaces: Readonly<Record<string, SurfaceCeilings>>; readonly overlays: Readonly<Record<string, OverlayCeilings>> }>>;
 
 /** What the measurement reads of a GlassTheme (glass.json): its keys and its classes' colors. */
 export interface GlassColors {

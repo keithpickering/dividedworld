@@ -2,7 +2,7 @@
  * One IntersectionObserver for every Feelin' Fab on the page (docs/plans/2026-11-02-onboarding-design.md, section 6): a post's rainbow
  * animates only while the post is in view, and a page of posts shares one observer rather than carrying one each. The observer is made
  * with the first post watched and dropped with the last. Where the browser has no IntersectionObserver, a post counts as in view, so the
- * rainbow runs rather than freezing.
+ * rainbow runs rather than freezing: it starts still for one frame, the same on the server and the client, and becomes in view in the effect.
  */
 import { useEffect, useState, type RefObject } from 'react';
 
@@ -32,10 +32,14 @@ export function watchInView(el: Element, onChange: Watcher): () => void {
   };
 }
 
-/** Whether the element is in view: false until the observer says so, or true at once where there is no observer. */
+/** Whether the element is in view: false until the observer says so, or until the effect runs where there is no observer. */
 export function useInView(ref: RefObject<Element | null>): boolean {
-  const [inView, setInView] = useState(() => typeof IntersectionObserver === 'undefined');
+  const [inView, setInView] = useState(false);
   useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') {
+      setInView(true);
+      return;
+    }
     const el = ref.current;
     return el ? watchInView(el, setInView) : undefined;
   }, [ref]);

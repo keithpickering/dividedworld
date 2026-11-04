@@ -27,6 +27,7 @@ import { useKayfa } from '../context.tsx';
 import type { Preferences } from '../data/api.ts';
 import { ALERT_KINDS, type AlertKind } from '../../rules/alerts.ts';
 import { toastDefaultKinds } from '../alerts/toast-kinds.ts';
+import { ReachAPerson } from '../contact/Contact.tsx';
 import { Link, useLocation, useNavigate } from '../router.tsx';
 import { Choice, MotionRow, TextSizeRow, ThemeRow, type Option } from './appearanceRows.tsx';
 import { Invites } from './Invites.tsx';
@@ -154,6 +155,8 @@ function Frame({ section, children }: { readonly section: Section | null; readon
         )}
         {children}
       </div>
+      {/* Every screen of Settings says how to reach a person; /contact is readable signed out, and the player who needs it may not be signed in. */}
+      <p className="kb-acct-text kb-calm kb-settings-reach"><ReachAPerson /></p>
     </div>
   );
 }

@@ -1,0 +1,15 @@
+-- Constraint functions are executable by their writers. docs/plans/2026-11-03-onboarding-followups-plan.md, Task 2 (the design's section 6).
+--
+-- The defect. A CHECK constraint, a column default or a generated column runs its functions as the writer, not as the table's owner, and
+-- 0001's default privileges revoke EXECUTE on every new function from PUBLIC. 0062, 0055 and 0068 each revoked their predicate by name,
+-- so a role that writes the table directly (a test's, a self-hosted instance's, a later migration's own) is refused with
+-- "permission denied for function" at the write, though the value is valid. The API roles never saw it: they write through security
+-- definer functions that run as the owner.
+--
+-- The fix. Each function a constraint calls is granted to PUBLIC. Each is a pure predicate over its argument and reads no table, so
+-- the grant lets a caller test a value they already hold and answers nothing else. supabase/tests/0082-constraint-functions.sql reads
+-- the catalog for every public function a CHECK, a default or a generated column calls, so a later migration that adds one is held to it.
+-- Left revoked: preferences_answer, which is no constraint's. And invite_lifetime, which is not a pure predicate: it is a security definer
+-- function that reads the settings table, and it is the default of invites.expires_at (0020), which only definer functions reach today,
+-- so no direct writer needs it and a grant to PUBLIC would let a visitor read a setting. The test names it as the one exclusion.
+grant execute on function tip_keys_ok(text[]), update_payload_problem(jsonb), reaches_hold(text[]) to public;

@@ -105,6 +105,14 @@ export type GlassSurface =
   | 'characters' | 'rankings' | 'log' | 'settings' | 'account' | 'settlement';
 
 /**
+ * Where the glass draws a sheet over the board instead of smoke: the engine's closed list of overlay sheets. An overlay's panel is
+ * `--kb-glass-sheet` over a scrim over whatever page is behind it, which can be white, so a sheet is read by its own rule in
+ * tools/check-glass-contrast.mjs (the scrim's share read from the overlay's stylesheet), and the guard refuses an overlay it has no
+ * rule for. `'tips'` is the spotlight's panel (engine/ui/tips/tips.css).
+ */
+export type GlassOverlay = 'tips';
+
+/**
  * How a class's large text (`GlassClassColor.large`) is drawn on a surface: on the full smoke, inside
  * a calm, or not at all. The engine says which for every surface (`classLargeText`,
  * engine/ui/glass/apply.ts), and tools/check-glass-contrast.mjs reads each class against it.
