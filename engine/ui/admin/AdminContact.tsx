@@ -15,11 +15,11 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { useKayfa } from '../context.tsx';
 import { CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, type ContactLink } from '../data/api.ts';
+import './write-update.css';
+import './admin-contact.css';
 
 /** A row with anything in it but the contact's whitespace: what the server keeps rather than drops as empty. */
 const VISIBLE = new RegExp(`[^${CONTACT_WS}]`, 'u');
-import './write-update.css';
-import './admin-contact.css';
 
 interface Row { readonly key: number; readonly label: string; readonly href: string }
 

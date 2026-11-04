@@ -63,8 +63,8 @@ begin
     if e ? 'href' and jsonb_typeof(e -> 'href') not in ('string', 'null') then
       raise exception 'row % has an address that is text', n using hint = 'kayfabb.refusal', errcode = '22023';
     end if;
-    lab := regexp_replace(coalesce(e ->> 'label', ''), '^[\x01-\x20\x7f-\x9f   -     　﻿]+|[\x01-\x20\x7f-\x9f   -     　﻿]+$', '', 'g');
-    adr := regexp_replace(coalesce(e ->> 'href', ''), '^[\x01-\x20\x7f-\x9f   -     　﻿]+|[\x01-\x20\x7f-\x9f   -     　﻿]+$', '', 'g');
+    lab := regexp_replace(coalesce(e ->> 'label', ''), '^[\x01-\x20\x7f-\x9f\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+|[\x01-\x20\x7f-\x9f\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+$', '', 'g');
+    adr := regexp_replace(coalesce(e ->> 'href', ''), '^[\x01-\x20\x7f-\x9f\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+|[\x01-\x20\x7f-\x9f\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+$', '', 'g');
     if lab = '' and adr = '' then continue; end if;
     if adr = '' then
       raise exception 'row % has a label and no address; give it an address, or leave the row out', n using hint = 'kayfabb.refusal', errcode = '22023';
@@ -81,7 +81,7 @@ begin
     if char_length(adr) > 300 then
       raise exception 'row % has an address of at most 300 characters', n using hint = 'kayfabb.refusal', errcode = '22023';
     end if;
-    if adr ~ '[\x01-\x20\x7f-\x9f   -     　﻿]' then
+    if adr ~ '[\x01-\x20\x7f-\x9f\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]' then
       raise exception 'row % has an address with no spaces or control characters in it', n using hint = 'kayfabb.refusal', errcode = '22023';
     end if;
     -- A bare email: no scheme, no slash, no query, and one at sign. Anything with a colon is not, whatever follows it.
