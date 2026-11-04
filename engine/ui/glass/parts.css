@@ -86,7 +86,9 @@
   letter-spacing: var(--kb-glass-control-spacing);
   text-transform: uppercase;
   text-decoration: none;
-  white-space: nowrap;
+  /* A label wraps inside its own control, which the row never lets share a line with another once it is wider than the line (the layout check refuses a split one). */
+  max-width: 100%;
+  text-align: center;
   cursor: pointer;
 }
 

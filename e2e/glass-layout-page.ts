@@ -157,6 +157,14 @@ function seenOf(el: Element, r: Box): Box | null {
   return box;
 }
 
+/** An element's content-box width in the page's px. */
+function contentWidth(el: Element): number {
+  const s = getComputedStyle(el);
+  const n = (v: string) => parseFloat(v) || 0;
+  const z = zoomOf(el);
+  return Math.max(0, el.getBoundingClientRect().width - (n(s.borderLeftWidth) + n(s.paddingLeft) + n(s.borderRightWidth) + n(s.paddingRight)) * z);
+}
+
 function blockOf(el: Element): BlockFact | null {
   const own = [...el.childNodes].filter((n): n is Text => n.nodeType === Node.TEXT_NODE && /\S/.test((n as Text).data));
   if (own.length === 0) return null;
@@ -193,7 +201,11 @@ function blockOf(el: Element): BlockFact | null {
   const breaks = s.overflowWrap === 'anywhere' || s.overflowWrap === 'break-word' || s.wordBreak === 'break-all' || s.wordBreak === 'break-word';
   const words = text.split(/[\s­‐-―/-]+/).filter(Boolean).sort((a, b) => b.length - a.length).slice(0, 3);
   const longestWord = breaks ? 0 : Math.max(0, ...words.map((w) => widthOf(w, s, z)));
-  return { path: pathOf(el), rect: content, fontSize, longestWord, wraps, textWidth: widest, seen: seenOf(el, content) };
+  /* The room the column had to give: the parent's content width (a parent that is a flex or grid item has already been sized by its own track). */
+  const column = el.parentElement ? contentWidth(el.parentElement) : content.width;
+  /* Card-face art: aria-hidden or data-kb-art text on a postcard face. */
+  const art = el.closest('.kb-postcard') !== null && el.closest('[aria-hidden="true"], [data-kb-art]') !== null;
+  return { path: pathOf(el), rect: content, fontSize, longestWord, wraps, textWidth: widest, column, ...(art ? { art } : {}), seen: seenOf(el, content) };
 }
 
 /* ---- controls, rows and panels ---- */

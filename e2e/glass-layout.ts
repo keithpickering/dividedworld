@@ -6,9 +6,14 @@ import type { Box } from './glass-text.ts';
  * `judge` in e2e/glass-text.ts is, so e2e/glass-layout.test.ts drives each refusal red on plain
  * data. It refuses six things, each named with the element's selector path and the screen:
  *
- *   1. a squeezed block: an element holding text that wraps, narrower than 10 * its font size, or
- *      any element narrower than its longest word, or one whose widest line of text is wider than
- *      its own box (clipped or ellipsized);
+ *   1. a squeezed block: an element holding text that wraps, narrower than 10 * its font size
+ *      when its column (its parent's content width) could have given it more room, as a sibling
+ *      that took the room did (a block that fills its column passes, however narrow the column),
+ *      or any element narrower than its longest word, or one whose widest line of text is wider
+ *      than its own box (clipped or ellipsized). Card-face art (aria-hidden or `data-kb-art` text
+ *      on a postcard) is exempt. A control alone on its line may wrap its label inside itself; a
+ *      label that wraps on a line another control of its row shares is a split label, refused as
+ *      part of this one;
  *   2. an overflow: anything outside the viewport's width (or a page that scrolls sideways), except
  *      inside an element that scrolls on purpose;
  *   3. a mismatched row: two GlassButtons in one ButtonRow, or two adjacent controls in one flex
@@ -72,6 +77,10 @@ export interface BlockFact extends Located {
   readonly longestWord: number;
   readonly wraps: boolean;
   readonly textWidth: number;
+  /** The content width of the block's parent: the room its column had to give it. */
+  readonly column: number;
+  /** Card-face art (aria-hidden or `data-kb-art` text on a postcard face): exempt from refusal 1. */
+  readonly art?: boolean;
 }
 
 export interface ControlInRow extends Located { readonly fontSize: number; readonly glass: boolean }
@@ -151,7 +160,8 @@ export function judgeLayout(facts: LayoutFacts): string[] {
   /* 1. a squeezed block */
   for (const b of facts.blocks) {
     const w = b.rect.width;
-    if (b.wraps && w < 10 * b.fontSize - EDGE) at('squeezed block', b.path, `${px(w)} wide by ${px(b.rect.height)} tall at ${px(b.fontSize)} type, narrower than 10 times its type size`);
+    if (b.art) continue;
+    if (b.wraps && w < 10 * b.fontSize - EDGE && w < b.column - EDGE) at('squeezed block', b.path, `${px(w)} wide by ${px(b.rect.height)} tall at ${px(b.fontSize)} type, narrower than 10 times its type size, in a column ${px(b.column)} wide that could have given it more`);
     else if (b.textWidth > w + EDGE) at('squeezed block', b.path, `${px(w)} wide, its text is ${px(b.textWidth)} wide on one line`);
     else if (w < b.longestWord - EDGE) at('squeezed block', b.path, `${px(w)} wide, narrower than its longest word (${px(b.longestWord)})`);
   }
@@ -174,6 +184,16 @@ export function judgeLayout(facts: LayoutFacts): string[] {
       const b = cs[i]!;
       if (Math.abs(a.rect.height - b.rect.height) > HEIGHT_TOLERANCE) at('mismatched row', b.path, `height ${px(b.rect.height)} beside ${px(a.rect.height)} (${shortPath(a.path)}) in ${shortPath(row.path)}`);
       if (Math.abs(a.fontSize - b.fontSize) > SIZE_TOLERANCE) at('mismatched row', b.path, `type size ${px(b.fontSize)} beside ${px(a.fontSize)} (${shortPath(a.path)}) in ${shortPath(row.path)}`);
+    }
+  }
+
+  /* 1b. a split label: a control's label that wraps while another control of its row shares its line (a lone control may wrap its label inside itself). */
+  for (const row of facts.rows) {
+    for (const c of row.controls) {
+      const wrapped = facts.blocks.some((b) => b.wraps && b.path.startsWith(`${c.path} > `));
+      if (!wrapped) continue;
+      const sharing = row.controls.find((o) => o !== c && Math.min(o.rect.y + o.rect.height, c.rect.y + c.rect.height) - Math.max(o.rect.y, c.rect.y) > Math.min(o.rect.height, c.rect.height) / 2);
+      if (sharing) at('split label', c.path, `its label wraps on a line it shares with ${shortPath(sharing.path)}, so one control's words split across controls`);
     }
   }
 

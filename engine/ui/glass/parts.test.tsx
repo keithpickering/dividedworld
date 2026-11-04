@@ -81,14 +81,16 @@ describe('GlassButton', () => {
 });
 
 describe('ButtonRow', () => {
-  test('wraps its controls between them, never inside one', () => {
+  test('wraps its controls between them; a label wraps inside its own control, never across two', () => {
     const { container } = renderInWorld(<ButtonRow align="end"><GlassButton>A</GlassButton><GlassButton>B</GlassButton></ButtonRow>);
     const row = container.querySelector('.kb-button-row')!;
     expect(row).toHaveAttribute('data-kb-align', 'end');
     expect(row.querySelectorAll('.kb-glass-button')).toHaveLength(2);
     const css = sheet('parts.css');
     expect(css).toMatch(/\.kb-button-row\s*\{[^}]*flex-wrap:\s*wrap[^}]*align-items:\s*stretch/);
-    expect(css).toMatch(/\.kb-glass-button\s*\{[^}]*white-space:\s*nowrap/);
+    /* A label may wrap inside its own control (never held on one line), within the line it stands on. */
+    expect(css).not.toMatch(/\.kb-glass-button\s*\{[^}]*white-space:\s*nowrap/);
+    expect(css).toMatch(/\.kb-glass-button\s*\{[^}]*max-width:\s*100%/);
   });
 });
 

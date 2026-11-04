@@ -26,8 +26,8 @@ const clean: LayoutFacts = {
   screen: SCREEN,
   viewport: { width: 390, height: 844, scrollWidth: 390 },
   blocks: [
-    { path: 'main:nth-child(1) > header:nth-child(1) > h1:nth-child(1)', rect: { x: 16, y: 20, width: 358, height: 40 }, fontSize: 32, longestWord: 120, wraps: false, textWidth: 120 },
-    { path: 'main:nth-child(1) > header:nth-child(1) > p.kb-lead:nth-child(2)', rect: { x: 16, y: 70, width: 358, height: 60 }, fontSize: 21, longestWord: 60, wraps: true, textWidth: 330 },
+    { path: 'main:nth-child(1) > header:nth-child(1) > h1:nth-child(1)', rect: { x: 16, y: 20, width: 358, height: 40 }, fontSize: 32, longestWord: 120, wraps: false, textWidth: 120, column: 358 },
+    { path: 'main:nth-child(1) > header:nth-child(1) > p.kb-lead:nth-child(2)', rect: { x: 16, y: 70, width: 358, height: 60 }, fontSize: 21, longestWord: 60, wraps: true, textWidth: 330, column: 358 },
   ],
   scrollers: [],
   extents: [],
@@ -57,7 +57,7 @@ describe('the layout judgment', () => {
   });
 
   test('refuses a squeezed block: the lead of 0px by 547px', () => {
-    const lead = { path: 'main:nth-child(1) > header:nth-child(1) > p.kb-lead:nth-child(2)', rect: { x: 16, y: 70, width: 0, height: 547 }, fontSize: 21, longestWord: 60, wraps: true, textWidth: 330 };
+    const lead = { path: 'main:nth-child(1) > header:nth-child(1) > p.kb-lead:nth-child(2)', rect: { x: 16, y: 70, width: 0, height: 547 }, fontSize: 21, longestWord: 60, wraps: true, textWidth: 330, column: 358 };
     const out = refusals({ blocks: [clean.blocks[0]!, lead] });
     expect(out).toHaveLength(1);
     expect(out[0]).toContain('p.kb-lead');
@@ -65,14 +65,53 @@ describe('the layout judgment', () => {
     expect(out[0]).toContain('squeezed');
   });
 
+  test('a narrow block that fills its column is not squeezed, and one a sibling squeezed is', () => {
+    const narrow = { path: 'main > aside.kb-side > p.kb-note', rect: { x: 16, y: 200, width: 120, height: 200 }, fontSize: 16, longestWord: 60, wraps: true, textWidth: 118, column: 120 };
+    /* A 120px column holds a 120px paragraph at 16px type (under ten ems): the column gave it all it had. */
+    expect(refusals({ blocks: [...clean.blocks, narrow] })).toEqual([]);
+    /* The poison: the same paragraph in a 358px column, 238px of which a sibling took. */
+    const out = refusals({ blocks: [...clean.blocks, { ...narrow, column: 358 }] });
+    expect(out).toHaveLength(1);
+    expect(out[0]).toContain('p.kb-note');
+    expect(out[0]).toContain('squeezed');
+    expect(out[0]).toContain('358');
+    /* A pixel short of the column is the column's own rounding. */
+    expect(refusals({ blocks: [...clean.blocks, { ...narrow, column: 120.6 }] })).toEqual([]);
+  });
+
+  test('card-face art is exempt from the squeeze, and the same words off a card face are not', () => {
+    const line = { path: 'main > div.kb-hand > button.kb-postcard > span.kb-postcard-line', rect: { x: 16, y: 200, width: 80, height: 60 }, fontSize: 14, longestWord: 40, wraps: true, textWidth: 78, column: 200 };
+    expect(refusals({ blocks: [...clean.blocks, { ...line, art: true }] })).toEqual([]);
+    const out = refusals({ blocks: [...clean.blocks, line] });
+    expect(out).toHaveLength(1);
+    expect(out[0]).toContain('kb-postcard-line');
+  });
+
+  test('a lone control may wrap its label inside itself; a label split across controls on one line is refused', () => {
+    const row = 'main:nth-child(1) > div.kb-button-row:nth-child(3)';
+    const label = (n: number) => ({ path: `${row} > button:nth-child(${n}) > span.kb-glass-upright:nth-child(1)`, rect: { x: 40, y: 150, width: 90, height: 42 }, fontSize: 21, longestWord: 80, wraps: true, textWidth: 88, column: 90 });
+    const btn = (n: number, y: number, h = 62) => ({ path: `${row} > button:nth-child(${n})`, rect: { x: 16, y, width: 358, height: h }, fontSize: 21, glass: true });
+    /* One control on its line (the second is under it) wraps its label: passes. */
+    expect(refusals({ blocks: [...clean.blocks, label(1)], rows: [{ path: row, kind: 'button-row', controls: [btn(1, 140), btn(2, 210)] }] })).toEqual([]);
+    /* The poison: the second control shares the line. */
+    const out = refusals({ blocks: [...clean.blocks, label(1)], rows: [{ path: row, kind: 'button-row', controls: [btn(1, 140), { ...btn(2, 140), rect: { x: 200, y: 140, width: 100, height: 62 } }] }] });
+    expect(out).toHaveLength(1);
+    expect(out[0]).toContain('split label');
+    expect(out[0]).toContain('button');
+    expect(out[0]).toContain(SCREEN);
+    /* A one-line label that is wider than its control is still refused, wrapped or not allowed. */
+    const wide = { ...label(1), wraps: false, textWidth: 130 };
+    expect(refusals({ blocks: [...clean.blocks, wide], rows: [{ path: row, kind: 'button-row', controls: [btn(1, 140), btn(2, 210)] }] })).toHaveLength(1);
+  });
+
   test('refuses a block narrower than its longest word, though not narrower than ten ems', () => {
-    const out = refusals({ blocks: [{ path: 'main > p.word', rect: { x: 0, y: 600, width: 200, height: 30 }, fontSize: 10, longestWord: 260, wraps: true, textWidth: 260 }] });
+    const out = refusals({ blocks: [{ path: 'main > p.word', rect: { x: 0, y: 600, width: 200, height: 30 }, fontSize: 10, longestWord: 260, wraps: true, textWidth: 260, column: 358 }] });
     expect(out).toHaveLength(1);
     expect(out[0]).toContain('p.word');
   });
 
   test('refuses a one-line block whose text is wider than its own box', () => {
-    const out = refusals({ blocks: [{ path: 'main > span.kb-chip', rect: { x: 0, y: 600, width: 100, height: 20 }, fontSize: 10, longestWord: 40, wraps: false, textWidth: 180 }] });
+    const out = refusals({ blocks: [{ path: 'main > span.kb-chip', rect: { x: 0, y: 600, width: 100, height: 20 }, fontSize: 10, longestWord: 40, wraps: false, textWidth: 180, column: 358 }] });
     expect(out).toHaveLength(1);
     expect(out[0]).toContain('span.kb-chip');
   });
@@ -212,7 +251,7 @@ describe('the layout judgment', () => {
   });
 
   /* A heading that stands in no calm, 20px under the header's foot, inside the header's 16px feather. */
-  const heading = { path: 'main:nth-child(1) > h2:nth-child(2)', rect: { x: 16, y: 138, width: 200, height: 30 }, fontSize: 30, longestWord: 100, wraps: false, textWidth: 150 };
+  const heading = { path: 'main:nth-child(1) > h2:nth-child(2)', rect: { x: 16, y: 138, width: 200, height: 30 }, fontSize: 30, longestWord: 100, wraps: false, textWidth: 150, column: 358 };
   const calmed = { path: headerPath, element: el, backing: { x: 0, y: 4, width: 390, height: 142 }, clips: [] };
 
   test('refuses a calm over other content: its feather lies on a heading that stands in no calm', () => {
@@ -266,7 +305,7 @@ describe('the layout judgment', () => {
 
   test('two calms whose feathers overlap are not refused: a staggered backing', () => {
     const other = { path: 'main:nth-child(1) > section:nth-child(2)', element: { x: 16, y: 140, width: 300, height: 60 }, backing: { x: 0, y: 124, width: 332, height: 92 }, clips: [] };
-    const para = { path: `${other.path} > p:nth-child(1)`, rect: { x: 16, y: 140, width: 300, height: 60 }, fontSize: 21, longestWord: 60, wraps: true, textWidth: 290 };
+    const para = { path: `${other.path} > p:nth-child(1)`, rect: { x: 16, y: 140, width: 300, height: 60 }, fontSize: 21, longestWord: 60, wraps: true, textWidth: 290, column: 358 };
     expect(refusals({ blocks: [...clean.blocks, para], calms: [calmed, other] })).toEqual([]);
   });
 
