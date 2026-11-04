@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { GlassTheme } from '../types.ts';
-import { applyGlass, glassVars, installGlassFonts } from './apply.ts';
+import { DEFAULT_CONTROLS, applyGlass, glassVars, installGlassFonts } from './apply.ts';
 
 const glass = {
   keys: {
@@ -39,6 +39,20 @@ describe('glassVars', () => {
     expect(v['--kb-glass-size-display-xl']).toBe('6rem');
     expect(v['--kb-glass-calm-opacity']).toBe('0.85');
     expect(v['--kb-glass-calm-feather']).toBe('32px');
+  });
+
+  it('writes the calm\'s pad and the controls\' measure, the engine\'s defaults where the theme gives none, and the phone\'s as names of their own', () => {
+    const v = glassVars(glass, 'standard');
+    expect(v['--kb-glass-calm-pad']).toBe('12px');
+    expect(v['--kb-glass-calm-feather-phone']).toBe('20px');
+    expect(v['--kb-glass-control-m-height']).toBe('48px');
+    expect(v['--kb-glass-control-s-size-phone']).toBe('var(--kb-glass-size-phone-small)');
+    expect(v['--kb-glass-control-spacing']).toBe('2px');
+    const own = glassVars({ ...glass, calm: { ...glass.calm, pad: 8, padPhone: 6 }, controls: { ...DEFAULT_CONTROLS, gap: 14, phone: { ...DEFAULT_CONTROLS.phone, m: { height: 44, pad: 18, size: 'phone-body' } } } }, 'standard');
+    expect(own['--kb-glass-calm-pad']).toBe('8px');
+    expect(own['--kb-glass-calm-pad-phone']).toBe('6px');
+    expect(own['--kb-glass-control-gap']).toBe('14px');
+    expect(own['--kb-glass-control-m-height-phone']).toBe('44px');
   });
 });
 

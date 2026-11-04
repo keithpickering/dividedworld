@@ -145,7 +145,17 @@
       "settlement": "settlement"
     }
   },
-  "calm": { "opacity": 0.85, "feather": 32 },
+  "calm": { "opacity": 0.85, "feather": 32, "pad": 12, "featherPhone": 20, "padPhone": 10 },
+  "controls": {
+    "m": { "height": 48, "pad": 22, "size": "body" },
+    "s": { "height": 36, "pad": 16, "size": "label" },
+    "phone": {
+      "m": { "height": 40, "pad": 16, "size": "phone-body" },
+      "s": { "height": 32, "pad": 12, "size": "phone-small" }
+    },
+    "spacing": 2,
+    "gap": 10
+  },
   "sizes": {
     "label": { "px": 20, "family": "Barlow Condensed", "weight": 800 },
     "body": { "px": 21, "family": "Barlow Condensed", "weight": 600 },

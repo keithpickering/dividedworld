@@ -7,7 +7,19 @@
  * (tools/check-glass-contrast.mjs holds that), so swapping the key re-colors the glass and
  * moves nothing. `applyGlass` marks the key on the root (`data-kb-glass-key`) for the stylesheet.
  */
-import type { ClassLargeDraw, GlassSurface, GlassTheme } from '../types.ts';
+import type { ClassLargeDraw, GlassControls, GlassSurface, GlassTheme } from '../types.ts';
+
+/** The calm's pad past the feather, and the phone layout's feather and pad, in px, where a theme gives none. */
+export const DEFAULT_CALM = { pad: 12, featherPhone: 20, padPhone: 10 } as const;
+
+/** The skewed controls' measure where a theme gives none (the values tokens.css names as plain defaults). */
+export const DEFAULT_CONTROLS: GlassControls = {
+  m: { height: 48, pad: 22, size: 'body' },
+  s: { height: 36, pad: 16, size: 'label' },
+  phone: { m: { height: 40, pad: 16, size: 'phone-body' }, s: { height: 32, pad: 12, size: 'phone-small' } },
+  spacing: 2,
+  gap: 10,
+};
 
 export type GlassKeyName = 'standard' | 'high';
 
@@ -26,6 +38,20 @@ export function glassVars(glass: GlassTheme, key: GlassKeyName): Record<string, 
   for (const [name, size] of Object.entries(glass.sizes)) out[`--kb-glass-size-${name}`] = `${size.px / 16}rem`;
   out['--kb-glass-calm-opacity'] = String(glass.calm.opacity);
   out['--kb-glass-calm-feather'] = `${glass.calm.feather}px`;
+  out['--kb-glass-calm-pad'] = `${glass.calm.pad ?? DEFAULT_CALM.pad}px`;
+  /* The phone layout's own names: calm.css and parts.css swap them in on the element, which a rule on the root's inline style could not. */
+  out['--kb-glass-calm-feather-phone'] = `${glass.calm.featherPhone ?? DEFAULT_CALM.featherPhone}px`;
+  out['--kb-glass-calm-pad-phone'] = `${glass.calm.padPhone ?? DEFAULT_CALM.padPhone}px`;
+  const c = glass.controls ?? DEFAULT_CONTROLS;
+  for (const [suffix, sizes] of [['', c], ['-phone', c.phone]] as const) {
+    for (const k of ['m', 's'] as const) {
+      out[`--kb-glass-control-${k}-height${suffix}`] = `${sizes[k].height}px`;
+      out[`--kb-glass-control-${k}-pad${suffix}`] = `${sizes[k].pad}px`;
+      out[`--kb-glass-control-${k}-size${suffix}`] = `var(--kb-glass-size-${sizes[k].size})`;
+    }
+  }
+  out['--kb-glass-control-spacing'] = `${c.spacing}px`;
+  out['--kb-glass-control-gap'] = `${c.gap}px`;
   glass.orbs.gradients.forEach((g, i) => {
     out[`--kb-glass-orb-${i + 1}-highlight`] = g.highlight;
     out[`--kb-glass-orb-${i + 1}-color`] = g.color;

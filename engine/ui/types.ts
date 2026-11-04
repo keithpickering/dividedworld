@@ -206,6 +206,22 @@ export interface GlassOrbStops {
   readonly shade: string;
 }
 
+/** One control size's height and horizontal padding in px, and its type size by the size step's name (`body`, `phone-small`). */
+export interface GlassControlSize {
+  readonly height: number;
+  readonly pad: number;
+  readonly size: string;
+}
+
+/** The skewed controls (GlassButton): sizes m and s on the Main layout and on the phone's, the letter spacing and the gap in a row, in px. */
+export interface GlassControls {
+  readonly m: GlassControlSize;
+  readonly s: GlassControlSize;
+  readonly phone: { readonly m: GlassControlSize; readonly s: GlassControlSize };
+  readonly spacing: number;
+  readonly gap: number;
+}
+
 /** The glass: an instance's look for everything outside the board, as data (docs/plans/2026-10-30-glass-to-the-boards-plan.md, sections 4 to 6). */
 export interface GlassTheme {
   /** Standard and high contrast: the same tokens, each with its tags, the high key's values reaching 7:1. */
@@ -214,8 +230,20 @@ export interface GlassTheme {
     readonly recipes: Readonly<Record<string, SmokeRecipe>>;
     readonly surfaces: Readonly<Record<GlassSurface, string>>;
   };
-  /** The calm's backing: its opacity and the width of its feathered edge in px. */
-  readonly calm: { readonly opacity: number; readonly feather: number };
+  /**
+   * The calm's backing: its opacity, the width of its feathered edge in px, and the solid pad past
+   * the feather; the phone layout has its own feather and pad. Any not given is the engine's
+   * default (DEFAULT_CALM, engine/ui/glass/apply.ts).
+   */
+  readonly calm: {
+    readonly opacity: number;
+    readonly feather: number;
+    readonly pad?: number;
+    readonly featherPhone?: number;
+    readonly padPhone?: number;
+  };
+  /** The skewed controls' measure; any not given is the engine's default (DEFAULT_CONTROLS, engine/ui/glass/apply.ts). */
+  readonly controls?: GlassControls;
   readonly sizes: Readonly<Record<string, GlassSize>>;
   readonly fonts: readonly GlassFont[];
   /** Each class's glass colors, by the class's key. */
