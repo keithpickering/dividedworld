@@ -7,8 +7,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fireEvent, screen } from '@testing-library/react';
 import { describe, expect, test } from 'vitest';
-import { contrastRatio, luminance, parseColor } from '../../../tools/check-glass-contrast.mjs';
+import { luminance } from '../../../tools/check-glass-contrast.mjs';
 import { renderInWorld } from '../test-world.tsx';
+import { BORDER_RULES, borderContrast, tokenDefaults } from './border-contrast.ts';
 import { ButtonRow, GlassButton } from './Button.tsx';
 import { PageHead } from './PageHead.tsx';
 
@@ -93,44 +94,10 @@ describe('ButtonRow', () => {
 
 /* ---- the border a button stands on the smoke with ---- */
 
-/** The brightest smoke any surface of any instance draws, which a button (outside every calm) stands on. */
+/** The brightest smoke any surface draws, which a button (outside every calm) stands on. */
 function worstSmoke(): number {
   const all = JSON.parse(fs.readFileSync(path.join(here, '..', '..', '..', 'e2e', 'glass-ceilings.json'), 'utf8')) as Record<string, { surfaces: Record<string, { worst: number; narrowWorst?: number }> }>;
   return Math.max(...Object.values(all).flatMap((i) => Object.values(i.surfaces).flatMap((x) => [x.worst, x.narrowWorst ?? 0])));
-}
-/** Every instance's standard key, with the tokens' plain defaults under it. */
-function keys(): Record<string, string>[] {
-  const defaults: Record<string, string> = {};
-  for (const m of sheet('tokens.css').matchAll(/(--kb-glass-[\w-]+):\s*([^;]+);/g)) defaults[m[1]!] = m[2]!.trim();
-  const dir = path.join(here, '..', '..', '..', 'instances');
-  return fs.readdirSync(dir).flatMap((n) => {
-    const f = path.join(dir, n, 'ui', 'glass.json');
-    if (!fs.existsSync(f)) return [];
-    const glass = JSON.parse(fs.readFileSync(f, 'utf8')) as { keys: Record<string, Record<string, { value: string }>> };
-    return Object.values(glass.keys).map((k) => ({ ...defaults, ...Object.fromEntries(Object.entries(k).map(([a, b]) => [a, b.value])) }));
-  });
-}
-/** A color value with its var()s and color-mix(in srgb, X N%, transparent) resolved to rgb and alpha. */
-function resolve(value: string, vars: Record<string, string>): { r: number; g: number; b: number; a: number } {
-  const v = value.replace(/var\((--[\w-]+)\)/g, (_, n: string) => vars[n] ?? 'NOPE').trim();
-  const mix = /^color-mix\(in srgb,\s*(.+?)\s+([\d.]+)%,\s*transparent\)$/.exec(v);
-  if (mix) { const c = resolve(mix[1]!, vars); return { ...c, a: c.a * Number(mix[2]) / 100 }; }
-  const c = parseColor(v);
-  if (!c) throw new Error(`cannot resolve ${v}`);
-  return c;
-}
-/** The contrast of the border a rule draws, over smoke of the given luminance. */
-function borderContrast(selector: RegExp, vars: Record<string, string>, smoke: number): number {
-  const rule = new RegExp(`(?:^|\\n|,)\\s*${selector.source}\\s*\\{([^}]*)\\}`).exec(sheet('parts.css'));
-  if (!rule) throw new Error(`no rule for ${selector}`);
-  const decl = /border(?:-color)?:\s*(?:\d+px\s+\w+\s+)?([^;]+);/.exec(rule[1]!);
-  if (!decl) throw new Error(`no border in ${selector}`);
-  const c = resolve(decl[1]!, vars);
-  /* The gray of that luminance (sRGB's inverse). */
-  const lin = smoke <= 0.0031308 ? smoke * 12.92 : 1.055 * smoke ** (1 / 2.4) - 0.055;
-  const g = 255 * lin;
-  const mixed = [c.r, c.g, c.b].map((x) => x * c.a + g * (1 - c.a));
-  return contrastRatio(mixed as never, [g, g, g] as never);
 }
 
 describe('a button\'s border on the brightest smoke', () => {
@@ -138,11 +105,11 @@ describe('a button\'s border on the brightest smoke', () => {
     expect(worstSmoke()).toBeGreaterThan(0.2);
     expect(luminance('#ffffff')).toBe(1);
   });
-  for (const [name, sel] of [['secondary', /\.kb-glass-button\[data-kb-kind='secondary'\]/], ['disabled', /\.kb-glass-button:disabled,\s*\.kb-glass-button\[aria-disabled='true'\]/]] as const) {
-    test(`the ${name} border reaches 3:1 in every instance's key`, () => {
-      const all = keys();
-      expect(all.length).toBeGreaterThan(0);
-      for (const vars of all) expect(borderContrast(sel, vars, worstSmoke())).toBeGreaterThanOrEqual(3);
+  /* With the tokens' plain defaults; web/src/contrast.test.ts holds each instance's keys to the same. */
+  for (const [name, sel] of BORDER_RULES) {
+    test(`the ${name} border reaches 3:1 with the tokens' defaults`, () => {
+      const css = sheet('parts.css');
+      expect(borderContrast(css, sel, tokenDefaults(sheet('tokens.css')), worstSmoke())).toBeGreaterThanOrEqual(3);
     });
   }
 });
