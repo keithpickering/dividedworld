@@ -30,9 +30,13 @@ declare
                            -- Season news (0063): the season page's News tab.
                            'season_news(timestampwithtimezone,integer)',
                            -- A play's moment (0072): what was on a post when a play landed.
-                           'play_moment(uuid)'];
+                           'play_moment(uuid)',
+                           -- Pure predicates a CHECK calls, granted to PUBLIC by 0080 so a direct writer is not refused (each reads no table).
+                           'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])'];
   -- What a visitor (anon) may execute, on purpose; each is also in the list above.
-  visitor_callable text[] := array['move_progress(uuid)'];
+  visitor_callable text[] := array['move_progress(uuid)',
+                           -- The same three CHECK predicates, which PUBLIC (so anon too) may execute by 0080; pure, reading no table.
+                           'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])'];
 begin
   for r in select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
            where n.nspname = 'public' and c.relkind = 'S'
