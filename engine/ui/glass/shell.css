@@ -164,16 +164,18 @@
 /* ---- the content column ---- */
 
 .kb-glass-content {
+  /* The column's side gutter; calm.css reads it, so on the phone a calm's feather stays inside the column's clip. */
+  --kb-glass-gutter: clamp(16px, 4.44vw, 64px);
   display: block;
   max-width: 1312px;
   margin: 0 auto;
-  padding: 0 clamp(16px, 4.44vw, 64px) 64px;
+  padding: 0 var(--kb-glass-gutter) 64px;
   zoom: var(--kb-board-scale, 1);
 }
 
 /* On the Main board's layout the column's gutters are the board's own 64px (the menu bar's are its 32px), drawn at its scale with the rest. */
 :where(:root[data-kb-layout='main']) .kb-glass-content {
-  padding-inline: 64px;
+  --kb-glass-gutter: 64px;
 }
 
 .kb-glass-content:focus {

@@ -11,16 +11,17 @@
  * The five poisons are the five refusals: a squeezed block (the phone My characters head as found,
  * a lead of 0px by 547px), an overflow (a panel 20px past the right edge, and the same inside a
  * scrolling track, which passes), a mismatched row (Cancel 44px and 18px beside Reveal 48px and
- * 21px), a cut control (a button whose top-right corner lies in its panel's 24px chamfer), and a
- * calm outside its box (a backing 32px outside its element on every side, the calm before the
- * inward backing).
+ * 21px), a cut control (a button whose top-right corner lies in its panel's 24px chamfer), and two
+ * for the calm: a calm cut (a 32px feather past the right edge of a column that clips, the phone
+ * Settings as found on main, where a 17px gutter cut it) and a calm over other content (a feather
+ * lying on a heading that stands in no calm). Two calms whose feathers overlap are not refused.
  */
 import { describe, expect, test } from 'vitest';
 import { judgeLayout, type LayoutFacts } from './glass-layout.ts';
 
 const SCREEN = 'My characters, on a phone';
 
-/** A phone screen that passes: a head, a row of two matching buttons, a button clear of its panel's cut, a calm inside its box. */
+/** A phone screen that passes: a head, a row of two matching buttons, a button clear of its panel's cut, a calm whose feather has room in the column that clips it. */
 const clean: LayoutFacts = {
   screen: SCREEN,
   viewport: { width: 390, height: 844, scrollWidth: 390 },
@@ -45,7 +46,7 @@ const clean: LayoutFacts = {
       panel: { path: 'main:nth-child(1) > section:nth-child(4)', rect: { x: 100, y: 200, width: 400, height: 200 }, polygon: [[100, 200], [476, 200], [500, 224], [500, 400], [100, 400]] },
     },
   ],
-  calms: [{ path: 'main:nth-child(1) > header:nth-child(1)', backing: { x: 16, y: 20, width: 358, height: 110 }, element: { x: 16, y: 20, width: 358, height: 110 } }],
+  calms: [{ path: 'main:nth-child(1) > header:nth-child(1)', backing: { x: 0, y: 4, width: 390, height: 142 }, element: { x: 16, y: 20, width: 358, height: 110 }, clips: [{ path: 'main:nth-child(1)', rect: { x: 0, y: 0, width: 390, height: 900 }, x: true, y: false }] }],
 };
 
 const refusals = (change: Partial<LayoutFacts>) => judgeLayout({ ...clean, ...change });
@@ -65,13 +66,13 @@ describe('the layout judgment', () => {
   });
 
   test('refuses a block narrower than its longest word, though not narrower than ten ems', () => {
-    const out = refusals({ blocks: [{ path: 'main > p.word', rect: { x: 0, y: 0, width: 200, height: 30 }, fontSize: 10, longestWord: 260, wraps: true, textWidth: 260 }] });
+    const out = refusals({ blocks: [{ path: 'main > p.word', rect: { x: 0, y: 600, width: 200, height: 30 }, fontSize: 10, longestWord: 260, wraps: true, textWidth: 260 }] });
     expect(out).toHaveLength(1);
     expect(out[0]).toContain('p.word');
   });
 
   test('refuses a one-line block whose text is wider than its own box', () => {
-    const out = refusals({ blocks: [{ path: 'main > span.kb-chip', rect: { x: 0, y: 0, width: 100, height: 20 }, fontSize: 10, longestWord: 40, wraps: false, textWidth: 180 }] });
+    const out = refusals({ blocks: [{ path: 'main > span.kb-chip', rect: { x: 0, y: 600, width: 100, height: 20 }, fontSize: 10, longestWord: 40, wraps: false, textWidth: 180 }] });
     expect(out).toHaveLength(1);
     expect(out[0]).toContain('span.kb-chip');
   });
@@ -183,16 +184,64 @@ describe('the layout judgment', () => {
     expect(refusals({ controls: [{ path: 'main > section > button.skewed', rect: { x: 386, y: 210, width: 80, height: 40 }, quad: clear, panel }] })).toEqual([]);
   });
 
-  test('refuses a calm whose backing lies 32px outside its element on every side', () => {
-    const el = { x: 16, y: 20, width: 358, height: 110 };
-    const out = refusals({ calms: [{ path: 'main:nth-child(1) > header:nth-child(1)', element: el, backing: { x: el.x - 32, y: el.y - 32, width: el.width + 64, height: el.height + 64 } }] });
+  /* The calm: a header at 16..374, its feather 16px (the phone's gutter) a side, in a column that clips sideways at 0..390. */
+  const headerPath = 'main:nth-child(1) > header:nth-child(1)';
+  const el = { x: 16, y: 20, width: 358, height: 110 };
+  const column = { path: 'main:nth-child(1)', rect: { x: 17, y: 0, width: 356, height: 900 }, x: true, y: false };
+
+  test('refuses a calm cut: a 32px feather past the right edge of the column that clips it', () => {
+    const out = refusals({ calms: [{ path: headerPath, element: { ...el, x: 17, width: 356 }, backing: { x: -15, y: -12, width: 420, height: 174 }, clips: [column] }] });
     expect(out).toHaveLength(1);
+    expect(out[0]).toContain('calm cut');
     expect(out[0]).toContain('header');
-    expect(out[0]).toContain('calm');
+    expect(out[0]).toContain('main');
+    expect(out[0]).toContain('right');
+    expect(out[0]).toContain(SCREEN);
   });
 
-  test('a calm inside its box, and a backing within a pixel of it, are not refused', () => {
-    const el = { x: 16, y: 20, width: 358, height: 110 };
-    expect(refusals({ calms: [{ path: 'header', element: el, backing: { x: 15.5, y: 20, width: 359, height: 110 } }] })).toEqual([]);
+  test('does not call a calm cut by an axis its ancestor does not clip, nor by a scroller its element is scrolled out of', () => {
+    const backing = { x: -15, y: -12, width: 420, height: 174 };
+    expect(refusals({ calms: [{ path: headerPath, element: { ...el, x: 17, width: 356 }, backing, clips: [{ ...column, rect: { ...column.rect, y: -100 }, x: false, y: true }] }] })).toEqual([]);
+    /* A calm in a track, wholly past the track's box, is not drawn there at all. */
+    expect(refusals({ calms: [{ path: headerPath, element: { x: 500, y: 20, width: 100, height: 40 }, backing: { x: 468, y: -12, width: 164, height: 104 }, clips: [{ path: 'main > ul', rect: { x: 0, y: 0, width: 390, height: 900 }, x: true, y: false }] }] })).toEqual([]);
+  });
+
+  test('a calm whose feather lies inside the column that clips it is not refused, nor one with no clipping ancestor', () => {
+    expect(refusals({ calms: [{ path: headerPath, element: el, backing: { x: 0, y: 4, width: 390, height: 142 }, clips: [{ ...column, rect: { x: 0, y: 0, width: 390, height: 900 } }] }] })).toEqual([]);
+    expect(refusals({ calms: [{ path: headerPath, element: el, backing: { x: -16, y: 4, width: 422, height: 142 }, clips: [] }] })).toEqual([]);
+  });
+
+  /* A heading that stands in no calm, 20px under the header's foot, inside the header's 16px feather. */
+  const heading = { path: 'main:nth-child(1) > h2:nth-child(2)', rect: { x: 16, y: 138, width: 200, height: 30 }, fontSize: 30, longestWord: 100, wraps: false, textWidth: 150 };
+  const calmed = { path: headerPath, element: el, backing: { x: 0, y: 4, width: 390, height: 142 }, clips: [] };
+
+  test('refuses a calm over other content: its feather lies on a heading that stands in no calm', () => {
+    const out = refusals({ blocks: [...clean.blocks, heading], calms: [calmed] });
+    expect(out).toHaveLength(1);
+    expect(out[0]).toContain('calm over other content');
+    expect(out[0]).toContain('header');
+    expect(out[0]).toContain('h2');
+    expect(out[0]).toContain(SCREEN);
+  });
+
+  test('refuses a calm over a control that stands in no calm', () => {
+    const control = { path: 'main:nth-child(1) > button:nth-child(2)', rect: { x: 16, y: 140, width: 100, height: 48 }, panel: null };
+    const out = refusals({ controls: [...clean.controls, control], calms: [calmed] });
+    expect(out).toHaveLength(1);
+    expect(out[0]).toContain('calm over other content');
+    expect(out[0]).toContain('button');
+  });
+
+  test('a heading clear of the feather, one inside this calm and one in another calm are not refused', () => {
+    expect(refusals({ blocks: [...clean.blocks, { ...heading, rect: { ...heading.rect, y: 150 } }], calms: [calmed] })).toEqual([]);
+    expect(refusals({ blocks: [...clean.blocks, { ...heading, path: `${headerPath} > h2:nth-child(3)`, rect: { ...heading.rect, y: 100 } }], calms: [calmed] })).toEqual([]);
+    const other = { path: 'main:nth-child(1) > section:nth-child(2)', element: { x: 16, y: 150, width: 300, height: 60 }, backing: { x: 0, y: 134, width: 332, height: 92 }, clips: [] };
+    expect(refusals({ blocks: [...clean.blocks, { ...heading, path: `${other.path} > h2:nth-child(1)` }], calms: [calmed, other] })).toEqual([]);
+  });
+
+  test('two calms whose feathers overlap are not refused: a staggered backing', () => {
+    const other = { path: 'main:nth-child(1) > section:nth-child(2)', element: { x: 16, y: 140, width: 300, height: 60 }, backing: { x: 0, y: 124, width: 332, height: 92 }, clips: [] };
+    const para = { path: `${other.path} > p:nth-child(1)`, rect: { x: 16, y: 140, width: 300, height: 60 }, fontSize: 21, longestWord: 60, wraps: true, textWidth: 290 };
+    expect(refusals({ blocks: [...clean.blocks, para], calms: [calmed, other] })).toEqual([]);
   });
 });

@@ -8,7 +8,7 @@
  */
 import { drawn, pseudoBox } from './glass-text-page.ts';
 import type {
-  BlockFact, CalmFact, ControlFact, ControlInRow, LayoutFacts, Located, PanelFact, RowFact,
+  BlockFact, CalmFact, ClipFact, ControlFact, ControlInRow, LayoutFacts, Located, PanelFact, RowFact,
 } from './glass-layout.ts';
 import type { Box } from './glass-text.ts';
 
@@ -278,11 +278,30 @@ function rowsOf(all: readonly Element[]): RowFact[] {
   return rows;
 }
 
+/** The ancestors of `el` that clip overflow (hidden, clip, scroll or auto on an axis), each as its padding box, which is where the clip lies. */
+function clipsOf(el: Element): ClipFact[] {
+  const out: ClipFact[] = [];
+  for (let a = el.parentElement; a && a !== document.documentElement; a = a.parentElement) {
+    const s = getComputedStyle(a);
+    const x = s.overflowX !== 'visible';
+    const y = s.overflowY !== 'visible';
+    if (!x && !y) continue;
+    const r = a.getBoundingClientRect();
+    const z = zoomOf(a);
+    const n = (v: string) => (parseFloat(v) || 0) * z;
+    out.push({
+      path: pathOf(a), x, y,
+      rect: { x: r.left + n(s.borderLeftWidth), y: r.top + n(s.borderTopWidth), width: r.width - n(s.borderLeftWidth) - n(s.borderRightWidth), height: r.height - n(s.borderTopWidth) - n(s.borderBottomWidth) },
+    });
+  }
+  return out;
+}
+
 function calmOf(el: Element): CalmFact | null {
   const ps = getComputedStyle(el, '::before');
   if (!drawn(ps)) return null;
   const { scale: _scale, ...backing } = pseudoBox(el, ps);
-  return { path: pathOf(el), backing, element: toBox(el.getBoundingClientRect()) };
+  return { path: pathOf(el), backing, element: toBox(el.getBoundingClientRect()), clips: clipsOf(el) };
 }
 
 /** Everything the judgment reads, from the page as it stands. */

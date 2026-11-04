@@ -103,13 +103,18 @@ describe('the calm is drawn outside its element', () => {
 
   test('its backing reaches the feather past the element\'s box', () => {
     /* (The rule inside `@supports not (mask-image)` sets inset 0 on the same selector: no feather to reach there.) */
-    expect(squash(calm)).toContain('inset: calc(var(--kb-glass-calm-feather) * -1);');
+    expect(squash(calm)).toContain('inset: calc(var(--kb-calm-feather) * -1);');
   });
   test('the element adds no padding of its own', () => {
     for (const sel of ['.kb-calm', '.kb-calm.kb-calm']) expect(declsOf(calm, sel).padding).toBeUndefined();
   });
   test('the mask ramps over the same feather the backing reaches', () => {
-    expect(calm).toMatch(/var\(--kb-glass-calm-feather\),/);
-    expect(calm).not.toMatch(/--kb-calm-/);
+    expect(calm).toMatch(/var\(--kb-calm-feather\),/);
+    expect(calm).not.toMatch(/var\(--kb-glass-calm-feather\),/);
+  });
+  test('each calm resolves its feather from the theme\'s, and on the phone the smaller of it and the column\'s gutter', () => {
+    const phone = ':where(:root[data-kb-layout=\'phone\'])';
+    expect(declsOf(calm, '.kb-calm')['--kb-calm-feather']).toBe('var(--kb-glass-calm-feather)');
+    expect(declsOf(calm, `${phone} .kb-calm`)['--kb-calm-feather']).toBe('min(var(--kb-glass-calm-feather), var(--kb-glass-gutter, 32px))');
   });
 });

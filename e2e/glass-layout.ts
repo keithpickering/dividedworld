@@ -4,7 +4,7 @@ import type { Box } from './glass-text.ts';
  * The layout check's judgment: what e2e/glass-layout.spec.ts makes of the facts
  * e2e/glass-layout-page.ts gathers from a screen at one viewport and one text size. Pure, as
  * `judge` in e2e/glass-text.ts is, so e2e/glass-layout.test.ts drives each refusal red on plain
- * data. It refuses five things, each named with the element's selector path and the screen:
+ * data. It refuses six things, each named with the element's selector path and the screen:
  *
  *   1. a squeezed block: an element holding text that wraps, narrower than 10 * its font size, or
  *      any element narrower than its longest word, or one whose widest line of text is wider than
@@ -15,8 +15,12 @@ import type { Box } from './glass-text.ts';
  *      line, whose heights (to within 1px) or computed type sizes differ;
  *   4. a cut control: a control whose box crosses into the cut corner of the clip-path polygon of
  *      the panel it sits in;
- *   5. a calm outside its box: a `.kb-calm` backing whose drawn rect goes past its element's
- *      border box.
+ *   5. a calm cut: a `.kb-calm` backing whose drawn rect (its feather included) crosses the box
+ *      of an ancestor that clips overflow, on an axis it clips, where the calm's own element lies
+ *      inside that box: the feather is cut on a straight line (the phone Settings, on main);
+ *   6. a calm over other content: a `.kb-calm` backing whose drawn rect overlaps the box of a text
+ *      block or a control that is neither inside this calm nor inside another calm. Two calms'
+ *      feathers meeting is a staggered backing and is not refused.
  *
  * The decisions the gatherer makes, so a reader of a refusal knows what was and was not looked at
  * (they are made in the page, where the styles are; they are written here because they are the
@@ -68,7 +72,11 @@ export interface PanelFact extends Located { readonly polygon: readonly (readonl
 /** A control's box, as the bounding rect and, where it is skewed, the four corners it is drawn at; and the nearest panel that clips what is in it. */
 export interface ControlFact extends Located { readonly quad?: readonly (readonly [number, number])[]; readonly panel: PanelFact | null }
 
-export interface CalmFact { readonly path: string; readonly backing: Box; readonly element: Box }
+/** An ancestor that clips overflow: its box, and the axes it clips on. */
+export interface ClipFact extends Located { readonly x: boolean; readonly y: boolean }
+
+/** A calm: its drawn backing (feather included), its element's border box, and the ancestors that clip it. */
+export interface CalmFact { readonly path: string; readonly backing: Box; readonly element: Box; readonly clips: readonly ClipFact[] }
 
 export interface LayoutFacts {
   readonly screen: string;
@@ -168,15 +176,36 @@ export function judgeLayout(facts: LayoutFacts): string[] {
     if (deep.length > 0) at('cut control', c.path, `its box at ${deep.map(([x, y]) => `${px(x)},${px(y)} (${where(r, x, y)})`).join(' ')} is cut off by ${shortPath(p.path)}`);
   }
 
-  /* 5. a calm outside its box */
+  /* 5. a calm cut */
   for (const m of facts.calms) {
     const b = m.backing;
     const e = m.element;
-    const over = {
-      left: e.x - b.x, top: e.y - b.y, right: b.x + b.width - (e.x + e.width), bottom: b.y + b.height - (e.y + e.height),
-    };
-    const sides = Object.entries(over).filter(([, v]) => v > EDGE).map(([k, v]) => `${k} ${px(v)}`);
-    if (sides.length > 0) at('calm outside its box', m.path, `its backing goes past the element's border box by ${sides.join(', ')}`);
+    for (const c of m.clips) {
+      const r = c.rect;
+      const sides: string[] = [];
+      /* Only where the element itself is in the clipper's box on that axis: a calm scrolled out of a track is not drawn there, a cut feather is. */
+      if (c.x && e.x >= r.x - EDGE && e.x + e.width <= r.x + r.width + EDGE) {
+        if (r.x - b.x > EDGE) sides.push(`left ${px(r.x - b.x)}`);
+        if (b.x + b.width - (r.x + r.width) > EDGE) sides.push(`right ${px(b.x + b.width - (r.x + r.width))}`);
+      }
+      if (c.y && e.y >= r.y - EDGE && e.y + e.height <= r.y + r.height + EDGE) {
+        if (r.y - b.y > EDGE) sides.push(`top ${px(r.y - b.y)}`);
+        if (b.y + b.height - (r.y + r.height) > EDGE) sides.push(`bottom ${px(b.y + b.height - (r.y + r.height))}`);
+      }
+      if (sides.length > 0) at('calm cut', m.path, `its backing reaches past the box of ${shortPath(c.path)}, which clips it, by ${sides.join(', ')}`);
+    }
+  }
+
+  /* 6. a calm over other content */
+  const within = (path: string, of: string) => path === of || path.startsWith(`${of} > `);
+  const overlaps = (a: Box, b: Box) => Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x) > EDGE && Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y) > EDGE;
+  const others: readonly Located[] = [...facts.blocks, ...facts.controls];
+  for (const m of facts.calms) {
+    for (const o of others) {
+      /* Inside this calm, inside another, or holding this calm: the calm is under it or it is under the calm. */
+      if (within(o.path, m.path) || within(m.path, o.path) || facts.calms.some((c) => within(o.path, c.path))) continue;
+      if (overlaps(m.backing, o.rect)) at('calm over other content', m.path, `its backing, ${px(m.backing.width)} by ${px(m.backing.height)} with its feather, lies on ${shortPath(o.path)}, which is in no calm`);
+    }
   }
 
   return out;

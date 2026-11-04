@@ -8,7 +8,7 @@ import type * as Gatherer from './glass-layout-page.ts';
  * The layout check (docs/plans/2026-11-04-glass-polish-design.md, section 3): every glass screen
  * and dialog (e2e/glass-screens.ts), at a phone (390×844), a tablet (834×1112) and a desktop
  * (1440×900), at each text size the preference offers (100, 125, 150, 200%), laid out as the browser
- * lays it out, and judged by e2e/glass-layout.ts, which says the five things it refuses and
+ * lays it out, and judged by e2e/glass-layout.ts, which says the six things it refuses and
  * e2e/glass-layout.test.ts drives each red on plain data. The facts are gathered in the page by
  * e2e/glass-layout-page.ts, bundled here for the browser.
  *

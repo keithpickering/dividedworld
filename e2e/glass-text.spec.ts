@@ -101,10 +101,14 @@ for (const [label, viewport] of SIZES) {
  * layout's own where the theme gives one; read as the browser computes it, which an inline root
  * style must not outrank.
  */
-for (const [label, viewport, feather] of [['1440 wide', { width: 1440, height: 900 }, 32], ['the phone, 390 wide', { width: 390, height: 844 }, 32]] as const) {
-  test(`the calm adds no padding and its backing reaches ${feather}px past the element, at ${label}`, async ({ page }) => {
+for (const [label, viewport, phone] of [['1440 wide', { width: 1440, height: 900 }, false], ['the phone, 390 wide', { width: 390, height: 844 }, true]] as const) {
+  test(`the calm adds no padding and its backing reaches the feather past the element, at ${label}`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await open(page, PAGES.find((p) => p.path === '/season?tab=rankings')!);
+    /* 32px, the theme's; on the phone the smaller of it and the column's gutter, so the column's clip never cuts it. */
+    const gutter = await page.locator('.kb-glass-content').evaluate((el) => parseFloat(getComputedStyle(el).paddingLeft));
+    const feather = phone ? Math.min(32, gutter) : 32;
+    if (phone) expect(feather, 'the phone gutter is under the 32px feather').toBeLessThan(32);
     for (const sel of ['.kb-rankings-lead.kb-calm', '.kb-rankings-board.kb-calm']) {
       const got = await page.locator(sel).evaluate((el) => {
         const s = getComputedStyle(el);
@@ -112,7 +116,7 @@ for (const [label, viewport, feather] of [['1440 wide', { width: 1440, height: 9
         return { padding: [s.paddingTop, s.paddingRight, s.paddingBottom, s.paddingLeft], inset: [b.top, b.right, b.bottom, b.left] };
       });
       expect(got.padding, `${sel} padding`).toEqual(['0px', '0px', '0px', '0px']);
-      expect(got.inset, `${sel} backing`).toEqual([`${-feather}px`, `${-feather}px`, `${-feather}px`, `${-feather}px`]);
+      expect(got.inset.map(parseFloat).map((v) => Math.round(v * 100) / 100), `${sel} backing`).toEqual(Array(4).fill(-Math.round(feather * 100) / 100));
     }
   });
 }
