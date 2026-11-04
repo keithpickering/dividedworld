@@ -1,0 +1,145 @@
+/*
+ * The glass's shared parts: the page head and the skewed button with its row (PageHead.tsx,
+ * Button.tsx). The measure of a control is the control tokens' (tokens.css); the phone layout's
+ * values are swapped in on the element, through a `:where` rule, because the root's tokens the
+ * instance's theme writes inline cannot be outranked by any stylesheet rule but an element's own.
+ */
+
+/* ---- the page head ---- */
+
+.kb-page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 28px;
+  row-gap: 4px;
+}
+
+.kb-page-head-eyebrow {
+  flex: 0 0 100%;
+  margin: 0;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: var(--kb-glass-control-spacing);
+  text-transform: uppercase;
+  color: var(--kb-glass-neon-text);
+}
+
+/* The title keeps its own width; the lead takes the rest, and goes under it when that is under 18em. */
+.kb-page-head-title {
+  flex: 0 1 auto;
+  min-width: min(100%, max-content);
+  margin: 0;
+  font-family: var(--kb-glass-font-display);
+  font-size: var(--kb-glass-size-display-m);
+  font-weight: 400;
+  color: var(--kb-glass-text-hi);
+}
+
+.kb-page-head-count {
+  font-size: var(--kb-glass-size-body);
+  color: var(--kb-glass-text-2);
+}
+
+.kb-page-head-lead {
+  flex: 1 1 18em;
+  margin: 0;
+  font-size: var(--kb-glass-size-body);
+  color: var(--kb-glass-text-2);
+}
+
+.kb-page-head > .kb-button-row {
+  flex: 0 0 100%;
+  margin-top: 8px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-page-head-title { font-size: var(--kb-glass-size-phone-display); }
+:where(:root[data-kb-layout='phone']) :is(.kb-page-head-lead, .kb-page-head-count, .kb-page-head-eyebrow) { font-size: var(--kb-glass-size-phone-body); }
+
+/* ---- the button row ---- */
+
+.kb-button-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: var(--kb-glass-control-gap);
+}
+.kb-button-row[data-kb-align='end'] { justify-content: flex-end; }
+.kb-button-row[data-kb-align='center'] { justify-content: center; }
+
+/* ---- the button ---- */
+
+.kb-glass-button {
+  --kb-button-height: var(--kb-glass-control-m-height);
+  --kb-button-pad: var(--kb-glass-control-m-pad);
+  --kb-button-size: var(--kb-glass-control-m-size);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: var(--kb-button-height);
+  padding: 0 var(--kb-button-pad);
+  border: 1px solid transparent;
+  background: transparent;
+  font: 800 var(--kb-button-size) / 1 var(--kb-glass-font-body);
+  letter-spacing: var(--kb-glass-control-spacing);
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.kb-glass-button[data-kb-size='s'] {
+  --kb-button-height: var(--kb-glass-control-s-height);
+  --kb-button-pad: var(--kb-glass-control-s-pad);
+  --kb-button-size: var(--kb-glass-control-s-size);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-glass-button {
+  --kb-button-height: var(--kb-glass-control-m-height-phone);
+  --kb-button-pad: var(--kb-glass-control-m-pad-phone);
+  --kb-button-size: var(--kb-glass-control-m-size-phone);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-glass-button[data-kb-size='s'] {
+  --kb-button-height: var(--kb-glass-control-s-height-phone);
+  --kb-button-pad: var(--kb-glass-control-s-pad-phone);
+  --kb-button-size: var(--kb-glass-control-s-size-phone);
+}
+
+/* Secondary: outlined. */
+.kb-glass-button[data-kb-kind='secondary'] {
+  border-color: color-mix(in srgb, var(--kb-glass-text) 60%, transparent);
+  color: var(--kb-glass-text);
+}
+
+/* Primary: the neon filled, with its glow. */
+.kb-glass-button[data-kb-kind='primary'] {
+  border-color: var(--kb-glass-neon);
+  background: var(--kb-glass-neon);
+  color: var(--kb-glass-ink-neon);
+  box-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 70%, transparent);
+}
+
+/* Quiet: text only. */
+.kb-glass-button[data-kb-kind='quiet'] {
+  color: var(--kb-glass-text-2);
+}
+
+.kb-glass-button:focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+}
+
+/*
+ * A control that cannot be pressed yet is drawn as the glass draws a Turn that opens later: the
+ * waiting token on a dashed edge (60% of it, past the 3:1 a border needs), never translucent.
+ */
+.kb-glass-button:disabled,
+.kb-glass-button[aria-disabled='true'] {
+  border: 1px dashed color-mix(in srgb, var(--kb-glass-neon-text) 60%, transparent);
+  background: transparent;
+  color: var(--kb-glass-neon-text);
+  box-shadow: none;
+  cursor: not-allowed;
+}
