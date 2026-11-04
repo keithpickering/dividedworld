@@ -281,20 +281,85 @@ for (const [label, viewport] of SIZES) {
 /*
  * The calm is drawn inside its element (engine/ui/glass/calm.css): as the browser computes it, the
  * padding is the feather plus the pad on the main layout (32 + 12) and the phone layout's (20 + 10),
- * which an inline root style must not outrank, and the backing is the element's box.
+ * which an inline root style must not outrank, and the backing is the element's box. A flush
+ * calm's words stand at its column's edge, its margin having taken the padding back.
  */
 for (const [label, viewport, padding] of [['1440 wide', { width: 1440, height: 900 }, 44], ['the phone, 390 wide', { width: 390, height: 844 }, 30]] as const) {
   test(`the calm's padding is ${padding}px and its backing is inset 0, at ${label}`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await open(page, PAGES.find((p) => p.path === '/season?tab=rankings')!);
-    const got = await page.locator('.kb-rankings-lead.kb-calm').evaluate((el) => {
-      const s = getComputedStyle(el);
-      const b = getComputedStyle(el, '::before');
-      return { left: s.paddingLeft, top: s.paddingTop, inset: [b.top, b.right, b.bottom, b.left] };
+    /* One flush calm (the lead) and one that is not (the board's wrapper). */
+    for (const sel of ['.kb-rankings-lead.kb-calm', '.kb-rankings-board.kb-calm']) {
+      const got = await page.locator(sel).evaluate((el) => {
+        const s = getComputedStyle(el);
+        const b = getComputedStyle(el, '::before');
+        return { left: s.paddingLeft, top: s.paddingTop, inset: [b.top, b.right, b.bottom, b.left] };
+      });
+      expect(got, sel).toEqual({ left: `${padding}px`, top: `${padding}px`, inset: ['0px', '0px', '0px', '0px'] });
+    }
+  });
+
+  test(`a flush calm's words stand at its column's left edge, at ${label}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await open(page, PAGES.find((p) => p.path === '/season?tab=rankings')!);
+    const edges = await page.evaluate(() => {
+      const lead = document.querySelector('.kb-rankings-lead.kb-calm')!;
+      const range = document.createRange();
+      range.selectNodeContents(lead);
+      /* The column: the lead's parent's content box, where an uncalmed block starts. */
+      const parent = lead.parentElement!;
+      const ps = getComputedStyle(parent);
+      return { words: range.getBoundingClientRect().left, column: parent.getBoundingClientRect().left + parseFloat(ps.paddingLeft) + parseFloat(ps.borderLeftWidth) };
     });
-    expect(got).toEqual({ left: `${padding}px`, top: `${padding}px`, inset: ['0px', '0px', '0px', '0px'] });
+    expect(Math.abs(edges.words - edges.column)).toBeLessThanOrEqual(1);
   });
 }
+
+/*
+ * The HUD's geometry is the one it had before the calm moved inside its box (main at 82599ef, read
+ * at 1440 and 390): the calms on its plate, aura and swap are outset, and the clock and the
+ * picker's labels take their padding back in negative margins, which must not move a word, change
+ * the glass's height or take a tap from the controls beside them.
+ */
+test.describe('the HUD keeps its geometry', () => {
+  const read = (page: Page) => page.evaluate(() => {
+    const top = document.querySelector('.kb-hud')!.getBoundingClientRect().top;
+    const at = (sel: string) => { const b = document.querySelector(sel)!.getBoundingClientRect(); return [b.left, b.top - top, b.width, b.height].map(Math.round); };
+    return { height: Math.round(document.querySelector('.kb-hud')!.getBoundingClientRect().height), avatar: at('.kb-hud-avatar'), select: at('.kb-hud-select'), aura: at('.kb-hud-aura'), orbs: at('.kb-hud-orbs'), clock: at('.kb-hud-clock-time') };
+  });
+  test('at 1440', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await open(page, { name: 'HUD', path: '/b/general' });
+    expect(await read(page)).toEqual({ height: 212, avatar: [59, 72, 84, 84], select: [256, 129, 151, 52], aura: [500, 10, 452, 150], orbs: [500, 47, 452, 113], clock: [980, 59, 134, 34] });
+  });
+  test('at 390', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await open(page, { name: 'HUD', path: '/b/general' });
+    const g = await read(page);
+    expect({ height: g.height, avatar: g.avatar, select: g.select, aura: g.aura, orbs: g.orbs }).toEqual({ height: 124, avatar: [16, 23, 44, 44], select: [70, 32, 96, 48], aura: [16, 88, 358, 30], orbs: [16, 88, 358, 30] });
+  });
+  for (const [label, viewport] of SIZES) {
+    test(`a calm's padding box does not take the taps of the Menu control or the picker's kinds, at ${label}`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      await open(page, { name: 'HUD', path: '/b/general' });
+      const tapped = (sel: string) => page.locator(sel).first().evaluate((el) => {
+        const b = el.getBoundingClientRect();
+        const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+        return hit !== null && el.contains(hit);
+      });
+      expect(await tapped('.kb-hud-menu'), 'Menu').toBe(true);
+      expect(await tapped('.kb-hud-hand'), 'Hand').toBe(true);
+      await open(page, OVERLAYS.find((o) => o.name.startsWith('The React picker'))!);
+      const kinds = await page.locator('.kb-picker-kind').evaluateAll((els) => els.map((el) => {
+        const b = el.getBoundingClientRect();
+        const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+        return hit !== null && el.contains(hit);
+      }));
+      expect(kinds.length).toBeGreaterThan(0);
+      expect(kinds.filter((ok) => !ok)).toEqual([]);
+    });
+  }
+});
 
 /*
  * High contrast (Settings › Accessibility; the design's section 4.5): every line of glass text
@@ -477,7 +542,7 @@ test.describe('the poisons, planted in a real page', () => {
   test('a calm moved off its text', async ({ page }) => {
     await open(page, rankings);
     await plant(page, '.kb-rankings-lead.kb-calm::before { transform: translateX(900px); }');
-    /* The page recipe's full worst, 0.231, is over the lead's ceiling, so the calm is still what it needs. */
+    /* The page recipe's full worst, 0.231, is over the lead's ceiling, so the calm is still what it needs. The words stand 12px (the pad) inside the interior, so a backing moved 900px off them lies 888px outside it. */
     expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-rankings-lead \(surface rankings\): lies outside its calm's interior .* by 888px, and its recipe's full worst, 0\.231, is not under the ceiling 0\.152/u));
   });
 

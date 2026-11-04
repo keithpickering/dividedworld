@@ -228,6 +228,8 @@
 /* A label stands where it did: its calm's padding is taken back above and below it, as at its sides (flush, Picker.tsx). */
 .kb-picker-label.kb-calm {
   margin-block: calc(var(--kb-glass-calm-inset) * -1);
+  /* Its padding box lies over the kind buttons beside it; it holds no control, so it takes no tap. */
+  pointer-events: none;
 }
 
 .kb-picker:not([data-kb-place='sheet']) .kb-picker-label.kb-calm::before {

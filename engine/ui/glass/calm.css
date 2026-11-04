@@ -49,6 +49,20 @@
   margin-inline: calc(var(--kb-glass-calm-inset) * -1);
 }
 
+/*
+ * An outset calm keeps the older drawing: no padding, and the backing reaches its feather past the
+ * element. It is for a placed element whose box cannot take padding without moving what is set
+ * inside it (the HUD's plate, aura and swap, whose avatar, word column and 124px phone glass are
+ * set by their boxes), so its words stand on the interior as before.
+ */
+.kb-calm.kb-calm[data-kb-calm='outset'] {
+  padding: 0;
+}
+
+.kb-calm[data-kb-calm='outset']::before {
+  inset: calc(var(--kb-calm-feather) * -1);
+}
+
 .kb-calm::before {
   content: '';
   position: absolute;

@@ -136,10 +136,11 @@
 }
 
 /*
- * The calms under the HUD's words reach their feather past their blocks (calm.css), which would
- * darken the page beside the tab and above it. The bar is cut to the glass's own shape, the tab's
- * polygon moved by where the bar starts in the glass (Hud.tsx measures it), so a calm stops where
- * the glass does. On the phone the glass is a plain band and clips what it holds.
+ * The outset calms under the HUD's words (the plate's, the aura's, the swap's; calm.css) reach their
+ * feather past their blocks, which would darken the page beside the tab and above it. The bar is
+ * cut to the glass's own shape, the tab's polygon moved by where the bar starts in the glass
+ * (Hud.tsx measures it), so a calm stops where the glass does. On the phone the glass is a plain
+ * band and clips what it holds.
  */
 :where(:root:not([data-kb-layout='phone'])) .kb-hud-bar {
   --kb-hud-cut: var(--kb-hud-bar-shift, 0px);
@@ -427,6 +428,8 @@
   max-width: 240px;
   /* The clock stands where it did: its calm's padding is taken back above and below it, as at its sides (flush, Hud.tsx). */
   margin: calc(1.875rem - var(--kb-glass-calm-inset)) 0 calc(var(--kb-glass-calm-inset) * -1);
+  /* Its padding box lies over the Menu and the hand beside it; it holds no control, so it takes no tap. */
+  pointer-events: none;
 }
 
 .kb-hud-clock-label {

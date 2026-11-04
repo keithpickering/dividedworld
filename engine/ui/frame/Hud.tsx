@@ -305,7 +305,7 @@ export function Hud() {
             <polyline className="kb-glass-seam-core" points={seam} />
           </svg>
           <div className="kb-hud-bar">
-            <div ref={plate} className={`kb-hud-plate${signedIn && player.loaded && hud ? ' kb-hud-plate--cast kb-calm' : ''}`}>
+            <div ref={plate} className={`kb-hud-plate${signedIn && player.loaded && hud ? ' kb-hud-plate--cast kb-calm' : ''}`} data-kb-calm="outset">
               <div className="kb-hud-plate-in">
                 {!signedIn ? (
                   <Link to={signInHref(location.path, searchOf(location.query))} className="kb-hud-sign-in kb-glass-cut-button">Sign in</Link>
@@ -333,7 +333,7 @@ export function Hud() {
                         {wide && hiddenMark}
                       </span>
                     </span>
-                    <span className="kb-hud-swap kb-calm" data-kb-calm="flush">
+                    <span className="kb-hud-swap kb-calm" data-kb-calm="outset">
                       <label htmlFor={selectId} className="kb-hud-swap-label">{wide ? 'Swap mask' : 'Posting as'}</label>
                       {/* The phone's HUD has no name line: the mark stands by the mask it names. */}
                       {!wide && hiddenMark}
@@ -347,7 +347,7 @@ export function Hud() {
               </div>
             </div>
             {signedIn && (
-              <div ref={aura} className="kb-hud-aura kb-calm">
+              <div ref={aura} className="kb-hud-aura kb-calm" data-kb-calm="outset">
                 <p className="kb-hud-aura-legend"><span>Aura</span><span className="kb-hud-aura-ghost">Ghost = estimate until settlement</span></p>
                 {player.wallet && (
                   <Link
