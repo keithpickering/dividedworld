@@ -279,6 +279,24 @@ for (const [label, viewport] of SIZES) {
 }
 
 /*
+ * The calm is drawn inside its element (engine/ui/glass/calm.css): as the browser computes it, the
+ * padding is the feather plus the pad on the main layout (32 + 12) and the phone layout's (20 + 10),
+ * which an inline root style must not outrank, and the backing is the element's box.
+ */
+for (const [label, viewport, padding] of [['1440 wide', { width: 1440, height: 900 }, 44], ['the phone, 390 wide', { width: 390, height: 844 }, 30]] as const) {
+  test(`the calm's padding is ${padding}px and its backing is inset 0, at ${label}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await open(page, PAGES.find((p) => p.path === '/season?tab=rankings')!);
+    const got = await page.locator('.kb-rankings-lead.kb-calm').evaluate((el) => {
+      const s = getComputedStyle(el);
+      const b = getComputedStyle(el, '::before');
+      return { left: s.paddingLeft, top: s.paddingTop, inset: [b.top, b.right, b.bottom, b.left] };
+    });
+    expect(got).toEqual({ left: `${padding}px`, top: `${padding}px`, inset: ['0px', '0px', '0px', '0px'] });
+  });
+}
+
+/*
  * High contrast (Settings › Accessibility; the design's section 4.5): every line of glass text
  * stands on solid ground (engine/ui/glass/contrast.css), with the high key on the root, so each
  * line is also held to the high key's colors. It is chosen as a player chooses it, by keyboard

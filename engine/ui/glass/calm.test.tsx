@@ -106,17 +106,28 @@ describe('the calm is drawn inside its element', () => {
   test('its backing is the element\'s box, not the box grown by the feather', () => {
     expect(declsOf(calm, '.kb-calm::before').inset).toBe('0');
   });
+  test('the element resolves its own feather and pad, the phone layout\'s on the phone, so no root style outranks them', () => {
+    expect(declsOf(calm, '.kb-calm')['--kb-calm-feather']).toBe('var(--kb-glass-calm-feather)');
+    expect(declsOf(calm, '.kb-calm')['--kb-calm-pad']).toBe('var(--kb-glass-calm-pad)');
+    expect(declsOf(calm, `${phone} .kb-calm`)['--kb-calm-feather']).toBe('var(--kb-glass-calm-feather-phone)');
+    expect(declsOf(calm, `${phone} .kb-calm`)['--kb-calm-pad']).toBe('var(--kb-glass-calm-pad-phone)');
+  });
   test('the element\'s padding is the feather plus the pad', () => {
     const d = declsOf(calm, '.kb-calm.kb-calm');
-    expect(d['--kb-glass-calm-inset']).toBe('calc(var(--kb-glass-calm-feather) + var(--kb-glass-calm-pad))');
+    expect(d['--kb-glass-calm-inset']).toBe('calc(var(--kb-calm-feather) + var(--kb-calm-pad))');
     expect(d.padding).toBe('var(--kb-glass-calm-inset)');
+  });
+  test('the mask ramps over the element\'s feather', () => {
+    expect(calm).not.toMatch(/var\(--kb-glass-calm-feather\)\s*,/);
   });
   test('a flush heading takes back the padding in its margin', () => {
     expect(declsOf(calm, ".kb-calm.kb-calm[data-kb-calm='flush']")['margin-inline']).toBe('calc(var(--kb-glass-calm-inset) * -1)');
   });
-  test('the main layout\'s pad is 12px; the phone layout\'s feather is 20px and its pad 10px', () => {
-    expect(declsOf(tokens, ':root')['--kb-glass-calm-pad']).toBe('12px');
-    expect(declsOf(tokens, phone)['--kb-glass-calm-feather']).toMatch(/^20px\b/);
-    expect(declsOf(tokens, phone)['--kb-glass-calm-pad']).toBe('10px');
+  test('the tokens: 32px feather and 12px pad; the phone\'s 20px and 10px', () => {
+    const root = declsOf(tokens, ':root');
+    expect(root['--kb-glass-calm-pad']).toBe('12px');
+    expect(root['--kb-glass-calm-feather-phone']).toBe('20px');
+    expect(root['--kb-glass-calm-pad-phone']).toBe('10px');
+    expect(tokens).not.toMatch(/!important/);
   });
 });

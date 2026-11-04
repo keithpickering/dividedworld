@@ -61,13 +61,7 @@
   --kb-glass-calm-feather: 32px;
   /* The solid calm between the feather and the text. */
   --kb-glass-calm-pad: 12px;
-}
-
-/*
- * The phone's calm is tighter. applyGlass sets the theme's feather on the root as an inline style,
- * which only !important outranks.
- */
-:where(:root[data-kb-layout='phone']) {
-  --kb-glass-calm-feather: 20px !important;
-  --kb-glass-calm-pad: 10px;
+  /* The phone layout's tighter calm; calm.css has each calm resolve these on the phone. */
+  --kb-glass-calm-feather-phone: 20px;
+  --kb-glass-calm-pad-phone: 10px;
 }

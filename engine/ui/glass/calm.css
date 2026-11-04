@@ -8,12 +8,24 @@
  * the root, unless the surface's recipe has its own, which the surface sets on its element
  * (surfaceCalm, apply.ts).
  *
- * A browser with no mask-image gets a hard-edged panel of the same backing: the edge is not
- * feathered, and the words are as legible.
+ * A browser with no mask-image draws the backing at full strength to its edge, with no feather; the
+ * words stand on the same ground and are as legible.
+ *
+ * Each calm resolves its own feather and pad (`--kb-calm-feather`, `--kb-calm-pad`) from the root's
+ * tokens, the phone layout's on the phone. The root's feather is written inline by applyGlass from
+ * the instance's theme, which no stylesheet rule outranks; a property set on the element itself is
+ * not that root property, so the phone's values win without `!important`.
  */
 .kb-calm {
   position: relative;
   isolation: isolate;
+  --kb-calm-feather: var(--kb-glass-calm-feather);
+  --kb-calm-pad: var(--kb-glass-calm-pad);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-calm {
+  --kb-calm-feather: var(--kb-glass-calm-feather-phone);
+  --kb-calm-pad: var(--kb-glass-calm-pad-phone);
 }
 
 /*
@@ -24,7 +36,7 @@
  * full calm), though not a phone or text-size rule written with `:where`.
  */
 .kb-calm.kb-calm {
-  --kb-glass-calm-inset: calc(var(--kb-glass-calm-feather) + var(--kb-glass-calm-pad));
+  --kb-glass-calm-inset: calc(var(--kb-calm-feather) + var(--kb-calm-pad));
   padding: var(--kb-glass-calm-inset);
 }
 
@@ -46,12 +58,12 @@
   background: color-mix(in srgb, var(--kb-glass-ground) calc(var(--kb-glass-calm-opacity) * 100%), transparent);
   /* Alpha is all a mask reads: the edge ramps over the feather on each axis, and the axes intersect. */
   -webkit-mask-image:
-    linear-gradient(to right, transparent, currentColor var(--kb-glass-calm-feather), currentColor calc(100% - var(--kb-glass-calm-feather)), transparent),
-    linear-gradient(to bottom, transparent, currentColor var(--kb-glass-calm-feather), currentColor calc(100% - var(--kb-glass-calm-feather)), transparent);
+    linear-gradient(to right, transparent, currentColor var(--kb-calm-feather), currentColor calc(100% - var(--kb-calm-feather)), transparent),
+    linear-gradient(to bottom, transparent, currentColor var(--kb-calm-feather), currentColor calc(100% - var(--kb-calm-feather)), transparent);
   -webkit-mask-composite: source-in;
   mask-image:
-    linear-gradient(to right, transparent, currentColor var(--kb-glass-calm-feather), currentColor calc(100% - var(--kb-glass-calm-feather)), transparent),
-    linear-gradient(to bottom, transparent, currentColor var(--kb-glass-calm-feather), currentColor calc(100% - var(--kb-glass-calm-feather)), transparent);
+    linear-gradient(to right, transparent, currentColor var(--kb-calm-feather), currentColor calc(100% - var(--kb-calm-feather)), transparent),
+    linear-gradient(to bottom, transparent, currentColor var(--kb-calm-feather), currentColor calc(100% - var(--kb-calm-feather)), transparent);
   mask-composite: intersect;
 }
 
