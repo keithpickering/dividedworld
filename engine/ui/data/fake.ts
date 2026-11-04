@@ -24,7 +24,7 @@ import { atOrBelow, basePrice, postTarget, casterMessage, decidePlay, decideSet,
 import { sameName } from '../../rules/names.ts';
 import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
-import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
+import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
@@ -628,6 +628,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** `within` (0005): text that is something and no longer than the setting, in the server's words. */
   const within = (field: string, value: string, most: number): string | null =>
     /^[\s\u200b-\u200d\u2060]*$/u.test(value) ? `${field} is empty` : [...value].length > most ? `${field} is longer than ${most} characters` : null;
+  const contactEdge = new RegExp(`^[${CONTACT_WS}]+|[${CONTACT_WS}]+$`, 'gu');
+  const contactSpaced = new RegExp(`[${CONTACT_WS}]`, 'u');
   /** How players reach the admins (the setting `adminContact`); none until an admin sets it. */
   let contact: readonly ContactLink[] = [];
   /**
@@ -646,14 +648,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const e = row as Record<string, unknown>;
       if (e['label'] != null && typeof e['label'] !== 'string') return refuse(`row ${n} has a label that is text`);
       if (e['href'] != null && typeof e['href'] !== 'string') return refuse(`row ${n} has an address that is text`);
-      const label = String(e['label'] ?? '').replace(/^\s+|\s+$/g, '');
-      let href = String(e['href'] ?? '').replace(/^\s+|\s+$/g, '');
+      const label = String(e['label'] ?? '').replace(contactEdge, '');
+      let href = String(e['href'] ?? '').replace(contactEdge, '');
       if (label === '' && href === '') continue;
       if (href === '') return refuse(`row ${n} has a label and no address; give it an address, or leave the row out`);
       if (label === '') return refuse(`row ${n} has an address and no label; give it a label, or leave the row out`);
+      if (label.replace(/[\u200b-\u200d\u2060\ufeff]/gu, '') === '') return refuse(`row ${n} has a label with something visible in it, not only zero-width characters`);
       if ([...label].length > CONTACT_LABEL_MAX) return refuse(`row ${n} has a label of at most ${CONTACT_LABEL_MAX} characters`);
       if ([...href].length > CONTACT_HREF_MAX) return refuse(`row ${n} has an address of at most ${CONTACT_HREF_MAX} characters`);
-      if (/[\s\x00-\x1f\x7f]/.test(href)) return refuse(`row ${n} has an address with no spaces or control characters in it`);
+      if (contactSpaced.test(href)) return refuse(`row ${n} has an address with no spaces or control characters in it`);
       if (/^[^@:/?#]+@[^@:/?#]+\.[^@:/?#]+$/.test(href)) href = `mailto:${href}`;
       if (!(/^https:\/\/[^/?#@]+([/?#]|$)/i.test(href) || /^mailto:[^@:/?#]+@[^@:/?#]+$/i.test(href))) return refuse(`row ${n} has an address that is https: or mailto: (a bare email is made mailto:)`);
       if (fixed.length >= CONTACT_MOST) return refuse(`the contact holds at most ${CONTACT_MOST} links, and row ${n} is one too many`);

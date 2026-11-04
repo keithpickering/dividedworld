@@ -348,4 +348,62 @@ describe('How players reach you, on the admin screen', () => {
     await userEvent.click(within(f).getByRole('button', { name: 'Save how players reach you' }));
     expect(await within(f).findByRole('alert')).toHaveTextContent('No answer came back');
   });
+
+  test('after a save, focus stays on the input it was on, and that input is the same one (not drawn again)', async () => {
+    open();
+    const f = await form();
+    await fill(1, 'Chat', 'https://chat.example/a');
+    await userEvent.click(within(f).getByRole('button', { name: 'Add a link' }));
+    await fill(2, 'Mail', 'admin@example.test');
+    const input = within(row(2)).getByLabelText('Link 2 address');
+    await userEvent.click(input);
+    await userEvent.keyboard('{Enter}');
+    await waitFor(() => expect(within(f).getByRole('status')).toHaveTextContent('Saved.'));
+    expect(within(row(2)).getByLabelText('Link 2 address')).toBe(input);
+    expect(input).toHaveFocus();
+    expect((input as HTMLInputElement).value).toBe('mailto:admin@example.test');
+  });
+
+  test('after a save that dropped an empty row, focus follows to the label it was on', async () => {
+    open();
+    const f = await form();
+    await fill(1, 'Chat', 'https://chat.example/a');
+    await userEvent.click(within(f).getByRole('button', { name: 'Add a link' }));
+    await userEvent.click(within(f).getByRole('button', { name: 'Add a link' }));
+    await fill(3, 'Mail', 'admin@example.test');
+    await userEvent.click(within(row(3)).getByLabelText('Link 3 label'));
+    await userEvent.keyboard('{Enter}');
+    await waitFor(() => expect(screen.queryByRole('group', { name: 'Link 3' })).toBeNull());
+    expect(within(row(2)).getByLabelText('Link 2 label')).toHaveFocus();
+  });
+
+  test('removing a row moves focus to the next row\'s label, else the previous row\'s, else the cleared row\'s', async () => {
+    open();
+    const f = await form();
+    for (let i = 0; i < 2; i += 1) await userEvent.click(within(f).getByRole('button', { name: 'Add a link' }));
+    for (const n of [1, 2, 3]) await userEvent.type(within(row(n)).getByLabelText(`Link ${n} label`), `L${n}`);
+    await userEvent.click(within(f).getByRole('button', { name: 'Remove link 2' }));
+    expect(within(row(2)).getByLabelText('Link 2 label')).toHaveFocus();
+    expect((within(row(2)).getByLabelText('Link 2 label') as HTMLInputElement).value).toBe('L3');
+    await userEvent.click(within(f).getByRole('button', { name: 'Remove link 2' }));
+    expect(within(row(1)).getByLabelText('Link 1 label')).toHaveFocus();
+    expect((within(row(1)).getByLabelText('Link 1 label') as HTMLInputElement).value).toBe('L1');
+    await userEvent.click(within(f).getByRole('button', { name: 'Remove link 1' }));
+    expect(within(row(1)).getByLabelText('Link 1 label')).toHaveFocus();
+    expect((within(row(1)).getByLabelText('Link 1 label') as HTMLInputElement).value).toBe('');
+  });
+
+  test('while a save is out, the status says Saving\u2026, and the button is held', async () => {
+    const { fake } = open();
+    const f = await form();
+    let release!: () => void;
+    const real = fake.setAdminContact.bind(fake);
+    vi.spyOn(fake, 'setAdminContact').mockImplementation((links) => new Promise((resolve) => { release = () => resolve(real(links)); }));
+    await fill(1, 'Chat', 'https://chat.example/a');
+    await userEvent.click(within(f).getByRole('button', { name: 'Save how players reach you' }));
+    expect(within(f).getByRole('status')).toHaveTextContent('Saving\u2026');
+    expect(within(f).getByRole('button', { name: 'Save how players reach you' })).toBeDisabled();
+    release();
+    await waitFor(() => expect(within(f).getByRole('status')).toHaveTextContent('Saved.'));
+  });
 });

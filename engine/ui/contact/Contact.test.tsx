@@ -74,6 +74,13 @@ describe('Reach a person, at /contact', () => {
     expect(screen.queryByRole('link', { name: 'Sneaky' })).toBeNull();
     expect(screen.getByRole('link', { name: 'Fine' })).toBeInTheDocument();
   });
+
+  test('re-applies the server\'s shape: a mailto: with a query or a second address, an https with no host, or an address with a space is no link', () => {
+    const bad = ['mailto:a@b?bcc=x@y', 'mailto:a@b@c', 'mailto:@b', 'https://', 'https:///x', 'https://u@h.example', 'https://a.example/ b', 'https://a.example/\u00a0b'];
+    renderIn(buildWorld(), <Contact links={bad.map((href, i) => ({ label: `Bad ${i}`, href }))} />, { path: '/contact' });
+    expect(screen.queryAllByRole('link')).toHaveLength(0);
+    for (let i = 0; i < bad.length; i += 1) expect(screen.getByText(`Bad ${i}`)).toBeInTheDocument();
+  });
 });
 
 describe('the link to it', () => {

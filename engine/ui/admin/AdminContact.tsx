@@ -12,9 +12,12 @@
  * an admin until it is filled in. Nothing is sent twice: the button is held while a save is out, and a lost answer is said in its words, with what
  * was typed kept, never resent by itself.
  */
-import { useEffect, useId, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { useKayfa } from '../context.tsx';
-import { CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, type ContactLink } from '../data/api.ts';
+import { CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, type ContactLink } from '../data/api.ts';
+
+/** A row with anything in it but the contact's whitespace: what the server keeps rather than drops as empty. */
+const VISIBLE = new RegExp(`[^${CONTACT_WS}]`, 'u');
 import './write-update.css';
 import './admin-contact.css';
 
@@ -37,6 +40,16 @@ export function AdminContact() {
   const [refusal, setRefusal] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
+  const form = useRef<HTMLFormElement>(null);
+  /* The aria-label of the input to focus once the rows that name it have been drawn: a removed row's focus goes to a neighbor, and a save keeps it where it was. */
+  const refocus = useRef<string | null>(null);
+  useEffect(() => {
+    if (refocus.current === null || form.current === null) return;
+    const label = refocus.current;
+    refocus.current = null;
+    [...form.current.querySelectorAll<HTMLElement>('input')].find((el) => el.getAttribute('aria-label') === label)?.focus();
+  });
+
   const show = (links: readonly ContactLink[], from: number) => {
     const made = links.length === 0 ? [{ key: from, label: '', href: '' }] : links.map((l, i) => ({ key: from + i, label: l.label, href: l.href }));
     setRows(made);
@@ -57,6 +70,9 @@ export function AdminContact() {
   /* The last row is cleared and not removed: a form with no row has nowhere to start a link. */
   const remove = (key: number) => {
     edit();
+    const at = rows.findIndex((r) => r.key === key);
+    /* The next row's label input (it takes this row's number), else the previous one's; the only row is cleared, and its label input is where focus goes. */
+    refocus.current = `Link ${rows.length === 1 || at < rows.length - 1 ? at + 1 : at} label`;
     if (rows.length === 1) { setRows([{ key: next, label: '', href: '' }]); setNext(next + 1); } else setRows(rows.filter((r) => r.key !== key));
   };
 
@@ -76,7 +92,15 @@ export function AdminContact() {
       }
       if (!answer.ok) { setRefusal(answer.error); return; }
       setStored(answer.value);
-      show(answer.value, next);
+      /* Rows the server kept keep their keys, so no input is remounted and focus stays where it was; a row it dropped (an empty one) shifts the rest, and focus follows the label it was on. */
+      const kept = rows.filter((r) => VISIBLE.test(r.label + r.href));
+      if (answer.value.length > 0 && kept.length === answer.value.length) {
+        setRows(answer.value.map((l, i) => ({ key: kept[i]!.key, label: l.label, href: l.href })));
+      } else {
+        const active = document.activeElement;
+        if (form.current?.contains(active) && active instanceof HTMLInputElement) refocus.current = active.getAttribute('aria-label');
+        show(answer.value, next);
+      }
       setSaved(true);
     } finally {
       setBusy(false);
@@ -88,7 +112,7 @@ export function AdminContact() {
   return (
     <section className="kb-admin-contact" aria-labelledby={`${id}-head`}>
       <h2 id={`${id}-head`} className="kb-queue-group-head kb-glass-display">How players reach you</h2>
-      <form className="kb-write-update" aria-labelledby={`${id}-head`} onSubmit={(e) => void submit(e)} noValidate>
+      <form ref={form} className="kb-write-update" aria-labelledby={`${id}-head`} onSubmit={(e) => void submit(e)} noValidate>
         <p className="kb-write-update-note">
           Players read these on the Reach a person page, which they can open signed out. Up to {CONTACT_MOST} links, each a label and an address: a web address that starts with https://, or an email address.
         </p>
@@ -112,7 +136,7 @@ export function AdminContact() {
           <button type="button" className="kb-write-update-button" disabled={rows.length >= CONTACT_MOST} onClick={add}>Add a link</button>
           <button type="submit" className="kb-write-update-button kb-write-update-post" disabled={busy}>Save how players reach you</button>
         </div>
-        <div role="status" className="kb-write-update-status">{saved ? 'Saved. Players see it on the Reach a person page.' : ''}</div>
+        <div role="status" className="kb-write-update-status">{busy ? 'Saving…' : saved ? 'Saved. Players see it on the Reach a person page.' : ''}</div>
         {refusal !== null && named === null && <p role="alert" className="kb-write-update-refusal">{refusal}</p>}
       </form>
     </section>

@@ -15,7 +15,7 @@
  */
 import { useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { ContactLink } from '../data/api.ts';
+import { CONTACT_WS, type ContactLink } from '../data/api.ts';
 import { Link } from '../router.tsx';
 import '../account/account.css';
 import './contact.css';
@@ -28,7 +28,10 @@ export function ReachAPerson({ className }: { readonly className?: string }) {
   return <Link to={CONTACT_PATH} className={className}>Reach a person</Link>;
 }
 
-const safe = (href: string): boolean => /^(https:\/\/|mailto:)/iu.test(href);
+/** The server's shape (set_admin_contact, 0081), applied again: `https://` with a host, or `mailto:` with exactly one name@host and no query; no space or control character. */
+const SPACED = new RegExp(`[${CONTACT_WS}]`, 'u');
+const safe = (href: string): boolean =>
+  !SPACED.test(href) && (/^https:\/\/[^/?#@]+([/?#]|$)/iu.test(href) || /^mailto:[^@:/?#]+@[^@:/?#]+$/iu.test(href));
 const address = (href: string): string | null => (/^mailto:/iu.test(href) ? href.replace(/^mailto:/iu, '') : null);
 
 /** The page, handed the links read: `null` while they are read, and an empty list for none. */

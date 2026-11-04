@@ -16,6 +16,10 @@
 --   Refused: an address that is neither `https://host…` nor `mailto:name@host…` (so `javascript:`, `http:`, `data:` and a scheme-relative `//`
 --   are refused; the scheme is read in any case), an address with a space or a control character, a label over 40 characters, an address over
 --   300, a label with no address or an address with no label (either would be inventing it), and more than five links once empty rows are dropped.
+-- "Whitespace" and "space or control character" are one explicit set, the same in the fake (engine/ui/data/fake.ts): ASCII controls and space, the C1
+-- controls (U+007F-U+009F, so U+0085 too), U+00A0, U+1680, U+2000-U+200A, U+2028, U+2029, U+202F, U+205F, U+3000 and U+FEFF. It does not lean on a locale's
+-- [[:space:]] or on JavaScript's \s, which disagree about U+0085 and U+00A0 (NUL cannot occur in text). A label of only U+200B-U+200D, U+2060 and U+FEFF would
+-- draw an invisible link, so it is refused as a label that is empty once those are removed.
 -- Every refusal carries hint = 'kayfabb.refusal', as the rest of the admin screen's do, so the form shows its words.
 --
 -- Only an admin writes it: auth.uid() is null for the service role, which is refused too, as post_update refuses it, since a model's words reach
@@ -59,8 +63,8 @@ begin
     if e ? 'href' and jsonb_typeof(e -> 'href') not in ('string', 'null') then
       raise exception 'row % has an address that is text', n using hint = 'kayfabb.refusal', errcode = '22023';
     end if;
-    lab := regexp_replace(coalesce(e ->> 'label', ''), '^\s+|\s+$', '', 'g');
-    adr := regexp_replace(coalesce(e ->> 'href', ''), '^\s+|\s+$', '', 'g');
+    lab := regexp_replace(coalesce(e ->> 'label', ''), '^[\x01-\x20\x7f-\x9f   -     　﻿]+|[\x01-\x20\x7f-\x9f   -     　﻿]+$', '', 'g');
+    adr := regexp_replace(coalesce(e ->> 'href', ''), '^[\x01-\x20\x7f-\x9f   -     　﻿]+|[\x01-\x20\x7f-\x9f   -     　﻿]+$', '', 'g');
     if lab = '' and adr = '' then continue; end if;
     if adr = '' then
       raise exception 'row % has a label and no address; give it an address, or leave the row out', n using hint = 'kayfabb.refusal', errcode = '22023';
@@ -68,13 +72,16 @@ begin
     if lab = '' then
       raise exception 'row % has an address and no label; give it a label, or leave the row out', n using hint = 'kayfabb.refusal', errcode = '22023';
     end if;
+    if regexp_replace(lab, '[\u200b-\u200d\u2060\ufeff]', '', 'g') = '' then
+      raise exception 'row % has a label with something visible in it, not only zero-width characters', n using hint = 'kayfabb.refusal', errcode = '22023';
+    end if;
     if char_length(lab) > 40 then
       raise exception 'row % has a label of at most 40 characters', n using hint = 'kayfabb.refusal', errcode = '22023';
     end if;
     if char_length(adr) > 300 then
       raise exception 'row % has an address of at most 300 characters', n using hint = 'kayfabb.refusal', errcode = '22023';
     end if;
-    if adr ~ '[[:space:][:cntrl:]]' then
+    if adr ~ '[\x01-\x20\x7f-\x9f   -     　﻿]' then
       raise exception 'row % has an address with no spaces or control characters in it', n using hint = 'kayfabb.refusal', errcode = '22023';
     end if;
     -- A bare email: no scheme, no slash, no query, and one at sign. Anything with a colon is not, whatever follows it.

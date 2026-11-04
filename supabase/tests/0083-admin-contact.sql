@@ -137,6 +137,18 @@ begin
   -- A newline inside an address is a control character, however the form let it in.
   said := pg_temp.refusal($q$select set_admin_contact(jsonb_build_array(jsonb_build_object('label', 'Nl', 'href', E'https://a.example/\nb')))$q$);
   if said is null then raise exception 'a control character is refused'; end if;
+  -- One explicit whitespace set, locale-free: U+00A0 and U+0085 are whitespace at the edges and inside an address; a label of only zero-width characters is empty.
+  got := set_admin_contact(jsonb_build_array(jsonb_build_object('label', E'\u00a0\u0085Nb\ufeff', 'href', E'\u00a0\u0085https://nb.example\u00a0')));
+  if got is distinct from '[{"label": "Nb", "href": "https://nb.example"}]'::jsonb then raise exception 'U+00A0, U+0085 and U+FEFF are trimmed: %', got; end if;
+  got := set_admin_contact('[{"label": "Keep", "href": "https://keep.example"}]');
+  said := pg_temp.refusal($q$select set_admin_contact(jsonb_build_array(jsonb_build_object('label', 'Nb', 'href', E'https://a.example/\u00a0b')))$q$);
+  if said is null or said not like '22023|kayfabb.refusal|%row 1%spaces%' then raise exception 'a no-break space inside an address is refused: %', coalesce(said, 'no refusal'); end if;
+  said := pg_temp.refusal($q$select set_admin_contact(jsonb_build_array(jsonb_build_object('label', 'Nel', 'href', E'https://a.example/\u0085b')))$q$);
+  if said is null or said not like '22023|kayfabb.refusal|%row 1%spaces%' then raise exception 'U+0085 inside an address is refused: %', coalesce(said, 'no refusal'); end if;
+  said := pg_temp.refusal($q$select set_admin_contact(jsonb_build_array(jsonb_build_object('label', E'\u200b\u200c\u200d\u2060', 'href', 'https://a.example')))$q$);
+  if said is null or said not like '22023|kayfabb.refusal|%row 1%label%zero-width%' then raise exception 'a zero-width-only label is refused naming row 1: %', coalesce(said, 'no refusal'); end if;
+  said := pg_temp.refusal($q$select set_admin_contact(jsonb_build_array(jsonb_build_object('label', 'Ok', 'href', 'https://ok.example'), jsonb_build_object('label', E' \u200b\ufeff', 'href', 'https://a.example')))$q$);
+  if said is null or said not like '22023|kayfabb.refusal|%row 2%' then raise exception 'a zero-width-and-space label is refused naming row 2: %', coalesce(said, 'no refusal'); end if;
   if admin_contact() is distinct from got then raise exception 'a refused write left the stored contact alone: %', admin_contact(); end if;
   perform tests.unbecome();
 end $$;

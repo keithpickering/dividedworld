@@ -732,6 +732,12 @@ export interface ContactLink {
 export const CONTACT_MOST = 5;
 export const CONTACT_LABEL_MAX = 40;
 export const CONTACT_HREF_MAX = 300;
+/**
+ * The one whitespace-or-control set a contact link is trimmed of and an address may not hold, as a regex character-class body. The SQL
+ * (0081) writes the same set, locale-free: ASCII controls and space, the C1 controls (U+0085 too), U+00A0, U+1680, U+2000-U+200A, U+2028,
+ * U+2029, U+202F, U+205F, U+3000, U+FEFF.
+ */
+export const CONTACT_WS = '\\x00-\\x20\\x7f-\\x9f\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff';
 
 /** What a player made public of a character's class in a season (the reveal's `shown`): its reveals and its announced Turns, in order. */
 export interface SeasonShown {
