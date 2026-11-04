@@ -28,7 +28,7 @@ function pathOf(el: Element): string {
   return path;
 }
 
-/** Drawn at all: it has a box, is not `visibility: hidden`, is not in a `[hidden]` or `[inert]` subtree, and is not a visually hidden clip (1px, `clip`, or `clip-path: inset(50%)`). */
+/** Drawn at all: it has a box, is not `visibility: hidden`, is not in a `[hidden]` or `[inert]` subtree, and is not a visually hidden clip (up to 2px, `clip`, or `clip-path: inset(50%)`). */
 function visible(el: Element): boolean {
   if (el.closest('[hidden], [inert]')) return false;
   if (!el.checkVisibility({ checkVisibilityCSS: true, visibilityProperty: true })) return false;
@@ -71,28 +71,17 @@ function scrollsOnPurpose(el: Element): boolean {
   return known;
 }
 
-const clippers = new WeakMap<Element, boolean>();
-/** An ancestor that clips what is wider than itself away (`overflow-x: hidden|clip` with content past its edge). */
-function clips(el: Element): boolean {
-  let known = clippers.get(el);
-  if (known === undefined) {
-    known = el.scrollWidth > el.clientWidth + 1 && ['hidden', 'clip'].includes(getComputedStyle(el).overflowX);
-    clippers.set(el, known);
-  }
-  return known;
-}
-
-interface Container { readonly scroller: Element | null; readonly clipped: boolean }
+interface Container { readonly scroller: Element | null }
 const containers = new WeakMap<Element, Container>();
-/** Whether `el` lies inside an element that scrolls on purpose (the nearest) and whether an ancestor clips it. */
+/** The element that scrolls on purpose that `el` lies inside, if any. A clipping ancestor excuses nothing: what it hides, the player loses. */
 function containerOf(el: Element): Container {
   const known = containers.get(el);
   if (known) return known;
   const parent = el.parentElement;
-  let c: Container = { scroller: null, clipped: false };
+  let c: Container = { scroller: null };
   if (parent && parent !== document.body && parent !== document.documentElement) {
     const above = containerOf(parent);
-    c = { scroller: above.scroller ?? (scrollsOnPurpose(parent) ? parent : null), clipped: above.clipped || clips(parent) };
+    c = { scroller: above.scroller ?? (scrollsOnPurpose(parent) ? parent : null) };
   }
   containers.set(el, c);
   return c;
@@ -134,10 +123,12 @@ function blockOf(el: Element): BlockFact | null {
   const fontSize = parseFloat(s.fontSize) * z;
   const range = document.createRange();
   const lines = new Set<number>();
+  let widest = 0;
   for (const t of own) {
     range.selectNodeContents(t);
     for (const q of range.getClientRects()) {
       if (q.width === 0) continue;
+      widest = Math.max(widest, q.width);
       lines.add(Math.round(q.top / Math.max(1, fontSize / 2)));
     }
   }
@@ -147,7 +138,7 @@ function blockOf(el: Element): BlockFact | null {
   const breaks = s.overflowWrap === 'anywhere' || s.overflowWrap === 'break-word' || s.wordBreak === 'break-all' || s.wordBreak === 'break-word';
   const words = text.split(/[\s­‐-―/-]+/).filter(Boolean).sort((a, b) => b.length - a.length).slice(0, 3);
   const longestWord = breaks ? 0 : Math.max(0, ...words.map((w) => widthOf(w, s, z)));
-  return { path: pathOf(el), rect: content, fontSize, longestWord, wraps };
+  return { path: pathOf(el), rect: content, fontSize, longestWord, wraps, textWidth: widest };
 }
 
 /* ---- controls, rows and panels ---- */
@@ -284,9 +275,8 @@ export function gather(): Omit<LayoutFacts, 'screen'> {
   const calms: CalmFact[] = [];
   const shown = all.filter(visible);
   for (const el of shown) {
-    const { scroller, clipped } = containerOf(el);
+    const { scroller } = containerOf(el);
     if (scrollsOnPurpose(el)) scrollers.set(pathOf(el), { path: pathOf(el), rect: toBox(el.getBoundingClientRect()) });
-    if (clipped) continue;
     const b = blockOf(el);
     if (b) blocks.push(b);
     const r = el.getBoundingClientRect();
@@ -300,6 +290,6 @@ export function gather(): Omit<LayoutFacts, 'screen'> {
   }
   return {
     viewport: { width: vw, height: innerHeight, scrollWidth: document.documentElement.scrollWidth },
-    blocks, scrollers: [...scrollers.values()], extents, rows: rowsOf(shown.filter((e) => !containerOf(e).clipped)), controls, calms,
+    blocks, scrollers: [...scrollers.values()], extents, rows: rowsOf(shown), controls, calms,
   };
 }

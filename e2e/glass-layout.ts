@@ -7,7 +7,8 @@ import type { Box } from './glass-text.ts';
  * data. It refuses five things, each named with the element's selector path and the screen:
  *
  *   1. a squeezed block: an element holding text that wraps, narrower than 10 * its font size, or
- *      any element narrower than its longest word;
+ *      any element narrower than its longest word, or one whose widest line of text is wider than
+ *      its own box (clipped or ellipsized);
  *   2. an overflow: anything outside the viewport's width (or a page that scrolls sideways), except
  *      inside an element that scrolls on purpose;
  *   3. a mismatched row: two GlassButtons in one ButtonRow, or two adjacent controls in one flex
@@ -24,8 +25,8 @@ import type { Box } from './glass-text.ts';
  *   - A TEXT BLOCK is a visible element with a direct, non-blank text node of its own, whose
  *     `display` is not `inline` or `contents` (an inline run is laid out by its block, which holds
  *     the words it is part of). `rect` is its content box. `wraps` is true when its words take
- *     more than one line (a single word wider than its box is the longest-word refusal's); a one-line label is as narrow as its words
- *     and is not squeezed by being short ("OK" is not narrower than 10em in any sense that
+ *     more than one line (a single word wider than its box is the longest-word refusal's);
+ *     a one-line label is as narrow as its words and is not squeezed by being short ("OK" is not narrower than 10em in any sense that
  *     matters). Decorative art is exempt from refusal 1 only when it truly is art: inside
  *     `aria-hidden="true"` and holding no letter or digit.
  *   - A CONTROL is a `button`, `a[href]`, `input`, `select`, `textarea`, or `[role=button|tab|
@@ -38,16 +39,23 @@ import type { Box } from './glass-text.ts';
  *     scrolling element's own box must still lie in the viewport; what is inside it is excused.
  *   - Anything inside `aria-hidden="true"` is not refused for overflow (it is not what a player reads).
  *   - HIDDEN is not looked at: `display: none`, `visibility: hidden`, a box with no size, a
- *     visually hidden clip (up to 2px, `clip`, `clip-path: inset(50%)`), anything inside `[hidden]` or `[inert]`, and anything
- *     an ancestor clips away (`overflow: hidden|clip` with content wider than the ancestor).
+ *     visually hidden clip (up to 2px, `clip`, `clip-path: inset(50%)`), and anything inside
+ *     `[hidden]` or `[inert]`. An ancestor that clips (`overflow-x: clip`, as the glass content
+ *     does) excuses nothing: what it hides, the player loses, so a block squeezed or pushed past
+ *     the edge inside it is still refused.
  *   - A CALM'S DRAWN BACKING includes any transform on it (e2e/glass-text-page.ts's pseudoBox).
  */
 
 /** A visible element's rect, with a path that is unique in the page (`tag.class:nth-child(n)` joined by ` > `). */
 export interface Located { readonly path: string; readonly rect: Box }
 
-/** A block of text: `rect` is its content box; `longestWord` is the width of its longest word in its own font. */
-export interface BlockFact extends Located { readonly fontSize: number; readonly longestWord: number; readonly wraps: boolean }
+/** A block of text: `rect` is its content box; `longestWord` is the width of its longest word in its own font; `textWidth`, its widest line as laid out. */
+export interface BlockFact extends Located {
+  readonly fontSize: number;
+  readonly longestWord: number;
+  readonly wraps: boolean;
+  readonly textWidth: number;
+}
 
 export interface ControlInRow extends Located { readonly fontSize: number; readonly glass: boolean }
 
@@ -80,6 +88,8 @@ export const HEIGHT_TOLERANCE = 1;
 /** Other lengths (a rect's edge past a bound, a corner in a cut) are compared to within this. */
 const EDGE = 1;
 const SIZE_TOLERANCE = 0.05;
+/** How far a skewed control may hang past its panel's edge and still be read against that panel's cut. */
+const OVERHANG = 16;
 
 /** A path as a reader wants it: its last four steps, without the child counts. */
 export const shortPath = (path: string): string => path.split(' > ').slice(-4).map((s) => s.replace(/:nth-child\(\d+\)/g, '')).join(' > ');
@@ -114,6 +124,7 @@ export function judgeLayout(facts: LayoutFacts): string[] {
   for (const b of facts.blocks) {
     const w = b.rect.width;
     if (b.wraps && w < 10 * b.fontSize - EDGE) at('squeezed block', b.path, `${px(w)} wide by ${px(b.rect.height)} tall at ${px(b.fontSize)} type, narrower than 10 times its type size`);
+    else if (b.textWidth > w + EDGE) at('squeezed block', b.path, `${px(w)} wide, its text is ${px(b.textWidth)} wide on one line`);
     else if (w < b.longestWord - EDGE) at('squeezed block', b.path, `${px(w)} wide, narrower than its longest word (${px(b.longestWord)})`);
   }
 
@@ -143,7 +154,11 @@ export function judgeLayout(facts: LayoutFacts): string[] {
     const p = c.panel;
     if (!p) continue;
     const r = p.rect;
-    const cut = samples(c).filter(([x, y]) => x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height && !insidePolygon([x, y], p.polygon));
+    /* A skewed control overhangs its panel's edge by a few px, and the clip cuts that off too: a point just outside the panel is tested at the nearest point on its edge; one far outside is another thing's. */
+    const cut = samples(c)
+      .filter(([x, y]) => x >= r.x - OVERHANG && x <= r.x + r.width + OVERHANG && y >= r.y - OVERHANG && y <= r.y + r.height + OVERHANG)
+      .map(([x, y]): [number, number] => [Math.min(Math.max(x, r.x), r.x + r.width), Math.min(Math.max(y, r.y), r.y + r.height)])
+      .filter((q) => !insidePolygon(q, p.polygon));
     /* A point exactly on the polygon's edge reads either way: it is cut only when it is more than a pixel inside the cut. */
     const deep = cut.filter(([x, y]) => ![[EDGE, 0], [-EDGE, 0], [0, EDGE], [0, -EDGE]].some(([dx, dy]) => insidePolygon([x + dx!, y + dy!], p.polygon)));
     if (deep.length > 0) at('cut control', c.path, `its box at ${deep.map(([x, y]) => `${px(x)},${px(y)}`).join(' ')} lies in the cut corner of ${shortPath(p.path)}`);

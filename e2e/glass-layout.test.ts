@@ -25,8 +25,8 @@ const clean: LayoutFacts = {
   screen: SCREEN,
   viewport: { width: 390, height: 844, scrollWidth: 390 },
   blocks: [
-    { path: 'main:nth-child(1) > header:nth-child(1) > h1:nth-child(1)', rect: { x: 16, y: 20, width: 358, height: 40 }, fontSize: 32, longestWord: 120, wraps: false },
-    { path: 'main:nth-child(1) > header:nth-child(1) > p.kb-lead:nth-child(2)', rect: { x: 16, y: 70, width: 358, height: 60 }, fontSize: 21, longestWord: 60, wraps: true },
+    { path: 'main:nth-child(1) > header:nth-child(1) > h1:nth-child(1)', rect: { x: 16, y: 20, width: 358, height: 40 }, fontSize: 32, longestWord: 120, wraps: false, textWidth: 120 },
+    { path: 'main:nth-child(1) > header:nth-child(1) > p.kb-lead:nth-child(2)', rect: { x: 16, y: 70, width: 358, height: 60 }, fontSize: 21, longestWord: 60, wraps: true, textWidth: 330 },
   ],
   scrollers: [],
   extents: [],
@@ -56,7 +56,7 @@ describe('the layout judgment', () => {
   });
 
   test('refuses a squeezed block: the lead of 0px by 547px', () => {
-    const lead = { path: 'main:nth-child(1) > header:nth-child(1) > p.kb-lead:nth-child(2)', rect: { x: 16, y: 70, width: 0, height: 547 }, fontSize: 21, longestWord: 60, wraps: true };
+    const lead = { path: 'main:nth-child(1) > header:nth-child(1) > p.kb-lead:nth-child(2)', rect: { x: 16, y: 70, width: 0, height: 547 }, fontSize: 21, longestWord: 60, wraps: true, textWidth: 330 };
     const out = refusals({ blocks: [clean.blocks[0]!, lead] });
     expect(out).toHaveLength(1);
     expect(out[0]).toContain('p.kb-lead');
@@ -65,9 +65,15 @@ describe('the layout judgment', () => {
   });
 
   test('refuses a block narrower than its longest word, though not narrower than ten ems', () => {
-    const out = refusals({ blocks: [{ path: 'main > p.word', rect: { x: 0, y: 0, width: 200, height: 30 }, fontSize: 10, longestWord: 260, wraps: true }] });
+    const out = refusals({ blocks: [{ path: 'main > p.word', rect: { x: 0, y: 0, width: 200, height: 30 }, fontSize: 10, longestWord: 260, wraps: true, textWidth: 260 }] });
     expect(out).toHaveLength(1);
     expect(out[0]).toContain('p.word');
+  });
+
+  test('refuses a one-line block whose text is wider than its own box', () => {
+    const out = refusals({ blocks: [{ path: 'main > span.kb-chip', rect: { x: 0, y: 0, width: 100, height: 20 }, fontSize: 10, longestWord: 40, wraps: false, textWidth: 180 }] });
+    expect(out).toHaveLength(1);
+    expect(out[0]).toContain('span.kb-chip');
   });
 
   test('refuses a panel 20px past the right edge', () => {
@@ -138,6 +144,18 @@ describe('the layout judgment', () => {
     expect(out[0]).toContain('button');
     expect(out[0]).toContain(SCREEN);
     expect(out[0]).toContain('cut');
+  });
+
+  test('refuses a skewed button whose drawn corner lies in the chamfer, though its bounding box corners need not', () => {
+    const panel = clean.controls[0]!.panel!;
+    /* Skewed by 10 degrees: the top-right corner is drawn 8px right of the box's middle edge; the quad's top-right (496,200) is in the cut. */
+    const quad = [[420, 200], [496, 200], [492, 240], [416, 240]] as const;
+    const out = refusals({ controls: [{ path: 'main > section > button.skewed', rect: { x: 416, y: 200, width: 80, height: 40 }, quad, panel }] });
+    expect(out).toHaveLength(1);
+    expect(out[0]).toContain('button.skewed');
+    /* The same box with its drawn corners clear of the cut passes. */
+    const clear = [[390, 210], [466, 210], [462, 250], [386, 250]] as const;
+    expect(refusals({ controls: [{ path: 'main > section > button.skewed', rect: { x: 386, y: 210, width: 80, height: 40 }, quad: clear, panel }] })).toEqual([]);
   });
 
   test('refuses a calm whose backing lies 32px outside its element on every side', () => {
