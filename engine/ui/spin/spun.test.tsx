@@ -8,7 +8,7 @@ import { SPUN_CACHE_SIZE, SPUN_CHUNK, SPUN_READ_LIMIT, SPUN_SHOWN, SPUN_TTL_MS, 
 
 const thread = (origin: Id, n: number): ThreadSummary => ({
   id: `${origin}-t${n}`, board: 'b', title: `T${n}`, originActId: origin, createdAt: '2026-10-29T12:00:00Z', lastAt: '2026-10-29T12:00:00Z', lastSeq: 1,
-  replies: 0, firstAct: null, firstCharacter: null, lastAct: null, lastCharacter: null, repliesThisWeek: 0, originThread: null, originTitle: null, originSeq: null,
+  replies: 0, firstAct: null, firstCharacter: null, lastAct: null, lastCharacter: null, repliesThisWeek: 0, originThread: null, origin: null,
 });
 
 function setup(spins: Readonly<Record<Id, number>> = {}) {

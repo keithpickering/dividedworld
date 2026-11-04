@@ -20,6 +20,7 @@ import { PostMarks } from '../cards/Marks.tsx';
 import { useReachShown } from '../cards/PlayActions.tsx';
 import { createPlays, effectCards, livePlays, playOf, readAbove, readEffects, type Plays } from '../cards/plays.ts';
 import { createMine, type Mine } from '../reactions/mine.ts';
+import { OriginLink } from '../spin/OriginLink.tsx';
 import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
 import { createTallies, type Tallies } from '../thread/tallies.ts';
 import type { SpinOrigin } from '../thread/Post.tsx';
@@ -267,8 +268,6 @@ function ThreadRow({ t, loaded, perPage, hot, mark = null }: { readonly t: Threa
   const name = (id: Id | null) => (id === null ? null : characters.get(id)?.name ?? 'A character');
   const starter = name(t.firstCharacter);
   const last = name(t.lastCharacter);
-  /* A spun thread's origin comes with its row: the thread it came out of, that thread's title and the Act's seq. */
-  const spun = t.originThread !== null && t.originTitle !== null && t.originSeq !== null ? { thread: t.originThread, title: t.originTitle, seq: t.originSeq } : null;
   const shownPages = pageList(1, pagesInThread);
 
   return (
@@ -280,9 +279,9 @@ function ThreadRow({ t, loaded, perPage, hot, mark = null }: { readonly t: Threa
       <td role="cell" className="kb-thread-main">
         <Link to={threadHref(t.id, 1)} className="kb-thread-title"><b>{t.title}</b></Link>
         {mark && <span className="kb-thread-pin-mark">{mark}</span>}
-        {spun && (
+        {t.originActId !== null && (
           <span className="kb-thread-spun kb-small">
-            {' '}↳ spun from <Link to={threadHref(spun.thread, pageOf(spun.seq, perPage), spun.seq)}>#{spun.seq} in {spun.title}</Link>
+            {' '}↳ spun from <OriginLink place={t.origin} perPage={perPage} />
           </span>
         )}
         <div className="kb-thread-meta kb-small">

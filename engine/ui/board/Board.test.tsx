@@ -2,6 +2,7 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { createFake, type Fake } from '../data/fake.ts';
+import type { ThreadSummary } from '../data/api.ts';
 import { buildWorld, renderIn, renderInWorld } from '../test-world.tsx';
 import { useLocation } from '../router.tsx';
 import { BoardScreen } from './Board.tsx';
@@ -120,6 +121,59 @@ describe('the row', () => {
     const row = rowOf('Spun thread');
     expect(row).toHaveTextContent('spun from');
     expect(within(row).getByRole('link', { name: /Thread 001/ })).toHaveAttribute('href', `/t/${w.ids[0]}?page=1#post-2`);
+  });
+
+  test('a thread spun from a play on a post says so, and links to that post; one spun from an update links to the Updates page', async () => {
+    const fake = buildWorld();
+    const w = world(fake, { threads: 1 });
+    const target = fake.seed.post(w.ids[0]!, w.spritey, 'a line to play on', { at: T0 + 2 * DAY });
+    const played = fake.seed.card(w.spritey, target, 'whoops');
+    expect((await fake.spin(played, w.mine!, 'From a play', 'x')).ok).toBe(true);
+    const update = fake.seed.update({ title: 'Traps bite', body: 'Hi.' });
+    expect((await fake.spin(update, w.mine!, 'From an update', 'x')).ok).toBe(true);
+    renderIn(fake, <BoardScreen slug="general" />);
+    await screen.findByRole('link', { name: 'From a play' });
+    const play = rowOf('From a play');
+    expect(play).toHaveTextContent(/spun from Whoops! on #2 in Thread 001/u);
+    expect(within(play).getByRole('link', { name: /^Whoops! on #2 in Thread 001$/u })).toHaveAttribute('href', `/t/${w.ids[0]}?page=1#post-2`);
+    const upd = rowOf('From an update');
+    expect(within(upd).getByRole('link', { name: 'the update “Traps bite”' })).toHaveAttribute('href', `/updates?update=${encodeURIComponent(update)}`);
+  });
+
+  /* A row's origin place, replaced in what the board reads: the fake always places what it can, so the unplaceable cases are made here. */
+  function withOrigin(fake: Fake, title: string, origin: ThreadSummary['origin']) {
+    const real = fake.threads.bind(fake);
+    vi.spyOn(fake, 'threads').mockImplementation(async (...args) => {
+      const got = await real(...args);
+      return { ...got, threads: got.threads.map((t) => (t.title === title ? { ...t, origin } : t)) };
+    });
+  }
+
+  test('a play on a target that cannot be placed says what was played, with no link', async () => {
+    const fake = buildWorld();
+    const w = world(fake, { threads: 1 });
+    const target = fake.seed.post(w.ids[0]!, w.spritey, 'a line to play on', { at: T0 + 2 * DAY });
+    expect((await fake.spin(fake.seed.card(w.spritey, target, 'whoops'), w.mine!, 'From a play', 'x')).ok).toBe(true);
+    withOrigin(fake, 'From a play', { kind: 'play', card: 'whoops', on: null });
+    renderIn(fake, <BoardScreen slug="general" />);
+    await screen.findByRole('link', { name: 'From a play' });
+    const row = rowOf('From a play');
+    const spun = row.querySelector('.kb-thread-spun') as HTMLElement;
+    expect(spun).toHaveTextContent(/spun from Whoops!$/u);
+    expect(within(spun).queryByRole('link')).toBeNull();
+  });
+
+  test('a row with an origin Act but no place reads "spun from an Act"', async () => {
+    const fake = buildWorld();
+    const w = world(fake, { threads: 1 });
+    const origin = fake.seed.post(w.ids[0]!, w.spritey, 'a line to spin from', { at: T0 + 2 * DAY });
+    expect((await fake.spin(origin, w.mine!, 'Placeless', 'x')).ok).toBe(true);
+    withOrigin(fake, 'Placeless', null);
+    renderIn(fake, <BoardScreen slug="general" />);
+    await screen.findByRole('link', { name: 'Placeless' });
+    const spun = rowOf('Placeless').querySelector('.kb-thread-spun') as HTMLElement;
+    expect(spun).toHaveTextContent(/spun from an Act$/u);
+    expect(within(spun).queryByRole('link')).toBeNull();
   });
 
   test('replies count the posts after the first: a thread whose last Act is not a post counts only its posts', async () => {
