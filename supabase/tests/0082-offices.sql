@@ -357,3 +357,39 @@ begin
   update characters set retired_at = null where staff = 'of-w4';
   perform pg_temp.admin_sets('of-w4', 'member');
 end $$;
+
+-- ---- A handover does not count a retired mod as the mod that keeps the staff from being empty ----
+do $$
+begin
+  -- State: of-w2 is the Boss and of-mod the only mod, now retired. Rotation hands over to of-w1.
+  if pg_temp.boss() is distinct from 'of-w2' then raise exception 'the state before the handover: %', pg_temp.boss(); end if;
+  update characters set retired_at = now() where staff = 'of-mod';
+  update settings set value = '["of-w2", "of-w1", "of-boss", "of-w3", "of-w4", "of-mod"]'::jsonb where key = 'bossRoster';
+  perform pg_temp.roll();
+  if pg_temp.boss() is distinct from 'of-w1' then raise exception 'the handover went to %', pg_temp.boss(); end if;
+  if pg_temp.office('of-w2') is distinct from 'mod' then raise exception 'the outgoing Boss counted a retired mod and became %, leaving no live mod', pg_temp.office('of-w2'); end if;
+  if not exists (select 1 from staff_now where staff = 'of-w2') then raise exception 'staff_now does not list the outgoing Boss'; end if;
+  update characters set retired_at = null where staff = 'of-mod';
+end $$;
+
+-- ---- Nominating a waiting persona is accepted by the guard and by a replacement ----
+do $$
+declare
+  admin uuid := (select id from auth.users where email = 'of-admin@test.invalid');
+  q bigint;
+begin
+  -- of-w5 waits (undebuted), and is on boss_roster().
+  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb, 'system', jsonb_build_object(
+      'firstBoss', 'of-boss', 'firstStaff', jsonb_build_array('of-mod'), 'staff', jsonb_build_array(
+        jsonb_build_object('key', 'of-boss', 'name', 'Of Boss'), jsonb_build_object('key', 'of-mod', 'name', 'Of Mod'), jsonb_build_object('key', 'of-w1', 'name', 'Of W One'),
+        jsonb_build_object('key', 'of-w5', 'name', 'Of W Five')))));
+  if pg_temp.office('of-w5') is distinct from 'waiting' then raise exception 'of-w5 should wait: %', pg_temp.office('of-w5'); end if;
+  if 'of-w5' <> all (boss_roster()) then raise exception 'a waiting persona is not on the roster: %', boss_roster(); end if;
+  -- The guard accepts a waiting nominee outright (it raises otherwise), and an admin may replace another nominee with a waiting one.
+  perform pg_temp.queue_nomination('of-w1', 'of-w5');
+  q := pg_temp.queue_nomination('of-w1', 'of-mod');
+  perform tests.become(admin);
+  perform replace_successor(q, 'of-w5');
+  perform tests.unbecome();
+  if (select params ->> 'boss' from queued_moves where id = q) is distinct from 'of-w5' then raise exception 'the waiting persona did not replace the successor'; end if;
+end $$;

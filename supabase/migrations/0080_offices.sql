@@ -269,13 +269,13 @@ begin
     end;
     -- The offices (0080): the arriving Boss debuts if it was waiting; the outgoing Boss becomes a member, or a Mod Bot where no persona
     -- is one now, since the staff is never empty. The Boss's own office is the season's and is never a row, so the two Bosses of this
-    -- handover are left out of the count: the outgoing one's latest row may still read mod, from before it was seated. Best effort, as the rest.
+    -- handover are left out of the count: the outgoing one's latest row may still read mod, from before it was seated; a retired mod is no mod either. Best effort, as the rest.
     begin
       perform pg_advisory_xact_lock(hashtext('kayfabb.offices'));
       update characters set debuted_at = at where staff = chosen and debuted_at is null;
       if outgoing is not null then
         insert into staff_offices (staff, office, cause, season)
-        values (outgoing, case when exists (select 1 from staff_office_now o where o.office = 'mod' and o.staff is distinct from outgoing and o.staff is distinct from chosen) then 'member' else 'mod' end, 'handover', new_season);
+        values (outgoing, case when exists (select 1 from staff_office_now o join characters c on c.staff = o.staff where o.office = 'mod' and o.staff is distinct from outgoing and o.staff is distinct from chosen and c.retired_at is null) then 'member' else 'mod' end, 'handover', new_season);
       end if;
     exception when others then
       note := coalesce(note || '; ', '') || 'the offices were not moved: ' || sqlerrm;
