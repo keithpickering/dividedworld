@@ -730,9 +730,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const a = await rpcWrite(() => client.rpc('replace_successor', { id, boss }));
       return a.ok ? { ok: true, value: { id: num(a.value['id']), boss: String(a.value['boss'] ?? '') } } : a;
     },
+    /* The Boss list is the database's roster (`boss_roster_names`, 0080, an admin's read): a waiting persona's name is in no public view. */
     async bosses() {
-      const rows = await list(() => client.from('characters_public').select('id,name,staff').not('staff', 'is', null).neq('office', 'developer').order('name', { ascending: true }).limit(100));
-      return rows.flatMap((r) => (typeof r['staff'] === 'string' ? [{ staff: r['staff'], name: String(r['name'] ?? r['staff']) }] : []));
+      const r = (await read(() => client.rpc('boss_roster_names'))).data;
+      return (Array.isArray(r) ? (r as Row[]) : []).flatMap((x) => (typeof x['staff'] === 'string' ? [{ staff: x['staff'], name: String(x['name'] ?? x['staff']) }] : []));
     },
     async reverseMove(act) {
       const a = await rpcWrite(() => client.rpc('reverse_move', { move_act: act }));

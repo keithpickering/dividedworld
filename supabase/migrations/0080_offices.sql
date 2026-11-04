@@ -117,6 +117,19 @@ language sql stable security definer set search_path = public, pg_temp as $$
   select coalesce(array_agg(p.staff order by p.ord, p.staff), '{}') from personas p
 $$;
 
+-- The roster with names and offices, for an admin's Boss list (the queue's replace choices and a nomination's name in a sentence). A
+-- waiting persona is on the roster but has not debuted, so its name is in no public view; this is the one read of it, admins only.
+create function boss_roster_names() returns jsonb
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+begin
+  perform only_admins('reads the Boss list');
+  return (select coalesce(jsonb_agg(jsonb_build_object('staff', c.staff, 'name', c.name, 'office', o.office) order by r.ord), '[]'::jsonb)
+          from unnest(boss_roster()) with ordinality r(staff, ord)
+          join characters c on c.staff = r.staff join staff_office_now o on o.staff = r.staff);
+end $$;
+revoke execute on function boss_roster_names() from public, anon;
+grant execute on function boss_roster_names() to authenticated;
+
 -- queued_moves_guard (0051), a nomination naming any persona; replace_successor (0051) likewise. Everything else as 0051 wrote them.
 create or replace function queued_moves_guard() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -419,6 +432,11 @@ begin
   insert into staff_offices (staff, office, cause)
   select k, 'mod', 'seed' from jsonb_array_elements_text(coalesce(payload -> 'system' -> 'firstStaff', '[]')) k
   where not exists (select 1 from staff_offices x where x.staff = k);
+  -- A persona the seed seats as a mod is debuted: a reseed that adds a still-waiting persona to firstStaff hires it above, and it debuts here.
+  update characters c set debuted_at = now()
+  where c.debuted_at is null and c.staff_kind = 'persona'
+    and c.staff in (select k from jsonb_array_elements_text(coalesce(payload -> 'system' -> 'firstStaff', '[]')) k)
+    and exists (select 1 from staff_offices x where x.staff = c.staff and x.cause = 'seed' and x.office = 'mod');
   -- The name of the member group every persona is in, which the instance gives.
   insert into settings (key, value)
   select 'staffGroup', payload -> 'system' -> 'staffGroup' where jsonb_typeof(payload -> 'system' -> 'staffGroup') = 'object'

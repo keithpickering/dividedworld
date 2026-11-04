@@ -1406,7 +1406,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         })),
       ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
       return { cap: 100, waiting, inForce: live, ended, more: { waiting: false, inForce: false, ended: false },
-        roster: [...characters.values()].filter((c) => c.staff && c.staff.office !== 'developer' && c.staff.office !== 'benched' && c.retiredAt === null && c.debutedAt !== null).map((c) => ({ staff: c.staff!.key, name: c.name })) } satisfies AdminQueue;
+        roster: [...characters.values()].filter((c) => c.staff && c.staff.office !== 'developer' && c.staff.office !== 'benched' && c.retiredAt === null).map((c) => ({ staff: c.staff!.key, name: c.name })) } satisfies AdminQueue;
     },
     holdMove(id) {
       if (!me()?.admin) return refuse('only an admin holds a move');
@@ -1424,14 +1424,18 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (q.successor === undefined) return refuse('that move names no successor');
       if (q.landed !== null) return refuse('that nomination has already landed; reverse it instead');
       if (q.heldAt !== null) return refuse('that nomination is held');
-      const roster = [...characters.values()].filter((c) => c.staff && c.staff.office !== 'developer' && c.staff.office !== 'benched' && c.retiredAt === null && c.debutedAt !== null);
+      const roster = [...characters.values()].filter((c) => c.staff && c.staff.office !== 'developer' && c.staff.office !== 'benched' && c.retiredAt === null);
       if (!roster.some((c) => c.staff?.key === boss)) return refuse('that is not a Boss of the roster');
       if (boss === q.staff) return refuse('a Boss cannot succeed itself');
       q.successor = boss;
       q.replacedAt = now();
       return ok({ id, boss });
     },
-    bosses: () => [...characters.values()].filter((c) => c.staff && c.staff.office !== 'developer' && c.debutedAt !== null).map((c) => ({ staff: c.staff!.key, name: c.name })),
+    /* boss_roster_names (0080): the roster's own list, a waiting persona's name included, for an admin alone. */
+    bosses() {
+      if (!me()?.admin) throw new Error('only an admin reads the Boss list');
+      return [...characters.values()].filter((c) => c.staff && c.staff.office !== 'developer' && c.staff.office !== 'benched' && c.retiredAt === null).map((c) => ({ staff: c.staff!.key, name: c.name }));
+    },
     reverseMove(act) {
       if (!me()?.admin) return refuse('only an admin reverses a move');
       const a = acts.get(act);

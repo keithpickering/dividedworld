@@ -2134,3 +2134,19 @@ describe('Updates: the developer persona\'s posts (updates, post_update, 0062)',
     for (const account of [w.ana, w.cy, w.bo]) { w.fake.signInAs(account); expect((await w.fake.alerts()).filter((a) => a.kind === 'update')).toHaveLength(3); }
   });
 });
+
+describe('the Boss list', () => {
+  test('is the database\'s roster: every persona not benched, a waiting one included, the developer and a benched one left out; the queue\'s replace choices are the same list', async () => {
+    const { fake } = world();
+    fake.seed.staff('boss', 'The Boss', 'boss');
+    fake.seed.staff('mod', 'A Mod', 'mod');
+    fake.seed.staff('member', 'A Member', 'member');
+    fake.seed.staff('later', 'Waiting Persona', 'member', { debuted: false });
+    fake.seed.staff('quiet', 'Benched Persona', 'benched');
+    await expect(Promise.resolve().then(() => fake.bosses())).rejects.toThrow('only an admin');
+    fake.signInAs(fake.seed.account('queue-admin', { admin: true }));
+    expect((await fake.bosses()).map((b) => b.staff).sort()).toEqual(['boss', 'later', 'member', 'mod']);
+    expect((await fake.bosses()).find((b) => b.staff === 'later')?.name).toBe('Waiting Persona');
+    expect((await fake.adminQueue()).roster.map((b) => b.staff).sort()).toEqual(['boss', 'later', 'member', 'mod']);
+  });
+});

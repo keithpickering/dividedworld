@@ -214,7 +214,7 @@ describe('a nomination of a successor', () => {
     expect(waiting).toHaveTextContent('An admin put this Boss in the nomination\'s place on');
   });
 
-  test('offers no persona that is retired, benched or has not debuted, though their names still read in a sentence', async () => {
+  test('offers no persona that is retired or benched, though their names still read in a sentence; a waiting one that has not debuted is offered, as the roster lists it', async () => {
     const { fake } = open({ build: (f) => {
       const id = nominate(f);
       f.seed.retire(f.seed.staff('old-timer', 'Old Timer', 'boss'));
@@ -224,7 +224,7 @@ describe('a nomination of a successor', () => {
     } });
     const waiting = await group(/^Waiting to land/u);
     const choice = within(waiting).getByRole('combobox', { name: 'Put another Boss in its place' });
-    expect(within(choice).getAllByRole('option').map((o) => o.textContent)).toEqual(['Choose a Boss', 'Hall Monitor', 'Hype Man']);
+    expect(within(choice).getAllByRole('option').map((o) => o.textContent)).toEqual(['Choose a Boss', 'Hall Monitor', 'Hype Man', 'Newcomer']);
     expect((await fake.adminQueue()).roster.map((b) => b.staff)).not.toContain('old-timer');
   });
 

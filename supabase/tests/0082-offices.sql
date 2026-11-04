@@ -35,6 +35,10 @@ create function pg_temp.debuted(k text) returns boolean language sql security de
 create function pg_temp.logged_admin(k text) returns uuid language sql security definer as $$ select admin from staff_offices where staff = k order by id desc limit 1 $$;
 create function pg_temp.rows(k text) returns text language sql security definer as $$
   select coalesce(string_agg(office || ':' || cause, ',' order by id), '') from staff_offices where staff = k $$;
+-- (Read as the superuser's definer: a waiting persona's row is not readable by the admin's own role, which is the point.)
+create function pg_temp.roster_with_names(roster text[]) returns jsonb language sql security definer as $$
+  select jsonb_agg(jsonb_build_object('staff', r.staff, 'name', c.name, 'office', o.office) order by r.ord)
+  from unnest(roster) with ordinality r(staff, ord) join characters c on c.staff = r.staff join staff_office_now o on o.staff = r.staff $$;
 create function pg_temp.boss() returns text language sql as $$ select boss from seasons where ends_at is null $$;
 create function pg_temp.roll() returns jsonb language sql as $$
   select reveal_season((select starts_at from seasons where ends_at is null) + interval '1 day')
@@ -227,6 +231,20 @@ begin
   if 'of-w3' = any (roster) then raise exception 'a benched persona is on the roster'; end if;
   -- The meeting is offered the database's own list: the roster without the Boss.
   if meeting_context() -> 'successors' is distinct from '["of-mod", "of-w1", "of-w2"]'::jsonb then raise exception 'the meeting''s successors: %', meeting_context() -> 'successors'; end if;
+  -- The admin's Boss list is the same roster with names (a waiting persona's name included, which no client can read from
+  -- characters_public), in the roster's order, and nobody else reads it.
+  perform tests.become(admin);
+  if boss_roster_names() is distinct from pg_temp.roster_with_names(roster) then raise exception 'the admin''s Boss list is not the roster: %', boss_roster_names(); end if;
+  if not boss_roster_names() @> '[{"staff": "of-w2", "name": "Of W Two", "office": "waiting"}]'::jsonb then raise exception 'the waiting persona is not named: %', boss_roster_names(); end if;
+  perform tests.unbecome();
+  perform tests.become((select id from auth.users where email = 'of-player@test.invalid'));
+  said := pg_temp.refused('select boss_roster_names()');
+  perform tests.unbecome();
+  if said is null or said !~ '^42501' then raise exception 'a player read the Boss list: %', said; end if;
+  perform tests.become_anon();
+  said := pg_temp.refused('select boss_roster_names()');
+  perform tests.unbecome();
+  if said is null or said !~ '^42501' then raise exception 'a visitor read the Boss list: %', said; end if;
   -- The waiting persona is a nomination's target; the developer is not, and no Boss names itself. (A benched nominee is turned away at the
   -- handover, which nominated_boss answers with the rotation, as it does a retired one.)
   perform pg_temp.queue_nomination('of-boss', 'of-w2');
@@ -266,4 +284,19 @@ begin
   if (select string_agg(staff, ',' order by staff) from staff_now) is distinct from 'of-w2' then raise exception 'staff_now after the fallback: %', (select string_agg(staff, ',') from staff_now); end if;
   select count(*) into n from staff_offices where staff = 'of-mod' and cause = 'handover';
   if n <> 0 then raise exception 'the incoming Boss was given a log row: the Boss''s office is computed'; end if;
+end $$;
+
+-- ---- A reseed that adds a waiting persona to firstStaff hires it as a mod and debuts it ----
+do $$
+declare
+  late jsonb := jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb, 'system', jsonb_build_object(
+      'firstBoss', 'of-boss', 'firstStaff', jsonb_build_array('of-mod'), 'staff', jsonb_build_array(
+        jsonb_build_object('key', 'of-boss', 'name', 'Of Boss'), jsonb_build_object('key', 'of-mod', 'name', 'Of Mod'), jsonb_build_object('key', 'of-w4', 'name', 'Of W Four'))));
+begin
+  perform seed_instance(late);
+  if pg_temp.office('of-w4') is distinct from 'waiting' or pg_temp.debuted('of-w4') then raise exception 'a persona outside firstStaff did not wait'; end if;
+  perform seed_instance(jsonb_set(late, '{system,firstStaff}', '["of-mod", "of-w4"]'));
+  if pg_temp.rows('of-w4') is distinct from 'mod:seed' then raise exception 'the reseed did not hire the waiting persona: %', pg_temp.rows('of-w4'); end if;
+  if not pg_temp.debuted('of-w4') or pg_temp.office('of-w4') is distinct from 'mod' then raise exception 'a persona the seed seats as a mod is %, debuted %', pg_temp.office('of-w4'), pg_temp.debuted('of-w4'); end if;
+  if not exists (select 1 from characters_public where staff = 'of-w4' and office = 'mod') then raise exception 'the seeded mod is not in characters_public'; end if;
 end $$;

@@ -1708,13 +1708,14 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     expect(log.rows.map((r) => [r.end?.why ?? null, r.keptBy])).toEqual([['superseded', null], ['spent', null], [null, 'the-clerk'], [null, null]]);
     const h = harness((r) => {
       if (r.url.pathname.endsWith('/rpc/replace_successor')) return json({ id: 4, boss: 'hype-man' });
-      if (r.url.pathname.endsWith('/characters_public')) return rows([{ id: A, name: 'Hype Man', staff: 'hype-man' }, { id: B, name: 'The Clerk', staff: 'the-clerk' }]);
+      if (r.url.pathname.endsWith('/rpc/boss_roster_names')) return json([{ staff: 'hype-man', name: 'Hype Man', office: 'member' }, { staff: 'the-clerk', name: 'The Clerk', office: 'waiting' }, { staff: 7, name: 'no key' }]);
       return json({}, 404);
     });
     expect(h.to('moves_log')).toHaveLength(0);
+    /* The Boss list is the database's own roster (waiting personas included, whose names characters_public does not hold), read through the admin function. */
     expect(await h.api.bosses()).toEqual([{ staff: 'hype-man', name: 'Hype Man' }, { staff: 'the-clerk', name: 'The Clerk' }]);
-    const roster = h.to('characters_public')[0]!.url.searchParams;
-    expect([roster.get('office'), roster.get('select')]).toEqual(['neq.developer', 'id,name,staff']);
+    expect(h.to('characters_public')).toHaveLength(0);
+    expect(h.to('rpc/boss_roster_names')).toHaveLength(1);
     expect(await h.api.replaceSuccessor(4, 'hype-man')).toEqual({ ok: true, value: { id: 4, boss: 'hype-man' } });
     expect(h.to('rpc/replace_successor')[0]?.body).toEqual({ id: 4, boss: 'hype-man' });
     const refused = harness(() => json({ code: '55000', message: 'that nomination has already landed; reverse it instead', hint: 'kayfabb.refusal' }, 400));
