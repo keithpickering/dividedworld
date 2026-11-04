@@ -233,9 +233,18 @@ describe('reads and their rows', () => {
       { kind: 'mystery', thread: C }, { kind: 'post', thread: C, title: 'T', seq: '7' }, { kind: 'post', thread: C, title: 'T' },
       { kind: 'update', act: A }, { kind: 'play', card: 5, on: null }, { kind: 'play', on: null },
       { kind: 'character', id: B, name: null }, 'post', 7, [],
+      // Each key alone missing or mistyped, with every other key right.
+      { kind: 'post', title: 'T', seq: 3 }, { kind: 'post', thread: 5, title: 'T', seq: 3 }, { kind: 'post', thread: C, title: 5, seq: 3 }, { kind: 'post', thread: C, title: 'T', seq: NaN },
+      { kind: 'update', title: 'U' }, { kind: 'update', act: 5, title: 'U' }, { kind: 'update', act: A }, { kind: 'update', act: A, title: 5 },
     ]) expect(await read(bad), JSON.stringify(bad)).toBeNull();
-    for (const on of [{ kind: 'mystery' }, { kind: 'post', thread: C, title: 'T', seq: '7' }, { kind: 'character', id: B }, { kind: 'board', slug: 'g' }, 'post', 3, undefined])
-      expect(await read({ kind: 'play', card: 'whoops', on }), JSON.stringify(on)).toEqual({ kind: 'play', card: 'whoops', on: null });
+    for (const on of [
+      { kind: 'mystery' }, { kind: 'post', thread: C, title: 'T', seq: '7' }, { kind: 'character', id: B }, { kind: 'board', slug: 'g' }, 'post', 3, undefined,
+      { kind: 'post', title: 'T', seq: 3 }, { kind: 'post', thread: 5, title: 'T', seq: 3 }, { kind: 'post', thread: C, seq: 3 }, { kind: 'post', thread: C, title: 5, seq: 3 }, { kind: 'post', thread: C, title: 'T', seq: NaN },
+      { kind: 'update', title: 'U' }, { kind: 'update', act: 5, title: 'U' }, { kind: 'update', act: A }, { kind: 'update', act: A, title: 5 },
+      { kind: 'character', name: 'N' }, { kind: 'character', id: 5, name: 'N' }, { kind: 'character', id: B, name: 5 },
+      { kind: 'thread', title: 'T' }, { kind: 'thread', id: 5, title: 'T' }, { kind: 'thread', id: T }, { kind: 'thread', id: T, title: 5 },
+      { kind: 'board', name: 'N' }, { kind: 'board', slug: 5, name: 'N' }, { kind: 'board', slug: 'g', name: 5 },
+    ]) expect(await read({ kind: 'play', card: 'whoops', on }), JSON.stringify(on)).toEqual({ kind: 'play', card: 'whoops', on: null });
   });
 
   it('reads a page of the season\'s news, newest first, and keeps only what the shape holds', async () => {

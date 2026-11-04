@@ -88,6 +88,8 @@ export interface Seed {
   season(season: Partial<Season>): void;
   nextSettlementAt(at: number | null): void;
   views(thread: Id, count: number): void;
+  /** Gives a card, set or spring a place number in its thread, as a play written before 0035 held one: the number is the fake's only legacy shape, for tests that read a play's place. */
+  legacyNumber(act: Id): void;
   /**
    * An alert the writers of the Acts would have written for `account` (`write_alert`, 0058), of a kind that is not read from the Acts
    * themselves: a trap struck or sprung, a hint, a ruling. A quote and a card on the account's post, character or thread are alerts
@@ -481,7 +483,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           : beyond.reach === 'thread' ? { kind: 'thread', id: beyond.target, title: threads.get(beyond.target)!.title }
           : { kind: 'board', slug: boards.find((b) => b.id === beyond.target)!.slug, name: boards.find((b) => b.id === beyond.target)!.name };
       } else {
-        on = onPost(origin) && origin.target !== null ? placeOf(acts.get(origin.target)) : null;
+        // A play with no play_reach row is on a post (0079 joins the target post only then; every beyond-post play has a reach row).
+        on = origin.target !== null ? placeOf(acts.get(origin.target)) : null;
       }
       return { kind: 'play', card, on };
     }
@@ -2087,6 +2090,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     nextSettlementAt(at) { nextSettlement = at; },
     views(thread, count) { views.set(thread, count); },
+    legacyNumber(act) {
+      const a = acts.get(act);
+      if (!a || !(a.kind === 'card' || a.kind === 'set' || a.kind === 'spring')) throw new Error('only a play can keep a legacy place number');
+      (a as { seq: number | null }).seq = threads.get(a.thread)!.nextSeq++;
+    },
     alert(account, a) {
       seeded(account);
       if (!isWritten(a.kind) || a.kind === 'quote' || a.kind === 'cardOnYours') throw new Error(`a ${a.kind} alert is read from the Acts that make it, not seeded`);

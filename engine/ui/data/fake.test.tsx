@@ -852,7 +852,7 @@ describe('what a list row shows', () => {
     const { fake, anaFace, boFace, opener, thread } = world();
     const place = async (origin: string) => (await fake.thread(must(await fake.spin(origin, anaFace, 'Spun', 'b')).thread.id))?.origin;
     const post = { kind: 'post', thread, title: 'Hello', seq: 1 };
-    // A face-up card on a post, and a card that kept an old place number: the kind is read before the seq.
+    // A face-up card on a post.
     expect(await place(fake.seed.card(anaFace, opener, 'whoops'))).toEqual({ kind: 'play', card: 'whoops', on: post });
     // A face-down set names no card; its spring, its own Act, names it.
     const set = fake.seed.set(boFace, fake.seed.post(thread, boFace, 'Bo here.'), 'snare');
@@ -869,6 +869,10 @@ describe('what a list row shows', () => {
     expect(await place(fake.seed.reach(boFace, 'thread', thread, 'glint'))).toEqual({ kind: 'play', card: 'glint', on: { kind: 'thread', id: thread, title: 'Hello' } });
     const general = (await fake.boards()).find((b) => b.slug === 'general')!;
     expect(await place(fake.seed.reach(boFace, 'board', general.id, 'glint'))).toEqual({ kind: 'play', card: 'glint', on: { kind: 'board', slug: 'general', name: 'General' } });
+    // A card that kept an old place number (staged last, since it takes one): still a play, never a post.
+    const old = fake.seed.card(anaFace, opener, 'whoops');
+    fake.seed.legacyNumber(old);
+    expect(await place(old)).toEqual({ kind: 'play', card: 'whoops', on: post });
   });
 
   test('a thread spun from an update has the update\'s place, and a play on an update lands on the update', async () => {
