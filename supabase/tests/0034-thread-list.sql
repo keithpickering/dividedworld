@@ -84,13 +84,13 @@ begin
   if (select replies from thread_list where id = fresh) is distinct from 0 or (select replies from thread_list where id = newer) is distinct from 1 then
     raise exception 'a one-post thread has no replies, and the other thread''s count is its own';
   end if;
-  -- A thread opened by a spin, in the list's one query: the origin Act's thread, that thread's title and the Act's seq.
+  -- A thread opened by a spin, in the list's one query: the origin Act's thread, and its place (0079: the Act's thread, that thread's title and the Act's seq).
   spun := tests.thread('Spun');
   update threads set origin_act_id = op where id = spun;
   select * into r from thread_list where id = spun;
-  if (r.origin_thread, r.origin_title, r.origin_seq) is distinct from (older, 'Older', (select seq from acts where id = op)) then raise exception 'a spun thread names its origin: %', to_jsonb(r); end if;
+  if (r.origin_thread, r.origin_place) is distinct from (older, jsonb_build_object('kind', 'post', 'thread', older, 'title', 'Older', 'seq', (select seq from acts where id = op))) then raise exception 'a spun thread names its origin: %', to_jsonb(r); end if;
   select * into r from thread_list where id = older;
-  if r.origin_thread is not null or r.origin_title is not null or r.origin_seq is not null then raise exception 'a thread that was not spun has no origin: %', to_jsonb(r); end if;
+  if r.origin_thread is not null or r.origin_place is not null then raise exception 'a thread that was not spun has no origin: %', to_jsonb(r); end if;
 
   -- The list never scans: a board's page is read from the (board, last_at) index, and the week's
   -- replies from the partial index of recent posts. A table this small would be scanned whatever
@@ -125,7 +125,7 @@ begin
   perform tests.unbecome();
   -- Its columns are public ones only.
   if (select array_agg(column_name::text order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'thread_list')
-     is distinct from array['id', 'board', 'title', 'origin_act_id', 'created_at', 'last_at', 'last_seq', 'replies', 'first_act', 'first_character', 'last_act', 'last_character', 'replies_this_week', 'origin_thread', 'origin_title', 'origin_seq'] then
+     is distinct from array['id', 'board', 'title', 'origin_act_id', 'created_at', 'last_at', 'last_seq', 'replies', 'first_act', 'first_character', 'last_act', 'last_character', 'replies_this_week', 'origin_thread', 'origin_place'] then
     raise exception 'thread_list shows more or less than it should';
   end if;
 end $$;
