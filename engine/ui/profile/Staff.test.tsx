@@ -125,4 +125,16 @@ describe('a Boss\'s log after a handover', () => {
     expect(within(byName('Forgotten Fen Place')).getAllByRole('cell').at(-1)).toHaveTextContent('ended at the handover');
   });
 
+  test('names a keeper who has not debuted in plain words to a non-admin, never its key', async () => {
+    open('director', (fake, world) => {
+      fake.seed.staff('the-waiting', 'Waiting Persona', 'member', { debuted: false });
+      fake.seed.keepMove(world.inForce, 'the-waiting', { at: fake.clock.now() - 3_600_000 });
+    });
+    await waitFor(async () => expect(await rows()).toHaveLength(4));
+    const text = (await log()).textContent ?? '';
+    expect(text).toContain('kept by a Boss who has not been introduced');
+    expect(text).not.toContain('the-waiting');
+    expect(text).not.toContain('Waiting Persona');
+  });
+
 });

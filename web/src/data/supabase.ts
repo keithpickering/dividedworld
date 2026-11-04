@@ -735,6 +735,11 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const r = (await read(() => client.rpc('boss_roster_names'))).data;
       return (Array.isArray(r) ? (r as Row[]) : []).flatMap((x) => (typeof x['staff'] === 'string' ? [{ staff: x['staff'], name: String(x['name'] ?? x['staff']) }] : []));
     },
+    /* The names anyone may read: staff in characters_public, which holds only the debuted. */
+    async staffNames() {
+      const rowsOf = await list(() => client.from('characters_public').select('staff,name').not('staff', 'is', null));
+      return rowsOf.flatMap((x) => (typeof x['staff'] === 'string' ? [{ staff: x['staff'], name: String(x['name'] ?? '') }] : []));
+    },
     async reverseMove(act) {
       const a = await rpcWrite(() => client.rpc('reverse_move', { move_act: act }));
       return a.ok ? { ok: true, value: { act: a.value['act'], endedBy: a.value['endedBy'] } } : a;

@@ -1436,6 +1436,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!me()?.admin) throw new Error('only an admin reads the Boss list');
       return [...characters.values()].filter((c) => c.staff && c.staff.office !== 'developer' && c.staff.office !== 'benched' && c.retiredAt === null).map((c) => ({ staff: c.staff!.key, name: c.name }));
     },
+    /* characters_public: staff that have debuted, for anyone. */
+    staffNames() {
+      return [...characters.values()].filter((c) => c.staff && c.debutedAt !== null).map((c) => ({ staff: c.staff!.key, name: c.name }));
+    },
     reverseMove(act) {
       if (!me()?.admin) return refuse('only an admin reverses a move');
       const a = acts.get(act);

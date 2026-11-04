@@ -1716,6 +1716,11 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     expect(await h.api.bosses()).toEqual([{ staff: 'hype-man', name: 'Hype Man' }, { staff: 'the-clerk', name: 'The Clerk' }]);
     expect(h.to('characters_public')).toHaveLength(0);
     expect(h.to('rpc/boss_roster_names')).toHaveLength(1);
+    /* The public names come from characters_public alone: debuted staff, by key. */
+    const pub = harness((r) => (r.url.pathname.endsWith('/characters_public') ? rows([{ staff: 'the-clerk', name: 'The Clerk' }, { staff: null, name: 'Al' }]) : rows([])));
+    expect(await pub.api.staffNames()).toEqual([{ staff: 'the-clerk', name: 'The Clerk' }]);
+    expect(pub.to('characters_public')[0]?.url.searchParams.get('select')).toBe('staff,name');
+    expect(pub.to('rpc/boss_roster_names')).toHaveLength(0);
     expect(await h.api.replaceSuccessor(4, 'hype-man')).toEqual({ ok: true, value: { id: 4, boss: 'hype-man' } });
     expect(h.to('rpc/replace_successor')[0]?.body).toEqual({ id: 4, boss: 'hype-man' });
     const refused = harness(() => json({ code: '55000', message: 'that nomination has already landed; reverse it instead', hint: 'kayfabb.refusal' }, 400));

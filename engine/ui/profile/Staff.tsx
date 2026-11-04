@@ -83,6 +83,9 @@ export function StaffProfile({ character: c }: { readonly character: Character }
   );
 }
 
+/** A staff key no public name resolves: a persona that has not debuted stays unnamed. */
+const UNINTRODUCED = 'a Boss who has not been introduced';
+
 function ModerationLog({ staff, bot }: { readonly staff: string; readonly bot: boolean }) {
   const { api } = useKayfa();
   const [rows, setRows] = useState<readonly MoveLogRow[] | null>(null);
@@ -94,8 +97,8 @@ function ModerationLog({ staff, bot }: { readonly staff: string; readonly bot: b
   useEffect(() => {
     let live = true;
     setRows(null);
-    /* The roster's names are a nicety (who keeps a move, whom a nomination names): the log reads without them. */
-    Promise.all([api.movesLog(staff), api.boardNames(), api.bosses().catch(() => [])]).then(([page, names, roster]) => {
+    /* The debuted staff's public names are a nicety (who keeps a move, whom a nomination names): the log reads without them. */
+    Promise.all([api.movesLog(staff), api.boardNames(), api.staffNames().catch(() => [])]).then(([page, names, roster]) => {
       if (!live) return;
       setRows(page.rows);
       setOlder(page.older);
@@ -130,8 +133,8 @@ function ModerationLog({ staff, bot }: { readonly staff: string; readonly bot: b
             {rows.map((r) => (
               <tr key={r.act}>
                 <td className="kb-small"><time dateTime={r.at} title={new Date(r.at).toLocaleString('en-US')}>{shortDate(r.at)}</time></td>
-                <td><MoveSentence kind={r.kind} params={r.params} boards={boards} bosses={bosses} tense="done" /></td>
-                <td className="kb-small kb-muted">{endedWords(r.end, r.demand, r.keptBy ? bosses.find((b) => b.staff === r.keptBy)?.name ?? r.keptBy : null)}</td>
+                <td><MoveSentence kind={r.kind} params={r.params} boards={boards} bosses={bosses} unnamed={UNINTRODUCED} tense="done" /></td>
+                <td className="kb-small kb-muted">{endedWords(r.end, r.demand, r.keptBy ? bosses.find((b) => b.staff === r.keptBy)?.name ?? UNINTRODUCED : null)}</td>
               </tr>
             ))}
           </tbody>

@@ -2135,6 +2135,15 @@ describe('Updates: the developer persona\'s posts (updates, post_update, 0062)',
   });
 });
 
+describe('the staff names', () => {
+  test('are public: every debuted staff character by key, a waiting persona left out', async () => {
+    const { fake } = world();
+    fake.seed.staff('boss', 'The Boss', 'boss');
+    fake.seed.staff('later', 'Waiting Persona', 'member', { debuted: false });
+    expect((await fake.staffNames()).map((b) => [b.staff, b.name])).toEqual([['boss', 'The Boss']]);
+  });
+});
+
 describe('the Boss list', () => {
   test('is the database\'s roster: every persona not benched, a waiting one included, the developer and a benched one left out; the queue\'s replace choices are the same list', async () => {
     const { fake } = world();

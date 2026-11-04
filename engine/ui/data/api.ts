@@ -986,8 +986,10 @@ export interface KayfaApi {
   reverseMove(act: Id): Promise<Answer<{ readonly act: Id; readonly endedBy: Id }>>;
   /** Puts another Boss of the roster in a waiting nomination's place (`id` is the queue row's). An admin's alone; a nomination that has landed or been held is refused. */
   replaceSuccessor(id: number, boss: string): Promise<Answer<{ readonly id: number; readonly boss: string }>>;
-  /** The Bosses of the instance's roster, by staff key and name: public, as a Boss's name is. */
+  /** The instance's whole roster by staff key and name, a waiting persona included (`boss_roster_names`): an admin's alone; anyone else is refused (the call throws). */
   bosses(): Promise<readonly { readonly staff: string; readonly name: string }[]>;
+  /** The names of staff who have debuted, by staff key (`characters_public`): public, so a waiting persona is not in it. The public moderation log names a nominee and a keeper from it. */
+  staffNames(): Promise<readonly { readonly staff: string; readonly name: string }[]>;
 
   settings(): Promise<ScreenSettings>;
 
