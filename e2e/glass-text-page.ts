@@ -140,7 +140,7 @@ function ownMatrix(ps: CSSStyleDeclaration, w: number, h: number): DOMMatrix {
  * size), the whole at the scale `el` is drawn at. `scale` is the pseudo's own: how much its
  * transform shrinks what it draws, its mask's feather with it.
  */
-function pseudoBox(el: Element, ps: CSSStyleDeclaration): Box & { readonly scale: number } {
+export function pseudoBox(el: Element, ps: CSSStyleDeclaration): Box & { readonly scale: number } {
   const r = el.getBoundingClientRect();
   const s = getComputedStyle(el);
   const z = zoomOf(el);
@@ -181,7 +181,7 @@ function featherOf(mask: string): number {
   return Math.max(0, ...[...mask.matchAll(/(-?[\d.]+)px/g)].map((m) => Math.abs(+m[1]!)));
 }
 
-const drawn = (ps: CSSStyleDeclaration) => ps.content !== 'none' && ps.content !== 'normal' && ps.display !== 'none';
+export const drawn = (ps: CSSStyleDeclaration) => ps.content !== 'none' && ps.content !== 'normal' && ps.display !== 'none';
 
 /** The nearest calm drawn on `el` or above it, inside the surface's element; a calm whose backing is not drawn is passed over. */
 function calmOf(el: Element, holder: Element): Calm | null {
