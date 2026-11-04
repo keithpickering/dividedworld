@@ -1,7 +1,7 @@
 /*
  * The calm: a backing of the ground, laid over the smoke under a block of text, so the words stand
  * on a quieter pixel than the smoke's worst. It is drawn on the text's own element (`kb-calm`), as
- * a `::before` sized by the block and feathered at its edge with a mask, so it follows its text
+ * a `::before` that is the block's own box, feathered at its edge with a mask, so it follows its text
  * when the text reflows. (The boards draw their calms as masks on the smoke; the build draws them
  * on the words.) tools/check-glass-contrast.mjs reads a calmed pixel as the smoke thinned to what
  * the calm leaves, and holds every `body` token to 4.5:1 on it. The opacity is the theme's, set on
@@ -16,11 +16,32 @@
   isolation: isolate;
 }
 
+/*
+ * The calm is drawn inside its element: the text is held in from the edge by the feather (the ramp
+ * from nothing to the full backing) and a pad past it, so it stands on the full-strength interior
+ * with a margin of solid calm around it. The doubled class outranks a component's own padding on
+ * the element (none is as large as the feather and the pad, and text in the feather is not on the
+ * full calm), though not a phone or text-size rule written with `:where`.
+ */
+.kb-calm.kb-calm {
+  --kb-glass-calm-inset: calc(var(--kb-glass-calm-feather) + var(--kb-glass-calm-pad));
+  padding: var(--kb-glass-calm-inset);
+}
+
+/*
+ * A calmed heading, lede or tab strip set flush to its column keeps the column's left edge: its
+ * margin takes back what its padding put between the edge and the words. (A block's own margin
+ * shorthand would otherwise reset it, so this is as specific as the padding.)
+ */
+.kb-calm.kb-calm[data-kb-calm='flush'] {
+  margin-inline: calc(var(--kb-glass-calm-inset) * -1);
+}
+
 .kb-calm::before {
   content: '';
   position: absolute;
   z-index: -1;
-  inset: calc(var(--kb-glass-calm-feather) * -1);
+  inset: 0;
   pointer-events: none;
   background: color-mix(in srgb, var(--kb-glass-ground) calc(var(--kb-glass-calm-opacity) * 100%), transparent);
   /* Alpha is all a mask reads: the edge ramps over the feather on each axis, and the axes intersect. */
@@ -34,8 +55,3 @@
   mask-composite: intersect;
 }
 
-@supports not (mask-image: linear-gradient(currentColor, currentColor)) {
-  .kb-calm::before {
-    inset: 0;
-  }
-}

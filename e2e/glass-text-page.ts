@@ -199,7 +199,7 @@ function calmOf(el: Element, holder: Element): Calm | null {
   const bg = parseColor(ps.backgroundColor);
   const opacity = (bg ? bg[3] : parseFloat(getComputedStyle(c).getPropertyValue('--kb-glass-calm-opacity'))) * opacityOf(c);
   const box = { x: backing.x + feather, y: backing.y + feather, width: backing.width - 2 * feather, height: backing.height - 2 * feather };
-  return { backing, feather, box, opacity };
+  return { backing, feather, box, opacity, element: toBox(c.getBoundingClientRect()) };
 }
 
 /**

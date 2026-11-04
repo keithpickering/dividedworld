@@ -51,8 +51,8 @@ export type Rgba = readonly [number, number, number, number];
 /** A layer under the text that is not the smoke: a panel's background, at the opacity it is drawn. */
 export interface Backing { readonly box: Box; readonly opacity: number }
 
-/** A calm: its backing as drawn, its feather, and `box`, the backing inset by the feather (its interior). */
-export interface Calm extends Backing { readonly backing: Box; readonly feather: number }
+/** A calm: its backing as drawn, its feather, `box` (the backing inset by the feather: its interior), and `element`, the calmed element's own border box. */
+export interface Calm extends Backing { readonly backing: Box; readonly feather: number; readonly element: Box }
 
 /** One line of one text node on a glass surface, as the gatherer read it in the page. */
 export interface TextFact {

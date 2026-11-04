@@ -170,7 +170,7 @@ export function Alerts({ data, older, onOlder, onUnfollow, notes }: AlertsProps)
       <div className="kb-alerts-head">
         <h1 className="kb-alerts-title kb-glass-display">Alerts</h1>
         {mine.length > 1 && (
-          <nav aria-label="Whose alerts" className="kb-alerts-tabs kb-calm">
+          <nav aria-label="Whose alerts" className="kb-alerts-tabs kb-calm" data-kb-calm="flush">
             <button type="button" className="kb-alerts-tab kb-glass-skew" aria-pressed={current === null} onClick={() => setPicked(null)}><span className="kb-glass-upright">All</span></button>
             {mine.map((c) => (
               <button key={c.id} type="button" className="kb-alerts-tab kb-glass-skew" aria-pressed={current?.id === c.id} onClick={() => setPicked(c.id)}><span className="kb-glass-upright">{c.name}</span></button>
@@ -178,7 +178,7 @@ export function Alerts({ data, older, onOlder, onUnfollow, notes }: AlertsProps)
           </nav>
         )}
       </div>
-      <p className="kb-alerts-lede kb-calm">
+      <p className="kb-alerts-lede kb-calm" data-kb-calm="flush">
         What happened to your characters, and what&apos;s new in the game. Every alert is true, and each one is also in your log or on the board. A thread drops off this list once you&apos;ve read it.
       </p>
       <div ref={list} role="group" aria-label="Your alerts" className="kb-alerts-board kb-calm" tabIndex={-1}>

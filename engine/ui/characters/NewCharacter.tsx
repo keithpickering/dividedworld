@@ -69,7 +69,7 @@ export function NewCharacter() {
     <div className="kb-new-character">
       <div className="kb-characters-head">
         <h1 className="kb-characters-title kb-glass-display">New character</h1>
-        <p className="kb-characters-lead kb-calm">This page is out of character and only you can see it. Nobody else can tell who plays a character.</p>
+        <p className="kb-characters-lead kb-calm" data-kb-calm="flush">This page is out of character and only you can see it. Nobody else can tell who plays a character.</p>
       </div>
       <form className="kb-new-form" aria-label="New character" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
         <div className="kb-new-name kb-calm">

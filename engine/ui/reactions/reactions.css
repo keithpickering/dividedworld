@@ -112,8 +112,9 @@
   color: var(--kb-glass-text-2);
 }
 
-.kb-picker-axis[data-kb-axis='top'] { top: 0; }
-.kb-picker-axis[data-kb-axis='bottom'] { bottom: 0; }
+/* The axis names stand where they did: its calm's padding is taken back at the edge it sits on. */
+.kb-picker-axis[data-kb-axis='top'] { top: calc(var(--kb-glass-calm-inset) * -1); }
+.kb-picker-axis[data-kb-axis='bottom'] { bottom: calc(var(--kb-glass-calm-inset) * -1); }
 
 .kb-picker-cross {
   position: absolute;
@@ -224,6 +225,11 @@
  * board draws them; on the phone's sheet they are the phone's display size, under the large size,
  * so there they stand in their calm, as body text does.
  */
+/* A label stands where it did: its calm's padding is taken back above and below it, as at its sides (flush, Picker.tsx). */
+.kb-picker-label.kb-calm {
+  margin-block: calc(var(--kb-glass-calm-inset) * -1);
+}
+
 .kb-picker:not([data-kb-place='sheet']) .kb-picker-label.kb-calm::before {
   content: none;
 }

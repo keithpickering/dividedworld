@@ -295,7 +295,7 @@ export function Vending() {
   return (
     <div className="kb-vending">
       <aside className="kb-vending-side">
-        <div className="kb-vending-head kb-calm">
+        <div className="kb-vending-head kb-calm" data-kb-calm="flush">
           <p className="kb-vending-eyebrow">Spend Aura</p>
           <h1 className="kb-vending-title kb-glass-display">Vending Machine</h1>
         </div>

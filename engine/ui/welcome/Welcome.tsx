@@ -104,7 +104,7 @@ export function Welcome() {
           </div>
         </article>
         <aside className="kb-welcome-side" aria-label="What happens next">
-          <p className="kb-welcome-lede kb-calm">You&apos;re in. One letter, three settings, then your first character.</p>
+          <p className="kb-welcome-lede kb-calm" data-kb-calm="flush">You&apos;re in. One letter, three settings, then your first character.</p>
           <ul className="kb-welcome-next kb-calm">
             {NEXT.map((n) => <li key={n.title}><b>{n.title}</b>{n.line}</li>)}
           </ul>

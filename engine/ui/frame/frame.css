@@ -425,7 +425,8 @@
   align-items: flex-start;
   /* Ends before the Alerts button, which stands at the right of the same corner (1229px at the board's 1440): the date and time are never drawn under it. */
   max-width: 240px;
-  margin: 1.875rem 0 0;
+  /* The clock stands where it did: its calm's padding is taken back above and below it, as at its sides (flush, Hud.tsx). */
+  margin: calc(1.875rem - var(--kb-glass-calm-inset)) 0 calc(var(--kb-glass-calm-inset) * -1);
 }
 
 .kb-hud-clock-label {
@@ -785,10 +786,7 @@
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hand-head-count {
-  /* The count stands in its own calm, a few px wider than its ink, which the heading's box does not reach. */
   display: inline-block;
-  margin: -4px;
-  padding: 4px;
   font-family: var(--kb-glass-font-body);
   font-size: var(--kb-glass-size-phone-display);
   font-weight: 800;

@@ -172,7 +172,7 @@ export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' 
       <div className="kb-log-head">
         <h1 className="kb-log-title kb-glass-display">My log</h1>
         {tabs.length > 0 && (
-          <nav aria-label="Whose log" className="kb-log-tabs kb-calm">
+          <nav aria-label="Whose log" className="kb-log-tabs kb-calm" data-kb-calm="flush">
             <button type="button" className="kb-log-tab kb-glass-skew" aria-pressed={current === null} onClick={() => onTab(null)}><span className="kb-glass-upright">All</span></button>
             {tabs.map((c) => (
               <button key={c.id} type="button" className="kb-log-tab kb-glass-skew" aria-pressed={current?.id === c.id} onClick={() => onTab(c.id)}><span className="kb-glass-upright">{c.name}</span></button>
@@ -180,7 +180,7 @@ export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' 
           </nav>
         )}
       </div>
-      <p className="kb-log-lead kb-calm">
+      <p className="kb-log-lead kb-calm" data-kb-calm="flush">
         Everything on this page is true. Each line names the Act that did it, what it changed and how much Aura moved. It never says who reacted, or
         any character's class but your own.
       </p>

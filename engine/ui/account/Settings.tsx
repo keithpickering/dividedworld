@@ -140,7 +140,7 @@ function Frame({ section, children }: { readonly section: Section | null; readon
       <h1 className="kb-acct-title kb-glass-display">Settings</h1>
       <div className="kb-settings-body">
         {section && (
-          <nav className="kb-settings-nav kb-calm" aria-label="Settings sections">
+          <nav className="kb-settings-nav kb-calm" data-kb-calm="flush" aria-label="Settings sections">
             <ul>
               {SECTIONS.map((s) => (
                 <li key={s.key}>
@@ -181,7 +181,7 @@ export function SettingsScreen() {
 
   if (session === null) return <div className="kb-acct" aria-busy="true" />;
   if (!session.signedIn || !account) {
-    return <Frame section={null}><p className="kb-acct-lead kb-calm"><Link to="/sign-in">Sign in</Link> to change your settings.</p></Frame>;
+    return <Frame section={null}><p className="kb-acct-lead kb-calm" data-kb-calm="flush"><Link to="/sign-in">Sign in</Link> to change your settings.</p></Frame>;
   }
   if (prefs === null) {
     return <Frame section={section}><div className="kb-settings-section" aria-busy="true">{refusal && <p role="alert" className="kb-acct-refusal kb-calm">{refusal}</p>}</div></Frame>;

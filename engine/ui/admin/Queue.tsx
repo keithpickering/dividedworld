@@ -88,10 +88,10 @@ export function QueueScreen({ now }: { readonly now?: number }) {
     <div className="kb-queue">
       <h1 className="kb-queue-title kb-glass-display">The System&apos;s moves</h1>
       {!admin
-        ? <p className="kb-queue-lead kb-calm">The admin queue is for admins.</p>
+        ? <p className="kb-queue-lead kb-calm" data-kb-calm="flush">The admin queue is for admins.</p>
         : (
           <>
-            <p className="kb-queue-lead kb-calm">
+            <p className="kb-queue-lead kb-calm" data-kb-calm="flush">
               Moves that reshape a board wait here before they land, and land unless you hold them. Anything in force can be reversed. Players never see a held move.
             </p>
             {failed && <p className="kb-queue-note kb-calm" role="alert">The queue could not be read. Reload the page to try again.</p>}

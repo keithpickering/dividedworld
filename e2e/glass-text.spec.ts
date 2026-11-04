@@ -460,7 +460,7 @@ test.describe('the poisons, planted in a real page', () => {
     await open(page, rankings);
     await plant(page, '.kb-rankings-lead.kb-calm::before { transform: translateX(900px); }');
     /* The page recipe's full worst, 0.231, is over the lead's ceiling, so the calm is still what it needs. */
-    expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-rankings-lead \(surface rankings\): lies outside its calm's interior .* by 900px, and its recipe's full worst, 0\.231, is not under the ceiling 0\.152/u));
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-rankings-lead \(surface rankings\): lies outside its calm's interior .* by 888px, and its recipe's full worst, 0\.231, is not under the ceiling 0\.152/u));
   });
 
   test('an uncalmed line on a recipe too bright for its color', async ({ page }) => {
@@ -472,7 +472,8 @@ test.describe('the poisons, planted in a real page', () => {
 
   test('a feather that reaches into the text', async ({ page }) => {
     await open(page, rankings);
-    await plant(page, '.kb-rankings-lead.kb-calm::before { inset: -4px; }');
+    /* The text stands 12px inside the interior (the pad); a backing drawn in 20px takes its interior past it. */
+    await plant(page, '.kb-rankings-lead.kb-calm::before { inset: 20px; }');
     expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-rankings-lead \(surface rankings\): lies outside its calm's interior \(its backing inset by its 32px feather\)/u));
   });
 
@@ -521,7 +522,7 @@ test.describe('the poisons, planted in a real page', () => {
     await page.locator('.kb-glass-page').evaluate((glassPage) => {
       const p = document.createElement('p');
       p.className = 'kb-calm kb-planted';
-      p.style.cssText = 'position: fixed; left: 40px; bottom: -12px; margin: 0';
+      p.style.cssText = 'position: fixed; left: 40px; bottom: -60px; margin: 0';
       p.textContent = 'A line the window always cuts';
       glassPage.append(p);
     });

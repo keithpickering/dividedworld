@@ -122,7 +122,7 @@ export function Updates({ updates, open, more, onMore, admin, onWritten }: Updat
       </div>
       <div className="kb-updates-cols">
         <aside className="kb-updates-side">
-          <p className="kb-updates-lede kb-calm">
+          <p className="kb-updates-lede kb-calm" data-kb-calm="flush">
             What changed in the game, from the people who make it.
             {voice !== undefined && <> The voice is {possessive(voice)}; every fact in it is true.</>}
           </p>

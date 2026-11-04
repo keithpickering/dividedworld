@@ -340,8 +340,8 @@ export function Characters() {
   return (
     <div className="kb-characters">
       <div className="kb-characters-head">
-        <h1 className="kb-characters-title kb-glass-display kb-calm">Your characters <span className="kb-characters-count">({active.length} of {per})</span></h1>
-        <p className="kb-characters-lead kb-calm">This page is out of character and only you can see it. Classes are shown here and nowhere else unless you reveal them.</p>
+        <h1 className="kb-characters-title kb-glass-display kb-calm" data-kb-calm="flush">Your characters <span className="kb-characters-count">({active.length} of {per})</span></h1>
+        <p className="kb-characters-lead kb-calm" data-kb-calm="flush">This page is out of character and only you can see it. Classes are shown here and nowhere else unless you reveal them.</p>
       </div>
       <div role="status" className="kb-flash">{flash && <p className="kb-notice kb-calm">{flash}</p>}</div>
 
@@ -349,7 +349,7 @@ export function Characters() {
 
       <div className="kb-roster-layout">
         <div className="kb-roster-side">
-          <ul className="kb-roster kb-calm" aria-label={`Roster, ${active.length} of ${per} slots used`}>
+          <ul className="kb-roster kb-calm" data-kb-calm="flush" aria-label={`Roster, ${active.length} of ${per} slots used`}>
             {mine.map((c) => {
               const r = rankOf(c);
               return (
