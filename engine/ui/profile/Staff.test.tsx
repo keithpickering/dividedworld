@@ -84,11 +84,11 @@ describe('a Boss\'s profile', () => {
 });
 
 describe('a staff profile\'s career', () => {
-  const led = (season: number, from: string, until: string | null, how: string) => ({ season, from, until, how });
+  const led = (season: number, from: string, until: string | null, how: string) => ({ season, since: from, until, how });
   test('lists the seasons it led and the offices it held, newest first, in plain words', async () => {
     open('director', (f) => f.seed.career('director', {
       led: [led(2, '2026-02-01T00:00:00+00:00', '2026-03-29T00:00:00+00:00', 'rotation'), led(5, '2026-06-07T00:00:00+00:00', null, 'nomination')],
-      offices: [{ office: 'mod', from: '2026-03-29T00:00:00+00:00', until: '2026-06-07T00:00:00+00:00', cause: 'handover' }],
+      offices: [{ office: 'mod', since: '2026-03-29T00:00:00+00:00', until: '2026-06-07T00:00:00+00:00', cause: 'handover' }],
     }));
     const career = await screen.findByRole('region', { name: 'Career' });
     const items = await within(career).findAllByRole('listitem');

@@ -116,7 +116,7 @@ test('the system prompt carries the Boss\'s career as plain facts, and says so w
   const facts = {
     boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: false, roster: [], notes: [],
   };
-  const served = meetingSystemPrompt({ ...facts, career: { led: [{ season: 3, from: '2026-04-01T00:00:00+00:00', until: null, how: 'nomination' }], offices: [] } });
+  const served = meetingSystemPrompt({ ...facts, career: { led: [{ season: 3, since: '2026-04-01T00:00:00+00:00', until: null, how: 'nomination' }], offices: [] } });
   assert.ok(served.includes('Your career, as plain facts'), served);
   assert.ok(served.includes('Boss in Season 3, from 2026-04-01 until now'), served);
   assert.ok(meetingSystemPrompt({ ...facts, career: { led: [], offices: [] } }).includes('You have held no office before.'));

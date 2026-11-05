@@ -516,8 +516,8 @@ test('a Boss with no moves banked still keeps its memory and profile', async () 
 
 test('the Boss\'s career is read for the Boss itself and carried in the system prompt as plain facts', async () => {
   const served = fakeDb({ career: {
-    led: [{ season: 2, from: '2026-02-01T00:00:00+00:00', until: '2026-03-29T00:00:00+00:00', how: 'rotation' }],
-    offices: [{ office: 'mod', from: '2026-03-29T00:00:00+00:00', until: null, cause: 'handover' }],
+    led: [{ season: 2, since: '2026-02-01T00:00:00+00:00', until: '2026-03-29T00:00:00+00:00', how: 'rotation' }],
+    offices: [{ office: 'mod', since: '2026-03-29T00:00:00+00:00', until: null, cause: 'handover' }],
   } });
   const m = fakeModels(answer([]));
   await run(served.db, m.models, quiet, SLOT, clock, noFeeds);

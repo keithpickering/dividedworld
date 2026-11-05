@@ -5,10 +5,10 @@ import { CAREER_MOST, careerText, type Career } from './career.ts';
 // A persona that led Season 2, was a Mod Bot under the next Boss, and led Season 5.
 const SERVED: Career = {
   led: [
-    { season: 2, from: '2026-02-01T00:00:00+00:00', until: '2026-03-29T00:00:00+00:00', how: 'rotation' },
-    { season: 5, from: '2026-06-07T00:00:00+00:00', until: null, how: 'nomination' },
+    { season: 2, since: '2026-02-01T00:00:00+00:00', until: '2026-03-29T00:00:00+00:00', how: 'rotation' },
+    { season: 5, since: '2026-06-07T00:00:00+00:00', until: null, how: 'nomination' },
   ],
-  offices: [{ office: 'mod', from: '2026-03-29T00:00:00+00:00', until: '2026-06-07T00:00:00+00:00', cause: 'handover' }],
+  offices: [{ office: 'mod', since: '2026-03-29T00:00:00+00:00', until: '2026-06-07T00:00:00+00:00', cause: 'handover' }],
 };
 const NEVER: Career = { led: [], offices: [] };
 
@@ -26,8 +26,8 @@ test('a persona that led two seasons and was a mod between them reads as plain s
 test('a mod who became Boss reads as a mod only until the season it leads began, never "until now" beside Boss "until now"', () => {
   // As the database returns it: the mod's office row is clipped where the persona's season begins.
   const lines = careerText({
-    led: [{ season: 3, from: '2026-05-01T00:00:00+00:00', until: null, how: 'rotation' }],
-    offices: [{ office: 'mod', from: '2026-01-01T00:00:00+00:00', until: '2026-05-01T00:00:00+00:00', cause: 'seed' }],
+    led: [{ season: 3, since: '2026-05-01T00:00:00+00:00', until: null, how: 'rotation' }],
+    offices: [{ office: 'mod', since: '2026-01-01T00:00:00+00:00', until: '2026-05-01T00:00:00+00:00', cause: 'seed' }],
   });
   assert.equal(lines.length, 2);
   assert.match(lines[0]!, /^Boss in Season 3, from 2026-05-01 until now/u);
@@ -41,7 +41,7 @@ test('a member that never served has no career', () => {
 
 test('thirteen entries are cut to the newest twelve and "and 1 more" says so', () => {
   const offices = Array.from({ length: 13 }, (_, i) => ({
-    office: i % 2 ? 'mod' : 'member', from: `2026-01-${String(i + 1).padStart(2, '0')}T00:00:00+00:00`,
+    office: i % 2 ? 'mod' : 'member', since: `2026-01-${String(i + 1).padStart(2, '0')}T00:00:00+00:00`,
     until: `2026-01-${String(i + 2).padStart(2, '0')}T00:00:00+00:00`, cause: 'admin',
   }));
   const lines = careerText({ led: [], offices });
@@ -56,8 +56,8 @@ test('thirteen entries are cut to the newest twelve and "and 1 more" says so', (
 test('poison: one persona\'s career never holds a season another persona led', () => {
   // Two personas as the database returns them: the careers are keyed by who is asked, so a season is in exactly one.
   const careers: Record<string, Career> = {
-    'of-ann': { led: [{ season: 1, from: '2026-01-01T00:00:00+00:00', until: '2026-02-01T00:00:00+00:00', how: 'seed' }], offices: [] },
-    'of-bob': { led: [{ season: 2, from: '2026-02-01T00:00:00+00:00', until: null, how: 'rotation' }], offices: [] },
+    'of-ann': { led: [{ season: 1, since: '2026-01-01T00:00:00+00:00', until: '2026-02-01T00:00:00+00:00', how: 'seed' }], offices: [] },
+    'of-bob': { led: [{ season: 2, since: '2026-02-01T00:00:00+00:00', until: null, how: 'rotation' }], offices: [] },
   };
   const ann = careerText(careers['of-ann']!).join('\n');
   const bob = careerText(careers['of-bob']!).join('\n');
@@ -69,9 +69,9 @@ test('poison: one persona\'s career never holds a season another persona led', (
 
 test('a season length is true: days below fourteen, whole weeks (rounded down) from there', () => {
   const len = (days: number): string => {
-    const from = '2026-02-01T00:00:00+00:00';
-    const until = new Date(Date.parse(from) + days * 86_400_000).toISOString();
-    return careerText({ led: [{ season: 1, from, until, how: 'rotation' }], offices: [] })[0]!;
+    const since = '2026-02-01T00:00:00+00:00';
+    const until = new Date(Date.parse(since) + days * 86_400_000).toISOString();
+    return careerText({ led: [{ season: 1, since, until, how: 'rotation' }], offices: [] })[0]!;
   };
   assert.match(len(10), /\(10 days\)/u);
   assert.match(len(1), /\(1 day\)/u);
@@ -83,7 +83,7 @@ test('a season length is true: days below fourteen, whole weeks (rounded down) f
 
 test('a date is the UTC date whatever offset the timestamp is written in', () => {
   const [line] = careerText({
-    led: [{ season: 1, from: '2026-02-02T08:00:00+13:00', until: '2026-02-20T11:00:00+13:00', how: 'rotation' }],
+    led: [{ season: 1, since: '2026-02-02T08:00:00+13:00', until: '2026-02-20T11:00:00+13:00', how: 'rotation' }],
     offices: [],
   });
   assert.match(line!, /from 2026-02-01 to 2026-02-19 /u);

@@ -50,7 +50,7 @@ begin
   if jsonb_array_length(c -> 'led') is distinct from 1 or (c -> 'led' -> 0 ->> 'season')::int is distinct from 1 then raise exception 'the first Boss''s career at the seed: %', c; end if;
   if c -> 'led' -> 0 -> 'until' is distinct from 'null'::jsonb then raise exception 'the open season has an end: %', c; end if;
   if c -> 'led' -> 0 ->> 'how' is distinct from 'seed' then raise exception 'the first season was not the seed''s: %', c; end if;
-  if (c -> 'led' -> 0 ->> 'from')::timestamptz is distinct from (select starts_at from seasons where number = 1) then raise exception 'the season began elsewhere: %', c; end if;
+  if (c -> 'led' -> 0 ->> 'since')::timestamptz is distinct from (select starts_at from seasons where number = 1) then raise exception 'the season began elsewhere: %', c; end if;
   if jsonb_array_length(c -> 'offices') <> 0 then raise exception 'a Boss''s seat is an office row: %', c; end if;
   c := pg_temp.career('cr-cat');
   if jsonb_array_length(c -> 'led') <> 0 or c -> 'offices' -> 0 ->> 'office' is distinct from 'mod' or c -> 'offices' -> 0 ->> 'cause' is distinct from 'seed'
@@ -75,7 +75,7 @@ begin
   if (select string_agg(o ->> 'office' || ':' || (o ->> 'cause'), ',' order by ord) from jsonb_array_elements(a -> 'offices') with ordinality x(o, ord)) is distinct from 'member:handover,benched:admin' then
     raise exception 'the outgoing Boss''s offices: %', a;
   end if;
-  if (a -> 'offices' -> 0 ->> 'until') is distinct from (a -> 'offices' -> 1 ->> 'from') or a -> 'offices' -> 1 -> 'until' is distinct from 'null'::jsonb then
+  if (a -> 'offices' -> 0 ->> 'until') is distinct from (a -> 'offices' -> 1 ->> 'since') or a -> 'offices' -> 1 -> 'until' is distinct from 'null'::jsonb then
     raise exception 'an office ends where the next begins and the latest is open: %', a;
   end if;
   if jsonb_array_length(b -> 'led') is distinct from 1 or b -> 'led' -> 0 ->> 'season' is distinct from '2' or b -> 'led' -> 0 ->> 'how' is distinct from 'rotation' then raise exception 'the new Boss''s career: %', b; end if;
@@ -129,7 +129,7 @@ declare
 begin
   set local timezone = 'Pacific/Auckland';
   c := staff_career('cr-ann');
-  if c -> 'led' -> 0 ->> 'from' !~ 'Z$' then raise exception 'an instant is not UTC under a non-UTC session: %', c; end if;
-  if (c -> 'led' -> 0 ->> 'from')::timestamptz is distinct from (select starts_at from seasons where number = 1) then raise exception 'the instant shifted under a non-UTC session: %', c; end if;
-  if c -> 'led' -> 0 ->> 'from' is distinct from to_char((select starts_at from seasons where number = 1) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') then raise exception 'the instant is not in UTC: %', c; end if;
+  if c -> 'led' -> 0 ->> 'since' !~ 'Z$' then raise exception 'an instant is not UTC under a non-UTC session: %', c; end if;
+  if (c -> 'led' -> 0 ->> 'since')::timestamptz is distinct from (select starts_at from seasons where number = 1) then raise exception 'the instant shifted under a non-UTC session: %', c; end if;
+  if c -> 'led' -> 0 ->> 'since' is distinct from to_char((select starts_at from seasons where number = 1) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') then raise exception 'the instant is not in UTC: %', c; end if;
 end $$;

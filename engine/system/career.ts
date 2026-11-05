@@ -11,9 +11,9 @@ export const CAREER_MOST = 12;
 
 export interface Career {
   /** The seasons it led, oldest first: the season's number, when it began and ended (null while open), and how the Boss was chosen. */
-  readonly led: readonly { readonly season: number; readonly from: string; readonly until: string | null; readonly how: string }[];
+  readonly led: readonly { readonly season: number; readonly since: string; readonly until: string | null; readonly how: string }[];
   /** The offices it held off the Boss's seat, oldest first, each with the instant it ended (null while held) and what caused it. */
-  readonly offices: readonly { readonly office: string; readonly from: string; readonly until: string | null; readonly cause: string }[];
+  readonly offices: readonly { readonly office: string; readonly since: string; readonly until: string | null; readonly cause: string }[];
 }
 
 const OFFICE_WORDS: Readonly<Record<string, string>> = { mod: 'Mod Bot', member: 'Member', benched: 'Benched' };
@@ -48,12 +48,12 @@ const weeks = (from: string, until: string): string => {
 export function careerText(career: Career, seasonNames: Readonly<Record<number, string>> = {}): string[] {
   const entries = [
     ...career.led.map((l) => ({
-      at: Date.parse(l.from),
-      text: `Boss in ${seasonNames[l.season] ?? `Season ${l.season}`}, from ${day(l.from)} ${l.until ? `to ${day(l.until)} (${weeks(l.from, l.until)})` : 'until now'}, ${HOW_WORDS[l.how] ?? l.how}.`,
+      at: Date.parse(l.since),
+      text: `Boss in ${seasonNames[l.season] ?? `Season ${l.season}`}, from ${day(l.since)} ${l.until ? `to ${day(l.until)} (${weeks(l.since, l.until)})` : 'until now'}, ${HOW_WORDS[l.how] ?? l.how}.`,
     })),
     ...career.offices.map((o) => ({
-      at: Date.parse(o.from),
-      text: `${OFFICE_WORDS[o.office] ?? o.office} from ${day(o.from)} ${o.until ? `to ${day(o.until)}` : 'until now'}, ${CAUSE_WORDS[o.cause] ?? o.cause}.`,
+      at: Date.parse(o.since),
+      text: `${OFFICE_WORDS[o.office] ?? o.office} from ${day(o.since)} ${o.until ? `to ${day(o.until)}` : 'until now'}, ${CAUSE_WORDS[o.cause] ?? o.cause}.`,
     })),
   ].sort((a, b) => b.at - a.at);
   const shown = entries.slice(0, CAREER_MOST).map((e) => e.text);
