@@ -38,7 +38,7 @@
   --kb-salty: #3f8fd2;
   --kb-pepperoni: #d24a2c;
   --kb-gold: #d4a017;
-  /* The glass's violet laid toward the window's edges, strongest at the foot above the HUD; the same in both board modes, where on white it is a shade and on black a glow. */
+  /* The glass's violet laid toward the window's edges, heaviest at the corners and the foot above the HUD. On white it is a shade; the dark blocks below give it more, so that on black it reads as a glow. */
   --kb-vignette-color: #1e083c;
   --kb-vignette-edge: 0.32;
   --kb-vignette-foot-color: #3c1478;
@@ -63,6 +63,10 @@
     --kb-pip-empty: #555;
     --kb-chip-bg: #000;
     --kb-chip-own: #fff;
+    --kb-vignette-color: #3c1478;
+    --kb-vignette-edge: 0.55;
+    --kb-vignette-foot-color: #5a1fb0;
+    --kb-vignette-foot: 0.45;
   }
 }
 
@@ -83,4 +87,8 @@
   --kb-pip-empty: #555;
   --kb-chip-bg: #000;
   --kb-chip-own: #fff;
+  --kb-vignette-color: #3c1478;
+  --kb-vignette-edge: 0.55;
+  --kb-vignette-foot-color: #5a1fb0;
+  --kb-vignette-foot: 0.45;
 }

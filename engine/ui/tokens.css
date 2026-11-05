@@ -32,6 +32,8 @@
   --kb-vignette-edge: 0;
   --kb-vignette-foot-color: transparent;
   --kb-vignette-foot: 0;
+  /* The vignette's mask reads alpha only, so its opaque stop is black in every mode and a theme has no reason to set it (a transparent value would empty the mask). */
+  --kb-vignette-mask: #000;
 
   --kb-font-body: Verdana, Geneva, sans-serif;
   --kb-font-mono: "Courier New", Courier, monospace;
