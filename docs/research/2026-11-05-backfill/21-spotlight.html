@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>The HUD tour: the backfill board</title>
+<!-- A board of the backfill design session (docs/plans/2026-11-05-backfill-boards-design.md), 1440 by 1000, drawn on
+     #202's head (c2553b3). Amends docs/research/2026-11-02-onboarding/03-spotlight.html: step 2 of the HUD tour over the Index, as the build opens it, the tip on the glass ground rather than a lighter gray. A reference for the look, not code to copy. Written by gen.mjs in this folder. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:inherit}a:hover{color:inherit;text-decoration:none}
+a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid #ffffff;outline-offset:3px}
+.tab{display:flex;align-items:center;min-height:52px;padding:0 20px;white-space:nowrap;transform:skewX(-10deg);text-decoration:none;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#e4def7}
+.many .tab{padding:0 13px;letter-spacing:1.5px}
+.tab b{display:inline-block;transform:skewX(10deg);font-weight:800}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:52px;padding:0 26px;transform:skewX(-10deg);text-decoration:none;border:1px solid rgba(241,236,255,.6);background:none;cursor:pointer;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#f1ecff}
+.btn b{display:inline-block;transform:skewX(10deg);font-weight:800}
+.btn.primary{background:#19e3ff;border-color:#19e3ff;color:#03141a;box-shadow:0 0 18px rgba(25,227,255,.6)}
+.btn.big{min-height:64px;padding:0 34px;font:400 30px Anton,Impact,sans-serif;letter-spacing:1px}
+.btn.big b{font-weight:400}
+.btns{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+.lead{margin:0;max-width:680px;font:600 21px/1.5 'Barlow Condensed',sans-serif;color:#f1ecff}
+.note{margin:12px 0 0;max-width:680px;font:500 21px/1.5 'Barlow Condensed',sans-serif;color:#e4def7}
+.row{display:grid;grid-template-columns:230px 1fr;column-gap:32px;padding:24px 0;border-top:1px solid rgba(241,236,255,.22)}
+.row h3,.k{margin:0;padding-top:12px;font:800 24px/1.1 'Barlow Condensed',sans-serif;letter-spacing:1.5px}
+.field label{display:block;margin:0 0 10px;font:800 24px/1.1 'Barlow Condensed',sans-serif;letter-spacing:1.5px}
+.field input[type=email],.field input[type=text]{box-sizing:border-box;width:100%;height:56px;padding:0 16px;background:rgba(18,12,36,.9);border:1px solid #19e3ff;color:#f1ecff;font:600 22px 'Barlow Condensed',sans-serif}
+.check{display:flex;gap:16px;align-items:center;min-height:52px;cursor:pointer;font:700 22px 'Barlow Condensed',sans-serif}
+.check input{width:30px;height:30px;margin:0;accent-color:#19e3ff;flex:none}
+.aside h2{margin:0 0 10px;font:800 24px/1.1 'Barlow Condensed',sans-serif;letter-spacing:1.5px;color:#f1ecff}
+.aside p{margin:0 0 18px;font:500 21px/1.5 'Barlow Condensed',sans-serif;color:#e4def7}
+.aside section+section{margin-top:34px;padding-top:30px;border-top:1px solid rgba(241,236,255,.22)}
+.lnk{font:700 21px 'Barlow Condensed',sans-serif;color:#c9f8ff;text-decoration-thickness:2px;text-underline-offset:4px}
+.seg{display:flex;flex-wrap:wrap;gap:10px}
+.seg label{position:relative;cursor:pointer}
+.seg input{position:absolute;opacity:0;width:1px;height:1px}
+.seg span{display:inline-flex;align-items:center;min-height:52px;padding:0 22px;transform:skewX(-10deg);border:1px solid rgba(241,236,255,.6);font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:1.5px;color:#f1ecff}
+.seg span b{display:inline-block;transform:skewX(10deg);font-weight:800}
+.seg input:checked + span{background:#19e3ff;border-color:#19e3ff;color:#03141a;box-shadow:0 0 18px rgba(25,227,255,.6)}
+.piece{border:1.5px solid rgba(201,248,255,.55);background:rgba(7,5,13,.92);clip-path:polygon(0 0,calc(100% - 22px) 0,100% 22px,100% 100%,22px 100%,0 calc(100% - 22px))}
+.by{display:flex;gap:18px;align-items:center}
+.by img{width:76px;height:76px;border:2px solid #a78bfa;image-rendering:pixelated}
+.by b{display:block;font:34px/1 Anton,Impact,sans-serif;letter-spacing:.5px}
+.by span{font:600 20px 'Barlow Condensed',sans-serif;color:#e4def7}
+.body p{margin:0 0 16px;font:500 21px/1.55 'Barlow Condensed',sans-serif;color:#f1ecff;max-width:760px}
+.rail p{margin:0;font:500 20px/1.5 'Barlow Condensed',sans-serif;color:#e4def7}
+.rail h3{margin:0 0 4px;font:700 21px 'Barlow Condensed',sans-serif;color:#f1ecff}
+.rail section{padding:16px 0;border-top:1px solid rgba(241,236,255,.22)}
+</style>
+</head>
+<body>
+<div style="width: 1440px; height: 1000px; position: relative; overflow: hidden; background: #ffffff; font-family: 'Barlow Condensed', sans-serif">
+  <div aria-hidden="true" style="position: absolute; inset: 0; filter: blur(5px)">
+    <div style="position: absolute; left: 240px; top: 0; width: 960px; color: #000">
+      <div style="padding: 14px 0 8px; border-bottom: 1px solid #000; font: 700 18px 'Courier New', monospace; letter-spacing: 3px">DIVIDED WORLD</div>
+      <div style="margin: 30px 0 10px; font: 700 17px 'Courier New', monospace">Index</div>
+      <div style="height: 130px; border: 1px solid #000"></div>
+      <div style="margin-top: 14px; height: 70px; border: 1px solid #000"></div>
+    </div>
+    <div style="position: absolute; left: 0; right: 0; bottom: 0; height: 190px; background: linear-gradient(#140c2c, #07050d)"></div>
+  </div>
+  <div aria-hidden="true" style="position: absolute; inset: 0; background: rgba(7,5,13,.62)"></div>
+  <div aria-hidden="true" style="position: absolute; left: 484px; top: 800px; width: 472px; height: 156px; border: 2px solid #19e3ff; box-shadow: 0 0 0 4px rgba(25,227,255,.18), 0 0 26px rgba(25,227,255,.55); background: linear-gradient(#140c2c, #07050d)">
+    <div style="position: absolute; left: 16px; top: 10px; font: 800 20px 'Barlow Condensed', sans-serif; letter-spacing: 3px; color: #e4def7">AURA</div>
+    <div style="position: absolute; left: 16px; top: 42px; display: flex; gap: 18px"><span style="width: 54px; height: 54px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #4a4466, #0d0a18)"></span><span style="width: 54px; height: 54px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #4a4466, #0d0a18)"></span><span style="width: 54px; height: 54px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #4a4466, #0d0a18)"></span><span style="width: 54px; height: 54px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #4a4466, #0d0a18)"></span><span style="width: 54px; height: 54px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #4a4466, #0d0a18)"></span><span style="width: 54px; height: 54px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #4a4466, #0d0a18)"></span></div>
+    <div style="position: absolute; left: 16px; top: 98px; font: 54px/1 Anton, Impact, sans-serif; color: #f1ecff">0.00 <span style="font: 700 22px 'Barlow Condensed', sans-serif">/ 6.00</span></div>
+  </div>
+  <section role="dialog" aria-labelledby="tipH" class="piece" style="position: absolute; left: 436px; top: 470px; background: #07050d; width: 580px; box-sizing: border-box; padding: 26px 26px 22px; border-color: #a78bfa; color: #f1ecff; clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px))">
+    <div class="by"><img src="../2026-11-02-onboarding/assets/gabe-avatar.png" alt="" style="width: 58px; height: 58px"><div><b id="tipH" style="font-size: 36px">THESE ARE YOUR ORBS</b><span style="font-weight: 800; letter-spacing: 2px; color: #c4b5fd">GABE &middot; THE HUD, 2 OF 3</span></div></div>
+    <p style="margin: 18px 0 20px; font: 500 21px/1.5 'Barlow Condensed', sans-serif">Reactions to your characters fill them at the settlement. Until then, hatched fill shows where you're headed. There is a most you can hold, so spend it.</p>
+    <div style="display: flex; align-items: center; justify-content: space-between">
+      <span aria-hidden="true" style="display: flex; gap: 6px"><i style="width: 14px; height: 14px; border: 1.5px solid #19e3ff; background: #19e3ff; transform: skewX(-10deg)"></i><i style="width: 14px; height: 14px; border: 1.5px solid #19e3ff; background: #19e3ff; transform: skewX(-10deg)"></i><i style="width: 14px; height: 14px; border: 1.5px solid #19e3ff; background: none; transform: skewX(-10deg)"></i></span>
+      <div class="btns"><button class="btn"><b>SKIP ALL TIPS</b></button><button class="btn primary"><b>GOT IT</b></button></div>
+    </div>
+  </section>
+  <i aria-hidden="true" style="position: absolute; left: 708px; top: 772px; border: 12px solid transparent; border-top: 14px solid #a78bfa"></i>
+</div>
+</body>
+</html>

@@ -22,3 +22,16 @@ The numbering continues the two-worlds folder's (01 to 13), so no board id here 
   compared) under the signed-out HUD, which is drawn in the signed-in HUD's own frame: the mask panel with "?", the Aura
   notch with its sockets empty, and Sign in and Register with an invite as one row.
 - `18-door-phone.html`: the four at 390 by 844, side by side.
+
+## Batch 2: onboarding, redrawn
+
+Amendments to `docs/research/2026-11-02-onboarding/`, which stays as the record. Gabe's avatar is that folder's
+`assets/gabe-avatar.png`, read by a relative path.
+
+- `19-welcome.html`: the welcome page, 1440 by 1720, on the build's current copy: the letter's heading as written, the
+  two calls to action as one ButtonRow.
+- `20-guide.html`: the Strategy Guide scrolled to Classes, 1440 by 1320.
+- `21-spotlight.html`: the HUD tour's second step over the Index, 1440 by 1000: the page dimmed and blurred, the tip on
+  the glass's ground.
+- `22-onboarding-phone.html`: three phone screens at 390 by 844: Before you start, the guide with its contents folded,
+  and the tour's second step.

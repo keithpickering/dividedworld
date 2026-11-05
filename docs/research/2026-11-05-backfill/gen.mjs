@@ -12,7 +12,8 @@ const CSS = `
 body{margin:0}
 a{color:inherit}a:hover{color:inherit;text-decoration:none}
 a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid #ffffff;outline-offset:3px}
-.tab{display:flex;align-items:center;min-height:52px;padding:0 20px;transform:skewX(-10deg);text-decoration:none;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#e4def7}
+.tab{display:flex;align-items:center;min-height:52px;padding:0 20px;white-space:nowrap;transform:skewX(-10deg);text-decoration:none;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#e4def7}
+.many .tab{padding:0 13px;letter-spacing:1.5px}
 .tab b{display:inline-block;transform:skewX(10deg);font-weight:800}
 .btn{display:inline-flex;align-items:center;justify-content:center;min-height:52px;padding:0 26px;transform:skewX(-10deg);text-decoration:none;border:1px solid rgba(241,236,255,.6);background:none;cursor:pointer;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#f1ecff}
 .btn b{display:inline-block;transform:skewX(10deg);font-weight:800}
@@ -32,6 +33,21 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid #ffff
 .aside p{margin:0 0 18px;font:500 21px/1.5 'Barlow Condensed',sans-serif;color:#e4def7}
 .aside section+section{margin-top:34px;padding-top:30px;border-top:1px solid rgba(241,236,255,.22)}
 .lnk{font:700 21px 'Barlow Condensed',sans-serif;color:#c9f8ff;text-decoration-thickness:2px;text-underline-offset:4px}
+.seg{display:flex;flex-wrap:wrap;gap:10px}
+.seg label{position:relative;cursor:pointer}
+.seg input{position:absolute;opacity:0;width:1px;height:1px}
+.seg span{display:inline-flex;align-items:center;min-height:52px;padding:0 22px;transform:skewX(-10deg);border:1px solid rgba(241,236,255,.6);font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:1.5px;color:#f1ecff}
+.seg span b{display:inline-block;transform:skewX(10deg);font-weight:800}
+.seg input:checked + span{background:#19e3ff;border-color:#19e3ff;color:#03141a;box-shadow:0 0 18px rgba(25,227,255,.6)}
+.piece{border:1.5px solid rgba(201,248,255,.55);background:rgba(7,5,13,.92);clip-path:polygon(0 0,calc(100% - 22px) 0,100% 22px,100% 100%,22px 100%,0 calc(100% - 22px))}
+.by{display:flex;gap:18px;align-items:center}
+.by img{width:76px;height:76px;border:2px solid #a78bfa;image-rendering:pixelated}
+.by b{display:block;font:34px/1 Anton,Impact,sans-serif;letter-spacing:.5px}
+.by span{font:600 20px 'Barlow Condensed',sans-serif;color:#e4def7}
+.body p{margin:0 0 16px;font:500 21px/1.55 'Barlow Condensed',sans-serif;color:#f1ecff;max-width:760px}
+.rail p{margin:0;font:500 20px/1.5 'Barlow Condensed',sans-serif;color:#e4def7}
+.rail h3{margin:0 0 4px;font:700 21px 'Barlow Condensed',sans-serif;color:#f1ecff}
+.rail section{padding:16px 0;border-top:1px solid rgba(241,236,255,.22)}
 `;
 
 const FONTS = `<link rel="preconnect" href="https://fonts.googleapis.com">
@@ -64,7 +80,8 @@ function menu(tabs = [], current = '') {
   const t = tabs.map((n) => n === current
     ? `<a href="#" class="tab" aria-current="page" style="background: rgba(25,227,255,.16); box-shadow: inset 0 -3px 0 #19e3ff; color: #ffffff"><b>${n}</b></a>`
     : `<a href="#" class="tab"><b>${n}</b></a>`).join('\n    ');
-  return `<nav aria-label="Menu" style="position: absolute; left: 0; right: 0; top: 0; height: 84px; z-index: 5; display: flex; align-items: center; gap: 8px; padding: 0 40px; background: rgba(7,5,13,.9); border-bottom: 1px solid rgba(201,248,255,.5); box-shadow: 0 1px 16px rgba(25,227,255,.35)">
+  const pad = tabs.length > 5 ? ' --tp: 14px;' : '';
+  return `<nav aria-label="Menu" class="${tabs.length > 5 ? 'many' : ''}" style="position: absolute; left: 0; right: 0; top: 0; height: 84px; z-index: 5; display: flex; align-items: center; gap: ${tabs.length > 5 ? 2 : 8}px; padding: 0 28px;${pad} background: rgba(7,5,13,.9); border-bottom: 1px solid rgba(201,248,255,.5); box-shadow: 0 1px 16px rgba(25,227,255,.35)">
     <a href="#" class="tab" aria-keyshortcuts="Escape" style="border: 1px solid #ffffff; color: #ffffff; margin-right: 18px"><b>${ESC}BACK TO THE BOARD</b></a>
     ${t}
   </nav>`;
@@ -306,6 +323,166 @@ page({
           <a href="#" class="btn" style="min-height: 46px; padding: 0 18px"><b>SIGN IN</b></a>
         </div>
       </div>
+    </section>
+  </figure>
+</div>`,
+});
+
+/* ---------------------------------------------------------------- batch 2: onboarding, redrawn */
+
+const GABE = '../2026-11-02-onboarding/assets/gabe-avatar.png';
+const PAUSE = ['ALERTS', 'VENDING MACHINE', 'MY CHARACTERS', 'SEASON', 'MY LOG', 'GUIDE', 'UPDATES', 'SETTINGS'];
+const segRow = (name, opts, note) => `<fieldset class="row" style="margin: 0; border-left: 0; border-right: 0; border-bottom: 0; grid-template-columns: 170px 1fr">
+        <legend style="float: left; padding: 0"><h3>${name}</h3></legend>
+        <div><div class="seg" role="radiogroup" aria-label="${name}">${opts.map((o, i) => `<label><input type="radio" name="${name}"${i ? '' : ' checked'}><span><b>${o}</b></span></label>`).join('')}</div>
+        <p class="note">${note}</p></div>
+      </fieldset>`;
+
+page({
+  file: '19-welcome.html', name: 'Welcome', w: 1440, h: 1720,
+  note: 'Amends docs/research/2026-11-02-onboarding/01-welcome.html on #202\'s parts: the build\'s current copy, the letter\'s heading in the case it is written in, and the two calls to action as one ButtonRow (#202 retired the 68px display button).',
+  body: frame(1440, 1720, `
+  ${smoke(1440, 1720, [[40, 270, 380, 540, .85], [430, 270, 960, 1400, .92]])}
+  ${menu(PAUSE)}
+  ${title('WELCOME')}
+  <aside class="rail" aria-label="What happens next" style="position: absolute; left: 64px; top: 290px; width: 340px">
+    <p style="margin-bottom: 18px; font-weight: 600; color: #f1ecff">You're in. One letter, three settings, then your first character.</p>
+    <section><h3>Your first character</h3><p>A name, a class, and when it arrives on the board. Once it has arrived, it can post.</p></section>
+    <section><h3>A short tour</h3><p>On the board, three short notes point out your mask, your orbs and your hand. Skip all tips ends them.</p></section>
+    <section style="border-bottom: 1px solid rgba(241,236,255,.22)"><h3>Change anything later</h3><p>These settings live in Settings › Accessibility, and this letter is the first section of the Strategy Guide.</p></section>
+  </aside>
+  <article class="piece" aria-labelledby="letterH" style="position: absolute; left: 450px; top: 290px; width: 926px; box-sizing: border-box; padding: 40px 42px">
+    <div class="by"><img src="${GABE}" alt=""><div><b>GABE</b><span>Made this. Sorry.</span></div></div>
+    <h2 id="letterH" style="margin: 26px 0 14px; font: 60px/1.05 Anton, Impact, sans-serif; letter-spacing: .5px; text-shadow: 0 0 24px rgba(167,139,250,.35)">After nine years of development</h2>
+    <div class="body">
+      <p>...hopefully it would have been worth the wait.</p>
+      <p>This is Divided World. It looks like a message board from 2003, and it is one. It is also a game. You'll play several characters, each behind a mask, each with a secret class that decides which reactions make it stronger. No other player can see which masks are yours.</p>
+      <p>Everything anyone does here is public. Who's doing it isn't. Work it out, or don't.</p>
+      <p>Go make somebody.</p>
+      <p style="font: italic 800 21px 'Barlow Condensed', sans-serif">Gabe</p>
+    </div>
+    <section aria-labelledby="startH" style="margin-top: 26px; padding-top: 30px; border-top: 1px solid rgba(241,236,255,.22)">
+      <h2 id="startH" style="margin: 0 0 8px; font: 44px/1 Anton, Impact, sans-serif">BEFORE YOU START</h2>
+      <p class="note" style="margin: 0 0 18px">How the board and the glass look and move. None of it changes how the game plays.</p>
+      ${segRow('THEME', ['FOLLOW MY DEVICE', 'BLACK ON WHITE', 'WHITE ON BLACK'], 'The 2003 board stays 2003 whichever you choose. Only its colors swap.')}
+      ${segRow('MOTION', ['FOLLOW MY DEVICE', 'REDUCED', 'FULL'], "Reduced stops the drifting smoke, the pulses and the orb shine. A card's effect stays: Stick Around still snaps you back, only instantly.")}
+      ${segRow('TEXT SIZE', ['100%', '125%', '150%', '200%'], 'Applies to the board and the glass together. Past 150% the glass folds into one column, and nothing is cut off.')}
+    </section>
+    <div class="btns" style="margin-top: 10px; padding-top: 30px; border-top: 1px solid rgba(241,236,255,.22)">
+      <a href="#" class="btn primary"><b>MAKE YOUR FIRST CHARACTER</b></a>
+      <a href="#" class="btn"><b>READ THE STRATEGY GUIDE FIRST</b></a>
+    </div>
+  </article>
+`),
+});
+
+/** A class card's grid: [top-left, top-right, bottom-left, bottom-right], each '+', '-' or ''. */
+const grid = (cells) => `<div aria-hidden="true" style="display: grid; grid-template-columns: 34px 34px; gap: 4px; flex: none">${cells.map((c) => `<span style="width: 34px; height: 34px; box-sizing: border-box; display: grid; place-items: center; font: 800 18px 'Barlow Condensed', sans-serif; border: 1px solid ${c === '+' ? '#ffd23f' : c === '-' ? '#ff5c8a' : 'rgba(241,236,255,.3)'}; color: ${c === '+' ? '#ffd23f' : '#ff5c8a'}; background: ${c ? 'rgba(255,255,255,.04)' : 'none'}">${c === '-' ? '&minus;' : c}</span>`).join('')}</div>`;
+const klass = (name, color, cells, text, hint) => `<div style="display: flex; gap: 26px; padding: 22px 0; border-top: 1px solid rgba(241,236,255,.22)">
+        ${grid(cells)}
+        <div><span style="display: inline-block; padding: 2px 10px; transform: skewX(-10deg); background: ${color}; font: 800 20px 'Barlow Condensed', sans-serif; letter-spacing: 1.5px; color: #ffffff"><b style="display: inline-block; transform: skewX(10deg)">${name}</b></span>
+          <p style="margin: 10px 0 0; font: 500 21px/1.5 'Barlow Condensed', sans-serif; color: #f1ecff; max-width: 720px">${text}</p>
+          <p style="margin: 8px 0 0; font: 500 21px 'Barlow Condensed', sans-serif; color: #e4def7"><b style="margin-right: 10px; font-weight: 800; letter-spacing: 1.5px; color: #c4b5fd">GABE'S HINT</b>${hint}</p></div>
+      </div>`;
+const guideNav = (current) => ['Welcome letter', 'The metagame', 'Reactions', 'Aura', 'Classes', 'Turns and reveals', 'Cards', 'The masks', 'The System', 'Coming attractions']
+  .map((n) => `<li style="border-bottom: 1px solid rgba(241,236,255,.22)"><a href="#"${n === current ? ' aria-current="location" style="display: block; padding: 10px 12px; border-left: 3px solid #19e3ff; background: rgba(25,227,255,.12); color: #c9f8ff; text-decoration: none; font: 700 21px \'Barlow Condensed\', sans-serif"' : ' style="display: block; padding: 10px 0; color: #f1ecff; text-decoration: none; font: 700 21px \'Barlow Condensed\', sans-serif"'}>${n}</a></li>`).join('');
+
+page({
+  file: '20-guide.html', name: 'Strategy Guide', w: 1440, h: 1320,
+  note: 'Amends docs/research/2026-11-02-onboarding/02-guide.html: scrolled to Classes, the section heading in the case it is written in, the contents\' current section marked as #202 marks it.',
+  body: frame(1440, 1320, `
+  ${smoke(1440, 1320, [[40, 250, 330, 780, .85], [400, 230, 990, 1080, .92]])}
+  ${menu(PAUSE, 'GUIDE')}
+  ${title('STRATEGY GUIDE')}
+  <nav aria-label="Contents" style="position: absolute; left: 64px; top: 270px; width: 290px">
+    <p style="margin: 0 0 18px; font: 600 20px/1.5 'Barlow Condensed', sans-serif; color: #f1ecff">How the game works, from the people who made it. The voice is Gabe's; every fact in it is true, and every number is today's.</p>
+    <ul style="margin: 0; padding: 0; list-style: none">${guideNav('Classes')}</ul>
+  </nav>
+  <article class="piece" aria-labelledby="classesH" style="position: absolute; left: 410px; top: 250px; width: 966px; box-sizing: border-box; padding: 36px 42px">
+    <h2 id="classesH" style="margin: 0 0 14px; font: 60px/1 Anton, Impact, sans-serif; letter-spacing: .5px">Classes</h2>
+    <p class="lead" style="max-width: 760px; font-weight: 500">Every character has one, and only you can see it. A class decides which corners of the reaction grid pay your character and which ones cost it. Reactions to a card you play count for you too, read through your class.</p>
+    <p class="lead" style="max-width: 760px; margin-top: 14px; font-weight: 500">Pick the one that sounds like how you already post, or one that sounds like a bad idea. You can Turn later.</p>
+    <p style="margin: 18px 0 18px; font: 600 20px 'Barlow Condensed', sans-serif; color: #e4def7">Top row excited, bottom calm; left negative, right positive. <span style="color: #ffd23f">+ earns</span> &middot; <span style="color: #ff5c8a">&minus; hurts</span></p>
+    ${klass('FACE', '#2f6fdf', ['', '+', '-', ''], "The crowd's favorite. Earns from excited, positive reactions, and from the cheers a post draws after its Sweet card lands there. Hurt by bored reactions, and by a card that outdraws the post it was played on.", 'Get behind the posts you like.')}
+    ${klass('HEEL', '#d4352f', ['+', '', '', '-'], 'Earns heat: excited, negative reactions, and a Salty card that outdraws the post it lands on. Hurt by the polite shrug, calm and positive.', 'Being hated is a living.')}
+    ${klass('JABRONI', '#b8860b', ['', '-', '+', ''], 'Anti-comedy: posts built to bomb. Earns from bored, negative reactions and from Salty cards others land on its posts. Hurt by being taken sincerely, excited and positive.', 'Commit to the bit. Especially when nobody laughs.')}
+    ${klass('TECHNICIAN', '#1f8f4e', ['-', '', '', '+'], 'The respected regular. Earns from calm, positive reactions to its posts and cards, and more when an old post of its own still draws them. Hurt by heat: excited, negative reactions.', 'Write the reply people come back to.')}
+  </article>
+`),
+});
+
+/* The tour on the board: the page dimmed and blurred, the cut-out on the orbs, Gabe's tip on the glass's own ground. */
+page({
+  file: '21-spotlight.html', name: 'The HUD tour', w: 1440, h: 1000,
+  note: 'Amends docs/research/2026-11-02-onboarding/03-spotlight.html: step 2 of the HUD tour over the Index, as the build opens it, the tip on the glass ground rather than a lighter gray.',
+  body: `<div style="width: 1440px; height: 1000px; position: relative; overflow: hidden; background: #ffffff; font-family: 'Barlow Condensed', sans-serif">
+  <div aria-hidden="true" style="position: absolute; inset: 0; filter: blur(5px)">
+    <div style="position: absolute; left: 240px; top: 0; width: 960px; color: #000">
+      <div style="padding: 14px 0 8px; border-bottom: 1px solid #000; font: 700 18px 'Courier New', monospace; letter-spacing: 3px">DIVIDED WORLD</div>
+      <div style="margin: 30px 0 10px; font: 700 17px 'Courier New', monospace">Index</div>
+      <div style="height: 130px; border: 1px solid #000"></div>
+      <div style="margin-top: 14px; height: 70px; border: 1px solid #000"></div>
+    </div>
+    <div style="position: absolute; left: 0; right: 0; bottom: 0; height: 190px; background: linear-gradient(#140c2c, #07050d)"></div>
+  </div>
+  <div aria-hidden="true" style="position: absolute; inset: 0; background: rgba(7,5,13,.62)"></div>
+  <div aria-hidden="true" style="position: absolute; left: 484px; top: 800px; width: 472px; height: 156px; border: 2px solid #19e3ff; box-shadow: 0 0 0 4px rgba(25,227,255,.18), 0 0 26px rgba(25,227,255,.55); background: linear-gradient(#140c2c, #07050d)">
+    <div style="position: absolute; left: 16px; top: 10px; font: 800 20px 'Barlow Condensed', sans-serif; letter-spacing: 3px; color: #e4def7">AURA</div>
+    <div style="position: absolute; left: 16px; top: 42px; display: flex; gap: 18px">${'<span style="width: 54px; height: 54px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #4a4466, #0d0a18)"></span>'.repeat(6)}</div>
+    <div style="position: absolute; left: 16px; top: 98px; font: 54px/1 Anton, Impact, sans-serif; color: #f1ecff">0.00 <span style="font: 700 22px 'Barlow Condensed', sans-serif">/ 6.00</span></div>
+  </div>
+  <section role="dialog" aria-labelledby="tipH" class="piece" style="position: absolute; left: 436px; top: 470px; background: #07050d; width: 580px; box-sizing: border-box; padding: 26px 26px 22px; border-color: #a78bfa; color: #f1ecff; clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px))">
+    <div class="by"><img src="${GABE}" alt="" style="width: 58px; height: 58px"><div><b id="tipH" style="font-size: 36px">THESE ARE YOUR ORBS</b><span style="font-weight: 800; letter-spacing: 2px; color: #c4b5fd">GABE &middot; THE HUD, 2 OF 3</span></div></div>
+    <p style="margin: 18px 0 20px; font: 500 21px/1.5 'Barlow Condensed', sans-serif">Reactions to your characters fill them at the settlement. Until then, hatched fill shows where you're headed. There is a most you can hold, so spend it.</p>
+    <div style="display: flex; align-items: center; justify-content: space-between">
+      <span aria-hidden="true" style="display: flex; gap: 6px">${['#19e3ff', '#19e3ff', 'none'].map((c) => `<i style="width: 14px; height: 14px; border: 1.5px solid #19e3ff; background: ${c}; transform: skewX(-10deg)"></i>`).join('')}</span>
+      <div class="btns"><button class="btn"><b>SKIP ALL TIPS</b></button><button class="btn primary"><b>GOT IT</b></button></div>
+    </div>
+  </section>
+  <i aria-hidden="true" style="position: absolute; left: 708px; top: 772px; border: 12px solid transparent; border-top: 14px solid #a78bfa"></i>
+</div>`,
+});
+
+const phoneTabs = (cur) => `<nav aria-label="Menu" style="position: absolute; left: 0; right: 0; top: 0; height: 124px; z-index: 5; background: rgba(7,5,13,.9); border-bottom: 1px solid rgba(201,248,255,.5); box-shadow: 0 1px 16px rgba(25,227,255,.35)">
+      <a href="#" class="tab" style="position: absolute; left: 12px; top: 12px; border: 1px solid #ffffff; color: #ffffff; min-height: 46px; font-size: 20px"><b>&lsaquo; BACK TO THE BOARD</b></a>
+      <div style="position: absolute; left: 0; right: 0; top: 66px; display: flex; overflow: hidden; padding-left: 12px">${['ALERTS', 'VENDING MACHINE', 'MY CHARACTERS', 'SEASON', 'MY LOG', 'GUIDE'].map((n) => `<a href="#" class="tab" style="min-height: 52px; padding: 0 12px; font-size: 19px${n === cur ? '; background: rgba(25,227,255,.16); box-shadow: inset 0 -3px 0 #19e3ff; color: #ffffff' : ''}"><b>${n}</b></a>`).join('')}</div>
+    </nav>`;
+const pSeg = (name, opts) => `<div style="padding: 16px 0; border-top: 1px solid rgba(241,236,255,.22)"><div class="k" style="padding: 0 0 12px; font-size: 22px">${name}</div><div class="seg" style="gap: 8px">${opts.map((o, i) => `<label><input type="radio" name="p${name}"${i ? '' : ' checked'}><span style="min-height: 48px; padding: 0 16px; font-size: 19px; white-space: nowrap"><b>${o}</b></span></label>`).join('')}</div></div>`;
+
+page({
+  file: '22-onboarding-phone.html', name: 'Onboarding on a phone', w: 1250, h: 884,
+  note: 'Three phone screens at 390 by 844: the welcome letter scrolled to Before you start, each setting a full-width row whose options wrap whole (no option breaks inside its label, no note squeezed beside them); the guide with its contents folded; the tour\'s second step as a sheet over the HUD, the mask\'s name whole.',
+  body: `<div style="width: 1250px; height: 884px; display: flex; gap: 20px; padding: 20px; box-sizing: border-box; background: #2a2833; font-family: 'Barlow Condensed', sans-serif">
+  ${phone('Welcome, Before you start', `${phoneTabs('')}
+    <section style="position: absolute; left: 16px; top: 140px; width: 358px">
+      <h2 style="margin: 0 0 6px; font: 38px/1 Anton, Impact, sans-serif">BEFORE YOU START</h2>
+      <p class="note" style="margin: 0 0 14px; font-size: 20px">How the board and the glass look and move. None of it changes how the game plays.</p>
+      ${pSeg('THEME', ['FOLLOW MY DEVICE', 'BLACK ON WHITE', 'WHITE ON BLACK'])}
+      <p class="note" style="margin: -4px 0 6px; font-size: 19px">The 2003 board stays 2003 whichever you choose. Only its colors swap.</p>
+      ${pSeg('MOTION', ['FOLLOW MY DEVICE', 'REDUCED', 'FULL'])}
+      <p class="note" style="margin: -4px 0 6px; font-size: 19px">Reduced stops the drifting smoke, the pulses and the orb shine. A card's effect stays: Stick Around still snaps you back, only instantly.</p>
+      ${pSeg('TEXT SIZE', ['100%', '125%', '150%', '200%'])}
+    </section>`, [[0, 130, 390, 714, .92]], 'q1')}
+  ${phone('The guide', `${phoneTabs('GUIDE')}
+    ${pTitle('STRATEGY<br>GUIDE').replace('top: 92px', 'top: 140px')}
+    <section style="position: absolute; left: 16px; top: 290px; width: 358px">
+      <p class="lead" style="font-size: 20px">How the game works, from the people who made it. The voice is Gabe's; every fact in it is true, and every number is today's.</p>
+      <button style="margin-top: 16px; width: 100%; height: 50px; display: flex; justify-content: space-between; align-items: center; padding: 0 14px; background: rgba(7,5,13,.9); border: 1px solid #19e3ff; color: #f1ecff; font: 800 20px 'Barlow Condensed', sans-serif; letter-spacing: 1.5px">CONTENTS &middot; CLASSES <span aria-hidden="true">&#x2304;</span></button>
+      <h2 style="margin: 26px 0 10px; font: 44px/1 Anton, Impact, sans-serif">Classes</h2>
+      <p class="note" style="font-size: 20px">Every character has one, and only you can see it. A class decides which corners of the reaction grid pay your character and which ones cost it.</p>
+    </section>`, [[0, 280, 390, 520, .92]], 'q2')}
+  <figure aria-label="The tour, step 2" style="margin: 0; width: 390px; height: 844px; position: relative; overflow: hidden; background: #ffffff; flex: none; font-family: 'Barlow Condensed', sans-serif">
+    <div aria-hidden="true" style="position: absolute; inset: 0; filter: blur(4px)"><div style="padding: 12px 10px; font: 700 17px 'Courier New', monospace; letter-spacing: 3px; border-bottom: 1px solid #000">DIVIDED WORLD</div><div style="margin: 20px 8px; height: 200px; border: 1px solid #000"></div></div>
+    <div aria-hidden="true" style="position: absolute; inset: 0; background: rgba(7,5,13,.62)"></div>
+    <section role="dialog" aria-label="These are your orbs" class="piece" style="position: absolute; left: 8px; right: 8px; top: 432px; padding: 18px 16px; background: #07050d; border-color: #a78bfa; color: #f1ecff">
+      <div class="by"><img src="${GABE}" alt="" style="width: 48px; height: 48px"><div><b style="font-size: 28px">THESE ARE YOUR ORBS</b><span style="font-weight: 800; letter-spacing: 2px; color: #c4b5fd">GABE &middot; THE HUD, 2 OF 3</span></div></div>
+      <p style="margin: 12px 0 14px; font: 500 19px/1.45 'Barlow Condensed', sans-serif">Reactions to your characters fill them at the settlement. Until then, hatched fill shows where you're headed. There is a most you can hold, so spend it.</p>
+      <div class="btns" style="justify-content: flex-end"><button class="btn" style="min-height: 46px; padding: 0 16px"><b>SKIP ALL TIPS</b></button><button class="btn primary" style="min-height: 46px; padding: 0 18px"><b>GOT IT</b></button></div>
+    </section>
+    <section aria-label="Game HUD" style="position: absolute; left: 0; right: 0; bottom: 0; height: 128px; background: linear-gradient(#140c2c, #07050d); border-top: 1.5px solid rgba(201,248,255,.7); color: #f1ecff">
+      <div style="position: absolute; left: 12px; top: 10px; width: 44px; height: 44px; border: 2px solid #19e3ff; display: grid; place-items: center; font: 28px Anton, Impact, sans-serif; opacity: .5">N</div>
+      <div style="position: absolute; left: 66px; top: 6px; opacity: .5"><div style="font: 800 15px 'Barlow Condensed', sans-serif; letter-spacing: 2px">POSTING AS</div><div style="font: 24px/1.1 Anton, Impact, sans-serif">NEWCOMER &#x2304;</div></div>
+      <div style="position: absolute; left: 6px; right: 6px; top: 66px; height: 54px; border: 2px solid #19e3ff; box-shadow: 0 0 18px rgba(25,227,255,.55); display: flex; align-items: center; gap: 6px; padding: 0 8px">${'<span style="width: 32px; height: 32px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #4a4466, #0d0a18)"></span>'.repeat(6)}<b style="margin-left: auto; font: 34px Anton, Impact, sans-serif">0.00</b></div>
     </section>
   </figure>
 </div>`,

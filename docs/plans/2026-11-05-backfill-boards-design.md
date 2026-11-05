@@ -70,7 +70,7 @@ Shot on c2553b3. The critique, against the two-worlds boards:
   door previews the game it opens onto. #224's sketch drew the empty sockets; the build left them out.
 - **The calms are hard-edged slabs.** See section 3.
 
-## 3. Open: the calm
+## 3. The calm
 
 The owner, on batch 1: "the 'scrims' (black blurred areas to increase contrast subtly) are nice, soft, and blended in
 the design boards, but in our actual implementation they are very harsh and noticeable, likely to force accessibility
@@ -87,4 +87,38 @@ with no edge to see), one or two per region. The boards hold the same 4.5:1 floo
 line below sits in a calm, so its worst pixel stays dark enough for 4.5:1"). So the harshness is the shape of the
 backing and its caps, not the contrast it buys. The board match never compares the smoke, so nothing has caught it.
 
-Undecided; asked of the owner with batch 1.
+**Decided** (the owner, agreeing with the recommendation): **region calms, as the boards draw them.** The calm becomes a
+mask on the smoke layer itself, one per region (a page's column, an aside, a dialog's body, the HUD's panels), with a
+Gaussian falloff, drawn behind the column so that no column's clip cuts it. It is its own task, ahead of the screens.
+
+**Decided** (the owner): **the floor stays 4.5:1 on Full smoke.** The owner noted that Smoke Low and Off already give
+every player a plain ground, so the default could be less strict; offered a lower floor on Full with Low and Off as the
+conforming version, or a percentile in place of the worst pixel, the owner chose to keep 4.5:1 against the worst pixel
+and soften only the shape, since the boards reach it softly. `tools/check-glass-contrast.mjs` keeps reading the worst
+pixel. No rule changes. Where a screen cannot reach 4.5:1 with a soft calm, the build stops and asks rather than
+hardening the calm.
+
+Batch 1 approved by the owner as drawn.
+
+## 4. Batch 2: onboarding, redrawn
+
+Shot on c2553b3: `/welcome`, `/guide`, and the HUD tour's first two steps on a new account (`e2e/onboarding.ts`'s
+`signInUnseasonedOnBoard`). The critique, against `docs/research/2026-11-02-onboarding/` and the two-worlds boards:
+
+- **The letter's heading is set in capitals and breaks onto two lines.** The board sets "After nine years of
+  development" as written, on one line at 60px; the build's capitals make it a two-line block that outweighs the page
+  title. The same holds for the guide's section headings ("WELCOME LETTER", "THE METAGAME" against the board's
+  "Classes"). The boards set a letter's or a section's heading in the case it is written in.
+- **The calms are slabs**, most visibly behind the welcome's rail and the guide's contents (section 3).
+- **On the phone, Before you start's choices are squeezed.** Each row keeps its label and its control in two columns at
+  390, so "FOLLOW MY DEVICE" breaks inside its own label and each note runs about 170px wide. The board makes each
+  setting a full-width block, its options wrapping whole and its note under them. The layout check's squeeze refusal
+  passed it, since the column gave the block no more room; the board match at 390 is what holds it.
+- **The tour's tip is a lighter gray than the glass**, and the page behind it is only dimmed. The board draws the tip on
+  the glass's own ground with the violet edge and blurs the page behind, so the cut-out is the one sharp thing.
+- **The phone HUD cuts the mask's name** ("NEWCOME" with the chevron over its last letter). The board gives the name its
+  width. (Held again by batch 5's HUD states.)
+- **A stray cyan square at the phone tour's top-left corner** (390, step 1), about 6px: a cut-out or a focus ring
+  drawn at (0, 0) before the target is measured. The build finds its cause first.
+- Kept from #202: the two calls to action as one ButtonRow at one size; the guide's folded contents on the phone; the
+  welcome's copy as it stands (the instance's welcome page, approved by the owner in review).
