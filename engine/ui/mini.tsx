@@ -3,9 +3,9 @@
  * "2 min ago" with its exact time on hover, and the "sign in" prompt a signed-out visitor sees
  * instead of boards (the API needs a session for reads).
  */
-import { useEffect, useState } from 'react';
 import type { Character, KayfaApi } from './data/api.ts';
 import { Link } from './router.tsx';
+import { usePlayer } from './player.tsx';
 import './mini.css';
 
 /** A character's square avatar, or its initial where it has none. Decoration: the name beside it says who. */
@@ -35,15 +35,14 @@ export function Ago({ at, now }: { readonly at: string; readonly now?: number })
 }
 
 /** Whether the visitor is signed in: null until the session is known. */
-export function useSignedIn(api: KayfaApi): boolean | null {
-  const [signedIn, setSignedIn] = useState<boolean | null>(null);
-  useEffect(() => {
-    let live = true;
-    void api.session().then((s) => { if (live) setSignedIn(s.signedIn); }, () => { if (live) setSignedIn(false); });
-    const off = api.onSession((s) => setSignedIn(s.signedIn));
-    return () => { live = false; off(); };
-  }, [api]);
-  return signedIn;
+/**
+ * Whether the reader is signed in, as the PlayerProvider already knows it: null until it does.
+ * It asks the server nothing of its own (the provider has read the session), so a screen's first
+ * read never waits a round trip on it. `api` is unused, kept so the screens' call sites stand.
+ */
+export function useSignedIn(_api: KayfaApi): boolean | null {
+  const { session, sessionKnown } = usePlayer();
+  return sessionKnown ? session.signedIn : null;
 }
 
 export function SignInPrompt() {
