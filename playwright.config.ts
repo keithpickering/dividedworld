@@ -13,6 +13,9 @@ export default defineConfig({
   /* Vitest runs e2e/*.test.ts (the board match's self-test); Playwright runs only the specs. */
   testMatch: '**/*.spec.ts',
   timeout: 30_000,
+  /* Tests, not files, are spread over the workers and over CI's shards (.github/workflows/web.yml), so a long spec (a11y) is split
+     too. No spec shares state between its tests: none has a beforeAll, a serial block or a module-level variable a test writes. */
+  fullyParallel: true,
   use: { baseURL: `http://localhost:${port}` },
   webServer: {
     command: `npx vite build web --mode e2e && npx vite preview web --port ${port} --strictPort`,
