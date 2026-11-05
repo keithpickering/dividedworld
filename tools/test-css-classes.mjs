@@ -48,6 +48,10 @@ check('a class in a call is read', fires(`const X = () => <p className={cx('kb-h
 check('a template prefix a variable completes is not a class', fires('const X = (a) => <p className={`kb-has-rule kb-thing-${a}`} />;').length === 0);
 check('a class that is a selector in a compound or a pseudo rule is defined', fires(`const X = () => <p className="kb-other kb-two kb-three" />;`).length === 0);
 check('a class not on a className is not read', fires(`const a = 'kb-missing'; const X = () => <p data-x="kb-missing" />;`).length === 0);
+check('a class in an object property named className is read', fires(`const props = { className: 'kb-has-rule kb-missing' };`).length === 1);
+check('a class in a quoted className property is read', fires(`const props = { 'className': 'kb-missing' };`).length === 1);
+check('a class in a className property built with a template is read', fires('const f = (a) => ({ className: `kb-has-rule kb-missing ${a}` });').length === 1);
+check('a class in another property is not read', fires(`const props = { title: 'kb-missing', name: 'kb-missing' };`).length === 0);
 check('a class that is not kb- is not read', fires(`const X = () => <p className="plain other" />;`).length === 0);
 
 /* ---- what is left out ---- */

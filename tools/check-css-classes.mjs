@@ -133,7 +133,7 @@ function definedIn(css) {
   return out;
 }
 
-/** Each `kb-` class a `className` attribute names in a component's source, with its line. */
+/** Each `kb-` class a `className` attribute or object property names in a component's source, with its line. */
 function namedIn(text, file) {
   const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const out = [];
@@ -160,6 +160,8 @@ function namedIn(text, file) {
   };
   const visit = (node) => {
     if (ts.isJsxAttribute(node) && ts.isIdentifier(node.name) && node.name.text === 'className' && node.initializer) read(node.initializer);
+    /* An object that carries props to an element (`{ className: 'kb-toast' }`) names classes the same way. */
+    else if (ts.isPropertyAssignment(node) && (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name)) && node.name.text === 'className') read(node.initializer);
     else ts.forEachChild(node, visit);
   };
   visit(sf);
