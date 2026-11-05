@@ -35,6 +35,8 @@ interface World {
   /** The personas whose signals fire: three by default. */
   named?: string[];
   boards?: Record<string, string>;
+  /** Personas whose signal names no thread (the pick's thread-null stumble). */
+  noThread?: string[];
 }
 type Spend = { day: string; staff: string; trigger: string; post_act: string; card_act: string | null; started_thread: boolean; record: any };
 
@@ -64,7 +66,7 @@ function fakeDb(w: World = {}) {
           return { spent: w.priorSpent ?? 0, threads: 0, today: today.map((s) => ({ staff: s.staff, post_act: s.post_act, card_act: s.card_act, started_thread: s.started_thread })) } as T;
         }
         case 'pool_signals':
-          return { named: named.map((s, i) => ({ staff: s, act: quotes[i], thread: threads[i], n: 1 })), quoted: [], legacy: [], reversals: [], handovers: [], hot: [], tallies: [] } as T;
+          return { named: named.map((s, i) => ({ staff: s, act: quotes[i], thread: (w.noThread ?? []).includes(s) ? null : threads[i], n: 1 })), quoted: [], legacy: [], reversals: [], handovers: [], hot: [], tallies: [] } as T;
         case 'staff_memory_latest': return null as T;
         case 'staff_memory_at': return null as T;
         case 'staff_career': return { led: [], offices: [] } as T;
@@ -76,7 +78,10 @@ function fakeDb(w: World = {}) {
         }
         case 'pool_orphan': {
           const mark = state.acts.find((a) => a.staff === args.of_staff && a.payload?.pool === args.on_day && !state.spends.some((s) => s.post_act === a.id));
-          return (mark ? { act: mark.id, startedThread: mark.kind === 'thread' } : null) as T;
+          if (!mark) return null as T;
+          // A card of the persona's, on the post's quoted target (a Cast) or on the post itself (a Set), not yet any spend's.
+          const tied = state.acts.find((a) => a.kind === 'card' && a.staff === mark.staff && (a.target === mark.id || (mark.target !== null && a.target === mark.target)) && !state.spends.some((s) => s.card_act === a.id));
+          return { act: mark.id, startedThread: mark.kind === 'thread', card: tied?.id ?? null } as T;
         }
         case 'write_staff_act': {
           const a = { id: nextId('act'), staff: String(args.staff_key), kind: 'post', thread: args.thread as string, target: args.target as string | null, payload: args.payload };
@@ -338,6 +343,36 @@ test('a rerun after a crash between a post and its spend adopts the post and wri
   assert.equal(d.state.spends.length, 3, 'the orphan now has its row');
   assert.equal(d.state.spends.find((s) => s.staff === orphaned)!.record.adopted, true);
   assert.equal(m.chats.length, paid, 'and no model call was made for it');
+});
+
+test('an adopted thread start uses the week\'s thread: no later pick in the rerun starts a second', async () => {
+  const d = fakeDb({ failOn: { record_pool_spend: 1 }, noThread: [CLERK, MON] });
+  const m = fakeModels(normal);
+  const first = await run(d, m);
+  assert.ok(first.status === 'ok');
+  assert.equal(first.picks[0]!.status, 'failed');
+  assert.equal(d.count('write_staff_thread'), 1);
+  const second = await run(d, m);
+  assert.ok(second.status === 'ok');
+  assert.equal(second.picks[0]!.status, 'adopted');
+  assert.equal(second.picks[0]!.startedThread, true);
+  assert.equal(d.count('write_staff_thread'), 1, 'no second thread start in the rerun');
+  assert.equal(d.state.spends.filter((s) => s.started_thread).length, 1);
+});
+
+test('an adopted post takes its card: the crash between the card and the spend still counts two slots', async () => {
+  const d = fakeDb({ pool: { threadsWeekly: 0 }, failOn: { record_pool_spend: 1 } });
+  const m = fakeModels((r) => ({ words: `A reply from ${r.staff}.`, card: { key: 'stick-around', on: 'reply' } }));
+  const first = await run(d, m);
+  assert.ok(first.status === 'ok');
+  assert.equal(first.picks[0]!.status, 'failed');
+  const cardAct = d.state.acts.find((a) => a.kind === 'card')!;
+  const second = await run(d, m);
+  assert.ok(second.status === 'ok');
+  const adopted = second.picks.find((p) => p.status === 'adopted')!;
+  assert.equal(adopted.card, cardAct.id);
+  assert.equal(d.state.spends.find((s) => s.staff === adopted.staff)!.card_act, cardAct.id, 'the spend names the card, so the week counts its slot');
+  assert.equal(d.count('staff_play_card'), 1, 'and no second card is played');
 });
 
 test('a rerun cannot spend past the day\'s allowance counting the rows already there', async () => {

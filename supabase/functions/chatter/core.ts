@@ -17,14 +17,20 @@
  * rerun picks the same personas. A persona with a spend row today is skipped (`already`), and the run stops at the day's allowance, counting
  * the rows already there, so even a rerun whose window shifted (a different slot) cannot spend more than the day was given. A crash between a
  * post and its spend leaves a post with no row: every pool post carries `pool: <day>` in its payload, and before it writes, a persona's run
- * asks `pool_orphan` for one. A found orphan is adopted: its spend is recorded (without a card, which a crash may or may not have played) and
- * nothing is written twice. The one thing a crash there loses is that post's card and note, never a second post.
+ * asks `pool_orphan` for one. A found orphan is adopted: its spend is recorded, with the card the persona played beside it if the database finds
+ * one tied to the post (0087: a card Act of the persona after the post, on the post's quoted target or on the post itself), so the week counts
+ * the card's slot; and nothing is written twice. The one thing a crash there loses is that post's note, never a second post or an uncounted card.
  *
  * **Failures.** A model's transport failure is retried on the request itself, inside models() ("Three unrelated timeouts are not a poison
  * pill"); this file never retries a pick. An answer that is rejected, or a call that fails, is skipped and spends nothing. A database error
- * stops that pick (the run goes on to the next) and is written on the pick's record in the result; the ledger row of the call is already
- * written and, being append-only, cannot carry it. A ledger row that could not be written stops the run: an unrecorded call is not trusted.
- * A card the card rules refuse keeps its post: the refusal's words go on the pick's record, which is written into the spend row.
+ * stops that pick (the run goes on to the next) and is written on the pick's record in the result.
+ *
+ * **Where the trims and the errors go.** The call's ledger row (models(), duty `chatter`) is written when the call returns, before the answer is
+ * repaired, and is append-only, so it holds the model-level result and nothing of this file's repair. The trims repairChatter makes, the
+ * card rules' refusal and a failed note are written on the pick's `record` in its spend row (`pool_spends.record`, which exists once the post
+ * does). A rejected answer, a failed call and a failed write spend nothing, so no row exists to carry them: their predicate or error is in the
+ * returned result (and in the function's console.warn, index.ts), which is all there is of them. A ledger row that could not be written stops
+ * the run: an unrecorded call is not trusted.
  *
  * **Cost does not grow with the instance.** One light-tier call per pick, at most the day's allowance (a week's pool over its days), and
  * reads bounded by the roster, the signals' own caps and `chatterThreadPosts`. Nothing here reads a row per player, character or Act.
@@ -184,18 +190,21 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
     if (used + 1 > todays) { records.push({ ...base, status: 'skipped', why: 'the day\'s allowance is spent' }); continue; }
 
     // A post of the persona's own that a crash left without a spend: adopt it, write nothing.
-    const orphan = await db.rpc<{ act: string; startedThread: boolean } | null>('pool_orphan', { of_staff: p.staff, on_day: day });
+    // A card the crash left beside it (pool_orphan ties it from public Act data) is recorded too, so the week counts its slot.
+    const orphan = await db.rpc<{ act: string; startedThread: boolean; card?: string | null } | null>('pool_orphan', { of_staff: p.staff, on_day: day });
     if (orphan) {
+      const card = orphan.card ?? null;
       try {
-        await db.rpc('record_pool_spend', { on_day: day, of_staff: p.staff, by_trigger: p.trigger, post: orphan.act, card: null, started: orphan.startedThread, note: { adopted: true } });
+        await db.rpc('record_pool_spend', { on_day: day, of_staff: p.staff, by_trigger: p.trigger, post: orphan.act, card, started: orphan.startedThread, note: { adopted: true } });
       } catch (e) {
         if (stopsTheRun(e)) throw e;
         records.push({ ...base, status: 'failed', why: said(e), post: orphan.act });
         continue;
       }
-      used += 1;
+      used += 1 + (card ? 1 : 0);
       already.add(p.staff);
-      records.push({ ...base, status: 'adopted', post: orphan.act, startedThread: orphan.startedThread });
+      if (orphan.startedThread) threadsLeft = 0;
+      records.push({ ...base, status: 'adopted', post: orphan.act, startedThread: orphan.startedThread, ...(card ? { card } : {}) });
       continue;
     }
 
@@ -204,6 +213,8 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
       threadsLeft, cardRoom: p.cardSlot && used + 2 <= todays,
     });
     records.push(record);
+    // A thread start whose spend failed is still a thread started: the rerun adopts it, and no second starts meanwhile.
+    if (record.status === 'failed' && record.post && record.startedThread) threadsLeft = 0;
     if (record.status === 'posted') {
       used += 1 + (record.card ? 1 : 0);
       already.add(p.staff);
@@ -339,7 +350,7 @@ async function onePick(r: PickRun): Promise<PickRecord> {
     } catch (e) {
       if (stopsTheRun(e)) throw e;
       // The post stands with no row: the next run of the day adopts it (pool_orphan) and writes no second.
-      return fail('failed', `the post was written but its spend was not recorded: ${said(e)}`, trims, { post, ...(card ? { card } : {}) });
+      return fail('failed', `the post was written but its spend was not recorded: ${said(e)}`, trims, { post, startedThread: startsThread, ...(card ? { card } : {}) });
     }
     return {
       ...base, status: 'posted', post, trims, startedThread: startsThread, noteWritten,

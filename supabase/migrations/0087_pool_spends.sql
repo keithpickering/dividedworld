@@ -8,8 +8,8 @@
 --
 -- A crash between a post and its spend must not post twice on the rerun. A pool post carries `pool` in its payload (the day, as
 -- `YYYY-MM-DD`), and `pool_orphan(staff, day)` finds a persona's post of the day that has no spend: the rerun records that post's spend
--- and writes no second post. The window is not a guess: the post and the marker are one insert. The post's card and note, written after
--- the post and before the spend, are lost in that one case, and nothing is repeated. supabase/functions/chatter/core.ts says the same.
+-- and writes no second post. The window is not a guess: the post and the marker are one insert. The post's note, written after the post
+-- and before the spend, is lost in that one case, and nothing is repeated; its card is found again (pool_orphan) and counted. supabase/functions/chatter/core.ts says the same.
 --
 -- Ways out: nothing here holds a player in a state. A spend is an inert record of what a persona did; a persona benched or waiting
 -- writes nothing, and an admin brings it back (set_office, 0080).
@@ -62,10 +62,20 @@ language sql stable security definer set search_path = public, pg_temp as $$
                        from pool_spends s where s.day = today), '[]'::jsonb))
 $$;
 
--- A persona's post of `day` that no spend names: the post a crash left behind. {act, startedThread}, or null.
+-- A persona's post of `day` that no spend names: the post a crash left behind. {act, startedThread, card}, or null.
+-- `card` is the persona's card Act tied to that post, or null. The card doors (0084) leave no marker on a card Act, so it is tied from public
+-- Act data alone: a card Act of the same persona, made at or after the post and within an hour of it (a card Act takes no place in its thread, so its time is all there is) (a run lasts minutes), that lands on the
+-- post itself (a Set) or on the post's quoted target (a Cast, for a reply), and that no spend names. A persona posts once a day and plays one
+-- card with the post, so the earliest such Act is the post's. The spend adopted with it counts the card's slot in the week.
 create function pool_orphan(of_staff text, on_day date) returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
-  select jsonb_build_object('act', a.id, 'startedThread', a.seq = 1)
+  select jsonb_build_object('act', a.id, 'startedThread', a.seq = 1,
+    'card', (select k.id from acts k
+             where k.character = a.character and k.kind = 'card'
+               and (k.target_act_id = a.id or (a.target_act_id is not null and k.target_act_id = a.target_act_id))
+               and k.created_at >= a.created_at and k.created_at < a.created_at + interval '1 hour'
+               and not exists (select 1 from pool_spends s where s.card_act = k.id)
+             order by k.created_at, k.id limit 1))
   from acts a join characters c on c.id = a.character
   where c.staff = of_staff and a.kind = 'post' and a.payload ->> 'pool' = on_day::text
     and not exists (select 1 from pool_spends s where s.post_act = a.id)

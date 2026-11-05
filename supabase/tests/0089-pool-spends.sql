@@ -154,6 +154,52 @@ begin
   perform tests.unbecome();
 end $$;
 
+-- ---- An orphan names the card the crash left beside it, from public Act data only ----
+-- A Cast is the persona's card Act on the reply's quoted target, made after the reply; a Set is its card Act on the post itself. A card of
+-- another persona, on another target, or already some spend's is none of the post's.
+do $$
+declare
+  t uuid := tests.thread('Orphan cards');
+  quoted uuid := pg_temp.staff_post('ps-boss', t, 'The post a reply quotes.');
+  other uuid := pg_temp.staff_post('ps-boss', t, 'Some other post.');
+  reply uuid;
+  stray uuid;
+  mine uuid;
+  found jsonb;
+begin
+  perform tests.become_service();
+  reply := (write_staff_act('ps-mod', 'post', t, quoted, '{"body": "A reply.", "pool": "2030-01-12"}') ->> 'id')::uuid;
+  found := pool_orphan('ps-mod', '2030-01-12');
+  if found ->> 'act' is distinct from reply::text or found -> 'card' is distinct from 'null'::jsonb then raise exception 'a card is tied to a post with none: %', found; end if;
+  stray := (write_staff_act('ps-mod', 'card', t, other, '{"card": "x"}') ->> 'id')::uuid;
+  perform write_staff_act('ps-boss', 'card', t, quoted, '{"card": "x"}');
+  found := pool_orphan('ps-mod', '2030-01-12');
+  if found -> 'card' is distinct from 'null'::jsonb then raise exception 'a card on another target or of another persona is tied: %', found; end if;
+  mine := (write_staff_act('ps-mod', 'card', t, quoted, '{"card": "x"}') ->> 'id')::uuid;
+  found := pool_orphan('ps-mod', '2030-01-12');
+  if (found ->> 'card')::uuid is distinct from mine then raise exception 'the Cast on the quoted target is not tied: %', found; end if;
+  -- Recorded as the spend's card, the card is no one else's, and the post is no orphan.
+  perform record_pool_spend('2030-01-12', 'ps-mod', 'named', reply, mine, false);
+  if pool_orphan('ps-mod', '2030-01-12') is not null then raise exception 'a spent post is still an orphan'; end if;
+  perform tests.unbecome();
+end $$;
+do $$
+declare
+  t uuid := tests.thread('Orphan sets');
+  start_post uuid;
+  set_act uuid;
+  found jsonb;
+begin
+  perform tests.become_service();
+  start_post := (write_staff_thread('ps-boss', 'side', 'A start', 'Opening.', '{"pool": "2030-01-13"}') -> 'act' ->> 'id')::uuid;
+  found := pool_orphan('ps-boss', '2030-01-13');
+  if found -> 'card' is distinct from 'null'::jsonb then raise exception 'a thread start with no Set names a card: %', found; end if;
+  set_act := (write_staff_act('ps-boss', 'card', (select thread from acts where id = start_post), start_post, '{"card": "x"}') ->> 'id')::uuid;
+  found := pool_orphan('ps-boss', '2030-01-13');
+  if (found ->> 'card')::uuid is distinct from set_act then raise exception 'the Set on the post is not tied: %', found; end if;
+  perform tests.unbecome();
+end $$;
+
 -- ---- write_staff_thread: a thread and its first post, held to the bounds, refused to those who write nothing ----
 do $$
 declare
