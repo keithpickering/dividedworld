@@ -1,5 +1,5 @@
 /**
- * The thread page's Follow / Unfollow control, in the glass: a strip of its own after the thread's last post (above the reply box), outside every post and outside the
+ * The thread page's Follow / Unfollow control, a 2003 board button (the board's own `kb-button`, not the glass's): a strip of its own after the thread's last post (above the reply box), outside every post and outside the
  * board's table (the alerts design, sections 4 and 12). A thread one's characters started is followed by default; this follows or
  * unfollows any thread, and it is the way out of a thread followed ("No player is ever stuck"; the Alerts row offers the same).
  *
@@ -7,6 +7,7 @@
  * from the thread's posts: the default depends on who started the thread, which is no one else's business and in no public read.
  * A click asks the server and shows the state it answers; a refusal leaves the button as it was and says why, in plain words.
  * Where the state cannot be read there is no button, since either label could be wrong. Plain words: the glass never bluffs.
+
  */
 import { useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
@@ -30,7 +31,7 @@ export function FollowControl({ thread }: { readonly thread: Id }) {
 
   /* Unread: no control, since either label could be wrong. While it loads the strip's height is kept, so the thread does not shift. */
   if (unread) return null;
-  if (following === null) return <div className="kb-glass kb-thread-glass" aria-hidden="true" />;
+  if (following === null) return <div className="kb-thread-controls" aria-hidden="true" />;
   const toggle = async () => {
     /* Busy is not disabled: a disabled button drops the keyboard's focus. */
     if (busy) return;
@@ -43,11 +44,11 @@ export function FollowControl({ thread }: { readonly thread: Id }) {
     setBusy(false);
   };
   return (
-    <div className="kb-glass kb-thread-glass" role="group" aria-label="Thread controls">
-      <button type="button" className="kb-glass-cut-button kb-thread-follow" aria-disabled={busy || undefined} onClick={() => void toggle()}>
+    <div className="kb-thread-controls" role="group" aria-label="Thread controls">
+      <button type="button" className="kb-button kb-thread-follow" aria-disabled={busy || undefined} onClick={() => void toggle()}>
         {following ? 'Unfollow this thread' : 'Follow this thread'}
       </button>
-      {refused && <span className="kb-thread-glass-note" role="alert">{refused}</span>}
+      {refused && <span className="kb-small" role="alert">{refused}</span>}
     </div>
   );
 }
