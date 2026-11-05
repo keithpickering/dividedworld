@@ -520,7 +520,8 @@
   padding-left: 12px;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-guide-article {
+/* The compound is repeated on purpose: the base rule is .kb-glass-cut-dialog.kb-guide-article, and a lone class loses to it. */
+:where(:root[data-kb-layout='phone']) .kb-glass-cut-dialog.kb-guide-article {
   padding: 20px 16px;
 }
 

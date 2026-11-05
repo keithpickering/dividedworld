@@ -253,7 +253,8 @@
   font-size: var(--kb-glass-size-phone-small);
 }
 
-:where(:root[data-kb-layout='phone']) .kb-updates-post {
+/* The compound is repeated on purpose: the base rule is .kb-glass-cut-dialog.kb-updates-post, and a lone class loses to it. */
+:where(:root[data-kb-layout='phone']) .kb-glass-cut-dialog.kb-updates-post {
   padding: 20px 16px 20px;
 }
 
