@@ -25,6 +25,11 @@
 
 /* ---- the menu bar ---- */
 
+/* What the page scrolls to stands clear of the sticky bar's foot (MenuBar.tsx writes its height). */
+:root {
+  scroll-padding-top: var(--kb-glass-menu-height, 0px);
+}
+
 /*
  * The boards' menu bar: 84px of the strong panel over the smoke, a pale rule at its foot with the
  * neon's glow under it, its tabs skewed with their words upright, at the label's weight and the
@@ -32,22 +37,27 @@
  * tab is lit with the neon's wash and a neon rule along its foot.
  */
 .kb-glass-menu {
-  position: relative;
+  position: sticky;
+  top: 0;
   z-index: 5;
   box-sizing: border-box;
   min-height: 85px;
   display: flex;
   align-items: center;
   padding: 16px 32px;
-  background: var(--kb-glass-panel-strong);
+  /* On the ground, so the page scrolling under the sticky bar does not show through it. */
+  background: linear-gradient(var(--kb-glass-panel-strong), var(--kb-glass-panel-strong)), var(--kb-glass-ground);
   border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-pale) 50%, transparent);
   box-shadow: 0 1px 16px color-mix(in srgb, var(--kb-glass-neon) 35%, transparent);
   zoom: var(--kb-board-scale, 1);
 }
 
-/* Dimmed while an overlay is open over the page, which also makes it inert (Overlay.tsx). */
+/*
+ * Dimmed while an overlay is open over the page, which also makes it inert (Overlay.tsx). The dim is a filter, never opacity: the bar
+ * is sticky and the page scrolls under it, and an opacity would let that page read through the bar's own ground.
+ */
 .kb-glass-menu[data-kb-dimmed] {
-  opacity: 0.6;
+  filter: brightness(0.6);
 }
 
 .kb-glass-menu-row {
@@ -90,6 +100,12 @@
   margin-right: 14px;
   border: 1px solid var(--kb-glass-text-hi);
   color: var(--kb-glass-text-hi);
+}
+
+.kb-glass-menu-tab:hover,
+.kb-glass-menu-back:hover {
+  color: var(--kb-glass-text-hi);
+  background: color-mix(in srgb, var(--kb-glass-neon) 12%, transparent);
 }
 
 .kb-glass-menu-tab[aria-current='page'] {
@@ -164,16 +180,18 @@
 /* ---- the content column ---- */
 
 .kb-glass-content {
+  /* The column's side gutter; calm.css reads it, so on the phone a calm's feather stays inside the column's clip. */
+  --kb-glass-gutter: clamp(16px, 4.44vw, 64px);
   display: block;
   max-width: 1312px;
   margin: 0 auto;
-  padding: 0 clamp(16px, 4.44vw, 64px) 64px;
+  padding: 0 var(--kb-glass-gutter) 64px;
   zoom: var(--kb-board-scale, 1);
 }
 
 /* On the Main board's layout the column's gutters are the board's own 64px (the menu bar's are its 32px), drawn at its scale with the rest. */
 :where(:root[data-kb-layout='main']) .kb-glass-content {
-  padding-inline: 64px;
+  --kb-glass-gutter: 64px;
 }
 
 .kb-glass-content:focus {
@@ -196,21 +214,45 @@
 
 /* Over a glass page it starts under the menu bar's foot (Overlay.tsx sets the line), so the bar stays in view. */
 .kb-glass-overlay {
+  --kb-dialog-bar-stuck-min: 64px;
   position: fixed;
   inset: var(--kb-glass-overlay-top, 0px) 0 0 0;
   z-index: 50;
   display: grid;
+  /* The column is the window's width, never its content's: a dialog's long line wraps inside it and does not push the dialog past the window. */
+  grid-template-columns: minmax(0, 1fr);
   place-items: center;
   padding: 16px;
   background: color-mix(in srgb, var(--kb-glass-ground) 72%, transparent);
   overflow-y: auto;
+  /* The sticky title row covers the scrollport's top (the `.kb-glass-dialog-bar` rule, below): a focused control is scrolled to clear it (WCAG 2.4.11). */
+  scroll-padding-top: var(--kb-dialog-bar-stuck, var(--kb-dialog-bar-stuck-min));
 }
 
+/*
+ * The one frame every glass dialog wears (Frame.tsx; the Reveal modal's look): the chamfered box, its 1.5px border drawn on the cut
+ * by base.css's `.kb-glass-cut-dialog` (the cut and the border are set there, once: no dialog sets either, and frame.test.tsx reads
+ * every stylesheet to hold that), a bar of the title and Close that stays in view while the body scrolls, and Close as a cross.
+ * A dialog sizes itself with the four tokens below (its width, and the room its words keep from the frame), and nothing else of
+ * the frame.
+ *   --kb-dialog-pad-x       the words' distance from the frame's sides
+ *   --kb-dialog-pad-top     the bar's distance from the frame's top
+ *   --kb-dialog-pad-bottom  the body's distance from the frame's foot
+ *   --kb-dialog-close-inset Close's distance from the title row's right edge (the Reveal modal's 24px; none on the phone)
+ * The bar's top is never less than the cut leaves it: Close's corner stands clear of the chamfer.
+ */
 .kb-glass-dialog {
-  --kb-cut: var(--kb-glass-chamfer-5);
+  /* Where the stuck bar's foot lies at least: its 12px offset and Close's 52px (the bar writes the real height, Frame.tsx). */
+  --kb-dialog-bar-stuck-min: 64px;
+  --kb-dialog-pad-x: 40px;
+  --kb-dialog-pad-top: 36px;
+  --kb-dialog-pad-bottom: 36px;
+  --kb-dialog-close-inset: 24px;
+  --kb-dialog-bar-top: max(var(--kb-dialog-pad-top), calc(var(--kb-cut) - var(--kb-dialog-pad-x) + var(--kb-border)));
   width: min(100%, 720px);
   box-sizing: border-box;
-  padding: 28px 32px;
+  /* The foot is never less than the cut leaves it: a control in the bottom left corner stands clear of the chamfer. */
+  padding: 0 var(--kb-dialog-pad-x) max(var(--kb-dialog-pad-bottom), calc(var(--kb-cut) - var(--kb-dialog-pad-x) + var(--kb-border)));
 }
 
 .kb-glass-dialog::after {
@@ -221,15 +263,70 @@
 .kb-glass-dialog > .kb-smoke {
   z-index: 0;
   inset: var(--kb-border);
+  opacity: 0.35;
 }
 
+/*
+ * The title row. It is sticky: a dialog taller than the window (or than the room it was given) scrolls its body under the bar,
+ * and the title and Close stay in view. It is on the ground, so the body does not show through it, and it lies exactly where
+ * the cut's own panel does (inside the border). It has no cut of its own: it sticks wherever the page scrolls it to, which is not
+ * always the frame's top (a dialog taller than the window scrolls in its overlay, the frame's corner far above), and a corner cut
+ * out of it there is a notch the body shows through. The frame's diagonal border, which the bar's ground would cover where the
+ * frame's own corner is in view, is drawn again above the bar (`.kb-glass-dialog::before`, below). Its top padding is mostly scrolled off when it sticks (the offset), leaving Close 12px from the edge.
+ */
 .kb-glass-dialog-bar {
-  position: relative;
-  z-index: 1;
+  position: sticky;
+  top: calc(12px - var(--kb-dialog-bar-top));
+  z-index: 2;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+  margin: var(--kb-border) calc(var(--kb-border) - var(--kb-dialog-pad-x)) 0;
+  padding: calc(var(--kb-dialog-bar-top) - var(--kb-border)) calc(var(--kb-dialog-pad-x) - var(--kb-border)) 0;
+  background: var(--kb-glass-ground);
+}
+
+/*
+ * Where the browser can say the bar is stuck (a scroll-state query), the ground is laid under it only then: at rest the bar is the
+ * dialog's own smoke, as the Reveal modal draws it, and it takes the ground only once the body is scrolling under it. Elsewhere the
+ * bar keeps its ground always, a plain band, which is the safe side.
+ */
+@supports (container-type: scroll-state) {
+  .kb-glass-dialog-bar {
+    container-type: scroll-state;
+    background: none;
+  }
+
+  .kb-glass-dialog-bar::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: var(--kb-glass-ground);
+    opacity: 0;
+  }
+
+  @container scroll-state(stuck: top) {
+    .kb-glass-dialog-bar::before { opacity: 1; }
+  }
+}
+
+/*
+ * The frame's diagonal edge, drawn over the title row: a stroke of the border's width and color along the top right cut, a square of
+ * the cut's size at the corner, a hard-edged band on the gradient's axis (perpendicular to the cut) from the cut's line one border in.
+ * It lies in the box, so it scrolls with the frame's own corner and is where the corner is.
+ */
+.kb-glass-dialog::before {
+  content: '';
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  right: 0;
+  width: var(--kb-cut);
+  height: var(--kb-cut);
+  pointer-events: none;
+  background: linear-gradient(to bottom left, transparent 50%, var(--kb-glass-neon) 50%, var(--kb-glass-neon) calc(50% + var(--kb-border)), transparent calc(50% + var(--kb-border)));
 }
 
 .kb-glass-dialog-titles {
@@ -238,44 +335,90 @@
 
 .kb-glass-dialog-kicker {
   margin: 0;
-  font-size: var(--kb-glass-size-label);
+  line-height: normal;
+  font-size: var(--kb-glass-size-body);
   font-weight: 800;
-  letter-spacing: 2px;
+  letter-spacing: 3px;
   text-transform: uppercase;
   color: var(--kb-glass-neon-text);
 }
 
 .kb-glass-dialog-head {
+  /* Above the kicker's calm, whose feather lies over it. */
+  position: relative;
+  z-index: 1;
   margin: 0;
   font-size: var(--kb-glass-size-display-s);
   color: var(--kb-glass-text-hi);
 }
 
+/* Close: the one look everywhere, a 52px square with a cross, its word kept for its name and hidden in the markup, the cross two strokes in the text's color. */
 .kb-glass-dialog-close {
-  --kb-cut: var(--kb-glass-chamfer-1);
-  min-height: 44px;
-  padding: 0 16px;
-  border: 0;
+  position: relative;
+  flex: none;
+  margin-right: var(--kb-dialog-close-inset);
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--kb-glass-neon-text) 60%, transparent);
+  background: color-mix(in srgb, var(--kb-glass-text-hi) 5%, transparent);
   font: inherit;
-  color: var(--kb-glass-text-hi);
+  color: var(--kb-glass-text);
   cursor: pointer;
 }
 
-.kb-glass-dialog-body,
-.kb-glass-dialog-foot {
+.kb-glass-dialog-close::before {
+  content: '';
+  position: absolute;
+  inset: 16px;
+  background:
+    linear-gradient(45deg, transparent calc(50% - 1px), currentColor calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)),
+    linear-gradient(-45deg, transparent calc(50% - 1px), currentColor calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px));
+}
+
+.kb-glass-dialog-body {
   position: relative;
   z-index: 1;
 }
 
-.kb-glass-dialog-foot {
-  display: flex;
-  justify-content: flex-end;
+/* On the phone a dialog takes the window's width less 8px a side, and its words 12px from its edge, so a line of body text at 200% (ten times 34px) fits the 390px window. */
+:where(:root[data-kb-layout='phone']) .kb-glass-overlay { padding: 8px; }
+:where(:root[data-kb-layout='phone']) .kb-glass-dialog {
+  --kb-dialog-pad-x: 12px;
+  --kb-dialog-pad-top: 32px;
+  --kb-dialog-pad-bottom: 40px;
+  --kb-dialog-close-inset: 0px;
 }
+
+/*
+ * On the phone the bar is two rows, so the title has the dialog's whole width and not what the close
+ * button leaves: the kicker beside Close, the title under both. The titles' box dissolves into the grid.
+ */
+:where(:root[data-kb-layout='phone']) .kb-glass-dialog-bar:has(> .kb-glass-dialog-titles) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 12px;
+  align-items: start;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-glass-dialog-bar > .kb-glass-dialog-titles { display: contents; }
+:where(:root[data-kb-layout='phone']) .kb-glass-dialog-bar > .kb-glass-dialog-titles > .kb-glass-dialog-kicker { grid-column: 1; grid-row: 1; }
+:where(:root[data-kb-layout='phone']) .kb-glass-dialog-bar > .kb-glass-dialog-titles > .kb-glass-dialog-head { grid-column: 1 / -1; grid-row: 2; }
+:where(:root[data-kb-layout='phone']) .kb-glass-dialog > .kb-glass-dialog-bar > .kb-glass-dialog-close { grid-column: 2; grid-row: 1; }
+:where(:root[data-kb-layout='phone']) .kb-glass-dialog-kicker { font-size: var(--kb-glass-size-phone-small); letter-spacing: 2px; }
 
 /* An overlay opened by an anchor (Overlay.tsx places it): out of the middle of the window, at the anchor on the Main board's layout, a sheet on the HUD on the Phone board's. */
 .kb-glass-overlay[data-kb-anchored] {
   display: block;
   padding: 0;
+}
+
+.kb-glass-dialog[data-kb-place='sheet'],
+.kb-glass-dialog[data-kb-place='below'],
+.kb-glass-dialog[data-kb-place='above'],
+.kb-float > .kb-float-box {
+  /* The dialogs that scroll in their own box (a sheet, a popover, a float) clear the stuck title row as the overlay does. */
+  scroll-padding-top: var(--kb-dialog-bar-stuck, var(--kb-dialog-bar-stuck-min));
 }
 
 .kb-glass-dialog[data-kb-place='sheet'] {
@@ -318,4 +461,11 @@
 /* What stands beside the dialog's box in the overlay (the Lens a takeover hosts): it takes no box, and what it holds is fixed to the window. */
 .kb-glass-overlay-beside {
   display: contents;
+}
+
+/* Close answers a pointer as the glass's other controls do: the neon's edge and a wash of it (e2e/glass-hover.spec.ts holds every control to a hover). */
+.kb-glass-dialog-close:hover {
+  border-color: var(--kb-glass-neon);
+  background: color-mix(in srgb, var(--kb-glass-neon) 18%, transparent);
+  color: var(--kb-glass-text-hi);
 }

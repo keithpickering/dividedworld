@@ -15,24 +15,6 @@
   padding-top: 32px;
 }
 
-.kb-rankings-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px 32px;
-}
-
-/* The Settings board's heading: Anton at 112px, set solid, with its neon glow. */
-.kb-rankings-title {
-  margin: 0;
-  font-size: 7rem;
-  line-height: 1;
-  letter-spacing: 1px;
-  color: var(--kb-glass-text);
-  text-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 35%, transparent);
-}
-
 .kb-rankings-season {
   margin: 0 0 12px;
   font-size: var(--kb-glass-size-label);
@@ -135,18 +117,19 @@
   padding-right: 0;
 }
 
-/* The player's own rows: a band of the neon along the row's left edge, under the tag. */
+/* The player's own rows: a band of the neon along the row's left edge, drawn outside it so the table's text stands where the page's does. */
 .kb-rankings-table tr[data-kb-own] td:first-child {
-  box-shadow: inset 3px 0 0 var(--kb-glass-neon);
-  padding-left: 16px;
+  position: relative;
 }
 
-.kb-rankings-table th.kb-rankings-place {
-  padding-left: 16px;
-}
-
-.kb-rankings-table td.kb-rankings-place {
-  padding-left: 16px;
+.kb-rankings-table tr[data-kb-own] td:first-child::before {
+  content: '';
+  position: absolute;
+  left: -14px;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--kb-glass-neon);
 }
 
 /* ---- the tag and the chips ---- */
@@ -252,10 +235,6 @@
   padding-top: 16px;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-rankings-title {
-  font-size: var(--kb-glass-size-display-l);
-}
-
 :where(:root[data-kb-layout='phone']) .kb-rankings-season {
   margin: 0;
   font-size: var(--kb-glass-size-phone-small);
@@ -282,6 +261,22 @@
   white-space: nowrap;
 }
 
+/* The head row is no table row here, so its cells never lay the table wider than the column. */
+:where(:root[data-kb-layout='phone']) .kb-rankings-table thead tr {
+  display: block;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-rankings-table thead th {
+  display: block;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 :where(:root[data-kb-layout='phone']) .kb-rankings-table tbody tr {
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr) auto;
@@ -290,12 +285,26 @@
     '. rank rank'
     '. cls cls';
   column-gap: 8px;
-  padding: 10px 0 10px 10px;
+  padding: 10px 0;
   border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-text) 20%, transparent);
 }
 
 :where(:root[data-kb-layout='phone']) .kb-rankings-table tbody tr[data-kb-own] {
-  box-shadow: inset 3px 0 0 var(--kb-glass-neon);
+  position: relative;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-rankings-table tbody tr[data-kb-own]::before {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--kb-glass-neon);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-rankings-table tr[data-kb-own] td:first-child::before {
+  display: none;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-rankings-table tbody > tr > :is(.kb-rankings-place, .kb-rankings-name, .kb-rankings-rank, .kb-rankings-standing, .kb-rankings-cls) {
@@ -340,4 +349,9 @@
 :where(:root[data-kb-layout='phone']) .kb-rankings-yours {
   margin-left: 6px;
   padding: 0 6px;
+}
+
+/* The season line stands as near the title as the board sets it, so its feather is capped at the title gap (calm.css) and lies on nothing but it. */
+.kb-rankings-season {
+  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
 }

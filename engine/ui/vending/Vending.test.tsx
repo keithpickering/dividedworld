@@ -42,6 +42,23 @@ const orbSolids = () => [...document.querySelectorAll<HTMLElement>('.kb-vending-
 beforeEach(() => { document.documentElement.setAttribute('data-kb-motion', 'reduce'); });
 afterEach(() => { document.documentElement.removeAttribute('data-kb-motion'); vi.useRealTimers(); });
 
+/* The sign: decoration picked at random when the screen opens; the group is named in plain words (docs/plans/2026-11-04-glass-polish-design.md, section 5). */
+describe('the machine\'s marquee', () => {
+  const sign = () => document.querySelector('.kb-vending-sign')!;
+  const names = ['FIRST NAME', 'SECOND NAME', 'THIRD NAME'];
+  test('draws the entry the random function picks, and the group keeps the shop\'s plain name', async () => {
+    renderIn(seeded(300), <Vending />, { instance: shop, cards: faces, path: '/vending', copy: { shopName: 'Plain Shop', marquees: names }, random: () => 0.5 });
+    expect(await screen.findByRole('group', { name: 'Plain Shop' })).toBeInTheDocument();
+    expect(sign()).toHaveTextContent('SECOND NAME');
+    expect(sign().closest('[aria-hidden="true"]')).not.toBeNull();
+  });
+  test('with no list draws the shop\'s name', async () => {
+    renderIn(seeded(300), <Vending />, { instance: shop, cards: faces, path: '/vending', copy: { shopName: 'Plain Shop' } });
+    await screen.findByRole('group', { name: 'Plain Shop' });
+    expect(sign()).toHaveTextContent('Plain Shop');
+  });
+});
+
 /* #86: an admin tuned a price in the economy row; the machine sells at the server's price, not the compiled one. */
 describe('a price an admin has tuned', () => {
   test('is the price on the face and the buy button, and the price the purchase is charged', async () => {
@@ -80,6 +97,27 @@ describe('the machine as the Vending board draws it', () => {
     expect(screen.getByRole('status', { name: 'Selected: A2, Whoops!, 1.00' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' })).toBeEnabled();
     expect(buy).not.toHaveBeenCalled();
+  });
+
+  test('the head is the board\'s yellow column head in the side column, and "Your hand" is a game piece like the HUD\'s Hand button, not a GlassButton', async () => {
+    open(seeded(562));
+    await screen.findByRole('button', { name: 'Buy Stick Around, 1.00 orb, common Cast' });
+    const side = document.querySelector('.kb-vending-side')!;
+    expect(side.querySelector('.kb-vending-head .kb-vending-eyebrow')).toHaveTextContent('Spend Aura');
+    expect(side.querySelector('.kb-vending-head h1.kb-vending-title')).toHaveTextContent('Vending Machine');
+    expect(document.querySelector('.kb-page-head')).toBeNull();
+    expect(side.querySelector('.kb-vending-head')).toHaveClass('kb-calm');
+    const hand = screen.getByRole('link', { name: /^Your hand/ });
+    expect(hand).toHaveClass('kb-vending-hand', 'kb-glass-skew');
+    expect(hand).not.toHaveAttribute('data-kb-kind');
+    expect(hand.querySelector('.kb-vending-hand-word.kb-glass-upright')).toHaveTextContent('Your hand');
+  });
+
+  test('on the phone the head\'s box does not reach past the column, which would scroll the page sideways', () => {
+    const css = readFileSync('engine/ui/vending/vending.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const rule = css.match(/:where\(:root\[data-kb-layout='phone'\]\) \.kb-vending-head \{([^}]*)\}/)?.[1] ?? '';
+    expect(rule).toMatch(/margin:\s*-16px 0/);
+    expect(rule).toMatch(/padding:\s*16px 0/);
   });
 
   test('the wallet panel says solid only, the wallet before and after, and the hand before and after', async () => {

@@ -51,8 +51,8 @@ export type Rgba = readonly [number, number, number, number];
 /** A layer under the text that is not the smoke: a panel's background, at the opacity it is drawn. */
 export interface Backing { readonly box: Box; readonly opacity: number }
 
-/** A calm: its backing as drawn, its feather, and `box`, the backing inset by the feather (its interior). */
-export interface Calm extends Backing { readonly backing: Box; readonly feather: number }
+/** A calm: its backing as drawn, its feather, `box` (the backing inset by the feather: its interior), and `element`, the calmed element's own border box. */
+export interface Calm extends Backing { readonly backing: Box; readonly feather: number; readonly element: Box }
 
 /** One line of one text node on a glass surface, as the gatherer read it in the page. */
 export interface TextFact {
@@ -427,6 +427,8 @@ export function feathersOf(mask: string, who: string): Feathers {
     }
     if (endRamp) {
       const n = px(stops[stops.length - 2]!);
+      /* A feather of nothing is computed to `100%` (calc(100% - 0px)): a ramp of no length, which leaves the edge at zero. */
+      if (n === null && /\s100%$/u.test(stops[stops.length - 2]!)) continue;
       if (n === null) return fail(`an end ramp with no px length: ${layer}`);
       if (x) f.right = Math.max(f.right, n); else f.bottom = Math.max(f.bottom, n);
     }

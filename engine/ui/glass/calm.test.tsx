@@ -8,6 +8,9 @@
  * What is drawn under a text block is `--kb-glass-calm-opacity` as calm.css reads it: the nearest
  * element that sets it, else the root, where applyGlass puts the theme's.
  */
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { screen, waitFor } from '@testing-library/react';
 import { describe, expect, test } from 'vitest';
 import { calmOf } from '../../../tools/check-glass-contrast.mjs';
@@ -70,5 +73,95 @@ describe('the calm drawn on a surface is the calm the guard reads it at', { time
     expect(drawn(document.querySelector('.kb-hand-bar')!)).toBe(guarded('hand'));
     /* The board's page is no glass surface: its calm, if it draws one, is the theme's. */
     expect(drawn(screen.getByText('page'))).toBe(glass.calm.opacity);
+  });
+});
+
+/*
+ * The calm feathers outward: the backing reaches the feather past the element's box, and the element
+ * adds no padding of its own. jsdom loads no stylesheet, so these read calm.css as text, as
+ * base.test.tsx does.
+ */
+const here = path.dirname(fileURLToPath(import.meta.url));
+const sheet = (name: string) => fs.readFileSync(path.join(here, name), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+const squash = (s: string) => s.replace(/\s+/g, ' ').trim();
+
+/** The declarations of the rules whose selector list contains exactly `selector`, whitespace squashed. */
+function declsOf(css: string, selector: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (!m[1]!.split(',').map(squash).includes(selector)) continue;
+    for (const d of m[2]!.split(';')) {
+      const i = d.indexOf(':');
+      if (i > 0) out[d.slice(0, i).trim()] = squash(d.slice(i + 1));
+    }
+  }
+  return out;
+}
+
+describe('the calm is drawn outside its element', () => {
+  const calm = sheet('calm.css');
+
+  test('its backing reaches the feather past the element\'s box', () => {
+    /* (The rule inside `@supports not (mask-image)` sets inset 0 on the same selector: no feather to reach there.) */
+    expect(squash(calm)).toContain('inset: calc(var(--kb-calm-feather) * -1);');
+  });
+  test('the element adds no padding of its own', () => {
+    for (const sel of ['.kb-calm', '.kb-calm.kb-calm']) expect(declsOf(calm, sel).padding).toBeUndefined();
+  });
+  test('the mask ramps over the same feather the backing reaches', () => {
+    expect(calm).toMatch(/var\(--kb-calm-feather\),/);
+    expect(calm).not.toMatch(/currentColor var\(--kb-glass-calm-feather\)/);
+  });
+  test('a calm in a framed panel (the HUD, a dialog, the hand, the class rail) keeps the soft feather: no override', () => {
+    /* Without a backing the panels' words fail their ceilings, and a hard box shows as a rectangle; the layout check exempts a panel's own content instead. */
+    for (const sel of ['.kb-hud', '.kb-hand-drawer', '.kb-class-rail']) expect(calm).not.toContain(`${sel} .kb-calm`);
+    /* (A dialog on the phone has the 12px its padding gives, below: a fix for a cut at the window, not a harder edge.) */
+  });
+  test('a calm in a dialog has a 12px feather, so it stays inside a dialog that stands against the window\'s or the overlay\'s edge', () => {
+    expect(declsOf(calm, '.kb-glass-dialog .kb-calm')['--kb-calm-feather']).toBe('min(var(--kb-glass-calm-feather), 12px)');
+  });
+  test('each calm resolves its feather from the theme\'s, and on the phone the smaller of it and the column\'s gutter', () => {
+    const phone = ':where(:root[data-kb-layout=\'phone\'])';
+    expect(declsOf(calm, '.kb-calm')['--kb-calm-feather']).toBe('var(--kb-glass-calm-feather)');
+    expect(declsOf(calm, `${phone} .kb-calm`)['--kb-calm-feather']).toBe('min(var(--kb-glass-calm-feather), var(--kb-glass-gutter, 32px))');
+  });
+});
+
+describe('a feather capped at the gap to the title states the gap once', () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const sheets = (dir: string): string[] => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? sheets(path.join(dir, e.name)) : e.name.endsWith('.css') ? [path.join(dir, e.name)] : []));
+  const css = sheets(root).filter((f) => !f.endsWith('glass/calm.css'));
+  const text = (f: string) => fs.readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+
+  /*
+   * A page sheet caps its feather in one of three ways, each for a reason, and none by a literal length (a literal is a gap stated twice):
+   *  - at the title gap, where the calm stands as near the title as the board sets it;
+   *  - at the class card's inset (characters.css), where the title's calm stands in a card at the edge of a row that clips, so its feather
+   *    ends where the card does;
+   *  - to nothing (`0px`), for the roster's tablist, which stands at its row's clipping edge and would have its feather cut on a straight line.
+   */
+  const CAPS = new Set([
+    'min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap))',
+    'min(var(--kb-glass-calm-feather), var(--kb-class-card-inset))',
+    '0px',
+  ]);
+  test('every page sheet that caps its feather caps it at the title gap, the class card\'s inset or nothing, never at another literal', () => {
+    const capped = css.filter((f) => text(f).includes('--kb-calm-feather:'));
+    expect(capped.length).toBeGreaterThanOrEqual(8);
+    for (const f of capped) {
+      for (const m of text(f).matchAll(/--kb-calm-feather:\s*([^;]+);/g)) {
+        expect(CAPS.has(squash(m[1]!)), `${path.basename(f)}: ${squash(m[1]!)}`).toBe(true);
+      }
+    }
+  });
+  test('the capping test refuses a literal length: 17px is no cap it knows', () => {
+    expect(CAPS.has(squash('min(var(--kb-glass-calm-feather), 17px)'))).toBe(false);
+    expect(CAPS.has(squash('12px'))).toBe(false);
+  });
+  test('the gap is declared in one place: 12px, and the phone\'s 8px', () => {
+    const calm = sheet('calm.css');
+    expect(declsOf(calm, ':root')['--kb-glass-title-gap']).toBe('12px');
+    expect(declsOf(calm, ":root[data-kb-layout='phone']")['--kb-glass-title-gap']).toBe('8px');
+    expect(css.filter((f) => text(f).includes('--kb-glass-title-gap:'))).toEqual([]);
   });
 });

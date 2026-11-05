@@ -59,4 +59,21 @@
   /* The calm: how much of the ground a text block's backing lays over the smoke, and its feathered edge. */
   --kb-glass-calm-opacity: 0.85;
   --kb-glass-calm-feather: 32px;
+
+  /* The skewed controls (Button.tsx): m and s, the Main layout's measure and then the phone layout's (parts.css swaps them on the element). */
+  --kb-glass-control-m-height: 48px;
+  --kb-glass-control-m-pad: 22px;
+  --kb-glass-control-m-size: var(--kb-glass-size-body);
+  --kb-glass-control-s-height: 36px;
+  --kb-glass-control-s-pad: 16px;
+  --kb-glass-control-s-size: var(--kb-glass-size-label);
+  --kb-glass-control-m-height-phone: 40px;
+  --kb-glass-control-m-pad-phone: 16px;
+  --kb-glass-control-m-size-phone: var(--kb-glass-size-phone-body);
+  --kb-glass-control-s-height-phone: 32px;
+  --kb-glass-control-s-pad-phone: 12px;
+  --kb-glass-control-s-size-phone: var(--kb-glass-size-phone-small);
+  --kb-glass-control-spacing: 2px;
+  /* The gap between controls in a row. */
+  --kb-glass-control-gap: 10px;
 }

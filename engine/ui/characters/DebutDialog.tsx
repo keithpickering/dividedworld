@@ -6,6 +6,7 @@
 import { useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { DebutLoudness, DebutTiming, MyCharacter } from '../data/api.ts';
+import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
 import { usePlayer } from '../player.tsx';
 import { DebutChoice } from './DebutChoice.tsx';
@@ -50,10 +51,10 @@ export function DebutDialog({ character, timing, onClose, onDone, returnFocusTo 
       <form className="kb-debut" onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); void submit(); }}>
         <DebutChoice name={character.name} className={className} timing={timing} loudness={loudness} onLoudness={setLoudness} />
         {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
-        <div className="kb-turn-actions">
-          <button type="button" className="kb-glass-action kb-glass-skew" onClick={onClose}><span className="kb-glass-upright">Cancel</span></button>
-          <button type="submit" className="kb-glass-confirm kb-glass-skew" disabled={busy}><span className="kb-glass-upright">{drop ? `Drop ${character.name} now` : `Save how ${character.name} debuts`}</span></button>
-        </div>
+        <ButtonRow>
+          <GlassButton onClick={onClose}>Cancel</GlassButton>
+          <GlassButton type="submit" kind="primary" disabled={busy}>{drop ? `Drop ${character.name} now` : `Save how ${character.name} debuts`}</GlassButton>
+        </ButtonRow>
       </form>
     </Overlay>
   );

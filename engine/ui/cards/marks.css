@@ -370,3 +370,8 @@
 .kb-thread-pinned > tr:last-child > td {
   border-bottom: 3px double var(--kb-rule);
 }
+
+.kb-callout-got:hover {
+  border-color: var(--kb-glass-text-hi);
+  background: color-mix(in srgb, var(--kb-glass-sweet) 25%, var(--kb-glass-field));
+}

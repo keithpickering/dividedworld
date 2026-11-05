@@ -33,8 +33,9 @@ import { demandNeeds } from '../board/move-words.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { useKayfa } from '../context.tsx';
 import type { AdminQueue, BoardName, HandoverTodo, MoveEnded, MoveInForce, QueuedMove } from '../data/api.ts';
+import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
-import { Link } from '../router.tsx';
+import { PageHead } from '../glass/PageHead.tsx';
 import { shortDate } from '../postbit/dates.ts';
 import { todoFacts, todoSentence } from './handover-words.ts';
 import { AdminContact } from './AdminContact.tsx';
@@ -94,7 +95,7 @@ export function QueueScreen({ now }: { readonly now?: number }) {
   if (admin === null) return <div className="kb-queue" aria-busy="true" />;
   return (
     <div className="kb-queue">
-      <h1 className="kb-queue-title kb-glass-display">The System&apos;s moves</h1>
+      <PageHead title="The System's moves" />
       {!admin
         ? <p className="kb-queue-lead kb-calm">The admin queue is for admins.</p>
         : (
@@ -129,7 +130,7 @@ export function QueueScreen({ now }: { readonly now?: number }) {
 
 function GroupHead({ id, title, count, more }: { readonly id: string; readonly title: string; readonly count: number; readonly more: boolean }) {
   return (
-    <h2 id={id} tabIndex={-1} className="kb-queue-group-head kb-glass-display">
+    <h2 id={id} tabIndex={-1} className="kb-queue-group-head kb-glass-display kb-calm">
       {title} <span className="kb-queue-count" aria-label={more ? `${count} or more` : `${count}`}>{count}{more ? '+' : ''}</span>
     </h2>
   );
@@ -172,7 +173,7 @@ function Replace({ row, roster, bosses, onReplaced }: { readonly row: QueuedMove
         <option value="">Choose a Boss</option>
         {choices.map((b) => <option key={b.staff} value={b.staff}>{b.name}</option>)}
       </select>
-      <button type="button" className="kb-queue-button kb-glass-skew" disabled={!pick || busy} aria-label={`Replace the nominated Boss, ${bosses.find((b) => b.staff === row.params['boss'])?.name ?? 'the Boss it names'}`} onClick={() => void submit()}><span className="kb-glass-upright">REPLACE</span></button>
+      <ButtonRow><GlassButton size="s" disabled={!pick || busy} aria-label={`Replace the nominated Boss, ${bosses.find((b) => b.staff === row.params['boss'])?.name ?? 'the Boss it names'}`} onClick={() => void submit()}>REPLACE</GlassButton></ButtonRow>
       {refusal && <p role="alert" className="kb-queue-failure">{refusal}</p>}
       {done && <p role="status" className="kb-small kb-muted">{done}</p>}
     </div>
@@ -215,8 +216,10 @@ function Todos({ rows, onDismissed }: { readonly rows: readonly HandoverTodo[]; 
             <p>The announcement is yours to write; no model writes it. This goes away when an update is posted after the handover, or when you dismiss it.</p>
           </div>
           <div className="kb-queue-act">
-            <Link className="kb-queue-button kb-glass-skew" to={`/updates?write=handover&season=${t.season}`} aria-label={`Write the announcement for season ${t.season}`}><span className="kb-glass-upright">Write the announcement</span></Link>
-            <button type="button" className="kb-queue-button kb-glass-skew" disabled={busy !== null} aria-label={`Dismiss the season ${t.season} to-do`} onClick={() => void dismiss(t.season)}><span className="kb-glass-upright">DISMISS</span></button>
+            <ButtonRow>
+              <GlassButton to={`/updates?write=handover&season=${t.season}`} aria-label={`Write the announcement for season ${t.season}`}>Write the announcement</GlassButton>
+              <GlassButton disabled={busy !== null} aria-label={`Dismiss the season ${t.season} to-do`} onClick={() => void dismiss(t.season)}>DISMISS</GlassButton>
+            </ButtonRow>
           </div>
         </article>
       ))}
@@ -253,7 +256,7 @@ function Waiting({ rows, more, boards, bosses, roster, now, onHold, onReplaced }
               )}
             </div>
             <div className="kb-queue-act">
-              <button type="button" className="kb-queue-button kb-queue-hold kb-glass-skew" aria-label={`Hold: ${q.params['name'] ?? (q.kind === 'nameSuccessor' ? 'the naming of a successor' : 'this move')}`} onClick={() => onHold(q)}><span className="kb-glass-upright">HOLD</span></button>
+              <ButtonRow><GlassButton aria-label={`Hold: ${q.params['name'] ?? (q.kind === 'nameSuccessor' ? 'the naming of a successor' : 'this move')}`} onClick={() => onHold(q)}>HOLD</GlassButton></ButtonRow>
               {q.kind === 'nameSuccessor' && <Replace row={q} roster={roster} bosses={bosses} onReplaced={onReplaced} />}
             </div>
           </article>
@@ -291,7 +294,7 @@ function InForce({ rows, more, boards, bosses, onReverse }: { readonly rows: rea
               {m.why && <p className="kb-queue-quote">Why, in {m.boss ?? 'the Boss'}&apos;s words: “{m.why}”</p>}
             </div>
             <div className="kb-queue-act">
-              <button type="button" className="kb-queue-button kb-queue-reverse kb-glass-skew" aria-label={`Reverse: ${m.params['name'] ?? 'this move'}`} onClick={() => onReverse(m)}><span className="kb-glass-upright">REVERSE</span></button>
+              <ButtonRow><GlassButton aria-label={`Reverse: ${m.params['name'] ?? 'this move'}`} onClick={() => onReverse(m)}>REVERSE</GlassButton></ButtonRow>
             </div>
           </article>
         );
@@ -312,13 +315,21 @@ function endedLine(e: MoveEnded): string {
 }
 
 function Ended({ rows, more, boards, bosses }: { readonly rows: readonly MoveEnded[]; readonly more: boolean; readonly boards: readonly BoardName[]; readonly bosses: readonly Roster[] }) {
+  /* With nothing to unfold there is no fold: the line is shown under the head, not hidden in a closed details. */
+  if (rows.length === 0) {
+    return (
+      <section className="kb-queue-group" aria-labelledby="queue-ended" data-kb-group="ended">
+        <GroupHead id="queue-ended" title="Ended" count={0} more={more} />
+        <p className="kb-queue-empty kb-calm">Nothing has ended in the last 30 days.</p>
+      </section>
+    );
+  }
   return (
     <section className="kb-queue-group" aria-labelledby="queue-ended" data-kb-group="ended">
       <details className="kb-queue-ended">
-        <summary className="kb-queue-group-head kb-glass-display" id="queue-ended" tabIndex={-1}>
+        <summary className="kb-queue-group-head kb-glass-display kb-calm" id="queue-ended" tabIndex={-1}>
           Ended <span className="kb-queue-count">{rows.length}{more ? '+' : ''}</span> <span className="kb-queue-fold">· the last 30 days, with how each ended ›</span>
         </summary>
-        {rows.length === 0 && <p className="kb-queue-empty kb-calm">Nothing has ended in the last 30 days.</p>}
         {rows.map((e) => (
           <article key={`${e.act ?? 'q'}${e.id ?? ''}${e.at}`} className="kb-queue-move kb-calm" data-kb-state="ended" data-kb-how={e.how}>
             <div className="kb-queue-body">
@@ -371,10 +382,10 @@ function Confirm({ asked, boards, bosses, onClose, onDone, onRefused, returnFocu
               : 'It ends now, as reversed by an admin, and the old name returns at once. The Boss says so in the move\'s thread, and learns of it at its next meeting.'}
         </p>
         {refusal && <p role="alert" className="kb-queue-failure">{refusal}</p>}
-        <div className="kb-queue-confirm-actions">
-          <button type="button" className="kb-queue-button kb-glass-skew" onClick={onClose}><span className="kb-glass-upright">Cancel</span></button>
-          <button type="button" className={`kb-queue-button kb-glass-skew ${hold ? 'kb-queue-hold' : 'kb-queue-reverse'}`} disabled={busy} onClick={() => void submit()}><span className="kb-glass-upright">{hold ? 'Hold it' : 'Reverse it'}</span></button>
-        </div>
+        <ButtonRow align="end">
+          <GlassButton onClick={onClose}>Cancel</GlassButton>
+          <GlassButton kind="primary" disabled={busy} onClick={() => void submit()}>{hold ? 'Hold it' : 'Reverse it'}</GlassButton>
+        </ButtonRow>
       </div>
     </Overlay>
   );

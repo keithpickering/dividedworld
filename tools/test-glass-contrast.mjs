@@ -51,7 +51,7 @@ check('the real glass is clean', glassFaults(real).length === 0, text(glassFault
 {
   const worsts = recipeWorsts(real);
   /* The plans' worst pixels (the glass plan's section 6 table, the web plan's rgb(77,126,247)), to the third place. */
-  const plan = { hud: 0.216, page: 0.230, characters: 0.196, turn: 0.116, effect: 0.103, react: 0.087, cards: 0.193, vending: 0.230, settlement: 0.274 };
+  const plan = { hud: 0.216, page: 0.230, characters: 0.196, turn: 0.116, effect: 0.103, react: 0.087, cards: 0.193, vending: 0.230, settlement: 0.245 };
   for (const [recipe, lum] of Object.entries(plan)) {
     check(`the ${recipe} recipe's worst pixel is ${lum}`, near(worsts[recipe]?.full.luminance, lum, 0.0021), String(worsts[recipe]?.full.luminance));
   }
@@ -69,8 +69,9 @@ check('the real glass is clean', glassFaults(real).length === 0, text(glassFault
   const loud = fresh();
   loud.smoke.recipes.page.layers[1].opacity = 1.0;
   check('with the cyan at 1.0, white is 1.69:1 on the page recipe', near(ratio('#ffffff', recipeWorsts(loud).page.full.rgb), 1.69, 0.006), String(ratio('#ffffff', recipeWorsts(loud).page.full.rgb)));
-  check('#f1ecff on the settlement recipe\'s full worst is under 3:1 (the plan: 2.81)', ratio('#f1ecff', worsts.settlement.full.rgb) < 3 && near(ratio('#f1ecff', worsts.settlement.full.rgb), 2.81, 0.01), String(ratio('#f1ecff', worsts.settlement.full.rgb)));
-  check('white is 3.24:1 on the settlement recipe\'s full worst', near(ratio('#ffffff', worsts.settlement.full.rgb), 3.24, 0.006), String(ratio('#ffffff', worsts.settlement.full.rgb)));
+  /* The recipe's cyan layer is 0.30 (the glass polish): the settlement's title stands on the bare smoke, so #f1ecff holds 3:1 on it. The board's 0.40 read 2.81. */
+  check('#f1ecff on the settlement recipe\'s full worst holds 3:1 (3.08; the board\'s 0.40 cyan read 2.81)', ratio('#f1ecff', worsts.settlement.full.rgb) >= 3 && near(ratio('#f1ecff', worsts.settlement.full.rgb), 3.08, 0.01), String(ratio('#f1ecff', worsts.settlement.full.rgb)));
+  check('white is 3.55:1 on the settlement recipe\'s full worst', near(ratio('#ffffff', worsts.settlement.full.rgb), 3.55, 0.006), String(ratio('#ffffff', worsts.settlement.full.rgb)));
   check('luminance and ratio are WCAG\'s: white on black is 21:1', near(ratio('#ffffff', '#000000'), 21, 0.0001) && near(luminance('#ffffff'), 1, 0.0001));
 }
 
@@ -137,9 +138,10 @@ check('the real glass is clean', glassFaults(real).length === 0, text(glassFault
 }
 {
   const g = fresh();
-  delete g.smoke.recipes.settlement.calmAll;
+  /* The settlement's title is bare on the smoke, so the recipe must stay dim enough: the board's brighter cyan layer fails it. */
+  g.smoke.recipes.settlement.layers.find((l) => l.color === '#14d9ff').opacity = 0.4;
   const r = named(glassFaults(g), 'recipe settlement', '#f1ecff', 'large');
-  check('the settlement recipe without calmAll: #f1ecff large falls under 3:1', r.length > 0 && r.some((f) => /2\.8/.test(f.why)), text(glassFaults(g)).slice(0, 600));
+  check('the settlement recipe with the board\'s 0.40 cyan layer: #f1ecff large falls under 3:1', r.length > 0 && r.some((f) => /2\.8/.test(f.why)), text(glassFaults(g)).slice(0, 600));
 }
 {
   const g = fresh();
@@ -345,7 +347,10 @@ const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s ===
   const onFull = named(glassFaults(g, only('log', 'full')), 'class heel', 'surface log', 'recipe page', 'full worst');
   check('and fails on a full surface that uses it', onFull.length === 1 && onFull[0].why.includes('1.79'), text(glassFaults(g, only('log', 'full'))));
   check('a none surface reads nothing, on a recipe whose full worst its class colors fail', glassFaults(g, only('log', 'none')).length === 0);
-  check('a full surface on a calmAll recipe is read calmed, as a large token is', named(glassFaults(g, only('settlement', 'full')), 'class ').length === 0, text(glassFaults(g, only('settlement', 'full'))));
+  const all = fresh();
+  all.smoke.recipes.settlement.calmAll = true;
+  check('a full surface on a calmAll recipe is read calmed, as a large token is', named(glassFaults(all, only('settlement', 'full')), 'class ').length === 0, text(glassFaults(all, only('settlement', 'full'))));
+  check('and without calmAll the same full surface fails its class colors', named(glassFaults(g, only('settlement', 'full')), 'class ').length > 0);
 
   /* The ceilings: a class ceiling per class where the list draws it, none where it does not. */
   const c = glassCeilings(real);
@@ -561,7 +566,7 @@ const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s ===
   check('a body token\'s ceiling is the brightest background it still holds 4.5:1 on', near(hud?.tokens['--kb-glass-text-2']?.body, (luminance('#e4def7') + 0.05) / 4.5 - 0.05, 0.0001), JSON.stringify(hud?.tokens['--kb-glass-text-2']));
   check('a large token\'s ceiling is 3:1', near(hud?.tokens['--kb-glass-text']?.large, (luminance('#f1ecff') + 0.05) / 3 - 0.05, 0.0001), JSON.stringify(hud?.tokens['--kb-glass-text']));
   check('every surface has its ceilings', SURFACES.every((s) => ceilings.surfaces[s] !== undefined), JSON.stringify(Object.keys(ceilings.surfaces)));
-  check('the settlement surface says it is calmAll', ceilings.surfaces.settlement?.calmAll === true && ceilings.surfaces.page === undefined);
+  check('the settlement surface is not calmAll (its title stands bare), and a recipe set calmAll says so', ceilings.surfaces.settlement?.calmAll === false && ceilings.surfaces.page === undefined && (() => { const g = structuredClone(real); g.smoke.recipes.settlement.calmAll = true; return glassCeilings(g).surfaces.settlement?.calmAll === true; })());
   const file = ceilingsFile({ 'divided-world': ceilings });
   check('the ceilings file is the ceilings as JSON, for each instance', JSON.parse(file)['divided-world'].surfaces.hud.recipe === 'hud');
   check('a file equal to the computed ceilings is not stale', ceilingsStale(file, file) === false);

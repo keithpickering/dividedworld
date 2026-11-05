@@ -15,6 +15,8 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useKayfa } from '../context.tsx';
 import { LOST_ANSWER } from '../data/api.ts';
+import { ButtonRow, GlassButton } from '../glass/Button.tsx';
+import { PageHead } from '../glass/PageHead.tsx';
 import { ReachAPerson } from '../contact/Contact.tsx';
 import { Link, useLocation, useNavigate } from '../router.tsx';
 import { safeNext } from './next.ts';
@@ -54,7 +56,7 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
   useEffect(() => { if (session?.account) navigate(next, { replace: true }); }, [session?.account, navigate, next]);
   useEffect(() => { if (step === 'code') codeField.current?.focus(); }, [step]);
 
-  const title = <h1 className="kb-acct-title kb-glass-display">{registering ? 'Register' : 'Sign in'}</h1>;
+  const title = <PageHead title={registering ? 'Register' : 'Sign in'} />;
   if (session === null) return <div className="kb-acct" aria-busy="true" />;
   if (session.signedIn && !session.account) return <div className="kb-acct">{title}<div className="kb-acct-panel kb-calm"><OpenAccount /></div></div>;
 
@@ -134,7 +136,7 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
             </label>
           )}
           {alert}
-          <p className="kb-acct-actions"><button type="submit" className="kb-acct-button kb-glass-skew" data-kb-primary="" disabled={busy !== null}><b className="kb-glass-upright">Send a code</b></button></p>
+          <ButtonRow><GlassButton type="submit" kind="primary" disabled={busy !== null}>Send a code</GlassButton></ButtonRow>
           <p role="status" className="kb-acct-note">{busy === 'sending' ? 'Sending…' : ''}</p>
           <p className="kb-acct-text">{registering ? <>Already playing? <Link to={toOther('/sign-in')}>Sign in</Link>.</> : <>New here? <Link to={toOther('/register')}>Register</Link>.</>}</p>
         </form>
@@ -147,11 +149,11 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
             <input ref={codeField} className="kb-acct-input kb-acct-code" name="code" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value)} {...tie('code')} />
           </label>
           {alert}
-          <p className="kb-acct-actions">
-            <button type="submit" className="kb-acct-button kb-glass-skew" data-kb-primary="" disabled={busy !== null}><b className="kb-glass-upright">Sign in</b></button>{' '}
-            <button type="button" className="kb-acct-button kb-glass-skew" disabled={busy !== null} onClick={() => void ask(undefined, true)}><b className="kb-glass-upright">Send a new code</b></button>{' '}
-            <button type="button" className="kb-acct-button kb-glass-skew" onClick={() => { setStep('email'); setRefusal(null); }}><b className="kb-glass-upright">Use another address</b></button>
-          </p>
+          <ButtonRow>
+            <GlassButton type="submit" kind="primary" disabled={busy !== null}>Sign in</GlassButton>
+            <GlassButton disabled={busy !== null} onClick={() => void ask(undefined, true)}>Send a new code</GlassButton>
+            <GlassButton onClick={() => { setStep('email'); setRefusal(null); }}>Use another address</GlassButton>
+          </ButtonRow>
           <p role="status" className="kb-acct-note">
             {busy === 'sending' ? 'Sending…' : busy === 'checking' ? 'Checking the code…' : asked > 0 ? <span key={asked}>Another code was asked for.</span> : ''}
           </p>

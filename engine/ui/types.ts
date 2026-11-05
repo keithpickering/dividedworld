@@ -68,8 +68,14 @@ export interface UiCopy {
   /** The banner's name, and the line under it. */
   readonly siteName: string;
   readonly siteTagline: string;
-  /** What the shop is called (the owner names it later; a placeholder until then). */
+  /** What the shop is called, in plain words: the log's line and the machine's group label say it. */
   readonly shopName: string;
+  /**
+   * Names for the machine's sign, decoration only: the Vending screen draws one picked at random each time it mounts. Absent,
+   * the sign shows `shopName`. Each is at most 20 characters (the sign's width at 390px); `instanceUiProblems` refuses an empty
+   * list, an empty entry and a long one.
+   */
+  readonly marquees?: readonly string[];
   /**
    * How a card's effect stays under reduced motion, in Settings' Motion sentence after "A card's
    * effect stays: ", naming the instance's own card the way its players know it (the engine names
@@ -208,6 +214,31 @@ export interface GlassOrbStops {
   readonly shade: string;
 }
 
+/** One control size's height and horizontal padding in px, and its type size by the size step's name (`body`, `phone-small`). */
+export interface GlassControlSize {
+  readonly height: number;
+  readonly pad: number;
+  readonly size: string;
+}
+
+/** The skewed controls (GlassButton): sizes m and s on the Main layout and on the phone's, the letter spacing and the gap in a row, in px. */
+export interface GlassControls {
+  readonly m: GlassControlSize;
+  readonly s: GlassControlSize;
+  readonly phone: { readonly m: GlassControlSize; readonly s: GlassControlSize };
+  readonly spacing: number;
+  readonly gap: number;
+}
+
+/** What a theme may give of the controls' measure: any field it leaves out is the engine's default (`glassVars` merges field by field). */
+export interface GlassControlsInput {
+  readonly m?: Partial<GlassControlSize>;
+  readonly s?: Partial<GlassControlSize>;
+  readonly phone?: { readonly m?: Partial<GlassControlSize>; readonly s?: Partial<GlassControlSize> };
+  readonly spacing?: number;
+  readonly gap?: number;
+}
+
 /** The glass: an instance's look for everything outside the board, as data (docs/plans/2026-10-30-glass-to-the-boards-plan.md, sections 4 to 6). */
 export interface GlassTheme {
   /** Standard and high contrast: the same tokens, each with its tags, the high key's values reaching 7:1. */
@@ -218,6 +249,8 @@ export interface GlassTheme {
   };
   /** The calm's backing: its opacity and the width of its feathered edge in px. */
   readonly calm: { readonly opacity: number; readonly feather: number };
+  /** The skewed controls' measure; any field not given is the engine's default, merged field by field (DEFAULT_CONTROLS, engine/ui/glass/apply.ts). */
+  readonly controls?: GlassControlsInput;
   readonly sizes: Readonly<Record<string, GlassSize>>;
   readonly fonts: readonly GlassFont[];
   /** Each class's glass colors, by the class's key. */

@@ -106,11 +106,13 @@ const manifest: BoardManifest = {
     { id: 'preview-line', role: 'text', name: 'Pipewrench has Turned. Now a Face. Before this, Pipewrench was a Heel.', buildName: 'Pipewrench has Turned from Heel', within: 'dialog', box: 'none' },
 
     /*
-     * The foot: Cancel by its size, and Confirm Turn in full from Cancel's corner. Where the foot
-     * stands follows the footer's sentence, which is left out (above).
+     * The foot: Cancel and Confirm Turn are GlassButtons in one ButtonRow (the glass polish, design section 2, and the owner's correction that Reveal's
+     * Cancel and Reveal are one row at one size; the Turn is the same), 48px of Barlow Condensed at the body's 21px where the board draws 60px of Anton
+     * at 26px. The parts' measure is held by parts.test.tsx and the layout check, so neither is compared here. Where the foot stands follows the
+     * footer's sentence, which is left out (above).
      */
-    { id: 'cancel', role: 'button', name: 'Cancel', within: 'dialog', box: 'size' },
-    { id: 'confirm', role: 'button', name: 'Confirm Turn', within: 'dialog', origin: 'cancel' },
+    { id: 'cancel', role: 'button', name: 'Cancel', within: 'dialog', box: 'none', type: false },
+    { id: 'confirm', role: 'button', name: 'Confirm Turn', within: 'dialog', box: 'none', type: false },
   ],
 };
 

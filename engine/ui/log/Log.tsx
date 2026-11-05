@@ -23,6 +23,8 @@ import { useKayfa } from '../context.tsx';
 import type { Id, LogSettlement } from '../data/api.ts';
 import { CONTACT_PATH } from '../contact/Contact.tsx';
 import { SignInPrompt, useSignedIn } from '../mini.tsx';
+import { ButtonRow, GlassButton } from '../glass/Button.tsx';
+import { PageHead } from '../glass/PageHead.tsx';
 import { usePlayer } from '../player.tsx';
 import { Link, useLocation } from '../router.tsx';
 import { actLink, inOrder, logRows, NO_SHARES, plain, reasonName, SHARES_ARE, signed, utcWhen, type LogData, type LogRow, type Segment, type Words } from './lines.ts';
@@ -115,17 +117,17 @@ function Row({ row, data, words, tab, open, onToggle }: { readonly row: LogRow; 
           <Said parts={row.details} />
           {s?.sharesKept && (
             <div className="kb-log-posts-row">
-              <button
+              <GlassButton
                 ref={button}
-                type="button"
-                className="kb-log-posts kb-glass-skew"
+                size="s"
+                className="kb-log-posts"
                 aria-expanded={open}
                 aria-controls={breakdown}
                 onClick={() => onToggle(s.id)}
                 onKeyDown={(e) => { if (e.key === 'Escape' && open && !e.repeat) { e.preventDefault(); close(); } }}
               >
-                <span className="kb-glass-upright">{open ? 'Hide posts' : 'Show posts'}</span>
-              </button>
+                {open ? 'Hide posts' : 'Show posts'}
+              </GlassButton>
             </div>
           )}
         </td>
@@ -170,17 +172,19 @@ export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' 
   }, [last]);
   return (
     <div className="kb-log">
-      <div className="kb-log-head">
-        <h1 className="kb-log-title kb-glass-display">My log</h1>
-        {tabs.length > 0 && (
-          <nav aria-label="Whose log" className="kb-log-tabs kb-calm">
-            <button type="button" className="kb-log-tab kb-glass-skew" aria-pressed={current === null} onClick={() => onTab(null)}><span className="kb-glass-upright">All</span></button>
-            {tabs.map((c) => (
-              <button key={c.id} type="button" className="kb-log-tab kb-glass-skew" aria-pressed={current?.id === c.id} onClick={() => onTab(c.id)}><span className="kb-glass-upright">{c.name}</span></button>
-            ))}
+      <PageHead
+        title="My log"
+        tabs={tabs.length > 0 && (
+          <nav aria-label="Whose log" className="kb-calm">
+            <ButtonRow>
+              <GlassButton kind={current === null ? 'primary' : 'secondary'} aria-pressed={current === null} onClick={() => onTab(null)}>All</GlassButton>
+              {tabs.map((c) => (
+                <GlassButton key={c.id} kind={current?.id === c.id ? 'primary' : 'secondary'} aria-pressed={current?.id === c.id} onClick={() => onTab(c.id)}>{c.name}</GlassButton>
+              ))}
+            </ButtonRow>
           </nav>
         )}
-      </div>
+      />
       <p className="kb-log-lead kb-calm">
         Everything on this page is true. Each line names the Act that did it, what it changed and how much Aura moved. It never says who reacted, or
         any character's class but your own.
@@ -208,7 +212,7 @@ export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' 
             {settled && rows.length === 0 && <p className="kb-log-empty">Nothing on these pages is {current?.name ?? 'yours'}'s yet.</p>}
             {onOlder && data.log.before !== null && (
               <p className="kb-log-older">
-                <button type="button" className="kb-log-posts kb-glass-skew" onClick={() => { reading.current = true; onOlder(); }} disabled={older === 'loading'}><span className="kb-glass-upright">Show older lines</span></button>
+                <GlassButton size="s" onClick={() => { reading.current = true; onOlder(); }} disabled={older === 'loading'}>Show older lines</GlassButton>
                 {older === 'failed' && <span className="kb-log-older-failed"> The older lines could not be read. Try again.</span>}
               </p>
             )}

@@ -38,11 +38,23 @@ export interface Landmark {
    * board only draws (the React board's picker over its post). Width and height are compared as ever.
    */
   readonly origin?: string;
+  /**
+   * `bottom`: this one's y is measured from its origin's bottom edge rather than its top, for a part that flows under a block of
+   * words (the Settlement's ways out under its Turn card), whose height a browser's own text metrics can change by a line. Only with
+   * `origin`.
+   */
+  readonly originEdge?: 'top' | 'bottom';
   /** Which of several matches (0 is the first). */
   readonly nth?: number;
   /** Which of the build's matches, where the build names a landmark the board leaves unnamed (`nth` otherwise). */
   readonly buildNth?: number;
   readonly box?: BoxMode;
+  /**
+   * Where a decision moves the build's place from the board's, in px: the build is held to the board's place plus this, within the same
+   * tolerance, so a part that a decision moved (the dialog frame's bar, which holds Close where the board's picker holds it at the foot)
+   * is still held to where it stands now, and a shift the manifest has wrong fails. `height` is the same for a box the shift made taller (the picker's, by its bar) or, negative, shorter (the Log's tab row, by 6px). Never a width.
+   */
+  readonly buildShift?: { readonly x?: number; readonly y?: number; readonly height?: number };
   /** `false` for a landmark whose type is not the glass's to compare (an image). */
   readonly type?: boolean;
   /**
@@ -158,7 +170,7 @@ function compareBox(id: string, mode: BoxMode, board: Box, build: Box, origin?: 
 }
 
 /** A box's place as an offset from another's top-left. */
-const offsetFrom = (box: Box, origin: Box): Box => ({ ...box, x: box.x - origin.x, y: box.y - origin.y });
+const offsetFrom = (box: Box, origin: Box, edge: 'top' | 'bottom' = 'top'): Box => ({ ...box, x: box.x - origin.x, y: box.y - origin.y - (edge === 'bottom' ? origin.height : 0) });
 
 function compareType(id: string, board: TypeRead, build: TypeRead, decidedSize?: number): Mismatch[] {
   const out: Mismatch[] = [];
@@ -193,15 +205,19 @@ export function compareBoard(board: Snapshot, build: Snapshot, manifest: BoardMa
       out.push(mismatch(l.id, 'presence', 'found', 'missing', `missing from the build: no ${l.role} named "${asked}"`));
       continue;
     }
-    if (l.origin !== undefined) {
+    const shift = l.buildShift;
+    const shifted = (box: Box): Box => (shift === undefined ? box : { ...box, x: box.x - (shift.x ?? 0), y: box.y - (shift.y ?? 0), height: box.height - (shift.height ?? 0) });
+    if (l.originEdge !== undefined && l.origin === undefined) {
+      out.push(mismatch(l.id, 'origin', 'none', 'none', `measured from the ${l.originEdge} of nothing: originEdge needs an origin`));
+    } else if (l.origin !== undefined) {
       const ob = board.shots.find((s) => s.id === l.origin);
       const ou = build.shots.find((s) => s.id === l.origin);
       if (!manifest.landmarks.some((m) => m.id === l.origin)) {
         out.push(mismatch(l.id, 'origin', l.origin, l.origin, `measured from ${l.origin}, which is no landmark of the manifest`));
       } else if (!ob?.found || !ou?.found || !ob.box || !ou.box) {
         out.push(mismatch(l.id, 'origin', ob?.found ? 'found' : 'missing', ou?.found ? 'found' : 'missing', `measured from ${l.origin}, which is missing, so its place cannot be compared`));
-      } else if (b.box && u.box) out.push(...compareBox(l.id, l.box ?? 'full', offsetFrom(b.box, ob.box), offsetFrom(u.box, ou.box), l.origin));
-    } else if (b.box && u.box) out.push(...compareBox(l.id, l.box ?? 'full', b.box, u.box));
+      } else if (b.box && u.box) out.push(...compareBox(l.id, l.box ?? 'full', offsetFrom(b.box, ob.box, l.originEdge), shifted(offsetFrom(u.box, ou.box, l.originEdge)), l.originEdge === 'bottom' ? `the bottom of ${l.origin}` : l.origin));
+    } else if (b.box && u.box) out.push(...compareBox(l.id, l.box ?? 'full', b.box, shifted(u.box)));
     if (l.type !== false) {
       if (b.type && u.type) out.push(...compareType(l.id, b.type, u.type, l.buildSize));
       else if (b.type || u.type) out.push(mismatch(l.id, 'font', b.type ? 'text' : 'no text', u.type ? 'text' : 'no text', 'one side has no text to read'));

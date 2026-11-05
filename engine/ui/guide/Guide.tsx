@@ -15,6 +15,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { motionReduced } from '../appearance.ts';
 import { useKayfa } from '../context.tsx';
+import { PageHead } from '../glass/PageHead.tsx';
 import { SignInPrompt, useSignedIn } from '../mini.tsx';
 import { Link, useLocation } from '../router.tsx';
 import { Classes, CardList, Letter, ReactionGrid } from './markers.tsx';
@@ -99,9 +100,7 @@ export function Guide() {
 
   return (
     <div className="kb-guide">
-      <div className="kb-guide-head">
-        <h1 className="kb-guide-title kb-glass-display">Strategy Guide</h1>
-      </div>
+      <PageHead title="Strategy Guide" />
       <div className="kb-guide-cols">
         <aside className="kb-guide-side">
           <p className="kb-guide-lede kb-calm">

@@ -21,8 +21,15 @@ jobs:
   e2e:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
-    # The suite runs a spec file to a worker, and a11y.spec.ts alone is about 11 minutes (1,153 tests in about 13 locally, 2026-11-02);
-    # with the browser's download that outgrew 15. Thirty leaves room and still ends a hang.
+    # The suite outgrew one runner: 2,073 tests took 28 of the 30 minutes on 2026-11-05 (a11y.spec.ts alone 18), and a slow
+    # setup ran one out. It is split by test (playwright.config.ts runs fully parallel, so a shard can split a spec), three
+    # ways, each about a third of the suite. Every shard runs to its end (fail-fast off), so one failure never hides another.
+    # Thirty minutes still ends a hang.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    name: e2e (${{ matrix.shard }}/3)
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -32,12 +39,13 @@ jobs:
       - run: npm ci --no-audit --no-fund
       # The runner has no browser of its own; CI is the one place one is downloaded.
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
+      - run: npm run test:e2e -- --shard=${{ matrix.shard }}/3
         env: { CI: '1' }
-      # The board match's side-by-side pictures and mismatch lists (e2e/boards.spec.ts), on a pass as well.
+      # The board match's side-by-side pictures and mismatch lists (e2e/boards.spec.ts), on a pass as well: each shard's
+      # own, for the boards that shard ran.
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: board-match-report
+          name: board-match-report-${{ matrix.shard }}
           path: e2e/report/boards/
           if-no-files-found: ignore

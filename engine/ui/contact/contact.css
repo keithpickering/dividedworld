@@ -38,3 +38,8 @@
 :where(:root[data-kb-layout='phone']) .kb-contact-item {
   font-size: var(--kb-glass-size-phone-body);
 }
+
+.kb-contact-item a:hover {
+  color: var(--kb-glass-text-hi);
+  text-decoration-thickness: 2px;
+}

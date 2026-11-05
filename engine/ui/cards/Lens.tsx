@@ -30,6 +30,7 @@ import {
 import { useKayfa } from '../context.tsx';
 import type { Id, PlayMoment } from '../data/api.ts';
 import { Float, type FloatPlace } from '../glass/Float.tsx';
+import { CloseCross, DialogBar } from '../glass/Frame.tsx';
 import { tabbables } from '../modal.tsx';
 import { usePlayer } from '../player.tsx';
 import { Reactions } from '../reactions/Reactions.tsx';
@@ -465,7 +466,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
       wrapStyle={{ '--kb-float-glow': 'var(--kb-lens-ink)' } as CSSProperties}
       data={{ 'kb-lens': placed, 'kb-card': card, 'kb-alignment': rules?.alignment, 'kb-tinted': ink ? 'true' : undefined }}
     >
-      <div className="kb-lens-bar">
+      <DialogBar close={<CloseCross onClick={dismiss} />}>
         <div className="kb-lens-tabs" role="tablist" aria-label="Card kinds" onKeyDown={move}>
           {kinds.map((kind) => {
             const label = kindName(instance, kind, here.plays);
@@ -479,8 +480,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
             );
           })}
         </div>
-        <button type="button" className="kb-glass-cut-button kb-lens-close" aria-label="Close" onClick={dismiss}><span aria-hidden="true">×</span></button>
-      </div>
+      </DialogBar>
       <div className="kb-lens-body" role="tabpanel" id={panelId} aria-labelledby={tabId(card)}>
         <div className="kb-lens-section kb-lens-state">
           <p className="kb-lens-line">{view.state}</p>

@@ -38,7 +38,8 @@ const manifest: BoardManifest = {
     { id: 'card-whoops', role: 'button', name: 'Whoops!, Salty postcard', buildName: 'Whoops!, Salty, Cast, common postcard', within: 'hand', buildNth: 1, type: false },
     /* (Each card's name says its play and rarity in the build, a departure the card mechanic makes: docs/plans/2026-11-01-card-plays-plan.md, Task 7.) */
     /* The link's place follows the line above it, whose words are the armed card's (cards Task 3), so only where it starts is compared. */
-    { id: 'hand-vending', role: 'link', name: 'Vending Machine', within: 'hand', box: 'position' },
+    /* A GlassButton in a centered ButtonRow (the glass polish, design section 2), in the parts' secondary colors, where the board draws a salty-yellow link at the sheet's left: not compared (the layout check holds it). */
+    { id: 'hand-vending', role: 'link', name: 'Vending Machine', within: 'hand', box: 'none', type: false },
     { id: 'hud', role: 'region', name: 'Game HUD', type: false },
     /*
      * REVISED by the alerts design (docs/plans/2026-11-02-alerts-design.md, section 8; docs/research/2026-11-02-alerts/05-phone.html): on the phone the HUD's

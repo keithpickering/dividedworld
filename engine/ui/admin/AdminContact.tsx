@@ -14,6 +14,7 @@
  */
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { useKayfa } from '../context.tsx';
+import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, type ContactLink } from '../data/api.ts';
 import './write-update.css';
 import './admin-contact.css';
@@ -126,16 +127,16 @@ export function AdminContact() {
                   aria-invalid={mine || undefined} aria-describedby={mine ? `${id}-r${r.key}` : undefined} onChange={(e) => setRow(r.key, 'label', e.target.value)} />
                 <input className="kb-write-update-input kb-write-update-text" aria-label={`Link ${i + 1} address`} placeholder="https://… or name@example.com" value={r.href} maxLength={CONTACT_HREF_MAX * 2} autoComplete="off" inputMode="url"
                   aria-invalid={mine || undefined} aria-describedby={mine ? `${id}-r${r.key}` : undefined} onChange={(e) => setRow(r.key, 'href', e.target.value)} />
-                <button type="button" className="kb-write-update-button" onClick={() => remove(r.key)}>Remove link {i + 1}</button>
+                <GlassButton size="s" onClick={() => remove(r.key)}>Remove link {i + 1}</GlassButton>
               </div>
               {mine && <p role="alert" id={`${id}-r${r.key}`} className="kb-write-update-refusal">{refusal}</p>}
             </div>
           );
         })}
-        <div className="kb-write-update-actions">
-          <button type="button" className="kb-write-update-button" disabled={rows.length >= CONTACT_MOST} onClick={add}>Add a link</button>
-          <button type="submit" className="kb-write-update-button kb-write-update-post" disabled={busy}>Save how players reach you</button>
-        </div>
+        <ButtonRow>
+          <GlassButton disabled={rows.length >= CONTACT_MOST} onClick={add}>Add a link</GlassButton>
+          <GlassButton type="submit" kind="primary" disabled={busy}>Save how players reach you</GlassButton>
+        </ButtonRow>
         <div role="status" className="kb-write-update-status">{busy ? 'Saving…' : saved ? 'Saved. Players see it on the Reach a person page.' : ''}</div>
         {refusal !== null && named === null && <p role="alert" className="kb-write-update-refusal">{refusal}</p>}
       </form>

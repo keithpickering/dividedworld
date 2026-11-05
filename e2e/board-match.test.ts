@@ -206,6 +206,87 @@ describe('compareBoard: a landmark measured from another one, and one compared b
   });
 });
 
+/*
+ * A part that flows under a block of words stands wherever those words end, and a browser's own text metrics can wrap them a
+ * line shorter or longer (the Settlement's ways out under its Turn card: one line apart between CI's Chromium and a local one).
+ * Measured from the bottom of the block (`originEdge: 'bottom'`), its place is the gap under the block, whatever the block's height.
+ */
+describe('compareBoard: a landmark measured from the bottom of another one', () => {
+  const CARD = { x: 700, y: 600, width: 600, height: 180 };
+  const WAY = { x: 1100, y: 812, width: 260, height: 60 };
+  const drawn = snap(shot('card', CARD), shot('way', WAY));
+  const under = manifest(lm('card', { box: 'none' }), lm('way', { origin: 'card', originEdge: 'bottom', box: 'height' }));
+
+  test('a card a line taller, its way out with it, is clean', () => {
+    expect(compareBoard(drawn, snap(shot('card', { ...CARD, height: 208 }), shot('way', { ...WAY, y: 840 })), under)).toEqual([]);
+  });
+
+  test('a card a line taller and its way out left where it was fails, and says it is measured from the card', () => {
+    const r = compareBoard(drawn, snap(shot('card', { ...CARD, height: 208 }), shot('way', WAY)), under);
+    expect(r).toMatchObject([{ landmark: 'way', field: 'y', board: '32', build: '4' }]);
+    expect(r[0]!.message).toContain('from the bottom of card');
+  });
+
+  test('measured from the top, the same taller card fails where measured from the bottom it passes', () => {
+    const top = manifest(lm('card', { box: 'none' }), lm('way', { origin: 'card', box: 'height' }));
+    expect(compareBoard(drawn, snap(shot('card', { ...CARD, height: 208 }), shot('way', { ...WAY, y: 840 })), top)).toMatchObject([{ landmark: 'way', field: 'y' }]);
+  });
+
+  test('the gap is held to 8px: 9px further under the card fails, 8px passes, and a declared shift moves it', () => {
+    expect(compareBoard(drawn, snap(shot('card', CARD), shot('way', { ...WAY, y: 821 })), under)).toMatchObject([{ landmark: 'way', field: 'y' }]);
+    expect(compareBoard(drawn, snap(shot('card', CARD), shot('way', { ...WAY, y: 820 })), under)).toEqual([]);
+    const shifted = manifest(lm('card', { box: 'none' }), lm('way', { origin: 'card', originEdge: 'bottom', box: 'height', buildShift: { y: -20 } }));
+    expect(compareBoard(drawn, snap(shot('card', CARD), shot('way', { ...WAY, y: 792 })), shifted)).toEqual([]);
+    expect(compareBoard(drawn, snap(shot('card', CARD), shot('way', WAY)), shifted)).toMatchObject([{ landmark: 'way', field: 'y' }]);
+  });
+
+  test('an edge with no origin is a mismatch in the manifest, never a silent pass', () => {
+    const r = compareBoard(drawn, drawn, manifest(lm('card', { box: 'none' }), lm('way', { originEdge: 'bottom', box: 'height' })));
+    expect(r).toMatchObject([{ landmark: 'way', field: 'origin' }]);
+  });
+});
+
+describe('compareBoard: a place a decision moved off the board', () => {
+  /* The shared dialog frame's bar holds Close, so the React picker's parts under it stand lower than the board's, which holds Close at the foot. */
+  const LINE = { x: 100, y: 200, width: 600, height: 24 };
+  const drawn = snap(shot('line', LINE));
+  const lowered = (by: number) => snap(shot('line', { ...LINE, y: LINE.y + by }));
+
+  test('a build 30px lower than the board fails without the shift, and passes with it declared', () => {
+    expect(compareBoard(drawn, lowered(30), manifest(lm('line')))).toMatchObject([{ landmark: 'line', field: 'y' }]);
+    expect(compareBoard(drawn, lowered(30), manifest(lm('line', { buildShift: { y: 30 } })))).toEqual([]);
+  });
+
+  test('the shift is held: a build 45px lower than a 30px shift fails, and the size is still compared', () => {
+    expect(compareBoard(drawn, lowered(45), manifest(lm('line', { buildShift: { y: 30 } })))).toMatchObject([{ landmark: 'line', field: 'y' }]);
+    expect(compareBoard(drawn, snap(shot('line', { ...LINE, y: 230, height: 40 })), manifest(lm('line', { buildShift: { y: 30 } })))).toMatchObject([{ landmark: 'line', field: 'height' }]);
+  });
+
+  test('a height the shift made taller is held the same way', () => {
+    const tall = snap(shot('line', { ...LINE, height: 40 }));
+    expect(compareBoard(drawn, tall, manifest(lm('line')))).toMatchObject([{ landmark: 'line', field: 'height' }]);
+    expect(compareBoard(drawn, tall, manifest(lm('line', { buildShift: { height: 16 } })))).toEqual([]);
+    expect(compareBoard(drawn, tall, manifest(lm('line', { buildShift: { height: 8 } })))).toMatchObject([{ landmark: 'line', field: 'height' }]);
+  });
+
+  test('a height the shift made shorter is held the same way, with a negative height', () => {
+    /* The Log's tab row is shorter in the build than on the board (e2e/boards/12-log.ts: height -6); 8px here, past the 4px tolerance. */
+    const short = snap(shot('line', { ...LINE, height: 16 }));
+    expect(compareBoard(drawn, short, manifest(lm('line')))).toMatchObject([{ landmark: 'line', field: 'height' }]);
+    expect(compareBoard(drawn, short, manifest(lm('line', { buildShift: { height: -8 } })))).toEqual([]);
+    expect(compareBoard(drawn, short, manifest(lm('line', { buildShift: { height: -2 } })))).toMatchObject([{ landmark: 'line', field: 'height' }]);
+    expect(compareBoard(drawn, short, manifest(lm('line', { buildShift: { height: 8 } })))).toMatchObject([{ landmark: 'line', field: 'height' }]);
+  });
+
+  test('the shift applies to a part measured from an origin, on the build side only', () => {
+    const pop = { x: 10, y: 10, width: 500, height: 400 };
+    const b = snap(shot('pop', pop), shot('line', { ...LINE, x: 30, y: 40 }));
+    const u = snap(shot('pop', pop), shot('line', { ...LINE, x: 30, y: 70 }));
+    expect(compareBoard(b, u, manifest(lm('pop', { box: 'size' }), lm('line', { origin: 'pop', buildShift: { y: 30 } })))).toEqual([]);
+    expect(compareBoard(b, u, manifest(lm('pop', { box: 'size' }), lm('line', { origin: 'pop' })))).toMatchObject([{ landmark: 'line', field: 'y' }]);
+  });
+});
+
 describe('compareBoard: a size a decision moved off the board', () => {
   /* The React picker's quadrant labels are 24px where the board draws 22px, by the owner's answer on #54. */
   const at = (size: number) => snap(...board.shots.map((x) => (x.id === 'line' ? { ...x, type: { ...BARLOW, size } } : x)));

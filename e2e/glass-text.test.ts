@@ -30,13 +30,11 @@ const high = paletteOf(glass, 'high');
 const TEXT: TextFact['color'] = [241, 236, 255, 1]; // --kb-glass-text
 const TEXT_2: TextFact['color'] = [228, 222, 247, 1]; // --kb-glass-text-2
 const LINE = { x: 100, y: 200, width: 400, height: 25 };
-/** A calm around LINE: its backing reaches the feather past the words, so its interior is the words' own block. */
-const calmAround = (box = LINE, feather = 32): TextFact['calm'] => ({
-  backing: { x: box.x - feather, y: box.y - feather, width: box.width + 2 * feather, height: box.height + 2 * feather },
-  feather,
-  box,
-  opacity: 0.85,
-});
+/** A calm around LINE: its backing is its element's own box, the feather in from its edge, so its interior is the words' own block. */
+const calmAround = (box = LINE, feather = 32): TextFact['calm'] => {
+  const backing = { x: box.x - feather, y: box.y - feather, width: box.width + 2 * feather, height: box.height + 2 * feather };
+  return { backing, element: backing, feather, box, opacity: 0.85 };
+};
 
 /** A 21px body line of --kb-glass-text-2 in a calm on the rankings page, over a quiet pixel: it passes. */
 const body: TextFact = {
@@ -58,8 +56,13 @@ const body: TextFact = {
 const heading: TextFact = {
   ...body, name: '"Rankings" in h1.kb-rankings-title', color: TEXT, family: 'Anton', size: 52, ink: 51.5, weight: 400, calm: null, brightest: 0.23,
 };
-const judged = (fact: TextFact, surface = fact.surface, opts: { phone?: boolean; palette?: typeof standard; high?: boolean } = {}) =>
-  judge(fact, { ceilings: ceilings[surface], palette: opts.palette ?? standard, phone: opts.phone ?? false, high: opts.high ?? false });
+const judged = (fact: TextFact, surface = fact.surface, opts: { phone?: boolean; palette?: typeof standard; high?: boolean; ceilings?: typeof ceilings[string] } = {}) =>
+  judge(fact, { ceilings: opts.ceilings ?? ceilings[surface], palette: opts.palette ?? standard, phone: opts.phone ?? false, high: opts.high ?? false });
+/*
+ * No recipe of Divided World is calmAll now (the settlement's title stands bare: its cyan layer is dim enough), but the mechanism is the check's
+ * and stays held: the settlement's ceilings with calmAll set, as a recipe that is bright again would carry them.
+ */
+const calmAllSettlement = { ...ceilings.settlement!, calmAll: true };
 
 describe('the clean nodes pass', () => {
   test('a body line in its calm, and a large heading on the full smoke under its large ceiling', () => {
@@ -115,7 +118,7 @@ describe('the web plan\'s five poisons', () => {
 
   test('a feather that reaches into the text', () => {
     /* The backing drawn on the words' own box: its 32px feather ramps over the words' edges. */
-    const tight = { backing: LINE, feather: 32, box: { x: LINE.x + 32, y: LINE.y + 32, width: LINE.width - 64, height: 0 }, opacity: 0.85 };
+    const tight = { backing: LINE, element: LINE, feather: 32, box: { x: LINE.x + 32, y: LINE.y + 32, width: LINE.width - 64, height: 0 }, opacity: 0.85 };
     const found = judged({ ...body, calm: tight });
     expect(found).toHaveLength(1);
     expect(found[0]).toMatch(/lies outside its calm's interior \(its backing inset by its 32px feather\)/);
@@ -193,7 +196,7 @@ describe('a recipe dim enough (the owner\'s answer on #53)', () => {
   });
 
   test('a calmAll surface still needs a calm, whatever its worst', () => {
-    expect(judged({ ...bare, surface: 'settlement' })[0]).toMatch(/is calmAll: every text node on it stands in a calm/);
+    expect(judged({ ...bare, surface: 'settlement' }, 'settlement', { ceilings: calmAllSettlement })[0]).toMatch(/is calmAll: every text node on it stands in a calm/);
   });
 });
 
@@ -233,8 +236,8 @@ describe('the ceilings', () => {
 describe('the glass plan\'s section 6', () => {
   test('on a calmAll surface the heading moved out of its calm fails, large as it is', () => {
     const settled: TextFact = { ...heading, name: '"Settled" in h1.kb-settlement-head', surface: 'settlement', brightest: 0.02 };
-    expect(judged({ ...settled, calm: calmAround() })).toEqual([]);
-    expect(judged(settled)).toEqual([
+    expect(judged({ ...settled, calm: calmAround() }, 'settlement', { ceilings: calmAllSettlement })).toEqual([]);
+    expect(judged(settled, 'settlement', { ceilings: calmAllSettlement })).toEqual([
       '"Settled" in h1.kb-settlement-head (surface settlement): stands in no calm and on no panel as solid as the calm (0.85); surface settlement (recipe settlement) is calmAll: every text node on it stands in a calm, large or not',
     ]);
   });
@@ -338,6 +341,12 @@ describe('feathersOf, the mask reader', () => {
 
   test('"to right" is the x axis', () => {
     expect(feathersOf(across, 'p.lead')).toEqual({ left: 32, right: 32, top: 0, bottom: 0 });
+  });
+
+  test('a feather of nothing (the roster tablist\'s, at its row\'s clipping edge) reads 0 on every edge, and not as a mask it cannot read', () => {
+    /* Chromium computes calm(100% - 0px) to 100%, and a start stop at 0px. */
+    const none = (axis: string) => `linear-gradient(${axis}${T}, ${C} 0px, ${C} 100%, ${T})`;
+    expect(feathersOf(`${none('to right, ')}, ${none('')}`, 'div.kb-carousel-tablist.kb-calm')).toEqual({ left: 0, right: 0, top: 0, bottom: 0 });
   });
 
   test('a ramp at one end only, as the phone HUD\'s join draws it (frame.css), leaves the other edge at zero', () => {

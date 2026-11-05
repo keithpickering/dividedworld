@@ -25,6 +25,7 @@ import { rankIndex } from '../../rules/ranks.ts';
 import { dayAndTime, figure } from '../characters/format.ts';
 import { useKayfa } from '../context.tsx';
 import type { ClassReveal, MyCharacter, Season, Standing, TurnAnnounced } from '../data/api.ts';
+import { PageHead } from '../glass/PageHead.tsx';
 import { shortDate } from '../postbit/dates.ts';
 import { PageLinks, SignInPrompt, useSignedIn } from '../mini.tsx';
 import { usePlayer } from '../player.tsx';
@@ -86,14 +87,15 @@ export function Rankings({ season, settledAt, standings, reveals, turns, mine, t
   const pages = Math.max(1, Math.ceil(total / PER_PAGE));
   return (
     <div className="kb-rankings">
-      <div className="kb-rankings-head">
-        {!embedded && <h1 className="kb-rankings-title kb-glass-display">Rankings</h1>}
-        <p className="kb-rankings-season kb-calm">
-          {season ? `Season ${season.number}` : 'This season'}
-          {' · '}
-          {settledAt ? `Settled ${dayAndTime(settledAt)}` : 'Nothing settled yet'}
-        </p>
-      </div>
+      {embedded
+        ? (
+          <p className="kb-rankings-season kb-calm">
+            {season ? `Season ${season.number}` : 'This season'}
+            {' · '}
+            {settledAt ? `Settled ${dayAndTime(settledAt)}` : 'Nothing settled yet'}
+          </p>
+        )
+        : <PageHead title="Rankings" lead={<>{season ? `Season ${season.number}` : 'This season'}{' · '}{settledAt ? `Settled ${dayAndTime(settledAt)}` : 'Nothing settled yet'}</>} />}
       <p className="kb-rankings-lead kb-calm">
         The season's standings, as the last settlement left them. Your own characters are marked, with their classes, which
         only you see here. Anyone else's class shows only once its player has revealed it.

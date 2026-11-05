@@ -155,7 +155,11 @@ const manifest: BoardManifest = {
     /* The fanned postcards at -11, -1 and 10 degrees: each a button by its name, compared by the turned card's bounds. */
     { id: 'card-stick', role: 'button', name: 'Stick Around, Sweet postcard', buildName: STICK, type: false },
     { id: 'card-whoops-armed', role: 'button', name: 'Whoops!, Salty postcard, armed: pick a post', buildName: `${WHOOPS}, armed: pick a post`, type: false },
-    { id: 'card-whoops', role: 'button', name: 'Whoops!, Salty postcard', buildName: WHOOPS, type: false },
+    /*
+     * The fan's last card is held inside the window (frame.css `.kb-hand-card`, the glass polish's layout check refusing an overflow), so it stands
+     * 36px further left than the board draws it: compared by its size.
+     */
+    { id: 'card-whoops', role: 'button', name: 'Whoops!, Salty postcard', buildName: WHOOPS, type: false, box: 'size' },
     /* The armed card's floating tag. */
     { id: 'armed-tag', role: 'text', name: 'Armed · pick a post' },
   ],

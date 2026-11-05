@@ -113,10 +113,10 @@ export function CardList() {
           {faces.map((f) => (
             <tr key={f.key}>
               <th scope="row">{f.name}</th>
-              <td>{`${f.tag} ${rarityName(f.rarity)}`}</td>
-              <td>{f.play.charAt(0).toUpperCase() + f.play.slice(1)}</td>
-              <td className="kb-num">{priceOf(f)}</td>
-              <td>
+              <td data-kb-label="Kind">{`${f.tag} ${rarityName(f.rarity)}`}</td>
+              <td data-kb-label="Played">{f.play.charAt(0).toUpperCase() + f.play.slice(1)}</td>
+              <td className="kb-num" data-kb-label="Price in orbs">{priceOf(f)}</td>
+              <td data-kb-label="What it does">
                 {f.tagline !== '' && <i className="kb-guide-flavor">{f.tagline}</i>}
                 {f.tagline !== '' && f.summary !== '' && ' '}
                 {f.summary}

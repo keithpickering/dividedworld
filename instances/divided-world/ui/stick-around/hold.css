@@ -63,13 +63,14 @@ article:has(> .kb-act-main .kb-hold)::after {
 }
 
 .kb-glass-dialog.kb-hold-view {
-  --kb-cut: var(--kb-glass-chamfer-5);
+  --kb-dialog-pad-x: 28px;
+  --kb-dialog-pad-top: 20px;
+  --kb-dialog-pad-bottom: 22px;
   display: flex;
   flex-direction: column;
   width: 100%;
   max-width: none;
   height: 100%;
-  padding: 20px 28px 22px;
 }
 
 .kb-hold-view .kb-glass-dialog-body {
@@ -300,7 +301,9 @@ article:has(> .kb-act-main .kb-hold)::after {
   }
 
   .kb-glass-dialog.kb-hold-view {
-    padding: 14px 14px 16px;
+    --kb-dialog-pad-x: 14px;
+    --kb-dialog-pad-top: 14px;
+    --kb-dialog-pad-bottom: 16px;
   }
 
   .kb-hold-view .kb-glass-dialog-bar {

@@ -11,26 +11,59 @@
  * A browser with no mask-image gets a hard-edged panel of the same backing: the edge is not
  * feathered, and the words are as legible.
  */
+/*
+ * The gap between a page's title and the lede or tabs under it, stated once: those calms cap their
+ * feather at it (`min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap))`), so it lies on
+ * nothing but the gap. The phone sets its blocks closer.
+ */
+:root {
+  --kb-glass-title-gap: 12px;
+}
+
+:root[data-kb-layout='phone'] {
+  --kb-glass-title-gap: 8px;
+}
+
 .kb-calm {
   position: relative;
   isolation: isolate;
+  --kb-calm-feather: var(--kb-glass-calm-feather);
+}
+
+/*
+ * On the phone the feather never reaches past the content column's gutter (shell.css), since the
+ * column clips at its own edge and a feather wider than the gutter would be cut there on a straight
+ * line. The root's feather is written inline by applyGlass, which no stylesheet rule outranks, so
+ * each calm resolves its own from it and the phone's is the smaller of the two.
+ */
+:where(:root[data-kb-layout='phone']) .kb-calm {
+  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-gutter, 32px));
+}
+
+/*
+ * A dialog taller than the window stands against its edge, and a dialog's words stand 12px from its
+ * own edge on the phone (shell.css), so a 32px feather would reach past the window or the overlay,
+ * where the page's clip cuts it on a straight line. In a dialog it is 12px, which stays on its ground.
+ */
+.kb-glass-dialog .kb-calm {
+  --kb-calm-feather: min(var(--kb-glass-calm-feather), 12px);
 }
 
 .kb-calm::before {
   content: '';
   position: absolute;
   z-index: -1;
-  inset: calc(var(--kb-glass-calm-feather) * -1);
+  inset: calc(var(--kb-calm-feather) * -1);
   pointer-events: none;
   background: color-mix(in srgb, var(--kb-glass-ground) calc(var(--kb-glass-calm-opacity) * 100%), transparent);
   /* Alpha is all a mask reads: the edge ramps over the feather on each axis, and the axes intersect. */
   -webkit-mask-image:
-    linear-gradient(to right, transparent, currentColor var(--kb-glass-calm-feather), currentColor calc(100% - var(--kb-glass-calm-feather)), transparent),
-    linear-gradient(to bottom, transparent, currentColor var(--kb-glass-calm-feather), currentColor calc(100% - var(--kb-glass-calm-feather)), transparent);
+    linear-gradient(to right, transparent, currentColor var(--kb-calm-feather), currentColor calc(100% - var(--kb-calm-feather)), transparent),
+    linear-gradient(to bottom, transparent, currentColor var(--kb-calm-feather), currentColor calc(100% - var(--kb-calm-feather)), transparent);
   -webkit-mask-composite: source-in;
   mask-image:
-    linear-gradient(to right, transparent, currentColor var(--kb-glass-calm-feather), currentColor calc(100% - var(--kb-glass-calm-feather)), transparent),
-    linear-gradient(to bottom, transparent, currentColor var(--kb-glass-calm-feather), currentColor calc(100% - var(--kb-glass-calm-feather)), transparent);
+    linear-gradient(to right, transparent, currentColor var(--kb-calm-feather), currentColor calc(100% - var(--kb-calm-feather)), transparent),
+    linear-gradient(to bottom, transparent, currentColor var(--kb-calm-feather), currentColor calc(100% - var(--kb-calm-feather)), transparent);
   mask-composite: intersect;
 }
 

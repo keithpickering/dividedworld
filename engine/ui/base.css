@@ -175,7 +175,8 @@ h1 {
 
 .kb-button[data-kb-primary] {
   font-weight: bold;
-  border-width: 2px;
+  /* The second pixel is drawn inside the first, so a primary button is as tall as the buttons beside it. */
+  box-shadow: inset 0 0 0 1px currentColor;
 }
 
 .kb-textarea {

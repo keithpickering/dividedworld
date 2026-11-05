@@ -18,6 +18,8 @@ import { useKayfa } from '../context.tsx';
 import type { Alert, Id } from '../data/api.ts';
 import { utcWhen } from '../log/lines.ts';
 import { SignInPrompt, useSignedIn } from '../mini.tsx';
+import { ButtonRow, GlassButton } from '../glass/Button.tsx';
+import { PageHead } from '../glass/PageHead.tsx';
 import { usePlayer } from '../player.tsx';
 import { Link } from '../router.tsx';
 import { AlertIcon } from './AlertIcon.tsx';
@@ -167,17 +169,19 @@ export function Alerts({ data, older, onOlder, onUnfollow, notes }: AlertsProps)
 
   return (
     <div className="kb-alerts">
-      <div className="kb-alerts-head">
-        <h1 className="kb-alerts-title kb-glass-display">Alerts</h1>
-        {mine.length > 1 && (
-          <nav aria-label="Whose alerts" className="kb-alerts-tabs kb-calm">
-            <button type="button" className="kb-alerts-tab kb-glass-skew" aria-pressed={current === null} onClick={() => setPicked(null)}><span className="kb-glass-upright">All</span></button>
-            {mine.map((c) => (
-              <button key={c.id} type="button" className="kb-alerts-tab kb-glass-skew" aria-pressed={current?.id === c.id} onClick={() => setPicked(c.id)}><span className="kb-glass-upright">{c.name}</span></button>
-            ))}
+      <PageHead
+        title="Alerts"
+        tabs={mine.length > 1 && (
+          <nav aria-label="Whose alerts" className="kb-calm">
+            <ButtonRow>
+              <GlassButton kind={current === null ? 'primary' : 'secondary'} aria-pressed={current === null} onClick={() => setPicked(null)}>All</GlassButton>
+              {mine.map((c) => (
+                <GlassButton key={c.id} kind={current?.id === c.id ? 'primary' : 'secondary'} aria-pressed={current?.id === c.id} onClick={() => setPicked(c.id)}>{c.name}</GlassButton>
+              ))}
+            </ButtonRow>
           </nav>
         )}
-      </div>
+      />
       <p className="kb-alerts-lede kb-calm">
         What happened to your characters, and what&apos;s new in the game. Every alert is true, and each one is also in your log or on the board. A thread drops off this list once you&apos;ve read it.
       </p>
@@ -199,7 +203,7 @@ export function Alerts({ data, older, onOlder, onUnfollow, notes }: AlertsProps)
         )}
         {data.more && (
           <p className="kb-alerts-older">
-            <button type="button" className="kb-alerts-tab kb-glass-skew" onClick={() => { known.current = new Set(items.map((i) => i.key)); onOlder(); }} aria-disabled={older === 'loading' || undefined}><span className="kb-glass-upright">Older</span></button>
+            <GlassButton size="s" onClick={() => { known.current = new Set(items.map((i) => i.key)); onOlder(); }} aria-disabled={older === 'loading' || undefined}>Older</GlassButton>
             {older === 'failed' && <span className="kb-alerts-older-failed" role="alert"> The older alerts could not be read. Try again.</span>}
           </p>
         )}
@@ -230,7 +234,7 @@ export function AlertsScreen() {
   if (state.status === 'failed') {
     return (
       <div className="kb-alerts">
-        <h1 className="kb-alerts-title kb-glass-display">Alerts</h1>
+        <PageHead title="Alerts" />
         <p className="kb-alerts-empty kb-calm" role="alert">
           Your alerts could not be read. Nothing is lost; they are still in your log and on the board.{' '}
           <button type="button" className="kb-alerts-unfollow" onClick={retry}>Try again</button>

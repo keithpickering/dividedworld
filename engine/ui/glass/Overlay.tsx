@@ -29,6 +29,7 @@ import { createPortal } from 'react-dom';
 import { useModalLayer } from '../modal.tsx';
 import type { GlassSurface } from '../types.ts';
 import { hudTopOf, placePopover } from './place.ts';
+import { CloseCross, DialogBar, FRAME } from './Frame.tsx';
 import { Smoke, useSurfaceStyle } from './Smoke.tsx';
 import './shell.css';
 
@@ -47,11 +48,11 @@ export interface OverlayProps {
   /** Set in the bar after the title. */
   readonly aside?: ReactNode;
   /**
-   * Where Close stands: in the bar (the default), or after the body, last in the order Tab goes; or nowhere, for a view the
-   * reader leaves by its own way out (Stick Around's bar) and not by closing it. Esc and a press on the dimmed page still
-   * call `onClose`, which then decides what they mean.
+   * Where Close stands: in the bar, the one look of it (Frame.tsx), or nowhere, for a view the reader leaves by its own way out
+   * (Stick Around's bar) and not by closing it. Esc and a press on the dimmed page still call `onClose`, which then decides what
+   * they mean.
    */
-  readonly closeAt?: 'bar' | 'foot' | 'none';
+  readonly closeAt?: 'bar' | 'none';
   /**
    * Gives an element that stands beside the dialog's box in the overlay, inside the layer's focus scope and outside the box's chamfer:
    * where a takeover hosts the Lens (cards/Lens.tsx `LensHost`), which the clip would cut. Told with null when it is gone.
@@ -178,20 +179,19 @@ export function Overlay({ title, onClose, children, surface, returnFocusTo, labe
     };
   }, [anchor, box, sheetBelow]);
 
-  const close = <button ref={closeButton} type="button" className="kb-glass-dialog-close kb-glass-cut-button" onClick={onClose}>Close</button>;
   return createPortal(
     <div
       ref={overlay} className="kb-glass kb-glass-overlay" data-kb-anchored={anchor ? '' : undefined}
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        ref={box} className={`kb-glass-dialog kb-glass-cut-dialog${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true"
+        ref={box} className={`${FRAME}${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true"
         aria-labelledby={label === undefined ? id : undefined} aria-label={label} aria-describedby={describedBy} tabIndex={-1}
         style={{ ...calm, ...style, ...(anchor ? { position: 'absolute' } : {}) }}
         {...Object.fromEntries(Object.entries(data ?? {}).map(([k, v]) => [`data-${k}`, v]))}
       >
         <Smoke surface={surface} />
-        <div className="kb-glass-dialog-bar">
+        <DialogBar close={closeAt === 'bar' ? <CloseCross buttonRef={closeButton} onClick={onClose} /> : undefined}>
           {kicker ? (
             <div className="kb-glass-dialog-titles">
               <p className="kb-glass-dialog-kicker">{kicker}</p>
@@ -199,10 +199,8 @@ export function Overlay({ title, onClose, children, surface, returnFocusTo, labe
             </div>
           ) : <h2 id={id} className="kb-glass-dialog-head kb-glass-display">{title}</h2>}
           {aside}
-          {closeAt === 'bar' && close}
-        </div>
+        </DialogBar>
         <div className="kb-glass-dialog-body">{children}</div>
-        {closeAt === 'foot' && <div className="kb-glass-dialog-foot">{close}</div>}
       </div>
       {onBeside && <div ref={besideRef} className="kb-glass-overlay-beside" />}
     </div>,

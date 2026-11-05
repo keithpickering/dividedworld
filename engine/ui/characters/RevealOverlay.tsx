@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Board, MyCharacter, ThreadSummary } from '../data/api.ts';
+import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
 import { PreviewBox } from './PreviewBox.tsx';
 import { revealPreview } from './previews.ts';
@@ -107,7 +108,7 @@ export function RevealOverlay({ character, onClose, onDone, returnFocusTo }: Rev
         </div>
         {board && total === 0 && <p className="kb-reveal-line">No threads on this board yet; choose another board.</p>}
         {total !== null && threads.length < total && (
-          <p><button type="button" className="kb-glass-action" disabled={more} onClick={() => void older()}>Show older threads</button></p>
+          <ButtonRow><GlassButton size="s" disabled={more} onClick={() => void older()}>Show older threads</GlassButton></ButtonRow>
         )}
         <label className="kb-glass-field">
           <span>In the character&apos;s words (optional)</span>
@@ -117,10 +118,10 @@ export function RevealOverlay({ character, onClose, onDone, returnFocusTo }: Rev
         <PreviewBox preview={revealPreview({ name: character.name, className: r.className, message: r.message, threadTitle: title })} />
         {r.over && <p role="alert" className="kb-notice" data-kb-tone="refusal">The message is at most {MAX} characters.</p>}
         {r.refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{r.refusal}</p>}
-        <div className="kb-turn-actions">
-          <button type="button" className="kb-glass-action kb-glass-skew" onClick={onClose}><span className="kb-glass-upright">Cancel</span></button>
-          <button type="submit" className="kb-glass-confirm kb-glass-skew" disabled={!chosen || r.over || r.busy}><span className="kb-glass-upright">{words.button}</span></button>
-        </div>
+        <ButtonRow>
+          <GlassButton onClick={onClose}>Cancel</GlassButton>
+          <GlassButton type="submit" kind="primary" disabled={!chosen || r.over || r.busy}>{words.button}</GlassButton>
+        </ButtonRow>
       </form>
     </Overlay>
   );

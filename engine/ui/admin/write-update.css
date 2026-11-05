@@ -75,42 +75,6 @@
   align-items: center;
 }
 
-.kb-write-update-button {
-  min-height: 52px;
-  padding: 0 20px;
-  font: inherit;
-  font-size: var(--kb-glass-size-label);
-  font-weight: 800;
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
-  color: var(--kb-glass-text);
-  background: transparent;
-  border: 1.5px solid color-mix(in srgb, var(--kb-glass-pale) 70%, transparent);
-  cursor: pointer;
-}
-
-.kb-write-update-button:disabled {
-  cursor: default;
-  color: var(--kb-glass-text-2);
-  border-style: dashed;
-}
-
-.kb-write-update-button:focus-visible {
-  outline: 3px solid var(--kb-glass-text-hi);
-  outline-offset: 2px;
-}
-
-.kb-write-update-post:not(:disabled) {
-  color: var(--kb-glass-ink-neon);
-  background: var(--kb-glass-neon);
-  border-color: var(--kb-glass-neon);
-}
-
-.kb-write-update-actions {
-  display: flex;
-  gap: 12px;
-}
-
 .kb-write-update-status,
 .kb-write-update-refusal {
   margin: 0;

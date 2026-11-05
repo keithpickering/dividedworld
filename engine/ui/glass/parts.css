@@ -1,0 +1,225 @@
+/*
+ * The glass's shared parts: the page head and the skewed button with its row (PageHead.tsx,
+ * Button.tsx). The measure of a control is the control tokens' (tokens.css); the phone layout's
+ * values are swapped in on the element, through a `:where` rule, because the root's tokens the
+ * instance's theme writes inline cannot be outranked by any stylesheet rule but an element's own.
+ */
+
+/* ---- the page head ---- */
+
+.kb-page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 28px;
+  /* The row gap is the title gap: the lead's and the eyebrow's calm feather is capped at it (calm.css), so it lies on nothing but the gap, never on the title. */
+  row-gap: var(--kb-glass-title-gap);
+  /* The calms of what follows reach 32px up (calm.css); the title stands clear of them. */
+  margin-bottom: 36px;
+}
+
+.kb-page-head-eyebrow,
+.kb-page-head-lead {
+  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
+}
+
+.kb-page-head-eyebrow {
+  flex: 0 0 100%;
+  margin: 0;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: var(--kb-glass-control-spacing);
+  text-transform: uppercase;
+  color: var(--kb-glass-neon-text);
+}
+
+/*
+ * The title is the game's oversized display heading, as every page has it (7rem, the roster's pages
+ * 96px), with no calm behind it: only the Anton headings stand on the full smoke. It never shrinks
+ * for a lead; the lead takes the rest of the line and goes under the title when that is under 18em.
+ */
+.kb-page-head-title {
+  flex: 0 0 auto;
+  max-width: 100%;
+  margin: 0;
+  font-family: var(--kb-glass-font-display);
+  font-size: 7rem;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 1px;
+  color: var(--kb-glass-text);
+  text-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 35%, transparent);
+}
+
+.kb-page-head[data-kb-size='roster'] .kb-page-head-title {
+  font-size: var(--kb-glass-size-display-xl);
+}
+
+/* The count is the heading's, read with it, and drawn smaller beside it. */
+.kb-page-head-count {
+  font-size: var(--kb-glass-size-display-m);
+  /* It stands on the full smoke with the title, so it is the title's color. */
+  color: var(--kb-glass-text-hi);
+}
+
+.kb-page-head-lead {
+  flex: 1 1 18em;
+  margin: 0;
+  font-size: var(--kb-glass-size-body);
+  color: var(--kb-glass-text-2);
+}
+
+.kb-page-head-tabs {
+  flex: 0 1 auto;
+  min-width: 0;
+  align-self: flex-end;
+  /* At the title row's right end, as the boards draw the filters and tabs; on the phone they stand under the title, at its left. */
+  margin-left: auto;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-page-head-tabs { margin-left: 0; }
+
+.kb-page-head-tabs > .kb-calm {
+  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
+}
+
+.kb-page-head > .kb-button-row {
+  flex: 0 0 100%;
+  margin-top: 8px;
+}
+
+/*
+ * The phone's title is capped against the width so that the longest word a page's title holds ("Characters", "Strategy") lies on one line at
+ * every text size: Anton's capitals run about 4.5em for ten letters, and a title that breaks inside a word is not read as its word
+ * (e2e/glass-layout.spec.ts holds it at 390px and 200%). `overflow-wrap: anywhere` stays for a title that is longer than that.
+ */
+:where(:root[data-kb-layout='phone']) .kb-page-head-title { font-size: min(4rem, 17vw); }
+:where(:root[data-kb-layout='phone']) .kb-page-head[data-kb-size='roster'] .kb-page-head-title { font-size: min(var(--kb-glass-size-display-m), 17vw); }
+:where(:root[data-kb-layout='phone']) .kb-page-head-count { font-size: var(--kb-glass-size-display-s); }
+:where(:root[data-kb-layout='phone']) :is(.kb-page-head-lead, .kb-page-head-eyebrow) { font-size: var(--kb-glass-size-phone-body); }
+
+/* ---- the button row ---- */
+
+.kb-button-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: var(--kb-glass-control-gap);
+}
+.kb-button-row[data-kb-align='end'] { justify-content: flex-end; }
+.kb-button-row[data-kb-align='center'] { justify-content: center; }
+
+/* ---- the button ---- */
+
+.kb-glass-button {
+  --kb-button-height: var(--kb-glass-control-m-height);
+  --kb-button-pad: var(--kb-glass-control-m-pad);
+  --kb-button-size: var(--kb-glass-control-m-size);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: var(--kb-button-height);
+  /* A fifth of the type over and under the label, so at 200% text the line's box (taller than the type) stays inside the border and does not touch it. */
+  padding: 0.2em var(--kb-button-pad);
+  border: 1px solid transparent;
+  background: transparent;
+  font: 800 var(--kb-button-size) / 1 var(--kb-glass-font-body);
+  letter-spacing: var(--kb-glass-control-spacing);
+  text-transform: uppercase;
+  text-decoration: none;
+  /* A label wraps inside its own control, which the row never lets share a line with another once it is wider than the line (the layout check refuses a split one). */
+  max-width: 100%;
+  text-align: center;
+  cursor: pointer;
+}
+
+.kb-glass-button[data-kb-size='s'] {
+  --kb-button-height: var(--kb-glass-control-s-height);
+  --kb-button-pad: var(--kb-glass-control-s-pad);
+  --kb-button-size: var(--kb-glass-control-s-size);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-glass-button {
+  --kb-button-height: var(--kb-glass-control-m-height-phone);
+  --kb-button-pad: var(--kb-glass-control-m-pad-phone);
+  --kb-button-size: var(--kb-glass-control-m-size-phone);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-glass-button[data-kb-size='s'] {
+  --kb-button-height: var(--kb-glass-control-s-height-phone);
+  --kb-button-pad: var(--kb-glass-control-s-pad-phone);
+  --kb-button-size: var(--kb-glass-control-s-size-phone);
+}
+
+/*
+ * Secondary: outlined. A button stands outside every calm, so its edge meets the page's brightest
+ * smoke (about 0.27 luminance), and only the full-strength text-hi reaches 3:1 there; a 60% mix of
+ * any text token does not (about 2:1). parts.test.tsx reads the border against e2e/glass-ceilings.json.
+ */
+.kb-glass-button[data-kb-kind='secondary'] {
+  border-color: var(--kb-glass-text-hi);
+  color: var(--kb-glass-text);
+}
+
+/* Primary: the neon filled, with its glow. */
+.kb-glass-button[data-kb-kind='primary'] {
+  border-color: var(--kb-glass-neon);
+  background: var(--kb-glass-neon);
+  color: var(--kb-glass-ink-neon);
+  box-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 70%, transparent);
+}
+
+/* Quiet: text only. */
+.kb-glass-button[data-kb-kind='quiet'] {
+  color: var(--kb-glass-text-2);
+}
+
+/*
+ * Hover: each kind answers a pointer with something the eye sees at once. Secondary and quiet take a wash of the neon and the neon's
+ * edge; primary, already the neon, lights its glow and its fill; a disabled control takes the neon edge on its dash and keeps its
+ * not-allowed cursor, so it reads as waiting, not as pressable.
+ */
+.kb-glass-button[data-kb-kind='secondary']:hover {
+  border-color: var(--kb-glass-neon);
+  background: color-mix(in srgb, var(--kb-glass-neon) 18%, transparent);
+  color: var(--kb-glass-text-hi);
+}
+
+.kb-glass-button[data-kb-kind='quiet']:hover {
+  background: color-mix(in srgb, var(--kb-glass-neon) 14%, transparent);
+  color: var(--kb-glass-text-hi);
+}
+
+.kb-glass-button[data-kb-kind='primary']:hover {
+  background: color-mix(in srgb, var(--kb-glass-neon) 80%, var(--kb-glass-text-hi));
+  border-color: color-mix(in srgb, var(--kb-glass-neon) 80%, var(--kb-glass-text-hi));
+  box-shadow: 0 0 44px color-mix(in srgb, var(--kb-glass-neon) 90%, transparent);
+}
+
+.kb-glass-button:disabled:hover,
+.kb-glass-button[aria-disabled='true']:hover {
+  border-color: var(--kb-glass-neon);
+  background: transparent;
+  box-shadow: none;
+}
+
+.kb-glass-button:focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+}
+
+/*
+ * A control that cannot be pressed yet is drawn as the glass draws a Turn that opens later: the
+ * waiting token for the words on a dashed edge, never translucent. The edge is text-hi at full
+ * strength, which is what reaches 3:1 on the brightest smoke (see the secondary kind); the dash and
+ * the words' color are what set it apart from an enabled control.
+ */
+.kb-glass-button:disabled,
+.kb-glass-button[aria-disabled='true'] {
+  border: 1px dashed var(--kb-glass-text-hi);
+  background: transparent;
+  color: var(--kb-glass-neon-text);
+  box-shadow: none;
+  cursor: not-allowed;
+}

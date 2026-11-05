@@ -6,6 +6,10 @@
  * Compared: the menu bar as the design revises it, the heading with its two tabs, the lead, and the feed's first items by their headings.
  * The story's world is its own (its Boss, its debut and its Turn are not the board's), so what only the board draws is not compared, and the
  * words the story shares with the board are compared by place and type.
+ *
+ * Departure by the glass polish (docs/plans/2026-11-04-glass-polish-plan.md, Task 4): the heading is a PageHead (engine/ui/glass/PageHead.tsx), which
+ * stands 36px clear of what follows (the lead and the items stand 15px lower than the board draws them), and the tabs are GlassButtons, 48px tall where the
+ * board's are 54. The tabs are held to their y and height (the board's place plus the shift, 19px down and 6px shorter), not their x or width.
  */
 import type { BoardManifest } from '../board-match.ts';
 
@@ -32,18 +36,18 @@ const manifest: BoardManifest = {
 
     { id: 'title', role: 'heading', name: 'Season 2', type: false },
     /* The two tabs are a real tab list in the build (one selected, each controlling the panel), where the board draws a nav of two links. */
-    { id: 'tabs', role: 'navigation', name: 'Season', buildRole: 'tablist', type: false },
+    { id: 'tabs', role: 'navigation', name: 'Season', buildRole: 'tablist', box: 'height', buildShift: { y: 19, height: -6 }, type: false },
     /* The idle tab's ink is the board's #e4def7 (text-2); the build sets it in text, which a glass text over bare smoke must be (e2e/glass-text.spec.ts), so its color is not compared. */
-    { id: 'tab-rankings', role: 'link', name: 'Rankings', buildRole: 'tab', within: 'tabs', type: false },
-    { id: 'tab-news', role: 'link', name: 'News', buildRole: 'tab', within: 'tabs' },
+    { id: 'tab-rankings', role: 'link', name: 'Rankings', buildRole: 'tab', within: 'tabs', box: 'height', buildShift: { y: 19, height: -6 }, type: false },
+    { id: 'tab-news', role: 'link', name: 'News', buildRole: 'tab', within: 'tabs', box: 'height', buildShift: { y: 19, height: -6 } },
 
     /* The build says when the season began, where the board counts its days ("Day 2 of 28", a season length no part of the design decided). */
-    { id: 'lead', role: 'text', name: 'Day 2 of 28. The Boss this season is Mister Spreadsheet. Everything here is public: results, debuts, Turns, and the Boss coming and going.', buildName: 'Season 2 began Nov 1, 8:17 AM. The Boss this season is Mister Spreadsheet. Everything here is public: results, debuts, Turns, and the Boss coming and going.' },
+    { id: 'lead', role: 'text', name: 'Day 2 of 28. The Boss this season is Mister Spreadsheet. Everything here is public: results, debuts, Turns, and the Boss coming and going.', buildName: 'Season 2 began Nov 1, 8:17 AM. The Boss this season is Mister Spreadsheet. Everything here is public: results, debuts, Turns, and the Boss coming and going.', buildShift: { y: 15 } },
 
     /* The feed, newest first: each item's heading. */
-    { id: 'item-debut', role: 'heading', name: 'Thwompson debuted' },
-    { id: 'item-turn', role: 'heading', name: 'Pipewrench turned' },
-    { id: 'item-boss', role: 'heading', name: 'The Boss has arrived', buildName: 'Mister Spreadsheet has arrived' },
+    { id: 'item-debut', role: 'heading', name: 'Thwompson debuted', buildShift: { y: 15 } },
+    { id: 'item-turn', role: 'heading', name: 'Pipewrench turned', buildShift: { y: 15 } },
+    { id: 'item-boss', role: 'heading', name: 'The Boss has arrived', buildName: 'Mister Spreadsheet has arrived', buildShift: { y: 15 } },
     /*
      * The board draws Season 1's results above the old Boss leaving; both happened at the same instant, and the build lists the leaving first (its
      * news query's order among equal times), so these two are found and compared by their type, not their places.

@@ -86,11 +86,13 @@ describe('the follow control', () => {
     expect(await screen.findByRole('button', { name: 'Unfollow this thread' })).toBeInTheDocument();
   });
 
-  test('it sits in the glass, outside every post', async () => {
+  test('it is a 2003 board button, the board\'s own plain button and not the glass\'s, outside every post', async () => {
     const w = world();
     show(w, w.elsewhere);
     const button = await screen.findByRole('button', { name: 'Follow this thread' });
-    expect(button.closest('.kb-glass')).not.toBeNull();
+    expect(button).toHaveClass('kb-button');
+    expect(button.closest('.kb-glass')).toBeNull();
+    expect(button).not.toHaveClass('kb-glass-skew', 'kb-glass-button', 'kb-glass-cut-button');
     expect(button.closest('article, .kb-acts')).toBeNull();
     expect(button.closest('[role="group"]')).toHaveAccessibleName('Thread controls');
   });

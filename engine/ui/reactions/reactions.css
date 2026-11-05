@@ -37,23 +37,19 @@
 
 /*
  * The picker: a glass overlay (Picker.tsx through engine/ui/glass/Overlay.tsx), at the React board's
- * sizes (docs/research/2026-10-29-two-worlds/03-react.html, 540 by 452 at the 900 by 700 board). Its
- * cut is the third chamfer with a 1px pale border, as the board's; every word that is not a
+ * sizes (docs/research/2026-10-29-two-worlds/03-react.html, 540 by 452 at the 900 by 700 board), in the shared dialog frame
+ * (glass/Frame.tsx: the board's third chamfer and 1px pale border are the frame's fifth and 1.5px neon); every word that is not a
  * quadrant's label stands in a calm. Each quadrant reads its class's colors from the two properties
  * Picker.tsx sets on it (--kb-picker-large, --kb-picker-fill), and the glass's text where it sets none.
  */
 .kb-glass-dialog.kb-picker {
-  --kb-cut: var(--kb-glass-chamfer-3);
   line-height: normal; /* the board's: its words set at the face's own line */
-  --kb-border: 1px;
+  --kb-dialog-pad-x: 20px;
+  --kb-dialog-pad-top: 14px;
+  --kb-dialog-pad-bottom: 20px;
+  --kb-dialog-close-inset: 0px;
   width: 540px; /* Picker.tsx's POPOVER_WIDTH */
   max-width: 100%;
-  padding: 14px 20px 34px;
-  background: var(--kb-glass-pale);
-}
-
-.kb-picker .kb-glass-dialog-bar {
-  align-items: baseline;
 }
 
 .kb-picker .kb-glass-dialog-head {
@@ -64,33 +60,13 @@
 }
 
 .kb-picker-left {
+  /* After the title, before Close: the count stands at the bar's right, beside Close. */
+  margin-left: auto;
   font-size: var(--kb-glass-size-body);
   font-weight: 800;
   letter-spacing: 2px;
   text-transform: uppercase;
   color: var(--kb-glass-pale);
-}
-
-/* Close stands at the foot's right, beside the hint, where the board leaves room. */
-.kb-picker .kb-glass-dialog-foot {
-  position: absolute;
-  right: 20px;
-  bottom: 12px;
-}
-
-/* Past 100% text the hint wraps and grows; Close comes into the flow under it rather than standing over its words. */
-:where(:root[data-kb-text-size]:not([data-kb-text-size='100'])) .kb-picker .kb-glass-dialog-foot {
-  position: static;
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 8px;
-}
-
-.kb-picker .kb-glass-dialog-close {
-  min-height: 52px;
-  font-size: var(--kb-glass-size-label);
-  font-weight: 800;
-  text-transform: uppercase;
 }
 
 /* The field: the two axes' words above and below, the quadrants between, and the cross through them. */
@@ -154,6 +130,9 @@
 
 /* 24px, WCAG's large size, 2px over the React board's 22px: a class's large color may stand at 3:1 on the react smoke from there (the owner's answer on #54). */
 .kb-picker-label {
+  /* Above the axis words' calm, whose feather lies over it. */
+  position: relative;
+  z-index: 1;
   font-size: 1.5rem;
   line-height: 1;
   color: var(--kb-picker-large);
@@ -171,6 +150,9 @@
 }
 
 .kb-picker-kind {
+  /* Above the quadrant label's calm and the axes' (their feathers lie over it), which are painted under it. */
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -206,10 +188,13 @@
   padding: 0;
 }
 
-/* In a window without the popover's room (a phone): a sheet above the HUD (Overlay.tsx), the kinds two across, at the phone's sizes, Close in the flow. */
+/* In a window without the popover's room (a phone): a sheet above the HUD (Overlay.tsx), the kinds two across, at the phone's sizes. */
 .kb-glass-dialog.kb-picker[data-kb-place='sheet'] {
   width: auto;
-  padding: 12px 16px;
+  --kb-dialog-pad-x: 16px;
+  --kb-dialog-pad-top: 12px;
+  --kb-dialog-pad-bottom: 12px;
+  --kb-dialog-close-inset: 0px;
 }
 
 .kb-picker[data-kb-place='sheet'] .kb-glass-dialog-head,
@@ -231,8 +216,7 @@
 .kb-picker[data-kb-place='sheet'] .kb-picker-left,
 .kb-picker[data-kb-place='sheet'] .kb-picker-hint,
 .kb-picker[data-kb-place='sheet'] .kb-picker-none,
-.kb-picker[data-kb-place='sheet'] .kb-picker-refusal,
-.kb-picker[data-kb-place='sheet'] .kb-glass-dialog-close {
+.kb-picker[data-kb-place='sheet'] .kb-picker-refusal {
   font-size: var(--kb-glass-size-phone-body);
 }
 
@@ -251,15 +235,6 @@
 .kb-picker[data-kb-place='sheet'] .kb-picker-kind {
   width: 48px;
   height: 48px;
-}
-
-.kb-picker[data-kb-place='sheet'] .kb-glass-dialog-foot {
-  position: static;
-  margin: 8px 0 0;
-}
-
-.kb-picker[data-kb-place='sheet'] .kb-glass-dialog-close {
-  min-height: 48px;
 }
 
 /*

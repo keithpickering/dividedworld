@@ -7,7 +7,28 @@
  * (tools/check-glass-contrast.mjs holds that), so swapping the key re-colors the glass and
  * moves nothing. `applyGlass` marks the key on the root (`data-kb-glass-key`) for the stylesheet.
  */
-import type { ClassLargeDraw, GlassSurface, GlassTheme } from '../types.ts';
+import type { ClassLargeDraw, GlassControls, GlassControlsInput, GlassSurface, GlassTheme } from '../types.ts';
+
+/** The skewed controls' measure where a theme gives none (the values tokens.css names as plain defaults). */
+export const DEFAULT_CONTROLS: GlassControls = {
+  m: { height: 48, pad: 22, size: 'body' },
+  s: { height: 36, pad: 16, size: 'label' },
+  phone: { m: { height: 40, pad: 16, size: 'phone-body' }, s: { height: 32, pad: 12, size: 'phone-small' } },
+  spacing: 2,
+  gap: 10,
+};
+
+/** The theme's controls over the defaults, field by field: a theme that gives one height keeps every other default. */
+export function controlsOf(given: GlassControlsInput | undefined): GlassControls {
+  const d = DEFAULT_CONTROLS;
+  return {
+    m: { ...d.m, ...given?.m },
+    s: { ...d.s, ...given?.s },
+    phone: { m: { ...d.phone.m, ...given?.phone?.m }, s: { ...d.phone.s, ...given?.phone?.s } },
+    spacing: given?.spacing ?? d.spacing,
+    gap: given?.gap ?? d.gap,
+  };
+}
 
 export type GlassKeyName = 'standard' | 'high';
 
@@ -26,6 +47,16 @@ export function glassVars(glass: GlassTheme, key: GlassKeyName): Record<string, 
   for (const [name, size] of Object.entries(glass.sizes)) out[`--kb-glass-size-${name}`] = `${size.px / 16}rem`;
   out['--kb-glass-calm-opacity'] = String(glass.calm.opacity);
   out['--kb-glass-calm-feather'] = `${glass.calm.feather}px`;
+  const c = controlsOf(glass.controls);
+  for (const [suffix, sizes] of [['', c], ['-phone', c.phone]] as const) {
+    for (const k of ['m', 's'] as const) {
+      out[`--kb-glass-control-${k}-height${suffix}`] = `${sizes[k].height}px`;
+      out[`--kb-glass-control-${k}-pad${suffix}`] = `${sizes[k].pad}px`;
+      out[`--kb-glass-control-${k}-size${suffix}`] = `var(--kb-glass-size-${sizes[k].size})`;
+    }
+  }
+  out['--kb-glass-control-spacing'] = `${c.spacing}px`;
+  out['--kb-glass-control-gap'] = `${c.gap}px`;
   glass.orbs.gradients.forEach((g, i) => {
     out[`--kb-glass-orb-${i + 1}-highlight`] = g.highlight;
     out[`--kb-glass-orb-${i + 1}-color`] = g.color;
@@ -89,7 +120,7 @@ export const classLargeText: Readonly<Record<GlassSurface, ClassLargeDraw>> = {
   settings: 'none',
   /* No board draws the account page; it shares the page recipe with 11 and 12, which draw none. */
   account: 'none',
-  /* 09 settlement names the new class (FACE, 52px Anton) in the heading's calm, and the recipe's calmAll puts every text node in one. */
+  /* 09 settlement names the new class (FACE, 52px Anton) in the heading's calm. */
   settlement: 'calmed',
 };
 

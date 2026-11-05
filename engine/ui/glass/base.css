@@ -19,6 +19,8 @@
   font-family: var(--kb-glass-font-display);
   font-weight: 400;
   text-transform: uppercase;
+  /* A display heading wraps inside its box, even a word of it, and is never squeezed or run past the column at large text. */
+  overflow-wrap: anywhere;
 }
 
 /* ---- the smoke ---- */
@@ -133,6 +135,7 @@
 .kb-glass-cut-panel { clip-path: polygon(0 0, calc(100% - var(--kb-cut)) 0, 100% var(--kb-cut), 100% 100%, 0 100%); }
 .kb-glass-cut-panel::after { clip-path: polygon(0 0, calc(100% - var(--kb-cut-in)) 0, 100% var(--kb-cut-in), 100% 100%, 0 100%); }
 
+.kb-glass-cut-dialog { --kb-cut: var(--kb-glass-chamfer-5); }
 .kb-glass-cut-dialog { clip-path: polygon(0 0, calc(100% - var(--kb-cut)) 0, 100% var(--kb-cut), 100% 100%, var(--kb-cut) 100%, 0 calc(100% - var(--kb-cut))); }
 .kb-glass-cut-dialog::after { clip-path: polygon(0 0, calc(100% - var(--kb-cut-in)) 0, 100% var(--kb-cut-in), 100% 100%, var(--kb-cut-in) 100%, 0 calc(100% - var(--kb-cut-in))); }
 
@@ -176,4 +179,9 @@
 .kb-glass .kb-glass-cut-panel:focus-visible,
 .kb-glass .kb-glass-cut-dialog:focus-visible {
   outline-offset: -7px;
+}
+
+/* A cut button (the HUD's door) lights its edge, which is its fill's color here, on a pointer. */
+.kb-glass-cut-button:is(a, button):hover {
+  background: color-mix(in srgb, var(--kb-glass-neon) 75%, var(--kb-glass-text-hi));
 }

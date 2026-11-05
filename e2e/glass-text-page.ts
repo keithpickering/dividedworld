@@ -140,7 +140,7 @@ function ownMatrix(ps: CSSStyleDeclaration, w: number, h: number): DOMMatrix {
  * size), the whole at the scale `el` is drawn at. `scale` is the pseudo's own: how much its
  * transform shrinks what it draws, its mask's feather with it.
  */
-function pseudoBox(el: Element, ps: CSSStyleDeclaration): Box & { readonly scale: number } {
+export function pseudoBox(el: Element, ps: CSSStyleDeclaration): Box & { readonly scale: number } {
   const r = el.getBoundingClientRect();
   const s = getComputedStyle(el);
   const z = zoomOf(el);
@@ -175,7 +175,7 @@ function pseudoBox(el: Element, ps: CSSStyleDeclaration): Box & { readonly scale
   };
 }
 
-const drawn = (ps: CSSStyleDeclaration) => ps.content !== 'none' && ps.content !== 'normal' && ps.display !== 'none';
+export const drawn = (ps: CSSStyleDeclaration) => ps.content !== 'none' && ps.content !== 'normal' && ps.display !== 'none';
 
 /** The nearest calm drawn on `el` or above it, inside the surface's element; a calm whose backing is not drawn is passed over. */
 function calmOf(el: Element, holder: Element): Calm | null {
@@ -196,7 +196,7 @@ function calmOf(el: Element, holder: Element): Calm | null {
   const bg = parseColor(ps.backgroundColor);
   const opacity = (bg ? bg[3] : parseFloat(getComputedStyle(c).getPropertyValue('--kb-glass-calm-opacity'))) * opacityOf(c);
   const box = { x: backing.x + l, y: backing.y + t, width: backing.width - l - r, height: backing.height - t - b };
-  return { backing, feather, box, opacity };
+  return { backing, feather, box, opacity, element: toBox(c.getBoundingClientRect()) };
 }
 
 /**

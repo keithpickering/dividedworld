@@ -16,6 +16,11 @@
  * card added; each stocked slot carries an info button ("About Whoops!") that opens the card's rules in an overlay. The
  * info buttons are the build's own and no board draws them, so they are not compared.
  *
+ * Departures by the glass polish (docs/plans/2026-11-04-glass-polish-design.md, sections 2 and 5): the left column is taller, since the price note
+ * stands in the wallet (the machine's panel is narrower than ten em of its type), so its boxes are compared across, by x and width, or not at all;
+ * the head is the board's own and "Your hand" is the HUD's Hand button's look (below); and the sign draws one of the instance's marquees, which the fixture fixes
+ * (`random` is 0 at `?fixture=boards`, web/src/App.tsx) so it is the first.
+ *
  * Not compared: the machine's drawing, which is the instance's art (its body, its marquee glass, the
  * slot codes, Push, Aura in, the tray and its words are marked `data-kb-art`, hidden from a screen
  * reader and read from no role); the cards' faces inside the slots.
@@ -51,14 +56,19 @@ const manifest: BoardManifest = {
     { id: 'title', role: 'heading', name: 'Vending Machine', type: false },
 
     /* The wallet panel, chamfer step 3. */
-    { id: 'wallet', role: 'region', name: 'Your wallet' },
-    { id: 'wallet-label', role: 'text', name: 'Wallet · solid only', within: 'wallet' },
-    { id: 'wallet-orbs', role: 'img', name: 'Wallet: 4.62 of 6.00; buying Whoops! leaves 3.62', buildName: 'Wallet: 5.62 of 6.00; buying Whoops! leaves 4.62', within: 'wallet' },
-    { id: 'wallet-after', role: 'text', name: '3.62', buildName: '4.62', within: 'wallet' },
-    { id: 'hand', role: 'link', name: 'Your hand 3 → 4', buildName: 'Your hand 2 → 3' },
+    { id: 'wallet', role: 'region', name: 'Your wallet', box: 'across' },
+    { id: 'wallet-label', role: 'text', name: 'Wallet · solid only', within: 'wallet', box: 'none' },
+    { id: 'wallet-orbs', role: 'img', name: 'Wallet: 4.62 of 6.00; buying Whoops! leaves 3.62', buildName: 'Wallet: 5.62 of 6.00; buying Whoops! leaves 4.62', within: 'wallet', box: 'across' },
+    { id: 'wallet-after', role: 'text', name: '3.62', buildName: '4.62', within: 'wallet', box: 'across' },
+    /*
+     * "Your hand" is drawn as the HUD's Hand button is, a game piece of the salty fill (the owner's correction of 2026-11-04, "matching the HUD's Hand
+     * button"), where the board draws a wider piece with its own spacing: its box and type are the HUD's, so they are not compared here (the HUD's is
+     * held by e2e/boards/01-main.ts).
+     */
+    { id: 'hand', role: 'link', name: 'Your hand 3 → 4', buildName: 'Your hand 2 → 3', box: 'none', type: false },
 
-    /* The machine's sign carries the instance's name for it; its drawing is the instance's art. */
-    { id: 'sign', role: 'text', name: '[Machine name]' },
+    /* The machine's sign carries one of the instance's marquees, the first in the fixture; its drawing is the instance's art, and its type is fitted to its name. */
+    { id: 'sign', role: 'text', name: '[Machine name]', buildName: '[MACHINE NAME]', type: false, box: 'across' },
 
     /* The slots: the two cards, A2 picked, and the four sealed. Their box is compared; their type is not, because a slot's
        visible words are the machine's printing, the instance's art (the postcard's face and a code the stylesheet writes out),
@@ -77,9 +87,9 @@ const manifest: BoardManifest = {
 
     /* The control panel: the price display, the buy button and the note under it. The display's lit words are the machine's
        printing (`data-kb-art`) and the text a reader gets is visually hidden, so its box is compared and its type is not. */
-    { id: 'price', role: 'status', name: 'Selected: A2, Whoops!, 1.00', type: false },
-    { id: 'buy', role: 'button', name: 'Buy Whoops! · 1.00' },
-    { id: 'price-note', role: 'text', name: 'Playing it on a long post costs up to 2.00 more, never more than 3.00 in all.' },
+    { id: 'price', role: 'status', name: 'Selected: A2, Whoops!, 1.00', type: false, box: 'across' },
+    { id: 'buy', role: 'button', name: 'Buy Whoops! · 1.00', box: 'across' },
+    { id: 'price-note', role: 'text', name: 'Playing it on a long post costs up to 2.00 more, never more than 3.00 in all.', box: 'none' },
 
     /* The board's line about the empty slots ("4 slots empty", "More postcards arrive in later seasons.") is not compared. The instance
        now stocks every slot (Feelin' Fab took the last, D2: eight cards fill the machine's eight slots), and the engine draws that line only while a slot is
