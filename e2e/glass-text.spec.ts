@@ -209,12 +209,12 @@ const TEXT_SIZES: readonly (readonly [string, readonly (readonly [string, { read
   ['200', SIZES],
 ];
 
-test('at 150% text the HUD\'s avatar grows on both sides with its plate, square', async ({ page }) => {
+test('at 125% text the HUD\'s avatar grows on both sides with its plate, square', async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
-  await chooseTextSize(page, '150');
+  await chooseTextSize(page, '125');
   await open(page, onTheAccount(PAGES.find((p) => p.path.includes('moment=01-main'))!));
   const box = await page.locator('.kb-hud-avatar').boundingBox();
-  expect(box!.height).toBeCloseTo(126, 0);
+  expect(box!.height).toBeCloseTo(105, 0);
   expect(box!.width).toBeCloseTo(box!.height, 0);
 });
 
