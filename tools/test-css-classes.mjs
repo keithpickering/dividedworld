@@ -11,7 +11,7 @@
  * completes) must stay clean. The last case runs the guard over the real tree, so a guard that has gone
  * quiet over nothing fails here.
  */
-import { classFaults, ALLOWED_HOOKS, treeFiles } from './check-css-classes.mjs';
+import { classFaults, ALLOWED_HOOKS, treeFiles, namedIn } from './check-css-classes.mjs';
 
 let pass = 0;
 const failures = [];
@@ -63,14 +63,17 @@ check('a class defined in an instance stylesheet counts', fires(`const X = () =>
 {
   const hook = [...ALLOWED_HOOKS][0];
   check('a listed hook with no rule is clean', hook !== undefined && fires(`const X = () => <p className="${hook}" />;`).length === 0, String(hook));
-  check('every listed hook is still named by a component (a stale entry fails)', staleHooks().length === 0, JSON.stringify(staleHooks()));
+  check('every listed hook is still named by a component (a stale entry fails)', staleHooks(treeFiles(), ALLOWED_HOOKS).length === 0, JSON.stringify(staleHooks(treeFiles(), ALLOWED_HOOKS)));
+  /* A hook is named only as a whole class token: 'kb-editor' is not named by 'kb-editor-hint'. */
+  const planted = { 'engine/ui/x/X.tsx': `const X = () => <p className="kb-editor-hint kb-other" />;` };
+  check('a stale hook that only substring-matches a longer class is found', staleHooks(planted, new Set(['kb-editor', 'kb-other'])).join() === 'kb-editor', JSON.stringify(staleHooks(planted, new Set(['kb-editor', 'kb-other']))));
 }
 
-function staleHooks() {
-  const files = treeFiles();
+/** The listed hooks no component names as a class, read the way the guard reads a name (whole tokens). */
+function staleHooks(files, hooks) {
   const used = new Set();
-  for (const [p, t] of Object.entries(files)) if (p.endsWith('.tsx') && !/\.test\.tsx$/.test(p)) for (const h of ALLOWED_HOOKS) if (t.includes(h)) used.add(h);
-  return [...ALLOWED_HOOKS].filter((h) => !used.has(h));
+  for (const [p, t] of Object.entries(files)) if (p.endsWith('.tsx') && !/\.test\.tsx$/.test(p)) for (const n of namedIn(t, p)) used.add(n.name);
+  return [...hooks].filter((h) => !used.has(h));
 }
 
 /* ---- the real tree ---- */

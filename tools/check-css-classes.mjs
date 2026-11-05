@@ -134,7 +134,7 @@ function definedIn(css) {
 }
 
 /** Each `kb-` class a `className` attribute or object property names in a component's source, with its line. */
-function namedIn(text, file) {
+export function namedIn(text, file) {
   const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const out = [];
   const words = (chunk, node, prefixAtEnd) => {
