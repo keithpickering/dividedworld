@@ -913,7 +913,7 @@
   grid-template-columns: auto minmax(0, 1fr) auto auto auto;
   grid-template-rows: auto auto;
   align-items: center;
-  gap: 8px 10px;
+  gap: var(--kb-glass-title-gap);
   height: auto;
   min-height: 0;
   /* Room under the last row, so at a larger text size its descenders are not cut at the window's foot. */
@@ -979,8 +979,17 @@
   content: none;
 }
 
+/*
+ * The avatar is above its neighbors' calms: each is a stacking context of its own, which paints over a static sibling, so the swap's
+ * backing would lie over the avatar and fade it. Those calms also reach no further than the gap between the cells.
+ */
 :where(:root[data-kb-layout='phone']) .kb-hud-plate--cast .kb-hud-avatar {
-  position: static;
+  position: relative;
+  z-index: 1;
+}
+
+:where(:root[data-kb-layout='phone']) :is(.kb-hud-swap, .kb-hud-aura, .kb-hud-clock) {
+  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hud-avatar {
