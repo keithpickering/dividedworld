@@ -82,8 +82,9 @@
  * middle of the top and the foot beyond the column's edge in height. High contrast draws none. Colors and opacities are the
  * instance's (engine/ui/tokens.css); the engine's defaults are transparent.
  *
- * The mask reads alpha only, so its opaque stops are `--kb-vignette-mask` (black, alpha only: engine/ui/tokens.css) and never the page's ground, which a transparent theme could empty. `48vw`
- * includes the scrollbar's width, so the mask's edge sits slightly outside the column, which is the safe side.
+ * The mask reads alpha only, so its opaque stops are `--kb-vignette-mask` (black, alpha only: engine/ui/tokens.css)
+ * and never the page's ground, which a transparent theme could empty. `48vw` includes the scrollbar's width, so the
+ * mask's edge sits slightly outside the column, which is the safe side.
  */
 .kb-vignette {
   --kb-column-half: min(48vw, calc(var(--kb-board-max) / 2));
