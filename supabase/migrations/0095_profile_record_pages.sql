@@ -81,8 +81,9 @@ begin atomic
            case when k.kind = 'all' then (k.page - 1) * 20 + 20 else 20 end as base
     from k
   ), acts_read as (
-    select a.* from acts_public a, w
-    where a.character = in_character and a.kind = any (w.kinds)
+    -- The kinds as an init plan, so the planner keeps the ordered scan of the character's Acts with the limit pushed down.
+    select a.* from acts_public a
+    where a.character = in_character and a.kind = any (((select kinds from w)::text[]))
     order by a.created_at desc
     offset (select from_row from w)
     limit (select case when k.kind = 'all' then w.base - w.from_row else 20 end from w, k)
@@ -94,7 +95,8 @@ begin atomic
     'profile', (select to_jsonb(p) from (
       select character, title, signature, avatar_square, avatar_portrait, square_frame, portrait_frame, pip_style
       from character_profiles where character = in_character) p),
-    'counts', (select to_jsonb(n) from (select character, posts, spins, cards from character_post_counts where character = in_character) n),
+    -- RecordScreen reads the counters for all, post, spin and card only.
+    'counts', (select to_jsonb(n) from (select character, posts, spins, cards from character_post_counts where character = in_character and (select kind from k) in ('all', 'post', 'spin', 'card')) n),
     'reveals', coalesce((select jsonb_agg(to_jsonb(r) order by r.at, r.act::text collate "C") from rv r), '[]'::jsonb),
     'turns', coalesce((select jsonb_agg(to_jsonb(t) order by t.at, t.act::text collate "C") from tn t), '[]'::jsonb),
     'seasons', coalesce((select jsonb_agg(to_jsonb(a) order by a.created_at desc) from seasons_read a), '[]'::jsonb),

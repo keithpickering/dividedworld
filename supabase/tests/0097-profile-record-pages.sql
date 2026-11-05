@@ -125,9 +125,11 @@ begin
   doc := record_page(f.pam, 'class', 1);
   if jsonb_array_length(doc -> 'reveals') <> 1 or jsonb_array_length(doc -> 'turns') <> 1 or jsonb_array_length(doc -> 'acts') <> 0
      or doc -> 'targets' -> 0 ->> 'id' is distinct from f.tally::text then raise exception 'class: %', doc; end if;
+  if doc -> 'counts' is not null and doc -> 'counts' <> 'null'::jsonb then raise exception 'class read the counters: %', doc -> 'counts'; end if;
   -- Seasons: the reveal post alone.
   doc := record_page(f.pam, 'seasons', 1);
   if jsonb_array_length(doc -> 'seasons') <> 1 or doc -> 'seasons' -> 0 ->> 'id' is distinct from f.reveal::text or jsonb_array_length(doc -> 'acts') <> 0 or jsonb_array_length(doc -> 'reveals') <> 0 then raise exception 'seasons: %', doc; end if;
+  if doc -> 'counts' is not null and doc -> 'counts' <> 'null'::jsonb then raise exception 'seasons read the counters: %', doc -> 'counts'; end if;
   -- All: the extras (1 reveal, 1 Turn, 1 season reveal = 3) and the Acts window mergeWindow asks for.
   doc := record_page(f.pam, 'all', 1);
   if jsonb_array_length(doc -> 'reveals') <> 1 or jsonb_array_length(doc -> 'turns') <> 1 or jsonb_array_length(doc -> 'seasons') <> 1 then raise exception 'all extras: %', doc; end if;
