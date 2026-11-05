@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1180">
+<title>The trophy case: cosmetics board 03</title>
+<!-- Cosmetics design session, 2026-11-04. The board's world: a profile with its gear, the words for what it wears,
+     its trophy case (every trophy, dated, with who gave it) and a belt's lineage. Placeholder art (art.svg). -->
+<style>
+  :root{--fg:#000;--bg:#fff;--mute:#555}
+  body{margin:0;padding:24px;background:var(--bg);color:var(--fg);font:12px/1.45 Verdana,Geneva,sans-serif;width:1132px}
+  h1{font:bold 18px "Courier New",monospace;margin:0 0 4px}
+  h2{font:bold 15px "Courier New",monospace;margin:28px 0 8px;border-bottom:2px solid var(--fg)}
+  a{color:var(--fg)} .small{font-size:10px}.muted{color:var(--mute)} .note{max-width:80em;margin:0 0 8px}
+  .prof{display:flex;gap:28px;border:1px solid var(--fg);padding:14px 18px}
+  .slot{position:relative;width:150px;border:1px solid var(--fg);flex:none;align-self:flex-start;margin-top:24px}
+  .slot svg.pic{display:block;width:100%;height:auto}
+  .gear{position:absolute}.gear svg{display:block;width:100%;height:100%}
+  .col{flex:1;min-width:0}
+  .name{font:bold 16px "Courier New",monospace}
+  table.t{border-collapse:collapse;width:100%}
+  .t th{font:bold 11px "Courier New",monospace;text-align:left;border:1px solid var(--fg);padding:3px 6px;background:#000;color:#fff}
+  .t td{border:1px solid var(--fg);padding:5px 6px;vertical-align:middle}
+  .t td.i{width:44px;text-align:center}
+  .t svg{width:24px;height:24px;display:block;margin:auto}.t svg.belt{width:44px;height:22px}
+</style>
+</head>
+<body>
+<!--ART-->
+<h1>Cosmetics 03. A profile's trophy case</h1>
+<p class="note">Every trophy the mask holds, newest first, with who gave it and when, in plain words. A belt it holds or once held lists its reigns. The gear is named in words for anyone who can't see the picture.</p>
+<div class="prof">
+  <div class="slot" aria-hidden="true">
+    <svg class="pic" viewBox="0 0 100 200"><use href="#portrait"/></svg>
+    <span class="gear" style="left:12%;top:-6%;width:76%;height:23%;transform:rotate(-8deg)"><svg viewBox="0 0 100 60"><use href="#g-cap"/></svg></span>
+    <span class="gear" style="left:30%;top:34.5%;width:40%;height:7%"><svg viewBox="0 0 100 34"><use href="#g-stache"/></svg></span>
+    <span class="gear" style="left:56%;top:54%;width:26%;height:13%;transform:rotate(14deg)"><svg viewBox="0 0 60 60"><use href="#g-button"/></svg></span>
+  </div>
+  <div class="col">
+    <span class="name">Pipewrench</span><br><span class="muted">Professional Wrench</span>
+    <p><b>Main Eventer</b> &middot; Posts: 212 &middot; Joined Oct 2026<br>
+    <span class="small">Wearing: Baseball Cap, Mustache, "I Really Wish I Weren't Here" Button.</span></p>
+
+    <table class="t" style="margin-top:10px">
+      <tr><th colspan="3">Trophy case (5)</th></tr>
+      <tr><td class="i"><svg class="belt" viewBox="0 0 48 24" role="img" aria-label="Hardcore Belt"><use href="#t-belt"/></svg></td><td><b>Hardcore Belt</b> &middot; champion since Nov 2 <span class="small muted">(taken from Sock Puppet by Sighbot, the Boss)</span></td><td class="small">On posts</td></tr>
+      <tr><td class="i"><svg role="img" aria-label="Sprite Contest 2026"><use href="#t-sprite"/></svg></td><td><b>Sprite Contest 2026</b> &middot; "Best walk cycle." <span class="small muted">Awarded by an admin, Oct 30</span></td><td class="small">On posts</td></tr>
+      <tr><td class="i"><svg role="img" aria-label="Boss's Pet"><use href="#t-pet"/></svg></td><td><b>Boss's Pet</b> <span class="small muted">Given by Sighbot, the Boss, Oct 21 &middot; <a href="#">its post</a></span></td><td class="small">On posts</td></tr>
+      <tr><td class="i"><svg role="img" aria-label="Met the Boss's demand"><use href="#t-demand"/></svg></td><td><b>Met the Boss's demand</b> &middot; "12 characters post in Tomato Talk" <span class="small muted">Oct 14 &middot; <a href="#">the move</a></span></td><td class="small"></td></tr>
+      <tr><td class="i"><svg role="img" aria-label="Season 1 Champion"><use href="#t-gold"/></svg></td><td><b>Season 1 Champion</b> &middot; first of 22 <span class="small muted">Season 1, ended Oct 1</span></td><td class="small">On posts</td></tr>
+    </table>
+
+    <table class="t" style="margin-top:14px">
+      <tr><th colspan="3">The Hardcore Belt's lineage</th></tr>
+      <tr><td>Pipewrench</td><td>Nov 2 &ndash; now</td><td class="small muted">by Sighbot's move</td></tr>
+      <tr><td>Sock Puppet</td><td>Oct 18 &ndash; Nov 2</td><td class="small muted">by Sighbot's move</td></tr>
+      <tr><td>Dr. Bones</td><td>Oct 9 &ndash; Oct 18</td><td class="small muted">by an admin (first holder)</td></tr>
+    </table>
+  </div>
+</div>
+<p class="note small muted" style="margin-top:10px">Its player picks which (up to three) show on posts, on the dress-up page. A belt held always shows.</p>
+</body>
+</html>

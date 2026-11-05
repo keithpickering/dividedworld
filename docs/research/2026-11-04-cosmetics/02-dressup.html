@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>The wardrobe: cosmetics board 02</title>
+<!-- Cosmetics design session, 2026-11-04. The glass: dressing one mask from the account's wardrobe. The portrait at
+     its own shape, gear dragged on, the selected piece with its size and turn handles, the same moves as buttons, the
+     square's preview, and the wardrobe's copies with where each is worn. Placeholder art (art.svg). -->
+<link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="boards.css">
+<style>
+  .stage{position:absolute;left:96px;top:230px;width:320px;height:640px;outline:1px dashed rgba(201,248,255,.35);outline-offset:40px;border:1px solid rgba(201,248,255,.45);background:#0b0816}
+  .stage>svg{display:block;width:100%;height:100%}
+  .gear{position:absolute}
+  .gear svg{display:block;width:100%;height:100%}
+  .gear.sel{outline:2px dashed var(--ready);outline-offset:4px}
+  .h{position:absolute;width:16px;height:16px;background:var(--ready);border:2px solid var(--ink-ready)}
+  .rot{position:absolute;width:18px;height:18px;border-radius:50%;background:var(--neon);border:2px solid var(--ink-neon)}
+  .ctl{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .ctl button{min-height:48px;padding:0 6px;border:1px solid rgba(201,248,255,.5);background:rgba(25,227,255,.06);font:800 18px var(--body);letter-spacing:1px;color:var(--pale);cursor:pointer}
+  .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .tile{position:relative;border:1px solid rgba(201,248,255,.3);background:rgba(10,6,20,.7);padding:12px 10px 10px;display:flex;flex-direction:column;align-items:center;gap:6px;min-height:178px}
+  .tile.on{border-color:var(--ready);box-shadow:inset 0 0 20px rgba(255,217,61,.18)}
+  .tile svg{width:96px;height:64px}
+  .tile b{font:800 19px/1.1 var(--body);color:var(--hi);text-align:center}
+  .tile .worn{font:600 16px/1.25 var(--body);color:#bdb5d8;text-align:center}
+  .tile .gem{position:absolute;left:10px;top:12px}
+  .sqprev{display:block;flex:none;width:120px;height:120px;border:1px solid rgba(201,248,255,.45);overflow:hidden;position:relative;background:#0b0816}
+</style>
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <!-- Placeholder art for the cosmetics boards, 2026-11-04. The owner's own Minus World gear replaces every piece. -->
+  <!-- A portrait cut 1:2: a figure on sky, as a player's own picture would stand. viewBox 100x200. -->
+  <symbol id="portrait" viewBox="0 0 100 200">
+    <rect width="100" height="200" fill="#8fd3f4"/>
+    <rect y="150" width="100" height="50" fill="#5aa25a"/>
+    <ellipse cx="50" cy="62" rx="22" ry="25" fill="#f2c9a0"/>
+    <path d="M28 98 Q50 86 72 98 L80 160 L20 160 Z" fill="#3b5bdb"/>
+    <rect x="30" y="158" width="16" height="36" fill="#222"/><rect x="54" y="158" width="16" height="36" fill="#222"/>
+    <circle cx="42" cy="60" r="2.4" fill="#222"/><circle cx="58" cy="60" r="2.4" fill="#222"/>
+    <path d="M42 75 Q50 80 58 75" stroke="#222" stroke-width="2" fill="none"/>
+  </symbol>
+  <!-- A portrait cut 1:1.4 -->
+  <symbol id="portrait2" viewBox="0 0 100 140">
+    <rect width="100" height="140" fill="#f4b6c2"/>
+    <ellipse cx="50" cy="58" rx="24" ry="27" fill="#c99366"/>
+    <path d="M22 100 Q50 88 78 100 L86 140 L14 140 Z" fill="#2f9e44"/>
+    <circle cx="41" cy="56" r="2.4" fill="#222"/><circle cx="59" cy="56" r="2.4" fill="#222"/>
+    <path d="M42 72 L58 72" stroke="#222" stroke-width="2"/>
+  </symbol>
+  <symbol id="g-cap" viewBox="0 0 100 60">
+    <path d="M14 46 Q14 6 50 6 Q86 6 86 46 Z" fill="#e03131"/>
+    <path d="M60 42 Q98 40 100 52 Q80 56 56 50 Z" fill="#c92a2a"/>
+    <rect x="12" y="42" width="76" height="8" fill="#fff"/>
+    <circle cx="50" cy="8" r="4" fill="#fff"/>
+  </symbol>
+  <symbol id="g-stache" viewBox="0 0 100 34">
+    <path d="M50 10 Q34 0 18 10 Q6 18 0 12 Q4 30 26 28 Q42 26 50 18 Q58 26 74 28 Q96 30 100 12 Q94 18 82 10 Q66 0 50 10 Z" fill="#3b2412"/>
+  </symbol>
+  <symbol id="g-shades" viewBox="0 0 100 30">
+    <rect x="2" y="4" width="40" height="22" rx="6" fill="#111"/><rect x="58" y="4" width="40" height="22" rx="6" fill="#111"/>
+    <rect x="40" y="10" width="20" height="4" fill="#111"/>
+    <path d="M8 9 L20 9" stroke="#fff" stroke-width="2" opacity=".6"/>
+  </symbol>
+  <symbol id="g-button" viewBox="0 0 60 60">
+    <circle cx="30" cy="30" r="28" fill="#ffd43b" stroke="#222" stroke-width="3"/>
+    <text x="30" y="27" text-anchor="middle" font-family="Verdana" font-weight="bold" font-size="9" fill="#222">I REALLY</text>
+    <text x="30" y="38" text-anchor="middle" font-family="Verdana" font-weight="bold" font-size="7" fill="#222">WISH I WEREN'T</text>
+    <text x="30" y="47" text-anchor="middle" font-family="Verdana" font-weight="bold" font-size="7" fill="#222">HERE</text>
+  </symbol>
+  <symbol id="g-tophat" viewBox="0 0 80 90">
+    <rect x="16" y="4" width="48" height="70" fill="#212529"/><rect x="16" y="54" width="48" height="10" fill="#7048e8"/>
+    <rect x="0" y="72" width="80" height="12" rx="4" fill="#212529"/>
+  </symbol>
+  <!-- trophies: small 2003 badge art, 24x24 -->
+  <symbol id="t-gold" viewBox="0 0 24 24"><path d="M5 3h14v4a7 7 0 0 1-14 0z" fill="#f1c40f" stroke="#000"/><rect x="10" y="14" width="4" height="4" fill="#f1c40f" stroke="#000"/><rect x="7" y="18" width="10" height="3" fill="#000"/></symbol>
+  <symbol id="t-silver" viewBox="0 0 24 24"><path d="M5 3h14v4a7 7 0 0 1-14 0z" fill="#ced4da" stroke="#000"/><rect x="10" y="14" width="4" height="4" fill="#ced4da" stroke="#000"/><rect x="7" y="18" width="10" height="3" fill="#000"/></symbol>
+  <symbol id="t-pet" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#ff6b6b" stroke="#000"/><path d="M12 17 L6 11 a3 3 0 0 1 6 -3 a3 3 0 0 1 6 3 Z" fill="#fff"/></symbol>
+  <symbol id="t-demand" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" fill="#69db7c" stroke="#000"/><path d="M7 12 l4 4 l7 -9" stroke="#000" stroke-width="2.5" fill="none"/></symbol>
+  <symbol id="t-sprite" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" fill="#748ffc" stroke="#000"/><rect x="8" y="7" width="3" height="3" fill="#fff"/><rect x="13" y="7" width="3" height="3" fill="#fff"/><rect x="7" y="14" width="10" height="3" fill="#fff"/></symbol>
+  <symbol id="t-belt" viewBox="0 0 48 24"><rect x="0" y="7" width="48" height="10" fill="#5c3d1e" stroke="#000"/><ellipse cx="24" cy="12" rx="11" ry="10" fill="#f1c40f" stroke="#000"/><path d="M24 5 l2 5 h5 l-4 3 l2 5 l-5 -3 l-5 3 l2 -5 l-4 -3 h5 z" fill="#c92a2a"/></symbol>
+</svg>
+
+<div class="board">
+  <nav class="menu" aria-label="Menu">
+    <a href="#" class="tab esc"><b><kbd>ESC</kbd>BACK TO THE BOARD</b></a>
+    <a href="#" class="tab"><b>MY CHARACTERS</b></a>
+    <a href="#" class="tab" aria-current="page"><b>WARDROBE</b></a>
+    <a href="#" class="tab"><b>LOG</b></a>
+    <a href="#" class="tab"><b>SETTINGS</b></a>
+  </nav>
+    <svg class="smoke" aria-hidden="true" width="100%" height="100%" preserveAspectRatio="none" viewBox="0 0 1440 1080">
+    <defs>
+      <filter id="sA" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.0022 0.004" numOctaves="5" seed="71"/><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.78"/><feGaussianBlur stdDeviation="18"/></filter>
+      <filter id="sB" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.003 0.005" numOctaves="4" seed="19"/><feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 0.17  0 0 0 0 0.84  0 2 0 0 -1.05"/><feGaussianBlur stdDeviation="18"/></filter>
+      <filter id="sC" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.0034 0.006" numOctaves="4" seed="3"/><feColorMatrix type="matrix" values="0 0 0 0 0.1  0 0 0 0 0.89  0 0 0 0 1  0 0 2 0 -1.15"/><feGaussianBlur stdDeviation="18"/></filter>
+    </defs>
+    <rect width="1440" height="1080" filter="url(#sA)" opacity="0.8"/>
+    <rect width="1440" height="1080" filter="url(#sB)" opacity="0.4"/>
+    <rect width="1440" height="1080" filter="url(#sC)" opacity="0.25"/>
+  </svg>
+
+  <div style="position:absolute;left:64px;top:104px;display:flex;align-items:center;gap:16px">
+    <span class="label">DRESSING</span>
+    <select aria-label="Which character to dress" style="width:240px"><option>Pipewrench</option></select>
+    <span class="note">The dashed line is as far past the portrait as a piece may reach.</span>
+  </div>
+
+  <div class="stage" aria-label="Pipewrench's portrait with its gear">
+    <svg viewBox="0 0 100 200" preserveAspectRatio="none"><use href="#portrait"/></svg>
+    <span class="gear" style="left:12%;top:-6%;width:76%;height:23%;transform:rotate(-8deg)"><svg viewBox="0 0 100 60"><use href="#g-cap"/></svg></span>
+    <span class="gear sel" style="left:30%;top:34.5%;width:40%;height:7%"><svg viewBox="0 0 100 34"><use href="#g-stache"/></svg>
+      <span class="h" style="right:-14px;bottom:-14px"></span><span class="h" style="left:-14px;bottom:-14px"></span><span class="h" style="right:-14px;top:-14px"></span><span class="h" style="left:-14px;top:-14px"></span>
+      <span class="rot" style="left:calc(100% + 26px);top:calc(50% - 9px)"></span>
+    </span>
+    <span class="gear" style="left:56%;top:54%;width:26%;height:13%;transform:rotate(14deg)"><svg viewBox="0 0 60 60"><use href="#g-button"/></svg></span>
+  </div>
+
+  <div style="position:absolute;left:480px;top:150px;width:390px;display:flex;flex-direction:column;gap:18px">
+    <div class="panel">
+      <div class="label" style="margin-bottom:8px">SELECTED · MUSTACHE</div>
+      <p class="body" style="margin:0 0 12px">Drag it, pull a corner to size it, or turn it by the round handle. The same moves from the keyboard:</p>
+      <div class="ctl">
+        <button aria-label="Move left">&larr;</button><button aria-label="Move up">&uarr;</button><button aria-label="Move down">&darr;</button><button aria-label="Move right">&rarr;</button>
+        <button>BIGGER</button><button>SMALLER</button><button>TURN &#8634;</button><button>TURN &#8635;</button>
+        <button style="grid-column:span 2">BRING FORWARD</button><button style="grid-column:span 2">SEND BACK</button>
+      </div>
+      <button class="btn" style="margin-top:14px"><b>TAKE IT OFF</b></button>
+    </div>
+    <div class="panel cyan">
+      <div class="label" style="margin-bottom:8px">ON THE SQUARE</div>
+      <div style="display:flex;gap:14px;align-items:flex-start">
+        <span class="sqprev" aria-hidden="true"><span style="position:absolute;left:0;top:0;width:100%;height:200%">
+          <svg viewBox="0 0 100 200" style="width:100%;height:100%;display:block"><use href="#portrait"/></svg>
+          <span class="gear" style="left:12%;top:-6%;width:76%;height:23%;transform:rotate(-8deg)"><svg viewBox="0 0 100 60"><use href="#g-cap"/></svg></span>
+          <span class="gear" style="left:30%;top:34.5%;width:40%;height:7%"><svg viewBox="0 0 100 34"><use href="#g-stache"/></svg></span>
+        </span></span>
+        <p class="note" style="margin:0">Cut at the square's edge. The button is below the square, so it shows only on the tall portrait.</p>
+      </div>
+    </div>
+    <p class="note" style="margin:0">3 of 12 pieces worn. A new portrait takes all of them off; recropping the square keeps them.</p>
+    <button class="btn gold"><b>SAVE THE OUTFIT</b></button>
+  </div>
+
+  <div style="position:absolute;left:900px;right:64px;top:150px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px">
+      <h1 style="margin:0;font:46px/1 var(--display);color:var(--hi)">THE WARDROBE</h1>
+      <span class="note">Yours alone. Drag a piece onto the portrait, or press Enter on it.</span>
+    </div>
+    <div class="tiles">
+      <div class="tile on"><span class="gem r-common"><span class="rar"></span></span><svg viewBox="0 0 100 60"><use href="#g-cap"/></svg><b>Baseball Cap</b><span class="worn">2 held · 1 on Pipewrench, 1 free</span></div>
+      <div class="tile on"><span class="gem r-uncommon"><span class="rar"></span></span><svg viewBox="0 0 100 34"><use href="#g-stache"/></svg><b>Mustache</b><span class="worn">6 held · 1 on Pipewrench, 2 on Sock Puppet, 3 free</span></div>
+      <div class="tile on"><span class="gem r-rare"><span class="rar"></span></span><svg viewBox="0 0 60 60"><use href="#g-button"/></svg><b>"I Really Wish I Weren't Here" Button</b><span class="worn">1 held · on Pipewrench</span></div>
+      <div class="tile"><span class="gem r-common"><span class="rar"></span></span><svg viewBox="0 0 100 30"><use href="#g-shades"/></svg><b>Shades</b><span class="worn">1 held · on Dr. Bones</span></div>
+      <div class="tile"><span class="gem r-legendary"><span class="rar"></span></span><svg viewBox="0 0 80 90"><use href="#g-tophat"/></svg><b>Nostalgic Hat</b><span class="worn">1 held · free</span></div>
+    </div>
+    <div class="panel cyan" style="margin-top:22px">
+      <div class="label" style="margin-bottom:6px">MUSTACHE · UNCOMMON</div>
+      <p class="body" style="margin:0">"Distinguished. Mostly." Found in a Random Event on Nov 1, granted by an admin on Nov 3 (×5). Anyone can see what a mask wears; only you see what you hold.</p>
+    </div>
+  </div>
+</div>
+</body>
+</html>

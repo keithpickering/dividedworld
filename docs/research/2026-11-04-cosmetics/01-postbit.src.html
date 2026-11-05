@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1180">
+<title>Gear and trophies on a post: cosmetics board 01</title>
+<!-- Cosmetics design session, 2026-11-04. The board's world: two posts with the side postbit, gear worn over the
+     portrait at its own shape (one 1:2, one 1:1.4), the cap reaching above the slot and drawn under the text around
+     it, and the chosen trophies with a held belt under the rank. Below: the same masks stacked, on the square, the
+     gear cut at its edge. Placeholder art (art.svg). -->
+<style>
+  :root{--fg:#000;--bg:#fff;--mute:#555;--rule:#000}
+  body{margin:0;padding:24px;background:var(--bg);color:var(--fg);font:12px/1.45 Verdana,Geneva,sans-serif;width:1132px}
+  h1{font:bold 18px "Courier New",monospace;margin:0 0 4px}
+  h2{font:bold 15px "Courier New",monospace;margin:28px 0 8px;border-bottom:2px solid var(--fg)}
+  .note{max-width:80em;margin:0 0 8px}
+  a{color:var(--fg)}
+  .small{font-size:10px}.muted{color:var(--mute)}
+  .thread{border:1px solid var(--rule)}
+  .thead{background:#000;color:#fff;font:bold 12px "Courier New",monospace;padding:4px 8px}
+  .post{display:grid;grid-template-columns:170px 1fr;border-top:1px solid var(--rule)}
+  .bit{border-right:1px solid var(--rule);padding:8px 10px;display:flex;flex-direction:column;gap:4px;position:relative}
+  .bit .text{position:relative;z-index:2}
+  .bit .text>span{background:var(--bg);box-shadow:0 0 0 2px var(--bg)}
+  .name{font-weight:bold}
+  .slot{position:relative;z-index:1;width:120px;border:1px solid var(--rule)}
+  .slot svg.pic{display:block;width:100%;height:auto}
+  .gear{position:absolute;pointer-events:none}
+  .gear svg{display:block;width:100%;height:100%}
+  .after{position:relative;z-index:2;background:var(--bg)}
+  .trophies{display:flex;flex-wrap:wrap;gap:3px;align-items:center;margin-top:2px}
+  .trophies svg{width:20px;height:20px;display:block}
+  .trophies svg.belt{width:40px}
+  .head{border-bottom:1px solid var(--rule);padding:4px 8px;font-size:10px;display:flex;justify-content:space-between}
+  .body{padding:10px 12px}
+  .stack{display:flex;gap:10px;align-items:center;border-top:1px solid var(--rule);padding:6px 10px}
+  .sq{position:relative;width:52px;height:52px;border:1px solid var(--rule);overflow:hidden;flex:none}
+  .sq .inner{position:absolute}
+  .callout{font:bold 10px "Courier New",monospace;border:1px dashed #000;padding:2px 5px;background:#fff}
+</style>
+</head>
+<body>
+<!--ART-->
+<h1>Cosmetics 01. Gear and trophies on a post</h1>
+<p class="note">The side postbit draws the portrait at the shape it was cut, so gear lands where its player put it. Gear may reach past the slot (the cap, top left) but is drawn under the name, title and rank, never over them: the text keeps the board's white behind it (Dr. Bones's top hat, under "no relation"). Under the rank: up to three trophies its player chose, then any belt it holds. Each trophy's name is its alt text and its title on hover.</p>
+
+<div class="thread">
+  <div class="thead">Re: official hat thread v2</div>
+
+  <div class="post">
+    <div class="bit">
+      <div class="text"><span class="name"><a href="#">Pipewrench</a></span><br><span class="small muted">Professional Wrench</span></div>
+      <div class="slot" aria-hidden="true">
+        <svg class="pic" viewBox="0 0 100 200"><use href="#portrait"/></svg>
+        <!-- fractions of the portrait: x,y of the piece's center, width as a fraction of the portrait's width, rotation -->
+        <span class="gear" style="left:12%;top:-6%;width:76%;height:23%;transform:rotate(-8deg)"><svg viewBox="0 0 100 60"><use href="#g-cap"/></svg></span>
+        <span class="gear" style="left:30%;top:34.5%;width:40%;height:7%"><svg viewBox="0 0 100 34"><use href="#g-stache"/></svg></span>
+        <span class="gear" style="left:56%;top:54%;width:26%;height:13%;transform:rotate(14deg)"><svg viewBox="0 0 60 60"><use href="#g-button"/></svg></span>
+      </div>
+      <div class="after">
+        <b>Main Eventer</b> <span style="color:#f1c40f;text-shadow:0 0 1px #000">&#9733;&#9733;&#9733;&#9733;</span>
+        <div class="trophies">
+          <svg role="img" aria-label="Season 1 Champion"><title>Season 1 Champion</title><use href="#t-gold"/></svg>
+          <svg role="img" aria-label="Boss's Pet (Sighbot, Oct)"><title>Boss's Pet</title><use href="#t-pet"/></svg>
+          <svg role="img" aria-label="Sprite Contest 2026"><title>Sprite Contest 2026</title><use href="#t-sprite"/></svg>
+          <svg class="belt" viewBox="0 0 48 24" role="img" aria-label="Holds the Hardcore Belt since Nov 2"><title>Hardcore Belt, since Nov 2</title><use href="#t-belt"/></svg>
+        </div>
+        <span class="small muted">Posts: 212<br>Joined Oct 2026</span>
+      </div>
+    </div>
+    <div>
+      <div class="head"><span>#14</span><span>Nov 4, 9:12 pm</span></div>
+      <div class="body">it's not a hat thread if nobody's wearing a hat. anyway here's my cap. found it on the ground behind the vending machine</div>
+    </div>
+  </div>
+
+  <div class="post">
+    <div class="bit">
+      <div class="text"><span class="name"><a href="#">Dr. Bones</a></span><br><span class="small muted">no relation</span></div>
+      <div class="slot" aria-hidden="true">
+        <svg class="pic" viewBox="0 0 100 140"><use href="#portrait2"/></svg>
+        <span class="gear" style="left:26%;top:-14%;width:48%;height:38%"><svg viewBox="0 0 80 90"><use href="#g-tophat"/></svg></span>
+        <span class="gear" style="left:23%;top:35%;width:54%;height:11%"><svg viewBox="0 0 100 30"><use href="#g-shades"/></svg></span>
+      </div>
+      <div class="after">
+        <b>Jobber</b> <span style="color:#f1c40f;text-shadow:0 0 1px #000">&#9733;</span>
+        <div class="trophies">
+          <svg role="img" aria-label="Met the Boss's demand: 12 characters post in Tomato Talk"><title>Met the Boss's demand</title><use href="#t-demand"/></svg>
+        </div>
+        <span class="small muted">Posts: 31<br>Joined Nov 2026</span>
+      </div>
+    </div>
+    <div>
+      <div class="head"><span>#15</span><span>Nov 4, 9:20 pm</span></div>
+      <div class="body">this portrait is shorter than yours and the hat still fits. checkmate</div>
+    </div>
+  </div>
+</div>
+
+<h2>Stacked, or on a phone: the square, gear cut at its edge</h2>
+<p class="note">The square is cut from inside the portrait, so the same gear is drawn through the square's frame, and clipped. No trophies in the stacked band beyond the belt, which shows as the name's badge; the rest are on the profile.</p>
+<div class="thread" style="width:560px">
+  <div class="stack">
+    <span class="sq" aria-hidden="true">
+      <!-- square frame: the portrait's top 0..50% (x 0..100%) -> scale 1 wide, 2 tall -->
+      <span class="inner" style="left:0;top:0;width:100%;height:200%">
+        <svg viewBox="0 0 100 200" style="width:100%;height:100%;display:block"><use href="#portrait"/></svg>
+        <span class="gear" style="left:12%;top:-6%;width:76%;height:23%;transform:rotate(-8deg)"><svg viewBox="0 0 100 60"><use href="#g-cap"/></svg></span>
+        <span class="gear" style="left:30%;top:34.5%;width:40%;height:7%"><svg viewBox="0 0 100 34"><use href="#g-stache"/></svg></span>
+        <span class="gear" style="left:56%;top:54%;width:26%;height:13%;transform:rotate(14deg)"><svg viewBox="0 0 60 60"><use href="#g-button"/></svg></span>
+      </span>
+    </span>
+    <span><span class="name"><a href="#">Pipewrench</a></span> <svg viewBox="0 0 48 24" width="32" height="16" role="img" aria-label="Holds the Hardcore Belt"><use href="#t-belt"/></svg><br><span class="small muted">Professional Wrench &middot; Main Eventer</span></span>
+    <span class="callout" style="margin-left:auto">the cap is cut at the square's top</span>
+  </div>
+</div>
+</body>
+</html>
