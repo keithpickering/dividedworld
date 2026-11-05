@@ -7,9 +7,8 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { psqlDb, sql } from './psql-db.ts';
+import { psqlDb, sql, scratchSeed } from './psql-db.ts';
 import { runSettlement } from '../../functions/settle/core.ts';
-import { instanceSeed } from '../../functions/_shared/seed.ts';
 import { instance } from '../../functions/_shared/instance.ts';
 import { SPAN_MOST } from '../../../engine/rules/instance.ts';
 
@@ -28,7 +27,7 @@ test('a span\'s largest count is one number in the code\'s settings and the data
 
 test('a day on the board settles into wallets and standings, once', async () => {
   const db = psqlDb();
-  await db.rpc('seed_instance', { payload: instanceSeed(instance) });
+  await db.rpc('seed_instance', { payload: scratchSeed(instance) });
 
   // The day starts where the history ends (an earlier race file commits a window).
   const start = sql(`select to_jsonb(coalesce(max(ends_at), now()))#>>'{}' from settlements`);

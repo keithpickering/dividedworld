@@ -6,13 +6,12 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { psqlDb, sql } from './psql-db.ts';
+import { psqlDb, sql, scratchSeed } from './psql-db.ts';
 import { runAction } from '../../functions/act/core.ts';
 import { instance } from '../../functions/_shared/instance.ts';
-import { instanceSeed } from '../../functions/_shared/seed.ts';
 
 test('a player starts a thread, replies quoting it, edits, spins a thread from it, and another reacts', async () => {
-  await psqlDb().rpc('seed_instance', { payload: instanceSeed(instance) });
+  await psqlDb().rpc('seed_instance', { payload: scratchSeed(instance) });
   const make = (label: string, name: string) => {
     const account = sql(`with u as (insert into auth.users (email) values ('${label}@test.invalid') returning id) insert into accounts (id) select id from u returning id`);
     const character = sql(`with c as (insert into characters (owner, name, debuted_at) values ('${account}', '${name}', now()) returning id)
