@@ -172,8 +172,12 @@ export function problems(files) {
   return out;
 }
 
-/** Every workflow and netlify.toml, read from disk. */
+/**
+ * Every workflow and netlify.toml, read from disk.
+ * @returns {Record<string, string>}
+ */
 export function readFiles(root = '.') {
+  /** @type {Record<string, string>} */
   const files = {};
   const dir = `${root}/${WORKFLOWS}`;
   for (const f of fs.existsSync(dir) ? fs.readdirSync(dir).filter((n) => /\.ya?ml$/.test(n)).sort() : []) {
