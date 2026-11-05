@@ -79,12 +79,22 @@ export function playOf(act: Act): CardPlay | null {
 export const homeOf = (play: Pick<CardPlay, 'post' | 'on'>): Id => play.on ?? play.post;
 
 /**
- * The plays still drawn: all but a play beyond a post whose end has passed (it ends on its timer, its way out). A Use's end on a post
- * is the Lens's to say ("has ended"), so it is kept.
+ * The plays in force: all but a play an admin ended (`reversed`: its layer is off) and a play beyond a post whose end has passed (it
+ * ends on its timer, its way out). A Use's end on a post is the Lens's to say ("has ended"), so it is kept. What counts layers, offers
+ * a card or pins a thread reads this; the marks and the Lens read `markedPlays`, which keeps an ended play on a post to say so.
  */
 export function livePlays(plays: readonly CardPlay[], now: number = Date.now()): readonly CardPlay[] {
-  const live = plays.filter((p) => !(p.reach && p.ends !== undefined && Date.parse(p.ends) <= now));
+  const live = plays.filter((p) => !p.reversed && !(p.reach && p.ends !== undefined && Date.parse(p.ends) <= now));
   return live.length === plays.length ? plays : live;
+}
+
+/**
+ * The plays the marks and the Lens draw: `livePlays`, but a play on a post that an admin ended is kept, as a caught play is, so its
+ * mark and its Lens row can say "Ended by an admin". Its layer is off all the same (`livePlays`, `effectsOf`, the post's effects).
+ */
+export function markedPlays(plays: readonly CardPlay[], now: number = Date.now()): readonly CardPlay[] {
+  const marked = plays.filter((p) => !(p.reach && (p.reversed || (p.ends !== undefined && Date.parse(p.ends) <= now))));
+  return marked.length === plays.length ? plays : marked;
 }
 
 /** The soonest end still ahead among plays beyond a post, as an epoch, or null: when what is drawn changes next by itself. */
@@ -103,6 +113,9 @@ function springOf(act: Act): { readonly set: Id; readonly card: string; readonly
   if (act.kind !== 'spring' || typeof act.payload.set !== 'string' || typeof act.payload.card !== 'string') return null;
   return { set: act.payload.set, card: act.payload.card, spring: act.id, at: act.createdAt };
 }
+
+/** The play a `card_end` Act ends, or null for any other Act. */
+const endOf = (act: Act): Id | null => (act.kind === 'card_end' && typeof act.targetActId === 'string' ? act.targetActId : null);
 
 /** Layer first, then when it was played, then its id: the order plays are laid over a post, the first innermost. */
 export const inPlayOrder = (a: CardPlay, b: CardPlay): number =>
@@ -166,7 +179,7 @@ export function defaultView(rules: Pick<CardRules, 'name'>, ui: Pick<CardUi, 'su
 
 export interface Plays {
   get(post: Id): PostPlays;
-  /** Take in card Acts (anything else is ignored); true when a play was new. A play is its Act's id: the same again is the same play. */
+  /** Take in card Acts, and the `card_end` of a play (it marks its play reversed, or is held for when the play arrives); anything else is ignored. True when a play was new or ended. A play is its Act's id: the same again is the same play. */
   add(acts: readonly Act[]): boolean;
   /** Keep each play's newest saved state, by when it was saved; true when any was newer. A state for a play not here is kept for when it is. */
   setStates(states: Readonly<Record<Id, EffectState>>): boolean;
@@ -197,6 +210,8 @@ export function createPlays(): Plays {
   const faces = new Map<Id, string>();
   /* A spring that arrived before the back it reveals, kept for when it does. */
   const springs = new Map<Id, NonNullable<ReturnType<typeof springOf>>>();
+  /* The plays an admin ended: a `card_end` that arrived before its play is kept here for when the play does. */
+  const ended = new Set<Id>();
   /* Each post's billing order, by play id: set by a read of its page, with a play that arrives later appended. */
   const order = new Map<Id, readonly Id[]>();
   /* Each card's view on a post, by `viewKey`: kept apart from the snapshots, so setting one never moves a snapshot or another card's view. */
@@ -247,10 +262,24 @@ export function createPlays(): Plays {
           }
           continue;
         }
+        /* A card_end marks its play reversed in place, keeping its place in the billing; one that comes first is held. */
+        const target = endOf(act);
+        if (target !== null) {
+          ended.add(target);
+          const home = postOf.get(target);
+          const own = home === undefined ? undefined : byPost.get(home);
+          const was = own?.get(target);
+          if (own && was && !was.reversed) {
+            own.set(target, { ...was, reversed: true });
+            touched.add(home!);
+          }
+          continue;
+        }
         const found = playOf(act);
         if (!found) continue;
         const early = found.faceDown ? springs.get(found.id) : undefined;
-        const play = early ? { ...found, card: sprungKind(early.spring), revealed: { card: early.card, spring: early.spring, at: early.at } } : found;
+        const withSpring = early ? { ...found, card: sprungKind(early.spring), revealed: { card: early.card, spring: early.spring, at: early.at } } : found;
+        const play = ended.has(found.id) ? { ...withSpring, reversed: true as const } : withSpring;
         const home = homeOf(play);
         const own = byPost.get(home) ?? new Map<Id, CardPlay>();
         if (own.has(play.id)) continue;
@@ -358,7 +387,8 @@ export async function readPlays(api: KayfaApi, plays: Plays, posts: readonly Id[
   const acts = await api.cardsOnMany(posts, posts.length * PLAYS_PER_POST).catch((): readonly Act[] => []);
   plays.add(acts);
   await readEffects(api, plays, acts, cards);
-  return acts;
+  /* The plays' ends ride in the read for the store; they are no plays, so no tally, reaction or caster is read for one. */
+  return acts.filter((a) => a.kind !== 'card_end');
 }
 
 /**
@@ -380,5 +410,5 @@ export async function readAbove(api: KayfaApi, plays: Plays, characters: readonl
  * default case draws the words in `PostEffects`) and the ORIGIN box both ask `holdsEffects`, so the kinds that wear an
  * effect, and so carry marks, are one list.
  */
-const WITHOUT_EFFECTS: ReadonlySet<ActKind> = new Set<ActKind>(['card', 'unmask', 'tally', 'reveal', 'move', 'move_end', 'move_keep', 'set', 'spring', 'update']);
+const WITHOUT_EFFECTS: ReadonlySet<ActKind> = new Set<ActKind>(['card', 'unmask', 'tally', 'reveal', 'move', 'move_end', 'move_keep', 'set', 'spring', 'update', 'card_end']);
 export const holdsEffects = (kind: ActKind): boolean => !WITHOUT_EFFECTS.has(kind);

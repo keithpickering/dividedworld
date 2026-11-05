@@ -2,7 +2,7 @@
  * The admin queue, a glass page at /admin/queue (the system plan, Task 12; mock-s3-admin-queue.html B), reached from the ADMIN tab of
  * the pause menu, which only an admin sees. The Boss's moves are not signed by a person, so what bounds The System in play is that
  * an admin sees a structural move coming, can hold it before it lands, and can reverse any move after it lands. Three groups, by
- * what an admin can do with them (and, above them, a To do group, below):
+ * what an admin can do with them (and, above them, a To do group, below; after In force, the Mod Bots' cards):
  *
  *   To do             a handover that changed the Boss (the staff roster design, section 11): "Season 4 opens with Comptroller", the handover's
  *                     plain facts, and a link to Write an update with those facts filled in. It is the admin's to write, and no model writes any
@@ -12,6 +12,8 @@
  *                     a move the tick could not land says why. HOLD, on these and nowhere else.
  *   In force          landed moves with no end: since and until, the demand with a progress bar and its why. REVERSE, on these
  *                     and nowhere else.
+ *   Mod Bots' cards   the face-up cards of staff characters still in force (last 30 days): the card, its persona, whom it was played on, and
+ *                     where. END, on these and nowhere else, asks first (the Lens's confirm) and takes the card's layer off for everyone.
  *   Ended             folded; the last 30 days, with how each ended: its demand met, run out, reversed, or held (never landed).
  *
  * Above the groups stands How players reach you (AdminContact.tsx): the links the public Reach a person page shows, which only an admin sets.
@@ -32,7 +34,8 @@ import { MoveSentence } from '../board/MoveSentence.tsx';
 import { demandNeeds } from '../board/move-words.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { useKayfa } from '../context.tsx';
-import type { AdminQueue, BoardName, HandoverTodo, MoveEnded, MoveInForce, QueuedMove } from '../data/api.ts';
+import { EndCardDialog } from '../cards/Lens.tsx';
+import type { AdminQueue, BoardName, HandoverTodo, MoveEnded, MoveInForce, QueuedMove, StaffCardPlay } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
@@ -68,6 +71,7 @@ export function QueueScreen({ now }: { readonly now?: number }) {
   const [bosses, setBosses] = useState<readonly Roster[]>([]);
   const [failed, setFailed] = useState(false);
   const [asked, setAsked] = useState<Asked | null>(null);
+  const [ending, setEnding] = useState<StaffCardPlay | null>(null);
   const clock = now ?? Date.now();
 
   const load = useCallback(async () => {
@@ -110,11 +114,19 @@ export function QueueScreen({ now }: { readonly now?: number }) {
                 <Todos rows={queue.todos} onDismissed={load} />
                 <Waiting rows={queue.waiting} more={queue.more.waiting} boards={boards} bosses={bosses} roster={queue.roster} now={clock} onHold={(row) => setAsked({ kind: 'hold', row })} onReplaced={load} />
                 <InForce rows={queue.inForce} more={queue.more.inForce} boards={boards} bosses={bosses} onReverse={(row) => setAsked({ kind: 'reverse', row })} />
+                <StaffCards rows={queue.staffCards} more={queue.more.staffCards} onEnd={setEnding} />
                 <Ended rows={queue.ended} more={queue.more.ended} boards={boards} bosses={bosses} />
               </>
             )}
           </>
         )}
+      {ending && (
+        <EndCardDialog
+          play={ending.play} card={ending.cardName} caster={ending.persona} onClose={() => setEnding(null)}
+          onEnded={async () => { await load(); setEnding(null); document.getElementById('queue-staff-cards')?.focus(); }}
+          returnFocusTo={heading('queue-staff-cards')}
+        />
+      )}
       {asked && (
         <Confirm
           asked={asked} boards={boards} bosses={bosses}
@@ -303,7 +315,32 @@ function InForce({ rows, more, boards, bosses, onReverse }: { readonly rows: rea
   );
 }
 
+/** The Mod Bots' cards still in force: an admin may end one (the same confirm as the Lens's), and the card's layer comes off for everyone. */
+function StaffCards({ rows, more, onEnd }: { readonly rows: readonly StaffCardPlay[]; readonly more: boolean; readonly onEnd: (row: StaffCardPlay) => void }) {
+  return (
+    <section className="kb-queue-group" aria-labelledby="queue-staff-cards" data-kb-group="staff-cards">
+      <GroupHead id="queue-staff-cards" title="Mod Bots' cards" count={rows.length} more={more} />
+      {rows.length === 0 && <p className="kb-queue-empty kb-calm">No Mod Bot has a card in force.</p>}
+      {rows.map((c) => (
+        <article key={c.play} className="kb-queue-move kb-calm" data-kb-state="staff-card">
+          <div className="kb-queue-when">
+            <p className="kb-queue-countdown">SINCE {shortDate(c.at).toUpperCase()}</p>
+          </div>
+          <div className="kb-queue-body">
+            <h3 className="kb-queue-sentence">{c.cardName} by {c.persona}</h3>
+            <p>{c.targetName ? `Played on ${c.targetName}` : 'Played'}{c.threadTitle ? ` in ${c.threadTitle}` : ''}.</p>
+          </div>
+          <div className="kb-queue-act">
+            <ButtonRow><GlassButton aria-label={`End: ${c.cardName} by ${c.persona}`} onClick={() => onEnd(c)}>END</GlassButton></ButtonRow>
+          </div>
+        </article>
+      ))}
+    </section>
+  );
+}
+
 function endedLine(e: MoveEnded): string {
+  if (e.card != null) return `Ended by an admin on ${shortDate(e.at)}. Its layer came off for everyone.`;
   switch (e.how) {
     case 'held': return `Held by an admin on ${shortDate(e.at)}. It never landed.`;
     case 'met': return `${e.landedAt ? `${shortDate(e.landedAt)} to ${shortDate(e.at)}. ` : ''}Undone when its demand was met.`;
@@ -333,7 +370,9 @@ function Ended({ rows, more, boards, bosses }: { readonly rows: readonly MoveEnd
         {rows.map((e) => (
           <article key={`${e.act ?? 'q'}${e.id ?? ''}${e.at}`} className="kb-queue-move kb-calm" data-kb-state="ended" data-kb-how={e.how}>
             <div className="kb-queue-body">
-              <h3 className="kb-queue-sentence"><MoveSentence kind={e.kind} params={e.params} boards={boards} bosses={bosses} tense={e.how === 'held' ? 'plan' : 'done'} /></h3>
+              <h3 className="kb-queue-sentence">
+                {e.card != null ? `${e.card}${e.boss ? ` by ${e.boss}` : ''}` : <MoveSentence kind={e.kind} params={e.params} boards={boards} bosses={bosses} tense={e.how === 'held' ? 'plan' : 'done'} />}
+              </h3>
               <p>{endedLine(e)}</p>
             </div>
           </article>

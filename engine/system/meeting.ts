@@ -118,6 +118,7 @@ export const MEETING_RULE: Rule = {
 export function ruleSchema(rule: Rule): Record<string, unknown> {
   switch (rule.type) {
     case 'string': return { type: 'string' };
+    case 'any': return {};
     case 'number': return { type: 'number' };
     case 'boolean': return { type: 'boolean' };
     case 'enum': return { type: 'string', enum: [...rule.values] };

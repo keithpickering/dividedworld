@@ -104,6 +104,33 @@ describe('a trap', () => {
   });
 });
 
+describe('a card an admin ended', () => {
+  const end = act('e', { character: null, kind: 'card_end', seq: null, targetActId: 'k', payload: { why: 'reversed', by: 'admin' } });
+  const play = (payload: Record<string, unknown>, o: Partial<Act> = {}) => act('k', { kind: 'card', seq: null, targetActId: 'post4', payload: { card: 'whoops', ...payload }, ...o });
+  const r = row({ kind: 'cardEnded', act: 'e', character: 'c1', name: 'Pipewrench', title: 'Hobbies' });
+  const names = new Map([['cG', 'Gizmo']]);
+  test('says an admin ended the card, on whose post, with the way to it', () => {
+    const s = said(r, ctx([end, play({}), act('post4', { character: 'cG', seq: 4 })], { names }));
+    expect(s).toEqual({
+      line: 'An admin ended your Whoops! on Gizmo\'s post.', detail: 'Its cost and the card are not refunded. In Hobbies.',
+      ways: [{ text: 'Go to the post', to: '/t/t1?page=1#post-4' }], who: 'Pipewrench',
+    });
+  });
+  test('a post of the caster\'s own is said as theirs, and one that could not be read as a post', () => {
+    expect(said(r, ctx([end, play({}), act('post4', { character: 'c1', seq: 4 })], { names })).line).toBe('An admin ended your Whoops! on your post.');
+    expect(said(r, ctx([end, play({})])).line).toBe('An admin ended your Whoops! on a post.');
+  });
+  test('a play beyond a post names its target', () => {
+    expect(said(r, ctx([end, play({ reach: 'character', character: 'cG', targetName: 'Gizmo' })])).line).toBe('An admin ended your Whoops! on Gizmo.');
+    expect(said(r, ctx([end, play({ reach: 'thread', thread: 't9', targetName: 'Hobbies' })])).line).toBe('An admin ended your Whoops! on the thread Hobbies.');
+    expect(said(r, ctx([end, play({ reach: 'board', board: 'b1', targetName: 'Lobby' })])).line).toBe('An admin ended your Whoops! on the Lobby board.');
+  });
+  test('says it plainly when the play could not be read', () => {
+    expect(said(r, ctx([end])).line).toBe('An admin ended your card.');
+    expect(said(r, ctx()).line).toBe('An admin ended your card.');
+  });
+});
+
 describe('a hint and a ruling', () => {
   const r = row({ kind: 'hint', sub: 'leading:excitedNegative', act: 'post4', character: 'c1', name: 'Pipewrench', title: 'Hobbies' });
   const c = ctx([act('post4', { seq: 4 })]);

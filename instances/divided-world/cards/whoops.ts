@@ -40,8 +40,12 @@ export const whoops: CardRules<{ color: string }> = {
     Math.max(0, Math.min(economyOf(settings, 'whoops.perLength') * Math.floor(target.length / economyOf(settings, 'whoops.lengthStep')),
       economyOf(settings, 'whoops.mostInAll') - basePrice(whoops, settings))),
   canApply: (target, effects, _config, now) => landsOn(whoops, target, effects, now),
-  /** The inks a staff persona's Whoops! is splatted in: plain code picks one (staffConfigOf), the persona never does. */
+  /** The inks code falls back on when a persona's own ink fails (staffConfigOf). */
   staffConfigs: [{ color: 'red' }, { color: 'teal' }, { color: 'orange' }, { color: 'purple' }, { color: 'lime' }],
+  staffOptions: {
+    prompt: 'Choose the ink the post is splatted in: a basic color name such as teal or crimson, or a hex color written #rrggbb.',
+    schema: { type: 'object', properties: { color: { type: 'string' } }, required: ['color'], additionalProperties: false },
+  },
   // Only the ink is the caster's: anything else sent (a seed among them) is not kept.
   validateConfig: (config) => {
     const ink = color(typeof config === 'object' && config !== null ? (config as { color?: unknown }).color : undefined);

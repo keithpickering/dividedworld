@@ -26,6 +26,8 @@ export interface AlertsRead {
   /** The player's own characters; empty where they could not be read (no filters). */
   readonly mine: readonly MyCharacter[];
   readonly acts: ReadonlyMap<Id, Act>;
+  /** Public names of the authors of the posts a card an admin ended was played on. */
+  readonly names: ReadonlyMap<Id, string>;
   /** The furthest seq read in each followed thread; null where it could not be read. */
   readonly reading: Readonly<Record<Id, number>> | null;
   /** Followed thread -> the player's own character that started it (from the thread's first post, a public fact); a thread followed by choice is absent. */
@@ -47,8 +49,9 @@ const inChunks = <T,>(xs: readonly T[]) => Array.from({ length: Math.ceil(xs.len
 const orElse = <T,>(read: Promise<T>, fallback: T) => read.catch(() => fallback);
 
 /** The Acts the rows name, and the posts those Acts landed on (a card's, a trap's), beyond those already held. */
-async function actsAround(api: KayfaApi, rows: readonly Alert[], held: ReadonlyMap<Id, Act>): Promise<Map<Id, Act>> {
+async function actsAround(api: KayfaApi, rows: readonly Alert[], held: ReadonlyMap<Id, Act>, heldNames: ReadonlyMap<Id, string>): Promise<{ acts: Map<Id, Act>; names: Map<Id, string> }> {
   const acts = new Map(held);
+  const names = new Map(heldNames);
   const read = async (ids: readonly Id[]) => {
     const want = [...new Set(ids)].filter((id) => !acts.has(id));
     for (const part of await Promise.all(inChunks(want).map((chunk) => orElse(api.actsById(chunk), [] as readonly Act[])))) for (const a of part) acts.set(a.id, a);
@@ -56,7 +59,12 @@ async function actsAround(api: KayfaApi, rows: readonly Alert[], held: ReadonlyM
   await read(rows.map((r) => r.act).filter((id): id is Id => id !== null));
   const named = rows.map((r) => (r.act === null ? undefined : acts.get(r.act)?.targetActId)).filter((id): id is Id => typeof id === 'string');
   await read(named);
-  return acts;
+  /* A card an admin ended is the card_end, then the play, then the post it landed on and that post's author's name. */
+  const ended = rows.filter((r) => r.kind === 'cardEnded' && r.act !== null).map((r) => acts.get(acts.get(r.act!)?.targetActId ?? ''));
+  await read(ended.map((p) => p?.targetActId).filter((id): id is Id => typeof id === 'string'));
+  const authors = ended.map((p) => (p?.targetActId ? acts.get(p.targetActId)?.character : undefined)).filter((c): c is Id => typeof c === 'string' && !names.has(c));
+  for (const part of await Promise.all(inChunks([...new Set(authors)]).map((chunk) => orElse(api.characters(chunk), [])))) for (const c of part) names.set(c.id, c.name);
+  return { acts, names };
 }
 
 /** The followed threads among these rows that one of the player's characters started, from one read of their first posts. A failed read leaves them tagged "Followed". */
@@ -89,15 +97,15 @@ export function useAlerts(api: KayfaApi, on: boolean | null, account: Id | null)
       const [rows, prefs, joined, mine] = await Promise.all([
         api.alerts(), orElse(api.preferences(), null), orElse<string | null | undefined>(api.accountOpenedAt(), undefined), orElse(api.myCharacters(), [] as readonly MyCharacter[]),
       ]);
-      const [acts, started, reading] = await Promise.all([
-        actsAround(api, rows, new Map()),
+      const [{ acts, names }, started, reading] = await Promise.all([
+        actsAround(api, rows, new Map(), new Map()),
         startedAmong(api, rows, mine, new Map()),
         (async () => {
           const threads = [...new Set(rows.filter((r) => r.kind === 'followed' && r.thread !== null).map((r) => r.thread!))];
           return threads.length === 0 ? {} : orElse(api.reading(threads), null);
         })(),
       ]);
-      return { rows, mark: prefs === null ? null : prefs.alertsSeenAt, markKnown: prefs !== null && joined !== undefined, joined: joined ?? null, mine, acts, started, reading, more: rows.length >= ALERTS_PAGE } satisfies AlertsRead;
+      return { rows, mark: prefs === null ? null : prefs.alertsSeenAt, markKnown: prefs !== null && joined !== undefined, joined: joined ?? null, mine, acts, names, started, reading, more: rows.length >= ALERTS_PAGE } satisfies AlertsRead;
     })().then(
       (data) => {
         if (!live) return;
@@ -122,15 +130,15 @@ export function useAlerts(api: KayfaApi, on: boolean | null, account: Id | null)
       const page = await api.alerts(last.at);
       const held = new Set(data.rows.map(rowKey));
       const fresh = page.filter((r) => !held.has(rowKey(r)));
-      const [acts, started, reading] = await Promise.all([
-        actsAround(api, fresh, data.acts),
+      const [{ acts, names }, started, reading] = await Promise.all([
+        actsAround(api, fresh, data.acts, data.names),
         startedAmong(api, fresh, data.mine, data.started),
         (async () => {
           const threads = [...new Set(fresh.filter((r) => r.kind === 'followed' && r.thread !== null).map((r) => r.thread!))];
           return threads.length === 0 ? {} : orElse(api.reading(threads), null);
         })(),
       ]);
-      return { page, fresh, acts, started, reading };
+      return { page, fresh, acts, names, started, reading };
     })().then(
       (got) => setRead((now) => {
         if (now.status !== 'ready' || now.key !== key) return now;
@@ -139,7 +147,7 @@ export function useAlerts(api: KayfaApi, on: boolean | null, account: Id | null)
         const fresh = withoutUnfollowed(got.fresh).filter((r) => !have.has(rowKey(r)));
         const reading = got.reading === null || now.data.reading === null ? null : { ...now.data.reading, ...got.reading };
         const data: AlertsRead = {
-          ...now.data, rows: [...now.data.rows, ...fresh], acts: new Map([...now.data.acts, ...got.acts]),
+          ...now.data, rows: [...now.data.rows, ...fresh], acts: new Map([...now.data.acts, ...got.acts]), names: new Map([...now.data.names, ...got.names]),
           started: new Map([...now.data.started, ...got.started]), reading, more: got.page.length >= ALERTS_PAGE,
         };
         return { status: 'ready', key, data, older: 'idle' };

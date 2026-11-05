@@ -31,7 +31,7 @@ import { Callout, useCallout } from './Callout.tsx';
 import { Lens, useLensFor, useLensHost, useLensStore, useResolvedView } from './Lens.tsx';
 import { GhostMark, ReachGhost, type ReachAt } from './PlayActions.tsx';
 import { MARKS_NARROW, MARKS_WIDE, backWords, kindsOf, markName, moreName, sumOf } from './marks.ts';
-import { inPlayOrder, isBack, livePlays, shownPlays, usePlays, type Plays } from './plays.ts';
+import { inPlayOrder, isBack, markedPlays, shownPlays, usePlays, type Plays } from './plays.ts';
 import type { CardPlay } from './types.ts';
 import './marks.css';
 
@@ -96,7 +96,7 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
   const name = back ? backWords(plays[0]!, nameOf?.(plays[0]!.caster) ?? 'someone', instance.settings.setLasts, (k) => instance.cards.find((c) => c.key === k)?.name ?? k).name : rules?.name ?? kind;
   const art = back && !revealed ? undefined : cardUi?.art;
   const icon = art?.mark ?? art?.image;
-  const caught = plays.every((p) => p.caught);
+  const caught = plays.every((p) => p.caught || p.reversed);
   /* The ink is the top-billed play's, where the card chooses one for it (`CardUi.tag` is given the kind's plays in play order). */
   const ordered = useMemo(() => [...plays].sort(inPlayOrder), [plays]);
   const ink = inkOf(ui, plays[0]!, ordered) ?? art?.color;
@@ -211,7 +211,7 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, re
   const { instance } = useKayfa();
   /* A play beyond a post goes at its end, by itself: no reread (its way out). */
   const now = useUntil(here.billed);
-  const billed = useMemo(() => livePlays(shownPlays(here.billed, instance.settings.setLasts), now), [here.billed, instance.settings.setLasts, now]);
+  const billed = useMemo(() => markedPlays(shownPlays(here.billed, instance.settings.setLasts), now), [here.billed, instance.settings.setLasts, now]);
   const byKind = useKindPlays(billed);
   /* `onOpen` may be a new function every render of the post; the marks are given one that is not. */
   const latest = useRef(onOpen);

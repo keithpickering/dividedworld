@@ -6,7 +6,7 @@
 import { describe, expect, test, vi } from 'vitest';
 import type { Act } from '../data/api.ts';
 import type { ActKind } from '../data/api.ts';
-import { CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, inPlayOrder, isBack, playOf, shownPlays } from './plays.ts';
+import { CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, inPlayOrder, isBack, livePlays, markedPlays, playOf, shownPlays } from './plays.ts';
 import type { CardView } from './types.ts';
 
 const POST = '11111111-0000-4000-8000-000000000001';
@@ -91,7 +91,7 @@ test('only the cards the instance draws an effect for have a state to read', () 
 
 describe('the kinds of Act that hold a card\'s effect', () => {
   test('are the ones drawn as words: not a card, an unmask, a tally, a reveal, a move, the end of one, a Boss keeping one, a card back, a spring or an update', () => {
-    const kinds: Record<ActKind, boolean> = { post: true, spin: true, edit: true, card: false, unmask: false, tally: false, reveal: false, move: false, move_end: false, move_keep: false, set: false, spring: false, update: false };
+    const kinds: Record<ActKind, boolean> = { post: true, spin: true, edit: true, card: false, unmask: false, tally: false, reveal: false, move: false, move_end: false, move_keep: false, set: false, spring: false, update: false, card_end: false };
     for (const [kind, held] of Object.entries(kinds)) expect(holdsEffects(kind as ActKind), kind).toBe(held);
   });
 });
@@ -317,5 +317,52 @@ describe('a back that sprang, and a new back set on the same post', () => {
   test('a back whose time has passed with nothing springing it is no longer shown', () => {
     const backs = [{ ...playOf(base('s1', 'set', {}))!, playedAt: '2020-01-01T00:00:00.000Z' }, { ...playOf(base('s2', 'set', {}))!, playedAt: new Date().toISOString() }];
     expect(shownPlays(backs, { unit: 'day', count: 7 }).map((p) => p.id)).toEqual(['s2']);
+  });
+});
+
+/* An admin's end of a play (supabase/migrations/0092_card_end.sql): a card_end Act names its play and marks it reversed, whichever arrives first. */
+describe('a play an admin ended', () => {
+  const at = '2026-10-30T10:00:00.000Z';
+  const act = (id: string, kind: Act['kind'], payload: Record<string, unknown>, target: string | null = 'p1'): Act =>
+    ({ id, kind, character: kind === 'card_end' ? null : 'c1', thread: 't', targetActId: target, seq: null, createdAt: at, payload, currentPayload: payload, editedAt: null, shownEditedAt: null });
+  const end = (play: string) => act(`end-${play}`, 'card_end', { why: 'reversed', by: 'admin' }, play);
+
+  test('a card_end after its play marks it reversed in place, and waking only its post', () => {
+    const plays = createPlays();
+    const heard = vi.fn();
+    plays.add([act('k1', 'card', { card: 'whoops' }), act('k2', 'card', { card: 'whoops' })]);
+    plays.setBilling('p1', ['k2', 'k1']);
+    plays.subscribe('p1', heard);
+    expect(plays.add([end('k1')])).toBe(true);
+    const got = plays.get('p1');
+    expect(got.billed.map((p) => [p.id, p.reversed])).toEqual([['k2', undefined], ['k1', true]]);
+    expect(heard).toHaveBeenCalledTimes(1);
+    expect(livePlays(got.plays).map((p) => p.id)).toEqual(['k2']);
+  });
+
+  test('a card_end that arrives before its play is held, and the play arrives reversed', () => {
+    const plays = createPlays();
+    plays.add([end('k1')]);
+    expect(plays.get('p1').plays).toEqual([]);
+    plays.add([act('k1', 'card', { card: 'whoops' })]);
+    expect(plays.get('p1').plays.map((p) => p.reversed)).toEqual([true]);
+    expect(livePlays(plays.get('p1').plays)).toEqual([]);
+  });
+
+  test('the same end again changes nothing, and an end is no play of its own', () => {
+    const plays = createPlays();
+    plays.add([act('k1', 'card', { card: 'whoops' }), end('k1')]);
+    const before = plays.get('p1');
+    expect(plays.add([end('k1')])).toBe(false);
+    expect(plays.get('p1')).toBe(before);
+    expect(playOf(end('k1'))).toBeNull();
+  });
+
+  test('a play beyond a post that was ended is dropped from the marks too; one on a post stays for the Lens to say so', () => {
+    const post = playOf(act('k1', 'card', { card: 'whoops' }))!;
+    const beyond = playOf(act('k2', 'card', { card: 'sparkly', reach: 'thread', thread: 'th', ends: '2099-01-01T00:00:00.000Z' }, 'p1'))!;
+    const ended = [{ ...post, reversed: true as const }, { ...beyond, reversed: true as const }];
+    expect(livePlays(ended)).toEqual([]);
+    expect(markedPlays(ended).map((p) => p.id)).toEqual(['k1']);
   });
 });

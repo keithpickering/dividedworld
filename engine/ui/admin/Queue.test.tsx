@@ -467,4 +467,52 @@ describe('How players reach you, on the admin screen', () => {
     release();
     await waitFor(() => expect(within(f).getByRole('status')).toHaveTextContent('Saved.'));
   });
+
+  describe("the Mod Bots' cards", () => {
+    const withBotCard = (fake: ReturnType<typeof buildWorld>, w: ReturnType<typeof seedMoves>) => {
+      const { act } = fake.seed.thread(w.general, w.pipewrench, 'Cards thread', 'A post for a card.');
+      fake.seed.card(w.bot, act, 'whoops', { layer: 1 });
+      // A player's card is not one of the bots'.
+      fake.seed.card(w.pipewrench, act, 'whoops', { layer: 2 });
+      return act;
+    };
+
+    test('is a group after In force, listing the card, its persona and whom it was played on, with END on each row', async () => {
+      open({ build: withBotCard });
+      const g = await group(/^Mod Bots' cards/u);
+      expect(g).toHaveTextContent('1');
+      expect(g).toHaveTextContent('Whoops! by Hall Monitor');
+      expect(g).toHaveTextContent('Played on Pipewrench in Cards thread.');
+      expect(within(g).getAllByRole('button', { name: /^End:/u })).toHaveLength(1);
+      expect(screen.getAllByRole('region').map((r) => r.getAttribute('data-kb-group')).slice(-3)).toEqual(['in-force', 'staff-cards', 'ended']);
+    });
+
+    test('END asks first, in plain words; ending calls reverseCard, the card leaves the group and enters Ended', async () => {
+      const { fake } = open({ build: withBotCard });
+      const spy = vi.spyOn(fake, 'reverseCard');
+      const g = await group(/^Mod Bots' cards/u);
+      await userEvent.click(within(g).getByRole('button', { name: /^End:/u }));
+      const dialog = await screen.findByRole('dialog');
+      expect(dialog).toHaveTextContent('End this Whoops! by Hall Monitor? Its layer comes off for everyone, and nothing is refunded.');
+      expect(spy).not.toHaveBeenCalled();
+      await userEvent.click(within(dialog).getByRole('button', { name: 'End it' }));
+      await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      await waitFor(() => expect(within(screen.getByRole('region', { name: /^Mod Bots' cards/u })).queryByRole('button', { name: /^End:/u })).toBeNull());
+      const ended = screen.getByRole('region', { name: /^Ended/u });
+      expect(within(ended).getByText('Whoops! by Hall Monitor')).toBeInTheDocument();
+      expect(ended).toHaveTextContent('Ended by an admin on');
+    });
+
+    test('a refusal shows in the dialog in the server\'s words, and the dialog stays open', async () => {
+      const { fake } = open({ build: withBotCard });
+      vi.spyOn(fake, 'reverseCard').mockResolvedValue({ ok: false, error: 'that card has already worn off' });
+      const g = await group(/^Mod Bots' cards/u);
+      await userEvent.click(within(g).getByRole('button', { name: /^End:/u }));
+      const dialog = await screen.findByRole('dialog');
+      await userEvent.click(within(dialog).getByRole('button', { name: 'End it' }));
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent('that card has already worn off');
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+    });
+  });
 });

@@ -411,7 +411,7 @@ describe('reads and their rows', () => {
   });
 
   it('reads the threads spun from several Acts in one request, and the card plays on one Act', async () => {
-    const h = harness((r) => (r.url.pathname.endsWith('/thread_list') ? rows([{ ...THREAD_ROW, origin_act_id: A }]) : rows([{ ...ACT_ROW, kind: 'card', target_act_id: A }])));
+    const h = harness((r) => (r.url.pathname.endsWith('/thread_list') ? rows([{ ...THREAD_ROW, origin_act_id: A }]) : r.url.searchParams.get('kind') === 'eq.card_end' ? rows([]) : rows([{ ...ACT_ROW, kind: 'card', target_act_id: A }])));
     const spun = await h.api.spunFromMany([A, B, A], 50);
     expect(h.to('thread_list')).toHaveLength(1);
     expect(h.to('thread_list')[0]?.url.searchParams.get('origin_act_id')).toBe(`in.(${A},${B})`);
@@ -420,23 +420,31 @@ describe('reads and their rows', () => {
     const p = h.to('acts_public')[0]?.url.searchParams;
     expect([p?.get('kind'), p?.get('target_act_id'), p?.get('order')]).toEqual(['in.(card,set,spring)', `eq.${A}`, 'created_at.asc']);
     expect(cards.map((c) => c.kind)).toEqual(['card']);
+    /* The plays' ends (an admin's reversal, 0092) are read by the plays' ids, in a request of their own. */
+    expect(h.to('acts_public')).toHaveLength(2);
+    expect([h.to('acts_public')[1]?.url.searchParams.get('kind'), h.to('acts_public')[1]?.url.searchParams.get('target_act_id')]).toEqual(['eq.card_end', `in.(${A})`]);
     expect(await h.api.spunFromMany(['x),y'], 5)).toEqual([]);
     expect(await h.api.cardsOn('x),y', 5)).toEqual([]);
+    expect(h.to('acts_public')).toHaveLength(2);
     expect(h.to('thread_list')).toHaveLength(1);
   });
 
   it('reads the card plays on a page of posts in one request, oldest first, bounded, and never filters on a non-id', async () => {
-    const h = harness(() => rows([{ ...ACT_ROW, kind: 'card', seq: null, target_act_id: A }, { ...ACT_ROW, id: B, kind: 'card', seq: null, target_act_id: C }]));
+    const END = { ...ACT_ROW, id: C, character: null, kind: 'card_end', seq: null, target_act_id: A, payload: { why: 'reversed', by: 'admin' } };
+    const h = harness((r) => (r.url.searchParams.get('kind') === 'eq.card_end' ? rows([END]) : rows([{ ...ACT_ROW, kind: 'card', seq: null, target_act_id: A }, { ...ACT_ROW, id: B, kind: 'card', seq: null, target_act_id: C }])));
     const plays = await h.api.cardsOnMany([A, C, A, 'x),y'], 60);
-    expect(h.to('acts_public')).toHaveLength(1);
+    /* The plays, then the ends of those plays in a request of their own, by the plays' ids. */
+    expect(h.to('acts_public')).toHaveLength(2);
+    expect(h.to('acts_public')[1]?.url.searchParams.get('kind')).toBe('eq.card_end');
     const p = h.to('acts_public')[0]?.url.searchParams;
     expect([p?.get('kind'), p?.get('target_act_id'), p?.get('order'), p?.get('limit')]).toEqual(['in.(card,set,spring)', `in.(${A},${C})`, 'created_at.asc', '60']);
-    expect(plays.map((c) => [c.kind, c.seq, c.targetActId])).toEqual([['card', null, A], ['card', null, C]]);
+    /* A reversed play is marked by its end riding in the same list (kind card_end, naming the play). */
+    expect(plays.map((c) => [c.kind, c.seq, c.targetActId])).toEqual([['card', null, A], ['card', null, C], ['card_end', null, A]]);
     expect(await h.api.cardsOnMany([], 5)).toEqual([]);
     expect(await h.api.cardsOnMany(['x),y'], 5)).toEqual([]);
-    expect(h.to('acts_public')).toHaveLength(1);
+    expect(h.to('acts_public')).toHaveLength(2);
     await h.api.cardsOnMany([A], 5000);
-    expect(h.to('acts_public')[1]?.url.searchParams.get('limit')).toBe('1000');
+    expect(h.to('acts_public')[2]?.url.searchParams.get('limit')).toBe('1000');
   });
 
   it('reads the saved effect states of plays in one request, and the reader\'s own releases from their own rows', async () => {
@@ -456,7 +464,7 @@ describe('reads and their rows', () => {
   });
 
   it('limits every list read of spins and card plays: ordered, and never more than the row cap', async () => {
-    const h = harness((r) => (r.url.pathname.endsWith('/thread_list') ? rows([{ ...THREAD_ROW, origin_act_id: A }]) : rows([{ ...ACT_ROW, kind: 'card', target_act_id: A }])));
+    const h = harness((r) => (r.url.pathname.endsWith('/thread_list') ? rows([{ ...THREAD_ROW, origin_act_id: A }]) : r.url.searchParams.get('kind') === 'eq.card_end' ? rows([]) : rows([{ ...ACT_ROW, kind: 'card', target_act_id: A }])));
     await h.api.spunFromMany([A, B], 120);
     await h.api.spunFrom(A);
     await h.api.spunFromMany([A], 5000);
@@ -1250,6 +1258,7 @@ describe('the log', () => {
           : rows([{ play: SET, card: 'bluffy', post: A, spring: null, ended_at: '2026-10-29T20:00:00+00:00' }]);
       }
       if (name === 'my_caught') return rows([{ play: C, card: 'whoops', post: A, trap: 'snare', spring: SPRING, price: 25, bought_price: 100, at: '2026-10-29T19:00:00+00:00' }]);
+      if (name === 'my_cards_ended') return rows([{ card_end: 'e1', play: C, card: 'whoops', at: '2026-10-29T22:00:00+00:00', side: 'onMine', reach: 'post', target_name: null, post_author_name: 'Pipewrench', caster_name: 'Spritey', character: B }]);
       return undefined;
     });
   }
@@ -1273,6 +1282,7 @@ describe('the log', () => {
       setEnds: [{ play: SET, card: 'bluffy', post: A, spring: null, endedAt: '2026-10-29T20:00:00+00:00' }],
       setPasses: [{ play: SET, card: 'hook', post: A, passedAt: '2026-10-29T18:00:00+00:00', endsAt: '2026-11-05T20:00:00+00:00' }],
       caught: [{ play: C, card: 'whoops', post: A, trap: 'snare', spring: SPRING, price: 25, boughtPrice: 100, at: '2026-10-29T19:00:00+00:00' }],
+      ended: [{ cardEnd: 'e1', play: C, card: 'whoops', at: '2026-10-29T22:00:00+00:00', side: 'onMine', reach: 'post', targetName: null, postAuthorName: 'Pipewrench', casterName: 'Spritey', character: B }],
       before: null,
     });
     const [ledger] = h.to('my_ledger');
@@ -1295,6 +1305,8 @@ describe('the log', () => {
     expect([passes?.url.searchParams.get('order'), passes?.url.searchParams.get('passed_at'), passes?.url.searchParams.get('spring'), passes?.url.searchParams.get('limit')]).toEqual(['passed_at.desc', 'not.is.null', 'is.null', '200']);
     const [caught] = h.to('my_caught');
     expect([caught?.url.searchParams.get('order'), caught?.url.searchParams.get('limit')]).toEqual(['at.desc', '200']);
+    const [ended] = h.to('my_cards_ended');
+    expect([ended?.url.searchParams.get('order'), ended?.url.searchParams.get('limit')]).toEqual(['at.desc', '200']);
     expect(h.rest().every((r) => r.method === 'GET' && (r.headers.get('prefer') ?? '').indexOf('count') === -1)).toBe(true);
   });
 
@@ -1311,6 +1323,7 @@ describe('the log', () => {
     expect(h.to('my_face_down')[0]?.url.searchParams.getAll('ended_at')).toEqual(['not.is.null', `lte.${before}`]);
     expect(h.to('my_face_down')[1]?.url.searchParams.getAll('passed_at')).toEqual(['not.is.null', `lte.${before}`]);
     expect(h.to('my_caught')[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
+    expect(h.to('my_cards_ended')[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
   });
 
   /* #89 F2: a settlement made before its shares were kept says so, and the log says it plainly rather than "no post". */
@@ -1471,7 +1484,8 @@ describe('reads by many ids', () => {
     const h = byIdHarness();
     await call(h.api);
     for (const name of tables) {
-      const reqs = h.to(name);
+      /* The ends of the plays read are asked in requests of their own (cardsOnMany); the chunks of ids are the rest. */
+      const reqs = h.to(name).filter((r) => r.url.searchParams.get('kind') !== 'eq.card_end');
       expect(reqs.length, name).toBe(5);
       for (const r of reqs) expect(r.url.toString().length, name).toBeLessThan(8000);
       const asked = reqs.flatMap(askedIn);
@@ -1516,7 +1530,7 @@ describe('reads by many ids', () => {
     const got = await h.api.cardsOnMany(posts, limit);
     const want = [...cardRows].sort(byTimeThenId).slice(0, Math.max(1, limit)).map((r) => r.id);
     expect(got.map((a) => a.id)).toEqual(want);
-    expect(h.to('acts_public').length).toBe(3);
+    expect(h.to('acts_public').filter((r) => r.url.searchParams.get('kind') !== 'eq.card_end').length).toBe(3);
   });
 
   it.each([0, 1, 7])('spunFromMany over 250 posts with limit %i answers the earliest threads across every chunk, in order, as one query would', async (limit) => {
@@ -1681,7 +1695,8 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
       waiting: [{ id: 4, staff: 'director', boss: 'The Director', kind: 'renameBoard', params: { board: C, name: 'Toast' }, demand: { kind: 'postsOnBoard', params: { board: C, count: 5 } }, why: 'Toast.', goLiveAt: '2026-10-31T14:10:00+00:00', expiresAt: '2026-11-14T00:00:00+00:00', structural: true, boardName: 'General', failedAt: '2026-10-31T14:11:00+00:00', failure: 'it did not land' }],
       inForce: [{ act: A, id: 3, staff: 'director', boss: 'The Director', kind: 'renameBoard', params: {}, demand: { kind: 'postsOnBoard', params: { board: C, count: 5 } }, why: 'Why.', landedAt: '2026-10-30T12:00:00+00:00', expiresAt: '2026-11-13T12:00:00+00:00', progress: { done: 2, of: 5, met: false, checkedAt: '2026-11-01T14:05:00+00:00' } }],
       ended: [{ how: 'held', by: 'admin', at: '2026-10-30T10:00:00+00:00', act: null, id: 2, staff: 'director', boss: 'The Director', kind: 'renameBoard', params: {}, demand: null, why: 'x', landedAt: null }, { how: 'met', by: 'tick', at: '2026-10-29T10:00:00+00:00', act: B, id: 1, staff: 'director', boss: 'The Director', kind: 'renameBoard', params: {}, demand: null, why: null, landedAt: '2026-10-28T10:00:00+00:00' }],
-      more: { waiting: false, inForce: false, ended: true },
+      staffCards: [{ play: A, card: 'whoops', cardName: 'Whoops!', staff: 'hall-monitor', persona: 'Hall Monitor', targetName: 'Ana Face', thread: B, threadTitle: 'A thread', at: '2026-11-01T10:00:00+00:00' }],
+      more: { waiting: false, inForce: false, staffCards: false, ended: true },
       roster: [{ staff: 'the-clerk', name: 'The Clerk' }, { staff: 7, name: 'bad' }],
     };
     const h = harness((r) => {
@@ -1694,7 +1709,8 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     expect(q.waiting[0]).toMatchObject({ id: 4, boss: 'The Director', boardName: 'General', failure: 'it did not land', failedAt: '2026-10-31T14:11:00+00:00', demand: { kind: 'postsOnBoard' } });
     expect(q.inForce[0]?.progress).toEqual({ done: 2, of: 5, met: false, checkedAt: '2026-11-01T14:05:00+00:00' });
     expect(q.ended.map((e) => e.how)).toEqual(['held', 'met']);
-    expect(q.more).toEqual({ waiting: false, inForce: false, ended: true });
+    expect(q.more).toEqual({ waiting: false, inForce: false, staffCards: false, ended: true });
+    expect(q.staffCards).toEqual([{ play: A, card: 'whoops', cardName: 'Whoops!', staff: 'hall-monitor', persona: 'Hall Monitor', targetName: 'Ana Face', thread: B, threadTitle: 'A thread', at: '2026-11-01T10:00:00+00:00' }]);
     expect(q.roster).toEqual([{ staff: 'the-clerk', name: 'The Clerk' }]);
     expect(q.waiting[0]?.replacedAt).toBeNull();
     expect(await h.api.holdMove(4)).toEqual({ ok: true, value: { id: 4, heldAt: '2026-10-31T15:00:00+00:00' } });

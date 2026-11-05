@@ -11,20 +11,20 @@
  * screen's own constant: `postsPerPage` counts posts inside a thread, and a list of threads is paged
  * for a different reason (the list's weight on a phone), so the two do not share a setting.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Act, Board, Character, Id, PinnedThread, ThreadSummary } from '../data/api.ts';
 import { useUntil } from '../cards/Effects.tsx';
 import { LensProvider } from '../cards/Lens.tsx';
 import { PostMarks } from '../cards/Marks.tsx';
 import { useReachShown } from '../cards/PlayActions.tsx';
-import { createPlays, effectCards, livePlays, playOf, readAbove, readEffects, type Plays } from '../cards/plays.ts';
+import { createPlays, effectCards, homeOf, livePlays, playOf, readAbove, readEffects, type Plays } from '../cards/plays.ts';
 import { createMine, type Mine } from '../reactions/mine.ts';
 import { OriginLink } from '../spin/OriginLink.tsx';
 import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
 import { createTallies, type Tallies } from '../thread/tallies.ts';
 import type { SpinOrigin } from '../thread/Post.tsx';
-import { Ago, Mini, pageList, useSignedIn } from '../mini.tsx';
+import { Ago, Mini, pageList, useIsAdmin, useSignedIn } from '../mini.tsx';
 import { FrontDoor } from '../front-door/FrontDoor.tsx';
 import { Link, useLocation } from '../router.tsx';
 import { MoveNotice } from './MoveNotice.tsx';
@@ -65,6 +65,7 @@ export function BoardScreen({ slug }: { readonly slug: string }) {
   useEffect(() => setSpinOrigin(null), [slug]);
   const { query } = useLocation();
   const signedIn = useSignedIn(api);
+  const admin = useIsAdmin(api, signedIn);
   const asked = Number.parseInt(query.get('page') ?? '1', 10);
   const [state, setState] = useState<State>({ status: 'loading' });
   /* A page turn keeps the list on screen, marked busy, until the next page lands; a new board starts empty. */
@@ -123,6 +124,8 @@ export function BoardScreen({ slug }: { readonly slug: string }) {
     if (boardId === null) return undefined;
     return api.subscribeReach({
       onPlay(a) {
+        /* The end of a play names only its play: the store marks it if it is one this banner keeps, and holds it otherwise. */
+        if (a.kind === 'card_end') { plays.add([a]); return; }
         if (a.kind !== 'card' || a.payload.reach !== 'board' || a.payload.board !== boardId) return;
         void (async () => {
           const who = a.character === null ? [] : await api.characters([a.character]).catch(() => []);
@@ -163,7 +166,7 @@ export function BoardScreen({ slug }: { readonly slug: string }) {
   const nameOf = (id: Id | null) => (id === null ? 'The System' : state.characters.get(id)?.name ?? 'A character');
   return (
     <div className="kb-board" data-kb-board={board.slug} aria-busy={turning || undefined}>
-      <LensProvider>
+      <LensProvider admin={admin}>
       <p className="kb-crumb"><Link to="/">Index</Link> › {board.name}</p>
       <BoardBanner board={board} plays={plays} tallies={tallies} mine={mine} nameOf={nameOf} heading={heading} onSpin={setSpinOrigin} />
       {spinOrigin && (
@@ -243,8 +246,15 @@ function Pinned({ loaded, plays, tallies, mine, nameOf, perPage, hot, onSpin }: 
   readonly perPage: number; readonly hot: number; readonly onSpin: (origin: SpinOrigin) => void;
 }) {
   const pins = useMemo(() => loaded.pins.map((p) => playOf(p.act)).filter((p) => p !== null), [loaded.pins]);
-  const now = useUntil(pins);
-  const live = new Set(livePlays(pins, now).map((p) => p.id));
+  /* A pin an admin ended is marked reversed in the store when its card_end is heard (the read of the board no longer lists it): it goes at once. */
+  const subscribeEnds = useCallback((wake: () => void) => {
+    const offs = pins.map((p) => plays.subscribe(homeOf(p), wake));
+    return () => { for (const off of offs) off(); };
+  }, [pins, plays]);
+  const endedPins = useSyncExternalStore(subscribeEnds, () => pins.filter((p) => plays.get(homeOf(p)).plays.some((q) => q.id === p.id && q.reversed)).map((p) => p.id).join(','));
+  const standing = useMemo(() => pins.map((p) => (endedPins.split(',').includes(p.id) ? { ...p, reversed: true as const } : p)), [pins, endedPins]);
+  const now = useUntil(standing);
+  const live = new Set(livePlays(standing, now).map((p) => p.id));
   const shown = loaded.pins.filter((p) => live.has(p.play));
   if (shown.length === 0) return null;
   return (

@@ -5,17 +5,19 @@
  *
  *   chatterPrompt(...)       the system prompt and the one message a chat persona is given
  *   chatterCompletion(...)   the document a persona on the old voice continues; it answers its words alone
- *   chatterSchema(...)       the provider's structured-output schema: a title only where one is asked, only the cards on offer
- *   CHATTER_RULE             the shape the model layer repairs against (supabase/functions/_shared/models/): words required, nothing cut
+ *   chatterSchema(...)       the provider's structured-output schema: a title only where one is asked, only the cards on offer, and the options of the cards that have any
+ *   CHATTER_RULE             the shape the model layer repairs against (supabase/functions/_shared/models/): words required, nothing cut; a card's options pass through untyped
  *   repairChatter(...)       every bound, in one place, under the validator rule
  *
  * **A validator tighter than the schema is a place a paid answer goes to die** (CLAUDE.md). So only what cannot be repaired without
  * inventing content is rejected: words that are missing, blank or not text, and a title that a thread start was asked for and did not
  * give. Everything else is trimmed and the trim named: words over `postMaxLength` cut at the last sentence that fits (at the length where
  * no sentence ends), a note over `noteMost` cut, a title cut, a title nobody asked for dropped, and a card that was not offered, whose
- * play does not fit where it says, or whose shape is wrong, dropped. The card is the one place the model could reach for an effect, so
- * the offer is checked here and again by the database (`staff_play_card`, `staff_set_card`): the model picks from a fixed list and a
- * target from two choices, and never invents an effect.
+ * play does not fit where it says, or whose shape is wrong, dropped, and the options of every card but the one chosen dropped. The card is
+ * the one place the model could reach for an effect, so the offer is checked here and again by the database (`staff_play_card`,
+ * `staff_set_card`): the model picks from a fixed list and a target from two choices, and a card's options (the ink, the phrase) are the
+ * model's words held to that card's own validator and canApply, in the Edge Function, with a fallback when they fail. A key outside the
+ * list is not a card, and a model's free text is never read as a choice.
  *
  * The masks. Nothing here is computed from who owns a character, a class or who reacted: the thread is its public posts, the memory and
  * career are a staff character's, the trigger is public play. The prompt tells the persona it cannot know who is behind a mask.
@@ -33,6 +35,8 @@ export interface OfferedCard {
   readonly key: string;
   readonly name: string;
   readonly play: 'cast' | 'set';
+  /** What the persona is told about the card's options and the shape of them (`CardRules.staffOptions`); the engine reads neither. */
+  readonly options?: { readonly prompt: string; readonly schema: Record<string, unknown> };
 }
 
 /** Where each play lands: a Cast on the post being replied to, a Set on the persona's own new post. */
@@ -41,7 +45,12 @@ export const LANDS: Readonly<Record<OfferedCard['play'], 'reply' | 'own'>> = Obj
 export interface ChatterAnswer {
   readonly words: string;
   readonly title?: string;
-  readonly card?: { readonly key: string; readonly on: 'reply' | 'own' };
+  readonly card?: {
+    readonly key: string;
+    readonly on: 'reply' | 'own';
+    /** The chosen card's own options as the persona gave them, unchecked: the card's validator is the Edge Function's to apply. */
+    readonly config?: Record<string, unknown>;
+  };
   readonly note?: string;
 }
 
@@ -49,15 +58,21 @@ export interface ChatterAnswer {
 
 /**
  * What the model layer repairs a chat answer against (its ledger row then names a rejection and the trims it made): the shape, with
- * nothing cut. `repair` keeps only the fields a rule names, so the optional ones are listed; their bounds are repairChatter's, which
- * knows what was asked and offered. A card's `on` is text here, not an enum, so a card the model mis-says does not cost the answer.
+ * nothing cut. `repair` keeps only the fields a rule names, so the optional ones are listed. A card's options are named `any`, passed
+ * through unchanged: a wrongly typed option (a color that is a number) must not cost the persona's post, so the type check is not the
+ * model layer's. repairChatter shape-checks the config (an object, the chosen card's key only) and the Edge Function's `validateConfig`
+ * types the fields and falls back when they fail. A card's `on` is text here, not an enum, so a card the model mis-says does not cost
+ * the answer. It is one rule for every call: the options' shapes live in the schema, never here.
  */
 export const CHATTER_RULE: Rule = {
   type: 'object',
   fields: {
     words: { type: 'string', minLength: 1 },
     title: { type: 'string', optional: true },
-    card: { type: 'object', optional: true, fields: { key: { type: 'string' }, on: { type: 'string' } } },
+    card: {
+      type: 'object', optional: true,
+      fields: { key: { type: 'string' }, on: { type: 'string' }, config: { type: 'any', optional: true } },
+    },
     note: { type: 'string', optional: true },
   },
 };
@@ -71,9 +86,21 @@ export function chatterSchema(c: { readonly askedTitle: boolean; readonly offere
     required.push('title');
   }
   if (c.offered.length > 0) {
+    const withOptions = c.offered.filter((o) => o.options);
     properties['card'] = {
       type: 'object',
-      properties: { key: { type: 'string', enum: c.offered.map((o) => o.key) }, on: { type: 'string', enum: ['reply', 'own'] } },
+      properties: {
+        key: { type: 'string', enum: c.offered.map((o) => o.key) },
+        on: { type: 'string', enum: ['reply', 'own'] },
+        // One optional property per card that has options, named by its key: no anyOf, so any provider's structured output holds it.
+        ...(withOptions.length ? {
+          config: {
+            type: 'object',
+            properties: Object.fromEntries(withOptions.map((o) => [o.key, o.options!.schema])),
+            additionalProperties: false,
+          },
+        } : {}),
+      },
       required: ['key', 'on'],
       additionalProperties: false,
     };
@@ -169,7 +196,24 @@ export function repairChatter(raw: unknown, f: RepairFacts): RepairedChatter {
       const offered = f.offered.find((o) => o.key === key);
       if (!offered) trim('card.key', 'offered', 1, 0);
       else if (LANDS[offered.play] !== on) trim('card.on', offered.play === 'cast' ? 'castOnReply' : 'setOnOwn', 1, 0);
-      else card = { key, on };
+      else {
+        card = { key, on };
+        // The options: only the chosen card's are kept, as the answer's config; every other card's are dropped, each named.
+        const given = (c as Record<string, unknown>)['config'];
+        if (given !== undefined && given !== null) {
+          if (typeof given !== 'object' || Array.isArray(given)) trim('card.config', 'isObject', 1, 0);
+          else {
+            const all = given as Record<string, unknown>;
+            for (const other of Object.keys(all)) if (other !== key) trim(`card.config.${other}`, 'notChosen', 1, 0);
+            const mine = all[key];
+            if (mine !== undefined && mine !== null) {
+              if (!offered.options) trim(`card.config.${key}`, 'noOptions', 1, 0);
+              else if (typeof mine !== 'object' || Array.isArray(mine)) trim(`card.config.${key}`, 'isObject', 1, 0);
+              else card = { key, on, config: mine as Record<string, unknown> };
+            }
+          }
+        }
+      }
     }
   }
 
@@ -266,7 +310,10 @@ export function chatterPrompt(i: ChatterInput): { readonly system: string; reado
   const offer = i.offeredCards.length
     ? [
       'You may play one card with this post, or none. The cards on offer (anything else is dropped):',
-      ...i.offeredCards.map((c) => `- ${c.key}: ${c.name}. ${c.play === 'cast' ? 'Cast on the post you reply to (card.on is "reply")' : 'Set face down on your own post (card.on is "own")'}.`),
+      ...i.offeredCards.flatMap((c) => [
+        `- ${c.key}: ${c.name}. ${c.play === 'cast' ? 'Cast on the post you reply to (card.on is "reply")' : 'Set face down on your own post (card.on is "own")'}.`,
+        ...(c.options ? [`  Its options go in card.config.${c.key}. ${c.options.prompt}`] : []),
+      ]),
     ].join('\n')
     : 'No card is on offer today; do not answer with one.';
   const system = [

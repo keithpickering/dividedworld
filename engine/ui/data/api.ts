@@ -160,7 +160,7 @@ export type OriginPlace =
   /* `card` is the card's key, null for a face-down set. `on` is null when the target cannot be placed. */
   | { readonly kind: 'play'; readonly card: string | null; readonly on: PlaceOn | null };
 
-export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | 'unmask' | 'move' | 'move_end' | 'move_keep' | 'set' | 'spring' | 'update';
+export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | 'unmask' | 'move' | 'move_end' | 'move_keep' | 'set' | 'spring' | 'update' | 'card_end';
 
 /** An Act as every reader sees it (acts_public): the original and, where edited, what it shows now. */
 export interface Act {
@@ -427,6 +427,22 @@ export interface MoveEnded {
   readonly demand: Demand | null;
   readonly why: string | null;
   readonly landedAt: string | null;
+  /** A card an admin ended (admin_queue): the card's name; its caster's name is `boss`. Absent on a move. */
+  readonly card?: string | null;
+}
+
+/** A face-up play of a staff character, still in force (admin_queue's `staffCards`), for an admin to end. */
+export interface StaffCardPlay {
+  readonly play: Id;
+  readonly card: string;
+  readonly cardName: string;
+  readonly staff: string;
+  readonly persona: string;
+  /** The target's public name: the post's author, or the character, thread or board the play named. */
+  readonly targetName: string | null;
+  readonly thread: Id;
+  readonly threadTitle: string | null;
+  readonly at: string;
 }
 
 /**
@@ -453,9 +469,11 @@ export interface AdminQueue {
   readonly waiting: readonly QueuedMove[];
   readonly inForce: readonly MoveInForce[];
   readonly ended: readonly MoveEnded[];
+  /** The Mod Bots' cards in force from the last 30 days, newest first. */
+  readonly staffCards: readonly StaffCardPlay[];
   /** The handovers still waiting for an announcement, newest first. */
   readonly todos: readonly HandoverTodo[];
-  readonly more: { readonly waiting: boolean; readonly inForce: boolean; readonly ended: boolean };
+  readonly more: { readonly waiting: boolean; readonly inForce: boolean; readonly staffCards: boolean; readonly ended: boolean };
   /** The Bosses a waiting nomination can be replaced with: on the roster, not retired, debuted; in the rotation's order. */
   readonly roster: readonly { readonly staff: string; readonly name: string }[];
 }
@@ -869,6 +887,25 @@ export interface CaughtPlay {
 }
 
 /**
+ * A card play an admin ended (`my_cards_ended`, 0092): on a play the player's character cast (`cast`), or on a post, character or
+ * thread of the player's it landed on (`onMine`). The names are public ones; a post is named by its author, and its own `targetName`
+ * is null.
+ */
+export interface CardEnded {
+  readonly cardEnd: Id;
+  readonly play: Id;
+  readonly card: string;
+  readonly at: string;
+  readonly side: 'cast' | 'onMine';
+  readonly reach: 'post' | 'character' | 'thread' | 'board';
+  readonly targetName: string | null;
+  readonly postAuthorName: string | null;
+  readonly casterName: string | null;
+  /** The player's own character the row is about: the caster on `cast`; on `onMine` the post's author, the character played on, or the thread's starter. */
+  readonly character: Id;
+}
+
+/**
  * A page of the player's own log, newest first: everything at or before the page's cursor and after
  * `before`, which is where the next page starts (null at the log's start). Each source is read a page
  * at a time, so a long-played account reads a page and never its history.
@@ -885,6 +922,8 @@ export interface Log {
   readonly setPasses: readonly FaceDownPass[];
   /** The player's plays a trap caught, by when each was played. */
   readonly caught: readonly CaughtPlay[];
+  /** The card plays an admin ended that the player cast or that landed on theirs, by when each was ended. */
+  readonly ended: readonly CardEnded[];
   /** The next page's cursor: pass it to `log` for what is older. Null when nothing older is left. */
   readonly before: string | null;
 }
@@ -1044,6 +1083,13 @@ export interface KayfaApi {
   holdMove(id: number): Promise<Answer<{ readonly id: number; readonly heldAt: string }>>;
   /** Ends a move in force now as reversed by an admin; the old name returns at once. An admin's alone. */
   reverseMove(act: Id): Promise<Answer<{ readonly act: Id; readonly endedBy: Id }>>;
+  /**
+   * Ends a card play as reversed by an admin (`reverse_card`, 0092): a `card_end` Act of no character is written beside the play, the
+   * layer comes off and the card stops counting; the original play is never changed. An admin's alone; a caught play, one that has
+   * worn off and one already ended are refused in words that say nothing of a face-down card. It cannot be taken back (play the card
+   * again). Answers the end's Act and the play.
+   */
+  reverseCard(play: Id): Promise<Answer<{ readonly act: Id; readonly play: Id }>>;
   /** Puts another Boss of the roster in a waiting nomination's place (`id` is the queue row's). An admin's alone; a nomination that has landed or been held is refused. */
   replaceSuccessor(id: number, boss: string): Promise<Answer<{ readonly id: number; readonly boss: string }>>;
   /** The instance's whole roster by staff key and name, a waiting persona included (`boss_roster_names`): an admin's alone; anyone else is refused (the call throws). */
@@ -1091,12 +1137,16 @@ export interface KayfaApi {
    * as `limit` may be cut, and an Act with none in it may have some.
    */
   spunFromMany(acts: readonly Id[], limit: number): Promise<readonly ThreadSummary[]>;
-  /** The card plays on an Act, oldest first, at most `limit`: the effects an ORIGIN box lists under the Act it shows. A result as long as `limit` may be cut. */
+  /**
+   * The card plays on an Act, oldest first, at most `limit`: the effects an ORIGIN box lists under the Act it shows. A result as long as `limit` may be cut.
+   * The `card_end` Acts of those plays follow the plays in the same list (kind `card_end`, `targetActId` the play): a play with one was
+   * ended by an admin, and the original play is unchanged.
+   */
   cardsOn(act: Id, limit: number): Promise<readonly Act[]>;
   /**
    * The card plays on any of these Acts, oldest first, in one read (a page of a thread asks once, never once per post), at most
    * `limit` rows in all; each names its post in `targetActId`. A result as long as `limit` may be cut, and a post with none in it
-   * may have some.
+   * may have some. The `card_end` Acts of those plays follow them in the same list (they name their play in `targetActId`, not a post).
    */
   cardsOnMany(acts: readonly Id[], limit: number): Promise<readonly Act[]>;
   /**

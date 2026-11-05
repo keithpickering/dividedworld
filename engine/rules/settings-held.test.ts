@@ -76,8 +76,12 @@ test('the issue\'s own cases are named: presencePollSeconds = 5 and presenceName
 });
 
 test('the kinds the migration lets toastDefaults name are the alert kinds (the lists are one list)', () => {
-  const sql = read('../../supabase/migrations/0077_settings_held.sql');
-  const m = /kinds text\[\] := array\[((?:'[A-Za-z]+',?\s*)+)\]/.exec(sql);
+  // settings_held is redefined by later migrations (0085, 0092), so the list read is the latest migration's that defines it.
+  const dir = path.join(here, '../../supabase/migrations');
+  const latest = fs.readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
+    .filter((f) => /function settings_held\b/.test(fs.readFileSync(path.join(dir, f), 'utf8'))).at(-1)!;
+  const sql = fs.readFileSync(path.join(dir, latest), 'utf8');
+  const m = [...sql.matchAll(/kinds text\[\] := array\[((?:'[A-Za-z]+',?\s*)+)\]/g)].at(-1);
   assert.ok(m, 'the migration lists the kinds');
   assert.deepEqual([...m![1]!.matchAll(/'([A-Za-z]+)'/g)].map((k) => k[1]!).sort(), [...ALERT_KINDS].sort());
 });

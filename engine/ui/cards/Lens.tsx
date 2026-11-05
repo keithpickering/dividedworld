@@ -28,9 +28,11 @@ import {
   type CSSProperties, type KeyboardEvent, type ReactNode,
 } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { Id, PlayMoment } from '../data/api.ts';
+import type { Act, Id, PlayMoment } from '../data/api.ts';
+import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Float, type FloatPlace } from '../glass/Float.tsx';
 import { CloseCross, DialogBar } from '../glass/Frame.tsx';
+import { Overlay } from '../glass/Overlay.tsx';
 import { tabbables } from '../modal.tsx';
 import { usePlayer } from '../player.tsx';
 import { Reactions } from '../reactions/Reactions.tsx';
@@ -42,8 +44,8 @@ import type { Tallies } from '../thread/tallies.ts';
 import { inkOf, useNarrow, useUntil } from './Effects.tsx';
 import { withCardEconomy } from './faces.ts';
 import { Kit } from './Kit.tsx';
-import { backWords, caughtWords, endsWords, kindsOf, playsPhrase, sumOf, wardWords } from './marks.ts';
-import { defaultView, inPlayOrder, isBack, livePlays, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
+import { backWords, caughtWords, endedWords, endsWords, kindsOf, playsPhrase, sumOf, wardWords } from './marks.ts';
+import { defaultView, inPlayOrder, isBack, markedPlays, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardView } from './types.ts';
 import './lens.css';
 
@@ -130,11 +132,15 @@ export function LensHost({ host, children }: { readonly host: HTMLElement | null
   return <LensHostCtx.Provider value={host}>{children}</LensHostCtx.Provider>;
 }
 
-/** One Lens for the page below: the thread, or a thread's ORIGIN box inside it. Leaving the page closes it. */
-export function LensProvider({ children }: { readonly children: ReactNode }) {
+/** Whether the reader is an admin, as the page knows it (`api.isAdmin`): only an admin's Lens offers "End this card". */
+const LensAdminCtx = createContext(false);
+export const useLensAdmin = (): boolean => useContext(LensAdminCtx);
+
+/** One Lens for the page below: the thread, or a thread's ORIGIN box inside it. Leaving the page closes it. `admin` is what the page knows of the reader. */
+export function LensProvider({ children, admin = false }: { readonly children: ReactNode; readonly admin?: boolean }) {
   const store = useMemo(createLensStore, []);
   useEffect(() => () => store.close(), [store]);
-  return <LensCtx.Provider value={store}>{children}</LensCtx.Provider>;
+  return <LensCtx.Provider value={store}><LensAdminCtx.Provider value={admin}>{children}</LensAdminCtx.Provider></LensCtx.Provider>;
 }
 
 /* Marks drawn where no page gave a provider (a story that draws a post alone) share one store: a document has one Lens in any case. */
@@ -175,12 +181,12 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
   const signature = useSyncExternalStore(subscribe, () => {
     const h = store.get(post);
     return JSON.stringify(h.plays.filter((p) => p.card === kind).map((p) => [p.id, p.caster, p.playedAt, p.caught ?? null, p.ends ?? null, p.revealed ?? null, h.faces[p.id] ?? null,
-      p.caught ? h.plays.find((b) => b.id === p.caught)?.revealed?.card ?? null : null]));
+      p.caught ? h.plays.find((b) => b.id === p.caught)?.revealed?.card ?? null : null, p.reversed ?? null]));
   });
   const here = useMemo(() => {
-    const rows = JSON.parse(signature) as [Id, Id | null, string, Id | null, string | null, CardPlay['revealed'] | null, string | null, string | null][];
+    const rows = JSON.parse(signature) as [Id, Id | null, string, Id | null, string | null, CardPlay['revealed'] | null, string | null, string | null, true | null][];
     return {
-      plays: rows.map(([id, caster, playedAt, caught, ends, revealed]): CardPlay => ({ id, card: kind, layer: 1, caster, message: '', config: {}, playedAt, post, ...(isBack(kind) ? { faceDown: true as const } : {}), ...(caught ? { caught } : {}), ...(ends ? { ends } : {}), ...(revealed ? { revealed } : {}) })),
+      plays: rows.map(([id, caster, playedAt, caught, ends, revealed, , , reversed]): CardPlay => ({ id, card: kind, layer: 1, caster, message: '', config: {}, playedAt, post, ...(isBack(kind) ? { faceDown: true as const } : {}), ...(caught ? { caught } : {}), ...(ends ? { ends } : {}), ...(revealed ? { revealed } : {}), ...(reversed ? { reversed: true as const } : {}) })),
       faces: Object.fromEntries(rows.filter((r) => r[6] !== null).map((r) => [r[0], r[6]!])) as Record<Id, string>,
       traps: Object.fromEntries(rows.filter((r) => r[7] !== null).map((r) => [r[0], r[7]!])) as Record<Id, string>,
     };
@@ -201,7 +207,10 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
       const trap = here.traps[p.id];
       return [p.id, caughtWords(trap ? cardName(trap) : null)];
     }));
-    const live = ofKind.filter((p) => !p.caught);
+    /* A play an admin ended says so, in plain words; its layer is off for everyone. */
+    for (const p of ofKind) if (p.reversed) caught[p.id] = endedWords();
+    const live = ofKind.filter((p) => !p.caught && !p.reversed);
+    if (live.length === 0 && ofKind.length > 0 && ofKind.every((p) => p.reversed)) return { ...base, progress: null, controls: [], state: endedWords(), notes: caught };
     if (live.length === 0 && ofKind.length > 0) {
       const trap = here.traps[ofKind[0]!.id];
       return { ...base, state: caughtWords(trap ? cardName(trap) : null), notes: caught };
@@ -219,7 +228,9 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
     }
     return Object.keys(caught).length > 0 ? { ...base, notes: caught } : base;
   }, [instance.cards, instance.settings.setLasts, ui.cards, kind, economy, here, nameOf]);
-  if (!given) return fallback;
+  /* Every play of the kind ended by an admin: its effect draws nothing, so whatever view it last gave is stale. */
+  const allEnded = here.plays.length > 0 && here.plays.every((p) => p.reversed);
+  if (!given || allEnded) return fallback;
   /* An effect's own view, with the catches the engine knows of beside its notes. */
   return Object.keys(fallback.notes).length > 0 && !isBack(kind) ? { ...given, notes: { ...fallback.notes, ...given.notes } } : given;
 }
@@ -270,6 +281,12 @@ interface RowProps {
   /** The post the play landed on, where Go to post leads; none where it cannot be found. */
   readonly to: string | null;
   readonly onSpin: (play: CardPlay, name: string) => void;
+  /** The store the play is kept in: an admin's end is added to it at once, so the layer comes off without waiting for the broadcast. */
+  readonly store: Plays;
+  /** The reader is an admin (what the page knows): a face-up play still in force offers "End this card". */
+  readonly admin: boolean;
+  /** Now, as the Lens counts it (it moves when a play's end passes). */
+  readonly now: number;
   /** Whether each play on a post offers As it landed: not where the moment is already the content (a play-spun ORIGIN box). */
   readonly moments: boolean;
 }
@@ -295,7 +312,80 @@ function AsItLanded({ play }: { readonly play: Id }) {
   );
 }
 
-function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, moments, onSpin }: RowProps) {
+/**
+ * The confirm of an admin's "End this card" (api.reverseCard), shared by the Lens and the admin queue: it says what it does in plain
+ * words, then makes the call. A refusal's words are shown in the dialog, which stays open. The card's own name and its caster's public
+ * name come from the caller, so the engine names no instance's card. `onEnded` gets the card_end's id once the play is ended.
+ */
+export function EndCardDialog({ play, card, caster, onClose, onEnded, returnFocusTo }: {
+  readonly play: Id; readonly card: string; readonly caster: string;
+  readonly onClose: () => void; readonly onEnded: (end: Id) => void | Promise<void>; readonly returnFocusTo: () => HTMLElement | null;
+}) {
+  const { api } = useKayfa();
+  const [busy, setBusy] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const once = useRef(false);
+  const submit = async () => {
+    if (once.current) return;
+    once.current = true;
+    setBusy(true);
+    setRefusal(null);
+    let ended: Id | null = null;
+    try {
+      const answer = await api.reverseCard(play);
+      if (!answer.ok) { setRefusal(answer.error); return; }
+      ended = answer.value.act;
+    } catch {
+      setRefusal('That could not be sent. Check your connection and look at the card before you try again.');
+    } finally {
+      once.current = false;
+      setBusy(false);
+    }
+    /* Outside the try: the card has ended, so what the screen does next (a reload) never reads as a failed send. */
+    if (ended !== null) await Promise.resolve(onEnded(ended)).catch(() => undefined);
+  };
+  return (
+    <Overlay title="End this card?" surface="settings" className="kb-lens-end" onClose={onClose} returnFocusTo={returnFocusTo}>
+      <div className="kb-lens-end-body">
+        <p>End this {card} by {caster}? Its layer comes off for everyone, and nothing is refunded.</p>
+        {refusal && <p role="alert" className="kb-lens-end-refusal">{refusal}</p>}
+        <ButtonRow align="end">
+          <GlassButton onClick={onClose}>Cancel</GlassButton>
+          <GlassButton kind="primary" disabled={busy} onClick={() => void submit()}>End it</GlassButton>
+        </ButtonRow>
+      </div>
+    </Overlay>
+  );
+}
+
+/** An admin's "End this card" in the Lens: the button, and the shared confirm. */
+function EndCard({ play, card, caster, store }: { readonly play: Id; readonly card: string; readonly caster: string; readonly store: Plays }) {
+  const opener = useRef<HTMLButtonElement>(null);
+  const [asking, setAsking] = useState(false);
+  const close = () => setAsking(false);
+  return (
+    <>
+      <button ref={opener} type="button" className="kb-kit-tile kb-lens-action" aria-haspopup="dialog" onClick={() => setAsking(true)}><span className="kb-kit-tile-label">End this card</span></button>
+      {asking && (
+        <EndCardDialog
+          play={play} card={card} caster={caster} onClose={close}
+          onEnded={(endId) => {
+            const end: Act = { id: endId, character: null, kind: 'card_end', thread: '', targetActId: play, seq: null, createdAt: new Date().toISOString(), payload: { why: 'reversed', by: 'admin' }, currentPayload: {}, editedAt: null, shownEditedAt: null };
+            store.add([end]);
+            setAsking(false);
+          }}
+          returnFocusTo={() => (opener.current?.isConnected ? opener.current : document.querySelector<HTMLElement>('.kb-lens [role="tab"][aria-selected="true"]'))}
+        />
+      )}
+    </>
+  );
+}
+
+/** Whether a play is face up and still in force, so an admin can end it: not a back (`faceDown` is set for exactly the card backs, sprung or not), not caught, not ended by an admin, not worn off. */
+const endable = (play: CardPlay, now: number): boolean =>
+  !play.faceDown && play.caught === undefined && !play.reversed && !(play.ends !== undefined && Date.parse(play.ends) <= now);
+
+function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, moments, onSpin, store, admin, now }: RowProps) {
   const { characters } = usePlayer();
   const name = playName(caster, card);
   const note = view.notes[play.id];
@@ -317,6 +407,7 @@ function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, mo
             ? <p className="kb-lens-note">Spin a thread from this play once you are free of the hold.</p>
             : <button type="button" className="kb-kit-tile kb-lens-action" onClick={() => onSpin(play, name)}><span className="kb-kit-tile-label">Spin thread</span></button>}
           {moments && !play.reach && <AsItLanded play={play.id} />}
+          {admin && endable(play, now) && <EndCard play={play.id} card={card} caster={caster} store={store} />}
           {to && <Link className="kb-kit-tile kb-lens-action" to={to}><span className="kb-kit-tile-label">Go to post</span></Link>}
         </div>
       </div>
@@ -377,7 +468,8 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   const narrow = useNarrow();
   const host = useLensHost();
   const now = useUntil(here.billed);
-  const billed = livePlays(shownPlays(here.billed, instance.settings.setLasts), now);
+  const billed = markedPlays(shownPlays(here.billed, instance.settings.setLasts), now);
+  const admin = useLensAdmin();
   const kinds = kindsOf(billed);
   const card = kinds.includes(open.card) ? open.card : null;
   /* The kind's plays are gone (a read of the page moved them): there is nothing to show. */
@@ -491,7 +583,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
           <div className="kb-lens-section kb-lens-act"><Kit card={name} controls={view.controls} ink={ink} /></div>
         )}
         <Who
-          plays={rowPlays} inkOfPlay={(p) => inkOf(ui, p, [...ofKind].sort(inPlayOrder))} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} card={name} view={view} tallies={tallies} mine={mine} compare={compare} to={to} moments={moments}
+          plays={rowPlays} inkOfPlay={(p) => inkOf(ui, p, [...ofKind].sort(inPlayOrder))} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} card={name} view={view} tallies={tallies} mine={mine} compare={compare} to={to} moments={moments} store={plays} admin={admin} now={now}
           onSpin={(play, spinName) => { store.close(); onSpin(play, spinName, open.opener); }}
         />
       </div>

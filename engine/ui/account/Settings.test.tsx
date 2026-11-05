@@ -466,6 +466,7 @@ describe('Settings › Notifications', () => {
   const WORDS: readonly (readonly [string, string])[] = [
     ['Quotes', 'A post quotes one of your characters.'],
     ['Cards on yours', 'A card is played on one of your posts.'],
+    ['Cards an admin ended', 'An admin ended a card one of your characters played.'],
     ['Traps that hit', 'A trap struck one of your posts.'],
     ['Traps you set', 'A trap you set sprang.'],
     ['Rulings', 'A ruling lands on one of your characters.'],

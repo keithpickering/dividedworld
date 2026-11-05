@@ -319,3 +319,46 @@ test('every staffConfigs entry of every card passes that card\'s own validateCon
   assert.ok(entries > 0, 'at least Whoops! lists staffConfigs');
   assert.equal(staffConfigOf(whoops, () => 0.9999999999) !== null && staffConfigOf(whoops, () => 0) !== null, true);
 });
+
+/* A card's staffOptions (docs/plans/2026-11-05-bot-card-options-plan.md, Task 8): what a Mod Bot's persona may set. */
+const answers: Record<string, Record<string, unknown>> = {
+  whoops: { color: '#12ab9f' },
+  autocorrect: { phrase: 'the same old', replacement: 'something new' },
+  'stick-around': { sentence: 'I have read every word of this' },
+};
+
+test('each card that lets the model set options gives an object schema its own validateConfig accepts for a sample answer', () => {
+  const keys = cards.filter((c) => c.staffOptions).map((c) => c.key).sort();
+  assert.deepEqual(keys, ['autocorrect', 'stick-around', 'whoops']);
+  for (const card of cards) {
+    if (!card.staffOptions) continue;
+    const { prompt, schema } = card.staffOptions;
+    assert.ok(prompt.length > 0 && prompt.length < 600, `${card.key}: a short prompt`);
+    assert.equal(schema.type, 'object', card.key);
+    assert.equal(schema.additionalProperties, false, card.key);
+    const props = schema.properties as Record<string, { type?: unknown }>;
+    for (const [name, def] of Object.entries(props)) {
+      for (const bound of ['maxLength', 'minLength', 'pattern', 'maxItems', 'minItems']) assert.equal(bound in def, false, `${card.key}.${name}: structured output cannot hold ${bound}`);
+      assert.ok(def.type === 'string' || 'enum' in def, `${card.key}.${name}: strings and enums only`);
+    }
+    for (const name of (schema.required ?? []) as string[]) assert.ok(name in props, `${card.key}: required ${name} is a property`);
+    const sample = answers[card.key];
+    assert.ok(sample, `${card.key} has a sample answer`);
+    assert.equal(card.validateConfig(sample).ok, true, `${card.key}: ${JSON.stringify(sample)}`);
+    for (const name of (schema.required ?? []) as string[]) assert.ok(name in sample, `${card.key}: the sample gives ${name}`);
+  }
+  assert.equal(stickAround.validateConfig({}).ok, true, 'Stick Around\'s sentence is optional: leaving it out gives the default');
+  assert.equal(autocorrect.validateConfig({}).ok, false);
+  assert.equal(staffConfigOf(autocorrect, () => 0), null, 'Autocorrect has no fallback');
+});
+
+test('every property a staffOptions schema names survives that card\'s validateConfig (a field it drops would be asked for and thrown away)', () => {
+  for (const card of cards) {
+    if (!card.staffOptions) continue;
+    const result = card.validateConfig(answers[card.key]);
+    assert.equal(result.ok, true, card.key);
+    if (!result.ok) continue;
+    const kept = Object.keys(result.value as object);
+    for (const name of Object.keys(card.staffOptions.schema.properties as object)) assert.ok(kept.includes(name), `${card.key}: "${name}" is dropped by validateConfig`);
+  }
+});

@@ -9,6 +9,7 @@ export const SHAPES: Readonly<Record<AlertKind, ReactNode>> = {
   followed: <><path d="M6 7h20M6 13h20M6 19h13" strokeWidth="2.2" strokeLinecap="round" fill="none" /><circle cx="24" cy="22" r="4" fill="currentColor" stroke="none" /></>,
   quote: <><path d="M6 9h20v12H15l-6 5v-5H6z" fill="none" strokeWidth="2.2" strokeLinejoin="round" /><path d="M11 14h10M11 17.5h6" strokeWidth="2" strokeLinecap="round" /></>,
   cardOnYours: <><rect x="8" y="5" width="16" height="22" rx="2" fill="none" strokeWidth="2.2" /><path d="M12 12l8 8M20 12l-8 8" strokeWidth="2" strokeLinecap="round" /></>,
+  cardEnded: <><rect x="8" y="5" width="16" height="22" rx="2" fill="none" strokeWidth="2.2" /><path d="M12 16h8" strokeWidth="2.2" strokeLinecap="round" /></>,
   trapStruck: <><path d="M7 25h12M10 21h6M13 21V13" strokeWidth="2.2" strokeLinecap="round" fill="none" /><rect x="11" y="4" width="14" height="7" rx="1" transform="rotate(35 18 7.5)" fill="none" strokeWidth="2.2" /></>,
   trapSprang: <><path d="M7 25h12M10 21h6M13 21V13" strokeWidth="2.2" strokeLinecap="round" fill="none" /><rect x="11" y="4" width="14" height="7" rx="1" transform="rotate(35 18 7.5)" fill="none" strokeWidth="2.2" /></>,
   ruling: <><path d="M7 25h12M10 21h6M13 21V13" strokeWidth="2.2" strokeLinecap="round" fill="none" /><rect x="11" y="4" width="14" height="7" rx="1" transform="rotate(35 18 7.5)" fill="none" strokeWidth="2.2" /></>,

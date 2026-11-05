@@ -37,8 +37,8 @@ import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, UPD
 import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import type {
-  AdminQueue, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffProfile,
-  Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEvent, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd, FaceDownPass,
+  AdminQueue, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
+  Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEnded, CardEvent, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd, FaceDownPass,
   Alert, ContactLink, EffectState, SeasonNewsItem, SeasonResult, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
 } from '../../../engine/ui/data/api.ts';
@@ -291,7 +291,14 @@ function toEnded(r: Row): MoveEnded {
   return {
     how: how === 'met' || how === 'expired' || how === 'reversed' || how === 'superseded' || how === 'spent' ? how : 'held', by: orNull(r['by']), at: String(r['at'] ?? ''), act: orNull(r['act']),
     id: typeof r['id'] === 'number' ? r['id'] : null, staff: orNull(r['staff']), boss: orNull(r['boss']), kind: String(r['kind'] ?? ''), params: params(r['params']),
-    demand: toDemand(r['demand']), why: orNull(r['why']), landedAt: orNull(r['landedAt']),
+    demand: toDemand(r['demand']), why: orNull(r['why']), landedAt: orNull(r['landedAt']), card: orNull(r['card']),
+  };
+}
+
+function toStaffCard(r: Row): StaffCardPlay {
+  return {
+    play: r['play'], card: String(r['card'] ?? ''), cardName: String(r['cardName'] ?? r['card'] ?? ''), staff: String(r['staff'] ?? ''), persona: String(r['persona'] ?? ''),
+    targetName: orNull(r['targetName']), thread: r['thread'], threadTitle: orNull(r['threadTitle']), at: String(r['at'] ?? ''),
   };
 }
 
@@ -589,6 +596,17 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   /* -------------------------------------------------------------------- the api ---- */
 
   const idOk = (id: string) => UUID.test(id);
+  /**
+   * The `card_end` Acts of these rows' card plays (an admin's reversal, 0092): each targets its play, so the plays-on-a-post read
+   * cannot find them and they are asked for by the plays' ids, in chunks. At most one per play (a unique index), so a chunk of
+   * plays needs no more rows than it has, and ID_CHUNK bounds each read. Returned beside the plays in the same list; the plays are unchanged.
+   */
+  const endsOf = async (plays: readonly Row[]): Promise<Row[]> => {
+    const ids = plays.filter((r) => r['kind'] === 'card' && typeof r['id'] === 'string' && idOk(r['id'])).map((r) => r['id'] as string);
+    if (ids.length === 0) return [];
+    const rows = await byChunks(ids, (part) => list(() => client.from('acts_public').select('*').eq('kind', 'card_end').in('target_act_id', part).order('created_at', { ascending: true }).limit(ID_CHUNK)));
+    return merged(rows, 'created_at', 'id');
+  };
   const act = async <T,>(body: Row, map: (r: Row) => T | Promise<T>): Promise<Answer<T>> => {
     const a = await edge('act', body, LOST);
     return a.ok ? { ok: true, value: await map(a.value) } : a;
@@ -726,7 +744,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const more = (q['more'] && typeof q['more'] === 'object' ? q['more'] : {}) as Row;
       return {
         cap: num(q['cap']), waiting: rows(q['waiting']).map(toQueued), inForce: rows(q['inForce']).map(toInForce), ended: rows(q['ended']).map(toEnded),
-        more: { waiting: more['waiting'] === true, inForce: more['inForce'] === true, ended: more['ended'] === true },
+        staffCards: rows(q['staffCards']).map(toStaffCard),
+        more: { waiting: more['waiting'] === true, inForce: more['inForce'] === true, staffCards: more['staffCards'] === true, ended: more['ended'] === true },
         roster: rows(q['roster']).flatMap((r) => (typeof r['staff'] === 'string' ? [{ staff: r['staff'], name: String(r['name'] ?? r['staff']) }] : [])),
         todos: rows(q['todos']).flatMap((r) => (typeof r['boss'] === 'string' ? [toTodo(r)] : [])),
       };
@@ -781,6 +800,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const a = await rpcWrite(() => client.rpc('reverse_move', { move_act: act }));
       return a.ok ? { ok: true, value: { act: a.value['act'], endedBy: a.value['endedBy'] } } : a;
     },
+    /* An admin's end of a card goes through the act function, which owns the broadcasts (a layer comes off for everyone reading). */
+    reverseCard: (play) => act({ action: 'reverseCard', play }, (r) => ({ act: r['id'], play: r['play'] })),
     async threads(board, page) {
       /* The page is the list's rows; the total is the board's counter (a trigger keeps it), so a page turn counts nothing. */
       const total = async () => num((await list(() => client.from('board_counts').select('threads').eq('board', board).limit(1)))[0]?.['threads']);
@@ -834,13 +855,14 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (!idOk(actId)) return [];
       /* A post's plays, its card backs and their springs (0054): each is a layer on the post, read through it. */
       const rows = await list(() => client.from('acts_public').select('*').in('kind', LAYER_KINDS).eq('target_act_id', actId).order('created_at', { ascending: true }).limit(rowLimit(limit)));
-      return rows.map(toAct);
+      return [...rows, ...await endsOf(rows)].map(toAct);
     },
     async cardsOnMany(actIds, limit) {
       const wanted = [...new Set(actIds)].filter(idOk);
       if (wanted.length === 0) return [];
       const rows = await byChunks(wanted, (part) => list(() => client.from('acts_public').select('*').in('kind', LAYER_KINDS).in('target_act_id', part).order('created_at', { ascending: true }).limit(rowLimit(limit))));
-      return merged(rows, 'created_at', 'id', rowLimit(limit)).map(toAct);
+      const plays = merged(rows, 'created_at', 'id', rowLimit(limit));
+      return [...plays, ...await endsOf(plays)].map(toAct);
     },
     async effectsAbove(characters, thread, board) {
       /* One request per chunk of characters, run together (effects_above holds at most 200 a call); the thread and the board are
@@ -1143,7 +1165,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           if (!('at' in range)) return list(() => page((range.before ? from().lte(column, range.before) : from()).order(column, { ascending: false })).limit(range.limit));
           return every((start, end) => whole.reduce((q: Q, c) => q.order(c, { ascending: true }), from().eq(column, range.at)).range(start, end));
         };
-        const [ledgerRows, walletRows, cardRows, playRows, saveRows, endRows, passRows, caughtRows] = await Promise.all([
+        const [ledgerRows, walletRows, cardRows, playRows, saveRows, endRows, passRows, caughtRows, endedRows] = await Promise.all([
           rows(() => client.from('my_ledger').select('settlement,starts_at,ends_at,character,reason,amount,shares_kept,params'), 'ends_at',
             (q) => q.order('character', { ascending: true }).order('reason', { ascending: true }), ['settlement', 'character', 'reason']),
           rows(() => client.from('my_wallet_events').select('settlement,kind,change,overflow,floored,balance_after,ref,at'), 'at', (q) => q, ['settlement', 'kind', 'ref', 'change', 'overflow', 'floored', 'balance_after']),
@@ -1155,6 +1177,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           /* The player's own cards a reply passed by without springing, by when it did (0078); the log names the reply traps among them. */
           rows(() => client.from('my_face_down').select('play,card,post,ends_at,passed_at').not('passed_at', 'is', null).is('spring', null), 'passed_at', (q) => q, ['play']),
           rows(() => client.from('my_caught').select('play,card,post,trap,spring,price,bought_price,at'), 'at', (q) => q, ['play']),
+          /* The card plays an admin ended that the player cast or that landed on theirs (0092); a third party's reversal is in no one's view but its own. */
+          rows(() => client.from('my_cards_ended').select('card_end,play,card,at,side,reach,target_name,post_author_name,caster_name,character'), 'at', (q) => q, ['card_end']),
         ]);
         const ledger = ledgerRows.map((r): LedgerRow => ({
           settlement: num(r['settlement']), startsAt: r['starts_at'], endsAt: r['ends_at'], sharesKept: r['shares_kept'] !== false,
@@ -1189,6 +1213,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           caught: caughtRows.map((r): CaughtPlay => ({
             play: r['play'], card: r['card'], post: r['post'], trap: r['trap'], spring: r['spring'], price: num(r['price']),
             boughtPrice: r['bought_price'] === null || r['bought_price'] === undefined ? null : num(r['bought_price']), at: r['at'],
+          })),
+          ended: endedRows.map((r): CardEnded => ({
+            cardEnd: r['card_end'], play: r['play'], card: r['card'], at: r['at'], side: r['side'], reach: r['reach'],
+            targetName: r['target_name'] ?? null, postAuthorName: r['post_author_name'] ?? null, casterName: r['caster_name'] ?? null, character: r['character'],
           })),
         };
       }, before ?? null);

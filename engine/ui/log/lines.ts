@@ -31,7 +31,9 @@ export type Segment = string | { readonly text: string; readonly href: string };
 
 export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 'played' | 'onMine' | 'saved'
   /* The card mechanic's (docs/plans/2026-11-01-card-mechanic-design.md, section 10). */
-  | 'set' | 'sprung' | 'payout' | 'setEnded' | 'passed' | 'caught' | 'struck' | 'wardEnded';
+  | 'set' | 'sprung' | 'payout' | 'setEnded' | 'passed' | 'caught' | 'struck' | 'wardEnded'
+  /* The bot-card-options design, section 3: an admin ended a card play. */
+  | 'ended';
 
 /** One row of the log. */
 export interface LogRow {
@@ -312,7 +314,7 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
 
   rows.push(...cardRows(data, words).filter((r) => inTab(r.characters)));
 
-  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, played: 4, onMine: 4, saved: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, passed: 4, caught: 4, struck: 4, wardEnded: 4 };
+  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, played: 4, onMine: 4, saved: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, passed: 4, caught: 4, struck: 4, wardEnded: 4, ended: 4 };
   rows.sort((a, b) => micros(b.at) - micros(a.at) || ORDER[a.kind] - ORDER[b.kind]);
   return [...estimateRows(data, words, tab), ...rows];
 }
@@ -448,7 +450,47 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     });
   }
   rows.push(...setEndRows(data, words, take));
+  rows.push(...endedRows(data, words));
   return rows;
+}
+
+/**
+ * The cards an admin ended (`my_cards_ended`): plain and true, never in character. The caster's player is told it was ended and that
+ * nothing came back; the one it landed on is told whose card it was. A reversal between two other players is in neither's view, so no
+ * line. Each line follows to the play (`actsFollowed` reads the post it landed on), but a post is named by its author from the view, so
+ * a post that could not be read is still named.
+ */
+function endedRows(data: LogData, words: Words): LogRow[] {
+  const cardName = (key: unknown) => words.instance.cards.find((c) => c.key === key)?.name ?? 'a card';
+  return data.log.ended.map((e): LogRow => {
+    const play = data.acts.get(e.play);
+    const post = play?.targetActId ? data.acts.get(play.targetActId) : undefined;
+    const mine = e.side === 'onMine';
+    const named = e.targetName ?? '';
+    let place: Segment[];
+    switch (e.reach) {
+      case 'character': place = [mine ? `your character${named ? ` ${named}` : ''}` : named || 'a character']; break;
+      case 'thread': place = [`${mine ? 'your' : 'the'} thread${named ? ` '${named}'` : ''}`]; break;
+      case 'board': place = [`the ${named || 'a'} board`]; break;
+      default: {
+        const own = mine || (post?.character != null && data.mine.some((c) => c.id === post.character));
+        const owner = own ? 'your post' : e.postAuthorName ? `${e.postAuthorName}'s post` : 'a post';
+        place = post && post.seq !== null
+          ? [{ text: `${owner} #${post.seq}`, href: threadHref(post.thread, pageOf(post.seq, words.postsPerPage), post.seq) }]
+          : [owner];
+      }
+    }
+    const card = cardName(e.card);
+    return {
+      key: `ended:${e.cardEnd}`, kind: 'ended', at: e.at,
+      what: mine ? `${e.casterName ?? 'Someone'}'s ${card} was ended` : `Your ${card} was ended`,
+      details: mine
+        ? [`An admin ended ${e.casterName ?? 'someone'}'s ${card} on `, ...place, '.']
+        : [`An admin ended your ${card} on `, ...place, '. Its cost and the card are not refunded.'],
+      aura: 0, wallet: null,
+      characters: [e.character],
+    };
+  });
 }
 
 const TRIGGERED: Readonly<Record<string, string>> = { cast: 'a cast', reaction: 'a reaction', reply: 'a reply', quote: 'a quote', visit: 'a visit' };
@@ -550,6 +592,7 @@ export function actsNamed(log: Log, estimate: Estimate | null, turns: readonly T
   for (const e of log.setEnds) { ids.add(e.post); if (e.spring) ids.add(e.spring); }
   for (const e of log.setPasses) ids.add(e.post);
   for (const c of log.caught) { ids.add(c.play); ids.add(c.post); }
+  for (const e of log.ended) ids.add(e.play);
   return [...ids];
 }
 
