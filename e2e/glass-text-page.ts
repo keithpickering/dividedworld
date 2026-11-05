@@ -23,7 +23,7 @@
  * and its surface's element. A panel under the smoke (the dialog's own ground, under its smoke) is
  * not under the text, so the walk stops at the surface's element.
  */
-import { isSkipped, parseColor, pixelStats, type Backing, type Box, type Calm, type Rgba, type TextFact } from './glass-text.ts';
+import { feathersOf, isSkipped, parseColor, pixelStats, type Backing, type Box, type Calm, type Rgba, type TextFact } from './glass-text.ts';
 
 /**
  * What a face inks is read over a string with an ascender and a descender: the design's "ascender
@@ -175,28 +175,6 @@ function pseudoBox(el: Element, ps: CSSStyleDeclaration): Box & { readonly scale
   };
 }
 
-/**
- * A mask's feather on each edge: a gradient layer ramps its start edge when its first stop is transparent and its end edge when its last is
- * (calm.css draws all four; the phone's HUD joins two calms with the edge that faces the other left unramped, frame.css). The ramp's length is
- * the first px length in the layer for the start edge and the last for the end edge. `to right` is the x axis and anything else the y axis.
- */
-interface Feathers { readonly left: number; readonly right: number; readonly top: number; readonly bottom: number }
-function feathersOf(mask: string): Feathers {
-  const f = { left: 0, right: 0, top: 0, bottom: 0 };
-  if (!mask || mask === 'none') return f;
-  for (const layer of mask.split(/(?=linear-gradient\()/)) {
-    const lengths = [...layer.matchAll(/(-?[\d.]+)px/g)].map((m) => Math.abs(+m[1]!));
-    if (lengths.length === 0) continue;
-    const clear = '(?:transparent|rgba\\(\\s*0,\\s*0,\\s*0,\\s*0\\s*\\))';
-    const startRamp = new RegExp(`^linear-gradient\\(\\s*(?:(?:to \\w+|[\\d.]+deg)\\s*,\\s*)?${clear}`).test(layer);
-    const endRamp = new RegExp(`${clear}\\s*\\)\\s*,?\\s*$`).test(layer);
-    const x = /to right/.test(layer);
-    if (startRamp) { if (x) f.left = Math.max(f.left, lengths[0]!); else f.top = Math.max(f.top, lengths[0]!); }
-    if (endRamp) { const n = lengths[lengths.length - 1]!; if (x) f.right = Math.max(f.right, n); else f.bottom = Math.max(f.bottom, n); }
-  }
-  return f;
-}
-
 const drawn = (ps: CSSStyleDeclaration) => ps.content !== 'none' && ps.content !== 'normal' && ps.display !== 'none';
 
 /** The nearest calm drawn on `el` or above it, inside the surface's element; a calm whose backing is not drawn is passed over. */
@@ -212,7 +190,7 @@ function calmOf(el: Element, holder: Element): Calm | null {
   const k = scaleOf(c);
   /* The feather is drawn by the backing's mask, so it shrinks with the backing and with the element. */
   const unit = zoomOf(c) * scale * Math.min(k.x, k.y);
-  const edges = feathersOf(ps.maskImage || ps.getPropertyValue('-webkit-mask-image'));
+  const edges = feathersOf(ps.maskImage || ps.getPropertyValue('-webkit-mask-image'), `${c.localName}${c.className ? `.${String(c.className).trim().split(/\s+/u).join('.')}` : ''}`);
   const l = edges.left * unit, r = edges.right * unit, t = edges.top * unit, b = edges.bottom * unit;
   const feather = Math.max(l, r, t, b);
   const bg = parseColor(ps.backgroundColor);

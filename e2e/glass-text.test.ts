@@ -19,7 +19,7 @@ import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { describe, expect, test } from 'vitest';
 import {
-  isSkipped, judge, paletteOf, pixelStats, within, type Backing, type CeilingsFile, type GlassColors, type TextFact,
+  feathersOf, isSkipped, judge, paletteOf, pixelStats, within, type Backing, type CeilingsFile, type GlassColors, type TextFact,
 } from './glass-text.ts';
 
 const glass = JSON.parse(readFileSync(new URL('../instances/divided-world/ui/glass.json', import.meta.url), 'utf8')) as GlassColors;
@@ -314,4 +314,56 @@ describe('what the measurement does not read', () => {
   test('the instance\'s art is skipped too', () => {
     expect(isSkipped(at('art'))).toBe(true);
   });
+});
+
+/*
+ * The mask reader (feathersOf): the page's calm is as wide as its mask says, per edge, and a mask the reader cannot read stops the check
+ * instead of widening the calm's interior. The strings are the computed forms Chromium gives calm.css's and frame.css's masks: the vertical
+ * gradient has no direction written, and transparent is rgba(0, 0, 0, 0).
+ */
+describe('feathersOf, the mask reader', () => {
+  const T = 'rgba(0, 0, 0, 0)';
+  const C = 'rgb(241, 236, 255)';
+  const across = `linear-gradient(to right, ${T}, ${C} 32px, ${C} calc(100% - 32px), ${T})`;
+  const down = `linear-gradient(${T}, ${C} 32px, ${C} calc(100% - 32px), ${T})`;
+
+  test('a calm feathered on every edge (calm.css) reads 32px on each', () => {
+    expect(feathersOf(`${across}, ${down}`, 'p.lead')).toEqual({ left: 32, right: 32, top: 32, bottom: 32 });
+  });
+
+  test('the default vertical direction, with no "to bottom" written, is the y axis', () => {
+    expect(feathersOf(down, 'p.lead')).toEqual({ left: 0, right: 0, top: 32, bottom: 32 });
+    expect(feathersOf(`linear-gradient(to bottom, ${T}, ${C} 32px, ${C} calc(100% - 32px), ${T})`, 'p.lead')).toEqual({ left: 0, right: 0, top: 32, bottom: 32 });
+  });
+
+  test('"to right" is the x axis', () => {
+    expect(feathersOf(across, 'p.lead')).toEqual({ left: 32, right: 32, top: 0, bottom: 0 });
+  });
+
+  test('a ramp at one end only, as the phone HUD\'s join draws it (frame.css), leaves the other edge at zero', () => {
+    expect(feathersOf(`${across}, linear-gradient(${T}, ${C} 32px)`, 'div.door')).toEqual({ left: 32, right: 32, top: 32, bottom: 0 });
+    expect(feathersOf(`${across}, linear-gradient(${C} calc(100% - 32px), ${T})`, 'div.actions')).toEqual({ left: 32, right: 32, top: 0, bottom: 32 });
+  });
+
+  test('no mask is no feather', () => {
+    expect(feathersOf('none', 'p.lead')).toEqual({ left: 0, right: 0, top: 0, bottom: 0 });
+    expect(feathersOf('', 'p.lead')).toEqual({ left: 0, right: 0, top: 0, bottom: 0 });
+  });
+
+  /* Each is a mask that is not "none" and that the reader cannot read: it must stop the check, naming the element and the mask. */
+  const unreadable: readonly (readonly [string, string])[] = [
+    ['an image layer', `url("calm.png"), ${down}`],
+    ['a radial gradient', `radial-gradient(${T}, ${C} 32px)`],
+    ['a layer with no px length', `linear-gradient(${T}, ${C})`],
+    ['a first and last stop that are not transparent', `linear-gradient(${C} 10px, rgb(1, 2, 3) 20px)`],
+    ['a direction to the left', `linear-gradient(to left, ${T}, ${C} 32px)`],
+    ['a direction to the top', `linear-gradient(to top, ${T}, ${C} 32px)`],
+    ['an angle', `linear-gradient(90deg, ${T}, ${C} 32px)`],
+  ];
+  for (const [what, mask] of unreadable) {
+    test(`${what} is thrown on, never read as zero`, () => {
+      expect(() => feathersOf(mask, 'p.lead')).toThrow(/p\.lead/u);
+      expect(() => feathersOf(mask, 'p.lead')).toThrow(/mask/u);
+    });
+  }
 });
