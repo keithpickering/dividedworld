@@ -34,6 +34,7 @@ import { DEFAULT_PREFERENCES, LOST_ANSWER, SPUN_FROM_MAX } from '../../../engine
 import { readLogPage, type LedgerRow, type ShareRow } from '../../../engine/ui/data/log-page.ts';
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
 import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
+import { RECORD_PAGE } from '../../../engine/ui/profile/record.ts';
 import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import type {
@@ -41,6 +42,7 @@ import type {
   Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEvent, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd, FaceDownPass,
   Alert, ContactLink, EffectState, SeasonNewsItem, SeasonResult, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
+  Boot, BoardPage, IndexPage, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson,
 } from '../../../engine/ui/data/api.ts';
 
 export interface SupabaseApiOptions {
@@ -255,6 +257,49 @@ function toBoard(r: Row): Board {
   return { id: r['id'], slug: r['slug'], name: r['name'], description: r['description'] ?? '', isSystem: r['is_system'] === true, moveAct: r['move_act'] ?? null };
 }
 
+/** One board of the index (index_page and boot, the same row), as boards() answers it. */
+function toBoardSummary(r: Row): BoardSummary {
+  return { ...toBoard(r), threadCount: num(r['thread_count']), lastAt: r['last_at'] ?? null, lastCharacter: r['last_character'] ?? null, lastThread: r['last_thread'] ?? null };
+}
+
+/** A presence box (here and presence_box answer the same): a name with no id or name is no line. */
+function toPresence(v: Row): Presence {
+  const names = (Array.isArray(v['names']) ? v['names'] : []).flatMap((n: Row) =>
+    typeof n?.['id'] === 'string' && typeof n?.['name'] === 'string' ? [{ id: n['id'], name: n['name'], staff: n['staff'] === true }] : []);
+  return { names, others: num(v['others']) };
+}
+
+/** A row of current_season, as season() answers it. */
+const toSeason = (r: Row): Season => ({ id: r['id'], number: r['number'], startsAt: r['starts_at'], endsAt: r['ends_at'] ?? null, turnsThread: r['turns_thread'] ?? null, revealAct: r['reveal_act'] ?? null });
+const toClassReveal = (r: Row): ClassReveal => ({ act: r['act'], character: r['character'], class: r['class'], at: r['at'], via: r['via'], thread: r['thread'] });
+const toTurn = (r: Row): TurnAnnounced => ({ act: r['act'], character: r['character'], at: r['at'], was: r['was'] ?? null });
+const toHeldCard = (r: Row): HeldCard => ({ card: r['card'], held: num(r['held']) });
+const toMyReaction = (r: Row): MyReaction => ({ act: r['act'], kind: r['kind'], character: r['character'] });
+const toPlayAbove = (x: Row): PlayAbove => ({ play: x['play'], reach: x['reach'], target: x['target'], endsAt: x['ends_at'], act: toAct(x['act']) });
+const toPinned = (x: Row): PinnedThread => ({ thread: toThread(x['thread']), play: x['play'], endsAt: x['ends_at'], act: toAct(x['act']) });
+/** standing_place's answer; null where it is none. */
+const toStandingPlace = (v: unknown): StandingPlace | null =>
+  v && typeof v === 'object' && !Array.isArray(v) ? { standing: num((v as Row)['standing']), place: num((v as Row)['place']), of: num((v as Row)['of']) } : null;
+/** The bell's count as alertsUnread() answers it: whole, at least 0, to the bound. */
+const toUnread = (v: unknown): number => Math.min(ALERTS_UNREAD_BOUND, Math.max(0, Math.floor(num(v))));
+/** character_post_counts' row, or none: a character that has done nothing counts zero. */
+const toCounts = (v: unknown): CharacterCounts => ({ posts: num(isObject(v) ? v['posts'] : 0), spins: num(isObject(v) ? v['spins'] : 0), cards: num(isObject(v) ? v['cards'] : 0) });
+const rowsOf = (v: unknown): Row[] => (Array.isArray(v) ? (v as Row[]) : []);
+/** effect_state rows, as effectStates() answers them. */
+const toStates = (list: Row[]): Record<Id, EffectState> => Object.fromEntries(list.map((r) => [r['play'], { state: r['state'], savedAt: r['saved_at'] }]));
+/** An answer's tallies as tallies() answers them for the acts asked: an act with none is an empty tally. */
+function toTallies(asked: readonly Id[], list: Row[]): Record<Id, Tally> {
+  const out: Record<Id, Record<string, number>> = Object.fromEntries(asked.map((a) => [a, {}]));
+  for (const r of list) (out[r['act']] ??= {})[r['kind']] = num(r['count']);
+  return out;
+}
+/** Counts by thread as viewCounts() answers them for the threads asked: 0 for a thread with no row. */
+function toViews(asked: readonly Id[], list: Row[]): Record<Id, number> {
+  const out: Record<Id, number> = Object.fromEntries(asked.map((t) => [t, 0]));
+  for (const r of list) out[r['thread']] = num(r['views']);
+  return out;
+}
+
 function toFrame(v: unknown): Frame | null {
   if (!v || typeof v !== 'object') return null;
   const f = v as Row;
@@ -462,19 +507,20 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
 
   /* ---------------------------------------------------------------- settings ---- */
 
+  /** What screen_settings holds laid over the instance's compiled defaults: a key it lacks, or holds as another type, is the default. */
+  function mergeSettings(held: Row): ScreenSettings {
+    const out: Row = { ...settingsFallback };
+    for (const key of Object.keys(settingsFallback)) {
+      const v = held[key];
+      const d = (settingsFallback as unknown as Row)[key];
+      if (v !== null && v !== undefined && typeof v === typeof d) out[key] = v;
+    }
+    return out as unknown as ScreenSettings;
+  }
   let settingsOnce: Promise<ScreenSettings> | null = null;
   function settings(): Promise<ScreenSettings> {
     settingsOnce ??= list(() => client.from('screen_settings').select('settings').limit(1))
-      .then((rows) => {
-        const held: Row = rows[0]?.['settings'] ?? {};
-        const out: Row = { ...settingsFallback };
-        for (const key of Object.keys(settingsFallback)) {
-          const v = held[key];
-          const d = (settingsFallback as unknown as Row)[key];
-          if (v !== null && v !== undefined && typeof v === typeof d) out[key] = v;
-        }
-        return out as unknown as ScreenSettings;
-      })
+      .then((rows) => mergeSettings(rows[0]?.['settings'] ?? {}))
       .catch((e: unknown) => {
         settingsOnce = null;
         throw e;
@@ -500,6 +546,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     joined: c['joined'] ?? '',
     ...(typeof c['staff'] === 'string' ? { staff: c['staff'], ...(toOffice(c['office']) ? { office: toOffice(c['office'])! } : {}) } : {}),
   });
+
+  /** A character a document carries with its profile nested (`profile` null where it has none). */
+  const faceOf = (c: Row): Character => toCharacter(c, isObject(c['profile']) ? c['profile'] : undefined);
 
   async function characters(ids: readonly Id[]): Promise<readonly Character[]> {
     if (ids.length === 0) return [];
@@ -854,7 +903,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         return Array.isArray(r.data) ? (r.data as Row[]) : [];
       }));
       return answers.flat()
-        .map((x): PlayAbove => ({ play: x['play'], reach: x['reach'], target: x['target'], endsAt: x['ends_at'], act: toAct(x['act']) }))
+        .map(toPlayAbove)
         .sort((a, b) => (a.act.createdAt < b.act.createdAt ? -1 : a.act.createdAt > b.act.createdAt ? 1 : a.play < b.play ? -1 : a.play > b.play ? 1 : 0));
     },
     async pinnedThreads(board) {
@@ -862,7 +911,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (!idOk(board)) return [];
       const r = await read(() => client.rpc('pinned_threads', { board }));
       const rows = Array.isArray(r.data) ? (r.data as Row[]) : [];
-      return rows.map((x): PinnedThread => ({ thread: toThread(x['thread']), play: x['play'], endsAt: x['ends_at'], act: toAct(x['act']) }));
+      return rows.map(toPinned);
     },
     async effectStates(plays) {
       const wanted = [...new Set(plays)].filter(idOk);
@@ -884,7 +933,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return {
         version: toAct(m['version']),
         layers: (m['layers'] as Row[]).map((l) => ({ act: toAct(l['act']), state: l['savedAt'] == null ? null : { state: l['state'], savedAt: l['savedAt'] } })),
-        above: (m['above'] as Row[]).map((x): PlayAbove => ({ play: x['play'], reach: x['reach'], target: x['target'], endsAt: x['ends_at'], act: toAct(x['act']) })),
+        above: (m['above'] as Row[]).map(toPlayAbove),
         recorded: m['recorded'] === true,
       };
     },
@@ -952,7 +1001,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       /* The season the standings read, named on the server (standings_season()), so a screen never names one season over another's ranking. */
       const r = (await list(() => client.from('current_season').select('*').limit(1)))[0];
       return r
-        ? ({ id: r['id'], number: r['number'], startsAt: r['starts_at'], endsAt: r['ends_at'] ?? null, turnsThread: r['turns_thread'] ?? null, revealAct: r['reveal_act'] ?? null } satisfies Season)
+        ? toSeason(r)
         : null;
     },
     /* A page of the ranking from the server, which reads one range of the standings' index for it and never ranks the
@@ -975,8 +1024,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async standingPlace(id): Promise<StandingPlace | null> {
       if (!idOk(id)) return null;
-      const v = (await read(() => client.rpc('standing_place', { of_character: id }))).data;
-      return v && typeof v === 'object' && !Array.isArray(v) ? { standing: num((v as Row)['standing']), place: num((v as Row)['place']), of: num((v as Row)['of']) } : null;
+      return toStandingPlace((await read(() => client.rpc('standing_place', { of_character: id }))).data);
     },
     async standingsCount() {
       return num((await list(() => client.from('season_size').select('characters').limit(1)))[0]?.['characters']);
@@ -988,12 +1036,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     async classReveals(chars) {
       if (chars.length === 0) return [];
       const rows = await byChunks(chars, (part) => list(() => client.from('class_reveals').select('act,character,class,at,via,thread').in('character', part).order('at', { ascending: true })));
-      return merged(rows, 'at', 'act').map((r): ClassReveal => ({ act: r['act'], character: r['character'], class: r['class'], at: r['at'], via: r['via'], thread: r['thread'] }));
+      return merged(rows, 'at', 'act').map(toClassReveal);
     },
     async turnsAnnounced(chars) {
       if (chars.length === 0) return [];
       const rows = await byChunks(chars, (part) => list(() => client.from('turns_announced').select('act,character,at,was').in('character', part).order('at', { ascending: true })));
-      return merged(rows, 'at', 'act').map((r): TurnAnnounced => ({ act: r['act'], character: r['character'], at: r['at'], was: r['was'] ?? null }));
+      return merged(rows, 'at', 'act').map(toTurn);
     },
     async nextSettlementAt() {
       return str((await read(() => client.rpc('next_settlement_at'))).data);
@@ -1009,10 +1057,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     async myReactions(acts) {
       if (acts.length === 0) return [];
       const rows = await byChunks(acts, (part) => list(() => client.from('my_reactions').select('act,kind,character').in('act', part)));
-      return rows.map((r): MyReaction => ({ act: r['act'], kind: r['kind'], character: r['character'] }));
+      return rows.map(toMyReaction);
     },
     async myCards() {
-      return (await list(() => client.from('my_cards').select('card,held'))).map((r): HeldCard => ({ card: r['card'], held: num(r['held']) }));
+      return (await list(() => client.from('my_cards').select('card,held'))).map(toHeldCard);
     },
     async reading(threads) {
       const out: Record<Id, number> = {};
@@ -1028,9 +1076,104 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const a = await rpcWrite(() => client.rpc('here', { in_kind: place.kind, in_place: at, through }));
       // A refusal or a lost answer throws, so the poll counts it as a failure and keeps its last answer.
       if (!a.ok) throw new Error(a.error);
-      const names = (Array.isArray(a.value['names']) ? a.value['names'] : []).flatMap((n: Row) =>
-        typeof n?.['id'] === 'string' && typeof n?.['name'] === 'string' ? [{ id: n['id'], name: n['name'], staff: n['staff'] === true }] : []);
-      return { names, others: num(a.value['others']) };
+      return toPresence(a.value);
+    },
+    /* The screens' documents: one rpc each, whose rows are the views' own (snake_case) and are mapped with the converters above, so each
+       field is what the method named in its type answers for the same data. A load writes nothing (the design's section 4). */
+    async boot(): Promise<Boot> {
+      const d = (await read(() => client.rpc('boot'))).data as Row | null;
+      if (!isObject(d)) throw new Error(NOT_READ);
+      const settings = mergeSettings(isObject(d['settings']) ? d['settings'] : {});
+      const w: Row = isObject(d['wallet']) ? d['wallet'] : {};
+      return {
+        settings,
+        account: str(d['account']),
+        preferences: isObject(d['preferences']) ? toPreferences(d['preferences']) : DEFAULT_PREFERENCES,
+        characters: rowsOf(d['characters']).map(toMyCharacter),
+        faces: rowsOf(d['faces']).map((f) => toCharacter(f, isObject(f['profile']) ? f['profile'] : undefined)),
+        wallet: { balance: num(w['balance']), cap: typeof w['cap'] === 'number' ? w['cap'] : settings.walletCap },
+        cards: rowsOf(d['cards']).map(toHeldCard),
+        boards: rowsOf(d['boards']).map(toBoardSummary),
+        unread: toUnread(d['unread']),
+        nextSettlementAt: str(d['nextSettlementAt']),
+        lastSettledAt: str(d['lastSettledAt']),
+        newestSettlement: str(d['newestSettlement']),
+      };
+    },
+    async indexPage(): Promise<IndexPage> {
+      const d = (await read(() => client.rpc('index_page'))).data as Row | null;
+      if (!isObject(d)) throw new Error(NOT_READ);
+      return { boards: rowsOf(d['boards']).map(toBoardSummary), characters: rowsOf(d['characters']).map(faceOf), presence: toPresence(d['presence'] ?? {}), unread: toUnread(d['unread']) };
+    },
+    async boardPage(slug, page, effectCards): Promise<BoardPage | null> {
+      const d = (await read(() => client.rpc('board_page', { in_slug: slug, in_page: page, effect_cards: [...effectCards] }))).data as Row | null;
+      if (!isObject(d)) return null;
+      const pins = rowsOf(d['pins']).map(toPinned);
+      const banner = rowsOf(d['banner']).map(toPlayAbove);
+      const threads = rowsOf(d['threads']).map(toThread);
+      const marked = [...pins.map((p) => p.act.id), ...banner.map((p) => p.act.id)];
+      const reading: Record<Id, number> = {};
+      for (const r of rowsOf(d['reading'])) reading[r['thread']] = num(r['furthest_seq']);
+      return {
+        board: toBoard(d['board'] as Row), total: num(d['total']), page: num(d['page'], 1), threads, pins, banner,
+        states: toStates(rowsOf(d['states'])), releases: rowsOf(d['releases']).map((r): Id => r['play']),
+        tallies: toTallies(marked, rowsOf(d['tallies'])), mine: rowsOf(d['mine']).map(toMyReaction), reading,
+        views: toViews([...pins.map((p) => p.thread.id), ...threads.map((t) => t.id)], rowsOf(d['views'])),
+        characters: rowsOf(d['characters']).map(faceOf), presence: toPresence(d['presence'] ?? {}), unread: toUnread(d['unread']),
+      };
+    },
+    async threadPage(thread, at, perPage, effectCards): Promise<ThreadPage | null> {
+      const d = (await read(() => client.rpc('thread_page', { in_thread: thread, in_page: at.page ?? null, in_seq: at.seq ?? null, per_page: perPage, effect_cards: [...effectCards] }))).data as Row | null;
+      if (!isObject(d)) return null;
+      const acts = rowsOf(d['acts']).map(toAct);
+      const plays = rowsOf(d['plays']).map(toAct);
+      const above = rowsOf(d['above']).map(toPlayAbove);
+      const summary = toThread(d['summary'] as Row);
+      /* The ids the page's tallies were asked for: its Acts, then the plays on its posts and above them. */
+      const asked = [...acts.map((a) => a.id), ...plays.map((a) => a.id), ...above.map((x) => x.act.id)];
+      const reading: Record<Id, number> = typeof d['reading'] === 'number' ? { [thread]: d['reading'] } : {};
+      return {
+        thread: summary, page: num(d['page'], 1), acts,
+        people: rowsOf(d['people']).map((p): ThreadPerson => ({
+          character: toCharacter(p['character'], isObject(p['profile']) ? p['profile'] : undefined), posts: num(p['posts']), standing: num(p['standing']),
+          reveals: rowsOf(p['reveals']).map(toClassReveal), turns: rowsOf(p['turns']).map(toTurn),
+        })),
+        plays, above, faces: Object.fromEntries(rowsOf(d['faces']).map((f) => [f['play'], f['card']])), states: toStates(rowsOf(d['states'])),
+        releases: (Array.isArray(d['releases']) ? d['releases'] : []).filter((x): x is Id => typeof x === 'string'),
+        tallies: toTallies(asked, rowsOf(d['tallies'])), mine: rowsOf(d['mine']).map(toMyReaction), spun: rowsOf(d['spun']).map(toThread), reading,
+        board: isObject(d['board']) ? toBoard(d['board']) : null, following: d['following'] === true,
+        presence: toPresence(d['presence'] ?? {}), unread: toUnread(d['unread']),
+      };
+    },
+    async profilePage(character): Promise<ProfilePage | null> {
+      const d = (await read(() => client.rpc('profile_page', { in_character: character }))).data as Row | null;
+      if (!isObject(d)) return null;
+      return {
+        character: toCharacter(d['character'] as Row, isObject(d['profile']) ? d['profile'] : undefined), counts: toCounts(d['counts']),
+        standing: toStandingPlace(d['standing']), settledAt: str(d['settled_at']), season: isObject(d['season']) ? toSeason(d['season']) : null,
+        reveals: rowsOf(d['reveals']).map(toClassReveal), turns: rowsOf(d['turns']).map(toTurn), acts: rowsOf(d['acts']).map(toAct),
+        targets: rowsOf(d['targets']).map(toAct), seasons: rowsOf(d['seasons']).map(toAct), unread: toUnread(d['unread']),
+      };
+    },
+    async recordPage(character, kind, page): Promise<RecordPage | null> {
+      const d = (await read(() => client.rpc('record_page', { in_character: character, in_kind: kind, in_page: page }))).data as Row | null;
+      if (!isObject(d)) return null;
+      const reveals = rowsOf(d['reveals']).map(toClassReveal);
+      const turns = rowsOf(d['turns']).map(toTurn);
+      const seasons = rowsOf(d['seasons']).map(toAct);
+      const shown = num(d['page'], 1);
+      const kindShown = (['all', 'post', 'spin', 'card', 'class', 'seasons'] as const).find((k) => k === d['kind']) ?? 'all';
+      /* The window's first row: for `all`, the extras merged in ahead of it push the read down by their number (the function's own rule). */
+      const from = kindShown === 'all' ? Math.max(0, (shown - 1) * RECORD_PAGE - (reveals.length + turns.length + seasons.length)) : (shown - 1) * RECORD_PAGE;
+      return {
+        kind: kindShown, page: shown, character: toCharacter(d['character'] as Row, isObject(d['profile']) ? d['profile'] : undefined), counts: toCounts(d['counts']),
+        reveals, turns, seasons, acts: rowsOf(d['acts']).map(toAct), from, targets: rowsOf(d['targets']).map(toAct), unread: toUnread(d['unread']),
+      };
+    },
+    async presenceBox(place): Promise<Presence> {
+      const at = place.kind === 'thread' ? place.thread : place.kind === 'board' ? place.board : null;
+      const d = (await read(() => client.rpc('presence_box', { in_kind: place.kind, in_place: at }))).data as Row | null;
+      return toPresence(isObject(d) ? d : {});
     },
     async setPresenceHidden(character, hidden) {
       const a = await rpcWrite(() => client.rpc('set_presence_hidden', { in_character: character, hidden }));
@@ -1110,7 +1253,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async alertsUnread() {
       const r = await read(() => client.rpc('my_alerts_unread'));
-      return Math.min(ALERTS_UNREAD_BOUND, Math.max(0, Math.floor(num(r.data))));
+      return toUnread(r.data);
     },
     async settlementMoved(id) {
       /* The caller's own ledger lines in one settlement, through a function (0076); no row is "moved none", for any id alike. */

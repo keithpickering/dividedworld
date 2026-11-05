@@ -113,6 +113,7 @@ describe('what the adapter may request', () => {
       api.characters([B]), api.characterCounts(B), api.characterStats([B]), api.standingAmounts([B]), api.standingPlace(B), api.characterActs(B, ['post'], { offset: 0, limit: 5 }), api.characterReveals(B), api.standingsCount(), api.standingsPage(0, 5), api.tallies([A]), api.viewCounts([T]), api.season(),
       api.boardNames(), api.moveNotice(A), api.movesLog('director'), api.movesLog('director', { at: '2026-10-01T10:00:00+00:00', act: A }), api.staffProfile('director'), api.adminQueue(), api.holdMove(1), api.reverseMove(A), api.updates(), api.updates('2026-10-01T10:00:00+00:00'), api.postUpdate('T', 'B', []),
       api.lastSettledAt(), api.classReveals([B]), api.turnsAnnounced([B]), api.nextSettlementAt(), api.myCharacters(), api.wallet(),
+      api.boot(), api.indexPage(), api.boardPage('general', 1, []), api.threadPage(T, { page: 1 }, 20, []), api.profilePage(B), api.recordPage(B, 'all', 1), api.presenceBox({ kind: 'index' }),
       api.myReactions([A]), api.myCards(), api.reading([T]), api.preferences(), api.invites(), api.isAdmin(), api.session(), api.estimate(),
     ]);
     const tables = new Set(h.rest().filter((r) => !r.url.pathname.includes('/rpc/')).map((r) => r.url.pathname.replace(`${REST}/`, '')));
@@ -1790,3 +1791,156 @@ describe('Updates', () => {
   });
 });
 
+
+describe('a screen in one call', () => {
+  const PROFILE = { title: 'Champ', signature: 'sig', avatar_square: 'sq', avatar_portrait: null, square_frame: { x: 1, y: 2, w: 3, h: 4 }, portrait_frame: null, pip_style: 'star' };
+  const CHAR = { id: B, name: 'Bea', joined: '2026-10-01', staff: null, office: null };
+  const BEA = { id: B, name: 'Bea', title: 'Champ', signature: 'sig', avatarSquare: `${URL_}/storage/v1/object/public/avatars/sq`, avatarPortrait: null, squareFrame: { x: 1, y: 2, w: 3, h: 4 }, portraitFrame: null, pipStyle: 'star', joined: '2026-10-01' };
+  const PRESENCE = { names: [{ id: B, name: 'Bea', staff: false }], others: 1 };
+  const PLAY_ROW = { ...ACT_ROW, id: SET, kind: 'card', target_act_id: A, payload: { card: 'splat' }, current_payload: { card: 'splat' } };
+  const ABOVE_ROW = { play: SPRING, reach: 'thread', target: T, ends_at: '2026-10-02T10:00:00+00:00', act: { ...ACT_ROW, id: SPRING, kind: 'card', payload: { card: 'whoops' } } };
+  const BOARD_ROW = { id: C, slug: 'general', name: 'General', description: 'All', is_system: false, move_act: null };
+  const BOARD = { id: C, slug: 'general', name: 'General', description: 'All', isSystem: false, moveAct: null };
+  /** A harness that answers one rpc with `answer` and nothing else, and the one request it should have been sent. */
+  const once = (name: string, answer: unknown) => harness((r) => (r.url.pathname.endsWith(`/rpc/${name}`) ? json(answer) : json({}, 404)));
+  const only = (h: ReturnType<typeof harness>, name: string) => {
+    expect(h.rest().map((r) => r.url.pathname.replace(`${REST}/`, ''))).toEqual([`rpc/${name}`]);
+    return h.to(`rpc/${name}`)[0]?.body;
+  };
+
+  it('boot: sends one request and maps the document to what the separate reads answer', async () => {
+    const h = once('boot', {
+      settings: { postsPerPage: 7, hotReplies: 'x' }, account: A, preferences: { theme: 'dark', text_size: 125, tips: 'off' },
+      characters: [{ id: B, name: 'Bea', class: 'face', class_since: '2026-10-01T00:00:00+00:00', presence_hidden: true }],
+      faces: [{ ...CHAR, profile: PROFILE }], wallet: { balance: 40, cap: null }, cards: [{ card: 'splat', held: 2 }],
+      boards: [{ ...BOARD_ROW, thread_count: 5, last_at: '2026-10-01T10:00:00+00:00', last_character: B, last_thread: T }],
+      unread: 99999, nextSettlementAt: '2026-10-02T08:17:00+00:00', lastSettledAt: '2026-10-01T08:17:00+00:00', newestSettlement: '2026-09-30T08:17:00+00:00',
+    });
+    const boot = await h.api.boot();
+    expect(only(h, 'boot') ?? {}).toEqual({});
+    expect(boot.settings.postsPerPage).toBe(7);
+    expect(boot.settings.hotReplies).toBe(FALLBACK.hotReplies);
+    expect(boot.account).toBe(A);
+    expect(boot.preferences).toMatchObject({ theme: 'dark', textSize: 125, tips: 'off' });
+    expect(boot.characters[0]).toMatchObject({ id: B, name: 'Bea', class: 'face', presenceHidden: true });
+    expect(boot.faces).toEqual([BEA]);
+    expect(boot.wallet).toEqual({ balance: 40, cap: FALLBACK.walletCap });
+    expect(boot.cards).toEqual([{ card: 'splat', held: 2 }]);
+    expect(boot.boards).toEqual([{ ...BOARD, threadCount: 5, lastAt: '2026-10-01T10:00:00+00:00', lastCharacter: B, lastThread: T }]);
+    expect(boot.unread).toBe(10);
+    expect([boot.nextSettlementAt, boot.lastSettledAt, boot.newestSettlement]).toEqual(['2026-10-02T08:17:00+00:00', '2026-10-01T08:17:00+00:00', '2026-09-30T08:17:00+00:00']);
+  });
+
+  it('boot: a caller with no account has none, and a refused boot throws', async () => {
+    const boot = await once('boot', { settings: {}, account: null, preferences: null, characters: [], faces: [], wallet: null, cards: [], boards: [], unread: 0, nextSettlementAt: null, lastSettledAt: null, newestSettlement: null }).api.boot();
+    expect(boot).toMatchObject({ account: null, characters: [], cards: [], boards: [], unread: 0, newestSettlement: null, wallet: { balance: 0, cap: FALLBACK.walletCap } });
+    await expect(harness(() => json({ code: '28000', message: 'sign in', hint: 'kayfabb.refusal' }, 401)).api.boot()).rejects.toThrow();
+  });
+
+  it('index_page: sends one request and maps boards, characters and the box', async () => {
+    const h = once('index_page', { boards: [{ ...BOARD_ROW, thread_count: 5, last_at: null, last_character: null, last_thread: null }], characters: [{ ...CHAR, profile: PROFILE }], presence: PRESENCE, unread: 3 });
+    const page = await h.api.indexPage();
+    expect(only(h, 'index_page') ?? {}).toEqual({});
+    expect(page).toEqual({ boards: [{ ...BOARD, threadCount: 5, lastAt: null, lastCharacter: null, lastThread: null }], characters: [BEA], presence: PRESENCE, unread: 3 });
+  });
+
+  it('board_page: sends the slug, page and cards by name, and maps the document; no such board is null', async () => {
+    const answer = {
+      board: BOARD_ROW, total: 41, page: 2, threads: [THREAD_ROW], pins: [{ thread: THREAD_ROW, play: SET, ends_at: '2026-10-02T10:00:00+00:00', act: PLAY_ROW }], banner: [ABOVE_ROW],
+      states: [{ play: SET, state: { n: 1 }, saved_at: '2026-10-01T11:00:00+00:00' }], releases: [{ play: SET }],
+      tallies: [{ act: SET, kind: 'fire', count: 2 }], mine: [{ act: SET, kind: 'fire', character: B }], reading: [{ thread: T, furthest_seq: 2 }],
+      views: [{ thread: T, views: 9 }], characters: [{ ...CHAR, profile: null }], presence: PRESENCE, unread: 0,
+    };
+    const h = once('board_page', answer);
+    const page = await h.api.boardPage('general', 2, ['splat']);
+    expect(only(h, 'board_page')).toEqual({ in_slug: 'general', in_page: 2, effect_cards: ['splat'] });
+    expect(page).toMatchObject({ board: BOARD, total: 41, page: 2, releases: [SET], reading: { [T]: 2 }, views: { [T]: 9 }, presence: PRESENCE, unread: 0 });
+    expect(page?.threads[0]).toMatchObject({ id: T, lastSeq: 2 });
+    expect(page?.pins[0]).toMatchObject({ play: SET, endsAt: '2026-10-02T10:00:00+00:00', thread: { id: T }, act: { id: SET, currentPayload: { card: 'splat' } } });
+    expect(page?.banner[0]).toMatchObject({ play: SPRING, reach: 'thread', target: T, act: { id: SPRING } });
+    expect(page?.states).toEqual({ [SET]: { state: { n: 1 }, savedAt: '2026-10-01T11:00:00+00:00' } });
+    expect(page?.tallies).toEqual({ [SET]: { fire: 2 }, [SPRING]: {} });
+    expect(page?.mine).toEqual([{ act: SET, kind: 'fire', character: B }]);
+    expect(page?.characters).toEqual([{ ...BEA, title: '', signature: '', avatarSquare: null, squareFrame: null, pipStyle: 'default' }]);
+    expect(await once('board_page', null).api.boardPage('nowhere', 1, [])).toBeNull();
+  });
+
+  it('thread_page: sends the thread, page or seq and per page by name, and maps the document', async () => {
+    const answer = {
+      summary: THREAD_ROW, page: 3, acts: [ACT_ROW], plays: [PLAY_ROW], above: [ABOVE_ROW], faces: [{ play: SET, card: 'splat' }],
+      states: [{ play: SET, state: { n: 1 }, saved_at: '2026-10-01T11:00:00+00:00' }], releases: [SET], tallies: [{ act: A, kind: 'fire', count: 1 }],
+      mine: [{ act: A, kind: 'fire', character: B }], spun: [{ ...THREAD_ROW, id: C }], reading: 2, board: BOARD_ROW, following: true, presence: PRESENCE, unread: 4,
+      people: [{ character: CHAR, profile: PROFILE, posts: 12, standing: 340, reveals: [{ act: A, character: B, class: 'face', at: '2026-10-01T10:00:00+00:00', via: 'act', thread: T }], turns: [{ act: C, character: B, at: '2026-10-02T10:00:00+00:00', was: null }] }],
+    };
+    const h = once('thread_page', answer);
+    const page = await h.api.threadPage(T, { page: null, seq: 41 }, 20, ['splat']);
+    expect(only(h, 'thread_page')).toEqual({ in_thread: T, in_page: null, in_seq: 41, per_page: 20, effect_cards: ['splat'] });
+    expect(page?.thread).toMatchObject({ id: T, lastSeq: 2 });
+    expect(page?.page).toBe(3);
+    expect(page?.acts).toEqual([ACT]);
+    expect(page?.acts[0]?.currentPayload).toEqual({ body: 'hello' });
+    expect(page?.people).toEqual([{
+      character: BEA, posts: 12, standing: 340,
+      reveals: [{ act: A, character: B, class: 'face', at: '2026-10-01T10:00:00+00:00', via: 'act', thread: T }], turns: [{ act: C, character: B, at: '2026-10-02T10:00:00+00:00', was: null }],
+    }]);
+    expect(page?.plays[0]).toMatchObject({ id: SET, targetActId: A });
+    expect(page?.above[0]).toMatchObject({ play: SPRING, target: T });
+    expect(page?.faces).toEqual({ [SET]: 'splat' });
+    expect(page?.states).toEqual({ [SET]: { state: { n: 1 }, savedAt: '2026-10-01T11:00:00+00:00' } });
+    expect(page?.releases).toEqual([SET]);
+    expect(page?.tallies).toEqual({ [A]: { fire: 1 }, [SET]: {}, [SPRING]: {} });
+    expect(page?.mine).toEqual([{ act: A, kind: 'fire', character: B }]);
+    expect(page?.spun[0]).toMatchObject({ id: C });
+    expect(page).toMatchObject({ reading: { [T]: 2 }, board: BOARD, following: true, presence: PRESENCE, unread: 4 });
+    const second = once('thread_page', { ...answer, reading: null, board: null });
+    await second.api.threadPage(T, { page: 2 }, 20, []);
+    expect(only(second, 'thread_page')).toEqual({ in_thread: T, in_page: 2, in_seq: null, per_page: 20, effect_cards: [] });
+    expect(await once('thread_page', { ...answer, reading: null, board: null }).api.threadPage(T, { page: 1 }, 20, [])).toMatchObject({ reading: {}, board: null });
+    expect(await once('thread_page', null).api.threadPage(T, { page: 1 }, 20, [])).toBeNull();
+  });
+
+  it('profile_page: sends the character and maps the document; no such character is null', async () => {
+    const answer = {
+      character: CHAR, profile: PROFILE, counts: { character: B, posts: 4, spins: 1, cards: 2 }, standing: { standing: 300, place: 2, of: 40 }, settled_at: '2026-10-01T08:17:00+00:00',
+      season: { id: 3, number: 2, starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, turns_thread: null, reveal_act: null },
+      reveals: [{ act: A, character: B, class: 'face', at: '2026-10-01T10:00:00+00:00', via: 'debut', thread: T }], turns: [], acts: [ACT_ROW], targets: [PLAY_ROW], seasons: [], unread: 1,
+    };
+    const h = once('profile_page', answer);
+    const page = await h.api.profilePage(B);
+    expect(only(h, 'profile_page')).toEqual({ in_character: B });
+    expect(page).toMatchObject({
+      character: BEA, counts: { posts: 4, spins: 1, cards: 2 }, standing: { standing: 300, place: 2, of: 40 }, settledAt: '2026-10-01T08:17:00+00:00',
+      season: { id: 3, number: 2, endsAt: null }, turns: [], seasons: [], unread: 1,
+    });
+    expect(page?.reveals[0]).toMatchObject({ class: 'face', via: 'debut' });
+    expect(page?.acts[0]?.currentPayload).toEqual({ body: 'hello' });
+    expect(page?.targets[0]?.id).toBe(SET);
+    expect(await once('profile_page', null).api.profilePage(B)).toBeNull();
+  });
+
+  it('record_page: sends the character, kind and page, and works out where the window starts', async () => {
+    const answer = {
+      kind: 'all', page: 2, character: CHAR, profile: null, counts: null,
+      reveals: [{ act: A, character: B, class: 'face', at: '2026-10-01T10:00:00+00:00', via: 'act', thread: T }], turns: [{ act: C, character: B, at: '2026-10-02T10:00:00+00:00', was: 'heel' }],
+      seasons: [], acts: [ACT_ROW], targets: [], unread: 0,
+    };
+    const h = once('record_page', answer);
+    const page = await h.api.recordPage(B, 'all', 2);
+    expect(only(h, 'record_page')).toEqual({ in_character: B, in_kind: 'all', in_page: 2 });
+    expect(page).toMatchObject({ kind: 'all', page: 2, from: 18, counts: { posts: 0, spins: 0, cards: 0 }, targets: [], seasons: [], unread: 0 });
+    expect(page?.turns).toEqual([{ act: C, character: B, at: '2026-10-02T10:00:00+00:00', was: 'heel' }]);
+    expect(page?.acts[0]?.currentPayload).toEqual({ body: 'hello' });
+    const posts = await once('record_page', { ...answer, kind: 'post' }).api.recordPage(B, 'post', 2);
+    expect(posts).toMatchObject({ kind: 'post', page: 2, ['fr' + 'om']: 20 });
+    expect(await once('record_page', null).api.recordPage(B, 'all', 1)).toBeNull();
+  });
+
+  it('presence_box: sends the place by name, reads nothing else, and answers as here does', async () => {
+    const h = once('presence_box', PRESENCE);
+    expect(await h.api.presenceBox({ kind: 'thread', thread: T })).toEqual(PRESENCE);
+    expect(only(h, 'presence_box')).toEqual({ in_kind: 'thread', in_place: T });
+    const index = once('presence_box', { names: [{ id: B }], others: 0 });
+    expect(await index.api.presenceBox({ kind: 'index' })).toEqual({ names: [], others: 0 });
+    expect(only(index, 'presence_box')).toEqual({ in_kind: 'index', in_place: null });
+  });
+});
