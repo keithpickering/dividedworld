@@ -156,3 +156,55 @@ test('a reaction to another\'s card on a third player\'s post is estimated, thro
   const { lines } = answer.body as { lines: { act: string; reason: string }[] };
   assert.deepEqual(lines.map((l) => [l.reason, l.act]), [['lurker.calledIt', card]], 'C\'s call on the card is C\'s line');
 });
+
+test('a card an admin reversed before the estimate\'s end is not estimated, nor the votes on it; one reversed at that instant still is', async () => {
+  const db = psqlDb();
+  await db.rpc('seed_instance', { payload: scratchSeed(instance) });
+  // The twin of 0001-settlement.ts's reversed-play cases (bot-card-options plan, Task 3), read through estimate_input.
+  const start = sql(`select to_jsonb(coalesce(max(ends_at), (select min(starts_at) from seasons)))#>>'{}' from settlements`);
+  const at = (hours: number) => new Date(Date.parse(start) + hours * 3_600_000).toISOString();
+  const ids = JSON.parse(sql(`
+    with u as (insert into auth.users (email) values ('est-rv-heel@test.invalid'), ('est-rv-f1@test.invalid'), ('est-rv-f2@test.invalid'), ('est-rv-au@test.invalid') returning id, email),
+    a as (insert into accounts (id) select id from u returning id)
+    select json_object_agg(split_part(email, '@', 1), id) from u`));
+  const masks: [string, string, string][] = [
+    ['est-rv-heel', 'Rv Gone', 'heel'], ['est-rv-heel', 'Rv Edge', 'heel'], ['est-rv-heel', 'Rv Kept', 'heel'],
+    ['est-rv-f1', 'Rv F1', 'face'], ['est-rv-f2', 'Rv F2', 'face'], ['est-rv-au', 'Rv Author', 'face'],
+  ];
+  const c = JSON.parse(sql(`
+    with c as (insert into characters (owner, name, created_at, debuted_at) values
+      ${masks.map(([who, name]) => `('${ids[who]}', '${name}', '${at(-48)}', '${at(-48)}')`).join(', ')} returning id, name),
+    h as (insert into class_history (character, class_key, started_at)
+      select c.id, m.class, '${at(-48)}' from c join (values ${masks.map(([, name, cls]) => `('${name}', '${cls}')`).join(', ')}) m(name, class) on m.name = c.name returning 1)
+    select json_object_agg(name, id) from c`));
+  const thread = sql(`insert into threads (board, title) select id, 'Reversed estimate' from boards where slug = 'general' returning id`);
+  const act = (who: string, hours: number, kind: string, target: string | null, payload: string) =>
+    sql(`insert into acts (character, kind, thread, target_act_id, payload, created_at) values ('${c[who]}', '${kind}', '${thread}', ${target ? `'${target}'` : 'null'}, '${payload}', '${at(hours)}') returning id`);
+  const plays: Record<string, string> = {};
+  let slot = 0;
+  for (const name of ['Rv Gone', 'Rv Edge', 'Rv Kept']) {
+    const post = act('Rv Author', 1, 'post', null, '{"body": "A take."}');
+    plays[name] = act(name, 2, 'card', post, '{"card": "whoops", "config": {"color": "red"}}');
+    for (const [i, fan] of ['Rv F1', 'Rv F2'].entries()) {
+      slot += 1;
+      sql(`insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values ('${plays[name]}', '${c[fan]}', '${ids[i === 0 ? 'est-rv-f1' : 'est-rv-f2']}', 'tomato', ${slot}, '${at(3 + i)}')`);
+    }
+  }
+  const reverse = (card: string, when: string) => sql(`select set_config('kayfabb.card_end_writer', 'on', false);
+    insert into acts (character, kind, thread, target_act_id, payload, created_at) values (null, 'card_end', '${thread}', '${card}', '{"why": "reversed", "by": "admin"}', '${when}');
+    select set_config('kayfabb.card_end_writer', '', false)`);
+  reverse(plays['Rv Gone'], at(10));
+  const until = at(24);
+  reverse(plays['Rv Edge'], until);
+
+  const scoped = JSON.parse(sql(`select estimate_input('${ids['est-rv-heel']}', '${until}')`)) as SettlementInput & { player: string };
+  const named = new Set(scoped.acts.map((a) => a.id));
+  assert.ok(!named.has(plays['Rv Gone']), 'the reversed card is not in the input');
+  assert.ok(!scoped.reactions.some((r) => r.act === plays['Rv Gone']), 'nor are the votes on it');
+  assert.ok(named.has(plays['Rv Edge']) && named.has(plays['Rv Kept']), 'a card reversed at the window\'s end, and a live one, are');
+  const lines = estimateForOwner(scoped, instance, scoped.player).lines;
+  const paid = (card: string) => lines.filter((l) => l.act === card).length;
+  assert.equal(paid(plays['Rv Gone']), 0, 'a reversed card draws nothing in the estimate');
+  assert.ok(paid(plays['Rv Kept']) > 0 || lines.some((l) => l.reason === 'heel.drewHeat'), `the control is estimated: ${JSON.stringify(lines)}`);
+  assert.ok(lines.length > 0);
+});

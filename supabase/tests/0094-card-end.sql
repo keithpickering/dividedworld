@@ -421,3 +421,13 @@ begin
     raise exception 'release_effect releases the live play alone';
   end if;
 end $$;
+
+-- ====================================================================================== Task 3 follow-up: the chatter run's grant ====
+
+-- ---- The chatter Edge Function reads a target's effects as service_role, so card_target_reach is granted to it by name ----
+do $$
+begin
+  if not has_function_privilege('service_role', 'card_target_reach(text, uuid, uuid)', 'execute') then
+    raise exception 'service_role may execute card_target_reach, which the chatter run calls';
+  end if;
+end $$;

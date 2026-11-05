@@ -196,3 +196,84 @@ test('the settlement of a season\'s last window posts its tally and its reveal, 
   assert.equal(sql(`select count(*) from broadcasts_due`), '0', 'nothing is left waiting');
   sql(`update settings set value = '{"unit": "month", "count": 3}' where key = 'seasonLength'`);
 });
+
+// A reversed play settles no further (bot-card-options plan, Task 3; design section 3, "Aura"). Two Heels each play a Salty card on a
+// post and the same two fans vote on each card; one card is reversed by an admin (a card_end, written as reverse_card writes it,
+// at an instant the test chooses), the other never is, so the control proves the setup pays at all.
+async function reversedPlays(db: ReturnType<typeof psqlDb>) {
+  await db.rpc('seed_instance', { payload: scratchSeed(instance) });
+  const start = sql(`select to_jsonb(coalesce(max(ends_at), now()))#>>'{}' from settlements`);
+  const at = (hours: number) => new Date(Date.parse(start) + hours * 3_600_000).toISOString();
+  const tag = Math.random().toString(36).slice(2, 8);
+  const ids = JSON.parse(sql(`
+    with u as (insert into auth.users (email) values ('e2e-rv-${tag}-gone@test.invalid'), ('e2e-rv-${tag}-kept@test.invalid'), ('e2e-rv-${tag}-fan1@test.invalid'), ('e2e-rv-${tag}-fan2@test.invalid'), ('e2e-rv-${tag}-author@test.invalid') returning id, email),
+    a as (insert into accounts (id) select id from u returning id)
+    select json_object_agg(split_part(email, '@', 1), id) from u`)) as Record<string, string>;
+  const who = (k: string) => ids[`e2e-rv-${tag}-${k}`];
+  const characters = JSON.parse(sql(`
+    with c as (insert into characters (owner, name, created_at, debuted_at) values
+      ('${who('gone')}', 'Gone ${tag}', '${at(-1)}', '${at(-1)}'), ('${who('kept')}', 'Kept ${tag}', '${at(-1)}', '${at(-1)}'),
+      ('${who('fan1')}', 'Fan1 ${tag}', '${at(-1)}', '${at(-1)}'), ('${who('fan2')}', 'Fan2 ${tag}', '${at(-1)}', '${at(-1)}'),
+      ('${who('author')}', 'Author ${tag}', '${at(-1)}', '${at(-1)}') returning id, name),
+    h as (insert into class_history (character, class_key, started_at)
+      select id, case when name like 'Gone%' or name like 'Kept%' then 'heel' else 'face' end, '${at(-1)}' from c returning 1)
+    select json_object_agg(split_part(name, ' ', 1), id) from c`)) as Record<string, string>;
+  const play = (name: 'Gone' | 'Kept') => {
+    const post = sql(`
+      with t as (insert into threads (board, title) select id, 'Salty ${name} ${tag}' from boards where slug = 'general' returning id)
+      insert into acts (character, kind, thread, payload, created_at)
+      select '${characters.Author}', 'post', t.id, '{"body": "A take."}', '${at(1)}' from t returning id`);
+    const card = sql(`insert into acts (character, kind, thread, target_act_id, payload, created_at)
+      select '${characters[name]}', 'card', thread, id, '{"card": "whoops", "config": {"color": "red"}}', '${at(2)}' from acts where id = '${post}' returning id`);
+    for (const [i, fan] of (['Fan1', 'Fan2'] as const).entries()) {
+      sql(`insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values
+        ('${card}', '${characters[fan]}', '${who(fan.toLowerCase())}', 'tomato', ${i + 1}, '${at(3 + i)}')`);
+    }
+    return { post, card };
+  };
+  // What reverse_card writes, at a chosen instant (it writes at now()).
+  const reverse = (card: string, when: string) => sql(`select set_config('kayfabb.card_end_writer', 'on', false);
+    insert into acts (character, kind, thread, target_act_id, payload, created_at)
+    select null, 'card_end', thread, id, '{"why": "reversed", "by": "admin"}', '${when}' from acts where id = '${card}'; select set_config('kayfabb.card_end_writer', '', false)`);
+  const aura = (name: string) => Number(sql(`select coalesce(sum(amount), 0) from ledger where character = '${characters[name]}'`));
+  return { at, ids, who, characters, play, reverse, aura, tag };
+}
+
+test('a card an admin reversed before the window\'s end moves no Aura, and the card beside it still does', async () => {
+  const db = psqlDb();
+  const t = await reversedPlays(db);
+  const gone = t.play('Gone');
+  t.play('Kept');
+  t.reverse(gone.card, t.at(10));
+  const out = await runSettlement(db, instance, t.at(24));
+  assert.equal(out.status, 'applied', JSON.stringify(out));
+  assert.ok(t.aura('Kept') > 0, 'the control: an unreversed Salty card and its two votes pay its Heel');
+  assert.equal(t.aura('Gone'), 0, 'a reversed card and the votes on it move no Aura');
+  assert.equal(sql(`select count(*) from ledger_shares where act = '${gone.card}'`), '0', 'and no share of a ledger line names the reversed play');
+});
+
+test('a card reversed exactly at the window\'s end was in force for the whole window, as a vote written then is not in it', async () => {
+  const db = psqlDb();
+  const t = await reversedPlays(db);
+  const edge = t.play('Gone');
+  t.play('Kept');
+  t.reverse(edge.card, t.at(24));
+  assert.equal((await runSettlement(db, instance, t.at(24))).status, 'applied');
+  assert.equal(t.aura('Gone'), t.aura('Kept'), 'an end at window_end is after the window, so it settles as the control does');
+  assert.ok(t.aura('Gone') > 0);
+});
+
+test('a card reversed after its window settled keeps that window\'s Aura, and moves none in the next', async () => {
+  const db = psqlDb();
+  const t = await reversedPlays(db);
+  const gone = t.play('Gone');
+  assert.equal((await runSettlement(db, instance, t.at(24))).status, 'applied');
+  const settled = t.aura('Gone');
+  assert.ok(settled > 0, 'the play paid its Heel in the window it was in force');
+  // Reversed in the next window, with a further vote on it after.
+  t.reverse(gone.card, t.at(25));
+  sql(`insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values
+    ('${gone.card}', '${t.characters.Author}', '${t.who('author')}', 'tomato', 1, '${t.at(26)}')`);
+  assert.equal((await runSettlement(db, instance, t.at(48))).status, 'applied');
+  assert.equal(t.aura('Gone'), settled, 'the first window\'s Aura stays and the next moves none');
+});
