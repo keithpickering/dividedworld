@@ -2,7 +2,7 @@
  * The frame: the banner, the links, and the Game HUD docked at the bottom. The banner is the 2003
  * board's, as the Main board draws it: the name on a row, the links on a row of their own under it,
  * each ruled off, and the page the window's width less a 2% gutter each side. Past `--kb-board-max`
- * (960px, the owner's word: engine/ui/tokens.css) the three stand in one column of that width,
+ * (1200px, the owner's word: engine/ui/tokens.css) the three stand in one column of that width,
  * centered, rules and all, so the board does not stretch into a table too wide to read; the HUD below
  * is the glass's and spans the window. On a phone the links fold behind Boards, a 44px control, as
  * the Phone board draws it.
@@ -29,8 +29,13 @@
 }
 
 .kb-logo {
-  /* The site's name is one line; the banner wraps what is beside it, and the name never wraps in a column too narrow for ten of its ems. */
-  white-space: nowrap;
+  /*
+   * The site's name is one line wherever it fits: the banner wraps what is beside it first, and a flex line breaks before it shrinks an
+   * item. Only when the name alone is wider than the banner does it fold, at its spaces, as the 2003 board's folds at a large text size
+   * (the name at 1.5625rem is 50px of type at 200% text, wider than a 390px phone); `anywhere` keeps one long word from running past
+   * the window.
+   */
+  overflow-wrap: anywhere;
   font: bold var(--kb-size-logo) / 1.2 var(--kb-font-mono);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -70,6 +75,41 @@
   padding-left: 0;
   padding-right: 0;
   padding-bottom: calc(var(--kb-hud-measured, 9em) + 1.5em);
+}
+
+/*
+ * The vignette (the glass-polish design's section 8, changed by the owner on 2026-11-05: "lay the vignette over the '03 board itself,
+ * perhaps by pulling it back a bit so it doesn't encroach on posts too much; the idea is to bridge the HUD/settings and the '03
+ * board", and behind the board it "makes more of a sandwich"): the glass's violet laid toward the edges of the window, heaviest at
+ * the corners and the foot above the HUD, so the HUD's glow seems to fall onto the page. One fixed element over the whole window,
+ * posts included, under the HUD (z-index 30), that takes no click. The edge is an elliptical radial gradient to the window's
+ * corners, where it reaches the full edge opacity, clear until 150px short of the column's edge (half of `--kb-board-max`, or the
+ * 48% of the window the column takes where the window is narrower) so over the posts it reaches only the column's outer edge, the
+ * postbit cells and the line ends; the foot is a linear gradient over 220px, on phones too. A mask holds both to
+ * `--kb-vignette-column` of their strength inside the column and leaves the gutters whole, so text under it keeps its contrast
+ * (e2e/board-width.spec.ts measures 4.5:1 at the strongest points). High contrast draws none. Colors and opacities are the
+ * instance's (engine/ui/tokens.css); the engine's defaults draw nothing.
+ *
+ * The mask reads alpha only, so its stops are `--kb-vignette-mask` (black: engine/ui/tokens.css) and never the page's ground, which a
+ * transparent theme could empty. `48vw` includes the scrollbar's width, so the mask's edge sits slightly outside the column, which
+ * is the safe side.
+ */
+.kb-vignette {
+  --kb-column-half: min(48vw, calc(var(--kb-board-max) / 2));
+  --kb-column-mask: color-mix(in srgb, var(--kb-vignette-mask) calc(var(--kb-vignette-column) * 100%), transparent);
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+  background:
+    linear-gradient(to top, color-mix(in srgb, var(--kb-vignette-foot-color) calc(var(--kb-vignette-foot) * 100%), transparent), transparent 220px),
+    radial-gradient(ellipse farthest-corner at 50% 50%, transparent max(0px, calc(var(--kb-column-half) - 150px)), color-mix(in srgb, var(--kb-vignette-color) calc(var(--kb-vignette-edge) * 100%), transparent) 100%);
+  -webkit-mask-image: linear-gradient(to right, var(--kb-vignette-mask) calc(50% - var(--kb-column-half)), var(--kb-column-mask) calc(50% - var(--kb-column-half)), var(--kb-column-mask) calc(50% + var(--kb-column-half)), var(--kb-vignette-mask) calc(50% + var(--kb-column-half)));
+  mask-image: linear-gradient(to right, var(--kb-vignette-mask) calc(50% - var(--kb-column-half)), var(--kb-column-mask) calc(50% - var(--kb-column-half)), var(--kb-column-mask) calc(50% + var(--kb-column-half)), var(--kb-vignette-mask) calc(50% + var(--kb-column-half)));
+}
+
+:root[data-kb-contrast='high'] .kb-vignette {
+  display: none;
 }
 
 /*

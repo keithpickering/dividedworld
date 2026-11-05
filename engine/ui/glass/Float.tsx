@@ -23,7 +23,7 @@ import type { GlassSurface } from '../types.ts';
 import { pageEscape } from './keys.ts';
 import { hudTopOf, placePopover } from './place.ts';
 import { FRAME } from './Frame.tsx';
-import { Smoke, useSurfaceStyle } from './Smoke.tsx';
+import { FIELD_PLACED, Smoke, useSurfaceStyle } from './Smoke.tsx';
 import './shell.css';
 
 /** Where a float stands: beside the post, under its anchor, over it where there is no room under, or the narrow width's sheet. */
@@ -176,6 +176,8 @@ export function Float({ label, surface, onClose, children, anchor, beside, sheet
       const scrolled = b.scrollTop;
       const placed = placeFloat(w, b, target, beside?.current ?? null, sheet);
       b.scrollTop = scrolled;
+      /* The float's smoke is a window onto the field and reads where the box stands (Smoke.tsx), which was only just decided. */
+      window.dispatchEvent(new Event(FIELD_PLACED));
       /*
        * A sheet scrolls the post so its marks sit just above it: on open and when the sheet's edge moves (its size changed), never
        * for a scroll, which would fight a reader scrolling the page.

@@ -18,7 +18,7 @@ const POST = { id: 'p1', character: 'c1', kind: 'post', thread: 't1', targetActI
 
 beforeEach(() => {
   /* Every box has a size, so an effect that measures itself builds what it draws, and a drag lands on it. */
-  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 790 });
+  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 988 });
   Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, get: () => 600 });
   HTMLCanvasElement.prototype.getContext = (() => null) as unknown as HTMLCanvasElement['getContext'];
   vi.useFakeTimers();

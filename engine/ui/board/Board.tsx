@@ -186,6 +186,7 @@ export function BoardScreen({ slug }: { readonly slug: string }) {
       ) : (
         <>
           {pager('top')}
+          <div className="kb-thread-list-fold">
           <table className="kb-table kb-thread-list" role="table">
             <caption className="kb-visually-hidden">Threads on {board.name}, most recently posted first</caption>
             <thead role="rowgroup">
@@ -202,6 +203,7 @@ export function BoardScreen({ slug }: { readonly slug: string }) {
               {threads.filter((t) => !state.pins.some((p) => p.thread.id === t.id)).map((t) => <ThreadRow key={t.id} t={t} loaded={state} perPage={settings.postsPerPage} hot={settings.hotReplies} />)}
             </tbody>
           </table>
+          </div>
           {pager('bottom')}
         </>
       )}

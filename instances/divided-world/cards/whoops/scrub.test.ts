@@ -14,13 +14,18 @@ const HEIGHT = 8;
 const BOX = { minX: 0, maxX: 1, minY: 0, maxY: HEIGHT };
 const splatOf = (seed: number) => makeSplat(seed);
 
-test('the reference width is the post body\'s width at the board\'s 960px, derived from the thread\'s own measures', () => {
-  /* The thread's table at its widest: 960 less its 1px borders, its postbit column minmax(8em, min(18%, 14em)) at 12px type, the rest the body. */
-  const table = 960 - 2;
-  const postbit = Math.max(8 * 12, Math.min(0.18 * table, 14 * 12));
-  assert.equal(postbit, 168);
+test('the reference width is the post body\'s width at the board\'s 1200px, derived from the thread\'s own measures', () => {
+  /* The thread's table at its widest: 1200 less its 1px borders, its postbit column minmax(8em, min(18%, 14em)) at 15px type, the rest the body. */
+  const table = 1200 - 2;
+  const postbit = Math.max(8 * 15, Math.min(0.18 * table, 14 * 15));
+  assert.equal(postbit, 210);
   assert.equal(REF_WIDTH, table - postbit);
-  assert.equal(REF_WIDTH, 790);
+  assert.equal(REF_WIDTH, 988);
+});
+
+test('the brush and the row keep their physical size at the reference width: 30px and 22.5px, the 24px and 18px of the 12px board scaled by 1.25', () => {
+  assert.ok(Math.abs(BRUSH * REF_WIDTH - 30) < 1e-9);
+  assert.ok(Math.abs(ROW * REF_WIDTH - 22.5) < 1e-9);
 });
 
 test('the layout is the body\'s width scaled to the frame, never scaled up, and centered', () => {

@@ -59,7 +59,8 @@
     "bit foot"
     "bit panels";
   grid-template-rows: auto 1fr auto auto;
-  border-bottom: 1px solid var(--kb-rule);
+  /* Posts stay one table, ruled apart by a 4px double rule (the glass-polish design, section 8: separate boxes were "too non-2003"). */
+  border-bottom: 4px double var(--kb-rule);
   scroll-margin-top: 0.5em;
 }
 
