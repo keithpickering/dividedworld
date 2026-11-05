@@ -145,7 +145,7 @@ function Frame({ section, children }: { readonly section: Section | null; readon
             <ul>
               {SECTIONS.map((s) => (
                 <li key={s.key}>
-                  <GlassButton to={sectionHref(s.key)} kind={s.key === section ? 'primary' : 'quiet'} aria-current={s.key === section ? 'page' : undefined}>{s.label}</GlassButton>
+                  <GlassButton to={sectionHref(s.key)} kind={s.key === section ? 'primary' : 'secondary'} aria-current={s.key === section ? 'page' : undefined}>{s.label}</GlassButton>
                 </li>
               ))}
             </ul>

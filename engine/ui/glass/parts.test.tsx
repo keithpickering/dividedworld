@@ -76,6 +76,32 @@ describe('PageHead', () => {
   });
 });
 
+describe('every tab strip of GlassButtons', () => {
+  /*
+   * An unselected tab is `secondary` everywhere: `quiet` fails contrast on the bare smoke. A tab strip is a
+   * `kind={x ? 'primary' : '<other>'}`, so any other word in the else place is a refusal.
+   */
+  test('draws its unselected tabs as secondary', () => {
+    const root = path.join(here, '..');
+    const files: string[] = [];
+    const walk = (dir: string) => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) walk(full);
+        else if (/\.tsx$/u.test(e.name) && !/\.(test|stories|board\.stories)\.tsx$/u.test(e.name)) files.push(full);
+      }
+    };
+    walk(root);
+    const wrong: string[] = [];
+    for (const f of files) {
+      for (const m of fs.readFileSync(f, 'utf8').matchAll(/kind=\{[^{}]*\?\s*'primary'\s*:\s*'(\w+)'\s*\}/gu)) {
+        if (m[1] !== 'secondary') wrong.push(`${path.relative(root, f)}: unselected tab is '${m[1]}'`);
+      }
+    }
+    expect(wrong).toEqual([]);
+  });
+});
+
 describe('GlassButton', () => {
   test('is a button, or a link with `to`', () => {
     renderInWorld(<><GlassButton>Save</GlassButton><GlassButton to="/log">Open</GlassButton></>);
