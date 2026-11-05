@@ -310,7 +310,7 @@ export function Hud() {
                 {!signedIn ? (
                   <div className="kb-hud-door kb-calm">
                     <span className="kb-hud-door-mark" aria-hidden="true">?</span>
-                    <div className="kb-hud-door-words kb-calm">
+                    <div className="kb-hud-door-words">
                       {/* A heading, not a bare element: the HUD is a labeled region, and its prompt is what a screen reader should find in it; it sits under the page's h1 in rank, though the HUD comes first in the document. */}
                       <h2 className="kb-hud-door-title kb-glass-display">{ui.frontDoor.prompt.title}</h2>
                       <p className="kb-hud-door-line">{ui.frontDoor.prompt.line}</p>
