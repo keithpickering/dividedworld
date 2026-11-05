@@ -21,10 +21,12 @@ import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import { ThemeRow, MotionRow, TextSizeRow } from '../account/appearanceRows.tsx';
 import { usePreferenceSaves } from '../account/preferences.ts';
 import { useKayfa } from '../context.tsx';
+import { ButtonRow, GlassButton } from '../glass/Button.tsx';
+import { PageHead } from '../glass/PageHead.tsx';
 import { Blocks, DASH, type Fill } from '../guide/render.tsx';
 import { inlineText, parse, settingText } from '../guide/markdown.ts';
 import { SignInPrompt, useSignedIn } from '../mini.tsx';
-import { Link, useLocation, useNavigate } from '../router.tsx';
+import { useLocation, useNavigate } from '../router.tsx';
 import { usePlayer } from '../player.tsx';
 import { PersonaMark } from '../updates/Persona.tsx';
 import './welcome.css';
@@ -69,7 +71,7 @@ export function Welcome() {
 
   return (
     <div className="kb-welcome">
-      <h1 className="kb-welcome-title kb-glass-display">Welcome</h1>
+      <PageHead title="Welcome" />
       <div className="kb-welcome-cols">
         <article className="kb-welcome-post" aria-labelledby={letter.title === null ? undefined : headline}>
           <div className="kb-updates-by">
@@ -99,8 +101,10 @@ export function Welcome() {
           </section>
 
           <div className="kb-welcome-go">
-            <Link to="/characters/new" className="kb-welcome-button kb-glass-skew"><b className="kb-glass-upright">Make your first character</b></Link>
-            <Link to="/guide" className="kb-welcome-link">Read the Strategy Guide first</Link>
+            <ButtonRow>
+              <GlassButton to="/characters/new" kind="primary">Make your first character</GlassButton>
+              <GlassButton to="/guide">Read the Strategy Guide first</GlassButton>
+            </ButtonRow>
           </div>
         </article>
         <aside className="kb-welcome-side" aria-label="What happens next">

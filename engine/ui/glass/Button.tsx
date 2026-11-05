@@ -1,4 +1,4 @@
-import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode } from 'react';
+import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode, Ref } from 'react';
 import { Link } from '../router.tsx';
 
 export type GlassButtonKind = 'primary' | 'secondary' | 'quiet';
@@ -10,7 +10,7 @@ type Common = {
   readonly children?: ReactNode;
 };
 /** Without `to`, a button and its props. */
-type AsButton = Common & { readonly to?: undefined } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'>;
+type AsButton = Common & { readonly to?: undefined; readonly ref?: Ref<HTMLButtonElement> } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'>;
 /** With `to`, the router's Link and an anchor's props (plus `state` and `replace`, which the router's Link takes, and `disabled`, which a link has no attribute for). */
 type AsLink = Common & { readonly to: string; readonly disabled?: boolean; readonly state?: unknown; readonly replace?: boolean } & Omit<AnchorHTMLAttributes<HTMLAnchorElement>, 'children'>;
 export type GlassButtonProps = AsButton | AsLink;

@@ -14,15 +14,6 @@
   padding-top: 32px;
 }
 
-.kb-guide-title {
-  margin: 0;
-  font-size: 7rem;
-  line-height: 1;
-  letter-spacing: 1px;
-  color: var(--kb-glass-text);
-  text-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 35%, transparent);
-}
-
 .kb-guide-cols {
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);
@@ -254,6 +245,8 @@
 .kb-guide-table-wrap {
   margin-top: 20px;
   overflow-x: auto;
+  /* The cards table asks its own width (below), not the window's. */
+  container-type: inline-size;
 }
 
 .kb-guide-table-wrap:focus-visible {
@@ -285,6 +278,49 @@
 .kb-guide-table tbody th {
   font-weight: 800;
   color: var(--kb-glass-text-hi);
+}
+
+/*
+ * The cards table has five columns, and each of them wants ten ems of its type or the others take the room (the layout check refuses a
+ * block squeezed by its siblings). Where the table's own box is narrower than that, at a phone or at large text, it is no table: each
+ * card is a block, its name first, then its Kind, Played, Price and what it does, each led by its column's name. The head row stays
+ * for a reader, visually hidden.
+ */
+@container (max-width: 56em) {
+  .kb-guide-cards,
+  .kb-guide-cards tbody,
+  .kb-guide-cards tbody tr,
+  .kb-guide-cards tbody th,
+  .kb-guide-cards tbody td {
+    display: block;
+  }
+
+  .kb-guide-cards thead th {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .kb-guide-cards tbody tr {
+    padding: 12px 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-text) 22%, transparent);
+  }
+
+  .kb-guide-cards tbody th,
+  .kb-guide-cards tbody td {
+    padding: 2px 0;
+    border-bottom: 0;
+  }
+
+  .kb-guide-cards tbody td[data-kb-label]::before {
+    content: attr(data-kb-label) ': ';
+    font-weight: 800;
+    color: var(--kb-glass-text-2);
+  }
 }
 
 /* The flavor is an <i>; the glass loads italic only at 700 and up, so it is drawn in one of those, never a synthesized slant. */
@@ -434,10 +470,6 @@
 
 :where(:root[data-kb-layout='phone']) .kb-guide {
   padding-top: 16px;
-}
-
-:where(:root[data-kb-layout='phone']) .kb-guide-title {
-  font-size: var(--kb-glass-size-display-l);
 }
 
 :where(:root[data-kb-layout='phone']) .kb-guide-cols {

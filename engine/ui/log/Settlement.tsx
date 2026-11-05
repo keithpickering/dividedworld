@@ -22,12 +22,14 @@
  * device's alone (`kb-settled-seen:<account>`), a key that is no longer read or written. It is set as the summary shows, so it
  * does not show again after either way out.
  */
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties, type MouseEvent } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Id } from '../data/api.ts';
 import { micros } from '../data/log-page.ts';
 import { backHref, boardPlace, useBackToBoard } from '../glass/back.ts';
+import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { pageEscape, plainClick } from '../glass/keys.ts';
+import { PageHead } from '../glass/PageHead.tsx';
 import { SignInPrompt, useSignedIn } from '../mini.tsx';
 import { Orbs } from '../orbs/Orbs.tsx';
 import { usePlayer } from '../player.tsx';
@@ -65,19 +67,20 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
   const turnTitle = turnAct ? data.titles.get(turnAct.thread) : undefined;
   return (
     <>
-      <header className="kb-settled-head">
-        <div className="kb-settled-top">
-          <p className="kb-settled-when kb-calm">Settled {utcWhen(s.endsAt)} UTC</p>
-          {tabs.length > 0 && (
-            <nav aria-label="Your characters" className="kb-settled-tabs kb-calm">
+      <PageHead
+        eyebrow={`Settled ${utcWhen(s.endsAt)} UTC`}
+        title="While you were away"
+        calmed
+        tabs={tabs.length > 0 && (
+          <nav aria-label="Your characters" className="kb-calm">
+            <ButtonRow>
               {tabs.map((c) => (
-                <button key={c.id} type="button" className="kb-settled-tab kb-glass-skew" aria-pressed={c.id === current?.id} onClick={() => onTab(c.id)}><span className="kb-glass-upright">{c.name}</span></button>
+                <GlassButton key={c.id} kind={c.id === current?.id ? 'primary' : 'secondary'} aria-pressed={c.id === current?.id} onClick={() => onTab(c.id)}>{c.name}</GlassButton>
               ))}
-            </nav>
-          )}
-        </div>
-        <h1 className="kb-settled-title kb-glass-display kb-calm">While you were away</h1>
-      </header>
+            </ButtonRow>
+          </nav>
+        )}
+      />
 
       <div className="kb-settled-body">
         <section aria-label="Wallet" className="kb-settled-wallet">
@@ -193,15 +196,17 @@ export function SettlementScreen() {
     <div className="kb-settled">
       {content}
       <div className="kb-settled-ways kb-calm">
-        {opening && <Link to="/log" state={opening} className="kb-settled-log kb-glass-skew"><span className="kb-glass-upright">Open my log</span></Link>}
-        <Link
-          to={backHref(boardPlace())}
-          className="kb-settled-back kb-glass-skew"
-          aria-keyshortcuts="Escape"
-          onClick={(e) => { if (!plainClick(e)) return; e.preventDefault(); back(); }}
-        >
-          <span className="kb-glass-upright">Back to the board</span>
-        </Link>
+        <ButtonRow>
+          {opening && <GlassButton to="/log" state={opening}>Open my log</GlassButton>}
+          <GlassButton
+            to={backHref(boardPlace())}
+            kind="primary"
+            aria-keyshortcuts="Escape"
+            onClick={(e: MouseEvent<HTMLAnchorElement>) => { if (!plainClick(e)) return; e.preventDefault(); back(); }}
+          >
+            Back to the board
+          </GlassButton>
+        </ButtonRow>
       </div>
     </div>
   );

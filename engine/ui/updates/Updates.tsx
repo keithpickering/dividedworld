@@ -18,6 +18,8 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import { UPDATES_PAGE, type Id, type Update } from '../data/api.ts';
+import { ButtonRow, GlassButton } from '../glass/Button.tsx';
+import { PageHead } from '../glass/PageHead.tsx';
 import { PersonaMark } from './Persona.tsx';
 import { ChangedList, Prose } from './UpdateWords.tsx';
 import { SignInPrompt, useSignedIn } from '../mini.tsx';
@@ -97,9 +99,7 @@ function Post({ update }: { readonly update: Update }) {
       )}
       <div className="kb-updates-acts">
         <Reactions act={update.act} author={update.character} authorName={update.name} tallies={tallies} mine={mine} subject={`the update “${update.title}”`} look="glass" />
-        <button type="button" className="kb-kit-tile kb-updates-spin" aria-expanded={spinning} onClick={() => setSpinning(!spinning)}>
-          <span className="kb-kit-tile-label">Spin a thread on the board</span>
-        </button>
+        <GlassButton aria-expanded={spinning} onClick={() => setSpinning(!spinning)}>Spin a thread on the board</GlassButton>
       </div>
       {spinning && (
         <div className="kb-updates-spinning">
@@ -117,9 +117,7 @@ export function Updates({ updates, open, more, onMore, admin, onWritten }: Updat
   const voice = updates[0]?.name;
   return (
     <div className="kb-updates">
-      <div className="kb-updates-head">
-        <h1 className="kb-updates-title kb-glass-display">Updates</h1>
-      </div>
+      <PageHead title="Updates" />
       <div className="kb-updates-cols">
         <aside className="kb-updates-side">
           <p className="kb-updates-lede kb-calm">
@@ -138,16 +136,14 @@ export function Updates({ updates, open, more, onMore, admin, onWritten }: Updat
                   </li>
                 ))}
               </ul>
-              {more && <button type="button" className="kb-kit-tile kb-updates-more" onClick={onMore}><span className="kb-kit-tile-label">Show earlier updates</span></button>}
+              {more && <ButtonRow><GlassButton className="kb-updates-more" onClick={onMore}>Show earlier updates</GlassButton></ButtonRow>}
             </nav>
           )}
         </aside>
         <div className="kb-updates-main">
           {admin && (
             <div className="kb-updates-write">
-              <button type="button" className="kb-kit-tile" aria-expanded={writing} onClick={() => setWriting(!writing)}>
-                <span className="kb-kit-tile-label">Write an update</span>
-              </button>
+              <ButtonRow><GlassButton aria-expanded={writing} onClick={() => setWriting(!writing)}>Write an update</GlassButton></ButtonRow>
               {writing && <WriteUpdate onWritten={onWritten} />}
             </div>
           )}

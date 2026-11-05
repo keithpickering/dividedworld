@@ -70,6 +70,25 @@
   color: var(--kb-glass-text-2);
 }
 
+.kb-page-head-tabs {
+  flex: 0 1 auto;
+  min-width: 0;
+  align-self: flex-end;
+  /* At the title row's right end, as the boards draw the filters and tabs; on the phone they stand under the title, at its left. */
+  margin-left: auto;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-page-head-tabs { margin-left: 0; }
+
+.kb-page-head-title.kb-calm {
+  /* Room in its own box for the face's ascent and descent, so the words lie inside the calm's interior. */
+  line-height: 1.15;
+}
+
+.kb-page-head-tabs > .kb-calm {
+  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
+}
+
 .kb-page-head > .kb-button-row {
   flex: 0 0 100%;
   margin-top: 8px;

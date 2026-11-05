@@ -19,6 +19,8 @@
   font-family: var(--kb-glass-font-display);
   font-weight: 400;
   text-transform: uppercase;
+  /* A display heading wraps inside its box, even a word of it, and is never squeezed or run past the column at large text. */
+  overflow-wrap: anywhere;
 }
 
 /* ---- the smoke ---- */

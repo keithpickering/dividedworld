@@ -1,10 +1,10 @@
 /*
  * The settlement's summary on the glass (Settlement.tsx), as the Settlement board draws it
  * (docs/research/2026-10-29-two-worlds/09-settlement.html): no menu bar; the settled time in the
- * estimate's amber and the tabs on one line, the heading at 112px under them; the wallet's column on
+ * estimate's amber and the tabs, the heading under them (a PageHead); the wallet's column on
  * the left (the orbs, the figure the wallet went from, the new one at 96px in the gold, the change),
  * then the reasons as a ruled list; the rank's card in the gold, chamfered, and the Turn's card in the
- * new class's color on the right; Open my log outlined and Back to the board in the gold at the foot.
+ * new class's color on the right; Open my log and Back to the board, two glass buttons, at the foot.
  *
  * The surface's recipe is `calmAll` (the glass plan, section 6), so every text node, the heading and
  * the large figures too, stands in a calm (calm.css) or on a card's panel. Sizes are the board's px
@@ -22,72 +22,12 @@
   padding-top: 36px;
 }
 
-.kb-settled-top {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px 32px;
-}
-
-.kb-settled-when {
-  margin: 0;
-  line-height: normal;
-  font-size: var(--kb-glass-size-label);
-  font-weight: 800;
-  letter-spacing: 4px;
-  text-transform: uppercase;
-  color: var(--kb-glass-estimate);
-}
-
-.kb-settled-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.kb-settled-tab,
-.kb-settled-log,
-.kb-settled-back {
-  display: inline-flex;
-  align-items: center;
-  min-height: 52px;
-  padding: 0 18px;
-  border: 1px solid color-mix(in srgb, var(--kb-glass-text) 50%, transparent);
-  background: transparent;
-  color: var(--kb-glass-text);
-  font: 800 var(--kb-glass-size-body) / 1 var(--kb-glass-font-body);
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.kb-settled-tab[aria-pressed='true'] {
-  border-color: var(--kb-glass-neon);
-  background: var(--kb-glass-neon);
-  color: var(--kb-glass-ink-neon);
-}
-
-.kb-settled-tab:focus-visible,
-.kb-settled-log:focus-visible,
-.kb-settled-back:focus-visible,
 .kb-settled a:focus-visible {
   outline: 3px solid var(--kb-glass-text-hi);
   outline-offset: 3px;
 }
 
-.kb-settled-title {
-  margin: 10px 0 0;
-  font-size: 7rem;
-  /* Room in its own box for the face's ascent and descent, so the words lie inside the calm's interior. */
-  line-height: 1.15;
-  letter-spacing: 2px;
-  color: var(--kb-glass-text);
-  text-shadow: 0 0 40px color-mix(in srgb, var(--kb-glass-ready) 35%, transparent);
-}
-
-.kb-settled a:not(.kb-settled-log, .kb-settled-back) {
+.kb-settled a:not(.kb-glass-button) {
   color: var(--kb-glass-pale);
   text-underline-offset: 4px;
 }
@@ -343,31 +283,17 @@
 /* ---- the ways out ---- */
 
 .kb-settled-ways {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 16px;
   margin-top: auto;
   padding-top: 40px;
 }
 
-.kb-settled-log {
-  min-height: 60px;
-  padding: 0 26px;
-  border-color: color-mix(in srgb, var(--kb-glass-text) 60%, transparent);
-  letter-spacing: 2px;
+.kb-settled-ways > .kb-button-row {
+  justify-content: flex-end;
 }
 
-.kb-settled-back {
-  min-height: 60px;
-  padding: 0 36px;
-  border: 0;
-  background: var(--kb-glass-ready);
-  color: var(--kb-glass-ink-ready);
-  /* The type size is its neighbor's (the layout check refuses two controls of one line at different sizes); the display face keeps it the call to action. */
-  font: var(--kb-glass-size-body) / 1 var(--kb-glass-font-display);
-  letter-spacing: 0;
-  box-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-ready) 60%, transparent);
+/* The ways stand as near the cards' words as the board sets them, so their feather is capped at the title gap (calm.css) and lies on nothing but it. */
+.kb-settled-ways {
+  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
 }
 
 /* ---- the Phone board's layout ---- */
@@ -376,10 +302,6 @@
   min-height: 0;
   margin-bottom: 0;
   padding-top: 16px;
-}
-
-:where(:root[data-kb-layout='phone']) .kb-settled-title {
-  font-size: var(--kb-glass-size-display-l);
 }
 
 :where(:root[data-kb-layout='phone']) .kb-settled-orbs {
@@ -392,23 +314,10 @@
   gap: 24px;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-settled-when,
 :where(:root[data-kb-layout='phone']) .kb-settled-why-head,
 :where(:root[data-kb-layout='phone']) .kb-settled-card-label {
   font-size: var(--kb-glass-size-phone-small);
   letter-spacing: 2px;
-}
-
-:where(:root[data-kb-layout='phone']) .kb-settled-tab,
-:where(:root[data-kb-layout='phone']) .kb-settled-log {
-  min-height: 48px;
-  padding: 0 12px;
-  font-size: var(--kb-glass-size-phone-small);
-}
-
-:where(:root[data-kb-layout='phone']) .kb-settled-back {
-  min-height: 48px;
-  font-size: var(--kb-glass-size-phone-small);
 }
 
 :where(:root[data-kb-layout='phone']) .kb-settled-why,
@@ -437,9 +346,4 @@
 
 :where(:root[data-kb-layout='phone']) .kb-settled-rank-was {
   font-size: var(--kb-glass-size-phone-display);
-}
-
-/* The ways stand as near the cards' words as the board sets them, so their feather is capped at the title gap (calm.css) and lies on nothing but it. */
-.kb-settled-ways {
-  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
 }

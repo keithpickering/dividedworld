@@ -829,7 +829,6 @@
   width: min(100%, 960px);
 }
 
-
 .kb-turn-dialog .kb-glass-dialog-head,
 .kb-debut-dialog .kb-glass-dialog-head,
 .kb-reveal-dialog .kb-glass-dialog-head {
@@ -839,7 +838,6 @@
   letter-spacing: 1px;
   color: var(--kb-glass-text);
 }
-
 
 .kb-turn {
   flex: 1;
