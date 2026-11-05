@@ -778,12 +778,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   function write(a: { id?: Id; character: Id | null; kind: ActKind; thread: Id; target?: Id | null; payload: Record<string, unknown>; at?: number }): ActRec {
     const t = threads.get(a.thread)!;
     /* An edit is a version of its post and a card is a tag on its post: neither takes a place in the thread (0035_card_takes_no_seq.sql). */
-    const placedAct = a.kind !== 'edit' && a.kind !== 'card' && a.kind !== 'set' && a.kind !== 'spring';
+    const placedAct = a.kind !== 'edit' && a.kind !== 'card' && a.kind !== 'set' && a.kind !== 'spring' && a.kind !== 'card_end';
     const rec: ActRec = {
       id: a.id ?? uuid(), order: ++order, character: a.character, kind: a.kind, thread: a.thread, target: a.target ?? null, seq: placedAct ? t.nextSeq++ : null,
       at: a.at ?? stamp ?? now(), payload: a.payload,
     };
     acts.set(rec.id, rec);
+    if (rec.kind === 'card_end' && rec.target !== null) reversedPlays.add(rec.target);
     if ((rec.kind === 'card' || rec.kind === 'set' || rec.kind === 'spring') && rec.target !== null && onPost(rec)) takeMoment(rec);
     return rec;
   }
@@ -935,7 +936,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         ...(m?.layers ?? []).map((l) => ({ rec: acts.get(l.layer)!, saved: l.saved })).sort((a, b) => byLanding(a.rec, b.rec))
           .map(({ rec, saved }) => ({ act: publicAct(rec), state: saved ? { state: saved.state, savedAt: iso(saved.at) } : null })),
       ],
-      above: [...reachPlays].filter(([p, r]) => r.endsAt > play.at && acts.get(p)!.at < play.at
+      above: [...reachPlays].filter(([p, r]) => r.endsAt > play.at && !reversedPlays.has(p) && acts.get(p)!.at < play.at
           && (r.reach === 'character' ? r.target === post.character : r.reach === 'thread' ? r.target === post.thread : r.target === board))
         .sort(([a], [b]) => byLanding(acts.get(a)!, acts.get(b)!))
         .map(([p, r]) => ({ play: p, reach: r.reach, target: r.target, endsAt: iso(r.endsAt), act: publicAct(acts.get(p)!) })),
@@ -944,6 +945,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
   /** The plays an account has released itself from, as "account play". */
   const releases = new Map<string, number>();
+  /** The card plays an admin has ended (a `card_end` beside each, 0092): not in force, though the play and its layer stay. */
+  const reversedPlays = new Set<Id>();
+  /** The plays cut to a limit, as public Acts, and after them the `card_end` of each that has one (cardsOn, cardsOnMany): the ends ride in the same list. */
+  const withEnds = (plays: readonly ActRec[]): Act[] => {
+    const wanted = new Set(plays.filter((p) => p.kind === 'card').map((p) => p.id));
+    const ends = [...acts.values()].filter((a) => a.kind === 'card_end' && a.target !== null && wanted.has(a.target)).sort((a, b) => a.at - b.at || a.order - b.order);
+    return [...plays, ...ends].map(publicAct);
+  };
   const playOf = (id: Id) => { const a = acts.get(id); return a && a.kind === 'card' ? a : null; };
 
   /* The player's log: the settlements' ledger with its shares, every wallet event and the card ledger, each by account (0003, 0006, 0034). */
@@ -1037,6 +1046,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const short = covers(account, decided.value.price);
     if (short) return short;
     account.cards[card]! -= 1;
+    /* The layer counts every play that landed, a reversed one too (acts_card_layers refuses a reused layer); only the stack count drops it. */
     const layer = [...acts.values()].filter((a) => a.kind === 'card' && a.target === target && a.payload.card === card && a.payload.caught === undefined && onPost(a)).length + 1;
     /* A live trap on a cast that is no rarer than it catches the play (spring_traps): the spring is written first, as the server writes it. */
     const trap = liveBack(target);
@@ -1071,12 +1081,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     for (const [set, f] of faceDown) if (f.post === post && f.sprung === null && f.endsAt > now()) return { set, card: f.card };
     return null;
   }
-  /** What a card's rules see on a post (card_target): its plays not caught, each ward's rarity and end, and its card backs naming no card. */
+  /** What a card's rules see on a post (card_target): its plays not caught or reversed, each ward's rarity and end, and its card backs naming no card. */
   function effectsOn(target: Id): CardEffect[] {
     const out: CardEffect[] = [];
     for (const a of acts.values()) {
       if (a.target !== target) continue;
-      if (a.kind === 'card' && a.payload.caught === undefined && onPost(a)) {
+      if (a.kind === 'card' && a.payload.caught === undefined && !reversedPlays.has(a.id) && onPost(a)) {
         const r = instance.cards.find((c) => c.key === a.payload.card);
         out.push({ card: String(a.payload.card), act: a.id, ...(r?.ward ? { ward: r.rarity } : {}), ...(typeof a.payload.ends === 'string' ? { ends: a.payload.ends } : {}) });
       } else if (a.kind === 'set') {
@@ -1092,7 +1102,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** The plays beyond a post (play_reach, 0055): each play's reach, its target and when it ends, never edited. */
   const reachPlays = new Map<Id, { reach: BeyondPost; target: Id; endsAt: number }>();
   /** The live plays on one target beyond a post, as effects (reach_effects, 0055). */
-  const reachEffects = (reach: BeyondPost, target: Id): CardEffect[] => [...reachPlays].filter(([, r]) => r.reach === reach && r.target === target && r.endsAt > now())
+  const reachEffects = (reach: BeyondPost, target: Id): CardEffect[] => [...reachPlays].filter(([play, r]) => r.reach === reach && r.target === target && r.endsAt > now() && !reversedPlays.has(play))
     .map(([play, r]) => {
       const rules = instance.cards.find((c) => c.key === acts.get(play)!.payload.card);
       return { card: String(acts.get(play)!.payload.card), act: play, reach, ends: iso(r.endsAt), ...(rules?.ward ? { ward: rules.rarity } : {}) };
@@ -1520,6 +1530,19 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const end = write({ character: null, kind: 'move_end', thread: a.thread, target: act, payload: { why: 'reversed', by: 'admin' } });
       return ok({ act, endedBy: end.id });
     },
+    reverseCard(play) {
+      if (!me()?.admin) return refuse('only an admin ends a card');
+      const p = acts.get(play);
+      if (!p || p.kind !== 'card') return refuse('that is not a card play');
+      if (p.payload.caught !== undefined) return refuse('that card was caught by a trap, so it never landed');
+      const ends = reachPlays.get(play)?.endsAt ?? (typeof p.payload.ends === 'string' ? Date.parse(p.payload.ends) : null);
+      if (ends !== null && ends <= now()) return refuse('that card has already worn off');
+      if (reversedPlays.has(play)) return refuse('an admin has already ended that card');
+      const end = write({ character: null, kind: 'card_end', thread: p.thread, target: play, payload: { why: 'reversed', by: 'admin' } });
+      sendAct(end);
+      if (!onPost(p)) { const shown = publicAct(end); send('reach', 'effect', () => { for (const l of [...reachListeners]) l.onPlay?.(shown); }); }
+      return ok({ act: end.id, play });
+    },
     threads(board, page) {
       const all = [...threads.values()].filter((t) => t.board === board && listed(t)).map(summary)
         .sort((x, y) => Date.parse(y.lastAt) - Date.parse(x.lastAt) || y.id.localeCompare(x.id));
@@ -1546,7 +1569,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     cardsOnMany(ids, limit) {
       const wanted = new Set(ids);
-      return [...acts.values()].filter((a) => (a.kind === 'card' || a.kind === 'set' || a.kind === 'spring') && a.target !== null && wanted.has(a.target)).sort((a, b) => a.at - b.at || a.order - b.order).slice(0, limit).map(publicAct);
+      return withEnds([...acts.values()].filter((a) => (a.kind === 'card' || a.kind === 'set' || a.kind === 'spring') && a.target !== null && wanted.has(a.target)).sort((a, b) => a.at - b.at || a.order - b.order).slice(0, limit));
     },
     effectStates(plays) {
       const out: Record<Id, EffectState> = {};
@@ -1615,16 +1638,16 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return Object.fromEntries(sets.filter((s) => faceDown.get(s)?.account === account).map((s) => [s, faceDown.get(s)!.card]));
     },
     pinnedThreads: (board) => [...reachPlays]
-      .filter(([play, r]) => r.reach === 'thread' && r.endsAt > now() && threads.get(r.target)?.board === board && instance.cards.find((c) => c.key === acts.get(play)!.payload.card)?.pins === true)
+      .filter(([play, r]) => r.reach === 'thread' && r.endsAt > now() && !reversedPlays.has(play) && threads.get(r.target)?.board === board && instance.cards.find((c) => c.key === acts.get(play)!.payload.card)?.pins === true)
       .map(([play, r]) => ({ thread: summary(threads.get(r.target)!), play, endsAt: iso(r.endsAt), act: publicAct(acts.get(play)!) }))
       .sort((a, b) => acts.get(b.play)!.at - acts.get(a.play)!.at || acts.get(b.play)!.order - acts.get(a.play)!.order),
     effectsAbove: (chars, thread, board) => {
       const wanted = new Set(chars);
-      return [...reachPlays].filter(([, r]) => r.endsAt > now() && (r.reach === 'character' ? wanted.has(r.target) : r.reach === 'thread' ? r.target === thread : r.target === board))
+      return [...reachPlays].filter(([play, r]) => r.endsAt > now() && !reversedPlays.has(play) && (r.reach === 'character' ? wanted.has(r.target) : r.reach === 'thread' ? r.target === thread : r.target === board))
         .map(([play, r]) => ({ play, reach: r.reach, target: r.target, endsAt: iso(r.endsAt), act: publicAct(acts.get(play)!) }))
         .sort((a, b) => acts.get(a.play)!.at - acts.get(b.play)!.at || acts.get(a.play)!.order - acts.get(b.play)!.order);
     },
-    cardsOn: (act, limit) => [...acts.values()].filter((a) => (a.kind === 'card' || a.kind === 'set' || a.kind === 'spring') && a.target === act).sort((a, b) => a.at - b.at || a.order - b.order).slice(0, limit).map(publicAct),
+    cardsOn: (act, limit) => withEnds([...acts.values()].filter((a) => (a.kind === 'card' || a.kind === 'set' || a.kind === 'spring') && a.target === act).sort((a, b) => a.at - b.at || a.order - b.order).slice(0, limit)),
     characters: (ids) => ids.map((id) => characters.get(id)).filter((c): c is CharRec => c !== undefined && c.debutedAt !== null).map(publicCharacter),
     characterCounts(id) {
       const c = characters.get(id);

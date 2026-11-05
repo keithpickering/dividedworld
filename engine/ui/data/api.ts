@@ -160,7 +160,7 @@ export type OriginPlace =
   /* `card` is the card's key, null for a face-down set. `on` is null when the target cannot be placed. */
   | { readonly kind: 'play'; readonly card: string | null; readonly on: PlaceOn | null };
 
-export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | 'unmask' | 'move' | 'move_end' | 'move_keep' | 'set' | 'spring' | 'update';
+export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | 'unmask' | 'move' | 'move_end' | 'move_keep' | 'set' | 'spring' | 'update' | 'card_end';
 
 /** An Act as every reader sees it (acts_public): the original and, where edited, what it shows now. */
 export interface Act {
@@ -1044,6 +1044,13 @@ export interface KayfaApi {
   holdMove(id: number): Promise<Answer<{ readonly id: number; readonly heldAt: string }>>;
   /** Ends a move in force now as reversed by an admin; the old name returns at once. An admin's alone. */
   reverseMove(act: Id): Promise<Answer<{ readonly act: Id; readonly endedBy: Id }>>;
+  /**
+   * Ends a card play as reversed by an admin (`reverse_card`, 0092): a `card_end` Act of no character is written beside the play, the
+   * layer comes off and the card stops counting; the original play is never changed. An admin's alone; a caught play, one that has
+   * worn off and one already ended are refused in words that say nothing of a face-down card. It cannot be taken back (play the card
+   * again). Answers the end's Act and the play.
+   */
+  reverseCard(play: Id): Promise<Answer<{ readonly act: Id; readonly play: Id }>>;
   /** Puts another Boss of the roster in a waiting nomination's place (`id` is the queue row's). An admin's alone; a nomination that has landed or been held is refused. */
   replaceSuccessor(id: number, boss: string): Promise<Answer<{ readonly id: number; readonly boss: string }>>;
   /** The instance's whole roster by staff key and name, a waiting persona included (`boss_roster_names`): an admin's alone; anyone else is refused (the call throws). */
@@ -1091,12 +1098,16 @@ export interface KayfaApi {
    * as `limit` may be cut, and an Act with none in it may have some.
    */
   spunFromMany(acts: readonly Id[], limit: number): Promise<readonly ThreadSummary[]>;
-  /** The card plays on an Act, oldest first, at most `limit`: the effects an ORIGIN box lists under the Act it shows. A result as long as `limit` may be cut. */
+  /**
+   * The card plays on an Act, oldest first, at most `limit`: the effects an ORIGIN box lists under the Act it shows. A result as long as `limit` may be cut.
+   * The `card_end` Acts of those plays follow the plays in the same list (kind `card_end`, `targetActId` the play): a play with one was
+   * ended by an admin, and the original play is unchanged.
+   */
   cardsOn(act: Id, limit: number): Promise<readonly Act[]>;
   /**
    * The card plays on any of these Acts, oldest first, in one read (a page of a thread asks once, never once per post), at most
    * `limit` rows in all; each names its post in `targetActId`. A result as long as `limit` may be cut, and a post with none in it
-   * may have some.
+   * may have some. The `card_end` Acts of those plays follow them in the same list (they name their play in `targetActId`, not a post).
    */
   cardsOnMany(acts: readonly Id[], limit: number): Promise<readonly Act[]>;
   /**

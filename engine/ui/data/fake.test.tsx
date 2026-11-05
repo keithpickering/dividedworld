@@ -1787,6 +1787,107 @@ describe('a card beyond a post, and the effects above a page', () => {
   });
 });
 
+/* An admin ends a card (supabase/migrations/0092_card_end.sql, Tasks 1 and 2): the fake refuses in the server's words and counts as it does. */
+describe('an admin ends a card play (reverse_card)', () => {
+  const ok = <T,>(value: T) => ({ ok: true as const, value });
+  const base = { priceKey: 'x.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
+  const blot = { ...base, key: 'blot', name: 'Blot', alignment: 'salty' as const, rarity: 'common' as const, canApply: () => ok(undefined) };
+  const snare = { ...base, key: 'snare', name: 'Snare', alignment: 'salty' as const, rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const }, outcome: { do: 'payout' as const } }, canApply: () => ok(undefined) };
+  const shield = { ...base, key: 'shield', name: 'Shield', alignment: 'sweet' as const, rarity: 'uncommon' as const, play: 'use' as const, ward: true as const, lasts: { unit: 'day' as const, count: 400 }, canApply: () => ok(undefined) };
+  const sparkle = {
+    ...base, key: 'sparkle', name: 'Sparkle', alignment: 'pepperoni' as const, rarity: 'uncommon' as const, priceKey: 'x.price', reaches: ['character' as const, 'thread' as const], lasts: { unit: 'day' as const, count: 400 },
+    canApply: (t: CardTarget, e: readonly CardEffect[]) => landsOn({ key: 'sparkle', reaches: ['character', 'thread'] }, t, e),
+  };
+  const world: Instance = { ...instance, cards: [blot, snare, shield, sparkle], settings: { ...settings, economy: { 'x.price': 100 }, reachLasts: { character: { unit: 'day', count: 400 }, thread: { unit: 'day', count: 400 }, board: { unit: 'day', count: 400 } } } };
+  /* The lasts are long: a card's rules read the real clock for a ward's end (decidePlay), and the fake's starts on a fixed date. */
+  function setup() {
+    const fake = createFake({ instance: world });
+    const ana = fake.seed.account('ana');
+    const boss = fake.seed.account('boss', { admin: true });
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const { thread, act: opener } = fake.seed.thread('general', anaFace, 'Hello', 'First post');
+    fake.seed.wallet(ana, 900);
+    fake.seed.cards(ana, { blot: 4, shield: 1, sparkle: 2, snare: 1 });
+    fake.signInAs(ana);
+    return { fake, ana, boss, anaFace, thread, opener };
+  }
+
+  test('only an admin ends a card, and only a card play; each refusal is the server\'s words, and a second end is refused', async () => {
+    const { fake, boss, anaFace, opener } = setup();
+    const play = must(await fake.playCard('blot', anaFace, opener, {}, ''));
+    expect(await fake.reverseCard(play.id)).toEqual(refused('only an admin ends a card'));
+    fake.signInAs(boss);
+    expect(await fake.reverseCard(opener)).toEqual(refused('that is not a card play'));
+    expect(await fake.reverseCard('00000000-0000-4000-8000-000000000000')).toEqual(refused('that is not a card play'));
+    expect(await fake.reverseCard(fake.seed.set(anaFace, opener, 'snare'))).toEqual(refused('that is not a card play'));
+    const ended = must(await fake.reverseCard(play.id));
+    expect(ended.play).toBe(play.id);
+    expect(await fake.reverseCard(play.id)).toEqual(refused('an admin has already ended that card'));
+  });
+
+  test('a caught play never landed, and a worn-off one has worn off', async () => {
+    const { fake, boss, anaFace, opener } = setup();
+    const set = fake.seed.set(anaFace, opener, 'snare');
+    const caught = fake.seed.card(anaFace, opener, 'blot', { caught: set });
+    const used = must(await fake.useCard('shield', anaFace, opener, {}, ''));
+    fake.signInAs(boss);
+    expect(await fake.reverseCard(caught)).toEqual(refused('that card was caught by a trap, so it never landed'));
+    fake.clock.advance(400 * 86_400_000 + 1);
+    expect(await fake.reverseCard(used.id)).toEqual(refused('that card has already worn off'));
+  });
+
+  test('the end is an Act of no character in the play\'s thread, taking no number, heard on the thread; the play\'s layer stays counted', async () => {
+    const { fake, boss, anaFace, thread, opener } = setup();
+    const heard: Act[] = [];
+    fake.subscribeThread(thread, { onAct: (a) => heard.push(a) });
+    const first = must(await fake.playCard('blot', anaFace, opener, {}, ''));
+    must(await fake.playCard('blot', anaFace, opener, {}, ''));
+    fake.signInAs(boss);
+    const ended = must(await fake.reverseCard(first.id));
+    const end = await fake.act(ended.act);
+    expect([end?.kind, end?.character, end?.seq, end?.thread, end?.targetActId, end?.payload]).toEqual(['card_end', null, null, thread, first.id, { why: 'reversed', by: 'admin' }]);
+    expect(heard.at(-1)?.id).toBe(ended.act);
+    expect((await fake.acts(thread, 1, 10)).map((a) => a.kind)).toEqual(['post']);
+    /* The layer counts every play, a reversed one too (acts_card_layers refuses a reused layer). */
+    expect((await fake.cardsOn(opener, 10)).filter((a) => a.kind === 'card').map((a) => a.payload.layer)).toEqual([1, 2]);
+  });
+
+  test('cardsOn and cardsOnMany carry the end beside the plays, for the screen to mark a play reversed', async () => {
+    const { fake, boss, anaFace, opener } = setup();
+    const play = must(await fake.playCard('blot', anaFace, opener, {}, ''));
+    fake.signInAs(boss);
+    const ended = must(await fake.reverseCard(play.id));
+    expect((await fake.cardsOn(opener, 10)).map((a) => [a.kind, a.id, a.targetActId])).toEqual([['card', play.id, opener], ['card_end', ended.act, play.id]]);
+    expect((await fake.cardsOnMany([opener], 10)).map((a) => a.kind)).toEqual(['card', 'card_end']);
+  });
+
+  test('a reversed ward turns away nothing, and a reversed play stops counting where a card\'s rules look at the post', async () => {
+    const { fake, ana, boss, anaFace, opener } = setup();
+    const ward = must(await fake.useCard('shield', anaFace, opener, {}, ''));
+    expect((await fake.playCard('blot', anaFace, opener, {}, '')).ok).toBe(false);
+    fake.signInAs(boss);
+    must(await fake.reverseCard(ward.id));
+    fake.signInAs(ana);
+    expect((await fake.playCard('blot', anaFace, opener, {}, '')).ok).toBe(true);
+  });
+
+  test('a play beyond a post that is ended leaves the effects above and can be played again; the end is heard on reach', async () => {
+    const { fake, ana, boss, anaFace, thread, opener } = setup();
+    const heard: Act[] = [];
+    fake.subscribeReach({ onPlay: (a) => heard.push(a) });
+    const live = must(await fake.playCard('sparkle', anaFace, anaFace, {}, '', 'character', opener));
+    const board = (await fake.thread(thread))!.board;
+    expect(await fake.effectsAbove([anaFace], thread, board)).toHaveLength(1);
+    expect((await fake.playCard('sparkle', anaFace, anaFace, {}, '', 'character', opener)).ok).toBe(false);
+    fake.signInAs(boss);
+    const ended = must(await fake.reverseCard(live.id));
+    expect(await fake.effectsAbove([anaFace], thread, board)).toEqual([]);
+    expect(heard.map((a) => a.id)).toEqual([live.id, ended.act]);
+    fake.signInAs(ana);
+    expect((await fake.playCard('sparkle', anaFace, anaFace, {}, '', 'character', opener)).ok).toBe(true);
+  });
+});
+
 describe('followed threads (my_followed_threads, 0059)', () => {
   test('a count stops at the cap, counts others\' posts alone, and a thread read to its end leaves', async () => {
     const fake = createFake({ instance });

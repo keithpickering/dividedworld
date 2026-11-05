@@ -589,6 +589,17 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   /* -------------------------------------------------------------------- the api ---- */
 
   const idOk = (id: string) => UUID.test(id);
+  /**
+   * The `card_end` Acts of these rows' card plays (an admin's reversal, 0092): each targets its play, so the plays-on-a-post read
+   * cannot find them and they are asked for by the plays' ids, in chunks. At most one per play (a unique index), so a chunk of
+   * plays needs no more rows than it has. Returned beside the plays in the same list; the plays are unchanged.
+   */
+  const endsOf = async (plays: readonly Row[]): Promise<Row[]> => {
+    const ids = plays.filter((r) => r['kind'] === 'card' && typeof r['id'] === 'string' && idOk(r['id'])).map((r) => r['id'] as string);
+    if (ids.length === 0) return [];
+    const rows = await byChunks(ids, (part) => list(() => client.from('acts_public').select('*').eq('kind', 'card_end').in('target_act_id', part).order('created_at', { ascending: true }).limit(part.length)));
+    return merged(rows, 'created_at', 'id');
+  };
   const act = async <T,>(body: Row, map: (r: Row) => T | Promise<T>): Promise<Answer<T>> => {
     const a = await edge('act', body, LOST);
     return a.ok ? { ok: true, value: await map(a.value) } : a;
@@ -781,6 +792,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const a = await rpcWrite(() => client.rpc('reverse_move', { move_act: act }));
       return a.ok ? { ok: true, value: { act: a.value['act'], endedBy: a.value['endedBy'] } } : a;
     },
+    /* An admin's end of a card goes through the act function, which owns the broadcasts (a layer comes off for everyone reading). */
+    reverseCard: (play) => act({ action: 'reverseCard', play }, (r) => ({ act: r['id'], play: r['play'] })),
     async threads(board, page) {
       /* The page is the list's rows; the total is the board's counter (a trigger keeps it), so a page turn counts nothing. */
       const total = async () => num((await list(() => client.from('board_counts').select('threads').eq('board', board).limit(1)))[0]?.['threads']);
@@ -834,13 +847,14 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (!idOk(actId)) return [];
       /* A post's plays, its card backs and their springs (0054): each is a layer on the post, read through it. */
       const rows = await list(() => client.from('acts_public').select('*').in('kind', LAYER_KINDS).eq('target_act_id', actId).order('created_at', { ascending: true }).limit(rowLimit(limit)));
-      return rows.map(toAct);
+      return [...rows, ...await endsOf(rows)].map(toAct);
     },
     async cardsOnMany(actIds, limit) {
       const wanted = [...new Set(actIds)].filter(idOk);
       if (wanted.length === 0) return [];
       const rows = await byChunks(wanted, (part) => list(() => client.from('acts_public').select('*').in('kind', LAYER_KINDS).in('target_act_id', part).order('created_at', { ascending: true }).limit(rowLimit(limit))));
-      return merged(rows, 'created_at', 'id', rowLimit(limit)).map(toAct);
+      const plays = merged(rows, 'created_at', 'id', rowLimit(limit));
+      return [...plays, ...await endsOf(plays)].map(toAct);
     },
     async effectsAbove(characters, thread, board) {
       /* One request per chunk of characters, run together (effects_above holds at most 200 a call); the thread and the board are

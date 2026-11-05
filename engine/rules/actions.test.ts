@@ -109,6 +109,12 @@ test('saving an effect\'s state names the play, the character and the state', ()
   assert.match(refusal({ action: 'saveEffect', play: other, character: id }) ?? '', /^state:/);
 });
 
+test('ending a card names the play, a uuid, and is the player\'s own call (the database asks whether the player is an admin)', () => {
+  assert.deepEqual(decide({ action: 'reverseCard', play: other }, instance), { ok: true, rpc: 'reverse_card', args: { play: other } });
+  assert.match(refusal({ action: 'reverseCard' }) ?? '', /^play:/);
+  assert.match(refusal({ action: 'reverseCard', play: 'not-a-uuid' }) ?? '', /^play:/);
+});
+
 test('a Turn names the character, a class the instance has, how loud it is, and which of its classes it names', () => {
   assert.deepEqual(decide({ action: 'turn', character: id, class: 'a', loudness: 'silent' }, instance),
     { ok: true, rpc: 'turn', args: { through: id, to_class: 'a', loudness: 'silent', show_from: false, show_to: false } });

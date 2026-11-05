@@ -177,6 +177,22 @@ test('what an action wrote is broadcast as its public projection, on its thread\
   }
 });
 
+test('ending a card is the caller\'s own call, heard on its thread, and on reach too for a play beyond a post; a refusal sends nothing', async () => {
+  const thread = '44444444-4444-4444-8444-444444444444';
+  const end = { id: 'e', kind: 'card_end', thread, target_act_id: target, payload: { why: 'reversed', by: 'admin' } };
+  const onPost = pair({ reverse_card: { ...end, play: target } });
+  const a = await runAction(onPost.dbs, instance, { action: 'reverseCard', play: target });
+  assert.equal(a.status, 200);
+  assert.deepEqual(a.broadcasts, [{ topic: `thread:${thread}`, event: 'act', payload: end }]);
+  assert.deepEqual(onPost.calls, [`player:reverse_card:${JSON.stringify({ play: target })}`]);
+  const beyond = await runAction(pair({ reverse_card: { ...end, play: target, reach: 'thread' } }).dbs, instance, { action: 'reverseCard', play: target });
+  assert.deepEqual(beyond.broadcasts, [{ topic: `thread:${thread}`, event: 'act', payload: end }, { topic: 'reach', event: 'effect', payload: end }]);
+  const no: Db = { rpc: async () => { throw new DatabaseError('reverse_card: no', '55000', 400, 'an admin has already ended that card', REFUSAL_HINT); } };
+  const refused = await runAction({ player: no, service: no }, instance, { action: 'reverseCard', play: target });
+  assert.deepEqual(refused, { status: 400, body: { error: 'an admin has already ended that card', code: '55000' } });
+  assert.equal((refused as { broadcasts?: unknown }).broadcasts, undefined);
+});
+
 test('a refused or failed action sends nothing live', async () => {
   const refusal = new DatabaseError('post: no', 'P0001', 400, 'no', REFUSAL_HINT);
   const failing: Db = { rpc: async () => { throw refusal; } };

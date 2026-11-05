@@ -411,7 +411,7 @@ describe('reads and their rows', () => {
   });
 
   it('reads the threads spun from several Acts in one request, and the card plays on one Act', async () => {
-    const h = harness((r) => (r.url.pathname.endsWith('/thread_list') ? rows([{ ...THREAD_ROW, origin_act_id: A }]) : rows([{ ...ACT_ROW, kind: 'card', target_act_id: A }])));
+    const h = harness((r) => (r.url.pathname.endsWith('/thread_list') ? rows([{ ...THREAD_ROW, origin_act_id: A }]) : r.url.searchParams.get('kind') === 'eq.card_end' ? rows([]) : rows([{ ...ACT_ROW, kind: 'card', target_act_id: A }])));
     const spun = await h.api.spunFromMany([A, B, A], 50);
     expect(h.to('thread_list')).toHaveLength(1);
     expect(h.to('thread_list')[0]?.url.searchParams.get('origin_act_id')).toBe(`in.(${A},${B})`);
@@ -420,23 +420,31 @@ describe('reads and their rows', () => {
     const p = h.to('acts_public')[0]?.url.searchParams;
     expect([p?.get('kind'), p?.get('target_act_id'), p?.get('order')]).toEqual(['in.(card,set,spring)', `eq.${A}`, 'created_at.asc']);
     expect(cards.map((c) => c.kind)).toEqual(['card']);
+    /* The plays' ends (an admin's reversal, 0092) are read by the plays' ids, in a request of their own. */
+    expect(h.to('acts_public')).toHaveLength(2);
+    expect([h.to('acts_public')[1]?.url.searchParams.get('kind'), h.to('acts_public')[1]?.url.searchParams.get('target_act_id')]).toEqual(['eq.card_end', `in.(${A})`]);
     expect(await h.api.spunFromMany(['x),y'], 5)).toEqual([]);
     expect(await h.api.cardsOn('x),y', 5)).toEqual([]);
+    expect(h.to('acts_public')).toHaveLength(2);
     expect(h.to('thread_list')).toHaveLength(1);
   });
 
   it('reads the card plays on a page of posts in one request, oldest first, bounded, and never filters on a non-id', async () => {
-    const h = harness(() => rows([{ ...ACT_ROW, kind: 'card', seq: null, target_act_id: A }, { ...ACT_ROW, id: B, kind: 'card', seq: null, target_act_id: C }]));
+    const END = { ...ACT_ROW, id: C, character: null, kind: 'card_end', seq: null, target_act_id: A, payload: { why: 'reversed', by: 'admin' } };
+    const h = harness((r) => (r.url.searchParams.get('kind') === 'eq.card_end' ? rows([END]) : rows([{ ...ACT_ROW, kind: 'card', seq: null, target_act_id: A }, { ...ACT_ROW, id: B, kind: 'card', seq: null, target_act_id: C }])));
     const plays = await h.api.cardsOnMany([A, C, A, 'x),y'], 60);
-    expect(h.to('acts_public')).toHaveLength(1);
+    /* The plays, then the ends of those plays in a request of their own, by the plays' ids. */
+    expect(h.to('acts_public')).toHaveLength(2);
+    expect(h.to('acts_public')[1]?.url.searchParams.get('kind')).toBe('eq.card_end');
     const p = h.to('acts_public')[0]?.url.searchParams;
     expect([p?.get('kind'), p?.get('target_act_id'), p?.get('order'), p?.get('limit')]).toEqual(['in.(card,set,spring)', `in.(${A},${C})`, 'created_at.asc', '60']);
-    expect(plays.map((c) => [c.kind, c.seq, c.targetActId])).toEqual([['card', null, A], ['card', null, C]]);
+    /* A reversed play is marked by its end riding in the same list (kind card_end, naming the play). */
+    expect(plays.map((c) => [c.kind, c.seq, c.targetActId])).toEqual([['card', null, A], ['card', null, C], ['card_end', null, A]]);
     expect(await h.api.cardsOnMany([], 5)).toEqual([]);
     expect(await h.api.cardsOnMany(['x),y'], 5)).toEqual([]);
-    expect(h.to('acts_public')).toHaveLength(1);
+    expect(h.to('acts_public')).toHaveLength(2);
     await h.api.cardsOnMany([A], 5000);
-    expect(h.to('acts_public')[1]?.url.searchParams.get('limit')).toBe('1000');
+    expect(h.to('acts_public')[2]?.url.searchParams.get('limit')).toBe('1000');
   });
 
   it('reads the saved effect states of plays in one request, and the reader\'s own releases from their own rows', async () => {
@@ -456,7 +464,7 @@ describe('reads and their rows', () => {
   });
 
   it('limits every list read of spins and card plays: ordered, and never more than the row cap', async () => {
-    const h = harness((r) => (r.url.pathname.endsWith('/thread_list') ? rows([{ ...THREAD_ROW, origin_act_id: A }]) : rows([{ ...ACT_ROW, kind: 'card', target_act_id: A }])));
+    const h = harness((r) => (r.url.pathname.endsWith('/thread_list') ? rows([{ ...THREAD_ROW, origin_act_id: A }]) : r.url.searchParams.get('kind') === 'eq.card_end' ? rows([]) : rows([{ ...ACT_ROW, kind: 'card', target_act_id: A }])));
     await h.api.spunFromMany([A, B], 120);
     await h.api.spunFrom(A);
     await h.api.spunFromMany([A], 5000);
@@ -1471,7 +1479,8 @@ describe('reads by many ids', () => {
     const h = byIdHarness();
     await call(h.api);
     for (const name of tables) {
-      const reqs = h.to(name);
+      /* The ends of the plays read are asked in requests of their own (cardsOnMany); the chunks of ids are the rest. */
+      const reqs = h.to(name).filter((r) => r.url.searchParams.get('kind') !== 'eq.card_end');
       expect(reqs.length, name).toBe(5);
       for (const r of reqs) expect(r.url.toString().length, name).toBeLessThan(8000);
       const asked = reqs.flatMap(askedIn);
@@ -1516,7 +1525,7 @@ describe('reads by many ids', () => {
     const got = await h.api.cardsOnMany(posts, limit);
     const want = [...cardRows].sort(byTimeThenId).slice(0, Math.max(1, limit)).map((r) => r.id);
     expect(got.map((a) => a.id)).toEqual(want);
-    expect(h.to('acts_public').length).toBe(3);
+    expect(h.to('acts_public').filter((r) => r.url.searchParams.get('kind') !== 'eq.card_end').length).toBe(3);
   });
 
   it.each([0, 1, 7])('spunFromMany over 250 posts with limit %i answers the earliest threads across every chunk, in order, as one query would', async (limit) => {
