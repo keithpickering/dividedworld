@@ -149,6 +149,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   memoryWheelhouse: whole(1, 'subjects'),
   memoryRealWorld: whole(1, 'subjects'),
   notesRead: whole(1, 'notes'),
+  poolCardRarityMost: (v) => (RARITIES.includes(v as never) ? null : 'a rarity: common, uncommon, rare or legendary'),
   boardNameMaxLength: whole(1, 'characters'),
   moveExpiryMostDays: whole(1, 'days'),
   moveExpiryLeastHours: whole(1, 'hours'),

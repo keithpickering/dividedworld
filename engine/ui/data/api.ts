@@ -626,10 +626,10 @@ export interface LogSettlement {
   readonly lines: readonly LogLine[];
 }
 
-/** A change to the player's wallet (`my_wallet_events`): a settlement's credit with what the cap and the floor cut off, a purchase, a play, a trap's payout. */
+/** A change to the player's wallet (`my_wallet_events`): a settlement's credit with what the cap and the floor cut off, a purchase, a play, a trap's payout, and The System's payout for a staff card a trap caught. */
 export interface WalletEvent {
   readonly settlement: number | null;
-  readonly kind: 'settlement' | 'purchase' | 'play' | 'trap';
+  readonly kind: 'settlement' | 'purchase' | 'play' | 'trap' | 'trapSystem';
   readonly change: number;
   /** What the cap held back of a settlement's credit. */
   readonly overflow: number;

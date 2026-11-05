@@ -169,6 +169,11 @@ export interface Settings {
    * until the pool's settings (`Settings.pool`, the staff roster plan's Task 9) take it as `pool.notesRead`. A starting point.
    */
   readonly notesRead: number;
+  /**
+   * The rarest card a pool persona plays (`staff_play_card`, `staff_set_card`): a card above it is refused. Held flat here until the
+   * pool's settings (`Settings.pool`, the staff roster plan's Task 9) take it as `pool.cardRarityMost`. A starting point.
+   */
+  readonly poolCardRarityMost: Rarity;
   /** The longest a board's name may be, in characters, whether The System or a player proposes it. */
   readonly boardNameMaxLength: number;
   /** The most days any move may last, whatever its phase allows. A starting point. */

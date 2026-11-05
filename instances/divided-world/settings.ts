@@ -74,6 +74,8 @@ export const defaults: Settings = deepFreeze<Settings>({
   memoryRealWorld: 30,
   /** A starting point: a Boss reads its twelve newest notes to itself at a meeting. */
   notesRead: 12,
+  /** A starting point: the pool plays common cards only. */
+  poolCardRarityMost: 'common',
   /** A board's name is at most 60 characters, whoever proposes it. */
   boardNameMaxLength: 60,
   /** A starting point: no move runs longer than six weeks. */

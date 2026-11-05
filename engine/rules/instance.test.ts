@@ -50,6 +50,7 @@ const settings: Settings = {
   memoryWheelhouse: 30,
   memoryRealWorld: 30,
   notesRead: 12,
+  poolCardRarityMost: 'common',
   boardNameMaxLength: 60,
   moveExpiryMostDays: 42,
   demandCheckMinutes: 5,
@@ -492,6 +493,7 @@ test('the new settings are checked like the others', () => {
   const bad = (k: string, v: unknown) => settingsProblems({ ...settings, [k]: v } as unknown as Settings).join('\n');
   assert.match(bad('systemEnabled', 'yes'), /systemEnabled/);
   assert.match(bad('meetingCron', 'daily'), /meetingCron/);
+  for (const v of ['mythic', '', 'Common', 1, null]) assert.match(bad('poolCardRarityMost', v), /poolCardRarityMost/, String(v));
   assert.match(bad('phases', { ...settings.phases, reign: { weeklyMoves: 0, bankCap: 10, moveExpiryMostDays: 28 } }), /phases/);
   assert.match(bad('phases', { ...settings.phases, honeymoon: { weeklyMoves: 2, bankCap: 4, moveExpiryMostDays: 7 } }), /phases/);
   for (const k of ['inheritanceGraceDays', 'rosterRecentExcluded', 'structuralHoldHours', 'microEventDailyCalls', 'digestThreads', 'digestExcerpts', 'digestExcerptChars', 'memoryOpinions', 'memoryGrudges', 'memoryWheelhouse', 'memoryRealWorld', 'notesRead', 'boardNameMaxLength', 'moveExpiryMostDays', 'moveExpiryLeastHours', 'demandCheckMinutes', 'demandChecksPerTick']) {
