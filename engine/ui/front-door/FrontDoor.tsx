@@ -129,7 +129,7 @@ export function FrontDoor() {
     const rank = Math.min(Math.max(c.rank, 0), Math.max(instance.ranks.length - 1, 0));
     /* The rank's floor is a standing the postbit's rankIndex lands on that rank. */
     const standing = rankFloor(instance.ranks, rank);
-    const person: PostbitPerson = { character: stage(c), posts: c.posts, standing, revealed: null, turnedAt: null };
+    const person: PostbitPerson = { character: stage(c), posts: c.posts, standing, revealed: c.revealed ?? null, turnedAt: null };
     return [c.key, person] as const;
   })), [door.cast, instance.ranks]);
   const nameOf = useCallback((id: Id | null) => door.cast.find((c) => idOf(c.key) === id)?.name ?? 'A character', [door.cast]);

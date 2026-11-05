@@ -277,6 +277,11 @@ export interface FrontDoorCharacter {
   /** Which of the instance's ranks the postbit draws (an index into `instance.ranks`). */
   readonly rank: number;
   readonly posts: number;
+  /**
+   * The class this character's player revealed, and when: drawn by the postbit's own "Revealed: <class> (date)" line, so a sample cast
+   * can show one of each class through a mechanic the game has. None keeps the class hidden, as a character's is until its player reveals it.
+   */
+  readonly revealed?: { readonly class: string; readonly at: string };
 }
 
 /** A post in the front door's sample thread. */

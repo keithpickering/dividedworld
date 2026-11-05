@@ -7,11 +7,11 @@ import type { CardUi } from '../cards/types.ts';
 import type { FrontDoorUi, OnboardingUi } from '../types.ts';
 
 const tips = () => Object.fromEntries(TIP_KEYS.map((k) => [k, { title: `T ${k}`, line: `L ${k}` }])) as unknown as Record<string, { title: string; line: string }>;
-/** The rules the front door is held to: two reactions and three ranks. */
-const rules = { reactions: [{ key: 'fire' }, { key: 'tea' }], ranks: [{ name: 'A' }, { name: 'B' }, { name: 'C' }] } as never;
+/** The rules the front door is held to: two reactions, three ranks and two classes. */
+const rules = { reactions: [{ key: 'fire' }, { key: 'tea' }], ranks: [{ name: 'A' }, { name: 'B' }, { name: 'C' }], classes: [{ key: 'face' }, { key: 'heel' }] } as never;
 const goodDoor = (): FrontDoorUi => ({
   title: 'T', label: 'Made up', note: 'N', prompt: { title: 'P', line: 'L' },
-  cast: [{ key: 'a', name: 'Ann', rank: 0, posts: 1 }, { key: 'b', name: 'Bo', rank: 2, posts: 9 }],
+  cast: [{ key: 'a', name: 'Ann', rank: 0, posts: 1, revealed: { class: 'heel', at: '2026-10-03T12:00:00Z' } }, { key: 'b', name: 'Bo', rank: 2, posts: 9 }],
   posts: [
     { by: 'a', body: 'Hi', reactions: { fire: 1 } },
     { by: 'b', body: 'Yo', reactions: { tea: 2 }, plays: [{ card: 'whoops', by: 'a', config: { seed: 1 } }] },
@@ -67,6 +67,10 @@ describe('instanceUiProblems', () => {
   test('refuses a rank outside the instance\'s ranks, and a duplicate cast key', () => {
     assert.deepEqual(door((d) => { d.cast = [{ ...d.cast[0]!, rank: 3 }, d.cast[1]!]; }), ['front door character "a" has rank 3, which is not one of the instance\'s 3 ranks']);
     assert.deepEqual(door((d) => { d.cast = [d.cast[0]!, { ...d.cast[1]!, key: 'a' }]; }).filter((p) => /twice/u.test(p)), ['front door cast key "a" is used twice']);
+  });
+  test('refuses a revealed class the instance does not have, and a reveal with no date', () => {
+    assert.deepEqual(door((d) => { d.cast = [{ ...d.cast[0]!, revealed: { class: 'wizard', at: '2026-10-03T12:00:00Z' } }, d.cast[1]!]; }), ['front door character "a" is revealed as "wizard", which is not one of the instance\'s classes']);
+    assert.deepEqual(door((d) => { d.cast = [{ ...d.cast[0]!, revealed: { class: 'heel', at: 'soon' } }, d.cast[1]!]; }), ['front door character "a" is revealed on "soon", which is not a date']);
   });
   test('refuses a front door with no posts, and an instance with no front door', () => {
     assert.deepEqual(door((d) => { d.posts = []; }), ['the front door has no posts']);

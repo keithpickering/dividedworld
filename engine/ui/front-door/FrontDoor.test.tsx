@@ -110,6 +110,12 @@ describe('the front door', () => {
     expect([...withDoor].filter((n) => !baseline.has(n))).toEqual([]);
   });
 
+  test('a cast member the front door reveals carries the postbit\'s own revealed line, and one it does not carries none', () => {
+    draw();
+    expect(within(screen.getByRole('group', { name: 'About Bo' })).getByText(/^Revealed: Heel \(/u)).toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: 'About Ann' })).queryByText(/^Revealed:/u)).toBeNull();
+  });
+
   test("each cast member's postbit shows the rank the front door gives it", () => {
     draw();
     expect(within(screen.getByRole('group', { name: 'About Ann' })).getByText('Jobber')).toBeInTheDocument();

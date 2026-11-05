@@ -8,7 +8,7 @@ import type { Instance } from '../../rules/types.ts';
 import type { InstanceUi } from '../types.ts';
 import { TIP_KEYS } from './keys.ts';
 
-export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'frontDoor' | 'cards'>, instance: Pick<Instance, 'reactions' | 'ranks'>): string[] {
+export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'frontDoor' | 'cards'>, instance: Pick<Instance, 'reactions' | 'ranks' | 'classes'>): string[] {
   const out: string[] = [];
   const on = ui.onboarding;
   if (typeof on !== 'object' || on === null) return ['the instance UI has no onboarding'];
@@ -28,7 +28,7 @@ export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'frontDoo
 }
 
 /** The front door held to the instance: each problem names the post by its index. */
-function frontDoorProblems(ui: Pick<InstanceUi, 'frontDoor' | 'cards'>, instance: Pick<Instance, 'reactions' | 'ranks'>): string[] {
+function frontDoorProblems(ui: Pick<InstanceUi, 'frontDoor' | 'cards'>, instance: Pick<Instance, 'reactions' | 'ranks' | 'classes'>): string[] {
   const door = ui.frontDoor;
   if (typeof door !== 'object' || door === null) return ['the instance UI has no front door'];
   const out: string[] = [];
@@ -37,6 +37,10 @@ function frontDoorProblems(ui: Pick<InstanceUi, 'frontDoor' | 'cards'>, instance
     if (keys.has(c.key)) out.push(`front door cast key "${c.key}" is used twice`);
     keys.add(c.key);
     if (!Number.isInteger(c.rank) || c.rank < 0 || c.rank >= instance.ranks.length) out.push(`front door character "${c.key}" has rank ${c.rank}, which is not one of the instance's ${instance.ranks.length} ranks`);
+    if (c.revealed !== undefined) {
+      if (!instance.classes.some((k) => k.key === c.revealed!.class)) out.push(`front door character "${c.key}" is revealed as "${c.revealed.class}", which is not one of the instance's classes`);
+      if (Number.isNaN(Date.parse(c.revealed.at))) out.push(`front door character "${c.key}" is revealed on "${c.revealed.at}", which is not a date`);
+    }
   }
   const reactions = new Set(instance.reactions.map((r) => r.key));
   const cards = new Set(ui.cards.map((c) => c.key));

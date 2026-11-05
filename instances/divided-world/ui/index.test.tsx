@@ -28,8 +28,10 @@ describe('Divided World\'s onboarding words', () => {
     expect(Object.keys(instanceUi.onboarding.tips).sort()).toEqual([...TIP_KEYS].sort());
   });
   test('the front door passes the same check, in its own words', () => {
-    expect(instanceUi.frontDoor.cast.map((c) => c.name)).toEqual(['Spritey', 'Pipewrench', 'Mrs. Hooligan']);
-    expect(instanceUi.frontDoor.posts).toHaveLength(6);
+    expect(instanceUi.frontDoor.cast.map((c) => c.name)).toEqual(['Snuckles', 'Captain Wholesome', 'The Accountant', 'Mr. Roboto']);
+    /* One of each class that posts, each through the postbit's real revealed line: the Lurker never posts, so it is absent by design. */
+    expect(instanceUi.frontDoor.cast.map((c) => c.revealed?.class)).toEqual(['jabroni', 'face', 'technician', 'heel']);
+    expect(instanceUi.frontDoor.posts).toHaveLength(5);
     expect(instanceUiProblems(instanceUi, instance).filter((p) => /front door/u.test(p))).toEqual([]);
   });
   test('the letter opens as Gabe\'s welcome does', () => {

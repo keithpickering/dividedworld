@@ -101,6 +101,20 @@ The front door adds no state a player, character or post can be put in. The visi
 on every board address, and both return them to that address. A splat a visitor scrubs is their screen's alone and ends
 on reload.
 
+## 5a. Amended 2026-11-05: the owner's own thread
+
+After seeing the build, the owner wrote the thread's copy with one character of each class that posts: Snuckles (Jabroni), Captain
+Wholesome (Face), The Accountant (Technician) and Mr. Roboto (Heel), the subject "WELCOME TO THE BEEF ZONE", and a longer note from Gabe
+ending on the ESRB. The owner chose the names Captain Wholesome and The Accountant from three each.
+
+**Decided** (the owner): each sample character shows its class through the postbit's real "Revealed: <class> (date)" line, so a newcomer
+meets one of each class through a mechanic the game has, rather than a label the game would never show. `FrontDoorCharacter` gains
+`revealed` (a class and a date), and `instanceUiProblems` refuses a class the instance does not have or a date that is not one. The Lurker
+reads the room and never posts, so it is absent by design. Each post's reactions are the ones its author's class earns from, and
+Snuckles's second post is splatted by Mr. Roboto's Whoops!, a Salty card, which a Jabroni earns from.
+
+**Decided** (the owner): the cast are drawn with their initials until they have avatars; an avatar slot is a follow-up.
+
 ## 6. Open
 
 - Whether the front door gets a phone-specific order (the HUD's plate wraps the line under the prompt today). The plan
