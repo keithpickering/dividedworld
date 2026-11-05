@@ -352,6 +352,18 @@
   white-space: nowrap;
 }
 
+/* The head row is no table row here, so its cells never lay the table wider than the column. */
+:where(:root[data-kb-layout='phone']) .kb-log-table thead tr {
+  display: block;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-log-table thead th {
+  display: block;
+  width: 100%;
+  padding: 0;
+  overflow: hidden;
+}
+
 :where(:root[data-kb-layout='phone']) .kb-log-table tbody > tr:not(.kb-log-breakdown) {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
