@@ -2,7 +2,7 @@
  * The app: the backend, the instance, its look and words, and the screens, put together. This and
  * web/src/data/ are the only places the engine's screens and an instance meet.
  */
-import { lazy, Suspense, useEffect, useLayoutEffect, useState, type ComponentType } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useState } from 'react';
 import type { KayfaApi, ScreenSettings } from '../../engine/ui/data/api.ts';
 import { applyAppearance } from '../../engine/ui/appearance.ts';
 import { KayfaProvider } from '../../engine/ui/context.tsx';
@@ -30,22 +30,21 @@ import { instanceUi } from '../../instances/divided-world/ui/index.ts';
  * (the forum-load plan, Task 15). Each glass route is drawn inside a Suspense whose fallback is nothing: the glass page's
  * own `main` is already on screen around it, empty until the screen lands.
  */
-const named = <M, K extends keyof M>(load: () => Promise<M>, name: K) => lazy(() => load().then((m) => ({ default: m[name] as ComponentType<M[K] extends ComponentType<infer P> ? P : never> })));
-const SignInScreen = named(() => import('../../engine/ui/account/SignIn.tsx'), 'SignInScreen');
-const Characters = named(() => import('../../engine/ui/characters/Characters.tsx'), 'Characters');
-const NewCharacter = named(() => import('../../engine/ui/characters/NewCharacter.tsx'), 'NewCharacter');
-const ProfileEdit = named(() => import('../../engine/ui/profile-edit/ProfileEdit.tsx'), 'ProfileEdit');
-const SettingsScreen = named(() => import('../../engine/ui/account/Settings.tsx'), 'SettingsScreen');
-const SeasonScreen = named(() => import('../../engine/ui/season/Season.tsx'), 'SeasonScreen');
-const Vending = named(() => import('../../engine/ui/vending/Vending.tsx'), 'Vending');
-const AlertsScreen = named(() => import('../../engine/ui/alerts/Alerts.tsx'), 'AlertsScreen');
-const UpdatesScreen = named(() => import('../../engine/ui/updates/Updates.tsx'), 'UpdatesScreen');
-const GuideScreen = named(() => import('../../engine/ui/guide/Guide.tsx'), 'GuideScreen');
-const ContactScreen = named(() => import('../../engine/ui/contact/Contact.tsx'), 'ContactScreen');
-const WelcomeScreen = named(() => import('../../engine/ui/welcome/Welcome.tsx'), 'WelcomeScreen');
-const QueueScreen = named(() => import('../../engine/ui/admin/Queue.tsx'), 'QueueScreen');
-const LogScreen = named(() => import('../../engine/ui/log/Log.tsx'), 'LogScreen');
-const SettlementScreen = named(() => import('../../engine/ui/log/Settlement.tsx'), 'SettlementScreen');
+const SignInScreen = lazy(() => import('../../engine/ui/account/SignIn.tsx').then((m) => ({ default: m.SignInScreen })));
+const Characters = lazy(() => import('../../engine/ui/characters/Characters.tsx').then((m) => ({ default: m.Characters })));
+const NewCharacter = lazy(() => import('../../engine/ui/characters/NewCharacter.tsx').then((m) => ({ default: m.NewCharacter })));
+const ProfileEdit = lazy(() => import('../../engine/ui/profile-edit/ProfileEdit.tsx').then((m) => ({ default: m.ProfileEdit })));
+const SettingsScreen = lazy(() => import('../../engine/ui/account/Settings.tsx').then((m) => ({ default: m.SettingsScreen })));
+const SeasonScreen = lazy(() => import('../../engine/ui/season/Season.tsx').then((m) => ({ default: m.SeasonScreen })));
+const Vending = lazy(() => import('../../engine/ui/vending/Vending.tsx').then((m) => ({ default: m.Vending })));
+const AlertsScreen = lazy(() => import('../../engine/ui/alerts/Alerts.tsx').then((m) => ({ default: m.AlertsScreen })));
+const UpdatesScreen = lazy(() => import('../../engine/ui/updates/Updates.tsx').then((m) => ({ default: m.UpdatesScreen })));
+const GuideScreen = lazy(() => import('../../engine/ui/guide/Guide.tsx').then((m) => ({ default: m.GuideScreen })));
+const ContactScreen = lazy(() => import('../../engine/ui/contact/Contact.tsx').then((m) => ({ default: m.ContactScreen })));
+const WelcomeScreen = lazy(() => import('../../engine/ui/welcome/Welcome.tsx').then((m) => ({ default: m.WelcomeScreen })));
+const QueueScreen = lazy(() => import('../../engine/ui/admin/Queue.tsx').then((m) => ({ default: m.QueueScreen })));
+const LogScreen = lazy(() => import('../../engine/ui/log/Log.tsx').then((m) => ({ default: m.LogScreen })));
+const SettlementScreen = lazy(() => import('../../engine/ui/log/Settlement.tsx').then((m) => ({ default: m.SettlementScreen })));
 
 const ROUTES: readonly Route[] = [
   { path: '/', render: () => <IndexScreen /> },
