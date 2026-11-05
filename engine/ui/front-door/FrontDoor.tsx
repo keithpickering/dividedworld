@@ -105,9 +105,11 @@ function Post({ staged, cards, fill, nameOf }: {
           </div>
         )}
       </div>
-      <footer className="kb-act-foot">
-        {controls.map((c) => <Kit key={c.key} card={c.ui?.key ?? c.key} controls={c.view.controls} />)}
-      </footer>
+      {controls.some((c) => c.view.controls.length > 0) && (
+        <footer className="kb-act-foot">
+          {controls.map((c) => <Kit key={c.key} card={c.ui?.key ?? c.key} controls={c.view.controls} />)}
+        </footer>
+      )}
     </article>
   );
 }

@@ -305,13 +305,13 @@ export function Hud() {
             <polyline className="kb-glass-seam-core" points={seam} />
           </svg>
           <div className="kb-hud-bar">
-            <div ref={plate} className={`kb-hud-plate${signedIn && player.loaded && hud ? ' kb-hud-plate--cast kb-calm' : ''}`}>
+            <div ref={plate} className={`kb-hud-plate${!signedIn ? ' kb-hud-plate--door' : signedIn && player.loaded && hud ? ' kb-hud-plate--cast kb-calm' : ''}`}>
               <div className="kb-hud-plate-in">
                 {!signedIn ? (
                   <div className="kb-hud-door">
                     <span className="kb-hud-door-mark" aria-hidden="true">?</span>
                     <div className="kb-hud-door-words">
-                      {/* A heading, not a bare element: the HUD is a labeled region, and its prompt is what a screen reader should find in it, below the page's own h1. */}
+                      {/* A heading, not a bare element: the HUD is a labeled region, and its prompt is what a screen reader should find in it; it sits under the page's h1 in rank, though the HUD comes first in the document. */}
                       <h2 className="kb-hud-door-title kb-glass-display">{ui.frontDoor.prompt.title}</h2>
                       <p className="kb-hud-door-line">{ui.frontDoor.prompt.line}</p>
                     </div>
@@ -370,7 +370,7 @@ export function Hud() {
             {!signedIn && (
               <div className="kb-hud-door-actions">
                 {settings.registrationMode !== 'closed' && (
-                  <Link to={registerHref(location.path, searchOf(location.query))} className="kb-hud-door-register kb-hud-sign-in kb-glass-cut-button">
+                  <Link to={registerHref(location.path, searchOf(location.query))} className="kb-hud-sign-in kb-hud-door-register kb-glass-cut-button">
                     {settings.registrationMode === 'invite' ? 'Register with an invite' : 'Register'}
                   </Link>
                 )}

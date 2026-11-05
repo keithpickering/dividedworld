@@ -672,6 +672,21 @@
   color: var(--kb-glass-text-2);
 }
 
+/* The door takes the plate's column and the aura's, which stay empty signed out, so the prompt stands on one line. */
+:where(:root:not([data-kb-layout='phone'])) .kb-hud-plate--door {
+  grid-column: 1 / 4;
+}
+
+/* Register is the page's one primary action: filled in the glass's neon, as the welcome page's way on is. */
+.kb-hud-door-register {
+  color: var(--kb-glass-ink-neon);
+  box-shadow: 0 0 22px color-mix(in srgb, var(--kb-glass-neon) 55%, transparent);
+}
+
+.kb-hud-door-register::after {
+  background: transparent;
+}
+
 .kb-hud-door-actions {
   grid-column: 5;
   display: flex;
@@ -733,9 +748,6 @@
   margin-top: 0;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-hud-door-register {
-  grid-column: auto;
-}
 
 /*
  * The hand (engine/ui/cards/Hand.tsx), one region that is two things by the board's layout.
