@@ -211,5 +211,5 @@
 /* The lede and the tabs stand as near the title as the board sets them (the head's 12px gap), so their feather is no wider than that and lies on nothing but the gap. */
 .kb-season-lede,
 .kb-season-tabs {
-  --kb-calm-feather: 12px;
+  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
 }

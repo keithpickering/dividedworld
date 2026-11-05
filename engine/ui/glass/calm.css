@@ -11,6 +11,19 @@
  * A browser with no mask-image gets a hard-edged panel of the same backing: the edge is not
  * feathered, and the words are as legible.
  */
+/*
+ * The gap between a page's title and the lede or tabs under it, stated once: those calms cap their
+ * feather at it (`min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap))`), so it lies on
+ * nothing but the gap. The phone sets its blocks closer.
+ */
+:root {
+  --kb-glass-title-gap: 12px;
+}
+
+:root[data-kb-layout='phone'] {
+  --kb-glass-title-gap: 8px;
+}
+
 .kb-calm {
   position: relative;
   isolation: isolate;
@@ -33,10 +46,6 @@
  * where the page's clip cuts it on a straight line. In a dialog it is 12px, which stays on its ground.
  */
 .kb-glass-dialog .kb-calm {
-  --kb-calm-feather: min(var(--kb-glass-calm-feather), 12px);
-}
-
-:where(:root[data-kb-layout='phone']) .kb-glass-dialog .kb-calm {
   --kb-calm-feather: min(var(--kb-glass-calm-feather), 12px);
 }
 

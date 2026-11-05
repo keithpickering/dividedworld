@@ -119,11 +119,33 @@ describe('the calm is drawn outside its element', () => {
   });
   test('a calm in a dialog has a 12px feather, so it stays inside a dialog that stands against the window\'s or the overlay\'s edge', () => {
     expect(declsOf(calm, '.kb-glass-dialog .kb-calm')['--kb-calm-feather']).toBe('min(var(--kb-glass-calm-feather), 12px)');
-    expect(declsOf(calm, ":where(:root[data-kb-layout='phone']) .kb-glass-dialog .kb-calm")['--kb-calm-feather']).toBe('min(var(--kb-glass-calm-feather), 12px)');
   });
   test('each calm resolves its feather from the theme\'s, and on the phone the smaller of it and the column\'s gutter', () => {
     const phone = ':where(:root[data-kb-layout=\'phone\'])';
     expect(declsOf(calm, '.kb-calm')['--kb-calm-feather']).toBe('var(--kb-glass-calm-feather)');
     expect(declsOf(calm, `${phone} .kb-calm`)['--kb-calm-feather']).toBe('min(var(--kb-glass-calm-feather), var(--kb-glass-gutter, 32px))');
+  });
+});
+
+describe('a feather capped at the gap to the title states the gap once', () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const sheets = (dir: string): string[] => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? sheets(path.join(dir, e.name)) : e.name.endsWith('.css') ? [path.join(dir, e.name)] : []));
+  const css = sheets(root).filter((f) => !f.endsWith('glass/calm.css'));
+  const text = (f: string) => fs.readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+
+  test('every page sheet that caps its feather caps it at the title gap, never at a literal', () => {
+    const capped = css.filter((f) => text(f).includes('--kb-calm-feather:'));
+    expect(capped.length).toBeGreaterThanOrEqual(8);
+    for (const f of capped) {
+      for (const m of text(f).matchAll(/--kb-calm-feather:\s*([^;]+);/g)) {
+        expect(squash(m[1]!), path.basename(f)).toBe('min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap))');
+      }
+    }
+  });
+  test('the gap is declared in one place: 12px, and the phone\'s 8px', () => {
+    const calm = sheet('calm.css');
+    expect(declsOf(calm, ':root')['--kb-glass-title-gap']).toBe('12px');
+    expect(declsOf(calm, ":root[data-kb-layout='phone']")['--kb-glass-title-gap']).toBe('8px');
+    expect(css.filter((f) => text(f).includes('--kb-glass-title-gap:'))).toEqual([]);
   });
 });

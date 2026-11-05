@@ -342,7 +342,7 @@
   padding: 0 6px;
 }
 
-/* The season line stands as near the title as the board sets it, so its feather is no wider than the gap and lies on nothing but it. */
+/* The season line stands as near the title as the board sets it, so its feather is capped at the title gap (calm.css) and lies on nothing but it. */
 .kb-rankings-season {
-  --kb-calm-feather: 12px;
+  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
 }

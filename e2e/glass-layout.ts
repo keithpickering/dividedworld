@@ -29,12 +29,14 @@ import type { Box } from './glass-text.ts';
  *      meeting is a staggered backing and is not refused.
  *
  *   A calm inside a FRAMED PANEL (the HUD's glass, a dialog, the hand's drawer, the class rail) is
- *   judged by neither 5 nor 6. The panel is a layer of its own: it clips what lies past its edge
+ *   judged by 6 only over content inside the same panel, and by 5 only for a clipper outside it
+ *   (below). The panel is a layer of its own: it clips what lies past its edge
  *   and is drawn over whatever lies under it, so a calm in it is a quiet patch of the panel's
  *   ground, soft at its edge as the board has it, and its feather cannot lie on page content that
  *   the panel already covers. Drawing no backing there fails the glass-text ceilings (53 screens
  *   went red when it was tried), and a hard-edged box shows as a rectangle on the HUD, so the
- *   feather stays and the judgment steps aside. The exemption is the panel's own: a calm outside
+ *   feather stays and the judgment steps aside for what the panel covers. A calm in the panel
+ *   lying over uncalmed content in the same panel is still refused. A calm outside
  *   any panel is judged as ever, and a clipper outside the panel still counts for 5, except the
  *   overlay a dialog scrolls in (a dialog taller than the window is cut at its edge, as its calm is).
  *
@@ -263,8 +265,10 @@ export function judgeLayout(facts: LayoutFacts): string[] {
     if (m.seen !== undefined) {
       drawn = m.seen === null ? { ...drawn, width: 0, height: 0 } : { x: Math.max(drawn.x, m.seen.x), y: Math.max(drawn.y, m.seen.y), width: Math.max(0, Math.min(drawn.x + drawn.width, m.seen.x + m.seen.width) - Math.max(drawn.x, m.seen.x)), height: Math.max(0, Math.min(drawn.y + drawn.height, m.seen.y + m.seen.height) - Math.max(drawn.y, m.seen.y)) };
     }
-    if (panelOf(m.path) !== null) continue;
+    /* A calm in a framed panel is judged over the panel's own content; what lies outside the panel, the panel covers. */
+    const panel6 = panelOf(m.path);
     for (const o of others) {
+      if (panel6 !== null && !inPanel(o.path, panel6)) continue;
       /* Inside this calm, inside another, or holding this calm: the calm is under it or it is under the calm. */
       if (within(o.path, m.path) || within(m.path, o.path) || facts.calms.some((c) => within(o.path, c.path))) continue;
       /* What the player sees of it: the part nothing else is drawn over. */

@@ -293,6 +293,19 @@ describe('the layout judgment', () => {
     expect(refusals({ blocks: [...clean.blocks, { ...heading, path: `${other.path} > h2:nth-child(1)` }], calms: [calmed, other] })).toEqual([]);
   });
 
+  test('a calm in a framed panel is refused over uncalmed content in the same panel, and excused over content outside it', () => {
+    const hudHeader = { ...calmed, path: 'div.kb-hud:nth-child(1) > header:nth-child(1)' };
+    const inside = { ...heading, path: 'div.kb-hud:nth-child(1) > h2:nth-child(2)' };
+    const out = refusals({ blocks: [...clean.blocks, inside], calms: [hudHeader] });
+    expect(out).toHaveLength(1);
+    expect(out[0]).toContain('calm over other content');
+    /* The panel covers what lies outside it, so a heading of the page under the panel is not what the calm lies on. */
+    expect(refusals({ blocks: [...clean.blocks, heading], calms: [hudHeader] })).toEqual([]);
+    /* In another calm of the same panel it is a staggered backing. */
+    const sibling = { path: 'div.kb-hud:nth-child(1) > section:nth-child(2)', element: { x: 16, y: 150, width: 300, height: 60 }, backing: { x: 0, y: 134, width: 332, height: 92 }, clips: [] };
+    expect(refusals({ blocks: [...clean.blocks, { ...inside, path: `${sibling.path} > h2:nth-child(1)` }], calms: [hudHeader, sibling] })).toEqual([]);
+  });
+
   test('a heading with something drawn over all of it is not what the calm lies on', () => {
     expect(refusals({ blocks: [...clean.blocks, { ...heading, seen: null }], calms: [calmed] })).toEqual([]);
   });
@@ -329,8 +342,9 @@ describe('the layout judgment', () => {
   const hudHeading = { ...heading, path: 'main:nth-child(1) > section.kb-hud:nth-child(2) > div.kb-hud-bar:nth-child(1) > span.kb-hud-name:nth-child(1)' };
   const aboveHud = { ...heading, path: 'main:nth-child(1) > h2:nth-child(3)' };
 
-  test('a calm in a framed panel is not refused for lying on content, the panel\'s own or the page\'s it covers', () => {
-    expect(refusals({ blocks: [hudHeading, aboveHud], calms: [hudCalm] })).toEqual([]);
+  test('a calm in a framed panel is not refused for lying on the page\'s content the panel covers, only on its own', () => {
+    expect(refusals({ blocks: [aboveHud], calms: [hudCalm] })).toEqual([]);
+    expect(refusals({ blocks: [hudHeading], calms: [hudCalm] })).toHaveLength(1);
     /* The poison: the same geometry outside a framed panel is refused, so the exemption is the panel's and not the geometry's. */
     expect(refusals({ blocks: [heading], calms: [{ ...hudCalm, path: calmed.path }] })).toHaveLength(1);
     /* A class that only starts with a panel's name is not a panel. */

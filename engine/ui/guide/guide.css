@@ -540,12 +540,7 @@
   font-size: var(--kb-glass-size-phone-small);
 }
 
-/* The lede stands as near the title and the contents button as the board sets them, so its feather is no wider than the gap and lies on nothing but it. */
+/* The lede stands as near the title and the contents button as the board sets them, so its feather is capped at the title gap (calm.css) and lies on nothing but it. */
 .kb-guide-lede {
-  --kb-calm-feather: 12px;
-}
-
-/* On the phone the lede stands 8px under the title, so its feather is the gap. */
-:where(:root[data-kb-layout='phone']) .kb-guide-lede {
-  --kb-calm-feather: 8px;
+  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
 }

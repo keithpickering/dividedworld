@@ -439,7 +439,7 @@
   font-size: var(--kb-glass-size-phone-display);
 }
 
-/* The ways stand as near the cards' words as the board sets them, so their feather is no wider than the gap and lies on nothing but it. */
+/* The ways stand as near the cards' words as the board sets them, so their feather is capped at the title gap (calm.css) and lies on nothing but it. */
 .kb-settled-ways {
-  --kb-calm-feather: 12px;
+  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
 }
