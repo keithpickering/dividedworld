@@ -1,11 +1,11 @@
 # Backfilling the boards: plan
 
 Record, written 2026-11-05. Carries out `docs/plans/2026-11-05-backfill-boards-design.md` (its sections are cited as
-§N). The boards are `docs/research/2026-11-05-backfill/` (14 to 39), written by its `gen.mjs`; where a board and the
+§N). The boards are `docs/research/2026-11-05-backfill/` (14 to 40), written by its `gen.mjs`; where a board and the
 design disagree, the design wins on what is decided and the board on how it looks.
 
-**When it is built.** The boards are drawn on #202's head (c2553b3). A build session starts this plan once #202 (the
-glass polish's Phase 1) is merged, and rebases on whatever of the polish's Phases 2 and 3 has merged by then; a board
+**When it is built.** The boards are drawn on #202's head (c2553b3), which has since merged. A build session starts
+from main, with whatever of the polish's Phases 2 and 3 has merged by then; a board
 that the polish has since changed under it is a question to the owner, not a silent departure. Task 11's card info
 waits for the card template plan (`docs/plans/2026-11-05-card-template-plan.md`) to merge. Three PRs, merged in order:
 Phase 1 (Tasks 1 to 5, the machinery), Phase 2 (Tasks 6 to 9), Phase 3 (Tasks 10 to 13).
@@ -32,7 +32,7 @@ Model: sonnet
 **Files:** `e2e/boards.spec.ts` (`BOARD_FOLDERS`, `PENDING`, the board-file loop), `e2e/board-match.ts`
 (`boardsToRun`), `e2e/board-match.test.ts`.
 
-- Add `docs/research/2026-11-05-backfill` to `BOARD_FOLDERS`. Add `PENDING` entries for its 26 boards (14 to 39), each
+- Add `docs/research/2026-11-05-backfill` to `BOARD_FOLDERS`. Add `PENDING` entries for its 27 boards (14 to 40), each
   naming the task of this plan that builds it, as `PENDING`'s comment asks ("the part … that builds it").
 - Add the three folders of designs not built yet, `docs/research/2026-11-04-booster-packs`,
   `docs/research/2026-11-04-cosmetics` and `docs/research/2026-11-05-card-template`, with every board of theirs in
@@ -59,8 +59,7 @@ Model: sonnet
 - `Screen` gains `readonly board: string | { readonly none: string }`: the id of the board the screen is held to, or why
   it has none (a sentence, never empty). Every entry gets one. The map, from §1 and the batches: Sign in `14-sign-in`;
   Register `15-register`; Reach a person `16-contact`; the HUD signed out `17-front-door`; Welcome `19-welcome`; Strategy
-  Guide `20-guide`; New character `23-new-character`; the two Debut dialogs `24-debut` (dropping now: `{ none }` until
-  the owner is shown a board of it, see Review focus); the Reveal modal `25-reveal`; Edit profile `26-edit-profile`; the
+  Guide `20-guide`; New character `23-new-character`; the Debut dialog choosing how `24-debut`, dropping now `40-debut-now`; the Reveal modal `25-reveal`; Edit profile `26-edit-profile`; the
   three Lens stories `28-lens` and `29-lens-states`; My log before anything has settled `30-log-empty`; the log story with
   a settlement's posts open `31-log-open`; Settings › Account `33-settings-account`; the Vending Machine's card info
   `34-vending-info`; the HUD past its cap `35-hud-cap`; the admin queue `37-admin-queue`; and the screens the two-worlds
@@ -212,7 +211,7 @@ tests; manifests `19-welcome.ts` … `22-onboarding-phone.ts`.
   `clientWidth` for the demo's longest name (red: "NEWCOME", "STORY RE").
 - **Tests first** as named; the manifests' first runs.
 
-## Task 8. Characters (§5; boards 23 to 27)
+## Task 8. Characters (§5, §9; boards 23 to 27 and 40)
 
 Model: sonnet
 
@@ -220,7 +219,7 @@ Model: sonnet
 `DebutDialog.tsx`, `DebutChoice.tsx`, `RevealOverlay.tsx`, `Characters.tsx`, `characters.css`,
 `engine/ui/profile-edit/ProfileEdit.tsx` and its stylesheet, the instance's class looks
 (`instances/divided-world/` where `ClassLook.description` is set: `grep -rn "description:" instances/divided-world/ui`),
-`engine/ui/tips/problems.ts` (`instanceUiProblems`), their tests; manifests `23-new-character.ts` … `27-characters-phone.ts`.
+`engine/ui/tips/problems.ts` (`instanceUiProblems`), their tests; manifests `23-new-character.ts` … `27-characters-phone.ts`, `40-debut-now.ts`.
 
 - **A class card's earns and hurts.** `ClassLook` gains `hurtsBy: (economy, settlementLength) => string`, and
   `description` says only how the class earns. The instance's five split at their own "Hurt by" (no words change).
@@ -230,7 +229,7 @@ Model: sonnet
 - **New character:** the lead under the title (PageHead's `lead`, not beside it); every section 44px from the next (a
   token, `--kb-glass-section-gap`, used by the dialogs too); the footer: one line saying what will happen beside Cancel and
   Make the character, as the Turn board's footer.
-- **The Debut dialog, choosing how:** How loud is one row of three (two-column grid gone); on the phone it stacks, and the
+- **The Debut dialog, both forms** (choosing how, dropping now): How loud is one row of three (two-column grid gone); on the phone it stacks, and the
   dialog is a sheet with its buttons at its foot.
 - **The Reveal modal:** Board and Thread one row of two equal fields; every count on its field's own line, right-aligned,
   the field's hint at its left (a shared `FieldCount` part, used by New character, Edit profile and Write update too).
@@ -244,7 +243,8 @@ Model: sonnet
   nit on batch 3); held by the layout check's cut-control refusal at 1440, which the manifest's run sees.
 - **Copy for review:** the footers' lines ("Waiting Wanda is on the board as soon as you make it, and The System announces
   it. Its class stays yours alone.", "It debuts at the next settlement, in 7 h 42 min. Until then you can drop it now
-  instead.", "The reveal is checked by The System and posted at once."): each is built from the form's state, and the
+  instead.", "The reveal is checked by The System and posted at once.", "Waiting Wanda goes on the board at once and can post at once, instead
+  of at the next settlement."): each is built from the form's state, and the
   task lists every variant it can say; Edit profile's "Under the name on every post." and "The preview follows what you
   type. Nothing changes on the board until you save."
 - **Tests first:** `problems.test` (the split), `ClassCards` (two paragraphs, the second the hurt), the dialogs' unit
@@ -385,7 +385,5 @@ Model: inline
 - **The board ids rule.** A later folder's board id is `<folder>/<name>`; an existing manifest renamed by mistake would
   silently stop comparing a board the owner approved.
 - **Copy drafts.** Every new line is a draft; the PR lists them all, and none ships unapproved.
-- **The Debut dialog, dropping now** has no board of its own (only choosing how was drawn); Task 2 marks it
-  `{ none }` with that reason, and the PR asks the owner whether it should get one.
 - **The card info's dependency.** Task 11's card info builds on the card template plan's `Postcard`; built before it, it
   would hold a face the owner has replaced.

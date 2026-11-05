@@ -79,3 +79,9 @@ Amends `docs/research/2026-10-30-the-system/mock-s3-admin-queue.html` (B), which
 - `38-write-update.html`: Updates as an admin with Write an update open, 1440 by 1600: the form in the glass's piece and
   the post as players will see it under it.
 - `39-admin-phone.html`: two phone screens at 390 by 844: the queue and Write an update.
+
+## After the batches
+
+- `40-debut-now.html`: the Debut dialog, dropping now, 1440 by 1000, asked for by the owner on #249: the same frame
+  and How loud row as `24-debut.html`, and the footer's line saying it lands at once. Its phone form is
+  `27-characters-phone.html`'s sheet.

@@ -1073,4 +1073,20 @@ page({
 </div>`,
 });
 
+/* ---------------------------------------------------------------- after the batches: Debut, dropping now (the owner, on #249) */
+
+page({
+  file: '40-debut-now.html', name: 'Drop a character now', w: 1440, h: 1000,
+  note: "The Debut dialog, dropping now, for a character waiting to debut: the same frame as 24-debut.html, How loud as one row of three, and the footer's line saying it lands at once.",
+  body: dialog(1440, 1000, 1100, 'MY CHARACTERS &rsaquo; DEBUT', 'DROP WAITING WANDA NOW', `
+    <fieldset style="margin: 0; padding: 0; border: 0"><legend class="sec">HOW LOUD</legend>
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px">${opt('SILENT', "Nobody is told. Waiting Wanda's first post is its entrance.", false, 'dn')}${opt('ANNOUNCED', 'The System posts that Waiting Wanda debuts, never as what.', true, 'dn')}${opt('ANNOUNCED, WITH ITS CLASS', "The System also says what class Waiting Wanda is, and that stays public. This can't be taken back.", false, 'dn')}</div>
+    </fieldset>
+    <section style="margin: 36px 0"><h3 class="sec">WHAT EVERYONE WILL SEE</h3>
+      <div class="preview"><div><b>The System</b><br><span style="font-size: 11px; color: #444">At once, in the season's Turns thread.</span></div><div><b>Waiting Wanda</b> debuts.</div></div>
+    </section>
+    ${foot('Waiting Wanda goes on the board at once and can post at once, instead of at the next settlement.', 'CANCEL', 'DROP WAITING WANDA NOW')}
+  `),
+});
+
 console.log('wrote the backfill boards');

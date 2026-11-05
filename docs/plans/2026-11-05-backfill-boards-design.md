@@ -288,9 +288,15 @@ B, grouped by what an admin can do, the owner's choice):
 **Approved by the owner** as drawn. Every batch is approved; the plan is
 `docs/plans/2026-11-05-backfill-boards-plan.md`.
 
-## 9. Open
+## 9. After the batches
 
-- **The Debut dialog, dropping now** was not drawn (only choosing how was). The plan marks it as having no board, with
-  that reason, and asks the owner in its PR whether it should get one.
+- **The Debut dialog, dropping now, gets a board** (the owner on #249: "Yeah let's do a board for 'drop now', might as
+  well"). `40-debut-now.html` is `24-debut.html`'s frame with its own title and footer; its flaws were the same (How loud
+  in a two-column grid with a hole, the bare buttons). Copy for review: "Waiting Wanda goes on the board at once and can
+  post at once, instead of at the next settlement."
+- **#202 merged** before this design did; the branch was rebased onto main with no change to the boards.
+
+## 10. Open
+
 - **The board world's screens** (the index, a profile and its record, the Director's profile, the move notice, errors)
   wait for a pass of their own (§1, decision 1).
