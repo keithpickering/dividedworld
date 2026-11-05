@@ -304,8 +304,8 @@ export function Vending() {
     <div className="kb-vending-frame">
     <div className="kb-vending">
       <aside className="kb-vending-side">
-        <div className="kb-vending-head">
-          <p className="kb-vending-eyebrow kb-calm">Spend Aura</p>
+        <div className="kb-vending-head kb-calm">
+          <p className="kb-vending-eyebrow">Spend Aura</p>
           <h1 className="kb-vending-title kb-glass-display">Vending Machine</h1>
         </div>
         <section className="kb-vending-wallet kb-glass-cut-panel" aria-label="Your wallet">

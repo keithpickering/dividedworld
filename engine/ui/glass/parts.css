@@ -59,7 +59,8 @@
 /* The count is the heading's, read with it, and drawn smaller beside it. */
 .kb-page-head-count {
   font-size: var(--kb-glass-size-display-m);
-  color: var(--kb-glass-text-2);
+  /* It stands on the full smoke with the title, so it is the title's color. */
+  color: var(--kb-glass-text-hi);
 }
 
 .kb-page-head-lead {

@@ -106,7 +106,7 @@ describe('the machine as the Vending board draws it', () => {
     expect(side.querySelector('.kb-vending-head .kb-vending-eyebrow')).toHaveTextContent('Spend Aura');
     expect(side.querySelector('.kb-vending-head h1.kb-vending-title')).toHaveTextContent('Vending Machine');
     expect(document.querySelector('.kb-page-head')).toBeNull();
-    expect(document.querySelector('h1')).not.toHaveClass('kb-calm');
+    expect(side.querySelector('.kb-vending-head')).toHaveClass('kb-calm');
     const hand = screen.getByRole('link', { name: /^Your hand/ });
     expect(hand).toHaveClass('kb-vending-hand', 'kb-glass-skew');
     expect(hand).not.toHaveAttribute('data-kb-kind');

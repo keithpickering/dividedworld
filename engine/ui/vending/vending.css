@@ -52,17 +52,19 @@
 }
 
 /*
- * The head is the board's, in the left column: the eyebrow and the title in the machine's yellow, the title at the board's
- * 78px, capped by the column's width and not only by the text size, so a larger text size never makes a word wider than the
- * machine beside it. The title stands on the full smoke, as every page's heading does; only the eyebrow is in a calm.
+ * The head is the board's, in the left column: the eyebrow and the title in the machine's yellow, the title at the board's 78px in this
+ * 320px column, where "MACHINE" runs a few px past the column's edge and the tall face's ink a few above and below its lines; its calm
+ * reaches 32px past the column and 12px above and below, so no letter stands outside it. The yellow Anton cannot stand on the bare smoke
+ * (e2e/glass-text.spec.ts holds it to its ceiling there), so this one heading keeps the calm it had. It is capped by the column's width
+ * and not only by the text size, so a larger text size never makes a word wider than the machine beside it.
  */
 .kb-vending-head {
-  margin: 0;
+  margin: -12px -32px -12px 0;
+  padding: 12px 32px 12px 0;
 }
 
 .kb-vending-eyebrow {
-  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
-  margin: 0 0 var(--kb-glass-title-gap);
+  margin: 0;
   line-height: normal;
   font-size: var(--kb-glass-size-body);
   font-weight: 800;
