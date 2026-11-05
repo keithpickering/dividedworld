@@ -893,27 +893,64 @@ begin
   return new;
 end $$;
 
+-- Cost: every branch is driven from the caller's own characters and ends in one probe of acts_one_card_end (a card_end's play), so
+-- a call reads the caller's own plays and posts and never builds the instance's card_ends. `cast` starts at the caller's characters'
+-- card Acts (acts_character). `onMine` starts at the caller's posts (acts_character, then the plays aimed at each by acts_target),
+-- at play_reach rows on the caller's characters (play_reach_character) and on the threads the caller's characters opened
+-- (acts_thread_openers, then play_reach_thread). The three onMine branches are disjoint: a play with a play_reach row is a character,
+-- thread or board play and its target is the row's, not the post it was cast from; a play with none counts as a post play only when
+-- its own payload says so (as 0056 guards my_posts_played_on), so one that says it reaches further but has no row reads as nothing.
+-- Plain `acts`, not acts_public, because only kind, ids and created_at are read; only public data (names) is put in a row, each by
+-- a probe of its own key for the row it belongs to, never a join that could read every character or Act.
+-- Columns: card_end, play, card, at, side ('cast' | 'onMine'), reach ('post' | 'character' | 'thread' | 'board'),
+--   target_name (the character's, thread's or board's public name; null for a post), post_author_name (a post play's post's author;
+--   else null), caster_name (the casting character, either side), character (the caller's own character the row files under: the
+--   caster on 'cast'; on 'onMine' the post's author, the character played on, or the thread's starter; a board play is only ever 'cast').
 create view my_cards_ended with (security_invoker = true) as
   with mine as (select c.id from characters c where c.owner = auth.uid()),
-  ended as (
-    select e.id as card_end, k.id as play, k.payload ->> 'card' as card, e.created_at as at, k.character as caster,
-           coalesce(pr.reach, 'post') as reach,
-           coalesce(k.payload ->> 'targetName', case pr.reach when 'character' then cp.name when 'thread' then th.title end) as target_name,
-           case coalesce(pr.reach, 'post') when 'post' then p.character when 'character' then pr.character when 'thread' then opening.character end as target_character
-    from acts_public e
-    join acts_public k on k.id = e.target_act_id and k.kind = 'card'
+  plays as (
+    select e.id as card_end, k.id as play, k.payload ->> 'card' as card, e.created_at as at, 'cast'::text as side,
+           k.character as caster, coalesce(pr.reach, 'post') as reach, k.target_act_id, k.payload ->> 'targetName' as named,
+           pr.character as reach_character, pr.thread as reach_thread, pr.board as reach_board, k.character as mine_character
+    from mine
+    join acts k on k.character = mine.id and k.kind = 'card'
+    join acts e on e.target_act_id = k.id and e.kind = 'card_end'
     left join play_reach pr on pr.play = k.id
-    left join acts_public p on p.id = k.target_act_id
-    left join characters_public cp on cp.id = pr.character
-    left join threads th on th.id = pr.thread
-    left join acts_public opening on opening.thread = pr.thread and opening.seq = 1
-    where e.kind = 'card_end'
+    where pr.play is not null or coalesce(k.payload ->> 'reach', 'post') = 'post'
+    union all
+    select e.id, k.id, k.payload ->> 'card', e.created_at, 'onMine', k.character, 'post', k.target_act_id, null, null, null, null, p.character
+    from mine
+    join acts p on p.character = mine.id and p.kind = 'post'
+    join acts k on k.target_act_id = p.id and k.kind = 'card'
+    join acts e on e.target_act_id = k.id and e.kind = 'card_end'
+    where coalesce(k.payload ->> 'reach', 'post') = 'post' and not exists (select 1 from play_reach x where x.play = k.id)
+      and k.character not in (select id from mine)
+    union all
+    select e.id, k.id, k.payload ->> 'card', e.created_at, 'onMine', k.character, 'character', k.target_act_id, k.payload ->> 'targetName', pr.character, null, null, pr.character
+    from mine
+    join play_reach pr on pr.character = mine.id
+    join acts k on k.id = pr.play and k.kind = 'card'
+    join acts e on e.target_act_id = k.id and e.kind = 'card_end'
+    where k.character not in (select id from mine)
+    union all
+    select e.id, k.id, k.payload ->> 'card', e.created_at, 'onMine', k.character, 'thread', k.target_act_id, k.payload ->> 'targetName', null, pr.thread, null, o.character
+    from mine
+    join acts o on o.character = mine.id and o.seq = 1
+    join play_reach pr on pr.thread = o.thread
+    join acts k on k.id = pr.play and k.kind = 'card'
+    join acts e on e.target_act_id = k.id and e.kind = 'card_end'
+    where k.character not in (select id from mine)
   )
-  select card_end, play, card, at, 'cast'::text as side, target_name, reach
-  from ended where caster in (select id from mine)
-  union all
-  select card_end, play, card, at, 'onMine'::text as side, target_name, reach
-  from ended where target_character in (select id from mine) and caster not in (select id from mine);
+  select pl.card_end, pl.play, pl.card, pl.at, pl.side, pl.reach,
+         case pl.reach
+           when 'character' then coalesce(pl.named, (select cp.name from characters_public cp where cp.id = pl.reach_character))
+           when 'thread' then coalesce(pl.named, (select th.title from threads th where th.id = pl.reach_thread))
+           when 'board' then coalesce(pl.named, (select bd.name from boards bd where bd.id = pl.reach_board))
+         end as target_name,
+         case when pl.reach = 'post' then (select cp.name from acts pa join characters_public cp on cp.id = pa.character where pa.id = pl.target_act_id) end as post_author_name,
+         (select cp.name from characters_public cp where cp.id = pl.caster) as caster_name,
+         pl.mine_character as character
+  from plays pl;
 
 revoke all on my_cards_ended from public, anon, authenticated;
 grant select on my_cards_ended to authenticated;

@@ -533,17 +533,42 @@ declare
   by_staff uuid := (select id from acts where kind = 'card' and character = staff);
   on_char uuid := (select id from acts where kind = 'card' and payload ->> 'card' = 'selfie' and character = (select id from characters where name = 'Ce4 Caster Two'));
   on_thread uuid := (select id from acts where kind = 'card' and payload ->> 'card' = 'marquee' and character = (select id from characters where name = 'Ce4 Caster'));
+  c1 uuid := (select id from characters where name = 'Ce4 Caster');
+  t uuid := (select thread from acts where id = p);
+  on_board uuid;
+  orphan uuid;
   r record;
 begin
+  -- A board play, and a play whose payload says it reaches beyond a post but whose play_reach row is missing (which must not read as a post).
+  on_board := tests.act(c1, 'card', t, '{"card": "quake", "reach": "board"}', null);
+  insert into play_reach (play, reach, board, ends_at) values (on_board, 'board', (select board from threads where id = t), now() + interval '1 day');
+  orphan := tests.act(c1, 'card', t, '{"card": "selfie", "reach": "character"}', p);
+  perform tests.become(admin_acc);
+  perform reverse_card(on_board);
+  perform reverse_card(orphan);
+  perform tests.unbecome();
+
   perform tests.become(cast_acc);
-  if (select count(*) from my_cards_ended) is distinct from 4::bigint or exists (select 1 from my_cards_ended where side <> 'cast') then
-    raise exception 'the caster''s player sees four plays, all cast: %', (select jsonb_agg(to_jsonb(x)) from my_cards_ended x);
+  if (select count(*) from my_cards_ended) is distinct from 5::bigint or exists (select 1 from my_cards_ended where side <> 'cast') then
+    raise exception 'the caster''s player sees five plays, all cast: %', (select jsonb_agg(to_jsonb(x)) from my_cards_ended x);
   end if;
   select * into r from my_cards_ended where play = on_post;
   if r.side <> 'cast' or r.card <> 'splat' or r.card_end is distinct from (select id from acts where kind = 'card_end' and target_act_id = on_post) or r.at is null then
     raise exception 'the cast row: %', to_jsonb(r);
   end if;
   if (select count(*) from my_cards_ended where play = on_own) is distinct from 1::bigint then raise exception 'a play cast on one''s own post is one row, cast'; end if;
+  if (select target_name from my_cards_ended where play = on_board) is distinct from (select b.name from threads x join boards b on b.id = x.board where x.id = t)
+     or (select reach from my_cards_ended where play = on_board) is distinct from 'board' then raise exception 'a board play names the board'; end if;
+  if exists (select 1 from my_cards_ended where play = orphan) then raise exception 'a play beyond a post with no play_reach row does not read as a post'; end if;
+  if (select caster_name from my_cards_ended where play = on_post) is distinct from 'Ce4 Caster' or (select caster_name from my_cards_ended where play = on_char) is distinct from 'Ce4 Caster Two' then
+    raise exception 'the cast side names the casting character';
+  end if;
+  if (select post_author_name from my_cards_ended where play = on_post) is distinct from 'Ce4 Target' or (select post_author_name from my_cards_ended where play = on_own) is distinct from 'Ce4 Caster' then
+    raise exception 'a post play names the post''s author';
+  end if;
+  if (select character from my_cards_ended where play = on_post) is distinct from c1 or (select character from my_cards_ended where play = on_char) is distinct from (select id from characters where name = 'Ce4 Caster Two')
+     or (select character from my_cards_ended where play = on_board) is distinct from c1 then raise exception 'a cast row files under the casting character'; end if;
+  if exists (select 1 from my_cards_ended where play in (on_char, on_thread, on_board) and post_author_name is not null) then raise exception 'only a post play names a post author'; end if;
   if exists (select 1 from my_cards_ended where play = by_staff) then raise exception 'a staff play is not the player''s'; end if;
   perform tests.unbecome();
 
@@ -555,6 +580,13 @@ begin
   if (select target_name from my_cards_ended where play = on_char) is distinct from 'Ce4 Target' then raise exception 'a character play names the character'; end if;
   if (select target_name from my_cards_ended where play = on_thread) is distinct from 'Ce4 thread' then raise exception 'a thread play names the thread'; end if;
   if (select target_name from my_cards_ended where play = on_post) is not null then raise exception 'a post play names no target'; end if;
+  if (select caster_name from my_cards_ended where play = on_post) is distinct from 'Ce4 Caster' or (select caster_name from my_cards_ended where play = by_staff) is distinct from 'Ce4 Bot' then
+    raise exception 'the onMine side names the casting character, a staff persona too';
+  end if;
+  if exists (select 1 from my_cards_ended where play in (on_post, on_char, on_thread, by_staff) and character is distinct from (select id from characters where name = 'Ce4 Target')) then
+    raise exception 'an onMine row files under the caller''s character that was played on: %', (select jsonb_agg(to_jsonb(x)) from my_cards_ended x);
+  end if;
+  if (select post_author_name from my_cards_ended where play = on_post) is distinct from 'Ce4 Target' then raise exception 'the onMine side names the post''s author'; end if;
   if exists (select 1 from my_cards_ended where play = on_own) then raise exception 'a play on someone else''s post is not the author''s'; end if;
   perform tests.unbecome();
 
