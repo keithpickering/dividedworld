@@ -62,7 +62,7 @@ export function seedMoves(fake: Fake, instance: Instance, options: { readonly si
     body: 'This board has been IMPROVED. From now on we talk about toast. Show me twelve of you can handle it and maybe I will think about it.',
     demand: distinct(first.slug, 12), at: ago(1), expiresAt: now + 5 * DAY,
   });
-  /* Its reactions, read from the instance by quadrant so the world names none of its kinds: the top three are hype, heat and calm. */
+  /* Its tally, one kind of each quadrant read from the instance, so the world names none of its kinds. */
   const kindIn = (q: Quadrant) => instance.reactions.find((r) => r.quadrant === q)!.key;
   fake.seed.tally(inForce, { [kindIn('excitedPositive')]: 9, [kindIn('excitedNegative')]: 6, [kindIn('calmPositive')]: 3, [kindIn('boredNegative')]: 1 });
 

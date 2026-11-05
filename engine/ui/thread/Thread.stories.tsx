@@ -41,15 +41,15 @@ const cast = (fake: Fake, instance: Instance) => {
 const short: World = (fake, instance) => {
   const w = cast(fake, instance);
   fake.seed.avatar(w.spritey, { square: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>' });
-  const t = fake.seed.thread(w.general, w.spritey, 'Who keeps reacting with tea?', 'Every post I make, a single [b]tea[/b]. Show yourself.', { at: T0 + MIN });
-  const reply = fake.seed.post(t.thread, w.mine, `[quote=${t.act}]a single tea[/quote]It was me. It is always me.\n\n[url=https://example.com]Proof[/url]`, { at: T0 + 2 * MIN });
+  const t = fake.seed.thread(w.general, w.spritey, 'Who keeps reacting to my posts?', 'Every post I make, the same [b]one reaction[/b]. Show yourself.', { at: T0 + MIN });
+  const reply = fake.seed.post(t.thread, w.mine, `[quote=${t.act}]the same one reaction[/quote]It was me. It is always me.\n\n[url=https://example.com]Proof[/url]`, { at: T0 + 2 * MIN });
   const fan = fake.seed.account('story-fan');
   fake.seed.react(fan, fake.seed.character(fan, 'Fan', instance.classes[0]!.key, { at: T0 }), reply, instance.reactions.find((r) => r.quadrant === 'calmPositive')!.key);
   fake.seed.reveal(w.mine, t.thread, { class: instance.classes[0]!.key, message: 'Told you.', at: T0 + 3 * MIN });
   fake.seed.post(t.thread, w.spritey, 'I knew it.', { at: T0 + 4 * MIN });
 };
 
-export const ShortThread: Story = { args: { title: 'Who keeps reacting with tea?' }, parameters: { world: short, path: '/t/x' } };
+export const ShortThread: Story = { args: { title: 'Who keeps reacting to my posts?' }, parameters: { world: short, path: '/t/x' } };
 
 export const LongThreadPageThree: Story = {
   args: { title: 'The long one' },
@@ -64,7 +64,7 @@ export const LongThreadPageThree: Story = {
 };
 
 export const StackedForTheReader: Story = {
-  args: { title: 'Who keeps reacting with tea?' },
+  args: { title: 'Who keeps reacting to my posts?' },
   parameters: { world: ((fake, instance) => { short(fake, instance); void fake.setPreferences({ postbit: 'stacked' }); }) satisfies World, path: '/t/x' },
 };
 
