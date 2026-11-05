@@ -75,11 +75,6 @@
   align-items: center;
 }
 
-.kb-write-update-actions {
-  display: flex;
-  gap: 12px;
-}
-
 .kb-write-update-status,
 .kb-write-update-refusal {
   margin: 0;

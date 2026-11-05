@@ -166,7 +166,6 @@
 :where(:root[data-kb-layout='phone']) .kb-welcome-next li,
 :where(:root[data-kb-layout='phone']) .kb-welcome-setup-lede,
 :where(:root[data-kb-layout='phone']) .kb-welcome-prose p,
-:where(:root[data-kb-layout='phone']) .kb-welcome-link,
 :where(:root[data-kb-layout='phone']) .kb-welcome-empty {
   font-size: var(--kb-glass-size-phone-body);
 }
