@@ -348,6 +348,15 @@ begin
   if r ->> 'maker' is distinct from 'ps-old' or r ->> 'staff' is distinct from 'ps-pat' or r ->> 'how' is distinct from 'met' or r ->> 'n' is distinct from '5' then
     raise exception 'a kept-then-ended move reads %', r;
   end if;
+  -- Every row names the thread of its Act, which is its move's thread (a move's Acts sit in its move's thread, 0051).
+  if exists (select 1 from jsonb_array_elements(d -> 'legacy') e where (e ->> 'thread') is distinct from (select a.thread::text from acts a where a.id = (e ->> 'act')::uuid)
+                                                                      or (e ->> 'thread') is distinct from (select m.thread::text from acts m where m.id = (e ->> 'move')::uuid)) then
+    raise exception 'legacy names a thread that is not its Act''s: %', d -> 'legacy';
+  end if;
+  if exists (select 1 from jsonb_array_elements(d -> 'reversals') e where (e ->> 'thread') is distinct from (select a.thread::text from acts a where a.id = (e ->> 'act')::uuid)
+                                                                         or (e ->> 'thread') is distinct from (select m.thread::text from acts m where m.id = (e ->> 'move')::uuid)) then
+    raise exception 'reversals names a thread that is not its Act''s: %', d -> 'reversals';
+  end if;
   -- Every row names the staff key that wrote its move, as acts_public holds it.
   if exists (select 1 from jsonb_array_elements(d -> 'legacy') e
              where e ->> 'maker' is distinct from (select c.staff from acts_public mv join characters_public c on c.id = mv.character where mv.id = (e ->> 'move')::uuid)) then
@@ -384,6 +393,17 @@ begin
   h := d -> 'handovers' -> 0;
   if (h ->> 'season')::bigint is distinct from (select id from seasons where ends_at is null) or h ->> 'outgoing' is distinct from 'ps-old' or h ->> 'boss' is distinct from 'ps-pat' or h ->> 'how' is distinct from 'rotation' then
     raise exception 'the handover reads %', h;
+  end if;
+  -- A handover whose arrival was not said has no act and no thread, and still lists.
+  if h -> 'act' is distinct from 'null'::jsonb or h -> 'thread' is distinct from 'null'::jsonb then raise exception 'a handover with no arrival names one: %', h; end if;
+  -- One that recorded its arrival names that post and its thread.
+  update season_handovers set arrival_act = pg_temp.say('ps-pat', pg_temp.ann(), 'Pat Boss arrives.', pg_temp.base() + interval '3 hours') where season = (h ->> 'season')::bigint;
+  d := pg_temp.signals(pg_temp.base(), pg_temp.base() + interval '1 hour');
+  h := d -> 'handovers' -> 0;
+  if h ->> 'act' is distinct from (select sh.arrival_act::text from season_handovers sh where sh.season = (h ->> 'season')::bigint)
+     or h ->> 'thread' is distinct from pg_temp.ann()::text
+     or (select a.payload ->> 'body' from acts a where a.id = (h ->> 'act')::uuid) is distinct from 'Pat Boss arrives.' then
+    raise exception 'a handover with an arrival reads %', h;
   end if;
   -- The error note is not for the pool: it is not in the answer and the role cannot read it.
   if h ? 'note' or d::text like '%secret error note%' then raise exception 'the handover carries its note: %', h; end if;

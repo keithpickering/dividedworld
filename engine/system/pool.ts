@@ -37,13 +37,15 @@ export interface LegacySignal {
   readonly maker: string;
   readonly move: string;
   readonly act: string;
+  /** The thread of `act`, which is the move's own thread. */
+  readonly thread: string;
   /** The end's reason (met, expired, reversed, superseded, spent) or `kept`. */
   readonly how: string;
   readonly n: number;
 }
 
 /** An admin's reversal of one of the current Boss's moves. */
-export interface ReversalSignal { readonly staff: string; readonly move: string; readonly act: string }
+export interface ReversalSignal { readonly staff: string; readonly move: string; readonly act: string; readonly thread: string }
 
 /** A season handover that landed in the window. */
 export interface HandoverSignal {
@@ -52,6 +54,9 @@ export interface HandoverSignal {
   readonly boss: string | null;
   readonly how: string;
   readonly at: string;
+  /** The new Boss's arrival post and its thread; both null where the arrival was not said (it is best effort). */
+  readonly act: string | null;
+  readonly thread: string | null;
 }
 
 /** One of the window's hottest threads. `boardMaker` is null until an Act records a board's creation. */
@@ -86,9 +91,13 @@ export interface PoolSignals {
 export interface Candidate {
   readonly staff: string;
   readonly trigger: PoolTrigger;
-  /** The thread the reply goes in; null where the trigger has no thread (a move ended, a handover, a stumble). */
+  /**
+   * The thread the reply goes in: the trigger's own. Null only where the trigger has no thread: a stumble from the Boss entering its
+   * meltdown (a phase crossing, no Act), or a handover whose arrival was not said. Task 10 treats a thread-null pick as a thread start
+   * when the week's thread share allows one, and skips it otherwise.
+   */
   readonly thread: string | null;
-  /** The post the reply quotes; null where the trigger is not a post. */
+  /** The post the reply quotes: the Act that set it off where it has a thread (a post, a move's end or keep, a reversal, an arrival); else null. */
   readonly quoting: string | null;
   /** The Act that set it off, a post or a move's end, a keep, a reversal; null where none did. */
   readonly act: string | null;
@@ -139,7 +148,7 @@ export function candidates(
   for (const s of signals.named) add(s.staff, 'named', s.thread, s.act, s.act);
   for (const s of signals.quoted) add(s.staff, 'quoted', s.thread, s.act, s.act);
   // Legacy is the maker's: the persona that wrote the move in an earlier reign, whoever owns it now.
-  for (const s of signals.legacy) add(s.maker, 'legacy', null, null, s.act);
+  for (const s of signals.legacy) add(s.maker, 'legacy', s.thread, s.act, s.act);
 
   // Successor stumbles is the Boss before the current one watching it fall: the current Boss entering its meltdown inside the window,
   // or an admin reversing one of its moves.
@@ -149,11 +158,11 @@ export function candidates(
     if (phase.until > phase.since && at(phase.since) !== 'meltdown' && at(phase.until - 1) === 'meltdown') {
       add(phase.predecessor, 'successorStumbles', null, null, null);
     }
-    for (const r of signals.reversals) add(phase.predecessor, 'successorStumbles', null, null, r.act);
+    for (const r of signals.reversals) add(phase.predecessor, 'successorStumbles', r.thread, r.act, r.act);
   }
 
-  // Season turn: a handover. The outgoing Boss, now a member, has a say; the arriving Boss's announcement is a duty and not the pool's.
-  for (const h of signals.handovers) add(h.outgoing, 'seasonTurn', null, null, null);
+  // Season turn: a handover. The outgoing Boss, now a member, has a say, replying to the arriving Boss's announcement (a duty, not the pool's) where it was said.
+  for (const h of signals.handovers) add(h.outgoing, 'seasonTurn', h.thread, h.act, h.act);
 
   for (const hot of signals.hot) {
     const authors = new Set(hot.authors.map((a) => a.character));

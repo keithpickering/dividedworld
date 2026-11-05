@@ -40,7 +40,7 @@ begin
   -- A handover (0086): the role reads its public columns, one by one, and not `note`, an error's words.
   select string_agg(attname, ', ' order by attname) into bad from pg_attribute
   where attrelid = 'season_handovers'::regclass and attnum > 0 and not attisdropped and has_column_privilege('kayfabb_digest', 'season_handovers', attname, 'select');
-  if bad is distinct from 'boss, how, landed_at, outgoing, season' then
+  if bad is distinct from 'arrival_act, boss, how, landed_at, outgoing, season' then
     raise exception 'the digest role reads these columns of season_handovers: %', bad;
   end if;
   if has_column_privilege('kayfabb_digest', 'queued_moves', 'held_by', 'select') then raise exception 'the digest role reads queued_moves.held_by'; end if;

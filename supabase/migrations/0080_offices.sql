@@ -231,6 +231,7 @@ declare
   how text;
   note text;
   open_nom record;
+  arrival uuid;
 begin
   begin
     chosen := nominated_boss(outgoing);
@@ -281,9 +282,9 @@ begin
       note := coalesce(note || '; ', '') || 'the offices were not moved: ' || sqlerrm;
     end;
     perform say_in_announcements(outgoing, 'bossFarewell');
-    perform say_in_announcements(chosen, 'bossArrival');
+    arrival := say_in_announcements(chosen, 'bossArrival');
   end if;
-  insert into season_handovers (season, outgoing, boss, how, note, at) values (new_season, outgoing, chosen, how, left(note, 1000), at);
+  insert into season_handovers (season, outgoing, boss, how, note, at, arrival_act) values (new_season, outgoing, chosen, how, left(note, 1000), at, arrival);
   return jsonb_build_object('boss', chosen, 'how', how, 'note', note);
 end $$;
 

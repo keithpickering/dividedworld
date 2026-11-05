@@ -112,6 +112,10 @@ begin
   -- The farewell and the arrival, said once, each by its own Boss; and the arriving Boss starts at zero.
   if pg_temp.posts_by('su-a', 'Farewell from Su A.') is distinct from 1::bigint then raise exception 'the farewell was said % times', pg_temp.posts_by('su-a', 'Farewell from Su A.'); end if;
   if pg_temp.posts_by('su-b', 'Hello from Su B.') is distinct from 1::bigint then raise exception 'the arrival was said % times', pg_temp.posts_by('su-b', 'Hello from Su B.'); end if;
+  -- The handover records the arrival post, so the pool can quote it (0086).
+  if hand.arrival_act is distinct from (select a.id from acts a join characters c on c.id = a.character where c.staff = 'su-b' and a.kind = 'post' and a.payload ->> 'body' = 'Hello from Su B.') then
+    raise exception 'the handover did not record the arrival: %', to_jsonb(hand);
+  end if;
   if (select balance from move_bank where staff = 'su-b') is distinct from 0::numeric then raise exception 'an arriving Boss did not start at zero'; end if;
   perform system_tick(); perform system_tick();
   if pg_temp.posts_by('su-b', 'Hello from Su B.') is distinct from 1::bigint then raise exception 'a tick said the arrival again'; end if;

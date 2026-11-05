@@ -5,14 +5,15 @@
 --                                       before the cap of five newest rows.
 --   quoted      [{staff, act, thread, n}]  posts in the window that quote or reply to a staff post, read as system_digest's `quoted` reads
 --                                       them (0052): through the target Act, never a character quoting itself.
---   legacy      [{staff, maker, move, act, how, n}]  move_end and move_keep Acts in the window on a move that is not the current Boss's
+--   legacy      [{staff, maker, move, act, thread, how, n}]  move_end and move_keep Acts in the window on a move that is not the current Boss's
 --                                       own making: its owner at the Act is not the current Boss, or its maker (the staff key that wrote
 --                                       the move) is not. `staff` is the owner at the Act, `maker` the writer, `move` the move, `act` the
---                                       end or the keep, `how` the end's reason (met, expired, reversed, superseded, spent) or `kept`, and
+--                                       end or the keep (`thread` its thread: the move's own, 0051), `how` the end's reason (met, expired, reversed, superseded, spent) or `kept`, and
 --                                       `n` the maker's total rows before the cap of five newest. An admin's reversal of such a move is a move_end with
 --                                       why `reversed`, so it is here.
---   reversals   [{staff, move, act}]    admin reversals (a move_end, why `reversed`, by `admin`) in the window of the current Boss's moves.
---   handovers   [{season, outgoing, boss, how, at}]  season_handovers landed in the window. Not `note`: that is an error's words.
+--   reversals   [{staff, move, act, thread}]    admin reversals (a move_end, why `reversed`, by `admin`) in the window of the current Boss's moves.
+--   handovers   [{season, outgoing, boss, how, at, act, thread}]  season_handovers landed in the window. `act` is the new Boss's arrival post (season_handovers.arrival_act,
+--                                       set by hand_over in its transaction) and `thread` its thread; both null where the arrival was not said. Not `note`: that is an error's words.
 --   hot         [{thread, board, heat, starter, starterStaff, staffStarted, authors, boardMaker}]  the top `digestThreads` threads by posts in the window,
 --                                       heat as the digest counts it (posts an hour). `starter` is the character whose post opened the
 --                                       thread; `starterStaff` its staff key where it is a persona's, and `staffStarted` says so.
@@ -49,7 +50,7 @@
 -- A handover's public columns: the season, who left, who came, how, and when it landed. Not `note` (an error's words, for admins). Its
 -- policy is the digest role's own, as the other tables it reads (0045).
 create policy digest_reads on season_handovers for select to kayfabb_digest using (true);
-grant select (season, outgoing, boss, how, landed_at) on season_handovers to kayfabb_digest;
+grant select (season, outgoing, boss, how, landed_at, arrival_act) on season_handovers to kayfabb_digest;
 
 -- The folds, so a name and the words around it are compared as the database compares names (0011). They read name_maps, which the role
 -- cannot; the function is security definer and says nothing about anyone.
@@ -136,7 +137,7 @@ begin
   -- else the writer; for a keep, the owner before it (the latest earlier keep, else the writer). Read from the public views, as the
   -- role may; supabase/tests/0088-pool-signals.sql checks an end's owner against move_owner itself.
   ev as (
-    select e.id as act, e.created_at, e.target_act_id as move,
+    select e.id as act, e.thread, e.created_at, e.target_act_id as move,
            case when e.kind = 'move_keep' then 'kept' else e.payload ->> 'why' end as how,
            e.payload ->> 'by' as by_whom,
            coalesce(
@@ -164,17 +165,18 @@ begin
           and tgt.kind = 'post' and tc.staff is not null and tc.office is distinct from 'developer' and w.character <> tgt.character
       ) q where q.rn <= 5),
     'legacy', (
-      select coalesce(jsonb_agg(jsonb_build_object('staff', l.owner, 'maker', l.maker, 'move', l.move, 'act', l.act, 'how', l.how, 'n', l.n) order by l.maker, l.created_at desc, l.act desc), '[]'::jsonb)
+      select coalesce(jsonb_agg(jsonb_build_object('staff', l.owner, 'maker', l.maker, 'move', l.move, 'act', l.act, 'thread', l.thread, 'how', l.how, 'n', l.n) order by l.maker, l.created_at desc, l.act desc), '[]'::jsonb)
       from (
         select v.*, row_number() over (partition by v.maker order by v.created_at desc, v.act desc) as rn, count(*) over (partition by v.maker) as n
         from ev v where v.owner is not null and v.maker is not null and (v.owner is distinct from boss or v.maker is distinct from boss)
       ) l where l.rn <= 5),
     'reversals', (
-      select coalesce(jsonb_agg(jsonb_build_object('staff', v.owner, 'move', v.move, 'act', v.act) order by v.created_at desc, v.act desc), '[]'::jsonb)
+      select coalesce(jsonb_agg(jsonb_build_object('staff', v.owner, 'move', v.move, 'act', v.act, 'thread', v.thread) order by v.created_at desc, v.act desc), '[]'::jsonb)
       from ev v where v.owner is not distinct from boss and v.owner is not null and v.how = 'reversed' and v.by_whom = 'admin'),
     'handovers', (
-      select coalesce(jsonb_agg(jsonb_build_object('season', h.season, 'outgoing', h.outgoing, 'boss', h.boss, 'how', h.how, 'at', h.landed_at) order by h.landed_at, h.season), '[]'::jsonb)
-      from season_handovers h where h.landed_at >= since and h.landed_at < until),
+      select coalesce(jsonb_agg(jsonb_build_object('season', h.season, 'outgoing', h.outgoing, 'boss', h.boss, 'how', h.how, 'at', h.landed_at,
+                                                   'act', arr.id, 'thread', arr.thread) order by h.landed_at, h.season), '[]'::jsonb)
+      from season_handovers h left join acts_public arr on arr.id = h.arrival_act where h.landed_at >= since and h.landed_at < until),
     'hot', (
       select coalesce(jsonb_agg(jsonb_build_object('thread', x.thread, 'board', x.board, 'heat', x.heat, 'starter', x.starter,
                                                    'starterStaff', x.starter_staff, 'staffStarted', x.starter_staff is not null,

@@ -47,8 +47,8 @@ test('quoted: a post that quotes or replies to a persona\'s post is a candidate 
 });
 
 test('legacy: a move ended, kept or reversed fires for its maker, not for its owner at the Act', () => {
-  const c = run({ legacy: [{ staff: 'mem1', maker: 'old', move: 'm1', act: 'e1', how: 'reversed', n: 1 }, { staff: 'mod1', maker: 'mod1', move: 'm2', act: 'k1', how: 'kept', n: 1 }] });
-  assert.deepEqual(only(c, 'legacy').map((x) => [x.staff, x.act]).sort(), [['mod1', 'k1'], ['old', 'e1']]);
+  const c = run({ legacy: [{ staff: 'mem1', maker: 'old', move: 'm1', act: 'e1', thread: 'tm1', how: 'reversed', n: 1 }, { staff: 'mod1', maker: 'mod1', move: 'm2', act: 'k1', thread: 'tm2', how: 'kept', n: 1 }] });
+  assert.deepEqual(only(c, 'legacy').map((x) => [x.staff, x.act, x.thread, x.quoting]).sort(), [['mod1', 'k1', 'tm2', 'k1'], ['old', 'e1', 'tm1', 'e1']], 'in the move\'s thread, quoting the end or the keep');
 });
 
 test('successorStumbles: the Boss entering its meltdown inside the window fires for the Boss before it, and only then', () => {
@@ -60,8 +60,8 @@ test('successorStumbles: the Boss entering its meltdown inside the window fires 
 });
 
 test('successorStumbles: an admin reversal of the Boss\'s move fires for the Boss before it, with the reversal as its act', () => {
-  const c = run({ reversals: [{ staff: 'boss1', move: 'm9', act: 'r1' }] });
-  assert.deepEqual(c, [{ staff: 'old', trigger: 'successorStumbles', thread: null, quoting: null, act: 'r1' }]);
+  const c = run({ reversals: [{ staff: 'boss1', move: 'm9', act: 'r1', thread: 'tm9' }] });
+  assert.deepEqual(c, [{ staff: 'old', trigger: 'successorStumbles', thread: 'tm9', quoting: 'r1', act: 'r1' }]);
 });
 
 test('oldFlame: a favorite or a grudge in its memory writing one of the hottest posts fires, in that thread', () => {
@@ -95,15 +95,17 @@ test('homeTurf: a hot thread a persona started fires for it; so does a board it 
 });
 
 test('seasonTurn: a handover in the window fires for the Boss that left', () => {
-  const c = run({ handovers: [{ season: 4, outgoing: 'old', boss: 'boss1', how: 'rotation', at: 'x' }, { season: 5, outgoing: null, boss: 'mod1', how: 'none', at: 'y' }] });
-  assert.deepEqual(c, [{ staff: 'old', trigger: 'seasonTurn', thread: null, quoting: null, act: null }]);
+  const c = run({ handovers: [{ season: 4, outgoing: 'old', boss: 'boss1', how: 'rotation', at: 'x', act: 'arr', thread: 'ta' }, { season: 5, outgoing: null, boss: 'mod1', how: 'none', at: 'y', act: null, thread: null }] });
+  assert.deepEqual(c, [{ staff: 'old', trigger: 'seasonTurn', thread: 'ta', quoting: 'arr', act: 'arr' }], 'a reply to the arrival');
+  const unsaid = run({ handovers: [{ season: 4, outgoing: 'old', boss: 'boss1', how: 'rotation', at: 'x', act: null, thread: null }] });
+  assert.deepEqual(unsaid, [{ staff: 'old', trigger: 'seasonTurn', thread: null, quoting: null, act: null }], 'an arrival not said: thread-null');
 });
 
 test('a waiting or benched persona is never a candidate, whatever the signal says', () => {
   const c = run({
     named: [{ staff: 'wait', act: 'a', thread: 't', n: 1 }, { staff: 'bench', act: 'b', thread: 't', n: 1 }],
-    legacy: [{ staff: 'x', maker: 'bench', move: 'm', act: 'e', how: 'met', n: 1 }],
-    handovers: [{ season: 1, outgoing: 'wait', boss: 'bench', how: 'rotation', at: 'z' }],
+    legacy: [{ staff: 'x', maker: 'bench', move: 'm', act: 'e', thread: 't', how: 'met', n: 1 }],
+    handovers: [{ season: 1, outgoing: 'wait', boss: 'bench', how: 'rotation', at: 'z', act: null, thread: null }],
     hot: [hot({ staffStarted: true, starterStaff: 'bench', board: 'unknown' })],
   });
   assert.deepEqual(c, []);
