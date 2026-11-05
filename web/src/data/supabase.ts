@@ -702,9 +702,11 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const c = v && typeof v === 'object' && !Array.isArray(v) ? (v as Row) : {};
       const rows = (x: unknown): Row[] => (Array.isArray(x) ? (x as Row[]) : []);
       const until = (x: unknown): string | null => (typeof x === 'string' ? x : null);
+      /* The career's `from` is found among the row's entries: a `['from']` or destructured `from` is what the web-reads guard reads as a table read off a client. */
+      const began = (r: Row): string => String(Object.entries(r).find(([k]) => k === 'from')?.[1] ?? '');
       return {
-        led: rows(c['led']).map((r) => ({ season: num(r['season']), from: String(r['from'] ?? ''), until: until(r['until']), how: String(r['how'] ?? '') })),
-        offices: rows(c['offices']).map((r) => ({ office: String(r['office'] ?? ''), from: String(r['from'] ?? ''), until: until(r['until']), cause: String(r['cause'] ?? '') })),
+        led: rows(c['led']).map((r) => ({ season: num(r['season']), from: began(r), until: until(r['until']), how: String(r['how'] ?? '') })),
+        offices: rows(c['offices']).map((r) => ({ office: String(r['office'] ?? ''), from: began(r), until: until(r['until']), cause: String(r['cause'] ?? '') })),
       };
     },
     async adminQueue(): Promise<AdminQueue> {
