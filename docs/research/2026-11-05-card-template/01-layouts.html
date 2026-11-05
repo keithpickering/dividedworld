@@ -84,8 +84,8 @@ label.toggle input { width: 18px; height: 18px; accent-color: var(--guide); }
 .pc[data-size='big'] { --w: 360px; max-width: 100%; box-shadow: 0 0 0 2px var(--c), 0 0 34px color-mix(in srgb, var(--c) 60%, transparent); }
 
 /* A full-art variant's ring has a foil sheen (an idea, for the question list). */
-.pc[data-variant='full'] { box-shadow: 0 0 0 1.5px var(--c), 0 0 18px color-mix(in srgb, var(--c) 55%, transparent); }
-.pc[data-variant='full']::after {
+.pc[data-variant='foil'] { box-shadow: 0 0 0 1.5px var(--c), 0 0 18px color-mix(in srgb, var(--c) 55%, transparent); }
+.pc[data-variant='foil']::after {
   content: ''; position: absolute; inset: -1.5px; border-radius: inherit; pointer-events: none;
   padding: 1.5px;
   background: conic-gradient(from 210deg, #fff0, #fff9, #ff8fd8aa, #8ff6ffaa, #fff9, #fff0 60%);
@@ -260,7 +260,7 @@ figcaption { font: 700 13px var(--mono); color: var(--text-2); }
   <header>
     <p class="eyebrow">Divided World · design session board · 2026-11-05</p>
     <h1>Postcard template</h1>
-    <p class="lede">One 2:3 card at every size. A black border the engine draws in the card's color, badges that sit on its inner edge, and an inner canvas the art owns. Default art keeps to the focus zone and may glow past it. A full-art variant fills the whole canvas.</p>
+    <p class="lede">One 2:3 card at every size. A black border the engine draws in the card's color, badges that sit on its inner edge, and an inner canvas the art owns. Every card's art is full art, filling the whole canvas. A design may still keep to one area of it, on the card's dark ground.</p>
   </header>
 
   <section aria-labelledby="h-anatomy">
@@ -269,8 +269,8 @@ figcaption { font: 700 13px var(--mono); color: var(--text-2); }
       <p class="lede">The guides show what an artist works to. The engine clips at the border and nowhere else.</p>
     </div>
     <div class="controls" role="group" aria-label="Anatomy card">
-      <button class="chip" type="button" data-anat="stick-default" aria-pressed="true">Default art</button>
-      <button class="chip" type="button" data-anat="stick-full" aria-pressed="false">Full art</button>
+      <button class="chip" type="button" data-anat="stick-full" aria-pressed="true">Full art</button>
+      <button class="chip" type="button" data-anat="stick-default" aria-pressed="false">A focused design</button>
       <label class="toggle"><input type="checkbox" id="guides" checked> Show template guides</label>
     </div>
     <div class="anatomy">
@@ -282,14 +282,14 @@ figcaption { font: 700 13px var(--mono); color: var(--text-2); }
               <tr><td>Card</td><td class="num">600 × 900</td><td>The template's units. 2:3 at every size: slot 86, phone 104, fan 150 and sheet 276 wide.</td></tr>
               <tr><td>Border</td><td class="num">30 · outer r 45</td><td>Black, ringed and glowing in the card's color. The engine draws it, so no art file contains it. Its outer corner is concentric with the canvas's (30 + 15), so it is 30 thick all the way round, at every size.</td></tr>
               <tr><td>Canvas</td><td class="num">540 × 840 @ 30,30 · r 15</td><td>The inner area, and the art file's whole canvas. The only clip.</td></tr>
-              <tr><td>Focus zone</td><td class="num">460 × 400 @ 70,100</td><td>Where a default art's subject sits, on a transparent ground. Glow, rings and splashes may run past it. A guide, never a mask.</td></tr>
+              <tr><td>Focus zone</td><td class="num">460 × 400 @ 70,100</td><td>Optional. A guide for a design that keeps to one area: its subject sits here on a transparent ground, the engine draws the card's dark ground and glow behind it, and glow, rings and splashes may run past it. Never a mask.</td></tr>
               <tr><td>Plate zone</td><td class="num">lower third</td><td>Always covered by the name plate and the text plate, which are translucent glass. Art there reads as texture behind words.</td></tr>
               <tr><td>Border pieces</td><td class="num">keep clear 12</td><td>Alignment and play (parallelograms), rarity (a gem on its point), price, and the foot line with the artist's credit, all from the card's data. They may cover the border's inner part, never its outer edge: every piece stays 12 units inside the silhouette (the dotted line).</td></tr>
               <tr><td>Mark</td><td class="num">96 × 96 · live 72</td><td>A separate square silhouette, drawn to read at 18px inside the post's mark tile.</td></tr>
             </tbody>
           </table>
         </div>
-        <p class="note">The art set for a new card: color and ink, default art (transparent, focus zone), and a mark. A full-art variant is another canvas of the same size with no restraint.</p>
+        <p class="note">The art set for a new card: color and ink, its art (the 540×840 canvas, SVG), and a mark (square, SVG). A variant is another canvas of the same size, SVG or a 1080×1680 image.</p>
       </div>
     </div>
   </section>
@@ -297,7 +297,7 @@ figcaption { font: 700 13px var(--mono); color: var(--text-2); }
   <section aria-labelledby="h-layouts">
     <div>
       <h2 id="h-layouts">The layout</h2>
-      <p class="lede">A, Low name, chosen over a Banner (from Magic and Yu-Gi-Oh!) and a Cost corner (from Hearthstone and Lorcana), which are in this board's history. Shown at the fan's size, default art and full art.</p>
+      <p class="lede">A, Low name, chosen over a Banner (from Magic and Yu-Gi-Oh!) and a Cost corner (from Hearthstone and Lorcana), which are in this board's history. Shown at the fan's size.</p>
     </div>
     <div class="trio" id="trio"></div>
   </section>
@@ -377,7 +377,7 @@ function card(key, variant, size) {
     ? `<div class="pc-art-full">${k.full()}</div>`
     : `<div class="pc-art-default">${k.def()}</div>`;
   const line = size === 'fan' ? k.tagline : k.summary;
-  return `<div class="pc" data-size="${size}" data-variant="${variant}" style="--c:${k.c};--ink:${k.ink}" role="img" aria-label="${k.name}, ${k.align}, ${k.play}, ${k.rarity}${variant === 'full' ? ', full art' : ''}, ${size} size">
+  return `<div class="pc" data-size="${size}" data-variant="${variant}" style="--c:${k.c};--ink:${k.ink}" role="img" aria-label="${k.name}, ${k.align}, ${k.play}, ${k.rarity}${variant === 'full' ? '' : ', a focused design'}, ${size} size">
     <div class="pc-inner">${art}
       <div class="pc-guides"><div class="g-focus"><span class="g-label" style="left:2px;top:2px">focus zone</span></div><div class="g-plates"><span class="g-label" style="right:2px;top:2px">plates</span></div><span class="g-label" style="left:2px;bottom:2px">canvas 540×840</span></div>
     </div>
@@ -398,19 +398,19 @@ const LAYOUTS = [
 document.getElementById('trio').innerHTML = LAYOUTS.map((l, i) => `
   <div class="cand" data-layout="${l.id}">
     <h3><b>A</b>${l.title}</h3>
-    <div class="pair">${card('stick', 'default', 'fan')}${card('whoops', 'full', 'fan')}</div>
+    <div class="pair">${card('stick', 'full', 'fan')}${card('whoops', 'full', 'fan')}</div>
     <p><i>${l.from}.</i> ${l.text}</p>
   </div>`).join('');
 
 function ladder(layout) {
   const sizes = ['slot', 'phone', 'fan', 'sheet'];
-  const row = (key, variant) => `<p class="row-label">${CARDS[key].name} · ${variant === 'full' ? 'full art' : 'default art'}</p>
+  const row = (key, variant) => `<p class="row-label">${CARDS[key].name} · ${variant === 'full' ? 'full art' : 'a focused design'}</p>
     <div class="ladder">${sizes.map((s) => `<figure>${card(key, variant, s)}<figcaption>${s}</figcaption></figure>`).join('')}</div>`;
-  document.getElementById('ladders').innerHTML = `<div data-layout="${layout}">${row('stick', 'default')}${row('whoops', 'default')}${row('stick', 'full')}${row('whoops', 'full')}</div>`;
+  document.getElementById('ladders').innerHTML = `<div data-layout="${layout}">${row('stick', 'full')}${row('whoops', 'full')}${row('stick', 'default')}${row('whoops', 'default')}</div>`;
 }
 ladder('low');
 
-let anatVariant = 'default';
+let anatVariant = 'full';
 let anatLayout = 'low';
 function anatomy() {
   const host = document.getElementById('anat');
