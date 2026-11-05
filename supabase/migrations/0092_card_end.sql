@@ -1116,7 +1116,7 @@ begin
         and (p.payload ->> 'ends' is null or (p.payload ->> 'ends')::timestamptz > now())
         and not exists (select 1 from play_reach r where r.play = p.id and r.ends_at <= now())
         and not exists (select 1 from acts e where e.kind = 'card_end' and e.target_act_id = p.id)
-      order by p.created_at desc, p.id limit cap + 1
+      order by p.created_at desc, p.id desc limit cap + 1
     ) k
     where c.staff is not null
     order by k.created_at desc, k.id limit cap + 1

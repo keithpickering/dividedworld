@@ -328,16 +328,19 @@ export function EndCardDialog({ play, card, caster, onClose, onEnded, returnFocu
     once.current = true;
     setBusy(true);
     setRefusal(null);
+    let ended: Id | null = null;
     try {
       const answer = await api.reverseCard(play);
       if (!answer.ok) { setRefusal(answer.error); return; }
-      await onEnded(answer.value.act);
+      ended = answer.value.act;
     } catch {
       setRefusal('That could not be sent. Check your connection and look at the card before you try again.');
     } finally {
       once.current = false;
       setBusy(false);
     }
+    /* Outside the try: the card has ended, so what the screen does next (a reload) never reads as a failed send. */
+    if (ended !== null) await Promise.resolve(onEnded(ended)).catch(() => undefined);
   };
   return (
     <Overlay title="End this card?" surface="settings" className="kb-lens-end" onClose={onClose} returnFocusTo={returnFocusTo}>

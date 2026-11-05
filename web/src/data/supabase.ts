@@ -599,12 +599,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   /**
    * The `card_end` Acts of these rows' card plays (an admin's reversal, 0092): each targets its play, so the plays-on-a-post read
    * cannot find them and they are asked for by the plays' ids, in chunks. At most one per play (a unique index), so a chunk of
-   * plays needs no more rows than it has. Returned beside the plays in the same list; the plays are unchanged.
+   * plays needs no more rows than it has, and ID_CHUNK bounds each read. Returned beside the plays in the same list; the plays are unchanged.
    */
   const endsOf = async (plays: readonly Row[]): Promise<Row[]> => {
     const ids = plays.filter((r) => r['kind'] === 'card' && typeof r['id'] === 'string' && idOk(r['id'])).map((r) => r['id'] as string);
     if (ids.length === 0) return [];
-    const rows = await byChunks(ids, (part) => list(() => client.from('acts_public').select('*').eq('kind', 'card_end').in('target_act_id', part).order('created_at', { ascending: true }).limit(part.length)));
+    const rows = await byChunks(ids, (part) => list(() => client.from('acts_public').select('*').eq('kind', 'card_end').in('target_act_id', part).order('created_at', { ascending: true }).limit(ID_CHUNK)));
     return merged(rows, 'created_at', 'id');
   };
   const act = async <T,>(body: Row, map: (r: Row) => T | Promise<T>): Promise<Answer<T>> => {
