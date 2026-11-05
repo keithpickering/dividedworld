@@ -28,16 +28,20 @@
   justify-content: flex-end;
 }
 
-/* The persona's post in the welcome page's frame: chamfered, outlined in pale, on the ground. */
-.kb-front-door-note {
+/* The persona's post in the welcome page's frame: chamfered by the glass cut (an edge in pale, drawn on the diagonal), on the ground. */
+.kb-glass-cut-dialog.kb-front-door-note {
   display: grid;
   gap: 14px;
   margin: 1.2em 0;
   padding: 28px 36px 32px;
+  --kb-cut: 24px;
+  --kb-border: 1px;
+  background: color-mix(in srgb, var(--kb-glass-pale) 55%, var(--kb-glass-ground));
+}
+
+/* The panel, one border in; the element above is the border's color (glass/base.css). */
+.kb-glass-cut-dialog.kb-front-door-note::after {
   background: var(--kb-glass-ground);
-  outline: 1px solid color-mix(in srgb, var(--kb-glass-pale) 55%, transparent);
-  outline-offset: -1px;
-  clip-path: polygon(0 0, calc(100% - 24px) 0, 100% 24px, 100% 100%, 24px 100%, 0 calc(100% - 24px));
 }
 
 .kb-front-door-prose > :first-child {

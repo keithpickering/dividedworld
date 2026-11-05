@@ -126,14 +126,18 @@
 
 /* ---- the article ---- */
 
-.kb-guide-article {
+.kb-glass-cut-dialog.kb-guide-article {
   box-sizing: border-box;
   min-width: 0;
   padding: 32px 44px 40px;
-  background: color-mix(in srgb, var(--kb-glass-ground) 86%, transparent);
-  outline: 1px solid color-mix(in srgb, var(--kb-glass-pale) 55%, transparent);
-  outline-offset: -1px;
-  clip-path: polygon(0 0, calc(100% - 24px) 0, 100% 24px, 100% 100%, 24px 100%, 0 calc(100% - 24px));
+  --kb-cut: 24px;
+  --kb-border: 1px;
+  background: color-mix(in srgb, var(--kb-glass-pale) 55%, var(--kb-glass-ground));
+}
+
+/* The panel, one border in; the element above is the border's color (glass/base.css). */
+.kb-glass-cut-dialog.kb-guide-article::after {
+  background: var(--kb-glass-ground);
 }
 
 /* A section scrolled to stops short of the window's top, which the contents' own top matches. */

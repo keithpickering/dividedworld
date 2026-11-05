@@ -129,7 +129,7 @@ export function Guide() {
             </ul>
           </nav>
         </aside>
-        <article className="kb-guide-article">
+        <article className="kb-glass-cut-dialog kb-guide-article">
           {sections.map((s) => (
             <section
               key={s.id} id={s.id} className="kb-guide-section" aria-labelledby={`${s.id}-title`}

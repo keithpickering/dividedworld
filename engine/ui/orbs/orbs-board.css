@@ -138,16 +138,21 @@
   gap: 20px;
 }
 
-.kb-orbs-board-state {
+.kb-glass-cut-panel.kb-orbs-board-state {
   --kb-orb-size: 42px;
   --kb-orb-gap: 8px;
   --kb-state-edge: color-mix(in srgb, var(--kb-glass-pale) 35%, transparent);
   --kb-state-ink: var(--kb-glass-text);
   --kb-state-figure: var(--kb-glass-text-hi);
   padding: 18px 22px;
-  background: var(--kb-glass-panel-soft);
-  border: 1px solid var(--kb-state-edge);
-  clip-path: polygon(0 0, calc(100% - 26px) 0, 100% 26px, 100% 100%, 0 100%);
+  --kb-cut: 26px;
+  --kb-border: 1px;
+  background: var(--kb-state-edge);
+}
+
+/* The panel, one border in; the element above is the border's color (glass/base.css). */
+.kb-glass-cut-panel.kb-orbs-board-state::after {
+  background: var(--kb-glass-ground);
 }
 
 .kb-orbs-board-state[data-kb-tone='ghost'] {

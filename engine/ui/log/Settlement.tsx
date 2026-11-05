@@ -119,7 +119,7 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
 
         <div className="kb-settled-cards">
           {rank && (
-            <section aria-label={rank.rankNow > rank.rankWas ? 'Rank up' : 'Rank down'} className="kb-settled-rank">
+            <section aria-label={rank.rankNow > rank.rankWas ? 'Rank up' : 'Rank down'} className="kb-glass-cut-dialog kb-settled-rank">
               <div className="kb-settled-card-label">{rank.rankNow > rank.rankWas ? 'New rank' : 'Rank down'}</div>
               <div className="kb-settled-rank-was">{instance.ranks[rank.rankWas]?.name}</div>
               <div className="kb-settled-rank-now kb-glass-display">{instance.ranks[rank.rankNow]?.name}</div>

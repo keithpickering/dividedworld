@@ -87,7 +87,7 @@ function Post({ update }: { readonly update: Update }) {
   }, [api, update.act, update.thread, tallies, mine]);
 
   return (
-    <article className="kb-updates-post" aria-labelledby={headline}>
+    <article className="kb-glass-cut-dialog kb-updates-post" aria-labelledby={headline}>
       <div className="kb-updates-by">
         <PersonaMark name={update.name} picture={picture} />
         <div>

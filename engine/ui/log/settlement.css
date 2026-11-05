@@ -152,15 +152,21 @@
   margin-top: -4px;
 }
 
-.kb-settled-rank {
+.kb-glass-cut-dialog.kb-settled-rank {
   box-sizing: border-box;
   min-height: 330px;
   padding: 26px 32px;
-  /* At least as solid as the calm (0.85): a card's words stand on a panel that is one. */
-  background: var(--kb-glass-panel-strong);
-  border: 1px solid var(--kb-glass-ready);
-  box-shadow: 0 0 50px color-mix(in srgb, var(--kb-glass-ready) 35%, transparent), inset 0 0 50px color-mix(in srgb, var(--kb-glass-ready) 8%, transparent);
-  clip-path: polygon(0 0, calc(100% - var(--kb-glass-chamfer-5)) 0, 100% var(--kb-glass-chamfer-5), 100% 100%, var(--kb-glass-chamfer-5) 100%, 0 calc(100% - var(--kb-glass-chamfer-5)));
+  --kb-cut: var(--kb-glass-chamfer-5);
+  --kb-border: 1px;
+  background: var(--kb-glass-ready);
+}
+
+/* The panel, one border in; the element above is the border's color (glass/base.css). Its ground is opaque, so the edge
+   color never bleeds through the words (the old panel was black at 0.88 over the page, as solid as the calm card's 0.85
+   it stands beside). The inner glow rides the panel; the outer one was a box-shadow the cut clipped away. */
+.kb-glass-cut-dialog.kb-settled-rank::after {
+  background: var(--kb-glass-ground);
+  box-shadow: inset 0 0 50px color-mix(in srgb, var(--kb-glass-ready) 8%, transparent);
 }
 
 .kb-settled-card-label {

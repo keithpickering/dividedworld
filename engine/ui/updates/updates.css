@@ -105,12 +105,16 @@
   margin-top: 16px;
 }
 
-.kb-updates-post {
+.kb-glass-cut-dialog.kb-updates-post {
   padding: 36px 44px 32px;
-  background: color-mix(in srgb, var(--kb-glass-ground) 86%, transparent);
-  outline: 1px solid color-mix(in srgb, var(--kb-glass-pale) 55%, transparent);
-  outline-offset: -1px;
-  clip-path: polygon(0 0, calc(100% - 24px) 0, 100% 24px, 100% 100%, 24px 100%, 0 calc(100% - 24px));
+  --kb-cut: 24px;
+  --kb-border: 1px;
+  background: color-mix(in srgb, var(--kb-glass-pale) 55%, var(--kb-glass-ground));
+}
+
+/* The panel, one border in; the element above is the border's color (glass/base.css). */
+.kb-glass-cut-dialog.kb-updates-post::after {
+  background: var(--kb-glass-ground);
 }
 
 .kb-updates-headline {

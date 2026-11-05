@@ -73,7 +73,7 @@ export function Welcome() {
     <div className="kb-welcome">
       <PageHead title="Welcome" />
       <div className="kb-welcome-cols">
-        <article className="kb-welcome-post" aria-labelledby={letter.title === null ? undefined : headline}>
+        <article className="kb-glass-cut-dialog kb-welcome-post" aria-labelledby={letter.title === null ? undefined : headline}>
           <div className="kb-updates-by">
             <PersonaMark name={persona.name} picture={picture} />
             <div>

@@ -78,7 +78,7 @@ function Results({ item, own, className }: { readonly item: SeasonNewsItem; read
           {item.top.map((r, i) => {
             const s = stated(r);
             return (
-              <li key={r.character} className="kb-season-podium">
+              <li key={r.character} className="kb-glass-cut-dialog kb-season-podium">
                 <span className="kb-season-place">{PLACES[i] ?? `Place ${r.place}`}</span>
                 <b className="kb-season-name"><Link to={`/c/${encodeURIComponent(r.character)}`}>{r.name}</Link></b>
                 <span className="kb-season-standing">

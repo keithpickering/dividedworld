@@ -146,6 +146,21 @@
 .kb-glass-cut-button::after { clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--kb-cut-in)), calc(100% - var(--kb-cut-in)) 100%, 0 100%); }
 
 /*
+ * Forced colors replaces an author background with the system's, so the edge (the element's background) and the panel (its
+ * ::after) would both turn Canvas and the edge would vanish. System colors are kept: the edge is CanvasText, the panel Canvas. !important, because a piece's own rule
+ * (two classes) sets its colors and outranks this one.
+ */
+@media (forced-colors: active) {
+  .kb-glass-cut-panel,
+  .kb-glass-cut-dialog,
+  .kb-glass-cut-button { background: CanvasText !important; }
+
+  .kb-glass-cut-panel::after,
+  .kb-glass-cut-dialog::after,
+  .kb-glass-cut-button::after { background: Canvas !important; }
+}
+
+/*
  * The HUD's top edge is a tab: 24px tall, 28px slopes, its four points (--tab-a to --tab-d, set
  * from the aura block's own position) following the orbs at every width. The seam is an SVG
  * polyline along the same points at y + 6, drawn twice: the glow under a blur, then the core.
