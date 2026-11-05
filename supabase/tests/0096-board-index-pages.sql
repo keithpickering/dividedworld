@@ -15,12 +15,17 @@ do $$
 declare
   ann uuid := tests.account('bp-ann');
   bob uuid := tests.account('bp-bob');
+  cat uuid := tests.account('bp-cat');
+  c1 uuid := tests.character(cat, 'Reader Two');
   a1 uuid := tests.character(ann, 'Reader One');
   b1 uuid := tests.character(bob, 'Poster One');
   gen uuid := (select id from boards where slug = 'general');
   side uuid;
   t uuid;
   tp uuid;
+  tp2 uuid;
+  pin2 uuid;
+  ban2 uuid;
   ts uuid;
   first_post uuid;
   pin_play uuid;
@@ -53,6 +58,14 @@ begin
   banner_play := tests.act(b1, 'card', (select id from threads where title = 'Thread 1'),
     jsonb_build_object('card', 'banner', 'reach', 'board', 'board', gen, 'ends', now() + interval '1 day'), null);
   insert into play_reach (play, reach, board, ends_at) values (banner_play, 'board', gen, now() + interval '1 day');
+  -- A second pin (older) and a second board card (older): the order of each aggregate is the function's own, not luck.
+  insert into threads (board, title) values (gen, 'Pinned two') returning id into tp2;
+  pin2 := tests.act(b1, 'card', tp2, jsonb_build_object('card', 'banner', 'reach', 'thread', 'thread', tp2, 'ends', now() + interval '1 day'),
+    tests.post(b1, tp2, 'Pin me too.', now() - interval '4 days'), now() - interval '1 hour');
+  insert into play_reach (play, reach, thread, pins_board, ends_at) values (pin2, 'thread', tp2, gen, now() + interval '1 day');
+  ban2 := tests.act(b1, 'card', (select id from threads where title = 'Thread 2'),
+    jsonb_build_object('card', 'banner', 'reach', 'board', 'board', gen, 'ends', now() + interval '1 day'), null, now() - interval '2 hours');
+  insert into play_reach (play, reach, board, ends_at) values (ban2, 'board', gen, now() + interval '1 day');
   insert into effect_state (play, state, saved_by) values (pin_play, '{"wash": 3}', b1);
   insert into effect_state (play, state, saved_by) values (banner_play, '{"wash": 1}', b1);
   insert into effect_releases (account, play) values (ann, pin_play);
@@ -61,6 +74,10 @@ begin
   insert into reading (account, thread, furthest_seq, first_character) values (bob, (select id from threads where title = 'Thread 4'), 1, b1);
   insert into thread_view_counts (thread, views, counted_at) values ((select id from threads where title = 'Thread 3'), 7, now());
 
+  -- Another player reacts to the pin too: the tally counts both, and ann's own reactions hold only hers.
+  perform tests.become(cat);
+  perform react(pin_play, c1, 'up');
+  perform tests.unbecome();
   perform tests.become(ann);
   perform react(pin_play, a1, 'up');
 
@@ -73,14 +90,14 @@ begin
     raise exception 'the board: %', got -> 'board'; end if;
   if (got ->> 'total')::integer is distinct from total then raise exception 'total: %', got ->> 'total'; end if;
   if (got ->> 'page')::integer <> 1 then raise exception 'page: %', got ->> 'page'; end if;
-  ids_want := (select jsonb_agg(f.id order by f.last_at desc, f.id desc) from (select id, last_at from thread_list where board = gen order by last_at desc, id desc limit 20) f);
+  ids_want := (select jsonb_agg(f.id order by f.last_at desc) from (select id, last_at from thread_list where board = gen order by last_at desc limit 20) f);
   if (select jsonb_agg(e ->> 'id' order by n) from jsonb_array_elements(got -> 'threads') with ordinality x(e, n)) is distinct from ids_want then
     raise exception 'page 1 threads: %', got -> 'threads'; end if;
   if got -> 'threads' -> 0 is distinct from (select to_jsonb(l) from thread_list l where l.id = (ids_want ->> 0)::uuid) then raise exception 'a thread row is the thread_list row'; end if;
   want := (select coalesce(jsonb_agg(to_jsonb(p)), '[]') from pinned_threads(gen) p);
-  if jsonb_array_length(want) <> 1 or got -> 'pins' is distinct from want then raise exception 'pins: % wanted %', got -> 'pins', want; end if;
+  if jsonb_array_length(want) <> 2 or got -> 'pins' is distinct from want or got -> 'pins' -> 0 ->> 'play' <> pin_play::text or got -> 'pins' -> 1 ->> 'play' <> pin2::text then raise exception 'pins: % wanted %', got -> 'pins', want; end if;
   want := (select coalesce(jsonb_agg(to_jsonb(p)), '[]') from effects_above('{}', null, gen) p);
-  if jsonb_array_length(want) <> 1 or got -> 'banner' is distinct from want then raise exception 'banner: % wanted %', got -> 'banner', want; end if;
+  if jsonb_array_length(want) <> 2 or got -> 'banner' is distinct from want or got -> 'banner' -> 0 ->> 'play' <> ban2::text or got -> 'banner' -> 1 ->> 'play' <> banner_play::text then raise exception 'banner: % wanted %', got -> 'banner', want; end if;
 
   -- The plays' pieces: states for the cards asked, the caller's releases, tallies, the caller's reactions.
   if (select jsonb_agg(e ->> 'play' order by e ->> 'play') from jsonb_array_elements(got -> 'states') e)
@@ -94,6 +111,8 @@ begin
     raise exception 'tallies: % wanted %', got -> 'tallies', want; end if;
   want := (select coalesce(jsonb_agg(to_jsonb(r)), '[]') from (select act, kind, character from my_reactions where act in (pin_play, banner_play)) r);
   if got -> 'mine' is distinct from want or jsonb_array_length(want) <> 1 then raise exception 'mine: % wanted %', got -> 'mine', want; end if;
+  if got -> 'mine' -> 0 ->> 'character' <> a1::text or (select (e ->> 'count')::integer from jsonb_array_elements(got -> 'tallies') e where (e ->> 'act') = pin_play::text) is distinct from 2 then
+    raise exception 'mine holds only ann''s reaction, the tally both: % %', got -> 'mine', got -> 'tallies'; end if;
 
   -- The listed threads' pieces.
   if (select jsonb_agg(e ->> 'thread') from jsonb_array_elements(got -> 'reading') e) is distinct from
@@ -109,7 +128,7 @@ begin
 
   -- ---- page 2, clamping, missing ----
   got := board_page('general', 2, array[]::text[]);
-  ids_want := (select jsonb_agg(f.id order by f.last_at desc, f.id desc) from (select id, last_at from thread_list where board = gen order by last_at desc, id desc offset 20 limit 20) f);
+  ids_want := (select jsonb_agg(f.id order by f.last_at desc) from (select id, last_at from thread_list where board = gen order by last_at desc offset 20 limit 20) f);
   if (select jsonb_agg(e ->> 'id' order by n) from jsonb_array_elements(got -> 'threads') with ordinality x(e, n)) is distinct from ids_want then
     raise exception 'page 2 threads: %', got -> 'threads'; end if;
   if jsonb_array_length(got -> 'pins') <> 0 or jsonb_array_length(got -> 'threads') = 0 then raise exception 'page 2 holds no pins: %', got -> 'pins'; end if;
@@ -131,11 +150,11 @@ begin
     raise exception 'side board newest thread: %', got -> 'boards'; end if;
   if (select (e ->> 'thread_count')::integer from jsonb_array_elements(got -> 'boards') e where e ->> 'slug' = 'side') is distinct from 2 then raise exception 'side count'; end if;
   if (select e ->> 'last_thread' from jsonb_array_elements(got -> 'boards') e where e ->> 'slug' = 'general')
-     is distinct from (select l.id::text from thread_list l where l.board = gen order by l.last_at desc, l.id desc limit 1) then raise exception 'general newest thread'; end if;
+     is distinct from (select l.id::text from thread_list l where l.board = gen order by l.last_at desc limit 1) then raise exception 'general newest thread'; end if;
   if (select jsonb_agg(e ->> 'id' order by e ->> 'id') from jsonb_array_elements(got -> 'characters') e)
      is distinct from (select jsonb_agg(q.x::text order by q.x::text) from (select distinct l.last_character x from thread_list l
                          where l.last_character is not null
-                           and l.id in (select (select n.id from thread_list n where n.board = b.id order by n.last_at desc, n.id desc limit 1) from boards b)) q) then
+                           and l.id in (select (select n.id from thread_list n where n.board = b.id order by n.last_at desc limit 1) from boards b)) q) then
     raise exception 'index characters: %', got -> 'characters'; end if;
   if got -> 'presence' is distinct from presence_box('index', null) then raise exception 'index presence'; end if;
   if (got ->> 'unread')::integer is distinct from my_alerts_unread() then raise exception 'index unread'; end if;

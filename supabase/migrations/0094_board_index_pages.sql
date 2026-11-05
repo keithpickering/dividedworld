@@ -19,12 +19,14 @@
 -- ------------------------------------------------------------------------------------------------------------ board_page ----
 
 -- in_slug may also be the board's id, as api.board(slugOrId) takes either. in_page is clamped to 1..last page. Pins are page 1's alone.
--- Order by (last_at desc, id desc): the adapter orders by last_at alone; the id makes the page deterministic when two threads tie.
+-- Threads are ordered by last_at desc alone, as the adapter orders them, which the (board, last_at desc) index serves. The 20 is
+-- THREADS_PER_PAGE in engine/ui/board/Board.tsx and must match it. A pin's and a banner's order is spelled out below to match
+-- pinned_threads (created_at desc, id desc) and effects_above (created_at, id).
 create function board_page(in_slug text, in_page integer, effect_cards text[]) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
 begin atomic
   with b as (
-    select x.id, x.slug, x.name, x.description, x.is_system, x.move_act from boards_now x where x.slug = in_slug or x.id::text = in_slug limit 1
+    select x.id, x.slug, x.name, x.description, x.is_system, x.move_act from boards_now x where x.slug = in_slug or x.id::text = in_slug order by (x.slug = in_slug) desc limit 1
   ),
   p as (
     select b.id as board, c.total,
@@ -34,7 +36,7 @@ begin atomic
   listed as materialized (
     select l.* from thread_list l
     where l.board = (select board from p)
-    order by l.last_at desc, l.id desc
+    order by l.last_at desc
     offset (select (page - 1) * 20 from p) limit 20
   ),
   pins as materialized (
@@ -60,9 +62,9 @@ begin atomic
     'board', to_jsonb(b),
     'total', p.total,
     'page', p.page,
-    'threads', (select coalesce(jsonb_agg(to_jsonb(l) order by l.last_at desc, l.id desc), '[]'::jsonb) from listed l),
-    'pins', (select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) from pins x),
-    'banner', (select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) from banner x),
+    'threads', (select coalesce(jsonb_agg(to_jsonb(l)), '[]'::jsonb) from listed l),
+    'pins', (select coalesce(jsonb_agg(to_jsonb(x) order by (x.act ->> 'created_at')::timestamptz desc, x.play desc), '[]'::jsonb) from pins x),
+    'banner', (select coalesce(jsonb_agg(to_jsonb(x) order by (x.act ->> 'created_at')::timestamptz, x.play), '[]'::jsonb) from banner x),
     'states', (select coalesce(jsonb_agg(jsonb_build_object('play', s.play, 'state', s.state, 'saved_at', s.saved_at)), '[]'::jsonb)
                from effect_state s where s.play in (select id from wanted)),
     'releases', (select coalesce(jsonb_agg(jsonb_build_object('play', r.play)), '[]'::jsonb)
@@ -103,7 +105,7 @@ begin atomic
     from boards_now b
     left join board_counts c on c.board = b.id
     left join lateral (
-      select t.id, t.last_at, t.last_character from thread_list t where t.board = b.id order by t.last_at desc, t.id desc limit 1
+      select t.id, t.last_at, t.last_character from thread_list t where t.board = b.id order by t.last_at desc limit 1
     ) l on true
   )
   select jsonb_build_object(
