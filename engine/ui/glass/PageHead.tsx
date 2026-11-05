@@ -8,7 +8,7 @@ import { ButtonRow } from './Button.tsx';
  * Anton headings stand on the full smoke); the eyebrow and the lead carry a calm. `size="roster"` is
  * the character pages' 96px title. parts.css has the layout.
  */
-export function PageHead({ title, eyebrow, lead, actions, count, size, tabs, calmed }: {
+export function PageHead({ title, eyebrow, lead, actions, count, size, tabs }: {
   readonly title: ReactNode;
   readonly eyebrow?: ReactNode;
   readonly lead?: ReactNode;
@@ -17,13 +17,11 @@ export function PageHead({ title, eyebrow, lead, actions, count, size, tabs, cal
   readonly size?: 'page' | 'roster';
   /** A tablist or a navigation of pressed-state buttons that goes with the title (whose log, which tab): the caller draws its `nav` or tablist and its ButtonRow. */
   readonly tabs?: ReactNode;
-  /** The title stands in a calm: only for a surface whose smoke recipe is `calmAll` (the settlement's), where every text node must, large or not. The rest stand on the full smoke. */
-  readonly calmed?: boolean;
 }) {
   return (
     <div className="kb-page-head" data-kb-size={size}>
       {eyebrow !== undefined && <p className="kb-page-head-eyebrow kb-calm">{eyebrow}</p>}
-      <h1 className={`kb-page-head-title kb-glass-display${calmed ? ' kb-calm' : ''}`}>
+      <h1 className="kb-page-head-title kb-glass-display">
         {title}
         {count !== undefined && <> <span className="kb-page-head-count">{count}</span></>}
       </h1>

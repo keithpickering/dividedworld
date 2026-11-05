@@ -22,14 +22,14 @@
  *    the class's own large color, #8fd6ff, the near value the plan made one).
  *  - The heading, the settled line and the tabs are a PageHead (engine/ui/glass/PageHead.tsx; the glass polish plan, Task 4): the settled line is the
  *    eyebrow, over the heading, in the page head's neon where the board draws amber, and the tabs, GlassButtons, stand under the heading, not on the
- *    board's top row. So the heading stands 21px higher, the wallet, rank and Turn columns about 76px lower, and the ways out 59px lower and 14px
+ *    board's top row. So the heading stands 21px higher, the wallet, rank and Turn columns about 58px lower, and the ways out 42px lower and 14px
  *    shorter than the board draws them (each is held to the board's place plus its shift), the heading's type is not compared (its letter-spacing is
- *    the page head's, 1px), the settled line and the tabs are compared by words and role alone, and the ways out's Back is the glass's primary button.
+ *    the page head's, 1px; its box is the page head's line-height 1, where the calm it stood in had 1.15, so the columns stand 18px higher than they did), the settled line and the tabs are compared by words and role alone, and the ways out's Back is the glass's primary button.
  *  - The reason lines are one line each in the build where the board's sentences take two: the first is
  *    compared by position, and the two under it, which stand higher for it, by their words and type alone.
- *  - The headings and big figures are set with room in their own boxes, so the words lie inside the
- *    calm the `calmAll` surface puts them in (the rendered measurement holds it), which moves the
- *    heading and the figures a few pixels; they are compared by position or height where it shows.
+ *  - The big figures are set with room in their own boxes, so the words lie inside the calm they stand in (the rendered measurement
+ *    holds it), which moves the figures a few pixels; they are compared by position or height where it shows. The heading stands on the
+ *    bare smoke, as every page's does (the settlement recipe's cyan layer is 0.30 for it, the board's 0.40).
  */
 import type { BoardManifest } from '../board-match.ts';
 
@@ -45,15 +45,15 @@ const manifest: BoardManifest = {
     { id: 'tab-spritey', role: 'link', buildRole: 'button', name: 'Spritey', within: 'tabs', box: 'none' },
     { id: 'title', role: 'heading', name: 'While you were away', box: 'position', buildShift: { y: -21 }, type: false },
 
-    { id: 'wallet', role: 'region', name: 'Wallet', type: false, box: 'position', buildShift: { y: 76 } },
+    { id: 'wallet', role: 'region', name: 'Wallet', type: false, box: 'position', buildShift: { y: 58 } },
     /* The board's img is the column's 640px row; the build's is the orbs' own, so its place is compared. */
-    { id: 'orbs', role: 'img', name: 'Wallet now 3.72 of 6.00', buildName: 'Wallet now 4.72 of 6.00', within: 'wallet', type: false, box: 'position', buildShift: { y: 76 } },
-    { id: 'was', role: 'text', name: '3.37 →', buildName: '4.37 →', within: 'wallet', box: 'position', buildShift: { y: 76 } },
-    { id: 'now', role: 'text', name: '3.72', buildName: '4.72', within: 'wallet', box: 'position', buildShift: { y: 76 } },
-    { id: 'change', role: 'text', name: '+0.35', within: 'wallet', box: 'position', type: false, buildShift: { y: 76 } },
-    { id: 'why', role: 'heading', name: 'Why, in plain words · scored as a Heel', within: 'wallet', box: 'position', buildShift: { y: 76 } },
+    { id: 'orbs', role: 'img', name: 'Wallet now 3.72 of 6.00', buildName: 'Wallet now 4.72 of 6.00', within: 'wallet', type: false, box: 'position', buildShift: { y: 58 } },
+    { id: 'was', role: 'text', name: '3.37 →', buildName: '4.37 →', within: 'wallet', box: 'position', buildShift: { y: 58 } },
+    { id: 'now', role: 'text', name: '3.72', buildName: '4.72', within: 'wallet', box: 'position', buildShift: { y: 58 } },
+    { id: 'change', role: 'text', name: '+0.35', within: 'wallet', box: 'position', type: false, buildShift: { y: 58 } },
+    { id: 'why', role: 'heading', name: 'Why, in plain words · scored as a Heel', within: 'wallet', box: 'position', buildShift: { y: 58 } },
     {
-      id: 'line-heat', role: 'text', within: 'wallet', box: 'position', buildShift: { y: 76 },
+      id: 'line-heat', role: 'text', within: 'wallet', box: 'position', buildShift: { y: 58 },
       name: 'Drew heat: 6 heat reactions on 2 posts. The live estimate said up to +0.30; the shared vote and halving made it +0.20.',
       buildName: 'Drew heat: excited, negative reactions to its posts and cards',
     },
@@ -68,19 +68,19 @@ const manifest: BoardManifest = {
       buildName: 'Shrugged off: calm, positive reactions to its posts and cards',
     },
 
-    { id: 'rank', role: 'region', name: 'Rank up', type: false, buildShift: { y: 76 } },
-    { id: 'rank-label', role: 'text', name: 'New rank', within: 'rank', buildShift: { y: 76 } },
-    { id: 'rank-was', role: 'text', name: 'Enhancement Talent', within: 'rank', buildShift: { y: 76 } },
-    { id: 'rank-now', role: 'text', name: 'Midcarder', within: 'rank', type: false, buildShift: { y: 76 } },
-    { id: 'rank-pips', role: 'img', name: 'Rank: 3 of 6 pips', within: 'rank', type: false, buildShift: { y: 76 } },
-    { id: 'rank-words', role: 'text', name: 'Season standing 2.95 → 3.30. Every post of Pipewrench\'s now shows the new rank.', within: 'rank', buildShift: { y: 76 } },
+    { id: 'rank', role: 'region', name: 'Rank up', type: false, buildShift: { y: 58 } },
+    { id: 'rank-label', role: 'text', name: 'New rank', within: 'rank', buildShift: { y: 58 } },
+    { id: 'rank-was', role: 'text', name: 'Enhancement Talent', within: 'rank', buildShift: { y: 58 } },
+    { id: 'rank-now', role: 'text', name: 'Midcarder', within: 'rank', type: false, buildShift: { y: 58 } },
+    { id: 'rank-pips', role: 'img', name: 'Rank: 3 of 6 pips', within: 'rank', type: false, buildShift: { y: 58 } },
+    { id: 'rank-words', role: 'text', name: 'Season standing 2.95 → 3.30. Every post of Pipewrench\'s now shows the new rank.', within: 'rank', buildShift: { y: 58 } },
 
     /* The Turn's sentence names the settlement's day (below), a line longer than the board's: the card is compared by position. */
-    { id: 'turn', role: 'region', name: 'Turn', type: false, box: 'position', buildShift: { y: 76 } },
-    { id: 'turn-was', role: 'text', name: 'Heel', within: 'turn', buildShift: { y: 76 } },
-    { id: 'turn-now', role: 'text', name: 'Face', within: 'turn', type: false, buildShift: { y: 76 } },
+    { id: 'turn', role: 'region', name: 'Turn', type: false, box: 'position', buildShift: { y: 58 } },
+    { id: 'turn-was', role: 'text', name: 'Heel', within: 'turn', buildShift: { y: 58 } },
+    { id: 'turn-now', role: 'text', name: 'Face', within: 'turn', type: false, buildShift: { y: 58 } },
     {
-      id: 'turn-words', role: 'text', within: 'turn', box: 'position', buildShift: { y: 76 },
+      id: 'turn-words', role: 'text', within: 'turn', box: 'position', buildShift: { y: 58 },
       name: 'Pipewrench\'s Turn took effect. From today it scores as a Face. The System announced it, with the old class, in Season 1: Who Turned.',
       /* The summary opens on a later load too, and by its address, where "today" would be false: the settlement's own day is always true. */
       buildName: 'Pipewrench\'s Turn took effect. From the Oct 30 settlement it scores as a Face. The System announced it, with the old class, in Season 1: Who Turned.',
@@ -91,8 +91,8 @@ const manifest: BoardManifest = {
      * the board draws Anton at 26px, so each is a little narrower and "Back to the board" stands further left. Compared by y and height, and the
      * type (the parts' own) not at all.
      */
-    { id: 'log', role: 'link', name: 'Open my log', box: 'height', buildShift: { y: 59, height: -14 } },
-    { id: 'back', role: 'link', name: 'Back to the board', box: 'height', buildShift: { y: 59, height: -14 }, type: false },
+    { id: 'log', role: 'link', name: 'Open my log', box: 'height', buildShift: { y: 42, height: -14 } },
+    { id: 'back', role: 'link', name: 'Back to the board', box: 'height', buildShift: { y: 42, height: -14 }, type: false },
   ],
 };
 

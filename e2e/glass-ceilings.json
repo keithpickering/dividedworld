@@ -657,9 +657,9 @@
       },
       "settlement": {
         "recipe": "settlement",
-        "calmAll": true,
-        "worst": 0.2744,
-        "calmedWorst": 0.0167,
+        "calmAll": false,
+        "worst": 0.2454,
+        "calmedWorst": 0.0149,
         "tokens": {
           "--kb-glass-text": {
             "body": 0.152,

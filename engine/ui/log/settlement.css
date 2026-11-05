@@ -6,8 +6,8 @@
  * then the reasons as a ruled list; the rank's card in the gold, chamfered, and the Turn's card in the
  * new class's color on the right; Open my log and Back to the board, two glass buttons, at the foot.
  *
- * The surface's recipe is `calmAll` (the glass plan, section 6), so every text node, the heading and
- * the large figures too, stands in a calm (calm.css) or on a card's panel. Sizes are the board's px
+ * The surface's recipe is dim enough that the title stands on the bare smoke (a large token holds 3:1 on its
+ * brightest pixel); the rest, the large figures too, stands in a calm (calm.css) or on a card's panel. Sizes are the board's px
  * or the glass's size tokens, never under the label (20px) on the Main board's layout
  * (engine/ui/glass/board.test.tsx reads this file). On the Phone board's layout the two columns stack
  * and the type takes the phone's sizes.
@@ -156,7 +156,7 @@
   box-sizing: border-box;
   min-height: 330px;
   padding: 26px 32px;
-  /* At least as solid as the calm (0.85): the surface is calmAll, so a card's words stand on a panel that is one. */
+  /* At least as solid as the calm (0.85): a card's words stand on a panel that is one. */
   background: var(--kb-glass-panel-strong);
   border: 1px solid var(--kb-glass-ready);
   box-shadow: 0 0 50px color-mix(in srgb, var(--kb-glass-ready) 35%, transparent), inset 0 0 50px color-mix(in srgb, var(--kb-glass-ready) 8%, transparent);

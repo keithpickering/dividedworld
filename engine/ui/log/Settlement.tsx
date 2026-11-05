@@ -70,7 +70,6 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
       <PageHead
         eyebrow={`Settled ${utcWhen(s.endsAt)} UTC`}
         title="While you were away"
-        calmed
         tabs={tabs.length > 0 && (
           <nav aria-label="Your characters" className="kb-calm">
             <ButtonRow>

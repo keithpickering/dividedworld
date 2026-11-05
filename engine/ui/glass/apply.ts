@@ -108,7 +108,7 @@ export const classLargeText: Readonly<Record<GlassSurface, ClassLargeDraw>> = {
   settings: 'none',
   /* No board draws the account page; it shares the page recipe with 11 and 12, which draw none. */
   account: 'none',
-  /* 09 settlement names the new class (FACE, 52px Anton) in the heading's calm, and the recipe's calmAll puts every text node in one. */
+  /* 09 settlement names the new class (FACE, 52px Anton) in the heading's calm. */
   settlement: 'calmed',
 };
 

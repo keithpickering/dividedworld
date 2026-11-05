@@ -80,11 +80,6 @@
 
 :where(:root[data-kb-layout='phone']) .kb-page-head-tabs { margin-left: 0; }
 
-.kb-page-head-title.kb-calm {
-  /* Room in its own box for the face's ascent and descent, so the words lie inside the calm's interior. */
-  line-height: 1.15;
-}
-
 .kb-page-head-tabs > .kb-calm {
   --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
 }
