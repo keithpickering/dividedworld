@@ -1,0 +1,91 @@
+/*
+ * The two error pages (Unavailable.tsx): the frame's type and rules, the body in Verdana 13px and the heading in bold
+ * 16px, the glyph a gray page drawn in CSS. The colors are the tokens' (engine/ui/tokens.css), so the dark theme reads
+ * as the board's own dark theme does; the house theme is black on white.
+ */
+.kb-unavailable {
+  box-sizing: border-box;
+  width: min(96%, var(--kb-board-max));
+  margin: 24px auto;
+  padding: 0 0 0 72px;
+  position: relative;
+  min-height: 96px;
+  color: var(--kb-fg);
+  background: var(--kb-bg);
+  font-family: var(--kb-font-body);
+  font-size: 13px;
+  line-height: var(--kb-line);
+}
+
+.kb-unavailable-glyph {
+  position: absolute;
+  left: 16px;
+  top: 4px;
+  width: 40px;
+  height: 48px;
+  box-sizing: border-box;
+  border: 2px solid var(--kb-muted);
+  border-radius: 2px;
+  background: var(--kb-bg);
+  /* The page's folded corner: a square of the page's own color, turned on the diagonal. */
+  clip-path: polygon(0 0, 70% 0, 100% 30%, 100% 100%, 0 100%);
+}
+
+.kb-unavailable h1 {
+  margin: 0 0 6px;
+  font-family: var(--kb-font-body);
+  font-size: 16px;
+  font-weight: bold;
+  line-height: 1.2;
+}
+
+.kb-unavailable-rule {
+  border: 0;
+  border-top: 1px solid var(--kb-rule);
+  margin: 6px 0 10px;
+  height: 0;
+}
+
+.kb-unavailable p {
+  margin: 0 0 10px;
+}
+
+.kb-unavailable ul {
+  margin: 0 0 10px;
+  padding-left: 24px;
+}
+
+.kb-unavailable li {
+  margin: 0 0 4px;
+}
+
+.kb-unavailable a {
+  color: var(--kb-link);
+}
+
+.kb-unavailable-retry {
+  font: inherit;
+  color: var(--kb-link);
+  background: none;
+  border: 0;
+  padding: 0;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.kb-unavailable-footer {
+  color: var(--kb-muted);
+  margin-bottom: 0;
+}
+
+@media (max-width: 480px) {
+  .kb-unavailable {
+    padding-left: 0;
+    padding-top: 64px;
+  }
+
+  .kb-unavailable-glyph {
+    left: 0;
+    top: 0;
+  }
+}
