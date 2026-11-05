@@ -609,7 +609,10 @@ describe('My characters on the glass (the Roster board)', () => {
     expect(roster().compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(roster()).queryByRole('link')).toBeNull();
     expect(screen.getByText('You have 1 open slot.')).toBeInTheDocument();
-    expect(document.querySelector('.kb-roster-empty')).toBeNull();
+    /* No empty slot is drawn, by role: the only tabs are the characters' (three), and New character is a link outside the tablist. */
+    expect(screen.getAllByRole('tab')).toHaveLength(3);
+    expect(screen.getAllByRole('tab').every((t) => roster().contains(t))).toBe(true);
+    expect(roster().contains(link)).toBe(false);
   });
 
   test('the roster is one tablist with one tab per character, the selected one marked, and the panel is its tabpanel', async () => {
