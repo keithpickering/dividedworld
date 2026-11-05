@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { testSystem } from '../rules/test-system.ts';
-import { chatterCompletion, chatterPrompt, chatterSchema, repairChatter, chatterRule, type OfferedCard, type RepairFacts } from './chatter.ts';
+import { chatterCompletion, chatterPrompt, chatterSchema, repairChatter, CHATTER_RULE, type OfferedCard, type RepairFacts } from './chatter.ts';
 import { noteMost } from './memory.ts';
 import { repair } from './validate.ts';
 
@@ -133,10 +133,10 @@ test('a rejection carries the trims made before it', () => {
 
 test('the model layer\'s rule passes a good answer whole and rejects missing words by name; the card and note are not tightened there', () => {
   const good = { words: 'Hi.', title: 't', card: { key: 'whoops', on: 'both' }, note: 'n'.repeat(900) };
-  const r = repair(good, chatterRule({ offered: [CAST, SET] }));
+  const r = repair(good, CHATTER_RULE);
   assert.ok(r.ok);
   assert.deepEqual(r.value, good, 'the rule cuts nothing: repairChatter owns every bound');
-  const miss = repair({ title: 't' }, chatterRule({ offered: [CAST, SET] }));
+  const miss = repair({ title: 't' }, CHATTER_RULE);
   assert.ok(!miss.ok);
   assert.equal(miss.predicate, 'required');
 });
@@ -232,7 +232,7 @@ test('the prompt puts a card\'s options on the line after it, and names where th
 });
 
 test('the model layer\'s rule passes an offered card\'s options through whole, a wrongly typed one included, so the post is not lost', () => {
-  const rule = chatterRule({ offered: [INKED] });
+  const rule = CHATTER_RULE;
   const r = repair({ words: 'Hi.', card: { key: 'inked', on: 'reply', config: { inked: { color: 'teal', seed: 4 }, other: { a: 1 } } } }, rule);
   assert.ok(r.ok);
   assert.deepEqual((r.value as any).card.config, { inked: { color: 'teal', seed: 4 }, other: { a: 1 } });
@@ -244,7 +244,7 @@ test('the model layer\'s rule passes an offered card\'s options through whole, a
 });
 
 test('whatever junk the config is, the model layer keeps the post and repairChatter trims it, never throws', () => {
-  const rule = chatterRule({ offered: [INKED] });
+  const rule = CHATTER_RULE;
   for (const junk of ['teal', 7, true, ['a'], { inked: null }, { inked: 'teal' }, { inked: ['x'] }, { inked: 3 }]) {
     const w = repair({ words: 'Hi.', card: { key: 'inked', on: 'reply', config: junk } }, rule);
     assert.ok(w.ok, JSON.stringify(junk));

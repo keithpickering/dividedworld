@@ -6,7 +6,7 @@
  *   chatterPrompt(...)       the system prompt and the one message a chat persona is given
  *   chatterCompletion(...)   the document a persona on the old voice continues; it answers its words alone
  *   chatterSchema(...)       the provider's structured-output schema: a title only where one is asked, only the cards on offer, and the options of the cards that have any
- *   chatterRule(...)         the shape the model layer repairs against (supabase/functions/_shared/models/): words required, nothing cut; built per call, with the schema
+ *   CHATTER_RULE             the shape the model layer repairs against (supabase/functions/_shared/models/): words required, nothing cut; a card's options pass through untyped
  *   repairChatter(...)       every bound, in one place, under the validator rule
  *
  * **A validator tighter than the schema is a place a paid answer goes to die** (CLAUDE.md). So only what cannot be repaired without
@@ -62,22 +62,20 @@ export interface ChatterAnswer {
  * through unchanged: a wrongly typed option (a color that is a number) must not cost the persona's post, so the type check is not the
  * model layer's. repairChatter shape-checks the config (an object, the chosen card's key only) and the Edge Function's `validateConfig`
  * types the fields and falls back when they fail. A card's `on` is text here, not an enum, so a card the model mis-says does not cost
- * the answer. `offered` is accepted so the call site is the same as the schema's.
+ * the answer. It is one rule for every call: the options' shapes live in the schema, never here.
  */
-export function chatterRule(_c: { readonly offered: readonly OfferedCard[] }): Rule {
-  return {
-    type: 'object',
-    fields: {
-      words: { type: 'string', minLength: 1 },
-      title: { type: 'string', optional: true },
-      card: {
-        type: 'object', optional: true,
-        fields: { key: { type: 'string' }, on: { type: 'string' }, config: { type: 'any', optional: true } },
-      },
-      note: { type: 'string', optional: true },
+export const CHATTER_RULE: Rule = {
+  type: 'object',
+  fields: {
+    words: { type: 'string', minLength: 1 },
+    title: { type: 'string', optional: true },
+    card: {
+      type: 'object', optional: true,
+      fields: { key: { type: 'string' }, on: { type: 'string' }, config: { type: 'any', optional: true } },
     },
-  };
-}
+    note: { type: 'string', optional: true },
+  },
+};
 
 /** The provider's structured-output schema for one call: a title only where a thread start asks, the card keys only on offer. */
 export function chatterSchema(c: { readonly askedTitle: boolean; readonly offered: readonly OfferedCard[] }): Record<string, unknown> {
