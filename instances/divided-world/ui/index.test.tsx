@@ -24,8 +24,13 @@ describe('Divided World\'s developer persona', () => {
 
 describe('Divided World\'s onboarding words', () => {
   test('fill the engine\'s tips exactly, and the check is run against the real instance', () => {
-    expect(instanceUiProblems(instanceUi)).toEqual([]);
+    expect(instanceUiProblems(instanceUi, instance)).toEqual([]);
     expect(Object.keys(instanceUi.onboarding.tips).sort()).toEqual([...TIP_KEYS].sort());
+  });
+  test('the front door passes the same check, in its own words', () => {
+    expect(instanceUi.frontDoor.cast.map((c) => c.name)).toEqual(['Spritey', 'Pipewrench', 'Mrs. Hooligan']);
+    expect(instanceUi.frontDoor.posts).toHaveLength(6);
+    expect(instanceUiProblems(instanceUi, instance).filter((p) => /front door/u.test(p))).toEqual([]);
   });
   test('the letter opens as Gabe\'s welcome does', () => {
     expect(instanceUi.onboarding.letter).toMatch(/^## After nine years of development/u);
