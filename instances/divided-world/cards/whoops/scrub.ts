@@ -18,12 +18,12 @@ import { covers, type Splat } from './splat.ts';
  * The reference width is derived, not chosen: it is the width of a post's body in the thread at the board's widest, so a
  * splatted post is laid out as any other post is at its widest and its lines break in the same places (the owner's word, the
  * cards plan's Task 5 amendment of 2026-10-30 and the glass plan's section 8). Every number below is the thread's own
- * (engine/ui/tokens.css and engine/ui/thread/thread.css), at the board's 12px type:
+ * (engine/ui/tokens.css and engine/ui/thread/thread.css), at the board's 15px type:
  *
- *   the board's column                                  960   (`--kb-board-max`)
- *   less the table's border, 1px each side              -2    = 958
- *   less the postbit column, minmax(8em, min(18%, 14em)) -168  (18% of 958 is 172.4, and 14em is 168)
- *   = the post's body, border to border                 790
+ *   the board's column                                  1200  (`--kb-board-max`)
+ *   less the table's border, 1px each side              -2    = 1198
+ *   less the postbit column, minmax(8em, min(18%, 14em)) -210  (18% of 1198 is 215.6, and 14em is 210)
+ *   = the post's body, border to border                 988
  *
  * The body is the layer's box: the splat covers it edge to edge, the words inside it keep the post's own gutters (1% of the
  * body each side), so they break as the same words would unsplatted. A theme or a player's own theme may change the
@@ -31,27 +31,31 @@ import { covers, type Splat } from './splat.ts';
  * is in widths of it). A narrower board is only scaled down as a whole, as a narrow window is.
  *
  * Strokes saved before this (no instance is deployed and there are no players, so none exists outside a test) were in widths
- * of a 360px layout; read at 790 they would land at 0.46 times the place and size they were drawn. They are not converted
+ * of a 360px layout; read at 988 they would land at 0.36 times the place and size they were drawn. They are not converted
  * (CLAUDE.md, "Nobody is waiting on a hotfix"): a stroke is kept in widths, and the width it is kept in is this one.
+ *
+ * The board was scaled by 1.25 (column 960 to 1200, type 12px to 15px; the glass-polish design's section 7). The layout scales with it in
+ * proportion (790 to 988, 1.25 times), so a stroke kept in widths of it lands where it was drawn and the words break in the same places;
+ * only the 1px table borders do not scale, a 0.05% shift. The brush and the row are scaled by 1.25 with the type, so they keep their size in widths.
  */
-const BOARD_MAX = 960;
+const BOARD_MAX = 1200;
 const TABLE_BORDERS = 2;
-const BODY_PX = 12;
+const BODY_PX = 15;
 const POSTBIT = { share: 0.18, least: 8 * BODY_PX, most: 14 * BODY_PX };
 const TABLE = BOARD_MAX - TABLE_BORDERS;
-/** The width the post's body is laid out at, in px, whatever the screen: lines break in the same places everywhere. 790. */
+/** The width the post's body is laid out at, in px, whatever the screen: lines break in the same places everywhere. 988. */
 export const REF_WIDTH = TABLE - Math.max(POSTBIT.least, Math.min(POSTBIT.share * TABLE, POSTBIT.most));
 /** The post's own gutter each side of its words, as a share of the body (`.kb-act-main`, thread.css): the layout keeps it, so its lines break as the post's. */
 export const BODY_GUTTER = 0.01;
-/** How far the layout may grow: not at all (#76). A splatted post keeps the board's 12px type in its full-width column, and is scaled down on a narrow screen. */
+/** How far the layout may grow: not at all (#76). A splatted post keeps the board's 15px type in its full-width column, and is scaled down on a narrow screen. */
 export const MAX_SCALE = 1;
 /** A length at the reference layout, px, as the widths the strokes are kept in: the card's measures keep their physical size at the board's widest. */
 const px = (n: number) => n / REF_WIDTH;
-/** The wash's brush and the author's pen, in widths (24px at the reference width: a splat that spans a 790px body is washed with a hand-sized brush, not a pen's). */
-export const BRUSH = px(24);
+/** The wash's brush and the author's pen, in widths (30px at the reference width, 24 scaled by 1.25: a splat that spans a 988px body is washed with a hand-sized brush, not a pen's). */
+export const BRUSH = px(30);
 export const PEN = BRUSH * 0.3;
-/** A line of the post's text, in widths (18px at the reference width, the board's 12px type at 1.5): the accessible sweep's band. */
-export const ROW = px(18);
+/** A line of the post's text, in widths (22.5px at the reference width, the board's 15px type at 1.5): the accessible sweep's band. */
+export const ROW = px(BODY_PX * 1.5);
 /** The accessible sweep's pace, in widths a second: a line a little under two seconds, as a hand takes. */
 export const SWEEP_SPEED = 0.55;
 /** The sweep's brush: a little over its band, so the bands leave no sliver between them. */

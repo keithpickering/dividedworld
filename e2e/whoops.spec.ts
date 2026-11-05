@@ -35,8 +35,8 @@ test('the splat on #41 is drawn, scrubbed by a drag, and back after a reload', a
 });
 
 /*
- * The splatted post is the post at the board's widest (the owner's word: the 2003 board is at most 960px wide, and Whoops!'s lines break
- * as the same post's would unsplatted): its layer is the post's whole body, border to border, laid out at the width the body has at 960px,
+ * The splatted post is the post at the board's widest (the owner's word: the 2003 board is at most 1200px wide, and Whoops!'s lines break
+ * as the same post's would unsplatted): its layer is the post's whole body, border to border, laid out at the width the body has at 1200px,
  * and its words get the width any other post's words get, so they break in the same places.
  */
 test('at the board\'s max the splat covers the post body edge to edge, and its words are as wide as an unsplatted post\'s', async ({ page }) => {
@@ -60,6 +60,23 @@ test('at the board\'s max the splat covers the post body edge to edge, and its w
   expect(read.frame.width).toBeCloseTo(read.body.width, 0);
   expect(read.layoutTransform).toBe('translateX(0px) scale(1)');
   expect(read.splattedWords).toBeCloseTo(read.plainWords, 0);
+});
+
+/*
+ * A stroke kept in widths lands where it was drawn: the middle of the reference layout is the middle of the post's body at 1440, within a
+ * pixel, whatever the board's column and type are scaled to (the glass-polish design's section 7: 1200px and 15px, REF_WIDTH 988).
+ */
+test('a stroke at the middle of the reference layout lands within a pixel of the middle of the post body at 1440px', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/?fixture=boards&moment=01-main');
+  await expect(page.locator('#post-41 .kb-whoops-ink')).toBeVisible();
+  const read = await page.evaluate(() => {
+    const body = document.querySelector('#post-41 .kb-act-main')!.getBoundingClientRect();
+    const layout = document.querySelector('#post-41 .kb-whoops-layout') as HTMLElement;
+    const box = layout.getBoundingClientRect();
+    return { bodyMiddle: body.x + body.width / 2, layoutMiddle: box.x + box.width / 2 };
+  });
+  expect(Math.abs(read.layoutMiddle - read.bodyMiddle)).toBeLessThanOrEqual(1);
 });
 
 /*

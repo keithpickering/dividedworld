@@ -1,12 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
 
 /**
- * The 2003 board stands in a column at most 960px wide, centered past it (the owner's word, the glass plan's
- * section 8 amendment of 2026-10-30; `--kb-board-max` in engine/ui/tokens.css), and the glass keeps its own
+ * The 2003 board stands in a column at most 1200px wide, centered past it (the owner's word, the glass plan's
+ * section 8 amendment of 2026-10-30, scaled by 1.25 with the type in the glass-polish design's section 7; `--kb-board-max` in engine/ui/tokens.css), and the glass keeps its own
  * widths: the HUD spans the window at every width. Below the column's max the board fills the window less the
  * board's 2% gutters, and nothing scrolls sideways.
  */
-const MAX = 960;
+const MAX = 1200;
 
 const box = async (page: Page, selector: string) => {
   const b = await page.locator(selector).first().boundingBox();
@@ -24,7 +24,7 @@ async function openThread(page: Page): Promise<void> {
 test.describe('a wide window', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test('the thread, the banner and the links are 960px wide and centered; the HUD spans the window', async ({ page }) => {
+  test('the thread, the banner and the links are 1200px wide and centered; the HUD spans the window', async ({ page }) => {
     await openThread(page);
     for (const selector of ['.kb-acts', '.kb-banner', '.kb-nav', '.kb-frame > .kb-page']) {
       const b = await box(page, selector);
@@ -38,7 +38,7 @@ test.describe('a wide window', () => {
   });
 
   for (const [label, path] of [['the index', '/'], ['a board', '/b/general']] as const) {
-    test(`${label} is a column at most 960px wide, centered`, async ({ page }) => {
+    test(`${label} is a column at most 1200px wide, centered`, async ({ page }) => {
       await page.goto(path);
       await expect(page.locator('.kb-frame > .kb-page')).toBeVisible();
       const b = await box(page, '.kb-frame > .kb-page');
@@ -64,7 +64,7 @@ test.describe('a narrower window', () => {
 });
 
 test.describe('at the column\'s own width and either side of it', () => {
-  for (const width of [320, 390, 960, 1000, 1200, 2560]) {
+  for (const width of [320, 390, 1000, 1200, 1240, 2560]) {
     test(`no sideways scroll at ${width}px, and the thread is never past ${MAX}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await openThread(page);

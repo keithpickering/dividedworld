@@ -32,7 +32,7 @@ import type { BoardManifest, Landmark } from '../board-match.ts';
 function post(n: number, index: number, author: string, pips: number, rank: string, box: Landmark['box']): Landmark[] {
   const id = `post-${n}`;
   /*
-   * The board is drawn at 1440 across the whole window; the build stands in the board's column, at most 960px wide and
+   * The board is drawn at 1440 across the whole window; the build stands in the board's column, at most 1200px wide and
    * centered (the owner: "we need a smaller max width for the 2003 board in general", the glass plan's section 8 amendment of
    * 2026-10-30). So a post's x and width differ by that word, and the landmarks inside it are compared as they sit in it
    * (from the post's own corner, `origin`) with the permalink, which the board sets at the right edge of a post a different
@@ -69,7 +69,7 @@ const manifest: BoardManifest = {
   landmarks: [
     /*
      * The banner: Index and the instance's boards. The board's Search is not built (section 3). The board draws its rows across
-     * the 1440px window; the build's stand in the board's column, 960px wide and centered (the owner's word, above, on `post`).
+     * the 1440px window; the build's stand in the board's column, 1200px wide and centered (the owner's word, above, on `post`).
      * So the links row is compared by its y and height, Index by its y and height too (its x is the column's edge), and the links
      * after it from Index, where they sit in the row.
      */
@@ -91,9 +91,9 @@ const manifest: BoardManifest = {
 
     /*
      * The posts. A card play takes no number and shows as its tag on its post (cards Task 3), so the page holds #41 to #46 and
-     * nothing else. #41 is splatted (cards Task 5): its body is laid out at the width the post body has at the board's 960px,
+     * nothing else. #41 is splatted (cards Task 5): its body is laid out at the width the post body has at the board's 1200px,
      * so it breaks its lines as an unsplatted post does, and its splat covers the body edge to edge (the owner's word, the cards
-     * plan's Task 5 amendment of 2026-10-30). The board is drawn across the 1440px window and the build stands in a 960px
+     * plan's Task 5 amendment of 2026-10-30). The board is drawn across the 1440px window and the build stands in a 1200px
      * column, so a post's x and width, and the heights of #41 (its words wrap more in the narrower column) are the owner's word
      * and not compared (see `post`); what is inside a post is compared from the post's own corner. #42 and #43 are compared by
      * type: #42's post is 92px shorter than the board's (the board's has a 160px avatar slot under the postbit, which the build

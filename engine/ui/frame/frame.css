@@ -2,7 +2,7 @@
  * The frame: the banner, the links, and the Game HUD docked at the bottom. The banner is the 2003
  * board's, as the Main board draws it: the name on a row, the links on a row of their own under it,
  * each ruled off, and the page the window's width less a 2% gutter each side. Past `--kb-board-max`
- * (960px, the owner's word: engine/ui/tokens.css) the three stand in one column of that width,
+ * (1200px, the owner's word: engine/ui/tokens.css) the three stand in one column of that width,
  * centered, rules and all, so the board does not stretch into a table too wide to read; the HUD below
  * is the glass's and spans the window. On a phone the links fold behind Boards, a 44px control, as
  * the Phone board draws it.
