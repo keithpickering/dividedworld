@@ -1897,6 +1897,11 @@ describe('a screen in one call', () => {
     expect(only(second, 'thread_page')).toEqual({ in_thread: T, in_page: 2, in_seq: null, per_page: 20, effect_cards: [] });
     expect(await once('thread_page', { ...answer, reading: null, board: null }).api.threadPage(T, { page: 1 }, 20, [])).toMatchObject({ reading: {}, board: null });
     expect(await once('thread_page', null).api.threadPage(T, { page: 1 }, 20, [])).toBeNull();
+    /* No page size is sent as null, which the function reads as the instance's own setting; an address that is no id is no thread, and no request. */
+    const third = once('thread_page', answer);
+    await third.api.threadPage(T, { page: 1 }, null, []);
+    expect(only(third, 'thread_page')).toMatchObject({ per_page: null });
+    expect(await once('thread_page', answer).api.threadPage('not-an-id', { page: 1 }, null, [])).toBeNull();
   });
 
   it('profile_page: sends the character and maps the document; no such character is null', async () => {
@@ -1927,11 +1932,11 @@ describe('a screen in one call', () => {
     const h = once('record_page', answer);
     const page = await h.api.recordPage(B, 'all', 2);
     expect(only(h, 'record_page')).toEqual({ in_character: B, in_kind: 'all', in_page: 2 });
-    expect(page).toMatchObject({ kind: 'all', page: 2, from: 18, counts: { posts: 0, spins: 0, cards: 0 }, targets: [], seasons: [], unread: 0 });
+    expect(page).toMatchObject({ kind: 'all', page: 2, windowFrom: 18, counts: { posts: 0, spins: 0, cards: 0 }, targets: [], seasons: [], unread: 0 });
     expect(page?.turns).toEqual([{ act: C, character: B, at: '2026-10-02T10:00:00+00:00', was: 'heel' }]);
     expect(page?.acts[0]?.currentPayload).toEqual({ body: 'hello' });
     const posts = await once('record_page', { ...answer, kind: 'post' }).api.recordPage(B, 'post', 2);
-    expect(posts).toMatchObject({ kind: 'post', page: 2, ['fr' + 'om']: 20 });
+    expect(posts).toMatchObject({ kind: 'post', page: 2, windowFrom: 20 });
     expect(await once('record_page', null).api.recordPage(B, 'all', 1)).toBeNull();
   });
 

@@ -5,6 +5,7 @@ import { turnPreview } from '../characters/previews.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { RevealPost, TallyPost } from './Reveal.tsx';
+import { LoadedThread } from '../loaded.tsx';
 
 const OCT3 = '2026-10-03T12:00:00Z';
 const OCT20 = '2026-10-20T12:00:00Z';
@@ -181,7 +182,7 @@ describe('on a thread of The System\'s board', () => {
     fake.seed.post(sys.thread, null, '', { kind: 'reveal', payload: { season: 1, character: 'c1', name: 'Pipewrench', place: 1, standing: 100, shown: [] } });
     fake.seed.post(sys.thread, null, '', { kind: 'tally', payload: { season: 1, part: 1, of: 1, debuts: [], turns: [{ character: 'c1', name: 'Pipewrench', loudness: 'announced' }] } });
     fake.signInAs(me);
-    renderIn(fake, <ThreadScreen thread={sys.thread} />, { path: `/t/${sys.thread}` });
+    renderIn(fake, <LoadedThread thread={sys.thread} />, { path: `/t/${sys.thread}` });
     for (const n of [2, 3]) {
       const article = await screen.findByRole('article', { name: new RegExp(`^Post ${n} by The System`, 'u') });
       expect(within(article).getByRole('button', { name: /React/u })).toBeInTheDocument();

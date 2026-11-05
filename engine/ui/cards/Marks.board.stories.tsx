@@ -19,6 +19,7 @@ import { usePlayer } from '../player.tsx';
 import { useLocation } from '../router.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { usePlay } from './play.tsx';
+import { LoadedThread } from '../loaded.tsx';
 
 const MINUTE = 60_000;
 
@@ -126,7 +127,7 @@ function Marked({ kinds, armed, quiet, landed = false }: { readonly kinds: Kinds
       {armed && <Arm />}
       {landed && <Landed />}
       <Look />
-      {thread && ready ? <ThreadScreen thread={thread} /> : <div aria-busy="true" />}
+      {thread && ready ? <LoadedThread thread={thread} /> : <div aria-busy="true" />}
     </Frame>
   );
 }

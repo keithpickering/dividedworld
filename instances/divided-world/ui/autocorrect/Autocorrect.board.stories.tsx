@@ -12,6 +12,7 @@ import { useKayfa } from '../../../../engine/ui/context.tsx';
 import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import { useLocation } from '../../../../engine/ui/router.tsx';
 import { ThreadScreen } from '../../../../engine/ui/thread/Thread.tsx';
+import { LoadedThread } from '../../../../engine/ui/loaded.tsx';
 
 type Case = 'one' | 'stack' | 'bold' | 'long';
 
@@ -53,7 +54,7 @@ function Autocorrected({ shown, mode, reduced }: Args) {
       PLAYS[shown].forEach((config, i) => fake.seed.card(caster.character!, post, 'autocorrect', { layer: i + 1, live: true, config, message: '' }));
     })();
   }, [api, thread, shown]);
-  return <Frame>{thread ? <ThreadScreen thread={thread} /> : <div aria-busy="true" />}</Frame>;
+  return <Frame>{thread ? <LoadedThread thread={thread} /> : <div aria-busy="true" />}</Frame>;
 }
 
 const meta: Meta<typeof Autocorrected> = {

@@ -22,6 +22,7 @@ import { useLocation } from '../../../../engine/ui/router.tsx';
 import { ThreadScreen } from '../../../../engine/ui/thread/Thread.tsx';
 import { BRUSH } from '../../cards/whoops/scrub.ts';
 import { HoldStage, type HoldStageValue } from '../stick-around/Effect.tsx';
+import { LoadedThread } from '../../../../engine/ui/loaded.tsx';
 
 const MINUTE = 60_000;
 const ORANGE = '#ff9f43';
@@ -139,7 +140,7 @@ function Post({ viewer, open, who, landed = false }: Props) {
     <Frame>
       <Look post={41} open={card} who={who} landed={landed} />
       <HoldStage.Provider value={stage}>
-        {thread && ready ? <ThreadScreen thread={thread} /> : <div aria-busy="true" />}
+        {thread && ready ? <LoadedThread thread={thread} /> : <div aria-busy="true" />}
       </HoldStage.Provider>
     </Frame>
   );
@@ -154,7 +155,7 @@ function Held() {
     <Frame>
       <HeldLook />
       <HoldStage.Provider value={stage}>
-        {thread && ready ? <ThreadScreen thread={thread} /> : <div aria-busy="true" />}
+        {thread && ready ? <LoadedThread thread={thread} /> : <div aria-busy="true" />}
       </HoldStage.Provider>
     </Frame>
   );

@@ -17,6 +17,7 @@ import { usePlayer } from '../player.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { playOf } from '../../rules/cards.ts';
 import { usePlay } from './play.tsx';
+import { LoadedThread } from '../loaded.tsx';
 
 type Scene = 'back' | 'caught' | 'ward' | 'armed';
 
@@ -91,7 +92,7 @@ function Scene({ scene }: { readonly scene: Scene }) {
     <Frame>
       {scene === 'armed' && <ArmSet />}
       <Look />
-      {thread && ready ? <ThreadScreen thread={thread} /> : <div aria-busy="true" />}
+      {thread && ready ? <LoadedThread thread={thread} /> : <div aria-busy="true" />}
     </Frame>
   );
 }

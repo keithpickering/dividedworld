@@ -4,7 +4,8 @@
 -- and the caller's releases, tallies and the caller's own reactions, the threads spun from them, how far the caller has read, the board, whether
 -- the caller follows the thread, the presence box and the unread count. Each piece is the same projection (the same columns, the same order) the
 -- browser reads today through web/src/data/supabase.ts, so the screen moves to it without a change in what it shows.
--- The bound: a page is at most 100 Acts (per_page is refused outside 1 to 100), their distinct authors and casters, at most PLAYS_PER_POST (8) plays
+-- The bound: a page is at most 100 Acts (per_page is refused outside 1 to 100; null is the instance's own postsPerPage setting, read here, so a
+-- first load needs no round trip to learn it), their distinct authors and casters, at most PLAYS_PER_POST (8) plays
 -- a post, and at most SPUN_FROM_MAX (200) threads spun from any one Act, so a busy instance's thread costs the same as a quiet one's.
 -- What it reads: only public projections (acts_public, thread_open, thread_list, characters_public, ...) and the caller's own rows (my_reactions,
 -- my_face_down, effect_releases, reading), as the caller: it is security invoker, so the caller's policies apply as they do to the browser's own
@@ -28,20 +29,25 @@ create function thread_page(in_thread uuid, in_page integer, in_seq integer, per
 language sql stable security invoker set search_path = public, pg_temp
 begin atomic
   -- The refusal, before anything is read.
-  select case when thread_page.per_page is null or thread_page.per_page not between 1 and 100 then screen_refusal('a page holds 1 to 100 posts') end;
+  select case when coalesce(thread_page.per_page, (select (x.settings ->> 'postsPerPage')::integer from screen_settings x limit 1)) is null
+                or coalesce(thread_page.per_page, (select (x.settings ->> 'postsPerPage')::integer from screen_settings x limit 1)) not between 1 and 100
+              then screen_refusal('a page holds 1 to 100 posts') end;
 
-  with s as materialized (
-    select o.*, greatest(1, ceil(o.last_seq::numeric / thread_page.per_page))::integer as last_page
+  with pp as materialized (
+    select coalesce(thread_page.per_page, (select (x.settings ->> 'postsPerPage')::integer from screen_settings x limit 1)) as n
+  ),
+  s as materialized (
+    select o.*, greatest(1, ceil(o.last_seq::numeric / (select pp.n from pp)))::integer as last_page
     from thread_open o where o.id = thread_page.in_thread
   ),
   pg as materialized (
     select s.*,
-           least(s.last_page, greatest(1, coalesce(case when thread_page.in_seq is not null then greatest(1, ceil(thread_page.in_seq::numeric / thread_page.per_page))::integer end,
+           least(s.last_page, greatest(1, coalesce(case when thread_page.in_seq is not null then greatest(1, ceil(thread_page.in_seq::numeric / (select pp.n from pp)))::integer end,
                                                    thread_page.in_page, 1))) as page
     from s
   ),
   rng as materialized (
-    select pg.*, (pg.page - 1) * thread_page.per_page + 1 as first_seq, pg.page * thread_page.per_page as end_seq from pg
+    select pg.*, (pg.page - 1) * (select pp.n from pp) + 1 as first_seq, pg.page * (select pp.n from pp) as end_seq from pg
   ),
   page_acts as materialized (
     select a.* from acts_public a, rng

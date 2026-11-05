@@ -9,6 +9,7 @@ import type { Fake } from '../data/fake.ts';
 import { usePlayer } from '../player.tsx';
 import { buildWorld, renderIn } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
+import { LoadedThread } from '../loaded.tsx';
 
 /** Pipewrench and Zed are the signed-in player's (Pipewrench first, so the HUD starts there); Spritey is another player's. */
 export function threadWorld(posts = 2, settings: Parameters<typeof buildWorld>[0] = undefined) {
@@ -36,7 +37,7 @@ export function Swapper() {
 }
 
 export function openThread(w: { fake: Fake; thread: Id }, path = `/t/${w.thread}`) {
-  return renderIn(w.fake, <><ThreadScreen thread={w.thread} /><Swapper /></>, { path });
+  return renderIn(w.fake, <><LoadedThread thread={w.thread} /><Swapper /></>, { path });
 }
 
 /** The composer's box, once the thread has loaded. */

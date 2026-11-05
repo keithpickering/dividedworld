@@ -2214,6 +2214,13 @@ describe('a screen in one call is what the separate calls answer', () => {
     expect(await fake.threadPage('00000000-0000-4000-8000-000000000000', { page: 1 }, 3, [])).toBeNull();
   });
 
+  test('threadPage with no per_page is the instance\'s own postsPerPage, as the server reads it', async () => {
+    const { fake, thread } = longWorld();
+    const size = (await fake.settings()).postsPerPage;
+    expect(size).toBe(2);
+    expect(await fake.threadPage(thread, { page: 2 }, null, [])).toEqual(await fake.threadPage(thread, { page: 2 }, size, []));
+  });
+
   test('presenceBox marks no one present, as here does', async () => {
     const { fake, thread, anaFace } = world();
     expect((await fake.presenceBox({ kind: 'thread', thread })).names).toEqual([]);
@@ -2239,8 +2246,8 @@ describe('a screen in one call is what the separate calls answer', () => {
     expect(profile?.acts).toEqual(await fake.characterActs(anaFace, ['post', 'spin', 'card'], { offset: 0, limit: 5 }));
     expect(await fake.profilePage('00000000-0000-4000-8000-000000000000')).toBeNull();
     const record = await fake.recordPage(anaFace, 'post', 2);
-    expect(record).toMatchObject({ kind: 'post', page: 2, from: 20, acts: await fake.characterActs(anaFace, ['post'], { offset: 20, limit: 20 }), counts: await fake.characterCounts(anaFace) });
-    expect((await fake.recordPage(anaFace, 'nonsense' as never, 0))).toMatchObject({ kind: 'all', page: 1, from: 0 });
+    expect(record).toMatchObject({ kind: 'post', page: 2, windowFrom: 20, acts: await fake.characterActs(anaFace, ['post'], { offset: 20, limit: 20 }), counts: await fake.characterCounts(anaFace) });
+    expect((await fake.recordPage(anaFace, 'nonsense' as never, 0))).toMatchObject({ kind: 'all', page: 1, windowFrom: 0 });
     const boot = await fake.boot();
     expect(boot).toMatchObject({ settings: await fake.settings(), preferences: await fake.preferences(), characters: await fake.myCharacters(), wallet: await fake.wallet(), boards, unread: await fake.alertsUnread() });
     expect(boot.faces.map((f) => f.name)).toEqual(['Ana Face', 'Ana Heel']);

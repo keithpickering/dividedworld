@@ -1129,7 +1129,7 @@ export interface RecordPage {
   readonly seasons: Awaited<ReturnType<KayfaApi['characterReveals']>>;
   /** The window of the character's own Acts (`characterActs`) starting at row `from`: for `all`, the extras ahead of the window push the read down by their number. */
   readonly acts: Awaited<ReturnType<KayfaApi['characterActs']>>;
-  readonly from: number;
+  readonly windowFrom: number;
   readonly targets: Awaited<ReturnType<KayfaApi['actsById']>>;
   readonly unread: number;
 }
@@ -1308,8 +1308,8 @@ export interface KayfaApi {
   indexPage(): Promise<IndexPage>;
   /** A board's page in one read; null where the board does not exist. `effectCards` names the cards the instance draws an effect for. */
   boardPage(slug: string, page: number, effectCards: readonly string[]): Promise<BoardPage | null>;
-  /** A thread's page in one read, at a page or around a seq (the seq wins); null where the thread does not exist. Also the read for a next page and a gap. */
-  threadPage(thread: Id, at: { readonly page?: number | null; readonly seq?: number | null }, perPage: number, effectCards: readonly string[]): Promise<ThreadPage | null>;
+  /** A thread's page in one read, at a page or around a seq (the seq wins); null where the thread does not exist. Also the read for a next page and a gap. A null `perPage` is the instance's own postsPerPage, which the server reads (a first load does not know it yet). */
+  threadPage(thread: Id, at: { readonly page?: number | null; readonly seq?: number | null }, perPage: number | null, effectCards: readonly string[]): Promise<ThreadPage | null>;
   /** A character's profile page in one read; null where the character is not shown. */
   profilePage(character: Id): Promise<ProfilePage | null>;
   /** A page of a character's record in one read; null where the character is not shown. */

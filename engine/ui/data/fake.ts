@@ -1830,9 +1830,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         characters: core.characters(people), presence: presenceAt({ kind: 'board', board: board.id }), unread: core.alertsUnread(),
       };
     },
-    threadPage(thread, at, perPage, effectCards): ThreadPage | null {
+    threadPage(thread, at, askedPerPage, effectCards): ThreadPage | null {
       const summary = core.thread(thread);
       if (!summary) return null;
+      /* No per_page is the instance's own setting, as the server reads it. */
+      const perPage = askedPerPage ?? settings.postsPerPage;
       if (!Number.isInteger(perPage) || perPage < 1 || perPage > 100) throw new Error('a page holds 1 to 100 Acts');
       const last = Math.max(1, Math.ceil(summary.lastSeq / perPage));
       const want = at.seq != null ? Math.max(1, Math.ceil(at.seq / perPage)) : at.page ?? 1;
@@ -1885,7 +1887,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return {
         kind, page: shown, character,
         /* record_page reads no counters for the class and seasons views, and the adapter reads its null as zeros. */
-        counts: kind === 'class' || kind === 'seasons' ? { posts: 0, spins: 0, cards: 0 } : core.characterCounts(id), reveals, turns, seasons, acts, from,
+        counts: kind === 'class' || kind === 'seasons' ? { posts: 0, spins: 0, cards: 0 } : core.characterCounts(id), reveals, turns, seasons, acts, windowFrom: from,
         targets: core.actsById([...acts.flatMap((a) => (a.kind === 'card' && a.targetActId !== null ? [a.targetActId] : [])), ...turns.map((t) => t.act)]),
         unread: core.alertsUnread(),
       };

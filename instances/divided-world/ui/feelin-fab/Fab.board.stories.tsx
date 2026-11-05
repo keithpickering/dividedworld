@@ -12,6 +12,7 @@ import { useKayfa } from '../../../../engine/ui/context.tsx';
 import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import { useLocation } from '../../../../engine/ui/router.tsx';
 import { ThreadScreen } from '../../../../engine/ui/thread/Thread.tsx';
+import { LoadedThread } from '../../../../engine/ui/loaded.tsx';
 
 interface Args {
   readonly level: 1 | 2 | 3;
@@ -51,7 +52,7 @@ function Fabbed({ level, mode, reduced, many = false }: Args) {
       for (let layer = 1; layer <= level; layer += 1) (api as Fake).seed.card(caster.character, target.id, 'feelin-fab', { layer, live: true, config: {}, message: `Fab ${layer}` });
     })();
   }, [api, thread, level, many]);
-  return <Frame>{thread ? <ThreadScreen thread={thread} /> : <div aria-busy="true" />}</Frame>;
+  return <Frame>{thread ? <LoadedThread thread={thread} /> : <div aria-busy="true" />}</Frame>;
 }
 
 const meta: Meta<typeof Fabbed> = {

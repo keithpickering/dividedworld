@@ -2,8 +2,8 @@
  * The app: the backend, the instance, its look and words, and the screens, put together. This and
  * web/src/data/ are the only places the engine's screens and an instance meet.
  */
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
-import type { Boot, Estimate, KayfaApi, ScreenSettings, Session } from '../../engine/ui/data/api.ts';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import type { BoardPage, Boot, Estimate, IndexPage, KayfaApi, ProfilePage, RecordPage, ScreenSettings, Session, ThreadPage } from '../../engine/ui/data/api.ts';
 import { fallbackSettings } from './data/settings.ts';
 import { BootProvider } from '../../engine/ui/boot.tsx';
 import { CannotDisplay } from '../../engine/ui/frame/Unavailable.tsx';
@@ -23,6 +23,8 @@ import { seasonAt } from '../../engine/ui/season/Season.tsx';
 import { SendToWelcome } from '../../engine/ui/welcome/Welcome.tsx';
 import { SettlementOnLoad } from '../../engine/ui/log/Settlement.tsx';
 import { match, RouterProvider, useLocation, useNavigate, useRouterAccount, useRouterInternals } from '../../engine/ui/router.tsx';
+import { effectCards } from '../../engine/ui/cards/plays.ts';
+import { boardKey, loadBoard, loadIndex, loadProfile, loadRecord, loadThread, recordKey, threadKey, type LoadEnv, type ScreenDoc } from '../../engine/ui/screen-docs.ts';
 import { Routes, type Route } from '../../engine/ui/routes.tsx';
 import { ThreadScreen } from '../../engine/ui/thread/Thread.tsx';
 import { instance } from '../../instances/divided-world/index.ts';
@@ -49,34 +51,46 @@ const QueueScreen = lazy(() => import('../../engine/ui/admin/Queue.tsx').then((m
 const LogScreen = lazy(() => import('../../engine/ui/log/Log.tsx').then((m) => ({ default: m.LogScreen })));
 const SettlementScreen = lazy(() => import('../../engine/ui/log/Settlement.tsx').then((m) => ({ default: m.SettlementScreen })));
 
-const ROUTES: readonly Route[] = [
-  { path: '/', render: () => <IndexScreen /> },
-  { path: '/b/:slug', render: ({ slug }) => <BoardScreen slug={slug!} /> },
-  { path: '/characters', render: () => <Characters /> },
-  { path: '/characters/new', render: () => <NewCharacter /> },
-  { path: '/characters/edit', render: () => <ProfileEdit /> },
-  { path: '/season', render: () => <SeasonScreen /> },
-  /* The standings and the rankings are the season page's Rankings tab (the alerts design, section 7); `?page=` goes with them. */
-  { path: '/standings', render: () => <MovedToRankings /> },
-  { path: '/rankings', render: () => <MovedToRankings /> },
-  { path: '/vending', render: () => <Vending /> },
-  { path: '/alerts', render: () => <AlertsScreen /> },
-  { path: '/updates', render: () => <UpdatesScreen /> },
-  { path: '/guide', render: () => <GuideScreen /> },
-  { path: '/contact', render: () => <ContactScreen /> },
-  { path: '/welcome', render: () => <WelcomeScreen /> },
-  { path: '/admin/queue', render: () => <QueueScreen /> },
-  { path: '/log', render: () => <LogScreen /> },
-  { path: '/log/settlement', render: () => <SettlementScreen /> },
-  { path: '/c/:id', render: ({ id }) => <ProfileScreen id={id!} /> },
-  { path: '/c/:id/record', render: ({ id }) => <RecordScreen id={id!} /> },
-  { path: '/sign-in', render: () => <SignInScreen mode="sign-in" /> },
-  { path: '/register', render: () => <SignInScreen mode="register" /> },
-  /* Invites live in Settings › Account (the glass build's Task 2.4); the old address opens it, so a link to it still works. */
-  { path: '/invites', render: () => <Moved to={INVITES} /> },
-  { path: '/settings', render: () => <SettingsScreen /> },
-  { path: '/t/:thread', render: ({ thread }) => <ThreadScreen thread={thread!} /> },
-];
+/**
+ * The routes. The five board-world routes load their screen's whole document before they move (the forum-load plan, Task 13), signed out
+ * answering a marker with no request; the rest render as they always did. `env` is what a loader needs of the app, read when it runs.
+ */
+function routesFor(env: LoadEnv): readonly Route[] {
+  return [
+    { path: '/', load: () => loadIndex(env), render: (_, doc) => <IndexScreen doc={doc as ScreenDoc<IndexPage>} /> },
+    {
+      path: '/b/:slug', load: ({ params, query }) => loadBoard(env, params.slug!, query), key: (params, query) => boardKey(params.slug!, query),
+      render: ({ slug }, doc) => <BoardScreen slug={slug!} doc={doc as ScreenDoc<BoardPage>} />,
+    },
+    { path: '/characters', render: () => <Characters /> },
+    { path: '/characters/new', render: () => <NewCharacter /> },
+    { path: '/characters/edit', render: () => <ProfileEdit /> },
+    { path: '/season', render: () => <SeasonScreen /> },
+    /* The standings and the rankings are the season page's Rankings tab (the alerts design, section 7); `?page=` goes with them. */
+    { path: '/standings', render: () => <MovedToRankings /> },
+    { path: '/rankings', render: () => <MovedToRankings /> },
+    { path: '/vending', render: () => <Vending /> },
+    { path: '/alerts', render: () => <AlertsScreen /> },
+    { path: '/updates', render: () => <UpdatesScreen /> },
+    { path: '/guide', render: () => <GuideScreen /> },
+    { path: '/contact', render: () => <ContactScreen /> },
+    { path: '/welcome', render: () => <WelcomeScreen /> },
+    { path: '/admin/queue', render: () => <QueueScreen /> },
+    { path: '/log', render: () => <LogScreen /> },
+    { path: '/log/settlement', render: () => <SettlementScreen /> },
+    { path: '/c/:id', load: ({ params }) => loadProfile(env, params.id!), render: ({ id }, doc) => <ProfileScreen id={id!} doc={doc as ScreenDoc<ProfilePage>} /> },
+    {
+      path: '/c/:id/record', load: ({ params, query }) => loadRecord(env, params.id!, query), key: (params, query) => recordKey(params.id!, query),
+      render: ({ id }, doc) => <RecordScreen id={id!} doc={doc as ScreenDoc<RecordPage>} />,
+    },
+    { path: '/sign-in', render: () => <SignInScreen mode="sign-in" /> },
+    { path: '/register', render: () => <SignInScreen mode="register" /> },
+    /* Invites live in Settings › Account (the glass build's Task 2.4); the old address opens it, so a link to it still works. */
+    { path: '/invites', render: () => <Moved to={INVITES} /> },
+    { path: '/settings', render: () => <SettingsScreen /> },
+    { path: '/t/:thread', load: ({ params, query, hash }) => loadThread(env, params.thread!, query, hash), key: (params) => threadKey(params.thread!), render: ({ thread }, doc) => <ThreadScreen thread={thread!} doc={doc as ScreenDoc<ThreadPage>} /> },
+  ];
+}
 
 /**
  * The routes that are glass pages (the glass build's Task 1.4), each with the surface whose smoke it
@@ -163,7 +177,7 @@ function Appearance({ api, boot }: { readonly api: KayfaApi; readonly boot: Boot
  * and each shell starts its own page at its top with focus on its main. A move within one shell
  * keeps it mounted and only the routed screen changes.
  */
-function Shell() {
+function Shell({ routes }: { readonly routes: readonly Route[] }) {
   const { path } = useLocation();
   const { session, sessionKnown } = usePlayer();
   const surface = isGlass(path) ? GLASS[path] : undefined;
@@ -181,7 +195,7 @@ function Shell() {
   const content = (
     <AccountGate>
       <Suspense fallback={null}>
-        <Routes key={mountedFor.n} routes={ROUTES} />
+        <Routes key={mountedFor.n} routes={routes} />
       </Suspense>
       {/* The first load of a board page after a settlement the device has not seen opens its summary (engine/ui/log/Settlement.tsx). */}
       <SettlementOnLoad active={!surface} />
@@ -216,12 +230,25 @@ interface FirstLoad {
 }
 
 /**
- * The first page draws once (the forum-load plan, Task 12, and the design, section 3): the session, then boot and the estimate together,
- * the page drawn when boot has landed (and the first route's load, in `FirstScreen`), the estimate waited for 600 ms more and then left
- * to land on its own. Signed out, `settings()` alone, as before.
+ * What the first load and the routes' loaders share: the session asked once (a loader and boot both wait on it, then run side by side), the
+ * session as the player's provider holds it once the page is drawn (a loader that runs on a later move asks that), and the instance's settings
+ * once the first load has read them (until then a loader leaves the thread's page size to the server).
  */
-async function firstLoad(api: KayfaApi): Promise<FirstLoad> {
-  const session = await api.session().catch((): Session => ({ signedIn: false, account: null }));
+interface Known {
+  session: Promise<Session> | null;
+  live: Session | null;
+  settings: ScreenSettings | null;
+}
+
+const sessionOnce = (api: KayfaApi, known: Known): Promise<Session> => (known.session ??= api.session().catch((): Session => ({ signedIn: false, account: null })));
+
+/**
+ * The first page draws once (the forum-load plan, Tasks 12 and 13, and the design, section 3): boot and the estimate start together once
+ * the session is known, beside the first route's load (which waits on the same session), the page drawn when boot and the load have landed
+ * (in `Gate`), the estimate waited for 600 ms more and then left to land on its own. Signed out, `settings()` alone, as before.
+ */
+async function firstLoad(api: KayfaApi, known: Known): Promise<FirstLoad> {
+  const session = await sessionOnce(api, known);
   if (!session.signedIn) return { session, boot: null, settings: await api.settings(), estimate: null };
   const asked = api.estimate().then((e): Estimate | null => e, () => null);
   const boot = await api.boot();
@@ -231,14 +258,18 @@ async function firstLoad(api: KayfaApi): Promise<FirstLoad> {
 
 /**
  * Inside the providers: boot for the account signed in now, read again when the session's account changes after the first load (a sign-in,
- * a sign-out, a switch), so the frame and the HUD never show the last account's data, and the router told whose session this is.
+ * a sign-out, a switch), so the frame and the HUD never show the last account's data, and the router told whose session this is. Signed out,
+ * the boot held is dropped, so a sign-in as the same account reads it afresh.
  */
-function Booted({ api, first, children }: { readonly api: KayfaApi; readonly first: Boot | null; readonly children: ReactNode }) {
+function Booted({ api, known, first, children }: { readonly api: KayfaApi; readonly known: Known; readonly first: Boot | null; readonly children: ReactNode }) {
   const { session } = usePlayer();
   const [boot, setBoot] = useState<Boot | null>(first);
+  /* The loaders ask the session as it is now: set before the router is told of an account that changed, which reads the page again. */
+  useLayoutEffect(() => { known.live = session; }, [known, session]);
   useRouterAccount(session.account);
   useEffect(() => {
-    if (!session.signedIn || (boot !== null && boot.account === session.account)) return;
+    if (!session.signedIn) { if (boot !== null) setBoot(null); return; }
+    if (boot !== null && boot.account === session.account) return;
     let live = true;
     void api.boot().then((b) => { if (live) setBoot(b); }, () => { /* each piece reads for itself until boot can be read */ });
     return () => { live = false; };
@@ -253,48 +284,67 @@ function Booted({ api, first, children }: { readonly api: KayfaApi; readonly fir
   );
 }
 
-/** The first route's load: the page waits for it, empty and busy, as it does for boot; a route without a loader needs none. */
-function FirstScreen({ children }: { readonly children: ReactNode }) {
+/**
+ * The page waits, empty and busy, for the first load (boot) and for the first route's load: both started together, so the page is as slow as
+ * the slower of the two, never the two in a row. The routes are handed to the router at once, which starts the first route's load; a route
+ * without a loader needs none.
+ */
+function Gate({ routes, ready, children }: { readonly routes: readonly Route[]; readonly ready: boolean; readonly children: ReactNode }) {
   const { shown, attach } = useRouterInternals();
-  useLayoutEffect(() => { attach(ROUTES); });
-  const loads = ROUTES.some((r) => r.load !== undefined && match(r.path, shown.location.path) !== null);
-  if (loads && !shown.ready && !shown.failure) return <main className="kb-page" aria-busy="true" />;
+  useLayoutEffect(() => { attach(routes); });
+  const loads = routes.some((r) => r.load !== undefined && match(r.path, shown.location.path) !== null);
+  /* Only the first draw waits for the route: a later load (a move, a switch of account) leaves the frame up and the router holds the old page. */
+  const [opened, setOpened] = useState(false);
+  const waiting = loads && !shown.ready && !shown.failure;
+  if (!opened && ready && !waiting) setOpened(true);
+  if (!ready || (!opened && waiting)) return <main className="kb-page" aria-busy="true" />;
   return <>{children}</>;
 }
+
+const EFFECTS: readonly string[] = [...effectCards(instanceUi)];
 
 export function App({ api }: { readonly api: KayfaApi }) {
   useGlass();
   const [first, setFirst] = useState<FirstLoad | null>(null);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const known = useRef<Known>({ session: null, live: null, settings: null });
+  const routes = useMemo(() => routesFor({
+    api,
+    signedIn: () => known.current.live?.signedIn ?? sessionOnce(api, known.current).then((s) => s.signedIn),
+    postsPerPage: () => known.current.settings?.postsPerPage ?? null,
+    effects: EFFECTS,
+  }), [api]);
   useEffect(() => {
     let live = true;
     setFailed(false);
-    void firstLoad(api).then((f) => { if (live) setFirst(f); }, () => { if (live) setFailed(true); });
+    void firstLoad(api, known.current).then((f) => { if (live) { known.current.settings = f.settings; setFirst(f); } }, () => { if (live) setFailed(true); });
     return () => { live = false; };
   }, [api, attempt]);
-  const retry = useCallback(() => { setFirst(null); setAttempt((n) => n + 1); }, []);
-  if (failed) {
-    /* No boot: the bare page, with the instance's own words and the way to try again. */
-    return (
-      <RouterProvider>
-        <KayfaProvider value={{ api, instance, ui: instanceUi, settings: fallbackSettings, ...FIXED_CHANCE }}>
-          <main className="kb-page"><CannotDisplay address={window.location.pathname + window.location.search} onRetry={retry} /></main>
-        </KayfaProvider>
-      </RouterProvider>
-    );
-  }
-  if (!first) return <main className="kb-page" aria-busy="true" />;
-  const initial: PlayerInitial = { session: first.session, boot: first.boot, estimate: first.estimate, ...(first.estimateLater ? { estimateLater: first.estimateLater } : {}) };
+  const retry = useCallback(() => { known.current.session = null; setFirst(null); setAttempt((n) => n + 1); }, []);
+  const initial: PlayerInitial | null = first ? { session: first.session, boot: first.boot, estimate: first.estimate, ...(first.estimateLater ? { estimateLater: first.estimateLater } : {}) } : null;
   return (
     <RouterProvider onMove={keepPlace}>
-      <KayfaProvider value={{ api, instance, ui: instanceUi, settings: first.settings, ...FIXED_CHANCE }}>
-        <PlayerProvider api={api} initial={initial}>
-          <Booted api={api} first={first.boot}>
-            <FirstScreen><Shell /></FirstScreen>
-          </Booted>
-        </PlayerProvider>
-      </KayfaProvider>
+      {failed
+        /* No boot: the bare page, with the instance's own words and the way to try again. */
+        ? (
+          <KayfaProvider value={{ api, instance, ui: instanceUi, settings: fallbackSettings, ...FIXED_CHANCE }}>
+            <main className="kb-page"><CannotDisplay address={window.location.pathname + window.location.search} onRetry={retry} /></main>
+          </KayfaProvider>
+        )
+        : (
+          <Gate routes={routes} ready={first !== null}>
+            {first && initial && (
+              <KayfaProvider value={{ api, instance, ui: instanceUi, settings: first.settings, ...FIXED_CHANCE }}>
+                <PlayerProvider api={api} initial={initial}>
+                  <Booted api={api} known={known.current} first={first.boot}>
+                    <Shell routes={routes} />
+                  </Booted>
+                </PlayerProvider>
+              </KayfaProvider>
+            )}
+          </Gate>
+        )}
     </RouterProvider>
   );
 }

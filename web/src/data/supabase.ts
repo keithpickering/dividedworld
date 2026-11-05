@@ -1123,6 +1123,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       };
     },
     async threadPage(thread, at, perPage, effectCards): Promise<ThreadPage | null> {
+      /* An address that is no id names no thread: it is not found, as `thread(id)` answers, rather than a read the server refuses. */
+      if (!idOk(thread)) return null;
       const d = (await read(() => client.rpc('thread_page', { in_thread: thread, in_page: at.page ?? null, in_seq: at.seq ?? null, per_page: perPage, effect_cards: [...effectCards] }))).data as Row | null;
       if (!isObject(d)) return null;
       const acts = rowsOf(d['acts']).map(toAct);
@@ -1146,6 +1148,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       };
     },
     async profilePage(character): Promise<ProfilePage | null> {
+      if (!idOk(character)) return null;
       const d = (await read(() => client.rpc('profile_page', { in_character: character }))).data as Row | null;
       if (!isObject(d)) return null;
       return {
@@ -1156,6 +1159,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       };
     },
     async recordPage(character, kind, page): Promise<RecordPage | null> {
+      if (!idOk(character)) return null;
       const d = (await read(() => client.rpc('record_page', { in_character: character, in_kind: kind, in_page: page }))).data as Row | null;
       if (!isObject(d)) return null;
       const reveals = rowsOf(d['reveals']).map(toClassReveal);
@@ -1167,7 +1171,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const from = kindShown === 'all' ? Math.max(0, (shown - 1) * RECORD_PAGE - (reveals.length + turns.length + seasons.length)) : (shown - 1) * RECORD_PAGE;
       return {
         kind: kindShown, page: shown, character: toCharacter(d['character'] as Row, isObject(d['profile']) ? d['profile'] : undefined), counts: toCounts(d['counts']),
-        reveals, turns, seasons, acts: rowsOf(d['acts']).map(toAct), from, targets: rowsOf(d['targets']).map(toAct), unread: toUnread(d['unread']),
+        reveals, turns, seasons, acts: rowsOf(d['acts']).map(toAct), windowFrom: from, targets: rowsOf(d['targets']).map(toAct), unread: toUnread(d['unread']),
       };
     },
     async presenceBox(place): Promise<Presence> {

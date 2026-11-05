@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createFake } from '../../engine/ui/data/fake.ts';
 import { instance } from '../../instances/divided-world/index.ts';
 import { instanceUi } from '../../instances/divided-world/ui/index.ts';
-import { App, NO_MENU } from './App.tsx';
+import { App, ESTIMATE_WAIT_MS, NO_MENU } from './App.tsx';
 import { startLoad } from '../../engine/ui/log/Settlement.tsx';
 import { seedDemo } from './demo.ts';
 import { seedMoves } from '../../engine/ui/board/move-world.ts';
@@ -599,17 +599,17 @@ describe('the first load draws once, from boot', () => {
   const ASKED: Readonly<Record<string, number>> = {
     boot: 1,
     estimate: 1,
-    /* Task 13 adds `threadPage: 1` here and takes the two reads below out (the thread draws from its document then). */
-    preferences: 1,
-    characters: 1,
+    /* The thread draws from its document (Task 13): one read, started with boot and not after it. */
+    threadPage: 1,
   };
-  const HELD_TO_ZERO = ['boards', 'myCharacters', 'wallet', 'myCards', 'alertsUnread', 'nextSettlementAt', 'lastSettledAt', 'log', 'threadPage'] as const;
+  const HELD_TO_ZERO = ['boards', 'myCharacters', 'wallet', 'myCards', 'alertsUnread', 'nextSettlementAt', 'lastSettledAt', 'log', 'preferences', 'characters', 'thread', 'acts', 'reading', 'board', 'tallies', 'myReactions', 'cardsOnMany', 'effectsAbove', 'following', 'characterStats', 'standingAmounts', 'classReveals', 'turnsAnnounced'] as const;
 
   test('/t/<id> asks boot and the estimate once and none of the frame\'s own reads, and the banner and HUD are in the first render after aria-busy clears', async () => {
     const fake = createFake({ instance, settings: fallbackSettings });
     const demo = seedDemo(fake);
     window.history.pushState(null, '', `/t/${demo.thread}`);
-    const names = [...Object.keys(ASKED), ...HELD_TO_ZERO, 'preferences', 'characters'];
+    const firstPost = String((await fake.acts(demo.thread, 1, 1))[0]!.currentPayload.body).replace(/\[[^\]]*\]/gu, '').slice(0, 20);
+    const names = [...Object.keys(ASKED), ...HELD_TO_ZERO];
     const counted = new Map<string, number>();
     for (const name of new Set(names)) {
       const real = (fake as unknown as Record<string, (...a: unknown[]) => unknown>)[name]!.bind(fake);
@@ -633,7 +633,8 @@ describe('the first load draws once, from boot', () => {
     expect(first).not.toBeNull();
     expect(first!.banner).toContain('General');
     expect(first!.hud).toContain('Pipewrench');
-    /* Task 13: expect(first!.main).toContain('Every post I make') once the thread draws from its document. */
+    /* The first post is in the same first render: the thread drew from its document. */
+    expect(first!.main).toContain(firstPost);
   });
 
   test('a switch of account after the first load reads boot again, so the HUD never shows the last account\'s mask', async () => {
@@ -652,5 +653,54 @@ describe('the first load draws once, from boot', () => {
     await waitFor(() => expect(screen.getByRole('region', { name: 'Game HUD' })).toHaveTextContent('Second Mask'));
     expect(screen.getByRole('region', { name: 'Game HUD' })).not.toHaveTextContent('First Mask');
     expect(booted).toHaveBeenCalledTimes(2);
+  });
+});
+
+/*
+ * The first load's rows are an account's own (the forum-load plan, Task 12 review): a sign-out forgets them, so signing in again as the same
+ * account reads them afresh; a failed boot can be tried again; an estimate that was late still reaches the HUD.
+ */
+describe('after the first load', () => {
+  test('signing out and in again as the same account reads boot, the wallet and the estimate afresh', async () => {
+    const fake = createFake({ instance, settings: fallbackSettings });
+    const demo = seedDemo(fake);
+    const booted = vi.spyOn(fake, 'boot');
+    const wallet = vi.spyOn(fake, 'wallet');
+    const estimate = vi.spyOn(fake, 'estimate');
+    render(<App api={fake} />);
+    const hud = await screen.findByRole('region', { name: 'Game HUD' });
+    await waitFor(() => expect(hud).toHaveTextContent('Pipewrench'));
+    expect([booted.mock.calls.length, wallet.mock.calls.length, estimate.mock.calls.length]).toEqual([1, 0, 1]);
+    act(() => { fake.signInAs(null); });
+    await waitFor(() => expect(within(screen.getByRole('region', { name: 'Game HUD' })).getByRole('link', { name: 'Sign in' })).toBeInTheDocument());
+    act(() => { fake.signInAs(demo.me); });
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Game HUD' })).toHaveTextContent('Pipewrench'));
+    await waitFor(() => expect(booted).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(wallet).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(estimate).toHaveBeenCalledTimes(2));
+  });
+
+  test('Try again after a failed boot reads boot again and draws the page', async () => {
+    const fake = createFake({ instance, settings: fallbackSettings });
+    seedDemo(fake);
+    const booted = vi.spyOn(fake, 'boot').mockRejectedValueOnce(new Error('down'));
+    render(<App api={fake} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+    expect(await screen.findByRole('region', { name: 'Game HUD' })).toHaveTextContent('Pipewrench');
+    expect(booted).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+  });
+
+  test('an estimate that lands after the wait reaches the HUD', async () => {
+    const fake = createFake({ instance, settings: fallbackSettings });
+    seedDemo(fake);
+    const real = fake.estimate.bind(fake);
+    vi.spyOn(fake, 'estimate').mockImplementation(() => new Promise((done) => { setTimeout(() => done(real()), ESTIMATE_WAIT_MS + 400); }));
+    render(<App api={fake} />);
+    const hud = await screen.findByRole('region', { name: 'Game HUD' });
+    /* The page drew without it... */
+    expect(within(hud).queryByRole('img', { name: /0\.85 pending/u })).toBeNull();
+    /* ...and it fills in when it lands. */
+    await waitFor(() => expect(within(screen.getByRole('region', { name: 'Game HUD' })).getByRole('img', { name: /0\.85 pending/u })).toBeInTheDocument(), { timeout: 3000 });
   });
 });

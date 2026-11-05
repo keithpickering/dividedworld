@@ -15,6 +15,7 @@ import { useKayfa } from '../../../../engine/ui/context.tsx';
 import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import { useLocation } from '../../../../engine/ui/router.tsx';
 import { ThreadScreen } from '../../../../engine/ui/thread/Thread.tsx';
+import { LoadedThread } from '../../../../engine/ui/loaded.tsx';
 
 /** What the extreme inks are: the lightest and the darkest a color field can hold. */
 const INKS = { lightest: '#ffffff', darkest: '#000000' } as const;
@@ -31,7 +32,7 @@ function Inked({ ink }: { readonly ink: keyof typeof INKS }) {
       (api as Fake).seed.card(caster.character, target.id, 'whoops', { layer: 2, live: true, config: { color: INKS[ink], seed: 7 }, message: `${ink} ink` });
     })();
   }, [api, thread, ink]);
-  return <Frame>{thread ? <ThreadScreen thread={thread} /> : <div aria-busy="true" />}</Frame>;
+  return <Frame>{thread ? <LoadedThread thread={thread} /> : <div aria-busy="true" />}</Frame>;
 }
 
 const meta: Meta<typeof Inked> = {

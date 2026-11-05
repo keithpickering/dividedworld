@@ -4,12 +4,14 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { CardUi } from '../cards/types.ts';
 import type { Act, Id, ThreadListener } from '../data/api.ts';
 import type { Fake } from '../data/fake.ts';
-import { buildWorld, renderIn } from '../test-world.tsx';
+import { buildWorld, holdReads, renderIn } from '../test-world.tsx';
 import { pageOf, pageRange, threadHref } from './pages.ts';
 import { createTallies } from './tallies.ts';
 import { GAP_FILL_MS, READ_DEBOUNCE_MS, ThreadScreen } from './Thread.tsx';
 import { ACT_CACHE_SIZE, actLoader } from './locate.tsx';
 import { returnState } from '../glass/back.ts';
+import { LoadedThread } from '../loaded.tsx';
+import { spunLoader } from '../spin/spun.ts';
 
 /* The HUD's estimate is asked for through the player; this test file watches that call. */
 const landed = vi.hoisted(() => vi.fn());
@@ -82,7 +84,7 @@ function world(acts: number, settings: Parameters<typeof buildWorld>[0] = undefi
   return { fake, me, other, pipe, spritey, thread, ids };
 }
 const open = (w: { fake: Fake; thread: Id }, hash = '', query = '') =>
-  renderIn(w.fake, <ThreadScreen thread={w.thread} />, { path: `/t/${w.thread}${query}${hash}` });
+  renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}${query}${hash}` });
 
 /** Capture the thread's live listener so a test can deliver events as the server would, twice or out of order. */
 function tap(fake: Fake) {
@@ -132,7 +134,7 @@ describe('pages and permalinks', () => {
     expect(post(45)).toBeInTheDocument();
     expect(document.getElementById('post-40')).toBeNull();
     unmount();
-    renderIn(w.fake, <ThreadScreen thread={w.thread} />, { path: `/t/${w.thread}?page=99` });
+    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}?page=99` });
     await screen.findByRole('article', { name: /^Post 41 /u });
   });
 
@@ -187,31 +189,22 @@ describe('pages and permalinks', () => {
     expect(window.location.search + window.location.hash).toBe('?page=3#post-45');
   });
 
-  test('a page costs one read of the Acts and one each of its characters, stats, standings, reveals, turns and tallies', async () => {
+  test('a page is one threadPage read, and none of the reads it replaces: the Acts, characters, stats, standings, reveals, turns, tallies, board, preferences or reading', async () => {
     const w = world(20);
-    const spies = (['acts', 'characters', 'characterStats', 'standingAmounts', 'classReveals', 'turnsAnnounced', 'tallies'] as const).map((m) => [m, vi.spyOn(w.fake, m)] as const);
+    const page = vi.spyOn(w.fake, 'threadPage');
+    const names = ['thread', 'acts', 'characters', 'characterStats', 'standingAmounts', 'classReveals', 'turnsAnnounced', 'tallies', 'myReactions', 'cardsOnMany', 'effectsAbove', 'board', 'boards', 'preferences', 'reading', 'following', 'standingsPage'] as const;
+    const spies = names.map((m) => [m, vi.spyOn(w.fake, m)] as const);
     open(w);
     await screen.findByRole('article', { name: /^Post 20 /u });
-    for (const [name, spy] of spies) expect(spy, name).toHaveBeenCalledTimes(1);
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(spies.map(([name, spy]) => [name, spy.mock.calls.length])).toEqual(names.map((n) => [n, 0]));
   });
 
-  test('a page learns what kind of board it is from one read of that board, never from the list of boards', async () => {
+  test('a thread that is not there is the router\'s "cannot be found" (no document), which leads back', async () => {
     const w = world(3);
-    const list = vi.spyOn(w.fake, 'boards');
-    const one = vi.spyOn(w.fake, 'board');
-    const ranked = vi.spyOn(w.fake, 'standingsPage');
-    open(w);
-    await screen.findByRole('article', { name: /^Post 3 /u });
-    expect(one).toHaveBeenCalledTimes(1);
-    expect(list).not.toHaveBeenCalled();
-    expect(ranked).not.toHaveBeenCalled();
-  });
-
-  test('a thread that is not there says so and leads back', async () => {
-    const w = world(3);
-    renderIn(w.fake, <ThreadScreen thread="00000000-0000-4000-8000-00000000ffff" />);
-    expect(await screen.findByRole('heading', { name: 'No such thread' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Back to the index' })).toBeInTheDocument();
+    renderIn(w.fake, <LoadedThread thread="00000000-0000-4000-8000-00000000ffff" />);
+    expect(await screen.findByRole('heading', { level: 1, name: 'The page cannot be found' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'index' })).toHaveAttribute('href', '/');
   });
 
   test('a visitor who is not signed in sees the front door', async () => {
@@ -295,7 +288,7 @@ describe('the postbit in a thread', () => {
   test('The System has a name and no postbit', async () => {
     const w = world(1);
     const sys = w.fake.seed.thread('the-system', null, 'Tally', 'Tonight, the board turns.');
-    renderIn(w.fake, <ThreadScreen thread={sys.thread} />, { path: `/t/${sys.thread}` });
+    renderIn(w.fake, <LoadedThread thread={sys.thread} />, { path: `/t/${sys.thread}` });
     const article = await screen.findByRole('article', { name: /^Post 1 by The System/u });
     expect(within(article).queryByRole('group')).toBeNull();
     expect(article).toHaveTextContent('Tonight, the board turns.');
@@ -325,6 +318,7 @@ describe('Acts that are not posts', () => {
     w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'first' });
     const next = w.fake.seed.post(w.thread, w.spritey, 'after the card');
     w.fake.seed.card(w.pipe, w.ids[2]!, 'whoops', { message: 'second' });
+    const page = vi.spyOn(w.fake, 'threadPage');
     const many = vi.spyOn(w.fake, 'cardsOnMany');
     const one = vi.spyOn(w.fake, 'cardsOn');
     open(w);
@@ -334,7 +328,9 @@ describe('Acts that are not posts', () => {
     expect(await within(post(2)).findByRole('button', { name: 'Whoops!, 1 play. Opens the cards on this post.' })).toBeInTheDocument();
     expect(await within(post(3)).findByRole('button', { name: 'Whoops!, 1 play. Opens the cards on this post.' })).toBeInTheDocument();
     expect(screen.getAllByRole('article')).toHaveLength(5);
-    expect(many).toHaveBeenCalledTimes(1);
+    /* The whole page's plays are in the page's own document: one request, whatever the plays. */
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(many).not.toHaveBeenCalled();
     expect(one).not.toHaveBeenCalled();
   });
 
@@ -361,7 +357,7 @@ describe('Acts that are not posts', () => {
     const w = world(1);
     const sys = w.fake.seed.thread('the-system', null, 'Tally', '');
     w.fake.seed.post(sys.thread, null, '', { payload: { debuts: [{ character: w.spritey, name: 'Spritey', class: 'face' }, { character: w.pipe, name: 'Pipewrench' }], turns: [{ character: w.pipe, name: 'Pipewrench', loudness: 'announced', was: 'face', class: 'heel' }] } });
-    renderIn(w.fake, <ThreadScreen thread={sys.thread} />, { path: `/t/${sys.thread}` });
+    renderIn(w.fake, <LoadedThread thread={sys.thread} />, { path: `/t/${sys.thread}` });
     const line = await screen.findByRole('article', { name: /^Post 2 by The System/u });
     expect(line).toHaveTextContent('Spritey debuts as Face');
     expect(line).toHaveTextContent('Pipewrench debuts');
@@ -372,7 +368,7 @@ describe('Acts that are not posts', () => {
     const w = world(3);
     const spun = await w.fake.spin(w.ids[1]!, (await w.fake.myCharacters())[0]!.id, 'Spun off', 'Taking this elsewhere.');
     if (!spun.ok) throw new Error(spun.error);
-    renderIn(w.fake, <ThreadScreen thread={spun.value.thread.id} />, { path: `/t/${spun.value.thread.id}` });
+    renderIn(w.fake, <LoadedThread thread={spun.value.thread.id} />, { path: `/t/${spun.value.thread.id}` });
     const first = await screen.findByRole('article', { name: /^Post 1 /u });
     const origin = within(first).getByRole('group', { name: 'Origin' });
     expect(within(origin).getByRole('link', { name: /#2 in A long thread/u })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`);
@@ -396,20 +392,19 @@ describe('the plays on a post: their tallies, own reactions and spins, read with
     return { ...w, first, second, third };
   }
 
-  test('a page whose post has three plays makes one tallies read and one read of the player\'s own reactions, each with the plays in it', async () => {
+  test('a page whose post has three plays is one document, with their tallies and the player\'s own reactions in it and no read for them', async () => {
     const w = played();
+    const page = vi.spyOn(w.fake, 'threadPage');
     const tallies = vi.spyOn(w.fake, 'tallies');
     const own = vi.spyOn(w.fake, 'myReactions');
     open(w);
     await screen.findByRole('article', { name: /^Post 3 /u });
     await waitFor(() => expect(billed(2)).toHaveLength(2));
-    expect(tallies).toHaveBeenCalledTimes(1);
-    expect(own).toHaveBeenCalledTimes(1);
-    for (const play of [w.first, w.second, w.third]) {
-      expect(tallies.mock.calls[0]![0]).toContain(play);
-      expect(own.mock.calls[0]![0]).toContain(play);
-    }
-    expect(tallies.mock.calls[0]![0]).toContain(w.ids[1]);
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(tallies).not.toHaveBeenCalled();
+    expect(own).not.toHaveBeenCalled();
+    const doc = await page.mock.results[0]!.value;
+    for (const play of [w.first, w.second, w.third, w.ids[1]]) expect(doc.tallies).toHaveProperty(play!);
   });
 
   test('the play that has drawn the most is billed first; with no draws the newest is', async () => {
@@ -449,41 +444,23 @@ describe('the plays on a post: their tallies, own reactions and spins, read with
     expect(billed(2)).toEqual(['stick-around:1', 'whoops:2']);
   });
 
-  test('a play that arrives while the page\'s reads are out is billed after the ones the read counted, and the page still opens', async () => {
-    const w = played();
-    const tapped = tap(w.fake);
-    let release!: () => void;
-    const held = new Promise<void>((r) => { release = r; });
-    const real = w.fake.spunFromMany.bind(w.fake);
-    const spins = vi.spyOn(w.fake, 'spunFromMany').mockImplementation(async (ids, limit) => { await held; return real(ids, limit); });
-    open(w);
-    const late = live(w.thread, null as unknown as number, w.pipe, { kind: 'card', seq: null, targetActId: w.ids[1]!, payload: { card: 'late-card', layer: 3, message: 'late' }, currentPayload: { card: 'late-card', layer: 3, message: 'late' }, createdAt: '2026-11-01T00:00:00Z' });
-    /* The page's plays are read, and their spins are being read. */
-    await waitFor(() => expect(spins).toHaveBeenCalled());
-    deliver(() => tapped().onAct?.(late));
-    await act(() => pause(20));
-    release();
-    /* The page opens: the reads' answers bill the plays they counted, and none of them is lost to the one that came. */
-    await waitFor(() => expect(document.querySelector('.kb-thread')).not.toHaveAttribute('aria-busy'));
-    expect(screen.queryByText(/could not be loaded/u)).toBeNull();
-    await waitFor(() => expect(billed(2)).toHaveLength(3));
-    expect(billed(2)).toEqual(['whoops:2', 'stick-around:1', 'late-card:1']);
-  });
-
-  test('two posts with plays cost one read of the plays and the spins read in the line\'s chunks, never one per post or play', async () => {
+  test('two posts with plays are one document, with the plays and the threads spun from them in it: no read of the plays or the spins, one per post or play or in chunks', async () => {
     const w = played(4);
     w.fake.seed.card(w.spritey, w.ids[3]!, 'whoops', { message: 'on four' });
+    await w.fake.spin(w.second, w.pipe, 'From the second play', '');
+    const page = vi.spyOn(w.fake, 'threadPage');
     const many = vi.spyOn(w.fake, 'cardsOnMany');
     const spins = vi.spyOn(w.fake, 'spunFromMany');
     const one = vi.spyOn(w.fake, 'spunFrom');
     open(w);
     await waitFor(() => expect(billed(4)).toHaveLength(1));
     expect(billed(2)).toHaveLength(2);
-    expect(many).toHaveBeenCalledTimes(1);
-    /* Four posts and four plays: eight Acts, one chunk. */
-    expect(spins).toHaveBeenCalledTimes(1);
-    expect(spins.mock.calls[0]![0]).toHaveLength(8);
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(many).not.toHaveBeenCalled();
+    expect(spins).not.toHaveBeenCalled();
     expect(one).not.toHaveBeenCalled();
+    /* What the line under the play that was spun from draws is the document's own answer. */
+    expect(spunLoader(w.fake).peek(w.second)?.threads.map((t) => t.title)).toEqual(['From the second play']);
   });
 
   test('a play of a new card that arrives live is billed last, however new it is', async () => {
@@ -680,10 +657,13 @@ describe('live updates', () => {
   });
 
   /* A card numbered before cards took none (0035_card_takes_no_seq.sql) is a seq no read returns: the fake cannot hold
-     one, so the read is stubbed to leave it out, as the server's reads leave cards out. */
+     one, so the page's read is stubbed to leave it out, as the server's reads leave cards out. */
   const withoutSeq = (w: ReturnType<typeof world>, gone: number) => {
-    const real = w.fake.acts.bind(w.fake);
-    vi.spyOn(w.fake, 'acts').mockImplementation(async (t, a, b) => (await real(t, a, b)).filter((x) => x.seq !== gone));
+    const real = w.fake.threadPage.bind(w.fake);
+    vi.spyOn(w.fake, 'threadPage').mockImplementation(async (...args) => {
+      const page = await real(...args);
+      return page && { ...page, acts: page.acts.filter((x) => x.seq !== gone) };
+    });
   };
 
   test('a page with a legacy numbered card missing from it is short but is not the end of the thread', async () => {
@@ -801,7 +781,7 @@ describe('live updates', () => {
 describe('back from the glass, to a thread that grew meanwhile', { timeout: 15_000 }, () => {
   /** The thread opened as Back opens it: at the post that was in view, with what it showed and knew of when the reader left. */
   const returning = (w: { fake: Fake; thread: Id }, where: string, shown: number, known = shown) =>
-    renderIn(w.fake, <ThreadScreen thread={w.thread} />, { path: `/t/${w.thread}${where}`, state: returnState({ shown, known }) });
+    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}${where}`, state: returnState({ shown, known }) });
   const scrolledTo = () => (Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>).mock.contexts.at(-1);
 
   test('the posts that came while the reader was away wait behind the bar, and the reader is at their post', async () => {
@@ -891,7 +871,7 @@ function fx(key: string): CardUi {
   };
 }
 const openWith = (w: { fake: Fake; thread: Id }, cards: readonly CardUi[]) =>
-  renderIn(w.fake, <ThreadScreen thread={w.thread} />, { path: `/t/${w.thread}`, cards });
+  renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, cards });
 
 describe('a card\'s effect on a post', () => {
   test('a card with no CardUi draws the post untouched, and its play as its mark alone', async () => {
@@ -936,7 +916,7 @@ describe('a card\'s effect on a post', () => {
     expect(within(inner).queryByTestId('fx-whoops')).toBeNull();
   });
 
-  test('its saved state and the reader\'s release arrive with the page, in one read each, for the cards that draw an effect only', async () => {
+  test('its saved state and the reader\'s release arrive with the page\'s document, with no read, for the cards that draw an effect only', async () => {
     const w = world(2);
     const played = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
     const other = w.fake.seed.card(w.spritey, w.ids[1]!, 'no-effect', { message: 'plain' });
@@ -948,10 +928,11 @@ describe('a card\'s effect on a post', () => {
     const wrapped = await within(await screen.findByRole('article', { name: /^Post 2 /u })).findByTestId('fx-whoops');
     await waitFor(() => expect(JSON.parse(wrapped.dataset.states!)[played].state).toEqual({ strokes: [1] }));
     expect(wrapped.dataset.released).toBe(played);
-    expect(states).toHaveBeenCalledTimes(1);
-    expect(states.mock.calls[0]![0]).toEqual([played]);
-    expect(releases).toHaveBeenCalledTimes(1);
-    expect(states.mock.calls[0]![0]).not.toContain(other);
+    /* The document was asked for the cards the instance draws an effect for, so the plain one's play has no state in it. */
+    expect(Object.keys(JSON.parse(wrapped.dataset.states!))).toEqual([played]);
+    expect(other).not.toBe(played);
+    expect(states).not.toHaveBeenCalled();
+    expect(releases).not.toHaveBeenCalled();
   });
 
   test('the author\'s save lands at once and is heard live by another reader; a release shows at once', async () => {
@@ -1133,7 +1114,7 @@ describe('a gap in the live Acts', () => {
     open(w);
     await screen.findByRole('article', { name: /^Post 5 /u });
     see(sentinel(), true);
-    const read = vi.spyOn(w.fake, 'acts');
+    const read = vi.spyOn(w.fake, 'threadPage');
     w.fake.seed.post(w.thread, w.pipe, 'post 6');
     w.fake.seed.post(w.thread, w.spritey, 'post 7');
     const seven = (await w.fake.acts(w.thread, 7, 7))[0]!;
@@ -1143,7 +1124,8 @@ describe('a gap in the live Acts', () => {
       await advance(500);
       deliver(() => tapped().onAct?.(live(w.thread, seq, w.pipe)));
     }
-    expect(read).toHaveBeenCalledWith(w.thread, 6, expect.any(Number));
+    /* The gap is read from the page that holds its first missing post: one page read. */
+    expect(read).toHaveBeenCalledWith(w.thread, { seq: 6 }, expect.any(Number), expect.anything());
     await screen.findByRole('article', { name: /^Post 6 /u });
   });
 
@@ -1154,7 +1136,7 @@ describe('a gap in the live Acts', () => {
     open(w);
     await screen.findByRole('article', { name: /^Post 5 /u });
     see(sentinel(), true);
-    const read = vi.spyOn(w.fake, 'acts').mockRejectedValue(new Error('down'));
+    const read = vi.spyOn(w.fake, 'threadPage').mockRejectedValue(new Error('down'));
     deliver(() => tapped().onAct?.(live(w.thread, 7, w.spritey)));
     await advance(50);
     await advance(GAP_FILL_MS + 100);
@@ -1176,8 +1158,8 @@ describe('a gap in the live Acts', () => {
     w.fake.seed.post(w.thread, w.pipe, 'post 6');
     w.fake.seed.post(w.thread, w.spritey, 'post 7');
     const seven = (await w.fake.acts(w.thread, 7, 7))[0]!;
-    const real = w.fake.acts.bind(w.fake);
-    const read = vi.spyOn(w.fake, 'acts').mockRejectedValueOnce(new Error('down')).mockRejectedValueOnce(new Error('down')).mockImplementation(real);
+    const real = w.fake.threadPage.bind(w.fake);
+    const read = vi.spyOn(w.fake, 'threadPage').mockRejectedValueOnce(new Error('down')).mockRejectedValueOnce(new Error('down')).mockImplementation(real);
     deliver(() => tapped().onAct?.(seven));
     await advance(50);
     await advance(GAP_FILL_MS + 50);
@@ -1243,7 +1225,7 @@ describe('quotes and tallies off the page', () => {
     expect(within(reply).queryByRole('link', { name: /^Post #/u })).toBeNull();
     expect(reply).toHaveTextContent('Quoted post');
     first.unmount();
-    renderIn(w.fake, <ThreadScreen thread={w.thread} />, { path: `/t/${w.thread}` });
+    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}` });
     const again = await screen.findByRole('article', { name: /^Post 3 /u });
     await waitFor(() => expect(within(again).getByRole('link', { name: 'Post #2' })).toBeInTheDocument());
   });
@@ -1345,15 +1327,15 @@ describe('reading when it cannot be sent', () => {
     const sent: unknown[][] = [];
     /* Assigned, not spied: a spy attaches a handler of its own and would hide the defect. */
     w.fake.markRead = ((...a: unknown[]) => { sent.push(a); return failed; }) as unknown as typeof w.fake.markRead;
-    open(w);
+    const view = open(w);
     await screen.findByRole('article', { name: /^Post 10 /u });
     await watched(post(10));
     clock();
     see(post(7));
     asked.mockClear();
-    act(() => { w.fake.signInAs(null); });
+    /* The screen leaves (the router draws the front door for a reader who signed out): what was read is sent as it goes. */
+    view.unmount();
     await debounced();
-    await screen.findByRole('heading', { level: 1, name: 'How do we explain this' });
     expect(sent[0]!.slice(0, 2)).toEqual([w.thread, 7]);
     expect(asked).toHaveBeenCalled();
   });
@@ -1439,8 +1421,11 @@ describe('landmarks and focus', () => {
     const w = world(25);
     open(w);
     await screen.findByRole('article', { name: /^Post 20 /u });
-    const real = w.fake.acts.bind(w.fake);
-    vi.spyOn(w.fake, 'acts').mockImplementation(async (t, a, b) => (a === 21 ? [] : real(t, a, b)));
+    const real = w.fake.threadPage.bind(w.fake);
+    vi.spyOn(w.fake, 'threadPage').mockImplementation(async (t, at, p, e) => {
+      const page = await real(t, at, p, e);
+      return page && (at.page === 2 ? { ...page, acts: [] } : page);
+    });
     const link = screen.getAllByRole('link', { name: 'Continue to page 2' })[0]!;
     link.focus();
     await userEvent.click(link);
@@ -1470,5 +1455,76 @@ describe('who is browsing', () => {
     open(w);
     const box = await screen.findByRole('region', { name: 'Users browsing this thread' });
     expect(await within(box).findByRole('link', { name: 'Pipewrench' })).toHaveAttribute('href', `/c/${w.pipe}`);
+  });
+});
+
+/* ------------------------------------------------------------------ the document ---- */
+describe('a thread drawn from its document (the forum-load plan, Task 13)', () => {
+  /** The thread's first page as the router would hand it over, with the backend held to the reads a landed page makes. */
+  async function landed(w: ReturnType<typeof world>, at: { page?: number; seq?: number } = { page: 1 }, allowed: readonly string[] = [], between?: () => void | Promise<void>) {
+    const boot = await w.fake.boot();
+    const doc = (await w.fake.threadPage(w.thread, at, 20, []))!;
+    /* What happens after the server has read the page and before the screen is drawn. */
+    await between?.();
+    const read = holdReads(w.fake, ['markRead', 'here', 'session', ...allowed]);
+    renderIn(w.fake, <ThreadScreen thread={w.thread} doc={doc} />, { path: `/t/${w.thread}?page=${at.page ?? 1}`, boot });
+    return { read, doc };
+  }
+
+  test('its whole page is in the first render, and nothing is read for it', async () => {
+    const w = world(45);
+    w.fake.seed.react(w.other, w.spritey, w.ids[1]!, 'fire');
+    w.fake.seed.react(w.me, w.pipe, w.ids[0]!, 'tea');
+    const { read } = await landed(w);
+    /* Synchronously after render: the posts, their authors, the tallies, the player's own reaction, the follow button, the box and the reply form. */
+    expect(post(1)).toBeInTheDocument();
+    expect(post(20)).toBeInTheDocument();
+    expect(within(post(2)).getAllByText('Pipewrench').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Follow this thread' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Users browsing this thread' })).toHaveTextContent('Pipewrench');
+    expect(document.querySelector('form.kb-composer')).not.toBeNull();
+    expect(within(post(2)).getByText('Fire, 1')).toBeInTheDocument();
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    await act(async () => { await pause(20); });
+    expect(read).toEqual([]);
+  });
+
+  test('its next page is one threadPage read, on the meter, and nothing else', async () => {
+    const w = world(45);
+    const board = vi.spyOn(w.fake, 'threadPage');
+    const { read } = await landed(w, { page: 1 }, ['threadPage']);
+    board.mockClear();
+    await userEvent.click(screen.getByRole('link', { name: 'Continue to page 2' }));
+    await waitFor(() => expect(post(21)).toBeInTheDocument());
+    expect(board).toHaveBeenCalledTimes(1);
+    expect(board.mock.calls[0]![0]).toBe(w.thread);
+    expect(board.mock.calls[0]![1]).toEqual({ page: 2 });
+    expect(read).toEqual([]);
+  });
+
+  test('the live channel starts after the first render and a gap is read from the document\'s last seq, with one threadPage read', async () => {
+    const w = world(45);
+    const listener = tap(w.fake);
+    const page = vi.spyOn(w.fake, 'threadPage');
+    clock();
+    /* Posts 46 and 47 were written between the server's read and the subscription; 48 is the first the channel hears. */
+    let last!: Act;
+    const { doc, read } = await landed(w, { page: 3 }, ['threadPage'], async () => {
+      w.fake.seed.post(w.thread, w.pipe, 'post 46');
+      w.fake.seed.post(w.thread, w.spritey, 'post 47');
+      w.fake.seed.post(w.thread, w.pipe, 'post 48');
+      last = (await w.fake.acts(w.thread, 48, 48))[0]!;
+    });
+    expect(doc.thread.lastSeq).toBe(45);
+    page.mockClear();
+    deliver(() => listener().onAct?.(last));
+    /* The held post is in before the gap's clock starts. */
+    await act(async () => {});
+    await act(async () => { await vi.advanceTimersByTimeAsync(GAP_FILL_MS + 100); });
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(page.mock.calls[0]![0]).toBe(w.thread);
+    expect(page.mock.calls[0]![1]).toEqual({ seq: 46 });
+    expect(read).toEqual([]);
+    expect(await screen.findByRole('button', { name: '3 new posts' })).toBeInTheDocument();
   });
 });

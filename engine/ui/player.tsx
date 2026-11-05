@@ -156,14 +156,22 @@ export function PlayerProvider({ api, initial, children }: { readonly api: Kayfa
 
   useEffect(() => {
     let live = true;
-    /* A session that cannot be read is read as signed out, so a screen shows its sign-in line rather than nothing. */
-    if (!initial) {
-      void api.session().then(
-        (s) => { if (live) { setSession(s); setSessionKnown(true); } },
-        () => { if (live) { setSession(SIGNED_OUT); setSessionKnown(true); } },
-      );
-    }
+    /*
+     * A session that cannot be read is read as signed out, so a screen shows its sign-in line rather than nothing. With the first load's
+     * session in hand it is read once more here, since a change between the first load and this effect (before the subscription below) would
+     * otherwise be lost: that read is taken only if no change was heard meanwhile and it differs from what is held, and a failure keeps it.
+     */
+    let heard = false;
+    void api.session().then(
+      (s) => {
+        if (!live) return;
+        if (!initial) { setSession(s); setSessionKnown(true); return; }
+        if (!heard && (s.signedIn !== initial.session.signedIn || s.account !== initial.session.account)) setSession(s);
+      },
+      () => { if (live && !initial) { setSession(SIGNED_OUT); setSessionKnown(true); } },
+    );
     const off = api.onSession((s) => {
+      heard = true;
       /*
        * Signing out, or switching to another account, takes the account's unsent drafts off this
        * device; signed in with no account for a moment (a token refresh, a whoami that failed) keeps them.
@@ -178,10 +186,11 @@ export function PlayerProvider({ api, initial, children }: { readonly api: Kayfa
   }, [api]);
 
   useEffect(() => {
+    /* The first load's rows are kept only for the account they were read for: any other state, signed out included, forgets them, so signing in again as the same account reads afresh. */
+    if (adopted.current && adopted.current.account !== account) adopted.current = null;
     if (!account) return;
     /* The rows the first load brought are the account's already: read again only for another account, or after an action. */
     if (adopted.current?.account === account) return;
-    adopted.current = null;
     void refresh();
   }, [account, refresh]);
 

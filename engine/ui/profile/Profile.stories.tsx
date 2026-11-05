@@ -4,6 +4,7 @@ import { useKayfa } from '../context.tsx';
 import type { World } from '../story.tsx';
 import { ProfileScreen } from './Profile.tsx';
 import { RecordScreen } from './Record.tsx';
+import { LoadedProfile, LoadedRecord } from '../loaded.tsx';
 
 const meta: Meta<typeof ProfileScreen> = { title: 'Profile/Profile', component: ProfileScreen };
 export default meta;
@@ -33,9 +34,9 @@ function Top({ record }: { readonly record?: boolean }) {
   const [id, setId] = useState<string | null>(null);
   useEffect(() => { void api.standingsPage(0, 1).then((r) => setId(r[0]?.character ?? 'nobody')); }, [api]);
   if (id === null) return null;
-  return record ? <RecordScreen id={id} /> : <ProfileScreen id={id} />;
+  return record ? <LoadedRecord id={id} /> : <LoadedProfile id={id} />;
 }
 
 export const Full: Story = { render: () => <Top />, parameters: { world: full, path: '/' } };
-export const NotFound: Story = { render: () => <ProfileScreen id="nobody" />, parameters: { world: ((fake) => { fake.signInAs(fake.seed.account('story-player')); }) satisfies World, path: '/c/nobody' } };
+export const NotFound: Story = { render: () => <LoadedProfile id="nobody" />, parameters: { world: ((fake) => { fake.signInAs(fake.seed.account('story-player')); }) satisfies World, path: '/c/nobody' } };
 export const Record: Story = { render: () => <Top record />, parameters: { world: full, path: '/' } };

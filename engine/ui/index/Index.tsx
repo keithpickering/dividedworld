@@ -6,42 +6,25 @@
  * There is no NEW here: a board's count of unread threads would need a read of every thread on it
  * (the thread list shows NEW per thread, from the player's own reading rows).
  */
-import { useEffect, useState } from 'react';
+import { useMemo } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { BoardSummary, Character, Id } from '../data/api.ts';
-import { Ago, Mini, useSignedIn } from '../mini.tsx';
+import type { Character, Id, IndexPage } from '../data/api.ts';
+import { Ago, Mini } from '../mini.tsx';
 import { FrontDoor } from '../front-door/FrontDoor.tsx';
 import { spanWords } from '../characters/format.ts';
 import { PresenceBox } from '../presence/PresenceBox.tsx';
 import { Link } from '../router.tsx';
+import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import './index.css';
 
-type State =
-  | { readonly status: 'loading' }
-  | { readonly status: 'failed' }
-  | { readonly status: 'ready'; readonly boards: readonly BoardSummary[]; readonly characters: ReadonlyMap<Id, Character> };
+/** The index draws its document (the forum-load plan, Task 13): the router loaded it, so the first frame is whole. Signed out, the loader's marker is the front door. */
+export function IndexScreen({ doc }: { readonly doc: ScreenDoc<IndexPage> }) {
+  const { settings } = useKayfa();
+  const page = isSignedOutDoc(doc) ? null : doc;
+  const characters = useMemo<ReadonlyMap<Id, Character>>(() => new Map((page?.characters ?? []).map((c) => [c.id, c])), [page]);
 
-export function IndexScreen() {
-  const { api, settings } = useKayfa();
-  const signedIn = useSignedIn(api);
-  const [state, setState] = useState<State>({ status: 'loading' });
-
-  useEffect(() => {
-    if (!signedIn) return;
-    let live = true;
-    void (async () => {
-      const boards = await api.boards();
-      const ids = [...new Set(boards.map((b) => b.lastCharacter).filter((c): c is Id => c !== null))];
-      const characters = ids.length ? await api.characters(ids) : [];
-      if (live) setState({ status: 'ready', boards, characters: new Map(characters.map((c) => [c.id, c])) });
-    })().catch(() => { if (live) setState({ status: 'failed' }); });
-    return () => { live = false; };
-  }, [api, signedIn]);
-
-  if (signedIn === null) return <div className="kb-index" aria-busy="true" />;
-  if (!signedIn) return <FrontDoor />;
-  if (state.status === 'loading') return <div className="kb-index" aria-busy="true" />;
-  if (state.status === 'failed') return <div className="kb-index"><p className="kb-notice" data-kb-tone="refusal">The boards could not be loaded. Reload the page to try again.</p></div>;
+  if (page === null) return <FrontDoor />;
+  const state = { boards: page.boards, characters };
 
   return (
     <div className="kb-index">
@@ -86,7 +69,7 @@ export function IndexScreen() {
           })}
         </tbody>
       </table>
-      <PresenceBox place={{ kind: 'index' }} heading="Who is online" note={`Characters active in the past ${spanWords(settings.presenceWindow)}`} />
+      <PresenceBox place={{ kind: 'index' }} heading="Who is online" note={`Characters active in the past ${spanWords(settings.presenceWindow)}`} snapshot={page.presence} />
     </div>
   );
 }

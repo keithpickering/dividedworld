@@ -7,6 +7,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { seedMoves } from '../board/move-world.ts';
 import { ProfileScreen } from './Profile.tsx';
 import type { World } from '../story.tsx';
+import { LoadedProfile } from '../loaded.tsx';
 
 const meta: Meta<typeof ProfileScreen> = { title: 'Profile/Staff', component: ProfileScreen };
 export default meta;
@@ -20,7 +21,7 @@ const as = (who: 'director' | 'bot'): World => (fake, instance) => {
 
 /** The id the world made: story worlds run before the render, and the route is set to it. */
 function Here() {
-  return <ProfileScreen id={window.location.pathname.split('/').pop() ?? ''} />;
+  return <LoadedProfile id={window.location.pathname.split('/').pop() ?? ''} />;
 }
 
 export const Boss: Story = { render: () => <Here />, parameters: { world: as('director') } };

@@ -362,6 +362,18 @@ export async function readPlays(api: KayfaApi, plays: Plays, posts: readonly Id[
 }
 
 /**
+ * Take a screen document's plays, with their saved states and the reader's releases, into the store with no read (the forum-load plan,
+ * Task 13): the document holds what `readPlays`, `readAbove` and `readEffects` would have asked for. `faces` are the reader's own card
+ * backs' cards, by set. The states and releases are the document's for the cards the instance draws an effect for.
+ */
+export function hydrate(plays: Plays, acts: readonly Act[], states: Readonly<Record<Id, EffectState>>, releases: readonly Id[], faces: Readonly<Record<Id, string>> = {}): void {
+  plays.add(acts);
+  plays.setStates(states);
+  plays.setReleased(releases);
+  plays.setFaces(faces);
+}
+
+/**
  * Read the live plays above a page's posts (`KayfaApi.effectsAbove`): on its distinct authors, its thread and its board, in one read
  * however many posts the page holds, each kept on its target. A failed read leaves them undrawn: a mark is missing, never a post.
  */

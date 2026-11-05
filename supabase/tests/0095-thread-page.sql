@@ -1,5 +1,5 @@
 -- thread_page (supabase/migrations/0093_thread_page.sql; the forum-load plan, Task 4): a thread's page in one read. A thread of 45 posts, with a
--- play, a set, a reaction and a spin on page 2. As a player, with per_page 20: page 2 holds seq 21 to 40; a per_page of 500 (or 0, or none) is refused;
+-- play, a set, a reaction and a spin on page 2. As a player, with per_page 20: page 2 holds seq 21 to 40; a per_page of 500 (or 0) is refused and none is the instance's setting;
 -- in_seq 42 lands on page 3; in_page 9 clamps to 3; each piece equals the matching view read made directly here (the same rows, by id); mine holds
 -- only the caller's reactions and faces only the caller's sets; a missing thread is null; anon is refused. The guard
 -- (supabase/tests/e2e/0016-screen-reads.ts) holds what it may read.
@@ -129,7 +129,11 @@ begin
   if jsonb_array_length(thread_page(t, 1, null, 100, '{}') -> 'acts') is distinct from 45 then raise exception 'per_page 100 should hold every Act'; end if;
   if pg_temp.refusal_full(format('select thread_page(%L, 1, null, 500, %L)', t, '{}')) is distinct from '22023|kayfabb.refusal|a page holds 1 to 100 posts' then raise exception 'per_page 500: %', pg_temp.refusal_full(format('select thread_page(%L, 1, null, 500, %L)', t, '{}')); end if;
   if pg_temp.refusal_full(format('select thread_page(%L, 1, null, 0, %L)', t, '{}')) is distinct from '22023|kayfabb.refusal|a page holds 1 to 100 posts' then raise exception 'per_page 0 was not refused'; end if;
-  if pg_temp.refusal_full(format('select thread_page(%L, 1, null, null, %L)', t, '{}')) is distinct from '22023|kayfabb.refusal|a page holds 1 to 100 posts' then raise exception 'no per_page was not refused'; end if;
+  -- No per_page is the instance's own postsPerPage setting, so a first load needs no read to learn it.
+  if (select x.settings -> 'postsPerPage' from screen_settings x limit 1) is distinct from '20'::jsonb then raise exception 'the test expects postsPerPage 20'; end if;
+  if thread_page(t, 2, null, null, '{}') is distinct from thread_page(t, 2, null, 20, '{}') then raise exception 'a null per_page should be the setting (20)'; end if;
+  if (thread_page(t, null, 42, null, '{}') ->> 'page')::integer is distinct from 3 then raise exception 'null per_page, in_seq 42 should land on page 3'; end if;
+  if jsonb_array_length(thread_page(t, 3, null, null, '{}') -> 'acts') is distinct from 5 then raise exception 'null per_page, page 3 should hold seq 41 to 45'; end if;
   -- A missing thread is null.
   if thread_page(gen_random_uuid(), 1, null, 20, '{}') is not null then raise exception 'a missing thread should be null'; end if;
   perform tests.unbecome();

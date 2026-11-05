@@ -49,6 +49,8 @@ export interface SpunLoader {
    * navigates to the new thread (SpinForm), so no row for the Act outlives it.
    */
   forget(act: Id): void;
+  /** Take in the answer a screen document carried for an Act (the threads spun from it, oldest first): no read, and as fresh as a read. */
+  seed(act: Id, threads: readonly ThreadSummary[]): void;
   /** What is known of an Act right now, without asking: its read answer, or the one it had before it was asked about again; null if it has none. */
   peek(act: Id): Spun | null;
 }
@@ -116,6 +118,12 @@ export function createSpunLoader(api: KayfaApi, now: () => number): SpunLoader {
       return promise;
     },
     forget(act) { cache.delete(act); },
+    seed(act, threads) {
+      const value = shape(threads, threads.length >= SPUN_FROM_MAX);
+      cache.delete(act);
+      cache.set(act, { at: now(), promise: Promise.resolve(value), value });
+      while (cache.size > SPUN_CACHE_SIZE) cache.delete(cache.keys().next().value!);
+    },
     peek(act) {
       const had = cache.get(act);
       return had?.value ?? had?.prior ?? null;

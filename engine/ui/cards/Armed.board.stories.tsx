@@ -17,6 +17,7 @@ import { useKayfa } from '../context.tsx';
 import { useLocation } from '../router.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { usePlay } from './play.tsx';
+import { LoadedThread } from '../loaded.tsx';
 
 /** The card the board arms: the instance's Whoops!, by its key (the story names no instance, so it is the card whose name is Whoops!). */
 function Arm({ reopen }: { readonly reopen: boolean }) {
@@ -39,7 +40,7 @@ function ArmedThread({ reopen }: { readonly reopen: boolean }) {
   return (
     <Frame>
       <Arm reopen={reopen} />
-      {thread ? <ThreadScreen thread={thread} /> : <div aria-busy="true" />}
+      {thread ? <LoadedThread thread={thread} /> : <div aria-busy="true" />}
     </Frame>
   );
 }
