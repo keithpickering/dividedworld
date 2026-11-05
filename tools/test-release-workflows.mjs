@@ -63,10 +63,13 @@ function quiet(name, files) {
 red('release.yml is missing', without(RELEASE), /release\.yml.*R1|R1.*release\.yml/);
 red('web is dropped from the jobs', edit(RELEASE, (d) => { delete d.jobs.web; }), /R1/);
 red('promote skips web', edit(RELEASE, (d) => { d.jobs.promote.needs = ['candidate', 'sql']; }), /R1/);
+red('sql does not need build', edit(RELEASE, (d) => { d.jobs.sql.needs = ['candidate']; }), /R1.*sql does not need build/);
+red('web does not need sql', edit(RELEASE, (d) => { d.jobs.web.needs = ['candidate', 'build']; }), /R1.*web does not need sql/);
 
 /* ---- R2: each job calls its own workflow on the candidate ---- */
 red('sql releases main, not the candidate', edit(RELEASE, (d) => { d.jobs.sql.with.ref = 'main'; }), /R2/);
 red('build calls web.yml', edit(RELEASE, (d) => { d.jobs.build.uses = './.github/workflows/web.yml'; }), /R2/);
+red('web releases main, not the candidate', edit(RELEASE, (d) => { d.jobs.web.with.ref = 'main'; }), /R2/);
 
 /* ---- R3: promote only fast-forwards, with the least permission ---- */
 red('promote pushes with --force', edit(RELEASE, (d) => {
@@ -81,14 +84,53 @@ red('promote pushes to main', edit(RELEASE, (d) => {
   const s = pushStep(d);
   s.run = s.run.replace('refs/heads/production', 'refs/heads/main');
 }), /R3/);
+red('promote pushes with -f', edit(RELEASE, (d) => {
+  const s = pushStep(d);
+  s.run = s.run.replace('git push origin', 'git push -f origin');
+}), /R3.*-f/);
+red('promote pushes with --force-with-lease', edit(RELEASE, (d) => {
+  const s = pushStep(d);
+  s.run = s.run.replace('git push origin', 'git push --force-with-lease origin');
+}), /R3/);
+red('promote pushes with --delete', edit(RELEASE, (d) => {
+  const s = pushStep(d);
+  s.run = s.run.replace('git push origin', 'git push --delete origin');
+}), /R3/);
+red('promote pushes with --mirror', edit(RELEASE, (d) => {
+  const s = pushStep(d);
+  s.run = s.run.replace('git push origin', 'git push --mirror origin');
+}), /R3/);
+red('promote pushes with --prune', edit(RELEASE, (d) => {
+  const s = pushStep(d);
+  s.run = s.run.replace('git push origin', 'git push --prune origin');
+}), /R3/);
+red('promote deletes production by an empty source', edit(RELEASE, (d) => {
+  const s = pushStep(d);
+  s.run = 'git push origin :refs/heads/production';
+}), /R3/);
+red('promote has no git push at all', edit(RELEASE, (d) => {
+  const s = pushStep(d);
+  s.run = 'echo promoted';
+}), /R3.*no git push/);
+red('report force-pushes production', edit(RELEASE, (d) => {
+  d.jobs.report.steps.push({ run: 'git push --force origin HEAD:refs/heads/production' });
+}), /R3.*report/);
+red('a new job pushes', edit(RELEASE, (d) => {
+  d.jobs.extra = { 'runs-on': 'ubuntu-latest', steps: [{ run: 'git push origin HEAD:refs/heads/other' }] };
+}), /R3.*extra/);
 red('promote asks pull-requests: write too', edit(RELEASE, (d) => { d.jobs.promote.permissions['pull-requests'] = 'write'; }), /R3/);
 
 /* ---- R4: the release runs on a schedule and a bare dispatch, nothing else ---- */
 red('release.yml runs on push', edit(RELEASE, (d) => { d.on.push = { branches: ['main'] }; }), /R4/);
+red('the schedule is empty', edit(RELEASE, (d) => { d.on.schedule = []; }), /R4.*empty schedule/);
 red('the dispatch takes a sha', edit(RELEASE, (d) => { d.on.workflow_dispatch = { inputs: { sha: { type: 'string' } } }; }), /R4/);
 
 /* ---- R5: the called workflows take a ref and use it ---- */
 red('web.yml loses workflow_call', edit(WEB, (d) => { delete d.on.workflow_call; }), /R5/);
+red('web.yml does not require its ref', edit(WEB, (d) => { d.on.workflow_call.inputs.ref.required = false; }), /R5.*required/);
+red('build.yml has no checkout', edit(BUILD, (d) => {
+  for (const job of Object.values(d.jobs)) job.steps = (job.steps ?? []).filter((s) => !String(s.uses ?? '').startsWith('actions/checkout'));
+}), /R5.*no checkout/);
 red('sql.yml checks out without the ref', edit(SQL, (d) => {
   for (const job of Object.values(d.jobs)) {
     for (const step of job.steps ?? []) if (String(step.uses ?? '').startsWith('actions/checkout')) delete step.with;
@@ -105,6 +147,21 @@ red('build.yml pushes a refspec held in a variable', edit(BUILD, (d) => {
   const job = Object.values(d.jobs)[0];
   job.steps.push({ run: 'spec=HEAD:production\ngit push origin "$spec"' });
 }), /R6/);
+red('build.yml pushes with options before push', edit(BUILD, (d) => {
+  Object.values(d.jobs)[0].steps.push({ run: 'git -C . push origin HEAD:production' });
+}), /R6/);
+red('build.yml pushes with -c before push', edit(BUILD, (d) => {
+  Object.values(d.jobs)[0].steps.push({ run: 'git -c k=v push origin HEAD:production' });
+}), /R6/);
+red('build.yml pushes a refspec held in a step env', edit(BUILD, (d) => {
+  Object.values(d.jobs)[0].steps.push({ env: { TARGET: 'HEAD:refs/heads/production' }, run: 'git push origin "$TARGET"' });
+}), /R6/);
+red('build.yml names production in a step input', edit(BUILD, (d) => {
+  Object.values(d.jobs)[0].steps.push({ uses: 'actions/some-action@v1', with: { branch: 'production' } });
+}), /R6.*inputs/);
+quiet('a shell comment line inside a run string is not a push', edit(BUILD, (d) => {
+  Object.values(d.jobs)[0].steps.push({ run: '# git push origin HEAD:production\necho fine' });
+}));
 quiet('a comment that mentions production is not a push', {
   ...REAL,
   [BUILD]: `${REAL[BUILD]}\n# git push origin HEAD:production would be wrong here; only release.yml moves production.\n`,
@@ -115,6 +172,11 @@ red('netlify.toml gives production its own command', {
   ...REAL,
   [NETLIFY]: `${REAL[NETLIFY]}\n[context.production]\n  command = "npm run build"\n`,
 }, /R7/);
+
+red('netlify.toml gives deploy previews their own command', {
+  ...REAL,
+  [NETLIFY]: `${REAL[NETLIFY]}\n[context.deploy-preview]\n  command = "npm run build"\n`,
+}, /R7.*deploy-preview/);
 
 /* ---- a file that does not parse ---- */
 red('a workflow that does not parse is named', { ...REAL, [BUILD]: 'on: [unclosed\n  - : :' }, /build\.yml/);

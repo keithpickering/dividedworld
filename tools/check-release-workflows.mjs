@@ -29,6 +29,8 @@ const CALLED = ['build', 'sql', 'web'];
 const JOBS = ['candidate', 'build', 'sql', 'web', 'promote', 'report'];
 const SHA = '${{ needs.candidate.outputs.sha }}';
 const REF = '${{ inputs.ref }}';
+/** A git command with any options before `push` (`git -C . push`, `git -c k=v push`). */
+const GIT_PUSH = /\bgit\b[^\n;|&]*\bpush\b/;
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const list = (v) => (v === undefined || v === null ? [] : Array.isArray(v) ? v : [v]);
@@ -89,13 +91,14 @@ export function problems(files) {
     if (isObj(jobs.promote)) {
       const promote = jobs.promote;
       const bad3 = [];
-      const pushes = list(promote.steps).flatMap(shellLines).filter((l) => /\bgit\s+push\b/.test(l));
+      const pushes = list(promote.steps).flatMap(shellLines).filter((l) => GIT_PUSH.test(l));
       if (!pushes.length) bad3.push('has no git push');
       for (const line of pushes) {
         if (/--force/.test(line)) bad3.push(`forces its push (${line.trim()})`);
         if (/\s-[A-Za-z]*f[A-Za-z]*(\s|$)/.test(line)) bad3.push(`passes -f (${line.trim()})`);
         if (/(^|[\s"'])\+|:\+/.test(line.replace(/\$\{\{[^}]*\}\}/g, 'X'))) bad3.push(`pushes a + refspec (${line.trim()})`);
-        if (!/:refs\/heads\/production(["'\s]|$)/.test(line)) bad3.push(`does not push to refs/heads/production (${line.trim()})`);
+        if (/(^|\s)(--delete|--mirror|--prune|-[A-Za-z]*d[A-Za-z]*)(\s|$)/.test(line)) bad3.push(`deletes or mirrors refs (${line.trim()})`);
+        if (!/[^\s"':]:refs\/heads\/production(["'\s]|$)/.test(line.replace(/\$\{\{[^}]*\}\}/g, 'X'))) bad3.push(`does not push to refs/heads/production (${line.trim()})`);
       }
       const perms = promote.permissions;
       if (!isObj(perms) || Object.keys(perms).length !== 1 || perms.contents !== 'write') {
@@ -103,6 +106,13 @@ export function problems(files) {
       }
       if (bad3.length) out.push(`${RELEASE}: R3 promote ${bad3.join('; ')}`);
     }
+
+    // Nothing else in the release pushes: a push anywhere but promote is a way to move a ref unseen.
+    const strays = Object.entries(jobs)
+      .filter(([name]) => name !== 'promote')
+      .filter(([, job]) => list(job?.steps).flatMap(shellLines).some((l) => GIT_PUSH.test(l)))
+      .map(([name]) => name);
+    if (strays.length) out.push(`${RELEASE}: R3 job ${strays.join(', ')} has a git push; only promote pushes`);
 
     const on = triggers(rel).sort();
     const dispatch = isObj(rel.on) ? rel.on.workflow_dispatch : undefined;
@@ -145,7 +155,7 @@ export function problems(files) {
         for (const step of list(job?.steps)) {
           const lines = shellLines(step);
           const text = lines.join('\n');
-          const pushes = lines.some((l) => /\bgit\s+push\b/.test(l));
+          const pushes = lines.some((l) => GIT_PUSH.test(l));
           const env = JSON.stringify(step?.env ?? {});
           if ((pushes && (/production/.test(text) || /production/.test(env))) || /refs\/heads\/production/.test(text)) {
             bad6.push(`job ${jobName} pushes to production`);
