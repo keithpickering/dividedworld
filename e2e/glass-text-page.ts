@@ -175,10 +175,26 @@ function pseudoBox(el: Element, ps: CSSStyleDeclaration): Box & { readonly scale
   };
 }
 
-/** A mask's feather: the longest length its gradients ramp over (calm.css: `currentColor var(--kb-glass-calm-feather)`). */
-function featherOf(mask: string): number {
-  if (!mask || mask === 'none') return 0;
-  return Math.max(0, ...[...mask.matchAll(/(-?[\d.]+)px/g)].map((m) => Math.abs(+m[1]!)));
+/**
+ * A mask's feather on each edge: a gradient layer ramps its start edge when its first stop is transparent and its end edge when its last is
+ * (calm.css draws all four; the phone's HUD joins two calms with the edge that faces the other left unramped, frame.css). The ramp's length is
+ * the first px length in the layer for the start edge and the last for the end edge. `to right` is the x axis and anything else the y axis.
+ */
+interface Feathers { readonly left: number; readonly right: number; readonly top: number; readonly bottom: number }
+function feathersOf(mask: string): Feathers {
+  const f = { left: 0, right: 0, top: 0, bottom: 0 };
+  if (!mask || mask === 'none') return f;
+  for (const layer of mask.split(/(?=linear-gradient\()/)) {
+    const lengths = [...layer.matchAll(/(-?[\d.]+)px/g)].map((m) => Math.abs(+m[1]!));
+    if (lengths.length === 0) continue;
+    const clear = '(?:transparent|rgba\\(\\s*0,\\s*0,\\s*0,\\s*0\\s*\\))';
+    const startRamp = new RegExp(`^linear-gradient\\(\\s*(?:(?:to \\w+|[\\d.]+deg)\\s*,\\s*)?${clear}`).test(layer);
+    const endRamp = new RegExp(`${clear}\\s*\\)\\s*,?\\s*$`).test(layer);
+    const x = /to right/.test(layer);
+    if (startRamp) { if (x) f.left = Math.max(f.left, lengths[0]!); else f.top = Math.max(f.top, lengths[0]!); }
+    if (endRamp) { const n = lengths[lengths.length - 1]!; if (x) f.right = Math.max(f.right, n); else f.bottom = Math.max(f.bottom, n); }
+  }
+  return f;
 }
 
 const drawn = (ps: CSSStyleDeclaration) => ps.content !== 'none' && ps.content !== 'normal' && ps.display !== 'none';
@@ -195,10 +211,13 @@ function calmOf(el: Element, holder: Element): Calm | null {
   const { scale, ...backing } = pseudoBox(c, ps);
   const k = scaleOf(c);
   /* The feather is drawn by the backing's mask, so it shrinks with the backing and with the element. */
-  const feather = featherOf(ps.maskImage || ps.getPropertyValue('-webkit-mask-image')) * zoomOf(c) * scale * Math.min(k.x, k.y);
+  const unit = zoomOf(c) * scale * Math.min(k.x, k.y);
+  const edges = feathersOf(ps.maskImage || ps.getPropertyValue('-webkit-mask-image'));
+  const l = edges.left * unit, r = edges.right * unit, t = edges.top * unit, b = edges.bottom * unit;
+  const feather = Math.max(l, r, t, b);
   const bg = parseColor(ps.backgroundColor);
   const opacity = (bg ? bg[3] : parseFloat(getComputedStyle(c).getPropertyValue('--kb-glass-calm-opacity'))) * opacityOf(c);
-  const box = { x: backing.x + feather, y: backing.y + feather, width: backing.width - 2 * feather, height: backing.height - 2 * feather };
+  const box = { x: backing.x + l, y: backing.y + t, width: backing.width - l - r, height: backing.height - t - b };
   return { backing, feather, box, opacity };
 }
 

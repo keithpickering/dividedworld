@@ -536,6 +536,14 @@ test.describe('the poisons, planted in a real page', () => {
     expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-rankings-lead \(surface rankings\): lies outside its calm's interior \(its backing inset by its 32px feather\)/u));
   });
 
+  test('a joined calm whose outer edge still feathers into the text', async ({ page }) => {
+    /* The phone's HUD door and actions join, with no feather where they face (frame.css); the door's top edge still ramps, so a backing pulled in on it is named. */
+    await page.setViewportSize({ width: 390, height: 844 });
+    await open(page, { name: 'The HUD, signed out', path: '/b/general', signedOut: true });
+    await plant(page, '.kb-hud-door.kb-calm::before { top: 0; }');
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/ h2\.kb-hud-door-title\.kb-glass-display \(surface hud\): lies outside its calm's interior \(its backing inset by its 32px feather\)/u));
+  });
+
   test('a 19px label', async ({ page }) => {
     await open(page, rankings);
     await plant(page, '.kb-glass-menu-tab { font-size: 19px !important; }');

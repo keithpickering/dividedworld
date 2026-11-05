@@ -738,6 +738,37 @@
   font-size: var(--kb-glass-size-phone-small);
 }
 
+/*
+ * The door and the actions stand one above the other on the phone, and each calm is its own stacking context, so the later paints over the
+ * earlier: a calm feathered into the gap would dim the other's words. The two calms join instead. Each reaches to the middle of the bar's
+ * row gap and stops there, with no feather on the edge that faces the other, and ramps only on its outer edge; the sides ramp as ever
+ * (calm.css). Neither backing lies over the other's text, and together they read as one panel. The gap is the bar's own row gap.
+ */
+:where(:root[data-kb-layout='phone']) .kb-hud-bar {
+  --kb-hud-row-gap: 8px;
+  --kb-hud-join: calc(var(--kb-hud-row-gap) / 2);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-door.kb-calm::before {
+  bottom: calc(var(--kb-hud-join) * -1);
+  -webkit-mask-image:
+    linear-gradient(to right, transparent, currentColor var(--kb-glass-calm-feather), currentColor calc(100% - var(--kb-glass-calm-feather)), transparent),
+    linear-gradient(to bottom, transparent, currentColor var(--kb-glass-calm-feather));
+  mask-image:
+    linear-gradient(to right, transparent, currentColor var(--kb-glass-calm-feather), currentColor calc(100% - var(--kb-glass-calm-feather)), transparent),
+    linear-gradient(to bottom, transparent, currentColor var(--kb-glass-calm-feather));
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-door-actions.kb-calm::before {
+  top: calc(var(--kb-hud-join) * -1);
+  -webkit-mask-image:
+    linear-gradient(to right, transparent, currentColor var(--kb-glass-calm-feather), currentColor calc(100% - var(--kb-glass-calm-feather)), transparent),
+    linear-gradient(to bottom, currentColor calc(100% - var(--kb-glass-calm-feather)), transparent);
+  mask-image:
+    linear-gradient(to right, transparent, currentColor var(--kb-glass-calm-feather), currentColor calc(100% - var(--kb-glass-calm-feather)), transparent),
+    linear-gradient(to bottom, currentColor calc(100% - var(--kb-glass-calm-feather)), transparent);
+}
+
 :where(:root[data-kb-layout='phone']) .kb-hud-door-actions {
   grid-column: 1 / -1;
   grid-row: 2;
@@ -1045,7 +1076,7 @@
   grid-template-columns: auto minmax(0, 1fr) auto auto auto;
   grid-template-rows: auto auto;
   align-items: center;
-  gap: 8px 10px;
+  gap: var(--kb-hud-row-gap) 10px;
   height: auto;
   min-height: 0;
   /* Room under the last row, so at a larger text size its descenders are not cut at the window's foot. */
