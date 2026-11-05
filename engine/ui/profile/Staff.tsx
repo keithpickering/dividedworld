@@ -102,8 +102,9 @@ function CareerList({ staff }: { readonly staff: string }) {
   return (
     <section className="kb-staff-career" aria-label="Career">
       <h2 className="kb-heading">Career</h2>
-      {career === 'failed' && <p className="kb-notice" data-kb-tone="refusal">Its career could not be loaded. Reload the page to try again.</p>}
-      {career === null && <p className="kb-muted" aria-busy="true">Loading the career…</p>}
+      {career === 'failed' && <p role="alert" className="kb-notice" data-kb-tone="refusal">Its career could not be loaded. Reload the page to try again.</p>}
+      <div role="status">{career === null && <p className="kb-visually-hidden">Reading the career</p>}</div>
+      {career === null && <p className="kb-muted" aria-hidden="true">Loading the career…</p>}
       {lines !== null && lines.length === 0 && <p>No office held yet.</p>}
       {lines !== null && lines.length > 0 && (
         <ul className="kb-career">

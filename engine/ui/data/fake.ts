@@ -2194,7 +2194,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     staffPost(staff, thread, body, o) {
       if (!threads.has(thread)) throw new Error(`no such thread ${thread}`);
-      if (!characters.get(staff)?.staff) throw new Error('only a staff character posts as The System\'s Boss');
+      if (!characters.get(staff)?.staff) throw new Error('only a staff character posts as staff');
       return write({ character: staff, kind: 'post', thread, payload: { body }, at: o?.at }).id;
     },
     move(staff, m) {

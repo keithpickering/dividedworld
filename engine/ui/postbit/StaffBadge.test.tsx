@@ -48,9 +48,14 @@ describe('a staff character\'s badge', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  test('poison: a player character planted with a staff office or a group label shows nothing', () => {
-    const { container } = show(character({ office: 'mod' }));
-    expect(container).toBeEmptyDOMElement();
-    expect(screen.queryByText('Test Cores')).toBeNull();
+  test('poison: a player character planted with a staff office, in an instance that has a group label, shows nothing', () => {
+    for (const office of ['boss', 'mod', 'member', 'benched'] as const) {
+      const { container, unmount } = show(character({ office }));
+      expect(container).toBeEmptyDOMElement();
+      expect(screen.queryByText('Test Cores')).toBeNull();
+      expect(screen.queryByText('MODERATOR')).toBeNull();
+      expect(screen.queryByText('ADMINISTRATOR')).toBeNull();
+      unmount();
+    }
   });
 });

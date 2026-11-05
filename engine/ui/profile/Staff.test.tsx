@@ -120,6 +120,37 @@ describe('a Mod Bot\'s profile', () => {
   });
 });
 
+describe('a member or benched persona\'s profile', () => {
+  test.each(['member', 'benched'] as const)('a %s shows the group chip and no office title', async (office) => {
+    const fake = buildWorld();
+    fake.signInAs(fake.seed.account('reader'));
+    const id = fake.seed.staff(`p-${office}`, 'Backup Persona', office, { title: 'Understudy', at: fake.clock.now() - 86_400_000 });
+    renderIn(fake, <ProfileScreen id={id} />, { path: `/c/${id}` });
+    await screen.findByRole('heading', { level: 1, name: 'Backup Persona' });
+    const card = await screen.findByRole('region', { name: 'About Backup Persona' });
+    expect(within(card).getByText('Test Cores')).toBeInTheDocument();
+    expect(within(card).queryByText('ADMINISTRATOR')).toBeNull();
+    expect(within(card).queryByText('MODERATOR')).toBeNull();
+  });
+});
+
+describe('the career\'s loading and failure', () => {
+  test('a failed load is announced in an alert region', async () => {
+    open('director', (f) => { f.staffCareer = () => Promise.reject(new Error('down')); });
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Its career could not be loaded');
+    expect(within(screen.getByRole('region', { name: 'Career' })).getByRole('alert')).toBe(alert);
+  });
+  test('loading is announced in a status region, and goes when the career arrives', async () => {
+    let arrive!: () => void;
+    open('director', (f) => { f.staffCareer = () => new Promise((res) => { arrive = () => res({ led: [], offices: [] }); }); });
+    const career = await screen.findByRole('region', { name: 'Career' });
+    expect(within(career).getByRole('status')).toHaveTextContent('Reading the career');
+    arrive();
+    await waitFor(() => expect(within(career).getByRole('status')).toBeEmptyDOMElement());
+  });
+});
+
 describe('an ordinary character\'s profile', () => {
   test('has no badge and no moderation log', async () => {
     open('spritey');
