@@ -13,6 +13,7 @@ body{margin:0}
 a{color:inherit}a:hover{color:inherit;text-decoration:none}
 a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid #ffffff;outline-offset:3px}
 .tab{display:flex;align-items:center;min-height:52px;padding:0 20px;white-space:nowrap;transform:skewX(-10deg);text-decoration:none;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#e4def7}
+button.tab{background:none;border:0;cursor:pointer}
 .many .tab{padding:0 13px;letter-spacing:1.5px}
 .tab b{display:inline-block;transform:skewX(10deg);font-weight:800}
 .btn{display:inline-flex;align-items:center;justify-content:center;min-height:52px;padding:0 26px;transform:skewX(-10deg);text-decoration:none;border:1px solid rgba(241,236,255,.6);background:none;cursor:pointer;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#f1ecff}
@@ -672,6 +673,171 @@ page({
     <h1 style="position: absolute; left: 16px; top: 92px; margin: 0; font: 60px/1 Anton, Impact, sans-serif; text-shadow: 0 0 24px rgba(25,227,255,.35)">YOUR<br>CHARACTERS</h1>
     <p style="position: absolute; left: 16px; top: 222px; margin: 0; font: 30px Anton, Impact, sans-serif; color: #e4def7">3 OF 6</p>
     <p class="lead" style="position: absolute; left: 16px; top: 272px; width: 358px; font-size: 20px">This page is out of character and only you can see it. Classes are shown here and nowhere else unless you reveal them.</p>`, [[0, 260, 390, 140, .85]], 'r4')}
+</div>`,
+});
+
+/* ---------------------------------------------------------------- batch 4: the Lens and My log's states */
+
+const WHOOPS = '#ff3db4';
+const lensBtn = (t, kind = '') => `<button class="btn${kind === 'ink' ? '' : ''}" style="min-height: 46px; padding: 0 16px; font-size: 19px${kind === 'ink' ? `; border-color: ${WHOOPS}; color: #ffffff; box-shadow: 0 0 14px rgba(255,61,180,.45); background: rgba(255,61,180,.16)` : ''}"><b>${t}</b></button>`;
+/** The Lens: a panel docked at the right, from the page's top to just over the HUD, its bar (tabs, Close) sticky, its body scrolling. */
+const lens = ({ tabs, current, ink, headline, body, tools, plays, play }) => `<section role="dialog" aria-label="Cards on this post" class="piece" style="--cut: 24px; --edge: ${ink}; --ground: #0b0818; position: absolute; right: 16px; top: 16px; width: 460px; height: 764px; box-sizing: border-box; color: #f1ecff">
+    <div style="position: absolute; left: 1.5px; right: 1.5px; top: 1.5px; padding: 16.5px 20.5px 14px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(241,236,255,.22)">
+      <div role="tablist" style="display: flex; gap: 6px">${tabs.map((t) => `<button role="tab" aria-selected="${t === current}" class="tab" style="min-height: 46px; padding: 0 14px; font-size: 20px${t === current ? `; background: ${ink}; color: #07050d` : '; border: 1px solid rgba(241,236,255,.5)'}"><b>${t}</b></button>`).join('')}</div>
+      <button class="btn" aria-label="Close" style="min-height: 46px; width: 46px; padding: 0; transform: none"><b style="transform: none; font: 400 28px/1 'Barlow Condensed', sans-serif">&times;</b></button>
+    </div>
+    <div style="position: absolute; left: 0; right: 0; top: 80px; bottom: 0; overflow: hidden; padding: 20px 22px">
+      <h2 style="margin: 0 0 8px; font: 30px/1.1 Anton, Impact, sans-serif; letter-spacing: .3px">${headline}</h2>
+      <p style="margin: 0 0 16px; font: 500 20px/1.45 'Barlow Condensed', sans-serif; color: #e4def7">${body}</p>
+      ${tools}
+      <button aria-expanded="true" style="display: flex; gap: 10px; align-items: baseline; width: 100%; margin: 22px 0 12px; padding: 12px 0 0; border: 0; border-top: 1px solid rgba(241,236,255,.22); background: none; color: #f1ecff; text-align: left; font: 800 21px 'Barlow Condensed', sans-serif; letter-spacing: 1px"><span aria-hidden="true">&#x2304;</span>${plays}</button>
+      ${play}
+    </div>
+    <div aria-hidden="true" style="position: absolute; left: 1.5px; right: 1.5px; bottom: 1.5px; height: 56px; background: linear-gradient(transparent, #0b0818)"></div>
+  </section>`;
+const playPlate = (layer, who, whoInk, when, words, acts) => `<article style="padding: 14px 16px 16px; border: 1px solid ${whoInk}; background: rgba(255,255,255,.03)">
+        <p style="margin: 0; font: 800 19px 'Barlow Condensed', sans-serif; letter-spacing: 1px; color: #e4def7">${layer}</p>
+        <p style="margin: 6px 0 0; font: 500 20px 'Barlow Condensed', sans-serif"><b style="font: 26px Anton, Impact, sans-serif; color: ${whoInk}">${who}</b> &middot; played ${when}</p>
+        <p style="margin: 6px 0 14px; font: italic 600 21px 'Barlow Condensed', sans-serif">&ldquo;${words}&rdquo;</p>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px">${acts.map((a) => `<button class="btn" style="min-height: 44px; padding: 0 10px; font-size: 18px"><b>${a}</b></button>`).join('')}</div>
+      </article>`;
+const threadBehind = `<div aria-hidden="true" style="position: absolute; left: 240px; top: 0; width: 960px; color: #000; font: 13px Verdana, sans-serif">
+    <div style="padding: 14px 0 8px; border-bottom: 1px solid #000; font: 700 18px 'Courier New', monospace; letter-spacing: 3px">DIVIDED WORLD</div>
+    <div style="margin: 30px 0 10px; font: 700 17px 'Courier New', monospace">who keeps splatting my posts</div>
+    <div style="height: 190px; border: 1px solid #000; background: linear-gradient(100deg, #e83fc8 0 12%, #d9b93a 12% 70%, #e8954a 70%)"></div>
+    <div style="margin-top: -1px; height: 150px; border: 1px solid #000"></div><div style="margin-top: -1px; height: 140px; border: 1px solid #000"></div><div style="margin-top: -1px; height: 200px; border: 1px solid #000"></div>
+  </div>
+  <div aria-hidden="true" style="position: absolute; left: 0; right: 0; bottom: 0; height: 196px; background: linear-gradient(#140c2c, #07050d); border-top: 1.5px solid rgba(201,248,255,.7)"></div>`;
+const PLAY_ACTS = ['+ REACT', 'SPIN THREAD', 'AS IT LANDED', 'GO TO POST'];
+
+page({
+  file: '28-lens.html', name: 'The Lens', w: 1440, h: 1000,
+  note: 'The Lens on Whoops!, its plays unfolded, as a reader sees it over the Main board\'s thread (the board world behind it and the HUD below are drawn for place only and not compared). Docked at the right from the page\'s top to just over the HUD; the bar sticky; the body scrolls, its foot fading.',
+  body: `<div style="width: 1440px; height: 1000px; position: relative; overflow: hidden; background: #ffffff; font-family: 'Barlow Condensed', sans-serif">
+  ${threadBehind}
+  ${lens({ tabs: ['WHOOPS!', 'STICK AROUND'], current: 'WHOOPS!', ink: WHOOPS,
+    headline: "3 layers &middot; top: Gloomba's yellow, 41% washed",
+    body: 'Ends on your screen when you scrub every layer off. The author can wash it for everyone.',
+    tools: `<div class="btns">${lensBtn('HOLD TO SCRUB', 'ink')}</div>`,
+    plays: '3 plays &middot; Gloomba, Pipewrench, Mrs. Hooligan',
+    play: playPlate('LAYER 3 OF 3, ON TOP &middot; 41% WASHED', 'GLOOMBA', '#ffd23f', 'Oct 29, 2026, 9:49 PM', "fine, I'll do it myself", PLAY_ACTS) })}
+</div>`,
+});
+
+/* The Lens's other two states, the panel alone: compared from its own corner (a manifest's origin). */
+page({
+  file: '29-lens-states.html', name: 'The Lens, two states', w: 1000, h: 800,
+  note: 'Two Lens panels at the size 28-lens.html docks them: on Stick Around (a reader), and the author\'s Lens on Whoops!, whose tools (Wash, Write in ink) stand in one row with Hold to scrub.',
+  body: `<div style="width: 1000px; height: 800px; position: relative; overflow: hidden; background: #2a2833; font-family: 'Barlow Condensed', sans-serif">
+  <div style="position: absolute; left: -940px; top: 0; width: 1440px; height: 800px">${lens({ tabs: ['WHOOPS!', 'STICK AROUND'], current: 'STICK AROUND', ink: '#19e3ff',
+    headline: "Holds you on this post until you check the caster's sentence, or break free for this visit",
+    body: 'Scroll past either end of the post, press Break free, or check the box.',
+    tools: '',
+    plays: '1 play &middot; Professor Hootenanny McGillicuddy III',
+    play: playPlate('THE ONE PLAY', 'PROFESSOR HOOTENANNY MCGILLICUDDY III', '#19e3ff', 'Oct 29, 2026, 9:50 PM', 'required reading', PLAY_ACTS) })}</div>
+  <div style="position: absolute; left: -440px; top: 0; width: 1440px; height: 800px">${lens({ tabs: ['WHOOPS!', 'STICK AROUND'], current: 'WHOOPS!', ink: WHOOPS,
+    headline: "3 layers &middot; top: Gloomba's yellow, 41% washed",
+    body: 'Ends on your screen when you scrub every layer off. You can wash it for everyone.',
+    tools: `<p style="margin: 0 0 8px; font: 800 19px 'Barlow Condensed', sans-serif; letter-spacing: 1.5px; color: #e4def7">YOUR TOOLS, AS THE AUTHOR</p><div class="btns" style="gap: 8px">${lensBtn('HOLD TO SCRUB', 'ink')}${lensBtn('WASH')}${lensBtn('WRITE IN INK')}</div>`,
+    plays: '3 plays &middot; Gloomba, Pipewrench, Mrs. Hooligan',
+    play: playPlate('LAYER 3 OF 3, ON TOP &middot; 41% WASHED', 'GLOOMBA', '#ffd23f', 'Oct 29, 2026, 9:49 PM', "fine, I'll do it myself", ['+ REACT', 'SPIN THREAD']) })}</div>
+</div>`,
+});
+
+const LOG_TABS = ['ALL', 'PIPEWRENCH', 'MRS. HOOLIGAN', 'SPRITEY'];
+const logTabs = (cur, right = 64, top = 180) => `<div role="tablist" aria-label="Characters" style="position: absolute; right: ${right}px; top: ${top}px; display: flex; gap: 8px">${LOG_TABS.map((t) => `<button role="tab" aria-selected="${t === cur}" class="btn${t === cur ? ' primary' : ''}"><b>${t}</b></button>`).join('')}</div>`;
+const logHead = `<div role="row" style="display: grid; grid-template-columns: 170px 250px 1fr 120px 120px; padding: 0 0 12px; border-bottom: 1px solid rgba(201,248,255,.5); font: 800 20px 'Barlow Condensed', sans-serif; letter-spacing: 2px; color: #19e3ff"><span>WHEN (UTC)</span><span>WHAT</span><span>DETAILS</span><span style="text-align: right">AURA</span><span style="text-align: right">WALLET</span></div>`;
+
+page({
+  file: '30-log-empty.html', name: 'My log, before anything has settled', w: 1440, h: 1000,
+  note: 'My log for a character with no settlement yet: the table keeps its shape, its head and one row saying what will be its first line and when.',
+  body: frame(1440, 1000, `
+  ${smoke(1440, 1000, [[40, 230, 1360, 520, .9]])}
+  ${menu(PAUSE, 'MY LOG')}
+  ${title('MY LOG')}
+  ${logTabs('MRS. HOOLIGAN')}
+  ${pageLead("Everything on this page is true. Each line names the Act that did it, what it changed and how much Aura moved. It never says who reacted, or any character's class but your own.")}
+  <section role="table" aria-label="Mrs. Hooligan's log" style="position: absolute; left: 64px; top: 360px; width: 1312px">
+    ${logHead}
+    <div role="row" style="display: grid; grid-template-columns: 170px 250px 1fr 240px; align-items: center; padding: 26px 0; border-bottom: 1px solid rgba(241,236,255,.22)">
+      <span style="font: 500 21px 'Barlow Condensed', sans-serif; color: #e4def7">Oct 30 &middot; 08:17</span>
+      <b style="font: 800 22px 'Barlow Condensed', sans-serif">Nothing yet</b>
+      <span style="font: 500 21px/1.5 'Barlow Condensed', sans-serif">Nothing has settled for Mrs. Hooligan yet. Its first settlement, in 7 h 42 min, is the first line here.</span>
+      <span style="text-align: right; font: 600 21px 'Barlow Condensed', sans-serif; color: #e4def7">&mdash;</span>
+    </div>
+    <p class="note" style="margin-top: 22px">If a line here looks wrong, that is a bug and not the game. <a href="#" class="lnk">Tell an admin</a>.</p>
+  </section>
+`),
+});
+
+const sub = (label, amt, neg) => `<div style="display: grid; grid-template-columns: 1fr 120px 120px; padding: 10px 0; border-bottom: 1px solid rgba(241,236,255,.14); font: 800 20px 'Barlow Condensed', sans-serif"><span>${label}</span><span style="text-align: right; color: ${neg ? '#ff8fb1' : '#19e3ff'}">${amt}</span><span></span></div>`;
+const subPost = (link, kind, amt, neg) => `<div style="display: grid; grid-template-columns: 1fr 140px 120px 120px; padding: 8px 0 8px 18px; border-bottom: 1px solid rgba(241,236,255,.1); font: 500 20px 'Barlow Condensed', sans-serif"><a href="#" class="lnk" style="font-weight: 600">${link}</a><span style="font-weight: 800; letter-spacing: 2px; color: #c9f8ff">${kind}</span><span style="text-align: right; color: ${neg ? '#ff8fb1' : '#19e3ff'}">${amt}</span><span></span></div>`;
+
+page({
+  file: '31-log-open.html', name: "My log, a settlement's posts open", w: 1440, h: 1000,
+  note: "My log for Pipewrench, its latest settlement's posts shown: every amount in the nested rows stands in the Aura column, as the settlement's own does, and the Wallet column is left empty there.",
+  body: frame(1440, 1000, `
+  ${smoke(1440, 1000, [[40, 230, 1360, 760, .92]])}
+  ${menu(PAUSE, 'MY LOG')}
+  ${title('MY LOG')}
+  ${logTabs('PIPEWRENCH')}
+  ${pageLead("Everything on this page is true. Each line names the Act that did it, what it changed and how much Aura moved. It never says who reacted, or any character's class but your own.")}
+  <section role="table" aria-label="Pipewrench's log" style="position: absolute; left: 64px; top: 360px; width: 1312px">
+    ${logHead}
+    <div role="row" style="display: grid; grid-template-columns: 170px 250px 1fr 120px 120px; padding: 22px 0 14px; font: 500 21px/1.5 'Barlow Condensed', sans-serif">
+      <span style="color: #e4def7">Oct 30 &middot; 08:17</span><b style="font-weight: 800">Settlement</b>
+      <span>Scored as a Heel for Oct 29: drew heat +0.20, stole the thunder +0.20, shrugged off &minus;0.05.<br><button class="btn" aria-expanded="true" style="margin-top: 10px; min-height: 44px; padding: 0 16px; font-size: 19px"><b>HIDE POSTS</b></button></span>
+      <span style="text-align: right; font-weight: 800; color: #19e3ff">+0.35</span><span style="text-align: right; font-weight: 800">4.72</span>
+    </div>
+    <div style="margin-left: 420px; padding: 4px 0 16px 0; border-bottom: 1px solid rgba(241,236,255,.22)">
+      ${sub('Drew heat: excited, negative reactions to its posts and cards', '+0.20')}
+      ${subPost('your post #43', 'HEAT', '+0.20')}
+      ${sub("Stole the thunder: its Salty card on another's post drew more votes than the post this window", '+0.20')}
+      ${subPost("your Whoops! on Gloomba's post #46", 'HEAT', '+0.20')}
+      ${sub('Shrugged off: calm, positive reactions to its posts and cards', '&minus;0.05', true)}
+      ${subPost('your post #43', 'CALM', '&minus;0.05', true)}
+      <p class="note" style="margin-top: 14px">Each reason's total is exact. It is split across your posts by how the live estimate valued their reactions.</p>
+    </div>
+  </section>
+`),
+});
+
+page({
+  file: '32-lens-log-phone.html', name: 'The Lens and My log on a phone', w: 1250, h: 884,
+  note: "Three phone screens at 390 by 844: the Lens as a sheet that ends above the HUD and scrolls inside, the character tabs as one scrolling row with the current one in view, and a settlement's posts open, each post's kind beside its link.",
+  body: `<div style="width: 1250px; height: 884px; display: flex; gap: 20px; padding: 20px; box-sizing: border-box; background: #2a2833; font-family: 'Barlow Condensed', sans-serif">
+  <figure aria-label="The Lens" style="margin: 0; width: 390px; height: 844px; position: relative; overflow: hidden; background: #ffffff; flex: none">
+    <div aria-hidden="true" style="height: 260px; margin: 60px 8px 0; border: 1px solid #000; background: linear-gradient(100deg, #e83fc8 0 18%, #d9b93a 18% 70%, #e8954a 70%)"></div>
+    <section class="piece" style="position: absolute; left: 0; right: 0; top: 300px; bottom: 124px; --cut: 18px; --edge: ${WHOOPS}; --ground: #0b0818; color: #f1ecff">
+      <div style="padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(241,236,255,.22)"><div style="display: flex; gap: 6px"><button class="tab" style="min-height: 42px; padding: 0 12px; font-size: 19px; background: ${WHOOPS}; color: #07050d"><b>WHOOPS!</b></button><button class="tab" style="min-height: 42px; padding: 0 12px; font-size: 19px; border: 1px solid rgba(241,236,255,.5)"><b>STICK AROUND</b></button></div><button class="btn" aria-label="Close" style="min-height: 42px; width: 42px; padding: 0; transform: none"><b style="transform: none; font: 400 26px/1 'Barlow Condensed', sans-serif">&times;</b></button></div>
+      <div style="padding: 12px 14px">
+        <h2 style="margin: 0 0 6px; font: 24px/1.15 Anton, Impact, sans-serif">3 layers &middot; top: Gloomba's yellow, 41% washed</h2>
+        <p style="margin: 0 0 12px; font: 500 19px/1.4 'Barlow Condensed', sans-serif; color: #e4def7">Ends on your screen when you scrub every layer off.</p>
+        <div class="btns">${lensBtn('HOLD TO SCRUB', 'ink')}</div>
+        <p style="margin: 14px 0 0; padding-top: 10px; border-top: 1px solid rgba(241,236,255,.22); font: 800 19px 'Barlow Condensed', sans-serif">&#x2304; 3 plays &middot; Gloomba, Pipewrench, Mrs. Hooligan</p>
+      </div>
+      <div aria-hidden="true" style="position: absolute; left: 1.5px; right: 1.5px; bottom: 1.5px; height: 40px; background: linear-gradient(transparent, #0b0818)"></div>
+    </section>
+    <div aria-hidden="true" style="position: absolute; left: 0; right: 0; bottom: 0; height: 124px; background: linear-gradient(#140c2c, #07050d); border-top: 1.5px solid rgba(201,248,255,.7)"></div>
+  </figure>
+  ${phone('My log, empty', `${phoneMenu}
+    <h1 style="position: absolute; left: 16px; top: 92px; margin: 0; font: 64px/1 Anton, Impact, sans-serif; text-shadow: 0 0 24px rgba(25,227,255,.35)">MY LOG</h1>
+    <div role="tablist" style="position: absolute; left: 16px; right: 0; top: 176px; display: flex; gap: 8px; overflow: hidden">${LOG_TABS.map((t) => `<button role="tab" class="btn${t === 'MRS. HOOLIGAN' ? ' primary' : ''}" style="flex: none; min-height: 46px; padding: 0 16px; font-size: 19px"><b>${t}</b></button>`).join('')}</div>
+    <section style="position: absolute; left: 16px; top: 250px; width: 358px">
+      <p class="lead" style="font-size: 19px; font-weight: 500">Everything on this page is true. Each line names the Act that did it, what it changed and how much Aura moved.</p>
+      <div style="margin-top: 18px; padding: 16px 0; border-top: 1px solid rgba(201,248,255,.5); border-bottom: 1px solid rgba(241,236,255,.22)"><p style="margin: 0; font: 500 19px 'Barlow Condensed', sans-serif; color: #e4def7">Oct 30 &middot; 08:17</p><b style="font: 800 21px 'Barlow Condensed', sans-serif">Nothing yet</b><p class="note" style="margin-top: 6px; font-size: 19px">Its first settlement, in 7 h 42 min, is the first line here.</p></div>
+    </section>`, [[0, 240, 390, 360, .9]], 's2')}
+  ${phone('My log, posts open', `${phoneMenu}
+    <section style="position: absolute; left: 16px; top: 90px; width: 358px; font-family: 'Barlow Condensed', sans-serif">
+      <p style="margin: 0; font: 500 19px 'Barlow Condensed', sans-serif; color: #e4def7">Oct 30 &middot; 08:17 &middot; <b style="color: #f1ecff">Settlement</b></p>
+      <div style="display: flex; justify-content: space-between; margin: 8px 0 12px; font: 800 20px 'Barlow Condensed', sans-serif"><span>AURA <span style="color: #19e3ff">+0.35</span></span><span>WALLET 4.72</span></div>
+      <div style="padding-left: 14px; border-left: 1px solid #19e3ff">
+        <div style="display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; font: 800 19px/1.3 'Barlow Condensed', sans-serif"><span>Drew heat: excited, negative reactions to its posts and cards</span><span style="color: #19e3ff">+0.20</span></div>
+        <div style="display: flex; justify-content: space-between; padding: 6px 0 12px; border-bottom: 1px solid rgba(241,236,255,.14); font: 500 19px 'Barlow Condensed', sans-serif"><span><a href="#" class="lnk" style="font-size: 19px">your post #43</a> <b style="margin-left: 8px; letter-spacing: 2px; color: #c9f8ff">HEAT</b></span><span style="color: #19e3ff">+0.20</span></div>
+        <div style="display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; font: 800 19px/1.3 'Barlow Condensed', sans-serif"><span>Shrugged off: calm, positive reactions to its posts and cards</span><span style="color: #ff8fb1">&minus;0.05</span></div>
+        <div style="display: flex; justify-content: space-between; padding: 6px 0 12px; font: 500 19px 'Barlow Condensed', sans-serif"><span><a href="#" class="lnk" style="font-size: 19px">your post #43</a> <b style="margin-left: 8px; letter-spacing: 2px; color: #c9f8ff">CALM</b></span><span style="color: #ff8fb1">&minus;0.05</span></div>
+      </div>
+    </section>`, [[0, 80, 390, 460, .9]], 's3')}
 </div>`,
 });
 

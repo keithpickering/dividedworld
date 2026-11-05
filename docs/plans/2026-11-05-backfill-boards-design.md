@@ -174,3 +174,29 @@ the two-worlds boards (06-turn above all, whose class carousel and How loud row 
 **Approved by the owner** ("Approved, very nice"), with one nit, now in the board: the carousel's Next arrow was cut on
 its right by the class row's clip, since a skewed control leans past its own box. The board pads the head by the lean.
 The build holds the same with the layout check's cut-control refusal, which the board match at 1440 will now also see.
+
+## 6. Batch 4: the Lens and My log's states
+
+Shot on c2553b3: the Lens's three stories (`boards-01-lens--lens-whoops-who`, `--lens-stick-around-who`,
+`--lens-author-whoops-who`), `/log` before anything has settled, and the Log board's story with a settlement's posts
+open. The critique:
+
+- **The Lens's content is cut off.** At 1440 by 1000 the panel is 340px wide, from 196px down to the HUD, and its last
+  play's buttons (As it landed, Go to post) run under the HUD; on the phone the sheet's play is cut by the HUD the same
+  way. Nothing says there is more. The board docks the Lens at the right from the page's top to just over the HUD, 460px
+  wide, its bar (the tabs and Close) fixed and its body scrolling, with a fade at its foot where more follows. On the
+  phone it is a sheet that ends above the HUD and scrolls inside.
+- **The Lens's current tab reads backward.** The current tab (WHOOPS!) is an outline and the other a filled dark block, the
+  reverse of every other glass tab strip. The board fills the current tab in its card's ink and outlines the other.
+- **The Lens's buttons fall in a ragged stack** of three styles: the play's four actions wrap as two, one, one, and the
+  author's tools stand as "Your tool WASH" over "WRITE IN INK". The board sets a play's actions as a two-by-two grid of
+  equal secondary buttons, and the author's tools as one row with Hold to scrub, under a label.
+- **My log before anything has settled is a paragraph on the smoke.** The board keeps the table's shape: its head, and
+  one row saying what its first line will be and when ("Its first settlement, in 7 h 42 min, is the first line here"),
+  so the page looks like the log it will become. On the phone that row is the first card.
+- **A settlement's open posts put their amounts in the Wallet column.** The nested rows' amounts stand under WALLET while
+  the settlement's own +0.35 stands under AURA. The board puts every nested amount in the Aura column and leaves the
+  Wallet column empty there. On the phone each post's kind sits beside its link, not on a line of its own.
+- **The phone's character tabs wrap raggedly** (Mrs. Hooligan alone on a second row). The board makes them one row that
+  scrolls, the current tab in view.
+- **The phone HUD cuts the mask's name again** ("STORY RE", "PIPEWREN"); see batch 2.

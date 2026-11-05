@@ -49,3 +49,14 @@ Amendments to `docs/research/2026-11-02-onboarding/`, which stays as the record.
 
 Copy new to these boards (the footers' summary lines, Edit profile's "Under the name on every post." and "The preview
 follows what you type.") is a draft for the owner's review.
+
+## Batch 4: the Lens and My log's states
+
+- `28-lens.html`: the Lens on Whoops!, its plays unfolded, over the Main board's thread, 1440 by 1000. The thread and
+  the HUD behind it are drawn for place only.
+- `29-lens-states.html`: the Lens on Stick Around and the author's Lens on Whoops!, the panels alone, 1000 by 800,
+  compared from each panel's own corner.
+- `30-log-empty.html`: My log before anything has settled, 1440 by 1000: the table's head and one row.
+- `31-log-open.html`: My log with a settlement's posts open, 1440 by 1000: every nested amount in the Aura column.
+- `32-lens-log-phone.html`: three phone screens at 390 by 844: the Lens as a sheet above the HUD, My log empty with its
+  tabs as one scrolling row, and a settlement's posts open.
