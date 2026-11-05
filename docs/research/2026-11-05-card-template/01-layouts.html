@@ -1,0 +1,443 @@
+<title>Postcard Template</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&display=swap">
+<style>
+/* Layout: a working board, top to bottom: anatomy with the template's guides, three layouts side by side, the size ladder of the chosen one, then the mark. One dark look, the glass's. */
+:root {
+  color-scheme: dark;
+  --ground: #000;
+  --smoke-1: #1a0b2e;
+  --smoke-2: #04202a;
+  --card: #050505;
+  --panel: rgb(0 0 0 / 0.72);
+  --text: #eee;
+  --text-2: #bbb;
+  --text-hi: #fff;
+  --gold: #ffd23f;
+  --gold-deep: #8a5a00;
+  --guide: #b6ff3b;
+  --board-bg: #fff;
+  --board-ink: #000;
+  --display: 'Anton', Impact, 'Arial Narrow', sans-serif;
+  --body: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  --mono: 'Courier New', Courier, monospace;
+  --skew: -12deg;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background:
+    radial-gradient(60vw 40vw at 15% 10%, var(--smoke-1), transparent 70%),
+    radial-gradient(50vw 40vw at 85% 60%, var(--smoke-2), transparent 70%),
+    var(--ground);
+  color: var(--text);
+  font-family: var(--body);
+  font-size: 17px;
+  line-height: 1.4;
+}
+.page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding-block: 32px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid;
+  gap: 56px;
+}
+.eyebrow { font-weight: 800; letter-spacing: 3px; text-transform: uppercase; font-size: 14px; color: var(--text-2); margin: 0 0 4px; }
+h1 { font-family: var(--display); font-weight: 400; font-size: clamp(44px, 8vw, 88px); line-height: 0.95; margin: 0; text-transform: uppercase; color: #ff8fb6; text-shadow: 0 0 24px rgb(255 61 127 / 0.5); }
+h2 { font-family: var(--display); font-weight: 400; font-size: clamp(26px, 4vw, 38px); margin: 0 0 6px; text-transform: uppercase; letter-spacing: 0.5px; text-wrap: balance; }
+p { margin: 0; max-width: 68ch; }
+.lede { color: var(--text-2); margin-top: 10px; font-size: 19px; }
+section { display: grid; gap: 20px; min-width: 0; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.chip {
+  font: 800 15px var(--body); letter-spacing: 1.5px; text-transform: uppercase; font-style: italic;
+  color: var(--text-hi); background: transparent; border: 2px solid #555; padding: 5px 16px;
+  transform: skewX(var(--skew)); cursor: pointer;
+}
+.chip[aria-pressed='true'] { background: var(--text-hi); color: var(--ground); border-color: var(--text-hi); }
+.chip:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
+label.toggle { display: inline-flex; gap: 8px; align-items: center; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; font-size: 14px; cursor: pointer; }
+label.toggle input { width: 18px; height: 18px; accent-color: var(--guide); }
+
+/* ================= THE CARD ================= */
+.pc {
+  --c: #2ee6ff; --ink: #03141a;
+  position: relative;
+  flex: none;
+  width: var(--w);
+  aspect-ratio: 2 / 3;
+  /* 45 units: the border's 30 plus the canvas's 15, so the border is 30 all the way round. From --w, since cqw on the card itself measures the page. */
+  border-radius: calc(var(--w) * 0.075);
+  container-type: inline-size;
+  background: var(--card);
+  box-shadow: 0 0 0 1.5px var(--c), 0 0 16px color-mix(in srgb, var(--c) 50%, transparent);
+  overflow: visible;
+}
+.pc[data-size='slot'] { --w: 86px; }
+.pc[data-size='phone'] { --w: 104px; }
+.pc[data-size='fan'] { --w: 150px; }
+.pc[data-size='sheet'] { --w: 276px; box-shadow: 0 0 0 2px var(--c), 0 0 30px color-mix(in srgb, var(--c) 60%, transparent); }
+.pc[data-size='big'] { --w: 360px; max-width: 100%; box-shadow: 0 0 0 2px var(--c), 0 0 34px color-mix(in srgb, var(--c) 60%, transparent); }
+
+/* A full-art variant's ring has a foil sheen (an idea, for the question list). */
+.pc[data-variant='foil'] { box-shadow: 0 0 0 1.5px var(--c), 0 0 18px color-mix(in srgb, var(--c) 55%, transparent); }
+.pc[data-variant='foil']::after {
+  content: ''; position: absolute; inset: -1.5px; border-radius: inherit; pointer-events: none;
+  padding: 1.5px;
+  background: conic-gradient(from 210deg, #fff0, #fff9, #ff8fd8aa, #8ff6ffaa, #fff9, #fff0 60%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+}
+
+/* The inner area: the only clip. Everything the art draws stays inside the black border. */
+.pc-inner {
+  position: absolute; inset: 5cqw;
+  border-radius: 2.5cqw;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 36%, color-mix(in srgb, var(--c) 32%, transparent), transparent 62%), var(--card);
+}
+.pc-inner::after { /* the inner hairline, over the art */
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 50%, transparent);
+}
+/* Default art sits in the focus zone, and may glow past it. */
+.pc-art-default { position: absolute; left: 7.4%; top: 8.33%; width: 85.2%; height: 47.6%; overflow: visible; }
+.pc-art-default svg { width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 0 4cqw color-mix(in srgb, var(--c) 70%, transparent)); }
+.pc-art-full { position: absolute; inset: 0; }
+.pc-art-full svg { width: 100%; height: 100%; display: block; }
+
+/* Guides: the template an artist works to. */
+.pc-guides { display: none; position: absolute; inset: 0; pointer-events: none; }
+.show-guides .pc-guides { display: block; }
+.g-focus { position: absolute; left: 7.4%; top: 8.33%; width: 85.2%; height: 47.6%; outline: 1.5px dashed var(--guide); }
+.g-plates { position: absolute; left: 0; right: 0; bottom: 0; height: 33.3%; background: repeating-linear-gradient(-45deg, rgb(182 255 59 / 0.18) 0 4px, transparent 4px 10px); border-top: 1.5px dashed var(--guide); }
+.g-label { position: absolute; font: 700 10px/1 var(--mono); color: var(--guide); background: rgb(0 0 0 / 0.75); padding: 2px 4px; white-space: nowrap; }
+.pc-guides-outer { display: none; position: absolute; inset: 0; pointer-events: none; border-radius: inherit; }
+.show-guides .pc-guides-outer { display: block; }
+.pc-guides-outer::after { /* the keep-clear line: no piece crosses it outward */
+  content: ''; position: absolute; inset: 2cqw; border-radius: 5.5cqw;
+  outline: 1.5px dotted var(--guide);
+}
+.pc-guides-outer::before { /* the border band */
+  content: ''; position: absolute; inset: 0; border-radius: inherit;
+  border: 5cqw solid rgb(182 255 59 / 0.12);
+}
+
+/* ---- the pieces drawn over the frame ---- */
+.pc-badges { position: absolute; z-index: 3; display: flex; gap: 1.6cqw; }
+.badge {
+  display: inline-block; transform: skewX(var(--skew));
+  background: var(--c); color: var(--ink);
+  font: italic 800 clamp(8px, 7.2cqw, 18px)/1.15 var(--body);
+  letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 0.12em 0.6em;
+  box-shadow: 0 0 0 1.5px var(--card), 0 0 10px color-mix(in srgb, var(--c) 60%, transparent);
+}
+.badge.ghost { background: var(--card); color: var(--c); box-shadow: inset 0 0 0 1.5px var(--c), 0 0 0 1.5px var(--card); }
+
+.pc-gem {
+  position: absolute; z-index: 3;
+  width: 12cqw; height: 12cqw; min-width: 13px; min-height: 13px;
+  display: grid; place-items: center;
+  background: var(--card);
+  transform: rotate(45deg);
+  box-shadow: inset 0 0 0 max(1.5px, 0.8cqw) var(--c), 0 0 10px color-mix(in srgb, var(--c) 60%, transparent);
+}
+.pc-gem span { transform: rotate(-45deg); color: var(--c); font-size: clamp(7px, 6.5cqw, 16px); line-height: 1; }
+
+.pc-name {
+  display: block; transform: skewX(calc(-1 * var(--skew)));
+  font-family: var(--display); font-weight: 400; text-transform: uppercase; letter-spacing: 0.02em; line-height: 0.95;
+  color: var(--text-hi);
+  text-shadow: 0 0 3cqw color-mix(in srgb, var(--c) 80%, transparent), 0 1px 0 #000;
+}
+.pc-name-plate {
+  position: absolute; z-index: 2;
+  transform: skewX(var(--skew));
+  background: linear-gradient(90deg, rgb(0 0 0 / 0.86), rgb(0 0 0 / 0.6));
+  box-shadow: inset 1.2cqw 0 0 var(--c);
+  backdrop-filter: blur(3px);
+  display: flex; align-items: center;
+  /* Anton sits high in its box: a touch more at the top centers its capitals. */
+  padding: 0.8cqw 4cqw 0 6.5cqw;
+}
+.pc-line {
+  position: absolute; z-index: 2;
+  background: var(--panel); backdrop-filter: blur(4px);
+  clip-path: polygon(0 0, calc(100% - 4cqw) 0, 100% 4cqw, 100% 100%, 4cqw 100%, 0 calc(100% - 4cqw));
+  color: var(--text-2);
+  font: 600 clamp(9px, 7.4cqw, 17px)/1.25 var(--body);
+  padding: 3cqw 4cqw;
+}
+/* The plate's 1px edge, all the way round, the chamfers included: a ring cut from the plate's own outline (even-odd), its inner line 1px in from every edge (on a 45° cut that is 0.414px further along each side). */
+.pc-line::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: color-mix(in srgb, var(--c) 55%, transparent);
+  clip-path: polygon(evenodd,
+    0 0, calc(100% - 4cqw) 0, 100% 4cqw, 100% 100%, 4cqw 100%, 0 calc(100% - 4cqw), 0 0,
+    1px 1px, 1px calc(100% - 4cqw - 0.414px), calc(4cqw + 0.414px) calc(100% - 1px), calc(100% - 1px) calc(100% - 1px), calc(100% - 1px) calc(4cqw + 0.414px), calc(100% - 4cqw - 0.414px) 1px, 1px 1px);
+}
+.pc-price {
+  position: absolute; z-index: 3;
+  display: inline-flex; align-items: center; gap: 0.35em;
+  transform: skewX(var(--skew));
+  background: var(--card); color: var(--text-hi);
+  box-shadow: inset 0 0 0 1.5px var(--gold), 0 0 10px rgb(255 210 63 / 0.45);
+  font: 800 clamp(9px, 7cqw, 18px)/1.2 var(--body);
+  padding: 0.12em 0.6em;
+}
+.orb { width: 0.95em; height: 0.95em; border-radius: 50%; background: radial-gradient(circle at 38% 30%, #fff6c8, var(--gold) 52%, var(--gold-deep)); flex: none; }
+.pc-foot {
+  position: absolute; z-index: 3; left: 7cqw; right: 31cqw; bottom: 0; height: 5cqw;
+  display: flex; align-items: center; justify-content: space-between; gap: 2cqw;
+  font: 700 clamp(6px, 3.3cqw, 10px)/1 var(--body); letter-spacing: 0.12em; text-transform: uppercase;
+  color: color-mix(in srgb, var(--c) 75%, #fff);
+}
+.pc-foot .credit { color: var(--text-2); font-style: italic; letter-spacing: 0.06em; }
+
+/* ---- Layout A · Low name: today's card, grown up ---- */
+[data-layout='low'] .pc-badges { left: 6cqw; top: 2.2cqw; }
+[data-layout='low'] .pc-gem { right: 4cqw; top: 4cqw; }
+[data-layout='low'] .pc-name-plate { left: 4.5cqw; width: 80%; top: 89cqw; height: 15cqw; }
+[data-layout='low'] .pc-name { font-size: 11.5cqw; }
+[data-layout='low'] .pc-line { left: 9cqw; right: 9cqw; top: 108cqw; bottom: 9cqw; }
+[data-layout='low'] .pc-price { right: 6cqw; bottom: 2.2cqw; }
+
+
+/* ---- what each size holds ---- */
+.pc[data-size='slot'] .pc-badges, .pc[data-size='slot'] .pc-line, .pc[data-size='slot'] .pc-price, .pc[data-size='slot'] .pc-foot { display: none; }
+.pc[data-size='phone'] .pc-line, .pc[data-size='phone'] .pc-price, .pc[data-size='phone'] .pc-foot { display: none; }
+.pc[data-size='fan'] .pc-price, .pc[data-size='fan'] .pc-foot { display: none; }
+.pc[data-size='slot'] .pc-name { font-size: 15cqw; }
+.pc[data-size='phone'] .pc-name { font-size: 13.5cqw; }
+[data-layout='low'] .pc[data-size='slot'] .pc-name-plate { top: auto; bottom: 7cqw; height: 20cqw; width: calc(100% - 5cqw); }
+[data-layout='low'] .pc[data-size='phone'] .pc-name-plate { top: auto; bottom: 8cqw; height: 18cqw; width: calc(100% - 5cqw); }
+.pc[data-size='sheet'] .pc-line, .pc[data-size='big'] .pc-line { font-size: 6.6cqw; line-height: 1.35; }
+
+/* ================= LAYOUT BOARDS ================= */
+.trio { display: grid; grid-template-columns: minmax(0, 520px); gap: 24px; }
+.cand { background: var(--panel); border: 1px solid #222; padding: 18px; display: grid; gap: 14px; align-content: start; min-width: 0; }
+.cand h3 { margin: 0; font: italic 800 20px var(--body); letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-hi); }
+.cand h3 b { color: var(--gold); margin-right: 6px; }
+.cand p { color: var(--text-2); font-size: 16px; }
+.pair { display: flex; gap: 22px; justify-content: center; padding: 12px 0; flex-wrap: wrap; }
+.ladder { display: flex; gap: 28px; align-items: flex-end; flex-wrap: wrap; padding: 16px 4px; }
+.ladder figure { margin: 0; display: grid; gap: 10px; justify-items: center; }
+figcaption { font: 700 13px var(--mono); color: var(--text-2); }
+.row-label { font: 800 14px var(--body); letter-spacing: 2px; text-transform: uppercase; color: var(--text-2); margin: 8px 0 -6px; }
+
+.anatomy { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 36px; align-items: start; }
+@media (max-width: 760px) { .anatomy { grid-template-columns: 1fr; justify-items: center; } }
+.spec { display: grid; gap: 14px; min-width: 0; }
+.spec table { border-collapse: collapse; width: 100%; font-size: 16px; }
+.spec td { padding: 6px 8px; border-bottom: 1px solid #222; vertical-align: top; }
+.spec td:first-child { font-weight: 800; color: var(--text-hi); white-space: nowrap; width: 1%; }
+.spec td.num { font-family: var(--mono); font-size: 14px; color: var(--guide); white-space: nowrap; }
+.spec .wrap { overflow-x: auto; }
+.note { border-left: 3px solid var(--gold); padding: 4px 0 4px 14px; color: var(--text-2); }
+
+/* ================= THE MARK, on the board ================= */
+.boardpost { background: var(--board-bg); color: var(--board-ink); font: 11px Verdana, Geneva, sans-serif; border: 1px solid #000; max-width: 720px; }
+.boardpost .meta { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid #000; }
+.boardpost .meta time { flex: 1 1 auto; }
+.boardpost .body { padding: 10px 8px 14px; font-size: 12px; }
+.marks { display: flex; gap: 6px; }
+.mark { --c: #2ee6ff; width: 27px; height: 27px; display: grid; place-items: center; transform: skewX(-10deg); border: 2px solid var(--c); background: #111; box-shadow: 0 0 8px color-mix(in srgb, var(--c) 55%, transparent); position: relative; }
+.mark svg { width: 18px; height: 18px; transform: skewX(10deg); }
+.mark.foil { border-color: transparent; background: linear-gradient(#111, #111) padding-box, conic-gradient(from 200deg, var(--c), #fff, #ff8fd8, #8ff6ff, var(--c)) border-box; }
+.markgrid { display: flex; gap: 28px; flex-wrap: wrap; align-items: end; }
+.markspec { display: grid; gap: 8px; justify-items: center; }
+.markbox { width: 96px; height: 96px; background: #111 repeating-linear-gradient(0deg, transparent 0 11px, #222 11px 12px), #111; background-size: 12px 12px; display: grid; place-items: center; border: 1px solid #333; position: relative; }
+.markbox::after { content: ''; position: absolute; inset: 12px; outline: 1px dashed var(--guide); }
+.markbox svg { width: 72px; height: 72px; }
+</style>
+
+<div class="page" id="page">
+  <header>
+    <p class="eyebrow">Divided World · design session board · 2026-11-05</p>
+    <h1>Postcard template</h1>
+    <p class="lede">One 2:3 card at every size. A black border the engine draws in the card's color, badges that sit on its inner edge, and an inner canvas the art owns. Every card's art is full art, filling the whole canvas. A design may still keep to one area of it, on the card's dark ground.</p>
+  </header>
+
+  <section aria-labelledby="h-anatomy">
+    <div>
+      <h2 id="h-anatomy">Anatomy</h2>
+      <p class="lede">The guides show what an artist works to. The engine clips at the border and nowhere else.</p>
+    </div>
+    <div class="controls" role="group" aria-label="Anatomy card">
+      <button class="chip" type="button" data-anat="stick-full" aria-pressed="true">Full art</button>
+      <button class="chip" type="button" data-anat="stick-default" aria-pressed="false">A focused design</button>
+      <label class="toggle"><input type="checkbox" id="guides" checked> Show template guides</label>
+    </div>
+    <div class="anatomy">
+      <div id="anat" class="show-guides"></div>
+      <div class="spec">
+        <div class="wrap">
+          <table>
+            <tbody>
+              <tr><td>Card</td><td class="num">600 × 900</td><td>The template's units. 2:3 at every size: slot 86, phone 104, fan 150 and sheet 276 wide.</td></tr>
+              <tr><td>Border</td><td class="num">30 · outer r 45</td><td>Black, ringed and glowing in the card's color. The engine draws it, so no art file contains it. Its outer corner is concentric with the canvas's (30 + 15), so it is 30 thick all the way round, at every size.</td></tr>
+              <tr><td>Canvas</td><td class="num">540 × 840 @ 30,30 · r 15</td><td>The inner area, and the art file's whole canvas. The only clip.</td></tr>
+              <tr><td>Focus zone</td><td class="num">460 × 400 @ 70,100</td><td>Optional. A guide for a design that keeps to one area: its subject sits here on a transparent ground, the engine draws the card's dark ground and glow behind it, and glow, rings and splashes may run past it. Never a mask.</td></tr>
+              <tr><td>Plate zone</td><td class="num">lower third</td><td>Always covered by the name plate and the text plate, which are translucent glass. Art there reads as texture behind words.</td></tr>
+              <tr><td>Border pieces</td><td class="num">keep clear 12</td><td>Alignment and play (parallelograms), rarity (a gem on its point), price, and the foot line with the artist's credit, all from the card's data. They may cover the border's inner part, never its outer edge: every piece stays 12 units inside the silhouette (the dotted line).</td></tr>
+              <tr><td>Mark</td><td class="num">96 × 96 · live 72</td><td>A separate square silhouette, drawn to read at 18px inside the post's mark tile.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">The art set for a new card: color and ink, its art (the 540×840 canvas, SVG), and a mark (square, SVG). A variant is another canvas of the same size, SVG or a 1080×1680 image.</p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-layouts">
+    <div>
+      <h2 id="h-layouts">The layout</h2>
+      <p class="lede">A, Low name, chosen over a Banner (from Magic and Yu-Gi-Oh!) and a Cost corner (from Hearthstone and Lorcana), which are in this board's history. Shown at the fan's size.</p>
+    </div>
+    <div class="trio" id="trio"></div>
+  </section>
+
+  <section aria-labelledby="h-ladder">
+    <div>
+      <h2 id="h-ladder">Every size</h2>
+      <p class="lede">The same card, scaled. A smaller size drops pieces. It never reshapes the art.</p>
+    </div>
+    <div id="ladders"></div>
+  </section>
+
+  <section aria-labelledby="h-mark">
+    <div>
+      <h2 id="h-mark">The mark</h2>
+      <p class="lede">On the board, a played card is its mark on the post's date row. The mark is its own drawing, a silhouette that holds up at 18px.</p>
+    </div>
+    <div class="markgrid">
+      <div class="markspec"><div class="markbox" id="mb1"></div><figcaption>stick-around-mark.svg</figcaption></div>
+      <div class="markspec"><div class="markbox" id="mb2"></div><figcaption>whoops-mark.svg</figcaption></div>
+    </div>
+    <div class="boardpost" role="img" aria-label="A board post with three marks: Stick Around, Whoops!, and a full-art Whoops! with a foil edge">
+      <div class="meta"><b>Spritey</b><time>Nov 5 2026, 9:14 pm</time><span class="marks" id="marks"></span><span>#41</span></div>
+      <div class="body">who keeps splatting my posts</div>
+    </div>
+    <p class="note">The third mark is a full-art Whoops!, given a foil edge here as an idea only. Whether a variant shows on its mark, and on the played card in the Lens, belongs to the variant design. This board only leaves room for it.</p>
+  </section>
+</div>
+
+<script>
+const SVG = {
+  stickDefault: `<svg viewBox="0 0 120 110" aria-hidden="true"><circle cx="60" cy="58" r="46" fill="none" stroke="#2ee6ff" stroke-width="1.5" opacity=".35"/><circle cx="60" cy="58" r="32" fill="none" stroke="#2ee6ff" stroke-width="2" opacity=".6"/><circle cx="60" cy="58" r="18" fill="none" stroke="#9ef4ff" stroke-width="2.5"/><circle cx="60" cy="40" r="11" fill="#2ee6ff"/><rect x="57" y="48" width="6" height="12" fill="#2ee6ff"/><path d="M60 60 L60 82" stroke="#e6fdff" stroke-width="2.5" stroke-linecap="round"/></svg>`,
+  whoopsDefault: `<svg viewBox="0 0 108 104" aria-hidden="true"><path fill="#ff3d7f" d="M50 8 C58 8 60 22 68 20 C78 17 80 6 88 12 C95 18 84 28 88 36 C92 44 104 44 100 54 C96 63 84 58 80 66 C76 75 88 86 78 92 C68 98 64 84 56 86 C48 88 46 100 36 96 C26 92 34 80 26 74 C18 68 4 74 4 62 C4 52 18 54 20 46 C22 38 10 30 18 22 C26 14 34 26 40 20 C46 14 42 8 50 8 Z"/><ellipse cx="42" cy="34" rx="14" ry="5" fill="#fff" opacity=".45"/></svg>`,
+};
+const SPLAT = 'M50 8 C58 8 60 22 68 20 C78 17 80 6 88 12 C95 18 84 28 88 36 C92 44 104 44 100 54 C96 63 84 58 80 66 C76 75 88 86 78 92 C68 98 64 84 56 86 C48 88 46 100 36 96 C26 92 34 80 26 74 C18 68 4 74 4 62 C4 52 18 54 20 46 C22 38 10 30 18 22 C26 14 34 26 40 20 C46 14 42 8 50 8 Z';
+
+let uid = 0;
+function stickFull() {
+  const id = 'sf' + (uid++);
+  const stars = [[40,60],[120,30],[480,90],[500,210],[30,300],[90,520],[460,560],[510,700],[60,760],[300,40],[220,120],[420,40],[160,700],[380,780]]
+    .map(([x, y], i) => `<circle cx="${x}" cy="${y}" r="${1.5 + (i % 3)}" fill="#e6fdff" opacity="${0.4 + (i % 4) * 0.15}"/>`).join('');
+  const rings = [60, 110, 170, 240, 320, 410, 510].map((r, i) => `<circle cx="270" cy="300" r="${r}" fill="none" stroke="#2ee6ff" stroke-width="${6 - i * 0.6}" opacity="${0.75 - i * 0.09}"/>`).join('');
+  return `<svg viewBox="0 0 540 840" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <defs><radialGradient id="${id}" cx="50%" cy="36%" r="75%"><stop offset="0" stop-color="#0f6f86"/><stop offset=".45" stop-color="#06303c"/><stop offset="1" stop-color="#010608"/></radialGradient></defs>
+    <rect width="540" height="840" fill="url(#${id})"/>
+    <polygon points="330,0 540,0 540,260 160,840 20,840" fill="#fff" opacity=".05"/>
+    ${stars}${rings}
+    <circle cx="270" cy="220" r="74" fill="#2ee6ff"/><circle cx="246" cy="194" r="22" fill="#fff" opacity=".5"/>
+    <rect x="254" y="286" width="32" height="70" fill="#2ee6ff"/>
+    <path d="M270 356 L270 560" stroke="#e6fdff" stroke-width="12" stroke-linecap="round"/>
+    <ellipse cx="270" cy="570" rx="60" ry="10" fill="#2ee6ff" opacity=".35"/>
+  </svg>`;
+}
+function whoopsFull() {
+  return `<svg viewBox="0 0 540 840" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <rect width="540" height="840" fill="#22030f"/>
+    <g opacity=".55"><path fill="#c71f5c" d="${SPLAT}" transform="translate(300 520) scale(3.4) rotate(20)"/></g>
+    <path fill="#ff3d7f" d="${SPLAT}" transform="translate(-140 -40) scale(7)"/>
+    <rect x="96" y="560" width="22" height="160" rx="11" fill="#ff3d7f"/><circle cx="107" cy="728" r="17" fill="#ff3d7f"/>
+    <rect x="300" y="600" width="16" height="110" rx="8" fill="#ff3d7f"/><circle cx="308" cy="716" r="13" fill="#ff3d7f"/>
+    <rect x="410" y="560" width="12" height="70" rx="6" fill="#ff3d7f"/>
+    <path fill="#ff7aa8" d="${SPLAT}" transform="translate(400 120) scale(1.3)"/>
+    <path fill="#ff7aa8" d="${SPLAT}" transform="translate(30 640) scale(.8)"/>
+    <circle cx="470" cy="420" r="14" fill="#ff3d7f"/><circle cx="60" cy="90" r="9" fill="#ff7aa8"/><circle cx="500" cy="760" r="20" fill="#c71f5c"/>
+    <ellipse cx="190" cy="200" rx="100" ry="32" fill="#fff" opacity=".4" transform="rotate(-8 190 200)"/>
+  </svg>`;
+}
+
+const CARDS = {
+  stick: { c: '#2ee6ff', ink: '#03141a', name: 'Stick Around', align: 'Sweet', play: 'Cast', gem: '●', rarity: 'Common', price: '1.00', tagline: 'Hold a reader on a post.', summary: 'Holds a reader on the post until they check your sentence, or break free.', foot: 'One per post', def: () => SVG.stickDefault, full: stickFull, credit: 'Art · Divided World' , fullCredit: 'Art · a community artist' },
+  whoops: { c: '#ff3d7f', ink: '#14030a', name: 'Whoops!', align: 'Salty', play: 'Cast', gem: '●', rarity: 'Common', price: '1.00+', tagline: 'Splat a post in ink.', summary: 'Splats a post in your ink. Readers scrub it; only the author can wash it.', foot: 'Stacks 3 deep', def: () => SVG.whoopsDefault, full: whoopsFull, credit: 'Art · Divided World', fullCredit: 'Art · a community artist' },
+};
+
+function card(key, variant, size) {
+  const k = CARDS[key];
+  const art = variant === 'full'
+    ? `<div class="pc-art-full">${k.full()}</div>`
+    : `<div class="pc-art-default">${k.def()}</div>`;
+  const line = size === 'fan' ? k.tagline : k.summary;
+  return `<div class="pc" data-size="${size}" data-variant="${variant}" style="--c:${k.c};--ink:${k.ink}" role="img" aria-label="${k.name}, ${k.align}, ${k.play}, ${k.rarity}${variant === 'full' ? '' : ', a focused design'}, ${size} size">
+    <div class="pc-inner">${art}
+      <div class="pc-guides"><div class="g-focus"><span class="g-label" style="left:2px;top:2px">focus zone</span></div><div class="g-plates"><span class="g-label" style="right:2px;top:2px">plates</span></div><span class="g-label" style="left:2px;bottom:2px">canvas 540×840</span></div>
+    </div>
+    <div class="pc-guides-outer"></div>
+    <span class="pc-badges"><span class="badge">${k.align}</span><span class="badge ghost">${k.play}</span></span>
+    <span class="pc-gem" title="${k.rarity}"><span>${k.gem}</span></span>
+    <span class="pc-name-plate"><span class="pc-name">${k.name}</span></span>
+    <span class="pc-line">${line}</span>
+    <span class="pc-price"><span class="orb"></span>${k.price}</span>
+    <span class="pc-foot"><span>Postcard · ${k.foot}</span><span class="credit">${variant === 'full' ? k.fullCredit : k.credit}</span></span>
+  </div>`;
+}
+
+const LAYOUTS = [
+  { id: 'low', title: 'Low name', from: 'From today\'s card and Pokémon\'s full arts', text: 'Badges sit on the top border, the gem sits in the corner, and the name plate cuts across the art\'s lower third. The art gets the most uninterrupted height.' },
+];
+
+document.getElementById('trio').innerHTML = LAYOUTS.map((l, i) => `
+  <div class="cand" data-layout="${l.id}">
+    <h3><b>A</b>${l.title}</h3>
+    <div class="pair">${card('stick', 'full', 'fan')}${card('whoops', 'full', 'fan')}</div>
+    <p><i>${l.from}.</i> ${l.text}</p>
+  </div>`).join('');
+
+function ladder(layout) {
+  const sizes = ['slot', 'phone', 'fan', 'sheet'];
+  const row = (key, variant) => `<p class="row-label">${CARDS[key].name} · ${variant === 'full' ? 'full art' : 'a focused design'}</p>
+    <div class="ladder">${sizes.map((s) => `<figure>${card(key, variant, s)}<figcaption>${s}</figcaption></figure>`).join('')}</div>`;
+  document.getElementById('ladders').innerHTML = `<div data-layout="${layout}">${row('stick', 'full')}${row('whoops', 'full')}${row('stick', 'default')}${row('whoops', 'default')}</div>`;
+}
+ladder('low');
+
+let anatVariant = 'full';
+let anatLayout = 'low';
+function anatomy() {
+  const host = document.getElementById('anat');
+  host.setAttribute('data-layout', anatLayout);
+  host.innerHTML = card('stick', anatVariant, 'big');
+}
+anatomy();
+
+document.querySelectorAll('[data-pick]').forEach((b) => b.addEventListener('click', () => {
+  document.querySelectorAll('[data-pick]').forEach((o) => o.setAttribute('aria-pressed', String(o === b)));
+  ladder(b.dataset.pick);
+  anatLayout = b.dataset.pick;
+  anatomy();
+}));
+document.querySelectorAll('[data-anat]').forEach((b) => b.addEventListener('click', () => {
+  document.querySelectorAll('[data-anat]').forEach((o) => o.setAttribute('aria-pressed', String(o === b)));
+  anatVariant = b.dataset.anat.endsWith('full') ? 'full' : 'default';
+  anatomy();
+}));
+document.getElementById('guides').addEventListener('change', (e) => {
+  document.getElementById('anat').classList.toggle('show-guides', e.target.checked);
+});
+
+document.getElementById('mb1').innerHTML = SVG.stickDefault;
+document.getElementById('mb2').innerHTML = SVG.whoopsDefault;
+document.getElementById('marks').innerHTML =
+  `<span class="mark" style="--c:#2ee6ff">${SVG.stickDefault}</span>` +
+  `<span class="mark" style="--c:#ff3d7f">${SVG.whoopsDefault}</span>` +
+  `<span class="mark foil" style="--c:#ff3d7f">${SVG.whoopsDefault}</span>`;
+</script>

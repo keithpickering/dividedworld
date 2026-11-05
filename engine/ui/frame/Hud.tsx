@@ -308,7 +308,7 @@ export function Hud() {
             <div ref={plate} className={`kb-hud-plate${!signedIn ? ' kb-hud-plate--door' : signedIn && player.loaded && hud ? ' kb-hud-plate--cast kb-calm' : ''}`}>
               <div className="kb-hud-plate-in">
                 {!signedIn ? (
-                  <div className="kb-hud-door">
+                  <div className="kb-hud-door kb-calm">
                     <span className="kb-hud-door-mark" aria-hidden="true">?</span>
                     <div className="kb-hud-door-words">
                       {/* A heading, not a bare element: the HUD is a labeled region, and its prompt is what a screen reader should find in it; it sits under the page's h1 in rank, though the HUD comes first in the document. */}
@@ -368,7 +368,7 @@ export function Hud() {
               </div>
             )}
             {!signedIn && (
-              <div className="kb-hud-door-actions">
+              <div className="kb-hud-door-actions kb-calm">
                 {settings.registrationMode !== 'closed' && (
                   <Link to={registerHref(location.path, searchOf(location.query))} className="kb-hud-sign-in kb-hud-door-register kb-glass-cut-button">
                     {settings.registrationMode === 'invite' ? 'Register with an invite' : 'Register'}
