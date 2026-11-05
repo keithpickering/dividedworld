@@ -182,6 +182,9 @@ for (const [label, viewport] of VIEWPORTS) {
           await page.goto(path);
           const menu = page.getByRole('navigation', { name: 'Menu' });
           await expect(menu).toBeVisible();
+          /* The menu shows before the page's own content has come (My characters' roster is the backend's answer), and a page no
+             taller than the window has nothing to scroll: so the scroll waits until there is something under the window to scroll to. */
+          await expect.poll(() => page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight), { message: 'the page is taller than the window' }).toBeGreaterThan(50);
           const out = await page.evaluate(async () => {
             window.scrollTo(0, document.documentElement.scrollHeight);
             await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
