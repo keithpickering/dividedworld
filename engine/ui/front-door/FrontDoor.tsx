@@ -15,6 +15,7 @@
  */
 import { useCallback, useId, useMemo, useState, type ReactNode } from 'react';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
+import { rankFloor } from '../../rules/ranks.ts';
 import { BbCode } from '../bbcode/render.tsx';
 import { Kit } from '../cards/Kit.tsx';
 import { sameView } from '../cards/plays.ts';
@@ -126,7 +127,9 @@ export function FrontDoor() {
 
   const cast = useMemo(() => new Map(door.cast.map((c) => {
     const rank = Math.min(Math.max(c.rank, 0), Math.max(instance.ranks.length - 1, 0));
-    const person: PostbitPerson = { character: stage(c), posts: c.posts, standing: instance.ranks[rank]?.from ?? null, revealed: null, turnedAt: null };
+    /* The rank's floor is a standing the postbit's rankIndex lands on that rank. */
+    const standing = rankFloor(instance.ranks, rank);
+    const person: PostbitPerson = { character: stage(c), posts: c.posts, standing, revealed: null, turnedAt: null };
     return [c.key, person] as const;
   })), [door.cast, instance.ranks]);
   const nameOf = useCallback((id: Id | null) => door.cast.find((c) => idOf(c.key) === id)?.name ?? 'A character', [door.cast]);
