@@ -359,9 +359,13 @@
 
 :where(:root[data-kb-layout='phone']) .kb-log-table thead th {
   display: block;
-  width: 100%;
+  position: absolute;
+  width: 1px;
+  height: 1px;
   padding: 0;
   overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-log-table tbody > tr:not(.kb-log-breakdown) {
@@ -387,6 +391,15 @@
 :where(:root[data-kb-layout='phone']) .kb-log-table tbody > tr > td.kb-log-what,
 :where(:root[data-kb-layout='phone']) .kb-log-table tbody > tr > td.kb-log-num {
   font-size: var(--kb-glass-size-phone-display);
+}
+
+/* The desk layout's column widths (170, 250, 110, 120px) are the table's; a grid cell fills its track, and never lays the row wider than the column. */
+:where(:root[data-kb-layout='phone']) .kb-log-table tbody > tr > td.kb-log-when,
+:where(:root[data-kb-layout='phone']) .kb-log-table tbody > tr > td.kb-log-what,
+:where(:root[data-kb-layout='phone']) .kb-log-table tbody > tr > td.kb-log-num,
+:where(:root[data-kb-layout='phone']) .kb-log-table tbody > tr > td:last-child {
+  width: auto;
+  min-width: 0;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-log-table tbody > tr > td:nth-child(1) { grid-area: when; }

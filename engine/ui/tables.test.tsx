@@ -21,7 +21,7 @@ describe('the rankings table', () => {
   });
   test('the phone\'s hidden head row is no table row', () => {
     expect(rules(text, `${PHONE} .kb-rankings-table thead tr`).join(';')).toMatch(/display:\s*block/);
-    expect(rules(text, `${PHONE} .kb-rankings-table thead th`).join(';')).toMatch(/display:\s*block/);
+    expect(rules(text, `${PHONE} .kb-rankings-table thead th`).join(';')).toMatch(/display:\s*block[^]*position:\s*absolute[^]*width:\s*1px[^]*clip-path:\s*inset\(50%\)/);
   });
 });
 
@@ -29,6 +29,11 @@ describe('the log table', () => {
   const text = css('engine/ui/log/log.css');
   test('the phone\'s hidden head row is no table row', () => {
     expect(rules(text, `${PHONE} .kb-log-table thead tr`).join(';')).toMatch(/display:\s*block/);
-    expect(rules(text, `${PHONE} .kb-log-table thead th`).join(';')).toMatch(/display:\s*block/);
+    expect(rules(text, `${PHONE} .kb-log-table thead th`).join(';')).toMatch(/display:\s*block[^]*position:\s*absolute[^]*width:\s*1px[^]*clip-path:\s*inset\(50%\)/);
+  });
+  test('on the phone no cell keeps the desk layout\'s column width, which would lay a row wider than the column', () => {
+    for (const c of ['td.kb-log-when', 'td.kb-log-what', 'td.kb-log-num', 'td:last-child']) {
+      expect(rules(text, `${PHONE} .kb-log-table tbody > tr > ${c}`).join(';'), c).toMatch(/width:\s*auto/);
+    }
   });
 });

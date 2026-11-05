@@ -290,9 +290,13 @@
 
 :where(:root[data-kb-layout='phone']) .kb-rankings-table thead th {
   display: block;
-  width: 100%;
+  position: absolute;
+  width: 1px;
+  height: 1px;
   padding: 0;
   overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-rankings-table tbody tr {
