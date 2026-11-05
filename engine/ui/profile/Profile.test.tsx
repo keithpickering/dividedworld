@@ -75,12 +75,13 @@ describe('the public profile', () => {
     expect(screen.getByRole('link', { name: 'Back to the index' })).toHaveAttribute('href', '/');
   });
 
-  test('a signed-out visitor is asked to sign in', async () => {
+  test('a signed-out visitor sees the front door', async () => {
     const fake = buildWorld();
     const w = world(fake);
     fake.signInAs(null);
     open(w.spritey, fake);
-    expect(await screen.findByRole('link', { name: 'Sign in' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'How do we explain this' })).toBeInTheDocument();
+    expect(screen.queryByText(/The board is for players\./u)).toBeNull();
   });
 });
 

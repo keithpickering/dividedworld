@@ -344,9 +344,10 @@ describe('the new-thread form', () => {
 });
 
 describe('a signed-out visitor', () => {
-  test('is asked to sign in, and sees no threads, NEW or form', async () => {
+  test('sees the front door, and no threads, NEW or form', async () => {
     renderInWorld(<BoardScreen slug="general" />, { seed: (f) => world(f, { signedIn: false }) });
-    expect(await screen.findByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/sign-in');
+    expect(await screen.findByRole('heading', { level: 1, name: 'How do we explain this' })).toBeInTheDocument();
+    expect(screen.queryByText(/The board is for players\./u)).toBeNull();
     expect(screen.queryByText('NEW')).toBeNull();
     expect(screen.queryByRole('form', { name: 'Start a thread' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Start a thread' })).toBeNull();

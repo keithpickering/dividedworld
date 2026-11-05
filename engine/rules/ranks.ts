@@ -11,3 +11,9 @@ export function rankIndex(ranks: readonly Rank[], standing: Hundredths | null): 
   ranks.forEach(({ from: threshold }, i) => { if (standing >= threshold) at = i; });
   return at;
 }
+
+/** The least standing that lands on the rank at `index` (its threshold), or null where there is no such rank: a staged postbit's standing. */
+export function rankFloor(ranks: readonly Rank[], index: number): Hundredths | null {
+  const rank = ranks[index];
+  return rank === undefined ? null : rank.from;
+}
