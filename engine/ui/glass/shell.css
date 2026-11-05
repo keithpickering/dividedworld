@@ -214,6 +214,7 @@
 
 /* Over a glass page it starts under the menu bar's foot (Overlay.tsx sets the line), so the bar stays in view. */
 .kb-glass-overlay {
+  --kb-dialog-bar-stuck-min: 64px;
   position: fixed;
   inset: var(--kb-glass-overlay-top, 0px) 0 0 0;
   z-index: 50;
@@ -224,6 +225,8 @@
   padding: 16px;
   background: color-mix(in srgb, var(--kb-glass-ground) 72%, transparent);
   overflow-y: auto;
+  /* The sticky title row covers the scrollport's top (the `.kb-glass-dialog-bar` rule, below): a focused control is scrolled to clear it (WCAG 2.4.11). */
+  scroll-padding-top: var(--kb-dialog-bar-stuck, var(--kb-dialog-bar-stuck-min));
 }
 
 /*
@@ -239,6 +242,8 @@
  * The bar's top is never less than the cut leaves it: Close's corner stands clear of the chamfer.
  */
 .kb-glass-dialog {
+  /* Where the stuck bar's foot lies at least: its 12px offset and Close's 52px (the bar writes the real height, Frame.tsx). */
+  --kb-dialog-bar-stuck-min: 64px;
   --kb-dialog-pad-x: 40px;
   --kb-dialog-pad-top: 36px;
   --kb-dialog-pad-bottom: 36px;
@@ -406,6 +411,14 @@
 .kb-glass-overlay[data-kb-anchored] {
   display: block;
   padding: 0;
+}
+
+.kb-glass-dialog[data-kb-place='sheet'],
+.kb-glass-dialog[data-kb-place='below'],
+.kb-glass-dialog[data-kb-place='above'],
+.kb-float > .kb-float-box {
+  /* The dialogs that scroll in their own box (a sheet, a popover, a float) clear the stuck title row as the overlay does. */
+  scroll-padding-top: var(--kb-dialog-bar-stuck, var(--kb-dialog-bar-stuck-min));
 }
 
 .kb-glass-dialog[data-kb-place='sheet'] {

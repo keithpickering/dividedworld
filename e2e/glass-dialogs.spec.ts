@@ -120,6 +120,55 @@ for (const [label, viewport] of VIEWPORTS) {
   }
 }
 
+/*
+ * WCAG 2.4.11 (Focus Not Obscured): the sticky title row sits over a scrolling dialog, so a control reached with Tab or Shift+Tab must
+ * be scrolled clear of it. The browser scrolls a focused control to the scrollport's edge unless the container's `scroll-padding-top`
+ * says the bar is there; Shift+Tab, going up, is the way that puts a control just under the bar. Read in a dialog made taller than
+ * the window, at a phone and at 200% text, through every control of it forward and back.
+ */
+for (const s of DIALOGS.filter((d) => !d.name.startsWith('Stick Around'))) {
+  test(`${s.name}: Tab and Shift+Tab never leave a focused control under the stuck title row (phone, 200% text)`, async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.setViewportSize({ width: 390, height: 664 });
+    await setTextSize(page, 200);
+    await open(page, s);
+    const tabbables = await page.evaluate(async () => {
+      const box = [...document.querySelectorAll<HTMLElement>('[role="dialog"]')].at(-1)!;
+      const filler = document.createElement('div');
+      filler.style.cssText = 'position:relative;z-index:1;display:grid;gap:40px;padding:40px 0';
+      for (let i = 1; i <= 14; i++) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = `Filler control ${i}`;
+        filler.append(b);
+      }
+      box.lastElementChild!.append(filler);
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return box.querySelectorAll('button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])').length;
+    });
+    const obscured = async () => page.evaluate(() => {
+      const box = [...document.querySelectorAll<HTMLElement>('[role="dialog"]')].at(-1)!;
+      const bar = box.querySelector<HTMLElement>('.kb-glass-dialog-bar')!;
+      const f = document.activeElement as HTMLElement | null;
+      if (!f || !box.contains(f) || bar.contains(f)) return null;
+      const a = f.getBoundingClientRect();
+      const b = bar.getBoundingClientRect();
+      const overlap = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+      return overlap > 0.5 && Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0.5 ? `${f.textContent?.trim().slice(0, 30) || f.tagName}: control ${Math.round(a.top)}-${Math.round(a.bottom)}, bar ${Math.round(b.top)}-${Math.round(b.bottom)}` : null;
+    });
+    expect(tabbables, 'the dialog has controls to walk').toBeGreaterThan(14);
+    const found: string[] = [];
+    for (const key of ['Tab', 'Shift+Tab'] as const) {
+      for (let i = 0; i < tabbables + 2; i++) {
+        await page.keyboard.press(key);
+        const o = await obscured();
+        if (o) found.push(`${key}: ${o}`);
+      }
+    }
+    expect(found).toEqual([]);
+  });
+}
+
 for (const [label, viewport] of VIEWPORTS) {
   for (const size of TEXT_SIZES) {
     test.describe(`sticky menu bar at ${label}, text ${size}%`, () => {
