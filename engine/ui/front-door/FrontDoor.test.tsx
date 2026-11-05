@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
-import { screen, within } from '@testing-library/react';
-import { describe, expect, test, vi } from 'vitest';
+import { act, screen, within } from '@testing-library/react';
+import { describe, expect, test } from 'vitest';
 import type { EffectProps, CardUi } from '../cards/types.ts';
 import { buildWorld, renderIn, renderInWorld } from '../test-world.tsx';
 import { FrontDoor } from './FrontDoor.tsx';
@@ -91,20 +91,28 @@ describe('the front door', () => {
     expect(screen.getByText('A note. It is by invite.')).toBeInTheDocument();
   });
 
-  test('the screen calls no API method of its own', async () => {
-    const called = (element: React.ReactElement) => {
+  test('the screen calls no API method of its own, now or later', async () => {
+    /* Every method the backend has is wrapped and named when called; what the frame's providers call around a bare
+       element is the baseline, and the front door may add none, even calls made after the first render settles. */
+    const called = async (element: React.ReactElement) => {
       const fake = buildWorld();
       const names = new Set<string>();
       for (const [key, value] of Object.entries(fake)) {
         if (typeof value === 'function') (fake as unknown as Record<string, unknown>)[key] = (...a: unknown[]) => { names.add(key); return (value as (...x: unknown[]) => unknown)(...a); };
       }
-      renderIn(fake, element, { cards: [test_card] });
+      const { unmount } = renderIn(fake, element, { cards: [test_card] });
+      await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+      unmount();
       return names;
     };
-    const baseline = called(<p>nothing</p>);
-    const withDoor = called(<FrontDoor />);
-    await Promise.resolve();
+    const baseline = await called(<p>nothing</p>);
+    const withDoor = await called(<FrontDoor />);
     expect([...withDoor].filter((n) => !baseline.has(n))).toEqual([]);
-    vi.restoreAllMocks();
+  });
+
+  test("each cast member's postbit shows the rank the front door gives it", () => {
+    draw();
+    expect(within(screen.getByRole('group', { name: 'About Ann' })).getByText('Jobber')).toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: 'About Bo' })).getByText('Main Eventer')).toBeInTheDocument();
   });
 });
