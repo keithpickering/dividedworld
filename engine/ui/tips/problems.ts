@@ -1,16 +1,18 @@
 /**
  * What an instance's UI must fill exactly, checked beside `instanceProblems` (engine/rules/instance.ts), which checks its
  * rules: `onboarding.tips` has every tip key the engine knows and none it does not, each with a title and a line, and the
- * welcome letter is text; `copy.marquees`, when given, is a non-empty list of names of 1 to 20 characters. Pure, so the self-test
- * can plant each defect; the build runs it against the real instance (instances/divided-world/ui/index.test.tsx).
+ * welcome letter is text; `copy.marquees`, when given, is a non-empty list of names of 1 to 20 characters; the front door names only cast
+ * members, reactions and ranks the instance has, and cards with a `CardUi`. Pure, so the self-test can plant each defect; the build runs it
+ * against the real instance (instances/divided-world/ui/index.test.tsx).
  */
+import type { Instance } from '../../rules/types.ts';
 import type { InstanceUi } from '../types.ts';
 import { TIP_KEYS } from './keys.ts';
 
 /** The longest a marquee name may be: the sign's width at 390px. */
 export const MARQUEE_MAX = 20;
 
-export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy'>): string[] {
+export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 'frontDoor' | 'cards'>, instance: Pick<Instance, 'reactions' | 'ranks' | 'classes'>): string[] {
   const out: string[] = [];
   const marquees: unknown = ui.copy?.marquees;
   if (marquees !== undefined) {
@@ -35,5 +37,35 @@ export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy'>):
   }
   for (const key of Object.keys(tips)) if (!(TIP_KEYS as readonly string[]).includes(key)) out.push(`the onboarding has a tip "${key}", which is not one of the engine's tips`);
   if (typeof on.letter !== 'string' || on.letter.trim() === '') out.push('the onboarding has no letter');
+  out.push(...frontDoorProblems(ui, instance));
+  return out;
+}
+
+/** The front door held to the instance: each problem names the post by its index. */
+function frontDoorProblems(ui: Pick<InstanceUi, 'frontDoor' | 'cards'>, instance: Pick<Instance, 'reactions' | 'ranks' | 'classes'>): string[] {
+  const door = ui.frontDoor;
+  if (typeof door !== 'object' || door === null) return ['the instance UI has no front door'];
+  const out: string[] = [];
+  const keys = new Set<string>();
+  for (const c of door.cast ?? []) {
+    if (keys.has(c.key)) out.push(`front door cast key "${c.key}" is used twice`);
+    keys.add(c.key);
+    if (!Number.isInteger(c.rank) || c.rank < 0 || c.rank >= instance.ranks.length) out.push(`front door character "${c.key}" has rank ${c.rank}, which is not one of the instance's ${instance.ranks.length} ranks`);
+    if (c.revealed !== undefined) {
+      if (!instance.classes.some((k) => k.key === c.revealed!.class)) out.push(`front door character "${c.key}" is revealed as "${c.revealed.class}", which is not one of the instance's classes`);
+      if (Number.isNaN(Date.parse(c.revealed.at))) out.push(`front door character "${c.key}" is revealed on "${c.revealed.at}", which is not a date`);
+    }
+  }
+  const reactions = new Set(instance.reactions.map((r) => r.key));
+  const cards = new Set(ui.cards.map((c) => c.key));
+  if (!door.posts?.length) out.push('the front door has no posts');
+  (door.posts ?? []).forEach((post, i) => {
+    if (!keys.has(post.by)) out.push(`front door post ${i} is by "${post.by}", who is not in the cast`);
+    for (const key of Object.keys(post.reactions ?? {})) if (!reactions.has(key)) out.push(`front door post ${i} has a reaction "${key}", which the instance does not have`);
+    for (const play of post.plays ?? []) {
+      if (!keys.has(play.by)) out.push(`front door post ${i} has a play by "${play.by}", who is not in the cast`);
+      if (!cards.has(play.card)) out.push(`front door post ${i} plays "${play.card}", which has no CardUi`);
+    }
+  });
   return out;
 }

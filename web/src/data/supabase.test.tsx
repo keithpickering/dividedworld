@@ -7,7 +7,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ALLOWED_READS, ALLOWED_RPCS as GUARD_RPCS } from '../../../tools/check-web-reads.mjs';
-import type { Act, KayfaApi, ScreenSettings } from '../../../engine/ui/data/api.ts';
+import type { Act, KayfaApi, ScreenSettings, ThreadSummary } from '../../../engine/ui/data/api.ts';
 import { createSupabaseApi } from './supabase.ts';
 
 /* Built in pieces on purpose: the web-reads guard refuses a path it cannot read to its end. */
@@ -85,7 +85,7 @@ function harness(router: Router) {
 
 const ACT_ROW = { id: A, character: B, kind: 'post', thread: T, target_act_id: null, seq: 2, created_at: '2026-10-01T10:00:00+00:00', payload: { body: 'hi' }, current_payload: { body: 'hello' }, edited_at: '2026-10-01T10:05:00+00:00', shown_edited_at: null };
 const ACT: Act = { id: A, character: B, kind: 'post', thread: T, targetActId: null, seq: 2, createdAt: '2026-10-01T10:00:00+00:00', payload: { body: 'hi' }, currentPayload: { body: 'hello' }, editedAt: '2026-10-01T10:05:00+00:00', shownEditedAt: null };
-const THREAD_ROW = { id: T, board: C, title: 'A title', origin_act_id: null, created_at: '2026-10-01T09:00:00+00:00', last_at: '2026-10-01T10:00:00+00:00', last_seq: 2, first_act: A, first_character: B, last_act: A, last_character: B, replies: 3, replies_this_week: 4, origin_thread: null, origin_title: null, origin_seq: null };
+const THREAD_ROW = { id: T, board: C, title: 'A title', origin_act_id: null, created_at: '2026-10-01T09:00:00+00:00', last_at: '2026-10-01T10:00:00+00:00', last_seq: 2, first_act: A, first_character: B, last_act: A, last_character: B, replies: 3, replies_this_week: 4, origin_thread: null, origin_place: null };
 
 /** Everything a read can name: the web-reads guard's own lists, so the adapter is held to the allowlist the build checks its source against. */
 const ALLOWED_TABLES = new Set(ALLOWED_READS);
@@ -175,7 +175,7 @@ describe('reads and their rows', () => {
     expect(req?.url.searchParams.get('offset')).toBe('10');
     expect(req?.url.searchParams.get('limit')).toBe('10');
     expect(page.total).toBe(37);
-    expect(page.threads).toEqual([{ id: T, board: C, title: 'A title', originActId: null, createdAt: '2026-10-01T09:00:00+00:00', lastAt: '2026-10-01T10:00:00+00:00', lastSeq: 2, firstAct: A, firstCharacter: B, lastAct: A, lastCharacter: B, replies: 3, repliesThisWeek: 4, originThread: null, originTitle: null, originSeq: null }]);
+    expect(page.threads).toEqual([{ id: T, board: C, title: 'A title', originActId: null, createdAt: '2026-10-01T09:00:00+00:00', lastAt: '2026-10-01T10:00:00+00:00', lastSeq: 2, firstAct: A, firstCharacter: B, lastAct: A, lastCharacter: B, replies: 3, repliesThisWeek: 4, originThread: null, origin: null }]);
   });
 
   it('reads only the counter for a page of no rows, and none of the list', async () => {
@@ -200,12 +200,51 @@ describe('reads and their rows', () => {
   });
 
   it('reads a spun thread\'s origin with its row, not in reads of its own', async () => {
-    const origin = { ...THREAD_ROW, origin_act_id: A, origin_thread: C, origin_title: 'Where it came from', origin_seq: 7 };
+    const origin = { ...THREAD_ROW, origin_act_id: A, origin_thread: C, origin_place: { kind: 'post', thread: C, title: 'Where it came from', seq: 7 } };
     const h = harness(() => rows([origin]));
     const row = await h.api.thread(T);
-    expect([row?.originActId, row?.originThread, row?.originTitle, row?.originSeq]).toEqual([A, C, 'Where it came from', 7]);
+    expect([row?.originActId, row?.originThread, row?.origin]).toEqual([A, C, { kind: 'post', thread: C, title: 'Where it came from', seq: 7 }]);
     /* By its id, from thread_open: thread_list leaves the season's reveal and Turns threads out of a board's list, and a link to one still opens it. */
     expect(h.rest().map((r) => r.url.pathname.replace(`${REST}/`, ''))).toEqual(['thread_open']);
+  });
+
+  it('reads each kind of origin place from a row', async () => {
+    const places: [unknown, ThreadSummary['origin']][] = [
+      [{ kind: 'post', thread: C, title: 'T', seq: 3 }, { kind: 'post', thread: C, title: 'T', seq: 3 }],
+      [{ kind: 'update', act: A, title: 'Traps bite' }, { kind: 'update', act: A, title: 'Traps bite' }],
+      [{ kind: 'play', card: 'whoops', on: { kind: 'post', thread: C, title: 'T', seq: 3 } }, { kind: 'play', card: 'whoops', on: { kind: 'post', thread: C, title: 'T', seq: 3 } }],
+      [{ kind: 'play', card: null, on: { kind: 'update', act: A, title: 'U' } }, { kind: 'play', card: null, on: { kind: 'update', act: A, title: 'U' } }],
+      [{ kind: 'play', card: 'glint', on: { kind: 'character', id: B, name: 'Ana Face' } }, { kind: 'play', card: 'glint', on: { kind: 'character', id: B, name: 'Ana Face' } }],
+      [{ kind: 'play', card: 'glint', on: { kind: 'character', id: B, name: null } }, { kind: 'play', card: 'glint', on: { kind: 'character', id: B, name: null } }],
+      [{ kind: 'play', card: 'glint', on: { kind: 'thread', id: T, title: 'T' } }, { kind: 'play', card: 'glint', on: { kind: 'thread', id: T, title: 'T' } }],
+      [{ kind: 'play', card: 'glint', on: { kind: 'board', slug: 'general', name: 'General' } }, { kind: 'play', card: 'glint', on: { kind: 'board', slug: 'general', name: 'General' } }],
+      [{ kind: 'play', card: 'glint', on: null }, { kind: 'play', card: 'glint', on: null }],
+      [null, null],
+    ];
+    for (const [raw, want] of places) {
+      const row = await harness(() => rows([{ ...THREAD_ROW, origin_place: raw }])).api.thread(T);
+      expect(row?.origin, JSON.stringify(raw)).toEqual(want);
+    }
+  });
+
+  it('reads a malformed origin place as null, and a play whose target is malformed as a play on nothing', async () => {
+    const read = async (raw: unknown) => (await harness(() => rows([{ ...THREAD_ROW, origin_place: raw }])).api.thread(T))?.origin;
+    for (const bad of [
+      { kind: 'mystery', thread: C }, { kind: 'post', thread: C, title: 'T', seq: '7' }, { kind: 'post', thread: C, title: 'T' },
+      { kind: 'update', act: A }, { kind: 'play', card: 5, on: null }, { kind: 'play', on: null },
+      { kind: 'character', id: B, name: null }, 'post', 7, [],
+      // Each key alone missing or mistyped, with every other key right.
+      { kind: 'post', title: 'T', seq: 3 }, { kind: 'post', thread: 5, title: 'T', seq: 3 }, { kind: 'post', thread: C, title: 5, seq: 3 }, { kind: 'post', thread: C, title: 'T', seq: NaN },
+      { kind: 'update', title: 'U' }, { kind: 'update', act: 5, title: 'U' }, { kind: 'update', act: A }, { kind: 'update', act: A, title: 5 },
+    ]) expect(await read(bad), JSON.stringify(bad)).toBeNull();
+    for (const on of [
+      { kind: 'mystery' }, { kind: 'post', thread: C, title: 'T', seq: '7' }, { kind: 'character', id: B }, { kind: 'board', slug: 'g' }, 'post', 3, undefined,
+      { kind: 'post', title: 'T', seq: 3 }, { kind: 'post', thread: 5, title: 'T', seq: 3 }, { kind: 'post', thread: C, seq: 3 }, { kind: 'post', thread: C, title: 5, seq: 3 }, { kind: 'post', thread: C, title: 'T', seq: NaN },
+      { kind: 'update', title: 'U' }, { kind: 'update', act: 5, title: 'U' }, { kind: 'update', act: A }, { kind: 'update', act: A, title: 5 },
+      { kind: 'character', name: 'N' }, { kind: 'character', id: 5, name: 'N' }, { kind: 'character', id: B, name: 5 },
+      { kind: 'thread', title: 'T' }, { kind: 'thread', id: 5, title: 'T' }, { kind: 'thread', id: T }, { kind: 'thread', id: T, title: 5 },
+      { kind: 'board', name: 'N' }, { kind: 'board', slug: 5, name: 'N' }, { kind: 'board', slug: 'g', name: 5 },
+    ]) expect(await read({ kind: 'play', card: 'whoops', on }), JSON.stringify(on)).toEqual({ kind: 'play', card: 'whoops', on: null });
   });
 
   it('reads a page of the season\'s news, newest first, and keeps only what the shape holds', async () => {
@@ -743,7 +782,7 @@ describe('writes through the act function', () => {
     expect(await h.api.edit(A, B, 'new')).toEqual({ ok: true, value: ACT });
     expect(await h.api.react(A, B, 'fire')).toEqual({ ok: true, value: { act: A, tally: { fire: 1 } } });
     const started = await h.api.startThread('general', B, 'A title', 'body');
-    expect(started).toEqual({ ok: true, value: { thread: { id: T, board: C, title: 'A title', originActId: null, createdAt: '2026-10-01T09:00:00+00:00', lastAt: ACT.createdAt, lastSeq: 2, firstAct: A, firstCharacter: B, lastAct: A, lastCharacter: B, replies: 0, repliesThisWeek: 0, originThread: null, originTitle: null, originSeq: null }, act: ACT } });
+    expect(started).toEqual({ ok: true, value: { thread: { id: T, board: C, title: 'A title', originActId: null, createdAt: '2026-10-01T09:00:00+00:00', lastAt: ACT.createdAt, lastSeq: 2, firstAct: A, firstCharacter: B, lastAct: A, lastCharacter: B, replies: 0, repliesThisWeek: 0, originThread: null, origin: null }, act: ACT } });
     expect(act(h).map((r) => r.body)).toEqual([
       { action: 'post', thread: T, character: B, body: 'hi', quote: A },
       { action: 'post', thread: T, character: B, body: 'hi' },
@@ -1686,6 +1725,28 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     const refused = harness(() => json({ code: '42501', message: 'only an admin holds a move', hint: 'kayfabb.refusal' }, 403));
     expect(await refused.api.holdMove(4)).toEqual({ ok: false, error: 'only an admin holds a move' });
     await expect(refused.api.adminQueue()).rejects.toThrow('that could not be read right now; try again');
+  });
+});
+
+describe('Contact', () => {
+  const LINKS = [{ label: 'Discord', href: 'https://discord.gg/x' }, { label: 'Email', href: 'mailto:a@b.c' }];
+
+  it('reads admin_contact and leaves out a row that is not a link', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/admin_contact') ? json([...LINKS, { label: 'No href' }, { href: 'x' }, null, { label: 5, href: 'y' }]) : undefined));
+    expect(await h.api.adminContact()).toEqual(LINKS);
+    expect(h.to('rpc/admin_contact')).toHaveLength(1);
+    const none = harness((r) => (r.url.pathname.endsWith('/rpc/admin_contact') ? json(null) : undefined));
+    expect(await none.api.adminContact()).toEqual([]);
+  });
+
+  it('writes through set_admin_contact by its parameter name, and answers the links as they read', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/set_admin_contact') ? json(LINKS) : undefined));
+    expect(await h.api.setAdminContact([{ label: 'Discord', href: 'https://discord.gg/x', extra: 1 } as never, LINKS[1]!])).toEqual({ ok: true, value: LINKS });
+    expect(h.to('rpc/set_admin_contact')[0]?.body).toEqual({ links: LINKS });
+    const refused = harness(() => json({ code: '42501', message: 'only an admin sets how to reach one', hint: 'kayfabb.refusal' }, 403));
+    expect(await refused.api.setAdminContact([])).toEqual({ ok: false, error: 'only an admin sets how to reach one' });
+    const lost = harness(() => new Error('network'));
+    expect(await lost.api.setAdminContact([])).toMatchObject({ ok: false, uncertain: true });
   });
 });
 

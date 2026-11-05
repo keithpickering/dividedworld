@@ -1,0 +1,40 @@
+/*
+ * Reach a person (Contact.tsx): the account screens' frame (account.css: the heading, the panel, the lead) with the admins' links under the
+ * lead, one to a row. Sizes are the glass's tokens, never px (engine/ui/glass/board.test.tsx reads this file); a link is the glass's pale,
+ * underlined like every link on the account screens, and an address shown as text is selectable and wraps rather than widening a phone.
+ */
+.kb-contact-list {
+  display: grid;
+  gap: 12px;
+  max-width: 680px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kb-contact-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 16px;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--kb-glass-text);
+}
+
+.kb-contact-item a {
+  color: var(--kb-glass-pale);
+  text-underline-offset: 4px;
+}
+
+.kb-contact-address {
+  font-weight: 500;
+  color: var(--kb-glass-text-2);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-contact-item {
+  font-size: var(--kb-glass-size-phone-body);
+}

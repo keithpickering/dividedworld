@@ -15,7 +15,7 @@
  *    section 2.1 amendment moves every later figure by 1.00).
  *  - The board's eight rows are six in the build (the glass plan's section 3: no Stick Around lines),
  *    so the table is compared by position alone.
- *  - "Tell an admin" is plain words, not a link: no screen yet says how to reach an admin.
+ *  - "Tell an admin" is a link to /contact, which says how to reach an admin (the onboarding follow-ups plan, Task 8); the foot's text is the board's.
  *
  * Departure by the glass polish (docs/plans/2026-11-04-glass-polish-plan.md, Task 4): the heading is a PageHead (engine/ui/glass/PageHead.tsx), which
  * stands 36px clear of what follows, so the lead stands 19px and the table 22px lower than the board draws them (each landmark is held to the board's

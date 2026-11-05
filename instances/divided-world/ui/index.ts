@@ -15,6 +15,7 @@ import pipEmpty from './pips/default-empty.svg?url';
 import gabe from './avatars/gabe.png?url';
 import { hintWords } from './hint-words.ts';
 import { onboarding } from './onboarding.ts';
+import { frontDoor } from './front-door.ts';
 import strategyGuide from '../guide/strategy-guide.md?raw';
 import { hints } from '../guide/hints.ts';
 import { defaults } from '../settings.ts';
@@ -133,6 +134,7 @@ export const instanceUi: InstanceUi = Object.freeze({
   glass,
   cards: cardsUi,
   onboarding,
+  frontDoor,
   /* The Strategy Guide's Markdown and Gabe's hint for each class (guide/); tools/check-guide.mjs holds both to the instance. */
   guide: Object.freeze({ markdown: strategyGuide, hints }),
 });

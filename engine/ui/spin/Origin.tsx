@@ -22,12 +22,13 @@ import { LastEdited, SystemPost, UnmaskLine, quoteLink, text, useHistory, when }
 import { useThread } from '../thread/context.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { useLocated } from '../thread/locate.tsx';
-import { Link } from '../router.tsx';
 import { ChangedList, Prose, updateOf } from '../updates/UpdateWords.tsx';
 import type { Mine } from '../reactions/mine.ts';
 import type { Tallies } from '../thread/tallies.ts';
 import { primeSpun, spunCount, takeOrigin } from './spun.ts';
 import type { SpinOrigin } from '../thread/Post.tsx';
+import { OriginLink } from './OriginLink.tsx';
+import { placeHref } from './place.ts';
 import { SpinForm, useSpinDrafts } from './SpinForm.tsx';
 import './spin.css';
 
@@ -126,11 +127,9 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   /* A play in the box is spun from in a form of the box's own, under it: the box's post is in another thread. */
   const [spinOrigin, setSpinOrigin] = useState<SpinOrigin | null>(null);
   const drafts = useSpinDrafts();
-  const backHref = summary.originSeq !== null && summary.originTitle !== null ? threadHref(summary.originThread!, pageOf(summary.originSeq, perPage), summary.originSeq) : null;
-  /* An update is read on the Updates page: the thread it was posted in is never listed, so the link goes to the page, to that update. */
-  const isUpdate = act?.kind === 'update';
-  const back = isUpdate ? <Link to={`/updates?update=${encodeURIComponent(originId)}`}>Updates</Link>
-    : backHref !== null ? <Link to={backHref}>#{summary.originSeq} in {summary.originTitle}</Link> : null;
+  /* The mark's Go to post for a post origin: the place's own link, where the place is a post. */
+  const backHref = summary.origin?.kind === 'post' ? placeHref(summary.origin, perPage) : null;
+  const from = <OriginLink place={summary.origin} perPage={perPage} />;
 
   /* The same node is the box's head's strip and, for a card that lifts the post (Stick Around), the strip it draws on the lifted post. */
   const marks = act && (act.kind === 'card' ? cardPlay !== null : holdsEffects(act.kind)) ? (
@@ -199,13 +198,13 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
     <>
       <div ref={box} className="kb-origin" role="group" aria-label="Origin" tabIndex={-1}>
         <p className="kb-origin-head">
-          <span className="kb-origin-head-text"><b>ORIGIN</b> · Spun from {back ?? 'an Act'}</span>
+          <span className="kb-origin-head-text"><b>ORIGIN</b> · Spun from {from}</span>
           {/* The strip hangs on the box's head, as it does on a post's date row. A card play's is compared with nothing: the post it landed on is in another thread. */}
           {marks}
         </p>
         {body()}
         {act && act.kind !== 'card' && more && (
-          <p className="kb-small kb-muted">More than {CARDS_SHOWN} cards were played on this Act; the rest are in {back ?? 'the thread it was spun from'}.</p>
+          <p className="kb-small kb-muted">More than {CARDS_SHOWN} cards were played on this Act; the rest are in {from}.</p>
         )}
       </div>
       {spinOrigin && (

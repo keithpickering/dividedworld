@@ -34,6 +34,8 @@ export const PAGES: readonly Screen[] = [
   { name: 'Alerts', path: '/alerts' },
   { name: 'Updates', path: '/updates' },
   { name: 'Strategy Guide', path: '/guide' },
+  /* Reach a person is read signed out, as the player who cannot sign in reaches it; the demo world sets its links. */
+  { name: 'Reach a person', path: '/contact', signedOut: true },
   { name: 'Welcome', path: '/welcome' },
   { name: 'My log, before anything has settled', path: '/log' },
   { name: 'The Vending Machine', path: '/vending' },

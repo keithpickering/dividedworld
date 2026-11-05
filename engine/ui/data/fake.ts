@@ -24,15 +24,15 @@ import { atOrBelow, basePrice, postTarget, casterMessage, decidePlay, decideSet,
 import { sameName } from '../../rules/names.ts';
 import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
-import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
+import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
   AdminQueue, BoardName, Demand, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffProfile,
-  Act, AccountListener, ActKind, Alert, SeasonNewsItem, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
+  Act, AccountListener, ActKind, Alert, ContactLink, SeasonNewsItem, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
-  Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, TurnAnnounced, Wallet, WalletEvent,
+  Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
 
 /** The tour's tips, which `replayTour` forgets alone: the engine's one list, which the SQL's replay_tour is held to (engine/ui/tips/keys.test.ts). */
@@ -88,6 +88,8 @@ export interface Seed {
   season(season: Partial<Season>): void;
   nextSettlementAt(at: number | null): void;
   views(thread: Id, count: number): void;
+  /** Gives a card, set or spring a place number in its thread, as a play written before 0035 held one: the number is the fake's only legacy shape, for tests that read a play's place. */
+  legacyNumber(act: Id): void;
   /**
    * An alert the writers of the Acts would have written for `account` (`write_alert`, 0058), of a kind that is not read from the Acts
    * themselves: a trap struck or sprung, a hint, a ruling. A quote and a card on the account's post, character or thread are alerts
@@ -106,6 +108,8 @@ export interface Seed {
    * update, from the instance's persona (else the engine's plain one), and so is the updates thread on The System's board. Returns the Act.
    */
   update(update: { title: string; body: string; changes?: readonly UpdateChange[]; at?: number }): Id;
+  /** The contact an admin set (`set_admin_contact`, 0081), past its admin check and held to its rules: a seed is the database's own hand. Refused in the server's words. */
+  contact(links: readonly ContactLink[]): void;
   cards(account: Id, held: Readonly<Record<string, number>>): void;
   /** The account's settled wallet, as a purchase or a card play leaves it between settlements (`settle` sets it at one, and dates it). Writes no wallet event: it is the state the seed starts from. */
   wallet(account: Id, balance: number): void;
@@ -461,13 +465,40 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return out.sort((a, b) => Date.parse(b.newestAt) - Date.parse(a.newestAt)).slice(0, 50);
   }
 
+  /** Where an Act is found, as an Act's own post or update place: an update, else a post with a place number, else nowhere. */
+  const placeOf = (a: ActRec | undefined): Extract<PlaceOn, { kind: 'post' | 'update' }> | null =>
+    !a ? null
+    : a.kind === 'update' ? { kind: 'update', act: a.id, title: String(a.payload['title']) }
+    : a.seq !== null ? { kind: 'post', thread: a.thread, title: threads.get(a.thread)!.title, seq: a.seq }
+    : null;
+
+  /** A spun thread's origin place, by the rules of thread_open's origin_place (0079), in order: none; an update; a play (kind first, so a numbered card is one) with its card (null for a set) and its target; any Act with a place number. */
+  function originPlace(origin: ActRec): OriginPlace | null {
+    if (origin.kind === 'update') return placeOf(origin);
+    if (origin.kind === 'card' || origin.kind === 'set' || origin.kind === 'spring') {
+      const card = origin.kind === 'set' ? null : String(origin.payload['card']);
+      const beyond = reachPlays.get(origin.id);
+      let on: PlaceOn | null;
+      if (beyond) {
+        const named = beyond.reach === 'character' ? characters.get(beyond.target) : undefined;
+        on = beyond.reach === 'character' ? { kind: 'character', id: beyond.target, name: named?.debutedAt != null ? named.name : null }
+          : beyond.reach === 'thread' ? { kind: 'thread', id: beyond.target, title: threads.get(beyond.target)!.title }
+          : { kind: 'board', slug: boards.find((b) => b.id === beyond.target)!.slug, name: boards.find((b) => b.id === beyond.target)!.name };
+      } else {
+        // A play with no play_reach row is on a post (0079 joins the target post only then; every beyond-post play has a reach row).
+        on = origin.target !== null ? placeOf(acts.get(origin.target)) : null;
+      }
+      return { kind: 'play', card, on };
+    }
+    return origin.seq !== null ? placeOf(origin) : null;
+  }
+
   function summary(t: ThreadRec): ThreadSummary {
     const all = placed(t.id);
     const first = all[0];
     const last = all.at(-1);
     const week = now() - 7 * DAY;
     const origin = t.origin === null ? undefined : acts.get(t.origin);
-    const from = origin ? threads.get(origin.thread) : undefined;
     // The greatest time of any placed (non-edit) Act, as threads.last_at is; the creation time with none, since lastAt is not null here.
     return {
       id: t.id, board: t.board, title: t.title, originActId: t.origin, createdAt: iso(t.at), lastAt: iso(all.length ? Math.max(...all.map((a) => a.at)) : t.at), lastSeq: t.nextSeq - 1,
@@ -475,7 +506,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       firstAct: first?.id ?? null, firstCharacter: first?.character ?? null, lastAct: last?.id ?? null, lastCharacter: last?.character ?? null,
       // Capped at the hotReplies threshold, as thread_list counts it: a screen only compares it with that.
       repliesThisWeek: Math.min(settings.hotReplies, all.filter((a) => a.kind === 'post' && a.seq! > 1 && a.at > week && a.at <= now()).length),
-      originThread: origin?.thread ?? null, originTitle: from?.title ?? null, originSeq: origin?.seq ?? null,
+      originThread: origin?.thread ?? null, origin: origin ? originPlace(origin) : null,
     };
   }
 
@@ -597,6 +628,43 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** `within` (0005): text that is something and no longer than the setting, in the server's words. */
   const within = (field: string, value: string, most: number): string | null =>
     /^[\s\u200b-\u200d\u2060]*$/u.test(value) ? `${field} is empty` : [...value].length > most ? `${field} is longer than ${most} characters` : null;
+  const contactEdge = new RegExp(`^[${CONTACT_WS}]+|[${CONTACT_WS}]+$`, 'gu');
+  const contactSpaced = new RegExp(`[${CONTACT_WS}]`, 'u');
+  /** How players reach the admins (the setting `adminContact`); none until an admin sets it. */
+  let contact: readonly ContactLink[] = [];
+  /**
+   * set_admin_contact (0081) past its admin check, as the SQL repairs and refuses: whitespace trimmed, an empty row and keys that are no part of a link dropped, a bare email
+   * (`name@host.tld`, with no scheme, slash, query or space) made `mailto:`; refused, in the SQL's words, naming the row (counted as typed, an empty row too): a label or
+   * address with no partner, a label over 40 characters, an address over 300 or with a space or control character, an address that is neither `https://host` nor
+   * `mailto:name@host`, and a sixth link. An input that looks like an email but carries a scheme (`javascript:a@b`) is no bare email and is refused as an address.
+   */
+  function writeContact(links: unknown): Answer<readonly ContactLink[]> {
+    const rows = links == null ? [] : links;
+    if (!Array.isArray(rows)) return refuse(`the contact is a list of { label, href }, not a ${typeof rows}`);
+    const fixed: ContactLink[] = [];
+    for (const [i, row] of rows.entries()) {
+      const n = i + 1;
+      if (row === null || typeof row !== 'object' || Array.isArray(row)) return refuse(`row ${n} is { label, href }, not a ${row === null ? 'null' : Array.isArray(row) ? 'array' : typeof row}`);
+      const e = row as Record<string, unknown>;
+      if (e['label'] != null && typeof e['label'] !== 'string') return refuse(`row ${n} has a label that is text`);
+      if (e['href'] != null && typeof e['href'] !== 'string') return refuse(`row ${n} has an address that is text`);
+      const label = String(e['label'] ?? '').replace(contactEdge, '');
+      let href = String(e['href'] ?? '').replace(contactEdge, '');
+      if (label === '' && href === '') continue;
+      if (href === '') return refuse(`row ${n} has a label and no address; give it an address, or leave the row out`);
+      if (label === '') return refuse(`row ${n} has an address and no label; give it a label, or leave the row out`);
+      if (label.replace(/[\u200b-\u200d\u2060\ufeff]/gu, '') === '') return refuse(`row ${n} has a label with something visible in it, not only zero-width characters`);
+      if ([...label].length > CONTACT_LABEL_MAX) return refuse(`row ${n} has a label of at most ${CONTACT_LABEL_MAX} characters`);
+      if ([...href].length > CONTACT_HREF_MAX) return refuse(`row ${n} has an address of at most ${CONTACT_HREF_MAX} characters`);
+      if (contactSpaced.test(href)) return refuse(`row ${n} has an address with no spaces or control characters in it`);
+      if (/^[^@:/?#]+@[^@:/?#]+\.[^@:/?#]+$/.test(href)) href = `mailto:${href}`;
+      if (!(/^https:\/\/[^/?#@]+([/?#]|$)/i.test(href) || /^mailto:[^@:/?#]+@[^@:/?#]+$/i.test(href))) return refuse(`row ${n} has an address that is https: or mailto: (a bare email is made mailto:)`);
+      if (fixed.length >= CONTACT_MOST) return refuse(`the contact holds at most ${CONTACT_MOST} links, and row ${n} is one too many`);
+      fixed.push({ label, href });
+    }
+    contact = fixed;
+    return ok(fixed);
+  }
   /** One update, with the persona that wrote it (the `updates` read). */
   function updateOf(a: ActRec): Update {
     const c = characters.get(a.character!)!;
@@ -1301,6 +1369,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (written.ok) sendNews(acts.get(written.value.act)!);
       return written;
     },
+    adminContact: () => contact,
+    setAdminContact: (links) => (me()?.admin ? writeContact(links) : refuse('only an admin sets how players reach the admins')),
     settings: () => screen,
 
     boards: () => boards.map((b): BoardSummary => {
@@ -2061,6 +2131,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     nextSettlementAt(at) { nextSettlement = at; },
     views(thread, count) { views.set(thread, count); },
+    legacyNumber(act) {
+      const a = acts.get(act);
+      if (!a || !(a.kind === 'card' || a.kind === 'set' || a.kind === 'spring')) throw new Error('only a play can keep a legacy place number');
+      (a as { seq: number | null }).seq = threads.get(a.thread)!.nextSeq++;
+    },
     alert(account, a) {
       seeded(account);
       if (!isWritten(a.kind) || a.kind === 'quote' || a.kind === 'cardOnYours') throw new Error(`a ${a.kind} alert is read from the Acts that make it, not seeded`);
@@ -2089,6 +2164,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const wrote = writeUpdate(u.title, u.body, u.changes ?? [], u.at);
       if (!wrote.ok) throw new Error(`a seeded update is refused: ${wrote.error}`);
       return wrote.value.act;
+    },
+    contact(links) {
+      const wrote = writeContact(links);
+      if (!wrote.ok) throw new Error(`a seeded contact is refused: ${wrote.error}`);
     },
     cards(account, held) { seeded(account).cards = { ...held }; },
     wallet(account, balance) { setWallet(account, balance); },

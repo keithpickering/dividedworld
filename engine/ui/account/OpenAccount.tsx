@@ -5,6 +5,7 @@
  * always offers the way out too: sign out, or use another address ("No player is ever stuck").
  */
 import { useState, type FormEvent, type ReactNode } from 'react';
+import { CONTACT_PATH } from '../contact/Contact.tsx';
 import { useKayfa } from '../context.tsx';
 import { LOST_ANSWER } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
@@ -72,12 +73,15 @@ export function OpenAccount() {
   );
 }
 
-/** Shows the open-account path in place of a page while the player is signed in with no account; the sign-in pages are let through. */
+/**
+ * Shows the open-account path in place of a page while the player is signed in with no account; the sign-in pages are let through, and so is Reach a person
+ * (/contact), since a player stuck here is the one who most needs a way to reach an admin.
+ */
 export function AccountGate({ children }: { readonly children: ReactNode }) {
   const { api } = useKayfa();
   const session = useSession(api);
   const { path } = useLocation();
-  if (session?.signedIn && !session.account && path !== '/sign-in' && path !== '/register') {
+  if (session?.signedIn && !session.account && path !== '/sign-in' && path !== '/register' && path !== CONTACT_PATH) {
     return <div className="kb-acct"><div className="kb-acct-panel kb-calm"><OpenAccount /></div></div>;
   }
   return <>{children}</>;

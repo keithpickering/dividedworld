@@ -19,3 +19,9 @@ export function signInHref(path: string, search: string): string {
   if (path === '/' || path === '/sign-in' || path === '/register') return '/sign-in';
   return `/sign-in?next=${encodeURIComponent(path + search)}`;
 }
+
+/** The link to register from a page: it carries the page as `next` the way signInHref does, so the account opens back where the visitor was. */
+export function registerHref(path: string, search: string): string {
+  if (path === '/' || path === '/sign-in' || path === '/register') return '/register';
+  return `/register?next=${encodeURIComponent(path + search)}`;
+}

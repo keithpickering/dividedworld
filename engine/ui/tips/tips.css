@@ -149,10 +149,16 @@
   background: transparent;
   color: var(--kb-glass-text);
   font: inherit;
+  font-size: var(--kb-glass-size-label);
   font-weight: 800;
   letter-spacing: 1.5px;
   text-transform: uppercase;
   cursor: pointer;
+}
+
+.kb-tips-button > b {
+  /* The upright <b> is `bolder` than the button's 800, which is 900, a weight the glass does not load (glass.json's fonts stop at 800). */
+  font-weight: inherit;
 }
 
 .kb-tips-go {
@@ -228,6 +234,7 @@
 }
 
 :where(:root[data-kb-layout='phone']) .kb-tips-button {
+  font-size: var(--kb-glass-size-phone-small);
   min-height: 48px;
   padding: 0 12px;
 }

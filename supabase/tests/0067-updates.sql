@@ -429,7 +429,7 @@ begin
   perform tests.become(bob);
   select * into got from thread_list where id = spun;
   perform tests.unbecome();
-  if got.id is null or got.origin_title is distinct from 'Updates' or got.origin_thread is distinct from ut or got.origin_seq is distinct from was + 2 then
+  if got.id is null or got.origin_place is distinct from jsonb_build_object('kind', 'update', 'act', second_update, 'title', (select payload ->> 'title' from acts where id = second_update)) or got.origin_thread is distinct from ut then
     raise exception 'the spun thread names where it was spun from: %', got;
   end if;
   if not exists (select 1 from thread_list where board = players_board() and id = spun) then raise exception 'the spun thread is listed on the board'; end if;

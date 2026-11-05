@@ -35,6 +35,12 @@ function SpunThread() {
   return spun ? <ThreadScreen thread={spun.id} /> : <div aria-busy="true" />;
 }
 
+/** The thread spun from a card play on the first post, opened on its ORIGIN box. */
+function PlaySpunThread() {
+  const spun = useThread('Spun from the play');
+  return spun ? <ThreadScreen thread={spun.id} /> : <div aria-busy="true" />;
+}
+
 /** The first post's spin form, open under it. */
 function OpenForm() {
   const first = useThread(TITLE);
@@ -54,6 +60,8 @@ const world: World = (fake, instance) => {
   /* The fake does its work before it answers, so the spun thread is there when the story reads. */
   fake.signInAs(me);
   void fake.spin(t.act, mine, 'Spun from the start', 'Carrying on over here.');
+  const play = fake.seed.card(other, t.act, instance.cards[0]!.key, { message: 'Oops.' });
+  void fake.spin(play, mine, 'Spun from the play', 'About that card.');
 };
 
 /** The small form under a post that starts a thread from it. */
@@ -61,3 +69,6 @@ export const SpinFormOpen: StoryObj = { render: () => <OpenForm />, parameters: 
 
 /** A spun thread, opening on its ORIGIN box: the Act it came from, live, with a link back. */
 export const OriginBox: StoryObj = { render: () => <SpunThread />, parameters: { world } };
+
+/** A thread spun from a card play on a post: its head names the card and the post it landed on, linked. */
+export const OriginBoxFromPlay: StoryObj = { render: () => <PlaySpunThread />, parameters: { world } };

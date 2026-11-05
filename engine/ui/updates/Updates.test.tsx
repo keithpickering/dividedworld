@@ -221,7 +221,7 @@ describe('React and Spin a thread', () => {
     await waitFor(() => expect(screen.getByTestId('where').textContent).toMatch(/^\/t\//u));
     const spun = await w.fake.spunFrom(w.newest);
     expect(spun).toHaveLength(1);
-    expect(spun[0]).toMatchObject({ title: 'Pinned forever', originActId: w.newest, originTitle: 'Updates' });
+    expect(spun[0]).toMatchObject({ title: 'Pinned forever', originActId: w.newest, origin: { kind: 'update', act: w.newest, title: 'Traps now bite board cards' } });
     expect(screen.getByTestId('where')).toHaveTextContent(`/t/${spun[0]!.id}`);
     expect((await w.fake.boards()).find((b) => b.id === spun[0]!.board)!.isSystem).toBe(false);
   });
@@ -261,7 +261,7 @@ describe('a thread spun from an update', () => {
     expect(within(origin).getByText('The trap was right to be offended.')).toBeInTheDocument();
     expect(within(origin).getByRole('list', { name: 'What changed' })).toHaveTextContent('Trap Card can now catch a card played on a thread or a board.');
     expect(await within(origin).findByText('Gabe')).toBeInTheDocument();
-    const back = within(origin).getByRole('link', { name: 'Updates' });
+    const back = within(origin).getByRole('link', { name: 'the update “Traps now bite board cards”' });
     expect(back).toHaveAttribute('href', `/updates?update=${encodeURIComponent(w.newest)}`);
     expect(within(origin).queryByRole('link', { name: /#\d+ in Updates/u })).toBeNull();
   });

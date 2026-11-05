@@ -293,11 +293,17 @@ function nameOf(text: string, el: Element): string {
   return `"${words.length > 40 ? `${words.slice(0, 39)}…` : words}" in ${up}${el.tagName.toLowerCase()}${cls}`;
 }
 
-/** Every line of glass text in the page now, with where each stands. */
-export async function gather(): Promise<Gathered[]> {
+/**
+ * Every line of glass text in the page now, with where each stands. With `panel` (a selector), the text read is the one overlay panel's
+ * and nothing else's: the spotlight's panel (engine/ui/tips/tips.css) stands on a sheet over a scrim and not on smoke, so it has no
+ * `.kb-smoke` to find, and its surface is named `tips` (an overlay sheet in the ceilings file, not one of the smoke surfaces).
+ */
+export async function gather(panel?: string): Promise<Gathered[]> {
   await document.fonts.ready;
+  const panelEl = panel ? document.querySelector(panel) : null;
+  if (panel && !panelEl) throw new Error(`There is no ${panel} on the page to read`);
   const overlays = [...document.querySelectorAll('.kb-glass-overlay')];
-  const overlay = overlays.at(-1) ?? null;
+  const overlay = panelEl ?? overlays.at(-1) ?? null;
   const view: Box = { x: 0, y: 0, width: innerWidth, height: innerHeight };
   const hudEl = document.querySelector('[aria-label="Game HUD"]');
   const hud = hudEl && getComputedStyle(hudEl).position === 'fixed' ? Object.assign(hudEl.getBoundingClientRect(), { contains: (n: Node) => hudEl.contains(n) }) : null;
@@ -312,7 +318,7 @@ export async function gather(): Promise<Gathered[]> {
     if (s.visibility !== 'visible') continue;
     const opacity = opacityOf(el);
     if (opacity === 0) continue;
-    const ground = smokeUnder(el);
+    const ground = panelEl ? { holder: panelEl, surface: 'tips' } : smokeUnder(el);
     if (!ground) continue;
     const range = document.createRange();
     range.selectNodeContents(n);

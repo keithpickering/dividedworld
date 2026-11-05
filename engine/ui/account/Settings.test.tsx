@@ -38,6 +38,17 @@ async function persists(w: ReturnType<typeof world>, groupName: string, name: st
 }
 
 describe('Settings, as board 11 draws it', () => {
+  test('every section of the frame ends with a link to reach a person', async () => {
+    const w = world();
+    open(w.fake);
+    expect(await screen.findByRole('link', { name: 'Reach a person' })).toHaveAttribute('href', '/contact');
+    cleanup();
+    open(w.fake, '/settings?section=account');
+    await screen.findByRole('heading', { name: 'Account' });
+    expect(screen.getAllByRole('link', { name: 'Reach a person' })).toHaveLength(1);
+    expect(screen.getByRole('link', { name: 'Reach a person' })).toHaveAttribute('href', '/contact');
+  });
+
   test('its sections are a navigation of Account, Accessibility and Notifications, and the page opens on Accessibility', async () => {
     open(world().fake);
     expect(await screen.findByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();

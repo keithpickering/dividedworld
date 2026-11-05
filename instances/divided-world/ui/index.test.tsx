@@ -24,8 +24,15 @@ describe('Divided World\'s developer persona', () => {
 
 describe('Divided World\'s onboarding words', () => {
   test('fill the engine\'s tips exactly, and the check is run against the real instance', () => {
-    expect(instanceUiProblems(instanceUi)).toEqual([]);
+    expect(instanceUiProblems(instanceUi, instance)).toEqual([]);
     expect(Object.keys(instanceUi.onboarding.tips).sort()).toEqual([...TIP_KEYS].sort());
+  });
+  test('the front door passes the same check, in its own words', () => {
+    expect(instanceUi.frontDoor.cast.map((c) => c.name)).toEqual(['Snuckles', 'Captain Wholesome', 'The Accountant', 'Mr. Roboto']);
+    /* One of each class that posts, each through the postbit's real revealed line: the Lurker never posts, so it is absent by design. */
+    expect(instanceUi.frontDoor.cast.map((c) => c.revealed?.class)).toEqual(['jabroni', 'face', 'technician', 'heel']);
+    expect(instanceUi.frontDoor.posts).toHaveLength(5);
+    expect(instanceUiProblems(instanceUi, instance).filter((p) => /front door/u.test(p))).toEqual([]);
   });
   test('the letter opens as Gabe\'s welcome does', () => {
     expect(instanceUi.onboarding.letter).toMatch(/^## After nine years of development/u);

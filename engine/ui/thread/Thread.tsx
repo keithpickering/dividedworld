@@ -37,7 +37,8 @@ import { createPlays, effectCards, readAbove, readEffects, readPlays } from '../
 import { Composer, SystemBoardNote, type ComposerHandle } from '../composer/Composer.tsx';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id, ThreadListener } from '../data/api.ts';
-import { SignInPrompt, pageList, useSignedIn } from '../mini.tsx';
+import { pageList, useSignedIn } from '../mini.tsx';
+import { FrontDoor } from '../front-door/FrontDoor.tsx';
 import { motionReduced } from '../appearance.ts';
 import { usePlayer } from '../player.tsx';
 import { PresenceBox } from '../presence/PresenceBox.tsx';
@@ -72,7 +73,7 @@ export function ThreadScreen({ thread }: { readonly thread: Id }) {
   const { api } = useKayfa();
   const signedIn = useSignedIn(api);
   if (signedIn === null) return <div className="kb-thread" aria-busy="true" />;
-  if (!signedIn) return <div className="kb-thread"><SignInPrompt /></div>;
+  if (!signedIn) return <FrontDoor />;
   return <ThreadView key={thread} thread={thread} />;
 }
 

@@ -61,8 +61,10 @@ export function Pips({ ranks, index, name, style }: { readonly ranks: number; re
   );
 }
 
-export const Postbit = memo(function Postbit({ person, layout, marks = null }: {
+export const Postbit = memo(function Postbit({ person, layout, marks = null, link = true }: {
   readonly person: PostbitPerson; readonly layout: PostbitLayout;
+  /** The name links to the character's profile; false draws it as text, for a made-up character with no profile behind it (the front door). */
+  readonly link?: boolean;
   /** The character's own marks (its live plays beyond a post), drawn under its name: the thread hands them in. */
   readonly marks?: ReactNode;
 }) {
@@ -77,7 +79,7 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null }: {
     <div className="kb-postbit" role="group" aria-label={`About ${c.name}`} data-kb-postbit={layout}>
       <Avatar character={c} layout={layout} />
       <div className="kb-postbit-text">
-        <span className="kb-postbit-name"><Link to={`/c/${encodeURIComponent(c.id)}`}>{c.name}</Link></span>
+        <span className="kb-postbit-name">{link ? <Link to={`/c/${encodeURIComponent(c.id)}`}>{c.name}</Link> : c.name}</span>
         {c.staff && <StaffBadge character={c} />}
         {marks && <span className="kb-postbit-marks">{marks}</span>}
         {c.title && <span className="kb-postbit-title kb-small kb-muted">{c.title}</span>}

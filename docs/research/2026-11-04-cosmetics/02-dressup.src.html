@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>The wardrobe: cosmetics board 02</title>
+<!-- Cosmetics design session, 2026-11-04. The glass: dressing one mask from the account's wardrobe. The portrait at
+     its own shape, gear dragged on, the selected piece with its size and turn handles, the same moves as buttons, the
+     square's preview, and the wardrobe's copies with where each is worn. Placeholder art (art.svg). -->
+<link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="boards.css">
+<style>
+  .stage{position:absolute;left:96px;top:230px;width:320px;height:640px;outline:1px dashed rgba(201,248,255,.35);outline-offset:40px;border:1px solid rgba(201,248,255,.45);background:#0b0816}
+  .stage>svg{display:block;width:100%;height:100%}
+  .gear{position:absolute}
+  .gear svg{display:block;width:100%;height:100%}
+  .gear.sel{outline:2px dashed var(--ready);outline-offset:4px}
+  .h{position:absolute;width:16px;height:16px;background:var(--ready);border:2px solid var(--ink-ready)}
+  .rot{position:absolute;width:18px;height:18px;border-radius:50%;background:var(--neon);border:2px solid var(--ink-neon)}
+  .ctl{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .ctl button{min-height:48px;padding:0 6px;border:1px solid rgba(201,248,255,.5);background:rgba(25,227,255,.06);font:800 18px var(--body);letter-spacing:1px;color:var(--pale);cursor:pointer}
+  .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .tile{position:relative;border:1px solid rgba(201,248,255,.3);background:rgba(10,6,20,.7);padding:12px 10px 10px;display:flex;flex-direction:column;align-items:center;gap:6px;min-height:178px}
+  .tile.on{border-color:var(--ready);box-shadow:inset 0 0 20px rgba(255,217,61,.18)}
+  .tile svg{width:96px;height:64px}
+  .tile b{font:800 19px/1.1 var(--body);color:var(--hi);text-align:center}
+  .tile .worn{font:600 16px/1.25 var(--body);color:#bdb5d8;text-align:center}
+  .tile .gem{position:absolute;left:10px;top:12px}
+  .sqprev{display:block;flex:none;width:120px;height:120px;border:1px solid rgba(201,248,255,.45);overflow:hidden;position:relative;background:#0b0816}
+</style>
+</head>
+<body>
+<!--ART-->
+<div class="board">
+  <nav class="menu" aria-label="Menu">
+    <a href="#" class="tab esc"><b><kbd>ESC</kbd>BACK TO THE BOARD</b></a>
+    <a href="#" class="tab"><b>MY CHARACTERS</b></a>
+    <a href="#" class="tab" aria-current="page"><b>WARDROBE</b></a>
+    <a href="#" class="tab"><b>LOG</b></a>
+    <a href="#" class="tab"><b>SETTINGS</b></a>
+  </nav>
+  <!--SMOKE-->
+  <div style="position:absolute;left:64px;top:104px;display:flex;align-items:center;gap:16px">
+    <span class="label">DRESSING</span>
+    <select aria-label="Which character to dress" style="width:240px"><option>Pipewrench</option></select>
+    <span class="note">The dashed line is as far past the portrait as a piece may reach.</span>
+  </div>
+
+  <div class="stage" aria-label="Pipewrench's portrait with its gear">
+    <svg viewBox="0 0 100 200" preserveAspectRatio="none"><use href="#portrait"/></svg>
+    <span class="gear" style="left:12%;top:-6%;width:76%;height:23%;transform:rotate(-8deg)"><svg viewBox="0 0 100 60"><use href="#g-cap"/></svg></span>
+    <span class="gear sel" style="left:30%;top:34.5%;width:40%;height:7%"><svg viewBox="0 0 100 34"><use href="#g-stache"/></svg>
+      <span class="h" style="right:-14px;bottom:-14px"></span><span class="h" style="left:-14px;bottom:-14px"></span><span class="h" style="right:-14px;top:-14px"></span><span class="h" style="left:-14px;top:-14px"></span>
+      <span class="rot" style="left:calc(100% + 26px);top:calc(50% - 9px)"></span>
+    </span>
+    <span class="gear" style="left:56%;top:54%;width:26%;height:13%;transform:rotate(14deg)"><svg viewBox="0 0 60 60"><use href="#g-button"/></svg></span>
+  </div>
+
+  <div style="position:absolute;left:480px;top:150px;width:390px;display:flex;flex-direction:column;gap:18px">
+    <div class="panel">
+      <div class="label" style="margin-bottom:8px">SELECTED · MUSTACHE</div>
+      <p class="body" style="margin:0 0 12px">Drag it, pull a corner to size it, or turn it by the round handle. The same moves from the keyboard:</p>
+      <div class="ctl">
+        <button aria-label="Move left">&larr;</button><button aria-label="Move up">&uarr;</button><button aria-label="Move down">&darr;</button><button aria-label="Move right">&rarr;</button>
+        <button>BIGGER</button><button>SMALLER</button><button>TURN &#8634;</button><button>TURN &#8635;</button>
+        <button style="grid-column:span 2">BRING FORWARD</button><button style="grid-column:span 2">SEND BACK</button>
+      </div>
+      <button class="btn" style="margin-top:14px"><b>TAKE IT OFF</b></button>
+    </div>
+    <div class="panel cyan">
+      <div class="label" style="margin-bottom:8px">ON THE SQUARE</div>
+      <div style="display:flex;gap:14px;align-items:flex-start">
+        <span class="sqprev" aria-hidden="true"><span style="position:absolute;left:0;top:0;width:100%;height:200%">
+          <svg viewBox="0 0 100 200" style="width:100%;height:100%;display:block"><use href="#portrait"/></svg>
+          <span class="gear" style="left:12%;top:-6%;width:76%;height:23%;transform:rotate(-8deg)"><svg viewBox="0 0 100 60"><use href="#g-cap"/></svg></span>
+          <span class="gear" style="left:30%;top:34.5%;width:40%;height:7%"><svg viewBox="0 0 100 34"><use href="#g-stache"/></svg></span>
+        </span></span>
+        <p class="note" style="margin:0">Cut at the square's edge. The button is below the square, so it shows only on the tall portrait.</p>
+      </div>
+    </div>
+    <p class="note" style="margin:0">3 of 12 pieces worn. A new portrait takes all of them off; recropping the square keeps them.</p>
+    <button class="btn gold"><b>SAVE THE OUTFIT</b></button>
+  </div>
+
+  <div style="position:absolute;left:900px;right:64px;top:150px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px">
+      <h1 style="margin:0;font:46px/1 var(--display);color:var(--hi)">THE WARDROBE</h1>
+      <span class="note">Yours alone. Drag a piece onto the portrait, or press Enter on it.</span>
+    </div>
+    <div class="tiles">
+      <div class="tile on"><span class="gem r-common"><span class="rar"></span></span><svg viewBox="0 0 100 60"><use href="#g-cap"/></svg><b>Baseball Cap</b><span class="worn">2 held · 1 on Pipewrench, 1 free</span></div>
+      <div class="tile on"><span class="gem r-uncommon"><span class="rar"></span></span><svg viewBox="0 0 100 34"><use href="#g-stache"/></svg><b>Mustache</b><span class="worn">6 held · 1 on Pipewrench, 2 on Sock Puppet, 3 free</span></div>
+      <div class="tile on"><span class="gem r-rare"><span class="rar"></span></span><svg viewBox="0 0 60 60"><use href="#g-button"/></svg><b>"I Really Wish I Weren't Here" Button</b><span class="worn">1 held · on Pipewrench</span></div>
+      <div class="tile"><span class="gem r-common"><span class="rar"></span></span><svg viewBox="0 0 100 30"><use href="#g-shades"/></svg><b>Shades</b><span class="worn">1 held · on Dr. Bones</span></div>
+      <div class="tile"><span class="gem r-legendary"><span class="rar"></span></span><svg viewBox="0 0 80 90"><use href="#g-tophat"/></svg><b>Nostalgic Hat</b><span class="worn">1 held · free</span></div>
+    </div>
+    <div class="panel cyan" style="margin-top:22px">
+      <div class="label" style="margin-bottom:6px">MUSTACHE · UNCOMMON</div>
+      <p class="body" style="margin:0">"Distinguished. Mostly." Found in a Random Event on Nov 1, granted by an admin on Nov 3 (×5). Anyone can see what a mask wears; only you see what you hold.</p>
+    </div>
+  </div>
+</div>
+</body>
+</html>

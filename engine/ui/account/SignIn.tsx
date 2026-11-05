@@ -17,6 +17,7 @@ import { useKayfa } from '../context.tsx';
 import { LOST_ANSWER } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
+import { ReachAPerson } from '../contact/Contact.tsx';
 import { Link, useLocation, useNavigate } from '../router.tsx';
 import { safeNext } from './next.ts';
 import { OpenAccount } from './OpenAccount.tsx';
@@ -158,6 +159,7 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
           </p>
         </form>
       )}
+      <p className="kb-acct-text"><ReachAPerson /></p>
       </div>
     </div>
   );

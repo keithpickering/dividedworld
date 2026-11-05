@@ -43,9 +43,10 @@ describe('the index', () => {
     expect(row).toHaveTextContent('None yet');
   });
 
-  test('a signed-out visitor is asked to sign in', async () => {
+  test('a signed-out visitor sees the front door, not the index', async () => {
     renderInWorld(<IndexScreen />, { seed: () => {} });
-    expect(await screen.findByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/sign-in');
+    expect(await screen.findByRole('heading', { level: 1, name: 'How do we explain this' })).toBeInTheDocument();
+    expect(screen.queryByText(/The board is for players\./u)).toBeNull();
     expect(screen.queryByRole('table')).toBeNull();
   });
 });

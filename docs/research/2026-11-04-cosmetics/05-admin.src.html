@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>Trophies and gear, for admins: cosmetics board 05</title>
+<!-- Cosmetics design session, 2026-11-04. The glass's admin page: make a one-off trophy, award any trophy (a belt
+     passes to its new holder), reverse an award, and grant gear to a character's player. -->
+<link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="boards.css">
+<style>
+  .grid{position:absolute;left:64px;right:64px;top:120px;bottom:40px;display:grid;grid-template-columns:1fr 1fr;gap:28px}
+  .grid .panel{padding:22px 24px}
+  .f{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+  .f input,.f select{width:100%;text-align:left}
+  .admin svg{width:24px;height:24px;vertical-align:middle}
+  .admin svg.belt{width:44px;height:22px}
+</style>
+</head>
+<body>
+<!--ART-->
+<div class="board">
+  <nav class="menu" aria-label="Menu">
+    <a href="#" class="tab esc"><b><kbd>ESC</kbd>BACK TO THE BOARD</b></a>
+    <a href="#" class="tab"><b>MOVE QUEUE</b></a>
+    <a href="#" class="tab"><b>THE MACHINE</b></a>
+    <a href="#" class="tab" aria-current="page"><b>TROPHIES &amp; GEAR</b></a>
+    <a href="#" class="tab"><b>UPDATES</b></a>
+  </nav>
+  <!--SMOKE-->
+  <div class="grid">
+    <div style="display:flex;flex-direction:column;gap:28px">
+      <section class="panel cyan">
+        <h2 style="margin:0 0 14px;font:38px/1 var(--display);color:var(--hi)">AWARD A TROPHY</h2>
+        <div class="f"><label class="label" for="a1">TROPHY</label><select id="a1"><option>Sprite Contest 2026 (made here)</option><option>Hardcore Belt (belt)</option><option>Season 1 Champion</option></select></div>
+        <div class="f"><label class="label" for="a2">TO THE CHARACTER</label><input id="a2" value="Pipewrench"></div>
+        <div class="f"><label class="label" for="a3">ITS LINE (OPTIONAL)</label><input id="a3" value="Best walk cycle."></div>
+        <p class="note">A belt passes to this character and its holder's reign ends. The award, and who gave it, is shown on the profile and in the character's log.</p>
+        <button class="btn gold"><b>AWARD</b></button>
+      </section>
+      <section class="panel">
+        <h2 style="margin:0 0 14px;font:38px/1 var(--display);color:var(--hi)">GRANT GEAR</h2>
+        <div style="display:grid;grid-template-columns:2fr 2fr 1fr;gap:14px">
+          <div class="f"><label class="label" for="g1">ITEM</label><select id="g1"><option>Mustache</option></select></div>
+          <div class="f"><label class="label" for="g2">TO THE CHARACTER</label><input id="g2" value="Dr. Bones"></div>
+          <div class="f"><label class="label" for="g3">COPIES</label><input id="g3" value="5"></div>
+        </div>
+        <p class="note">The copies go to the wardrobe of whoever plays that character. This page never says who that is.</p>
+        <button class="btn gold"><b>GRANT</b></button>
+      </section>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:28px">
+      <section class="panel cyan">
+        <h2 style="margin:0 0 14px;font:38px/1 var(--display);color:var(--hi)">MAKE A TROPHY</h2>
+        <div class="f"><label class="label" for="m1">NAME</label><input id="m1" value="Sprite Contest 2026"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <div class="f"><label class="label" for="m2">IMAGE (PNG OR WEBP, 48×48 AT MOST)</label><button class="btn cyan" id="m2"><b>CHOOSE A FILE</b></button></div>
+          <div class="f"><span class="label">KIND</span><select aria-label="Kind"><option>A trophy</option><option>A belt (one holder at a time)</option></select></div>
+        </div>
+        <button class="btn gold"><b>MAKE IT</b></button>
+      </section>
+      <section class="panel">
+        <h2 style="margin:0 0 10px;font:38px/1 var(--display);color:var(--hi)">RECENT AWARDS</h2>
+        <table class="admin"><thead><tr><th></th><th>TROPHY</th><th>TO</th><th>BY</th><th></th></tr></thead><tbody>
+          <tr><td><svg class="belt" viewBox="0 0 48 24"><use href="#t-belt"/></svg></td><td>Hardcore Belt</td><td>Pipewrench</td><td>The Boss · Nov 2</td><td><a href="#" class="note">Reverse in the queue</a></td></tr>
+          <tr><td><svg viewBox="0 0 24 24"><use href="#t-sprite"/></svg></td><td>Sprite Contest 2026</td><td>Pipewrench</td><td>An admin · Oct 30</td><td><button class="btn" style="min-height:40px;padding:0 14px"><b>REVERSE</b></button></td></tr>
+          <tr><td><svg viewBox="0 0 24 24"><use href="#t-demand"/></svg></td><td>Met the Boss's demand</td><td>12 characters</td><td>The System · Oct 14</td><td><button class="btn" style="min-height:40px;padding:0 14px"><b>REVERSE ONE</b></button></td></tr>
+        </tbody></table>
+      </section>
+    </div>
+  </div>
+</div>
+</body>
+</html>

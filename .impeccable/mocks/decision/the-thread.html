@@ -1,0 +1,55 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>the-thread</title>
+<style>
+@font-face{font-family:Anton;src:url(../../../instances/divided-world/ui/fonts/Anton-Regular.woff2)}
+@font-face{font-family:'Barlow Condensed';font-weight:500;src:url(../../../instances/divided-world/ui/fonts/BarlowCondensed-Medium.woff2)}
+@font-face{font-family:'Barlow Condensed';font-weight:600;src:url(../../../instances/divided-world/ui/fonts/BarlowCondensed-SemiBold.woff2)}
+@font-face{font-family:'Barlow Condensed';font-weight:700;src:url(../../../instances/divided-world/ui/fonts/BarlowCondensed-Bold.woff2)}
+@font-face{font-family:'Barlow Condensed';font-weight:800;src:url(../../../instances/divided-world/ui/fonts/BarlowCondensed-ExtraBold.woff2)}
+@font-face{font-family:'Barlow Condensed';font-weight:800;font-style:italic;src:url(../../../instances/divided-world/ui/fonts/BarlowCondensed-ExtraBoldItalic.woff2)}
+html,body{margin:0}
+.frame{width:1440px;height:900px;position:relative;overflow:hidden;background:#07050d;color:#f1ecff;font-family:'Barlow Condensed',sans-serif}
+.smoke{position:absolute;inset:0}
+.skew{display:inline-flex;align-items:center;transform:skewX(-10deg);text-decoration:none}
+.skew>b{display:inline-block;transform:skewX(10deg);font-weight:inherit}
+.cta{min-height:64px;padding:0 32px;font:30px/1 Anton,sans-serif;letter-spacing:1.5px;color:#03141a;background:#19e3ff;box-shadow:0 0 26px rgba(25,227,255,.6)}
+.ghost{min-height:56px;padding:0 24px;font:800 22px 'Barlow Condensed',sans-serif;letter-spacing:1.5px;color:#f1ecff;border:1px solid rgba(241,236,255,.6)}
+.disp{font-family:Anton,sans-serif;font-weight:400;letter-spacing:.5px;margin:0}
+.chamfer{clip-path:polygon(0 0,calc(100% - 24px) 0,100% 24px,100% 100%,24px 100%,0 calc(100% - 24px))}
+.sample{font:800 16px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#03141a;background:#ffd93d;padding:2px 8px}
+</style>
+</head><body>
+<div class="frame" style="background:#fff;color:#000;font-family:Verdana,'DejaVu Sans',sans-serif">
+<div style="padding:18px 28px 0">
+  <div style="display:flex;justify-content:space-between;align-items:baseline;font-family:'Courier New',monospace"><b style="font-size:22px;letter-spacing:2px">DIVIDED WORLD</b><span style="font:12px Verdana;color:#555">dw.gripe</span></div>
+  <div style="border-top:1px solid #000;border-bottom:1px solid #000;margin-top:12px;padding:6px 0;font-size:11px"><u>Front door</u> · <u>Sign in</u> · <u>Register</u></div>
+  <div style="margin-top:14px;font-size:11px"><u>Divided World</u> » <u>Front door</u> » what is this place <span class="sample" style="font-size:11px;margin-left:8px">SAMPLE THREAD · MADE UP</span></div>
+  <h1 style="font:bold 20px 'Courier New',monospace;margin:6px 0 8px">what is this place</h1>
+  <table style="width:100%;border-collapse:collapse;border:1px solid #000;font-size:12px">
+    <tr style="font:bold 11px 'Courier New'"><td style="border:1px solid #000;padding:3px 8px;width:200px">Author</td><td style="border:1px solid #000;padding:3px 8px">Message</td></tr>
+    <tr><td style="border:1px solid #000;padding:8px;vertical-align:top"><b><u>Spritey</u></b><br>Main Eventer<br><span style="color:#d4a017">◆◆◆◆◇◇</span></td>
+      <td style="border:1px solid #000;padding:10px 12px;vertical-align:top;line-height:1.6">It's a forum. You make up to six characters. Each one has a secret class, and the class decides which reactions make it stronger. Nobody can see which characters are yours.<div style="margin-top:8px;font-size:11px"><span style="border:1px solid #000;padding:1px 6px">🔥 4</span> <span style="border:1px solid #000;padding:1px 6px">🙄 2</span> <span style="border:1px solid #000;padding:1px 6px">☕ 1</span></div></td></tr>
+    <tr><td style="border:1px solid #000;padding:8px;vertical-align:top"><b><u>Mrs. Hooligan</u></b><br>Midcarder<br><span style="color:#d4a017">◆◆◆◇◇◇</span></td>
+      <td style="border:1px solid #000;padding:10px 12px;vertical-align:top;line-height:1.6;position:relative;height:96px">Reactions turn into Aura every night. Spend it on postcards, then play them on posts. Like this one.
+        <svg width="460" height="120" style="position:absolute;left:180px;top:-6px" aria-hidden="true"><path d="M30 60 C40 10 160 0 220 30 C300 -5 420 20 430 60 C460 100 330 120 240 100 C160 125 40 115 30 60Z" fill="#ff3d7f" opacity=".92"/><circle cx="450" cy="20" r="9" fill="#ff3d7f"/><circle cx="14" cy="100" r="6" fill="#ff3d7f"/></svg>
+        <div style="position:relative;font-size:11px;color:#555;margin-top:30px">This post is splatted. <b style="color:#000">Drag across the ink to scrub it</b>, or <span style="border:1px solid #000;padding:1px 4px;color:#000">Scrub with the keyboard</span></div></td></tr>
+    <tr><td style="border:1px solid #000;padding:8px;vertical-align:top"><b><u>Pipewrench</u></b><br>Enhancement Talent</td>
+      <td style="border:1px solid #000;padding:10px 12px;vertical-align:top;line-height:1.6">At the end of the season every character's class is revealed. Not who played it. You'll have to work that out yourself.</td></tr>
+  </table>
+</div>
+<!-- The HUD, signed out: the glass docked under the board, where Register lives. -->
+<div style="position:absolute;left:0;right:0;bottom:0;height:200px;background:#07050d;color:#f1ecff;border-top:1px solid #c9f8ff;box-shadow:0 -2px 14px rgba(25,227,255,.6);font-family:'Barlow Condensed'">
+  <svg class="smoke" aria-hidden="true" width="1440" height="900"><defs><filter id="A"><feTurbulence type="fractalNoise" baseFrequency="0.0022 0.004" numOctaves="5" seed="31"/><feColorMatrix values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.74"/><feGaussianBlur stdDeviation="18"/></filter><filter id="B"><feTurbulence type="fractalNoise" baseFrequency="0.003 0.005" numOctaves="4" seed="14"/><feColorMatrix values="0 0 0 0 0.08  0 0 0 0 0.85  0 0 0 0 1  0 2 0 0 -1.0"/><feGaussianBlur stdDeviation="18"/></filter></defs><rect width="1440" height="900" filter="url(#A)" opacity=".75"/><rect width="1440" height="900" filter="url(#B)" opacity=".45"/></svg>
+  <div style="position:absolute;left:48px;top:34px;display:flex;gap:22px;align-items:center">
+    <div style="width:86px;height:86px;border:2px solid #19e3ff;box-shadow:0 0 14px rgba(25,227,255,.6);display:flex;align-items:center;justify-content:center;font:48px Anton">?</div>
+    <div><span class="disp" style="font-size:44px">NOBODY YET</span><br><span style="font:700 22px 'Barlow Condensed';color:#e4def7">No mask, no orbs, no hand. That's the rest of the game.</span></div>
+  </div>
+  <div style="position:absolute;left:620px;top:46px;display:flex;gap:14px">
+    <i style="width:56px;height:56px;border-radius:50%;border:1px solid #555;background:radial-gradient(circle at 35% 30%,#3a2f55,#0b0914)"></i><i style="width:56px;height:56px;border-radius:50%;border:1px solid #555;background:radial-gradient(circle at 35% 30%,#3a2f55,#0b0914)"></i><i style="width:56px;height:56px;border-radius:50%;border:1px solid #555;background:radial-gradient(circle at 35% 30%,#3a2f55,#0b0914)"></i>
+  </div>
+  <div style="position:absolute;right:48px;top:40px;display:flex;flex-direction:column;align-items:flex-end;gap:12px">
+    <a class="skew cta" href="#"><b>REGISTER WITH AN INVITE</b></a>
+    <span style="font:600 20px 'Barlow Condensed'">Already playing? <u style="color:#c9f8ff">Sign in</u></span>
+  </div>
+</div>
+</div>
+</body></html>

@@ -837,15 +837,52 @@ describe('what a list row shows', () => {
     expect(row?.lastSeq).toBe(3);
   });
 
-  test('a spun thread names its origin in the row: the thread, its title and the Act\'s seq', async () => {
+  test('a spun thread names its origin in the row: the thread, and the place with its title and the Act\'s seq', async () => {
     const { fake, anaFace, thread } = world();
     const second = must(await fake.post(thread, anaFace, 'second', null));
     const spun = must(await fake.spin(second.id, anaFace, 'Spun out', 'body'));
     const row = await fake.thread(spun.thread.id);
-    expect([row?.originThread, row?.originTitle, row?.originSeq]).toEqual([thread, 'Hello', 2]);
-    expect((await fake.spunFrom(second.id)).map((t) => [t.originThread, t.originSeq])).toEqual([[thread, 2]]);
+    expect([row?.originThread, row?.origin]).toEqual([thread, { kind: 'post', thread, title: 'Hello', seq: 2 }]);
+    expect((await fake.spunFrom(second.id)).map((t) => [t.originThread, t.origin])).toEqual([[thread, { kind: 'post', thread, title: 'Hello', seq: 2 }]]);
     const plain = await fake.thread(thread);
-    expect([plain?.originThread, plain?.originTitle, plain?.originSeq]).toEqual([null, null, null]);
+    expect([plain?.originThread, plain?.origin]).toEqual([null, null]);
+  });
+
+  test('a thread spun from a play has the place the SQL gives it: a play, with its card and where it landed (0079)', async () => {
+    const { fake, anaFace, boFace, opener, thread } = world();
+    const place = async (origin: string) => (await fake.thread(must(await fake.spin(origin, anaFace, 'Spun', 'b')).thread.id))?.origin;
+    const post = { kind: 'post', thread, title: 'Hello', seq: 1 };
+    // A face-up card on a post.
+    expect(await place(fake.seed.card(anaFace, opener, 'whoops'))).toEqual({ kind: 'play', card: 'whoops', on: post });
+    // A face-down set names no card; its spring, its own Act, names it.
+    const set = fake.seed.set(boFace, fake.seed.post(thread, boFace, 'Bo here.'), 'snare');
+    expect(await place(set)).toEqual({ kind: 'play', card: null, on: { kind: 'post', thread, title: 'Hello', seq: 2 } });
+    expect(JSON.stringify(await place(set))).not.toContain('snare');
+    expect(await place(fake.seed.spring(set))).toEqual({ kind: 'play', card: 'snare', on: { kind: 'post', thread, title: 'Hello', seq: 2 } });
+    // Beyond a post: a character (its name, null before its debut), a thread and a board.
+    const mine = fake.seed.post(thread, anaFace, 'Mine.');
+    expect(await place(fake.seed.reach(boFace, 'character', anaFace, 'glint', { post: mine }))).toEqual({ kind: 'play', card: 'glint', on: { kind: 'character', id: anaFace, name: 'Ana Face' } });
+    const unborn = fake.seed.staff('ghost', 'Not Yet', 'bot', { debuted: false });
+    const sys = fake.seed.thread('the-system', null, 'Notice').thread;
+    const theirs = fake.seed.staffPost(unborn, sys, 'Hidden.');
+    expect(await place(fake.seed.reach(boFace, 'character', unborn, 'glint', { post: theirs }))).toEqual({ kind: 'play', card: 'glint', on: { kind: 'character', id: unborn, name: null } });
+    expect(await place(fake.seed.reach(boFace, 'thread', thread, 'glint'))).toEqual({ kind: 'play', card: 'glint', on: { kind: 'thread', id: thread, title: 'Hello' } });
+    const general = (await fake.boards()).find((b) => b.slug === 'general')!;
+    expect(await place(fake.seed.reach(boFace, 'board', general.id, 'glint'))).toEqual({ kind: 'play', card: 'glint', on: { kind: 'board', slug: 'general', name: 'General' } });
+    // A card that kept an old place number (staged last, since it takes one): still a play, never a post.
+    const old = fake.seed.card(anaFace, opener, 'whoops');
+    fake.seed.legacyNumber(old);
+    expect(await place(old)).toEqual({ kind: 'play', card: 'whoops', on: post });
+  });
+
+  test('a thread spun from an update has the update\'s place, and a play on an update lands on the update', async () => {
+    const { fake, anaFace } = world();
+    const update = fake.seed.update({ title: 'Traps bite', body: 'Hi.' });
+    const spun = must(await fake.spin(update, anaFace, 'About it', 'b'));
+    expect(spun.thread.origin).toEqual({ kind: 'update', act: update, title: 'Traps bite' });
+    const played = fake.seed.card(anaFace, update, 'whoops');
+    const fromPlay = must(await fake.spin(played, anaFace, 'About the play', 'b'));
+    expect(fromPlay.thread.origin).toEqual({ kind: 'play', card: 'whoops', on: { kind: 'update', act: update, title: 'Traps bite' } });
   });
 
   test('spunFromMany reads the threads spun from any of several Acts at once, and cardsOn the card plays on one', async () => {
@@ -2058,7 +2095,7 @@ describe('Updates: the developer persona\'s posts (updates, post_update, 0062)',
     w.fake.signInAs(w.bo);
     expect(must(await w.fake.react(w.second, w.boFace, 'fire')).tally).toEqual({ fire: 2 });
     const spun = must(await w.fake.spin(w.second, w.boFace, 'About the trap', 'Discuss.'));
-    expect(spun.thread).toMatchObject({ originActId: w.second, originTitle: 'Updates', originSeq: 2 });
+    expect(spun.thread).toMatchObject({ originActId: w.second, origin: { kind: 'update', act: w.second, title: 'Traps bite' } });
     const board = (await w.fake.boards()).find((b) => b.id === spun.thread.board)!;
     expect(board.isSystem).toBe(false);
     expect((await w.fake.spunFrom(w.second)).map((t) => t.id)).toEqual([spun.thread.id]);
@@ -2095,5 +2132,28 @@ describe('Updates: the developer persona\'s posts (updates, post_update, 0062)',
     w.fake.signInAs(w.admin);
     must(await w.fake.postUpdate('Fourth', 'Body.', []));
     for (const account of [w.ana, w.cy, w.bo]) { w.fake.signInAs(account); expect((await w.fake.alerts()).filter((a) => a.kind === 'update')).toHaveLength(3); }
+  });
+});
+
+describe('the contact is written as set_admin_contact writes it (0081), with the SQL\'s one whitespace set', () => {
+  const adminFake = () => { const w = world(); const root = w.fake.seed.account('root', { admin: true }); w.fake.signInAs(root); return w.fake; };
+  const one = (label: string, href: string) => [{ label, href }];
+  test('U+00A0, U+0085 and U+FEFF are trimmed at the edges of a label and an address', async () => {
+    const fake = adminFake();
+    expect(await fake.setAdminContact(one(' \u0085Nb﻿', ' \u0085https://nb.example '))).toEqual({ ok: true, value: [{ label: 'Nb', href: 'https://nb.example' }] });
+  });
+  test('U+00A0 and U+0085 inside an address are refused as a space or control character, naming the row', async () => {
+    const fake = adminFake();
+    const words = 'row 1 has an address with no spaces or control characters in it';
+    expect(await fake.setAdminContact(one('Nb', 'https://a.example/ b'))).toEqual(refused(words));
+    expect(await fake.setAdminContact(one('Nel', 'https://a.example/\u0085b'))).toEqual(refused(words));
+  });
+  test('a label of only zero-width characters is refused, naming the predicate and the row, and leaves the stored contact alone', async () => {
+    const fake = adminFake();
+    must(await fake.setAdminContact(one('Keep', 'https://keep.example')));
+    const words = 'has a label with something visible in it, not only zero-width characters';
+    expect(await fake.setAdminContact(one('​‌‍⁠', 'https://a.example'))).toEqual(refused(`row 1 ${words}`));
+    expect(await fake.setAdminContact([...one('Ok', 'https://ok.example'), ...one(' ​﻿', 'https://a.example')])).toEqual(refused(`row 2 ${words}`));
+    expect(await fake.adminContact()).toEqual(one('Keep', 'https://keep.example'));
   });
 });
