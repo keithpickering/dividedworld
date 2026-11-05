@@ -70,7 +70,8 @@ revoke execute on function settings_held_pool_cards() from public, anon, authent
 --   1. Where the trap's setter is a staff character, `kayfabb.staff_writer` is open for the insert of the spring and again for the
 --      strike's, and is put back to the value it held when the insert is done (not to closed: a staff Cast that springs a staff trap
 --      is itself inside a staff write). A player's own Act, written after the spring, is therefore checked as it always was.
---   2. trapStruck is written only where the trap's setter has an owner; a staff trap has none to name as the one who did it.
+--   2. trapStruck goes to the struck post's author whoever set the trap; write_alert's last argument only names an account to skip (a
+--      player's own other masks, as 0058 has it), and a staff setter has none, so it is passed null and skips nobody.
 --   3. A Cast with no paying account is a staff character's (place_cast passes the account of a player's, and for a staff one the
 --      card's base price as `price`). When it is caught by a trap that pays out, the trapper is credited that price through wallet_move,
 --      made new and taken from no wallet, kind 'trapSystem', whatever the trapper holds.
@@ -153,9 +154,7 @@ begin
       || case when struck.seeded then jsonb_build_object('seed', floor(random() * 2147483648)::bigint) else '{}'::jsonb end
     from acts a where a.id = by_act returning id into struck_play;
     if setter_staff then perform set_config('kayfabb.staff_writer', flag, true); end if;
-    if setter_owner is not null then
-      perform write_alert((select a.character from acts a where a.id = by_act), 'trapStruck', null, struck_play, setter_owner);
-    end if;
+    perform write_alert((select a.character from acts a where a.id = by_act), 'trapStruck', null, struck_play, setter_owner);
     -- The struck card's play goes out with the spring, so it reaches readers live as the spring does.
     return act_projection(sprung) || jsonb_build_object('struck', act_projection(struck_play));
   end if;

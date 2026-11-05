@@ -180,8 +180,18 @@ describe('cards set face down, traps and catches', () => {
       wallet: [{ settlement: null, kind: 'trapSystem' as const, change: 75, overflow: 0, floored: 0, balanceAfter: 75, ref: 'sp', at: later }] };
     const [row] = logRows(data({ log, mine, acts: new Map([...posts, play, spring].map((a) => [a.id, a])), names }), w, 600, null);
     expect(row!.kind).toBe('payout');
-    expect(text(row!)).toBe('Your Snare caught Spritey\'s Whoops!. The System paid you 0.75 Aura.');
+    expect(text(row!)).toBe('Your Snare caught Spritey\'s Whoops! The System paid you 0.75 Aura.');
     expect([row!.aura, row!.wallet]).toEqual([75, 75]);
+  });
+
+  test('a capped trapper is told what was credited, never the base price', () => {
+    const play = act('k1', 'card', 's', { targetActId: 'post3', payload: { card: 'whoops', caught: 'set1' } });
+    const spring = act('sp', 'spring', 'p', { targetActId: 'post3', payload: { card: 'snare', trigger: 'cast', outcome: { do: 'payout' }, set: 'set1', by: 'k1', caught: 'k1' } });
+    const log = { ...empty, setEnds: [{ play: 'set1', card: 'snare', post: 'post3', spring: 'sp', endedAt: later }],
+      wallet: [{ settlement: null, kind: 'trapSystem' as const, change: 20, overflow: 55, floored: 0, balanceAfter: 10000, ref: 'sp', at: later }] };
+    const [row] = logRows(data({ log, mine, acts: new Map([...posts, play, spring].map((a) => [a.id, a])), names }), w, 600, null);
+    expect(text(row!)).toBe('Your Snare caught Spritey\'s Whoops! The System paid you 0.20 Aura.');
+    expect([row!.aura, row!.wallet]).toEqual([20, 10000]);
   });
 
   test('a strike says what it laid and where', () => {

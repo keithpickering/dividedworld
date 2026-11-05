@@ -259,9 +259,30 @@ begin
   perform tests.unbecome();
 end $$;
 
+-- ---- A trapper at the wallet cap is credited what the wallet took, and the event says so ----
+do $$
+declare
+  ann uuid := tests.account('sc-capped'); a uuid := tests.character(ann, 'Sc Capped');
+  t uuid := tests.thread('Caught staff at the cap');
+  pa uuid := tests.post(a, t, 'Trapped at the cap.');
+  cap integer := (setting('walletCap'))::integer; r jsonb;
+begin
+  perform pg_temp.hand(ann, 'snare');
+  insert into wallets (account, balance) values (ann, cap - 30);
+  perform set_card(ann, 'snare', a, pa, '{}', 0);
+  perform tests.become_service();
+  r := staff_play_card('sc-mod', 'sweetie', pa, '{}', '');
+  perform tests.unbecome();
+  if (select w.change || ':' || w.overflow || ':' || w.balance_after from wallet_events w where w.account = ann and w.kind = 'trapSystem')
+       is distinct from '30:70:' || cap then
+    raise exception 'a capped trapper is credited what fit, with the rest as overflow: %', (select jsonb_agg(to_jsonb(w)) from wallet_events w where w.account = ann);
+  end if;
+end $$;
+
 -- ---- A trap set by staff springs on a player's reply without refusing it, and the staff flag closes behind it ----
--- The poison: with spring_traps as 0078 wrote it (no flag opened) the strike's Act is a staff character's with the flag closed, which
--- acts_well_formed refuses, and with it the player's reply.
+-- The poison, planted and observed: with both `set_config('kayfabb.staff_writer', 'on', true)` lines removed from spring_traps in 0084
+-- (the flag left closed), this block fails at the player's reply with `a staff character acts only through The System` raised by
+-- acts_well_formed() inside spring_traps' insert of the spring (psql line 330 of the file as then run); restored, it passes.
 do $$
 declare
   bob uuid := tests.account('sc-replier'); b uuid := tests.character(bob, 'Sc Replier');
@@ -292,9 +313,15 @@ begin
   if coalesce(current_setting('kayfabb.staff_writer', true), '') = 'on' then raise exception 'the staff flag was left open after a spring'; end if;
   said := pg_temp.refused(format('insert into acts (character, kind, thread, payload) values (%L, ''post'', %L, ''{"body": "Passing as staff."}'')', mod, t));
   if said is null or said !~ 'a staff character acts only through The System' then raise exception 'a write passed as staff after a spring: %', said; end if;
-  -- A staff trap has no owner to alert: nothing is written for the struck post's author or for the setter.
-  if exists (select 1 from alerts where kind in ('trapStruck', 'trapSprang') and act in ((replied -> 'sprung' ->> 'id')::uuid, (select x.id from acts x where x.payload ->> 'spring' = replied -> 'sprung' ->> 'id'))) then
-    raise exception 'a staff trap wrote an alert';
+  -- The struck post's author is alerted that a trap struck (trapStruck goes to the struck post's author, a player, whoever set the
+  -- trap); the staff setter has no owner, so nothing is written for it.
+  if (select count(*) from alerts where kind = 'trapStruck' and account = bob
+        and act = (select x.id from acts x where x.payload ->> 'spring' = replied -> 'sprung' ->> 'id')) is distinct from 1 then
+    raise exception 'the player a staff trap struck was not alerted: %', (select jsonb_agg(to_jsonb(al)) from alerts al where al.account = bob);
+  end if;
+  if exists (select 1 from alerts where kind in ('trapStruck', 'trapSprang') and account is distinct from bob
+               and act in ((replied -> 'sprung' ->> 'id')::uuid, (select x.id from acts x where x.payload ->> 'spring' = replied -> 'sprung' ->> 'id'))) then
+    raise exception 'a staff trap wrote an alert for someone but the struck player';
   end if;
   -- It sprang once: the hook is spent.
   perform tests.become(bob);
