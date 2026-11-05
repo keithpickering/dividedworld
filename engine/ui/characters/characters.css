@@ -669,7 +669,8 @@
 
 .kb-choice {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  /* As many options across as keep each one's words at ten times their type, the radio and the padding beside it (90px): the Turn's loud tiles name their three columns (.kb-turn-loud). */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, max(240px, calc(10 * var(--kb-glass-size-body) + 90px))), 1fr));
   gap: 14px;
 }
 
