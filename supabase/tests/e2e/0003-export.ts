@@ -148,14 +148,23 @@ test('an instance exported and imported into a fresh database is the same instan
       -- A meeting, the Boss's memory and profile from it, and its move bank (0044); the call above names the meeting.
       insert into meetings (started_at, slot, finished_at, outcome, bank_before, bank_after, record) values (now() - interval '1 minute', now() - interval '1 minute', now(), 'ok', 1, 0, '{"trims": []}');
       perform record_model_call(jsonb_build_object('duty', 'meeting', 'staff', 'director', 'provider', 'anthropic', 'model', 'claude-opus-5-5', 'service_tier', 'standard', 'input_tokens', 1200, 'output_tokens', 300, 'cost_microdollars', 10800, 'outcome', 'rejected', 'predicate', 'atMost(6)', 'trims', '[{"path": "moves", "predicate": "atMost(6)", "before": 7, "after": 6}]'::jsonb, 'retries', 1, 'meeting', (select max(id) from meetings)));
-      -- A Boss and a Mod Bot (0043): characters with no owner, the bot on staff, the Boss named by the season and writing an Act.
-      insert into characters (name, staff, staff_kind, debuted_at) values ('Exported Boss', 'exp-boss', 'boss', now()), ('Exported Bot', 'exp-bot', 'bot', now());
-      insert into staff_changes (staff, on_staff) values ('exp-bot', true);
+      -- A Boss and a Mod Bot (0043, 0082): personas with no owner, the bot an office row's mod, the Boss named by the season and writing an Act.
+      insert into characters (name, staff, staff_kind, debuted_at) values ('Exported Boss', 'exp-boss', 'persona', now()), ('Exported Bot', 'exp-bot', 'persona', now());
+      insert into staff_offices (staff, office, cause) values ('exp-bot', 'mod', 'seed');
       update seasons set boss = 'exp-boss' where ends_at is null;
       insert into staff_memory (staff, meeting, body) select 'exp-boss', max(id), '{"opinions": [], "grudges": []}' from meetings;
       insert into staff_profiles (staff, meeting, interests, favorites, mood, signature) select 'exp-boss', max(id), '{pie}', array[a], 'smug', 'It is decided.' from meetings;
       insert into move_bank (staff, balance, as_of) values ('exp-boss', 3.5, now());
       perform write_staff_act('exp-boss', 'post', t, null, '{"body": "Carried across, with no account behind it."}');
+      -- A note the Boss wrote with that post (0085).
+      insert into staff_notes (staff, act, body) select 'exp-boss', id, 'A thought to itself, carried across.' from acts where character = (select id from characters where staff = 'exp-boss') and kind = 'post' order by created_at desc limit 1;
+      -- The day it posted, in the pool's ledger (0089).
+      insert into pool_spends (day, staff, trigger, post_act, record) select '2030-01-07', 'exp-boss', 'named', id, '{"trims": []}' from acts where character = (select id from characters where staff = 'exp-boss') and kind = 'post' order by created_at desc limit 1;
+      -- A handover's to-do an admin dismissed (0090): the handover is a Boss changing, the season it opened.
+      insert into season_handovers (season, outgoing, boss, how) select (select id from seasons where ends_at is null), 'exp-boss', 'exp-bot', 'rotation' on conflict (season) do nothing;
+      insert into handover_dismissals (season, admin) select season, ann from season_handovers order by season limit 1;
+      -- A run's claim on a day (0089), which the pool's schedule would have taken.
+      insert into pool_run_claims (day) values ('2030-01-07');
       -- The developer persona (0062): a staff character of its own kind, its avatar key, the updates thread The System's board never lists (updatesThread),
       -- and an update by it, written as post_update writes one.
       perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
@@ -192,6 +201,11 @@ test('an instance exported and imported into a fresh database is the same instan
     create table public.export_probe (id integer primary key, amount numeric(10,2), tags text[], said text);
     insert into public.export_probe values (1, 12.50, array['a,b', 'q"uote', null], 'astral 😀 and \\. alone');`);
   const before = contents(from);
+  // The staff roster's tables hold a row in the fixture, so the comparison below carries each (an empty table would round-trip as well, and prove nothing).
+  for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals']) {
+    const rows = before.get(`public.${t}`);
+    assert.ok(rows !== undefined && rows !== '[]', `${t} holds a row in the fixture (got ${rows === undefined ? 'no such table' : rows})`);
+  }
   // The cast's own set, its spring and the card it caught, by their ids, so the round trip is shown to carry a trap's rows
   // whatever else this database holds (#136 F1).
   const trapIds = sql(`select f.play || '|' || s.id || '|' || k.id from face_down f join auth.users u on u.id = f.account and u.email = 'exp-ann@test.invalid'
@@ -374,6 +388,7 @@ test('an instance exported and imported into a fresh database is the same instan
     const after = contents(fresh.toString());
     assert.deepEqual([...after.keys()], [...before.keys()]);
     for (const [t, rows] of before) assert.equal(after.get(t), rows, `${t} differs after the round trip`);
+    for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals']) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
     // The contact an admin set is the same contact in the imported instance, as the page's read answers it (0081).
     const contact = (url: string) => psqlOn(url, `select admin_contact()::text`);
     assert.match(contact(from), /Exported mail/, 'the exported instance holds the contact');
@@ -403,8 +418,8 @@ test('an instance exported and imported into a fresh database is the same instan
     assert.equal(behind, '', `identity columns behind their rows: ${behind}`);
 
     // The jobs that run the instance are there, each scheduled from the imported settings: the
-    // settlement's, the view count's and the Boss's meeting.
-    assert.equal(psqlOn(fresh.toString(), `select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'kayfabb-%'`), 'kayfabb-meet,kayfabb-settle,kayfabb-system-tick,kayfabb-view-counts');
+    // settlement's, the view count's, the Boss's meeting and the pool's chatter.
+    assert.equal(psqlOn(fresh.toString(), `select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'kayfabb-%'`), 'kayfabb-chatter,kayfabb-meet,kayfabb-settle,kayfabb-system-tick,kayfabb-view-counts');
 
     // And a second import onto what is no longer a fresh instance is refused, naming why.
     const twice = await run('import-instance.mjs', ['--from', dir, '--to', fresh.toString(), '--storage', newStore.url]);

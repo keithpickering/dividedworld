@@ -159,7 +159,7 @@ test('a rename is queued, lands, is met by three characters and ends, and the ne
   assert.match(line, /demand distinctCharactersOnBoard 3 of 3, met/);
   assert.match(line, /met by Dayrun Ada, Dayrun Bea and Dayrun Cyd/, line);
   assert.ok(!line.includes('Dayrun Dov') && !line.includes('Dayrun Rex'), 'neither the early poster nor the one elsewhere is credited');
-  assert.ok(!line.includes(instance.system.bosses.find((b) => b.key === BOSS)!.name), 'a staff member is never credited');
+  assert.ok(!line.includes(instance.system.roster.find((b) => b.key === BOSS)!.name), 'a staff member is never credited');
 
   // ---- A reaction to the Boss's move Act is public and pays nobody; one to a player's post in the same window does pay. ----
   const rex = psqlDb(account('Dayrun Rex'));

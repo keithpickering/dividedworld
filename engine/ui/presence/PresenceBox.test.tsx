@@ -80,6 +80,31 @@ describe('the presence box', () => {
     expect((await fake.here({ kind: 'thread', thread: seeded.thread }, null)).names.map((n) => n.name)).toEqual(['Pipewrench']);
   });
 
+  test('a staff character is listed for the window after its post there, with the group after its name; a player is never given the group', async () => {
+    const { seeded, show, fake } = crowd(['Pipewrench']);
+    const modbot = fake.seed.staff('bot-a', 'Hall Monitor', 'mod');
+    fake.seed.staffPost(modbot, seeded.thread, 'Order.');
+    show(<PresenceBox place={{ kind: 'thread', thread: seeded.thread }} heading={HEADING} />);
+    const box = await screen.findByRole('region', { name: HEADING });
+    await within(box).findByRole('link', { name: 'Hall Monitor' });
+    expect(box).toHaveTextContent('Hall Monitor, Test Cores');
+    expect(within(box).getByText((_, el) => el?.textContent === ', ' && el.tagName === 'SPAN')).toHaveClass('kb-visually-hidden');
+    expect(box).toHaveTextContent('Pipewrench');
+    expect(box).not.toHaveTextContent('Pipewrench Test Cores');
+    expect(box).not.toHaveTextContent('Spritey Test Cores');
+  });
+
+  test('past the window the staff character is gone', async () => {
+    const { seeded, show, fake } = crowd(['Pipewrench']);
+    const modbot = fake.seed.staff('bot-a', 'Hall Monitor', 'mod');
+    fake.seed.staffPost(modbot, seeded.thread, 'Order.');
+    fake.clock.advance(6 * 60_000);
+    show(<PresenceBox place={{ kind: 'thread', thread: seeded.thread }} heading={HEADING} />);
+    const box = await screen.findByRole('region', { name: HEADING });
+    await within(box).findByRole('link', { name: 'Spritey' });
+    expect(box).not.toHaveTextContent('Hall Monitor');
+  });
+
   test('is not a live region', async () => {
     const { seeded, show } = crowd(['Pipewrench']);
     show(<PresenceBox place={{ kind: 'thread', thread: seeded.thread }} heading={HEADING} />);
@@ -175,7 +200,7 @@ describe('polling', () => {
       if (first) {
         first = false;
         await new Promise<void>((resolve) => { late.push(resolve); });
-        return { names: [{ id: 'stale', name: 'Stale' }], others: 0 };
+        return { names: [{ id: 'stale', name: 'Stale', staff: false }], others: 0 };
       }
       return real(place, through);
     });

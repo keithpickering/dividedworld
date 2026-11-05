@@ -6,7 +6,7 @@
 import type { DutyAssignee, SystemContent } from '../rules/types.ts';
 import type { Tier } from './model.ts';
 
-export const DUTIES = ['meeting', 'standingOrderLine', 'microEvent', 'renameJudge', 'appeal'] as const;
+export const DUTIES = ['meeting', 'standingOrderLine', 'microEvent', 'renameJudge', 'appeal', 'chatter'] as const;
 export type Duty = (typeof DUTIES)[number];
 
 export interface DutySpec {
@@ -14,13 +14,15 @@ export interface DutySpec {
   readonly tier: Tier;
 }
 
-/** The meeting runs on the stronger tier; micro-events, the rename judge and appeals on the light one; a standing order's line is the old voice. */
+/** The meeting runs on the stronger tier; micro-events, the rename judge, appeals and the pool's chatter on the light one; a standing order's line is the old voice. */
 export const DUTY_SPECS: Readonly<Record<Duty, DutySpec>> = {
   meeting: { mode: 'chat', tier: 'strong' },
   standingOrderLine: { mode: 'completion', tier: 'light' },
   microEvent: { mode: 'chat', tier: 'light' },
   renameJudge: { mode: 'chat', tier: 'light' },
   appeal: { mode: 'chat', tier: 'light' },
+  // A pool post (the staff roster plan, Task 10): chat for a persona whose voice is `chat`, a raw completion for one whose voice is the old voice (which answers its words alone). Always the light tier.
+  chatter: { mode: 'chat', tier: 'light' },
 };
 
 /**

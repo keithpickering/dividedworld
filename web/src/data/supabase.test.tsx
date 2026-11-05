@@ -34,6 +34,7 @@ const FALLBACK: ScreenSettings = {
   cardEconomy: {},
   economy: {},
   toastDefaults: ['quote', 'update'],
+  staffGroup: { name: 'Test Cores' },
 };
 
 const B64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');
@@ -142,8 +143,8 @@ describe('what the adapter may request', () => {
   });
 
   it('polls presence with the place and the HUD mask in the body, answers names and a count, and throws on a refusal', async () => {
-    const h = harness((r) => (r.url.pathname.endsWith('/rpc/here') ? json({ names: [{ id: A, name: 'Ann' }], others: 2 }) : json({}, 404)));
-    expect(await h.api.here({ kind: 'thread', thread: T }, B)).toEqual({ names: [{ id: A, name: 'Ann' }], others: 2 });
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/here') ? json({ names: [{ id: A, name: 'Ann', staff: false }, { id: B, name: 'Bossy', staff: true }, { id: T, name: 'Old answer' }], others: 2 }) : json({}, 404)));
+    expect(await h.api.here({ kind: 'thread', thread: T }, B)).toEqual({ names: [{ id: A, name: 'Ann', staff: false }, { id: B, name: 'Bossy', staff: true }, { id: T, name: 'Old answer', staff: false }], others: 2 });
     await h.api.here({ kind: 'index' }, null);
     const [first, second] = h.to('rpc/here');
     expect(first?.body).toEqual({ in_kind: 'thread', in_place: T, through: B });
@@ -1668,10 +1669,10 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
   });
 
   it('marks a character as staff from characters_public, and not otherwise', async () => {
-    const h = harness((r) => (r.url.pathname.endsWith('/characters_public') ? rows([{ id: B, name: 'The Director', joined: '2026-10-01', staff: 'director', staff_kind: 'boss' }, { id: C, name: 'Al', joined: '2026-10-01', staff: null, staff_kind: null }]) : rows([])));
+    const h = harness((r) => (r.url.pathname.endsWith('/characters_public') ? rows([{ id: B, name: 'The Director', joined: '2026-10-01', staff: 'director', office: 'boss' }, { id: C, name: 'Al', joined: '2026-10-01', staff: null, office: null }]) : rows([])));
     const [boss, al] = await h.api.characters([B, C]);
-    expect([boss?.staff, boss?.staffKind, al?.staff, al?.staffKind]).toEqual(['director', 'boss', undefined, undefined]);
-    expect(h.to('characters_public')[0]?.url.searchParams.get('select')).toBe('id,name,joined,staff,staff_kind');
+    expect([boss?.staff, boss?.office, al?.staff, al?.office]).toEqual(['director', 'boss', undefined, undefined]);
+    expect(h.to('characters_public')[0]?.url.searchParams.get('select')).toBe('id,name,joined,staff,office');
   });
 
   it('reads the admin queue in its three groups, and holds and reverses through the admin functions', async () => {
@@ -1708,13 +1709,19 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     expect(log.rows.map((r) => [r.end?.why ?? null, r.keptBy])).toEqual([['superseded', null], ['spent', null], [null, 'the-clerk'], [null, null]]);
     const h = harness((r) => {
       if (r.url.pathname.endsWith('/rpc/replace_successor')) return json({ id: 4, boss: 'hype-man' });
-      if (r.url.pathname.endsWith('/characters_public')) return rows([{ id: A, name: 'Hype Man', staff: 'hype-man' }, { id: B, name: 'The Clerk', staff: 'the-clerk' }]);
+      if (r.url.pathname.endsWith('/rpc/boss_roster_names')) return json([{ staff: 'hype-man', name: 'Hype Man', office: 'member' }, { staff: 'the-clerk', name: 'The Clerk', office: 'waiting' }, { staff: 7, name: 'no key' }]);
       return json({}, 404);
     });
     expect(h.to('moves_log')).toHaveLength(0);
+    /* The Boss list is the database's own roster (waiting personas included, whose names characters_public does not hold), read through the admin function. */
     expect(await h.api.bosses()).toEqual([{ staff: 'hype-man', name: 'Hype Man' }, { staff: 'the-clerk', name: 'The Clerk' }]);
-    const roster = h.to('characters_public')[0]!.url.searchParams;
-    expect([roster.get('staff_kind'), roster.get('select')]).toEqual(['eq.boss', 'id,name,staff']);
+    expect(h.to('characters_public')).toHaveLength(0);
+    expect(h.to('rpc/boss_roster_names')).toHaveLength(1);
+    /* The public names come from characters_public alone: debuted staff, by key. */
+    const pub = harness((r) => (r.url.pathname.endsWith('/characters_public') ? rows([{ staff: 'the-clerk', name: 'The Clerk' }, { staff: null, name: 'Al' }]) : rows([])));
+    expect(await pub.api.staffNames()).toEqual([{ staff: 'the-clerk', name: 'The Clerk' }]);
+    expect(pub.to('characters_public')[0]?.url.searchParams.get('select')).toBe('staff,name');
+    expect(pub.to('rpc/boss_roster_names')).toHaveLength(0);
     expect(await h.api.replaceSuccessor(4, 'hype-man')).toEqual({ ok: true, value: { id: 4, boss: 'hype-man' } });
     expect(h.to('rpc/replace_successor')[0]?.body).toEqual({ id: 4, boss: 'hype-man' });
     const refused = harness(() => json({ code: '55000', message: 'that nomination has already landed; reverse it instead', hint: 'kayfabb.refusal' }, 400));
@@ -1774,12 +1781,12 @@ describe('Updates', () => {
     expect(await lost.api.postUpdate('T', 'B', [])).toMatchObject({ ok: false, uncertain: true });
   });
 
-  it('knows the developer as a staff kind of its own', async () => {
+  it('knows the developer as an office of its own', async () => {
     const h = harness((r) => {
-      if (r.url.pathname.endsWith('/characters_public')) return rows([{ id: B, name: 'Gabe', joined: '2026-10-01', staff: 'developer', staff_kind: 'developer' }], 1);
+      if (r.url.pathname.endsWith('/characters_public')) return rows([{ id: B, name: 'Gabe', joined: '2026-10-01', staff: 'developer', office: 'developer' }], 1);
       return rows([], 0);
     });
-    expect((await h.api.characters([B]))[0]).toMatchObject({ name: 'Gabe', staff: 'developer', staffKind: 'developer' });
+    expect((await h.api.characters([B]))[0]).toMatchObject({ name: 'Gabe', staff: 'developer', office: 'developer' });
   });
 });
 

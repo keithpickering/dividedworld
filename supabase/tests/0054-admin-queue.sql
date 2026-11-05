@@ -17,7 +17,7 @@ begin
       'systemMoveWords', jsonb_build_object('renameBoard', 'the renaming of a board to "{name}"')),
     'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'aq-boss',
-      'staff', jsonb_build_array(jsonb_build_object('key', 'aq-boss', 'name', 'Queue Boss', 'kind', 'boss', 'title', 'Boss', 'signature', 'Hi')),
+      'staff', jsonb_build_array(jsonb_build_object('key', 'aq-boss', 'name', 'Queue Boss', 'title', 'Boss', 'signature', 'Hi')),
       'firstStaff', '[]'::jsonb,
       'moves', jsonb_build_array(jsonb_build_object('key', 'renameBoard', 'structural', true)),
       'demands', jsonb_build_array(jsonb_build_object('key', 'postsOnBoard'))));

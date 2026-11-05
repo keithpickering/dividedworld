@@ -33,7 +33,7 @@ declare
   m8 bigint; m9 bigint;
 begin
   select id into general from boards where slug = 'general';
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Mt Boss', 'mt-boss', 'boss', now()), ('Mt Other', 'mt-other', 'boss', now());
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Mt Boss', 'mt-boss', 'persona', now()), ('Mt Other', 'mt-other', 'persona', now());
   select id into boss_char from characters where staff = 'mt-boss';
   insert into move_kinds (key, structural) values ('renameBoard', true) on conflict (key) do nothing;
   insert into demand_kinds (key) values ('postsOnBoard') on conflict (key) do nothing;
@@ -140,6 +140,8 @@ begin
   end if;
   if staff_memory_latest('mt-boss') #>> '{hobby,name}' is distinct from 'later' then raise exception 'the latest memory is not the latest: %', staff_memory_latest('mt-boss'); end if;
   if staff_memory_latest('mt-other') is not null then raise exception 'a Boss with no memory has one'; end if;
+  if staff_memory_at('mt-boss') is distinct from (select max(at) from staff_memory where staff = 'mt-boss') then raise exception 'staff_memory_at is not the latest version''s time'; end if;
+  if staff_memory_at('mt-other') is not null then raise exception 'a Boss with no memory has a time'; end if;
   r := public_characters(jsonb_build_array(boss_char, gen_random_uuid(), 'not a uuid', 7, null));
   if r is distinct from jsonb_build_array(boss_char) then raise exception 'public_characters: %', r; end if;
   if public_characters('"x"') is distinct from '[]'::jsonb then raise exception 'public_characters of a non-list'; end if;
@@ -167,7 +169,7 @@ begin
   if not denied then raise exception 'meetings was truncated'; end if;
 
   -- A favorite, an opinion and a grudge in the memory name debuted public characters only; the database keeps the filter whatever the caller sent.
-  insert into characters (name, staff, staff_kind) values ('Mt Hidden', 'mt-hidden', 'bot');
+  insert into characters (name, staff, staff_kind) values ('Mt Hidden', 'mt-hidden', 'persona');
   select id into hidden from characters where staff = 'mt-hidden';
   m8 := (begin_meeting(slot1 + interval '20 days') ->> 'meeting')::bigint;
   pl := pg_temp.payload('mt-boss', '[]', 'filtered');

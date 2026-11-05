@@ -13,7 +13,7 @@ declare
   seen text;
   fav uuid;
 begin
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Dir Boss', 'dir-boss', 'boss', now()), ('Dir Other', 'dir-other', 'boss', now());
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Dir Boss', 'dir-boss', 'persona', now()), ('Dir Other', 'dir-other', 'persona', now());
   insert into meetings (started_at, slot, finished_at, outcome, bank_before, bank_after) values (now() - interval '2 minutes', now() - interval '2 minutes', now() - interval '1 minute', 'ok', 2, 1) returning id into m1;
   insert into meetings (started_at, slot, finished_at, outcome, error, consecutive_failures) values (now() - interval '1 minute', now() - interval '1 minute', now(), 'failed', 'upstream 500', 1) returning id into m2;
   insert into staff_memory (staff, meeting, body) values ('dir-boss', m1, '{"opinions": []}');

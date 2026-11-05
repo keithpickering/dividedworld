@@ -487,10 +487,15 @@ function setEndRows(data: LogData, words: Words, take: (match: (w: WalletEvent) 
     const caught = typeof spring?.payload.caught === 'string' ? data.acts.get(spring.payload.caught) : undefined;
     const by = typeof spring?.payload.by === 'string' ? data.acts.get(spring.payload.by) : undefined;
     if (caught) {
-      const paid = outcome === 'payout' ? take((w) => w.kind === 'trap' && w.ref === e.spring) : undefined;
+      const paid = outcome === 'payout' ? take((w) => (w.kind === 'trap' || w.kind === 'trapSystem') && w.ref === e.spring) : undefined;
+      /* A staff card nobody paid for: The System pays, and the line states what the wallet event credited (the wallet's cap can cut it below the base price), so {n} is read from that row, never priced here (the staff roster design, section 7). */
+      const stop = (name: string) => (/[.!?]$/.test(name) ? name : `${name}.`);
+      const bySystem = paid?.kind === 'trapSystem';
       rows.push({
         key: `sprung:${e.play}`, kind: paid ? 'payout' : 'sprung', at: e.endedAt, what: `Your ${cardName(e.card)} sprang`,
-        details: [`${cardName(e.card)} caught ${nameOf(caught.character)}'s ${cardName(caught.payload.card)} on `, on, paid ? `; ${signed(paid.change)} to your wallet.` : '.'],
+        details: bySystem
+          ? [`Your ${cardName(e.card)} caught ${nameOf(caught.character)}'s ${stop(cardName(caught.payload.card))} The System paid you ${plain(paid.change)} Aura.`]
+          : [`${cardName(e.card)} caught ${nameOf(caught.character)}'s ${cardName(caught.payload.card)} on `, on, paid ? `; ${signed(paid.change)} to your wallet.` : '.'],
         aura: paid?.change ?? 0, wallet: paid?.balanceAfter ?? null, characters,
       });
       continue;

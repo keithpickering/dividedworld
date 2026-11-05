@@ -163,7 +163,7 @@ begin
   -- A staff character has no owner, so its post in a followed thread is another's and is counted.
   s := tests.thread('Staff speaks');
   perform tests.post(d1, s, 'opening');
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Follow Boss', 'follow-boss', 'boss', now()) returning id into boss;
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Follow Boss', 'follow-boss', 'persona', now()) returning id into boss;
   perform tests.become_service();
   perform write_staff_act('follow-boss', 'post', s, null, '{"body": "It is decided."}');
   perform tests.unbecome();

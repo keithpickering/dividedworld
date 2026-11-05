@@ -2,8 +2,11 @@
  * The admin queue, a glass page at /admin/queue (the system plan, Task 12; mock-s3-admin-queue.html B), reached from the ADMIN tab of
  * the pause menu, which only an admin sees. The Boss's moves are not signed by a person, so what bounds The System in play is that
  * an admin sees a structural move coming, can hold it before it lands, and can reverse any move after it lands. Three groups, by
- * what an admin can do with them:
+ * what an admin can do with them (and, above them, a To do group, below):
  *
+ *   To do             a handover that changed the Boss (the staff roster design, section 11): "Season 4 opens with Comptroller", the handover's
+ *                     plain facts, and a link to Write an update with those facts filled in. It is the admin's to write, and no model writes any
+ *                     of it. It goes away when an update is posted after the handover, or when an admin dismisses it.
  *   Waiting to land   queued moves, soonest first: the countdown and time, the full proposal (the move in the engine's words, its new
  *                     subject, its demand, the description in the Boss's old voice) and the Boss's own `why`, quoted as its words;
  *                     a move the tick could not land says why. HOLD, on these and nowhere else.
@@ -29,9 +32,11 @@ import { MoveSentence } from '../board/MoveSentence.tsx';
 import { demandNeeds } from '../board/move-words.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { useKayfa } from '../context.tsx';
-import type { AdminQueue, BoardName, MoveEnded, MoveInForce, QueuedMove } from '../data/api.ts';
+import type { AdminQueue, BoardName, HandoverTodo, MoveEnded, MoveInForce, QueuedMove } from '../data/api.ts';
 import { Overlay } from '../glass/Overlay.tsx';
+import { Link } from '../router.tsx';
 import { shortDate } from '../postbit/dates.ts';
+import { todoFacts, todoSentence } from './handover-words.ts';
 import { AdminContact } from './AdminContact.tsx';
 import './queue.css';
 
@@ -101,6 +106,7 @@ export function QueueScreen({ now }: { readonly now?: number }) {
             {failed && <p className="kb-queue-note kb-calm" role="alert">The queue could not be read. Reload the page to try again.</p>}
             {queue && (
               <>
+                <Todos rows={queue.todos} onDismissed={load} />
                 <Waiting rows={queue.waiting} more={queue.more.waiting} boards={boards} bosses={bosses} roster={queue.roster} now={clock} onHold={(row) => setAsked({ kind: 'hold', row })} onReplaced={load} />
                 <InForce rows={queue.inForce} more={queue.more.inForce} boards={boards} bosses={bosses} onReverse={(row) => setAsked({ kind: 'reverse', row })} />
                 <Ended rows={queue.ended} more={queue.more.ended} boards={boards} bosses={bosses} />
@@ -170,6 +176,51 @@ function Replace({ row, roster, bosses, onReplaced }: { readonly row: QueuedMove
       {refusal && <p role="alert" className="kb-queue-failure">{refusal}</p>}
       {done && <p role="status" className="kb-small kb-muted">{done}</p>}
     </div>
+  );
+}
+
+/** The handovers waiting for an announcement. Dismiss is not asked twice: it only puts a reminder away, and the form stays open to any admin. */
+function Todos({ rows, onDismissed }: { readonly rows: readonly HandoverTodo[]; readonly onDismissed: () => Promise<void> }) {
+  const { api } = useKayfa();
+  const [busy, setBusy] = useState<number | null>(null);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const dismiss = async (season: number) => {
+    if (busy !== null) return;
+    setBusy(season);
+    setRefusal(null);
+    try {
+      const answer = await api.dismissHandoverTodo(season);
+      if (!answer.ok) setRefusal(answer.error);
+      await onDismissed();
+      document.getElementById('queue-todo')?.focus();
+    } catch {
+      setRefusal('That could not be sent. Check your connection and look at the queue before you try again.');
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <section className="kb-queue-group" aria-labelledby="queue-todo" data-kb-group="todo">
+      <GroupHead id="queue-todo" title="To do" count={rows.length} more={false} />
+      {rows.length === 0 && <p className="kb-queue-empty kb-calm">Nothing to do.</p>}
+      {refusal && <p role="alert" className="kb-queue-failure">{refusal}</p>}
+      {rows.map((t) => (
+        <article key={t.season} className="kb-queue-move kb-calm" data-kb-state="todo">
+          <div className="kb-queue-when">
+            <p className="kb-queue-countdown">SINCE {shortDate(t.landedAt).toUpperCase()}</p>
+          </div>
+          <div className="kb-queue-body">
+            <h3 className="kb-queue-sentence">{todoSentence(t)}</h3>
+            {todoFacts(t).map((line) => <p key={line}>{line}</p>)}
+            <p>The announcement is yours to write; no model writes it. This goes away when an update is posted after the handover, or when you dismiss it.</p>
+          </div>
+          <div className="kb-queue-act">
+            <Link className="kb-queue-button kb-glass-skew" to={`/updates?write=handover&season=${t.season}`} aria-label={`Write the announcement for season ${t.season}`}><span className="kb-glass-upright">Write the announcement</span></Link>
+            <button type="button" className="kb-queue-button kb-glass-skew" disabled={busy !== null} aria-label={`Dismiss the season ${t.season} to-do`} onClick={() => void dismiss(t.season)}><span className="kb-glass-upright">DISMISS</span></button>
+          </div>
+        </article>
+      ))}
+    </section>
   );
 }
 

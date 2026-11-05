@@ -31,20 +31,19 @@ test('the seed carries every setting, class, reaction, card and board of the ins
   assert.equal(seed.reactions.length, 16);
 });
 
-test('the seed carries the roster as staff characters, Bosses and bots, and the bots on staff at first, and no prompt', () => {
+test('the seed carries the roster as staff characters, one kind of persona, the first staff named, and no prompt', () => {
   const seed = instanceSeed(instance);
-  const { bosses, modBots, firstStaff } = instance.system;
-  assert.deepEqual(seed.system.staff.filter((s) => s.kind === 'boss').map((s) => s.key), bosses.map((b) => b.key));
-  assert.deepEqual(seed.system.staff.filter((s) => s.kind === 'bot').map((s) => s.key), modBots.map((b) => b.key));
-  assert.equal(seed.system.staff.length, bosses.length + modBots.length);
+  const { roster, firstStaff, staffGroup } = instance.system;
+  assert.deepEqual(seed.system.staff.map((s) => s.key), roster.map((p) => p.key));
+  assert.deepEqual(seed.system.staffGroup, { name: staffGroup.name });
   assert.deepEqual(seed.system.firstStaff, [...firstStaff]);
   assert.equal(seed.system.firstBoss, instance.system.firstBoss, 'the first season\'s Boss');
   for (const s of seed.system.staff) {
-    assert.deepEqual(Object.keys(s).sort(), ['key', 'kind', 'name', 'signature', 'title']);
+    assert.deepEqual(Object.keys(s).sort(), ['key', 'name', 'signature', 'title']);
     assert.ok(s.title.length <= 40 && s.signature.length <= 500, 'the SQL cuts these in silence; instanceProblems holds them');
   }
   const bytes = JSON.stringify(seed);
-  for (const b of [...bosses, ...modBots]) assert.ok(!bytes.includes(b.persona.slice(0, 80)), `${b.key}'s prompt stays in the instance module`);
+  for (const b of roster) assert.ok(!bytes.includes(b.persona.slice(0, 80)), `${b.key}'s prompt stays in the instance module`);
 });
 
 test('the seed carries the engine\'s catalogs of moves (with whether each is structural and shapes a board) and demands', () => {

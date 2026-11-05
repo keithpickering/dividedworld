@@ -30,3 +30,9 @@ export const ClassRevealed: Story = { args: { person: person({ revealed: { class
 export const ClassRevealedThenTurned: Story = {
   args: { person: person({ revealed: { class: 'heel', at: '2026-10-03T12:00:00Z' }, turnedAt: '2026-10-20T12:00:00Z' }), layout: 'stacked' },
 };
+
+/* A staff character at each of the three offices a postbit shows: the group's chip at every office, the office's title beside it for the Boss and a mod. */
+const staffPerson = (c: Partial<Character>): PostbitPerson => person({ standing: null }, { avatarPortrait: null, ...c });
+export const StaffBoss: Story = { args: { person: staffPerson({ name: 'The Clerk', title: 'Head of Board Operations', staff: 'the-clerk', office: 'boss' }), layout: 'side' } };
+export const StaffMod: Story = { args: { person: staffPerson({ name: 'Hall Monitor', title: 'Hall monitor', staff: 'hall-monitor', office: 'mod' }), layout: 'side' } };
+export const StaffMember: Story = { args: { person: staffPerson({ name: 'Retired Clerk', title: 'Emeritus', staff: 'retired-clerk', office: 'member' }), layout: 'stacked' } };

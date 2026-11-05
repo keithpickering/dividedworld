@@ -7,11 +7,14 @@
  * The viewer's own HUD mask, when it is hidden, is added in italics, "(hidden, only you see this)":
  * drawn from the player's own session (the HUD's mask), never from the answer, which lists no hidden
  * mask for anyone. The box is not a live region, so a screen reader is not interrupted at each poll.
+ * A staff name is followed by the staff group's chip (the staff roster design, section 10).
  * It renders nothing until its first answer, or once its polls have stopped answering.
  */
 import { useId, type ReactNode } from 'react';
 import type { PresencePlace } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
+import { useKayfa } from '../context.tsx';
+import { StaffGroup } from '../postbit/StaffBadge.tsx';
 import { Link } from '../router.tsx';
 import { usePresence } from './presence.ts';
 import './presence.css';
@@ -29,10 +32,14 @@ const profile = (id: string) => `/c/${encodeURIComponent(id)}`;
 export function PresenceBox({ place, heading, note }: PresenceBoxProps) {
   const presence = usePresence(place);
   const player = usePlayer();
+  const { settings } = useKayfa();
   const id = useId();
   if (presence === null) return null;
 
-  const items: ReactNode[] = presence.names.map((n) => <Link key={n.id} to={profile(n.id)}>{n.name}</Link>);
+  const items: ReactNode[] = presence.names.map((n) =>
+    n.staff && settings.staffGroup
+      ? <span key={n.id}><Link to={profile(n.id)}>{n.name}</Link><span className="kb-visually-hidden">, </span><StaffGroup name={settings.staffGroup.name} /></span>
+      : <Link key={n.id} to={profile(n.id)}>{n.name}</Link>);
   const hud = player.hudCharacter;
   if (hud?.presenceHidden) {
     items.push(

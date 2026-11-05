@@ -29,6 +29,19 @@
  */
 import { repair, type Repaired, type Rule, type Trim } from './validate.ts';
 
+/**
+ * The longest a staff note may be, in characters: the same 280 the database check on `staff_notes.body` holds
+ * (supabase/migrations/0085_staff_notes.sql; a test reads the file and compares). A note is a persona's own thought, written with
+ * a pool post; the Boss's meeting reads its recent ones as context and never acts on their words.
+ */
+export const noteMost = 280;
+
+/** The newest `most` of a persona's notes (given oldest first, as `staff_notes_recent` returns them), oldest first, each trimmed to `noteMost`. */
+export function recentNotes(notes: readonly string[], most: number): string[] {
+  const kept = notes.map((n) => n.trim().slice(0, noteMost)).filter((n) => n !== '');
+  return most > 0 ? kept.slice(-most) : [];
+}
+
 export const SCORE_MIN = -5;
 export const SCORE_MAX = 5;
 

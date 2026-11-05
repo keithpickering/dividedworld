@@ -862,7 +862,7 @@ describe('what a list row shows', () => {
     // Beyond a post: a character (its name, null before its debut), a thread and a board.
     const mine = fake.seed.post(thread, anaFace, 'Mine.');
     expect(await place(fake.seed.reach(boFace, 'character', anaFace, 'glint', { post: mine }))).toEqual({ kind: 'play', card: 'glint', on: { kind: 'character', id: anaFace, name: 'Ana Face' } });
-    const unborn = fake.seed.staff('ghost', 'Not Yet', 'bot', { debuted: false });
+    const unborn = fake.seed.staff('ghost', 'Not Yet', 'mod', { debuted: false });
     const sys = fake.seed.thread('the-system', null, 'Notice').thread;
     const theirs = fake.seed.staffPost(unborn, sys, 'Hidden.');
     expect(await place(fake.seed.reach(boFace, 'character', unborn, 'glint', { post: theirs }))).toEqual({ kind: 'play', card: 'glint', on: { kind: 'character', id: unborn, name: null } });
@@ -1522,7 +1522,7 @@ describe('moves, a staff member and the admin queue', () => {
   test('the Director is a staff character in the public projection, and a player\'s character is not', async () => {
     const { fake, director } = world();
     const [boss] = await fake.characters([director]);
-    expect([boss?.staff, boss?.staffKind]).toEqual(['director', 'boss']);
+    expect([boss?.staff, boss?.office]).toEqual(['director', 'boss']);
     fake.signInAs(null);
     expect((await fake.characters([director]))[0]?.staff).toBe('director');
   });
@@ -1577,7 +1577,7 @@ describe('presence', () => {
     expect(ids(await fake.here({ kind: 'board', board: general.id }, null))).toEqual([anaFace]);
     expect(ids(await fake.here({ kind: 'board', board: system.id }, null))).toEqual([]);
     const online = await fake.here({ kind: 'index' }, null);
-    expect(online).toEqual({ names: [{ id: anaFace, name: 'Ana Face' }], others: 0 });
+    expect(online).toEqual({ names: [{ id: anaFace, name: 'Ana Face', staff: false }], others: 0 });
   });
   test('a hidden mask is written nowhere and omitted for another account; my characters say it is hidden', async () => {
     const { fake, bo, anaFace, boFace, thread } = world();
@@ -2030,7 +2030,7 @@ describe('Updates: the developer persona\'s posts (updates, post_update, 0062)',
     expect((await plain.fake.updates())[0]).toMatchObject({ name: 'The developers', tagline: '', avatar: null });
     // The persona is a staff character of its own kind, known to be staff, and no player's.
     const [character] = await w.fake.characters([rows[0]!.character]);
-    expect(character).toMatchObject({ name: 'Gabe', title: 'Made this. Sorry.', staff: 'developer', staffKind: 'developer' });
+    expect(character).toMatchObject({ name: 'Gabe', title: 'Made this. Sorry.', staff: 'developer', office: 'developer' });
   });
 
   test('a page is bounded and pages back by `before`, exclusive', async () => {
@@ -2132,6 +2132,31 @@ describe('Updates: the developer persona\'s posts (updates, post_update, 0062)',
     w.fake.signInAs(w.admin);
     must(await w.fake.postUpdate('Fourth', 'Body.', []));
     for (const account of [w.ana, w.cy, w.bo]) { w.fake.signInAs(account); expect((await w.fake.alerts()).filter((a) => a.kind === 'update')).toHaveLength(3); }
+  });
+});
+
+describe('the staff names', () => {
+  test('are public: every debuted staff character by key, a waiting persona left out', async () => {
+    const { fake } = world();
+    fake.seed.staff('boss', 'The Boss', 'boss');
+    fake.seed.staff('later', 'Waiting Persona', 'member', { debuted: false });
+    expect((await fake.staffNames()).map((b) => [b.staff, b.name])).toEqual([['boss', 'The Boss']]);
+  });
+});
+
+describe('the Boss list', () => {
+  test('is the database\'s roster: every persona not benched, a waiting one included, the developer and a benched one left out; the queue\'s replace choices are the same list', async () => {
+    const { fake } = world();
+    fake.seed.staff('boss', 'The Boss', 'boss');
+    fake.seed.staff('mod', 'A Mod', 'mod');
+    fake.seed.staff('member', 'A Member', 'member');
+    fake.seed.staff('later', 'Waiting Persona', 'member', { debuted: false });
+    fake.seed.staff('quiet', 'Benched Persona', 'benched');
+    await expect(Promise.resolve().then(() => fake.bosses())).rejects.toThrow('only an admin');
+    fake.signInAs(fake.seed.account('queue-admin', { admin: true }));
+    expect((await fake.bosses()).map((b) => b.staff).sort()).toEqual(['boss', 'later', 'member', 'mod']);
+    expect((await fake.bosses()).find((b) => b.staff === 'later')?.name).toBe('Waiting Persona');
+    expect((await fake.adminQueue()).roster.map((b) => b.staff).sort()).toEqual(['boss', 'later', 'member', 'mod']);
   });
 });
 

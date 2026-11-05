@@ -19,6 +19,7 @@
 import type { Quadrant, Span } from '../../rules/types.ts';
 import type { BeyondPost, Reach } from '../../rules/cards.ts';
 import type { AlertKind } from '../../rules/alerts.ts';
+import type { Career } from '../../system/career.ts';
 
 export type Id = string;
 
@@ -79,6 +80,11 @@ export interface ScreenSettings {
    * fact. A key it lacks is the compiled economy's (`economyNow`).
    */
   readonly economy: Readonly<Record<string, number>>;
+  /**
+   * The staff group's name, which the instance names ("Personality Cores"; `SystemContent.staffGroup`, seeded as the setting
+   * `staffGroup`): drawn beside every staff character's name, on the postbit, the profile and the presence boxes. Public.
+   */
+  readonly staffGroup: { readonly name: string };
   /** The alert kinds that toast for a player who has not chosen (`Settings.toastDefaults`). */
   readonly toastDefaults: readonly AlertKind[];
   /** How long a toast stays, in milliseconds, where a world sets it (the boards fixture holds its toasts); absent, the HUD's six seconds. */
@@ -205,11 +211,14 @@ export interface Character {
   readonly pipStyle: string;
   /** The first day of the month it debuted, "2026-10-01": the month and never the time ("Joined Oct 2026"). */
   readonly joined: string;
-  /** Set only for a staff character (a Boss or a Mod Bot): the instance's key for it. A staff member is known to be staff, signed in or not. */
+  /** Set only for a staff character (a persona or the developer): the instance's key for it. A staff member is known to be staff, signed in or not. */
   readonly staff?: string;
-  /** A Boss is shown ADMINISTRATOR and a Mod Bot MODERATOR; the developer persona (the Updates page's author) has no badge. Set with `staff`. */
-  readonly staffKind?: 'boss' | 'bot' | 'developer';
+  /** The office a staff character holds now (characters_public). The Boss is shown ADMINISTRATOR and a Mod Bot MODERATOR; a member or a benched persona has no badge, and neither has the developer persona (the Updates page's author). Set with `staff`. */
+  readonly office?: Office;
 }
+
+/** An office a staff character holds (0082). `waiting` is never shown on a character (a persona that has not debuted is in no public list); `developer` is the developer persona's, which holds no office. */
+export type Office = 'boss' | 'mod' | 'member' | 'benched' | 'waiting' | 'developer';
 
 /** A character's season standing and its place, as a page of the standings lists it (standings_page). */
 export interface Standing {
@@ -420,12 +429,32 @@ export interface MoveEnded {
   readonly landedAt: string | null;
 }
 
+/**
+ * A handover that changed the Boss and has no announcement yet (admin_queue's `todos`; the staff roster design, section 11). It clears when an
+ * update is posted after `landedAt`, or when an admin dismisses it. `season` is the new season's number. Offices are the office log's words
+ * (`boss`, `mod`, `member`, `benched`, `waiting`); `bossWas` is the new Boss's office before it took the seat, null where it held none.
+ */
+export interface HandoverTodo {
+  readonly season: number;
+  readonly boss: string;
+  readonly bossName: string;
+  readonly bossWas: string | null;
+  readonly outgoing: string | null;
+  readonly outgoingName: string | null;
+  readonly outgoingOffice: string | null;
+  /** How the new Boss was chosen: `nomination` or `rotation`. */
+  readonly how: string;
+  readonly landedAt: string;
+}
+
 /** What the admin screen shows. Each group holds at most `cap` rows; `more` says a group was cut. */
 export interface AdminQueue {
   readonly cap: number;
   readonly waiting: readonly QueuedMove[];
   readonly inForce: readonly MoveInForce[];
   readonly ended: readonly MoveEnded[];
+  /** The handovers still waiting for an announcement, newest first. */
+  readonly todos: readonly HandoverTodo[];
   readonly more: { readonly waiting: boolean; readonly inForce: boolean; readonly ended: boolean };
   /** The Bosses a waiting nomination can be replaced with: on the roster, not retired, debuted; in the rotation's order. */
   readonly roster: readonly { readonly staff: string; readonly name: string }[];
@@ -471,7 +500,8 @@ export type PresencePlace = { readonly kind: 'thread'; readonly thread: Id } | {
  * account, and nothing that says which are the caller's.
  */
 export interface Presence {
-  readonly names: readonly { readonly id: Id; readonly name: string }[];
+  /** Each name is a character's. `staff` is a public fact (a staff key shows to a visitor); a staff name is listed after its own post there. */
+  readonly names: readonly { readonly id: Id; readonly name: string; readonly staff: boolean }[];
   readonly others: number;
 }
 
@@ -616,10 +646,10 @@ export interface LogSettlement {
   readonly lines: readonly LogLine[];
 }
 
-/** A change to the player's wallet (`my_wallet_events`): a settlement's credit with what the cap and the floor cut off, a purchase, a play, a trap's payout. */
+/** A change to the player's wallet (`my_wallet_events`): a settlement's credit with what the cap and the floor cut off, a purchase, a play, a trap's payout, and The System's payout for a staff card a trap caught. */
 export interface WalletEvent {
   readonly settlement: number | null;
-  readonly kind: 'settlement' | 'purchase' | 'play' | 'trap';
+  readonly kind: 'settlement' | 'purchase' | 'play' | 'trap' | 'trapSystem';
   readonly change: number;
   /** What the cap held back of a settlement's credit. */
   readonly overflow: number;
@@ -996,6 +1026,8 @@ export interface KayfaApi {
    * a label over 80 or more than 30 changes is refused naming which. An admin's alone, and written by no model.
    */
   postUpdate(title: string, body: string, changes: readonly UpdateChange[]): Promise<Answer<Update>>;
+  /** Puts a handover's to-do away without an update (`dismiss_handover_todo`). An admin's alone; a season with no to-do is refused, and one already dismissed is answered. */
+  dismissHandoverTodo(season: number): Promise<Answer<{ readonly season: number }>>;
   /**
    * How players reach the admins (`admin_contact`): the links an admin set, or none. Public, and the same for every caller, signed in or
    * not, because the player who most needs a person may be the one who cannot sign in. Rejects when it cannot be read.
@@ -1014,8 +1046,10 @@ export interface KayfaApi {
   reverseMove(act: Id): Promise<Answer<{ readonly act: Id; readonly endedBy: Id }>>;
   /** Puts another Boss of the roster in a waiting nomination's place (`id` is the queue row's). An admin's alone; a nomination that has landed or been held is refused. */
   replaceSuccessor(id: number, boss: string): Promise<Answer<{ readonly id: number; readonly boss: string }>>;
-  /** The Bosses of the instance's roster, by staff key and name: public, as a Boss's name is. */
+  /** The instance's whole roster by staff key and name, a waiting persona included (`boss_roster_names`): an admin's alone; anyone else is refused (the call throws). */
   bosses(): Promise<readonly { readonly staff: string; readonly name: string }[]>;
+  /** The names of staff who have debuted, by staff key (`characters_public`): public, so a waiting persona is not in it. The public moderation log names a nominee and a keeper from it. */
+  staffNames(): Promise<readonly { readonly staff: string; readonly name: string }[]>;
 
   settings(): Promise<ScreenSettings>;
 
@@ -1035,6 +1069,8 @@ export interface KayfaApi {
   movesLog(staff: string, before?: MovesCursor | null): Promise<MovesLog>;
   /** A staff member's latest in-character profile, or null before it has one (a Mod Bot has none until it is asked to write one). */
   staffProfile(staff: string): Promise<StaffProfile | null>;
+  /** A staff member's career (`staff_career`): the seasons it led and the offices it held, plain facts any reader may see. */
+  staffCareer(staff: string): Promise<Career>;
   /** A page of a board's threads, newest first; `total` is the board's thread counter, never a count of the list. */
   threads(board: Id, page: { readonly offset: number; readonly limit: number }): Promise<{ readonly threads: readonly ThreadSummary[]; readonly total: number }>;
   thread(id: Id): Promise<ThreadSummary | null>;

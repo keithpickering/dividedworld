@@ -47,7 +47,7 @@ declare
   t uuid := tests.thread('Core staff');
   bot uuid; bp uuid; card uuid; got jsonb;
 begin
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Core Bot', 'core-bot', 'bot', ws - interval '1 day') returning id into bot;
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Core Bot', 'core-bot', 'persona', ws - interval '1 day') returning id into bot;
   perform set_config('kayfabb.staff_writer', 'on', true);
   bp := tests.post(bot, t, 'Behave.', ws + interval '1 hour');
   perform set_config('kayfabb.staff_writer', '', true);

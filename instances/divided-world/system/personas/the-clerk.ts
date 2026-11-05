@@ -9,13 +9,13 @@
  * to exercise that path: it starts the season already fussing, with more honeymoon moves a week
  * and a bigger bank than the instance's ordinary honeymoon (still inside the engine's PHASE_CAPS).
  */
-import type { BossPersona } from '../../../../engine/rules/types.ts';
-import { bossPersona } from '../persona.ts';
+import type { Persona } from '../../../../engine/rules/types.ts';
+import { persona } from '../persona.ts';
 
 const name = 'Clerk-O-Tron 3000 (placeholder)';
 const title = 'Placeholder Boss: the petty clerk';
 
-export const theClerk: BossPersona = {
+export const theClerk: Persona = {
   key: 'placeholder-clerk',
   name,
   title,
@@ -23,7 +23,14 @@ export const theClerk: BossPersona = {
   startingHobby: 'stamping things (rubber stamps, official seals, anything with a form number)',
   temperament: 'Petty, bureaucratic and wounded. Treats every feud as a filing error.',
   phases: { honeymoon: { weeklyMoves: 3, bankCap: 6 } },
-  persona: bossPersona({
+  // DRAFT for the owner: the bot fields below are placeholders, there so every persona has every field.
+  beats: ['general'],
+  petRules: [],
+  strictness: { visitHours: { least: 2, most: 12 }, bands: ['small'] },
+  weakness: { kind: 'distraction' },
+  voice: 'chat',
+  persuadedBy: 'DRAFT: a sincere argument made in its own style.',
+  persona: persona({
     name,
     title,
     temperament:
