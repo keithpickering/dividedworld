@@ -683,7 +683,7 @@ const lensBtn = (t, kind = '') => `<button class="btn${kind === 'ink' ? '' : ''}
 /** The Lens: a panel docked at the right, from the page's top to just over the HUD, its bar (tabs, Close) sticky, its body scrolling. */
 const lens = ({ tabs, current, ink, headline, body, tools, plays, play }) => `<section role="dialog" aria-label="Cards on this post" class="piece" style="--cut: 24px; --edge: ${ink}; --ground: #0b0818; position: absolute; right: 16px; top: 16px; width: 460px; height: 764px; box-sizing: border-box; color: #f1ecff">
     <div style="position: absolute; left: 1.5px; right: 1.5px; top: 1.5px; padding: 16.5px 20.5px 14px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(241,236,255,.22)">
-      <div role="tablist" style="display: flex; gap: 6px">${tabs.map((t) => `<button role="tab" aria-selected="${t === current}" class="tab" style="min-height: 46px; padding: 0 14px; font-size: 20px${t === current ? `; background: ${ink}; color: #07050d` : '; border: 1px solid rgba(241,236,255,.5)'}"><b>${t}</b></button>`).join('')}</div>
+      <div role="tablist" style="position: relative; display: flex; gap: 6px; width: 330px; overflow: hidden; padding-right: 8px">${tabs.length > 2 ? '<span aria-hidden="true" style="position: absolute; z-index: 1; right: 0; top: 0; bottom: 0; width: 70px; background: linear-gradient(to right, rgba(11,8,24,0), #0b0818 80%)"></span>' : ''}${tabs.map((t) => `<button role="tab" aria-selected="${t === current}" class="tab" style="flex: none; min-height: 46px; padding: 0 14px; font-size: 20px${t === current ? `; background: ${ink}; color: #07050d` : '; border: 1px solid rgba(241,236,255,.5)'}"><b>${t}</b></button>`).join('')}</div>
       <button class="btn" aria-label="Close" style="min-height: 46px; width: 46px; padding: 0; transform: none"><b style="transform: none; font: 400 28px/1 'Barlow Condensed', sans-serif">&times;</b></button>
     </div>
     <div style="position: absolute; left: 0; right: 0; top: 80px; bottom: 0; overflow: hidden; padding: 20px 22px">
@@ -715,8 +715,8 @@ page({
   note: 'The Lens on Whoops!, its plays unfolded, as a reader sees it over the Main board\'s thread (the board world behind it and the HUD below are drawn for place only and not compared). Docked at the right from the page\'s top to just over the HUD; the bar sticky; the body scrolls, its foot fading.',
   body: `<div style="width: 1440px; height: 1000px; position: relative; overflow: hidden; background: #ffffff; font-family: 'Barlow Condensed', sans-serif">
   ${threadBehind}
-  ${lens({ tabs: ['WHOOPS!', 'STICK AROUND'], current: 'WHOOPS!', ink: WHOOPS,
-    headline: "3 layers &middot; top: Gloomba's yellow, 41% washed",
+  ${lens({ tabs: ['WHOOPS!', 'STICK AROUND', 'GLITTER BOMB', 'AUTOCORRECT', 'FORCE FIELD'], current: 'WHOOPS!', ink: WHOOPS,
+    headline: '41% washed for you',
     body: 'Ends on your screen when you scrub every layer off. The author can wash it for everyone.',
     tools: `<div class="btns">${lensBtn('HOLD TO SCRUB', 'ink')}</div>`,
     plays: '3 plays &middot; Gloomba, Pipewrench, Mrs. Hooligan',
@@ -730,14 +730,14 @@ page({
   note: 'Two Lens panels at the size 28-lens.html docks them: on Stick Around (a reader), and the author\'s Lens on Whoops!, whose tools (Wash, Write in ink) stand in one row with Hold to scrub.',
   body: `<div style="width: 1000px; height: 800px; position: relative; overflow: hidden; background: #2a2833; font-family: 'Barlow Condensed', sans-serif">
   <div style="position: absolute; left: -940px; top: 0; width: 1440px; height: 800px">${lens({ tabs: ['WHOOPS!', 'STICK AROUND'], current: 'STICK AROUND', ink: '#19e3ff',
-    headline: "Holds you on this post until you check the caster's sentence, or break free for this visit",
-    body: 'Scroll past either end of the post, press Break free, or check the box.',
+    headline: 'Holding you on this post',
+    body: "Ends when you check the caster's sentence, scroll past either end of the post, or press Break free.",
     tools: '',
     plays: '1 play &middot; Professor Hootenanny McGillicuddy III',
     play: playPlate('THE ONE PLAY', 'PROFESSOR HOOTENANNY MCGILLICUDDY III', '#19e3ff', 'Oct 29, 2026, 9:50 PM', 'required reading', PLAY_ACTS) })}</div>
   <div style="position: absolute; left: -440px; top: 0; width: 1440px; height: 800px">${lens({ tabs: ['WHOOPS!', 'STICK AROUND'], current: 'WHOOPS!', ink: WHOOPS,
-    headline: "3 layers &middot; top: Gloomba's yellow, 41% washed",
-    body: 'Ends on your screen when you scrub every layer off. You can wash it for everyone.',
+    headline: '41% washed for you',
+    body: 'Ends on your screen when you scrub every layer off. As its author, you can wash it for everyone.',
     tools: `<p style="margin: 0 0 8px; font: 800 19px 'Barlow Condensed', sans-serif; letter-spacing: 1.5px; color: #e4def7">YOUR TOOLS, AS THE AUTHOR</p><div class="btns" style="gap: 8px">${lensBtn('HOLD TO SCRUB', 'ink')}${lensBtn('WASH')}${lensBtn('WRITE IN INK')}</div>`,
     plays: '3 plays &middot; Gloomba, Pipewrench, Mrs. Hooligan',
     play: playPlate('LAYER 3 OF 3, ON TOP &middot; 41% WASHED', 'GLOOMBA', '#ffd23f', 'Oct 29, 2026, 9:49 PM', "fine, I'll do it myself", ['+ REACT', 'SPIN THREAD']) })}</div>

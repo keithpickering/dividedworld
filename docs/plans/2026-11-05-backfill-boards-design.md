@@ -200,3 +200,28 @@ open. The critique:
 - **The phone's character tabs wrap raggedly** (Mrs. Hooligan alone on a second row). The board makes them one row that
   scrolls, the current tab in view.
 - **The phone HUD cuts the mask's name again** ("STORY RE", "PIPEWREN"); see batch 2.
+
+**Approved by the owner, with two nits, both decided:**
+
+- **The Lens's tabs scroll** (the owner asked how they scale past two cards; chose "Scroll, like the menu"). A tab is one
+  kind of card on the post, so a post holds as many as an instance has kinds (nine in Divided World, any number in
+  another). The strip is one row that scrolls sideways, fading at the edge where more wait, with the current tab
+  scrolled into view, as #202 made the menu bar on the phone. `28-lens.html` draws five kinds.
+- **What each block of the Lens's words is for** (the owner: "our copy in these sections is a bit inconsistent (a
+  heading acting as a description in Stick Around's case, acting as duplicated progress info for Whoops, probably
+  others for other effects) ... it's good to wrangle in what each block of text is supposed to actually do here"; chose
+  the roles, the check and a rewrite of every card). `engine/ui/cards/types.ts` already names the blocks (`CardView`'s
+  `state`, `ends`, `notes`, `report`; `CardUi`'s `hint`), but each card fills them its own way: Stick Around's `state` is
+  a sentence that describes the card and its way out, and Whoops!'s repeats its plays' notes. The roles:
+  - **the tab:** the card's name;
+  - **the heading (`state`):** what the card is doing to this reader on this post now, as a short status ("41% washed
+    for you", "Holding you on this post"); never a sentence, never how it ends;
+  - **the line under it (`ends`):** the way out, present whenever the card holds the reader or covers the post
+    (CLAUDE.md, "No player is ever stuck"), in plain words;
+  - **a play's note (`notes`):** that play's own part only ("Layer 3 of 3, on top"), never the whole card's;
+  - **`report`:** a longer plain report, only where a card has more to say than the status and the way out;
+  - **`hint`:** the one line for a reader who has not yet met the card.
+  The plan adds a check over every instance card's views that can be checked from their words (an `ends` while the card
+  holds or covers; a `state` with no sentence in it), driven red on a planted card, and a task that rewrites each
+  card's Lens words to the roles, every new line drafted in the plan for the owner's review in the PR. The boards' Lens
+  headings and lines are drawn to the roles; their words are drafts.
