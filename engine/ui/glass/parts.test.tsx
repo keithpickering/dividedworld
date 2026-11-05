@@ -49,7 +49,7 @@ describe('PageHead', () => {
     const css = sheet('parts.css');
     expect(declsOf(css, '.kb-page-head-title')['font-size']).toBe('7rem');
     expect(declsOf(css, ".kb-page-head[data-kb-size='roster'] .kb-page-head-title")['font-size']).toBe('var(--kb-glass-size-display-xl)');
-    expect(declsOf(css, ":where(:root[data-kb-layout='phone']) .kb-page-head-title")['font-size']).toBe('4rem');
+    expect(declsOf(css, ":where(:root[data-kb-layout='phone']) .kb-page-head-title")['font-size']).toBe('min(4rem, 17vw)');
     expect(declsOf(css, ".kb-page-head-title")['flex']).toBe('0 0 auto');
     const { container } = renderInWorld(<PageHead title="Your characters" size="roster" />);
     expect(container.querySelector('.kb-page-head')).toHaveAttribute('data-kb-size', 'roster');

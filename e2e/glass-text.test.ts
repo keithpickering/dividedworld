@@ -56,8 +56,13 @@ const body: TextFact = {
 const heading: TextFact = {
   ...body, name: '"Rankings" in h1.kb-rankings-title', color: TEXT, family: 'Anton', size: 52, ink: 51.5, weight: 400, calm: null, brightest: 0.23,
 };
-const judged = (fact: TextFact, surface = fact.surface, opts: { phone?: boolean; palette?: typeof standard; high?: boolean } = {}) =>
-  judge(fact, { ceilings: ceilings[surface], palette: opts.palette ?? standard, phone: opts.phone ?? false, high: opts.high ?? false });
+const judged = (fact: TextFact, surface = fact.surface, opts: { phone?: boolean; palette?: typeof standard; high?: boolean; ceilings?: typeof ceilings[string] } = {}) =>
+  judge(fact, { ceilings: opts.ceilings ?? ceilings[surface], palette: opts.palette ?? standard, phone: opts.phone ?? false, high: opts.high ?? false });
+/*
+ * No recipe of Divided World is calmAll now (the settlement's title stands bare: its cyan layer is dim enough), but the mechanism is the check's
+ * and stays held: the settlement's ceilings with calmAll set, as a recipe that is bright again would carry them.
+ */
+const calmAllSettlement = { ...ceilings.settlement!, calmAll: true };
 
 describe('the clean nodes pass', () => {
   test('a body line in its calm, and a large heading on the full smoke under its large ceiling', () => {
@@ -191,7 +196,7 @@ describe('a recipe dim enough (the owner\'s answer on #53)', () => {
   });
 
   test('a calmAll surface still needs a calm, whatever its worst', () => {
-    expect(judged({ ...bare, surface: 'settlement' })[0]).toMatch(/is calmAll: every text node on it stands in a calm/);
+    expect(judged({ ...bare, surface: 'settlement' }, 'settlement', { ceilings: calmAllSettlement })[0]).toMatch(/is calmAll: every text node on it stands in a calm/);
   });
 });
 
@@ -231,8 +236,8 @@ describe('the ceilings', () => {
 describe('the glass plan\'s section 6', () => {
   test('on a calmAll surface the heading moved out of its calm fails, large as it is', () => {
     const settled: TextFact = { ...heading, name: '"Settled" in h1.kb-settlement-head', surface: 'settlement', brightest: 0.02 };
-    expect(judged({ ...settled, calm: calmAround() })).toEqual([]);
-    expect(judged(settled)).toEqual([
+    expect(judged({ ...settled, calm: calmAround() }, 'settlement', { ceilings: calmAllSettlement })).toEqual([]);
+    expect(judged(settled, 'settlement', { ceilings: calmAllSettlement })).toEqual([
       '"Settled" in h1.kb-settlement-head (surface settlement): stands in no calm and on no panel as solid as the calm (0.85); surface settlement (recipe settlement) is calmAll: every text node on it stands in a calm, large or not',
     ]);
   });
