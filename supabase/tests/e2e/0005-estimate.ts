@@ -193,18 +193,18 @@ test('a card an admin reversed before the estimate\'s end is not estimated, nor 
   const reverse = (card: string, when: string) => sql(`select set_config('kayfabb.card_end_writer', 'on', false);
     insert into acts (character, kind, thread, target_act_id, payload, created_at) values (null, 'card_end', '${thread}', '${card}', '{"why": "reversed", "by": "admin"}', '${when}');
     select set_config('kayfabb.card_end_writer', '', false)`);
-  reverse(plays['Rv Gone'], at(10));
+  reverse(plays['Rv Gone']!, at(10));
   const until = at(24);
-  reverse(plays['Rv Edge'], until);
+  reverse(plays['Rv Edge']!, until);
 
   const scoped = JSON.parse(sql(`select estimate_input('${ids['est-rv-heel']}', '${until}')`)) as SettlementInput & { player: string };
   const named = new Set(scoped.acts.map((a) => a.id));
-  assert.ok(!named.has(plays['Rv Gone']), 'the reversed card is not in the input');
-  assert.ok(!scoped.reactions.some((r) => r.act === plays['Rv Gone']), 'nor are the votes on it');
-  assert.ok(named.has(plays['Rv Edge']) && named.has(plays['Rv Kept']), 'a card reversed at the window\'s end, and a live one, are');
+  assert.ok(!named.has(plays['Rv Gone']!), 'the reversed card is not in the input');
+  assert.ok(!scoped.reactions.some((r) => r.act === plays['Rv Gone']!), 'nor are the votes on it');
+  assert.ok(named.has(plays['Rv Edge']!) && named.has(plays['Rv Kept']!), 'a card reversed at the window\'s end, and a live one, are');
   const lines = estimateForOwner(scoped, instance, scoped.player).lines;
   const paid = (card: string) => lines.filter((l) => l.act === card).length;
-  assert.equal(paid(plays['Rv Gone']), 0, 'a reversed card draws nothing in the estimate');
-  assert.ok(paid(plays['Rv Kept']) > 0 || lines.some((l) => l.reason === 'heel.drewHeat'), `the control is estimated: ${JSON.stringify(lines)}`);
+  assert.equal(paid(plays['Rv Gone']!), 0, 'a reversed card draws nothing in the estimate');
+  assert.ok(paid(plays['Rv Kept']!) > 0 || lines.some((l) => l.reason === 'heel.drewHeat'), `the control is estimated: ${JSON.stringify(lines)}`);
   assert.ok(lines.length > 0);
 });
