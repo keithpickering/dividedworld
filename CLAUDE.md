@@ -67,13 +67,15 @@ the words a player wrote, and a move that reshapes a board is shown to admins be
 
 The System's arbitrariness is the game's chance: a model encouraged to be unreasonable, reading the state of play the
 way a game director does, so that a ruling feels earned or cruel rather than a coin flip. So no person signs its
-rulings in play. What bounds it is the code: every verdict, reward and punishment it can give is one of a fixed list
-of choices the code maps to an effect with limits, and free text a model returns is shown, never acted on. A player's
-post may be shredded, redacted, splatted or autocorrected, but each of those is a layer over the original, which
-survives and can come back by the game's own means or an admin's. A move that reshapes a board (creating, merging,
-restricting or renaming one) or permabans a character goes to admins about 24 hours before it lands and lands unless
-one holds it, and an admin can reverse any move after it lands, so an admin can override The System while the illusion
-holds, and an instance whose admins are away never stalls.
+rulings in play. What bounds it is the code: every verdict, reward and punishment it can give is one of a fixed list of
+choices the code maps to an effect with limits, and a model's free text is never read as a choice. Its words may be
+posted, or become a card's words within the bounds that card's own rules check for any player: a card a Mod Bot plays
+is a game move like a player's, it lands at once, and an admin can end it after it lands. A player's post may be
+shredded, redacted, splatted or autocorrected, but each of those is a layer over the original, which survives and can
+come back by the game's own means or an admin's. A move that reshapes a board (creating, merging, restricting or
+renaming one) or permabans a character goes to admins about 24 hours before it lands and lands unless one holds it, and
+an admin can reverse any move after it lands, so an admin can override The System while the illusion holds, and an
+instance whose admins are away never stalls.
 
 ## Append-only
 
