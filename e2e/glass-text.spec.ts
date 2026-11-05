@@ -136,8 +136,19 @@ for (const [label, viewport, phone] of [['1440 wide', { width: 1440, height: 900
 
 /*
  * The HUD's geometry is main's (read at 82599ef, at 1440 and 390): no word moves, the glass keeps its
- * height and no box takes a tap from the controls beside it.
+ * height and no box takes a tap from the controls beside it. A box sized by its words is measured a pixel
+ * or two apart by two Chromiums' text metrics (CI's clock is 132px wide where a local one is 134), so
+ * each box is held within HUD_SLACK of main's, the board comparer's size tolerance, and the height exactly.
  */
+const HUD_SLACK = 4;
+const nearly = (got: Record<string, number | number[]>, want: Record<string, number | number[]>) => {
+  expect(Object.keys(got).sort()).toEqual(Object.keys(want).sort());
+  for (const [key, w] of Object.entries(want)) {
+    const g = got[key]!;
+    if (typeof w === 'number') expect(g, key).toBe(w);
+    else (g as number[]).forEach((v, i) => expect(Math.abs(v - w[i]!), `${key}[${i}] is ${v}, main's ${w[i]}`).toBeLessThanOrEqual(HUD_SLACK));
+  }
+};
 test.describe('the HUD keeps its geometry', () => {
   const read = (page: Page) => page.evaluate(() => {
     const top = document.querySelector('.kb-hud')!.getBoundingClientRect().top;
@@ -147,13 +158,13 @@ test.describe('the HUD keeps its geometry', () => {
   test('at 1440', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await open(page, { name: 'HUD', path: '/b/general' });
-    expect(await read(page)).toEqual({ height: 212, avatar: [59, 72, 84, 84], select: [256, 129, 151, 52], aura: [500, 10, 452, 29], orbs: [500, 47, 452, 113], clock: [980, 59, 134, 34] });
+    nearly(await read(page), { height: 212, avatar: [59, 72, 84, 84], select: [256, 129, 151, 52], aura: [500, 10, 452, 29], orbs: [500, 47, 452, 113], clock: [980, 59, 134, 34] });
   });
   test('at 390', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await open(page, { name: 'HUD', path: '/b/general' });
     const g = await read(page);
-    expect({ height: g.height, avatar: g.avatar, select: g.select, orbs: g.orbs }).toEqual({ height: 124, avatar: [16, 23, 44, 44], select: [70, 32, 96, 48], orbs: [16, 88, 358, 30] });
+    nearly({ height: g.height, avatar: g.avatar, select: g.select, orbs: g.orbs }, { height: 124, avatar: [16, 23, 44, 44], select: [70, 32, 96, 48], orbs: [16, 88, 358, 30] });
   });
   for (const [label, viewport] of SIZES) {
     test(`no box takes the taps of the Menu control, the Hand or the picker's kinds, at ${label}`, async ({ page }) => {
