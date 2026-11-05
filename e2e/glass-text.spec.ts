@@ -218,6 +218,32 @@ test('at 125% text the HUD\'s avatar grows on both sides with its plate, square'
   expect(box!.width).toBeCloseTo(box!.height, 0);
 });
 
+/*
+ * The phone HUD's avatar stands beside the name, whole inside the HUD and clear of the name's and the label's boxes, on a tall window and on a short one (a
+ * phone browser with its toolbar shows about 664px): it was once drawn low, under the name and past the HUD's foot, because the desk layout's offsets moved
+ * it when it was made `relative`.
+ */
+for (const [label, viewport, size] of [['390x844', { width: 390, height: 844 }, '100'], ['390x664, a short window', { width: 390, height: 664 }, '100'], ['390x844 at 125% text', { width: 390, height: 844 }, '125']] as const) {
+  test(`the phone HUD's avatar sits whole beside the name, clear of it, at ${label}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    if (size !== '100') await chooseTextSize(page, size);
+    await open(page, onTheAccount(PAGES.find((p) => p.path.includes('moment=01-main'))!));
+    const boxes = await page.evaluate(() => {
+      const b = (sel: string) => { const r = document.querySelector(sel)!.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; };
+      return { hud: b('.kb-hud'), avatar: b('.kb-hud-avatar'), name: b('.kb-hud-select'), label: b('.kb-hud-swap-label') };
+    });
+    const { hud, avatar } = boxes;
+    expect(avatar.left, 'inside the HUD, left').toBeGreaterThanOrEqual(hud.left);
+    expect(avatar.top, 'inside the HUD, top').toBeGreaterThanOrEqual(hud.top);
+    expect(avatar.right, 'inside the HUD, right').toBeLessThanOrEqual(hud.right);
+    expect(avatar.bottom, 'inside the HUD, bottom').toBeLessThanOrEqual(hud.bottom + 0.5);
+    expect(avatar.bottom, 'inside the window').toBeLessThanOrEqual(viewport.height);
+    const apart = (a: typeof avatar, c: typeof avatar) => a.right <= c.left + 0.5 || c.right <= a.left + 0.5 || a.bottom <= c.top + 0.5 || c.bottom <= a.top + 0.5;
+    expect(apart(avatar, boxes.name), 'clear of the name').toBe(true);
+    expect(apart(avatar, boxes.label), 'clear of "Posting as"').toBe(true);
+  });
+}
+
 for (const [size, widths] of TEXT_SIZES) {
   test.describe(`at ${size}% text`, () => {
     for (const [label, viewport] of widths) {
