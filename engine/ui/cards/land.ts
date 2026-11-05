@@ -24,7 +24,7 @@ export function targetOf(post: Act): PostTarget {
 /** What the post carries as its rules see it (card_target, 0054): a play not caught, with a ward's rarity and a Use's end; a card back naming no card, ended where it sprang or its time passed. */
 export function effectsOf(plays: readonly CardPlay[], cards: readonly Pick<CardRules, 'key' | 'ward' | 'rarity'>[], setLasts: Span): CardEffect[] {
   const span = setLasts.count * (setLasts.unit === 'minute' ? 60_000 : setLasts.unit === 'day' ? 86_400_000 : setLasts.unit === 'week' ? 7 * 86_400_000 : 30 * 86_400_000);
-  return plays.filter((p) => !p.caught).map((p): CardEffect => {
+  return plays.filter((p) => !p.caught && !p.reversed).map((p): CardEffect => {
     if (p.faceDown) return { card: null, act: p.id, faceDown: true, ends: p.revealed?.at ?? new Date(Date.parse(p.playedAt) + span).toISOString() };
     const ward = cards.find((c) => c.key === p.card);
     return { card: p.card, act: p.id, ...(ward?.ward ? { ward: ward.rarity } : {}), ...(p.ends ? { ends: p.ends } : {}) };
@@ -48,7 +48,7 @@ export interface LandingContext {
  * is the caller's to ask. With no context, it is the card's `canApply` alone.
  */
 export function landing(rules: Pick<CardRules, 'canApply'> & Partial<CardRules>, post: Act, plays: readonly CardPlay[], context?: LandingContext): Verdict {
-  if (!context || !rules.key || !rules.rarity) return rules.canApply(targetOf(post), plays.filter((p) => !p.caught).map((p) => ({ card: p.card, act: p.id })));
+  if (!context || !rules.key || !rules.rarity) return rules.canApply(targetOf(post), plays.filter((p) => !p.caught && !p.reversed).map((p) => ({ card: p.card, act: p.id })));
   return landingOn(rules as CardRules, targetOf(post), plays, context);
 }
 

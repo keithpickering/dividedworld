@@ -100,3 +100,12 @@ test('a trim never empties a string that had text: an emoji at the cut is kept w
   assert.deepEqual(repair('😀b', { type: 'string', maxLength: 1, minLength: 1 }), { ok: true, value: '😀', trims: [{ path: '', predicate: 'maxLength(1)', before: 3, after: 2 }] });
   assert.deepEqual(cutCompletion('😀b', [], 1), { ok: true, text: '😀', trims: [{ path: '', predicate: 'maxLength(1)', before: 3, after: 2 }] });
 });
+
+test('an any rule passes a value of any type unchanged, and an absent optional one is left out', () => {
+  const rule: Rule = { type: 'object', fields: { words: { type: 'string' }, extra: { type: 'any', optional: true } } };
+  for (const extra of [5, 'teal', ['a'], { color: 5 }, true]) {
+    assert.deepEqual(repair({ words: 'x', extra }, rule), { ok: true, value: { words: 'x', extra }, trims: [] });
+  }
+  assert.deepEqual(repair({ words: 'x' }, rule), { ok: true, value: { words: 'x' }, trims: [] });
+  assert.deepEqual(repair({ words: 'x', extra: null }, rule), { ok: true, value: { words: 'x' }, trims: [] });
+});

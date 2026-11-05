@@ -78,6 +78,8 @@ async function fakeStorage() {
 
 test('an instance exported and imported into a fresh database is the same instance, table by table', async () => {
   const from = scratchUrl();
+  /** The card an admin ends after the cast's last card (0092): its play's id, fixed here so the assertions below name it. */
+  const endedPlay = '7d4e2f9a-1c3b-4e8d-9a6f-0b5c2e8d1f37';
   // A cast with every kind of thing in it: players, characters, Acts, reactions, cards and
   // their state, invites, a settlement (e2e/0001 settled), and a reveal.
   sql(`
@@ -108,6 +110,8 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into card_ledger (account, card, kind, price) values (ann, 'expcatch', 'bought', 0), (bob, 'blot', 'bought', 0);
       perform set_card(ann, 'expcatch', a, p, '{}', 0);
       perform play_card(bob, 'blot', b, p, '{}', 0, '');
+      -- One more card, played as the sweetie above is, for an admin to end after the caught one (0092); its id is fixed in the test.
+      insert into acts (id, character, kind, thread, target_act_id, payload) values ('${endedPlay}', a, 'card', t, p, '{"card": "sweetie", "config": {}}');
       -- What the screens keep: a release, reading, the mask read through, view counts, preferences, a profile with an
       -- avatar, and an admin.
       insert into effect_releases (account, play) values (bob, play);
@@ -128,6 +132,10 @@ test('an instance exported and imported into a fresh database is the same instan
       -- An original 0025 handed to the sweep: a row the export carries, naming a file it does not.
       insert into avatar_orphans (key) values ('exp-src.webp');
       insert into admins (account) values (ann);
+      -- An admin ends that card with reverse_card, as ann, the admin (0092); the play's id is the one planted above.
+      perform tests.become(ann);
+      perform reverse_card('${endedPlay}');
+      perform tests.unbecome();
       -- A kept estimate, a waiting Turn, a standing, and a class's total in e2e/0001's settlement.
       insert into estimates (account, made_at, window_from, answer) values (ann, now(), now(), '{"entries": [], "lines": [], "asOf": null, "freshAfter": null}');
       -- A waiting Turn naming the class it Turns to and from (0028), passed over once by a reveal (its due_at, 0074), a later Turn
@@ -398,6 +406,12 @@ test('an instance exported and imported into a fresh database is the same instan
       (select to_jsonb(a)::text from acts a where a.id = '${springAct}' and a.kind = 'spring') || '|' || (select to_jsonb(a)::text from acts a where a.id = '${caughtAct}' and a.kind = 'card')`);
     assert.notEqual(trapRows(fresh.toString()), '', 'the set, its spring and the caught card are in the imported instance');
     assert.equal(trapRows(fresh.toString()), trapRows(from));
+    // The card an admin ended (0092): its card_end Act is carried as written, by its id, its target, its kind, and its payload.
+    const endAct = sql(`select id from acts where kind = 'card_end' and target_act_id = '${endedPlay}'`);
+    assert.ok(endAct, 'the card an admin ended holds a card_end in the exported instance');
+    const endRow = (url: string) => psqlOn(url, `select to_jsonb(a)::text from acts a where a.id = '${endAct}' and a.kind = 'card_end' and a.target_act_id = '${endedPlay}' and a.payload = '{"why": "reversed", "by": "admin"}'::jsonb`);
+    assert.notEqual(endRow(fresh.toString()), '', 'the card_end is in the imported instance');
+    assert.equal(endRow(fresh.toString()), endRow(from));
     // The moments were carried as written, and the import, a replica's write, took none of its own (0072's trigger stayed silent).
     const moments = (url: string) => psqlOn(url, 'select (select count(*) from play_moments) || \'/\' || (select count(*) from play_moment_layers)');
     assert.equal(moments(fresh.toString()), moments(from));

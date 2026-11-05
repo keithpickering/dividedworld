@@ -81,6 +81,8 @@ export function Frame({ children }: { readonly children: ReactNode }) {
             </ul>
           </nav>
           <main ref={main} className="kb-page" tabIndex={-1}>{children}</main>
+          {/* The glass's violet laid toward the window's edges (frame.css); it is paint, so it is out of the reading order. */}
+          <div className="kb-vignette" aria-hidden="true" />
           <Hud />
         </div>
       </PlayProvider>

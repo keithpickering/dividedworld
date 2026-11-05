@@ -38,48 +38,51 @@
   inset: 0;
 }
 
-.kb-smoke-layers,
-.kb-smoke-wide,
-.kb-smoke-narrow,
-.kb-smoke-svg {
+.kb-smoke-layers {
   position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
 }
 
-/* A drifting recipe is a strip wider than its frame (its width is set inline), slid by its travel. */
-.kb-smoke-strip {
+/*
+ * One layer of the field (Smoke.tsx; engine/ui/glass/field.ts has its noise as an image). The
+ * element is as wide as the viewport plus the layer's own drift travel and is moved by minus its
+ * window's place (--kb-field-x, --kb-field-y), so every window shows the same clouds in the same
+ * place. `translate` is the placement and `transform` is the drift, so neither undoes the other.
+ * The image is only the noise's alpha, used as a mask over the layer's color, which a crossing
+ * between surfaces fades over the motion feel's screen duration (the variables are the feel's;
+ * until it defines them, 400ms and ease-in-out).
+ */
+.kb-smoke-layer {
   position: absolute;
   top: 0;
-  bottom: 0;
   left: 0;
-  width: 100%;
-}
-
-.kb-smoke-strip[data-kb-drift] {
+  translate: var(--kb-field-x, 0px) var(--kb-field-y, 0px);
+  -webkit-mask-image: var(--kb-field-mask);
+  mask-image: var(--kb-field-mask);
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  /* The recipe's color (--kb-field-ink, a value Smoke.tsx hands over) at its opacity; with no ink, nothing. Moving between surfaces changes the computed color, which the transition below fades. */
+  background-color: color-mix(in srgb, var(--kb-field-ink, transparent) calc(var(--kb-field-alpha, 0) * 100%), transparent);
+  /* A layer is its own compositor layer: sliding it is a transform, never a repaint. */
   will-change: transform;
-  animation: kb-smoke-drift var(--kb-smoke-seconds) ease-in-out infinite alternate;
+  /* The delay is the page's clock (Smoke.tsx), so every window's copy of a layer is at the same point of its run. */
+  animation: kb-field-drift var(--kb-field-seconds) ease-in-out var(--kb-field-delay, 0s) infinite alternate;
+  transition: background-color var(--kb-motion-screen, 400ms) var(--kb-motion-ease, ease-in-out);
 }
 
-@keyframes kb-smoke-drift {
+@keyframes kb-field-drift {
   from { transform: translateX(0); }
-  to { transform: translateX(calc(var(--kb-smoke-travel) * -1)); }
+  to { transform: translateX(calc(var(--kb-field-travel) * -1)); }
 }
 
+/* Off: no drift and no fade; the layers stand at the end state, the same crop. */
 @media (prefers-reduced-motion: reduce) {
-  :root:not([data-kb-motion='full']) .kb-smoke-strip[data-kb-drift] { animation: none; }
+  :root:not([data-kb-motion='full']) .kb-smoke-layer { animation: none; transition: none; will-change: auto; }
 }
 
-:root[data-kb-motion='reduce'] .kb-smoke-strip[data-kb-drift] { animation: none; }
-
-/* A recipe's narrow layers stand in below 600px. */
-.kb-smoke-narrow { display: none; }
-
-@media (max-width: 599.98px) {
-  .kb-smoke-wide + .kb-smoke-narrow { display: block; }
-  .kb-smoke-strip:has(.kb-smoke-narrow) .kb-smoke-wide { display: none; }
-}
+:root[data-kb-motion='reduce'] .kb-smoke-layer { animation: none; transition: none; will-change: auto; }
 
 /* ---- the shapes ---- */
 

@@ -153,7 +153,7 @@ begin
   perform tests.become(admin);
   q := admin_queue();
   perform tests.unbecome();
-  if (q ->> 'cap')::integer is distinct from 100 or q -> 'more' is distinct from '{"waiting": false, "inForce": false, "ended": false}'::jsonb then raise exception 'the cap and what was cut are %, %', q -> 'cap', q -> 'more'; end if;
+  if (q ->> 'cap')::integer is distinct from 100 or q -> 'more' is distinct from '{"waiting": false, "inForce": false, "staffCards": false, "ended": false}'::jsonb then raise exception 'the cap and what was cut are %, %', q -> 'cap', q -> 'more'; end if;
   -- Waiting: only the one not yet due, with its Boss, its why in the Boss's words, its times, and the board's name now.
   if jsonb_array_length(q -> 'waiting') is distinct from 1 then raise exception 'waiting holds % moves: %', jsonb_array_length(q -> 'waiting'), q -> 'waiting'; end if;
   if q #>> '{waiting,0,id}' is distinct from later::text or q #>> '{waiting,0,why}' is distinct from 'because Waiting Way' or q #>> '{waiting,0,boss}' is distinct from 'Queue Boss'

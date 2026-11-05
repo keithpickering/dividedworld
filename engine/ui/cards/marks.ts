@@ -82,3 +82,6 @@ export const endsWords = (ends: string): string => `Ends by itself on ${utcDate(
 
 /** A caught play's note: what caught it, where the trap has been revealed (it always is, once it caught something). */
 export const caughtWords = (trap: string | null): string => `Caught by ${trap ? article(trap) : 'a trap'}. It did nothing, and its card is spent.`;
+
+/** The Lens's state for a play an admin ended: plain words, never in character. Its layer is off for everyone and nothing was refunded. */
+export const endedWords = (): string => 'Ended by an admin';

@@ -26,7 +26,8 @@ import { Page } from './Page.tsx';
 const glass = {
   ...testGlass,
   smoke: {
-    recipes: { plain: { layers: [] }, own: { layers: [], calm: 0.6 } },
+    field: { layers: [] },
+    recipes: { plain: { colors: [] }, own: { colors: [], calm: 0.6 } },
     surfaces: { ...testGlass.smoke.surfaces, characters: 'own', react: 'own', hud: 'own', hand: 'own' },
   },
 } as unknown as GlassTheme;

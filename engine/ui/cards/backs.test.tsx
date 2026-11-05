@@ -18,7 +18,9 @@ const base = { priceKey: 'x.price', playPrice: () => 0, validateConfig: (c: unkn
 const blot: CardRules = { ...base, key: 'blot', name: 'Blot', alignment: 'salty', rarity: 'common', canApply: (t, e, _config, now) => landsOn({ key: 'blot' }, t, e, now) };
 const snare: CardRules = { ...base, key: 'snare', name: 'Snare', alignment: 'salty', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'cast' }, outcome: { do: 'nullify' } }, canApply: () => ok(undefined) };
 const bluffy: CardRules = { ...base, key: 'bluffy', name: 'Bluffy', alignment: 'pepperoni', rarity: 'common', play: 'set', canApply: () => ok(undefined) };
-const instance: Instance = { ...testInstance, cards: [blot, snare, bluffy], settings: { ...testInstance.settings, economy: { 'x.price': 100 } } };
+const instance: Instance = { ...testInstance, cards: [blot, snare, bluffy], settings: { ...testInstance.settings, economy: { 'x.price': 100 },
+  /* Long, because the screens read a back's end against the real clock and the fake's starts on a fixed date. */
+  setLasts: { unit: 'day', count: 3650 } } };
 
 /** Blot draws a marker around the post's words, so a test sees whether its effect was drawn. */
 function Splash({ children }: EffectProps) {

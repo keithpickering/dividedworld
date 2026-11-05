@@ -29,6 +29,8 @@ export interface Trim {
 export type Rule =
   | { readonly type: 'string'; readonly maxLength?: number; readonly minLength?: number; readonly optional?: boolean }
   | { readonly type: 'number'; readonly optional?: boolean }
+  /** Anything at all passes, unchanged: a field whose shape a later, kinder check owns (a wrong type there must not cost the answer). */
+  | { readonly type: 'any'; readonly optional?: boolean }
   | { readonly type: 'boolean'; readonly optional?: boolean }
   | { readonly type: 'enum'; readonly values: readonly string[]; readonly optional?: boolean }
   | { readonly type: 'list'; readonly of: Rule; readonly max?: number; readonly min?: number; readonly optional?: boolean }
@@ -73,6 +75,8 @@ function walk(value: unknown, rule: Rule, path: string, trims: Trim[]): Step {
       }
       return { ok: true, value };
     }
+    case 'any':
+      return { ok: true, value };
     case 'number':
       return typeof value === 'number' && Number.isFinite(value) ? { ok: true, value } : no('isNumber');
     case 'boolean':

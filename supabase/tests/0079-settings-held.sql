@@ -538,6 +538,7 @@ insert into goods (key, value) values
   ('hints', '{"least": 10, "share": 0.51, "split": 0.01, "window": {"unit": "month", "count": 1000}}'),
   ('toastDefaults', '["quote"]'),
   ('toastDefaults', '[]'),
+  ('toastDefaults', '["cardEnded"]'),
   ('toastDefaults', '["quote", "cardOnYours", "trapStruck", "trapSprang", "hint", "ruling", "settlement", "followed", "update", "seasonNews"]'),
   ('phases', '{"honeymoon": {"days": 14, "weeklyMoves": 2, "bankCap": 4, "moveExpiryMostDays": 7}, "reign": {"weeklyMoves": 5, "bankCap": 10, "moveExpiryMostDays": 28}, "meltdown": {"days": 21, "weeklyMoves": 8, "bankCap": 14, "moveExpiryMostDays": 42}}'),
   ('phases', '{"honeymoon": {"days": 1, "weeklyMoves": 1, "bankCap": 1, "moveExpiryMostDays": 1}, "reign": {"weeklyMoves": 5, "bankCap": 10, "moveExpiryMostDays": 28}, "meltdown": {"days": 21, "weeklyMoves": 8, "bankCap": 14, "moveExpiryMostDays": 42}}'),

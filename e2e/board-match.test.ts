@@ -269,6 +269,15 @@ describe('compareBoard: a place a decision moved off the board', () => {
     expect(compareBoard(drawn, tall, manifest(lm('line', { buildShift: { height: 8 } })))).toMatchObject([{ landmark: 'line', field: 'height' }]);
   });
 
+  test('a width the shift made wider is held the same way', () => {
+    /* The type scale (the glass polish, design section 7) sets every board size token at 1.25 times, so a text's box is 1.25 times as wide as the board draws it. */
+    const wide = snap(shot('line', { ...LINE, width: LINE.width + 30 }));
+    expect(compareBoard(drawn, wide, manifest(lm('line')))).toMatchObject([{ landmark: 'line', field: 'width' }]);
+    expect(compareBoard(drawn, wide, manifest(lm('line', { buildShift: { width: 30 } })))).toEqual([]);
+    expect(compareBoard(drawn, wide, manifest(lm('line', { buildShift: { width: 20 } })))).toMatchObject([{ landmark: 'line', field: 'width' }]);
+    expect(compareBoard(drawn, drawn, manifest(lm('line', { buildShift: { width: 30 } })))).toMatchObject([{ landmark: 'line', field: 'width' }]);
+  });
+
   test('a height the shift made shorter is held the same way, with a negative height', () => {
     /* The Log's tab row is shorter in the build than on the board (e2e/boards/12-log.ts: height -6); 8px here, past the 4px tolerance. */
     const short = snap(shot('line', { ...LINE, height: 16 }));

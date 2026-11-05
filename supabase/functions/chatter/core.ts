@@ -41,9 +41,12 @@
  *
  * Nothing private reaches the model: the signals come from the digest role, the thread from public play, and the memory and career are a
  * staff character's. A card's target is the post the pick replies to, or the persona's own post, chosen from the trigger, never from who
- * owns anything.
+ * owns anything. A card's options are the persona's own words (an ink, a phrase), held to the card's own rules as a player's are: read the
+ * target as the act function does (`card_target_reach`), then `validateConfig`, `effectsOnTarget` and `decidePlay` or `decideSet`. When they
+ * fail, the trim names the predicate and plain code's seeded configuration is played instead; where code can build none, the card is dropped
+ * (`cardRefused`) and the post stands. The database then holds every rule it holds for a player's play.
  */
-import { atOrBelow, playOf, staffConfigOf } from '../../../engine/rules/cards.ts';
+import { atOrBelow, decidePlay, decideSet, effectsOnTarget, playOf, postTarget, staffConfigOf, staffOffers, type CardEffect, type CardTarget, type EffectsAbove } from '../../../engine/rules/cards.ts';
 import type { Instance, Persona } from '../../../engine/rules/types.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import {
@@ -128,6 +131,8 @@ export interface PickRecord {
   readonly trims: readonly Trim[];
   /** The card rules' words, when a card the persona asked for was refused (the post stands). */
   readonly cardRefused?: string;
+  /** Why the persona's own options for its card were not played, where they were not (the fallback played, or the card dropped). */
+  readonly cardOptionsFailed?: string;
   readonly noteWritten?: boolean;
   /** An adopted post: the day it was written on, which is the day its spend is recorded on. */
   readonly day?: string;
@@ -226,7 +231,7 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
   const offerable = settings.pool.cardRarityMost;
   const cardsOnOffer = tuned.cards.filter((c) => {
     const play = playOf(c);
-    return (play === 'cast' || play === 'set') && atOrBelow(c.rarity, offerable) && staffConfigOf(c, () => 0) !== null
+    return (play === 'cast' || play === 'set') && atOrBelow(c.rarity, offerable) && staffOffers(c)
       && !(play === 'set' && c.trap?.outcome.do === 'payout');
   });
 
@@ -289,7 +294,7 @@ async function onePick(r: PickRun): Promise<PickRecord> {
     // The cards on offer: a Cast needs a post to land on (the post it replies to, which it was shown), a Set lands on its own new post. Only
     // when the day's allowance has a slot for a card.
     const offered: OfferedCard[] = r.cardRoom && persona.voice === 'chat'
-      ? r.cardsOnOffer.filter((c) => (playOf(c) === 'set' ? true : quotedPost !== null)).map((c) => ({ key: c.key, name: c.name, play: playOf(c) as 'cast' | 'set' }))
+      ? r.cardsOnOffer.filter((c) => (playOf(c) === 'set' ? true : quotedPost !== null)).map((c) => ({ key: c.key, name: c.name, play: playOf(c) as 'cast' | 'set', ...(c.staffOptions ? { options: c.staffOptions } : {}) }))
       : [];
 
     const [career, memory, since] = await Promise.all([
@@ -355,11 +360,24 @@ async function onePick(r: PickRun): Promise<PickRecord> {
     let card: string | undefined;
     if (answer.card) {
       try {
-        // The configuration is plain code's, seeded from the day and the persona so a rerun builds the same (the model picks a card and a target, never an effect).
         const rules = r.cardsOnOffer.find((c) => c.key === answer.card!.key);
-        const config = rules ? staffConfigOf(rules, seededRng(`kayfabb-pool-card:${day}:${p.staff}`)) : null;
+        // The persona's own options first, decided by the card's rules against the target as the act function reads it; when they fail the trim
+        // names the predicate, and the configuration is plain code's, seeded from the day and the persona so a rerun builds the same.
+        let config: unknown = null;
+        if (rules && answer.card.config !== undefined) {
+          const decided = await decideOptions(db, tuned, rules, answer.card.on === 'reply' ? p.quoting : post, answer.card.on, answer.card.config);
+          if (decided.ok) config = decided.config;
+          else {
+            const failed = `${answer.card.key}: ${decided.why}`;
+            record['cardOptionsFailed'] = failed;
+            trims.push({ path: `card.config.${answer.card.key}`, predicate: decided.why, before: 1, after: 0 });
+          }
+        }
+        if (config === null && rules) config = staffConfigOf(rules, seededRng(`kayfabb-pool-card:${day}:${p.staff}`));
         if (config === null) throw new DatabaseError('no configuration could be built for the card', '', 400, 'no configuration could be built for the card');
         record['cardConfig'] = config;
+        // Unlike supabase/functions/act/core.ts's play_card, staff_play_card is sent no `version`, so an edit landing between the read
+        // above and this play is not refused (as before the options existed).
         const played = answer.card.on === 'reply'
           ? await db.rpc<{ id: string }>('staff_play_card', { staff_key: p.staff, card: answer.card.key, target: p.quoting, config, message: '', pool_day: day })
           : await db.rpc<{ id: string }>('staff_set_card', { staff_key: p.staff, card: answer.card.key, target: post, config });
@@ -388,7 +406,8 @@ async function onePick(r: PickRun): Promise<PickRecord> {
     }
     return {
       ...base, status: 'posted', post, trims, startedThread: startsThread, noteWritten,
-      ...(card ? { card } : {}), ...(typeof record['cardRefused'] === 'string' ? { cardRefused: record['cardRefused'] } : {}),
+      ...(card ? { card } : {}), ...(typeof record['cardOptionsFailed'] === 'string' ? { cardOptionsFailed: record['cardOptionsFailed'] } : {}),
+      ...(typeof record['cardRefused'] === 'string' ? { cardRefused: record['cardRefused'] } : {}),
     };
   } catch (e) {
     if (stopsTheRun(e)) throw e;
@@ -401,4 +420,25 @@ async function onePick(r: PickRun): Promise<PickRecord> {
 function beatsBoard(persona: Persona, slugs: ReadonlySet<string>, seed: string): string | null {
   const mine = persona.beats.filter((b) => slugs.has(b)).sort();
   return mine.length ? mine[Math.floor(seededRng(`kayfabb-pool-board:${seed}`)() * mine.length)]! : null;
+}
+
+/**
+ * A persona's options for its card, decided as a player's play is (supabase/functions/act/core.ts): the target read as the card's rules see
+ * it (`card_target_reach`, the post replied to or the persona's own new post), then `decidePlay` or `decideSet`, which hold `validateConfig`
+ * and `canApply` against the post's whole visible text, never the excerpt the persona was shown. `why` is the card's own words. A database
+ * error is thrown, as any other; a target that cannot be read is a failure of the options, so the fallback plays.
+ */
+async function decideOptions(db: Db, tuned: Instance, rules: Instance['cards'][number], target: string | null, on: 'reply' | 'own', config: unknown):
+  Promise<{ ok: true; config: unknown } | { ok: false; why: string }> {
+  if (target === null) return { ok: false, why: 'there is no post to read' };
+  const read = await db.rpc<(CardTarget & { effects: CardEffect[]; above?: EffectsAbove }) | null>('card_target_reach', { reach: 'post', target });
+  if (!read) return { ok: false, why: 'there is no such post' };
+  const { effects: own, above = {}, ...said } = read;
+  const post = said as { act: string; kind: Parameters<typeof postTarget>[1]; body?: unknown; version?: string };
+  const t = postTarget(post.act, post.kind, post.body, post.version);
+  const effects = effectsOnTarget(t, own ?? [], above);
+  const decided = on === 'own'
+    ? decideSet(rules, tuned.settings, t, effects, config, tuned.cards)
+    : decidePlay(rules, tuned.settings, t, effects, config, '', { nameOf: (key) => tuned.cards.find((c) => c.key === key)?.name ?? key });
+  return decided.ok ? { ok: true, config: decided.value.config } : { ok: false, why: decided.why };
 }

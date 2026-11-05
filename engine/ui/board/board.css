@@ -135,7 +135,17 @@
   font-weight: bold;
 }
 
-@media (max-width: 40em) {
+/*
+ * The list folds into cards when its column is narrow for the text: a media query's em is the browser's 16px and ignores the player's
+ * text size, so at 200% text a tablet's 800px column was still laid out as a five-column table, whose fixed columns (in ems of the
+ * text) left the title column 0px wide. A container query's rem follows the root's font size, so the fold moves with the text: 40rem
+ * of a column that is 96% of the window is the 640px window it folds at at 100%, and 1280px at 200%.
+ */
+.kb-thread-list-fold {
+  container-type: inline-size;
+}
+
+@container (max-width: calc(40rem * 0.96)) {
   .kb-thread-list,
   .kb-thread-list tbody,
   .kb-thread-list tr,
@@ -148,10 +158,14 @@
     position: absolute;
     width: 1px;
     height: 1px;
-    overflow: hidden;
     clip-path: inset(50%);
   }
 
+  /*
+   * The head stays in the accessibility tree, hidden by clip-path alone: the folded list is a table still (its roles are set), and a
+   * display:none head would take its column headers from it. No `overflow: hidden` goes with the clip, since a visible line inside a
+   * box that clips it is what the text-cut check (and a reader's tool) calls cut off, and the clip-path already shows nothing.
+   */
   /* The head's cells are hidden with it, each as the clip itself: they are no cells of a table here, so no width is asked of them (the 52% and 9% above) and none can be squeezed. */
   .kb-thread-list thead th:nth-child(n) {
     display: block;
@@ -159,7 +173,6 @@
     width: 1px;
     height: 1px;
     padding: 0;
-    overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
   }

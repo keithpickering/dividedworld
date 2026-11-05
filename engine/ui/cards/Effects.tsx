@@ -84,7 +84,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   /* A play a trap caught does nothing, and a card back draws no effect: neither wraps the post (the card mechanic's design, section 4). */
   const layers = [
     ...above.map((l) => ({ reach: l.reach as Reach, acting: livePlays(l.drawn, now), of: l.of })),
-    { reach: 'post' as Reach, acting: here.plays.filter((p) => !p.caught && !p.faceDown && !p.reach), of: here },
+    { reach: 'post' as Reach, acting: here.plays.filter((p) => !p.caught && !p.reversed && !p.faceDown && !p.reach), of: here },
   ];
   /*
    * A play's moment shown here (As it landed): it replaces the post's words and every effect inside the takeovers, which keep wrapping
@@ -177,7 +177,7 @@ export interface MomentParts {
 
 /**
  * Splits a moment into what is drawn and what is named. Liveness is judged at the play's own time, never now: a Use that had ended
- * by then is left out, a caught play is named "caught by" its trap's card (the spring that caught it made that card public), and a
+ * by then is left out, a play an admin had ended by then is named "ended by an admin" (its card_end is among the layers, before the moment), a caught play is named "caught by" its trap's card (the spring that caught it made that card public), and a
  * card back is named as a back, always, even once it sprang: which card it is is never read. A play above the post is named with
  * what it was on, and never drawn, since its moment isn't one post's. A card that cannot change after it lands, or that draws no
  * effect, is named.
@@ -186,11 +186,13 @@ export function momentParts(moment: PlayMoment, rules: readonly CardRules[], ui:
   const at = Date.parse(moment.layers[0]!.act.createdAt);
   const cardName = (key: string) => rules.find((c) => c.key === key)?.name ?? key;
   const springs = moment.layers.map((l) => l.act).filter((a) => a.kind === 'spring');
+  /* A play an admin had ended by then: its card_end rides among the layers, and counts only when it came before the moment. */
+  const endedBy = new Map(moment.layers.map((l) => l.act).filter((a) => a.kind === 'card_end' && a.targetActId !== null && Date.parse(a.createdAt) <= at).map((a) => [a.targetActId!, a.id] as const));
   const drawn: CardPlay[] = [];
   const states: Record<Id, EffectState> = {};
   const named: { readonly words: string; readonly play: CardPlay }[] = [];
   for (const { act, state } of moment.layers) {
-    if (act.kind === 'spring') continue;
+    if (act.kind === 'spring' || act.kind === 'card_end') continue;
     const play = playOf(act);
     if (!play || play.reach) continue;
     if (play.faceDown) {
@@ -202,6 +204,10 @@ export function momentParts(moment: PlayMoment, rules: readonly CardRules[], ui:
     if (play.caught !== undefined) {
       const trap = springs.find((s) => s.payload.set === play.caught)?.payload.card;
       named.push({ words: `${cardName(play.card)}, caught by ${typeof trap === 'string' ? cardName(trap) : 'a trap'}`, play });
+      continue;
+    }
+    if (endedBy.has(play.id)) {
+      named.push({ words: `${cardName(play.card)}, ended by an admin`, play });
       continue;
     }
     if (play.ends !== undefined && Date.parse(play.ends) <= at) continue;

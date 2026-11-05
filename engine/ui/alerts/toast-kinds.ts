@@ -13,7 +13,7 @@ import { onToastChoice } from './toast-choice.ts';
 export type ToastDefaults = Readonly<Record<AlertKind, boolean>>;
 
 export const TOAST_DEFAULTS: ToastDefaults = {
-  quote: true, cardOnYours: true, trapStruck: true, trapSprang: true, ruling: true, settlement: true, update: true,
+  quote: true, cardOnYours: true, cardEnded: true, trapStruck: true, trapSprang: true, ruling: true, settlement: true, update: true,
   followed: false, hint: false, seasonNews: false,
 };
 

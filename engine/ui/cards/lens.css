@@ -286,3 +286,21 @@
   padding: 0.1rem 0.7rem;
   letter-spacing: 0.06em;
 }
+
+/* An admin's End this card: the confirm stands over the page, its words plain and its two controls the Lens's own tiles. */
+.kb-lens-end-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  max-width: 30rem;
+}
+
+.kb-lens-end-body > p {
+  margin: 0;
+}
+
+.kb-lens-end-refusal {
+  color: var(--kb-glass-loss);
+}
+
+.kb-lens-end { width: min(100%, 560px); }

@@ -52,9 +52,9 @@ export interface Landmark {
   /**
    * Where a decision moves the build's place from the board's, in px: the build is held to the board's place plus this, within the same
    * tolerance, so a part that a decision moved (the dialog frame's bar, which holds Close where the board's picker holds it at the foot)
-   * is still held to where it stands now, and a shift the manifest has wrong fails. `height` is the same for a box the shift made taller (the picker's, by its bar) or, negative, shorter (the Log's tab row, by 6px). Never a width.
+   * is still held to where it stands now, and a shift the manifest has wrong fails. `height` is the same for a box the shift made taller (the picker's, by its bar) or, negative, shorter (the Log's tab row, by 6px). `width` is the same for a text the type scale (the glass polish, design section 7: every board size token at 1.25 times) made wider than the board draws it; a shift that moves a box's width is only ever that.
    */
-  readonly buildShift?: { readonly x?: number; readonly y?: number; readonly height?: number };
+  readonly buildShift?: { readonly x?: number; readonly y?: number; readonly height?: number; readonly width?: number };
   /** `false` for a landmark whose type is not the glass's to compare (an image). */
   readonly type?: boolean;
   /**
@@ -206,7 +206,7 @@ export function compareBoard(board: Snapshot, build: Snapshot, manifest: BoardMa
       continue;
     }
     const shift = l.buildShift;
-    const shifted = (box: Box): Box => (shift === undefined ? box : { ...box, x: box.x - (shift.x ?? 0), y: box.y - (shift.y ?? 0), height: box.height - (shift.height ?? 0) });
+    const shifted = (box: Box): Box => (shift === undefined ? box : { ...box, x: box.x - (shift.x ?? 0), y: box.y - (shift.y ?? 0), height: box.height - (shift.height ?? 0), width: box.width - (shift.width ?? 0) });
     if (l.originEdge !== undefined && l.origin === undefined) {
       out.push(mismatch(l.id, 'origin', 'none', 'none', `measured from the ${l.originEdge} of nothing: originEdge needs an origin`));
     } else if (l.origin !== undefined) {

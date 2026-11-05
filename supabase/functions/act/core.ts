@@ -84,6 +84,12 @@ const BROADCASTS: Record<string, (answer: Row) => Broadcast[]> = {
   post: (a) => withSprung(a, act(without(a, 'sprung'))),
   edit_post: (a) => act(a),
   play_card: (a) => withSprung(a, [...act(without(a, 'sprung')), ...onReach(without(a, 'sprung'))]),
+  // An admin's end of a card: the card_end is an Act of the play's thread. For a play beyond a post the answer also names its `reach`
+  // (reverse_card), and the end is heard on `reach` too, as the play was; neither the `play` nor the `reach` is sent on.
+  reverse_card: (a) => {
+    const end = without(without(a, 'play'), 'reach');
+    return [...act(end), ...(a.reach === 'character' || a.reach === 'thread' || a.reach === 'board' ? [{ topic: 'reach', event: 'effect', payload: end }] : [])];
+  },
   // A card back: the set Act names no card, so neither does what is sent.
   set_card: (a) => act(a),
   start_thread: (a) => [...thread(a.thread), ...act(a.act)],

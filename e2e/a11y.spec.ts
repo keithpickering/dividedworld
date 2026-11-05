@@ -25,6 +25,12 @@ const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
 interface Found { readonly id: string; readonly impact: string | null; readonly nodes: readonly { readonly target: unknown; readonly html: string }[] }
 
 export async function pageViolations(page: Page): Promise<string[]> {
+  /* Each smoke layer is a full-rect div with a translucent background color, and its shape is only a mask-image, which axe
+     cannot see: it reads the layer as a solid fill under the text and fails contrast the player never sees (the old SVG smoke
+     was an unknown background to it). Only the layers' container is hidden. Text over the smoke is held by
+     tools/check-glass-contrast.mjs (every recipe's layers at full noise against every text token) and e2e/glass-text.spec.ts
+     (the rendered text, measured). */
+  await page.addStyleTag({ content: '.kb-smoke-layers { display: none !important; }' });
   await page.addScriptTag({ path: axePath });
   const found = await page.evaluate(async (tags) => {
     const axe = (window as unknown as { axe: { run(c: unknown, o: unknown): Promise<{ violations: Found[] }> } }).axe;

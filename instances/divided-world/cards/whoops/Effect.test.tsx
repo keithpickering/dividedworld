@@ -34,9 +34,9 @@ vi.mock('./scrub.ts', async (importOriginal) => {
 });
 
 const LINES = 30;
-/** The pen strokes' tests lie below every splat (at the 790px layout a splat reaches 1.8 widths down, 78 lines of 18px) and lay the post out this tall. */
+/** The pen strokes' tests lie below every splat (at the 988px layout a splat reaches 1.8 widths down, 79 lines of 22.5px) and lay the post out this tall. */
 const TEXT_LINES = 90;
-const LINE_PX = 18;
+const LINE_PX = 22.5;
 /** Each line of the post's text is exactly this long, so a word's place in the text is its line. */
 const LINE_CHARS = 24;
 const textOf = (lines: number) => Array.from({ length: lines }, (_, k) => `L${String(k).padStart(2, '0')} alpha beta gamma`.padEnd(LINE_CHARS)).join('');
@@ -563,7 +563,7 @@ describe('the keyboard path', () => {
 
 describe('what a screen reader is given', () => {
   test('a line under ink is hidden from a screen reader as it is from the eye, and the lines clear of it are read', () => {
-    /* A post tall enough that its last lines lie below the splat, which at the 790px layout reaches well down. */
+    /* A post tall enough that its last lines lie below the splat, which at the 988px layout reaches well down. */
     layoutLines = TEXT_LINES;
     const { root } = mount();
     const layout = root.querySelector('.kb-whoops-layout') as HTMLElement;

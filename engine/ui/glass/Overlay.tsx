@@ -30,7 +30,7 @@ import { useModalLayer } from '../modal.tsx';
 import type { GlassSurface } from '../types.ts';
 import { hudTopOf, placePopover } from './place.ts';
 import { CloseCross, DialogBar, FRAME } from './Frame.tsx';
-import { Smoke, useSurfaceStyle } from './Smoke.tsx';
+import { FIELD_PLACED, Smoke, useSurfaceStyle } from './Smoke.tsx';
 import './shell.css';
 
 export interface OverlayProps {
@@ -156,6 +156,8 @@ export function Overlay({ title, onClose, children, surface, returnFocusTo, labe
       const at = place(el, target, sheetBelow);
       el.setAttribute('data-kb-place', at);
       el.scrollTop = scrolled;
+      /* The overlay's smoke is a window onto the field and reads where the box stands (Smoke.tsx), which was only just decided. */
+      window.dispatchEvent(new Event(FIELD_PLACED));
       told.current?.(at);
       /* Popover to sheet or back: what it holds is laid out anew for it (the picker's kinds two or four across), so it is measured again once that has landed. */
       if (last !== null && at !== last) soon();

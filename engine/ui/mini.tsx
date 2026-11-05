@@ -46,6 +46,18 @@ export function useSignedIn(api: KayfaApi): boolean | null {
   return signedIn;
 }
 
+/** Whether the signed-in reader is an admin (`api.isAdmin`): false until known, and for a read that fails, so an admin's control is never offered on a guess. */
+export function useIsAdmin(api: KayfaApi, signedIn: boolean | null): boolean {
+  const [admin, setAdmin] = useState(false);
+  useEffect(() => {
+    if (!signedIn) { setAdmin(false); return undefined; }
+    let live = true;
+    void api.isAdmin().then((a) => { if (live) setAdmin(a); }, () => { if (live) setAdmin(false); });
+    return () => { live = false; };
+  }, [api, signedIn]);
+  return admin;
+}
+
 export function SignInPrompt() {
   return (
     <p className="kb-sign-in-prompt">

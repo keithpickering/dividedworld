@@ -224,6 +224,8 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
     if (code !== null && (typeof code !== 'string' || code.length > 64)) throw new Refused('invite', 'is not an invite code');
     return { rpc: 'open_account', args: { code } };
   },
+  // An admin ends a card play (supabase/migrations/0092_card_end.sql): the player's own call, since only_admins reads the caller.
+  reverseCard: (r) => ({ rpc: 'reverse_card', args: { play: id(r, 'play') } }),
   saveEffect: (r) => {
     if (typeof r.state !== 'object' || r.state === null) throw new Refused('state', 'is the effect\'s state, an object');
     return { rpc: 'save_effect_state', args: { through: id(r, 'character'), on_play: id(r, 'play'), state: r.state }, asService: true, needsCardOfPlay: true };

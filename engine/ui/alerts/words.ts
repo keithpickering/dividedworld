@@ -31,6 +31,8 @@ export interface WordsContext {
   /** Followed thread -> the name of the player's own character that started it (a public fact, the thread's first post); absent for a thread followed by choice. */
   readonly startedBy: ReadonlyMap<Id, string>;
   readonly perPage: number;
+  /** Public names of the characters whose posts a row names, where it needs them (a card an admin ended names the post's author). */
+  readonly names?: ReadonlyMap<Id, string>;
   /** The settlement id (a row's `sub`) of the newest settlement, which `/log/settlement` shows. */
   readonly newestSettlement: string | null;
 }
@@ -86,6 +88,23 @@ function cardOn(row: Alert, ctx: WordsContext): { card: string; place: Part[]; d
   }
 }
 
+/** The parts of a card an admin ended: what it was played on, said by the target's public name, and the way to it. */
+function endedOn(row: Alert, play: Act, ctx: WordsContext): { place: Part[]; ways: Way[] } {
+  const said = typeof play.payload.targetName === 'string' && play.payload.targetName !== '' ? play.payload.targetName : null;
+  const id = (key: string) => (typeof play.payload[key] === 'string' ? play.payload[key] as Id : null);
+  switch (play.payload.reach) {
+    case 'character': { const target = id('character'); const name = said ?? (target ? ctx.names?.get(target) : undefined) ?? 'a character'; return { place: [name], ways: target ? [{ text: `Go to ${name}`, to: `/c/${encodeURIComponent(target)}` }] : [] }; }
+    case 'thread': { const target = id('thread'); return { place: ['the thread ', { em: said ?? row.title ?? 'a thread' }], ways: target ? [{ text: 'Go to the thread', to: threadHref(target, 1) }] : [] }; }
+    case 'board': return { place: [`the ${said ?? 'a'} board`], ways: [] };
+    default: {
+      const post = play.targetActId ? ctx.acts.get(play.targetActId) : undefined;
+      const author = post?.character == null ? undefined : ctx.names?.get(post.character);
+      const own = post?.character != null && post.character === row.character;
+      return { place: [own ? 'your post' : author ? `${author}'s post` : 'a post'], ways: postWay(post, row, ctx) };
+    }
+  }
+}
+
 /** The key the cards of one target share, so a page can batch them; null for a row that is not a card on something that can be told. */
 export function targetKey(row: Alert, ctx: WordsContext): string | null {
   if (row.kind !== 'cardOnYours' || row.act === null) return null;
@@ -123,6 +142,15 @@ export function wordsFor(row: Alert, ctx: WordsContext): Said {
       const on = cardOn(row, ctx);
       if (!on) return { line: ['A card was played on something of yours'], detail: inTitle(row), ways: threadWay(row), who };
       return { line: [`${on.card} was played on `, ...on.place], detail: on.detail, ways: on.ways, who };
+    }
+    case 'cardEnded': {
+      const play = act?.targetActId ? ctx.acts.get(act.targetActId) : undefined;
+      if (!play || play.kind !== 'card') return { line: ['An admin ended your card.'], detail: sentences(['Its cost and the card are not refunded.'], inTitle(row)), ways: threadWay(row), who };
+      const on = endedOn(row, play, ctx);
+      return {
+        line: [`An admin ended your ${cardName(play.payload.card, ctx) ?? 'card'} on `, ...on.place, '.'],
+        detail: sentences(['Its cost and the card are not refunded.'], inTitle(row)), ways: on.ways, who,
+      };
     }
     case 'trapStruck': {
       const post = act?.targetActId ? ctx.acts.get(act.targetActId) : undefined;

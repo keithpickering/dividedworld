@@ -1,0 +1,103 @@
+<!doctype html>
+<!--
+  Record, written 2026-11-05 by the forum-load spike. A mock of a classic loading bar for the board pages, for the owner
+  to react to: not code to copy. Click a link on the mock board; the page you were on stays put while the "next" one
+  loads (as a 2003 browser did), the bar fills, and the new page lands in one piece. Two placements are shown: A, a
+  status bar strip on the seam just above the Game HUD (where IE6's sat, at the window's foot); B, inside the banner
+  beside the site's address. Reduced motion fills the bar in one step, with no march.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loading Bar Mock</title>
+<style>
+  :root { --fg: #111; --bg: #fff; --rule: #999; --muted: #666; --face: #d4d0c8; --hi: #fff; --lo: #808080; --dk: #404040; --block: #0a246a; --hud: #120d24; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 13px/1.4 Verdana, Tahoma, sans-serif; }
+  .wrap { width: min(96%, 960px); margin-inline: auto; }
+  .banner { display: flex; justify-content: space-between; align-items: center; gap: 1em; border-bottom: 1px solid var(--rule); padding: 12px 0; }
+  .logo { font: bold 20px/1.2 "Courier New", monospace; letter-spacing: .06em; text-transform: uppercase; }
+  .addr { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; }
+  nav { padding: 5px 0; border-bottom: 1px solid var(--rule); font-size: 11px; }
+  nav a + a::before { content: "·"; margin: 0 .4em; color: var(--fg); }
+  main { padding: 12px 0 120px; min-height: 60vh; }
+  table { width: 100%; border-collapse: collapse; border: 1px solid var(--rule); }
+  th, td { border: 1px solid var(--rule); padding: 4px 6px; text-align: left; font-size: 12px; }
+  th { background: #eee; font-size: 11px; }
+  h1 { font: bold 16px "Courier New", monospace; margin: 8px 0; }
+  a { color: #0033cc; }
+
+  /* The classic bar: a sunken well of navy blocks that march in as the page arrives. */
+  .well { width: 150px; height: 16px; padding: 2px; background: var(--face);
+    border: 1px solid; border-color: var(--lo) var(--hi) var(--hi) var(--lo); box-shadow: inset 1px 1px 0 var(--dk); }
+  .well, .fill { display: block; }
+  .fill { height: 100%; width: 0%; background: repeating-linear-gradient(90deg, var(--block) 0 8px, transparent 8px 10px); transition: width .12s steps(3); }
+  .well.small { width: 96px; height: 12px; padding: 1px; }
+
+  /* A: the status bar on the seam above the HUD. */
+  .status { position: fixed; left: 0; right: 0; bottom: 56px; height: 22px; display: flex; align-items: center; gap: 6px; padding: 0 6px;
+    background: var(--face); border-top: 1px solid var(--hi); box-shadow: 0 -1px 0 var(--lo); font: 11px Tahoma, sans-serif; color: #000; }
+  .status .text { flex: 1; padding: 1px 4px; border: 1px solid; border-color: var(--lo) var(--hi) var(--hi) var(--lo); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .status .zone { padding: 1px 6px; border: 1px solid; border-color: var(--lo) var(--hi) var(--hi) var(--lo); }
+  .hud { position: fixed; left: 0; right: 0; bottom: 0; height: 56px; background: var(--hud); color: #fff; display: flex; align-items: center; padding: 0 16px;
+    font: bold 14px "Arial Narrow", sans-serif; letter-spacing: .05em; text-transform: uppercase; border-top: 2px solid #4ee; }
+  .placement { position: fixed; top: 8px; left: 50%; transform: translateX(-50%); background: #ffe; border: 1px solid #cc9; padding: 6px 8px; font-size: 11px; z-index: 5; }
+  [data-placement="B"] .status, [data-placement="A"] .addr .well { display: none; }
+  @media (prefers-reduced-motion: reduce) { .fill { transition: none; } }
+  @media (max-width: 600px) { .well { width: 90px; } .addr span { display: none; } }
+</style>
+</head>
+<body data-placement="A">
+  <div class="placement">Placement:
+    <label><input type="radio" name="p" value="A" checked> A, status bar</label>
+    <label><input type="radio" name="p" value="B"> B, banner</label>
+  </div>
+  <div class="wrap">
+    <header class="banner">
+      <span class="logo">Divided World</span>
+      <span class="addr"><span>dw.gripe</span><span class="well small" role="progressbar" aria-label="Loading the page" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span class="fill"></span></span></span>
+    </header>
+    <nav><a href="#index">Index</a><a href="#general">General</a><a href="#system">The System</a></nav>
+    <main id="page" aria-live="off"></main>
+  </div>
+  <div class="status" role="status">
+    <span class="text" id="status-text">Done</span>
+    <span class="well" role="progressbar" aria-label="Loading the page" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span class="fill"></span></span>
+    <span class="zone">Internet</span>
+  </div>
+  <div class="hud">Posting as Mrs. Hooligan</div>
+<script>
+  const pages = {
+    index: '<h1>Index</h1><table><tr><th>Board</th><th>Threads</th><th>Last post</th></tr><tr><td><a href="#general">General</a></td><td>3</td><td>Oct 6 by Mrs. Hooligan</td></tr><tr><td><a href="#system">The System</a></td><td>1</td><td>Oct 5 by The System</td></tr></table>',
+    general: '<h1>General</h1><table><tr><th>Thread</th><th>Replies</th><th>Last post</th></tr><tr><td><a href="#thread">Rate my avatar</a></td><td>0</td><td>Mrs. Hooligan</td></tr><tr><td><a href="#thread">Who keeps reacting with a thumbs up?</a></td><td>3</td><td>Mrs. Hooligan</td></tr></table>',
+    system: '<h1>The System</h1><p>The System is listening.</p><p><a href="#index">Back to the index</a></p>',
+    thread: '<p><a href="#index">Index</a> › Rate my avatar</p><h1>Rate my avatar</h1><table><tr><th style="width:22%">Author</th><th>Message</th></tr><tr><td><b>Mrs. Hooligan</b><br>Jobber<br>Posts: 58</td><td>Be honest.</td></tr></table>',
+  };
+  const fills = document.querySelectorAll('.fill');
+  const bars = document.querySelectorAll('[role=progressbar]');
+  const text = document.getElementById('status-text');
+  const set = (pct) => { fills.forEach((f) => (f.style.width = pct + '%')); bars.forEach((b) => b.setAttribute('aria-valuenow', String(Math.round(pct)))); };
+  let timer = null;
+  function go(name) {
+    clearInterval(timer);
+    const page = document.getElementById('page');
+    page.setAttribute('aria-busy', 'true');
+    text.textContent = `Opening page http://dw.gripe/${name === 'index' ? '' : name}...`;
+    /* The bar trickles toward 90% while the screen's one read is out (a busy instance's nano server, 600 to 1400 ms here), then fills and the page lands whole. */
+    let pct = 0; set(0);
+    timer = setInterval(() => { pct += (90 - pct) * 0.18; set(pct); }, 120);
+    setTimeout(() => {
+      clearInterval(timer); set(100);
+      page.innerHTML = pages[name] || pages.index;
+      page.removeAttribute('aria-busy');
+      text.textContent = 'Done';
+      setTimeout(() => set(0), 250);
+    }, 600 + Math.random() * 800);
+  }
+  document.addEventListener('click', (e) => { const a = e.target.closest('a[href^="#"]'); if (!a) return; e.preventDefault(); go(a.getAttribute('href').slice(1)); });
+  document.querySelectorAll('input[name=p]').forEach((r) => r.addEventListener('change', () => (document.body.dataset.placement = r.value)));
+  document.getElementById('page').innerHTML = pages.index;
+</script>
+</body>
+</html>

@@ -65,8 +65,12 @@ function useOrigin(origin: Id, thread: Id, plays: Plays, tallies: Tallies, mine:
       (a) => { if (live) { if (a) setAct((was) => (was ? newer(was, a) : a)); else setRead('gone'); } },
       () => { if (live) setRead('failed'); },
     );
-    void api.cardsOn(origin, CARDS_SHOWN + 1).then(async (all) => {
+    void api.cardsOn(origin, CARDS_SHOWN + 1).then(async (read) => {
       if (!live) return;
+      /* The read carries the plays' ends (an admin's reversal) after the plays: they are no plays, so neither the count of "more" nor a
+         tally or a reaction is read for them. They join the store beside the plays, which marks a reversed one. */
+      const all = read.filter((a) => a.kind !== 'card_end');
+      const ends = read.filter((a) => a.kind === 'card_end');
       const shown = all.slice(0, CARDS_SHOWN);
       /*
        * The plays are Acts like the post: their tallies and the player's own reactions to them are read in one read
@@ -86,7 +90,7 @@ function useOrigin(origin: Id, thread: Id, plays: Plays, tallies: Tallies, mine:
       for (const [id, t] of Object.entries(counted)) tallies.merge(id, t);
       for (const id of ids) mine.merge(id, own.filter((r) => r.act === id));
       setMore(all.length > CARDS_SHOWN);
-      plays.add(shown);
+      plays.add([...shown, ...ends.filter((e) => shown.some((p) => p.id === e.targetActId))]);
       billPost(plays, origin, spun, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!)));
     }, () => { /* the tags are left out */ });
     return () => { live = false; off(); };
