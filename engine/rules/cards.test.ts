@@ -5,13 +5,13 @@ import type { Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
 const base = { alignment: 'salty' as const, priceKey: 'x.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c) };
-const cast = (key: string, rarity: CardRules['rarity']): CardRules => ({ ...base, key, name: `Test ${key}`, rarity, canApply: (t, e) => landsOn({ key }, t, e) });
+const cast = (key: string, rarity: CardRules['rarity']): CardRules => ({ ...base, key, name: `Test ${key}`, rarity, canApply: (t, e, _config, now) => landsOn({ key }, t, e, now) });
 const plain = cast('plain', 'common');
 const grand = cast('grand', 'legendary');
-const shield: CardRules = { ...base, key: 'shield', name: 'Test Shield', rarity: 'uncommon', play: 'use', ward: true, lasts: { unit: 'day', count: 7 }, canApply: (t, e) => landsOn({ key: 'shield' }, t, e) };
+const shield: CardRules = { ...base, key: 'shield', name: 'Test Shield', rarity: 'uncommon', play: 'use', ward: true, lasts: { unit: 'day', count: 7 }, canApply: (t, e, _config, now) => landsOn({ key: 'shield' }, t, e, now) };
 const snare: CardRules = { ...base, key: 'snare', name: 'Test Snare', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'cast' }, outcome: { do: 'payout' } }, canApply: () => ok(undefined) };
 const pick = (c: unknown) => (typeof c === 'object' && c !== null && (c as { ink?: unknown }).ink === 'red' ? ok({ ink: 'red' }) : refuse('the ink is red'));
-const inky: CardRules = { ...base, key: 'inky', name: 'Test Inky', rarity: 'common', canApply: (t, e) => landsOn({ key: 'inky' }, t, e), validateConfig: pick };
+const inky: CardRules = { ...base, key: 'inky', name: 'Test Inky', rarity: 'common', canApply: (t, e, _config, now) => landsOn({ key: 'inky' }, t, e, now), validateConfig: pick };
 const striker: CardRules = { ...base, key: 'striker', name: 'Test Striker', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'reply' }, outcome: { do: 'strike', card: 'inky' } }, canApply: () => ok(undefined) };
 const bluff: CardRules = { ...base, key: 'bluffy', name: 'Test Bluffy', rarity: 'common', play: 'set', canApply: () => ok(undefined) };
 
@@ -91,6 +91,25 @@ test('a post\'s stack counts the plays still up: an ended Use holds no place', (
   assert.equal(decideUse(shield, settings, post, [{ ...ended, ends: soon }], {}, '').ok, false);
 });
 
+test('a decision reads its effects on the clock it is given, and hands that clock to the card\'s landing', () => {
+  // One play that ends at noon on a fixed day, decided an hour before and an hour after, whatever the real time is.
+  const noon = Date.UTC(2020, 0, 1, 12);
+  const before = new Date(noon - 3_600_000);
+  const after = new Date(noon + 3_600_000);
+  const up: CardEffect = { card: 'shield', act: 'w', ward: 'uncommon', ends: new Date(noon).toISOString() };
+  assert.equal(decideUse(shield, settings, post, [up], {}, '', { now: before }).ok, false);
+  assert.equal(decideUse(shield, settings, post, [up], {}, '', { now: after }).ok, true);
+  assert.equal(decidePlay(plain, settings, post, [up], {}, '', { now: before }).ok, false);
+  assert.equal(decidePlay(plain, settings, post, [up], {}, '', { now: after }).ok, true);
+  const mine: CardEffect = { card: 'plain', act: 'p1', ends: new Date(noon).toISOString() };
+  assert.equal(decidePlay(plain, settings, post, [mine], {}, '', { now: before }).ok, false);
+  assert.equal(decidePlay(plain, settings, post, [mine], {}, '', { now: after }).ok, true);
+  const seen: (Date | undefined)[] = [];
+  const watcher: CardRules = { ...snare, key: 'watcher', canApply: (_t, _e, _config, now) => { seen.push(now); return ok(undefined); } };
+  decideSet(watcher, settings, post, [], {}, [], before);
+  assert.deepEqual(seen, [before]);
+});
+
 // Reach (the card mechanic's design, section 7): a card lands only where its reaches say, its stack counts the effects on that
 // same target, and a board carries one board card at a time.
 const character: CardTarget = { reach: 'character', character: 'c1' };
@@ -98,7 +117,7 @@ const thread: CardTarget = { reach: 'thread', thread: 't1' };
 const board: CardTarget = { reach: 'board', board: 'b1' };
 const reaching = (key: string, reaches: CardRules['reaches'], stack?: number): CardRules => ({
   ...base, key, name: `Test ${key}`, rarity: 'legendary', reaches, lasts: { unit: 'day', count: 1 }, ...(stack ? { stack } : {}),
-  canApply: (t, e) => landsOn({ key, reaches, stack }, t, e),
+  canApply: (t, e, _config, now) => landsOn({ key, reaches, stack }, t, e, now),
 });
 
 test('a card lands only on a reach it lists, a post unless it says', () => {

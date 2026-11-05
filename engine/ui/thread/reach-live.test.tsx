@@ -16,7 +16,7 @@ import { ThreadScreen } from './Thread.tsx';
 
 const base = { priceKey: 'test.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c) };
 const reaching = (key: string, name: string, rarity: CardRules['rarity'], reaches: CardRules['reaches']): CardRules => ({
-  ...base, key, name, alignment: 'pepperoni', rarity, reaches, lasts: { unit: 'day', count: 1 }, canApply: (t, e) => landsOn({ key, reaches }, t, e),
+  ...base, key, name, alignment: 'pepperoni', rarity, reaches, lasts: { unit: 'day', count: 1 }, canApply: (t, e, _config, now) => landsOn({ key, reaches }, t, e, now),
 });
 const instance: Instance = { ...testInstance, cards: [reaching('sparkle', 'Sparkle', 'uncommon', ['character']), reaching('beacon', 'Beacon', 'rare', ['thread'])], settings: { ...testInstance.settings, economy: { 'test.price': 100 } } };
 
