@@ -297,6 +297,12 @@ describe('the look', () => {
     expect(/\.kb-guide-side\s*\{[^}]*position:\s*sticky/u.test(css)).toBe(true);
     expect(css).toMatch(/:where\(:root\[data-kb-layout='phone'\]\)[^{]*\.kb-guide-contents[^{]*\{/u);
   });
+  test('the contents are a stacked list on the Main board\'s layout, and the columns stand clear of the heading', () => {
+    const rule = (sel: string) => css.match(new RegExp(`(?:^|\\n)${sel.replace(/[.[\]()'=:]/g, '\\$&')}\\s*\\{([^}]*)\\}`, 'u'))?.[1] ?? '';
+    expect(rule('.kb-guide-toc')).not.toMatch(/overflow|display:\s*flex/u);
+    expect(rule('.kb-guide-toc li')).not.toMatch(/display:\s*inline|flex:/u);
+    expect(rule('.kb-guide-cols')).toMatch(/margin-top:\s*28px/u);
+  });
   test('the mark on the section on screen is the neon along the left edge, as the Updates archive marks its current one', () => {
     expect(/\[aria-current='location'\][^{]*\{[^}]*inset 3px 0 0 var\(--kb-glass-neon\)/u.test(css)).toBe(true);
   });

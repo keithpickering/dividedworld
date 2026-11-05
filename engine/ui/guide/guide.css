@@ -28,7 +28,7 @@
   grid-template-columns: 300px minmax(0, 1fr);
   gap: 24px 44px;
   align-items: start;
-  margin-top: 1px;
+  margin-top: 28px;
 }
 
 .kb-guide-empty {
@@ -443,7 +443,7 @@
 :where(:root[data-kb-layout='phone']) .kb-guide-cols {
   grid-template-columns: minmax(0, 1fr);
   gap: 16px;
-  margin-top: 8px;
+  margin-top: 16px;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-guide-side {
