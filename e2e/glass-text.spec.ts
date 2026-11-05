@@ -450,10 +450,10 @@ test.describe('the poisons, planted in a real page', () => {
   });
 
   test('a joined calm whose outer edge still feathers into the text', async ({ page }) => {
-    /* The phone's HUD door and actions join, with no feather where they face (frame.css); the door's top edge still ramps, so a backing pulled in on it is named. */
+    /* The phone's HUD door and actions join, with no feather where they face (frame.css); the door's title stands in the words' own calm here (the door's words stand in calms), whose top edge still ramps, so a backing pulled in on it is named. */
     await page.setViewportSize({ width: 390, height: 844 });
     await open(page, { name: 'The HUD, signed out', path: '/b/general', signedOut: true });
-    await plant(page, '.kb-hud-door.kb-calm::before { top: 0; }');
+    await plant(page, '.kb-hud-door-words.kb-calm::before { top: 0; }');
     expect(await measure(page)).toContainEqual(expect.stringMatching(/ h2\.kb-hud-door-title\.kb-glass-display \(surface hud\): lies outside its calm's interior \(its backing inset by its 32px feather\)/u));
   });
 
