@@ -23,8 +23,8 @@
  *
  * The thread's type and the postbit are the board's: the two-worlds design decides Verdana and bold
  * Courier New in black and white, and the board how they look (docs/research/2026-10-29-two-worlds/
- * README.md), so the build sets 12px Verdana words, an 18px Courier New title, bold Verdana names
- * with the rank under them, and a 10px post line in the muted ink (engine/ui/tokens.css).
+ * README.md), so the build sets 15px Verdana words, a 22.5px Courier New title, bold Verdana names
+ * with the rank under them, and a 12.5px post line in the muted ink (engine/ui/tokens.css).
  */
 import type { BoardManifest, Landmark } from '../board-match.ts';
 

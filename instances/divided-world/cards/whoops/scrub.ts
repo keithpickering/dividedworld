@@ -36,7 +36,7 @@ import { covers, type Splat } from './splat.ts';
  *
  * The board was scaled by 1.25 (column 960 to 1200, type 12px to 15px; the glass-polish design's section 7). The layout scales with it in
  * proportion (790 to 988, 1.25 times), so a stroke kept in widths of it lands where it was drawn and the words break in the same places;
- * only the 1px table borders do not scale, a 0.05% shift. The brush and the row are scaled by 1.25 with the type, so they keep their size in widths.
+ * only the 1px table borders do not scale, a 0.05% shift. The brush, the row and the stroke and hit-test steps (MIN_STEP, CELL, BUCKET) are scaled by 1.25 with the type, so they keep their size in widths.
  */
 const BOARD_MAX = 1200;
 const TABLE_BORDERS = 2;
@@ -84,7 +84,7 @@ export function toLayout([px, py]: Pt, frame: number): Pt {
 const thousandth = (n: number) => Math.round(n * 1000) / 1000;
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
 /** Points closer than this to the one before are dropped: a drag reports far more than a path needs, and a layer's points are bounded. */
-const MIN_STEP = px(4);
+const MIN_STEP = px(5);
 
 /**
  * A stroke as the card keeps it: points held to the layout (across 0 to 1, down 0 to `STROKES.deepest`), to a
@@ -119,13 +119,13 @@ export function fits(strokes: readonly Stroke[]): boolean {
 /* --------------------------------------------------------------------- a layer's ink ---- */
 
 /** The spacing of the points a layer's remaining ink is counted at, in widths (10px at the reference width, under half the brush). */
-const CELL = px(10);
+const CELL = px(12.5);
 
 /** How many points' answers a layer keeps of its splat's outline: a post's lines sampled across (a few thousand), with room to spare. */
 const MEMO_MOST = 20_000;
 
 /** The side of the squares `has` files a stroke's segments under, in widths (about 40px at the reference width: a few cells, a little over a brush). */
-const BUCKET = px(40);
+const BUCKET = px(50);
 /** A bucket's key: its column and row (a stroke is held to the card's bounds, so both are small) as one number. */
 const bucketKey = (i: number, j: number) => (j + 4096) * 8192 + (i + 4096);
 

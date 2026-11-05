@@ -159,7 +159,7 @@ test.describe('the ghost mark and the edge', () => {
  * phone it is a sheet, which the first describe above measures inside the window.
  */
 /*
- * The Lens's type is the glass's at its smallest step, so the post's own 12px words are never out-shouted (the design's section 2): it is
+ * The Lens's type is the glass's at its smallest step, so the post's own 15px words are never out-shouted (the design's section 2): it is
  * 340px wide, its body is the label step (20px, 18px of ink in the glass's face), its names the display face's smallest step, and a kit
  * tile is a 36px target, not a slab. Each row is a plate of its own with its play's ink in its corner, and its note stands above its caster.
  */

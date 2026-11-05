@@ -74,8 +74,11 @@ test('a stroke at the middle of the reference layout lands within a pixel of the
     const body = document.querySelector('#post-41 .kb-act-main')!.getBoundingClientRect();
     const layout = document.querySelector('#post-41 .kb-whoops-layout') as HTMLElement;
     const box = layout.getBoundingClientRect();
-    return { bodyMiddle: body.x + body.width / 2, layoutMiddle: box.x + box.width / 2 };
+    return { bodyMiddle: body.x + body.width / 2, layoutMiddle: box.x + box.width / 2, bodyW: body.width, layoutW: layout.offsetWidth, transform: layout.style.transform };
   });
+  expect(read.layoutW).toBe(988);
+  expect(Math.abs(read.bodyW - read.layoutW)).toBeLessThanOrEqual(1);
+  expect(read.transform).toBe('translateX(0px) scale(1)');
   expect(Math.abs(read.layoutMiddle - read.bodyMiddle)).toBeLessThanOrEqual(1);
 });
 

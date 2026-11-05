@@ -18,7 +18,7 @@
  * ("a footer bar similar to the header bar ... that ink color is totally variable too", and "why do we have "Play card" in
  * this row at all anymore? It's a game act so it should be Glass", the footer bar's amendment of 2026-10-31). Nothing of
  * that row is compared, and the thread is not compared here at all.
- * The Boards button is set in the board's 12px words, not at a control's 11px (engine/ui/frame/frame.css).
+ * The Boards button is set in the board's 15px words, not at a control's 13.75px (engine/ui/frame/frame.css).
  */
 import type { BoardManifest } from '../board-match.ts';
 
