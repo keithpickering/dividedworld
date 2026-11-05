@@ -126,4 +126,4 @@ Not built yet, and subject to change:
 - **Reports and appeals.**
 - **More cards.**
 
-That's the game as it stands. It's a pre-alpha, and every number in here is today's, so this guide changes when the game does. The game may be unfair, but it will never be a trap: if you ever find yourself stuck with no way out, that's a bug, so tell an admin.
+That's the game as it stands. It's a pre-alpha, and every number in here is today's, so this guide changes when the game does. The game may be unfair, but it will never be a trap: if you ever find yourself stuck with no way out, that's a bug, so [tell an admin](/contact).

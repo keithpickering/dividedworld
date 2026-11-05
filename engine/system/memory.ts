@@ -31,7 +31,7 @@ import { repair, type Repaired, type Rule, type Trim } from './validate.ts';
 
 /**
  * The longest a staff note may be, in characters: the same 280 the database check on `staff_notes.body` holds
- * (supabase/migrations/0083_staff_notes.sql; a test reads the file and compares). A note is a persona's own thought, written with
+ * (supabase/migrations/0085_staff_notes.sql; a test reads the file and compares). A note is a persona's own thought, written with
  * a pool post; the Boss's meeting reads its recent ones as context and never acts on their words.
  */
 export const noteMost = 280;

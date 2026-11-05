@@ -1,6 +1,6 @@
 -- Staff characters (supabase/migrations/0043_staff.sql; the system plan, Task 4; the seasonal Boss design, section 1; the
 -- staff design, "Staff characters, like Bosses"): a Boss or a Mod Bot is a character with no account behind it, seeded once,
--- written only by write_staff_act, earning nothing, and on staff only as the office log (staff_offices, 0080) says.
+-- written only by write_staff_act, earning nothing, and on staff only as the office log (staff_offices, 0082) says.
 
 -- ---- A seed makes each staff member once, with its profile; a reseed changes nothing an admin wrote ----
 do $$
@@ -27,7 +27,7 @@ begin
   if director is null or bot_one is null then raise exception 'the seed made no staff character'; end if;
   if (select count(*) from characters where staff is not null) is distinct from 3 then raise exception 'the seed made % staff characters, not 3', (select count(*) from characters where staff is not null); end if;
   if exists (select 1 from characters where staff is not null and owner is not null) then raise exception 'a staff character has an owner'; end if;
-  -- The first Boss and the first staff debut at the seed; the rest of the roster waits (0080) until an office debuts it.
+  -- The first Boss and the first staff debut at the seed; the rest of the roster waits (0082) until an office debuts it.
   if (select count(*) from characters where staff is not null and debuted_at is null) is distinct from 1 or (select debuted_at from characters where staff = 'bot-two') is not null then raise exception 'only bot-two should be waiting'; end if;
   update characters set debuted_at = now() where staff = 'bot-two';
   if (select staff_kind from characters where id = director) is distinct from 'persona' or (select staff_kind from characters where id = bot_one) is distinct from 'persona'
@@ -89,7 +89,7 @@ begin
   begin insert into characters (name, staff, staff_kind, debuted_at) values ('Shape Twin', 'shape-boss', 'persona', now()); raise exception 'two staff characters shared a key';
   exception when unique_violation then null; end;
 
-  -- The Boss's office is the season's and is never a row; a row is never changed or removed (0082 holds the rest of the log's guards).
+  -- The Boss's office is the season's and is never a row; a row is never changed or removed (0084 holds the rest of the log's guards).
   begin insert into staff_offices (staff, office, cause) values ('shape-boss', 'boss', 'admin'); raise exception 'a Boss was put in the office log';
   exception when check_violation then null; end;
   insert into characters (name, staff, staff_kind, debuted_at) values ('Shape Bot', 'shape-bot', 'persona', now());

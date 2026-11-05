@@ -8,8 +8,7 @@ export const withArticle = (name: string) => `${/^[aeiou]/iu.test(name) ? 'an' :
 
 /** A span the way a player says it: "30 days", "1 month". */
 export function spanWords(span: Span): string {
-  const unit = span.unit === 'minute' ? 'minute' : span.unit;
-  return `${span.count} ${unit}${span.count === 1 ? '' : 's'}`;
+  return `${span.count} ${span.unit}${span.count === 1 ? '' : 's'}`;
 }
 
 /** "Oct 30, 1:17 AM": a day and a time in the reader's zone. */

@@ -80,7 +80,7 @@ const DAY = 86_400_000;
 
 /**
  * How long a run's claim on its day holds. It is longer than the run can last: the schedule gives the function 150 seconds
- * (supabase/migrations/0087_pool_spends.sql, `timeout_milliseconds`), and the platform kills a function well before ten minutes, so a claim
+ * (supabase/migrations/0089_pool_spends.sql, `timeout_milliseconds`), and the platform kills a function well before ten minutes, so a claim
  * younger than this belongs to a run that may still be writing, and an older one to a run that is dead. A crashed run's claim is its own way
  * out: it ages out, and the next run goes ahead.
  */

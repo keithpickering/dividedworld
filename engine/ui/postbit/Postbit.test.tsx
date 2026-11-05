@@ -32,6 +32,12 @@ describe('the postbit', () => {
     expect(screen.getByRole('link', { name: 'Pipewrench' })).toHaveAttribute('href', '/c/c1');
   });
 
+  test('link={false} draws the name as text, with no link to a profile behind it', () => {
+    renderInWorld(<Postbit person={person()} layout="side" link={false} />);
+    expect(screen.queryByRole('link')).toBeNull();
+    expect(within(screen.getByRole('group', { name: 'About Pipewrench' })).getByText('Pipewrench')).toBeInTheDocument();
+  });
+
   test('side by side puts the portrait in the tall slot, with the square for a phone', () => {
     show(person());
     expect(screen.getByRole('group')).toHaveAttribute('data-kb-postbit', 'side');

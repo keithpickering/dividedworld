@@ -304,7 +304,7 @@ export interface RepairContext {
   /** Whether a character is debuted and public now, from `public_characters`. */
   readonly isPublic: (character: string) => boolean;
   readonly successorAllowed: boolean;
-  /** The keys a nomination may name now, as `meeting_context().successors` lists them (0080): any persona that is not retired or benched, waiting ones included, and not the Boss. */
+  /** The keys a nomination may name now, as `meeting_context().successors` lists them (0082): any persona that is not retired or benched, waiting ones included, and not the Boss. */
   readonly successors: ReadonlySet<string>;
   /** The moves the Boss inherits and was shown (`meeting_context().inheritanceDue`), when it was shown any: an answer naming another is dropped. Omitted: any move is accepted here and the database holds the line. */
   readonly inheritable?: ReadonlySet<string>;

@@ -1,6 +1,6 @@
 /**
  * The posting pool's Edge Function: pg_cron calls it at the instance's `pool.chatterCron` with the minute it fired
- * (supabase/migrations/0087_pool_spends.sql). The work is core.ts; this is the edge: the jobs key it accepts (kayfabb_jobs, in apikey), the
+ * (supabase/migrations/0089_pool_spends.sql). The work is core.ts; this is the edge: the jobs key it accepts (kayfabb_jobs, in apikey), the
  * environment, the model adapters (supabase/functions/_shared/models/) and an answer that says what happened. No secret is ever logged or
  * returned: the model key is read by the adapter from `Deno.env` and appears in no message.
  *

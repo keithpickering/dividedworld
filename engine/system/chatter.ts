@@ -173,7 +173,7 @@ export function repairChatter(raw: unknown, f: RepairFacts): RepairedChatter {
     }
   }
 
-  // The note: a thought to itself, cut to noteMost (the database's own bound, 0083), dropped if it says nothing.
+  // The note: a thought to itself, cut to noteMost (the database's own bound, 0085), dropped if it says nothing.
   let note: string | undefined;
   if (given['note'] !== undefined && given['note'] !== null) {
     if (typeof given['note'] !== 'string') trim('note', 'isString', 1, 0);

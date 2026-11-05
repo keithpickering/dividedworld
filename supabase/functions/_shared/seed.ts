@@ -40,7 +40,7 @@ export function instanceSeed(instance: Instance) {
     // prompts stay in the instance module; the meeting reads them in code (chooseInstance), so they are not seeded.
     system: {
       staff: [
-        // Every persona alike; seed_instance (0080) debuts the first Boss and the first staff and leaves the rest waiting.
+        // Every persona alike; seed_instance (0082) debuts the first Boss and the first staff and leaves the rest waiting.
         ...instance.system.roster.map((p) => ({ key: p.key, name: p.name, title: p.title, signature: p.signature })),
       ],
       firstStaff: [...instance.system.firstStaff],

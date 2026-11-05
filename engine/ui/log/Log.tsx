@@ -21,6 +21,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Id, LogSettlement } from '../data/api.ts';
+import { CONTACT_PATH } from '../contact/Contact.tsx';
 import { SignInPrompt, useSignedIn } from '../mini.tsx';
 import { usePlayer } from '../player.tsx';
 import { Link, useLocation } from '../router.tsx';
@@ -213,7 +214,7 @@ export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' 
             )}
           </div>
         )}
-      <p className="kb-log-foot kb-calm">If a line here looks wrong, that is a bug and not the game. Tell an admin.</p>
+      <p className="kb-log-foot kb-calm">If a line here looks wrong, that is a bug and not the game. <Link to={CONTACT_PATH}>Tell an admin</Link>.</p>
     </div>
   );
 }

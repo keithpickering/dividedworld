@@ -105,6 +105,14 @@ export type GlassSurface =
   | 'characters' | 'rankings' | 'log' | 'settings' | 'account' | 'settlement';
 
 /**
+ * Where the glass draws a sheet over the board instead of smoke: the engine's closed list of overlay sheets. An overlay's panel is
+ * `--kb-glass-sheet` over a scrim over whatever page is behind it, which can be white, so a sheet is read by its own rule in
+ * tools/check-glass-contrast.mjs (the scrim's share read from the overlay's stylesheet), and the guard refuses an overlay it has no
+ * rule for. `'tips'` is the spotlight's panel (engine/ui/tips/tips.css).
+ */
+export type GlassOverlay = 'tips';
+
+/**
  * How a class's large text (`GlassClassColor.large`) is drawn on a surface: on the full smoke, inside
  * a calm, or not at all. The engine says which for every surface (`classLargeText`,
  * engine/ui/glass/apply.ts), and tools/check-glass-contrast.mjs reads each class against it.
@@ -255,6 +263,54 @@ export interface InstanceUi {
   readonly onboarding: OnboardingUi;
   /** The instance's Strategy Guide: its prose, and Gabe's hint for each class (docs/plans/2026-11-02-onboarding-plan.md, Task 8). */
   readonly guide: GuideUi;
+  /** What a signed-out visitor meets: a made-up sample thread, the developer persona's note and the HUD's prompt (docs/plans/2026-11-05-front-door-design.md, section 4). */
+  readonly frontDoor: FrontDoorUi;
+}
+
+/** A made-up character in the front door's sample thread; there is no profile behind it. */
+export interface FrontDoorCharacter {
+  /** Unique in the cast: what a post's `by` names. */
+  readonly key: string;
+  readonly name: string;
+  /** The postbit's custom title, as a character's. */
+  readonly title?: string;
+  /** Which of the instance's ranks the postbit draws (an index into `instance.ranks`). */
+  readonly rank: number;
+  readonly posts: number;
+  /**
+   * The class this character's player revealed, and when: drawn by the postbit's own "Revealed: <class> (date)" line, so a sample cast
+   * can show one of each class through a mechanic the game has. None keeps the class hidden, as a character's is until its player reveals it.
+   */
+  readonly revealed?: { readonly class: string; readonly at: string };
+}
+
+/** A post in the front door's sample thread. */
+export interface FrontDoorPost {
+  /** The key of a cast member. */
+  readonly by: string;
+  /** BBCode; `{{setting:<path>}}` is filled from the instance's settings, as the guide's are. */
+  readonly body: string;
+  /** Counts shown on the post, by reaction key. Static: nothing can be pressed. */
+  readonly reactions: Readonly<Record<string, number>>;
+  /** Cards played on the post, drawn by each card's `CardUi.Effect`: its key, who cast it (a cast key), and its config (a seeded card's seed included). */
+  readonly plays?: readonly { readonly card: string; readonly by: string; readonly config: Readonly<Record<string, unknown>> }[];
+}
+
+/**
+ * The front door: the sample thread a signed-out visitor reads in place of the board, which stays hidden. Every word is the instance's,
+ * committed and approved by the owner in review; nothing in it is read from the server (`instanceUiProblems` holds it to the instance).
+ */
+export interface FrontDoorUi {
+  /** The sample thread's title. */
+  readonly title: string;
+  /** The visible label that says the thread is made up. */
+  readonly label: string;
+  readonly cast: readonly FrontDoorCharacter[];
+  readonly posts: readonly FrontDoorPost[];
+  /** The developer persona's closing post, Markdown with `{{setting:<path>}}` markers, drawn through the guide's renderer. */
+  readonly note: string;
+  /** The HUD's plate signed out: its heading and the one line under it. */
+  readonly prompt: { readonly title: string; readonly line: string };
 }
 
 /**

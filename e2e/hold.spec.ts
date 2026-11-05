@@ -28,13 +28,36 @@ const ready = async (page: Page) => { await page.evaluate(() => document.fonts.r
  * by the page at its own pace, as the wheel's are in the tests above: the bar drains while the reader waits, so a press that comes
  * to the page through a round trip of the test's own (the button found, checked still and clicked, a few hundred ms on a busy runner)
  * arrives after the bar has drained what the last one filled, and the reader is never freed by the test's slowness alone.
+ * Playwright's checks that a button can be pressed are skipped by that, so the page makes them itself before each press: the button
+ * has a box, is not hidden or transparent (it or an ancestor), and is the element at its center, not something laid over it. The
+ * first press that fails them stops the loop and returns what was wrong, naming the cover; a spec asserts the result is null.
  */
-async function pressBreakFreeUntilFree(page: Page) {
-  await page.evaluate(() => new Promise<void>((done) => {
+async function pressBreakFreeUntilFree(page: Page): Promise<string | null> {
+  return page.evaluate(() => new Promise<string | null>((done) => {
     let presses = 0;
+    const name = (el: Element | null) => (el ? `${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ''}${typeof el.className === 'string' && el.className ? `.${el.className.trim().split(/\s+/u).join('.')}` : ''}` : 'nothing');
+    const fault = (button: HTMLButtonElement): string | null => {
+      const box = button.getBoundingClientRect();
+      if (box.width === 0 || box.height === 0) return 'Break free has an empty box';
+      for (let el: Element | null = button; el; el = el.parentElement) {
+        const style = getComputedStyle(el);
+        if (style.visibility === 'hidden') return `Break free is hidden (visibility on ${name(el)})`;
+        if (Number(style.opacity) === 0) return `Break free is transparent (opacity 0 on ${name(el)})`;
+      }
+      if (button.disabled) return 'Break free is disabled';
+      const x = box.left + box.width / 2;
+      const y = box.top + box.height / 2;
+      if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return 'Break free\'s center is outside the viewport';
+      const at = document.elementFromPoint(x, y);
+      if (at !== button && !button.contains(at)) return `Break free is covered by ${name(at)}`;
+      return null;
+    };
     const press = () => {
       const button = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"][aria-label="Stick Around"] button')].find((b) => b.textContent === 'Break free');
-      if (!button || presses >= 60) { done(); return; }
+      if (!button) { done(null); return; }
+      if (presses >= 60) { done('the reader is still held after 60 presses'); return; }
+      const wrong = fault(button);
+      if (wrong) { done(wrong); return; }
       presses += 1;
       button.click();
       setTimeout(press, 130);
@@ -140,7 +163,7 @@ test.describe('the app at the Hold board\'s moment', () => {
     await page.goto(MOMENT);
     await ready(page);
     await expect(view(page)).toBeVisible({ timeout: 10_000 });
-    await pressBreakFreeUntilFree(page);
+    expect(await pressBreakFreeUntilFree(page)).toBeNull();
     await expect(view(page)).toBeHidden();
     await page.getByRole('link', { name: 'General', exact: true }).first().click();
     await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
@@ -153,6 +176,22 @@ test.describe('the app at the Hold board\'s moment', () => {
     await page.goto(MOMENT);
     await ready(page);
     await expect(view(page)).toBeVisible({ timeout: 10_000 });
+  });
+
+  test('the poison: a transparent layer over Break free is named by the press, and the reader is not freed', async ({ page }) => {
+    await page.goto(MOMENT);
+    await ready(page);
+    await expect(view(page)).toBeVisible({ timeout: 10_000 });
+    await page.evaluate(() => {
+      const cover = document.createElement('div');
+      cover.id = 'kb-poison-cover';
+      cover.style.cssText = 'position: fixed; inset: 0; background: transparent; z-index: 2147483647';
+      document.body.appendChild(cover);
+    });
+    const fault = await pressBreakFreeUntilFree(page);
+    expect(fault, 'the press names what covers the button').toContain('kb-poison-cover');
+    await expect(view(page)).toBeVisible();
+    expect(await level(page)).toBe(0);
   });
 
   test('Esc does not close the view; each Esc press is a press of Break free, so pressing it again and again frees the reader', async ({ page }) => {
@@ -259,7 +298,7 @@ test('Whoops!\' ink under the hold keeps its canvas and a reader\'s scrubbing ac
   expect(Math.abs((await inked()) - scrubbed) / whole).toBeLessThan(0.1);
 
   /* Released back into the thread: still the same canvas and the same scrubbing. */
-  await pressBreakFreeUntilFree(page);
+  expect(await pressBreakFreeUntilFree(page)).toBeNull();
   await expect(view(page)).toBeHidden();
   await expect(page.locator('article .kb-whoops-ink[data-kb-same="yes"]')).toHaveCount(1);
   await expect.poll(inked).toBeLessThan(whole * 0.97);

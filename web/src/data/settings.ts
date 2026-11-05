@@ -25,7 +25,7 @@ export const fallbackSettings: ScreenSettings = Object.freeze({
   presencePollSeconds: defaults.presencePollSeconds,
   presenceWindow: defaults.presenceWindow,
   toastDefaults: defaults.toastDefaults,
-  /* The group's name is the instance's; the database holds it as the setting staffGroup once seeded (0082 shows it to the screens). */
+  /* The group's name is the instance's; the database holds it as the setting staffGroup once seeded (0084 shows it to the screens). */
   staffGroup: { name: system.staffGroup.name },
   /* None held: every price is the compiled economy's until the view says otherwise. */
   cardEconomy: {},

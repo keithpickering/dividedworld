@@ -724,6 +724,26 @@
           }
         }
       }
+    },
+    "overlays": {
+      "tips": {
+        "scrim": 72,
+        "worst": 0.0098,
+        "tokens": {
+          "--kb-glass-text": {
+            "body": 0.152
+          },
+          "--kb-glass-text-hi": {
+            "body": 0.1833
+          },
+          "--kb-glass-text-2": {
+            "body": 0.1288
+          },
+          "--kb-glass-pale": {
+            "body": 0.1539
+          }
+        }
+      }
     }
   }
 }

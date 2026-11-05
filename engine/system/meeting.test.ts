@@ -139,7 +139,7 @@ test('the Boss\'s recent notes are in the prompt as its own thoughts, capped at 
 });
 
 test('noteMost is the 280 the database check holds', () => {
-  const sql = readFileSync(new URL('../../supabase/migrations/0083_staff_notes.sql', import.meta.url), 'utf8');
+  const sql = readFileSync(new URL('../../supabase/migrations/0085_staff_notes.sql', import.meta.url), 'utf8');
   assert.equal(noteMost, 280);
   assert.match(sql, new RegExp(`between 1 and ${noteMost}\\b`));
 });

@@ -1,0 +1,59 @@
+/*
+ * The front door's layout (FrontDoor.tsx). The posts are the thread's (thread.css, postbit.css) and the persona's byline is the glass's
+ * (updates/persona.css); this holds only how the pieces sit: the crumb row with the label beside it, and the note's panel under the thread.
+ */
+.kb-front-door {
+  min-width: 0;
+}
+
+.kb-front-door-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2em 1em;
+}
+
+.kb-front-door-top > .kb-crumb {
+  margin: 0;
+}
+
+.kb-front-door-label {
+  padding: 0 0.5em;
+  border: 1px solid currentColor;
+  font-weight: 700;
+}
+
+/* A staged post has no date, so its number stands where a thread's does: at the row's end. */
+.kb-front-door .kb-act-meta {
+  justify-content: flex-end;
+}
+
+/* The persona's post in the welcome page's frame: chamfered, outlined in pale, on the ground. */
+.kb-front-door-note {
+  display: grid;
+  gap: 14px;
+  margin: 1.2em 0;
+  padding: 28px 36px 32px;
+  background: var(--kb-glass-ground);
+  outline: 1px solid color-mix(in srgb, var(--kb-glass-pale) 55%, transparent);
+  outline-offset: -1px;
+  clip-path: polygon(0 0, calc(100% - 24px) 0, 100% 24px, 100% 100%, 24px 100%, 0 calc(100% - 24px));
+}
+
+.kb-front-door-prose > :first-child {
+  margin-top: 0;
+}
+
+.kb-front-door-prose > :last-child {
+  margin-bottom: 0;
+}
+
+.kb-front-door-prose ul {
+  padding-left: 1.25em;
+}
+
+@media (max-width: 40em) {
+  .kb-front-door-note {
+    padding: 18px 16px;
+  }
+}

@@ -86,7 +86,7 @@ interface Context {
   /** The slot of the last meeting that closed ok or failed: where this window starts. Null before the first. */
   readonly lastSlot: string | null;
   readonly boards: readonly { readonly id: string; readonly name: string }[];
-  /** The keys a nomination may name (0080): the roster's unretired personas that are not benched, waiting ones included, without the Boss. */
+  /** The keys a nomination may name (0082): the roster's unretired personas that are not benched, waiting ones included, without the Boss. */
   readonly successors?: readonly string[];
   /** The moves of an earlier Boss, still in force and shaping a board, that this Boss has neither kept nor ended (0051); absent from an older database. */
   readonly inheritanceDue?: readonly InheritedMove[];

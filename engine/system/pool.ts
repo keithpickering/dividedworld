@@ -6,7 +6,7 @@
  *   priority(tally)                                      how loudly the crowd answers a persona's posts
  *   pick(candidates, priorities, allowance, ...)         who posts, at most once each, up to the day's allowance
  *
- * Every input is public play. The signals are `pool_signals` (supabase/migrations/0086_pool_signals.sql), which the digest role
+ * Every input is public play. The signals are `pool_signals` (supabase/migrations/0088_pool_signals.sql), which the digest role
  * computes without who owns a character, a class or who reacted; a persona's memory and office are facts about a staff character,
  * who has no owner. Nothing here reads a private fact ("A response never proves a private fact"). A seeded random number breaks
  * ties, seeded from the day, so a run repeated on the same day picks the same.

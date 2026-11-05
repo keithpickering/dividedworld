@@ -1,0 +1,53 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>the-invite</title>
+<style>
+@font-face{font-family:Anton;src:url(../../../instances/divided-world/ui/fonts/Anton-Regular.woff2)}
+@font-face{font-family:'Barlow Condensed';font-weight:500;src:url(../../../instances/divided-world/ui/fonts/BarlowCondensed-Medium.woff2)}
+@font-face{font-family:'Barlow Condensed';font-weight:600;src:url(../../../instances/divided-world/ui/fonts/BarlowCondensed-SemiBold.woff2)}
+@font-face{font-family:'Barlow Condensed';font-weight:700;src:url(../../../instances/divided-world/ui/fonts/BarlowCondensed-Bold.woff2)}
+@font-face{font-family:'Barlow Condensed';font-weight:800;src:url(../../../instances/divided-world/ui/fonts/BarlowCondensed-ExtraBold.woff2)}
+@font-face{font-family:'Barlow Condensed';font-weight:800;font-style:italic;src:url(../../../instances/divided-world/ui/fonts/BarlowCondensed-ExtraBoldItalic.woff2)}
+html,body{margin:0}
+.frame{width:1440px;height:900px;position:relative;overflow:hidden;background:#07050d;color:#f1ecff;font-family:'Barlow Condensed',sans-serif}
+.smoke{position:absolute;inset:0}
+.skew{display:inline-flex;align-items:center;transform:skewX(-10deg);text-decoration:none}
+.skew>b{display:inline-block;transform:skewX(10deg);font-weight:inherit}
+.cta{min-height:64px;padding:0 32px;font:30px/1 Anton,sans-serif;letter-spacing:1.5px;color:#03141a;background:#19e3ff;box-shadow:0 0 26px rgba(25,227,255,.6)}
+.ghost{min-height:56px;padding:0 24px;font:800 22px 'Barlow Condensed',sans-serif;letter-spacing:1.5px;color:#f1ecff;border:1px solid rgba(241,236,255,.6)}
+.disp{font-family:Anton,sans-serif;font-weight:400;letter-spacing:.5px;margin:0}
+.chamfer{clip-path:polygon(0 0,calc(100% - 24px) 0,100% 24px,100% 100%,24px 100%,0 calc(100% - 24px))}
+.sample{font:800 16px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#03141a;background:#ffd93d;padding:2px 8px}
+</style>
+</head><body>
+<div class="frame">
+<svg class="smoke" aria-hidden="true" width="1440" height="900"><defs><filter id="A"><feTurbulence type="fractalNoise" baseFrequency="0.0022 0.004" numOctaves="5" seed="31"/><feColorMatrix values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.74"/><feGaussianBlur stdDeviation="18"/></filter><filter id="B"><feTurbulence type="fractalNoise" baseFrequency="0.003 0.005" numOctaves="4" seed="14"/><feColorMatrix values="0 0 0 0 0.08  0 0 0 0 0.85  0 0 0 0 1  0 2 0 0 -1.0"/><feGaussianBlur stdDeviation="18"/></filter></defs><rect width="1440" height="900" filter="url(#A)" opacity=".75"/><rect width="1440" height="900" filter="url(#B)" opacity=".45"/></svg>
+<header style="position:absolute;left:64px;right:64px;top:28px;display:flex;justify-content:space-between;align-items:center">
+  <span class="disp" style="font-size:30px;letter-spacing:2px">DIVIDED WORLD</span>
+  <a class="skew ghost" href="#"><b>SIGN IN</b></a>
+</header>
+<!-- One postcard, the game's own object, seen once: its back, divided down the middle like any postcard. -->
+<article class="chamfer" style="position:absolute;left:150px;top:118px;width:1140px;height:640px;background:#0b0914;outline:2px solid #19e3ff;outline-offset:-2px;box-shadow:0 0 40px rgba(25,227,255,.35);display:grid;grid-template-columns:1fr 1px 430px">
+  <div style="padding:44px 48px 40px">
+    <span class="skew" style="background:#19e3ff;color:#03141a;padding:2px 14px;font:800 italic 24px 'Barlow Condensed';letter-spacing:1px"><b>GREETINGS FROM</b></span>
+    <h1 class="disp" style="font-size:108px;line-height:.95;margin-top:18px;text-shadow:0 0 30px rgba(25,227,255,.35)">A BOARD WHERE<br>EVERYONE'S<br>IN A MASK</h1>
+    <p style="font:500 23px/1.45 'Barlow Condensed';max-width:560px;margin:22px 0 0;color:#f1ecff">Divided World looks like a message board from 2003, and it is one. It is also a game. You play up to six characters, each with a secret class. Everything anyone does here is public. Who's doing it isn't.</p>
+    <p style="font:700 italic 22px 'Barlow Condensed';color:#e4def7;margin:18px 0 0">Wish you were here. Somebody you know already is.</p>
+  </div>
+  <div style="background:rgba(241,236,255,.35);margin:44px 0"></div>
+  <div style="padding:40px 44px;display:flex;flex-direction:column">
+    <div style="align-self:flex-end;width:118px;height:140px;border:2px dashed #ffd93d;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#ffe27a;font:800 18px 'Barlow Condensed';letter-spacing:2px">
+      <span class="disp" style="font-size:40px;color:#ffd93d">18+</span>ADULTS ONLY</div>
+    <p style="font:800 20px 'Barlow Condensed';letter-spacing:2px;color:#c9f8ff;margin:34px 0 8px">TO: YOU</p>
+    <label style="font:800 20px 'Barlow Condensed';letter-spacing:1.5px">INVITE CODE</label>
+    <div style="height:54px;border-bottom:2px solid #f1ecff;margin:6px 0 4px;font:600 24px 'Barlow Condensed';color:#9ef4ff;display:flex;align-items:flex-end;padding-bottom:6px">mfgg-●●●●-●●●●</div>
+    <p style="font:500 19px/1.4 'Barlow Condensed';color:#e4def7;margin:6px 0 22px">Registration is by invite for now. A friend who plays sends you a link; its code fills in here.</p>
+    <a class="skew cta" href="#" style="align-self:flex-start"><b>REGISTER</b></a>
+    <p style="font:600 19px 'Barlow Condensed';color:#e4def7;margin:auto 0 0">Already playing? <u style="color:#c9f8ff">Sign in</u></p>
+  </div>
+</article>
+<!-- The next section starts below the fold: three plain rows (masks, Aura, the reveal) and Gabe's note. -->
+<div style="position:absolute;left:150px;right:150px;top:800px;display:flex;gap:40px;border-top:1px solid rgba(241,236,255,.3);padding-top:22px">
+  <span class="disp" style="font-size:40px">HOW IT PLAYS</span>
+  <span style="font:600 22px 'Barlow Condensed';color:#e4def7;padding-top:10px">Masks · Reactions · Aura · Postcards · The reveal</span>
+</div>
+</div>
+</body></html>

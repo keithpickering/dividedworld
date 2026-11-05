@@ -17,7 +17,8 @@ import { useKayfa } from '../context.tsx';
 import type { Character, CharacterCounts, ClassReveal, Id, StandingPlace, TurnAnnounced } from '../data/api.ts';
 import { rankIndex } from '../../rules/ranks.ts';
 import { dayAndTime, figure } from '../characters/format.ts';
-import { Ago, SignInPrompt, useSignedIn } from '../mini.tsx';
+import { Ago, useSignedIn } from '../mini.tsx';
+import { FrontDoor } from '../front-door/FrontDoor.tsx';
 import { Pips } from '../postbit/Postbit.tsx';
 import { Avatar } from './Avatar.tsx';
 import { StaffProfile } from './Staff.tsx';
@@ -44,7 +45,7 @@ export function ProfileScreen({ id }: { readonly id: Id }) {
   const signedIn = useSignedIn(api);
   const found = useCharacter(api, id);
   if (signedIn === null || found.status === 'loading') return <div className="kb-profile" aria-busy="true" />;
-  if (!signedIn) return <div className="kb-profile"><SignInPrompt /></div>;
+  if (!signedIn) return <FrontDoor />;
   if (found.status === 'failed') return <div className="kb-profile"><p className="kb-notice" data-kb-tone="refusal">The profile could not be loaded. Reload the page to try again.</p></div>;
   if (found.status === 'missing') return <NotFound />;
   /* A Boss or a Mod Bot is a profile of its own kind: no standing, no class, no season record; its moderation log instead. */

@@ -14,6 +14,8 @@
  *                     and nowhere else.
  *   Ended             folded; the last 30 days, with how each ended: its demand met, run out, reversed, or held (never landed).
  *
+ * Above the groups stands How players reach you (AdminContact.tsx): the links the public Reach a person page shows, which only an admin sets.
+ *
  * Plain text throughout. The glass never speaks as the Boss: what it says of a move is the engine's catalog (engine/system/moves.ts,
  * demands.ts), and what the Boss wrote (`why`, the description) is quoted and named as its words.
  *
@@ -35,6 +37,7 @@ import { Overlay } from '../glass/Overlay.tsx';
 import { Link } from '../router.tsx';
 import { shortDate } from '../postbit/dates.ts';
 import { todoFacts, todoSentence } from './handover-words.ts';
+import { AdminContact } from './AdminContact.tsx';
 import './queue.css';
 
 const MINUTE = 60_000;
@@ -99,6 +102,7 @@ export function QueueScreen({ now }: { readonly now?: number }) {
             <p className="kb-queue-lead kb-calm">
               Moves that reshape a board wait here before they land, and land unless you hold them. Anything in force can be reversed. Players never see a held move.
             </p>
+            <AdminContact />
             {failed && <p className="kb-queue-note kb-calm" role="alert">The queue could not be read. Reload the page to try again.</p>}
             {queue && (
               <>

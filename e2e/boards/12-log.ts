@@ -15,7 +15,7 @@
  *    section 2.1 amendment moves every later figure by 1.00).
  *  - The board's eight rows are six in the build (the glass plan's section 3: no Stick Around lines),
  *    so the table is compared by position alone.
- *  - "Tell an admin" is plain words, not a link: no screen yet says how to reach an admin.
+ *  - "Tell an admin" is a link to /contact, which says how to reach an admin (the onboarding follow-ups plan, Task 8); the foot's text is the board's.
  */
 import type { BoardManifest } from '../board-match.ts';
 

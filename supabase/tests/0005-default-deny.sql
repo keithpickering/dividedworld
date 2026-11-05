@@ -31,10 +31,18 @@ declare
                            'season_news(timestampwithtimezone,integer)',
                            -- A play's moment (0072): what was on a post when a play landed.
                            'play_moment(uuid)',
-                           -- A persona's career (0081): public facts about staff.
-                           'staff_career(text)'];
+                           -- A persona's career (0083): public facts about staff.
+                           'staff_career(text)',
+                           -- How players reach an admin (0081): a visitor and a player read the contact, an admin writes it.
+                           'admin_contact()', 'set_admin_contact(jsonb)',
+                           -- Pure predicates a CHECK calls, granted to PUBLIC by 0080 so a direct writer is not refused (each reads no table).
+                           'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])'];
   -- What a visitor (anon) may execute, on purpose; each is also in the list above.
-  visitor_callable text[] := array['move_progress(uuid)', 'staff_career(text)'];
+  visitor_callable text[] := array['move_progress(uuid)', 'staff_career(text)',
+                           -- The contact (0081): the player who most needs a person is often one who cannot sign in. One setting, the same for every caller.
+                           'admin_contact()',
+                           -- The same three CHECK predicates, which PUBLIC (so anon too) may execute by 0080; pure, reading no table.
+                           'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])'];
 begin
   for r in select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
            where n.nspname = 'public' and c.relkind = 'S'
@@ -44,7 +52,7 @@ begin
            where n.nspname = 'public' and c.relkind in ('r', 'v', 'm', 'p')
              and (has_table_privilege('anon', c.oid, 'select,insert,update,delete,truncate,references,trigger') and not c.relname in ('screen_settings', 'staff_now', 'staff_office_now', 'staff_profile_now', 'boards_now', 'moves_log')
                   -- screen_settings (0030) is a view a visitor reads: the sign-up page must know whether the instance asks for an invite.
-                  -- staff_now (0043) is the other, and staff_office_now (0080) its source: the staff are known to be staff, signed in or not.
+                  -- staff_now (0043) is the other, and staff_office_now (0082) its source: the staff are known to be staff, signed in or not.
                   -- staff_profile_now (0044) is the third: a Boss's in-character profile is a public page.
                   -- boards_now and moves_log (0046) are the last two: a board's name now, and a Boss's moves with how each ended, are
                   -- computed from Acts anyone can read.

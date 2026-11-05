@@ -2159,3 +2159,26 @@ describe('the Boss list', () => {
     expect((await fake.adminQueue()).roster.map((b) => b.staff).sort()).toEqual(['boss', 'later', 'member', 'mod']);
   });
 });
+
+describe('the contact is written as set_admin_contact writes it (0081), with the SQL\'s one whitespace set', () => {
+  const adminFake = () => { const w = world(); const root = w.fake.seed.account('root', { admin: true }); w.fake.signInAs(root); return w.fake; };
+  const one = (label: string, href: string) => [{ label, href }];
+  test('U+00A0, U+0085 and U+FEFF are trimmed at the edges of a label and an address', async () => {
+    const fake = adminFake();
+    expect(await fake.setAdminContact(one(' \u0085Nb﻿', ' \u0085https://nb.example '))).toEqual({ ok: true, value: [{ label: 'Nb', href: 'https://nb.example' }] });
+  });
+  test('U+00A0 and U+0085 inside an address are refused as a space or control character, naming the row', async () => {
+    const fake = adminFake();
+    const words = 'row 1 has an address with no spaces or control characters in it';
+    expect(await fake.setAdminContact(one('Nb', 'https://a.example/ b'))).toEqual(refused(words));
+    expect(await fake.setAdminContact(one('Nel', 'https://a.example/\u0085b'))).toEqual(refused(words));
+  });
+  test('a label of only zero-width characters is refused, naming the predicate and the row, and leaves the stored contact alone', async () => {
+    const fake = adminFake();
+    must(await fake.setAdminContact(one('Keep', 'https://keep.example')));
+    const words = 'has a label with something visible in it, not only zero-width characters';
+    expect(await fake.setAdminContact(one('​‌‍⁠', 'https://a.example'))).toEqual(refused(`row 1 ${words}`));
+    expect(await fake.setAdminContact([...one('Ok', 'https://ok.example'), ...one(' ​﻿', 'https://a.example')])).toEqual(refused(`row 2 ${words}`));
+    expect(await fake.adminContact()).toEqual(one('Keep', 'https://keep.example'));
+  });
+});

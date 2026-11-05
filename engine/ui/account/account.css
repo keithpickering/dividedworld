@@ -542,3 +542,8 @@
   margin-top: 8px;
   text-align: left;
 }
+
+/* The link under Settings' sections to Reach a person (Contact.tsx): clear of the last section, at the section's own measure. */
+.kb-settings-reach {
+  margin-top: 36px;
+}
