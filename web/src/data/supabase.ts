@@ -37,7 +37,7 @@ import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, UPD
 import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import type {
-  AdminQueue, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffProfile,
+  AdminQueue, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEnded, CardEvent, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd, FaceDownPass,
   Alert, ContactLink, EffectState, SeasonNewsItem, SeasonResult, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
@@ -291,7 +291,14 @@ function toEnded(r: Row): MoveEnded {
   return {
     how: how === 'met' || how === 'expired' || how === 'reversed' || how === 'superseded' || how === 'spent' ? how : 'held', by: orNull(r['by']), at: String(r['at'] ?? ''), act: orNull(r['act']),
     id: typeof r['id'] === 'number' ? r['id'] : null, staff: orNull(r['staff']), boss: orNull(r['boss']), kind: String(r['kind'] ?? ''), params: params(r['params']),
-    demand: toDemand(r['demand']), why: orNull(r['why']), landedAt: orNull(r['landedAt']),
+    demand: toDemand(r['demand']), why: orNull(r['why']), landedAt: orNull(r['landedAt']), card: orNull(r['card']),
+  };
+}
+
+function toStaffCard(r: Row): StaffCardPlay {
+  return {
+    play: r['play'], card: String(r['card'] ?? ''), cardName: String(r['cardName'] ?? r['card'] ?? ''), staff: String(r['staff'] ?? ''), persona: String(r['persona'] ?? ''),
+    targetName: orNull(r['targetName']), thread: r['thread'], threadTitle: orNull(r['threadTitle']), at: String(r['at'] ?? ''),
   };
 }
 
@@ -737,7 +744,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const more = (q['more'] && typeof q['more'] === 'object' ? q['more'] : {}) as Row;
       return {
         cap: num(q['cap']), waiting: rows(q['waiting']).map(toQueued), inForce: rows(q['inForce']).map(toInForce), ended: rows(q['ended']).map(toEnded),
-        more: { waiting: more['waiting'] === true, inForce: more['inForce'] === true, ended: more['ended'] === true },
+        staffCards: rows(q['staffCards']).map(toStaffCard),
+        more: { waiting: more['waiting'] === true, inForce: more['inForce'] === true, staffCards: more['staffCards'] === true, ended: more['ended'] === true },
         roster: rows(q['roster']).flatMap((r) => (typeof r['staff'] === 'string' ? [{ staff: r['staff'], name: String(r['name'] ?? r['staff']) }] : [])),
         todos: rows(q['todos']).flatMap((r) => (typeof r['boss'] === 'string' ? [toTodo(r)] : [])),
       };

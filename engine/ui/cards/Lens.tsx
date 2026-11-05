@@ -311,18 +311,18 @@ function AsItLanded({ play }: { readonly play: Id }) {
 }
 
 /**
- * An admin's "End this card" (api.reverseCard): a confirm that says what it does in plain words, then the call. A refusal's words are
- * shown in the dialog, which stays open. The card's own name and its caster's public name come from the Lens, so the engine names no
- * instance's card.
+ * The confirm of an admin's "End this card" (api.reverseCard), shared by the Lens and the admin queue: it says what it does in plain
+ * words, then makes the call. A refusal's words are shown in the dialog, which stays open. The card's own name and its caster's public
+ * name come from the caller, so the engine names no instance's card. `onEnded` gets the card_end's id once the play is ended.
  */
-function EndCard({ play, card, caster, store }: { readonly play: Id; readonly card: string; readonly caster: string; readonly store: Plays }) {
+export function EndCardDialog({ play, card, caster, onClose, onEnded, returnFocusTo }: {
+  readonly play: Id; readonly card: string; readonly caster: string;
+  readonly onClose: () => void; readonly onEnded: (end: Id) => void | Promise<void>; readonly returnFocusTo: () => HTMLElement | null;
+}) {
   const { api } = useKayfa();
-  const opener = useRef<HTMLButtonElement>(null);
-  const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const once = useRef(false);
-  const close = () => { setAsking(false); setRefusal(null); };
   const submit = async () => {
     if (once.current) return;
     once.current = true;
@@ -331,9 +331,7 @@ function EndCard({ play, card, caster, store }: { readonly play: Id; readonly ca
     try {
       const answer = await api.reverseCard(play);
       if (!answer.ok) { setRefusal(answer.error); return; }
-      const end: Act = { id: answer.value.act, character: null, kind: 'card_end', thread: '', targetActId: play, seq: null, createdAt: new Date().toISOString(), payload: { why: 'reversed', by: 'admin' }, currentPayload: {}, editedAt: null, shownEditedAt: null };
-      store.add([end]);
-      setAsking(false);
+      await onEnded(answer.value.act);
     } catch {
       setRefusal('That could not be sent. Check your connection and look at the card before you try again.');
     } finally {
@@ -342,22 +340,37 @@ function EndCard({ play, card, caster, store }: { readonly play: Id; readonly ca
     }
   };
   return (
+    <Overlay title="End this card?" surface="settings" className="kb-lens-end" onClose={onClose} returnFocusTo={returnFocusTo}>
+      <div className="kb-lens-end-body">
+        <p>End this {card} by {caster}? Its layer comes off for everyone, and nothing is refunded.</p>
+        {refusal && <p role="alert" className="kb-lens-end-refusal">{refusal}</p>}
+        <div className="kb-lens-end-actions">
+          <button type="button" className="kb-kit-tile kb-lens-action" onClick={onClose}><span className="kb-kit-tile-label">Cancel</span></button>
+          <button type="button" className="kb-kit-tile kb-lens-action" disabled={busy} onClick={() => void submit()}><span className="kb-kit-tile-label">End it</span></button>
+        </div>
+      </div>
+    </Overlay>
+  );
+}
+
+/** An admin's "End this card" in the Lens: the button, and the shared confirm. */
+function EndCard({ play, card, caster, store }: { readonly play: Id; readonly card: string; readonly caster: string; readonly store: Plays }) {
+  const opener = useRef<HTMLButtonElement>(null);
+  const [asking, setAsking] = useState(false);
+  const close = () => setAsking(false);
+  return (
     <>
       <button ref={opener} type="button" className="kb-kit-tile kb-lens-action" aria-haspopup="dialog" onClick={() => setAsking(true)}><span className="kb-kit-tile-label">End this card</span></button>
       {asking && (
-        <Overlay
-          title="End this card?" surface="settings" className="kb-lens-end" onClose={close}
+        <EndCardDialog
+          play={play} card={card} caster={caster} onClose={close}
+          onEnded={(endId) => {
+            const end: Act = { id: endId, character: null, kind: 'card_end', thread: '', targetActId: play, seq: null, createdAt: new Date().toISOString(), payload: { why: 'reversed', by: 'admin' }, currentPayload: {}, editedAt: null, shownEditedAt: null };
+            store.add([end]);
+            setAsking(false);
+          }}
           returnFocusTo={() => (opener.current?.isConnected ? opener.current : document.querySelector<HTMLElement>('.kb-lens [role="tab"][aria-selected="true"]'))}
-        >
-          <div className="kb-lens-end-body">
-            <p>End this {card} by {caster}? Its layer comes off for everyone, and nothing is refunded.</p>
-            {refusal && <p role="alert" className="kb-lens-end-refusal">{refusal}</p>}
-            <div className="kb-lens-end-actions">
-              <button type="button" className="kb-kit-tile kb-lens-action" onClick={close}><span className="kb-kit-tile-label">Cancel</span></button>
-              <button type="button" className="kb-kit-tile kb-lens-action" disabled={busy} onClick={() => void submit()}><span className="kb-kit-tile-label">End it</span></button>
-            </div>
-          </div>
-        </Overlay>
+        />
       )}
     </>
   );

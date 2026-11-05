@@ -427,6 +427,22 @@ export interface MoveEnded {
   readonly demand: Demand | null;
   readonly why: string | null;
   readonly landedAt: string | null;
+  /** A card an admin ended (admin_queue): the card's name; its caster's name is `boss`. Absent on a move. */
+  readonly card?: string | null;
+}
+
+/** A face-up play of a staff character, still in force (admin_queue's `staffCards`), for an admin to end. */
+export interface StaffCardPlay {
+  readonly play: Id;
+  readonly card: string;
+  readonly cardName: string;
+  readonly staff: string;
+  readonly persona: string;
+  /** The target's public name: the post's author, or the character, thread or board the play named. */
+  readonly targetName: string | null;
+  readonly thread: Id;
+  readonly threadTitle: string | null;
+  readonly at: string;
 }
 
 /**
@@ -453,9 +469,11 @@ export interface AdminQueue {
   readonly waiting: readonly QueuedMove[];
   readonly inForce: readonly MoveInForce[];
   readonly ended: readonly MoveEnded[];
+  /** The Mod Bots' cards in force from the last 30 days, newest first. */
+  readonly staffCards: readonly StaffCardPlay[];
   /** The handovers still waiting for an announcement, newest first. */
   readonly todos: readonly HandoverTodo[];
-  readonly more: { readonly waiting: boolean; readonly inForce: boolean; readonly ended: boolean };
+  readonly more: { readonly waiting: boolean; readonly inForce: boolean; readonly staffCards: boolean; readonly ended: boolean };
   /** The Bosses a waiting nomination can be replaced with: on the roster, not retired, debuted; in the rotation's order. */
   readonly roster: readonly { readonly staff: string; readonly name: string }[];
 }

@@ -30,7 +30,7 @@ import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
-  AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffProfile,
+  AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, AccountListener, ActKind, Alert, ContactLink, SeasonNewsItem, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, Wallet, WalletEvent,
@@ -1490,11 +1490,34 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           const { q, staff, boss } = rowOf(a);
           return { how: e.why, by: e.by, at: iso(e.at), act: id, id: q?.id ?? null, staff, boss, kind: String(a.payload['kind']), params: (a.payload['params'] ?? {}) as Record<string, unknown>, demand: demandOf(id), why: q?.why ?? null, landedAt: iso(a.at) };
         }),
+        ...[...acts.values()].filter((e) => e.kind === 'card_end' && e.target !== null && e.at >= since).map((e): MoveEnded => {
+          const play = acts.get(e.target!)!;
+          return {
+            how: 'reversed', by: 'admin', at: iso(e.at), act: play.id, id: null, staff: play.character ? characters.get(play.character)?.staff?.key ?? null : null,
+            boss: play.character ? characters.get(play.character)?.name ?? null : null, kind: 'card', params: {}, demand: null, why: null, landedAt: iso(play.at),
+            card: instance.cards.find((c) => c.key === play.payload.card)?.name ?? String(play.payload.card ?? ''),
+          };
+        }),
         ...queue.filter((q) => q.heldAt !== null && q.heldAt >= since).map((q): MoveEnded => ({
           how: 'held', by: 'admin', at: iso(q.heldAt!), act: null, id: q.id, staff: q.staff, boss: nameOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, landedAt: null,
         })),
       ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
-      return { cap: 100, waiting, inForce: live, ended, todos: handoverTodos(), more: { waiting: false, inForce: false, ended: false },
+      /* The Mod Bots' cards in force: a face-up `card` Act of a staff character, from the last 30 days, not caught, not worn off, not ended. */
+      const staffCards = [...acts.values()].filter((a) => {
+        if (a.kind !== 'card' || a.character === null || !characters.get(a.character)?.staff || a.at < since) return false;
+        const ends = reachPlays.get(a.id)?.endsAt ?? (typeof a.payload.ends === 'string' ? Date.parse(a.payload.ends) : null);
+        return a.payload.caught === undefined && (ends === null || ends > now()) && !reversedPlays.has(a.id);
+      }).sort((a, b) => b.at - a.at || a.order - b.order).map((a): StaffCardPlay => {
+        const who = characters.get(a.character!)!;
+        const reach = reachPlays.get(a.id)?.reach;
+        const named = reach === 'character' ? characters.get(reachPlays.get(a.id)!.target)?.name : reach === 'thread' ? threads.get(reachPlays.get(a.id)!.target)?.title
+          : reach === 'board' ? boards.find((b) => b.id === reachPlays.get(a.id)!.target)?.name : characters.get(acts.get(a.target ?? '')?.character ?? '')?.name;
+        return {
+          play: a.id, card: String(a.payload.card ?? ''), cardName: instance.cards.find((c) => c.key === a.payload.card)?.name ?? String(a.payload.card ?? ''),
+          staff: who.staff!.key, persona: who.name, targetName: named ?? null, thread: a.thread, threadTitle: threads.get(a.thread)?.title ?? null, at: iso(a.at),
+        };
+      });
+      return { cap: 100, waiting, inForce: live, staffCards: staffCards.slice(0, 100), ended, todos: handoverTodos(), more: { waiting: false, inForce: false, staffCards: staffCards.length > 100, ended: false },
         roster: [...characters.values()].filter((c) => c.staff && c.staff.office !== 'developer' && c.staff.office !== 'benched' && c.retiredAt === null).map((c) => ({ staff: c.staff!.key, name: c.name })) } satisfies AdminQueue;
     },
     dismissHandoverTodo(season) {
@@ -2384,7 +2407,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         const short = covers(seeded(ownerOf(character)), o.paid);
         if (short) accepted(short);
       }
-      const written = asAt(ownerOf(character), o?.at, () => write({ character, kind: 'card', thread: on.thread, target, payload }));
+      /* A staff character's play has no owner to act as (staff_play_card writes it as The System): it is written as itself, at `at`. */
+      const written = characters.get(character)?.staff
+        ? write({ character, kind: 'card', thread: on.thread, target, payload, at: o?.at })
+        : asAt(ownerOf(character), o?.at, () => write({ character, kind: 'card', thread: on.thread, target, payload }));
       if (o?.unrecorded) moments.delete(written.id);
       if (o?.paid !== undefined) {
         const account = seeded(ownerOf(character));

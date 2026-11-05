@@ -643,3 +643,150 @@ begin
   end if;
   if jsonb_array_length(got_later -> 'above') <> 0 then raise exception 'a play ended before the moment is no longer above: %', got_later -> 'above'; end if;
 end $$;
+
+-- ============================================================================ Task 7: the admin queue's Mod Bots' cards ====
+-- admin_queue().staffCards lists the face-up, in-force plays of staff characters from the last 30 days; `ended` also lists each card_end of
+-- the window as reversed by an admin, with the card's name. Red before this section of the migration: the queue has no staffCards.
+
+do $$
+declare
+  caster uuid := (select id from characters where name = 'Ce Caster');
+  author uuid := (select id from characters where name = 'Ce Author');
+  t uuid := tests.thread('Card end queue');
+  p uuid := tests.post(author, t, 'Queue post.');
+  bot uuid;
+begin
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Ce7 Bot', 'ce7-bot', 'persona', now()) returning id into bot;
+end $$;
+
+create function pg_temp.queue() returns jsonb language plpgsql as $$
+declare q jsonb;
+begin
+  perform tests.become((select id from auth.users where email = 'ce-admin@test.invalid'));
+  q := admin_queue();
+  perform tests.unbecome();
+  return q;
+end $$;
+
+-- ---- A staff Set is not in staffCards until it springs, and its strike is; a player's card never is ----
+do $$
+declare
+  caster uuid := (select id from characters where name = 'Ce Caster');
+  author uuid := (select id from characters where name = 'Ce Author');
+  bot uuid := (select id from characters where name = 'Ce7 Bot');
+  p uuid := (select id from acts where kind = 'post' and payload ->> 'body' = 'Queue post.');
+  t uuid := (select thread from acts where id = p);
+  sp uuid; set_act uuid; strike uuid; theirs uuid; q jsonb; row_ jsonb;
+begin
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  sp := tests.post(bot, t, 'A staff post.');
+  set_act := tests.act(bot, 'set', t, '{}', sp);
+  perform set_config('kayfabb.staff_writer', '', true);
+  theirs := tests.act(caster, 'card', t, '{"card": "ce-wh", "layer": 1}', p);
+  q := pg_temp.queue();
+  if exists (select 1 from jsonb_array_elements(q -> 'staffCards') j where j ->> 'persona' = 'Ce7 Bot') then
+    raise exception 'a staff Set (face down) is in staffCards: %', q -> 'staffCards';
+  end if;
+  if exists (select 1 from jsonb_array_elements(q -> 'staffCards') j where j ->> 'play' = theirs::text) then raise exception 'a player''s card is in staffCards'; end if;
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  strike := tests.act(bot, 'card', t, jsonb_build_object('card', 'ce-wh', 'layer', 5, 'message', '', 'spring', set_act::text), p);
+  perform set_config('kayfabb.staff_writer', '', true);
+  q := pg_temp.queue();
+  select j into row_ from jsonb_array_elements(q -> 'staffCards') j where j ->> 'play' = strike::text;
+  if row_ is null then raise exception 'the strike is not in staffCards: %', q -> 'staffCards'; end if;
+  if row_ ->> 'card' <> 'ce-wh' or row_ ->> 'cardName' <> 'Ce Whoops' or row_ ->> 'persona' <> 'Ce7 Bot' or row_ ->> 'staff' <> 'ce7-bot'
+     or row_ ->> 'targetName' <> 'Ce Author' or row_ ->> 'thread' <> t::text or row_ ->> 'threadTitle' <> 'Card end queue' or row_ ->> 'at' is null then
+    raise exception 'the staff card row reads %', row_;
+  end if;
+  if (q -> 'more' ->> 'staffCards')::boolean then raise exception 'staffCards is not cut: %', q -> 'more'; end if;
+  if q::text like '%' || set_act::text || '%' then raise exception 'the queue names a face-down Set'; end if;
+end $$;
+
+-- ---- A worn-off, a caught, a reach-ended and an old staff play are absent; a reversed one leaves staffCards and enters ended ----
+do $$
+declare
+  author uuid := (select id from characters where name = 'Ce Author');
+  caster uuid := (select id from characters where name = 'Ce Caster');
+  bot uuid := (select id from characters where name = 'Ce7 Bot');
+  t uuid := (select thread from acts where kind = 'post' and payload ->> 'body' = 'Queue post.');
+  p uuid := (select id from acts where kind = 'post' and payload ->> 'body' = 'Queue post.');
+  worn uuid; caught uuid; old uuid; live uuid; reach_gone uuid; theirs uuid; stale uuid; q jsonb; e jsonb;
+  pl uuid[];
+begin
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  worn := tests.act(bot, 'card', t, jsonb_build_object('card', 'ce-wd', 'layer', 1, 'ends', now() - interval '1 hour'), p);
+  caught := tests.act(bot, 'card', t, '{"card": "ce-wh", "layer": 2, "caught": "x"}', p);
+  old := tests.act(bot, 'card', t, '{"card": "ce-wh", "layer": 3}', p, now() - interval '40 days');
+  live := tests.act(bot, 'card', t, jsonb_build_object('card', 'ce-wd', 'layer', 2, 'ends', now() + interval '1 day'), p);
+  reach_gone := tests.act(bot, 'card', t, '{"card": "ce-ch", "reach": "character"}', p);
+  perform set_config('kayfabb.staff_writer', '', true);
+  insert into play_reach (play, reach, character, ends_at) values (reach_gone, 'character', author, now() - interval '1 minute');
+  q := pg_temp.queue();
+  select coalesce(array_agg((j ->> 'play')::uuid), '{}') into pl from jsonb_array_elements(q -> 'staffCards') j;
+  if worn = any(pl) or caught = any(pl) or old = any(pl) or reach_gone = any(pl) then raise exception 'a worn-off, caught, reach-ended or old staff play is listed'; end if;
+  if not live = any(pl) then raise exception 'a live staff play is not listed'; end if;
+  -- Reversed: out of staffCards, into ended with how reversed, by admin, and the card's name.
+  perform pg_temp.end_play(live);
+  q := pg_temp.queue();
+  if exists (select 1 from jsonb_array_elements(q -> 'staffCards') j where j ->> 'play' = live::text) then raise exception 'a reversed play stays in staffCards'; end if;
+  select j into e from jsonb_array_elements(q -> 'ended') j where j ->> 'act' = live::text;
+  if e is null or e ->> 'how' <> 'reversed' or e ->> 'by' <> 'admin' or e ->> 'card' <> 'Ce Ward' or e ->> 'kind' <> 'card' or e ->> 'boss' <> 'Ce7 Bot' or e ->> 'at' is null then
+    raise exception 'the reversed play in ended reads %', e;
+  end if;
+  -- A player's reversed play is listed too; a card_end of 40 days ago is in no group.
+  theirs := tests.act(caster, 'card', t, '{"card": "ce-wh", "layer": 9}', p);
+  perform pg_temp.end_play(theirs);
+  stale := tests.act(caster, 'card', t, '{"card": "ce-wh", "layer": 10}', p);
+  perform set_config('kayfabb.card_end_writer', 'on', true);
+  insert into acts (character, kind, thread, target_act_id, payload, created_at) values (null, 'card_end', t, stale, '{"why": "reversed", "by": "admin"}', now() - interval '40 days');
+  perform set_config('kayfabb.card_end_writer', '', true);
+  q := pg_temp.queue();
+  if not exists (select 1 from jsonb_array_elements(q -> 'ended') j where j ->> 'act' = theirs::text and j ->> 'card' = 'Ce Whoops') then raise exception 'a player''s reversed play is not in ended'; end if;
+  if exists (select 1 from jsonb_array_elements(q -> 'ended') j where j ->> 'act' = stale::text) then raise exception 'a card_end of 40 days ago is in the window'; end if;
+end $$;
+
+-- ---- The group is cut at the cap and says so (a throwaway: undone below) ----
+do $$
+declare
+  bot uuid := (select id from characters where name = 'Ce7 Bot');
+  t uuid := (select thread from acts where kind = 'post' and payload ->> 'body' = 'Queue post.');
+  i integer; q jsonb; target uuid;
+begin
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  for i in 1..101 loop
+    target := tests.post(bot, t, 'Bulk ' || i);
+    perform tests.act(bot, 'card', t, '{"card": "ce-wh", "layer": 1}', target);
+  end loop;
+  perform set_config('kayfabb.staff_writer', '', true);
+  q := pg_temp.queue();
+  if jsonb_array_length(q -> 'staffCards') <> 100 or (q -> 'more' ->> 'staffCards')::boolean is not true then
+    raise exception 'staffCards holds % and more.staffCards is %', jsonb_array_length(q -> 'staffCards'), q -> 'more' -> 'staffCards';
+  end if;
+  if (q -> 'more' ->> 'inForce')::boolean or (q -> 'more' ->> 'ended')::boolean then raise exception 'a group that was not cut says it was: %', q -> 'more'; end if;
+  raise exception 'throwaway' using errcode = 'P9999';
+exception when sqlstate 'P9999' then null;
+end $$;
+
+-- ---- my_cards_ended, the caller's own characters on each other: one 'cast' row for a character play and a thread play ----
+-- The onMine branches leave out a play the caller's own character cast (`not in mine`); without that filter each play reads twice.
+do $$
+declare
+  acc uuid := tests.account('ce7-own');
+  a uuid := tests.character(acc, 'Ce7 One');
+  b uuid := tests.character(acc, 'Ce7 Two');
+  own_t uuid := tests.thread('Ce7 own thread');
+  own_p uuid := tests.post(b, own_t, 'Ce7 opening.');
+  on_char uuid := tests.act(a, 'card', own_t, '{"card": "ce-ch", "reach": "character"}', own_p);
+  on_thread uuid := tests.act(a, 'card', own_t, '{"card": "ce-th", "reach": "thread"}', own_p);
+begin
+  insert into play_reach (play, reach, character, ends_at) values (on_char, 'character', b, now() + interval '1 day');
+  insert into play_reach (play, reach, thread, ends_at) values (on_thread, 'thread', own_t, now() + interval '1 day');
+  perform pg_temp.end_play(on_char);
+  perform pg_temp.end_play(on_thread);
+  perform tests.become(acc);
+  if (select count(*) from my_cards_ended where play = on_char) is distinct from 1::bigint or (select count(*) from my_cards_ended where play = on_thread) is distinct from 1::bigint then
+    raise exception 'one row each for a character play and a thread play between one player''s characters: %', (select jsonb_agg(to_jsonb(x)) from my_cards_ended x);
+  end if;
+  if exists (select 1 from my_cards_ended where play in (on_char, on_thread) and side <> 'cast') then raise exception 'those rows are cast'; end if;
+  perform tests.unbecome();
+end $$;
