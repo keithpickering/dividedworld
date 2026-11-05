@@ -546,8 +546,8 @@ test.describe('the poisons, planted in a real page', () => {
   test('on a calmAll surface, the settlement\'s heading moved out of its calm', async ({ page }) => {
     await open(page, SETTLEMENT);
     expect(await measure(page)).toEqual([]);
-    await page.locator('.kb-settled-title').evaluate((el) => el.classList.remove('kb-calm'));
-    expect(await measure(page)).toContainEqual(expect.stringMatching(/^"While you were away" in .*h1\.kb-settled-title[^(]* \(surface settlement\): stands in no calm and on no panel as solid as the calm \(0\.85\); surface settlement \(recipe settlement\) is calmAll/u));
+    await page.locator('.kb-page-head-title').evaluate((el) => el.classList.remove('kb-calm'));
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/^"While you were away" in .*h1\.kb-page-head-title[^(]* \(surface settlement\): stands in no calm and on no panel as solid as the calm \(0\.85\); surface settlement \(recipe settlement\) is calmAll/u));
   });
 
   test('a class\'s large text on a surface the engine\'s list says does not draw it', async ({ page }) => {
