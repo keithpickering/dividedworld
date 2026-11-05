@@ -109,7 +109,7 @@ begin
   update characters set debuted_at = null where staff = 'ps-ghost';
   -- The developer is staff of a third kind, never a persona; its name in a post names no one.
   insert into characters (name, staff, staff_kind, debuted_at) values ('Dev Gabe', 'ps-dev', 'developer', now());
-  insert into settings (key, value) values ('digestThreads', '3'), ('poolPriorityDays', '28') on conflict (key) do update set value = excluded.value;
+  insert into settings (key, value) values ('digestThreads', '3'), ('pool', '{"weekly": 20, "holdback": 0.2, "threadsWeekly": 1, "cardRarityMost": "common", "priorityDays": 28, "notesRead": 12, "strengths": {"named": 5, "quoted": 5, "legacy": 5, "successorStumbles": 5, "oldFlame": 5, "homeTurf": 2, "seasonTurn": 2, "hotOnBeat": 2}, "chatterCron": "37 17 * * *"}') on conflict (key) do update set value = excluded.value;
   t1 := tests.thread('Named'); t2 := tests.thread('Staff started'); t3 := tests.thread('Third'); t4 := tests.thread('Fourth');
 
   -- ------------------------------------------------------------------ named ----
@@ -461,11 +461,11 @@ begin
   if (tl ->> 'posts')::integer is distinct from 0 or (tl ->> 'reactions')::integer is distinct from 0 then raise exception 'a persona with no posts reads %', tl; end if;
   if exists (select 1 from jsonb_array_elements(d -> 'tallies') e where e ->> 'staff' in ('ps-ghost', 'ps-dev')) then raise exception 'tallies lists a persona that is not one: %', d -> 'tallies'; end if;
   -- The trailing days are the setting's: at 7 the older post (27 days back) is out.
-  update settings set value = '7' where key = 'poolPriorityDays';
+  update settings set value = jsonb_set(value, '{priorityDays}', '7') where key = 'pool';
   d := pg_temp.signals(pg_temp.base(), pg_temp.base() + interval '1 hour');
   select e into tl from jsonb_array_elements(d -> 'tallies') e where e ->> 'staff' = 'ps-clerk';
   if (tl ->> 'posts')::integer is distinct from 3 or (tl ->> 'reactions')::integer is distinct from 2 then raise exception 'the Clerk reads % over 7 days', tl; end if;
-  update settings set value = '28' where key = 'poolPriorityDays';
+  update settings set value = jsonb_set(value, '{priorityDays}', '28') where key = 'pool';
 end $$;
 
 -- ------------------------------------------------------------------------------------------ one pass, by plan ----

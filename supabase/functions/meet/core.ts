@@ -173,7 +173,7 @@ export async function runMeeting(
     const bossNotes = await db.rpc<string[]>('staff_notes_recent', {
       of_staff: bossKey,
       since: memoryAt ? new Date(Date.parse(memoryAt)).toISOString() : null,
-      most: settings.notesRead,
+      most: settings.pool.notesRead,
     });
 
     const bank = await db.rpc<number>('bank_now', { staff: bossKey, weekly_moves: phase.numbers.weeklyMoves, bank_cap: phase.numbers.bankCap });

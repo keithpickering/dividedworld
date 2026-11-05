@@ -142,7 +142,7 @@ const fieldsOf = (rule: Rule, leave: readonly string[] = []): string =>
 export interface PromptFacts {
   readonly boss: Persona;
   readonly system: Pick<SystemContent, 'nameStyleBrief' | 'realWorld'>;
-  readonly settings: Pick<Settings, 'structuralHoldHours' | 'boardNameMaxLength' | 'moveExpiryLeastHours' | 'reactionCap' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'moveExpiryMostDays' | 'notesRead'>;
+  readonly settings: Pick<Settings, 'structuralHoldHours' | 'boardNameMaxLength' | 'moveExpiryLeastHours' | 'reactionCap' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'moveExpiryMostDays' | 'pool'>;
   readonly phase: PhaseAt;
   readonly bank: number;
   /** Whether this is the meltdown's last week, in which a successor may be named. */
@@ -166,7 +166,7 @@ export function meetingSystemPrompt(f: PromptFacts): string {
   );
   const demands = DEMAND_KINDS.map((d) => `- ${d.key}: params: ${fieldsOf(d.params)}.`);
   const career = careerText(f.career);
-  const notes = recentNotes(f.notes, s.notesRead);
+  const notes = recentNotes(f.notes, s.pool.notesRead);
   return [
     f.boss.persona,
     career.length ? ['Your career, as plain facts (newest first; your memory holds how you feel about it, and these hold what happened):', ...career.map((c) => `- ${c}`)].join('\n') : 'You have held no office before.',

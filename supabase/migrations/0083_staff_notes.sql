@@ -47,17 +47,6 @@ $$;
 revoke execute on function staff_notes_recent(text, timestamptz, integer) from public, anon, authenticated;
 grant execute on function staff_notes_recent(text, timestamptz, integer) to service_role;
 
--- The setting that bounds the read: how many of its own recent notes the Boss's meeting reads (`notesRead`, a whole number, at least 1).
--- Held beside settings_held (0077) in a trigger of its own so that function stays as it was; the pool's settings (the plan's Task 9)
--- fold it into that function's list when they arrive. The TypeScript rule is `notesRead` in engine/rules/instance.ts, and
+-- The setting that bounds the read is `pool.notesRead`: how many of its own recent notes the Boss's meeting reads (a whole number, at least 1).
+-- It is held with the pool's other settings by settings_held (0077); the TypeScript rule is `poolRule` in engine/rules/instance.ts, and
 -- supabase/tests/0079-settings-held.sql lists its poisons and goods.
-create function settings_held_notes() returns trigger
-language plpgsql set search_path = public, pg_temp as $$
-begin
-  if new.key = 'notesRead' and not setting_whole(new.value, 1) then
-    raise exception 'notesRead is a whole number of notes, at least 1' using errcode = '23514';
-  end if;
-  return new;
-end $$;
-create trigger settings_held_notes before insert or update on settings for each row execute function settings_held_notes();
-revoke execute on function settings_held_notes() from public, anon, authenticated;

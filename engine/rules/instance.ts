@@ -8,6 +8,7 @@ import type { DeveloperPersona, EconomyRead, Instance, Settings, QuizQuestion, S
 import { DIGEST_MOST } from '../system/digest.ts';
 import { DUTIES } from '../system/duties.ts';
 import { PHASES, PHASE_CAPS, PHASE_KEYS } from '../system/phases.ts';
+import { TRIGGERS as POOL_TRIGGERS } from '../system/pool.ts';
 import { STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from '../system/stock.ts';
 import { BEYOND_POST, INT4_MAX, OUTCOMES, PLAYS, RARITIES, REACHES, TRIGGERS, atOrBelow, spanMs } from './cards.ts';
 import type { CardRules } from './cards.ts';
@@ -103,6 +104,31 @@ function perReach(holds: (v: unknown) => boolean, shape: string) {
   };
 }
 
+/**
+ * The pool's settings (`Settings.pool`): exactly the fields of PoolSettings, each held as its own words say. Mirrors `setting_pool` in
+ * supabase/migrations/0077_settings_held.sql, and supabase/tests/0079-settings-held.sql lists its poisons and goods.
+ */
+const POOL_WHOLE = { weekly: 1, threadsWeekly: 0, priorityDays: 1, notesRead: 1 } as const;
+const POOL_KEYS = [...Object.keys(POOL_WHOLE), 'holdback', 'cardRarityMost', 'strengths', 'chatterCron'].sort();
+function poolRule(v: unknown): string | null {
+  const shape = 'an object giving weekly, priorityDays and notesRead (whole numbers, at least 1), threadsWeekly (a whole number, at least 0), holdback (from 0 to 0.5), cardRarityMost (common, uncommon, rare or legendary), strengths (a whole number, at least 1, for each of ' + POOL_TRIGGERS.join(', ') + ') and chatterCron (a five-field cron expression, each field inside its range)';
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return shape;
+  const given = v as Record<string, unknown>;
+  const extra = Object.keys(given).find((k) => !POOL_KEYS.includes(k));
+  if (extra !== undefined) return `${shape}; "${extra}" is not one of its fields`;
+  for (const [k, least] of Object.entries(POOL_WHOLE)) if (!isWhole(given[k], least)) return `${shape}; "${k}" is not`;
+  if (!(typeof given.holdback === 'number' && given.holdback >= 0 && given.holdback <= 0.5)) return `${shape}; "holdback" is not`;
+  if (!RARITIES.includes(given.cardRarityMost as never)) return `${shape}; "cardRarityMost" is not`;
+  if (!isCron(given.chatterCron)) return `${shape}; "chatterCron" is not`;
+  const strengths = given.strengths;
+  if (typeof strengths !== 'object' || strengths === null || Array.isArray(strengths)) return `${shape}; "strengths" is not`;
+  const s = strengths as Record<string, unknown>;
+  const stray = Object.keys(s).find((k) => !(POOL_TRIGGERS as readonly string[]).includes(k));
+  if (stray !== undefined) return `${shape}; "strengths.${stray}" is not a trigger`;
+  for (const t of POOL_TRIGGERS) if (!isWhole(s[t], 1)) return `${shape}; "strengths.${t}" is not`;
+  return null;
+}
+
 /** Every setting the engine reads, each with what it must be. */
 const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | null } = {
   walletCap: (v) => (isWhole(v, 1) ? null : 'a whole number of hundredths, at least 1'),
@@ -148,9 +174,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   memoryGrudges: whole(1, 'grudges'),
   memoryWheelhouse: whole(1, 'subjects'),
   memoryRealWorld: whole(1, 'subjects'),
-  notesRead: whole(1, 'notes'),
-  poolPriorityDays: whole(1, 'days'),
-  poolCardRarityMost: (v) => (RARITIES.includes(v as never) ? null : 'a rarity: common, uncommon, rare or legendary'),
+  pool: poolRule,
   boardNameMaxLength: whole(1, 'characters'),
   moveExpiryMostDays: whole(1, 'days'),
   moveExpiryLeastHours: whole(1, 'hours'),

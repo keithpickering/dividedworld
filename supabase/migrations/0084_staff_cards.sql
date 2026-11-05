@@ -10,7 +10,7 @@
 --     caster: a staff caster with a payer, or a player's character with none, is refused inside place_cast and place_set, so a door that
 --     forgot to hold the line cannot make a player's play free or bill a persona.
 --   - A staff door refuses a waiting, benched or developer persona (as write_staff_act does), a card above the setting
---     `poolCardRarityMost`, and a Set whose trap pays out (a staff character has no wallet, so its trap never pays: it is not offered).
+--     `pool.cardRarityMost`, and a Set whose trap pays out (a staff character has no wallet, so its trap never pays: it is not offered).
 --   - face_down.account is null exactly when the setter is a staff character.
 --   - spring_traps opens `kayfabb.staff_writer` for the one insert of a spring or a strike when the trap's setter is staff, so a staff
 --     trap never refuses the write that sets it off, and puts the flag back to what it was the moment that insert is done: a player's
@@ -20,8 +20,7 @@
 --     never read from the trapper's account. The pool's one card per post and its rarity cap bound how much can be made.
 --
 -- The settlement is unchanged: is_staff_side (0054) leaves a staff caster's play unpaid, and the post it lands on is judged as for any
--- card. `poolCardRarityMost` is held flat for now, in a trigger of its own (as 0083 holds notesRead); the pool's settings (the plan's
--- Task 9) group it with the rest. Ways out: nothing here holds a player in a state. A staff card on a player's post is a card like any
+-- card. `pool.cardRarityMost` is one of the pool's settings, held by settings_held (0077). Ways out: nothing here holds a player in a state. A staff card on a player's post is a card like any
 -- other, and ends as it does.
 
 -- ------------------------------------------------------------------------------------------------------ the ledger kind ----
@@ -51,18 +50,9 @@ revoke execute on function face_down_account_matches() from public, anon, authen
 
 -- ------------------------------------------------------------------------------------------------------- the setting ----
 
--- `poolCardRarityMost`: the rarest card a pool persona may play (common, uncommon, rare or legendary). The TypeScript rule is the same
--- name in engine/rules/instance.ts, and supabase/tests/0079-settings-held.sql lists its poisons and goods.
-create function settings_held_pool_cards() returns trigger
-language plpgsql set search_path = public, pg_temp as $$
-begin
-  if new.key = 'poolCardRarityMost' and (jsonb_typeof(new.value) is distinct from 'string' or rarity_rank(new.value #>> '{}') is null) then
-    raise exception 'poolCardRarityMost is a rarity: common, uncommon, rare or legendary' using errcode = '23514';
-  end if;
-  return new;
-end $$;
-create trigger settings_held_pool_cards before insert or update on settings for each row execute function settings_held_pool_cards();
-revoke execute on function settings_held_pool_cards() from public, anon, authenticated;
+-- `pool.cardRarityMost`: the rarest card a pool persona may play (common, uncommon, rare or legendary). It is held with the pool's other
+-- settings by settings_held (0077); the TypeScript rule is `poolRule` in engine/rules/instance.ts, and supabase/tests/0079-settings-held.sql
+-- lists its poisons and goods.
 
 -- ------------------------------------------------------------------------------------------------------- spring_traps ----
 
@@ -422,7 +412,7 @@ end $$;
 -- ---------------------------------------------------------------------------------------------------- the staff's doors ----
 
 -- A staff persona's Cast, for the service role: by staff key, on the post it replies to (a staff card lands on a post). Refuses a
--- persona that is waiting, benched or the developer, a card above `poolCardRarityMost`, and a card that is not a Cast or a Use. The
+-- persona that is waiting, benched or the developer, a card above `pool.cardRarityMost`, and a card that is not a Cast or a Use. The
 -- staff flag is open for the one call and put back to what it was after.
 create function staff_play_card(staff_key text, card text, target uuid, config jsonb default '{}', message text default '') returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -442,7 +432,7 @@ begin
   select * into kind_of from card_kinds k where k.key = staff_play_card.card;
   if kind_of.key is null then raise exception 'there is no such card' using errcode = 'P0002'; end if;
   -- Refused when the setting cannot be read as a rarity either, so a broken setting plays no card.
-  if not coalesce(rarity_rank(kind_of.rarity) <= rarity_rank(setting('poolCardRarityMost') #>> '{}'), false) then
+  if not coalesce(rarity_rank(kind_of.rarity) <= rarity_rank(setting('pool') #>> '{cardRarityMost}'), false) then
     raise exception '% is above the rarity the pool plays', kind_of.name using errcode = '55000';
   end if;
   flag := coalesce(current_setting('kayfabb.staff_writer', true), '');
@@ -473,7 +463,7 @@ begin
   if held in ('waiting', 'benched') then raise exception 'a % persona writes nothing', held using errcode = '55000'; end if;
   select * into kind_of from card_kinds k where k.key = staff_set_card.card;
   if kind_of.key is null then raise exception 'there is no such card' using errcode = 'P0002'; end if;
-  if not coalesce(rarity_rank(kind_of.rarity) <= rarity_rank(setting('poolCardRarityMost') #>> '{}'), false) then
+  if not coalesce(rarity_rank(kind_of.rarity) <= rarity_rank(setting('pool') #>> '{cardRarityMost}'), false) then
     raise exception '% is above the rarity the pool plays', kind_of.name using errcode = '55000';
   end if;
   if kind_of.trap #>> '{outcome,do}' = 'payout' then

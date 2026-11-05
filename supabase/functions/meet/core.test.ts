@@ -537,7 +537,7 @@ test('the Boss\'s recent notes are read for the Boss itself since the last meeti
   const reads = served.calls.filter((c) => c.fn === 'staff_notes_recent');
   assert.equal(reads.length, 1);
   assert.equal(reads[0]!.args.of_staff, BOSS);
-  assert.equal(reads[0]!.args.most, dividedWorld.settings.notesRead);
+  assert.equal(reads[0]!.args.most, dividedWorld.settings.pool.notesRead);
   assert.equal(reads[0]!.args.since, '2026-10-31T09:23:00.000Z', 'since its latest memory version');
   const system = m.chats[0]!.system;
   assert.ok(system.includes('Ann is up to something.') && system.includes('Bob owes me a rematch.'), system);

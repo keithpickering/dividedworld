@@ -15,6 +15,7 @@ import type { Duty } from '../system/duties.ts';
 import type { HintSettings } from './hints.ts';
 import type { AlertKind } from './alerts.ts';
 import type { PhaseOverrides, PhaseSettings } from '../system/phases.ts';
+import type { PoolTrigger } from '../system/pool.ts';
 
 /** Where a reaction sits on the two axes the classes read: how excited, how positive. */
 export type Quadrant = 'excitedPositive' | 'excitedNegative' | 'calmPositive' | 'boredNegative';
@@ -41,6 +42,26 @@ export interface Span {
   /** Minutes only where a setting says it takes them (editGrace, presenceWindow, hints.window); a window, a season and a cooldown count days or more. */
   readonly unit: 'minute' | 'day' | 'week' | 'month';
   readonly count: number;
+}
+
+/** The posting pool's numbers (`Settings.pool`). */
+export interface PoolSettings {
+  /** How many posts a week the pool pays for, in all: every unprompted post at every office. */
+  readonly weekly: number;
+  /** The share of a day's posts held back for personas with little history, from 0 to 0.5; the first favorites cannot hold every slot forever. */
+  readonly holdback: number;
+  /** How many new threads a week the pool may start; zero is none, and then every pool post is a reply. */
+  readonly threadsWeekly: number;
+  /** The rarest card a pool persona plays (`staff_play_card`, `staff_set_card`): a card above it is refused. */
+  readonly cardRarityMost: Rarity;
+  /** How many days back a persona's priority reads its posts and the reactions to them (`pool_signals`'s `tallies`). */
+  readonly priorityDays: number;
+  /** The most of its own recent notes (`staff_notes`) the Boss's meeting reads, newest kept. A note is read, never acted on. */
+  readonly notesRead: number;
+  /** Each trigger's strength: a candidate's score is its trigger's strength times its persona's priority. A whole number, at least 1. */
+  readonly strengths: Readonly<Record<PoolTrigger, number>>;
+  /** When the pool's daily pick and posts run, as a five-field cron expression in UTC. */
+  readonly chatterCron: string;
 }
 
 /** The settings the engine itself reads. A class's own numbers live with the class. */
@@ -165,20 +186,10 @@ export interface Settings {
   /** The most real-world subjects a Boss's memory leaves alone, most important first. A starting point. */
   readonly memoryRealWorld: number;
   /**
-   * The most of its own recent notes (`staff_notes`) the Boss's meeting reads, newest kept. A note is read, never acted on. Held flat here
-   * until the pool's settings (`Settings.pool`, the staff roster plan's Task 9) take it as `pool.notesRead`. A starting point.
+   * The staff roster's posting pool (the staff roster design, sections 4 and 6; its plan, Task 9): how many posts a week the pool pays
+   * for, how a day's pick is made, and the numbers the pool's other readers share (notes, cards, priority). A starting point each.
    */
-  readonly notesRead: number;
-  /**
-   * The rarest card a pool persona plays (`staff_play_card`, `staff_set_card`): a card above it is refused. Held flat here until the
-   * pool's settings (`Settings.pool`, the staff roster plan's Task 9) take it as `pool.cardRarityMost`. A starting point.
-   */
-  readonly poolCardRarityMost: Rarity;
-  /**
-   * How many days back the pool's priority reads a staff persona's posts and the reactions to them (`pool_signals`'s `tallies`). Held
-   * flat here until the pool's settings (`Settings.pool`, the staff roster plan's Task 9) take it as `pool.priorityDays`. A starting point.
-   */
-  readonly poolPriorityDays: number;
+  readonly pool: PoolSettings;
   /** The longest a board's name may be, in characters, whether The System or a player proposes it. */
   readonly boardNameMaxLength: number;
   /** The most days any move may last, whatever its phase allows. A starting point. */

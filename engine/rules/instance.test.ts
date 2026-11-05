@@ -49,9 +49,7 @@ const settings: Settings = {
   memoryGrudges: 20,
   memoryWheelhouse: 30,
   memoryRealWorld: 30,
-  notesRead: 12,
-  poolCardRarityMost: 'common',
-  poolPriorityDays: 28,
+  pool: { weekly: 20, holdback: 0.2, threadsWeekly: 1, cardRarityMost: 'common', priorityDays: 28, notesRead: 12, strengths: { named: 5, quoted: 5, legacy: 5, successorStumbles: 5, oldFlame: 5, homeTurf: 2, seasonTurn: 2, hotOnBeat: 2 }, chatterCron: '37 17 * * *' },
   boardNameMaxLength: 60,
   moveExpiryMostDays: 42,
   demandCheckMinutes: 5,
@@ -490,18 +488,38 @@ test('a phase\'s longest move may not outrun the setting for any move, and the l
   assert.match(said(phased({ moveExpiryLeastHours: 24 * 42 + 1 })), /moveExpiryLeastHours/);
 });
 
+test('the pool\'s settings are checked: whole numbers, a holdback from 0 to 0.5, a rarity, a strength for every trigger, a cron', () => {
+  const pool = settings.pool;
+  const bad = (change: object) => settingsProblems({ ...settings, pool: { ...pool, ...change } } as unknown as Settings).join('\n');
+  const good = (change: object) => settingsProblems({ ...settings, pool: { ...pool, ...change } } as unknown as Settings);
+  for (const k of ['weekly', 'priorityDays', 'notesRead']) for (const v of [0, -1, 1.5, '5', null, 2 ** 53]) assert.match(bad({ [k]: v }), /setting "pool"/, `${k} = ${String(v)}`);
+  for (const v of [-1, 1.5, '1', null]) assert.match(bad({ threadsWeekly: v }), /threadsWeekly/, String(v));
+  assert.deepEqual(good({ threadsWeekly: 0 }), [], 'zero new threads a week is allowed');
+  for (const v of [-0.1, 0.51, 1, '0.2', null]) assert.match(bad({ holdback: v }), /holdback/, String(v));
+  for (const v of [0, 0.5]) assert.deepEqual(good({ holdback: v }), [], `holdback ${v}`);
+  for (const v of ['mythic', '', 'Common', 1, null]) assert.match(bad({ cardRarityMost: v }), /cardRarityMost/, String(v));
+  for (const v of ['daily', '61 * * * *', '* * * *', 5, null]) assert.match(bad({ chatterCron: v }), /chatterCron/, String(v));
+  for (const t of Object.keys(pool.strengths)) {
+    const { [t as keyof typeof pool.strengths]: _gone, ...rest } = pool.strengths;
+    assert.match(bad({ strengths: rest }), new RegExp(`strengths.${t}`), `no strength for ${t}`);
+    for (const v of [0, 1.5, '5', null]) assert.match(bad({ strengths: { ...pool.strengths, [t]: v } }), new RegExp(`strengths.${t}`), `${t} = ${String(v)}`);
+  }
+  assert.match(bad({ strengths: { ...pool.strengths, shouting: 5 } }), /strengths.shouting/);
+  assert.match(bad({ stray: 1 }), /stray/);
+  assert.match(settingsProblems({ ...settings, pool: [] } as unknown as Settings).join('\n'), /setting "pool"/);
+});
+
 test('the new settings are checked like the others', () => {
   const bad = (k: string, v: unknown) => settingsProblems({ ...settings, [k]: v } as unknown as Settings).join('\n');
   assert.match(bad('systemEnabled', 'yes'), /systemEnabled/);
   assert.match(bad('meetingCron', 'daily'), /meetingCron/);
-  for (const v of ['mythic', '', 'Common', 1, null]) assert.match(bad('poolCardRarityMost', v), /poolCardRarityMost/, String(v));
   assert.match(bad('phases', { ...settings.phases, reign: { weeklyMoves: 0, bankCap: 10, moveExpiryMostDays: 28 } }), /phases/);
   assert.match(bad('phases', { ...settings.phases, honeymoon: { weeklyMoves: 2, bankCap: 4, moveExpiryMostDays: 7 } }), /phases/);
-  for (const k of ['inheritanceGraceDays', 'rosterRecentExcluded', 'structuralHoldHours', 'microEventDailyCalls', 'digestThreads', 'digestExcerpts', 'digestExcerptChars', 'memoryOpinions', 'memoryGrudges', 'memoryWheelhouse', 'memoryRealWorld', 'notesRead', 'poolPriorityDays', 'boardNameMaxLength', 'moveExpiryMostDays', 'moveExpiryLeastHours', 'demandCheckMinutes', 'demandChecksPerTick']) {
+  for (const k of ['inheritanceGraceDays', 'rosterRecentExcluded', 'structuralHoldHours', 'microEventDailyCalls', 'digestThreads', 'digestExcerpts', 'digestExcerptChars', 'memoryOpinions', 'memoryGrudges', 'memoryWheelhouse', 'memoryRealWorld', 'boardNameMaxLength', 'moveExpiryMostDays', 'moveExpiryLeastHours', 'demandCheckMinutes', 'demandChecksPerTick']) {
     assert.match(bad(k, -1), new RegExp(k), k);
     assert.match(bad(k, 1.5), new RegExp(k), k);
   }
-  for (const k of ['memoryOpinions', 'memoryGrudges', 'memoryWheelhouse', 'memoryRealWorld', 'notesRead']) {
+  for (const k of ['memoryOpinions', 'memoryGrudges', 'memoryWheelhouse', 'memoryRealWorld']) {
     assert.match(bad(k, 0), new RegExp(k), k);
     assert.match(bad(k, 2.5), new RegExp(k), k);
   }

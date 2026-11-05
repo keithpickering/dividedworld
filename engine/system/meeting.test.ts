@@ -127,7 +127,7 @@ test('the Boss\'s recent notes are in the prompt as its own thoughts, capped at 
     boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: false, roster: [],
     career: { led: [], offices: [] },
   };
-  const notes = Array.from({ length: settings.notesRead + 3 }, (_, i) => `thought number ${i + 1}`);
+  const notes = Array.from({ length: settings.pool.notesRead + 3 }, (_, i) => `thought number ${i + 1}`);
   const served = meetingSystemPrompt({ ...facts, notes });
   assert.match(served, /your own recent thoughts/);
   assert.ok(served.includes(`thought number ${notes.length}`), 'the newest note is kept');

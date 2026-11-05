@@ -20,7 +20,7 @@
 --                                       busiest first (character ids, as memory opinions name them). `boardMaker` is the staff key of
 --                                       whoever made the board, from the Act that recorded it: no Act records a board's creation (a
 --                                       move can only rename one; boards are made by seed and by admins), so it is null until one does.
---   tallies     [{staff, posts, reactions}]  each debuted persona's posts in the last `poolPriorityDays` before `until`, and the public
+--   tallies     [{staff, posts, reactions}]  each debuted persona's posts in the last `pool.priorityDays` before `until`, and the public
 --                                       tallies on them, every kind of reaction counted alike. A persona with no posts is listed with 0.
 --
 -- OWNED BY kayfabb_digest (0045), security definer: it runs with that role's privileges and nothing else's, so the database refuses it
@@ -60,19 +60,9 @@ create index acts_move_keeps on acts (created_at desc, id desc) where kind = 'mo
 
 -- --------------------------------------------------------------------------------------------------------- the setting ----
 
--- `poolPriorityDays`: how many days back a persona's priority reads (a whole number, at least 1). Held flat in a trigger of its own, as
--- 0083 holds notesRead; the pool's settings (the plan's Task 9) fold it into settings_held when they arrive. The TypeScript rule is
--- `poolPriorityDays` in engine/rules/instance.ts, and supabase/tests/0079-settings-held.sql lists its poisons and goods.
-create function settings_held_pool_signals() returns trigger
-language plpgsql set search_path = public, pg_temp as $$
-begin
-  if new.key = 'poolPriorityDays' and not setting_whole(new.value, 1) then
-    raise exception 'poolPriorityDays is a whole number of days, at least 1' using errcode = '23514';
-  end if;
-  return new;
-end $$;
-create trigger settings_held_pool_signals before insert or update on settings for each row execute function settings_held_pool_signals();
-revoke execute on function settings_held_pool_signals() from public, anon, authenticated;
+-- `pool.priorityDays`: how many days back a persona's priority reads (a whole number, at least 1), held with the pool's other settings by
+-- settings_held (0077). The TypeScript rule is `poolRule` in engine/rules/instance.ts, and supabase/tests/0079-settings-held.sql lists its
+-- poisons and goods.
 
 -- ------------------------------------------------------------------------------------------------------------- named ----
 
@@ -132,7 +122,7 @@ create function pool_signals(since timestamptz, until timestamptz) returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
   threads_cap integer := (setting('digestThreads'))::integer;
-  days integer := coalesce((setting('poolPriorityDays'))::integer, 28);
+  days integer := coalesce(((setting('pool') ->> 'priorityDays'))::integer, 28);
   boss text := current_boss();
   hours numeric;
   result jsonb;

@@ -1,7 +1,7 @@
 -- The staff card path (supabase/migrations/0084_staff_cards.sql; the staff roster design, section 7; its plan, Task 7).
 -- A pool persona plays a card through staff_play_card and staff_set_card, which take the same rules a player's play does (place_cast and
 -- place_set, the inner halves of play_card and set_card), pay nothing, and refuse a persona that is waiting or benched, a card above
--- `poolCardRarityMost`, and a Set whose trap pays out. A player's trap that catches a staff Cast pays the card's base price as a wallet
+-- `pool.cardRarityMost`, and a Set whose trap pays out. A player's trap that catches a staff Cast pays the card's base price as a wallet
 -- event of kind 'trapSystem'. A trap set by staff springs on a player's write without refusing it, and the staff flag the spring opens is
 -- closed again before the player's own Act is checked. The poisons: a staff Cast with a payer is refused (the staff writer passes none),
 -- and a spring on a staff trap with the flag left closed refuses the player's reply (red before spring_traps opens it).
@@ -28,7 +28,7 @@ begin
   update characters set debuted_at = now() where staff = 'sc-bench';
   insert into staff_offices (staff, office, cause) values ('sc-bench', 'benched', 'admin');
   -- The pool plays up to uncommon.
-  insert into settings (key, value) values ('poolCardRarityMost', '"uncommon"') on conflict (key) do update set value = excluded.value;
+  insert into settings (key, value) values ('pool', '{"weekly": 20, "holdback": 0.2, "threadsWeekly": 1, "cardRarityMost": "uncommon", "priorityDays": 28, "notesRead": 12, "strengths": {"named": 5, "quoted": 5, "legacy": 5, "successorStumbles": 5, "oldFlame": 5, "homeTurf": 2, "seasonTurn": 2, "hotOnBeat": 2}, "chatterCron": "37 17 * * *"}') on conflict (key) do update set value = excluded.value;
   update settings set value = value || '{"snare.price": 150, "catcher.price": 100, "bluffy.price": 25, "grandie.price": 100, "shield.price": 150, "hook.price": 100}' where key = 'economy';
   insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap, ward, lasts) values
     ('snare', 'Snare', 'salty', 'snare.price', 'uncommon', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "payout"}}', false, null),
@@ -157,7 +157,7 @@ begin
   perform tests.unbecome();
   if said is null or said !~ '^55000 Grandie is above the rarity the pool plays' then raise exception 'a legendary Cast under an uncommon cap: %', said; end if;
   -- The cap moves with the setting: at common, an uncommon card is refused and a common one is not.
-  update settings set value = '"common"' where key = 'poolCardRarityMost';
+  update settings set value = jsonb_set(value, '{cardRarityMost}', '"common"') where key = 'pool';
   perform tests.become_service();
   said := pg_temp.refused(format('select staff_set_card(%L, %L, %L)', 'sc-mod', 'hook', sp2));
   perform tests.unbecome();
@@ -165,11 +165,11 @@ begin
   perform tests.become_service();
   perform staff_set_card('sc-mod', 'bluffy', sp2);
   perform tests.unbecome();
-  said := pg_temp.refused($q$update settings set value = '"mythic"' where key = 'poolCardRarityMost'$q$);
+  said := pg_temp.refused($q$update settings set value = jsonb_set(value, '{cardRarityMost}', '"mythic"') where key = 'pool'$q$);
   if said is null or said !~ '^23514' then raise exception 'a pool cap that is no rarity was stored: %', said; end if;
-  said := pg_temp.refused($q$update settings set value = '3' where key = 'poolCardRarityMost'$q$);
+  said := pg_temp.refused($q$update settings set value = jsonb_set(value, '{cardRarityMost}', '3') where key = 'pool'$q$);
   if said is null or said !~ '^23514' then raise exception 'a pool cap that is a number was stored: %', said; end if;
-  update settings set value = '"uncommon"' where key = 'poolCardRarityMost';
+  update settings set value = jsonb_set(value, '{cardRarityMost}', '"uncommon"') where key = 'pool';
 end $$;
 
 -- ---- A waiting, a benched or an unknown persona plays nothing; the doors are the service role's alone ----
@@ -339,10 +339,10 @@ declare
   r jsonb;
 begin
   -- Plant a nullify trap of the staff's own for the staff to meet (catcher is rare: lifted for this setup alone).
-  update settings set value = '"rare"' where key = 'poolCardRarityMost';
+  update settings set value = jsonb_set(value, '{cardRarityMost}', '"rare"') where key = 'pool';
   perform tests.become_service();
   perform staff_set_card('sc-mod', 'catcher', sp);
-  update settings set value = '"uncommon"' where key = 'poolCardRarityMost';
+  update settings set value = jsonb_set(value, '{cardRarityMost}', '"uncommon"') where key = 'pool';
   r := staff_play_card('sc-boss', 'sweetie', sp, '{}', '');
   perform tests.unbecome();
   if r -> 'payload' ->> 'caught' is null then raise exception 'a staff Cast did not meet the staff trap: %', r; end if;
