@@ -66,7 +66,7 @@ test('at the board\'s max the splat covers the post body edge to edge, and its w
  * A stroke kept in widths lands where it was drawn: the middle of the reference layout is the middle of the post's body at 1440, within a
  * pixel, whatever the board's column and type are scaled to (the glass-polish design's section 7: 1200px and 15px, REF_WIDTH 988).
  */
-test('a stroke at the middle of the reference layout lands within a pixel of the middle of the post body at 1440px', async ({ page }) => {
+test('the post-body layout is 988px wide and centered on the body at 1440px', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/?fixture=boards&moment=01-main');
   await expect(page.locator('#post-41 .kb-whoops-ink')).toBeVisible();

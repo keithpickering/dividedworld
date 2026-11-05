@@ -35,7 +35,10 @@
 
   --kb-font-body: Verdana, Geneva, sans-serif;
   --kb-font-mono: "Courier New", Courier, monospace;
-  /* The Main board's sizes, the 2003 board's scaled by 1.25 (the glass-polish design's section 7): 15px words, 13.75px links and controls, a 12.5px post line, a 22.5px title. */
+  /*
+   * The Main board's sizes, the 2003 board's scaled by 1.25 (the glass-polish design's section 7): 15px words, 13.75px links and
+   * controls, a 12.5px post line, a 22.5px title.
+   */
   --kb-size-body: 0.9375rem;
   --kb-size-small: 0.859375rem;
   --kb-size-fine: 0.78125rem;
@@ -46,10 +49,9 @@
   /*
    * How wide the board's own pages may be (the banner, the index, the boards, the threads, the profile,
    * the standings): a column at most this wide, centered past it. The owner chose 960px for the 2003
-   * board (the glass plan's section 8), and 1200px with the type scaled by 1.25 (the glass-polish design's
-   * section 7), so a line holds about the same words: wider and the table looks silly, and Whoops!'s fixed layout is
-   * laid out at the post body this makes (instances/divided-world/cards/whoops/scrub.ts). The glass
-   * keeps its own widths. A theme may set it, as a plain positive length (tools/check-theme.mjs).
+   * board (the glass plan's section 8), and 1200px with the type scaled by 1.25 (the glass-polish design's section 7), so a
+   * line holds about the same words: wider and the table looks silly, and Whoops!'s fixed layout is laid out at the post body
+   * this makes (instances/divided-world/cards/whoops/scrub.ts). The glass keeps its own widths. A theme may set it, as a plain positive length (tools/check-theme.mjs).
    */
   --kb-board-max: 1200px;
 

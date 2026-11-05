@@ -2,8 +2,8 @@ import { expect, test, type Page } from '@playwright/test';
 
 /**
  * The 2003 board stands in a column at most 1200px wide, centered past it (the owner's word, the glass plan's
- * section 8 amendment of 2026-10-30, scaled by 1.25 with the type in the glass-polish design's section 7; `--kb-board-max` in engine/ui/tokens.css), and the glass keeps its own
- * widths: the HUD spans the window at every width. Below the column's max the board fills the window less the
+ * section 8 amendment of 2026-10-30, scaled by 1.25 with the type in the glass-polish design's section 7; `--kb-board-max` in
+ * engine/ui/tokens.css), and the glass keeps its own widths: the HUD spans the window at every width. Below the column's max the board fills the window less the
  * board's 2% gutters, and nothing scrolls sideways.
  */
 const MAX = 1200;

@@ -34,9 +34,10 @@ import { covers, type Splat } from './splat.ts';
  * of a 360px layout; read at 988 they would land at 0.36 times the place and size they were drawn. They are not converted
  * (CLAUDE.md, "Nobody is waiting on a hotfix"): a stroke is kept in widths, and the width it is kept in is this one.
  *
- * The board was scaled by 1.25 (column 960 to 1200, type 12px to 15px; the glass-polish design's section 7). The layout scales with it in
- * proportion (790 to 988, 1.25 times), so a stroke kept in widths of it lands where it was drawn and the words break in the same places;
- * only the 1px table borders do not scale, a 0.05% shift. The brush, the row and the stroke and hit-test steps (MIN_STEP, CELL, BUCKET) are scaled by 1.25 with the type, so they keep their size in widths.
+ * The board was scaled by 1.25 (column 960 to 1200, type 12px to 15px; the glass-polish design's section 7). The layout scales with it
+ * in proportion (790 to 988, 1.25 times), so a stroke kept in widths of it lands where it was drawn and the words break in the same
+ * places. Only the 1px table borders do not scale, a 0.05% shift. The brush, the row and the stroke and hit-test steps (MIN_STEP,
+ * CELL, BUCKET) are scaled by 1.25 with the type, so they keep their size in widths.
  */
 const BOARD_MAX = 1200;
 const TABLE_BORDERS = 2;
@@ -54,7 +55,7 @@ const px = (n: number) => n / REF_WIDTH;
 /** The wash's brush and the author's pen, in widths (30px at the reference width, 24 scaled by 1.25: a splat that spans a 988px body is washed with a hand-sized brush, not a pen's). */
 export const BRUSH = px(30);
 export const PEN = BRUSH * 0.3;
-/** A line of the post's text, in widths (22.5px at the reference width, the board's 15px type at 1.5): the accessible sweep's band. */
+/** A line of the post's text, in widths (22.5px at the reference width, the board's 15px type at about 1.5): the accessible sweep's band. */
 export const ROW = px(BODY_PX * 1.5);
 /** The accessible sweep's pace, in widths a second: a line a little under two seconds, as a hand takes. */
 export const SWEEP_SPEED = 0.55;

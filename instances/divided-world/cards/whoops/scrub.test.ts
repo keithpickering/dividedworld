@@ -23,6 +23,11 @@ test('the reference width is the post body\'s width at the board\'s 1200px, deri
   assert.equal(REF_WIDTH, 988);
 });
 
+test('the brush and the row keep their physical size at the reference width: 30px and 22.5px, the 24px and 18px of the 12px board scaled by 1.25', () => {
+  assert.ok(Math.abs(BRUSH * REF_WIDTH - 30) < 1e-9);
+  assert.ok(Math.abs(ROW * REF_WIDTH - 22.5) < 1e-9);
+});
+
 test('the layout is the body\'s width scaled to the frame, never scaled up, and centered', () => {
   assert.deepEqual(layoutOf(REF_WIDTH), { scale: 1, width: REF_WIDTH, offset: 0 });
   const wide = layoutOf(1000);
