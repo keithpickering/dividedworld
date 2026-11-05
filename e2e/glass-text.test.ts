@@ -343,6 +343,12 @@ describe('feathersOf, the mask reader', () => {
     expect(feathersOf(across, 'p.lead')).toEqual({ left: 32, right: 32, top: 0, bottom: 0 });
   });
 
+  test('a feather of nothing (the roster tablist\'s, at its row\'s clipping edge) reads 0 on every edge, and not as a mask it cannot read', () => {
+    /* Chromium computes calm(100% - 0px) to 100%, and a start stop at 0px. */
+    const none = (axis: string) => `linear-gradient(${axis}${T}, ${C} 0px, ${C} 100%, ${T})`;
+    expect(feathersOf(`${none('to right, ')}, ${none('')}`, 'div.kb-carousel-tablist.kb-calm')).toEqual({ left: 0, right: 0, top: 0, bottom: 0 });
+  });
+
   test('a ramp at one end only, as the phone HUD\'s join draws it (frame.css), leaves the other edge at zero', () => {
     expect(feathersOf(`${across}, linear-gradient(${T}, ${C} 32px)`, 'div.door')).toEqual({ left: 32, right: 32, top: 32, bottom: 0 });
     expect(feathersOf(`${across}, linear-gradient(${C} calc(100% - 32px), ${T})`, 'div.actions')).toEqual({ left: 32, right: 32, top: 0, bottom: 32 });

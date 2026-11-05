@@ -427,6 +427,8 @@ export function feathersOf(mask: string, who: string): Feathers {
     }
     if (endRamp) {
       const n = px(stops[stops.length - 2]!);
+      /* A feather of nothing is computed to `100%` (calc(100% - 0px)): a ramp of no length, which leaves the edge at zero. */
+      if (n === null && /\s100%$/u.test(stops[stops.length - 2]!)) continue;
       if (n === null) return fail(`an end ramp with no px length: ${layer}`);
       if (x) f.right = Math.max(f.right, n); else f.bottom = Math.max(f.bottom, n);
     }
