@@ -44,7 +44,7 @@ describe('Divided World\'s Vending Machine words', () => {
     expect(instanceUi.copy.shopName).toBe('Vending Machine');
     expect(instanceUi.copy.marquees).toHaveLength(12);
     expect(instanceUi.copy.marquees![0]).toBe('[MACHINE NAME]');
-    expect(instanceUiProblems(instanceUi)).toEqual([]);
+    expect(instanceUiProblems(instanceUi, instance)).toEqual([]);
   });
 });
 

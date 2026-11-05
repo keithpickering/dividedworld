@@ -17,6 +17,7 @@ import { useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import { CONTACT_WS, type ContactLink } from '../data/api.ts';
 import { Link } from '../router.tsx';
+import { PageHead } from '../glass/PageHead.tsx';
 import '../account/account.css';
 import './contact.css';
 
@@ -38,7 +39,7 @@ const address = (href: string): string | null => (/^mailto:/iu.test(href) ? href
 export function Contact({ links }: { readonly links: readonly ContactLink[] | null }) {
   return (
     <div className="kb-acct kb-contact" aria-busy={links === null || undefined}>
-      <h1 className="kb-acct-title kb-glass-display">Reach a person</h1>
+      <PageHead title="Reach a person" />
       <div className="kb-acct-panel kb-calm">
         <p className="kb-acct-lead">The admins run this instance. Write to them if something looks broken, if you&apos;re stuck with no way out, or about anything that isn&apos;t part of the game.</p>
         {links !== null && links.length === 0 && <p className="kb-acct-text">This instance&apos;s admins haven&apos;t added a way to reach them yet.</p>}
@@ -70,7 +71,7 @@ export function ContactScreen() {
   if (!failed) return <Contact links={links} />;
   return (
     <div className="kb-acct kb-contact">
-      <h1 className="kb-acct-title kb-glass-display">Reach a person</h1>
+      <PageHead title="Reach a person" />
       <div className="kb-acct-panel kb-calm">
         <p role="alert" className="kb-acct-refusal">The admins&apos; contact could not be read. Reload the page to try again.</p>
       </div>
