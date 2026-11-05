@@ -250,3 +250,11 @@ an estimate past the cap. The critique:
 - **The phone HUD cuts the mask's name** once more ("MRS. HOO"); the board gives the name the row's width, the Hand
   button beside it.
 - Kept: the section rail's outlined unselected sections (#202: quiet fails contrast on bare smoke).
+
+**Approved by the owner** ("I like putting the card image in the modal"), with one direction: **the card info shows the
+card's real face, as the card template draws it.** The owner: "In the build let's be sure to use the actual card image,
+which (not built yet) has been redesigned" in the card template design (`docs/plans/2026-11-05-card-template-design.md`,
+its board `docs/research/2026-11-05-card-template/01-layouts.html`: the "Low name" layout, 2:3 at every size). The card
+info draws `Postcard.tsx` at the sheet's size (276 wide) and never an image of its own, so it shows the new face once the
+card template plan is built. The plan's card-info task follows that plan's merge; the board's face (`34-vending-info.html`,
+`36-account-phone.html`) is a stand-in in the template's layout, and its manifest compares the face's box only.

@@ -852,6 +852,17 @@ const invite = (code, state, note, open) => `<li style="display: grid; grid-temp
           ${open ? '<div class="btns" style="gap: 8px"><button class="btn" style="min-height: 44px; padding: 0 16px; font-size: 19px"><b>COPY THE LINK</b></button><button class="btn" style="min-height: 44px; padding: 0 16px; font-size: 19px"><b>WITHDRAW</b></button></div>' : '<span></span>'}
         </li>`;
 
+/* A stand-in for Postcard.tsx in the card template's layout (docs/plans/2026-11-05-card-template-design.md, "Low name"):
+   2:3, a black border ringed and glowing in the card's color, the badges on the top border, the gem in the corner, the name
+   plate across the art's lower third, the text plate under it, the price on the bottom border. Its box is what a board
+   compares; the face itself is the card template's to draw. */
+const postcard = (w) => { const u = w / 100; return `<figure aria-label="Whoops!, Salty, Cast, Common" style="position: relative; margin: 0; flex: none; width: ${w}px; height: ${w * 1.5}px; border-radius: ${7.5 * u}px; background: #050505; box-shadow: 0 0 0 2px #ff3d7f, 0 0 30px rgba(255,61,127,.6)">
+      <div style="position: absolute; inset: ${5 * u}px; border-radius: ${2.5 * u}px; overflow: hidden; background: #22030f"><img src="${ART}whoops.svg" alt="" style="position: absolute; left: 7%; top: 8%; width: 86%; height: 48%; object-fit: contain"></div>
+      <span style="position: absolute; left: ${6 * u}px; top: ${2.2 * u}px; display: flex; gap: ${1.6 * u}px; transform: skewX(-12deg); font: italic 800 ${Math.min(18, 7.2 * u)}px/1.15 'Barlow Condensed', sans-serif; letter-spacing: .08em"><b style="padding: 0 .6em; background: #ff3d7f; color: #14030a">SALTY</b><b style="padding: 0 .6em; background: #050505; color: #ff3d7f; box-shadow: inset 0 0 0 1.5px #ff3d7f">CAST</b></span>
+      <span style="position: absolute; left: ${4.5 * u}px; top: ${89 * u}px; width: 80%; height: ${15 * u}px; transform: skewX(-12deg); background: linear-gradient(90deg, rgba(0,0,0,.86), rgba(0,0,0,.6)); box-shadow: inset ${1.2 * u}px 0 0 #ff3d7f; display: flex; align-items: center; padding-left: ${6.5 * u}px"><b style="transform: skewX(12deg); font: ${11.5 * u}px/1 Anton, Impact, sans-serif; color: #fff">WHOOPS!</b></span>
+      <span style="position: absolute; left: ${9 * u}px; right: ${9 * u}px; top: ${108 * u}px; bottom: ${9 * u}px; background: rgba(0,0,0,.72); border: 1px solid rgba(255,61,127,.55); color: #bbb; font: 600 ${6.6 * u}px/1.35 'Barlow Condensed', sans-serif; padding: ${3 * u}px ${4 * u}px">Splats a post in your ink. Readers scrub it; only the author can wash it.</span>
+    </figure>`; };
+
 page({
   file: '33-settings-account.html', name: 'Settings, Account', w: 1440, h: 1000,
   note: 'Settings › Account with two invites made, one open and one used: each invite a row with its state and its own actions; Reach a person under the section rail, where every Settings section can reach it.',
@@ -887,11 +898,7 @@ page({
   <div aria-hidden="true" style="position: absolute; inset: 0; z-index: 6; background: rgba(7,5,13,.72)"></div>
   <section role="dialog" aria-labelledby="infoH" class="piece" style="position: absolute; z-index: 7; left: 270px; top: 170px; width: 900px; box-sizing: border-box; padding: 38px 40px 34px; --cut: 40px; --edge: #19e3ff; --ground: #07050d; display: grid; grid-template-columns: 276px 1fr; column-gap: 40px">
     <button class="btn" aria-label="Close" style="position: absolute; right: 40px; top: 34px; min-height: 52px; width: 52px; padding: 0; transform: none"><b style="transform: none; font: 400 30px/1 'Barlow Condensed', sans-serif">&times;</b></button>
-    <figure aria-label="Whoops!, Salty" style="margin: 0; width: 276px; height: 400px; box-sizing: border-box; border: 6px solid #0b0b0b; border-radius: 14px; background: #ff3db4; display: grid; grid-template-rows: auto 1fr auto; padding: 14px; color: #0b0b0b">
-      <div style="display: flex; justify-content: space-between; font: 800 18px 'Barlow Condensed', sans-serif; letter-spacing: 2px"><span>SALTY</span><span>CAST</span></div>
-      <img src="${ART}whoops.svg" alt="" style="width: 100%; height: 100%; object-fit: contain">
-      <b style="font: 36px Anton, Impact, sans-serif; text-align: center">WHOOPS!</b>
-    </figure>
+    ${postcard(276)}
     <div>
       <p style="margin: 0; font: 800 21px 'Barlow Condensed', sans-serif; letter-spacing: 3px; color: #19e3ff">SLOT A2 &middot; SALTY</p>
       <h2 id="infoH" style="margin: 2px 60px 18px 0; font: 60px/1 Anton, Impact, sans-serif">WHOOPS!</h2>
@@ -944,7 +951,7 @@ page({
       <button class="btn" aria-label="Close" style="position: absolute; right: 16px; top: 18px; min-height: 46px; width: 46px; padding: 0; transform: none"><b style="transform: none; font: 400 26px/1 'Barlow Condensed', sans-serif">&times;</b></button>
       <p style="margin: 0; font: 800 18px 'Barlow Condensed', sans-serif; letter-spacing: 2px; color: #19e3ff">SLOT A2 &middot; SALTY</p>
       <h2 style="margin: 2px 0 14px; font: 40px/1 Anton, Impact, sans-serif">WHOOPS!</h2>
-      <figure style="margin: 0 auto 14px; width: 180px; height: 260px; box-sizing: border-box; border: 5px solid #0b0b0b; border-radius: 10px; background: #ff3db4; display: grid; place-items: center"><img src="${ART}whoops.svg" alt="" style="width: 80%"></figure>
+      <div style="display: flex; justify-content: center; margin-bottom: 14px">${postcard(170)}</div>
       <p style="margin: 0 0 10px; font: 700 21px 'Barlow Condensed', sans-serif">1.00 to buy <span style="font-weight: 500; color: #e4def7">&middot; more on a long post</span></p>
       <p style="margin: 0; font: 500 19px/1.45 'Barlow Condensed', sans-serif">It splats a post in the ink you choose, and a reader can scrub the ink away on their own screen; the post's author can wash it away for everyone.</p>
     </section>
