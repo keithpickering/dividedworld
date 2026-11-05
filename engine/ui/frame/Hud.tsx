@@ -44,7 +44,8 @@ import { useKayfa } from '../context.tsx';
 import { usePlayer } from '../player.tsx';
 import { registerHref, signInHref } from '../account/next.ts';
 import { dayAndTime } from '../characters/format.ts';
-import { Link, searchOf, useLocation, useNavigate } from '../router.tsx';
+import { useBoot } from '../boot.tsx';
+import { Link, searchOf, useLocation, useNavigate, useRouterInternals } from '../router.tsx';
 import { Hand } from '../cards/Hand.tsx';
 import { facesOf, withCardEconomy } from '../cards/faces.ts';
 import { usePlay } from '../cards/play.tsx';
@@ -79,8 +80,8 @@ export function Hud() {
   const navigate = useNavigate();
   const { board, scale } = useBoard();
   const wide = board === 'main';
-  const [face, setFace] = useState<Character | null>(null);
-  const [next, setNext] = useState<string | null>(null);
+  const [readFace, setFace] = useState<Character | null>(null);
+  const [readNext, setNext] = useState<string | null>(null);
   const [tab, setTab] = useState<readonly [number, number, number, number] | null>(null);
   const handButton = useRef<HTMLButtonElement>(null);
   const drawer = useRef<HTMLDivElement>(null);
@@ -113,7 +114,12 @@ export function Hud() {
   if (!play) throw new Error('the HUD is drawn inside the Frame');
   const { handOpen, setHandOpen, armed } = play;
   const signedIn = player.session.signedIn;
-  const feed = useAlertFeed(api, player.session.account, location.path);
+  const boot = useBoot();
+  /* The count comes from the shown page's document when its route loads one, else from boot, then from a read on each move (useAlertFeed). */
+  const { shown } = useRouterInternals();
+  const loader = shown.route?.load !== undefined;
+  const docUnread = loader && shown.ready ? (shown.doc as { readonly unread?: unknown } | null | undefined)?.unread : undefined;
+  const feed = useAlertFeed(api, player.session.account, location.path, { boot: boot?.unread ?? null, loader, doc: typeof docUnread === 'number' ? docUnread : null });
   const unread = unreadText(feed.unread);
 
   /* The welcome is read once by the TipsProvider; the HUD tour's gate is the HUD's acting character (debuted, not retired), narrower than "the account has a character" because the plate and the hand need it. */
@@ -125,22 +131,27 @@ export function Hud() {
   useTip('ghost', aura, { when: signedIn && player.wallet !== null && player.pending !== 0 });
 
   const hudId = hud?.id ?? null;
+  /* Boot's faces are in the first render; a mask boot does not hold (made after it) is read, and a later page asks again. */
+  const bootFace = hudId && boot ? boot.faces.find((f) => f.id === hudId) ?? null : null;
+  const face = bootFace ?? readFace;
   useEffect(() => {
     let live = true;
     setFace(null);
-    if (!hudId) return;
+    if (!hudId || bootFace) return;
     /* No face is the initial in the slot; a later page asks again. */
     void api.characters([hudId]).then((cs) => { if (live) setFace(cs[0] ?? null); }, () => {});
     return () => { live = false; };
-  }, [api, hudId]);
+  }, [api, hudId, bootFace]);
 
+  const booted = boot !== null;
+  const next = booted ? boot.nextSettlementAt : readNext;
   useEffect(() => {
     let live = true;
     setNext(null);
-    if (!signedIn) return;
+    if (!signedIn || booted) return;
     void api.nextSettlementAt().then((at) => { if (live) setNext(at); }, () => {});
     return () => { live = false; };
-  }, [api, signedIn]);
+  }, [api, signedIn, booted]);
 
   /* Once the cascade has played (or at once, under reduced motion), this device has seen the new wallet. */
   const { walletSeen, markWalletSeen } = player;

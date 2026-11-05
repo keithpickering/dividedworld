@@ -2,8 +2,11 @@
  * The app: the backend, the instance, its look and words, and the screens, put together. This and
  * web/src/data/ are the only places the engine's screens and an instance meet.
  */
-import { lazy, Suspense, useEffect, useLayoutEffect, useState } from 'react';
-import type { KayfaApi, ScreenSettings } from '../../engine/ui/data/api.ts';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
+import type { Boot, Estimate, KayfaApi, ScreenSettings, Session } from '../../engine/ui/data/api.ts';
+import { fallbackSettings } from './data/settings.ts';
+import { BootProvider } from '../../engine/ui/boot.tsx';
+import { CannotDisplay } from '../../engine/ui/frame/Unavailable.tsx';
 import { applyAppearance } from '../../engine/ui/appearance.ts';
 import { KayfaProvider } from '../../engine/ui/context.tsx';
 import { BoardScreen } from '../../engine/ui/board/Board.tsx';
@@ -15,11 +18,11 @@ import { keepBoardPlace } from '../../engine/ui/glass/back.ts';
 import { applyGlass, installGlassFonts, type GlassSurface } from '../../engine/ui/glass/index.ts';
 import { Page as GlassPage } from '../../engine/ui/glass/Page.tsx';
 import { IndexScreen } from '../../engine/ui/index/Index.tsx';
-import { PlayerProvider, usePlayer } from '../../engine/ui/player.tsx';
+import { PlayerProvider, usePlayer, type PlayerInitial } from '../../engine/ui/player.tsx';
 import { seasonAt } from '../../engine/ui/season/Season.tsx';
 import { SendToWelcome } from '../../engine/ui/welcome/Welcome.tsx';
 import { SettlementOnLoad } from '../../engine/ui/log/Settlement.tsx';
-import { RouterProvider, useLocation, useNavigate } from '../../engine/ui/router.tsx';
+import { match, RouterProvider, useLocation, useNavigate, useRouterAccount, useRouterInternals } from '../../engine/ui/router.tsx';
 import { Routes, type Route } from '../../engine/ui/routes.tsx';
 import { ThreadScreen } from '../../engine/ui/thread/Thread.tsx';
 import { instance } from '../../instances/divided-world/index.ts';
@@ -138,16 +141,18 @@ function MovedToRankings() {
  * contrast and text size (engine/ui/appearance.ts). The device decides, and the glass is at its
  * defaults, until then and once signed out.
  */
-function Appearance({ api }: { readonly api: KayfaApi }) {
+function Appearance({ api, boot }: { readonly api: KayfaApi; readonly boot: Boot | null }) {
   const { session } = usePlayer();
   useEffect(() => {
     /* The device's look first, on every change of account: the last account's never stands for the next. */
     applyAppearance(document, { theme: 'system', motion: 'system' }, instanceUi.themes, instanceUi.glass);
     if (!session.account) return;
+    /* Boot's preferences are this account's; a session that changed after boot is read again until boot is. */
+    if (boot) { applyAppearance(document, boot.preferences, instanceUi.themes, instanceUi.glass); return; }
     let live = true;
     void api.preferences().then((p) => { if (live) applyAppearance(document, p, instanceUi.themes, instanceUi.glass); }, () => { /* keep the device's choice */ });
     return () => { live = false; };
-  }, [api, session.account]);
+  }, [api, session.account, boot]);
   return null;
 }
 
@@ -198,21 +203,96 @@ function useGlass() {
 /** Read once, at load, while the address still names the fixture. At the board match's fixture a screen's chance is fixed (the Vending sign is its first marquee), so a board is compared to the same screen each time. */
 const FIXED_CHANCE: { readonly random?: () => number } = new URLSearchParams(window.location.search).get('fixture') === 'boards' ? { random: () => 0 } : {};
 
+/** How long after boot and the first load the estimate is waited for before the page draws without it. */
+export const ESTIMATE_WAIT_MS = 600;
+
+/** What the first load read: the session, boot (a session's), the instance's settings, and the estimate if it landed in time. */
+interface FirstLoad {
+  readonly session: Session;
+  readonly boot: Boot | null;
+  readonly settings: ScreenSettings;
+  readonly estimate: Estimate | null;
+  readonly estimateLater?: Promise<Estimate | null>;
+}
+
+/**
+ * The first page draws once (the forum-load plan, Task 12, and the design, section 3): the session, then boot and the estimate together,
+ * the page drawn when boot has landed (and the first route's load, in `FirstScreen`), the estimate waited for 600 ms more and then left
+ * to land on its own. Signed out, `settings()` alone, as before.
+ */
+async function firstLoad(api: KayfaApi): Promise<FirstLoad> {
+  const session = await api.session().catch((): Session => ({ signedIn: false, account: null }));
+  if (!session.signedIn) return { session, boot: null, settings: await api.settings(), estimate: null };
+  const asked = api.estimate().then((e): Estimate | null => e, () => null);
+  const boot = await api.boot();
+  const estimate = await Promise.race([asked, new Promise<'late'>((r) => setTimeout(() => r('late'), ESTIMATE_WAIT_MS))]);
+  return estimate === 'late' ? { session, boot, settings: boot.settings, estimate: null, estimateLater: asked } : { session, boot, settings: boot.settings, estimate };
+}
+
+/**
+ * Inside the providers: boot for the account signed in now, read again when the session's account changes after the first load (a sign-in,
+ * a sign-out, a switch), so the frame and the HUD never show the last account's data, and the router told whose session this is.
+ */
+function Booted({ api, first, children }: { readonly api: KayfaApi; readonly first: Boot | null; readonly children: ReactNode }) {
+  const { session } = usePlayer();
+  const [boot, setBoot] = useState<Boot | null>(first);
+  useRouterAccount(session.account);
+  useEffect(() => {
+    if (!session.signedIn || (boot !== null && boot.account === session.account)) return;
+    let live = true;
+    void api.boot().then((b) => { if (live) setBoot(b); }, () => { /* each piece reads for itself until boot can be read */ });
+    return () => { live = false; };
+  }, [api, session.signedIn, session.account, boot]);
+  /* Boot is drawn only for the account it was read for: after a switch it is null until it is read again. */
+  const mine = boot !== null && session.signedIn && boot.account === session.account ? boot : null;
+  return (
+    <BootProvider boot={mine}>
+      <Appearance api={api} boot={mine} />
+      {children}
+    </BootProvider>
+  );
+}
+
+/** The first route's load: the page waits for it, empty and busy, as it does for boot; a route without a loader needs none. */
+function FirstScreen({ children }: { readonly children: ReactNode }) {
+  const { shown, attach } = useRouterInternals();
+  useLayoutEffect(() => { attach(ROUTES); });
+  const loads = ROUTES.some((r) => r.load !== undefined && match(r.path, shown.location.path) !== null);
+  if (loads && !shown.ready && !shown.failure) return <main className="kb-page" aria-busy="true" />;
+  return <>{children}</>;
+}
+
 export function App({ api }: { readonly api: KayfaApi }) {
   useGlass();
-  const [settings, setSettings] = useState<ScreenSettings | null>(null);
+  const [first, setFirst] = useState<FirstLoad | null>(null);
   const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    void api.settings().then(setSettings, () => setFailed(true));
-  }, [api]);
-  if (failed) return <main className="kb-page"><p className="kb-notice" data-kb-tone="refusal">The board could not be reached. Reload the page to try again.</p></main>;
-  if (!settings) return <main className="kb-page" aria-busy="true" />;
+    let live = true;
+    setFailed(false);
+    void firstLoad(api).then((f) => { if (live) setFirst(f); }, () => { if (live) setFailed(true); });
+    return () => { live = false; };
+  }, [api, attempt]);
+  const retry = useCallback(() => { setFirst(null); setAttempt((n) => n + 1); }, []);
+  if (failed) {
+    /* No boot: the bare page, with the instance's own words and the way to try again. */
+    return (
+      <RouterProvider>
+        <KayfaProvider value={{ api, instance, ui: instanceUi, settings: fallbackSettings, ...FIXED_CHANCE }}>
+          <main className="kb-page"><CannotDisplay address={window.location.pathname + window.location.search} onRetry={retry} /></main>
+        </KayfaProvider>
+      </RouterProvider>
+    );
+  }
+  if (!first) return <main className="kb-page" aria-busy="true" />;
+  const initial: PlayerInitial = { session: first.session, boot: first.boot, estimate: first.estimate, ...(first.estimateLater ? { estimateLater: first.estimateLater } : {}) };
   return (
     <RouterProvider onMove={keepPlace}>
-      <KayfaProvider value={{ api, instance, ui: instanceUi, settings, ...FIXED_CHANCE }}>
-        <PlayerProvider api={api}>
-          <Appearance api={api} />
-          <Shell />
+      <KayfaProvider value={{ api, instance, ui: instanceUi, settings: first.settings, ...FIXED_CHANCE }}>
+        <PlayerProvider api={api} initial={initial}>
+          <Booted api={api} first={first.boot}>
+            <FirstScreen><Shell /></FirstScreen>
+          </Booted>
         </PlayerProvider>
       </KayfaProvider>
     </RouterProvider>

@@ -17,6 +17,7 @@
  */
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { signInHref } from '../account/next.ts';
+import { useBoot } from '../boot.tsx';
 import { useKayfa } from '../context.tsx';
 import type { BoardSummary } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
@@ -30,6 +31,7 @@ import './frame.css';
 export function Frame({ children }: { readonly children: ReactNode }) {
   const { api, ui } = useKayfa();
   const { session } = usePlayer();
+  const boot = useBoot();
   const [open, setOpen] = useState(false);
   const [boards, setBoards] = useState<readonly BoardSummary[]>([]);
   const navId = useId();
@@ -48,19 +50,24 @@ export function Frame({ children }: { readonly children: ReactNode }) {
     main.current?.focus({ preventScroll: true });
   }, [path]);
 
-  /* The boards are read for a session only; signed out the banner holds Index and Sign in. */
+  /*
+   * The boards come from boot, which the first load read once for the frame and the HUD; a session that changed after boot (a sign-in on
+   * this page) reads them itself until boot is read again. Signed out the banner holds Index and Sign in.
+   */
+  const booted = boot !== null;
   useEffect(() => {
     let live = true;
     setBoards([]);
-    if (!session.signedIn) return;
+    if (!session.signedIn || booted) return;
     void api.boards().then((b) => { if (live) setBoards(b); }, () => {});
     return () => { live = false; };
-  }, [api, session.signedIn]);
+  }, [api, session.signedIn, booted]);
+  const shownBoards = boot ? boot.boards : boards;
 
   const here = searchOf(query);
   const links: readonly { readonly to: string; readonly label: string }[] = [
     { to: '/', label: 'Index' },
-    ...boards.map((b) => ({ to: `/b/${b.slug}`, label: b.name })),
+    ...shownBoards.map((b) => ({ to: `/b/${b.slug}`, label: b.name })),
     ...(session.signedIn ? [] : [{ to: signInHref(path, here), label: 'Sign in' }]),
   ];
 

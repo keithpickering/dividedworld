@@ -20,6 +20,7 @@ import { useEffect, useId, useMemo, useRef } from 'react';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import { ThemeRow, MotionRow, TextSizeRow } from '../account/appearanceRows.tsx';
 import { usePreferenceSaves } from '../account/preferences.ts';
+import { useBoot } from '../boot.tsx';
 import { useKayfa } from '../context.tsx';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
@@ -138,15 +139,27 @@ export function WelcomeScreen() {
  * preferences and the roster once, at that first board page: the roster again because a roster that failed to load reads as empty in the
  * player's rows, and a failed read must not send a player who has characters. A read that fails sends nobody.
  */
+const decisions = new WeakMap<object, Set<string>>();
+const decidedFor = (api: object): Set<string> => {
+  const known = decisions.get(api) ?? new Set<string>();
+  decisions.set(api, known);
+  return known;
+};
+
 export function SendToWelcome({ active }: { readonly active: boolean }) {
   const { api } = useKayfa();
   const { session, sessionKnown, loaded, characters } = usePlayer();
   const { path } = useLocation();
   const navigate = useNavigate();
+  const boot = useBoot();
   const account = session.account;
   /* The accounts this session has decided for, the one signed in now (an answer for another is dropped), and whether the player is still on a
    * board page (an answer that arrives after they opened Settings must not pull them away from it). */
-  const decided = useRef<Set<string>>(new Set());
+  /*
+   * Kept for the app's life, not this component's: a move into the glass swaps the shell and mounts this again, and boot's preferences (read
+   * before the welcome was seen) must not decide a second time for the account that has just left the welcome.
+   */
+  const decided = useRef<Set<string>>(decidedFor(api));
   const now = useRef<string | null>(null);
   const onBoard = useRef(active);
   /* A move from a board page to a glass page swaps the shell, so this listener is unmounted and a new one mounted: the old one's answer is dropped. */
@@ -162,9 +175,10 @@ export function SendToWelcome({ active }: { readonly active: boolean }) {
     if (!active || !loaded || decided.current.has(account)) return;
     decided.current.add(account);
     if (characters.length > 0) return;
-    void Promise.all([api.preferences(), api.myCharacters()]).then(([p, mine]) => {
+    /* Boot holds both; a session that changed after boot reads them. */
+    void (boot ? Promise.resolve([boot.preferences, boot.characters] as const) : Promise.all([api.preferences(), api.myCharacters()])).then(([p, mine]) => {
       if (now.current === account && mounted.current && onBoard.current && p.welcomedAt === null && mine.length === 0) navigate(WELCOME_PATH, { replace: true });
     }, () => { /* nobody is sent on a read that failed */ });
-  }, [api, account, sessionKnown, active, loaded, characters.length, path, navigate]);
+  }, [api, boot, account, sessionKnown, active, loaded, characters.length, path, navigate]);
   return null;
 }

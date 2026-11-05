@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ALERT_KINDS, type AlertKind } from '../../rules/alerts.ts';
+import { useBoot } from '../boot.tsx';
 import { useKayfa } from '../context.tsx';
 import { onToastChoice } from './toast-choice.ts';
 
@@ -37,14 +38,17 @@ export function toastsOn(prefs: ToastPrefs | null, kind: AlertKind, defaults: To
  */
 export function useToastKinds(): (kind: AlertKind) => boolean {
   const { api, settings } = useKayfa();
-  const [chosen, setChosen] = useState<ToastPrefs['toasts']>(null);
+  /* Boot's preferences are the account's for this page (the first load read them once); without boot the HUD reads them as before. */
+  const boot = useBoot();
+  const [chosen, setChosen] = useState<ToastPrefs['toasts']>(boot?.preferences.toasts ?? null);
   useEffect(() => {
     let live = true;
     let heard = false;
     const off = onToastChoice((kinds) => { heard = true; if (live) setChosen(kinds); });
-    Promise.resolve().then(() => api.preferences()).then((p) => { if (live && !heard) setChosen(p.toasts ?? null); }, () => {});
+    if (boot) setChosen((c) => (heard ? c : boot.preferences.toasts ?? null));
+    else Promise.resolve().then(() => api.preferences()).then((p) => { if (live && !heard) setChosen(p.toasts ?? null); }, () => {});
     return () => { live = false; off(); };
-  }, [api]);
+  }, [api, boot]);
   const given = settings.toastDefaults;
   const defaults = useMemo<ToastDefaults>(() => {
     const kinds = toastDefaultKinds(given);

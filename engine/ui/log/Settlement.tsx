@@ -23,6 +23,7 @@
  * does not show again after either way out.
  */
 import { useEffect, useState, type CSSProperties, type MouseEvent } from 'react';
+import { useBoot } from '../boot.tsx';
 import { useKayfa } from '../context.tsx';
 import type { Id } from '../data/api.ts';
 import { micros } from '../data/log-page.ts';
@@ -231,6 +232,7 @@ export function SettlementOnLoad({ active }: { readonly active: boolean }) {
   const { api } = useKayfa();
   const { session, sessionKnown } = usePlayer();
   const navigate = useNavigate();
+  const boot = useBoot();
   useEffect(() => {
     const account = session.account;
     if (!sessionKnown || !account) return undefined;
@@ -250,20 +252,21 @@ export function SettlementOnLoad({ active }: { readonly active: boolean }) {
     let live = true;
     const done = () => { if (live) load.looked.add(account); };
     void (async () => {
-      const last = await api.lastSettledAt();
+      /* Boot holds all three answers (the first load read them once); a session that changed after boot asks for each. */
+      const last = boot ? boot.lastSettledAt : await api.lastSettledAt();
       if (!live) return;
       if (!last) return done();
-      const seen = (await api.preferences()).settlementSeen;
+      const seen = boot ? boot.preferences.settlementSeen : (await api.preferences()).settlementSeen;
       if (!live) return;
       if (seen !== null && micros(seen) >= micros(last)) return done();
-      const newest = (await api.log()).settlements[0];
+      const newestEnds = boot ? boot.newestSettlement : (await api.log()).settlements[0]?.endsAt;
       if (!live) return;
       done();
       void api.seeSettlement(last).catch(() => { /* unmarked, it shows again on a later load: no harm */ });
       /* The summary is of a settlement the player has lines in; one that scored nothing of theirs is only marked. */
-      if (newest && micros(newest.endsAt) === micros(last)) navigate('/log/settlement');
+      if (newestEnds && micros(newestEnds) === micros(last)) navigate('/log/settlement');
     })().catch(() => { done(); /* a load the summary could not be read for opens as it would have */ });
     return () => { live = false; };
-  }, [active, api, navigate, session.account, sessionKnown]);
+  }, [active, api, boot, navigate, session.account, sessionKnown]);
   return null;
 }
