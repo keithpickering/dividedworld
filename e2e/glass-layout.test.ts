@@ -270,6 +270,23 @@ describe('the layout judgment', () => {
     expect(refusals({ calms: [{ path: headerPath, element: el, backing: { x: -16, y: 4, width: 422, height: 142 }, clips: [] }] })).toEqual([]);
   });
 
+  test('an unframed class is no panel: a calm cut by the row that holds it is refused, and so is one over a heading beside it', () => {
+    /* The roster's rail has no clip-path and no ground (characters.css), so a calm under it is judged as one in the page: the row that scrolls clips its feather. */
+    const rail = 'main:nth-child(1) > div.kb-class-rail:nth-child(2)';
+    const grid = { path: `${rail} > div.kb-class-grid:nth-child(1)`, rect: { x: 0, y: 200, width: 390, height: 300 }, x: true, y: true };
+    const tabs = { path: `${grid.path} > div.kb-carousel-tablist.kb-calm:nth-child(1)`, element: { x: 0, y: 232, width: 390, height: 236 }, backing: { x: -32, y: 200, width: 454, height: 300 }, clips: [grid] };
+    const cut = refusals({ calms: [tabs] });
+    expect(cut.some((o) => o.includes('calm cut') && o.includes('div.kb-class-grid'))).toBe(true);
+    /* A framed panel (a class that names one) stays excused, so the exemption is the panel's and not the geometry's. */
+    const framed = 'main:nth-child(1) > div.kb-hud:nth-child(2)';
+    const inHud = { ...tabs, path: `${framed} > div.kb-carousel-tablist.kb-calm:nth-child(1)`, clips: [{ ...grid, path: `${framed} > div.kb-class-grid:nth-child(1)` }] };
+    expect(refusals({ calms: [inHud] })).toEqual([]);
+    /* And a heading the rail's calm lies on, beside it in the page, is refused as over other content. */
+    const head = { path: 'main:nth-child(1) > h2:nth-child(1)', rect: { x: 16, y: 190, width: 200, height: 30 }, fontSize: 30, longestWord: 100, wraps: false, textWidth: 150, column: 358 };
+    const over = refusals({ blocks: [...clean.blocks, head], calms: [{ ...tabs, clips: [] }] });
+    expect(over.some((o) => o.includes('calm over other content') && o.includes('h2'))).toBe(true);
+  });
+
   /* A heading that stands in no calm, 20px under the header's foot, inside the header's 16px feather. */
   const heading = { path: 'main:nth-child(1) > h2:nth-child(2)', rect: { x: 16, y: 138, width: 200, height: 30 }, fontSize: 30, longestWord: 100, wraps: false, textWidth: 150, column: 358 };
   const calmed = { path: headerPath, element: el, backing: { x: 0, y: 4, width: 390, height: 142 }, clips: [] };

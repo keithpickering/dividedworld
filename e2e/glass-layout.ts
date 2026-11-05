@@ -233,7 +233,7 @@ export function judgeLayout(facts: LayoutFacts): string[] {
   /* The framed panel a path lies in: the path up to its first element whose classes name one (a class that only starts with the name is not one). */
   const panelOf = (path: string): string | null => {
     const segs = path.split(' > ');
-    const i = segs.findIndex((g) => /\.(?:kb-hud|kb-hand-drawer|kb-glass-dialog|kb-class-rail)(?![\w-])/.test(g));
+    const i = segs.findIndex((g) => /\.(?:kb-hud|kb-hand-drawer|kb-glass-dialog)(?![\w-])/.test(g));
     return i < 0 ? null : segs.slice(0, i + 1).join(' > ');
   };
   const inPanel = (path: string, panel: string | null) => panel !== null && (path === panel || path.startsWith(`${panel} > `));

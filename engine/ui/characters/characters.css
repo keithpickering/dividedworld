@@ -69,6 +69,14 @@
   max-width: 52em;
 }
 
+/*
+ * The row clips at its own left edge (it scrolls), and the tablist's calm stands at that edge: its feather would be cut on a straight line
+ * there, so it has none. The cards in it carry their own panels.
+ */
+.kb-carousel-tablist.kb-calm {
+  --kb-calm-feather: 0px;
+}
+
 /* The tablist is a row of its own beside New character, at the row's gap; the wrappers that only group draw no box. */
 .kb-carousel-tablist {
   /* A grid of one row, not a flex line: the layout check's rows of controls are button rows, and a card whose words wrap is no split label. */
@@ -437,19 +445,20 @@
 }
 
 /*
- * The row and its count and arrows. The row's block padding holds the chosen card's glow, which the
- * scroll would clip; the rail gives that room back above and below, so the cards stand the board's
- * 10px under the legend. (The margins are the rail's, not the row's, so none collapses through it.)
+ * The row and its count and arrows. The row's block padding holds the chosen card's glow and the feather of a calm on a card, which
+ * the scroll would clip (a calm's backing reaches its feather past its box: 32px, so the padding is no less); the rail gives that room
+ * back above and below, so the cards stand the board's 10px under the legend. (The margins are the rail's, not the row's, so none
+ * collapses through it.) The rail is no framed panel: it has no clip-path and no ground, and the layout check does not treat it as one.
  */
 .kb-class-rail {
   position: relative;
-  margin-block: calc(10px - 30px) -30px;
+  margin-block: calc(10px - var(--kb-glass-calm-feather)) calc(-1 * var(--kb-glass-calm-feather));
 }
 
 .kb-class-grid {
   display: flex;
   gap: 14px;
-  padding-block: 30px;
+  padding-block: var(--kb-glass-calm-feather);
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scroll-snap-type: x mandatory;
@@ -583,6 +592,11 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: 10px;
+}
+
+/* The title's calm stands 17px (the card's border and padding) in from the card, and a first card is the row's edge, which clips: its feather ends there. */
+.kb-class-title.kb-calm {
+  --kb-calm-feather: min(var(--kb-glass-calm-feather), 17px);
 }
 
 /* On the phone the title has its calm's box, which the radio (top right) must not lie under: the box ends before it. */
