@@ -24,7 +24,7 @@
   --kb-hud-bg: #fff;
   --kb-overlay: rgb(0 0 0 / 0.5);
   /*
-   * The vignette over the board (frame.css): a color and an opacity at the window's sides, and a second color and opacity at the
+   * The vignette over the board (frame.css): a color and an opacity at the window's corners, and a second color and opacity at the
    * foot above the HUD. These defaults draw nothing; an instance's theme gives the look. Each color is paired with its own opacity
    * (a number from 0 to 1) so a theme changes how much without restating which.
    */
@@ -32,7 +32,9 @@
   --kb-vignette-edge: 0;
   --kb-vignette-foot-color: transparent;
   --kb-vignette-foot: 0;
-  /* The vignette's mask reads alpha only, so its opaque stop is black in every mode and a theme has no reason to set it (a transparent value would empty the mask). */
+  /* How much of that strength the vignette keeps where it lies over the board's own column, from 0 (none) to 1 (all of it). The default draws nothing there. */
+  --kb-vignette-column: 0;
+  /* The vignette's mask reads alpha only, so its opaque stop is black in every mode, scaled by --kb-vignette-column inside the column and a theme has no reason to set it (a transparent value would empty the mask). */
   --kb-vignette-mask: #000;
 
   --kb-font-body: Verdana, Geneva, sans-serif;

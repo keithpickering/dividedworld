@@ -75,11 +75,12 @@ test.describe('at the column\'s own width and either side of it', () => {
 });
 
 /**
- * The vignette (the glass-polish design's section 8) is violet laid toward the edges of the window, strongest at the corners and the
- * foot, and the board's text column is untouched, so the board's contrast is what it was. Measured in the browser, with the HUD
- * hidden so the foot above it is read (it is opaque, z-index 30, and would cover the foot's samples): a strip inside the column is
- * the same pixels with the vignette drawn as with it hidden, a strip in the gutter is not, a gutter corner is shifted more than the
- * gutter's vertical middle, and under High contrast it is not drawn at all. Both board modes, and a window where the gutter is narrow.
+ * The vignette (the glass-polish design's section 8, as the owner changed it: it lies over the '03 board itself, drawn back so it does
+ * not encroach on the posts) is violet laid toward the edges of the window, strongest at the corners and the foot, and held to a
+ * fraction of that strength where it lies over the column. Measured in the browser, with the HUD hidden so the foot above it is read
+ * (the HUD is opaque, z-index 30, and would cover the foot's samples): a gutter strip is shifted by the vignette and a gutter corner
+ * more than the gutter's vertical middle; the foot is drawn over the posts too, but less than in the gutter; under High contrast none
+ * is drawn; and every piece of text under it keeps 4.5:1 against the ground the vignette leaves it, in both board modes at three widths.
  */
 const meanShift = (page: Page, a: Buffer, b: Buffer) => page.evaluate(async ([x, y]) => {
   const px = async (png: string) => {
@@ -120,7 +121,11 @@ for (const scheme of ['light', 'dark'] as const) {
         await vignette.evaluate((e) => { (e as HTMLElement).style.display = 'none'; });
         const bare = await Promise.all(all.map(([x, y]) => strip(page, x, y)));
         const shift = await Promise.all(all.map((_, i) => meanShift(page, drawn[i]!, bare[i]!)));
-        inside.forEach((at, i) => expect(shift[i], `inside the column at ${at}`).toBe(0));
+        /* The foot lies over the posts, at a fraction of its gutter strength. */
+        const footIn = inside.findIndex(([x, y]) => x === xs[1] && y === 800);
+        const footGutter = all.findIndex(([x, y]) => x === 0 && y === height - W);
+        expect(shift[footIn], 'the foot over the posts').toBeGreaterThan(0);
+        expect(shift[footIn], 'the foot over the posts against the gutter\'s').toBeLessThan(shift[footGutter]!);
         gutter.forEach((at, i) => expect(shift[inside.length + i], `in the gutter at ${at}`).toBeGreaterThan(0));
         if (width === 1440) {
           const [top, middle, foot] = shift.slice(inside.length) as [number, number, number];
@@ -130,6 +135,54 @@ for (const scheme of ['light', 'dark'] as const) {
         await vignette.evaluate((e) => { (e as HTMLElement).style.display = ''; });
         await page.evaluate(() => document.documentElement.setAttribute('data-kb-contrast', 'high'));
         expect(await vignette.evaluate((e) => getComputedStyle(e).display)).toBe('none');
+      });
+    });
+  }
+}
+
+/* The worst contrast found under the vignette, read by the run that reports it. */
+for (const scheme of ['light', 'dark'] as const) {
+  for (const width of [1440, 800, 390]) {
+    test.describe(`text under the vignette, ${scheme}, ${width}px wide`, () => {
+      test.use({ viewport: { width, height: 900 }, reducedMotion: 'reduce', colorScheme: scheme, bypassCSP: true });
+
+      test('keeps 4.5:1 against the ground the vignette leaves it', async ({ page }) => {
+        await openThread(page);
+        await page.addStyleTag({ content: '.kb-hud { visibility: hidden !important; }' });
+        /* Every text-bearing element in the window, with its ink; then the same window with the ink hidden, so the pixels read are the ground under the vignette. */
+        const boxes = await page.evaluate(() => {
+          const out: { x: number; y: number; color: string; text: string }[] = [];
+          for (const el of document.querySelectorAll('body *')) {
+            if (![...el.childNodes].some((n) => n.nodeType === 3 && n.textContent!.trim())) continue;
+            const r = el.getBoundingClientRect();
+            const cs = getComputedStyle(el);
+            if (r.width < 4 || r.height < 4 || r.bottom > innerHeight || r.top < 0 || cs.visibility === 'hidden' || cs.display === 'none') continue;
+            for (const f of [0.25, 0.5, 0.75]) out.push({ x: Math.round(r.left + r.width * f), y: Math.round(r.top + r.height / 2), color: cs.color, text: (el.textContent ?? '').trim().slice(0, 24) });
+          }
+          return out;
+        });
+        expect(boxes.length).toBeGreaterThan(20);
+        await page.addStyleTag({ content: '*, *::before, *::after { color: transparent !important; -webkit-text-fill-color: transparent !important; text-decoration-color: transparent !important; text-shadow: none !important; caret-color: transparent !important; }' });
+        const shot = (await page.screenshot({ animations: 'disabled' })).toString('base64');
+        const worst = await page.evaluate(async ([png, list]) => {
+          const bitmap = await createImageBitmap(await (await fetch(`data:image/png;base64,${png}`)).blob());
+          const g = new OffscreenCanvas(bitmap.width, bitmap.height).getContext('2d')!;
+          g.drawImage(bitmap, 0, 0);
+          const lin = (v: number) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+          const lum = (r: number, gg: number, b: number) => 0.2126 * lin(r) + 0.7152 * lin(gg) + 0.0722 * lin(b);
+          let low = { ratio: 99, text: '', at: '' };
+          for (const b of JSON.parse(list) as { x: number; y: number; color: string; text: string }[]) {
+            const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(b.color);
+            if (!m) continue;
+            const d = g.getImageData(b.x, b.y, 1, 1).data;
+            const [l1, l2] = [lum(+m[1]!, +m[2]!, +m[3]!), lum(d[0]!, d[1]!, d[2]!)];
+            const ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+            if (ratio < low.ratio) low = { ratio, text: b.text, at: `${b.x},${b.y} on rgb(${d[0]},${d[1]},${d[2]}) in ${b.color}` };
+          }
+          return low;
+        }, [shot, JSON.stringify(boxes)] as const);
+        console.log(`worst contrast under the vignette, ${scheme} ${width}: ${worst.ratio.toFixed(2)} ("${worst.text}" at ${worst.at})`);
+        expect(worst.ratio, `"${worst.text}" at ${worst.at}`).toBeGreaterThanOrEqual(4.5);
       });
     });
   }
