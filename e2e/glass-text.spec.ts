@@ -356,7 +356,9 @@ test.describe('the picked slot and the armed card in forced colors', () => {
       const highlight = getComputedStyle(probe).color;
       probe.remove();
       const ring = getComputedStyle(el, '::after');
-      return { style: ring.borderTopStyle, width: ring.borderTopWidth, highlight: ring.borderTopColor === highlight };
+      /* In the element's own px: a slot's card is drawn at the machine's `zoom` (vending.css), which scales its 3px ring with it (the browser snaps the scaled width, so whole px). */
+      const zoom = (el as Element & { currentCSSZoom?: number }).currentCSSZoom ?? 1;
+      return { style: ring.borderTopStyle, width: `${Math.round(parseFloat(ring.borderTopWidth) / zoom)}px`, highlight: ring.borderTopColor === highlight };
     });
     expect(await ring('button.kb-vending-slot[aria-pressed="true"]')).toEqual({ style: 'solid', width: '3px', highlight: true });
     expect((await ring('button.kb-vending-slot[aria-pressed="false"]')).style).not.toBe('solid');
