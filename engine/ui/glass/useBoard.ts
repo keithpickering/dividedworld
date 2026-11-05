@@ -51,7 +51,7 @@ function read(at: number, size: number): BoardLayout {
 export function useBoard(): BoardLayout {
   const { ui } = useKayfa();
   const at = boardSwitch(ui.glass);
-  /* The player's text size, as the root is marked (appearance.ts): past 150% the page is one column. */
+  /* The player's text size, as the root is marked (appearance.ts): from 150% up the page is one column. */
   const size = useTextSize();
   const [layout, setLayout] = useState(() => read(at, size));
 

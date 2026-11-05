@@ -10,7 +10,7 @@
  * tokens: 1440 times the smallest phone size over the smallest Main board size, worked out from the
  * instance's sizes and never picked by hand.
  *
- * The player's text size folds it too: past 150% the glass is the Phone board's at any width.
+ * The player's text size folds it too: from 150% up the glass is the Phone board's at any width.
  *
  * Every text size the HUD and the glass pages draw at the Main board's layout is a size token or a
  * fixed size larger than the smallest token, so the smallest token is the smallest text; the

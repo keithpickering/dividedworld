@@ -9,7 +9,7 @@
  *
  * The words stand in calms (calm.css): the section and the sections' navigation each carry one, as
  * the board draws its two calms behind them; only the Anton headings stand on the full smoke, at
- * large-text size. On the Phone board's layout, which is also the glass's one column past 150% text
+ * large-text size. On the Phone board's layout, which is also the glass's one column at 150% text and up
  * (engine/ui/glass/board.ts), the rows are one column at the phone's sizes and controls 48px tall.
  */
 
@@ -366,7 +366,7 @@
   color: var(--kb-glass-text-2);
 }
 
-/* ---- the Phone board's layout, and the one column past 150% text ---- */
+/* ---- the Phone board's layout, and the one column at 150% text and up ---- */
 
 :where(:root[data-kb-layout='phone']) .kb-acct {
   padding-top: 16px;
