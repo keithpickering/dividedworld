@@ -32,7 +32,7 @@ begin
     'settings', jsonb_build_object('systemEnabled', true, 'rosterRecentExcluded', 1,
       'seasonLength', jsonb_build_object('unit', 'day', 'count', 1),
       'systemLines', jsonb_build_object('bossFarewell', jsonb_build_array('Farewell from {boss}.'), 'bossArrival', jsonb_build_array('Hello from {boss}.'))),
-    'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+    'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'sn-a',
       'staff', jsonb_build_array(
         jsonb_build_object('key', 'sn-a', 'name', 'Sn A', 'kind', 'boss', 'title', 'Boss', 'signature', 'a'),

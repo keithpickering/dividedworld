@@ -26,7 +26,7 @@ end $$;
 do $$
 declare
   seed jsonb := jsonb_build_object(
-    'settings', jsonb_build_object('systemEnabled', true), 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+    'settings', jsonb_build_object('systemEnabled', true), 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'ps-boss',
       'staff', jsonb_build_array(jsonb_build_object('key', 'ps-boss', 'name', 'Scale Boss', 'kind', 'boss', 'title', 'Boss', 'signature', 'Hi')),
       'firstStaff', '[]'::jsonb,

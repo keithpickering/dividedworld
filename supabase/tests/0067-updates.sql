@@ -33,7 +33,7 @@ end $$;
 -- ---- The seed makes the developer and its thread, once, and only when its seed has one ----
 do $$
 declare
-  seed jsonb := jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+  seed jsonb := jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'developer', jsonb_build_object('name', 'Gabe', 'title', 'Made this. Sorry.', 'avatar', 'gabe'));
   dev uuid;
   ut uuid;
@@ -90,7 +90,7 @@ declare
   bob_rows jsonb;
   stored integer := (select count(*) from alerts);
 begin
-  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'developer', jsonb_build_object('name', 'Gabe', 'title', 'Made this. Sorry.')));
   select (value #>> '{}')::uuid into ut from settings where key = 'updatesThread';
   insert into admins (account) values (adm);
@@ -160,7 +160,7 @@ declare
   said text;
   was integer;
 begin
-  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'developer', jsonb_build_object('name', 'Gabe', 'title', 'Made this. Sorry.', 'avatar', 'gabe')));
   select (value #>> '{}')::uuid into ut from settings where key = 'updatesThread';
   select id into dev from characters where staff_kind = 'developer';
@@ -213,7 +213,7 @@ declare
   act_id uuid;
   was integer := (select count(*) from acts where kind = 'update');
 begin
-  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'developer', jsonb_build_object('name', 'Gabe', 'title', 'Made this. Sorry.')));
   insert into admins (account) values (adm);
   perform tests.become(adm);
@@ -263,7 +263,7 @@ declare
   said text;
   stmt text;
 begin
-  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'developer', jsonb_build_object('name', 'Gabe', 'title', 'Made this. Sorry.')));
   select id into dev from characters where staff_kind = 'developer';
   select (value #>> '{}')::uuid into ut from settings where key = 'updatesThread';
@@ -346,7 +346,7 @@ declare
   n integer;
   was integer;
 begin
-  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'developer', jsonb_build_object('name', 'Gabe', 'title', 'Made this. Sorry.', 'avatar', 'gabe')));
   select (value #>> '{}')::uuid into ut from settings where key = 'updatesThread';
   select id into dev from characters where staff_kind = 'developer';
@@ -464,7 +464,7 @@ begin
     delete from characters where staff_kind = 'developer';
     delete from settings where key = 'updatesThread';
     begin
-      perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+      perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
         'developer', jsonb_build_object('name', 'Gabe', 'title', 'Made this. Sorry.', 'avatar', 'gabe')));
     exception when others then
       said := sqlerrm;

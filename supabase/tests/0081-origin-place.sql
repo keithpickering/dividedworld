@@ -132,7 +132,7 @@ begin
   if got is distinct from jsonb_build_object('kind', 'play', 'card', 'sweetie', 'on', p_place) then raise exception 'a legacy numbered card is not a play: %', got; end if;
 
   -- An update: its headline, and the thread it opens is listed on the players' first board and is not "#N in Updates".
-  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'developer', jsonb_build_object('name', 'Op Gabe', 'title', 'Made this.', 'avatar', 'gabe')));
   select id into dev from characters where staff_kind = 'developer';
   perform set_config('kayfabb.update_writer', 'on', true);

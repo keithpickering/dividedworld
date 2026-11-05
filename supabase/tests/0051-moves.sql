@@ -50,7 +50,7 @@ end $$;
 -- ---- The catalogs: seeded by seed_instance, upserted on a reseed, and none without a `system` ----
 do $$
 declare
-  seed jsonb := jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+  seed jsonb := jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'system', jsonb_build_object('staff', '[]'::jsonb, 'firstStaff', '[]'::jsonb,
       'moves', jsonb_build_array(jsonb_build_object('key', 'renameBoard', 'structural', true), jsonb_build_object('key', 'lockThread', 'structural', false)),
       'demands', jsonb_build_array(jsonb_build_object('key', 'postsOnBoard'), jsonb_build_object('key', 'crossQuote'))));
