@@ -134,6 +134,14 @@ describe('the meter', () => {
     expect(now()).toBe(0);
   });
 
+  test('after a failure, an instant move that reports landed flashes full', () => {
+    const r = view();
+    move(r, ended('failed', 1), '/b/x');
+    move(r, ended('landed', 2), '/b/y');
+    expect(now()).toBe(100);
+    expect(screen.getByRole('status').textContent).toBe('Page loaded');
+  });
+
   test('a tracked read runs the meter without the Opening text', () => {
     const r = view();
     move(r, { pending: null, tracking: 1, outcome: null, track: (p) => p });

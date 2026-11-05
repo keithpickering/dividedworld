@@ -596,7 +596,7 @@ describe('an account change while a page is shown or opening', () => {
     const length = window.history.length;
     view.setAccount('p2');
     expect(load).toHaveBeenCalledTimes(2);
-    expect(screen.getByText('thread a: A-p1')).toBeInTheDocument();
+    expect(screen.queryByText(/A-p1/)).toBeNull();
     await answer(calls[1], 'A-p2');
     expect(screen.getByText('thread a: A-p2')).toBeInTheDocument();
     expect(window.history.length).toBe(length);
@@ -647,10 +647,12 @@ describe('a link starts its load early', () => {
     act(() => { vi.advanceTimersByTime(200); });
     expect(load).not.toHaveBeenCalled();
   });
-  test('focus starts one, and pointerdown starts one', () => {
+  test('focus rests 100 ms like the pointer, and pointerdown starts one at once', () => {
     vi.useFakeTimers();
     const { load, link } = setupLinks();
     fireEvent.focus(link('thread'));
+    expect(load).not.toHaveBeenCalled();
+    act(() => { vi.advanceTimersByTime(100); });
     expect(load).toHaveBeenCalledTimes(1);
     cleanup();
     const again = setupLinks();
@@ -668,5 +670,101 @@ describe('a link starts its load early', () => {
     fireEvent.pointerDown(link('thread'), { ctrlKey: true });
     act(() => { vi.advanceTimersByTime(300); });
     expect(load).not.toHaveBeenCalled();
+  });
+});
+
+describe('from the Task 11 review', () => {
+  beforeEach(() => { log.length = 0; });
+  afterEach(() => { vi.useRealTimers(); });
+
+  test('an account change blanks the earlier account\'s document at once, and the re-read is not a move', async () => {
+    const { load, calls } = manualLoader();
+    const told: string[] = [];
+    const routes: Route[] = [{ path: '/', render: () => <Index /> }, { path: '/t/:id', load, render: (p, doc) => <p>thread {p.id}: {String(doc)}</p> }];
+    let setId: (id: string | null) => void = () => undefined;
+    function Shell() { const [id, set] = useState<string | null>('p1'); setId = set; useRouterAccount(id); return <><Probe /><Routes routes={routes} /></>; }
+    window.history.replaceState(null, '', '/');
+    render(<KayfaProvider value={kayfa}><RouterProvider onMove={(f, t) => told.push(`${f?.path ?? '-'}>${t.path}`)}><Shell /></RouterProvider></KayfaProvider>);
+    act(() => nav('/t/a'));
+    await answer(calls[0], 'A-p1');
+    expect(told).toEqual(['->/', '/>/t/a']);
+    act(() => setId('p2'));
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText(/A-p1/)).toBeNull();
+    expect(navigation.pending).not.toBeNull();
+    await answer(calls[1], 'A-p2');
+    expect(screen.getByText('thread a: A-p2')).toBeInTheDocument();
+    expect(told).toHaveLength(2);
+  });
+  test('Escape does not stop the re-read of a blanked page', async () => {
+    const { load, calls } = manualLoader();
+    const view = mount(load, { account: 'p1' });
+    act(() => nav('/t/a'));
+    await answer(calls[0], 'A1');
+    view.setAccount('p2');
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    expect(calls[1]!.signal.aborted).toBe(false);
+    expect(navigation.pending).not.toBeNull();
+  });
+  test('after a failure, a cached Back and a move to a page with no loader report landed', async () => {
+    const { load, calls } = manualLoader();
+    mount(load);
+    act(() => nav('/t/a'));
+    await answer(calls[0], 'A1');
+    act(() => nav('/t/b'));
+    await act(async () => { calls[1]!.reject(new Error('down')); });
+    expect(navigation.outcome?.kind).toBe('failed');
+    const seq = navigation.outcome!.seq;
+    act(() => window.history.back());
+    await waitFor(() => expect(screen.getByText('thread a: A1')).toBeInTheDocument());
+    expect(navigation.outcome?.kind).toBe('landed');
+    expect(navigation.outcome!.seq).toBeGreaterThan(seq);
+    act(() => nav('/plain/x'));
+    expect(navigation.outcome!.seq).toBeGreaterThan(seq + 1);
+  });
+  test('the first account drops every prefetch made before it was known, but not the load that is pending', () => {
+    const { load, calls } = manualLoader();
+    window.history.replaceState(null, '', '/t/a');
+    const routes: Route[] = [{ path: '/t/:id', load, render: (p, doc) => <p>thread {p.id}: {String(doc)}</p> }];
+    function Account() { useRouterAccount('p1'); return null; }
+    function Shell() { const [on, set] = useState(false); return <><Probe /><button onClick={() => set(true)}>know</button>{on && <Account />}<Routes routes={routes} /></>; }
+    render(<KayfaProvider value={kayfa}><RouterProvider><Shell /></RouterProvider></KayfaProvider>);
+    act(() => prefetch('/t/b'));
+    expect(calls).toHaveLength(2);
+    act(() => screen.getByText('know').click());
+    expect(calls[1]!.signal.aborted).toBe(true);
+    expect(calls[0]!.signal.aborted).toBe(false);
+  });
+  test('prefetches are capped at twenty, the oldest dropped, and one older than thirty seconds is swept', async () => {
+    vi.useFakeTimers();
+    const { load, calls } = manualLoader();
+    mount(load);
+    for (let i = 0; i < 21; i++) act(() => prefetch(`/t/p${i}`));
+    expect(calls).toHaveLength(21);
+    expect(calls[0]!.signal.aborted).toBe(true);
+    expect(calls[1]!.signal.aborted).toBe(false);
+    await act(async () => { calls[20]!.resolve('x'); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(31_000); });
+    act(() => prefetch('/t/p20'));
+    expect(calls).toHaveLength(22);
+  });
+  test('a link\'s focus rests before it reads, and blur clears it; only the primary button\'s pointerdown reads', () => {
+    vi.useFakeTimers();
+    const { load, calls } = manualLoader();
+    window.history.replaceState(null, '', '/');
+    const routes: Route[] = [{ path: '/', render: () => <p>home</p> }, { path: '/t/:id', load, render: () => <p>t</p> }];
+    render(<KayfaProvider value={kayfa}><RouterProvider><Link to="/t/a">one</Link><Link to="/t/b">two</Link><Routes routes={routes} /></RouterProvider></KayfaProvider>);
+    fireEvent.focus(screen.getByRole('link', { name: 'one' }));
+    act(() => { vi.advanceTimersByTime(60); });
+    fireEvent.blur(screen.getByRole('link', { name: 'one' }));
+    fireEvent.focus(screen.getByRole('link', { name: 'two' }));
+    act(() => { vi.advanceTimersByTime(60); });
+    fireEvent.blur(screen.getByRole('link', { name: 'two' }));
+    act(() => { vi.advanceTimersByTime(300); });
+    expect(calls).toHaveLength(0);
+    fireEvent.pointerDown(screen.getByRole('link', { name: 'one' }), { button: 2 });
+    expect(calls).toHaveLength(0);
+    fireEvent.pointerDown(screen.getByRole('link', { name: 'one' }), { button: 0 });
+    expect(calls).toHaveLength(1);
   });
 });

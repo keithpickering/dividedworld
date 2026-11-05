@@ -135,12 +135,13 @@ const LOAD_LIMIT_MS = 20_000;
 const PREFETCH_KEPT_MS = 30_000;
 const ENTRY_KEPT_MS = 5 * 60_000;
 const ENTRIES_MAX = 20;
+const PREFETCHES_MAX = 20;
 
-interface Pending { readonly id: number; readonly to: string; readonly controller: AbortController; readonly startedAt: number; account: string | null | undefined; readonly popped: boolean; readonly initial: boolean }
+interface Pending { readonly id: number; readonly to: string; readonly controller: AbortController; readonly startedAt: number; account: string | null | undefined; readonly popped: boolean; readonly initial: boolean; readonly silent: boolean; readonly joined: string | null }
 interface Prefetched { readonly promise: Promise<unknown>; readonly controller: AbortController; readonly timer: ReturnType<typeof setTimeout>; settledAt: number | null }
 interface Entry { doc: unknown; scrollY: number; at: number }
 type Outcome = { readonly kind: 'doc'; readonly doc: unknown } | { readonly kind: 'failure'; readonly failure: Failure } | { readonly kind: 'aborted' };
-interface Request { readonly full: string; readonly replace?: boolean; readonly state?: unknown; readonly popped: boolean; readonly kb: string | null; readonly initial?: boolean }
+interface Request { readonly full: string; readonly replace?: boolean; readonly state?: unknown; readonly popped: boolean; readonly kb: string | null; readonly initial?: boolean; readonly silent?: boolean }
 
 const keyOf = (route: RouteLike, params: Params, query: URLSearchParams, path: string): string => (route.key ? route.key(params, query) : path + searchOf(query));
 
@@ -246,7 +247,7 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     const before = req.popped ? cache.current.get(entry)?.scrollY : undefined;
     if (ok) remember(entry, outcome.doc);
     if (before !== undefined) restore.current = before;
-    commit({ location, doc: ok ? outcome.doc : undefined, ready: true, failure: ok ? null : outcome.failure, route: found.route, key: ok ? keyOf(found.route, found.params, location.query, location.path) : null }, entry, !req.initial);
+    commit({ location, doc: ok ? outcome.doc : undefined, ready: true, failure: ok ? null : outcome.failure, route: found.route, key: ok ? keyOf(found.route, found.params, location.query, location.path) : null }, entry, !req.initial && !req.silent);
   }, [w, leave, remember, commit]);
 
   const startLoad = useCallback((req: Request, found: { readonly route: RouteLike; readonly params: Params }) => {
@@ -256,9 +257,9 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     const id = ++sequence.current;
     const controller = new AbortController();
     const startedAt = Date.now();
-    pendingRef.current = { id, to: req.full, controller, startedAt, account: accountRef.current, popped: req.popped, initial: !!req.initial };
-    setPending({ to: req.full, startedAt });
     const joined = takePrefetch(address);
+    pendingRef.current = { id, to: req.full, controller, startedAt, account: accountRef.current, popped: req.popped, initial: !!req.initial, silent: !!req.silent, joined: joined ? prefetchKey(address) : null };
+    setPending({ to: req.full, startedAt });
     const promise = joined ?? invoke(found.route, url, found.params, controller.signal);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const outcome = new Promise<Outcome>((resolve) => {
@@ -309,7 +310,7 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
   /* Escape stops a pending load, as IE's Stop did. It is not the router's in a text field or over a modal, and it is not consumed. */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || !pendingRef.current) return;
+      if (e.key !== 'Escape' || !pendingRef.current || pendingRef.current.silent) return;
       const t = e.target;
       if (t instanceof Element && t.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
       if (w.document.querySelector('[aria-modal="true"], dialog[open]')) return;
@@ -332,6 +333,7 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
         leave();
         restore.current = kb ? cache.current.get(kb)?.scrollY ?? null : null;
         commit({ location, doc: same ? sh.doc : undefined, ready: true, failure: null, route: found?.route ?? null, key }, kb);
+        report('landed');
         return;
       }
       const cached = kb ? cache.current.get(kb) : undefined;
@@ -339,13 +341,14 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
         leave();
         restore.current = cached.scrollY;
         commit({ location, doc: cached.doc, ready: true, failure: null, route: found.route, key }, kb);
+        report('landed');
         return;
       }
       startLoad({ full: w.location.pathname + w.location.search + w.location.hash, popped: true, kb }, found);
     };
     w.addEventListener('popstate', onPop);
     return () => w.removeEventListener('popstate', onPop);
-  }, [w, routeFor, cancelPending, leave, commit, startLoad]);
+  }, [w, routeFor, cancelPending, leave, commit, startLoad, report]);
 
   const navigate = useCallback((to: string, options?: { readonly replace?: boolean; readonly state?: unknown }) => {
     // An in-app navigation never leaves the site: an address that resolves elsewhere (a stray `next`,
@@ -372,7 +375,8 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     leave();
     remember(entry, same ? sh.doc : undefined);
     commit({ location: read(w), doc: same ? sh.doc : undefined, ready: true, failure: null, route: found?.route ?? null, key }, entry);
-  }, [w, routeFor, startLoad, cancelPending, leave, remember, commit]);
+    report('landed');
+  }, [w, routeFor, startLoad, cancelPending, leave, remember, commit, report]);
 
   const retry = useCallback(() => {
     const l = shownRef.current.location;
@@ -386,6 +390,14 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     if (!found?.route.load) return;
     const address = url.pathname + url.search;
     if (takePrefetch(address)) return;
+    /* Entries answered and left unused for the kept time go, and the oldest past the cap are given up. */
+    for (const [k, e] of prefetched.current) {
+      if (e.settledAt !== null && Date.now() - e.settledAt >= PREFETCH_KEPT_MS) { clearTimeout(e.timer); prefetched.current.delete(k); }
+    }
+    while (prefetched.current.size >= PREFETCHES_MAX) {
+      const [k, e] = prefetched.current.entries().next().value as [string, Prefetched];
+      clearTimeout(e.timer); e.controller.abort(); prefetched.current.delete(k);
+    }
     const key = prefetchKey(address);
     const controller = new AbortController();
     const promise = invoke(found.route, url, found.params, controller.signal);
@@ -396,9 +408,11 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     promise.then(() => { clearTimeout(timer); entry.settledAt = Date.now(); }, () => { clearTimeout(timer); if (prefetched.current.get(key) === entry) prefetched.current.delete(key); });
   }, [w, routeFor, takePrefetch]);
 
-  const dropPrefetches = useCallback(() => {
-    for (const e of prefetched.current.values()) { clearTimeout(e.timer); e.controller.abort(); }
-    prefetched.current.clear();
+  const dropPrefetches = useCallback((except?: string | null) => {
+    for (const [k, e] of prefetched.current) {
+      if (k === except) continue;
+      clearTimeout(e.timer); e.controller.abort(); prefetched.current.delete(k);
+    }
   }, []);
   const beginInitial = useCallback(() => {
     if (initialStarted.current || shownRef.current.ready || pendingRef.current) return;
@@ -418,8 +432,8 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     accountRef.current = id;
     if (first) {
       if (pendingRef.current) pendingRef.current.account = id;
-      /* What was prefetched before the account was known may carry no one's data, or another's. */
-      if (!pendingRef.current) dropPrefetches();
+      /* What was prefetched before the account was known may carry no one's data, or another's; the load that joined one keeps it. */
+      dropPrefetches(pendingRef.current?.joined);
       return;
     }
     const was = pendingRef.current;
@@ -431,13 +445,17 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     /* A Back or Forward that was loading is asked again for the address the browser is at, under the new account. */
     if (was?.popped) {
       const found = routeFor(w.location.pathname);
-      if (found?.route.load) { startLoad({ full: w.location.pathname + w.location.search + w.location.hash, popped: true, kb: unwrap(w.history.state).kb }, found); return; }
+      if (found?.route.load) { startLoad({ full: w.location.pathname + w.location.search + w.location.hash, popped: true, kb: unwrap(w.history.state).kb, silent: true }, found); return; }
     }
     /* The shown document was read for the earlier account: read it again for this one, in place. */
     const sh = shownRef.current;
     const found = sh.ready ? routeFor(sh.location.path) : null;
-    if (found?.route.load) startLoad({ full: addressOf(sh.location) + (sh.location.hash ? `#${sh.location.hash}` : ''), replace: true, state: sh.location.state, popped: false, kb: null }, found);
-  }, [w, cancelPending, dropPrefetches, beginInitial, routeFor, startLoad]);
+    if (found?.route.load) {
+      /* Not drawn under the new account until the read lands; a read is not a move, so onMove is not told. */
+      commit({ ...sh, doc: undefined, ready: false, failure: null }, entryRef.current, false);
+      startLoad({ full: addressOf(sh.location) + (sh.location.hash ? `#${sh.location.hash}` : ''), replace: true, state: sh.location.state, popped: false, kb: null, silent: true }, found);
+    }
+  }, [w, cancelPending, dropPrefetches, beginInitial, routeFor, startLoad, commit]);
 
   /* Leaving the page: nothing stays out, and a second run of the effects (StrictMode) starts the first load again. */
   useEffect(() => () => {
@@ -479,15 +497,16 @@ export function useNavigate(): Router['navigate'] {
 }
 
 /** A link that moves within the app without a reload; a modified click opens as the browser would. */
-export function Link({ to, replace, state, onClick, onPointerEnter, onPointerLeave, onPointerDown, onFocus, ...rest }: { readonly to: string; readonly replace?: boolean; readonly state?: unknown } & AnchorHTMLAttributes<HTMLAnchorElement>) {
+export function Link({ to, replace, state, onClick, onPointerEnter, onPointerLeave, onPointerDown, onFocus, onBlur, ...rest }: { readonly to: string; readonly replace?: boolean; readonly state?: unknown } & AnchorHTMLAttributes<HTMLAnchorElement>) {
   const navigate = useNavigate();
   const prefetch = usePrefetch();
-  const rest100 = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(rest100.current), []);
-  /* A link that would be left to the browser (a target, a download, another site) is not read early. */
+  /* The pointer's rest and the keyboard's focus each wait REST_MS, so holding Tab through a list reads nothing. */
+  const pointerRest = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const focusRest = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => { clearTimeout(pointerRest.current); clearTimeout(focusRest.current); }, []);
+  /* A link that would be left to the browser (a target, a download) is not read early; the router's own prefetch refuses another site. */
   const early = () => {
     if (rest.target || rest.download !== undefined) return;
-    if (new URL(to, window.location.href).origin !== window.location.origin) return;
     prefetch(to);
   };
   const click = (e: MouseEvent<HTMLAnchorElement>) => {
@@ -501,10 +520,11 @@ export function Link({ to, replace, state, onClick, onPointerEnter, onPointerLea
     <a
       href={to}
       onClick={click}
-      onPointerEnter={(e) => { onPointerEnter?.(e); clearTimeout(rest100.current); rest100.current = setTimeout(early, REST_MS); }}
-      onPointerLeave={(e) => { onPointerLeave?.(e); clearTimeout(rest100.current); }}
-      onPointerDown={(e) => { onPointerDown?.(e); if (!(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)) early(); }}
-      onFocus={(e) => { onFocus?.(e); early(); }}
+      onPointerEnter={(e) => { onPointerEnter?.(e); clearTimeout(pointerRest.current); pointerRest.current = setTimeout(early, REST_MS); }}
+      onPointerLeave={(e) => { onPointerLeave?.(e); clearTimeout(pointerRest.current); }}
+      onPointerDown={(e) => { onPointerDown?.(e); if (e.button === 0 && !(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)) early(); }}
+      onFocus={(e) => { onFocus?.(e); clearTimeout(focusRest.current); focusRest.current = setTimeout(early, REST_MS); }}
+      onBlur={(e) => { onBlur?.(e); clearTimeout(focusRest.current); }}
       {...rest}
     />
   );
