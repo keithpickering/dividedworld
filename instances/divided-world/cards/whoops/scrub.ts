@@ -118,13 +118,13 @@ export function fits(strokes: readonly Stroke[]): boolean {
 
 /* --------------------------------------------------------------------- a layer's ink ---- */
 
-/** The spacing of the points a layer's remaining ink is counted at, in widths (10px at the reference width, under half the brush). */
+/** The spacing of the points a layer's remaining ink is counted at, in widths (12.5px at the reference width, under half the brush). */
 const CELL = px(12.5);
 
 /** How many points' answers a layer keeps of its splat's outline: a post's lines sampled across (a few thousand), with room to spare. */
 const MEMO_MOST = 20_000;
 
-/** The side of the squares `has` files a stroke's segments under, in widths (about 40px at the reference width: a few cells, a little over a brush). */
+/** The side of the squares `has` files a stroke's segments under, in widths (about 50px at the reference width: a few cells, a little over a brush). */
 const BUCKET = px(50);
 /** A bucket's key: its column and row (a stroke is held to the card's bounds, so both are small) as one number. */
 const bucketKey = (i: number, j: number) => (j + 4096) * 8192 + (i + 4096);
