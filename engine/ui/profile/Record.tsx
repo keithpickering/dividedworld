@@ -7,7 +7,8 @@
 import { useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Act, ActKind, CharacterCounts, Id } from '../data/api.ts';
-import { Ago, PageLinks, SignInPrompt, useSignedIn } from '../mini.tsx';
+import { Ago, PageLinks, useSignedIn } from '../mini.tsx';
+import { FrontDoor } from '../front-door/FrontDoor.tsx';
 import { Link, useLocation } from '../router.tsx';
 import { RECORD_KINDS, RECORD_LABELS, RECORD_PAGE, SEASONS_SHOWN, actRow, mergeWindow, newest, playLinks, recordKind, revealRow, seasonRow, turnLinks, turnRow, type RecordKind, type RecordRow, type Words } from './record.ts';
 import { useCharacter } from './useCharacter.ts';
@@ -77,7 +78,7 @@ export function RecordScreen({ id }: { readonly id: Id }) {
   }, [api, id, kind, page, found.status, instance, settings.postsPerPage]);
 
   if (signedIn === null || found.status === 'loading') return <div className="kb-record" aria-busy="true" />;
-  if (!signedIn) return <div className="kb-record"><SignInPrompt /></div>;
+  if (!signedIn) return <FrontDoor />;
   if (found.status === 'failed') return <div className="kb-record"><p className="kb-notice" data-kb-tone="refusal">The record could not be loaded. Reload the page to try again.</p></div>;
   if (found.status === 'missing') return <NotFound />;
   const name = found.character.name;

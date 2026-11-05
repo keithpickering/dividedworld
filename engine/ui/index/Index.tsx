@@ -9,7 +9,8 @@
 import { useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { BoardSummary, Character, Id } from '../data/api.ts';
-import { Ago, Mini, SignInPrompt, useSignedIn } from '../mini.tsx';
+import { Ago, Mini, useSignedIn } from '../mini.tsx';
+import { FrontDoor } from '../front-door/FrontDoor.tsx';
 import { spanWords } from '../characters/format.ts';
 import { PresenceBox } from '../presence/PresenceBox.tsx';
 import { Link } from '../router.tsx';
@@ -38,7 +39,7 @@ export function IndexScreen() {
   }, [api, signedIn]);
 
   if (signedIn === null) return <div className="kb-index" aria-busy="true" />;
-  if (!signedIn) return <div className="kb-index"><h1 className="kb-heading">Index</h1><SignInPrompt /></div>;
+  if (!signedIn) return <FrontDoor />;
   if (state.status === 'loading') return <div className="kb-index" aria-busy="true" />;
   if (state.status === 'failed') return <div className="kb-index"><p className="kb-notice" data-kb-tone="refusal">The boards could not be loaded. Reload the page to try again.</p></div>;
 

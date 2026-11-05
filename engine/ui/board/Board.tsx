@@ -24,7 +24,8 @@ import { OriginLink } from '../spin/OriginLink.tsx';
 import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
 import { createTallies, type Tallies } from '../thread/tallies.ts';
 import type { SpinOrigin } from '../thread/Post.tsx';
-import { Ago, Mini, SignInPrompt, pageList, useSignedIn } from '../mini.tsx';
+import { Ago, Mini, pageList, useSignedIn } from '../mini.tsx';
+import { FrontDoor } from '../front-door/FrontDoor.tsx';
 import { Link, useLocation } from '../router.tsx';
 import { MoveNotice } from './MoveNotice.tsx';
 import { PresenceBox } from '../presence/PresenceBox.tsx';
@@ -143,7 +144,7 @@ export function BoardScreen({ slug }: { readonly slug: string }) {
   }, [readyPage]);
 
   if (signedIn === null) return <div className="kb-board" aria-busy="true" />;
-  if (!signedIn) return <div className="kb-board"><SignInPrompt /></div>;
+  if (!signedIn) return <FrontDoor />;
   if (state.status === 'loading') return <div className="kb-board" aria-busy="true" />;
   if (state.status === 'failed') return <div className="kb-board"><p className="kb-notice" data-kb-tone="refusal">The board could not be loaded. Reload the page to try again.</p></div>;
   if (state.status === 'missing') {

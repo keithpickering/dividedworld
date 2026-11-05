@@ -26,6 +26,15 @@ const open = (fake: Fake, id: string, query = '') => renderIn(fake, <RecordScree
 const dataRows = () => screen.getAllByRole('row').slice(1);
 
 describe('the full public record', () => {
+  test('a signed-out visitor sees the front door, not the record', async () => {
+    const fake = buildWorld();
+    const w = world(fake);
+    fake.signInAs(null);
+    open(fake, w.spritey);
+    expect(await screen.findByRole('heading', { level: 1, name: 'How do we explain this' })).toBeInTheDocument();
+    expect(screen.queryByText(/The board is for players\./u)).toBeNull();
+  });
+
   test('pages twenty to a page, newest first, and says which page', async () => {
     const fake = buildWorld();
     const w = world(fake);

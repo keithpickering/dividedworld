@@ -214,11 +214,12 @@ describe('pages and permalinks', () => {
     expect(screen.getByRole('link', { name: 'Back to the index' })).toBeInTheDocument();
   });
 
-  test('a visitor who is not signed in is asked to sign in', async () => {
+  test('a visitor who is not signed in sees the front door', async () => {
     const w = world(3);
     w.fake.signInAs(null);
     open(w);
-    expect(await screen.findByRole('link', { name: 'Sign in' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'How do we explain this' })).toBeInTheDocument();
+    expect(screen.queryByText(/The board is for players\./u)).toBeNull();
   });
 });
 
@@ -1352,7 +1353,7 @@ describe('reading when it cannot be sent', () => {
     asked.mockClear();
     act(() => { w.fake.signInAs(null); });
     await debounced();
-    await screen.findByRole('link', { name: 'Sign in' });
+    await screen.findByRole('heading', { level: 1, name: 'How do we explain this' });
     expect(sent[0]!.slice(0, 2)).toEqual([w.thread, 7]);
     expect(asked).toHaveBeenCalled();
   });
