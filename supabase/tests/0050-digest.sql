@@ -37,6 +37,12 @@ begin
   if bad is distinct from 'demand, expires_at, go_live_at, held_at, id, kind, landed_act, params, staff, structural, why' then
     raise exception 'the digest role reads these columns of queued_moves: %', bad;
   end if;
+  -- A handover (0086): the role reads its public columns, one by one, and not `note`, an error's words.
+  select string_agg(attname, ', ' order by attname) into bad from pg_attribute
+  where attrelid = 'season_handovers'::regclass and attnum > 0 and not attisdropped and has_column_privilege('kayfabb_digest', 'season_handovers', attname, 'select');
+  if bad is distinct from 'boss, how, landed_at, outgoing, season' then
+    raise exception 'the digest role reads these columns of season_handovers: %', bad;
+  end if;
   if has_column_privilege('kayfabb_digest', 'queued_moves', 'held_by', 'select') then raise exception 'the digest role reads queued_moves.held_by'; end if;
   -- No my_* view: they read auth.uid(), and the role is nobody.
   select string_agg(relname, ', ') into bad from pg_class
@@ -47,7 +53,7 @@ begin
   where relnamespace = 'public'::regnamespace and relkind in ('v', 'r') and has_table_privilege('kayfabb_digest', oid, 'insert,update,delete,truncate,references,trigger');
   if bad is not null then raise exception 'the digest role writes %', bad; end if;
   -- The role's reach, whole: it cannot create in the schema (the owner change takes the grant and gives it back), no client
-  -- role can become it, and the functions it may execute are exactly the eight reviewed here: a new grant fails this.
+  -- role can become it, and the functions it may execute are exactly the eleven reviewed here: a new grant fails this.
   if has_schema_privilege('kayfabb_digest', 'public', 'create') then raise exception 'the digest role can create in public'; end if;
   foreach t in array array['anon', 'authenticated', 'service_role'] loop
     if pg_has_role(t, 'kayfabb_digest', 'member') then raise exception '% is a member of the digest role', t; end if;
@@ -57,8 +63,10 @@ begin
     and not exists (select 1 from pg_depend d where d.classid = 'pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e');
   if fns is distinct from (select string_agg(x, ', ' order by x) from unnest(array[
       'setting(text)', 'span_interval(jsonb)', 'standings_season()', 'current_boss()', 'demand_progress(uuid)', 'demand_progress_or_error(uuid)',
-      'system_digest(timestamp with time zone,timestamp with time zone)', 'staff_career(text)']) x) then
-    raise exception 'the functions the digest role may execute are not the reviewed eight: %', fns;
+      'system_digest(timestamp with time zone,timestamp with time zone)', 'staff_career(text)',
+      -- The pool's signals (0086): the two functions it owns, and the folds it matches names with.
+      'pool_signals(timestamp with time zone,timestamp with time zone)', 'pool_named(timestamp with time zone,timestamp with time zone)', 'name_skeleton(text)']) x) then
+    raise exception 'the functions the digest role may execute are not the reviewed eleven: %', fns;
   end if;
   if (select r.rolcanlogin or r.rolsuper or r.rolbypassrls from pg_roles r where r.rolname = 'kayfabb_digest') then raise exception 'the digest role logs in, is a superuser or bypasses row-level security'; end if;
 
@@ -99,7 +107,8 @@ begin
 
   -- A later function given the role's ownership fails here, to be reviewed (0046 added the demand evaluator).
   select string_agg(p.oid::regprocedure::text, ', ') into bad from pg_proc p join pg_roles r on r.oid = p.proowner
-  where r.rolname = 'kayfabb_digest' and p.oid::regprocedure::text <> all (array['system_digest(timestamp with time zone,timestamp with time zone)', 'demand_progress(uuid)', 'demand_progress_or_error(uuid)']);
+  where r.rolname = 'kayfabb_digest' and p.oid::regprocedure::text <> all (array['system_digest(timestamp with time zone,timestamp with time zone)', 'demand_progress(uuid)', 'demand_progress_or_error(uuid)',
+    'pool_signals(timestamp with time zone,timestamp with time zone)', 'pool_named(timestamp with time zone,timestamp with time zone)']);
   if bad is not null then raise exception 'functions owned by the digest role that this file has not reviewed: %', bad; end if;
   if exists (select 1 from pg_class where relowner = 'kayfabb_digest'::regrole) or exists (select 1 from pg_type where typowner = 'kayfabb_digest'::regrole and typtype <> 'c') then
     raise exception 'the digest role owns an object that is not a function';

@@ -76,6 +76,8 @@ export const defaults: Settings = deepFreeze<Settings>({
   notesRead: 12,
   /** A starting point: the pool plays common cards only. */
   poolCardRarityMost: 'common',
+  /** A starting point: a persona's priority reads its last four weeks of posts. */
+  poolPriorityDays: 28,
   /** A board's name is at most 60 characters, whoever proposes it. */
   boardNameMaxLength: 60,
   /** A starting point: no move runs longer than six weeks. */
