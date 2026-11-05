@@ -566,3 +566,48 @@ begin
   perform tests.unbecome();
   if has_table_privilege('anon', 'my_cards_ended', 'select') or not has_table_privilege('authenticated', 'my_cards_ended', 'select') then raise exception 'my_cards_ended is a signed-in read'; end if;
 end $$;
+
+-- ============================================================================ Task 6 follow-up: a moment carries the card_ends that came before it ====
+-- play_moment's layers also carry each card_end of the play or of one of its layers that was written at or before the moment, so a
+-- reader (momentParts) names an ended layer instead of drawing it as live; one written after the moment is not there, because the
+-- play was live then. The plays above leave out a play ended at or before the moment. Red before this section of the migration: no
+-- moment carries a card_end, and the later moment lists the ended play above.
+do $$
+declare
+  caster uuid := (select id from characters where name = 'Ce Caster');
+  author uuid := (select id from characters where name = 'Ce Author');
+  t uuid := tests.thread('Card end moments');
+  p uuid := tests.post(author, t, 'Moments.');
+  first_wh uuid := tests.act(caster, 'card', t, '{"card": "ce-wh", "layer": 1}', p, now() - interval '2 hours');
+  reach_play uuid;
+  early uuid := tests.act(caster, 'card', t, '{"card": "ce-wh", "layer": 2}', p, now() - interval '1 hour');
+  later uuid; got_early jsonb; got_later jsonb; ends_early jsonb; ends_later jsonb; end_id uuid;
+begin
+  insert into acts (character, kind, thread, target_act_id, payload, created_at)
+  values (caster, 'card', t, p, jsonb_build_object('card', 'ce-wh', 'reach', 'character', 'character', author), now() - interval '90 minutes') returning id into reach_play;
+  insert into play_reach (play, reach, character, ends_at) values (reach_play, 'character', author, now() + interval '1 day');
+  -- A moment taken while both are live: it must show the reach play above and no end.
+  got_early := play_moment(early);
+  perform pg_temp.end_play(first_wh);
+  perform pg_temp.end_play(reach_play);
+  later := tests.act(caster, 'card', t, '{"card": "ce-wh", "layer": 3}', p, now() + interval '1 minute');
+  end_id := (select id from acts where kind = 'card_end' and target_act_id = first_wh);
+  got_early := play_moment(early);
+  got_later := play_moment(later);
+  ends_early := jsonb_path_query_array(got_early -> 'layers', '$[*].act ? (@.kind == "card_end")');
+  ends_later := jsonb_path_query_array(got_later -> 'layers', '$[*].act ? (@.kind == "card_end")');
+  if jsonb_array_length(ends_early) <> 0 then raise exception 'a moment before the reversal carries no card_end: %', ends_early; end if;
+  if jsonb_path_query_array(got_early -> 'above', '$[*].play') is distinct from jsonb_build_array(reach_play) then
+    raise exception 'a play ended after the moment was live then, so it is above: %', got_early -> 'above';
+  end if;
+  if jsonb_array_length(ends_later) <> 1 or (ends_later #>> '{0,id}')::uuid <> end_id or (ends_later #>> '{0,target_act_id}')::uuid <> first_wh then
+    raise exception 'the later moment carries the layer''s card_end: %', ends_later;
+  end if;
+  if jsonb_path_query_array(got_later -> 'layers', '$[*].act.id') is distinct from jsonb_build_array(later, first_wh, early, end_id) then
+    raise exception 'the later moment''s layers are the play, its layers and the end: %', got_later -> 'layers';
+  end if;
+  if (got_later #> '{layers,3}') is distinct from jsonb_build_object('act', got_later #> '{layers,3,act}', 'state', null, 'savedAt', null) then
+    raise exception 'a card_end rides as a layer with no state: %', got_later #> '{layers,3}';
+  end if;
+  if jsonb_array_length(got_later -> 'above') <> 0 then raise exception 'a play ended before the moment is no longer above: %', got_later -> 'above'; end if;
+end $$;

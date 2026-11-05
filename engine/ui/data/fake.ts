@@ -926,6 +926,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const edited = version.kind === 'edit' ? version : null;
     const byLanding = (a: ActRec, b: ActRec) => a.at - b.at || a.order - b.order;
     const board = threads.get(post.thread)!.board;
+    const wanted = new Set([id, ...(m?.layers ?? []).map((l) => l.layer)]);
+    /* A play an admin had ended by the moment (a card_end at or before it) was not live then; one ended later was. */
+    const endedBy = (p: Id) => [...acts.values()].some((a) => a.kind === 'card_end' && a.target === p && a.at <= play.at);
     return {
       version: {
         ...publicAct(post), currentPayload: version.payload, editedAt: edited ? iso(edited.at) : null,
@@ -935,8 +938,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         { act: publicAct(play), state: null },
         ...(m?.layers ?? []).map((l) => ({ rec: acts.get(l.layer)!, saved: l.saved })).sort((a, b) => byLanding(a.rec, b.rec))
           .map(({ rec, saved }) => ({ act: publicAct(rec), state: saved ? { state: saved.state, savedAt: iso(saved.at) } : null })),
+        /* The card_end of the play or of one of its layers written at or before the moment (momentParts counts `<=` too), as 0092 gives. */
+        ...[...acts.values()].filter((a) => a.kind === 'card_end' && a.target !== null && wanted.has(a.target) && a.at <= play.at)
+          .sort(byLanding).map((a) => ({ act: publicAct(a), state: null })),
       ],
-      above: [...reachPlays].filter(([p, r]) => r.endsAt > play.at && !reversedPlays.has(p) && acts.get(p)!.at < play.at
+      above: [...reachPlays].filter(([p, r]) => r.endsAt > play.at && !endedBy(p) && acts.get(p)!.at < play.at
           && (r.reach === 'character' ? r.target === post.character : r.reach === 'thread' ? r.target === post.thread : r.target === board))
         .sort(([a], [b]) => byLanding(acts.get(a)!, acts.get(b)!))
         .map(([p, r]) => ({ play: p, reach: r.reach, target: r.target, endsAt: iso(r.endsAt), act: publicAct(acts.get(p)!) })),

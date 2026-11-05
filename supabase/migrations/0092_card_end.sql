@@ -924,3 +924,76 @@ grant select on my_cards_ended to authenticated;
 -- Where a database's default privileges do not hand service_role execute on new functions, that call is refused; granted by name here
 -- so it never depends on them. It reads public facts only (a target's live effects, no owner), as for authenticated.
 grant execute on function card_target_reach(text, uuid, uuid) to service_role;
+
+-- ============================================================================ Task 6 follow-up: a moment carries the card_ends that came before it ====
+--
+-- play_moment (0072), redefined whole with `create or replace`; what changed:
+--   layers  after the play's own Act and the layer rows, each card_end (as acts_public shows it, with state and savedAt null) whose target
+--           is the moment's play or one of its layers and whose created_at is at or before the moment play's created_at. The reader
+--           (momentParts, engine/ui/cards/Effects.tsx) takes `<=` too, so a play an admin ended at the very instant of the moment counts as
+--           ended there and the two agree on the boundary. A card_end after the moment is left out: the play was live then, and is drawn so.
+--   above   leaves out a play beyond a post that a card_end ended at or before the moment (`<=`, as above); one ended later was live then.
+-- Everything else is as 0072 wrote it. Cost: one probe of acts_one_card_end (target_act_id) per layer or play above, each bounded as the
+-- layers and the plays above already are.
+create or replace function play_moment(play uuid) returns jsonb
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare
+  k acts%rowtype;
+  on_post acts%rowtype;
+  v acts%rowtype;
+  recorded boolean;
+  on_board uuid;
+  grace interval := coalesce(span_interval((select g.value from settings g where g.key = 'editGrace')), interval '0');
+  -- A play beyond a post that began before this one ends at most its reach's reachLasts after it began (play_card), so before this
+  -- play's time plus that bound: each probe of play_reach reads the plays live then and none begun since, however old the play is.
+  -- (An instance that lowers reachLasts later bounds an older moment by the lower span; a play that outlived it is left off that
+  -- moment's list of plays above, which is words on the frame.)
+  bound record;
+begin
+  select * into k from acts a where a.id = play_moment.play;
+  if k.id is not null and k.kind in ('card', 'set', 'spring') and k.target_act_id is not null and coalesce(k.payload ->> 'reach', 'post') = 'post' then
+    select * into on_post from acts a where a.id = k.target_act_id;
+  end if;
+  if on_post.kind is distinct from 'post' then raise exception 'that is no play on a post' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  select * into v from acts a where a.id = (select m.post_version from play_moments m where m.play = k.id);
+  recorded := v.id is not null;
+  if not recorded then
+    select * into v from acts e where e.kind = 'edit' and e.target_act_id = on_post.id and e.created_at <= k.created_at
+    order by e.created_at desc, e.id desc limit 1;
+    if v.id is null then v := on_post; end if;
+  end if;
+  select t.board into on_board from threads t where t.id = on_post.thread;
+  -- An instance seeded without reachLasts (settings_reach_hold makes it whole once written) bounds nothing, rather than reading none.
+  select coalesce(span_interval(setting('reachLasts') -> 'character'), interval '1000 months') as character,
+         coalesce(span_interval(setting('reachLasts') -> 'thread'), interval '1000 months') as thread,
+         coalesce(span_interval(setting('reachLasts') -> 'board'), interval '1000 months') as board into bound;
+  return jsonb_build_object(
+    'version', act_projection(on_post.id) || jsonb_build_object(
+      'current_payload', v.payload,
+      'edited_at', case when v.kind = 'edit' then v.created_at end,
+      'shown_edited_at', case when v.kind = 'edit' and v.created_at > on_post.created_at + grace then v.created_at end),
+    -- The rows' order is for a stable answer only: a caught play and its spring share a transaction's time, so readers order the layers
+    -- themselves (inPlayOrder) and find a caught play's spring by its set, never by this order.
+    'layers', jsonb_build_array(jsonb_build_object('act', act_projection(k.id), 'state', null, 'savedAt', null))
+      || coalesce((select jsonb_agg(jsonb_build_object('act', to_jsonb(a), 'state', l.state, 'savedAt', l.saved_at) order by a.created_at, a.id)
+                   from play_moment_layers l join acts_public a on a.id = l.layer where l.play = k.id), '[]'::jsonb)
+      || coalesce((select jsonb_agg(jsonb_build_object('act', to_jsonb(e), 'state', null, 'savedAt', null) order by e.created_at, e.id)
+                   from acts_public e
+                   where e.kind = 'card_end' and e.created_at <= k.created_at
+                     and e.target_act_id in (select k.id union all select l.layer from play_moment_layers l where l.play = k.id)), '[]'::jsonb),
+    'above', coalesce((
+      select jsonb_agg(jsonb_build_object('play', r.play, 'reach', r.reach, 'target', coalesce(r.character, r.thread, r.board), 'ends_at', r.ends_at, 'act', to_jsonb(a))
+                       order by a.created_at, a.id)
+      from (
+        select x.* from play_reach x where x.character = on_post.character and x.ends_at > k.created_at and x.ends_at <= k.created_at + bound.character
+        union all
+        select x.* from play_reach x where x.thread = on_post.thread and x.ends_at > k.created_at and x.ends_at <= k.created_at + bound.thread
+        union all
+        select x.* from play_reach x where x.board = on_board and x.ends_at > k.created_at and x.ends_at <= k.created_at + bound.board
+      ) r join acts_public a on a.id = r.play
+      where a.created_at < k.created_at
+        and not exists (select 1 from acts e where e.kind = 'card_end' and e.target_act_id = r.play and e.created_at <= k.created_at)), '[]'::jsonb),
+    'recorded', recorded);
+end $$;
+revoke execute on function play_moment(uuid) from public, anon, authenticated;
+grant execute on function play_moment(uuid) to authenticated;

@@ -6,7 +6,9 @@
  */
 import { describe, expect, test } from 'vitest';
 import type { Instance, Settings } from '../../rules/types.ts';
-import { landsOn, type CardEffect, type CardTarget } from '../../rules/cards.ts';
+import { landsOn, type CardEffect, type CardRules, type CardTarget } from '../../rules/cards.ts';
+import { momentParts } from '../cards/Effects.tsx';
+import type { CardUi } from '../cards/types.ts';
 import type { Act, Refusal, Tally } from './api.ts';
 import { TIP_KEYS } from '../tips/keys.ts';
 import { createFake, FAKE_BACKEND_MARKER, TEST_CODE } from './fake.ts';
@@ -1006,6 +1008,36 @@ describe('what a list row shows', () => {
     /* The first play's own moment is unchanged by what landed over it. */
     expect((await fake.playMoment(first))!.layers.map((l) => l.act.id)).toEqual([first]);
     expect((await fake.playMoment(first))!.version.currentPayload).toEqual({ body: 'a post to ruin' });
+  });
+
+  test('a moment carries the end of a play an admin had ended by then, and lists no such play above; one ended after it is live in it', async () => {
+    const { fake, anaFace, boFace, thread } = world();
+    const boss = fake.seed.account('boss', { admin: true });
+    const mine = must(await fake.post(thread, anaFace, 'a post to ruin', null));
+    const first = fake.seed.card(boFace, mine.id, 'whoops', { layer: 1 });
+    fake.clock.advance(1000);
+    const onAna = fake.seed.reach(boFace, 'character', anaFace, 'glint', { post: mine.id });
+    fake.clock.advance(1000);
+    const early = fake.seed.card(boFace, mine.id, 'whoops', { layer: 2 });
+    fake.clock.advance(1000);
+    fake.signInAs(boss);
+    const endFirst = must(await fake.reverseCard(first));
+    must(await fake.reverseCard(onAna));
+    fake.clock.advance(1000);
+    const later = fake.seed.card(boFace, mine.id, 'whoops', { layer: 3 });
+    const before = (await fake.playMoment(early))!;
+    expect(before.layers.map((l) => l.act.id)).toEqual([early, first]);
+    expect(before.above.map((a) => a.play)).toEqual([onAna]);
+    const after = (await fake.playMoment(later))!;
+    expect(after.layers.map((l) => l.act.id)).toEqual([later, first, early, endFirst.act]);
+    expect(after.layers.at(-1)).toEqual({ act: await fake.act(endFirst.act), state: null });
+    expect(after.above).toEqual([]);
+    /* The boundary is momentParts' own: an end at or before the moment names the play, and the layer is not drawn. */
+    const rule = { key: 'whoops', name: 'Whoops!', stack: 3, validateState: (s: unknown) => ({ ok: true as const, value: s }) } as unknown as CardRules;
+    const ui = [{ key: 'whoops', Effect: () => null }] as unknown as CardUi[];
+    expect(momentParts(before, [rule], ui, () => '').drawn.map((p) => p.id).sort()).toEqual([early, first].sort());
+    expect(momentParts(after, [rule], ui, () => '').drawn.map((p) => p.id).sort()).toEqual([early, later].sort());
+    expect(momentParts(after, [rule], ui, () => '').named).toEqual(['Whoops!, ended by an admin']);
   });
 
   test('a moment is a play on a post\'s alone, and a play the fake was given no snapshot for answers from its time, by itself', async () => {
