@@ -275,6 +275,9 @@ for (const [size, widths] of TEXT_SIZES) {
         test.use({ viewport });
         for (const s of [...PAGES, ...OVERLAYS].filter((x) => !x.signedOut).map(onTheAccount)) {
           test(`${s.name}: every line of glass text is legible on its smoke`, async ({ page }) => {
+            /* Every line's pixels are read, against its smoke and under each preference: the Strategy Guide at 200% takes about 20s
+               alone, and with tests spread fully parallel (playwright.config.ts) several of these share a machine. 90s still ends a hang. */
+            test.setTimeout(90_000);
             await chooseTextSize(page, size);
             await open(page, s);
             await expect(page.locator('html')).toHaveAttribute('data-kb-text-size', size);
