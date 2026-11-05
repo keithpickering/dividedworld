@@ -29,8 +29,13 @@
 }
 
 .kb-logo {
-  /* The site's name is one line; the banner wraps what is beside it, and the name never wraps in a column too narrow for ten of its ems. */
-  white-space: nowrap;
+  /*
+   * The site's name is one line wherever it fits: the banner wraps what is beside it first, and a flex line breaks before it shrinks an
+   * item. Only when the name alone is wider than the banner does it fold, at its spaces, as the 2003 board's folds at a large text size
+   * (the name at 1.5625rem is 50px of type at 200% text, wider than a 390px phone); `anywhere` keeps one long word from running past
+   * the window.
+   */
+  overflow-wrap: anywhere;
   font: bold var(--kb-size-logo) / 1.2 var(--kb-font-mono);
   letter-spacing: 0.06em;
   text-transform: uppercase;

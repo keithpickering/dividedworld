@@ -135,7 +135,17 @@
   font-weight: bold;
 }
 
-@media (max-width: 40em) {
+/*
+ * The list folds into cards when its column is narrow for the text: a media query's em is the browser's 16px and ignores the player's
+ * text size, so at 200% text a tablet's 800px column was still laid out as a five-column table, whose fixed columns (in ems of the
+ * text) left the title column 0px wide. A container query's rem follows the root's font size, so the fold moves with the text: 40rem
+ * of a column that is 96% of the window is the 640px window it folds at at 100%, and 1280px at 200%.
+ */
+.kb-thread-list-fold {
+  container-type: inline-size;
+}
+
+@container (max-width: calc(40rem * 0.96)) {
   .kb-thread-list,
   .kb-thread-list tbody,
   .kb-thread-list tr,
