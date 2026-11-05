@@ -152,7 +152,7 @@ test.describe('high contrast', () => {
    * Signed out no account's preference applies; the screens are read under high contrast's mark as
    * Settings would set it, so a player who signs out and back in meets the same ground.
    */
-  for (const path of ['/sign-in', '/register']) {
+  for (const [path, name] of [['/sign-in', 'Sign in'], ['/register', 'Register']] as const) {
     test(`${path}, signed out: every line of glass text stands on solid ground under high contrast`, async ({ page }) => {
       await page.goto('/');
       await page.waitForFunction(() => '__kbFake' in globalThis);
@@ -160,7 +160,8 @@ test.describe('high contrast', () => {
       /* The page has seen the sign-out when it asks for a sign-in: a navigation pushed before that is lost to the session change. */
       await expect(page.getByRole('region', { name: 'Game HUD' }).getByRole('link', { name: 'Sign in' })).toBeVisible();
       await page.evaluate((p) => { history.pushState(null, '', p); window.dispatchEvent(new PopStateEvent('popstate')); }, path);
-      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+      /* The page asked for, by its own title: the first page's h1 is there before the pushed one is drawn. */
+      await expect(page.getByRole('heading', { level: 1, name, exact: true })).toBeVisible();
       await page.evaluate(() => document.documentElement.setAttribute('data-kb-contrast', 'high'));
       expect(await linesOffGround(page)).toEqual([]);
     });

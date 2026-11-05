@@ -730,7 +730,8 @@
 :where(:root[data-kb-layout='phone']) .kb-hud-door-title {
   font-size: var(--kb-glass-size-phone-display);
   /*
-   * The title's line is one em tall, and the display face's glyph box is half an em taller, a quarter above and a quarter below, so the box
+   * The title's line is one em tall, and the display face's glyph box (Anton: ascent about 1.18em and descent about 0.33em) is about half an
+   * em taller, a quarter above and a quarter below, so the box
    * reaches up past the line. The glass clips at its top (overflow: clip), and the bar's top padding takes up only the first 8px of that
    * reach: at 200% text the reach is 10px, and the box stood above the glass. The margin gives it the rest, and is nothing where the
    * padding is enough.
