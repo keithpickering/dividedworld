@@ -43,7 +43,7 @@
  * staff character's. A card's target is the post the pick replies to, or the persona's own post, chosen from the trigger, never from who
  * owns anything.
  */
-import { atOrBelow, playOf } from '../../../engine/rules/cards.ts';
+import { atOrBelow, playOf, staffConfigOf } from '../../../engine/rules/cards.ts';
 import type { Instance, Persona } from '../../../engine/rules/types.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import {
@@ -226,7 +226,7 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
   const offerable = settings.pool.cardRarityMost;
   const cardsOnOffer = tuned.cards.filter((c) => {
     const play = playOf(c);
-    return (play === 'cast' || play === 'set') && atOrBelow(c.rarity, offerable) && c.validateConfig({}).ok
+    return (play === 'cast' || play === 'set') && atOrBelow(c.rarity, offerable) && staffConfigOf(c, () => 0) !== null
       && !(play === 'set' && c.trap?.outcome.do === 'payout');
   });
 
@@ -355,9 +355,14 @@ async function onePick(r: PickRun): Promise<PickRecord> {
     let card: string | undefined;
     if (answer.card) {
       try {
+        // The configuration is plain code's, seeded from the day and the persona so a rerun builds the same (the model picks a card and a target, never an effect).
+        const rules = r.cardsOnOffer.find((c) => c.key === answer.card!.key);
+        const config = rules ? staffConfigOf(rules, seededRng(`kayfabb-pool-card:${day}:${p.staff}`)) : null;
+        if (config === null) throw new DatabaseError('no configuration could be built for the card', '', 400, 'no configuration could be built for the card');
+        record['cardConfig'] = config;
         const played = answer.card.on === 'reply'
-          ? await db.rpc<{ id: string }>('staff_play_card', { staff_key: p.staff, card: answer.card.key, target: p.quoting, config: {}, message: '', pool_day: day })
-          : await db.rpc<{ id: string }>('staff_set_card', { staff_key: p.staff, card: answer.card.key, target: post, config: {} });
+          ? await db.rpc<{ id: string }>('staff_play_card', { staff_key: p.staff, card: answer.card.key, target: p.quoting, config, message: '', pool_day: day })
+          : await db.rpc<{ id: string }>('staff_set_card', { staff_key: p.staff, card: answer.card.key, target: post, config });
         card = played.id;
       } catch (e) {
         if (stopsTheRun(e)) throw e;

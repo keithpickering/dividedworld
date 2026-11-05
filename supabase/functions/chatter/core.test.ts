@@ -7,6 +7,7 @@ import { AnswerRejected, LedgerWriteFailed, models as realModels } from '../_sha
 import type { ModelCallRow } from '../_shared/models/ledger.ts';
 import type { ChatRequest, CompletionRequest, ModelResult, Models } from '../../../engine/system/model.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
+import { whoops as whoopsRules } from '../../../instances/divided-world/cards/whoops.ts';
 
 // A Wednesday: the week's 20 posts over its five days left give an allowance of 4, so three posts and one card slot.
 const SLOT = '2026-11-04T17:37:00.000Z';
@@ -205,6 +206,31 @@ test('with no thread left in the week, the top scorer replies and its Cast lands
   assert.equal(play.target, reply.target, 'a Cast lands on the post the reply quotes, never on one chosen by who wrote it');
   assert.ok([Q1, Q2, Q3].includes(play.target as string));
   assert.deepEqual(out.picks.map((p) => p.status), ['posted', 'posted', 'posted']);
+});
+
+test('Whoops! is offered, played with an ink chosen by code, and the same ink on a rerun; the ink is on the spend\'s record', async () => {
+  const inks = async () => {
+    const d = fakeDb({ pool: { threadsWeekly: 0 } });
+    const m = fakeModels((r) => ({ words: `A reply from ${r.staff}.`, card: { key: 'whoops', on: 'reply' } }));
+    const out = await run(d, m);
+    assert.ok(out.status === 'ok');
+    assert.ok(m.chats.some((c) => JSON.stringify(c.schema).includes('whoops')), 'Whoops! is on offer');
+    const play = d.of('staff_play_card')[0]!;
+    assert.equal(play.card, 'whoops');
+    const config = play.config as { color: string };
+    assert.deepEqual(whoopsRules.validateConfig(config), { ok: true, value: config }, 'a valid ink');
+    assert.deepEqual(d.state.spends.find((s) => s.staff === play.staff_key)!.record.cardConfig, config, 'and it is on the record');
+    return JSON.stringify(config);
+  };
+  assert.equal(await inks(), await inks(), 'the same day builds the same ink');
+});
+
+test('a card with no default and no configurations of its own is not offered', async () => {
+  const bare = { ...dividedWorld, cards: dividedWorld.cards.map((c) => (c.key === 'whoops' ? { ...c, staffConfigs: undefined } : c)) } as Instance;
+  const d = fakeDb({ pool: { threadsWeekly: 0 } });
+  const m = fakeModels((r) => ({ words: 'x', card: { key: 'whoops', on: 'reply' } }));
+  await run(d, m, bare);
+  assert.equal(d.count('staff_play_card'), 0);
 });
 
 test('a disabled System writes nothing and calls no model', async () => {
