@@ -400,8 +400,8 @@
  * of view is hidden from anyone: no card is given visibility, display or inert here.
  */
 .kb-class-cards {
-  /* 216px, and never under ten times the description's type and the card's padding: past 100% text the card grows and the row scrolls. */
-  --kb-class-card-width: max(216px, calc(10 * var(--kb-glass-size-body) + 44px));
+  /* The board's 216px at every text size: a description that fills its card is not squeezed (the layout check's refusal 1), however tall it grows. */
+  --kb-class-card-width: 216px;
   /* The phone's peek, which its card leaves of the row. */
   --kb-class-peek: 64px;
 }
@@ -669,8 +669,7 @@
 
 .kb-choice {
   display: grid;
-  /* As many options across as keep each one's words at ten times their type, the radio and the padding beside it (90px). */
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, max(240px, calc(10 * var(--kb-glass-size-body) + 90px))), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 14px;
 }
 
@@ -839,8 +838,7 @@
 .kb-debut-dialog .kb-glass-dialog-head,
 .kb-reveal-dialog .kb-glass-dialog-head {
   margin-top: 2px;
-  /* The display's large size: past 125% text a 4.25rem title is wider than ten times its type in the bar. */
-  font-size: var(--kb-glass-size-display-l);
+  font-size: 4.25rem;
   line-height: 1;
   letter-spacing: 1px;
   color: var(--kb-glass-text);
@@ -907,8 +905,7 @@
 
 .kb-turn-portrait-name > span {
   display: block;
-  /* The display's medium size: a name at 2.75rem past 125% text is wider than the portrait's column. */
-  font-size: var(--kb-glass-size-display-m);
+  font-size: 2.75rem;
   line-height: 1;
   letter-spacing: 0.5px;
   color: var(--kb-glass-text-hi);
@@ -967,6 +964,10 @@
 
 .kb-turn-map-cells {
   text-transform: uppercase;
+}
+
+.kb-turn-loud {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.35fr);
 }
 
 /*
@@ -1264,7 +1265,7 @@
 
 /* The phone's row: one card whole and the next peeking under the fade. */
 :where(:root[data-kb-layout='phone']) .kb-class-cards {
-  --kb-class-card-width: max(calc(100% - var(--kb-class-peek)), calc(10 * var(--kb-glass-size-body) + 44px));
+  --kb-class-card-width: calc(100% - var(--kb-class-peek));
 }
 
 :where(:root[data-kb-layout='phone']) .kb-class-card {

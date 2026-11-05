@@ -81,8 +81,13 @@ const manifest: BoardManifest = {
       buildName: 'Pipewrench\'s Turn took effect. From the Oct 30 settlement it scores as a Face. The System announced it, with the old class, in Season 1: Who Turned.',
     },
 
-    { id: 'log', role: 'link', name: 'Open my log' },
-    { id: 'back', role: 'link', name: 'Back to the board' },
+    /*
+     * The two links are GlassButtons (docs/plans/2026-11-04-glass-polish-design.md, section 2): 48px of Barlow Condensed at the body's 21px, where
+     * the board draws Anton at 26px, so each is a little narrower and "Back to the board" stands further left. Compared by y and height, and the
+     * type (the parts' own) not at all.
+     */
+    { id: 'log', role: 'link', name: 'Open my log', box: 'height' },
+    { id: 'back', role: 'link', name: 'Back to the board', box: 'height', type: false },
   ],
 };
 

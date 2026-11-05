@@ -97,9 +97,7 @@
 .kb-picker-field {
   position: relative;
   margin: 10px 0 0;
-  /* Room for an axis name above and below, whose type grows with the text size: its calm's box lies on nothing else. */
-  --kb-picker-axis-room: max(28px, calc(var(--kb-glass-size-label) * 1.6));
-  padding: var(--kb-picker-axis-room) 0;
+  padding: 28px 0;
 }
 
 .kb-picker-axis {
@@ -111,8 +109,6 @@
   letter-spacing: 3px;
   text-transform: uppercase;
   white-space: nowrap;
-  /* Its calm is its box (no feather in a dialog), which holds the letters' ink and the spacing after the last. */
-  padding: 2px 6px;
   color: var(--kb-glass-text-2);
 }
 
@@ -125,7 +121,7 @@
   pointer-events: none;
 }
 
-.kb-picker-cross[data-kb-cross='down'] { left: 50%; top: var(--kb-picker-axis-room); bottom: var(--kb-picker-axis-room); width: 1px; }
+.kb-picker-cross[data-kb-cross='down'] { left: 50%; top: 28px; bottom: 28px; width: 1px; }
 .kb-picker-cross[data-kb-cross='across'] { top: 50%; left: 0; right: 0; height: 1px; }
 
 .kb-picker-grid {
@@ -201,12 +197,6 @@
   font-size: var(--kb-glass-size-body);
   font-weight: 600;
   color: var(--kb-glass-text-2);
-}
-
-.kb-picker-hint {
-  /* Its calm is its box, so the box is its words' width and ends before Close, which stands at the foot's right. */
-  width: fit-content;
-  max-width: calc(100% - 100px);
 }
 
 .kb-picker-refusal {

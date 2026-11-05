@@ -18,7 +18,7 @@
  *
  * Departures by the glass polish (docs/plans/2026-11-04-glass-polish-design.md, sections 2 and 5): the left column is taller, since the price note
  * stands in the wallet (the machine's panel is narrower than ten em of its type), so its boxes are compared across, by x and width, or not at all;
- * the head and "Your hand" are the board's own; and the sign draws one of the instance's marquees, which the fixture fixes
+ * the head is the board's own and "Your hand" is the HUD's Hand button's look (below); and the sign draws one of the instance's marquees, which the fixture fixes
  * (`random` is 0 at `?fixture=boards`, web/src/App.tsx) so it is the first.
  *
  * Not compared: the machine's drawing, which is the instance's art (its body, its marquee glass, the
@@ -60,7 +60,12 @@ const manifest: BoardManifest = {
     { id: 'wallet-label', role: 'text', name: 'Wallet · solid only', within: 'wallet', box: 'none' },
     { id: 'wallet-orbs', role: 'img', name: 'Wallet: 4.62 of 6.00; buying Whoops! leaves 3.62', buildName: 'Wallet: 5.62 of 6.00; buying Whoops! leaves 4.62', within: 'wallet', box: 'across' },
     { id: 'wallet-after', role: 'text', name: '3.62', buildName: '4.62', within: 'wallet', box: 'across' },
-    { id: 'hand', role: 'link', name: 'Your hand 3 → 4', buildName: 'Your hand 2 → 3' },
+    /*
+     * "Your hand" is drawn as the HUD's Hand button is, a game piece of the salty fill (the owner's correction of 2026-11-04, "matching the HUD's Hand
+     * button"), where the board draws a wider piece with its own spacing: its box and type are the HUD's, so they are not compared here (the HUD's is
+     * held by e2e/boards/01-main.ts).
+     */
+    { id: 'hand', role: 'link', name: 'Your hand 3 → 4', buildName: 'Your hand 2 → 3', box: 'none', type: false },
 
     /* The machine's sign carries one of the instance's marquees, the first in the fixture; its drawing is the instance's art, and its type is fitted to its name. */
     { id: 'sign', role: 'text', name: '[Machine name]', buildName: '[MACHINE NAME]', type: false, box: 'across' },

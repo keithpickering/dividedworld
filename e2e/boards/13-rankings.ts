@@ -8,6 +8,11 @@
  * Yours, and the classes, with both ways a stranger's class shows (Gloomba's reveal; Thwompson's,
  * Turned since).
  *
+ * Departure by the glass polish (docs/plans/2026-11-04-glass-polish-design.md, the owner's answer of 2026-11-04): the table's text starts at the page's
+ * left edge (the first column has no left padding, and an own row's neon band is drawn outside the table), so the Place and Character columns
+ * stand 16px further left than the board draws them and are 16px narrower and wider; the landmarks of those two columns are compared by their
+ * y and height, and the other columns, which keep their places, in full.
+ *
  * The season's line and the dates are in the reader's own time; the board draws them in UTC, and the
  * board match opens both pages in UTC (e2e/boards.spec.ts), whatever the machine's zone.
  */
@@ -15,20 +20,20 @@ import type { BoardManifest, Landmark } from '../board-match.ts';
 
 /** How many cells of each text the rows before have: a cell is found in the table by its text and its place among those. */
 const seen = new Map<string, number>();
-const cell = (id: string, name: string): Landmark => {
+const cell = (id: string, name: string, box?: Landmark['box']): Landmark => {
   const nth = seen.get(name) ?? 0;
   seen.set(name, nth + 1);
-  return { id, role: 'cell', name, within: 'table', nth, origin: 'table' };
+  return { id, role: 'cell', name, within: 'table', nth, origin: 'table', ...(box ? { box } : {}) };
 };
 
 /** A row: its header (the name, with Yours on the player's own), its link, and its place, rank and standing. */
 function row(n: number, name: string, place: string, rank: string, standing: string, own: boolean): Landmark[] {
   const id = `row-${n}`;
   return [
-    { id, role: 'rowheader', name: own ? `${name} Yours` : name, within: 'table', type: false, origin: 'table' },
-    { id: `${id}-name`, role: 'link', name, within: id, origin: 'table' },
-    ...(own ? [{ id: `${id}-yours`, role: 'text', name: 'Yours', within: id, origin: 'table' }] : []),
-    cell(`${id}-place`, place),
+    { id, role: 'rowheader', name: own ? `${name} Yours` : name, within: 'table', type: false, origin: 'table', box: 'height' },
+    { id: `${id}-name`, role: 'link', name, within: id, origin: 'table', box: 'height' },
+    ...(own ? [{ id: `${id}-yours`, role: 'text', name: 'Yours', within: id, origin: 'table', box: 'height' as const }] : []),
+    cell(`${id}-place`, place, 'height'),
     cell(`${id}-rank`, rank),
     cell(`${id}-standing`, standing),
   ];
@@ -75,8 +80,8 @@ const manifest: BoardManifest = {
 
     /* The table and its heads. */
     { id: 'table', role: 'table', name: 'Season 1 rankings, highest standing first', type: false, box: 'across' },
-    { id: 'head-place', role: 'columnheader', name: 'Place', within: 'table', origin: 'table' },
-    { id: 'head-character', role: 'columnheader', name: 'Character', within: 'table', origin: 'table' },
+    { id: 'head-place', role: 'columnheader', name: 'Place', within: 'table', origin: 'table', box: 'height' },
+    { id: 'head-character', role: 'columnheader', name: 'Character', within: 'table', origin: 'table', box: 'height' },
     { id: 'head-rank', role: 'columnheader', name: 'Rank', within: 'table', origin: 'table' },
     { id: 'head-standing', role: 'columnheader', name: 'Standing', within: 'table', origin: 'table' },
     { id: 'head-class', role: 'columnheader', name: 'Class', within: 'table', origin: 'table' },
