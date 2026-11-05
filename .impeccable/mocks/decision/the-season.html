@@ -1,0 +1,42 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>the-season</title>
+<style>
+@font-face{font-family:Anton;src:url(../../../instances/divided-world/ui/fonts/Anton-Regular.woff2)}
+@font-face{font-family:'Barlow Condensed';font-weight:500;src:url(../../../instances/divided-world/ui/fonts/BarlowCondensed-Medium.woff2)}
+@font-face{font-family:'Barlow Condensed';font-weight:600;src:url(../../../instances/divided-world/ui/fonts/BarlowCondensed-SemiBold.woff2)}
+@font-face{font-family:'Barlow Condensed';font-weight:700;src:url(../../../instances/divided-world/ui/fonts/BarlowCondensed-Bold.woff2)}
+@font-face{font-family:'Barlow Condensed';font-weight:800;src:url(../../../instances/divided-world/ui/fonts/BarlowCondensed-ExtraBold.woff2)}
+@font-face{font-family:'Barlow Condensed';font-weight:800;font-style:italic;src:url(../../../instances/divided-world/ui/fonts/BarlowCondensed-ExtraBoldItalic.woff2)}
+html,body{margin:0}
+.frame{width:1440px;height:900px;position:relative;overflow:hidden;background:#07050d;color:#f1ecff;font-family:'Barlow Condensed',sans-serif}
+.smoke{position:absolute;inset:0}
+.skew{display:inline-flex;align-items:center;transform:skewX(-10deg);text-decoration:none}
+.skew>b{display:inline-block;transform:skewX(10deg);font-weight:inherit}
+.cta{min-height:64px;padding:0 32px;font:30px/1 Anton,sans-serif;letter-spacing:1.5px;color:#03141a;background:#19e3ff;box-shadow:0 0 26px rgba(25,227,255,.6)}
+.ghost{min-height:56px;padding:0 24px;font:800 22px 'Barlow Condensed',sans-serif;letter-spacing:1.5px;color:#f1ecff;border:1px solid rgba(241,236,255,.6)}
+.disp{font-family:Anton,sans-serif;font-weight:400;letter-spacing:.5px;margin:0}
+.chamfer{clip-path:polygon(0 0,calc(100% - 24px) 0,100% 24px,100% 100%,24px 100%,0 calc(100% - 24px))}
+.sample{font:800 16px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#03141a;background:#ffd93d;padding:2px 8px}
+</style>
+</head><body>
+<div class="frame">
+<svg class="smoke" aria-hidden="true" width="1440" height="900"><defs><filter id="A"><feTurbulence type="fractalNoise" baseFrequency="0.0022 0.004" numOctaves="5" seed="31"/><feColorMatrix values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.74"/><feGaussianBlur stdDeviation="18"/></filter><filter id="B"><feTurbulence type="fractalNoise" baseFrequency="0.003 0.005" numOctaves="4" seed="14"/><feColorMatrix values="0 0 0 0 0.08  0 0 0 0 0.85  0 0 0 0 1  0 2 0 0 -1.0"/><feGaussianBlur stdDeviation="18"/></filter></defs><rect width="1440" height="900" filter="url(#A)" opacity=".75"/><rect width="1440" height="900" filter="url(#B)" opacity=".45"/></svg>
+<header style="position:absolute;left:64px;right:64px;top:28px;display:flex;justify-content:space-between;align-items:center">
+  <span style="font:800 20px 'Barlow Condensed';letter-spacing:3px;color:#c9f8ff">DW.GRIPE · AN INVITE-ONLY FORUM GAME · 18+</span>
+  <a class="skew ghost" href="#"><b>SIGN IN</b></a>
+</header>
+<h1 class="disp" style="position:absolute;left:58px;top:78px;font-size:190px;line-height:.9;text-shadow:0 0 40px rgba(155,89,182,.5)">DIVIDED<br>WORLD</h1>
+<p style="position:absolute;left:64px;top:440px;width:560px;font:500 24px/1.45 'Barlow Condensed';margin:0">A message board where every regular is wearing a mask. Post as up to six characters, each with a secret class. Draw the reactions your class wants. At season's end, every class is revealed. Who played them never is.</p>
+<div style="position:absolute;left:64px;top:600px;display:flex;gap:22px;align-items:center">
+  <a class="skew cta" href="#"><b>REGISTER WITH AN INVITE</b></a>
+  <span style="font:600 20px 'Barlow Condensed';max-width:260px;color:#e4def7">No invite? Ask a friend who plays.</span>
+</div>
+<!-- The season, left to right: each stop holds a real game piece. -->
+<ol style="position:absolute;left:720px;right:56px;top:96px;margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:14px">
+  <li class="chamfer" style="background:rgba(10,6,20,.82);outline:1px solid rgba(201,184,255,.5);outline-offset:-1px;padding:16px 24px;display:grid;grid-template-columns:70px 1fr;gap:18px;align-items:center"><span class="disp" style="font-size:44px;color:#19e3ff">01</span><span><b class="disp" style="font-size:30px">PUT ON A MASK</b><br><span style="font:500 21px 'Barlow Condensed'">Face, Heel, Jabroni, Technician or Lurker. Only you see it.</span></span></li>
+  <li class="chamfer" style="background:rgba(10,6,20,.82);outline:1px solid rgba(201,184,255,.5);outline-offset:-1px;padding:16px 24px;display:grid;grid-template-columns:70px 1fr;gap:18px;align-items:center"><span class="disp" style="font-size:44px;color:#19e3ff">02</span><span><b class="disp" style="font-size:30px">POST. GET REACTIONS.</b><br><span style="font:500 21px 'Barlow Condensed'">Sweet, Salty and the rest. Your class decides which ones count.</span></span></li>
+  <li class="chamfer" style="background:rgba(10,6,20,.82);outline:1px solid rgba(201,184,255,.5);outline-offset:-1px;padding:16px 24px;display:grid;grid-template-columns:70px 1fr 260px;gap:18px;align-items:center"><span class="disp" style="font-size:44px;color:#ffd93d">03</span><span><b class="disp" style="font-size:30px">AURA, EVERY NIGHT</b><br><span style="font:500 21px 'Barlow Condensed'">The day's reactions settle into orbs.</span></span><span style="display:flex;gap:8px"><i style="width:44px;height:44px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#d9b3ff,#9b59b6)"></i><i style="width:44px;height:44px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#a8d6ff,#3498db)"></i><i style="width:44px;height:44px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#a8ffd0,#2ecc71)"></i><i style="width:44px;height:44px;border-radius:50%;border:1px solid #555;background:#0b0914"></i></span></li>
+  <li class="chamfer" style="background:rgba(10,6,20,.82);outline:1px solid rgba(255,61,127,.7);outline-offset:-1px;padding:16px 24px;display:grid;grid-template-columns:70px 1fr;gap:18px;align-items:center"><span class="disp" style="font-size:44px;color:#ff3d7f">04</span><span><b class="disp" style="font-size:30px">PLAY POSTCARDS</b><br><span style="font:500 21px 'Barlow Condensed'">Whoops! splats a post in ink. Stick Around holds a reader on it.</span></span></li>
+  <li class="chamfer" style="background:rgba(10,6,20,.82);outline:1px solid #19e3ff;outline-offset:-1px;box-shadow:0 0 24px rgba(25,227,255,.35);padding:16px 24px;display:grid;grid-template-columns:70px 1fr;gap:18px;align-items:center"><span class="disp" style="font-size:44px;color:#19e3ff">05</span><span><b class="disp" style="font-size:30px">THE REVEAL</b><br><span style="font:500 21px 'Barlow Condensed'">Every 3 months, every class goes public. Never the player.</span></span></li>
+</ol>
+</div>
+</body></html>

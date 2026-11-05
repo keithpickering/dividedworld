@@ -42,7 +42,7 @@ import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type
 import type { Character } from '../data/api.ts';
 import { useKayfa } from '../context.tsx';
 import { usePlayer } from '../player.tsx';
-import { signInHref } from '../account/next.ts';
+import { registerHref, signInHref } from '../account/next.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { Link, searchOf, useLocation, useNavigate } from '../router.tsx';
 import { Hand } from '../cards/Hand.tsx';
@@ -305,10 +305,17 @@ export function Hud() {
             <polyline className="kb-glass-seam-core" points={seam} />
           </svg>
           <div className="kb-hud-bar">
-            <div ref={plate} className={`kb-hud-plate${signedIn && player.loaded && hud ? ' kb-hud-plate--cast kb-calm' : ''}`}>
+            <div ref={plate} className={`kb-hud-plate${!signedIn ? ' kb-hud-plate--door' : signedIn && player.loaded && hud ? ' kb-hud-plate--cast kb-calm' : ''}`}>
               <div className="kb-hud-plate-in">
                 {!signedIn ? (
-                  <Link to={signInHref(location.path, searchOf(location.query))} className="kb-hud-sign-in kb-glass-cut-button">Sign in</Link>
+                  <div className="kb-hud-door">
+                    <span className="kb-hud-door-mark" aria-hidden="true">?</span>
+                    <div className="kb-hud-door-words">
+                      {/* A heading, not a bare element: the HUD is a labeled region, and its prompt is what a screen reader should find in it; it sits under the page's h1 in rank, though the HUD comes first in the document. */}
+                      <h2 className="kb-hud-door-title kb-glass-display">{ui.frontDoor.prompt.title}</h2>
+                      <p className="kb-hud-door-line">{ui.frontDoor.prompt.line}</p>
+                    </div>
+                  </div>
                 ) : !player.loaded ? null : !hud ? (
                   <Link to="/characters/new" className="kb-hud-make kb-glass-cut-button">Make a character</Link>
                 ) : (
@@ -358,6 +365,23 @@ export function Hud() {
                     <Orbs settled={player.wallet.balance} pending={player.pending} cap={player.wallet.cap ?? settings.walletCap} cascadeFrom={player.walletSeen} />
                   </Link>
                 )}
+              </div>
+            )}
+            {!signedIn && (
+              <div className="kb-hud-door-actions">
+                {settings.registrationMode !== 'closed' && (
+                  <Link to={registerHref(location.path, searchOf(location.query))} className="kb-hud-sign-in kb-hud-door-register kb-glass-cut-button">
+                    {settings.registrationMode === 'invite' ? 'Register with an invite' : 'Register'}
+                  </Link>
+                )}
+                {settings.registrationMode === 'invite' && <p className="kb-hud-door-note">No invite? Ask someone who plays.</p>}
+                {settings.registrationMode === 'closed' && <p className="kb-hud-door-note">Registration is closed for now.</p>}
+                <Link
+                  to={signInHref(location.path, searchOf(location.query))}
+                  className={`kb-hud-door-sign-in${settings.registrationMode === 'closed' ? ' kb-hud-sign-in kb-glass-cut-button' : ''}`}
+                >
+                  Sign in
+                </Link>
               </div>
             )}
             {signedIn && (

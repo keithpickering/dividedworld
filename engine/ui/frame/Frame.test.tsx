@@ -27,7 +27,7 @@ const isGlass = (path: string) => GLASS.has(path);
 /* What the backend says of the player's alerts: the count, and the channel the player's account hears (the test sends on it). */
 const alerts: { unread: number; account: AccountListener | null; subscribed: number; reads: number } = { unread: 0, account: null, subscribed: 0, reads: 0 };
 
-function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b', 'Mrs. Hooligan', 'face')], page = <p>page</p>) {
+function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b', 'Mrs. Hooligan', 'face')], page = <p>page</p>, registrationMode: 'invite' | 'open' | 'closed' = 'invite') {
   const api = {
     session: async () => ({ signedIn, account: signedIn ? 'acc' : null }),
     onSession: () => () => {},
@@ -60,8 +60,8 @@ function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b',
       settings: { economy: { 'whoops.price': 100, 'stick.price': 100 } },
       classes: [{ key: 'face', name: 'Face' }, { key: 'heel', name: 'Heel' }],
     },
-    ui: { glass: testGlass, copy: { siteName: 'Divided World', siteTagline: 'dw.gripe', shopName: 'The Vending Machine' }, cards: [] },
-    settings: { walletCap: 600 },
+    ui: { glass: testGlass, copy: { siteName: 'Divided World', siteTagline: 'dw.gripe', shopName: 'The Vending Machine' }, cards: [], frontDoor: { prompt: { title: 'Who will you play as?', line: 'A test game, played in masks.' } } },
+    settings: { walletCap: 600, registrationMode },
   } as unknown as Kayfa;
   const view = render(
     <RouterProvider onMove={keepBoardPlace(isGlass)}>
@@ -309,13 +309,43 @@ describe('the hand', () => {
 });
 
 describe('signed out and new', () => {
-  test('signed out, the HUD offers sign-in and holds no orbs, no Menu and no hand', async () => {
+  test('signed out, the HUD holds the instance\'s prompt and line, and no orbs, no Menu and no hand', async () => {
     setup(false);
     const h = await hud();
     await act(async () => {});
+    expect(within(h).getByRole('heading', { name: 'Who will you play as?' })).toBeInTheDocument();
+    expect(within(h).getByText('A test game, played in masks.')).toBeInTheDocument();
     expect(within(h).getByRole('link', { name: 'Sign in' })).toBeInTheDocument();
     expect(within(h).queryByRole('img')).toBeNull();
     expect(within(h).queryByRole('button')).toBeNull();
+    expect(within(h).queryByText('?')?.closest('[aria-hidden="true"]')).not.toBeNull();
+  });
+  test.each([
+    ['invite', '/b/general?page=3', 'Register with an invite', '/register?next=%2Fb%2Fgeneral%3Fpage%3D3', 'No invite? Ask someone who plays.'],
+    ['open', '/b/general?page=3', 'Register', '/register?next=%2Fb%2Fgeneral%3Fpage%3D3', null],
+    ['closed', '/b/general?page=3', null, null, 'Registration is closed for now.'],
+    ['invite', '/', 'Register with an invite', '/register', 'No invite? Ask someone who plays.'],
+  ] as const)('signed out in %s mode at %s, the HUD offers %s', async (mode, at, register, registerTo, line) => {
+    window.history.replaceState(null, '', at);
+    setup(false, [], <p>page</p>, mode);
+    const h = await hud();
+    await act(async () => {});
+    const to = at === '/' ? '/sign-in' : '/sign-in?next=%2Fb%2Fgeneral%3Fpage%3D3';
+    expect(within(h).getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', to);
+    if (register === null) expect(within(h).queryByRole('link', { name: /^Register/ })).toBeNull();
+    else expect(within(h).getByRole('link', { name: register })).toHaveAttribute('href', registerTo);
+    if (line === null) expect(within(h).queryByText(/No invite|closed/)).toBeNull();
+    else expect(within(h).getByText(line)).toBeInTheDocument();
+  });
+  test('signed in, none of the front door shows in the HUD', async () => {
+    setup(true);
+    const h = await hud();
+    await screen.findByRole('button', { name: 'Hand, 3 postcards' });
+    expect(within(h).queryByText('Who will you play as?')).toBeNull();
+    expect(within(h).queryByText('A test game, played in masks.')).toBeNull();
+    expect(within(h).queryByRole('link', { name: /^Register/ })).toBeNull();
+    expect(within(h).queryByRole('link', { name: 'Sign in' })).toBeNull();
+    expect(within(h).queryByText(/No invite|Registration is closed/)).toBeNull();
   });
   test('a player with no character that can act is told how to make one', async () => {
     setup(true, []);
