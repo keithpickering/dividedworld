@@ -152,6 +152,14 @@ test('the Boss is named and a mod quoted, the season is handed over, and the poo
   // The week's spend is recorded: a row for each pick, posts and cards counted.
   assert.equal(sql(`select count(*) from pool_spends where day = '${day}' and staff in ('${OLD}', '${MOD}')`), '2');
   assert.equal(sql(`select count(*) from pool_spends where day = '${day}' and card_act in ('${oldPick.card}', '${modPick.card}')`), '2');
+  // And pool_week counts it as the run does: a spend with a card is two slots (a post and a card), so the day's two such spends are four.
+  // Read from the next day, which leaves the day's own rows in `spent`; on a Sunday that is a new week and holds none of them.
+  const nextDay = sql(`select ('${day}'::date + 1)::text`);
+  const slots = Number(sql(`select count(*) + count(card_act) from pool_spends where day = '${day}'`));
+  assert.ok(slots >= 4, `the day's spends with cards are at least four slots: ${slots}`);
+  const sameWeek = sql(`select date_trunc('week', '${nextDay}'::date) <= '${day}'::date`) === 't';
+  assert.equal(Number(sql(`select pool_week('${nextDay}'::date) ->> 'spent'`)), sameWeek ? Number(sql(`select coalesce(sum(1 + (card_act is not null)::int), 0) from pool_spends where day >= date_trunc('week', '${nextDay}'::date) and day < '${nextDay}'::date`)) : 0, 'pool_week spent counts a card as a second slot');
+  if (sameWeek) assert.ok(Number(sql(`select pool_week('${nextDay}'::date) ->> 'spent'`)) >= 4, 'pool_week counts both spends with their cards, four slots at least');
 
   // A second run of the day, while the first's claim is young, is told so and writes nothing; the ex-Boss still posted once.
   const again = await runChatter(db, real, instance, new Date(Date.parse(slot) + 60_000).toISOString());
