@@ -4,7 +4,7 @@
  * plain object; e2e/board-snapshot.ts reads the snapshots out of a page, and e2e/boards.spec.ts
  * runs both.
  *
- * A manifest (e2e/boards/<NN>-<name>.ts) lists a board's landmarks by role and accessible name. A
+ * A manifest (e2e/boards/<NN>-<name>.ts, or e2e/boards/<folder>/<NN>-<name>.ts for a later folder's board) lists a board's landmarks by role and accessible name. A
  * snapshot says, for each landmark, whether it was found, where, and how its first text is set. The
  * comparison is what docs/plans/2026-10-30-glass-to-the-boards-plan.md section 2.3 specifies: a box
  * within 8px of the board's position and 4px of its size (a popover's parts measured from its own corner,
@@ -245,6 +245,36 @@ export async function compareSides(
   return out;
 }
 
+/** A board file ends `.html`; a `.src.html` beside it is a generator's source, not a board. */
+const isBoardFile = (f: string): boolean => f.endsWith('.html') && !f.endsWith('.src.html');
+
+/**
+ * The boards of the folders, in order, each with its id. A board in one of the first `bareFolders` folders keeps its bare file
+ * name as its id (the manifests written before a second kind of folder existed are not renamed); a board in any later folder is
+ * `<folder>/<name>`, since two later folders may each draw a `05-admin.html`. A bare id two folders share is reported in `shared`.
+ */
+export function boardIds(
+  folders: readonly { name: string; files: readonly string[] }[],
+  bareFolders: number,
+): { boards: { id: string; folder: string; file: string }[]; shared: string[] } {
+  const boards: { id: string; folder: string; file: string }[] = [];
+  const shared: string[] = [];
+  const seen = new Set<string>();
+  folders.forEach((dir, i) => {
+    for (const file of dir.files) {
+      if (!isBoardFile(file)) continue;
+      const base = file.slice(0, -'.html'.length);
+      const id = i < bareFolders ? base : `${dir.name}/${base}`;
+      if (seen.has(id)) shared.push(`${id} is drawn in two board folders`);
+      else {
+        seen.add(id);
+        boards.push({ id, folder: dir.name, file });
+      }
+    }
+  });
+  return { boards, shared };
+}
+
 /**
  * Which boards the spec runs, from the folder's file names, the boards that have a manifest and the
  * pending map (board id to the part that builds it). The list is the folder's, so a board cannot be
@@ -257,7 +287,7 @@ export function boardsToRun(
   manifests: readonly string[],
   pending: Readonly<Record<string, string>>,
 ): { run: string[]; pending: string[]; problems: string[] } {
-  const boards = folder.filter((f) => f.endsWith('.html')).map((f) => f.slice(0, -'.html'.length)).sort();
+  const boards = folder.filter(isBoardFile).map((f) => f.slice(0, -'.html'.length)).sort();
   const has = new Set(manifests);
   const problems: string[] = [];
   const run: string[] = [];
