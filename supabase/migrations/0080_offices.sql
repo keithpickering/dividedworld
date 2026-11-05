@@ -221,6 +221,30 @@ language sql stable security definer set search_path = public, pg_temp as $$
       from inheritance_due(current_boss(), 20) d), '[]'))
 $$;
 
+-- ------------------------------------------------------------------------------ the arrival post of a handover ----
+
+-- The new Boss's arrival post in the announcements thread (the Act say_in_announcements wrote in hand_over's transaction), or null where the
+-- arrival was not said (no line, no thread, or the post failed: it is best effort). Public: the pool quotes it (0086).
+alter table season_handovers add column arrival_act uuid references acts (id);
+
+-- say_in_announcements (0051) now returns the post's id, or null where nothing was said. A changed return type needs a drop; only
+-- hand_over (below) calls it, by name, so nothing depends on the old one.
+drop function say_in_announcements(text, text);
+create function say_in_announcements(speaker text, line_key text) returns uuid
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  ann uuid := (select (s.value #>> '{}')::uuid from settings s where s.key = 'systemAnnouncements');
+begin
+  if ann is null or speaker is null then return null; end if;
+  if not exists (select 1 from settings s where s.key = 'systemLines' and jsonb_typeof(s.value -> line_key) = 'array' and jsonb_array_length(s.value -> line_key) > 0) then return null; end if;
+  return (write_staff_act(speaker, 'post', ann, null, jsonb_build_object('body', system_line(line_key, null, null, speaker))) ->> 'id')::uuid;
+exception when others then
+  raise warning 'say_in_announcements: % was not said by %: % (%)', line_key, speaker, sqlerrm, sqlstate;
+  return null;
+end $$;
+revoke execute on function say_in_announcements(text, text) from public, anon, authenticated;
+grant execute on function say_in_announcements(text, text) to service_role;
+
 -- ------------------------------------------------------------------------------------------------- the handover ----
 
 -- hand_over (0051), moving the offices inside its transaction (see the block). Everything else as 0051 wrote it.

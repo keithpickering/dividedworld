@@ -80,42 +80,6 @@ language sql immutable set search_path = public, pg_temp as $$
     or abs((e.value #>> '{}')::numeric) >= setting_infinity())
 $$;
 
--- The posting pool's settings (`pool`; the staff roster plan, Task 9): exactly eight fields, each held as the TypeScript rule says
--- (`poolRule` in engine/rules/instance.ts). Returns the words of what is wrong, or null. Its rarities are rarity_rank's (0054) and its triggers are
--- the pool's eight (engine/system/pool.ts, TRIGGERS), which supabase/tests/0079-settings-held.sql and engine/rules/settings-held.test.ts keep one list.
-create function setting_pool(v jsonb) returns text
-language plpgsql immutable set search_path = public, pg_temp as $$
-declare
-  fields text[] := array['weekly', 'holdback', 'threadsWeekly', 'cardRarityMost', 'priorityDays', 'notesRead', 'strengths', 'chatterCron'];
-  triggers text[] := array['named', 'quoted', 'legacy', 'successorStumbles', 'oldFlame', 'homeTurf', 'seasonTurn', 'hotOnBeat'];
-  shape text := 'an object giving weekly, priorityDays and notesRead (whole numbers, at least 1), threadsWeekly (a whole number, at least 0), '
-    'holdback (from 0 to 0.5), cardRarityMost (common, uncommon, rare or legendary), strengths (a whole number, at least 1, for each of '
-    'named, quoted, legacy, successorStumbles, oldFlame, homeTurf, seasonTurn, hotOnBeat) and chatterCron (a five-field cron expression, each field inside its range)';
-  k text;
-begin
-  if jsonb_typeof(v) is distinct from 'object' then return shape; end if;
-  select e into k from jsonb_object_keys(v) e where e <> all (fields) limit 1;
-  if k is not null then return format('%s; "%s" is not one of its fields', shape, k); end if;
-  foreach k in array array['weekly', 'priorityDays', 'notesRead'] loop
-    if not setting_whole(v -> k, 1) then return format('%s; "%s" is not', shape, k); end if;
-  end loop;
-  if not setting_whole(v -> 'threadsWeekly', 0) then return shape || '; "threadsWeekly" is not'; end if;
-  if not coalesce(jsonb_typeof(v -> 'holdback') = 'number' and (v ->> 'holdback')::numeric >= 0 and (v ->> 'holdback')::numeric <= 0.5, false) then
-    return shape || '; "holdback" is not';
-  end if;
-  if not coalesce(jsonb_typeof(v -> 'cardRarityMost') = 'string' and rarity_rank(v ->> 'cardRarityMost') is not null, false) then
-    return shape || '; "cardRarityMost" is not';
-  end if;
-  if not setting_cron(v -> 'chatterCron') then return shape || '; "chatterCron" is not'; end if;
-  if jsonb_typeof(v -> 'strengths') is distinct from 'object' then return shape || '; "strengths" is not'; end if;
-  select e into k from jsonb_object_keys(v -> 'strengths') e where e <> all (triggers) limit 1;
-  if k is not null then return format('%s; "strengths.%s" is not a trigger', shape, k); end if;
-  foreach k in array triggers loop
-    if not setting_whole(v -> 'strengths' -> k, 1) then return format('%s; "strengths.%s" is not', shape, k); end if;
-  end loop;
-  return null;
-end $$;
-
 create function settings_held() returns trigger
 language plpgsql set search_path = public, pg_temp as $$
 declare
@@ -180,7 +144,6 @@ begin
     when 'moveExpiryLeastHours' then case when not setting_whole(v, 1) then 'a whole number of hours, at least 1' end
     when 'demandCheckMinutes' then case when not setting_whole(v, 1, 1440) then 'a whole number of minutes, at least 1 and at most 1440' end
     when 'demandChecksPerTick' then case when not setting_whole(v, 1, 1000) then 'a whole number of moves, at least 1 and at most 1000' end
-    when 'pool' then setting_pool(v)
     when 'modelTiers' then case when not coalesce(jsonb_typeof(v) = 'object'
         and jsonb_typeof(v -> 'strong') = 'string' and btrim(v ->> 'strong', E' \t\n\r\f\v') <> ''
         and jsonb_typeof(v -> 'light') = 'string' and btrim(v ->> 'light', E' \t\n\r\f\v') <> '', false)
@@ -208,7 +171,7 @@ end $$;
 create trigger settings_held before insert or update on settings for each row execute function settings_held();
 
 revoke execute on function setting_whole(jsonb, numeric, numeric), setting_span(jsonb, text[]), setting_cron(jsonb),
-  setting_infinity(), setting_positive(jsonb), setting_named_numbers(jsonb), setting_pool(jsonb), settings_held() from public, anon, authenticated;
+  setting_infinity(), setting_positive(jsonb), setting_named_numbers(jsonb), settings_held() from public, anon, authenticated;
 
 -- Every row already there goes through the hold, so one that breaks a rule fails this migration and names its key.
 update settings set value = value;

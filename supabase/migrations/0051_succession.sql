@@ -389,10 +389,7 @@ create table season_handovers (
   boss text references characters (staff),
   how text not null check (how in ('nomination', 'rotation', 'unchanged', 'none')),
   note text,
-  at timestamptz not null default now(),
-  -- The new Boss's arrival post in the announcements thread (the Act say_in_announcements wrote in hand_over's transaction), or null where
-  -- the arrival was not said (no line, no thread, or the post failed: it is best effort). Public: the pool quotes it (0086).
-  arrival_act uuid references acts (id)
+  at timestamptz not null default now()
 );
 alter table season_handovers enable row level security;
 revoke all on season_handovers from public, anon, authenticated;
@@ -460,17 +457,16 @@ revoke execute on function rotation_boss(text) from public, anon, authenticated;
 grant execute on function rotation_boss(text) to service_role;
 
 -- The line a stock key holds, said by a staff member in the announcements thread, if the instance wrote one. Best effort: a failure is a warning.
-create function say_in_announcements(speaker text, line_key text) returns uuid
+create function say_in_announcements(speaker text, line_key text) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   ann uuid := (select (s.value #>> '{}')::uuid from settings s where s.key = 'systemAnnouncements');
 begin
-  if ann is null or speaker is null then return null; end if;
-  if not exists (select 1 from settings s where s.key = 'systemLines' and jsonb_typeof(s.value -> line_key) = 'array' and jsonb_array_length(s.value -> line_key) > 0) then return null; end if;
-  return (write_staff_act(speaker, 'post', ann, null, jsonb_build_object('body', system_line(line_key, null, null, speaker))) ->> 'id')::uuid;
+  if ann is null or speaker is null then return; end if;
+  if not exists (select 1 from settings s where s.key = 'systemLines' and jsonb_typeof(s.value -> line_key) = 'array' and jsonb_array_length(s.value -> line_key) > 0) then return; end if;
+  perform write_staff_act(speaker, 'post', ann, null, jsonb_build_object('body', system_line(line_key, null, null, speaker)));
 exception when others then
   raise warning 'say_in_announcements: % was not said by %: % (%)', line_key, speaker, sqlerrm, sqlstate;
-  return null;
 end $$;
 revoke execute on function say_in_announcements(text, text) from public, anon, authenticated;
 grant execute on function say_in_announcements(text, text) to service_role;
