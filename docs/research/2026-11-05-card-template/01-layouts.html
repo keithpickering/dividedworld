@@ -68,18 +68,20 @@ label.toggle input { width: 18px; height: 18px; accent-color: var(--guide); }
   --c: #2ee6ff; --ink: #03141a;
   position: relative;
   flex: none;
+  width: var(--w);
   aspect-ratio: 2 / 3;
-  border-radius: 5cqw;
+  /* 45 units: the border's 30 plus the canvas's 15, so the border is 30 all the way round. From --w, since cqw on the card itself measures the page. */
+  border-radius: calc(var(--w) * 0.075);
   container-type: inline-size;
   background: var(--card);
   box-shadow: 0 0 0 1.5px var(--c), 0 0 16px color-mix(in srgb, var(--c) 50%, transparent);
   overflow: visible;
 }
-.pc[data-size='slot'] { width: 86px; }
-.pc[data-size='phone'] { width: 104px; }
-.pc[data-size='fan'] { width: 150px; }
-.pc[data-size='sheet'] { width: 276px; box-shadow: 0 0 0 2px var(--c), 0 0 30px color-mix(in srgb, var(--c) 60%, transparent); }
-.pc[data-size='big'] { width: 360px; max-width: 100%; box-shadow: 0 0 0 2px var(--c), 0 0 34px color-mix(in srgb, var(--c) 60%, transparent); }
+.pc[data-size='slot'] { --w: 86px; }
+.pc[data-size='phone'] { --w: 104px; }
+.pc[data-size='fan'] { --w: 150px; }
+.pc[data-size='sheet'] { --w: 276px; box-shadow: 0 0 0 2px var(--c), 0 0 30px color-mix(in srgb, var(--c) 60%, transparent); }
+.pc[data-size='big'] { --w: 360px; max-width: 100%; box-shadow: 0 0 0 2px var(--c), 0 0 34px color-mix(in srgb, var(--c) 60%, transparent); }
 
 /* A full-art variant's ring has a foil sheen (an idea, for the question list). */
 .pc[data-variant='full'] { box-shadow: 0 0 0 1.5px var(--c), 0 0 18px color-mix(in srgb, var(--c) 55%, transparent); }
@@ -117,7 +119,7 @@ label.toggle input { width: 18px; height: 18px; accent-color: var(--guide); }
 .pc-guides-outer { display: none; position: absolute; inset: 0; pointer-events: none; border-radius: inherit; }
 .show-guides .pc-guides-outer { display: block; }
 .pc-guides-outer::after { /* the keep-clear line: no piece crosses it outward */
-  content: ''; position: absolute; inset: 2cqw; border-radius: 3cqw;
+  content: ''; position: absolute; inset: 2cqw; border-radius: 5.5cqw;
   outline: 1.5px dotted var(--guide);
 }
 .pc-guides-outer::before { /* the border band */
@@ -148,7 +150,7 @@ label.toggle input { width: 18px; height: 18px; accent-color: var(--guide); }
 .pc-gem span { transform: rotate(-45deg); color: var(--c); font-size: clamp(7px, 6.5cqw, 16px); line-height: 1; }
 
 .pc-name {
-  position: absolute; z-index: 3;
+  display: block; transform: skewX(calc(-1 * var(--skew)));
   font-family: var(--display); font-weight: 400; text-transform: uppercase; letter-spacing: 0.02em; line-height: 0.95;
   color: var(--text-hi);
   text-shadow: 0 0 3cqw color-mix(in srgb, var(--c) 80%, transparent), 0 1px 0 #000;
@@ -159,15 +161,25 @@ label.toggle input { width: 18px; height: 18px; accent-color: var(--guide); }
   background: linear-gradient(90deg, rgb(0 0 0 / 0.86), rgb(0 0 0 / 0.6));
   box-shadow: inset 1.2cqw 0 0 var(--c);
   backdrop-filter: blur(3px);
+  display: flex; align-items: center;
+  /* Anton sits high in its box: a touch more at the top centers its capitals. */
+  padding: 0.8cqw 4cqw 0 6.5cqw;
 }
 .pc-line {
   position: absolute; z-index: 2;
   background: var(--panel); backdrop-filter: blur(4px);
   clip-path: polygon(0 0, calc(100% - 4cqw) 0, 100% 4cqw, 100% 100%, 4cqw 100%, 0 calc(100% - 4cqw));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 40%, transparent);
   color: var(--text-2);
   font: 600 clamp(9px, 7.4cqw, 17px)/1.25 var(--body);
   padding: 3cqw 4cqw;
+}
+/* The plate's 1px edge, all the way round, the chamfers included: a ring cut from the plate's own outline (even-odd), its inner line 1px in from every edge (on a 45° cut that is 0.414px further along each side). */
+.pc-line::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: color-mix(in srgb, var(--c) 55%, transparent);
+  clip-path: polygon(evenodd,
+    0 0, calc(100% - 4cqw) 0, 100% 4cqw, 100% 100%, 4cqw 100%, 0 calc(100% - 4cqw), 0 0,
+    1px 1px, 1px calc(100% - 4cqw - 0.414px), calc(4cqw + 0.414px) calc(100% - 1px), calc(100% - 1px) calc(100% - 1px), calc(100% - 1px) calc(4cqw + 0.414px), calc(100% - 4cqw - 0.414px) 1px, 1px 1px);
 }
 .pc-price {
   position: absolute; z-index: 3;
@@ -180,7 +192,7 @@ label.toggle input { width: 18px; height: 18px; accent-color: var(--guide); }
 }
 .orb { width: 0.95em; height: 0.95em; border-radius: 50%; background: radial-gradient(circle at 38% 30%, #fff6c8, var(--gold) 52%, var(--gold-deep)); flex: none; }
 .pc-foot {
-  position: absolute; z-index: 3; left: 7cqw; right: 7cqw; bottom: 0; height: 5cqw;
+  position: absolute; z-index: 3; left: 7cqw; right: 31cqw; bottom: 0; height: 5cqw;
   display: flex; align-items: center; justify-content: space-between; gap: 2cqw;
   font: 700 clamp(6px, 3.3cqw, 10px)/1 var(--body); letter-spacing: 0.12em; text-transform: uppercase;
   color: color-mix(in srgb, var(--c) 75%, #fff);
@@ -191,34 +203,10 @@ label.toggle input { width: 18px; height: 18px; accent-color: var(--guide); }
 [data-layout='low'] .pc-badges { left: 6cqw; top: 2.2cqw; }
 [data-layout='low'] .pc-gem { right: 4cqw; top: 4cqw; }
 [data-layout='low'] .pc-name-plate { left: 4.5cqw; width: 80%; top: 89cqw; height: 15cqw; }
-[data-layout='low'] .pc-name { left: 7cqw; right: 14cqw; top: 91cqw; font-size: 11.5cqw; }
+[data-layout='low'] .pc-name { font-size: 11.5cqw; }
 [data-layout='low'] .pc-line { left: 9cqw; right: 9cqw; top: 108cqw; bottom: 9cqw; }
 [data-layout='low'] .pc-price { right: 6cqw; bottom: 2.2cqw; }
 
-/* ---- Layout B · Banner: the title bar across the top border ---- */
-[data-layout='banner'] .pc-name-plate { left: 4cqw; right: 4cqw; top: 2.5cqw; height: 15cqw; box-shadow: inset 0 0 0 1.5px var(--c), 0 0 10px color-mix(in srgb, var(--c) 50%, transparent); background: rgb(0 0 0 / 0.88); }
-[data-layout='banner'] .pc-name { left: 7cqw; right: 18cqw; top: 4.6cqw; font-size: 11cqw; white-space: nowrap; overflow: hidden; text-overflow: clip; }
-[data-layout='banner'] .pc-gem { right: 6cqw; top: 5cqw; width: 10cqw; height: 10cqw; }
-[data-layout='banner'] .pc-badges { left: 3.5cqw; top: 21cqw; flex-direction: column; align-items: flex-start; gap: 1.6cqw; }
-[data-layout='banner'] .pc-line { left: 9cqw; right: 9cqw; top: 98cqw; bottom: 9cqw; }
-[data-layout='banner'] .pc-price { left: 50%; bottom: 2.2cqw; translate: -50% 0; }
-
-.pc-coin { display: none; }
-/* ---- Layout C · Cost corner: the price as a coin on the corner ---- */
-[data-layout='corner'] .pc-coin {
-  position: absolute; z-index: 4; left: 2.5cqw; top: 2.5cqw; display: grid;
-  width: 19cqw; height: 19cqw; border-radius: 50%;
-  display: grid; place-items: center;
-  background: radial-gradient(circle at 38% 30%, #fff6c8, var(--gold) 50%, var(--gold-deep));
-  box-shadow: 0 0 0 1.5px var(--card), 0 0 14px rgb(255 210 63 / 0.6);
-  color: #241500; font: 800 clamp(8px, 7.6cqw, 20px)/1 var(--body); letter-spacing: -0.02em;
-}
-[data-layout='corner'] .pc-gem { right: 4cqw; top: 4cqw; }
-[data-layout='corner'] .pc-name-plate { left: 6cqw; right: 6cqw; top: 90cqw; height: 14cqw; box-shadow: inset 0 -1.2cqw 0 var(--c); }
-[data-layout='corner'] .pc-name { left: 9cqw; right: 9cqw; top: 92cqw; font-size: 11cqw; text-align: center; }
-[data-layout='corner'] .pc-line { left: 9cqw; right: 9cqw; top: 108cqw; bottom: 10cqw; }
-[data-layout='corner'] .pc-badges { left: 0; right: 0; bottom: 2.2cqw; justify-content: center; }
-[data-layout='corner'] .pc-price { display: none; }
 
 /* ---- what each size holds ---- */
 .pc[data-size='slot'] .pc-badges, .pc[data-size='slot'] .pc-line, .pc[data-size='slot'] .pc-price, .pc[data-size='slot'] .pc-foot { display: none; }
@@ -226,20 +214,12 @@ label.toggle input { width: 18px; height: 18px; accent-color: var(--guide); }
 .pc[data-size='fan'] .pc-price, .pc[data-size='fan'] .pc-foot { display: none; }
 .pc[data-size='slot'] .pc-name { font-size: 15cqw; }
 .pc[data-size='phone'] .pc-name { font-size: 13.5cqw; }
-[data-layout='low'] .pc[data-size='slot'] .pc-name { top: auto; bottom: 9cqw; }
 [data-layout='low'] .pc[data-size='slot'] .pc-name-plate { top: auto; bottom: 7cqw; height: 20cqw; width: calc(100% - 5cqw); }
-[data-layout='low'] .pc[data-size='phone'] .pc-name { top: auto; bottom: 10cqw; }
 [data-layout='low'] .pc[data-size='phone'] .pc-name-plate { top: auto; bottom: 8cqw; height: 18cqw; width: calc(100% - 5cqw); }
-[data-layout='corner'] .pc[data-size='slot'] .pc-name, [data-layout='corner'] .pc[data-size='phone'] .pc-name { top: auto; bottom: 12cqw; }
-[data-layout='corner'] .pc[data-size='slot'] .pc-name-plate, [data-layout='corner'] .pc[data-size='phone'] .pc-name-plate { top: auto; bottom: 9cqw; height: 20cqw; left: 3cqw; right: 3cqw; }
-[data-layout='corner'] .pc[data-size='slot'] .pc-coin { width: 22cqw; height: 22cqw; }
-[data-layout='banner'] .pc[data-size='slot'] .pc-name, [data-layout='banner'] .pc[data-size='phone'] .pc-name { font-size: 11cqw; top: 4cqw; }
-[data-layout='banner'] .pc[data-size='slot'] .pc-gem, [data-layout='banner'] .pc[data-size='phone'] .pc-gem { display: none; }
-[data-layout='banner'] .pc[data-size='slot'] .pc-name, [data-layout='banner'] .pc[data-size='phone'] .pc-name { right: 4cqw; }
 .pc[data-size='sheet'] .pc-line, .pc[data-size='big'] .pc-line { font-size: 6.6cqw; line-height: 1.35; }
 
 /* ================= LAYOUT BOARDS ================= */
-.trio { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; }
+.trio { display: grid; grid-template-columns: minmax(0, 520px); gap: 24px; }
 .cand { background: var(--panel); border: 1px solid #222; padding: 18px; display: grid; gap: 14px; align-content: start; min-width: 0; }
 .cand h3 { margin: 0; font: italic 800 20px var(--body); letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-hi); }
 .cand h3 b { color: var(--gold); margin-right: 6px; }
@@ -300,7 +280,7 @@ figcaption { font: 700 13px var(--mono); color: var(--text-2); }
           <table>
             <tbody>
               <tr><td>Card</td><td class="num">600 × 900</td><td>The template's units. 2:3 at every size: slot 86, phone 104, fan 150 and sheet 276 wide.</td></tr>
-              <tr><td>Border</td><td class="num">30 · r 30</td><td>Black, ringed and glowing in the card's color. The engine draws it, so no art file contains it.</td></tr>
+              <tr><td>Border</td><td class="num">30 · outer r 45</td><td>Black, ringed and glowing in the card's color. The engine draws it, so no art file contains it. Its outer corner is concentric with the canvas's (30 + 15), so it is 30 thick all the way round, at every size.</td></tr>
               <tr><td>Canvas</td><td class="num">540 × 840 @ 30,30 · r 15</td><td>The inner area, and the art file's whole canvas. The only clip.</td></tr>
               <tr><td>Focus zone</td><td class="num">460 × 400 @ 70,100</td><td>Where a default art's subject sits, on a transparent ground. Glow, rings and splashes may run past it. A guide, never a mask.</td></tr>
               <tr><td>Plate zone</td><td class="num">lower third</td><td>Always covered by the name plate and the text plate, which are translucent glass. Art there reads as texture behind words.</td></tr>
@@ -316,8 +296,8 @@ figcaption { font: 700 13px var(--mono); color: var(--text-2); }
 
   <section aria-labelledby="h-layouts">
     <div>
-      <h2 id="h-layouts">Three layouts</h2>
-      <p class="lede">Each one borrows a convention a TCG player already knows, set in the glass's shapes. Shown at the fan's size, default art and full art.</p>
+      <h2 id="h-layouts">The layout</h2>
+      <p class="lede">A, Low name, chosen over a Banner (from Magic and Yu-Gi-Oh!) and a Cost corner (from Hearthstone and Lorcana), which are in this board's history. Shown at the fan's size, default art and full art.</p>
     </div>
     <div class="trio" id="trio"></div>
   </section>
@@ -326,11 +306,6 @@ figcaption { font: 700 13px var(--mono); color: var(--text-2); }
     <div>
       <h2 id="h-ladder">Every size</h2>
       <p class="lede">The same card, scaled. A smaller size drops pieces. It never reshapes the art.</p>
-    </div>
-    <div class="controls" role="group" aria-label="Layout for the size ladder">
-      <button class="chip" type="button" data-pick="low" aria-pressed="true">A · Low name</button>
-      <button class="chip" type="button" data-pick="banner" aria-pressed="false">B · Banner</button>
-      <button class="chip" type="button" data-pick="corner" aria-pressed="false">C · Cost corner</button>
     </div>
     <div id="ladders"></div>
   </section>
@@ -407,11 +382,9 @@ function card(key, variant, size) {
       <div class="pc-guides"><div class="g-focus"><span class="g-label" style="left:2px;top:2px">focus zone</span></div><div class="g-plates"><span class="g-label" style="right:2px;top:2px">plates</span></div><span class="g-label" style="left:2px;bottom:2px">canvas 540×840</span></div>
     </div>
     <div class="pc-guides-outer"></div>
-    <span class="pc-coin">${k.price.replace('+', '')}</span>
     <span class="pc-badges"><span class="badge">${k.align}</span><span class="badge ghost">${k.play}</span></span>
     <span class="pc-gem" title="${k.rarity}"><span>${k.gem}</span></span>
-    <span class="pc-name-plate"></span>
-    <span class="pc-name">${k.name}</span>
+    <span class="pc-name-plate"><span class="pc-name">${k.name}</span></span>
     <span class="pc-line">${line}</span>
     <span class="pc-price"><span class="orb"></span>${k.price}</span>
     <span class="pc-foot"><span>Postcard · ${k.foot}</span><span class="credit">${variant === 'full' ? k.fullCredit : k.credit}</span></span>
@@ -420,13 +393,11 @@ function card(key, variant, size) {
 
 const LAYOUTS = [
   { id: 'low', title: 'Low name', from: 'From today\'s card and Pokémon\'s full arts', text: 'Badges sit on the top border, the gem sits in the corner, and the name plate cuts across the art\'s lower third. The art gets the most uninterrupted height.' },
-  { id: 'banner', title: 'Banner', from: 'From Magic and Yu-Gi-Oh!', text: 'A title bar sits on the top border and the badges on the left one. The name is read first and in the same place at every size, but the bar takes a slice off the top of the art.' },
-  { id: 'corner', title: 'Cost corner', from: 'From Hearthstone and Lorcana', text: 'The price is a coin on the top-left corner and the badges sit on the bottom border. It is the most familiar game shape, but it puts the price on every size, where today it shows only on the sheet.' },
 ];
 
 document.getElementById('trio').innerHTML = LAYOUTS.map((l, i) => `
   <div class="cand" data-layout="${l.id}">
-    <h3><b>${'ABC'[i]}</b>${l.title}</h3>
+    <h3><b>A</b>${l.title}</h3>
     <div class="pair">${card('stick', 'default', 'fan')}${card('whoops', 'full', 'fan')}</div>
     <p><i>${l.from}.</i> ${l.text}</p>
   </div>`).join('');
