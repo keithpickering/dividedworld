@@ -7,6 +7,7 @@ import { AnswerRejected, LedgerWriteFailed, models as realModels } from '../_sha
 import type { ModelCallRow } from '../_shared/models/ledger.ts';
 import type { ChatRequest, CompletionRequest, ModelResult, Models } from '../../../engine/system/model.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
+import { autocorrect as autocorrectRules } from '../../../instances/divided-world/cards/autocorrect.ts';
 import { whoops as whoopsRules } from '../../../instances/divided-world/cards/whoops.ts';
 
 // A Wednesday: the week's 20 posts over its five days left give an allowance of 4, so three posts and one card slot.
@@ -38,6 +39,8 @@ interface World {
   boards?: Record<string, string>;
   /** Personas whose signal names no thread (the pick's thread-null stumble). */
   noThread?: string[];
+  /** The body card_target_reach reports for a post the run did not write. */
+  targetBody?: string;
 }
 type Spend = { day: string; staff: string; trigger: string; post_act: string; card_act: string | null; started_thread: boolean; record: any };
 
@@ -112,6 +115,12 @@ function fakeDb(w: World = {}) {
           const a = { id: nextId('card'), staff: String(args.staff_key), kind: fn === 'staff_set_card' ? 'set' : 'card', thread: null, target: args.target as string, payload: fn === 'staff_set_card' ? {} : { card: args.card, ...(args.pool_day ? { pool: args.pool_day } : {}) } };
           state.acts.push(a);
           return { id: a.id } as T;
+        }
+        case 'card_target_reach': {
+          // The post as the act function reads it: a quoted post says Hello there.; a post the run wrote says what it was given.
+          const wrote = state.acts.find((a) => a.id === args.target);
+          const body = wrote ? String(wrote.payload?.body ?? '') : (w.targetBody ?? 'Hello there. Pineapple is a fine topping.');
+          return { act: args.target, kind: 'post', length: body.length, body, version: 'v1', effects: [], above: {} } as T;
         }
         case 'write_staff_note': state.notes.push({ staff: String(args.staff_key), post: String(args.post), body: String(args.body) }); return 1 as T;
         case 'record_pool_spend': {
@@ -536,4 +545,86 @@ test('the claim is taken at the start of the run, before any write, and a disabl
   const off = fakeDb({ enabled: false });
   await run(off, fakeModels(normal));
   assert.equal(off.count('claim_pool_run'), 0);
+});
+
+/* ------------------------------------------------------------------------------- a persona chooses its card's options ---- */
+
+const asks = (card: Record<string, unknown>) => (r: ChatRequest) => ({ words: `A reply from ${r.staff}.`, card: { on: 'reply', ...card } });
+const oneReply = { pool: { threadsWeekly: 0 } };
+
+test('Autocorrect is offered with its options in the prompt and the schema, and Whoops! carries config.whoops', async () => {
+  const d = fakeDb(oneReply);
+  const m = fakeModels(asks({ key: 'autocorrect', config: { autocorrect: { phrase: 'fine topping', replacement: 'terrible crime' } } }));
+  await run(d, m);
+  const offered = m.chats.find((c) => (c.schema as any).properties.card)!;
+  const schema = offered.schema as any;
+  assert.deepEqual(Object.keys(schema.properties.card.properties.config.properties).sort(), ['autocorrect', 'stick-around', 'whoops']);
+  assert.match(offered.system, /card\.config\.autocorrect/);
+  assert.ok((offered.rules as any).fields.card.fields.config.fields.whoops, 'and the model layer\'s rule names them');
+  assert.ok(m.chats.filter((c) => !(c.schema as any).properties.card).every((c) => !JSON.stringify(c.rules).includes('whoops')), 'a call with no card offered has no options in its rule');
+});
+
+test('a persona\'s valid Autocorrect is played with its phrase, on the whole post, and the config is on the record', async () => {
+  const d = fakeDb(oneReply);
+  const m = fakeModels(asks({ key: 'autocorrect', config: { autocorrect: { phrase: 'fine topping', replacement: 'terrible crime' } } }));
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  const play = d.of('staff_play_card')[0]!;
+  assert.equal(play.card, 'autocorrect');
+  assert.deepEqual(play.config, { phrase: 'fine topping', replacement: 'terrible crime' });
+  assert.deepEqual(autocorrectRules.validateConfig(play.config).ok, true);
+  const spend = d.state.spends.find((x) => x.staff === play.staff_key)!;
+  assert.deepEqual(spend.record.cardConfig, play.config);
+  assert.equal(spend.record.cardOptionsFailed, undefined);
+  assert.equal(d.count('card_target_reach') >= 1, true, 'the target was read as the act function reads it');
+});
+
+test('a phrase not in the post drops the card with the trim, and the post is written', async () => {
+  const d = fakeDb(oneReply);
+  const m = fakeModels(asks({ key: 'autocorrect', config: { autocorrect: { phrase: 'banana split', replacement: 'terrible crime' } } }));
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  assert.equal(d.count('staff_play_card'), 0, 'Autocorrect has no fallback');
+  assert.equal(d.count('write_staff_act'), 3, 'every post is written');
+  const pick = out.picks.find((x) => x.cardRefused)!;
+  assert.match(pick.cardOptionsFailed!, /autocorrect.*banana split|not in this post/);
+  assert.equal(pick.cardRefused, 'no configuration could be built for the card');
+  assert.ok(pick.trims.some((t) => t.path === 'card.config.autocorrect'), 'the trim names the card');
+  assert.equal(pick.status, 'posted');
+});
+
+test('an Autocorrect without options is dropped the same way, with no failure to name', async () => {
+  const d = fakeDb(oneReply);
+  await run(d, fakeModels(asks({ key: 'autocorrect' })));
+  assert.equal(d.count('staff_play_card'), 0);
+});
+
+test('an ink that is not a color falls back to a staffConfigs ink, with the trim', async () => {
+  const d = fakeDb(oneReply);
+  const m = fakeModels(asks({ key: 'whoops', config: { whoops: { color: 'not a color at all' } } }));
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  const play = d.of('staff_play_card')[0]!;
+  const config = play.config as { color: string };
+  assert.deepEqual(whoopsRules.validateConfig(config), { ok: true, value: config });
+  assert.ok((whoopsRules.staffConfigs ?? []).some((c) => (c as { color: string }).color === config.color), 'one of the five');
+  const pick = out.picks.find((x) => x.card)!;
+  assert.match(pick.cardOptionsFailed!, /^whoops: /);
+  assert.ok(pick.trims.some((t) => t.path === 'card.config.whoops'));
+  assert.deepEqual(d.state.spends.find((x) => x.staff === play.staff_key)!.record.cardConfig, config);
+});
+
+test('a persona\'s valid ink is played as given', async () => {
+  const d = fakeDb(oneReply);
+  await run(d, fakeModels(asks({ key: 'whoops', config: { whoops: { color: '#12ab34' } } })));
+  assert.deepEqual(d.of('staff_play_card')[0]!.config, { color: '#12ab34' });
+});
+
+test('an answer carrying another card\'s options keeps only the chosen card\'s', async () => {
+  const d = fakeDb(oneReply);
+  const m = fakeModels(asks({ key: 'whoops', config: { whoops: { color: 'teal' }, autocorrect: { phrase: 'fine topping', replacement: 'x y z' } } }));
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  assert.deepEqual(d.of('staff_play_card')[0]!.config, { color: 'teal' });
+  assert.ok(out.picks.some((x) => x.trims.some((t) => t.path === 'card.config.autocorrect' && t.predicate === 'notChosen')));
 });

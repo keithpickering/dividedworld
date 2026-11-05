@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { testSystem } from '../rules/test-system.ts';
-import { chatterCompletion, chatterPrompt, chatterSchema, repairChatter, CHATTER_RULE, type OfferedCard, type RepairFacts } from './chatter.ts';
+import { chatterCompletion, chatterPrompt, chatterSchema, repairChatter, chatterRule, type OfferedCard, type RepairFacts } from './chatter.ts';
 import { noteMost } from './memory.ts';
 import { repair } from './validate.ts';
 
@@ -133,10 +133,10 @@ test('a rejection carries the trims made before it', () => {
 
 test('the model layer\'s rule passes a good answer whole and rejects missing words by name; the card and note are not tightened there', () => {
   const good = { words: 'Hi.', title: 't', card: { key: 'whoops', on: 'both' }, note: 'n'.repeat(900) };
-  const r = repair(good, CHATTER_RULE);
+  const r = repair(good, chatterRule({ offered: [CAST, SET] }));
   assert.ok(r.ok);
   assert.deepEqual(r.value, good, 'the rule cuts nothing: repairChatter owns every bound');
-  const miss = repair({ title: 't' }, CHATTER_RULE);
+  const miss = repair({ title: 't' }, chatterRule({ offered: [CAST, SET] }));
   assert.ok(!miss.ok);
   assert.equal(miss.predicate, 'required');
 });
@@ -199,4 +199,55 @@ test('the oldVoice completion is one document that ends where the persona\'s wor
   assert.ok(c.prompt.endsWith('Old Timer:'));
   assert.ok(c.prompt.includes('Ann: Pineapple is fine.'));
   assert.ok(c.stop.includes('\n'));
+});
+
+/* A test card with options (the engine knows no instance's cards): one string field, as Whoops!'s ink is. */
+const INKED: OfferedCard = {
+  key: 'inked', name: 'Inked', play: 'cast',
+  options: { prompt: 'Choose the ink.', schema: { type: 'object', properties: { color: { type: 'string' } }, required: ['color'], additionalProperties: false } },
+};
+const PLAIN: OfferedCard = { key: 'plain', name: 'Plain', play: 'cast' };
+
+test('the schema carries card.config.<key> only for an offered card with options, and uses no anyOf', () => {
+  const none = chatterSchema({ askedTitle: false, offered: [PLAIN] }) as any;
+  assert.equal(none.properties.card.properties.config, undefined, 'no card with options, no config');
+  const some = chatterSchema({ askedTitle: false, offered: [PLAIN, INKED] }) as any;
+  assert.deepEqual(Object.keys(some.properties.card.properties.config.properties), ['inked'], 'by key, only the card with options');
+  assert.deepEqual(some.properties.card.properties.config.properties.inked, INKED.options!.schema);
+  assert.deepEqual(some.properties.card.required, ['key', 'on'], 'the config is optional');
+  assert.ok(!JSON.stringify(some).includes('anyOf'));
+});
+
+test('the prompt puts a card\'s options on the line after it, and names where they go', () => {
+  const { system } = chatterPrompt({
+    premise: 'p', persona, career: { led: [], offices: [] } as any, memory: null, notes: [], thread: null, quoting: { name: 'Ann', body: 'Hello.' },
+    trigger: 'named', offeredCards: [INKED, PLAIN], startThread: false, limits: { threadPosts: 3, excerptChars: 100, postMaxLength: 200, titleMaxLength: 40 },
+  });
+  const lines = system.split('\n');
+  const at = lines.findIndex((l) => l.startsWith('- inked:'));
+  assert.ok(at >= 0);
+  assert.match(lines[at + 1]!, /card\.config\.inked/);
+  assert.match(lines[at + 1]!, /Choose the ink\./);
+  assert.ok(lines[at + 2]!.startsWith('- plain:'), 'a card without options has no second line');
+});
+
+test('the model layer\'s rule keeps an offered card\'s options and drops the fields it does not name', () => {
+  const r = repair({ words: 'Hi.', card: { key: 'inked', on: 'reply', config: { inked: { color: 'teal', seed: 4 }, other: { a: 1 } } } }, chatterRule({ offered: [INKED] }));
+  assert.ok(r.ok);
+  assert.deepEqual((r.value as any).card.config, { inked: { color: 'teal' } });
+});
+
+test('the chosen card\'s options become the answer\'s config, and another card\'s are dropped with a trim', () => {
+  const r = ok({ words: 'Hi.', card: { key: 'inked', on: 'reply', config: { inked: { color: 'teal' }, whoops: { color: 'red' } } } }, { offered: [INKED, CAST] });
+  assert.deepEqual(r.answer.card, { key: 'inked', on: 'reply', config: { color: 'teal' } });
+  assert.deepEqual(r.trims, [{ path: 'card.config.whoops', predicate: 'notChosen', before: 1, after: 0 }]);
+});
+
+test('options for a card without any, or not an object, are dropped with a trim and the card stands', () => {
+  const a = ok({ words: 'Hi.', card: { key: 'plain', on: 'reply', config: { plain: { x: 1 } } } }, { offered: [PLAIN] });
+  assert.deepEqual(a.answer.card, { key: 'plain', on: 'reply' });
+  assert.deepEqual(a.trims.map((t) => t.predicate), ['noOptions']);
+  const b = ok({ words: 'Hi.', card: { key: 'inked', on: 'reply', config: { inked: 'teal' } } }, { offered: [INKED] });
+  assert.deepEqual(b.answer.card, { key: 'inked', on: 'reply' });
+  assert.deepEqual(b.trims.map((t) => t.predicate), ['isObject']);
 });
