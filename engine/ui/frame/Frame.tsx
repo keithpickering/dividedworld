@@ -20,10 +20,11 @@ import { signInHref } from '../account/next.ts';
 import { useKayfa } from '../context.tsx';
 import type { BoardSummary } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
-import { Link, searchOf, useLocation } from '../router.tsx';
+import { Link, searchOf, useLocation, useNavigation } from '../router.tsx';
 import { PlayProvider } from '../cards/play.tsx';
 import { TipsProvider } from '../tips/Tips.tsx';
 import { Hud } from './Hud.tsx';
+import { Loading } from './Loading.tsx';
 import './frame.css';
 
 export function Frame({ children }: { readonly children: ReactNode }) {
@@ -32,6 +33,7 @@ export function Frame({ children }: { readonly children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [boards, setBoards] = useState<readonly BoardSummary[]>([]);
   const navId = useId();
+  const { pending } = useNavigation();
   /*
    * A move to another page reads as one: the page starts at its top and focus is on it, so a
    * keyboard and a screen reader begin there, as after a load. An address with a fragment is the
@@ -65,10 +67,11 @@ export function Frame({ children }: { readonly children: ReactNode }) {
   return (
     <TipsProvider>
       <PlayProvider>
-        <div className="kb-frame">
+        <div className="kb-frame" data-kb-loading={pending ? true : undefined}>
           <header className="kb-banner">
             <Link to="/" className="kb-logo">{ui.copy.siteName}</Link>
             <span className="kb-tagline kb-muted kb-small">{ui.copy.siteTagline}</span>
+            <Loading />
             <button type="button" className="kb-button kb-menu-button" aria-expanded={open} aria-controls={navId} onClick={() => setOpen((o) => !o)}>
               Boards
             </button>
@@ -80,7 +83,7 @@ export function Frame({ children }: { readonly children: ReactNode }) {
               ))}
             </ul>
           </nav>
-          <main ref={main} className="kb-page" tabIndex={-1}>{children}</main>
+          <main ref={main} className="kb-page" tabIndex={-1} aria-busy={pending ? true : undefined}>{children}</main>
           <Hud />
         </div>
       </PlayProvider>

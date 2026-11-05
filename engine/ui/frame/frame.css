@@ -28,6 +28,65 @@
   margin-inline: auto;
 }
 
+/*
+ * The loading meter, beside the host in the banner (Loading.tsx): a 96 by 12 well, sunken, with a fill of
+ * blocks 8px wide and 2px apart. Its colors are the game piece's own tokens (engine/ui/tokens.css).
+ */
+.kb-address {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: var(--kb-size-small);
+}
+
+.kb-address-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-meter {
+  box-sizing: border-box;
+  flex: none;
+  display: block;
+  width: 96px;
+  height: 12px;
+  padding: 1px;
+  background: var(--kb-meter-face);
+  border: 1px solid;
+  border-color: var(--kb-meter-lo) var(--kb-meter-hi) var(--kb-meter-hi) var(--kb-meter-lo);
+  box-shadow: inset 1px 1px 0 var(--kb-meter-dark);
+}
+
+.kb-meter-fill {
+  display: block;
+  height: 100%;
+  background: repeating-linear-gradient(90deg, var(--kb-meter-fill) 0 8px, transparent 8px 10px);
+  transition: width 0.12s steps(3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-kb-motion="full"]) .kb-meter-fill {
+    transition: none;
+  }
+}
+
+:root[data-kb-motion="reduce"] .kb-meter-fill {
+  transition: none;
+}
+
+.kb-frame[data-kb-loading] {
+  cursor: progress;
+}
+
+@media (max-width: 40em) {
+  .kb-address-text {
+    max-width: 40vw;
+  }
+}
+
 .kb-logo {
   /* The site's name is one line; the banner wraps what is beside it, and the name never wraps in a column too narrow for ten of its ems. */
   white-space: nowrap;
