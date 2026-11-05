@@ -43,7 +43,7 @@ export const whoops: CardRules<{ color: string }> = {
   /** The inks code falls back on when a persona's own ink fails (staffConfigOf). */
   staffConfigs: [{ color: 'red' }, { color: 'teal' }, { color: 'orange' }, { color: 'purple' }, { color: 'lime' }],
   staffOptions: {
-    prompt: 'Choose the ink the post is splatted in: any named color, such as teal or crimson, or a hex color written #rrggbb.',
+    prompt: 'Choose the ink the post is splatted in: a basic color name such as teal or crimson, or a hex color written #rrggbb.',
     schema: { type: 'object', properties: { color: { type: 'string' } }, required: ['color'], additionalProperties: false },
   },
   // Only the ink is the caster's: anything else sent (a seed among them) is not kept.

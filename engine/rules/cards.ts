@@ -370,8 +370,9 @@ export function landsOn(rules: Pick<CardRules, 'key' | 'stack' | 'reaches'>, tar
 }
 
 /**
- * The fallback configuration the pool plays a card with when a persona's own options (`staffOptions`) fail or are not given, chosen by code: the card's default where `validateConfig({})` accepts
- * one (played as `{}`, so the database applies the same default), else one of its `staffConfigs` picked by `rng` (in [0, 1)) and returned
+ * The fallback configuration the pool plays a card with when a persona's own options (`staffOptions`) fail or are not given,
+ * chosen by code: the card's default where `validateConfig({})` accepts one (played as `{}`, so the database applies the same
+ * default), else one of its `staffConfigs` picked by `rng` (in [0, 1)) and returned
  * as `validateConfig` shapes it; null where code can build none, and the card is then not offered.
  */
 export function staffConfigOf(card: CardRules, rng: () => number): unknown | null {
