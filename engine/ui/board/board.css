@@ -158,10 +158,14 @@
     position: absolute;
     width: 1px;
     height: 1px;
-    overflow: hidden;
     clip-path: inset(50%);
   }
 
+  /*
+   * The head stays in the accessibility tree, hidden by clip-path alone: the folded list is a table still (its roles are set), and a
+   * display:none head would take its column headers from it. No `overflow: hidden` goes with the clip, since a visible line inside a
+   * box that clips it is what the text-cut check (and a reader's tool) calls cut off, and the clip-path already shows nothing.
+   */
   /* The head's cells are hidden with it, each as the clip itself: they are no cells of a table here, so no width is asked of them (the 52% and 9% above) and none can be squeezed. */
   .kb-thread-list thead th:nth-child(n) {
     display: block;
@@ -169,7 +173,6 @@
     width: 1px;
     height: 1px;
     padding: 0;
-    overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
   }
