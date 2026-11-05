@@ -61,7 +61,7 @@ test('another account signing in starts the open screen afresh: the last account
   const pipe = (await fake.myCharacters()).find((c) => c.name === 'Pipewrench')!;
   await fake.turn(pipe.id, instance.classes.find((c) => c.key !== pipe.class)!.key, 'announced', false, false);
   render(<App api={fake} />);
-  await userEvent.click(await screen.findByRole('button', { name: /^Pipewrench/u }));
+  await userEvent.click(await screen.findByRole('tab', { name: /^Pipewrench/u }));
   await userEvent.click(await screen.findByRole('button', { name: 'Withdraw Pipewrench\'s Turn' }));
   expect(await screen.findByText('Pipewrench\'s Turn is withdrawn.')).toBeInTheDocument();
   fake.signInAs(fake.seed.account('next'));
