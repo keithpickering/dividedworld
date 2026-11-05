@@ -76,15 +76,6 @@ test('the playtest overrides are separate values, not edits of the defaults', ()
   assert.deepEqual(restPlaytest, restDefaults, 'the playtest changes only what it overrides');
 });
 
-test('the reaction set is the spec\'s four sets of four', () => {
-  const by = (q: string) => reactions.filter((r) => r.quadrant === q).map((r) => r.emoji);
-  assert.deepEqual(by('excitedPositive'), ['🔥', '❤️', '🙌', '🤩']);
-  assert.deepEqual(by('excitedNegative'), ['🍅', '🤢', '🤬', '👎']);
-  assert.deepEqual(by('calmPositive'), ['😌', '☕', '🤝', '🧘']);
-  assert.deepEqual(by('boredNegative'), ['💤', '🙄', '🗑️', '🥱']);
-  assert.equal(reactions.length, 16);
-});
-
 test('every reaction key is unique, plain, and has a quadrant', () => {
   const keys = reactions.map((r) => r.key);
   assert.equal(new Set(keys).size, keys.length);

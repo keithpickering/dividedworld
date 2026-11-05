@@ -20,7 +20,7 @@ for (const path of PAGES) {
 
 test('a thread with its reply box: every stop shows a focus indicator', async ({ page }) => {
   await page.goto('/b/general');
-  await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+  await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Your reply' })).toBeVisible();
   expect(await controlsWithoutFocusIndicator(page)).toEqual([]);
 });
@@ -33,7 +33,7 @@ test('Stick Around\'s view: the post\'s scroller, the checkbox and the button ea
 
 test('the reaction picker: every kind the arrows reach shows a focus indicator', async ({ page }) => {
   await page.goto('/b/general');
-  await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+  await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
   /* Opened by keyboard, as the picker's own focus is only drawn for a keyboard user. */
   await page.locator('#post-3').getByRole('button', { name: 'React' }).focus();
   await page.keyboard.press('Enter');
@@ -50,7 +50,7 @@ test('the reaction picker: every kind the arrows reach shows a focus indicator',
 
 test('the spin form: its fields show a focus indicator', async ({ page }) => {
   await page.goto('/b/general');
-  await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+  await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
   await page.locator('#post-1').getByRole('button', { name: 'Spin thread' }).click();
   await expect(page.getByLabel('Thread title')).toBeFocused();
   expect((await focusedIndicator(page))?.visible).toBe(true);
@@ -184,8 +184,8 @@ test('Back from "Make a character" in the reply box returns to the same post in 
 
 test('a link out of the glass forgets the thread, and Back lands on the one the glass was last entered from', async ({ page }) => {
   await page.goto('/b/general');
-  await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
-  await expect(page.getByRole('heading', { level: 1, name: 'Who keeps reacting with tea?' })).toBeVisible();
+  await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Who keeps reacting with a thumbs up?' })).toBeVisible();
   await page.getByRole('region', { name: 'Game HUD' }).getByRole('button', { name: 'Menu' }).click();
   await expect(page.getByRole('navigation', { name: 'Menu' })).toBeVisible();
   /*

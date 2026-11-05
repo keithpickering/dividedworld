@@ -174,7 +174,7 @@ test.describe('high contrast', () => {
   /* The glass over the board and over a glass page: the React picker on a post, the Turn modal on My characters, and the hand. */
   test('the React picker over a post: every line stands on solid ground', async ({ page }) => {
     await prefer(page, '/b/general', { contrast: 'high' });
-    await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+    await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
     await page.locator('#post-3').getByRole('button', { name: 'React' }).click();
     await expect(page.getByRole('dialog', { name: /^React to / })).toBeVisible();
     expect(await page.locator('.kb-glass-dialog').count()).toBeGreaterThan(0);

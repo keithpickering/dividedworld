@@ -72,7 +72,7 @@ test('the scoped estimate is the whole window\'s, filtered to the player, and na
   };
   // On Ann's posts: Bob through two masks (one that never writes), Cat, Dee; Ann's own Lurker (dropped as her own), and an old post's.
   react(p, 'Est Heel', 'est-bob', 'fire', 5); react(p, 'Est Ghost', 'est-bob', 'tomato', 5.5); react(p, 'Est Cat', 'est-cat', 'fire', 6);
-  react(p, 'Est Dee', 'est-dee', 'zzz', 6.5); react(p, 'Est Lurker', 'est-ann', 'fire', 7); react(old, 'Est Cat', 'est-cat', 'fire', 8);
+  react(p, 'Est Dee', 'est-dee', 'facepalm', 6.5); react(p, 'Est Lurker', 'est-ann', 'fire', 7); react(old, 'Est Cat', 'est-cat', 'fire', 8);
   // On Bob's post: Ann's Lurker early, then a crowd, one of them before the window; and votes after Ann's card.
   react(q, 'Est Lurker', 'est-ann', 'fire', 1.6); react(q, 'Est Cat', 'est-cat', 'fire', 9); react(q, 'Est Dee', 'est-dee', 'fire', 9.5);
   react(q, 'Est Shadow', 'est-bob', 'fire', 10);

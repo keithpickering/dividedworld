@@ -50,7 +50,7 @@ test('a day on the board settles into wallets and standings, once', async () => 
     select '${characters.Pipewrench}', 'post', t.id, '{"body": "Pineapple belongs on pizza."}', '${at(1)}' from t returning id`);
   sql(`insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values
     ('${post}', '${characters.Sunbeam}', '${ids['e2e-face']}', 'tomato', 1, '${at(2)}'),
-    ('${post}', '${characters.Shadow}', '${ids['e2e-lurk']}', 'nauseated', 1, '${at(3)}')`);
+    ('${post}', '${characters.Shadow}', '${ids['e2e-lurk']}', 'vomiting', 1, '${at(3)}')`);
 
   const until = at(24);
   const first = await runSettlement(db, instance, until);
@@ -137,7 +137,7 @@ test('a player reacting on two days is paid one vote in all, through the real mi
     ('${post}', '${characters['Twice Fan']}', '${ids['e2e-twice-fan']}', 'tomato', 1, '${at(2)}')`);
   assert.equal((await runSettlement(db, instance, at(24))).status, 'applied');
   sql(`insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values
-    ('${post}', '${characters['Twice Fan']}', '${ids['e2e-twice-fan']}', 'nauseated', 2, '${at(26)}')`);
+    ('${post}', '${characters['Twice Fan']}', '${ids['e2e-twice-fan']}', 'vomiting', 2, '${at(26)}')`);
   assert.equal((await runSettlement(db, instance, at(48))).status, 'applied');
   assert.equal(Number(sql(`select sum(amount) from ledger where character = '${characters['Twice Heel']}' and reason = 'heel.drewHeat'`)), 10, 'one vote of heat over two days, not one and a half');
 });

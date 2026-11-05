@@ -23,7 +23,7 @@ test('the main flows run under the policy with no violation', async ({ page }) =
   page.on('console', (m) => { if (/content security policy/iu.test(m.text())) violations.push(m.text()); });
   page.on('pageerror', (e) => violations.push(e.message));
   await page.goto('/b/general');
-  await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+  await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
   await page.locator('#post-3').getByRole('button', { name: 'React' }).click();
   await expect(page.getByRole('dialog', { name: /^React to / })).toBeVisible();
   await page.keyboard.press('Escape');

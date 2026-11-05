@@ -248,12 +248,12 @@ describe('the thread', () => {
     expect(await nameOf(later.fake, plays[0]!.character)).toBe('Pipewrench');
   });
 
-  it('has the Main board\'s chips on #41 and #42, with the rival\'s Tea among #42\'s, and #43\'s four from 22:04', async () => {
+  it('has the Main board\'s chips on #41 and #42, with the rival\'s Folded hands among #42\'s, and #43\'s four from 22:04', async () => {
     const { fake, thread } = await load('01-main');
     const posts = (await postsOf(fake, thread)).slice(40, 43);
     const tallies = await fake.tallies(posts.map((a) => a.id));
-    expect(tallies[posts[0]!.id]).toEqual({ fire: 4, 'eye-roll': 2, tea: 1 });
-    expect(tallies[posts[1]!.id]).toEqual({ nauseated: 3, tomato: 2, handshake: 1, tea: 1 });
+    expect(tallies[posts[0]!.id]).toEqual({ fire: 4, 'eye-roll': 2, 'folded-hands': 1 });
+    expect(tallies[posts[1]!.id]).toEqual({ vomiting: 3, tomato: 2, salute: 1, 'folded-hands': 1 });
     expect(tallies[posts[2]!.id]).toEqual({});
     const later = await load('06-turn');
     const third = (await postsOf(later.fake, later.thread))[42]!;
@@ -268,21 +268,21 @@ describe('the thread', () => {
 });
 
 describe('the rival', () => {
-  it('has the Tea on Mrs. Hooligan\'s #42 as its own row, and only that one', async () => {
+  it('has the Folded hands on Mrs. Hooligan\'s #42 as its own row, and only that one', async () => {
     const { fake, thread } = await load('03-react');
     const post42 = (await postsOf(fake, thread))[41]!;
     const reactions = await fake.myReactions((await postsOf(fake, thread)).map((a) => a.id));
     expect(reactions).toHaveLength(1);
-    expect(reactions[0]).toMatchObject({ act: post42.id, kind: 'tea' });
+    expect(reactions[0]).toMatchObject({ act: post42.id, kind: 'folded-hands' });
     expect(await nameOf(fake, reactions[0]!.character)).toBe('Gloomba');
   });
 
-  it('is the same Tea at the Main moment, seen from the rival\'s own sign-in, and the player does not own it', async () => {
+  it('is the same Folded hands at the Main moment, seen from the rival\'s own sign-in, and the player does not own it', async () => {
     const { fake, thread } = await load('01-main');
     const post42 = (await postsOf(fake, thread))[41]!;
     expect(await fake.myReactions([post42.id])).toEqual([]);
     expect(await fake.verifyCode(EMAILS.rival, TEST_CODE)).toMatchObject({ ok: true });
-    expect(await fake.myReactions([post42.id])).toEqual([expect.objectContaining({ act: post42.id, kind: 'tea' })]);
+    expect(await fake.myReactions([post42.id])).toEqual([expect.objectContaining({ act: post42.id, kind: 'folded-hands' })]);
   });
 });
 

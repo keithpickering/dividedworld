@@ -7,7 +7,7 @@
  * the play function presses React the same way.
  *
  * The rival is the viewer because the player owns Mrs. Hooligan, and a player's own posts carry no
- * React (the glass plan, section 3, item 1); the rival's own Tea is the outlined kind, and "2 of 3
+ * React (the glass plan, section 3, item 1); the rival's own Folded hands is the outlined kind, and "2 of 3
  * left" is the rival's own count. The post is the one the moment's route names (the preview opens
  * the story there: `/t/<thread>?page=3#post-42`), read the way the thread reads it (its Act, its
  * author's postbit, its tallies and the viewer's own reactions) and drawn by the thread's own

@@ -651,11 +651,11 @@ describe('reads and their rows', () => {
 
   it('keys tallies, view counts and reading by id', async () => {
     const h = harness((r) => {
-      if (r.url.pathname.endsWith('/reaction_tallies')) return rows([{ act: A, kind: 'fire', count: 3 }, { act: A, kind: 'zzz', count: 1 }]);
+      if (r.url.pathname.endsWith('/reaction_tallies')) return rows([{ act: A, kind: 'fire', count: 3 }, { act: A, kind: 'facepalm', count: 1 }]);
       if (r.url.pathname.endsWith('/thread_view_counts')) return rows([{ thread: T, views: 9 }]);
       return rows([{ thread: T, furthest_seq: 4 }]);
     });
-    expect(await h.api.tallies([A, B])).toEqual({ [A]: { fire: 3, zzz: 1 }, [B]: {} });
+    expect(await h.api.tallies([A, B])).toEqual({ [A]: { fire: 3, facepalm: 1 }, [B]: {} });
     expect(await h.api.viewCounts([T])).toEqual({ [T]: 9 });
     expect(await h.api.reading([T])).toEqual({ [T]: 4 });
   });
@@ -1615,13 +1615,13 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
   it('builds a move\'s notice from its Act, its tally (the top three) and move_progress, a public read', async () => {
     const h = harness((r) => {
       if (r.url.pathname.endsWith('/acts_public')) return rows([MOVE_ROW]);
-      if (r.url.pathname.endsWith('/reaction_tallies')) return rows([{ kind: 'fire', count: 9 }, { kind: 'zzz', count: 1 }, { kind: 'tea', count: 3 }, { kind: 'tomato', count: 6 }]);
+      if (r.url.pathname.endsWith('/reaction_tallies')) return rows([{ kind: 'fire', count: 9 }, { kind: 'facepalm', count: 1 }, { kind: 'folded-hands', count: 3 }, { kind: 'tomato', count: 6 }]);
       if (r.url.pathname.endsWith('/rpc/move_progress')) return json({ done: 7, of: 12, met: false, checkedAt: '2026-11-01T14:05:00+00:00' });
       return json({}, 404);
     });
     const notice = await h.api.moveNotice(A);
     expect(notice).toMatchObject({ act: A, kind: 'renameBoard', body: 'Toast now.', demand: { kind: 'distinctCharactersOnBoard' }, progress: { done: 7, of: 12, met: false, checkedAt: '2026-11-01T14:05:00+00:00' }, expiresAt: '2026-11-13T12:00:00+00:00' });
-    expect(notice?.reactions).toEqual([{ kind: 'fire', count: 9 }, { kind: 'tomato', count: 6 }, { kind: 'tea', count: 3 }]);
+    expect(notice?.reactions).toEqual([{ kind: 'fire', count: 9 }, { kind: 'tomato', count: 6 }, { kind: 'folded-hands', count: 3 }]);
     expect(h.to('rpc/move_progress')[0]?.body).toEqual({ move_act: A });
     expect(await harness(() => rows([])).api.moveNotice(A)).toBeNull();
   });

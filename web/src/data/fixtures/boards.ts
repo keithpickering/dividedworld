@@ -269,24 +269,24 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
   post(46, gloomba, LONG_POST);
   play(PLAYED_AT, pipewrench, 46, 'whoops', 'you dropped your ink', { paid: LONG_POST_COST });
 
-  /* ---- reactions: the Main board's chips, the rival's own Tea on #42, then #43's four ---- */
+  /* ---- reactions: the Main board's chips, the rival's own Folded hands on #42, then #43's four ---- */
   const [r1, r2, r3, r4] = fans as [string, string, string, string];
   const [a1, a2, a3, a4] = crowd as [string, string, string, string];
   when(POSTED[41] + 9 * MINUTE, () => {
     for (const [account, character] of [[a1, r1], [a2, r2], [a3, r3], [a4, r4]] as const) seed.react(account, character, posts[41]!, 'fire');
     for (const [account, character] of [[a1, r1], [a2, r2]] as const) seed.react(account, character, posts[41]!, 'eye-roll');
-    seed.react(a3, r3, posts[41]!, 'tea');
+    seed.react(a3, r3, posts[41]!, 'folded-hands');
   });
   when(POSTED[42] + 9 * MINUTE, () => {
-    for (const [account, character] of [[a1, r1], [a2, r2], [a3, r3]] as const) seed.react(account, character, posts[42]!, 'nauseated');
+    for (const [account, character] of [[a1, r1], [a2, r2], [a3, r3]] as const) seed.react(account, character, posts[42]!, 'vomiting');
     for (const [account, character] of [[a1, r1], [a2, r2]] as const) seed.react(account, character, posts[42]!, 'tomato');
-    seed.react(a3, r3, posts[42]!, 'handshake');
-    seed.react(rival, gloomba, posts[42]!, 'tea');
+    seed.react(a3, r3, posts[42]!, 'salute');
+    seed.react(rival, gloomba, posts[42]!, 'folded-hands');
   });
   when(utc(29, 22, 4), () => {
     seed.react(a1, r1, posts[43]!, 'tomato');
     seed.react(a2, r2, posts[43]!, 'tomato');
-    seed.react(a3, r3, posts[43]!, 'nauseated');
+    seed.react(a3, r3, posts[43]!, 'vomiting');
     seed.react(a4, r4, posts[43]!, 'cursing');
   });
 

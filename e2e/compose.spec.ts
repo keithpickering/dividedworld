@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 /* The demo world's short thread: the reply box at its foot, reached and used with the keyboard alone. */
 test('replies with the keyboard only: Tab to the box, type, Send with Enter on the button', async ({ page }) => {
   await page.goto('/b/general');
-  await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+  await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
   const box = page.getByRole('textbox', { name: 'Your reply' });
   await expect(box).toBeVisible();
   /* Start from the last control before the toolbar and Tab forward: the toolbar is one stop, then the box. */
@@ -30,7 +30,7 @@ test('replies with the keyboard only: Tab to the box, type, Send with Enter on t
 
 test('a toolbar press can be undone with Ctrl+Z', async ({ page }) => {
   await page.goto('/b/general');
-  await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+  await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
   const box = page.getByRole('textbox', { name: 'Your reply' });
   await box.fill('make this loud');
   await box.evaluate((el: HTMLTextAreaElement) => { el.setSelectionRange(5, 9); });
@@ -43,7 +43,7 @@ test('a toolbar press can be undone with Ctrl+Z', async ({ page }) => {
 
 test('spins a thread from a post and lands on its ORIGIN box', async ({ page }) => {
   await page.goto('/b/general');
-  await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+  await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
   const post = page.locator('#post-1');
   await post.getByRole('button', { name: 'Spin thread' }).click();
   await post.getByLabel('Thread title').fill('A spin from the tea thread');
@@ -53,5 +53,5 @@ test('spins a thread from a post and lands on its ORIGIN box', async ({ page }) 
   await expect(origin).toBeVisible();
   await expect(origin).toBeFocused();
   await expect(origin).toContainText('Every post I make');
-  await expect(origin.getByRole('link', { name: /in Who keeps reacting with tea\?/ })).toBeVisible();
+  await expect(origin.getByRole('link', { name: /in Who keeps reacting with a thumbs up\?/ })).toBeVisible();
 });

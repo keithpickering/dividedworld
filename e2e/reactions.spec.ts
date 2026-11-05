@@ -43,7 +43,7 @@ test.describe('the Phone board\'s phone', () => {
 
   test('the picker\'s sheet stands on the HUD\'s top edge', async ({ page }) => {
     await page.goto('/b/general');
-    await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+    await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
     await page.locator('#post-3').getByRole('button', { name: 'React' }).click();
     const picker = page.getByRole('dialog', { name: /^React to / });
     await expect(picker).toHaveAttribute('data-kb-place', 'sheet');
@@ -67,7 +67,7 @@ test.describe('a short desktop window', () => {
 
   test('the picker opened on the last post lies inside the window, above the HUD', async ({ page }) => {
     await page.goto('/b/general');
-    await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+    await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
     const posts = page.getByRole('article');
     await expect(posts.first()).toBeVisible();
     /* The last post another player's character wrote has a React button; scroll to the very foot of the page first. */
@@ -104,7 +104,7 @@ test.describe('a wide window', () => {
 
   test('the picker opens by the post\'s reactions, inside the window and clear of the HUD', async ({ page }) => {
     await page.goto('/b/general');
-    await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+    await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
     const post = page.locator('#post-3');
     await post.getByRole('button', { name: 'React' }).click();
     const picker = page.getByRole('dialog', { name: /^React to / });

@@ -49,7 +49,7 @@ describe('the story route', () => {
     const picker = screen.getByRole('dialog', { name: 'React to Mrs. Hooligan\'s post' });
     expect(within(picker).getByRole('status')).toHaveTextContent('2 of 3 left');
     expect(within(picker).getAllByRole('group').map((g) => g.querySelector('.kb-picker-label')?.textContent)).toEqual(['Heat', 'Hype', 'Groan', 'Calm']);
-    expect(within(picker).getByRole('button', { name: 'Tea, Calm, your reaction' })).toBeDisabled();
+    expect(within(picker).getByRole('button', { name: 'Folded hands, Calm, your reaction' })).toBeDisabled();
     expect(within(picker).getByText('Arrow keys move, Enter reacts. Outlined: yours.')).toBeInTheDocument();
   });
 
