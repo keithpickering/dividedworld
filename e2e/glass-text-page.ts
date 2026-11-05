@@ -23,7 +23,7 @@
  * and its surface's element. A panel under the smoke (the dialog's own ground, under its smoke) is
  * not under the text, so the walk stops at the surface's element.
  */
-import { isSkipped, parseColor, pixelStats, type Backing, type Box, type Calm, type Rgba, type TextFact } from './glass-text.ts';
+import { feathersOf, isSkipped, parseColor, pixelStats, type Backing, type Box, type Calm, type Rgba, type TextFact } from './glass-text.ts';
 
 /**
  * What a face inks is read over a string with an ascender and a descender: the design's "ascender
@@ -175,12 +175,6 @@ function pseudoBox(el: Element, ps: CSSStyleDeclaration): Box & { readonly scale
   };
 }
 
-/** A mask's feather: the longest length its gradients ramp over (calm.css: `currentColor var(--kb-glass-calm-feather)`). */
-function featherOf(mask: string): number {
-  if (!mask || mask === 'none') return 0;
-  return Math.max(0, ...[...mask.matchAll(/(-?[\d.]+)px/g)].map((m) => Math.abs(+m[1]!)));
-}
-
 const drawn = (ps: CSSStyleDeclaration) => ps.content !== 'none' && ps.content !== 'normal' && ps.display !== 'none';
 
 /** The nearest calm drawn on `el` or above it, inside the surface's element; a calm whose backing is not drawn is passed over. */
@@ -195,10 +189,13 @@ function calmOf(el: Element, holder: Element): Calm | null {
   const { scale, ...backing } = pseudoBox(c, ps);
   const k = scaleOf(c);
   /* The feather is drawn by the backing's mask, so it shrinks with the backing and with the element. */
-  const feather = featherOf(ps.maskImage || ps.getPropertyValue('-webkit-mask-image')) * zoomOf(c) * scale * Math.min(k.x, k.y);
+  const unit = zoomOf(c) * scale * Math.min(k.x, k.y);
+  const edges = feathersOf(ps.maskImage || ps.getPropertyValue('-webkit-mask-image'), `${c.localName}${c.className ? `.${String(c.className).trim().split(/\s+/u).join('.')}` : ''}`);
+  const l = edges.left * unit, r = edges.right * unit, t = edges.top * unit, b = edges.bottom * unit;
+  const feather = Math.max(l, r, t, b);
   const bg = parseColor(ps.backgroundColor);
   const opacity = (bg ? bg[3] : parseFloat(getComputedStyle(c).getPropertyValue('--kb-glass-calm-opacity'))) * opacityOf(c);
-  const box = { x: backing.x + feather, y: backing.y + feather, width: backing.width - 2 * feather, height: backing.height - 2 * feather };
+  const box = { x: backing.x + l, y: backing.y + t, width: backing.width - l - r, height: backing.height - t - b };
   return { backing, feather, box, opacity };
 }
 

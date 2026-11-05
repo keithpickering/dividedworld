@@ -49,12 +49,14 @@ export async function signInUnseasonedOnBoard(page: Page): Promise<void> {
 /**
  * Signs the session out and in again on the fake, so the page reads the account's preferences and rows afresh (a page reload would reset
  * the fake's world instead). It takes what to wait for once signed in again (`back`: the page's own marker, such as the Game HUD on the
- * board), and returns when that is visible. Out is waited for on the signed-out page's own prompt, so the page has seen the sign-out: a flip
- * with nothing between is batched into no change at all.
+ * board), and returns when that is visible. Out is waited for on the signed-out page's own prompt, Sign in, so the page has seen the
+ * sign-out: a flip with nothing between is batched into no change at all. The prompt is in the page's main, or in the Game HUD where the
+ * front door asks it (a signed-out board screen since the front door).
  */
 export async function flipSession(page: Page, back: Locator): Promise<void> {
   await page.evaluate(() => { (globalThis as E2eWindow).__kbFake.signInAs(null); });
-  await expect(page.getByRole('main').getByRole('link', { name: 'Sign in' })).toBeVisible();
+  const prompt = page.getByRole('main').getByRole('link', { name: 'Sign in' }).or(page.getByRole('region', { name: 'Game HUD' }).getByRole('link', { name: 'Sign in' }));
+  await expect(prompt.first()).toBeVisible();
   await page.evaluate(() => { const w = globalThis as E2eWindow; w.__kbFake.signInAs(w.__kbUnseasoned!); });
   await expect(back).toBeVisible();
 }
