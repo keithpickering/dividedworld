@@ -29,11 +29,11 @@
  * field were wider than their frame for the same reason).
  *
  * `rasterize` is the one function that touches a canvas; jsdom has none, so the cache takes it as a
- * parameter and tests give it a stand-in. Where the browser cannot draw the image (no
- * `createImageBitmap`, a canvas that will not allocate) the layer is simply not drawn, and the
+ * parameter and tests give it a stand-in. Where the browser cannot draw the image (no 2d context,
+ * a canvas that will not allocate) the layer is simply not drawn, and the
  * ground the page is legible on shows, as it does before the raster is ready.
  */
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import type { FieldLayer } from '../types.ts';
 
 /** A size in CSS pixels. */
@@ -54,8 +54,12 @@ const STRETCH_X = 0.15;
 const STRETCH_Y = 0.25;
 /** The pixel ratio the field is rasterized at is capped here: the clouds are blurred, so more is memory for nothing. */
 const MAX_DPR = 2;
-/** A layer's pixels, at most: a 4K window at ratio 2 would otherwise be 33 million pixels, and the field holds four. */
-const MAX_PIXELS = 6_000_000;
+/**
+ * A layer's pixels, at most. A decoded layer is 4 bytes a pixel and the field holds four, so 6 million pixels each was about
+ * 84MB at 1440 and ratio 2. The noise is blurred (a standard deviation of 9 to 18 CSS pixels), so nothing in it is finer than
+ * a pixel and a layer drawn at 1.2 times and stretched by the browser looks the same: 2 million is about 32MB for the four.
+ */
+const MAX_PIXELS = 2_000_000;
 
 /** The pixels a layer is drawn in for `size` CSS pixels at `dpr`: the ratio capped at 2, and lowered where the pixel budget needs it. */
 export function rasterSize(size: Size, dpr: number): { readonly width: number; readonly height: number; readonly scale: number } {
@@ -83,19 +87,20 @@ function svgOf(layer: FieldLayer, size: Size, pixels: { readonly width: number; 
  * background-color is the layer's color), so it is used as a mask.
  */
 export const rasterize: Rasterize = async (layer, size, dpr) => {
-  if (typeof createImageBitmap !== 'function' || typeof document === 'undefined') throw new Error('this browser cannot rasterize the field');
+  if (typeof Image !== 'function' || typeof document === 'undefined') throw new Error('this browser cannot rasterize the field');
   const pixels = rasterSize(size, dpr);
   const url = URL.createObjectURL(new Blob([svgOf(layer, size, pixels)], { type: 'image/svg+xml' }));
   try {
+    /* The SVG's own width and height are the pixels, so the image is drawn straight to the canvas at that size; no bitmap in between to be closed. */
     const img = new Image();
     img.src = url;
     await img.decode();
-    const bitmap = await createImageBitmap(img, { resizeWidth: pixels.width, resizeHeight: pixels.height });
     const canvas = document.createElement('canvas');
     canvas.width = pixels.width;
     canvas.height = pixels.height;
-    canvas.getContext('2d')!.drawImage(bitmap, 0, 0);
-    bitmap.close();
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('the field\'s canvas has no 2d context');
+    ctx.drawImage(img, 0, 0, pixels.width, pixels.height);
     const png = await new Promise<Blob | null>((done) => canvas.toBlob(done, 'image/png'));
     /* The canvas's own bytes are no use once it is a PNG; a zero size lets the browser free them now rather than at collection. */
     canvas.width = canvas.height = 0;
@@ -167,6 +172,8 @@ export function createRasters(initial: Rasterize = rasterize, revoke: (url: stri
       publish({ key, urls: got.slice() });
     }
     let left = l.length;
+    /* In a rebuild, a layer that fails keeps the URL it had (and it is not revoked below), so a failure costs one new raster, not the layer for the session. */
+    const carried: boolean[] = l.map(() => false);
     l.forEach((layer, i) => {
       raster(layer, layerSize(layer, view), dpr).then(
         (url) => {
@@ -174,13 +181,18 @@ export function createRasters(initial: Rasterize = rasterize, revoke: (url: stri
           got[i] = url;
           if (!keep) publish({ key, urls: got.slice() });
         },
-        () => { /* This layer stays undrawn; the others still draw. */ },
+        () => {
+          /* In a first build this layer stays undrawn and the others still draw; in a rebuild it keeps its old raster. */
+          if (mine !== generation || !keep) return;
+          got[i] = snapshot.urls[i] ?? null;
+          carried[i] = got[i] !== null;
+        },
       ).finally(() => {
         if (mine !== generation || --left > 0 || !keep) return;
         /* Whole: the new set replaces the old in one step, and the old is given back. */
         const old = snapshot.urls;
         publish({ key, urls: got.slice() });
-        revokeAll(old);
+        revokeAll(old.filter((_, i) => !carried[i]));
       });
     });
   }
@@ -265,18 +277,50 @@ function envNow(): FieldEnv {
 
 const same = (a: FieldEnv, b: FieldEnv) => a.narrow === b.narrow && a.dpr === b.dpr && a.view.width === b.view.width && a.view.height === b.view.height;
 
+/*
+ * One watch on the window for every Smoke on the page, not one each: a busy screen has a window for the page, the HUD, the hand
+ * and every open overlay. The listeners are on while any window is subscribed. A resize (which a zoom also is) is gathered into
+ * one reading a frame; the width class's media query is read at once, as a class change is rare and wants no frame of the wrong set.
+ */
+let env: FieldEnv | null = null;
+const watchers = new Set<() => void>();
+let off: (() => void) | null = null;
+
+function refresh() {
+  const now = envNow();
+  if (env && same(env, now)) return;
+  env = now;
+  for (const w of watchers) w();
+}
+
+function attach(): () => void {
+  const mq = typeof matchMedia === 'function' ? matchMedia(NARROW_QUERY) : null;
+  let frame: number | null = null;
+  const soon = () => { if (frame === null) frame = requestAnimationFrame(() => { frame = null; refresh(); }); };
+  mq?.addEventListener('change', refresh);
+  window.addEventListener('resize', soon);
+  return () => {
+    mq?.removeEventListener('change', refresh);
+    window.removeEventListener('resize', soon);
+    if (frame !== null) cancelAnimationFrame(frame);
+  };
+}
+
+function subscribeEnv(watcher: () => void): () => void {
+  if (watchers.size === 0) { env = envNow(); off = attach(); }
+  watchers.add(watcher);
+  return () => {
+    watchers.delete(watcher);
+    /* Nobody is watching, so what was read is going stale: the next window reads afresh. */
+    if (watchers.size === 0) { off?.(); off = null; env = null; }
+  };
+}
+
+const getEnv = (): FieldEnv => env ?? (env = envNow());
+
 /** Where the window is: below 600px or not, at what pixel ratio and size, following a resize, a zoom and the class's media query. */
 export function useFieldEnv(): FieldEnv {
-  const [env, setEnv] = useState<FieldEnv>(envNow);
-  useEffect(() => {
-    const update = () => setEnv((was) => { const now = envNow(); return same(was, now) ? was : now; });
-    const mq = typeof matchMedia === 'function' ? matchMedia(NARROW_QUERY) : null;
-    mq?.addEventListener('change', update);
-    window.addEventListener('resize', update);
-    update();
-    return () => { mq?.removeEventListener('change', update); window.removeEventListener('resize', update); };
-  }, []);
-  return env;
+  return useSyncExternalStore(subscribeEnv, getEnv, getEnv);
 }
 
 /**

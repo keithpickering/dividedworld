@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FieldLayer } from '../types.ts';
-import { createRasters, GRACE_MS, rasterSize, type Rasterize } from './field.ts';
+import { createRasters, GRACE_MS, rasterize, rasterSize, type Rasterize } from './field.ts';
 
 const layer = (seed: number, travel = 100): FieldLayer => ({ alpha: [0, 0, 0, 1, 0], frequency: [0.01, 0.02], octaves: 2, seed, blur: 5, drift: { seconds: 30, travel } });
 const WIDE = [layer(1, 80), layer(2, 120), layer(3, 160)];
@@ -203,6 +203,21 @@ describe('the raster cache', () => {
     expect(rasters.get().urls).toEqual(['blob:test/3', 'blob:test/4', 'blob:test/5']);
   });
 
+  it('keeps a layer\'s old raster, and does not revoke it, when that layer fails in a resize rebuild', async () => {
+    let calls = 0;
+    const r: Rasterize = vi.fn(async (l) => { if (calls++ >= 3 && l.seed === 2) throw new Error('no memory'); return URL.createObjectURL(new Blob()); });
+    const rasters = createRasters(r);
+    rasters.acquire(WIDE, 1, VIEW);
+    await settle();
+    expect(rasters.get().urls).toEqual(['blob:test/0', 'blob:test/1', 'blob:test/2']);
+    rasters.resize({ width: 800, height: 900 });
+    await vi.advanceTimersByTimeAsync(1000);
+    /* The layer that failed is still the old one, still live; the others are new, and their old ones are given back. */
+    expect(rasters.get().urls).toEqual(['blob:test/3', 'blob:test/1', 'blob:test/4']);
+    expect(revoked).toEqual(['blob:test/0', 'blob:test/2']);
+    expect(live()).toEqual(['blob:test/1', 'blob:test/3', 'blob:test/4']);
+  });
+
   it('does not grow over many crossings: the live URLs are the field\'s, however often a window comes and goes', async () => {
     const rasters = createRasters(raster());
     for (let i = 0; i < 50; i++) {
@@ -230,12 +245,38 @@ describe('the raster cache', () => {
 });
 
 describe('the raster\'s size', () => {
-  it('is the size in CSS pixels times the ratio capped at 2, and never past the pixel budget', () => {
+  it('is the size in CSS pixels times the ratio capped at 2, and never past the pixel budget of 2 million', () => {
     expect(rasterSize({ width: 1440, height: 900 }, 1)).toEqual({ width: 1440, height: 900, scale: 1 });
-    expect(rasterSize({ width: 1440, height: 900 }, 3)).toEqual({ width: 2880, height: 1800, scale: 2 });
+    expect(rasterSize({ width: 390, height: 844 }, 3)).toEqual({ width: 780, height: 1688, scale: 2 });
+    const capped = rasterSize({ width: 1440, height: 900 }, 3);
+    expect(capped.width * capped.height).toBeLessThanOrEqual(2_000_000);
+    expect(capped.scale).toBeGreaterThan(1);
+    expect(capped.scale).toBeLessThan(2);
     const huge = rasterSize({ width: 3840, height: 2160 }, 2);
-    expect(huge.width * huge.height).toBeLessThanOrEqual(6_000_000);
-    expect(huge.scale).toBeLessThan(2);
+    expect(huge.width * huge.height).toBeLessThanOrEqual(2_000_000);
     expect(huge.scale).toBeGreaterThan(0);
+  });
+});
+
+describe('the real rasterizer', () => {
+  /* jsdom has no canvas: an image that decodes and a canvas the test hands out stand in, to hold what happens when the canvas fails. */
+  const stage = (canvas: object) => {
+    vi.stubGlobal('Image', class { src = ''; decode = async () => {}; });
+    vi.spyOn(document, 'createElement').mockReturnValue(canvas as HTMLCanvasElement);
+  };
+
+  it('throws a named error when the canvas gives no 2d context, and gives back the SVG\'s own URL', async () => {
+    stage({ getContext: () => null, width: 0, height: 0 });
+    await expect(rasterize(layer(1), VIEW, 1)).rejects.toThrow('no 2d context');
+    expect(revoked).toEqual(['blob:test/0']);
+  });
+
+  it('draws the image to the canvas at the raster\'s pixels and returns the PNG\'s URL, the SVG\'s revoked', async () => {
+    const drawImage = vi.fn();
+    stage({ getContext: () => ({ drawImage }), toBlob: (done: (b: Blob) => void) => done(new Blob()), width: 0, height: 0 });
+    const url = await rasterize(layer(1), VIEW, 1);
+    expect(drawImage).toHaveBeenCalledWith(expect.anything(), 0, 0, 1440, 900);
+    expect(url).toBe('blob:test/1');
+    expect(revoked).toEqual(['blob:test/0']);
   });
 });

@@ -44,6 +44,7 @@ let made = 0;
 /** A rasterizer that answers at once, naming each URL by the layer's seed. */
 const instant: Rasterize = async (layer) => `blob:layer/${layer.seed}/${made++}`;
 let narrow = false;
+let mediaCalls = 0;
 let narrowListeners: ((e: { matches: boolean }) => void)[] = [];
 let revoked: string[] = [];
 const realRevoke = URL.revokeObjectURL;
@@ -54,7 +55,8 @@ beforeEach(() => {
   made = 0; narrow = false; narrowListeners = [];
   fieldRasters.reset();
   fieldRasters.setRasterizer(instant);
-  vi.stubGlobal('matchMedia', (q: string) => ({
+  mediaCalls = 0;
+  vi.stubGlobal('matchMedia', (q: string) => (mediaCalls++, {
     get matches() { return /max-width/.test(q) && narrow; }, media: q,
     addEventListener: (_: string, f: (e: { matches: boolean }) => void) => { narrowListeners.push(f); },
     removeEventListener: (_: string, f: (e: { matches: boolean }) => void) => { narrowListeners = narrowListeners.filter((x) => x !== f); },
@@ -418,5 +420,44 @@ describe('the drift clock', () => {
     rerender(inWorld(<Smoke surface="hud" />));
     await ready();
     expect(layers(container)[0]!.style.getPropertyValue('--kb-field-delay')).toBe('-40s');
+  });
+
+  it('hears a burst of resizes as one, for every window together, once a frame', async () => {
+    render(inWorld(<><Smoke surface="hud" /><Smoke surface="hand" /><Smoke surface="log" /></>));
+    await ready();
+    const before = mediaCalls;
+    await act(async () => {
+      for (let i = 0; i < 10; i++) window.dispatchEvent(new Event('resize'));
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+    });
+    expect(mediaCalls - before).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('what a window listens to', () => {
+  const reads = () => vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect');
+  const flush = () => act(async () => { await new Promise((r) => requestAnimationFrame(() => r(null))); });
+
+  it('re-measures a window in the page\'s flow when the page scrolls', async () => {
+    const spy = reads();
+    render(inWorld(<div><Smoke surface="log" /></div>));
+    await ready();
+    spy.mockClear();
+    await act(async () => { window.dispatchEvent(new Event('scroll')); });
+    await flush();
+    expect(spy).toHaveBeenCalled();
+  });
+
+  it('does not re-measure a fixed window when the page scrolls, and does when what it is fixed in scrolls', async () => {
+    const spy = reads();
+    const { container } = render(inWorld(<div data-testid="fixed" style={{ position: 'fixed' }}><div><Smoke surface="hud" /></div></div>));
+    await ready();
+    spy.mockClear();
+    await act(async () => { window.dispatchEvent(new Event('scroll')); });
+    await flush();
+    expect(spy).not.toHaveBeenCalled();
+    await act(async () => { container.querySelector('[data-testid="fixed"]')!.dispatchEvent(new Event('scroll')); });
+    await flush();
+    expect(spy).toHaveBeenCalled();
   });
 });

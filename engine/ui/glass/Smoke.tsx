@@ -74,6 +74,12 @@ function rgba(hex: string, alpha: number): string {
 interface Placement { readonly x: number; readonly y: number; readonly zoom: number }
 const HOME: Placement = { x: 0, y: 0, zoom: 1 };
 
+/** The nearest of `el` and its ancestors laid out `position: fixed`, or null where none is. */
+function fixedAncestor(el: HTMLElement): HTMLElement | null {
+  for (let a: HTMLElement | null = el; a; a = a.parentElement) if (getComputedStyle(a).position === 'fixed') return a;
+  return null;
+}
+
 /**
  * The element's place in the viewport, kept current. Measured in a layout effect on mount, so the
  * first frame it draws is already in place, and then on the events that move or resize a window,
@@ -94,7 +100,15 @@ function usePlacement(ref: { readonly current: HTMLElement | null }, active: boo
     let frame: number | null = null;
     const soon = () => { if (frame === null) frame = requestAnimationFrame(() => { frame = null; measure(); }); };
     window.addEventListener('resize', soon);
-    window.addEventListener('scroll', soon, true);
+    /*
+     * Only what can move the window is listened to. In the page's flow, any scroll can. A window that is fixed (the HUD's tab, the
+     * hand drawer, a glass page's smoke) or inside a fixed element moves with the viewport, so the page scrolling never moves it, and
+     * only a scroll inside that element can: listened to there, and nowhere for a fixed window itself. Otherwise every scroll of the
+     * page measured every window once a frame.
+     */
+    const fixed = fixedAncestor(el);
+    const scroller = fixed === null ? window : fixed === el ? null : fixed;
+    scroller?.addEventListener('scroll', soon, true);
     /* Told by a surface that has just moved itself: measured now, not a frame later, so the clouds are never drawn for a frame at the unplaced offset. */
     window.addEventListener(FIELD_PLACED, measure);
     /* A drawer's `hidden` ending, or a box changing size, moves nothing the events above hear. */
@@ -102,7 +116,7 @@ function usePlacement(ref: { readonly current: HTMLElement | null }, active: boo
     grown?.observe(el);
     return () => {
       window.removeEventListener('resize', soon);
-      window.removeEventListener('scroll', soon, true);
+      scroller?.removeEventListener('scroll', soon, true);
       window.removeEventListener(FIELD_PLACED, measure);
       grown?.disconnect();
       if (frame !== null) cancelAnimationFrame(frame);
