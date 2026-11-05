@@ -283,16 +283,16 @@
 /*
  * The cards table has five columns, and each of them wants ten ems of its type or the others take the room (the layout check refuses a
  * block squeezed by its siblings). Where the table's own box is narrower than that, at a phone or at large text, it is no table: each
- * card is a block, its name first, then its Kind, Played, Price and what it does, each led by its column's name. The head row stays
+ * card is a grid row, its name first, then its Kind, Played, Price and what it does, each led by its column's name. The head row stays
  * for a reader, visually hidden.
  */
 @container (max-width: 56em) {
-  .kb-guide-cards,
-  .kb-guide-cards tbody,
-  .kb-guide-cards tbody tr,
-  .kb-guide-cards tbody th,
-  .kb-guide-cards tbody td {
-    display: block;
+  /*
+   * Only the row is laid out otherwise (a grid, whose cells are blockified), so the table, its row group, its rows and its cells keep
+   * their table roles for a reader: a display of block drops them in the browsers' accessibility trees.
+   */
+  .kb-guide-cards tbody tr {
+    display: grid;
   }
 
   .kb-guide-cards thead th {

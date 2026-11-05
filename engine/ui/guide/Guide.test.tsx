@@ -264,6 +264,24 @@ describe('the cards marker', () => {
     const cells = within(row).getAllByRole('cell').map((c) => c.textContent);
     expect(cells).toEqual(['Salty Common', 'Cast', '1.00', 'Splat a post in ink. Splats a post in your ink.']);
   });
+  test('each stacked label is its column\'s name: the head row says what every data-kb-label says', () => {
+    page('## Cards\n\n<!-- kayfabb:cards -->', { cards: [whoops] });
+    const table = within(sectionOf('Cards')).getByRole('table', { name: 'The cards' });
+    const heads = within(table).getAllByRole('columnheader').map((h) => h.textContent);
+    const labels = [...table.querySelectorAll('tbody td')].map((td) => td.getAttribute('data-kb-label'));
+    expect(heads.slice(1)).toEqual(labels);
+  });
+  test('stacked under 56em the table keeps its table semantics: only the rows are laid out as a grid', () => {
+    const css = fs.readFileSync('engine/ui/guide/guide.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const stacked = css.slice(css.indexOf('@container (max-width: 56em)'));
+    const blocked: string[] = [];
+    for (const m of stacked.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      if (!/display:\s*block/u.test(m[2]!)) continue;
+      blocked.push(...m[1]!.split(',').map((x) => x.replace(/\s+/gu, ' ').replace(/^@container[^{]*\{/u, '').trim()));
+    }
+    /* A block table, row group, row, header or cell is no table to a reader (browsers drop the role with the display). */
+    expect(blocked.filter((x) => /^\.kb-guide-cards( tbody( tr| th| td)?)?$/u.test(x))).toEqual([]);
+  });
   test('the price is the economy\'s the server prices with now, as the Vending Machine shows it', () => {
     page('## Cards\n\n<!-- kayfabb:cards -->', { cards: [whoops], settings: { cardEconomy: { 'whoops.price': 250 } } });
     expect(within(screen.getByRole('row', { name: /Whoops!/u })).getByRole('cell', { name: '2.50' })).toBeInTheDocument();

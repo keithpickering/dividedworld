@@ -452,3 +452,19 @@ test('the check sees low-contrast text in the browser', async ({ page }) => {
   const found = await pageViolations(page);
   expect(found.some((f) => f.startsWith('color-contrast'))).toBe(true);
 });
+
+/* The Guide's cards table is stacked into one block per card on a phone, and stays a table to a reader: its rows, row headers, column headers and cells keep their roles. */
+test('the Guide\'s cards table is still a table when it is stacked on a phone', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/guide');
+  const table = page.getByRole('table', { name: 'The cards' });
+  await expect(table).toBeAttached();
+  await table.scrollIntoViewIfNeeded();
+  expect(await table.getByRole('columnheader').allTextContents()).toEqual(['Card', 'Kind', 'Played', 'Price in orbs', 'What it does']);
+  expect(await table.getByRole('row').count()).toBeGreaterThan(1);
+  expect(await table.getByRole('rowheader').count()).toBeGreaterThan(0);
+  expect(await table.getByRole('cell').count()).toBeGreaterThan(0);
+  /* The stacked rows are laid out as grids, never as blocks. */
+  expect(await table.locator('tbody tr').first().evaluate((el) => getComputedStyle(el).display)).toBe('grid');
+  expect(await table.evaluate((el) => getComputedStyle(el).display)).toBe('table');
+});
