@@ -1,8 +1,10 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useEffect } from 'react';
-import { beforeEach, describe, expect, test } from 'vitest';
-import { addressOf, Link, RouterProvider, searchOf, useLocation, useNavigate, type Location } from './router.tsx';
+import { useEffect, useState } from 'react';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { KayfaProvider, type Kayfa } from './context.tsx';
+import { addressOf, Link, RouterProvider, searchOf, useLocation, useNavigate, useNavigation, usePrefetch, useRouterAccount, type Location } from './router.tsx';
+import { Routes, type Route } from './routes.tsx';
 
 function Where() {
   const l = useLocation();
@@ -112,5 +114,261 @@ describe('an address read from a location', () => {
     const query = new URLSearchParams('page=2');
     Object.defineProperty(query, 'size', { value: undefined });
     expect(addressOf({ path: '/t/abc', query })).toBe('/t/abc?page=2');
+  });
+});
+
+/* A loader the test answers by hand: each call waits until the test resolves or rejects it. */
+interface Call { readonly params: Readonly<Record<string, string>>; readonly signal: AbortSignal; readonly resolve: (doc: unknown) => void; readonly reject: (e: unknown) => void }
+function manualLoader() {
+  const calls: Call[] = [];
+  const load = vi.fn((a: { params: Readonly<Record<string, string>>; signal: AbortSignal }) => new Promise<unknown>((resolve, reject) => { calls.push({ params: a.params, signal: a.signal, resolve, reject }); }));
+  return { load, calls };
+}
+
+const kayfa = { ui: { copy: { siteName: 'Test Board' } } } as unknown as Kayfa;
+let nav: ReturnType<typeof useNavigate>;
+let prefetch: ReturnType<typeof usePrefetch>;
+let navigation: ReturnType<typeof useNavigation>;
+const log: string[] = [];
+let seenState: unknown;
+
+function Probe() {
+  nav = useNavigate();
+  prefetch = usePrefetch();
+  navigation = useNavigation();
+  seenState = useLocation().state;
+  return null;
+}
+function Index() { log.push(`index@${useLocation().path}`); return <p>index screen</p>; }
+
+function mount(load: Route['load'], { account = null as string | null, path = '/' } = {}) {
+  const routes: Route[] = [
+    { path: '/', render: () => <Index /> },
+    { path: '/t/:id', load, key: (p) => p.id!, render: (p, doc) => <p>thread {p.id}: {String(doc)}</p> },
+    { path: '/plain/:id', render: (p) => <p>plain {p.id}</p> },
+  ];
+  window.history.replaceState(null, '', path);
+  function Account({ id }: { id: string | null }) { useRouterAccount(id); return null; }
+  let setAccount: (id: string | null) => void = () => undefined;
+  function Shell() {
+    const [id, set] = useState(account);
+    setAccount = set;
+    return <><Account id={id} /><Probe /><Link to="/t/a">to a</Link><Routes routes={routes} /></>;
+  }
+  const view = render(<KayfaProvider value={kayfa}><RouterProvider><Shell /></RouterProvider></KayfaProvider>);
+  return { ...view, setAccount: (id: string | null) => act(() => setAccount(id)) };
+}
+const answer = (c: Call | undefined, doc: unknown) => act(async () => { c!.resolve(doc); });
+
+describe('the router loads before it moves', () => {
+  beforeEach(() => { log.length = 0; });
+  afterEach(() => { vi.useRealTimers(); });
+
+  test('a click on a link to a loading route leaves the old screen drawn and the address as it was until the load lands, then both change together', async () => {
+    const { load, calls } = manualLoader();
+    mount(load);
+    await userEvent.click(screen.getByRole('link', { name: 'to a' }));
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('index screen')).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/');
+    expect(navigation.pending?.to).toBe('/t/a');
+    await answer(calls[0], 'A1');
+    expect(screen.getByText('thread a: A1')).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/t/a');
+    expect(navigation.pending).toBeNull();
+    expect(log).not.toContain('index@/t/a');
+  });
+  test('a second click aborts the first, and the first one\'s late answer is never shown', async () => {
+    const { load, calls } = manualLoader();
+    mount(load);
+    act(() => nav('/t/a'));
+    act(() => nav('/t/b'));
+    expect(calls[0]!.signal.aborted).toBe(true);
+    expect(calls[1]!.signal.aborted).toBe(false);
+    await answer(calls[0], 'late');
+    expect(screen.queryByText(/thread a/)).toBeNull();
+    expect(screen.getByText('index screen')).toBeInTheDocument();
+    await answer(calls[1], 'B1');
+    expect(screen.getByText('thread b: B1')).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/t/b');
+  });
+  test('Escape aborts a pending load and the old screen stays', async () => {
+    const { load, calls } = manualLoader();
+    mount(load);
+    act(() => nav('/t/a'));
+    const e = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    act(() => { window.dispatchEvent(e); });
+    expect(e.defaultPrevented).toBe(false);
+    expect(calls[0]!.signal.aborted).toBe(true);
+    expect(navigation.pending).toBeNull();
+    await answer(calls[0], 'late');
+    expect(screen.getByText('index screen')).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/');
+  });
+  test('Escape typed in a text field, or with a modal open, is not the router\'s', () => {
+    const { load, calls } = manualLoader();
+    mount(load);
+    act(() => nav('/t/a'));
+    const field = document.createElement('textarea');
+    document.body.append(field);
+    act(() => { field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    expect(calls[0]!.signal.aborted).toBe(false);
+    field.remove();
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    document.body.append(dialog);
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    expect(calls[0]!.signal.aborted).toBe(false);
+    dialog.remove();
+  });
+  test('a load that throws shows the page cannot be displayed, and Try again loads again', async () => {
+    const { load, calls } = manualLoader();
+    mount(load);
+    act(() => nav('/t/a'));
+    await act(async () => { calls[0]!.reject(new Error('down')); });
+    expect(screen.getByRole('heading', { name: 'The page cannot be displayed' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/t/a');
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(load).toHaveBeenCalledTimes(2);
+    await answer(calls[1], 'A2');
+    expect(screen.getByText('thread a: A2')).toBeInTheDocument();
+  });
+  test('a load that answers null shows the page cannot be found, and so does an address no route matches', async () => {
+    const { load, calls } = manualLoader();
+    mount(load);
+    act(() => nav('/t/gone'));
+    await answer(calls[0], null);
+    expect(screen.getByRole('heading', { name: 'The page cannot be found' })).toBeInTheDocument();
+    act(() => nav('/nowhere/at/all'));
+    expect(screen.getByRole('heading', { name: 'The page cannot be found' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/nowhere/at/all');
+  });
+  test('a move that keeps the route\'s key draws at once with no load', async () => {
+    const { load, calls } = manualLoader();
+    mount(load);
+    act(() => nav('/t/a'));
+    await answer(calls[0], 'A1');
+    act(() => nav('/t/a#post-142'));
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(navigation.pending).toBeNull();
+    expect(window.location.hash).toBe('#post-142');
+    expect(screen.getByText('thread a: A1')).toBeInTheDocument();
+  });
+  test('a route with no loader moves at once', () => {
+    const { load } = manualLoader();
+    mount(load);
+    act(() => nav('/plain/x'));
+    expect(screen.getByText('plain x')).toBeInTheDocument();
+    expect(load).not.toHaveBeenCalled();
+  });
+  test('a prefetch answered before the click makes the click show the page with no second load', async () => {
+    const { load, calls } = manualLoader();
+    mount(load);
+    act(() => prefetch('/t/a'));
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(window.location.pathname).toBe('/');
+    await answer(calls[0], 'P1');
+    act(() => nav('/t/a'));
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText('thread a: P1')).toBeInTheDocument();
+  });
+  test('a click while a prefetch is still out joins it', async () => {
+    const { load, calls } = manualLoader();
+    mount(load);
+    act(() => prefetch('/t/a'));
+    act(() => nav('/t/a'));
+    expect(load).toHaveBeenCalledTimes(1);
+    await answer(calls[0], 'P1');
+    expect(screen.getByText('thread a: P1')).toBeInTheDocument();
+  });
+  test('Back to an entry left less than five minutes ago shows its document with no load and restores its scroll; an older one loads', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-05T12:00:00Z'));
+    const scrollTo = vi.fn();
+    window.scrollTo = scrollTo as unknown as typeof window.scrollTo;
+    let y = 0;
+    Object.defineProperty(window, 'scrollY', { configurable: true, get: () => y });
+    const { load, calls } = manualLoader();
+    mount(load);
+    act(() => nav('/t/a'));
+    await answer(calls[0], 'A1');
+    y = 300;
+    act(() => nav('/t/b'));
+    await answer(calls[1], 'B1');
+    expect(window.history.state).toEqual(expect.objectContaining({ kb: expect.any(String) }));
+    vi.setSystemTime(new Date('2026-11-05T12:04:00Z'));
+    act(() => window.history.back());
+    await waitFor(() => expect(screen.getByText('thread a: A1')).toBeInTheDocument());
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(scrollTo).toHaveBeenCalledWith(0, 300);
+    act(() => window.history.forward());
+    await waitFor(() => expect(screen.getByText('thread b: B1')).toBeInTheDocument());
+    expect(load).toHaveBeenCalledTimes(2);
+    vi.setSystemTime(new Date('2026-11-05T12:20:00Z'));
+    act(() => window.history.back());
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(3));
+    expect(screen.getByText('thread b: B1')).toBeInTheDocument();
+    await answer(calls[2], 'A-again');
+    expect(screen.getByText('thread a: A-again')).toBeInTheDocument();
+  });
+  test('Back to a route with no loader restores its scroll', async () => {
+    const scrollTo = vi.fn();
+    window.scrollTo = scrollTo as unknown as typeof window.scrollTo;
+    let y = 0;
+    Object.defineProperty(window, 'scrollY', { configurable: true, get: () => y });
+    const { load } = manualLoader();
+    mount(load);
+    act(() => nav('/plain/x'));
+    y = 420;
+    act(() => nav('/plain/y'));
+    y = 0;
+    act(() => window.history.back());
+    await waitFor(() => expect(screen.getByText('plain x')).toBeInTheDocument());
+    expect(scrollTo).toHaveBeenCalledWith(0, 420);
+  });
+  test('a change of account empties the caches: a prefetch is dropped, and Back loads again', async () => {
+    const { load, calls } = manualLoader();
+    const view = mount(load, { account: 'p1' });
+    act(() => prefetch('/t/a'));
+    await answer(calls[0], 'P1');
+    view.setAccount('p2');
+    act(() => nav('/t/a'));
+    expect(load).toHaveBeenCalledTimes(2);
+    await answer(calls[1], 'A1');
+    act(() => nav('/t/b'));
+    await answer(calls[2], 'B1');
+    view.setAccount('p3');
+    act(() => window.history.back());
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(4));
+  });
+  test('at twenty seconds a pending load aborts and shows the page cannot be displayed', async () => {
+    vi.useFakeTimers();
+    const { load, calls } = manualLoader();
+    mount(load);
+    act(() => nav('/t/a'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(19_000); });
+    expect(screen.getByText('index screen')).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_500); });
+    expect(calls[0]!.signal.aborted).toBe(true);
+    expect(screen.getByRole('heading', { name: 'The page cannot be displayed' })).toBeInTheDocument();
+  });
+  test('a page\'s own state still reads through Location.state when the entry carries the router\'s key', async () => {
+    const { load, calls } = manualLoader();
+    mount(load);
+    act(() => nav('/t/a', { state: { character: 'c1' } }));
+    await answer(calls[0], 'A1');
+    expect(window.history.state).toEqual({ kb: expect.any(String), state: { character: 'c1' } });
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    expect(seenState).toEqual({ character: 'c1' });
+  });
+  test('track counts a screen\'s own read while it is in flight', async () => {
+    const { load } = manualLoader();
+    mount(load);
+    let done!: () => void;
+    act(() => { void navigation.track(new Promise<void>((r) => { done = r; })); });
+    expect(navigation.tracking).toBe(1);
+    await act(async () => { done(); });
+    expect(navigation.tracking).toBe(0);
   });
 });
