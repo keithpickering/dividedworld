@@ -431,3 +431,138 @@ begin
     raise exception 'service_role may execute card_target_reach, which the chatter run calls';
   end if;
 end $$;
+
+-- ====================================================================================== Task 4: the alert and the log's view ====
+
+-- ---- Fixtures: a caster with two masks, a target's author who started a thread, a third player, a staff persona, an admin ----
+do $$
+declare
+  admin_acc uuid := tests.account('ce4-admin');
+  cast_acc uuid := tests.account('ce4-cast');
+  tgt_acc uuid := tests.account('ce4-tgt');
+  third_acc uuid := tests.account('ce4-third');
+  c1 uuid := tests.character(cast_acc, 'Ce4 Caster');
+  c2 uuid := tests.character(cast_acc, 'Ce4 Caster Two');
+  tgt uuid := tests.character(tgt_acc, 'Ce4 Target');
+  third uuid := tests.character(third_acc, 'Ce4 Third');
+  t uuid := tests.thread('Ce4 thread');
+  p uuid := tests.post(tgt, t, 'Ce4 opening.');
+  own_t uuid := tests.thread('Ce4 own thread');
+  own_p uuid := tests.post(c1, own_t, 'Ce4 own post.');
+  staff uuid;
+begin
+  insert into admins (account) values (admin_acc);
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Ce4 Bot', 'ce4-bot', 'persona', now()) returning id into staff;
+end $$;
+
+-- ---- The reversals ----
+do $$
+declare
+  admin_acc uuid := (select id from auth.users where email = 'ce4-admin@test.invalid');
+  c1 uuid := (select id from characters where name = 'Ce4 Caster');
+  c2 uuid := (select id from characters where name = 'Ce4 Caster Two');
+  tgt uuid := (select id from characters where name = 'Ce4 Target');
+  staff uuid := (select id from characters where name = 'Ce4 Bot');
+  p uuid := (select id from acts where kind = 'post' and payload ->> 'body' = 'Ce4 opening.');
+  t uuid := (select thread from acts where id = p);
+  own_p uuid := (select id from acts where kind = 'post' and payload ->> 'body' = 'Ce4 own post.');
+  own_t uuid := (select thread from acts where id = own_p);
+  on_post uuid := tests.act(c1, 'card', t, '{"card": "splat"}', p);
+  on_char uuid := tests.act(c2, 'card', t, '{"card": "selfie", "reach": "character"}', p);
+  on_thread uuid := tests.act(c1, 'card', t, '{"card": "marquee", "reach": "thread"}', p);
+  on_own uuid := tests.act(c2, 'card', own_t, '{"card": "splat"}', own_p);
+  by_staff uuid;
+  got jsonb;
+begin
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  by_staff := tests.act(staff, 'card', t, '{"card": "splat", "layer": 2}', p);
+  perform set_config('kayfabb.staff_writer', '', true);
+  insert into play_reach (play, reach, character, ends_at) values (on_char, 'character', tgt, now() + interval '1 day');
+  insert into play_reach (play, reach, thread, ends_at) values (on_thread, 'thread', t, now() + interval '1 day');
+  perform tests.become(admin_acc);
+  got := reverse_card(on_post);
+  if got ? 'reach' then raise exception 'a play on a post has no reach in the answer: %', got; end if;
+  got := reverse_card(on_thread);
+  if got ->> 'reach' is distinct from 'thread' then raise exception 'a thread play answers its reach: %', got; end if;
+  got := reverse_card(on_char);
+  if got ->> 'reach' is distinct from 'character' then raise exception 'a character play answers its reach: %', got; end if;
+  perform reverse_card(on_own);
+  perform reverse_card(by_staff);
+  perform tests.unbecome();
+end $$;
+
+-- ---- The caster's alert: one per player-cast reversal, about the card_end; none for a staff caster ----
+do $$
+declare
+  cast_acc uuid := (select id from auth.users where email = 'ce4-cast@test.invalid');
+  tgt_acc uuid := (select id from auth.users where email = 'ce4-tgt@test.invalid');
+  third_acc uuid := (select id from auth.users where email = 'ce4-third@test.invalid');
+  c1 uuid := (select id from characters where name = 'Ce4 Caster');
+  staff uuid := (select id from characters where name = 'Ce4 Bot');
+  p uuid := (select id from acts where kind = 'post' and payload ->> 'body' = 'Ce4 opening.');
+  on_post uuid := (select id from acts where kind = 'card' and character = c1 and target_act_id = p and payload ->> 'card' = 'splat');
+  end_id uuid := (select id from acts where kind = 'card_end' and target_act_id = on_post);
+  n integer;
+  r alerts%rowtype;
+begin
+  select count(*) into n from alerts where kind = 'cardEnded' and account = cast_acc;
+  if n <> 4 then raise exception 'the caster has one cardEnded alert per reversed play (4), got %', n; end if;
+  select * into r from alerts where kind = 'cardEnded' and act = end_id;
+  if r.account is distinct from cast_acc or r.character is distinct from c1 or r.sub is not null then raise exception 'the alert is the caster''s, about the card_end: %', to_jsonb(r); end if;
+  if exists (select 1 from alerts where kind = 'cardEnded' and account in (tgt_acc, third_acc)) then raise exception 'neither the target''s author nor a third player is alerted'; end if;
+  if exists (select 1 from alerts a join acts e on e.id = a.act where a.kind = 'cardEnded' and e.target_act_id in (select id from acts where character = staff)) then
+    raise exception 'a staff caster''s reversed play writes no alert';
+  end if;
+  perform tests.become(cast_acc);
+  if (select count(*) from my_alerts() where kind = 'cardEnded') is distinct from 4::bigint then raise exception 'my_alerts lists the caster''s cardEnded alerts'; end if;
+  perform tests.unbecome();
+end $$;
+
+-- ---- my_cards_ended: the caster's player sees 'cast' rows, the target's author 'onMine', a third player nothing ----
+do $$
+declare
+  cast_acc uuid := (select id from auth.users where email = 'ce4-cast@test.invalid');
+  tgt_acc uuid := (select id from auth.users where email = 'ce4-tgt@test.invalid');
+  third_acc uuid := (select id from auth.users where email = 'ce4-third@test.invalid');
+  admin_acc uuid := (select id from auth.users where email = 'ce4-admin@test.invalid');
+  staff uuid := (select id from characters where name = 'Ce4 Bot');
+  p uuid := (select id from acts where kind = 'post' and payload ->> 'body' = 'Ce4 opening.');
+  own_p uuid := (select id from acts where kind = 'post' and payload ->> 'body' = 'Ce4 own post.');
+  on_post uuid := (select id from acts where kind = 'card' and target_act_id = p and payload ->> 'card' = 'splat' and character <> staff);
+  on_own uuid := (select id from acts where kind = 'card' and target_act_id = own_p);
+  by_staff uuid := (select id from acts where kind = 'card' and character = staff);
+  on_char uuid := (select id from acts where kind = 'card' and payload ->> 'card' = 'selfie' and character = (select id from characters where name = 'Ce4 Caster Two'));
+  on_thread uuid := (select id from acts where kind = 'card' and payload ->> 'card' = 'marquee' and character = (select id from characters where name = 'Ce4 Caster'));
+  r record;
+begin
+  perform tests.become(cast_acc);
+  if (select count(*) from my_cards_ended) is distinct from 4::bigint or exists (select 1 from my_cards_ended where side <> 'cast') then
+    raise exception 'the caster''s player sees four plays, all cast: %', (select jsonb_agg(to_jsonb(x)) from my_cards_ended x);
+  end if;
+  select * into r from my_cards_ended where play = on_post;
+  if r.side <> 'cast' or r.card <> 'splat' or r.card_end is distinct from (select id from acts where kind = 'card_end' and target_act_id = on_post) or r.at is null then
+    raise exception 'the cast row: %', to_jsonb(r);
+  end if;
+  if (select count(*) from my_cards_ended where play = on_own) is distinct from 1::bigint then raise exception 'a play cast on one''s own post is one row, cast'; end if;
+  if exists (select 1 from my_cards_ended where play = by_staff) then raise exception 'a staff play is not the player''s'; end if;
+  perform tests.unbecome();
+
+  perform tests.become(tgt_acc);
+  if (select count(*) from my_cards_ended) is distinct from 4::bigint or exists (select 1 from my_cards_ended where side <> 'onMine') then
+    raise exception 'the target''s author sees four plays, all onMine: %', (select jsonb_agg(to_jsonb(x)) from my_cards_ended x);
+  end if;
+  if not exists (select 1 from my_cards_ended where play = by_staff and side = 'onMine') then raise exception 'a staff caster''s reversed play appears on the target''s side'; end if;
+  if (select target_name from my_cards_ended where play = on_char) is distinct from 'Ce4 Target' then raise exception 'a character play names the character'; end if;
+  if (select target_name from my_cards_ended where play = on_thread) is distinct from 'Ce4 thread' then raise exception 'a thread play names the thread'; end if;
+  if (select target_name from my_cards_ended where play = on_post) is not null then raise exception 'a post play names no target'; end if;
+  if exists (select 1 from my_cards_ended where play = on_own) then raise exception 'a play on someone else''s post is not the author''s'; end if;
+  perform tests.unbecome();
+
+  perform tests.become(third_acc);
+  if exists (select 1 from my_cards_ended) then raise exception 'a third player sees neither row'; end if;
+  perform tests.unbecome();
+  perform tests.become(admin_acc);
+  if exists (select 1 from my_cards_ended) then raise exception 'an admin as such sees nothing in a player''s log'; end if;
+  perform tests.unbecome();
+  if has_table_privilege('anon', 'my_cards_ended', 'select') or not has_table_privilege('authenticated', 'my_cards_ended', 'select') then raise exception 'my_cards_ended is a signed-in read'; end if;
+end $$;

@@ -164,8 +164,12 @@ begin
   insert into acts (character, kind, thread, target_act_id, payload)
   values (null, 'card_end', p.thread, p.id, jsonb_build_object('why', 'reversed', 'by', 'admin')) returning id into written;
   perform set_config('kayfabb.card_end_writer', '', true);
-  -- Task 4 writes the caster's alert here, from the play and its caster's account.
-  return act_projection(written) || jsonb_build_object('play', p.id);
+  -- The caster's alert (Task 4): one, in this transaction, for the caster's own player, about the card_end. write_alert writes none
+  -- for a staff character (no owner), so a staff play's end tells nobody. `acting` is null: the admin is not told apart from the caster.
+  perform write_alert(p.character, 'cardEnded', null, written, null);
+  -- The answer carries the play, and for a play beyond a post its reach, so the act function can broadcast the end on `reach`.
+  return act_projection(written) || jsonb_strip_nulls(jsonb_build_object('play', p.id,
+    'reach', case when p.payload ->> 'reach' in ('character', 'thread', 'board') then p.payload ->> 'reach' end));
 end $$;
 revoke execute on function reverse_card(uuid) from public, anon;
 grant execute on function reverse_card(uuid) to authenticated;
@@ -736,6 +740,183 @@ begin
   );
 end $$;
 
+
+-- ============================================================================ Task 4: the alert and the log's view ====
+--
+--   cardEnded  An alert kind: an admin ended a card play the player's character cast. It is written by reverse_card (above), in its
+--              transaction, to the caster's own player and no one else, about the card_end. A staff caster has no player, so none.
+--   my_cards_ended  The log's rows for a card_end: on a play the caller's player cast (side 'cast') or on a play that landed on the
+--              caller's post, character or thread (side 'onMine'). A play the caller cast on their own post is one row, 'cast', as
+--              my_posts_played_on leaves a player's own plays out of "played on mine": the log says it once, for what it was.
+--
+-- What changed, each redefined whole from its latest definition (everything else is as that migration wrote it):
+--   - alerts_kind_check (0058) gains 'cardEnded'. account_preferences_toasts_check (0064) gains it.
+--   - set_preferences (0068) and settings_held (0085) list it among the kinds a toast choice and the toastDefaults setting may name.
+-- Reversal changes nothing here (reverse_card, Task 1, is edited in place above: this migration is unshipped).
+--
+-- The masks: the view is a security-invoker read of acts_public, play_reach, characters_public and the caller's own characters
+-- (characters' own-rows policy). The caller's side is `their character cast it` or `their character is the target's author, the
+-- character played on, or the thread's starter`; each is the caller's own characters and never another player's ownership. A third
+-- player sees neither row, which says nothing about anyone else's characters. A name is a public one (the play's own targetName as
+-- written, else the character's name or the thread's title as the log's other views give it; null for a post, which the log names by
+-- its author and number). The instance export reads Acts and the alerts table, not views, so it needs nothing for them.
+
+alter table alerts drop constraint alerts_kind_check;
+alter table alerts add constraint alerts_kind_check check (kind in ('quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'cardEnded'));
+
+alter table account_preferences drop constraint account_preferences_toasts_check;
+alter table account_preferences add constraint account_preferences_toasts_check
+  check (toasts is null or toasts <@ array['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'settlement', 'followed', 'update', 'seasonNews', 'cardEnded']);
+
+create or replace function set_preferences(theme text default null, postbit text default null, motion text default null,
+  smoke text default null, contrast text default null, text_size integer default null,
+  toasts text[] default null, toasts_default boolean default false) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  caller uuid := signed_in_account();
+  kept account_preferences%rowtype;
+  known text[] := array['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'settlement', 'followed', 'update', 'seasonNews', 'cardEnded'];
+  bad text;
+  once text[];
+begin
+  if theme is not null and theme !~ '^[a-z][a-z0-9-]{0,39}$' then raise exception 'a theme is named in lowercase words joined by hyphens' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if postbit is not null and postbit not in ('side', 'stacked') then raise exception 'the postbit is side or stacked' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if motion is not null and motion not in ('system', 'reduce', 'full') then raise exception 'motion follows the system, or is reduced or full' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if smoke is not null and smoke not in ('full', 'low', 'off') then raise exception 'the smoke is full, low or off' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if contrast is not null and contrast not in ('standard', 'high') then raise exception 'contrast is standard or high' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if text_size is not null and text_size not in (100, 125, 150, 200) then raise exception 'text size is 100, 125, 150 or 200 percent' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if toasts is not null and coalesce(toasts_default, false) then raise exception 'the toasts are chosen or put back to the defaults, not both' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if toasts is not null then
+    select string_agg(coalesce(k, '(blank)'), ', ' order by first) into bad from (select k, min(n) as first from unnest(toasts) with ordinality t(k, n) where k is null or not k = any (known) group by k) u;
+    if bad is not null then raise exception 'not a kind of alert: %', bad using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+    -- Repaired, not refused: the same kind named twice is the kind once, in the order it was first named.
+    select coalesce(array_agg(k order by first), '{}') into once from (select k, min(n) as first from unnest(toasts) with ordinality t(k, n) group by k) d;
+  end if;
+  insert into account_preferences as p (account, theme, postbit, motion, smoke, contrast, text_size, toasts)
+  values (caller, coalesce(theme, 'system'), coalesce(postbit, 'side'), coalesce(motion, 'system'),
+    coalesce(smoke, 'full'), coalesce(contrast, 'standard'), coalesce(text_size, 100), once)
+  on conflict (account) do update set theme = coalesce(set_preferences.theme, p.theme), postbit = coalesce(set_preferences.postbit, p.postbit),
+    motion = coalesce(set_preferences.motion, p.motion), smoke = coalesce(set_preferences.smoke, p.smoke),
+    contrast = coalesce(set_preferences.contrast, p.contrast), text_size = coalesce(set_preferences.text_size, p.text_size),
+    toasts = case when coalesce(set_preferences.toasts_default, false) then null when set_preferences.toasts is not null then once else p.toasts end
+  returning * into kept;
+  return preferences_answer(kept);
+end $$;
+
+create or replace function settings_held() returns trigger
+language plpgsql set search_path = public, pg_temp as $$
+declare
+  v jsonb := new.value;
+  why text;
+  shape text;
+  phase text;
+  pkey text;
+  kinds text[] := array['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'settlement', 'followed', 'update', 'seasonNews', 'cardEnded'];
+begin
+  why := case new.key
+    when 'walletCap' then case when not setting_whole(v, 1) then 'a whole number of hundredths, at least 1' end
+    when 'vote' then case when not setting_whole(v, 1) then 'a whole number of hundredths, at least 1' end
+    when 'halving' then case when not coalesce(jsonb_typeof(v) = 'number' and setting_positive(v) and (v #>> '{}')::numeric <= 1, false)
+      then 'a fraction above 0 and at most 1' end
+    when 'reactionCap' then case when not setting_whole(v, 1) then 'a whole number, at least 1' end
+    when 'charactersPerPlayer' then case when not setting_whole(v, 1) then 'a whole number, at least 1' end
+    when 'settlementCron' then case when not setting_cron(v) then 'a five-field cron expression, each field inside its range' end
+    when 'viewCountCron' then case when not setting_cron(v) then 'a five-field cron expression, each field inside its range' end
+    when 'meetingCron' then case when not setting_cron(v) then 'a five-field cron expression, each field inside its range' end
+    -- The spans the earlier triggers hold, but let through with a field missing.
+    when 'settlementLength' then case when not setting_span(v, array['day', 'week', 'month']) then 'a span: a unit of day, week or month and a whole count from 1 to 1000' end
+    when 'seasonLength' then case when not setting_span(v, array['day', 'week', 'month']) then 'a span: a unit of day, week or month and a whole count from 1 to 1000' end
+    when 'turnCooldown' then case when not setting_span(v, array['day', 'week', 'month']) then 'a span: a unit of day, week or month and a whole count from 1 to 1000' end
+    when 'inviteLifetime' then case when not setting_span(v, array['day', 'week', 'month']) then 'a span: a unit of day, week or month and a whole count from 1 to 1000' end
+    when 'setLasts' then case when not setting_span(v, array['day', 'week', 'month']) then 'a span: a unit of day, week or month and a whole count from 1 to 1000' end
+    when 'editGrace' then case when not setting_span(v, array['minute', 'day', 'week', 'month']) then 'a span: a unit of minute, day, week or month and a whole count from 1 to 1000' end
+    when 'presenceWindow' then case when not setting_span(v, array['minute', 'day', 'week', 'month']) then 'a span: a unit of minute, day, week or month and a whole count from 1 to 1000' end
+    when 'registrationMode' then case when v not in ('"open"', '"invite"', '"closed"') then '"open", "invite" or "closed"' end
+    when 'postMaxLength' then case when not setting_whole(v, 1) then 'a whole number of characters, at least 1' end
+    when 'titleMaxLength' then case when not setting_whole(v, 1) then 'a whole number of characters, at least 1' end
+    when 'postsPerPage' then case when not setting_whole(v, 1) then 'a whole number of posts, at least 1' end
+    when 'hotReplies' then case when not setting_whole(v, 1) then 'a whole number of replies, at least 1' end
+    when 'presenceNames' then case when not setting_whole(v, 1) then 'a whole number of names, at least 1' end
+    when 'presencePollSeconds' then case when not setting_whole(v, 10, 300) then 'a whole number of seconds from 10 to 300' end
+    when 'cardSettings' then case when not setting_named_numbers(v) then 'an object of named numbers' end
+    when 'systemEnabled' then case when jsonb_typeof(v) is distinct from 'boolean' then 'true or false' end
+    when 'hints' then case when not coalesce(jsonb_typeof(v) = 'object'
+        and setting_whole(v -> 'least', 1)
+        and jsonb_typeof(v -> 'share') = 'number' and (v ->> 'share')::numeric > 0.5 and (v ->> 'share')::numeric <= 1
+        and jsonb_typeof(v -> 'split') = 'number' and setting_positive(v -> 'split') and (v ->> 'split')::numeric <= 0.5
+        and setting_span(v -> 'window', array['minute', 'day', 'week', 'month']), false)
+      then 'an object giving least (a whole number of reactions, at least 1), share (above 0.5, at most 1), split (above 0, at most 0.5) and window (a span: a unit of minute, day, week or month and a whole count from 1 to 1000)' end
+    when 'toastDefaults' then case when not coalesce(jsonb_typeof(v) = 'array'
+        and not exists (select 1 from jsonb_array_elements(v) e where jsonb_typeof(e) <> 'string' or (e #>> '{}') <> all (kinds))
+        and (select count(*) = count(distinct e) from jsonb_array_elements(v) e), false)
+      then 'a list of the kinds of alert that toast (' || array_to_string(kinds, ', ') || '), each named once' end
+    when 'phases' then null  -- below: it needs a loop
+    when 'inheritanceGraceDays' then case when not setting_whole(v, 0) then 'a whole number of days, at least 0' end
+    when 'rosterRecentExcluded' then case when not setting_whole(v, 0) then 'a whole number of Bosses, at least 0' end
+    when 'structuralHoldHours' then case when not setting_whole(v, 1) then 'a whole number of hours, at least 1' end
+    when 'microEventDailyCalls' then case when not setting_whole(v, 0) then 'a whole number of calls, at least 0' end
+    when 'digestThreads' then case when not setting_whole(v, 1, 25) then 'a whole number of threads, at least 1 and at most 25' end
+    when 'digestExcerpts' then case when not setting_whole(v, 1, 20) then 'a whole number of posts, at least 1 and at most 20' end
+    when 'digestExcerptChars' then case when not setting_whole(v, 1, 1000) then 'a whole number of characters, at least 1 and at most 1000' end
+    when 'memoryOpinions' then case when not setting_whole(v, 1) then 'a whole number of opinions, at least 1' end
+    when 'memoryGrudges' then case when not setting_whole(v, 1) then 'a whole number of grudges, at least 1' end
+    when 'memoryWheelhouse' then case when not setting_whole(v, 1) then 'a whole number of subjects, at least 1' end
+    when 'memoryRealWorld' then case when not setting_whole(v, 1) then 'a whole number of subjects, at least 1' end
+    when 'boardNameMaxLength' then case when not setting_whole(v, 1) then 'a whole number of characters, at least 1' end
+    when 'moveExpiryMostDays' then case when not setting_whole(v, 1) then 'a whole number of days, at least 1' end
+    when 'moveExpiryLeastHours' then case when not setting_whole(v, 1) then 'a whole number of hours, at least 1' end
+    when 'demandCheckMinutes' then case when not setting_whole(v, 1, 1440) then 'a whole number of minutes, at least 1 and at most 1440' end
+    when 'demandChecksPerTick' then case when not setting_whole(v, 1, 1000) then 'a whole number of moves, at least 1 and at most 1000' end
+    when 'pool' then setting_pool(v)
+    when 'modelTiers' then case when not coalesce(jsonb_typeof(v) = 'object'
+        and jsonb_typeof(v -> 'strong') = 'string' and btrim(v ->> 'strong', E' \t\n\r\f\v') <> ''
+        and jsonb_typeof(v -> 'light') = 'string' and btrim(v ->> 'light', E' \t\n\r\f\v') <> '', false)
+      then 'an object naming a model id for "strong" and for "light"' end
+    else null
+  end;
+  if new.key = 'phases' then
+    shape := 'an object of honeymoon, reign and meltdown, each holding its numbers (honeymoon and meltdown also their days) as whole numbers, at least 1';
+    if jsonb_typeof(v) <> 'object' then raise exception 'phases is %', shape using errcode = '23514'; end if;
+    foreach phase in array array['honeymoon', 'reign', 'meltdown'] loop
+      if jsonb_typeof(v -> phase) is distinct from 'object' then raise exception 'phases is %; "%" is missing', shape, phase using errcode = '23514'; end if;
+      foreach pkey in array case when phase = 'reign' then array['weeklyMoves', 'bankCap', 'moveExpiryMostDays']
+                                 else array['days', 'weeklyMoves', 'bankCap', 'moveExpiryMostDays'] end loop
+        if not setting_whole(v -> phase -> pkey, 1) then raise exception 'phases is %; "%.%" is not', shape, phase, pkey using errcode = '23514'; end if;
+      end loop;
+      select k into pkey from jsonb_object_keys(v -> phase) k
+        where k <> all (case when phase = 'reign' then array['weeklyMoves', 'bankCap', 'moveExpiryMostDays']
+                             else array['days', 'weeklyMoves', 'bankCap', 'moveExpiryMostDays'] end) limit 1;
+      if pkey is not null then raise exception 'phases is %; "%.%" is not a number a phase holds', shape, phase, pkey using errcode = '23514'; end if;
+    end loop;
+  end if;
+  if why is not null then raise exception '% is %', new.key, why using errcode = '23514'; end if;
+  return new;
+end $$;
+
+create view my_cards_ended with (security_invoker = true) as
+  with mine as (select c.id from characters c where c.owner = auth.uid()),
+  ended as (
+    select e.id as card_end, k.id as play, k.payload ->> 'card' as card, e.created_at as at, k.character as caster,
+           coalesce(pr.reach, 'post') as reach,
+           coalesce(k.payload ->> 'targetName', case pr.reach when 'character' then cp.name when 'thread' then th.title end) as target_name,
+           case coalesce(pr.reach, 'post') when 'post' then p.character when 'character' then pr.character when 'thread' then opening.character end as target_character
+    from acts_public e
+    join acts_public k on k.id = e.target_act_id and k.kind = 'card'
+    left join play_reach pr on pr.play = k.id
+    left join acts_public p on p.id = k.target_act_id
+    left join characters_public cp on cp.id = pr.character
+    left join threads th on th.id = pr.thread
+    left join acts_public opening on opening.thread = pr.thread and opening.seq = 1
+    where e.kind = 'card_end'
+  )
+  select card_end, play, card, at, 'cast'::text as side, target_name, reach
+  from ended where caster in (select id from mine)
+  union all
+  select card_end, play, card, at, 'onMine'::text as side, target_name, reach
+  from ended where target_character in (select id from mine) and caster not in (select id from mine);
+
+revoke all on my_cards_ended from public, anon, authenticated;
+grant select on my_cards_ended to authenticated;
 
 -- ============================================================================ Task 9 follow-up: the chatter run reads a target's effects ====
 --
