@@ -58,6 +58,10 @@ export const autocorrect: CardRules<AutocorrectConfig> = {
     if (!lands.ok || !config || target.reach !== 'post') return lands;
     return occurrences(target.text, config.phrase).length ? lands : refuse(`“${config.phrase}” is not in this post's own words`);
   },
+  staffOptions: {
+    prompt: 'Choose the words to cover and what to cover them with. The phrase must be copied exactly, word for word, from the post you are replying to, and be at least 4 characters. The replacement is other words, up to 100 characters.',
+    schema: { type: 'object', properties: { phrase: { type: 'string' }, replacement: { type: 'string' } }, required: ['phrase', 'replacement'], additionalProperties: false },
+  },
   validateConfig: (config) => {
     const { phrase: p, replacement: r } = typeof config === 'object' && config !== null ? (config as { phrase?: unknown; replacement?: unknown }) : {};
     if (typeof p !== 'string') return refuse('the phrase is the words to cover');

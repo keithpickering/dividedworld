@@ -43,7 +43,7 @@
  * staff character's. A card's target is the post the pick replies to, or the persona's own post, chosen from the trigger, never from who
  * owns anything.
  */
-import { atOrBelow, playOf, staffConfigOf } from '../../../engine/rules/cards.ts';
+import { atOrBelow, playOf, staffConfigOf, staffOffers } from '../../../engine/rules/cards.ts';
 import type { Instance, Persona } from '../../../engine/rules/types.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import {
@@ -226,7 +226,7 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
   const offerable = settings.pool.cardRarityMost;
   const cardsOnOffer = tuned.cards.filter((c) => {
     const play = playOf(c);
-    return (play === 'cast' || play === 'set') && atOrBelow(c.rarity, offerable) && staffConfigOf(c, () => 0) !== null
+    return (play === 'cast' || play === 'set') && atOrBelow(c.rarity, offerable) && staffOffers(c)
       && !(play === 'set' && c.trap?.outcome.do === 'payout');
   });
 
