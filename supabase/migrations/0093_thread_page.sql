@@ -10,17 +10,25 @@
 -- my_face_down, effect_releases, reading), as the caller: it is security invoker, so the caller's policies apply as they do to the browser's own
 -- reads. It calls only functions a screen may call and that are stable (effects_above, following_thread, my_alerts_unread, presence_box). It writes
 -- nothing, so reading a page marks no mask present and no Act read. supabase/tests/e2e/0016-screen-reads.ts holds all of that.
--- A refusal of a per_page outside 1 to 100 cannot be raised from a SQL-standard body (it has no raise), so it is raised by effects_above's own
--- refusal for an oversized list (kayfabb.refusal, errcode 54000), asked for only when per_page is out of range.
+-- A SQL-standard body has no raise, so a per_page outside 1 to 100 is refused through screen_refusal(msg), below: a stable function whose only
+-- work is to raise `msg` with the refusal hint, called from a CASE that runs only when the page is refused. The screen functions share it.
 --
 -- Ways out: no state is added; a page is a read.
+
+create function screen_refusal(msg text) returns integer
+language plpgsql stable set search_path = public, pg_temp as $$
+begin
+  raise exception '%', msg using hint = 'kayfabb.refusal', errcode = '22023';
+end $$;
+
+revoke execute on function screen_refusal(text) from public, anon;
+grant execute on function screen_refusal(text) to authenticated;
 
 create function thread_page(in_thread uuid, in_page integer, in_seq integer, per_page integer, effect_cards text[]) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
 begin atomic
   -- The refusal, before anything is read.
-  select effects_above(array_fill('00000000-0000-0000-0000-000000000000'::uuid, array[201]), null, null)
-  where thread_page.per_page is null or thread_page.per_page not between 1 and 100;
+  select case when thread_page.per_page is null or thread_page.per_page not between 1 and 100 then screen_refusal('a page holds 1 to 100 posts') end;
 
   with s as materialized (
     select o.*, greatest(1, ceil(o.last_seq::numeric / thread_page.per_page))::integer as last_page
@@ -87,7 +95,7 @@ begin atomic
       from characters_public c where c.id in (select w.c from who w)),
     'plays', (select coalesce(jsonb_agg(to_jsonb(o) - 'n' order by o.created_at, o.id), '[]'::jsonb) from on_posts o),
     'above', (select coalesce(jsonb_agg(jsonb_build_object('play', x.play, 'reach', x.reach, 'target', x.target, 'ends_at', x.ends_at, 'act', x.act)
-                order by x.act ->> 'created_at', x.play), '[]'::jsonb) from above x),
+                order by (x.act ->> 'created_at')::timestamptz, x.play), '[]'::jsonb) from above x),
     'faces', (select coalesce(jsonb_agg(jsonb_build_object('play', f.play, 'card', f.card)), '[]'::jsonb)
               from my_face_down f where f.play in (select p.id from played p where p.kind = 'set')),
     'states', (select coalesce(jsonb_agg(jsonb_build_object('play', e.play, 'state', e.state, 'saved_at', e.saved_at)), '[]'::jsonb)

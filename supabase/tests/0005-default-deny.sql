@@ -33,6 +33,8 @@ declare
                            'thread_page(uuid,integer,integer,integer,text[])',
                            -- The frame and the HUD in one read (0096): a signed-in player's own boot document, stable, writing nothing.
                            'boot()',
+                           -- The refusal a SQL-standard screen function raises through (0093).
+                           'screen_refusal(text)',
                            -- Cards beyond a post (0055): a target's effects for the act function, and a page's plays above its posts and its board's pins.
                            'card_target_reach(text,uuid,uuid)', 'effects_above(uuid[],uuid,uuid)', 'pinned_threads(uuid)',
                            -- Updates (0062): an admin's post_update, and the page's read.
