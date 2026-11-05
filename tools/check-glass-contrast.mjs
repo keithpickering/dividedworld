@@ -32,7 +32,7 @@
  * separately, the same way (the field's `narrow` layers in the recipe's `narrowColors`, or, for a recipe
  * with none, in its first `colors`). The numbers this reproduces are the audit's (the glass plan, section 6:
  * the hud recipe 0.216, page 0.230, characters 0.196, turn 0.116, effect 0.103, react 0.087, cards
- * 0.193, vending 0.230, settlement 0.274), and test-glass-contrast.mjs pins them.
+ * 0.193, vending 0.230, settlement 0.245), and test-glass-contrast.mjs pins them.
  *
  * Read, for each instance's standard key (a token has tags, `GlassTag` in engine/ui/types.ts): a
  * `large` token at 3:1 against the full worst of every recipe, unless the recipe is `calmAll`

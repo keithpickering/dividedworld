@@ -108,9 +108,9 @@
       },
       "react": {
         "colors": [
+          { "color": "#000000", "opacity": 0 },
+          { "color": "#000000", "opacity": 0 },
           { "color": "#8c24fa", "opacity": 0.8 },
-          { "color": "#000000", "opacity": 0 },
-          { "color": "#000000", "opacity": 0 },
           { "color": "#000000", "opacity": 0 }
         ]
       },
