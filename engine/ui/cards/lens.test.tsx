@@ -804,7 +804,7 @@ describe('End this card', () => {
     expect(endButton()).toBeNull();
   });
 
-  test('is not offered on a caught play, an ended play, or a card back', async () => {
+  test('is not offered on a caught play', async () => {
     width(false);
     const w = world();
     w.fake.seed.admin(w.me);
@@ -858,6 +858,62 @@ describe('End this card', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'End this card?' })).toBeNull());
     expect(within(lens()).getByText('Ended by an admin', { selector: '.kb-lens-line' })).toBeInTheDocument();
     expect(endButton()).toBeNull();
+  });
+
+  test('is not offered on a Use that has worn off', async () => {
+    width(false);
+    const w = world();
+    w.fake.seed.admin(w.me);
+    w.fake.clock.advance(60_000);
+    w.fake.seed.card(w.spritey, w.second, 'k2', { ends: new Date(Date.now() - 3_600_000).toISOString() });
+    open(w);
+    await openKind(2, 'Card 2');
+    expect(endButton()).toBeNull();
+  });
+
+  test('is offered on a Use still ahead of its end, which the worn-off one beside it is not', async () => {
+    width(false);
+    const w = world();
+    w.fake.seed.admin(w.me);
+    w.fake.clock.advance(60_000);
+    w.fake.seed.card(w.spritey, w.second, 'k2', { ends: new Date(Date.now() - 3_600_000).toISOString() });
+    w.fake.seed.card(w.spritey, w.second, 'k2', { ends: new Date(Date.now() + 3_600_000).toISOString() });
+    open(w);
+    await openKind(2, 'Card 2');
+    expect(within(lens()).getAllByRole('button', { name: 'End this card' })).toHaveLength(1);
+  });
+
+  test('says Ended by an admin on the ended play of a kind alone, and offers End on the live one beside it', async () => {
+    width(false);
+    const w = world();
+    w.fake.seed.admin(w.me);
+    const live = w.play('k2');
+    const ended = w.play('k2');
+    expect((await w.fake.reverseCard(ended)).ok).toBe(true);
+    open(w);
+    await openKind(2, 'Card 2');
+    const row = (id: Id) => lens().querySelector<HTMLElement>(`[data-kb-play="${id}"]`)!;
+    expect(within(row(ended)).getByText('Ended by an admin')).toBeInTheDocument();
+    expect(within(row(live)).queryByText('Ended by an admin')).toBeNull();
+    expect(within(row(ended)).queryByRole('button', { name: 'End this card' })).toBeNull();
+    expect(within(row(live)).getByRole('button', { name: 'End this card' })).toBeInTheDocument();
+  });
+
+  test('takes the layer off at once when no broadcast arrives, the Lens adding the end itself', async () => {
+    width(false);
+    const w = world();
+    w.fake.seed.admin(w.me);
+    w.play('k2');
+    open(w);
+    await openKind(2, 'Card 2');
+    /* Every event the server would send is held and never delivered: only the Lens's own add can show the end. */
+    w.fake.broadcast.hold();
+    await userEvent.click(endButton()!);
+    await userEvent.click(within(screen.getByRole('dialog', { name: 'End this card?' })).getByRole('button', { name: 'End it' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'End this card?' })).toBeNull());
+    expect(within(lens()).getByText('Ended by an admin', { selector: '.kb-lens-line' })).toBeInTheDocument();
+    expect(endButton()).toBeNull();
+    expect(w.fake.broadcast.log.some((e) => e.event === 'act')).toBe(true);
   });
 
   test('cancel leaves the play as it was, and a refusal\'s words are shown in the dialog', async () => {

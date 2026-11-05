@@ -6,7 +6,7 @@
 import { describe, expect, test } from 'vitest';
 import { landsOn, type CardRules } from '../../rules/cards.ts';
 import type { Act } from '../data/api.ts';
-import { landing, landingOn, lengthOf } from './land.ts';
+import { effectsOf, landing, landingOn, lengthOf } from './land.ts';
 import type { CardPlay } from './types.ts';
 
 const rules = (key: string, stack?: number): Pick<CardRules, 'key' | 'stack' | 'canApply'> => {
@@ -99,5 +99,23 @@ describe('where a card beyond a post is offered', () => {
   test('a board card where no board card is live', () => {
     expect(landingOn(quake, { reach: 'board', board: 'b1' }, [on('other', '2099-03-04T05:06:07Z')], { cards, setLasts })).toEqual({ ok: false, why: 'this board already carries a board card until 2099-03-04 05:06 UTC' });
     expect(landingOn(quake, { reach: 'board', board: 'b1' }, [], { cards, setLasts }).ok).toBe(true);
+  });
+});
+
+/* An admin's end (supabase/migrations/0092_card_end.sql): a play an admin ended is no effect the rules see, as a caught one is none. */
+describe('a play an admin ended, as the rules see the post', () => {
+  const setLasts = { unit: 'day' as const, count: 7 };
+  const cards = [{ key: 'whoops', rarity: 'common' as const }];
+  const ended = (n: number): CardPlay => ({ ...play('whoops', n), reversed: true });
+
+  test('effectsOf leaves it out, and keeps the live one beside it', () => {
+    expect(effectsOf([play('whoops', 1), ended(2)], cards, setLasts).map((e) => e.act)).toEqual(['play-whoops-1']);
+    expect(effectsOf([ended(1)], cards, setLasts)).toEqual([]);
+  });
+
+  test('it holds no place against a card\'s stack limit', () => {
+    const three = [play('whoops', 1), play('whoops', 2), ended(3)];
+    expect(landing(rules('whoops', 3), post('hi'), three).ok).toBe(true);
+    expect(landing(rules('whoops', 3), post('hi'), [...three.slice(0, 2), play('whoops', 3)]).ok).toBe(false);
   });
 });

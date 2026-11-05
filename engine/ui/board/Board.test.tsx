@@ -459,13 +459,13 @@ describe('pinned threads and the banner', () => {
     const fake = createFake({ instance, now: () => Date.now() });
     const w = world(fake, { threads: 25 });
     /* Thread 003 is far down page 1, and Thread 001 on page 2: each is pinned all the same. */
-    fake.seed.reach(w.spritey, 'thread', w.ids[0]!, 'beacon', { ends: o.ends ?? Date.now() + DAY, message: 'Look here.' });
+    const pin = fake.seed.reach(w.spritey, 'thread', w.ids[0]!, 'beacon', { ends: o.ends ?? Date.now() + DAY, message: 'Look here.' });
     if (o.alsoPin !== undefined) fake.seed.reach(w.spritey, 'thread', w.ids[o.alsoPin]!, 'beacon', { ends: Date.now() + DAY });
     const board = (await fake.board('general'))!.id;
-    fake.seed.reach(w.spritey, 'board', board, 'rumble', { ends: Date.now() + DAY });
+    const banner = fake.seed.reach(w.spritey, 'board', board, 'rumble', { ends: Date.now() + DAY });
     renderIn(fake, <BoardScreen slug="general" />, { instance, path: `/b/general${o.page ? `?page=${o.page}` : ''}` });
     await screen.findByRole('link', { name: o.page === 2 ? 'Thread 005' : 'Thread 025' });
-    return { fake, w };
+    return { fake, w, pin, banner };
   }
 
   test('a pin is drawn above page 1, with its mark, and not above page 2', async () => {
@@ -501,6 +501,26 @@ describe('pinned threads and the banner', () => {
       await act(() => vi.advanceTimersByTimeAsync(31_000));
       await waitFor(() => expect(pinned()).toBeNull());
     } finally { vi.useRealTimers(); }
+  });
+
+  /* An admin's end (supabase/migrations/0092_card_end.sql) is announced on `reach` alone (a thread's pin and the board's card are played beyond
+     the board's own topic), so only the board's reach listener can take either off the page it is open on. */
+  test('a pin an admin ends is unpinned live, its thread kept in its bump place', async () => {
+    const { fake, w, pin } = await open();
+    await waitFor(() => expect(pinned()).not.toBeNull());
+    fake.seed.admin(w.me);
+    expect((await fake.reverseCard(pin)).ok).toBe(true);
+    await waitFor(() => expect(pinned()).toBeNull());
+  });
+
+  test('a board card an admin ends leaves the banner live, and the pin beside it stays', async () => {
+    const { fake, w, banner } = await open();
+    const rumbleMark = () => document.querySelector('.kb-board-banner')!.querySelector('button[aria-label^="Rumble, 1 play"]');
+    await waitFor(() => expect(rumbleMark()).not.toBeNull());
+    fake.seed.admin(w.me);
+    expect((await fake.reverseCard(banner)).ok).toBe(true);
+    await waitFor(() => expect(rumbleMark()).toBeNull());
+    expect(pinned()).not.toBeNull();
   });
 
   test('a board card armed puts its ghost on the banner, and focus goes back to the board\'s title after the play', async () => {

@@ -363,9 +363,9 @@ function EndCard({ play, card, caster, store }: { readonly play: Id; readonly ca
   );
 }
 
-/** Whether a play is face up and still in force, so an admin can end it: not a back, not caught, not ended by an admin, not worn off. */
+/** Whether a play is face up and still in force, so an admin can end it: not a back (`faceDown` is set for exactly the card backs, sprung or not), not caught, not ended by an admin, not worn off. */
 const endable = (play: CardPlay, now: number): boolean =>
-  !play.faceDown && !isBack(play.card) && play.caught === undefined && !play.reversed && !(play.ends !== undefined && Date.parse(play.ends) <= now);
+  !play.faceDown && play.caught === undefined && !play.reversed && !(play.ends !== undefined && Date.parse(play.ends) <= now);
 
 function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, moments, onSpin, store, admin, now }: RowProps) {
   const { characters } = usePlayer();
