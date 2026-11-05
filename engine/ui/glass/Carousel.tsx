@@ -11,7 +11,8 @@
  * `aria-selected` and `aria-controls`, one tab stop (a roving tabindex), and the arrow keys move
  * and select, wrapping, Home and End going to the first and last (WAI-ARIA tabs, automatic
  * activation). The caller draws the tabpanel directly after the row, `role="tabpanel"` with
- * `id={carouselPanelId(id)}` and `aria-labelledby={carouselTabId(id, selectedKey)}`.
+ * `id={carouselPanelId(id)}` and an `aria-labelledby` naming the selected tab, or the part of it that is the item's name
+ * (a tab is named by its visible words, WCAG 2.5.3, so a card that shows more than a name names its panel by the name inside it).
  *
  * `after` is a card drawn last that is no item (New character): in a tablist it stands beside the
  * tablist, never inside it, since a link is not a tab. The count and the arrows sit after the cards

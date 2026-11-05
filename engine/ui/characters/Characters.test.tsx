@@ -623,7 +623,8 @@ describe('My characters on the glass (the Roster board)', () => {
     const selected = tabs.find((t) => t.getAttribute('aria-selected') === 'true')!;
     const panel = screen.getByRole('tabpanel');
     expect(panel).toHaveAccessibleName(/^(Pipewrench|Mrs\. Hooligan|Spritey)$/u);
-    expect(panel.getAttribute('aria-labelledby')).toBe(selected.id);
+    /* Named by the character's name inside the selected tab. */
+    expect(selected.contains(document.getElementById(panel.getAttribute('aria-labelledby')!))).toBe(true);
     expect(selected.getAttribute('aria-controls')).toBe(panel.id);
     /* The panel comes directly after the row. */
     expect(roster().closest('.kb-carousel')!.nextElementSibling).toBe(panel);

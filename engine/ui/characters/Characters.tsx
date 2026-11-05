@@ -267,7 +267,7 @@ export function Characters() {
     const posts = counts?.id === c.id ? counts.counts.posts : null;
     const before = was.get(c.id);
     return (
-      <section id={carouselPanelId(rosterId)} role="tabpanel" className="kb-roster-panel kb-glass-cut-panel kb-calm" aria-labelledby={carouselTabId(rosterId, c.id)} data-kb-character={c.id}>
+      <section id={carouselPanelId(rosterId)} role="tabpanel" className="kb-roster-panel kb-glass-cut-panel kb-calm" aria-labelledby={`${carouselTabId(rosterId, c.id)}-name`} data-kb-character={c.id}>
         <div className="kb-roster-panel-head">
           <p className="kb-roster-selected">Selected</p>
           <h2 id={panelHead} className="kb-roster-panel-name kb-glass-display">{c.name}</h2>
@@ -355,13 +355,12 @@ export function Characters() {
             items={mine.map((c) => ({ key: c.id, c }))} value={selected?.id ?? null} onChange={setPicked}
             renderItem={({ c }, { props }) => {
               const r = rankOf(c);
-              /* The tab is named by its character alone (aria-label, which the panel's aria-labelledby reads as the name), and described by the rest. */
-              const more = `${rosterId}-${c.id}-more`;
+              /* The tab's name is its words, as drawn (a name that left out visible words would fail WCAG 2.5.3); its panel is named by the character's name alone, inside it. */
               return (
-                <button key={c.id} type="button" {...props} className="kb-roster-card" aria-label={c.name} aria-describedby={more}>
+                <button key={c.id} type="button" {...props} className="kb-roster-card">
                   <Portrait face={faces.get(c.id)} className="kb-roster-portrait" />
-                  <span className="kb-roster-name kb-glass-display">{c.name}</span>
-                  <span id={more} className="kb-roster-more">
+                  <span id={`${carouselTabId(rosterId, c.id)}-name`} className="kb-roster-name kb-glass-display">{c.name}</span>
+                  <span className="kb-roster-more">
                     <span className="kb-roster-class">
                       <ClassChip cls={c.class} name={className(c.class)} />
                       {r && <span className="kb-roster-rank" data-testid="kb-roster-rank">{r.rank.name}</span>}

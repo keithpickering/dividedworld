@@ -74,7 +74,8 @@ const manifest: BoardManifest = {
 
     /* The sections: Account and Accessibility, the board's first two, in their places. */
     { id: 'sections', role: 'navigation', name: 'Settings sections', box: 'across', type: false },
-    { id: 'section-account', role: 'link', name: 'Account', within: 'sections', origin: 'sections' },
+    /* The unselected tab is a `secondary` GlassButton, as every tab strip's is (the board's quiet one reads #e4def7, which fails contrast on the bare smoke): its text is the glass's #f1ecff, so its type is not compared. */
+    { id: 'section-account', role: 'link', name: 'Account', within: 'sections', origin: 'sections', type: false },
     { id: 'section-accessibility', role: 'link', name: 'Accessibility', within: 'sections', origin: 'sections' },
 
     { id: 'accessibility', role: 'heading', name: 'Accessibility', box: 'across' },
