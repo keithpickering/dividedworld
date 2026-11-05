@@ -7,7 +7,7 @@ import type { Location, Navigation } from '../router.tsx';
 import { Loading, shortenPath } from './Loading.tsx';
 
 /* The router's two signals the meter reads, held here so a test moves them. */
-const nav: { value: Navigation } = { value: { pending: null, tracking: 0, track: (p) => p } };
+const nav: { value: Navigation } = { value: { pending: null, tracking: 0, outcome: null, track: (p) => p } };
 const place: { value: Location } = { value: { path: '/', query: new URLSearchParams(), hash: '', popped: false, state: null } };
 vi.mock('../router.tsx', async (orig) => ({
   ...(await orig<typeof import('../router.tsx')>()),
@@ -16,8 +16,9 @@ vi.mock('../router.tsx', async (orig) => ({
 }));
 
 const THREAD = '3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b';
-const pending = (to: string): Navigation => ({ pending: { to, startedAt: 0 }, tracking: 0, track: (p) => p });
-const idle: Navigation = { pending: null, tracking: 0, track: (p) => p };
+const pending = (to: string): Navigation => ({ pending: { to, startedAt: 0 }, tracking: 0, outcome: null, track: (p) => p });
+const ended = (kind: 'landed' | 'cancelled' | 'failed', seq = 1): Navigation => ({ pending: null, tracking: 0, outcome: { seq, kind }, track: (p) => p });
+const idle: Navigation = ended('landed');
 const where = (path: string): Location => ({ path, query: new URLSearchParams(), hash: '', popped: false, state: null });
 
 const bar = () => screen.getByRole('progressbar', { name: 'Loading the page' });
@@ -92,9 +93,50 @@ describe('the meter', () => {
     expect(screen.queryByText(/Opening/)).toBeNull();
   });
 
+  test('a load stopped by Escape leaves 0 and says nothing', () => {
+    const r = view();
+    move(r, pending('/b/general'));
+    tick(600);
+    expect(now()).toBeGreaterThan(0);
+    move(r, ended('cancelled'));
+    expect(now()).toBe(0);
+    expect(screen.getByRole('status').textContent).toBe('');
+    tick(300);
+    expect(now()).toBe(0);
+  });
+
+  test('a tracked read that rejects does not say Page loaded', () => {
+    const r = view();
+    move(r, { pending: null, tracking: 1, outcome: null, track: (p) => p });
+    tick(300);
+    move(r, ended('failed'));
+    expect(now()).toBe(0);
+    expect(screen.getByRole('status').textContent).toBe('');
+  });
+
+  test('a page that lands as the cannot-be-displayed page does not say Page loaded', () => {
+    const r = view();
+    move(r, pending('/b/general'));
+    tick(300);
+    move(r, ended('failed'), '/b/general');
+    expect(now()).toBe(0);
+    expect(screen.getByRole('status').textContent).toBe('');
+  });
+
+  test('a landing says Page loaded once, not twice', () => {
+    const r = view();
+    move(r, pending('/b/general'));
+    tick(300);
+    move(r, ended('landed', 2), '/b/general');
+    tick(200);
+    expect(now()).toBe(100);
+    tick(50);
+    expect(now()).toBe(0);
+  });
+
   test('a tracked read runs the meter without the Opening text', () => {
     const r = view();
-    move(r, { pending: null, tracking: 1, track: (p) => p });
+    move(r, { pending: null, tracking: 1, outcome: null, track: (p) => p });
     tick(240);
     expect(now()).toBeGreaterThan(0);
     expect(screen.queryByText(/Opening/)).toBeNull();

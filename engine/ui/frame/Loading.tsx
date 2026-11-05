@@ -28,7 +28,7 @@ export function shortenPath(to: string): string {
 }
 
 export function Loading({ host = globalThis.location?.host ?? '' }: { readonly host?: string }) {
-  const { pending, tracking } = useNavigation();
+  const { pending, tracking, outcome } = useNavigation();
   const { path, query } = useLocation();
   const busy = pending !== null || tracking > 0;
   const [value, setValue] = useState(0);
@@ -45,25 +45,30 @@ export function Loading({ host = globalThis.location?.host ?? '' }: { readonly h
     setLoaded(true);
     timers.current.hold = setTimeout(() => { setValue(0); setLoaded(false); timers.current = {}; }, HOLD_MS);
   };
+  /* A load that did not land (stopped, replaced, or failed) empties the meter and says nothing. */
+  const drop = () => { clear(); setValue(0); setLoaded(false); };
 
+  /*
+   * One effect reads both signals, so a landing is shown once. A load ending is told by `busy` falling and what
+   * `outcome` says of it; a swap answered at once has no busy phase and is told by the address changing, unless
+   * the last outcome was a failure.
+   */
   useEffect(() => {
-    if (busy && !wasBusy.current) {
+    const moved = address !== lastAddress.current;
+    lastAddress.current = address;
+    const was = wasBusy.current;
+    wasBusy.current = busy;
+    if (busy && !was) {
       clear();
       setLoaded(false);
       setValue(0);
       timers.current.tick = setInterval(() => setValue((p) => 90 - (90 - p) * 0.82), TICK_MS);
-    } else if (!busy && wasBusy.current) {
+    } else if (!busy && was) {
+      if (outcome?.kind === 'landed') land(); else drop();
+    } else if (!busy && moved && outcome?.kind !== 'failed') {
       land();
     }
-    wasBusy.current = busy;
-  }, [busy]);
-
-  /* A move that landed with no load out: a prefetch or the cache answered at once. */
-  useEffect(() => {
-    if (address === lastAddress.current) return;
-    lastAddress.current = address;
-    if (!busy && !wasBusy.current) land();
-  }, [address]);
+  }, [busy, address]);
 
   useEffect(() => clear, []);
 

@@ -69,6 +69,12 @@ export interface Navigation {
   readonly pending: { readonly to: string; readonly startedAt: number } | null;
   /** How many reads a screen has handed to `track` that have not settled. */
   readonly tracking: number;
+  /**
+   * How the last load or tracked read ended, for the meter: `landed` (the page or the read arrived), `cancelled`
+   * (Escape, or another click or a Back took its place) or `failed` (the page cannot be displayed or found, or a
+   * tracked read rejected). `seq` rises with every one; null before the first.
+   */
+  readonly outcome: { readonly seq: number; readonly kind: 'landed' | 'cancelled' | 'failed' } | null;
   /** A screen runs the meter for a read of its own within its key (a thread's next page). */
   readonly track: <T>(promise: Promise<T>) => Promise<T>;
 }
@@ -150,6 +156,8 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
   const [shown, setShown] = useState<Shown>(() => ({ location: read(w), doc: undefined, ready: false, failure: null, route: null, key: null }));
   const [pending, setPending] = useState<Navigation['pending']>(null);
   const [tracking, setTracking] = useState(0);
+  const [outcome, setOutcome] = useState<Navigation['outcome']>(null);
+  const report = useCallback((kind: NonNullable<Navigation['outcome']>['kind']) => setOutcome((o) => ({ seq: (o?.seq ?? 0) + 1, kind })), []);
   /* What is shown, for the next move's `from`, and the latest onMove, so a new one does not re-subscribe. */
   const shownRef = useRef(shown);
   const entryRef = useRef<string | null>(unwrap(w.history.state).kb);
@@ -206,11 +214,12 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     pendingRef.current = null;
     p.controller.abort();
     setPending(null);
+    report('cancelled');
     if (p.popped && restoreBar && entryRef.current) {
       const l = shownRef.current.location;
       w.history.replaceState(wrap(entryRef.current, l.state), '', addressOf(l) + (l.hash ? `#${l.hash}` : ''));
     }
-  }, [w]);
+  }, [w, report]);
   const takePrefetch = useCallback((address: string): Promise<unknown> | null => {
     const k = `${accountRef.current ?? ''}|${address}`;
     const e = prefetched.current.get(k);
@@ -261,9 +270,10 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
       if (p?.id !== id || o.kind === 'aborted' || p.account !== accountRef.current) return;
       pendingRef.current = null;
       setPending(null);
+      report(o.kind === 'doc' ? 'landed' : 'failed');
       land(req, found, o);
     });
-  }, [w, cancelPending, takePrefetch, land]);
+  }, [w, cancelPending, takePrefetch, land, report]);
 
   /*
    * The document's first move is told in a layout effect: a parent's passive effect runs after its
@@ -422,10 +432,10 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
 
   const track = useCallback(<T,>(promise: Promise<T>): Promise<T> => {
     setTracking((n) => n + 1);
-    const done = () => setTracking((n) => n - 1);
-    promise.then(done, done);
+    const settle = (kind: 'landed' | 'failed') => () => { setTracking((n) => n - 1); report(kind); };
+    promise.then(settle('landed'), settle('failed'));
     return promise;
-  }, []);
+  }, [report]);
 
   /* Routes hands over the route list; a first address whose route loads is loaded here, once. */
   const attach = useCallback((routes: readonly RouteLike[]) => {
@@ -433,7 +443,7 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     beginInitial();
   }, [beginInitial]);
 
-  const navigation = useMemo(() => ({ pending, tracking, track }), [pending, tracking, track]);
+  const navigation = useMemo(() => ({ pending, tracking, outcome, track }), [pending, tracking, outcome, track]);
   const value = useMemo(() => ({ location: shown.location, shown, navigate, retry, prefetch, navigation, attach, setAccount }), [shown, navigate, retry, prefetch, navigation, attach, setAccount]);
   return <RouterContext.Provider value={value}>{children}</RouterContext.Provider>;
 }

@@ -520,4 +520,32 @@ describe('the router loads before it moves', () => {
     await act(async () => { done(); });
     expect(navigation.tracking).toBe(0);
   });
+  test('the outcome says how the last load ended: landed, cancelled by Escape, failed', async () => {
+    const { load, calls } = manualLoader();
+    mount(load);
+    expect(navigation.outcome).toBeNull();
+    act(() => nav('/t/a'));
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    expect(navigation.outcome?.kind).toBe('cancelled');
+    const seq = navigation.outcome!.seq;
+    act(() => nav('/t/b'));
+    await answer(calls[1], 'B');
+    expect(navigation.outcome).toEqual({ seq: expect.any(Number), kind: 'landed' });
+    expect(navigation.outcome!.seq).toBeGreaterThan(seq);
+    act(() => nav('/t/c'));
+    await act(async () => { calls[2]!.reject(new Error('down')); });
+    expect(navigation.outcome?.kind).toBe('failed');
+  });
+  test('a tracked read reports landed when it resolves and failed when it rejects', async () => {
+    const { load } = manualLoader();
+    mount(load);
+    let ok!: () => void;
+    let bad!: (e: unknown) => void;
+    act(() => { void navigation.track(new Promise<void>((r) => { ok = r; })); });
+    await act(async () => { ok(); });
+    expect(navigation.outcome?.kind).toBe('landed');
+    act(() => { navigation.track(new Promise<void>((_, r) => { bad = r; })).catch(() => {}); });
+    await act(async () => { bad(new Error('x')); });
+    expect(navigation.outcome?.kind).toBe('failed');
+  });
 });

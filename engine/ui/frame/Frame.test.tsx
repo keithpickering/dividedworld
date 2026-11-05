@@ -6,6 +6,7 @@ import { ALERTS_UNREAD_BOUND } from '../data/api.ts';
 import { KayfaProvider, type Kayfa } from '../context.tsx';
 import { PlayerProvider } from '../player.tsx';
 import { RouterProvider } from '../router.tsx';
+import { Routes } from '../routes.tsx';
 import { testGlass } from '../test-world.tsx';
 import { boardPlace, forgetBoard, keepBoardPlace } from '../glass/back.ts';
 import { boardSwitch } from '../glass/board.ts';
@@ -682,5 +683,29 @@ describe('the HUD\'s Alerts button and the toasts (the alerts plan, Task 10)', (
       expect(menu.querySelector('.kb-hud-menu-glyph')).toBeNull();
       expect(document.querySelector('.kb-hud-name-probe')).toBeNull();
     });
+  });
+});
+
+describe('the frame while a page opens', () => {
+  test('main is busy and the frame carries the loading mark exactly while a click\'s load is out', async () => {
+    let answer!: (doc: unknown) => void;
+    const page = (
+      <Routes routes={[
+        { path: '/', render: () => <Link to="/slow">slow</Link> },
+        { path: '/slow', load: () => new Promise<unknown>((r) => { answer = r; }), render: () => <p>slow page</p> },
+      ]} />
+    );
+    setup(true, undefined, page);
+    const frame = () => document.querySelector('.kb-frame')!;
+    const main = () => screen.getByRole('main');
+    expect(main()).not.toHaveAttribute('aria-busy');
+    expect(frame()).not.toHaveAttribute('data-kb-loading');
+    fireEvent.click(await screen.findByRole('link', { name: 'slow' }));
+    await waitFor(() => expect(main()).toHaveAttribute('aria-busy', 'true'));
+    expect(frame()).toHaveAttribute('data-kb-loading');
+    await act(async () => { answer('ok'); });
+    await screen.findByText('slow page');
+    expect(main()).not.toHaveAttribute('aria-busy');
+    expect(frame()).not.toHaveAttribute('data-kb-loading');
   });
 });
