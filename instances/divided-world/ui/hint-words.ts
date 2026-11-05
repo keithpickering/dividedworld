@@ -17,8 +17,8 @@ const LEADING: Readonly<Record<string, { post: Words; card: Words }>> = {
     card: { line: 'Your card is popping off', detail: `Most of the reactions it has drawn lately are the excited, positive kind. That play landed. ${COUNTED}` },
   },
   'leading:calmPositive': {
-    post: { line: 'Your post is getting polite shrugs', detail: `Most of the reactions it has drawn lately are the calm, positive kind: a nod, a cup of tea. ${COUNTED}` },
-    card: { line: 'Your card is getting polite shrugs', detail: `Most of the reactions it has drawn lately are the calm, positive kind: a nod, a cup of tea. ${COUNTED}` },
+    post: { line: 'Your post is getting polite shrugs', detail: `Most of the reactions it has drawn lately are the calm, positive kind: a thumbs up, a thank-you. ${COUNTED}` },
+    card: { line: 'Your card is getting polite shrugs', detail: `Most of the reactions it has drawn lately are the calm, positive kind: a thumbs up, a thank-you. ${COUNTED}` },
   },
   'leading:boredNegative': {
     post: { line: 'Your post is getting groans', detail: `Most of the reactions it has drawn lately are the bored, negative kind. It might be exactly what you were going for. ${COUNTED}` },
