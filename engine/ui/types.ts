@@ -291,9 +291,10 @@ export interface InstanceUi {
   readonly glass: GlassTheme;
   /**
    * Font files for the board's own stacks (the theme's `--kb-font-body` and `--kb-font-mono`), for a
-   * device that has none of the families the stack names before them: a phone with no Verdana falls
-   * to its own sans-serif otherwise. Each is installed at load (engine/ui/fonts.ts) and fetched only
-   * where text needs it, so a device with an earlier family, or with the face installed, downloads nothing.
+   * device that has none of the families the stack names before them, which otherwise falls to its
+   * own generic family. Each is installed at load (engine/ui/fonts.ts) and fetched only where text
+   * needs it, so a device with an earlier family that holds the text, or with the face installed,
+   * downloads nothing.
    */
   readonly boardFonts?: readonly FontFile[];
   /** The instance's pictures for its personas, by the key its rules name (`DeveloperPersona.avatar`) as a URL; a persona with none is drawn as an initial. */

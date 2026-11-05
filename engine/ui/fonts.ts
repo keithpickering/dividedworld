@@ -7,8 +7,9 @@
  * first (`local`), so a device that has the family never downloads the file.
  *
  * A face is only fetched when text on the page needs it, so a face for a family a stack names after
- * one the device has (DejaVu Sans after Verdana) costs that device nothing. Each face is added once
- * per document, however often this is called; a document with no font set (a test's) is left alone.
+ * one the device has costs that device nothing, unless the page shows a character in the face's
+ * range that the earlier family lacks. Each face is added once per document, however often this is
+ * called; a document with no font set (a test's) is left alone.
  * A face whose file fails to load goes to `error` in the font set and its text keeps the rest of its
  * stack, so nothing throws.
  */
