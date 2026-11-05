@@ -149,3 +149,125 @@ for (const [label, viewport] of VIEWPORTS) {
     });
   }
 }
+
+/** The color of one pixel of a screenshot, read through a canvas in the page (the repository carries no PNG decoder). */
+async function pixelAt(page: Page, shot: Buffer, x: number, y: number): Promise<readonly [number, number, number]> {
+  return page.evaluate(async ([b64, px, py]) => {
+    const img = new Image();
+    img.src = `data:image/png;base64,${b64}`;
+    await img.decode();
+    const c = document.createElement('canvas');
+    c.width = img.width;
+    c.height = img.height;
+    const g = c.getContext('2d')!;
+    g.drawImage(img, 0, 0);
+    const d = g.getImageData(px as number, py as number, 1, 1).data;
+    return [d[0]!, d[1]!, d[2]!] as const;
+  }, [shot.toString('base64'), x, y] as const);
+}
+
+/*
+ * The sticky menu bar is opaque while a dialog dims it: the page scrolls under it, and what scrolls there must never read through.
+ * A white sheet is laid under the bar (below its layer), the page scrolled so that it lies there, and a pixel of the bar that carries
+ * no letter is read: it is the bar's own ground, black, not the sheet through a 60% bar.
+ */
+for (const [label, viewport] of VIEWPORTS) {
+  test.describe(`the dimmed menu bar at ${label}`, () => {
+    test.use({ viewport });
+    test('what scrolls under it never reads through', async ({ page }) => {
+      test.setTimeout(60_000);
+      const reveal = OVERLAYS.find((s) => s.name === 'The Reveal modal, from My characters')!;
+      await setTextSize(page, 100);
+      await open(page, reveal);
+      const menu = page.getByRole('navigation', { name: 'Menu' });
+      await expect(menu).toHaveAttribute('data-kb-dimmed', '');
+      await page.evaluate(async () => {
+        const sheet = document.createElement('div');
+        sheet.setAttribute('data-probe', '');
+        sheet.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:4000px;background:#fff;z-index:1;pointer-events:none';
+        /* A sibling of the bar's, so the two stack against each other as the page's own content and the bar do. */
+        document.querySelector('nav[aria-label="Menu"]')!.parentElement!.prepend(sheet);
+        window.scrollTo(0, 300);
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      });
+      const bar = (await menu.boundingBox())!;
+      expect(Math.round(bar.y), 'the bar is stuck at the top').toBe(0);
+      const shot = await page.screenshot();
+      /* The bar's far right edge carries no tab or letter. */
+      const [r, g, b] = await pixelAt(page, shot, viewport.width - 3, Math.floor(bar.height / 2));
+      expect(Math.max(r, g, b), `the bar's ground is black, not the sheet under it (rgb ${r} ${g} ${b})`).toBeLessThan(40);
+    });
+  });
+}
+
+/*
+ * The stuck title row's top right corner: the body scrolling under the row must not show through it. The row is cut at that corner at
+ * its place at the frame's top, and the page may stick it elsewhere (a dialog taller than the window scrolls in its overlay, the frame's own
+ * corner far above), where a cut would be a notch showing the body behind it. A red sheet runs the body's whole width, the dialog is scrolled
+ * to its foot, and the pixels of the row's top right 48px square that lie inside the frame's own cut (and off Close) are read: none is the sheet.
+ */
+for (const [label, viewport] of VIEWPORTS) {
+  test.describe(`the stuck title row's corner at ${label}`, () => {
+    test.use({ viewport });
+    for (const s of DIALOGS.filter((d) => !d.name.startsWith('Stick Around'))) {
+      test(`${s.name}: no body shows through the corner`, async ({ page }) => {
+        test.setTimeout(60_000);
+        await setTextSize(page, 100);
+        await open(page, s);
+        const at = await page.evaluate(async () => {
+          const box = [...document.querySelectorAll<HTMLElement>('[role="dialog"]')].at(-1)!;
+          const sheet = document.createElement('div');
+          sheet.style.cssText = 'height:3000px;position:relative;z-index:1;background:#f00;margin:0 -200px';
+          box.lastElementChild!.append(sheet);
+          await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+          const toFoot = () => { ((box.scrollHeight > box.clientHeight + 1) ? box : box.parentElement!).scrollTop = 1e6; };
+          toFoot();
+          await new Promise((r) => setTimeout(r, 300));
+          toFoot();
+          await new Promise((r) => setTimeout(r, 300));
+          const r = box.getBoundingClientRect();
+          const bar = box.querySelector<HTMLElement>('.kb-glass-dialog-bar')!.getBoundingClientRect();
+          const close = box.querySelector<HTMLElement>('.kb-glass-dialog-close')!.getBoundingClientRect();
+          const cs = getComputedStyle(box);
+          return { box: { right: r.right, top: r.top }, bar: { right: bar.right, top: bar.top, bottom: bar.bottom }, close: { left: close.left, right: close.right, top: close.top, bottom: close.bottom }, cut: parseFloat(cs.getPropertyValue('--kb-cut')), border: parseFloat(cs.getPropertyValue('--kb-border')) };
+        });
+        const shot = await page.screenshot();
+        const bad: string[] = [];
+        for (let dx = 3; dx <= 48; dx += 5) {
+          for (let dy = 3; dy <= 48; dy += 5) {
+            const x = at.bar.right - dx;
+            const y = Math.max(at.bar.top, 0) + dy;
+            if (y > at.bar.bottom - 2) continue;
+            /* Inside the frame's own cut (its diagonal moved in by the border, and a margin), not on Close. */
+            if ((at.box.right - x) + (y - at.box.top) < at.cut + at.border * 1.5 + 4 || y < at.box.top) continue;
+            if (x > at.close.left - 3 && x < at.close.right + 3 && y > at.close.top - 3 && y < at.close.bottom + 3) continue;
+            const [r, g, b] = await pixelAt(page, shot, Math.round(x), Math.round(y));
+            if (r > 120 && g < 70 && b < 70) bad.push(`(${Math.round(x)}, ${Math.round(y)}) is rgb ${r} ${g} ${b}`);
+          }
+        }
+        expect(bad, 'pixels of the title row where the sheet under it shows').toEqual([]);
+      });
+    }
+  });
+}
+
+/* The pause menu's current tab is in the window as the page opens, at every text size: the strip scrolls it into view (MenuBar.tsx). */
+for (const [label, viewport] of VIEWPORTS) {
+  for (const size of TEXT_SIZES) {
+    test.describe(`the menu's current tab at ${label}, text ${size}%`, () => {
+      test.use({ viewport });
+      for (const path of ['/settings', '/guide', '/season']) {
+        test(`${path}: the current tab is in the window`, async ({ page }) => {
+          await setTextSize(page, size);
+          await page.goto(path);
+          const tab = page.getByRole('navigation', { name: 'Menu' }).locator('[aria-current="page"]');
+          await expect(tab).toBeVisible();
+          await expect.poll(async () => {
+            const r = (await tab.boundingBox())!;
+            return r.x >= -0.5 && r.x + r.width <= viewport.width + 0.5;
+          }, { message: 'the current tab lies inside the window' }).toBe(true);
+        });
+      }
+    });
+  }
+}

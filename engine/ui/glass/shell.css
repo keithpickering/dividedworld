@@ -52,9 +52,12 @@
   zoom: var(--kb-board-scale, 1);
 }
 
-/* Dimmed while an overlay is open over the page, which also makes it inert (Overlay.tsx). */
+/*
+ * Dimmed while an overlay is open over the page, which also makes it inert (Overlay.tsx). The dim is a filter, never opacity: the bar
+ * is sticky and the page scrolls under it, and an opacity would let that page read through the bar's own ground.
+ */
 .kb-glass-menu[data-kb-dimmed] {
-  opacity: 0.6;
+  filter: brightness(0.6);
 }
 
 .kb-glass-menu-row {
@@ -261,8 +264,10 @@
 /*
  * The title row. It is sticky: a dialog taller than the window (or than the room it was given) scrolls its body under the bar,
  * and the title and Close stay in view. It is on the ground, so the body does not show through it, and it lies exactly where
- * the cut's own panel does (inside the border, with the panel's own corner cut), so the border is drawn round it as round the
- * rest. Its top padding is mostly scrolled off when it sticks (the offset), leaving Close 12px from the edge.
+ * the cut's own panel does (inside the border). It has no cut of its own: it sticks wherever the page scrolls it to, which is not
+ * always the frame's top (a dialog taller than the window scrolls in its overlay, the frame's corner far above), and a corner cut
+ * out of it there is a notch the body shows through. The frame's diagonal border, which the bar's ground would cover where the
+ * frame's own corner is in view, is drawn again above the bar (`.kb-glass-dialog::before`, below). Its top padding is mostly scrolled off when it sticks (the offset), leaving Close 12px from the edge.
  */
 .kb-glass-dialog-bar {
   position: sticky;
@@ -275,7 +280,6 @@
   margin: var(--kb-border) calc(var(--kb-border) - var(--kb-dialog-pad-x)) 0;
   padding: calc(var(--kb-dialog-bar-top) - var(--kb-border)) calc(var(--kb-dialog-pad-x) - var(--kb-border)) 0;
   background: var(--kb-glass-ground);
-  clip-path: polygon(0 0, calc(100% - var(--kb-cut-in)) 0, 100% var(--kb-cut-in), 100% 100%, 0 100%);
 }
 
 /*
@@ -301,6 +305,23 @@
   @container scroll-state(stuck: top) {
     .kb-glass-dialog-bar::before { opacity: 1; }
   }
+}
+
+/*
+ * The frame's diagonal edge, drawn over the title row: a stroke of the border's width and color along the top right cut, a square of
+ * the cut's size at the corner, a hard-edged band on the gradient's axis (perpendicular to the cut) from the cut's line one border in.
+ * It lies in the box, so it scrolls with the frame's own corner and is where the corner is.
+ */
+.kb-glass-dialog::before {
+  content: '';
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  right: 0;
+  width: var(--kb-cut);
+  height: var(--kb-cut);
+  pointer-events: none;
+  background: linear-gradient(to bottom left, transparent 50%, var(--kb-glass-neon) 50%, var(--kb-glass-neon) calc(50% + var(--kb-border)), transparent calc(50% + var(--kb-border)));
 }
 
 .kb-glass-dialog-titles {
