@@ -227,10 +227,14 @@ const rgbText = (rgb) => `rgb(${rgb.map((v) => Math.round(v)).join(',')})`;
 
 /* ---- the smoke ---- */
 
+/** A plain object: not null, not an array. Every shape the guard reads is checked with this before it is read into. */
+const isObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
+
 /** The composite of a recipe's layers at full noise over the ground, each layer's opacity scaled by `k`. */
 function composite(layers, ground, k) {
   let c = [...ground];
   for (const layer of layers) {
+    if (!isObject(layer)) continue;
     const col = parseColor(layer.color);
     if (!col) continue;
     const a = Math.min(1, Math.max(0, layer.opacity * k));
@@ -251,12 +255,12 @@ function groundOf(glass) {
 export function narrowColorsOf(glass, recipe) {
   const n = glass.smoke?.field?.narrow;
   if (!Array.isArray(n) || n.length === 0) return null;
-  if (Array.isArray(recipe.narrowColors)) return recipe.narrowColors;
-  return Array.isArray(recipe.colors) ? recipe.colors.slice(0, n.length) : [];
+  if (Array.isArray(recipe?.narrowColors)) return recipe.narrowColors;
+  return Array.isArray(recipe?.colors) ? recipe.colors.slice(0, n.length) : [];
 }
 
 /** A recipe's calm opacity: its own, else the theme's. */
-export const calmOf = (glass, recipe) => recipe.calm ?? glass.calm?.opacity ?? 0;
+export const calmOf = (glass, recipe) => recipe?.calm ?? glass.calm?.opacity ?? 0;
 
 /**
  * The worst pixel of each recipe: `{ full, calmed }` and, for a recipe whose pixel on the field's narrow layers
@@ -266,6 +270,7 @@ export function recipeWorsts(glass) {
   const ground = groundOf(glass);
   const out = {};
   for (const [name, recipe] of Object.entries(glass.smoke?.recipes ?? {})) {
+    if (!isObject(recipe)) continue;
     const k = 1 - calmOf(glass, recipe);
     const colors = Array.isArray(recipe.colors) ? recipe.colors : [];
     out[name] = { full: measure(composite(colors, ground, 1)), calmed: measure(composite(colors, ground, k)) };
@@ -485,6 +490,7 @@ export function glassFaults(glass, classLarge = CLASS_LARGE?.entries ?? {}, over
   }
   for (const [which, layers] of [['layers', fieldLayers], ['narrow layers', narrowLayers]]) {
     layers.forEach((l, i) => {
+      if (!isObject(l)) { fault('field', `${which} ${i + 1} is not an object`); return; }
       const bad = !Array.isArray(l.alpha) || l.alpha.length !== 5 || !Array.isArray(l.frequency) || l.frequency.length !== 2
         || !(l.octaves >= 1) || !Number.isFinite(l.seed) || !(l.blur >= 0);
       if (bad) fault('field', `${which} ${i + 1} is not an alpha row of five, two frequencies, octaves, a seed and a blur`);
@@ -494,11 +500,13 @@ export function glassFaults(glass, classLarge = CLASS_LARGE?.entries ?? {}, over
 
   /* Each recipe's colors are what the model reads: one per field layer, and one per narrow layer. */
   for (const [name, recipe] of Object.entries(recipes)) {
+    if (!isObject(recipe)) { fault(`recipe ${name}`, 'is not an object; a recipe has colors, and may have narrowColors and a calm'); continue; }
     /* A recipe's own calm is drawn on its surface as the calm's opacity (surfaceCalm, engine/ui/glass/apply.ts), so it is held as the theme's is. */
     if (recipe.calm !== undefined && !(typeof recipe.calm === 'number' && recipe.calm > 0 && recipe.calm <= 1)) {
       fault(`recipe ${name}`, `its own calm ${JSON.stringify(recipe.calm)} needs to be a number above 0 and at most 1: the screen draws it as the calm's opacity on the surface`);
     }
     const colorFaults = (which, colors) => colors.forEach((c, i) => {
+      if (!isObject(c)) { fault(`recipe ${name}`, `${which} ${i + 1} is not an object`); return; }
       if (!LAYER_COLOR.test(c?.color) || !(typeof c.opacity === 'number' && c.opacity >= 0 && c.opacity <= 1)) {
         fault(`recipe ${name}`, `${which} ${i + 1} is not a six-digit #rrggbb color (the only form Smoke reads) with an opacity from 0 to 1`);
       }
@@ -552,6 +560,7 @@ export function glassFaults(glass, classLarge = CLASS_LARGE?.entries ?? {}, over
   const worsts = recipeWorsts(glass);
   for (const [name, recipe] of Object.entries(recipes)) {
     const w = worsts[name];
+    if (!w) continue;
     const sets = [['', w.full, w.calmed]];
     if (w.narrow) sets.push([' (narrow)', w.narrow.full, w.narrow.calmed]);
     for (const [suffix, full, calmed] of sets) {

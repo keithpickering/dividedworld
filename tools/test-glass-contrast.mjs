@@ -287,6 +287,15 @@ check('a three-digit layer color fires: Smoke reads six digits only', poisoned((
 check('an rgb() layer color fires', poisoned((g) => { g.smoke.recipes.react.colors[0].color = 'rgb(128,64,255)'; }, 'recipe react', 'colors 1', '#rrggbb').length === 1);
 check('an eight-digit layer color fires', poisoned((g) => { g.smoke.recipes.react.colors[0].color = '#8040ff80'; }, 'recipe react', 'colors 1').length === 1);
 check('a narrow layer color with a bad shape is named as narrow', poisoned((g) => { g.smoke.recipes.hud.narrowColors[0].color = 'red'; }, 'recipe hud', 'narrowColors 1').length === 1);
+/* A null where an object belongs is a named fault, never a crash further down. */
+const crashes = (poison) => { try { poison(); return false; } catch { return true; } };
+check('a null field layer fires, naming the layer, and does not crash', !crashes(() => poisoned((g) => { g.smoke.field.layers[1] = null; })) && poisoned((g) => { g.smoke.field.layers[1] = null; }, 'field', 'layers 2', 'not an object').length === 1);
+check('a null narrow field layer fires, naming the layer', !crashes(() => poisoned((g) => { g.smoke.field.narrow[0] = null; })) && poisoned((g) => { g.smoke.field.narrow[0] = null; }, 'field', 'narrow layers 1', 'not an object').length === 1);
+check('a null recipe color fires, naming the recipe and the color', !crashes(() => poisoned((g) => { g.smoke.recipes.react.colors[1] = null; })) && poisoned((g) => { g.smoke.recipes.react.colors[1] = null; }, 'recipe react', 'colors 2', 'not an object').length === 1);
+check('a null narrow color fires, naming the recipe and the color', !crashes(() => poisoned((g) => { g.smoke.recipes.hud.narrowColors[2] = null; })) && poisoned((g) => { g.smoke.recipes.hud.narrowColors[2] = null; }, 'recipe hud', 'narrowColors 3', 'not an object').length === 1);
+check('a null recipe fires, naming the recipe', !crashes(() => poisoned((g) => { g.smoke.recipes.cards = null; })) && poisoned((g) => { g.smoke.recipes.cards = null; }, 'recipe cards', 'not an object').length === 1);
+check('a null recipe does not crash the ceilings or the worsts', !crashes(() => { const g = fresh(); g.smoke.recipes.cards = null; glassCeilings(g); recipeWorsts(g); }));
+check('field layers that are not an array fire, and do not crash', !crashes(() => poisoned((g) => { g.smoke.field.layers = { 0: {} }; })) && poisoned((g) => { g.smoke.field.layers = { 0: {} }; }, 'field', 'no layers').length === 1);
 check('a font with no family fires', poisoned((g) => { delete g.fonts[0].family; }, 'font fonts/Anton-Regular.woff2', 'needs a family').length === 1);
 check('a font with no file fires', poisoned((g) => { delete g.fonts[0].file; }, 'font (no file)', 'needs a family').length === 1);
 check('a font with no weight fires', poisoned((g) => { delete g.fonts[0].weight; }, 'font fonts/Anton-Regular.woff2', 'needs a family').length === 1);
