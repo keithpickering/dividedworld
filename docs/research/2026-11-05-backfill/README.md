@@ -69,3 +69,13 @@ follows what you type.") is a draft for the owner's review.
 - `35-hud-cap.html`: the HUD with a wallet past its cap, 1440 wide. Only the Aura notch is compared (from its own
   corner); the rest of the HUD is drawn for place and held by `e2e/boards/01-main.ts`.
 - `36-account-phone.html`: three phone screens at 390 by 844: the invites, the card info as a sheet, the HUD past its cap.
+
+## Batch 6: admin
+
+Amends `docs/research/2026-10-30-the-system/mock-s3-admin-queue.html` (B), which stays as the record.
+
+- `37-admin-queue.html`: The System's moves with a move waiting and one in force, 1440 by 1640: the menu bar with Admin
+  on one row, the queue first, How players reach you after it.
+- `38-write-update.html`: Updates as an admin with Write an update open, 1440 by 1600: the form in the glass's piece and
+  the post as players will see it under it.
+- `39-admin-phone.html`: two phone screens at 390 by 844: the queue and Write an update.

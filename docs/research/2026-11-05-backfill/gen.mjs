@@ -15,6 +15,7 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid #ffff
 .tab{display:flex;align-items:center;min-height:52px;padding:0 20px;white-space:nowrap;transform:skewX(-10deg);text-decoration:none;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#e4def7}
 button.tab{background:none;border:0;cursor:pointer}
 .many .tab{padding:0 13px;letter-spacing:1.5px}
+.most .tab{padding:0 10px;letter-spacing:1px}
 .tab b{display:inline-block;transform:skewX(10deg);font-weight:800}
 .btn{display:inline-flex;align-items:center;justify-content:center;min-height:52px;padding:0 26px;transform:skewX(-10deg);text-decoration:none;border:1px solid rgba(241,236,255,.6);background:none;cursor:pointer;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#f1ecff}
 .btn b{display:inline-block;transform:skewX(10deg);font-weight:800}
@@ -100,7 +101,7 @@ function menu(tabs = [], current = '') {
     ? `<a href="#" class="tab" aria-current="page" style="background: rgba(25,227,255,.16); box-shadow: inset 0 -3px 0 #19e3ff; color: #ffffff"><b>${n}</b></a>`
     : `<a href="#" class="tab"><b>${n}</b></a>`).join('\n    ');
   const pad = tabs.length > 5 ? ' --tp: 14px;' : '';
-  return `<nav aria-label="Menu" class="${tabs.length > 5 ? 'many' : ''}" style="position: absolute; left: 0; right: 0; top: 0; height: 84px; z-index: 5; display: flex; align-items: center; gap: ${tabs.length > 5 ? 2 : 8}px; padding: 0 28px;${pad} background: rgba(7,5,13,.9); border-bottom: 1px solid rgba(201,248,255,.5); box-shadow: 0 1px 16px rgba(25,227,255,.35)">
+  return `<nav aria-label="Menu" class="${tabs.length > 8 ? 'many most' : tabs.length > 5 ? 'many' : ''}" style="position: absolute; left: 0; right: 0; top: 0; height: 84px; z-index: 5; display: flex; align-items: center; gap: ${tabs.length > 5 ? 2 : 8}px; padding: 0 28px;${pad} background: rgba(7,5,13,.9); border-bottom: 1px solid rgba(201,248,255,.5); box-shadow: 0 1px 16px rgba(25,227,255,.35)">
     <a href="#" class="tab" aria-keyshortcuts="Escape" style="border: 1px solid #ffffff; color: #ffffff; margin-right: 18px"><b>${ESC}BACK TO THE BOARD</b></a>
     ${t}
   </nav>`;
@@ -965,6 +966,110 @@ page({
       <p style="position: absolute; left: 12px; right: 12px; top: 106px; margin: 0; font: 600 18px/1.3 'Barlow Condensed', sans-serif; color: #ffd9b0"><b style="color: #ffb86b">+0.85 est. past the cap.</b> Spend some before the settlement, or it won't fit.</p>
     </section>
   </figure>
+</div>`,
+});
+
+/* ---------------------------------------------------------------- batch 6: admin */
+
+const ADMIN_TABS = [...PAUSE, 'ADMIN'];
+const move = (when, whenSub, color, title, lines, action, actionColor, bar) => `<article style="display: grid; grid-template-columns: 170px 1fr 160px; gap: 24px; align-items: center; padding: 18px 0 18px 22px; border-left: 3px solid ${color}; background: rgba(7,5,13,.55)">
+        <div><b style="display: block; font: 800 20px 'Barlow Condensed', sans-serif; letter-spacing: 1px; color: ${color}">${when}</b><span style="font: 500 20px 'Barlow Condensed', sans-serif; color: #e4def7">${whenSub}</span></div>
+        <div><h3 style="margin: 0 0 6px; font: 800 22px 'Barlow Condensed', sans-serif">${title}</h3>${lines.map((l) => `<p style="margin: 0 0 4px; font: 500 20px/1.45 'Barlow Condensed', sans-serif; color: ${l.startsWith('Why') ? '#c9f8ff' : '#e4def7'}">${l}</p>`).join('')}${bar ? `<div style="margin-top: 8px; height: 12px; border: 1px solid #19e3ff"><div style="width: ${bar * 100}%; height: 100%; background: #19e3ff"></div></div><p style="margin: 4px 0 0; font: 500 19px 'Barlow Condensed', sans-serif">7 of 12</p>` : ''}</div>
+        <div style="text-align: right; padding-right: 8px"><button class="btn" style="border-color: ${actionColor}; box-shadow: 0 0 12px ${actionColor}66"><b>${action}</b></button></div>
+      </article>`;
+const group = (name, n, color, inner) => `<section style="margin-top: 34px"><h2 style="margin: 0 0 14px; font: 44px/1 Anton, Impact, sans-serif">${name} <span style="font: 800 24px 'Barlow Condensed', sans-serif; color: ${color}">${n}</span></h2>${inner}</section>`;
+const linkRow = (label, addr, n) => `<div style="display: grid; grid-template-columns: 190px 1fr auto; gap: 12px; align-items: end; padding: 12px 0; border-top: 1px solid rgba(241,236,255,.14)">
+        <div class="field"><label style="font-size: 19px">LABEL</label><input type="text" value="${label}"></div>
+        <div class="field"><label style="font-size: 19px">ADDRESS</label><input type="text" value="${addr}"></div>
+        <button class="btn" aria-label="Remove link ${n}" style="min-height: 56px"><b>REMOVE</b></button>
+      </div>`;
+
+page({
+  file: '37-admin-queue.html', name: "The System's moves", w: 1440, h: 1640,
+  note: "The admin queue with a move waiting and one in force, in docs/research/2026-10-30-the-system/mock-s3-admin-queue.html's grouping (B, the owner's choice), redrawn on #202's parts: the queue first, How players reach you after it as its own section, and the menu bar on one row with Admin.",
+  body: frame(1440, 1640, `
+  ${smoke(1440, 1640, [[40, 220, 1360, 1360, .92]])}
+  ${menu(ADMIN_TABS, 'ADMIN')}
+  ${title("THE SYSTEM'S MOVES")}
+  ${pageLead('Moves that reshape a board wait here before they land, and land unless you hold them. Anything in force can be reversed. Players never see a held move.')}
+  <div style="position: absolute; left: 64px; top: 290px; width: 1312px">
+    ${group('TO DO', '0', '#19e3ff', '<p class="note" style="margin: 0; padding: 14px 0; border-top: 1px solid rgba(241,236,255,.22); border-bottom: 1px solid rgba(241,236,255,.22)">Nothing to do.</p>')}
+    ${group('WAITING TO LAND', '1', '#ffd23f', move('IN 17 HOURS', 'Oct 31, 2:10 pm', '#ffd23f', 'Rename <u>Games</u> to Small Soldiers Situation Room', ['New subject: the 1998 film Small Soldiers. Changes back when 8 different characters post there, or Nov 14.', 'Why, in the Director\'s words: &ldquo;Games has gone soft. Time for discipline.&rdquo;'], 'HOLD', '#ffd23f'))}
+    ${group('IN FORCE', '1', '#19e3ff', move('SINCE OCT 30', 'ends Nov 13', '#19e3ff', 'Renamed <u>General</u> to Pointless Toast Palace', ['Back when 12 different characters post there.'], 'REVERSE', '#ff3d6e', 7 / 12))}
+    <section style="margin-top: 34px"><h2 style="margin: 0; font: 44px/1 Anton, Impact, sans-serif">ENDED <span style="font: 600 21px 'Barlow Condensed', sans-serif; color: #e4def7">&middot; the last 30 days, with how each ended &rsaquo;</span></h2></section>
+    <section aria-labelledby="reachH" style="margin-top: 54px; padding-top: 34px; border-top: 1px solid rgba(241,236,255,.22); width: 920px">
+      <h2 id="reachH" style="margin: 0 0 10px; font: 44px/1 Anton, Impact, sans-serif">HOW PLAYERS REACH YOU</h2>
+      <p class="note" style="margin: 0 0 14px">Players read these on the Reach a person page, which they can open signed out. Up to 5 links, each a label and an address: a web address that starts with https://, or an email address.</p>
+      ${linkRow('Discord', 'https://discord.example/users/admin', 1)}
+      ${linkRow('Email', 'mailto:admin@example.test', 2)}
+      <div class="btns" style="margin-top: 18px; padding-top: 18px; border-top: 1px solid rgba(241,236,255,.14)"><button class="btn"><b>ADD A LINK</b></button><button class="btn primary"><b>SAVE HOW PLAYERS REACH YOU</b></button></div>
+    </section>
+  </div>
+`),
+});
+
+page({
+  file: '38-write-update.html', name: 'Write an update', w: 1440, h: 1600,
+  note: "Updates as an admin, Write an update open with a draft: the form in the glass's piece, its labels in the field label's own color, each change's Remove named in words, and the post as players will see it under the form.",
+  body: frame(1440, 1600, `
+  ${smoke(1440, 1600, [[40, 220, 1360, 1320, .92]])}
+  ${menu(ADMIN_TABS, 'UPDATES')}
+  ${title('UPDATES')}
+  ${pageLead('What changed in the game, from the people who make it.')}
+  <form aria-labelledby="wH" class="piece" style="position: absolute; left: 64px; top: 300px; width: 920px; box-sizing: border-box; padding: 30px 34px; --cut: 24px">
+    <h2 id="wH" style="margin: 0 0 8px; font: 44px/1 Anton, Impact, sans-serif">WRITE AN UPDATE</h2>
+    <p class="note" style="margin: 0 0 22px">This posts as Gabe. Every player gets it as an alert. No model writes it, and the page says it is always true, so check the facts.</p>
+    <div class="field"><label>TITLE</label><input type="text" value="Whoops! costs less on short posts"></div>
+    <div class="field" style="margin-top: 22px"><label>WORDS</label><textarea style="box-sizing: border-box; width: 100%; height: 130px; padding: 12px 16px; background: rgba(18,12,36,.9); border: 1px solid #19e3ff; color: #f1ecff; font: 600 21px/1.4 'Barlow Condensed', sans-serif">A long post still costs more to splat. A short one costs what the slot says.</textarea><div class="count"><span></span><span>78 of 20000</span></div></div>
+    <fieldset style="margin: 22px 0 0; padding: 0; border: 0"><legend class="field" style="padding: 0"><label style="margin: 0">WHAT CHANGED</label></legend>
+      <p class="note" style="margin: 8px 0 12px">A bold label (it can be left empty) and the words after it, one change to a row. A row with nothing in it is left out.</p>
+      <div style="display: grid; grid-template-columns: 190px 1fr auto; gap: 12px; align-items: center"><input class="sel" type="text" value="Whoops!" aria-label="Label, change 1"><input class="sel" type="text" value="0.25 more for every 500 characters, from the first 500." aria-label="What changed, change 1"><button class="btn" aria-label="Remove change 1" style="min-height: 56px"><b>REMOVE</b></button></div>
+    </fieldset>
+    <div class="btns" style="margin-top: 22px; padding-top: 22px; border-top: 1px solid rgba(241,236,255,.22)"><button class="btn"><b>ADD A CHANGE</b></button><button class="btn primary"><b>POST UPDATE</b></button></div>
+  </form>
+  <section aria-labelledby="pvU" style="position: absolute; left: 64px; top: 1150px; width: 920px">
+    <h3 id="pvU" class="sec">WHAT EVERYONE WILL SEE</h3>
+    <article class="piece" style="padding: 26px 30px; --cut: 24px; --edge: rgba(167,139,250,.7)">
+      <div class="by"><img src="${GABE}" alt="" style="width: 56px; height: 56px"><div><b style="font-size: 28px">GABE</b><span>Made this. Sorry.</span></div></div>
+      <h4 style="margin: 16px 0 6px; font: 34px/1.05 Anton, Impact, sans-serif">Whoops! costs less on short posts</h4>
+      <p style="margin: 0 0 12px; font: 500 21px/1.5 'Barlow Condensed', sans-serif">A long post still costs more to splat. A short one costs what the slot says.</p>
+      <p style="margin: 0; font: 800 19px 'Barlow Condensed', sans-serif; letter-spacing: 2px; color: #c9f8ff">WHAT CHANGED</p>
+      <p style="margin: 4px 0 0; font: 500 21px 'Barlow Condensed', sans-serif"><b>Whoops!</b> 0.25 more for every 500 characters, from the first 500.</p>
+    </article>
+  </section>
+`),
+});
+
+page({
+  file: '39-admin-phone.html', name: 'Admin on a phone', w: 840, h: 884,
+  note: 'Two phone screens at 390 by 844: the queue, a move\'s action under its words; and Write an update, each change\'s fields stacked with Remove at its foot.',
+  body: `<div style="width: 840px; height: 884px; display: flex; gap: 20px; padding: 20px; box-sizing: border-box; background: #2a2833; font-family: 'Barlow Condensed', sans-serif">
+  ${phone('The queue', `${phoneMenu}
+    <section style="position: absolute; left: 16px; top: 90px; width: 358px">
+      <h2 style="margin: 0 0 10px; font: 34px/1 Anton, Impact, sans-serif">WAITING TO LAND <span style="font: 800 20px 'Barlow Condensed', sans-serif; color: #ffd23f">1</span></h2>
+      <article style="padding: 14px 0 16px 16px; border-left: 3px solid #ffd23f; background: rgba(7,5,13,.55)">
+        <b style="font: 800 19px 'Barlow Condensed', sans-serif; color: #ffd23f">IN 17 HOURS</b> <span style="font: 500 19px 'Barlow Condensed', sans-serif; color: #e4def7">&middot; Oct 31, 2:10 pm</span>
+        <h3 style="margin: 6px 0 4px; font: 800 21px 'Barlow Condensed', sans-serif">Rename <u>Games</u> to Small Soldiers Situation Room</h3>
+        <p style="margin: 0 0 12px; font: 500 19px/1.4 'Barlow Condensed', sans-serif; color: #e4def7">Changes back when 8 different characters post there, or Nov 14.</p>
+        <button class="btn" style="border-color: #ffd23f"><b>HOLD</b></button>
+      </article>
+      <h2 style="margin: 26px 0 10px; font: 34px/1 Anton, Impact, sans-serif">IN FORCE <span style="font: 800 20px 'Barlow Condensed', sans-serif; color: #19e3ff">1</span></h2>
+      <article style="padding: 14px 0 16px 16px; border-left: 3px solid #19e3ff; background: rgba(7,5,13,.55)">
+        <b style="font: 800 19px 'Barlow Condensed', sans-serif; color: #19e3ff">SINCE OCT 30</b> <span style="font: 500 19px 'Barlow Condensed', sans-serif; color: #e4def7">&middot; ends Nov 13</span>
+        <h3 style="margin: 6px 0 8px; font: 800 21px 'Barlow Condensed', sans-serif">Renamed <u>General</u> to Pointless Toast Palace</h3>
+        <div style="height: 10px; border: 1px solid #19e3ff; margin-right: 16px"><div style="width: 58%; height: 100%; background: #19e3ff"></div></div>
+        <p style="margin: 4px 0 12px; font: 500 18px 'Barlow Condensed', sans-serif">7 of 12</p>
+        <button class="btn" style="border-color: #ff3d6e"><b>REVERSE</b></button>
+      </article>
+    </section>`, [[0, 80, 390, 700, .9]], 'u1')}
+  ${phone('Write an update', `${phoneMenu}
+    <form style="position: absolute; left: 16px; top: 90px; width: 358px">
+      <h2 style="margin: 0 0 10px; font: 34px/1 Anton, Impact, sans-serif">WRITE AN UPDATE</h2>
+      <div class="field"><label>TITLE</label><input type="text" value="Whoops! costs less on short posts"></div>
+      <div class="field" style="margin-top: 16px"><label>WORDS</label><textarea style="box-sizing: border-box; width: 100%; height: 100px; padding: 10px 14px; background: rgba(18,12,36,.9); border: 1px solid #19e3ff; color: #f1ecff; font: 600 20px/1.4 'Barlow Condensed', sans-serif">A long post still costs more to splat.</textarea><div class="count"><span></span><span>38 of 20000</span></div></div>
+      <div class="field" style="margin-top: 16px"><label>WHAT CHANGED</label><input type="text" value="Whoops!" aria-label="Label, change 1"><input type="text" value="0.25 more for every 500 characters." aria-label="What changed, change 1" style="margin-top: 8px"><button class="btn" aria-label="Remove change 1" style="margin-top: 8px; min-height: 44px"><b>REMOVE</b></button></div>
+      <div class="btns" style="margin-top: 16px"><button class="btn"><b>ADD A CHANGE</b></button><button class="btn primary"><b>POST UPDATE</b></button></div>
+    </form>`, [[0, 80, 390, 700, .9]], 'u2')}
 </div>`,
 });
 

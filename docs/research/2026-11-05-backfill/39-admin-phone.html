@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=840">
+<title>Admin on a phone: the backfill board</title>
+<!-- A board of the backfill design session (docs/plans/2026-11-05-backfill-boards-design.md), 840 by 884, drawn on
+     #202's head (c2553b3). Two phone screens at 390 by 844: the queue, a move's action under its words; and Write an update, each change's fields stacked with Remove at its foot. A reference for the look, not code to copy. Written by gen.mjs in this folder. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:inherit}a:hover{color:inherit;text-decoration:none}
+a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid #ffffff;outline-offset:3px}
+.tab{display:flex;align-items:center;min-height:52px;padding:0 20px;white-space:nowrap;transform:skewX(-10deg);text-decoration:none;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#e4def7}
+button.tab{background:none;border:0;cursor:pointer}
+.many .tab{padding:0 13px;letter-spacing:1.5px}
+.most .tab{padding:0 10px;letter-spacing:1px}
+.tab b{display:inline-block;transform:skewX(10deg);font-weight:800}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:52px;padding:0 26px;transform:skewX(-10deg);text-decoration:none;border:1px solid rgba(241,236,255,.6);background:none;cursor:pointer;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#f1ecff}
+.btn b{display:inline-block;transform:skewX(10deg);font-weight:800}
+.btn.primary{background:#19e3ff;border-color:#19e3ff;color:#03141a;box-shadow:0 0 18px rgba(25,227,255,.6)}
+.btn.big{min-height:64px;padding:0 34px;font:400 30px Anton,Impact,sans-serif;letter-spacing:1px}
+.btn.big b{font-weight:400}
+.btns{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+.lead{margin:0;max-width:680px;font:600 21px/1.5 'Barlow Condensed',sans-serif;color:#f1ecff}
+.note{margin:12px 0 0;max-width:680px;font:500 21px/1.5 'Barlow Condensed',sans-serif;color:#e4def7}
+.row{display:grid;grid-template-columns:230px 1fr;column-gap:32px;padding:24px 0;border-top:1px solid rgba(241,236,255,.22)}
+.row h3,.k{margin:0;padding-top:12px;font:800 24px/1.1 'Barlow Condensed',sans-serif;letter-spacing:1.5px}
+.field label{display:block;margin:0 0 10px;font:800 24px/1.1 'Barlow Condensed',sans-serif;letter-spacing:1.5px}
+.field input[type=email],.field input[type=text]{box-sizing:border-box;width:100%;height:56px;padding:0 16px;background:rgba(18,12,36,.9);border:1px solid #19e3ff;color:#f1ecff;font:600 22px 'Barlow Condensed',sans-serif}
+.check{display:flex;gap:16px;align-items:center;min-height:52px;cursor:pointer;font:700 22px 'Barlow Condensed',sans-serif}
+.check input{width:30px;height:30px;margin:0;accent-color:#19e3ff;flex:none}
+.aside h2{margin:0 0 10px;font:800 24px/1.1 'Barlow Condensed',sans-serif;letter-spacing:1.5px;color:#f1ecff}
+.aside p{margin:0 0 18px;font:500 21px/1.5 'Barlow Condensed',sans-serif;color:#e4def7}
+.aside section+section{margin-top:34px;padding-top:30px;border-top:1px solid rgba(241,236,255,.22)}
+.lnk{font:700 21px 'Barlow Condensed',sans-serif;color:#c9f8ff;text-decoration-thickness:2px;text-underline-offset:4px}
+.seg{display:flex;flex-wrap:wrap;gap:10px}
+.seg label{position:relative;cursor:pointer}
+.seg input{position:absolute;opacity:0;width:1px;height:1px}
+.seg span{display:inline-flex;align-items:center;min-height:52px;padding:0 22px;transform:skewX(-10deg);border:1px solid rgba(241,236,255,.6);font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:1.5px;color:#f1ecff}
+.seg span b{display:inline-block;transform:skewX(10deg);font-weight:800}
+.seg input:checked + span{background:#19e3ff;border-color:#19e3ff;color:#03141a;box-shadow:0 0 18px rgba(25,227,255,.6)}
+.piece{--cut:22px;--edge:rgba(201,248,255,.55);--ground:rgba(7,5,13,.94);position:relative;isolation:isolate;background:var(--edge);clip-path:polygon(0 0,calc(100% - var(--cut)) 0,100% var(--cut),100% 100%,var(--cut) 100%,0 calc(100% - var(--cut)))}
+.piece::before{content:'';position:absolute;z-index:-1;inset:1.5px;background:var(--ground);clip-path:polygon(0 0,calc(100% - var(--cut) + .62px) 0,100% calc(var(--cut) - .62px),100% 100%,calc(var(--cut) - .62px) 100%,0 calc(100% - var(--cut) + .62px))}
+.by{display:flex;gap:18px;align-items:center}
+.by img{width:76px;height:76px;border:2px solid #a78bfa;image-rendering:pixelated}
+.by b{display:block;font:34px/1 Anton,Impact,sans-serif;letter-spacing:.5px}
+.by span{font:600 20px 'Barlow Condensed',sans-serif;color:#e4def7}
+.body p{margin:0 0 16px;font:500 21px/1.55 'Barlow Condensed',sans-serif;color:#f1ecff;max-width:760px}
+.rail p{margin:0;font:500 20px/1.5 'Barlow Condensed',sans-serif;color:#e4def7}
+.rail h3{margin:0 0 4px;font:700 21px 'Barlow Condensed',sans-serif;color:#f1ecff}
+.rail section{padding:16px 0;border-top:1px solid rgba(241,236,255,.22)}
+.opt{position:relative;display:block;box-sizing:border-box;padding:16px 18px 16px 52px;border:1px solid rgba(241,236,255,.45);background:rgba(7,5,13,.6);cursor:pointer}
+.opt input{position:absolute;left:18px;top:19px;width:22px;height:22px;margin:0;accent-color:#19e3ff}
+.opt b{display:block;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:1.5px}
+.opt span{display:block;margin-top:4px;font:500 20px/1.4 'Barlow Condensed',sans-serif;color:#e4def7}
+.opt.on{border:2px solid #19e3ff;background:rgba(25,227,255,.08);box-shadow:0 0 18px rgba(25,227,255,.35)}
+.sec{margin:0 0 14px;font:800 22px 'Barlow Condensed',sans-serif;letter-spacing:3px}
+.count{display:flex;justify-content:space-between;margin-top:8px;font:500 19px 'Barlow Condensed',sans-serif;color:#e4def7}
+.cls{position:relative;flex:none;box-sizing:border-box;width:236px;padding:18px 18px 20px;border:1px solid var(--c);background:rgba(7,5,13,.7)}
+.cls h4{margin:0 30px 0 0;font:38px/1 Anton,Impact,sans-serif;color:var(--c)}
+.cls p{margin:12px 0 0;font:500 20px/1.45 'Barlow Condensed',sans-serif;color:#f1ecff}
+.cls p.hurt{color:#ff8fb1}
+.cls input{position:absolute;right:16px;top:20px;width:22px;height:22px;margin:0;accent-color:#19e3ff}
+.cls.on{border:2px solid #19e3ff;box-shadow:0 0 18px rgba(25,227,255,.4);background:rgba(25,227,255,.07)}
+.preview{border:1.5px solid rgba(201,248,255,.7);box-shadow:0 0 14px rgba(25,227,255,.3);background:#fff;color:#000;display:grid;grid-template-columns:160px 1fr;font:12px/1.45 Verdana,sans-serif}
+.preview>div{padding:8px 10px}
+.preview>div+div{border-left:1px solid #000}
+.sel{box-sizing:border-box;height:56px;padding:0 16px;background:rgba(18,12,36,.9);border:1px solid #19e3ff;color:#f1ecff;font:700 21px 'Barlow Condensed',sans-serif}
+</style>
+</head>
+<body>
+<div style="width: 840px; height: 884px; display: flex; gap: 20px; padding: 20px; box-sizing: border-box; background: #2a2833; font-family: 'Barlow Condensed', sans-serif">
+  <figure aria-label="The queue" style="margin: 0; width: 390px; height: 844px; position: relative; overflow: hidden; background: #07050d; color: #f1ecff; flex: none">
+    <svg aria-hidden="true" width="390" height="844" style="position: absolute; left: 0; top: 0">
+    <defs>
+      <filter id="sAu1" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.0022 0.004" numOctaves="5" seed="23"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.74"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="sBu1" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.003 0.005" numOctaves="4" seed="61"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.85  0 0 0 0 1  0 2 0 0 -1.0"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="softu1" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="30"></feGaussianBlur></filter>
+      <mask id="calmu1" maskUnits="userSpaceOnUse" x="0" y="0" width="390" height="844">
+        <rect width="390" height="844" fill="#ffffff"></rect>
+        <rect x="0" y="80" width="390" height="700" fill="#000000" opacity="0.9" filter="url(#softu1)"></rect>
+      </mask>
+    </defs>
+    <g mask="url(#calmu1)">
+      <rect width="390" height="844" filter="url(#sAu1)" opacity="0.95"></rect>
+      <rect width="390" height="844" filter="url(#sBu1)" opacity="0.5"></rect>
+    </g>
+  </svg>
+    <nav aria-label="Menu" style="position: absolute; left: 0; right: 0; top: 0; height: 70px; z-index: 5; display: flex; align-items: center; padding: 0 12px; background: rgba(7,5,13,.9); border-bottom: 1px solid rgba(201,248,255,.5); box-shadow: 0 1px 16px rgba(25,227,255,.35)">
+      <a href="#" class="tab" style="border: 1px solid #ffffff; color: #ffffff; min-height: 46px; font-size: 20px"><b>&lsaquo; BACK TO THE BOARD</b></a>
+    </nav>
+    <section style="position: absolute; left: 16px; top: 90px; width: 358px">
+      <h2 style="margin: 0 0 10px; font: 34px/1 Anton, Impact, sans-serif">WAITING TO LAND <span style="font: 800 20px 'Barlow Condensed', sans-serif; color: #ffd23f">1</span></h2>
+      <article style="padding: 14px 0 16px 16px; border-left: 3px solid #ffd23f; background: rgba(7,5,13,.55)">
+        <b style="font: 800 19px 'Barlow Condensed', sans-serif; color: #ffd23f">IN 17 HOURS</b> <span style="font: 500 19px 'Barlow Condensed', sans-serif; color: #e4def7">&middot; Oct 31, 2:10 pm</span>
+        <h3 style="margin: 6px 0 4px; font: 800 21px 'Barlow Condensed', sans-serif">Rename <u>Games</u> to Small Soldiers Situation Room</h3>
+        <p style="margin: 0 0 12px; font: 500 19px/1.4 'Barlow Condensed', sans-serif; color: #e4def7">Changes back when 8 different characters post there, or Nov 14.</p>
+        <button class="btn" style="border-color: #ffd23f"><b>HOLD</b></button>
+      </article>
+      <h2 style="margin: 26px 0 10px; font: 34px/1 Anton, Impact, sans-serif">IN FORCE <span style="font: 800 20px 'Barlow Condensed', sans-serif; color: #19e3ff">1</span></h2>
+      <article style="padding: 14px 0 16px 16px; border-left: 3px solid #19e3ff; background: rgba(7,5,13,.55)">
+        <b style="font: 800 19px 'Barlow Condensed', sans-serif; color: #19e3ff">SINCE OCT 30</b> <span style="font: 500 19px 'Barlow Condensed', sans-serif; color: #e4def7">&middot; ends Nov 13</span>
+        <h3 style="margin: 6px 0 8px; font: 800 21px 'Barlow Condensed', sans-serif">Renamed <u>General</u> to Pointless Toast Palace</h3>
+        <div style="height: 10px; border: 1px solid #19e3ff; margin-right: 16px"><div style="width: 58%; height: 100%; background: #19e3ff"></div></div>
+        <p style="margin: 4px 0 12px; font: 500 18px 'Barlow Condensed', sans-serif">7 of 12</p>
+        <button class="btn" style="border-color: #ff3d6e"><b>REVERSE</b></button>
+      </article>
+    </section>
+  </figure>
+  <figure aria-label="Write an update" style="margin: 0; width: 390px; height: 844px; position: relative; overflow: hidden; background: #07050d; color: #f1ecff; flex: none">
+    <svg aria-hidden="true" width="390" height="844" style="position: absolute; left: 0; top: 0">
+    <defs>
+      <filter id="sAu2" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.0022 0.004" numOctaves="5" seed="23"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.74"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="sBu2" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.003 0.005" numOctaves="4" seed="61"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.85  0 0 0 0 1  0 2 0 0 -1.0"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="softu2" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="30"></feGaussianBlur></filter>
+      <mask id="calmu2" maskUnits="userSpaceOnUse" x="0" y="0" width="390" height="844">
+        <rect width="390" height="844" fill="#ffffff"></rect>
+        <rect x="0" y="80" width="390" height="700" fill="#000000" opacity="0.9" filter="url(#softu2)"></rect>
+      </mask>
+    </defs>
+    <g mask="url(#calmu2)">
+      <rect width="390" height="844" filter="url(#sAu2)" opacity="0.95"></rect>
+      <rect width="390" height="844" filter="url(#sBu2)" opacity="0.5"></rect>
+    </g>
+  </svg>
+    <nav aria-label="Menu" style="position: absolute; left: 0; right: 0; top: 0; height: 70px; z-index: 5; display: flex; align-items: center; padding: 0 12px; background: rgba(7,5,13,.9); border-bottom: 1px solid rgba(201,248,255,.5); box-shadow: 0 1px 16px rgba(25,227,255,.35)">
+      <a href="#" class="tab" style="border: 1px solid #ffffff; color: #ffffff; min-height: 46px; font-size: 20px"><b>&lsaquo; BACK TO THE BOARD</b></a>
+    </nav>
+    <form style="position: absolute; left: 16px; top: 90px; width: 358px">
+      <h2 style="margin: 0 0 10px; font: 34px/1 Anton, Impact, sans-serif">WRITE AN UPDATE</h2>
+      <div class="field"><label>TITLE</label><input type="text" value="Whoops! costs less on short posts"></div>
+      <div class="field" style="margin-top: 16px"><label>WORDS</label><textarea style="box-sizing: border-box; width: 100%; height: 100px; padding: 10px 14px; background: rgba(18,12,36,.9); border: 1px solid #19e3ff; color: #f1ecff; font: 600 20px/1.4 'Barlow Condensed', sans-serif">A long post still costs more to splat.</textarea><div class="count"><span></span><span>38 of 20000</span></div></div>
+      <div class="field" style="margin-top: 16px"><label>WHAT CHANGED</label><input type="text" value="Whoops!" aria-label="Label, change 1"><input type="text" value="0.25 more for every 500 characters." aria-label="What changed, change 1" style="margin-top: 8px"><button class="btn" aria-label="Remove change 1" style="margin-top: 8px; min-height: 44px"><b>REMOVE</b></button></div>
+      <div class="btns" style="margin-top: 16px"><button class="btn"><b>ADD A CHANGE</b></button><button class="btn primary"><b>POST UPDATE</b></button></div>
+    </form>
+  </figure>
+</div>
+</body>
+</html>

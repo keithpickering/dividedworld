@@ -258,3 +258,27 @@ its board `docs/research/2026-11-05-card-template/01-layouts.html`: the "Low nam
 info draws `Postcard.tsx` at the sheet's size (276 wide) and never an image of its own, so it shows the new face once the
 card template plan is built. The plan's card-info task follows that plan's merge; the board's face (`34-vending-info.html`,
 `36-account-phone.html`) is a stand-in in the template's layout, and its manifest compares the face's box only.
+
+## 8. Batch 6: admin
+
+Shot on c2553b3 as an admin: `/admin/queue`, and `/updates` with Write an update open. The critique, against the
+two-worlds boards and The System's mock of the queue (`docs/research/2026-10-30-the-system/mock-s3-admin-queue.html`,
+B, grouped by what an admin can do, the owner's choice):
+
+- **The menu bar breaks onto two rows when Admin is in it.** With nine tabs, Back to the board stands on a row of its
+  own and the bar is 140px tall on every admin's every glass page. The board fits the nine on one row at 1440 by setting
+  their padding and spacing tighter as the count grows; past what fits, the bar scrolls as the phone's does.
+- **The queue's page leads with its settings.** "How players reach you" stands above To do, under a title about
+  The System's moves. The board puts the queue first and How players reach you after it, ruled off, as its own section.
+- **The contact links' fields have no labels in view** (a placeholder at most), and each Remove button reads "REMOVE LINK
+  1". The board labels the two fields of each row (Label, Address) and shows Remove, its accessible name keeping the link's
+  number; Write update's changes the same.
+- **The forms sit in plain rectangles.** The contact form and Write update are drawn in a 1px box that no other glass
+  piece uses. The board draws Write update as the glass's chamfered piece, its border on the cut, and the contact links
+  as rows on the page.
+- **Write update's labels are cyan**, every other glass form's white. The board uses the field label's own color.
+- **Write update has no preview.** The board shows the update as players will see it (the Updates post, Gabe's frame)
+  under the form, the idiom New character and the dialogs use ("What everyone will see").
+- **The empty groups each take a display heading and a line.** Kept: the build draws To do, Waiting to land, In force and
+  Ended with their counts, and the board draws them with a move waiting and one in force (the mock's sample), so the
+  groups' shapes are held, an empty one as its heading and one line.
