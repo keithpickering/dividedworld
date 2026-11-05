@@ -92,6 +92,12 @@
   color: var(--kb-glass-text-hi);
 }
 
+.kb-glass-menu-tab:hover,
+.kb-glass-menu-back:hover {
+  color: var(--kb-glass-text-hi);
+  background: color-mix(in srgb, var(--kb-glass-neon) 12%, transparent);
+}
+
 .kb-glass-menu-tab[aria-current='page'] {
   color: var(--kb-glass-text-hi);
   background: color-mix(in srgb, var(--kb-glass-neon) 16%, transparent);

@@ -562,6 +562,13 @@
   text-transform: uppercase;
 }
 
+/* The HUD's art buttons answer a pointer by brightening. */
+.kb-hud-menu:hover,
+.kb-hud-hand:hover,
+.kb-hud-alerts:hover {
+  filter: brightness(1.18);
+}
+
 .kb-hud-menu {
   width: 210px;
   color: var(--kb-glass-text);

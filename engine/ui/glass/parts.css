@@ -156,6 +156,35 @@
   color: var(--kb-glass-text-2);
 }
 
+/*
+ * Hover: each kind answers a pointer with something the eye sees at once. Secondary and quiet take a wash of the neon and the neon's
+ * edge; primary, already the neon, lights its glow and its fill; a disabled control takes the neon edge on its dash and keeps its
+ * not-allowed cursor, so it reads as waiting, not as pressable.
+ */
+.kb-glass-button[data-kb-kind='secondary']:hover {
+  border-color: var(--kb-glass-neon);
+  background: color-mix(in srgb, var(--kb-glass-neon) 18%, transparent);
+  color: var(--kb-glass-text-hi);
+}
+
+.kb-glass-button[data-kb-kind='quiet']:hover {
+  background: color-mix(in srgb, var(--kb-glass-neon) 14%, transparent);
+  color: var(--kb-glass-text-hi);
+}
+
+.kb-glass-button[data-kb-kind='primary']:hover {
+  background: color-mix(in srgb, var(--kb-glass-neon) 80%, white);
+  border-color: color-mix(in srgb, var(--kb-glass-neon) 80%, white);
+  box-shadow: 0 0 44px color-mix(in srgb, var(--kb-glass-neon) 90%, transparent);
+}
+
+.kb-glass-button:disabled:hover,
+.kb-glass-button[aria-disabled='true']:hover {
+  border-color: var(--kb-glass-neon);
+  background: transparent;
+  box-shadow: none;
+}
+
 .kb-glass-button:focus-visible {
   outline: 3px solid var(--kb-glass-text-hi);
   outline-offset: 3px;

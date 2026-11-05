@@ -176,3 +176,52 @@ describe('GlassButton as a link', () => {
     });
   }
 });
+
+/*
+ * Every button variant answers a hover (something the player can see change) and a keyboard focus (a ring). Each variant is drawn here as the
+ * screens draw it, and the stylesheets are asked for a `:hover` rule and a `:focus-visible` rule that select it.
+ */
+describe('every button variant has a visible hover and a focus-visible style', () => {
+  const root = path.resolve(here, '..');
+  const sheets = [path.join(here, 'parts.css'), path.join(here, 'shell.css'), path.join(here, 'base.css'), path.join(root, 'frame/frame.css'), path.join(root, 'vending/vending.css')]
+    .map((f) => fs.readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, ''));
+  const rules = sheets.flatMap((css) => [...css.matchAll(/([^{}@]+)\{([^{}]*)\}/g)].map((m) => ({ selectors: m[1]!.split(/,(?![^(]*\))/).map((s) => s.replace(/\s+/g, ' ').trim()), body: m[2]! })));
+  /** The rules whose selector ends in `pseudo` and, without it, selects `el`. */
+  const answering = (el: Element, pseudo: ':hover' | ':focus-visible') => rules.filter((r) => r.selectors.some((s) => {
+    if (!s.endsWith(pseudo)) return false;
+    try { const base = s.slice(0, -pseudo.length); return el.matches(base.endsWith(' ') ? `${base}*` : base === '' ? '*' : base); } catch { return false; }
+  }));
+  const VISIBLE = /(?:^|;|\s)(?:color|background|background-color|border-color|box-shadow|filter|text-decoration)\s*:/;
+
+  const html = (cls: string, tag = 'a', attrs = '') => { const w = document.createElement('div'); w.className = 'kb-glass'; w.innerHTML = `<${tag} class="${cls}" ${attrs}></${tag}>`; return w.firstElementChild!; };
+  const variants: Record<string, () => Element> = {
+    'primary GlassButton': () => html('kb-glass-button kb-glass-skew', 'button', 'data-kb-kind="primary"'),
+    'secondary GlassButton': () => html('kb-glass-button kb-glass-skew', 'button', 'data-kb-kind="secondary"'),
+    'quiet GlassButton': () => html('kb-glass-button kb-glass-skew', 'button', 'data-kb-kind="quiet"'),
+    'disabled GlassButton': () => html('kb-glass-button kb-glass-skew', 'button', 'data-kb-kind="secondary" disabled'),
+    'a link drawn as a button': () => html('kb-glass-button kb-glass-skew', 'a', 'data-kb-kind="primary" href="/x"'),
+    'a disabled link drawn as a button': () => html('kb-glass-button kb-glass-skew', 'a', 'data-kb-kind="primary" aria-disabled="true"'),
+    'the HUD\'s Menu button': () => html('kb-hud-menu kb-glass-skew', 'button'),
+    'the HUD\'s Hand button': () => html('kb-hud-hand kb-glass-skew', 'button'),
+    'the HUD\'s alerts bell': () => html('kb-hud-alerts kb-glass-skew', 'a', 'href="/alerts"'),
+    'the Vending Machine\'s Your hand': () => html('kb-vending-hand kb-glass-skew', 'a', 'href="/"'),
+    'a menu tab': () => html('kb-glass-menu-tab kb-glass-skew', 'a', 'href="/x"'),
+    'the menu\'s Back': () => html('kb-glass-menu-back kb-glass-skew', 'a', 'href="/x"'),
+  };
+  for (const [name, make] of Object.entries(variants)) {
+    test(`${name} changes something visible on hover`, () => {
+      const hover = answering(make(), ':hover');
+      expect(hover.length, 'no :hover rule selects it').toBeGreaterThan(0);
+      expect(hover.some((r) => VISIBLE.test(r.body))).toBe(true);
+    });
+    test(`${name} has a focus ring, and nothing takes it away`, () => {
+      const el = make();
+      const ring = answering(el, ':focus-visible').filter((r) => /outline:\s*3px solid/.test(r.body));
+      expect(ring.length, 'no :focus-visible ring selects it').toBeGreaterThan(0);
+      for (const r of rules) {
+        if (!r.selectors.some((s) => { try { const base = s.replace(/:focus(?:-visible)?$/, ''); return el.matches(base.endsWith(' ') ? `${base}*` : base); } catch { return false; } })) continue;
+        expect(r.body).not.toMatch(/outline(?:-style)?:\s*(?:none|0)\b/);
+      }
+    });
+  }
+});
