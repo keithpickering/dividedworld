@@ -150,6 +150,16 @@ describe('a moment names what it does not draw', () => {
     expect(named(m)).toEqual(['a card set face down', 'Smear, caught by Trappy']);
   });
 
+  test('a play an admin had ended by the moment is named so and draws nothing; one ended after it is drawn as it was', () => {
+    const end = (play: string, minutes: number) => act(`end-${play}`, 'card_end', { why: 'reversed', by: 'admin' }, minutes, { character: null, targetActId: play });
+    const before = card('k1', 'smear', 1);
+    const after = card('k0', 'ripple', 0);
+    const m = moment([{ act: card('k2', 'sparkly', 5), state: null }, { act: before, state: null }, { act: end('k1', 3), state: null }, { act: after, state: null }, { act: end('k0', 9), state: null }]);
+    draw(m);
+    expect(chain().sort()).toEqual(['ripple', 'sparkly']);
+    expect(named(m)).toEqual(['Smear, ended by an admin']);
+  });
+
   test('a Use that had ended by the moment is left out, and one live then is drawn', () => {
     const ended = card('u1', 'shieldy', 0, { ends: at(3) });
     const live = card('u2', 'shieldy', 0, { ends: at(60) });

@@ -24,7 +24,7 @@ import { OriginLink } from '../spin/OriginLink.tsx';
 import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
 import { createTallies, type Tallies } from '../thread/tallies.ts';
 import type { SpinOrigin } from '../thread/Post.tsx';
-import { Ago, Mini, pageList, useSignedIn } from '../mini.tsx';
+import { Ago, Mini, pageList, useIsAdmin, useSignedIn } from '../mini.tsx';
 import { FrontDoor } from '../front-door/FrontDoor.tsx';
 import { Link, useLocation } from '../router.tsx';
 import { MoveNotice } from './MoveNotice.tsx';
@@ -65,6 +65,7 @@ export function BoardScreen({ slug }: { readonly slug: string }) {
   useEffect(() => setSpinOrigin(null), [slug]);
   const { query } = useLocation();
   const signedIn = useSignedIn(api);
+  const admin = useIsAdmin(api, signedIn);
   const asked = Number.parseInt(query.get('page') ?? '1', 10);
   const [state, setState] = useState<State>({ status: 'loading' });
   /* A page turn keeps the list on screen, marked busy, until the next page lands; a new board starts empty. */
@@ -123,6 +124,8 @@ export function BoardScreen({ slug }: { readonly slug: string }) {
     if (boardId === null) return undefined;
     return api.subscribeReach({
       onPlay(a) {
+        /* The end of a play names only its play: the store marks it if it is one this banner keeps, and holds it otherwise. */
+        if (a.kind === 'card_end') { plays.add([a]); return; }
         if (a.kind !== 'card' || a.payload.reach !== 'board' || a.payload.board !== boardId) return;
         void (async () => {
           const who = a.character === null ? [] : await api.characters([a.character]).catch(() => []);
@@ -163,7 +166,7 @@ export function BoardScreen({ slug }: { readonly slug: string }) {
   const nameOf = (id: Id | null) => (id === null ? 'The System' : state.characters.get(id)?.name ?? 'A character');
   return (
     <div className="kb-board" data-kb-board={board.slug} aria-busy={turning || undefined}>
-      <LensProvider>
+      <LensProvider admin={admin}>
       <p className="kb-crumb"><Link to="/">Index</Link> › {board.name}</p>
       <BoardBanner board={board} plays={plays} tallies={tallies} mine={mine} nameOf={nameOf} heading={heading} onSpin={setSpinOrigin} />
       {spinOrigin && (

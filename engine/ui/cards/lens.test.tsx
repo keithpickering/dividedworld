@@ -777,3 +777,103 @@ describe('As it landed', () => {
     expect(read).toHaveBeenCalledTimes(1);
   });
 });
+
+
+/* An admin's End this card (docs/plans/2026-11-05-bot-card-options-plan.md, Task 6): on a face-up play still in force, to an admin alone. */
+describe('End this card', () => {
+  const endButton = () => within(lens()).queryByRole('button', { name: 'End this card' });
+  const unfold = async () => { await userEvent.click(whoButton()); };
+  const openKind = async (n: number, card: string) => { await userEvent.click(await markOf(n, card)); await unfold(); };
+
+  test('is offered to an admin on a live face-up play', async () => {
+    width(false);
+    const w = world();
+    w.fake.seed.admin(w.me);
+    w.play('k2');
+    open(w);
+    await openKind(2, 'Card 2');
+    expect(endButton()).toBeInTheDocument();
+  });
+
+  test('is never offered to a player who is not an admin', async () => {
+    width(false);
+    const w = world();
+    w.play('k2');
+    open(w);
+    await openKind(2, 'Card 2');
+    expect(endButton()).toBeNull();
+  });
+
+  test('is not offered on a caught play, an ended play, or a card back', async () => {
+    width(false);
+    const w = world();
+    w.fake.seed.admin(w.me);
+    w.fake.clock.advance(60_000);
+    w.fake.seed.card(w.spritey, w.second, 'k2', { caught: w.third });
+    open(w);
+    await openKind(2, 'Card 2');
+    expect(endButton()).toBeNull();
+  });
+
+  test('is not offered on an ended play, which reads Ended by an admin', async () => {
+    width(false);
+    const w = world();
+    w.fake.seed.admin(w.me);
+    const played = w.play('k2');
+    expect((await w.fake.reverseCard(played)).ok).toBe(true);
+    open(w);
+    const mark = await markOf(2, 'Card 2');
+    await userEvent.click(mark);
+    expect(within(lens()).getByText('Ended by an admin', { selector: '.kb-lens-line' })).toBeInTheDocument();
+    await unfold();
+    expect(endButton()).toBeNull();
+  });
+
+  test('is not offered on a card back, even to an admin', async () => {
+    width(false);
+    const w = world();
+    w.fake.seed.admin(w.me);
+    w.fake.clock.advance(60_000);
+    w.fake.seed.set(w.spritey, w.second, 'k2', { at: Date.now() });
+    open(w);
+    await userEvent.click(await within(await article(2)).findByRole('button', { name: /^A card set face down/u }));
+    await unfold();
+    expect(endButton()).toBeNull();
+  });
+
+  test('asks first in plain words naming the card and its caster, then ends the play for everyone', async () => {
+    width(false);
+    const w = world();
+    w.fake.seed.admin(w.me);
+    const played = w.play('k2');
+    const reverse = vi.spyOn(w.fake, 'reverseCard');
+    open(w);
+    await openKind(2, 'Card 2');
+    await userEvent.click(endButton()!);
+    const ask = screen.getByRole('dialog', { name: 'End this card?' });
+    expect(within(ask).getByText('End this Card 2 by Spritey? Its layer comes off for everyone, and nothing is refunded.')).toBeInTheDocument();
+    expect(reverse).not.toHaveBeenCalled();
+    await userEvent.click(within(ask).getByRole('button', { name: 'End it' }));
+    expect(reverse).toHaveBeenCalledWith(played);
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'End this card?' })).toBeNull());
+    expect(within(lens()).getByText('Ended by an admin', { selector: '.kb-lens-line' })).toBeInTheDocument();
+    expect(endButton()).toBeNull();
+  });
+
+  test('cancel leaves the play as it was, and a refusal\'s words are shown in the dialog', async () => {
+    width(false);
+    const w = world();
+    w.fake.seed.admin(w.me);
+    w.play('k2');
+    const reverse = vi.spyOn(w.fake, 'reverseCard').mockResolvedValueOnce({ ok: false, error: 'an admin has already ended that card' });
+    open(w);
+    await openKind(2, 'Card 2');
+    await userEvent.click(endButton()!);
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(reverse).not.toHaveBeenCalled();
+    await userEvent.click(endButton()!);
+    await userEvent.click(screen.getByRole('button', { name: 'End it' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('an admin has already ended that card');
+    expect(screen.getByRole('dialog', { name: 'End this card?' })).toBeInTheDocument();
+  });
+});
