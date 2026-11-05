@@ -73,3 +73,34 @@ test.describe('at the column\'s own width and either side of it', () => {
     });
   }
 });
+
+/**
+ * The vignette (the glass-polish design's section 8) is violet laid toward the edges of the window, and the board's text column is
+ * untouched, so the board's contrast is what it was. Measured in the browser: a strip inside the column is the same pixels with the
+ * vignette drawn as with it hidden, a strip in the gutter is not, and under High contrast it is not drawn at all.
+ */
+test.describe('the vignette', () => {
+  test.use({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+
+  const strip = (page: Page, x: number, y: number) => page.screenshot({ clip: { x, y, width: 40, height: 40 }, animations: 'disabled' });
+
+  test('lies in the gutters and never inside the 1200px column; High contrast draws none', async ({ page }) => {
+    await openThread(page);
+    const vignette = page.locator('.kb-vignette');
+    await expect(vignette).toHaveCount(1);
+    await expect(vignette).toHaveAttribute('aria-hidden', 'true');
+    expect(await vignette.evaluate((e) => getComputedStyle(e).pointerEvents)).toBe('none');
+    expect(await vignette.evaluate((e) => getComputedStyle(e).position)).toBe('fixed');
+    /* Just inside the column's left edge (x 120) and its right (x 1320), at the top, the middle and the foot above the HUD. */
+    const inside = [[122, 20], [122, 450], [122, 700], [1318 - 40, 20], [1318 - 40, 450], [1318 - 40, 700], [700, 20], [700, 700]] as const;
+    const outside = [[2, 20], [2, 700], [1398, 450]] as const;
+    const drawn = await Promise.all([...inside, ...outside].map(([x, y]) => strip(page, x, y)));
+    await vignette.evaluate((e) => { (e as HTMLElement).style.display = 'none'; });
+    const bare = await Promise.all([...inside, ...outside].map(([x, y]) => strip(page, x, y)));
+    inside.forEach((at, i) => expect(drawn[i]!.equals(bare[i]!), `inside the column at ${at}`).toBe(true));
+    outside.forEach((at, i) => expect(drawn[inside.length + i]!.equals(bare[inside.length + i]!), `in the gutter at ${at}`).toBe(false));
+    await vignette.evaluate((e) => { (e as HTMLElement).style.display = ''; });
+    await page.evaluate(() => document.documentElement.setAttribute('data-kb-contrast', 'high'));
+    expect(await vignette.evaluate((e) => getComputedStyle(e).display)).toBe('none');
+  });
+});

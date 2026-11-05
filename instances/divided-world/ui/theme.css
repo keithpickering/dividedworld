@@ -38,6 +38,11 @@
   --kb-salty: #3f8fd2;
   --kb-pepperoni: #d24a2c;
   --kb-gold: #d4a017;
+  /* The glass's violet laid toward the window's edges, strongest at the foot above the HUD; the same in both board modes, where on white it is a shade and on black a glow. */
+  --kb-vignette-color: #1e083c;
+  --kb-vignette-edge: 0.32;
+  --kb-vignette-foot-color: #3c1478;
+  --kb-vignette-foot: 0.28;
 }
 
 @media (prefers-color-scheme: dark) {

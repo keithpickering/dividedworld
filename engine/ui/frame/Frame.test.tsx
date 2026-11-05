@@ -92,6 +92,17 @@ function width(px: number) {
 beforeEach(() => { alerts.unread = 0; alerts.account = null; alerts.subscribed = 0; alerts.reads = 0; localStorage.clear(); sessionStorage.clear(); forgetBoard(); window.history.replaceState(null, '', '/'); });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); delete (document.documentElement as { clientWidth?: number }).clientWidth; });
 
+describe('the vignette', () => {
+  test('is one aria-hidden element in the frame, below the HUD in the tree and out of the reading order', () => {
+    setup();
+    const all = document.querySelectorAll('.kb-vignette');
+    expect(all).toHaveLength(1);
+    expect(all[0]).toHaveAttribute('aria-hidden', 'true');
+    expect(all[0]!.parentElement).toHaveClass('kb-frame');
+    expect(all[0]!.textContent).toBe('');
+  });
+});
+
 describe('the banner: the board\'s own', () => {
   test('holds the instance\'s name, then Index and the boards, and nothing of the glass', async () => {
     setup();

@@ -23,6 +23,15 @@
   --kb-selection-bg: #000;
   --kb-hud-bg: #fff;
   --kb-overlay: rgb(0 0 0 / 0.5);
+  /*
+   * The vignette over the board (frame.css): a color and an opacity at the window's sides, and a second color and opacity at the
+   * foot above the HUD. These defaults draw nothing; an instance's theme gives the look. Each color is paired with its own opacity
+   * (a number from 0 to 1) so a theme changes how much without restating which.
+   */
+  --kb-vignette-color: transparent;
+  --kb-vignette-edge: 0;
+  --kb-vignette-foot-color: transparent;
+  --kb-vignette-foot: 0;
 
   --kb-font-body: Verdana, Geneva, sans-serif;
   --kb-font-mono: "Courier New", Courier, monospace;
