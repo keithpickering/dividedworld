@@ -267,16 +267,25 @@ describe('a nomination of a successor', () => {
       expect(todo).toHaveTextContent('Season 2 opens with Comptroller.');
       expect(todo).toHaveTextContent('Season 2\'s Boss: Comptroller (was a Moderator).');
       expect(todo).toHaveTextContent('Old Boss is now a member.');
-      expect(within(todo).getByRole('link', { name: 'Write the announcement' })).toHaveAttribute('href', '/updates?write=handover&season=2');
+      expect(within(todo).getByRole('link', { name: 'Write the announcement for season 2' })).toHaveAttribute('href', '/updates?write=handover&season=2');
       expect(within(todo).getByRole('button', { name: 'Dismiss the season 2 to-do' })).toBeInTheDocument();
       const waiting = await group(/^Waiting to land/u);
       expect(todo.compareDocumentPosition(waiting) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 
+    test('each row\'s Write the announcement link names its season, so two rows are told apart', async () => {
+      open({ build: (fake) => { handover(fake, fake.clock.now() - 7_200_000); fake.seed.staff('third', 'Third', 'mod'); fake.seed.handover({ outgoing: 'comptroller', boss: 'third', at: fake.clock.now() - 3_600_000, how: 'rotation', bossWas: 'mod', outgoingOffice: 'member' }); } });
+      const todo = await group(/^To do/u);
+      const names = within(todo).getAllByRole('link', { name: /^Write the announcement/u }).map((a) => a.getAttribute('aria-label') ?? a.textContent);
+      expect(names).toHaveLength(2);
+      expect(new Set(names).size).toBe(2);
+      expect(within(todo).getByRole('link', { name: 'Write the announcement for season 2' })).toBeInTheDocument();
+    });
+
     test('no change of Boss, no row: the group says there is nothing to do', async () => {
       open();
       expect(await group(/^To do/u)).toHaveTextContent('Nothing to do.');
-      expect(screen.queryByRole('link', { name: 'Write the announcement' })).toBeNull();
+      expect(screen.queryByRole('link', { name: 'Write the announcement for season 2' })).toBeNull();
     });
 
     test('a handover that kept its Boss is no to-do', async () => {
@@ -288,7 +297,7 @@ describe('a nomination of a successor', () => {
       const { fake } = open({ build: (f) => handover(f) });
       const todo = await group(/^To do/u);
       await userEvent.click(within(todo).getByRole('button', { name: 'Dismiss the season 2 to-do' }));
-      await waitFor(() => expect(screen.queryByRole('link', { name: 'Write the announcement' })).toBeNull());
+      await waitFor(() => expect(screen.queryByRole('link', { name: 'Write the announcement for season 2' })).toBeNull());
       expect((await fake.adminQueue()).todos).toEqual([]);
       expect(await group(/^To do/u)).toHaveTextContent('Nothing to do.');
     });

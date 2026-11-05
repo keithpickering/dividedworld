@@ -211,7 +211,7 @@ function Todos({ rows, onDismissed }: { readonly rows: readonly HandoverTodo[]; 
             <p>The announcement is yours to write; no model writes it. This goes away when an update is posted after the handover, or when you dismiss it.</p>
           </div>
           <div className="kb-queue-act">
-            <Link className="kb-queue-button kb-glass-skew" to={`/updates?write=handover&season=${t.season}`}><span className="kb-glass-upright">Write the announcement</span></Link>
+            <Link className="kb-queue-button kb-glass-skew" to={`/updates?write=handover&season=${t.season}`} aria-label={`Write the announcement for season ${t.season}`}><span className="kb-glass-upright">Write the announcement</span></Link>
             <button type="button" className="kb-queue-button kb-glass-skew" disabled={busy !== null} aria-label={`Dismiss the season ${t.season} to-do`} onClick={() => void dismiss(t.season)}><span className="kb-glass-upright">DISMISS</span></button>
           </div>
         </article>

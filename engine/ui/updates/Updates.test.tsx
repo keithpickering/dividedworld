@@ -328,6 +328,20 @@ describe('opened from a handover to-do', () => {
     expect(screen.getByText(/no to-do for season 9/u)).toBeInTheDocument();
   });
 
+  test('a to-do list that could not be read says so, and does not claim there is no to-do', async () => {
+    const w = handedOver();
+    vi.spyOn(w.fake, 'adminQueue').mockRejectedValue(new Error('offline'));
+    show(w.fake, '/updates?write=handover&season=2');
+    expect(await screen.findByText(/to-do list could not be loaded/u)).toBeInTheDocument();
+    expect(screen.queryByText(/no to-do for season/u)).toBeNull();
+  });
+
+  test.each(['abc', '0', '-1', '3.5'])('season=%s says plainly that the address names no season', async (bad) => {
+    show(handedOver().fake, `/updates?write=handover&season=${bad}`);
+    expect(await screen.findByText(/names no season/u)).toBeInTheDocument();
+    expect(screen.queryByText(/no to-do for season/u)).toBeNull();
+  });
+
   test('a player who is not an admin gets no writer from the address', async () => {
     const w = handedOver();
     w.fake.signInAs(w.me);
