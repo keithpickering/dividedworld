@@ -17,6 +17,8 @@ export interface Screen {
   readonly then?: (page: Page) => Promise<void>;
   /** It is read signed out, as a player reaches it. */
   readonly signedOut?: boolean;
+  /** It is read as an admin: the demo's player is made one in the app (a load starts the demo over), then the page is moved to. */
+  readonly asAdmin?: boolean;
 }
 
 /**
@@ -50,6 +52,8 @@ export const PAGES: readonly Screen[] = [
     },
   },
   { name: 'Settings', path: '/settings' },
+  /* The admin queue, with the form for how players reach the admins (AdminContact), read as an admin. */
+  { name: 'The admin queue', path: '/admin/queue', asAdmin: true },
   { name: 'Settings › Account, with the invites', path: '/settings?section=account' },
   { name: 'Sign in', path: '/sign-in', signedOut: true },
   { name: 'Register', path: '/register?invite=ab12cd34', signedOut: true },
@@ -184,10 +188,19 @@ async function goInApp(page: Page, path: string) {
   await page.evaluate((to) => { history.pushState(null, '', to); window.dispatchEvent(new PopStateEvent('popstate')); }, path);
 }
 
+/** The demo world's player becomes an admin, in the app, from a page the admin does not need (the queue itself is moved to after). */
+async function makeAdmin(page: Page) {
+  await page.goto('/settings');
+  await page.waitForFunction(() => '__kbFake' in globalThis);
+  await page.evaluate(() => { const w = globalThis as E2eWindow; w.__kbFake.seed.admin(w.__kbDemo.me, true); });
+  await expect(page.getByRole('navigation', { name: 'Menu' })).toBeVisible();
+}
+
 /** Opens a screen ready to read: a glass page when its menu bar shows, a board page when its HUD does, a story once rendered. */
 export async function open(page: Page, s: Screen) {
   if (s.signedOut) await signOut(page);
-  if (s.signedOut) await goInApp(page, s.path);
+  if (s.asAdmin) await makeAdmin(page);
+  if (s.signedOut || s.asAdmin) await goInApp(page, s.path);
   else await page.goto(s.path);
   const ready = s.path.includes('story=')
     ? page.locator('#root > *').first()

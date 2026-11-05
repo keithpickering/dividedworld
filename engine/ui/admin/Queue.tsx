@@ -130,7 +130,7 @@ export function QueueScreen({ now }: { readonly now?: number }) {
 
 function GroupHead({ id, title, count, more }: { readonly id: string; readonly title: string; readonly count: number; readonly more: boolean }) {
   return (
-    <h2 id={id} tabIndex={-1} className="kb-queue-group-head kb-glass-display">
+    <h2 id={id} tabIndex={-1} className="kb-queue-group-head kb-glass-display kb-calm">
       {title} <span className="kb-queue-count" aria-label={more ? `${count} or more` : `${count}`}>{count}{more ? '+' : ''}</span>
     </h2>
   );
@@ -315,13 +315,21 @@ function endedLine(e: MoveEnded): string {
 }
 
 function Ended({ rows, more, boards, bosses }: { readonly rows: readonly MoveEnded[]; readonly more: boolean; readonly boards: readonly BoardName[]; readonly bosses: readonly Roster[] }) {
+  /* With nothing to unfold there is no fold: the line is shown under the head, not hidden in a closed details. */
+  if (rows.length === 0) {
+    return (
+      <section className="kb-queue-group" aria-labelledby="queue-ended" data-kb-group="ended">
+        <GroupHead id="queue-ended" title="Ended" count={0} more={more} />
+        <p className="kb-queue-empty kb-calm">Nothing has ended in the last 30 days.</p>
+      </section>
+    );
+  }
   return (
     <section className="kb-queue-group" aria-labelledby="queue-ended" data-kb-group="ended">
       <details className="kb-queue-ended">
-        <summary className="kb-queue-group-head kb-glass-display" id="queue-ended" tabIndex={-1}>
+        <summary className="kb-queue-group-head kb-glass-display kb-calm" id="queue-ended" tabIndex={-1}>
           Ended <span className="kb-queue-count">{rows.length}{more ? '+' : ''}</span> <span className="kb-queue-fold">· the last 30 days, with how each ended ›</span>
         </summary>
-        {rows.length === 0 && <p className="kb-queue-empty kb-calm">Nothing has ended in the last 30 days.</p>}
         {rows.map((e) => (
           <article key={`${e.act ?? 'q'}${e.id ?? ''}${e.at}`} className="kb-queue-move kb-calm" data-kb-state="ended" data-kb-how={e.how}>
             <div className="kb-queue-body">

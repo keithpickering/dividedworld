@@ -37,7 +37,7 @@ export async function pageViolations(page: Page): Promise<string[]> {
 test.use({ bypassCSP: true });
 
 /* A glass page is ready when its menu bar is; a board page when its Game HUD is. */
-const GLASS = new Set(['/characters', '/characters/new', '/characters/edit', '/settings', '/invites', '/sign-in', '/register', '/season?tab=rankings', '/season?tab=news', '/alerts', '/updates', '/guide', '/contact', '/vending']);
+const GLASS = new Set(['/characters', '/characters/new', '/characters/edit', '/settings', '/invites', '/sign-in', '/register', '/season?tab=rankings', '/season?tab=news', '/alerts', '/updates', '/guide', '/contact', '/vending', '/admin/queue']);
 const ready = (page: import('@playwright/test').Page, path: string) => (GLASS.has(path)
   ? page.getByRole('navigation', { name: 'Menu' })
   : page.getByRole('region', { name: 'Game HUD' }));
@@ -96,8 +96,20 @@ const ABOVE_SWITCH = SWITCH + 8;
 const BELOW_SWITCH = SWITCH - 8;
 
 const PAGES: readonly [string, string][] = [
-  ['index', '/'], ['board', '/b/general'], ['characters', '/characters'], ['season rankings', '/season?tab=rankings'], ['season news', '/season?tab=news'], ['alerts', '/alerts'], ['updates', '/updates'], ['guide', '/guide'], ['contact', '/contact'], ['vending', '/vending'], ['settings', '/settings'], ['invites', '/invites'],
+  ['index', '/'], ['board', '/b/general'], ['characters', '/characters'], ['season rankings', '/season?tab=rankings'], ['season news', '/season?tab=news'], ['alerts', '/alerts'], ['updates', '/updates'], ['guide', '/guide'], ['contact', '/contact'], ['vending', '/vending'], ['settings', '/settings'], ['invites', '/invites'], ['admin queue', '/admin/queue'],
 ];
+
+/** Opens a page; the admin queue is the demo player made an admin in the app (a load starts the demo over), then moved to. */
+async function visit(page: Page, path: string) {
+  if (path !== '/admin/queue') {
+    await page.goto(path);
+    return;
+  }
+  await page.goto('/settings');
+  await page.waitForFunction(() => '__kbFake' in globalThis);
+  await page.evaluate(() => { const w = globalThis as typeof globalThis & { readonly __kbFake: Fake; readonly __kbDemo: Demo }; w.__kbFake.seed.admin(w.__kbDemo.me, true); });
+  await page.evaluate(() => { history.pushState(null, '', '/admin/queue'); window.dispatchEvent(new PopStateEvent('popstate')); });
+}
 
 const STORIES = boardStoryIds();
 
@@ -121,17 +133,17 @@ for (const scheme of ['light', 'dark'] as const) {
 
       for (const [label, path] of PAGES) {
         test(`${label} has no axe violation, color contrast included`, async ({ page }) => {
-          await page.goto(path);
+          await visit(page, path);
           await expect(ready(page, path)).toBeVisible();
           expect(await pageViolations(page)).toEqual([]);
         });
         test(`${label} does not scroll sideways`, async ({ page }) => {
-          await page.goto(path);
+          await visit(page, path);
           await expect(ready(page, path)).toBeVisible();
           expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
         });
         if (!GLASS.has(path)) test(`${label}'s Game HUD holds all it shows inside its glass and the window`, async ({ page }) => {
-          await page.goto(path);
+          await visit(page, path);
           await expect(ready(page, path)).toBeVisible();
           await expect(page.locator('.kb-hud-orbs .kb-orb').first()).toBeVisible();
           expect(await hudCut(page)).toEqual([]);
