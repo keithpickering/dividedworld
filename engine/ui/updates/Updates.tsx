@@ -26,6 +26,7 @@ import { createMine } from '../reactions/mine.ts';
 import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
 import { createTallies } from '../thread/tallies.ts';
 import { Link, useLocation, useNavigate } from '../router.tsx';
+import { todoDraft } from '../admin/handover-words.ts';
 import { WriteUpdate } from '../admin/WriteUpdate.tsx';
 import '../cards/kit.css';
 import './updates.css';
@@ -57,6 +58,10 @@ export interface UpdatesProps {
   /** Whether the player may write one. */
   readonly admin: boolean;
   readonly onWritten: (update: Update) => void;
+  /** A handover's facts to open the writer with (`?write=handover&season=N`), and the writer open on them. */
+  readonly initial?: { readonly title: string; readonly words: string };
+  /** The address asked for a handover's writer, and that to-do is not there (cleared by an update or dismissed). */
+  readonly handoverGone?: number;
 }
 
 function Post({ update }: { readonly update: Update }) {
@@ -111,9 +116,10 @@ function Post({ update }: { readonly update: Update }) {
   );
 }
 
-export function Updates({ updates, open, more, onMore, admin, onWritten }: UpdatesProps) {
+export function Updates({ updates, open, more, onMore, admin, onWritten, initial, handoverGone }: UpdatesProps) {
   const current = updates.find((u) => u.act === open) ?? updates[0];
-  const [writing, setWriting] = useState(false);
+  const [writing, setWriting] = useState(initial !== undefined || handoverGone !== undefined);
+  useEffect(() => { if (initial !== undefined || handoverGone !== undefined) setWriting(true); }, [initial, handoverGone]);
   const voice = updates[0]?.name;
   return (
     <div className="kb-updates">
@@ -148,7 +154,8 @@ export function Updates({ updates, open, more, onMore, admin, onWritten }: Updat
               <button type="button" className="kb-kit-tile" aria-expanded={writing} onClick={() => setWriting(!writing)}>
                 <span className="kb-kit-tile-label">Write an update</span>
               </button>
-              {writing && <WriteUpdate onWritten={onWritten} />}
+              {writing && handoverGone !== undefined && <p className="kb-updates-note" role="status">There is no to-do for season {handoverGone}: an update was posted after its handover, or it was dismissed.</p>}
+              {writing && <WriteUpdate key={initial?.title ?? ''} onWritten={onWritten} initial={initial} />}
             </div>
           )}
           {current ? <Post key={current.act} update={current} /> : <p className="kb-updates-empty kb-calm">Nothing here yet. When the developers post an update, it is here, and in everyone&apos;s alerts.</p>}
@@ -172,6 +179,19 @@ export function UpdatesScreen() {
   const [state, setState] = useState<State>({ status: 'loading' });
   const [admin, setAdmin] = useState(false);
   const [paging, setPaging] = useState(false);
+  /* `?write=handover&season=N` (from the admin queue's to-do): the writer opens on that handover's facts. Read once the page knows the reader is an admin. */
+  const asked = Number(query.get('season'));
+  const season = query.get('write') === 'handover' && Number.isInteger(asked) && asked > 0 ? asked : null;
+  const [handover, setHandover] = useState<{ readonly season: number; readonly draft: { readonly title: string; readonly words: string } | null } | null>(null);
+  useEffect(() => {
+    if (!admin || season === null) { setHandover(null); return undefined; }
+    let live = true;
+    api.adminQueue().then(
+      (q) => { const todo = q.todos.find((t) => t.season === season); if (live) setHandover({ season, draft: todo === undefined ? null : todoDraft(todo) }); },
+      () => { if (live) setHandover({ season, draft: null }); },
+    );
+    return () => { live = false; };
+  }, [api, admin, season]);
 
   useEffect(() => {
     if (!signedIn) return undefined;
@@ -201,5 +221,5 @@ export function UpdatesScreen() {
     setState((was) => (was.status !== 'ready' ? was : { ...was, updates: [update, ...was.updates.filter((u) => u.act !== update.act)] }));
     navigate(updatesAt(update.act));
   };
-  return <Updates updates={state.updates} open={query.get('update')} more={state.more} onMore={more} admin={admin} onWritten={written} />;
+  return <Updates updates={state.updates} open={query.get('update')} more={state.more} onMore={more} admin={admin} onWritten={written} initial={handover?.draft ?? undefined} handoverGone={handover !== null && handover.draft === null ? handover.season : undefined} />;
 }

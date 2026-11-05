@@ -37,7 +37,7 @@ import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, UPD
 import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import type {
-  AdminQueue, BoardName, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffProfile,
+  AdminQueue, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffProfile,
   Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEvent, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd, FaceDownPass,
   Alert, EffectState, SeasonNewsItem, SeasonResult, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
@@ -264,6 +264,13 @@ function toQueued(r: Row): QueuedMove {
     id: num(r['id']), staff: String(r['staff'] ?? ''), boss: orNull(r['boss']), kind: String(r['kind'] ?? ''), params: params(r['params']), demand: toDemand(r['demand']),
     why: String(r['why'] ?? ''), goLiveAt: String(r['goLiveAt'] ?? ''), expiresAt: orNull(r['expiresAt']), structural: r['structural'] === true, boardName: orNull(r['boardName']),
     failedAt: orNull(r['failedAt']), failure: orNull(r['failure']), replacedAt: orNull(r['replacedAt']),
+  };
+}
+
+function toTodo(r: Row): HandoverTodo {
+  return {
+    season: num(r['season']), boss: String(r['boss'] ?? ''), bossName: String(r['bossName'] ?? r['boss'] ?? ''), bossWas: orNull(r['bossWas']), outgoing: orNull(r['outgoing']),
+    outgoingName: orNull(r['outgoingName']), outgoingOffice: orNull(r['outgoingOffice']), how: String(r['how'] ?? ''), landedAt: String(r['landedAt'] ?? ''),
   };
 }
 
@@ -716,7 +723,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         cap: num(q['cap']), waiting: rows(q['waiting']).map(toQueued), inForce: rows(q['inForce']).map(toInForce), ended: rows(q['ended']).map(toEnded),
         more: { waiting: more['waiting'] === true, inForce: more['inForce'] === true, ended: more['ended'] === true },
         roster: rows(q['roster']).flatMap((r) => (typeof r['staff'] === 'string' ? [{ staff: r['staff'], name: String(r['name'] ?? r['staff']) }] : [])),
+        todos: rows(q['todos']).flatMap((r) => (typeof r['boss'] === 'string' ? [toTodo(r)] : [])),
       };
+    },
+    async dismissHandoverTodo(season) {
+      const a = await rpcWrite(() => client.rpc('dismiss_handover_todo', { season_number: season }));
+      return a.ok ? { ok: true, value: { season: num(a.value['season']) } } : a;
     },
     /* A page of the Updates (`updates`, 0062): public, the same for every reader, newest first. */
     async updates(before) {

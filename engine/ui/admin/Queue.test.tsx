@@ -253,4 +253,55 @@ describe('a nomination of a successor', () => {
     expect(ended).toHaveTextContent('Ended by the new Boss at the handover.');
     expect(ended).toHaveTextContent('Ended at the handover: the new Boss did not review it in time.');
   });
+
+  describe('the to-do group (the staff roster design, section 11)', () => {
+    const handover = (fake: ReturnType<typeof buildWorld>, at = fake.clock.now() - 3_600_000) => {
+      fake.seed.staff('old-boss', 'Old Boss', 'boss');
+      fake.seed.staff('comptroller', 'Comptroller', 'mod');
+      fake.seed.handover({ outgoing: 'old-boss', boss: 'comptroller', at, how: 'rotation', bossWas: 'mod', outgoingOffice: 'member' });
+    };
+
+    test('a change of Boss is a row above Waiting, with the plain facts, a link to the form for that season, and a Dismiss', async () => {
+      open({ build: (fake) => handover(fake) });
+      const todo = await group(/^To do/u);
+      expect(todo).toHaveTextContent('Season 2 opens with Comptroller.');
+      expect(todo).toHaveTextContent('Season 2\'s Boss: Comptroller (was a Moderator).');
+      expect(todo).toHaveTextContent('Old Boss is now a member.');
+      expect(within(todo).getByRole('link', { name: 'Write the announcement' })).toHaveAttribute('href', '/updates?write=handover&season=2');
+      expect(within(todo).getByRole('button', { name: 'Dismiss the season 2 to-do' })).toBeInTheDocument();
+      const waiting = await group(/^Waiting to land/u);
+      expect(todo.compareDocumentPosition(waiting) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    test('no change of Boss, no row: the group says there is nothing to do', async () => {
+      open();
+      expect(await group(/^To do/u)).toHaveTextContent('Nothing to do.');
+      expect(screen.queryByRole('link', { name: 'Write the announcement' })).toBeNull();
+    });
+
+    test('a handover that kept its Boss is no to-do', async () => {
+      open({ build: (fake) => { fake.seed.staff('same-boss', 'Same Boss', 'boss'); fake.seed.handover({ outgoing: 'same-boss', boss: 'same-boss' }); } });
+      expect(await group(/^To do/u)).toHaveTextContent('Nothing to do.');
+    });
+
+    test('Dismiss puts the row away and keeps it away on a fresh read', async () => {
+      const { fake } = open({ build: (f) => handover(f) });
+      const todo = await group(/^To do/u);
+      await userEvent.click(within(todo).getByRole('button', { name: 'Dismiss the season 2 to-do' }));
+      await waitFor(() => expect(screen.queryByRole('link', { name: 'Write the announcement' })).toBeNull());
+      expect((await fake.adminQueue()).todos).toEqual([]);
+      expect(await group(/^To do/u)).toHaveTextContent('Nothing to do.');
+    });
+
+    test('an update posted after the handover takes the row away; one posted before it does not (the poison)', async () => {
+      const before = open({ build: (fake) => { handover(fake); fake.seed.update({ title: 'Older news', body: 'Before.', at: fake.clock.now() - 2 * 3_600_000 }); } });
+      expect((await before.fake.adminQueue()).todos.map((t) => t.season)).toEqual([2]);
+      expect(await group(/^To do/u)).toHaveTextContent('Season 2 opens with Comptroller.');
+    });
+
+    test('an update after the handover clears it', async () => {
+      open({ build: (fake) => { handover(fake); fake.seed.update({ title: 'Season 2', body: 'After.', at: fake.clock.now() - 60_000 }); } });
+      expect(await group(/^To do/u)).toHaveTextContent('Nothing to do.');
+    });
+  });
 });

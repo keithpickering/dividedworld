@@ -30,7 +30,7 @@ import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
-  AdminQueue, BoardName, Demand, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffProfile,
+  AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffProfile,
   Act, AccountListener, ActKind, Alert, SeasonNewsItem, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, Wallet, WalletEvent,
@@ -101,9 +101,11 @@ export interface Seed {
   /**
    * A change of Boss at a season's roll-over (a `season_handovers` row, 0051): the outgoing Boss (null at the first) and the arriving one, by staff key,
    * dated `at` (else now). Season news then holds the Boss's arrival and departure, quoting the first post each wrote in the announcements thread dated
-   * at exactly `at` (`staffPost`), as the server finds it; a later remark is not its words.
+   * at exactly `at` (`staffPost`), as the server finds it; a later remark is not its words. A change of Boss is also a to-do in the admin queue
+   * (`how` rotation unless said, `bossWas` the new Boss's office before, `outgoingOffice` member unless said), until an update is seeded or posted
+   * after `at` or an admin dismisses it. The season is the next number: the first season is the seed's, and each handover opens the one after.
    */
-  handover(handover: { outgoing?: string | null; boss: string; at?: number }): void;
+  handover(handover: { outgoing?: string | null; boss: string; at?: number; how?: 'nomination' | 'rotation'; bossWas?: string | null; outgoingOffice?: string | null }): void;
   /**
    * An update by the developer persona (what `post_update` writes, 0062), dated `at` (else now): the developer character is made on its first
    * update, from the instance's persona (else the engine's plain one), and so is the updates thread on The System's board. Returns the Act.
@@ -641,7 +643,21 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
   /* ------------------------------------------------------------------ season news ---- */
   /** The Boss changes the fake's seeds hold (`season_handovers`, 0051): who left, who arrived, and when. */
-  const handovers: { readonly outgoing: string | null; readonly boss: string; readonly at: number }[] = [];
+  const handovers: { readonly outgoing: string | null; readonly boss: string; readonly at: number; readonly how: string; readonly bossWas: string | null; readonly outgoingOffice: string | null }[] = [];
+  /** The seasons whose to-do an admin dismissed (`handover_dismissals`). */
+  const dismissedTodos = new Set<number>();
+  /** The to-dos the admin queue holds: each change of Boss with no update after it and no dismissal, newest first (admin_queue's `todos`). */
+  function handoverTodos(): HandoverTodo[] {
+    const latest = updateActs()[0]?.at ?? -Infinity;
+    return handovers.flatMap((h, i): HandoverTodo[] => {
+      const season = i + 2;
+      if (h.outgoing === h.boss || latest > h.at || dismissedTodos.has(season)) return [];
+      return [{
+        season, boss: h.boss, bossName: staffByKey(h.boss)?.name ?? h.boss, bossWas: h.bossWas, outgoing: h.outgoing, outgoingName: h.outgoing === null ? null : staffByKey(h.outgoing)?.name ?? h.outgoing,
+        outgoingOffice: h.outgoing === null ? null : h.outgoingOffice, how: h.how, landedAt: iso(h.at),
+      }];
+    }).reverse();
+  }
   const staffByKey = (key: string) => [...characters.values()].find((c) => c.staff?.key === key);
   /** The first post of a staff member in the announcements thread dated at the handover's instant: what the Boss said as it came or went (a later remark is not it). */
   function bossPost(key: string, at: number): ActRec | undefined {
@@ -1413,8 +1429,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           how: 'held', by: 'admin', at: iso(q.heldAt!), act: null, id: q.id, staff: q.staff, boss: nameOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, landedAt: null,
         })),
       ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
-      return { cap: 100, waiting, inForce: live, ended, more: { waiting: false, inForce: false, ended: false },
+      return { cap: 100, waiting, inForce: live, ended, todos: handoverTodos(), more: { waiting: false, inForce: false, ended: false },
         roster: [...characters.values()].filter((c) => c.staff && c.staff.office !== 'developer' && c.staff.office !== 'benched' && c.retiredAt === null).map((c) => ({ staff: c.staff!.key, name: c.name })) } satisfies AdminQueue;
+    },
+    dismissHandoverTodo(season) {
+      if (!me()?.admin) return refuse('only an admin dismisses a to-do');
+      if (!handovers.some((h, i) => i + 2 === season && h.outgoing !== h.boss)) return refuse(`there is no to-do for season ${season}: its handover did not change the Boss`);
+      dismissedTodos.add(season);
+      return ok({ season });
     },
     holdMove(id) {
       if (!me()?.admin) return refuse('only an admin holds a move');
@@ -2133,7 +2155,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     handover(h) {
       if (h.outgoing !== null && h.outgoing !== undefined) staffId(h.outgoing);
       staffId(h.boss);
-      handovers.push({ outgoing: h.outgoing ?? null, boss: h.boss, at: h.at ?? now() });
+      handovers.push({ outgoing: h.outgoing ?? null, boss: h.boss, at: h.at ?? now(), how: h.how ?? 'rotation', bossWas: h.bossWas ?? null, outgoingOffice: h.outgoingOffice ?? 'member' });
       /* A change of Boss is two items of news, as news_announce (0063) queues them: the one who left, where there was one, and the one who arrived. */
       const at = iso(h.at ?? now());
       if (h.outgoing != null && h.outgoing !== h.boss) {

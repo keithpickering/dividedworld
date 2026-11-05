@@ -429,12 +429,32 @@ export interface MoveEnded {
   readonly landedAt: string | null;
 }
 
+/**
+ * A handover that changed the Boss and has no announcement yet (admin_queue's `todos`; the staff roster design, section 11). It clears when an
+ * update is posted after `landedAt`, or when an admin dismisses it. `season` is the new season's number. Offices are the office log's words
+ * (`boss`, `mod`, `member`, `benched`, `waiting`); `bossWas` is the new Boss's office before it took the seat, null where it held none.
+ */
+export interface HandoverTodo {
+  readonly season: number;
+  readonly boss: string;
+  readonly bossName: string;
+  readonly bossWas: string | null;
+  readonly outgoing: string | null;
+  readonly outgoingName: string | null;
+  readonly outgoingOffice: string | null;
+  /** How the new Boss was chosen: `nomination` or `rotation`. */
+  readonly how: string;
+  readonly landedAt: string;
+}
+
 /** What the admin screen shows. Each group holds at most `cap` rows; `more` says a group was cut. */
 export interface AdminQueue {
   readonly cap: number;
   readonly waiting: readonly QueuedMove[];
   readonly inForce: readonly MoveInForce[];
   readonly ended: readonly MoveEnded[];
+  /** The handovers still waiting for an announcement, newest first. */
+  readonly todos: readonly HandoverTodo[];
   readonly more: { readonly waiting: boolean; readonly inForce: boolean; readonly ended: boolean };
   /** The Bosses a waiting nomination can be replaced with: on the roster, not retired, debuted; in the rotation's order. */
   readonly roster: readonly { readonly staff: string; readonly name: string }[];
@@ -987,6 +1007,8 @@ export interface KayfaApi {
    * a label over 80 or more than 30 changes is refused naming which. An admin's alone, and written by no model.
    */
   postUpdate(title: string, body: string, changes: readonly UpdateChange[]): Promise<Answer<Update>>;
+  /** Puts a handover's to-do away without an update (`dismiss_handover_todo`). An admin's alone; a season with no to-do is refused, and one already dismissed is answered. */
+  dismissHandoverTodo(season: number): Promise<Answer<{ readonly season: number }>>;
   /** Holds a move that is waiting: it never lands. An admin's alone, and it cannot be taken back. */
   holdMove(id: number): Promise<Answer<{ readonly id: number; readonly heldAt: string }>>;
   /** Ends a move in force now as reversed by an admin; the old name returns at once. An admin's alone. */

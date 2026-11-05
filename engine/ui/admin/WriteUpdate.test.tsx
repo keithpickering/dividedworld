@@ -136,4 +136,35 @@ describe('Write an update', () => {
     expect(within(form()).getByLabelText('Title')).toHaveValue('Once');
     expect(fake.postUpdate).toHaveBeenCalledTimes(1);
   });
+
+  describe('opened from a handover (`initial`)', () => {
+    const initial = { title: 'Season 4 opens with Comptroller', words: 'Season 4\'s Boss: Comptroller (was a Moderator).\n\nHype Man is now a member.' };
+
+    test('opens filled in, says the lines are for the admin to replace, and holds the post until they are', async () => {
+      renderIn(world(), <WriteUpdate initial={initial} />, { instance });
+      expect(within(form()).getByLabelText('Title')).toHaveValue(initial.title);
+      expect(within(form()).getByLabelText('Words')).toHaveValue(initial.words);
+      expect(within(form()).getByText(/filled in from the handover/u)).toBeInTheDocument();
+      expect(within(form()).getByRole('button', { name: 'Post update' })).toBeDisabled();
+      expect(within(form()).getByText(/Replace the filled-in lines/u)).toBeInTheDocument();
+    });
+
+    test('posts what the admin typed, and nothing of the filled-in lines they replaced', async () => {
+      const fake = world();
+      renderIn(fake, <WriteUpdate initial={initial} />, { instance });
+      const words = within(form()).getByLabelText('Words');
+      await userEvent.clear(words);
+      await userEvent.type(words, 'Comptroller has the seat. Be kind to it.');
+      await userEvent.click(within(form()).getByRole('button', { name: 'Post update' }));
+      expect(await screen.findByText('Posted. Every player has it in their alerts.')).toBeInTheDocument();
+      const posted = (await fake.updates()).map((u) => ({ title: u.title, body: u.body }));
+      expect(posted).toEqual([{ title: initial.title, body: 'Comptroller has the seat. Be kind to it.' }]);
+    });
+
+    test('without `initial` the form opens empty and says nothing of a handover', () => {
+      renderIn(world(), <WriteUpdate />, { instance });
+      expect(within(form()).getByLabelText('Title')).toHaveValue('');
+      expect(within(form()).queryByText(/handover/u)).toBeNull();
+    });
+  });
 });

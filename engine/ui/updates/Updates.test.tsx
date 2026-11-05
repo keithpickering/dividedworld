@@ -301,3 +301,49 @@ function must<T>(a: { ok: true; value: T } | { ok: false; error: string }): T {
   if (!a.ok) throw new Error(a.error);
   return a.value;
 }
+
+describe('opened from a handover to-do', () => {
+  const handedOver = () => {
+    const w = world();
+    w.fake.seed.staff('old-boss', 'Old Boss', 'boss');
+    w.fake.seed.staff('comptroller', 'Comptroller', 'mod');
+    w.fake.seed.handover({ outgoing: 'old-boss', boss: 'comptroller', at: at(3), bossWas: 'mod', outgoingOffice: 'member' });
+    /* The page's clock is past the handover, as a real one is, so an update posted now is posted after it. */
+    w.fake.clock.advance(Math.max(0, at(3) + 3_600_000 - w.fake.clock.now()));
+    w.fake.signInAs(w.admin);
+    return w;
+  };
+
+  test('?write=handover&season=2 opens the writer with the handover\'s facts, for an admin', async () => {
+    show(handedOver().fake, '/updates?write=handover&season=2');
+    const form = await screen.findByRole('form', { name: 'Write an update' });
+    expect(within(form).getByLabelText('Title')).toHaveValue('Season 2 opens with Comptroller');
+    expect(within(form).getByLabelText('Words')).toHaveValue('Season 2\'s Boss: Comptroller (was a Moderator).\n\nOld Boss is now a member.\n\nThe Boss was chosen by the roster\'s rotation.');
+  });
+
+  test('a season with no to-do opens the empty writer and says the to-do is already cleared', async () => {
+    show(handedOver().fake, '/updates?write=handover&season=9');
+    const form = await screen.findByRole('form', { name: 'Write an update' });
+    expect(within(form).getByLabelText('Title')).toHaveValue('');
+    expect(screen.getByText(/no to-do for season 9/u)).toBeInTheDocument();
+  });
+
+  test('a player who is not an admin gets no writer from the address', async () => {
+    const w = handedOver();
+    w.fake.signInAs(w.me);
+    show(w.fake, '/updates?write=handover&season=2');
+    await screen.findByRole('article');
+    expect(screen.queryByRole('form', { name: 'Write an update' })).toBeNull();
+  });
+
+  test('posting the announcement clears the to-do', async () => {
+    const w = handedOver();
+    show(w.fake, '/updates?write=handover&season=2');
+    const form = await screen.findByRole('form', { name: 'Write an update' });
+    const words = within(form).getByLabelText('Words');
+    await userEvent.clear(words);
+    await userEvent.type(words, 'Comptroller has the seat.');
+    await userEvent.click(within(form).getByRole('button', { name: 'Post update' }));
+    await waitFor(async () => expect((await w.fake.adminQueue()).todos).toEqual([]));
+  });
+});
