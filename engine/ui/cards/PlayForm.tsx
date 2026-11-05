@@ -216,7 +216,7 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
   const hint = `${id}-hint`;
 
   return (
-    <Overlay closeLook="cross"
+    <Overlay
       title={face.name}
       kicker={<span className="kb-calm">{how === 'set' ? 'Set a card face down' : how === 'use' ? 'Use a card' : 'Play a card'}</span>}
       surface="play"

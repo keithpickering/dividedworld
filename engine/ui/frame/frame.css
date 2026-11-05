@@ -834,6 +834,8 @@
 
 :where(:root[data-kb-layout='phone']) .kb-hand-cards {
   position: relative;
+  /* Above the says line's calm, whose feather lies over the cards. */
+  z-index: 1;
   display: flex;
   /* Every card stays in reach: a hand wider than the phone wraps onto another row, never off the screen's edge (impeccable's audit of the cards, P1-2). */
   flex-wrap: wrap;

@@ -133,6 +133,7 @@
 .kb-glass-cut-panel { clip-path: polygon(0 0, calc(100% - var(--kb-cut)) 0, 100% var(--kb-cut), 100% 100%, 0 100%); }
 .kb-glass-cut-panel::after { clip-path: polygon(0 0, calc(100% - var(--kb-cut-in)) 0, 100% var(--kb-cut-in), 100% 100%, 0 100%); }
 
+.kb-glass-cut-dialog { --kb-cut: var(--kb-glass-chamfer-5); }
 .kb-glass-cut-dialog { clip-path: polygon(0 0, calc(100% - var(--kb-cut)) 0, 100% var(--kb-cut), 100% 100%, var(--kb-cut) 100%, 0 calc(100% - var(--kb-cut))); }
 .kb-glass-cut-dialog::after { clip-path: polygon(0 0, calc(100% - var(--kb-cut-in)) 0, 100% var(--kb-cut-in), 100% 100%, var(--kb-cut-in) 100%, 0 calc(100% - var(--kb-cut-in))); }
 

@@ -22,6 +22,7 @@ import { modalOpen, topModalHolds } from '../modal.tsx';
 import type { GlassSurface } from '../types.ts';
 import { pageEscape } from './keys.ts';
 import { hudTopOf, placePopover } from './place.ts';
+import { FRAME } from './Frame.tsx';
 import { Smoke, useSurfaceStyle } from './Smoke.tsx';
 import './shell.css';
 
@@ -208,7 +209,7 @@ export function Float({ label, surface, onClose, children, anchor, beside, sheet
   return createPortal(
     <div ref={wrap} className="kb-glass kb-float" style={wrapStyle}>
       <div
-        ref={box} className={`kb-glass-dialog kb-glass-cut-dialog kb-float-box${className ? ` ${className}` : ''}`} role="dialog" aria-modal="false" aria-label={label} tabIndex={-1} onKeyDown={onKeyDown}
+        ref={box} className={`${FRAME} kb-float-box${className ? ` ${className}` : ''}`} role="dialog" aria-modal="false" aria-label={label} tabIndex={-1} onKeyDown={onKeyDown}
         style={{ ...calm, ...style }}
         {...Object.fromEntries(Object.entries(data ?? {}).map(([k, v]) => [`data-${k}`, v]))}
       >

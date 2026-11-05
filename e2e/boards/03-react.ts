@@ -31,6 +31,9 @@
  *    where Face's and the Technician's are #8fd6ff and #7dffc8). Groan's is the same on both, so its label's
  *    type is compared, and every group's box is.
  *
+ * The frame (Frame.tsx) is the owner's correction to the Modals: one frame for every dialog, the Reveal modal's, with Close in a sticky title row;
+ * the board's picker holds Close at the foot, so the parts under the row are shifted (`buildShift`, below).
+ *
  * Not compared: the post under the picker, which is the 2003 board's (its chips and its React are
  * the thread's own, and the build's #42 carries a fourth chip the board left out, the fixture's
  * handshake), the smoke, and the cross through the quadrants.
@@ -48,8 +51,18 @@ const KINDS: readonly (readonly [string, string, string?])[] = [
   ['Relieved', 'Calm'], ['Handshake', 'Calm'], ['Meditating', 'Calm'],
 ];
 
+/**
+ * The shared dialog frame's title row holds Close (engine/ui/glass/Frame.tsx), where the board's picker holds it at the foot beside the hint:
+ * the row is Close's 52px tall under the frame's top, so everything under it stands about 28px lower (LOWER, held within the match's
+ * tolerance), the picker is 16px taller, its foot kept at the frame's room (LOWER less the 12px the foot gives back), and the count stands
+ * beside Close, which the board's does not (COUNT_LEFT, from the board's right edge to Close's left). The frame's other departures from the
+ * board are the owner's: the fifth chamfer and a 1.5px neon border where the board draws the third and a 1px pale one (not compared).
+ */
+const LOWER = 28;
+const COUNT_LEFT = 67;
+
 const buttons: Landmark[] = KINDS.map(([name, quadrant, built]) => ({
-  id: `kind-${name.toLowerCase().replace(/\W+/g, '-')}`, role: 'button', name, buildName: `${(built ?? name).replace('-', ' ')}, ${quadrant}`, within: 'picker', origin: 'picker', type: false,
+  id: `kind-${name.toLowerCase().replace(/\W+/g, '-')}`, role: 'button', name, buildName: `${(built ?? name).replace('-', ' ')}, ${quadrant}`, within: 'picker', origin: 'picker', type: false, buildShift: { y: LOWER },
 }));
 
 const manifest: BoardManifest = {
@@ -58,20 +71,20 @@ const manifest: BoardManifest = {
   build: { story: 'boards-03-react--board' },
   press: [{ role: 'button', name: 'React' }],
   landmarks: [
-    { id: 'picker', role: 'dialog', name: 'React to Mrs. Hooligan\'s post', box: 'size' },
+    { id: 'picker', role: 'dialog', name: 'React to Mrs. Hooligan\'s post', box: 'size', buildShift: { height: LOWER - 12 } },
     { id: 'heading', role: 'heading', name: 'React', within: 'picker', origin: 'picker' },
-    { id: 'left', role: 'text', name: '2 of 3 left', within: 'picker', origin: 'picker' },
-    { id: 'excited', role: 'text', name: 'Excited', within: 'picker', origin: 'picker' },
-    { id: 'low-key', role: 'text', name: 'Low-key', within: 'picker', origin: 'picker' },
-    { id: 'heat', role: 'group', name: 'Heat', within: 'picker', origin: 'picker', type: false },
-    { id: 'hype', role: 'group', name: 'Hype', within: 'picker', origin: 'picker', type: false },
-    { id: 'groan', role: 'group', name: 'Groan', within: 'picker', origin: 'picker', type: false },
+    { id: 'left', role: 'text', name: '2 of 3 left', within: 'picker', origin: 'picker', buildShift: { x: -COUNT_LEFT } },
+    { id: 'excited', role: 'text', name: 'Excited', within: 'picker', origin: 'picker', buildShift: { y: LOWER } },
+    { id: 'low-key', role: 'text', name: 'Low-key', within: 'picker', origin: 'picker', buildShift: { y: LOWER } },
+    { id: 'heat', role: 'group', name: 'Heat', within: 'picker', origin: 'picker', type: false, buildShift: { y: LOWER } },
+    { id: 'hype', role: 'group', name: 'Hype', within: 'picker', origin: 'picker', type: false, buildShift: { y: LOWER } },
+    { id: 'groan', role: 'group', name: 'Groan', within: 'picker', origin: 'picker', type: false, buildShift: { y: LOWER } },
     /* 24px where the board draws 22px: WCAG's large size, so a class's large color stands at 3:1 on the react smoke (the owner's answer on #54). */
-    { id: 'groan-label', role: 'text', name: 'Groan', within: 'groan', origin: 'picker', buildSize: 24 },
-    { id: 'calm', role: 'group', name: 'Calm', within: 'picker', origin: 'picker', type: false },
+    { id: 'groan-label', role: 'text', name: 'Groan', within: 'groan', origin: 'picker', buildSize: 24, buildShift: { y: LOWER } },
+    { id: 'calm', role: 'group', name: 'Calm', within: 'picker', origin: 'picker', type: false, buildShift: { y: LOWER } },
     ...buttons,
-    { id: 'kind-tea', role: 'button', name: 'Tea, your reaction', buildName: 'Tea, Calm, your reaction', within: 'picker', origin: 'picker', type: false },
-    { id: 'hint', role: 'text', name: 'Arrow keys move, Enter reacts. Outlined: yours.', within: 'picker', origin: 'picker' },
+    { id: 'kind-tea', role: 'button', name: 'Tea, your reaction', buildName: 'Tea, Calm, your reaction', within: 'picker', origin: 'picker', type: false, buildShift: { y: LOWER } },
+    { id: 'hint', role: 'text', name: 'Arrow keys move, Enter reacts. Outlined: yours.', within: 'picker', origin: 'picker', buildShift: { y: LOWER } },
   ],
 };
 

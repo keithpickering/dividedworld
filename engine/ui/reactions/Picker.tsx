@@ -143,7 +143,7 @@ export function Picker({ act, subject, as, own, tallies, mine, anchor, onClose }
   return (
     <Overlay
       title={<span className="kb-calm">React</span>} label={`React to ${subject}`} surface="react" className="kb-picker"
-      describedBy={describedId} closeAt="foot" anchor={anchor} sheetBelow={POPOVER_ROOM} onPlace={setPlaced} onClose={() => onClose(true)}
+      describedBy={describedId} anchor={anchor} sheetBelow={POPOVER_ROOM} onPlace={setPlaced} onClose={() => onClose(true)}
       aside={<span id={countId} className="kb-picker-left kb-calm" role="status">{left} of {cap} left</span>}
     >
       {/* What the dialog is described by: the count, and the mask the reaction goes out under (the HUD's, which the overlay dims). */}

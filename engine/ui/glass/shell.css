@@ -216,11 +216,28 @@
   overflow-y: auto;
 }
 
+/*
+ * The one frame every glass dialog wears (Frame.tsx; the Reveal modal's look): the chamfered box, its 1.5px border drawn on the cut
+ * by base.css's `.kb-glass-cut-dialog` (the cut and the border are set there, once: no dialog sets either, and frame.test.tsx reads
+ * every stylesheet to hold that), a bar of the title and Close that stays in view while the body scrolls, and Close as a cross.
+ * A dialog sizes itself with the four tokens below (its width, and the room its words keep from the frame), and nothing else of
+ * the frame.
+ *   --kb-dialog-pad-x       the words' distance from the frame's sides
+ *   --kb-dialog-pad-top     the bar's distance from the frame's top
+ *   --kb-dialog-pad-bottom  the body's distance from the frame's foot
+ *   --kb-dialog-close-inset Close's distance from the title row's right edge (the Reveal modal's 24px; none on the phone)
+ * The bar's top is never less than the cut leaves it: Close's corner stands clear of the chamfer.
+ */
 .kb-glass-dialog {
-  --kb-cut: var(--kb-glass-chamfer-5);
+  --kb-dialog-pad-x: 40px;
+  --kb-dialog-pad-top: 36px;
+  --kb-dialog-pad-bottom: 36px;
+  --kb-dialog-close-inset: 24px;
+  --kb-dialog-bar-top: max(var(--kb-dialog-pad-top), calc(var(--kb-cut) - var(--kb-dialog-pad-x) + var(--kb-border)));
   width: min(100%, 720px);
   box-sizing: border-box;
-  padding: 28px 32px;
+  /* The foot is never less than the cut leaves it: a control in the bottom left corner stands clear of the chamfer. */
+  padding: 0 var(--kb-dialog-pad-x) max(var(--kb-dialog-pad-bottom), calc(var(--kb-cut) - var(--kb-dialog-pad-x) + var(--kb-border)));
 }
 
 .kb-glass-dialog::after {
@@ -231,15 +248,52 @@
 .kb-glass-dialog > .kb-smoke {
   z-index: 0;
   inset: var(--kb-border);
+  opacity: 0.35;
 }
 
+/*
+ * The title row. It is sticky: a dialog taller than the window (or than the room it was given) scrolls its body under the bar,
+ * and the title and Close stay in view. It is on the ground, so the body does not show through it, and it lies exactly where
+ * the cut's own panel does (inside the border, with the panel's own corner cut), so the border is drawn round it as round the
+ * rest. Its top padding is mostly scrolled off when it sticks (the offset), leaving Close 12px from the edge.
+ */
 .kb-glass-dialog-bar {
-  position: relative;
-  z-index: 1;
+  position: sticky;
+  top: calc(12px - var(--kb-dialog-bar-top));
+  z-index: 2;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+  margin: var(--kb-border) calc(var(--kb-border) - var(--kb-dialog-pad-x)) 0;
+  padding: calc(var(--kb-dialog-bar-top) - var(--kb-border)) calc(var(--kb-dialog-pad-x) - var(--kb-border)) 0;
+  background: var(--kb-glass-ground);
+  clip-path: polygon(0 0, calc(100% - var(--kb-cut-in)) 0, 100% var(--kb-cut-in), 100% 100%, 0 100%);
+}
+
+/*
+ * Where the browser can say the bar is stuck (a scroll-state query), the ground is laid under it only then: at rest the bar is the
+ * dialog's own smoke, as the Reveal modal draws it, and it takes the ground only once the body is scrolling under it. Elsewhere the
+ * bar keeps its ground always, a plain band, which is the safe side.
+ */
+@supports (container-type: scroll-state) {
+  .kb-glass-dialog-bar {
+    container-type: scroll-state;
+    background: none;
+  }
+
+  .kb-glass-dialog-bar::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: var(--kb-glass-ground);
+    opacity: 0;
+  }
+
+  @container scroll-state(stuck: top) {
+    .kb-glass-dialog-bar::before { opacity: 1; }
+  }
 }
 
 .kb-glass-dialog-titles {
@@ -248,49 +302,39 @@
 
 .kb-glass-dialog-kicker {
   margin: 0;
-  font-size: var(--kb-glass-size-label);
+  line-height: normal;
+  font-size: var(--kb-glass-size-body);
   font-weight: 800;
-  letter-spacing: 2px;
+  letter-spacing: 3px;
   text-transform: uppercase;
   color: var(--kb-glass-neon-text);
 }
 
 .kb-glass-dialog-head {
+  /* Above the kicker's calm, whose feather lies over it. */
+  position: relative;
+  z-index: 1;
   margin: 0;
   font-size: var(--kb-glass-size-display-s);
   color: var(--kb-glass-text-hi);
 }
 
+/* Close: the one look everywhere, a 52px square with a cross, its word kept for its name and hidden in the markup, the cross two strokes in the text's color. */
 .kb-glass-dialog-close {
-  --kb-cut: var(--kb-glass-chamfer-1);
-  min-height: 44px;
-  padding: 0 16px;
-  border: 0;
-  font: inherit;
-  color: var(--kb-glass-text-hi);
-  cursor: pointer;
-}
-
-/*
- * Close as a cross (Overlay's `closeLook`): a 52px square, its word kept for its name and hidden in the markup, the cross two
- * strokes in the text's color. The dialog sets its own edge color and margin.
- */
-.kb-glass-dialog-close[data-kb-look='cross'] {
+  position: relative;
   flex: none;
+  margin-right: var(--kb-dialog-close-inset);
   width: 52px;
   height: 52px;
   padding: 0;
-  clip-path: none;
-  background: color-mix(in srgb, var(--kb-glass-text-hi) 5%, transparent);
   border: 1px solid color-mix(in srgb, var(--kb-glass-neon-text) 60%, transparent);
+  background: color-mix(in srgb, var(--kb-glass-text-hi) 5%, transparent);
+  font: inherit;
   color: var(--kb-glass-text);
+  cursor: pointer;
 }
 
-.kb-glass-dialog-close[data-kb-look='cross']::after {
-  display: none;
-}
-
-.kb-glass-dialog-close[data-kb-look='cross']::before {
+.kb-glass-dialog-close::before {
   content: '';
   position: absolute;
   inset: 16px;
@@ -299,23 +343,19 @@
     linear-gradient(-45deg, transparent calc(50% - 1px), currentColor calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px));
 }
 
-.kb-glass-dialog-body,
-.kb-glass-dialog-foot {
+.kb-glass-dialog-body {
   position: relative;
   z-index: 1;
 }
 
-.kb-glass-dialog-foot {
-  display: flex;
-  justify-content: flex-end;
-}
-
-/*
- * On the phone a dialog takes the window's width less 8px a side, and its words 12px from its edge, so a line of body text at 200%
- * (ten times 34px) fits the 390px window. Its top and foot stand clear of the cut corners.
- */
+/* On the phone a dialog takes the window's width less 8px a side, and its words 12px from its edge, so a line of body text at 200% (ten times 34px) fits the 390px window. */
 :where(:root[data-kb-layout='phone']) .kb-glass-overlay { padding: 8px; }
-:where(:root[data-kb-layout='phone']) .kb-glass-dialog { padding: 32px 12px 40px; }
+:where(:root[data-kb-layout='phone']) .kb-glass-dialog {
+  --kb-dialog-pad-x: 12px;
+  --kb-dialog-pad-top: 32px;
+  --kb-dialog-pad-bottom: 40px;
+  --kb-dialog-close-inset: 0px;
+}
 
 /*
  * On the phone the bar is two rows, so the title has the dialog's whole width and not what the close
@@ -331,7 +371,8 @@
 :where(:root[data-kb-layout='phone']) .kb-glass-dialog-bar > .kb-glass-dialog-titles { display: contents; }
 :where(:root[data-kb-layout='phone']) .kb-glass-dialog-bar > .kb-glass-dialog-titles > .kb-glass-dialog-kicker { grid-column: 1; grid-row: 1; }
 :where(:root[data-kb-layout='phone']) .kb-glass-dialog-bar > .kb-glass-dialog-titles > .kb-glass-dialog-head { grid-column: 1 / -1; grid-row: 2; }
-:where(:root[data-kb-layout='phone']) .kb-glass-dialog > .kb-glass-dialog-bar > .kb-glass-dialog-close { grid-column: 2; grid-row: 1; margin-right: 0; }
+:where(:root[data-kb-layout='phone']) .kb-glass-dialog > .kb-glass-dialog-bar > .kb-glass-dialog-close { grid-column: 2; grid-row: 1; }
+:where(:root[data-kb-layout='phone']) .kb-glass-dialog-kicker { font-size: var(--kb-glass-size-phone-small); letter-spacing: 2px; }
 
 /* An overlay opened by an anchor (Overlay.tsx places it): out of the middle of the window, at the anchor on the Main board's layout, a sheet on the HUD on the Phone board's. */
 .kb-glass-overlay[data-kb-anchored] {

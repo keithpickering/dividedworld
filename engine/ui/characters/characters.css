@@ -621,6 +621,9 @@
 
 /* The marks' cells are 28px at 100% text, in rem so they grow with the text they hold and each mark stays on its fill or ground. */
 .kb-class-marks {
+  /* Above the class title's calm, whose feather lies over it. */
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-columns: repeat(2, 1.75rem);
   gap: 4px;
@@ -813,7 +816,6 @@
   display: flex;
   flex-direction: column;
   width: min(100%, 1392px);
-  padding: 36px 40px;
 }
 
 .kb-turn-dialog > .kb-glass-dialog-body {
@@ -825,15 +827,8 @@
 .kb-debut-dialog,
 .kb-reveal-dialog {
   width: min(100%, 960px);
-  padding: 36px 40px;
 }
 
-/* The dialogs' sheet over their smoke, as the board's .94 panel lets its smoke through. */
-.kb-turn-dialog > .kb-smoke,
-.kb-debut-dialog > .kb-smoke,
-.kb-reveal-dialog > .kb-smoke {
-  opacity: 0.35;
-}
 
 .kb-turn-dialog .kb-glass-dialog-head,
 .kb-debut-dialog .kb-glass-dialog-head,
@@ -845,23 +840,6 @@
   color: var(--kb-glass-text);
 }
 
-.kb-glass-dialog-titles .kb-glass-dialog-kicker,
-.kb-debut-dialog .kb-glass-dialog-kicker,
-.kb-reveal-dialog .kb-glass-dialog-kicker {
-  margin: 0;
-  line-height: normal;
-  font-size: var(--kb-glass-size-body);
-  font-weight: 800;
-  letter-spacing: 3px;
-  text-transform: uppercase;
-  color: var(--kb-glass-neon-text);
-}
-
-.kb-turn-dialog .kb-glass-dialog-close,
-.kb-debut-dialog .kb-glass-dialog-close,
-.kb-reveal-dialog .kb-glass-dialog-close {
-  margin-right: 24px;
-}
 
 .kb-turn {
   flex: 1;
@@ -1297,13 +1275,6 @@
   font-size: var(--kb-glass-size-phone-display);
 }
 
-:where(:root[data-kb-layout='phone']) .kb-turn-dialog,
-:where(:root[data-kb-layout='phone']) .kb-debut-dialog,
-:where(:root[data-kb-layout='phone']) .kb-reveal-dialog {
-  /* The top and the foot clear the dialog's cut corners: Close and the buttons stand 40px in from the cut's edges (shell.css). */
-  padding: 32px 12px 40px;
-}
-
 :where(:root[data-kb-layout='phone']) .kb-glass-overlay:has(> .kb-turn-dialog) {
   padding: 8px;
 }
@@ -1320,11 +1291,6 @@
 
 :where(:root[data-kb-layout='phone']) .kb-turn-portrait-name {
   font-size: var(--kb-glass-size-phone-display);
-}
-
-:where(:root[data-kb-layout='phone']) :is(.kb-turn-dialog, .kb-debut-dialog, .kb-reveal-dialog) .kb-glass-dialog-kicker {
-  font-size: var(--kb-glass-size-phone-small);
-  letter-spacing: 2px;
 }
 
 :where(:root[data-kb-layout='phone']) :is(.kb-characters, .kb-new-character, .kb-turn-dialog, .kb-debut-dialog, .kb-reveal-dialog) :is(.kb-reveal-line, .kb-roster-line, .kb-roster-rank, .kb-roster-turn, .kb-roster-facts, .kb-turn-facts, .kb-turn-line, .kb-turn-map, .kb-class-description, .kb-choice-option, .kb-turn-toggle, .kb-notice, .kb-glass-field, legend, .kb-preview-head, .kb-turn-rank, .kb-characters-empty, .kb-characters-new) {

@@ -206,6 +206,38 @@ describe('compareBoard: a landmark measured from another one, and one compared b
   });
 });
 
+describe('compareBoard: a place a decision moved off the board', () => {
+  /* The shared dialog frame's bar holds Close, so the React picker's parts under it stand lower than the board's, which holds Close at the foot. */
+  const LINE = { x: 100, y: 200, width: 600, height: 24 };
+  const drawn = snap(shot('line', LINE));
+  const lowered = (by: number) => snap(shot('line', { ...LINE, y: LINE.y + by }));
+
+  test('a build 30px lower than the board fails without the shift, and passes with it declared', () => {
+    expect(compareBoard(drawn, lowered(30), manifest(lm('line')))).toMatchObject([{ landmark: 'line', field: 'y' }]);
+    expect(compareBoard(drawn, lowered(30), manifest(lm('line', { buildShift: { y: 30 } })))).toEqual([]);
+  });
+
+  test('the shift is held: a build 45px lower than a 30px shift fails, and the size is still compared', () => {
+    expect(compareBoard(drawn, lowered(45), manifest(lm('line', { buildShift: { y: 30 } })))).toMatchObject([{ landmark: 'line', field: 'y' }]);
+    expect(compareBoard(drawn, snap(shot('line', { ...LINE, y: 230, height: 40 })), manifest(lm('line', { buildShift: { y: 30 } })))).toMatchObject([{ landmark: 'line', field: 'height' }]);
+  });
+
+  test('a height the shift made taller is held the same way', () => {
+    const tall = snap(shot('line', { ...LINE, height: 40 }));
+    expect(compareBoard(drawn, tall, manifest(lm('line')))).toMatchObject([{ landmark: 'line', field: 'height' }]);
+    expect(compareBoard(drawn, tall, manifest(lm('line', { buildShift: { height: 16 } })))).toEqual([]);
+    expect(compareBoard(drawn, tall, manifest(lm('line', { buildShift: { height: 8 } })))).toMatchObject([{ landmark: 'line', field: 'height' }]);
+  });
+
+  test('the shift applies to a part measured from an origin, on the build side only', () => {
+    const pop = { x: 10, y: 10, width: 500, height: 400 };
+    const b = snap(shot('pop', pop), shot('line', { ...LINE, x: 30, y: 40 }));
+    const u = snap(shot('pop', pop), shot('line', { ...LINE, x: 30, y: 70 }));
+    expect(compareBoard(b, u, manifest(lm('pop', { box: 'size' }), lm('line', { origin: 'pop', buildShift: { y: 30 } })))).toEqual([]);
+    expect(compareBoard(b, u, manifest(lm('pop', { box: 'size' }), lm('line', { origin: 'pop' })))).toMatchObject([{ landmark: 'line', field: 'y' }]);
+  });
+});
+
 describe('compareBoard: a size a decision moved off the board', () => {
   /* The React picker's quadrant labels are 24px where the board draws 22px, by the owner's answer on #54. */
   const at = (size: number) => snap(...board.shots.map((x) => (x.id === 'line' ? { ...x, type: { ...BARLOW, size } } : x)));

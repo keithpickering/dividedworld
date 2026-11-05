@@ -78,7 +78,7 @@ export function TurnDialog({ character, face, standing, nextSettlement, onClose,
   };
 
   return (
-    <Overlay closeLook="cross"
+    <Overlay
       title={pending ? `Change ${character.name}'s Turn` : `Turn ${character.name}`}
       kicker="My characters › Turn"
       surface="turn"

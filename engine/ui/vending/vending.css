@@ -671,17 +671,3 @@ button.kb-vending-slot {
   top: 0;
 }
 
-/*
- * Close, on the vending smoke: bare type on this recipe is brighter than a body color's ceiling and the word is under the
- * large size, so it stands on a panel of the ground as solid as the calm, the way a card of the glass is drawn, outlined in
- * the glass's neon.
- */
-.kb-vending-about-dialog .kb-glass-dialog-close {
-  clip-path: none;
-  background: color-mix(in srgb, var(--kb-glass-ground) 90%, transparent);
-  border: 1px solid color-mix(in srgb, var(--kb-glass-neon-text) 60%, transparent);
-}
-
-.kb-vending-about-dialog .kb-glass-dialog-close::after {
-  display: none;
-}

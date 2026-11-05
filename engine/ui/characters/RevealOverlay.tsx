@@ -86,7 +86,7 @@ export function RevealOverlay({ character, onClose, onDone, returnFocusTo }: Rev
   };
 
   return (
-    <Overlay closeLook="cross" title={`Reveal ${character.name}'s class`} kicker="My characters › Reveal" surface="turn" className="kb-reveal-dialog" onClose={onClose} returnFocusTo={returnFocusTo}>
+    <Overlay title={`Reveal ${character.name}'s class`} kicker="My characters › Reveal" surface="turn" className="kb-reveal-dialog" onClose={onClose} returnFocusTo={returnFocusTo}>
       <form className="kb-reveal" onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); void submit(); }}>
         <p className="kb-reveal-line">{words.sentence}</p>
         {words.pendingTurn && <p className="kb-reveal-line kb-reveal-note">{words.pendingTurn}</p>}

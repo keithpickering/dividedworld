@@ -6,8 +6,7 @@
  * the glass's.
  *
  * The form is a 420px panel docked to the window's right side, 64px from its top and foot and 40px
- * from its edge, the chamfer's fourth step cut from its top right and bottom left, its border the
- * card's alignment (salty, here) and a glow. On a phone it is the window's width, as the Turn is.
+ * from its edge, in the shared dialog frame (glass/Frame.tsx), the card's alignment only the color of its kicker. On a phone it is the window's width, as the Turn is.
  */
 .kb-glass-overlay:has(> .kb-play-dialog) {
   align-items: stretch;
@@ -16,19 +15,19 @@
   background: color-mix(in srgb, var(--kb-glass-ground) 84%, transparent);
 }
 
+:where(:root:not([data-kb-layout='phone'])) .kb-play-dialog {
+  --kb-dialog-pad-x: 28px;
+  --kb-dialog-pad-top: 28px;
+  --kb-dialog-pad-bottom: 28px;
+  --kb-dialog-close-inset: 6px;
+}
+
 .kb-play-dialog {
-  --kb-cut: var(--kb-glass-chamfer-4);
   display: flex;
   flex-direction: column;
   width: 420px;
   max-width: 100%;
-  padding: 28px;
-  background: var(--kb-glass-salty);
   zoom: var(--kb-board-scale, 1);
-}
-
-.kb-play-dialog > .kb-smoke {
-  opacity: 0.35;
 }
 
 .kb-play-dialog > .kb-glass-dialog-body {
@@ -55,11 +54,6 @@
   letter-spacing: 3px;
   text-transform: uppercase;
   color: var(--kb-glass-salty-text);
-}
-
-.kb-play-dialog .kb-glass-dialog-close {
-  margin-right: 6px;
-  border-color: color-mix(in srgb, var(--kb-glass-salty-text) 60%, transparent);
 }
 
 /* ---- the form ---- */
@@ -112,6 +106,9 @@
 }
 
 .kb-play-input {
+  /* Above its label's calm and its count's, whose feathers lie over it. */
+  position: relative;
+  z-index: 1;
   box-sizing: border-box;
   width: 100%;
   margin-top: 8px;
@@ -256,7 +253,6 @@
 
 :where(:root[data-kb-layout='phone']) .kb-play-dialog {
   width: 100%;
-  padding: 32px 12px 40px;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-play-dialog .kb-glass-dialog-head {

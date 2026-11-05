@@ -43,6 +43,12 @@ export interface Landmark {
   /** Which of the build's matches, where the build names a landmark the board leaves unnamed (`nth` otherwise). */
   readonly buildNth?: number;
   readonly box?: BoxMode;
+  /**
+   * Where a decision moves the build's place from the board's, in px: the build is held to the board's place plus this, within the same
+   * tolerance, so a part that a decision moved (the dialog frame's bar, which holds Close where the board's picker holds it at the foot)
+   * is still held to where it stands now, and a shift the manifest has wrong fails. `height` is the same for a box the shift made taller (the picker's, by its bar). Never a width.
+   */
+  readonly buildShift?: { readonly x?: number; readonly y?: number; readonly height?: number };
   /** `false` for a landmark whose type is not the glass's to compare (an image). */
   readonly type?: boolean;
   /**
@@ -193,6 +199,8 @@ export function compareBoard(board: Snapshot, build: Snapshot, manifest: BoardMa
       out.push(mismatch(l.id, 'presence', 'found', 'missing', `missing from the build: no ${l.role} named "${asked}"`));
       continue;
     }
+    const shift = l.buildShift;
+    const shifted = (box: Box): Box => (shift === undefined ? box : { ...box, x: box.x - (shift.x ?? 0), y: box.y - (shift.y ?? 0), height: box.height - (shift.height ?? 0) });
     if (l.origin !== undefined) {
       const ob = board.shots.find((s) => s.id === l.origin);
       const ou = build.shots.find((s) => s.id === l.origin);
@@ -200,8 +208,8 @@ export function compareBoard(board: Snapshot, build: Snapshot, manifest: BoardMa
         out.push(mismatch(l.id, 'origin', l.origin, l.origin, `measured from ${l.origin}, which is no landmark of the manifest`));
       } else if (!ob?.found || !ou?.found || !ob.box || !ou.box) {
         out.push(mismatch(l.id, 'origin', ob?.found ? 'found' : 'missing', ou?.found ? 'found' : 'missing', `measured from ${l.origin}, which is missing, so its place cannot be compared`));
-      } else if (b.box && u.box) out.push(...compareBox(l.id, l.box ?? 'full', offsetFrom(b.box, ob.box), offsetFrom(u.box, ou.box), l.origin));
-    } else if (b.box && u.box) out.push(...compareBox(l.id, l.box ?? 'full', b.box, u.box));
+      } else if (b.box && u.box) out.push(...compareBox(l.id, l.box ?? 'full', offsetFrom(b.box, ob.box), shifted(offsetFrom(u.box, ou.box)), l.origin));
+    } else if (b.box && u.box) out.push(...compareBox(l.id, l.box ?? 'full', b.box, shifted(u.box)));
     if (l.type !== false) {
       if (b.type && u.type) out.push(...compareType(l.id, b.type, u.type, l.buildSize));
       else if (b.type || u.type) out.push(mismatch(l.id, 'font', b.type ? 'text' : 'no text', u.type ? 'text' : 'no text', 'one side has no text to read'));
