@@ -284,6 +284,8 @@ export interface Picked {
 }
 
 const key = (s: string | null) => s ?? '';
+/** Code-unit order, never the locale's: two platforms must sort the same keys the same way, or one day's seed picks two winners. */
+const byUnit = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 export function pick(
   cands: readonly Candidate[],
@@ -296,8 +298,8 @@ export function pick(
   const slots = Math.max(Math.floor(allowanceToday), 0);
   // The candidates in a fixed order, each given its tie-breaker from the one generator, so the same day and the same candidates pick
   // the same whatever order they arrive in.
-  const ordered = [...cands].sort((a, b) => key(a.staff).localeCompare(key(b.staff)) || a.trigger.localeCompare(b.trigger)
-    || key(a.thread).localeCompare(key(b.thread)) || key(a.quoting).localeCompare(key(b.quoting)) || key(a.act).localeCompare(key(b.act)));
+  const ordered = [...cands].sort((a, b) => byUnit(key(a.staff), key(b.staff)) || byUnit(a.trigger, b.trigger)
+    || byUnit(key(a.thread), key(b.thread)) || byUnit(key(a.quoting), key(b.quoting)) || byUnit(key(a.act), key(b.act)));
   const scored = ordered.map((c) => {
     const p = priorityOf[c.staff];
     return { c, tie: rng(), isNew: p === undefined ? true : p.isNew, score: (pool.strengths[c.trigger] ?? 0) * Math.max(p?.value ?? 0, PRIORITY_FLOOR) };
@@ -311,7 +313,7 @@ export function pick(
   }
   const ranked = [...best.values()].sort(better);
   // The holdback: a share of the day's posts goes to personas with little history first; what none of them fills goes back to the rest.
-  const reserve = Math.min(Math.ceil(slots * pool.holdback), slots);
+  const reserve = Math.min(Math.ceil(Math.round(slots * pool.holdback * 1e9) / 1e9), slots);
   const fromNew = ranked.filter((s) => s.isNew).slice(0, reserve);
   const taken = new Set(fromNew);
   const chosen = [...fromNew, ...ranked.filter((s) => !taken.has(s)).slice(0, slots - fromNew.length)].sort(better);

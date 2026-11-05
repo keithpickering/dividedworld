@@ -245,3 +245,28 @@ test('a benched or waiting persona is never picked, even when handed to pick as 
   const { picks } = pick(c, PRIOR('bench', 'wait', 'mod1'), 10, 1, dayRng('d'), POOL);
   assert.deepEqual(picks.map((p) => p.staff), ['mod1']);
 });
+
+test('the tie-breaks do not depend on the order the candidates arrive in, nor on the platform\'s locale', () => {
+  // Equal scores, so the day's generator alone breaks the tie, and it is drawn in the sorted order: the order must be total.
+  const cs = [cand('a', 'named', 't1'), { ...cand('a', 'named', 't1'), act: 'x2' }, { ...cand('a', 'named', 't1'), act: 'x1' }, cand('b', 'named'), cand('c', 'named'), cand('d', 'quoted'), cand('e', 'named')];
+  const want = pick(cs, PRIOR('a', 'b', 'c', 'd', 'e'), 2, 0, dayRng('d'), POOL).picks;
+  const perms = (xs: Candidate[]): Candidate[][] => xs.length <= 1 ? [xs] : xs.flatMap((x, i) => perms([...xs.slice(0, i), ...xs.slice(i + 1)]).map((p) => [x, ...p]));
+  for (const p of perms(cs.slice(0, 5))) {
+    const got = pick([...p, ...cs.slice(5)], PRIOR('a', 'b', 'c', 'd', 'e'), 2, 0, dayRng('d'), POOL).picks;
+    assert.deepEqual(got.map((x) => x.staff), want.map((x) => x.staff), 'the same picks for any arrival order');
+  }
+  // Keys differing only in case order by code unit ('A' < 'B' < 'a'), not by locale ('a' < 'A' < 'B'): the last drawn tie wins.
+  let n = 0;
+  const rising = () => ++n / 10;
+  const got = pick([cand('a'), cand('B'), cand('A')], PRIOR('a', 'B', 'A'), 1, 0, rising, POOL).picks;
+  assert.deepEqual(got.map((p) => p.staff), ['a']);
+});
+
+test('the holdback is not pushed up by float error: 7 percent of 100 is 7', () => {
+  const vets = Array.from({ length: 100 }, (_, i) => 'v' + i);
+  const rooks = Array.from({ length: 12 }, (_, i) => 'r' + i);
+  const pr = { ...PRIOR(...vets), ...Object.fromEntries(rooks.map((r) => [r, rookie])) };
+  const { picks } = pick([...vets, ...rooks].map((s) => cand(s)), pr, 100, 0, dayRng('d'), { ...POOL, holdback: 0.07 });
+  assert.equal(picks.length, 100);
+  assert.equal(picks.filter((p) => rooks.includes(p.staff)).length, 7, 'exactly seven of a hundred are held for rookies');
+});
