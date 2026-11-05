@@ -69,6 +69,17 @@ describe('the raster cache', () => {
     expect(rasters.get().urls).toEqual(live());
   });
 
+  it('revokes the first set when a second, different layers array is asked for at the same size and ratio', async () => {
+    const rasters = createRasters(raster());
+    rasters.acquire(WIDE, 1, VIEW);
+    await settle();
+    const first = [...made];
+    rasters.acquire([layer(9), layer(10)], 1, VIEW);
+    await settle();
+    expect(revoked).toEqual(first);
+    expect(live()).toHaveLength(2);
+  });
+
   it('revokes every URL when the device pixel ratio changes (a zoom, or a window moved to another screen)', async () => {
     const r = raster();
     const rasters = createRasters(r);

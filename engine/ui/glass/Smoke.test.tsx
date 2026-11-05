@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { KayfaProvider, type Kayfa } from '../context.tsx';
 import { renderInWorld, testGlass } from '../test-world.tsx';
 import type { FieldLayer, GlassTheme, LayerColor } from '../types.ts';
-import { fieldRasters, type Rasterize } from './field.ts';
+import { fieldRasters, GRACE_MS, type Rasterize } from './field.ts';
 import { Page } from './Page.tsx';
 import { Smoke } from './Smoke.tsx';
 
@@ -45,8 +45,12 @@ let made = 0;
 const instant: Rasterize = async (layer) => `blob:layer/${layer.seed}/${made++}`;
 let narrow = false;
 let narrowListeners: ((e: { matches: boolean }) => void)[] = [];
+let revoked: string[] = [];
+const realRevoke = URL.revokeObjectURL;
 
 beforeEach(() => {
+  revoked = [];
+  URL.revokeObjectURL = (u: string) => { revoked.push(u); };
   made = 0; narrow = false; narrowListeners = [];
   fieldRasters.reset();
   fieldRasters.setRasterizer(instant);
@@ -58,6 +62,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   fieldRasters.reset();
+  URL.revokeObjectURL = realRevoke;
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   document.documentElement.removeAttribute('data-kb-motion');
@@ -173,6 +178,25 @@ describe('Smoke', () => {
     expect(layers(container)).toHaveLength(1);
     expect(fieldRasters.get().urls).toHaveLength(1);
     expect(fieldRasters.get().urls).not.toEqual(first);
+    /* Not only replaced: every one of the old set was revoked, and none of the new. */
+    expect(revoked).toEqual(first);
+    expect(revoked).not.toContain(fieldRasters.get().urls[0]);
+  });
+
+  it('gives every raster back once smoke goes off and the grace has passed', async () => {
+    vi.useFakeTimers();
+    try {
+      const { container, rerender } = render(inWorld(<Smoke surface="hud" />));
+      await ready();
+      const urls = fieldRasters.get().urls.filter((u): u is string => u !== null);
+      expect(urls).toHaveLength(3);
+      rerender(inWorld(<Smoke surface="hud" level="off" />));
+      await ready();
+      expect(layers(container)).toHaveLength(0);
+      expect(revoked).toEqual([]);
+      await act(async () => { await vi.advanceTimersByTimeAsync(GRACE_MS); });
+      expect(revoked.sort()).toEqual([...urls].sort());
+    } finally { vi.useRealTimers(); }
   });
 
   it('draws only the wide layers where the field has no narrow ones, at any width', async () => {
@@ -344,5 +368,55 @@ describe('the drift clock', () => {
     rerender(inWorld(<Smoke surface="hud" />));
     await ready();
     expect(layers(container).map((e) => e.style.getPropertyValue('--kb-field-delay'))).toEqual(first);
+  });
+
+  /* A layer element is only drawn once its raster is ready, so its phase is the clock then, not at its window's mount. */
+  it('takes a layer\'s delay when its element is first drawn, not when its window mounted', async () => {
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+    const answers: ((u: string) => void)[] = [];
+    fieldRasters.setRasterizer(() => new Promise<string>((res) => { answers.push(res); }));
+    const { container } = render(inWorld(<Smoke surface="hud" />));
+    await ready();
+    expect(layers(container)).toHaveLength(0);
+    now.mockReturnValue(50_000);
+    await act(async () => { answers.forEach((r, i) => r(`blob:slow/${i}`)); await Promise.resolve(); });
+    await ready();
+    /* 50s into the page: the 28s layer's run is 56s, so it is 50s in. */
+    expect(layers(container)[0]!.style.getPropertyValue('--kb-field-delay')).toBe('-50s');
+  });
+
+  it('gives two windows mounted at different times the same delay for elements drawn on the same tick', async () => {
+    const now = vi.spyOn(performance, 'now').mockReturnValue(10_000);
+    const answers: ((u: string) => void)[] = [];
+    fieldRasters.setRasterizer(() => new Promise<string>((res) => { answers.push(res); }));
+    const first = render(inWorld(<Smoke surface="hud" />));
+    await ready();
+    now.mockReturnValue(20_000);
+    const second = render(inWorld(<Smoke surface="hand" />));
+    await ready();
+    now.mockReturnValue(30_000);
+    await act(async () => { answers.forEach((r, i) => r(`blob:slow/${i}`)); await Promise.resolve(); });
+    await ready();
+    const delays = (c: HTMLElement) => layers(c).map((e) => e.style.getPropertyValue('--kb-field-delay'));
+    expect(delays(first.container)).toHaveLength(3);
+    expect(delays(second.container)).toEqual(delays(first.container));
+    expect(delays(first.container)[0]).toBe('-30s');
+  });
+
+  it('draws a layer that comes back (after off) at the clock then, and keeps it through a crossing', async () => {
+    const now = vi.spyOn(performance, 'now').mockReturnValue(5_000);
+    const { container, rerender } = render(inWorld(<Smoke surface="hand" />));
+    await ready();
+    expect(layers(container)[0]!.style.getPropertyValue('--kb-field-delay')).toBe('-5s');
+    rerender(inWorld(<Smoke surface="hand" level="off" />));
+    await ready();
+    now.mockReturnValue(40_000);
+    rerender(inWorld(<Smoke surface="hand" />));
+    await ready();
+    expect(layers(container)[0]!.style.getPropertyValue('--kb-field-delay')).toBe('-40s');
+    now.mockReturnValue(41_000);
+    rerender(inWorld(<Smoke surface="hud" />));
+    await ready();
+    expect(layers(container)[0]!.style.getPropertyValue('--kb-field-delay')).toBe('-40s');
   });
 });

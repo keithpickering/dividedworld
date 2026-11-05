@@ -127,9 +127,15 @@ export function Smoke({ surface, level: asked }: SmokeProps) {
   const urls = useFieldRasters(drawn ? layers : null, env);
   const root = useRef<HTMLDivElement>(null);
   const at = usePlacement(root, drawn);
-  /* The page's clock at this window's mount, kept for its life: a crossing does not restart the drift. */
-  const [born] = useState(() => (typeof performance === 'undefined' ? 0 : performance.now()) / 1000);
+  /*
+   * The page's clock when each layer's element was first drawn, kept for that element's life: a crossing does not restart
+   * the drift. An element is drawn only once its raster is ready, so the animation starts then, and the delay must be
+   * read then (a window that mounted earlier would otherwise start its layers out of phase with a later window's).
+   * A layer not drawn is forgotten, so one that comes back (smoke back from Off, a width class crossed) is read afresh.
+   */
+  const born = useRef(new Map<string, number>());
   const scale = level === 'low' ? LOW : 1;
+  if (!recipe || level === 'off') born.current.clear();
   return (
     <div ref={root} className="kb-smoke" data-kb-surface={surface} aria-hidden="true">
       <div className="kb-smoke-ground" data-kb-ground="" style={{ background: 'var(--kb-glass-ground)' }} />
@@ -137,7 +143,9 @@ export function Smoke({ surface, level: asked }: SmokeProps) {
         <div className="kb-smoke-layers" data-kb-smoke={surfaces[surface]}>
           {layers.map((layer, i) => {
             const url = urls[i];
-            if (!url) return null;
+            const key = `${isNarrow ? 'n' : 'w'}${i}`;
+            if (!url) { born.current.delete(key); return null; }
+            if (!born.current.has(key)) born.current.set(key, (typeof performance === 'undefined' ? 0 : performance.now()) / 1000);
             const { color, opacity } = colors[i] ?? NONE;
             const { seconds, travel } = layer.drift;
             const style = {
@@ -149,9 +157,9 @@ export function Smoke({ surface, level: asked }: SmokeProps) {
               '--kb-field-y': `${-at.y}px`,
               '--kb-field-seconds': `${seconds}s`,
               '--kb-field-travel': `${travel / at.zoom}px`,
-              '--kb-field-delay': `-${born % (2 * seconds)}s`,
+              '--kb-field-delay': `-${born.current.get(key)! % (2 * seconds)}s`,
             } as CSSProperties;
-            return <div key={`${isNarrow ? 'n' : 'w'}${i}`} className="kb-smoke-layer" style={style} />;
+            return <div key={key} className="kb-smoke-layer" style={style} />;
           })}
         </div>
       ) : null}
