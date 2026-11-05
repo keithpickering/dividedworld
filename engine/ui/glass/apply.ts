@@ -7,7 +7,7 @@
  * (tools/check-glass-contrast.mjs holds that), so swapping the key re-colors the glass and
  * moves nothing. `applyGlass` marks the key on the root (`data-kb-glass-key`) for the stylesheet.
  */
-import type { ClassLargeDraw, GlassControls, GlassSurface, GlassTheme } from '../types.ts';
+import type { ClassLargeDraw, GlassControls, GlassControlsInput, GlassSurface, GlassTheme } from '../types.ts';
 
 /** The skewed controls' measure where a theme gives none (the values tokens.css names as plain defaults). */
 export const DEFAULT_CONTROLS: GlassControls = {
@@ -17,6 +17,18 @@ export const DEFAULT_CONTROLS: GlassControls = {
   spacing: 2,
   gap: 10,
 };
+
+/** The theme's controls over the defaults, field by field: a theme that gives one height keeps every other default. */
+export function controlsOf(given: GlassControlsInput | undefined): GlassControls {
+  const d = DEFAULT_CONTROLS;
+  return {
+    m: { ...d.m, ...given?.m },
+    s: { ...d.s, ...given?.s },
+    phone: { m: { ...d.phone.m, ...given?.phone?.m }, s: { ...d.phone.s, ...given?.phone?.s } },
+    spacing: given?.spacing ?? d.spacing,
+    gap: given?.gap ?? d.gap,
+  };
+}
 
 export type GlassKeyName = 'standard' | 'high';
 
@@ -35,7 +47,7 @@ export function glassVars(glass: GlassTheme, key: GlassKeyName): Record<string, 
   for (const [name, size] of Object.entries(glass.sizes)) out[`--kb-glass-size-${name}`] = `${size.px / 16}rem`;
   out['--kb-glass-calm-opacity'] = String(glass.calm.opacity);
   out['--kb-glass-calm-feather'] = `${glass.calm.feather}px`;
-  const c = glass.controls ?? DEFAULT_CONTROLS;
+  const c = controlsOf(glass.controls);
   for (const [suffix, sizes] of [['', c], ['-phone', c.phone]] as const) {
     for (const k of ['m', 's'] as const) {
       out[`--kb-glass-control-${k}-height${suffix}`] = `${sizes[k].height}px`;

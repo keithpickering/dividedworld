@@ -52,6 +52,23 @@ describe('glassVars', () => {
   });
 });
 
+describe('a theme that gives some of the controls\' measure', () => {
+  it('takes the engine\'s default for every field it leaves out, field by field, not all or nothing', () => {
+    const v = glassVars({ ...glass, controls: { gap: 14, m: { height: 52 }, phone: { s: { pad: 10 } } } }, 'standard');
+    /* What it gave. */
+    expect(v['--kb-glass-control-gap']).toBe('14px');
+    expect(v['--kb-glass-control-m-height']).toBe('52px');
+    expect(v['--kb-glass-control-s-pad-phone']).toBe('10px');
+    /* What it left out: the default's, down to a size's other fields. */
+    expect(v['--kb-glass-control-spacing']).toBe('2px');
+    expect(v['--kb-glass-control-m-pad']).toBe(`${DEFAULT_CONTROLS.m.pad}px`);
+    expect(v['--kb-glass-control-m-size']).toBe('var(--kb-glass-size-body)');
+    expect(v['--kb-glass-control-s-height']).toBe(`${DEFAULT_CONTROLS.s.height}px`);
+    expect(v['--kb-glass-control-s-height-phone']).toBe(`${DEFAULT_CONTROLS.phone.s.height}px`);
+    expect(v['--kb-glass-control-m-height-phone']).toBe(`${DEFAULT_CONTROLS.phone.m.height}px`);
+  });
+});
+
 describe('the instance\'s own colors as properties', () => {
   /* The orbs and the classes are the instance's data, not tokens (the glass plan, section 4): the engine reads them by position and by key. */
   const colored = {

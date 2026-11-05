@@ -230,6 +230,15 @@ export interface GlassControls {
   readonly gap: number;
 }
 
+/** What a theme may give of the controls' measure: any field it leaves out is the engine's default (`glassVars` merges field by field). */
+export interface GlassControlsInput {
+  readonly m?: Partial<GlassControlSize>;
+  readonly s?: Partial<GlassControlSize>;
+  readonly phone?: { readonly m?: Partial<GlassControlSize>; readonly s?: Partial<GlassControlSize> };
+  readonly spacing?: number;
+  readonly gap?: number;
+}
+
 /** The glass: an instance's look for everything outside the board, as data (docs/plans/2026-10-30-glass-to-the-boards-plan.md, sections 4 to 6). */
 export interface GlassTheme {
   /** Standard and high contrast: the same tokens, each with its tags, the high key's values reaching 7:1. */
@@ -240,8 +249,8 @@ export interface GlassTheme {
   };
   /** The calm's backing: its opacity and the width of its feathered edge in px. */
   readonly calm: { readonly opacity: number; readonly feather: number };
-  /** The skewed controls' measure; any not given is the engine's default (DEFAULT_CONTROLS, engine/ui/glass/apply.ts). */
-  readonly controls?: GlassControls;
+  /** The skewed controls' measure; any field not given is the engine's default, merged field by field (DEFAULT_CONTROLS, engine/ui/glass/apply.ts). */
+  readonly controls?: GlassControlsInput;
   readonly sizes: Readonly<Record<string, GlassSize>>;
   readonly fonts: readonly GlassFont[];
   /** Each class's glass colors, by the class's key. */
