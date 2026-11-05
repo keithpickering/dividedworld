@@ -7,6 +7,7 @@ import '../../engine/ui/glass/parts.css';
 import '../../engine/ui/glass/contrast.css';
 import '../../instances/divided-world/ui/vending/vending.css';
 import { applyAppearance } from '../../engine/ui/appearance.ts';
+import { installFonts } from '../../engine/ui/fonts.ts';
 import { instanceUi } from '../../instances/divided-world/ui/index.ts';
 import { App } from './App.tsx';
 import { createBackend } from './data/backend.ts';
@@ -15,6 +16,8 @@ import { StartError } from './StartError.tsx';
 
 // The device decides until the account's preferences are read (App's Appearance applies them then).
 applyAppearance(document, { theme: 'system', motion: 'system' }, instanceUi.themes);
+// The board's own fonts, for a device without the families its stacks name first (engine/ui/fonts.ts).
+installFonts(document, instanceUi.boardFonts ?? []);
 const root = createRoot(document.getElementById('root')!);
 /* The end-to-end build's story route (web/src/data/fixtures/stories.tsx): the board match's stories, with no app around them. */
 const story = import.meta.env.MODE === 'e2e' ? storyFromAddress(globalThis.location.search) : null;

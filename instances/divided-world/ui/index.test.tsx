@@ -12,7 +12,7 @@ import { TIP_KEYS } from '../../../engine/ui/tips/keys.ts';
 import { instance } from '../index.ts';
 import { logRows } from '../../../engine/ui/log/lines.ts';
 import type { Act, Log } from '../../../engine/ui/data/api.ts';
-import { instanceUi, REASON_KEYS, wordsRead } from './index.ts';
+import { BOARD_FONTS, instanceUi, REASON_KEYS, wordsRead } from './index.ts';
 
 describe('Divided World\'s developer persona', () => {
   test('is Gabe, with his tagline, and his picture is one the UI has', () => {
@@ -231,9 +231,12 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
       expect(resolved, f.file).toMatch(/\.woff2(\?.*)?$/);
     });
   });
-  test('no font file sits in ui/fonts/ that glass.json does not name', () => {
+  test('no font file sits in ui/fonts/ that glass.json or the board\'s fonts do not name', () => {
     const dir = path.dirname(fileURLToPath(import.meta.url));
-    const named = new Set((JSON.parse(fs.readFileSync(path.join(dir, 'glass.json'), 'utf8')).fonts as { file: string }[]).map((f) => f.file));
+    const named = new Set([
+      ...(JSON.parse(fs.readFileSync(path.join(dir, 'glass.json'), 'utf8')).fonts as { file: string }[]).map((f) => f.file),
+      ...BOARD_FONTS.map((f) => f.file),
+    ]);
     const shipped = fs.readdirSync(path.join(dir, 'fonts')).filter((f) => f.endsWith('.woff2')).map((f) => `fonts/${f}`);
     expect(shipped.filter((f) => !named.has(f)), 'shipped but unnamed').toEqual([]);
   });
@@ -260,6 +263,34 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   test('the fonts ship with their license', () => {
     const dir = path.dirname(fileURLToPath(import.meta.url));
     expect(fs.readFileSync(path.join(dir, 'fonts', 'OFL.txt'), 'utf8')).toMatch(/SIL OPEN FONT LICENSE/);
+  });
+  test('every board font file exists, and the instance serves the URL it resolved to', () => {
+    const dir = path.dirname(fileURLToPath(import.meta.url));
+    expect(BOARD_FONTS.length).toBeGreaterThan(0);
+    expect(instanceUi.boardFonts).toHaveLength(BOARD_FONTS.length);
+    BOARD_FONTS.forEach((f, i) => {
+      expect(fs.existsSync(path.join(dir, f.file)), f.file).toBe(true);
+      const resolved = instanceUi.boardFonts![i]!.file;
+      expect(resolved, f.file).not.toBe(f.file);
+      expect(resolved, f.file).toMatch(/\.woff2(\?.*)?$/);
+    });
+  });
+  test('the board serves DejaVu Sans in the regular and bold the board sets, for a phone that has no Verdana (Android falls to Roboto)', () => {
+    expect(BOARD_FONTS.map((f) => [f.family, f.weight, f.style])).toEqual([['DejaVu Sans', 400, 'normal'], ['DejaVu Sans', 700, 'normal']]);
+    /* A device with DejaVu installed (most Linux desktops) uses its own copy and downloads nothing. */
+    for (const f of BOARD_FONTS) expect(f.local?.length, `${f.file} names its installed face`).toBeGreaterThan(0);
+  });
+  test('a board font is a family the house theme\'s body stack names after Verdana, so a device with Verdana never fetches it', () => {
+    const css = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'theme.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const stack = /--kb-font-body:\s*([^;]+);/u.exec(css)![1]!.split(',').map((s) => s.trim().replace(/^"|"$/g, ''));
+    for (const f of BOARD_FONTS) {
+      expect(stack, f.family).toContain(f.family);
+      expect(stack.indexOf(f.family), f.family).toBeGreaterThan(stack.indexOf('Verdana'));
+    }
+  });
+  test('the board fonts ship with their license', () => {
+    const dir = path.dirname(fileURLToPath(import.meta.url));
+    expect(fs.readFileSync(path.join(dir, 'fonts', 'DejaVu-LICENSE.txt'), 'utf8')).toMatch(/Bitstream Vera/);
   });
   test('every reason a class pays reads as a sentence of its own', () => {
     const reasons = ['face.cheered', 'face.liftedAPost', 'face.boredTheRoom', 'face.stoleThunder', 'heel.drewHeat', 'heel.stoleThunder', 'heel.shrugged',

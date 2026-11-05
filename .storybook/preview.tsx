@@ -17,6 +17,7 @@ import '../engine/ui/glass/parts.css';
 import '../engine/ui/glass/contrast.css';
 import '../instances/divided-world/ui/vending/vending.css';
 import { applyGlass, installGlassFonts } from '../engine/ui/glass/index.ts';
+import { installFonts } from '../engine/ui/fonts.ts';
 import { boardSwitch } from '../engine/ui/glass/board.ts';
 import { createFake } from '../engine/ui/data/fake.ts';
 import { KayfaProvider } from '../engine/ui/context.tsx';
@@ -31,6 +32,8 @@ import { assertMoment, createBoardsFake, seedBoards } from '../web/src/data/fixt
 /* The instance's glass, as the app puts it on the page. */
 applyGlass(document.documentElement, instanceUi.glass, 'standard');
 installGlassFonts(document, instanceUi.glass);
+/* The board's own fonts, as the app installs them at load. */
+installFonts(document, instanceUi.boardFonts ?? []);
 
 /* Where the Main board's layout becomes the Phone board's, worked out from the instance's sizes (engine/ui/glass/board.ts). */
 const SWITCH = boardSwitch(instanceUi.glass);

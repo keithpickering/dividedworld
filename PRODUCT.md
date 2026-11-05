@@ -62,9 +62,10 @@ and never lets anyone measure who is behind them.
 
 ## Brand Commitments
 
-- The house style: a 2003 BBCode message board. Verdana for body and UI, bold Courier New for headers, logs and system
-  text; black and white, in light and dark themes; color only on the game's own pieces (orbs, postcards and their
-  effects, reactions, rank pips, the Vending Machine).
+- The house style: a 2003 BBCode message board. Verdana for body and UI (DejaVu Sans, which the instance serves, on a
+  device with no Verdana, such as an Android phone), bold Courier New for headers, logs and system text; black and
+  white, in light and dark themes; color only on the game's own pieces (orbs, postcards and their effects, reactions,
+  rank pips, the Vending Machine).
 - The glass: a near-black violet ground under two layers of slow procedural smoke, violet and cyan; cyan for the
   selected, gold for the ready and earned, Salty pink for loss; Anton for headings and moments, Barlow Condensed for
   the rest, both served from the instance's own files; buttons and tabs skewed, panels chamfered, no rounded pills and

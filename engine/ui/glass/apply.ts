@@ -7,6 +7,7 @@
  * (tools/check-glass-contrast.mjs holds that), so swapping the key re-colors the glass and
  * moves nothing. `applyGlass` marks the key on the root (`data-kb-glass-key`) for the stylesheet.
  */
+import { installFonts } from '../fonts.ts';
 import type { ClassLargeDraw, GlassControls, GlassControlsInput, GlassSurface, GlassTheme } from '../types.ts';
 
 /** The skewed controls' measure where a theme gives none (the values tokens.css names as plain defaults). */
@@ -130,27 +131,10 @@ export function applyGlass(root: HTMLElement, glass: GlassTheme, key: GlassKeyNa
   root.setAttribute('data-kb-glass-key', key);
 }
 
-/** The faces put in each document, by file, weight and style, so a second call adds none. */
-const installed = new WeakMap<object, Set<string>>();
-
 /**
- * Puts each of the glass's font files in the document's font set as a FontFace, with `display:
- * swap` so text shows in the fallback while a font loads. A face added this way is fetched under
- * the site's font-src, where an injected `<style>` of @font-face rules would be refused by its
- * style-src (web/headers.ts; e2e/csp.spec.ts holds it). Each face is added once per document,
- * however often this is called; a document with no font set (a test's) is left alone. A face whose
- * file fails to load goes to `error` in the font set and its text keeps the fallback stack, so
- * nothing throws.
+ * Puts each of the glass's font files in the document's font set as a FontFace (engine/ui/fonts.ts
+ * says how, and why a face and never an injected style).
  */
 export function installGlassFonts(doc: Document, glass: GlassTheme): void {
-  const Face = doc.defaultView?.FontFace;
-  if (!doc.fonts || !Face) return;
-  let done = installed.get(doc);
-  if (!done) installed.set(doc, (done = new Set()));
-  for (const f of glass.fonts) {
-    const face = `${f.file} ${f.weight} ${f.style}`;
-    if (done.has(face)) continue;
-    done.add(face);
-    doc.fonts.add(new Face(f.family, `url(${JSON.stringify(f.file)}) format("woff2")`, { weight: String(f.weight), style: f.style, display: 'swap' }));
-  }
+  installFonts(doc, glass.fonts);
 }

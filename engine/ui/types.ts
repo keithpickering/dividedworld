@@ -7,6 +7,7 @@
  * Everything here a player reads out of character is plain and true ("The fiction may lie; the
  * log never does"). The System's in-character words are the rules' `Copy`.
  */
+import type { FontFile } from './fonts.ts';
 import type { Quadrant, Span } from '../rules/types.ts';
 import type { CardUi } from './cards/types.ts';
 import type { Alert } from './data/api.ts';
@@ -288,6 +289,13 @@ export interface InstanceUi {
   readonly pips: Readonly<Record<string, PipImages>>;
   /** The glass: smoke, tokens, fonts and class colors for every screen outside the board. */
   readonly glass: GlassTheme;
+  /**
+   * Font files for the board's own stacks (the theme's `--kb-font-body` and `--kb-font-mono`), for a
+   * device that has none of the families the stack names before them: a phone with no Verdana falls
+   * to its own sans-serif otherwise. Each is installed at load (engine/ui/fonts.ts) and fetched only
+   * where text needs it, so a device with an earlier family, or with the face installed, downloads nothing.
+   */
+  readonly boardFonts?: readonly FontFile[];
   /** The instance's pictures for its personas, by the key its rules name (`DeveloperPersona.avatar`) as a URL; a persona with none is drawn as an initial. */
   readonly avatars?: Readonly<Record<string, string>>;
   /** How each card draws and describes itself, one per card key the instance sells; a card with none is shown as its tag alone (engine/ui/cards/types.ts). */

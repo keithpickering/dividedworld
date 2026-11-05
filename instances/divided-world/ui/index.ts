@@ -6,6 +6,7 @@
  * the owner has not yet named (the web plan's brief, item 7); each is marked where it stands.
  */
 import type { ClassLook, GlassTheme, InstanceUi } from '../../../engine/ui/types.ts';
+import type { FontFile } from '../../../engine/ui/fonts.ts';
 import { spanWords } from '../../../engine/ui/characters/format.ts';
 import glassData from './glass.json';
 import { cardsUi } from './cards.ts';
@@ -37,6 +38,26 @@ const glass: GlassTheme = Object.freeze({
     }),
   ),
 });
+
+/**
+ * The board's fonts: DejaVu Sans, which the house theme's body stack names after Verdana and Geneva,
+ * for a phone that has neither (Android has no Verdana and would set the board in Roboto). Its
+ * letters are Bitstream Vera's, close to Verdana's in width and x-height, so the 12px board keeps its
+ * measure. Each file is DejaVu Sans 2.37 cut to the Latin letters, punctuation and arrows (the range
+ * below) with hinting dropped, about 14 KB; a character outside the range falls through to the
+ * device's sans-serif. Italic is the browser's slant of the regular, as the board sets little of it.
+ * Each names the installed face first, so a Linux desktop that has DejaVu uses its own.
+ */
+const LATIN = 'U+0000-017F, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2190-2199, U+2212, U+2215, U+FEFF, U+FFFD';
+export const BOARD_FONTS: readonly FontFile[] = Object.freeze([
+  { family: 'DejaVu Sans', file: 'fonts/DejaVuSans.woff2', weight: 400, style: 'normal', local: ['DejaVu Sans', 'DejaVuSans'], unicodeRange: LATIN },
+  { family: 'DejaVu Sans', file: 'fonts/DejaVuSans-Bold.woff2', weight: 700, style: 'normal', local: ['DejaVu Sans Bold', 'DejaVuSans-Bold'], unicodeRange: LATIN },
+]);
+const boardFonts: readonly FontFile[] = Object.freeze(BOARD_FONTS.map((f) => {
+  const url = FONT_URLS[`./${f.file}`];
+  if (!url) throw new Error(`the board's fonts name ${f.file}, which is not in ui/fonts/`);
+  return Object.freeze({ ...f, file: url });
+}));
 
 /** A count in words, as the classes' words say one: one to twenty spelled out, and any other number in figures. */
 const COUNTS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen',
@@ -89,6 +110,7 @@ export const wordsRead: Readonly<Record<string, readonly string[]>> = Object.fre
 
 export const instanceUi: InstanceUi = Object.freeze({
   themes: Object.freeze([{ key: 'house', name: 'House (black and white)', href: theme, modes: 'both' as const }]),
+  boardFonts,
   // Placeholders until the owner names them.
   quadrantLabels: Object.freeze({
     excitedNegative: 'Heat',
