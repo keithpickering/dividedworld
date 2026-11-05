@@ -57,7 +57,6 @@ export function Characters() {
   const location = useLocation();
   const signedIn = useSignedIn(api);
   const rosterId = useId();
-  const panelHead = useId();
   const [faces, setFaces] = useState<ReadonlyMap<Id, Character>>(new Map());
   const [standings, setStandings] = useState<Readonly<Record<Id, number>>>({});
   const [was, setWas] = useState<ReadonlyMap<Id, string>>(new Map());
@@ -270,7 +269,7 @@ export function Characters() {
       <section id={carouselPanelId(rosterId)} role="tabpanel" className="kb-roster-panel kb-glass-cut-panel kb-calm" aria-labelledby={`${carouselTabId(rosterId, c.id)}-name`} data-kb-character={c.id}>
         <div className="kb-roster-panel-head">
           <p className="kb-roster-selected">Selected</p>
-          <h2 id={panelHead} className="kb-roster-panel-name kb-glass-display">{c.name}</h2>
+          <h2 className="kb-roster-panel-name kb-glass-display">{c.name}</h2>
           {face?.title && <p className="kb-roster-line kb-character-sub">{face.title}</p>}
         </div>
         {waiting && (
