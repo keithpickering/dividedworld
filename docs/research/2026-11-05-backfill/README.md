@@ -60,3 +60,12 @@ follows what you type.") is a draft for the owner's review.
 - `31-log-open.html`: My log with a settlement's posts open, 1440 by 1000: every nested amount in the Aura column.
 - `32-lens-log-phone.html`: three phone screens at 390 by 844: the Lens as a sheet above the HUD, My log empty with its
   tabs as one scrolling row, and a settlement's posts open.
+
+## Batch 5: account and HUD states
+
+- `33-settings-account.html`: Settings › Account with two invites, 1440 by 1000.
+- `34-vending-info.html`: the Vending Machine's card info for Whoops! from slot A2, 1440 by 1000: the card's face beside
+  its rules. The face is a stand-in for `Postcard.tsx` at the hand sheet's size; its box is compared, not its art.
+- `35-hud-cap.html`: the HUD with a wallet past its cap, 1440 wide. Only the Aura notch is compared (from its own
+  corner); the rest of the HUD is drawn for place and held by `e2e/boards/01-main.ts`.
+- `36-account-phone.html`: three phone screens at 390 by 844: the invites, the card info as a sheet, the HUD past its cap.

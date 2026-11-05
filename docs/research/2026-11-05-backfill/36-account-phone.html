@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1250">
+<title>Account and HUD states on a phone: the backfill board</title>
+<!-- A board of the backfill design session (docs/plans/2026-11-05-backfill-boards-design.md), 1250 by 884, drawn on
+     #202's head (c2553b3). Three phone screens at 390 by 844: Settings › Account with its invites, the card info as a sheet with the card's face, and the HUD past its cap: the mask's name whole and the way out said. A reference for the look, not code to copy. Written by gen.mjs in this folder. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:inherit}a:hover{color:inherit;text-decoration:none}
+a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid #ffffff;outline-offset:3px}
+.tab{display:flex;align-items:center;min-height:52px;padding:0 20px;white-space:nowrap;transform:skewX(-10deg);text-decoration:none;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#e4def7}
+button.tab{background:none;border:0;cursor:pointer}
+.many .tab{padding:0 13px;letter-spacing:1.5px}
+.tab b{display:inline-block;transform:skewX(10deg);font-weight:800}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:52px;padding:0 26px;transform:skewX(-10deg);text-decoration:none;border:1px solid rgba(241,236,255,.6);background:none;cursor:pointer;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#f1ecff}
+.btn b{display:inline-block;transform:skewX(10deg);font-weight:800}
+.btn.primary{background:#19e3ff;border-color:#19e3ff;color:#03141a;box-shadow:0 0 18px rgba(25,227,255,.6)}
+.btn.big{min-height:64px;padding:0 34px;font:400 30px Anton,Impact,sans-serif;letter-spacing:1px}
+.btn.big b{font-weight:400}
+.btns{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+.lead{margin:0;max-width:680px;font:600 21px/1.5 'Barlow Condensed',sans-serif;color:#f1ecff}
+.note{margin:12px 0 0;max-width:680px;font:500 21px/1.5 'Barlow Condensed',sans-serif;color:#e4def7}
+.row{display:grid;grid-template-columns:230px 1fr;column-gap:32px;padding:24px 0;border-top:1px solid rgba(241,236,255,.22)}
+.row h3,.k{margin:0;padding-top:12px;font:800 24px/1.1 'Barlow Condensed',sans-serif;letter-spacing:1.5px}
+.field label{display:block;margin:0 0 10px;font:800 24px/1.1 'Barlow Condensed',sans-serif;letter-spacing:1.5px}
+.field input[type=email],.field input[type=text]{box-sizing:border-box;width:100%;height:56px;padding:0 16px;background:rgba(18,12,36,.9);border:1px solid #19e3ff;color:#f1ecff;font:600 22px 'Barlow Condensed',sans-serif}
+.check{display:flex;gap:16px;align-items:center;min-height:52px;cursor:pointer;font:700 22px 'Barlow Condensed',sans-serif}
+.check input{width:30px;height:30px;margin:0;accent-color:#19e3ff;flex:none}
+.aside h2{margin:0 0 10px;font:800 24px/1.1 'Barlow Condensed',sans-serif;letter-spacing:1.5px;color:#f1ecff}
+.aside p{margin:0 0 18px;font:500 21px/1.5 'Barlow Condensed',sans-serif;color:#e4def7}
+.aside section+section{margin-top:34px;padding-top:30px;border-top:1px solid rgba(241,236,255,.22)}
+.lnk{font:700 21px 'Barlow Condensed',sans-serif;color:#c9f8ff;text-decoration-thickness:2px;text-underline-offset:4px}
+.seg{display:flex;flex-wrap:wrap;gap:10px}
+.seg label{position:relative;cursor:pointer}
+.seg input{position:absolute;opacity:0;width:1px;height:1px}
+.seg span{display:inline-flex;align-items:center;min-height:52px;padding:0 22px;transform:skewX(-10deg);border:1px solid rgba(241,236,255,.6);font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:1.5px;color:#f1ecff}
+.seg span b{display:inline-block;transform:skewX(10deg);font-weight:800}
+.seg input:checked + span{background:#19e3ff;border-color:#19e3ff;color:#03141a;box-shadow:0 0 18px rgba(25,227,255,.6)}
+.piece{--cut:22px;--edge:rgba(201,248,255,.55);--ground:rgba(7,5,13,.94);position:relative;isolation:isolate;background:var(--edge);clip-path:polygon(0 0,calc(100% - var(--cut)) 0,100% var(--cut),100% 100%,var(--cut) 100%,0 calc(100% - var(--cut)))}
+.piece::before{content:'';position:absolute;z-index:-1;inset:1.5px;background:var(--ground);clip-path:polygon(0 0,calc(100% - var(--cut) + .62px) 0,100% calc(var(--cut) - .62px),100% 100%,calc(var(--cut) - .62px) 100%,0 calc(100% - var(--cut) + .62px))}
+.by{display:flex;gap:18px;align-items:center}
+.by img{width:76px;height:76px;border:2px solid #a78bfa;image-rendering:pixelated}
+.by b{display:block;font:34px/1 Anton,Impact,sans-serif;letter-spacing:.5px}
+.by span{font:600 20px 'Barlow Condensed',sans-serif;color:#e4def7}
+.body p{margin:0 0 16px;font:500 21px/1.55 'Barlow Condensed',sans-serif;color:#f1ecff;max-width:760px}
+.rail p{margin:0;font:500 20px/1.5 'Barlow Condensed',sans-serif;color:#e4def7}
+.rail h3{margin:0 0 4px;font:700 21px 'Barlow Condensed',sans-serif;color:#f1ecff}
+.rail section{padding:16px 0;border-top:1px solid rgba(241,236,255,.22)}
+.opt{position:relative;display:block;box-sizing:border-box;padding:16px 18px 16px 52px;border:1px solid rgba(241,236,255,.45);background:rgba(7,5,13,.6);cursor:pointer}
+.opt input{position:absolute;left:18px;top:19px;width:22px;height:22px;margin:0;accent-color:#19e3ff}
+.opt b{display:block;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:1.5px}
+.opt span{display:block;margin-top:4px;font:500 20px/1.4 'Barlow Condensed',sans-serif;color:#e4def7}
+.opt.on{border:2px solid #19e3ff;background:rgba(25,227,255,.08);box-shadow:0 0 18px rgba(25,227,255,.35)}
+.sec{margin:0 0 14px;font:800 22px 'Barlow Condensed',sans-serif;letter-spacing:3px}
+.count{display:flex;justify-content:space-between;margin-top:8px;font:500 19px 'Barlow Condensed',sans-serif;color:#e4def7}
+.cls{position:relative;flex:none;box-sizing:border-box;width:236px;padding:18px 18px 20px;border:1px solid var(--c);background:rgba(7,5,13,.7)}
+.cls h4{margin:0 30px 0 0;font:38px/1 Anton,Impact,sans-serif;color:var(--c)}
+.cls p{margin:12px 0 0;font:500 20px/1.45 'Barlow Condensed',sans-serif;color:#f1ecff}
+.cls p.hurt{color:#ff8fb1}
+.cls input{position:absolute;right:16px;top:20px;width:22px;height:22px;margin:0;accent-color:#19e3ff}
+.cls.on{border:2px solid #19e3ff;box-shadow:0 0 18px rgba(25,227,255,.4);background:rgba(25,227,255,.07)}
+.preview{border:1.5px solid rgba(201,248,255,.7);box-shadow:0 0 14px rgba(25,227,255,.3);background:#fff;color:#000;display:grid;grid-template-columns:160px 1fr;font:12px/1.45 Verdana,sans-serif}
+.preview>div{padding:8px 10px}
+.preview>div+div{border-left:1px solid #000}
+.sel{box-sizing:border-box;height:56px;padding:0 16px;background:rgba(18,12,36,.9);border:1px solid #19e3ff;color:#f1ecff;font:700 21px 'Barlow Condensed',sans-serif}
+</style>
+</head>
+<body>
+<div style="width: 1250px; height: 884px; display: flex; gap: 20px; padding: 20px; box-sizing: border-box; background: #2a2833; font-family: 'Barlow Condensed', sans-serif">
+  <figure aria-label="Account" style="margin: 0; width: 390px; height: 844px; position: relative; overflow: hidden; background: #07050d; color: #f1ecff; flex: none">
+    <svg aria-hidden="true" width="390" height="844" style="position: absolute; left: 0; top: 0">
+    <defs>
+      <filter id="sAt1" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.0022 0.004" numOctaves="5" seed="23"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.74"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="sBt1" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.003 0.005" numOctaves="4" seed="61"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.85  0 0 0 0 1  0 2 0 0 -1.0"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="softt1" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="30"></feGaussianBlur></filter>
+      <mask id="calmt1" maskUnits="userSpaceOnUse" x="0" y="0" width="390" height="844">
+        <rect width="390" height="844" fill="#ffffff"></rect>
+        <rect x="0" y="80" width="390" height="620" fill="#000000" opacity="0.9" filter="url(#softt1)"></rect>
+      </mask>
+    </defs>
+    <g mask="url(#calmt1)">
+      <rect width="390" height="844" filter="url(#sAt1)" opacity="0.95"></rect>
+      <rect width="390" height="844" filter="url(#sBt1)" opacity="0.5"></rect>
+    </g>
+  </svg>
+    <nav aria-label="Menu" style="position: absolute; left: 0; right: 0; top: 0; height: 70px; z-index: 5; display: flex; align-items: center; padding: 0 12px; background: rgba(7,5,13,.9); border-bottom: 1px solid rgba(201,248,255,.5); box-shadow: 0 1px 16px rgba(25,227,255,.35)">
+      <a href="#" class="tab" style="border: 1px solid #ffffff; color: #ffffff; min-height: 46px; font-size: 20px"><b>&lsaquo; BACK TO THE BOARD</b></a>
+    </nav>
+    <section style="position: absolute; left: 16px; top: 90px; width: 358px">
+      <h2 style="margin: 0 0 8px; font: 44px/1 Anton, Impact, sans-serif">ACCOUNT</h2>
+      <div style="padding: 14px 0; border-top: 1px solid rgba(241,236,255,.22)"><div class="k" style="padding: 0 0 8px">INVITES</div><p class="note" style="margin: 0; font-size: 19px">You hold 1 of 3 open invites. One use each; 7 days.</p>
+        <div style="margin-top: 12px; padding: 12px 0; border-top: 1px solid rgba(241,236,255,.14)"><code style="font: 700 21px 'Barlow Condensed', sans-serif; letter-spacing: 2px">ab12cd34</code> <span style="font: 500 19px 'Barlow Condensed', sans-serif; color: #e4def7"><b style="color: #19e3ff">OPEN</b> &middot; expires Nov 12</span><div class="btns" style="margin-top: 10px; gap: 8px"><button class="btn" style="min-height: 44px; padding: 0 14px; font-size: 18px"><b>COPY THE LINK</b></button><button class="btn" style="min-height: 44px; padding: 0 14px; font-size: 18px"><b>WITHDRAW</b></button></div></div>
+        <div style="padding: 12px 0; border-top: 1px solid rgba(241,236,255,.14); border-bottom: 1px solid rgba(241,236,255,.14)"><code style="font: 700 21px 'Barlow Condensed', sans-serif; letter-spacing: 2px; color: #a9a2c2">9f3k2m7q</code> <span style="font: 500 19px 'Barlow Condensed', sans-serif; color: #e4def7"><b>USED</b> &middot; Nov 2</span></div>
+        <div class="btns" style="margin-top: 14px"><button class="btn primary" style="width: 100%"><b>MAKE AN INVITE</b></button></div></div>
+    </section>
+  </figure>
+  <figure aria-label="Card info, as a sheet" style="margin: 0; width: 390px; height: 844px; position: relative; overflow: hidden; background: #07050d; color: #f1ecff; flex: none">
+    <section class="piece" style="position: absolute; left: 0; right: 0; top: 40px; bottom: 0; padding: 22px 16px; --cut: 20px; --edge: #19e3ff; --ground: #07050d">
+      <button class="btn" aria-label="Close" style="position: absolute; right: 16px; top: 18px; min-height: 46px; width: 46px; padding: 0; transform: none"><b style="transform: none; font: 400 26px/1 'Barlow Condensed', sans-serif">&times;</b></button>
+      <p style="margin: 0; font: 800 18px 'Barlow Condensed', sans-serif; letter-spacing: 2px; color: #19e3ff">SLOT A2 &middot; SALTY</p>
+      <h2 style="margin: 2px 0 14px; font: 40px/1 Anton, Impact, sans-serif">WHOOPS!</h2>
+      <figure style="margin: 0 auto 14px; width: 180px; height: 260px; box-sizing: border-box; border: 5px solid #0b0b0b; border-radius: 10px; background: #ff3db4; display: grid; place-items: center"><img src="../../../instances/divided-world/ui/cards/whoops.svg" alt="" style="width: 80%"></figure>
+      <p style="margin: 0 0 10px; font: 700 21px 'Barlow Condensed', sans-serif">1.00 to buy <span style="font-weight: 500; color: #e4def7">&middot; more on a long post</span></p>
+      <p style="margin: 0; font: 500 19px/1.45 'Barlow Condensed', sans-serif">It splats a post in the ink you choose, and a reader can scrub the ink away on their own screen; the post's author can wash it away for everyone.</p>
+    </section>
+  </figure>
+  <figure aria-label="The HUD past its cap" style="margin: 0; width: 390px; height: 844px; position: relative; overflow: hidden; background: #ffffff; flex: none">
+    <section aria-label="Game HUD" style="position: absolute; left: 0; right: 0; bottom: 0; height: 168px; background: linear-gradient(#140c2c, #07050d); border-top: 1.5px solid rgba(201,248,255,.7); color: #f1ecff">
+      <div style="position: absolute; left: 12px; top: 10px; width: 44px; height: 44px; border: 2px solid #19e3ff; display: grid; place-items: center; font: 28px Anton, Impact, sans-serif">M</div>
+      <div style="position: absolute; left: 66px; top: 6px; width: 170px"><div style="font: 800 15px 'Barlow Condensed', sans-serif; letter-spacing: 2px">POSTING AS</div><div style="font: 22px/1.1 Anton, Impact, sans-serif">MRS. HOOLIGAN &#x2304;</div></div>
+      <a href="#" class="btn" style="position: absolute; right: 12px; top: 10px; min-height: 44px; padding: 0 14px; background: #ff3d6e; border-color: #ff3d6e; color: #07050d"><b>HAND 3</b></a>
+      <div style="position: absolute; left: 12px; right: 12px; top: 66px; display: flex; align-items: center; gap: 6px"><span style="width: 30px; height: 30px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ffffff99, #a463ff 45%, #00000099)"></span><span style="width: 30px; height: 30px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ffffff99, #3a7dff 45%, #00000099)"></span><span style="width: 30px; height: 30px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ffffff99, #22c38a 45%, #00000099)"></span><span style="width: 30px; height: 30px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ffffff99, #e8c021 45%, #00000099)"></span><span style="width: 30px; height: 30px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ffffff99, #f08a2e 45%, #00000099)"></span><span style="width: 30px; height: 30px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ffffff99, #ff4d5e 45%, #00000099)"></span><b style="margin-left: auto; font: 32px Anton, Impact, sans-serif">6.00</b></div>
+      <p style="position: absolute; left: 12px; right: 12px; top: 106px; margin: 0; font: 600 18px/1.3 'Barlow Condensed', sans-serif; color: #ffd9b0"><b style="color: #ffb86b">+0.85 est. past the cap.</b> Spend some before the settlement, or it won't fit.</p>
+    </section>
+  </figure>
+</div>
+</body>
+</html>

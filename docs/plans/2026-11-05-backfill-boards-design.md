@@ -225,3 +225,28 @@ open. The critique:
   holds or covers; a `state` with no sentence in it), driven red on a planted card, and a task that rewrites each
   card's Lens words to the roles, every new line drafted in the plan for the owner's review in the PR. The boards' Lens
   headings and lines are drawn to the roles; their words are drafts.
+
+## 7. Batch 5: account and HUD states
+
+Shot on c2553b3: Settings › Account, the Vending Machine's card info from slot A2, and the HUD with a full wallet and
+an estimate past the cap. The critique:
+
+- **The invites have no list.** The screen named "with the invites" shows none made ("You have made no invites." under
+  the button, the state after the action). The board draws two, one open and one used, each a row with its code, its
+  state and when, and the open one's own Copy the link and Withdraw; Make an invite follows the list. (Whether
+  Withdraw exists in the engine is the plan's to check; where it does not, the row has Copy the link alone.)
+- **Reach a person is stranded** at the page's foot-left, under no section. The board puts it under the section rail,
+  ruled off, where every Settings section reaches it.
+- **The card info has no card.** About Whoops! is a dialog of text with a small title, so the face a player tapped to
+  learn about is gone. The board sets the card's face (the hand sheet's size, `Postcard.tsx`) beside its rules, the
+  title at the dialog frame's heading size, and the slot and the card's kind above it.
+- **"1.00+" is a price no one can read.** The board says it in words: "1.00 to buy · more to play on a long post", and
+  the rules say how much more.
+- **The HUD past its cap says the figure twice and drops the way out.** It shows "+0.85 EST." and "+0.85 past the cap"
+  side by side, and leaves out the second half of the orbs' own words ("Spend some before the settlement, or it won't
+  fit.", `engine/ui/orbs/Orbs.board.stories.tsx`). On the phone it shows an orb with a plus and says nothing. The board
+  says the figure once ("+0.85 EST. PAST THE CAP") and the way out under it, on both sizes. Losing Aura is not being
+  stuck, but the glass says plainly what the player can do about it.
+- **The phone HUD cuts the mask's name** once more ("MRS. HOO"); the board gives the name the row's width, the Hand
+  button beside it.
+- Kept: the section rail's outlined unselected sections (#202: quiet fails contrast on bare smoke).

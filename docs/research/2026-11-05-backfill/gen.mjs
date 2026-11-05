@@ -841,4 +841,124 @@ page({
 </div>`,
 });
 
+/* ---------------------------------------------------------------- batch 5: account and HUD states */
+
+const ART = '../../../instances/divided-world/ui/cards/';
+const settingsRail = (cur) => `<nav aria-label="Settings sections" style="position: absolute; left: 64px; top: 262px; width: 254px"><ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px">${['ACCOUNT', 'ACCESSIBILITY', 'NOTIFICATIONS'].map((n) => `<li><a href="#" class="btn${n === cur ? ' primary' : ''}" style="display: flex; justify-content: flex-start"${n === cur ? ' aria-current="page"' : ''}><b>${n}</b></a></li>`).join('')}</ul>
+    <p style="margin: 34px 0 0; padding-top: 22px; border-top: 1px solid rgba(241,236,255,.22)"><a href="#" class="lnk">Reach a person</a></p></nav>`;
+const invite = (code, state, note, open) => `<li style="display: grid; grid-template-columns: 150px 1fr auto; align-items: center; gap: 18px; padding: 14px 0; border-top: 1px solid rgba(241,236,255,.14)">
+          <code style="font: 700 22px 'Barlow Condensed', sans-serif; letter-spacing: 2px; color: ${open ? '#f1ecff' : '#a9a2c2'}">${code}</code>
+          <span style="font: 500 20px 'Barlow Condensed', sans-serif; color: #e4def7"><b style="font-weight: 800; letter-spacing: 1.5px; color: ${open ? '#19e3ff' : '#e4def7'}">${state}</b> &middot; ${note}</span>
+          ${open ? '<div class="btns" style="gap: 8px"><button class="btn" style="min-height: 44px; padding: 0 16px; font-size: 19px"><b>COPY THE LINK</b></button><button class="btn" style="min-height: 44px; padding: 0 16px; font-size: 19px"><b>WITHDRAW</b></button></div>' : '<span></span>'}
+        </li>`;
+
+page({
+  file: '33-settings-account.html', name: 'Settings, Account', w: 1440, h: 1000,
+  note: 'Settings › Account with two invites made, one open and one used: each invite a row with its state and its own actions; Reach a person under the section rail, where every Settings section can reach it.',
+  body: frame(1440, 1000, `
+  ${smoke(1440, 1000, [[40, 240, 300, 340, .85], [350, 240, 990, 700, .92]])}
+  ${menu(PAUSE, 'SETTINGS')}
+  ${title('SETTINGS')}
+  ${settingsRail('ACCOUNT')}
+  <section aria-labelledby="accH" style="position: absolute; left: 370px; top: 262px; width: 920px">
+    <h2 id="accH" style="margin: 0 0 12px; font: 52px/1 Anton, Impact, sans-serif; letter-spacing: .5px">ACCOUNT</h2>
+    <p class="lead" style="margin-bottom: 22px">Out of character: what you sign in with, and who you bring in.</p>
+    <div class="row"><h3>SIGN-IN ADDRESS</h3><div><p style="margin: 10px 0 0; font: 700 22px 'Barlow Condensed', sans-serif">demo-player@example.test</p><p class="note">The address the code and the link come to. It is not shown to anyone else.</p></div></div>
+    <div class="row"><h3>INVITES</h3><div>
+      <p class="note" style="margin-top: 10px">You hold 1 of 3 open invites. An invite is one use, and expires 7 days after it is made or reissued. One used or expired frees one.</p>
+      <ul style="margin: 16px 0 0; padding: 0; list-style: none; border-bottom: 1px solid rgba(241,236,255,.14)">
+        ${invite('ab12cd34', 'OPEN', 'expires Nov 12', true)}
+        ${invite('9f3k2m7q', 'USED', 'Nov 2', false)}
+      </ul>
+      <div class="btns" style="margin-top: 18px"><button class="btn primary"><b>MAKE AN INVITE</b></button></div>
+    </div></div>
+    <div class="row" style="border-bottom: 1px solid rgba(241,236,255,.22)"><h3>SIGN OUT</h3><div><div class="btns"><button class="btn"><b>SIGN OUT</b></button></div><p class="note">Ends this session on this device. Your characters and settings stay with your account.</p></div></div>
+  </section>
+`),
+});
+
+page({
+  file: '34-vending-info.html', name: "The Vending Machine's card info", w: 1440, h: 1000,
+  note: "About Whoops!, from slot A2: the card's face beside its rules, its price said in words where the build writes \"1.00+\", in #202's one dialog frame at its heading size.",
+  body: `<div style="width: 1440px; height: 1000px; position: relative; overflow: hidden; background: #07050d; color: #f1ecff; font-family: 'Barlow Condensed', sans-serif">
+  ${smoke(1440, 1000, [[0, 0, 1440, 1000, .4]])}
+  ${menu(PAUSE, 'VENDING MACHINE')}
+  <div aria-hidden="true" style="position: absolute; left: 420px; top: 106px; width: 620px; height: 960px; border: 2px solid #ff3d6e; border-radius: 18px"></div>
+  <div aria-hidden="true" style="position: absolute; inset: 0; z-index: 6; background: rgba(7,5,13,.72)"></div>
+  <section role="dialog" aria-labelledby="infoH" class="piece" style="position: absolute; z-index: 7; left: 270px; top: 170px; width: 900px; box-sizing: border-box; padding: 38px 40px 34px; --cut: 40px; --edge: #19e3ff; --ground: #07050d; display: grid; grid-template-columns: 276px 1fr; column-gap: 40px">
+    <button class="btn" aria-label="Close" style="position: absolute; right: 40px; top: 34px; min-height: 52px; width: 52px; padding: 0; transform: none"><b style="transform: none; font: 400 30px/1 'Barlow Condensed', sans-serif">&times;</b></button>
+    <figure aria-label="Whoops!, Salty" style="margin: 0; width: 276px; height: 400px; box-sizing: border-box; border: 6px solid #0b0b0b; border-radius: 14px; background: #ff3db4; display: grid; grid-template-rows: auto 1fr auto; padding: 14px; color: #0b0b0b">
+      <div style="display: flex; justify-content: space-between; font: 800 18px 'Barlow Condensed', sans-serif; letter-spacing: 2px"><span>SALTY</span><span>CAST</span></div>
+      <img src="${ART}whoops.svg" alt="" style="width: 100%; height: 100%; object-fit: contain">
+      <b style="font: 36px Anton, Impact, sans-serif; text-align: center">WHOOPS!</b>
+    </figure>
+    <div>
+      <p style="margin: 0; font: 800 21px 'Barlow Condensed', sans-serif; letter-spacing: 3px; color: #19e3ff">SLOT A2 &middot; SALTY</p>
+      <h2 id="infoH" style="margin: 2px 60px 18px 0; font: 60px/1 Anton, Impact, sans-serif">WHOOPS!</h2>
+      <p style="margin: 0 0 18px; font: 700 24px 'Barlow Condensed', sans-serif">1.00 to buy <span style="font-weight: 500; color: #e4def7">&middot; more to play on a long post</span></p>
+      <p style="margin: 0 0 14px; font: 500 21px/1.5 'Barlow Condensed', sans-serif">It splats a post in the ink you choose, and a reader can scrub the ink away on their own screen; the post's author can wash it away for everyone. Up to three can stack on one post, each in its own ink.</p>
+      <p style="margin: 0; font: 500 21px/1.5 'Barlow Condensed', sans-serif; color: #e4def7">Playing it on a long post costs 0.25 more for every 500 characters, 3.00 at most in all.</p>
+    </div>
+  </section>
+</div>`,
+});
+
+/* The HUD alone, at its 1440 width: compared from its own corner. */
+page({
+  file: '35-hud-cap.html', name: 'The HUD, a wallet past its cap', w: 1440, h: 230,
+  note: "The HUD on a board page when the settled wallet is full and the estimate runs past the cap: the figure once, and the way out said under it (the orbs' own words, engine/ui/orbs/Orbs.board.stories.tsx, which the HUD drops today).",
+  body: `<div style="width: 1440px; height: 230px; position: relative; overflow: hidden; background: #ffffff; font-family: 'Barlow Condensed', sans-serif">
+  <section aria-label="Game HUD" style="position: absolute; left: 0; right: 0; bottom: 0; height: 210px; color: #f1ecff">
+    <div aria-hidden="true" style="position: absolute; inset: 0; background: linear-gradient(#140c2c, #07050d); clip-path: polygon(0 26px, 452px 26px, 478px 0, 972px 0, 998px 26px, 100% 26px, 100% 100%, 0 100%)"></div>
+    <div aria-hidden="true" style="position: absolute; left: 60px; top: 66px; width: 82px; height: 82px; border: 2px solid #19e3ff; box-shadow: 0 0 16px rgba(25,227,255,.6); display: grid; place-items: center; font: 40px Anton, Impact, sans-serif">M</div>
+    <b style="position: absolute; left: 156px; top: 52px; font: 40px/1 Anton, Impact, sans-serif">MRS. HOOLIGAN</b>
+    <span style="position: absolute; left: 156px; top: 100px; padding: 0 10px; background: #3aa0ff; transform: skewX(-10deg); font: italic 800 20px 'Barlow Condensed', sans-serif; letter-spacing: 1.5px">FACE</span>
+    <span style="position: absolute; left: 230px; top: 100px; font: 800 20px 'Barlow Condensed', sans-serif; letter-spacing: 1.5px">&#x1F512;&#xFE0E; ONLY YOU SEE THIS</span>
+    <div style="position: absolute; left: 500px; top: 12px; width: 452px; display: flex; justify-content: space-between; font: 800 20px 'Barlow Condensed', sans-serif; letter-spacing: 2.5px"><span>AURA</span><span style="color: #ffb86b">GHOST = ESTIMATE UNTIL SETTLEMENT</span></div>
+    <div aria-hidden="true" style="position: absolute; left: 500px; top: 46px; display: flex; gap: 18px">${['#a463ff', '#3a7dff', '#22c38a', '#e8c021', '#f08a2e', '#ff4d5e'].map((c) => `<span style="width: 56px; height: 56px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ffffff99, ${c} 45%, #00000099)"></span>`).join('')}</div>
+    <div style="position: absolute; left: 500px; top: 112px; font: 54px/1 Anton, Impact, sans-serif">6.00 <span style="font: 700 22px 'Barlow Condensed', sans-serif">/ 6.00</span></div>
+    <div style="position: absolute; left: 700px; top: 116px; width: 252px; text-align: right"><b style="display: inline-block; padding: 2px 8px; border: 1.5px dashed #ffb86b; font: 800 22px 'Barlow Condensed', sans-serif; color: #ffb86b">+0.85 EST. PAST THE CAP</b></div>
+    <p style="position: absolute; left: 500px; top: 168px; width: 452px; margin: 0; font: 600 19px 'Barlow Condensed', sans-serif; color: #ffd9b0">Spend some before the settlement, or it won't fit.</p>
+    <div style="position: absolute; left: 980px; top: 44px; font: 800 20px 'Barlow Condensed', sans-serif; letter-spacing: 3px; color: #e4def7">NEXT SETTLEMENT</div>
+    <div style="position: absolute; left: 980px; top: 72px; font: 34px Anton, Impact, sans-serif; color: #c9f8ff">Oct 30, 8:17 AM</div>
+    <a href="#" class="btn" style="position: absolute; left: 990px; top: 140px; min-height: 52px; padding: 0 22px"><b>ESC&nbsp; MENU</b></a>
+    <a href="#" class="btn" style="position: absolute; left: 1236px; top: 140px; min-height: 52px; padding: 0 34px; background: #ff3d6e; border-color: #ff3d6e; color: #07050d"><b>HAND 3</b></a>
+  </section>
+</div>`,
+});
+
+page({
+  file: '36-account-phone.html', name: 'Account and HUD states on a phone', w: 1250, h: 884,
+  note: "Three phone screens at 390 by 844: Settings › Account with its invites, the card info as a sheet with the card's face, and the HUD past its cap: the mask's name whole and the way out said.",
+  body: `<div style="width: 1250px; height: 884px; display: flex; gap: 20px; padding: 20px; box-sizing: border-box; background: #2a2833; font-family: 'Barlow Condensed', sans-serif">
+  ${phone('Account', `${phoneMenu}
+    <section style="position: absolute; left: 16px; top: 90px; width: 358px">
+      <h2 style="margin: 0 0 8px; font: 44px/1 Anton, Impact, sans-serif">ACCOUNT</h2>
+      <div style="padding: 14px 0; border-top: 1px solid rgba(241,236,255,.22)"><div class="k" style="padding: 0 0 8px">INVITES</div><p class="note" style="margin: 0; font-size: 19px">You hold 1 of 3 open invites. One use each; 7 days.</p>
+        <div style="margin-top: 12px; padding: 12px 0; border-top: 1px solid rgba(241,236,255,.14)"><code style="font: 700 21px 'Barlow Condensed', sans-serif; letter-spacing: 2px">ab12cd34</code> <span style="font: 500 19px 'Barlow Condensed', sans-serif; color: #e4def7"><b style="color: #19e3ff">OPEN</b> &middot; expires Nov 12</span><div class="btns" style="margin-top: 10px; gap: 8px"><button class="btn" style="min-height: 44px; padding: 0 14px; font-size: 18px"><b>COPY THE LINK</b></button><button class="btn" style="min-height: 44px; padding: 0 14px; font-size: 18px"><b>WITHDRAW</b></button></div></div>
+        <div style="padding: 12px 0; border-top: 1px solid rgba(241,236,255,.14); border-bottom: 1px solid rgba(241,236,255,.14)"><code style="font: 700 21px 'Barlow Condensed', sans-serif; letter-spacing: 2px; color: #a9a2c2">9f3k2m7q</code> <span style="font: 500 19px 'Barlow Condensed', sans-serif; color: #e4def7"><b>USED</b> &middot; Nov 2</span></div>
+        <div class="btns" style="margin-top: 14px"><button class="btn primary" style="width: 100%"><b>MAKE AN INVITE</b></button></div></div>
+    </section>`, [[0, 80, 390, 620, .9]], 't1')}
+  <figure aria-label="Card info, as a sheet" style="margin: 0; width: 390px; height: 844px; position: relative; overflow: hidden; background: #07050d; color: #f1ecff; flex: none">
+    <section class="piece" style="position: absolute; left: 0; right: 0; top: 40px; bottom: 0; padding: 22px 16px; --cut: 20px; --edge: #19e3ff; --ground: #07050d">
+      <button class="btn" aria-label="Close" style="position: absolute; right: 16px; top: 18px; min-height: 46px; width: 46px; padding: 0; transform: none"><b style="transform: none; font: 400 26px/1 'Barlow Condensed', sans-serif">&times;</b></button>
+      <p style="margin: 0; font: 800 18px 'Barlow Condensed', sans-serif; letter-spacing: 2px; color: #19e3ff">SLOT A2 &middot; SALTY</p>
+      <h2 style="margin: 2px 0 14px; font: 40px/1 Anton, Impact, sans-serif">WHOOPS!</h2>
+      <figure style="margin: 0 auto 14px; width: 180px; height: 260px; box-sizing: border-box; border: 5px solid #0b0b0b; border-radius: 10px; background: #ff3db4; display: grid; place-items: center"><img src="${ART}whoops.svg" alt="" style="width: 80%"></figure>
+      <p style="margin: 0 0 10px; font: 700 21px 'Barlow Condensed', sans-serif">1.00 to buy <span style="font-weight: 500; color: #e4def7">&middot; more on a long post</span></p>
+      <p style="margin: 0; font: 500 19px/1.45 'Barlow Condensed', sans-serif">It splats a post in the ink you choose, and a reader can scrub the ink away on their own screen; the post's author can wash it away for everyone.</p>
+    </section>
+  </figure>
+  <figure aria-label="The HUD past its cap" style="margin: 0; width: 390px; height: 844px; position: relative; overflow: hidden; background: #ffffff; flex: none">
+    <section aria-label="Game HUD" style="position: absolute; left: 0; right: 0; bottom: 0; height: 168px; background: linear-gradient(#140c2c, #07050d); border-top: 1.5px solid rgba(201,248,255,.7); color: #f1ecff">
+      <div style="position: absolute; left: 12px; top: 10px; width: 44px; height: 44px; border: 2px solid #19e3ff; display: grid; place-items: center; font: 28px Anton, Impact, sans-serif">M</div>
+      <div style="position: absolute; left: 66px; top: 6px; width: 170px"><div style="font: 800 15px 'Barlow Condensed', sans-serif; letter-spacing: 2px">POSTING AS</div><div style="font: 22px/1.1 Anton, Impact, sans-serif">MRS. HOOLIGAN &#x2304;</div></div>
+      <a href="#" class="btn" style="position: absolute; right: 12px; top: 10px; min-height: 44px; padding: 0 14px; background: #ff3d6e; border-color: #ff3d6e; color: #07050d"><b>HAND 3</b></a>
+      <div style="position: absolute; left: 12px; right: 12px; top: 66px; display: flex; align-items: center; gap: 6px">${['#a463ff', '#3a7dff', '#22c38a', '#e8c021', '#f08a2e', '#ff4d5e'].map((c) => `<span style="width: 30px; height: 30px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ffffff99, ${c} 45%, #00000099)"></span>`).join('')}<b style="margin-left: auto; font: 32px Anton, Impact, sans-serif">6.00</b></div>
+      <p style="position: absolute; left: 12px; right: 12px; top: 106px; margin: 0; font: 600 18px/1.3 'Barlow Condensed', sans-serif; color: #ffd9b0"><b style="color: #ffb86b">+0.85 est. past the cap.</b> Spend some before the settlement, or it won't fit.</p>
+    </section>
+  </figure>
+</div>`,
+});
+
 console.log('wrote the backfill boards');
