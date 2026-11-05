@@ -163,7 +163,8 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
     const [, acts] = await Promise.all([player.refresh(), beyond
       ? api.effectsAbove(beyond.reach === 'character' ? [beyond.target] : [], beyond.reach === 'thread' ? beyond.target : null, beyond.reach === 'board' ? beyond.target : null).then((a) => a.map((p) => p.act))
       : api.cardsOn(post!.id, PLAYS_PER_POST)]);
-    await target.know(acts.map((a) => a.character));
+    /* The read carries the plays' ends too (an admin's reversal): they join the store, but name no caster. */
+    await target.know(acts.filter((a) => a.kind !== 'card_end').map((a) => a.character));
     target.plays.add(acts);
     await readEffects(api, target.plays, acts, effectCards(ui));
   };

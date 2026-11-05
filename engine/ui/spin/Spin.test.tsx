@@ -179,6 +179,25 @@ describe('the ORIGIN box', () => {
     await waitFor(() => expect(box).toHaveTextContent('the rest are in an Act.'));
   });
 
+  test('a reversed play\'s end rides in the read but is no play: it neither makes "more" nor is read for tallies', async () => {
+    const w = threadWorld(3);
+    const plays = Array.from({ length: 20 }, (_, i) => w.fake.seed.card(w.zed, w.ids[1]!, 'whoops', { message: `play ${i}` }));
+    const boss = w.fake.seed.account('boss', { admin: true });
+    w.fake.signInAs(boss);
+    const ended = await w.fake.reverseCard(plays[0]!);
+    w.fake.signInAs(w.me);
+    expect(ended.ok).toBe(true);
+    expect((await w.fake.cardsOn(w.ids[1]!, 21)).map((a) => a.kind).filter((k) => k === 'card_end')).toHaveLength(1);
+    const spun = await spinFrom(w, w.ids[1]!);
+    const tallies = vi.spyOn(w.fake, 'tallies');
+    openSpun(w, spun);
+    const box = await origin();
+    await waitFor(() => expect(box.querySelectorAll('.kb-mark').length).toBeGreaterThan(0));
+    expect(box).not.toHaveTextContent('More than 20 cards');
+    const end = ended.ok ? ended.value.act : '';
+    expect(tallies.mock.calls.some(([ids]) => ids.includes(end))).toBe(false);
+  });
+
   test('a play on a target that cannot be placed is the words alone, in the head', async () => {
     const w = threadWorld(3);
     const card = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });

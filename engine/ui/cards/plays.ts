@@ -358,7 +358,8 @@ export async function readPlays(api: KayfaApi, plays: Plays, posts: readonly Id[
   const acts = await api.cardsOnMany(posts, posts.length * PLAYS_PER_POST).catch((): readonly Act[] => []);
   plays.add(acts);
   await readEffects(api, plays, acts, cards);
-  return acts;
+  /* The plays' ends ride in the read for the store; they are no plays, so no tally, reaction or caster is read for one. */
+  return acts.filter((a) => a.kind !== 'card_end');
 }
 
 /**

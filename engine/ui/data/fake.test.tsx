@@ -1709,11 +1709,13 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
    plays above a page's posts read in one batch. */
 describe('a card beyond a post, and the effects above a page', () => {
   const sparkle = {
-    key: 'sparkle', name: 'Sparkle', alignment: 'pepperoni' as const, rarity: 'uncommon' as const, priceKey: 'sparkle.price', reaches: ['character' as const], lasts: { unit: 'day' as const, count: 7 },
+    key: 'sparkle', name: 'Sparkle', alignment: 'pepperoni' as const, rarity: 'uncommon' as const, priceKey: 'sparkle.price', reaches: ['character' as const], lasts: { unit: 'day' as const, count: 3650 },
     playPrice: () => 0, validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
     canApply: (t: CardTarget, e: readonly CardEffect[]) => landsOn({ key: 'sparkle', reaches: ['character'] }, t, e),
   };
-  const shop: Instance = { ...instance, cards: [sparkle], settings: { ...settings, economy: { 'sparkle.price': 100 } } };
+  /* Long reaches: a card's canApply reads the real clock for an effect's end, and the fake's starts on a fixed date. */
+  const longReach = { unit: 'day' as const, count: 3650 };
+  const shop: Instance = { ...instance, cards: [sparkle], settings: { ...settings, economy: { 'sparkle.price': 100 }, reachLasts: { ...settings.reachLasts, character: longReach } } };
   function world() {
     const fake = createFake({ instance: shop });
     const ana = fake.seed.account('ana');
@@ -1733,7 +1735,7 @@ describe('a card beyond a post, and the effects above a page', () => {
     expect(await fake.playCard('sparkle', anaFace, opener, {}, '')).toMatchObject({ ok: false, field: 'reach', error: 'this card lands on a character' });
     const played = must(await fake.playCard('sparkle', anaFace, boFace, {}, 'Shine.', 'character', opener));
     expect(played).toMatchObject({ kind: 'card', thread, targetActId: opener, payload: { card: 'sparkle', reach: 'character', character: boFace, message: 'Shine.' } });
-    expect(Date.parse(String(played.payload.ends)) - Date.parse(played.createdAt)).toBe(7 * 86_400_000);
+    expect(Date.parse(String(played.payload.ends)) - Date.parse(played.createdAt)).toBe(3650 * 86_400_000);
     expect(await fake.playCard('sparkle', anaFace, boFace, {}, '', 'character', opener)).toEqual(refused('this character already carries that card', 'config'));
   });
 
@@ -1782,7 +1784,7 @@ describe('a card beyond a post, and the effects above a page', () => {
     expect(above).toEqual([{ play: live.id, reach: 'character', target: boFace, endsAt: live.payload.ends, act: live }]);
     expect(await fake.effectsAbove([boOther], thread, board)).toEqual([]);
     /* An ended play is gone without a reread of anything but the time. */
-    fake.clock.advance(7 * 86_400_000 + 1);
+    fake.clock.advance(3650 * 86_400_000 + 1);
     expect(await fake.effectsAbove([boFace], thread, board)).toEqual([]);
   });
 });
@@ -1859,6 +1861,21 @@ describe('an admin ends a card play (reverse_card)', () => {
     const ended = must(await fake.reverseCard(play.id));
     expect((await fake.cardsOn(opener, 10)).map((a) => [a.kind, a.id, a.targetActId])).toEqual([['card', play.id, opener], ['card_end', ended.act, play.id]]);
     expect((await fake.cardsOnMany([opener], 10)).map((a) => a.kind)).toEqual(['card', 'card_end']);
+  });
+
+  test('an ended play keeps no state and is not released from: both are refused in the server\'s words, after the checks that come first', async () => {
+    const { fake, ana, boss, anaFace, opener } = setup();
+    const play = must(await fake.playCard('blot', anaFace, opener, {}, ''));
+    fake.signInAs(boss);
+    must(await fake.reverseCard(play.id));
+    fake.signInAs(ana);
+    expect(await fake.saveEffect(play.id, anaFace, { strokes: [] })).toEqual(refused('an admin ended that card'));
+    expect(await fake.releaseEffect(play.id)).toEqual(refused('an admin ended that card'));
+    /* Not the post's author: that refusal comes first, as the SQL checks it before the end. */
+    const other = fake.seed.account('other');
+    const otherFace = fake.seed.character(other, 'Other Face', 'face');
+    fake.signInAs(other);
+    expect(await fake.saveEffect(play.id, otherFace, { strokes: [] })).toEqual(refused('only the post\'s author saves what is on it'));
   });
 
   test('a reversed ward turns away nothing, and a reversed play stops counting where a card\'s rules look at the post', async () => {
