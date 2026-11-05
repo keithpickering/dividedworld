@@ -63,6 +63,12 @@
   padding: 16px 32px 16px 0;
 }
 
+/* On the phone the column is the window's, clipped at its gutter: the head's box ends at the column's edge, and its calm's feather is the gutter's (calm.css). */
+:where(:root[data-kb-layout='phone']) .kb-vending-head {
+  margin: -16px 0;
+  padding: 16px 0;
+}
+
 .kb-vending-eyebrow {
   margin: 0;
   line-height: normal;

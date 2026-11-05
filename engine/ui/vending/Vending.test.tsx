@@ -113,6 +113,13 @@ describe('the machine as the Vending board draws it', () => {
     expect(hand.querySelector('.kb-vending-hand-word.kb-glass-upright')).toHaveTextContent('Your hand');
   });
 
+  test('on the phone the head\'s box does not reach past the column, which would scroll the page sideways', () => {
+    const css = readFileSync('engine/ui/vending/vending.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const rule = css.match(/:where\(:root\[data-kb-layout='phone'\]\) \.kb-vending-head \{([^}]*)\}/)?.[1] ?? '';
+    expect(rule).toMatch(/margin:\s*-16px 0/);
+    expect(rule).toMatch(/padding:\s*16px 0/);
+  });
+
   test('the wallet panel says solid only, the wallet before and after, and the hand before and after', async () => {
     open(seeded(562));
     await screen.findByRole('button', { name: 'Buy Stick Around, 1.00 orb, common Cast' });
