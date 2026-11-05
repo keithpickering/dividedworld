@@ -9,8 +9,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { screen } from '@testing-library/react';
-import { describe, expect, test } from 'vitest';
+import { act, screen } from '@testing-library/react';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { renderInWorld } from '../test-world.tsx';
 import { Float } from './Float.tsx';
 import { FRAME } from './Frame.tsx';
@@ -36,6 +36,50 @@ describe('the markup: every dialog stands in the one frame', () => {
     renderInWorld(<Float label="Cards" surface="effect" anchor={anchor} sheet={false} onClose={() => undefined}><p>Body</p></Float>);
     const box = screen.getByRole('dialog');
     for (const c of FRAME.split(' ')) expect(box).toHaveClass(c);
+  });
+});
+
+/*
+ * The bar writes where it stands when stuck from its holders' padding, which a breakpoint (the root's layout) or a Float's place changes
+ * with the bar's own size unchanged. jsdom lays out nothing, so the bar's sticky offset is stubbed, and the padding is the holder's inline style.
+ */
+describe('the bar re-measures when its holders\' padding changes', () => {
+  afterEach(() => { vi.restoreAllMocks(); document.documentElement.removeAttribute('data-kb-layout'); });
+  const settle = () => act(() => new Promise<void>((r) => { setTimeout(r, 0); }));
+  function stub() {
+    const real = window.getComputedStyle.bind(window);
+    vi.spyOn(window, 'getComputedStyle').mockImplementation((el: Element, pseudo?: string | null) => {
+      const style = real(el, pseudo);
+      return el.classList.contains('kb-glass-dialog-bar') ? ({ top: '12px' } as CSSStyleDeclaration) : style;
+    });
+  }
+  test('a padding change on the dialog, the bar unchanged in size, is followed', async () => {
+    stub();
+    renderInWorld(<Overlay title="Anything" surface="turn" onClose={() => undefined}><p>Body</p></Overlay>);
+    const box = screen.getByRole('dialog');
+    expect(box.style.getPropertyValue('--kb-dialog-bar-stuck')).toBe('16px');
+    box.style.paddingTop = '24px';
+    await settle();
+    expect(box.style.getPropertyValue('--kb-dialog-bar-stuck')).toBe('40px');
+  });
+  test('a padding change on the overlay around it is followed', async () => {
+    stub();
+    renderInWorld(<Overlay title="Anything" surface="turn" onClose={() => undefined}><p>Body</p></Overlay>);
+    const around = screen.getByRole('dialog').parentElement!;
+    expect(around).toHaveClass('kb-glass-overlay');
+    expect(around.style.getPropertyValue('--kb-dialog-bar-stuck')).not.toBe('');
+    around.style.paddingTop = '40px';
+    await settle();
+    expect(around.style.getPropertyValue('--kb-dialog-bar-stuck')).toBe('56px');
+  });
+  test('a change of the root\'s layout (the breakpoint that swaps the padding) is followed', async () => {
+    stub();
+    renderInWorld(<Overlay title="Anything" surface="turn" onClose={() => undefined}><p>Body</p></Overlay>);
+    const box = screen.getByRole('dialog');
+    box.style.paddingTop = '10px';
+    document.documentElement.setAttribute('data-kb-layout', 'phone');
+    await settle();
+    expect(box.style.getPropertyValue('--kb-dialog-bar-stuck')).toBe('26px');
   });
 });
 

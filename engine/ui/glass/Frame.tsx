@@ -23,6 +23,10 @@ export function CloseCross({ onClick, buttonRef }: { readonly onClick: MouseEven
  * (WCAG 2.4.11). The bar's height is its content's (a title that wraps at large text makes it several times Close's 52px), so the bar writes the
  * height its foot stands at when stuck, `--kb-dialog-bar-stuck`, on its dialog and on the overlay around it, and shell.css's `scroll-padding-top` on
  * every scroll container of a dialog reads it (with Close's own height and the stuck offset as the fallback before this runs).
+ *
+ * The value also rests on the holders' padding, which changes without the bar's size changing: the root's layout swaps the overlay's
+ * padding at the phone breakpoint, and a Float's place moves it between popover and sheet. So the bar measures again when the window
+ * resizes, when the root's `data-kb-layout` changes, and when a holder's class, style or `data-kb-place` does.
  */
 export function DialogBar({ children, close }: { readonly children: ReactNode; readonly close?: ReactNode }) {
   const bar = useRef<HTMLDivElement>(null);
@@ -36,15 +40,22 @@ export function DialogBar({ children, close }: { readonly children: ReactNode; r
       const lift = parseFloat(getComputedStyle(el).top) + el.getBoundingClientRect().height;
       for (const h of holders) {
         const stuck = lift + parseFloat(getComputedStyle(h).paddingTop);
-        if (Number.isFinite(stuck)) h.style.setProperty('--kb-dialog-bar-stuck', `${Math.ceil(stuck) + 4}px`);
+        const value = `${Math.ceil(stuck) + 4}px`;
+        /* Not written again when it is the same: a write to the style is itself a change the holders' observer would hear. */
+        if (Number.isFinite(stuck) && h.style.getPropertyValue('--kb-dialog-bar-stuck') !== value) h.style.setProperty('--kb-dialog-bar-stuck', value);
       }
     };
     write();
-    if (typeof ResizeObserver === 'undefined') return undefined;
-    const watch = new ResizeObserver(write);
-    watch.observe(el);
+    const resize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(write);
+    resize?.observe(el);
+    const mutate = typeof MutationObserver === 'undefined' ? null : new MutationObserver(write);
+    for (const h of holders) mutate?.observe(h, { attributes: true, attributeFilter: ['class', 'style', 'data-kb-place'] });
+    mutate?.observe(document.documentElement, { attributes: true, attributeFilter: ['data-kb-layout'] });
+    window.addEventListener('resize', write);
     return () => {
-      watch.disconnect();
+      resize?.disconnect();
+      mutate?.disconnect();
+      window.removeEventListener('resize', write);
       for (const h of holders) h.style.removeProperty('--kb-dialog-bar-stuck');
     };
   }, []);
