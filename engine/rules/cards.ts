@@ -170,9 +170,10 @@ export interface CardRules<Config = unknown> {
   /**
    * Whether it lands on this target, given the effects already there. A Cast or a Use is also given its configuration as
    * `validateConfig` returned it, where that accepted it, so a card that works on the post's words can refuse a phrase that is
-   * not there; the screens' offer of a card on a post (before any configuration) and a Set give none.
+   * not there; the screens' offer of a card on a post (before any configuration) and a Set give none. `now` is the time the play is
+   * decided at, which a card hands to `landsOn` so an effect is read as live or ended on the decider's clock; the real time when not given.
    */
-  canApply(target: CardTarget, effectsOnTarget: readonly CardEffect[], config?: Config): Verdict;
+  canApply(target: CardTarget, effectsOnTarget: readonly CardEffect[], config?: Config, now?: Date): Verdict;
   /** Checks a caster's configuration and returns it in the card's own shape. */
   validateConfig(config: unknown): Verdict<Config>;
   /**
@@ -213,10 +214,10 @@ export const ok = <T>(value: T): Verdict<T> => ({ ok: true, value });
 export const refuse = (why: string): Verdict<never> => ({ ok: false, why });
 
 /** What every play of a card decides: whether it lands, its configuration, the caster's message, its price. */
-function decided(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown): Verdict<{ price: Hundredths; config: unknown; message: string }> {
+function decided(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, now: Date): Verdict<{ price: Hundredths; config: unknown; message: string }> {
   // The configuration is checked first so the landing can read it, and the landing's refusal is still said first.
   const checked = rules.validateConfig(config);
-  const lands = rules.canApply(target, effects, checked.ok ? checked.value : undefined);
+  const lands = rules.canApply(target, effects, checked.ok ? checked.value : undefined, now);
   if (!lands.ok) return lands;
   if (!checked.ok) return checked;
   const said = casterMessage(message);
@@ -247,16 +248,16 @@ export function decidePlay(rules: CardRules, settings: Settings, target: CardTar
   const now = context.now ?? new Date();
   const ward = effects.find((e) => e.ward !== undefined && (e.reach ?? 'post') === target.reach && isLive(e, now) && atOrBelow(rules.rarity, e.ward));
   if (ward) return refuse(wardWords(ward.card === null ? 'ward' : (context.nameOf?.(ward.card) ?? ward.card), ward.ward!, target.reach));
-  return decided(rules, settings, target, effects, config, message);
+  return decided(rules, settings, target, effects, config, message, now);
 }
 
 /**
  * A Use card played on a target. That the target is the player's own post is SQL's to hold, since
  * only SQL reads who wrote it; a ward does not refuse a Use.
  */
-export function decideUse(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown): Verdict<{ price: Hundredths; config: unknown; message: string }> {
+export function decideUse(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, context: Pick<PlayContext, 'now'> = {}): Verdict<{ price: Hundredths; config: unknown; message: string }> {
   if (playOf(rules) !== 'use') return wrongPlay(rules);
-  return decided(rules, settings, target, effects, config, message);
+  return decided(rules, settings, target, effects, config, message, context.now ?? new Date());
 }
 
 /**
@@ -270,7 +271,7 @@ export function decideSet(rules: CardRules, settings: Settings, target: CardTarg
   if (playOf(rules) !== 'set') return wrongPlay(rules);
   if (target.reach !== 'post' || target.kind !== 'post') return refuse('a card is set face down on a post');
   if (effects.some((e) => e.faceDown && isLive(e, now))) return refuse('this post already holds a card face down');
-  const lands = rules.canApply(target, effects);
+  const lands = rules.canApply(target, effects, undefined, now);
   if (!lands.ok) return lands;
   const outcome = rules.trap?.outcome;
   let checked: Verdict<unknown>;

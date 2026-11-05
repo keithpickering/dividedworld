@@ -15,7 +15,7 @@ import { ThreadScreen } from '../thread/Thread.tsx';
 import type { CardUi, EffectProps } from './types.ts';
 
 const base = { priceKey: 'x.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
-const blot: CardRules = { ...base, key: 'blot', name: 'Blot', alignment: 'salty', rarity: 'common', canApply: (t, e) => landsOn({ key: 'blot' }, t, e) };
+const blot: CardRules = { ...base, key: 'blot', name: 'Blot', alignment: 'salty', rarity: 'common', canApply: (t, e, _config, now) => landsOn({ key: 'blot' }, t, e, now) };
 const snare: CardRules = { ...base, key: 'snare', name: 'Snare', alignment: 'salty', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'cast' }, outcome: { do: 'nullify' } }, canApply: () => ok(undefined) };
 const bluffy: CardRules = { ...base, key: 'bluffy', name: 'Bluffy', alignment: 'pepperoni', rarity: 'common', play: 'set', canApply: () => ok(undefined) };
 const instance: Instance = { ...testInstance, cards: [blot, snare, bluffy], settings: { ...testInstance.settings, economy: { 'x.price': 100 },
@@ -45,11 +45,16 @@ beforeEach(() => {
   localStorage.clear();
   window.history.replaceState(null, '', '/');
 });
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-/** Spritey (another player) sets a Snare on post 2 and a Bluffy on post 3; post 4 is the reader's own. */
+/**
+ * Spritey (another player) sets a Snare on post 2 and a Bluffy on post 3; post 4 is the reader's own. The screens read the time from
+ * the browser and the fake dates its Acts on its own clock, so the browser's is set to the fake's: a back's week is counted from the
+ * day it was set, never from the day the test runs.
+ */
 async function world() {
   const fake = buildWorld({ postMaxLength: 1000 }, instance);
+  vi.useFakeTimers({ shouldAdvanceTime: true, now: fake.clock.now() });
   const me = fake.seed.account('me');
   const other = fake.seed.account('other');
   const pipe = fake.seed.character(me, 'Pipewrench', 'heel');

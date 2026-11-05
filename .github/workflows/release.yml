@@ -1,0 +1,103 @@
+# The daily release (docs/plans/2026-11-05-daily-release-design.md). Production moves once a day, here, and nowhere
+# else: the candidate is main's head when the run starts. It is built, its SQL suite and its e2e flows run, and only
+# then does `production` fast-forward to it. Netlify builds `production`. A red job stops everything after it:
+# production stays where it is, the run goes red and GitHub emails the owner, and `report` names the failed job.
+# The fix goes forward. A dispatch, the owner's alone, always releases main's head. Migrations and functions are
+# still deployed by hand (issue #243). 22:13 PDT, 21:13 PST. tools/check-release-workflows.mjs holds this shape.
+# Carried from currents' release.yml, cut down to the site.
+name: Release
+on:
+  schedule:
+    - cron: '13 5 * * *'
+  workflow_dispatch:
+concurrency: { group: release, cancel-in-progress: false }
+permissions:
+  contents: read
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.pick.outputs.sha }}
+      same: ${{ steps.pick.outputs.same }}
+      previous: ${{ steps.pick.outputs.previous }}
+    steps:
+      - id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)
+          prod=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/production" --jq .object.sha 2>/dev/null || true)
+          # A missing ref (the first release) or an API error prints error JSON, not a SHA: only a
+          # 40-character hex SHA is a previous production.
+          case "$prod" in (*[!0-9a-f]*) prod="" ;; esac
+          [ "${#prod}" -eq 40 ] || prod=""
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+          echo "previous=${prod}" >> "$GITHUB_OUTPUT"
+          if [ "$sha" = "$prod" ]; then
+            echo "same=true" >> "$GITHUB_OUTPUT"
+            echo "Nothing to release: production is already at ${sha}." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "same=false" >> "$GITHUB_OUTPUT"
+          fi
+  build:
+    needs: candidate
+    if: needs.candidate.outputs.same != 'true'
+    uses: ./.github/workflows/build.yml
+    with:
+      ref: ${{ needs.candidate.outputs.sha }}
+  sql:
+    needs: [candidate, build]
+    if: needs.candidate.outputs.same != 'true'
+    uses: ./.github/workflows/sql.yml
+    with:
+      ref: ${{ needs.candidate.outputs.sha }}
+  web:
+    needs: [candidate, sql]
+    if: needs.candidate.outputs.same != 'true'
+    uses: ./.github/workflows/web.yml
+    with:
+      ref: ${{ needs.candidate.outputs.sha }}
+  promote:
+    needs: [candidate, web]
+    if: needs.candidate.outputs.same != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.candidate.outputs.sha }}
+      # A fast-forward only: no force, so `production` can only move along main.
+      - run: git push origin "${{ needs.candidate.outputs.sha }}:refs/heads/production"
+  report:
+    needs: [candidate, build, sql, web, promote]
+    if: always() && needs.candidate.result == 'success' && needs.candidate.outputs.same != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.candidate.outputs.sha }}
+      - env:
+          CANDIDATE: ${{ needs.candidate.outputs.sha }}
+          PREVIOUS: ${{ needs.candidate.outputs.previous }}
+          RESULTS: "build=${{ needs.build.result }} sql=${{ needs.sql.result }} web=${{ needs.web.result }} promote=${{ needs.promote.result }}"
+        run: |
+          {
+            echo "## Release of ${CANDIDATE}"
+            if [ -n "$PREVIOUS" ]; then echo "Previous production: ${PREVIOUS}"; else echo "First release: no previous production."; fi
+            echo
+            echo "Jobs: ${RESULTS}"
+            failed=$(echo "$RESULTS" | tr ' ' '\n' | grep -E '=(failure|cancelled)$' | cut -d= -f1 | tr '\n' ' ')
+            if [ -n "$failed" ]; then echo; echo "**Held.** Production did not move. Failed: ${failed}"; fi
+            echo
+            echo "### Commits in this release"
+            if [ -n "$PREVIOUS" ]; then range="${PREVIOUS}..${CANDIDATE}"; else range="-n 40 ${CANDIDATE}"; fi
+            git log --first-parent --reverse --format='- %h %s' $range
+          } >> "$GITHUB_STEP_SUMMARY"

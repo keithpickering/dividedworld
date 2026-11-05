@@ -20,7 +20,7 @@ export const stickAround: CardRules<{ sentence: string }> = {
   rarity: 'common',
   priceKey: 'stickAround.price',
   playPrice: () => 0,
-  canApply: (target, effects) => landsOn(stickAround, target, effects),
+  canApply: (target, effects, _config, now) => landsOn(stickAround, target, effects, now),
   staffOptions: {
     prompt: 'Optionally choose the sentence a reader must check to be let go, at most 200 characters. Leave it out to use the usual one.',
     schema: { type: 'object', properties: { sentence: { type: 'string' } }, additionalProperties: false },

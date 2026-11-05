@@ -7,12 +7,17 @@
 # (check-doc-references.mjs reports a record's dead references and gates only on current
 # documents). specs/, CLAUDE.md, README.md and the rest of docs/ stay covered:
 # check-working-rules reads CLAUDE.md and docs/working-rules/ directly.
+# The daily release calls it on its candidate (release.yml).
 name: Build
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths-ignore: ['docs/plans/**']
   workflow_dispatch:
+  # The daily release (release.yml) calls this with the candidate it is releasing.
+  workflow_call:
+    inputs:
+      ref: { type: string, required: true }
 concurrency:
   group: build-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -23,6 +28,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.ref }}' }
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
       - run: npm ci --no-audit --no-fund

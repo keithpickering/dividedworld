@@ -6,12 +6,17 @@
 # Postgres 17 here, as Supabase runs; a session's container runs its distribution's Postgres.
 # Same trigger shape as build.yml: a draft's push shows a skipped job, and a PR is run when it
 # is marked ready. Carried from currents (docs/plans/port-manifest.md).
+# The daily release calls it on its candidate (release.yml).
 name: SQL
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths-ignore: ['docs/**']
   workflow_dispatch:
+  # The daily release (release.yml) calls this with the candidate it is releasing.
+  workflow_call:
+    inputs:
+      ref: { type: string, required: true }
 concurrency:
   group: sql-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -29,6 +34,7 @@ jobs:
           --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.ref }}' }
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
       # Installed only when missing, so the day a runner image stops shipping it fails loudly here.

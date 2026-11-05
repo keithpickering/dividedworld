@@ -27,7 +27,7 @@ const economy = { 'whoops.price': 100, 'whoops.perLength': 25, 'whoops.lengthSte
 const whoopsRules: CardRules<{ color: string }> = {
   key: 'whoops', name: 'Whoops!', alignment: 'salty', rarity: 'common', priceKey: 'whoops.price', stack: 3, reads: ['whoops.perLength', 'whoops.lengthStep'],
   playPrice: (settings, target) => settings.economy['whoops.perLength']! * Math.floor((target.reach === 'post' ? target.length : 0) / settings.economy['whoops.lengthStep']!),
-  canApply: (target, effects) => landsOn(whoopsRules, target, effects),
+  canApply: (target, effects, _config, now) => landsOn(whoopsRules, target, effects, now),
   validateConfig: (config) => {
     const color = typeof config === 'object' && config !== null ? (config as { color?: unknown }).color : undefined;
     return typeof color === 'string' ? ok({ color }) : refuse('the ink is a color');
@@ -36,7 +36,7 @@ const whoopsRules: CardRules<{ color: string }> = {
 const stickRules: CardRules = {
   key: 'stick-around', name: 'Stick Around', alignment: 'sweet', rarity: 'common', priceKey: 'stick.price',
   playPrice: () => 0,
-  canApply: (target, effects) => landsOn({ key: 'stick-around' }, target, effects),
+  canApply: (target, effects, _config, now) => landsOn({ key: 'stick-around' }, target, effects, now),
   validateConfig: (config) => ok(config),
 };
 const instance: Instance = { ...testInstance, cards: [whoopsRules, stickRules], settings: { ...testInstance.settings, economy } };
