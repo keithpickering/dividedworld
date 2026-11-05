@@ -34,7 +34,6 @@ export function Ago({ at, now }: { readonly at: string; readonly now?: number })
   return <time dateTime={at} title={new Date(at).toLocaleString('en-US')}>{ago(at, now)}</time>;
 }
 
-/** Whether the visitor is signed in: null until the session is known. */
 /**
  * Whether the reader is signed in, as the PlayerProvider already knows it: null until it does.
  * It asks the server nothing of its own (the provider has read the session), so a screen's first

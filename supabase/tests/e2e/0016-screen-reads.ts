@@ -80,8 +80,9 @@ const poisons: { name: string; create: string; why: RegExp }[] = [
   { name: 'is plpgsql', why: /poison_page: its body is not a SQL-standard body/,
     create: `create function public.poison_page() returns jsonb language plpgsql stable as $$ begin return to_jsonb(1); end $$;
       grant execute on function public.poison_page() to authenticated; revoke execute on function public.poison_page() from public, anon;` },
-  { name: 'calls here', why: /poison_page: it depends on function here, which is (not in ALLOWED_RPCS|volatile)|poison_page: it is not stable/,
-    create: `create function public.poison_page() returns jsonb language sql begin atomic select to_jsonb(public.here('board', null, null)); end;
+  { name: 'calls here', why: /poison_page: it depends on function here, which is volatile and may write/,
+    /* Declared stable, so only the volatile-dependency clause can catch it: here is in ALLOWED_RPCS. */
+    create: `create function public.poison_page() returns jsonb language sql stable begin atomic select to_jsonb(public.here('board', null, null)); end;
       grant execute on function public.poison_page() to authenticated; revoke execute on function public.poison_page() from public, anon;` },
   { name: 'is granted to anon', why: /poison_page: anon can execute it/,
     create: `create function public.poison_page() returns jsonb language sql stable begin atomic select to_jsonb(1); end;
