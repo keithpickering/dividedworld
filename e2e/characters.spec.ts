@@ -13,8 +13,8 @@ async function tabTo(page: Page, target: ReturnType<Page['locator']>) {
 test('asks for a Turn, sees it pending, and withdraws it, with the keyboard alone', async ({ page }) => {
   await page.goto('/characters');
   /* On the glass a character's controls are in its panel, chosen by its card (the Roster board); before, its table row. */
-  await page.getByRole('list', { name: /^Roster, /u }).getByRole('button', { name: /^Pipewrench/u }).click();
-  const row = page.getByRole('region', { name: 'Pipewrench' });
+  await page.getByRole('tablist', { name: /^Roster, /u }).getByRole('tab', { name: /^Pipewrench/u }).click();
+  const row = page.getByRole('tabpanel', { name: 'Pipewrench' });
   const turn = row.getByRole('button', { name: 'Turn Pipewrench' });
   await expect(turn).toBeVisible();
   /* The glass page has no crumb: the keyboard starts from the menu bar's Back, as a player's does. */
@@ -76,7 +76,7 @@ test('a phone shows My characters without scrolling sideways', async ({ page }) 
   await page.setViewportSize({ width: 320, height: 640 });
   await page.goto('/characters');
   await expect(page.getByRole('heading', { level: 1, name: /Your characters/u })).toBeVisible();
-  await page.getByRole('list', { name: /^Roster, /u }).getByRole('button', { name: /^Pipewrench/u }).click();
+  await page.getByRole('tablist', { name: /^Roster, /u }).getByRole('tab', { name: /^Pipewrench/u }).click();
   await expect(page.getByRole('button', { name: 'Turn Pipewrench' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
   await page.goto('/characters/new');
@@ -93,7 +93,7 @@ for (const width of [1440, 1280]) {
   test(`at ${width}px the Turn modal leaves the menu bar in view, dimmed and inert, and Close lights it again`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto('/characters');
-    await page.getByRole('list', { name: /^Roster, /u }).getByRole('button', { name: /^Pipewrench/u }).click();
+    await page.getByRole('tablist', { name: /^Roster, /u }).getByRole('tab', { name: /^Pipewrench/u }).click();
     await page.getByRole('button', { name: 'Turn Pipewrench' }).click();
     await expect(page.getByRole('dialog', { name: 'Turn Pipewrench' })).toBeVisible();
     const bar = page.locator('nav.kb-glass-menu');
@@ -119,7 +119,7 @@ for (const width of [1440, 1280]) {
 test('in forced colors the Turn names still show which is on', async ({ page }) => {
   await page.emulateMedia({ forcedColors: 'active' });
   await page.goto('/characters');
-  await page.getByRole('list', { name: /^Roster, /u }).getByRole('button', { name: /^Pipewrench/u }).click();
+  await page.getByRole('tablist', { name: /^Roster, /u }).getByRole('tab', { name: /^Pipewrench/u }).click();
   await page.getByRole('button', { name: 'Turn Pipewrench' }).click();
   const dialog = page.getByRole('dialog', { name: 'Turn Pipewrench' });
   await dialog.getByRole('radio').first().check();
@@ -154,7 +154,7 @@ test('in forced colors the Turn names still show which is on', async ({ page }) 
 test('on a phone at 100% text, a roster card is 280px tall with its Turn line 10px off its foot', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/characters');
-  await expect(page.getByRole('list', { name: /^Roster, /u })).toBeVisible();
+  await expect(page.getByRole('tablist', { name: /^Roster, /u })).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
   const got = await page.evaluate(() => {
     const card = document.querySelector('.kb-roster-card')!.getBoundingClientRect();
@@ -174,8 +174,8 @@ test('on a phone at 100% text, a roster card is 280px tall with its Turn line 10
 async function openTurnAt(page: Page, width: number, height = 1000) {
   await page.setViewportSize({ width, height });
   await page.goto('/characters');
-  await page.getByRole('list', { name: /^Roster, /u }).getByRole('button', { name: /^Pipewrench/u }).click();
-  await page.getByRole('region', { name: 'Pipewrench' }).getByRole('button', { name: 'Turn Pipewrench' }).click();
+  await page.getByRole('tablist', { name: /^Roster, /u }).getByRole('tab', { name: /^Pipewrench/u }).click();
+  await page.getByRole('tabpanel', { name: 'Pipewrench' }).getByRole('button', { name: 'Turn Pipewrench' }).click();
   const dialog = page.getByRole('dialog', { name: 'Turn Pipewrench' });
   await expect(dialog).toBeVisible();
   return dialog;
@@ -281,7 +281,7 @@ test('a Turn reopened on a pending Lurker opens with the Lurker in view', async 
   await classGroup(dialog).getByRole('radio', { name: 'Lurker' }).check();
   await dialog.getByRole('button', { name: 'Confirm Turn' }).click();
   await expect(dialog).toBeHidden();
-  await page.getByRole('region', { name: 'Pipewrench' }).getByRole('button', { name: /Change Pipewrench/u }).click();
+  await page.getByRole('tabpanel', { name: 'Pipewrench' }).getByRole('button', { name: /Change Pipewrench/u }).click();
   const change = page.getByRole('dialog', { name: /Change Pipewrench/u });
   await expect(change).toBeVisible();
   await expect(classGroup(change).getByRole('radio', { name: 'Lurker' })).toBeChecked();

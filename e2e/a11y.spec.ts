@@ -239,7 +239,7 @@ for (const scheme of ['light', 'dark'] as const) {
       test('the Turn, Reveal and Debut dialogs have none', async ({ page }) => {
         await page.goto('/characters');
         /* On the glass a character's controls are in its panel, chosen by its card (the Roster board). */
-        await page.getByRole('list', { name: /^Roster, /u }).getByRole('button', { name: /^Pipewrench/u }).click();
+        await page.getByRole('tablist', { name: /^Roster, /u }).getByRole('tab', { name: /^Pipewrench/u }).click();
         await page.getByRole('button', { name: 'Turn Pipewrench' }).click();
         await expect(page.getByRole('dialog', { name: 'Turn Pipewrench' })).toBeVisible();
         expect(await pageViolations(page)).toEqual([]);

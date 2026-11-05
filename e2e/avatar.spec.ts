@@ -3,8 +3,8 @@ import { webpChunks, webpProblem, webpSize } from '../engine/ui/profile-edit/web
 
 /* On the glass a character's Edit profile is in its panel, chosen by its card (the Roster board); before, its table row. */
 async function pipewrench(page: Page) {
-  await page.getByRole('list', { name: /^Roster, /u }).getByRole('button', { name: /^Pipewrench/u }).click();
-  await page.getByRole('region', { name: 'Pipewrench' }).getByRole('link', { name: 'Edit profile' }).click();
+  await page.getByRole('tablist', { name: /^Roster, /u }).getByRole('tab', { name: /^Pipewrench/u }).click();
+  await page.getByRole('tabpanel', { name: 'Pipewrench' }).getByRole('link', { name: 'Edit profile' }).click();
 }
 
 /* Safari's canvas gives a PNG when asked for a WebP; a page can be made to do the same. */

@@ -183,7 +183,7 @@ test.describe('high contrast', () => {
 
   test('the Turn modal over My characters: every line stands on solid ground', async ({ page }) => {
     await prefer(page, '/characters', { contrast: 'high' });
-    await page.getByRole('list', { name: /^Roster, /u }).getByRole('button', { name: /^Pipewrench/u }).click();
+    await page.getByRole('tablist', { name: /^Roster, /u }).getByRole('tab', { name: /^Pipewrench/u }).click();
     await page.getByRole('button', { name: 'Turn Pipewrench' }).click();
     await expect(page.getByRole('dialog', { name: 'Turn Pipewrench' })).toBeVisible();
     expect(await linesOffGround(page)).toEqual([]);

@@ -19,6 +19,7 @@ import { rankIndex } from '../../rules/ranks.ts';
 import { useKayfa } from '../context.tsx';
 import type { Character, CharacterCounts, Id, MyCharacter } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
+import { Carousel, carouselPanelId, carouselTabId } from '../glass/Carousel.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import { SignInPrompt, useSignedIn } from '../mini.tsx';
 import { usePlayer } from '../player.tsx';
@@ -55,6 +56,7 @@ export function Characters() {
   const player = usePlayer();
   const location = useLocation();
   const signedIn = useSignedIn(api);
+  const rosterId = useId();
   const panelHead = useId();
   const [faces, setFaces] = useState<ReadonlyMap<Id, Character>>(new Map());
   const [standings, setStandings] = useState<Readonly<Record<Id, number>>>({});
@@ -265,7 +267,7 @@ export function Characters() {
     const posts = counts?.id === c.id ? counts.counts.posts : null;
     const before = was.get(c.id);
     return (
-      <section className="kb-roster-panel kb-glass-cut-panel kb-calm" aria-labelledby={panelHead} data-kb-character={c.id}>
+      <section id={carouselPanelId(rosterId)} role="tabpanel" className="kb-roster-panel kb-glass-cut-panel kb-calm" aria-labelledby={carouselTabId(rosterId, c.id)} data-kb-character={c.id}>
         <div className="kb-roster-panel-head">
           <p className="kb-roster-selected">Selected</p>
           <h2 id={panelHead} className="kb-roster-panel-name kb-glass-display">{c.name}</h2>
@@ -347,42 +349,44 @@ export function Characters() {
       {mine.length === 0 && <p className="kb-characters-empty kb-calm">You have no characters yet. <Link to="/characters/new">Make one</Link> to start playing.</p>}
 
       <div className="kb-roster-layout">
-        <div className="kb-roster-side">
-          <ul className="kb-roster kb-calm" aria-label={`Roster, ${active.length} of ${per} slots used`}>
-            {mine.map((c) => {
+          <Carousel
+            role="tablist" id={rosterId} className="kb-roster-carousel"
+            label={`Roster, ${active.length} of ${per} slots used`}
+            items={mine.map((c) => ({ key: c.id, c }))} value={selected?.id ?? null} onChange={setPicked}
+            renderItem={({ c }, { props }) => {
               const r = rankOf(c);
+              /* The tab is named by its character alone (aria-label, which the panel's aria-labelledby reads as the name), and described by the rest. */
+              const more = `${rosterId}-${c.id}-more`;
               return (
-                <li key={c.id}>
-                  <button type="button" className="kb-roster-card" aria-current={c.id === selected?.id ? 'true' : undefined} onClick={() => setPicked(c.id)}>
-                    <Portrait face={faces.get(c.id)} className="kb-roster-portrait" />
-                    <span className="kb-roster-name kb-glass-display">{c.name}</span>
+                <button key={c.id} type="button" {...props} className="kb-roster-card" aria-label={c.name} aria-describedby={more}>
+                  <Portrait face={faces.get(c.id)} className="kb-roster-portrait" />
+                  <span className="kb-roster-name kb-glass-display">{c.name}</span>
+                  <span id={more} className="kb-roster-more">
                     <span className="kb-roster-class">
                       <ClassChip cls={c.class} name={className(c.class)} />
                       {r && <span className="kb-roster-rank" data-testid="kb-roster-rank">{r.rank.name}</span>}
                     </span>
                     {cardTurn(c)}
-                  </button>
-                </li>
+                  </span>
+                </button>
               );
-            })}
-            {open > 0 && (
-              <li className="kb-roster-new">
+            }}
+            after={open > 0 ? (
+              <div className="kb-roster-new kb-calm">
                 <Link to="/characters/new" className="kb-roster-new-link">
                   <svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><path d="M22 6 V38 M6 22 H38" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
                   <span className="kb-glass-display">New character</span>
                 </Link>
                 <span className="kb-roster-slots">You have {open} open {open === 1 ? 'slot' : 'slots'}.</span>
-              </li>
-            )}
-            {Array.from({ length: Math.max(0, open - 1) }, (_, i) => <li key={`empty-${i}`} className="kb-roster-empty" aria-hidden="true" />)}
-          </ul>
+              </div>
+            ) : undefined}
+          />
+        {selected && panel(selected)}
           {open === 0 && (
             <p className="kb-characters-new kb-calm">
               You play {active.length} of {per} characters, the most there are. There is no way to free a slot yet; an admin can retire a character on request, and keeps every Act it made.
             </p>
           )}
-        </div>
-        {selected && panel(selected)}
       </div>
 
       {dialog && target && dialog.kind === 'turn' && <TurnDialog character={target} face={faces.get(target.id)} standing={standings[target.id]} nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}

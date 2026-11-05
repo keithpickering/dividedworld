@@ -36,14 +36,14 @@ const open = (w: World) => renderIn(w.fake, <Characters />, { path: '/characters
  * player reaches it, by its card (a click that moves no focus, as a row's controls were always in
  * view). Before the glass this read the table's row.
  */
-const roster = () => screen.getByRole('list', { name: /^Roster, /u });
-const card = (name: string) => within(roster()).getByRole('button', { name: new RegExp(`^${name}`, 'u') });
+const roster = () => screen.getByRole('tablist', { name: /^Roster, /u });
+const card = (name: string) => within(roster()).getByRole('tab', { name: new RegExp(`^${name}`, 'u') });
 const row = (name: string) => {
   fireEvent.click(card(name));
-  return screen.getByRole('region', { name });
+  return screen.getByRole('tabpanel', { name });
 };
 /* Before the glass this waited for the name, which the card and the panel now both show. */
-const ready = async () => { await screen.findByRole('heading', { level: 1, name: /Your characters/u }); await within(await screen.findByRole('list', { name: /^Roster, /u })).findByText('Pipewrench'); };
+const ready = async () => { await screen.findByRole('heading', { level: 1, name: /Your characters/u }); await within(await screen.findByRole('tablist', { name: /^Roster, /u })).findByText('Pipewrench'); };
 
 /** Mrs. Hooligan has Turned once, today, so she cannot Turn for 30 days. */
 async function cooldown(w: World) {
@@ -589,21 +589,68 @@ describe('A pending Turn and a reveal', () => {
 });
 
 describe('My characters on the glass (the Roster board)', () => {
-  test('the roster is a list of the slots used, a card per character with its class, rank and Turn state, then New character', async () => {
+  test('the roster is a tablist of the slots used, a tab per character with its class, rank and Turn state, then New character', async () => {
     const w = world();
     await cooldown(w);
     open(w);
     await ready();
     expect(roster()).toHaveAccessibleName('Roster, 3 of 4 slots used');
     /* In the order they joined, the one still waiting last. */
-    expect(within(roster()).getAllByRole('button').map((b) => b.textContent)).toEqual([
+    expect(within(roster()).getAllByRole('tab').map((b) => b.textContent)).toEqual([
       expect.stringMatching(/^Pipewrench/u), expect.stringMatching(/^Mrs\. Hooligan/u), expect.stringMatching(/^Spritey/u),
     ]);
     expect(within(card('Pipewrench')).getByText('Face')).toBeInTheDocument();
     expect(within(card('Pipewrench')).getByText('Turn ready')).toBeInTheDocument();
     expect(within(card('Mrs. Hooligan')).getByText(/^Next Turn opens Nov 28$/u)).toBeInTheDocument();
     expect(within(card('Spritey')).getByText('Waiting to debut')).toBeInTheDocument();
-    expect(within(roster()).getByRole('link', { name: 'New character' })).toHaveAttribute('href', '/characters/new');
+    /* New character is a link after the tabs (a link is no tab, so it stands beside the tablist), its line naming the open slots, and no empty slot is drawn. */
+    const link = screen.getByRole('link', { name: 'New character' });
+    expect(link).toHaveAttribute('href', '/characters/new');
+    expect(roster().compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(roster()).queryByRole('link')).toBeNull();
+    expect(screen.getByText('You have 1 open slot.')).toBeInTheDocument();
+    expect(document.querySelector('.kb-roster-empty')).toBeNull();
+  });
+
+  test('the roster is one tablist with one tab per character, the selected one marked, and the panel is its tabpanel', async () => {
+    const w = world();
+    await cooldown(w);
+    open(w);
+    await ready();
+    const tabs = within(roster()).getAllByRole('tab');
+    expect(tabs).toHaveLength(3);
+    expect(tabs.filter((t) => t.getAttribute('aria-selected') === 'true')).toHaveLength(1);
+    const selected = tabs.find((t) => t.getAttribute('aria-selected') === 'true')!;
+    const panel = screen.getByRole('tabpanel');
+    expect(panel).toHaveAccessibleName(/^(Pipewrench|Mrs\. Hooligan|Spritey)$/u);
+    expect(panel.getAttribute('aria-labelledby')).toBe(selected.id);
+    expect(selected.getAttribute('aria-controls')).toBe(panel.id);
+    /* The panel comes directly after the row. */
+    expect(roster().closest('.kb-carousel')!.nextElementSibling).toBe(panel);
+    /* One tab stop: the selected tab. */
+    expect(tabs.map((t) => t.tabIndex)).toEqual(tabs.map((t) => (t === selected ? 0 : -1)));
+  });
+
+  test('the arrow keys select the next or previous character and move focus, wrapping; Home and End go to the ends', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    const tabs = () => within(roster()).getAllByRole('tab');
+    await userEvent.click(tabs()[0]!);
+    await userEvent.keyboard('{ArrowRight}');
+    expect(tabs()[1]).toHaveAttribute('aria-selected', 'true');
+    expect(tabs()[1]).toHaveFocus();
+    expect(screen.getByRole('tabpanel')).toHaveAccessibleName(/^Mrs\. Hooligan/u);
+    await userEvent.keyboard('{End}');
+    expect(tabs().at(-1)).toHaveFocus();
+    expect(tabs().at(-1)).toHaveAttribute('aria-selected', 'true');
+    await userEvent.keyboard('{ArrowRight}');
+    expect(tabs()[0]).toHaveFocus();
+    await userEvent.keyboard('{ArrowLeft}');
+    expect(tabs().at(-1)).toHaveFocus();
+    await userEvent.keyboard('{Home}');
+    expect(tabs()[0]).toHaveFocus();
+    expect(tabs()[0]).toHaveAttribute('aria-selected', 'true');
   });
 
   test('a card shows its character\'s rank once the standings are read', async () => {
@@ -621,9 +668,9 @@ describe('My characters on the glass (the Roster board)', () => {
     open(w);
     await ready();
     await userEvent.click(card('Mrs. Hooligan'));
-    expect(card('Mrs. Hooligan')).toHaveAttribute('aria-current', 'true');
-    expect(card('Pipewrench')).not.toHaveAttribute('aria-current');
-    const panel = screen.getByRole('region', { name: 'Mrs. Hooligan' });
+    expect(card('Mrs. Hooligan')).toHaveAttribute('aria-selected', 'true');
+    expect(card('Pipewrench')).toHaveAttribute('aria-selected', 'false');
+    const panel = screen.getByRole('tabpanel', { name: 'Mrs. Hooligan' });
     expect(within(panel).getByText('Selected')).toBeInTheDocument();
     expect(window.location.pathname + window.location.search + window.location.hash).toBe('/characters');
   });
@@ -632,12 +679,12 @@ describe('My characters on the glass (the Roster board)', () => {
     const w = world();
     renderIn(w.fake, <Characters />, { path: '/characters', state: { character: w.hoolie }, settings: { charactersPerPlayer: w.per } });
     await ready();
-    expect(card('Mrs. Hooligan')).toHaveAttribute('aria-current', 'true');
+    expect(card('Mrs. Hooligan')).toHaveAttribute('aria-selected', 'true');
     cleanup();
     localStorage.setItem(`kb-hud:${w.me}`, w.pipe);
     open(w);
     await ready();
-    expect(card('Pipewrench')).toHaveAttribute('aria-current', 'true');
+    expect(card('Pipewrench')).toHaveAttribute('aria-selected', 'true');
   });
 
   test('the panel says what the Roster board says: the class with its date, rank and standing, the wallet, the posts and the month joined', async () => {
@@ -687,7 +734,7 @@ describe('the class, in its own color, to its own player only', () => {
     const w = world();
     w.fake.signInAs(w.other);
     open(w);
-    await within(await screen.findByRole('list', { name: /^Roster, /u })).findByText('Stranger');
+    await within(await screen.findByRole('tablist', { name: /^Roster, /u })).findByText('Stranger');
     expect(screen.queryByText('Pipewrench')).toBeNull();
     expect(document.querySelector('[data-kb-class="face"]')).toBeNull();
     expect(document.querySelector('[style*="--kb-glass-class-face"]')).toBeNull();

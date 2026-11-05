@@ -29,7 +29,7 @@ test('the main flows run under the policy with no violation', async ({ page }) =
   await page.keyboard.press('Escape');
   await page.goto('/characters');
   /* On the glass a character's controls are in its panel, chosen by its card (the Roster board). */
-  await page.getByRole('list', { name: /^Roster, /u }).getByRole('button', { name: /^Pipewrench/u }).click();
+  await page.getByRole('tablist', { name: /^Roster, /u }).getByRole('tab', { name: /^Pipewrench/u }).click();
   await page.getByRole('button', { name: 'Turn Pipewrench' }).click();
   await expect(page.getByRole('dialog', { name: 'Turn Pipewrench' })).toBeVisible();
   await page.keyboard.press('Escape');

@@ -9,10 +9,17 @@
  * Edit profile for the board's Change avatar. The menu bar's tabs are compared in full: the
  * Vending Machine's joined it with the cards (the glass build plan, Part 3).
  *
- * Departures by the glass polish (docs/plans/2026-11-04-glass-polish-design.md, section 2): the head is a PageHead (engine/ui/glass/PageHead.tsx), which
+ * Departures by the glass polish (docs/plans/2026-11-04-glass-polish-design.md, sections 2 and 4): the head is a PageHead (engine/ui/glass/PageHead.tsx), which
  * sets its lead on the title's baseline and leaves 36px under the head, so the lead stands 36px lower and everything under the head 37px lower than
  * the board draws it. The lead is not compared by place, and the roster and the panel by their size and the places of their parts from
  * their own corners.
+ *
+ * Section 4 (the roster is a carousel of tabs): the roster is one row, a tablist, and the selected panel is its tabpanel directly under
+ * the row at the page's full width, where the board draws the grid of three beside a 500px panel. So the roster is compared by its x and width as
+ * the three tabs (its row gap is the board's 20px), New character, which stands beside the tablist and not in it, by its size, and the
+ * panel by nothing of its own: the labels keep their places from the panel's top-left, the parts whose width follows the panel (its head, the Was
+ * line, the pip style: 1252px under the row, the board's 438px) are held by their y and height from that corner, and the cooldown, the Turn button
+ * and the two links, whose widths follow the panel too and whose places already follow the Online status row, are held by their words.
  *
  * "Pipewrench's log" opens My log on Pipewrench's tab (the glass build's Part 4); its place follows the
  * panel's actions, where Reveal… sits beside Edit profile, so it is compared by size. Left out: Mrs. Hooligan's and Spritey's classes and
@@ -59,7 +66,7 @@ const manifest: BoardManifest = {
     },
 
     /* The roster, and Pipewrench's card: its name, its class in its color, its rank and its next Turn. */
-    { id: 'roster', role: 'list', name: 'Roster, 3 of 6 slots used', type: false, box: 'across' },
+    { id: 'roster', role: 'list', buildRole: 'tablist', name: 'Roster, 3 of 6 slots used', type: false, box: 'across' },
     { id: 'card-name', role: 'text', name: 'Pipewrench', within: 'roster', origin: 'roster' },
     { id: 'card-class', role: 'text', name: 'Face', within: 'roster', origin: 'roster' },
     { id: 'card-rank', role: 'text', name: 'Midcarder', within: 'roster', origin: 'roster' },
@@ -69,31 +76,32 @@ const manifest: BoardManifest = {
      * Mrs. Hooligan has never Turned, so the build's first "Turn ready" is hers and Spritey's the second.
      */
     { id: 'card-ready', role: 'text', name: 'Turn ready', within: 'roster', buildNth: 1, origin: 'roster' },
-    { id: 'new', role: 'link', name: 'New character', within: 'roster', origin: 'roster' },
+    /* Beside the tablist, the row's last card: a link is no tab. The board draws it in the grid's next row, so its size is held. */
+    { id: 'new', role: 'link', name: 'New character', box: 'size' },
 
     /*
      * The selected panel, chamfer step 4. The build adds Online status under the pip style (the presence
      * plan, docs/plans/2026-10-31-presence-plan.md, Task 5), which the board predates: the panel grows by
      * that row and its line, so the panel is compared across, its parts from its corner, and what follows the row by size.
      */
-    { id: 'panel', role: 'region', name: 'Pipewrench', type: false, box: 'across' },
-    { id: 'panel-selected', role: 'text', name: 'Selected', within: 'panel', origin: 'panel' },
-    { id: 'panel-name', role: 'heading', name: 'Pipewrench', within: 'panel', origin: 'panel' },
+    { id: 'panel', role: 'region', buildRole: 'tabpanel', name: 'Pipewrench', type: false, box: 'none' },
+    { id: 'panel-selected', role: 'text', name: 'Selected', within: 'panel', origin: 'panel', box: 'height' },
+    { id: 'panel-name', role: 'heading', name: 'Pipewrench', within: 'panel', origin: 'panel', box: 'height' },
     /* The class's "only you" tag follows it on the build's line (web Task 9), so the chip stands left of the board's: its size is compared. */
     { id: 'panel-class', role: 'text', name: 'Face', within: 'panel', box: 'size' },
     { id: 'panel-was-label', role: 'text', name: 'Was', within: 'panel', origin: 'panel' },
-    { id: 'panel-was', role: 'text', name: 'Heel, announced publicly', within: 'panel', origin: 'panel' },
+    { id: 'panel-was', role: 'text', name: 'Heel, announced publicly', within: 'panel', origin: 'panel', box: 'height' },
     { id: 'panel-rank-label', role: 'text', name: 'Rank', within: 'panel', origin: 'panel' },
     { id: 'panel-wallet-label', role: 'text', name: 'Wallet', within: 'panel', origin: 'panel' },
     { id: 'panel-posts-label', role: 'text', name: 'Posts', within: 'panel', origin: 'panel' },
     /* The pip style, the profile's own, chosen here. */
-    { id: 'panel-pip', role: 'combobox', name: 'Pip style', within: 'panel', origin: 'panel' },
+    { id: 'panel-pip', role: 'combobox', name: 'Pip style', within: 'panel', origin: 'panel', box: 'height' },
     /* The Turn that opens later, in the neon's text on a dashed edge; its name is the screen's own. */
-    { id: 'panel-turn', role: 'button', name: 'TURN · OPENS NOV 29', buildName: 'Turn Pipewrench', within: 'panel', box: 'size' },
-    { id: 'panel-cooldown', role: 'text', name: 'A character can Turn once every 30 days. Pipewrench last Turned at the Oct 30 settlement.', within: 'panel', box: 'size' },
+    { id: 'panel-turn', role: 'button', name: 'TURN · OPENS NOV 29', buildName: 'Turn Pipewrench', within: 'panel', box: 'none' },
+    { id: 'panel-cooldown', role: 'text', name: 'A character can Turn once every 30 days. Pipewrench last Turned at the Oct 30 settlement.', within: 'panel', box: 'none' },
     /* Two GlassButtons (48px; the board's are 56px), compared across. */
-    { id: 'panel-avatar', role: 'link', name: 'Change avatar', buildName: 'Edit profile', within: 'panel', box: 'across' },
-    { id: 'panel-log', role: 'link', name: 'Pipewrench\'s log', within: 'panel', box: 'across' },
+    { id: 'panel-avatar', role: 'link', name: 'Change avatar', buildName: 'Edit profile', within: 'panel', box: 'none' },
+    { id: 'panel-log', role: 'link', name: 'Pipewrench\'s log', within: 'panel', box: 'none' },
     {
       id: 'panel-most', role: 'text', name: 'Six characters at most. To free a slot, ask an admin to retire one; every Act it made stays on the board.',
       buildName: '6 characters at most. To free a slot, ask an admin to retire one; every Act it made stays on the board.',
