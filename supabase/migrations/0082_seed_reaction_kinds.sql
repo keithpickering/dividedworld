@@ -32,12 +32,13 @@ begin
   if payload ? 'reactions' then
     select string_agg(k.key || ' (' || (select count(*) from reactions r where r.kind = k.key) || ' reactions)', ', ' order by k.key) into unknown
     from reaction_kinds k
-    where k.key not in (select e ->> 'key' from jsonb_array_elements(payload -> 'reactions') e)
+    where not exists (select 1 from jsonb_array_elements(payload -> 'reactions') e where e ->> 'key' = k.key)
       and (exists (select 1 from reactions r where r.kind = k.key) or exists (select 1 from reaction_tallies t where t.kind = k.key));
     if unknown is not null then
       raise exception 'the instance no longer lists reaction kinds that reactions use: %; a used kind is never removed (#216)', unknown using errcode = '22023';
     end if;
-    delete from reaction_kinds where key not in (select e ->> 'key' from jsonb_array_elements(payload -> 'reactions') e);
+    -- `not exists`, not `not in`: an element with no key would make `not in` null for every kind, hiding a used one.
+    delete from reaction_kinds k where not exists (select 1 from jsonb_array_elements(payload -> 'reactions') e where e ->> 'key' = k.key);
   end if;
   insert into reaction_kinds (key, emoji, quadrant) select e ->> 'key', e ->> 'emoji', e ->> 'quadrant' from jsonb_array_elements(payload -> 'reactions') e
   on conflict (key) do update set emoji = excluded.emoji, quadrant = excluded.quadrant;

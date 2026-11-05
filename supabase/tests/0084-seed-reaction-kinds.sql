@@ -116,3 +116,30 @@ begin
   end if;
 end $$;
 rollback to savepoint kinds_5;
+
+-- ---- An element with no key does not hide a used kind ----
+-- Under `not in`, the element's null key made every kind look listed: the refusal found nothing and the seed failed later,
+-- on the key's not-null, with no word of the kind in use.
+savepoint kinds_6;
+do $$
+declare
+  ann uuid := tests.account('rn-ann');
+  bob uuid := tests.account('rn-bob');
+  a uuid := tests.character(ann, 'Rn Ann');
+  b uuid := tests.character(bob, 'Rn Bob');
+  t uuid := tests.thread('Rn thread');
+  p uuid := tests.post(a, t);
+  list jsonb := jsonb_build_array(pg_temp.kind('up', '⬆️', 'excitedPositive'), pg_temp.kind('boo', '👻', 'excitedNegative'),
+    pg_temp.kind('calm', '🌊', 'calmPositive'), pg_temp.kind('meh', '😑', 'boredNegative'),
+    jsonb_build_object('emoji', '💥', 'quadrant', 'excitedPositive'));
+  why text;
+begin
+  insert into reactions (act, reactor_account, reactor_character, kind, slot) values (p, bob, b, 'wow', 1);
+  insert into reaction_tallies (act, kind, count) values (p, 'wow', 1);
+  why := pg_temp.refusal(format('select seed_instance(%L::jsonb)', pg_temp.payload(list)));
+  if why is null or why not like '%wow (1 reactions)%' then
+    raise exception 'an element with no key hid the used kind from the refusal: %', why;
+  end if;
+  if not exists (select 1 from reaction_kinds where key = 'wow') then raise exception 'a refused seed removed the used kind'; end if;
+end $$;
+rollback to savepoint kinds_6;
