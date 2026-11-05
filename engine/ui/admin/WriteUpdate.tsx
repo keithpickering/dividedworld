@@ -61,7 +61,7 @@ export function WriteUpdate({ onWritten, initial }: WriteUpdateProps) {
 
   /* Why the button is held, in words: the button is described by this, and a too-long form says by how much. */
   const over = length - settings.postMaxLength;
-  const why = over > 0 ? `Too long by ${over} ${over === 1 ? 'character' : 'characters'}` : tooLong ? 'The title is too long.' : blank ? 'Give the update a title and some words to post it.' : drafting ? 'Replace the filled-in lines with your announcement to post it.' : '';
+  const why = over > 0 ? `Too long by ${over} ${over === 1 ? 'character' : 'characters'}` : tooLong ? 'The title is too long.' : blank ? 'Give the update a title and some words to post it.' : drafting ? 'Change the words to post. The filled-in lines are facts, not yet the announcement.' : '';
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -101,7 +101,7 @@ export function WriteUpdate({ onWritten, initial }: WriteUpdateProps) {
       </div>
       {initial !== undefined && (
         <p className="kb-write-update-note" role="note">
-          The title and words are filled in from the handover: these are facts, not the announcement. Write it in your own words; no model does.
+          The title and words are filled in from the handover: these are facts, not the announcement. Add to them or rewrite them in your own words; no model does.
         </p>
       )}
       <div className="kb-write-update-field">

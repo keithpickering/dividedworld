@@ -146,7 +146,7 @@ describe('Write an update', () => {
       expect(within(form()).getByLabelText('Words')).toHaveValue(initial.words);
       expect(within(form()).getByText(/filled in from the handover/u)).toBeInTheDocument();
       expect(within(form()).getByRole('button', { name: 'Post update' })).toBeDisabled();
-      expect(within(form()).getByText(/Replace the filled-in lines/u)).toBeInTheDocument();
+      expect(within(form()).getByText(/Change the words to post/u)).toBeInTheDocument();
     });
 
     test('posts what the admin typed, and nothing of the filled-in lines they replaced', async () => {
