@@ -75,32 +75,68 @@ test.describe('at the column\'s own width and either side of it', () => {
 });
 
 /**
- * The vignette (the glass-polish design's section 8) is violet laid toward the edges of the window, and the board's text column is
- * untouched, so the board's contrast is what it was. Measured in the browser: a strip inside the column is the same pixels with the
- * vignette drawn as with it hidden, a strip in the gutter is not, and under High contrast it is not drawn at all.
+ * The vignette (the glass-polish design's section 8) is violet laid toward the edges of the window, strongest at the corners and the
+ * foot, and the board's text column is untouched, so the board's contrast is what it was. Measured in the browser, with the HUD
+ * hidden so the foot above it is read (it is opaque, z-index 30, and would cover the foot's samples): a strip inside the column is
+ * the same pixels with the vignette drawn as with it hidden, a strip in the gutter is not, a gutter corner is shifted more than the
+ * gutter's vertical middle, and under High contrast it is not drawn at all. Both board modes, and a window where the gutter is narrow.
  */
-test.describe('the vignette', () => {
-  test.use({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+const meanShift = (page: Page, a: Buffer, b: Buffer) => page.evaluate(async ([x, y]) => {
+  const px = async (png: string) => {
+    const bitmap = await createImageBitmap(await (await fetch(`data:image/png;base64,${png}`)).blob());
+    const g = new OffscreenCanvas(bitmap.width, bitmap.height).getContext('2d')!;
+    g.drawImage(bitmap, 0, 0);
+    return g.getImageData(0, 0, bitmap.width, bitmap.height).data;
+  };
+  const [p, q] = [await px(x!), await px(y!)];
+  let sum = 0;
+  for (let i = 0; i < p.length; i += 4) sum += Math.abs(p[i]! - q[i]!) + Math.abs(p[i + 1]! - q[i + 1]!) + Math.abs(p[i + 2]! - q[i + 2]!);
+  return sum / (p.length / 4) / 3;
+}, [a.toString('base64'), b.toString('base64')]);
 
-  const strip = (page: Page, x: number, y: number) => page.screenshot({ clip: { x, y, width: 40, height: 40 }, animations: 'disabled' });
+for (const scheme of ['light', 'dark'] as const) {
+  for (const [width, height] of [[1440, 900], [800, 900]] as const) {
+    test.describe(`the vignette, ${scheme}, ${width}px wide`, () => {
+      test.use({ viewport: { width, height }, reducedMotion: 'reduce', colorScheme: scheme, bypassCSP: true });
+      const W = 8;
+      const strip = (page: Page, x: number, y: number) => page.screenshot({ clip: { x, y, width: W, height: W }, animations: 'disabled' });
+      const left = (width - Math.min(width * 0.96, MAX)) / 2;
 
-  test('lies in the gutters and never inside the 1200px column; High contrast draws none', async ({ page }) => {
-    await openThread(page);
-    const vignette = page.locator('.kb-vignette');
-    await expect(vignette).toHaveCount(1);
-    await expect(vignette).toHaveAttribute('aria-hidden', 'true');
-    expect(await vignette.evaluate((e) => getComputedStyle(e).pointerEvents)).toBe('none');
-    expect(await vignette.evaluate((e) => getComputedStyle(e).position)).toBe('fixed');
-    /* Just inside the column's left edge (x 120) and its right (x 1320), at the top, the middle and the foot above the HUD. */
-    const inside = [[122, 20], [122, 450], [122, 700], [1318 - 40, 20], [1318 - 40, 450], [1318 - 40, 700], [700, 20], [700, 700]] as const;
-    const outside = [[2, 20], [2, 700], [1398, 450]] as const;
-    const drawn = await Promise.all([...inside, ...outside].map(([x, y]) => strip(page, x, y)));
-    await vignette.evaluate((e) => { (e as HTMLElement).style.display = 'none'; });
-    const bare = await Promise.all([...inside, ...outside].map(([x, y]) => strip(page, x, y)));
-    inside.forEach((at, i) => expect(drawn[i]!.equals(bare[i]!), `inside the column at ${at}`).toBe(true));
-    outside.forEach((at, i) => expect(drawn[inside.length + i]!.equals(bare[inside.length + i]!), `in the gutter at ${at}`).toBe(false));
-    await vignette.evaluate((e) => { (e as HTMLElement).style.display = ''; });
-    await page.evaluate(() => document.documentElement.setAttribute('data-kb-contrast', 'high'));
-    expect(await vignette.evaluate((e) => getComputedStyle(e).display)).toBe('none');
-  });
+      test('lies in the gutters and never inside the column; High contrast draws none', async ({ page }) => {
+        await openThread(page);
+        await page.addStyleTag({ content: '.kb-hud { visibility: hidden !important; }' });
+        const vignette = page.locator('.kb-vignette');
+        await expect(vignette).toHaveCount(1);
+        await expect(vignette).toHaveAttribute('aria-hidden', 'true');
+        expect(await vignette.evaluate((e) => getComputedStyle(e).pointerEvents)).toBe('none');
+        expect(await vignette.evaluate((e) => getComputedStyle(e).position)).toBe('fixed');
+        /* The column's own edges, and its middle, at the top, the middle, and the foot above the HUD (the foot's 220px is y 680 to 900). */
+        const xs = [left, width / 2 - W / 2, width - left - W];
+        const ys = [0, 450, 700, 800, height - W];
+        const inside = xs.flatMap((x) => ys.map((y) => [x, y] as const));
+        const gutter = [[0, 0], [0, 450], [0, height - W], [width - W, 450]] as const;
+        const all = [...inside, ...gutter];
+        const drawn = await Promise.all(all.map(([x, y]) => strip(page, x, y)));
+        await vignette.evaluate((e) => { (e as HTMLElement).style.display = 'none'; });
+        const bare = await Promise.all(all.map(([x, y]) => strip(page, x, y)));
+        const shift = await Promise.all(all.map((_, i) => meanShift(page, drawn[i]!, bare[i]!)));
+        inside.forEach((at, i) => expect(shift[i], `inside the column at ${at}`).toBe(0));
+        gutter.forEach((at, i) => expect(shift[inside.length + i], `in the gutter at ${at}`).toBeGreaterThan(0));
+        if (width === 1440) {
+          const [top, middle, foot] = shift.slice(inside.length) as [number, number, number];
+          expect(top, 'the top corner against the gutter\'s middle').toBeGreaterThan(middle);
+          expect(foot, 'the bottom corner against the gutter\'s middle').toBeGreaterThan(middle);
+        }
+        await vignette.evaluate((e) => { (e as HTMLElement).style.display = ''; });
+        await page.evaluate(() => document.documentElement.setAttribute('data-kb-contrast', 'high'));
+        expect(await vignette.evaluate((e) => getComputedStyle(e).display)).toBe('none');
+      });
+    });
+  }
+}
+
+test('the vignette is the board\'s: a glass page draws none', async ({ page }) => {
+  await page.goto('/log');
+  await expect(page.locator('.kb-glass-page, .kb-glass-content').first()).toBeVisible();
+  await expect(page.locator('.kb-vignette')).toHaveCount(0);
 });

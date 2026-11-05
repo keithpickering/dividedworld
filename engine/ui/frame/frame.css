@@ -76,10 +76,10 @@
  * The vignette (the glass-polish design, section 8): the glass's violet laid toward the edges of the window, strongest at the foot
  * above the HUD, so the HUD's glow seems to fall onto the page. One fixed element, under the HUD (z-index 30) and above the board,
  * that takes no click. It is drawn only in the gutters beside the board's column and never inside it, so the board's contrast is
- * what it was: the sides are a radial gradient whose transparent stop is the column's edge (half of `--kb-board-max`, or the 48%
- * of the window the column takes where the window is narrower), made almost flat vertically by a very tall ellipse so that no
- * point of the column's top or foot is reached; the foot is a linear gradient over 220px; and a mask keeps the foot out of the
- * column too. High contrast draws none. Colors and opacities are the instance's (engine/ui/tokens.css); the engine's defaults are transparent.
+ * what it was: the edge is an elliptical radial gradient to the window's corners, where it reaches the full edge opacity, clear
+ * out to the column's edge (half of `--kb-board-max`, or the 48% of the window the column takes where the window is narrower);
+ * the foot is a linear gradient over 220px; and a mask keeps both out of the column, since the ellipse still reaches the middle
+ * of the top and the foot beyond the column's edge in height. High contrast draws none. Colors and opacities are the instance's (engine/ui/tokens.css); the engine's defaults are transparent.
  */
 .kb-vignette {
   --kb-column-half: min(48vw, calc(var(--kb-board-max) / 2));
@@ -89,7 +89,7 @@
   pointer-events: none;
   background:
     linear-gradient(to top, color-mix(in srgb, var(--kb-vignette-foot-color) calc(var(--kb-vignette-foot) * 100%), transparent), transparent 220px),
-    radial-gradient(ellipse 50vw 100000px at 50% 50%, transparent var(--kb-column-half), color-mix(in srgb, var(--kb-vignette-color) calc(var(--kb-vignette-edge) * 100%), transparent) 50vw);
+    radial-gradient(ellipse farthest-corner at 50% 50%, transparent var(--kb-column-half), color-mix(in srgb, var(--kb-vignette-color) calc(var(--kb-vignette-edge) * 100%), transparent) 100%);
   -webkit-mask-image: linear-gradient(to right, var(--kb-bg) calc(50% - var(--kb-column-half)), transparent calc(50% - var(--kb-column-half)), transparent calc(50% + var(--kb-column-half)), var(--kb-bg) calc(50% + var(--kb-column-half)));
   mask-image: linear-gradient(to right, var(--kb-bg) calc(50% - var(--kb-column-half)), transparent calc(50% - var(--kb-column-half)), transparent calc(50% + var(--kb-column-half)), var(--kb-bg) calc(50% + var(--kb-column-half)));
 }
