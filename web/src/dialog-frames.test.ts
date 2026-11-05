@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 import { describe, expect, test } from 'vitest';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -41,8 +42,54 @@ describe('the markup: no component draws a dialog frame', () => {
 });
 
 describe('the stylesheets: no dialog draws its own frame', () => {
-  /** The classes that are a dialog's box: the frame's and each dialog's own. */
-  const BOXES = ['kb-glass-dialog', 'kb-glass-cut-dialog', 'kb-picker', 'kb-lens', 'kb-hold-view', 'kb-play-dialog', 'kb-turn-dialog', 'kb-debut-dialog', 'kb-reveal-dialog', 'kb-vending-about-dialog', 'kb-queue-dialog', 'kb-move-overlay'];
+  /**
+   * The classes that are a dialog's box: the frame's, and each `className` given to an `Overlay` or a `Float` in the engine or an instance,
+   * read from the source (the AST), so a new dialog is held to the frame the moment it is written, with no list to add it to. A className
+   * that is not a string the test can read (a variable, a call) is a dialog it cannot see, and fails.
+   */
+  const FRAME_CLASSES = ['kb-glass-dialog', 'kb-glass-cut-dialog'];
+  /** Each `className` string of an `<Overlay>` or `<Float>` in `text`, and the className expressions that could not be read as strings. */
+  const dialogClasses = (text: string, file = 'x.tsx') => {
+    const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const found = new Set<string>();
+    const unread: string[] = [];
+    const strings = (n: ts.Node): boolean => {
+      if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) { for (const c of n.text.split(/\s+/u)) if (c) found.add(c); return true; }
+      if (ts.isConditionalExpression(n)) return strings(n.whenTrue) && strings(n.whenFalse);
+      if (ts.isParenthesizedExpression(n)) return strings(n.expression);
+      return false;
+    };
+    const visit = (n: ts.Node) => {
+      const tag = ts.isJsxOpeningElement(n) || ts.isJsxSelfClosingElement(n) ? n.tagName.getText(sf) : null;
+      if (tag === 'Overlay' || tag === 'Float') {
+        const attrs = (n as ts.JsxOpeningElement).attributes.properties;
+        const cls = attrs.find((a): a is ts.JsxAttribute => ts.isJsxAttribute(a) && a.name.getText(sf) === 'className');
+        const init = cls?.initializer;
+        const expr = init && ts.isJsxExpression(init) ? init.expression : init;
+        if (expr && !strings(expr)) unread.push(`${file}: ${expr.getText(sf)}`);
+      }
+      ts.forEachChild(n, visit);
+    };
+    visit(sf);
+    return { found, unread };
+  };
+  const source = walk(path.join(root, 'engine'), '.tsx').concat(walk(path.join(root, 'instances'), '.tsx'), walk(path.join(root, 'web', 'src'), '.tsx'))
+    .filter((f) => !/\.(test|stories)\.tsx$/u.test(f));
+  const derived = source.map((f) => ({ f: rel(f), ...dialogClasses(fs.readFileSync(f, 'utf8'), rel(f)) }));
+  const BOXES = [...new Set([...FRAME_CLASSES, ...derived.flatMap((d) => [...d.found])])].sort();
+
+  test('every className an Overlay or a Float is given is read, and the dialogs this repository has are among them', () => {
+    expect(derived.flatMap((d) => d.unread)).toEqual([]);
+    for (const c of ['kb-turn-dialog', 'kb-debut-dialog', 'kb-reveal-dialog', 'kb-vending-about-dialog', 'kb-queue-dialog', 'kb-move-overlay']) expect(BOXES, c).toContain(c);
+  });
+
+  test('a dialog planted in a component is found, and so is one a variable hides', () => {
+    const planted = dialogClasses('const A = () => <Overlay title="x" className="kb-planted-dialog" onClose={f}>x</Overlay>; const B = () => <Float className={open ? "kb-planted-float kb-two" : \'kb-three\'} />;');
+    expect([...planted.found].sort()).toEqual(['kb-planted-dialog', 'kb-planted-float', 'kb-three', 'kb-two']);
+    expect(dialogClasses('const A = () => <Overlay className={cls} />;').unread).toHaveLength(1);
+    expect(dialogClasses('const A = () => <Panel className="kb-not-a-dialog" />;').found.size).toBe(0);
+  });
+
   /** What draws the frame: the cut, the border, the sheet it is drawn on, the glow. */
   const FRAME_PROPS = /^(--kb-cut|--kb-cut-in|--kb-border|clip-path|background|background-color|background-image|border(-[a-z-]+)?|outline|box-shadow|filter)$/u;
   const SHELL = ['engine/ui/glass/shell.css', 'engine/ui/glass/base.css'];
