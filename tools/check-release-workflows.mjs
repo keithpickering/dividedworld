@@ -69,12 +69,13 @@ export function problems(files) {
   } else {
     const jobs = isObj(rel.jobs) ? rel.jobs : {};
     const missing = JOBS.filter((j) => !isObj(jobs[j]));
-    if (missing.length) out.push(`${RELEASE}: R1 jobs missing: ${missing.join(', ')}`);
     const chain = [['sql', 'build'], ['web', 'sql'], ['promote', 'web']];
     const broken = chain.filter(([job, before]) => isObj(jobs[job]) && !list(jobs[job].needs).includes(before));
-    if (broken.length) {
-      out.push(`${RELEASE}: R1 the chain build -> sql -> web -> promote is broken: ${broken.map(([j, b]) => `${j} does not need ${b}`).join('; ')}`);
-    }
+    const bad1 = [
+      ...(missing.length ? [`jobs missing: ${missing.join(', ')}`] : []),
+      ...broken.map(([j, b]) => `the chain build -> sql -> web -> promote is broken: ${j} does not need ${b}`),
+    ];
+    if (bad1.length) out.push(`${RELEASE}: R1 ${bad1.join('; ')}`);
 
     const bad = [];
     for (const name of CALLED) {
