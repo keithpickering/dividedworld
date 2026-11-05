@@ -3,6 +3,8 @@
  * (supabase/migrations/0004_schedule.sql) writes: how an instance's classes, reactions, cards,
  * settings and boards arrive in a database whose SQL names none of them. Staff arrive as a roster of
  * characters only; their prompts are read from the instance in code and never travel in the seed.
+ * The reactions list is the instance's whole set: seeding deletes a kind the instance dropped, or refuses when one is in
+ * use (supabase/migrations/0082_seed_reaction_kinds.sql).
  */
 import type { Instance } from '../../../engine/rules/types.ts';
 import { DEFAULT_DEVELOPER } from '../../../engine/rules/instance.ts';

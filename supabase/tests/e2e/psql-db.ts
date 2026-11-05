@@ -7,6 +7,8 @@
  */
 import { execFileSync } from 'node:child_process';
 import { DatabaseError, type Db } from '../../functions/_shared/rpc.ts';
+import { instanceSeed } from '../../functions/_shared/seed.ts';
+import type { Instance } from '../../../engine/rules/types.ts';
 
 export function scratchUrl(): string {
   const url = process.env.KAYFABB_SCRATCH_URL;
@@ -22,6 +24,22 @@ export function sql(text: string, vars: Record<string, string> = {}): string {
   for (const [k, v] of Object.entries(vars)) args.push('-v', `${k}=${v}`);
   args.push('-f', '-');
   return execFileSync('psql', args, { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+}
+
+/**
+ * The instance's seed, for this scratch database. The database is shared with the SQL suite's own test
+ * instance (supabase/tests/setup/fixtures.sql), whose race files commit reactions on its kinds, and
+ * seed_instance takes a payload's reactions as the instance's whole set and refuses to drop a kind that
+ * reactions use (0082). So the kinds the database already holds are seeded beside the instance's own, as
+ * they stood before. Where a held kind shares a key or an emoji with one of the instance's, the instance's
+ * wins and the held one is left out.
+ */
+export function scratchSeed(instance: Instance): ReturnType<typeof instanceSeed> {
+  const seed = instanceSeed(instance);
+  const held = JSON.parse(sql(`select coalesce(jsonb_agg(jsonb_build_object('key', key, 'emoji', emoji, 'quadrant', quadrant) order by key), '[]') from reaction_kinds`)) as typeof seed.reactions;
+  const keys = new Set(seed.reactions.map((r) => r.key));
+  const emoji = new Set(seed.reactions.map((r) => r.emoji));
+  return { ...seed, reactions: [...seed.reactions, ...held.filter((r) => !keys.has(r.key) && !emoji.has(r.emoji))] };
 }
 
 /** As the service role, or, given an account, as that player, as their session would be. */

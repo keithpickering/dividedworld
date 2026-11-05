@@ -9,7 +9,7 @@
 do $$
 declare
   seed jsonb := jsonb_build_object(
-    'settings', jsonb_build_object('systemEnabled', true), 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+    'settings', jsonb_build_object('systemEnabled', true), 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'sc-boss',
       'staff', jsonb_build_array(jsonb_build_object('key', 'sc-boss', 'name', 'Screens Boss', 'title', 'Boss', 'signature', 'Hi')),
       'firstStaff', '[]'::jsonb,

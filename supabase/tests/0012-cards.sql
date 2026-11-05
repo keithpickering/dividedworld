@@ -121,7 +121,7 @@ begin
   if coalesce(pg_temp.refusal($q$delete from settings where key = 'economy'$q$), '') not like '%replace it%' then raise exception 'the economy, which holds the cards'' prices, was deleted'; end if;
   -- A card the code no longer sells keeps its price when the instance is seeded again without it.
   perform seed_instance(jsonb_build_object('settings', jsonb_build_object('economy', jsonb_build_object('sweetie.price', 100)), 'classes', '[]'::jsonb,
-    'reactions', '[]'::jsonb, 'cards', '[]'::jsonb, 'boards', '[]'::jsonb));
+    'cards', '[]'::jsonb, 'boards', '[]'::jsonb));
   if (select value ->> 'splat.price' from settings where key = 'economy') is distinct from '20.0' then raise exception 'a reseed took a retired card''s price away'; end if;
 end $$;
 

@@ -21,8 +21,8 @@ const day: SettlementInput = {
   acts: [{ id: 'p1', character: 'he', kind: 'post', at: FROM + H, thread: 't' }],
   reactions: [
     { act: 'p1', player: 'cat', character: 'ca', kind: 'tomato', at: FROM + 2 * H },
-    { act: 'p1', player: 'dee', character: 'de', kind: 'tea', at: FROM + 3 * H },
-    { act: 'p1', player: 'dee', character: 'de', kind: 'nauseated', at: FROM + 3 * H + 1 },
+    { act: 'p1', player: 'dee', character: 'de', kind: 'folded-hands', at: FROM + 3 * H },
+    { act: 'p1', player: 'dee', character: 'de', kind: 'vomiting', at: FROM + 3 * H + 1 },
     { act: 'p1', player: 'eve', character: 'ev', kind: 'tomato', at: FROM + 4 * H },
     { act: 'p1', player: 'fay', character: 'fa', kind: 'tomato', at: FROM + 5 * H },
   ],

@@ -91,8 +91,8 @@ test('an instance exported and imported into a fresh database is the same instan
       moved uuid; ended uuid; kept uuid; gen uuid := (select id from boards order by created_at, slug limit 1);
     begin
       perform tests.post(b, t, 'A reply, counted on the thread and on its author');
-      insert into reactions (act, reactor_account, reactor_character, kind, slot) values (p, bob, b, 'up', 1);
-      insert into reaction_tallies (act, kind, count) values (p, 'up', 1);
+      insert into reactions (act, reactor_account, reactor_character, kind, slot) values (p, bob, b, 'fire', 1);
+      insert into reaction_tallies (act, kind, count) values (p, 'fire', 1);
       insert into wallets (account, balance) values (ann, 0) on conflict (account) do nothing;
       insert into card_ledger (account, card, kind, price) values (ann, 'splat', 'bought', 100);
       insert into invites (code_hash, inviter) values (invite_hash('exported'), ann);
@@ -167,7 +167,7 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into pool_run_claims (day) values ('2030-01-07');
       -- The developer persona (0062): a staff character of its own kind, its avatar key, the updates thread The System's board never lists (updatesThread),
       -- and an update by it, written as post_update writes one.
-      perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+      perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
         'developer', jsonb_build_object('name', 'Exported Gabe', 'title', 'Made this. Sorry.', 'avatar', 'gabe')));
       perform set_config('kayfabb.staff_writer', 'on', true);
       perform set_config('kayfabb.update_writer', 'on', true);

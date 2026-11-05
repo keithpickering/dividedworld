@@ -26,10 +26,10 @@ export function seedDemo(fake: Fake): Demo {
   const pipewrench = fake.seed.character(me, 'Pipewrench', 'heel', { at: t0 });
   const hooligan = fake.seed.character(me, 'Mrs. Hooligan', 'face', { at: t0 + day });
   const spritey = fake.seed.character(other, 'Spritey', 'jabroni', { at: t0 + 2 * day });
-  const { thread, act } = fake.seed.thread('general', spritey, 'Who keeps reacting with tea?', 'Every post I make, a single [b]☕[/b]. Show yourself.', { at: t0 + 3 * day });
+  const { thread, act } = fake.seed.thread('general', spritey, 'Who keeps reacting with a thumbs up?', 'Every post I make, a single [b]👍[/b]. Show yourself.', { at: t0 + 3 * day });
   fake.seed.post(thread, pipewrench, 'It was me. It is always me.', { at: t0 + 3 * day + 3_600_000 });
   fake.seed.post(thread, spritey, 'I knew it.', { at: t0 + 3 * day + 7_200_000 });
-  fake.seed.react(other, spritey, fake.seed.post(thread, hooligan, 'Calm down, everyone.', { at: t0 + 4 * day }), 'tea');
+  fake.seed.react(other, spritey, fake.seed.post(thread, hooligan, 'Calm down, everyone.', { at: t0 + 4 * day }), 'thumbs-up');
   fake.seed.react(me, pipewrench, act, 'fire');
   fake.seed.thread('general', hooligan, 'Rate my avatar', 'Be honest.', { at: t0 + 5 * day });
   const long = fake.seed.thread('general', spritey, 'The long one', 'Post 1 of a thread long enough to have pages.', { at: t0 + 4 * day });

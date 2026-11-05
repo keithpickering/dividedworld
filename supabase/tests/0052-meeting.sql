@@ -236,10 +236,10 @@ begin
 
   -- The seed gives the open season its first Boss when it has none, and leaves one it has.
   update seasons set boss = null where ends_at is null;
-  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'system', jsonb_build_object('staff', '[]'::jsonb, 'firstStaff', '[]'::jsonb, 'firstBoss', 'mt-other')));
   if current_boss() is distinct from 'mt-other' then raise exception 'the seed did not give the open season its Boss'; end if;
-  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'system', jsonb_build_object('staff', '[]'::jsonb, 'firstStaff', '[]'::jsonb, 'firstBoss', 'mt-boss')));
   if current_boss() is distinct from 'mt-other' then raise exception 'a reseed changed a season''s Boss'; end if;
 

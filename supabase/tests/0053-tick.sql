@@ -21,7 +21,7 @@ begin
         'moveExpired', jsonb_build_array('Expired: {move}.'),
         'bossArrival', jsonb_build_array('{boss} on {board} for {move}.')),
       'systemMoveWords', jsonb_build_object('renameBoard', 'the renaming of a board to "{name}"')),
-    'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+    'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'tk-boss',
       'staff', jsonb_build_array(jsonb_build_object('key', 'tk-boss', 'name', 'Tick Boss', 'title', 'Boss', 'signature', 'Hi')),
       'firstStaff', '[]'::jsonb,

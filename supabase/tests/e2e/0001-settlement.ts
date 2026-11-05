@@ -7,9 +7,8 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { psqlDb, sql } from './psql-db.ts';
+import { psqlDb, sql, scratchSeed } from './psql-db.ts';
 import { runSettlement } from '../../functions/settle/core.ts';
-import { instanceSeed } from '../../functions/_shared/seed.ts';
 import { instance } from '../../functions/_shared/instance.ts';
 import { SPAN_MOST } from '../../../engine/rules/instance.ts';
 
@@ -28,7 +27,7 @@ test('a span\'s largest count is one number in the code\'s settings and the data
 
 test('a day on the board settles into wallets and standings, once', async () => {
   const db = psqlDb();
-  await db.rpc('seed_instance', { payload: instanceSeed(instance) });
+  await db.rpc('seed_instance', { payload: scratchSeed(instance) });
 
   // The day starts where the history ends (an earlier race file commits a window).
   const start = sql(`select to_jsonb(coalesce(max(ends_at), now()))#>>'{}' from settlements`);
@@ -50,7 +49,7 @@ test('a day on the board settles into wallets and standings, once', async () => 
     select '${characters.Pipewrench}', 'post', t.id, '{"body": "Pineapple belongs on pizza."}', '${at(1)}' from t returning id`);
   sql(`insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values
     ('${post}', '${characters.Sunbeam}', '${ids['e2e-face']}', 'tomato', 1, '${at(2)}'),
-    ('${post}', '${characters.Shadow}', '${ids['e2e-lurk']}', 'nauseated', 1, '${at(3)}')`);
+    ('${post}', '${characters.Shadow}', '${ids['e2e-lurk']}', 'vomiting', 1, '${at(3)}')`);
 
   const until = at(24);
   const first = await runSettlement(db, instance, until);
@@ -137,7 +136,7 @@ test('a player reacting on two days is paid one vote in all, through the real mi
     ('${post}', '${characters['Twice Fan']}', '${ids['e2e-twice-fan']}', 'tomato', 1, '${at(2)}')`);
   assert.equal((await runSettlement(db, instance, at(24))).status, 'applied');
   sql(`insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values
-    ('${post}', '${characters['Twice Fan']}', '${ids['e2e-twice-fan']}', 'nauseated', 2, '${at(26)}')`);
+    ('${post}', '${characters['Twice Fan']}', '${ids['e2e-twice-fan']}', 'vomiting', 2, '${at(26)}')`);
   assert.equal((await runSettlement(db, instance, at(48))).status, 'applied');
   assert.equal(Number(sql(`select sum(amount) from ledger where character = '${characters['Twice Heel']}' and reason = 'heel.drewHeat'`)), 10, 'one vote of heat over two days, not one and a half');
 });

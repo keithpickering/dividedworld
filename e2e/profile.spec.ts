@@ -4,7 +4,7 @@ test.use({ viewport: { width: 320, height: 640 } });
 
 test('opens a profile from a postbit, and pages the public record by keyboard', async ({ page }) => {
   await page.goto('/b/general');
-  await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+  await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
   await page.getByRole('article').first().getByRole('link', { name: 'Spritey' }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'Spritey' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Public record' })).toBeVisible();

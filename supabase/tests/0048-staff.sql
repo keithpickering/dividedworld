@@ -5,7 +5,7 @@
 -- ---- A seed makes each staff member once, with its profile; a reseed changes nothing an admin wrote ----
 do $$
 declare
-  seed jsonb := jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+  seed jsonb := jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'system', jsonb_build_object(
       'staff', jsonb_build_array(
         jsonb_build_object('key', 'director', 'name', 'The Director', 'title', 'The System', 'signature', '[i]It is decided.[/i]'),

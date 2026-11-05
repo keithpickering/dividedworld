@@ -8,7 +8,7 @@ declare
   payload jsonb := jsonb_build_object(
     'settings', jsonb_build_object('reactionCap', 3, 'settlementCron', '5 9 * * *', 'economy', jsonb_build_object('zing.price', 150)),
     'classes', jsonb_build_array(jsonb_build_object('key', 'gamma', 'name', 'Gamma')),
-    'reactions', jsonb_build_array(jsonb_build_object('key', 'zap', 'emoji', '⚡', 'quadrant', 'excitedPositive')),
+    'reactions', jsonb_build_array(jsonb_build_object('key', 'up', 'emoji', '⬆️', 'quadrant', 'excitedPositive'), jsonb_build_object('key', 'boo', 'emoji', '👻', 'quadrant', 'excitedNegative'), jsonb_build_object('key', 'calm', 'emoji', '🌊', 'quadrant', 'calmPositive'), jsonb_build_object('key', 'meh', 'emoji', '😑', 'quadrant', 'boredNegative'), jsonb_build_object('key', 'wow', 'emoji', '🎆', 'quadrant', 'excitedPositive'), jsonb_build_object('key', 'zap', 'emoji', '⚡', 'quadrant', 'excitedPositive')),
     'cards', jsonb_build_array(jsonb_build_object('key', 'zing', 'name', 'Zing', 'alignment', 'pepperoni', 'priceSetting', 'zing.price', 'rarity', 'common')),
     'boards', jsonb_build_array(jsonb_build_object('slug', 'side', 'name', 'Side', 'description', 'Off to one side.')));
   first jsonb;

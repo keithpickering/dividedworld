@@ -87,7 +87,7 @@ end $$;
 -- ---- The instance's pip styles arrive with its seed, and stay ----
 do $$
 begin
-  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'cards', '[]'::jsonb, 'boards', '[]'::jsonb,
+  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'cards', '[]'::jsonb, 'boards', '[]'::jsonb,
     'pipStyles', jsonb_build_array(jsonb_build_object('key', 'default', 'name', 'Plain', 'full', 'f.svg', 'empty', 'e.svg'), jsonb_build_object('key', 'hearts', 'name', 'Hearts', 'full', 'h.svg', 'empty', 'o.svg'))));
   if (select (name, full_image) from pip_styles where key = 'default') is distinct from ('Plain'::text, 'f.svg'::text) then raise exception 'a seeded pip style is written'; end if;
   if not exists (select 1 from pip_styles where key = 'hearts') or not exists (select 1 from pip_styles where key = 'stars') then raise exception 'a new style is added, and one the seed no longer names is kept'; end if;

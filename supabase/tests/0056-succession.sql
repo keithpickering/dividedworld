@@ -17,7 +17,7 @@ begin
         'bossFarewell', jsonb_build_array('Farewell from {boss}.'),
         'bossArrival', jsonb_build_array('Hello from {boss}.')),
       'systemMoveWords', jsonb_build_object('renameBoard', 'the renaming of a board to "{name}"', 'nameSuccessor', 'the naming of a successor')),
-    'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+    'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'su-a',
       'staff', jsonb_build_array(
         jsonb_build_object('key', 'su-a', 'name', 'Su A', 'title', 'Boss', 'signature', 'a'),

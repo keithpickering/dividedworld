@@ -68,14 +68,14 @@ end $$;
 -- ---- The stack and the seed reach the database from the instance's seed ----
 do $$
 begin
-  perform seed_instance(jsonb_build_object('settings', jsonb_build_object('economy', jsonb_build_object('stacky.price', 50)), 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb,
+  perform seed_instance(jsonb_build_object('settings', jsonb_build_object('economy', jsonb_build_object('stacky.price', 50)), 'classes', '[]'::jsonb, 'boards', '[]'::jsonb,
     'cards', jsonb_build_array(jsonb_build_object('key', 'stacky', 'name', 'Stacky', 'alignment', 'sweet', 'priceSetting', 'stacky.price', 'rarity', 'common', 'stack', 2, 'seeded', true),
                                jsonb_build_object('key', 'plain', 'name', 'Plain', 'alignment', 'sweet', 'priceSetting', 'stacky.price', 'rarity', 'common'))));
   if (select (stack, seeded) from card_kinds where key = 'stacky') is distinct from (2, true) then raise exception 'the seed''s stack and seeded reach card_kinds'; end if;
   if (select (stack, seeded) from card_kinds where key = 'plain') is distinct from (1, false) then raise exception 'a card that says neither is one to a post, unseeded'; end if;
   if pg_temp.refusal($q$update card_kinds set stack = 0 where key = 'plain'$q$) is null then raise exception 'a stack of 0 was written'; end if;
   -- Seeded again, as an instance that already holds the card is: its stack and seed are the code's now.
-  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb,
+  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb,
     'cards', jsonb_build_array(jsonb_build_object('key', 'stacky', 'name', 'Stacky', 'alignment', 'sweet', 'priceSetting', 'stacky.price', 'rarity', 'common', 'stack', 3, 'seeded', false))));
   if (select (stack, seeded) from card_kinds where key = 'stacky') is distinct from (3, false) then raise exception 'seeding again kept the old stack and seed'; end if;
 end $$;

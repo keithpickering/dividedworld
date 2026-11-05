@@ -7,7 +7,7 @@
  * the one in force on the first board, "Pointless Toast Palace", which asks twelve different characters to post and has five.
  * A move waits in the admin queue, and one was held.
  */
-import type { Instance } from '../../rules/types.ts';
+import type { Instance, Quadrant } from '../../rules/types.ts';
 import type { Fake } from '../data/fake.ts';
 
 const DAY = 86_400_000;
@@ -62,7 +62,9 @@ export function seedMoves(fake: Fake, instance: Instance, options: { readonly si
     body: 'This board has been IMPROVED. From now on we talk about toast. Show me twelve of you can handle it and maybe I will think about it.',
     demand: distinct(first.slug, 12), at: ago(1), expiresAt: now + 5 * DAY,
   });
-  fake.seed.tally(inForce, { fire: 9, tomato: 6, tea: 3, zzz: 1 });
+  /* Its tally, one kind of each quadrant read from the instance, so the world names none of its kinds. */
+  const kindIn = (q: Quadrant) => instance.reactions.find((r) => r.quadrant === q)!.key;
+  fake.seed.tally(inForce, { [kindIn('excitedPositive')]: 9, [kindIn('excitedNegative')]: 6, [kindIn('calmPositive')]: 3, [kindIn('boredNegative')]: 1 });
 
   /* Five different characters have posted on the board since the move landed. */
   const { thread } = fake.seed.thread(first.slug, spritey, 'toast is a sandwich and I can prove it', 'Hear me out.', { at: ago(0.5) });

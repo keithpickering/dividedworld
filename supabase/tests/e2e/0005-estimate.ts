@@ -6,8 +6,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { psqlDb, sql } from './psql-db.ts';
-import { instanceSeed } from '../../functions/_shared/seed.ts';
+import { psqlDb, sql, scratchSeed } from './psql-db.ts';
 import { instance } from '../../functions/_shared/instance.ts';
 import { estimateForOwner } from '../../../engine/rules/settle.ts';
 import { runEstimate } from '../../functions/estimate/core.ts';
@@ -16,7 +15,7 @@ import type { SettlementInput } from '../../../engine/rules/types.ts';
 
 test('the scoped estimate is the whole window\'s, filtered to the player, and names nobody else', async () => {
   const db = psqlDb();
-  await db.rpc('seed_instance', { payload: instanceSeed(instance) });
+  await db.rpc('seed_instance', { payload: scratchSeed(instance) });
   // The window opens where the history ends (earlier files commit settlements).
   const start = sql(`select to_jsonb(coalesce(max(ends_at), (select min(starts_at) from seasons)))#>>'{}' from settlements`);
   const at = (hours: number) => new Date(Date.parse(start) + hours * 3_600_000).toISOString();
@@ -72,7 +71,7 @@ test('the scoped estimate is the whole window\'s, filtered to the player, and na
   };
   // On Ann's posts: Bob through two masks (one that never writes), Cat, Dee; Ann's own Lurker (dropped as her own), and an old post's.
   react(p, 'Est Heel', 'est-bob', 'fire', 5); react(p, 'Est Ghost', 'est-bob', 'tomato', 5.5); react(p, 'Est Cat', 'est-cat', 'fire', 6);
-  react(p, 'Est Dee', 'est-dee', 'zzz', 6.5); react(p, 'Est Lurker', 'est-ann', 'fire', 7); react(old, 'Est Cat', 'est-cat', 'fire', 8);
+  react(p, 'Est Dee', 'est-dee', 'facepalm', 6.5); react(p, 'Est Lurker', 'est-ann', 'fire', 7); react(old, 'Est Cat', 'est-cat', 'fire', 8);
   // On Bob's post: Ann's Lurker early, then a crowd, one of them before the window; and votes after Ann's card.
   react(q, 'Est Lurker', 'est-ann', 'fire', 1.6); react(q, 'Est Cat', 'est-cat', 'fire', 9); react(q, 'Est Dee', 'est-dee', 'fire', 9.5);
   react(q, 'Est Shadow', 'est-bob', 'fire', 10);
@@ -124,7 +123,7 @@ test('the scoped estimate is the whole window\'s, filtered to the player, and na
 
 test('a reaction to another\'s card on a third player\'s post is estimated, through the estimate function (#137)', async () => {
   const db = psqlDb();
-  await db.rpc('seed_instance', { payload: instanceSeed(instance) });
+  await db.rpc('seed_instance', { payload: scratchSeed(instance) });
   // The window opens where the history ends, which an earlier file's settlement can put anywhere: the function's read of the
   // window is asked up to a day past it, as the first test asks it, and everything else is the function's own.
   const start = Date.parse(sql(`select to_jsonb(coalesce(max(ends_at), (select min(starts_at) from seasons)))#>>'{}' from settlements`));

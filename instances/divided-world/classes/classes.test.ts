@@ -213,7 +213,7 @@ function board(lurkerClass = 'lurker'): SettlementInput {
     ],
     reactions: [
       { act: 'k1', player: 'pf', character: 'fa', kind: 'fire', at: 3 * H },
-      { act: 'k1', player: 'pj', character: 'ja', kind: 'zzz', at: 3 * H },
+      { act: 'k1', player: 'pj', character: 'ja', kind: 'facepalm', at: 3 * H },
       { act: 'p1', player: 'pl', character: 'lu', kind: 'tomato', at: 4 * H },
     ],
   };
@@ -250,7 +250,7 @@ test('a Lurker reacting alone to a post is never paid for the call', () => {
 });
 
 test('a Lurker\'s call is paid in the window the third other player arrives, by the direction then, and once', () => {
-  const day1 = [by('lu', 'fire', H), by('o1', 'fire', 2 * H), by('o2', 'zzz', 3 * H)];
+  const day1 = [by('lu', 'fire', H), by('o1', 'fire', 2 * H), by('o2', 'facepalm', 3 * H)];
   const w1 = settle(crowd(day1), world);
   assert.equal(called(w1), 0, 'two other players are not yet a crowd');
   const day2 = [...day1, by('o3', 'fire', 25 * H)];
@@ -259,7 +259,7 @@ test('a Lurker\'s call is paid in the window the third other player arrives, by 
   const w3 = settle(crowd([...day2, by('o4', 'fire', 49 * H)], D3, upTo(w1, w2)), world);
   assert.equal(called(w3), 0, 'a fourth pays nothing more');
   // Had the third leaned the other way, the call is judged by the direction then, and a later turn never rescues it.
-  const against = [...day1, by('o3', 'zzz', 25 * H)];
+  const against = [...day1, by('o3', 'facepalm', 25 * H)];
   const w2x = settle(crowd(against, D2, upTo(w1)), world);
   assert.equal(called(w2x), 0);
   assert.equal(called(settle(crowd([...against, by('o4', 'fire', 49 * H), by('o4', 'heart', 49 * H)], D3, upTo(w1, w2x)), world)), 0);
@@ -268,13 +268,13 @@ test('a Lurker\'s call is paid in the window the third other player arrives, by 
 test('where a post ends up is read without the calling Lurker\'s own vote', () => {
   // Without the Lurker, one excited-positive, one bored-negative and one calm-positive: no direction,
   // though the Lurker's own fire would have tipped it.
-  assert.equal(called(settle(crowd([by('lu', 'fire', H), by('o1', 'fire', 2 * H), by('o2', 'zzz', 3 * H), by('o3', 'tea', 4 * H)]), world)), 0);
-  assert.equal(called(settle(crowd([by('lu', 'fire', H), by('o1', 'fire', 2 * H), by('o2', 'fire', 3 * H), by('o3', 'tea', 4 * H)]), world)), 10);
+  assert.equal(called(settle(crowd([by('lu', 'fire', H), by('o1', 'fire', 2 * H), by('o2', 'facepalm', 3 * H), by('o3', 'folded-hands', 4 * H)]), world)), 0);
+  assert.equal(called(settle(crowd([by('lu', 'fire', H), by('o1', 'fire', 2 * H), by('o2', 'fire', 3 * H), by('o3', 'folded-hands', 4 * H)]), world)), 10);
 });
 
 test('a hedged call is paid its exact share: a third of 7.5 is 2.5, which rounds to 3', () => {
   const tuned = { ...world, settings: withOverrides(world.settings, { economy: { 'lurker.earlyMatch': 7.5 } }) };
-  const hedged = [by('lu', 'fire', H), by('lu', 'tea', H + 1), by('lu', 'zzz', H + 2), by('o1', 'fire', 2 * H), by('o2', 'fire', 3 * H), by('o3', 'fire', 4 * H)];
+  const hedged = [by('lu', 'fire', H), by('lu', 'folded-hands', H + 1), by('lu', 'facepalm', H + 2), by('o1', 'fire', 2 * H), by('o2', 'fire', 3 * H), by('o3', 'fire', 4 * H)];
   assert.equal(called(settle(crowd(hedged), tuned)), 3);
 });
 
@@ -288,7 +288,7 @@ test('a Lurker\'s cards and reactions never count as posting', () => {
   const many: SettlementInput = {
     ...b,
     acts: [...b.acts, ...[2, 3, 4, 5].map((n) => ({ id: `k${n}`, character: 'lu', kind: 'card' as const, at: (2 + n) * H, thread: 't', target: 'p1', card: 'whoops' }))],
-    reactions: [...b.reactions, ...['fire', 'tea'].map((kind) => ({ act: 'p1', player: 'pl', character: 'lu', kind, at: 5 * H }))],
+    reactions: [...b.reactions, ...['fire', 'folded-hands'].map((kind) => ({ act: 'p1', player: 'pl', character: 'lu', kind, at: 5 * H }))],
   };
   const r = settle(many, world);
   assert.equal(r.entries.filter((e) => e.reason === 'lurker.postedTooMuch').length, 0);
@@ -368,8 +368,8 @@ test('a calm vote on a Technician\'s 4-day-old post pays 15 hundredths under its
       { id: 'hp', character: 'he', kind: 'post', at: 6 * DAY + 1, thread: 'u' },
     ],
     reactions: [
-      { act: 'old', player: 'pf', character: 'fa', kind: 'relieved', at: 10 * DAY + H },
-      { act: 'hp', player: 'pf', character: 'fa', kind: 'relieved', at: 10 * DAY + H },
+      { act: 'old', player: 'pf', character: 'fa', kind: 'thumbs-up', at: 10 * DAY + H },
+      { act: 'hp', player: 'pf', character: 'fa', kind: 'thumbs-up', at: 10 * DAY + H },
     ],
   }, world);
   const of = (c: string, reason: string) => r.entries.filter((e) => e.character === c && e.reason === reason).reduce((t, e) => t + e.amount, 0);
@@ -389,9 +389,9 @@ test('the estimate shows the Technician\'s evergreen line whole at the reaction\
     ],
     acts: [{ id: 'old', character: 'te', kind: 'post', at: 5 * DAY, thread: 't' }],
     reactions: [
-      { act: 'old', player: 'p-o1', character: 'o1', kind: 'relieved', at },
-      { act: 'old', player: 'p-o2', character: 'o2', kind: 'relieved', at: at + H },
-      { act: 'old', player: 'p-o3', character: 'o3', kind: 'relieved', at: at + 2 * H },
+      { act: 'old', player: 'p-o1', character: 'o1', kind: 'thumbs-up', at },
+      { act: 'old', player: 'p-o2', character: 'o2', kind: 'thumbs-up', at: at + H },
+      { act: 'old', player: 'p-o3', character: 'o3', kind: 'thumbs-up', at: at + 2 * H },
     ],
   }, world, 'pt').lines;
   assert.deepEqual(lines.filter((l) => l.reason === 'technician.evergreen').map((l) => [l.act, l.quadrant, l.at, l.amount]), [
@@ -499,8 +499,8 @@ function onTheBoss(card: { by: string; card: string }, cardVoters: string[], pos
     acts: [{ id: 'k1', character: card.by, kind: 'card', at: 2 * H, thread: 't', target: 'boss-post', card: card.card }],
     unscoredTargets: [{ id: 'boss-post', kind: 'post', at: 1 * H, thread: 't', staff: true }],
     reactions: [
-      ...cardVoters.map((v, i) => ({ act: 'k1', player: `p-${v}`, character: v, kind: 'zzz', at: (3 + i) * H })),
-      ...postVoters.map((v, i) => ({ act: 'boss-post', player: `p-${v}`, character: v, kind: 'zzz', at: (3 + i) * H })),
+      ...cardVoters.map((v, i) => ({ act: 'k1', player: `p-${v}`, character: v, kind: 'facepalm', at: (3 + i) * H })),
+      ...postVoters.map((v, i) => ({ act: 'boss-post', player: `p-${v}`, character: v, kind: 'facepalm', at: (3 + i) * H })),
     ],
   };
 }
@@ -564,7 +564,7 @@ test('settled whole: a Pepperoni card drawing groans on a Jabroni\'s post sells 
     reactions: [...b.reactions, { act: 'kp', player: 'pf', character: 'fa', kind, at: 7 * H }, { act: 'kp', player: 'pl', character: 'lu', kind, at: 7 * H }],
   });
   const sold = (r: ReturnType<typeof settle>) => r.entries.filter((e) => e.character === 'ja' && e.reason === 'jabroni.soldTheL').length;
-  assert.equal(sold(settle(onJa('zzz'), pepWorld)), 1);
+  assert.equal(sold(settle(onJa('facepalm'), pepWorld)), 1);
   assert.equal(sold(settle(onJa('fire'), pepWorld)), 0);
 });
 test('settled whole: a Jabroni\'s own second mask groaning at a Pepperoni card on the Jabroni\'s post sells no L (#170)', () => {
@@ -575,7 +575,7 @@ test('settled whole: a Jabroni\'s own second mask groaning at a Pepperoni card o
     ...b,
     characters: [...b.characters, { id: 'ja2', player: 'pj', classes: [{ class: 'face', from: -1 }] }],
     acts: [...b.acts, { id: 'jp', character: 'ja', kind: 'post', at: 5 * H, thread: 't' }, { id: 'kp', character: 'he', kind: 'card', at: 6 * H, thread: 't', target: 'jp', card: 'pep' }],
-    reactions: [...b.reactions, { act: 'kp', player: 'pj', character: 'ja2', kind: 'zzz', at: 7 * H }],
+    reactions: [...b.reactions, { act: 'kp', player: 'pj', character: 'ja2', kind: 'facepalm', at: 7 * H }],
   }, pepWorld);
   assert.equal(r.entries.filter((e) => e.character === 'ja' && e.reason === 'jabroni.soldTheL').length, 0);
 });
@@ -597,5 +597,5 @@ test('settled whole: a Pepperoni card drawing heat that outdraws the post pays a
   assert.equal(paid(settle(cast('he', 'tomato', false), pepWorld), 'he', 'heel.stoleThunder'), 1, 'heat on it, outdrawing the post: Salty, and a Heel is paid');
   assert.equal(paid(settle(cast('he', 'fire', false), pepWorld), 'he', 'heel.stoleThunder'), 0, 'cheered, it reads as Sweet: no thunder stolen');
   assert.equal(paid(settle(cast('fa', 'fire', true), pepWorld), 'fa', 'face.liftedAPost'), 1, 'cheered, it reads as Sweet, and the post\'s cheer after it lifts it for a Face');
-  assert.equal(paid(settle(cast('fa', 'zzz', true), pepWorld), 'fa', 'face.liftedAPost'), 0, 'groaned at, it reads as Salty: no lift');
+  assert.equal(paid(settle(cast('fa', 'facepalm', true), pepWorld), 'fa', 'face.liftedAPost'), 0, 'groaned at, it reads as Salty: no lift');
 });
