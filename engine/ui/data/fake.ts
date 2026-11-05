@@ -131,7 +131,7 @@ export interface Seed {
   career(key: string, career: Career): void;
   /** A staff member's in-character profile, a version at `at` (the latest is the one read). */
   staffProfile(key: string, profile: { interests?: readonly string[]; favorites?: readonly Id[]; mood?: string; signature?: string; at?: number }): void;
-  /** A staff character's post in a thread of The System's board, as the Boss posts there. */
+  /** A staff character's post in a thread (The System's board for the Boss; any board for a persona's pool post, which presence lists it for). */
   staffPost(staff: Id, thread: Id, body: string, options?: { at?: number }): Id;
   /**
    * A landed move: the Boss's `move` Act in a thread of The System's board (the first thread there is used, or one is made), as the
@@ -306,6 +306,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     turnCooldown: settings.turnCooldown, walletCap: settings.walletCap, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength,
     registrationMode: settings.registrationMode, settlementLength: settings.settlementLength, cardSettings: settings.cardSettings,
     presencePollSeconds: settings.presencePollSeconds, presenceWindow: settings.presenceWindow, toastDefaults: settings.toastDefaults,
+    staffGroup: options.settings?.staffGroup ?? { name: options.instance.system.staffGroup.name },
     ...(options.settings?.toastMs === undefined ? {} : { toastMs: options.settings.toastMs }),
     /* What screen_settings's cardEconomy holds (0039): the economy this backend prices with, cut to what the cards' prices read. */
     cardEconomy: Object.fromEntries(Object.entries(settings.economy).filter(([key]) => instance.cards.some((c) => c.priceKey === key || (c.reads ?? []).some((r) => (typeof r === 'string' ? r : r.key) === key)))),
@@ -1692,10 +1693,20 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         if (row.seenAt < at - win || c.debutedAt === null || c.retiredAt !== null || c.presenceHidden) return [];
         if (where.kind === 'thread' && !(row.kind === 'thread' && row.place === place)) return [];
         if (where.kind === 'board' && row.board !== board) return [];
-        return [{ id, name: c.name, since: where.kind === 'index' ? row.onlineSince : row.placeSince }];
-      }).sort((a, b) => a.since - b.since || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+        return [{ id, name: c.name, staff: false, since: where.kind === 'index' ? row.onlineSince : row.placeSince }];
+      }).concat(
+        /* A staff character (not the developer) is listed in a thread's and a board's box for the window after its own post there (0082), read from
+           public posts; the index never lists it, and a board lists it once however many of its threads it posted in. */
+        where.kind === 'index' ? [] : [...characters.values()].flatMap((c) => {
+          if (!c.staff || c.staff.office === 'developer' || c.debutedAt === null || c.retiredAt !== null) return [];
+          const posts = [...acts.values()].filter((a) => a.kind === 'post' && a.character === c.id && a.at >= at - win && a.thread !== null && threads.has(a.thread)
+            && (where.kind === 'thread' ? a.thread === place : threads.get(a.thread)!.board === board));
+          if (posts.length === 0) return [];
+          return [{ id: c.id, name: c.name, staff: true, since: Math.min(...posts.map((a) => a.at)) }];
+        }),
+      ).sort((a, b) => a.since - b.since || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
       const shown = listed.slice(0, settings.presenceNames);
-      return { names: shown.map(({ id, name }) => ({ id, name })), others: listed.length - shown.length };
+      return { names: shown.map(({ id, name, staff }) => ({ id, name, staff })), others: listed.length - shown.length };
     },
     setPresenceHidden(character, hidden) {
       if (!me()) return refuse('sign in with an account first');
@@ -2182,7 +2193,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       staffProfiles.push({ key, at: p.at ?? now(), interests: [...(p.interests ?? [])], favorites: [...(p.favorites ?? [])], mood: p.mood ?? '', signature: p.signature ?? '' });
     },
     staffPost(staff, thread, body, o) {
-      systemBoard(thread);
+      if (!threads.has(thread)) throw new Error(`no such thread ${thread}`);
       if (!characters.get(staff)?.staff) throw new Error('only a staff character posts as The System\'s Boss');
       return write({ character: staff, kind: 'post', thread, payload: { body }, at: o?.at }).id;
     },

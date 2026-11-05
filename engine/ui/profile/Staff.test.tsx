@@ -26,6 +26,7 @@ describe('a Boss\'s profile', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'The Director' })).toBeInTheDocument();
     const card = screen.getByRole('region', { name: 'About The Director' });
     expect(within(card).getByText('ADMINISTRATOR')).toBeInTheDocument();
+    expect(within(card).getByText('Test Cores')).toBeInTheDocument();
     expect(card).toHaveTextContent('Head of Board Operations (Toast Division)');
     const table = await within(card).findByRole('table', { name: 'About The Director, in its own words' });
     const row = (name: string) => within(table).getByRole('rowheader', { name }).closest('tr')!;
@@ -111,6 +112,7 @@ describe('a Mod Bot\'s profile', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Hall Monitor' })).toBeInTheDocument();
     const card = screen.getByRole('region', { name: 'About Hall Monitor' });
     expect(within(card).getByText('MODERATOR')).toBeInTheDocument();
+    expect(within(card).getByText('Test Cores')).toBeInTheDocument();
     expect(within(card).queryByText('ADMINISTRATOR')).toBeNull();
     expect(card).toHaveTextContent('Keeper of the Hall');
     expect(await screen.findByText(/Nothing here yet\. A Mod Bot's moderation log stays empty until Mod Bots start their visits\./u)).toBeInTheDocument();

@@ -141,13 +141,43 @@
   padding-top: 0.3em;
 }
 
-/* A staff character's badge (StaffBadge.tsx): the board's ink reversed, in capitals. */
+/*
+ * A staff character's badge (StaffBadge.tsx): the group as a game piece, a chip with a small orb in the board's ink, and the office's title
+ * beside it in capitals on the board's ink reversed. Both are at the board's full contrast (text on the chip's ground, text on reversed ink).
+ */
 .kb-staff-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  vertical-align: middle;
+  font: bold var(--kb-size-fine) / 1.6 var(--kb-font-body);
+  letter-spacing: 0.1em;
+}
+
+.kb-staff-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0 0.4em 0 0.25em;
+  border: 1px solid var(--kb-rule);
+  background: var(--kb-chip-bg);
+  color: var(--kb-fg);
+  font: bold var(--kb-size-fine) / 1.5 var(--kb-font-body);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.kb-staff-orb {
   display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  border-radius: 50%;
+  border: 1px solid var(--kb-orb-rim);
+  background: radial-gradient(circle at 32% 28%, var(--kb-orb-shine), transparent 48%), var(--kb-gold);
+}
+
+.kb-staff-office {
   padding: 0 0.4em;
   background: var(--kb-fg);
   color: var(--kb-bg);
-  font: bold var(--kb-size-fine) / 1.6 var(--kb-font-body);
-  letter-spacing: 0.1em;
-  vertical-align: middle;
 }

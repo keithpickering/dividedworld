@@ -80,6 +80,11 @@ export interface ScreenSettings {
    * fact. A key it lacks is the compiled economy's (`economyNow`).
    */
   readonly economy: Readonly<Record<string, number>>;
+  /**
+   * The staff group's name, which the instance names ("Personality Cores"; `SystemContent.staffGroup`, seeded as the setting
+   * `staffGroup`): drawn beside every staff character's name, on the postbit, the profile and the presence boxes. Public.
+   */
+  readonly staffGroup: { readonly name: string };
   /** The alert kinds that toast for a player who has not chosen (`Settings.toastDefaults`). */
   readonly toastDefaults: readonly AlertKind[];
   /** How long a toast stays, in milliseconds, where a world sets it (the boards fixture holds its toasts); absent, the HUD's six seconds. */
@@ -475,7 +480,8 @@ export type PresencePlace = { readonly kind: 'thread'; readonly thread: Id } | {
  * account, and nothing that says which are the caller's.
  */
 export interface Presence {
-  readonly names: readonly { readonly id: Id; readonly name: string }[];
+  /** Each name is a character's. `staff` is a public fact (a staff key shows to a visitor); a staff name is listed after its own post there. */
+  readonly names: readonly { readonly id: Id; readonly name: string; readonly staff: boolean }[];
   readonly others: number;
 }
 

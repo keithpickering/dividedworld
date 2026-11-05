@@ -34,6 +34,7 @@ const FALLBACK: ScreenSettings = {
   cardEconomy: {},
   economy: {},
   toastDefaults: ['quote', 'update'],
+  staffGroup: { name: 'Test Cores' },
 };
 
 const B64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');
@@ -142,8 +143,8 @@ describe('what the adapter may request', () => {
   });
 
   it('polls presence with the place and the HUD mask in the body, answers names and a count, and throws on a refusal', async () => {
-    const h = harness((r) => (r.url.pathname.endsWith('/rpc/here') ? json({ names: [{ id: A, name: 'Ann' }], others: 2 }) : json({}, 404)));
-    expect(await h.api.here({ kind: 'thread', thread: T }, B)).toEqual({ names: [{ id: A, name: 'Ann' }], others: 2 });
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/here') ? json({ names: [{ id: A, name: 'Ann', staff: false }, { id: B, name: 'Bossy', staff: true }, { id: T, name: 'Old answer' }], others: 2 }) : json({}, 404)));
+    expect(await h.api.here({ kind: 'thread', thread: T }, B)).toEqual({ names: [{ id: A, name: 'Ann', staff: false }, { id: B, name: 'Bossy', staff: true }, { id: T, name: 'Old answer', staff: false }], others: 2 });
     await h.api.here({ kind: 'index' }, null);
     const [first, second] = h.to('rpc/here');
     expect(first?.body).toEqual({ in_kind: 'thread', in_place: T, through: B });

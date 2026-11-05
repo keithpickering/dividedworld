@@ -1003,7 +1003,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       // A refusal or a lost answer throws, so the poll counts it as a failure and keeps its last answer.
       if (!a.ok) throw new Error(a.error);
       const names = (Array.isArray(a.value['names']) ? a.value['names'] : []).flatMap((n: Row) =>
-        typeof n?.['id'] === 'string' && typeof n?.['name'] === 'string' ? [{ id: n['id'], name: n['name'] }] : []);
+        typeof n?.['id'] === 'string' && typeof n?.['name'] === 'string' ? [{ id: n['id'], name: n['name'], staff: n['staff'] === true }] : []);
       return { names, others: num(a.value['others']) };
     },
     async setPresenceHidden(character, hidden) {

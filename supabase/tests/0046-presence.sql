@@ -47,8 +47,8 @@ begin
     raise exception 'the answer holds only names and others: %', box;
   end if;
   if exists (select 1 from jsonb_array_elements(box -> 'names') e
-             where (select array_agg(k order by k) from jsonb_object_keys(e) k) is distinct from array['id', 'name']) then
-    raise exception 'a name holds only its id and its name: %', box;
+             where (select array_agg(k order by k) from jsonb_object_keys(e) k) is distinct from array['id', 'name', 'staff']) then
+    raise exception 'a name holds only its id, its name and whether it is staff (a public fact, 0082): %', box;
   end if;
   if box #>> '{names,0,name}' is distinct from 'Here One' then raise exception 'a name is the character''s: %', box; end if;
 
