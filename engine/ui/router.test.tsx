@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useEffect, useState } from 'react';
+import { StrictMode, useEffect, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { KayfaProvider, type Kayfa } from './context.tsx';
 import { addressOf, Link, RouterProvider, searchOf, useLocation, useNavigate, useNavigation, usePrefetch, useRouterAccount, type Location } from './router.tsx';
@@ -92,6 +92,155 @@ describe('the router', () => {
     window.history.replaceState(null, '', '/sign-in');
     render(<RouterProvider onMove={(from, to) => seen.push([from?.path ?? null, to.path])}><Away /></RouterProvider>);
     expect(seen).toEqual([[null, '/sign-in'], ['/sign-in', '/b/general']]);
+  });
+});
+
+describe('from the Task 10 review', () => {
+  beforeEach(() => { log.length = 0; });
+  afterEach(() => { vi.useRealTimers(); });
+
+  test('a pending load never lands under another account, and a same-key move after the change loads again', async () => {
+    const { load, calls } = manualLoader();
+    const view = mount(load, { account: 'p1' });
+    act(() => nav('/t/a'));
+    view.setAccount('p2');
+    expect(calls[0]!.signal.aborted).toBe(true);
+    await answer(calls[0], 'A-p1');
+    expect(screen.queryByText(/thread a/)).toBeNull();
+    expect(navigation.pending).toBeNull();
+    act(() => nav('/t/a'));
+    await answer(calls[1], 'A-p2');
+    view.setAccount('p3');
+    act(() => nav('/t/a#post-1'));
+    expect(load).toHaveBeenCalledTimes(3);
+  });
+  test('a click that joined a prefetch in flight is dropped by an account change, and the next click loads again', async () => {
+    const { load, calls } = manualLoader();
+    const view = mount(load, { account: 'p1' });
+    act(() => prefetch('/t/a'));
+    act(() => nav('/t/a'));
+    view.setAccount('p2');
+    expect(calls[0]!.signal.aborted).toBe(true);
+    await answer(calls[0], 'A-p1');
+    expect(screen.queryByText(/thread a/)).toBeNull();
+    act(() => nav('/t/a'));
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+  test('the first account the router hears of does not cancel the first load', async () => {
+    const { load, calls } = manualLoader();
+    window.history.replaceState(null, '', '/t/a');
+    const routes: Route[] = [{ path: '/t/:id', load, render: (p, doc) => <p>thread {p.id}: {String(doc)}</p> }];
+    function Account() { useRouterAccount('p1'); return null; }
+    render(<KayfaProvider value={kayfa}><RouterProvider><Routes routes={routes} /><Account /></RouterProvider></KayfaProvider>);
+    await answer(calls[0], 'first');
+    expect(screen.getByText('thread a: first')).toBeInTheDocument();
+  });
+  test('unmounting aborts the pending load', () => {
+    const { load, calls } = manualLoader();
+    const view = mount(load);
+    act(() => nav('/t/a'));
+    view.unmount();
+    expect(calls[0]!.signal.aborted).toBe(true);
+  });
+  test('unmounting aborts a prefetch in flight', () => {
+    const { load, calls } = manualLoader();
+    const view = mount(load);
+    act(() => prefetch('/t/a'));
+    view.unmount();
+    expect(calls[0]!.signal.aborted).toBe(true);
+  });
+  test('a first load survives StrictMode\'s second run of the effects, and is told once', async () => {
+    const { load, calls } = manualLoader();
+    window.history.replaceState(null, '', '/t/a');
+    const routes: Route[] = [{ path: '/t/:id', load, render: (p, doc) => <p>thread {p.id}: {String(doc)}</p> }];
+    const told: string[] = [];
+    render(<StrictMode><KayfaProvider value={kayfa}><RouterProvider onMove={(f, t) => told.push(`${f?.path ?? 'nothing'}>${t.path}`)}><Routes routes={routes} /></RouterProvider></KayfaProvider></StrictMode>);
+    await act(async () => { for (const c of calls) c.resolve('S1'); });
+    expect(screen.getByText('thread a: S1')).toBeInTheDocument();
+    expect(told).toEqual(['nothing>/t/a']);
+  });
+  test('Escape on a Back that was loading returns the address bar to the page still shown', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-05T12:00:00Z'));
+    const { load, calls } = manualLoader();
+    mount(load);
+    act(() => nav('/t/a'));
+    await answer(calls[0], 'A1');
+    act(() => nav('/t/b'));
+    await answer(calls[1], 'B1');
+    vi.setSystemTime(new Date('2026-11-05T12:20:00Z'));
+    act(() => window.history.back());
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(3));
+    expect(window.location.pathname).toBe('/t/a');
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    expect(window.location.pathname).toBe('/t/b');
+    expect(screen.getByText('thread b: B1')).toBeInTheDocument();
+  });
+  test('a prefetch that never settles is dropped at twenty seconds, so a click then loads again', async () => {
+    vi.useFakeTimers();
+    const { load } = manualLoader();
+    mount(load);
+    act(() => prefetch('/t/a'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(21_000); });
+    act(() => nav('/t/a'));
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+  test('a prefetch answer is kept thirty seconds and no longer', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-05T12:00:00Z'));
+    const { load, calls } = manualLoader();
+    mount(load);
+    act(() => prefetch('/t/a'));
+    await answer(calls[0], 'P1');
+    vi.setSystemTime(new Date('2026-11-05T12:00:29Z'));
+    act(() => prefetch('/t/a'));
+    expect(load).toHaveBeenCalledTimes(1);
+    vi.setSystemTime(new Date('2026-11-05T12:00:31Z'));
+    act(() => nav('/t/a'));
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+  test('onMove is told when a load lands, not at the click', async () => {
+    const { load, calls } = manualLoader();
+    const told: string[] = [];
+    window.history.replaceState(null, '', '/');
+    const routes: Route[] = [{ path: '/', render: () => <p>home</p> }, { path: '/t/:id', load, render: (p) => <p>thread {p.id}</p> }];
+    render(<KayfaProvider value={kayfa}><RouterProvider onMove={(f, t) => told.push(`${f?.path ?? 'nothing'}>${t.path}`)}><Probe /><Routes routes={routes} /></RouterProvider></KayfaProvider>);
+    act(() => nav('/t/a'));
+    expect(told).toEqual(['nothing>/']);
+    await answer(calls[0], 'A1');
+    expect(told).toEqual(['nothing>/', '/>/t/a']);
+  });
+  test('the history cache holds twenty entries: a Back inside them shows at once, one beyond them loads', async () => {
+    const { load, calls } = manualLoader();
+    mount(load);
+    for (let i = 0; i < 24; i++) {
+      act(() => nav(`/t/${i}`));
+      await answer(calls[i], `D${i}`);
+    }
+    act(() => window.history.go(-3));
+    await waitFor(() => expect(screen.getByText('thread 20: D20')).toBeInTheDocument());
+    expect(load).toHaveBeenCalledTimes(24);
+    act(() => window.history.go(-19));
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(25));
+  });
+  test('the router keeps scroll restoration manual while mounted and gives it back on unmount', () => {
+    const { load } = manualLoader();
+    window.history.scrollRestoration = 'auto';
+    const view = mount(load);
+    expect(window.history.scrollRestoration).toBe('manual');
+    view.unmount();
+    expect(window.history.scrollRestoration).toBe('auto');
+  });
+  test('a popstate while a load is pending stops the load and moves to where the browser went', async () => {
+    const { load, calls } = manualLoader();
+    mount(load);
+    act(() => nav('/t/a'));
+    act(() => { window.history.replaceState(null, '', '/plain/x'); window.dispatchEvent(new PopStateEvent('popstate')); });
+    expect(calls[0]!.signal.aborted).toBe(true);
+    expect(screen.getByText('plain x')).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/plain/x');
+    await answer(calls[0], 'late');
+    expect(screen.queryByText(/thread a/)).toBeNull();
   });
 });
 

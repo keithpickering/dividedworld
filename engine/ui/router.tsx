@@ -128,8 +128,8 @@ const PREFETCH_KEPT_MS = 30_000;
 const ENTRY_KEPT_MS = 5 * 60_000;
 const ENTRIES_MAX = 20;
 
-interface Pending { readonly id: number; readonly to: string; readonly controller: AbortController; readonly startedAt: number }
-interface Prefetched { readonly promise: Promise<unknown>; readonly controller: AbortController; settledAt: number | null }
+interface Pending { readonly id: number; readonly to: string; readonly controller: AbortController; readonly startedAt: number; account: string | null | undefined; readonly popped: boolean; readonly initial: boolean }
+interface Prefetched { readonly promise: Promise<unknown>; readonly controller: AbortController; readonly timer: ReturnType<typeof setTimeout>; settledAt: number | null }
 interface Entry { doc: unknown; scrollY: number; at: number }
 type Outcome = { readonly kind: 'doc'; readonly doc: unknown } | { readonly kind: 'failure'; readonly failure: Failure } | { readonly kind: 'aborted' };
 interface Request { readonly full: string; readonly replace?: boolean; readonly state?: unknown; readonly popped: boolean; readonly kb: string | null; readonly initial?: boolean }
@@ -155,7 +155,9 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
   const entryRef = useRef<string | null>(unwrap(w.history.state).kb);
   const pendingRef = useRef<Pending | null>(null);
   const routesRef = useRef<readonly RouteLike[]>([]);
-  const accountRef = useRef<string | null>(null);
+  /* undefined until the first account is heard of: that one is the account the first loads ran under. */
+  const accountRef = useRef<string | null | undefined>(undefined);
+  const told = useRef(false);
   const prefetched = useRef(new Map<string, Prefetched>());
   const cache = useRef(new Map<string, Entry>());
   const restore = useRef<number | null>(null);
@@ -188,18 +190,33 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     entryRef.current = entry;
     setShown(next);
   }, []);
-  const cancelPending = useCallback(() => {
+  /* A prefetch is kept by its address and the account it was made under. */
+  const prefetchKey = (address: string) => `${accountRef.current ?? ''}|${address}`;
+  /*
+   * Stops the pending load. A Back that was loading has already moved the address bar to its target; stopping
+   * it puts the bar back on the page still shown by replacing the target's entry with the shown page's address
+   * and state, under the shown page's key. That keeps the stack the length it is, pushes nothing, and leaves bar
+   * and page agreeing; history.go(delta) would need each entry's index, which nothing here tracks, and would
+   * itself raise a popstate. The target entry is the one given up. A popstate that cancels (`restoreBar` false)
+   * has been moved by the browser to a new entry, which must not be written over.
+   */
+  const cancelPending = useCallback((restoreBar = true) => {
     const p = pendingRef.current;
     if (!p) return;
     pendingRef.current = null;
     p.controller.abort();
     setPending(null);
-  }, []);
+    if (p.popped && restoreBar && entryRef.current) {
+      const l = shownRef.current.location;
+      w.history.replaceState(wrap(entryRef.current, l.state), '', addressOf(l) + (l.hash ? `#${l.hash}` : ''));
+    }
+  }, [w]);
   const takePrefetch = useCallback((address: string): Promise<unknown> | null => {
-    const e = prefetched.current.get(address);
+    const k = `${accountRef.current ?? ''}|${address}`;
+    const e = prefetched.current.get(k);
     if (!e) return null;
     if (e.settledAt === null || Date.now() - e.settledAt < PREFETCH_KEPT_MS) return e.promise;
-    prefetched.current.delete(address);
+    prefetched.current.delete(k);
     return null;
   }, []);
 
@@ -228,7 +245,7 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     const id = ++sequence.current;
     const controller = new AbortController();
     const startedAt = Date.now();
-    pendingRef.current = { id, to: req.full, controller, startedAt };
+    pendingRef.current = { id, to: req.full, controller, startedAt, account: accountRef.current, popped: req.popped, initial: !!req.initial };
     setPending({ to: req.full, startedAt });
     const joined = takePrefetch(address);
     const promise = joined ?? invoke(found.route, url, found.params, controller.signal);
@@ -240,7 +257,8 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     });
     void outcome.then((o) => {
       clearTimeout(timer);
-      if (pendingRef.current?.id !== id || o.kind === 'aborted') return;
+      const p = pendingRef.current;
+      if (p?.id !== id || o.kind === 'aborted' || p.account !== accountRef.current) return;
       pendingRef.current = null;
       setPending(null);
       land(req, found, o);
@@ -260,7 +278,7 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     entryRef.current = entry;
     w.history.replaceState(wrap(entry, unwrap(w.history.state).state), '');
     if (!cache.current.has(entry)) remember(entry, undefined);
-    moved.current?.(null, shownRef.current.location);
+    if (!told.current) { told.current = true; moved.current?.(null, shownRef.current.location); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   /* The scroll a Back restored from memory, set once the page it belongs to is drawn. */
@@ -295,7 +313,7 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
       const kb = unwrap(w.history.state).kb;
       const found = routeFor(location.path);
       const sh = shownRef.current;
-      cancelPending();
+      cancelPending(false);
       const key = found ? keyOf(found.route, found.params, location.query, location.path) : null;
       const same = !!found && sh.ready && !sh.failure && sh.route === found.route && sh.key === key;
       if (!found?.route.load || same) {
@@ -356,21 +374,51 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     if (!found?.route.load) return;
     const address = url.pathname + url.search;
     if (takePrefetch(address)) return;
+    const key = prefetchKey(address);
     const controller = new AbortController();
     const promise = invoke(found.route, url, found.params, controller.signal);
-    const entry: Prefetched = { promise, controller, settledAt: null };
-    const timer = setTimeout(() => controller.abort(), LOAD_LIMIT_MS);
-    prefetched.current.set(address, entry);
-    promise.then(() => { clearTimeout(timer); entry.settledAt = Date.now(); }, () => { clearTimeout(timer); if (prefetched.current.get(address) === entry) prefetched.current.delete(address); });
+    /* Past the limit it is aborted and, if it never answered (a loader that ignores its signal), forgotten. */
+    const timer = setTimeout(() => { controller.abort(); if (prefetched.current.get(key) === entry && entry.settledAt === null) prefetched.current.delete(key); }, LOAD_LIMIT_MS);
+    const entry: Prefetched = { promise, controller, timer, settledAt: null };
+    prefetched.current.set(key, entry);
+    promise.then(() => { clearTimeout(timer); entry.settledAt = Date.now(); }, () => { clearTimeout(timer); if (prefetched.current.get(key) === entry) prefetched.current.delete(key); });
   }, [w, routeFor, takePrefetch]);
 
+  const dropPrefetches = useCallback(() => {
+    for (const e of prefetched.current.values()) { clearTimeout(e.timer); e.controller.abort(); }
+    prefetched.current.clear();
+  }, []);
+  const beginInitial = useCallback(() => {
+    if (initialStarted.current || shownRef.current.ready || pendingRef.current) return;
+    initialStarted.current = true;
+    const l = shownRef.current.location;
+    const found = routeFor(l.path);
+    if (found?.route.load) startLoad({ full: l.path + searchOf(l.query) + (l.hash ? `#${l.hash}` : ''), popped: false, kb: entryRef.current, initial: true }, found);
+  }, [routeFor, startLoad]);
+  /*
+   * A different account empties every cache, stops the load in flight (it was asked for the earlier account and
+   * may carry its data) and takes the shown document off the same-key shortcut, so no move reuses or remembers it.
+   * The first account the router hears of is only recorded. A first load that is stopped is started again.
+   */
   const setAccount = useCallback((id: string | null) => {
     if (accountRef.current === id) return;
+    const first = accountRef.current === undefined;
     accountRef.current = id;
-    for (const e of prefetched.current.values()) e.controller.abort();
-    prefetched.current.clear();
+    if (first) { if (pendingRef.current) pendingRef.current.account = id; return; }
+    const wasInitial = pendingRef.current?.initial;
+    cancelPending(false);
+    dropPrefetches();
     cache.current.clear();
-  }, []);
+    shownRef.current = { ...shownRef.current, key: null };
+    if (wasInitial) { initialStarted.current = false; beginInitial(); }
+  }, [cancelPending, dropPrefetches, beginInitial]);
+
+  /* Leaving the page: nothing stays out, and a second run of the effects (StrictMode) starts the first load again. */
+  useEffect(() => () => {
+    cancelPending(false);
+    dropPrefetches();
+    initialStarted.current = false;
+  }, [cancelPending, dropPrefetches]);
 
   const track = useCallback(<T,>(promise: Promise<T>): Promise<T> => {
     setTracking((n) => n + 1);
@@ -382,12 +430,8 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
   /* Routes hands over the route list; a first address whose route loads is loaded here, once. */
   const attach = useCallback((routes: readonly RouteLike[]) => {
     routesRef.current = routes;
-    if (initialStarted.current || shownRef.current.ready || pendingRef.current) return;
-    initialStarted.current = true;
-    const l = shownRef.current.location;
-    const found = routeFor(l.path);
-    if (found?.route.load) startLoad({ full: l.path + searchOf(l.query) + (l.hash ? `#${l.hash}` : ''), popped: false, kb: entryRef.current, initial: true }, found);
-  }, [routeFor, startLoad]);
+    beginInitial();
+  }, [beginInitial]);
 
   const navigation = useMemo(() => ({ pending, tracking, track }), [pending, tracking, track]);
   const value = useMemo(() => ({ location: shown.location, shown, navigate, retry, prefetch, navigation, attach, setAccount }), [shown, navigate, retry, prefetch, navigation, attach, setAccount]);
