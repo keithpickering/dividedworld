@@ -133,14 +133,30 @@ describe('a feather capped at the gap to the title states the gap once', () => {
   const css = sheets(root).filter((f) => !f.endsWith('glass/calm.css'));
   const text = (f: string) => fs.readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
 
-  test('every page sheet that caps its feather caps it at the title gap, never at a literal', () => {
+  /*
+   * A page sheet caps its feather in one of three ways, each for a reason, and none by a literal length (a literal is a gap stated twice):
+   *  - at the title gap, where the calm stands as near the title as the board sets it;
+   *  - at the class card's inset (characters.css), where the title's calm stands in a card at the edge of a row that clips, so its feather
+   *    ends where the card does;
+   *  - to nothing (`0px`), for the roster's tablist, which stands at its row's clipping edge and would have its feather cut on a straight line.
+   */
+  const CAPS = new Set([
+    'min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap))',
+    'min(var(--kb-glass-calm-feather), var(--kb-class-card-inset))',
+    '0px',
+  ]);
+  test('every page sheet that caps its feather caps it at the title gap, the class card\'s inset or nothing, never at another literal', () => {
     const capped = css.filter((f) => text(f).includes('--kb-calm-feather:'));
     expect(capped.length).toBeGreaterThanOrEqual(8);
     for (const f of capped) {
       for (const m of text(f).matchAll(/--kb-calm-feather:\s*([^;]+);/g)) {
-        expect(squash(m[1]!), path.basename(f)).toBe('min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap))');
+        expect(CAPS.has(squash(m[1]!)), `${path.basename(f)}: ${squash(m[1]!)}`).toBe(true);
       }
     }
+  });
+  test('the capping test refuses a literal length: 17px is no cap it knows', () => {
+    expect(CAPS.has(squash('min(var(--kb-glass-calm-feather), 17px)'))).toBe(false);
+    expect(CAPS.has(squash('12px'))).toBe(false);
   });
   test('the gap is declared in one place: 12px, and the phone\'s 8px', () => {
     const calm = sheet('calm.css');

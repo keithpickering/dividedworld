@@ -462,3 +462,10 @@
 .kb-glass-overlay-beside {
   display: contents;
 }
+
+/* Close answers a pointer as the glass's other controls do: the neon's edge and a wash of it (e2e/glass-hover.spec.ts holds every control to a hover). */
+.kb-glass-dialog-close:hover {
+  border-color: var(--kb-glass-neon);
+  background: color-mix(in srgb, var(--kb-glass-neon) 18%, transparent);
+  color: var(--kb-glass-text-hi);
+}

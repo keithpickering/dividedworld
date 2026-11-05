@@ -1409,3 +1409,17 @@
   text-transform: uppercase;
   overflow-wrap: anywhere;
 }
+
+/* The HUD's links answer a pointer: the avatar lights its edge and glow, the orbs take the soft plate they take focused, and the door's text link its neon (e2e/glass-hover.spec.ts). */
+.kb-hud-avatar:hover {
+  border-color: var(--kb-glass-text-hi);
+  box-shadow: 0 0 28px color-mix(in srgb, var(--kb-glass-neon) 90%, transparent);
+}
+
+.kb-hud-orbs:hover {
+  background: var(--kb-glass-panel-soft);
+}
+
+.kb-hud-door-sign-in:not(.kb-glass-cut-button):hover {
+  color: var(--kb-glass-neon-text);
+}

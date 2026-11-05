@@ -221,7 +221,7 @@ describe('GlassButton as a link', () => {
  */
 describe('every button variant has a visible hover and a focus-visible style', () => {
   const root = path.resolve(here, '..');
-  const sheets = [path.join(here, 'parts.css'), path.join(here, 'shell.css'), path.join(here, 'base.css'), path.join(root, 'frame/frame.css'), path.join(root, 'vending/vending.css')]
+  const sheets = [path.join(here, 'parts.css'), path.join(here, 'shell.css'), path.join(here, 'base.css'), path.join(root, 'frame/frame.css'), path.join(root, 'vending/vending.css'), path.join(root, 'characters/characters.css')]
     .map((f) => fs.readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, ''));
   const rules = sheets.flatMap((css) => [...css.matchAll(/([^{}@]+)\{([^{}]*)\}/g)].map((m) => ({ selectors: m[1]!.split(/,(?![^(]*\))/).map((s) => s.replace(/\s+/g, ' ').trim()), body: m[2]! })));
   /** The rules whose selector ends in `pseudo` and, without it, selects `el`. */
@@ -245,6 +245,10 @@ describe('every button variant has a visible hover and a focus-visible style', (
     'the Vending Machine\'s Your hand': () => html('kb-vending-hand kb-glass-skew', 'a', 'href="/"'),
     'a menu tab': () => html('kb-glass-menu-tab kb-glass-skew', 'a', 'href="/x"'),
     'the menu\'s Back': () => html('kb-glass-menu-back kb-glass-skew', 'a', 'href="/x"'),
+    /* The three that had no hover until e2e/glass-hover.spec.ts found them. */
+    'a dialog\'s Close cross': () => html('kb-glass-dialog-close', 'button'),
+    'the roster\'s arrow': () => html('kb-class-arrow', 'button'),
+    'a roster tab card': () => html('kb-roster-card', 'button', 'role="tab"'),
   };
   for (const [name, make] of Object.entries(variants)) {
     test(`${name} changes something visible on hover`, () => {

@@ -671,3 +671,8 @@ button.kb-vending-slot {
   top: 0;
 }
 
+
+/* A slot answers a pointer with a wash of the neon behind its card; the selected one lights further (e2e/glass-hover.spec.ts). */
+button.kb-vending-slot:hover {
+  background: color-mix(in srgb, var(--kb-glass-neon) 14%, transparent);
+}

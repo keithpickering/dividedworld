@@ -576,3 +576,12 @@
 .kb-guide-lede {
   --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
 }
+
+.kb-guide-toc a:hover {
+  color: var(--kb-glass-text-hi);
+  box-shadow: inset 3px 0 0 var(--kb-glass-neon);
+}
+
+.kb-guide-toc a[aria-current='location']:hover {
+  color: var(--kb-glass-text-hi);
+}

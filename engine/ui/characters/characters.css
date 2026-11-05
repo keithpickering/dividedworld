@@ -553,6 +553,8 @@
 }
 
 .kb-class-card {
+  /* The card's border and inline padding: how far in from its edge the title's words stand. */
+  --kb-class-card-inset: 17px;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -596,7 +598,7 @@
 
 /* The title's calm stands 17px (the card's border and padding) in from the card, and a first card is the row's edge, which clips: its feather ends there. */
 .kb-class-title.kb-calm {
-  --kb-calm-feather: min(var(--kb-glass-calm-feather), 17px);
+  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-class-card-inset));
 }
 
 /* On the phone the title has its calm's box, which the radio (top right) must not lie under: the box ends before it. */
@@ -1363,4 +1365,57 @@
 .kb-glass :is(.kb-roster-facts, .kb-turn-rank) {
   --kb-pip: var(--kb-glass-ready);
   --kb-pip-empty: var(--kb-glass-text-2);
+}
+
+/*
+ * Hover: each control of the roster and the class cards answers a pointer with something the eye sees at once, as the glass's buttons do
+ * (parts.css): the neon's edge or a wash of it, a brighter fill or glow where the control is already lit. A selected card and a chosen
+ * one answer too (they light further), so no resting pointer is lost on them. e2e/glass-hover.spec.ts holds every control to this.
+ */
+.kb-class-arrow:not(:disabled):hover {
+  border-color: var(--kb-glass-neon);
+  background: color-mix(in srgb, var(--kb-glass-neon) 18%, var(--kb-glass-ground));
+  color: var(--kb-glass-text-hi);
+}
+
+.kb-roster-card:hover {
+  background: color-mix(in srgb, var(--kb-glass-neon) 12%, var(--kb-glass-panel-soft));
+  box-shadow: inset 0 0 0 1px var(--kb-glass-neon);
+}
+
+.kb-roster-card[aria-selected='true']:hover {
+  background: color-mix(in srgb, var(--kb-glass-neon) 12%, var(--kb-glass-panel));
+  box-shadow: 0 0 0 2px var(--kb-glass-neon), 0 0 44px color-mix(in srgb, var(--kb-glass-neon) 80%, transparent);
+}
+
+.kb-roster-new-link:hover {
+  border-color: var(--kb-glass-ready);
+  background: color-mix(in srgb, var(--kb-glass-ready) 14%, transparent);
+}
+
+.kb-roster-turn-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--kb-glass-neon) 80%, var(--kb-glass-text-hi));
+  box-shadow: 0 0 44px color-mix(in srgb, var(--kb-glass-neon) 90%, transparent);
+}
+
+.kb-class-card:hover {
+  border-color: var(--kb-class-fill);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--kb-class-fill) 45%, transparent);
+}
+
+.kb-class-card[data-kb-chosen]:hover {
+  background: color-mix(in srgb, var(--kb-class-fill) 20%, var(--kb-glass-panel-soft));
+  box-shadow: 0 0 44px color-mix(in srgb, var(--kb-class-fill) 80%, transparent);
+}
+
+.kb-choice-option:hover:not(:has(input:disabled)) {
+  border-color: var(--kb-glass-neon);
+  background: color-mix(in srgb, var(--kb-glass-neon) 10%, transparent);
+  color: var(--kb-glass-text-hi);
+}
+
+.kb-choice-option:has(input:checked):hover:not(:has(input:disabled)),
+.kb-choice-option[data-kb-chosen]:hover {
+  background: color-mix(in srgb, var(--kb-glass-neon) 18%, transparent);
+  box-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 70%, transparent);
 }

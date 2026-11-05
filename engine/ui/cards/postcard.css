@@ -253,3 +253,8 @@ button.kb-postcard {
 .kb-postcard-gem::before { content: attr(data-kb-gem); }
 .kb-postcard[data-size='sheet'] .kb-postcard-play { left: 18px; top: 52px; }
 .kb-postcard[data-size='sheet'] .kb-postcard-gem { right: 18px; top: 52px; }
+
+/* A card that is a button answers a pointer by lighting (e2e/glass-hover.spec.ts). */
+button.kb-postcard:hover {
+  filter: brightness(1.15);
+}
