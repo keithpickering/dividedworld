@@ -46,7 +46,7 @@ export interface Landmark {
   /**
    * Where a decision moves the build's place from the board's, in px: the build is held to the board's place plus this, within the same
    * tolerance, so a part that a decision moved (the dialog frame's bar, which holds Close where the board's picker holds it at the foot)
-   * is still held to where it stands now, and a shift the manifest has wrong fails. `height` is the same for a box the shift made taller (the picker's, by its bar). Never a width.
+   * is still held to where it stands now, and a shift the manifest has wrong fails. `height` is the same for a box the shift made taller (the picker's, by its bar) or, negative, shorter (the Log's tab row, by 6px). Never a width.
    */
   readonly buildShift?: { readonly x?: number; readonly y?: number; readonly height?: number };
   /** `false` for a landmark whose type is not the glass's to compare (an image). */

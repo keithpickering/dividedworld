@@ -229,6 +229,15 @@ describe('compareBoard: a place a decision moved off the board', () => {
     expect(compareBoard(drawn, tall, manifest(lm('line', { buildShift: { height: 8 } })))).toMatchObject([{ landmark: 'line', field: 'height' }]);
   });
 
+  test('a height the shift made shorter is held the same way, with a negative height', () => {
+    /* The Log's tab row is shorter in the build than on the board (e2e/boards/12-log.ts: height -6); 8px here, past the 4px tolerance. */
+    const short = snap(shot('line', { ...LINE, height: 16 }));
+    expect(compareBoard(drawn, short, manifest(lm('line')))).toMatchObject([{ landmark: 'line', field: 'height' }]);
+    expect(compareBoard(drawn, short, manifest(lm('line', { buildShift: { height: -8 } })))).toEqual([]);
+    expect(compareBoard(drawn, short, manifest(lm('line', { buildShift: { height: -2 } })))).toMatchObject([{ landmark: 'line', field: 'height' }]);
+    expect(compareBoard(drawn, short, manifest(lm('line', { buildShift: { height: 8 } })))).toMatchObject([{ landmark: 'line', field: 'height' }]);
+  });
+
   test('the shift applies to a part measured from an origin, on the build side only', () => {
     const pop = { x: 10, y: 10, width: 500, height: 400 };
     const b = snap(shot('pop', pop), shot('line', { ...LINE, x: 30, y: 40 }));
