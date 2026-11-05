@@ -6,7 +6,7 @@ look the best. Features that have been added since have not been given boards, s
 The session runs impeccable's critique over each screen built without a board, draws the board with the owner, and
 turns every flaw a board fixes into a task for a build session. It is drawn on #202's head (c2553b3), the glass polish's
 first phase, which may still change in review. The boards are in `docs/research/2026-11-05-backfill/`. The plan is
-written once every batch is approved.
+`docs/plans/2026-11-05-backfill-boards-plan.md`.
 
 ## 0. Where it starts
 
@@ -233,8 +233,10 @@ an estimate past the cap. The critique:
 
 - **The invites have no list.** The screen named "with the invites" shows none made ("You have made no invites." under
   the button, the state after the action). The board draws two, one open and one used, each a row with its code, its
-  state and when, and the open one's own Copy the link and Withdraw; Make an invite follows the list. (Whether
-  Withdraw exists in the engine is the plan's to check; where it does not, the row has Copy the link alone.)
+  state and when, and the open one's own Reissue; Make an invite follows the list. (Corrected while writing the plan:
+  the board first drew Copy the link and Withdraw on the row, but `engine/ui/account/Invites.tsx` shows an invite's
+  link once, when it is made, and never again, so a row can only Reissue it; the build already lists invites this
+  way when any exist. The board now draws Reissue.)
 - **Reach a person is stranded** at the page's foot-left, under no section. The board puts it under the section rail,
   ruled off, where every Settings section reaches it.
 - **The card info has no card.** About Whoops! is a dialog of text with a small title, so the face a player tapped to
@@ -282,3 +284,13 @@ B, grouped by what an admin can do, the owner's choice):
 - **The empty groups each take a display heading and a line.** Kept: the build draws To do, Waiting to land, In force and
   Ended with their counts, and the board draws them with a move waiting and one in force (the mock's sample), so the
   groups' shapes are held, an empty one as its heading and one line.
+
+**Approved by the owner** as drawn. Every batch is approved; the plan is
+`docs/plans/2026-11-05-backfill-boards-plan.md`.
+
+## 9. Open
+
+- **The Debut dialog, dropping now** was not drawn (only choosing how was). The plan marks it as having no board, with
+  that reason, and asks the owner in its PR whether it should get one.
+- **The board world's screens** (the index, a profile and its record, the Director's profile, the move notice, errors)
+  wait for a pass of their own (§1, decision 1).

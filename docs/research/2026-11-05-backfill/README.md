@@ -68,7 +68,7 @@ follows what you type.") is a draft for the owner's review.
   its rules. The face is a stand-in for `Postcard.tsx` at the hand sheet's size; its box is compared, not its art.
 - `35-hud-cap.html`: the HUD with a wallet past its cap, 1440 wide. Only the Aura notch is compared (from its own
   corner); the rest of the HUD is drawn for place and held by `e2e/boards/01-main.ts`.
-- `36-account-phone.html`: three phone screens at 390 by 844: the invites, the card info as a sheet, the HUD past its cap.
+- `36-account-phone.html`: three phone screens at 390 by 844: the invites (Reissue on the open one), the card info as a sheet, the HUD past its cap.
 
 ## Batch 6: admin
 

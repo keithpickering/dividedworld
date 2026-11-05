@@ -850,7 +850,7 @@ const settingsRail = (cur) => `<nav aria-label="Settings sections" style="positi
 const invite = (code, state, note, open) => `<li style="display: grid; grid-template-columns: 150px 1fr auto; align-items: center; gap: 18px; padding: 14px 0; border-top: 1px solid rgba(241,236,255,.14)">
           <code style="font: 700 22px 'Barlow Condensed', sans-serif; letter-spacing: 2px; color: ${open ? '#f1ecff' : '#a9a2c2'}">${code}</code>
           <span style="font: 500 20px 'Barlow Condensed', sans-serif; color: #e4def7"><b style="font-weight: 800; letter-spacing: 1.5px; color: ${open ? '#19e3ff' : '#e4def7'}">${state}</b> &middot; ${note}</span>
-          ${open ? '<div class="btns" style="gap: 8px"><button class="btn" style="min-height: 44px; padding: 0 16px; font-size: 19px"><b>COPY THE LINK</b></button><button class="btn" style="min-height: 44px; padding: 0 16px; font-size: 19px"><b>WITHDRAW</b></button></div>' : '<span></span>'}
+          ${open ? '<div class="btns" style="gap: 8px"><button class="btn" style="min-height: 44px; padding: 0 16px; font-size: 19px"><b>REISSUE</b></button></div>' : '<span></span>'}
         </li>`;
 
 /* A stand-in for Postcard.tsx in the card template's layout (docs/plans/2026-11-05-card-template-design.md, "Low name"):
@@ -866,7 +866,7 @@ const postcard = (w) => { const u = w / 100; return `<figure aria-label="Whoops!
 
 page({
   file: '33-settings-account.html', name: 'Settings, Account', w: 1440, h: 1000,
-  note: 'Settings › Account with two invites made, one open and one used: each invite a row with its state and its own actions; Reach a person under the section rail, where every Settings section can reach it.',
+  note: 'Settings › Account with two invites made, one open and one used: each invite a row with its state and, while unused, Reissue (its link is shown once, when made, and never again); Reach a person under the section rail, where every Settings section can reach it.',
   body: frame(1440, 1000, `
   ${smoke(1440, 1000, [[40, 240, 300, 340, .85], [350, 240, 990, 700, .92]])}
   ${menu(PAUSE, 'SETTINGS')}
@@ -943,7 +943,7 @@ page({
     <section style="position: absolute; left: 16px; top: 90px; width: 358px">
       <h2 style="margin: 0 0 8px; font: 44px/1 Anton, Impact, sans-serif">ACCOUNT</h2>
       <div style="padding: 14px 0; border-top: 1px solid rgba(241,236,255,.22)"><div class="k" style="padding: 0 0 8px">INVITES</div><p class="note" style="margin: 0; font-size: 19px">You hold 1 of 3 open invites. One use each; 7 days.</p>
-        <div style="margin-top: 12px; padding: 12px 0; border-top: 1px solid rgba(241,236,255,.14)"><code style="font: 700 21px 'Barlow Condensed', sans-serif; letter-spacing: 2px">ab12cd34</code> <span style="font: 500 19px 'Barlow Condensed', sans-serif; color: #e4def7"><b style="color: #19e3ff">OPEN</b> &middot; expires Nov 12</span><div class="btns" style="margin-top: 10px; gap: 8px"><button class="btn" style="min-height: 44px; padding: 0 14px; font-size: 18px"><b>COPY THE LINK</b></button><button class="btn" style="min-height: 44px; padding: 0 14px; font-size: 18px"><b>WITHDRAW</b></button></div></div>
+        <div style="margin-top: 12px; padding: 12px 0; border-top: 1px solid rgba(241,236,255,.14)"><code style="font: 700 21px 'Barlow Condensed', sans-serif; letter-spacing: 2px">ab12cd34</code> <span style="font: 500 19px 'Barlow Condensed', sans-serif; color: #e4def7"><b style="color: #19e3ff">OPEN</b> &middot; expires Nov 12</span><div class="btns" style="margin-top: 10px; gap: 8px"><button class="btn" style="min-height: 44px; padding: 0 14px; font-size: 18px"><b>REISSUE</b></button></div></div>
         <div style="padding: 12px 0; border-top: 1px solid rgba(241,236,255,.14); border-bottom: 1px solid rgba(241,236,255,.14)"><code style="font: 700 21px 'Barlow Condensed', sans-serif; letter-spacing: 2px; color: #a9a2c2">9f3k2m7q</code> <span style="font: 500 19px 'Barlow Condensed', sans-serif; color: #e4def7"><b>USED</b> &middot; Nov 2</span></div>
         <div class="btns" style="margin-top: 14px"><button class="btn primary" style="width: 100%"><b>MAKE AN INVITE</b></button></div></div>
     </section>`, [[0, 80, 390, 620, .9]], 't1')}
