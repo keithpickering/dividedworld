@@ -77,6 +77,11 @@ describe('the layout judgment', () => {
     expect(out[0]).toContain('358');
     /* An em or so short of the column is the control's own marker or edge (a radio beside its label), not a sibling's squeeze. */
     expect(refusals({ blocks: [...clean.blocks, { ...narrow, rect: { ...narrow.rect, width: 100 }, textWidth: 98, column: 120 }] })).toEqual([]);
+    /* The boundary is 1.5 ems at 16px type (24px): 1.4 ems short (22.4px) passes, 1.6 ems short (25.6px) is refused. */
+    expect(refusals({ blocks: [...clean.blocks, { ...narrow, rect: { ...narrow.rect, width: 120 - 1.4 * 16 }, textWidth: 90, column: 120 }] })).toEqual([]);
+    const shortBy = refusals({ blocks: [...clean.blocks, { ...narrow, rect: { ...narrow.rect, width: 120 - 1.6 * 16 }, textWidth: 90, column: 120 }] });
+    expect(shortBy).toHaveLength(1);
+    expect(shortBy[0]).toContain('squeezed');
     /* A pixel short of the column is the column's own rounding. */
     expect(refusals({ blocks: [...clean.blocks, { ...narrow, column: 120.6 }] })).toEqual([]);
   });
@@ -304,6 +309,20 @@ describe('the layout judgment', () => {
     /* In another calm of the same panel it is a staggered backing. */
     const sibling = { path: 'div.kb-hud:nth-child(1) > section:nth-child(2)', element: { x: 16, y: 150, width: 300, height: 60 }, backing: { x: 0, y: 134, width: 332, height: 92 }, clips: [] };
     expect(refusals({ blocks: [...clean.blocks, { ...inside, path: `${sibling.path} > h2:nth-child(1)` }], calms: [hudHeader, sibling] })).toEqual([]);
+  });
+
+  test('a calm lies under content that paints above its backing: it dims nothing, so it is not refused; painted over it, it is', () => {
+    /* The faded avatar: the swap's calm painted its 85% ground over the avatar in its feather. The gatherer reads the paint order, and lists what is above. */
+    const control = { path: 'main:nth-child(1) > button:nth-child(2)', rect: { x: 16, y: 140, width: 100, height: 48 }, panel: null };
+    const poison = refusals({ controls: [...clean.controls, control], calms: [{ ...calmed, above: [] }] });
+    expect(poison).toHaveLength(1);
+    expect(poison[0]).toContain('calm over other content');
+    expect(poison[0]).toContain('button');
+    /* The same geometry with the control above the backing passes, for a control and for a block. */
+    expect(refusals({ controls: [...clean.controls, control], calms: [{ ...calmed, above: [control.path] }] })).toEqual([]);
+    expect(refusals({ blocks: [...clean.blocks, heading], calms: [{ ...calmed, above: [heading.path] }] })).toEqual([]);
+    /* Another element being above is no excuse for this one. */
+    expect(refusals({ blocks: [...clean.blocks, heading], calms: [{ ...calmed, above: [control.path] }] })).toHaveLength(1);
   });
 
   test('a heading with something drawn over all of it is not what the calm lies on', () => {

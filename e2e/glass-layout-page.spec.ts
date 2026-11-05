@@ -64,3 +64,52 @@ test('the gatherer hands the judgment what a clipping column holds, and not a sc
   expect(text).not.toMatch(/button\.half/u);
   expect(text).not.toMatch(/track|strip/u);
 });
+
+/*
+ * Paint order (refusal 6): the swap's calm is a stacking context, which paints over a static
+ * neighbor and faded the phone avatar; the same neighbor positioned above it is not dimmed. The
+ * fixture reproduces both, with the calm's backing as calm.css draws it (a `::before` at
+ * z-index -1 in an isolated calm). It also holds the card-face art exemption to marked text inside
+ * the card: an aria-hidden ancestor above the card exempts nothing.
+ */
+const PAINT = `<!doctype html><meta charset="utf-8"><style>
+  body { margin: 0; font: 16px/1.3 sans-serif; }
+  .calm { position: relative; isolation: isolate; margin: 60px 60px 0; width: 200px; height: 40px; }
+  .calm::before { content: ''; position: absolute; z-index: -1; inset: -30px; background: #000; pointer-events: none; }
+  .row { position: relative; height: 0; }
+  button.pic { width: 80px; height: 30px; }
+  button.over { display: block; margin: -20px 0 0 70px; }
+  button.above { position: absolute; left: 70px; top: -20px; z-index: 1; }
+  .card { display: flex; width: 358px; margin-top: 200px; }
+  .card p { width: 100px; margin: 0; }
+</style>
+<main>
+  <div class="calm kb-calm">Calm</div>
+  <button class="pic over">Over</button>
+  <div class="calm kb-calm" style="margin-top: 140px">Calm two</div>
+  <div class="row"><button class="pic above">Above</button></div>
+  <div aria-hidden="true"><div class="kb-postcard card"><p class="bare">Every character you have made, and where each one stands, on this card.</p><span></span></div></div>
+  <div class="kb-postcard card"><p data-kb-art class="marked">Every character you have made, and where each one stands, on this card.</p><span></span></div>
+</main>`;
+
+test('the gatherer reads paint order: a calm painted over a control is refused, one under it is not', async ({ page }) => {
+  await page.setContent(PAINT);
+  await page.addScriptTag({ content: GATHERER });
+  const facts = await page.evaluate(() => (globalThis as Bundled).kbGlassLayout.gather());
+  const text = judgeLayout({ screen: 'the fixture', ...facts }).join('\n');
+  expect(text).toMatch(/calm over other content: .*lies on .*button\.pic\.over/u);
+  expect(text).not.toMatch(/lies on .*button\.pic\.above/u);
+  /* The gatherer lists the one it read as above, and not the other. */
+  const listed = facts.calms.flatMap((c) => c.above ?? []);
+  expect(listed.some((p) => p.includes('button.pic.above'))).toBe(true);
+  expect(listed.some((p) => p.includes('button.pic.over'))).toBe(false);
+});
+
+test('card-face art is only marked text inside the card, not anything under an aria-hidden ancestor', async ({ page }) => {
+  await page.setContent(PAINT);
+  await page.addScriptTag({ content: GATHERER });
+  const facts = await page.evaluate(() => (globalThis as Bundled).kbGlassLayout.gather());
+  const text = judgeLayout({ screen: 'the fixture', ...facts }).join('\n');
+  expect(text).toMatch(/squeezed block: .*p\.bare/u);
+  expect(text).not.toMatch(/p\.marked/u);
+});

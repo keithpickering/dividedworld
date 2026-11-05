@@ -203,9 +203,74 @@ function blockOf(el: Element): BlockFact | null {
   const longestWord = breaks ? 0 : Math.max(0, ...words.map((w) => widthOf(w, s, z)));
   /* The room the column had to give: the parent's content width (a parent that is a flex or grid item has already been sized by its own track). */
   const column = el.parentElement ? contentWidth(el.parentElement) : content.width;
-  /* Card-face art: aria-hidden or data-kb-art text on a postcard face. */
-  const art = el.closest('.kb-postcard') !== null && el.closest('[aria-hidden="true"], [data-kb-art]') !== null;
+  /* Card-face art: text marked aria-hidden or data-kb-art inside a postcard (an aria-hidden ancestor above the card does not count). */
+  const art = el.closest('.kb-postcard [data-kb-art], .kb-postcard [aria-hidden="true"]') !== null;
   return { path: pathOf(el), rect: content, fontSize, longestWord, wraps, textWidth: widest, column, ...(art ? { art } : {}), seen: seenOf(el, content) };
+}
+
+/* ---- paint order (refusal 6) ---- */
+
+/** Overlap of two boxes, or null. */
+function intersect(a: Box, b: Box): Box | null {
+  const x0 = Math.max(a.x, b.x);
+  const y0 = Math.max(a.y, b.y);
+  const x1 = Math.min(a.x + a.width, b.x + b.width);
+  const y1 = Math.min(a.y + a.height, b.y + b.height);
+  return x1 - x0 > 1 && y1 - y0 > 1 ? { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } : null;
+}
+
+/**
+ * Whether the calm's backing paints over `content` (true), lies under it (false), or could not be asked (null). Asked of the
+ * page: at a grid of points in the overlap of the backing and the content's box, `elementsFromPoint` lists what is hit,
+ * topmost first, so the calm's own element (hit through its `::before`, made hit-testable by the caller) coming before the
+ * content's says the backing is drawn over it at that point. One point where the calm is on top is enough to call it over;
+ * under it at every point asked is under. A point the page does not answer (off the window, a clip hides the backing there,
+ * another layer covers both) is not asked; when none can be, the calm's element is scrolled into view and the question asked
+ * again, then the scroll put back.
+ */
+function paintsOver(calmEl: Element, content: Element): boolean | null {
+  const ask = (): boolean | null => {
+    const backing = pseudoBox(calmEl, getComputedStyle(calmEl, '::before'));
+    const both = intersect(backing, content.getBoundingClientRect());
+    if (!both) return null;
+    const x0 = Math.max(0, both.x);
+    const y0 = Math.max(0, both.y);
+    const x1 = Math.min(innerWidth - 1, both.x + both.width);
+    const y1 = Math.min(innerHeight - 1, both.y + both.height);
+    if (x1 < x0 || y1 < y0) return null;
+    let under = false;
+    const N = 4;
+    for (let i = 0; i <= N; i++) {
+      for (let j = 0; j <= N; j++) {
+        const list = document.elementsFromPoint(x0 + ((x1 - x0) * i) / N, y0 + ((y1 - y0) * j) / N);
+        const m = list.indexOf(calmEl);
+        const c = list.findIndex((h) => content.contains(h));
+        if (m < 0 || c < 0) continue;
+        if (m < c) return true;
+        under = true;
+      }
+    }
+    return under ? false : null;
+  };
+  const first = ask();
+  if (first !== null) return first;
+  const saved: [Element, number, number][] = [];
+  for (let a: Element | null = calmEl; a; a = a.parentElement) saved.push([a, a.scrollLeft, a.scrollTop]);
+  calmEl.scrollIntoView({ block: 'center', inline: 'nearest' });
+  const again = ask();
+  for (const [a, l, t] of saved) { a.scrollLeft = l; a.scrollTop = t; }
+  return again;
+}
+
+/** The paths of the blocks and controls that paint above the calm's backing, where they overlap it. */
+function aboveOf(calm: CalmFact, calmEl: Element, contents: ReadonlyMap<string, Element>): string[] {
+  const out: string[] = [];
+  for (const [path, el] of contents) {
+    if (el === calmEl || calmEl.contains(el) || el.contains(calmEl)) continue;
+    if (!intersect(calm.backing, el.getBoundingClientRect())) continue;
+    if (paintsOver(calmEl, el) === false) out.push(path);
+  }
+  return out;
 }
 
 /* ---- controls, rows and panels ---- */
@@ -359,12 +424,14 @@ export function gather(): Omit<LayoutFacts, 'screen'> {
   const reached = new Set<Element>();
   const controls: ControlFact[] = [];
   const calms: CalmFact[] = [];
+  const calmEls: Element[] = [];
+  const contents = new Map<string, Element>();
   const shown = all.filter(visible);
   for (const el of shown) {
     const { scroller } = containerOf(el);
     if (scrollsOnPurpose(el)) scrollers.set(pathOf(el), { path: pathOf(el), rect: toBox(el.getBoundingClientRect()) });
     const b = blockOf(el);
-    if (b) blocks.push(b);
+    if (b) { blocks.push(b); contents.set(b.path, el); }
     const r = el.getBoundingClientRect();
     const out = r.left < -1 || r.right > vw + 1;
     if (out && !scroller && !el.closest('[aria-hidden="true"]') && !(el.parentElement && reached.has(el.parentElement))) {
@@ -373,12 +440,18 @@ export function gather(): Omit<LayoutFacts, 'screen'> {
     if (out) reached.add(el);
     if (isControl(el)) {
       const seen = inView(el);
-      if (seen) controls.push({ path: pathOf(el), rect: toBox(seen.rect), seen: seenOf(el, toBox(seen.rect)), quad: seen.clipped ? undefined : quadOf(el), panel: panelOf(el) });
+      if (seen) { controls.push({ path: pathOf(el), rect: toBox(seen.rect), seen: seenOf(el, toBox(seen.rect)), quad: seen.clipped ? undefined : quadOf(el), panel: panelOf(el) }); contents.set(pathOf(el), el); }
     }
-    if (el.classList.contains('kb-calm')) { const c = calmOf(el); if (c) calms.push(c); }
+    if (el.classList.contains('kb-calm')) { const c = calmOf(el); if (c) { calms.push(c); calmEls.push(el); } }
   }
+  /* Paint order: with every backing made hit-testable for the question (calm.css gives it `pointer-events: none`), which content paints above which calm. */
+  const style = document.createElement('style');
+  style.textContent = '.kb-calm::before { pointer-events: auto !important; }';
+  document.head.append(style);
+  const withOrder = calms.map((c, i) => ({ ...c, above: aboveOf(c, calmEls[i]!, contents) }));
+  style.remove();
   return {
     viewport: { width: vw, height: innerHeight, scrollWidth: document.documentElement.scrollWidth },
-    blocks, scrollers: [...scrollers.values()], extents, rows: rowsOf(shown), controls, calms,
+    blocks, scrollers: [...scrollers.values()], extents, rows: rowsOf(shown), controls, calms: withOrder,
   };
 }

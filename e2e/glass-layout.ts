@@ -25,8 +25,23 @@ import type { Box } from './glass-text.ts';
  *      inside that box: the feather is cut on a straight line (the phone Settings, on main);
  *   6. a calm over other content: a `.kb-calm` backing whose drawn rect overlaps the box of a text
  *      block or a control (the backing as the clipping ancestors leave it) that is neither inside this calm nor inside another calm, taking
- *      of that block or control only the part nothing else is drawn over. Two calms' feathers
- *      meeting is a staggered backing and is not refused.
+ *      of that block or control only the part nothing else is drawn over, and only where the calm
+ *      PAINTS OVER it. Two calms' feathers meeting is a staggered backing and is not refused.
+ *
+ *      The defect this refusal exists for is a backing painted over content, which dims it: the
+ *      swap's calm is a stacking context (`isolation: isolate`) and painted its 85% ground over the
+ *      phone avatar, which faded. A feather that lies UNDER a neighbor, the neighbor painting
+ *      above it, dims nothing: the HUD's avatar, bell, Menu and Hand stand in the swap's and the
+ *      Aura's feathers on main, and that is the approved look. So the judgment reads paint order, not
+ *      overlap alone. The gatherer asks the page (`document.elementsFromPoint`, with the backing
+ *      made hit-testable for the question) at sample points in the overlap of the backing and the
+ *      block, and records, as `CalmFact.above`, the paths whose element comes before the calm's in
+ *      that list, which is the topmost first: they paint above the backing. Where no sample can be
+ *      asked (the overlap is off the window, covered by another layer), the block is not listed, and
+ *      so is judged as overlapping: the check errs toward refusing what it could not see. The pair
+ *      that goes red is a calm with a control in its feather and the control in the page's flow
+ *      after it (a stacking context paints above static content); the same geometry with the
+ *      control positioned above the calm passes (e2e/glass-layout-page.spec.ts).
  *
  *   A calm inside a FRAMED PANEL (the HUD's glass, a dialog, the hand's drawer, the class rail) is
  *   judged by 6 only over content inside the same panel, and by 5 only for a clipper outside it
@@ -100,7 +115,7 @@ export interface ControlFact extends Located { readonly seen?: Box | null; reado
 export interface ClipFact extends Located { readonly x: boolean; readonly y: boolean }
 
 /** A calm: its drawn backing (feather included), its element's border box, and the ancestors that clip it. */
-export interface CalmFact { readonly path: string; readonly backing: Box; readonly element: Box; readonly clips: readonly ClipFact[]; /** The part of `backing` nothing else is drawn over, as for a block's `seen`. Absent: all of it. */ readonly seen?: Box | null }
+export interface CalmFact { readonly path: string; readonly backing: Box; readonly element: Box; readonly clips: readonly ClipFact[]; /** The paths of blocks and controls that paint ABOVE this calm's backing where they overlap it (read from the page's paint order): the calm lies under them and dims nothing. Absent: none are known to be. */ readonly above?: readonly string[]; /** The part of `backing` nothing else is drawn over, as for a block's `seen`. Absent: all of it. */ readonly seen?: Box | null }
 
 export interface LayoutFacts {
   readonly screen: string;
@@ -274,6 +289,8 @@ export function judgeLayout(facts: LayoutFacts): string[] {
       /* What the player sees of it: the part nothing else is drawn over. */
       const seen = (o as { seen?: Box | null }).seen;
       if (seen === null) continue;
+      /* Painted above the backing: the calm is under it, and a feather under a neighbor dims nothing of it. */
+      if (m.above?.includes(o.path)) continue;
       if (overlaps(drawn, seen ?? o.rect)) at('calm over other content', m.path, `its backing, ${px(drawn.width)} by ${px(drawn.height)} with its feather and as its ancestors leave it, lies on ${shortPath(o.path)}, which is in no calm`);
     }
   }
