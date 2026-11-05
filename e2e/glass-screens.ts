@@ -5,11 +5,14 @@ import type { Demo } from '../web/src/demo.ts';
 /**
  * Every screen the glass is measured on, shared by the specs that visit them all
  * (e2e/glass-text.spec.ts reads their text, e2e/glass-layout.spec.ts their layout): the glass
- * pages, the overlays, the stories, and `open`, which brings one up ready to read.
+ * pages, the overlays, the stories, and `open`, which brings one up ready to read. Each `Screen` names the board it is held to
+ * (e2e/boards.spec.ts checks that the id is a board's) or says why it has none; `open` takes a `Probe`, the part of a screen it needs,
+ * so a spec's own one-off page needs no board.
  */
 export type E2eWindow = typeof globalThis & { readonly __kbFake: Fake; readonly __kbDemo: Demo };
 
-export interface Screen {
+/** Where a screen opens and how it is brought up: all `open` needs. A spec's own probe of a screen no board holds is one. */
+export interface Probe {
   readonly name: string;
   /** Where it opens: a route, a moment of the boards' fixture, or a board story. */
   readonly path: string;
@@ -21,6 +24,16 @@ export interface Screen {
   readonly asAdmin?: boolean;
 }
 
+/** A glass screen the specs visit, each held to a board or told why not. */
+export interface Screen extends Probe {
+  /**
+   * The board the screen is held to (e2e/boards.spec.ts compares it, or lists it in PENDING until its task builds it), by the board's
+   * id; or why it has none, a sentence. A screen held by two boards names the one its manifest compares on (a phone board is its
+   * 1440 board's second comparison).
+   */
+  readonly board: string | { readonly none: string };
+}
+
 /**
  * Every glass page: the routes web/src/App.tsx's GLASS map draws on the glass, each read in full
  * (Invites is Settings › Account, where /invites now opens). The HUD is glass on every board page:
@@ -28,39 +41,41 @@ export interface Screen {
  * past its cap, the longest its figures get.
  */
 export const PAGES: readonly Screen[] = [
-  { name: 'My characters', path: '/characters' },
-  { name: 'New character', path: '/characters/new' },
-  { name: 'Edit profile', path: '/characters/edit' },
-  { name: 'Rankings', path: '/season?tab=rankings' },
-  { name: 'Season news', path: '/season?tab=news' },
-  { name: 'Alerts', path: '/alerts' },
-  { name: 'Updates', path: '/updates' },
-  { name: 'Strategy Guide', path: '/guide' },
+  { name: 'My characters', board: '10-roster', path: '/characters' },
+  { name: 'New character', board: '2026-11-05-backfill/23-new-character', path: '/characters/new' },
+  { name: 'Edit profile', board: '2026-11-05-backfill/26-edit-profile', path: '/characters/edit' },
+  { name: 'Rankings', board: '13-rankings', path: '/season?tab=rankings' },
+  { name: 'Season news', board: '04-season-news', path: '/season?tab=news' },
+  { name: 'Alerts', board: '02-alerts', path: '/alerts' },
+  { name: 'Updates', board: '03-updates', path: '/updates' },
+  { name: 'Strategy Guide', board: '2026-11-05-backfill/20-guide', path: '/guide' },
   /* Reach a person is read signed out, as the player who cannot sign in reaches it; the demo world sets its links. */
-  { name: 'Reach a person', path: '/contact', signedOut: true },
-  { name: 'Welcome', path: '/welcome' },
-  { name: 'My log, before anything has settled', path: '/log' },
-  { name: 'The Vending Machine', path: '/vending' },
-  { name: 'The hand, open', path: '/b/general', then: async (page) => { await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click(); } },
+  { name: 'Reach a person', board: '2026-11-05-backfill/16-contact', path: '/contact', signedOut: true },
+  { name: 'Welcome', board: '2026-11-05-backfill/19-welcome', path: '/welcome' },
+  { name: 'My log, before anything has settled', board: '2026-11-05-backfill/30-log-empty', path: '/log' },
+  { name: 'The Vending Machine', board: '07-vending', path: '/vending' },
+  { name: 'The hand, open', board: '05-cards', path: '/b/general', then: async (page) => { await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click(); } },
   /* The armed card, with its floating tag where the layout keeps the hand open to show it. */
   {
     name: 'The hand, with a card armed',
+    board: '05-cards',
     path: '/b/general',
     then: async (page) => {
       await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click();
       await page.getByRole('button', { name: /^Whoops!, Salty\b/ }).first().click();
     },
   },
-  { name: 'Settings', path: '/settings' },
+  { name: 'Settings', board: '11-settings', path: '/settings' },
   /* The admin queue, with the form for how players reach the admins (AdminContact), read as an admin. */
-  { name: 'The admin queue', path: '/admin/queue', asAdmin: true },
-  { name: 'Settings › Account, with the invites', path: '/settings?section=account' },
-  { name: 'Sign in', path: '/sign-in', signedOut: true },
-  { name: 'Register', path: '/register?invite=ab12cd34', signedOut: true },
-  { name: 'The HUD, on the Main board\'s moment', path: '/?fixture=boards&moment=01-main' },
-  { name: 'The HUD, signed out', path: '/b/general', signedOut: true },
+  { name: 'The admin queue', board: '2026-11-05-backfill/37-admin-queue', path: '/admin/queue', asAdmin: true },
+  { name: 'Settings › Account, with the invites', board: '2026-11-05-backfill/33-settings-account', path: '/settings?section=account' },
+  { name: 'Sign in', board: '2026-11-05-backfill/14-sign-in', path: '/sign-in', signedOut: true },
+  { name: 'Register', board: '2026-11-05-backfill/15-register', path: '/register?invite=ab12cd34', signedOut: true },
+  { name: 'The HUD, on the Main board\'s moment', board: '01-main', path: '/?fixture=boards&moment=01-main' },
+  { name: 'The HUD, signed out', board: '2026-11-05-backfill/17-front-door', path: '/b/general', signedOut: true },
   {
     name: 'The HUD, with a wallet past its cap',
+    board: '2026-11-05-backfill/35-hud-cap',
     path: '/b/general',
     then: async (page) => {
       /* A full wallet puts the demo's estimate wholly past the cap; the HUD reads the wallet when the account changes, out and back in. */
@@ -92,6 +107,7 @@ const debut = (button: string, dialog: string) => async (page: Page) => {
 export const OVERLAYS: readonly Screen[] = [
   {
     name: 'The React picker, from a post',
+    board: '03-react',
     path: '/b/general',
     then: async (page) => {
       await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
@@ -101,6 +117,7 @@ export const OVERLAYS: readonly Screen[] = [
   },
   {
     name: 'The Turn modal, from My characters',
+    board: '06-turn',
     path: '/characters',
     then: async (page) => {
       await page.getByRole('tablist', { name: /^Roster, /u }).getByRole('tab', { name: /^Pipewrench/u }).click();
@@ -110,6 +127,7 @@ export const OVERLAYS: readonly Screen[] = [
   },
   {
     name: 'The Reveal modal, from My characters',
+    board: '2026-11-05-backfill/25-reveal',
     path: '/characters',
     then: async (page) => {
       await page.getByRole('tablist', { name: /^Roster, /u }).getByRole('tab', { name: /^Pipewrench/u }).click();
@@ -119,14 +137,15 @@ export const OVERLAYS: readonly Screen[] = [
   },
   {
     name: 'The Vending Machine\'s card info, from a slot',
+    board: '2026-11-05-backfill/34-vending-info',
     path: '/vending',
     then: async (page) => {
       await page.getByRole('button', { name: 'About Whoops!' }).click();
       await expect(page.getByRole('dialog', { name: 'Whoops!' })).toBeVisible();
     },
   },
-  { name: 'The Debut dialog, dropping now', path: '/characters/new', then: debut('Drop Waiting Wanda now', 'Drop Waiting Wanda now') },
-  { name: 'The Debut dialog, choosing how', path: '/characters/new', then: debut('Change how Waiting Wanda debuts', 'How Waiting Wanda debuts') },
+  { name: 'The Debut dialog, dropping now', board: '2026-11-05-backfill/40-debut-now', path: '/characters/new', then: debut('Drop Waiting Wanda now', 'Drop Waiting Wanda now') },
+  { name: 'The Debut dialog, choosing how', board: '2026-11-05-backfill/24-debut', path: '/characters/new', then: debut('Change how Waiting Wanda debuts', 'How Waiting Wanda debuts') },
 ];
 
 /**
@@ -136,12 +155,14 @@ export const OVERLAYS: readonly Screen[] = [
 export const FIXTURE_OVERLAYS: readonly Screen[] = [
   {
     name: 'Stick Around\'s view, taking the reader over on the Hold board\'s moment',
+    board: '08-hold',
     path: '/?fixture=boards&moment=08-hold',
     then: async (page) => { await expect(page.getByRole('dialog', { name: 'Stick Around' })).toBeVisible({ timeout: 10_000 }); },
   },
   {
     /* The Cards board's moment: the hand, the card armed, then the post's own button, which opens the form on the post. */
     name: 'The play form, on the Cards board\'s moment',
+    board: '05-cards',
     path: '/?fixture=boards&moment=05-cards',
     then: async (page) => {
       await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click();
@@ -158,17 +179,17 @@ export const FIXTURE_OVERLAYS: readonly Screen[] = [
  * `calmAll` surface: every line on it, large text too, stands in a calm. Read in the first runs only, as the overlays above
  * are. The other board stories are the boards' drawings for the board match, whose screens are read above as the app draws them.
  */
-export const SETTLEMENT: Screen = { name: 'The settlement\'s summary, on the Settlement board\'s moment', path: '/?fixture=boards&moment=09-settlement' };
+export const SETTLEMENT: Screen = { name: 'The settlement\'s summary, on the Settlement board\'s moment', board: '09-settlement', path: '/?fixture=boards&moment=09-settlement' };
 /** A Lens story opens its Lens on its own once the thread is read; the lines are read when it stands. */
 const lensOpen = async (page: Page) => { await expect(page.getByRole('dialog', { name: 'Cards on this post' })).toBeVisible({ timeout: 15_000 }); };
 export const STORIES: readonly Screen[] = [
-  { name: 'My log, on the Log board\'s moment', path: '/?fixture=boards&moment=12-log' },
+  { name: 'My log, on the Log board\'s moment', board: '12-log', path: '/?fixture=boards&moment=12-log' },
   SETTLEMENT,
-  { name: 'My log with a settlement\'s posts open, in its story', path: '/?fixture=boards&story=boards-12-log--open' },
+  { name: 'My log with a settlement\'s posts open, in its story', board: '2026-11-05-backfill/31-log-open', path: '/?fixture=boards&story=boards-12-log--open' },
   /* The Lens, on each tab with Who unfolded, for a reader and for the post's author: glass type over the 2003 post. */
-  { name: 'The Lens on Whoops!, Who unfolded, in its story', path: '/?fixture=boards&story=boards-01-lens--lens-whoops-who', then: lensOpen },
-  { name: 'The Lens on Stick Around, Who unfolded, in its story', path: '/?fixture=boards&story=boards-01-lens--lens-stick-around-who', then: lensOpen },
-  { name: 'The author\'s Lens on Whoops!, in its story', path: '/?fixture=boards&story=boards-01-lens--lens-author-whoops-who', then: lensOpen },
+  { name: 'The Lens on Whoops!, Who unfolded, in its story', board: '2026-11-05-backfill/28-lens', path: '/?fixture=boards&story=boards-01-lens--lens-whoops-who', then: lensOpen },
+  { name: 'The Lens on Stick Around, Who unfolded, in its story', board: '2026-11-05-backfill/28-lens', path: '/?fixture=boards&story=boards-01-lens--lens-stick-around-who', then: lensOpen },
+  { name: 'The author\'s Lens on Whoops!, in its story', board: '2026-11-05-backfill/29-lens-states', path: '/?fixture=boards&story=boards-01-lens--lens-author-whoops-who', then: lensOpen },
   /*
    * The Lens opened inside Stick Around's view (story `held-inside`) is not read here: the Lens stands over the view's tag and, at a phone,
    * over the checkbox's words, as the mockup's held shot does, and a line it covers is read through the Lens's own pixels. The view's lines are
@@ -197,7 +218,7 @@ async function makeAdmin(page: Page) {
 }
 
 /** Opens a screen ready to read: a glass page when its menu bar shows, a board page when its HUD does, a story once rendered. */
-export async function open(page: Page, s: Screen) {
+export async function open(page: Page, s: Probe) {
   if (s.signedOut) await signOut(page);
   if (s.asAdmin) await makeAdmin(page);
   if (s.signedOut || s.asAdmin) await goInApp(page, s.path);

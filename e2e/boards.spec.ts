@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { expect, test, type Browser, type Page } from '@playwright/test';
-import { boardIds, boardsToRun, compareBoard, compareSides, type BoardManifest, type Mismatch, type Snapshot } from './board-match.ts';
+import { boardIds, boardsToRun, compareBoard, compareSides, phoneSizeProblems, screensWithoutBoards, type BoardManifest, type Mismatch, type Snapshot } from './board-match.ts';
+import { FIXTURE_OVERLAYS, OVERLAYS, PAGES, STORIES } from './glass-screens.ts';
 import { pressControls, routeBoardFonts, settledSnapshot, snapshotPage, standInFaces } from './board-snapshot.ts';
 
 /**
@@ -13,7 +14,10 @@ import { pressControls, routeBoardFonts, settledSnapshot, snapshotPage, standInF
  * which plan, and which task of it, builds it; a board in PENDING that has a manifest fails too, so the
  * map cannot go stale. The task that builds a board takes it out of PENDING in the same change that
  * writes its manifest (e2e/boards/<NN>-<name>.ts, a default-exported BoardManifest; for a board in a folder after the
- * first two, e2e/boards/<folder>/<NN>-<name>.ts, and its id is <folder>/<NN>-<name>).
+ * first two, e2e/boards/<folder>/<NN>-<name>.ts, and its id is <folder>/<NN>-<name>). A manifest may also export `phone`, a
+ * BoardManifest for the same board's phone drawing, compared at 390 by 844 (PHONE_SIZE); that phone board has no manifest file of
+ * its own, one parent names it, and its report goes under the phone board's own id. Every glass screen (e2e/glass-screens.ts) names
+ * the board it is held to or says why it has none, which the second test checks.
  *
  * The board's Google Fonts requests are routed to the instance's own files (the build serves the
  * same files itself), the system faces both name first are set in one stand-in where the machine
@@ -106,10 +110,28 @@ if (fs.existsSync(MANIFESTS)) {
     } else if (entry.name.endsWith('.ts')) manifestIds.push(entry.name.slice(0, -3));
   }
 }
-const { run, problems } = boardsToRun(folder, manifestIds, PENDING);
+
+/**
+ * A manifest module may also export `phone`, the same board's phone drawing, compared at 390 by 844 (the board's id is that manifest's
+ * `board`). That board has no file of its own in e2e/boards/, so the modules are read here for the ids their `phone` exports name.
+ */
+const loadManifest = async (id: string) => (await import(pathToFileURL(path.join(MANIFESTS, `${id}.ts`)).href)) as { default: BoardManifest; phone?: BoardManifest };
+const phoneOf = new Map<string, BoardManifest>();
+for (const id of manifestIds) {
+  const phone = (await loadManifest(id)).phone;
+  if (phone) phoneOf.set(id, phone);
+}
+const phoneIds = [...phoneOf.values()].map((p) => p.board);
+const { run, problems } = boardsToRun(folder, manifestIds, PENDING, phoneIds);
+problems.push(...phoneSizeProblems([...phoneOf].map(([parent, phone]) => ({ parent, size: phone.size }))));
 
 test('every board has a manifest or is pending, and the pending map is not stale', () => {
   expect([...shared, ...problems]).toEqual([]);
+});
+
+test('every glass screen names the board it is held to, or says why it has none', () => {
+  const screens = [...PAGES, ...OVERLAYS, ...FIXTURE_OVERLAYS, ...STORIES];
+  expect(screensWithoutBoards(screens, boards.map((b) => b.id), PENDING)).toEqual([]);
 });
 
 const escapeHtml = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -185,11 +207,14 @@ async function compareSide(browser: Browser, baseURL: string | undefined, id: st
 
 for (const id of run) {
   test(`${id} matches its board`, async ({ browser }, testInfo) => {
-    const manifest = (await import(pathToFileURL(path.join(MANIFESTS, `${id}.ts`)).href) as { default: BoardManifest }).default;
+    const { default: manifest, phone } = await loadManifest(id);
     expect(manifest.board).toBe(id);
     const baseURL = testInfo.project.use.baseURL;
     /* The board's own build side, then each further one (the Cards board's play form is the app, its hand sheet a story). */
     const mismatches = await compareSides(manifest, (side, folder) => compareSide(browser, baseURL, id, side, folder));
-    expect(mismatches, `${id} differs from its board; see e2e/report/boards/${id}/index.html`).toEqual([]);
+    /* The same board's phone drawing, at 390 by 844, against the phone board its manifest names. */
+    if (phone) mismatches.push(...(await compareSides(phone, (side, folder) => compareSide(browser, baseURL, phone.board, side, folder))).map((m) => `phone: ${m}`));
+    const reports = phone ? `e2e/report/boards/${id}/index.html, and for a phone: line, e2e/report/boards/${phone.board}/index.html` : `e2e/report/boards/${id}/index.html`;
+    expect(mismatches, `${id} differs from its board; see ${reports}`).toEqual([]);
   });
 }

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { open, type Screen } from './glass-screens.ts';
+import { open, type Probe } from './glass-screens.ts';
 
 /**
  * The Season's rankings table and the Log's table stand on the page's own left edge, as its text does (engine/ui/tables.test.tsx reads
@@ -8,7 +8,7 @@ import { open, type Screen } from './glass-screens.ts';
  */
 test.use({ bypassCSP: true, reducedMotion: 'reduce', deviceScaleFactor: 1 });
 
-const TABLES: readonly { readonly screen: Screen; readonly table: string }[] = [
+const TABLES: readonly { readonly screen: Probe; readonly table: string }[] = [
   { screen: { name: 'Rankings', path: '/season?tab=rankings' }, table: '.kb-rankings-table' },
   { screen: { name: 'My log, on the Log board\'s moment', path: '/?fixture=boards&moment=12-log' }, table: '.kb-log-table' },
 ];

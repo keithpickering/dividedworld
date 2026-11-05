@@ -4,7 +4,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { judge, paletteOf, type CeilingsFile, type GlassColors, type SurfaceCeilings, type TextFact } from './glass-text.ts';
 import { signInUnseasonedOnBoard } from './onboarding.ts';
 import type * as Gatherer from './glass-text-page.ts';
-import { FIXTURE_OVERLAYS, OVERLAYS, PAGES, SETTLEMENT, STORIES, open, type Screen } from './glass-screens.ts';
+import { FIXTURE_OVERLAYS, OVERLAYS, PAGES, SETTLEMENT, STORIES, open, type Probe, type Screen } from './glass-screens.ts';
 
 /**
  * The rendered glass measurement (the web plan's glass amendment to Task 12; the glass build's
@@ -207,7 +207,7 @@ async function chooseHighContrast(page: Page) {
 }
 
 /* The boards' fixture signs in its own account, which has no preference; the HUD is read on the demo world's board, as the player who chose it. */
-const onTheAccount = (s: Screen): Screen => (s.path.includes('fixture=boards') ? { name: 'The HUD, on a board page', path: '/b/general' } : s);
+const onTheAccount = (s: Probe): Probe => (s.path.includes('fixture=boards') ? { name: 'The HUD, on a board page', path: '/b/general' } : s);
 
 /*
  * Text size (Settings › Accessibility): the glass's words grow with the player's choice, from 150% up

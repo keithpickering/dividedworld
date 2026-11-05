@@ -281,26 +281,68 @@ export function boardIds(
  * left out by forgetting it: a board with no manifest that is not pending is a problem, a pending
  * board that has a manifest is one (the map went stale), and so is a name in either list that is no
  * board in the folder.
+ *
+ * A phone board is compared by the second export (`phone`) of the manifest of the board it belongs to, so it has no file of its
+ * own: `phones` lists the ids those exports name. A phone board counts as having a manifest (so it needs no PENDING entry, and
+ * is a stale one if it has it), is not run on its own, since its parent's test runs it, and is a problem if it also has a
+ * manifest file of its own or names no board in the folder.
  */
 export function boardsToRun(
   folder: readonly string[],
   manifests: readonly string[],
   pending: Readonly<Record<string, string>>,
+  phones: readonly string[] = [],
 ): { run: string[]; pending: string[]; problems: string[] } {
   const boards = folder.filter(isBoardFile).map((f) => f.slice(0, -'.html'.length)).sort();
-  const has = new Set(manifests);
+  const has = new Set([...manifests, ...phones]);
+  const phone = new Set(phones);
   const problems: string[] = [];
   const run: string[] = [];
   const waiting: string[] = [];
   for (const b of boards) {
     const part = pending[b];
     if (has.has(b)) {
-      run.push(b);
+      if (!phone.has(b)) run.push(b);
+      if (phone.has(b) && manifests.includes(b)) problems.push(`${b} is a phone export's board and has a manifest file of its own: keep one`);
       if (part !== undefined) problems.push(`${b} has a manifest and is still in PENDING (${part}): remove it from the map`);
     } else if (part !== undefined) waiting.push(b);
     else problems.push(`${b} has no manifest and is not in PENDING: write e2e/boards/${b}.ts, or name the part that builds it`);
   }
   for (const name of Object.keys(pending)) if (!boards.includes(name)) problems.push(`PENDING names ${name}, which is no board file in the folder`);
   for (const name of manifests) if (!boards.includes(name)) problems.push(`e2e/boards/${name}.ts is a manifest for no board file in the folder`);
+  for (const name of new Set(phones.filter((n, i) => phones.indexOf(n) !== i))) problems.push(`${name} is the phone board of more than one manifest: a phone board has one parent`);
+  for (const name of phones) if (!boards.includes(name)) problems.push(`a phone export names ${name}, which is no board file in the folder`);
   return { run, pending: waiting, problems };
+}
+
+/** A phone board is compared at this size. */
+export const PHONE_SIZE = { width: 390, height: 844 } as const;
+
+/** A problem for each manifest whose `phone` export is not drawn at the phone size; `parent` is the manifest's board id. */
+export function phoneSizeProblems(phones: readonly { readonly parent: string; readonly size: { readonly width: number; readonly height: number } }[]): string[] {
+  return phones
+    .filter((p) => p.size.width !== PHONE_SIZE.width || p.size.height !== PHONE_SIZE.height)
+    .map((p) => `${p.parent}'s phone export is ${p.size.width} by ${p.size.height}: a phone board is compared at ${PHONE_SIZE.width} by ${PHONE_SIZE.height}`);
+}
+
+/**
+ * Every glass screen is held to a board or says why it has none (a screen's `board`). A problem for a screen with neither, a
+ * `board` that is no board's id (a board in `pending` is one: a screen may name a board its task has not built yet), and a
+ * `{ none }` whose reason is empty or only whitespace.
+ */
+export function screensWithoutBoards(
+  screens: readonly { readonly name: string; readonly board?: string | { readonly none: string } }[],
+  ids: readonly string[],
+  pending: Readonly<Record<string, string>>,
+): string[] {
+  const known = new Set([...ids, ...Object.keys(pending)]);
+  const problems: string[] = [];
+  for (const { name, board } of screens) {
+    /* The type requires a board; an entry that reaches here without one is an untyped one (a cast, or a spec's own literal), which is what this catches. */
+    if (board === undefined || board === null) problems.push(`"${name}" names no board and gives no reason it has none: set its \`board\` in e2e/glass-screens.ts`);
+    else if (typeof board === 'string') {
+      if (!known.has(board)) problems.push(`"${name}" names the board ${board}, which is no board's id`);
+    } else if (typeof board.none !== 'string' || board.none.trim() === '') problems.push(`"${name}" has no board and an empty reason: say why in \`{ none }\``);
+  }
+  return problems;
 }
