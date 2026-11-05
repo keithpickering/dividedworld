@@ -364,7 +364,8 @@
   border: 0;
   background: var(--kb-glass-ready);
   color: var(--kb-glass-ink-ready);
-  font: 1.625rem / 1 var(--kb-glass-font-display);
+  /* The type size is its neighbor's (the layout check refuses two controls of one line at different sizes); the display face keeps it the call to action. */
+  font: var(--kb-glass-size-body) / 1 var(--kb-glass-font-display);
   letter-spacing: 0;
   box-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-ready) 60%, transparent);
 }
@@ -407,7 +408,7 @@
 
 :where(:root[data-kb-layout='phone']) .kb-settled-back {
   min-height: 48px;
-  font-size: var(--kb-glass-size-phone-display);
+  font-size: var(--kb-glass-size-phone-small);
 }
 
 :where(:root[data-kb-layout='phone']) .kb-settled-why,

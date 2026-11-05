@@ -278,6 +278,16 @@
   color: var(--kb-glass-text);
 }
 
+/* At large text a fact's label and value would not both fit one line of the column, so the value takes the line under its label. */
+:where(:root[data-kb-text-size='150'], :root[data-kb-text-size='200']) :is(.kb-roster-facts, .kb-turn-facts) {
+  grid-template-columns: 1fr;
+  row-gap: 0;
+}
+:where(:root[data-kb-text-size='150'], :root[data-kb-text-size='200']) :is(.kb-roster-facts, .kb-turn-facts) dd {
+  text-align: left;
+  margin-bottom: 8px;
+}
+
 .kb-roster-facts .kb-pips {
   vertical-align: middle;
 }
