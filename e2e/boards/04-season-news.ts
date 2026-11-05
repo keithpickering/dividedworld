@@ -20,11 +20,16 @@ const manifest: BoardManifest = {
   landmarks: [
     { id: 'menu', role: 'navigation', name: 'Menu', type: false },
     { id: 'menu-back', role: 'link', name: 'ESC BACK TO THE BOARD', buildName: 'Back to the board', within: 'menu' },
-    { id: 'menu-alerts', role: 'link', name: 'Alerts', within: 'menu' },
-    { id: 'menu-vending', role: 'link', name: 'Vending Machine', within: 'menu' },
-    { id: 'menu-characters', role: 'link', name: 'My characters', within: 'menu' },
-    { id: 'menu-season', role: 'link', name: 'Season', within: 'menu' },
-    { id: 'menu-log', role: 'link', name: 'My log', within: 'menu' },
+    /*
+     * REVISED by the backfill boards (docs/plans/2026-11-05-backfill-boards-design.md section 8; docs/plans/2026-11-05-backfill-boards-plan.md Task 5): a bar
+     * of more than five tabs steps its tabs down to 13px padding, as the backfill boards draw a player's eight (docs/research/2026-11-05-backfill/gen.mjs), so
+     * these tabs are narrower and later than this board draws them: compared by their y and height and their type, not their x and width. Back is held in full.
+     */
+    { id: 'menu-alerts', role: 'link', name: 'Alerts', within: 'menu', box: 'height' },
+    { id: 'menu-vending', role: 'link', name: 'Vending Machine', within: 'menu', box: 'height' },
+    { id: 'menu-characters', role: 'link', name: 'My characters', within: 'menu', box: 'height' },
+    { id: 'menu-season', role: 'link', name: 'Season', within: 'menu', box: 'height' },
+    { id: 'menu-log', role: 'link', name: 'My log', within: 'menu', box: 'height' },
     /*
      * The build's menu gains a Guide tab before Updates (the onboarding plan, Task 8; the Strategy Guide's page) that this board, drawn before the guide,
      * does not have. So Updates and Settings, which follow it, stand one tab's width further right than the board draws them: each is compared by its

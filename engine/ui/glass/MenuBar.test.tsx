@@ -216,6 +216,17 @@ describe('the ADMIN tab', () => {
     await waitFor(() => expect(seen).toContain(admin));
   });
 
+  test('the tab list says how crowded it is, for the stylesheet to step the tabs down: many past five, most past eight (few is for an instance with five or fewer, which this game\'s eight never is)', async () => {
+    const list = () => within(bar()).getAllByRole('list')[0]!;
+    const { unmount } = renderInWorld(<MenuBar />, { path: '/settings', seed: signedIn });
+    await within(bar()).findByRole('link', { name: 'Settings' });
+    expect(list()).toHaveAttribute('data-kb-tabs', 'many');
+    unmount();
+    renderInWorld(<MenuBar />, { path: '/admin/queue', seed: (fake) => fake.signInAs(fake.seed.account('boss', { admin: true })) });
+    await within(bar()).findByRole('link', { name: 'Admin' });
+    expect(list()).toHaveAttribute('data-kb-tabs', 'most');
+  });
+
   test('is not there signed out, where the bar holds Back alone', async () => {
     renderInWorld(<MenuBar />, { path: '/sign-in' });
     await within(bar()).findByRole('link', { name: 'Back to the board' });
