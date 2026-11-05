@@ -5,7 +5,7 @@
  * returned: the model key is read by the adapter from `Deno.env` and appears in no message.
  *
  * The database client does not repeat a write after a failure that may have followed its commit (`safeToRepeat`): a post or a spend repeated
- * on a guess is a post twice. A read is repeated; a write is thrown, and the next run of the day finds what was written (core.ts, `pool_orphan`).
+ * on a guess is a post twice (and a claim repeated would be refused by its own first try). A read is repeated; a write is thrown, and the next run of the day finds what was written (core.ts, `pool_orphans`).
  */
 import { runChatter } from './core.ts';
 import { chooseInstance } from '../_shared/instance.ts';
@@ -16,7 +16,7 @@ import { ledgerWriter } from '../_shared/models/ledger.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 
 /** The calls that write: not sent again after an answer that may have been lost on the way back. The ledger's own writer is one. */
-const WRITES = new Set(['write_staff_act', 'write_staff_thread', 'staff_play_card', 'staff_set_card', 'write_staff_note', 'record_pool_spend', 'record_model_call']);
+const WRITES = new Set(['write_staff_act', 'write_staff_thread', 'staff_play_card', 'staff_set_card', 'write_staff_note', 'record_pool_spend', 'claim_pool_run', 'record_model_call']);
 
 Deno.serve(async (request) => {
   const env = environment((name) => Deno.env.get(name));

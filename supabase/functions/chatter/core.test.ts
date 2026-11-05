@@ -42,7 +42,7 @@ type Spend = { day: string; staff: string; trigger: string; post_act: string; ca
 
 function fakeDb(w: World = {}) {
   const calls: { fn: string; args: Record<string, any> }[] = [];
-  const state = { acts: [] as { id: string; staff: string; kind: string; thread: string | null; target: string | null; payload: any }[], spends: [] as Spend[], notes: [] as { staff: string; post: string; body: string }[], n: 0 };
+  const state = { held: false, acts: [] as { id: string; staff: string; kind: string; thread: string | null; target: string | null; payload: any }[], spends: [] as Spend[], notes: [] as { staff: string; post: string; body: string }[], n: 0 };
   const failing = { ...(w.failOn ?? {}) };
   const named = w.named ?? [SIGH, CLERK, MON];
   const threads = [T1, T2, T3];
@@ -58,12 +58,15 @@ function fakeDb(w: World = {}) {
       }
       switch (fn) {
         case 'instance_settings': return { economy: dividedWorld.settings.economy, systemEnabled: w.enabled ?? true, ...(w.pool ? { pool: { ...dividedWorld.settings.pool, ...w.pool } } : {}) } as T;
+        case 'claim_pool_run': return (state.held ? null : 'run-0001') as T;
         case 'pool_context':
           return { season: { startsAt: Date.parse('2026-10-01T00:00:00Z'), endsAt: Date.parse('2026-12-30T00:00:00Z') }, boss: HYPE, predecessor: null,
             offices: { [CLERK]: 'member', [HYPE]: 'boss', [SIGH]: 'mod', [MON]: 'mod' }, characters: {}, boards: w.boards ?? { [GENERAL]: 'general' } } as T;
         case 'pool_week': {
           const today = state.spends.filter((s) => s.day === args.today);
-          return { spent: w.priorSpent ?? 0, threads: 0, today: today.map((s) => ({ staff: s.staff, post_act: s.post_act, card_act: s.card_act, started_thread: s.started_thread })) } as T;
+          const monday = new Date(Date.parse(String(args.today)) - ((new Date(String(args.today)).getUTCDay() + 6) % 7) * 86_400_000).toISOString().slice(0, 10);
+          const before = state.spends.filter((s) => s.day >= monday && s.day < String(args.today));
+          return { spent: (w.priorSpent ?? 0) + before.reduce((n, s) => n + 1 + (s.card_act === null ? 0 : 1), 0), threads: before.filter((s) => s.started_thread).length, today: today.map((s) => ({ staff: s.staff, post_act: s.post_act, card_act: s.card_act, started_thread: s.started_thread })) } as T;
         }
         case 'pool_signals':
           return { named: named.map((s, i) => ({ staff: s, act: quotes[i], thread: (w.noThread ?? []).includes(s) ? null : threads[i], n: 1 })), quoted: [], legacy: [], reversals: [], handovers: [], hot: [], tallies: [] } as T;
@@ -76,12 +79,21 @@ function fakeDb(w: World = {}) {
           const at = threads.indexOf(args.in_thread as string);
           return { title: `Thread ${at}`, posts: [{ act: quotes[at] ?? 'none', name: 'Ann', body: 'Hello there.' }] } as T;
         }
-        case 'pool_orphan': {
-          const mark = state.acts.find((a) => a.staff === args.of_staff && a.payload?.pool === args.on_day && !state.spends.some((s) => s.post_act === a.id));
-          if (!mark) return null as T;
-          // A card of the persona's, on the post's quoted target (a Cast) or on the post itself (a Set), not yet any spend's.
-          const tied = state.acts.find((a) => a.kind === 'card' && a.staff === mark.staff && (a.target === mark.id || (mark.target !== null && a.target === mark.target)) && !state.spends.some((s) => s.card_act === a.id));
-          return { act: mark.id, startedThread: mark.kind === 'thread', card: tied?.id ?? null } as T;
+        case 'pool_orphans': {
+          // Every marked post of the week up to `through` that no spend names (the earliest for a persona and a day), with the card marked
+          // the same day, of the same persona, on the post itself or on the post's quoted target.
+          const through = String(args.through);
+          const monday = new Date(Date.parse(through) - ((new Date(through).getUTCDay() + 6) % 7) * 86_400_000).toISOString().slice(0, 10);
+          const out: unknown[] = [];
+          for (const mark of state.acts) {
+            const day = mark.payload?.pool as string | undefined;
+            if (mark.kind === 'card' || mark.kind === 'set' || !day || day < monday || day > through || state.spends.some((s) => s.post_act === mark.id)) continue;
+            if (out.some((o: any) => o.staff === mark.staff && o.day === day)) continue;
+            const tied = state.acts.find((a) => a.staff === mark.staff && !state.spends.some((s) => s.card_act === a.id)
+              && ((a.kind === 'set' && a.target === mark.id) || (a.kind === 'card' && a.payload?.pool === day && mark.target !== null && a.target === mark.target)));
+            out.push({ staff: mark.staff, day, act: mark.id, startedThread: mark.kind === 'thread', card: tied?.id ?? null });
+          }
+          return out as T;
         }
         case 'write_staff_act': {
           const a = { id: nextId('act'), staff: String(args.staff_key), kind: 'post', thread: args.thread as string, target: args.target as string | null, payload: args.payload };
@@ -96,7 +108,7 @@ function fakeDb(w: World = {}) {
         case 'staff_play_card':
         case 'staff_set_card': {
           if (w.cardRefusal) throw new DatabaseError(`${fn}: ${w.cardRefusal}`, '55000', 400, w.cardRefusal);
-          const a = { id: nextId('card'), staff: String(args.staff_key), kind: 'card', thread: null, target: args.target as string, payload: { card: args.card, fn } };
+          const a = { id: nextId('card'), staff: String(args.staff_key), kind: fn === 'staff_set_card' ? 'set' : 'card', thread: null, target: args.target as string, payload: fn === 'staff_set_card' ? {} : { card: args.card, ...(args.pool_day ? { pool: args.pool_day } : {}) } };
           state.acts.push(a);
           return { id: a.id } as T;
         }
@@ -167,7 +179,7 @@ test('a day with three picks writes three posts, one card, the notes and three s
   assert.equal(d.state.spends.filter((s) => s.started_thread).length, 1);
   assert.deepEqual([...new Set(d.state.spends.map((s) => s.trigger))], ['named']);
   assert.equal(new Set(d.state.spends.map((s) => s.staff)).size, 3, 'one post a persona');
-  for (const a of d.state.acts.filter((x) => x.kind !== 'card')) assert.equal(a.payload.pool, DAY, 'the post carries the day for a crash to find');
+  for (const a of d.state.acts.filter((x) => x.kind !== 'card' && x.kind !== 'set')) assert.equal(a.payload.pool, DAY, 'the post carries the day for a crash to find');
   // The reply goes in its trigger's thread, quoting the post that set it off.
   const reply = d.of('write_staff_act')[0]!;
   assert.equal(reply.kind, 'post');
@@ -338,7 +350,8 @@ test('a rerun after a crash between a post and its spend adopts the post and wri
   const paid = m.chats.length;
   const second = await run(d, m);
   assert.ok(second.status === 'ok');
-  assert.equal(second.picks.find((p) => p.staff === orphaned)!.status, 'adopted');
+  assert.equal(second.adopted.find((p) => p.staff === orphaned)!.status, 'adopted');
+  assert.equal(second.picks.find((p) => p.staff === orphaned)!.status, 'already', 'and it is not picked again');
   assert.equal(d.state.acts.filter((a) => a.kind === 'post').length, 3, 'no second post');
   assert.equal(d.state.spends.length, 3, 'the orphan now has its row');
   assert.equal(d.state.spends.find((s) => s.staff === orphaned)!.record.adopted, true);
@@ -354,8 +367,8 @@ test('an adopted thread start uses the week\'s thread: no later pick in the reru
   assert.equal(d.count('write_staff_thread'), 1);
   const second = await run(d, m);
   assert.ok(second.status === 'ok');
-  assert.equal(second.picks[0]!.status, 'adopted');
-  assert.equal(second.picks[0]!.startedThread, true);
+  assert.equal(second.adopted[0]!.status, 'adopted');
+  assert.equal(second.adopted[0]!.startedThread, true);
   assert.equal(d.count('write_staff_thread'), 1, 'no second thread start in the rerun');
   assert.equal(d.state.spends.filter((s) => s.started_thread).length, 1);
 });
@@ -369,7 +382,7 @@ test('an adopted post takes its card: the crash between the card and the spend s
   const cardAct = d.state.acts.find((a) => a.kind === 'card')!;
   const second = await run(d, m);
   assert.ok(second.status === 'ok');
-  const adopted = second.picks.find((p) => p.status === 'adopted')!;
+  const adopted = second.adopted[0]!;
   assert.equal(adopted.card, cardAct.id);
   assert.equal(d.state.spends.find((s) => s.staff === adopted.staff)!.card_act, cardAct.id, 'the spend names the card, so the week counts its slot');
   assert.equal(d.count('staff_play_card'), 1, 'and no second card is played');
@@ -442,4 +455,59 @@ test('through the real model layer: a transport failure is retried once on the r
 test('the database failing before anything is written fails the run loudly, and a bad slot is refused', async () => {
   await assert.rejects(run(fakeDb({ failOn: { pool_context: 'always' } }), fakeModels(normal)), /connection dropped/);
   await assert.rejects(run(fakeDb(), fakeModels(normal), dividedWorld, 'not a time'), /slot is not a time/);
+});
+
+test('a staff Cast is told the day, so the card Act is tied to its post exactly', async () => {
+  const d = fakeDb({ pool: { threadsWeekly: 0 } });
+  const m = fakeModels((r) => ({ words: `A reply from ${r.staff}.`, card: { key: 'stick-around', on: 'reply' } }));
+  await run(d, m);
+  const doors = d.of('staff_play_card');
+  assert.ok(doors.length > 0);
+  assert.ok(doors.every((a) => a.pool_day === DAY), 'every staff Cast carries the pool day');
+});
+
+test('an orphan from an earlier day of the week is adopted today, on its own day, and counts in the week and the thread share', async () => {
+  const d = fakeDb();
+  d.state.acts.push({ id: 'old-start', staff: SIGH, kind: 'thread', thread: 'old-thread', target: null, payload: { pool: '2026-11-03', body: 'x' } });
+  d.state.acts.push({ id: 'old-card', staff: SIGH, kind: 'set', thread: null, target: 'old-start', payload: {} });
+  d.state.acts.push({ id: 'last-week', staff: CLERK, kind: 'post', thread: T1, target: null, payload: { pool: '2026-11-01', body: 'x' } });
+  const m = fakeModels(normal);
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  assert.deepEqual(out.adopted.map((a) => [a.staff, a.status, a.day, a.post, a.card]), [[SIGH, 'adopted', '2026-11-03', 'old-start', 'old-card']]);
+  const spend = d.state.spends.find((s) => s.post_act === 'old-start')!;
+  assert.equal(spend.day, '2026-11-03', 'recorded on its own day');
+  assert.equal(spend.card_act, 'old-card');
+  assert.equal(spend.started_thread, true);
+  assert.equal(d.state.spends.some((s) => s.post_act === 'last-week'), false, 'a post of the week before is not this week\'s');
+  const calls = d.calls.map((c) => c.fn);
+  assert.ok(calls.indexOf('pool_orphans') < calls.indexOf('pool_week'), 'adopted before the week is read, so the week counts it');
+  assert.equal(d.count('write_staff_thread'), 0, 'its thread is the week\'s one thread');
+  // The week's spend as the next read sees it counts the post and its card.
+  const week = await d.db.rpc<{ spent: number; threads: number }>('pool_week', { today: DAY });
+  assert.equal(week.spent, 2);
+  assert.equal(week.threads, 1);
+});
+
+test('a run that loses the claim writes nothing and reads nothing past it', async () => {
+  const d = fakeDb();
+  d.state.held = true;
+  const m = fakeModels(normal);
+  const out = await run(d, m);
+  assert.equal(out.status, 'busy');
+  assert.deepEqual(d.calls.map((c) => c.fn).filter((f) => f !== 'instance_settings'), ['claim_pool_run']);
+  assert.equal(d.calls.find((c) => c.fn === 'claim_pool_run')!.args.on_day, DAY);
+  assert.equal(m.chats.length + m.completions.length, 0, 'and no model was paid');
+  assert.equal(d.state.acts.length + d.state.spends.length + d.state.notes.length, 0);
+});
+
+test('the claim is taken at the start of the run, before any write, and a disabled System claims nothing', async () => {
+  const d = fakeDb();
+  await run(d, fakeModels(normal));
+  const calls = d.calls.map((c) => c.fn);
+  assert.ok(calls.indexOf('claim_pool_run') < calls.indexOf('pool_context'));
+  assert.equal(d.count('claim_pool_run'), 1);
+  const off = fakeDb({ enabled: false });
+  await run(off, fakeModels(normal));
+  assert.equal(off.count('claim_pool_run'), 0);
 });

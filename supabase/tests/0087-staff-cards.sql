@@ -433,3 +433,28 @@ begin
   if said is null or said !~ '^P0001 you hold no "splat" card' then raise exception 'a card not in hand: %', said; end if;
   if (select balance from wallets where account = ann) is distinct from 200 then raise exception 'a refused play at the door charged'; end if;
 end $$;
+
+-- ---- A staff Cast carries the pool's marker when given one, and nothing when not; a player's play never does ----
+do $$
+declare
+  ann uuid := tests.account('sc-ann-marker'); a uuid := tests.character(ann, 'Sc Ann Marker');
+  t uuid := tests.thread('Staff markers');
+  p uuid := tests.post(a, t, 'A post for a marked Cast.');
+  sp uuid := pg_temp.staff_post('sc-mod', t, 'A staff post for a Set.');
+  cast_act jsonb; set_act jsonb; plain jsonb;
+begin
+  perform tests.become_service();
+  cast_act := staff_play_card('sc-mod', 'sweetie', p, '{}', '', '2030-03-04');
+  set_act := staff_set_card('sc-mod', 'bluffy', sp);
+  perform tests.unbecome();
+  if (select x.payload ->> 'pool' from acts x where x.id = (cast_act ->> 'id')::uuid) is distinct from '2030-03-04' then raise exception 'a marked Cast has no marker: %', cast_act; end if;
+  -- A Set's payload is empty (acts_set_payload); it is tied to its post by landing on it.
+  if (select x.payload ->> 'card' from acts x where x.id = (cast_act ->> 'id')::uuid) is distinct from 'sweetie' then raise exception 'the marker displaced the card'; end if;
+  perform tests.become_service();
+  plain := staff_play_card('sc-boss', 'blot', p, '{"color": "red"}');
+  perform tests.unbecome();
+  if (select x.payload ? 'pool' from acts x where x.id = (plain ->> 'id')::uuid) then raise exception 'an unmarked staff Cast carries a marker'; end if;
+  if exists (select 1 from acts x where x.kind in ('card', 'set') and x.payload ? 'pool' and x.character not in (select id from characters where staff is not null)) then
+    raise exception 'a player''s play carries a pool marker';
+  end if;
+end $$;

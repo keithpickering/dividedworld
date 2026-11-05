@@ -158,7 +158,7 @@ end $$;
 -- `caster` is the character playing; `payer` is the account that pays, null for a staff character and never for a player's, with
 -- `price` 0 for the one that pays nothing. It does not spend: the wallet is the caller's, after this has come back without a refusal
 -- (the player's charge for a play refused here is therefore none). Callable by no API role.
-create function place_cast(caster uuid, card text, target uuid, config jsonb, message text, reach text, from_post uuid, payer uuid, price integer)
+create function place_cast(caster uuid, card text, target uuid, config jsonb, message text, reach text, from_post uuid, payer uuid, price integer, marker jsonb default '{}')
 returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -288,7 +288,8 @@ begin
       || case when reach <> 'post' then jsonb_build_object('reach', reach, reach, target, 'ends', ends, 'targetName', target_name)
               when sprung is not null then jsonb_build_object('caught', sprung -> 'payload' ->> 'set') else jsonb_build_object('layer', layer) end
       || case when kind_of.seeded then jsonb_build_object('seed', floor(random() * 2147483648)::bigint) else '{}'::jsonb end
-      || case when reach = 'post' and kind_of.play = 'use' and kind_of.lasts is not null then jsonb_build_object('ends', now() + kind_of.lasts) else '{}'::jsonb end);
+      || case when reach = 'post' and kind_of.play = 'use' and kind_of.lasts is not null then jsonb_build_object('ends', now() + kind_of.lasts) else '{}'::jsonb end
+      || coalesce(marker, '{}'::jsonb));
   exception when unique_violation then
     -- Only a writer that skipped the lock above could take the same layer.
     raise exception 'this post already carries that card' using hint = 'kayfabb.refusal', errcode = '23505';
@@ -304,7 +305,7 @@ begin
   end if;
   return act_projection(written) || case when sprung is not null then jsonb_build_object('sprung', sprung) else '{}'::jsonb end;
 end $$;
-revoke execute on function place_cast(uuid, text, uuid, jsonb, text, text, uuid, uuid, integer) from public, anon, authenticated, service_role;
+revoke execute on function place_cast(uuid, text, uuid, jsonb, text, text, uuid, uuid, integer, jsonb) from public, anon, authenticated, service_role;
 
 -- play_card (0058), split: it authorizes, checks the hand, hands the rules to place_cast, and only then spends the wallet and writes the
 -- card ledger's row, so a play refused anywhere in place_cast costs nothing. The order of its refusals is 0058's: the inputs, the price,
@@ -413,8 +414,10 @@ end $$;
 
 -- A staff persona's Cast, for the service role: by staff key, on the post it replies to (a staff card lands on a post). Refuses a
 -- persona that is waiting, benched or the developer, a card above `pool.cardRarityMost`, and a card that is not a Cast or a Use. The
--- staff flag is open for the one call and put back to what it was after.
-create function staff_play_card(staff_key text, card text, target uuid, config jsonb default '{}', message text default '') returns jsonb
+-- staff flag is open for the one call and put back to what it was after. `pool_day`, when given, is merged into the card Act's payload as
+-- `pool: <day>` at the insert (an Act is never edited), so the pool's orphan finder (0087) ties the card to its post exactly. A Set takes none:
+-- a set Act's payload is empty (acts_set_payload, 0054), and a Set lands only on the persona's own post, which is the tie.
+create function staff_play_card(staff_key text, card text, target uuid, config jsonb default '{}', message text default '', pool_day date default null) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   who uuid;
@@ -437,12 +440,13 @@ begin
   end if;
   flag := coalesce(current_setting('kayfabb.staff_writer', true), '');
   perform set_config('kayfabb.staff_writer', 'on', true);
-  played := place_cast(who, card, target, coalesce(config, '{}'), coalesce(message, ''), 'post', null, null, 0);
+  played := place_cast(who, card, target, coalesce(config, '{}'), coalesce(message, ''), 'post', null, null, 0,
+    case when pool_day is null then '{}'::jsonb else jsonb_build_object('pool', pool_day::text) end);
   perform set_config('kayfabb.staff_writer', flag, true);
   return played;
 end $$;
-revoke execute on function staff_play_card(text, text, uuid, jsonb, text) from public, anon, authenticated;
-grant execute on function staff_play_card(text, text, uuid, jsonb, text) to service_role;
+revoke execute on function staff_play_card(text, text, uuid, jsonb, text, date) from public, anon, authenticated;
+grant execute on function staff_play_card(text, text, uuid, jsonb, text, date) to service_role;
 
 -- A staff persona's Set, on its own post. As above, and a Set whose trap pays out is refused: a staff character has no wallet, so its
 -- trap never pays, and it is not offered.

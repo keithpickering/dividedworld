@@ -6,19 +6,20 @@
 -- (day, staff): a persona posts at most once a day, so a run repeated on the same day cannot post twice for it. No client reads or writes
 -- it; the service role reaches it through the functions below.
 --
--- A crash between a post and its spend must not post twice on the rerun. A pool post carries `pool` in its payload (the day, as
--- `YYYY-MM-DD`), and `pool_orphan(staff, day)` finds a persona's post of the day that has no spend: the rerun records that post's spend
--- and writes no second post. The window is not a guess: the post and the marker are one insert. The post's note, written after the post
--- and before the spend, is lost in that one case, and nothing is repeated; its card is found again (pool_orphan) and counted. supabase/functions/chatter/core.ts says the same.
+-- A crash between a post and its spend must not post twice on the rerun. A pool post, and the card played with it, carries `pool` in its
+-- payload (the day, as `YYYY-MM-DD`; one insert each), and `pool_orphans(through)` finds the week's posts that have no spend, each with its
+-- card tied exactly by the marker: the run records those spends, on their own days, and writes no second post. The post's note, written
+-- after the post and before the spend, is lost in that one case, and nothing is repeated. `claim_pool_run` keeps two runs from both
+-- posting. supabase/functions/chatter/core.ts says the same.
 --
--- Ways out: nothing here holds a player in a state. A spend is an inert record of what a persona did; a persona benched or waiting
+-- Ways out: nothing here holds a player in a state; a run's claim ages out after its lease. A spend is an inert record of what a persona did; a persona benched or waiting
 -- writes nothing, and an admin brings it back (set_office, 0080).
 
 create table pool_spends (
   id bigint generated always as identity primary key,
   day date not null,
   staff text not null references characters (staff),
-  trigger text not null check (trigger in ('named', 'quoted', 'legacy', 'successorStumbles', 'oldFlame', 'homeTurf', 'seasonTurn', 'hotOnBeat')),
+  trigger text not null check (trigger in ('named', 'quoted', 'legacy', 'successorStumbles', 'oldFlame', 'homeTurf', 'seasonTurn', 'hotOnBeat', 'adopted')),
   post_act uuid not null references acts (id),
   card_act uuid references acts (id),
   started_thread boolean not null default false,
@@ -62,25 +63,64 @@ language sql stable security definer set search_path = public, pg_temp as $$
                        from pool_spends s where s.day = today), '[]'::jsonb))
 $$;
 
--- A persona's post of `day` that no spend names: the post a crash left behind. {act, startedThread, card}, or null.
--- `card` is the persona's card Act tied to that post, or null. The card doors (0084) leave no marker on a card Act, so it is tied from public
--- Act data alone: a card Act of the same persona, made at or after the post and within an hour of it (a card Act takes no place in its thread, so its time is all there is) (a run lasts minutes), that lands on the
--- post itself (a Set) or on the post's quoted target (a Cast, for a reply), and that no spend names. A persona posts once a day and plays one
--- card with the post, so the earliest such Act is the post's. The spend adopted with it counts the card's slot in the week.
-create function pool_orphan(of_staff text, on_day date) returns jsonb
+-- The posts a crash left behind in `through`'s week (Monday to `through`, UTC, as pool_week counts it): each marked pool post that no spend
+-- names, the earliest for a persona and a day, as [{staff, day, act, startedThread, card}]. The run is daily, so an orphan is met a day
+-- later at the soonest, and the run adopts the whole week's, each spend on its own day.
+-- `card` is the persona's card Act tied to that post, or null, and the tie is exact: the card Act carries the same `pool` day (the card
+-- doors, 0084, merge it at the insert) and lands on the post's quoted target (a Cast, for a reply); a Set (whose payload is empty by
+-- acts_set_payload, 0054) is the persona's set Act on the post itself, which only its own post takes. No spend names it. No time window and
+-- no guess: a persona plays one card with its day's post. The spend adopted with it counts the card's slot.
+create function pool_orphans(through date) returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
-  select jsonb_build_object('act', a.id, 'startedThread', a.seq = 1,
+  select coalesce(jsonb_agg(jsonb_build_object('staff', o.staff, 'day', o.day, 'act', o.id, 'startedThread', o.seq = 1,
     'card', (select k.id from acts k
-             where k.character = a.character and k.kind = 'card'
-               and (k.target_act_id = a.id or (a.target_act_id is not null and k.target_act_id = a.target_act_id))
-               and k.created_at >= a.created_at and k.created_at < a.created_at + interval '1 hour'
+             where k.character = o.character
+               and ((k.kind = 'set' and k.target_act_id = o.id)
+                    or (k.kind = 'card' and k.payload ->> 'pool' = o.day and o.target_act_id is not null and k.target_act_id = o.target_act_id))
                and not exists (select 1 from pool_spends s where s.card_act = k.id)
-             order by k.created_at, k.id limit 1))
-  from acts a join characters c on c.id = a.character
-  where c.staff = of_staff and a.kind = 'post' and a.payload ->> 'pool' = on_day::text
-    and not exists (select 1 from pool_spends s where s.post_act = a.id)
-  order by a.created_at, a.id limit 1
+             order by k.created_at, k.id limit 1)) order by o.day, o.staff), '[]'::jsonb)
+  from (select distinct on (c.staff, a.payload ->> 'pool') c.staff, a.payload ->> 'pool' as day, a.id, a.seq, a.character, a.target_act_id
+        from acts a join characters c on c.id = a.character
+        where c.staff is not null and a.kind = 'post' and a.payload ->> 'pool' ~ '^\d{4}-\d{2}-\d{2}$'
+          and (a.payload ->> 'pool')::date between date_trunc('week', through::timestamp)::date and through
+          and not exists (select 1 from pool_spends s where s.post_act = a.id)
+        order by c.staff, a.payload ->> 'pool', a.created_at, a.id) o
 $$;
+
+-- A run's claim on its day, taken at the start of the run, so two overlapping runs cannot both post. `pool_run_claims` is append-only like
+-- the spends and no client's. `claim_pool_run(day, lease)` returns the run's id, or null when a claim for the day is younger than the
+-- lease. The day's advisory lock is taken inside the function, so two claimers are serialized and cannot both win. The way out of a crashed
+-- run is time: its claim ages past the lease and the next run goes ahead. The lease is longer than the function can run (see core.ts).
+create table pool_run_claims (
+  id bigint generated always as identity primary key,
+  day date not null,
+  at timestamptz not null default clock_timestamp(),
+  run uuid not null default gen_random_uuid()
+);
+create index pool_run_claims_day_at on pool_run_claims (day, at desc);
+alter table pool_run_claims enable row level security;
+revoke all on pool_run_claims from public, anon, authenticated;
+
+create function pool_run_claims_append_only() returns trigger
+language plpgsql set search_path = public, pg_temp as $$
+begin
+  raise exception 'a pool run claim is never edited or removed (%); it ages out', tg_op using errcode = 'P0001';
+end $$;
+create trigger pool_run_claims_no_update before update or delete on pool_run_claims for each row execute function pool_run_claims_append_only();
+create trigger pool_run_claims_no_truncate before truncate on pool_run_claims for each statement execute function pool_run_claims_append_only();
+alter table pool_run_claims enable always trigger pool_run_claims_no_update;
+alter table pool_run_claims enable always trigger pool_run_claims_no_truncate;
+revoke execute on function pool_run_claims_append_only() from public, anon, authenticated;
+
+create function claim_pool_run(on_day date, lease interval default interval '10 minutes') returns uuid
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare made uuid;
+begin
+  perform pg_advisory_xact_lock(hashtextextended('kayfabb-pool-run:' || on_day::text, 0));
+  if exists (select 1 from pool_run_claims c where c.day = on_day and c.at > clock_timestamp() - lease) then return null; end if;
+  insert into pool_run_claims (day) values (on_day) returning run into made;
+  return made;
+end $$;
 
 -- Records a persona's spend for a day. The post (and the card, if any) must be that persona's own Acts. A second spend for the same persona
 -- and day is not an error: it is `already`, and writes nothing, so a repeated call is harmless.
@@ -96,7 +136,7 @@ begin
   if not exists (select 1 from acts a where a.id = post and a.character = who and a.kind = 'post') then
     raise exception 'the spend''s post is not a post of %', of_staff using errcode = '22023';
   end if;
-  if card is not null and not exists (select 1 from acts a where a.id = card and a.character = who and a.kind = 'card') then
+  if card is not null and not exists (select 1 from acts a where a.id = card and a.character = who and a.kind in ('card', 'set')) then
     raise exception 'the spend''s card is not a card of %', of_staff using errcode = '22023';
   end if;
   insert into pool_spends (day, staff, trigger, post_act, card_act, started_thread, record)
@@ -205,10 +245,10 @@ begin
   return made;
 end $$;
 
-revoke execute on function pool_week(date), pool_orphan(text, date), record_pool_spend(date, text, text, uuid, uuid, boolean, jsonb), pool_context(),
+revoke execute on function pool_week(date), pool_orphans(date), claim_pool_run(date, interval), record_pool_spend(date, text, text, uuid, uuid, boolean, jsonb), pool_context(),
   pool_thread(uuid, integer, integer, uuid), pool_names(jsonb), write_staff_thread(text, text, text, text, jsonb), write_staff_note(text, uuid, text)
   from public, anon, authenticated;
-grant execute on function pool_week(date), pool_orphan(text, date), record_pool_spend(date, text, text, uuid, uuid, boolean, jsonb), pool_context(),
+grant execute on function pool_week(date), pool_orphans(date), claim_pool_run(date, interval), record_pool_spend(date, text, text, uuid, uuid, boolean, jsonb), pool_context(),
   pool_thread(uuid, integer, integer, uuid), pool_names(jsonb), write_staff_thread(text, text, text, text, jsonb), write_staff_note(text, uuid, text)
   to service_role;
 

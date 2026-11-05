@@ -36,6 +36,11 @@ create function pg_temp.staff_post(k text, in_thread uuid, body text, marker tex
   select (write_staff_act(k, 'post', in_thread, null, jsonb_build_object('body', body) || coalesce(jsonb_build_object('pool', marker), '{}'::jsonb)) ->> 'id')::uuid
 $$;
 
+-- A persona's orphan of a day, as the week's orphans (through the Sunday) list it: the element for (staff, day), or null.
+create function pg_temp.orphan(k text, d text) returns jsonb language sql as $$
+  select e from jsonb_array_elements(pool_orphans('2030-01-13')) e where e ->> 'staff' = k and e ->> 'day' = d limit 1
+$$;
+
 -- ---- The ledger: one spend a day for a persona, written once, and no client's ----
 do $$
 declare
@@ -91,7 +96,7 @@ begin
     denied := false;
     begin perform count(*) from pool_spends; exception when insufficient_privilege then denied := true; end;
     if not denied then raise exception '% can read the pool''s spends', who; end if;
-    foreach fn in array array['select pool_week(''2030-01-07'')', 'select pool_orphan(''ps-boss'', ''2030-01-07'')', 'select pool_context()', 'select pool_names(''[]'')',
+    foreach fn in array array['select pool_week(''2030-01-07'')', 'select pool_orphans(''2030-01-07'')', 'select claim_pool_run(''2030-01-07'')', 'select pool_context()', 'select pool_names(''[]'')',
       'select pool_thread(gen_random_uuid(), 1, 1, null)', 'select write_staff_thread(''ps-boss'', ''side'', ''t'', ''b'')', 'select schedule_chatter()',
       'select record_pool_spend(''2030-01-07'', ''ps-boss'', ''named'', gen_random_uuid(), null, false)', 'select write_staff_note(''ps-boss'', gen_random_uuid(), ''n'')'] loop
       denied := false;
@@ -144,60 +149,132 @@ declare
   found jsonb;
 begin
   perform tests.become_service();
-  found := pool_orphan('ps-mod', '2030-01-10');
+  found := pg_temp.orphan('ps-mod', '2030-01-10');
   if found is null or (found ->> 'act')::uuid is distinct from marked or (found ->> 'startedThread')::boolean then raise exception 'the orphan was not found: %', found; end if;
-  if pool_orphan('ps-mod', '2030-01-11') is not null then raise exception 'an orphan of another day was found'; end if;
-  if pool_orphan('ps-boss', '2030-01-10') is not null then raise exception 'an orphan of another persona was found'; end if;
+  if pg_temp.orphan('ps-mod', '2030-01-11') is not null then raise exception 'an orphan of another day was found'; end if;
+  if pg_temp.orphan('ps-boss', '2030-01-10') is not null then raise exception 'an orphan of another persona was found'; end if;
   -- Once its spend is recorded it is no orphan.
   perform record_pool_spend('2030-01-10', 'ps-mod', 'named', marked, null, false);
-  if pool_orphan('ps-mod', '2030-01-10') is not null then raise exception 'a spent post is still an orphan'; end if;
+  if pg_temp.orphan('ps-mod', '2030-01-10') is not null then raise exception 'a spent post is still an orphan'; end if;
   perform tests.unbecome();
 end $$;
 
--- ---- An orphan names the card the crash left beside it, from public Act data only ----
--- A Cast is the persona's card Act on the reply's quoted target, made after the reply; a Set is its card Act on the post itself. A card of
--- another persona, on another target, or already some spend's is none of the post's.
+-- ---- An orphan names the card the crash left beside it, exactly: by the pool marker and the target ----
+-- A Cast is the persona's card Act marked with the day, on the reply's quoted target; a Set is its set Act (whose payload is empty) on the post itself. A
+-- card of another persona, on another target, with no marker or another day's, or already some spend's, is none of the post's, however
+-- close in time it was made.
 do $$
 declare
   t uuid := tests.thread('Orphan cards');
   quoted uuid := pg_temp.staff_post('ps-boss', t, 'The post a reply quotes.');
   other uuid := pg_temp.staff_post('ps-boss', t, 'Some other post.');
   reply uuid;
-  stray uuid;
-  mine uuid;
   found jsonb;
+  mine uuid;
 begin
   perform tests.become_service();
   reply := (write_staff_act('ps-mod', 'post', t, quoted, '{"body": "A reply.", "pool": "2030-01-12"}') ->> 'id')::uuid;
-  found := pool_orphan('ps-mod', '2030-01-12');
+  found := pg_temp.orphan('ps-mod', '2030-01-12');
   if found ->> 'act' is distinct from reply::text or found -> 'card' is distinct from 'null'::jsonb then raise exception 'a card is tied to a post with none: %', found; end if;
-  stray := (write_staff_act('ps-mod', 'card', t, other, '{"card": "x"}') ->> 'id')::uuid;
-  perform write_staff_act('ps-boss', 'card', t, quoted, '{"card": "x"}');
-  found := pool_orphan('ps-mod', '2030-01-12');
+  perform write_staff_act('ps-mod', 'card', t, other, '{"card": "x", "pool": "2030-01-12"}');
+  perform write_staff_act('ps-boss', 'card', t, quoted, '{"card": "x", "pool": "2030-01-12"}');
+  found := pg_temp.orphan('ps-mod', '2030-01-12');
   if found -> 'card' is distinct from 'null'::jsonb then raise exception 'a card on another target or of another persona is tied: %', found; end if;
-  mine := (write_staff_act('ps-mod', 'card', t, quoted, '{"card": "x"}') ->> 'id')::uuid;
-  found := pool_orphan('ps-mod', '2030-01-12');
-  if (found ->> 'card')::uuid is distinct from mine then raise exception 'the Cast on the quoted target is not tied: %', found; end if;
+  -- The poison the old tie fell for: the persona's card on the quoted target, made seconds after the post, with no marker, or another day's.
+  perform write_staff_act('ps-mod', 'card', t, quoted, '{"card": "x"}');
+  perform write_staff_act('ps-mod', 'card', t, quoted, '{"card": "x", "pool": "2030-01-11"}');
+  found := pg_temp.orphan('ps-mod', '2030-01-12');
+  if found -> 'card' is distinct from 'null'::jsonb then raise exception 'a card with no marker, or another day''s, is tied: %', found; end if;
+  mine := (write_staff_act('ps-mod', 'card', t, quoted, '{"card": "x", "pool": "2030-01-12"}') ->> 'id')::uuid;
+  found := pg_temp.orphan('ps-mod', '2030-01-12');
+  if (found ->> 'card')::uuid is distinct from mine then raise exception 'the marked Cast on the quoted target is not tied: %', found; end if;
   -- Recorded as the spend's card, the card is no one else's, and the post is no orphan.
   perform record_pool_spend('2030-01-12', 'ps-mod', 'named', reply, mine, false);
-  if pool_orphan('ps-mod', '2030-01-12') is not null then raise exception 'a spent post is still an orphan'; end if;
+  if pg_temp.orphan('ps-mod', '2030-01-12') is not null then raise exception 'a spent post is still an orphan'; end if;
   perform tests.unbecome();
 end $$;
 do $$
 declare
-  t uuid := tests.thread('Orphan sets');
   start_post uuid;
   set_act uuid;
   found jsonb;
 begin
   perform tests.become_service();
   start_post := (write_staff_thread('ps-boss', 'side', 'A start', 'Opening.', '{"pool": "2030-01-13"}') -> 'act' ->> 'id')::uuid;
-  found := pool_orphan('ps-boss', '2030-01-13');
+  found := pg_temp.orphan('ps-boss', '2030-01-13');
   if found -> 'card' is distinct from 'null'::jsonb then raise exception 'a thread start with no Set names a card: %', found; end if;
-  set_act := (write_staff_act('ps-boss', 'card', (select thread from acts where id = start_post), start_post, '{"card": "x"}') ->> 'id')::uuid;
-  found := pool_orphan('ps-boss', '2030-01-13');
-  if (found ->> 'card')::uuid is distinct from set_act then raise exception 'the Set on the post is not tied: %', found; end if;
+  -- A card Act on the post itself is no Set: only a set Act (empty payload, 0054) on the post is.
+  perform write_staff_act('ps-boss', 'card', (select thread from acts where id = start_post), start_post, '{"card": "x", "pool": "2030-01-13"}');
+  found := pg_temp.orphan('ps-boss', '2030-01-13');
+  if found -> 'card' is distinct from 'null'::jsonb then raise exception 'a card Act on the post is tied as its Set: %', found; end if;
+  -- As staff_set_card writes it (0084): the staff flag open for the insert.
   perform tests.unbecome();
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  insert into acts (character, kind, thread, target_act_id, payload)
+  select a.character, 'set', a.thread, a.id, '{}' from acts a where a.id = start_post returning id into set_act;
+  perform set_config('kayfabb.staff_writer', '', true);
+  perform tests.become_service();
+  found := pg_temp.orphan('ps-boss', '2030-01-13');
+  if (found ->> 'card')::uuid is distinct from set_act then raise exception 'the Set on the post is not tied: %', found; end if;
+  -- And it is recorded as the spend's card (the spend names a card or a set Act).
+  perform record_pool_spend('2030-01-13', 'ps-boss', 'adopted', start_post, set_act, true);
+  if (select card_act from pool_spends where post_act = start_post) is distinct from set_act then raise exception 'the Set was not recorded as the spend''s card'; end if;
+  perform tests.unbecome();
+end $$;
+
+-- ---- An orphan of an earlier day of the week is found on a later day, and not one of an earlier week ----
+-- The run is once a day, so a crash's orphan is met the day after. 2030-01-09 is a Wednesday of the week of 01-07; 2030-01-05 a Saturday of
+-- the week before; the run of 01-13 (a Sunday) is the week's last.
+do $$
+declare
+  t uuid := tests.thread('Orphan days');
+  early uuid;
+  found jsonb;
+begin
+  perform tests.become_service();
+  early := (write_staff_act('ps-mod', 'post', t, null, '{"body": "Written on Wednesday.", "pool": "2030-01-09"}') ->> 'id')::uuid;
+  perform write_staff_act('ps-mod', 'post', t, null, '{"body": "Written the week before.", "pool": "2030-01-05"}');
+  found := pg_temp.orphan('ps-mod', '2030-01-09');
+  if (found ->> 'act')::uuid is distinct from early then raise exception 'Wednesday''s orphan was not found on Sunday: %', found; end if;
+  if pg_temp.orphan('ps-mod', '2030-01-05') is not null then raise exception 'an orphan of the week before was found'; end if;
+  if jsonb_array_length(pool_orphans('2030-01-07')) <> 0 then raise exception 'the orphans of later days were listed on Monday: %', pool_orphans('2030-01-07'); end if;
+  -- Adopted on its own day, so the week counts it, and the unique (day, staff) holds.
+  perform record_pool_spend('2030-01-09', 'ps-mod', 'adopted', early, null, false, '{"adopted": true}');
+  if pg_temp.orphan('ps-mod', '2030-01-09') is not null then raise exception 'an adopted post is still an orphan'; end if;
+  if (pool_week('2030-01-13') ->> 'spent')::int < 1 then raise exception 'the week does not count the adopted spend: %', pool_week('2030-01-13'); end if;
+  perform tests.unbecome();
+end $$;
+
+-- ---- A run claim: the second claim inside the lease is refused, one after it is allowed, and a crashed run's ages out ----
+do $$
+declare
+  first uuid; again uuid; said text;
+begin
+  perform tests.become_service();
+  first := claim_pool_run('2030-02-01');
+  if first is null then raise exception 'the first claim was refused'; end if;
+  again := claim_pool_run('2030-02-01');
+  if again is not null then raise exception 'a second claim within the lease was granted'; end if;
+  if claim_pool_run('2030-02-02') is null then raise exception 'a claim for another day was refused'; end if;
+  -- A lease the first claim is older than: a short lease lets a claim by.
+  perform pg_sleep(0.05);
+  if claim_pool_run('2030-02-01', interval '10 milliseconds') is null then raise exception 'a claim after the lease was refused'; end if;
+  perform tests.unbecome();
+  -- The way out of a crashed run is time alone: a claim made an hour ago does not hold the day.
+  insert into pool_run_claims (day, at) values ('2030-02-03', now() - interval '1 hour');
+  perform tests.become_service();
+  if claim_pool_run('2030-02-03') is null then raise exception 'a claim an hour old held the day'; end if;
+  if claim_pool_run('2030-02-03') is not null then raise exception 'the fresh claim did not hold the day'; end if;
+  perform tests.unbecome();
+  -- Two claimers cannot both win: the function takes the day's lock itself.
+  if pg_get_functiondef('claim_pool_run(date, interval)'::regprocedure) !~ 'pg_advisory_xact_lock' then raise exception 'the claim does not lock'; end if;
+  if (select prosecdef and proconfig::text ~ 'search_path' from pg_proc where oid = 'claim_pool_run(date, interval)'::regprocedure) is not true then raise exception 'the claim is not definer with a pinned search_path'; end if;
+  said := pg_temp.refused('update pool_run_claims set day = day');
+  if said is null then raise exception 'a claim was updated'; end if;
+  said := pg_temp.refused('delete from pool_run_claims');
+  if said is null then raise exception 'a claim was deleted'; end if;
+  if not (select relrowsecurity from pg_class where oid = 'public.pool_run_claims'::regclass) then raise exception 'the claims have no row level security'; end if;
+  if has_table_privilege('anon', 'public.pool_run_claims', 'select,insert,update,delete') or has_table_privilege('authenticated', 'public.pool_run_claims', 'select,insert,update,delete') then raise exception 'a client reaches the claims'; end if;
 end $$;
 
 -- ---- write_staff_thread: a thread and its first post, held to the bounds, refused to those who write nothing ----
@@ -211,7 +288,7 @@ begin
   if (select a.payload ->> 'pool' from acts a where a.id = (r -> 'act' ->> 'id')::uuid) is distinct from '2030-01-10' then raise exception 'the pool marker did not reach the post'; end if;
   if (select a.seq from acts a where a.id = (r -> 'act' ->> 'id')::uuid) is distinct from 1 then raise exception 'the first post is not the thread''s first'; end if;
   if (select a.character from acts a where a.id = (r -> 'act' ->> 'id')::uuid) is distinct from (select id from characters where staff = 'ps-boss') then raise exception 'the thread was not the persona''s'; end if;
-  if not (pool_orphan('ps-boss', '2030-01-10') ->> 'startedThread')::boolean then raise exception 'a thread''s first post is not read as a thread start'; end if;
+  if not (pg_temp.orphan('ps-boss', '2030-01-10') ->> 'startedThread')::boolean then raise exception 'a thread''s first post is not read as a thread start'; end if;
   said := pg_temp.refused(format('select write_staff_thread(%L, %L, %L, %L)', 'ps-boss', 'side', repeat('t', most_title + 1), 'Body.'));
   if said is null or said !~ '^22001' then raise exception 'a title past titleMaxLength: %', said; end if;
   said := pg_temp.refused(format('select write_staff_thread(%L, %L, %L, %L)', 'ps-boss', 'side', 'Title', repeat('b', most_post + 1)));

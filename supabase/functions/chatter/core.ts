@@ -16,10 +16,14 @@
  * **A rerun the same day posts nothing twice.** The pick is seeded from the day and the allowance is computed from the week before today, so a
  * rerun picks the same personas. A persona with a spend row today is skipped (`already`), and the run stops at the day's allowance, counting
  * the rows already there, so even a rerun whose window shifted (a different slot) cannot spend more than the day was given. A crash between a
- * post and its spend leaves a post with no row: every pool post carries `pool: <day>` in its payload, and before it writes, a persona's run
- * asks `pool_orphan` for one. A found orphan is adopted: its spend is recorded, with the card the persona played beside it if the database finds
- * one tied to the post (0087: a card Act of the persona after the post, on the post's quoted target or on the post itself), so the week counts
- * the card's slot; and nothing is written twice. The one thing a crash there loses is that post's note, never a second post or an uncounted card.
+ * post and its spend leaves a post with no row: every pool post, and the card played with it, carries `pool: <day>` in its payload (a Cast takes `pool_day`; a Set's payload is empty by
+ * rule, and it is tied by landing on the post itself), and the run starts by asking `pool_orphans` for the week's posts with no spend, every day from Monday to today (the
+ * run is daily, so a crash's orphan is met the next day). Each is adopted: its spend is recorded on its own day, with the card tied to it by
+ * the marker and the target, so the week counts the post, the card's slot and the thread, and nothing is written twice. This is done before
+ * the week is read. The one thing a crash there loses is that post's note, never a second post or an uncounted card.
+ *
+ * **One run at a time.** The first thing a run does after the System-enabled check is `claim_pool_run(day, CLAIM_LEASE)`. A run that loses
+ * the claim (another run of the day holds one younger than the lease) returns `busy` having written nothing. A crashed run's claim ages out.
  *
  * **Failures.** A model's transport failure is retried on the request itself, inside models() ("Three unrelated timeouts are not a poison
  * pill"); this file never retries a pick. An answer that is rejected, or a call that fails, is skipped and spends nothing. A database error
@@ -74,6 +78,40 @@ import { AnswerRejected, LedgerWriteFailed } from '../_shared/models/index.ts';
 
 const DAY = 86_400_000;
 
+/**
+ * How long a run's claim on its day holds. It is longer than the run can last: the schedule gives the function 150 seconds
+ * (supabase/migrations/0087_pool_spends.sql, `timeout_milliseconds`), and the platform kills a function well before ten minutes, so a claim
+ * younger than this belongs to a run that may still be writing, and an older one to a run that is dead. A crashed run's claim is its own way
+ * out: it ages out, and the next run goes ahead.
+ */
+export const CLAIM_LEASE = '10 minutes';
+
+interface Orphan { readonly staff: string; readonly day: string; readonly act: string; readonly startedThread: boolean; readonly card: string | null }
+
+/**
+ * The posts an earlier run (today's, or an earlier day of this ISO week) wrote and died before spending: each is recorded on its own day,
+ * with the card tied to it exactly (the card Act carries the same `pool` marker), so the week counts the post and the card, and nothing is
+ * written twice. Done before the week is read, so the allowance and the thread share see them. The run is once a day, so an orphan is
+ * always met a day later at the soonest: adopting only today's would count none. A database error on one is recorded on its result and the
+ * others go on.
+ */
+async function adoptOrphans(db: Db, today: string): Promise<PickRecord[]> {
+  const found = await db.rpc<Orphan[]>('pool_orphans', { through: today });
+  const adopted: PickRecord[] = [];
+  for (const o of found) {
+    const base = { staff: o.staff, trigger: 'adopted', trims: [] as Trim[], day: o.day, post: o.act };
+    try {
+      await db.rpc('record_pool_spend', { on_day: o.day, of_staff: o.staff, by_trigger: 'adopted', post: o.act, card: o.card, started: o.startedThread, note: { adopted: true } });
+    } catch (e) {
+      if (stopsTheRun(e)) throw e;
+      adopted.push({ ...base, status: 'failed', why: said(e) });
+      continue;
+    }
+    adopted.push({ ...base, status: 'adopted', startedThread: o.startedThread, ...(o.card ? { card: o.card } : {}) });
+  }
+  return adopted;
+}
+
 /** What a pick came to. `posted` and `adopted` spent a slot; every other status spent nothing. */
 export type PickStatus = 'posted' | 'adopted' | 'already' | 'skipped' | 'rejected' | 'failed';
 
@@ -91,17 +129,23 @@ export interface PickRecord {
   /** The card rules' words, when a card the persona asked for was refused (the post stands). */
   readonly cardRefused?: string;
   readonly noteWritten?: boolean;
+  /** An adopted post: the day it was written on, which is the day its spend is recorded on. */
+  readonly day?: string;
 }
 
 export type ChatterOutcome =
   | { readonly status: 'off' }
   | { readonly status: 'no season' }
+  /** Another run of the day holds the claim (core.ts, `claim_pool_run`): this one wrote and read nothing more. */
+  | { readonly status: 'busy' }
   | {
     readonly status: 'ok';
     readonly day: string;
     /** Today's allowance, in slots, before the rows already spent today. */
     readonly allowance: number;
     readonly picks: readonly PickRecord[];
+    /** The posts an earlier run of the week left without a spend, which this run recorded (on their own days). */
+    readonly adopted: readonly PickRecord[];
   };
 
 interface Context {
@@ -141,8 +185,12 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
   if (!settings.systemEnabled) return { status: 'off' };
 
   const day = dayOf(slotAt);
+  // One run of a day at a time: the claim is taken before anything is read or written, and a crashed run's claim ages out by itself.
+  const claimed = await db.rpc<string | null>('claim_pool_run', { on_day: day, lease: CLAIM_LEASE });
+  if (claimed === null) return { status: 'busy' };
   const context = await db.rpc<Context>('pool_context', {});
   if (!context.season) return { status: 'no season' };
+  const adopted = await adoptOrphans(db, day);
   const week = await db.rpc<Week>('pool_week', { today: day });
 
   // The allowance counts the week before today, so a rerun of the day computes the day's allowance the first run did.
@@ -152,7 +200,7 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
   let used = week.today.reduce((n, r) => n + 1 + (r.card_act === null ? 0 : 1), 0);
   const already = new Set(week.today.map((r) => r.staff));
   const records: PickRecord[] = [];
-  if (todays === 0) return { status: 'ok', day, allowance: todays, picks: records };
+  if (todays === 0) return { status: 'ok', day, allowance: todays, picks: records, adopted };
 
   const roster = tuned.system.roster;
   const signals = await db.rpc<PoolSignals>('pool_signals', { since: new Date(slotAt - DAY).toISOString(), until: new Date(slotAt).toISOString() });
@@ -189,25 +237,6 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
     if (already.has(p.staff)) { records.push({ ...base, status: 'already' }); continue; }
     if (used + 1 > todays) { records.push({ ...base, status: 'skipped', why: 'the day\'s allowance is spent' }); continue; }
 
-    // A post of the persona's own that a crash left without a spend: adopt it, write nothing.
-    // A card the crash left beside it (pool_orphan ties it from public Act data) is recorded too, so the week counts its slot.
-    const orphan = await db.rpc<{ act: string; startedThread: boolean; card?: string | null } | null>('pool_orphan', { of_staff: p.staff, on_day: day });
-    if (orphan) {
-      const card = orphan.card ?? null;
-      try {
-        await db.rpc('record_pool_spend', { on_day: day, of_staff: p.staff, by_trigger: p.trigger, post: orphan.act, card, started: orphan.startedThread, note: { adopted: true } });
-      } catch (e) {
-        if (stopsTheRun(e)) throw e;
-        records.push({ ...base, status: 'failed', why: said(e), post: orphan.act });
-        continue;
-      }
-      used += 1 + (card ? 1 : 0);
-      already.add(p.staff);
-      if (orphan.startedThread) threadsLeft = 0;
-      records.push({ ...base, status: 'adopted', post: orphan.act, startedThread: orphan.startedThread, ...(card ? { card } : {}) });
-      continue;
-    }
-
     const record = await onePick({
       db, models, tuned, persona, p, day, slugs, cardsOnOffer,
       threadsLeft, cardRoom: p.cardSlot && used + 2 <= todays,
@@ -221,7 +250,7 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
       if (record.startedThread) threadsLeft = 0;
     }
   }
-  return { status: 'ok', day, allowance: todays, picks: records };
+  return { status: 'ok', day, allowance: todays, picks: records, adopted };
 }
 
 interface PickRun {
@@ -327,7 +356,7 @@ async function onePick(r: PickRun): Promise<PickRecord> {
     if (answer.card) {
       try {
         const played = answer.card.on === 'reply'
-          ? await db.rpc<{ id: string }>('staff_play_card', { staff_key: p.staff, card: answer.card.key, target: p.quoting, config: {}, message: '' })
+          ? await db.rpc<{ id: string }>('staff_play_card', { staff_key: p.staff, card: answer.card.key, target: p.quoting, config: {}, message: '', pool_day: day })
           : await db.rpc<{ id: string }>('staff_set_card', { staff_key: p.staff, card: answer.card.key, target: post, config: {} });
         card = played.id;
       } catch (e) {
@@ -349,7 +378,7 @@ async function onePick(r: PickRun): Promise<PickRecord> {
       await db.rpc('record_pool_spend', { on_day: day, of_staff: p.staff, by_trigger: p.trigger, post, card: card ?? null, started: startsThread, note: record });
     } catch (e) {
       if (stopsTheRun(e)) throw e;
-      // The post stands with no row: the next run of the day adopts it (pool_orphan) and writes no second.
+      // The post stands with no row: the next run of the day adopts it (pool_orphans) and writes no second.
       return fail('failed', `the post was written but its spend was not recorded: ${said(e)}`, trims, { post, startedThread: startsThread, ...(card ? { card } : {}) });
     }
     return {
