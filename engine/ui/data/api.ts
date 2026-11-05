@@ -883,6 +883,8 @@ export interface CardEnded {
   readonly targetName: string | null;
   readonly postAuthorName: string | null;
   readonly casterName: string | null;
+  /** The player's own character the row is about: the caster on `cast`; on `onMine` the post's author, the character played on, or the thread's starter. */
+  readonly character: Id;
 }
 
 /**

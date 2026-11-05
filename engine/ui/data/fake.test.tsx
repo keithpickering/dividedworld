@@ -1899,17 +1899,40 @@ describe('an admin ends a card play (reverse_card)', () => {
     fake.signInAs(boss);
     const ended = must(await fake.reverseCard(play.id));
     const row = { cardEnd: ended.act, play: play.id, card: 'blot', reach: 'post', targetName: null, postAuthorName: 'Ana Face', casterName: 'Ben Heel' };
+    /* my_cards_ended.character: the caster's mask on the caster's row, the post's author on the other. */
     fake.signInAs(ben);
-    expect((await fake.log()).ended).toMatchObject([{ ...row, side: 'cast' }]);
+    expect((await fake.log()).ended).toMatchObject([{ ...row, side: 'cast', character: benMask }]);
     expect((await fake.alerts()).filter((a) => a.kind === 'cardEnded')).toMatchObject([{ act: ended.act, character: benMask, name: 'Ben Heel', thread }]);
     fake.signInAs(ana);
-    expect((await fake.log()).ended).toMatchObject([{ ...row, side: 'onMine' }]);
+    expect((await fake.log()).ended).toMatchObject([{ ...row, side: 'onMine', character: anaFace }]);
     expect((await fake.alerts()).filter((a) => a.kind === 'cardEnded')).toEqual([]);
     for (const other of [boss, cara]) {
       fake.signInAs(other);
       expect((await fake.log()).ended).toEqual([]);
       expect((await fake.alerts()).filter((a) => a.kind === 'cardEnded')).toEqual([]);
     }
+  });
+
+  test('my_cards_ended.character files a character and a thread play under the mask it landed on, and the caster\'s own row under the caster', async () => {
+    const { fake, boss, ana, anaFace, opener, thread } = setup();
+    const ben = fake.seed.account('ben');
+    const benMask = fake.seed.character(ben, 'Ben Heel', 'heel');
+    const ana2 = fake.seed.character(ana, 'Ana Other', 'face');
+    const { act: second } = fake.seed.thread('general', ana2, 'Second', 'Another');
+    fake.seed.wallet(ben, 900);
+    fake.seed.cards(ben, { sparkle: 4 });
+    fake.signInAs(ben);
+    const onChar = must(await fake.playCard('sparkle', benMask, ana2, {}, '', 'character', second));
+    const onThread = must(await fake.playCard('sparkle', benMask, thread, {}, '', 'thread', opener));
+    fake.signInAs(boss);
+    must(await fake.reverseCard(onChar.id));
+    must(await fake.reverseCard(onThread.id));
+    fake.signInAs(ana);
+    const mineRows = (await fake.log()).ended.map((e) => [e.play, e.side, e.reach, e.character]);
+    expect(mineRows).toEqual(expect.arrayContaining([[onChar.id, 'onMine', 'character', ana2], [onThread.id, 'onMine', 'thread', anaFace]]));
+    expect(mineRows).toHaveLength(2);
+    fake.signInAs(ben);
+    expect((await fake.log()).ended.map((e) => [e.play, e.side, e.character])).toEqual(expect.arrayContaining([[onChar.id, 'cast', benMask], [onThread.id, 'cast', benMask]]));
   });
 
   test('cardsOn and cardsOnMany carry the end beside the plays, for the screen to mark a play reversed', async () => {

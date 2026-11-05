@@ -1644,12 +1644,16 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
             const cast = characters.get(play.character ?? '')?.owner === account;
             if (!cast && targetOwner(play) !== account) return [];
             const reach = reachOf(play);
+            /* A play beyond a post without its play_reach row is in no one's view (the view joins it); a board is only ever the caster's. */
+            if (reach !== 'post' && !reachPlays.has(play.id)) return [];
+            if (!cast && reach === 'board') return [];
             const targetAuthor = reach === 'post' ? acts.get(play.target ?? '')?.character : undefined;
             return [{ ms: e.at, order: e.order, e: {
               cardEnd: e.id, play: play.id, card: String(play.payload.card), at: iso(e.at), side: cast ? 'cast' as const : 'onMine' as const, reach,
               targetName: reach === 'board' ? boards.find((b) => b.id === play.payload.board)?.name ?? null : targetName(play),
               postAuthorName: targetAuthor == null ? null : characters.get(targetAuthor)?.name ?? null,
               casterName: characters.get(play.character ?? '')?.name ?? null,
+              character: (cast ? play.character : targetCharacter(play)) as Id,
             } }];
           })).map(({ e }) => e),
         };

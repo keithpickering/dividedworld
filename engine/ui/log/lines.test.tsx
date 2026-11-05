@@ -224,7 +224,7 @@ describe('cards set face down, traps and catches', () => {
   });
 
   describe('a card an admin ended', () => {
-    const ended = (o: Record<string, unknown>) => ({ cardEnd: 'e1', play: 'k9', card: 'whoops', at, side: 'cast' as const, reach: 'post' as const, targetName: null, postAuthorName: 'Spritey', casterName: 'Pipewrench', ...o });
+    const ended = (o: Record<string, unknown>) => ({ cardEnd: 'e1', play: 'k9', card: 'whoops', at, side: 'cast' as const, reach: 'post' as const, targetName: null, postAuthorName: 'Spritey', casterName: 'Pipewrench', character: 'p', ...o });
     const read = (e: ReturnType<typeof ended>, acts: Act[] = []) =>
       logRows(data({ log: { ...empty, ended: [e] }, mine, acts: new Map([...posts, ...acts].map((a) => [a.id, a])), names }), w, 600, null);
 
@@ -247,6 +247,12 @@ describe('cards set face down, traps and catches', () => {
       expect(post({})).toBe('An admin ended Spritey\'s Whoops! on your post #3.');
       expect(text(read(ended({ side: 'onMine', reach: 'character', targetName: 'Pipewrench', casterName: 'Spritey' }))[0]!)).toBe('An admin ended Spritey\'s Whoops! on your character Pipewrench.');
       expect(text(read(ended({ side: 'onMine', reach: 'thread', targetName: 'Hobbies', casterName: 'Spritey' }))[0]!)).toBe('An admin ended Spritey\'s Whoops! on your thread \'Hobbies\'.');
+    });
+    test('each line is filed under the character the view names, for every reach', () => {
+      const tabs = (e: object) => read(ended({ side: 'onMine', casterName: 'Spritey', ...e }))[0]!.characters;
+      expect(tabs({ reach: 'character', targetName: 'Gizmo', character: 'g' })).toEqual(['g']);
+      expect(tabs({ reach: 'thread', targetName: 'Hobbies', character: 'p' })).toEqual(['p']);
+      expect(read(ended({ reach: 'board', targetName: 'Lobby', character: 'p' }))[0]!.characters).toEqual(['p']);
     });
     test('the log follows each line to its play, and no row means no line (a third party\'s reversal is not in the view)', () => {
       expect(actsNamed({ ...empty, ended: [ended({})] }, null, [])).toContain('k9');

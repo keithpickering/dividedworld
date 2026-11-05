@@ -488,7 +488,7 @@ function endedRows(data: LogData, words: Words): LogRow[] {
         ? [`An admin ended ${e.casterName ?? 'someone'}'s ${card} on `, ...place, '.']
         : [`An admin ended your ${card} on `, ...place, '. Its cost and the card are not refunded.'],
       aura: 0, wallet: null,
-      characters: mine ? (post?.character ? [post.character] : []) : (play?.character ? [play.character] : []),
+      characters: [e.character],
     };
   });
 }
