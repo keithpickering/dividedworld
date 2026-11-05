@@ -122,3 +122,20 @@ Shot on c2553b3: `/welcome`, `/guide`, and the HUD tour's first two steps on a n
   drawn at (0, 0) before the target is measured. The build finds its cause first.
 - Kept from #202: the two calls to action as one ButtonRow at one size; the guide's folded contents on the phone; the
   welcome's copy as it stands (the instance's welcome page, approved by the owner in review).
+
+**Approved by the owner, with two nits, both now in the boards:**
+
+- **A chamfered piece draws its border along the cut.** The owner: "For the cards with chamfered corners, are we able to
+  make the thin border go along the chamfered corner's edge, rather than just masking the regular rectangle's border?
+  I think it will look a bit cleaner, and I believe we're already doing it on Modals." The dialogs do, through
+  `engine/ui/glass/base.css`'s `.kb-glass-cut-panel`, `-dialog` and `-button` (the element is the border's color, cut,
+  and its `::after` is the panel one border in, cut by a line moved in by 0.5858 of the border). The welcome letter
+  (`engine/ui/welcome/welcome.css`), the Updates post (`engine/ui/updates/updates.css`), the guide's article
+  (`engine/ui/guide/guide.css`) and Gabe's note on the front door (`engine/ui/front-door/front-door.css`) instead clip a
+  bordered box with a hard-coded 24px polygon, so the cut runs through the border and leaves the diagonal bare. The
+  boards' `.piece` draws the border on the cut, as the dialogs do; the plan moves every clipped, bordered piece onto
+  base.css's cut classes and adds a check that refuses a `clip-path` polygon on a rule with a border outside base.css.
+- **The tip's arrow meets the tip's edge.** The owner: "the arrow pointer for Gabe's tips is about 4-5px too low,
+  floating beyond the edge of the card". In the build's tour at 1440 (step 2), the arrow starts about 5px below the
+  tip's foot too (`engine/ui/tips/tips.css`, `.kb-tips-arrow`). The board's arrow starts one border above the foot, so
+  the two read as one piece.

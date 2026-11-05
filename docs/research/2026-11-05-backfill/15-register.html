@@ -39,7 +39,8 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid #ffff
 .seg span{display:inline-flex;align-items:center;min-height:52px;padding:0 22px;transform:skewX(-10deg);border:1px solid rgba(241,236,255,.6);font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:1.5px;color:#f1ecff}
 .seg span b{display:inline-block;transform:skewX(10deg);font-weight:800}
 .seg input:checked + span{background:#19e3ff;border-color:#19e3ff;color:#03141a;box-shadow:0 0 18px rgba(25,227,255,.6)}
-.piece{border:1.5px solid rgba(201,248,255,.55);background:rgba(7,5,13,.92);clip-path:polygon(0 0,calc(100% - 22px) 0,100% 22px,100% 100%,22px 100%,0 calc(100% - 22px))}
+.piece{--cut:22px;--edge:rgba(201,248,255,.55);--ground:rgba(7,5,13,.94);position:relative;isolation:isolate;background:var(--edge);clip-path:polygon(0 0,calc(100% - var(--cut)) 0,100% var(--cut),100% 100%,var(--cut) 100%,0 calc(100% - var(--cut)))}
+.piece::before{content:'';position:absolute;z-index:-1;inset:1.5px;background:var(--ground);clip-path:polygon(0 0,calc(100% - var(--cut) + .62px) 0,100% calc(var(--cut) - .62px),100% 100%,calc(var(--cut) - .62px) 100%,0 calc(100% - var(--cut) + .62px))}
 .by{display:flex;gap:18px;align-items:center}
 .by img{width:76px;height:76px;border:2px solid #a78bfa;image-rendering:pixelated}
 .by b{display:block;font:34px/1 Anton,Impact,sans-serif;letter-spacing:.5px}

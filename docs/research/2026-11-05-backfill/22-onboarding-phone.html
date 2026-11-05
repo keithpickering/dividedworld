@@ -39,7 +39,8 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid #ffff
 .seg span{display:inline-flex;align-items:center;min-height:52px;padding:0 22px;transform:skewX(-10deg);border:1px solid rgba(241,236,255,.6);font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:1.5px;color:#f1ecff}
 .seg span b{display:inline-block;transform:skewX(10deg);font-weight:800}
 .seg input:checked + span{background:#19e3ff;border-color:#19e3ff;color:#03141a;box-shadow:0 0 18px rgba(25,227,255,.6)}
-.piece{border:1.5px solid rgba(201,248,255,.55);background:rgba(7,5,13,.92);clip-path:polygon(0 0,calc(100% - 22px) 0,100% 22px,100% 100%,22px 100%,0 calc(100% - 22px))}
+.piece{--cut:22px;--edge:rgba(201,248,255,.55);--ground:rgba(7,5,13,.94);position:relative;isolation:isolate;background:var(--edge);clip-path:polygon(0 0,calc(100% - var(--cut)) 0,100% var(--cut),100% 100%,var(--cut) 100%,0 calc(100% - var(--cut)))}
+.piece::before{content:'';position:absolute;z-index:-1;inset:1.5px;background:var(--ground);clip-path:polygon(0 0,calc(100% - var(--cut) + .62px) 0,100% calc(var(--cut) - .62px),100% 100%,calc(var(--cut) - .62px) 100%,0 calc(100% - var(--cut) + .62px))}
 .by{display:flex;gap:18px;align-items:center}
 .by img{width:76px;height:76px;border:2px solid #a78bfa;image-rendering:pixelated}
 .by b{display:block;font:34px/1 Anton,Impact,sans-serif;letter-spacing:.5px}
@@ -113,7 +114,7 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid #ffff
   <figure aria-label="The tour, step 2" style="margin: 0; width: 390px; height: 844px; position: relative; overflow: hidden; background: #ffffff; flex: none; font-family: 'Barlow Condensed', sans-serif">
     <div aria-hidden="true" style="position: absolute; inset: 0; filter: blur(4px)"><div style="padding: 12px 10px; font: 700 17px 'Courier New', monospace; letter-spacing: 3px; border-bottom: 1px solid #000">DIVIDED WORLD</div><div style="margin: 20px 8px; height: 200px; border: 1px solid #000"></div></div>
     <div aria-hidden="true" style="position: absolute; inset: 0; background: rgba(7,5,13,.62)"></div>
-    <section role="dialog" aria-label="These are your orbs" class="piece" style="position: absolute; left: 8px; right: 8px; top: 432px; padding: 18px 16px; background: #07050d; border-color: #a78bfa; color: #f1ecff">
+    <section role="dialog" aria-label="These are your orbs" class="piece" style="position: absolute; left: 8px; right: 8px; top: 432px; padding: 18px 16px; --ground: #07050d; --edge: #a78bfa; --cut: 16px; color: #f1ecff">
       <div class="by"><img src="../2026-11-02-onboarding/assets/gabe-avatar.png" alt="" style="width: 48px; height: 48px"><div><b style="font-size: 28px">THESE ARE YOUR ORBS</b><span style="font-weight: 800; letter-spacing: 2px; color: #c4b5fd">GABE &middot; THE HUD, 2 OF 3</span></div></div>
       <p style="margin: 12px 0 14px; font: 500 19px/1.45 'Barlow Condensed', sans-serif">Reactions to your characters fill them at the settlement. Until then, hatched fill shows where you're headed. There is a most you can hold, so spend it.</p>
       <div class="btns" style="justify-content: flex-end"><button class="btn" style="min-height: 46px; padding: 0 16px"><b>SKIP ALL TIPS</b></button><button class="btn primary" style="min-height: 46px; padding: 0 18px"><b>GOT IT</b></button></div>

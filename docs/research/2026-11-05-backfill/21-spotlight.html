@@ -39,7 +39,8 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid #ffff
 .seg span{display:inline-flex;align-items:center;min-height:52px;padding:0 22px;transform:skewX(-10deg);border:1px solid rgba(241,236,255,.6);font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:1.5px;color:#f1ecff}
 .seg span b{display:inline-block;transform:skewX(10deg);font-weight:800}
 .seg input:checked + span{background:#19e3ff;border-color:#19e3ff;color:#03141a;box-shadow:0 0 18px rgba(25,227,255,.6)}
-.piece{border:1.5px solid rgba(201,248,255,.55);background:rgba(7,5,13,.92);clip-path:polygon(0 0,calc(100% - 22px) 0,100% 22px,100% 100%,22px 100%,0 calc(100% - 22px))}
+.piece{--cut:22px;--edge:rgba(201,248,255,.55);--ground:rgba(7,5,13,.94);position:relative;isolation:isolate;background:var(--edge);clip-path:polygon(0 0,calc(100% - var(--cut)) 0,100% var(--cut),100% 100%,var(--cut) 100%,0 calc(100% - var(--cut)))}
+.piece::before{content:'';position:absolute;z-index:-1;inset:1.5px;background:var(--ground);clip-path:polygon(0 0,calc(100% - var(--cut) + .62px) 0,100% calc(var(--cut) - .62px),100% 100%,calc(var(--cut) - .62px) 100%,0 calc(100% - var(--cut) + .62px))}
 .by{display:flex;gap:18px;align-items:center}
 .by img{width:76px;height:76px;border:2px solid #a78bfa;image-rendering:pixelated}
 .by b{display:block;font:34px/1 Anton,Impact,sans-serif;letter-spacing:.5px}
@@ -67,7 +68,7 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid #ffff
     <div style="position: absolute; left: 16px; top: 42px; display: flex; gap: 18px"><span style="width: 54px; height: 54px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #4a4466, #0d0a18)"></span><span style="width: 54px; height: 54px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #4a4466, #0d0a18)"></span><span style="width: 54px; height: 54px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #4a4466, #0d0a18)"></span><span style="width: 54px; height: 54px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #4a4466, #0d0a18)"></span><span style="width: 54px; height: 54px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #4a4466, #0d0a18)"></span><span style="width: 54px; height: 54px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #4a4466, #0d0a18)"></span></div>
     <div style="position: absolute; left: 16px; top: 98px; font: 54px/1 Anton, Impact, sans-serif; color: #f1ecff">0.00 <span style="font: 700 22px 'Barlow Condensed', sans-serif">/ 6.00</span></div>
   </div>
-  <section role="dialog" aria-labelledby="tipH" class="piece" style="position: absolute; left: 436px; top: 470px; background: #07050d; width: 580px; box-sizing: border-box; padding: 26px 26px 22px; border-color: #a78bfa; color: #f1ecff; clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px))">
+  <section role="dialog" aria-labelledby="tipH" class="piece" style="position: absolute; left: 436px; top: 470px; --ground: #07050d; --edge: #a78bfa; --cut: 16px; width: 580px; box-sizing: border-box; padding: 26px 26px 22px; color: #f1ecff">
     <div class="by"><img src="../2026-11-02-onboarding/assets/gabe-avatar.png" alt="" style="width: 58px; height: 58px"><div><b id="tipH" style="font-size: 36px">THESE ARE YOUR ORBS</b><span style="font-weight: 800; letter-spacing: 2px; color: #c4b5fd">GABE &middot; THE HUD, 2 OF 3</span></div></div>
     <p style="margin: 18px 0 20px; font: 500 21px/1.5 'Barlow Condensed', sans-serif">Reactions to your characters fill them at the settlement. Until then, hatched fill shows where you're headed. There is a most you can hold, so spend it.</p>
     <div style="display: flex; align-items: center; justify-content: space-between">
@@ -75,7 +76,7 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid #ffff
       <div class="btns"><button class="btn"><b>SKIP ALL TIPS</b></button><button class="btn primary"><b>GOT IT</b></button></div>
     </div>
   </section>
-  <i aria-hidden="true" style="position: absolute; left: 708px; top: 772px; border: 12px solid transparent; border-top: 14px solid #a78bfa"></i>
+  <i aria-hidden="true" style="position: absolute; left: 708px; top: 763px; border: 12px solid transparent; border-top: 14px solid #a78bfa"></i>
 </div>
 </body>
 </html>
