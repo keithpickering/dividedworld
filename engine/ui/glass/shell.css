@@ -25,6 +25,11 @@
 
 /* ---- the menu bar ---- */
 
+/* What the page scrolls to stands clear of the sticky bar's foot (MenuBar.tsx writes its height). */
+:root {
+  scroll-padding-top: var(--kb-glass-menu-height, 0px);
+}
+
 /*
  * The boards' menu bar: 84px of the strong panel over the smoke, a pale rule at its foot with the
  * neon's glow under it, its tabs skewed with their words upright, at the label's weight and the
@@ -32,14 +37,16 @@
  * tab is lit with the neon's wash and a neon rule along its foot.
  */
 .kb-glass-menu {
-  position: relative;
+  position: sticky;
+  top: 0;
   z-index: 5;
   box-sizing: border-box;
   min-height: 85px;
   display: flex;
   align-items: center;
   padding: 16px 32px;
-  background: var(--kb-glass-panel-strong);
+  /* On the ground, so the page scrolling under the sticky bar does not show through it. */
+  background: linear-gradient(var(--kb-glass-panel-strong), var(--kb-glass-panel-strong)), var(--kb-glass-ground);
   border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-pale) 50%, transparent);
   box-shadow: 0 1px 16px color-mix(in srgb, var(--kb-glass-neon) 35%, transparent);
   zoom: var(--kb-board-scale, 1);

@@ -20,6 +20,9 @@
  * upright, Back outlined in white with its ESC key cap before its words, the current tab lit. While
  * an overlay is open over the page the bar stays in view, dimmed and inert (Overlay.tsx).
  *
+ * The bar is sticky: it stays at the top of the window while the page scrolls under it, on its own opaque ground, and the root's
+ * scroll padding (shell.css) is its height, so a focused control is never scrolled under it.
+ *
  * On a phone Back is on its own row and the pages are a strip under it that scrolls sideways, so
  * the current page's tab is scrolled into view as a page opens; with reduced motion it is there at
  * once. Back stays out of the strip, so no tab ever slides under it.
@@ -64,6 +67,19 @@ export function MenuBar() {
   const { path } = useLocation();
   const back = useBackToBoard();
   const list = useRef<HTMLUListElement>(null);
+  const bar = useRef<HTMLElement>(null);
+
+  /* The bar stays at the top of the window while the page scrolls under it, so what the page scrolls to (a focused control, a link's target) stands clear of its foot. */
+  useEffect(() => {
+    const el = bar.current;
+    if (!el) return;
+    const root = document.documentElement;
+    const measure = () => root.style.setProperty('--kb-glass-menu-height', `${Math.round(el.getBoundingClientRect().height)}px`);
+    measure();
+    const watch = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
+    watch?.observe(el);
+    return () => { watch?.disconnect(); root.style.removeProperty('--kb-glass-menu-height'); };
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -81,7 +97,7 @@ export function MenuBar() {
   }, [path, session.signedIn, admin]);
 
   return (
-    <nav className="kb-glass-menu" aria-label="Menu">
+    <nav ref={bar} className="kb-glass-menu" aria-label="Menu">
       <div className="kb-glass-menu-row">
         <Link
           to={backHref(boardPlace())}
