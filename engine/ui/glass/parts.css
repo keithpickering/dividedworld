@@ -48,7 +48,7 @@
   font-weight: 400;
   line-height: 1;
   letter-spacing: 1px;
-  color: var(--kb-glass-text-hi);
+  color: var(--kb-glass-text);
   text-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 35%, transparent);
 }
 
