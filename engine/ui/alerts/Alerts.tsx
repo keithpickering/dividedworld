@@ -106,7 +106,7 @@ export function Alerts({ data, older, onOlder, onUnfollow, notes }: AlertsProps)
   const startedBy = new Map([...data.started].flatMap(([thread, c]) => { const name = data.mine.find((m) => m.id === c)?.name; return name === undefined ? [] : [[thread, name] as const]; }));
   const characterOf = (r: Alert): Id | null => r.character ?? (r.kind === 'followed' && r.thread !== null ? data.started.get(r.thread) ?? null : null);
   const ctx: WordsContext = {
-    instance, ui, acts: data.acts, reading: data.reading, startedBy, perPage: settings.postsPerPage,
+    instance, ui, acts: data.acts, names: data.names, reading: data.reading, startedBy, perPage: settings.postsPerPage,
     newestSettlement: data.rows.find((r) => r.kind === 'settlement')?.sub ?? null,
   };
   const shown = current === null ? data.rows : data.rows.filter((r) => characterOf(r) === current.id);

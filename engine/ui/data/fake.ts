@@ -398,7 +398,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * The alert an Act writes, read from the Act as `write_alert`'s callers do: a quote of a post, or a card on a post, a character or a
    * thread, for the owner of what it landed on. Null for a staff target, a spring, and a target of the Act's own account.
    */
-  function derivedAlert(a: ActRec): { account: Id; kind: 'quote' | 'cardOnYours'; character: Id } | null {
+  function derivedAlert(a: ActRec): { account: Id; kind: 'quote' | 'cardOnYours' | 'cardEnded'; character: Id } | null {
+    /* An admin ended a card: the alert is the caster's own player's, about the card_end (reverse_card's write_alert); none for a staff caster. */
+    if (a.kind === 'card_end') {
+      const caster = a.target === null ? undefined : acts.get(a.target)?.character;
+      const owner = caster == null ? undefined : characters.get(caster)?.owner;
+      return caster == null || !owner ? null : { account: owner, kind: 'cardEnded', character: caster };
+    }
     if (a.character === null) return null;
     let kind: 'quote' | 'cardOnYours';
     let target: Id | null | undefined;
@@ -1630,6 +1636,22 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           setEnds: [],
           setPasses: [],
           caught: [],
+          /* my_cards_ended (0092): an admin's end of a play the player cast (`cast`, its own post's too) or of one that landed on theirs
+             (`onMine`); a reversal between two other players is in neither's view. */
+          ended: newest([...acts.values()].filter((e) => e.kind === 'card_end' && e.target !== null && fits(e.at)).flatMap((e) => {
+            const play = acts.get(e.target!);
+            if (!play || play.kind !== 'card') return [];
+            const cast = characters.get(play.character ?? '')?.owner === account;
+            if (!cast && targetOwner(play) !== account) return [];
+            const reach = reachOf(play);
+            const targetAuthor = reach === 'post' ? acts.get(play.target ?? '')?.character : undefined;
+            return [{ ms: e.at, order: e.order, e: {
+              cardEnd: e.id, play: play.id, card: String(play.payload.card), at: iso(e.at), side: cast ? 'cast' as const : 'onMine' as const, reach,
+              targetName: reach === 'board' ? boards.find((b) => b.id === play.payload.board)?.name ?? null : targetName(play),
+              postAuthorName: targetAuthor == null ? null : characters.get(targetAuthor)?.name ?? null,
+              casterName: characters.get(play.character ?? '')?.name ?? null,
+            } }];
+          })).map(({ e }) => e),
         };
       }, before ?? null);
     },
@@ -2128,7 +2150,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const ownerOfCharacter = (c: Id | null | undefined) => (c == null ? undefined : characters.get(c)?.owner);
     const out: Alert[] = [];
     for (const a of acts.values()) {
-      if (a.character === null || ownerOfCharacter(a.character) === account.id) continue;
+      if ((a.character === null && a.kind !== 'card_end') || ownerOfCharacter(a.character) === account.id) continue;
       const derived = derivedAlert(a);
       if (derived?.account === account.id) out.push(line({ kind: derived.kind, sub: null, act: a.id, character: derived.character, at: a.at }));
     }
@@ -2217,7 +2239,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     alert(account, a) {
       seeded(account);
-      if (!isWritten(a.kind) || a.kind === 'quote' || a.kind === 'cardOnYours') throw new Error(`a ${a.kind} alert is read from the Acts that make it, not seeded`);
+      if (!isWritten(a.kind) || a.kind === 'quote' || a.kind === 'cardOnYours' || a.kind === 'cardEnded') throw new Error(`a ${a.kind} alert is read from the Acts that make it, not seeded`);
       if (!acts.has(a.act)) throw new Error('an alert is about an Act that exists');
       if (a.character !== undefined && characters.get(a.character)?.owner !== account) throw new Error('an alert concerns a character of the account\'s');
       const line = { account, kind: a.kind, sub: a.sub ?? null, act: a.act, character: a.character ?? null, at: a.at ?? now() };

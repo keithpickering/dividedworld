@@ -6,10 +6,10 @@
 import { describe, expect, test } from 'vitest';
 import type { Act, Log, LogSettlement, MyCharacter, TurnAnnounced } from '../data/api.ts';
 import { testInstance } from '../test-world.tsx';
-import { logRows, rankChanges, scoredAs, turnsTaken, type LogData, type Words } from './lines.ts';
+import { actsNamed, logRows, rankChanges, scoredAs, turnsTaken, type LogData, type Words } from './lines.ts';
 import { mergeLogs } from './useLog.ts';
 
-const empty: Log = { settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], before: null };
+const empty: Log = { settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], before: null };
 const settled = (id: number, endsAt: string, lines: LogSettlement['lines']): LogSettlement => ({ id, startsAt: new Date(Date.parse(endsAt) - 86_400_000).toISOString(), endsAt, sharesKept: true, lines });
 const char = (id: string, name: string, cls: string, classSince = '2026-10-01T00:00:00.000Z'): MyCharacter =>
   ({ id, name, class: cls, classSince, classDueAt: null, turnOpensAt: null, debutedAt: '2026-10-01T00:00:00.000Z', debutLoudness: 'announced', retiredAt: null, pendingTurn: null, presenceHidden: false });
@@ -221,6 +221,37 @@ describe('cards set face down, traps and catches', () => {
     expect(rows[0]!.what).toBe('Your Whoops! was caught');
     expect(text(rows[0]!)).toBe('Your Whoops! on Spritey\'s post #9 was caught by a Snare; it cost 1.00 and 0.75, and nothing came back.');
     expect([rows[0]!.aura, rows[0]!.wallet]).toEqual([-75, 225]);
+  });
+
+  describe('a card an admin ended', () => {
+    const ended = (o: Record<string, unknown>) => ({ cardEnd: 'e1', play: 'k9', card: 'whoops', at, side: 'cast' as const, reach: 'post' as const, targetName: null, postAuthorName: 'Spritey', casterName: 'Pipewrench', ...o });
+    const read = (e: ReturnType<typeof ended>, acts: Act[] = []) =>
+      logRows(data({ log: { ...empty, ended: [e] }, mine, acts: new Map([...posts, ...acts].map((a) => [a.id, a])), names }), w, 600, null);
+
+    test('the caster\'s line says it was ended on a post, and that what it cost and the card did not come back', () => {
+      const rows = read(ended({}), [act('k9', 'card', 'p', { targetActId: 'post4' })]);
+      expect(rows.map((r) => r.kind)).toEqual(['ended']);
+      expect(text(rows[0]!)).toBe('An admin ended your Whoops! on Spritey\'s post #4. Its cost and the card are not refunded.');
+      expect([rows[0]!.aura, rows[0]!.wallet]).toEqual([0, null]);
+    });
+    test('without the post read, it still names the author', () => {
+      expect(text(read(ended({}))[0]!)).toBe('An admin ended your Whoops! on Spritey\'s post. Its cost and the card are not refunded.');
+    });
+    test('a card the caster cast beyond a post names its target', () => {
+      expect(text(read(ended({ reach: 'character', targetName: 'Gizmo' }))[0]!)).toBe('An admin ended your Whoops! on Gizmo. Its cost and the card are not refunded.');
+      expect(text(read(ended({ reach: 'thread', targetName: 'Hobbies' }))[0]!)).toBe('An admin ended your Whoops! on the thread \'Hobbies\'. Its cost and the card are not refunded.');
+      expect(text(read(ended({ reach: 'board', targetName: 'Lobby' }))[0]!)).toBe('An admin ended your Whoops! on the Lobby board. Its cost and the card are not refunded.');
+    });
+    test('the line of the one it landed on names the caster and says nothing of a refund', () => {
+      const post = (e: object) => text(read(ended({ side: 'onMine', postAuthorName: 'Pipewrench', casterName: 'Spritey', ...e }), [act('k9', 'card', 's', { targetActId: 'post3' })])[0]!);
+      expect(post({})).toBe('An admin ended Spritey\'s Whoops! on your post #3.');
+      expect(text(read(ended({ side: 'onMine', reach: 'character', targetName: 'Pipewrench', casterName: 'Spritey' }))[0]!)).toBe('An admin ended Spritey\'s Whoops! on your character Pipewrench.');
+      expect(text(read(ended({ side: 'onMine', reach: 'thread', targetName: 'Hobbies', casterName: 'Spritey' }))[0]!)).toBe('An admin ended Spritey\'s Whoops! on your thread \'Hobbies\'.');
+    });
+    test('the log follows each line to its play, and no row means no line (a third party\'s reversal is not in the view)', () => {
+      expect(actsNamed({ ...empty, ended: [ended({})] }, null, [])).toContain('k9');
+      expect(logRows(data({ log: empty, mine, acts: new Map(posts.map((a) => [a.id, a])), names }), w, 600, null)).toEqual([]);
+    });
   });
 
   test('a strike on the player\'s post is their line, naming the trap that laid it', () => {

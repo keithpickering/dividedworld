@@ -29,6 +29,7 @@ export function mergeLogs(newer: Log, older: Log): Log {
     setEnds: [...newer.setEnds, ...older.setEnds],
     setPasses: [...newer.setPasses, ...older.setPasses],
     caught: [...newer.caught, ...older.caught],
+    ended: [...newer.ended, ...older.ended],
     before: older.before,
   };
 }

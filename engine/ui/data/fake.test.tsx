@@ -1313,7 +1313,7 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
     validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
   };
   const shop: Instance = { ...instance, cards: [splat], settings: { ...settings, economy: { 'splat.price': 100 } } };
-  const empty = { settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], before: null };
+  const empty = { settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], before: null };
 
   function logWorld() {
     const fake = createFake({ instance: shop });
@@ -1884,6 +1884,32 @@ describe('an admin ends a card play (reverse_card)', () => {
     expect((await fake.acts(thread, 1, 10)).map((a) => a.kind)).toEqual(['post']);
     /* The layer counts every play, a reversed one too (acts_card_layers refuses a reused layer). */
     expect((await fake.cardsOn(opener, 10)).filter((a) => a.kind === 'card').map((a) => a.payload.layer)).toEqual([1, 2]);
+  });
+
+  test('the log and the alerts say it, as my_cards_ended and write_alert do: to the caster\'s player and the one it landed on, never to a third', async () => {
+    const { fake, boss, ana, anaFace, opener, thread } = setup();
+    const ben = fake.seed.account('ben');
+    const benMask = fake.seed.character(ben, 'Ben Heel', 'heel');
+    const cara = fake.seed.account('cara');
+    fake.seed.character(cara, 'Cara Face', 'face');
+    fake.seed.wallet(ben, 900);
+    fake.seed.cards(ben, { blot: 2 });
+    fake.signInAs(ben);
+    const play = must(await fake.playCard('blot', benMask, opener, {}, ''));
+    fake.signInAs(boss);
+    const ended = must(await fake.reverseCard(play.id));
+    const row = { cardEnd: ended.act, play: play.id, card: 'blot', reach: 'post', targetName: null, postAuthorName: 'Ana Face', casterName: 'Ben Heel' };
+    fake.signInAs(ben);
+    expect((await fake.log()).ended).toMatchObject([{ ...row, side: 'cast' }]);
+    expect((await fake.alerts()).filter((a) => a.kind === 'cardEnded')).toMatchObject([{ act: ended.act, character: benMask, name: 'Ben Heel', thread }]);
+    fake.signInAs(ana);
+    expect((await fake.log()).ended).toMatchObject([{ ...row, side: 'onMine' }]);
+    expect((await fake.alerts()).filter((a) => a.kind === 'cardEnded')).toEqual([]);
+    for (const other of [boss, cara]) {
+      fake.signInAs(other);
+      expect((await fake.log()).ended).toEqual([]);
+      expect((await fake.alerts()).filter((a) => a.kind === 'cardEnded')).toEqual([]);
+    }
   });
 
   test('cardsOn and cardsOnMany carry the end beside the plays, for the screen to mark a play reversed', async () => {

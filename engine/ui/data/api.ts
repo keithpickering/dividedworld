@@ -869,6 +869,23 @@ export interface CaughtPlay {
 }
 
 /**
+ * A card play an admin ended (`my_cards_ended`, 0092): on a play the player's character cast (`cast`), or on a post, character or
+ * thread of the player's it landed on (`onMine`). The names are public ones; a post is named by its author, and its own `targetName`
+ * is null.
+ */
+export interface CardEnded {
+  readonly cardEnd: Id;
+  readonly play: Id;
+  readonly card: string;
+  readonly at: string;
+  readonly side: 'cast' | 'onMine';
+  readonly reach: 'post' | 'character' | 'thread' | 'board';
+  readonly targetName: string | null;
+  readonly postAuthorName: string | null;
+  readonly casterName: string | null;
+}
+
+/**
  * A page of the player's own log, newest first: everything at or before the page's cursor and after
  * `before`, which is where the next page starts (null at the log's start). Each source is read a page
  * at a time, so a long-played account reads a page and never its history.
@@ -885,6 +902,8 @@ export interface Log {
   readonly setPasses: readonly FaceDownPass[];
   /** The player's plays a trap caught, by when each was played. */
   readonly caught: readonly CaughtPlay[];
+  /** The card plays an admin ended that the player cast or that landed on theirs, by when each was ended. */
+  readonly ended: readonly CardEnded[];
   /** The next page's cursor: pass it to `log` for what is older. Null when nothing older is left. */
   readonly before: string | null;
 }

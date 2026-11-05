@@ -38,7 +38,7 @@ import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import type {
   AdminQueue, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffProfile,
-  Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEvent, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd, FaceDownPass,
+  Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEnded, CardEvent, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd, FaceDownPass,
   Alert, ContactLink, EffectState, SeasonNewsItem, SeasonResult, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
 } from '../../../engine/ui/data/api.ts';
@@ -1157,7 +1157,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           if (!('at' in range)) return list(() => page((range.before ? from().lte(column, range.before) : from()).order(column, { ascending: false })).limit(range.limit));
           return every((start, end) => whole.reduce((q: Q, c) => q.order(c, { ascending: true }), from().eq(column, range.at)).range(start, end));
         };
-        const [ledgerRows, walletRows, cardRows, playRows, saveRows, endRows, passRows, caughtRows] = await Promise.all([
+        const [ledgerRows, walletRows, cardRows, playRows, saveRows, endRows, passRows, caughtRows, endedRows] = await Promise.all([
           rows(() => client.from('my_ledger').select('settlement,starts_at,ends_at,character,reason,amount,shares_kept,params'), 'ends_at',
             (q) => q.order('character', { ascending: true }).order('reason', { ascending: true }), ['settlement', 'character', 'reason']),
           rows(() => client.from('my_wallet_events').select('settlement,kind,change,overflow,floored,balance_after,ref,at'), 'at', (q) => q, ['settlement', 'kind', 'ref', 'change', 'overflow', 'floored', 'balance_after']),
@@ -1169,6 +1169,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           /* The player's own cards a reply passed by without springing, by when it did (0078); the log names the reply traps among them. */
           rows(() => client.from('my_face_down').select('play,card,post,ends_at,passed_at').not('passed_at', 'is', null).is('spring', null), 'passed_at', (q) => q, ['play']),
           rows(() => client.from('my_caught').select('play,card,post,trap,spring,price,bought_price,at'), 'at', (q) => q, ['play']),
+          /* The card plays an admin ended that the player cast or that landed on theirs (0092); a third party's reversal is in no one's view but its own. */
+          rows(() => client.from('my_cards_ended').select('card_end,play,card,at,side,reach,target_name,post_author_name,caster_name'), 'at', (q) => q, ['card_end']),
         ]);
         const ledger = ledgerRows.map((r): LedgerRow => ({
           settlement: num(r['settlement']), startsAt: r['starts_at'], endsAt: r['ends_at'], sharesKept: r['shares_kept'] !== false,
@@ -1203,6 +1205,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           caught: caughtRows.map((r): CaughtPlay => ({
             play: r['play'], card: r['card'], post: r['post'], trap: r['trap'], spring: r['spring'], price: num(r['price']),
             boughtPrice: r['bought_price'] === null || r['bought_price'] === undefined ? null : num(r['bought_price']), at: r['at'],
+          })),
+          ended: endedRows.map((r): CardEnded => ({
+            cardEnd: r['card_end'], play: r['play'], card: r['card'], at: r['at'], side: r['side'], reach: r['reach'],
+            targetName: r['target_name'] ?? null, postAuthorName: r['post_author_name'] ?? null, casterName: r['caster_name'] ?? null,
           })),
         };
       }, before ?? null);
