@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode, useEffect, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -111,8 +111,9 @@ describe('from the Task 10 review', () => {
     act(() => nav('/t/a'));
     await answer(calls[1], 'A-p2');
     view.setAccount('p3');
-    act(() => nav('/t/a#post-1'));
     expect(load).toHaveBeenCalledTimes(3);
+    act(() => nav('/t/a#post-1'));
+    expect(load).toHaveBeenCalledTimes(4);
   });
   test('a click that joined a prefetch in flight is dropped by an account change, and the next click loads again', async () => {
     const { load, calls } = manualLoader();
@@ -547,5 +548,125 @@ describe('the router loads before it moves', () => {
     act(() => { navigation.track(new Promise<void>((_, r) => { bad = r; })).catch(() => {}); });
     await act(async () => { bad(new Error('x')); });
     expect(navigation.outcome?.kind).toBe('failed');
+  });
+});
+
+describe('an account change while a page is shown or opening', () => {
+  beforeEach(() => { log.length = 0; });
+  afterEach(() => { vi.useRealTimers(); });
+
+  test('a Back that was loading is started again under the new account, not dropped', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-05T12:00:00Z'));
+    const { load, calls } = manualLoader();
+    const view = mount(load, { account: 'p1' });
+    act(() => nav('/t/a'));
+    await answer(calls[0], 'A1');
+    act(() => nav('/t/b'));
+    await answer(calls[1], 'B1');
+    vi.setSystemTime(new Date('2026-11-05T12:20:00Z'));
+    act(() => window.history.back());
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(3));
+    view.setAccount('p2');
+    expect(calls[2]!.signal.aborted).toBe(true);
+    expect(load).toHaveBeenCalledTimes(4);
+    expect(navigation.pending?.to).toBe('/t/a');
+    await answer(calls[3], 'A-p2');
+    expect(screen.getByText('thread a: A-p2')).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/t/a');
+    expect(navigation.pending).toBeNull();
+  });
+  test('the first account the router hears of drops the prefetches made before it was known', () => {
+    const { load, calls } = manualLoader();
+    const routes: Route[] = [{ path: '/', render: () => <Index /> }, { path: '/t/:id', load, render: (p, doc) => <p>thread {p.id}: {String(doc)}</p> }];
+    function Account() { useRouterAccount('p1'); return null; }
+    function Shell() { const [on, set] = useState(false); return <><Probe /><button onClick={() => set(true)}>know</button>{on && <Account />}<Routes routes={routes} /></>; }
+    window.history.replaceState(null, '', '/');
+    render(<KayfaProvider value={kayfa}><RouterProvider><Shell /></RouterProvider></KayfaProvider>);
+    act(() => prefetch('/t/a'));
+    expect(calls).toHaveLength(1);
+    act(() => screen.getByText('know').click());
+    expect(calls[0]!.signal.aborted).toBe(true);
+  });
+  test('the shown document of the earlier account is loaded again for the new one, replacing the entry', async () => {
+    const { load, calls } = manualLoader();
+    const view = mount(load, { account: 'p1' });
+    act(() => nav('/t/a'));
+    await answer(calls[0], 'A-p1');
+    const length = window.history.length;
+    view.setAccount('p2');
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('thread a: A-p1')).toBeInTheDocument();
+    await answer(calls[1], 'A-p2');
+    expect(screen.getByText('thread a: A-p2')).toBeInTheDocument();
+    expect(window.history.length).toBe(length);
+    expect(window.location.pathname).toBe('/t/a');
+  });
+  test('a shown page with no loader is not loaded again', async () => {
+    const { load } = manualLoader();
+    const view = mount(load, { account: 'p1' });
+    view.setAccount('p2');
+    expect(load).not.toHaveBeenCalled();
+  });
+});
+
+describe('a link starts its load early', () => {
+  afterEach(() => { vi.useRealTimers(); });
+  function setupLinks() {
+    const { load, calls } = manualLoader();
+    const routes: Route[] = [
+      { path: '/', render: () => <p>home</p> },
+      { path: '/t/:id', load, render: (p) => <p>thread {p.id}</p> },
+      { path: '/plain/:id', render: () => <p>plain</p> },
+    ];
+    window.history.replaceState(null, '', '/');
+    render(<KayfaProvider value={kayfa}><RouterProvider>
+      <Link to="/t/a">thread</Link><Link to="/plain/x">plain</Link><Link to="https://evil.example/t/a">out</Link>
+      <Link to="/t/b" target="_blank">blank</Link><Link to="/t/c" download>get</Link><Routes routes={routes} />
+    </RouterProvider></KayfaProvider>);
+    return { load, calls, link: (name: string) => screen.getByRole('link', { name }) };
+  }
+
+  test('resting on a link for 100 ms starts one load', () => {
+    vi.useFakeTimers();
+    const { load, link } = setupLinks();
+    fireEvent.pointerEnter(link('thread'));
+    act(() => { vi.advanceTimersByTime(99); });
+    expect(load).not.toHaveBeenCalled();
+    act(() => { vi.advanceTimersByTime(1); });
+    expect(load).toHaveBeenCalledTimes(1);
+    fireEvent.pointerDown(link('thread'));
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+  test('leaving at 60 ms starts none', () => {
+    vi.useFakeTimers();
+    const { load, link } = setupLinks();
+    fireEvent.pointerEnter(link('thread'));
+    act(() => { vi.advanceTimersByTime(60); });
+    fireEvent.pointerLeave(link('thread'));
+    act(() => { vi.advanceTimersByTime(200); });
+    expect(load).not.toHaveBeenCalled();
+  });
+  test('focus starts one, and pointerdown starts one', () => {
+    vi.useFakeTimers();
+    const { load, link } = setupLinks();
+    fireEvent.focus(link('thread'));
+    expect(load).toHaveBeenCalledTimes(1);
+    cleanup();
+    const again = setupLinks();
+    fireEvent.pointerDown(again.link('thread'));
+    expect(again.load).toHaveBeenCalledTimes(1);
+  });
+  test('a link to a route with no loader, an off-site link, a target and a download start none, nor does a modified pointerdown', () => {
+    vi.useFakeTimers();
+    const { load, link } = setupLinks();
+    for (const name of ['plain', 'out', 'blank', 'get']) {
+      fireEvent.focus(link(name));
+      fireEvent.pointerDown(link(name));
+      fireEvent.pointerEnter(link(name));
+    }
+    fireEvent.pointerDown(link('thread'), { ctrlKey: true });
+    act(() => { vi.advanceTimersByTime(300); });
+    expect(load).not.toHaveBeenCalled();
   });
 });

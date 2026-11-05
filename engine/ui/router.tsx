@@ -129,6 +129,8 @@ const read = (w: Window, popped = false): Location => ({ path: w.location.pathna
  */
 export type OnMove = (from: Location | null, to: Location) => void;
 
+/** How long the pointer rests on a link before its page is read early. */
+const REST_MS = 100;
 const LOAD_LIMIT_MS = 20_000;
 const PREFETCH_KEPT_MS = 30_000;
 const ENTRY_KEPT_MS = 5 * 60_000;
@@ -414,14 +416,28 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     if (accountRef.current === id) return;
     const first = accountRef.current === undefined;
     accountRef.current = id;
-    if (first) { if (pendingRef.current) pendingRef.current.account = id; return; }
-    const wasInitial = pendingRef.current?.initial;
+    if (first) {
+      if (pendingRef.current) pendingRef.current.account = id;
+      /* What was prefetched before the account was known may carry no one's data, or another's. */
+      if (!pendingRef.current) dropPrefetches();
+      return;
+    }
+    const was = pendingRef.current;
     cancelPending(false);
     dropPrefetches();
     cache.current.clear();
     shownRef.current = { ...shownRef.current, key: null };
-    if (wasInitial) { initialStarted.current = false; beginInitial(); }
-  }, [cancelPending, dropPrefetches, beginInitial]);
+    if (was?.initial) { initialStarted.current = false; beginInitial(); return; }
+    /* A Back or Forward that was loading is asked again for the address the browser is at, under the new account. */
+    if (was?.popped) {
+      const found = routeFor(w.location.pathname);
+      if (found?.route.load) { startLoad({ full: w.location.pathname + w.location.search + w.location.hash, popped: true, kb: unwrap(w.history.state).kb }, found); return; }
+    }
+    /* The shown document was read for the earlier account: read it again for this one, in place. */
+    const sh = shownRef.current;
+    const found = sh.ready ? routeFor(sh.location.path) : null;
+    if (found?.route.load) startLoad({ full: addressOf(sh.location) + (sh.location.hash ? `#${sh.location.hash}` : ''), replace: true, state: sh.location.state, popped: false, kb: null }, found);
+  }, [w, cancelPending, dropPrefetches, beginInitial, routeFor, startLoad]);
 
   /* Leaving the page: nothing stays out, and a second run of the effects (StrictMode) starts the first load again. */
   useEffect(() => () => {
@@ -463,8 +479,17 @@ export function useNavigate(): Router['navigate'] {
 }
 
 /** A link that moves within the app without a reload; a modified click opens as the browser would. */
-export function Link({ to, replace, state, onClick, ...rest }: { readonly to: string; readonly replace?: boolean; readonly state?: unknown } & AnchorHTMLAttributes<HTMLAnchorElement>) {
+export function Link({ to, replace, state, onClick, onPointerEnter, onPointerLeave, onPointerDown, onFocus, ...rest }: { readonly to: string; readonly replace?: boolean; readonly state?: unknown } & AnchorHTMLAttributes<HTMLAnchorElement>) {
   const navigate = useNavigate();
+  const prefetch = usePrefetch();
+  const rest100 = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(rest100.current), []);
+  /* A link that would be left to the browser (a target, a download, another site) is not read early. */
+  const early = () => {
+    if (rest.target || rest.download !== undefined) return;
+    if (new URL(to, window.location.href).origin !== window.location.origin) return;
+    prefetch(to);
+  };
   const click = (e: MouseEvent<HTMLAnchorElement>) => {
     onClick?.(e);
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || rest.target || rest.download !== undefined) return;
@@ -472,7 +497,17 @@ export function Link({ to, replace, state, onClick, ...rest }: { readonly to: st
     e.preventDefault();
     navigate(to, { replace, state });
   };
-  return <a href={to} onClick={click} {...rest} />;
+  return (
+    <a
+      href={to}
+      onClick={click}
+      onPointerEnter={(e) => { onPointerEnter?.(e); clearTimeout(rest100.current); rest100.current = setTimeout(early, REST_MS); }}
+      onPointerLeave={(e) => { onPointerLeave?.(e); clearTimeout(rest100.current); }}
+      onPointerDown={(e) => { onPointerDown?.(e); if (!(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)) early(); }}
+      onFocus={(e) => { onFocus?.(e); early(); }}
+      {...rest}
+    />
+  );
 }
 
 
