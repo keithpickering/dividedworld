@@ -139,3 +139,34 @@ Shot on c2553b3: `/welcome`, `/guide`, and the HUD tour's first two steps on a n
   floating beyond the edge of the card". In the build's tour at 1440 (step 2), the arrow starts about 5px below the
   tip's foot too (`engine/ui/tips/tips.css`, `.kb-tips-arrow`). The board's arrow starts one border above the foot, so
   the two read as one piece.
+
+## 5. Batch 3: characters
+
+Shot on c2553b3: `/characters/new`, both Debut dialogs, `/characters/edit`, and the Reveal modal. The critique, against
+the two-worlds boards (06-turn above all, whose class carousel and How loud row New character shares):
+
+- **New character's lead floats beside its title**, baseline-misaligned, on a slab calm. PageHead puts the lead under
+  the title, as every other glass page has it since #202. The board does too.
+- **New character's sections run together.** "HOW LOUD" sits 15px under the debut options and "WHAT EVERYONE WILL SEE"
+  as close under How loud, so a label reads as the foot of the block above. The board spaces every section 44px from
+  the next, as the Turn board does.
+- **A class card's earns and hurts are one run of text.** The Turn board sets the hurts apart, in the hurt color, so the
+  card reads as two facts. The board does the same with the build's own words, split at "Hurt by". The class's copy
+  gains no words; the instance's class entry carries the two halves as two fields (the plan names the interface).
+- **The page ends on two bare buttons.** The board gives New character, the Debut dialog and the Reveal modal the Turn
+  board's footer: one plain line saying what will happen, beside Cancel and the primary action. Its sentences are a
+  draft for the owner's review.
+- **The Debut dialog's three How loud options sit in a two-column grid**, leaving a hole beside the third. The board
+  sets them as one row of three, as the Turn board does; on the phone they stack.
+- **The Reveal modal's Board and Thread are two small, unequal selects**, and its count sits about 40px below its field,
+  nearer the next label than its own. The board makes Board and Thread one row of two equal fields, and puts each count
+  on its field's own line, right-aligned, with the field's hint at its left.
+- **Edit profile is one column over half the page**, its counts detached from their fields the same way, and the
+  picture is chosen with the browser's own file button ("Choose File No file chosen"). The board puts the fields on the
+  left, and on the right the postbit as the board will show it, following what is typed ("What everyone will see", the
+  idiom New character and the dialogs already use). The picture is chosen with a secondary GlassButton beside the two
+  crops' frames.
+- **On the phone, My characters' title breaks inside its count** ("YOUR CHARACTERS (3 OF" / "6)"). The board sets the
+  count on a line of its own under the title, never broken. The Debut dialog on the phone is a sheet with its two
+  buttons at its foot.
+- Kept: the shared dialog frame (#202), the carousel and its count, the preview's 2003 look.

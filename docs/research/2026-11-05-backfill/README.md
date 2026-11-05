@@ -35,3 +35,17 @@ Amendments to `docs/research/2026-11-02-onboarding/`, which stays as the record.
   the glass's ground.
 - `22-onboarding-phone.html`: three phone screens at 390 by 844: Before you start, the guide with its contents folded,
   and the tour's second step.
+
+## Batch 3: characters
+
+- `23-new-character.html`: New character, 1440 by 1720: a name typed, Face chosen, the classes as the Turn board's
+  carousel with each card's hurts set apart, the sections 44px apart, and the Turn board's footer.
+- `24-debut.html`: the Debut dialog, choosing how, 1440 by 1000: How loud as one row of three.
+- `25-reveal.html`: the Reveal modal, 1440 by 1000: Board and Thread as one row, the count on its field's line.
+- `26-edit-profile.html`: Edit profile, 1440 by 1420: the fields on the left, the live postbit on the right, the
+  picture chosen with a GlassButton.
+- `27-characters-phone.html`: four phone screens at 390 by 844: New character's class carousel, the Debut dialog as a
+  sheet, Edit profile, and My characters' title with its count on its own line.
+
+Copy new to these boards (the footers' summary lines, Edit profile's "Under the name on every post." and "The preview
+follows what you type.") is a draft for the owner's review.

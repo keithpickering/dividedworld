@@ -49,6 +49,23 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid #ffff
 .rail p{margin:0;font:500 20px/1.5 'Barlow Condensed',sans-serif;color:#e4def7}
 .rail h3{margin:0 0 4px;font:700 21px 'Barlow Condensed',sans-serif;color:#f1ecff}
 .rail section{padding:16px 0;border-top:1px solid rgba(241,236,255,.22)}
+.opt{position:relative;display:block;box-sizing:border-box;padding:16px 18px 16px 52px;border:1px solid rgba(241,236,255,.45);background:rgba(7,5,13,.6);cursor:pointer}
+.opt input{position:absolute;left:18px;top:19px;width:22px;height:22px;margin:0;accent-color:#19e3ff}
+.opt b{display:block;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:1.5px}
+.opt span{display:block;margin-top:4px;font:500 20px/1.4 'Barlow Condensed',sans-serif;color:#e4def7}
+.opt.on{border:2px solid #19e3ff;background:rgba(25,227,255,.08);box-shadow:0 0 18px rgba(25,227,255,.35)}
+.sec{margin:0 0 14px;font:800 22px 'Barlow Condensed',sans-serif;letter-spacing:3px}
+.count{display:flex;justify-content:space-between;margin-top:8px;font:500 19px 'Barlow Condensed',sans-serif;color:#e4def7}
+.cls{position:relative;flex:none;box-sizing:border-box;width:236px;padding:18px 18px 20px;border:1px solid var(--c);background:rgba(7,5,13,.7)}
+.cls h4{margin:0 30px 0 0;font:38px/1 Anton,Impact,sans-serif;color:var(--c)}
+.cls p{margin:12px 0 0;font:500 20px/1.45 'Barlow Condensed',sans-serif;color:#f1ecff}
+.cls p.hurt{color:#ff8fb1}
+.cls input{position:absolute;right:16px;top:20px;width:22px;height:22px;margin:0;accent-color:#19e3ff}
+.cls.on{border:2px solid #19e3ff;box-shadow:0 0 18px rgba(25,227,255,.4);background:rgba(25,227,255,.07)}
+.preview{border:1.5px solid rgba(201,248,255,.7);box-shadow:0 0 14px rgba(25,227,255,.3);background:#fff;color:#000;display:grid;grid-template-columns:160px 1fr;font:12px/1.45 Verdana,sans-serif}
+.preview>div{padding:8px 10px}
+.preview>div+div{border-left:1px solid #000}
+.sel{box-sizing:border-box;height:56px;padding:0 16px;background:rgba(18,12,36,.9);border:1px solid #19e3ff;color:#f1ecff;font:700 21px 'Barlow Condensed',sans-serif}
 `;
 
 const FONTS = `<link rel="preconnect" href="https://fonts.googleapis.com">
@@ -486,6 +503,175 @@ page({
       <div style="position: absolute; left: 6px; right: 6px; top: 66px; height: 54px; border: 2px solid #19e3ff; box-shadow: 0 0 18px rgba(25,227,255,.55); display: flex; align-items: center; gap: 6px; padding: 0 8px">${'<span style="width: 32px; height: 32px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #4a4466, #0d0a18)"></span>'.repeat(6)}<b style="margin-left: auto; font: 34px Anton, Impact, sans-serif">0.00</b></div>
     </section>
   </figure>
+</div>`,
+});
+
+/* ---------------------------------------------------------------- batch 3: characters */
+
+const CLASSES = [
+  ['FACE', '#3aa0ff', ['', '+', '-', ''], 'The crowd\'s favorite. Earns from excited, positive reactions, and from the cheers a post draws after its Sweet card lands there.', 'Hurt by bored reactions, and by a card that outdraws the post it was played on.'],
+  ['HEEL', '#ff3d6e', ['+', '', '', '-'], 'Earns heat: excited, negative reactions, and a Salty card that outdraws the post it lands on.', 'Hurt by the polite shrug, calm and positive.'],
+  ['JABRONI', '#ffd23f', ['', '-', '+', ''], 'Anti-comedy: posts built to bomb. Earns from bored, negative reactions and from Salty cards others land on its posts.', 'Hurt by being taken sincerely, excited and positive.'],
+  ['TECHNICIAN', '#2ee59d', ['-', '', '', '+'], 'The respected regular. Earns from calm, positive reactions to its posts and cards, and more when an old post of its own still draws them.', 'Hurt by heat: excited, negative reactions.'],
+  ['LURKER', '#a78bfa', ['', '', '', ''], 'Reads the room. Earns by reacting early in the direction a post ends up, by spinning threads others reply to, and from reactions to its cards.', 'Hurt by posting more than three times in one settlement window (1 day).'],
+];
+const miniGrid = (cells, c) => `<div aria-hidden="true" style="display: grid; grid-template-columns: 26px 26px; gap: 4px; margin-top: 12px">${cells.map((x) => `<span style="width: 26px; height: 26px; box-sizing: border-box; display: grid; place-items: center; font: 800 15px 'Barlow Condensed', sans-serif; ${x === '+' ? `background: ${c}; color: #07050d` : x === '-' ? 'border: 1px dashed #ff5c8a; color: #ff5c8a' : `border: 1px ${c === '#a78bfa' ? 'dashed' : 'solid'} rgba(241,236,255,.3)`}">${x === '-' ? '&minus;' : x}</span>`).join('')}</div>`;
+const classCard = ([n, c, cells, earns, hurt], on) => `<label class="cls${on ? ' on' : ''}" style="--c: ${c}"><input type="radio" name="cls"${on ? ' checked' : ''}><h4>${n}</h4>${miniGrid(cells, c)}<p>${earns}</p><p class="hurt">${hurt}</p></label>`;
+const carouselHead = (label, count) => `<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px">
+        <h3 class="sec" style="margin: 0">${label}</h3>
+        <div style="display: flex; align-items: center; gap: 10px"><span style="font: 800 22px 'Barlow Condensed', sans-serif; letter-spacing: 2px; color: #c9f8ff">${count}</span><button class="btn" aria-label="Previous" disabled style="min-height: 44px; padding: 0 14px; opacity: .45"><b>&lsaquo;</b></button><button class="btn" aria-label="Next" style="min-height: 44px; padding: 0 14px"><b>&rsaquo;</b></button></div>
+      </div>`;
+const opt = (t, d, on, name) => `<label class="opt${on ? ' on' : ''}"><input type="radio" name="${name}"${on ? ' checked' : ''}><b>${t}</b><span>${d}</span></label>`;
+const foot = (note, cancel, go, disabled) => `<div style="display: flex; justify-content: space-between; align-items: center; gap: 40px; padding-top: 26px; border-top: 1px solid rgba(241,236,255,.22)">
+      <p class="note" style="margin: 0; max-width: 620px">${note}</p>
+      <div class="btns" style="flex: none"><button class="btn"><b>${cancel}</b></button><button class="btn primary"${disabled ? ' aria-disabled="true" style="opacity: .5; box-shadow: none"' : ''}><b>${go}</b></button></div>
+    </div>`;
+const CHAR_TABS = ['ALERTS', 'VENDING MACHINE', 'MY CHARACTERS', 'SEASON', 'MY LOG', 'GUIDE', 'UPDATES', 'SETTINGS'];
+const pageLead = (t, top = 238) => `<p class="lead" style="position: absolute; left: 64px; top: ${top}px; max-width: 760px">${t}</p>`;
+
+page({
+  file: '23-new-character.html', name: 'New character', w: 1440, h: 1720,
+  note: 'A name typed, Face chosen. The lead under the title (PageHead), the classes as the Turn board\'s carousel with each card\'s earns and hurts set apart, each section 44px from the next, and the footer\'s summary beside its two buttons.',
+  body: frame(1440, 1720, `
+  ${smoke(1440, 1720, [[40, 220, 1360, 1460, .9]])}
+  ${menu(CHAR_TABS, 'MY CHARACTERS')}
+  ${title('NEW CHARACTER')}
+  ${pageLead('This page is out of character and only you can see it. Nobody else can tell who plays a character.')}
+  <form aria-label="New character" style="position: absolute; left: 64px; top: 312px; width: 1312px">
+    <div class="field" style="width: 680px"><label for="nm">NAME</label><input id="nm" type="text" value="Waiting Wanda"><div class="count"><span>Letters, marks, digits and single spaces. Names are unique, look-alikes included.</span><span>13 of 40</span></div></div>
+    <fieldset style="margin: 44px 0 0; padding: 0; border: 0; width: 1312px; overflow: hidden">
+      <legend hidden>Class</legend>
+      ${carouselHead('CLASS', '1&ndash;5 OF 5')}
+      <div role="radiogroup" aria-label="Class" style="display: flex; gap: 33px">${CLASSES.map((c, i) => classCard(c, i === 0)).join('')}</div>
+      <p class="note" style="margin-top: 14px">Only you will know its class, unless you choose to reveal it.</p>
+    </fieldset>
+    <fieldset style="margin: 44px 0 0; padding: 0; border: 0"><legend class="sec">WHEN IT DEBUTS</legend>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px">${opt('DROP NOW', 'It is on the board at once, and can post at once.', true, 'when')}${opt('DEBUT AT THE SETTLEMENT', 'It waits, seen by no one but you, and debuts at the next settlement.', false, 'when')}</div>
+    </fieldset>
+    <fieldset style="margin: 44px 0 0; padding: 0; border: 0"><legend class="sec">HOW LOUD</legend>
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px">${opt('SILENT', "Nobody is told. Its first post is its entrance.", false, 'loud')}${opt('ANNOUNCED', 'The System posts that Waiting Wanda debuts, never as what.', true, 'loud')}${opt('ANNOUNCED, WITH ITS CLASS', "The System also says what class it is, and that stays public. This can't be taken back.", false, 'loud')}</div>
+    </fieldset>
+    <section style="margin: 44px 0 0"><h3 class="sec">WHAT EVERYONE WILL SEE</h3>
+      <div class="preview"><div><b>The System</b><br><span style="font-size: 11px; color: #444">At once, in the season's Turns thread.</span></div><div><b>Waiting Wanda</b> debuts.</div></div>
+    </section>
+    <div style="margin-top: 44px">${foot('Waiting Wanda is on the board as soon as you make it, and The System announces it. Its class stays yours alone.', 'CANCEL', 'MAKE THE CHARACTER')}</div>
+  </form>
+`),
+});
+
+/** A dialog in #202's one frame (the Reveal modal's look), its border on the cut, over a dimmed My characters. */
+const dialog = (w, h, dw, crumbs, heading, inner) => `<div style="width: ${w}px; height: ${h}px; position: relative; overflow: hidden; background: #07050d; color: #f1ecff; font-family: 'Barlow Condensed', sans-serif">
+  ${smoke(w, h, [[0, 0, w, h, .4]])}
+  ${menu(CHAR_TABS, 'MY CHARACTERS')}
+  ${title('YOUR CHARACTERS')}
+  <div aria-hidden="true" style="position: absolute; inset: 0; z-index: 6; background: rgba(7,5,13,.72)"></div>
+  <section role="dialog" aria-labelledby="dlgH" class="piece" style="position: absolute; z-index: 7; left: ${(w - dw) / 2}px; top: 120px; width: ${dw}px; box-sizing: border-box; padding: 38px 40px 34px; --cut: 40px; --edge: #19e3ff; --ground: #07050d">
+    <button class="btn" aria-label="Close" style="position: absolute; right: 40px; top: 34px; min-height: 52px; width: 52px; padding: 0; transform: none"><b style="transform: none; font: 400 30px/1 'Barlow Condensed', sans-serif">&times;</b></button>
+    <p style="margin: 0; font: 800 21px 'Barlow Condensed', sans-serif; letter-spacing: 3px; color: #19e3ff">${crumbs}</p>
+    <h2 id="dlgH" style="margin: 2px 0 26px; font: 60px/1 Anton, Impact, sans-serif; letter-spacing: .5px">${heading}</h2>
+    ${inner}
+  </section>
+</div>`;
+
+page({
+  file: '24-debut.html', name: 'How a character debuts', w: 1440, h: 1000,
+  note: 'The Debut dialog, choosing how, for a character waiting to debut: How loud as one row of three, as the Turn board sets it.',
+  body: dialog(1440, 1000, 1100, 'MY CHARACTERS &rsaquo; DEBUT', 'HOW WAITING WANDA DEBUTS', `
+    <fieldset style="margin: 0; padding: 0; border: 0"><legend class="sec">HOW LOUD</legend>
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px">${opt('SILENT', 'Nobody is told. Waiting Wanda simply appears.', false, 'dl')}${opt('ANNOUNCED', 'The System posts that Waiting Wanda debuts, never as what.', true, 'dl')}${opt('ANNOUNCED, WITH ITS CLASS', "The System also says what class Waiting Wanda is, and that stays public. This can't be taken back.", false, 'dl')}</div>
+    </fieldset>
+    <section style="margin: 36px 0"><h3 class="sec">WHAT EVERYONE WILL SEE</h3>
+      <div class="preview"><div><b>The System</b><br><span style="font-size: 11px; color: #444">In the tally at the next settlement, in the season's Turns thread.</span></div><div><b>Waiting Wanda</b> debuts.</div></div>
+    </section>
+    ${foot('It debuts at the next settlement, in 7 h 42 min. Until then you can drop it now instead.', 'CANCEL', 'SAVE HOW IT DEBUTS')}
+  `),
+});
+
+page({
+  file: '25-reveal.html', name: "Reveal a character's class", w: 1440, h: 1000,
+  note: 'The Reveal modal for Pipewrench, a board chosen: Board and Thread as one row of two equal fields, the count on its field\'s own line.',
+  body: dialog(1440, 1000, 1100, 'MY CHARACTERS &rsaquo; REVEAL', "REVEAL PIPEWRENCH'S CLASS", `
+    <p class="lead" style="max-width: 820px; font-weight: 500">Pipewrench is a Heel. This shows everyone that, as checked by The System, as Pipewrench's own post. Anyone can react to it or spin a thread from it, and this can't be taken back.</p>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 28px">
+      <div class="field"><label>BOARD</label><select class="sel" style="width: 100%"><option>General</option></select></div>
+      <div class="field"><label>THREAD</label><select class="sel" style="width: 100%"><option>who keeps splatting my posts</option></select></div>
+    </div>
+    <div class="field" style="margin-top: 24px"><label>IN THE CHARACTER'S WORDS (OPTIONAL)</label><input type="text" value="Took you long enough."><div class="count"><span>Plain text.</span><span>21 of 200</span></div></div>
+    <section style="margin: 28px 0 30px"><h3 class="sec">WHAT EVERYONE WILL SEE</h3>
+      <div class="preview"><div><b>Pipewrench</b><br><span style="font-size: 11px; color: #444">At once, in the thread you choose.</span></div><div><b>Pipewrench revealed: Heel</b><br>Took you long enough.</div></div>
+    </section>
+    ${foot('The reveal is checked by The System and posted at once.', 'CANCEL', 'REVEAL PIPEWRENCH AS A HEEL')}
+  `),
+});
+
+page({
+  file: '26-edit-profile.html', name: 'Edit profile', w: 1440, h: 1420,
+  note: 'Edit Mrs. Hooligan: the fields on the left, each count on its field\'s own line; on the right, the postbit as the board shows it, live; the avatar\'s picture chosen with a glass button, its two crops shown.',
+  body: frame(1440, 1420, `
+  ${smoke(1440, 1420, [[40, 220, 760, 1150, .9], [840, 220, 560, 900, .85]])}
+  ${menu(CHAR_TABS, 'MY CHARACTERS')}
+  ${title('EDIT MRS. HOOLIGAN')}
+  ${pageLead('What you set here is public: it shows beside Mrs. Hooligan\'s posts.')}
+  <form aria-label="Profile" style="position: absolute; left: 64px; top: 312px; width: 700px">
+    <div class="field"><label>CHARACTER</label><select class="sel" style="width: 100%"><option>Mrs. Hooligan</option></select></div>
+    <div class="field" style="margin-top: 30px"><label>TITLE</label><input type="text" value="Magenta enthusiast (classier)"><div class="count"><span>Under the name on every post.</span><span>29 of 40</span></div></div>
+    <div class="field" style="margin-top: 30px"><label>SIGNATURE</label><textarea style="box-sizing: border-box; width: 100%; height: 120px; padding: 12px 16px; background: rgba(18,12,36,.9); border: 1px solid #19e3ff; color: #f1ecff; font: 600 21px/1.4 'Barlow Condensed', sans-serif">[i]not the ink. never the ink.[/i]</textarea><div class="count"><span>BBCode, as in a post.</span><span>34 of 500</span></div></div>
+    <div class="field" style="margin-top: 30px"><label>PIP STYLE</label><select class="sel" style="width: 100%"><option>Default</option></select></div>
+    <div class="btns" style="margin-top: 30px"><button class="btn primary"><b>SAVE THE PROFILE</b></button></div>
+    <section style="margin-top: 50px; padding-top: 34px; border-top: 1px solid rgba(241,236,255,.22)">
+      <h2 style="margin: 0 0 10px; font: 44px/1 Anton, Impact, sans-serif">AVATAR</h2>
+      <p class="note" style="margin: 0 0 20px">Choose one picture. It is cut in your browser and only the two crops are sent, as plain pictures with nothing else in them; the original stays with you. The portrait is shown beside your posts on a wide screen; the square is shown in lists and on a phone.</p>
+      <div style="display: flex; gap: 22px; align-items: flex-end">
+        <div aria-hidden="true" style="width: 120px; height: 160px; background: repeating-linear-gradient(135deg, #1b1630 0 10px, #241d40 10px 20px); border: 1px solid rgba(241,236,255,.3)"></div>
+        <div aria-hidden="true" style="width: 72px; height: 72px; background: repeating-linear-gradient(135deg, #1b1630 0 10px, #241d40 10px 20px); border: 1px solid rgba(241,236,255,.3)"></div>
+        <div><p class="note" style="margin: 0 0 12px">No picture yet.</p><label class="btn"><input type="file" style="position: absolute; opacity: 0; width: 1px"><b>CHOOSE A PICTURE</b></label></div>
+      </div>
+    </section>
+  </form>
+  <aside aria-labelledby="pvH" style="position: absolute; left: 860px; top: 312px; width: 516px">
+    <h3 id="pvH" class="sec">WHAT EVERYONE WILL SEE</h3>
+    <div class="preview" style="grid-template-columns: 170px 1fr">
+      <div><b><u>Mrs. Hooligan</u></b><br>Magenta enthusiast (classier)<br><span>&#9632;&#9632;&#9632;&#9633;&#9633;&#9633;</span><div style="margin: 8px 0; width: 60px; height: 80px; border: 1px solid #000; display: grid; place-items: center">M</div><span style="font-size: 11px; color: #444">Posts: 11<br>Joined Oct 2026</span></div>
+      <div>Magenta is a very popular color.<div style="margin-top: 60px; padding-top: 6px; border-top: 1px solid #999; font-style: italic">not the ink. never the ink.</div></div>
+    </div>
+    <p class="note">The preview follows what you type. Nothing changes on the board until you save.</p>
+  </aside>
+`),
+});
+
+page({
+  file: '27-characters-phone.html', name: 'Characters on a phone', w: 1660, h: 884,
+  note: 'Four phone screens at 390 by 844: New character at its class carousel, the Debut dialog as a sheet, Edit profile, and My characters\' title with its count on a line of its own.',
+  body: `<div style="width: 1660px; height: 884px; display: flex; gap: 20px; padding: 20px; box-sizing: border-box; background: #2a2833; font-family: 'Barlow Condensed', sans-serif">
+  ${phone('New character', `${phoneMenu}
+    <section style="position: absolute; left: 16px; top: 90px; width: 358px">
+      ${carouselHead('CLASS', '1 OF 5')}
+      <div style="display: flex; gap: 14px; width: 600px">${classCard(CLASSES[0], true).replace('width:236px', '')}${classCard(CLASSES[1], false)}</div>
+      <p class="note" style="font-size: 19px">Only you will know its class, unless you choose to reveal it.</p>
+      <h3 class="sec" style="margin-top: 30px">WHEN IT DEBUTS</h3>
+      ${opt('DROP NOW', 'It is on the board at once, and can post at once.', true, 'pw')}
+    </section>`, [[0, 80, 390, 760, .9]], 'r1').replace('class="cls on" style="--c: #3aa0ff"', 'class="cls on" style="--c: #3aa0ff; width: 300px"')}
+  <figure aria-label="Debut, as a sheet" style="margin: 0; width: 390px; height: 844px; position: relative; overflow: hidden; background: #07050d; color: #f1ecff; flex: none">
+    <div aria-hidden="true" style="position: absolute; inset: 0; background: rgba(7,5,13,.72)"></div>
+    <section class="piece" style="position: absolute; left: 0; right: 0; top: 40px; bottom: 0; padding: 22px 16px; --cut: 20px; --edge: #19e3ff; --ground: #07050d">
+      <button class="btn" aria-label="Close" style="position: absolute; right: 16px; top: 18px; min-height: 46px; width: 46px; padding: 0; transform: none"><b style="transform: none; font: 400 26px/1 'Barlow Condensed', sans-serif">&times;</b></button>
+      <p style="margin: 0; font: 800 18px 'Barlow Condensed', sans-serif; letter-spacing: 2px; color: #19e3ff">MY CHARACTERS &rsaquo; DEBUT</p>
+      <h2 style="margin: 4px 60px 18px 0; font: 34px/1.05 Anton, Impact, sans-serif">HOW WAITING WANDA DEBUTS</h2>
+      <div style="display: grid; gap: 10px">${opt('SILENT', 'Nobody is told. Waiting Wanda simply appears.', false, 'pd')}${opt('ANNOUNCED', 'The System posts that Waiting Wanda debuts, never as what.', true, 'pd')}${opt('ANNOUNCED, WITH ITS CLASS', "The System also says what class Waiting Wanda is. This can't be taken back.", false, 'pd')}</div>
+      <div class="btns" style="position: absolute; left: 16px; right: 16px; bottom: 18px; justify-content: stretch"><button class="btn" style="flex: 1"><b>CANCEL</b></button><button class="btn primary" style="flex: 2"><b>SAVE</b></button></div>
+    </section>
+  </figure>
+  ${phone('Edit profile', `${phoneMenu}${pTitle('EDIT MRS.<br>HOOLIGAN')}
+    <form style="position: absolute; left: 16px; top: 236px; width: 358px">
+      <p class="lead" style="font-size: 20px; font-weight: 500">What you set here is public: it shows beside Mrs. Hooligan's posts.</p>
+      <div class="field" style="margin-top: 20px"><label>TITLE</label><input type="text" value="Magenta enthusiast (classier)"><div class="count"><span></span><span>29 of 40</span></div></div>
+      <div class="field" style="margin-top: 18px"><label>SIGNATURE</label><textarea style="box-sizing: border-box; width: 100%; height: 96px; padding: 10px 14px; background: rgba(18,12,36,.9); border: 1px solid #19e3ff; color: #f1ecff; font: 600 20px/1.4 'Barlow Condensed', sans-serif">[i]not the ink. never the ink.[/i]</textarea><div class="count"><span>BBCode, as in a post.</span><span>34 of 500</span></div></div>
+      <div class="btns" style="margin-top: 18px"><button class="btn primary" style="width: 100%"><b>SAVE THE PROFILE</b></button></div>
+    </form>`, [[0, 220, 390, 600, .9]], 'r3')}
+  ${phone('My characters', `${phoneMenu}
+    <h1 style="position: absolute; left: 16px; top: 92px; margin: 0; font: 60px/1 Anton, Impact, sans-serif; text-shadow: 0 0 24px rgba(25,227,255,.35)">YOUR<br>CHARACTERS</h1>
+    <p style="position: absolute; left: 16px; top: 222px; margin: 0; font: 30px Anton, Impact, sans-serif; color: #e4def7">3 OF 6</p>
+    <p class="lead" style="position: absolute; left: 16px; top: 272px; width: 358px; font-size: 20px">This page is out of character and only you can see it. Classes are shown here and nowhere else unless you reveal them.</p>`, [[0, 260, 390, 140, .85]], 'r4')}
 </div>`,
 });
 
