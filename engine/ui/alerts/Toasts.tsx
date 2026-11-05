@@ -68,12 +68,17 @@ async function read(api: KayfaApi, a: Arrival, base: Pick<WordsContext, 'instanc
       for (const x of named) acts.set(x.id, x);
       const play = acts.get(a.act);
       /* A card an admin ended is the card_end, then the play, then the post it landed on and that post's author. */
+      /* Its own catch: a failed read here costs the toast the post's author, never the caster's name below. */
       const ofEnd = a.kind === 'cardEnded' && play?.targetActId ? play.targetActId : null;
-      if (ofEnd) for (const x of await api.actsById([ofEnd])) acts.set(x.id, x);
-      const ended = ofEnd ? acts.get(ofEnd) : undefined;
-      if (ended?.targetActId) for (const x of await api.actsById([ended.targetActId])) acts.set(x.id, x);
-      const author = ended?.targetActId ? acts.get(ended.targetActId)?.character : null;
-      if (author) for (const c of await api.characters([author]).catch(() => [])) names.set(c.id, c.name);
+      if (ofEnd) {
+        try {
+          for (const x of await api.actsById([ofEnd])) acts.set(x.id, x);
+          const ended = acts.get(ofEnd);
+          if (ended?.targetActId) for (const x of await api.actsById([ended.targetActId])) acts.set(x.id, x);
+          const author = ended?.targetActId ? acts.get(ended.targetActId)?.character : null;
+          if (author) for (const c of await api.characters([author])) names.set(c.id, c.name);
+        } catch { /* the words fall back to "a post" */ }
+      }
       const target = play?.kind === 'card' && play.targetActId ? play.targetActId : null;
       if (target) for (const x of await api.actsById([target])) acts.set(x.id, x);
       const about = (target ? acts.get(target) : undefined) ?? play;
