@@ -14,6 +14,6 @@ export const glitterBomb: CardRules<Record<string, never>> = {
   lasts: { unit: 'day', count: 7 },
   priceKey: 'glitterBomb.price',
   playPrice: () => 0,
-  canApply: (target, effects) => landsOn(glitterBomb, target, effects),
+  canApply: (target, effects, _config, now) => landsOn(glitterBomb, target, effects, now),
   validateConfig: () => ok({}),
 };

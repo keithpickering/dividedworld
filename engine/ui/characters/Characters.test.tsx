@@ -8,7 +8,7 @@ import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { Characters } from './Characters.tsx';
 
 beforeEach(() => { localStorage.clear(); });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
 
 const DAY = 86_400_000;
 const T0 = Date.parse('2026-10-01T12:00:00Z');
@@ -17,6 +17,9 @@ const T0 = Date.parse('2026-10-01T12:00:00Z');
 function world(options: { readonly per?: number; readonly instance?: Instance } = {}) {
   const per = options.per ?? 4;
   const fake = buildWorld({ charactersPerPlayer: per }, options.instance);
+  /* The screen counts the days to a Turn's opening from the browser's clock, and the fake dates the cooldown on its own: the browser's is
+     set to the fake's, so "opens in N days" is counted from the scene, never from the day the test runs. */
+  vi.useFakeTimers({ shouldAdvanceTime: true, now: fake.clock.now() });
   const me = fake.seed.account('me');
   const other = fake.seed.account('other');
   const pipe = fake.seed.character(me, 'Pipewrench', 'face', { at: T0 });

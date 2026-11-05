@@ -39,7 +39,7 @@ export const whoops: CardRules<{ color: string }> = {
   playPrice: (settings, target) => target.reach !== 'post' ? 0 :
     Math.max(0, Math.min(economyOf(settings, 'whoops.perLength') * Math.floor(target.length / economyOf(settings, 'whoops.lengthStep')),
       economyOf(settings, 'whoops.mostInAll') - basePrice(whoops, settings))),
-  canApply: (target, effects) => landsOn(whoops, target, effects),
+  canApply: (target, effects, _config, now) => landsOn(whoops, target, effects, now),
   /** The inks a staff persona's Whoops! is splatted in: plain code picks one (staffConfigOf), the persona never does. */
   staffConfigs: [{ color: 'red' }, { color: 'teal' }, { color: 'orange' }, { color: 'purple' }, { color: 'lime' }],
   // Only the ink is the caster's: anything else sent (a seed among them) is not kept.

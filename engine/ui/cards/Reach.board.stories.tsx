@@ -31,7 +31,7 @@ type Scene = 'character' | 'still' | 'armed' | 'thread' | 'banner' | 'pinned';
 /** The engine's own board card, for the banner: legendary, a day, drawn as a plain mark in the glass's neon. */
 const RUMBLE: CardRules = {
   key: 'kb-test-rumble', name: 'Rumble', alignment: 'salty', rarity: 'legendary', reaches: ['board'], lasts: { unit: 'day', count: 1 },
-  priceKey: 'kb-test-rumble.price', playPrice: () => 0, validateConfig: (c) => ok(c), canApply: (t, e) => landsOn({ key: 'kb-test-rumble', reaches: ['board'] }, t, e),
+  priceKey: 'kb-test-rumble.price', playPrice: () => 0, validateConfig: (c) => ok(c), canApply: (t, e, _config, now) => landsOn({ key: 'kb-test-rumble', reaches: ['board'] }, t, e, now),
 };
 const RUMBLE_UI: CardUi = { key: 'kb-test-rumble', art: { color: 'var(--kb-glass-neon)', ink: 'var(--kb-glass-ink-neon)', tagline: 'Shake a board.' }, describe: () => 'The engine\'s test board card.' };
 

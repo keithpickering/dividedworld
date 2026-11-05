@@ -20,7 +20,7 @@ export const stickAround: CardRules<{ sentence: string }> = {
   rarity: 'common',
   priceKey: 'stickAround.price',
   playPrice: () => 0,
-  canApply: (target, effects) => landsOn(stickAround, target, effects),
+  canApply: (target, effects, _config, now) => landsOn(stickAround, target, effects, now),
   validateConfig: (config) => {
     const given = typeof config === 'object' && config !== null ? (config as { sentence?: unknown }).sentence : undefined;
     if (given === undefined) return ok({ sentence: DEFAULT_SENTENCE });
