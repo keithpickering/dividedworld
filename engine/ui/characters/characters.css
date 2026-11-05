@@ -65,6 +65,8 @@
 .kb-roster-layout > .kb-roster-panel {
   /* The panel's calm feathers past its edge and must not lie on the cards above it, which stand in no calm (the layout check). */
   margin-top: calc(var(--kb-calm-feather) + 8px);
+  /* A readable measure on a wide layout, about the roster row of three cards; the phone's width is below it, so it fills. */
+  max-width: 52em;
 }
 
 /* The tablist is a row of its own beside New character, at the row's gap; the wrappers that only group draw no box. */

@@ -85,6 +85,22 @@ test('a phone shows My characters without scrolling sideways', async ({ page }) 
 });
 
 /*
+ * The selected character's panel keeps a readable measure on a wide layout: its buttons and its label/value
+ * rows do not stretch across the whole content width. It is capped in em (52em) and stays full width on the phone.
+ */
+test('at 1440 the roster panel keeps a readable measure; at 390 it fills the width', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('/characters');
+  await page.getByRole('tablist', { name: /^Roster, /u }).getByRole('tab', { name: /^Pipewrench/u }).click();
+  const panel = page.getByRole('tabpanel', { name: 'Pipewrench' });
+  const wide = await panel.evaluate((el) => ({ width: el.getBoundingClientRect().width, cap: parseFloat(getComputedStyle(el).fontSize) * 56 }));
+  expect(wide.width).toBeLessThanOrEqual(wide.cap);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const narrow = await panel.evaluate((el) => ({ width: el.getBoundingClientRect().width, parent: el.parentElement!.getBoundingClientRect().width }));
+  expect(narrow.width).toBeGreaterThanOrEqual(narrow.parent - 1);
+});
+
+/*
  * The Turn modal from My characters leaves the menu bar in view, dimmed and inert (the web plan's
  * 2026-10-30 amendment to Task 9), as the Turn board draws it: the overlay starts at the bar's foot,
  * so nothing covers the bar, and the bar is drawn at brightness 0.6. Close puts the page back as it was.

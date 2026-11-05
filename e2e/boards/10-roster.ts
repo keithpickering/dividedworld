@@ -15,7 +15,7 @@
  * their own corners.
  *
  * Section 4 (the roster is a carousel of tabs): the roster is one row, a tablist, and the selected panel is its tabpanel directly under
- * the row at the page's full width, where the board draws the grid of three beside a 500px panel. So the roster is compared by its x and width as
+ * the row, capped at a readable 52em on a wide layout (full width on the phone), where the board draws the grid of three beside a 500px panel. So the roster is compared by its x and width as
  * the three tabs (its row gap is the board's 20px), New character, which stands beside the tablist and not in it, by its size, and the
  * panel by nothing of its own: the labels keep their places from the panel's top-left, the parts whose width follows the panel (its head, the Was
  * line, the pip style: 1252px under the row, the board's 438px) are held by their y and height from that corner, and the cooldown, the Turn button
