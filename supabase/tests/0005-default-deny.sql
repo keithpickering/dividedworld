@@ -27,6 +27,8 @@ declare
                            'presence_box(text,uuid)',
                            -- A board's page and the index, each in one read (0094): invoker, stable, and readable by a signed-in player alone.
                            'board_page(text,integer,text[])', 'index_page()',
+                           -- A character's two pages, each in one read (0095): invoker and stable, held to the web's read lists by the screen-function guard.
+                           'profile_page(uuid)', 'record_page(uuid,text,integer)',
                            -- Cards beyond a post (0055): a target's effects for the act function, and a page's plays above its posts and its board's pins.
                            'card_target_reach(text,uuid,uuid)', 'effects_above(uuid[],uuid,uuid)', 'pinned_threads(uuid)',
                            -- Updates (0062): an admin's post_update, and the page's read.
