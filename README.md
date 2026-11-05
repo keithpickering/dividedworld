@@ -185,7 +185,8 @@ a module is not found, stop there and file what it printed.
 
 ### 7. Netlify: the site
 
-1. Add a new site from this GitHub repository, with `production` as its production branch, not `main`.
+1. Add a new site from this GitHub repository, with `production` as its production branch, not `main`. If
+   `production` does not exist yet, dispatch **Release** once from the Actions tab first (step 4 says why).
    `netlify.toml` already says the build command (`npm run build:web`), the published directory (`web/dist`), Node 22,
    the single-page redirect and the security headers; leave those fields as the file sets them.
 2. Under **Site configuration > Environment variables**, set `VITE_SUPABASE_URL` to `https://<ref>.supabase.co` and
@@ -197,8 +198,7 @@ a module is not found, stop there and file what it printed.
 4. `production` is moved only by the Release workflow (`.github/workflows/release.yml`), once a night: it builds
    `main`'s head, runs the SQL suite and the e2e flows on it, and only then fast-forwards `production`. `main` is a
    branch deploy the team can see. Under **Site configuration > Build & deploy > Branches and deploy contexts**, add
-   `main` as a branch deploy. If `production` does not exist yet, dispatch **Release** once from the Actions tab
-   first.
+   `main` as a branch deploy.
 
 ### 8. The first admin, and the first invites
 
