@@ -87,15 +87,27 @@ describe('the HUD tab', () => {
   });
 });
 
-describe('the smoke\'s drift', () => {
-  const strip = '.kb-smoke-strip[data-kb-drift]';
-  it('moves only the drifting strip, on its own layer', () => {
-    expect(decl(strip, 'will-change')).toBe('transform');
-    expect(decl(strip, 'animation')).toMatch(/^kb-smoke-drift var\(--kb-smoke-seconds\)/);
+describe('the smoke\'s layers', () => {
+  const layer = '.kb-smoke-layer';
+  it('are masked elements the size the component sets, held at the window\'s corner and moved by its offset', () => {
+    expect(decl(layer, 'position')).toBe('absolute');
+    expect(decl(layer, 'translate')).toBe('var(--kb-field-x, 0px) var(--kb-field-y, 0px)');
+    expect(decl(layer, 'mask-image')).toBe('var(--kb-field-mask)');
+    expect(decl(layer, '-webkit-mask-image')).toBe('var(--kb-field-mask)');
+    expect(decl(layer, 'mask-size')).toBe('100% 100%');
   });
-  it('stops under the device\'s reduced motion unless the player chose full, and under the player\'s reduce', () => {
-    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*:root:not\(\[data-kb-motion='full'\]\) \.kb-smoke-strip\[data-kb-drift\] \{ animation: none; \}/);
-    expect(rule(`:root[data-kb-motion='reduce'] ${strip}`)).toBe('animation: none;');
+  it('cross-fade their color over the motion feel\'s screen duration, 400ms and ease-in-out until the feel defines them', () => {
+    expect(decl(layer, 'transition')).toBe('background-color var(--kb-motion-screen, 400ms) var(--kb-motion-ease, ease-in-out)');
+  });
+  it('drift on their own layer, each by its own travel at its own pace, back and forth', () => {
+    expect(decl(layer, 'will-change')).toBe('transform');
+    expect(decl(layer, 'animation')).toBe('kb-field-drift var(--kb-field-seconds) ease-in-out var(--kb-field-delay, 0s) infinite alternate');
+    expect(css).toMatch(/@keyframes kb-field-drift \{\s*from \{ transform: translateX\(0\); \}\s*to \{ transform: translateX\(calc\(var\(--kb-field-travel\) \* -1\)\); \}/);
+  });
+  it('stop drifting and stop fading under the device\'s reduced motion unless the player chose full, and under the player\'s Off', () => {
+    const off = 'animation: none; transition: none; will-change: auto;';
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*:root:not\(\[data-kb-motion='full'\]\) \.kb-smoke-layer \{ animation: none; transition: none; will-change: auto; \}/);
+    expect(rule(`:root[data-kb-motion='reduce'] ${layer}`)).toBe(off);
   });
 });
 

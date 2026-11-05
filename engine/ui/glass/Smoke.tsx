@@ -1,21 +1,34 @@
 /**
- * The glass's smoke: procedural fractal noise behind a glass surface, as the boards draw it
- * (docs/plans/2026-10-30-glass-to-the-boards-plan.md, section 6). The surface picks a recipe from
- * the instance's glass (`GlassTheme.smoke.surfaces`), each layer of which is a `<rect>` filtered
- * by feTurbulence, a color matrix that turns the noise into the layer's cloud in its constant
- * color, and a blur. The layers are drawn over an opaque ground (`--kb-glass-ground`), so a page
- * is legible before the smoke draws and when it never does.
+ * The glass's smoke: one field of clouds behind every glass surface (the glass polish design,
+ * section 6; docs/plans/2026-10-30-glass-to-the-boards-plan.md, section 6, for what it replaced).
+ * The field is the instance's (`GlassTheme.smoke.field`): each layer's noise and its drift. A
+ * surface is a window onto it: it picks a recipe (`smoke.recipes`), which gives each layer a color
+ * and an opacity, and draws each layer as an element whose `mask-image` is the layer's noise,
+ * rasterized once for the whole page (field.ts), and whose `background-color` is the recipe's
+ * color. The elements are laid over an opaque ground (`--kb-glass-ground`), so a page is legible
+ * before the rasters are ready and when they never are.
  *
- * Under the `low` preference each layer is drawn at a third of its opacity; under `off` no smoke
- * element is drawn and the ground remains. The preference is the player's, read from the root's
- * `data-kb-smoke-level` (engine/ui/appearance.ts) and followed as it changes.
+ * Windows line up. Each layer is as wide as the viewport (and its own drift travel more) and is
+ * moved by minus its window's own place in the viewport, so the HUD's tab, the hand drawer, a glass
+ * page and an overlay show the same clouds in the same place. A window's place is read when it
+ * mounts, when the window resizes or scrolls, when its own box changes size (a drawer opening) and
+ * when an overlay says it has placed itself (`FIELD_PLACED`). Inside a zoomed window (the HUD below
+ * 1440px is drawn with CSS `zoom`) the layers are sized and moved in the window's own pixels, the
+ * zoom taken from its box, so they are still the viewport's size and place on the screen.
  *
- * A recipe with a `drift` is a strip wider than its frame that slides back and forth (base.css
- * holds the keyframes and stops them under reduced motion, the device's or the player's override,
- * so the strip and its crop are the same either way). A recipe's `narrow` layers are drawn too, and
- * base.css shows one set or the other at 600px. The filters work in sRGB: the boards were drawn
- * there, and SVG's default linearRGB brightens the noise, which tools/check-glass-contrast.mjs's
- * numbers do not allow for.
+ * The drift is one clock. Each layer's animation starts at a negative delay of the time since the
+ * page loaded (modulo its own run, there and back), so a window that mounts later is in phase with
+ * one already drawn, and a crossing never restarts it: the delay is kept for a window's life. base.css
+ * holds the keyframes and stops them under reduced motion, the device's or the player's override.
+ *
+ * Moving between surfaces keeps the elements and changes only their color, which base.css fades
+ * over the motion feel's screen duration. A layer a recipe gives opacity 0 is still drawn, in
+ * transparent color, so a crossing to a surface that uses it fades it in. Under the `low`
+ * preference each layer is drawn at a third of its opacity; under `off` no smoke element is drawn
+ * and the ground remains, and the rasters are given back once no window wants them. The preference
+ * is the player's, read from the root's `data-kb-smoke-level` (engine/ui/appearance.ts) and
+ * followed as it changes. Below 600px the field's narrow layers are drawn, in the recipe's
+ * `narrowColors` or else its first colors, the same rule tools/check-glass-contrast.mjs composites.
  *
  * It says nothing to a screen reader. Where it is not drawn the page loses decoration only.
  *
@@ -23,11 +36,12 @@
  * element that holds a surface's smoke and its text takes useSurfaceStyle's style, so every calm
  * on that text is drawn at the number tools/check-glass-contrast.mjs reads it at.
  */
-import { useId, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { FieldLayer, GlassSurface, LayerColor, SmokeRecipe } from '../types.ts';
+import type { GlassSurface, LayerColor, SmokeRecipe } from '../types.ts';
 import { useSmokeLevel } from '../appearance.ts';
 import { surfaceCalm } from './apply.ts';
+import { useFieldEnv, useFieldRasters } from './field.ts';
 
 /** The player's smoke preference (Settings, Accessibility). */
 export type SmokeLevel = 'full' | 'low' | 'off';
@@ -42,53 +56,59 @@ export interface SmokeProps {
 const LOW = 1 / 3;
 
 /**
- * BRIDGE (Task 9 to Task 10): until the renderer draws the field (the glass polish design, section 6),
- * Smoke builds the layer it used to read from a recipe out of a field layer and the recipe's color
- * for it. Task 10 replaces this, `bridged` and the HUD-only strip below with the field's own render.
+ * Dispatched on `window` by a surface that has moved itself (an overlay, placed by its anchor), so the
+ * windows it holds measure their place again: a placement is made after its children mount.
  */
-interface Bridged extends FieldLayer {
-  readonly color: string;
-  readonly opacity: number;
+export const FIELD_PLACED = 'kb-field-placed';
+
+/** A layer's color where a recipe names none (a recipe with fewer colors than the field has layers): none of it. */
+const NONE: LayerColor = { color: '#000000', opacity: 0 };
+
+/** `#rrggbb` at `alpha`, as the color a layer's background is. */
+function rgba(hex: string, alpha: number): string {
+  const n = Number.parseInt(hex.slice(1, 7), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${Math.round(alpha * 1e6) / 1e6})`;
 }
 
-/** A field's layers in a recipe's colors, leaving out each layer at opacity 0 (a layer the recipe does not draw). */
-function bridged(layers: readonly FieldLayer[], colors: readonly LayerColor[]): Bridged[] {
-  return layers.flatMap((l, i) => (colors[i] && colors[i].opacity > 0 ? [{ ...l, color: colors[i].color, opacity: colors[i].opacity }] : []));
-}
+/** Where a window stands in the viewport, in the window's own pixels, and how much it is zoomed. */
+interface Placement { readonly x: number; readonly y: number; readonly zoom: number }
+const HOME: Placement = { x: 0, y: 0, zoom: 1 };
 
-/** The width of the HUD's drifting strip, as the recipe's drift gave it before the field. */
-const BRIDGE_STRIP_WIDTH = 1560;
-
-/** A hex color's channels as the 0 to 1 numbers a color matrix takes. */
-function channels(hex: string): [number, number, number] {
-  const h = hex.replace('#', '');
-  const n = (i: number) => parseInt(h.slice(i, i + 2), 16) / 255;
-  return [n(0), n(2), n(4)];
-}
-
-/** The matrix: every channel set to the layer's color, the alpha row the layer's own. */
-function matrix(layer: Bridged): string {
-  const [r, g, b] = channels(layer.color);
-  return [0, 0, 0, 0, r, 0, 0, 0, 0, g, 0, 0, 0, 0, b, ...layer.alpha].join(' ');
-}
-
-function Layers({ layers, scale, ids, name }: { readonly layers: readonly Bridged[]; readonly scale: number; readonly ids: string; readonly name: string }) {
-  return (
-    <svg className="kb-smoke-svg" data-kb-smoke-set={name} width="100%" height="100%" preserveAspectRatio="none" focusable="false">
-      <defs>
-        {layers.map((l, i) => (
-          <filter key={i} id={`${ids}-${name}-${i}`} x="0" y="0" width="100%" height="100%" colorInterpolationFilters="sRGB">
-            <feTurbulence type="fractalNoise" baseFrequency={l.frequency.join(' ')} numOctaves={l.octaves} seed={l.seed} />
-            <feColorMatrix type="matrix" values={matrix(l)} />
-            <feGaussianBlur stdDeviation={l.blur} />
-          </filter>
-        ))}
-      </defs>
-      {layers.map((l, i) => (
-        <rect key={i} width="100%" height="100%" filter={`url(#${ids}-${name}-${i})`} opacity={l.opacity * scale} />
-      ))}
-    </svg>
-  );
+/**
+ * The element's place in the viewport, kept current. Measured in a layout effect on mount, so the
+ * first frame it draws is already in place, and then on the events that move or resize a window,
+ * at most once a frame. `active` false (nothing is drawn) listens to nothing.
+ */
+function usePlacement(ref: { readonly current: HTMLElement | null }, active: boolean): Placement {
+  const [at, setAt] = useState<Placement>(HOME);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!active || !el) return;
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      /* Laid out at `offsetWidth` of its own pixels and drawn `r.width` wide: the zoom, 1 where either is nothing (a hidden drawer, jsdom). */
+      const zoom = el.offsetWidth > 0 && r.width > 0 ? r.width / el.offsetWidth : 1;
+      setAt((was) => (was.x === r.left / zoom && was.y === r.top / zoom && was.zoom === zoom ? was : { x: r.left / zoom, y: r.top / zoom, zoom }));
+    };
+    measure();
+    let frame: number | null = null;
+    const soon = () => { if (frame === null) frame = requestAnimationFrame(() => { frame = null; measure(); }); };
+    window.addEventListener('resize', soon);
+    window.addEventListener('scroll', soon, true);
+    /* Told by a surface that has just moved itself: measured now, not a frame later, so the clouds are never drawn for a frame at the unplaced offset. */
+    window.addEventListener(FIELD_PLACED, measure);
+    /* A drawer's `hidden` ending, or a box changing size, moves nothing the events above hear. */
+    const grown = typeof ResizeObserver === 'function' ? new ResizeObserver(soon) : null;
+    grown?.observe(el);
+    return () => {
+      window.removeEventListener('resize', soon);
+      window.removeEventListener('scroll', soon, true);
+      window.removeEventListener(FIELD_PLACED, measure);
+      grown?.disconnect();
+      if (frame !== null) cancelAnimationFrame(frame);
+    };
+  }, [ref, active]);
+  return at;
 }
 
 export function Smoke({ surface, level: asked }: SmokeProps) {
@@ -96,34 +116,43 @@ export function Smoke({ surface, level: asked }: SmokeProps) {
   /* The player's preference, as the root is marked (appearance.ts), unless the caller fixes one. */
   const chosen = useSmokeLevel();
   const level = asked ?? chosen;
-  const ids = useId().replace(/:/g, '');
   const { recipes, surfaces, field } = ui.glass.smoke;
   const recipe: SmokeRecipe | undefined = recipes[surfaces[surface]];
-  const wide = recipe ? bridged(field.layers, recipe.colors) : [];
-  /* The recipe's narrow colors, or its first colors, on the field's narrow layers. */
-  const narrow = recipe && field.narrow ? bridged(field.narrow, recipe.narrowColors ?? recipe.colors.slice(0, field.narrow.length)) : [];
+  const env = useFieldEnv();
+  /* Below 600px, the field's narrow layers, in the recipe's narrow colors or its first colors (check-glass-contrast.mjs's narrowColorsOf). */
+  const isNarrow = env.narrow && field.narrow !== undefined && field.narrow.length > 0;
+  const layers = isNarrow ? field.narrow! : field.layers;
+  const colors: readonly LayerColor[] = !recipe ? [] : isNarrow ? recipe.narrowColors ?? recipe.colors.slice(0, layers.length) : recipe.colors;
+  const drawn = recipe !== undefined && level !== 'off' && layers.length > 0;
+  const urls = useFieldRasters(drawn ? layers : null, env);
+  const root = useRef<HTMLDivElement>(null);
+  const at = usePlacement(root, drawn);
+  /* The page's clock at this window's mount, kept for its life: a crossing does not restart the drift. */
+  const [born] = useState(() => (typeof performance === 'undefined' ? 0 : performance.now()) / 1000);
   const scale = level === 'low' ? LOW : 1;
-  /* Only the HUD's strip drifts here, as it did before the field, at the field's first layer's rate. */
-  const own = field.layers[0]?.drift;
-  const drift = recipe && level !== 'off' && surface === 'hud' && own ? own : null;
-  const strip: CSSProperties | undefined = drift
-    ? ({ width: `${BRIDGE_STRIP_WIDTH}px`, '--kb-smoke-seconds': `${drift.seconds}s`, '--kb-smoke-travel': `${drift.travel}px` } as CSSProperties)
-    : undefined;
   return (
-    <div className="kb-smoke" data-kb-surface={surface} aria-hidden="true">
+    <div ref={root} className="kb-smoke" data-kb-surface={surface} aria-hidden="true">
       <div className="kb-smoke-ground" data-kb-ground="" style={{ background: 'var(--kb-glass-ground)' }} />
       {recipe && level !== 'off' ? (
         <div className="kb-smoke-layers" data-kb-smoke={surfaces[surface]}>
-          <div className="kb-smoke-strip" data-kb-drift={drift ? '' : undefined} style={strip}>
-            <div className="kb-smoke-wide" data-kb-smoke-wide="">
-              <Layers layers={wide} scale={scale} ids={ids} name="wide" />
-            </div>
-            {narrow.length > 0 ? (
-              <div className="kb-smoke-narrow" data-kb-smoke-narrow="">
-                <Layers layers={narrow} scale={scale} ids={ids} name="narrow" />
-              </div>
-            ) : null}
-          </div>
+          {layers.map((layer, i) => {
+            const url = urls[i];
+            if (!url) return null;
+            const { color, opacity } = colors[i] ?? NONE;
+            const { seconds, travel } = layer.drift;
+            const style = {
+              width: `${(env.view.width + travel) / at.zoom}px`,
+              height: `${env.view.height / at.zoom}px`,
+              backgroundColor: rgba(color, opacity * scale),
+              '--kb-field-mask': `url("${url}")`,
+              '--kb-field-x': `${-at.x}px`,
+              '--kb-field-y': `${-at.y}px`,
+              '--kb-field-seconds': `${seconds}s`,
+              '--kb-field-travel': `${travel / at.zoom}px`,
+              '--kb-field-delay': `-${born % (2 * seconds)}s`,
+            } as CSSProperties;
+            return <div key={`${isNarrow ? 'n' : 'w'}${i}`} className="kb-smoke-layer" style={style} />;
+          })}
         </div>
       ) : null}
     </div>
