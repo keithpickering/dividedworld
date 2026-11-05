@@ -16,18 +16,51 @@ import { PageHead } from './PageHead.tsx';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const sheet = (name: string) => fs.readFileSync(path.join(here, name), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
 
+/** The declarations of the rules whose selector list contains exactly `selector`, whitespace squashed. */
+function declsOf(css: string, selector: string): Record<string, string> {
+  const squash = (x: string) => x.replace(/\s+/g, ' ').trim();
+  const out: Record<string, string> = {};
+  for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (!m[1]!.split(',').map(squash).includes(selector)) continue;
+    for (const d of m[2]!.split(';')) {
+      const i = d.indexOf(':');
+      if (i > 0) out[d.slice(0, i).trim()] = squash(d.slice(i + 1));
+    }
+  }
+  return out;
+}
+
 describe('PageHead', () => {
   test('is one h1, and the lead is a p after it', () => {
     const { container } = renderInWorld(<PageHead title="Rankings" lead="Who is up." eyebrow="Week 3" count="(2 of 3)" actions={<GlassButton>Go</GlassButton>} />);
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     const h1 = container.querySelector('h1')!;
     expect(h1).toHaveTextContent('Rankings');
-    expect(h1).toHaveClass('kb-calm');
+    expect(h1).not.toHaveClass('kb-calm');
+    expect(h1).toHaveClass('kb-glass-display');
     const lead = container.querySelector('p.kb-page-head-lead')!;
     expect(lead).toHaveClass('kb-calm');
     expect(lead).toHaveTextContent('Who is up.');
     expect(h1.compareDocumentPosition(lead) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Go' })).toBeInTheDocument();
+  });
+
+  test('keeps the oversized display title, and a lead goes under it rather than shrink it', () => {
+    const css = sheet('parts.css');
+    expect(declsOf(css, '.kb-page-head-title')['font-size']).toBe('7rem');
+    expect(declsOf(css, ".kb-page-head[data-kb-size='roster'] .kb-page-head-title")['font-size']).toBe('var(--kb-glass-size-display-xl)');
+    expect(declsOf(css, ":where(:root[data-kb-layout='phone']) .kb-page-head-title")['font-size']).toBe('4rem');
+    expect(declsOf(css, ".kb-page-head-title")['flex']).toBe('0 0 auto');
+    const { container } = renderInWorld(<PageHead title="Your characters" size="roster" />);
+    expect(container.querySelector('.kb-page-head')).toHaveAttribute('data-kb-size', 'roster');
+  });
+
+  test('the lead\'s and the eyebrow\'s feather is capped at the row gap, which is the title gap', () => {
+    const css = sheet('parts.css');
+    expect(declsOf(css, '.kb-page-head')['row-gap']).toBe('var(--kb-glass-title-gap)');
+    expect(declsOf(css, '.kb-page-head-lead')['--kb-calm-feather']).toBe('min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap))');
+    expect(declsOf(css, '.kb-page-head-eyebrow')['--kb-calm-feather']).toBe('min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap))');
+    expect(declsOf(css, '.kb-page-head')['margin-bottom']).toBe('36px');
   });
 
   test('leaves out what it is not given', () => {
@@ -39,7 +72,7 @@ describe('PageHead', () => {
   test('lays the lead under a title it would be narrower than 18em beside', () => {
     const css = sheet('parts.css');
     expect(css).toMatch(/\.kb-page-head-lead\s*\{[^}]*flex:\s*1 1 18em/);
-    expect(css).toMatch(/\.kb-page-head-title\s*\{[^}]*flex:\s*0 1 auto[^}]*min-width:\s*min\(100%, max-content\)/);
+    expect(css).toMatch(/\.kb-page-head-title\s*\{[^}]*flex:\s*0 0 auto[^}]*max-width:\s*100%/);
   });
 });
 

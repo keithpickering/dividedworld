@@ -12,7 +12,15 @@
   flex-wrap: wrap;
   align-items: baseline;
   column-gap: 28px;
-  row-gap: 4px;
+  /* The row gap is the title gap: the lead's and the eyebrow's calm feather is capped at it (calm.css), so it lies on nothing but the gap, never on the title. */
+  row-gap: var(--kb-glass-title-gap);
+  /* The calms of what follows reach 32px up (calm.css); the title stands clear of them. */
+  margin-bottom: 36px;
+}
+
+.kb-page-head-eyebrow,
+.kb-page-head-lead {
+  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
 }
 
 .kb-page-head-eyebrow {
@@ -25,19 +33,32 @@
   color: var(--kb-glass-neon-text);
 }
 
-/* The title keeps its own width; the lead takes the rest, and goes under it when that is under 18em. */
+/*
+ * The title is the game's oversized display heading, as every page has it (7rem, the roster's pages
+ * 96px), with no calm behind it: only the Anton headings stand on the full smoke. It never shrinks
+ * for a lead; the lead takes the rest of the line and goes under the title when that is under 18em.
+ */
 .kb-page-head-title {
-  flex: 0 1 auto;
-  min-width: min(100%, max-content);
+  flex: 0 0 auto;
+  max-width: 100%;
   margin: 0;
+  overflow-wrap: anywhere;
   font-family: var(--kb-glass-font-display);
-  font-size: var(--kb-glass-size-display-m);
+  font-size: 7rem;
   font-weight: 400;
+  line-height: 1;
+  letter-spacing: 1px;
   color: var(--kb-glass-text-hi);
+  text-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 35%, transparent);
 }
 
+.kb-page-head[data-kb-size='roster'] .kb-page-head-title {
+  font-size: var(--kb-glass-size-display-xl);
+}
+
+/* The count is the heading's, read with it, and drawn smaller beside it. */
 .kb-page-head-count {
-  font-size: var(--kb-glass-size-body);
+  font-size: var(--kb-glass-size-display-m);
   color: var(--kb-glass-text-2);
 }
 
@@ -53,8 +74,10 @@
   margin-top: 8px;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-page-head-title { font-size: var(--kb-glass-size-phone-display); }
-:where(:root[data-kb-layout='phone']) :is(.kb-page-head-lead, .kb-page-head-count, .kb-page-head-eyebrow) { font-size: var(--kb-glass-size-phone-body); }
+:where(:root[data-kb-layout='phone']) .kb-page-head-title { font-size: 4rem; }
+:where(:root[data-kb-layout='phone']) .kb-page-head[data-kb-size='roster'] .kb-page-head-title { font-size: var(--kb-glass-size-display-m); }
+:where(:root[data-kb-layout='phone']) .kb-page-head-count { font-size: var(--kb-glass-size-phone-display); }
+:where(:root[data-kb-layout='phone']) :is(.kb-page-head-lead, .kb-page-head-eyebrow) { font-size: var(--kb-glass-size-phone-body); }
 
 /* ---- the button row ---- */
 

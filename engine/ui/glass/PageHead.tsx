@@ -4,20 +4,22 @@ import { ButtonRow } from './Button.tsx';
 /**
  * The head every glass page opens with: the title in the display face, an eyebrow above it, a lead
  * beside it (under it when it would be narrower than 18em), the page's actions in a button row, and
- * a count after the title. The calm is on the title and the lead, as each screen has it; parts.css
- * has the layout.
+ * a count after the title. The title is the oversized display heading with no calm behind it (the
+ * Anton headings stand on the full smoke); the eyebrow and the lead carry a calm. `size="roster"` is
+ * the character pages' 96px title. parts.css has the layout.
  */
-export function PageHead({ title, eyebrow, lead, actions, count }: {
+export function PageHead({ title, eyebrow, lead, actions, count, size }: {
   readonly title: ReactNode;
   readonly eyebrow?: ReactNode;
   readonly lead?: ReactNode;
   readonly actions?: ReactNode;
   readonly count?: ReactNode;
+  readonly size?: 'page' | 'roster';
 }) {
   return (
-    <div className="kb-page-head">
+    <div className="kb-page-head" data-kb-size={size}>
       {eyebrow !== undefined && <p className="kb-page-head-eyebrow kb-calm">{eyebrow}</p>}
-      <h1 className="kb-page-head-title kb-glass-display kb-calm">
+      <h1 className="kb-page-head-title kb-glass-display">
         {title}
         {count !== undefined && <> <span className="kb-page-head-count">{count}</span></>}
       </h1>

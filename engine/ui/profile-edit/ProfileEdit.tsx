@@ -68,7 +68,7 @@ export function ProfileEdit({ io }: { readonly io?: PictureIo }) {
   if (!mine || id === null) {
     return (
       <div className="kb-profile-edit">
-        <PageHead title="Edit profile" />
+        <PageHead size="roster" title="Edit profile" />
         <p className="kb-notice kb-calm">You have no characters yet, so there is no profile here for you to edit. <Link to="/characters/new">Make a character</Link> first.</p>
         {back}
       </div>
@@ -85,7 +85,7 @@ export function ProfileEdit({ io }: { readonly io?: PictureIo }) {
   /* The same head in every state, so the select keeps its place in the tree (and its open list) while a profile loads. */
   const head = (
     <>
-      <PageHead title={`Edit ${mine.name}`} />
+      <PageHead size="roster" title={`Edit ${mine.name}`} />
       {picker}
     </>
   );

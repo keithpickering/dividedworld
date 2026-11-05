@@ -39,7 +39,7 @@ export function NewCharacter() {
   if (active >= settings.charactersPerPlayer) {
     return (
       <div className="kb-new-character">
-        <PageHead title="New character" />
+        <PageHead size="roster" title="New character" />
         <p className="kb-notice kb-calm">
           You play {active} of {settings.charactersPerPlayer} characters, the most there are. There is no way to free a slot yet; an admin can retire a character on request, and keeps every Act it made.
         </p>
@@ -69,7 +69,7 @@ export function NewCharacter() {
 
   return (
     <div className="kb-new-character">
-      <PageHead title="New character" lead="This page is out of character and only you can see it. Nobody else can tell who plays a character." />
+      <PageHead size="roster" title="New character" lead="This page is out of character and only you can see it. Nobody else can tell who plays a character." />
       <form className="kb-new-form" aria-label="New character" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
         <div className="kb-new-name kb-calm">
           <label className="kb-glass-field">

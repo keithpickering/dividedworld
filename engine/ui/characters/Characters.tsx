@@ -341,7 +341,7 @@ export function Characters() {
 
   return (
     <div className="kb-characters">
-      <PageHead title="Your characters" count={`(${active.length} of ${per})`} lead="This page is out of character and only you can see it. Classes are shown here and nowhere else unless you reveal them." />
+      <PageHead size="roster" title="Your characters" count={`(${active.length} of ${per})`} lead="This page is out of character and only you can see it. Classes are shown here and nowhere else unless you reveal them." />
       <div role="status" className="kb-flash">{flash && <p className="kb-notice kb-calm">{flash}</p>}</div>
 
       {mine.length === 0 && <p className="kb-characters-empty kb-calm">You have no characters yet. <Link to="/characters/new">Make one</Link> to start playing.</p>}
