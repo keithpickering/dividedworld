@@ -206,6 +206,46 @@ describe('compareBoard: a landmark measured from another one, and one compared b
   });
 });
 
+/*
+ * A part that flows under a block of words stands wherever those words end, and a browser's own text metrics can wrap them a
+ * line shorter or longer (the Settlement's ways out under its Turn card: one line apart between CI's Chromium and a local one).
+ * Measured from the bottom of the block (`originEdge: 'bottom'`), its place is the gap under the block, whatever the block's height.
+ */
+describe('compareBoard: a landmark measured from the bottom of another one', () => {
+  const CARD = { x: 700, y: 600, width: 600, height: 180 };
+  const WAY = { x: 1100, y: 812, width: 260, height: 60 };
+  const drawn = snap(shot('card', CARD), shot('way', WAY));
+  const under = manifest(lm('card', { box: 'none' }), lm('way', { origin: 'card', originEdge: 'bottom', box: 'height' }));
+
+  test('a card a line taller, its way out with it, is clean', () => {
+    expect(compareBoard(drawn, snap(shot('card', { ...CARD, height: 208 }), shot('way', { ...WAY, y: 840 })), under)).toEqual([]);
+  });
+
+  test('a card a line taller and its way out left where it was fails, and says it is measured from the card', () => {
+    const r = compareBoard(drawn, snap(shot('card', { ...CARD, height: 208 }), shot('way', WAY)), under);
+    expect(r).toMatchObject([{ landmark: 'way', field: 'y', board: '32', build: '4' }]);
+    expect(r[0]!.message).toContain('from the bottom of card');
+  });
+
+  test('measured from the top, the same taller card fails where measured from the bottom it passes', () => {
+    const top = manifest(lm('card', { box: 'none' }), lm('way', { origin: 'card', box: 'height' }));
+    expect(compareBoard(drawn, snap(shot('card', { ...CARD, height: 208 }), shot('way', { ...WAY, y: 840 })), top)).toMatchObject([{ landmark: 'way', field: 'y' }]);
+  });
+
+  test('the gap is held to 8px: 9px further under the card fails, 8px passes, and a declared shift moves it', () => {
+    expect(compareBoard(drawn, snap(shot('card', CARD), shot('way', { ...WAY, y: 821 })), under)).toMatchObject([{ landmark: 'way', field: 'y' }]);
+    expect(compareBoard(drawn, snap(shot('card', CARD), shot('way', { ...WAY, y: 820 })), under)).toEqual([]);
+    const shifted = manifest(lm('card', { box: 'none' }), lm('way', { origin: 'card', originEdge: 'bottom', box: 'height', buildShift: { y: -20 } }));
+    expect(compareBoard(drawn, snap(shot('card', CARD), shot('way', { ...WAY, y: 792 })), shifted)).toEqual([]);
+    expect(compareBoard(drawn, snap(shot('card', CARD), shot('way', WAY)), shifted)).toMatchObject([{ landmark: 'way', field: 'y' }]);
+  });
+
+  test('an edge with no origin is a mismatch in the manifest, never a silent pass', () => {
+    const r = compareBoard(drawn, drawn, manifest(lm('card', { box: 'none' }), lm('way', { originEdge: 'bottom', box: 'height' })));
+    expect(r).toMatchObject([{ landmark: 'way', field: 'origin' }]);
+  });
+});
+
 describe('compareBoard: a place a decision moved off the board', () => {
   /* The shared dialog frame's bar holds Close, so the React picker's parts under it stand lower than the board's, which holds Close at the foot. */
   const LINE = { x: 100, y: 200, width: 600, height: 24 };

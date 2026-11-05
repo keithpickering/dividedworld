@@ -22,7 +22,7 @@
  *    the class's own large color, #8fd6ff, the near value the plan made one).
  *  - The heading, the settled line and the tabs are a PageHead (engine/ui/glass/PageHead.tsx; the glass polish plan, Task 4): the settled line is the
  *    eyebrow, over the heading, in the page head's neon where the board draws amber, and the tabs, GlassButtons, stand under the heading, not on the
- *    board's top row. So the heading stands 21px higher, the wallet, rank and Turn columns about 58px lower, and the ways out 42px lower and 14px
+ *    board's top row. So the heading stands 21px higher, the wallet, rank and Turn columns about 58px lower, and the ways out 47px closer under the Turn card and 14px
  *    shorter than the board draws them (each is held to the board's place plus its shift), the heading's type is not compared (its letter-spacing is
  *    the page head's, 1px; its box is the page head's line-height 1, where the calm it stood in had 1.15, so the columns stand 18px higher than they did), the settled line and the tabs are compared by words and role alone, and the ways out's Back is the glass's primary button.
  *  - The reason lines are one line each in the build where the board's sentences take two: the first is
@@ -89,10 +89,12 @@ const manifest: BoardManifest = {
     /*
      * The two links are GlassButtons (docs/plans/2026-11-04-glass-polish-design.md, section 2): 48px of Barlow Condensed at the body's 21px, where
      * the board draws Anton at 26px, so each is a little narrower and "Back to the board" stands further left. Compared by y and height, and the
-     * type (the parts' own) not at all.
+     * type (the parts' own) not at all. They flow under the Turn card, whose sentence one browser's text metrics wrap to two lines and another's to
+     * three, so their y is the gap under the card (`originEdge: 'bottom'`), never a place on the page: 40px in the build, where the board, which pins
+     * them to the screen's foot, leaves 87px. "Back to the board" is the glass's primary, not the board's yellow, which no other button uses.
      */
-    { id: 'log', role: 'link', name: 'Open my log', box: 'height', buildShift: { y: 42, height: -14 } },
-    { id: 'back', role: 'link', name: 'Back to the board', box: 'height', buildShift: { y: 42, height: -14 }, type: false },
+    { id: 'log', role: 'link', name: 'Open my log', box: 'height', origin: 'turn', originEdge: 'bottom', buildShift: { y: -47, height: -14 } },
+    { id: 'back', role: 'link', name: 'Back to the board', box: 'height', origin: 'turn', originEdge: 'bottom', buildShift: { y: -47, height: -14 }, type: false },
   ],
 };
 
