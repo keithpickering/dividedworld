@@ -19,7 +19,7 @@ declare
   c1 uuid := tests.character(cat, 'Reader Two');
   a1 uuid := tests.character(ann, 'Reader One');
   b1 uuid := tests.character(bob, 'Poster One');
-  gen uuid := (select id from boards where slug = 'general');
+  gen uuid;
   side uuid;
   t uuid;
   tp uuid;
@@ -37,11 +37,14 @@ declare
   last_page integer;
   i integer;
 begin
+  -- The board under test is one of this file's own, never 'bp-main': other files commit threads there (the race tests, through
+  -- tests.commit, outlive their rollback), and enough of them newer than these push 'Thread 3' off page 1 and its reading row out of the page.
+  insert into boards (slug, name, description) values ('bp-main', 'Main Board', 'This file''s own.') returning id into gen;
   insert into boards (slug, name, description) values ('side', 'Side Board', 'Off to the side.') returning id into side;
 
-  -- Twenty-five threads on general, the newest posted a minute ago, each a minute older than the last.
+  -- Twenty-five threads on bp-main, the newest posted a minute ago, each a minute older than the last.
   for i in 1..25 loop
-    t := tests.thread('Thread ' || i);
+    insert into threads (board, title) values (gen, 'Thread ' || i) returning id into t;
     perform tests.post(b1, t, 'Post in ' || i, now() - (i || ' minutes')::interval);
   end loop;
   -- Two on the side board, the newer one by the other player's character.
@@ -50,7 +53,7 @@ begin
   insert into threads (board, title) values (side, 'Side two') returning id into ts;
   perform tests.post(a1, ts, 'Newer side post.', now() - interval '1 hour');
 
-  -- A pinned thread on general and a board card on general, both live, and a state, a release, a reading row and a view count.
+  -- A pinned thread on bp-main and a board card on bp-main, both live, and a state, a release, a reading row and a view count.
   insert into threads (board, title) values (gen, 'Pinned') returning id into tp;
   first_post := tests.post(b1, tp, 'Pin me.', now() - interval '3 days');
   pin_play := tests.act(b1, 'card', tp, jsonb_build_object('card', 'banner', 'reach', 'thread', 'thread', tp, 'ends', now() + interval '1 day'), first_post);
@@ -82,7 +85,7 @@ begin
   perform react(pin_play, a1, 'up');
 
   -- ---- board_page, page 1 ----
-  got := board_page('general', 1, array['banner']);
+  got := board_page('bp-main', 1, array['banner']);
   total := (select threads from board_counts where board = gen);
   last_page := greatest(1, ceil(total / 20.0))::integer;
   if last_page < 2 then raise exception 'the board needs a second page: % threads', total; end if;
@@ -105,7 +108,7 @@ begin
     raise exception 'states: %', got -> 'states'; end if;
   if (select jsonb_agg(e ->> 'play') from jsonb_array_elements(got -> 'releases') e) is distinct from jsonb_build_array(pin_play::text) then
     raise exception 'releases hold only the caller''s: %', got -> 'releases'; end if;
-  if jsonb_array_length(board_page('general', 1, array[]::text[]) -> 'states') <> 0 then raise exception 'no card asked, no state'; end if;
+  if jsonb_array_length(board_page('bp-main', 1, array[]::text[]) -> 'states') <> 0 then raise exception 'no card asked, no state'; end if;
   want := (select coalesce(jsonb_agg(to_jsonb(r) order by r.act, r.kind), '[]') from (select act, kind, count from reaction_tallies where act in (pin_play, banner_play)) r);
   if (select coalesce(jsonb_agg(e order by e ->> 'act', e ->> 'kind'), '[]') from jsonb_array_elements(got -> 'tallies') e) is distinct from want or jsonb_array_length(want) = 0 then
     raise exception 'tallies: % wanted %', got -> 'tallies', want; end if;
@@ -127,30 +130,30 @@ begin
   if (got ->> 'unread')::integer is distinct from my_alerts_unread() then raise exception 'unread: %', got -> 'unread'; end if;
 
   -- ---- page 2, clamping, missing ----
-  got := board_page('general', 2, array[]::text[]);
+  got := board_page('bp-main', 2, array[]::text[]);
   ids_want := (select jsonb_agg(f.id order by f.last_at desc) from (select id, last_at from thread_list where board = gen order by last_at desc offset 20 limit 20) f);
   if (select jsonb_agg(e ->> 'id' order by n) from jsonb_array_elements(got -> 'threads') with ordinality x(e, n)) is distinct from ids_want then
     raise exception 'page 2 threads: %', got -> 'threads'; end if;
   if jsonb_array_length(got -> 'pins') <> 0 or jsonb_array_length(got -> 'threads') = 0 then raise exception 'page 2 holds no pins: %', got -> 'pins'; end if;
-  if (board_page('general', 999, array[]::text[]) ->> 'page')::integer <> last_page then raise exception 'a page past the end clamps to %', last_page; end if;
-  if board_page('general', 999, array[]::text[]) -> 'threads' is distinct from got -> 'threads' then raise exception 'the clamped page is the last page'; end if;
-  if (board_page('general', 0, array[]::text[]) ->> 'page')::integer <> 1 or (board_page('general', null, array[]::text[]) ->> 'page')::integer <> 1 then
+  if (board_page('bp-main', 999, array[]::text[]) ->> 'page')::integer <> last_page then raise exception 'a page past the end clamps to %', last_page; end if;
+  if board_page('bp-main', 999, array[]::text[]) -> 'threads' is distinct from got -> 'threads' then raise exception 'the clamped page is the last page'; end if;
+  if (board_page('bp-main', 0, array[]::text[]) ->> 'page')::integer <> 1 or (board_page('bp-main', null, array[]::text[]) ->> 'page')::integer <> 1 then
     raise exception 'page 0 or null is page 1'; end if;
   if board_page('no-such-board', 1, array[]::text[]) is not null then raise exception 'a missing slug is null'; end if;
-  if board_page(gen::text, 1, array[]::text[]) -> 'board' ->> 'slug' <> 'general' then raise exception 'a board by its id'; end if;
+  if board_page(gen::text, 1, array[]::text[]) -> 'board' ->> 'slug' <> 'bp-main' then raise exception 'a board by its id'; end if;
   if board_page('side', 1, array[]::text[]) ->> 'total' <> '2' then raise exception 'the side board holds two'; end if;
   if board_page('side', 1, array[]::text[]) -> 'threads' -> 0 ->> 'title' <> 'Side two' then raise exception 'newest first'; end if;
 
   -- ---- index_page ----
   got := index_page();
   if jsonb_array_length(got -> 'boards') <> (select count(*) from boards_now) then raise exception 'index boards: %', got -> 'boards'; end if;
-  if (select (e ->> 'thread_count')::integer from jsonb_array_elements(got -> 'boards') e where e ->> 'slug' = 'general') is distinct from total then raise exception 'general count'; end if;
+  if (select (e ->> 'thread_count')::integer from jsonb_array_elements(got -> 'boards') e where e ->> 'slug' = 'bp-main') is distinct from total then raise exception 'bp-main count'; end if;
   if (select e ->> 'last_thread' from jsonb_array_elements(got -> 'boards') e where e ->> 'slug' = 'side') is distinct from ts::text
      or (select e ->> 'last_character' from jsonb_array_elements(got -> 'boards') e where e ->> 'slug' = 'side') is distinct from a1::text then
     raise exception 'side board newest thread: %', got -> 'boards'; end if;
   if (select (e ->> 'thread_count')::integer from jsonb_array_elements(got -> 'boards') e where e ->> 'slug' = 'side') is distinct from 2 then raise exception 'side count'; end if;
-  if (select e ->> 'last_thread' from jsonb_array_elements(got -> 'boards') e where e ->> 'slug' = 'general')
-     is distinct from (select l.id::text from thread_list l where l.board = gen order by l.last_at desc limit 1) then raise exception 'general newest thread'; end if;
+  if (select e ->> 'last_thread' from jsonb_array_elements(got -> 'boards') e where e ->> 'slug' = 'bp-main')
+     is distinct from (select l.id::text from thread_list l where l.board = gen order by l.last_at desc limit 1) then raise exception 'bp-main newest thread'; end if;
   if (select jsonb_agg(e ->> 'id' order by e ->> 'id') from jsonb_array_elements(got -> 'characters') e)
      is distinct from (select jsonb_agg(q.x::text order by q.x::text) from (select distinct l.last_character x from thread_list l
                          where l.last_character is not null
@@ -162,7 +165,7 @@ begin
 
   -- ---- anon ----
   perform tests.become_anon();
-  if pg_temp.refusal(format('select board_page(%L, 1, array[]::text[])', 'general')) is distinct from '42501' then raise exception 'anon reads a board'; end if;
+  if pg_temp.refusal(format('select board_page(%L, 1, array[]::text[])', 'bp-main')) is distinct from '42501' then raise exception 'anon reads a board'; end if;
   if pg_temp.refusal('select index_page()') is distinct from '42501' then raise exception 'anon reads the index'; end if;
   perform tests.unbecome();
 end $$;
