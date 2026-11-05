@@ -28,3 +28,12 @@ test('useSignedIn reads the player\'s session and asks the server nothing of its
   expect(await screen.findByText('signed in')).toBeInTheDocument();
   expect(sessions).toBe(1);
 });
+
+test('useSignedIn answers signed out when the session cannot be read, so the sign-in line shows rather than nothing', async () => {
+  function Probe() {
+    const signedIn = useSignedIn(useKayfa().api);
+    return <p>{signedIn === null ? 'unknown' : signedIn ? 'signed in' : 'signed out'}</p>;
+  }
+  renderInWorld(<Probe />, { seed: (fake) => { fake.session = () => Promise.reject(new Error('offline')); } });
+  expect(await screen.findByText('signed out')).toBeInTheDocument();
+});

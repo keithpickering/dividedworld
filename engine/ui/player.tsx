@@ -130,7 +130,11 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
 
   useEffect(() => {
     let live = true;
-    void api.session().then((s) => { if (live) { setSession(s); setSessionKnown(true); } });
+    /* A session that cannot be read is read as signed out, so a screen shows its sign-in line rather than nothing. */
+    void api.session().then(
+      (s) => { if (live) { setSession(s); setSessionKnown(true); } },
+      () => { if (live) { setSession(SIGNED_OUT); setSessionKnown(true); } },
+    );
     const off = api.onSession((s) => {
       /*
        * Signing out, or switching to another account, takes the account's unsent drafts off this
