@@ -38,7 +38,7 @@ export function PresenceBox({ place, heading, note }: PresenceBoxProps) {
 
   const items: ReactNode[] = presence.names.map((n) =>
     n.staff && settings.staffGroup
-      ? <span key={n.id}><Link to={profile(n.id)}>{n.name}</Link> <StaffGroup name={settings.staffGroup.name} /></span>
+      ? <span key={n.id}><Link to={profile(n.id)}>{n.name}</Link><span className="kb-visually-hidden">, </span><StaffGroup name={settings.staffGroup.name} /></span>
       : <Link key={n.id} to={profile(n.id)}>{n.name}</Link>);
   const hud = player.hudCharacter;
   if (hud?.presenceHidden) {

@@ -140,6 +140,8 @@ begin
   end if;
   if staff_memory_latest('mt-boss') #>> '{hobby,name}' is distinct from 'later' then raise exception 'the latest memory is not the latest: %', staff_memory_latest('mt-boss'); end if;
   if staff_memory_latest('mt-other') is not null then raise exception 'a Boss with no memory has one'; end if;
+  if staff_memory_at('mt-boss') is distinct from (select max(at) from staff_memory where staff = 'mt-boss') then raise exception 'staff_memory_at is not the latest version''s time'; end if;
+  if staff_memory_at('mt-other') is not null then raise exception 'a Boss with no memory has a time'; end if;
   r := public_characters(jsonb_build_array(boss_char, gen_random_uuid(), 'not a uuid', 7, null));
   if r is distinct from jsonb_build_array(boss_char) then raise exception 'public_characters: %', r; end if;
   if public_characters('"x"') is distinct from '[]'::jsonb then raise exception 'public_characters of a non-list'; end if;

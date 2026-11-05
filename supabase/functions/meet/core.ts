@@ -166,11 +166,13 @@ export async function runMeeting(
 
     const career = await db.rpc<Career>('staff_career', { of_staff: bossKey });
 
-    // Its own notes since its last memory version (the last meeting; a Boss with no memory of its own reads all it has written), the newest
+    // Its own notes since its latest memory version (not the last recorded slot: a meeting that failed after its slot was recorded and before its
+    // memory was saved would otherwise skip the notes in between; a Boss with no memory of its own reads all it has written), the newest
     // `notesRead`. They are read as its own thoughts and never acted on.
+    const memoryAt = hasOwnMemory ? await db.rpc<string | null>('staff_memory_at', { staff: bossKey }) : null;
     const bossNotes = await db.rpc<string[]>('staff_notes_recent', {
       of_staff: bossKey,
-      since: hasOwnMemory && context.lastSlot ? new Date(Date.parse(context.lastSlot)).toISOString() : null,
+      since: memoryAt ? new Date(Date.parse(memoryAt)).toISOString() : null,
       most: settings.notesRead,
     });
 

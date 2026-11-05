@@ -87,7 +87,8 @@ describe('the presence box', () => {
     show(<PresenceBox place={{ kind: 'thread', thread: seeded.thread }} heading={HEADING} />);
     const box = await screen.findByRole('region', { name: HEADING });
     await within(box).findByRole('link', { name: 'Hall Monitor' });
-    expect(box).toHaveTextContent('Hall Monitor Test Cores');
+    expect(box).toHaveTextContent('Hall Monitor, Test Cores');
+    expect(within(box).getByText((_, el) => el?.textContent === ', ' && el.tagName === 'SPAN')).toHaveClass('kb-visually-hidden');
     expect(box).toHaveTextContent('Pipewrench');
     expect(box).not.toHaveTextContent('Pipewrench Test Cores');
     expect(box).not.toHaveTextContent('Spritey Test Cores');

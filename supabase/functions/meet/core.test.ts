@@ -63,6 +63,8 @@ interface World {
   career?: { led: unknown[]; offices: unknown[] };
   /** What staff_notes_recent returns for the Boss (default: none). */
   notes?: string[];
+  /** When the Boss's latest memory version was written (staff_memory_at; default: with the last meeting's slot). */
+  memoryAt?: string;
 }
 function fakeDb(w: World = {}) {
   const calls: { fn: string; args: Record<string, any> }[] = [];
@@ -85,6 +87,7 @@ function fakeDb(w: World = {}) {
           return { since: args.since, until: args.until, threads: [{ thread: HOT, title: 'Pineapple', board: 'Mario Fan Games', posts: 4, heat: 1, controversy: 0.5, length: 9 }], standings: [], moves: [], quotes: [], bossReactions: [], excerpts: [], characters: [{ id: ANN, name: 'Ann the Great', staff: false }] } as T;
         case 'staff_notes_recent': return (w.notes ?? []) as T;
         case 'staff_career': return (w.career ?? { led: [], offices: [] }) as T;
+        case 'staff_memory_at': return (w.memories?.[String(args.staff)] ? (w.memoryAt ?? '2026-10-31T09:23:00.000Z') : null) as T;
         case 'staff_memory_latest': return (w.memories?.[String(args.staff)] ?? null) as T;
         case 'bank_now': return (w.bank ?? 5.9) as T;
         case 'public_characters': return (args.ids as string[]).filter((id) => (w.publicIds ?? [ANN, BOB]).includes(id)) as T;
@@ -535,7 +538,7 @@ test('the Boss\'s recent notes are read for the Boss itself since the last meeti
   assert.equal(reads.length, 1);
   assert.equal(reads[0]!.args.of_staff, BOSS);
   assert.equal(reads[0]!.args.most, dividedWorld.settings.notesRead);
-  assert.equal(reads[0]!.args.since, '2026-10-31T09:23:00.000Z', 'since the last meeting');
+  assert.equal(reads[0]!.args.since, '2026-10-31T09:23:00.000Z', 'since its latest memory version');
   const system = m.chats[0]!.system;
   assert.ok(system.includes('Ann is up to something.') && system.includes('Bob owes me a rematch.'), system);
   assert.ok(system.includes('your own recent thoughts'), system);
@@ -545,4 +548,11 @@ test('the Boss\'s recent notes are read for the Boss itself since the last meeti
   const bare = fakeModels(answer([]));
   await run(fakeDb().db, bare.models, quiet, SLOT, clock, noFeeds);
   assert.ok(!bare.chats[0]!.system.includes('your own recent thoughts'), 'a Boss with no notes is told nothing of them');
+});
+
+test('the Boss\'s notes are read since its latest memory version, not the last recorded slot: a meeting that failed after its slot was recorded skipped no notes', async () => {
+  const served = fakeDb({ notes: ['Written in the gap.'], memories: { [BOSS]: memory('my own hobby') }, memoryAt: '2026-10-29T08:00:00.000Z' });
+  await run(served.db, fakeModels(answer([])).models, quiet, SLOT, clock, noFeeds);
+  const read = served.calls.find((c) => c.fn === 'staff_notes_recent')!;
+  assert.equal(read.args.since, '2026-10-29T08:00:00.000Z', 'earlier than the recorded slot (2026-10-31T09:23Z), where the memory was last saved');
 });
