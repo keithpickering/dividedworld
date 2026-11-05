@@ -45,7 +45,8 @@ describe('the stylesheets: no dialog draws its own frame', () => {
   /**
    * The classes that are a dialog's box: the frame's, and each `className` given to an `Overlay` or a `Float` in the engine or an instance,
    * read from the source (the AST), so a new dialog is held to the frame the moment it is written, with no list to add it to. A className
-   * that is not a string the test can read (a variable, a call) is a dialog it cannot see, and fails.
+   * that is not a string the test can read (a variable, a call, a wrapper's pass-through) or a spread that could carry one is a dialog it
+   * cannot see, and fails.
    */
   const FRAME_CLASSES = ['kb-glass-dialog', 'kb-glass-cut-dialog'];
   /** Each `className` string of an `<Overlay>` or `<Float>` in `text`, and the className expressions that could not be read as strings. */
@@ -63,6 +64,7 @@ describe('the stylesheets: no dialog draws its own frame', () => {
       const tag = ts.isJsxOpeningElement(n) || ts.isJsxSelfClosingElement(n) ? n.tagName.getText(sf) : null;
       if (tag === 'Overlay' || tag === 'Float') {
         const attrs = (n as ts.JsxOpeningElement).attributes.properties;
+        for (const a of attrs) if (ts.isJsxSpreadAttribute(a)) unread.push(`${file}: ${a.getText(sf)}`);
         const cls = attrs.find((a): a is ts.JsxAttribute => ts.isJsxAttribute(a) && a.name.getText(sf) === 'className');
         const init = cls?.initializer;
         const expr = init && ts.isJsxExpression(init) ? init.expression : init;
@@ -87,6 +89,12 @@ describe('the stylesheets: no dialog draws its own frame', () => {
     const planted = dialogClasses('const A = () => <Overlay title="x" className="kb-planted-dialog" onClose={f}>x</Overlay>; const B = () => <Float className={open ? "kb-planted-float kb-two" : \'kb-three\'} />;');
     expect([...planted.found].sort()).toEqual(['kb-planted-dialog', 'kb-planted-float', 'kb-three', 'kb-two']);
     expect(dialogClasses('const A = () => <Overlay className={cls} />;').unread).toHaveLength(1);
+    /* A wrapper that passes its className through hides the class from every place it is used, so the wrapper itself is the unreadable one. */
+    expect(dialogClasses('const W = ({ className }) => <Overlay title="x" className={className} onClose={f}>x</Overlay>;').unread).toHaveLength(1);
+    expect(dialogClasses('const W = (p) => <Float className={`kb-a ${p.className}`} />;').unread).toHaveLength(1);
+    /* A spread can carry a className too, which nothing here reads. */
+    expect(dialogClasses('const W = (props) => <Overlay title="x" {...props} onClose={f}>x</Overlay>;').unread).toHaveLength(1);
+    expect(dialogClasses('const W = (props) => <Float {...props} className="kb-ok" />;').unread).toHaveLength(1);
     expect(dialogClasses('const A = () => <Panel className="kb-not-a-dialog" />;').found.size).toBe(0);
   });
 
