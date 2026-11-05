@@ -116,6 +116,10 @@ label.toggle input { width: 18px; height: 18px; accent-color: var(--guide); }
 .g-label { position: absolute; font: 700 10px/1 var(--mono); color: var(--guide); background: rgb(0 0 0 / 0.75); padding: 2px 4px; white-space: nowrap; }
 .pc-guides-outer { display: none; position: absolute; inset: 0; pointer-events: none; border-radius: inherit; }
 .show-guides .pc-guides-outer { display: block; }
+.pc-guides-outer::after { /* the keep-clear line: no piece crosses it outward */
+  content: ''; position: absolute; inset: 2cqw; border-radius: 3cqw;
+  outline: 1.5px dotted var(--guide);
+}
 .pc-guides-outer::before { /* the border band */
   content: ''; position: absolute; inset: 0; border-radius: inherit;
   border: 5cqw solid rgb(182 255 59 / 0.12);
@@ -184,36 +188,36 @@ label.toggle input { width: 18px; height: 18px; accent-color: var(--guide); }
 .pc-foot .credit { color: var(--text-2); font-style: italic; letter-spacing: 0.06em; }
 
 /* ---- Layout A · Low name: today's card, grown up ---- */
-[data-layout='low'] .pc-badges { left: 3.5cqw; top: 1.4cqw; }
-[data-layout='low'] .pc-gem { right: 1.6cqw; top: 1.6cqw; }
-[data-layout='low'] .pc-name-plate { left: -1.5cqw; width: 84%; top: 89cqw; height: 15cqw; }
+[data-layout='low'] .pc-badges { left: 6cqw; top: 2.2cqw; }
+[data-layout='low'] .pc-gem { right: 4cqw; top: 4cqw; }
+[data-layout='low'] .pc-name-plate { left: 2.5cqw; width: 82%; top: 89cqw; height: 15cqw; }
 [data-layout='low'] .pc-name { left: 7cqw; right: 14cqw; top: 91cqw; font-size: 11.5cqw; }
 [data-layout='low'] .pc-line { left: 9cqw; right: 9cqw; top: 108cqw; bottom: 9cqw; }
-[data-layout='low'] .pc-price { right: 5cqw; bottom: 1.4cqw; }
+[data-layout='low'] .pc-price { right: 6cqw; bottom: 2.2cqw; }
 
 /* ---- Layout B · Banner: the title bar across the top border ---- */
-[data-layout='banner'] .pc-name-plate { left: 2cqw; right: 2cqw; top: 1.4cqw; height: 15cqw; box-shadow: inset 0 0 0 1.5px var(--c), 0 0 10px color-mix(in srgb, var(--c) 50%, transparent); background: rgb(0 0 0 / 0.88); }
-[data-layout='banner'] .pc-name { left: 7cqw; right: 18cqw; top: 3.6cqw; font-size: 11cqw; white-space: nowrap; overflow: hidden; text-overflow: clip; }
-[data-layout='banner'] .pc-gem { right: 4cqw; top: 3cqw; width: 10cqw; height: 10cqw; }
-[data-layout='banner'] .pc-badges { left: -1.5cqw; top: 20cqw; flex-direction: column; align-items: flex-start; gap: 1.6cqw; }
+[data-layout='banner'] .pc-name-plate { left: 2.5cqw; right: 2.5cqw; top: 2.5cqw; height: 15cqw; box-shadow: inset 0 0 0 1.5px var(--c), 0 0 10px color-mix(in srgb, var(--c) 50%, transparent); background: rgb(0 0 0 / 0.88); }
+[data-layout='banner'] .pc-name { left: 7cqw; right: 18cqw; top: 4.6cqw; font-size: 11cqw; white-space: nowrap; overflow: hidden; text-overflow: clip; }
+[data-layout='banner'] .pc-gem { right: 6cqw; top: 5cqw; width: 10cqw; height: 10cqw; }
+[data-layout='banner'] .pc-badges { left: 2.5cqw; top: 21cqw; flex-direction: column; align-items: flex-start; gap: 1.6cqw; }
 [data-layout='banner'] .pc-line { left: 9cqw; right: 9cqw; top: 98cqw; bottom: 9cqw; }
-[data-layout='banner'] .pc-price { left: 50%; bottom: 1.4cqw; translate: -50% 0; }
+[data-layout='banner'] .pc-price { left: 50%; bottom: 2.2cqw; translate: -50% 0; }
 
 .pc-coin { display: none; }
 /* ---- Layout C · Cost corner: the price as a coin on the corner ---- */
 [data-layout='corner'] .pc-coin {
-  position: absolute; z-index: 4; left: -3cqw; top: -3cqw; display: grid;
-  width: 22cqw; height: 22cqw; border-radius: 50%;
+  position: absolute; z-index: 4; left: 2.5cqw; top: 2.5cqw; display: grid;
+  width: 19cqw; height: 19cqw; border-radius: 50%;
   display: grid; place-items: center;
   background: radial-gradient(circle at 38% 30%, #fff6c8, var(--gold) 50%, var(--gold-deep));
   box-shadow: 0 0 0 1.5px var(--card), 0 0 14px rgb(255 210 63 / 0.6);
   color: #241500; font: 800 clamp(8px, 7.6cqw, 20px)/1 var(--body); letter-spacing: -0.02em;
 }
-[data-layout='corner'] .pc-gem { right: 1.6cqw; top: 1.6cqw; }
+[data-layout='corner'] .pc-gem { right: 4cqw; top: 4cqw; }
 [data-layout='corner'] .pc-name-plate { left: 6cqw; right: 6cqw; top: 90cqw; height: 14cqw; box-shadow: inset 0 -1.2cqw 0 var(--c); }
 [data-layout='corner'] .pc-name { left: 9cqw; right: 9cqw; top: 92cqw; font-size: 11cqw; text-align: center; }
 [data-layout='corner'] .pc-line { left: 9cqw; right: 9cqw; top: 108cqw; bottom: 10cqw; }
-[data-layout='corner'] .pc-badges { left: 0; right: 0; bottom: 1.4cqw; justify-content: center; }
+[data-layout='corner'] .pc-badges { left: 0; right: 0; bottom: 2.2cqw; justify-content: center; }
 [data-layout='corner'] .pc-price { display: none; }
 
 /* ---- what each size holds ---- */
@@ -223,12 +227,12 @@ label.toggle input { width: 18px; height: 18px; accent-color: var(--guide); }
 .pc[data-size='slot'] .pc-name { font-size: 15cqw; }
 .pc[data-size='phone'] .pc-name { font-size: 13.5cqw; }
 [data-layout='low'] .pc[data-size='slot'] .pc-name { top: auto; bottom: 9cqw; }
-[data-layout='low'] .pc[data-size='slot'] .pc-name-plate { top: auto; bottom: 7cqw; height: 20cqw; width: 96%; }
+[data-layout='low'] .pc[data-size='slot'] .pc-name-plate { top: auto; bottom: 7cqw; height: 20cqw; width: calc(100% - 5cqw); }
 [data-layout='low'] .pc[data-size='phone'] .pc-name { top: auto; bottom: 10cqw; }
-[data-layout='low'] .pc[data-size='phone'] .pc-name-plate { top: auto; bottom: 8cqw; height: 18cqw; width: 94%; }
+[data-layout='low'] .pc[data-size='phone'] .pc-name-plate { top: auto; bottom: 8cqw; height: 18cqw; width: calc(100% - 5cqw); }
 [data-layout='corner'] .pc[data-size='slot'] .pc-name, [data-layout='corner'] .pc[data-size='phone'] .pc-name { top: auto; bottom: 12cqw; }
 [data-layout='corner'] .pc[data-size='slot'] .pc-name-plate, [data-layout='corner'] .pc[data-size='phone'] .pc-name-plate { top: auto; bottom: 9cqw; height: 20cqw; left: 3cqw; right: 3cqw; }
-[data-layout='corner'] .pc[data-size='slot'] .pc-coin { width: 26cqw; height: 26cqw; }
+[data-layout='corner'] .pc[data-size='slot'] .pc-coin { width: 22cqw; height: 22cqw; }
 [data-layout='banner'] .pc[data-size='slot'] .pc-name, [data-layout='banner'] .pc[data-size='phone'] .pc-name { font-size: 11cqw; top: 4cqw; }
 [data-layout='banner'] .pc[data-size='slot'] .pc-gem, [data-layout='banner'] .pc[data-size='phone'] .pc-gem { display: none; }
 [data-layout='banner'] .pc[data-size='slot'] .pc-name, [data-layout='banner'] .pc[data-size='phone'] .pc-name { right: 4cqw; }
@@ -276,7 +280,7 @@ figcaption { font: 700 13px var(--mono); color: var(--text-2); }
   <header>
     <p class="eyebrow">Divided World · design session board · 2026-11-05</p>
     <h1>Postcard template</h1>
-    <p class="lede">One 2:3 card at every size. A black border the engine draws in the card's color, badges that cross it, and an inner canvas the art owns. Default art keeps to the focus zone and may glow past it. A full-art variant fills the whole canvas.</p>
+    <p class="lede">One 2:3 card at every size. A black border the engine draws in the card's color, badges that sit on its inner edge, and an inner canvas the art owns. Default art keeps to the focus zone and may glow past it. A full-art variant fills the whole canvas.</p>
   </header>
 
   <section aria-labelledby="h-anatomy">
@@ -300,7 +304,7 @@ figcaption { font: 700 13px var(--mono); color: var(--text-2); }
               <tr><td>Canvas</td><td class="num">540 × 840 @ 30,30 · r 15</td><td>The inner area, and the art file's whole canvas. The only clip.</td></tr>
               <tr><td>Focus zone</td><td class="num">460 × 400 @ 70,100</td><td>Where a default art's subject sits, on a transparent ground. Glow, rings and splashes may run past it. A guide, never a mask.</td></tr>
               <tr><td>Plate zone</td><td class="num">lower third</td><td>Always covered by the name plate and the text plate, which are translucent glass. Art there reads as texture behind words.</td></tr>
-              <tr><td>Crossing pieces</td><td class="num">on the border</td><td>Alignment and play (parallelograms), rarity (a gem on its point), price, and the foot line with the artist's credit. They come from the card's data.</td></tr>
+              <tr><td>Border pieces</td><td class="num">keep clear 12</td><td>Alignment and play (parallelograms), rarity (a gem on its point), price, and the foot line with the artist's credit, all from the card's data. They may cover the border's inner part, never its outer edge: every piece stays 12 units inside the silhouette (the dotted line).</td></tr>
               <tr><td>Mark</td><td class="num">96 × 96 · live 72</td><td>A separate square silhouette, drawn to read at 18px inside the post's mark tile.</td></tr>
             </tbody>
           </table>
@@ -415,8 +419,8 @@ function card(key, variant, size) {
 }
 
 const LAYOUTS = [
-  { id: 'low', title: 'Low name', from: 'From today\'s card and Pokémon\'s full arts', text: 'Badges cross the top border, the gem sits on the corner, and the name plate cuts across the art\'s lower third. The art gets the most uninterrupted height.' },
-  { id: 'banner', title: 'Banner', from: 'From Magic and Yu-Gi-Oh!', text: 'A title bar crosses the top border and the badges cross the left one. The name is read first and in the same place at every size, but the bar takes a slice off the top of the art.' },
+  { id: 'low', title: 'Low name', from: 'From today\'s card and Pokémon\'s full arts', text: 'Badges sit on the top border, the gem sits in the corner, and the name plate cuts across the art\'s lower third. The art gets the most uninterrupted height.' },
+  { id: 'banner', title: 'Banner', from: 'From Magic and Yu-Gi-Oh!', text: 'A title bar sits on the top border and the badges on the left one. The name is read first and in the same place at every size, but the bar takes a slice off the top of the art.' },
   { id: 'corner', title: 'Cost corner', from: 'From Hearthstone and Lorcana', text: 'The price is a coin on the top-left corner and the badges sit on the bottom border. It is the most familiar game shape, but it puts the price on every size, where today it shows only on the sheet.' },
 ];
 
