@@ -185,15 +185,20 @@ a module is not found, stop there and file what it printed.
 
 ### 7. Netlify: the site
 
-1. Add a new site from this GitHub repository, on `main`. `netlify.toml` already says the build command
-   (`npm run build:web`), the published directory (`web/dist`), Node 22, the single-page redirect and the security
-   headers; leave those fields as the file sets them.
+1. Add a new site from this GitHub repository, with `production` as its production branch, not `main`. If
+   `production` does not exist yet, dispatch **Release** once from the Actions tab first (step 4 says why).
+   `netlify.toml` already says the build command (`npm run build:web`), the published directory (`web/dist`), Node 22,
+   the single-page redirect and the security headers; leave those fields as the file sets them.
 2. Under **Site configuration > Environment variables**, set `VITE_SUPABASE_URL` to `https://<ref>.supabase.co` and
    `VITE_SUPABASE_PUBLISHABLE_KEY` to the `default` publishable key. Both are public by design; no other variable
    belongs here, and no secret key ever does. A build without the two succeeds and the app refuses to start, saying
    so.
 3. Deploy, then under **Domain management** add `dw.gripe`, point its DNS at Netlify as Netlify says (or move the
    domain's DNS to Netlify), and let Netlify issue the certificate. Turn on **Force HTTPS**.
+4. `production` is moved only by the Release workflow (`.github/workflows/release.yml`), once a night: it builds
+   `main`'s head, runs the SQL suite and the e2e flows on it, and only then fast-forwards `production`. `main` is a
+   branch deploy the team can see. Under **Site configuration > Build & deploy > Branches and deploy contexts**, add
+   `main` as a branch deploy.
 
 ### 8. The first admin, and the first invites
 
@@ -222,7 +227,9 @@ the first account is opened with registration briefly open.
   lives.
 - Every later deploy is the same in a shorter order: `supabase db push` and `supabase migration list` when there are
   new migrations, `supabase functions deploy --use-api` when the functions, the engine or the instance changed, the
-  seed when the instance's settings or vocabulary changed, and Netlify deploys `main` by itself.
+  seed when the instance's settings or vocabulary changed, and the Release workflow moves the site once a night, or
+  when you dispatch it. Migrations and functions are not in the release yet. They join it when the first instance is
+  deployed (issue #243).
 - Keep an export. `tools/export-instance.mjs` writes every table and every avatar to a directory only you can read,
   and `tools/import-instance.mjs` brings it back into a fresh project. Use the database's session-pooler connection
   string from the dashboard's **Connect** dialog as `--from`, and the `default` secret key in `KAYFABB_STORAGE_KEY`.
