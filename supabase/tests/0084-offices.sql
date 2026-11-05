@@ -13,7 +13,7 @@ begin
         'moveLanded', jsonb_build_array('Landed: {move}.'),
         'bossFarewell', jsonb_build_array('Farewell from {boss}.'),
         'bossArrival', jsonb_build_array('Hello from {boss}.'))),
-    'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+    'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'of-boss',
       'staffGroup', jsonb_build_object('name', 'Test Cores'),
       'staff', jsonb_build_array(
@@ -81,7 +81,7 @@ begin
   -- staff_now lists exactly the mods; the Boss's office is never a row.
   if (select string_agg(staff, ',' order by staff) from staff_now) is distinct from 'of-mod' then raise exception 'staff_now should hold of-mod alone: %', (select string_agg(staff, ',') from staff_now); end if;
   -- A reseed hires no one again and debuts no one.
-  perform seed_instance((select jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb, 'system', jsonb_build_object(
+  perform seed_instance((select jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb, 'system', jsonb_build_object(
       'firstBoss', 'of-boss', 'firstStaff', jsonb_build_array('of-mod'), 'staff', jsonb_build_array(
         jsonb_build_object('key', 'of-boss', 'name', 'Of Boss'), jsonb_build_object('key', 'of-mod', 'name', 'Of Mod'), jsonb_build_object('key', 'of-w1', 'name', 'Of W One'))))));
   if (select count(*) from staff_offices) is distinct from 1 then raise exception 'a reseed wrote office rows'; end if;
@@ -157,7 +157,7 @@ begin
   if pg_temp.office('of-w1') is distinct from 'benched' then raise exception 'the bench did not take: %', pg_temp.office('of-w1'); end if;
   -- A reseed leaves a benched persona benched.
   perform tests.unbecome();
-  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb, 'system', jsonb_build_object(
+  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb, 'system', jsonb_build_object(
       'firstBoss', 'of-boss', 'firstStaff', jsonb_build_array('of-mod', 'of-w1'), 'staff', jsonb_build_array(
         jsonb_build_object('key', 'of-boss', 'name', 'Of Boss'), jsonb_build_object('key', 'of-mod', 'name', 'Of Mod'), jsonb_build_object('key', 'of-w1', 'name', 'Of W One')))));
   perform tests.become(admin);
@@ -289,7 +289,7 @@ end $$;
 -- ---- A reseed that adds a waiting persona to firstStaff hires it as a mod and debuts it ----
 do $$
 declare
-  late jsonb := jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb, 'system', jsonb_build_object(
+  late jsonb := jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb, 'system', jsonb_build_object(
       'firstBoss', 'of-boss', 'firstStaff', jsonb_build_array('of-mod'), 'staff', jsonb_build_array(
         jsonb_build_object('key', 'of-boss', 'name', 'Of Boss'), jsonb_build_object('key', 'of-mod', 'name', 'Of Mod'), jsonb_build_object('key', 'of-w4', 'name', 'Of W Four'))));
 begin
@@ -379,7 +379,7 @@ declare
   q bigint;
 begin
   -- of-w5 waits (undebuted), and is on boss_roster().
-  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb, 'system', jsonb_build_object(
+  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb, 'system', jsonb_build_object(
       'firstBoss', 'of-boss', 'firstStaff', jsonb_build_array('of-mod'), 'staff', jsonb_build_array(
         jsonb_build_object('key', 'of-boss', 'name', 'Of Boss'), jsonb_build_object('key', 'of-mod', 'name', 'Of Mod'), jsonb_build_object('key', 'of-w1', 'name', 'Of W One'),
         jsonb_build_object('key', 'of-w5', 'name', 'Of W Five')))));
