@@ -29,7 +29,7 @@ import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, 
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
 import { PLAYS_PER_POST } from '../cards/plays.ts';
-import type { RecordKind } from '../profile/record.ts';
+import { PROFILE_ROWS, RECORD_PAGE, type RecordKind } from '../profile/record.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
   AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffProfile,
@@ -1862,7 +1862,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!character) return null;
       const reveals = core.classReveals([id]);
       const turns = core.turnsAnnounced([id]);
-      const acts = core.characterActs(id, ['post', 'spin', 'card'], { offset: 0, limit: 5 });
+      const acts = core.characterActs(id, ['post', 'spin', 'card'], { offset: 0, limit: PROFILE_ROWS });
       return {
         character, counts: core.characterCounts(id), standing: core.standingPlace(id), settledAt: core.lastSettledAt(), season: core.season(), reveals, turns, acts,
         targets: core.actsById([...acts.flatMap((a) => (a.kind === 'card' && a.targetActId !== null ? [a.targetActId] : [])), ...turns.map((t) => t.act)]),
@@ -1872,7 +1872,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     recordPage(id, asked, page): RecordPage | null {
       const character = core.characters([id])[0];
       if (!character) return null;
-      const RECORD = 20; // RECORD_PAGE (engine/ui/profile/record.ts)
+      const RECORD = RECORD_PAGE;
       const kind: RecordKind = (['all', 'post', 'spin', 'card', 'class', 'seasons'] as const).find((k) => k === asked) ?? 'all';
       const shown = Math.min(Math.max(page, 1), 10_000);
       const reveals = kind === 'all' || kind === 'class' ? core.classReveals([id]) : [];
@@ -1883,7 +1883,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const limit = kind === 'all' ? shown * RECORD - from : RECORD;
       const acts = core.characterActs(id, kinds[kind], { offset: from, limit });
       return {
-        kind, page: shown, character, counts: core.characterCounts(id), reveals, turns, seasons, acts, from,
+        kind, page: shown, character,
+        /* record_page reads no counters for the class and seasons views, and the adapter reads its null as zeros. */
+        counts: kind === 'class' || kind === 'seasons' ? { posts: 0, spins: 0, cards: 0 } : core.characterCounts(id), reveals, turns, seasons, acts, from,
         targets: core.actsById([...acts.flatMap((a) => (a.kind === 'card' && a.targetActId !== null ? [a.targetActId] : [])), ...turns.map((t) => t.act)]),
         unread: core.alertsUnread(),
       };
