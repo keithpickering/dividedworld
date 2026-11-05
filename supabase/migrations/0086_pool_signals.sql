@@ -1,18 +1,25 @@
 -- The pool's signals (the staff roster design, sections 4, 6 and "A busy instance"; its plan, Task 8). pool_signals(since, until) is
 -- everything the daily pick reads about play, as jsonb, in one call:
 --
---   named       [{staff, act, thread}]  posts in the window whose words contain a debuted persona's name.
---   quoted      [{staff, act, thread}]  posts in the window that quote or reply to a staff post, read as system_digest's `quoted` reads
+--   named       [{staff, act, thread, n}]  posts in the window whose words contain a debuted persona's name; `n` is that persona's total
+--                                       before the cap of five newest rows.
+--   quoted      [{staff, act, thread, n}]  posts in the window that quote or reply to a staff post, read as system_digest's `quoted` reads
 --                                       them (0052): through the target Act, never a character quoting itself.
---   legacy      [{staff, move, act, how}]  move_end and move_keep Acts in the window on a move whose owner is not the current Boss: `staff`
---                                       is that owner, `move` the move, `act` the end or the keep, `how` the end's reason (met, expired,
---                                       reversed, superseded, spent) or `kept`. An admin's reversal of such a move is a move_end with
+--   legacy      [{staff, maker, move, act, how, n}]  move_end and move_keep Acts in the window on a move that is not the current Boss's
+--                                       own making: its owner at the Act is not the current Boss, or its maker (the staff key that wrote
+--                                       the move) is not. `staff` is the owner at the Act, `maker` the writer, `move` the move, `act` the
+--                                       end or the keep, `how` the end's reason (met, expired, reversed, superseded, spent) or `kept`, and
+--                                       `n` the maker's total rows before the cap of five newest. An admin's reversal of such a move is a move_end with
 --                                       why `reversed`, so it is here.
 --   reversals   [{staff, move, act}]    admin reversals (a move_end, why `reversed`, by `admin`) in the window of the current Boss's moves.
 --   handovers   [{season, outgoing, boss, how, at}]  season_handovers landed in the window. Not `note`: that is an error's words.
---   hot         [{thread, board, heat, starter, starterStaff, staffStarted}]  the top `digestThreads` threads by posts in the window,
+--   hot         [{thread, board, heat, starter, starterStaff, staffStarted, authors, boardMaker}]  the top `digestThreads` threads by posts in the window,
 --                                       heat as the digest counts it (posts an hour). `starter` is the character whose post opened the
 --                                       thread; `starterStaff` its staff key where it is a persona's, and `staffStarted` says so.
+--                                       `authors` is [{character, posts}], the distinct characters who posted in it in the window, ten
+--                                       busiest first (character ids, as memory opinions name them). `boardMaker` is the staff key of
+--                                       whoever made the board, from the Act that recorded it: no Act records a board's creation (a
+--                                       move can only rename one; boards are made by seed and by admins), so it is null until one does.
 --   tallies     [{staff, posts, reactions}]  each debuted persona's posts in the last `poolPriorityDays` before `until`, and the public
 --                                       tallies on them, every kind of reaction counted alike. A persona with no posts is listed with 0.
 --
@@ -73,12 +80,13 @@ revoke execute on function settings_held_pool_signals() from public, anon, authe
 -- positional parameters so a test can prepare and explain exactly this text. The pattern is one alternation of every persona's folded
 -- name, longest first, escaped (every character that is not a letter, digit or space gets a backslash), with a whole-name edge on each
 -- side; regexp_matches runs it once per post and the rows join back to the personas by the folded name that matched. A post's words
--- are its current words, an edit being the words (acts_public.current_payload).
+-- are its current words, an edit being the words (acts_public.current_payload), with every run of whitespace (a line break, a tab) one
+-- space, so a name split across a line is still the name. Each persona's rows say their total in `n`, before the five-row cap.
 create function pool_named(timestamptz, timestamptz) returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
   with
   names as (
-    select cp.staff, name_skeleton(cp.name) as folded
+    select cp.staff, regexp_replace(name_skeleton(cp.name), '\s+', ' ', 'g') as folded
     from characters_public cp
     where cp.staff is not null and cp.office is distinct from 'developer'
   ),
@@ -88,7 +96,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
     from names n where n.folded <> ''
   ),
   posts as (
-    select p.id, p.thread, p.created_at, c.staff as author_staff, coalesce(p.current_payload ->> 'body', '') as body
+    select p.id, p.thread, p.created_at, c.staff as author_staff, regexp_replace(coalesce(p.current_payload ->> 'body', ''), '\s+', ' ', 'g') as body
     from acts_public p join characters_public c on c.id = p.character
     where p.kind = 'post' and p.created_at >= $1 and p.created_at < $2
   ),
@@ -112,9 +120,9 @@ language sql stable security definer set search_path = public, pg_temp as $$
     where n.staff is distinct from p.author_staff
   ),
   ranked as (
-    select h.*, row_number() over (partition by h.staff order by h.created_at desc, h.id desc) as rn from hits h
+    select h.*, row_number() over (partition by h.staff order by h.created_at desc, h.id desc) as rn, count(*) over (partition by h.staff) as n from hits h
   )
-  select coalesce(jsonb_agg(jsonb_build_object('staff', r.staff, 'act', r.id, 'thread', r.thread) order by r.staff, r.created_at desc, r.id desc), '[]'::jsonb)
+  select coalesce(jsonb_agg(jsonb_build_object('staff', r.staff, 'act', r.id, 'thread', r.thread, 'n', r.n) order by r.staff, r.created_at desc, r.id desc), '[]'::jsonb)
   from ranked r where r.rn <= 5
 $$;
 
@@ -146,17 +154,19 @@ begin
                where k.kind = 'move_keep' and k.target_act_id = e.target_act_id
                  and (e.kind = 'move_end' or (k.created_at, k.id) < (e.created_at, e.id))
                order by k.created_at desc, k.id desc limit 1),
-             (select mc.staff from acts_public mv join characters_public mc on mc.id = mv.character where mv.id = e.target_act_id and mv.kind = 'move')) as owner
+             (select mc.staff from acts_public mv join characters_public mc on mc.id = mv.character where mv.id = e.target_act_id and mv.kind = 'move')) as owner,
+           (select mc.staff from acts_public mv join characters_public mc on mc.id = mv.character where mv.id = e.target_act_id and mv.kind = 'move') as maker
     from acts_public e
     where e.kind in ('move_end', 'move_keep') and e.created_at >= since and e.created_at < until
   )
   select jsonb_build_object(
     'named', pool_named(since, until),
     'quoted', (
-      select coalesce(jsonb_agg(jsonb_build_object('staff', q.staff, 'act', q.act, 'thread', q.thread) order by q.staff, q.created_at desc, q.act desc), '[]'::jsonb)
+      select coalesce(jsonb_agg(jsonb_build_object('staff', q.staff, 'act', q.act, 'thread', q.thread, 'n', q.n) order by q.staff, q.created_at desc, q.act desc), '[]'::jsonb)
       from (
         select tc.staff, w.id as act, w.thread, w.created_at,
-               row_number() over (partition by tc.staff order by w.created_at desc, w.id desc) as rn
+               row_number() over (partition by tc.staff order by w.created_at desc, w.id desc) as rn,
+               count(*) over (partition by tc.staff) as n
         from acts_public w
         join acts_public tgt on tgt.id = w.target_act_id
         join characters_public tc on tc.id = tgt.character
@@ -164,10 +174,10 @@ begin
           and tgt.kind = 'post' and tc.staff is not null and tc.office is distinct from 'developer' and w.character <> tgt.character
       ) q where q.rn <= 5),
     'legacy', (
-      select coalesce(jsonb_agg(jsonb_build_object('staff', l.owner, 'move', l.move, 'act', l.act, 'how', l.how) order by l.owner, l.created_at desc, l.act desc), '[]'::jsonb)
+      select coalesce(jsonb_agg(jsonb_build_object('staff', l.owner, 'maker', l.maker, 'move', l.move, 'act', l.act, 'how', l.how, 'n', l.n) order by l.maker, l.created_at desc, l.act desc), '[]'::jsonb)
       from (
-        select v.*, row_number() over (partition by v.owner order by v.created_at desc, v.act desc) as rn
-        from ev v where v.owner is not null and v.owner is distinct from boss
+        select v.*, row_number() over (partition by v.maker order by v.created_at desc, v.act desc) as rn, count(*) over (partition by v.maker) as n
+        from ev v where v.owner is not null and v.maker is not null and (v.owner is distinct from boss or v.maker is distinct from boss)
       ) l where l.rn <= 5),
     'reversals', (
       select coalesce(jsonb_agg(jsonb_build_object('staff', v.owner, 'move', v.move, 'act', v.act) order by v.created_at desc, v.act desc), '[]'::jsonb)
@@ -177,9 +187,14 @@ begin
       from season_handovers h where h.landed_at >= since and h.landed_at < until),
     'hot', (
       select coalesce(jsonb_agg(jsonb_build_object('thread', x.thread, 'board', x.board, 'heat', x.heat, 'starter', x.starter,
-                                                   'starterStaff', x.starter_staff, 'staffStarted', x.starter_staff is not null) order by x.posts desc, x.thread), '[]'::jsonb)
+                                                   'starterStaff', x.starter_staff, 'staffStarted', x.starter_staff is not null,
+                                                   'authors', x.authors, 'boardMaker', null) order by x.posts desc, x.thread), '[]'::jsonb)
       from (
-        select tl.id as thread, tl.board, h.posts, round(h.posts / hours, 2) as heat, tl.first_character as starter, sc.staff as starter_staff
+        select tl.id as thread, tl.board, h.posts, round(h.posts / hours, 2) as heat, tl.first_character as starter, sc.staff as starter_staff,
+               (select coalesce(jsonb_agg(jsonb_build_object('character', a.character, 'posts', a.n) order by a.n desc, a.character), '[]'::jsonb)
+                from (select p.character, count(*) as n from acts_public p
+                      where p.thread = tl.id and p.kind = 'post' and p.created_at >= since and p.created_at < until and p.character is not null
+                      group by p.character order by n desc, p.character limit 10) a) as authors
         from (
           select p.thread, count(*) as posts from acts_public p
           where p.kind = 'post' and p.created_at >= since and p.created_at < until and p.character is not null

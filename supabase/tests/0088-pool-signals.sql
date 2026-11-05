@@ -99,6 +99,7 @@ declare
   a uuid; b uuid; c uuid;
   t1 uuid; t2 uuid; t3 uuid; t4 uuid;
   clerk_post uuid; warden_post uuid; edit_target uuid; w uuid; old_post uuid;
+  m_kept_met uuid; m_w uuid; hc uuid[]; t5 uuid;
   m_old_end uuid; m_old_keep uuid; m_old_rev uuid; m_old_early uuid; m_pat_rev uuid; m_pat_met uuid; m_pat_early uuid; m_kept_rev uuid;
   i integer;
 begin
@@ -122,6 +123,8 @@ begin
   -- One post names two personas, and punctuation is an edge.
   insert into pg_temp.fx values ('n_both', tests.post(b, t1, 'The Clerk and Warden walk in.', base + interval '12 minutes'));
   insert into pg_temp.fx values ('n_pat', tests.post(a, t1, 'Pat Boss, what now?', base + interval '13 minutes'));
+  -- A name split across a line break (or a tab, or doubled spaces) is still the name: all whitespace is one space.
+  insert into pg_temp.fx values ('n_newline', tests.post(c, t1, E'Then The\nClerk\t  walked off', base + interval '9 minutes'));
   -- A name inside a longer word is not the name; a waiting persona and the developer are named by no one.
   perform tests.post(a, t1, 'Wardenclyffe tower is tall', base + interval '14 minutes');
   perform tests.post(a, t1, 'We met in the Clerkenwell', base + interval '15 minutes');
@@ -167,6 +170,15 @@ begin
   m_pat_met := pg_temp.land('ps-pat', base - interval '5 days');
   m_pat_early := pg_temp.land('ps-pat', base - interval '5 days');
   m_kept_rev := pg_temp.land('ps-old', base - interval '5 days');
+  -- Boss A (Old Boss) makes a move, Boss B (Pat, the current Boss) keeps it before the window, and Pat's own tick ends it in the window.
+  m_kept_met := pg_temp.land('ps-old', base - interval '5 days');
+  perform pg_temp.keep('ps-pat', m_kept_met, base - interval '1 day');
+  insert into pg_temp.fx values ('m_kept_met', m_kept_met), ('e_kept_met', pg_temp.finish(m_kept_met, 'met', 'tick', base + interval '46 minutes'));
+  -- Six moves of the Warden's end in the window: its five newest are carried, and the total is told.
+  for i in 1..6 loop
+    m_w := pg_temp.land('ps-warden', base - interval '5 days');
+    insert into pg_temp.fx values ('e_w_' || i, pg_temp.finish(m_w, 'expired', 'tick', base + interval '47 minutes' + i * interval '1 minute'));
+  end loop;
   insert into pg_temp.fx values ('m_old_end', m_old_end), ('m_old_keep', m_old_keep), ('m_old_rev', m_old_rev), ('m_pat_rev', m_pat_rev), ('m_kept_rev', m_kept_rev);
   perform pg_temp.keep('ps-pat', m_kept_rev, base - interval '1 day');
   insert into pg_temp.fx values ('e_old_end', pg_temp.finish(m_old_end, 'expired', 'tick', base + interval '40 minutes'));
@@ -237,12 +249,18 @@ begin
   -- The Clerk: a lowercase mention, a shared post, an edited-in mention. Not "the Clerkenwell", not the early or end-of-window ones.
   -- Warden: a lookalike spelling, the shared post, a persona's mention of it; not Wardenclyffe, not its own words. Old Boss: its five newest.
   want := pg_temp.expected(array[
-    'ps-clerk', fx ->> 'n_clerk_lower', 'ps-clerk', fx ->> 'n_both', 'ps-clerk', fx ->> 'n_edited',
+    'ps-clerk', fx ->> 'n_clerk_lower', 'ps-clerk', fx ->> 'n_both', 'ps-clerk', fx ->> 'n_edited', 'ps-clerk', fx ->> 'n_newline',
     'ps-warden', fx ->> 'n_warden_look', 'ps-warden', fx ->> 'n_both', 'ps-warden', fx ->> 'n_staff_names',
     'ps-pat', fx ->> 'n_pat',
     'ps-old', fx ->> 'n_old_3', 'ps-old', fx ->> 'n_old_4', 'ps-old', fx ->> 'n_old_5', 'ps-old', fx ->> 'n_old_6', 'ps-old', fx ->> 'n_old_7']);
   if pg_temp.pairs(d, 'named') is distinct from want then
     raise exception E'named is\n%\nwanted\n%', pg_temp.pairs(d, 'named'), want;
+  end if;
+  -- The five-row cap is told: Old Boss has seven mentions and five rows, each saying seven; the Clerk's four say four.
+  if exists (select 1 from jsonb_array_elements(d -> 'named') e where e ->> 'staff' = 'ps-old' and e ->> 'n' is distinct from '7')
+     or exists (select 1 from jsonb_array_elements(d -> 'named') e where e ->> 'staff' = 'ps-clerk' and e ->> 'n' is distinct from '4')
+     or exists (select 1 from jsonb_array_elements(d -> 'named') e where e ->> 'n' is null) then
+    raise exception 'named does not tell its totals: %', d -> 'named';
   end if;
   -- Every row carries the thread of its Act.
   if exists (select 1 from jsonb_array_elements(d -> 'named') e where (e ->> 'thread')::uuid is distinct from (select thread from acts where id = (e ->> 'act')::uuid)) then
@@ -286,6 +304,9 @@ begin
   if pg_temp.pairs(d, 'quoted') is distinct from pg_temp.expected(array['ps-clerk', fx ->> 'q_player', 'ps-clerk', fx ->> 'q_staff', 'ps-warden', fx ->> 'q_warden']) then
     raise exception 'quoted is %', pg_temp.pairs(d, 'quoted');
   end if;
+  if exists (select 1 from jsonb_array_elements(d -> 'quoted') e where e ->> 'n' is distinct from case e ->> 'staff' when 'ps-clerk' then '2' else '1' end) then
+    raise exception 'quoted does not tell its totals: %', d -> 'quoted';
+  end if;
   if exists (select 1 from jsonb_array_elements(d -> 'quoted') e where (e ->> 'thread')::uuid is distinct from (select thread from acts where id = (e ->> 'act')::uuid)) then
     raise exception 'a quoted row has the wrong thread: %', d -> 'quoted';
   end if;
@@ -311,7 +332,10 @@ declare
 begin
   -- Legacy: Old Boss's move that expired, the keep of its move by the current Boss (still Old Boss's signal: it is a move it made), and
   -- the reversal an admin gave another of its moves. Not the early end, not Pat's own moves.
-  if pg_temp.pairs(d, 'legacy') is distinct from pg_temp.expected(array['ps-old', fx ->> 'e_old_end', 'ps-old', fx ->> 'k_old_keep', 'ps-old', fx ->> 'e_old_rev']) then
+  -- The current Boss's keep-then-end of a move Old Boss made is Old Boss's legacy too (`staff` is the owner at the Act, `maker` who wrote it).
+  if pg_temp.pairs(d, 'legacy') is distinct from pg_temp.expected(array['ps-old', fx ->> 'e_old_end', 'ps-old', fx ->> 'k_old_keep', 'ps-old', fx ->> 'e_old_rev',
+        'ps-pat', fx ->> 'e_kept_met', 'ps-pat', fx ->> 'e_kept_rev',
+        'ps-warden', fx ->> 'e_w_2', 'ps-warden', fx ->> 'e_w_3', 'ps-warden', fx ->> 'e_w_4', 'ps-warden', fx ->> 'e_w_5', 'ps-warden', fx ->> 'e_w_6']) then
     raise exception 'legacy is %', pg_temp.pairs(d, 'legacy');
   end if;
   select e into r from jsonb_array_elements(d -> 'legacy') e where e ->> 'act' = fx ->> 'e_old_end';
@@ -320,6 +344,21 @@ begin
   if r ->> 'move' is distinct from fx ->> 'm_old_keep' or r ->> 'how' is distinct from 'kept' then raise exception 'a kept move reads %', r; end if;
   select e into r from jsonb_array_elements(d -> 'legacy') e where e ->> 'act' = fx ->> 'e_old_rev';
   if r ->> 'move' is distinct from fx ->> 'm_old_rev' or r ->> 'how' is distinct from 'reversed' then raise exception 'a reversed move reads %', r; end if;
+  select e into r from jsonb_array_elements(d -> 'legacy') e where e ->> 'act' = fx ->> 'e_kept_met';
+  if r ->> 'maker' is distinct from 'ps-old' or r ->> 'staff' is distinct from 'ps-pat' or r ->> 'how' is distinct from 'met' or r ->> 'n' is distinct from '5' then
+    raise exception 'a kept-then-ended move reads %', r;
+  end if;
+  -- Every row names the staff key that wrote its move, as acts_public holds it.
+  if exists (select 1 from jsonb_array_elements(d -> 'legacy') e
+             where e ->> 'maker' is distinct from (select c.staff from acts_public mv join characters_public c on c.id = mv.character where mv.id = (e ->> 'move')::uuid)) then
+    raise exception 'legacy names a maker that did not write the move: %', d -> 'legacy';
+  end if;
+  -- The cap is told, not silent: Warden's six rows are five, each saying six; the others say how many they have.
+  if (select count(*) from jsonb_array_elements(d -> 'legacy') e where e ->> 'maker' = 'ps-warden') is distinct from 5
+     or exists (select 1 from jsonb_array_elements(d -> 'legacy') e where e ->> 'maker' = 'ps-warden' and e ->> 'n' is distinct from '6')
+     or exists (select 1 from jsonb_array_elements(d -> 'legacy') e where e ->> 'maker' = 'ps-old' and e ->> 'n' is distinct from '5') then
+    raise exception 'legacy does not tell its total: %', d -> 'legacy';
+  end if;
   -- The owner a row names is move_owner's (0051) for an end: asked of the database, the owner of each ended move.
   if exists (select 1 from jsonb_array_elements(d -> 'legacy') e where e ->> 'how' <> 'kept' and move_owner((e ->> 'move')::uuid) is distinct from e ->> 'staff') then
     raise exception 'legacy names an owner move_owner does not: %', d -> 'legacy';
@@ -361,12 +400,13 @@ declare
   t2 uuid := (select id from threads where title = 'Staff started');
   t4 uuid := (select id from threads where title = 'Fourth');
   general uuid := (select id from boards where slug = 'general');
+  hc uuid[]; t5 uuid; i integer;
 begin
   if jsonb_array_length(d -> 'hot') <> 3 then raise exception 'hot is not capped at digestThreads: %', d -> 'hot'; end if;
-  -- In the window t1 has 13 posts, t4 seven, t2 four and the third thread two: the top three, hottest first.
+  -- In the window t1 has 14 posts, t4 seven, t2 four and the third thread two: the top three, hottest first.
   if (d #>> '{hot,0,thread}')::uuid <> t1 or (d #>> '{hot,1,thread}')::uuid <> t4 or (d #>> '{hot,2,thread}')::uuid <> t2 then raise exception 'hot is ordered %', d -> 'hot'; end if;
   if (d #>> '{hot,0,board}')::uuid is distinct from general then raise exception 'hot does not name its board: %', d -> 'hot'; end if;
-  if (d #>> '{hot,0,heat}')::numeric is distinct from 13.00 or (d #>> '{hot,1,heat}')::numeric is distinct from 7.00 then raise exception 'heat is posts an hour: %', d -> 'hot'; end if;
+  if (d #>> '{hot,0,heat}')::numeric is distinct from 14.00 or (d #>> '{hot,1,heat}')::numeric is distinct from 7.00 then raise exception 'heat is posts an hour: %', d -> 'hot'; end if;
   -- Who started each: a player started t1 and t4 (their first post); the Clerk started t2.
   if (d #>> '{hot,0,staffStarted}')::boolean is distinct from false or (d #>> '{hot,1,staffStarted}')::boolean is distinct from false
      or (d #>> '{hot,2,staffStarted}')::boolean is distinct from true or (d #>> '{hot,2,starterStaff}') is distinct from 'ps-clerk'
@@ -374,6 +414,32 @@ begin
     raise exception 'who started the hot threads: %', d -> 'hot';
   end if;
   if (d #>> '{hot,2,starter}')::uuid is distinct from (select id from characters where staff = 'ps-clerk') then raise exception 'the starter is %', d -> 'hot' -> 2; end if;
+  -- Who posted in each hot thread: distinct characters with their posts in the window, from the public Acts (the character id opinions use).
+  if exists (
+    select 1 from jsonb_array_elements(d -> 'hot') h
+    where (select coalesce(jsonb_agg(jsonb_build_object('character', x.character, 'posts', x.n) order by x.n desc, x.character), '[]'::jsonb)
+           from (select p.character, count(*) as n from acts_public p
+                 where p.thread = (h ->> 'thread')::uuid and p.kind = 'post' and p.character is not null and p.created_at >= pg_temp.base() and p.created_at < pg_temp.base() + interval '1 hour'
+                 group by p.character order by n desc, p.character limit 10) x)
+          is distinct from h -> 'authors') then
+    raise exception 'hot authors are %', d -> 'hot';
+  end if;
+  if jsonb_array_length(d #> '{hot,0,authors}') < 4 then raise exception 'the busiest thread has too few authors: %', d #> '{hot,0}'; end if;
+  -- A board's maker: no Act records a board's creation (no move creates one), so it is null, and the key is there.
+  if exists (select 1 from jsonb_array_elements(d -> 'hot') h where not (h ? 'boardMaker') or h -> 'boardMaker' is distinct from 'null'::jsonb) then
+    raise exception 'hot does not carry boardMaker (null): %', d -> 'hot';
+  end if;
+  -- At most ten authors, the busiest first: twelve characters post in a thread in a window of its own.
+  t5 := tests.thread('Crowded');
+  for i in 1..12 loop
+    hc[i] := tests.character(tests.account('ps-h' || i), 'Ps H' || i);
+    perform tests.post(hc[i], t5, 'hello', pg_temp.base() + interval '3 hours' + i * interval '1 minute');
+  end loop;
+  perform tests.post(hc[12], t5, 'again', pg_temp.base() + interval '3 hours 30 minutes');
+  d := pg_temp.signals(pg_temp.base() + interval '3 hours', pg_temp.base() + interval '4 hours');
+  if jsonb_array_length(d #> '{hot,0,authors}') <> 10 or (d #>> '{hot,0,authors,0,character}')::uuid <> hc[12] or (d #>> '{hot,0,authors,0,posts}') <> '2' then
+    raise exception 'authors are not the ten busiest: %', d #> '{hot,0,authors}';
+  end if;
   d := pg_temp.signals(pg_temp.base() + interval '10 days', pg_temp.base() + interval '11 days');
   if d -> 'hot' is distinct from '[]'::jsonb then raise exception 'a window with no posts has hot threads: %', d -> 'hot'; end if;
 end $$;
