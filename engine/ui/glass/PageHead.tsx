@@ -25,7 +25,7 @@ export function PageHead({ title, eyebrow, lead, actions, count, size, tabs }: {
         {title}
         {count !== undefined && <> <span className="kb-page-head-count">{count}</span></>}
       </h1>
-      {tabs !== undefined && <div className="kb-page-head-tabs">{tabs}</div>}
+      {tabs && <div className="kb-page-head-tabs">{tabs}</div>}
       {lead !== undefined && <p className="kb-page-head-lead kb-calm">{lead}</p>}
       {actions !== undefined && <ButtonRow>{actions}</ButtonRow>}
     </div>

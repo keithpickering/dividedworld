@@ -76,6 +76,18 @@ describe('PageHead', () => {
   });
 });
 
+describe('PageHead tabs', () => {
+  test('a screen with no tabs passes false and gets no empty tabs wrapper (it could add a row gap on the phone)', () => {
+    const { container } = renderInWorld(<PageHead title="Log" tabs={false} />);
+    expect(container.querySelector('.kb-page-head-tabs')).toBeNull();
+  });
+
+  test('tabs that are given are drawn in their wrapper', () => {
+    const { container } = renderInWorld(<PageHead title="Log" tabs={<nav aria-label="Characters" />} />);
+    expect(container.querySelector('.kb-page-head-tabs nav')).not.toBeNull();
+  });
+});
+
 describe('every tab strip of GlassButtons', () => {
   /*
    * An unselected tab is `secondary` everywhere: `quiet` fails contrast on the bare smoke. A tab strip is a
