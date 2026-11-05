@@ -77,7 +77,7 @@
 
 :where(:root[data-kb-layout='phone']) .kb-page-head-title { font-size: 4rem; }
 :where(:root[data-kb-layout='phone']) .kb-page-head[data-kb-size='roster'] .kb-page-head-title { font-size: var(--kb-glass-size-display-m); }
-:where(:root[data-kb-layout='phone']) .kb-page-head-count { font-size: var(--kb-glass-size-phone-display); }
+:where(:root[data-kb-layout='phone']) .kb-page-head-count { font-size: var(--kb-glass-size-display-s); }
 :where(:root[data-kb-layout='phone']) :is(.kb-page-head-lead, .kb-page-head-eyebrow) { font-size: var(--kb-glass-size-phone-body); }
 
 /* ---- the button row ---- */

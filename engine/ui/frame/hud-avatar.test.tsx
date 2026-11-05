@@ -25,4 +25,9 @@ describe('the phone HUD\'s avatar', () => {
     expect(d).toMatch(/left:\s*auto/);
     expect(d).toMatch(/top:\s*auto/);
   });
+  test('grows with the text, so its placeholder letter stays inside its border', () => {
+    const d = decls(`${PHONE} .kb-hud-avatar`);
+    expect(d).toMatch(/width:\s*2\.75rem/);
+    expect(d).toMatch(/height:\s*2\.75rem/);
+  });
 });
