@@ -58,24 +58,13 @@ export interface ChatterAnswer {
 
 /**
  * What the model layer repairs a chat answer against (its ledger row then names a rejection and the trims it made): the shape, with
- * nothing cut. `repair` keeps only the fields a rule names, so the optional ones are listed, and so is each offered card's options, field
- * by field as its schema names them (every one optional: the card's own validator says what is missing, and falls back). Their bounds are
- * repairChatter's, which knows what was asked and offered. A card's `on` is text here, not an enum, so a card the model mis-says does not
- * cost the answer.
+ * nothing cut. `repair` keeps only the fields a rule names, so the optional ones are listed. A card's options are named `any`, passed
+ * through unchanged: a wrongly typed option (a color that is a number) must not cost the persona's post, so the type check is not the
+ * model layer's. repairChatter shape-checks the config (an object, the chosen card's key only) and the Edge Function's `validateConfig`
+ * types the fields and falls back when they fail. A card's `on` is text here, not an enum, so a card the model mis-says does not cost
+ * the answer. `offered` is accepted so the call site is the same as the schema's.
  */
-export function chatterRule(c: { readonly offered: readonly OfferedCard[] }): Rule {
-  const config: Record<string, Rule> = {};
-  for (const o of c.offered) {
-    if (!o.options) continue;
-    const props = (o.options.schema['properties'] ?? {}) as Record<string, { type?: unknown }>;
-    const fields: Record<string, Rule> = {};
-    for (const [name, p] of Object.entries(props)) {
-      if (p.type === 'string') fields[name] = { type: 'string', optional: true };
-      else if (p.type === 'number' || p.type === 'integer') fields[name] = { type: 'number', optional: true };
-      else if (p.type === 'boolean') fields[name] = { type: 'boolean', optional: true };
-    }
-    config[o.key] = { type: 'object', optional: true, fields };
-  }
+export function chatterRule(_c: { readonly offered: readonly OfferedCard[] }): Rule {
   return {
     type: 'object',
     fields: {
@@ -83,10 +72,7 @@ export function chatterRule(c: { readonly offered: readonly OfferedCard[] }): Ru
       title: { type: 'string', optional: true },
       card: {
         type: 'object', optional: true,
-        fields: {
-          key: { type: 'string' }, on: { type: 'string' },
-          ...(Object.keys(config).length ? { config: { type: 'object' as const, optional: true, fields: config } } : {}),
-        },
+        fields: { key: { type: 'string' }, on: { type: 'string' }, config: { type: 'any', optional: true } },
       },
       note: { type: 'string', optional: true },
     },

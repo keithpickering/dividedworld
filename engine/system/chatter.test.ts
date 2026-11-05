@@ -231,10 +231,31 @@ test('the prompt puts a card\'s options on the line after it, and names where th
   assert.ok(lines[at + 2]!.startsWith('- plain:'), 'a card without options has no second line');
 });
 
-test('the model layer\'s rule keeps an offered card\'s options and drops the fields it does not name', () => {
-  const r = repair({ words: 'Hi.', card: { key: 'inked', on: 'reply', config: { inked: { color: 'teal', seed: 4 }, other: { a: 1 } } } }, chatterRule({ offered: [INKED] }));
+test('the model layer\'s rule passes an offered card\'s options through whole, a wrongly typed one included, so the post is not lost', () => {
+  const rule = chatterRule({ offered: [INKED] });
+  const r = repair({ words: 'Hi.', card: { key: 'inked', on: 'reply', config: { inked: { color: 'teal', seed: 4 }, other: { a: 1 } } } }, rule);
   assert.ok(r.ok);
-  assert.deepEqual((r.value as any).card.config, { inked: { color: 'teal' } });
+  assert.deepEqual((r.value as any).card.config, { inked: { color: 'teal', seed: 4 }, other: { a: 1 } });
+  const bad = { words: 'Hi.', card: { key: 'inked', on: 'reply', config: { inked: { color: 5 } } } };
+  const w = repair(bad, rule);
+  assert.ok(w.ok, 'a number where the ink color belongs does not reject the answer');
+  const k = ok(w.value, { offered: [INKED] });
+  assert.deepEqual(k.answer.card, { key: 'inked', on: 'reply', config: { color: 5 } }, 'the config reaches the card\'s validator, which refuses it and falls back');
+});
+
+test('whatever junk the config is, the model layer keeps the post and repairChatter trims it, never throws', () => {
+  const rule = chatterRule({ offered: [INKED] });
+  for (const junk of ['teal', 7, true, ['a'], { inked: null }, { inked: 'teal' }, { inked: ['x'] }, { inked: 3 }]) {
+    const w = repair({ words: 'Hi.', card: { key: 'inked', on: 'reply', config: junk } }, rule);
+    assert.ok(w.ok, JSON.stringify(junk));
+    const k = ok(w.value, { offered: [INKED] });
+    assert.equal(k.answer.words, 'Hi.');
+    assert.equal(k.answer.card?.key, 'inked');
+    if (k.answer.card?.config !== undefined) assert.ok(typeof k.answer.card.config === 'object' && !Array.isArray(k.answer.card.config), JSON.stringify(junk));
+  }
+  const s = ok({ words: 'Hi.', card: { key: 'inked', on: 'reply', config: 'teal' } }, { offered: [INKED] });
+  assert.deepEqual(s.answer.card, { key: 'inked', on: 'reply' });
+  assert.deepEqual(s.trims.map((t) => t.predicate), ['isObject']);
 });
 
 test('the chosen card\'s options become the answer\'s config, and another card\'s are dropped with a trim', () => {

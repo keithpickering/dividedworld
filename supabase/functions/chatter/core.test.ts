@@ -560,8 +560,7 @@ test('Autocorrect is offered with its options in the prompt and the schema, and 
   const schema = offered.schema as any;
   assert.deepEqual(Object.keys(schema.properties.card.properties.config.properties).sort(), ['autocorrect', 'stick-around', 'whoops']);
   assert.match(offered.system, /card\.config\.autocorrect/);
-  assert.ok((offered.rules as any).fields.card.fields.config.fields.whoops, 'and the model layer\'s rule names them');
-  assert.ok(m.chats.filter((c) => !(c.schema as any).properties.card).every((c) => !JSON.stringify(c.rules).includes('whoops')), 'a call with no card offered has no options in its rule');
+  assert.deepEqual((offered.rules as any).fields.card.fields.config, { type: 'any', optional: true }, 'and the model layer\'s rule passes the options through for the card\'s own validator');
 });
 
 test('a persona\'s valid Autocorrect is played with its phrase, on the whole post, and the config is on the record', async () => {
@@ -627,4 +626,45 @@ test('an answer carrying another card\'s options keeps only the chosen card\'s',
   assert.ok(out.status === 'ok');
   assert.deepEqual(d.of('staff_play_card')[0]!.config, { color: 'teal' });
   assert.ok(out.picks.some((x) => x.trims.some((t) => t.path === 'card.config.autocorrect' && t.predicate === 'notChosen')));
+});
+
+test('a wrongly typed option costs neither the post nor the card: the ink falls back with a trim', async () => {
+  const d = fakeDb(oneReply);
+  const out = await run(d, fakeModels(asks({ key: 'whoops', config: { whoops: { color: 5 } } })));
+  assert.ok(out.status === 'ok');
+  assert.equal(d.count('write_staff_act'), 3, 'every post is written');
+  const play = d.of('staff_play_card')[0]!;
+  const config = play.config as { color: string };
+  assert.ok((whoopsRules.staffConfigs ?? []).some((c) => (c as { color: string }).color === config.color), 'the fallback ink');
+  const pick = out.picks.find((x) => x.card)!;
+  assert.equal(pick.status, 'posted');
+  assert.ok(pick.trims.some((t) => t.path === 'card.config.whoops'));
+  const auto = await run(fakeDb(oneReply), fakeModels(asks({ key: 'autocorrect', config: { autocorrect: 'teal' } })));
+  assert.ok(auto.status === 'ok' && auto.picks.every((x) => x.status === 'posted'), 'a non-object option for the chosen card is trimmed and the post stands');
+});
+
+test('a Set with options reads its own new post as the target, after it is written, and sets with the decided config', async () => {
+  // No Divided World card with options is a Set (the trap-card's outcome is a payout, which the pool does not set), so the instance
+  // here carries a Set trap that strikes Whoops!, with Whoops!'s options: the persona's ink is checked by the struck card.
+  const whoops = dividedWorld.cards.find((c) => c.key === 'whoops')!;
+  const snare = { ...whoops, key: 'snare', name: 'Snare', play: 'set' as const, trap: { trigger: { on: 'reply' as const }, outcome: { do: 'strike' as const, card: 'whoops' } } };
+  const tuned: Instance = { ...dividedWorld, cards: [...dividedWorld.cards, snare] };
+  const d = fakeDb(oneReply);
+  const m = fakeModels((r) => ({ words: `A reply from ${r.staff}.`, card: { key: 'snare', on: 'own', config: { snare: { color: '#12ab34' } } } }));
+  const out = await run(d, m, tuned);
+  assert.ok(out.status === 'ok');
+  const set = d.of('staff_set_card')[0]!;
+  assert.ok(set, 'the Set was made');
+  assert.equal(set.card, 'snare');
+  assert.deepEqual(set.config, { color: '#12ab34' });
+  const post = d.state.acts.find((a) => a.id === set.target)!;
+  assert.equal(post.kind, 'post', 'the target is the persona\'s own new post');
+  const reads = d.calls.filter((c) => c.fn === 'card_target_reach' && c.args.target === set.target);
+  assert.ok(reads.length >= 1, 'that post was read as the card\'s target');
+  const order = d.calls.map((c, i) => [c.fn, c.fn === 'write_staff_act' ? c.args.staff_key : c.args.target ?? c.args.staff_key, i] as const);
+  const wrote = d.calls.findIndex((c) => c.fn === 'write_staff_act' && c.args.staff_key === set.staff_key);
+  const read = d.calls.findIndex((c) => c.fn === 'card_target_reach' && c.args.target === set.target);
+  const setAt = d.calls.findIndex((c) => c.fn === 'staff_set_card');
+  assert.ok(wrote >= 0 && wrote < read && read < setAt, 'written, then read, then set');
+  void order;
 });

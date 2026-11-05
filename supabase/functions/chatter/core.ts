@@ -376,6 +376,8 @@ async function onePick(r: PickRun): Promise<PickRecord> {
         if (config === null && rules) config = staffConfigOf(rules, seededRng(`kayfabb-pool-card:${day}:${p.staff}`));
         if (config === null) throw new DatabaseError('no configuration could be built for the card', '', 400, 'no configuration could be built for the card');
         record['cardConfig'] = config;
+        // Unlike supabase/functions/act/core.ts's play_card, staff_play_card is sent no `version`, so an edit landing between the read
+        // above and this play is not refused (as before the options existed).
         const played = answer.card.on === 'reply'
           ? await db.rpc<{ id: string }>('staff_play_card', { staff_key: p.staff, card: answer.card.key, target: p.quoting, config, message: '', pool_day: day })
           : await db.rpc<{ id: string }>('staff_set_card', { staff_key: p.staff, card: answer.card.key, target: post, config });
