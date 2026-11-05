@@ -59,3 +59,35 @@ for (const [label, viewport] of VIEWPORTS) {
     });
   }
 }
+
+/*
+ * A page title never breaks inside a word. The display headings allow it (`overflow-wrap: anywhere`, base.css, once) so that a long one never runs past
+ * the column, and the phone's title size is capped against the width so that no single word of the page's titles needs it: at 390px and
+ * 200% text, each word of each page title lies on one line.
+ */
+test.describe('on a phone at 200% text', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+  for (const s of PAGES) {
+    test(`${s.name}: no page title breaks inside a word`, async ({ page }) => {
+      await setTextSize(page, 200);
+      await open(page, s);
+      const broken = await page.evaluate(() => {
+        const out: string[] = [];
+        for (const el of document.querySelectorAll('.kb-page-head-title')) {
+          const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+          for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+            for (const m of (n.textContent ?? '').matchAll(/\S+/gu)) {
+              const range = document.createRange();
+              range.setStart(n, m.index!);
+              range.setEnd(n, m.index! + m[0].length);
+              const tops = new Set([...range.getClientRects()].filter((r) => r.width > 0).map((r) => Math.round(r.top / 4)));
+              if (tops.size > 1) out.push(`"${m[0]}" in ${el.tagName.toLowerCase()}.${el.className}`);
+            }
+          }
+        }
+        return out;
+      });
+      expect(broken).toEqual([]);
+    });
+  }
+});

@@ -42,7 +42,6 @@
   flex: 0 0 auto;
   max-width: 100%;
   margin: 0;
-  overflow-wrap: anywhere;
   font-family: var(--kb-glass-font-display);
   font-size: 7rem;
   font-weight: 400;
@@ -89,8 +88,13 @@
   margin-top: 8px;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-page-head-title { font-size: 4rem; }
-:where(:root[data-kb-layout='phone']) .kb-page-head[data-kb-size='roster'] .kb-page-head-title { font-size: var(--kb-glass-size-display-m); }
+/*
+ * The phone's title is capped against the width so that the longest word a page's title holds ("Characters", "Strategy") lies on one line at
+ * every text size: Anton's capitals run about 4.5em for ten letters, and a title that breaks inside a word is not read as its word
+ * (e2e/glass-layout.spec.ts holds it at 390px and 200%). `overflow-wrap: anywhere` stays for a title that is longer than that.
+ */
+:where(:root[data-kb-layout='phone']) .kb-page-head-title { font-size: min(4rem, 17vw); }
+:where(:root[data-kb-layout='phone']) .kb-page-head[data-kb-size='roster'] .kb-page-head-title { font-size: min(var(--kb-glass-size-display-m), 17vw); }
 :where(:root[data-kb-layout='phone']) .kb-page-head-count { font-size: var(--kb-glass-size-display-s); }
 :where(:root[data-kb-layout='phone']) :is(.kb-page-head-lead, .kb-page-head-eyebrow) { font-size: var(--kb-glass-size-phone-body); }
 
