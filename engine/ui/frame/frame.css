@@ -729,6 +729,13 @@
 
 :where(:root[data-kb-layout='phone']) .kb-hud-door-title {
   font-size: var(--kb-glass-size-phone-display);
+  /*
+   * The title's line is one em tall, and the display face's glyph box is half an em taller, a quarter above and a quarter below, so the box
+   * reaches up past the line. The glass clips at its top (overflow: clip), and the bar's top padding takes up only the first 8px of that
+   * reach: at 200% text the reach is 10px, and the box stood above the glass. The margin gives it the rest, and is nothing where the
+   * padding is enough.
+   */
+  margin-top: max(0px, calc(0.25em - var(--kb-hud-pad-top)));
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hud-door-line,
@@ -746,6 +753,7 @@
  */
 :where(:root[data-kb-layout='phone']) .kb-hud-bar {
   --kb-hud-row-gap: 8px;
+  --kb-hud-pad-top: 8px;
   --kb-hud-join: calc(var(--kb-hud-row-gap) / 2);
 }
 
@@ -1080,7 +1088,7 @@
   height: auto;
   min-height: 0;
   /* Room under the last row, so at a larger text size its descenders are not cut at the window's foot. */
-  padding: 8px 16px 0.25rem;
+  padding: var(--kb-hud-pad-top) 16px 0.25rem;
 }
 
 /*
