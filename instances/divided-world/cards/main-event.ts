@@ -14,6 +14,6 @@ export const mainEvent: CardRules<Record<string, never>> = {
   pins: true,
   priceKey: 'mainEvent.price',
   playPrice: () => 0,
-  canApply: (target, effects) => landsOn(mainEvent, target, effects),
+  canApply: (target, effects, _config, now) => landsOn(mainEvent, target, effects, now),
   validateConfig: () => ok({}),
 };

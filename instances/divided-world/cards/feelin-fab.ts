@@ -14,6 +14,6 @@ export const feelinFab: CardRules<Record<string, never>> = {
   stack: 3,
   priceKey: 'feelinFab.price',
   playPrice: () => 0,
-  canApply: (target, effects) => landsOn(feelinFab, target, effects),
+  canApply: (target, effects, _config, now) => landsOn(feelinFab, target, effects, now),
   validateConfig: () => ok({}),
 };

@@ -1028,7 +1028,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
     const effects = effectsOn(target);
     // Decided and written in one step, with no gap for an edit to land in, so the fake checks no version (play_card does, 0070).
-    const decided = decidePlay(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effects, config, message, { nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k });
+    const decided = decidePlay(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effects, config, message, { now: new Date(now()), nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k });
     if (!decided.ok) return refuse(decided.why, message !== undefined && !casterMessage(message).ok ? 'message' : 'config');
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -1130,7 +1130,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const at = stamp ?? now();
     const goal = { reach, [reach]: target } as unknown as CardTarget;
     const effects = effectsOnTarget(goal, reachEffects(reach, target), above, new Date(at));
-    const decided = play === 'use' ? decideUse(rules, settings, goal, effects, config, message) : decidePlay(rules, settings, goal, effects, config, message, { now: new Date(at) });
+    const decided = play === 'use' ? decideUse(rules, settings, goal, effects, config, message, { now: new Date(at) }) : decidePlay(rules, settings, goal, effects, config, message, { now: new Date(at) });
     if (!decided.ok) return refuse(decided.why, message !== undefined && !casterMessage(message).ok ? 'message' : 'config');
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -1159,7 +1159,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (!on) return refuse('there is no such post', 'target');
     const rules = instance.cards.find((c) => c.key === card)!;
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
-    const decided = decideSet(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effectsOn(target), config, instance.cards);
+    const decided = decideSet(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effectsOn(target), config, instance.cards, new Date(now()));
     if (!decided.ok) return refuse(decided.why, 'config');
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -1187,7 +1187,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (!on) return refuse('there is no such post', 'target');
     const rules = instance.cards.find((c) => c.key === card)!;
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
-    const decided = decideUse(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effectsOn(target), config, message);
+    const decided = decideUse(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effectsOn(target), config, message, { now: new Date(now()) });
     if (!decided.ok) return refuse(decided.why, 'config');
     const c = acting(character);
     if (isRefusal(c)) return c;

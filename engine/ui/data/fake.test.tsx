@@ -1711,7 +1711,7 @@ describe('a card beyond a post, and the effects above a page', () => {
   const sparkle = {
     key: 'sparkle', name: 'Sparkle', alignment: 'pepperoni' as const, rarity: 'uncommon' as const, priceKey: 'sparkle.price', reaches: ['character' as const], lasts: { unit: 'day' as const, count: 7 },
     playPrice: () => 0, validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
-    canApply: (t: CardTarget, e: readonly CardEffect[]) => landsOn({ key: 'sparkle', reaches: ['character'] }, t, e),
+    canApply: (t: CardTarget, e: readonly CardEffect[], _config?: unknown, now?: Date) => landsOn({ key: 'sparkle', reaches: ['character'] }, t, e, now),
   };
   const shop: Instance = { ...instance, cards: [sparkle], settings: { ...settings, economy: { 'sparkle.price': 100 } } };
   function world() {
@@ -1743,7 +1743,7 @@ describe('a card beyond a post, and the effects above a page', () => {
     must(await fake.playCard('sparkle', anaFace, boFace, {}, '', 'character', opener));
     expect(await fake.playCard('sparkle', anaFace, opener, {}, '')).toMatchObject({ field: 'reach' });
     /* The post's own plays are unchanged: the character play takes no layer there. */
-    const shopBoth: Instance = { ...shop, cards: [{ ...sparkle, reaches: ['character', 'post'], canApply: (t: CardTarget, e: readonly CardEffect[]) => landsOn({ key: 'sparkle', reaches: ['character', 'post'] }, t, e) }] };
+    const shopBoth: Instance = { ...shop, cards: [{ ...sparkle, reaches: ['character', 'post'], canApply: (t: CardTarget, e: readonly CardEffect[], _config?: unknown, now?: Date) => landsOn({ key: 'sparkle', reaches: ['character', 'post'] }, t, e, now) }] };
     const both = createFake({ instance: shopBoth });
     const a = both.seed.account('a'); const b = both.seed.account('b');
     const af = both.seed.character(a, 'A Face', 'face'); const bf = both.seed.character(b, 'B Face', 'face');
@@ -1754,8 +1754,8 @@ describe('a card beyond a post, and the effects above a page', () => {
   });
 
   test('a Use beyond a post goes on the caller\'s own character, and a board play in The System\'s announcements thread, on no post', async () => {
-    const selfie = { ...sparkle, key: 'selfie', name: 'Selfie', play: 'use' as const, canApply: (t: CardTarget, e: readonly CardEffect[]) => landsOn({ key: 'selfie', reaches: ['character'] }, t, e) };
-    const quake = { ...sparkle, key: 'quake', name: 'Quake', rarity: 'legendary' as const, reaches: ['board' as const], lasts: { unit: 'day' as const, count: 3 }, canApply: (t: CardTarget, e: readonly CardEffect[]) => landsOn({ key: 'quake', reaches: ['board'] }, t, e) };
+    const selfie = { ...sparkle, key: 'selfie', name: 'Selfie', play: 'use' as const, canApply: (t: CardTarget, e: readonly CardEffect[], _config?: unknown, now?: Date) => landsOn({ key: 'selfie', reaches: ['character'] }, t, e, now) };
+    const quake = { ...sparkle, key: 'quake', name: 'Quake', rarity: 'legendary' as const, reaches: ['board' as const], lasts: { unit: 'day' as const, count: 3 }, canApply: (t: CardTarget, e: readonly CardEffect[], _config?: unknown, now?: Date) => landsOn({ key: 'quake', reaches: ['board'] }, t, e, now) };
     /* On the wall clock: a card's own rules (landsOn) read the time as the server does, so a live board card is live to them. */
     const fake = createFake({ instance: { ...shop, cards: [selfie, quake], settings: { ...shop.settings, economy: { 'sparkle.price': 100 } } }, now: () => Date.now() });
     const ana = fake.seed.account('ana'); const bo = fake.seed.account('bo');

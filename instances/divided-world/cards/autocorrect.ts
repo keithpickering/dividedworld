@@ -53,8 +53,8 @@ export const autocorrect: CardRules<AutocorrectConfig> = {
     const volume = occurrences(target.text, config.phrase).length * characters(config.phrase);
     return Math.max(0, Math.min(economyOf(settings, 'autocorrect.perVolume') * Math.floor(volume / economyOf(settings, 'autocorrect.volumeStep')), room));
   },
-  canApply: (target, effects, config) => {
-    const lands = landsOn(autocorrect, target, effects);
+  canApply: (target, effects, config, now) => {
+    const lands = landsOn(autocorrect, target, effects, now);
     if (!lands.ok || !config || target.reach !== 'post') return lands;
     return occurrences(target.text, config.phrase).length ? lands : refuse(`“${config.phrase}” is not in this post's own words`);
   },
