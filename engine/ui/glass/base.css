@@ -63,6 +63,8 @@
   mask-size: 100% 100%;
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
+  /* The recipe's color (--kb-field-ink, a value Smoke.tsx hands over) at its opacity; with no ink, nothing. Moving between surfaces changes the computed color, which the transition below fades. */
+  background-color: color-mix(in srgb, var(--kb-field-ink, transparent) calc(var(--kb-field-alpha, 0) * 100%), transparent);
   /* A layer is its own compositor layer: sliding it is a transform, never a repaint. */
   will-change: transform;
   /* The delay is the page's clock (Smoke.tsx), so every window's copy of a layer is at the same point of its run. */

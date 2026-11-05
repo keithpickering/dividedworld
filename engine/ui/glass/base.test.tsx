@@ -96,6 +96,9 @@ describe('the smoke\'s layers', () => {
     expect(decl(layer, '-webkit-mask-image')).toBe('var(--kb-field-mask)');
     expect(decl(layer, 'mask-size')).toBe('100% 100%');
   });
+  it('take their color from the ink and alpha the component hands over, mixed in the stylesheet, so the engine writes no color', () => {
+    expect(decl(layer, 'background-color')).toBe('color-mix(in srgb, var(--kb-field-ink, transparent) calc(var(--kb-field-alpha, 0) * 100%), transparent)');
+  });
   it('cross-fade their color over the motion feel\'s screen duration, 400ms and ease-in-out until the feel defines them', () => {
     expect(decl(layer, 'transition')).toBe('background-color var(--kb-motion-screen, 400ms) var(--kb-motion-ease, ease-in-out)');
   });

@@ -74,12 +74,11 @@ afterEach(() => {
 /** Let the rasterizer's promises land and React draw what they gave. */
 const ready = () => act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
 const layers = (c: HTMLElement | Document = document) => [...c.querySelectorAll<HTMLElement>('.kb-smoke-layer')];
-/** A layer's drawn color as [r, g, b, a], from its inline background-color. */
+/** A layer's drawn color as [r, g, b, a], from the ink and alpha the component hands to base.css (which mixes them). */
 function rgba(el: HTMLElement): number[] {
-  const m = /rgba?\(([^)]+)\)/.exec(el.style.backgroundColor);
-  if (!m) throw new Error(`no color in ${el.style.backgroundColor}`);
-  const [r, g, b, a = 1] = m[1]!.split(/[\s,/]+/).filter(Boolean).map(Number);
-  return [r!, g!, b!, a];
+  const ink = el.style.getPropertyValue('--kb-field-ink');
+  const n = ink ? Number.parseInt(ink.slice(1), 16) : 0;
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255, Number(el.style.getPropertyValue('--kb-field-alpha'))];
 }
 
 describe('Smoke', () => {
@@ -136,7 +135,6 @@ describe('Smoke', () => {
   it('draws a third of each layer\'s opacity under low', async () => {
     const { container } = render(inWorld(<Smoke surface="hud" level="low" />));
     await ready();
-    /* jsdom serializes a color's alpha to three places. */
     const got = layers(container).map((e) => rgba(e)[3]!);
     expect(got[0]).toBeCloseTo(1 / 3, 3);
     expect(got[1]).toBeCloseTo(0.55 / 3, 3);

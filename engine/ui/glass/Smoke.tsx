@@ -61,15 +61,6 @@ const LOW = 1 / 3;
  */
 export const FIELD_PLACED = 'kb-field-placed';
 
-/** A layer's color where a recipe names none (a recipe with fewer colors than the field has layers): none of it. */
-const NONE: LayerColor = { color: '#000000', opacity: 0 };
-
-/** `#rrggbb` at `alpha`, as the color a layer's background is. */
-function rgba(hex: string, alpha: number): string {
-  const n = Number.parseInt(hex.slice(1, 7), 16);
-  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${Math.round(alpha * 1e6) / 1e6})`;
-}
-
 /** Where a window stands in the viewport, in the window's own pixels, and how much it is zoomed. */
 interface Placement { readonly x: number; readonly y: number; readonly zoom: number }
 const HOME: Placement = { x: 0, y: 0, zoom: 1 };
@@ -160,12 +151,15 @@ export function Smoke({ surface, level: asked }: SmokeProps) {
             const key = `${isNarrow ? 'n' : 'w'}${i}`;
             if (!url) { born.current.delete(key); return null; }
             if (!born.current.has(key)) born.current.set(key, (typeof performance === 'undefined' ? 0 : performance.now()) / 1000);
-            const { color, opacity } = colors[i] ?? NONE;
+            /* A recipe that names no color for this layer draws none of it: no ink, alpha 0. */
+            const { color, opacity } = colors[i] ?? { color: undefined, opacity: 0 };
             const { seconds, travel } = layer.drift;
             const style = {
               width: `${(env.view.width + travel) / at.zoom}px`,
               height: `${env.view.height / at.zoom}px`,
-              backgroundColor: rgba(color, opacity * scale),
+              /* The recipe's color and opacity are handed over as values; base.css mixes them, so the engine writes no color. */
+              '--kb-field-ink': color,
+              '--kb-field-alpha': opacity * scale,
               '--kb-field-mask': `url("${url}")`,
               '--kb-field-x': `${-at.x}px`,
               '--kb-field-y': `${-at.y}px`,
