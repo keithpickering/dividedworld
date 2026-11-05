@@ -661,10 +661,8 @@ test('a Set with options reads its own new post as the target, after it is writt
   assert.equal(post.kind, 'post', 'the target is the persona\'s own new post');
   const reads = d.calls.filter((c) => c.fn === 'card_target_reach' && c.args.target === set.target);
   assert.ok(reads.length >= 1, 'that post was read as the card\'s target');
-  const order = d.calls.map((c, i) => [c.fn, c.fn === 'write_staff_act' ? c.args.staff_key : c.args.target ?? c.args.staff_key, i] as const);
   const wrote = d.calls.findIndex((c) => c.fn === 'write_staff_act' && c.args.staff_key === set.staff_key);
   const read = d.calls.findIndex((c) => c.fn === 'card_target_reach' && c.args.target === set.target);
   const setAt = d.calls.findIndex((c) => c.fn === 'staff_set_card');
   assert.ok(wrote >= 0 && wrote < read && read < setAt, 'written, then read, then set');
-  void order;
 });
