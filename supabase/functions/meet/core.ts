@@ -28,6 +28,7 @@
  * model names are checked against `characters_public`.
  */
 import type { Instance } from '../../../engine/rules/types.ts';
+import type { Career } from '../../../engine/system/career.ts';
 import { DIGEST_MOST, renderDigest, type Digest } from '../../../engine/system/digest.ts';
 import { DUTY_SPECS } from '../../../engine/system/duties.ts';
 import { feedTitles } from '../../../engine/system/feed.ts';
@@ -85,6 +86,8 @@ interface Context {
   /** The slot of the last meeting that closed ok or failed: where this window starts. Null before the first. */
   readonly lastSlot: string | null;
   readonly boards: readonly { readonly id: string; readonly name: string }[];
+  /** The keys a nomination may name (0082): the roster's unretired personas that are not benched, waiting ones included, without the Boss. */
+  readonly successors?: readonly string[];
   /** The moves of an earlier Boss, still in force and shaping a board, that this Boss has neither kept nor ended (0051); absent from an older database. */
   readonly inheritanceDue?: readonly InheritedMove[];
 }
@@ -138,12 +141,15 @@ export async function runMeeting(
       await close('failed', error);
       return { status: 'failed', meeting, error };
     }
-    const boss = tuned.system.bosses.find((b) => b.key === bossKey);
+    const boss = tuned.system.roster.find((b) => b.key === bossKey);
     if (!boss) {
       const error = `the season's Boss "${bossKey}" is not in the instance's roster`;
       await close('failed', error);
       return { status: 'failed', meeting, error };
     }
+
+    // Who a nomination may name is the database's own list (boss_roster), so the prompt, the repair and the guard agree.
+    const successors = new Set(context.successors ?? []);
 
     const now = clock();
     const phase = phaseAt(context.season, now, settings, boss);
@@ -155,7 +161,20 @@ export async function runMeeting(
 
     // Its own latest memory; a Boss with none (a new one) reads nothing, or the memory of the Boss its persona inherits.
     let memory = await db.rpc<Memory | null>('staff_memory_latest', { staff: bossKey });
+    const hasOwnMemory = memory !== null;
     if (memory === null && boss.inheritsMemoryOf) memory = await db.rpc<Memory | null>('staff_memory_latest', { staff: boss.inheritsMemoryOf });
+
+    const career = await db.rpc<Career>('staff_career', { of_staff: bossKey });
+
+    // Its own notes since its latest memory version (not the last recorded slot: a meeting that failed after its slot was recorded and before its
+    // memory was saved would otherwise skip the notes in between; a Boss with no memory of its own reads all it has written), the newest
+    // `notesRead`. They are read as its own thoughts and never acted on.
+    const memoryAt = hasOwnMemory ? await db.rpc<string | null>('staff_memory_at', { staff: bossKey }) : null;
+    const bossNotes = await db.rpc<string[]>('staff_notes_recent', {
+      of_staff: bossKey,
+      since: memoryAt ? new Date(Date.parse(memoryAt)).toISOString() : null,
+      most: settings.pool.notesRead,
+    });
 
     const bank = await db.rpc<number>('bank_now', { staff: bossKey, weekly_moves: phase.numbers.weeklyMoves, bank_cap: phase.numbers.bankCap });
 
@@ -170,7 +189,9 @@ export async function runMeeting(
       phase,
       bank,
       successorAllowed,
-      roster: tuned.system.bosses.map((b) => ({ key: b.key, name: b.name })),
+      career,
+      notes: bossNotes,
+      roster: tuned.system.roster.filter((b) => successors.has(b.key)).map((b) => ({ key: b.key, name: b.name })),
     });
     const notes = skipped.map((f) => `The feed "${f.name}" could not be read today (${f.why}).`);
     const message = [
@@ -224,6 +245,7 @@ export async function runMeeting(
       threads: new Set(digest.threads.slice(0, REFERENCE_MOST.threads).map((t) => t.thread)),
       isPublic: (id) => publicNow.has(id),
       successorAllowed,
+      successors,
       inheritable: context.inheritanceDue ? new Set(due.map((m) => m.act.toLowerCase())) : undefined,
     });
     if (!repaired.ok) {

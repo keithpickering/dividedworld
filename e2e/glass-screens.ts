@@ -90,7 +90,7 @@ export const OVERLAYS: readonly Screen[] = [
     name: 'The React picker, from a post',
     path: '/b/general',
     then: async (page) => {
-      await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+      await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
       await page.locator('#post-3').getByRole('button', { name: 'React' }).click();
       await expect(page.getByRole('dialog', { name: /^React to / })).toBeVisible();
     },

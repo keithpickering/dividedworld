@@ -67,7 +67,7 @@ begin
   insert into boards (slug, name) values ('al-board', 'Al Board') returning id into brd;
   announce := tests.thread('Al Announcements');
   insert into settings (key, value) values ('systemAnnouncements', to_jsonb(announce::text)) on conflict (key) do update set value = excluded.value;
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Al Bot', 'al-bot', 'bot', now()) returning id into staff;
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Al Bot', 'al-bot', 'persona', now()) returning id into staff;
   perform set_config('kayfabb.staff_writer', 'on', true);
   staff_post := tests.post(staff, t_staff, 'The bot speaks.');
   perform set_config('kayfabb.staff_writer', '', true);
@@ -207,7 +207,7 @@ declare
   said_owned jsonb; said_staff jsonb; said_mine jsonb;
 begin
   perform pg_temp.cards();
-  insert into characters (name, staff, staff_kind, debuted_at) values ('As Bot', 'as-bot', 'bot', now()) returning id into staff;
+  insert into characters (name, staff, staff_kind, debuted_at) values ('As Bot', 'as-bot', 'persona', now()) returning id into staff;
   perform set_config('kayfabb.staff_writer', 'on', true);
   staffs := tests.post(staff, t2, 'The bot.');
   perform set_config('kayfabb.staff_writer', '', true);
@@ -258,7 +258,7 @@ declare
   said_owned jsonb; said_staff jsonb; said_mine jsonb;
 begin
   perform pg_temp.cards();
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Th Bot', 'th-bot', 'bot', now()) returning id into staff;
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Th Bot', 'th-bot', 'persona', now()) returning id into staff;
   perform tests.post(a1, t_owned, 'Ann starts.');
   perform tests.post(b2, t_mine, 'Bob Two starts.');
   perform set_config('kayfabb.staff_writer', 'on', true);

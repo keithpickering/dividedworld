@@ -24,13 +24,14 @@ import { atOrBelow, basePrice, postTarget, casterMessage, decidePlay, decideSet,
 import { sameName } from '../../rules/names.ts';
 import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
+import type { Career } from '../../system/career.ts';
 import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
-  AdminQueue, BoardName, Demand, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffProfile,
-  Act, AccountListener, ActKind, Alert, ContactLink, SeasonNewsItem, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
+  AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffProfile,
+  Act, AccountListener, ActKind, Alert, ContactLink, SeasonNewsItem, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
@@ -100,9 +101,11 @@ export interface Seed {
   /**
    * A change of Boss at a season's roll-over (a `season_handovers` row, 0051): the outgoing Boss (null at the first) and the arriving one, by staff key,
    * dated `at` (else now). Season news then holds the Boss's arrival and departure, quoting the first post each wrote in the announcements thread dated
-   * at exactly `at` (`staffPost`), as the server finds it; a later remark is not its words.
+   * at exactly `at` (`staffPost`), as the server finds it; a later remark is not its words. A change of Boss is also a to-do in the admin queue
+   * (`how` rotation unless said, `bossWas` the new Boss's office before, `outgoingOffice` member unless said), until an update is seeded or posted
+   * after `at` or an admin dismisses it. The season is the next number: the first season is the seed's, and each handover opens the one after.
    */
-  handover(handover: { outgoing?: string | null; boss: string; at?: number }): void;
+  handover(handover: { outgoing?: string | null; boss: string; at?: number; how?: 'nomination' | 'rotation'; bossWas?: string | null; outgoingOffice?: string | null }): void;
   /**
    * An update by the developer persona (what `post_update` writes, 0062), dated `at` (else now): the developer character is made on its first
    * update, from the instance's persona (else the engine's plain one), and so is the updates thread on The System's board. Returns the Act.
@@ -127,10 +130,12 @@ export interface Seed {
   /** A tally on an Act as if that many others had reacted, kind by kind: no one's reaction (no account or character stands behind it), only the counts every reader sees. */
   tally(act: Id, counts: Readonly<Record<string, number>>): void;
   /** A staff character (a Boss or a Mod Bot): debuted, owned by no player, with no class; it acts only through the seed below. */
-  staff(key: string, name: string, kind: 'boss' | 'bot', options?: { title?: string; signature?: string; at?: number; debuted?: boolean }): Id;
+  staff(key: string, name: string, office: 'boss' | 'mod' | 'member' | 'benched', options?: { title?: string; signature?: string; at?: number; debuted?: boolean }): Id;
+  /** A staff member's career as `staff_career` would return it (default: none). */
+  career(key: string, career: Career): void;
   /** A staff member's in-character profile, a version at `at` (the latest is the one read). */
   staffProfile(key: string, profile: { interests?: readonly string[]; favorites?: readonly Id[]; mood?: string; signature?: string; at?: number }): void;
-  /** A staff character's post in a thread of The System's board, as the Boss posts there. */
+  /** A staff character's post in a thread (The System's board for the Boss; any board for a persona's pool post, which presence lists it for). */
   staffPost(staff: Id, thread: Id, body: string, options?: { at?: number }): Id;
   /**
    * A landed move: the Boss's `move` Act in a thread of The System's board (the first thread there is used, or one is made), as the
@@ -249,7 +254,7 @@ interface CharRec {
   squareFrame: Frame | null;
   portraitFrame: Frame | null;
   /** Set for a staff character. */
-  staff?: { readonly key: string; readonly kind: 'boss' | 'bot' | 'developer' };
+  staff?: { readonly key: string; readonly office: Office };
 }
 interface ActRec {
   readonly id: Id;
@@ -305,6 +310,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     turnCooldown: settings.turnCooldown, walletCap: settings.walletCap, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength,
     registrationMode: settings.registrationMode, settlementLength: settings.settlementLength, cardSettings: settings.cardSettings,
     presencePollSeconds: settings.presencePollSeconds, presenceWindow: settings.presenceWindow, toastDefaults: settings.toastDefaults,
+    staffGroup: options.settings?.staffGroup ?? { name: options.instance.system.staffGroup.name },
     ...(options.settings?.toastMs === undefined ? {} : { toastMs: options.settings.toastMs }),
     /* What screen_settings's cardEconomy holds (0039): the economy this backend prices with, cut to what the cards' prices read. */
     cardEconomy: Object.fromEntries(Object.entries(settings.economy).filter(([key]) => instance.cards.some((c) => c.priceKey === key || (c.reads ?? []).some((r) => (typeof r === 'string' ? r : r.key) === key)))),
@@ -342,6 +348,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const boards: Board[] = options.instance.boards.map((b) => ({ id: uuid(), slug: b.slug, name: b.name, description: b.description, isSystem: b.system === true, moveAct: null }));
   /* Moves: how each landed move ended, the staff profiles (versions, newest read), and the admin queue's own rows. */
   const moveEnds = new Map<Id, { why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent'; by: string; at: number }>();
+  const careers = new Map<string, Career>();
   const staffProfiles: { key: string; at: number; interests: string[]; favorites: Id[]; mood: string; signature: string }[] = [];
   interface QueueRec { id: number; staff: string; successor?: string; move: SeedMove; why: string; goLiveAt: number; failure: { at: number; text: string } | null; heldAt: number | null; landed: Id | null; replacedAt?: number }
   const queue: QueueRec[] = [];
@@ -524,7 +531,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       id: c.id, name: c.name, title: c.title, signature: c.signature, avatarSquare: c.square, avatarPortrait: c.portrait, squareFrame: c.squareFrame,
       portraitFrame: c.portraitFrame, pipStyle: c.pipStyle,
       joined: `${iso(c.debutedAt!).slice(0, 7)}-01`,
-      ...(c.staff ? { staff: c.staff.key, staffKind: c.staff.kind } : {}),
+      ...(c.staff ? { staff: c.staff.key, office: c.staff.office } : {}),
     };
   }
 
@@ -608,7 +615,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const c: CharRec = {
       id: uuid(), owner: '', name: persona.name, createdAt: at, debutedAt: at, retiredAt: null, loudness: 'silent', history: [{ cls: '', at }], pending: null, presenceHidden: false,
       title: persona.tagline.slice(0, 40), signature: '', pipStyle: options.instance.pipStyles[0]?.key ?? 'default',
-      square: null, portrait: null, squareFrame: null, portraitFrame: null, staff: { key: 'developer', kind: 'developer' },
+      square: null, portrait: null, squareFrame: null, portraitFrame: null, staff: { key: 'developer', office: 'developer' },
     };
     characters.set(c.id, c);
     developerId = c.id;
@@ -675,7 +682,21 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
   /* ------------------------------------------------------------------ season news ---- */
   /** The Boss changes the fake's seeds hold (`season_handovers`, 0051): who left, who arrived, and when. */
-  const handovers: { readonly outgoing: string | null; readonly boss: string; readonly at: number }[] = [];
+  const handovers: { readonly outgoing: string | null; readonly boss: string; readonly at: number; readonly how: string; readonly bossWas: string | null; readonly outgoingOffice: string | null }[] = [];
+  /** The seasons whose to-do an admin dismissed (`handover_dismissals`). */
+  const dismissedTodos = new Set<number>();
+  /** The to-dos the admin queue holds: each change of Boss with no update after it and no dismissal, newest first (admin_queue's `todos`). */
+  function handoverTodos(): HandoverTodo[] {
+    const latest = updateActs()[0]?.at ?? -Infinity;
+    return handovers.flatMap((h, i): HandoverTodo[] => {
+      const season = i + 2;
+      if (h.outgoing === h.boss || latest > h.at || dismissedTodos.has(season)) return [];
+      return [{
+        season, boss: h.boss, bossName: staffByKey(h.boss)?.name ?? h.boss, bossWas: h.bossWas, outgoing: h.outgoing, outgoingName: h.outgoing === null ? null : staffByKey(h.outgoing)?.name ?? h.outgoing,
+        outgoingOffice: h.outgoing === null ? null : h.outgoingOffice, how: h.how, landedAt: iso(h.at),
+      }];
+    }).reverse();
+  }
   const staffByKey = (key: string) => [...characters.values()].find((c) => c.staff?.key === key);
   /** The first post of a staff member in the announcements thread dated at the handover's instant: what the Boss said as it came or went (a later remark is not it). */
   function bossPost(key: string, at: number): ActRec | undefined {
@@ -1406,6 +1427,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const older: MovesCursor | null = after.length > MOVES_LOG_PAGE && last ? { at: iso(last.at), act: last.id } : null;
       return { rows, older } satisfies MovesLog;
     },
+    staffCareer(staff) {
+      return careers.get(staff) ?? { led: [], offices: [] };
+    },
     staffProfile(staff) {
       const latest = staffProfiles.filter((p) => p.key === staff).sort((a, b) => b.at - a.at).at(0);
       return latest ? ({ staff, at: iso(latest.at), interests: latest.interests, favorites: latest.favorites, mood: latest.mood, signature: latest.signature } satisfies StaffProfile) : null;
@@ -1446,8 +1470,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           how: 'held', by: 'admin', at: iso(q.heldAt!), act: null, id: q.id, staff: q.staff, boss: nameOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, landedAt: null,
         })),
       ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
-      return { cap: 100, waiting, inForce: live, ended, more: { waiting: false, inForce: false, ended: false },
-        roster: [...characters.values()].filter((c) => c.staff?.kind === 'boss' && c.retiredAt === null && c.debutedAt !== null).map((c) => ({ staff: c.staff!.key, name: c.name })) } satisfies AdminQueue;
+      return { cap: 100, waiting, inForce: live, ended, todos: handoverTodos(), more: { waiting: false, inForce: false, ended: false },
+        roster: [...characters.values()].filter((c) => c.staff && c.staff.office !== 'developer' && c.staff.office !== 'benched' && c.retiredAt === null).map((c) => ({ staff: c.staff!.key, name: c.name })) } satisfies AdminQueue;
+    },
+    dismissHandoverTodo(season) {
+      if (!me()?.admin) return refuse('only an admin dismisses a to-do');
+      if (!handovers.some((h, i) => i + 2 === season && h.outgoing !== h.boss)) return refuse(`there is no to-do for season ${season}: its handover did not change the Boss`);
+      dismissedTodos.add(season);
+      return ok({ season });
     },
     holdMove(id) {
       if (!me()?.admin) return refuse('only an admin holds a move');
@@ -1465,14 +1495,22 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (q.successor === undefined) return refuse('that move names no successor');
       if (q.landed !== null) return refuse('that nomination has already landed; reverse it instead');
       if (q.heldAt !== null) return refuse('that nomination is held');
-      const roster = [...characters.values()].filter((c) => c.staff?.kind === 'boss' && c.retiredAt === null && c.debutedAt !== null);
+      const roster = [...characters.values()].filter((c) => c.staff && c.staff.office !== 'developer' && c.staff.office !== 'benched' && c.retiredAt === null);
       if (!roster.some((c) => c.staff?.key === boss)) return refuse('that is not a Boss of the roster');
       if (boss === q.staff) return refuse('a Boss cannot succeed itself');
       q.successor = boss;
       q.replacedAt = now();
       return ok({ id, boss });
     },
-    bosses: () => [...characters.values()].filter((c) => c.staff?.kind === 'boss').map((c) => ({ staff: c.staff!.key, name: c.name })),
+    /* boss_roster_names (0082): the roster's own list, a waiting persona's name included, for an admin alone. */
+    bosses() {
+      if (!me()?.admin) throw new Error('only an admin reads the Boss list');
+      return [...characters.values()].filter((c) => c.staff && c.staff.office !== 'developer' && c.staff.office !== 'benched' && c.retiredAt === null).map((c) => ({ staff: c.staff!.key, name: c.name }));
+    },
+    /* characters_public: staff that have debuted, for anyone. */
+    staffNames() {
+      return [...characters.values()].filter((c) => c.staff && c.debutedAt !== null).map((c) => ({ staff: c.staff!.key, name: c.name }));
+    },
     reverseMove(act) {
       if (!me()?.admin) return refuse('only an admin reverses a move');
       const a = acts.get(act);
@@ -1718,10 +1756,20 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         if (row.seenAt < at - win || c.debutedAt === null || c.retiredAt !== null || c.presenceHidden) return [];
         if (where.kind === 'thread' && !(row.kind === 'thread' && row.place === place)) return [];
         if (where.kind === 'board' && row.board !== board) return [];
-        return [{ id, name: c.name, since: where.kind === 'index' ? row.onlineSince : row.placeSince }];
-      }).sort((a, b) => a.since - b.since || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+        return [{ id, name: c.name, staff: false, since: where.kind === 'index' ? row.onlineSince : row.placeSince }];
+      }).concat(
+        /* A staff character (not the developer) is listed in a thread's and a board's box for the window after its own post there (0084), read from
+           public posts; the index never lists it, and a board lists it once however many of its threads it posted in. */
+        where.kind === 'index' ? [] : [...characters.values()].flatMap((c) => {
+          if (!c.staff || c.staff.office === 'developer' || c.debutedAt === null || c.retiredAt !== null) return [];
+          const posts = [...acts.values()].filter((a) => a.kind === 'post' && a.character === c.id && a.at >= at - win && a.thread !== null && threads.has(a.thread)
+            && (where.kind === 'thread' ? a.thread === place : threads.get(a.thread)!.board === board));
+          if (posts.length === 0) return [];
+          return [{ id: c.id, name: c.name, staff: true, since: Math.min(...posts.map((a) => a.at)) }];
+        }),
+      ).sort((a, b) => a.since - b.since || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
       const shown = listed.slice(0, settings.presenceNames);
-      return { names: shown.map(({ id, name }) => ({ id, name })), others: listed.length - shown.length };
+      return { names: shown.map(({ id, name, staff }) => ({ id, name, staff })), others: listed.length - shown.length };
     },
     setPresenceHidden(character, hidden) {
       if (!me()) return refuse('sign in with an account first');
@@ -2148,7 +2196,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     handover(h) {
       if (h.outgoing !== null && h.outgoing !== undefined) staffId(h.outgoing);
       staffId(h.boss);
-      handovers.push({ outgoing: h.outgoing ?? null, boss: h.boss, at: h.at ?? now() });
+      handovers.push({ outgoing: h.outgoing ?? null, boss: h.boss, at: h.at ?? now(), how: h.how ?? 'rotation', bossWas: h.bossWas ?? null, outgoingOffice: h.outgoingOffice ?? 'member' });
       /* A change of Boss is two items of news, as news_announce (0063) queues them: the one who left, where there was one, and the one who arrived. */
       const at = iso(h.at ?? now());
       if (h.outgoing != null && h.outgoing !== h.boss) {
@@ -2192,24 +2240,28 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!acts.has(act)) throw new Error(`no such Act ${act}`);
       for (const [kind, n] of Object.entries(counts)) for (let i = 0; i < n; i++) reactions.push({ act, account: '', character: '', kind });
     },
-    staff(key, name, kind, o) {
+    staff(key, name, office, o) {
       if ([...characters.values()].some((c) => c.staff?.key === key)) throw new Error(`staff member ${key} exists`);
       const at = o?.at ?? now();
       const c: CharRec = {
         id: uuid(), owner: '', name, createdAt: at, debutedAt: o?.debuted === false ? null : at, retiredAt: null, loudness: 'silent', history: [{ cls: '', at }], pending: null, presenceHidden: false,
         title: o?.title ?? '', signature: o?.signature ?? '', pipStyle: options.instance.pipStyles[0]?.key ?? 'default',
-        square: null, portrait: null, squareFrame: null, portraitFrame: null, staff: { key, kind },
+        square: null, portrait: null, squareFrame: null, portraitFrame: null, staff: { key, office },
       };
       characters.set(c.id, c);
       return c.id;
+    },
+    career(key, career) {
+      staffId(key);
+      careers.set(key, career);
     },
     staffProfile(key, p) {
       staffId(key);
       staffProfiles.push({ key, at: p.at ?? now(), interests: [...(p.interests ?? [])], favorites: [...(p.favorites ?? [])], mood: p.mood ?? '', signature: p.signature ?? '' });
     },
     staffPost(staff, thread, body, o) {
-      systemBoard(thread);
-      if (!characters.get(staff)?.staff) throw new Error('only a staff character posts as The System\'s Boss');
+      if (!threads.has(thread)) throw new Error(`no such thread ${thread}`);
+      if (!characters.get(staff)?.staff) throw new Error('only a staff character posts as staff');
       return write({ character: staff, kind: 'post', thread, payload: { body }, at: o?.at }).id;
     },
     move(staff, m) {

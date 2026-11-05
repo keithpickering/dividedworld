@@ -191,7 +191,7 @@ for (const scheme of ['light', 'dark'] as const) {
 
       test('a thread, a picker and a spin form have none', async ({ page }) => {
         await page.goto('/b/general');
-        await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+        await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
         await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
         await page.locator('#post-1').getByRole('button', { name: 'Spin thread' }).click();
         await page.locator('#post-3').getByRole('button', { name: 'React' }).click();
@@ -201,7 +201,7 @@ for (const scheme of ['light', 'dark'] as const) {
 
       test('the open hand, its postcards named by what they show, has none', async ({ page }) => {
         await page.goto('/b/general');
-        await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+        await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
         await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
         await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click();
         await expect(page.locator('.kb-hand-card button').first()).toBeVisible();
@@ -210,7 +210,7 @@ for (const scheme of ['light', 'dark'] as const) {
 
       test('the play form, reached through an armed card and its button on a post, has none', async ({ page }) => {
         await page.goto('/b/general');
-        await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+        await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
         await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
         await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click();
         await page.getByRole('button', { name: /^Whoops!, Salty\b/ }).first().click();

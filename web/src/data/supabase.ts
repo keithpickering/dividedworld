@@ -35,9 +35,10 @@ import { readLogPage, type LedgerRow, type ShareRow } from '../../../engine/ui/d
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
 import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
 import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
+import type { Career } from '../../../engine/system/career.ts';
 import type {
-  AdminQueue, BoardName, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffProfile,
-  Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEvent, CaughtPlay, Character, CharacterCounts, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd, FaceDownPass,
+  AdminQueue, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffProfile,
+  Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEvent, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd, FaceDownPass,
   Alert, ContactLink, EffectState, SeasonNewsItem, SeasonResult, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
 } from '../../../engine/ui/data/api.ts';
@@ -271,6 +272,13 @@ function toQueued(r: Row): QueuedMove {
   };
 }
 
+function toTodo(r: Row): HandoverTodo {
+  return {
+    season: num(r['season']), boss: String(r['boss'] ?? ''), bossName: String(r['bossName'] ?? r['boss'] ?? ''), bossWas: orNull(r['bossWas']), outgoing: orNull(r['outgoing']),
+    outgoingName: orNull(r['outgoingName']), outgoingOffice: orNull(r['outgoingOffice']), how: String(r['how'] ?? ''), landedAt: String(r['landedAt'] ?? ''),
+  };
+}
+
 function toInForce(r: Row): MoveInForce {
   return {
     act: r['act'], id: typeof r['id'] === 'number' ? r['id'] : null, staff: orNull(r['staff']), boss: orNull(r['boss']), kind: String(r['kind'] ?? ''), params: params(r['params']),
@@ -476,6 +484,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
 
   /* ---------------------------------------------------------------- characters ---- */
 
+  /** The office characters_public shows a staff character; anything else it might say is no office. */
+  const toOffice = (o: unknown): Office | undefined => (o === 'boss' || o === 'mod' || o === 'member' || o === 'benched' || o === 'waiting' || o === 'developer' ? o : undefined);
+
   const toCharacter = (c: Row, p: Row | undefined): Character => ({
     id: c['id'],
     name: c['name'],
@@ -487,13 +498,13 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     portraitFrame: toFrame(p?.['portrait_frame']),
     pipStyle: p?.['pip_style'] ?? 'default',
     joined: c['joined'] ?? '',
-    ...(typeof c['staff'] === 'string' ? { staff: c['staff'], staffKind: c['staff_kind'] === 'bot' ? ('bot' as const) : c['staff_kind'] === 'developer' ? ('developer' as const) : ('boss' as const) } : {}),
+    ...(typeof c['staff'] === 'string' ? { staff: c['staff'], ...(toOffice(c['office']) ? { office: toOffice(c['office'])! } : {}) } : {}),
   });
 
   async function characters(ids: readonly Id[]): Promise<readonly Character[]> {
     if (ids.length === 0) return [];
     const [cs, ps] = await Promise.all([
-      byChunks(ids, (part) => list(() => client.from('characters_public').select('id,name,joined,staff,staff_kind').in('id', part))),
+      byChunks(ids, (part) => list(() => client.from('characters_public').select('id,name,joined,staff,office').in('id', part))),
       byChunks(ids, (part) => list(() => client.from('character_profiles').select('character,title,signature,avatar_square,avatar_portrait,square_frame,portrait_frame,pip_style').in('character', part))),
     ]);
     const profile = new Map(ps.map((p) => [p['character'] as string, p]));
@@ -508,11 +519,11 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   async function profileCharacter(p: Row): Promise<Character> {
     let found: Row | undefined;
     try {
-      found = (await list(() => client.from('characters_public').select('id,name,joined,staff,staff_kind').eq('id', p['character']).limit(1)))[0];
+      found = (await list(() => client.from('characters_public').select('id,name,joined,staff,office').eq('id', p['character']).limit(1)))[0];
     } catch {
       found = undefined;
     }
-    return toCharacter({ id: p['character'], name: found?.['name'] ?? '', joined: found?.['joined'] ?? '', staff: found?.['staff'], staff_kind: found?.['staff_kind'] }, p);
+    return toCharacter({ id: p['character'], name: found?.['name'] ?? '', joined: found?.['joined'] ?? '', staff: found?.['staff'], office: found?.['office'] }, p);
   }
 
   /* -------------------------------------------------------------------- live ---- */
@@ -698,6 +709,16 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const texts = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
       return { staff: r['staff'], at: r['at'], interests: texts(r['interests']), favorites: texts(r['favorites']), mood: String(r['mood'] ?? ''), signature: String(r['signature'] ?? '') };
     },
+    async staffCareer(staff): Promise<Career> {
+      const v = (await read(() => client.rpc('staff_career', { of_staff: staff }))).data;
+      const c = v && typeof v === 'object' && !Array.isArray(v) ? (v as Row) : {};
+      const rows = (x: unknown): Row[] => (Array.isArray(x) ? (x as Row[]) : []);
+      const until = (x: unknown): string | null => (typeof x === 'string' ? x : null);
+      return {
+        led: rows(c['led']).map((r) => ({ season: num(r['season']), since: String(r['since'] ?? ''), until: until(r['until']), how: String(r['how'] ?? '') })),
+        offices: rows(c['offices']).map((r) => ({ office: String(r['office'] ?? ''), since: String(r['since'] ?? ''), until: until(r['until']), cause: String(r['cause'] ?? '') })),
+      };
+    },
     async adminQueue(): Promise<AdminQueue> {
       const v = (await read(() => client.rpc('admin_queue'))).data;
       const q = v && typeof v === 'object' && !Array.isArray(v) ? (v as Row) : {};
@@ -707,7 +728,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         cap: num(q['cap']), waiting: rows(q['waiting']).map(toQueued), inForce: rows(q['inForce']).map(toInForce), ended: rows(q['ended']).map(toEnded),
         more: { waiting: more['waiting'] === true, inForce: more['inForce'] === true, ended: more['ended'] === true },
         roster: rows(q['roster']).flatMap((r) => (typeof r['staff'] === 'string' ? [{ staff: r['staff'], name: String(r['name'] ?? r['staff']) }] : [])),
+        todos: rows(q['todos']).flatMap((r) => (typeof r['boss'] === 'string' ? [toTodo(r)] : [])),
       };
+    },
+    async dismissHandoverTodo(season) {
+      const a = await rpcWrite(() => client.rpc('dismiss_handover_todo', { season_number: season }));
+      return a.ok ? { ok: true, value: { season: num(a.value['season']) } } : a;
     },
     /* A page of the Updates (`updates`, 0062): public, the same for every reader, newest first. */
     async updates(before) {
@@ -741,9 +767,15 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const a = await rpcWrite(() => client.rpc('replace_successor', { id, boss }));
       return a.ok ? { ok: true, value: { id: num(a.value['id']), boss: String(a.value['boss'] ?? '') } } : a;
     },
+    /* The Boss list is the database's roster (`boss_roster_names`, 0082, an admin's read): a waiting persona's name is in no public view. */
     async bosses() {
-      const rows = await list(() => client.from('characters_public').select('id,name,staff').eq('staff_kind', 'boss').order('name', { ascending: true }).limit(100));
-      return rows.flatMap((r) => (typeof r['staff'] === 'string' ? [{ staff: r['staff'], name: String(r['name'] ?? r['staff']) }] : []));
+      const r = (await read(() => client.rpc('boss_roster_names'))).data;
+      return (Array.isArray(r) ? (r as Row[]) : []).flatMap((x) => (typeof x['staff'] === 'string' ? [{ staff: x['staff'], name: String(x['name'] ?? x['staff']) }] : []));
+    },
+    /* The names anyone may read: staff in characters_public, which holds only the debuted. */
+    async staffNames() {
+      const rowsOf = await list(() => client.from('characters_public').select('staff,name').not('staff', 'is', null));
+      return rowsOf.flatMap((x) => (typeof x['staff'] === 'string' ? [{ staff: x['staff'], name: String(x['name'] ?? '') }] : []));
     },
     async reverseMove(act) {
       const a = await rpcWrite(() => client.rpc('reverse_move', { move_act: act }));
@@ -997,7 +1029,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       // A refusal or a lost answer throws, so the poll counts it as a failure and keeps its last answer.
       if (!a.ok) throw new Error(a.error);
       const names = (Array.isArray(a.value['names']) ? a.value['names'] : []).flatMap((n: Row) =>
-        typeof n?.['id'] === 'string' && typeof n?.['name'] === 'string' ? [{ id: n['id'], name: n['name'] }] : []);
+        typeof n?.['id'] === 'string' && typeof n?.['name'] === 'string' ? [{ id: n['id'], name: n['name'], staff: n['staff'] === true }] : []);
       return { names, others: num(a.value['others']) };
     },
     async setPresenceHidden(character, hidden) {

@@ -8,7 +8,7 @@ create function pg_temp.boss() returns uuid language plpgsql as $$
 declare made uuid;
 begin
   select id into made from characters where staff = 'mv-boss';
-  if made is null then insert into characters (name, staff, staff_kind, debuted_at) values ('Mv Boss', 'mv-boss', 'boss', now()) returning id into made; end if;
+  if made is null then insert into characters (name, staff, staff_kind, debuted_at) values ('Mv Boss', 'mv-boss', 'persona', now()) returning id into made; end if;
   return made;
 end $$;
 create function pg_temp.announcements() returns uuid language plpgsql as $$
@@ -50,7 +50,7 @@ end $$;
 -- ---- The catalogs: seeded by seed_instance, upserted on a reseed, and none without a `system` ----
 do $$
 declare
-  seed jsonb := jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+  seed jsonb := jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'system', jsonb_build_object('staff', '[]'::jsonb, 'firstStaff', '[]'::jsonb,
       'moves', jsonb_build_array(jsonb_build_object('key', 'renameBoard', 'structural', true), jsonb_build_object('key', 'lockThread', 'structural', false)),
       'demands', jsonb_build_array(jsonb_build_object('key', 'postsOnBoard'), jsonb_build_object('key', 'crossQuote'))));
@@ -459,7 +459,7 @@ declare
   rows_ jsonb;
 begin
   insert into move_kinds (key, structural) values ('renameBoard', true) on conflict (key) do update set structural = excluded.structural;
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Mv Other Boss', 'mv-other', 'boss', now()) returning id into other_boss;
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Mv Other Boss', 'mv-other', 'persona', now()) returning id into other_boss;
   m1 := pg_temp.move(general, 'Log One', null, base);
   m2 := pg_temp.move(general, 'Log Two', null, base + interval '1 day');
   m3 := pg_temp.move(general, 'Log Three', null, base + interval '2 days');

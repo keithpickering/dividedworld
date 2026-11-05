@@ -7,7 +7,7 @@ create function pg_temp.boss() returns uuid language plpgsql as $$
 declare made uuid;
 begin
   select id into made from characters where staff = 'dm-boss';
-  if made is null then insert into characters (name, staff, staff_kind, debuted_at) values ('Dm Boss', 'dm-boss', 'boss', now()) returning id into made; end if;
+  if made is null then insert into characters (name, staff, staff_kind, debuted_at) values ('Dm Boss', 'dm-boss', 'persona', now()) returning id into made; end if;
   return made;
 end $$;
 create function pg_temp.announcements() returns uuid language plpgsql as $$

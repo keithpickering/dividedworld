@@ -4,13 +4,13 @@
  * setting `systemEnabled` (false) keeps it from acting. Nothing a Mod Bot does is built in Part 1;
  * these fields are fixed now so the roster can be written against them.
  */
-import type { ModBotPersona } from '../../../../engine/rules/types.ts';
-import { modBotPersona } from '../persona.ts';
+import type { Persona } from '../../../../engine/rules/types.ts';
+import { persona } from '../persona.ts';
 
 const name = 'Hall Monitor (placeholder)';
 const title = 'Placeholder Mod Bot';
 
-export const placeholderMonitor: ModBotPersona = {
+export const placeholderMonitor: Persona = {
   key: 'placeholder-monitor',
   name,
   title,
@@ -28,11 +28,14 @@ export const placeholderMonitor: ModBotPersona = {
   },
   voice: 'chat',
   persuadedBy: 'Sincere, polite appeals that cite a rule by its number; it is unmoved by bravado.',
-  persona: modBotPersona({
+  // DRAFT for the owner: the Boss fields below are placeholders, there so every persona has every field.
+  startingHobby: 'DRAFT: clipboards (it collects the ones other people put down)',
+  temperament: 'DRAFT: Earnest, literal and a little proud of its lanyard. It enforces whatever it was told with total sincerity.',
+  persona: persona({
     name,
     title,
     temperament: 'Earnest, literal and a little proud of its lanyard. It enforces whatever it was told with total sincerity.',
     voice: 'Short, polite and slightly stiff. Says "friendly reminder" before a warning. Never jokes on purpose.',
     habits: ['It announces its own arrival in a thread as though it were a fire drill.', 'It thanks everyone it visits for their cooperation.'],
-  }),
+  }, 'bot'),
 };

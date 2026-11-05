@@ -8,8 +8,13 @@ test('every duty has a mode and a default tier', () => {
   assert.equal(DUTY_SPECS.standingOrderLine.mode, 'completion');
 });
 
+test('the pool\'s chatter is a light-tier chat duty', () => {
+  assert.deepEqual(DUTY_SPECS.chatter, { mode: 'chat', tier: 'light' });
+  assert.ok((DUTIES as readonly string[]).includes('chatter'));
+});
+
 test('staffFor returns the staff key the instance assigns the duty', () => {
-  const instance = { system: { duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'beat' } as const } };
+  const instance = { system: { duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'beat', chatter: 'boss' } as const } };
   assert.equal(staffFor('meeting', instance), 'boss');
   assert.equal(staffFor('appeal', instance), 'beat');
 });

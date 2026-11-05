@@ -13,7 +13,7 @@ const DAY = 24 * H;
 const NOW = Date.parse('2026-11-01T12:00:00Z');
 const SLOT = '2026-11-01T09:23:00.000Z';
 const BOSS = dividedWorld.system.firstBoss;
-const OTHER_BOSS = dividedWorld.system.bosses.find((b) => b.key !== BOSS)!.key;
+const OTHER_BOSS = dividedWorld.system.roster.find((b) => b.key !== BOSS && !dividedWorld.system.firstStaff.includes(b.key))!.key;
 const BOARD = '11111111-1111-4111-8111-111111111111';
 const BOARD2 = '22222222-2222-4222-8222-222222222222';
 const HOT = '33333333-3333-4333-8333-333333333333';
@@ -57,6 +57,14 @@ interface World {
   failOn?: string | string[];
   publicIds?: string[];
   boss?: string;
+  /** The keys meeting_context() lists as a nomination's candidates (default: the roster but the Boss). */
+  successors?: string[];
+  /** What staff_career returns for the Boss (default: it has led nothing). */
+  career?: { led: unknown[]; offices: unknown[] };
+  /** What staff_notes_recent returns for the Boss (default: none). */
+  notes?: string[];
+  /** When the Boss's latest memory version was written (staff_memory_at; default: with the last meeting's slot). */
+  memoryAt?: string;
 }
 function fakeDb(w: World = {}) {
   const calls: { fn: string; args: Record<string, any> }[] = [];
@@ -74,9 +82,12 @@ function fakeDb(w: World = {}) {
           return { status: 'begun', meeting: state.meeting } as T;
         case 'fail_meeting': state.failed.push(args); state.closed = true; return { status: 'closed' } as T;
         case 'meeting_context':
-          return { season: { startsAt: NOW - 30 * DAY, endsAt: NOW + (w.endsIn ?? 60 * DAY) }, boss: w.boss ?? BOSS, lastSlot: '2026-10-31T09:23:00.000Z', boards: [{ id: BOARD, name: 'Mario Fan Games' }, { id: BOARD2, name: 'Off Topic' }], ...(w.inheritanceDue ? { inheritanceDue: w.inheritanceDue } : {}) } as T;
+          return { season: { startsAt: NOW - 30 * DAY, endsAt: NOW + (w.endsIn ?? 60 * DAY) }, boss: w.boss ?? BOSS, lastSlot: '2026-10-31T09:23:00.000Z', boards: [{ id: BOARD, name: 'Mario Fan Games' }, { id: BOARD2, name: 'Off Topic' }], successors: w.successors ?? dividedWorld.system.roster.map((b) => b.key).filter((k) => k !== (w.boss ?? BOSS)), ...(w.inheritanceDue ? { inheritanceDue: w.inheritanceDue } : {}) } as T;
         case 'system_digest':
           return { since: args.since, until: args.until, threads: [{ thread: HOT, title: 'Pineapple', board: 'Mario Fan Games', posts: 4, heat: 1, controversy: 0.5, length: 9 }], standings: [], moves: [], quotes: [], bossReactions: [], excerpts: [], characters: [{ id: ANN, name: 'Ann the Great', staff: false }] } as T;
+        case 'staff_notes_recent': return (w.notes ?? []) as T;
+        case 'staff_career': return (w.career ?? { led: [], offices: [] }) as T;
+        case 'staff_memory_at': return (w.memories?.[String(args.staff)] ? (w.memoryAt ?? '2026-10-31T09:23:00.000Z') : null) as T;
         case 'staff_memory_latest': return (w.memories?.[String(args.staff)] ?? null) as T;
         case 'bank_now': return (w.bank ?? 5.9) as T;
         case 'public_characters': return (args.ids as string[]).filter((id) => (w.publicIds ?? [ANN, BOB]).includes(id)) as T;
@@ -324,6 +335,21 @@ test('a successor named before the meltdown\'s last week is dropped and recorded
   }
 });
 
+test('who a successor may be is the database\'s list, not the roster minus the first staff', async () => {
+  const [staffKey] = dividedWorld.system.firstStaff;
+  // A persona on staff from the start may be named: the Boss may come from any office.
+  const onStaff = fakeDb({ endsIn: 3 * DAY });
+  const so = await run(onStaff.db, fakeModels(answer([], { successor: { boss: staffKey!, why: 'x' } })).models, quiet, SLOT, clock, noFeeds);
+  assert.deepEqual(so.successor, { boss: staffKey, why: 'x' });
+  // One the database leaves out (benched) is refused, and is not offered in the prompt.
+  const benched = fakeDb({ endsIn: 3 * DAY, successors: [OTHER_BOSS] });
+  const bm = fakeModels(answer([], { successor: { boss: staffKey!, why: 'x' } }));
+  const bo = await run(benched.db, bm.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(bo.successor, null);
+  assert.ok(bo.trims.some((t: any) => t.path === 'successor.boss' && t.predicate === 'rosterBoss'), JSON.stringify(bo.trims));
+  assert.ok(!bm.chats[0]!.system.includes(`${staffKey} (`), 'a persona the database leaves out is not offered');
+});
+
 test('inheritance answers are repaired and carried, not acted on', async () => {
   const d = fakeDb();
   const act = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
@@ -375,7 +401,7 @@ test('a new Boss reads no memory, unless its persona inherits another Boss\'s', 
   assert.match(fm.chats[0]!.messages[0]!.content, /You are new to this board/);
   assert.doesNotMatch(fm.chats[0]!.messages[0]!.content, /the old boss's hobby/);
 
-  const heir: Instance = { ...quiet, system: { ...quiet.system, bosses: quiet.system.bosses.map((b) => (b.key === BOSS ? { ...b, inheritsMemoryOf: OTHER_BOSS } : b)) } };
+  const heir: Instance = { ...quiet, system: { ...quiet.system, roster: quiet.system.roster.map((b) => (b.key === BOSS ? { ...b, inheritsMemoryOf: OTHER_BOSS } : b)) } };
   const inherited = fakeDb({ memories: { [OTHER_BOSS]: memory('the old boss\'s hobby') } });
   const im = fakeModels(answer());
   await run(inherited.db, im.models, heir, SLOT, clock, noFeeds);
@@ -486,4 +512,47 @@ test('a Boss with no moves banked still keeps its memory and profile', async () 
   assert.equal(p.moves.length, 0);
   assert.equal(p.profile.mood, 'smug');
   assert.ok(out.trims.some((t: any) => t.path === 'moves' && t.after === 0));
+});
+
+test('the Boss\'s career is read for the Boss itself and carried in the system prompt as plain facts', async () => {
+  const served = fakeDb({ career: {
+    led: [{ season: 2, since: '2026-02-01T00:00:00+00:00', until: '2026-03-29T00:00:00+00:00', how: 'rotation' }],
+    offices: [{ office: 'mod', since: '2026-03-29T00:00:00+00:00', until: null, cause: 'handover' }],
+  } });
+  const m = fakeModels(answer([]));
+  await run(served.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.deepEqual(served.calls.filter((c) => c.fn === 'staff_career').map((c) => c.args), [{ of_staff: BOSS }]);
+  const system = m.chats[0]!.system;
+  assert.ok(system.includes('Boss in Season 2, from 2026-02-01 to 2026-03-29'), system);
+  assert.ok(system.includes('Mod Bot from 2026-03-29 until now'), system);
+  const fresh = fakeModels(answer([]));
+  await run(fakeDb().db, fresh.models, quiet, SLOT, clock, noFeeds);
+  assert.ok(fresh.chats[0]!.system.includes('You have held no office before.'), 'a Boss with no career is told so');
+});
+
+test('the Boss\'s recent notes are read for the Boss itself since the last meeting, capped by notesRead, and carried in the system prompt', async () => {
+  const served = fakeDb({ notes: ['Ann is up to something.', 'Bob owes me a rematch.'], memories: { [BOSS]: memory('my own hobby') } });
+  const m = fakeModels(answer([]));
+  await run(served.db, m.models, quiet, SLOT, clock, noFeeds);
+  const reads = served.calls.filter((c) => c.fn === 'staff_notes_recent');
+  assert.equal(reads.length, 1);
+  assert.equal(reads[0]!.args.of_staff, BOSS);
+  assert.equal(reads[0]!.args.most, dividedWorld.settings.pool.notesRead);
+  assert.equal(reads[0]!.args.since, '2026-10-31T09:23:00.000Z', 'since its latest memory version');
+  const system = m.chats[0]!.system;
+  assert.ok(system.includes('Ann is up to something.') && system.includes('Bob owes me a rematch.'), system);
+  assert.ok(system.includes('your own recent thoughts'), system);
+  const fresh = fakeDb({ notes: ['Written as a member.'] });
+  await run(fresh.db, fakeModels(answer([])).models, quiet, SLOT, clock, noFeeds);
+  assert.equal(fresh.calls.find((c) => c.fn === 'staff_notes_recent')!.args.since, null, 'a Boss with no memory of its own reads every note it has written');
+  const bare = fakeModels(answer([]));
+  await run(fakeDb().db, bare.models, quiet, SLOT, clock, noFeeds);
+  assert.ok(!bare.chats[0]!.system.includes('your own recent thoughts'), 'a Boss with no notes is told nothing of them');
+});
+
+test('the Boss\'s notes are read since its latest memory version, not the last recorded slot: a meeting that failed after its slot was recorded skipped no notes', async () => {
+  const served = fakeDb({ notes: ['Written in the gap.'], memories: { [BOSS]: memory('my own hobby') }, memoryAt: '2026-10-29T08:00:00.000Z' });
+  await run(served.db, fakeModels(answer([])).models, quiet, SLOT, clock, noFeeds);
+  const read = served.calls.find((c) => c.fn === 'staff_notes_recent')!;
+  assert.equal(read.args.since, '2026-10-29T08:00:00.000Z', 'earlier than the recorded slot (2026-10-31T09:23Z), where the memory was last saved');
 });

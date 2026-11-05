@@ -6,7 +6,7 @@ import type { BoardName } from '../data/api.ts';
 import { Link } from '../router.tsx';
 import { moveParts } from './move-words.ts';
 
-export function MoveSentence({ kind, params, boards, tense, was, bosses }: {
+export function MoveSentence({ kind, params, boards, tense, was, bosses, unnamed }: {
   readonly kind: string;
   readonly params: Readonly<Record<string, unknown>>;
   readonly boards: readonly BoardName[];
@@ -15,9 +15,11 @@ export function MoveSentence({ kind, params, boards, tense, was, bosses }: {
   readonly was?: string | null;
   /** The roster's Bosses, so a move that names one reads with its name and not its key. */
   readonly bosses?: readonly { readonly staff: string; readonly name: string }[];
+  /** What a nominated Boss is called when `bosses` does not know it (a persona that has not debuted); its key is never shown. */
+  readonly unnamed?: string;
 }) {
   const named = boards.find((b) => b.id === params['board']);
-  const boss = kind === 'nameSuccessor' ? bosses?.find((b) => b.staff === params['boss'])?.name : undefined;
+  const boss = kind === 'nameSuccessor' ? bosses?.find((b) => b.staff === params['boss'])?.name ?? unnamed : undefined;
   const parts = moveParts(kind, params, was ?? boss ?? named?.was ?? null, tense);
   return (
     <>

@@ -3,6 +3,8 @@
  * (supabase/migrations/0004_schedule.sql) writes: how an instance's classes, reactions, cards,
  * settings and boards arrive in a database whose SQL names none of them. Staff arrive as a roster of
  * characters only; their prompts are read from the instance in code and never travel in the seed.
+ * The reactions list is the instance's whole set: seeding deletes a kind the instance dropped, or refuses when one is in
+ * use (supabase/migrations/0091_seed_reaction_kinds.sql).
  */
 import type { Instance } from '../../../engine/rules/types.ts';
 import { DEFAULT_DEVELOPER } from '../../../engine/rules/instance.ts';
@@ -40,10 +42,12 @@ export function instanceSeed(instance: Instance) {
     // prompts stay in the instance module; the meeting reads them in code (chooseInstance), so they are not seeded.
     system: {
       staff: [
-        ...instance.system.bosses.map((b) => ({ key: b.key, name: b.name, title: b.title, signature: b.signature, kind: 'boss' as const })),
-        ...instance.system.modBots.map((b) => ({ key: b.key, name: b.name, title: b.title, signature: b.signature, kind: 'bot' as const })),
+        // Every persona alike; seed_instance (0082) debuts the first Boss and the first staff and leaves the rest waiting.
+        ...instance.system.roster.map((p) => ({ key: p.key, name: p.name, title: p.title, signature: p.signature })),
       ],
       firstStaff: [...instance.system.firstStaff],
+      // The member group every staff character is in, named by the instance.
+      staffGroup: { name: instance.system.staffGroup.name },
       // The first season's Boss, set on an open season that has none (0047).
       firstBoss: instance.system.firstBoss,
       // The thread on The System's board where moves land and end, made once (0048).

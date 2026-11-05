@@ -185,7 +185,7 @@ declare
   bot uuid; t uuid := tests.thread('Staff reach'); p uuid; pl jsonb;
 begin
   perform pg_temp.cards();
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Reach Bot', 'reach-bot', 'bot', now()) returning id into bot;
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Reach Bot', 'reach-bot', 'persona', now()) returning id into bot;
   perform set_config('kayfabb.staff_writer', 'on', true);
   p := tests.post(bot, t, 'Behave.');
   perform set_config('kayfabb.staff_writer', '', true);
@@ -285,26 +285,26 @@ end $$;
 do $$
 declare why text;
 begin
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "reaches": ["character"], "lasts": {"unit": "day", "count": 1}}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "reaches": ["character"], "lasts": {"unit": "day", "count": 1}}]}')$s$);
   if why is distinct from 'card "seedling" reaches a character, which takes a card of uncommon or rarer; it is common' then raise exception 'the seed holds reachRarity, said %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "uncommon", "reaches": ["character"]}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "uncommon", "reaches": ["character"]}]}')$s$);
   if why is distinct from 'card "seedling" reaches beyond a post with no time up (lasts); every effect beyond a post ends at its time' then raise exception 'a card beyond a post has a time up, said %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "legendary", "reaches": ["thread"], "lasts": {"unit": "week", "count": 1}}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "legendary", "reaches": ["thread"], "lasts": {"unit": "week", "count": 1}}]}')$s$);
   if why is distinct from 'card "seedling" lasts 1 week, longer than a thread effect may (reachLasts.thread, 1 day)' then raise exception 'a time up is at most its reach''s, said %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "legendary", "play": "set", "reaches": ["post", "board"], "lasts": {"unit": "day", "count": 1}}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "legendary", "play": "set", "reaches": ["post", "board"], "lasts": {"unit": "day", "count": 1}}]}')$s$);
   if why is distinct from 'card "seedling" is set face down, and a Set lands only on a post' then raise exception 'a Set lands on a post alone, said %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "reaches": ["room"]}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "reaches": ["room"]}]}')$s$);
   if why is distinct from 'card "seedling" reaches ["room"]; a card reaches a list of post, character, thread or board, each once' then raise exception 'a reach is one of four, said %', why; end if;
   -- Quoted as JSON.stringify quotes it, so the seed and instanceProblems say the same words.
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "reaches": ["post", "post"]}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "reaches": ["post", "post"]}]}')$s$);
   if why is distinct from 'card "seedling" reaches ["post","post"]; a card reaches a list of post, character, thread or board, each once' then raise exception 'a reach is listed once, said %', why; end if;
   -- A time up that is no span is named, never a cast error.
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "legendary", "reaches": ["thread"], "lasts": {"unit": "day", "count": 1.5}}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "legendary", "reaches": ["thread"], "lasts": {"unit": "day", "count": 1.5}}]}')$s$);
   if why !~ '^card "seedling" lasts \{"unit": "day", "count": 1.5\}; it must be a span' then raise exception 'a malformed time up is named, said %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "uncommon", "reaches": ["character"], "lasts": {"unit": "day", "count": 1}, "pins": true}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "uncommon", "reaches": ["character"], "lasts": {"unit": "day", "count": 1}, "pins": true}]}')$s$);
   if why is distinct from 'card "seedling" pins true; only a card that reaches a thread pins, and pins is true or left out' then raise exception 'only a thread card pins, said %', why; end if;
   -- One that holds is written with its reaches.
-  perform seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "uncommon", "reaches": ["character"], "lasts": {"unit": "day", "count": 7}}]}');
+  perform seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "uncommon", "reaches": ["character"], "lasts": {"unit": "day", "count": 7}}]}');
   if (select reaches from card_kinds where key = 'seedling') is distinct from '{character}' then raise exception 'the seed writes a card''s reaches'; end if;
   -- reachRarity and reachLasts are held to their shapes.
   if pg_temp.refusal($s$update settings set value = '{"character": "uncommon"}' where key = 'reachRarity'$s$) is null then raise exception 'reachRarity names all three reaches'; end if;
@@ -371,7 +371,7 @@ begin
   got := settlement_input(now() - interval '1 day', now() + interval '1 minute');
   if exists (select 1 from jsonb_array_elements(got -> 'acts') e where e ->> 'id' = old::text) then raise exception 'an earlier play beyond a post is no earlier card on the post a reaction touches'; end if;
   -- A character play on a staff mask, from its post, makes that post no unscored target: the play has no target post.
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Settle Bot', 'settle-bot', 'bot', now()) returning id into bot;
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Settle Bot', 'settle-bot', 'persona', now()) returning id into bot;
   perform set_config('kayfabb.staff_writer', 'on', true);
   bot_post := tests.post(bot, t, 'Behave.', now() - interval '2 days');
   perform set_config('kayfabb.staff_writer', '', true);

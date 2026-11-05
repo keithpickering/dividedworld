@@ -26,6 +26,7 @@ describe('a Boss\'s profile', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'The Director' })).toBeInTheDocument();
     const card = screen.getByRole('region', { name: 'About The Director' });
     expect(within(card).getByText('ADMINISTRATOR')).toBeInTheDocument();
+    expect(within(card).getByText('Test Cores')).toBeInTheDocument();
     expect(card).toHaveTextContent('Head of Board Operations (Toast Division)');
     const table = await within(card).findByRole('table', { name: 'About The Director, in its own words' });
     const row = (name: string) => within(table).getByRole('rowheader', { name }).closest('tr')!;
@@ -82,16 +83,71 @@ describe('a Boss\'s profile', () => {
   });
 });
 
+describe('a staff profile\'s career', () => {
+  const led = (season: number, from: string, until: string | null, how: string) => ({ season, since: from, until, how });
+  test('lists the seasons it led and the offices it held, newest first, in plain words', async () => {
+    open('director', (f) => f.seed.career('director', {
+      led: [led(2, '2026-02-01T00:00:00+00:00', '2026-03-29T00:00:00+00:00', 'rotation'), led(5, '2026-06-07T00:00:00+00:00', null, 'nomination')],
+      offices: [{ office: 'mod', since: '2026-03-29T00:00:00+00:00', until: '2026-06-07T00:00:00+00:00', cause: 'handover' }],
+    }));
+    const career = await screen.findByRole('region', { name: 'Career' });
+    const items = await within(career).findAllByRole('listitem');
+    expect(items).toHaveLength(3);
+    expect(items[0]).toHaveTextContent('Boss in Season 5, from 2026-06-07 until now, named by the Boss before it.');
+    expect(items[1]).toHaveTextContent('Mod Bot from 2026-03-29 to 2026-06-07, at a handover.');
+    expect(items[2]).toHaveTextContent('Boss in Season 2, from 2026-02-01 to 2026-03-29 (8 weeks), by rotation.');
+  });
+  test('says plainly that a persona that never served has no career, and keeps another persona\'s seasons out of it', async () => {
+    open('bot', (f) => f.seed.career('director', { led: [led(1, '2026-01-01T00:00:00+00:00', null, 'seed')], offices: [] }));
+    const career = await screen.findByRole('region', { name: 'Career' });
+    await waitFor(() => expect(career).toHaveTextContent('No office held yet.'));
+    expect(career).not.toHaveTextContent('Season 1');
+    expect(within(career).queryAllByRole('listitem')).toHaveLength(0);
+  });
+});
+
 describe('a Mod Bot\'s profile', () => {
   test('is the same screen with a MODERATOR badge and its own title, and says plainly that its log is empty until it makes its visits', async () => {
     open('bot');
     expect(await screen.findByRole('heading', { level: 1, name: 'Hall Monitor' })).toBeInTheDocument();
     const card = screen.getByRole('region', { name: 'About Hall Monitor' });
     expect(within(card).getByText('MODERATOR')).toBeInTheDocument();
+    expect(within(card).getByText('Test Cores')).toBeInTheDocument();
     expect(within(card).queryByText('ADMINISTRATOR')).toBeNull();
     expect(card).toHaveTextContent('Keeper of the Hall');
     expect(await screen.findByText(/Nothing here yet\. A Mod Bot's moderation log stays empty until Mod Bots start their visits\./u)).toBeInTheDocument();
     expect(screen.queryByRole('table', { name: 'Moderation log, newest first' })).toBeNull();
+  });
+});
+
+describe('a member or benched persona\'s profile', () => {
+  test.each(['member', 'benched'] as const)('a %s shows the group chip and no office title', async (office) => {
+    const fake = buildWorld();
+    fake.signInAs(fake.seed.account('reader'));
+    const id = fake.seed.staff(`p-${office}`, 'Backup Persona', office, { title: 'Understudy', at: fake.clock.now() - 86_400_000 });
+    renderIn(fake, <ProfileScreen id={id} />, { path: `/c/${id}` });
+    await screen.findByRole('heading', { level: 1, name: 'Backup Persona' });
+    const card = await screen.findByRole('region', { name: 'About Backup Persona' });
+    expect(within(card).getByText('Test Cores')).toBeInTheDocument();
+    expect(within(card).queryByText('ADMINISTRATOR')).toBeNull();
+    expect(within(card).queryByText('MODERATOR')).toBeNull();
+  });
+});
+
+describe('the career\'s loading and failure', () => {
+  test('a failed load is announced in an alert region', async () => {
+    open('director', (f) => { f.staffCareer = () => Promise.reject(new Error('down')); });
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Its career could not be loaded');
+    expect(within(screen.getByRole('region', { name: 'Career' })).getByRole('alert')).toBe(alert);
+  });
+  test('loading is announced in a status region, and goes when the career arrives', async () => {
+    let arrive!: () => void;
+    open('director', (f) => { f.staffCareer = () => new Promise((res) => { arrive = () => res({ led: [], offices: [] }); }); });
+    const career = await screen.findByRole('region', { name: 'Career' });
+    expect(within(career).getByRole('status')).toHaveTextContent('Reading the career');
+    arrive();
+    await waitFor(() => expect(within(career).getByRole('status')).toBeEmptyDOMElement());
   });
 });
 
@@ -123,6 +179,18 @@ describe('a Boss\'s log after a handover', () => {
     expect(within(byName('Pointless Toast Palace')).getAllByRole('cell').at(-1)).toHaveTextContent('in force, kept by The Clerk');
     expect(within(byName('Set Aside Alley')).getAllByRole('cell').at(-1)).toHaveTextContent('ended at the handover');
     expect(within(byName('Forgotten Fen Place')).getAllByRole('cell').at(-1)).toHaveTextContent('ended at the handover');
+  });
+
+  test('names a keeper who has not debuted in plain words to a non-admin, never its key', async () => {
+    open('director', (fake, world) => {
+      fake.seed.staff('the-waiting', 'Waiting Persona', 'member', { debuted: false });
+      fake.seed.keepMove(world.inForce, 'the-waiting', { at: fake.clock.now() - 3_600_000 });
+    });
+    await waitFor(async () => expect(await rows()).toHaveLength(4));
+    const text = (await log()).textContent ?? '';
+    expect(text).toContain('kept by a Boss who has not been introduced');
+    expect(text).not.toContain('the-waiting');
+    expect(text).not.toContain('Waiting Persona');
   });
 
 });

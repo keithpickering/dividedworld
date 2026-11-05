@@ -107,7 +107,7 @@ declare
 begin
   p := tests.post(a1, t, 'Ann''s post.');
   q := tests.post(b1, t, 'Bob''s post.');
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Hf Bot', 'hf-bot', 'bot', now()) returning id into staff;
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Hf Bot', 'hf-bot', 'persona', now()) returning id into staff;
   perform set_config('kayfabb.staff_writer', 'on', true);
   staff_post := tests.post(staff, t_staff, 'The bot speaks.');
   perform set_config('kayfabb.staff_writer', '', true);

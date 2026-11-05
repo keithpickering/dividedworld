@@ -28,6 +28,7 @@ import { createMine } from '../reactions/mine.ts';
 import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
 import { createTallies } from '../thread/tallies.ts';
 import { Link, useLocation, useNavigate } from '../router.tsx';
+import { todoDraft } from '../admin/handover-words.ts';
 import { WriteUpdate } from '../admin/WriteUpdate.tsx';
 import '../cards/kit.css';
 import './updates.css';
@@ -59,6 +60,12 @@ export interface UpdatesProps {
   /** Whether the player may write one. */
   readonly admin: boolean;
   readonly onWritten: (update: Update) => void;
+  /** A handover's facts to open the writer with (`?write=handover&season=N`), and the writer open on them. */
+  readonly initial?: { readonly title: string; readonly words: string };
+  /** The address asked for a handover's writer, and that to-do is not there (cleared by an update or dismissed). */
+  readonly handoverGone?: number;
+  /** The address asked for a handover's writer, and what it asked cannot be shown: said plainly (the to-do list could not be read, or no season was named). */
+  readonly handoverProblem?: string;
 }
 
 function Post({ update }: { readonly update: Update }) {
@@ -111,9 +118,10 @@ function Post({ update }: { readonly update: Update }) {
   );
 }
 
-export function Updates({ updates, open, more, onMore, admin, onWritten }: UpdatesProps) {
+export function Updates({ updates, open, more, onMore, admin, onWritten, initial, handoverGone, handoverProblem }: UpdatesProps) {
   const current = updates.find((u) => u.act === open) ?? updates[0];
-  const [writing, setWriting] = useState(false);
+  const [writing, setWriting] = useState(initial !== undefined || handoverGone !== undefined || handoverProblem !== undefined);
+  useEffect(() => { if (initial !== undefined || handoverGone !== undefined || handoverProblem !== undefined) setWriting(true); }, [initial, handoverGone, handoverProblem]);
   const voice = updates[0]?.name;
   return (
     <div className="kb-updates">
@@ -144,7 +152,9 @@ export function Updates({ updates, open, more, onMore, admin, onWritten }: Updat
           {admin && (
             <div className="kb-updates-write">
               <ButtonRow><GlassButton aria-expanded={writing} onClick={() => setWriting(!writing)}>Write an update</GlassButton></ButtonRow>
-              {writing && <WriteUpdate onWritten={onWritten} />}
+              {writing && handoverGone !== undefined && <p className="kb-updates-note" role="status">There is no to-do for season {handoverGone}: an update was posted after its handover, or it was dismissed.</p>}
+              {writing && handoverProblem !== undefined && <p className="kb-updates-note" role="status">{handoverProblem}</p>}
+              {writing && <WriteUpdate key={initial?.title ?? ''} onWritten={onWritten} initial={initial} />}
             </div>
           )}
           {current ? <Post key={current.act} update={current} /> : <p className="kb-updates-empty kb-calm">Nothing here yet. When the developers post an update, it is here, and in everyone&apos;s alerts.</p>}
@@ -168,6 +178,19 @@ export function UpdatesScreen() {
   const [state, setState] = useState<State>({ status: 'loading' });
   const [admin, setAdmin] = useState(false);
   const [paging, setPaging] = useState(false);
+  /* `?write=handover&season=N` (from the admin queue's to-do): the writer opens on that handover's facts. Read once the page knows the reader is an admin. */
+  const asked = Number(query.get('season'));
+  const season = query.get('write') === 'handover' && Number.isInteger(asked) && asked > 0 ? asked : null;
+  const [handover, setHandover] = useState<{ readonly season: number; readonly draft: { readonly title: string; readonly words: string } | null; readonly failed?: true } | null>(null);
+  useEffect(() => {
+    if (!admin || season === null) { setHandover(null); return undefined; }
+    let live = true;
+    api.adminQueue().then(
+      (q) => { const todo = q.todos.find((t) => t.season === season); if (live) setHandover({ season, draft: todo === undefined ? null : todoDraft(todo) }); },
+      () => { if (live) setHandover({ season, draft: null, failed: true }); },
+    );
+    return () => { live = false; };
+  }, [api, admin, season]);
 
   useEffect(() => {
     if (!signedIn) return undefined;
@@ -184,6 +207,10 @@ export function UpdatesScreen() {
   if (signedIn === null || state.status === 'loading') return <div className="kb-updates" aria-busy="true" />;
   if (state.status === 'failed') return <div className="kb-updates"><p className="kb-updates-empty kb-calm">The updates could not be loaded. Reload the page to try again.</p></div>;
 
+  const asksHandover = query.get('write') === 'handover';
+  const problem = asksHandover && season === null ? 'The address names no season, so there is no handover to write about. Open the to-do from the admin queue.'
+    : handover?.failed === true ? 'The to-do list could not be loaded, so the handover\'s facts are not here. Reload the page to try again.' : undefined;
+
   const more = () => {
     const last = state.updates.at(-1);
     if (!last || paging) return;
@@ -197,5 +224,5 @@ export function UpdatesScreen() {
     setState((was) => (was.status !== 'ready' ? was : { ...was, updates: [update, ...was.updates.filter((u) => u.act !== update.act)] }));
     navigate(updatesAt(update.act));
   };
-  return <Updates updates={state.updates} open={query.get('update')} more={state.more} onMore={more} admin={admin} onWritten={written} />;
+  return <Updates updates={state.updates} open={query.get('update')} more={state.more} onMore={more} admin={admin} onWritten={written} initial={handover?.draft ?? undefined} handoverGone={handover !== null && handover.draft === null && handover.failed !== true ? handover.season : undefined} handoverProblem={problem} />;
 }

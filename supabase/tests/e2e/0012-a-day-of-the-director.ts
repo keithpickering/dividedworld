@@ -15,10 +15,9 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { psqlDb, sql } from './psql-db.ts';
+import { psqlDb, sql, scratchSeed } from './psql-db.ts';
 import { runMeeting } from '../../functions/meet/core.ts';
 import { runSettlement } from '../../functions/settle/core.ts';
-import { instanceSeed } from '../../functions/_shared/seed.ts';
 import { instance } from '../../functions/_shared/instance.ts';
 import { models } from '../../functions/_shared/models/index.ts';
 import { ledgerWriter } from '../../functions/_shared/models/ledger.ts';
@@ -30,7 +29,7 @@ const tiers = { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' };
 
 test('a rename is queued, lands, is met by three characters and ends, and the next meeting is told who met it', async () => {
   const db = psqlDb();
-  await db.rpc('seed_instance', { payload: instanceSeed(instance) });
+  await db.rpc('seed_instance', { payload: scratchSeed(instance) });
   sql(`update settings set value = 'true' where key = 'systemEnabled'`);
   sql(`update seasons set boss = '${BOSS}' where ends_at is null`);
   sql(`insert into move_bank (staff, balance, as_of) values ('${BOSS}', 3, now()) on conflict (staff) do update set balance = 3, as_of = now()`);
@@ -159,7 +158,7 @@ test('a rename is queued, lands, is met by three characters and ends, and the ne
   assert.match(line, /demand distinctCharactersOnBoard 3 of 3, met/);
   assert.match(line, /met by Dayrun Ada, Dayrun Bea and Dayrun Cyd/, line);
   assert.ok(!line.includes('Dayrun Dov') && !line.includes('Dayrun Rex'), 'neither the early poster nor the one elsewhere is credited');
-  assert.ok(!line.includes(instance.system.bosses.find((b) => b.key === BOSS)!.name), 'a staff member is never credited');
+  assert.ok(!line.includes(instance.system.roster.find((b) => b.key === BOSS)!.name), 'a staff member is never credited');
 
   // ---- A reaction to the Boss's move Act is public and pays nobody; one to a player's post in the same window does pay. ----
   const rex = psqlDb(account('Dayrun Rex'));

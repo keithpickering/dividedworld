@@ -40,7 +40,7 @@ test('reads a thread: from the index to a board, to a thread, and on to the next
 
 test('reacts: opens the picker from the keyboard, moves with arrows, chooses with Enter, and focus comes back', async ({ page }) => {
   await page.goto('/b/general');
-  await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+  await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
   const post = page.locator('#post-3'); // Spritey's reply to nobody: another player's character, so it has a React button
   const react = post.getByRole('button', { name: 'React' });
   await expect(react).toBeVisible();
@@ -70,7 +70,7 @@ test('reacts: opens the picker from the keyboard, moves with arrows, chooses wit
 
 test('plays a card by keyboard: the HUD\'s Hand, a card armed, the glass tile on a post, the form, and Esc puts the armed card back', async ({ page }) => {
   await page.goto('/b/general');
-  await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+  await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
   const post = page.locator('#post-3');
   /* The post's row has no "Play card" (the owner: a game act is glass): the hand is the HUD's. */
   await expect(post.getByRole('button', { name: 'Play card' })).toHaveCount(0);
@@ -101,7 +101,7 @@ test('plays a card by keyboard: the HUD\'s Hand, a card armed, the glass tile on
 
 test('spins: opens the form from a post, types a title, sends with Enter, and lands on ORIGIN', async ({ page }) => {
   await page.goto('/b/general');
-  await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+  await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
   const post = page.locator('#post-1');
   const open = post.getByRole('button', { name: 'Spin thread' });
   await tabTo(page, open);
@@ -123,7 +123,7 @@ test.describe('on a phone', () => {
 
   test('arming a card from the hand\'s sheet leaves focus on the hand button', async ({ page }) => {
     await page.goto('/b/general');
-    await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+    await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
     const handButton = page.getByRole('button', { name: /^Hand, \d+ postcards?$/ });
     await tabTo(page, handButton);
     await page.keyboard.press('Enter');

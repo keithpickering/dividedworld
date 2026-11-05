@@ -152,13 +152,16 @@ test.describe('high contrast', () => {
    * Signed out no account's preference applies; the screens are read under high contrast's mark as
    * Settings would set it, so a player who signs out and back in meets the same ground.
    */
-  for (const path of ['/sign-in', '/register']) {
+  for (const [path, name] of [['/sign-in', 'Sign in'], ['/register', 'Register']] as const) {
     test(`${path}, signed out: every line of glass text stands on solid ground under high contrast`, async ({ page }) => {
       await page.goto('/');
       await page.waitForFunction(() => '__kbFake' in globalThis);
       await page.evaluate(() => (globalThis as E2eWindow).__kbFake.signInAs(null));
+      /* The page has seen the sign-out when it asks for a sign-in: a navigation pushed before that is lost to the session change. */
+      await expect(page.getByRole('region', { name: 'Game HUD' }).getByRole('link', { name: 'Sign in' })).toBeVisible();
       await page.evaluate((p) => { history.pushState(null, '', p); window.dispatchEvent(new PopStateEvent('popstate')); }, path);
-      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+      /* The page asked for, by its own title: the first page's h1 is there before the pushed one is drawn. */
+      await expect(page.getByRole('heading', { level: 1, name, exact: true })).toBeVisible();
       await page.evaluate(() => document.documentElement.setAttribute('data-kb-contrast', 'high'));
       expect(await linesOffGround(page)).toEqual([]);
     });
@@ -174,7 +177,7 @@ test.describe('high contrast', () => {
   /* The glass over the board and over a glass page: the React picker on a post, the Turn modal on My characters, and the hand. */
   test('the React picker over a post: every line stands on solid ground', async ({ page }) => {
     await prefer(page, '/b/general', { contrast: 'high' });
-    await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+    await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
     await page.locator('#post-3').getByRole('button', { name: 'React' }).click();
     await expect(page.getByRole('dialog', { name: /^React to / })).toBeVisible();
     expect(await page.locator('.kb-glass-dialog').count()).toBeGreaterThan(0);
@@ -225,13 +228,16 @@ test.describe('200% text at 1280px wide', () => {
     });
   }
 
-  for (const path of ['/sign-in', '/register']) {
+  for (const [path, name] of [['/sign-in', 'Sign in'], ['/register', 'Register'], ['/b/general', 'WELCOME TO THE BEEF ZONE']] as const) {
     test(`${path}, signed out, read at 200%: one column, no sideways scroll, no text cut off`, async ({ page }) => {
       await page.goto('/');
       await page.waitForFunction(() => '__kbFake' in globalThis);
       await page.evaluate(() => (globalThis as E2eWindow).__kbFake.signInAs(null));
+      /* The page has seen the sign-out when it asks for a sign-in: a navigation pushed before that is lost to the session change. */
+      await expect(page.getByRole('region', { name: 'Game HUD' }).getByRole('link', { name: 'Sign in' })).toBeVisible();
       await page.evaluate((p) => { history.pushState(null, '', p); window.dispatchEvent(new PopStateEvent('popstate')); }, path);
-      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+      /* The page asked for, by its own title: the first page's h1 is there before the pushed one is drawn, and a check run then reads the wrong screen. */
+      await expect(page.getByRole('heading', { level: 1, name, exact: true })).toBeVisible();
       /* Signed out no account's text size applies; it is set on the root as Settings sets it. */
       await page.evaluate(() => document.documentElement.setAttribute('data-kb-text-size', '200'));
       await expect(page.locator('html')).toHaveAttribute('data-kb-layout', 'phone');

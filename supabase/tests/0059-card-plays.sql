@@ -524,13 +524,13 @@ end $$;
 do $$
 declare why text;
 begin
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "trap": {"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}, "rarity": "common"}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "trap": {"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}, "rarity": "common"}]}')$s$);
   if why is distinct from 'card "seedling" has a trap, and only a Set card does' then raise exception 'a trap on a Cast seeded: %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price"}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price"}]}')$s$);
   if why is distinct from 'card "seedling" has no rarity; a rarity is common, uncommon, rare or legendary' then raise exception 'a card with no rarity seeded: %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "nothing"}}}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "nothing"}}}]}')$s$);
   if why is distinct from 'card "seedling" strikes with "nothing", which the instance does not have' then raise exception 'a strike of no card seeded: %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "use", "ward": true, "lasts": {"unit": "day", "count": 7}}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "use", "ward": true, "lasts": {"unit": "day", "count": 7}}]}')$s$);
   if why is not null then raise exception 'a ward was refused: %', why; end if;
   if (select lasts from card_kinds where key = 'seedling') is distinct from interval '7 days' or not (select ward from card_kinds where key = 'seedling') then raise exception 'the seed wrote the ward and its time up'; end if;
   why := pg_temp.refusal($s$insert into settings (key, value) values ('setLasts', '{"unit": "minute", "count": 5}') on conflict (key) do update set value = excluded.value$s$);
@@ -554,7 +554,7 @@ begin
   perform pg_temp.cards();
   perform pg_temp.hand(ann, 'catcher');
   perform pg_temp.hand(bob, 'sweetie', 'splat');
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Settle Boss', 'settle-boss', 'boss', now()) returning id into boss;
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Settle Boss', 'settle-boss', 'persona', now()) returning id into boss;
   perform set_config('kayfabb.staff_writer', 'on', true);
   insert into acts (character, kind, thread, payload) values (boss, 'post', t, '{"body": "A decree."}') returning id into decree;
   perform set_config('kayfabb.staff_writer', '', true);
@@ -612,19 +612,19 @@ end $$;
 do $$
 declare why text;
 begin
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "use", "ward": true}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "use", "ward": true}]}')$s$);
   if why is distinct from 'card "seedling" is a ward with no time up (lasts); a ward ends at its time' then raise exception 'a ward with no time up seeded: %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "reply"}, "outcome": {"do": "payout"}}}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "reply"}, "outcome": {"do": "payout"}}}]}')$s$);
   if why is distinct from 'card "seedling" pays out on a reply; it pays out only on a cast, since only a cast is paid for' then raise exception 'a payout on a reply seeded: %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "sneeze"}, "outcome": {"do": "nullify"}}}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "sneeze"}, "outcome": {"do": "nullify"}}}]}')$s$);
   if why is distinct from 'card "seedling" springs on "sneeze"; a trap springs on cast, reaction, reply, quote, visit' then raise exception 'a trap on no trigger seeded: %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "cast"}, "outcome": {"do": "strike", "card": "sweetie"}}}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "cast"}, "outcome": {"do": "strike", "card": "sweetie"}}}]}')$s$);
   if why is distinct from 'card "seedling" strikes on a cast; a strike lays its card on a reply or a quote, until cards reach characters' then raise exception 'a strike on a cast seeded: %', why; end if;
   -- A struck card already in the table, rarer than the trap, is refused as one in the seed is.
   update card_kinds set rarity = 'legendary' where key = 'blot';
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "blot"}}}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "blot"}}}]}')$s$);
   if why is distinct from 'card "seedling" strikes with "blot", which is rarer than the trap (common)' then raise exception 'a strike of a rarer card in the table seeded: %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "use", "ward": true, "lasts": {"unit": "day", "count": "seven"}}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "use", "ward": true, "lasts": {"unit": "day", "count": "seven"}}]}')$s$);
   if why is distinct from 'card "seedling" lasts {"unit": "day", "count": "seven"}; it must be a span: a unit of day, week or month and a whole count from 1 to 1000' then raise exception 'a time up of no number seeded: %', why; end if;
   -- An invite's lifetime is still a span of days or more (0020), beside setLasts.
   why := pg_temp.refusal($s$insert into settings (key, value) values ('inviteLifetime', '{"unit": "minute", "count": 5}') on conflict (key) do update set value = excluded.value$s$);

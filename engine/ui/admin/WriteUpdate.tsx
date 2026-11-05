@@ -10,6 +10,10 @@
  * The server repairs what an admin typed where it can (the space around words, a row with neither label nor text) and refuses, naming the
  * change's number, where it cannot; its words are shown as they come. `postUpdate` holds the real rules; the bounds below only keep the form
  * from being sent when it is plainly empty or too long, and the rows to the 30 the page lists.
+ *
+ * Opened from a handover's to-do (the staff roster design, section 11), the form carries `initial`: a title and the handover's plain facts as the
+ * words. They are a draft the admin replaces, not an announcement: the form says so, and holds the post while the words are still exactly the
+ * filled-in lines, so the facts alone are never posted as if they were written. Nothing here calls a model.
  */
 import { useId, useState, type FormEvent } from 'react';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
@@ -23,11 +27,17 @@ const MOST_CHANGES = 30;
 
 interface Row { readonly key: number; readonly label: string; readonly text: string }
 
-export function WriteUpdate({ onWritten }: { readonly onWritten?: (update: Update) => void }) {
+export interface WriteUpdateProps {
+  readonly onWritten?: (update: Update) => void;
+  /** A title and words to open with (a handover's facts): a draft for the admin to replace. */
+  readonly initial?: { readonly title: string; readonly words: string };
+}
+
+export function WriteUpdate({ onWritten, initial }: WriteUpdateProps) {
   const { api, instance, settings } = useKayfa();
   const id = useId();
-  const [title, setTitle] = useState('');
-  const [words, setWords] = useState('');
+  const [title, setTitle] = useState(initial?.title ?? '');
+  const [words, setWords] = useState(initial?.words ?? '');
   const [rows, setRows] = useState<readonly Row[]>([{ key: 0, label: '', text: '' }]);
   const [next, setNext] = useState(1);
   const [busy, setBusy] = useState(false);
@@ -46,15 +56,17 @@ export function WriteUpdate({ onWritten }: { readonly onWritten?: (update: Updat
 
   const length = [...words].length;
   const blank = title.trim() === '' || words.trim() === '';
+  /* The filled-in lines, untouched: a draft, not yet an announcement. */
+  const drafting = initial !== undefined && words === initial.words;
   const tooLong = length > settings.postMaxLength || [...title].length > settings.titleMaxLength;
 
   /* Why the button is held, in words: the button is described by this, and a too-long form says by how much. */
   const over = length - settings.postMaxLength;
-  const why = over > 0 ? `Too long by ${over} ${over === 1 ? 'character' : 'characters'}` : tooLong ? 'The title is too long.' : blank ? 'Give the update a title and some words to post it.' : '';
+  const why = over > 0 ? `Too long by ${over} ${over === 1 ? 'character' : 'characters'}` : tooLong ? 'The title is too long.' : blank ? 'Give the update a title and some words to post it.' : drafting ? 'Change the words to post. The filled-in lines are facts, not yet the announcement.' : '';
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (busy || blank || tooLong) return;
+    if (busy || blank || tooLong || drafting) return;
     setBusy(true);
     setRefusal(null);
     setPosted(false);
@@ -88,6 +100,11 @@ export function WriteUpdate({ onWritten }: { readonly onWritten?: (update: Updat
         <label htmlFor={`${id}-title`}>Title</label>
         <input id={`${id}-title`} className="kb-write-update-input" value={title} maxLength={settings.titleMaxLength} autoComplete="off" onChange={(e) => { edit(); setTitle(e.target.value); }} />
       </div>
+      {initial !== undefined && (
+        <p className="kb-write-update-note" role="note">
+          The title and words are filled in from the handover: these are facts, not the announcement. Add to them or rewrite them in your own words; no model does.
+        </p>
+      )}
       <div className="kb-write-update-field">
         <label htmlFor={`${id}-words`}>Words</label>
         <textarea id={`${id}-words`} className="kb-write-update-input" rows={6} value={words} aria-describedby={`${id}-count`} onChange={(e) => { edit(); setWords(e.target.value); }} />
@@ -106,7 +123,7 @@ export function WriteUpdate({ onWritten }: { readonly onWritten?: (update: Updat
         <ButtonRow><GlassButton size="s" disabled={rows.length >= MOST_CHANGES} onClick={add}>Add a change</GlassButton></ButtonRow>
       </fieldset>
       <ButtonRow>
-        <GlassButton type="submit" kind="primary" disabled={busy || blank || tooLong} aria-describedby={why === '' ? undefined : `${id}-why`}>Post update</GlassButton>
+        <GlassButton type="submit" kind="primary" disabled={busy || blank || tooLong || drafting} aria-describedby={why === '' ? undefined : `${id}-why`}>Post update</GlassButton>
       </ButtonRow>
       <div id={`${id}-why`} aria-live="polite" className="kb-write-update-why">{why}</div>
       <div role="status" className="kb-write-update-status">{posted ? 'Posted. Every player has it in their alerts.' : ''}</div>

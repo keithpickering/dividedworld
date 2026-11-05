@@ -7,9 +7,8 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { psqlDb, sql } from './psql-db.ts';
+import { psqlDb, sql, scratchSeed } from './psql-db.ts';
 import { runMeeting } from '../../functions/meet/core.ts';
-import { instanceSeed } from '../../functions/_shared/seed.ts';
 import { instance } from '../../functions/_shared/instance.ts';
 import { models } from '../../functions/_shared/models/index.ts';
 import { ledgerWriter } from '../../functions/_shared/models/ledger.ts';
@@ -17,7 +16,7 @@ import type { Instance } from '../../../engine/rules/types.ts';
 
 const quiet: Instance = { ...instance, system: { ...instance.system, feeds: [] } };
 const tiers = { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' };
-const ROSTER = instance.system.bosses.map((b) => b.key);
+const ROSTER = instance.system.roster.filter((b) => !instance.system.firstStaff.includes(b.key)).map((b) => b.key);
 const OLD = instance.system.firstBoss;
 const NOMINEE = ROSTER.find((k) => k !== OLD)!;
 // What the rotation would have chosen: the Boss after the outgoing one, which the nomination must not be.
@@ -32,7 +31,7 @@ const makeDue = (where: string) => sql(`
 test('the outgoing Boss names a successor, the season rolls over, and the new Boss keeps the old rename and makes its own', async () => {
   assert.notEqual(NOMINEE, ROTATION, 'the roster must let a nomination differ from the rotation');
   const db = psqlDb();
-  await db.rpc('seed_instance', { payload: instanceSeed(instance) });
+  await db.rpc('seed_instance', { payload: scratchSeed(instance) });
   sql(`update settings set value = 'true' where key = 'systemEnabled'`);
   sql(`update seasons set boss = '${OLD}' where ends_at is null`);
   sql(`insert into move_bank (staff, balance, as_of) values ('${OLD}', 3, now()) on conflict (staff) do update set balance = 3, as_of = now()`);

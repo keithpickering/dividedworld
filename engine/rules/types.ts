@@ -15,6 +15,7 @@ import type { Duty } from '../system/duties.ts';
 import type { HintSettings } from './hints.ts';
 import type { AlertKind } from './alerts.ts';
 import type { PhaseOverrides, PhaseSettings } from '../system/phases.ts';
+import type { PoolTrigger } from '../system/pool.ts';
 
 /** Where a reaction sits on the two axes the classes read: how excited, how positive. */
 export type Quadrant = 'excitedPositive' | 'excitedNegative' | 'calmPositive' | 'boredNegative';
@@ -41,6 +42,28 @@ export interface Span {
   /** Minutes only where a setting says it takes them (editGrace, presenceWindow, hints.window); a window, a season and a cooldown count days or more. */
   readonly unit: 'minute' | 'day' | 'week' | 'month';
   readonly count: number;
+}
+
+/** The posting pool's numbers (`Settings.pool`). */
+export interface PoolSettings {
+  /** How many posts a week the pool pays for, in all: every unprompted post at every office. */
+  readonly weekly: number;
+  /** The share of a day's posts held back for personas with little history, from 0 to 0.5; the first favorites cannot hold every slot forever. */
+  readonly holdback: number;
+  /** How many new threads a week the pool may start; zero is none, and then every pool post is a reply. */
+  readonly threadsWeekly: number;
+  /** The rarest card a pool persona plays (`staff_play_card`, `staff_set_card`): a card above it is refused. */
+  readonly cardRarityMost: Rarity;
+  /** How many days back a persona's priority reads its posts and the reactions to them (`pool_signals`'s `tallies`). */
+  readonly priorityDays: number;
+  /** The most of its own recent notes (`staff_notes`) the Boss's meeting reads, newest kept. A note is read, never acted on. */
+  readonly notesRead: number;
+  /** How many of a thread's newest public posts a pool persona is shown when it writes in it (`chatter`), each cut to `digestExcerptChars`. */
+  readonly chatterThreadPosts: number;
+  /** Each trigger's strength: a candidate's score is its trigger's strength times its persona's priority. A whole number, at least 1. */
+  readonly strengths: Readonly<Record<PoolTrigger, number>>;
+  /** When the pool's daily pick and posts run, as a five-field cron expression in UTC. */
+  readonly chatterCron: string;
 }
 
 /** The settings the engine itself reads. A class's own numbers live with the class. */
@@ -164,6 +187,11 @@ export interface Settings {
   readonly memoryWheelhouse: number;
   /** The most real-world subjects a Boss's memory leaves alone, most important first. A starting point. */
   readonly memoryRealWorld: number;
+  /**
+   * The staff roster's posting pool (the staff roster design, sections 4 and 6; its plan, Task 9): how many posts a week the pool pays
+   * for, how a day's pick is made, and the numbers the pool's other readers share (notes, cards, priority). A starting point each.
+   */
+  readonly pool: PoolSettings;
   /** The longest a board's name may be, in characters, whether The System or a player proposes it. */
   readonly boardNameMaxLength: number;
   /** The most days any move may last, whatever its phase allows. A starting point. */
@@ -508,20 +536,6 @@ export interface StaffSeed {
 /** The standing orders' stock lines: what The System says when a model call is out of budget or fails. */
 export type StockLines = Readonly<Record<StockLineKey, readonly string[]>>;
 
-/** A Boss in the instance's roster: a staff character, and the persona that plays it for a season. */
-export interface BossPersona extends StaffSeed {
-  /** The system prompt that makes the model this Boss, built on the instance's shared premise. */
-  readonly persona: string;
-  /** What it is into on its first day. */
-  readonly startingHobby: string;
-  /** A line of temperament, for an admin reading the roster and for the meeting to be told. */
-  readonly temperament: string;
-  /** For a reinvention: the key of the Boss whose memory this persona picks up. */
-  readonly inheritsMemoryOf?: string;
-  /** This Boss's own phase numbers, clamped into the engine's caps (`PHASE_CAPS`). */
-  readonly phases?: PhaseOverrides;
-}
-
 /** One dumb multiple-choice question a Mod Bot asks of whoever tries to talk it down. */
 export interface QuizQuestion {
   readonly question: string;
@@ -536,9 +550,22 @@ export type Weakness =
   | { readonly kind: 'bribe'; readonly price: Hundredths }
   | { readonly kind: 'distraction' };
 
-/** A Mod Bot in the instance's roster: standing staff that outlasts Bosses. */
-export interface ModBotPersona extends StaffSeed {
+/**
+ * A persona in the instance's one roster (the staff roster design, section 1): a staff character and the mind that plays
+ * it. Every persona carries every field a Boss has and every field a Mod Bot has, so any persona can hold any office
+ * without a second shape.
+ */
+export interface Persona extends StaffSeed {
+  /** The system prompt that makes the model this persona, built on the instance's shared premise for the duty it is doing. */
   readonly persona: string;
+  /** What it is into on its first day. */
+  readonly startingHobby: string;
+  /** A line of temperament, for an admin reading the roster and for the meeting to be told. */
+  readonly temperament: string;
+  /** For a reinvention: the key of the persona whose memory this one picks up. */
+  readonly inheritsMemoryOf?: string;
+  /** Its own phase numbers as a Boss, clamped into the engine's caps (`PHASE_CAPS`). */
+  readonly phases?: PhaseOverrides;
   /** The kinds of board it likes to patrol. */
   readonly beats: readonly string[];
   /** The predicate keys it lobbies for. */
@@ -568,18 +595,20 @@ export interface FeedSource {
 }
 
 /**
- * Everything The System needs from an instance: its Bosses and Mod Bots, who does each duty, the lines it falls back
+ * Everything The System needs from an instance: its roster of personas, who does each duty, the lines it falls back
  * on, what it reads from outside, what it leaves alone, and the shape of a board's name. The engine names this
  * interface and never an instance's persona.
  */
 export interface SystemContent {
-  readonly bosses: readonly BossPersona[];
-  /** The key of the first season's Boss. */
+  /** Every staff persona the instance seeds: Bosses, Mod Bots and any other, one shape. */
+  readonly roster: readonly Persona[];
+  /** The member group every staff character is in; the engine reads its name from here. */
+  readonly staffGroup: { readonly name: string };
+  /** The roster key of the first season's Boss. */
   readonly firstBoss: string;
   /** The title of the one thread on The System's board where landed moves and their ends are written; the seed makes it once. */
   readonly announcementsTitle: string;
-  readonly modBots: readonly ModBotPersona[];
-  /** The keys of the bots on staff when the instance is seeded. */
+  /** The roster keys on staff when the instance is seeded (never the first Boss). */
   readonly firstStaff: readonly string[];
   readonly duties: Readonly<Record<Duty, DutyAssignee>>;
   readonly stockLines: StockLines;

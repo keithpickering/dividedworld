@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { BoardName, Character, CharacterCounts, MoveLogRow, MovesCursor, StaffProfile as StaffProfileData } from '../data/api.ts';
+import { careerText, type Career } from '../../system/career.ts';
 import { BbCode } from '../bbcode/render.tsx';
 import { MoveSentence } from '../board/MoveSentence.tsx';
 import { endedWords } from '../board/move-words.ts';
@@ -77,11 +78,45 @@ export function StaffProfile({ character: c }: { readonly character: Character }
             <p className="kb-small kb-muted">The interests, favorites, mood and signature are what it says about itself, in character, and it may bluff. The moderation log is a plain record.</p>
           </div>
         </section>
-        <ModerationLog staff={staff} bot={c.staffKind === 'bot'} />
+        <CareerList staff={staff} />
+        <ModerationLog staff={staff} bot={c.office === 'mod'} />
       </div>
     </div>
   );
 }
+
+/**
+ * The career: the seasons it led and the offices it held, as plain facts (`staff_career`, public like "Former Administrator" on a forum),
+ * newest first and cut to the engine's bound with "and N more." This is the glass, not the persona: it never bluffs.
+ */
+function CareerList({ staff }: { readonly staff: string }) {
+  const { api } = useKayfa();
+  const [career, setCareer] = useState<Career | 'failed' | null>(null);
+  useEffect(() => {
+    let live = true;
+    setCareer(null);
+    api.staffCareer(staff).then((c) => { if (live) setCareer(c); }, () => { if (live) setCareer('failed'); });
+    return () => { live = false; };
+  }, [api, staff]);
+  const lines = career && career !== 'failed' ? careerText(career) : null;
+  return (
+    <section className="kb-staff-career" aria-label="Career">
+      <h2 className="kb-heading">Career</h2>
+      {career === 'failed' && <p role="alert" className="kb-notice" data-kb-tone="refusal">Its career could not be loaded. Reload the page to try again.</p>}
+      <div role="status">{career === null && <p className="kb-visually-hidden">Reading the career</p>}</div>
+      {career === null && <p className="kb-muted" aria-hidden="true">Loading the career…</p>}
+      {lines !== null && lines.length === 0 && <p>No office held yet.</p>}
+      {lines !== null && lines.length > 0 && (
+        <ul className="kb-career">
+          {lines.map((l, i) => <li key={i}>{l}</li>)}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/** A staff key no public name resolves: a persona that has not debuted stays unnamed. */
+const UNINTRODUCED = 'a Boss who has not been introduced';
 
 function ModerationLog({ staff, bot }: { readonly staff: string; readonly bot: boolean }) {
   const { api } = useKayfa();
@@ -94,8 +129,8 @@ function ModerationLog({ staff, bot }: { readonly staff: string; readonly bot: b
   useEffect(() => {
     let live = true;
     setRows(null);
-    /* The roster's names are a nicety (who keeps a move, whom a nomination names): the log reads without them. */
-    Promise.all([api.movesLog(staff), api.boardNames(), api.bosses().catch(() => [])]).then(([page, names, roster]) => {
+    /* The debuted staff's public names are a nicety (who keeps a move, whom a nomination names): the log reads without them. */
+    Promise.all([api.movesLog(staff), api.boardNames(), api.staffNames().catch(() => [])]).then(([page, names, roster]) => {
       if (!live) return;
       setRows(page.rows);
       setOlder(page.older);
@@ -130,8 +165,8 @@ function ModerationLog({ staff, bot }: { readonly staff: string; readonly bot: b
             {rows.map((r) => (
               <tr key={r.act}>
                 <td className="kb-small"><time dateTime={r.at} title={new Date(r.at).toLocaleString('en-US')}>{shortDate(r.at)}</time></td>
-                <td><MoveSentence kind={r.kind} params={r.params} boards={boards} bosses={bosses} tense="done" /></td>
-                <td className="kb-small kb-muted">{endedWords(r.end, r.demand, r.keptBy ? bosses.find((b) => b.staff === r.keptBy)?.name ?? r.keptBy : null)}</td>
+                <td><MoveSentence kind={r.kind} params={r.params} boards={boards} bosses={bosses} unnamed={UNINTRODUCED} tense="done" /></td>
+                <td className="kb-small kb-muted">{endedWords(r.end, r.demand, r.keptBy ? bosses.find((b) => b.staff === r.keptBy)?.name ?? UNINTRODUCED : null)}</td>
               </tr>
             ))}
           </tbody>

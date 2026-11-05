@@ -175,6 +175,11 @@ export interface CardRules<Config = unknown> {
   canApply(target: CardTarget, effectsOnTarget: readonly CardEffect[], config?: Config): Verdict;
   /** Checks a caster's configuration and returns it in the card's own shape. */
   validateConfig(config: unknown): Verdict<Config>;
+  /**
+   * The configurations a staff persona may play it with, where `validateConfig({})` refuses (Whoops! needs an ink). Plain code picks one,
+   * seeded from the day; the model never chooses a configuration (`staffConfigOf`). A card with neither a default nor this list is not offered to the pool.
+   */
+  readonly staffConfigs?: readonly Config[];
   /** For a card whose effect holds state (Whoops!'s strokes): checks a state to be saved. */
   validateState?(state: unknown): Verdict<unknown>;
 }
@@ -354,6 +359,19 @@ export function landsOn(rules: Pick<CardRules, 'key' | 'stack' | 'reaches'>, tar
     return refuse(stack === 1 ? `${where} already carries that card` : `${where} already carries ${stack} of that card, the most it takes`);
   }
   return ok(undefined);
+}
+
+/**
+ * The configuration the pool plays a card with, chosen by code and never by a model: the card's default where `validateConfig({})` accepts
+ * one (played as `{}`, so the database applies the same default), else one of its `staffConfigs` picked by `rng` (in [0, 1)) and returned
+ * as `validateConfig` shapes it; null where code can build none, and the card is then not offered.
+ */
+export function staffConfigOf(card: CardRules, rng: () => number): unknown | null {
+  if (card.validateConfig({}).ok) return {};
+  const choices = (card.staffConfigs ?? []).filter((c) => card.validateConfig(c).ok);
+  if (choices.length === 0) return null;
+  const chosen = card.validateConfig(choices[Math.floor(rng() * choices.length)]);
+  return chosen.ok ? chosen.value : null;
 }
 
 /** A color as a post's [color] tag reads one (engine/bbcode/parse.ts), surrounding spaces aside. */

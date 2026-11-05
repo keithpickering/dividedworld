@@ -308,7 +308,7 @@ export function Hud() {
             <div ref={plate} className={`kb-hud-plate${!signedIn ? ' kb-hud-plate--door' : signedIn && player.loaded && hud ? ' kb-hud-plate--cast kb-calm' : ''}`}>
               <div className="kb-hud-plate-in">
                 {!signedIn ? (
-                  <div className="kb-hud-door">
+                  <div className="kb-hud-door kb-calm">
                     <span className="kb-hud-door-mark" aria-hidden="true">?</span>
                     <div className="kb-hud-door-words kb-calm">
                       {/* A heading, not a bare element: the HUD is a labeled region, and its prompt is what a screen reader should find in it; it sits under the page's h1 in rank, though the HUD comes first in the document. */}

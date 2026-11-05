@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RARITIES, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideUse, effectsOnTarget, landsOn, ok, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
+import { RARITIES, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideUse, effectsOnTarget, landsOn, ok, staffConfigOf, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
 import type { Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
@@ -209,4 +209,12 @@ test('a card\'s landing may read its checked configuration, and a landing refusa
   assert.deepEqual(decidePlay(words as CardRules, settings, on, [], { word: 'dogs' }, ''), { ok: false, why: 'that word is not in this post' });
   assert.deepEqual(decidePlay(words as CardRules, settings, { ...on, kind: 'spin' }, [], {}, ''), { ok: false, why: 'a post' }, 'landing first, as before');
   assert.deepEqual(decidePlay(words as CardRules, settings, on, [], {}, ''), { ok: false, why: 'a word' });
+});
+
+test('staffConfigOf: the default as {}, else a valid staffConfigs pick at either edge of rng, else null', () => {
+  assert.deepEqual(staffConfigOf(plain, () => 0), {}, 'a card whose validateConfig({}) passes is played as {}');
+  assert.equal(staffConfigOf(inky, () => 0), null, 'a card with no default and no staffConfigs is not offered');
+  const stocked: CardRules = { ...inky, staffConfigs: [{ ink: 'red' }, { ink: 'blue' }] };
+  for (const edge of [0, 0.9999999999]) assert.deepEqual(staffConfigOf(stocked, () => edge), { ink: 'red' }, `rng ${edge} lands on a config the card accepts (the invalid one is never picked)`);
+  assert.equal(staffConfigOf({ ...inky, staffConfigs: [{ ink: 'blue' }] }, () => 0), null, 'staffConfigs the card itself refuses leave nothing to play');
 });

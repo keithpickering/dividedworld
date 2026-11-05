@@ -7,7 +7,7 @@ import { stickAround } from './stick-around.ts';
 import { STROKES, whoops } from './whoops.ts';
 import { cards } from './index.ts';
 import { instance } from '../index.ts';
-import { basePrice, decidePlay, decideSet, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
+import { basePrice, staffConfigOf, decidePlay, decideSet, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
 import { PEELS, autocorrect } from './autocorrect.ts';
 import { decide } from '../../../engine/rules/actions.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
@@ -300,4 +300,22 @@ test('Autocorrect: a landing refusal is said before a configuration\'s, the face
 test('Autocorrect: the replacement is refused as the phrase itself exactly when the matcher would read them as one', () => {
   assert.equal(config('Mario', 'mArIo').ok, false);
   assert.equal(config('straße', 'STRASSE').ok, true, 'the matcher does not fold ß to SS, so neither does this');
+});
+
+test('every staffConfigs entry of every card passes that card\'s own validateConfig, and the pool can play each card it offers', () => {
+  let entries = 0;
+  for (const card of cards) {
+    for (const entry of card.staffConfigs ?? []) {
+      entries += 1;
+      assert.equal(card.validateConfig(entry).ok, true, `${card.key}: ${JSON.stringify(entry)}`);
+    }
+    for (const edge of [0, 0.9999999999]) {
+      const chosen = staffConfigOf(card, () => edge);
+      if (card.validateConfig({}).ok) assert.deepEqual(chosen, {}, `${card.key} is played as its default at rng ${edge}`);
+      else if ((card.staffConfigs ?? []).length > 0) assert.equal(card.validateConfig(chosen).ok, true, `${card.key} at rng ${edge}: ${JSON.stringify(chosen)}`);
+      else assert.equal(chosen, null, `${card.key} has neither a default nor staffConfigs`);
+    }
+  }
+  assert.ok(entries > 0, 'at least Whoops! lists staffConfigs');
+  assert.equal(staffConfigOf(whoops, () => 0.9999999999) !== null && staffConfigOf(whoops, () => 0) !== null, true);
 });

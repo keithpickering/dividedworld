@@ -33,7 +33,7 @@ end $$;
 -- ---- The seed makes the developer and its thread, once, and only when its seed has one ----
 do $$
 declare
-  seed jsonb := jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+  seed jsonb := jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'developer', jsonb_build_object('name', 'Gabe', 'title', 'Made this. Sorry.', 'avatar', 'gabe'));
   dev uuid;
   ut uuid;
@@ -67,8 +67,8 @@ begin
   -- Only one developer can exist.
   begin insert into characters (name, staff, staff_kind, debuted_at) values ('Second Dev', 'dev-two', 'developer', now()); raise exception 'a second developer was made';
   exception when unique_violation then null; end;
-  -- The kind is among the three.
-  begin insert into characters (name, staff, staff_kind, debuted_at) values ('Odd Kind', 'odd', 'henchman', now()); raise exception 'a kind outside boss, bot and developer was made';
+  -- The kind is among the two.
+  begin insert into characters (name, staff, staff_kind, debuted_at) values ('Odd Kind', 'odd', 'henchman', now()); raise exception 'a kind outside persona and developer was made';
   exception when check_violation then null; end;
 
   -- The board's thread counter is the length of its list: the hidden thread is in neither.
@@ -90,7 +90,7 @@ declare
   bob_rows jsonb;
   stored integer := (select count(*) from alerts);
 begin
-  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'developer', jsonb_build_object('name', 'Gabe', 'title', 'Made this. Sorry.')));
   select (value #>> '{}')::uuid into ut from settings where key = 'updatesThread';
   insert into admins (account) values (adm);
@@ -160,7 +160,7 @@ declare
   said text;
   was integer;
 begin
-  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'developer', jsonb_build_object('name', 'Gabe', 'title', 'Made this. Sorry.', 'avatar', 'gabe')));
   select (value #>> '{}')::uuid into ut from settings where key = 'updatesThread';
   select id into dev from characters where staff_kind = 'developer';
@@ -213,7 +213,7 @@ declare
   act_id uuid;
   was integer := (select count(*) from acts where kind = 'update');
 begin
-  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'developer', jsonb_build_object('name', 'Gabe', 'title', 'Made this. Sorry.')));
   insert into admins (account) values (adm);
   perform tests.become(adm);
@@ -263,11 +263,11 @@ declare
   said text;
   stmt text;
 begin
-  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'developer', jsonb_build_object('name', 'Gabe', 'title', 'Made this. Sorry.')));
   select id into dev from characters where staff_kind = 'developer';
   select (value #>> '{}')::uuid into ut from settings where key = 'updatesThread';
-  insert into characters (name, staff, staff_kind, debuted_at) values ('Upm Boss', 'upm-boss', 'boss', now()) returning id into boss;
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Upm Boss', 'upm-boss', 'persona', now()) returning id into boss;
   mine := tests.post(a1, t, 'A post.');
 
   -- The Director's path (the service role, by staff key) refuses the developer, whatever kind it asks for; a Boss it still writes.
@@ -318,8 +318,8 @@ begin
   end loop;
   perform tests.unbecome();
 
-  -- It cannot be hired as a Mod Bot (staff_changes holds only bots), so no road from the roster a model works through leads to it.
-  begin insert into staff_changes (staff, on_staff) values ('developer', true); raise exception 'the developer was hired as a Mod Bot';
+  -- It cannot be hired as a Mod Bot (the office log holds only personas), so no road from the roster a model works through leads to it.
+  begin insert into staff_offices (staff, office, cause) values ('developer', 'mod', 'admin'); raise exception 'the developer was hired as a Mod Bot';
   exception when check_violation then null; end;
 end $$;
 
@@ -346,7 +346,7 @@ declare
   n integer;
   was integer;
 begin
-  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'developer', jsonb_build_object('name', 'Gabe', 'title', 'Made this. Sorry.', 'avatar', 'gabe')));
   select (value #>> '{}')::uuid into ut from settings where key = 'updatesThread';
   select id into dev from characters where staff_kind = 'developer';
@@ -464,7 +464,7 @@ begin
     delete from characters where staff_kind = 'developer';
     delete from settings where key = 'updatesThread';
     begin
-      perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+      perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
         'developer', jsonb_build_object('name', 'Gabe', 'title', 'Made this. Sorry.', 'avatar', 'gabe')));
     exception when others then
       said := sqlerrm;

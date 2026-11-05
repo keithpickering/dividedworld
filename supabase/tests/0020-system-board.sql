@@ -121,7 +121,7 @@ begin
 
   -- An admin seeds again with the instance's flagged board: it becomes The System's, and nothing moves.
   perform set_config('role', 'service_role', true);
-  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'cards', '[]'::jsonb,
+  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'cards', '[]'::jsonb,
     'boards', jsonb_build_array(jsonb_build_object('slug', 'general', 'name', 'General', 'description', ''),
                                 jsonb_build_object('slug', 'the-system', 'name', 'The System', 'description', '', 'system', true))));
   perform tests.unbecome();
@@ -131,13 +131,13 @@ begin
 
   -- A seed that flags no board leaves the flag where it is.
   perform set_config('role', 'service_role', true);
-  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'cards', '[]'::jsonb,
+  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'cards', '[]'::jsonb,
     'boards', jsonb_build_array(jsonb_build_object('slug', 'side', 'name', 'Side', 'description', ''))));
   perform tests.unbecome();
   if system_board() is distinct from (select id from boards where slug = 'the-system') then raise exception 'a seed that flags no board unflagged The System''s'; end if;
   -- A seed that flags another board moves the flag to it, and only the flag.
   perform set_config('role', 'service_role', true);
-  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'cards', '[]'::jsonb,
+  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'cards', '[]'::jsonb,
     'boards', jsonb_build_array(jsonb_build_object('slug', 'side', 'name', 'Renamed', 'description', '', 'system', true))));
   perform tests.unbecome();
   if system_board() is distinct from (select id from boards where slug = 'side') then raise exception 'a seed flagging another board moved the flag'; end if;
@@ -145,13 +145,13 @@ begin
   if (select count(*) from boards where is_system) is distinct from 1::bigint then raise exception 'two boards are The System''s'; end if;
   -- A seed flagging a board it is adding: the new board is The System's, the old flag gone.
   perform set_config('role', 'service_role', true);
-  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'cards', '[]'::jsonb,
+  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'cards', '[]'::jsonb,
     'boards', jsonb_build_array(jsonb_build_object('slug', 'fresh', 'name', 'Fresh', 'description', '', 'system', true))));
   perform tests.unbecome();
   if (select array_agg(slug) from boards where is_system) is distinct from array['fresh'] then raise exception 'a seed flagging a new board left %', (select array_agg(slug) from boards where is_system); end if;
   -- A seed flagging two boards is refused, and changes nothing.
   perform set_config('role', 'service_role', true);
-  why := pg_temp.refusal($q$select seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'cards', '[]'::jsonb,
+  why := pg_temp.refusal($q$select seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'cards', '[]'::jsonb,
     'boards', jsonb_build_array(jsonb_build_object('slug', 'general', 'name', 'General', 'system', true), jsonb_build_object('slug', 'side', 'name', 'Side', 'system', true))))$q$);
   perform tests.unbecome();
   if why is distinct from 'a seed flags one board as The System''s, not 2' then raise exception 'a seed flagging two boards: %', why; end if;
