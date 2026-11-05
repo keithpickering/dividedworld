@@ -87,7 +87,7 @@ test('a phone shows My characters without scrolling sideways', async ({ page }) 
 /*
  * The Turn modal from My characters leaves the menu bar in view, dimmed and inert (the web plan's
  * 2026-10-30 amendment to Task 9), as the Turn board draws it: the overlay starts at the bar's foot,
- * so nothing covers the bar, and the bar is drawn at 0.6. Close puts the page back as it was.
+ * so nothing covers the bar, and the bar is drawn at brightness 0.6. Close puts the page back as it was.
  */
 for (const width of [1440, 1280]) {
   test(`at ${width}px the Turn modal leaves the menu bar in view, dimmed and inert, and Close lights it again`, async ({ page }) => {
@@ -102,12 +102,13 @@ for (const width of [1440, 1280]) {
       const overlay = document.querySelector('.kb-glass-overlay')!.getBoundingClientRect();
       const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
       /* An inert element is passed over by hit testing, so what is under the bar's middle is the page's root, never the overlay. */
-      return { opacity: getComputedStyle(nav).opacity, inert: nav.closest('[inert]') !== null, uncovered: !hit?.closest('.kb-glass-overlay'), gap: Math.round(overlay.top - box.bottom) };
+      return { dim: getComputedStyle(nav).filter, opacity: getComputedStyle(nav).opacity, inert: nav.closest('[inert]') !== null, uncovered: !hit?.closest('.kb-glass-overlay'), gap: Math.round(overlay.top - box.bottom) };
     });
-    expect(got).toEqual({ opacity: '0.6', inert: true, uncovered: true, gap: 0 });
+    /* The dim is a filter, never opacity (shell.css): the sticky bar stays opaque over the page that scrolls under it. */
+    expect(got).toEqual({ dim: 'brightness(0.6)', opacity: '1', inert: true, uncovered: true, gap: 0 });
     await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click();
     await expect(page.getByRole('dialog')).toBeHidden();
-    expect(await bar.evaluate((nav) => ({ opacity: getComputedStyle(nav).opacity, inert: nav.closest('[inert]') !== null }))).toEqual({ opacity: '1', inert: false });
+    expect(await bar.evaluate((nav) => ({ dim: getComputedStyle(nav).filter, opacity: getComputedStyle(nav).opacity, inert: nav.closest('[inert]') !== null }))).toEqual({ dim: 'none', opacity: '1', inert: false });
     await expect(page.getByRole('button', { name: 'Turn Pipewrench' })).toBeFocused();
   });
 }
