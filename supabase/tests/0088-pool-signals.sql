@@ -109,7 +109,7 @@ begin
   update characters set debuted_at = null where staff = 'ps-ghost';
   -- The developer is staff of a third kind, never a persona; its name in a post names no one.
   insert into characters (name, staff, staff_kind, debuted_at) values ('Dev Gabe', 'ps-dev', 'developer', now());
-  insert into settings (key, value) values ('digestThreads', '3'), ('pool', '{"weekly": 20, "holdback": 0.2, "threadsWeekly": 1, "cardRarityMost": "common", "priorityDays": 28, "notesRead": 12, "strengths": {"named": 5, "quoted": 5, "legacy": 5, "successorStumbles": 5, "oldFlame": 5, "homeTurf": 2, "seasonTurn": 2, "hotOnBeat": 2}, "chatterCron": "37 17 * * *"}') on conflict (key) do update set value = excluded.value;
+  insert into settings (key, value) values ('digestThreads', '3'), ('pool', '{"weekly": 20, "holdback": 0.2, "threadsWeekly": 1, "cardRarityMost": "common", "priorityDays": 28, "notesRead": 12, "chatterThreadPosts": 8, "strengths": {"named": 5, "quoted": 5, "legacy": 5, "successorStumbles": 5, "oldFlame": 5, "homeTurf": 2, "seasonTurn": 2, "hotOnBeat": 2}, "chatterCron": "37 17 * * *"}') on conflict (key) do update set value = excluded.value;
   t1 := tests.thread('Named'); t2 := tests.thread('Staff started'); t3 := tests.thread('Third'); t4 := tests.thread('Fourth');
 
   -- ------------------------------------------------------------------ named ----

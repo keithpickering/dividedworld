@@ -76,7 +76,7 @@ export const defaults: Settings = deepFreeze<Settings>({
   /**
    * The staff roster's posting pool (the staff roster design, sections 4 to 6). Starting points: twenty posts a week, a fifth of a day's held
    * back for personas with little history, one new thread a week, common cards only, a priority that reads the last four weeks of a
-   * persona's posts, a Boss that reads its twelve newest notes at a meeting, the engine's strengths (the first five triggers outrank the
+   * persona's posts, a Boss that reads its twelve newest notes at a meeting, a pool persona that reads the eight newest posts of the thread it writes in, the engine's strengths (the first five triggers outrank the
    * last three), and the pick and its posts at 17:37 UTC, past the morning's meeting and settlement.
    */
   pool: {
@@ -86,6 +86,7 @@ export const defaults: Settings = deepFreeze<Settings>({
     cardRarityMost: 'common',
     priorityDays: 28,
     notesRead: 12,
+    chatterThreadPosts: 8,
     strengths: { ...DEFAULT_STRENGTHS },
     chatterCron: '37 17 * * *',
   },

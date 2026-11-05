@@ -108,10 +108,10 @@ function perReach(holds: (v: unknown) => boolean, shape: string) {
  * The pool's settings (`Settings.pool`): exactly the fields of PoolSettings, each held as its own words say. Mirrors `setting_pool` in
  * supabase/migrations/0077_settings_held.sql, and supabase/tests/0079-settings-held.sql lists its poisons and goods.
  */
-const POOL_WHOLE = { weekly: 1, threadsWeekly: 0, priorityDays: 1, notesRead: 1 } as const;
+const POOL_WHOLE = { weekly: 1, threadsWeekly: 0, priorityDays: 1, notesRead: 1, chatterThreadPosts: 1 } as const;
 const POOL_KEYS = [...Object.keys(POOL_WHOLE), 'holdback', 'cardRarityMost', 'strengths', 'chatterCron'].sort();
 function poolRule(v: unknown): string | null {
-  const shape = 'an object giving weekly, priorityDays and notesRead (whole numbers, at least 1), threadsWeekly (a whole number, at least 0), holdback (from 0 to 0.5), cardRarityMost (common, uncommon, rare or legendary), strengths (a whole number, at least 1, for each of ' + POOL_TRIGGERS.join(', ') + ') and chatterCron (a five-field cron expression, each field inside its range)';
+  const shape = 'an object giving weekly, priorityDays, notesRead and chatterThreadPosts (whole numbers, at least 1), threadsWeekly (a whole number, at least 0), holdback (from 0 to 0.5), cardRarityMost (common, uncommon, rare or legendary), strengths (a whole number, at least 1, for each of ' + POOL_TRIGGERS.join(', ') + ') and chatterCron (a five-field cron expression, each field inside its range)';
   if (typeof v !== 'object' || v === null || Array.isArray(v)) return shape;
   const given = v as Record<string, unknown>;
   const extra = Object.keys(given).find((k) => !POOL_KEYS.includes(k));

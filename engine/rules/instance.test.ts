@@ -49,7 +49,7 @@ const settings: Settings = {
   memoryGrudges: 20,
   memoryWheelhouse: 30,
   memoryRealWorld: 30,
-  pool: { weekly: 20, holdback: 0.2, threadsWeekly: 1, cardRarityMost: 'common', priorityDays: 28, notesRead: 12, strengths: { named: 5, quoted: 5, legacy: 5, successorStumbles: 5, oldFlame: 5, homeTurf: 2, seasonTurn: 2, hotOnBeat: 2 }, chatterCron: '37 17 * * *' },
+  pool: { weekly: 20, holdback: 0.2, threadsWeekly: 1, cardRarityMost: 'common', priorityDays: 28, notesRead: 12, chatterThreadPosts: 8, strengths: { named: 5, quoted: 5, legacy: 5, successorStumbles: 5, oldFlame: 5, homeTurf: 2, seasonTurn: 2, hotOnBeat: 2 }, chatterCron: '37 17 * * *' },
   boardNameMaxLength: 60,
   moveExpiryMostDays: 42,
   demandCheckMinutes: 5,
@@ -77,7 +77,7 @@ const system: SystemContent = {
   staffGroup: { name: 'Test Cores' },
   firstBoss: 'boss-a',
   firstStaff: ['bot-a'],
-  duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'beat' },
+  duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'beat', chatter: 'boss' },
   stockLines: Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as SystemContent['stockLines'],
   feeds: [],
   realWorld: ['politics'],
@@ -354,7 +354,7 @@ test('a duty assigned to a staff key that does not exist is a problem; a key tha
 test('a duty left unassigned is a problem, one for each', () => {
   const { appeal: _a, ...rest } = system.duties;
   assert.match(said(withSystem({ duties: rest as SystemContent['duties'] })), /duty "appeal" is assigned to no one/);
-  assert.equal(DUTIES.length, 5);
+  assert.equal(DUTIES.length, 6);
 });
 
 test('a standing order with no stock line is a problem, and so is one with an empty list', () => {
@@ -492,7 +492,7 @@ test('the pool\'s settings are checked: whole numbers, a holdback from 0 to 0.5,
   const pool = settings.pool;
   const bad = (change: object) => settingsProblems({ ...settings, pool: { ...pool, ...change } } as unknown as Settings).join('\n');
   const good = (change: object) => settingsProblems({ ...settings, pool: { ...pool, ...change } } as unknown as Settings);
-  for (const k of ['weekly', 'priorityDays', 'notesRead']) for (const v of [0, -1, 1.5, '5', null, 2 ** 53]) assert.match(bad({ [k]: v }), /setting "pool"/, `${k} = ${String(v)}`);
+  for (const k of ['weekly', 'priorityDays', 'notesRead', 'chatterThreadPosts']) for (const v of [0, -1, 1.5, '5', null, 2 ** 53]) assert.match(bad({ [k]: v }), /setting "pool"/, `${k} = ${String(v)}`);
   for (const v of [-1, 1.5, '1', null]) assert.match(bad({ threadsWeekly: v }), /threadsWeekly/, String(v));
   assert.deepEqual(good({ threadsWeekly: 0 }), [], 'zero new threads a week is allowed');
   for (const v of [-0.1, 0.51, 1, '0.2', null]) assert.match(bad({ holdback: v }), /holdback/, String(v));

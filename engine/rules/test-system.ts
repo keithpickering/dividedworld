@@ -9,7 +9,7 @@ import { DEFAULT_STRENGTHS } from '../system/pool.ts';
 
 /** The pool's settings as a test world holds them. */
 export const testPool: Settings['pool'] = {
-  weekly: 20, holdback: 0.2, threadsWeekly: 1, cardRarityMost: 'common', priorityDays: 28, notesRead: 12, strengths: { ...DEFAULT_STRENGTHS }, chatterCron: '37 17 * * *',
+  weekly: 20, holdback: 0.2, threadsWeekly: 1, cardRarityMost: 'common', priorityDays: 28, notesRead: 12, chatterThreadPosts: 8, strengths: { ...DEFAULT_STRENGTHS }, chatterCron: '37 17 * * *',
 };
 
 export const systemSettings: Pick<Settings, 'systemEnabled' | 'meetingCron' | 'phases' | 'inheritanceGraceDays' | 'rosterRecentExcluded' | 'structuralHoldHours' | 'microEventDailyCalls' | 'digestThreads' | 'digestExcerpts' | 'digestExcerptChars' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'pool' | 'boardNameMaxLength' | 'moveExpiryMostDays' | 'moveExpiryLeastHours' | 'demandCheckMinutes' | 'demandChecksPerTick' | 'modelTiers'> = {
@@ -38,7 +38,7 @@ export const testSystem: SystemContent = {
   firstBoss: 'boss-a',
   announcementsTitle: 'Announcements',
   firstStaff: ['bot-a'],
-  duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'boss' },
+  duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'boss', chatter: 'boss' },
   stockLines: Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as SystemContent['stockLines'],
   feeds: [], realWorld: [], wheelhouse: [],
   oldVoice: () => ({ prompt: '', stop: [] }),

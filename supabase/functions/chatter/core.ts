@@ -1,0 +1,359 @@
+/**
+ * The pool's daily run, as a pure module (the staff roster design, sections 4 to 8; its plan, Task 10): it takes a `Db`, the `Models`, the
+ * instance, the minute the schedule fired for and nothing else, and does the run the plan lists. supabase/functions/chatter/index.ts is the
+ * thin Edge Function around it; this file is what Node tests (core.test.ts) and Deno both run. The engine's side of the call (who posts, the
+ * prompt, the repair) is engine/system/pool.ts and engine/system/chatter.ts; this file moves data between the database, the model and them.
+ *
+ *   1. Nothing at all unless `systemEnabled`.
+ *   2. The week's spend (`pool_week`), the season and offices (`pool_context`), the last day's signals (`pool_signals`) and each persona's
+ *      memory: the pick's inputs.
+ *   3. `candidates`, then `pick`, seeded from the day.
+ *   4. For each pick: its career, memory, notes and thread; then one model call, duty `chatter`, with `staff` set, so the call is a ledger row
+ *      (models(), "Cost is a column"). A chat persona is asked in structure; a persona on the old voice writes its words in raw completion.
+ *   5. The answer is repaired (repairChatter): every bound trimmed and named, and only what cannot be repaired without inventing content is rejected.
+ *   6. The post (`write_staff_act` or `write_staff_thread`), then the card if one was asked for and a slot is left, then the note, then the spend.
+ *
+ * **A rerun the same day posts nothing twice.** The pick is seeded from the day and the allowance is computed from the week before today, so a
+ * rerun picks the same personas. A persona with a spend row today is skipped (`already`), and the run stops at the day's allowance, counting
+ * the rows already there, so even a rerun whose window shifted (a different slot) cannot spend more than the day was given. A crash between a
+ * post and its spend leaves a post with no row: every pool post carries `pool: <day>` in its payload, and before it writes, a persona's run
+ * asks `pool_orphan` for one. A found orphan is adopted: its spend is recorded (without a card, which a crash may or may not have played) and
+ * nothing is written twice. The one thing a crash there loses is that post's card and note, never a second post.
+ *
+ * **Failures.** A model's transport failure is retried on the request itself, inside models() ("Three unrelated timeouts are not a poison
+ * pill"); this file never retries a pick. An answer that is rejected, or a call that fails, is skipped and spends nothing. A database error
+ * stops that pick (the run goes on to the next) and is written on the pick's record in the result; the ledger row of the call is already
+ * written and, being append-only, cannot carry it. A ledger row that could not be written stops the run: an unrecorded call is not trusted.
+ * A card the card rules refuse keeps its post: the refusal's words go on the pick's record, which is written into the spend row.
+ *
+ * **Cost does not grow with the instance.** One light-tier call per pick, at most the day's allowance (a week's pool over its days), and
+ * reads bounded by the roster, the signals' own caps and `chatterThreadPosts`. Nothing here reads a row per player, character or Act.
+ *
+ * Nothing private reaches the model: the signals come from the digest role, the thread from public play, and the memory and career are a
+ * staff character's. A card's target is the post the pick replies to, or the persona's own post, chosen from the trigger, never from who
+ * owns anything.
+ */
+import { atOrBelow, playOf } from '../../../engine/rules/cards.ts';
+import type { Instance, Persona } from '../../../engine/rules/types.ts';
+import type { Career } from '../../../engine/system/career.ts';
+import {
+  POOL_PREMISE,
+  CHATTER_RULE,
+  chatterCompletion,
+  chatterPrompt,
+  chatterSchema,
+  repairChatter,
+  type OfferedCard,
+  type ThreadPost,
+} from '../../../engine/system/chatter.ts';
+import { DUTY_SPECS } from '../../../engine/system/duties.ts';
+import type { Memory } from '../../../engine/system/memory.ts';
+import type { Models } from '../../../engine/system/model.ts';
+import {
+  allowance,
+  candidates,
+  dayOf,
+  dayRng,
+  pick,
+  priorities,
+  seededRng,
+  type PoolPhase,
+  type PoolPick,
+  type PoolSignals,
+} from '../../../engine/system/pool.ts';
+import type { Trim } from '../../../engine/system/validate.ts';
+import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
+import { withDatabaseSettings } from '../_shared/settings.ts';
+import { AnswerRejected, LedgerWriteFailed } from '../_shared/models/index.ts';
+
+const DAY = 86_400_000;
+
+/** What a pick came to. `posted` and `adopted` spent a slot; every other status spent nothing. */
+export type PickStatus = 'posted' | 'adopted' | 'already' | 'skipped' | 'rejected' | 'failed';
+
+export interface PickRecord {
+  readonly staff: string;
+  readonly trigger: string;
+  readonly status: PickStatus;
+  /** Why a pick that spent nothing did not: the predicate that rejected the answer, the error, or the reason it was skipped. */
+  readonly why?: string;
+  readonly post?: string;
+  readonly card?: string;
+  readonly startedThread?: boolean;
+  /** Every bound the answer was trimmed to. */
+  readonly trims: readonly Trim[];
+  /** The card rules' words, when a card the persona asked for was refused (the post stands). */
+  readonly cardRefused?: string;
+  readonly noteWritten?: boolean;
+}
+
+export type ChatterOutcome =
+  | { readonly status: 'off' }
+  | { readonly status: 'no season' }
+  | {
+    readonly status: 'ok';
+    readonly day: string;
+    /** Today's allowance, in slots, before the rows already spent today. */
+    readonly allowance: number;
+    readonly picks: readonly PickRecord[];
+  };
+
+interface Context {
+  readonly season: { readonly startsAt: number; readonly endsAt: number } | null;
+  readonly boss: string | null;
+  readonly predecessor: string | null;
+  readonly offices: Readonly<Record<string, string>>;
+  readonly characters: Readonly<Record<string, string>>;
+  readonly boards: Readonly<Record<string, string>>;
+}
+
+interface Week {
+  readonly spent: number;
+  readonly threads: number;
+  readonly today: readonly { readonly staff: string; readonly card_act: string | null; readonly started_thread: boolean }[];
+}
+
+interface ThreadRead {
+  readonly title: string;
+  readonly posts: readonly { readonly act: string; readonly name: string; readonly body: string }[];
+}
+
+const clip = (s: string, n: number): string => (s.length <= n ? s : s.slice(0, n));
+const said = (e: unknown): string => clip(e instanceof Error ? e.message : String(e), 500);
+
+/** Errors that are facts about the ledger or the transport to the database, not about one pick: thrown, stopping the run. */
+const stopsTheRun = (e: unknown): boolean => e instanceof LedgerWriteFailed || e instanceof TransportError;
+
+/** A refusal a SQL function raised on purpose (a 4xx with its own words), as opposed to a database that is down. */
+const isRefusal = (e: unknown): e is DatabaseError => e instanceof DatabaseError && e.status >= 400 && e.status < 500;
+
+export async function runChatter(db: Db, models: Models, instance: Instance, slot: string): Promise<ChatterOutcome> {
+  const slotAt = Date.parse(slot);
+  if (Number.isNaN(slotAt)) throw new Error(`chatter: slot is not a time: ${JSON.stringify(slot)}`);
+  const tuned = await withDatabaseSettings(instance, db);
+  const settings = tuned.settings;
+  if (!settings.systemEnabled) return { status: 'off' };
+
+  const day = dayOf(slotAt);
+  const context = await db.rpc<Context>('pool_context', {});
+  if (!context.season) return { status: 'no season' };
+  const week = await db.rpc<Week>('pool_week', { today: day });
+
+  // The allowance counts the week before today, so a rerun of the day computes the day's allowance the first run did.
+  const todays = allowance(week.spent, settings.pool.weekly, slotAt);
+  const startedToday = week.today.some((r) => r.started_thread);
+  let threadsLeft = startedToday ? 0 : Math.max(settings.pool.threadsWeekly - week.threads, 0);
+  let used = week.today.reduce((n, r) => n + 1 + (r.card_act === null ? 0 : 1), 0);
+  const already = new Set(week.today.map((r) => r.staff));
+  const records: PickRecord[] = [];
+  if (todays === 0) return { status: 'ok', day, allowance: todays, picks: records };
+
+  const roster = tuned.system.roster;
+  const signals = await db.rpc<PoolSignals>('pool_signals', { since: new Date(slotAt - DAY).toISOString(), until: new Date(slotAt).toISOString() });
+  const memories: Record<string, Memory | undefined> = {};
+  await Promise.all(roster.map(async (p) => {
+    let m = await db.rpc<Memory | null>('staff_memory_latest', { staff: p.key });
+    if (m === null && p.inheritsMemoryOf) m = await db.rpc<Memory | null>('staff_memory_latest', { staff: p.inheritsMemoryOf });
+    if (m !== null) memories[p.key] = m;
+  }));
+
+  const phase: PoolPhase = {
+    season: context.season,
+    since: slotAt - DAY,
+    until: slotAt,
+    settings,
+    boss: context.boss,
+    predecessor: context.predecessor,
+  };
+  const cands = candidates(signals, roster, memories, phase, { offices: context.offices, boards: context.boards, characters: context.characters });
+  const picked = pick(cands, priorities(signals.tallies), todays, threadsLeft, dayRng(day), { strengths: settings.pool.strengths, holdback: settings.pool.holdback });
+
+  const slugs = new Set(Object.values(context.boards));
+  const offerable = settings.pool.cardRarityMost;
+  const cardsOnOffer = tuned.cards.filter((c) => {
+    const play = playOf(c);
+    return (play === 'cast' || play === 'set') && atOrBelow(c.rarity, offerable) && c.validateConfig({}).ok
+      && !(play === 'set' && c.trap?.outcome.do === 'payout');
+  });
+
+  for (const p of picked.picks) {
+    const persona = roster.find((r) => r.key === p.staff);
+    const base = { staff: p.staff, trigger: p.trigger, trims: [] as Trim[] };
+    if (!persona) { records.push({ ...base, status: 'skipped', why: 'the persona is not in the roster' }); continue; }
+    if (already.has(p.staff)) { records.push({ ...base, status: 'already' }); continue; }
+    if (used + 1 > todays) { records.push({ ...base, status: 'skipped', why: 'the day\'s allowance is spent' }); continue; }
+
+    // A post of the persona's own that a crash left without a spend: adopt it, write nothing.
+    const orphan = await db.rpc<{ act: string; startedThread: boolean } | null>('pool_orphan', { of_staff: p.staff, on_day: day });
+    if (orphan) {
+      try {
+        await db.rpc('record_pool_spend', { on_day: day, of_staff: p.staff, by_trigger: p.trigger, post: orphan.act, card: null, started: orphan.startedThread, note: { adopted: true } });
+      } catch (e) {
+        if (stopsTheRun(e)) throw e;
+        records.push({ ...base, status: 'failed', why: said(e), post: orphan.act });
+        continue;
+      }
+      used += 1;
+      already.add(p.staff);
+      records.push({ ...base, status: 'adopted', post: orphan.act, startedThread: orphan.startedThread });
+      continue;
+    }
+
+    const record = await onePick({
+      db, models, tuned, persona, p, day, slugs, cardsOnOffer,
+      threadsLeft, cardRoom: p.cardSlot && used + 2 <= todays,
+    });
+    records.push(record);
+    if (record.status === 'posted') {
+      used += 1 + (record.card ? 1 : 0);
+      already.add(p.staff);
+      if (record.startedThread) threadsLeft = 0;
+    }
+  }
+  return { status: 'ok', day, allowance: todays, picks: records };
+}
+
+interface PickRun {
+  readonly db: Db;
+  readonly models: Models;
+  readonly tuned: Instance;
+  readonly persona: Persona;
+  readonly p: PoolPick;
+  readonly day: string;
+  readonly slugs: ReadonlySet<string>;
+  readonly cardsOnOffer: Instance['cards'];
+  readonly threadsLeft: number;
+  readonly cardRoom: boolean;
+}
+
+/** One pick, from its inputs to its spend. Never throws except for a run-stopping error. */
+async function onePick(r: PickRun): Promise<PickRecord> {
+  const { db, models, tuned, persona, p, day } = r;
+  const settings = tuned.settings;
+  const base = { staff: p.staff, trigger: p.trigger };
+  const skip = (why: string, trims: readonly Trim[] = []): PickRecord => ({ ...base, status: 'skipped', why, trims });
+  const fail = (status: 'failed' | 'rejected', why: string, trims: readonly Trim[], extra: Partial<PickRecord> = {}): PickRecord => ({ ...base, status, why, trims, ...extra });
+  try {
+    // Where it posts: a thread start (the pick's thread-null stumble, or the day's top scorer, while the week has a thread left and the persona
+    // has a beats board and a voice that can give a title); else a reply in its trigger's thread.
+    const wantsStart = p.startThread || p.thread === null;
+    const board = wantsStart && r.threadsLeft > 0 && persona.voice === 'chat' ? beatsBoard(persona, r.slugs, `${day}:${p.staff}`) : null;
+    const startsThread = board !== null;
+    if (!startsThread && p.thread === null) return skip(r.threadsLeft > 0 ? 'no board on its beats to start a thread on' : 'no thread to reply in, and the week has no thread left');
+
+    const read = !startsThread
+      ? await db.rpc<ThreadRead>('pool_thread', { in_thread: p.thread, most: settings.pool.chatterThreadPosts, chars: settings.digestExcerptChars, also: p.quoting })
+      : null;
+    const quotedPost: ThreadPost | null = read && p.quoting ? (read.posts.find((x) => x.act === p.quoting) ?? null) : null;
+
+    // The cards on offer: a Cast needs a post to land on (the post it replies to, which it was shown), a Set lands on its own new post. Only
+    // when the day's allowance has a slot for a card.
+    const offered: OfferedCard[] = r.cardRoom && persona.voice === 'chat'
+      ? r.cardsOnOffer.filter((c) => (playOf(c) === 'set' ? true : quotedPost !== null)).map((c) => ({ key: c.key, name: c.name, play: playOf(c) as 'cast' | 'set' }))
+      : [];
+
+    const [career, memory, since] = await Promise.all([
+      db.rpc<Career>('staff_career', { of_staff: p.staff }),
+      db.rpc<Memory | null>('staff_memory_latest', { staff: p.staff }),
+      db.rpc<string | null>('staff_memory_at', { staff: p.staff }),
+    ]);
+    const notes = await db.rpc<string[]>('staff_notes_recent', { of_staff: p.staff, since: since ? new Date(Date.parse(since)).toISOString() : null, most: settings.pool.notesRead });
+    const known = memory ? [...memory.opinions.map((o) => o.character), ...memory.grudges.map((g) => g.character)] : [];
+    const names = known.length ? await db.rpc<Record<string, string>>('pool_names', { ids: known }) : {};
+
+    const limits = { threadPosts: settings.pool.chatterThreadPosts, excerptChars: settings.digestExcerptChars, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength };
+    const thread = read ? { title: read.title, posts: read.posts.map((x) => ({ name: x.name, body: x.body })) } : null;
+
+    // The call. A transport failure was retried inside models(); what comes back is an answer, a rejection, or a failure.
+    let raw: unknown;
+    try {
+      if (persona.voice === 'oldVoice') {
+        const frame = chatterCompletion({ name: persona.name, thread, limits });
+        const out = await models.complete({
+          duty: 'chatter', staff: p.staff, prompt: frame.prompt, temperature: 0.9, topP: 0.95, stop: frame.stop, maxTokens: 400, maxChars: settings.postMaxLength,
+        });
+        raw = { words: out.value };
+      } else {
+        const frame = chatterPrompt({
+          premise: POOL_PREMISE, persona, career, memory, notes, thread,
+          quoting: quotedPost ? { name: quotedPost.name, body: quotedPost.body } : null,
+          trigger: p.trigger, offeredCards: offered, startThread: startsThread, limits, names: (id) => names[id] ?? 'a character',
+        });
+        const out = await models.chat({
+          duty: 'chatter', tier: DUTY_SPECS.chatter.tier, staff: p.staff, system: frame.system, messages: [{ role: 'user', content: frame.message }],
+          schema: chatterSchema({ askedTitle: startsThread, offered }), rules: CHATTER_RULE, maxTokens: 1_500,
+        });
+        raw = out.value;
+      }
+    } catch (e) {
+      if (stopsTheRun(e)) throw e;
+      return fail(e instanceof AnswerRejected ? 'rejected' : 'failed', said(e), []);
+    }
+
+    const repaired = repairChatter(raw, { postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength, askedTitle: startsThread, offered });
+    if (!repaired.ok) return fail('rejected', `the answer failed ${repaired.predicate} at ${repaired.path || 'the top'}`, repaired.trims);
+    const answer = repaired.answer;
+    const trims: Trim[] = [...repaired.trims];
+
+    // The post. A database error here stops this pick with nothing written.
+    let post: string;
+    try {
+      if (startsThread) {
+        const made = await db.rpc<{ act: { id: string } }>('write_staff_thread', { staff_key: p.staff, board, title: answer.title, body: answer.words, marker: { pool: day } });
+        post = made.act.id;
+      } else {
+        const written = await db.rpc<{ id: string }>('write_staff_act', { staff_key: p.staff, kind: 'post', thread: p.thread, target: p.quoting, payload: { body: answer.words, pool: day } });
+        post = written.id;
+      }
+    } catch (e) {
+      if (stopsTheRun(e)) throw e;
+      return fail('failed', said(e), trims);
+    }
+
+    // From here the post is written: whatever goes wrong with the card, the note or the spend must not lose it, and nothing is written twice.
+    const record: Record<string, unknown> = { trims };
+    let card: string | undefined;
+    if (answer.card) {
+      try {
+        const played = answer.card.on === 'reply'
+          ? await db.rpc<{ id: string }>('staff_play_card', { staff_key: p.staff, card: answer.card.key, target: p.quoting, config: {}, message: '' })
+          : await db.rpc<{ id: string }>('staff_set_card', { staff_key: p.staff, card: answer.card.key, target: post, config: {} });
+        card = played.id;
+      } catch (e) {
+        if (stopsTheRun(e)) throw e;
+        record['cardRefused'] = said(isRefusal(e) ? e.reason : e);
+      }
+    }
+    let noteWritten = false;
+    if (answer.note) {
+      try {
+        await db.rpc('write_staff_note', { staff_key: p.staff, post, body: answer.note });
+        noteWritten = true;
+      } catch (e) {
+        if (stopsTheRun(e)) throw e;
+        record['noteError'] = said(e);
+      }
+    }
+    try {
+      await db.rpc('record_pool_spend', { on_day: day, of_staff: p.staff, by_trigger: p.trigger, post, card: card ?? null, started: startsThread, note: record });
+    } catch (e) {
+      if (stopsTheRun(e)) throw e;
+      // The post stands with no row: the next run of the day adopts it (pool_orphan) and writes no second.
+      return fail('failed', `the post was written but its spend was not recorded: ${said(e)}`, trims, { post, ...(card ? { card } : {}) });
+    }
+    return {
+      ...base, status: 'posted', post, trims, startedThread: startsThread, noteWritten,
+      ...(card ? { card } : {}), ...(typeof record['cardRefused'] === 'string' ? { cardRefused: record['cardRefused'] } : {}),
+    };
+  } catch (e) {
+    if (stopsTheRun(e)) throw e;
+    if (e instanceof DatabaseError) return fail('failed', said(e), []);
+    throw e;
+  }
+}
+
+/** The board a persona starts a thread on: one of its beats that exists, chosen by a seed so a rerun chooses the same; null where none does. */
+function beatsBoard(persona: Persona, slugs: ReadonlySet<string>, seed: string): string | null {
+  const mine = persona.beats.filter((b) => slugs.has(b)).sort();
+  return mine.length ? mine[Math.floor(seededRng(`kayfabb-pool-board:${seed}`)() * mine.length)]! : null;
+}

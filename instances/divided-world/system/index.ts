@@ -28,7 +28,7 @@ export const system: SystemContent = Object.freeze({
   announcementsTitle: 'Announcements From The System',
   firstStaff: Object.freeze([placeholderMonitor.key]),
   // Every duty is the season's Boss's until the Mod Bots session reassigns some (the staff design, section 15).
-  duties: Object.freeze({ meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'boss' } as const),
+  duties: Object.freeze({ meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'boss', chatter: 'boss' } as const),
   stockLines,
   feeds,
   realWorld,

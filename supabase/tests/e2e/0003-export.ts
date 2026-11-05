@@ -158,6 +158,8 @@ test('an instance exported and imported into a fresh database is the same instan
       perform write_staff_act('exp-boss', 'post', t, null, '{"body": "Carried across, with no account behind it."}');
       -- A note the Boss wrote with that post (0083).
       insert into staff_notes (staff, act, body) select 'exp-boss', id, 'A thought to itself, carried across.' from acts where character = (select id from characters where staff = 'exp-boss') and kind = 'post' order by created_at desc limit 1;
+      -- The day it posted, in the pool's ledger (0087).
+      insert into pool_spends (day, staff, trigger, post_act, record) select '2030-01-07', 'exp-boss', 'named', id, '{"trims": []}' from acts where character = (select id from characters where staff = 'exp-boss') and kind = 'post' order by created_at desc limit 1;
       -- The developer persona (0062): a staff character of its own kind, its avatar key, the updates thread The System's board never lists (updatesThread),
       -- and an update by it, written as post_update writes one.
       perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
@@ -398,8 +400,8 @@ test('an instance exported and imported into a fresh database is the same instan
     assert.equal(behind, '', `identity columns behind their rows: ${behind}`);
 
     // The jobs that run the instance are there, each scheduled from the imported settings: the
-    // settlement's, the view count's and the Boss's meeting.
-    assert.equal(psqlOn(fresh.toString(), `select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'kayfabb-%'`), 'kayfabb-meet,kayfabb-settle,kayfabb-system-tick,kayfabb-view-counts');
+    // settlement's, the view count's, the Boss's meeting and the pool's chatter.
+    assert.equal(psqlOn(fresh.toString(), `select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'kayfabb-%'`), 'kayfabb-chatter,kayfabb-meet,kayfabb-settle,kayfabb-system-tick,kayfabb-view-counts');
 
     // And a second import onto what is no longer a fresh instance is refused, naming why.
     const twice = await run('import-instance.mjs', ['--from', dir, '--to', fresh.toString(), '--storage', newStore.url]);

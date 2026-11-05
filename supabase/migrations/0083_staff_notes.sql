@@ -53,15 +53,15 @@ grant execute on function staff_notes_recent(text, timestamptz, integer) to serv
 
 -- ----------------------------------------------------------------------------------- the pool's settings held ----
 
--- The posting pool's settings (`pool`; the staff roster plan, Task 9): exactly eight fields, each held as the TypeScript rule says
+-- The posting pool's settings (`pool`; the staff roster plan, Task 9): exactly nine fields, each held as the TypeScript rule says
 -- (`poolRule` in engine/rules/instance.ts). Returns the words of what is wrong, or null. Its rarities are rarity_rank's (0054) and its triggers are
 -- the pool's eight (engine/system/pool.ts, TRIGGERS), which supabase/tests/0079-settings-held.sql and engine/rules/settings-held.test.ts keep one list.
 create function setting_pool(v jsonb) returns text
 language plpgsql immutable set search_path = public, pg_temp as $$
 declare
-  fields text[] := array['weekly', 'holdback', 'threadsWeekly', 'cardRarityMost', 'priorityDays', 'notesRead', 'strengths', 'chatterCron'];
+  fields text[] := array['weekly', 'holdback', 'threadsWeekly', 'cardRarityMost', 'priorityDays', 'notesRead', 'chatterThreadPosts', 'strengths', 'chatterCron'];
   triggers text[] := array['named', 'quoted', 'legacy', 'successorStumbles', 'oldFlame', 'homeTurf', 'seasonTurn', 'hotOnBeat'];
-  shape text := 'an object giving weekly, priorityDays and notesRead (whole numbers, at least 1), threadsWeekly (a whole number, at least 0), '
+  shape text := 'an object giving weekly, priorityDays, notesRead and chatterThreadPosts (whole numbers, at least 1), threadsWeekly (a whole number, at least 0), '
     'holdback (from 0 to 0.5), cardRarityMost (common, uncommon, rare or legendary), strengths (a whole number, at least 1, for each of '
     'named, quoted, legacy, successorStumbles, oldFlame, homeTurf, seasonTurn, hotOnBeat) and chatterCron (a five-field cron expression, each field inside its range)';
   k text;
@@ -69,7 +69,7 @@ begin
   if jsonb_typeof(v) is distinct from 'object' then return shape; end if;
   select e into k from jsonb_object_keys(v) e where e <> all (fields) limit 1;
   if k is not null then return format('%s; "%s" is not one of its fields', shape, k); end if;
-  foreach k in array array['weekly', 'priorityDays', 'notesRead'] loop
+  foreach k in array array['weekly', 'priorityDays', 'notesRead', 'chatterThreadPosts'] loop
     if not setting_whole(v -> k, 1) then return format('%s; "%s" is not', shape, k); end if;
   end loop;
   if not setting_whole(v -> 'threadsWeekly', 0) then return shape || '; "threadsWeekly" is not'; end if;

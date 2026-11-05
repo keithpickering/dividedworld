@@ -58,6 +58,8 @@ export interface PoolSettings {
   readonly priorityDays: number;
   /** The most of its own recent notes (`staff_notes`) the Boss's meeting reads, newest kept. A note is read, never acted on. */
   readonly notesRead: number;
+  /** How many of a thread's newest public posts a pool persona is shown when it writes in it (`chatter`), each cut to `digestExcerptChars`. */
+  readonly chatterThreadPosts: number;
   /** Each trigger's strength: a candidate's score is its trigger's strength times its persona's priority. A whole number, at least 1. */
   readonly strengths: Readonly<Record<PoolTrigger, number>>;
   /** When the pool's daily pick and posts run, as a five-field cron expression in UTC. */
