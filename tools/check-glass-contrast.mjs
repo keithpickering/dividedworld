@@ -10,11 +10,15 @@
  * (the engine's guard names no instance; it reads every one) by a model, and e2e/glass-text.spec.ts
  * (Part 2) measures the rendered page against the ceilings this file writes.
  *
- * The model. A recipe's layers are composited in order over the opaque ground at *full noise*, the
+ * The model. The glass's smoke is one field of layers (`smoke.field`, the glass polish design, section 6)
+ * and a recipe gives each field layer a color and an opacity. A recipe's layers, the field's in the
+ * recipe's colors, are composited in order over the opaque ground at *full noise*, the
  * most any pixel can be: each layer's alpha is its rect's opacity (the noise saturates the color
  * matrix's alpha row, which the boards write as `1.8 r - 0.74` and `2 g - 1.0`; a row that evaluates
  * a little under 1 at full noise, `2 b - 1.12`, is taken as 1, which only over-states the worst), its
- * color is the matrix's constant color, and the blur cannot raise a maximum. Only the colors are
+ * color is the matrix's constant color, and the blur cannot raise a maximum. A layer at opacity 0
+ * adds nothing, which is how a recipe leaves a field layer out. The field's shape (frequency, seed,
+ * drift) is not in the model: where a cloud falls is not a question of how bright the brightest is. Only the colors are
  * quantized to 8 bits (the browser rounds a matrix's constant color to a byte); opacities and the calm
  * are not. That is the worst pixel. The calmed worst is the same with each layer's opacity scaled by (1 - calm): a calm is
  * the ground laid over the smoke at the calm's opacity under a text block (engine/ui/glass/calm.css),
@@ -25,7 +29,8 @@
  * place, and the screen draws that same number on each surface that uses the recipe (surfaceCalm,
  * engine/ui/glass/apply.ts; engine/ui/glass/calm.test.tsx holds the two equal), so it is held, as
  * the theme's is, to a number in (0, 1]. A recipe's `narrow` layers (below 600px) are held
- * separately, the same way. The numbers this reproduces are the audit's (the glass plan, section 6:
+ * separately, the same way (the field's `narrow` layers in the recipe's `narrowColors`, or, for a recipe
+ * with none, in its first `colors`). The numbers this reproduces are the audit's (the glass plan, section 6:
  * the hud recipe 0.216, page 0.230, characters 0.196, turn 0.116, effect 0.103, react 0.087, cards
  * 0.193, vending 0.230, settlement 0.274), and test-glass-contrast.mjs pins them.
  *
@@ -56,6 +61,10 @@
  * is committed; the check fails when it no longer matches glass.json, so a change to the smoke is a
  * change to the file Part 2 measures against.
  *
+ * The field is held to its cap (at most 4 layers, 3 narrow: each layer is a raster kept in memory, the
+ * design's cost paragraph), to a drift with positive seconds and travel on every layer, and each recipe
+ * to one color per field layer (and `narrowColors` to one per narrow layer).
+ *
  * The glass files are read from git, so an untracked scratch file neither fails the build nor makes
  * it pass; the engine's two lists (`GlassSurface`, `classLargeText`) are read from the working tree,
  * as the type check reads them. The
@@ -83,6 +92,9 @@ const INK_FLOOR = 18;
 const PHONE_FLOOR = 16;
 /** A smoke layer's color: six hex digits, the only form engine/ui/glass/Smoke.tsx reads. */
 const LAYER_COLOR = /^#[0-9a-f]{6}$/i;
+/** The cap on the field: each layer is a raster kept in memory (the glass polish design, section 6, Cost). */
+export const MAX_FIELD = 4;
+export const MAX_FIELD_NARROW = 3;
 const TEXT_TAGS = ['body', 'large', 'waiting', 'ink'];
 /** The ratio each tag asks of the standard key; the high key asks HIGH of every text token and ink, on its bare ground. */
 const HIGH = 7;
@@ -235,20 +247,34 @@ function groundOf(glass) {
   return p ? [p.r, p.g, p.b] : [0, 0, 0];
 }
 
+/** The colors a recipe puts on the field's narrow layers: its own `narrowColors`, else its first colors; none where the field has no narrow layers. */
+export function narrowColorsOf(glass, recipe) {
+  const n = glass.smoke?.field?.narrow;
+  if (!Array.isArray(n) || n.length === 0) return null;
+  if (Array.isArray(recipe.narrowColors)) return recipe.narrowColors;
+  return Array.isArray(recipe.colors) ? recipe.colors.slice(0, n.length) : [];
+}
+
 /** A recipe's calm opacity: its own, else the theme's. */
 export const calmOf = (glass, recipe) => recipe.calm ?? glass.calm?.opacity ?? 0;
 
 /**
- * The worst pixel of each recipe: `{ full, calmed }` and, for a recipe with `narrow` layers,
- * `narrow: { full, calmed }`, each `{ rgb, luminance }`.
+ * The worst pixel of each recipe: `{ full, calmed }` and, for a recipe whose pixel on the field's narrow layers
+ * differs from its own on the wide ones, `narrow: { full, calmed }`, each `{ rgb, luminance }`.
  */
 export function recipeWorsts(glass) {
   const ground = groundOf(glass);
   const out = {};
   for (const [name, recipe] of Object.entries(glass.smoke?.recipes ?? {})) {
     const k = 1 - calmOf(glass, recipe);
-    out[name] = { full: measure(composite(recipe.layers ?? [], ground, 1)), calmed: measure(composite(recipe.layers ?? [], ground, k)) };
-    if (recipe.narrow) out[name].narrow = { full: measure(composite(recipe.narrow, ground, 1)), calmed: measure(composite(recipe.narrow, ground, k)) };
+    const colors = Array.isArray(recipe.colors) ? recipe.colors : [];
+    out[name] = { full: measure(composite(colors, ground, 1)), calmed: measure(composite(colors, ground, k)) };
+    const narrow = narrowColorsOf(glass, recipe);
+    if (narrow) {
+      const n = { full: measure(composite(narrow, ground, 1)), calmed: measure(composite(narrow, ground, k)) };
+      /* The same pixel as the wide set's is no new fact: reported once, so a fault is named once and the ceilings carry a phone worst only where it differs. */
+      if (n.full.luminance !== out[name].full.luminance || n.calmed.luminance !== out[name].calmed.luminance) out[name].narrow = n;
+    }
   }
   return out;
 }
@@ -447,20 +473,47 @@ export function glassFaults(glass, classLarge = CLASS_LARGE?.entries ?? {}, over
   const calm = glass.calm;
   if (!calm || !(calm.opacity > 0 && calm.opacity <= 1) || !(calm.feather >= 0)) fault('calm', 'needs an opacity above 0 and at most 1, and a feather of 0 or more');
 
-  /* Each recipe's layers are what the model reads. */
+  /* The field: the shapes every recipe is a window onto, capped, each layer drifting. */
+  const field = glass.smoke?.field;
+  const fieldLayers = Array.isArray(field?.layers) ? field.layers : [];
+  const narrowLayers = Array.isArray(field?.narrow) ? field.narrow : [];
+  if (fieldLayers.length === 0) fault('field', 'has no layers; the smoke is one field of layers that every recipe colors');
+  else if (fieldLayers.length > MAX_FIELD) fault('field', `has ${fieldLayers.length} layers, at most ${MAX_FIELD}: each is a raster kept in memory`);
+  if (field?.narrow !== undefined) {
+    if (narrowLayers.length === 0) fault('field', 'has no narrow layers; leave `narrow` out, or give it layers');
+    else if (narrowLayers.length > MAX_FIELD_NARROW) fault('field', `has ${narrowLayers.length} narrow layers, at most ${MAX_FIELD_NARROW}: each is a raster kept in memory`);
+  }
+  for (const [which, layers] of [['layers', fieldLayers], ['narrow layers', narrowLayers]]) {
+    layers.forEach((l, i) => {
+      const bad = !Array.isArray(l.alpha) || l.alpha.length !== 5 || !Array.isArray(l.frequency) || l.frequency.length !== 2
+        || !(l.octaves >= 1) || !Number.isFinite(l.seed) || !(l.blur >= 0);
+      if (bad) fault('field', `${which} ${i + 1} is not an alpha row of five, two frequencies, octaves, a seed and a blur`);
+      if (!(l.drift?.seconds > 0 && l.drift?.travel > 0)) fault('field', `${which} ${i + 1} has a drift that needs positive seconds and travel`);
+    });
+  }
+
+  /* Each recipe's colors are what the model reads: one per field layer, and one per narrow layer. */
   for (const [name, recipe] of Object.entries(recipes)) {
     /* A recipe's own calm is drawn on its surface as the calm's opacity (surfaceCalm, engine/ui/glass/apply.ts), so it is held as the theme's is. */
     if (recipe.calm !== undefined && !(typeof recipe.calm === 'number' && recipe.calm > 0 && recipe.calm <= 1)) {
       fault(`recipe ${name}`, `its own calm ${JSON.stringify(recipe.calm)} needs to be a number above 0 and at most 1: the screen draws it as the calm's opacity on the surface`);
     }
-    for (const [which, layers] of [['layers', recipe.layers], ['narrow layers', recipe.narrow]]) {
-      if (layers === undefined && which === 'narrow layers') continue;
-      if (!Array.isArray(layers) || layers.length === 0) { fault(`recipe ${name}`, `has no ${which}`); continue; }
-      layers.forEach((l, i) => {
-        const bad = !LAYER_COLOR.test(l.color) || !(l.opacity > 0 && l.opacity <= 1) || !Array.isArray(l.alpha) || l.alpha.length !== 5
-          || !Array.isArray(l.frequency) || l.frequency.length !== 2 || !(l.octaves >= 1) || !Number.isFinite(l.seed) || !(l.blur >= 0);
-        if (bad) fault(`recipe ${name}`, `${which} ${i + 1} is not a six-digit #rrggbb color (the only form Smoke reads), an opacity in (0, 1], an alpha row of five, two frequencies, octaves, a seed and a blur`);
-      });
+    const colorFaults = (which, colors) => colors.forEach((c, i) => {
+      if (!LAYER_COLOR.test(c?.color) || !(typeof c.opacity === 'number' && c.opacity >= 0 && c.opacity <= 1)) {
+        fault(`recipe ${name}`, `${which} ${i + 1} is not a six-digit #rrggbb color (the only form Smoke reads) with an opacity from 0 to 1`);
+      }
+    });
+    if (!Array.isArray(recipe.colors) || recipe.colors.length === 0) fault(`recipe ${name}`, `has no colors; it needs one per field layer (${fieldLayers.length})`);
+    else {
+      if (recipe.colors.length !== fieldLayers.length) fault(`recipe ${name}`, `has ${recipe.colors.length} colors, needs one per field layer (${fieldLayers.length})`);
+      colorFaults('colors', recipe.colors);
+    }
+    if (recipe.narrowColors !== undefined) {
+      if (narrowLayers.length === 0) fault(`recipe ${name}`, 'has narrowColors, but the field has no narrow layers');
+      else if (!Array.isArray(recipe.narrowColors) || recipe.narrowColors.length !== narrowLayers.length) {
+        fault(`recipe ${name}`, `has ${Array.isArray(recipe.narrowColors) ? recipe.narrowColors.length : 0} narrowColors, needs one per narrow field layer (${narrowLayers.length})`);
+      }
+      if (Array.isArray(recipe.narrowColors)) colorFaults('narrowColors', recipe.narrowColors);
     }
   }
 

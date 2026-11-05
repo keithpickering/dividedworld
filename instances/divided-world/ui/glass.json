@@ -60,71 +60,100 @@
     }
   },
   "smoke": {
+    "field": {
+      "layers": [
+        { "alpha": [1.8, 0, 0, 0, -0.74], "frequency": [0.0022, 0.004], "octaves": 5, "seed": 57, "blur": 18, "drift": { "seconds": 90, "travel": 80 } },
+        { "alpha": [0, 2, 0, 0, -1.0], "frequency": [0.003, 0.005], "octaves": 4, "seed": 8, "blur": 18, "drift": { "seconds": 60, "travel": 110 } },
+        { "alpha": [0, 0, 2, 0, -1.12], "frequency": [0.0034, 0.006], "octaves": 4, "seed": 2, "blur": 18, "drift": { "seconds": 40, "travel": 130 } },
+        { "alpha": [1.8, 0, 0, 0, -0.78], "frequency": [0.0016, 0.0028], "octaves": 5, "seed": 41, "blur": 18, "drift": { "seconds": 28, "travel": 160 } }
+      ],
+      "narrow": [
+        { "alpha": [1.9, 0, 0, 0, -0.82], "frequency": [0.008, 0.012], "octaves": 4, "seed": 9, "blur": 9, "drift": { "seconds": 90, "travel": 40 } },
+        { "alpha": [0, 0, 2, 0, -1.1], "frequency": [0.012, 0.016], "octaves": 3, "seed": 31, "blur": 9, "drift": { "seconds": 60, "travel": 60 } },
+        { "alpha": [0, 2, 0, 0, -1.05], "frequency": [0.016, 0.02], "octaves": 3, "seed": 17, "blur": 9, "drift": { "seconds": 40, "travel": 80 } }
+      ]
+    },
     "recipes": {
       "page": {
-        "layers": [
-          { "color": "#8c24fa", "opacity": 0.95, "alpha": [1.8, 0, 0, 0, -0.74], "frequency": [0.0022, 0.004], "octaves": 5, "seed": 57, "blur": 18 },
-          { "color": "#14d9ff", "opacity": 0.5, "alpha": [0, 2, 0, 0, -1.0], "frequency": [0.003, 0.005], "octaves": 4, "seed": 8, "blur": 18 }
+        "colors": [
+          { "color": "#8c24fa", "opacity": 0.95 },
+          { "color": "#14d9ff", "opacity": 0.5 },
+          { "color": "#000000", "opacity": 0 },
+          { "color": "#000000", "opacity": 0 }
         ]
       },
       "characters": {
-        "layers": [
-          { "color": "#8c24fa", "opacity": 0.85, "alpha": [1.8, 0, 0, 0, -0.78], "frequency": [0.0022, 0.004], "octaves": 5, "seed": 91, "blur": 18 },
-          { "color": "#14d9ff", "opacity": 0.45, "alpha": [0, 2, 0, 0, -1.05], "frequency": [0.003, 0.005], "octaves": 4, "seed": 34, "blur": 18 }
+        "colors": [
+          { "color": "#8c24fa", "opacity": 0.85 },
+          { "color": "#14d9ff", "opacity": 0.45 },
+          { "color": "#000000", "opacity": 0 },
+          { "color": "#000000", "opacity": 0 }
         ]
       },
       "turn": {
-        "layers": [
-          { "color": "#8c24fa", "opacity": 0.6, "alpha": [1.8, 0, 0, 0, -0.8], "frequency": [0.0022, 0.0038], "octaves": 5, "seed": 61, "blur": 18 },
-          { "color": "#1fb3ff", "opacity": 0.4, "alpha": [0, 2, 0, 0, -1.05], "frequency": [0.003, 0.005], "octaves": 4, "seed": 7, "blur": 18 }
+        "colors": [
+          { "color": "#8c24fa", "opacity": 0.6 },
+          { "color": "#1fb3ff", "opacity": 0.4 },
+          { "color": "#000000", "opacity": 0 },
+          { "color": "#000000", "opacity": 0 }
         ]
       },
       "effect": {
-        "layers": [
-          { "color": "#1ad9ff", "opacity": 0.5, "alpha": [1.8, 0, 0, 0, -0.82], "frequency": [0.0024, 0.004], "octaves": 5, "seed": 88, "blur": 18 },
-          { "color": "#8c24fa", "opacity": 0.55, "alpha": [0, 2, 0, 0, -1.05], "frequency": [0.003, 0.005], "octaves": 4, "seed": 12, "blur": 18 }
+        "colors": [
+          { "color": "#1ad9ff", "opacity": 0.5 },
+          { "color": "#8c24fa", "opacity": 0.55 },
+          { "color": "#000000", "opacity": 0 },
+          { "color": "#000000", "opacity": 0 }
         ]
       },
       "react": {
-        "layers": [
-          { "color": "#8c24fa", "opacity": 0.8, "alpha": [1.8, 0, 0, 0, -0.8], "frequency": [0.006, 0.008], "octaves": 4, "seed": 44, "blur": 10 }
+        "colors": [
+          { "color": "#8c24fa", "opacity": 0.8 },
+          { "color": "#000000", "opacity": 0 },
+          { "color": "#000000", "opacity": 0 },
+          { "color": "#000000", "opacity": 0 }
         ]
       },
       "cards": {
-        "layers": [
-          { "color": "#801ff2", "opacity": 0.85, "alpha": [1.8, 0, 0, 0, -0.8], "frequency": [0.0024, 0.0042], "octaves": 5, "seed": 29, "blur": 18 },
-          { "color": "#ff2e8c", "opacity": 0.5, "alpha": [0, 2, 0, 0, -1.05], "frequency": [0.003, 0.005], "octaves": 4, "seed": 13, "blur": 18 },
-          { "color": "#1ad9ff", "opacity": 0.4, "alpha": [0, 0, 2, 0, -1.12], "frequency": [0.0034, 0.006], "octaves": 4, "seed": 2, "blur": 18 }
+        "colors": [
+          { "color": "#801ff2", "opacity": 0.85 },
+          { "color": "#ff2e8c", "opacity": 0.5 },
+          { "color": "#1ad9ff", "opacity": 0.4 },
+          { "color": "#000000", "opacity": 0 }
         ],
-        "narrow": [
-          { "color": "#9929ff", "opacity": 1.0, "alpha": [1.9, 0, 0, 0, -0.82], "frequency": [0.008, 0.012], "octaves": 4, "seed": 9, "blur": 9 },
-          { "color": "#ff2bd6", "opacity": 0.55, "alpha": [0, 0, 2, 0, -1.1], "frequency": [0.012, 0.016], "octaves": 3, "seed": 31, "blur": 9 }
+        "narrowColors": [
+          { "color": "#9929ff", "opacity": 1.0 },
+          { "color": "#ff2bd6", "opacity": 0.55 },
+          { "color": "#000000", "opacity": 0 }
         ]
       },
       "vending": {
-        "layers": [
-          { "color": "#8c24fa", "opacity": 0.85, "alpha": [1.8, 0, 0, 0, -0.78], "frequency": [0.0022, 0.004], "octaves": 5, "seed": 71, "blur": 18 },
-          { "color": "#ff2bd6", "opacity": 0.45, "alpha": [0, 2, 0, 0, -1.05], "frequency": [0.003, 0.005], "octaves": 4, "seed": 19, "blur": 18 },
-          { "color": "#ffd93d", "opacity": 0.3, "alpha": [0, 0, 2, 0, -1.15], "frequency": [0.0034, 0.006], "octaves": 4, "seed": 3, "blur": 18 }
+        "colors": [
+          { "color": "#8c24fa", "opacity": 0.85 },
+          { "color": "#ff2bd6", "opacity": 0.45 },
+          { "color": "#ffd93d", "opacity": 0.3 },
+          { "color": "#000000", "opacity": 0 }
         ]
       },
       "settlement": {
-        "layers": [
-          { "color": "#8c24fa", "opacity": 0.85, "alpha": [1.8, 0, 0, 0, -0.78], "frequency": [0.0022, 0.004], "octaves": 5, "seed": 5, "blur": 18 },
-          { "color": "#ffd93d", "opacity": 0.35, "alpha": [0, 2, 0, 0, -1.05], "frequency": [0.003, 0.005], "octaves": 4, "seed": 27, "blur": 18 },
-          { "color": "#14d9ff", "opacity": 0.3, "alpha": [0, 0, 2, 0, -1.12], "frequency": [0.0034, 0.006], "octaves": 4, "seed": 66, "blur": 18 }
+        "colors": [
+          { "color": "#8c24fa", "opacity": 0.85 },
+          { "color": "#ffd93d", "opacity": 0.35 },
+          { "color": "#14d9ff", "opacity": 0.3 },
+          { "color": "#000000", "opacity": 0 }
         ]
       },
       "hud": {
-        "drift": { "width": 1560, "seconds": 28, "travel": 120 },
-        "layers": [
-          { "color": "#9929ff", "opacity": 1.0, "alpha": [1.9, 0, 0, 0, -0.82], "frequency": [0.0042, 0.016], "octaves": 4, "seed": 11, "blur": 9 },
-          { "color": "#14d9ff", "opacity": 0.55, "alpha": [0, 2, 0, 0, -1.02], "frequency": [0.006, 0.022], "octaves": 3, "seed": 4, "blur": 9 },
-          { "color": "#ff2bd6", "opacity": 0.5, "alpha": [0, 0, 2, 0, -1.1], "frequency": [0.008, 0.02], "octaves": 3, "seed": 23, "blur": 9 }
+        "colors": [
+          { "color": "#9929ff", "opacity": 1.0 },
+          { "color": "#14d9ff", "opacity": 0.55 },
+          { "color": "#ff2bd6", "opacity": 0.5 },
+          { "color": "#000000", "opacity": 0 }
         ],
-        "narrow": [
-          { "color": "#9929ff", "opacity": 1.0, "alpha": [1.9, 0, 0, 0, -0.82], "frequency": [0.01, 0.03], "octaves": 4, "seed": 3, "blur": 9 },
-          { "color": "#14d9ff", "opacity": 0.5, "alpha": [0, 2, 0, 0, -1.02], "frequency": [0.014, 0.03], "octaves": 3, "seed": 8, "blur": 9 }
+        "narrowColors": [
+          { "color": "#9929ff", "opacity": 1.0 },
+          { "color": "#14d9ff", "opacity": 0.5 },
+          { "color": "#000000", "opacity": 0 }
         ]
       }
     },

@@ -25,7 +25,7 @@
  */
 import { useId, type CSSProperties } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { GlassSurface, SmokeLayer } from '../types.ts';
+import type { FieldLayer, GlassSurface, LayerColor, SmokeRecipe } from '../types.ts';
 import { useSmokeLevel } from '../appearance.ts';
 import { surfaceCalm } from './apply.ts';
 
@@ -41,6 +41,24 @@ export interface SmokeProps {
 /** The low preference draws a third of each layer's opacity. */
 const LOW = 1 / 3;
 
+/**
+ * BRIDGE (Task 9 to Task 10): until the renderer draws the field (the glass polish design, section 6),
+ * Smoke builds the layer it used to read from a recipe out of a field layer and the recipe's color
+ * for it. Task 10 replaces this, `bridged` and the HUD-only strip below with the field's own render.
+ */
+interface Bridged extends FieldLayer {
+  readonly color: string;
+  readonly opacity: number;
+}
+
+/** A field's layers in a recipe's colors, leaving out each layer at opacity 0 (a layer the recipe does not draw). */
+function bridged(layers: readonly FieldLayer[], colors: readonly LayerColor[]): Bridged[] {
+  return layers.flatMap((l, i) => (colors[i] && colors[i].opacity > 0 ? [{ ...l, color: colors[i].color, opacity: colors[i].opacity }] : []));
+}
+
+/** The width of the HUD's drifting strip, as the recipe's drift gave it before the field. */
+const BRIDGE_STRIP_WIDTH = 1560;
+
 /** A hex color's channels as the 0 to 1 numbers a color matrix takes. */
 function channels(hex: string): [number, number, number] {
   const h = hex.replace('#', '');
@@ -49,12 +67,12 @@ function channels(hex: string): [number, number, number] {
 }
 
 /** The matrix: every channel set to the layer's color, the alpha row the layer's own. */
-function matrix(layer: SmokeLayer): string {
+function matrix(layer: Bridged): string {
   const [r, g, b] = channels(layer.color);
   return [0, 0, 0, 0, r, 0, 0, 0, 0, g, 0, 0, 0, 0, b, ...layer.alpha].join(' ');
 }
 
-function Layers({ layers, scale, ids, name }: { readonly layers: readonly SmokeLayer[]; readonly scale: number; readonly ids: string; readonly name: string }) {
+function Layers({ layers, scale, ids, name }: { readonly layers: readonly Bridged[]; readonly scale: number; readonly ids: string; readonly name: string }) {
   return (
     <svg className="kb-smoke-svg" data-kb-smoke-set={name} width="100%" height="100%" preserveAspectRatio="none" focusable="false">
       <defs>
@@ -79,12 +97,17 @@ export function Smoke({ surface, level: asked }: SmokeProps) {
   const chosen = useSmokeLevel();
   const level = asked ?? chosen;
   const ids = useId().replace(/:/g, '');
-  const { recipes, surfaces } = ui.glass.smoke;
-  const recipe = recipes[surfaces[surface]];
+  const { recipes, surfaces, field } = ui.glass.smoke;
+  const recipe: SmokeRecipe | undefined = recipes[surfaces[surface]];
+  const wide = recipe ? bridged(field.layers, recipe.colors) : [];
+  /* The recipe's narrow colors, or its first colors, on the field's narrow layers. */
+  const narrow = recipe && field.narrow ? bridged(field.narrow, recipe.narrowColors ?? recipe.colors.slice(0, field.narrow.length)) : [];
   const scale = level === 'low' ? LOW : 1;
-  const drift = recipe && level !== 'off' && recipe.drift ? recipe.drift : null;
+  /* Only the HUD's strip drifts here, as it did before the field, at the field's first layer's rate. */
+  const own = field.layers[0]?.drift;
+  const drift = recipe && level !== 'off' && surface === 'hud' && own ? own : null;
   const strip: CSSProperties | undefined = drift
-    ? ({ width: `${drift.width}px`, '--kb-smoke-seconds': `${drift.seconds}s`, '--kb-smoke-travel': `${drift.travel}px` } as CSSProperties)
+    ? ({ width: `${BRIDGE_STRIP_WIDTH}px`, '--kb-smoke-seconds': `${drift.seconds}s`, '--kb-smoke-travel': `${drift.travel}px` } as CSSProperties)
     : undefined;
   return (
     <div className="kb-smoke" data-kb-surface={surface} aria-hidden="true">
@@ -93,11 +116,11 @@ export function Smoke({ surface, level: asked }: SmokeProps) {
         <div className="kb-smoke-layers" data-kb-smoke={surfaces[surface]}>
           <div className="kb-smoke-strip" data-kb-drift={drift ? '' : undefined} style={strip}>
             <div className="kb-smoke-wide" data-kb-smoke-wide="">
-              <Layers layers={recipe.layers} scale={scale} ids={ids} name="wide" />
+              <Layers layers={wide} scale={scale} ids={ids} name="wide" />
             </div>
-            {recipe.narrow ? (
+            {narrow.length > 0 ? (
               <div className="kb-smoke-narrow" data-kb-smoke-narrow="">
-                <Layers layers={recipe.narrow} scale={scale} ids={ids} name="narrow" />
+                <Layers layers={narrow} scale={scale} ids={ids} name="narrow" />
               </div>
             ) : null}
           </div>

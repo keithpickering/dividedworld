@@ -9,20 +9,26 @@ import { act, render } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { KayfaProvider, type Kayfa } from '../context.tsx';
-import type { GlassTheme, SmokeLayer } from '../types.ts';
+import type { FieldLayer, GlassTheme, LayerColor } from '../types.ts';
 import { Smoke } from './Smoke.tsx';
 
-const layer = (color: string, opacity: number, seed: number): SmokeLayer => ({
-  color, opacity, alpha: [0, 0, 0, 1.8, -0.74], frequency: [0.01, 0.02], octaves: 3, seed, blur: 9,
+const shape = (seed: number): FieldLayer => ({
+  alpha: [0, 0, 0, 1.8, -0.74], frequency: [0.01, 0.02], octaves: 3, seed, blur: 9, drift: { seconds: 28, travel: 120 },
 });
+const color = (c: string, opacity: number): LayerColor => ({ color: c, opacity });
 
-/** A glass of two recipes: one drifting with a narrow variant, one plain. */
+/*
+ * A field of three layers and one narrow, and two recipes: one with narrow colors of its own, one
+ * plain. (The renderer is bridged to the field until the glass polish plan's Task 10 draws it, and
+ * these tests read the bridge's elements: the layers a recipe draws, at opacity above 0.)
+ */
 const glass = {
   keys: { standard: {}, high: {} },
   smoke: {
+    field: { layers: [shape(3), shape(7), shape(9)], narrow: [shape(3)] },
     recipes: {
-      deep: { layers: [layer('#8040ff', 1, 3), layer('#00e0ff', 0.55, 7)], drift: { width: 1560, seconds: 28, travel: 120 }, narrow: [layer('#8040ff', 0.6, 3)] },
-      calm: { layers: [layer('#8040ff', 0.6, 5)] },
+      deep: { colors: [color('#8040ff', 1), color('#00e0ff', 0.55), color('#000000', 0)], narrowColors: [color('#8040ff', 0.6)] },
+      calm: { colors: [color('#8040ff', 0.6), color('#000000', 0), color('#000000', 0)] },
     },
     surfaces: { hud: 'deep', hand: 'calm', play: 'calm', react: 'calm', turn: 'calm', effect: 'calm', vending: 'calm', characters: 'calm', rankings: 'calm', log: 'calm', settings: 'calm', account: 'calm', settlement: 'calm' },
   },

@@ -67,12 +67,47 @@ check('the real glass is clean', glassFaults(real).length === 0, text(glassFault
   check('with the calm at 0.3, #e4def7 is 4.42:1 on the page recipe', near(ratio('#e4def7', thinned), 4.42, 0.006), String(ratio('#e4def7', thinned)));
   check('#9ef4ff on the page recipe\'s full worst is under 3:1 (the plan: 2.99)', ratio('#9ef4ff', worsts.page.full.rgb) < 3 && near(ratio('#9ef4ff', worsts.page.full.rgb), 2.99, 0.01), String(ratio('#9ef4ff', worsts.page.full.rgb)));
   const loud = fresh();
-  loud.smoke.recipes.page.layers[1].opacity = 1.0;
+  loud.smoke.recipes.page.colors[1].opacity = 1.0;
   check('with the cyan at 1.0, white is 1.69:1 on the page recipe', near(ratio('#ffffff', recipeWorsts(loud).page.full.rgb), 1.69, 0.006), String(ratio('#ffffff', recipeWorsts(loud).page.full.rgb)));
   /* The recipe's cyan layer is 0.30 (the glass polish): the settlement's title stands on the bare smoke, so #f1ecff holds 3:1 on it. The board's 0.40 read 2.81. */
   check('#f1ecff on the settlement recipe\'s full worst holds 3:1 (3.08; the board\'s 0.40 cyan read 2.81)', ratio('#f1ecff', worsts.settlement.full.rgb) >= 3 && near(ratio('#f1ecff', worsts.settlement.full.rgb), 3.08, 0.01), String(ratio('#f1ecff', worsts.settlement.full.rgb)));
   check('white is 3.55:1 on the settlement recipe\'s full worst', near(ratio('#ffffff', worsts.settlement.full.rgb), 3.55, 0.006), String(ratio('#ffffff', worsts.settlement.full.rgb)));
   check('luminance and ratio are WCAG\'s: white on black is 21:1', near(ratio('#ffffff', '#000000'), 21, 0.0001) && near(luminance('#ffffff'), 1, 0.0001));
+}
+
+/*
+ * The field's worst pixels, pinned (the glass polish design, section 6). The field's layers are
+ * composited in each recipe's colors and opacities by the model the recipes' own layers had, with
+ * opacity 0 for a layer a recipe did not draw, so every recipe's worst is the one the recipe had before
+ * the field: these are the numbers from before it. A recipe with no narrowColors reads the first
+ * colors on the field's narrow layers; where that is the same pixel as its wide layers it reports no phone worst.
+ */
+{
+  const worsts = recipeWorsts(real);
+  const pinned = {
+    page: [0.2310, 0.0126, null, null], characters: [0.1960, 0.0110, null, null], turn: [0.1167, 0.0079, null, null],
+    effect: [0.1032, 0.0094, null, null], react: [0.0875, 0.0053, null, null], cards: [0.1933, 0.0141, 0.2108, 0.0127],
+    vending: [0.2297, 0.0145, null, null], settlement: [0.2454, 0.0149, null, null], hud: [0.2161, 0.0196, 0.2492, 0.0136],
+  };
+  for (const [recipe, [full, calmed, nFull, nCalmed]] of Object.entries(pinned)) {
+    const w = worsts[recipe];
+    check(`the ${recipe} recipe's worst, calmed worst and phone worsts are ${full}, ${calmed}, ${nFull}, ${nCalmed}`,
+      near(w?.full.luminance, full, 0.00006) && near(w?.calmed.luminance, calmed, 0.00006)
+        && (nFull === null ? w?.narrow === undefined : near(w?.narrow?.full.luminance, nFull, 0.00006) && near(w?.narrow?.calmed.luminance, nCalmed, 0.00006)),
+      JSON.stringify(w && [w.full.luminance, w.calmed.luminance, w.narrow?.full.luminance, w.narrow?.calmed.luminance]));
+  }
+  check('a layer a recipe leaves at opacity 0 adds nothing: the page recipe\'s worst is the same with its unused colors changed', (() => {
+    const g = fresh();
+    g.smoke.recipes.page.colors[2].color = '#ffffff';
+    g.smoke.recipes.page.colors[3].color = '#ffffff';
+    return near(recipeWorsts(g).page.full.luminance, worsts.page.full.luminance, 1e-9);
+  })());
+  check('a layer brought in raises the worst: the page recipe with its third layer at 0.5 white is brighter', (() => {
+    const g = fresh();
+    g.smoke.recipes.page.colors[2] = { color: '#ffffff', opacity: 0.5 };
+    return recipeWorsts(g).page.full.luminance > worsts.page.full.luminance + 0.05;
+  })());
+  check('the field is four layers and three narrow, each drifting at its own rate', real.smoke.field?.layers.length === 4 && real.smoke.field?.narrow?.length === 3 && new Set(real.smoke.field.layers.map((l) => l.drift.seconds)).size === 4, JSON.stringify(real.smoke.field?.layers.map((l) => l.drift)));
 }
 
 /* ---- the web plan's seven poisons ---- */
@@ -91,7 +126,7 @@ check('the real glass is clean', glassFaults(real).length === 0, text(glassFault
 }
 {
   const g = fresh();
-  g.smoke.recipes.page.layers[1].opacity = 1.0;
+  g.smoke.recipes.page.colors[1].opacity = 1.0;
   const r = named(glassFaults(g), '--kb-glass-text-hi', 'large');
   check('the cyan layer\'s opacity raised to 1.0: white large text falls to 1.69:1', r.some((f) => /recipe page/.test(f.where) && f.why.includes('1.69')), text(glassFaults(g)).slice(0, 600));
 }
@@ -139,13 +174,13 @@ check('the real glass is clean', glassFaults(real).length === 0, text(glassFault
 {
   const g = fresh();
   /* The settlement's title is bare on the smoke, so the recipe must stay dim enough: the board's brighter cyan layer fails it. */
-  g.smoke.recipes.settlement.layers.find((l) => l.color === '#14d9ff').opacity = 0.4;
+  g.smoke.recipes.settlement.colors.find((l) => l.color === '#14d9ff').opacity = 0.4;
   const r = named(glassFaults(g), 'recipe settlement', '#f1ecff', 'large');
   check('the settlement recipe with the board\'s 0.40 cyan layer: #f1ecff large falls under 3:1', r.length > 0 && r.some((f) => /2\.8/.test(f.why)), text(glassFaults(g)).slice(0, 600));
 }
 {
   const g = fresh();
-  g.smoke.recipes.hud.narrow[1].opacity = 1.0;
+  g.smoke.recipes.hud.narrowColors[1].opacity = 1.0;
   const r = named(glassFaults(g), 'recipe hud', 'narrow', 'large');
   check('the hud recipe\'s narrow cyan raised to 1.0 fires, naming the narrow layers', r.length > 0, text(glassFaults(g)).slice(0, 600));
   check('and only the narrow layers\' check fires: the wide layers are untouched', named(glassFaults(g), 'recipe hud').every((f) => f.where.includes('narrow')));
@@ -223,18 +258,35 @@ check('a calm with no opacity fires', poisoned((g) => { g.calm.opacity = 0; }, '
 check('a calm opacity above 1 fires', poisoned((g) => { g.calm.opacity = 1.2; }, 'calm', 'opacity').length === 1);
 check('a negative feather fires', poisoned((g) => { g.calm.feather = -1; }, 'calm', 'feather').length === 1);
 check('a glass with no calm fires', poisoned((g) => { delete g.calm; }, 'calm', 'opacity').length === 1);
-check('a recipe with no layers fires', poisoned((g) => { g.smoke.recipes.react.layers = []; }, 'recipe react', 'no layers').length === 1);
-check('narrow layers that are empty fire', poisoned((g) => { g.smoke.recipes.hud.narrow = []; }, 'recipe hud', 'no narrow layers').length === 1);
-check('a layer with no alpha row fires', poisoned((g) => { delete g.smoke.recipes.react.layers[0].alpha; }, 'recipe react', 'layers 1').length === 1);
-check('a layer with one frequency fires', poisoned((g) => { g.smoke.recipes.react.layers[0].frequency = [0.01]; }, 'recipe react', 'layers 1').length === 1);
-check('a layer with no seed fires', poisoned((g) => { delete g.smoke.recipes.react.layers[0].seed; }, 'recipe react', 'layers 1').length === 1);
-check('a layer with a negative blur fires', poisoned((g) => { g.smoke.recipes.react.layers[0].blur = -1; }, 'recipe react', 'layers 1').length === 1);
-check('a layer with zero octaves fires', poisoned((g) => { g.smoke.recipes.react.layers[0].octaves = 0; }, 'recipe react', 'layers 1').length === 1);
-check('a layer whose opacity is 0 fires', poisoned((g) => { g.smoke.recipes.react.layers[0].opacity = 0; }, 'recipe react', 'layers 1').length === 1);
-check('a narrow layer with a bad shape is named as narrow', poisoned((g) => { delete g.smoke.recipes.hud.narrow[0].seed; }, 'recipe hud', 'narrow layers 1').length === 1);
-check('a three-digit layer color fires: Smoke reads six digits only', poisoned((g) => { g.smoke.recipes.react.layers[0].color = '#80f'; }, 'recipe react', 'layers 1', '#rrggbb').length === 1);
-check('an rgb() layer color fires', poisoned((g) => { g.smoke.recipes.react.layers[0].color = 'rgb(128,64,255)'; }, 'recipe react', 'layers 1', '#rrggbb').length === 1);
-check('an eight-digit layer color fires', poisoned((g) => { g.smoke.recipes.react.layers[0].color = '#8040ff80'; }, 'recipe react', 'layers 1').length === 1);
+check('a recipe with no colors fires', poisoned((g) => { g.smoke.recipes.react.colors = []; }, 'recipe react', 'colors').length === 1);
+check('a recipe with one color too few fires, naming the field\'s count', poisoned((g) => { g.smoke.recipes.page.colors.pop(); }, 'recipe page', 'has 3 colors', 'one per field layer (4)').length === 1);
+check('a recipe with one color too many fires', poisoned((g) => { g.smoke.recipes.page.colors.push({ color: '#000000', opacity: 0 }); }, 'recipe page', 'has 5 colors').length === 1);
+check('narrow colors that are empty fire', poisoned((g) => { g.smoke.recipes.hud.narrowColors = []; }, 'recipe hud', 'narrowColors').length === 1);
+check('narrow colors one too few fire, naming the narrow field\'s count', poisoned((g) => { g.smoke.recipes.hud.narrowColors.pop(); }, 'recipe hud', 'has 2 narrowColors', 'one per narrow field layer (3)').length === 1);
+check('narrow colors on a field with no narrow layers fire', poisoned((g) => { delete g.smoke.field.narrow; }, 'recipe cards', 'narrowColors', 'no narrow layers').length === 1);
+check('a field of five layers fires: the cap is 4', poisoned((g) => { g.smoke.field.layers.push(structuredClone(g.smoke.field.layers[0])); for (const r of Object.values(g.smoke.recipes)) r.colors.push({ color: '#000000', opacity: 0 }); }, 'field', 'at most 4').length === 1);
+check('a narrow field of four layers fires: the cap is 3', poisoned((g) => { g.smoke.field.narrow.push(structuredClone(g.smoke.field.narrow[0])); for (const r of Object.values(g.smoke.recipes)) r.narrowColors?.push({ color: '#000000', opacity: 0 }); }, 'field', 'at most 3').length === 1);
+check('a drift of 0 seconds fires, naming the layer', poisoned((g) => { g.smoke.field.layers[1].drift.seconds = 0; }, 'field', 'layers 2', 'drift', 'seconds and travel').length === 1);
+check('a drift of 0 travel fires', poisoned((g) => { g.smoke.field.layers[0].drift.travel = 0; }, 'field', 'layers 1', 'drift').length === 1);
+check('a negative drift fires', poisoned((g) => { g.smoke.field.layers[0].drift.seconds = -4; }, 'field', 'layers 1', 'drift').length === 1);
+check('a layer with no drift fires', poisoned((g) => { delete g.smoke.field.layers[2].drift; }, 'field', 'layers 3', 'drift').length === 1);
+check('a narrow layer with a bad drift is named as narrow', poisoned((g) => { g.smoke.field.narrow[0].drift.seconds = 0; }, 'field', 'narrow layers 1', 'drift').length === 1);
+check('a glass with no field fires', poisoned((g) => { delete g.smoke.field; }, 'field', 'no layers').length >= 1);
+check('a field with no layers fires', poisoned((g) => { g.smoke.field.layers = []; for (const r of Object.values(g.smoke.recipes)) r.colors = []; }, 'field', 'no layers').length === 1);
+check('a narrow field that is empty fires', poisoned((g) => { g.smoke.field.narrow = []; for (const r of Object.values(g.smoke.recipes)) delete r.narrowColors; }, 'field', 'no narrow layers').length === 1);
+check('a field layer with no alpha row fires', poisoned((g) => { delete g.smoke.field.layers[0].alpha; }, 'field', 'layers 1').length === 1);
+check('a field layer with one frequency fires', poisoned((g) => { g.smoke.field.layers[0].frequency = [0.01]; }, 'field', 'layers 1').length === 1);
+check('a field layer with no seed fires', poisoned((g) => { delete g.smoke.field.layers[0].seed; }, 'field', 'layers 1').length === 1);
+check('a field layer with a negative blur fires', poisoned((g) => { g.smoke.field.layers[0].blur = -1; }, 'field', 'layers 1').length === 1);
+check('a field layer with zero octaves fires', poisoned((g) => { g.smoke.field.layers[0].octaves = 0; }, 'field', 'layers 1').length === 1);
+check('a narrow field layer with a bad shape is named as narrow', poisoned((g) => { delete g.smoke.field.narrow[0].seed; }, 'field', 'narrow layers 1').length === 1);
+check('a layer color of opacity 0 is fine: it leaves the layer out on that surface', poisoned((g) => { g.smoke.recipes.react.colors[0].opacity = 0; }, 'recipe react').length === 0);
+check('a layer color with an opacity above 1 fires', poisoned((g) => { g.smoke.recipes.react.colors[0].opacity = 1.2; }, 'recipe react', 'colors 1').length === 1);
+check('a layer color with a negative opacity fires', poisoned((g) => { g.smoke.recipes.react.colors[0].opacity = -0.1; }, 'recipe react', 'colors 1').length === 1);
+check('a three-digit layer color fires: Smoke reads six digits only', poisoned((g) => { g.smoke.recipes.react.colors[0].color = '#80f'; }, 'recipe react', 'colors 1', '#rrggbb').length === 1);
+check('an rgb() layer color fires', poisoned((g) => { g.smoke.recipes.react.colors[0].color = 'rgb(128,64,255)'; }, 'recipe react', 'colors 1', '#rrggbb').length === 1);
+check('an eight-digit layer color fires', poisoned((g) => { g.smoke.recipes.react.colors[0].color = '#8040ff80'; }, 'recipe react', 'colors 1').length === 1);
+check('a narrow layer color with a bad shape is named as narrow', poisoned((g) => { g.smoke.recipes.hud.narrowColors[0].color = 'red'; }, 'recipe hud', 'narrowColors 1').length === 1);
 check('a font with no family fires', poisoned((g) => { delete g.fonts[0].family; }, 'font fonts/Anton-Regular.woff2', 'needs a family').length === 1);
 check('a font with no file fires', poisoned((g) => { delete g.fonts[0].file; }, 'font (no file)', 'needs a family').length === 1);
 check('a font with no weight fires', poisoned((g) => { delete g.fonts[0].weight; }, 'font fonts/Anton-Regular.woff2', 'needs a family').length === 1);
@@ -279,13 +331,13 @@ const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s ===
   /* The hud draws no class large text in the engine's list, so each of these reads it under a list that says it does. */
   const g = fresh();
   g.smoke.recipes.hud.calm = 0.001;
-  for (const l of g.smoke.recipes.hud.layers) l.color = '#000000';
-  g.smoke.recipes.hud.narrow[0].color = '#ffffff';
-  g.smoke.recipes.hud.narrow[0].opacity = 1;
+  for (const l of g.smoke.recipes.hud.colors) l.color = '#000000';
+  g.smoke.recipes.hud.narrowColors[0].color = '#ffffff';
+  g.smoke.recipes.hud.narrowColors[0].opacity = 1;
   const f = named(glassFaults(g, only('hud', 'calmed')), 'class ', 'surface hud');
   check('a class\'s large text on only the narrow layers\' calmed worst fires on a calmed surface, naming them', f.length === Object.keys(g.classes).length && f.every((x) => x.why.includes('narrow calmed worst') && x.why.includes('recipe hud')), text(f).slice(0, 500));
   const n = fresh();
-  for (const l of n.smoke.recipes.hud.layers) l.color = '#000000';
+  for (const l of n.smoke.recipes.hud.colors) l.color = '#000000';
   const nf = named(glassFaults(n, only('hud', 'full')), 'class ', 'surface hud');
   check('a class\'s large text on only the narrow layers\' full worst fires on a full surface, naming them', nf.length === Object.keys(n.classes).length && nf.every((x) => x.why.includes('narrow full worst')), text(nf).slice(0, 500));
 }
@@ -542,7 +594,7 @@ const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s ===
   check('a current ceilings file passes', current.status === 0 && /is current/.test(current.stdout), current.stderr + current.stdout);
 
   const moved = fresh();
-  moved.smoke.recipes.hud.layers[0].opacity = 0.9;
+  moved.smoke.recipes.hud.colors[0].opacity = 0.9;
   fs.writeFileSync(path.join(dir, 'instances', 'x', 'ui', 'glass.json'), JSON.stringify(moved));
   stage(dir);
   const stale = run(dir);
@@ -571,7 +623,7 @@ const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s ===
   check('the ceilings file is the ceilings as JSON, for each instance', JSON.parse(file)['divided-world'].surfaces.hud.recipe === 'hud');
   check('a file equal to the computed ceilings is not stale', ceilingsStale(file, file) === false);
   const brighter = fresh();
-  brighter.smoke.recipes.hud.layers[0].opacity = 0.9;
+  brighter.smoke.recipes.hud.colors[0].opacity = 0.9;
   const stale = ceilingsFile({ 'divided-world': glassCeilings(brighter) });
   check('a ceilings file that no longer matches glass.json is stale', ceilingsStale(file, stale) === true);
   check('a missing ceilings file is stale', ceilingsStale(file, null) === true);

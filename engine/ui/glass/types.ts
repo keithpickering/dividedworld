@@ -6,5 +6,5 @@
  */
 export type {
   ClassLargeDraw, GlassClassColor, GlassFont, GlassKey, GlassOrbStops, GlassSize, GlassSurface, GlassTag, GlassTheme, GlassToken,
-  SmokeDrift, SmokeLayer, SmokeRecipe,
+  FieldDrift, FieldLayer, LayerColor, SmokeRecipe,
 } from '../types.ts';
