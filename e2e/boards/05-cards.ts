@@ -98,8 +98,13 @@ const manifest: BoardManifest = {
       { id: 'fine', role: 'text', name: 'Playing is a public Act under Pipewrench\'s name. Only solid Aura is spent; the ghost doesn\'t count.', within: 'dialog', box: 'size' },
 
       /* The foot follows the taller form down the dialog, so the buttons are compared by size. */
-      { id: 'play', role: 'button', name: 'Play as Pipewrench', within: 'dialog', box: 'size' },
-      { id: 'cancel', role: 'button', name: 'Cancel', within: 'dialog', box: 'size' },
+      /*
+       * The two buttons are GlassButtons in a ButtonRow (the glass polish, design section 2; the play form is one of the dialogs on the parts): 48px
+       * of Barlow Condensed at the body's 21px, where the board draws 60px of Anton at 24px. Held by the layout check (e2e/glass-layout.spec.ts)
+       * and parts.test.tsx, and not compared here.
+       */
+      { id: 'play', role: 'button', name: 'Play as Pipewrench', within: 'dialog', box: 'none', type: false },
+      { id: 'cancel', role: 'button', name: 'Cancel', within: 'dialog', box: 'none', type: false },
     ],
   }],
 };

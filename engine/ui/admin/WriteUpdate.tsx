@@ -19,6 +19,7 @@ import { useId, useState, type FormEvent } from 'react';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import { useKayfa } from '../context.tsx';
 import type { Update, UpdateChange } from '../data/api.ts';
+import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import './write-update.css';
 
 /** The most changes an update lists (supabase/migrations/0062_updates.sql, update_payload_problem). */
@@ -116,14 +117,14 @@ export function WriteUpdate({ onWritten, initial }: WriteUpdateProps) {
           <div key={r.key} className="kb-write-update-row">
             <input className="kb-write-update-input kb-write-update-label" aria-label={`Change ${i + 1} label`} placeholder="Label" value={r.label} autoComplete="off" onChange={(e) => setRow(r.key, 'label', e.target.value)} />
             <input className="kb-write-update-input kb-write-update-text" aria-label={`Change ${i + 1} text`} placeholder="What changed" value={r.text} autoComplete="off" onChange={(e) => setRow(r.key, 'text', e.target.value)} />
-            <button type="button" className="kb-write-update-button" onClick={() => remove(r.key)}>Remove change {i + 1}</button>
+            <GlassButton size="s" onClick={() => remove(r.key)}>Remove change {i + 1}</GlassButton>
           </div>
         ))}
-        <button type="button" className="kb-write-update-button" disabled={rows.length >= MOST_CHANGES} onClick={add}>Add a change</button>
+        <ButtonRow><GlassButton size="s" disabled={rows.length >= MOST_CHANGES} onClick={add}>Add a change</GlassButton></ButtonRow>
       </fieldset>
-      <div className="kb-write-update-actions">
-        <button type="submit" className="kb-write-update-button kb-write-update-post" disabled={busy || blank || tooLong || drafting} aria-describedby={why === '' ? undefined : `${id}-why`}>Post update</button>
-      </div>
+      <ButtonRow>
+        <GlassButton type="submit" kind="primary" disabled={busy || blank || tooLong || drafting} aria-describedby={why === '' ? undefined : `${id}-why`}>Post update</GlassButton>
+      </ButtonRow>
       <div id={`${id}-why`} aria-live="polite" className="kb-write-update-why">{why}</div>
       <div role="status" className="kb-write-update-status">{posted ? 'Posted. Every player has it in their alerts.' : ''}</div>
       {refusal && <p role="alert" className="kb-write-update-refusal">{refusal}</p>}

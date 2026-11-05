@@ -109,11 +109,10 @@
         ]
       },
       "settlement": {
-        "calmAll": true,
         "layers": [
           { "color": "#8c24fa", "opacity": 0.85, "alpha": [1.8, 0, 0, 0, -0.78], "frequency": [0.0022, 0.004], "octaves": 5, "seed": 5, "blur": 18 },
           { "color": "#ffd93d", "opacity": 0.35, "alpha": [0, 2, 0, 0, -1.05], "frequency": [0.003, 0.005], "octaves": 4, "seed": 27, "blur": 18 },
-          { "color": "#14d9ff", "opacity": 0.4, "alpha": [0, 0, 2, 0, -1.12], "frequency": [0.0034, 0.006], "octaves": 4, "seed": 66, "blur": 18 }
+          { "color": "#14d9ff", "opacity": 0.3, "alpha": [0, 0, 2, 0, -1.12], "frequency": [0.0034, 0.006], "octaves": 4, "seed": 66, "blur": 18 }
         ]
       },
       "hud": {
@@ -146,6 +145,16 @@
     }
   },
   "calm": { "opacity": 0.85, "feather": 32 },
+  "controls": {
+    "m": { "height": 48, "pad": 22, "size": "body" },
+    "s": { "height": 36, "pad": 16, "size": "label" },
+    "phone": {
+      "m": { "height": 40, "pad": 16, "size": "phone-body" },
+      "s": { "height": 32, "pad": 12, "size": "phone-small" }
+    },
+    "spacing": 2,
+    "gap": 10
+  },
   "sizes": {
     "label": { "px": 20, "family": "Barlow Condensed", "weight": 800 },
     "body": { "px": 21, "family": "Barlow Condensed", "weight": 600 },

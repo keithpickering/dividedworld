@@ -41,6 +41,7 @@ import { signInHref } from '../account/next.ts';
 import { useKayfa } from '../context.tsx';
 import type { Id } from '../data/api.ts';
 import { backHref, boardPlace } from '../glass/back.ts';
+import { GlassButton } from '../glass/Button.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
 import { Orbs } from '../orbs/Orbs.tsx';
 import { cascade, CASCADE_BEAT_MS } from '../orbs/fill.ts';
@@ -92,7 +93,13 @@ interface Kept {
 /** Nothing held yet for `account`. */
 const emptyFor = (account: Id | null): Kept => ({ for: account, pickedKey: null, busy: false, outcome: null, drainFrom: null, drop: null });
 
-function Machine({ faces, picked, onPick, onAbout, onBuy, busy, drop, onLanded, shopName }: {
+/** One of `list` by `random` (0 up to, never including, 1); with no list, `fallback`. */
+export function pick(list: readonly string[] | undefined, fallback: string, random: () => number): string {
+  if (list === undefined || list.length === 0) return fallback;
+  return list[Math.min(list.length - 1, Math.floor(random() * list.length))]!;
+}
+
+function Machine({ faces, picked, onPick, onAbout, onBuy, busy, drop, onLanded, shopName, marquees, random }: {
   readonly faces: readonly CardFace[];
   readonly picked: CardFace | null;
   readonly onPick: (key: string) => void;
@@ -102,7 +109,11 @@ function Machine({ faces, picked, onPick, onAbout, onBuy, busy, drop, onLanded, 
   readonly drop: Drop | null;
   readonly onLanded: () => void;
   readonly shopName: string;
+  readonly marquees: readonly string[] | undefined;
+  readonly random: () => number;
 }) {
+  /* The sign is decoration: one name, picked when the screen opens and kept while it is open. */
+  const [sign] = useState(() => pick(marquees, shopName, random));
   const total = slotsFor(faces.length);
   const dropped = drop ? faces.find((f) => f.key === drop.key) : undefined;
   const pickedCode = picked ? codeOf(faces.indexOf(picked)) : null;
@@ -110,7 +121,7 @@ function Machine({ faces, picked, onPick, onAbout, onBuy, busy, drop, onLanded, 
   return (
     <div className="kb-vending-machine" role="group" aria-label={shopName}>
       <div className="kb-vending-body" aria-hidden="true" data-kb-art />
-      <div className="kb-vending-marquee" aria-hidden="true" data-kb-art><span className="kb-vending-sign">{shopName}</span></div>
+      <div className="kb-vending-marquee" aria-hidden="true" data-kb-art><span className="kb-vending-sign" style={{ '--kb-sign-chars': sign.length } as CSSProperties}>{sign}</span></div>
 
       <div className="kb-vending-front">
         <div className="kb-vending-sheen" aria-hidden="true" data-kb-art />
@@ -120,15 +131,19 @@ function Machine({ faces, picked, onPick, onAbout, onBuy, busy, drop, onLanded, 
             const code = codeOf(i);
             if (!face) {
               return (
-                <div key={code} className="kb-vending-slot kb-vending-slot--sealed" role="img" aria-label={`Empty slot ${code}, waiting for a future postcard`}>
-                  <span className="kb-vending-sealed" aria-hidden="true" data-kb-art />
-                  <span className="kb-vending-slot-code" aria-hidden="true" data-kb-art data-code={code} />
+                <div key={code} className="kb-vending-cell">
+                  <div className="kb-vending-slot kb-vending-slot--sealed" role="img" aria-label={`Empty slot ${code}, waiting for a future postcard`}>
+                    <span className="kb-vending-sealed" aria-hidden="true" data-kb-art />
+                  </div>
+                  <div className="kb-vending-shelf" aria-hidden="true" data-kb-art>
+                    <span className="kb-vending-slot-code" data-code={code} />
+                  </div>
                 </div>
               );
             }
             const selected = picked?.key === face.key;
             return (
-              <div key={face.key} className="kb-vending-cell">
+              <div key={face.key} className="kb-vending-cell" style={{ '--kb-card-color': face.art.color, '--kb-card-ink': face.art.ink } as CSSProperties}>
                 <button
                   type="button"
                   className="kb-vending-slot"
@@ -139,20 +154,18 @@ function Machine({ faces, picked, onPick, onAbout, onBuy, busy, drop, onLanded, 
                   onClick={() => onPick(face.key)}
                 >
                   <Postcard face={face} size="slot" />
-                  <svg className="kb-vending-coil" aria-hidden="true" focusable="false" width="120" height="22" viewBox="0 0 120 22" data-kb-art>
-                    <path d="M4 11 q8 -10 16 0 t16 0 t16 0 t16 0 t16 0 t16 0 t16 0" fill="none" strokeWidth="2.5" />
-                  </svg>
+                </button>
+                <div className="kb-vending-shelf">
                   <span className="kb-vending-slot-code" aria-hidden="true" data-kb-art data-code={`${code} · ${orbs(face.price)}`} />
-                </button>
-                <button
-                  type="button"
-                  className="kb-vending-about"
-                  aria-label={`About ${face.name}`}
-                  style={{ '--kb-card-color': face.art.color } as CSSProperties}
-                  onClick={(e) => onAbout(face.key, e.currentTarget)}
-                >
-                  <span aria-hidden="true" data-kb-art>i</span>
-                </button>
+                  <GlassButton
+                    size="s"
+                    className="kb-vending-about"
+                    aria-label={`About ${face.name}`}
+                    onClick={(e) => onAbout(face.key, e.currentTarget)}
+                  >
+                    <span aria-hidden="true" data-kb-art>i</span>
+                  </GlassButton>
+                </div>
               </div>
             );
           })}
@@ -170,11 +183,6 @@ function Machine({ faces, picked, onPick, onAbout, onBuy, busy, drop, onLanded, 
           <span className="kb-vending-buy-word">Buy</span>{' '}
           {picked && <span className="kb-vending-buy-card">{picked.name} · {orbs(picked.price)}</span>}
         </button>
-        <p className="kb-vending-price-note kb-calm">
-          {!picked ? 'Pick a slot to see what it costs.' : picked.extra > 0
-            ? `Playing it on a long post costs up to ${orbs(picked.extra)} more, never more than ${orbs(picked.price + picked.extra)} in all.`
-            : 'Playing it costs nothing more.'}
-        </p>
       </div>
 
       <div className="kb-vending-tray">
@@ -192,7 +200,7 @@ function Machine({ faces, picked, onPick, onAbout, onBuy, busy, drop, onLanded, 
 }
 
 export function Vending() {
-  const { instance, settings, ui } = useKayfa();
+  const { instance, settings, ui, random } = useKayfa();
   const player = usePlayer();
   const location = useLocation();
   /* Priced as the server will charge (withCardEconomy): a price an admin has tuned is the one the machine shows. */
@@ -293,6 +301,7 @@ export function Vending() {
     : `Wallet: ${orbs(balance)} of ${orbs(cap)}`;
 
   return (
+    <div className="kb-vending-frame">
     <div className="kb-vending">
       <aside className="kb-vending-side">
         <div className="kb-vending-head kb-calm">
@@ -307,6 +316,11 @@ export function Vending() {
             </div>
             <p className="kb-vending-sum kb-num kb-calm">
               {orbs(balance)}{after !== null ? <> → <b>{orbs(after)}</b></> : null}
+            </p>
+            <p className="kb-vending-fine kb-calm">
+              {!picked ? 'Pick a slot to see what it costs.' : picked.extra > 0
+                ? `Playing it on a long post costs up to ${orbs(picked.extra)} more, never more than ${orbs(picked.price + picked.extra)} in all.`
+                : 'Playing it costs nothing more.'}
             </p>
             {short && !outcome && <p className="kb-vending-fine kb-calm">{shortWords}</p>}
             {/*
@@ -325,7 +339,7 @@ export function Vending() {
       </aside>
 
       <Machine
-        faces={faces} picked={picked} busy={busy} drop={drop} shopName={ui.copy.shopName}
+        faces={faces} picked={picked} busy={busy} drop={drop} shopName={ui.copy.shopName} marquees={ui.copy.marquees} random={random ?? Math.random}
         onPick={(key) => change(account, () => ({ pickedKey: key, outcome: null }))}
         onAbout={(key, button) => { aboutButton.current = button; setAbout(key); }}
         onBuy={() => void buy()}
@@ -347,6 +361,7 @@ export function Vending() {
           <p className="kb-vending-empty-line-says">More postcards arrive in later seasons.</p>
         </div>
       )}
+    </div>
     </div>
   );
 }

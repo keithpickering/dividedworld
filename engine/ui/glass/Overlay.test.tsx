@@ -170,7 +170,7 @@ describe('a popover overlay (the React picker\'s)', () => {
         <div ref={row} data-testid="row"><button type="button" onClick={() => setOpen(true)}>React</button></div>
         {open && (
           <Overlay
-            title="React" label="React to Alex's post" surface="react" describedBy="count" closeAt="foot"
+            title="React" label="React to Alex's post" surface="react" describedBy="count"
             aside={<span id="count">2 of 3 left</span>} anchor={anchored ? row : undefined} sheetBelow={572} onClose={() => setOpen(false)}
           >
             <button type="button">Fire</button>
@@ -189,21 +189,19 @@ describe('a popover overlay (the React picker\'s)', () => {
     const dialog = screen.getByRole('dialog', { name: 'React to Alex\'s post' });
     expect(dialog).toHaveAccessibleDescription('2 of 3 left');
     expect(within(dialog).getByRole('heading', { name: 'React' })).toBeInTheDocument();
-    expect(dialog.querySelector('.kb-glass-dialog-bar')).toHaveTextContent(/^React2 of 3 left$/u);
+    expect(dialog.querySelector('.kb-glass-dialog-bar')).toHaveTextContent(/^React2 of 3 leftClose$/u);
   });
 
-  test('with its Close at the foot, Close comes after the body: Tab reaches it last and comes back round', async () => {
+  test('Close stands in the bar, before the body in the order Tab goes: focus opens on the body, and Tab comes round to Close', async () => {
     renderInWorld(<Pop />, { path: '/t/1', seed: signedIn });
     await userEvent.click(screen.getByRole('button', { name: 'React' }));
     const dialog = screen.getByRole('dialog', { name: 'React to Alex\'s post' });
-    expect(within(dialog).getAllByRole('button').map((b) => b.textContent)).toEqual(['Fire', 'Close']);
+    expect(within(dialog).getAllByRole('button').map((b) => b.textContent)).toEqual(['Close', 'Fire']);
     expect(screen.getByRole('button', { name: 'Fire' })).toHaveFocus();
     await userEvent.tab();
     expect(screen.getByRole('button', { name: 'Close' })).toHaveFocus();
     await userEvent.tab();
     expect(screen.getByRole('button', { name: 'Fire' })).toHaveFocus();
-    await userEvent.tab({ shift: true });
-    expect(screen.getByRole('button', { name: 'Close' })).toHaveFocus();
   });
 
   test('opened by an anchor, it stands below it, its left edge at the anchor\'s, inside the window', async () => {

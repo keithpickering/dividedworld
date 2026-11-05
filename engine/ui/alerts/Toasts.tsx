@@ -227,7 +227,7 @@ function Card({ toast, reduced, held, left, onDismiss, onGone }: CardProps) {
 
   const props = {
     ref: el,
-    className: 'kb-toast kb-glass-cut',
+    className: 'kb-toast',
     'data-kb-kind': toast.kind,
     'aria-labelledby': lineId,
     /* Only a mouse holds a toast by hovering: a tap on a touch screen is not a pointer resting on it. */

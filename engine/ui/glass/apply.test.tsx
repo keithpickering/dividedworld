@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { GlassTheme } from '../types.ts';
-import { applyGlass, glassVars, installGlassFonts } from './apply.ts';
+import { DEFAULT_CONTROLS, applyGlass, glassVars, installGlassFonts } from './apply.ts';
 
 const glass = {
   keys: {
@@ -39,6 +39,33 @@ describe('glassVars', () => {
     expect(v['--kb-glass-size-display-xl']).toBe('6rem');
     expect(v['--kb-glass-calm-opacity']).toBe('0.85');
     expect(v['--kb-glass-calm-feather']).toBe('32px');
+  });
+
+  it('writes the controls\' measure, the engine\'s defaults where the theme gives none, and the phone\'s as names of their own', () => {
+    const v = glassVars(glass, 'standard');
+    expect(v['--kb-glass-control-m-height']).toBe('48px');
+    expect(v['--kb-glass-control-s-size-phone']).toBe('var(--kb-glass-size-phone-small)');
+    expect(v['--kb-glass-control-spacing']).toBe('2px');
+    const own = glassVars({ ...glass, controls: { ...DEFAULT_CONTROLS, gap: 14, phone: { ...DEFAULT_CONTROLS.phone, m: { height: 44, pad: 18, size: 'phone-body' } } } }, 'standard');
+    expect(own['--kb-glass-control-gap']).toBe('14px');
+    expect(own['--kb-glass-control-m-height-phone']).toBe('44px');
+  });
+});
+
+describe('a theme that gives some of the controls\' measure', () => {
+  it('takes the engine\'s default for every field it leaves out, field by field, not all or nothing', () => {
+    const v = glassVars({ ...glass, controls: { gap: 14, m: { height: 52 }, phone: { s: { pad: 10 } } } }, 'standard');
+    /* What it gave. */
+    expect(v['--kb-glass-control-gap']).toBe('14px');
+    expect(v['--kb-glass-control-m-height']).toBe('52px');
+    expect(v['--kb-glass-control-s-pad-phone']).toBe('10px');
+    /* What it left out: the default's, down to a size's other fields. */
+    expect(v['--kb-glass-control-spacing']).toBe('2px');
+    expect(v['--kb-glass-control-m-pad']).toBe(`${DEFAULT_CONTROLS.m.pad}px`);
+    expect(v['--kb-glass-control-m-size']).toBe('var(--kb-glass-size-body)');
+    expect(v['--kb-glass-control-s-height']).toBe(`${DEFAULT_CONTROLS.s.height}px`);
+    expect(v['--kb-glass-control-s-height-phone']).toBe(`${DEFAULT_CONTROLS.phone.s.height}px`);
+    expect(v['--kb-glass-control-m-height-phone']).toBe(`${DEFAULT_CONTROLS.phone.m.height}px`);
   });
 });
 

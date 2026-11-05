@@ -13,6 +13,7 @@
 
 .kb-banner {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: baseline;
   gap: 0.4em 1.2em;
@@ -28,6 +29,8 @@
 }
 
 .kb-logo {
+  /* The site's name is one line; the banner wraps what is beside it, and the name never wraps in a column too narrow for ten of its ems. */
+  white-space: nowrap;
   font: bold var(--kb-size-logo) / 1.2 var(--kb-font-mono);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -200,6 +203,8 @@
 }
 
 :where(:root:not([data-kb-layout='phone'])) .kb-hud-plate--cast .kb-hud-who {
+  /* The plate is a fixed 420px: the name steps down to fit its width at a larger text size (as a class card's name does), never to an ellipsis. */
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -245,6 +250,7 @@
   align-self: flex-start;
   max-width: 100%;
   font-size: var(--kb-glass-size-title);
+  font-size: min(var(--kb-glass-size-title), calc(205cqw / var(--kb-name-chars, 8)));
   line-height: 1;
   letter-spacing: 0.5px;
   color: var(--kb-glass-text);
@@ -425,6 +431,8 @@
   align-items: flex-start;
   /* Ends before the Alerts button, which stands at the right of the same corner (1229px at the board's 1440): the date and time are never drawn under it. */
   max-width: 240px;
+  /* The clock's calm is its box, so the box is its words' width, and the hand's fan lies on nothing of it. */
+  width: fit-content;
   margin: 1.875rem 0 0;
 }
 
@@ -552,6 +560,13 @@
   line-height: 1;
   letter-spacing: 1px;
   text-transform: uppercase;
+}
+
+/* The HUD's art buttons answer a pointer by brightening. */
+.kb-hud-menu:hover,
+.kb-hud-hand:hover,
+.kb-hud-alerts:hover {
+  filter: brightness(1.18);
 }
 
 .kb-hud-menu {
@@ -846,7 +861,8 @@
 
 :where(:root:not([data-kb-layout='phone'])) .kb-hand-card {
   position: absolute;
-  left: calc(256px + var(--kb-fan-x));
+  /* The fan's last card stands where its turn leaves it inside the window: 150px wide, and about 18px more a side where it leans. */
+  left: min(calc(256px + var(--kb-fan-x)), calc(100% - 134px));
   top: calc(8.875rem + var(--kb-fan-y));
   z-index: var(--kb-fan-z);
   transform: rotate(var(--kb-fan-turn));
@@ -986,6 +1002,8 @@
 
 :where(:root[data-kb-layout='phone']) .kb-hand-cards {
   position: relative;
+  /* Above the says line's calm, whose feather lies over the cards. */
+  z-index: 1;
   display: flex;
   /* Every card stays in reach: a hand wider than the phone wraps onto another row, never off the screen's edge (impeccable's audit of the cards, P1-2). */
   flex-wrap: wrap;
@@ -1037,20 +1055,7 @@
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hand-vending {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 48px;
   margin: 12px 16px 0;
-  background: var(--kb-glass-panel-strong);
-  border: 1px solid var(--kb-glass-ready);
-  color: var(--kb-glass-ready);
-  text-decoration: none;
-  font-size: var(--kb-glass-size-phone-body);
-  font-weight: 800;
-  letter-spacing: 2px;
-  text-transform: uppercase;
 }
 
 /* ---- below the switch: the Phone board's HUD ---- */
@@ -1151,15 +1156,26 @@
   content: none;
 }
 
+/*
+ * The avatar is above its neighbors' calms: each is a stacking context of its own, which paints over a static sibling, so the swap's
+ * backing would lie over the avatar and fade it. (The calms' reach stays: the avatar, the Menu and the hand stand in their feathers, which
+ * e2e/glass-text.spec.ts holds to their ceilings.)
+ */
 :where(:root[data-kb-layout='phone']) .kb-hud-plate--cast .kb-hud-avatar {
-  position: static;
+  position: relative;
+  /* The desk layout's offsets (left, top) would move a relative box off its cell. */
+  left: auto;
+  top: auto;
+  z-index: 1;
 }
+
 
 :where(:root[data-kb-layout='phone']) .kb-hud-avatar {
   grid-column: 1;
   grid-row: 1;
-  width: 44px;
-  height: 44px;
+  /* 44px at 100% text, and it grows with the text (rem) so the placeholder's letter, which does, stays inside its border. */
+  width: 2.75rem;
+  height: 2.75rem;
   box-shadow: 0 0 12px color-mix(in srgb, var(--kb-glass-neon) 60%, transparent);
 }
 
@@ -1392,4 +1408,18 @@
   letter-spacing: 0.5px;
   text-transform: uppercase;
   overflow-wrap: anywhere;
+}
+
+/* The HUD's links answer a pointer: the avatar lights its edge and glow, the orbs take the soft plate they take focused, and the door's text link its neon (e2e/glass-hover.spec.ts). */
+.kb-hud-avatar:hover {
+  border-color: var(--kb-glass-text-hi);
+  box-shadow: 0 0 28px color-mix(in srgb, var(--kb-glass-neon) 90%, transparent);
+}
+
+.kb-hud-orbs:hover {
+  background: var(--kb-glass-panel-soft);
+}
+
+.kb-hud-door-sign-in:not(.kb-glass-cut-button):hover {
+  color: var(--kb-glass-neon-text);
 }

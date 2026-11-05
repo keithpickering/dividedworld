@@ -8,6 +8,7 @@ import { useState, type FormEvent, type ReactNode } from 'react';
 import { CONTACT_PATH } from '../contact/Contact.tsx';
 import { useKayfa } from '../context.tsx';
 import { LOST_ANSWER } from '../data/api.ts';
+import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { useLocation, useNavigate } from '../router.tsx';
 import { useSession, useWhy } from './session.ts';
 import './account.css';
@@ -60,14 +61,14 @@ export function OpenAccount() {
             <span className="kb-acct-row-label">Invite</span>
             <input className="kb-acct-input" value={invite} onChange={(e) => setInvite(e.target.value)} autoComplete="off" spellCheck={false} />
           </label>
-          <p className="kb-acct-actions"><button type="submit" className="kb-acct-button kb-glass-skew" data-kb-primary="" disabled={busy}><b className="kb-glass-upright">Open the account</b></button></p>
+          <ButtonRow><GlassButton type="submit" kind="primary" disabled={busy}>Open the account</GlassButton></ButtonRow>
         </>
       )}
       {refusal && <p role="alert" className="kb-acct-refusal">{refusal}</p>}
-      <p className="kb-acct-actions">
-        <button type="button" className="kb-acct-button kb-glass-skew" disabled={busy} onClick={() => void leave()}><b className="kb-glass-upright">Sign out</b></button>{' '}
-        <button type="button" className="kb-acct-button kb-glass-skew" disabled={busy} onClick={() => void leave('/sign-in')}><b className="kb-glass-upright">Use another address</b></button>
-      </p>
+      <ButtonRow>
+        <GlassButton disabled={busy} onClick={() => void leave()}>Sign out</GlassButton>
+        <GlassButton disabled={busy} onClick={() => void leave('/sign-in')}>Use another address</GlassButton>
+      </ButtonRow>
     </form>
   );
 }

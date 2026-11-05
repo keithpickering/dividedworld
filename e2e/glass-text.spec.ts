@@ -4,10 +4,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { judge, paletteOf, type CeilingsFile, type GlassColors, type SurfaceCeilings, type TextFact } from './glass-text.ts';
 import { signInUnseasonedOnBoard } from './onboarding.ts';
 import type * as Gatherer from './glass-text-page.ts';
-import type { Fake } from '../engine/ui/data/fake.ts';
-import type { Demo } from '../web/src/demo.ts';
-
-type E2eWindow = typeof globalThis & { readonly __kbFake: Fake; readonly __kbDemo: Demo };
+import { FIXTURE_OVERLAYS, OVERLAYS, PAGES, SETTLEMENT, STORIES, open, type Screen } from './glass-screens.ts';
 
 /**
  * The rendered glass measurement (the web plan's glass amendment to Task 12; the glass build's
@@ -94,188 +91,6 @@ async function measure(page: Page, panel?: string): Promise<string[]> {
   return [...faults, ...never];
 }
 
-/* ---- what is measured ---- */
-
-interface Screen {
-  readonly name: string;
-  /** Where it opens: a route, a moment of the boards' fixture, or a board story. */
-  readonly path: string;
-  /** What a player does there to bring it up, once the page is ready. */
-  readonly then?: (page: Page) => Promise<void>;
-  /** It is read signed out, as a player reaches it. */
-  readonly signedOut?: boolean;
-}
-
-/**
- * Every glass page: the routes web/src/App.tsx's GLASS map draws on the glass, each read in full
- * (Invites is Settings › Account, where /invites now opens). The HUD is glass on every board page:
- * it is read on the Main board's moment, where it holds the most, signed out, and with a wallet
- * past its cap, the longest its figures get.
- */
-const PAGES: readonly Screen[] = [
-  { name: 'My characters', path: '/characters' },
-  { name: 'New character', path: '/characters/new' },
-  { name: 'Edit profile', path: '/characters/edit' },
-  { name: 'Rankings', path: '/season?tab=rankings' },
-  { name: 'Season news', path: '/season?tab=news' },
-  { name: 'Alerts', path: '/alerts' },
-  { name: 'Updates', path: '/updates' },
-  { name: 'Strategy Guide', path: '/guide' },
-  /* Reach a person is read signed out, as the player who cannot sign in reaches it; the demo world sets its links. */
-  { name: 'Reach a person', path: '/contact', signedOut: true },
-  { name: 'Welcome', path: '/welcome' },
-  { name: 'My log, before anything has settled', path: '/log' },
-  { name: 'The Vending Machine', path: '/vending' },
-  { name: 'The hand, open', path: '/b/general', then: async (page) => { await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click(); } },
-  /* The armed card, with its floating tag where the layout keeps the hand open to show it. */
-  {
-    name: 'The hand, with a card armed',
-    path: '/b/general',
-    then: async (page) => {
-      await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click();
-      await page.getByRole('button', { name: /^Whoops!, Salty\b/ }).first().click();
-    },
-  },
-  { name: 'Settings', path: '/settings' },
-  { name: 'Settings › Account, with the invites', path: '/settings?section=account' },
-  { name: 'Sign in', path: '/sign-in', signedOut: true },
-  { name: 'Register', path: '/register?invite=ab12cd34', signedOut: true },
-  { name: 'The HUD, on the Main board\'s moment', path: '/?fixture=boards&moment=01-main' },
-  { name: 'The HUD, signed out', path: '/b/general', signedOut: true },
-  {
-    name: 'The HUD, with a wallet past its cap',
-    path: '/b/general',
-    then: async (page) => {
-      /* A full wallet puts the demo's estimate wholly past the cap; the HUD reads the wallet when the account changes, out and back in. */
-      await page.waitForFunction(() => '__kbFake' in globalThis);
-      await page.evaluate(() => {
-        const w = globalThis as E2eWindow;
-        w.__kbFake.seed.wallet(w.__kbDemo.me, 600);
-        w.__kbFake.signInAs(null);
-      });
-      await expect(page.locator('.kb-hud-orbs')).toHaveCount(0);
-      await page.evaluate(() => { const w = globalThis as E2eWindow; w.__kbFake.signInAs(w.__kbDemo.me); });
-      await expect(page.locator('.kb-hud-orbs .kb-orbs-over')).toHaveText(/^\+\d\.\d\d past the cap$/u);
-    },
-  },
-];
-
-/** A new character waits to debut; its two debut dialogs open from its panel. */
-const debut = (button: string, dialog: string) => async (page: Page) => {
-  await page.getByLabel(/name/iu).first().fill('Waiting Wanda');
-  await page.getByRole('radio').first().check();
-  /* Drop now is the default (the onboarding plan's Task 1), so a character that waits chooses the settlement. */
-  await page.getByRole('radio', { name: 'Debut at the settlement' }).check();
-  await page.getByRole('button', { name: 'Make the character' }).click();
-  await page.getByRole('button', { name: button }).click();
-  await expect(page.getByRole('dialog', { name: dialog })).toBeVisible();
-};
-
-/** Every glass overlay (engine/ui/glass/Overlay.tsx), opened from where a player opens it. */
-const OVERLAYS: readonly Screen[] = [
-  {
-    name: 'The React picker, from a post',
-    path: '/b/general',
-    then: async (page) => {
-      await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
-      await page.locator('#post-3').getByRole('button', { name: 'React' }).click();
-      await expect(page.getByRole('dialog', { name: /^React to / })).toBeVisible();
-    },
-  },
-  {
-    name: 'The Turn modal, from My characters',
-    path: '/characters',
-    then: async (page) => {
-      await page.getByRole('list', { name: /^Roster, /u }).getByRole('button', { name: /^Pipewrench/u }).click();
-      await page.getByRole('button', { name: 'Turn Pipewrench' }).click();
-      await expect(page.getByRole('dialog', { name: 'Turn Pipewrench' })).toBeVisible();
-    },
-  },
-  {
-    name: 'The Vending Machine\'s card info, from a slot',
-    path: '/vending',
-    then: async (page) => {
-      await page.getByRole('button', { name: 'About Whoops!' }).click();
-      await expect(page.getByRole('dialog', { name: 'Whoops!' })).toBeVisible();
-    },
-  },
-  { name: 'The Debut dialog, dropping now', path: '/characters/new', then: debut('Drop Waiting Wanda now', 'Drop Waiting Wanda now') },
-  { name: 'The Debut dialog, choosing how', path: '/characters/new', then: debut('Change how Waiting Wanda debuts', 'How Waiting Wanda debuts') },
-];
-
-/**
- * An overlay that opens on its own on the boards' fixture, whose account is the fixture's and not the demo world's: read in
- * the first run only, as the stories are (the runs below sign in as the demo's player, which this fixture has no use for).
- */
-const FIXTURE_OVERLAYS: readonly Screen[] = [
-  {
-    name: 'Stick Around\'s view, taking the reader over on the Hold board\'s moment',
-    path: '/?fixture=boards&moment=08-hold',
-    then: async (page) => { await expect(page.getByRole('dialog', { name: 'Stick Around' })).toBeVisible({ timeout: 10_000 }); },
-  },
-  {
-    /* The Cards board's moment: the hand, the card armed, then the post's own button, which opens the form on the post. */
-    name: 'The play form, on the Cards board\'s moment',
-    path: '/?fixture=boards&moment=05-cards',
-    then: async (page) => {
-      await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click();
-      await page.getByRole('button', { name: /^Whoops!, Salty\b/ }).first().click();
-      await page.getByRole('button', { name: /^Play Whoops! on post \d+$/u }).last().click();
-      await expect(page.getByRole('dialog', { name: 'Whoops!' })).toBeVisible();
-    },
-  },
-];
-
-/**
- * The log and the settlement's summary, at the Log and Settlement boards' moments, where they hold lines (the demo world's
- * log has none), and the log's breakdown open, which no board draws (its story, "12 Log, open"). The summary is the
- * `calmAll` surface: every line on it, large text too, stands in a calm. Read in the first runs only, as the overlays above
- * are. The other board stories are the boards' drawings for the board match, whose screens are read above as the app draws them.
- */
-const SETTLEMENT: Screen = { name: 'The settlement\'s summary, on the Settlement board\'s moment', path: '/?fixture=boards&moment=09-settlement' };
-/** A Lens story opens its Lens on its own once the thread is read; the lines are read when it stands. */
-const lensOpen = async (page: Page) => { await expect(page.getByRole('dialog', { name: 'Cards on this post' })).toBeVisible({ timeout: 15_000 }); };
-const STORIES: readonly Screen[] = [
-  { name: 'My log, on the Log board\'s moment', path: '/?fixture=boards&moment=12-log' },
-  SETTLEMENT,
-  { name: 'My log with a settlement\'s posts open, in its story', path: '/?fixture=boards&story=boards-12-log--open' },
-  /* The Lens, on each tab with Who unfolded, for a reader and for the post's author: glass type over the 2003 post. */
-  { name: 'The Lens on Whoops!, Who unfolded, in its story', path: '/?fixture=boards&story=boards-01-lens--lens-whoops-who', then: lensOpen },
-  { name: 'The Lens on Stick Around, Who unfolded, in its story', path: '/?fixture=boards&story=boards-01-lens--lens-stick-around-who', then: lensOpen },
-  { name: 'The author\'s Lens on Whoops!, in its story', path: '/?fixture=boards&story=boards-01-lens--lens-author-whoops-who', then: lensOpen },
-  /*
-   * The Lens opened inside Stick Around's view (story `held-inside`) is not read here: the Lens stands over the view's tag and, at a phone,
-   * over the checkbox's words, as the mockup's held shot does, and a line it covers is read through the Lens's own pixels. The view's lines are
-   * read above with the Lens closed (the Hold board's moment), and the Lens's lines on the post's own page.
-   */
-];
-
-/** The demo world starts signed in, and starts over on a load: sign out in the app. */
-async function signOut(page: Page) {
-  await page.goto('/settings?section=account');
-  await page.getByRole('button', { name: 'Sign out' }).click();
-  await expect(page.getByRole('region', { name: 'Game HUD' }).getByRole('link', { name: 'Sign in' })).toBeVisible();
-}
-
-/** Moves the app to `path` as a link does, without a load, so the signed-out session stays. */
-async function goInApp(page: Page, path: string) {
-  await page.evaluate((to) => { history.pushState(null, '', to); window.dispatchEvent(new PopStateEvent('popstate')); }, path);
-}
-
-/** Opens a screen ready to read: a glass page when its menu bar shows, a board page when its HUD does, a story once rendered. */
-async function open(page: Page, s: Screen) {
-  if (s.signedOut) await signOut(page);
-  if (s.signedOut) await goInApp(page, s.path);
-  else await page.goto(s.path);
-  const ready = s.path.includes('story=')
-    ? page.locator('#root > *').first()
-    /* The settlement's summary has no menu bar: its heading says it is drawn. */
-    : page.getByRole('navigation', { name: 'Menu' }).or(page.getByRole('region', { name: 'Game HUD' })).or(page.getByRole('heading', { level: 1, name: 'While you were away' })).first();
-  await expect(ready).toBeVisible();
-  await s.then?.(page);
-  await page.evaluate(() => document.fonts.ready);
-}
-
 /** Puts a style into the page: a poison's plant. */
 const plant = (page: Page, css: string) => page.addStyleTag({ content: css });
 
@@ -292,6 +107,87 @@ for (const [label, viewport] of SIZES) {
     }
   });
 }
+
+/*
+ * The calm is drawn outside its element (engine/ui/glass/calm.css): the element adds no padding, and
+ * its backing reaches the feather past its box on every side. 32px on the main layout, the phone
+ * layout's own where the theme gives one; read as the browser computes it, which an inline root
+ * style must not outrank.
+ */
+for (const [label, viewport, phone] of [['1440 wide', { width: 1440, height: 900 }, false], ['the phone, 390 wide', { width: 390, height: 844 }, true]] as const) {
+  test(`the calm adds no padding and its backing reaches the feather past the element, at ${label}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await open(page, PAGES.find((p) => p.path === '/season?tab=rankings')!);
+    /* 32px, the theme's; on the phone the smaller of it and the column's gutter, so the column's clip never cuts it. */
+    const gutter = await page.locator('.kb-glass-content').evaluate((el) => parseFloat(getComputedStyle(el).paddingLeft));
+    const feather = phone ? Math.min(32, gutter) : 32;
+    if (phone) expect(feather, 'the phone gutter is under the 32px feather').toBeLessThan(32);
+    for (const sel of ['.kb-rankings-lead.kb-calm', '.kb-rankings-board.kb-calm']) {
+      const got = await page.locator(sel).evaluate((el) => {
+        const s = getComputedStyle(el);
+        const b = getComputedStyle(el, '::before');
+        return { padding: [s.paddingTop, s.paddingRight, s.paddingBottom, s.paddingLeft], inset: [b.top, b.right, b.bottom, b.left] };
+      });
+      expect(got.padding, `${sel} padding`).toEqual(['0px', '0px', '0px', '0px']);
+      expect(got.inset.map(parseFloat).map((v) => Math.round(v * 100) / 100), `${sel} backing`).toEqual(Array(4).fill(-Math.round(feather * 100) / 100));
+    }
+  });
+}
+
+/*
+ * The HUD's geometry is main's (read at 82599ef, at 1440 and 390): no word moves, the glass keeps its
+ * height and no box takes a tap from the controls beside it. A box sized by its words is measured a pixel
+ * or two apart by two Chromiums' text metrics (CI's clock is 132px wide where a local one is 134), so
+ * each box is held within HUD_SLACK of main's, the board comparer's size tolerance, and the height exactly.
+ */
+const HUD_SLACK = 4;
+const nearly = (got: Record<string, number | number[]>, want: Record<string, number | number[]>) => {
+  expect(Object.keys(got).sort()).toEqual(Object.keys(want).sort());
+  for (const [key, w] of Object.entries(want)) {
+    const g = got[key]!;
+    if (typeof w === 'number') expect(g, key).toBe(w);
+    else (g as number[]).forEach((v, i) => expect(Math.abs(v - w[i]!), `${key}[${i}] is ${v}, main's ${w[i]}`).toBeLessThanOrEqual(HUD_SLACK));
+  }
+};
+test.describe('the HUD keeps its geometry', () => {
+  const read = (page: Page) => page.evaluate(() => {
+    const top = document.querySelector('.kb-hud')!.getBoundingClientRect().top;
+    const at = (sel: string) => { const b = document.querySelector(sel)!.getBoundingClientRect(); return [b.left, b.top - top, b.width, b.height].map(Math.round); };
+    return { height: Math.round(document.querySelector('.kb-hud')!.getBoundingClientRect().height), avatar: at('.kb-hud-avatar'), select: at('.kb-hud-select'), aura: at('.kb-hud-aura-legend'), orbs: at('.kb-hud-orbs'), clock: at('.kb-hud-clock-time') };
+  });
+  test('at 1440', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await open(page, { name: 'HUD', path: '/b/general' });
+    nearly(await read(page), { height: 212, avatar: [59, 72, 84, 84], select: [256, 129, 151, 52], aura: [500, 10, 452, 29], orbs: [500, 47, 452, 113], clock: [980, 59, 134, 34] });
+  });
+  test('at 390', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await open(page, { name: 'HUD', path: '/b/general' });
+    const g = await read(page);
+    nearly({ height: g.height, avatar: g.avatar, select: g.select, orbs: g.orbs }, { height: 124, avatar: [16, 23, 44, 44], select: [70, 32, 96, 48], orbs: [16, 88, 358, 30] });
+  });
+  for (const [label, viewport] of SIZES) {
+    test(`no box takes the taps of the Menu control, the Hand or the picker's kinds, at ${label}`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      await open(page, { name: 'HUD', path: '/b/general' });
+      const tapped = (sel: string) => page.locator(sel).first().evaluate((el) => {
+        const b = el.getBoundingClientRect();
+        const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+        return hit !== null && el.contains(hit);
+      });
+      expect(await tapped('.kb-hud-menu'), 'Menu').toBe(true);
+      expect(await tapped('.kb-hud-hand'), 'Hand').toBe(true);
+      await open(page, OVERLAYS.find((o) => o.name.startsWith('The React picker'))!);
+      const kinds = await page.locator('.kb-picker-kind').evaluateAll((els) => els.map((el) => {
+        const b = el.getBoundingClientRect();
+        const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+        return hit !== null && el.contains(hit);
+      }));
+      expect(kinds.length).toBeGreaterThan(0);
+      expect(kinds.filter((ok) => !ok)).toEqual([]);
+    });
+  }
+});
 
 /*
  * High contrast (Settings › Accessibility; the design's section 4.5): every line of glass text
@@ -314,7 +210,7 @@ async function chooseHighContrast(page: Page) {
 const onTheAccount = (s: Screen): Screen => (s.path.includes('fixture=boards') ? { name: 'The HUD, on a board page', path: '/b/general' } : s);
 
 /*
- * Text size (Settings › Accessibility): the glass's words grow with the player's choice, past 150%
+ * Text size (Settings › Accessibility): the glass's words grow with the player's choice, from 150% up
  * on the Phone board's layout, and every line is held to the same rules at every size, its calm
  * growing with it. Chosen as a player chooses it, by keyboard, and kept by the account across the
  * load that opens each screen; signed-out screens are left out, as no account's size applies there.
@@ -337,14 +233,40 @@ const TEXT_SIZES: readonly (readonly [string, readonly (readonly [string, { read
   ['200', SIZES],
 ];
 
-test('at 150% text the HUD\'s avatar grows on both sides with its plate, square', async ({ page }) => {
+test('at 125% text the HUD\'s avatar grows on both sides with its plate, square', async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
-  await chooseTextSize(page, '150');
+  await chooseTextSize(page, '125');
   await open(page, onTheAccount(PAGES.find((p) => p.path.includes('moment=01-main'))!));
   const box = await page.locator('.kb-hud-avatar').boundingBox();
-  expect(box!.height).toBeCloseTo(126, 0);
+  expect(box!.height).toBeCloseTo(105, 0);
   expect(box!.width).toBeCloseTo(box!.height, 0);
 });
+
+/*
+ * The phone HUD's avatar stands beside the name, whole inside the HUD and clear of the name's and the label's boxes, on a tall window and on a short one (a
+ * phone browser with its toolbar shows about 664px): it was once drawn low, under the name and past the HUD's foot, because the desk layout's offsets moved
+ * it when it was made `relative`.
+ */
+for (const [label, viewport, size] of [['390x844', { width: 390, height: 844 }, '100'], ['390x664, a short window', { width: 390, height: 664 }, '100'], ['390x844 at 125% text', { width: 390, height: 844 }, '125']] as const) {
+  test(`the phone HUD's avatar sits whole beside the name, clear of it, at ${label}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    if (size !== '100') await chooseTextSize(page, size);
+    await open(page, onTheAccount(PAGES.find((p) => p.path.includes('moment=01-main'))!));
+    const boxes = await page.evaluate(() => {
+      const b = (sel: string) => { const r = document.querySelector(sel)!.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; };
+      return { hud: b('.kb-hud'), avatar: b('.kb-hud-avatar'), name: b('.kb-hud-select'), label: b('.kb-hud-swap-label') };
+    });
+    const { hud, avatar } = boxes;
+    expect(avatar.left, 'inside the HUD, left').toBeGreaterThanOrEqual(hud.left);
+    expect(avatar.top, 'inside the HUD, top').toBeGreaterThanOrEqual(hud.top);
+    expect(avatar.right, 'inside the HUD, right').toBeLessThanOrEqual(hud.right);
+    expect(avatar.bottom, 'inside the HUD, bottom').toBeLessThanOrEqual(hud.bottom + 0.5);
+    expect(avatar.bottom, 'inside the window').toBeLessThanOrEqual(viewport.height);
+    const apart = (a: typeof avatar, c: typeof avatar) => a.right <= c.left + 0.5 || c.right <= a.left + 0.5 || a.bottom <= c.top + 0.5 || c.bottom <= a.top + 0.5;
+    expect(apart(avatar, boxes.name), 'clear of the name').toBe(true);
+    expect(apart(avatar, boxes.label), 'clear of "Posting as"').toBe(true);
+  });
+}
 
 for (const [size, widths] of TEXT_SIZES) {
   test.describe(`at ${size}% text`, () => {
@@ -353,6 +275,9 @@ for (const [size, widths] of TEXT_SIZES) {
         test.use({ viewport });
         for (const s of [...PAGES, ...OVERLAYS].filter((x) => !x.signedOut).map(onTheAccount)) {
           test(`${s.name}: every line of glass text is legible on its smoke`, async ({ page }) => {
+            /* Every line's pixels are read, against its smoke and under each preference: the Strategy Guide at 200% takes about 20s
+               alone, and with tests spread fully parallel (playwright.config.ts) several of these share a machine. 90s still ends a hang. */
+            test.setTimeout(90_000);
             await chooseTextSize(page, size);
             await open(page, s);
             await expect(page.locator('html')).toHaveAttribute('data-kb-text-size', size);
@@ -458,7 +383,9 @@ test.describe('the picked slot and the armed card in forced colors', () => {
       const highlight = getComputedStyle(probe).color;
       probe.remove();
       const ring = getComputedStyle(el, '::after');
-      return { style: ring.borderTopStyle, width: ring.borderTopWidth, highlight: ring.borderTopColor === highlight };
+      /* In the element's own px: a slot's card is drawn at the machine's `zoom` (vending.css), which scales its 3px ring with it (the browser snaps the scaled width, so whole px). */
+      const zoom = (el as Element & { currentCSSZoom?: number }).currentCSSZoom ?? 1;
+      return { style: ring.borderTopStyle, width: `${Math.round(parseFloat(ring.borderTopWidth) / zoom)}px`, highlight: ring.borderTopColor === highlight };
     });
     expect(await ring('button.kb-vending-slot[aria-pressed="true"]')).toEqual({ style: 'solid', width: '3px', highlight: true });
     expect((await ring('button.kb-vending-slot[aria-pressed="false"]')).style).not.toBe('solid');
@@ -526,8 +453,8 @@ test.describe('the poisons, planted in a real page', () => {
   test('an uncalmed line on a recipe too bright for its color', async ({ page }) => {
     /* The owner's answer on #53 lets a line stand bare on a recipe dim enough (the Turn modal's); the characters recipe's full worst, 0.196, is over every body ceiling. */
     await open(page, PAGES.find((p) => p.path === '/characters')!);
-    await page.locator('.kb-characters-lead').evaluate((el) => el.classList.remove('kb-calm'));
-    expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-characters-lead \(surface characters\): stands in no calm and on no panel as solid as the calm \(0\.85\), and its recipe's full worst, 0\.196, is not under the ceiling 0\.1288 for --kb-glass-text-2 as body text on surface characters \(recipe characters\)/u));
+    await page.locator('.kb-page-head-lead').evaluate((el) => el.classList.remove('kb-calm'));
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-page-head-lead \(surface characters\): stands in no calm and on no panel as solid as the calm \(0\.85\), and its recipe's full worst, 0\.196, is not under the ceiling 0\.1288 for --kb-glass-text-2 as body text on surface characters \(recipe characters\)/u));
   });
 
   test('a feather that reaches into the text', async ({ page }) => {
@@ -537,7 +464,7 @@ test.describe('the poisons, planted in a real page', () => {
   });
 
   test('a joined calm whose outer edge still feathers into the text', async ({ page }) => {
-    /* The phone's HUD door and actions join, with no feather where they face (frame.css); the door's top edge still ramps, so a backing pulled in on it is named. */
+    /* The phone's HUD door and actions join, with no feather where they face (frame.css); the door's title stands in the door's own calm, whose top edge still ramps, so a backing pulled in on it is named. */
     await page.setViewportSize({ width: 390, height: 844 });
     await open(page, { name: 'The HUD, signed out', path: '/b/general', signedOut: true });
     await plant(page, '.kb-hud-door.kb-calm::before { top: 0; }');
@@ -696,11 +623,10 @@ test.describe('the poisons, planted in a real page', () => {
     expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-rankings-lead \(surface rankings\): its color rgba\(228, 222, 247, 0\.8\) is translucent; glass type is opaque$/u));
   });
 
-  test('on a calmAll surface, the settlement\'s heading moved out of its calm', async ({ page }) => {
+  test('the settlement\'s title stands on the bare smoke, and is legible there', async ({ page }) => {
     await open(page, SETTLEMENT);
+    expect(await page.locator('.kb-page-head-title').evaluate((el) => el.classList.contains('kb-calm'))).toBe(false);
     expect(await measure(page)).toEqual([]);
-    await page.locator('.kb-settled-title').evaluate((el) => el.classList.remove('kb-calm'));
-    expect(await measure(page)).toContainEqual(expect.stringMatching(/^"While you were away" in .*h1\.kb-settled-title[^(]* \(surface settlement\): stands in no calm and on no panel as solid as the calm \(0\.85\); surface settlement \(recipe settlement\) is calmAll/u));
   });
 
   test('a class\'s large text on a surface the engine\'s list says does not draw it', async ({ page }) => {

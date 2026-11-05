@@ -12,15 +12,6 @@
   padding-top: 32px;
 }
 
-.kb-updates-title {
-  margin: 0;
-  font-size: 7rem;
-  line-height: 1;
-  letter-spacing: 1px;
-  color: var(--kb-glass-text);
-  text-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 35%, transparent);
-}
-
 .kb-updates-cols {
   display: grid;
   grid-template-columns: 360px minmax(0, 1fr);
@@ -226,10 +217,6 @@
   padding-top: 16px;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-updates-title {
-  font-size: var(--kb-glass-size-display-l);
-}
-
 :where(:root[data-kb-layout='phone']) .kb-updates-cols {
   grid-template-columns: minmax(0, 1fr);
   gap: 16px;
@@ -269,4 +256,9 @@
 :where(:root[data-kb-layout='phone']) .kb-updates-headline {
   margin-top: 18px;
   font-size: var(--kb-glass-size-display-m);
+}
+
+/* The lede stands as near the title as the board sets it, so its feather is capped at the title gap (calm.css) and lies on nothing but it. */
+.kb-updates-lede {
+  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
 }

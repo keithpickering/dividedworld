@@ -37,7 +37,7 @@ export async function pageViolations(page: Page): Promise<string[]> {
 test.use({ bypassCSP: true });
 
 /* A glass page is ready when its menu bar is; a board page when its Game HUD is. */
-const GLASS = new Set(['/characters', '/characters/new', '/characters/edit', '/settings', '/invites', '/sign-in', '/register', '/season?tab=rankings', '/season?tab=news', '/alerts', '/updates', '/guide', '/contact', '/vending']);
+const GLASS = new Set(['/characters', '/characters/new', '/characters/edit', '/settings', '/invites', '/sign-in', '/register', '/season?tab=rankings', '/season?tab=news', '/alerts', '/updates', '/guide', '/contact', '/vending', '/admin/queue']);
 const ready = (page: import('@playwright/test').Page, path: string) => (GLASS.has(path)
   ? page.getByRole('navigation', { name: 'Menu' })
   : page.getByRole('region', { name: 'Game HUD' }));
@@ -73,6 +73,20 @@ async function hudCut(page: Page): Promise<(readonly [string, string, number])[]
   });
 }
 
+/* The check can go red: the aura, a calm, and the orbs in it, each pushed below the glass are named. */
+test.describe('hudCut names what runs past the glass', () => {
+  test.use({ viewport: { width: 1000, height: 800 } });
+  for (const [what, css] of [['a calm', '.kb-hud-aura { position: relative; top: 400px; }'], ['a control in a calm', '.kb-hud-orbs { position: relative; top: 400px; }']] as const) {
+    test(`${what} pushed past the glass's foot`, async ({ page }) => {
+      await page.goto('/b/general');
+      await expect(page.locator('.kb-hud-orbs .kb-orb').first()).toBeVisible();
+      await page.addStyleTag({ content: css });
+      const names = (await hudCut(page)).map(([name, side]) => `${name}:${side}`);
+      expect(names).toContainEqual(what === 'a calm' ? 'kb-hud-aura kb-calm:bottom' : 'kb-hud-orbs:bottom');
+    });
+  }
+});
+
 /*
  * Where the Main board's layout becomes the Phone board's, worked out from Divided World's size
  * tokens (engine/ui/glass/board.ts), and a window just either side of it.
@@ -82,8 +96,20 @@ const ABOVE_SWITCH = SWITCH + 8;
 const BELOW_SWITCH = SWITCH - 8;
 
 const PAGES: readonly [string, string][] = [
-  ['index', '/'], ['board', '/b/general'], ['characters', '/characters'], ['season rankings', '/season?tab=rankings'], ['season news', '/season?tab=news'], ['alerts', '/alerts'], ['updates', '/updates'], ['guide', '/guide'], ['contact', '/contact'], ['vending', '/vending'], ['settings', '/settings'], ['invites', '/invites'],
+  ['index', '/'], ['board', '/b/general'], ['characters', '/characters'], ['season rankings', '/season?tab=rankings'], ['season news', '/season?tab=news'], ['alerts', '/alerts'], ['updates', '/updates'], ['guide', '/guide'], ['contact', '/contact'], ['vending', '/vending'], ['settings', '/settings'], ['invites', '/invites'], ['admin queue', '/admin/queue'],
 ];
+
+/** Opens a page; the admin queue is the demo player made an admin in the app (a load starts the demo over), then moved to. */
+async function visit(page: Page, path: string) {
+  if (path !== '/admin/queue') {
+    await page.goto(path);
+    return;
+  }
+  await page.goto('/settings');
+  await page.waitForFunction(() => '__kbFake' in globalThis);
+  await page.evaluate(() => { const w = globalThis as typeof globalThis & { readonly __kbFake: Fake; readonly __kbDemo: Demo }; w.__kbFake.seed.admin(w.__kbDemo.me, true); });
+  await page.evaluate(() => { history.pushState(null, '', '/admin/queue'); window.dispatchEvent(new PopStateEvent('popstate')); });
+}
 
 const STORIES = boardStoryIds();
 
@@ -107,17 +133,17 @@ for (const scheme of ['light', 'dark'] as const) {
 
       for (const [label, path] of PAGES) {
         test(`${label} has no axe violation, color contrast included`, async ({ page }) => {
-          await page.goto(path);
+          await visit(page, path);
           await expect(ready(page, path)).toBeVisible();
           expect(await pageViolations(page)).toEqual([]);
         });
         test(`${label} does not scroll sideways`, async ({ page }) => {
-          await page.goto(path);
+          await visit(page, path);
           await expect(ready(page, path)).toBeVisible();
           expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
         });
         if (!GLASS.has(path)) test(`${label}'s Game HUD holds all it shows inside its glass and the window`, async ({ page }) => {
-          await page.goto(path);
+          await visit(page, path);
           await expect(ready(page, path)).toBeVisible();
           await expect(page.locator('.kb-hud-orbs .kb-orb').first()).toBeVisible();
           expect(await hudCut(page)).toEqual([]);
@@ -225,7 +251,7 @@ for (const scheme of ['light', 'dark'] as const) {
       test('the Turn, Reveal and Debut dialogs have none', async ({ page }) => {
         await page.goto('/characters');
         /* On the glass a character's controls are in its panel, chosen by its card (the Roster board). */
-        await page.getByRole('list', { name: /^Roster, /u }).getByRole('button', { name: /^Pipewrench/u }).click();
+        await page.getByRole('tablist', { name: /^Roster, /u }).getByRole('tab', { name: /^Pipewrench/u }).click();
         await page.getByRole('button', { name: 'Turn Pipewrench' }).click();
         await expect(page.getByRole('dialog', { name: 'Turn Pipewrench' })).toBeVisible();
         expect(await pageViolations(page)).toEqual([]);
@@ -437,4 +463,20 @@ test('the check sees low-contrast text in the browser', async ({ page }) => {
   await page.addStyleTag({ content: 'body, main, .kb-box, .kb-table { background: #fff !important; } h1, h2, td, th, a, p { color: #ccc !important; }' });
   const found = await pageViolations(page);
   expect(found.some((f) => f.startsWith('color-contrast'))).toBe(true);
+});
+
+/* The Guide's cards table is stacked into one block per card on a phone, and stays a table to a reader: its rows, row headers, column headers and cells keep their roles. */
+test('the Guide\'s cards table is still a table when it is stacked on a phone', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/guide');
+  const table = page.getByRole('table', { name: 'The cards' });
+  await expect(table).toBeAttached();
+  await table.scrollIntoViewIfNeeded();
+  expect(await table.getByRole('columnheader').allTextContents()).toEqual(['Card', 'Kind', 'Played', 'Price in orbs', 'What it does']);
+  expect(await table.getByRole('row').count()).toBeGreaterThan(1);
+  expect(await table.getByRole('rowheader').count()).toBeGreaterThan(0);
+  expect(await table.getByRole('cell').count()).toBeGreaterThan(0);
+  /* The stacked rows are laid out as grids, never as blocks. */
+  expect(await table.locator('tbody tr').first().evaluate((el) => getComputedStyle(el).display)).toBe('grid');
+  expect(await table.evaluate((el) => getComputedStyle(el).display)).toBe('table');
 });

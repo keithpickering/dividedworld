@@ -11,55 +11,6 @@
   padding-top: 32px;
 }
 
-.kb-season-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px 32px;
-}
-
-.kb-season-title {
-  margin: 0;
-  font-size: 7rem;
-  line-height: 1;
-  letter-spacing: 1px;
-  color: var(--kb-glass-text);
-  text-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 35%, transparent);
-}
-
-.kb-season-tabs {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-
-.kb-season-tab {
-  display: flex;
-  align-items: center;
-  min-height: 52px;
-  padding: 0 16px;
-  font-size: 1.3125rem;
-  font-weight: 800;
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
-  text-decoration: none;
-  white-space: nowrap;
-  color: var(--kb-glass-text);
-  border: 1px solid color-mix(in srgb, var(--kb-glass-pale) 60%, transparent);
-}
-
-.kb-season-tab[data-kb-current] {
-  background: var(--kb-glass-neon);
-  color: var(--kb-glass-ink-neon);
-  border-color: var(--kb-glass-neon);
-}
-
-.kb-season-tab:focus-visible {
-  outline: 3px solid var(--kb-glass-text);
-  outline-offset: 3px;
-}
-
 .kb-season-panel {
   margin-top: 8px;
 }
@@ -195,10 +146,6 @@
   margin-top: 24px;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-season-title {
-  font-size: 4rem;
-}
-
 :where(:root[data-kb-layout='phone']) .kb-season-item {
   grid-template-columns: minmax(0, 1fr);
   gap: 6px;
@@ -206,4 +153,9 @@
 
 :where(:root[data-kb-layout='phone']) .kb-season-podium-list {
   grid-template-columns: minmax(0, 1fr);
+}
+
+/* The lede stands as near the title as the board sets them (the head's 12px gap), so its feather is no wider than that and lies on nothing but the gap. */
+.kb-season-lede {
+  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
 }

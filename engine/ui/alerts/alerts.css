@@ -14,52 +14,6 @@
   padding-top: 32px;
 }
 
-.kb-alerts-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px 32px;
-}
-
-.kb-alerts-title {
-  margin: 0;
-  font-size: 7rem;
-  line-height: 1;
-  letter-spacing: 1px;
-  color: var(--kb-glass-text);
-  text-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 35%, transparent);
-}
-
-.kb-alerts-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-
-.kb-alerts-tab {
-  display: inline-flex;
-  align-items: center;
-  min-height: 52px;
-  padding: 0 16px;
-  border: 1px solid color-mix(in srgb, var(--kb-glass-text) 60%, transparent);
-  background: transparent;
-  color: var(--kb-glass-text-2);
-  font: 800 var(--kb-glass-size-body) / 1 var(--kb-glass-font-body);
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
-.kb-alerts-tab[aria-pressed='true'] {
-  border-color: var(--kb-glass-neon);
-  background: var(--kb-glass-neon);
-  color: var(--kb-glass-ink-neon);
-  box-shadow: 0 0 18px color-mix(in srgb, var(--kb-glass-neon) 55%, transparent);
-}
-
-.kb-alerts-tab:focus-visible,
 .kb-alerts-row:focus-visible,
 .kb-alerts-unfollow:focus-visible,
 .kb-alerts a:focus-visible,
@@ -255,17 +209,6 @@
   padding-top: 16px;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-alerts-title {
-  font-size: var(--kb-glass-size-display-l);
-}
-
-:where(:root[data-kb-layout='phone']) .kb-alerts-tab {
-  min-height: 48px;
-  padding: 0 12px;
-  font-size: var(--kb-glass-size-phone-small);
-  letter-spacing: 1px;
-}
-
 :where(:root[data-kb-layout='phone']) .kb-alerts-lede,
 :where(:root[data-kb-layout='phone']) .kb-alerts-empty,
 :where(:root[data-kb-layout='phone']) .kb-alerts-nothing,
@@ -310,4 +253,9 @@
 :where(:root[data-kb-layout='phone']) .kb-alerts-who,
 :where(:root[data-kb-layout='phone']) .kb-alerts-row time {
   font-size: var(--kb-glass-size-phone-small);
+}
+
+/* The lede and the tabs stand as near the title as the board sets them, so their feather is capped at the title gap (calm.css) and lies on nothing but it. */
+.kb-alerts-lede {
+  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
 }

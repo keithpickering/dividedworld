@@ -18,9 +18,9 @@
  * board's layout, since the Main board's at that room would draw its smallest text below the
  * phone's. A scrollbar that comes or goes without the window resizing is read at the next resize.
  *
- * The player's text size past 150% (`data-kb-text-size` on the root, engine/ui/appearance.ts) makes
+ * The player's text size of 150% and up (`data-kb-text-size` on the root, engine/ui/appearance.ts) makes
  * it the Phone board's at any width, the glass's one column, and it follows the text size as it
- * changes (board.ts, FOLD_ABOVE_TEXT_SIZE).
+ * changes (board.ts, FOLD_FROM_TEXT_SIZE).
  *
  * Every caller sets the same two values, so they are shared: a count of the callers mounted keeps
  * them on the root until the last one unmounts, and only then are they taken off, so the shell
@@ -29,7 +29,7 @@
 import { useLayoutEffect, useState } from 'react';
 import { useTextSize } from '../appearance.ts';
 import { useKayfa } from '../context.tsx';
-import { boardSwitch, FOLD_ABOVE_TEXT_SIZE, MAIN_BOARD_WIDTH, type BoardLayout } from './board.ts';
+import { boardSwitch, FOLD_FROM_TEXT_SIZE, MAIN_BOARD_WIDTH, type BoardLayout } from './board.ts';
 
 /** How many callers are mounted; the root's mark and scale are theirs until it is 0. */
 let mounted = 0;
@@ -41,7 +41,7 @@ function room(): number {
 
 /* Where nothing answers a media query (a test's document), it is the Main board's, unscaled, as the stylesheets draw a root with no mark. */
 function read(at: number, size: number): BoardLayout {
-  if (size > FOLD_ABOVE_TEXT_SIZE) return { board: 'phone', scale: 1 };
+  if (size >= FOLD_FROM_TEXT_SIZE) return { board: 'phone', scale: 1 };
   if (typeof globalThis.matchMedia !== 'function') return { board: 'main', scale: 1 };
   const width = room();
   if (!globalThis.matchMedia(`(min-width: ${at}px)`).matches || width < at) return { board: 'phone', scale: 1 };
@@ -51,7 +51,7 @@ function read(at: number, size: number): BoardLayout {
 export function useBoard(): BoardLayout {
   const { ui } = useKayfa();
   const at = boardSwitch(ui.glass);
-  /* The player's text size, as the root is marked (appearance.ts): past 150% the page is one column. */
+  /* The player's text size, as the root is marked (appearance.ts): from 150% up the page is one column. */
   const size = useTextSize();
   const [layout, setLayout] = useState(() => read(at, size));
 

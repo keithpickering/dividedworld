@@ -2,7 +2,7 @@
  * The welcome page on the glass (Welcome.tsx), as the Welcome board draws it (docs/research/2026-11-02-onboarding/01-welcome.html): the
  * heading at the Settings board's 112px, a column of 340px at the left that says what happens next, and at the right the persona's letter as
  * a post on a chamfered panel (the Updates page's frame; its byline is that page's), the headline in Anton, the prose, Before you start under
- * a rule, and under another the one button and a quieter link. The text stands in calms (calm.css) where it stands on the smoke, and the post
+ * a rule, and under another two glass buttons in a row. The text stands in calms (calm.css) where it stands on the smoke, and the post
  * is its own panel.
  *
  * Sizes are the boards' px or the glass's size tokens, never under the label (20px) on the Main board's layout (engine/ui/glass/board.test.tsx
@@ -11,15 +11,6 @@
  */
 .kb-welcome {
   padding-top: 32px;
-}
-
-.kb-welcome-title {
-  margin: 0;
-  font-size: 7rem;
-  line-height: 1;
-  letter-spacing: 1px;
-  color: var(--kb-glass-text);
-  text-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 35%, transparent);
 }
 
 .kb-welcome-cols {
@@ -151,52 +142,9 @@
 /* ---- the way on ---- */
 
 .kb-welcome-go {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 20px 28px;
   margin-top: 34px;
   padding-top: 30px;
   border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 30%, transparent);
-}
-
-.kb-welcome-button {
-  display: inline-flex;
-  align-items: center;
-  min-height: 68px;
-  padding: 0 34px;
-  font-family: var(--kb-glass-font-display);
-  font-size: var(--kb-glass-size-display-s);
-  line-height: 1;
-  letter-spacing: 1.5px;
-  text-decoration: none;
-  text-transform: uppercase;
-  background: var(--kb-glass-neon);
-  color: var(--kb-glass-ink-neon);
-  box-shadow: 0 0 26px color-mix(in srgb, var(--kb-glass-neon) 60%, transparent);
-}
-
-.kb-welcome-button > b {
-  font-weight: 400;
-}
-
-.kb-welcome-button:focus-visible,
-.kb-welcome-link:focus-visible {
-  outline: 3px solid var(--kb-glass-text-hi);
-  outline-offset: 3px;
-}
-
-.kb-welcome-link {
-  font-size: 1.375rem;
-  font-weight: 700;
-  color: var(--kb-glass-neon-text);
-  text-underline-offset: 4px;
-}
-
-/* ---- the Phone board's layout ---- */
-
-:where(:root[data-kb-layout='phone']) .kb-welcome-title {
-  font-size: var(--kb-glass-size-display-l);
 }
 
 :where(:root[data-kb-layout='phone']) .kb-welcome-cols {
@@ -218,7 +166,6 @@
 :where(:root[data-kb-layout='phone']) .kb-welcome-next li,
 :where(:root[data-kb-layout='phone']) .kb-welcome-setup-lede,
 :where(:root[data-kb-layout='phone']) .kb-welcome-prose p,
-:where(:root[data-kb-layout='phone']) .kb-welcome-link,
 :where(:root[data-kb-layout='phone']) .kb-welcome-empty {
   font-size: var(--kb-glass-size-phone-body);
 }
@@ -242,17 +189,11 @@
 }
 
 :where(:root[data-kb-layout='phone']) .kb-welcome-go {
-  flex-direction: column;
-  align-items: stretch;
   margin-top: 20px;
   padding-top: 20px;
-  text-align: center;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-welcome-button {
-  justify-content: center;
-  min-height: 56px;
-  /* The label wraps at large text sizes, and its ink runs past its line boxes, so the fill has room above and below it, in rem to grow with it. */
-  padding: 0.5rem 16px;
-  font-size: var(--kb-glass-size-display-xs);
+/* The lede stands as near the title as the board sets it, so its feather is capped at the title gap (calm.css) and lies on nothing but it. */
+.kb-welcome-lede {
+  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
 }

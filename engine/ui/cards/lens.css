@@ -1,6 +1,6 @@
 /*
- * The Lens (Lens.tsx), on the glass's float (glass/Float.tsx): the chamfered glass of the dialog's cut with its border drawn
- * in the open tab's ink, or its alignment's color (salty the pink, sweet the cyan), the card's name in the display face on
+ * The Lens (Lens.tsx), on the glass's float (glass/Float.tsx): the shared dialog frame (glass/Frame.tsx), its tabs in the frame's bar
+ * and the open tab's ink, or its alignment's color (salty the pink, sweet the cyan), on the tab and the float's glow, the card's name in the display face on
  * its tab. Beside the post on a desktop, under its mark where there is no room beside it, and a short sheet on the HUD's
  * top edge at the thread's narrow width. The glow is the float wrapper's drop shadow (shell.css `.kb-float`), since the
  * chamfer's clip-path cuts a box-shadow. Every color is a glass token or the card's own ink (`--kb-lens-ink`, inline).
@@ -8,12 +8,13 @@
 .kb-glass-dialog.kb-lens {
   --kb-lens-ink: var(--kb-glass-sweet);
   --kb-lens-ink-text: var(--kb-glass-neon-text);
-  --kb-cut: var(--kb-glass-chamfer-3);
-  --kb-border: 1px;
   width: 340px;
   max-width: 100%;
-  padding: 8px 14px 12px;
-  background: var(--kb-lens-ink);
+  /* The room its words keep from the frame is the compact float's own (the frame's tokens, shell.css). */
+  --kb-dialog-pad-x: 14px;
+  --kb-dialog-pad-top: 12px;
+  --kb-dialog-pad-bottom: 12px;
+  --kb-dialog-close-inset: 0px;
   color: var(--kb-glass-text);
   font-family: var(--kb-glass-font-body);
   /* The glass's smallest step (label, 20px: 18px of ink in its face, the floor): a Lens never out-shouts the post's own 12px words. */
@@ -29,15 +30,6 @@
 /* The sheet is the window's width, standing on the HUD's top edge (Float.tsx places it). */
 .kb-glass-dialog.kb-lens[data-kb-lens="sheet"] {
   width: 100%;
-}
-
-.kb-lens-bar {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
 }
 
 /* The tabs scroll where there are more than fit. */
@@ -72,19 +64,6 @@
 
 .kb-lens-tab:hover {
   color: var(--kb-glass-text-hi);
-}
-
-.kb-lens-close {
-  --kb-cut: var(--kb-glass-chamfer-1);
-  flex: none;
-  min-width: 40px;
-  min-height: 40px;
-  padding: 0 10px;
-  border: 0;
-  color: var(--kb-glass-text-hi);
-  font: inherit;
-  font-size: var(--kb-glass-size-label);
-  cursor: pointer;
 }
 
 .kb-lens-body {
@@ -324,8 +303,4 @@
   color: var(--kb-glass-loss);
 }
 
-.kb-lens-end-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem;
-}
+.kb-lens-end { width: min(100%, 560px); }

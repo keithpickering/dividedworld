@@ -62,6 +62,15 @@
 .kb-thread-list th:nth-child(4) { width: 9%; text-align: right; }
 .kb-thread-list th:nth-child(5) { width: 24%; }
 
+/*
+ * At a larger text size the percentages above are too narrow for the head's words ("Status", "Replies"), which a fixed table never
+ * wraps; the three narrow columns ask for the room their words take, in ems of the text, and the title's column gives it up.
+ */
+:root[data-kb-text-size] .kb-thread-list th:nth-child(1) { width: 5em; }
+:root[data-kb-text-size] .kb-thread-list th:nth-child(2) { width: auto; }
+:root[data-kb-text-size] .kb-thread-list th:nth-child(3),
+:root[data-kb-text-size] .kb-thread-list th:nth-child(4) { width: 5.5em; }
+
 .kb-thread-last {
   width: 24%;
   overflow-wrap: anywhere;
@@ -141,6 +150,18 @@
     height: 1px;
     overflow: hidden;
     clip-path: inset(50%);
+  }
+
+  /* The head's cells are hidden with it, each as the clip itself: they are no cells of a table here, so no width is asked of them (the 52% and 9% above) and none can be squeezed. */
+  .kb-thread-list thead th:nth-child(n) {
+    display: block;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   .kb-thread-row {

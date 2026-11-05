@@ -95,7 +95,13 @@ button.kb-postcard {
 
 .kb-postcard[data-size='slot'] .kb-postcard-glow { height: 84px; }
 .kb-postcard[data-size='slot'] .kb-postcard-art { left: 14px; top: 16px; width: 64px; height: 60px; }
-.kb-postcard[data-size='slot'] .kb-postcard-name { left: 6px; right: 4px; bottom: 6px; font-size: min(var(--kb-glass-size-display-xs), 21.7cqw); }
+/*
+ * The slot's name is one line in the card's width, whatever its length and the text size: a name of n characters is
+ * laid out at no more than 178cqw / n (the display face runs under half an em a character), so "AUTOCORRECT" and "STICK
+ * AROUND" shrink to fit where "BLUFF" keeps its size. The whole card is then scaled by the machine (vending.css), the
+ * name with it.
+ */
+.kb-postcard[data-size='slot'] .kb-postcard-name { left: 6px; right: 4px; bottom: 6px; white-space: nowrap; font-size: min(var(--kb-glass-size-display-xs), 21.7cqw, calc(178cqw / var(--kb-name-chars, 8))); }
 
 /* ---- the HUD's fan ---- */
 .kb-postcard[data-size='fan'] {
@@ -107,7 +113,7 @@ button.kb-postcard {
 
 .kb-postcard[data-size='fan'] .kb-postcard-glow { height: 150px; }
 .kb-postcard[data-size='fan'] .kb-postcard-art { left: 15px; top: 26px; width: 120px; height: 110px; }
-.kb-postcard[data-size='fan'] .kb-postcard-name { left: 10px; right: 10px; bottom: 66px; font-size: min(1.5rem, 16cqw); }
+.kb-postcard[data-size='fan'] .kb-postcard-name { left: 10px; right: 10px; bottom: 66px; white-space: nowrap; font-size: min(1.5rem, 16cqw, calc(178cqw / var(--kb-name-chars, 8))); }
 .kb-postcard[data-size='fan'] .kb-postcard-line { left: 10px; right: 10px; bottom: 10px; }
 
 /* ---- the Phone board's sheet ---- */
@@ -120,7 +126,7 @@ button.kb-postcard {
 :where(:root[data-kb-layout='phone']) .kb-postcard[data-size='phone'] .kb-postcard-glow { height: 104px; }
 :where(:root[data-kb-layout='phone']) .kb-postcard[data-size='phone'] .kb-postcard-art { left: 12px; top: 20px; width: 80px; height: 74px; }
 :where(:root[data-kb-layout='phone']) .kb-postcard[data-size='phone'] .kb-postcard-tag { left: 6px; top: 6px; padding: 0 6px; font-size: min(var(--kb-glass-size-phone-small), 15.4cqw); }
-:where(:root[data-kb-layout='phone']) .kb-postcard[data-size='phone'] .kb-postcard-name { left: 7px; right: 6px; bottom: 8px; font-size: min(var(--kb-glass-size-phone-display), 19.2cqw); }
+:where(:root[data-kb-layout='phone']) .kb-postcard[data-size='phone'] .kb-postcard-name { left: 7px; right: 6px; bottom: 8px; white-space: nowrap; font-size: min(var(--kb-glass-size-phone-display), 19.2cqw, calc(188cqw / var(--kb-name-chars, 8))); }
 
 /* ---- the hand's sheet ---- */
 .kb-postcard[data-size='sheet'] {
@@ -247,3 +253,8 @@ button.kb-postcard {
 .kb-postcard-gem::before { content: attr(data-kb-gem); }
 .kb-postcard[data-size='sheet'] .kb-postcard-play { left: 18px; top: 52px; }
 .kb-postcard[data-size='sheet'] .kb-postcard-gem { right: 18px; top: 52px; }
+
+/* A card that is a button answers a pointer by lighting (e2e/glass-hover.spec.ts). */
+button.kb-postcard:hover {
+  filter: brightness(1.15);
+}

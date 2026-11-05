@@ -119,8 +119,10 @@ export const instanceUi: InstanceUi = Object.freeze({
   copy: Object.freeze({
     siteName: 'Divided World',
     siteTagline: 'dw.gripe',
-    // The owner names the machine later; the board draws this placeholder on its sign (07-vending.html).
-    shopName: '[Machine name]',
+    // What the log and the machine's group label call the shop, in plain words; the sign draws one of `marquees`.
+    shopName: 'Vending Machine',
+    // The sign's names, one picked each time the Vending screen opens (decoration; none claims anything untrue; at most 20 characters each).
+    marquees: Object.freeze(['[MACHINE NAME]', 'AURA-MATIC 3000', 'VEND-ETTA', 'THE CARD SHARK', 'POSTCARD PALACE', 'COIN-OP KAYFABE', 'MERCH TABLE', 'CHEAP POP', 'FINISHER FRIDGE', 'GIMMICK DISPENSER', 'HEAT LAMP', 'NO FOOD, ONLY CARDS']),
     // The Settings board's words for Motion (docs/research/2026-10-29-two-worlds/11-settings.html).
     reducedMotionCard: 'Stick Around still snaps you back, only instantly.',
     // Hints (the alerts design's section 5): playful, and never a bluff.

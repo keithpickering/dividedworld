@@ -573,7 +573,7 @@ export interface Preferences {
   readonly smoke: 'full' | 'low' | 'off';
   /** High puts solid ground under every line of glass text and switches the glass to its `high` key. */
   readonly contrast: 'standard' | 'high';
-  /** The text's size for the board and the glass together, in percent; past 150 the glass is one column. */
+  /** The text's size for the board and the glass together, in percent; from 150 up the glass is one column. */
   readonly textSize: 100 | 125 | 150 | 200;
   /**
    * The card kinds (their keys) this account has met: a kind's first mark on a page shows its callout until the kind is in this

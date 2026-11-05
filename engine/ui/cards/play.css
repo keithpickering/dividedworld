@@ -6,8 +6,7 @@
  * the glass's.
  *
  * The form is a 420px panel docked to the window's right side, 64px from its top and foot and 40px
- * from its edge, the chamfer's fourth step cut from its top right and bottom left, its border the
- * card's alignment (salty, here) and a glow. On a phone it is the window's width, as the Turn is.
+ * from its edge, in the shared dialog frame (glass/Frame.tsx), the card's alignment only the color of its kicker. On a phone it is the window's width, as the Turn is.
  */
 .kb-glass-overlay:has(> .kb-play-dialog) {
   align-items: stretch;
@@ -16,19 +15,19 @@
   background: color-mix(in srgb, var(--kb-glass-ground) 84%, transparent);
 }
 
+:where(:root:not([data-kb-layout='phone'])) .kb-play-dialog {
+  --kb-dialog-pad-x: 28px;
+  --kb-dialog-pad-top: 28px;
+  --kb-dialog-pad-bottom: 28px;
+  --kb-dialog-close-inset: 6px;
+}
+
 .kb-play-dialog {
-  --kb-cut: var(--kb-glass-chamfer-4);
   display: flex;
   flex-direction: column;
   width: 420px;
   max-width: 100%;
-  padding: 28px;
-  background: var(--kb-glass-salty);
   zoom: var(--kb-board-scale, 1);
-}
-
-.kb-play-dialog > .kb-smoke {
-  opacity: 0.35;
 }
 
 .kb-play-dialog > .kb-glass-dialog-body {
@@ -55,35 +54,6 @@
   letter-spacing: 3px;
   text-transform: uppercase;
   color: var(--kb-glass-salty-text);
-}
-
-/* Close, the board's: a 52px square with a cross, its word kept for its name and drawn off the button. */
-.kb-play-dialog .kb-glass-dialog-close {
-  flex: none;
-  width: 52px;
-  height: 52px;
-  margin-right: 6px;
-  padding: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-indent: 52px;
-  clip-path: none;
-  background: color-mix(in srgb, var(--kb-glass-text-hi) 5%, transparent);
-  border: 1px solid color-mix(in srgb, var(--kb-glass-salty-text) 60%, transparent);
-  color: var(--kb-glass-text);
-}
-
-.kb-play-dialog .kb-glass-dialog-close::after {
-  display: none;
-}
-
-.kb-play-dialog .kb-glass-dialog-close::before {
-  content: '';
-  position: absolute;
-  inset: 16px;
-  background:
-    linear-gradient(45deg, transparent calc(50% - 1px), currentColor calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)),
-    linear-gradient(-45deg, transparent calc(50% - 1px), currentColor calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px));
 }
 
 /* ---- the form ---- */
@@ -136,6 +106,9 @@
 }
 
 .kb-play-input {
+  /* Above its label's calm and its count's, whose feathers lie over it. */
+  position: relative;
+  z-index: 1;
   box-sizing: border-box;
   width: 100%;
   margin-top: 8px;
@@ -156,8 +129,13 @@
   line-height: 1.3;
 }
 
+.kb-play-count {
+  flex-wrap: wrap;
+}
+
 .kb-play-count > span:last-child {
   flex: none;
+  white-space: nowrap;
 }
 
 /* ---- what it costs ---- */
@@ -210,8 +188,15 @@
   margin-top: 14px;
 }
 
+.kb-play-wallet {
+  flex-wrap: wrap;
+}
+
+/* The sum takes ten of its own ems when the orbs leave them, else a row of its own. */
 .kb-play-wallet-sum {
-  margin-left: auto;
+  flex: 1 1 10em;
+  min-width: min(10em, 100%);
+  text-align: right;
 }
 
 .kb-play-wallet-sum b {
@@ -236,57 +221,28 @@
 
 /* ---- the foot ---- */
 
-.kb-play-foot {
-  display: flex;
-  gap: 14px;
-  align-items: center;
+.kb-play-dialog .kb-button-row {
   margin-top: auto;
 }
 
-.kb-play-go,
-.kb-play-cancel {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 60px;
-  box-sizing: border-box;
-  font: inherit;
-  cursor: pointer;
-}
-
-.kb-play-go {
-  flex: 1;
-  padding: 0 14px;
-  border: 0;
+/*
+ * The play button is the card's own color, not the glass's cyan: the parts have one primary, so this
+ * one rule re-tints it for a play. A disabled one keeps the parts' dashed look, in the card's text color.
+ */
+.kb-play-dialog .kb-glass-button[data-kb-kind='primary']:not(:disabled) {
+  border-color: var(--kb-glass-salty);
   background: var(--kb-glass-salty);
   color: var(--kb-glass-ink-salty);
-  font-family: var(--kb-glass-font-display);
-  font-size: var(--kb-glass-size-lead);
-  font-weight: 400;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
   box-shadow: 0 0 28px color-mix(in srgb, var(--kb-glass-salty) 70%, transparent);
 }
 
-.kb-play-cancel {
-  padding: 0 18px;
-  border: 1px solid color-mix(in srgb, var(--kb-glass-text) 60%, transparent);
-  /* On the sheet, so its words stand on a panel as solid as a calm where the smoke is brightest. */
+.kb-play-dialog .kb-glass-button[data-kb-kind='secondary'] {
+  /* On the sheet, so its words stand on a panel as solid as a calm where the play's smoke is brightest. */
   background: var(--kb-glass-sheet);
-  font-size: var(--kb-glass-size-body);
-  font-weight: 800;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  color: var(--kb-glass-text);
 }
 
-/* A play that cannot be made yet is drawn as a Turn that opens later is, never translucent. */
-.kb-play-go:disabled {
-  border: 1px dashed color-mix(in srgb, var(--kb-glass-salty-text) 60%, transparent);
-  background: transparent;
+.kb-play-dialog .kb-glass-button[data-kb-kind='primary']:disabled {
   color: var(--kb-glass-salty-text);
-  box-shadow: none;
-  cursor: not-allowed;
 }
 
 /* ---- on a phone ---- */
@@ -297,7 +253,6 @@
 
 :where(:root[data-kb-layout='phone']) .kb-play-dialog {
   width: 100%;
-  padding: 20px 16px;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-play-dialog .kb-glass-dialog-head {
@@ -308,10 +263,6 @@
   font-size: var(--kb-glass-size-phone-body);
 }
 
-:where(:root[data-kb-layout='phone']) :is(.kb-play-label, .kb-play legend, .kb-play-go, .kb-play-cancel, .kb-play-dialog .kb-glass-dialog-kicker) {
+:where(:root[data-kb-layout='phone']) :is(.kb-play-label, .kb-play legend, .kb-play-dialog .kb-glass-dialog-kicker) {
   font-size: var(--kb-glass-size-phone-body);
-}
-
-:where(:root[data-kb-layout='phone']) .kb-play-go {
-  font-size: var(--kb-glass-size-phone-display);
 }

@@ -6,6 +6,10 @@
  * Compared: the menu bar as the design revises it, the heading and the lead, the archive's four titles in order, the open update's byline,
  * title, time, its changes' head and the react and spin buttons. The persona's prose and its change list are the story's own words, not the
  * board's, so only their places are compared where the words are the same.
+ *
+ * Departure by the glass polish (docs/plans/2026-11-04-glass-polish-plan.md, Task 4): the heading is a PageHead (engine/ui/glass/PageHead.tsx), which
+ * stands 36px clear of what follows, so the lead, the archive and the post stand 32 to 40px lower than the board draws them (each is held to the board's
+ * place plus a shift), and the heading is as wide as its words, not the page, so it is held to its y and height.
  */
 import type { BoardManifest } from '../board-match.ts';
 
@@ -29,24 +33,24 @@ const manifest: BoardManifest = {
     { id: 'menu-updates', role: 'link', name: 'Updates', within: 'menu', box: 'height' },
     { id: 'menu-settings', role: 'link', name: 'Settings', within: 'menu', box: 'height' },
 
-    { id: 'title', role: 'heading', name: 'Updates', type: false },
-    { id: 'lead', role: 'text', name: 'What changed in the game, from the people who make it. The voice is Gabe\'s; every fact in it is true.' },
+    { id: 'title', role: 'heading', name: 'Updates', box: 'height', type: false },
+    { id: 'lead', role: 'text', name: 'What changed in the game, from the people who make it. The voice is Gabe\'s; every fact in it is true.', buildShift: { y: 36 } },
 
     /* The archive, newest first: its four titles and their days. */
-    { id: 'archive', role: 'navigation', name: 'Earlier updates', buildName: 'All updates', type: false },
-    { id: 'archive-1', role: 'link', name: 'Traps now bite board cards Nov 2', within: 'archive', type: false },
-    { id: 'archive-2', role: 'link', name: 'Season 2 is open, and so is the Vending Machine\'s back panel Nov 1', within: 'archive', type: false },
-    { id: 'archive-3', role: 'link', name: 'Whoops! washes 20% faster, because you asked nicely Oct 30', within: 'archive', type: false },
-    { id: 'archive-4', role: 'link', name: 'Welcome to the playtest Oct 28', within: 'archive', type: false },
+    { id: 'archive', role: 'navigation', name: 'Earlier updates', buildName: 'All updates', type: false, buildShift: { y: 37 } },
+    { id: 'archive-1', role: 'link', name: 'Traps now bite board cards Nov 2', within: 'archive', type: false, buildShift: { y: 37 } },
+    { id: 'archive-2', role: 'link', name: 'Season 2 is open, and so is the Vending Machine\'s back panel Nov 1', within: 'archive', type: false, buildShift: { y: 37 } },
+    { id: 'archive-3', role: 'link', name: 'Whoops! washes 20% faster, because you asked nicely Oct 30', within: 'archive', type: false, buildShift: { y: 37 } },
+    { id: 'archive-4', role: 'link', name: 'Welcome to the playtest Oct 28', within: 'archive', type: false, buildShift: { y: 37 } },
 
     /* The time's ink is the board's lilac #d9ceff, which is no token of the instance's; the build sets it in text-2, so only its box is compared. */
     /* The open update (the board's article has no name; the build names it by its headline): the persona's name, the headline and its time (the board's UTC, the build's with its zone said), the changes' head and the note. */
-    { id: 'post', role: 'article', name: '', buildName: 'Traps now bite board cards', type: false, box: 'position' },
-    { id: 'post-by', role: 'text', name: 'Gabe', within: 'post', nth: 1, buildNth: 0 },
-    { id: 'post-title', role: 'heading', name: 'Traps now bite board cards', within: 'post' },
-    { id: 'post-time', role: 'text', name: 'Nov 2 · 08:00 UTC', within: 'post', type: false },
-    { id: 'post-changed', role: 'heading', name: 'What changed', within: 'post' },
-    { id: 'post-note', role: 'text', name: 'Reactions here pay no one. A spun thread opens on the board with this update in its origin box.', within: 'post', box: 'position' },
+    { id: 'post', role: 'article', name: '', buildName: 'Traps now bite board cards', type: false, box: 'position', buildShift: { y: 36 } },
+    { id: 'post-by', role: 'text', name: 'Gabe', within: 'post', nth: 1, buildNth: 0, buildShift: { y: 36 } },
+    { id: 'post-title', role: 'heading', name: 'Traps now bite board cards', within: 'post', buildShift: { y: 36 } },
+    { id: 'post-time', role: 'text', name: 'Nov 2 · 08:00 UTC', within: 'post', type: false, buildShift: { y: 36 } },
+    { id: 'post-changed', role: 'heading', name: 'What changed', within: 'post', buildShift: { y: 36 } },
+    { id: 'post-note', role: 'text', name: 'Reactions here pay no one. A spun thread opens on the board with this update in its origin box.', within: 'post', box: 'position', buildShift: { y: 36 } },
   ],
 };
 

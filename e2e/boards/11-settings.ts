@@ -19,6 +19,10 @@
  *    and "its colors" for "its two colors". (Motion's names Stick Around in the instance's own copy,
  *    `InstanceUi.copy.reducedMotionCard`, since the engine names no card, and reads as the board's.)
  *
+ * Departures by the glass polish (docs/plans/2026-11-04-glass-polish-design.md, section 2): the head is a PageHead (engine/ui/glass/PageHead.tsx), which
+ * leaves 36px under the title where the board leaves 66, so the sections' navigation and the page stand 40px higher than the board draws them: the
+ * navigation and the heading are compared across, and what follows the heading from the heading's own corner. The row labels' column is 10px wider.
+ *
  * Not compared: the smoke and its calms, which are the guards' (tools/check-glass-contrast.mjs and
  * e2e/glass-text.spec.ts). "Changes save as you make them." follows the build's own rows (Posts, and the card tips'
  * row) where the board's follows Read-outs, so it is held by its words and type, not its place.
@@ -33,11 +37,12 @@ import type { BoardManifest, Landmark } from '../board-match.ts';
  */
 function row(id: string, label: string, group: string, choices: readonly string[], sentence: string, buildGroup?: string, buildSentence?: string): Landmark[] {
   return [
-    { id: `${id}-label`, role: 'heading', name: label },
+    /* The label's column is 10px wider in the build (240px to the board's 230), so its width is not compared. */
+    { id: `${id}-label`, role: 'heading', name: label, origin: 'accessibility', box: 'position' },
     { id, role: 'radiogroup', name: group, ...(buildGroup ? { buildName: buildGroup } : {}), type: false, box: 'none' },
-    ...choices.map((c): Landmark => ({ id: `${id}-${c.toLowerCase().replace(/\W+/g, '-')}`, role: 'text', name: c, within: id })),
+    ...choices.map((c): Landmark => ({ id: `${id}-${c.toLowerCase().replace(/\W+/g, '-')}`, role: 'text', name: c, within: id, origin: 'accessibility' })),
     /* A sentence the build words otherwise runs to its own length: its place and its type are compared. */
-    { id: `${id}-sentence`, role: 'text', name: sentence, ...(buildSentence ? { buildName: buildSentence, box: 'position' as const } : {}) },
+    { id: `${id}-sentence`, role: 'text', name: sentence, origin: 'accessibility', ...(buildSentence ? { buildName: buildSentence, box: 'position' as const } : {}) },
   ];
 }
 
@@ -68,12 +73,13 @@ const manifest: BoardManifest = {
     { id: 'title', role: 'heading', name: 'Settings', nth: 0 },
 
     /* The sections: Account and Accessibility, the board's first two, in their places. */
-    { id: 'sections', role: 'navigation', name: 'Settings sections', box: 'position', type: false },
-    { id: 'section-account', role: 'link', name: 'Account', within: 'sections' },
-    { id: 'section-accessibility', role: 'link', name: 'Accessibility', within: 'sections' },
+    { id: 'sections', role: 'navigation', name: 'Settings sections', box: 'across', type: false },
+    /* The unselected tab is a `secondary` GlassButton, as every tab strip's is (the board's quiet one reads #e4def7, which fails contrast on the bare smoke): its text is the glass's #f1ecff, so its type is not compared. */
+    { id: 'section-account', role: 'link', name: 'Account', within: 'sections', origin: 'sections', type: false },
+    { id: 'section-accessibility', role: 'link', name: 'Accessibility', within: 'sections', origin: 'sections' },
 
-    { id: 'accessibility', role: 'heading', name: 'Accessibility' },
-    { id: 'lead', role: 'text', name: 'These change how the board and the glass look, read and move. They never change how hard a card is to get through.' },
+    { id: 'accessibility', role: 'heading', name: 'Accessibility', box: 'across' },
+    { id: 'lead', role: 'text', origin: 'accessibility', name: 'These change how the board and the glass look, read and move. They never change how hard a card is to get through.' },
 
     ...row('motion', 'Motion', 'Motion', ['Follow my device', 'Reduced', 'Full'],
       'Reduced stops the drifting smoke, the pulses and the orb shine. A card\'s effect stays: Stick Around still snaps you back, only instantly.'),

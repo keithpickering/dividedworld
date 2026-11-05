@@ -13,6 +13,7 @@ import '../instances/divided-world/ui/theme.css';
 import '../engine/ui/glass/tokens.css';
 import '../engine/ui/glass/base.css';
 import '../engine/ui/glass/calm.css';
+import '../engine/ui/glass/parts.css';
 import '../engine/ui/glass/contrast.css';
 import '../instances/divided-world/ui/vending/vending.css';
 import { applyGlass, installGlassFonts } from '../engine/ui/glass/index.ts';

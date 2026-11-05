@@ -3,7 +3,7 @@
  * and a refusal stands under the row it names. Sizes are the glass's tokens, never px (engine/ui/glass/board.test.tsx reads this file).
  */
 .kb-admin-contact {
-  margin: 28px 0 0;
+  margin: calc(var(--kb-glass-calm-feather) + 8px) 0 0;
 }
 
 .kb-admin-contact .kb-write-update {

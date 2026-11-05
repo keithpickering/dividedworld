@@ -186,7 +186,7 @@ test.describe('high contrast', () => {
 
   test('the Turn modal over My characters: every line stands on solid ground', async ({ page }) => {
     await prefer(page, '/characters', { contrast: 'high' });
-    await page.getByRole('list', { name: /^Roster, /u }).getByRole('button', { name: /^Pipewrench/u }).click();
+    await page.getByRole('tablist', { name: /^Roster, /u }).getByRole('tab', { name: /^Pipewrench/u }).click();
     await page.getByRole('button', { name: 'Turn Pipewrench' }).click();
     await expect(page.getByRole('dialog', { name: 'Turn Pipewrench' })).toBeVisible();
     expect(await linesOffGround(page)).toEqual([]);
@@ -221,7 +221,7 @@ test.describe('200% text at 1280px wide', () => {
       await expect(ready(page, glass)).toBeVisible();
       await expect(page.locator('html')).toHaveAttribute('data-kb-text-size', '200');
       expect(await page.evaluate(() => getComputedStyle(document.documentElement).fontSize)).toBe('32px');
-      /* Past 150% the glass is the Phone board's one column, however wide the window. */
+      /* From 150% up the glass is the Phone board's one column, however wide the window. */
       await expect(page.locator('html')).toHaveAttribute('data-kb-layout', 'phone');
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
       expect(await clipped(page)).toEqual([]);

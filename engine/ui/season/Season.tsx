@@ -18,6 +18,8 @@ import { useEffect, useId, useState, type KeyboardEvent } from 'react';
 import { dayAndTime, figure } from '../characters/format.ts';
 import { useKayfa } from '../context.tsx';
 import { SEASON_NEWS_PAGE, type Id, type MyCharacter, type Season, type SeasonNewsItem, type SeasonResult, type TallyName } from '../data/api.ts';
+import { ButtonRow, GlassButton } from '../glass/Button.tsx';
+import { PageHead } from '../glass/PageHead.tsx';
 import { SignInPrompt, useSignedIn } from '../mini.tsx';
 import { usePlayer } from '../player.tsx';
 import { RankingsScreen } from '../rankings/Rankings.tsx';
@@ -183,7 +185,7 @@ export function News({ items, mine, season, perPage, more, onMore }: NewsProps) 
             })}
           </ul>
         )}
-      {more && <button type="button" className="kb-kit-tile kb-season-more" onClick={onMore}><span className="kb-kit-tile-label">Show earlier news</span></button>}
+      {more && <ButtonRow><GlassButton className="kb-season-more" onClick={onMore}>Show earlier news</GlassButton></ButtonRow>}
     </div>
   );
 }
@@ -252,28 +254,31 @@ export function SeasonScreen() {
   if (signedIn === false) return <div className="kb-season"><div className="kb-season-empty kb-calm"><SignInPrompt /></div></div>;
   return (
     <div className="kb-season">
-      <div className="kb-season-head">
-        <h1 className="kb-season-title kb-glass-display">{season ? `Season ${season.number}` : 'Season'}</h1>
-        <div role="tablist" aria-label="Season" className="kb-season-tabs">
-          {TABS.map((t, i) => (
-            <Link
-              key={t.key}
-              to={seasonAt(t.key)}
-              replace
-              role="tab"
-              id={`${ids}-tab-${t.key}`}
-              aria-selected={t.key === tab}
-              aria-controls={`${ids}-panel`}
-              tabIndex={t.key === tab ? 0 : -1}
-              className="kb-season-tab kb-glass-skew"
-              data-kb-current={t.key === tab ? '' : undefined}
-              onKeyDown={(e) => onKey(e, i)}
-            >
-              <span className="kb-glass-upright">{t.label}</span>
-            </Link>
-          ))}
-        </div>
-      </div>
+      <PageHead
+        title={season ? `Season ${season.number}` : 'Season'}
+        tabs={(
+          <div role="tablist" aria-label="Season" className="kb-calm">
+            <ButtonRow>
+              {TABS.map((t, i) => (
+                <GlassButton
+                  key={t.key}
+                  to={seasonAt(t.key)}
+                  replace
+                  role="tab"
+                  id={`${ids}-tab-${t.key}`}
+                  kind={t.key === tab ? 'primary' : 'secondary'}
+                  aria-selected={t.key === tab}
+                  aria-controls={`${ids}-panel`}
+                  tabIndex={t.key === tab ? 0 : -1}
+                  onKeyDown={(e: KeyboardEvent<HTMLAnchorElement>) => onKey(e, i)}
+                >
+                  {t.label}
+                </GlassButton>
+              ))}
+            </ButtonRow>
+          </div>
+        )}
+      />
       <div role="tabpanel" id={`${ids}-panel`} aria-labelledby={`${ids}-tab-${tab}`} className="kb-season-panel">
         {tab === 'rankings' ? <RankingsScreen embedded href={rankingsAt} /> : signedIn === null ? <div aria-busy="true" /> : <NewsPanel season={season} />}
       </div>

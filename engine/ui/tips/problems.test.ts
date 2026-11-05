@@ -18,7 +18,12 @@ const goodDoor = (): FrontDoorUi => ({
   ],
 });
 const cards = [{ key: 'whoops' }] as unknown as readonly CardUi[];
-const ui = (onboarding: unknown, frontDoor: unknown = goodDoor()) => ({ onboarding: onboarding as OnboardingUi, frontDoor: frontDoor as FrontDoorUi, cards });
+const copy = { siteName: 'S', siteTagline: 't', shopName: 'Shop', reducedMotionCard: 'x' };
+const ui = (onboarding: unknown, frontDoor: unknown = goodDoor(), marquees?: unknown) => ({
+  onboarding: onboarding as OnboardingUi, frontDoor: frontDoor as FrontDoorUi, cards,
+  copy: { ...copy, ...(marquees === undefined ? {} : { marquees: marquees as readonly string[] }) },
+});
+const good = { tips: tips(), letter: 'Hi.' };
 const door = (change: (d: { -readonly [K in keyof FrontDoorUi]: FrontDoorUi[K] }) => void) => {
   const d = goodDoor() as { -readonly [K in keyof FrontDoorUi]: FrontDoorUi[K] };
   change(d);
@@ -75,5 +80,19 @@ describe('instanceUiProblems', () => {
   test('refuses a front door with no posts, and an instance with no front door', () => {
     assert.deepEqual(door((d) => { d.posts = []; }), ['the front door has no posts']);
     assert.deepEqual(instanceUiProblems(ui({ tips: tips(), letter: 'Hi.' }, null), rules), ['the instance UI has no front door']);
+  });
+  test('passes a marquee list of names within 20 characters, and no list at all', () => {
+    assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), ['AURA-MATIC 3000', 'NO FOOD, ONLY CARDS']), rules), []);
+    assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), ['X'.repeat(20)]), rules), []);
+  });
+  test('refuses an empty marquee list', () => {
+    assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), []), rules), ['the copy has a marquees list with nothing in it']);
+  });
+  test('refuses a marquee that is empty after trimming, naming its place', () => {
+    assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), ['OK', '  ']), rules), ['the marquee 2 is empty']);
+    assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), ['']), rules), ['the marquee 1 is empty']);
+  });
+  test('refuses a marquee over 20 characters, naming it', () => {
+    assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), ['X'.repeat(21)]), rules), [`the marquee "${'X'.repeat(21)}" is 21 characters, over the 20 the sign holds`]);
   });
 });

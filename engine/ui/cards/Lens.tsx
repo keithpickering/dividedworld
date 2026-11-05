@@ -29,7 +29,9 @@ import {
 } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id, PlayMoment } from '../data/api.ts';
+import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Float, type FloatPlace } from '../glass/Float.tsx';
+import { CloseCross, DialogBar } from '../glass/Frame.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
 import { tabbables } from '../modal.tsx';
 import { usePlayer } from '../player.tsx';
@@ -347,10 +349,10 @@ export function EndCardDialog({ play, card, caster, onClose, onEnded, returnFocu
       <div className="kb-lens-end-body">
         <p>End this {card} by {caster}? Its layer comes off for everyone, and nothing is refunded.</p>
         {refusal && <p role="alert" className="kb-lens-end-refusal">{refusal}</p>}
-        <div className="kb-lens-end-actions">
-          <button type="button" className="kb-kit-tile kb-lens-action" onClick={onClose}><span className="kb-kit-tile-label">Cancel</span></button>
-          <button type="button" className="kb-kit-tile kb-lens-action" disabled={busy} onClick={() => void submit()}><span className="kb-kit-tile-label">End it</span></button>
-        </div>
+        <ButtonRow align="end">
+          <GlassButton onClick={onClose}>Cancel</GlassButton>
+          <GlassButton kind="primary" disabled={busy} onClick={() => void submit()}>End it</GlassButton>
+        </ButtonRow>
       </div>
     </Overlay>
   );
@@ -556,7 +558,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
       wrapStyle={{ '--kb-float-glow': 'var(--kb-lens-ink)' } as CSSProperties}
       data={{ 'kb-lens': placed, 'kb-card': card, 'kb-alignment': rules?.alignment, 'kb-tinted': ink ? 'true' : undefined }}
     >
-      <div className="kb-lens-bar">
+      <DialogBar close={<CloseCross onClick={dismiss} />}>
         <div className="kb-lens-tabs" role="tablist" aria-label="Card kinds" onKeyDown={move}>
           {kinds.map((kind) => {
             const label = kindName(instance, kind, here.plays);
@@ -570,8 +572,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
             );
           })}
         </div>
-        <button type="button" className="kb-glass-cut-button kb-lens-close" aria-label="Close" onClick={dismiss}><span aria-hidden="true">×</span></button>
-      </div>
+      </DialogBar>
       <div className="kb-lens-body" role="tabpanel" id={panelId} aria-labelledby={tabId(card)}>
         <div className="kb-lens-section kb-lens-state">
           <p className="kb-lens-line">{view.state}</p>

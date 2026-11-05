@@ -21,7 +21,7 @@
 import { useId, useState, type CSSProperties } from 'react';
 import type { HeldCard } from '../data/api.ts';
 import { useBoard } from '../glass/useBoard.ts';
-import { Link } from '../router.tsx';
+import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Postcard, cardLabel } from './Postcard.tsx';
 import type { CardFace } from './faces.ts';
 
@@ -126,7 +126,7 @@ export function Hand({ held, faces, armed = null, onPick, onClose, vendingHref }
             : <><b>{inView.name}.</b> {inView.summary}</>}
         </p>
       )}
-      <Link to={vendingHref} className="kb-hand-vending kb-glass-skew"><span className="kb-glass-upright">Vending Machine</span></Link>
+      <div className="kb-hand-vending kb-calm"><ButtonRow align="center"><GlassButton to={vendingHref}>Vending Machine</GlassButton></ButtonRow></div>
     </>
   );
 }

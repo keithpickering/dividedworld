@@ -12,7 +12,7 @@
  * `data-kb-contrast` (high; contrast.css puts solid ground under the glass's text) and
  * `data-kb-text-size` (125, 150 or 200; base.css sets the root's font size from it, every size on
  * the board and the glass is in rem or a glass size token, which is rem, so all of it follows; and
- * past 150 useBoard folds the glass to the Phone board's one column). Given the instance's glass,
+ * from 150 up useBoard folds the glass to the Phone board's one column). Given the instance's glass,
  * high contrast also puts its `high` key on the root, and anything else its standard key.
  */
 import { useSyncExternalStore } from 'react';

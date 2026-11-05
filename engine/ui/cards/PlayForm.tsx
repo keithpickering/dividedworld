@@ -28,6 +28,7 @@ import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'rea
 import { casterMessage, MESSAGE_MOST, playOf, type CardTarget } from '../../rules/cards.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
+import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
 import { Orbs } from '../orbs/Orbs.tsx';
 import { usePlayer } from '../player.tsx';
@@ -264,12 +265,10 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
           </p>
         </div>
         {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
-        <div className="kb-play-foot">
-          <button type="submit" className="kb-play-go kb-glass-skew" disabled={blocked}>
-            <span className="kb-glass-upright">{again ? `${verb} again anyway` : hud ? `${verb} as ${hud.name}` : verb}</span>
-          </button>
-          <button type="button" className="kb-play-cancel kb-glass-skew" onClick={onClose}><span className="kb-glass-upright">Cancel</span></button>
-        </div>
+        <ButtonRow>
+          <GlassButton type="submit" kind="primary" disabled={blocked}>{again ? `${verb} again anyway` : hud ? `${verb} as ${hud.name}` : verb}</GlassButton>
+          <GlassButton onClick={onClose}>Cancel</GlassButton>
+        </ButtonRow>
       </form>
     </Overlay>
   );

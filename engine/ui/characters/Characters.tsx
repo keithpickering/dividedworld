@@ -18,6 +18,9 @@ import { useEffect, useId, useMemo, useState } from 'react';
 import { rankIndex } from '../../rules/ranks.ts';
 import { useKayfa } from '../context.tsx';
 import type { Character, CharacterCounts, Id, MyCharacter } from '../data/api.ts';
+import { ButtonRow, GlassButton } from '../glass/Button.tsx';
+import { Carousel, carouselPanelId, carouselTabId } from '../glass/Carousel.tsx';
+import { PageHead } from '../glass/PageHead.tsx';
 import { SignInPrompt, useSignedIn } from '../mini.tsx';
 import { usePlayer } from '../player.tsx';
 import { Pips } from '../postbit/Postbit.tsx';
@@ -53,7 +56,7 @@ export function Characters() {
   const player = usePlayer();
   const location = useLocation();
   const signedIn = useSignedIn(api);
-  const panelHead = useId();
+  const rosterId = useId();
   const [faces, setFaces] = useState<ReadonlyMap<Id, Character>>(new Map());
   const [standings, setStandings] = useState<Readonly<Record<Id, number>>>({});
   const [was, setWas] = useState<ReadonlyMap<Id, string>>(new Map());
@@ -218,10 +221,10 @@ export function Characters() {
           <p className="kb-turn-pending"><b>Turn waiting</b>: to {className(p.class)}, {named}.</p>
           <p className="kb-roster-line kb-turn-when">Takes effect at the next settlement{when ? `, ${dayAndTime(when)}` : ''}.</p>
           <p className="kb-roster-line kb-turn-note">If its settlement is due, a reveal waits until it has run.</p>
-          <span className="kb-row-actions">
-            <button type="button" className="kb-glass-action kb-glass-skew" data-kb-return="" aria-label={`Change ${c.name}'s Turn`} onClick={() => show({ kind: 'turn', id: c.id })}><span className="kb-glass-upright">Change</span></button>
-            <button type="button" className="kb-glass-action kb-glass-skew" aria-label={`Withdraw ${c.name}'s Turn`} disabled={busy === c.id} onClick={() => void withdraw(c)}><span className="kb-glass-upright">Withdraw</span></button>
-          </span>
+          <ButtonRow>
+            <GlassButton data-kb-return="" aria-label={`Change ${c.name}'s Turn`} onClick={() => show({ kind: 'turn', id: c.id })}>Change</GlassButton>
+            <GlassButton aria-label={`Withdraw ${c.name}'s Turn`} disabled={busy === c.id} onClick={() => void withdraw(c)}>Withdraw</GlassButton>
+          </ButtonRow>
           {problem?.id === c.id && !problem.pip && <p role="alert" className="kb-notice" data-kb-tone="refusal">{problem.text}</p>}
         </div>
       );
@@ -263,10 +266,10 @@ export function Characters() {
     const posts = counts?.id === c.id ? counts.counts.posts : null;
     const before = was.get(c.id);
     return (
-      <section className="kb-roster-panel kb-glass-cut-panel kb-calm" aria-labelledby={panelHead} data-kb-character={c.id}>
+      <section id={carouselPanelId(rosterId)} role="tabpanel" className="kb-roster-panel kb-glass-cut-panel kb-calm" aria-labelledby={`${carouselTabId(rosterId, c.id)}-name`} data-kb-character={c.id}>
         <div className="kb-roster-panel-head">
           <p className="kb-roster-selected">Selected</p>
-          <h2 id={panelHead} className="kb-roster-panel-name kb-glass-display">{c.name}</h2>
+          <h2 className="kb-roster-panel-name kb-glass-display">{c.name}</h2>
           {face?.title && <p className="kb-roster-line kb-character-sub">{face.title}</p>}
         </div>
         {waiting && (
@@ -275,10 +278,10 @@ export function Characters() {
               <span>Waiting to debut at the next settlement{next ? `, ${dayAndTime(next)}` : ''}.</span>
               <span> It will debut {LOUD[c.debutLoudness ?? 'announced']}.</span>
             </p>
-            <span className="kb-row-actions">
-              <button type="button" className="kb-glass-action kb-glass-skew" data-kb-return="" aria-label={`Drop ${c.name} now`} onClick={() => show({ kind: 'drop', id: c.id })}><span className="kb-glass-upright">Drop now…</span></button>
-              <button type="button" className="kb-glass-action kb-glass-skew" aria-label={`Change how ${c.name} debuts`} onClick={() => show({ kind: 'debut', id: c.id })}><span className="kb-glass-upright">Change how it debuts…</span></button>
-            </span>
+            <ButtonRow>
+              <GlassButton data-kb-return="" aria-label={`Drop ${c.name} now`} onClick={() => show({ kind: 'drop', id: c.id })}>Drop now…</GlassButton>
+              <GlassButton aria-label={`Change how ${c.name} debuts`} onClick={() => show({ kind: 'debut', id: c.id })}>Change how it debuts…</GlassButton>
+            </ButtonRow>
           </div>
         )}
         <dl className="kb-roster-facts">
@@ -327,10 +330,10 @@ export function Characters() {
         {problem?.id === c.id && problem.pip && <p role="alert" className="kb-notice" data-kb-tone="refusal">{problem.text}</p>}
         <div className="kb-roster-actions">
           {turnCell(c)}
-          {live && <Link to="/characters/edit" state={{ character: c.id }} className="kb-glass-action kb-glass-skew" aria-label="Edit profile"><span className="kb-glass-upright">Edit profile</span></Link>}
+          {live && <GlassButton to="/characters/edit" state={{ character: c.id }} aria-label="Edit profile">Edit profile</GlassButton>}
           {/* Its own tab of My log, chosen by the navigation's state and never the address (engine/ui/log/Log.tsx), as the Roster board draws the link. */}
-          <Link to="/log" state={{ character: c.id }} className="kb-glass-action kb-glass-skew"><span className="kb-glass-upright">{c.name}'s log</span></Link>
-          {live && <button type="button" className="kb-glass-action kb-glass-skew" aria-label={`Reveal ${c.name}'s class`} onClick={() => show({ kind: 'reveal', id: c.id })}><span className="kb-glass-upright">Reveal…</span></button>}
+          <GlassButton to="/log" state={{ character: c.id }}>{c.name}'s log</GlassButton>
+          {live && <GlassButton aria-label={`Reveal ${c.name}'s class`} onClick={() => show({ kind: 'reveal', id: c.id })}>Reveal…</GlassButton>}
         </div>
         <p className="kb-roster-line kb-roster-most">{per} characters at most. To free a slot, ask an admin to retire one; every Act it made stays on the board.</p>
       </section>
@@ -339,51 +342,49 @@ export function Characters() {
 
   return (
     <div className="kb-characters">
-      <div className="kb-characters-head">
-        <h1 className="kb-characters-title kb-glass-display kb-calm">Your characters <span className="kb-characters-count">({active.length} of {per})</span></h1>
-        <p className="kb-characters-lead kb-calm">This page is out of character and only you can see it. Classes are shown here and nowhere else unless you reveal them.</p>
-      </div>
+      <PageHead size="roster" title="Your characters" count={`(${active.length} of ${per})`} lead="This page is out of character and only you can see it. Classes are shown here and nowhere else unless you reveal them." />
       <div role="status" className="kb-flash">{flash && <p className="kb-notice kb-calm">{flash}</p>}</div>
 
       {mine.length === 0 && <p className="kb-characters-empty kb-calm">You have no characters yet. <Link to="/characters/new">Make one</Link> to start playing.</p>}
 
       <div className="kb-roster-layout">
-        <div className="kb-roster-side">
-          <ul className="kb-roster kb-calm" aria-label={`Roster, ${active.length} of ${per} slots used`}>
-            {mine.map((c) => {
+          <Carousel
+            role="tablist" id={rosterId} className="kb-roster-carousel"
+            label={`Roster, ${active.length} of ${per} slots used`}
+            items={mine.map((c) => ({ key: c.id, c }))} value={selected?.id ?? null} onChange={setPicked}
+            renderItem={({ c }, { props }) => {
               const r = rankOf(c);
+              /* The tab's name is its words, as drawn (a name that left out visible words would fail WCAG 2.5.3); its panel is named by the character's name alone, inside it. */
               return (
-                <li key={c.id}>
-                  <button type="button" className="kb-roster-card" aria-current={c.id === selected?.id ? 'true' : undefined} onClick={() => setPicked(c.id)}>
-                    <Portrait face={faces.get(c.id)} className="kb-roster-portrait" />
-                    <span className="kb-roster-name kb-glass-display">{c.name}</span>
+                <button key={c.id} type="button" {...props} className="kb-roster-card">
+                  <Portrait face={faces.get(c.id)} className="kb-roster-portrait" />
+                  <span id={`${carouselTabId(rosterId, c.id)}-name`} className="kb-roster-name kb-glass-display">{c.name}</span>
+                  <span className="kb-roster-more">
                     <span className="kb-roster-class">
                       <ClassChip cls={c.class} name={className(c.class)} />
                       {r && <span className="kb-roster-rank" data-testid="kb-roster-rank">{r.rank.name}</span>}
                     </span>
                     {cardTurn(c)}
-                  </button>
-                </li>
+                  </span>
+                </button>
               );
-            })}
-            {open > 0 && (
-              <li className="kb-roster-new">
+            }}
+            after={open > 0 ? (
+              <div className="kb-roster-new kb-calm">
                 <Link to="/characters/new" className="kb-roster-new-link">
                   <svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><path d="M22 6 V38 M6 22 H38" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
                   <span className="kb-glass-display">New character</span>
                 </Link>
                 <span className="kb-roster-slots">You have {open} open {open === 1 ? 'slot' : 'slots'}.</span>
-              </li>
-            )}
-            {Array.from({ length: Math.max(0, open - 1) }, (_, i) => <li key={`empty-${i}`} className="kb-roster-empty" aria-hidden="true" />)}
-          </ul>
+              </div>
+            ) : undefined}
+          />
+        {selected && panel(selected)}
           {open === 0 && (
             <p className="kb-characters-new kb-calm">
               You play {active.length} of {per} characters, the most there are. There is no way to free a slot yet; an admin can retire a character on request, and keeps every Act it made.
             </p>
           )}
-        </div>
-        {selected && panel(selected)}
       </div>
 
       {dialog && target && dialog.kind === 'turn' && <TurnDialog character={target} face={faces.get(target.id)} standing={standings[target.id]} nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
