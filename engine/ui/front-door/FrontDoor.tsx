@@ -13,7 +13,7 @@
  * ink back. The card's keyboard path (its view's `controls`, drawn by `Kit`) stands under the post as it does in the Lens, so the obstacle
  * costs the same either way ("An accessible path costs what the obstacle costs").
  */
-import { useCallback, useId, useMemo, useState, type ReactNode } from 'react';
+import { Suspense, useCallback, useId, useMemo, useState, type ReactNode } from 'react';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import { rankFloor } from '../../rules/ranks.ts';
 import { BbCode } from '../bbcode/render.tsx';
@@ -57,7 +57,7 @@ function Wrapped({ ui, post, plays, nameOf, onView, children }: {
     post, plays, states: {}, released: NO_RELEASED, reader: { author: false, caster: false }, place: 'thread', reach: 'post', show, met: none,
     holdScreen: none, still: false, marks: null, save: refuse, release: refuse, nameOf,
   } : null;
-  return Effect && props ? <Effect {...props}>{children}</Effect> : <>{children}</>;
+  return Effect && props ? <Suspense fallback={children}><Effect {...props}>{children}</Effect></Suspense> : <>{children}</>;
 }
 const NO_RELEASED: ReadonlySet<Id> = new Set();
 

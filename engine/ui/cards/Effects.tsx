@@ -15,7 +15,7 @@
  * takeover is given the post's `marks` (the strip the post's date row draws, handed in by the post) and draws them on the post
  * it lifts. A post with no plays, or whose plays' cards draw no effect, is drawn untouched.
  */
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ComponentType, type ReactNode } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ComponentType, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Act, EffectState, Id, PlayAbove, PlayMoment } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
@@ -160,7 +160,8 @@ function BoundEffect({ Effect, store, marks, ...props }: Omit<EffectProps, 'show
   useEffect(() => () => { if (own) store.setView(post, card, null); }, [store, post, card, own]);
   const met = useMeet(card);
   const holdScreen = useHoldScreen();
-  return <Effect {...props} still={false} show={show} met={met} holdScreen={holdScreen} marks={marks} />;
+  /* An effect may load on first use: until it lands the post shows its words (`children`), so a post never pops in without them. */
+  return <Suspense fallback={props.children}><Effect {...props} still={false} show={show} met={met} holdScreen={holdScreen} marks={marks} /></Suspense>;
 }
 
 /* ------------------------------------------------------------------------------ a play's moment ---- */
@@ -277,7 +278,7 @@ function StillEffect({ Effect, card, onWords, ...props }: Omit<EffectProps, 'sho
 }) {
   const show = useCallback((view: CardView | null) => onWords(card, view?.state ?? null), [onWords, card]);
   useEffect(() => () => onWords(card, null), [onWords, card]);
-  return <Effect {...props} still show={show} met={nothing} holdScreen={nothing} marks={null} save={stillSave} release={stillRelease} />;
+  return <Suspense fallback={props.children}><Effect {...props} still show={show} met={nothing} holdScreen={nothing} marks={null} save={stillSave} release={stillRelease} /></Suspense>;
 }
 
 /** The thread's narrow width (thread.css's 40em, where a post is stacked): the Lens is a sheet there and a post's marks are fewer. */

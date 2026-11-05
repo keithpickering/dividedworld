@@ -2,17 +2,12 @@
  * The app: the backend, the instance, its look and words, and the screens, put together. This and
  * web/src/data/ are the only places the engine's screens and an instance meet.
  */
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useState, type ComponentType } from 'react';
 import type { KayfaApi, ScreenSettings } from '../../engine/ui/data/api.ts';
 import { applyAppearance } from '../../engine/ui/appearance.ts';
 import { KayfaProvider } from '../../engine/ui/context.tsx';
-import { QueueScreen } from '../../engine/ui/admin/Queue.tsx';
 import { BoardScreen } from '../../engine/ui/board/Board.tsx';
 import { AccountGate } from '../../engine/ui/account/OpenAccount.tsx';
-import { SettingsScreen } from '../../engine/ui/account/Settings.tsx';
-import { SignInScreen } from '../../engine/ui/account/SignIn.tsx';
-import { Characters } from '../../engine/ui/characters/Characters.tsx';
-import { NewCharacter } from '../../engine/ui/characters/NewCharacter.tsx';
 import { ProfileScreen } from '../../engine/ui/profile/Profile.tsx';
 import { RecordScreen } from '../../engine/ui/profile/Record.tsx';
 import { Frame } from '../../engine/ui/frame/Frame.tsx';
@@ -21,21 +16,36 @@ import { applyGlass, installGlassFonts, type GlassSurface } from '../../engine/u
 import { Page as GlassPage } from '../../engine/ui/glass/Page.tsx';
 import { IndexScreen } from '../../engine/ui/index/Index.tsx';
 import { PlayerProvider, usePlayer } from '../../engine/ui/player.tsx';
-import { ProfileEdit } from '../../engine/ui/profile-edit/ProfileEdit.tsx';
-import { Vending } from '../../engine/ui/vending/Vending.tsx';
-import { SeasonScreen, seasonAt } from '../../engine/ui/season/Season.tsx';
-import { AlertsScreen } from '../../engine/ui/alerts/Alerts.tsx';
-import { ContactScreen } from '../../engine/ui/contact/Contact.tsx';
-import { UpdatesScreen } from '../../engine/ui/updates/Updates.tsx';
-import { GuideScreen } from '../../engine/ui/guide/Guide.tsx';
-import { SendToWelcome, WelcomeScreen } from '../../engine/ui/welcome/Welcome.tsx';
-import { LogScreen } from '../../engine/ui/log/Log.tsx';
-import { SettlementOnLoad, SettlementScreen } from '../../engine/ui/log/Settlement.tsx';
+import { seasonAt } from '../../engine/ui/season/Season.tsx';
+import { SendToWelcome } from '../../engine/ui/welcome/Welcome.tsx';
+import { SettlementOnLoad } from '../../engine/ui/log/Settlement.tsx';
 import { RouterProvider, useLocation, useNavigate } from '../../engine/ui/router.tsx';
 import { Routes, type Route } from '../../engine/ui/routes.tsx';
 import { ThreadScreen } from '../../engine/ui/thread/Thread.tsx';
 import { instance } from '../../instances/divided-world/index.ts';
 import { instanceUi } from '../../instances/divided-world/ui/index.ts';
+
+/*
+ * The glass screens, the admin queue and the vending machine load on first use, so the board's first script is the board's
+ * (the forum-load plan, Task 15). Each glass route is drawn inside a Suspense whose fallback is nothing: the glass page's
+ * own `main` is already on screen around it, empty until the screen lands.
+ */
+const named = <M, K extends keyof M>(load: () => Promise<M>, name: K) => lazy(() => load().then((m) => ({ default: m[name] as ComponentType<M[K] extends ComponentType<infer P> ? P : never> })));
+const SignInScreen = named(() => import('../../engine/ui/account/SignIn.tsx'), 'SignInScreen');
+const Characters = named(() => import('../../engine/ui/characters/Characters.tsx'), 'Characters');
+const NewCharacter = named(() => import('../../engine/ui/characters/NewCharacter.tsx'), 'NewCharacter');
+const ProfileEdit = named(() => import('../../engine/ui/profile-edit/ProfileEdit.tsx'), 'ProfileEdit');
+const SettingsScreen = named(() => import('../../engine/ui/account/Settings.tsx'), 'SettingsScreen');
+const SeasonScreen = named(() => import('../../engine/ui/season/Season.tsx'), 'SeasonScreen');
+const Vending = named(() => import('../../engine/ui/vending/Vending.tsx'), 'Vending');
+const AlertsScreen = named(() => import('../../engine/ui/alerts/Alerts.tsx'), 'AlertsScreen');
+const UpdatesScreen = named(() => import('../../engine/ui/updates/Updates.tsx'), 'UpdatesScreen');
+const GuideScreen = named(() => import('../../engine/ui/guide/Guide.tsx'), 'GuideScreen');
+const ContactScreen = named(() => import('../../engine/ui/contact/Contact.tsx'), 'ContactScreen');
+const WelcomeScreen = named(() => import('../../engine/ui/welcome/Welcome.tsx'), 'WelcomeScreen');
+const QueueScreen = named(() => import('../../engine/ui/admin/Queue.tsx'), 'QueueScreen');
+const LogScreen = named(() => import('../../engine/ui/log/Log.tsx'), 'LogScreen');
+const SettlementScreen = named(() => import('../../engine/ui/log/Settlement.tsx'), 'SettlementScreen');
 
 const ROUTES: readonly Route[] = [
   { path: '/', render: () => <IndexScreen /> },
@@ -166,7 +176,9 @@ function Shell() {
   }
   const content = (
     <AccountGate>
-      <Routes key={mountedFor.n} routes={ROUTES} />
+      <Suspense fallback={null}>
+        <Routes key={mountedFor.n} routes={ROUTES} />
+      </Suspense>
       {/* The first load of a board page after a settlement the device has not seen opens its summary (engine/ui/log/Settlement.tsx). */}
       <SettlementOnLoad active={!surface} />
       {/* A new account, with no character and the welcome unseen, is sent to it from its first board page (engine/ui/welcome/Welcome.tsx). */}
