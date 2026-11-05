@@ -30,6 +30,9 @@ interface Frame {
 }
 
 async function frameOf(page: Page): Promise<Frame> {
+  /* Close answers a hover (shell.css): the frame is read at rest, with the pointer off whatever the last dialog's Close left it on. */
+  await page.mouse.move(0, 0);
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
   return page.evaluate(() => {
     const box = [...document.querySelectorAll<HTMLElement>('[role="dialog"]')].at(-1)!;
     const cs = getComputedStyle(box);
