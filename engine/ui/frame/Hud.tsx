@@ -310,7 +310,7 @@ export function Hud() {
                 {!signedIn ? (
                   <div className="kb-hud-door">
                     <span className="kb-hud-door-mark" aria-hidden="true">?</span>
-                    <div className="kb-hud-door-words">
+                    <div className="kb-hud-door-words kb-calm">
                       {/* A heading, not a bare element: the HUD is a labeled region, and its prompt is what a screen reader should find in it; it sits under the page's h1 in rank, though the HUD comes first in the document. */}
                       <h2 className="kb-hud-door-title kb-glass-display">{ui.frontDoor.prompt.title}</h2>
                       <p className="kb-hud-door-line">{ui.frontDoor.prompt.line}</p>
@@ -368,7 +368,7 @@ export function Hud() {
               </div>
             )}
             {!signedIn && (
-              <div className="kb-hud-door-actions">
+              <div className="kb-hud-door-actions kb-calm">
                 {settings.registrationMode !== 'closed' && (
                   <Link to={registerHref(location.path, searchOf(location.query))} className="kb-hud-sign-in kb-hud-door-register kb-glass-cut-button">
                     {settings.registrationMode === 'invite' ? 'Register with an invite' : 'Register'}

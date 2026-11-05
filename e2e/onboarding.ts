@@ -54,7 +54,8 @@ export async function signInUnseasonedOnBoard(page: Page): Promise<void> {
  */
 export async function flipSession(page: Page, back: Locator): Promise<void> {
   await page.evaluate(() => { (globalThis as E2eWindow).__kbFake.signInAs(null); });
-  await expect(page.getByRole('main').getByRole('link', { name: 'Sign in' })).toBeVisible();
+  /* Signed out, a glass page prompts in its main and a board page in the HUD (the front door's design, section 2.3), so either is the sign. */
+  await expect(page.getByRole('main').or(page.getByRole('region', { name: 'Game HUD' })).getByRole('link', { name: 'Sign in' }).first()).toBeVisible();
   await page.evaluate(() => { const w = globalThis as E2eWindow; w.__kbFake.signInAs(w.__kbUnseasoned!); });
   await expect(back).toBeVisible();
 }
