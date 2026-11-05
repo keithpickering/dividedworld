@@ -49,6 +49,7 @@ const settings: Settings = {
   memoryGrudges: 20,
   memoryWheelhouse: 30,
   memoryRealWorld: 30,
+  notesRead: 12,
   boardNameMaxLength: 60,
   moveExpiryMostDays: 42,
   demandCheckMinutes: 5,
@@ -493,11 +494,11 @@ test('the new settings are checked like the others', () => {
   assert.match(bad('meetingCron', 'daily'), /meetingCron/);
   assert.match(bad('phases', { ...settings.phases, reign: { weeklyMoves: 0, bankCap: 10, moveExpiryMostDays: 28 } }), /phases/);
   assert.match(bad('phases', { ...settings.phases, honeymoon: { weeklyMoves: 2, bankCap: 4, moveExpiryMostDays: 7 } }), /phases/);
-  for (const k of ['inheritanceGraceDays', 'rosterRecentExcluded', 'structuralHoldHours', 'microEventDailyCalls', 'digestThreads', 'digestExcerpts', 'digestExcerptChars', 'memoryOpinions', 'memoryGrudges', 'memoryWheelhouse', 'memoryRealWorld', 'boardNameMaxLength', 'moveExpiryMostDays', 'moveExpiryLeastHours', 'demandCheckMinutes', 'demandChecksPerTick']) {
+  for (const k of ['inheritanceGraceDays', 'rosterRecentExcluded', 'structuralHoldHours', 'microEventDailyCalls', 'digestThreads', 'digestExcerpts', 'digestExcerptChars', 'memoryOpinions', 'memoryGrudges', 'memoryWheelhouse', 'memoryRealWorld', 'notesRead', 'boardNameMaxLength', 'moveExpiryMostDays', 'moveExpiryLeastHours', 'demandCheckMinutes', 'demandChecksPerTick']) {
     assert.match(bad(k, -1), new RegExp(k), k);
     assert.match(bad(k, 1.5), new RegExp(k), k);
   }
-  for (const k of ['memoryOpinions', 'memoryGrudges', 'memoryWheelhouse', 'memoryRealWorld']) {
+  for (const k of ['memoryOpinions', 'memoryGrudges', 'memoryWheelhouse', 'memoryRealWorld', 'notesRead']) {
     assert.match(bad(k, 0), new RegExp(k), k);
     assert.match(bad(k, 2.5), new RegExp(k), k);
   }

@@ -61,6 +61,8 @@ interface World {
   successors?: string[];
   /** What staff_career returns for the Boss (default: it has led nothing). */
   career?: { led: unknown[]; offices: unknown[] };
+  /** What staff_notes_recent returns for the Boss (default: none). */
+  notes?: string[];
 }
 function fakeDb(w: World = {}) {
   const calls: { fn: string; args: Record<string, any> }[] = [];
@@ -81,6 +83,7 @@ function fakeDb(w: World = {}) {
           return { season: { startsAt: NOW - 30 * DAY, endsAt: NOW + (w.endsIn ?? 60 * DAY) }, boss: w.boss ?? BOSS, lastSlot: '2026-10-31T09:23:00.000Z', boards: [{ id: BOARD, name: 'Mario Fan Games' }, { id: BOARD2, name: 'Off Topic' }], successors: w.successors ?? dividedWorld.system.roster.map((b) => b.key).filter((k) => k !== (w.boss ?? BOSS)), ...(w.inheritanceDue ? { inheritanceDue: w.inheritanceDue } : {}) } as T;
         case 'system_digest':
           return { since: args.since, until: args.until, threads: [{ thread: HOT, title: 'Pineapple', board: 'Mario Fan Games', posts: 4, heat: 1, controversy: 0.5, length: 9 }], standings: [], moves: [], quotes: [], bossReactions: [], excerpts: [], characters: [{ id: ANN, name: 'Ann the Great', staff: false }] } as T;
+        case 'staff_notes_recent': return (w.notes ?? []) as T;
         case 'staff_career': return (w.career ?? { led: [], offices: [] }) as T;
         case 'staff_memory_latest': return (w.memories?.[String(args.staff)] ?? null) as T;
         case 'bank_now': return (w.bank ?? 5.9) as T;
@@ -522,4 +525,24 @@ test('the Boss\'s career is read for the Boss itself and carried in the system p
   const fresh = fakeModels(answer([]));
   await run(fakeDb().db, fresh.models, quiet, SLOT, clock, noFeeds);
   assert.ok(fresh.chats[0]!.system.includes('You have held no office before.'), 'a Boss with no career is told so');
+});
+
+test('the Boss\'s recent notes are read for the Boss itself since the last meeting, capped by notesRead, and carried in the system prompt', async () => {
+  const served = fakeDb({ notes: ['Ann is up to something.', 'Bob owes me a rematch.'], memories: { [BOSS]: memory('my own hobby') } });
+  const m = fakeModels(answer([]));
+  await run(served.db, m.models, quiet, SLOT, clock, noFeeds);
+  const reads = served.calls.filter((c) => c.fn === 'staff_notes_recent');
+  assert.equal(reads.length, 1);
+  assert.equal(reads[0]!.args.of_staff, BOSS);
+  assert.equal(reads[0]!.args.most, dividedWorld.settings.notesRead);
+  assert.equal(reads[0]!.args.since, '2026-10-31T09:23:00.000Z', 'since the last meeting');
+  const system = m.chats[0]!.system;
+  assert.ok(system.includes('Ann is up to something.') && system.includes('Bob owes me a rematch.'), system);
+  assert.ok(system.includes('your own recent thoughts'), system);
+  const fresh = fakeDb({ notes: ['Written as a member.'] });
+  await run(fresh.db, fakeModels(answer([])).models, quiet, SLOT, clock, noFeeds);
+  assert.equal(fresh.calls.find((c) => c.fn === 'staff_notes_recent')!.args.since, null, 'a Boss with no memory of its own reads every note it has written');
+  const bare = fakeModels(answer([]));
+  await run(fakeDb().db, bare.models, quiet, SLOT, clock, noFeeds);
+  assert.ok(!bare.chats[0]!.system.includes('your own recent thoughts'), 'a Boss with no notes is told nothing of them');
 });

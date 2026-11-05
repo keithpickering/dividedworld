@@ -164,6 +164,11 @@ export interface Settings {
   readonly memoryWheelhouse: number;
   /** The most real-world subjects a Boss's memory leaves alone, most important first. A starting point. */
   readonly memoryRealWorld: number;
+  /**
+   * The most of its own recent notes (`staff_notes`) the Boss's meeting reads, newest kept. A note is read, never acted on. Held flat here
+   * until the pool's settings (`Settings.pool`, the staff roster plan's Task 9) take it as `pool.notesRead`. A starting point.
+   */
+  readonly notesRead: number;
   /** The longest a board's name may be, in characters, whether The System or a player proposes it. */
   readonly boardNameMaxLength: number;
   /** The most days any move may last, whatever its phase allows. A starting point. */

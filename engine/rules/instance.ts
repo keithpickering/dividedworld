@@ -148,6 +148,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   memoryGrudges: whole(1, 'grudges'),
   memoryWheelhouse: whole(1, 'subjects'),
   memoryRealWorld: whole(1, 'subjects'),
+  notesRead: whole(1, 'notes'),
   boardNameMaxLength: whole(1, 'characters'),
   moveExpiryMostDays: whole(1, 'days'),
   moveExpiryLeastHours: whole(1, 'hours'),

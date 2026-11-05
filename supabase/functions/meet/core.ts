@@ -161,9 +161,18 @@ export async function runMeeting(
 
     // Its own latest memory; a Boss with none (a new one) reads nothing, or the memory of the Boss its persona inherits.
     let memory = await db.rpc<Memory | null>('staff_memory_latest', { staff: bossKey });
+    const hasOwnMemory = memory !== null;
     if (memory === null && boss.inheritsMemoryOf) memory = await db.rpc<Memory | null>('staff_memory_latest', { staff: boss.inheritsMemoryOf });
 
     const career = await db.rpc<Career>('staff_career', { of_staff: bossKey });
+
+    // Its own notes since its last memory version (the last meeting; a Boss with no memory of its own reads all it has written), the newest
+    // `notesRead`. They are read as its own thoughts and never acted on.
+    const bossNotes = await db.rpc<string[]>('staff_notes_recent', {
+      of_staff: bossKey,
+      since: hasOwnMemory && context.lastSlot ? new Date(Date.parse(context.lastSlot)).toISOString() : null,
+      most: settings.notesRead,
+    });
 
     const bank = await db.rpc<number>('bank_now', { staff: bossKey, weekly_moves: phase.numbers.weeklyMoves, bank_cap: phase.numbers.bankCap });
 
@@ -179,6 +188,7 @@ export async function runMeeting(
       bank,
       successorAllowed,
       career,
+      notes: bossNotes,
       roster: tuned.system.roster.filter((b) => successors.has(b.key)).map((b) => ({ key: b.key, name: b.name })),
     });
     const notes = skipped.map((f) => `The feed "${f.name}" could not be read today (${f.why}).`);

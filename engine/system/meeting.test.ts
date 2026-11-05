@@ -1,8 +1,10 @@
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { systemSettings, testSystem } from '../rules/test-system.ts';
 import { DEMAND_KINDS } from './demands.ts';
 import { DEMAND_ID_ROLES, inheritedText, meetingSystemPrompt, namedCharacters, repairAnswer, type InheritedMove, type RepairContext } from './meeting.ts';
+import { noteMost } from './memory.ts';
 import { phaseAt } from './phases.ts';
 
 const H = 3_600_000;
@@ -112,10 +114,32 @@ test('the inheritance section is in plain words, says reviewing is free and what
 
 test('the system prompt carries the Boss\'s career as plain facts, and says so when there is none', () => {
   const facts = {
-    boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: false, roster: [],
+    boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: false, roster: [], notes: [],
   };
   const served = meetingSystemPrompt({ ...facts, career: { led: [{ season: 3, from: '2026-04-01T00:00:00+00:00', until: null, how: 'nomination' }], offices: [] } });
   assert.ok(served.includes('Your career, as plain facts'), served);
   assert.ok(served.includes('Boss in Season 3, from 2026-04-01 until now'), served);
   assert.ok(meetingSystemPrompt({ ...facts, career: { led: [], offices: [] } }).includes('You have held no office before.'));
+});
+
+test('the Boss\'s recent notes are in the prompt as its own thoughts, capped at notesRead with the newest kept, and the section is absent when there are none', () => {
+  const facts = {
+    boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: false, roster: [],
+    career: { led: [], offices: [] },
+  };
+  const notes = Array.from({ length: settings.notesRead + 3 }, (_, i) => `thought number ${i + 1}`);
+  const served = meetingSystemPrompt({ ...facts, notes });
+  assert.match(served, /your own recent thoughts/);
+  assert.ok(served.includes(`thought number ${notes.length}`), 'the newest note is kept');
+  assert.ok(served.includes('thought number 4'), 'the oldest note inside the cap is kept');
+  assert.ok(!served.includes('thought number 3\n') && !/thought number 3$/m.test(served), 'a note past the cap is cut from the old end');
+  assert.ok(served.indexOf('thought number 4') < served.indexOf(`thought number ${notes.length}`), 'oldest first');
+  const none = meetingSystemPrompt({ ...facts, notes: [] });
+  assert.ok(!none.includes('your own recent thoughts'), none);
+});
+
+test('noteMost is the 280 the database check holds', () => {
+  const sql = readFileSync(new URL('../../supabase/migrations/0083_staff_notes.sql', import.meta.url), 'utf8');
+  assert.equal(noteMost, 280);
+  assert.match(sql, new RegExp(`between 1 and ${noteMost}\\b`));
 });
