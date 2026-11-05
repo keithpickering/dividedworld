@@ -11,7 +11,7 @@
  * screen's own constant: `postsPerPage` counts posts inside a thread, and a list of threads is paged
  * for a different reason (the list's weight on a phone), so the two do not share a setting.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Act, Board, BoardPage, Character, Id, PinnedThread, ThreadSummary } from '../data/api.ts';
 import { useUntil } from '../cards/Effects.tsx';
@@ -74,17 +74,28 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
   const heading = useRef<HTMLHeadingElement>(null);
   const shownPage = useRef<number | null>(null);
 
-  /* The document into the stores and the list, before the first render: the banner's and the pins' plays with their states, tallies and the reader's reactions. */
-  const state = useMemo<Loaded>(() => {
-    const marked: readonly Act[] = [...doc.banner.map((p) => p.act), ...doc.pins.map((p) => p.act)];
-    hydrate(plays, marked, doc.states, doc.releases);
-    for (const [id, t] of Object.entries(doc.tallies)) tallies.merge(id, t);
-    for (const a of marked) mine.merge(a.id, doc.mine.filter((r) => r.act === a.id));
-    return {
-      board: doc.board, threads: doc.threads, total: doc.total, page: doc.page, reading: doc.reading, views: doc.views,
-      characters: new Map(doc.characters.map((c) => [c.id, c])), pins: doc.pins,
-    };
-  }, [doc, plays, tallies, mine]);
+  /*
+   * The document into the stores: the banner's and the pins' plays with their states, tallies and the reader's reactions. The first frame is
+   * whole, so the first document goes in during the first render, into stores nothing listens to yet. A later document (a page turn) goes in
+   * in a layout effect, before paint: a store with listeners notifies as it is written, which a render must not do.
+   */
+  const hydrated = useRef<BoardPage | null>(null);
+  const hydrate1 = (d: BoardPage) => {
+    const marked: readonly Act[] = [...d.banner.map((p) => p.act), ...d.pins.map((p) => p.act)];
+    hydrate(plays, marked, d.states, d.releases);
+    for (const [id, t] of Object.entries(d.tallies)) tallies.merge(id, t);
+    for (const a of marked) mine.merge(a.id, d.mine.filter((r) => r.act === a.id));
+  };
+  if (hydrated.current === null) { hydrated.current = doc; hydrate1(doc); }
+  useLayoutEffect(() => {
+    if (hydrated.current === doc) return;
+    hydrated.current = doc;
+    hydrate1(doc);
+  }, [doc]); // eslint-disable-line react-hooks/exhaustive-deps -- the stores are this view's own and never change
+  const state = useMemo<Loaded>(() => ({
+    board: doc.board, threads: doc.threads, total: doc.total, page: doc.page, reading: doc.reading, views: doc.views,
+    characters: new Map(doc.characters.map((c) => [c.id, c])), pins: doc.pins,
+  }), [doc]);
   /* A page turn is a navigation to the next page's document: what a spin form held open belonged to the page before. */
   useEffect(() => setSpinOrigin(null), [doc]);
 

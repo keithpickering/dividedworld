@@ -435,6 +435,31 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     return api.subscribeThread(thread, listener);
   }, [api, thread, ensurePeople, tallies, plays, effects]);
 
+  /*
+   * The window between the server reading the document and the subscription above being set up: a post written in it is neither in the
+   * document nor heard. One cheap check once subscribed (the thread's summary, one row) finds it, and the existing gap read brings it in,
+   * on the meter. A tally that grew in the window is not re-read here: the next `onTally` for that Act carries the whole count
+   * (a tally only grows and each event is the Act's total), so a later reaction corrects it; until then it shows the document's count.
+   * Only the open tail is caught up: a page that is not the last takes what lies beyond it from its own next-page read.
+   */
+  useEffect(() => {
+    let live = true;
+    void api.thread(thread).then(async (summary) => {
+      const f = feedRef.current;
+      if (!live || !summary || !f.ready || !f.tailLoaded || summary.lastSeq <= f.knownLast) return;
+      const acts: Act[] = [];
+      for (let from = f.knownLast + 1; from <= summary.lastSeq; ) {
+        const read = await readPage({ seq: from });
+        acts.push(...read.acts.filter((a) => a.seq !== null && a.seq >= from && a.seq <= summary.lastSeq));
+        const next = pageRange(read.page, P).end + 1;
+        if (next <= from) break;
+        from = next;
+      }
+      if (live) dispatch({ type: 'fill', acts });
+    }).catch(() => { /* a later live Act shows the gap, as before */ });
+    return () => { live = false; };
+  }, [api, thread, P, readPage]);
+
   /* A play beyond a post is announced on `reach`, which every signed-in page hears, since it is played from a post in some other thread
      as often as this one (a character's) and on The System's announcements thread (a board's). This page keeps the plays whose target it
      shows: this thread, this thread's board, or a character with a post in view; the rest are dropped, so its memory is its screen's.

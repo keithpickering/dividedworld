@@ -1,5 +1,6 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useLayoutEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { CardUi } from '../cards/types.ts';
 import type { Act, Id, ThreadListener } from '../data/api.ts';
@@ -89,9 +90,21 @@ const open = (w: { fake: Fake; thread: Id }, hash = '', query = '') =>
 /** Capture the thread's live listener so a test can deliver events as the server would, twice or out of order. */
 function tap(fake: Fake) {
   let listener: ThreadListener | undefined;
+  /* The screen subscribes after its first render (in a passive effect), so an event asked for earlier waits for it. */
+  const waiting: ((l: ThreadListener) => void)[] = [];
   const real = fake.subscribeThread.bind(fake);
-  fake.subscribeThread = (t, l) => { listener = l; return real(t, l); };
-  return () => listener!;
+  fake.subscribeThread = (t, l) => {
+    listener = l;
+    const off = real(t, l);
+    for (const call of waiting.splice(0)) call(l);
+    return off;
+  };
+  const proxy: ThreadListener = {
+    onAct: (a) => (listener ? listener.onAct?.(a) : void waiting.push((l) => l.onAct?.(a))),
+    onTally: (act, t) => (listener ? listener.onTally?.(act, t) : void waiting.push((l) => l.onTally?.(act, t))),
+    onEffect: (p, at) => (listener ? listener.onEffect?.(p, at) : void waiting.push((l) => l.onEffect?.(p, at))),
+  };
+  return () => proxy;
 }
 let counter = 0;
 const live = (thread: Id, seq: number, character: Id | null, over: Partial<Act> = {}): Act => ({
@@ -192,11 +205,15 @@ describe('pages and permalinks', () => {
   test('a page is one threadPage read, and none of the reads it replaces: the Acts, characters, stats, standings, reveals, turns, tallies, board, preferences or reading', async () => {
     const w = world(20);
     const page = vi.spyOn(w.fake, 'threadPage');
-    const names = ['thread', 'acts', 'characters', 'characterStats', 'standingAmounts', 'classReveals', 'turnsAnnounced', 'tallies', 'myReactions', 'cardsOnMany', 'effectsAbove', 'board', 'boards', 'preferences', 'reading', 'following', 'standingsPage'] as const;
+    const names = ['acts', 'characters', 'characterStats', 'standingAmounts', 'classReveals', 'turnsAnnounced', 'tallies', 'myReactions', 'cardsOnMany', 'effectsAbove', 'board', 'boards', 'preferences', 'reading', 'following', 'standingsPage'] as const;
     const spies = names.map((m) => [m, vi.spyOn(w.fake, m)] as const);
+    /* The one summary read after the subscription (the live window's catch-up) is the only other read, and finds nothing to fetch. */
+    const summary = vi.spyOn(w.fake, 'thread');
     open(w);
     await screen.findByRole('article', { name: /^Post 20 /u });
+    await act(async () => {});
     expect(page).toHaveBeenCalledTimes(1);
+    expect(summary).toHaveBeenCalledTimes(1);
     expect(spies.map(([name, spy]) => [name, spy.mock.calls.length])).toEqual(names.map((n) => [n, 0]));
   });
 
@@ -1466,7 +1483,7 @@ describe('a thread drawn from its document (the forum-load plan, Task 13)', () =
     const doc = (await w.fake.threadPage(w.thread, at, 20, []))!;
     /* What happens after the server has read the page and before the screen is drawn. */
     await between?.();
-    const read = holdReads(w.fake, ['markRead', 'here', 'session', ...allowed]);
+    const read = holdReads(w.fake, ['markRead', 'here', 'session', 'thread', ...allowed]);
     renderIn(w.fake, <ThreadScreen thread={w.thread} doc={doc} />, { path: `/t/${w.thread}?page=${at.page ?? 1}`, boot });
     return { read, doc };
   }
@@ -1489,6 +1506,30 @@ describe('a thread drawn from its document (the forum-load plan, Task 13)', () =
     expect(read).toEqual([]);
   });
 
+  test('the reply box is in the first commit, before any passive effect runs', async () => {
+    const w = world(45);
+    localStorage.setItem(`kb-draft:${w.me}:${w.thread}`, JSON.stringify({ text: 'half a thought', as: null }));
+    const seen: (string | null)[] = [];
+    function Probe() {
+      useLayoutEffect(() => { seen.push(document.querySelector('form.kb-composer textarea, form.kb-composer [role="textbox"]')?.textContent ?? (document.querySelector('form.kb-composer') ? '' : null)); }, []);
+      return null;
+    }
+    const doc = (await w.fake.threadPage(w.thread, { page: 1 }, 20, []))!;
+    renderIn(w.fake, <><ThreadScreen thread={w.thread} doc={doc} /><Probe /></>, { path: `/t/${w.thread}?page=1`, boot: await w.fake.boot() });
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).not.toBeNull();
+    localStorage.clear();
+  });
+
+  test('a post written after the server read the document and before the subscription shows with no later live event', async () => {
+    const w = world(45);
+    clock();
+    const { doc } = await landed(w, { page: 3 }, ['threadPage', 'thread'], async () => { w.fake.seed.post(w.thread, w.pipe, 'post 46'); });
+    expect(doc.thread.lastSeq).toBe(45);
+    await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+    expect(await screen.findByRole('button', { name: '1 new post' })).toBeInTheDocument();
+  });
+
   test('its next page is one threadPage read, on the meter, and nothing else', async () => {
     const w = world(45);
     const board = vi.spyOn(w.fake, 'threadPage');
@@ -1506,6 +1547,9 @@ describe('a thread drawn from its document (the forum-load plan, Task 13)', () =
     const w = world(45);
     const listener = tap(w.fake);
     const page = vi.spyOn(w.fake, 'threadPage');
+    /* The catch-up check has its own test below; here the summary is held at the document's, so the gap is the live Act's to find. */
+    const realThread = w.fake.thread.bind(w.fake);
+    vi.spyOn(w.fake, 'thread').mockImplementation(async (id) => { const t = await realThread(id); return t && { ...t, lastSeq: 45 }; });
     clock();
     /* Posts 46 and 47 were written between the server's read and the subscription; 48 is the first the channel hears. */
     let last!: Act;
