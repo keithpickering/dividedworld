@@ -18,7 +18,7 @@ begin
   perform seed_instance(jsonb_build_object(
     'settings', jsonb_build_object('systemEnabled', true, 'structuralHoldHours', 24, 'rosterRecentExcluded', 0, 'inheritanceGraceDays', 3,
       'seasonLength', jsonb_build_object('unit', 'day', 'count', 1)),
-    'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+    'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'ps-pat',
       'staff', jsonb_build_array(
         jsonb_build_object('key', 'ps-pat', 'name', 'Pat Boss', 'title', 'Boss', 'signature', 'a'),

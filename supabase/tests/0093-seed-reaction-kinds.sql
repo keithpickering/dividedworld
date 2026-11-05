@@ -1,4 +1,4 @@
--- Seeding a changed reaction set (supabase/migrations/0082_seed_reaction_kinds.sql; design
+-- Seeding a changed reaction set (supabase/migrations/0091_seed_reaction_kinds.sql; design
 -- docs/plans/2026-11-05-reaction-set-design.md, section 3): a payload that carries `reactions` names the
 -- instance's whole set. A kind it drops that nothing uses is deleted; one a reaction or a tally uses stops the seed,
 -- and nothing is written; a payload with no `reactions` key leaves the kinds as they are.

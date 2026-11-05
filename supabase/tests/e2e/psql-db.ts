@@ -30,7 +30,7 @@ export function sql(text: string, vars: Record<string, string> = {}): string {
  * The instance's seed, for this scratch database. The database is shared with the SQL suite's own test
  * instance (supabase/tests/setup/fixtures.sql), whose race files commit reactions on its kinds, and
  * seed_instance takes a payload's reactions as the instance's whole set and refuses to drop a kind that
- * reactions use (0082). So the kinds the database already holds are seeded beside the instance's own, as
+ * reactions use (0091). So the kinds the database already holds are seeded beside the instance's own, as
  * they stood before. Where a held kind shares a key or an emoji with one of the instance's, the instance's
  * wins and the held one is left out.
  */

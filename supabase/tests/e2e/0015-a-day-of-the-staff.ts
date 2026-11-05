@@ -14,9 +14,8 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { psqlDb, sql } from './psql-db.ts';
+import { psqlDb, sql, scratchSeed } from './psql-db.ts';
 import { runChatter } from '../../functions/chatter/core.ts';
-import { instanceSeed } from '../../functions/_shared/seed.ts';
 import { instance } from '../../functions/_shared/instance.ts';
 import { models } from '../../functions/_shared/models/index.ts';
 import { ledgerWriter } from '../../functions/_shared/models/ledger.ts';
@@ -29,7 +28,7 @@ const persona = (key: string) => roster.find((p) => p.key === key)!;
 
 test('the Boss is named and a mod quoted, the season is handed over, and the pool answers: replies, a caught Whoops!, a landed one, and the to-do', async () => {
   const db = psqlDb();
-  await db.rpc('seed_instance', { payload: instanceSeed(instance) });
+  await db.rpc('seed_instance', { payload: scratchSeed(instance) });
   sql(`update settings set value = 'true' where key = 'systemEnabled'`);
   sql(`update settings set value = value || '{"weekly": 700, "threadsWeekly": 0}'::jsonb where key = 'pool'`);
   assert.equal(sql(`select value ->> 'cardRarityMost' from settings where key = 'pool'`), 'common');

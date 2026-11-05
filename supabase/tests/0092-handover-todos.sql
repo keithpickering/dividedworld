@@ -10,7 +10,7 @@ begin
       'seasonLength', jsonb_build_object('unit', 'day', 'count', 1),
       'systemLines', jsonb_build_object('moveLanded', jsonb_build_array('Landed: {move}.'),
         'bossFarewell', jsonb_build_array('Farewell from {boss}.'), 'bossArrival', jsonb_build_array('Hello from {boss}.'))),
-    'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+    'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'developer', jsonb_build_object('name', 'Ht Gabe', 'title', 'Made this.', 'avatar', 'gabe'),
     'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'ht-boss',
       'staffGroup', jsonb_build_object('name', 'Test Cores'),

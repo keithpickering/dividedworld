@@ -12,7 +12,7 @@ begin
       'seasonLength', jsonb_build_object('unit', 'day', 'count', 1),
       'systemLines', jsonb_build_object('moveLanded', jsonb_build_array('Landed: {move}.'),
         'bossFarewell', jsonb_build_array('Farewell from {boss}.'), 'bossArrival', jsonb_build_array('Hello from {boss}.'))),
-    'classes', '[]'::jsonb, 'reactions', '[]'::jsonb,
+    'classes', '[]'::jsonb,
     'boards', jsonb_build_array(jsonb_build_object('slug', 'side', 'name', 'Side', 'description', 'Off to one side.')),
     'cards', '[]'::jsonb,
     'developer', jsonb_build_object('name', 'Ps Gabe', 'title', 'Made this.', 'avatar', 'gabe'),

@@ -5,7 +5,7 @@
 -- written. A payload with no `reactions` key leaves the kinds as they are. Way out of a refused seed: the instance puts the
 -- kind back in its list and seeds again, or #216's retirement once designed.
 
--- seed_instance (0062), with the reactions list as the whole set. Everything else as 0062 wrote it.
+-- seed_instance (0082_offices), with the reactions list as the whole set. Everything else as 0082_offices wrote it.
 create or replace function seed_instance(payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -15,7 +15,7 @@ declare
   sys uuid;
   opened uuid;
 begin
-  -- Two seeds at once would each find no hire row and both write one into append-only staff_changes. An advisory
+  -- Two seeds at once would each find no office row and both write one into the append-only office log. An advisory
   -- transaction lock serializes seeds without locking any table a player reads, and lets go at commit.
   perform pg_advisory_xact_lock(hashtext('kayfabb.seed_instance'));
   select count(*), min(e ->> 'slug') into flags, flagged
@@ -69,25 +69,39 @@ begin
   insert into pip_styles (key, name, full_image, empty_image)
   select e ->> 'key', e ->> 'name', e ->> 'full', e ->> 'empty' from jsonb_array_elements(coalesce(payload -> 'pipStyles', '[]')) e
   on conflict (key) do update set name = excluded.name, full_image = excluded.full_image, empty_image = excluded.empty_image;
-  -- The instance's staff (0043), once each: a Boss or a Mod Bot is made when its key has no character yet, debuted at
-  -- seed time, with the profile its seed gives (its title and its signature, cut to what a profile holds). What an admin
-  -- wrote is never written over: a reseed finds the key and does nothing. A bot in firstStaff with no staff_changes row
-  -- is hired; one with a row, a fired bot's included, is left as that row says.
+  -- The instance's personas (0082), once each: a persona is made when its key has no character yet, with the profile its seed gives (its
+  -- title and its signature, cut to what a profile holds). The first Boss and the first staff debut at seed time; every other persona
+  -- is made waiting, with no debut, and debuts the moment it first takes an office. What an admin wrote is never written over: a reseed
+  -- finds the key and does nothing. A persona in firstStaff with no office row is hired as a Mod Bot, cause `seed`; one with a row,
+  -- a benched one's included, is left as that row says, so a reseed never rehires.
   with seeded as (
-    select e ->> 'key' as staff, e ->> 'name' as name, e ->> 'kind' as kind, coalesce(e ->> 'title', '') as title, coalesce(e ->> 'signature', '') as signature
+    select e ->> 'key' as staff, e ->> 'name' as name, coalesce(e ->> 'title', '') as title, coalesce(e ->> 'signature', '') as signature
     from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) e
   ), made as (
-    insert into characters (name, staff, staff_kind, debuted_at) select s.name, s.staff, s.kind, now() from seeded s
+    insert into characters (name, staff, staff_kind, debuted_at)
+    select s.name, s.staff, 'persona',
+      case when s.staff = nullif(payload -> 'system' ->> 'firstBoss', '')
+             or s.staff in (select jsonb_array_elements_text(coalesce(payload -> 'system' -> 'firstStaff', '[]'))) then now() end
+    from seeded s
     on conflict (staff) do nothing returning id, staff
   )
   insert into character_profiles (character, title, signature)
   select m.id, left(s.title, 40), left(s.signature, 500) from made m join seeded s on s.staff = m.staff;
   select string_agg(k, ', ') into unknown from jsonb_array_elements_text(coalesce(payload -> 'system' -> 'firstStaff', '[]')) k
-  where not exists (select 1 from characters c where c.staff = k and c.staff_kind = 'bot');
-  if unknown is not null then raise exception 'firstStaff names %, which no bot in the seed''s staff is', unknown using errcode = '22023'; end if;
-  insert into staff_changes (staff, on_staff)
-  select k, true from jsonb_array_elements_text(coalesce(payload -> 'system' -> 'firstStaff', '[]')) k
-  where not exists (select 1 from staff_changes x where x.staff = k);
+  where not exists (select 1 from characters c where c.staff = k and c.staff_kind = 'persona');
+  if unknown is not null then raise exception 'firstStaff names %, which no persona in the seed''s roster is', unknown using errcode = '22023'; end if;
+  insert into staff_offices (staff, office, cause)
+  select k, 'mod', 'seed' from jsonb_array_elements_text(coalesce(payload -> 'system' -> 'firstStaff', '[]')) k
+  where not exists (select 1 from staff_offices x where x.staff = k);
+  -- A persona the seed seats as a mod is debuted: a reseed that adds a still-waiting persona to firstStaff hires it above, and it debuts here.
+  update characters c set debuted_at = now()
+  where c.debuted_at is null and c.staff_kind = 'persona'
+    and c.staff in (select k from jsonb_array_elements_text(coalesce(payload -> 'system' -> 'firstStaff', '[]')) k)
+    and exists (select 1 from staff_offices x where x.staff = c.staff and x.cause = 'seed' and x.office = 'mod');
+  -- The name of the member group every persona is in, which the instance gives.
+  insert into settings (key, value)
+  select 'staffGroup', payload -> 'system' -> 'staffGroup' where jsonb_typeof(payload -> 'system' -> 'staffGroup') = 'object'
+  on conflict (key) do update set value = excluded.value;
   -- The catalogs (0046): the moves and demands the engine holds, as the engine lists them. A reseed upserts a move's flag and
   -- never removes a kind, since a landed move may name it. A missing flag is a seed's mistake (a move that reshapes a board
   -- must not be seeded as one that does not), so it is refused by the column.
@@ -95,11 +109,11 @@ begin
   on conflict (key) do update set structural = excluded.structural, shapes_board = excluded.shapes_board;
   insert into demand_kinds (key) select e ->> 'key' from jsonb_array_elements(coalesce(payload -> 'system' -> 'demands', '[]')) e
   on conflict (key) do nothing;
-  -- The roster's order (0051): the Bosses of the seed's staff, in the order it lists them, so the rotation has one to follow. A seed with no
-  -- Boss leaves the setting as it was.
+  -- The roster's order (0051): the seed's personas, in the order it lists them, so the rotation has one to follow. A seed with no
+  -- persona leaves the setting as it was.
   insert into settings (key, value)
   select 'bossRoster', jsonb_agg(e.value ->> 'key' order by e.ord)
-  from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) with ordinality e(value, ord) where e.value ->> 'kind' = 'boss'
+  from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) with ordinality e(value, ord)
   having count(*) > 0
   on conflict (key) do update set value = excluded.value;
   if not exists (select 1 from seasons) then insert into seasons (number, starts_at) values (1, now()); end if;
@@ -122,7 +136,7 @@ begin
     on conflict (key) do update set value = excluded.value;
   end if;
   -- The developer persona and its thread (0062): a seed with a `developer` entry ({ name, title, avatar }) makes the one developer, once,
-  -- as it makes a Boss: debuted at seed time, with the tagline as its profile title, cut to what a profile holds. What an admin wrote is
+  -- as it makes a persona: debuted at seed time, with the tagline as its profile title, cut to what a profile holds. What an admin wrote is
   -- never written over: a reseed finds the key and does nothing, except that the avatar's asset key is the instance's to change. Then
   -- the updates thread, on The System's board, recorded in the setting `updatesThread` (not in a seed's `settings`, so no seed
   -- writes it over); the board's thread counter is netted by the thread's own, since a board's count is the length of its list and
