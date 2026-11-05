@@ -29,28 +29,28 @@ export const frontDoor: FrontDoorUi = Object.freeze({
     Object.freeze({
       by: 'snuckles',
       body: 'This is a plain old outdated forum...or is it something more? In the game we call life, we have few opportunities to put on a mask. We are giving you that opportunity now. Will you take it, weary traveler?',
-      reactions: Object.freeze({ 'eye-roll': 4, zzz: 3, yawn: 2 }),
+      reactions: Object.freeze({ 'eye-roll': 4, facepalm: 3, yawn: 2 }),
     }),
     Object.freeze({
       by: 'wholesome',
       body: 'Do you ever stop talking?',
-      reactions: Object.freeze({ fire: 7, heart: 5, 'raised-hands': 4, 'star-struck': 3 }),
+      reactions: Object.freeze({ fire: 7, heart: 5, laughing: 4, 'hundred-points': 3 }),
     }),
     Object.freeze({
       by: 'snuckles',
       body: 'Oh come on! I\'m just trying to be cool in front of the new person and of course you\'re being a jerk about it. Once again you\'re mad that you don\'t have what it takes to compete in the Marketplace of Ideas.',
-      reactions: Object.freeze({ yawn: 3, trash: 1 }),
+      reactions: Object.freeze({ yawn: 3, crickets: 1 }),
       plays: Object.freeze([Object.freeze({ card: 'whoops', by: 'roboto', config: Object.freeze({ color: '#ff3d7f', seed: 228 }) })]),
     }),
     Object.freeze({
       by: 'accountant',
       body: 'You\'re just trying to get crowd points by acting like a clown. How about we try to explain this in a way that makes sense?',
-      reactions: Object.freeze({ tea: 4, handshake: 3, meditating: 2 }),
+      reactions: Object.freeze({ 'folded-hands': 4, salute: 3, 'light-bulb': 2 }),
     }),
     Object.freeze({
       by: 'roboto',
       body: 'Hey new guy! This site is honestly really cool. It\'s a convergence of human intelligence with the new AI Renaissance, and I am totally here for it.',
-      reactions: Object.freeze({ tomato: 5, 'thumbs-down': 4, nauseated: 2, cursing: 1 }),
+      reactions: Object.freeze({ tomato: 5, 'thumbs-down': 4, vomiting: 2, cursing: 1 }),
     }),
   ]),
   note: [
