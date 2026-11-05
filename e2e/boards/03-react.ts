@@ -17,8 +17,8 @@
  *
  * Where the build differs by a decision:
  *  - each button is named by its emoji's name and its quadrant (web Task 6, "each button named by its
- *    emoji's name and quadrant"), so "Tomato" is "Tomato, Heat", and the rival's own Tea is "Tea,
- *    Calm, your reaction"; a name is its key made readable, so "Star-struck" is "Star struck";
+ *    emoji's name and quadrant"), so "Tomato" is "Tomato, Heat", and the rival's own Tea is "Folded hands,
+ *    Calm, your reaction"; a name is its key made readable, so 'hundred-points' is "Hundred points";
  *  - the buttons' type is not compared: their only text is the emoji, which the board leaves bare
  *    and the build hides from a screen reader behind the button's name, and an emoji's face is the
  *    system's, not the glass's;
@@ -33,19 +33,20 @@
  *
  * Not compared: the post under the picker, which is the 2003 board's (its chips and its React are
  * the thread's own, and the build's #42 carries a fourth chip the board left out, the fixture's
- * handshake), the smoke, and the cross through the quadrants.
+ * salute), the smoke, and the cross through the quadrants.
  */
 import type { BoardManifest, Landmark } from '../board-match.ts';
 
 /**
  * Each quadrant's emoji, as the board names its buttons, with the build's quadrant label, and the build's own name where its emoji differs:
- * the board's 😡 Angry is the instance's 🤢 Nauseated since #161 (the Excited Negative set has four distinct feelings), in the same place.
+ * the instance's set since 2026-11-05 (docs/plans/2026-11-05-reaction-set-design.md) stands in the board's places, as the board's 😡 Angry
+ * stood as 🤢 Nauseated since #161, and is now 🤮 Vomiting, in the same place.
  */
 const KINDS: readonly (readonly [string, string, string?])[] = [
-  ['Tomato', 'Heat'], ['Angry', 'Heat', 'Nauseated'], ['Cursing', 'Heat'], ['Thumbs down', 'Heat'],
-  ['Fire', 'Hype'], ['Heart', 'Hype'], ['Raised hands', 'Hype'], ['Star-struck', 'Hype'],
-  ['Zzz', 'Groan'], ['Eye roll', 'Groan'], ['Trash', 'Groan'], ['Yawn', 'Groan'],
-  ['Relieved', 'Calm'], ['Handshake', 'Calm'], ['Meditating', 'Calm'],
+  ['Tomato', 'Heat'], ['Angry', 'Heat', 'Vomiting'], ['Cursing', 'Heat'], ['Thumbs down', 'Heat'],
+  ['Fire', 'Hype'], ['Heart', 'Hype'], ['Raised hands', 'Hype', 'Laughing'], ['Star-struck', 'Hype', 'Hundred points'],
+  ['Zzz', 'Groan', 'Facepalm'], ['Eye roll', 'Groan'], ['Trash', 'Groan', 'Crickets'], ['Yawn', 'Groan'],
+  ['Relieved', 'Calm', 'Thumbs up'], ['Handshake', 'Calm', 'Salute'], ['Meditating', 'Calm', 'Light bulb'],
 ];
 
 const buttons: Landmark[] = KINDS.map(([name, quadrant, built]) => ({
@@ -70,7 +71,7 @@ const manifest: BoardManifest = {
     { id: 'groan-label', role: 'text', name: 'Groan', within: 'groan', origin: 'picker', buildSize: 24 },
     { id: 'calm', role: 'group', name: 'Calm', within: 'picker', origin: 'picker', type: false },
     ...buttons,
-    { id: 'kind-tea', role: 'button', name: 'Tea, your reaction', buildName: 'Tea, Calm, your reaction', within: 'picker', origin: 'picker', type: false },
+    { id: 'kind-tea', role: 'button', name: 'Tea, your reaction', buildName: 'Folded hands, Calm, your reaction', within: 'picker', origin: 'picker', type: false },
     { id: 'hint', role: 'text', name: 'Arrow keys move, Enter reacts. Outlined: yours.', within: 'picker', origin: 'picker' },
   ],
 };
