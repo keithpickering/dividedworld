@@ -170,3 +170,7 @@ the two-worlds boards (06-turn above all, whose class carousel and How loud row 
   count on a line of its own under the title, never broken. The Debut dialog on the phone is a sheet with its two
   buttons at its foot.
 - Kept: the shared dialog frame (#202), the carousel and its count, the preview's 2003 look.
+
+**Approved by the owner** ("Approved, very nice"), with one nit, now in the board: the carousel's Next arrow was cut on
+its right by the class row's clip, since a skewed control leans past its own box. The board pads the head by the lean.
+The build holds the same with the layout check's cut-control refusal, which the board match at 1440 will now also see.

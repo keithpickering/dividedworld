@@ -517,7 +517,7 @@ const CLASSES = [
 ];
 const miniGrid = (cells, c) => `<div aria-hidden="true" style="display: grid; grid-template-columns: 26px 26px; gap: 4px; margin-top: 12px">${cells.map((x) => `<span style="width: 26px; height: 26px; box-sizing: border-box; display: grid; place-items: center; font: 800 15px 'Barlow Condensed', sans-serif; ${x === '+' ? `background: ${c}; color: #07050d` : x === '-' ? 'border: 1px dashed #ff5c8a; color: #ff5c8a' : `border: 1px ${c === '#a78bfa' ? 'dashed' : 'solid'} rgba(241,236,255,.3)`}">${x === '-' ? '&minus;' : x}</span>`).join('')}</div>`;
 const classCard = ([n, c, cells, earns, hurt], on) => `<label class="cls${on ? ' on' : ''}" style="--c: ${c}"><input type="radio" name="cls"${on ? ' checked' : ''}><h4>${n}</h4>${miniGrid(cells, c)}<p>${earns}</p><p class="hurt">${hurt}</p></label>`;
-const carouselHead = (label, count) => `<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px">
+const carouselHead = (label, count) => `<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; padding-right: 8px">
         <h3 class="sec" style="margin: 0">${label}</h3>
         <div style="display: flex; align-items: center; gap: 10px"><span style="font: 800 22px 'Barlow Condensed', sans-serif; letter-spacing: 2px; color: #c9f8ff">${count}</span><button class="btn" aria-label="Previous" disabled style="min-height: 44px; padding: 0 14px; opacity: .45"><b>&lsaquo;</b></button><button class="btn" aria-label="Next" style="min-height: 44px; padding: 0 14px"><b>&rsaquo;</b></button></div>
       </div>`;
