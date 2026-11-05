@@ -51,9 +51,33 @@
   container-type: inline-size;
 }
 
-/* The head is a PageHead across the top of the three columns, so its title has the page's width and never the left column's. */
+/*
+ * The head is the board's, in the left column: the eyebrow and the title in the machine's yellow, the title at the board's
+ * 78px, capped by the column's width and not only by the text size, so a larger text size never makes a word wider than the
+ * machine beside it. The title stands on the full smoke, as every page's heading does; only the eyebrow is in a calm.
+ */
 .kb-vending-head {
-  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.kb-vending-eyebrow {
+  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
+  margin: 0 0 var(--kb-glass-title-gap);
+  line-height: normal;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 800;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: var(--kb-glass-ready);
+}
+
+.kb-vending-title {
+  margin: 0;
+  font-size: min(4.875rem, 24.4cqw);
+  line-height: 0.95;
+  letter-spacing: 1px;
+  color: var(--kb-glass-ready);
+  text-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-ready) 35%, transparent);
 }
 
 .kb-vending-wallet {
@@ -66,7 +90,7 @@
 }
 
 .kb-vending-wallet-in {
-  padding: 18px 14px;
+  padding: 18px 20px;
 }
 
 .kb-vending-label {
@@ -121,10 +145,42 @@
   color: var(--kb-glass-loss);
 }
 
-/* Your hand: a primary GlassButton, its count after the words. */
+/*
+ * Your hand is the HUD's Hand button as the board draws it (frame.css): the salty piece, skewed, its words upright, the count in
+ * the ink's fill, 170px by 3.25rem.
+ */
+.kb-vending-hand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-start;
+  gap: 12px;
+  min-width: 170px;
+  min-height: 3.25rem;
+  padding: 0 20px;
+  white-space: nowrap;
+  text-decoration: none;
+  background: var(--kb-glass-salty);
+  color: var(--kb-glass-ink-salty);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--kb-glass-salty) 60%, transparent);
+}
+
+.kb-vending-hand-word {
+  font-family: var(--kb-glass-font-display);
+  font-weight: 400;
+  font-size: var(--kb-glass-size-lead);
+  line-height: 1;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
 .kb-vending-hand-count {
-  margin-left: 0.5em;
+  padding: 0 8px;
+  font-size: 1.375rem;
   font-weight: 800;
+  line-height: 1.3;
+  background: var(--kb-glass-ink-salty);
+  color: var(--kb-glass-salty-text);
 }
 
 /* ---- the machine ---- */

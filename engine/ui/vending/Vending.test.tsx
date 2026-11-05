@@ -99,6 +99,20 @@ describe('the machine as the Vending board draws it', () => {
     expect(buy).not.toHaveBeenCalled();
   });
 
+  test('the head is the board\'s yellow column head in the side column, and "Your hand" is a game piece like the HUD\'s Hand button, not a GlassButton', async () => {
+    open(seeded(562));
+    await screen.findByRole('button', { name: 'Buy Stick Around, 1.00 orb, common Cast' });
+    const side = document.querySelector('.kb-vending-side')!;
+    expect(side.querySelector('.kb-vending-head .kb-vending-eyebrow')).toHaveTextContent('Spend Aura');
+    expect(side.querySelector('.kb-vending-head h1.kb-vending-title')).toHaveTextContent('Vending Machine');
+    expect(document.querySelector('.kb-page-head')).toBeNull();
+    expect(document.querySelector('h1')).not.toHaveClass('kb-calm');
+    const hand = screen.getByRole('link', { name: /^Your hand/ });
+    expect(hand).toHaveClass('kb-vending-hand', 'kb-glass-skew');
+    expect(hand).not.toHaveAttribute('data-kb-kind');
+    expect(hand.querySelector('.kb-vending-hand-word.kb-glass-upright')).toHaveTextContent('Your hand');
+  });
+
   test('the wallet panel says solid only, the wallet before and after, and the hand before and after', async () => {
     open(seeded(562));
     await screen.findByRole('button', { name: 'Buy Stick Around, 1.00 orb, common Cast' });

@@ -43,7 +43,6 @@ import type { Id } from '../data/api.ts';
 import { backHref, boardPlace } from '../glass/back.ts';
 import { GlassButton } from '../glass/Button.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
-import { PageHead } from '../glass/PageHead.tsx';
 import { Orbs } from '../orbs/Orbs.tsx';
 import { cascade, CASCADE_BEAT_MS } from '../orbs/fill.ts';
 import { usePlayer } from '../player.tsx';
@@ -304,8 +303,11 @@ export function Vending() {
   return (
     <div className="kb-vending-frame">
     <div className="kb-vending">
-      <div className="kb-vending-head"><PageHead eyebrow="Spend Aura" title="Vending Machine" /></div>
       <aside className="kb-vending-side">
+        <div className="kb-vending-head">
+          <p className="kb-vending-eyebrow kb-calm">Spend Aura</p>
+          <h1 className="kb-vending-title kb-glass-display">Vending Machine</h1>
+        </div>
         <section className="kb-vending-wallet kb-glass-cut-panel" aria-label="Your wallet">
           <div className="kb-vending-wallet-in">
             <p className="kb-vending-label kb-calm">Wallet · solid only</p>
@@ -330,9 +332,10 @@ export function Vending() {
             <p className="kb-vending-fine kb-calm">The ghost estimate can't be spent. What you buy is private: nobody else sees it until you play it.</p>
           </div>
         </section>
-        <GlassButton to={handLink} kind="primary" className="kb-vending-hand">
-          Your hand <span className="kb-vending-hand-count kb-num">{picked && !short ? `${held} → ${held + 1}` : held}</span>
-        </GlassButton>
+        <Link to={handLink} className="kb-vending-hand kb-glass-skew">
+          <span className="kb-vending-hand-word kb-glass-upright">Your hand</span>{' '}
+          <span className="kb-vending-hand-count kb-glass-upright kb-num">{picked && !short ? `${held} → ${held + 1}` : held}</span>
+        </Link>
       </aside>
 
       <Machine
