@@ -162,6 +162,9 @@ red('build.yml names production in a step input', edit(BUILD, (d) => {
 quiet('a shell comment line inside a run string is not a push', edit(BUILD, (d) => {
   Object.values(d.jobs)[0].steps.push({ run: '# git push origin HEAD:production\necho fine' });
 }));
+quiet('a git command whose words include push is not a push', edit(RELEASE, (d) => {
+  d.jobs.report.steps.push({ run: 'git log --oneline push-fix\ngit commit -m "fix push"\ngit checkout -b push/x' });
+}));
 quiet('a comment that mentions production is not a push', {
   ...REAL,
   [BUILD]: `${REAL[BUILD]}\n# git push origin HEAD:production would be wrong here; only release.yml moves production.\n`,

@@ -29,8 +29,11 @@ const CALLED = ['build', 'sql', 'web'];
 const JOBS = ['candidate', 'build', 'sql', 'web', 'promote', 'report'];
 const SHA = '${{ needs.candidate.outputs.sha }}';
 const REF = '${{ inputs.ref }}';
-/** A git command with any options before `push` (`git -C . push`, `git -c k=v push`). */
-const GIT_PUSH = /\bgit\b[^\n;|&]*\bpush\b/;
+/**
+ * `push` as git's subcommand, after any global options (`git -C . push`, `git -c k=v push`), and
+ * never a word later in another command's arguments (`git commit -m "fix push"`).
+ */
+const GIT_PUSH = /\bgit(?:\s+(?:-[Cc]\s+\S+|--?[\w-]+(?:=\S+)?))*\s+push\b/;
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const list = (v) => (v === undefined || v === null ? [] : Array.isArray(v) ? v : [v]);
