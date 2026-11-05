@@ -543,9 +543,12 @@ describe('pinned threads and the banner', () => {
 
   test('a board card played while the page is open is drawn on the banner, heard on reach', async () => {
     const fake = createFake({ instance, now: () => Date.now() });
+    const heard = vi.spyOn(fake, 'subscribeReach');
     const w = world(fake, { threads: 2 });
     renderIn(fake, <BoardScreen slug="general" />, { instance, path: '/b/general' });
     await screen.findByRole('link', { name: 'Thread 002' });
+    /* The page listens from an effect, which can run after the list is on screen: a play sent before it would be heard by no one. */
+    await waitFor(() => expect(heard).toHaveBeenCalled());
     const banner = document.querySelector('.kb-board-banner') as HTMLElement;
     expect(within(banner).queryByRole('button', { name: /^Rumble, 1 play\b/u })).toBeNull();
     const board = (await fake.board('general'))!.id;
@@ -556,9 +559,12 @@ describe('pinned threads and the banner', () => {
 
   test('a board card on another board is not drawn on this banner', async () => {
     const fake = createFake({ instance, now: () => Date.now() });
+    const heard = vi.spyOn(fake, 'subscribeReach');
     const w = world(fake, { threads: 2 });
     renderIn(fake, <BoardScreen slug="general" />, { instance, path: '/b/general' });
     await screen.findByRole('link', { name: 'Thread 002' });
+    /* The page listens from an effect, which can run after the list is on screen: a play sent before it would be heard by no one. */
+    await waitFor(() => expect(heard).toHaveBeenCalled());
     const banner = document.querySelector('.kb-board-banner') as HTMLElement;
     fake.seed.reach(w.spritey, 'board', '99999999-9999-4999-8999-999999999999', 'rumble', { ends: Date.now() + DAY, live: true });
     await new Promise((r) => setTimeout(r, 50));
