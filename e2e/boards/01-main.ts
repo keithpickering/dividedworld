@@ -21,12 +21,22 @@
  * and "React" and "1 of 3 left" on #41 and #42, which are the player's own characters' posts
  * (section 3, the first departure).
  *
- * The thread's type and the postbit are the board's: the two-worlds design decides Verdana and bold
+ * The thread's type and the postbit are the board's in face, weight and color: the two-worlds design decides Verdana and bold
  * Courier New in black and white, and the board how they look (docs/research/2026-10-29-two-worlds/
- * README.md), so the build sets 15px Verdana words, a 22.5px Courier New title, bold Verdana names
- * with the rank under them, and a 12.5px post line in the muted ink (engine/ui/tokens.css).
+ * README.md). The sizes are the board's at 1.25 times (the glass polish, design section 7: the owner's decision after the boards
+ * were drawn, held by `buildSize`), so the build sets 15px Verdana words where the board draws 12px, a 22.5px Courier New title
+ * where it draws 18px, 13.75px nav, crumb and pager where it draws 11px, bold Verdana names with the rank under them, and a
+ * 12.5px post line in the muted ink where it draws 10px (engine/ui/tokens.css). What the larger words move is held by
+ * `buildShift`, as measured.
  */
 import type { BoardManifest, Landmark } from '../board-match.ts';
+
+/** The type scale's sizes, in px, for the words the board draws at 12px (a post) and 10px (its permalink): 1.25 times each. */
+const POST_SIZE = 15;
+const POST_LINE_SIZE = 12.5;
+/** The nav row's, the crumb's and the pager's, drawn at 11px, and the title's, drawn at 18px. */
+const SMALL_SIZE = 13.75;
+const TITLE_SIZE = 22.5;
 
 /** A post's article, its author link, its rank and its permalink, found inside the article. */
 function post(n: number, index: number, author: string, pips: number, rank: string, box: Landmark['box']): Landmark[] {
@@ -42,12 +52,18 @@ function post(n: number, index: number, author: string, pips: number, rank: stri
    */
   const placed = box === 'none' ? undefined : id;
   const inside = box === 'none' ? 'none' : 'position';
+  /*
+   * The type scale (the glass polish, design section 7: the owner's decision, after these boards, to set every board size token at 1.25
+   * times) sets the post's words at 15px where the board draws 12px, and its permalink at 12.5px where the board draws 10px. So the
+   * rank under the author name stands 10.5px lower in the post, and #41's permalink, which sits below the nav, crumb, title and
+   * pager rows the scale made taller, 38.8px lower on the page, as measured.
+   */
   return [
-    { id, role: 'article', name: '', nth: index, buildName: `Post ${n} by ${author}`, buildNth: 0, box: 'none' },
-    { id: `${id}-author`, role: 'link', name: author, within: id, origin: placed, box: inside },
+    { id, role: 'article', name: '', nth: index, buildName: `Post ${n} by ${author}`, buildNth: 0, box: 'none', buildSize: POST_SIZE },
+    { id: `${id}-author`, role: 'link', name: author, within: id, origin: placed, box: inside, buildSize: POST_SIZE },
     /* The rank's name is the postbit's (web Task 5), which says the rank's title where the board says pips. */
-    { id: `${id}-rank`, role: 'img', name: `Rank: ${pips} of 6 pips`, buildName: `Rank ${pips} of 6: ${rank}`, within: id, origin: placed, box: inside, type: false },
-    { id: `${id}-permalink`, role: 'link', name: `#${n}`, buildName: `Permalink to post #${n}`, within: id, box: box === 'none' ? 'none' : 'height' },
+    { id: `${id}-rank`, role: 'img', name: `Rank: ${pips} of 6 pips`, buildName: `Rank ${pips} of 6: ${rank}`, within: id, origin: placed, box: inside, type: false, buildShift: { y: 10.5 } },
+    { id: `${id}-permalink`, role: 'link', name: `#${n}`, buildName: `Permalink to post #${n}`, within: id, box: box === 'none' ? 'none' : 'height', buildSize: POST_LINE_SIZE, buildShift: { y: 38.8 } },
   ];
 }
 
@@ -73,21 +89,21 @@ const manifest: BoardManifest = {
      * So the links row is compared by its y and height, Index by its y and height too (its x is the column's edge), and the links
      * after it from Index, where they sit in the row.
      */
-    { id: 'nav', role: 'navigation', name: 'Main', box: 'height' },
-    { id: 'nav-index', role: 'link', name: 'Index', within: 'nav', box: 'height' },
-    { id: 'nav-general', role: 'link', name: 'General', within: 'nav', origin: 'nav-index', box: 'position' },
-    { id: 'nav-system', role: 'link', name: 'The System', within: 'nav', origin: 'nav-index', box: 'position' },
+    { id: 'nav', role: 'navigation', name: 'Main', box: 'height', buildSize: SMALL_SIZE },
+    { id: 'nav-index', role: 'link', name: 'Index', within: 'nav', box: 'height', buildSize: SMALL_SIZE },
+    { id: 'nav-general', role: 'link', name: 'General', within: 'nav', origin: 'nav-index', box: 'position', buildSize: SMALL_SIZE, buildShift: { x: 12.4 } },
+    { id: 'nav-system', role: 'link', name: 'The System', within: 'nav', origin: 'nav-index', box: 'position', buildSize: SMALL_SIZE, buildShift: { x: 28.2 } },
 
     /*
      * The breadcrumb over the thread's head, by its type: the board's words lead from the instance
      * through the board, and the build's crumb is Index and the title (Thread.tsx).
      */
-    { id: 'crumb', role: 'text', name: 'Divided World » General » who keeps splatting my posts', buildName: 'Index › who keeps splatting my posts', box: 'none' },
+    { id: 'crumb', role: 'text', name: 'Divided World » General » who keeps splatting my posts', buildName: 'Index › who keeps splatting my posts', box: 'none', buildSize: SMALL_SIZE },
 
     /* The thread's head: its type only (section 7). */
-    { id: 'title', role: 'heading', name: 'who keeps splatting my posts', box: 'none' },
-    { id: 'page-1', role: 'link', name: '1', buildName: 'Page 1', box: 'none' },
-    { id: 'jump', role: 'link', name: 'Jump to latest', box: 'none' },
+    { id: 'title', role: 'heading', name: 'who keeps splatting my posts', box: 'none', buildSize: TITLE_SIZE },
+    { id: 'page-1', role: 'link', name: '1', buildName: 'Page 1', box: 'none', buildSize: SMALL_SIZE },
+    { id: 'jump', role: 'link', name: 'Jump to latest', box: 'none', buildSize: SMALL_SIZE },
 
     /*
      * The posts. A card play takes no number and shows as its tag on its post (cards Task 3), so the page holds #41 to #46 and

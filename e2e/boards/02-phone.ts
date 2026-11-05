@@ -18,7 +18,8 @@
  * ("a footer bar similar to the header bar ... that ink color is totally variable too", and "why do we have "Play card" in
  * this row at all anymore? It's a game act so it should be Glass", the footer bar's amendment of 2026-10-31). Nothing of
  * that row is compared, and the thread is not compared here at all.
- * The Boards button is set in the board's 15px words, not at a control's 13.75px (engine/ui/frame/frame.css).
+ * The Boards button is set in the body's 15px words, not at a control's 13.75px (engine/ui/frame/frame.css); the board draws 12px, and the type scale
+ * (the glass polish, design section 7) is the 1.25 times that `buildSize` and `buildShift` hold.
  */
 import type { BoardManifest } from '../board-match.ts';
 
@@ -28,7 +29,8 @@ const manifest: BoardManifest = {
   build: { moment: '02-phone' },
   press: [{ role: 'button', name: 'Hand, 3 postcards' }],
   landmarks: [
-    { id: 'boards', role: 'button', name: 'Boards' },
+    /* The type scale (the glass polish, design section 7) sets the button's words at 15px where the board draws 12px, so it is 10.4px wider and, held to the right edge, 18.2px further left. */
+    { id: 'boards', role: 'button', name: 'Boards', buildSize: 15, buildShift: { x: -18.2, width: 10.4 } },
     /* The sheet's box, its heading with the count, and its close button. */
     { id: 'hand', role: 'region', name: 'Your hand', type: false },
     { id: 'hand-head', role: 'heading', name: 'Hand · 3', within: 'hand' },
