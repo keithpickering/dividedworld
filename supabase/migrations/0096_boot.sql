@@ -11,6 +11,8 @@
 -- a signed-out load reads settings() alone, as today.
 --
 -- `unread` is 0 for a caller with no account, whom my_alerts_unread() refuses.
+-- Settlements are applied one window after another, each starting where the last ended, so the newest id is the newest end: the
+-- newest one holding a line of hers is one ledger_account (account, settlement) probe, not a sort of her whole ledger.
 -- `boards` is index_page's boards piece, computed the way the adapter's boards() reads it: boards_now in creation order, each with
 -- board_counts' threads and its newest listed thread by the (board, last_at) index, one index probe a board.
 -- `newestSettlement` is the end of the newest settlement the caller has ledger lines in, as log() reads its first settlement;
@@ -38,14 +40,14 @@ begin atomic
     'boards', coalesce((
       select jsonb_agg(jsonb_build_object(
         'id', b.id, 'slug', b.slug, 'name', b.name, 'description', b.description, 'is_system', b.is_system, 'move_act', b.move_act,
-        'threads', coalesce(bc.threads, 0), 'last_at', l.last_at, 'last_character', l.last_character, 'last_thread', l.id) order by b.created_at)
+        'thread_count', coalesce(bc.threads, 0), 'last_at', l.last_at, 'last_character', l.last_character, 'last_thread', l.id) order by b.created_at, b.id)
       from boards_now b
       left join board_counts bc on bc.board = b.id
       left join lateral (select t.id, t.last_at, t.last_character from thread_list t where t.board = b.id order by t.last_at desc limit 1) l on true), '[]'::jsonb),
     'unread', case when whoami() is null then 0 else my_alerts_unread() end,
     'nextSettlementAt', next_settlement_at(),
     'lastSettledAt', (select s.ends_at from settlements s order by s.ends_at desc limit 1),
-    'newestSettlement', (select l.ends_at from my_ledger l order by l.ends_at desc limit 1)
+    'newestSettlement', (select s.ends_at from settlements s where s.id = (select max(l.settlement) from my_ledger l))
   );
 end;
 

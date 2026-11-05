@@ -62,12 +62,13 @@ begin
   -- Each board carries its count and its newest listed thread, as the adapter reads them one board at a time.
   if exists (
     select 1 from jsonb_array_elements(got -> 'boards') x
-    where (x ->> 'threads')::integer is distinct from coalesce((select c.threads from board_counts c where c.board = (x ->> 'id')::uuid), 0)
+    where (x ->> 'thread_count')::integer is distinct from coalesce((select c.threads from board_counts c where c.board = (x ->> 'id')::uuid), 0)
        or x ->> 'last_thread' is distinct from (select l.id::text from thread_list l where l.board = (x ->> 'id')::uuid order by l.last_at desc limit 1)
        or x ->> 'last_character' is distinct from (select l.last_character::text from thread_list l where l.board = (x ->> 'id')::uuid order by l.last_at desc limit 1)
   ) then
     raise exception 'a board carries its count and its newest thread: %', got -> 'boards';
   end if;
+  if got -> 'boards' is distinct from index_page() -> 'boards' then raise exception 'boot boards are index_page boards: % vs %', got -> 'boards', index_page() -> 'boards'; end if;
   -- She has no ledger lines, so no settlement of hers is the newest one.
   if got -> 'newestSettlement' is distinct from 'null'::jsonb then raise exception 'newestSettlement: %', got -> 'newestSettlement'; end if;
   perform tests.unbecome();
@@ -77,7 +78,7 @@ begin
   got := boot();
   if got -> 'preferences' is distinct from 'null'::jsonb then raise exception 'no row, no preferences: %', got -> 'preferences'; end if;
   if jsonb_array_length(got -> 'characters') is distinct from 1 or got #>> '{characters,0,name}' is distinct from 'Bt Bobs' then raise exception 'Bob reads his one character: %', got -> 'characters'; end if;
-  if got::text like '%Bt Zed%' and not exists (select 1 from jsonb_array_elements(got -> 'faces') f where f ->> 'name' = 'Bt Zed') then null; end if;
+  if got::text like '%Bt Zed%' or jsonb_array_length(got -> 'faces') is distinct from 1 then raise exception 'Bob''s boot holds one face and none of Ann''s: %', got -> 'faces'; end if;
   if jsonb_array_length(got -> 'cards') is distinct from 0 then raise exception 'Bob holds no card: %', got -> 'cards'; end if;
   perform tests.unbecome();
 
@@ -94,4 +95,16 @@ begin
   why := pg_temp.refusal('select boot()');
   perform tests.unbecome();
   if why is null or why not like '42501%' then raise exception 'anon must be refused boot(), got %', why; end if;
+  -- Lines in two settlements: the newer one's end is the newest settlement of hers, whichever line was written last.
+  declare
+    s1 bigint; s2 bigint; e2 timestamptz := date_trunc('second', now() + interval '2001 days');
+  begin
+    insert into settlements (starts_at, ends_at, season) values (now() + interval '1999 days', now() + interval '2000 days', (select id from seasons order by starts_at limit 1)) returning id into s1;
+    insert into settlements (starts_at, ends_at, season) values (now() + interval '2000 days', e2, (select id from seasons order by starts_at limit 1)) returning id into s2;
+    insert into ledger (settlement, account, character, reason, amount) values (s2, ann, a1, 'post.liked', 3), (s1, ann, a1, 'post.liked', 2);
+    perform tests.become(ann);
+    got := boot();
+    perform tests.unbecome();
+    if (got ->> 'newestSettlement')::timestamptz is distinct from e2 then raise exception 'the newest settlement of hers: % wanted %', got -> 'newestSettlement', e2; end if;
+  end;
 end $$;
