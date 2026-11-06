@@ -31,7 +31,7 @@ once the provider knows. Red today: two calls.
 
 Model: sonnet
 
-**Files:** `supabase/migrations/0092_presence_box.sql` (new), `supabase/tests/0094-presence-box.sql` (new),
+**Files:** `supabase/migrations/0093_presence_box.sql` (new), `supabase/tests/0095-presence-box.sql` (new),
 `supabase/tests/0005-default-deny.sql` (`callable`).
 
 `presence_box(in_kind text, in_place uuid) returns jsonb`, `language plpgsql stable security definer set search_path =
@@ -72,7 +72,7 @@ real check passes; Tasks 4 to 7 add functions it then holds.
 
 Model: sonnet
 
-**Files:** `supabase/migrations/0093_thread_page.sql` (new), `supabase/tests/0095-thread-page.sql` (new),
+**Files:** `supabase/migrations/0094_thread_page.sql` (new), `supabase/tests/0096-thread-page.sql` (new),
 `supabase/tests/0005-default-deny.sql`.
 
 `thread_page(in_thread uuid, in_page integer, in_seq integer, per_page integer, effect_cards text[]) returns jsonb`, `language sql stable
@@ -111,7 +111,7 @@ function.
 
 Model: sonnet
 
-**Files:** `supabase/migrations/0094_board_index_pages.sql` (new), `supabase/tests/0096-board-index-pages.sql` (new),
+**Files:** `supabase/migrations/0095_board_index_pages.sql` (new), `supabase/tests/0097-board-index-pages.sql` (new),
 `supabase/tests/0005-default-deny.sql`.
 
 `board_page(in_slug text, in_page integer, effect_cards text[]) returns jsonb`: null when `boards_now` has no such slug
@@ -133,7 +133,7 @@ refused; the guard passes. Red: no such functions.
 
 Model: sonnet
 
-**Files:** `supabase/migrations/0095_profile_record_pages.sql` (new), `supabase/tests/0097-profile-record-pages.sql`
+**Files:** `supabase/migrations/0096_profile_record_pages.sql` (new), `supabase/tests/0098-profile-record-pages.sql`
 (new), `supabase/tests/0005-default-deny.sql`.
 
 `profile_page(in_character uuid) returns jsonb`: null when `characters_public` does not show the character; otherwise
@@ -154,7 +154,7 @@ Red: no such functions.
 
 Model: sonnet
 
-**Files:** `supabase/migrations/0096_boot.sql` (new), `supabase/tests/0098-boot.sql` (new),
+**Files:** `supabase/migrations/0097_boot.sql` (new), `supabase/tests/0099-boot.sql` (new),
 `supabase/tests/0005-default-deny.sql`.
 
 `boot() returns jsonb`: `settings` (`screen_settings.settings`), `account` (`whoami()`), `preferences` (the caller's

@@ -11,7 +11,7 @@
  * It renders nothing until its first answer, or once its polls have stopped answering.
  */
 import { useId, type ReactNode } from 'react';
-import type { PresencePlace } from '../data/api.ts';
+import type { Presence, PresencePlace } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
 import { useKayfa } from '../context.tsx';
 import { StaffGroup } from '../postbit/StaffBadge.tsx';
@@ -25,12 +25,14 @@ export interface PresenceBoxProps {
   readonly heading: string;
   /** A small muted line under the names ("Characters active in the past 5 minutes"). */
   readonly note?: string;
+  /** The page document's copy of the box, shown at once with the reader's mask added, until the heartbeat's first answer replaces it. */
+  readonly snapshot?: Presence;
 }
 
 const profile = (id: string) => `/c/${encodeURIComponent(id)}`;
 
-export function PresenceBox({ place, heading, note }: PresenceBoxProps) {
-  const presence = usePresence(place);
+export function PresenceBox({ place, heading, note, snapshot }: PresenceBoxProps) {
+  const presence = usePresence(place, snapshot);
   const player = usePlayer();
   const { settings } = useKayfa();
   const id = useId();

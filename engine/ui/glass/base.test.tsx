@@ -60,8 +60,24 @@ describe('the cuts', () => {
   }
 
   it('a cut is the third chamfer step unless the component sets another, and the inner cut allows for the border', () => {
-    expect(decl('.kb-glass-cut-panel', '--kb-cut')).toBe('var(--kb-glass-chamfer-3)');
+    expect(squash(css)).toContain(':where(.kb-glass-cut-panel, .kb-glass-cut-dialog, .kb-glass-cut-button) { --kb-cut: var(--kb-glass-chamfer-3);');
     expect(decl('.kb-glass-cut-panel', '--kb-cut-in')).toBe('calc(var(--kb-cut) - var(--kb-border) * 0.5858)');
+  });
+
+  /*
+   * The overlay and the screens load their stylesheets on first use (web/src/App.tsx), so base.css may come after a piece's own: a
+   * piece's size, edge color or ground (the dialog's ::after, shell.css) then lost to the default by order alone, and the React
+   * picker drew the 82% panel where its ground is solid. The defaults sit at no specificity, so any piece's rule outranks them.
+   */
+  it('the size and colors a piece sets are set by base.css only at no specificity', () => {
+    const owned = /^(?:--kb-cut|--kb-border|background(?:-color)?)\s*:/u;
+    const loud = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      /* A bare cut class (or its ::after) is one class, a piece's own rule's weight, so order alone decides between them; a state (the
+         cut button's hover) outranks a piece's rule in any order. */
+      .filter((m) => m[1]!.split(',').map(squash).every((sel) => /^\.kb-glass-cut-(?:panel|dialog|button)(?:::after)?$/u.test(sel)))
+      /* Forced colors' system colors are meant to outrank every piece, and say so with !important. */
+      .flatMap((m) => m[2]!.split(';').map(squash).filter((d) => owned.test(d) && !d.includes('!important')).map((d) => `${squash(m[1]!)} { ${d} }`));
+    expect(loud).toEqual([]);
   });
 
   it('the old ad hoc shapes are gone', () => {

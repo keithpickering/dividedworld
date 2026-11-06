@@ -8,6 +8,7 @@ import type { Act, ThreadListener } from '../data/api.ts';
 import { renderIn, testInstance } from '../test-world.tsx';
 import type { CardUi, EffectProps } from '../cards/types.ts';
 import { ThreadScreen } from '../thread/Thread.tsx';
+import { LoadedThread } from '../loaded.tsx';
 
 beforeEach(() => {
   localStorage.clear();
@@ -122,7 +123,7 @@ async function spinFrom(w: ReturnType<typeof threadWorld>, origin: string, title
   return made.value.thread.id;
 }
 const openSpun = (w: ReturnType<typeof threadWorld>, thread: string) =>
-  renderIn(w.fake, <ThreadScreen thread={thread} />, { path: `/t/${thread}` });
+  renderIn(w.fake, <LoadedThread thread={thread} />, { path: `/t/${thread}` });
 /** The marks in the ORIGIN box, in the order they are drawn: each card and how many plays of it. */
 const marks = (box: HTMLElement) => [...box.querySelectorAll('.kb-mark[data-kb-card]')].map((el) => `${el.getAttribute('data-kb-card')}:${el.getAttribute('data-kb-plays')}`);
 const origin = () => screen.findByRole('group', { name: 'Origin' });
@@ -166,10 +167,11 @@ describe('the ORIGIN box', () => {
     const w = threadWorld(3);
     for (let i = 0; i < 22; i++) w.fake.seed.card(w.zed, w.ids[1]!, 'whoops', { message: `play ${i}` });
     const spun = await spinFrom(w, w.ids[1]!);
-    const real = w.fake.thread.bind(w.fake);
-    vi.spyOn(w.fake, 'thread').mockImplementation(async (id) => {
-      const got = await real(id);
-      return id === spun && got ? { ...got, origin: null } : got;
+    /* The page's document carries the thread's summary: its origin has no place. */
+    const real = w.fake.threadPage.bind(w.fake);
+    vi.spyOn(w.fake, 'threadPage').mockImplementation(async (id, ...rest) => {
+      const got = await real(id, ...rest);
+      return id === spun && got ? { ...got, thread: { ...got.thread, origin: null } } : got;
     });
     openSpun(w, spun);
     const box = await origin();
@@ -202,10 +204,10 @@ describe('the ORIGIN box', () => {
     const w = threadWorld(3);
     const card = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
     const spun = await spinFrom(w, card, 'About that card');
-    const real = w.fake.thread.bind(w.fake);
-    vi.spyOn(w.fake, 'thread').mockImplementation(async (id) => {
-      const got = await real(id);
-      return id === spun && got ? { ...got, origin: { kind: 'play', card: 'whoops', on: null } } : got;
+    const real = w.fake.threadPage.bind(w.fake);
+    vi.spyOn(w.fake, 'threadPage').mockImplementation(async (id, ...rest) => {
+      const got = await real(id, ...rest);
+      return id === spun && got ? { ...got, thread: { ...got.thread, origin: { kind: 'play', card: 'whoops', on: null } } } : got;
     });
     openSpun(w, spun);
     const box = await origin();
@@ -266,7 +268,7 @@ describe('the ORIGIN box', () => {
     const w = threadWorld(3);
     const played = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
     const spun = await spinFrom(w, w.ids[1]!);
-    renderIn(w.fake, <ThreadScreen thread={spun} />, {
+    renderIn(w.fake, <LoadedThread thread={spun} />, {
       path: `/t/${spun}`,
       cards: [{
         key: 'whoops', art: { color: '#000000', ink: '#ffffff' }, describe: () => 'x',
@@ -284,7 +286,7 @@ describe('the ORIGIN box', () => {
     const w = threadWorld(3);
     w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
     const spun = await spinFrom(w, w.ids[1]!);
-    renderIn(w.fake, <ThreadScreen thread={spun} />, {
+    renderIn(w.fake, <LoadedThread thread={spun} />, {
       path: `/t/${spun}`,
       cards: [{
         key: 'whoops', art: { color: '#000000', ink: '#ffffff' }, describe: () => 'x',
@@ -559,7 +561,7 @@ describe('the ORIGIN box of a play-spun thread', () => {
     return { w, wash, hold, spun };
   }
   const openWith = (w: ReturnType<typeof threadWorld>, thread: string) =>
-    renderIn(w.fake, <ThreadScreen thread={thread} />, { path: `/t/${thread}`, instance: momentInstance, cards: momentCards });
+    renderIn(w.fake, <LoadedThread thread={thread} />, { path: `/t/${thread}`, instance: momentInstance, cards: momentCards });
 
   test('draws the play\'s moment under its mark: the Whoops! still at its 40%, and Stick Around named', async () => {
     const { w, spun } = await spunFromHold();
@@ -642,7 +644,7 @@ describe('after a spin', () => {
     /* The address decides which thread is open, as the app's routes do. */
     function Routed() {
       const { path } = useLocation();
-      return <><ThreadScreen thread={path.slice('/t/'.length)} /><Swapper /></>;
+      return <><LoadedThread thread={path.slice('/t/'.length)} /><Swapper /></>;
     }
     renderIn(w.fake, <Routed />, { path: `/t/${w.thread}` });
     const article = await screen.findByRole('article', { name: /^Post 2 /u });
@@ -704,7 +706,7 @@ describe('after a spin', () => {
 });
 
 describe('Spun into', () => {
-  test('lists under an origin the threads spun from it, with their reply counts, from one read for the page', async () => {
+  test('lists under an origin the threads spun from it, with their reply counts, from the page\'s document', async () => {
     const w = threadWorld(3);
     const first = await spinFrom(w, w.ids[1]!, 'Crimson Incident');
     await spinFrom(w, w.ids[1]!, 'Is Pipewrench a Heel?');
@@ -718,7 +720,7 @@ describe('Spun into', () => {
     /* Lifted over a card's ink, and marked so that an effect starts no stroke on it (the Whoops! refinements design's section 5). */
     expect(line.closest('p')).toHaveAttribute('data-kb-over-ink');
     expect(within(article).getByRole('link', { name: 'Crimson Incident' })).toHaveAttribute('href', `/t/${first}`);
-    expect(many).toHaveBeenCalledTimes(1);
+    expect(many).not.toHaveBeenCalled();
     expect(one).not.toHaveBeenCalled();
     expect(within(await screen.findByRole('article', { name: /^Post 3 /u })).queryByText(/Spun into/u)).toBeNull();
   });
@@ -735,7 +737,7 @@ describe('Spun into', () => {
     const more = within(line).getByRole('button', { name: 'Show the other 2 threads spun from this Act' });
     expect(more).toHaveTextContent('and 2 more');
     expect(one).not.toHaveBeenCalled();
-    expect(many).toHaveBeenCalledWith(expect.any(Array), 400);
+    expect(many).not.toHaveBeenCalled();
     await userEvent.click(more);
     await waitFor(() => expect(within(line).getAllByRole('link')).toHaveLength(7));
     expect(one).toHaveBeenCalledTimes(1);

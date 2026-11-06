@@ -13,6 +13,7 @@ import { Frame } from '../frame/Frame.tsx';
 import { renderIn, testInstance } from '../test-world.tsx';
 import type { CardUi } from '../cards/types.ts';
 import { ThreadScreen } from './Thread.tsx';
+import { LoadedThread } from '../loaded.tsx';
 
 const base = { priceKey: 'test.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c) };
 const reaching = (key: string, name: string, rarity: CardRules['rarity'], reaches: CardRules['reaches']): CardRules => ({
@@ -42,7 +43,7 @@ async function open(withCards = false) {
   const elsewhere = fake.seed.thread('general', spritey, 'Somewhere else', 'a post over there');
   const gloombaThere = fake.seed.post(elsewhere.thread, gloomba, 'gloomba over there');
   fake.signInAs(me);
-  renderIn(fake, <Frame><ThreadScreen thread={here.thread} /></Frame>, { path: `/t/${here.thread}`, instance, ...(withCards ? { cards } : {}) });
+  renderIn(fake, <Frame><LoadedThread thread={here.thread} /></Frame>, { path: `/t/${here.thread}`, instance, ...(withCards ? { cards } : {}) });
   await screen.findByRole('article', { name: /^Post 1 /u });
   return { fake, me, spritey, gloomba, here, elsewhere, gloombaThere };
 }

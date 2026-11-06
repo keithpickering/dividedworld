@@ -4,18 +4,15 @@
  * Acts (posts, spins, card plays); its reveals and announced Turns are the "Class statements"
  * filter and its past seasons' reveal posts the "Seasons" filter, short lists read whole and paged here. Out of character and plain.
  */
-import { useEffect, useState } from 'react';
+import { useMemo } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { Act, ActKind, CharacterCounts, Id } from '../data/api.ts';
-import { Ago, PageLinks, useSignedIn } from '../mini.tsx';
+import type { ActKind, CharacterCounts, Id, RecordPage } from '../data/api.ts';
+import { Ago, PageLinks } from '../mini.tsx';
 import { FrontDoor } from '../front-door/FrontDoor.tsx';
-import { Link, useLocation } from '../router.tsx';
-import { RECORD_KINDS, RECORD_LABELS, RECORD_PAGE, SEASONS_SHOWN, actRow, mergeWindow, newest, playLinks, recordKind, revealRow, seasonRow, turnLinks, turnRow, type RecordKind, type RecordRow, type Words } from './record.ts';
-import { useCharacter } from './useCharacter.ts';
+import { Link } from '../router.tsx';
+import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
+import { RECORD_KINDS, RECORD_LABELS, RECORD_PAGE, SEASONS_SHOWN, actRow, mergeWindow, newest, playLinksFrom, revealRow, seasonRow, turnLinksFrom, turnRow, type RecordKind, type RecordRow, type Words } from './record.ts';
 import './profile.css';
-
-/** A page number past any real record is read as this one: an offset the server answers plainly. */
-const MAX_PAGE = 10_000;
 
 export const recordHref = (id: Id, kind: RecordKind, page = 1): string => {
   const q = new URLSearchParams();
@@ -25,63 +22,42 @@ export const recordHref = (id: Id, kind: RecordKind, page = 1): string => {
   return `/c/${id}/record${s ? `?${s}` : ''}`;
 };
 
-const KINDS: Readonly<Record<Exclude<RecordKind, 'class' | 'seasons'>, readonly ActKind[]>> = { all: ['post', 'spin', 'card'], post: ['post'], spin: ['spin'], card: ['card'] };
+/** The rows of a record page and how many the kind has, from its document: the extras (reveals, Turns, seasons) merged with the window of Acts the server read. */
+function rowsOfPage(doc: RecordPage, words: Words): { readonly rows: readonly RecordRow[]; readonly total: number } {
+  const { kind, page, windowFrom } = doc;
+  const offset = (page - 1) * RECORD_PAGE;
+  const links = turnLinksFrom(doc.targets, words.perPage);
+  const plays = playLinksFrom(doc.targets, doc.acts, words.perPage);
+  /* A kind's total is the character's counters, one row, never a count of its Acts. */
+  const totalOf = (counts: CharacterCounts) => (kind === 'all' ? counts.posts + counts.spins + counts.cards : kind === 'post' ? counts.posts : kind === 'spin' ? counts.spins : counts.cards);
+  const paged = (all: readonly RecordRow[]) => ({ rows: all.slice(offset, offset + RECORD_PAGE), total: all.length });
+  const reveals = doc.reveals.map((x) => revealRow(x, words));
+  const turns = doc.turns.map((x) => turnRow(x, words, links));
+  if (kind === 'class') return paged(newest([...reveals, ...turns]));
+  if (kind === 'seasons') return paged(doc.seasons.slice(0, SEASONS_SHOWN).map((a) => seasonRow(a, words)));
+  const acts = doc.acts.map((a) => actRow(a, words, plays));
+  if (kind === 'all') {
+    const more = newest([...reveals, ...turns, ...doc.seasons.map((a) => seasonRow(a, words))]);
+    return { rows: mergeWindow(more, acts, windowFrom, offset, RECORD_PAGE), total: totalOf(doc.counts) + more.length };
+  }
+  return { rows: acts, total: totalOf(doc.counts) };
+}
 
-type Loaded = { readonly status: 'loading' } | { readonly status: 'failed' } | { readonly status: 'ready'; readonly rows: readonly RecordRow[]; readonly total: number };
+/** The record draws its document (the forum-load plan, Task 13): whole on the first frame; a page or a kind is another document, reached by a navigation. Signed out, the marker is the front door. */
+export function RecordScreen({ id, doc }: { readonly id: Id; readonly doc: ScreenDoc<RecordPage> }) {
+  if (isSignedOutDoc(doc)) return <FrontDoor />;
+  return <Record id={id} doc={doc} />;
+}
 
-export function RecordScreen({ id }: { readonly id: Id }) {
-  const { api, instance, settings } = useKayfa();
-  const signedIn = useSignedIn(api);
-  const { query } = useLocation();
-  const kind = recordKind(query.get('kind'));
-  const page = Math.min(MAX_PAGE, Math.max(1, Number.parseInt(query.get('page') ?? '', 10) || 1));
-  const found = useCharacter(api, id);
-  const [loaded, setLoaded] = useState<Loaded>({ status: 'loading' });
-
-  useEffect(() => {
-    if (found.status !== 'ready') return;
-    let live = true;
-    setLoaded({ status: 'loading' });
-    const words: Words = {
-      className: (k) => instance.classes.find((c) => c.key === k)?.name ?? k,
-      cardName: (k) => instance.cards.find((c) => c.key === k)?.name ?? (k || 'a card'),
-      perPage: settings.postsPerPage,
-    };
-    const offset = (page - 1) * RECORD_PAGE;
-    /* A kind's total is the character's counters, one row, never a count of its Acts. */
-    const totalOf = (counts: CharacterCounts) => (kind === 'all' ? counts.posts + counts.spins + counts.cards : kind === 'post' ? counts.posts : kind === 'spin' ? counts.spins : counts.cards);
-    const paged = (all: readonly RecordRow[]) => ({ rows: all.slice(offset, offset + RECORD_PAGE), total: all.length });
-    /* The reveals, announced Turns and past seasons: short lists, read whole. The tallies' places come with a second, batched read. */
-    const extras = async (): Promise<RecordRow[]> => {
-      const [r, t, seasons] = await Promise.all([api.classReveals([id]), api.turnsAnnounced([id]), api.characterReveals(id)]);
-      const links = await turnLinks(api, t, words.perPage);
-      return newest([...r.map((x) => revealRow(x, words)), ...t.map((x) => turnRow(x, words, links)), ...seasons.map((a) => seasonRow(a, words))]);
-    };
-    /* Each card play's row links to its target post, placed with one batched read per page of rows. */
-    const rowsOf = async (acts: readonly Act[]) => { const plays = await playLinks(api, acts, words.perPage); return acts.map((a) => actRow(a, words, plays)); };
-    const read = kind === 'class'
-      ? Promise.all([api.classReveals([id]), api.turnsAnnounced([id])]).then(async ([r, t]) => {
-        const links = await turnLinks(api, t, words.perPage);
-        return paged(newest([...r.map((x) => revealRow(x, words)), ...t.map((x) => turnRow(x, words, links))]));
-      })
-      : kind === 'seasons'
-        ? api.characterReveals(id, SEASONS_SHOWN).then((list) => paged(list.map((a) => seasonRow(a, words))))
-        : kind === 'all'
-          ? Promise.all([extras(), api.characterCounts(id)]).then(async ([more, counts]) => {
-            const from = Math.max(0, offset - more.length);
-            const acts = await api.characterActs(id, KINDS.all, { offset: from, limit: offset + RECORD_PAGE - from });
-            return { rows: mergeWindow(more, await rowsOf(acts), from, offset, RECORD_PAGE), total: totalOf(counts) + more.length };
-          })
-          : Promise.all([api.characterActs(id, KINDS[kind], { offset, limit: RECORD_PAGE }), api.characterCounts(id)]).then(async ([acts, counts]) => ({ rows: await rowsOf(acts), total: totalOf(counts) }));
-    read.then((r) => { if (live) setLoaded({ status: 'ready', ...r }); }, () => { if (live) setLoaded({ status: 'failed' }); });
-    return () => { live = false; };
-  }, [api, id, kind, page, found.status, instance, settings.postsPerPage]);
-
-  if (signedIn === null || found.status === 'loading') return <div className="kb-record" aria-busy="true" />;
-  if (!signedIn) return <FrontDoor />;
-  if (found.status === 'failed') return <div className="kb-record"><p className="kb-notice" data-kb-tone="refusal">The record could not be loaded. Reload the page to try again.</p></div>;
-  if (found.status === 'missing') return <NotFound />;
-  const name = found.character.name;
+function Record({ id, doc }: { readonly id: Id; readonly doc: RecordPage }) {
+  const { instance, settings } = useKayfa();
+  const { kind, page } = doc;
+  const loaded = useMemo(() => rowsOfPage(doc, {
+    className: (k) => instance.classes.find((c) => c.key === k)?.name ?? k,
+    cardName: (k) => instance.cards.find((c) => c.key === k)?.name ?? (k || 'a card'),
+    perPage: settings.postsPerPage,
+  }), [doc, instance, settings.postsPerPage]);
+  const name = doc.character.name;
   return (
     <div className="kb-record">
       <p className="kb-crumb"><Link to="/">Index</Link> › <Link to={`/c/${id}`}>{name}</Link> › Public record</p>
@@ -91,11 +67,9 @@ export function RecordScreen({ id }: { readonly id: Id }) {
           ? <span key={k} className="kb-record-kind" aria-current="true">{RECORD_LABELS[k]}</span>
           : <Link key={k} className="kb-record-kind" to={recordHref(id, k)}>{RECORD_LABELS[k]}</Link>))}
       </nav>
-      {loaded.status === 'failed' && <p className="kb-notice" data-kb-tone="refusal">The record could not be loaded. Reload the page to try again.</p>}
-      {loaded.status === 'loading' && <p className="kb-muted" aria-busy="true">Loading…</p>}
       {kind === 'seasons' && <p className="kb-small kb-muted">The latest {SEASONS_SHOWN} season reveal posts.</p>}
       {kind === 'all' && <p className="kb-small kb-muted">Its Acts with its reveals, announced Turns and season reveal posts, newest first.</p>}
-      {loaded.status === 'ready' && <Rows id={id} kind={kind} page={page} rows={loaded.rows} total={loaded.total} />}
+      <Rows id={id} kind={kind} page={page} rows={loaded.rows} total={loaded.total} />
     </div>
   );
 }
@@ -122,14 +96,5 @@ function Rows({ id, kind, page, rows, total }: { readonly id: Id; readonly kind:
         )}
       <PageLinks label="Pages of the record" page={page} pages={pages} href={(p) => recordHref(id, kind, p)} />
     </>
-  );
-}
-
-export function NotFound() {
-  return (
-    <div className="kb-record">
-      <h1 className="kb-heading">No such character</h1>
-      <p>There is no character at this address. <Link to="/">Back to the index</Link>.</p>
-    </div>
   );
 }

@@ -1,9 +1,10 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
-import { buildWorld, renderIn } from '../test-world.tsx';
+import { buildWorld, holdReads, renderIn } from '../test-world.tsx';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { ProfileScreen } from './Profile.tsx';
+import { LoadedProfile } from '../loaded.tsx';
 
 const DAY = 86_400_000;
 const T0 = Date.UTC(2026, 9, 1, 12);
@@ -26,7 +27,7 @@ function world(fake: Fake) {
   return { me, other, spritey, pipe, waiting, thread, act };
 }
 
-const open = (id: string, w?: Fake) => (w ? renderIn(w, <ProfileScreen id={id} />, { path: `/c/${id}` }) : null);
+const open = (id: string, w?: Fake) => (w ? renderIn(w, <LoadedProfile id={id} />, { path: `/c/${id}` }) : null);
 
 describe('the public profile', () => {
   test('its facts: name, title, rank, exact standing and when it settled, place, counts, month joined, signature', async () => {
@@ -67,12 +68,13 @@ describe('the public profile', () => {
     await waitFor(() => expect(facts).toHaveTextContent('Nothing has settled for it yet'));
   });
 
-  test('a character that is waiting to debut, and one that does not exist, are the same page: not found', async () => {
+  test('a character that is waiting to debut, and one that does not exist, are the same page: the router\'s "cannot be found"', async () => {
     const fake = buildWorld();
     const w = world(fake);
     open(w.waiting, fake);
-    expect(await screen.findByRole('heading', { level: 1, name: 'No such character' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Back to the index' })).toHaveAttribute('href', '/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'The page cannot be found' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'index' })).toHaveAttribute('href', '/');
+    expect(await fake.profilePage(w.waiting)).toBeNull();
   });
 
   test('a signed-out visitor sees the front door', async () => {
@@ -208,23 +210,32 @@ describe('past seasons, announced Turns and the size of the season', () => {
     expect(link).toHaveAttribute('href', `/t/${w.sys}?page=1#post-2`);
   });
 
-  test('the profile reads these once, never once per row', async () => {
+  test('the profile is one profilePage read, and none of the reads it replaces', async () => {
     const fake = buildWorld();
     const w = withReveals(fake);
-    const by = vi.spyOn(fake, 'actsById');
-    const rv = vi.spyOn(fake, 'characterReveals');
-    const place = vi.spyOn(fake, 'standingPlace');
-    const latest = vi.spyOn(fake, 'characterActs');
-    const ranked = vi.spyOn(fake, 'standingsPage');
-    const size = vi.spyOn(fake, 'standingsCount');
+    const page = vi.spyOn(fake, 'profilePage');
+    const names = ['actsById', 'characterReveals', 'standingPlace', 'characterActs', 'standingsPage', 'standingsCount', 'characterCounts', 'classReveals', 'turnsAnnounced', 'characters', 'lastSettledAt', 'season'] as const;
+    const spies = names.map((n) => [n, vi.spyOn(fake, n)] as const);
     open(w.pipe, fake);
     await screen.findByRole('link', { name: 'Announced a Turn' });
-    expect(by).toHaveBeenCalledTimes(1);
-    expect(rv).toHaveBeenCalledTimes(1);
-    /* A profile's place is one call that counts index ranges: it never ranks the season or counts its characters. */
-    expect(place).toHaveBeenCalledTimes(1);
-    expect(latest).toHaveBeenCalledTimes(1);
-    expect(ranked).not.toHaveBeenCalled();
-    expect(size).not.toHaveBeenCalled();
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(spies.map(([n, spy]) => [n, spy.mock.calls.length])).toEqual(names.map((n) => [n, 0]));
   });
+
+  test('its whole page is in the first render, from the document, and nothing is read for it', async () => {
+    const fake = buildWorld();
+    const w = world(fake);
+    const boot = await fake.boot();
+    const doc = (await fake.profilePage(w.spritey))!;
+    const read = holdReads(fake, ['session']);
+    renderIn(fake, <ProfileScreen id={w.spritey} doc={doc} />, { path: `/c/${w.spritey}`, boot });
+    const facts = screen.getByRole('region', { name: 'About Spritey' });
+    expect(facts).toHaveTextContent('Midcarder');
+    expect(facts).toHaveTextContent('Posts: 5');
+    expect(screen.getByRole('region', { name: 'Public record' })).toHaveTextContent('Posted:');
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+    expect(read).toEqual([]);
+  });
+
 });

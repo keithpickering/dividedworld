@@ -95,7 +95,7 @@ describe('My characters', () => {
     expect(within(row('Pipewrench')).getByRole('link', { name: 'Edit profile' })).toHaveAttribute('href', '/characters/edit');
     await userEvent.click(within(row('Mrs. Hooligan')).getByRole('link', { name: 'Edit profile' }));
     expect(window.location.pathname + window.location.search + window.location.hash).toBe('/characters/edit');
-    expect(window.history.state).toEqual({ character: w.hoolie });
+    expect((window.history.state as { state: unknown }).state).toEqual({ character: w.hoolie });
   });
 
   test('a character\'s log opens My log on its tab, carried in history.state as Edit profile is, never in the address', async () => {
@@ -106,7 +106,7 @@ describe('My characters', () => {
     expect(link).toHaveAttribute('href', '/log');
     await userEvent.click(link);
     expect(window.location.pathname + window.location.search + window.location.hash).toBe('/log');
-    expect(window.history.state).toEqual({ character: w.hoolie });
+    expect((window.history.state as { state: unknown }).state).toEqual({ character: w.hoolie });
   });
 
   test('says when a Turn opens instead of offering it, and why', async () => {

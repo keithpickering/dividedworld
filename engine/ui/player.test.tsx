@@ -329,3 +329,23 @@ describe('from the Task 7 re-review: drafts leave the device only with their acc
     expect(localStorage.getItem('kb-draft:acc-1:t1')).toBeNull();
   });
 });
+
+describe('a provider that starts from the first load\'s session', () => {
+  const signedOutFirst = { session: { signedIn: false, account: null } as Session, boot: null, estimate: null };
+
+  test('reads the session once more on mount, so a change between the first load and the subscription is not lost', async () => {
+    const { api } = stubApi();
+    render(<PlayerProvider api={api} initial={signedOutFirst}><Probe /></PlayerProvider>);
+    await waitFor(() => expect(screen.getByTestId('acting')).toHaveTextContent('a,b'));
+  });
+
+  test('a change heard from the subscription is not taken back by that read', async () => {
+    let listener: (s: Session) => void = () => {};
+    let answer!: (s: Session) => void;
+    const { api } = stubApi({ session: () => new Promise<Session>((r) => { answer = r; }), onSession: (l) => { listener = l; return () => {}; } });
+    render(<PlayerProvider api={api} initial={signedOutFirst}><Probe /></PlayerProvider>);
+    act(() => { listener({ signedIn: false, account: null }); });
+    await act(async () => { answer({ signedIn: true, account: 'acc-1' }); });
+    expect(screen.getByTestId('acting')).toHaveTextContent('');
+  });
+});

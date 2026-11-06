@@ -21,6 +21,7 @@ import { ThreadScreen } from '../thread/Thread.tsx';
 import { PostEffects } from './Effects.tsx';
 import { createPlays } from './plays.ts';
 import type { CardUi, EffectProps } from './types.ts';
+import { LoadedThread } from '../loaded.tsx';
 
 const base = { priceKey: 'test.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c) };
 const reaching = (key: string, name: string, rarity: CardRules['rarity'], reaches: CardRules['reaches'], extra: Partial<CardRules> = {}): CardRules => ({
@@ -64,7 +65,7 @@ function world() {
   return { fake, thread, ids, me, pipe, spritey, gloomba };
 }
 async function open(w: ReturnType<typeof world>) {
-  renderIn(w.fake, <Frame><ThreadScreen thread={w.thread} /></Frame>, { path: `/t/${w.thread}`, instance, cards });
+  renderIn(w.fake, <Frame><LoadedThread thread={w.thread} /></Frame>, { path: `/t/${w.thread}`, instance, cards });
   await screen.findByRole('article', { name: /^Post 5 /u });
 }
 const post = (seq: number) => document.getElementById(`post-${seq}`)!;
@@ -72,16 +73,13 @@ const postbit = (seq: number) => post(seq).querySelector('.kb-postbit') as HTMLE
 const sparkleMark = (el: HTMLElement) => within(el).queryByRole('button', { name: /^Sparkle, 1 play\b.*Opens the cards on this character\./u });
 
 describe('the plays above a page', () => {
-  test('are read once a page, for its distinct authors, its thread and its board, however many posts it holds', async () => {
+  test('come with the page\'s one document, for its distinct authors, its thread and its board, however many posts it holds', async () => {
     const w = world();
     const above = vi.spyOn(w.fake, 'effectsAbove');
+    const page = vi.spyOn(w.fake, 'threadPage');
     await open(w);
-    await waitFor(() => expect(above).toHaveBeenCalledTimes(1));
-    const [characters, thread, board] = above.mock.calls[0]!;
-    expect(new Set(characters)).toEqual(new Set([w.spritey, w.gloomba, w.pipe]));
-    expect(characters).toHaveLength(3);
-    expect(thread).toBe(w.thread);
-    expect(board).toBe((await w.fake.thread(w.thread))!.board);
+    await waitFor(() => expect(page).toHaveBeenCalledTimes(1));
+    expect(above).not.toHaveBeenCalled();
   });
 
   test('a character\'s live play is a mark on every postbit of it in view, opening the Lens, and on no other', async () => {

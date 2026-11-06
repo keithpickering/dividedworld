@@ -17,21 +17,25 @@
  */
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { signInHref } from '../account/next.ts';
+import { useBoot } from '../boot.tsx';
 import { useKayfa } from '../context.tsx';
 import type { BoardSummary } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
-import { Link, searchOf, useLocation } from '../router.tsx';
+import { Link, searchOf, useLocation, useNavigation } from '../router.tsx';
 import { PlayProvider } from '../cards/play.tsx';
 import { TipsProvider } from '../tips/Tips.tsx';
 import { Hud } from './Hud.tsx';
+import { Loading } from './Loading.tsx';
 import './frame.css';
 
 export function Frame({ children }: { readonly children: ReactNode }) {
   const { api, ui } = useKayfa();
   const { session } = usePlayer();
+  const boot = useBoot();
   const [open, setOpen] = useState(false);
   const [boards, setBoards] = useState<readonly BoardSummary[]>([]);
   const navId = useId();
+  const { pending } = useNavigation();
   /*
    * A move to another page reads as one: the page starts at its top and focus is on it, so a
    * keyboard and a screen reader begin there, as after a load. An address with a fragment is the
@@ -43,32 +47,44 @@ export function Frame({ children }: { readonly children: ReactNode }) {
   useEffect(() => {
     if (first.current) { first.current = false; return; }
     if (!hash && !popped) globalThis.scrollTo?.(0, 0);
+    /*
+     * A screen that came with the move may have put focus where it means it (a spun thread's ORIGIN box). A screen's effects run before this
+     * one, since the new page now commits with the new address; focus already inside the page is left where the screen put it.
+     */
+    const there = document.activeElement;
+    if (there && there !== main.current && main.current?.contains(there)) return;
     main.current?.focus({ preventScroll: true });
   }, [path]);
 
-  /* The boards are read for a session only; signed out the banner holds Index and Sign in. */
+  /*
+   * The boards come from boot, which the first load read once for the frame and the HUD; a session that changed after boot (a sign-in on
+   * this page) reads them itself until boot is read again. Signed out the banner holds Index and Sign in.
+   */
+  const booted = boot !== null;
   useEffect(() => {
     let live = true;
     setBoards([]);
-    if (!session.signedIn) return;
+    if (!session.signedIn || booted) return;
     void api.boards().then((b) => { if (live) setBoards(b); }, () => {});
     return () => { live = false; };
-  }, [api, session.signedIn]);
+  }, [api, session.signedIn, booted]);
+  const shownBoards = boot ? boot.boards : boards;
 
   const here = searchOf(query);
   const links: readonly { readonly to: string; readonly label: string }[] = [
     { to: '/', label: 'Index' },
-    ...boards.map((b) => ({ to: `/b/${b.slug}`, label: b.name })),
+    ...shownBoards.map((b) => ({ to: `/b/${b.slug}`, label: b.name })),
     ...(session.signedIn ? [] : [{ to: signInHref(path, here), label: 'Sign in' }]),
   ];
 
   return (
     <TipsProvider>
       <PlayProvider>
-        <div className="kb-frame">
+        <div className="kb-frame" data-kb-loading={pending ? true : undefined}>
           <header className="kb-banner">
             <Link to="/" className="kb-logo">{ui.copy.siteName}</Link>
             <span className="kb-tagline kb-muted kb-small">{ui.copy.siteTagline}</span>
+            <Loading />
             <button type="button" className="kb-button kb-menu-button" aria-expanded={open} aria-controls={navId} onClick={() => setOpen((o) => !o)}>
               Boards
             </button>
@@ -80,7 +96,7 @@ export function Frame({ children }: { readonly children: ReactNode }) {
               ))}
             </ul>
           </nav>
-          <main ref={main} className="kb-page" tabIndex={-1}>{children}</main>
+          <main ref={main} className="kb-page" tabIndex={-1} aria-busy={pending ? true : undefined}>{children}</main>
           {/* The glass's violet laid toward the window's edges (frame.css); it is paint, so it is out of the reading order. */}
           <div className="kb-vignette" aria-hidden="true" />
           <Hud />

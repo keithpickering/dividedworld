@@ -13,8 +13,8 @@ describe('the routes', () => {
   test('an address that matches nothing says so and links to the index', () => {
     window.history.pushState(null, '', '/nowhere');
     render(<RouterProvider><Routes routes={[{ path: '/', render: () => <p>index</p> }]} /></RouterProvider>);
-    expect(screen.getByRole('heading', { name: 'No such page' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Back to the index' })).toHaveAttribute('href', '/');
+    expect(screen.getByRole('heading', { name: 'The page cannot be found' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'index' })).toHaveAttribute('href', '/');
   });
 });
 

@@ -12,11 +12,39 @@
  * (`?fixture=boards&story=<id>`) is the story route's, which main.tsx takes before it asks for a
  * backend, so one that reaches here is refused. Nothing else reads those parameters: the Supabase
  * branch returns before it looks at the address. The end-to-end build also leaves the demo's fake
- * where a test can reach it (exposeFake, web/src/demo.ts), to play another player's part.
+ * where a test can reach it (exposeFake, web/src/demo.ts), to play another player's part. In a build that
+ * is not production, `?latency=<ms>` delays every promise the fake answers (withLatency).
  */
 import type { KayfaApi } from '../../../engine/ui/data/api.ts';
 import { createSupabaseApi } from './supabase.ts';
 import { fallbackSettings } from './settings.ts';
+
+/**
+ * `?latency=<ms>` (end-to-end and development builds only): every promise the fake returns answers that much
+ * later, as a round trip would, so a test can watch a page open. Anything else the fake returns passes through.
+ */
+function withLatency(api: KayfaApi, params: URLSearchParams | null): KayfaApi {
+  const raw = params?.get('latency') ?? null;
+  if (raw === null) return api;
+  const ms = Number(raw);
+  if (!Number.isFinite(ms) || ms < 0) throw new Error(`The address names latency "${raw}": it is a number of milliseconds.`);
+  return new Proxy(api, {
+    get(target, key) {
+      const value = Reflect.get(target, key, target) as unknown;
+      if (typeof value !== 'function') return value;
+      return (...args: unknown[]) => {
+        const out = (value as (...a: unknown[]) => unknown).apply(target, args);
+        if (!out || typeof (out as { then?: unknown }).then !== 'function') return out;
+        return new Promise((resolve, reject) => {
+          (out as Promise<unknown>).then(
+            (x) => setTimeout(() => resolve(x), ms),
+            (e) => setTimeout(() => reject(e), ms),
+          );
+        });
+      };
+    },
+  });
+}
 
 export async function createBackend(): Promise<KayfaApi> {
   const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -31,6 +59,8 @@ export async function createBackend(): Promise<KayfaApi> {
     throw new Error('This build names no Supabase project: set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY when building.');
   }
   const params = e2e ? new URLSearchParams(globalThis.location?.search) : null;
+  /* The latency switch alone is also read in development; the fixture parameters stay the e2e build's. */
+  const timing = e2e || import.meta.env.DEV ? new URLSearchParams(globalThis.location?.search) : null;
   const named = params?.get('fixture') ?? null;
   if (named !== null && named !== 'boards') throw new Error(`There is no fixture named "${named}". The fixture is boards.`);
   // `?fixture=boards&story=<id>` is the story route's (web/src/main.tsx renders it before any backend is asked).
@@ -43,7 +73,7 @@ export async function createBackend(): Promise<KayfaApi> {
     const fake = createBoardsFake(moment);
     globalThis.history.replaceState(null, '', seedBoards(fake, moment));
     recordAvatarUploads(fake);
-    return fake;
+    return withLatency(fake, timing);
   }
   const [{ createFake }, { instance }, { seedDemo, recordAvatarUploads, exposeFake }] = await Promise.all([
     import('../../../engine/ui/data/fake.ts'),
@@ -56,5 +86,5 @@ export async function createBackend(): Promise<KayfaApi> {
     recordAvatarUploads(fake);
     exposeFake(fake, demo);
   }
-  return fake;
+  return withLatency(fake, timing);
 }

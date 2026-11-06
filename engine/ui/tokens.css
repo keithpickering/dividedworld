@@ -77,6 +77,12 @@
   --kb-salty: #777;
   --kb-pepperoni: #777;
   --kb-gold: #777;
+  /* The loading meter's well (engine/ui/frame/Loading.tsx): a game piece's own colors, the 2003 progress bar. */
+  --kb-meter-face: #d4d0c8;
+  --kb-meter-lo: #808080;
+  --kb-meter-hi: #fff;
+  --kb-meter-dark: #404040;
+  --kb-meter-fill: #0a246a;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -96,6 +102,11 @@
     --kb-pip-empty: #555;
     --kb-chip-bg: #000;
     --kb-chip-own: #fff;
+    --kb-meter-face: #1e1e1e;
+    --kb-meter-lo: #6a6a6a;
+    --kb-meter-hi: #b0b0b0;
+    --kb-meter-dark: #000;
+    --kb-meter-fill: #7fb2ff;
   }
 }
 
@@ -115,4 +126,9 @@
   --kb-pip-empty: #555;
   --kb-chip-bg: #000;
   --kb-chip-own: #fff;
+  --kb-meter-face: #1e1e1e;
+  --kb-meter-lo: #6a6a6a;
+  --kb-meter-hi: #b0b0b0;
+  --kb-meter-dark: #000;
+  --kb-meter-fill: #7fb2ff;
 }

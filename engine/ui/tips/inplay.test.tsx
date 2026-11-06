@@ -13,6 +13,7 @@ import { Frame } from '../frame/Frame.tsx';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { TipsProvider } from './Tips.tsx';
+import { LoadedThread } from '../loaded.tsx';
 
 beforeEach(() => { Element.prototype.scrollIntoView = vi.fn(); localStorage.clear(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -31,7 +32,7 @@ function thread() {
   fake.signInAs(me);
   return { fake, id };
 }
-const board = (w: ReturnType<typeof thread>) => renderIn(w.fake, <TipsProvider><ThreadScreen thread={w.id} /></TipsProvider>, { path: `/t/${w.id}` });
+const board = (w: ReturnType<typeof thread>) => renderIn(w.fake, <TipsProvider><LoadedThread thread={w.id} /></TipsProvider>, { path: `/t/${w.id}` });
 const picker = () => screen.getByRole('dialog', { name: /^React to / });
 const openPicker = async () => { await userEvent.click(await screen.findByRole('button', { name: 'React' })); return picker(); };
 
@@ -170,7 +171,7 @@ describe('the first card\'s line', () => {
     fake.seed.card(spritey, third, 'k2', { message: '' });
     return { fake, id };
   }
-  const page = (w: ReturnType<typeof cards>) => renderIn(w.fake, <TipsProvider><ThreadScreen thread={w.id} /></TipsProvider>, { path: `/t/${w.id}`, instance, cards: KEYS.map(cardUi) });
+  const page = (w: ReturnType<typeof cards>) => renderIn(w.fake, <TipsProvider><LoadedThread thread={w.id} /></TipsProvider>, { path: `/t/${w.id}`, instance, cards: KEYS.map(cardUi) });
 
   test('the first callout a player sees carries it and marks it seen; the second does not', async () => {
     const w = cards();

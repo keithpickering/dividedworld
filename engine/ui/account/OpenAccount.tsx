@@ -44,7 +44,8 @@ export function OpenAccount() {
     setBusy(true);
     try {
       await api.signOut();
-      if (then) navigate(then);
+      /* The move is the signed-out reader's: the router keeps it through the account change it hears next. */
+      if (then) navigate(then, { afterAccountChange: true });
     } finally {
       setBusy(false);
     }

@@ -286,14 +286,17 @@ describe('the box', () => {
 describe('a board that could not be read', () => {
   test('shows neither the reply box nor the System\'s note, but a plain line with Try again', async () => {
     const w = threadWorld();
-    const real = w.fake.board.bind(w.fake);
-    const failing = vi.spyOn(w.fake, 'board').mockRejectedValue(new Error('down'));
+    /* The page's document could not read the board (its `board` is null, as the function answers); a read of that one board works later. */
+    const real = w.fake.threadPage.bind(w.fake);
+    vi.spyOn(w.fake, 'threadPage').mockImplementation(async (...args) => {
+      const page = await real(...args);
+      return page && { ...page, board: null };
+    });
     openThread(w);
     await screen.findByRole('article', { name: /^Post 1 /u });
     expect(await screen.findByText(/could not be read, so the reply box is left out/u)).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Your reply' })).toBeNull();
     expect(screen.queryByText(/Replies here are spins/u)).toBeNull();
-    failing.mockImplementation(real);
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await replyBox()).toBeInTheDocument();
     expect(screen.queryByText(/left out/u)).toBeNull();

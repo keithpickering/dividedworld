@@ -3,12 +3,14 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { createFake, type Fake } from '../data/fake.ts';
 import type { ThreadSummary } from '../data/api.ts';
-import { buildWorld, renderIn, renderInWorld } from '../test-world.tsx';
+import { buildWorld, holdReads, renderIn, renderInWorld } from '../test-world.tsx';
+import { SIGNED_OUT_DOC } from '../screen-docs.ts';
 import { useLocation } from '../router.tsx';
 import { BoardScreen } from './Board.tsx';
 import { Frame } from '../frame/Frame.tsx';
 import { seedMoves } from './move-world.ts';
 import { testInstance } from '../test-world.tsx';
+import { LoadedBoard } from '../loaded.tsx';
 
 const DAY = 86_400_000;
 const T0 = Date.UTC(2026, 9, 20, 12);
@@ -34,7 +36,7 @@ function replies(fake: Fake, thread: string, by: string, n: number, at = T0 + 3 
 
 function Switch() {
   const { path } = useLocation();
-  return <BoardScreen slug={path.split('/').pop()!} />;
+  return <LoadedBoard slug={path.split('/').pop()!} />;
 }
 
 /** The new-thread form is a disclosure: the button opens it in place. */
@@ -48,7 +50,7 @@ beforeEach(() => localStorage.clear());
 
 describe('NEW comes from the player\'s own reading rows', () => {
   test('a reading row behind the last post marks the thread NEW and links to the first unread post', async () => {
-    const { seeded, fake } = renderInWorld(<BoardScreen slug="general" />, {
+    const { seeded, fake } = renderInWorld(<LoadedBoard slug="general" />, {
       seed: (f) => { const w = world(f); replies(f, w.ids[0]!, w.spritey, 4); return w; },
     });
     fake.markRead(seeded.ids[0]!, 2, null);
@@ -59,7 +61,7 @@ describe('NEW comes from the player\'s own reading rows', () => {
   });
 
   test('no NEW when the player has read to the last post', async () => {
-    const { seeded, fake } = renderInWorld(<BoardScreen slug="general" />, {
+    const { seeded, fake } = renderInWorld(<LoadedBoard slug="general" />, {
       seed: (f) => { const w = world(f); replies(f, w.ids[0]!, w.spritey, 2); return w; },
     });
     fake.markRead(seeded.ids[0]!, 3, null);
@@ -70,7 +72,7 @@ describe('NEW comes from the player\'s own reading rows', () => {
   });
 
   test('first unread is on the page that holds the post', async () => {
-    const { seeded, fake } = renderInWorld(<BoardScreen slug="general" />, {
+    const { seeded, fake } = renderInWorld(<LoadedBoard slug="general" />, {
       settings: { postsPerPage: 2 },
       seed: (f) => { const w = world(f); replies(f, w.ids[0]!, w.spritey, 6); return w; },
     });
@@ -80,7 +82,7 @@ describe('NEW comes from the player\'s own reading rows', () => {
   });
 
   test('a thread the player has never read is NEW from its first post', async () => {
-    const { seeded } = renderInWorld(<BoardScreen slug="general" />, { seed: (f) => world(f) });
+    const { seeded } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f) });
     await screen.findByRole('link', { name: 'Thread 001' });
     const row = rowOf('Thread 001');
     expect(within(row).getByText('NEW')).toBeInTheDocument();
@@ -88,7 +90,7 @@ describe('NEW comes from the player\'s own reading rows', () => {
   });
 
   test('a thread is never marked as the player\'s own', async () => {
-    renderInWorld(<BoardScreen slug="general" />, {
+    renderInWorld(<LoadedBoard slug="general" />, {
       seed: (f) => { const w = world(f); f.seed.thread('general', w.mine, 'Plain thread', 'x', { at: T0 + 5 * DAY }); return w; },
     });
     await screen.findByRole('link', { name: 'Plain thread' });
@@ -109,7 +111,7 @@ describe('the row', () => {
     const origin = fake.seed.post(w.ids[0]!, w.spritey, 'a line to spin from', { at: T0 + 2 * DAY });
     const spun = await fake.spin(origin, w.mine!, 'Spun thread', 'x');
     expect(spun.ok).toBe(true);
-    renderIn(fake, <BoardScreen slug="general" />);
+    renderIn(fake, <LoadedBoard slug="general" />);
     await screen.findByRole('link', { name: 'Thread 002' });
     const hot = rowOf('Thread 002');
     expect(within(hot).getByText('HOT')).toBeInTheDocument();
@@ -131,7 +133,7 @@ describe('the row', () => {
     expect((await fake.spin(played, w.mine!, 'From a play', 'x')).ok).toBe(true);
     const update = fake.seed.update({ title: 'Traps bite', body: 'Hi.' });
     expect((await fake.spin(update, w.mine!, 'From an update', 'x')).ok).toBe(true);
-    renderIn(fake, <BoardScreen slug="general" />);
+    renderIn(fake, <LoadedBoard slug="general" />);
     await screen.findByRole('link', { name: 'From a play' });
     const play = rowOf('From a play');
     expect(play).toHaveTextContent(/spun from Whoops! on #2 in Thread 001/u);
@@ -142,10 +144,10 @@ describe('the row', () => {
 
   /* A row's origin place, replaced in what the board reads: the fake always places what it can, so the unplaceable cases are made here. */
   function withOrigin(fake: Fake, title: string, origin: ThreadSummary['origin']) {
-    const real = fake.threads.bind(fake);
-    vi.spyOn(fake, 'threads').mockImplementation(async (...args) => {
+    const real = fake.boardPage.bind(fake);
+    vi.spyOn(fake, 'boardPage').mockImplementation(async (...args) => {
       const got = await real(...args);
-      return { ...got, threads: got.threads.map((t) => (t.title === title ? { ...t, origin } : t)) };
+      return got && { ...got, threads: got.threads.map((t) => (t.title === title ? { ...t, origin } : t)) };
     });
   }
 
@@ -155,7 +157,7 @@ describe('the row', () => {
     const target = fake.seed.post(w.ids[0]!, w.spritey, 'a line to play on', { at: T0 + 2 * DAY });
     expect((await fake.spin(fake.seed.card(w.spritey, target, 'whoops'), w.mine!, 'From a play', 'x')).ok).toBe(true);
     withOrigin(fake, 'From a play', { kind: 'play', card: 'whoops', on: null });
-    renderIn(fake, <BoardScreen slug="general" />);
+    renderIn(fake, <LoadedBoard slug="general" />);
     await screen.findByRole('link', { name: 'From a play' });
     const row = rowOf('From a play');
     const spun = row.querySelector('.kb-thread-spun') as HTMLElement;
@@ -169,7 +171,7 @@ describe('the row', () => {
     const origin = fake.seed.post(w.ids[0]!, w.spritey, 'a line to spin from', { at: T0 + 2 * DAY });
     expect((await fake.spin(origin, w.mine!, 'Placeless', 'x')).ok).toBe(true);
     withOrigin(fake, 'Placeless', null);
-    renderIn(fake, <BoardScreen slug="general" />);
+    renderIn(fake, <LoadedBoard slug="general" />);
     await screen.findByRole('link', { name: 'Placeless' });
     const spun = rowOf('Placeless').querySelector('.kb-thread-spun') as HTMLElement;
     expect(spun).toHaveTextContent(/spun from an Act$/u);
@@ -181,14 +183,14 @@ describe('the row', () => {
     const w = world(fake, { threads: 2 });
     replies(fake, w.ids[0]!, w.spritey, 2);
     fake.seed.reveal(w.spritey, w.ids[0]!); /* its last Act, which is no reply */
-    renderIn(fake, <BoardScreen slug="general" />);
+    renderIn(fake, <LoadedBoard slug="general" />);
     await screen.findByRole('link', { name: 'Thread 001' });
     expect(within(rowOf('Thread 001')).getByText('2', { selector: '.kb-thread-replies .kb-num' })).toBeInTheDocument();
     expect(within(rowOf('Thread 002')).getByText('0', { selector: '.kb-thread-replies .kb-num' })).toBeInTheDocument();
   });
 
   test('"started by" and "last post" name their characters, with the last post linked to its page', async () => {
-    const { seeded } = renderInWorld(<BoardScreen slug="general" />, {
+    const { seeded } = renderInWorld(<LoadedBoard slug="general" />, {
       settings: { postsPerPage: 2 },
       seed: (f) => { const w = world(f); replies(f, w.ids[0]!, w.mine!, 4); return w; },
     });
@@ -210,7 +212,7 @@ describe('the row', () => {
 
 describe('The System\'s board', () => {
   test('is read-only: no new-thread form, and a plain note says why', async () => {
-    renderInWorld(<BoardScreen slug="the-system" />, {
+    renderInWorld(<LoadedBoard slug="the-system" />, {
       seed: (f) => { const w = world(f); f.seed.thread('the-system', null, 'The Bulletin', 'Tonight.', { at: T0 }); return w; },
     });
     await screen.findByRole('link', { name: 'The Bulletin' });
@@ -222,7 +224,7 @@ describe('The System\'s board', () => {
   });
 
   test('the ordinary board has a "Start a thread" button that opens the form in place, above the list, with focus on the title', async () => {
-    renderInWorld(<BoardScreen slug="general" />, { seed: (f) => world(f) });
+    renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f) });
     const button = await screen.findByRole('button', { name: 'Start a thread' });
     expect(button).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByRole('form', { name: 'Start a thread' })).toBeNull();
@@ -240,21 +242,21 @@ describe('The System\'s board', () => {
 
 describe('a list of 0, 1 and 200 threads', () => {
   test('none: says so, and the form is there to start one', async () => {
-    renderInWorld(<BoardScreen slug="general" />, { seed: (f) => world(f, { threads: 0 }) });
+    renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 0 }) });
     expect(await screen.findByText('No threads here yet.')).toBeInTheDocument();
     expect(screen.queryByRole('table')).toBeNull();
     await openForm();
   });
 
   test('one: a row and no pager', async () => {
-    renderInWorld(<BoardScreen slug="general" />, { seed: (f) => world(f, { threads: 1 }) });
+    renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 1 }) });
     await screen.findByRole('link', { name: 'Thread 001' });
     expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(2);
     expect(screen.queryByRole('navigation', { name: 'Pages' })).toBeNull();
   });
 
   test('two hundred: twenty to a page, newest first, ten pages, and the page in the address', async () => {
-    renderInWorld(<BoardScreen slug="general" />, { seed: (f) => world(f, { threads: 200 }) });
+    renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 200 }) });
     await screen.findByRole('link', { name: 'Thread 200' });
     expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(21);
     expect(screen.getByRole('link', { name: 'Thread 181' })).toBeInTheDocument();
@@ -264,52 +266,96 @@ describe('a list of 0, 1 and 200 threads', () => {
     expect(within(pages).getByRole('link', { name: 'Next' })).toHaveAttribute('href', '/b/general?page=2');
   });
 
-  test('turning a page keeps the list on screen while the next loads, and puts focus on the board, not the page\'s body', async () => {
-    renderInWorld(<BoardScreen slug="general" />, { seed: (f) => world(f, { threads: 200 }) });
-    await screen.findByRole('link', { name: 'Thread 200' });
+  test('turning a page is a navigation: the screen reads nothing, and is handed the next page\'s document, with focus on the board\'s heading', async () => {
+    const fake = buildWorld();
+    world(fake, { threads: 200 });
+    const boot = await fake.boot();
+    const docs = { 1: (await fake.boardPage('general', 1, []))!, 2: (await fake.boardPage('general', 2, []))! };
+    const read = holdReads(fake, ['session', 'here']);
+    /* The router's part: the screen drawn is the one the address names, from the document its load brought. */
+    function Route() {
+      const { query } = useLocation();
+      return <BoardScreen slug="general" doc={query.get('page') === '2' ? docs[2] : docs[1]} />;
+    }
+    renderIn(fake, <Route />, { path: '/b/general', boot });
+    expect(screen.getByRole('link', { name: 'Thread 200' })).toBeInTheDocument();
     const next = within(screen.getByRole('navigation', { name: 'Pages, top' })).getByRole('link', { name: 'Next' });
     next.focus();
     await userEvent.click(next);
-    expect(screen.queryByRole('table')).not.toBeNull();
-    await screen.findByRole('link', { name: 'Thread 180' });
-    expect(document.activeElement).not.toBe(document.body);
+    expect(window.location.search).toBe('?page=2');
+    expect(screen.getByRole('link', { name: 'Thread 180' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Thread 200' })).toBeNull();
     expect(screen.getByRole('heading', { level: 1 })).toHaveFocus();
+    expect(read).toEqual([]);
   });
 
   test('page 3 of the same list', async () => {
-    renderInWorld(<BoardScreen slug="general" />, { path: '/b/general?page=3', seed: (f) => world(f, { threads: 200 }) });
+    renderInWorld(<LoadedBoard slug="general" />, { path: '/b/general?page=3', seed: (f) => world(f, { threads: 200 }) });
     await screen.findByRole('link', { name: 'Thread 160' });
     expect(screen.getByRole('link', { name: 'Thread 141' })).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Pages, top' })).toHaveTextContent('Page 3 of 10');
   });
 
   test('a page past the end shows the last page', async () => {
-    renderInWorld(<BoardScreen slug="general" />, { path: '/b/general?page=99', seed: (f) => world(f, { threads: 41 }) });
+    renderInWorld(<LoadedBoard slug="general" />, { path: '/b/general?page=99', seed: (f) => world(f, { threads: 41 }) });
     await screen.findByRole('link', { name: 'Thread 001' });
     expect(screen.getByRole('navigation', { name: 'Pages, top' })).toHaveTextContent('Page 3 of 3');
   });
 });
 
 describe('what a page of a board reads', () => {
-  test('its own board by one read of that board, and the list of threads once; never the list of boards', async () => {
-    let spies: Record<'boards' | 'board' | 'threads', { readonly mock: { readonly calls: readonly unknown[][] } }> | null = null;
-    renderInWorld(<BoardScreen slug="general" />, {
+  test('one boardPage read, and none of the board, the list of threads or the list of boards', async () => {
+    let spies: Record<'boardPage' | 'boards' | 'board' | 'threads', { readonly mock: { readonly calls: readonly unknown[][] } }> | null = null;
+    renderInWorld(<LoadedBoard slug="general" />, {
       seed: (f) => {
         world(f, { threads: 3 });
-        spies = { boards: vi.spyOn(f, 'boards'), board: vi.spyOn(f, 'board'), threads: vi.spyOn(f, 'threads') };
+        spies = { boardPage: vi.spyOn(f, 'boardPage'), boards: vi.spyOn(f, 'boards'), board: vi.spyOn(f, 'board'), threads: vi.spyOn(f, 'threads') };
       },
     });
     await screen.findByRole('heading', { level: 1, name: /General/u });
-    expect(spies!.board.mock.calls).toHaveLength(1);
-    expect(spies!.board.mock.calls[0]![0]).toBe('general');
-    expect(spies!.threads.mock.calls).toHaveLength(1);
+    expect(spies!.boardPage.mock.calls).toHaveLength(1);
+    expect(spies!.boardPage.mock.calls[0]!.slice(0, 2)).toEqual(['general', 1]);
+    expect(spies!.board.mock.calls).toHaveLength(0);
+    expect(spies!.threads.mock.calls).toHaveLength(0);
     expect(spies!.boards.mock.calls).toHaveLength(0);
+  });
+
+  test('its whole page is in the first render, from the document, and nothing is read for it', async () => {
+    const fake = buildWorld();
+    const w = world(fake, { threads: 3 });
+    replies(fake, w.ids[0]!, w.spritey, 2);
+    fake.signInAs(w.other);
+    const board = (await fake.boards()).find((b) => b.slug === 'general')!;
+    await fake.here({ kind: 'board', board: board.id }, w.spritey);
+    fake.signInAs(w.me);
+    const boot = await fake.boot();
+    const doc = (await fake.boardPage('general', 1, []))!;
+    const read = holdReads(fake, ['session', 'here']);
+    renderIn(fake, <BoardScreen slug="general" doc={doc} />, { path: '/b/general', boot });
+    const row = rowOf('Thread 001');
+    expect(within(row).getByText('2', { selector: '.kb-num' })).toBeInTheDocument();
+    expect(row).toHaveTextContent('Spritey');
+    expect(screen.getByRole('heading', { level: 1, name: /General/u })).toBeInTheDocument();
+    /* The box of who is browsing the board: the snapshot, with the reader's mask added. */
+    const box = screen.getByRole('region', { name: 'Users browsing this board' });
+    expect(within(box).getAllByRole('link').map((a) => a.textContent)).toEqual(['Spritey', 'Pipewrench']);
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+    expect(read).toEqual([]);
+  });
+
+  test('signed out, the loader\'s marker is the front door, with no read', () => {
+    const fake = buildWorld();
+    const read = holdReads(fake, ['session']);
+    renderIn(fake, <BoardScreen slug="general" doc={SIGNED_OUT_DOC} />);
+    expect(screen.getByRole('heading', { level: 1, name: 'How do we explain this' })).toBeInTheDocument();
+    expect(read).toEqual([]);
   });
 });
 
 describe('the new-thread form', () => {
   test('posts as the HUD\'s character and goes to the new thread', async () => {
-    const { fake } = renderInWorld(<BoardScreen slug="general" />, { seed: (f) => world(f, { threads: 0 }) });
+    const { fake } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 0 }) });
     const form = await openForm();
     await waitFor(() => expect(within(form).getByText('Pipewrench')).toBeInTheDocument());
     await userEvent.type(within(form).getByRole('textbox', { name: 'Title' }), 'A fresh start');
@@ -324,7 +370,7 @@ describe('the new-thread form', () => {
   });
 
   test('a refusal shows the server\'s words and keeps the draft', async () => {
-    renderInWorld(<BoardScreen slug="general" />, { seed: (f) => world(f, { threads: 0 }) });
+    renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 0 }) });
     const form = await openForm();
     await waitFor(() => expect(within(form).getByText('Pipewrench')).toBeInTheDocument());
     await userEvent.type(within(form).getByRole('textbox', { name: 'First post' }), 'Body without a title');
@@ -336,7 +382,7 @@ describe('the new-thread form', () => {
   });
 
   test('with no character that can act, it says so and links to making one', async () => {
-    renderInWorld(<BoardScreen slug="general" />, { seed: (f) => world(f, { characters: false }) });
+    renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { characters: false }) });
     const form = await openForm();
     expect(within(form).queryByRole('button', { name: 'Start thread' })).toBeNull();
     expect(within(form).getByRole('link', { name: 'Make a character' })).toHaveAttribute('href', '/characters/new');
@@ -345,7 +391,7 @@ describe('the new-thread form', () => {
 
 describe('a signed-out visitor', () => {
   test('sees the front door, and no threads, NEW or form', async () => {
-    renderInWorld(<BoardScreen slug="general" />, { seed: (f) => world(f, { signedIn: false }) });
+    renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { signedIn: false }) });
     expect(await screen.findByRole('heading', { level: 1, name: 'How do we explain this' })).toBeInTheDocument();
     expect(screen.queryByText(/The board is for players\./u)).toBeNull();
     expect(screen.queryByText('NEW')).toBeNull();
@@ -356,10 +402,10 @@ describe('a signed-out visitor', () => {
 });
 
 describe('a board that is not there', () => {
-  test('says so and links back to the index', async () => {
-    renderInWorld(<BoardScreen slug="nowhere" />, { seed: (f) => world(f) });
-    expect(await screen.findByText(/There is no such board/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Back to the index' })).toHaveAttribute('href', '/');
+  test('is the router\'s "cannot be found" (no document), which links back to the index', async () => {
+    renderInWorld(<LoadedBoard slug="nowhere" />, { seed: (f) => world(f) });
+    expect(await screen.findByRole('heading', { level: 1, name: 'The page cannot be found' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'index' })).toHaveAttribute('href', '/');
   });
 });
 
@@ -380,7 +426,7 @@ describe('moving between boards', () => {
 
 describe('accessible names', () => {
   test('the pagers are told apart, and the views column says what it counts in text', async () => {
-    renderInWorld(<BoardScreen slug="general" />, { seed: (f) => world(f, { threads: 41 }) });
+    renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 41 }) });
     await screen.findByRole('link', { name: 'Thread 041' });
     expect(screen.getByRole('navigation', { name: 'Pages, top' })).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Pages, bottom' })).toBeInTheDocument();
@@ -389,7 +435,7 @@ describe('accessible names', () => {
   });
 
   test('the table keeps its roles where the phone layout drops the native ones', async () => {
-    renderInWorld(<BoardScreen slug="general" />, { seed: (f) => world(f) });
+    renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f) });
     await screen.findByRole('link', { name: 'Thread 001' });
     const table = screen.getByRole('table');
     expect(table).toHaveAttribute('role', 'table');
@@ -403,7 +449,7 @@ describe('a move in force on the board', () => {
   const withMoves = (fake: Fake) => seedMoves(fake, testInstance);
 
   test('the board reads its name and description from the move in force, and shows the notice under the description', async () => {
-    const { seeded } = renderInWorld(<BoardScreen slug="general" />, { seed: withMoves });
+    const { seeded } = renderInWorld(<LoadedBoard slug="general" />, { seed: withMoves });
     expect(await screen.findByRole('heading', { level: 1, name: 'Pointless Toast Palace' })).toBeInTheDocument();
     expect(screen.getByText('Welcome to the Pointless Toast Palace. Please butter responsibly.')).toBeInTheDocument();
     const notice = await screen.findByRole('region', { name: 'Announcement from The Director' });
@@ -414,7 +460,7 @@ describe('a move in force on the board', () => {
   });
 
   test('a board whose moves have all ended has its own name back and no notice', async () => {
-    renderInWorld(<BoardScreen slug="off-topic" />, { seed: withMoves });
+    renderInWorld(<LoadedBoard slug="off-topic" />, { seed: withMoves });
     expect(await screen.findByRole('heading', { level: 1, name: 'Off Topic' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: /^Announcement from/u })).toBeNull();
   });
@@ -423,7 +469,7 @@ describe('a move in force on the board', () => {
     const fake = buildWorld();
     const w = withMoves(fake);
     fake.seed.endMove(w.inForce, { why: 'reversed', by: 'admin' });
-    renderIn(fake, <BoardScreen slug="general" />, { path: '/b/general' });
+    renderIn(fake, <LoadedBoard slug="general" />, { path: '/b/general' });
     expect(await screen.findByRole('heading', { level: 1, name: 'General' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: /^Announcement from/u })).toBeNull();
   });
@@ -431,7 +477,7 @@ describe('a move in force on the board', () => {
 
 describe('who is browsing', () => {
   test('under the thread list, "Users browsing this board" lists a mask on one of its threads', async () => {
-    const { seeded, fake } = renderInWorld(<BoardScreen slug="general" />, { seed: (f) => world(f) });
+    const { seeded, fake } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f) });
     fake.signInAs(seeded.other);
     await fake.here({ kind: 'thread', thread: seeded.ids[0]! }, seeded.spritey);
     fake.signInAs(seeded.me);
@@ -463,7 +509,7 @@ describe('pinned threads and the banner', () => {
     if (o.alsoPin !== undefined) fake.seed.reach(w.spritey, 'thread', w.ids[o.alsoPin]!, 'beacon', { ends: Date.now() + DAY });
     const board = (await fake.board('general'))!.id;
     const banner = fake.seed.reach(w.spritey, 'board', board, 'rumble', { ends: Date.now() + DAY });
-    renderIn(fake, <BoardScreen slug="general" />, { instance, path: `/b/general${o.page ? `?page=${o.page}` : ''}` });
+    renderIn(fake, <LoadedBoard slug="general" />, { instance, path: `/b/general${o.page ? `?page=${o.page}` : ''}` });
     await screen.findByRole('link', { name: o.page === 2 ? 'Thread 005' : 'Thread 025' });
     return { fake, w, pin, banner };
   }
@@ -528,7 +574,7 @@ describe('pinned threads and the banner', () => {
     const w = world(fake, { threads: 2 });
     fake.seed.cards(w.me, { rumble: 1 });
     fake.seed.wallet(w.me, 500);
-    renderIn(fake, <Frame><BoardScreen slug="general" /></Frame>, { instance, path: '/b/general' });
+    renderIn(fake, <Frame><LoadedBoard slug="general" /></Frame>, { instance, path: '/b/general' });
     await screen.findByRole('link', { name: 'Thread 002' });
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: /^Hand, \d postcards?/u }));
@@ -545,7 +591,7 @@ describe('pinned threads and the banner', () => {
     const fake = createFake({ instance, now: () => Date.now() });
     const heard = vi.spyOn(fake, 'subscribeReach');
     const w = world(fake, { threads: 2 });
-    renderIn(fake, <BoardScreen slug="general" />, { instance, path: '/b/general' });
+    renderIn(fake, <LoadedBoard slug="general" />, { instance, path: '/b/general' });
     await screen.findByRole('link', { name: 'Thread 002' });
     /* The page listens from an effect, which can run after the list is on screen: a play sent before it would be heard by no one. */
     await waitFor(() => expect(heard).toHaveBeenCalled());
@@ -561,7 +607,7 @@ describe('pinned threads and the banner', () => {
     const fake = createFake({ instance, now: () => Date.now() });
     const heard = vi.spyOn(fake, 'subscribeReach');
     const w = world(fake, { threads: 2 });
-    renderIn(fake, <BoardScreen slug="general" />, { instance, path: '/b/general' });
+    renderIn(fake, <LoadedBoard slug="general" />, { instance, path: '/b/general' });
     await screen.findByRole('link', { name: 'Thread 002' });
     /* The page listens from an effect, which can run after the list is on screen: a play sent before it would be heard by no one. */
     await waitFor(() => expect(heard).toHaveBeenCalled());

@@ -8,9 +8,9 @@
  * The faces' colors are the Cards board's: Sweet is the cyan, Salty the pink, each with the dark
  * ink the board sets on it (docs/research/2026-10-29-two-worlds/05-cards.html).
  */
+import { lazy } from 'react';
 import type { CardUi } from '../../../engine/ui/cards/types.ts';
 import type { Settings } from '../../../engine/rules/types.ts';
-import { StickAroundEffect } from './stick-around/Effect.tsx';
 import stickAroundFace from './cards/stick-around.svg?url';
 import stickAroundMark from './cards/stick-around-mark.svg?url';
 import whoopsFace from './cards/whoops.svg?url';
@@ -27,12 +27,9 @@ import mainEventFace from './cards/main-event.svg?url';
 import mainEventMark from './cards/main-event-mark.svg?url';
 import autocorrectFace from './cards/autocorrect.svg?url';
 import autocorrectMark from './cards/autocorrect-mark.svg?url';
-import { AutocorrectEffect } from '../cards/autocorrect/Effect.tsx';
 import { ConfigForm as AutocorrectConfigForm } from '../cards/autocorrect/ConfigForm.tsx';
 import feelinFabFace from './cards/feelin-fab.svg?url';
 import feelinFabMark from './cards/feelin-fab-mark.svg?url';
-import { FeelinFabEffect } from './feelin-fab/Effect.tsx';
-import { GlitterBombEffect } from './glitter-bomb/Effect.tsx';
 import { glitterBomb } from '../cards/glitter-bomb.ts';
 import { mainEvent } from '../cards/main-event.ts';
 import { forceField } from '../cards/force-field.ts';
@@ -41,11 +38,20 @@ import { feelinFab } from '../cards/feelin-fab.ts';
 /** A span in words: "a week", "3 days". */
 const spanWords = (s: { readonly unit: string; readonly count: number }) => (s.unit === 'day' && s.count === 7 ? 'a week' : s.count === 1 ? `a ${s.unit}` : `${s.count} ${s.unit}s`);
 import { ConfigForm as WhoopsConfigForm } from '../cards/whoops/ConfigForm.tsx';
-import { Effect as WhoopsEffect } from '../cards/whoops/Effect.tsx';
 import { luminance } from '../cards/whoops/splat.ts';
 
 /** A price of a whole number of hundredths, as the shop says it: "1.00". */
 const orbs = (hundredths: number) => (hundredths / 100).toFixed(2);
+
+/*
+ * Each card's effect loads the first time a post wears it, so the board's first script holds none of them; the engine's effect
+ * slot draws one inside a Suspense whose fallback is the post's words (engine/ui/cards/Effects.tsx).
+ */
+const StickAroundEffect = lazy(() => import('./stick-around/Effect.tsx').then((m) => ({ default: m.StickAroundEffect })));
+const AutocorrectEffect = lazy(() => import('../cards/autocorrect/Effect.tsx').then((m) => ({ default: m.AutocorrectEffect })));
+const FeelinFabEffect = lazy(() => import('./feelin-fab/Effect.tsx').then((m) => ({ default: m.FeelinFabEffect })));
+const GlitterBombEffect = lazy(() => import('./glitter-bomb/Effect.tsx').then((m) => ({ default: m.GlitterBombEffect })));
+const WhoopsEffect = lazy(() => import('../cards/whoops/Effect.tsx').then((m) => ({ default: m.Effect })));
 
 export const cardsUi: readonly CardUi[] = Object.freeze([
   {

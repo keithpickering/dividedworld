@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { World } from '../story.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
+import { LoadedThread } from '../loaded.tsx';
 
 function ShortThread() {
   const { api } = useKayfa();
@@ -15,7 +16,7 @@ function ShortThread() {
       }
     })();
   }, [api]);
-  return id ? <ThreadScreen thread={id} /> : <div aria-busy="true" />;
+  return id ? <LoadedThread thread={id} /> : <div aria-busy="true" />;
 }
 
 const meta: Meta<typeof ShortThread> = { title: 'Composer/Quick reply', component: ShortThread };

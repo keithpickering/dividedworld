@@ -23,6 +23,18 @@ declare
                            'next_settlement_at(timestampwithtimezone)', 'release_effect(uuid)', 'mark_read(uuid,integer,uuid)', 'set_preferences(text,text,text,text,text,integer,text[],boolean)', 'meet_card(text)', 'see_welcome()', 'see_tip(text)', 'skip_tips()', 'restore_tips()', 'resume_tips()', 'replay_tour()', 'my_account_opened()', 'see_alerts(timestampwithtimezone)', 'see_settlement(timestampwithtimezone)', 'follow_thread(uuid,boolean)', 'following_thread(uuid)', 'my_alerts(timestampwithtimezone,integer)', 'my_alerts_unread()', 'my_settlement_moved(bigint)', 'set_profile(uuid,text,text,text)', 'is_admin()', 'retire_character(uuid)', 'restore_character(uuid)', 'span_interval(jsonb)',
                            'unmask(uuid,uuid,text)', 'turn(uuid,text,text,boolean,boolean)', 'standing_place(uuid)', 'standings_page(integer,integer)', 'standings_season()', 'admin_queue()', 'hold_move(bigint)', 'reverse_move(uuid)', 'reverse_card(uuid)', 'card_ended(uuid)', 'replace_successor(bigint,text)', 'set_office(text,text)', 'boss_roster_names()', 'dismiss_handover_todo(integer)', 'move_progress(uuid)',
                            'here(text,uuid,uuid)', 'set_presence_hidden(uuid,boolean)',
+                           -- The box here() ends with (0093), readable without marking a mask.
+                           'presence_box(text,uuid)',
+                           -- A board's page and the index, each in one read (0095): invoker, stable, and readable by a signed-in player alone.
+                           'board_page(text,integer,text[])', 'index_page()',
+                           -- A character's two pages, each in one read (0096): invoker and stable, held to the web's read lists by the screen-function guard.
+                           'profile_page(uuid)', 'record_page(uuid,text,integer)',
+                           -- A thread's page in one read (0094), a security invoker function.
+                           'thread_page(uuid,integer,integer,integer,text[])',
+                           -- The frame and the HUD in one read (0097): a signed-in player's own boot document, stable, writing nothing.
+                           'boot()',
+                           -- The refusal a SQL-standard screen function raises through (0094).
+                           'screen_refusal(text)',
                            -- Cards beyond a post (0055): a target's effects for the act function, and a page's plays above its posts and its board's pins.
                            'card_target_reach(text,uuid,uuid)', 'effects_above(uuid[],uuid,uuid)', 'pinned_threads(uuid)',
                            -- Updates (0062): an admin's post_update, and the page's read.

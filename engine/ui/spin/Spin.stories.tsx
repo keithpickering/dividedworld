@@ -5,6 +5,7 @@ import type { ThreadSummary } from '../data/api.ts';
 import type { World } from '../story.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { SpinForm } from './SpinForm.tsx';
+import { LoadedThread } from '../loaded.tsx';
 
 const TITLE = 'Where it began';
 
@@ -32,13 +33,13 @@ function useThread(title: string): ThreadSummary | null {
 /** The thread spun from the first post of "Where it began", opened on its ORIGIN box. */
 function SpunThread() {
   const spun = useThread('Spun from the start');
-  return spun ? <ThreadScreen thread={spun.id} /> : <div aria-busy="true" />;
+  return spun ? <LoadedThread thread={spun.id} /> : <div aria-busy="true" />;
 }
 
 /** The thread spun from a card play on the first post, opened on its ORIGIN box. */
 function PlaySpunThread() {
   const spun = useThread('Spun from the play');
-  return spun ? <ThreadScreen thread={spun.id} /> : <div aria-busy="true" />;
+  return spun ? <LoadedThread thread={spun.id} /> : <div aria-busy="true" />;
 }
 
 /** The first post's spin form, open under it. */

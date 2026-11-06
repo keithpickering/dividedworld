@@ -3,35 +3,22 @@
  * board's table (the alerts design, sections 4 and 12). A thread one's characters started is followed by default; this follows or
  * unfollows any thread, and it is the way out of a thread followed ("No player is ever stuck"; the Alerts row offers the same).
  *
- * Its state is the server's answer to "does the caller follow this thread" (`api.following`), read once on opening, never a guess
- * from the thread's posts: the default depends on who started the thread, which is no one else's business and in no public read.
- * A click asks the server and shows the state it answers; a refusal leaves the button as it was and says why, in plain words.
- * Where the state cannot be read there is no button, since either label could be wrong. Plain words: the glass never bluffs.
+ * Its state is the server's answer to "does the caller follow this thread", which the thread's page document carries (`following`), never
+ * a guess from the thread's posts: the default depends on who started the thread, which is no one else's business and in no public read.
+ * It reads nothing of its own: only its button asks the server (`api.follow`) and shows the state it answers; a refusal leaves the button
+ * as it was and says why, in plain words. Plain words: the glass never bluffs.
 
  */
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Id } from '../data/api.ts';
 
-export function FollowControl({ thread }: { readonly thread: Id }) {
+export function FollowControl({ thread, following: held }: { readonly thread: Id; readonly following: boolean }) {
   const { api } = useKayfa();
-  const [following, setFollowing] = useState<boolean | null>(null);
-  const [unread, setUnread] = useState(false);
+  const [following, setFollowing] = useState<boolean>(held);
   const [busy, setBusy] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
 
-  useEffect(() => {
-    let live = true;
-    setFollowing(null);
-    setRefused(null);
-    setUnread(false);
-    void Promise.resolve().then(() => api.following(thread)).then((f) => { if (live) setFollowing(f); }, () => { if (live) setUnread(true); });
-    return () => { live = false; };
-  }, [api, thread]);
-
-  /* Unread: no control, since either label could be wrong. While it loads the strip's height is kept, so the thread does not shift. */
-  if (unread) return null;
-  if (following === null) return <div className="kb-thread-controls" aria-hidden="true" />;
   const toggle = async () => {
     /* Busy is not disabled: a disabled button drops the keyboard's focus. */
     if (busy) return;
