@@ -111,6 +111,8 @@ export function Picker({ act, subject, as, own, tallies, mine, anchor, onClose }
   };
 
   const choose = async (kind: string) => {
+    /* A press dropped for one in flight leaves a refusal on screen as it is. */
+    if (busy) return;
     setRefusal(null);
     const answer = await send(kind);
     if (answer === 'busy') return;
