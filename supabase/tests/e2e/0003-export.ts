@@ -203,8 +203,9 @@ test('an instance exported and imported into a fresh database is the same instan
       select max(m.id), 'exp-boss', 'renameBoard', '{"board": "x", "name": "Exported Palace"}', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', gen, 'count', 2)), 'Because the toast was cold.',
              now() - interval '1 day', now() + interval '2 days', true, kept from meetings m;
       -- A Mod's order from that meeting (0101), and a visit by the Mod on the post with its open row (0103), one failed attempt to draw a visit and one to file it, so the
-      -- tables the Mod Bots add are carried across with the Acts that name them.
-      insert into staff_orders (meeting, staff, boards, order_line, allowance) select max(id), 'exp-bot', '{}', 'Watch the boards.', 1 from meetings;
+      -- tables the Mod Bots add are carried across with the Acts that name them. The order hands out nothing: an
+      -- allowance left unspent here would be returned to the Boss's bank by e2e/0011's meeting, which counts the bank.
+      insert into staff_orders (meeting, staff, boards, order_line, allowance) select max(id), 'exp-bot', '{}', 'Watch the boards.', 0 from meetings;
       perform write_staff_act('exp-bot', 'visit', t, p, jsonb_build_object('charges', jsonb_build_array(jsonb_build_object('rule_number', 1, 'board', gen, 'band', 'minor', 'cause', 'rule', 'about_act', p::text)),
         'ends_at', now() + interval '3 hours', 'challenge', jsonb_build_object('kind', 'distraction'), 'line', 'Looking.'));
       insert into visit_draw_failures (post_act, rule_number, error) values (p, 1, 'planted: carried across');
