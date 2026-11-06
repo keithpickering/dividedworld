@@ -6,7 +6,10 @@
  * thread of twenty Feelin' Fab posts (a whole page, #41 to #60), mixed levels, to scroll and watch for dropped frames.
  *
  * The story page hands e2e/fab.spec.ts the loop's probe (`window.__kbShineDraws(n)`: how many times the loop has drawn the nth
- * Feelin' Fab on the page), the way the other board stories reach their internals; the app itself exposes nothing.
+ * Feelin' Fab on the page), the way the other board stories reach their internals; the app itself exposes nothing. The foil is drawn
+ * in a worker where the browser can (engine/ui/shine/foilClient.ts), the application's own worker here, and the page cannot read a
+ * transferred canvas: `window.__kbFabPixels(n)` gives the nth foil canvas's pixels as the worker holds them (or, where the browser
+ * draws on the page, as the canvas does), with the size they have.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useState } from 'react';
@@ -15,9 +18,15 @@ import { useKayfa } from '../../../../engine/ui/context.tsx';
 import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import { useLocation } from '../../../../engine/ui/router.tsx';
 import { probe } from '../../../../engine/ui/shine/loop.ts';
+import { foilProbe } from '../../../../engine/ui/shine/foilClient.ts';
 import { LoadedThread } from '../../../../engine/ui/loaded.tsx';
 
-declare global { interface Window { __kbShineDraws?: (nth: number) => number } }
+declare global {
+  interface Window {
+    __kbShineDraws?: (nth: number) => number;
+    __kbFabPixels?: (nth: number) => Promise<{ width: number; height: number; data: Uint8ClampedArray } | null>;
+  }
+}
 
 interface Args {
   readonly level: 1 | 2 | 3;
@@ -41,7 +50,14 @@ function Fabbed({ level, mode, reduced, many = false }: Args) {
   }, [mode, reduced]);
   useEffect(() => {
     window.__kbShineDraws = (nth) => probe.draws(document.querySelectorAll('[data-kb-fab]')[nth] ?? {});
-    return () => { delete window.__kbShineDraws; };
+    window.__kbFabPixels = async (nth) => {
+      const cv = document.querySelectorAll<HTMLCanvasElement>('[data-kb-fab] canvas.dw-fab-foil')[nth];
+      if (!cv) return null;
+      if (foilProbe.idOf(cv) !== undefined) return foilProbe.pixels(cv);
+      const g = cv.getContext('2d');
+      return g ? { width: cv.width, height: cv.height, data: g.getImageData(0, 0, cv.width, cv.height).data } : null;
+    };
+    return () => { delete window.__kbShineDraws; delete window.__kbFabPixels; };
   }, []);
   useEffect(() => {
     if (thread === null) return;

@@ -22,17 +22,31 @@
  * the rest light and registers nothing that moves. Nothing here reads who owns a post, who played on it, or any class: the seed is
  * `post.id` and the plays' ids, which are public.
  *
- * Units: the box is CSS px (the host's getBoundingClientRect size); the canvas is sized to round(box x density) with the density the
- * loop returns (at most 2), and its CSS size is the host's through the stylesheet (100%). A resize registers again and, because
- * sizing the backing store clears it, repaints at once with the last light and the band already held, rather than waiting for
- * the loop's next draw.
+ * Where the browser has a Worker, an OffscreenCanvas and a canvas that can hand over control (`offscreenFoils`), the foil is drawn in a
+ * worker (engine/ui/shine/foilClient.ts, issue #272): the render and the full-canvas draw were most of the main thread's work during a
+ * busy scroll. The post hands its canvas over once (`adoptFoil`) and the loop's draw callback posts what the draw needs (the foil's
+ * spec, the box, the density, the light and band read here on the main thread, the time) instead of painting; the worker makes the
+ * same foil and calls the same `foil.draw`, so the look and the motion are the same. The loop still decides when the post draws, eases
+ * its light and counts its draws. Everywhere else, and for a play's moment (`still`, drawn once, so a worker would only add a hop),
+ * the post draws on the main thread as it always did. A transferred canvas can never be drawn on from the page again, nor handed over
+ * a second time, so the `<canvas>` carries a `key` of level, seed and still: an effect that runs again (a level or a seed change)
+ * gets a fresh element. A development build under React's StrictMode would run the effect twice on one element and the second
+ * hand-over is refused (logged, the post bare); the app does not use StrictMode.
  *
- * Memory: a post that leaves view frees what it holds, the foil's buffers and the canvas's own backing store (width and height 0);
- * when it returns, the next draw sizes the canvas again and draws fresh. A board change lets the other board's foil go once.
+ * Units: the box is CSS px (the host's getBoundingClientRect size); the canvas is sized to round(box x density) with the density the
+ * loop returns (at most 2), and its CSS size is the host's through the stylesheet (100%). On the page the effect sizes it; in the
+ * worker the worker does, in the same task as the draw, whenever the box differs. A resize registers again and, because sizing the
+ * backing store clears it, repaints at once with the last light and the band already held, rather than waiting for the loop's next draw.
+ *
+ * Memory: a post that leaves view frees what it holds, the foil's buffers and the canvas's own backing store (width and height 0;
+ * in the worker, `free`); when it returns, the next draw sizes the canvas again and draws fresh. A board change lets the other board's
+ * foil go once (on the page, by key in the worker). An unmounted post drops its canvas, and the last drop ends the worker.
  */
 import { useEffect, useRef } from 'react';
 import { bandFor, type Band } from '../../../../engine/ui/shine/band.ts';
 import { makeFoil, type Foil, type FoilPattern } from '../../../../engine/ui/shine/foil.ts';
+import { adoptFoil, offscreenFoils, type FoilHandle } from '../../../../engine/ui/shine/foilClient.ts';
+import type { FoilSpec } from '../../../../engine/ui/shine/foilProtocol.ts';
 import { REST, type Light } from '../../../../engine/ui/shine/light.ts';
 import { register, unregister, wake } from '../../../../engine/ui/shine/loop.ts';
 import type { EffectProps } from '../../../../engine/ui/cards/types.ts';
@@ -63,6 +77,12 @@ export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
     const el = host.current, cv = canvas.current;
     if (!el || !cv) return;
     const pattern = PATTERN[level] as FoilPattern;
+    /* In a worker, unless this is a play's moment: the canvas is handed over now and cannot be drawn on from here again. */
+    let remote: FoilHandle | null = null;
+    if (!still && offscreenFoils()) {
+      try { remote = adoptFoil(cv); } catch (err) { console.error(err); return; }
+    }
+    const specs: Partial<Record<Board, FoilSpec>> = {};
     const foils: Partial<Record<Board, Foil>> = {};
     const release = (): void => { for (const f of Object.values(foils)) f?.release(); };
     let box = { w: 0, h: 0 };
@@ -80,7 +100,14 @@ export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
     };
     /* The band as last read; null until read, and again after a board that could not be read. Draws use it and never read. */
     let band: Band | null = null;
+    /* In the worker: the draw is posted, with the band read here (a null band clears the canvas there). */
+    const post = (handle: FoilHandle, light: Light, now: number, idle: boolean): void => {
+      const board: Board = band && band.hi < 0.5 ? 'dark' : 'light';
+      const spec = (specs[board] ??= { seed, pattern, palette: FAB_STOPS[board], stars: TWINKLES[level]!, glint: FAB_GLINT });
+      handle.draw(spec, board, box, density, light, band, now, idle);
+    };
     const paint = (light: Light, now: number, idle: boolean): void => {
+      if (remote) { post(remote, light, now, idle); return; }
       const ctx = cv.getContext('2d');
       if (!ctx) return;
       if (!band) { ctx.clearRect(0, 0, cv.width, cv.height); return; }
@@ -101,7 +128,10 @@ export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
       freed = false;
     };
     /* Out of view: the foil's buffers and the post's own backing store both go; the next draw sizes and draws fresh. */
-    const leave = (): void => { release(); cv.width = cv.height = 0; freed = true; };
+    const leave = (): void => {
+      if (remote) remote.free(); else { release(); cv.width = cv.height = 0; }
+      freed = true;
+    };
     const measure = (): { w: number; h: number } => { const r = el.getBoundingClientRect(); return { w: r.width, h: r.height }; };
     const setup = (): void => {
       band = readBand();
@@ -113,7 +143,7 @@ export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
         return;
       }
       density = register(el, cv, box, window.devicePixelRatio || 1, (frame) => {
-        if (freed) size();
+        if (freed) { if (!remote) size(); freed = false; }
         last = { light: frame.light, t: frame.t };
         paint(frame.light, frame.t, frame.idle);
         return false;
@@ -121,7 +151,7 @@ export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
       /* Resizing the backing store clears it, and the loop's next draw waits for the in-view callback: repaint now, with the
          light and band already held, so the post never shows a bare frame. A freed canvas (out of view) stays freed. */
       if (freed) return;
-      size();
+      if (!remote) size();
       if (last) paint(last.light, last.t, false);
     };
     setup();
@@ -146,13 +176,14 @@ export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
       mode?.disconnect();
       resize?.disconnect();
       if (!still) unregister(el);
+      remote?.drop();
       release();
     };
   }, [level, seed, still]);
 
   return (
     <div ref={host} className="dw-fab" data-kb-fab="" data-kb-level={level}>
-      <canvas ref={canvas} className="dw-fab-foil" aria-hidden="true" />
+      <canvas key={`${level}:${seed}:${still ? 'still' : 'live'}`} ref={canvas} className="dw-fab-foil" aria-hidden="true" />
       <div className="dw-fab-words">{children}</div>
     </div>
   );

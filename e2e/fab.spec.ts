@@ -10,6 +10,12 @@ import { expect, test, type Page } from '@playwright/test';
  *
  * Draws are counted through the loop's probe, which the story page hands over as `window.__kbShineDraws(n)`
  * (instances/divided-world/ui/feelin-fab/Fab.board.stories.tsx): the application exposes nothing.
+ *
+ * The foil is drawn in a worker, on a canvas whose control the page handed over (engine/ui/shine/foilClient.ts): the page can no longer
+ * call getContext on it, so its pixels and size are read from the worker through the story's `window.__kbFabPixels(n)`. That probe
+ * reads the worker's own canvas, which cannot show that the worker's frames reach the screen, so one test takes a screenshot of the
+ * canvas's box (with the words hidden by a planted style) and compares it with the same box with the canvas hidden; a poison test
+ * hides the canvas and expects the measure to read nothing.
  */
 test.use({ bypassCSP: true });
 
@@ -70,11 +76,12 @@ const layoutProblems = (page: Page, post: number): Promise<string[]> =>
     return out;
   });
 
-/** The mean relative luminance of a sample of the canvas's pixels, and how many of them are painted at all. */
+/** The mean relative luminance of a sample of the canvas's pixels, and how many of them are painted at all (read from the worker that holds them). */
 const paint = (page: Page, post: number): Promise<{ lum: number; painted: number; w: number; h: number }> =>
-  page.locator(FAB).nth(post).locator('canvas.dw-fab-foil').evaluate((cv: HTMLCanvasElement) => {
-    const g = cv.getContext('2d')!;
-    const { data } = g.getImageData(0, 0, cv.width, cv.height);
+  page.evaluate(async (nth) => {
+    const px = await window.__kbFabPixels!(nth);
+    if (!px) throw new Error('the foil canvas holds no pixels');
+    const { data } = px;
     const lin = (v: number) => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
     let sum = 0, n = 0, painted = 0;
     for (let i = 0; i < data.length; i += 4 * 97) {
@@ -82,8 +89,39 @@ const paint = (page: Page, post: number): Promise<{ lum: number; painted: number
       if (data[i + 3]! > 0) painted++;
       sum += 0.2126 * lin(data[i]!) + 0.7152 * lin(data[i + 1]!) + 0.0722 * lin(data[i + 2]!);
     }
-    return { lum: sum / n, painted: painted / n, w: cv.width, h: cv.height };
-  });
+    return { lum: sum / n, painted: painted / n, w: px.width, h: px.height };
+  }, post);
+
+/**
+ * The share of the canvas's box on screen that the canvas itself paints: a screenshot of the box's left half (the first tip's card
+ * stands over the right of it) as it is, against one with the canvas hidden (the post's own ground), counting the pixels that differ
+ * by more than a visible step. Run with the words hidden, so only the canvas can account for the difference.
+ */
+async function onScreen(page: Page, post: number, thresh = 24): Promise<number> {
+  const cv = page.locator(FAB).nth(post).locator('canvas.dw-fab-foil');
+  const box = (await cv.boundingBox())!;
+  const clip = { x: box.x, y: Math.max(0, box.y), width: Math.floor(box.width / 2), height: Math.floor(Math.min(box.height, (page.viewportSize()?.height ?? 720) - Math.max(0, box.y))) };
+  const shown = (await page.screenshot({ clip })).toString('base64');
+  const style = await page.addStyleTag({ content: '.dw-fab-foil { visibility: hidden !important }' });
+  const ground = (await page.screenshot({ clip })).toString('base64');
+  await style.evaluate((el) => (el as Element).remove());
+  return page.evaluate(async ([a, b, THRESH]) => {
+    const read = async (b64: string) => {
+      const bmp = await createImageBitmap(await (await fetch(`data:image/png;base64,${b64}`)).blob());
+      const c = new OffscreenCanvas(bmp.width, bmp.height), g = c.getContext('2d')!;
+      g.drawImage(bmp, 0, 0);
+      return g.getImageData(0, 0, bmp.width, bmp.height);
+    };
+    const x = await read(a as string), y = await read(b as string);
+    if (x.width !== y.width || x.height !== y.height) throw new Error('the two screenshots differ in size');
+    let differ = 0;
+    for (let i = 0; i < x.data.length; i += 4) {
+      const d = Math.abs(x.data[i]! - y.data[i]!) + Math.abs(x.data[i + 1]! - y.data[i + 1]!) + Math.abs(x.data[i + 2]! - y.data[i + 2]!);
+      if (d > THRESH) differ++;
+    }
+    return differ / (x.width * x.height);
+  }, [shown, ground, thresh] as const);
+}
 
 test.describe('the foil in a real page', () => {
   test('the canvas lies under the words, fills the post and takes no pointer', async ({ page }) => {
@@ -156,6 +194,16 @@ test.describe('the foil in a real page', () => {
   });
 });
 
+test.describe('the worker\'s frames reach the screen', () => {
+  test('with the words hidden, the canvas\'s box on screen is painted by the canvas, not the post\'s ground', async ({ page }) => {
+    await open(page, 'three-light');
+    await settle(page);
+    await plant(page, '.dw-fab-words { visibility: hidden !important }');
+    await frames(page, 4);
+    expect(await onScreen(page, 0)).toBeGreaterThan(0.95);
+  });
+});
+
 /*
  * The poisons: each defect the checks above exist to catch, planted by a style tag in a real page, and named by the check.
  * Each red run, with the check expecting no problem, is recorded in the PR that added this spec.
@@ -177,5 +225,14 @@ test.describe('the poisons, planted in a real page', () => {
     await open(page, 'two-light');
     await plant(page, '.dw-fab-foil { pointer-events: auto !important; z-index: 5 !important }');
     expect(await layoutProblems(page, 0)).toContain('the canvas lies over the words');
+  });
+
+  test('a canvas that is not shown leaves the box the post\'s ground, and the on-screen check reads nothing', async ({ page }) => {
+    await open(page, 'three-light');
+    await settle(page);
+    await plant(page, '.dw-fab-words { visibility: hidden !important }');
+    await plant(page, '.dw-fab-foil { opacity: 0 !important }');
+    await frames(page, 4);
+    expect(await onScreen(page, 0)).toBeLessThan(0.01);
   });
 });

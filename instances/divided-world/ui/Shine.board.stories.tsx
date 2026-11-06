@@ -5,8 +5,15 @@
  * about five are in view, and the rest wait their turn below. `Still` is the same page under reduced motion.
  *
  * The story page hands e2e/shine.spec.ts the loop's probe as `window.__kbShine`: each shiny post's draws, its place on the page (in
- * document order) and its size in device px, the loop's frame count and whether it runs, and the canvas pixels the page's 2D contexts
- * have rastered since it last asked (`raster`, below). The application exposes nothing.
+ * document order) and its size in device px, the loop's frame count and whether it runs, the size of every canvas each post holds
+ * (`held`), and the canvas pixels the 2D contexts have rastered (`raster`, below). The application exposes nothing.
+ *
+ * A Feelin' Fab is drawn in a worker where the browser can (engine/ui/shine/foilClient.ts), a Glitter Bomb on the page, so every
+ * instrument reads both threads. The story gives the foil its own worker entry (shine-probe.worker.ts: the foil server plus a pixel
+ * counter and the worker-side poisons) with `setFoilWorker` before any post mounts. A transferred canvas cannot be read from the
+ * page, so `held` asks the worker for the Fab canvases' sizes; `workerWork` is the worker's own time per batch, the cost of the foil
+ * that the loop's own time no longer includes; and a frame's rastered pixels are the page's plus the worker's for the batch with the
+ * same `t`, the animation frame's timestamp.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useState } from 'react';
@@ -15,7 +22,9 @@ import { useKayfa } from '../../../engine/ui/context.tsx';
 import type { Fake } from '../../../engine/ui/data/fake.ts';
 import { useLocation } from '../../../engine/ui/router.tsx';
 import { probe } from '../../../engine/ui/shine/loop.ts';
+import { foilProbe, setFoilWorker } from '../../../engine/ui/shine/foilClient.ts';
 import { LoadedThread } from '../../../engine/ui/loaded.tsx';
+import { countRaster, type Counter, type RasterFrame, type StoryAnswer, type StoryAsk } from './shine-probes.ts';
 
 declare global {
   interface Window {
@@ -26,13 +35,18 @@ declare global {
       frames: () => number;
       /** The loop's own time in each of its last `n` frames, in milliseconds. */
       work: (n: number) => number[];
+      /** The foil worker's own time in each of its last `n` batches (oldest first, ms) and how many batches it has drawn in all; none where there is no worker. */
+      workerWork: (n: number) => Promise<{ batches: number; work: number[] }>;
       running: () => boolean;
+      /** Every shiny post's box and the size of each canvas inside it, a worker's canvases read from the worker (a transferred canvas's own attributes say nothing). */
+      held: () => Promise<{ top: number; bottom: number; sizes: { w: number; h: number }[] }[]>;
       /**
-       * Counting the canvas pixels the page's 2D contexts raster (`countRaster`): `start` patches the contexts (a timed run leaves it
-       * off, so the count costs the loop nothing there), `take` gives the pixels since the last take (all of them, and those a
-       * drawImage scaled at 'high' smoothing quality), `stop` puts the contexts back.
+       * Counting the canvas pixels the 2D contexts raster (shine-probes.ts, on the page and in the worker): `start` patches the contexts
+       * (a timed run leaves it off, so the count costs the loop nothing there), `take` gives the page's pixels since the last take (all
+       * of them, and those a drawImage scaled at 'high' smoothing quality), `worker` gives the worker's pixels by batch (the `t` of the
+       * frame each belongs to), `stop` puts the contexts back.
        */
-      raster: { start: () => void; take: () => { px: number; high: number }; stop: () => void };
+      raster: { start: () => void; take: () => { px: number; high: number }; worker: () => Promise<RasterFrame[]>; stop: () => void };
     };
   }
 }
@@ -41,76 +55,79 @@ const SHINY = '[data-kb-fab], [data-kb-glitter]';
 
 /**
  * Story-only poisons for e2e/shine.spec.ts, which plants each to see its check go red (a guard never red is not known to work).
- * `window.__kbPoison = 'slow'` (set by the spec before the page loads; the app rewrites its address, so a query would not survive) makes the third shiny post's canvas cost 25 ms every time it is drawn on (a busy-wait in `getContext`, which both
- * effects call on each paint); `'keep'` makes the first shiny post's canvases ignore being freed (a width or height of 0).
- * Nothing but this story reads the flag, and without it nothing is patched.
+ * `window.__kbPoison` is set by the spec before the page loads (the app rewrites its address, so a query would not survive). Nothing
+ * but this story reads the flag, and without it nothing is patched.
+ *  - `'slow'`: the second Glitter Bomb post's first canvas costs 25 ms every time it is drawn on (a busy-wait in `getContext`, which the
+ *    effect calls on each paint). A Feelin' Fab is no longer drawn on the page, so the page-side cost is planted on a Glitter Bomb.
+ *  - `'slow-worker'`: every batch the foil worker draws takes 25 ms more (shine-probe.worker.ts).
+ *  - `'keep'`: the first shiny post's canvas ignores being freed (a width or height of 0), in the worker where its canvas lives.
  */
 function plant(poison: string | null): () => void {
-  if (poison !== 'slow' && poison !== 'keep') return () => {};
-  const proto = HTMLCanvasElement.prototype;
-  const nth = (cv: HTMLCanvasElement, n: number) => { const host = cv.closest(SHINY); return host !== null && [...document.querySelectorAll(SHINY)].indexOf(host) === n; };
   if (poison === 'slow') {
-    const get = proto.getContext;
+    const proto = HTMLCanvasElement.prototype, get = proto.getContext;
     proto.getContext = function (this: HTMLCanvasElement, ...a: Parameters<typeof get>) {
-      if (nth(this, 2)) for (const until = performance.now() + 25; performance.now() < until;) { /* busy */ }
+      const host = this.closest('[data-kb-glitter]');
+      if (host !== null && host === document.querySelectorAll('[data-kb-glitter]')[1] && host.querySelector('canvas') === this) {
+        for (const until = performance.now() + 25; performance.now() < until;) { /* busy */ }
+      }
       return get.apply(this, a);
     } as typeof get;
     return () => { proto.getContext = get; };
   }
-  const undo: (() => void)[] = [];
-  for (const key of ['width', 'height'] as const) {
-    const d = Object.getOwnPropertyDescriptor(proto, key)!;
-    Object.defineProperty(proto, key, { ...d, set(this: HTMLCanvasElement, v: number) { if (v === 0 && nth(this, 0)) return; d.set!.call(this, v); } });
-    undo.push(() => Object.defineProperty(proto, key, d));
+  if (poison === 'keep') {
+    /* Once the first shiny post's canvas has been handed over, tell the worker which canvas it is. */
+    const timer = setInterval(() => {
+      const cv = document.querySelector(SHINY)?.querySelector('canvas'), w = foilProbe.worker();
+      const id = cv ? foilProbe.idOf(cv) : undefined;
+      if (id === undefined || !w) return;
+      w.postMessage({ kind: 'story', what: 'poison', poison: 'keep', id } satisfies StoryAsk);
+      clearInterval(timer);
+    }, 20);
+    return () => clearInterval(timer);
   }
-  return () => undo.forEach((u) => u());
+  return () => {};
 }
 
-/**
- * Counts the canvas pixels the page's 2D contexts raster: the area each clearRect, fillRect, putImageData and drawImage covers, in the
- * canvas's own px (its transform's scale applied), and a drawImage no larger than the clip it is drawn in when the clip is a set of
- * rects (`rect` then `clip`). The pixels a drawImage scales with 'high' smoothing quality are counted apart too: that filter costs
- * far more a pixel than bilinear. A browser rasters what a frame's draws cover when it produces the frame, and then hands each
- * changed canvas to the compositor; a frame that clears and redraws whole post-sized canvases on every shiny post in view, or scales
- * them at 'high', costs a slow machine its frame, which the loop's own time never shows (e2e/shine.spec.ts). Story-only: it patches
- * the prototype from `start` until `stop`.
- */
-function countRaster(): { take: () => { px: number; high: number }; stop: () => void } {
-  const proto = CanvasRenderingContext2D.prototype;
-  let total = 0, high = 0;
-  const clips = new WeakMap<CanvasRenderingContext2D, { pending: number; clip: number; stack: number[] }>();
-  const of = (c: CanvasRenderingContext2D) => { let s = clips.get(c); if (!s) { s = { pending: 0, clip: Infinity, stack: [] }; clips.set(c, s); } return s; };
-  const scale = (c: CanvasRenderingContext2D) => { const m = c.getTransform(); return Math.abs(m.a * m.d - m.b * m.c); };
-  const orig = {
-    clearRect: proto.clearRect, fillRect: proto.fillRect, putImageData: proto.putImageData, drawImage: proto.drawImage,
-    beginPath: proto.beginPath, rect: proto.rect, clip: proto.clip, save: proto.save, restore: proto.restore,
+/** The story's worker: the foil server with this story's instruments (shine-probe.worker.ts), told its poison at birth. */
+function probeWorker(poison: string | null): () => Worker {
+  return () => {
+    const w = new Worker(new URL('./shine-probe.worker.ts', import.meta.url), { type: 'module' });
+    if (poison === 'slow-worker') w.postMessage({ kind: 'story', what: 'poison', poison: 'slow-worker' } satisfies StoryAsk);
+    return w;
   };
-  const area = (c: CanvasRenderingContext2D, w: number, h: number) => Math.min(Math.abs(w * h) * scale(c), c.canvas.width * c.canvas.height);
-  proto.clearRect = function (this: CanvasRenderingContext2D, x, y, w, h) { total += area(this, w, h); orig.clearRect.call(this, x, y, w, h); };
-  proto.fillRect = function (this: CanvasRenderingContext2D, x, y, w, h) { total += area(this, w, h); orig.fillRect.call(this, x, y, w, h); };
-  proto.putImageData = function (this: CanvasRenderingContext2D, ...a: unknown[]) {
-    const img = a[0] as ImageData;
-    total += img.width * img.height;
-    (orig.putImageData as (...b: unknown[]) => void).apply(this, a);
-  };
-  proto.drawImage = function (this: CanvasRenderingContext2D, ...a: unknown[]) {
-    const n = a.length, img = a[0] as { width: number; height: number };
-    const [w, h] = n >= 9 ? [a[7] as number, a[8] as number] : n >= 5 ? [a[3] as number, a[4] as number] : [img.width, img.height];
-    const [sw, sh] = n >= 9 ? [a[3] as number, a[4] as number] : [img.width, img.height];
-    const px = Math.min(area(this, w, h), of(this).clip);
-    total += px;
-    if (this.imageSmoothingEnabled && this.imageSmoothingQuality === 'high' && px > Math.abs(sw * sh) * 1.5) high += px;
-    (orig.drawImage as (...b: unknown[]) => void).apply(this, a);
-  };
-  proto.beginPath = function (this: CanvasRenderingContext2D) { of(this).pending = 0; orig.beginPath.call(this); };
-  proto.rect = function (this: CanvasRenderingContext2D, x, y, w, h) { of(this).pending += area(this, w, h); orig.rect.call(this, x, y, w, h); };
-  proto.clip = function (this: CanvasRenderingContext2D, ...a: unknown[]) { const s = of(this); s.clip = Math.min(s.clip, s.pending); (orig.clip as (...b: unknown[]) => void).apply(this, a); };
-  proto.save = function (this: CanvasRenderingContext2D) { const s = of(this); s.stack.push(s.clip); orig.save.call(this); };
-  proto.restore = function (this: CanvasRenderingContext2D) { const s = of(this); s.clip = s.stack.pop() ?? Infinity; orig.restore.call(this); };
-  return {
-    take: () => { const t = { px: total, high }; total = 0; high = 0; return t; },
-    stop: () => { Object.assign(proto, orig); },
-  };
+}
+
+let asked = 0;
+/** What the story worker rastered, by batch; none where there is no worker. */
+function workerRaster(): Promise<RasterFrame[]> {
+  const w = foilProbe.worker();
+  if (!w) return Promise.resolve([]);
+  return new Promise((resolve) => {
+    const nonce = ++asked;
+    const on = (e: MessageEvent): void => {
+      const m = e.data as Partial<StoryAnswer> | null;
+      if (m?.kind !== 'story' || m.nonce !== nonce) return;
+      w.removeEventListener('message', on);
+      resolve([...(m.frames ?? [])]);
+    };
+    w.addEventListener('message', on);
+    w.postMessage({ kind: 'story', what: 'frames', nonce } satisfies StoryAsk);
+  });
+}
+
+/** Every shiny post's box and its canvases' sizes: a canvas handed to the worker is read there, any other from its own attributes. */
+async function held(): Promise<{ top: number; bottom: number; sizes: { w: number; h: number }[] }[]> {
+  const worked = await foilProbe.sizes();
+  return [...document.querySelectorAll(SHINY)].map((el) => {
+    const r = el.getBoundingClientRect();
+    const sizes = [...el.querySelectorAll('canvas')].map((c) => {
+      const there = worked.get(c);
+      if (there) return there;
+      if (foilProbe.idOf(c) !== undefined) throw new Error('a canvas handed to the foil worker is not in the worker\'s list: the buffer check would read its placeholder');
+      return { w: c.width, h: c.height };
+    });
+    return { top: r.top, bottom: r.bottom, sizes };
+  });
 }
 
 interface Args { readonly reduced: boolean }
@@ -125,9 +142,15 @@ function Busy({ reduced }: Args) {
     root.setAttribute('data-kb-motion', reduced ? 'reduce' : 'full');
     return () => { root.removeAttribute('data-kb-mode'); root.removeAttribute('data-kb-motion'); };
   }, [reduced]);
+  /* Before any post mounts (they wait for the thread to be seeded): the foil is drawn by this story's worker, and put back on unmount. */
+  useEffect(() => {
+    setFoilWorker(probeWorker(window.__kbPoison ?? null));
+    return () => { setFoilWorker(null); };
+  }, []);
   useEffect(() => plant(window.__kbPoison ?? null), []);
   useEffect(() => {
-    let raster: ReturnType<typeof countRaster> | null = null;
+    let raster: Counter | null = null;
+    const tell = (on: boolean): void => { foilProbe.worker()?.postMessage({ kind: 'story', what: 'raster', on } satisfies StoryAsk); };
     window.__kbShine = {
       hosts: () => [...document.querySelectorAll(SHINY)].map((el) => {
         const r = el.getBoundingClientRect(), d = window.devicePixelRatio || 1;
@@ -135,14 +158,17 @@ function Busy({ reduced }: Args) {
       }),
       frames: probe.frames,
       work: (n) => probe.work(n),
+      workerWork: (n) => foilProbe.work(n),
       running: probe.running,
+      held,
       raster: {
-        start: () => { raster ??= countRaster(); },
+        start: () => { raster ??= countRaster(CanvasRenderingContext2D.prototype); tell(true); },
         take: () => raster?.take() ?? { px: 0, high: 0 },
-        stop: () => { raster?.stop(); raster = null; },
+        worker: workerRaster,
+        stop: () => { raster?.stop(); raster = null; tell(false); },
       },
     };
-    return () => { raster?.stop(); delete window.__kbShine; };
+    return () => { raster?.stop(); tell(false); delete window.__kbShine; };
   }, []);
   useEffect(() => {
     if (thread === null) return;

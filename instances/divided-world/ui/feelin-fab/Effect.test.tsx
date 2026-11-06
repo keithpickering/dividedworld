@@ -17,6 +17,7 @@ import type { CardPlay, EffectProps } from '../../../../engine/ui/cards/types.ts
 import { bandOf, POST_INK } from '../../../../engine/ui/shine/band.ts';
 import { light as pageLight, REST } from '../../../../engine/ui/shine/light.ts';
 import { probe } from '../../../../engine/ui/shine/loop.ts';
+import { foilProbe, setFoilWorker } from '../../../../engine/ui/shine/foilClient.ts';
 
 /* The foil is a spy that remembers how it was made; the band is the root's board, as bandFor would read it from the tokens. */
 const made = vi.hoisted(() => [] as { opts: { seed: string; pattern: string; palette: readonly string[]; stars: number; glint: string }; draw: ReturnType<typeof vi.fn>; release: ReturnType<typeof vi.fn> }[]);
@@ -498,5 +499,179 @@ describe("Feelin' Fab's palettes", () => {
     expect(bandOf(tokens.dark).hi).toBeLessThan(0.5);
     expect(FAB_STOPS.light).toHaveLength(6);
     expect(FAB_STOPS.dark).toHaveLength(6);
+  });
+});
+
+/* Where the browser can draw in a worker, the foil is drawn there: the canvas is handed over, and the loop's draw callback posts. */
+describe("Feelin' Fab drawing in a worker", () => {
+  class FakeWorker {
+    static made: FakeWorker[] = [];
+    readonly sent: Record<string, unknown>[] = [];
+    terminated = false;
+    constructor() { FakeWorker.made.push(this); }
+    postMessage(message: Record<string, unknown>) { this.sent.push(message); }
+    addEventListener() {}
+    terminate() { this.terminated = true; }
+    of(kind: string) { return this.sent.filter((m) => m.kind === kind); }
+  }
+  type Sent = { t: number; draws: { id: number; spec: { seed: string; pattern: string; palette: readonly string[]; stars: number; glint: string }; key: string; box: { w: number; h: number }; density: number; light: { x: number; y: number }; band: { lo: number; hi: number } | null; now: number; idle: boolean }[] };
+  const proto = HTMLCanvasElement.prototype as unknown as { transferControlToOffscreen?: () => unknown };
+  let transferred: HTMLCanvasElement[] = [];
+  const worker = () => FakeWorker.made[0]!;
+  const posted = (): Sent[] => worker().of('frame') as unknown as Sent[];
+  const tick = () => Promise.resolve();
+  /* Frames one at a time, with the microtask between them that the browser gives: a frame's draws are posted before the next frame runs. */
+  const run = async (n: number, from = 0, step = 16) => { for (let i = 1; i <= n; i++) { flush(from + i * step); await tick(); } };
+  const pageContexts = () => vi.mocked(HTMLCanvasElement.prototype.getContext).mock.calls.length;
+
+  beforeEach(() => {
+    FakeWorker.made = []; transferred = [];
+    vi.stubGlobal('Worker', FakeWorker);
+    vi.stubGlobal('OffscreenCanvas', class {});
+    proto.transferControlToOffscreen = function (this: HTMLCanvasElement) { transferred.push(this); return { of: this }; };
+    setFoilWorker(() => new FakeWorker() as unknown as Worker);
+  });
+  afterEach(() => {
+    foilProbe.reset();
+    setFoilWorker(null);
+    delete proto.transferControlToOffscreen;
+  });
+
+  test('a post hands its canvas to the worker once and posts its draws, and the page never gets a context from it', async () => {
+    render(<FeelinFabEffect {...props(2)} />);
+    expect(transferred).toEqual([canvas()]);
+    expect(worker().of('adopt')).toHaveLength(1);
+    void see(canvas(), true);
+    await run(2);
+    expect(made, 'no foil is made on the page').toHaveLength(0);
+    expect(pageContexts(), 'the page does not draw, size or clear a transferred canvas').toBe(0);
+    expect(posted().length).toBeGreaterThanOrEqual(1);
+    const d = posted()[0]!.draws[0]!;
+    expect(d.id).toBe(foilProbe.idOf(canvas()));
+    expect(d.spec).toEqual({ seed: 'p1:f1,f2', pattern: 'bands', palette: FAB_STOPS.light, stars: 8, glint: FAB_GLINT });
+    expect(d.key).toBe('light');
+    expect(d.box).toEqual({ w: 300, h: 120 });
+    expect(d.density).toBe(1.5);
+    expect(d.band).toEqual({ lo: 0.59, hi: 1 });
+    expect(d.idle).toBe(false);
+    expect(posted()[0]!.t).toBe(d.now);
+    expect(probe.draws(box())).toBeGreaterThanOrEqual(1);
+  });
+
+  test('on the dark board the draw carries the dark palette, its key and its band', async () => {
+    document.documentElement.setAttribute('data-kb-mode', 'dark');
+    render(<FeelinFabEffect {...props(1)} />);
+    void see(canvas(), true);
+    await run(2);
+    const d = posted()[0]!.draws[0]!;
+    expect([d.key, d.spec.palette, d.band]).toEqual(['dark', FAB_STOPS.dark, { lo: 0, hi: 0.048 }]);
+  });
+
+  test('a board whose tokens cannot be read posts a draw with no band, which clears the canvas and leaves the words bare', async () => {
+    bandState.throws = true;
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    render(<FeelinFabEffect {...props(1)} />);
+    void see(canvas(), true);
+    await run(2);
+    expect(posted()[0]!.draws[0]!.band).toBeNull();
+    log.mockRestore();
+  });
+
+  test('every post in one frame is in one frame message', async () => {
+    render(<><FeelinFabEffect {...props(1)} /><FeelinFabEffect {...props(2)} /></>);
+    for (const c of document.querySelectorAll('canvas')) void see(c, true);
+    await run(1);
+    expect(posted()).toHaveLength(1);
+    expect(posted()[0]!.draws).toHaveLength(2);
+  });
+
+  test('leaving view frees the canvas in the worker; coming back posts a draw again', async () => {
+    render(<FeelinFabEffect {...props(1)} />);
+    void see(canvas(), true); await run(2);
+    const before = posted().length;
+    void see(canvas(), false);
+    expect(worker().of('free')).toEqual([{ kind: 'free', id: foilProbe.idOf(canvas()) }]);
+    await run(3);
+    expect(posted()).toHaveLength(before);
+    void see(canvas(), true); await run(2, 100);
+    expect(posted().length).toBeGreaterThan(before);
+  });
+
+  test('a resize repaints at once from the held light and band, with the new box, posted in the same task\'s microtask', async () => {
+    render(<FeelinFabEffect {...props(1)} />);
+    void see(canvas(), true); await run(2);
+    const lastLight = posted().at(-1)!.draws[0]!.light;
+    const before = posted().length;
+    size = { w: 200, h: 80 };
+    act(() => resizes[0]!.cb());
+    await tick();
+    expect(posted()).toHaveLength(before + 1);
+    const d = posted().at(-1)!.draws[0]!;
+    expect([d.box, d.light, d.band]).toEqual([{ w: 200, h: 80 }, lastLight, { lo: 0.59, hi: 1 }]);
+    expect(pageContexts()).toBe(0);
+  });
+
+  test('a resize while out of view posts nothing: the canvas stays freed until the loop draws it', async () => {
+    render(<FeelinFabEffect {...props(1)} />);
+    void see(canvas(), true); await run(2);
+    void see(canvas(), false);
+    const before = posted().length;
+    size = { w: 200, h: 80 };
+    act(() => resizes[0]!.cb());
+    await tick();
+    expect(posted()).toHaveLength(before);
+  });
+
+  test('unmounting drops the canvas, and the last drop ends the worker', () => {
+    const one = render(<FeelinFabEffect {...props(1)} />);
+    expect(foilProbe.idOf(canvas())).toBeDefined();
+    one.unmount();
+    expect(worker().terminated, 'the only canvas on the page: nothing left for the worker to serve').toBe(true);
+    const two = render(<div><FeelinFabEffect key="a" {...props(1)} /><FeelinFabEffect key="b" {...props(2)} /></div>);
+    const second = FakeWorker.made[1]!;
+    const ida = foilProbe.idOf(document.querySelectorAll('canvas')[0]!);
+    two.rerender(<div><FeelinFabEffect key="b" {...props(2)} /></div>);
+    expect(second.of('drop')).toEqual([{ kind: 'drop', id: ida }]);
+    expect(second.terminated).toBe(false);
+    two.unmount();
+    expect(second.terminated).toBe(true);
+  });
+
+  test('a play\'s moment (still) never adopts: it is drawn once, at rest, on the page, with no worker', () => {
+    render(<FeelinFabEffect {...props(3)} still />);
+    expect(transferred).toEqual([]);
+    expect(FakeWorker.made).toHaveLength(0);
+    expect(draws()).toBe(1);
+    expect(canvas().width).toBe(450);
+  });
+
+  test('a change of level gives the post a new canvas element (a transferred one cannot be handed over again), and lets the old go', async () => {
+    const r = render(<FeelinFabEffect {...props(1)} />);
+    const first = canvas();
+    void see(first, true); await run(2);
+    r.rerender(<FeelinFabEffect {...props(2)} />);
+    const second = canvas();
+    expect(second).not.toBe(first);
+    expect(transferred).toEqual([first, second]);
+    expect(worker().terminated, 'the old canvas was dropped, and it was the last').toBe(true);
+    void see(second, true); await run(2, 100);
+    expect(FakeWorker.made[1]!.of('frame').at(-1)).toMatchObject({ draws: [{ spec: { pattern: 'bands' } }] });
+  });
+
+  test('reduced motion posts one draw, at the rest light, and the loop stops', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    render(<FeelinFabEffect {...props(2)} />);
+    void see(canvas(), true);
+    await run(10);
+    expect(posted()).toHaveLength(1);
+    expect(posted()[0]!.draws[0]!.light).toEqual(REST);
+    expect(probe.running()).toBe(false);
+  });
+
+  test('the header says the foil is drawn in a worker where the browser can, and how a transferred canvas is handled', () => {
+    const src = read('./Effect.tsx');
+    expect(src).toMatch(/worker/iu);
+    expect(src).toMatch(/OffscreenCanvas|offscreen/iu);
+    expect(src).toMatch(/key=/u);
   });
 });
