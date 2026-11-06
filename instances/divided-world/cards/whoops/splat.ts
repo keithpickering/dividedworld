@@ -169,7 +169,7 @@ export interface Shading {
   readonly luminance: number;
   /** Opacity of the white wet highlight: strongest on a dark ink, none on white. */
   readonly highlight: number;
-  /** A pale ink's soft shadow around the outside edge, so it has an outline on a white page: opacity, then blur and downward offset in pixels at the reference width. */
+  /** A pale ink's soft shadow around the outside edge, so it has an outline on a white page: opacity, then blur and downward offset in CSS px. */
   readonly edgeShadow: number;
   readonly edgeBlur: number;
   readonly edgeOffset: number;
