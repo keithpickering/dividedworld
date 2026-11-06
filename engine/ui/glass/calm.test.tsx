@@ -330,11 +330,9 @@ describe('the rect is blurred by the theme\'s feather, at the calm\'s opacity, i
   test('the falloff lies outside the region\'s box: the rect is drawn out past it, so every word inside is on the calm in full', () => {
     expect(declsOf(calm, '.kb-smoke-calm::before').inset).toMatch(/^calc\(var\(--kb-calm-blur\) \* var\(--kb-glass-calm-reach\) \* -1\)$/);
   });
-  test('the theme\'s feather is 60px and the phone\'s 30px', () => {
+  /* The instance's own feather (glass.json) is held in its own test: the engine never reads an instance's files. */
+  test('the engine\'s default feather is 60px, so the phone\'s is 30px', () => {
     expect(declsOf(sheet('tokens.css'), ':root')['--kb-glass-calm-feather']).toBe('60px');
-    const json = JSON.parse(fs.readFileSync(path.join(here, '../../../instances/divided-world/ui/glass.json'), 'utf8')) as { calm: { feather: number } };
-    expect(json.calm.feather).toBe(60);
-    expect(json.calm.feather / 2).toBe(30);
   });
   test('the rect only takes smoke away: it lies in the smoke and never takes pointer events', () => {
     expect(declsOf(calm, '.kb-smoke-calm').position).toBe('absolute');
