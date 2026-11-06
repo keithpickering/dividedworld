@@ -110,6 +110,16 @@ check('the real glass is clean', glassFaults(real).length === 0, text(glassFault
   check('the field is four layers and three narrow, each drifting at its own rate', real.smoke.field?.layers.length === 4 && real.smoke.field?.narrow?.length === 3 && new Set(real.smoke.field.layers.map((l) => l.drift.seconds)).size === 4, JSON.stringify(real.smoke.field?.layers.map((l) => l.drift)));
 }
 
+/* ---- the hurt color: what hurts a class, set under how it earns on the class card (the backfill plan, Task 8) ---- */
+{
+  check('the real glass has --kb-glass-hurt as a body token in both keys, held at 4.5:1 like the other text colors', ['standard', 'high'].every((k) => real.keys[k]['--kb-glass-hurt']?.tags?.includes('body')), JSON.stringify(real.keys.standard['--kb-glass-hurt']));
+  const g = fresh();
+  g.keys.standard['--kb-glass-hurt'].value = '#7a2f46';
+  const r = named(glassFaults(g), '--kb-glass-hurt', 'body');
+  check('a hurt color too dark for the card fires, naming the token and the 4.5 it needs', r.length > 0 && r.every((f) => /needs 4\.5/.test(f.why)), text(glassFaults(g)).slice(0, 600));
+  check('the real hurt color does not fire', named(glassFaults(fresh()), '--kb-glass-hurt').length === 0);
+}
+
 /* ---- the web plan's seven poisons ---- */
 {
   const g = fresh();
@@ -454,9 +464,9 @@ const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s ===
 
 /*
  * Overlay sheets (the onboarding follow-ups design, section 3): the spotlight's panel stands on none of the smoke surfaces. It is
- * `--kb-glass-sheet` over a base (the panel's own `--kb-glass-pale` background, which the sheet's ::after is laid on) and, outside the
- * panel, a scrim of the ground at N% over whatever page is behind, which can be white. The worst pixel under the text is the sheet
- * over the brighter of the two bases; the panel's border (pale) is read against the scrim over white. Colors are rounded to bytes at
+ * `--kb-glass-ground` over a base (the panel's own `--kb-glass-violet` background, which the ground's ::after is laid on) and, outside the
+ * panel, a scrim of the ground at N% over whatever page is behind, which can be white. The worst pixel under the text is the ground
+ * over the brighter of the two bases; the panel's border (violet) is read against the scrim over white. Colors are rounded to bytes at
  * each composite, as the browser draws them.
  */
 {
@@ -466,51 +476,53 @@ const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s ===
   const faultsOf = (glass, scrims = at(reading?.percent)) => glassFaults(glass, undefined, scrims);
 
   check('the engine lists the tips overlay, and the guard has a rule for it', JSON.stringify(OVERLAYS) === '["tips"]' && OVERLAY_RULES.tips !== undefined, JSON.stringify(OVERLAYS));
-  check('the scrim is read from tips.css as 72, and the panel\'s base as --kb-glass-pale', reading?.percent === 72 && reading?.base === '--kb-glass-pale', JSON.stringify(reading));
+  check('the scrim is read from tips.css as 72, and the panel\'s base as --kb-glass-violet', reading?.percent === 72 && reading?.base === '--kb-glass-violet', JSON.stringify(reading));
   check('readScrim reads the .kb-tips-dim rule\'s color-mix percentage', readScrim(tipsCss, '.kb-tips-dim') === 72);
   check('readScrim finds no rule when the class is renamed', readScrim(tipsCss.replace('.kb-tips-dim {', '.kb-tips-veil {'), '.kb-tips-dim') === null);
   check('readScrim finds none when the rule no longer mixes the ground', readScrim(tipsCss.replace('var(--kb-glass-ground) 72%', 'black 72%'), '.kb-tips-dim') === null);
 
-  /* Divided World's numbers, with their arithmetic. Standard key: ground #07050d = (7, 5, 13), sheet rgba(9, 5, 18, 0.92), pale #c9f8ff = (201, 248, 255). */
-  const w = overlayWorst(real, 'standard', 72, '--kb-glass-pale');
+  /* Divided World's numbers, with their arithmetic. Standard key: ground #07050d = (7, 5, 13), violet #a78bfa = (167, 139, 250). */
+  const w = overlayWorst(real, 'standard', 72, '--kb-glass-violet');
   /* The scrim over white: 255 * 0.28 + ground * 0.72 = (76.44, 75.0, 80.76) -> (76, 75, 81), the border's ground. */
   check('the scrim over white is rgb(76,75,81)', JSON.stringify(w?.scrim) === '[76,75,81]', JSON.stringify(w?.scrim));
-  /* The sheet over pale: 0.92 * (9, 5, 18) + 0.08 * (201, 248, 255) = (24.36, 24.44, 36.96) -> (24, 24, 37). Over the scrim it would be (14, 11, 23), so pale is the worse base. */
-  check('the sheet over the pale base is rgb(24,24,37), the worst pixel', JSON.stringify(w?.rgb) === '[24,24,37]', JSON.stringify(w?.rgb));
-  check('the worst luminance is 0.0098', near(w?.luminance, 0.0098, 0.00005), String(w?.luminance));
-  const high = overlayWorst(real, 'high', 72, '--kb-glass-pale');
-  check('under the high key the sheet is opaque #090512, so the worst is rgb(9,5,18)', JSON.stringify(high?.rgb) === '[9,5,18]', JSON.stringify(high?.rgb));
+  /* The tip stands on the glass's opaque ground #07050d, laid inside its violet edge: the worst pixel is the ground itself, rgb(7,5,13), whatever is under it. */
+  check('the ground is the worst pixel, rgb(7,5,13)', JSON.stringify(w?.rgb) === '[7,5,13]', JSON.stringify(w?.rgb));
+  check('the worst luminance is 0.0018', near(w?.luminance, 0.0018, 0.00005), String(w?.luminance));
+  const high = overlayWorst(real, 'high', 72, '--kb-glass-violet');
+  check('under the high key the ground is the same #07050d, so the worst is rgb(7,5,13)', JSON.stringify(high?.rgb) === '[7,5,13]', JSON.stringify(high?.rgb));
   const ratios = Object.fromEntries(['--kb-glass-text', '--kb-glass-text-hi', '--kb-glass-text-2', '--kb-glass-pale'].map((t) => [t, [contrastRatio(real.keys.standard[t].value, w.rgb), contrastRatio(real.keys.high[t].value, high.rgb)]]));
   /*
    * PINNED: contrast on the worst, standard / high, to two places, as (L_fg + 0.05) / (L_bg + 0.05) with the luminances to four places.
-   * Standard, L_bg 0.0098 (rgb(24,24,37)): text #f1ecff 0.8591 -> 0.9091 / 0.0598 = 15.20; text-hi #ffffff 1.0 -> 1.05 / 0.0598 = 17.56;
-   * text-2 #e4def7 0.7545 -> 0.8045 / 0.0598 = 13.45; pale #c9f8ff 0.8677 -> 0.9177 / 0.0598 = 15.34.
-   * High, L_bg 0.0021 (rgb(9,5,18), the opaque sheet): text #ffffff 1.05 / 0.0521 = 20.15; text-hi the same, 20.15; text-2 #f1ecff
-   * 0.9091 / 0.0521 = 17.45; pale 0.9177 / 0.0521 = 17.61.
+   * Standard, L_bg 0.0018 (rgb(7,5,13), the opaque ground): text #f1ecff 0.9091 / 0.0518 = 17.54; text-hi #ffffff 1.05 / 0.0518 = 20.26;
+   * text-2 #e4def7 0.8045 / 0.0518 = 15.52; pale #c9f8ff 0.9177 / 0.0518 = 17.71.
+   * High, the same ground: text #ffffff 20.26; text-hi 20.26; text-2 #f1ecff 17.54; pale 17.71.
    */
-  const pin = { '--kb-glass-text': [15.2, 20.15], '--kb-glass-text-hi': [17.56, 20.15], '--kb-glass-text-2': [13.45, 17.45], '--kb-glass-pale': [15.34, 17.61] };
+  const pin = { '--kb-glass-text': [17.54, 20.26], '--kb-glass-text-hi': [20.26, 20.26], '--kb-glass-text-2': [15.52, 17.54], '--kb-glass-pale': [17.71, 17.71] };
   for (const [t, [s2, h2]] of Object.entries(pin)) check(`${t} on the worst is ${s2}:1 standard and ${h2}:1 high`, near(ratios[t][0], s2, 0.006) && near(ratios[t][1], h2, 0.006), JSON.stringify(ratios[t]));
-  /* The border: pale #c9f8ff 0.8677 over the scrim over white rgb(76,75,81), luminance 0.0716: 0.9177 / 0.1216 = 7.55. */
-  check('the border pale on the scrim over white is 7.55:1, over its 3:1', near(contrastRatio(real.keys.standard['--kb-glass-pale'].value, w.scrim), 7.55, 0.006), String(contrastRatio(real.keys.standard['--kb-glass-pale'].value, w.scrim)));
+  /* The border: violet #a78bfa (luminance 0.3319) against the scrim over white rgb(76,75,81), luminance 0.0716: 0.3819 / 0.1216 = 3.17 (the pin is the computed ratio). */
+  check('the border violet on the scrim over white is 3.17:1, over its 3:1', near(contrastRatio(real.keys.standard['--kb-glass-violet'].value, w.scrim), 3.17, 0.006), String(contrastRatio(real.keys.standard['--kb-glass-violet'].value, w.scrim)));
+  const dimViolet = fresh();
+  dimViolet.keys.standard['--kb-glass-violet'].value = '#6d5aa8';
+  check('a violet border below 3:1 on the scrim is named', named(faultsOf(dimViolet), 'overlay tips', 'border').length >= 1, text(faultsOf(dimViolet)));
   check('the real glass passes the overlay rules', named(faultsOf(real), 'overlay').length === 0, text(named(faultsOf(real), 'overlay')));
 
   /* The poisons, each red before the guard knew overlays. */
   const half = fresh();
-  half.keys.standard['--kb-glass-sheet'].value = 'rgba(9, 5, 18, 0.5)';
+  half.keys.standard['--kb-glass-ground'].value = 'rgba(7, 5, 13, 0.3)';
   const halfFaults = named(faultsOf(half), 'overlay tips', '--kb-glass-text-2');
-  check('a sheet at alpha 0.5 fails --kb-glass-text-2 on the worst', halfFaults.length === 1 && /standard key/.test(halfFaults[0].why) && /needs 4\.5:1/.test(halfFaults[0].why), text(halfFaults));
-  check('the 0.5 sheet would pass over the scrim alone: it is the pale base under the sheet that makes it the worst', overlayWorst(half, 'standard', 72, null).luminance < 0.05 && overlayWorst(half, 'standard', 72, '--kb-glass-pale').luminance > 0.12, '');
+  check('a ground at alpha 0.3 fails --kb-glass-text-2 on the worst', halfFaults.length === 1 && /standard key/.test(halfFaults[0].why) && /needs 4\.5:1/.test(halfFaults[0].why), text(halfFaults));
+  check('the 0.3 ground would pass over the scrim alone: it is the violet base under it that makes it the worst', overlayWorst(half, 'standard', 72, null).luminance < 0.05 && overlayWorst(half, 'standard', 72, '--kb-glass-violet').luminance > 0.12, '');
   const thin = faultsOf(real, at(30));
   check('a scrim read as 30% fails the panel\'s border at 3:1', named(thin, 'overlay tips', 'border').length >= 1 && /needs 3:1/.test(text(named(thin, 'overlay tips', 'border'))), text(thin));
   const high7 = fresh();
-  high7.keys.high['--kb-glass-sheet'].value = 'rgba(9, 5, 18, 0.5)';
-  check('under the high key a sheet that is not opaque fails text-2 at 7:1', named(faultsOf(high7), 'overlay tips', 'high key', '--kb-glass-text-2', 'needs 7:1').length === 1, text(faultsOf(high7)));
-  const noSheet = fresh();
-  delete noSheet.keys.high['--kb-glass-sheet'];
-  check('a sheet token missing from a key is an error', named(faultsOf(noSheet), 'overlay tips', '--kb-glass-sheet', 'high key').length >= 1, text(faultsOf(noSheet)));
-  const noSheet2 = fresh();
-  noSheet2.keys.standard['--kb-glass-sheet'].value = 'sheet';
-  check('a sheet token that is not a color is an error', named(faultsOf(noSheet2), 'overlay tips', '--kb-glass-sheet', 'standard key').length >= 1, text(faultsOf(noSheet2)));
+  high7.keys.high['--kb-glass-ground'].value = 'rgba(9, 5, 18, 0.5)';
+  check('under the high key a ground that is not opaque fails text-2 at 7:1', named(faultsOf(high7), 'overlay tips', 'high key', '--kb-glass-text-2', 'needs 7:1').length === 1, text(faultsOf(high7)));
+  const noGround = fresh();
+  delete noGround.keys.high['--kb-glass-ground'];
+  check('a ground token missing from a key is an error', named(faultsOf(noGround), 'overlay tips', '--kb-glass-ground', 'high key').length >= 1, text(faultsOf(noGround)));
+  const noGround2 = fresh();
+  noGround2.keys.standard['--kb-glass-ground'].value = 'ground';
+  check('a ground token that is not a color is an error', named(faultsOf(noGround2), 'overlay tips', '--kb-glass-ground', 'standard key').length >= 1, text(faultsOf(noGround2)));
 
   check('a GlassOverlay with no rule in the guard is refused', overlayRuleFaults(['tips', 'toast'], OVERLAY_RULES).some((f) => /toast/.test(f.where) && /no rule/.test(f.why)), text(overlayRuleFaults(['tips', 'toast'], OVERLAY_RULES)));
   check('a rule for an overlay the engine does not list is refused', overlayRuleFaults([], OVERLAY_RULES).some((f) => /tips/.test(f.where) && /does not list/.test(f.why)), text(overlayRuleFaults([], OVERLAY_RULES)));

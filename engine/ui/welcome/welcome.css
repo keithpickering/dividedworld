@@ -91,6 +91,8 @@
 .kb-welcome-headline {
   margin: 26px 0 0;
   font-size: 4rem;
+  /* As the instance writes it (the board sets the letter's heading in the case it is written in), on one line at 1440. */
+  text-transform: none;
   line-height: 1.02;
   letter-spacing: 0.5px;
   color: var(--kb-glass-text);
@@ -116,12 +118,18 @@
 /* ---- before you start ---- */
 
 .kb-welcome-setup {
-  margin-top: 34px;
+  /* 26px above the rule as the board has it, and the signature's 16px under it (the signature has no margin of its own). */
+  margin-top: 42px;
   border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 30%, transparent);
 }
 
+/* The rule's 30px above the title is the section's own padding, which outranks the account screens' 27px. */
+.kb-welcome-setup.kb-acct {
+  padding-top: 30px;
+}
+
 .kb-welcome-setup-title {
-  margin: 28px 0 4px;
+  margin: 0 0 4px;
   font-size: var(--kb-glass-size-display-m);
   line-height: 1;
   letter-spacing: 0.5px;
@@ -129,7 +137,7 @@
 }
 
 .kb-welcome-setup-lede {
-  margin: 8px 0 6px;
+  margin: 8px 0 18px;
   font-size: var(--kb-glass-size-body);
   font-weight: 500;
   line-height: 1.5;
@@ -140,13 +148,14 @@
 .kb-welcome-setup.kb-acct .kb-acct-row {
   grid-template-columns: 170px minmax(0, 1fr);
   column-gap: 28px;
-  padding: 16px 0;
+  padding: 24px 0;
 }
 
 /* ---- the way on ---- */
 
 .kb-welcome-go {
-  margin-top: 34px;
+  /* The last setting's own padding is the rest of the board's 34px. */
+  margin-top: 10px;
   padding-top: 30px;
   border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 30%, transparent);
 }
@@ -187,6 +196,32 @@
 
 :where(:root[data-kb-layout='phone']) .kb-welcome-setup {
   margin-top: 20px;
+}
+
+/*
+ * On the phone each setting is a full-width block (the board, 22-onboarding-phone.html): its label, its options wrapping whole under it, its note
+ * under them. The desktop's label column above outranks the account screens' own fold, so it is undone here with the same specificity, and the
+ * 170px label column and the 28px gap go with it. An option's text is never broken inside its own label (at 200% text the longest no longer
+ * fits the block, so it wraps there, as the layout check requires).
+ */
+:where(:root[data-kb-layout='phone']) .kb-welcome-setup.kb-acct .kb-acct-row {
+  grid-template-columns: minmax(0, 1fr);
+  column-gap: 0;
+  row-gap: 12px;
+  padding: 16px 0;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-welcome-setup.kb-acct {
+  /* The phone's twin of the desktop's 30px above (the compound outranks a lone class): the board starts Before you start at the page's gutter. */
+  padding-top: 16px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-welcome-setup .kb-acct-seg-face > b {
+  white-space: nowrap;
+}
+
+:where(:root[data-kb-layout='phone'][data-kb-text-size='200']) .kb-welcome-setup .kb-acct-seg-face > b {
+  white-space: normal;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-welcome-setup-title {

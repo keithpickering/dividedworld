@@ -10,6 +10,8 @@
 /* The gap between a page's title and the lede or tabs under it, stated once; the phone sets its blocks closer. */
 :root {
   --kb-glass-title-gap: 12px;
+  /* The room between the sections of a form or a dialog, stated once (the character forms' boards draw 44px between every one: New character, the Debut and Reveal dialogs). */
+  --kb-glass-section-gap: 44px;
 }
 
 :root[data-kb-layout='phone'] {
@@ -71,6 +73,10 @@
   color: var(--kb-glass-text-2);
 }
 
+.kb-page-head[data-kb-lead='under'] .kb-page-head-lead {
+  flex-basis: 100%;
+}
+
 .kb-page-head-tabs {
   flex: 0 1 auto;
   min-width: 0;
@@ -95,6 +101,12 @@
 :where(:root[data-kb-layout='phone']) .kb-page-head[data-kb-size='roster'] .kb-page-head-title { font-size: min(var(--kb-glass-size-display-m), 17vw); }
 :where(:root[data-kb-layout='phone']) .kb-page-head-count { font-size: var(--kb-glass-size-display-s); }
 :where(:root[data-kb-layout='phone']) :is(.kb-page-head-lead, .kb-page-head-eyebrow) { font-size: var(--kb-glass-size-phone-body); }
+
+/* The count is the heading's own, but on the phone it stands on a line of its own under the title and is never broken ("(3 of" / "6)"). */
+:where(:root[data-kb-layout='phone']) .kb-page-head-count {
+  display: block;
+  white-space: nowrap;
+}
 
 /* ---- the button row ---- */
 
@@ -220,4 +232,78 @@
   color: var(--kb-glass-neon-text);
   box-shadow: none;
   cursor: not-allowed;
+}
+
+/*
+ * A text field's line under it: the hint at the left, the count at the right (FieldCount.tsx). The hint wraps in its own measure and
+ * the count stays on its line, so a long hint never pushes the count under it.
+ */
+.kb-glass-field-count {
+  display: flex;
+  /* The count goes under its hint, at the right, where the hint would be narrower than ten times its type beside it (the layout check's squeezed block). */
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px 24px;
+  margin: 8px 0 0;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-glass-field-hint {
+  flex: 1 1 10em;
+  min-width: 0;
+}
+
+.kb-glass-field-tally {
+  flex: none;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* Past the most the count is told by its words ("41 of 40") and by its weight, not by a color alone. */
+.kb-glass-field-tally[data-kb-over] {
+  font-weight: 800;
+  color: var(--kb-glass-over);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-glass-field-count {
+  font-size: var(--kb-glass-size-phone-small);
+}
+
+/*
+ * The foot of a form or a dialog (FormFoot.tsx): a rule, the line, and the buttons at the right. The line takes the room the buttons
+ * leave, and the buttons go under it when it would be narrower than 18em. The form's own gap puts it a section gap under the last section.
+ */
+.kb-glass-form-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px 40px;
+  padding-top: 26px;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-neon-text) 35%, transparent);
+}
+
+.kb-glass-form-foot-line {
+  flex: 1 1 18em;
+  max-width: 620px;
+  margin: 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-glass-form-foot > .kb-button-row {
+  /* The buttons keep their own width, and wrap onto lines of their own where the foot is narrower than they are. */
+  flex: 0 1 auto;
+  max-width: 100%;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-glass-form-foot-line {
+  font-size: var(--kb-glass-size-phone-body);
 }

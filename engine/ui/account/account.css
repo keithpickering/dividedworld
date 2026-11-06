@@ -75,7 +75,7 @@
 /* Scoped to the screen, so it outranks a glass-wide rule for a fieldset or a legend. */
 .kb-acct .kb-acct-row {
   display: grid;
-  /* The board's 230px label column and 32px gap, with the column never under ten of the label's own em; the gap gives back the 10px that costs at 100% text, so the controls stay where the board has them (262px in, as .kb-acct-indent keeps). */
+  /* The board's 230px label column and 32px gap, with the column never under ten of the label's own em; the gap gives back the 10px that costs at 100% text, so the controls stay where the board has them (262px in). */
   grid-template-columns: max(230px, calc(var(--kb-glass-size-lead) * 10)) minmax(0, 1fr);
   column-gap: max(16px, calc(262px - max(230px, calc(var(--kb-glass-size-lead) * 10))));
   min-width: 0;
@@ -241,11 +241,6 @@
   letter-spacing: 4px;
 }
 
-/* A sentence under a field, set under the field and not under its label. */
-.kb-acct-indent {
-  margin: 0 0 0 262px;
-}
-
 .kb-acct-ack {
   display: flex;
   gap: 16px;
@@ -253,7 +248,8 @@
   min-height: 52px;
   margin: 8px 0;
   font-size: var(--kb-glass-size-body);
-  font-weight: 700;
+  /* Regular weight, as the screen's other sentences: a bold line outweighed the form (the backfill design, section 2). */
+  font-weight: 500;
   line-height: 1.3;
   color: var(--kb-glass-text);
   cursor: pointer;
@@ -366,6 +362,147 @@
   color: var(--kb-glass-text-2);
 }
 
+/* ---- the door: Sign in and Register (the backfill design, section 2; boards 14, 15 and 18) ---- */
+
+/* The form in a 680px column, and the other ways in as an aside in the right column, 126px off it as the boards draw them. */
+.kb-door {
+  display: grid;
+  grid-template-columns: minmax(0, 680px) minmax(0, 420px);
+  column-gap: 126px;
+  align-items: start;
+  max-width: 1226px;
+  margin-top: 28px;
+}
+
+.kb-door-form {
+  min-width: 0;
+}
+
+/* A field here is its label over the field, the width of the column; the Settings rows' label column is for rows of choices. */
+.kb-door .kb-acct-row {
+  display: block;
+  padding: 0;
+  border: 0;
+  margin-top: 1.625rem;
+}
+
+.kb-door .kb-acct-lead + .kb-acct-row {
+  margin-top: 2.125rem;
+}
+
+.kb-door .kb-acct-row-label {
+  display: block;
+  margin-bottom: 10px;
+  padding: 0;
+}
+
+.kb-door .kb-acct-input {
+  max-width: none;
+  min-height: 3.5rem;
+}
+
+.kb-door .kb-acct-code {
+  max-width: 320px;
+}
+
+.kb-door .kb-door-invite {
+  letter-spacing: 2px;
+}
+
+/* The check stands 22px under the invite's note, as the board draws it. */
+.kb-door .kb-acct-ack {
+  margin: 22px 0 0;
+}
+
+/* The acknowledgement is a note under its check, in line with the check's words (the box and its gap). */
+.kb-door .kb-door-ack-note {
+  margin: 2px 0 0 46px;
+}
+
+.kb-door .kb-button-row {
+  margin-top: 1.625rem;
+}
+
+.kb-door-aside {
+  min-width: 0;
+}
+
+.kb-door-aside > section + section {
+  margin-top: 34px;
+  padding-top: 30px;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 22%, transparent);
+}
+
+.kb-door-heading {
+  margin: 0 0 10px;
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-lead);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text);
+}
+
+.kb-door-text {
+  margin: 0 0 18px;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-door-aside a:not(.kb-glass-button) {
+  font-size: var(--kb-glass-size-body);
+  font-weight: 700;
+  text-decoration-thickness: 2px;
+}
+
+/* The door sits inside .kb-acct, so its phone rules below carry .kb-acct too: the generic phone rules (`.kb-acct .kb-acct-row`, further down) have the
+   same weight, and a door rule without it would lose to them or win only by coming later. */
+/* On the phone the aside stacks under the form, a rule and 24px of room between. */
+:where(:root[data-kb-layout='phone']) .kb-door {
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: 30px;
+  margin-top: 24px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-acct .kb-door .kb-acct-row {
+  /* The phone's rows (above) pad 16px; the door's fields are bare. */
+  padding: 0;
+  margin-top: 1.125rem;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-acct .kb-door .kb-acct-lead + .kb-acct-row {
+  margin-top: 1.5rem;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-acct .kb-door .kb-acct-row-label {
+  font-size: var(--kb-glass-size-phone-display);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-acct .kb-door .kb-acct-input {
+  min-height: 3rem;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-acct .kb-door .kb-button-row > .kb-glass-button {
+  flex: 1 1 100%;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-door-aside {
+  padding-top: 24px;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 22%, transparent);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-door-heading {
+  font-size: var(--kb-glass-size-phone-display);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-door-text,
+:where(:root[data-kb-layout='phone']) .kb-door-aside a:not(.kb-glass-button) {
+  font-size: var(--kb-glass-size-phone-body);
+}
+
 /* ---- the Phone board's layout, and the one column at 150% text and up ---- */
 
 :where(:root[data-kb-layout='phone']) .kb-acct {
@@ -432,10 +569,6 @@
 
 :where(:root[data-kb-layout='phone']) .kb-acct-input {
   min-height: 48px;
-}
-
-:where(:root[data-kb-layout='phone']) .kb-acct-indent {
-  margin-left: 0;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-invite-table th,

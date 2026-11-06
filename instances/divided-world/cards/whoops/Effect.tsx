@@ -84,8 +84,9 @@ const FALLBACK_INK = '#ff2bd6';
 
 /** The help sentence of the hold, read by a screen reader with the control. */
 const HOLD_HELP = 'Hold Space or Enter on this button to scrub the ink away line by line, at the pace of a hand. Let go to stop. It never clears the ink all at once.';
-/** When the effect ends, in the Lens's State row. */
+/** The Lens's way out: it ends on the reader's screen as they scrub; the author, who can wash it for everyone, is told so as the author. */
 const ENDS = 'Ends on your screen when you scrub every layer off. The author can wash it for everyone.';
+const ENDS_AUTHOR = 'Ends on your screen when you scrub every layer off. As its author, you can wash it for everyone.';
 /** The author's two tools (the stroke they save for everyone is the wash). */
 const TOOLS = [{ value: 'wash', label: 'Wash' }, { value: 'ink', label: 'Write in ink' }] as const;
 
@@ -1028,18 +1029,16 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   const cleanAt = (i: number) => (view ? view.clean[i] === true : false);
   const percent = (i: number) => percentWashed(view?.washed[i] ?? 0, cleanAt(i));
   const top = layers.reduce((at, _, i) => (cleanAt(i) ? at : i), -1);
-  const upper = top >= 0 ? layers[top]! : null;
   /* In a moment, each layer top first, as it stood: "Gloomba's yellow, 40% washed; Spritey's cyan, washed clean". */
-  const stillWords = layers.map((l, i) => `${nameOf(l.play.caster)}'s ${inkName(l.color)}, ${cleanAt(i) ? 'washed clean' : `${percent(i)}% washed`}`).reverse().join('; ');
-  const state = still ? stillWords : upper === null
-    ? 'Washed clean'
-    : `${layers.length} ${layers.length === 1 ? 'layer' : 'layers'} · top: ${nameOf(upper.play.caster)}'s ${inkName(upper.color)}, ${percent(top)}% washed`;
+  const stillLine = (i: number) => `${nameOf(layers[i]!.play.caster)}'s ${inkName(layers[i]!.color)}, ${cleanAt(i) ? 'washed clean' : `${percent(i)}% washed`}`;
   /* A share that is not a number counts as nothing washed, so the view and the key it is published on agree (JSON turns NaN into null). */
   const inked = layers.flatMap((_, i) => { const w = view?.washed[i] ?? 0; return cleanAt(i) ? [] : [Number.isFinite(w) ? Math.min(1, w) : 0]; });
   const progress = inked.length === 0 ? null : inked.reduce((sum, w) => sum + w, 0) / inked.length;
+  /* The heading is the mark's own progress, for this reader ("41% washed for you"); which layer is on top is each layer's note. */
+  const state = still ? 'As it landed' : progress === null ? 'Washed clean' : `${percentWashed(progress, false)}% washed for you`;
   /* Each layer's line for its Who row: "Layer 3 of 3, on top · 40% washed", or "Washed clean". */
   const lineOf = (i: number) => (cleanAt(i) ? 'Washed clean' : `Layer ${i + 1} of ${layers.length}${i === top ? ', on top' : ''} · ${percent(i)}% washed`);
-  const notes = Object.fromEntries(layers.map((l, i) => [l.play.id, lineOf(i)]));
+  const notes = Object.fromEntries(layers.map((l, i) => [l.play.id, still ? stillLine(i) : lineOf(i)]));
   const author = reader.author;
   /*
    * The controls are made again only when the tool or the author changes: the engine compares a view's controls by function
@@ -1055,7 +1054,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     return [hold, { kind: 'choose', label: 'Your tool', options: TOOLS, value: tool, choose: chooseTool }];
   }, [anyLive, still, author, tool, startSweep, stopSweep, chooseTool]);
   const cardView: CardView = {
-    progress, state, ...(anyLive && !still ? { ends: ENDS } : null), yours: author && anyLive && !still, controls, notes, ...(report ? { report } : null),
+    progress, state, ...(anyLive && !still ? { ends: author ? ENDS_AUTHOR : ENDS } : null), yours: author && anyLive && !still, controls, notes, ...(report ? { report } : null),
   };
   /* Said when it changes: the model's numbers are published at REFRESH_MS while a sweep runs, so this is never more than a frame's work. */
   const viewKey = JSON.stringify([progress, state, anyLive, author, report, notes, still]);

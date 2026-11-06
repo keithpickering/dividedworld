@@ -5,8 +5,8 @@
  *
  * Its tabs are the post's card kinds in the marks' order (a `tablist`; the arrow keys move between them and only the open
  * tab is a Tab stop). For the open tab it draws three rows, the same for every card:
- *  - State: the card's view of itself (`CardView`): what it is doing, how it ends and, where a save did not get through, why;
- *    a card with no effect says its `summary` (`defaultView`).
+ *  - State: the card's view of itself (`CardView`): a short status of what it is doing to this reader now, the line under it
+ *    for how it ends and, where a save did not get through, why; a card with no effect says its `status` (`defaultView`).
  *  - Act: the view's controls, drawn by the kit (Kit.tsx), so every card's Lens looks, sizes and reads alike.
  *  - Who: folded until opened ("3 plays · Gloomba, Pipewrench, Mrs. Hooligan"), then one row per play (`PlayRow`): #97's
  *    panel content for a play, an Act like a post, reacted to and spun from on its own. A card whose rules stack lists its
@@ -44,7 +44,7 @@ import type { Tallies } from '../thread/tallies.ts';
 import { inkOf, useNarrow, useUntil } from './Effects.tsx';
 import { withCardEconomy } from './faces.ts';
 import { Kit } from './Kit.tsx';
-import { backWords, caughtWords, endedWords, endsWords, kindsOf, playsPhrase, sumOf, wardWords } from './marks.ts';
+import { backWords, CAUGHT_STATE, caughtWords, endedWords, kindsOf, playsPhrase, sumOf, wardWords } from './marks.ts';
 import { defaultView, inPlayOrder, isBack, markedPlays, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardView } from './types.ts';
 import './lens.css';
@@ -197,12 +197,14 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
     const ofKind = here.plays.filter((p) => p.card === kind);
     if (isBack(kind) && ofKind.length > 0) {
       const say = (p: CardPlay) => backWords(p, nameOf?.(p.caster) ?? 'someone', instance.settings.setLasts, cardName);
-      const yours = (p: CardPlay) => (here.faces[p.id] ? ` Yours: ${cardName(here.faces[p.id]!)}, which nobody else can see.` : '');
+      const yours = (p: CardPlay) => (here.faces[p.id] ? `Yours: ${cardName(here.faces[p.id]!)}, which nobody else can see.` : '');
       const first = say(ofKind[0]!);
-      return { progress: null, state: `${first.state}${yours(ofKind[0]!)}`, ends: first.ends, yours: false, controls: [], notes: Object.fromEntries(ofKind.map((p) => [p.id, `${say(p).state}${yours(p)} ${say(p).ends}`])) };
+      return { progress: null, state: first.state, ends: first.ends, yours: false, controls: [], notes: Object.fromEntries(ofKind.map((p) => [p.id, [say(p).note, yours(p)].filter((w) => w !== '').join(' ')])) };
     }
     const rules = instance.cards.find((c) => c.key === kind);
-    const base = defaultView({ name: rules?.name ?? kind }, ui.cards.find((c) => c.key === kind), economy);
+    /* A play beyond a post ends on its timer: the view's way out says when, the latest of the kind's (each is drawn until its own). */
+    const latestEnd = ofKind.filter((p) => !p.caught && !p.reversed && p.ends !== undefined).map((p) => p.ends!).sort((a, b) => Date.parse(b) - Date.parse(a))[0];
+    const base = defaultView({ name: rules?.name ?? kind }, ui.cards.find((c) => c.key === kind), economy, latestEnd, ofKind.filter((p) => !p.caught && !p.reversed));
     const caught = Object.fromEntries(ofKind.filter((p) => p.caught).map((p) => {
       const trap = here.traps[p.id];
       return [p.id, caughtWords(trap ? cardName(trap) : null)];
@@ -212,19 +214,12 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
     const live = ofKind.filter((p) => !p.caught && !p.reversed);
     if (live.length === 0 && ofKind.length > 0 && ofKind.every((p) => p.reversed)) return { ...base, progress: null, controls: [], state: endedWords(), notes: caught };
     if (live.length === 0 && ofKind.length > 0) {
-      const trap = here.traps[ofKind[0]!.id];
-      return { ...base, state: caughtWords(trap ? cardName(trap) : null), notes: caught };
+      return { ...base, state: CAUGHT_STATE, notes: caught };
     }
     if (rules?.ward && live.length > 0) {
       const latest = [...live].sort((a, b) => Date.parse(b.ends ?? '') - Date.parse(a.ends ?? ''))[0]!;
-      const ward = wardWords(rules.name, rules.rarity, latest.ends);
+      const ward = wardWords(rules.rarity, latest.ends);
       return { ...base, state: ward.state, ...(ward.ends ? { ends: ward.ends } : {}), notes: caught };
-    }
-    /* A play beyond a post ends on its timer: its line says when, the latest of the kind's (each is drawn until its own). */
-    const timed = live.filter((p) => p.ends !== undefined);
-    if (timed.length > 0) {
-      const latest = [...timed].sort((a, b) => Date.parse(b.ends!) - Date.parse(a.ends!))[0]!;
-      return { ...base, ends: endsWords(latest.ends!), notes: caught };
     }
     return Object.keys(caught).length > 0 ? { ...base, notes: caught } : base;
   }, [instance.cards, instance.settings.setLasts, ui.cards, kind, economy, here, nameOf]);

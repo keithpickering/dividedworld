@@ -50,7 +50,7 @@ import { Hand } from '../cards/Hand.tsx';
 import { facesOf, withCardEconomy } from '../cards/faces.ts';
 import { usePlay } from '../cards/play.tsx';
 import { Orbs } from '../orbs/Orbs.tsx';
-import { cascade, CASCADE_BEAT_MS } from '../orbs/fill.ts';
+import { cascade, CASCADE_BEAT_MS, orbFills } from '../orbs/fill.ts';
 import { motionReduced, useTextSize } from '../appearance.ts';
 import { ALERTS_UNREAD_BOUND } from '../data/api.ts';
 import { Toasts } from '../alerts/Toasts.tsx';
@@ -63,6 +63,7 @@ import { useBoard } from '../glass/useBoard.ts';
 import { useTour } from '../tips/tour.ts';
 import { useTip, useTipsStore } from '../tips/Tips.tsx';
 import { CalmRegion } from '../glass/Calm.tsx';
+import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 
 /** The tab's slopes: 28px across, 24px tall, its top 20px wider than the aura each side, as the Main board draws them. */
 const SLOPE = 28;
@@ -70,6 +71,8 @@ const TAB = 24;
 const TAB_OUT = 20;
 /** The room the mask picker's arrow takes beside the name, in the phone's px. */
 const PICKER_ARROW = 28;
+/** The room the picker's own chevron takes at the name's right, in the phone's px (the name is drawn by the HUD, and stops short of it). */
+const PICKER_CHEVRON = 16;
 
 /** The count as the HUD says it: nothing at none, the number to 9, "9+" at the bound. */
 export const unreadText = (n: number | null): string | null => (n === null || n <= 0 ? null : n >= ALERTS_UNREAD_BOUND ? `${ALERTS_UNREAD_BOUND - 1}+` : String(n));
@@ -92,6 +95,9 @@ export function Hud() {
   const menuButton = useRef<HTMLButtonElement>(null);
   const picker = useRef<HTMLSelectElement>(null);
   const probe = useRef<HTMLSpanElement>(null);
+  const wordProbe = useRef<HTMLSpanElement>(null);
+  /* How much of the phone's name size the picker's name keeps so its widest word fits its room, from 0 to 1 (frame.css floors the size, then wraps inside a word). */
+  const [fit, setFit] = useState(1);
   /* On the Phone board: Menu is its glyph, because the row would cut the mask's name with the word; and Menu's width with the word, kept for judging that. */
   const [compact, setCompact] = useState(false);
   const menuWide = useRef(0);
@@ -227,8 +233,9 @@ export function Hud() {
     const bar = section.current;
     const choose = picker.current;
     const word = probe.current;
+    const widest = wordProbe.current;
     const menu = menuButton.current;
-    if (wide || !bar || !choose || !word || !menu || typeof ResizeObserver === 'undefined') { setCompact(false); return undefined; }
+    if (wide || !bar || !choose || !word || !widest || !menu || typeof ResizeObserver === 'undefined') { setCompact(false); setFit(1); return undefined; }
     const judge = () => {
       const menuNow = menu.getBoundingClientRect().width;
       if (!shortened.current) menuWide.current = menuNow;
@@ -237,10 +244,14 @@ export function Hud() {
       const cut = word.getBoundingClientRect().width + PICKER_ARROW > room;
       shortened.current = cut;
       setCompact(cut);
+      /* The name is drawn over the picker (frame.css) and wraps at its spaces, so what must fit is its widest word: the size it keeps is what the room allows. */
+      const wordWidth = widest.getBoundingClientRect().width;
+      const roomNow = choose.getBoundingClientRect().width - PICKER_CHEVRON;
+      setFit(wordWidth > 0 && roomNow > 0 ? Math.min(1, roomNow / wordWidth) : 1);
     };
     judge();
     const watch = new ResizeObserver(judge);
-    for (const el of [bar, choose, word]) watch.observe(el);
+    for (const el of [bar, choose, word, widest]) watch.observe(el);
     return () => watch.disconnect();
   }, [wide, hudName, board, scale, size, redraw]);
 
@@ -318,7 +329,7 @@ export function Hud() {
               <polyline className="kb-glass-seam-core" points={seam} />
             </svg>
             <div className="kb-hud-bar">
-              <CalmRegion calm={wide} ref={plate} className={`kb-hud-plate${!signedIn ? ' kb-hud-plate--door' : signedIn && player.loaded && hud ? ' kb-hud-plate--cast' : ''}`}>
+              <CalmRegion calm={wide} ref={plate} className={`kb-hud-plate${!signedIn ? ' kb-hud-plate--door' : ''}${!signedIn || (player.loaded && hud) ? ' kb-hud-plate--cast' : ''}`}>
                 <div className="kb-hud-plate-in">
                   {!signedIn ? (
                     <CalmRegion calm={!wide} className="kb-hud-door">
@@ -358,9 +369,15 @@ export function Hud() {
                         {/* The phone's HUD has no name line: the mark stands by the mask it names. */}
                         {!wide && hiddenMark}
                         {!wide && <span ref={probe} className="kb-hud-name-probe" aria-hidden="true">{hud.name}</span>}
-                        <select ref={picker} id={selectId} className="kb-hud-select" value={hud.id} onChange={(e) => player.setHudCharacter(e.target.value)}>
-                          {player.actingCharacters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                        </select>
+                        {!wide && <span ref={wordProbe} className="kb-hud-name-probe kb-hud-name-probe--word" aria-hidden="true">{hud.name}</span>}
+                        <span className="kb-hud-pick" style={{ '--kb-hud-chevron': `${PICKER_CHEVRON}px` } as CSSProperties}>
+                          <select ref={picker} id={selectId} className="kb-hud-select" value={hud.id} onChange={(e) => player.setHudCharacter(e.target.value)}>
+                            {player.actingCharacters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                          </select>
+                          {/* The phone's picker shows the name here, over its own text (which is clear): a native picker clips the name to its box, this wraps it and sizes it to fit. */}
+                          {!wide && <span className="kb-hud-picked" aria-hidden="true" style={{ '--kb-hud-pick-fit': fit } as CSSProperties}>{hud.name}</span>}
+                          {!wide && <svg className="kb-hud-chevron" aria-hidden="true" focusable="false" width="14" height="10" viewBox="0 0 14 10"><path d="M1 2l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" /></svg>}
+                        </span>
                       </CalmRegion>
                     </>
                   )}
@@ -380,21 +397,33 @@ export function Hud() {
                   )}
                 </CalmRegion>
               )}
+              {/* Signed out, the Aura notch is the signed-in one's with its sockets empty, so the door previews the game it opens onto. */}
+              {!signedIn && (
+                <CalmRegion ref={aura} className="kb-hud-aura kb-hud-aura--empty">
+                  <p className="kb-hud-aura-legend"><span>Aura</span></p>
+                  <span className="kb-hud-sockets" aria-hidden="true">
+                    {Array.from({ length: orbFills(0, 0, settings.walletCap).orbs.length }, (_, i) => <span key={i} className="kb-hud-socket" />)}
+                  </span>
+                  <p className="kb-hud-aura-line">No mask, no Aura, no hand yet. Your first character fills them.</p>
+                </CalmRegion>
+              )}
               {!signedIn && (
                 <CalmRegion className="kb-hud-door-actions">
-                  {settings.registrationMode !== 'closed' && (
-                    <Link to={registerHref(location.path, searchOf(location.query))} className="kb-hud-sign-in kb-hud-door-register kb-glass-cut-button">
-                      {settings.registrationMode === 'invite' ? 'Register with an invite' : 'Register'}
-                    </Link>
-                  )}
+                  {/* Tab order is the drawn order: Sign in then Register across the Main board's row, Register (full width) then Sign in on the Phone board's sheet. */}
+                  <ButtonRow align="end">
+                    {(() => {
+                      const signInButton = <GlassButton key="in" to={signInHref(location.path, searchOf(location.query))} kind={settings.registrationMode === 'closed' ? 'primary' : 'secondary'} className="kb-hud-door-in">Sign in</GlassButton>;
+                      if (settings.registrationMode === 'closed') return signInButton;
+                      const registerButton = (
+                        <GlassButton key="join" to={registerHref(location.path, searchOf(location.query))} kind="primary" className="kb-hud-door-join">
+                          {settings.registrationMode === 'invite' ? 'Register with an invite' : 'Register'}
+                        </GlassButton>
+                      );
+                      return wide ? [signInButton, registerButton] : [registerButton, signInButton];
+                    })()}
+                  </ButtonRow>
                   {settings.registrationMode === 'invite' && <p className="kb-hud-door-note">No invite? Ask someone who plays.</p>}
                   {settings.registrationMode === 'closed' && <p className="kb-hud-door-note">Registration is closed for now.</p>}
-                  <Link
-                    to={signInHref(location.path, searchOf(location.query))}
-                    className={`kb-hud-door-sign-in${settings.registrationMode === 'closed' ? ' kb-hud-sign-in kb-glass-cut-button' : ''}`}
-                  >
-                    Sign in
-                  </Link>
                 </CalmRegion>
               )}
               {signedIn && (

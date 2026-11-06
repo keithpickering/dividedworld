@@ -5,14 +5,16 @@ import { CalmRegion } from './Calm.tsx';
 /**
  * The head every glass page opens with: the title in the display face, an eyebrow above it, a lead
  * beside it (under it when it would be narrower than 18em), the page's actions in a button row, and
- * a count after the title. The title is the oversized display heading with no calm behind it (the
+ * a count after the title. `leadUnder` sets the lead on a line below the title at every width. The title is the oversized display heading with no calm behind it (the
  * Anton headings stand on the full smoke); the eyebrow and the lead carry a calm. `size="roster"` is
  * the character pages' 96px title. parts.css has the layout.
  */
-export function PageHead({ title, eyebrow, lead, actions, count, size, tabs }: {
+export function PageHead({ title, eyebrow, lead, leadUnder, actions, count, size, tabs }: {
   readonly title: ReactNode;
   readonly eyebrow?: ReactNode;
   readonly lead?: ReactNode;
+  /** Set the lead under the title at every width, as the character forms' boards draw it (the default puts it beside the title where there is room). */
+  readonly leadUnder?: boolean;
   readonly actions?: ReactNode;
   readonly count?: ReactNode;
   readonly size?: 'page' | 'roster';
@@ -20,7 +22,7 @@ export function PageHead({ title, eyebrow, lead, actions, count, size, tabs }: {
   readonly tabs?: ReactNode;
 }) {
   return (
-    <div className="kb-page-head" data-kb-size={size}>
+    <div className="kb-page-head" data-kb-size={size} data-kb-lead={lead !== undefined && leadUnder ? 'under' : undefined}>
       {eyebrow !== undefined && <CalmRegion as="p" className="kb-page-head-eyebrow">{eyebrow}</CalmRegion>}
       <h1 className="kb-page-head-title kb-glass-display">
         {title}

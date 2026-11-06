@@ -12,6 +12,7 @@ import { renderInWorld } from '../test-world.tsx';
 import { BORDER_RULES, borderContrast, tokenDefaults } from './border-contrast.ts';
 import { ButtonRow, GlassButton } from './Button.tsx';
 import { PageHead } from './PageHead.tsx';
+import { FormFoot } from './FormFoot.tsx';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const sheet = (name: string) => fs.readFileSync(path.join(here, name), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
@@ -61,6 +62,25 @@ describe('PageHead', () => {
     const { container } = renderInWorld(<PageHead title="Log" eyebrow="Week 3" />);
     expect(container.querySelector('p.kb-page-head-eyebrow')).toHaveAttribute('data-kb-calm-region');
     expect(declsOf(css, '.kb-page-head')['margin-bottom']).toBe('36px');
+  });
+
+  test('can be told to set its lead under the title at any width, as the character forms\' boards draw it', () => {
+    const css = sheet('parts.css');
+    expect(declsOf(css, ".kb-page-head[data-kb-lead='under'] .kb-page-head-lead")['flex-basis']).toBe('100%');
+    const { container } = renderInWorld(<PageHead title="New character" lead="Out of character." leadUnder />);
+    expect(container.querySelector('.kb-page-head')).toHaveAttribute('data-kb-lead', 'under');
+    const beside = renderInWorld(<PageHead title="Rankings" lead="Who is up." />);
+    expect(beside.container.querySelector('.kb-page-head')).not.toHaveAttribute('data-kb-lead');
+  });
+
+  test('on the phone the count stands on a line of its own under the title and is never broken', () => {
+    const css = sheet('parts.css');
+    const phone = declsOf(css, ":where(:root[data-kb-layout='phone']) .kb-page-head-count");
+    expect(phone['display']).toBe('block');
+    expect(phone['white-space']).toBe('nowrap');
+    const { container } = renderInWorld(<PageHead title="Your characters" count="(3 of 6)" />);
+    /* Still the heading's own, read with it. */
+    expect(screen.getByRole('heading', { level: 1, name: 'Your characters (3 of 6)' })).toBe(container.querySelector('h1'));
   });
 
   test('leaves out what it is not given', () => {
@@ -266,4 +286,17 @@ describe('every button variant has a visible hover and a focus-visible style', (
       }
     });
   }
+});
+
+describe('FormFoot', () => {
+  test('is one line saying what will happen beside the form\'s buttons, the line first', () => {
+    const { container } = renderInWorld(<FormFoot line="It is on the board at once."><GlassButton>Cancel</GlassButton><GlassButton kind="primary">Make it</GlassButton></FormFoot>);
+    const foot = container.querySelector('.kb-glass-form-foot')!;
+    expect(foot.children[0]).toHaveTextContent('It is on the board at once.');
+    expect(foot.children[1]).toHaveClass('kb-button-row');
+    expect(foot.querySelectorAll('button')).toHaveLength(2);
+    const css = sheet('parts.css');
+    /* The form's own gap sets it a section gap from the last section, so the foot adds none (it would double). */
+    expect(declsOf(css, '.kb-glass-form-foot')['margin-top']).toBeUndefined();
+  });
 });

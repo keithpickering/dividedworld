@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { boardIds, boardsToRun, compareBoard, compareSides, phoneSizeProblems, screensWithoutBoards, type BoardManifest, type Mismatch, type Snapshot } from './board-match.ts';
 import { FIXTURE_OVERLAYS, OVERLAYS, PAGES, STORIES } from './glass-screens.ts';
+import { loadFaces } from './fonts.ts';
 import { pressControls, routeBoardFonts, settledSnapshot, snapshotPage, standInFaces } from './board-snapshot.ts';
 
 /**
@@ -68,20 +69,6 @@ const PENDING: Readonly<Record<string, string>> = {
   '2026-11-04-cosmetics/04-event': 'docs/plans/2026-11-04-cosmetics-plan.md',
   '2026-11-04-cosmetics/05-admin': 'docs/plans/2026-11-04-cosmetics-plan.md',
   '2026-11-05-card-template/01-layouts': 'docs/plans/2026-11-05-card-template-plan.md',
-  '2026-11-05-backfill/14-sign-in': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 6',
-  '2026-11-05-backfill/15-register': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 6',
-  '2026-11-05-backfill/16-contact': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 6',
-  '2026-11-05-backfill/17-front-door': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 6',
-  '2026-11-05-backfill/18-door-phone': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 6',
-  '2026-11-05-backfill/19-welcome': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 7',
-  '2026-11-05-backfill/20-guide': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 7',
-  '2026-11-05-backfill/21-spotlight': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 7',
-  '2026-11-05-backfill/22-onboarding-phone': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 7',
-  '2026-11-05-backfill/23-new-character': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 8',
-  '2026-11-05-backfill/24-debut': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 8',
-  '2026-11-05-backfill/25-reveal': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 8',
-  '2026-11-05-backfill/26-edit-profile': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 8',
-  '2026-11-05-backfill/27-characters-phone': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 8',
   '2026-11-05-backfill/28-lens': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 10',
   '2026-11-05-backfill/29-lens-states': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 10',
   '2026-11-05-backfill/30-log-empty': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 10',
@@ -94,7 +81,6 @@ const PENDING: Readonly<Record<string, string>> = {
   '2026-11-05-backfill/37-admin-queue': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 12',
   '2026-11-05-backfill/38-write-update': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 12',
   '2026-11-05-backfill/39-admin-phone': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 12',
-  '2026-11-05-backfill/40-debut-now': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 8',
 };
 
 /** Where each board's file is, by its id; a bare id two of the first folders share is a problem the first test reports. */
@@ -182,7 +168,7 @@ async function compareSide(browser: Browser, baseURL: string | undefined, id: st
       const query = 'moment' in manifest.build ? `moment=${encodeURIComponent(manifest.build.moment)}` : `story=${encodeURIComponent(manifest.build.story)}`;
       await buildPage.goto(`/?fixture=boards&${query}`);
       await pressControls(buildPage, manifest.press);
-      for (const page of [boardPage, buildPage]) await page.evaluate(() => document.fonts.ready);
+      for (const page of [boardPage, buildPage]) await loadFaces(page);
       shots.board = await snapshotPage(boardPage, manifest, 'board');
       shots.build = await settledSnapshot(buildPage, manifest, 'build');
       mismatches = compareBoard(shots.board, shots.build, manifest);

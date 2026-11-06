@@ -33,6 +33,7 @@ import feelinFabMark from './cards/feelin-fab-mark.svg?url';
 import { glitterBomb } from '../cards/glitter-bomb.ts';
 import { mainEvent } from '../cards/main-event.ts';
 import { forceField } from '../cards/force-field.ts';
+import { feelinFab } from '../cards/feelin-fab.ts';
 
 /** A span in words: "a week", "3 days". */
 const spanWords = (s: { readonly unit: string; readonly count: number }) => (s.unit === 'day' && s.count === 7 ? 'a week' : s.count === 1 ? `a ${s.unit}` : `${s.count} ${s.unit}s`);
@@ -59,6 +60,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     takeover: true,
     art: { color: '#2ee6ff', ink: '#03141a', image: stickAroundFace, mark: stickAroundMark, tagline: 'Hold a reader on a post.' },
     summary: 'Holds a reader on the post until they check your sentence, or break free.',
+    status: 'Holding you on this post',
     describe: (settings: Settings) =>
       `A Sweet card. Once the post settles in view, whoever reads it is pulled to it and the post fills their screen: they read it there, and get out by checking the caster's sentence to certify they read it, or by scrolling hard past either end of it (or pressing Break free, or Esc) to fill a bar that drains whenever they stop, which frees them for that visit. The post's author and the caster are never held. It costs ${orbs(settings.economy['stickAround.price'] ?? 0)} to buy, and nothing more to play.`,
   },
@@ -66,6 +68,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     key: 'whoops',
     art: { color: '#ff3d7f', ink: '#14030a', image: whoopsFace, mark: whoopsMark, tagline: 'Splat a post in ink.' },
     hint: 'Drag across the ink to scrub it off your screen.',
+    status: 'Ink on this post',
     summary: 'Splats a post in your ink. Readers scrub it; only the author can wash it.',
     Effect: WhoopsEffect,
     ConfigForm: WhoopsConfigForm,
@@ -105,6 +108,8 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     key: 'trap-card',
     art: { color: '#ff3d7f', ink: '#14030a', image: trapCardFace, mark: trapCardMark, tagline: 'Catch the next card cast on your post.' },
     summary: 'Set face down on your post. Catches the next card cast there, and pays you what it cost.',
+    /* Shown only for a play that names this card; a Set is a card back, whose words are the engine's ("Face down on this post"). */
+    status: 'Set, face down to everyone else',
     describe: (settings: Settings) =>
       `A Salty card, uncommon, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The next card cast on that post that is uncommon or commoner is caught: it lands as caught and does nothing, its caster has spent it, and your wallet gains what their wallet paid to play it, as far as your wallet's cap allows. A rarer card passes over it. It springs once, or ends by itself after ${settings.setLasts.count} ${settings.setLasts.unit}${settings.setLasts.count === 1 ? '' : 's'}. It costs ${orbs(settings.economy['trapCard.price'] ?? 0)} to buy, and nothing more to set.`,
   },
@@ -112,6 +117,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     key: 'force-field',
     art: { color: '#2ee6ff', ink: '#03141a', image: forceFieldFace, mark: forceFieldMark, tagline: 'Turn away cards from your post.' },
     summary: `Used on your post. Turns away cards up to ${forceField.rarity} for ${spanWords(forceField.lasts!)}.`,
+    status: `Turning away cards up to ${forceField.rarity}`,
     describe: (settings: Settings) =>
       `A Sweet card, ${forceField.rarity}, used on one of your own posts. For ${spanWords(forceField.lasts!)}, every card cast there that is ${forceField.rarity} or commoner is turned away before it lands, and its caster is told so; a rarer card lands as usual. It never stops a card set face down. It costs ${orbs(settings.economy['forceField.price'] ?? 0)} to buy, and nothing more to use.`,
   },
@@ -119,6 +125,8 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     key: 'bluff',
     art: { color: '#d24a2c', ink: '#1a0602', image: bluffFace, mark: bluffMark, tagline: 'A card back that does nothing.' },
     summary: 'Set face down on your post. Looks like a trap, and does nothing.',
+    /* As the Trap Card's: the same words, so neither can be told from the other. */
+    status: 'Set, face down to everyone else',
     describe: (settings: Settings) =>
       `A Pepperoni card, common, set face down on one of your own posts. Everyone sees a card back there, the same as a Trap Card's. It does nothing, and ends by itself after ${settings.setLasts.count} ${settings.setLasts.unit}${settings.setLasts.count === 1 ? '' : 's'} with nothing revealed. It costs ${orbs(settings.economy['bluff.price'] ?? 0)} to buy, and nothing more to set.`,
   },
@@ -131,6 +139,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     art: { color: '#d24a2c', ink: '#1a0602', image: autocorrectFace, mark: autocorrectMark, tagline: 'Tape over a word, everywhere.' },
     summary: 'Covers a phrase everywhere it appears in a post with words of your choosing.',
     hint: 'Drag a strip off to read what is under it.',
+    status: 'Words taped over',
     Effect: AutocorrectEffect,
     ConfigForm: AutocorrectConfigForm,
     surcharge: (settings: Settings) => {
@@ -158,6 +167,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     Effect: GlitterBombEffect,
     art: { color: '#d24a2c', ink: '#1a0602', image: glitterBombFace, mark: glitterBombMark, tagline: 'Make a character sparkle.' },
     summary: `Cast on a character. Every post of theirs sparkles for ${spanWords(glitterBomb.lasts!)}.`,
+    status: 'Sparkling every post of theirs',
     describe: (settings: Settings) =>
       `A Pepperoni card, ${glitterBomb.rarity}, cast on a character from any of their posts. For ${spanWords(glitterBomb.lasts!)}, every post of that character sparkles, wherever it is, and then it stops by itself. It falls on that mask alone. It costs ${orbs(settings.economy['glitterBomb.price'] ?? 0)} to buy, and nothing more to play.`,
   },
@@ -165,6 +175,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     key: 'main-event',
     art: { color: '#2ee6ff', ink: '#03141a', image: mainEventFace, mark: mainEventMark, tagline: 'Pin a thread to the top of its board.' },
     summary: `Cast on a thread. Pins it to the top of its board for ${spanWords(mainEvent.lasts!)}.`,
+    status: "Pinned to its board's top",
     describe: (settings: Settings) =>
       `A Sweet card, ${mainEvent.rarity}, cast on a thread from its title. For ${spanWords(mainEvent.lasts!)}, the thread is pinned above the first page of its board's list, and then it drops back to its place by itself. It takes no other thread's place on the page. It costs ${orbs(settings.economy['mainEvent.price'] ?? 0)} to buy, and nothing more to play.`,
   },
@@ -176,6 +187,8 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     key: 'feelin-fab',
     Effect: FeelinFabEffect,
     art: { color: '#2ee6ff', ink: '#03141a', image: feelinFabFace, mark: feelinFabMark, tagline: 'Give a post a rainbow.' },
+    /* Up to the rules' `stack` can be on a post; the status counts the plays there. */
+    status: (plays) => `${Math.min(plays.length, feelinFab.stack!)} of ${feelinFab.stack} stacked`,
     hint: "A Feelin' Fab: the more of them on a post, the more it glows.",
     summary: 'Gives a post a rainbow behind its words. Up to three can stack, and each makes it grander.',
     describe: (settings: Settings) =>

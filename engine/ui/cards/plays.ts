@@ -15,6 +15,7 @@ import type { InstanceUi } from '../types.ts';
 import { BEYOND_POST, type BeyondPost, type CardRules } from '../../rules/cards.ts';
 import type { Settings, Span } from '../../rules/types.ts';
 import type { CardPlay, CardUi, CardView, KitControl } from './types.ts';
+import { endsWords } from './marks.ts';
 
 /** More than any card stacks on one post; a page of posts asks for this many plays per post at most. */
 export const PLAYS_PER_POST = 8;
@@ -167,14 +168,15 @@ export function sameView(a: CardView, b: CardView): boolean {
 }
 
 /**
- * The engine's view for a card with no effect, or before its effect has said anything: its State is the card's `summary`,
- * else the first sentence of what `describe` says under `settings`, else (no settings to describe under) its name; no
- * edge, no notch, no controls.
+ * The engine's view for a card with no effect, or before its effect has said anything: its State is the card's `status`,
+ * else its `summary`, else the first sentence of what `describe` says under `settings`, else (no settings to describe under)
+ * its name; no edge, no notch, no controls. A play that ends on a timer (`endsAt`, a Use's `ends`) gives the view its way out,
+ * "Ends Nov 7, 9:14 PM", in the reader's zone. A status that is a function is given the card's `plays` on the post.
  */
-export function defaultView(rules: Pick<CardRules, 'name'>, ui: Pick<CardUi, 'summary' | 'describe'> | undefined, settings?: Settings): CardView {
+export function defaultView(rules: Pick<CardRules, 'name'>, ui: Pick<CardUi, 'status' | 'summary' | 'describe'> | undefined, settings?: Settings, endsAt?: string, plays: readonly CardPlay[] = []): CardView {
   const described = ui && settings ? ui.describe(settings) : '';
   const first = /^.*?[.!?](?=\s|$)/s.exec(described.trim())?.[0] ?? described.trim();
-  return { progress: null, state: ui?.summary ?? (first || rules.name), yours: false, controls: [], notes: {} };
+  return { progress: null, state: (typeof ui?.status === 'function' ? ui.status(plays) : ui?.status) ?? ui?.summary ?? (first || rules.name), ...(endsAt !== undefined ? { ends: endsWords(endsAt) } : {}), yours: false, controls: [], notes: {} };
 }
 
 export interface Plays {

@@ -19,3 +19,17 @@ export function inDays(iso: string, nowMs = Date.now()): string {
   const days = Math.max(1, Math.ceil((Date.parse(iso) - nowMs) / 86_400_000));
   return `in ${days} ${days === 1 ? 'day' : 'days'}`;
 }
+
+/**
+ * "in 7 h 42 min": how far off a time is, in its two largest units, rounded up to the minute ("in 1 min" for what is
+ * under one). Days and hours past a day ("in 1 d 3 h"), hours and minutes past an hour, minutes alone below it; a unit
+ * that is nothing is left out ("in 7 h", "in 2 d"). A time due or past is null, and the footer names no time.
+ */
+export function untilWords(iso: string, nowMs = Date.now()): string | null {
+  const left = Date.parse(iso) - nowMs;
+  if (!(left > 0)) return null;
+  const minutes = Math.max(1, Math.ceil(left / 60_000));
+  const [d, h, m] = [Math.floor(minutes / 1440), Math.floor((minutes % 1440) / 60), minutes % 60];
+  const parts = d > 0 ? [[d, 'd'], [h, 'h']] : h > 0 ? [[h, 'h'], [m, 'min']] : [[m, 'min']];
+  return `in ${parts.filter(([n]) => n !== 0).map(([n, u]) => `${n} ${u}`).join(' ')}`;
+}

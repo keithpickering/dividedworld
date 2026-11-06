@@ -38,6 +38,7 @@ const PAGE = 0.9;
 /** The bar is announced to a screen reader in steps of this many percent; the drawn bar is smooth. */
 const ANNOUNCE_STEP = 10;
 
+/* The Lens says the same ways out in `LENS_ENDS` (Effect.tsx): change one, change both. */
 export const WAYS_OUT = 'Scroll past either end of the post, press Break free, or check the box.';
 /** What the view says after an Esc, and after a press on the dimmed page behind: the first is a way out, the second is not. */
 const ON_ESC = `Esc breaks free, like the Break free button: each press fills the bar a little, and it drains when you stop. ${WAYS_OUT}`;

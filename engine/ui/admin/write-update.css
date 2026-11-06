@@ -54,12 +54,6 @@
   outline-offset: 2px;
 }
 
-.kb-write-update-count {
-  font-size: var(--kb-glass-size-label);
-  font-weight: 600;
-  color: var(--kb-glass-text-2);
-}
-
 .kb-write-update-changes {
   display: grid;
   gap: 10px;

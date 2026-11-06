@@ -53,3 +53,22 @@ test('Register and Invites fit a 320px phone with no sideways scroll', async ({ 
     expect(wide, path).toBe(false);
   }
 });
+
+test('on a phone the door\'s field rows are bare: the generic phone row\'s 16px padding does not reach them', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  /* The demo world starts signed in; the door is what a signed-out visit sees. */
+  await page.goto('/settings?section=account');
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await expect(page).toHaveURL(/\/$/u);
+  for (const path of ['/sign-in', '/register']) {
+    /* A reload would start the demo world over, signed in; the app's own navigation keeps it signed out. */
+    await page.evaluate((to) => { window.history.pushState({}, '', to); window.dispatchEvent(new PopStateEvent('popstate')); }, path);
+    await expect(page.getByRole('heading', { level: 1, name: path === '/sign-in' ? 'Sign in' : 'Register' })).toBeVisible();
+    const pads = await page.locator('.kb-door .kb-acct-row').evaluateAll((rows) => rows.map((row) => {
+      const style = getComputedStyle(row);
+      return [style.paddingTop, style.paddingBottom];
+    }));
+    expect(pads.length, path).toBeGreaterThan(0);
+    for (const pad of pads) expect(pad, path).toEqual(['0px', '0px']);
+  }
+});

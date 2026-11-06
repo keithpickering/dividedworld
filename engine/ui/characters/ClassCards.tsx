@@ -1,6 +1,7 @@
 /**
  * The class cards, used by New character and the Turn: one radio per class, each with the
- * instance's plain description of how it earns and what hurts it, and its marks on the reaction
+ * instance's plain description of how it earns and, under it in the hurt color, what hurts it (the two are
+ * two fields of the class's look, `description` and `hurtsBy`), and its marks on the reaction
  * map (a plus where it earns, a minus where it is hurt, dotted where it earns by calling), named in
  * words. A card is a game piece, so it carries its class's glass colors, but the words are what a
  * player chooses by: each radio is named by its class alone and described by its words, so a
@@ -73,8 +74,10 @@ export function ClassCards({ legend, value, onChange, current, large = false }: 
       role="radiogroup" label={legend} items={instance.classes} value={value} onChange={onChange}
       renderItem={(c, { props, follow }) => {
         const look = ui.classLooks?.[c.key];
-        const ids = { name: `${group}-${c.key}-name`, words: `${group}-${c.key}-words`, marks: `${group}-${c.key}-marks` };
-        const described = [look?.description && ids.words, look?.marks && ids.marks].filter(Boolean).join(' ') || undefined;
+        const ids = { name: `${group}-${c.key}-name`, words: `${group}-${c.key}-words`, hurts: `${group}-${c.key}-hurts`, marks: `${group}-${c.key}-marks` };
+        /* How the class earns, and under it what hurts it: a class with nothing that hurts it has no second paragraph. */
+        const hurts = look?.hurtsBy(economy, settings.settlementLength) ?? '';
+        const described = [look?.description && ids.words, hurts && ids.hurts, look?.marks && ids.marks].filter(Boolean).join(' ') || undefined;
         const inside = (
           <>
             <span className="kb-class-title">
@@ -83,6 +86,7 @@ export function ClassCards({ legend, value, onChange, current, large = false }: 
             </span>
             {look?.marks && <Marks marks={look.marks} id={ids.marks} />}
             {look?.description && <span id={ids.words} className="kb-class-description">{look.description(economy, settings.settlementLength)}</span>}
+            {hurts && <span id={ids.hurts} className="kb-class-hurt">{hurts}</span>}
           </>
         );
         if (c.key === current) {

@@ -3,18 +3,6 @@
   min-width: 0;
 }
 
-.kb-profile-edit .kb-input,
-.kb-profile-edit .kb-textarea {
-  box-sizing: border-box;
-  width: 100%;
-}
-
-.kb-signature-preview {
-  border: 1px solid var(--kb-rule);
-  padding: 0.4em 0.6em;
-  margin: 0.4em 0;
-}
-
 .kb-avatar-editor {
   border-top: 1px solid var(--kb-rule);
   margin-top: 1.2em;
@@ -125,13 +113,12 @@
 }
 
 /*
- * On the glass. No board draws the profile editor; it is My characters' own page (its head and
- * buttons are engine/ui/glass's PageHead and GlassButton), its words on the glass's text at the body's
- * size, its fields the HUD's, the cropper's frames drawn in the glass's light. The signature's
- * preview stays the board's own post, as it will read beside the character's posts.
+ * On the glass, as the Edit profile board draws it (docs/research/2026-11-05-backfill/26-edit-profile.html): My characters' own page (its head and
+ * buttons are engine/ui/glass's PageHead and GlassButton), its words on the glass's text at the body's size, its fields the character forms'
+ * (characters.css `kb-glass-field`), the cropper's frames drawn in the glass's light. Two columns at a wide window: the fields and the avatar, and
+ * the preview, the postbit as the board draws it, beside them; one column below that.
  */
 .kb-glass .kb-profile-edit {
-  max-width: 900px;
   padding-top: 27px;
   font-size: var(--kb-glass-size-body);
   font-weight: 500;
@@ -144,12 +131,186 @@
   color: var(--kb-glass-text-2);
 }
 
-.kb-glass .kb-profile-edit form,
+/* The postbit and its post are the board's, whatever the page's words are. */
+.kb-glass .kb-profile-edit .kb-profile-preview-post :is(.kb-small, .kb-muted, p) {
+  font-size: inherit;
+  color: inherit;
+}
+
+.kb-glass .kb-profile-form,
 .kb-glass .kb-avatar-editor {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-top: 24px;
+}
+
+/* The fields stand 30px apart (the board's), each with its count line under it. */
+.kb-glass .kb-profile-form {
+  gap: 30px;
+}
+
+/* A field and its count line are one: the count stands 8px under the field (parts.css), and a long hint wraps in its own measure. */
+.kb-glass .kb-profile-field {
+  min-width: 0;
+}
+
+/* The save's live region holds no height until it speaks, so the form's 30px gap is not spent twice under the button. */
+.kb-glass .kb-profile-form > [role='status']:empty {
+  margin-top: -30px;
+}
+
+.kb-glass .kb-profile-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+  min-width: 0;
+}
+
+/* The fields and, beside them, the preview: 700px and 516px at the board's 1440, the preview after a 96px gap. */
+.kb-glass .kb-profile-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 44px 96px;
+  align-items: start;
+}
+
+@media (min-width: 1100px) {
+  .kb-glass .kb-profile-columns:has(> .kb-profile-preview) {
+    grid-template-columns: minmax(0, 700px) minmax(0, 516px);
+  }
+}
+
+.kb-glass .kb-avatar-editor {
+  margin-top: 20px;
+  padding-top: 34px;
+}
+
+.kb-glass .kb-glass-textarea {
+  /* The board's 120px, however many rows the text has (the player may drag it taller). */
+  height: 120px;
+  min-height: 120px;
+  padding: 12px 16px;
+  line-height: 1.4;
+  resize: vertical;
+}
+
+/* The avatar's choice: the two crops' frames, then what is said of them and the button that chooses. */
+.kb-avatar-pick {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 22px;
+}
+
+.kb-avatar-frame {
+  display: block;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--kb-glass-text) 30%, transparent);
+  background: repeating-linear-gradient(135deg, var(--kb-glass-field-2) 0 10px, var(--kb-glass-field) 10px 20px);
+}
+
+.kb-avatar-frame[data-kb-frame='portrait'] {
+  width: 120px;
+  height: 160px;
+}
+
+.kb-avatar-frame[data-kb-frame='square'] {
+  width: 72px;
+  height: 72px;
+}
+
+.kb-avatar-frame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.kb-avatar-pick-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.kb-glass .kb-profile-edit .kb-avatar-none {
+  margin: 0;
+}
+
+/*
+ * What everyone will see: the postbit, in the board's own colors and type (it is the board's post, drawn as the thread draws it), with the
+ * glass's heading above it and its note under. The post is the board's grid: the postbit in a 170px side, the words and the signature beside.
+ */
+.kb-glass .kb-profile-preview {
+  min-width: 0;
+}
+
+.kb-glass .kb-profile-edit .kb-profile-preview-head {
+  margin: 0 0 14px;
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-body);
+  font-weight: 800;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-glass .kb-profile-preview-post {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  min-height: 160px;
+  background: var(--kb-bg);
+  color: var(--kb-fg);
+  border: 1px solid var(--kb-rule);
+  font-family: var(--kb-font-body);
+  font-size: var(--kb-size-body);
+  font-weight: normal;
+  line-height: 1.45;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--kb-glass-pale) 60%, transparent), 0 0 26px color-mix(in srgb, var(--kb-glass-neon) 35%, transparent);
+}
+
+.kb-glass .kb-profile-preview-side {
+  padding: 8px 10px;
+  border-right: 1px solid var(--kb-rule);
+  min-width: 0;
+}
+
+/* Held only while what the postbit shows is read, so the column does not jump when it arrives (a portrait slot, name, title, rank, pips,
+   counts); once it has, the postbit sets its own height, which on the phone's stacked postbit is far less. */
+.kb-glass .kb-profile-preview-side[aria-busy='true'] {
+  min-height: 330px;
+}
+
+.kb-glass .kb-profile-preview-body {
+  display: flex;
+  flex-direction: column;
+  gap: 60px;
+  min-width: 0;
+  padding: 8px 10px;
+  overflow-wrap: anywhere;
+}
+
+.kb-glass .kb-profile-preview-body p {
+  margin: 0;
+  font-size: inherit;
+  color: inherit;
+}
+
+.kb-glass .kb-profile-preview-body .kb-signature {
+  margin-top: auto;
+  padding-top: 6px;
+  border-top: 1px solid var(--kb-rule);
+  font-size: var(--kb-size-small);
+}
+
+.kb-glass .kb-profile-edit .kb-profile-preview-note {
+  margin: 14px 0 0;
+}
+
+@media (max-width: 600px) {
+  .kb-glass .kb-profile-preview-post { grid-template-columns: minmax(0, 1fr); }
+  .kb-glass .kb-profile-preview-side { border-right: 0; border-bottom: 1px solid var(--kb-rule); }
 }
 
 .kb-glass .kb-profile-edit .kb-heading {
@@ -159,33 +320,6 @@
   font-weight: 400;
   line-height: 1;
   text-transform: uppercase;
-  color: var(--kb-glass-text);
-}
-
-.kb-glass .kb-profile-edit .kb-field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 12px;
-  font-size: var(--kb-glass-size-body);
-  font-weight: 800;
-  letter-spacing: 3px;
-  text-transform: uppercase;
-  color: var(--kb-glass-text-2);
-}
-
-.kb-glass .kb-profile-edit :is(.kb-input, .kb-select, .kb-textarea) {
-  min-height: 52px;
-  box-sizing: border-box;
-  width: 100%;
-  padding: 4px 12px;
-  border: 1px solid var(--kb-glass-neon);
-  background: var(--kb-glass-field);
-  font-family: var(--kb-glass-font-body);
-  font-size: var(--kb-glass-size-body);
-  font-weight: 700;
-  letter-spacing: 0;
-  text-transform: none;
   color: var(--kb-glass-text);
 }
 
@@ -218,20 +352,6 @@
   color: var(--kb-glass-text);
 }
 
-.kb-glass .kb-signature-preview {
-  background: var(--kb-bg);
-  color: var(--kb-fg);
-  border: 1px solid var(--kb-rule);
-  font-family: var(--kb-font-body);
-  font-size: var(--kb-size-body);
-  font-weight: normal;
-}
-
-.kb-glass .kb-profile-edit .kb-signature-preview :is(p, span) {
-  font-size: inherit;
-  color: inherit;
-}
-
 .kb-glass .kb-crop-stage,
 .kb-glass .kb-crop-preview {
   border-color: var(--kb-glass-neon);
@@ -262,7 +382,7 @@
   padding-top: 16px;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-glass .kb-profile-edit :is(.kb-small, .kb-muted, p, .kb-field, .kb-input, .kb-select, .kb-textarea, .kb-button) {
+:where(:root[data-kb-layout='phone']) .kb-glass .kb-profile-edit :is(.kb-small, .kb-muted, p, .kb-button) {
   font-size: var(--kb-glass-size-phone-body);
 }
 

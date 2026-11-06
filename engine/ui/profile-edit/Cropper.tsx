@@ -1,5 +1,6 @@
 /**
- * The avatar cropper: one picture, two frames. The player picks a picture (a file input; it is
+ * The avatar cropper: one picture, two frames. The player picks a picture (a secondary glass button,
+ * which opens the file input it labels, an input the eye never sees; the picture is
  * never uploaded as it is), and a portrait frame (from square to twice as tall as wide) and a
  * square frame inside it appear, the square at the portrait's top where a face usually is. Each
  * frame moves and resizes by pointer drag and by keyboard (arrows move, plus and minus resize; the
@@ -9,6 +10,7 @@
  * from the stored portrait, loaded from its public address, and sends only the square.
  */
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { GlassButton } from '../glass/Button.tsx';
 import { useKayfa } from '../context.tsx';
 import type { Character, Frame } from '../data/api.ts';
 import { cutAvatar, type Picture, type PictureIo } from './crops.ts';
@@ -101,6 +103,7 @@ export function AvatarEditor({ character, onSaved, io = browserIo }: AvatarEdito
   const [problem, setProblem] = useState<string | null>(null);
   const [saved, setSaved] = useState('');
   const helpId = useId();
+  const fileInput = useRef<HTMLInputElement>(null);
   const current = useRef<Cutting | null>(null);
   current.current = cutting;
   useEffect(() => () => current.current?.picture.release(), []);
@@ -179,10 +182,20 @@ export function AvatarEditor({ character, onSaved, io = browserIo }: AvatarEdito
         Choose one picture. It is cut in your browser and only the two crops are sent, as plain pictures with nothing else in them; the original stays with you.
         The portrait is shown beside your posts on a wide screen; the square is shown in lists and on a phone.
       </p>
-      <label className="kb-field">
-        <span>Choose a picture</span>
-        <input className="kb-input kb-wide" type="file" accept="image/*" onChange={(e) => { void choose(e.target.files?.[0]); e.target.value = ''; }} />
-      </label>
+      <div className="kb-avatar-pick">
+        {/* The two crops' frames: what is saved now, or empty ones, as the Edit profile board draws them. */}
+        <span className="kb-avatar-frame" data-kb-frame="portrait" aria-hidden="true">{character.avatarPortrait && <img src={character.avatarPortrait} alt="" />}</span>
+        <span className="kb-avatar-frame" data-kb-frame="square" aria-hidden="true">{character.avatarSquare && <img src={character.avatarSquare} alt="" />}</span>
+        <div className="kb-avatar-pick-side">
+          {!character.avatarPortrait && !character.avatarSquare && <p className="kb-avatar-none">No picture yet.</p>}
+          {/* The button stands for the file input, which only a screen reader hears by name: a secondary glass button, as every action is. */}
+          <GlassButton id={`${helpId}-choose`} onClick={() => fileInput.current?.click()}>Choose a picture</GlassButton>
+          <input
+            ref={fileInput} className="kb-visually-hidden" type="file" accept="image/*" tabIndex={-1} aria-hidden="true" aria-labelledby={`${helpId}-choose`}
+            onChange={(e) => { void choose(e.target.files?.[0]); e.target.value = ''; }}
+          />
+        </div>
+      </div>
       {character.avatarPortrait && (
         <p><button type="button" className="kb-button" onClick={() => void recrop()}>Recrop the square from my stored portrait</button></p>
       )}

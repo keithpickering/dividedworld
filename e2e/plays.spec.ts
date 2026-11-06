@@ -341,8 +341,8 @@ test.describe('glass in the 2003 board, reduced motion', () => {
     await expect(page.locator('#post-41 .kb-whoops')).toBeVisible();
     await expect(page.locator('.kb-effect-strip, .kb-effect-plate, .kb-act-slot')).toHaveCount(0);
     const lens = await openWhoopsLens(page);
-    /* The State names the top layer, its caster and its ink, with its own share washed (the plays-on-a-post design, section 5). */
-    await expect(lens.locator('.kb-lens-state .kb-lens-line')).toHaveText(/^\d+ layers? · top: .+'s [a-z]+, \d+% washed$/u);
+    /* The State is the mark's progress for this reader (the Lens's roles, backfill-boards design section 6). */
+    await expect(lens.locator('.kb-lens-state .kb-lens-line')).toHaveText(/^\d+% washed for you$/u);
     await expect(lens.locator('.kb-lens-ends')).toHaveText(/^Ends on your screen when you scrub every layer off\./u);
     await expect(lens.getByRole('button', { name: 'Hold to scrub' })).toBeVisible();
     /* The armed card is the post's ghost mark, in its date row, and not among the Lens's controls. */

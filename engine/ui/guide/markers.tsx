@@ -89,7 +89,7 @@ export function Classes() {
             {look?.marks ? <Marks marks={look.marks} id={`${group}-${c.key}-marks`} /> : <span />}
             <div className="kb-guide-class-words">
               <h3 id={name} className="kb-guide-class-name"><span className="kb-class-chip kb-glass-skew"><span className="kb-glass-upright">{c.name}</span></span></h3>
-              {look?.description && <p>{look.description(economy, settings.settlementLength)}</p>}
+              {look?.description && <p>{look.description(economy, settings.settlementLength)} {look.hurtsBy(economy, settings.settlementLength)}</p>}
               {hint && <p className="kb-guide-hint"><span className="kb-guide-hint-label">{hintLabel}</span>{' '}<span>{hint}</span></p>}
             </div>
           </div>

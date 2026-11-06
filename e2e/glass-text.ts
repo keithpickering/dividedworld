@@ -352,13 +352,14 @@ function reading(fact: TextFact, role: ColorRole, s: SurfaceCeilings, at: string
 
 /**
  * The board drawn inside the glass: the post a Turn or a debut previews as the thread will show it
- * (characters/PreviewBox.tsx), and the 2003 window on the hand sheet's story, around the card's tag
+ * (characters/PreviewBox.tsx), the postbit and the post Edit profile previews beside its fields
+ * (profile-edit/ProfilePreview.tsx), and the 2003 window on the hand sheet's story, around the card's tag
  * (cards/Hand.board.stories.tsx; the tag itself is glass and is read): in the board's own ground
  * and type, opaque, which the board's rules and axe hold, not the glass's; and the post Stick Around
  * lifts into its full-screen view, still the board's 2003 post, white, with the release and the bar
  * (the glass's, read) around it.
  */
-export const BOARD = '.kb-preview-post, .kb-hand-board-post-bar, .kb-hand-board-post-foot, .kb-hold-post';
+export const BOARD = '.kb-preview-post, .kb-profile-preview-post, .kb-hand-board-post-bar, .kb-hand-board-post-foot, .kb-hold-post';
 /**
  * The instance's drawn art, marked `data-kb-art` by the engine screen that leaves it a place (the Vending
  * Machine's sign and the codes printed on its slots): decoration, hidden from a screen reader, with no

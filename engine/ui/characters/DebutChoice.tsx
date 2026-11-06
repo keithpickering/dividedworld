@@ -2,6 +2,9 @@
  * How a character debuts: now or at the settlement, and how loud (silent, announced, announced
  * with its class), with the preview of what everyone will see. New character and a waiting
  * character's dialog share it. The preview shows a class only for the option that names it.
+ * It draws its sections as the fragment's own children, so the form or dialog around it spaces
+ * them, a section gap apart, as it does its other sections. How loud is one row of three (a stack
+ * on the phone): characters.css.
  */
 import { useId } from 'react';
 import type { DebutLoudness, DebutTiming } from '../data/api.ts';
@@ -36,7 +39,7 @@ export function DebutChoice({ name, className, timing, loudness, onTiming, onLou
           </label>
         </fieldset>
       )}
-      <fieldset className="kb-choice">
+      <fieldset className="kb-choice kb-choice-loud">
         <legend>How loud</legend>
         <label className="kb-choice-option">
           <input type="radio" name={loud} checked={loudness === 'silent'} onChange={() => onLoudness('silent')} />

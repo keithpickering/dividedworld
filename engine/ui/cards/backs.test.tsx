@@ -13,6 +13,7 @@ import { hudKey } from '../player.tsx';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import type { CardUi, EffectProps } from './types.ts';
+import { wordsProblems } from './lens-words.ts';
 import { LoadedThread } from '../loaded.tsx';
 
 const base = { priceKey: 'x.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
@@ -92,11 +93,16 @@ describe('a card back', () => {
     expect(post(2).querySelector('[data-kb-face]')).toBeNull();
     const user = userEvent.setup();
     await user.click(trap);
-    const said = (await screen.findByRole('dialog', { name: 'Cards on this post' })).querySelector('.kb-lens-state')!.textContent;
+    const lensOf = async () => {
+      const dialog = await screen.findByRole('dialog', { name: 'Cards on this post' });
+      return { heading: dialog.querySelector('.kb-lens-line')!.textContent, ends: dialog.querySelector('.kb-lens-ends')!.textContent };
+    };
+    const said = await lensOf();
     await user.keyboard('{Escape}');
     await user.click(bluff);
-    expect((await screen.findByRole('dialog', { name: 'Cards on this post' })).querySelector('.kb-lens-state')!.textContent).toBe(said);
-    expect(said).toMatch(/^A card set face down by Spritey, on \w+ \d+\.Ends by itself on \w+ \d+, unless it springs first\.$/u);
+    expect(await lensOf()).toEqual(said);
+    expect(said.heading).toBe('Face down on this post');
+    expect(said.ends).toMatch(/^Ends \w+ \d+, [\d:]+\s[AP]M, unless it springs first\.$/u);
   });
 
   test('shows its setter their own card under it, on their screen alone', async () => {
@@ -116,6 +122,16 @@ describe('a caught play', () => {
     await open(w);
     const mark = await within(post(2)).findByRole('button', { name: /^Blot, 1 play/u });
     expect(mark.getAttribute('data-kb-caught')).toBe('true');
+    /* The Lens's heading for a caught kind is a short status; what caught it is the play's note (the same for every card kind). */
+    const user = userEvent.setup();
+    await user.click(mark);
+    const lens = await screen.findByRole('dialog', { name: 'Cards on this post' });
+    const heading = lens.querySelector('.kb-lens-state .kb-lens-line')!.textContent!;
+    expect(heading).toBe('Caught, did nothing');
+    expect(wordsProblems('state', heading)).toEqual([]);
+    await user.click(within(lens).getByRole('button', { name: /^1 play/u }));
+    expect(lens.querySelector('.kb-lens-note')).toHaveTextContent('Caught by a Snare. It did nothing, and its card is spent.');
+    await user.keyboard('{Escape}');
     expect(within(post(2)).queryByTestId('splash')).toBeNull();
     /* The back sprang: it shows the card it was, in its place. */
     expect(post(2).querySelector('[data-kb-back="sprung"]')).not.toBeNull();
