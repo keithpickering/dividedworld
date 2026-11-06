@@ -1,6 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 import type { Fake } from '../engine/ui/data/fake.ts';
 import type { Demo } from '../web/src/demo.ts';
+import { loadFaces } from './fonts.ts';
 
 /**
  * Every screen the glass is measured on, shared by the specs that visit them all
@@ -229,6 +230,6 @@ export async function open(page: Page, s: Probe) {
     : page.getByRole('navigation', { name: 'Menu' }).or(page.getByRole('region', { name: 'Game HUD' })).or(page.getByRole('heading', { level: 1, name: 'While you were away' })).first();
   await expect(ready).toBeVisible();
   await s.then?.(page);
-  await page.evaluate(() => document.fonts.ready);
+  await loadFaces(page);
 }
 

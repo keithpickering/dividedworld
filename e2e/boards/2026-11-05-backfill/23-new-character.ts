@@ -56,7 +56,7 @@ const manifest: BoardManifest = {
     at('technician', 'text', 'Technician', { within: 'classes', box: 'none', type: false }),
     at('lurker', 'text', 'Lurker', { within: 'classes', box: 'none', type: false }),
     at('face-hurt', 'text', 'Hurt by bored reactions, and by a card that outdraws the post it was played on.', { within: 'classes', box: 'none', type: false }),
-    at('note', 'text', 'Only you will know its class, unless you choose to reveal it.', { type: false, buildShift: { y: 64.5 } }),
+    at('note', 'text', 'Only you will know its class, unless you choose to reveal it.', { type: false, origin: 'classes', originEdge: 'bottom', buildShift: { y: 0 } }),
 
     at('when', 'group', 'When it debuts', { type: false, box: 'none' }),
     at('loud', 'group', 'How loud', { type: false, box: 'none' }),
@@ -118,8 +118,8 @@ export const phone: BoardManifest = {
     { id: 'class-label', role: 'text', name: 'CLASS', type: false, box: 'none' },
     held('class-label', 'count', 'text', '1 OF 5', { x: -20 }, { buildName: '1–1 of 5' }),
     held('class-label', 'note', 'text', 'Only you will know its class, unless you choose to reveal it.', { y: -81 }),
-    held('class-label', 'when', 'text', 'WHEN IT DEBUTS', { y: -98.5 }),
-    held('class-label', 'drop-now', 'text', 'DROP NOW', { y: -107.5 }, { buildName: 'Drop now.' }),
+    held('class-label', 'when', 'text', 'WHEN IT DEBUTS', { y: 14 }, { origin: 'note', originEdge: 'bottom' }),
+    held('class-label', 'drop-now', 'text', 'DROP NOW', { y: 5 }, { buildName: 'Drop now.', origin: 'note', originEdge: 'bottom' }),
   ],
   also: [
     {

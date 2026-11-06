@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { boardIds, boardsToRun, compareBoard, compareSides, phoneSizeProblems, screensWithoutBoards, type BoardManifest, type Mismatch, type Snapshot } from './board-match.ts';
 import { FIXTURE_OVERLAYS, OVERLAYS, PAGES, STORIES } from './glass-screens.ts';
+import { loadFaces } from './fonts.ts';
 import { pressControls, routeBoardFonts, settledSnapshot, snapshotPage, standInFaces } from './board-snapshot.ts';
 
 /**
@@ -167,7 +168,7 @@ async function compareSide(browser: Browser, baseURL: string | undefined, id: st
       const query = 'moment' in manifest.build ? `moment=${encodeURIComponent(manifest.build.moment)}` : `story=${encodeURIComponent(manifest.build.story)}`;
       await buildPage.goto(`/?fixture=boards&${query}`);
       await pressControls(buildPage, manifest.press);
-      for (const page of [boardPage, buildPage]) await page.evaluate(() => document.fonts.ready);
+      for (const page of [boardPage, buildPage]) await loadFaces(page);
       shots.board = await snapshotPage(boardPage, manifest, 'board');
       shots.build = await settledSnapshot(buildPage, manifest, 'build');
       mismatches = compareBoard(shots.board, shots.build, manifest);

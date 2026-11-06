@@ -27,7 +27,7 @@ const manifest: BoardManifest = {
     { id: 'prompt', role: 'heading', name: 'WHO WILL YOU PLAY AS?', within: 'hud', origin: 'hud' },
     { id: 'pitch', role: 'text', name: 'A message board where everyone wears a mask, and everyone is someone you know.', within: 'hud', origin: 'hud', box: 'position', buildSize: 20 },
     { id: 'aura', role: 'text', name: 'AURA', within: 'hud', origin: 'hud', box: 'position', type: false },
-    { id: 'notch-line', role: 'text', name: 'No mask, no Aura, no hand yet. Your first character fills them.', within: 'hud', origin: 'hud' },
+    { id: 'notch-line', role: 'text', name: 'No mask, no Aura, no hand yet. Your first character fills them.', within: 'hud', origin: 'hud', box: 'position' },
     { id: 'sign-in', role: 'link', name: 'SIGN IN', within: 'hud', origin: 'hud', box: 'height', buildShift: { height: -6 } },
     { id: 'register', role: 'link', name: 'REGISTER WITH AN INVITE', within: 'hud', origin: 'hud', box: 'height', buildShift: { height: -6 } },
     { id: 'no-invite', role: 'text', name: 'No invite? Ask someone who plays.', within: 'hud', origin: 'hud', box: 'position' },

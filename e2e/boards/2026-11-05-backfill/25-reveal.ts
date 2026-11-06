@@ -20,10 +20,13 @@ import { part } from './24-debut.ts';
 
 /**
  * How much lower the build stands what is under the sentence, from what the first run measured: the dialog's 44px section gap where the board
- * draws 24 to 30 between its sections (the Reveal board's own are uneven), and the frame's 68px title where the board draws 60. They add as the
- * parts go down the dialog.
+ * draws 24 to 30 between its sections (the Reveal board's own are uneven). They add as the parts go down the dialog. Each is measured from the
+ * sentence's bottom edge (`UNDER`), not from the dialog's corner: the sentence is 680px wide and its words stand within a few percent of two lines'
+ * worth, so one machine sets it in two lines and another in three (CI two, a local run three), which moves everything under it by a line.
+ * What follows the sentence is held from where the sentence ends, whatever its lines.
  */
-const DOWN = { fields: { y: 51.5 }, selects: { y: 51.5 }, words: { y: 72 }, count: { y: 71.5 } } as const;
+const DOWN = { fields: { y: 16 }, selects: { y: 16 }, words: { y: 36.5 }, count: { y: 36 } } as const;
+const UNDER = { origin: 'sentence', originEdge: 'bottom' } as const;
 
 const manifest: BoardManifest = {
   board: '2026-11-05-backfill/25-reveal',
@@ -39,13 +42,13 @@ const manifest: BoardManifest = {
     part('title', 'heading', "Reveal Pipewrench's class", { type: false }),
     part('close', 'button', 'Close', { type: false, box: 'size' }),
     part('sentence', 'text', "Pipewrench is a Heel. This shows everyone that, as checked by The System, as Pipewrench's own post. Anyone can react to it or spin a thread from it, and this can't be taken back.", { box: 'none', type: false }),
-    part('board-label', 'text', 'BOARD', { buildShift: DOWN.fields }),
-    part('board', 'combobox', '', { type: false, buildName: 'Board', buildShift: DOWN.selects }),
-    part('thread-label', 'text', 'THREAD', { buildShift: DOWN.fields }),
-    part('thread', 'combobox', '', { type: false, buildName: 'Thread', nth: 1, buildNth: 0, buildShift: DOWN.selects }),
-    part('words-label', 'text', "IN THE CHARACTER'S WORDS (OPTIONAL)", { buildShift: DOWN.words }),
-    part('hint', 'text', 'Plain text.', { type: false, buildShift: DOWN.count }),
-    part('count', 'text', '21 of 200', { type: false, buildShift: DOWN.count }),
+    part('board-label', 'text', 'BOARD', { ...UNDER, buildShift: DOWN.fields }),
+    part('board', 'combobox', '', { ...UNDER, type: false, buildName: 'Board', buildShift: DOWN.selects }),
+    part('thread-label', 'text', 'THREAD', { ...UNDER, buildShift: DOWN.fields }),
+    part('thread', 'combobox', '', { ...UNDER, type: false, buildName: 'Thread', nth: 1, buildNth: 0, buildShift: DOWN.selects }),
+    part('words-label', 'text', "IN THE CHARACTER'S WORDS (OPTIONAL)", { ...UNDER, buildShift: DOWN.words }),
+    part('hint', 'text', 'Plain text.', { ...UNDER, type: false, buildShift: DOWN.count }),
+    part('count', 'text', '21 of 200', { ...UNDER, type: false, buildShift: DOWN.count }),
     part('preview-head', 'text', 'What everyone will see', { box: 'none', type: false }),
     part('foot-line', 'text', 'The reveal is checked by The System and posted at once.', { box: 'none', type: false }),
     part('cancel', 'button', 'CANCEL', { buildName: 'Cancel', type: false, box: 'none' }),

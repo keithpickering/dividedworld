@@ -91,7 +91,9 @@ export const phone: BoardManifest = {
     at('new-heading', 'heading', 'NEW HERE?', { y: 22 }),
     at('new-text', 'text', 'Registering takes an invite from someone who plays.', { y: 22 }, { buildName: 'Registering takes an invite from someone who plays. The same email code signs you in after.' }),
     at('register', 'link', 'REGISTER'),
-    at('reach', 'link', 'Reach a person', { y: 138 }, { nth: 0 }),
+    /* The board has no "Stuck?" block on this screen; the build's last paragraph before Reach a person stands in the board's last (Register's lead), so that Reach a person is held from where the paragraph ends. */
+    at('stuck-end', 'text', 'Registering takes an invite from someone who plays.', {}, { buildName: 'No code arrived, or the link has expired. The admins can help.', box: 'none' }),
+    at('reach', 'link', 'Reach a person', { y: -73 }, { nth: 0, origin: 'stuck-end', originEdge: 'bottom' }),
   ],
   also: [
     {
@@ -103,8 +105,10 @@ export const phone: BoardManifest = {
         at('lead', 'text', 'No password. We email you a code and a link; either one makes your account.', { y: 9 }),
         at('email-label', 'text', 'EMAIL ADDRESS', { y: 20 }, { nth: 1, buildNth: 0 }),
         at('invite-label', 'text', 'INVITE', { y: 40 }),
-        at('ack', 'text', 'I am 18 or older.', { y: 80 }),
-        at('send', 'button', 'SEND A CODE', { y: 120 }, { nth: 1, buildNth: 0 }),
+        /* The invite's note is one line on one machine and two on another (its words fill the 358px column), so what follows it is held from where it ends. */
+        at('invite-note', 'text', 'Your invite link filled this in.', {}, { buildName: 'Registration is by invite for now. Your invite link filled this in.', box: 'none' }),
+        at('ack', 'text', 'I am 18 or older.', { y: 12 }, { origin: 'invite-note', originEdge: 'bottom' }),
+        at('send', 'button', 'SEND A CODE', { y: 51.5 }, { nth: 1, buildNth: 0, origin: 'invite-note', originEdge: 'bottom' }),
       ],
     },
     {
