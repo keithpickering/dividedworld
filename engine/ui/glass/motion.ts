@@ -69,7 +69,6 @@ function landing(f: NonNullable<ActiveFeel>, ms: number, delay = 0): Transition 
 }
 /** How a thing leaves: eased over the feel's exit, never sprung, so an exit ends when it says. */
 const eased = (f: NonNullable<ActiveFeel>, ms = f.exit): Transition => ({ duration: sec(ms), ease: bezier(f.ease) });
-const leaving = eased;
 
 /** Half the slant of an edge `h` px tall, by the glass's skew: a CSS length. */
 const slant = (h: number | string) => `calc(tan(var(--kb-glass-skew)) * ${typeof h === 'number' ? `${h / 2}px` : h})`;
@@ -110,7 +109,7 @@ export function crossing(feel: ActiveFeel, args: { readonly from: Rect; readonly
     return {
       initial: { clipPath: closed, opacity: 0 },
       animate: { clipPath: open, opacity: 1, transition: landing(feel, feel.screen) },
-      exit: { clipPath: closed, opacity: 0, transition: leaving(feel, feel.screen) },
+      exit: { clipPath: closed, opacity: 0, transition: eased(feel, feel.screen) },
     };
   }
   const origin = `${from.x + from.width / 2}px ${from.y + from.height / 2}px`;
@@ -118,7 +117,7 @@ export function crossing(feel: ActiveFeel, args: { readonly from: Rect; readonly
   return {
     initial: closed,
     animate: { opacity: 1, scale: 1, filter: BLUR(0), transformOrigin: origin, transition: landing(feel, feel.screen) },
-    exit: { ...closed, transition: leaving(feel, feel.screen) },
+    exit: { ...closed, transition: eased(feel, feel.screen) },
   };
 }
 
@@ -133,12 +132,12 @@ export function screen(feel: ActiveFeel): MotionProps {
     ? {
         enter: (d: Dir) => ({ x: d * feel.distance, clipPath: WIPE_HIDDEN }),
         center: { x: 0, clipPath: WIPE_SHOWN, transition: landing(feel, feel.screen) },
-        exit: (d: Dir) => ({ x: -d * feel.distance, opacity: 0, transition: leaving(feel, feel.screen) }),
+        exit: (d: Dir) => ({ x: -d * feel.distance, opacity: 0, transition: eased(feel, feel.screen) }),
       }
     : {
         enter: (d: Dir) => ({ x: d * feel.distance, opacity: 0, scale: feel.scale, filter: BLUR(feel.blur) }),
         center: { x: 0, opacity: 1, scale: 1, filter: BLUR(0), transition: landing(feel, feel.screen) },
-        exit: (d: Dir) => ({ x: -d * feel.distance, opacity: 0, scale: feel.scale, filter: BLUR(feel.blur), transition: leaving(feel, feel.screen) }),
+        exit: (d: Dir) => ({ x: -d * feel.distance, opacity: 0, scale: feel.scale, filter: BLUR(feel.blur), transition: eased(feel, feel.screen) }),
       };
   return { variants, initial: 'enter', animate: 'center', exit: 'exit' };
 }
@@ -153,13 +152,13 @@ export function overlay(feel: ActiveFeel, anchor?: { readonly x: number; readonl
     return {
       initial: { clipPath: WIPE_HIDDEN, y: feel.distance / 2, transformOrigin },
       animate: { clipPath: WIPE_SHOWN, y: 0, transformOrigin, transition: landing(feel, feel.enter) },
-      exit: { clipPath: WIPE_HIDDEN, opacity: 0, transformOrigin, transition: leaving(feel) },
+      exit: { clipPath: WIPE_HIDDEN, opacity: 0, transformOrigin, transition: eased(feel) },
     };
   }
   return {
     initial: { opacity: 0, scale: feel.scale, filter: BLUR(feel.blur), transformOrigin },
     animate: { opacity: 1, scale: 1, filter: BLUR(0), transformOrigin, transition: landing(feel, feel.enter) },
-    exit: { opacity: 0, scale: feel.scale, filter: BLUR(feel.blur), transformOrigin, transition: leaving(feel) },
+    exit: { opacity: 0, scale: feel.scale, filter: BLUR(feel.blur), transformOrigin, transition: eased(feel) },
   };
 }
 
@@ -170,20 +169,20 @@ export function modal(feel: ActiveFeel): MotionProps {
     return {
       initial: { clipPath: WIPE_HIDDEN, y: feel.distance },
       animate: { clipPath: WIPE_SHOWN, y: 0, transition: landing(feel, feel.enter) },
-      exit: { clipPath: WIPE_HIDDEN, opacity: 0, y: feel.distance / 2, transition: leaving(feel) },
+      exit: { clipPath: WIPE_HIDDEN, opacity: 0, y: feel.distance / 2, transition: eased(feel) },
     };
   }
   return {
     initial: { opacity: 0, y: feel.distance, scale: feel.scale, filter: BLUR(feel.blur) },
     animate: { opacity: 1, y: 0, scale: 1, filter: BLUR(0), transition: landing(feel, feel.enter) },
-    exit: { opacity: 0, y: feel.distance / 2, scale: feel.scale, filter: BLUR(feel.blur), transition: leaving(feel) },
+    exit: { opacity: 0, y: feel.distance / 2, scale: feel.scale, filter: BLUR(feel.blur), transition: eased(feel) },
   };
 }
 
 /** The dim behind an overlay or a modal, fading in step with it. */
 export function backdrop(feel: ActiveFeel): MotionProps {
   if (!feel) return {};
-  return { initial: { opacity: 0 }, animate: { opacity: 1, transition: eased(feel, feel.enter) }, exit: { opacity: 0, transition: leaving(feel) } };
+  return { initial: { opacity: 0 }, animate: { opacity: 1, transition: eased(feel, feel.enter) }, exit: { opacity: 0, transition: eased(feel) } };
 }
 
 /**
@@ -219,12 +218,12 @@ export function swap(feel: ActiveFeel): MotionProps {
     ? {
         enter: (d: Dir) => ({ y: d * feel.distance, clipPath: WIPE_HIDDEN }),
         center: { y: 0, clipPath: WIPE_SHOWN, transition: landing(feel, feel.enter) },
-        exit: (d: Dir) => ({ y: -d * feel.distance / 2, opacity: 0, transition: leaving(feel) }),
+        exit: (d: Dir) => ({ y: -d * feel.distance / 2, opacity: 0, transition: eased(feel) }),
       }
     : {
         enter: (d: Dir) => ({ y: d * feel.distance, opacity: 0, scale: feel.scale, filter: BLUR(feel.blur) }),
         center: { y: 0, opacity: 1, scale: 1, filter: BLUR(0), transition: landing(feel, feel.enter) },
-        exit: (d: Dir) => ({ y: -d * feel.distance / 2, opacity: 0, filter: BLUR(feel.blur), transition: leaving(feel) }),
+        exit: (d: Dir) => ({ y: -d * feel.distance / 2, opacity: 0, filter: BLUR(feel.blur), transition: eased(feel) }),
       };
   return { variants, initial: 'enter', animate: 'center', exit: 'exit' };
 }
