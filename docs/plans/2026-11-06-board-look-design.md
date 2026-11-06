@@ -141,14 +141,15 @@ boards and `e2e/whoops.spec.ts`.
   thread's board-world type and places today; the plan moves those landmarks to this batch's manifests, and 01-main
   keeps the HUD, the hand and the game's pieces.
 
-Asked of the owner with the boards:
-- **New thread's editor.** `NewThread.tsx` draws a bare textarea, with no toolbar, no Preview and no Ctrl+Enter, where
-  a reply and an edit share `Editor.tsx`. The boards draw the first post with the shared editor ("Ctrl+Enter or
-  Command+Enter starts it", a draft); recommended, since a first post is a post.
+Decided with the owner ("Agreed with your recommendations on 1 and 2"):
+- **New thread uses the shared editor.** `NewThread.tsx` draws a bare textarea, with no toolbar, no Preview and no
+  Ctrl+Enter, where a reply and an edit share `Editor.tsx`; the first post takes `Editor.tsx`, since a first post is a
+  post. Its hint reads "Ctrl+Enter or Command+Enter starts it".
 - **The phone postbit drops Posts and Joined**, which the profile carries a tap away.
+
+**Batch 2 approved by the owner** ("Looking good, approved"), after the nits above.
 
 ## Open
 
 - Fan Site's name, now that it salutes one board's blue.
 - The legend's words.
-- Batch 2's approval, New thread's editor, and the phone postbit's counts.
