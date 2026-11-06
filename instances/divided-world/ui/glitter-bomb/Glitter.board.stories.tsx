@@ -8,7 +8,7 @@
  * Glitter Bomb on the page), the way the other board stories reach their internals; the app itself exposes nothing.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Frame } from '../../../../engine/ui/frame/Frame.tsx';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
 import type { Fake } from '../../../../engine/ui/data/fake.ts';
@@ -25,6 +25,7 @@ interface Args {
 
 function Glittering({ mode, reduced }: Args) {
   const { api } = useKayfa();
+  const [ready, setReady] = useState(false);
   /* The thread the moment opens on (`/t/<thread>`). */
   const thread = /^\/t\/([^/]+)/u.exec(useLocation().path)?.[1] ?? null;
   useEffect(() => {
@@ -39,14 +40,18 @@ function Glittering({ mode, reduced }: Args) {
   }, []);
   useEffect(() => {
     if (thread === null) return;
+    let live = true;
     void (async () => {
       const [[target], [caster]] = await Promise.all([api.acts(thread, 41, 41), api.acts(thread, 42, 42)]);
       if (!target?.character || !caster?.character) return;
       /* Cast on #41's character from #41 itself, by #42's author, who is not its author. */
-      (api as Fake).seed.reach(caster.character, 'character', target.character, 'glitter-bomb', { post: target.id, live: true, message: 'Sparkle.' });
-    })();
+      (api as Fake).seed.reach(caster.character, 'character', target.character, 'glitter-bomb', { post: target.id, ends: Date.now() + 5 * 86_400_000, message: 'Sparkle.' });
+      /* The page is drawn once the play is seeded, as the page reads plays on a character when it loads and drops one that comes later. */
+      if (live) setReady(true);
+    })().catch((e: unknown) => { console.error('the Glitter Bomb could not be seeded', e); });
+    return () => { live = false; };
   }, [api, thread]);
-  return <Frame>{thread ? <ThreadScreen thread={thread} /> : <div aria-busy="true" />}</Frame>;
+  return <Frame>{thread && ready ? <ThreadScreen thread={thread} /> : <div aria-busy="true" />}</Frame>;
 }
 
 const meta: Meta<typeof Glittering> = {
