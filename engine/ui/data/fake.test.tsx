@@ -1385,7 +1385,8 @@ describe('a finished season\'s results and its announcements', () => {
       { act: debut, character: anaFace, class: 'face', at: new Date(at(5, 8)).toISOString(), via: 'debut', thread },
       { act: turn, character: boFace, class: 'face', at: new Date(at(6, 8)).toISOString(), via: 'turn', thread },
     ]);
-    expect(bare).toBeTruthy();
+    // A debut naming no class is its character's announce in the same thread, and no reveal (absent above).
+    expect(await fake.act(bare)).toMatchObject({ kind: 'announce', character: anaHeel, thread });
     expect(await fake.turnsAnnounced([anaFace, anaHeel, boFace])).toEqual([
       { act: turn, character: boFace, at: new Date(at(6, 8)).toISOString(), was: 'heel' },
       { act: quiet, character: boFace, at: new Date(at(7, 8)).toISOString(), was: null },
