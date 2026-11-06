@@ -115,6 +115,18 @@ describe('from the Task 10 review', () => {
     act(() => nav('/t/a#post-1'));
     expect(load).toHaveBeenCalledTimes(4);
   });
+  test('a move made by the act that ends the account is asked again under the new account, where a click is dropped', async () => {
+    const { load, calls } = manualLoader();
+    const view = mount(load, { account: 'p1' });
+    act(() => nav('/t/a', { afterAccountChange: true }));
+    view.setAccount(null);
+    expect(calls[0]!.signal.aborted).toBe(true);
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(navigation.pending?.to).toBe('/t/a');
+    await answer(calls[1], 'A-out');
+    expect(screen.getByText('thread a: A-out')).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/t/a');
+  });
   test('a click that joined a prefetch in flight is dropped by an account change, and the next click loads again', async () => {
     const { load, calls } = manualLoader();
     const view = mount(load, { account: 'p1' });

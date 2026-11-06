@@ -82,7 +82,7 @@ export interface Navigation {
 interface Router {
   readonly location: Location;
   readonly shown: Shown;
-  readonly navigate: (to: string, options?: { readonly replace?: boolean; readonly state?: unknown }) => void;
+  readonly navigate: (to: string, options?: { readonly replace?: boolean; readonly state?: unknown; readonly afterAccountChange?: boolean }) => void;
   readonly retry: () => void;
   readonly prefetch: (to: string) => void;
   readonly navigation: Navigation;
@@ -137,11 +137,11 @@ const ENTRY_KEPT_MS = 5 * 60_000;
 const ENTRIES_MAX = 20;
 const PREFETCHES_MAX = 20;
 
-interface Pending { readonly id: number; readonly to: string; readonly controller: AbortController; readonly startedAt: number; account: string | null | undefined; readonly popped: boolean; readonly initial: boolean; readonly silent: boolean; readonly joined: string | null }
+interface Pending { readonly id: number; readonly to: string; readonly controller: AbortController; readonly startedAt: number; account: string | null | undefined; readonly popped: boolean; readonly initial: boolean; readonly silent: boolean; readonly joined: string | null; readonly req: Request }
 interface Prefetched { readonly promise: Promise<unknown>; readonly controller: AbortController; readonly timer: ReturnType<typeof setTimeout>; settledAt: number | null }
 interface Entry { doc: unknown; scrollY: number; at: number }
 type Outcome = { readonly kind: 'doc'; readonly doc: unknown } | { readonly kind: 'failure'; readonly failure: Failure } | { readonly kind: 'aborted' };
-interface Request { readonly full: string; readonly replace?: boolean; readonly state?: unknown; readonly popped: boolean; readonly kb: string | null; readonly initial?: boolean; readonly silent?: boolean }
+interface Request { readonly full: string; readonly replace?: boolean; readonly state?: unknown; readonly popped: boolean; readonly kb: string | null; readonly initial?: boolean; readonly silent?: boolean; readonly afterAccountChange?: boolean }
 
 const keyOf = (route: RouteLike, params: Params, query: URLSearchParams, path: string): string => (route.key ? route.key(params, query) : path + searchOf(query));
 
@@ -258,7 +258,7 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     const controller = new AbortController();
     const startedAt = Date.now();
     const joined = takePrefetch(address);
-    pendingRef.current = { id, to: req.full, controller, startedAt, account: accountRef.current, popped: req.popped, initial: !!req.initial, silent: !!req.silent, joined: joined ? prefetchKey(address) : null };
+    pendingRef.current = { id, to: req.full, controller, startedAt, account: accountRef.current, popped: req.popped, initial: !!req.initial, silent: !!req.silent, joined: joined ? prefetchKey(address) : null, req };
     setPending({ to: req.full, startedAt });
     const promise = joined ?? invoke(found.route, url, found.params, controller.signal);
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -350,7 +350,7 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     return () => w.removeEventListener('popstate', onPop);
   }, [w, routeFor, cancelPending, leave, commit, startLoad, report]);
 
-  const navigate = useCallback((to: string, options?: { readonly replace?: boolean; readonly state?: unknown }) => {
+  const navigate = useCallback((to: string, options?: { readonly replace?: boolean; readonly state?: unknown; readonly afterAccountChange?: boolean }) => {
     // An in-app navigation never leaves the site: an address that resolves elsewhere (a stray `next`,
     // a link built from text) is the index. A <Link> to another site is left to the browser instead.
     let url = new URL(to, w.location.href);
@@ -362,7 +362,7 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     const key = found ? keyOf(found.route, found.params, query, url.pathname) : null;
     const same = !!found && sh.ready && !sh.failure && sh.route === found.route && sh.key === key;
     if (found?.route.load && !same) {
-      startLoad({ full, replace: options?.replace, state: options?.state, popped: false, kb: null }, found);
+      startLoad({ full, replace: options?.replace, state: options?.state, popped: false, kb: null, afterAccountChange: options?.afterAccountChange }, found);
       return;
     }
     /* A route with no loader, or a move within its key, moves at once. */
@@ -442,6 +442,14 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     cache.current.clear();
     shownRef.current = { ...shownRef.current, key: null };
     if (was?.initial) { initialStarted.current = false; beginInitial(); return; }
+    /*
+     * A move made by an act that changes the account itself (signing out, then going to the index) is the new account's move, whichever
+     * of the two the router hears first: it is asked again under the new account, not dropped with a click made under the old one.
+     */
+    if (was?.req.afterAccountChange && !was.popped) {
+      const moved = routeFor(new URL(was.req.full, w.location.href).pathname);
+      if (moved?.route.load) { startLoad(was.req, moved); return; }
+    }
     /* A Back or Forward that was loading is asked again for the address the browser is at, under the new account. */
     if (was?.popped) {
       const found = routeFor(w.location.pathname);
