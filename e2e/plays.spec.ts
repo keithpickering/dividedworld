@@ -29,8 +29,8 @@ for (const [label, viewport, story] of [
       const marks = post.locator('.kb-mark');
       await expect(marks.first()).toBeVisible();
       /* Six real kinds: the strip draws what it has room for, and the rest fold into "+N". */
-      await expect(marks).toHaveCount(viewport.width <= 640 ? 4 : 5);
-      await expect(post.locator('.kb-mark-more')).toHaveText(viewport.width <= 640 ? '+3' : '+2');
+      await expect(marks).toHaveCount(viewport.width <= 640 ? 3 : 5);
+      await expect(post.locator('.kb-mark-more')).toHaveText(viewport.width <= 640 ? '+4' : '+2');
       await effectsLanded(page);
       const height = async () => (await post.boundingBox())!.height;
       const drawn = await height();
@@ -181,6 +181,8 @@ test.describe('the Lens\'s size and rows at 1920', () => {
     for (const h of await lens.locator('.kb-kit-tile').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().height))) expect(h).toBeLessThanOrEqual(48);
     const rows = lens.locator('.kb-lens-row');
     await expect(rows).toHaveCount(3);
+    /* A note is the card's own effect's line, which loads on first use: the rows are there before their notes are. */
+    await expect(rows.locator('.kb-lens-note')).toHaveCount(3);
     const corners = await rows.evaluateAll((els) => els.map((el) => getComputedStyle(el, '::before').backgroundColor));
     expect(new Set(corners).size, 'each layer\'s ink is its own plate\'s corner').toBe(3);
     /* Each play is a plate of its own, apart from the next. */
