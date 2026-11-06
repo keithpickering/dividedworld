@@ -22,8 +22,13 @@
  * the rest light and registers nothing that moves. Nothing here reads who owns a post, who played on it, or any class: the seed is
  * `post.id` and the plays' ids, which are public.
  *
- * Units: the box is CSS px (the host's layout size); the canvas is sized to round(box x density) with the density the loop returns
- * (at most 2), and its CSS size is the host's through the stylesheet (100%), so a resize registers again and redraws fresh.
+ * Units: the box is CSS px (the host's getBoundingClientRect size); the canvas is sized to round(box x density) with the density the
+ * loop returns (at most 2), and its CSS size is the host's through the stylesheet (100%). A resize registers again and, because
+ * sizing the backing store clears it, repaints at once with the last light and the band already held, rather than waiting for
+ * the loop's next draw.
+ *
+ * Memory: a post that leaves view frees what it holds, the foil's buffers and the canvas's own backing store (width and height 0);
+ * when it returns, the next draw sizes the canvas again and draws fresh. A board change lets the other board's foil go once.
  */
 import { useEffect, useRef } from 'react';
 import { bandFor, type Band } from '../../../../engine/ui/shine/band.ts';
@@ -62,6 +67,12 @@ export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
     const release = (): void => { for (const f of Object.values(foils)) f?.release(); };
     let box = { w: 0, h: 0 };
     let density = 1;
+    /* The board whose foil is in use; the other is let go once, when this changes, and its reference dropped. */
+    let current: Board | null = null;
+    /* True while the backing store is freed (out of view); the next draw sizes it again. */
+    let freed = false;
+    /* The last light and time drawn, for a synchronous repaint after a resize cleared the canvas. */
+    let last: { light: Light; t: number } | null = null;
 
     /* The band where this post sits, or null when the board's tokens cannot be read (nothing is drawn then). */
     const readBand = (): Band | null => {
@@ -74,34 +85,51 @@ export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
       if (!ctx) return;
       if (!band) { ctx.clearRect(0, 0, cv.width, cv.height); return; }
       const board: Board = band.hi < 0.5 ? 'dark' : 'light';
-      /* The other board's foil is let go: a board change leaves only the one in use holding buffers. */
-      foils[board === 'dark' ? 'light' : 'dark']?.release();
+      /* A board change lets the other board's foil go, once: only the one in use holds buffers. */
+      if (board !== current) {
+        const other: Board = board === 'dark' ? 'light' : 'dark';
+        foils[other]?.release();
+        delete foils[other];
+        current = board;
+      }
       const foil = (foils[board] ??= makeFoil({ seed, pattern, palette: FAB_STOPS[board], stars: TWINKLES[level]!, glint: FAB_GLINT }));
       foil.draw(ctx, box, density, light, band, now, idle);
     };
     const size = (): void => {
       cv.width = Math.round(box.w * density);
       cv.height = Math.round(box.h * density);
+      freed = false;
     };
+    /* Out of view: the foil's buffers and the post's own backing store both go; the next draw sizes and draws fresh. */
+    const leave = (): void => { release(); cv.width = cv.height = 0; freed = true; };
+    const measure = (): { w: number; h: number } => { const r = el.getBoundingClientRect(); return { w: r.width, h: r.height }; };
     const setup = (): void => {
       band = readBand();
-      box = { w: el.offsetWidth, h: el.offsetHeight };
+      box = measure();
       if (still) {
         density = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
         size();
         paint(REST, 0, false);
         return;
       }
-      density = register(el, cv, box, window.devicePixelRatio || 1, (frame) => { paint(frame.light, frame.t, frame.idle); return false; }, {
-        hidden: release,
-      });
+      density = register(el, cv, box, window.devicePixelRatio || 1, (frame) => {
+        if (freed) size();
+        last = { light: frame.light, t: frame.t };
+        paint(frame.light, frame.t, frame.idle);
+        return false;
+      }, { hidden: leave });
+      /* Resizing the backing store clears it, and the loop's next draw waits for the in-view callback: repaint now, with the
+         light and band already held, so the post never shows a bare frame. A freed canvas (out of view) stays freed. */
+      if (freed) return;
       size();
+      if (last) paint(last.light, last.t, false);
     };
     setup();
 
     /* A resize registers again at the new size; the loop draws it fresh. */
     const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(() => {
-      if (el.offsetWidth === box.w && el.offsetHeight === box.h) return;
+      const now = measure();
+      if (now.w === box.w && now.h === box.h) return;
       setup();
     }) : null;
     resize?.observe(el);

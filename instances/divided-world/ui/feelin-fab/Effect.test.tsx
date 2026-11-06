@@ -8,6 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { StrictMode } from 'react';
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ratio, tokensOf } from '../../../../engine/ui/contrast.ts';
@@ -55,7 +56,7 @@ const canvas = () => box().querySelector('canvas') as HTMLCanvasElement;
 const foils = () => made;
 const draws = () => made.reduce((n, f) => n + f.draw.mock.calls.length, 0);
 
-/* A fake rAF the test flushes by hand, a fake IntersectionObserver and ResizeObserver it drives, and a 300 x 120 layout. */
+/* A fake rAF the test flushes by hand, a fake IntersectionObserver and ResizeObserver it drives, and a 300 x 120 layout (read through getBoundingClientRect). */
 let queue = new Map<number, FrameRequestCallback>();
 let nextId = 1;
 const flush = (t: number) => { const run = [...queue.values()]; queue.clear(); for (const cb of run) cb(t); };
@@ -89,8 +90,7 @@ beforeEach(() => {
   vi.stubGlobal('IntersectionObserver', FakeObserver);
   vi.stubGlobal('ResizeObserver', FakeResize);
   vi.stubGlobal('devicePixelRatio', 1.5);
-  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(() => size.w);
-  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(() => size.h);
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(() => ({ x: 0, y: 0, left: 0, top: 0, right: size.w, bottom: size.h, width: size.w, height: size.h, toJSON: () => ({}) }));
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => ctx) as never);
   document.documentElement.setAttribute('data-kb-motion', 'full');
   document.documentElement.removeAttribute('data-kb-mode');
@@ -211,6 +211,37 @@ describe("Feelin' Fab", () => {
     expect(last[1]).toEqual({ w: 200, h: 80 });
   });
 
+  test('a resize repaints at once with the held light and band, before the loop\'s in-view callback', () => {
+    render(<FeelinFabEffect {...props(1)} />);
+    void see(canvas(), true); frames(2);
+    const before = draws();
+    const lastLight = made[0]!.draw.mock.calls.at(-1)![3];
+    size = { w: 200, h: 80 };
+    act(() => resizes[0]!.cb());
+    /* No in-view callback, no frame: the canvas was cleared by the resize, so it is painted in the same task. */
+    expect(draws()).toBe(before + 1);
+    const call = made[0]!.draw.mock.calls.at(-1)!;
+    expect(call[1]).toEqual({ w: 200, h: 80 });
+    expect(call[3]).toEqual(lastLight);
+    expect(call[4]).toEqual({ lo: 0.59, hi: 1 });
+  });
+
+  test('a resize before anything was drawn has no light to repaint with, and waits for the loop', () => {
+    render(<FeelinFabEffect {...props(1)} />);
+    size = { w: 200, h: 80 };
+    act(() => resizes[0]!.cb());
+    expect(draws()).toBe(0);
+  });
+
+  test('the box is measured by getBoundingClientRect, fractions included, and the backing store is round(box x density)', () => {
+    size = { w: 300.4, h: 119.6 };
+    render(<FeelinFabEffect {...props(1)} />);
+    expect(canvas().width).toBe(Math.round(300.4 * 1.5));
+    expect(canvas().height).toBe(Math.round(119.6 * 1.5));
+    void see(canvas(), true); frames(2);
+    expect(made[0]!.draw.mock.calls[0]![1]).toEqual({ w: 300.4, h: 119.6 });
+  });
+
   test('unmounting unregisters: nothing is drawn after, and the observers let go', () => {
     const r = render(<FeelinFabEffect {...props(2)} />);
     const host = box();
@@ -225,18 +256,110 @@ describe("Feelin' Fab", () => {
     expect(probe.running()).toBe(false);
   });
 
+  test('unmounting disconnects the mode observer and removes the color-scheme listener it added', () => {
+    const disconnect = vi.spyOn(MutationObserver.prototype, 'disconnect');
+    const observe = vi.spyOn(MutationObserver.prototype, 'observe');
+    const queries = new Map<string, { addEventListener: ReturnType<typeof vi.fn>; removeEventListener: ReturnType<typeof vi.fn> }>();
+    vi.stubGlobal('matchMedia', (q: string) => {
+      if (!queries.has(q)) queries.set(q, { addEventListener: vi.fn(), removeEventListener: vi.fn() });
+      return { matches: false, media: q, ...queries.get(q)! };
+    });
+    const r = render(<FeelinFabEffect {...props(1)} />);
+    const scheme = queries.get('(prefers-color-scheme: dark)')!;
+    expect(scheme.addEventListener).toHaveBeenCalledTimes(1);
+    /* The one watching the board's mode on the root (the loop keeps observers of its own). */
+    const at = observe.mock.calls.findIndex(([, o]) => (o as MutationObserverInit | undefined)?.attributeFilter?.includes('data-kb-mode'));
+    expect(at).toBeGreaterThanOrEqual(0);
+    const mine = observe.mock.contexts[at];
+    expect(disconnect.mock.contexts).not.toContain(mine);
+    r.unmount();
+    expect(disconnect.mock.contexts).toContain(mine);
+    expect(scheme.removeEventListener).toHaveBeenCalledTimes(1);
+    expect(scheme.removeEventListener.mock.calls[0]).toEqual(scheme.addEventListener.mock.calls[0]);
+  });
+
+  test('a StrictMode mount (mount, cleanup, mount) leaves one registration, one resize watch and no leaked foil', () => {
+    const r = render(<StrictMode><FeelinFabEffect {...props(1)} /></StrictMode>);
+    const host = box();
+    expect([...observers].reduce((n, o) => n + o.seen.size, 0)).toBe(1);
+    expect(resizes.reduce((n, o) => n + o.watching.size, 0)).toBe(1);
+    void see(canvas(), true); frames(2);
+    expect(probe.draws(host)).toBeGreaterThanOrEqual(1);
+    expect(made).toHaveLength(1);
+    expect(made[0]!.release).not.toHaveBeenCalled();
+    r.unmount();
+    expect([...observers].reduce((n, o) => n + o.seen.size, 0)).toBe(0);
+    expect(resizes.reduce((n, o) => n + o.watching.size, 0)).toBe(0);
+    expect(made.every((f) => f.release.mock.calls.length >= 1)).toBe(true);
+    frames(3, 500);
+    expect(probe.running()).toBe(false);
+  });
+
   test('a post that leaves view releases the foil\'s buffers, and draws fresh when it returns', () => {
     render(<FeelinFabEffect {...props(1)} />);
     const c = canvas();
     void see(c, true); frames(2);
-    expect(made.every((f) => f.release.mock.calls.length === 0)).toBe(true);
+    expect(made).toHaveLength(1);
+    expect(made[0]!.release).not.toHaveBeenCalled();
     void see(c, false);
-    expect(made.some((f) => f.release.mock.calls.length > 0)).toBe(true);
+    expect(made[0]!.release).toHaveBeenCalledTimes(1);
     const before = draws();
     frames(4, 100);
     expect(draws()).toBe(before);
     void see(c, true); frames(2, 300);
     expect(draws()).toBe(before + 1);
+  });
+
+  test('a post out of view also frees its own backing store, and sizes it again with a draw when it returns', () => {
+    render(<FeelinFabEffect {...props(1)} />);
+    const c = canvas();
+    void see(c, true); frames(2);
+    expect(c.width).toBe(450);
+    expect(c.height).toBe(180);
+    void see(c, false);
+    expect(c.width).toBe(0);
+    expect(c.height).toBe(0);
+    const before = draws();
+    frames(4, 100);
+    void see(c, true); frames(2, 300);
+    expect(c.width).toBe(450);
+    expect(c.height).toBe(180);
+    expect(draws()).toBe(before + 1);
+  });
+
+  test('a resize while out of view keeps the backing store freed, and the return sizes it to the new box', () => {
+    render(<FeelinFabEffect {...props(1)} />);
+    const c = canvas();
+    void see(c, true); frames(2);
+    void see(c, false);
+    size = { w: 200, h: 80 };
+    act(() => resizes[0]!.cb());
+    expect(c.width).toBe(0);
+    const before = draws();
+    frames(4, 100);
+    void see(c, true); frames(2, 300);
+    expect(c.width).toBe(300);
+    expect(c.height).toBe(120);
+    expect(draws()).toBe(before + 1);
+  });
+
+  test('the other board\'s foil is released once at a board change, not on every draw, and its reference dropped', async () => {
+    render(<FeelinFabEffect {...props(1)} />);
+    void see(canvas(), true); frames(20);
+    expect(made).toHaveLength(1);
+    const light = made[0]!;
+    expect(light.release).not.toHaveBeenCalled();
+    await act(async () => { document.documentElement.setAttribute('data-kb-mode', 'dark'); await Promise.resolve(); });
+    frames(40, 1000);
+    expect(made).toHaveLength(2);
+    expect(light.release).toHaveBeenCalledTimes(1);
+    expect(made[1]!.release).not.toHaveBeenCalled();
+    /* Back again: a new light foil is made (the old reference is gone), and the dark one is released once. */
+    await act(async () => { document.documentElement.setAttribute('data-kb-mode', 'light'); await Promise.resolve(); });
+    frames(40, 3000);
+    expect(made).toHaveLength(3);
+    expect(light.release).toHaveBeenCalledTimes(1);
+    expect(made[1]!.release).toHaveBeenCalledTimes(1);
   });
 
   test('a play\'s moment (still) draws once at the rest light and registers nothing that moves', () => {

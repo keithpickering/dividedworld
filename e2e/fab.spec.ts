@@ -21,6 +21,21 @@ const draws = (page: Page, nth = 0): Promise<number> => page.evaluate((n) => win
 const frames = (page: Page, n: number): Promise<void> =>
   page.evaluate((count) => new Promise<void>((done) => { let left = count; const tick = () => (--left <= 0 ? done() : requestAnimationFrame(tick)); requestAnimationFrame(tick); }), n);
 
+/**
+ * Waits until the first post's layout is stable: fonts loaded, and its box unchanged across two frames. A late re-layout (a font,
+ * a scrollbar) sets the effect up again and adds a draw, so an exact count is taken only after this.
+ */
+async function settle(page: Page): Promise<void> {
+  await page.evaluate(() => document.fonts.ready.then(() => undefined));
+  await page.evaluate(() => new Promise<void>((done) => {
+    const el = document.querySelector('[data-kb-fab]')!;
+    const read = () => { const r = el.getBoundingClientRect(); return `${r.width}x${r.height}`; };
+    let prev = read(), same = 0;
+    const tick = () => { const now = read(); same = now === prev ? same + 1 : 0; prev = now; if (same >= 2) done(); else requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
+  }));
+}
+
 /** Opens a story, waits for its first Feelin' Fab, and (in view) for its first draw. */
 async function open(page: Page, name: string, inView = true) {
   await page.goto(STORY(name));
@@ -78,11 +93,16 @@ test.describe('the foil in a real page', () => {
 
   test('the canvas is painted, at the post\'s size times the device\'s density', async ({ page }) => {
     await open(page, 'three-light');
-    const { w, h, painted } = await paint(page, 0);
-    const box = (await page.locator(FAB).first().boundingBox())!;
-    const dpr = await page.evaluate(() => Math.min(2, window.devicePixelRatio));
-    expect(w).toBe(Math.round(Math.round(box.width) * dpr));
-    expect(h).toBe(Math.round(Math.round(box.height) * dpr));
+    const { painted } = await paint(page, 0);
+    await settle(page);
+    const size = await page.evaluate(() => {
+      const r = document.querySelector('[data-kb-fab]')!.getBoundingClientRect();
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      return { w: Math.round(r.width * dpr), h: Math.round(r.height * dpr) };
+    });
+    const now = await paint(page, 0);
+    expect(now.w).toBe(size.w);
+    expect(now.h).toBe(size.h);
     expect(painted).toBeGreaterThan(0.99);
   });
 
@@ -107,16 +127,21 @@ test.describe('the foil in a real page', () => {
   test('reduced motion draws once, and neither the pointer nor time draws it again', async ({ page }) => {
     await page.addInitScript(() => document.documentElement.setAttribute('data-kb-motion', 'reduce'));
     await open(page, 'one-still');
+    await settle(page);
+    await frames(page, 4);
+    const base = await draws(page);
+    expect(base).toBeGreaterThanOrEqual(1);
     await page.mouse.move(200, 200);
     await page.mouse.move(500, 400);
     await frames(page, 30);
-    expect(await draws(page)).toBe(1);
+    expect(await draws(page)).toBe(base);
     expect((await paint(page, 0)).painted).toBeGreaterThan(0.99);
   });
 
   test('switching the board redraws with the other board\'s band, even when the foil is held', async ({ page }) => {
     await page.addInitScript(() => document.documentElement.setAttribute('data-kb-motion', 'reduce'));
     await open(page, 'two-still');
+    await settle(page);
     await frames(page, 10);
     const light = await paint(page, 0);
     expect(light.lum).toBeGreaterThan(0.59);
