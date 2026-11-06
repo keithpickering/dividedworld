@@ -96,8 +96,10 @@ function make(svg: string): SVGSVGElement {
 function sizeCanvas(): void {
   if (!canvas) return;
   ratio = Math.min(2, window.devicePixelRatio || 1);
-  canvas.width = Math.ceil(innerWidth * ratio);
-  canvas.height = Math.ceil(innerHeight * ratio);
+  const w = Math.ceil(innerWidth * ratio), h = Math.ceil(innerHeight * ratio);
+  // Assigning a canvas's size clears it, so it is assigned only when it changed: the window may be zoomed or moved to another screen between frames.
+  if (canvas.width !== w) canvas.width = w;
+  if (canvas.height !== h) canvas.height = h;
 }
 
 /** The bench's drop: a teardrop with a gloss, drawn once. */
@@ -151,20 +153,24 @@ function release(): void {
   host = null;
   mode = null;
   pressed = false;
-  if (spongeEl) { spongeEl.hidden = true; spongeEl.classList.remove('kb-whoops-pressing'); }
-  if (penEl) penEl.hidden = true;
+  if (spongeEl) { spongeEl.toggleAttribute('hidden', true); spongeEl.classList.remove('kb-whoops-pressing'); }
+  penEl?.toggleAttribute('hidden', true);
   if (!idle && canvas) idle = setTimeout(() => { idle = undefined; if (!host) dispose(); }, IDLE_MS);
 }
 
+/** Frames run only while a cursor is shown or a drop is falling; `over` starts them again. */
 function loop(t: number): void {
-  frame = requestAnimationFrame(loop);
+  frame = 0;
   try { cursor.tick(t); } catch (err) { console.error(err); }
+  if (host || drops.length) frame = requestAnimationFrame(loop);
+  else lastTick = null;
 }
 
 /** One frame: sheds, moves and draws the drops. Exposed so a test can step time. */
 function tick(now: number): void {
   const dt = lastTick === null ? 0 : Math.min(0.05, Math.max(0, (now - lastTick) / 1000));
   lastTick = now;
+  if (host && !host.isConnected) release();
   if (mode === 'sponge' && !motionReduced()) {
     acc += dt * DRIPS * (0.9 + speed / 260 + (pressed ? 1.4 : 0));
     while (acc > 1) {
@@ -176,6 +182,7 @@ function tick(now: number): void {
   drops = drops.filter((d) => (now - d.born) / 1000 < LIFE);
   for (const d of drops) { d.vy += GRAVITY * dt; d.x += d.vx * dt; d.y += d.vy * dt; }
   if (!drawing || !canvas) return;
+  sizeCanvas();
   drawing.setTransform(1, 0, 0, 1, 0, 0);
   drawing.clearRect(0, 0, canvas.width, canvas.height);
   if (!sprite) return;
@@ -203,8 +210,8 @@ function over(el: HTMLElement, e: CursorPointer, want: CursorMode, ink?: string)
   x = e.clientX; y = e.clientY; lastMove = now;
   mode = want;
   const [show, hide, at] = want === 'pen' ? [penEl!, spongeEl!, PEN_AT] : [spongeEl!, penEl!, SPONGE_AT];
-  hide.hidden = true;
-  show.hidden = false;
+  hide.toggleAttribute('hidden', true);
+  show.toggleAttribute('hidden', false);
   if (want === 'pen' && ink) penEl!.style.setProperty('--kb-pen-ink', ink);
   show.style.transform = `translate(${x - at.x}px, ${y - at.y}px)`;
   if (!frame) frame = requestAnimationFrame(loop);

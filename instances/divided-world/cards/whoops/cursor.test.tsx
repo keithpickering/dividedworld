@@ -8,18 +8,23 @@ import { cursor, IDLE_MS } from './cursor.ts';
 const FINE = '(hover: hover) and (pointer: fine)';
 let fine = true;
 let host: HTMLElement;
+/** The frames asked for and not yet run, by id: a stub that hands out increasing ids, as a browser does. */
+let pending: Map<number, (t: number) => void>;
+let nextId = 1;
 
 const mouse = (x = 100, y = 100, pointerType = 'mouse') => ({ clientX: x, clientY: y, pointerType });
 const sponge = () => document.querySelector<HTMLElement>('[data-kb-cursor="sponge"]');
 const pen = () => document.querySelector<HTMLElement>('[data-kb-cursor="pen"]');
-const shown = (el: HTMLElement | null) => el !== null && !el.hidden;
+const shown = (el: Element | null) => el !== null && !el.hasAttribute('hidden');
 
 beforeEach(() => {
   vi.useFakeTimers();
   fine = true;
   vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === FINE ? fine : false, media: query, addEventListener() {}, removeEventListener() {} }));
-  vi.stubGlobal('requestAnimationFrame', () => 0);
-  vi.stubGlobal('cancelAnimationFrame', () => {});
+  pending = new Map();
+  nextId = 1;
+  vi.stubGlobal('requestAnimationFrame', (cb: (t: number) => void) => { const id = nextId++; pending.set(id, cb); return id; });
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => { pending.delete(id); });
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
   document.documentElement.removeAttribute('data-kb-motion');
   host = document.createElement('div');
@@ -34,6 +39,25 @@ afterEach(() => {
   vi.restoreAllMocks();
   host.remove();
 });
+
+/** Runs the oldest frame asked for, as the browser would, at time t. */
+function runFrame(t: number): void {
+  const first = pending.entries().next().value;
+  if (!first) throw new Error('no frame is waiting');
+  pending.delete(first[0]);
+  first[1](t);
+}
+
+/** A 2D context that records what is drawn and accepts everything else. */
+function recordingContext() {
+  const calls: string[] = [];
+  const ctx: Record<string, unknown> = {};
+  for (const m of ['setTransform', 'clearRect', 'drawImage', 'beginPath', 'moveTo', 'bezierCurveTo', 'arc', 'closePath', 'fill', 'stroke', 'ellipse']) {
+    ctx[m] = vi.fn(() => { calls.push(m); });
+  }
+  ctx.createLinearGradient = () => ({ addColorStop() {} });
+  return { ctx: ctx as unknown as CanvasRenderingContext2D, calls, fns: ctx as Record<string, ReturnType<typeof vi.fn>> };
+}
 
 /** Frames of 16ms, enough of them that a rate of about two a second would show. */
 function frames(count: number, from = 1000): number {
@@ -173,5 +197,120 @@ describe('the drips', () => {
     frames(300);
     expect(cursor.drips()).toBe(0);
     cursor.press(false);
+  });
+});
+
+describe('the frame loop', () => {
+  test('it stops when nothing is shown and no drop is falling, and starts again when a cursor shows', () => {
+    cursor.over(host, mouse(), 'sponge');
+    expect(pending.size).toBe(1);
+    cursor.leave(host);
+    runFrame(1000);
+    expect(pending.size).toBe(0);
+    cursor.over(host, mouse(), 'sponge');
+    expect(pending.size).toBe(1);
+  });
+
+  test('it runs on while drops fall after the cursor is gone, then stops', () => {
+    cursor.over(host, mouse(), 'sponge');
+    let t = 1000;
+    runFrame(t);
+    for (let i = 0; i < 125; i++) runFrame(t += 16);
+    expect(cursor.drips()).toBeGreaterThan(0);
+    cursor.leave(host);
+    runFrame(t += 16);
+    expect(pending.size).toBe(1);
+    for (let i = 0; i < 100 && pending.size; i++) runFrame(t += 16);
+    expect(cursor.drips()).toBe(0);
+    expect(pending.size).toBe(0);
+  });
+
+  test('a host removed from the page while it holds the cursor releases it', () => {
+    host.style.cursor = 'crosshair';
+    cursor.over(host, mouse(), 'sponge');
+    host.remove();
+    runFrame(1000);
+    expect(shown(sponge())).toBe(false);
+    expect(host.style.cursor).toBe('crosshair');
+    let t = 1000;
+    for (let i = 0; i < 100 && pending.size; i++) runFrame(t += 16);
+    expect(pending.size).toBe(0);
+  });
+});
+
+describe('drawing', () => {
+  test('drips are drawn, the canvas follows the window and the pixel ratio, and a frame whose draw throws does not stop the loop', () => {
+    const { ctx, calls, fns } = recordingContext();
+    vi.stubGlobal('devicePixelRatio', 2);
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx as never);
+    cursor.over(host, mouse(), 'sponge');
+    const drips = document.querySelector<HTMLCanvasElement>('[data-kb-cursor="drips"]')!;
+    expect(drips.width).toBe(innerWidth * 2);
+    expect(drips.height).toBe(innerHeight * 2);
+    let t = 1000;
+    runFrame(t);
+    for (let i = 0; i < 125; i++) runFrame(t += 16);
+    expect(cursor.drips()).toBeGreaterThan(0);
+    expect(calls).toContain('drawImage');
+    expect(calls).toContain('clearRect');
+    vi.stubGlobal('devicePixelRatio', 1);
+    runFrame(t += 16);
+    expect(drips.width).toBe(innerWidth);
+    expect(drips.height).toBe(innerHeight);
+    fns.drawImage.mockImplementationOnce(() => { throw new Error('draw failed'); });
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    runFrame(t += 16);
+    expect(log).toHaveBeenCalledOnce();
+    expect(pending.size).toBe(1);
+    const before = fns.drawImage.mock.calls.length;
+    runFrame(t += 16);
+    expect(fns.drawImage.mock.calls.length).toBeGreaterThan(before);
+  });
+});
+
+describe('without matchMedia', () => {
+  test('over() shows nothing and throws nothing', () => {
+    vi.stubGlobal('matchMedia', undefined);
+    expect(() => cursor.over(host, mouse(), 'sponge')).not.toThrow();
+    expect(sponge()).toBeNull();
+    expect(host.style.cursor).toBe('');
+  });
+});
+
+describe('rate and cleanup', () => {
+  test('a sponge at rest sheds about 1.8 drops a second', () => {
+    cursor.over(host, mouse(), 'sponge');
+    cursor.tick(1000);
+    let t = frames(100, 1000); // one second for the pointer's earlier speed and the first drops to settle
+    let live = 0;
+    for (let i = 0; i < 625; i++) { t += 16; cursor.tick(t); live += cursor.drips() * 0.016; }
+    // Each drop lives 0.9s, so drop-seconds in the air over ten seconds, divided by 0.9, is how many were shed.
+    const shed = live / 0.9;
+    expect(shed).toBeGreaterThanOrEqual(14);
+    expect(shed).toBeLessThanOrEqual(22);
+  });
+
+  test('the idle timer is cleared when a host returns before it fires', () => {
+    cursor.over(host, mouse(), 'sponge');
+    cursor.leave(host);
+    expect(vi.getTimerCount()).toBe(1);
+    vi.advanceTimersByTime(IDLE_MS - 100);
+    cursor.over(host, mouse(), 'sponge');
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(IDLE_MS * 2);
+    expect(shown(sponge())).toBe(true);
+  });
+
+  test('disposing removes the resize listener and the pending frame', () => {
+    const add = vi.spyOn(window, 'addEventListener');
+    const remove = vi.spyOn(window, 'removeEventListener');
+    cursor.over(host, mouse(), 'sponge');
+    const added = add.mock.calls.find((c) => c[0] === 'resize')?.[1];
+    expect(added).toBeTypeOf('function');
+    cursor.leave(host);
+    vi.advanceTimersByTime(IDLE_MS + 10);
+    expect(sponge()).toBeNull();
+    expect(remove.mock.calls.some((c) => c[0] === 'resize' && c[1] === added)).toBe(true);
+    expect(pending.size).toBe(0);
   });
 });
