@@ -15,8 +15,15 @@ export default meta;
 
 type Story = StoryObj<typeof Loading>;
 
-/* The meter at rest beside the host: an empty well, and the status silent. */
-export const AtRest: Story = {};
+/* The meter at rest beside the host, over the page shown: an empty well, and the status silent. */
+export const AtRest: Story = {
+  render: (args) => (
+    <>
+      <Loading {...args} />
+      <Routes routes={[{ path: '/', render: () => <p>The page shown, with nothing loading behind it.</p> }]} />
+    </>
+  ),
+};
 
 /* A route whose load never answers, so the click stays pending and the meter stays mid-load. */
 const never = () => new Promise<unknown>(() => {});
