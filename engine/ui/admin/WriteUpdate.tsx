@@ -20,6 +20,7 @@ import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import { useKayfa } from '../context.tsx';
 import type { Update, UpdateChange } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
+import { FieldCount } from '../glass/FieldCount.tsx';
 import './write-update.css';
 
 /** The most changes an update lists (supabase/migrations/0062_updates.sql, update_payload_problem). */
@@ -108,7 +109,7 @@ export function WriteUpdate({ onWritten, initial }: WriteUpdateProps) {
       <div className="kb-write-update-field">
         <label htmlFor={`${id}-words`}>Words</label>
         <textarea id={`${id}-words`} className="kb-write-update-input" rows={6} value={words} aria-describedby={`${id}-count`} onChange={(e) => { edit(); setWords(e.target.value); }} />
-        <span id={`${id}-count`} className="kb-write-update-count kb-num">{length} of {settings.postMaxLength}</span>
+        <FieldCount id={`${id}-count`} text={words} max={settings.postMaxLength} />
       </div>
       <fieldset className="kb-write-update-changes">
         <legend>What changed</legend>

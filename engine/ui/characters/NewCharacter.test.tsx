@@ -152,13 +152,6 @@ describe('New character\'s head, name and foot', () => {
     expect(/\.kb-debut,\s*\.kb-reveal\s*\{[^}]*gap:\s*var\(--kb-glass-section-gap\)/u.test(css)).toBe(true);
   });
 
-  test('keeps the carousel\'s arrows a skew\'s lean inside the row\'s right edge, so a clip there never cuts one', () => {
-    const css = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'characters.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
-    const nav = /^\.kb-class-nav\s*\{([^}]*)\}/mu.exec(css)![1]!;
-    /* Half the arrow's height times the tangent of the skew's 10 degrees: 3.85px at the board's 44px, more as the arrows grow with the text. */
-    expect(nav).toMatch(/right:\s*calc\(var\(--kb-glass-size-display-s\) \* 44 \/ 26 \* 0\.0875\)/u);
-  });
-
   test('says in one line, beside Cancel and Make the character, what will happen, as the form is filled', async () => {
     open(world());
     const f = await form();

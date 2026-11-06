@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
  * between its field and the next label. The field names it in `aria-describedby`, so a screen reader
  * hears the hint and then the count. The count is of characters as a player counts them (a pair of
  * code units is one), and says "N of MAX" in words, a sign past the most and not a color alone.
- * New character, Edit profile and the Reveal modal use it, and Write update can.
+ * New character, Edit profile, the Reveal modal and Write update use it.
  */
 export function FieldCount({ id, hint, text, max }: {
   readonly id: string;

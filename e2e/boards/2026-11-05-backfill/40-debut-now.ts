@@ -16,7 +16,7 @@ const manifest: BoardManifest = {
   landmarks: debutLandmarks({
     title: 'DROP WAITING WANDA NOW', buildTitle: 'Drop Waiting Wanda now',
     foot: 'Waiting Wanda goes on the board at once and can post at once, instead of at the next settlement.',
-    save: 'DROP WAITING WANDA NOW', buildSave: 'Drop Waiting Wanda now', silent: "Nobody is told. Waiting Wanda's first post is its entrance.", where: 'At once',
+    save: 'DROP WAITING WANDA NOW', buildSave: 'Drop Waiting Wanda now',
   }),
 };
 

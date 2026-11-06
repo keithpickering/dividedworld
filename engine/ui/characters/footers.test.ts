@@ -44,7 +44,8 @@ test('untilWords counts a time off in the largest two units, never under a minut
   assert.equal(untilWords(at(7 * 60 * MIN), now), 'in 7 h');
   assert.equal(untilWords(at(42 * MIN), now), 'in 42 min');
   assert.equal(untilWords(at(10_000), now), 'in 1 min');
-  assert.equal(untilWords(at(-5 * MIN), now), 'in 1 min', 'a settlement that is due is a minute off at most');
+  assert.equal(untilWords(at(0), now), null, 'a settlement that is due has no countdown');
+  assert.equal(untilWords(at(-5 * MIN), now), null, 'nor one that is past');
   assert.equal(untilWords(at(27 * 60 * MIN + 30 * MIN), now), 'in 1 d 3 h');
   assert.equal(untilWords(at(48 * 60 * MIN), now), 'in 2 d');
 });

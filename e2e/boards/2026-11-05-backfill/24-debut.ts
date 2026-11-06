@@ -24,7 +24,7 @@ import type { BoardManifest, Landmark } from '../../board-match.ts';
 export const part = (id: string, role: string, name: string, more: Partial<Landmark> = {}): Landmark => ({ id, role, name, within: 'dialog', origin: 'dialog', box: 'position', ...more });
 
 /** The parts the two Debut boards share, with the footer's words and the save button's name each draws. */
-export function debutLandmarks(o: { readonly title: string; readonly buildTitle: string; readonly foot: string; readonly save: string; readonly buildSave: string; readonly silent: string; readonly where: string }): Landmark[] {
+export function debutLandmarks(o: { readonly title: string; readonly buildTitle: string; readonly foot: string; readonly save: string; readonly buildSave: string }): Landmark[] {
   return [
     { id: 'dialog', role: 'dialog', name: o.buildTitle, buildName: o.buildTitle, type: false, box: 'across' },
     part('kicker', 'text', 'MY CHARACTERS › DEBUT', { buildName: 'My characters › Debut', type: false }),
@@ -50,7 +50,7 @@ const manifest: BoardManifest = {
   landmarks: debutLandmarks({
     title: "HOW WAITING WANDA DEBUTS", buildTitle: 'How Waiting Wanda debuts',
     foot: 'It debuts at the next settlement, in 7 h 42 min. Until then you can drop it now instead.',
-    save: 'SAVE HOW IT DEBUTS', buildSave: 'Save how Waiting Wanda debuts', silent: 'Nobody is told. Waiting Wanda simply appears.', where: 'In the tally at the next settlement',
+    save: 'SAVE HOW IT DEBUTS', buildSave: 'Save how Waiting Wanda debuts',
   }),
 };
 

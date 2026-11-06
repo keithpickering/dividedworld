@@ -489,8 +489,7 @@
  */
 .kb-class-nav {
   position: absolute;
-  /* The arrows are skewed controls, which lean past their own box: kept that lean inside the row's right edge, so nothing that clips there cuts one (half the arrow's height times the tangent of the skew's 10 degrees). */
-  right: calc(var(--kb-glass-size-display-s) * 44 / 26 * 0.0875);
+  right: 0;
   bottom: calc(100% - 30px + 10px + var(--kb-glass-size-body) * 0.6 - var(--kb-glass-size-display-s) * 22 / 26);
   display: flex;
   gap: 10px;
