@@ -182,6 +182,7 @@ begin
   end loop;
   insert into season_results (season, character, name, place, standing)
   select s2, c.id, c.name, (substring(c.name from 5))::integer, 1000 - (substring(c.name from 5))::integer from characters c where c.name like 'Big %';
+  select id into last_spot from characters where name = 'Big 051';
   perform tests.become(viewer);
   if (select array_agg(number order by ord) from (select number, row_number() over () ord from finished_seasons()) x) is distinct from array[50, 1] then
     raise exception 'finished seasons, newest first: %', (select jsonb_agg(to_jsonb(x)) from finished_seasons() x);
@@ -193,7 +194,6 @@ begin
   if (select name from results_page(50, 2) order by place limit 1) is distinct from 'Big 051' or (select max(place) from results_page(50, 1)) is distinct from 50 then raise exception 'pages follow the places'; end if;
   if (select count(*) from results_page(1, 1)) is distinct from 4 or (select name from results_page(1, 1) order by place limit 1) is distinct from 'Spritey' then raise exception 'the first season''s page'; end if;
   if (select count(*) from results_page(1, 0)) is distinct from 4 or (select count(*) from results_page(99, 1)) is distinct from 0 then raise exception 'a page below 1 is 1; an unknown season is empty'; end if;
-  select id into last_spot from characters where name = 'Big 051';
   p := result_place(50, last_spot);
   if p is distinct from 50 then raise exception 'a character''s place in the order, counted from 0: %', p; end if;
   if result_place(50, f.spritey) is not null or result_place(99, last_spot) is not null then raise exception 'no row, no index'; end if;
@@ -213,14 +213,14 @@ end $$;
 do $$
 declare ln record; plan text := '';
 begin
-  set local enable_seqscan = off;
+  set local enable_seqscan = off; set local enable_bitmapscan = off;
   for ln in explain select * from season_results where season = (select id from seasons where number = 50) order by place, name, character limit 50 loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
   if plan !~ 'season_results_by_place' or plan ~ 'Sort' then raise exception 'a results page is read in order from season_results_by_place:%', plan; end if;
 end $$;
 
 -- ---- The profile and the record read the table ----
 do $$
-declare f pg_temp.sr; doc jsonb; viewer uuid := tests.account('sr-viewer');
+declare f pg_temp.sr; doc jsonb; viewer uuid := tests.account('sr-viewer-2');
 begin
   select * into f from pg_temp.sr;
   perform tests.become(viewer);
@@ -234,7 +234,9 @@ begin
   end if;
   if profile_page(f.hooli) -> 'seasons' -> 0 ->> 'place' is distinct from '3' then raise exception 'a place per season'; end if;
   -- A season with no results is not listed.
+  perform tests.unbecome();
   insert into seasons (number, starts_at, ends_at) values (60, '1990-03-01', '1990-04-01');
+  perform tests.become(viewer);
   if jsonb_array_length(profile_page(f.spritey) -> 'seasons') is distinct from 1 then raise exception 'a season without results is not listed'; end if;
   perform tests.unbecome();
 end $$;
