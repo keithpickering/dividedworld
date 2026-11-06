@@ -58,8 +58,9 @@ function looseFields(rules: readonly Rule[]): Record<string, Rule> {
     for (const [name, sub] of Object.entries(rule.fields)) {
       if (out[name]) continue;
       // An enum reaches the model as a string it is told the values of; a value outside is the catalog's to refuse.
-      // A string keeps its own bound where that is longer than the loose 500 (a rename's description, 2000), so the meeting
-      // trims it once, in `moveParamsProblems`, and records the trim.
+      // A string keeps its own bound where that is longer than the loose 500 (a rename's description, 2000), so the loose
+      // bound never cuts it short: the answer's own `repair` trims it at that bound and records the trim, once, and
+      // `moveParamsProblems` then finds nothing to trim.
       out[name] = sub.type === 'number' ? { type: 'number', optional: true } : { type: 'string', maxLength: Math.max(500, sub.type === 'string' ? (sub.maxLength ?? 0) : 0), optional: true };
     }
   }
