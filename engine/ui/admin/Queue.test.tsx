@@ -30,6 +30,17 @@ describe('the admin queue', () => {
     expect(screen.getByText(/Players never see a held move\./u)).toBeInTheDocument();
   });
 
+  test('leads with the queue (To do, Waiting to land, In force, Ended), and How players reach you stands last, as its own section', async () => {
+    open();
+    await group(/^Ended/u);
+    await screen.findByRole('form', { name: 'How players reach you' });
+    const order = [...document.querySelectorAll('[data-kb-group], .kb-admin-contact')].map((el) => el.getAttribute('data-kb-group') ?? 'contact');
+    expect(order).toEqual(['todo', 'waiting', 'in-force', 'staff-cards', 'ended', 'contact']);
+    const contact = document.querySelector('.kb-admin-contact')!;
+    expect(contact.tagName).toBe('SECTION');
+    expect(contact.querySelector('h2')).toHaveTextContent('How players reach you');
+  });
+
   test('HOLD is on a move that waits and nowhere else; REVERSE is on a move in force and nowhere else', async () => {
     open();
     await group(/^Waiting to land/u);
@@ -332,6 +343,21 @@ describe('How players reach you, on the admin screen', () => {
     expect(await form()).toBeInTheDocument();
   });
 
+  test('each row labels its two fields in view (Label, Address), and shows Remove while the button is still named for its link', async () => {
+    const { fake } = open({ build: (f) => { f.seed.contact([{ label: 'Discord', href: 'https://discord.example/u/me' }, { label: 'Email', href: 'mailto:a@example.test' }]); } });
+    await form();
+    for (const n of [1, 2]) {
+      const line = await screen.findByRole('group', { name: `Link ${n}` });
+      expect(within(line).getByText('Label').tagName).toBe('LABEL');
+      expect(within(line).getByText('Address').tagName).toBe('LABEL');
+      expect(within(line).getByLabelText(`Link ${n} label`)).toHaveAttribute('id', within(line).getByText('Label').getAttribute('for'));
+      const remove = within(line).getByRole('button', { name: `Remove link ${n}` });
+      expect(within(remove).getByText('Remove', { exact: true })).toBeVisible();
+      expect(remove.querySelector('.kb-visually-hidden')).toHaveTextContent(`link ${n}`);
+    }
+    expect(fake).toBeDefined();
+  });
+
   test('says players have no way to reach you while the contact is empty, and stops saying so once it is saved', async () => {
     const { fake } = open();
     const f = await form();
@@ -484,7 +510,7 @@ describe('How players reach you, on the admin screen', () => {
       expect(g).toHaveTextContent('Whoops! by Hall Monitor');
       expect(g).toHaveTextContent('Played on Pipewrench in Cards thread.');
       expect(within(g).getAllByRole('button', { name: /^End:/u })).toHaveLength(1);
-      expect(screen.getAllByRole('region').map((r) => r.getAttribute('data-kb-group')).slice(-3)).toEqual(['in-force', 'staff-cards', 'ended']);
+      expect(screen.getAllByRole('region').map((r) => r.getAttribute('data-kb-group')).filter((g) => g !== null).slice(-3)).toEqual(['in-force', 'staff-cards', 'ended']);
     });
 
     test('END asks first, in plain words; ending calls reverseCard, the card leaves the group and enters Ended', async () => {

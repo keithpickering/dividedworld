@@ -88,6 +88,15 @@ test('a press with nth -1 presses the last match, and a press with fill types it
   expect(await page.locator('input').inputValue()).toBe('ink everywhere');
 });
 
+test('a press of scroll top returns the page to its top, as a reader arrives, after a fill scrolled it down', async ({ page }) => {
+  await page.setViewportSize({ width: 300, height: 200 });
+  await page.setContent(`<div style="height:900px">tall</div><input aria-label="Low">`);
+  await pressControls(page, [{ role: 'textbox', name: 'Low', fill: 'x' }]);
+  expect(await page.evaluate(() => scrollY)).toBeGreaterThan(300);
+  await pressControls(page, [{ scroll: 'top' }]);
+  expect(await page.evaluate(() => scrollY)).toBe(0);
+});
+
 test('a page that renders after it loads is read once every landmark is found and still', async ({ page }) => {
   await page.setContent(`<div id="r"></div><script>
     setTimeout(() => { document.querySelector('#r').innerHTML = '<button style="margin-top:0">Late</button>'; }, 150);

@@ -361,7 +361,7 @@ test.describe('in forced colors', () => {
       const outline = (el: Element) => { const c = getComputedStyle(el); return { style: c.outlineStyle, width: c.outlineWidth, color: c.outlineColor }; };
       const border = (el: Element) => { const c = getComputedStyle(el); return { style: c.borderTopStyle, width: c.borderTopWidth, color: c.borderTopColor }; };
       const [chosen, other] = [...form.querySelectorAll('input')];
-      const tools = [...document.querySelectorAll('.kb-lens [role="group"] .kb-kit-tile')];
+      const tools = [...document.querySelectorAll('.kb-lens [role="group"] .kb-kit-tile[aria-pressed]')];
       return {
         buttonText: system('ButtonText'), highlight: system('Highlight'),
         scrub: outline(document.querySelector('.kb-lens .kb-kit-tile[data-kb-hold]')!),

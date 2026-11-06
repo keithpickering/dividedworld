@@ -62,6 +62,15 @@ article:has(> .kb-act-main .kb-hold)::after {
   padding: 16px;
 }
 
+/*
+ * The Lens a mark opens in the view stands over the overlay (a dock at the right, a sheet at the foot), and the view gives it its room, so the
+ * post and Break free are never under it (the owner, 2026-11-06: "Dock, but move the post"). Float.tsx says the room on the root element.
+ */
+html[data-kb-float] .kb-glass-overlay:has(> .kb-hold-view) {
+  padding-right: calc(16px + var(--kb-float-right, 0px));
+  padding-bottom: calc(16px + var(--kb-float-bottom, 0px));
+}
+
 .kb-glass-dialog.kb-hold-view {
   --kb-dialog-pad-x: 28px;
   --kb-dialog-pad-top: 20px;

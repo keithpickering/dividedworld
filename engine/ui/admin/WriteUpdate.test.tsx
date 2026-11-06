@@ -107,6 +107,67 @@ describe('Write an update', () => {
     expect(post).toBeDisabled();
   });
 
+  test('each change shows Remove, and the button keeps its change\'s number as its name', () => {
+    renderIn(world(), <WriteUpdate />, { instance });
+    const remove = within(form()).getByRole('button', { name: 'Remove change 1' });
+    expect(within(remove).getByText('Remove', { exact: true })).toBeVisible();
+    expect(remove.querySelector('.kb-visually-hidden')).toHaveTextContent('change 1');
+  });
+
+  test('the form is a titled, chamfered piece of the glass, headed Write an update', () => {
+    renderIn(world(), <WriteUpdate />, { instance });
+    expect(form()).toHaveClass('kb-glass-cut-dialog');
+    expect(within(form()).getByRole('heading', { name: 'Write an update' })).toBeInTheDocument();
+  });
+
+  describe('What everyone will see', () => {
+    const preview = () => screen.getByRole('region', { name: 'What everyone will see' });
+
+    test('is the Updates page\'s own article, given what is typed: the persona, the title, the words and the changes, as they are typed', async () => {
+      renderIn(world(), <WriteUpdate />, { instance });
+      await fill('Whoops! costs less', 'A long post still costs more.\n\nA short one does not.');
+      await userEvent.type(within(form()).getByRole('textbox', { name: 'Change 1 label' }), 'Whoops!');
+      await userEvent.type(within(form()).getByRole('textbox', { name: 'Change 1 text' }), 'costs less.');
+      const post = within(preview()).getByRole('article');
+      expect(post).toHaveClass('kb-updates-post');
+      expect(within(post).getByText('Gabe')).toBeInTheDocument();
+      expect(within(post).getByText('Made this. Sorry.')).toBeInTheDocument();
+      expect(within(post).getByRole('heading', { level: 4, name: 'Whoops! costs less' })).toBeInTheDocument();
+      expect(within(post).getByText('A short one does not.')).toBeInTheDocument();
+      expect(within(post).getByRole('heading', { level: 5, name: 'What changed' })).toBeInTheDocument();
+      expect(within(post).getByText('costs less.', { exact: false, selector: 'li' })).toHaveTextContent('Whoops! costs less.');
+    });
+
+    test('follows the form and leaves out a change with nothing in it, as the post would', async () => {
+      renderIn(world(), <WriteUpdate />, { instance });
+      await fill('T', 'W');
+      expect(within(preview()).queryByRole('heading', { name: 'What changed' })).toBeNull();
+      await userEvent.type(within(form()).getByRole('textbox', { name: 'Change 1 text' }), 'one');
+      expect(within(preview()).getByRole('heading', { name: 'What changed' })).toBeInTheDocument();
+      await userEvent.clear(within(form()).getByRole('textbox', { name: 'Change 1 text' }));
+      expect(within(preview()).queryByRole('heading', { name: 'What changed' })).toBeNull();
+    });
+
+    test('is never saved or sent: no read of a reaction, no write, and nothing to react to or spin from', async () => {
+      const fake = world();
+      const posted = vi.spyOn(fake, 'postUpdate');
+      const reacted = vi.spyOn(fake, 'myReactions');
+      renderIn(fake, <WriteUpdate />, { instance });
+      await fill('Draft', 'Not posted.');
+      expect(within(preview()).getByRole('heading', { name: 'Draft' })).toBeInTheDocument();
+      expect(posted).not.toHaveBeenCalled();
+      expect(reacted).not.toHaveBeenCalled();
+      expect(within(preview()).queryByRole('button')).toBeNull();
+      expect((await fake.updates())).toEqual([]);
+    });
+
+    test('says there is nothing to see while the title and the words are both empty', () => {
+      renderIn(world(), <WriteUpdate />, { instance });
+      expect(within(preview()).queryByRole('article')).toBeNull();
+      expect(within(preview()).getByText('Nothing to show yet. Write a title and some words.')).toBeInTheDocument();
+    });
+  });
+
   test('counts on the shared FieldCount line, the glass part the character forms use', async () => {
     renderIn(world(), <WriteUpdate />, { instance });
     const words = within(form()).getByLabelText('Words');

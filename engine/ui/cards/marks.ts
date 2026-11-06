@@ -11,8 +11,12 @@ import { dayAndTime } from '../characters/format.ts';
 
 /** The most marks a strip draws on a desktop, before the "+N" mark. */
 export const MARKS_WIDE = 4;
-/** The most under the thread's 40em breakpoint (cards/Effects.tsx `useNarrow`). */
-export const MARKS_NARROW = 3;
+/**
+ * The most under the thread's 40em breakpoint (cards/Effects.tsx `useNarrow`). Two and "+N", not three: the strip's tiles are 2.25rem
+ * (glass/meta-tile.css), and three marks and "+N" leave a phone's 390px date bar 100px for a 140px date, which the bar would cut with an
+ * ellipsis (e2e/glass-layout.spec.ts, the Lens story's post #41). The "+N" mark opens the Lens on the first kind left out.
+ */
+export const MARKS_NARROW = 2;
 
 /**
  * The card kinds of a post's plays in billing order: a kind's place is the place of its first play in `billed` (the

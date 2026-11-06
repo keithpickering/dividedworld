@@ -1,18 +1,22 @@
 /*
- * The Lens (Lens.tsx), on the glass's float (glass/Float.tsx): the shared dialog frame (glass/Frame.tsx), its tabs in the frame's bar
- * and the open tab's ink, or its alignment's color (salty the pink, sweet the cyan), on the tab and the float's glow, the card's name in the display face on
- * its tab. Beside the post on a desktop, under its mark where there is no room beside it, and a short sheet on the HUD's
- * top edge at the thread's narrow width. The glow is the float wrapper's drop shadow (shell.css `.kb-float`), since the
- * chamfer's clip-path cuts a box-shadow. Every color is a glass token or the card's own ink (`--kb-lens-ink`, inline).
+ * The Lens (Lens.tsx), on the glass's float (glass/Float.tsx; board 28): the shared dialog frame (glass/Frame.tsx), its tabs in the frame's bar,
+ * the open tab filled in the card's ink (its alignment's color where it has none: salty the pink, sweet the cyan) and the others outlined, the
+ * ink also the float's glow. Docked at the right of a wide window, from the page's top to just above the HUD, and a sheet on the HUD's top edge
+ * at the thread's narrow width (Float.tsx places it). The bar stands still and the body scrolls under it, its foot fading while more lies below
+ * (`data-kb-more`, set by Lens.tsx). The glow is the float wrapper's drop shadow (shell.css `.kb-float`), since the chamfer's clip-path cuts a
+ * box-shadow. Every color is a glass token or the card's own ink (`--kb-lens-ink`, inline).
  */
 .kb-glass-dialog.kb-lens {
   --kb-lens-ink: var(--kb-glass-sweet);
   --kb-lens-ink-text: var(--kb-glass-neon-text);
-  width: 340px;
+  /* The float's wrapper is as wide as the dock or the sheet says; the dialog fills it. */
+  width: 100%;
   max-width: 100%;
-  /* The room its words keep from the frame is the compact float's own (the frame's tokens, shell.css). */
-  --kb-dialog-pad-x: 14px;
-  --kb-dialog-pad-top: 12px;
+  display: flex;
+  flex-direction: column;
+  /* The room its words keep from the frame: the board's 20px at the sides, a bar 16px from the top. */
+  --kb-dialog-pad-x: 20px;
+  --kb-dialog-pad-top: 16px;
   --kb-dialog-pad-bottom: 12px;
   --kb-dialog-close-inset: 0px;
   color: var(--kb-glass-text);
@@ -27,48 +31,125 @@
   --kb-lens-ink-text: var(--kb-glass-salty-text);
 }
 
-/* The sheet is the window's width, standing on the HUD's top edge (Float.tsx places it). */
-.kb-glass-dialog.kb-lens[data-kb-lens="sheet"] {
-  width: 100%;
+/* The body scrolls inside the panel (the float is a fixed size, Float.tsx), so the float's own scrolling is off. */
+.kb-float > .kb-glass-dialog.kb-lens {
+  overflow: hidden;
 }
 
-/* The tabs scroll where there are more than fit. */
+/*
+ * The tabs are one row that scrolls sideways, as the phone's menu bar does: no scrollbar, a fade at the edge where more wait
+ * (`data-kb-fade`, Lens.tsx), and the open tab scrolled into view. The strip leaves a few px at its ends for a skewed tab's slant.
+ */
+.kb-lens-tabstrip {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .kb-lens-tabs {
   display: flex;
-  gap: 4px;
+  gap: 8px;
   min-width: 0;
+  padding: 0 6px;
   overflow-x: auto;
-  scrollbar-width: thin;
+  scrollbar-width: none;
 }
 
+.kb-lens-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.kb-lens-tabstrip::before,
+.kb-lens-tabstrip::after {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  bottom: 0;
+  width: 56px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease-out;
+}
+
+.kb-lens-tabstrip::before {
+  left: 0;
+  background: linear-gradient(to left, transparent, var(--kb-glass-ground) 80%);
+}
+
+.kb-lens-tabstrip::after {
+  right: 0;
+  background: linear-gradient(to right, transparent, var(--kb-glass-ground) 80%);
+}
+
+.kb-lens-tabstrip:is([data-kb-fade='start'], [data-kb-fade='both'])::before,
+.kb-lens-tabstrip:is([data-kb-fade='end'], [data-kb-fade='both'])::after {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kb-lens-tabstrip::before,
+  .kb-lens-tabstrip::after { transition: none; }
+}
+
+:root[data-kb-motion='reduce'] .kb-lens-tabstrip::before,
+:root[data-kb-motion='reduce'] .kb-lens-tabstrip::after { transition: none; }
+
+/* A tab is a skewed outline; the open one is filled in the card's ink, as every other glass tab strip fills its current one. */
 .kb-lens-tab {
   flex: none;
-  min-height: 40px;
+  min-height: 44px;
   margin: 0;
-  padding: 0 10px;
-  border: 0;
-  border-bottom: 3px solid transparent;
+  padding: 0 14px;
+  border: 1px solid color-mix(in srgb, var(--kb-glass-text) 50%, transparent);
   background: transparent;
-  color: var(--kb-glass-text-2);
+  color: var(--kb-glass-text);
   font: inherit;
-  font-size: var(--kb-glass-size-display-xs);
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
   line-height: 1.1;
-  letter-spacing: 0.5px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  white-space: nowrap;
   cursor: pointer;
 }
 
 .kb-lens-tab[aria-selected="true"] {
-  border-bottom-color: var(--kb-lens-ink);
-  color: var(--kb-lens-ink-text);
+  border-color: var(--kb-lens-ink);
+  background: var(--kb-lens-ink);
+  color: var(--kb-glass-ink-neon);
 }
 
-.kb-lens-tab:hover {
+.kb-lens-tab:hover:not([aria-selected="true"]) {
+  border-color: var(--kb-glass-text-hi);
   color: var(--kb-glass-text-hi);
 }
 
 .kb-lens-body {
   position: relative;
   z-index: 1;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-bottom: 12px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+/* The fade at the panel's foot, only while more lies below (the panel's `data-kb-more`, set as the body scrolls); it takes no pointer. */
+.kb-lens-fade {
+  display: none;
+  position: absolute;
+  z-index: 3;
+  left: var(--kb-border);
+  right: var(--kb-border);
+  bottom: var(--kb-border);
+  height: 56px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--kb-glass-ground));
+}
+
+.kb-lens[data-kb-more='true'] > .kb-lens-fade {
+  display: block;
 }
 
 .kb-lens-section {
@@ -218,26 +299,50 @@
   letter-spacing: 0.06em;
 }
 
-/* The play's reactions (meta tiles, 36px), React, Spin thread and Go to post (kit tiles, 44px): one wrapping run, centered on one line. */
+/*
+ * A play's actions, React, Spin thread, As it landed and Go to post: a two-by-two grid of equal tiles (board 28), the play's reaction tiles
+ * over it on a line of their own. The reactions' box and the actions' wrapper take no box of their own, so every tile is the grid's.
+ */
 .kb-lens-row-foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 10px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
   margin-top: 0.5rem;
 }
 
 .kb-lens-row-foot .kb-reactions {
+  display: contents;
+}
+
+/* The play's reaction tiles (meta tiles, 36px) stand over the grid on a line of their own. */
+.kb-lens-row-foot .kb-reaction-list {
+  grid-column: 1 / -1;
   margin: 0;
+}
+
+/* The React tile is one of the grid's four: it fills its cell and stands as tall as the kit tiles beside it, so the tiles stay equal. */
+.kb-lens-row-foot .kb-react-button {
+  height: auto;
+  min-height: 44px;
 }
 
 .kb-lens-actions {
   display: contents;
 }
 
-/* Where a hosted Lens says when spinning is possible, the sentence takes its own line. */
+.kb-lens-row-foot .kb-kit-tile {
+  justify-content: center;
+  min-height: 44px;
+}
+
+/* An odd number of tiles leaves the last alone in its row: it spans both columns (Lens.tsx marks it). */
+.kb-lens-row-foot [data-kb-span] {
+  grid-column: 1 / -1;
+}
+
+/* Where a hosted Lens says when spinning is possible, the sentence takes a line of its own. */
 .kb-lens-actions > .kb-lens-note {
-  flex: 1 0 100%;
+  grid-column: 1 / -1;
   margin: 0;
   color: var(--kb-glass-text-2);
 }
@@ -267,8 +372,15 @@
 
 @media (forced-colors: active) {
   .kb-lens-tab[aria-selected="true"] {
-    border-bottom-color: Highlight;
+    border-color: Highlight;
+    background: Highlight;
+    color: HighlightText;
+    forced-color-adjust: none;
   }
+
+  .kb-lens-fade,
+  .kb-lens-tabstrip::before,
+  .kb-lens-tabstrip::after { display: none; }
 }
 
 /*
@@ -285,6 +397,11 @@
 .kb-lens-row .kb-kit-tile {
   padding: 0.1rem 0.7rem;
   letter-spacing: 0.06em;
+}
+
+/* A named kit's label (Whoops!'s "Your tools, as the author") stands under the state's lines, over its one row. */
+.kb-lens-act .kb-kit-label {
+  margin-bottom: 8px;
 }
 
 /* An admin's End this card: the confirm stands over the page, its words plain and its two controls the Lens's own tiles. */

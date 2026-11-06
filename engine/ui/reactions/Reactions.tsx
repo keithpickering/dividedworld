@@ -34,12 +34,14 @@ interface Props {
   readonly mine: Mine;
   /** What is reacted to, as the picker is named ("React to Mrs. Hooligan's Whoops!"); the author's post where none is given. */
   readonly subject?: string;
+  /** What the picker stands by: the whole row (the default), or the React tile, for a row that takes no box of its own (the Lens's grid of actions). */
+  readonly pickerAt?: 'row' | 'button';
 }
 
 /** The tab stop of the React tile; a kind's is its key. */
 const REACT_STOP = ' react'; /* a space: no reaction key has one */
 
-export function Reactions({ act, author, authorName = 'this character', tallies, mine, subject }: Props) {
+export function Reactions({ act, author, authorName = 'this character', tallies, mine, subject, pickerAt = 'row' }: Props) {
   const { instance, settings } = useKayfa();
   const player = usePlayer();
   const tally = useTally(tallies, act);
@@ -152,7 +154,7 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
       {canReact && <span role="status" className="kb-visually-hidden">{said}</span>}
       {open && canReact && (
         <Picker
-          subject={subject ?? `${authorName}'s post`} as={as} own={own} send={send} busy={busy} refusal={refusal} anchor={row}
+          subject={subject ?? `${authorName}'s post`} as={as} own={own} send={send} busy={busy} refusal={refusal} anchor={pickerAt === 'button' ? button : row}
           onClose={(refocus) => { setOpen(false); if (refocus) button.current?.focus(); }}
         />
       )}
