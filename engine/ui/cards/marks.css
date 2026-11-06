@@ -34,10 +34,9 @@
 .kb-marks {
   position: absolute;
   /* Centered on its anchor, which is as tall as the row: a 36px tile hangs a few pixels over a bar about 30px tall. */
-  top: 50%;
+  top: calc(50% - var(--kb-meta-tile) / 2);
   right: 0;
   z-index: 3;
-  transform: translateY(-50%);
   display: flex;
   align-items: center;
   gap: 0.4rem;
@@ -296,7 +295,6 @@
 .kb-thread-pin-mark {
   display: flex;
   position: relative;
-  min-height: 1.9rem;
 }
 .kb-thread-head-marks > .kb-marks-anchor,
 .kb-board-banner-marks > .kb-marks-anchor,
@@ -323,7 +321,6 @@
   position: absolute;
   top: 0.3rem;
   right: 0.3rem;
-  min-height: 0;
 }
 .kb-postbit-marks > .kb-marks-anchor {
   margin-inline-start: auto;
@@ -333,13 +330,11 @@
   right: 0;
   /* Hung from the strip's own top, not centered: the postbit's strip is out of the flow at its corner. */
   top: 0;
-  transform: none;
 }
 .kb-thread-head-marks {
   flex: 0 0 auto;
   align-self: center;
-  /* As tall as the title's line already is: a thread card armed adds the strip beside the title, never a taller head. */
-  min-height: 0;
+  /* No height of its own: the strip is out of the flow and the head's min-height does the reserving. */
 }
 .kb-board-banner {
   display: flex;
@@ -351,7 +346,8 @@
 }
 .kb-board-banner-marks {
   flex: 0 0 auto;
-  min-height: 0;
+  /* The title's top margin is 1em above its bottom one, so its line sits half an em below the banner's middle: the strip follows it. */
+  margin-top: var(--kb-size-title);
 }
 .kb-thread-pin-mark {
   display: inline-flex;

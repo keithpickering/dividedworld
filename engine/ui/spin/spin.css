@@ -10,6 +10,7 @@
   margin: 0 0 0.3em;
   font-family: var(--kb-font-mono);
   /* As the date bar's: the strip is centered on the head, and a tile hangs a few pixels past it (cards/marks.css). */
+  box-sizing: border-box;
   min-height: calc(var(--kb-meta-tile) - 0.4rem);
 }
 

@@ -56,15 +56,16 @@ function post(n: number, index: number, author: string, pips: number, rank: stri
    * The type scale (the glass polish, design section 7: the owner's decision, after these boards, to set every board size token at 1.25
    * times) sets the post's words at 15px where the board draws 12px, and its permalink at 12.5px where the board draws 10px. So the
    * rank under the author name stands 10.5px lower in the post, and #41's permalink, which sits below the nav, crumb, title and
-   * pager rows the scale made taller, 38.8px lower on the page, as measured; and 9px more (47.8) since the thread head always reserves the
-   * 2.25rem meta tile where its title was 27px tall (docs/plans/2026-11-06-meta-acts-plan.md, Task 2).
+   * pager rows the scale made taller, 38.8px lower on the page, as measured; and 11.1px more (49.9) since the thread head always reserves
+   * the 2.25rem meta tile where its title was 27px tall (9px), and the date bar is 29.6px where it was 25.4px, its permalink centered in it
+   * (half of the 4.2px growth, 2.1px) (docs/plans/2026-11-06-meta-acts-plan.md, Task 2).
    */
   return [
     { id, role: 'article', name: '', nth: index, buildName: `Post ${n} by ${author}`, buildNth: 0, box: 'none', buildSize: POST_SIZE },
     { id: `${id}-author`, role: 'link', name: author, within: id, origin: placed, box: inside, buildSize: POST_SIZE },
     /* The rank's name is the postbit's (web Task 5), which says the rank's title where the board says pips. */
     { id: `${id}-rank`, role: 'img', name: `Rank: ${pips} of 6 pips`, buildName: `Rank ${pips} of 6: ${rank}`, within: id, origin: placed, box: inside, type: false, buildShift: { y: 10.5 } },
-    { id: `${id}-permalink`, role: 'link', name: `#${n}`, buildName: `Permalink to post #${n}`, within: id, box: box === 'none' ? 'none' : 'height', buildSize: POST_LINE_SIZE, buildShift: { y: 47.8 } },
+    { id: `${id}-permalink`, role: 'link', name: `#${n}`, buildName: `Permalink to post #${n}`, within: id, box: box === 'none' ? 'none' : 'height', buildSize: POST_LINE_SIZE, buildShift: { y: 49.9 } },
   ];
 }
 

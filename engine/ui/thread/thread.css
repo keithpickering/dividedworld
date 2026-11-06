@@ -12,7 +12,7 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  align-items: flex-end;
+  align-items: center;
   gap: 0.2em 1em;
   margin-bottom: 0.5em;
   /* Always room for the strip's tile, so a card armed or a play landing never makes the head taller (cards/marks.css). */
@@ -91,6 +91,7 @@
 .kb-act-meta {
   grid-area: meta;
   /* Tall enough to hold a mark's tile with a few pixels of it hung over each side (marks.css): on every post, so a mark moves nothing. */
+  box-sizing: border-box;
   min-height: calc(var(--kb-meta-tile) - 0.4rem);
   align-items: center;
   border-bottom: 1px solid var(--kb-rule);

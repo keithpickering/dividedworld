@@ -33,7 +33,7 @@ for (const [label, size] of [['desktop', { width: 1440, height: 900 }], ['phone'
   test.describe(`the date bar holds the strip (${label})`, () => {
     test.use({ viewport: size });
 
-    test('a bar with marks is as tall as one with none, and at least 29px', async ({ page }) => {
+    test('a bar with marks is as tall as one with none, 29 to 31px', async ({ page }) => {
       await page.goto('/?fixture=boards&moment=01-main');
       await expect(page.locator('#post-41 .kb-mark').first()).toBeVisible();
       const bars = await page.evaluate(() => {
@@ -44,10 +44,11 @@ for (const [label, size] of [['desktop', { width: 1440, height: 900 }], ['phone'
         return { withMarks: all.find((a) => a.marks > 0)!, without: all.find((a) => a.marks === 0)! };
       });
       expect(bars.withMarks.h).toBeGreaterThanOrEqual(29);
+      expect(bars.withMarks.h).toBeLessThanOrEqual(31);
       expect(Math.abs(bars.withMarks.h - bars.without.h)).toBeLessThanOrEqual(0.5);
     });
 
-    test('each mark hangs no more than 4px past its bar, and clear of the first line of words', async ({ page }) => {
+    test('each mark hangs over its bar by 1 to 4px each side, and clear of the first line of words', async ({ page }) => {
       await page.goto('/?fixture=boards&moment=01-main');
       await expect(page.locator('#post-41 .kb-mark').first()).toBeVisible();
       const found = await page.evaluate(() => {
@@ -72,8 +73,10 @@ for (const [label, size] of [['desktop', { width: 1440, height: 900 }], ['phone'
       });
       expect(found.length).toBeGreaterThan(0);
       for (const f of found) {
-        expect(f.over[0]!).toBeLessThanOrEqual(OVERHANG);
-        expect(f.over[1]!).toBeLessThanOrEqual(OVERHANG);
+        for (const o of f.over) {
+          expect(o).toBeGreaterThan(0);
+          expect(o).toBeLessThanOrEqual(OVERHANG);
+        }
         expect(f.hit).toBe(false);
       }
     });
@@ -104,19 +107,48 @@ test.describe('the strips beyond a post add no height', () => {
     await expect(page.locator('.kb-board-banner-marks .kb-mark').first()).toBeVisible();
     const played = await height(page, '.kb-board-banner');
     expect(Math.abs(played - bare)).toBeLessThanOrEqual(0.5);
-    expect(bare).toBeGreaterThanOrEqual(36);
+    /* The General banner is taller than a tile on its own, so the reservation is read as the rule: the computed min-height is the tile. */
+    for (const sel of ['.kb-board-banner']) expect(await page.locator(sel).first().evaluate((el) => parseFloat(getComputedStyle(el).minHeight))).toBeCloseTo(36, 0);
+    await page.goto('/?fixture=boards&moment=01-main');
+    expect(await page.locator('.kb-thread-head').evaluate((el) => parseFloat(getComputedStyle(el).minHeight))).toBeCloseTo(36, 0);
   });
 
-  test('a pinned row is as tall as an unpinned one', async ({ page }) => {
+  test('a pinned row is as tall as an unpinned one, and the pin mark adds one line of words to it', async ({ page }) => {
     await page.goto(`${STORY}pinned`);
     await expect(page.locator('.kb-thread-pin-mark .kb-mark').first()).toBeVisible();
     const rows = await page.evaluate(() => {
       const pinned = document.querySelector('.kb-thread-pinned > tr')!.getBoundingClientRect().height;
       const other = [...document.querySelectorAll('tr.kb-thread-row')].find((r) => !r.closest('.kb-thread-pinned'))!.getBoundingClientRect().height;
-      return { pinned, other };
+      const pin = document.querySelector<HTMLElement>('.kb-thread-pin-mark')!;
+      const cs = getComputedStyle(pin);
+      const probe = document.createElement('span');
+      probe.style.cssText = 'display:inline-block;height:1lh;width:0';
+      pin.parentElement!.append(probe);
+      const line = probe.getBoundingClientRect().height;
+      probe.remove();
+      return { pinned, other, box: pin.getBoundingClientRect().height + parseFloat(cs.marginTop) + parseFloat(cs.marginBottom), line };
     });
     expect(Math.abs(rows.pinned - rows.other)).toBeLessThanOrEqual(1.5);
+    /* The tile straddles its row: its margin box is one line of the title's words, so the row grows by nothing. */
+    expect(Math.abs(rows.box - rows.line)).toBeLessThanOrEqual(1);
   });
+
+  for (const [scene, title] of [['thread', '.kb-thread-head > h1'], ['banner', '.kb-board-banner > h1']] as const) {
+    test(`the ${scene} strip is centered on its title's line`, async ({ page }) => {
+      await page.goto(`${STORY}${scene}`);
+      const mark = page.locator('.kb-thread-head-marks .kb-mark, .kb-board-banner-marks .kb-mark').first();
+      await expect(mark).toBeVisible();
+      const d = await page.evaluate((sel) => {
+        const h = document.querySelector(sel)!;
+        const range = document.createRange();
+        range.selectNodeContents(h);
+        const line = range.getClientRects()[0]!;
+        const m = document.querySelector('.kb-thread-head-marks .kb-mark, .kb-board-banner-marks .kb-mark')!.getBoundingClientRect();
+        return (m.top + m.bottom) / 2 - (line.top + line.bottom) / 2;
+      }, title);
+      expect(Math.abs(d)).toBeLessThanOrEqual(2);
+    });
+  }
 });
 
 test('a ghost mark has no glow', async ({ page }) => {
