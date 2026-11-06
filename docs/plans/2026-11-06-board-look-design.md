@@ -250,7 +250,9 @@ the alerts design's line holds ("the board never names a mechanic; the glass nev
    thread.", and the index's tag "Staff post here; you react and spin". General's description becomes "Anything and
    everything. The staff are watching." (drafts for the owner's review with the plan).
 4. **The glass's plain voice names who acted, or the game.** Where a staff member acted, the glass names it: the move's
-   label reads "The Director renamed this board" (the move's actor, from the data), Season News quotes the Boss's first
+   label names the actor by its role, "The Boss renamed this board" (the owner: a Boss's name in the label would not
+   scale, "A generic 'The Boss renamed this board' would work whichever is in power"; the role word is the instance's
+   copy, and a Mod Bot's move, once Mod Bots move, names its role the same way), Season News quotes the Boss's first
    words "on Staff Announcements" (the board's name, from the data). Where a mechanic acted, the glass says "the game":
    "The game paid you 0.35 Aura", "checked by the game". Debut and Turn copy says the Boss posts the announcement, by the
    instance's word for the role.
@@ -259,12 +261,21 @@ the alerts design's line holds ("the board never names a mechanic; the glass nev
    System" in `engine/ui/` (the index, board, thread, post, move notice, spin origin, character previews and footers,
    the debut and Turn dialogs, the log's lines and the settlement page, Season News) move to it. The plan lists each.
 
-The boards follow: the nav and the index name Staff Announcements; `11-move-notice`'s label names the Director;
+The boards follow: the nav and the index name Staff Announcements; `11-move-notice`'s label reads "The Boss renamed this
+board";
 `12-reveal` and `13-tally` are signed by the Director with a staff postbit (its name, its badges, its title, its avatar,
 no rank, since staff are not scored), the reveal opening with its farewell line.
 
 The masks: a Boss signing a post reads no private fact; the list it carries is the same public record the reveal and
 tally hold today.
+
+**Filed as their own issues** (the owner: "For the drift we can log separate issues"):
+- **#278, whether the season's reveal still needs a thread on the board.** The owner: "I'm not sure the whole reveal
+  thread is needed anymore since we decided to make class reveals optional at any time. This would just be an
+  announcement of information that is already available, and it also encroaches a bit on the 'forum aware of kayfabe'
+  point". `12-reveal` is drawn as things stand and waits on it; the signing decided above holds if the thread stays.
+- **#279, member groups**: a group bar for every character, as the staff have, and staff who move characters between
+  groups.
 
 ## Open
 

@@ -686,7 +686,7 @@ console.log('wrote the batch 3 boards');
    the glass label, the moderation log and the notes are the engine's plain words. */
 const notice = (phone) => `
   <div class="notice-wrap">
-    <div class="glasslabel"><span class="l">The Director renamed this board</span><span class="w">Way out: 5 of 12 posters ›</span></div>
+    <div class="glasslabel"><span class="l">The Boss renamed this board</span><span class="w">Way out: 5 of 12 posters ›</span></div>
     <table class="t notice"><tbody>
       <tr><td class="bar"><span class="says">Announcement from <a href="#">The Director</a></span></td></tr>
       <tr><td class="words">This board has been IMPROVED. From now on we talk about toast. Show me twelve of you can handle it and maybe I will think about it.
