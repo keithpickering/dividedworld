@@ -115,8 +115,12 @@ begin
   if why is null or why not like '%season_results%' then raise exception 'truncate refused by the guard: %', why; end if;
   set local session_replication_role = replica;
   why := pg_temp.refusal(format('update season_results set standing = 0 where character = %L', f.spritey));
+  if why is null or why not like '%never edited or removed%' then raise exception 'a session in replica mode edited a result: %', why; end if;
+  why := pg_temp.refusal(format('delete from season_results where character = %L', f.spritey));
+  if why is null or why not like '%never edited or removed%' then raise exception 'a session in replica mode removed a result: %', why; end if;
+  why := pg_temp.refusal('truncate season_results');
+  if why is null or why not like '%never edited or removed%' then raise exception 'a session in replica mode truncated the results: %', why; end if;
   set local session_replication_role = origin;
-  if why is null then raise exception 'a session in replica mode edited a result'; end if;
   if (select count(*) from pg_trigger where tgrelid = 'season_results'::regclass and not tgisinternal and tgenabled = 'A') is distinct from 2 then
     raise exception 'both guards fire always';
   end if;
@@ -126,14 +130,7 @@ begin
   end if;
 end $$;
 
--- ---- apply_settlement reads only the season's number from a reveal ----
-do $$
-begin
-  if (select pg_get_functiondef(p.oid) from pg_proc p where p.proname = 'apply_settlement') !~ 'revealed'
-     or (select pg_get_functiondef(p.oid) from pg_proc p where p.proname = 'apply_settlement') ~ 'reveal_act|season_results' then
-    raise exception 'apply_settlement reads only the revealed season''s number';
-  end if;
-end $$;
+-- ---- apply_settlement's `revealed` is the season's number: supabase/tests/0013-seasons.sql settles a season's last window and asserts it, the results rows and results_at ----
 
 -- ---- Season News: the results item, from the table ----
 do $$
@@ -174,7 +171,7 @@ declare
 begin
   select * into f from pg_temp.sr;
   -- A second finished season of 60 characters.
-  insert into seasons (number, starts_at, ends_at, results_at) values (50, '1990-01-01', '1990-02-01', '1990-02-01') returning id into s2;
+  insert into seasons (number, starts_at, ends_at, results_at, results_count) values (50, '1990-01-01', '1990-02-01', '1990-02-01', 60) returning id into s2;
   for i in 1..60 loop
     if (i - 1) % 6 = 0 then big_owner := tests.account('sr-big-' || ((i - 1) / 6)); end if;
     insert into characters (owner, name, created_at, debuted_at)
@@ -188,6 +185,20 @@ begin
     raise exception 'finished seasons, newest first: %', (select jsonb_agg(to_jsonb(x)) from finished_seasons() x);
   end if;
   if (select characters from finished_seasons() where number = 50) is distinct from 60 or (select characters from finished_seasons() where number = 1) is distinct from 4 then raise exception 'finished seasons count their characters'; end if;
+  -- The count is frozen with the results: a row inserted afterwards (the guard allows inserts, as the import does) is not counted.
+  perform tests.unbecome();
+  begin
+    insert into season_results (season, character, name, place, standing) select f.season_id, c.id, c.name, 5, 0 from characters c where c.name = 'Big 001';
+    perform tests.become(viewer);
+    if (select count(*) from season_results where season = f.season_id) is distinct from 5 then raise exception 'the fixture is wrong: the late row is in'; end if;
+    if (select characters from finished_seasons() where number = 1) is distinct from 4 then raise exception 'finished seasons read the frozen count, not the rows: %', (select characters from finished_seasons() where number = 1); end if;
+    raise exception using errcode = 'P0001', message = 'sr-undo';
+  exception when sqlstate 'P0001' then
+    if sqlerrm <> 'sr-undo' then raise; end if;
+  end;
+  perform tests.unbecome();
+  perform tests.become(viewer);
+  if (select count(*) from season_results where season = f.season_id) is distinct from 4 then raise exception 'the late row was undone'; end if;
   if (select count(*) from results_page(50, 1)) is distinct from 50 or (select count(*) from results_page(50, 2)) is distinct from 10 or (select count(*) from results_page(50, 3)) is distinct from 0 then
     raise exception 'a page is 50 rows';
   end if;
@@ -214,7 +225,13 @@ do $$
 declare ln record; plan text := '';
 begin
   set local enable_seqscan = off; set local enable_bitmapscan = off;
-  for ln in explain select * from season_results where season = (select id from seasons where number = 50) order by place, name, character limit 50 loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
+  -- EXPLAIN of results_page(50, 1) shows only a Function Scan (the function is not inlined), so this is its query itself: the same where, order by,
+  -- offset and limit, page 1 of season 50.
+  for ln in explain select r.character, r.name, r.place, r.standing, r.shown
+    from season_results r
+    where r.season = (select f.id from seasons_finished f where f.number = 50)
+    order by r.place, r.name, r.character
+    offset (least(greatest(1, 1), 10000) - 1) * 50 limit 50 loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
   if plan !~ 'season_results_by_place' or plan ~ 'Sort' then raise exception 'a results page is read in order from season_results_by_place:%', plan; end if;
 end $$;
 
@@ -268,11 +285,41 @@ begin
   if (select place || '/' || standing from season_results where character = b and season = s) is distinct from '2/5' then raise exception 'a season revealed before the places were written takes them from the standings: %', (select place || '/' || standing from season_results where character = b and season = s); end if;
   if (select results_at from seasons where id = s) is distinct from landed then raise exception 'the results landed when the header was written: %', (select results_at from seasons where id = s); end if;
   -- Run again, it changes nothing; a season whose results the end wrote itself is not copied from anywhere.
+  if (select results_count from seasons where id = s) is distinct from 2 then raise exception 'the backfill freezes the count: %', (select results_count from seasons where id = s); end if;
   perform backfill_season_results();
   if (select count(*) from season_results where season = s) is distinct from 2 then raise exception 'the backfill is idempotent'; end if;
   -- The thread and its Acts are as they were written, and still draw.
   if (select count(*) from acts where thread = th) is distinct from 3 then raise exception 'the old Acts are left alone'; end if;
   if (select kind from season_news(null, 50) where season = 70 and kind = 'results') is distinct from 'results' then raise exception 'an old season''s results are news too'; end if;
+end $$;
+
+-- ---- The backfill's first date: a season whose header has a news_landed row is dated from it, not from the header's created_at ----
+-- Staged as the database stood before this migration: the kind check still allows 'results'. The migration backfills first and deletes the old rows
+-- after, and so does this. The staging is undone with the subtransaction (the DDL is transactional).
+do $$
+declare
+  ann uuid := tests.account('sr-old-2');
+  a uuid; s bigint; th uuid; hdr uuid; wrote timestamptz := now() - interval '120 days'; landed timestamptz := now() - interval '110 days';
+begin
+  a := tests.character(ann, 'Older Ann', 'alpha', now() - interval '300 days');
+  insert into seasons (number, starts_at, ends_at) values (71, '1990-07-01', '1990-08-01') returning id into s;
+  th := tests.thread('Season 71: The Reveal');
+  hdr := tests.act(null, 'reveal', th, jsonb_build_object('season', 71, 'body', 'Every mask.', 'characters', 1), null, wrote);
+  perform tests.act(null, 'reveal', th, jsonb_build_object('season', 71, 'character', a, 'name', 'Older Ann Then', 'place', 1, 'standing', 9, 'shown', '[]'::jsonb), null, wrote);
+  update seasons set reveal_act = hdr where id = s;
+  begin
+    alter table news_landed drop constraint news_landed_kind_check;
+    insert into news_landed (act, kind, landed_at) values (hdr, 'results', landed);
+    perform backfill_season_results();
+    delete from news_landed where kind = 'results';
+    if (select results_at from seasons where id = s) is distinct from landed then
+      raise exception 'the results are dated from news_landed, not from the header (% written, % landed): %', wrote, landed, (select results_at from seasons where id = s);
+    end if;
+    if (select results_count from seasons where id = s) is distinct from 1 then raise exception 'the backfill freezes the count: %', (select results_count from seasons where id = s); end if;
+    raise exception using errcode = 'P0001', message = 'sr-undo';
+  exception when sqlstate 'P0001' then
+    if sqlerrm <> 'sr-undo' then raise; end if;
+  end;
 end $$;
 
 -- ---- The words The System needs: the Promos thread's title ----

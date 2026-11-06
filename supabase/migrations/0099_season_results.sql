@@ -53,11 +53,14 @@ alter table season_results enable always trigger season_results_no_truncate;
 revoke execute on function season_results_append_only() from public, anon, authenticated;
 
 alter table seasons add column results_at timestamptz;
+-- How many rows the results hold, frozen with them: the rows are never removed, so the count is written once, in the same statement as `results_at`, and
+-- the reads never count a season's rows (a cost that grows with characters times seasons).
+alter table seasons add column results_count integer;
 
 -- The seasons whose results have landed, which the reads below and the screens' pickers see (the whole of `seasons` is readable already; this is the
 -- finished part, in the words of the glass).
-create view seasons_finished as
-  select id, number, starts_at, ends_at, results_at from seasons where results_at is not null;
+create view seasons_finished with (security_invoker = true) as
+  select id, number, starts_at, ends_at, results_at, results_count from seasons where results_at is not null;
 revoke all on seasons_finished from public, anon, authenticated;
 grant select on seasons_finished to authenticated;
 
@@ -83,7 +86,8 @@ language sql security definer set search_path = public, pg_temp as $$
   on conflict (season, character) do nothing;
   update seasons s set results_at = coalesce(
     (select n.landed_at from news_landed n where n.act = s.reveal_act and n.kind = 'results'),
-    (select h.created_at from acts h where h.id = s.reveal_act))
+    (select h.created_at from acts h where h.id = s.reveal_act)),
+    results_count = (select count(*) from season_results r where r.season = s.id)
   where s.reveal_act is not null and s.results_at is null
 $$;
 revoke execute on function backfill_season_results() from public, anon, authenticated;
@@ -146,7 +150,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
   ),
   results as (
     select 'results'::text as kind, null::uuid as act, null::uuid as thread, null::integer as seq, s.results_at as at, s.number as season,
-           null::text as name, null::text as quote, (select count(*) from season_results r where r.season = s.id)::integer as count,
+           null::text as name, null::text as quote, coalesce(s.results_count, 0) as count,
            jsonb_build_object('top', (
              select coalesce(jsonb_agg(jsonb_build_object('character', t.character, 'name', t.name, 'place', t.place, 'standing', t.standing, 'shown', t.shown)
                                        order by t.place, t.name, t.character), '[]'::jsonb)
@@ -268,18 +272,18 @@ begin
     where c.debuted_at < ended and c.staff is null
     order by coalesce(st.amount, 0) desc, c.name, c.id;
   get diagnostics written = row_count;
-  update seasons set results_at = now() where id = s.id;
+  update seasons set results_at = now(), results_count = written where id = s.id;
   perform broadcast_later('reach', 'news', jsonb_build_object('kind', 'seasonNews', 'sub', 'results', 'season', s.number, 'act', null, 'at', now()));
   return jsonb_build_object('season', s.number, 'results', written);
 end $$;
 
 -- ---------------------------------------------------------------------------------------- the reads ----
 
--- The finished seasons, newest first: the choice on Rankings. Characters is the season's row count.
+-- The finished seasons, newest first: the choice on Rankings. Characters is the season's row count, frozen with the results.
 create function finished_seasons() returns table (number integer, starts_at timestamptz, ends_at timestamptz, results_at timestamptz, characters integer)
 language sql stable security invoker set search_path = public, pg_temp
 begin atomic
-  select f.number, f.starts_at, f.ends_at, f.results_at, (select count(*) from season_results r where r.season = f.id)::integer
+  select f.number, f.starts_at, f.ends_at, f.results_at, coalesce(f.results_count, 0)
   from seasons_finished f order by f.number desc limit 200;
 end;
 
@@ -289,8 +293,9 @@ create function results_page(in_season integer, page integer) returns table ("ch
 language sql stable security invoker set search_path = public, pg_temp
 begin atomic
   select r.character, r.name, r.place, r.standing, r.shown
-  from season_results r join seasons_finished f on f.id = r.season
-  where f.number = in_season
+  from season_results r
+  -- The season's id as an init plan, so the order is read from the index (season_results_by_place) with the limit pushed down, as a join would not.
+  where r.season = (select f.id from seasons_finished f where f.number = in_season)
   order by r.place, r.name, r.character
   offset (least(greatest(coalesce(page, 1), 1), 10000) - 1) * 50 limit 50;
 end;
