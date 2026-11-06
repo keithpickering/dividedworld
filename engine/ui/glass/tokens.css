@@ -79,4 +79,17 @@
   --kb-glass-control-spacing: 2px;
   /* The gap between controls in a row. */
   --kb-glass-control-gap: 10px;
+
+  /* Each motion feel's durations and easing (engine/ui/glass/motion-tokens.ts holds the defaults; apply.ts writes them
+     under an instance's glass.json motion overrides), for the stylesheet's own transitions. */
+  --kb-motion-smooth-enter: 380ms;
+  --kb-motion-smooth-exit: 300ms;
+  --kb-motion-smooth-screen: 420ms;
+  --kb-motion-smooth-stagger: 30ms;
+  --kb-motion-smooth-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --kb-motion-snappy-enter: 180ms;
+  --kb-motion-snappy-exit: 140ms;
+  --kb-motion-snappy-screen: 220ms;
+  --kb-motion-snappy-stagger: 24ms;
+  --kb-motion-snappy-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }

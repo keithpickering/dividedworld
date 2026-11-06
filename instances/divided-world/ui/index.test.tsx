@@ -246,7 +246,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   });
   test('the names tokens.css declares are the names the glass writes: two lists that must agree are one list', () => {
     const css = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../engine/ui/glass/tokens.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
-    const declared = [...css.matchAll(/(--kb-glass-[\w-]+)\s*:/g)].map((m) => m[1]!).sort();
+    const declared = [...css.matchAll(/(--kb-(?:glass|motion)-[\w-]+)\s*:/g)].map((m) => m[1]!).sort();
     /* The orbs' and the classes' properties are named by the instance's own orbs and class keys, so
        tokens.css cannot declare them; they are held to the instance's lists instead. */
     const keyed = /^--kb-glass-(orb|class)-/;
