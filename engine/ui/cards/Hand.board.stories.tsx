@@ -20,6 +20,7 @@ import { usePlayer } from '../player.tsx';
 import { Postcard } from './Postcard.tsx';
 import { facesOf } from './faces.ts';
 import type { CardPlay } from './types.ts';
+import '../glass/meta-tile.css';
 import './marks.css';
 import './hand-board.css';
 import { CalmRegion } from '../glass/Calm.tsx';
@@ -80,8 +81,8 @@ function HandSheet() {
           {play && (
             <div className="kb-hand-board-tags">
               {/* The play as the post's mark (cards/Marks.tsx), drawn here as the specimen it is: it acts on nothing. */}
-              <span className="kb-mark" data-kb-card={play.card} style={shown ? { '--kb-mark-color': shown.art.color } as CSSProperties : undefined}>
-                <span className="kb-mark-in" aria-hidden="true"><span className="kb-mark-swatch" /></span>
+              <span className="kb-mark kb-meta-tile" aria-disabled="true" data-kb-card={play.card} style={shown ? { '--kb-mark-color': shown.art.color } as CSSProperties : undefined}>
+                <span className="kb-meta-tile-in" aria-hidden="true"><span className="kb-mark-swatch" /></span>
               </span>
             </div>
           )}

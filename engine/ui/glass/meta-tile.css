@@ -1,0 +1,71 @@
+/*
+ * The meta tile (docs/plans/2026-11-06-meta-acts-design.md, sections 1 and 5): the one small glass tile every control beside a post's
+ * words is drawn as, a mark above all. One height, one skew, one border in the tile's line color (`--kb-meta-line`, set by whatever
+ * wears it), and the shared states written once here: a hover, a focus ring, a disabled tile and forced colors.
+ */
+:root {
+  --kb-meta-tile: 2.25rem;
+}
+
+.kb-meta-tile {
+  --kb-meta-line: var(--kb-glass-sweet);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  height: var(--kb-meta-tile);
+  min-width: var(--kb-meta-tile);
+  margin: 0;
+  padding: 0 0.45rem;
+  transform: skewX(var(--kb-glass-skew));
+  border: 2px solid var(--kb-meta-line);
+  background: var(--kb-glass-field);
+  color: var(--kb-glass-text);
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* The contents stand upright on the skew, as the kit's tile labels do. */
+.kb-meta-tile-in {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  transform: skewX(calc(var(--kb-glass-skew) * -1));
+}
+
+.kb-meta-tile:hover:not([aria-disabled="true"]) {
+  border-color: var(--kb-glass-text-hi);
+  background: color-mix(in srgb, var(--kb-meta-line) 18%, var(--kb-glass-field));
+}
+
+/* On the post's ground the glass's white ring would vanish on a white post: the ring is doubled by the post's own ink. */
+.kb-meta-tile:focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 5px var(--kb-fg);
+}
+
+.kb-meta-tile[aria-disabled="true"] {
+  cursor: default;
+}
+
+@media (forced-colors: active) {
+  .kb-meta-tile {
+    border-color: ButtonText;
+    box-shadow: none;
+  }
+
+  .kb-meta-tile:hover:not([aria-disabled="true"]) {
+    border-color: Highlight;
+  }
+
+  .kb-meta-tile:focus-visible {
+    outline-color: Highlight;
+    box-shadow: none;
+  }
+}
