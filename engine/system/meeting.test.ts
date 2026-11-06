@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { systemSettings, testSystem } from '../rules/test-system.ts';
 import { DEMAND_KINDS } from './demands.ts';
-import { DEMAND_ID_ROLES, inheritedText, meetingSystemPrompt, namedCharacters, repairAnswer, type InheritedMove, type RepairContext } from './meeting.ts';
+import { DEMAND_ID_ROLES, MEETING_RULE, inheritedText, meetingSystemPrompt, namedCharacters, repairAnswer, ruleSchema, type InheritedMove, type RepairContext } from './meeting.ts';
 import { noteMost } from './memory.ts';
 import { phaseAt } from './phases.ts';
 
@@ -142,4 +142,33 @@ test('noteMost is the 280 the database check holds', () => {
   const sql = readFileSync(new URL('../../supabase/migrations/0085_staff_notes.sql', import.meta.url), 'utf8');
   assert.equal(noteMost, 280);
   assert.match(sql, new RegExp(`between 1 and ${noteMost}\\b`));
+});
+
+test('the rule\'s schema lists description among the rename\'s params, and the prompt says it is the Boss\'s own words', () => {
+  const schema = ruleSchema(MEETING_RULE) as any;
+  const params = schema.properties.moves.items.properties.params;
+  assert.ok('description' in params.properties, JSON.stringify(Object.keys(params.properties)));
+  assert.ok(!params.required.includes('description'), 'optional: a Boss that gives none gets the stock line');
+  const prompt = meetingSystemPrompt({ boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] } });
+  const rename = prompt
+    .split('\n').find((l) => l.startsWith('- renameBoard'))!;
+  assert.match(rename, /description \(text\)/);
+  assert.match(prompt, /renameBoard description is your own words, in character/);
+});
+
+test('a description the Boss writes is kept, one over 2000 is trimmed with a record, and a blank one is left out', () => {
+  const withDescription = (description: unknown) => {
+    const a = answer({ kind: 'postsOnBoard', params: { board: BOARD, count: 10 } });
+    (a.moves[0] as any).params = { ...(a.moves[0] as any).params, description };
+    return repairAnswer(a, ctx());
+  };
+  const said = withDescription('Pirates park puns here.');
+  assert.ok(said.ok && said.moves[0]!.params['description'] === 'Pirates park puns here.');
+  const long = withDescription('d'.repeat(2400));
+  assert.ok(long.ok && (long.moves[0]!.params['description'] as string).length === 2000);
+  assert.ok(long.ok && long.trims.some((t) => t.path === 'moves[0].params.description' && t.predicate === 'maxLength(2000)' && t.before === 2400 && t.after === 2000), JSON.stringify(long.ok && long.trims));
+  for (const blank of ['', '  ', undefined]) {
+    const r = withDescription(blank);
+    assert.ok(r.ok && r.moves.length === 1 && !('description' in r.moves[0]!.params), JSON.stringify(r));
+  }
 });

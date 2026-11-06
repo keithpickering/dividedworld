@@ -582,12 +582,6 @@ export interface Persona extends StaffSeed {
 /** Who does a duty: the season's Boss, the bot on the board's beat, the bot that filed, or a staff member by key. */
 export type DutyAssignee = 'boss' | 'beat' | 'filer' | (string & {});
 
-/** What the old voice is given for a board's description, and what it is told to stop at. */
-export interface OldVoiceFrame {
-  readonly prompt: string;
-  readonly stop: readonly string[];
-}
-
 /** A feed an instance lets The System read for outside material: plain code fetches it; no model searches the web. */
 export interface FeedSource {
   readonly name: string;
@@ -617,8 +611,6 @@ export interface SystemContent {
   readonly realWorld: readonly string[];
   /** Material the community likes, a starting list The System learns more of. */
   readonly wheelhouse: readonly string[];
-  /** The completion prompt for a board's description, and where it stops. */
-  oldVoice(input: { readonly name: string; readonly premise: string }): OldVoiceFrame;
   /** Problems with a board name The System proposes; empty when it is in style. */
   nameStyle(name: string): string[];
   /**

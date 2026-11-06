@@ -1,6 +1,6 @@
 /**
  * Divided World's System content: the roster of personas, who does each duty, the stock lines,
- * the outside feeds, the never-amplified subjects, the wheelhouse, the old voice's frame and the
+ * the outside feeds, the never-amplified subjects, the wheelhouse, and the
  * PPP name style. It reaches the engine as `Instance.system`; the engine never names anything here
  * ("KayfaBB never knows which instance it runs"). The numbers are settings (../settings.ts).
  *
@@ -17,7 +17,6 @@ import { placeholderMonitor } from './personas/placeholder-monitor.ts';
 import { feeds } from './feeds.ts';
 import { stockLines } from './lines.ts';
 import { nameStyle, nameStyleBrief } from './name-style.ts';
-import { oldVoice } from './old-voice.ts';
 import { realWorld } from './real-world.ts';
 import { wheelhouse } from './wheelhouse.ts';
 
@@ -33,7 +32,6 @@ export const system: SystemContent = Object.freeze({
   feeds,
   realWorld,
   wheelhouse,
-  oldVoice,
   nameStyle,
   nameStyleBrief,
 });

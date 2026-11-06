@@ -41,7 +41,6 @@ export const testSystem: SystemContent = {
   duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'boss', chatter: 'boss' },
   stockLines: Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as SystemContent['stockLines'],
   feeds: [], realWorld: [], wheelhouse: [],
-  oldVoice: () => ({ prompt: '', stop: [] }),
   nameStyle: () => [],
   nameStyleBrief: 'any name',
 };

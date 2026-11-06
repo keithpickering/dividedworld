@@ -82,7 +82,6 @@ const system: SystemContent = {
   feeds: [],
   realWorld: ['politics'],
   wheelhouse: ['games'],
-  oldVoice: ({ name }) => ({ prompt: `Board: ${name}\nDescription:`, stop: ['\n'] }),
   nameStyle: () => [],
   nameStyleBrief: 'any name',
   announcementsTitle: 'Announcements',
@@ -475,7 +474,7 @@ test('the name style must also be said in words for the meeting\'s prompt', () =
 
 test('nameStyle must be a function', () => {
   assert.match(said(withSystem({ nameStyle: 'PPP' as never })), /nameStyle/);
-  assert.match(said(withSystem({ oldVoice: undefined as never })), /oldVoice/);
+  assert.doesNotMatch(said(withSystem({ nameStyleBrief: 'x' })), /oldVoice/, 'a whole system names no oldVoice problem');
 });
 
 test('no system content at all is a problem, not a crash', () => {

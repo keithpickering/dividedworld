@@ -51,23 +51,22 @@ export const WHY_MOST = 200;
 /* --------------------------------------------------------------------------------- the rule ---- */
 
 /** The params any move kind or demand kind names, as one object of optional fields; a model fills only the ones its kind needs. */
-function looseFields(rules: readonly Rule[], leave: readonly string[] = []): Record<string, Rule> {
+function looseFields(rules: readonly Rule[]): Record<string, Rule> {
   const out: Record<string, Rule> = {};
   for (const rule of rules) {
     if (rule.type !== 'object') continue;
     for (const [name, sub] of Object.entries(rule.fields)) {
-      if (leave.includes(name) || out[name]) continue;
+      if (out[name]) continue;
       // An enum reaches the model as a string it is told the values of; a value outside is the catalog's to refuse.
-      out[name] = sub.type === 'number' ? { type: 'number', optional: true } : { type: 'string', maxLength: 500, optional: true };
+      // A string keeps its own bound where that is longer than the loose 500 (a rename's description, 2000), so the meeting
+      // trims it once, in `moveParamsProblems`, and records the trim.
+      out[name] = sub.type === 'number' ? { type: 'number', optional: true } : { type: 'string', maxLength: Math.max(500, sub.type === 'string' ? (sub.maxLength ?? 0) : 0), optional: true };
     }
   }
   return out;
 }
 
-/** The fields a model fills for a move: the kind's params less `description`, which the old voice writes. */
-const MODEL_LEAVES = ['description'];
-
-const paramsRule = (): Rule => ({ type: 'object', fields: looseFields(ASKABLE_MOVE_KINDS.map((k) => k.params), MODEL_LEAVES) });
+const paramsRule = (): Rule => ({ type: 'object', fields: looseFields(ASKABLE_MOVE_KINDS.map((k) => k.params)) });
 const demandRule = (): Rule => ({
   type: 'object',
   fields: { kind: { type: 'string', maxLength: 60 }, params: { type: 'object', fields: looseFields(DEMAND_KINDS.map((d) => d.params)) } },
@@ -135,9 +134,9 @@ export function ruleSchema(rule: Rule): Record<string, unknown> {
 
 /* ------------------------------------------------------------------------------- the prompt ---- */
 
-const fieldsOf = (rule: Rule, leave: readonly string[] = []): string =>
+const fieldsOf = (rule: Rule): string =>
   rule.type === 'object'
-    ? Object.entries(rule.fields).filter(([k]) => !leave.includes(k)).map(([k, v]) => `${k} (${v.type === 'enum' ? v.values.join(' | ') : v.type === 'number' ? 'number' : 'text'})`).join(', ')
+    ? Object.entries(rule.fields).map(([k, v]) => `${k} (${v.type === 'enum' ? v.values.join(' | ') : v.type === 'number' ? 'number' : 'text'})`).join(', ')
     : '';
 
 export interface PromptFacts {
@@ -163,7 +162,7 @@ export function meetingSystemPrompt(f: PromptFacts): string {
   const whole = Math.floor(f.bank);
   const { settings: s, phase } = f;
   const kinds = ASKABLE_MOVE_KINDS.map(
-    (k) => `- ${k.key}: ${k.label.toLowerCase()}. params: ${fieldsOf(k.params, MODEL_LEAVES)}.${k.structural ? ` It waits at least ${s.structuralHoldHours} hours in the admin queue before it lands, and an admin can hold it.` : ''}`,
+    (k) => `- ${k.key}: ${k.label.toLowerCase()}. params: ${fieldsOf(k.params)}.${k.structural ? ` It waits at least ${s.structuralHoldHours} hours in the admin queue before it lands, and an admin can hold it.` : ''}`,
   );
   const demands = DEMAND_KINDS.map((d) => `- ${d.key}: params: ${fieldsOf(d.params)}.`);
   const career = careerText(f.career);
@@ -188,7 +187,7 @@ export function meetingSystemPrompt(f: PromptFacts): string {
       ...demands,
       `Use only the ids you are given below for boards, threads and characters. A count is a whole number of at least 1. A reaction threshold (a quadrant's count, a crossQuote's reactions) is at least ${s.reactionCap + 1}.`,
     ].join('\n'),
-    `Board names. ${f.system.nameStyleBrief} A renameBoard name is at most ${s.boardNameMaxLength} characters; its premise is a sentence saying what the board is now for. A name that is not in the style is dropped, not corrected.`,
+    `Board names. ${f.system.nameStyleBrief} A renameBoard name is at most ${s.boardNameMaxLength} characters; its premise is a sentence saying what the board is now for. A name that is not in the style is dropped, not corrected. A renameBoard description is your own words, in character: the board's subtitle under its new name, a sentence or two.`,
     [
       'Your memory. Your answer is your whole new memory: what you leave out is forgotten. Order every list most important first.',
       `You keep at most ${s.memoryOpinions} opinions, ${s.memoryGrudges} grudges, ${s.memoryWheelhouse} wheelhouse subjects and ${s.memoryRealWorld} real-world subjects; the rest are cut from the end. Opinions and grudges name characters by the ids you are given, scored -5 to 5. Leave alone these subjects, and add to them: ${f.system.realWorld.join('; ')}.`,
@@ -258,7 +257,7 @@ export function referenceText(ids: ReferenceIds): string {
 
 export interface PlannedMove {
   readonly kind: string;
-  /** Without `description`: the old voice writes it, and the stock description stands in when it cannot. */
+  /** A rename's `description` is the Boss's own words; it is absent when the Boss gave none, and the stock description stands in. */
   readonly params: Readonly<Record<string, unknown>>;
   readonly demand: { readonly kind: string; readonly params: Readonly<Record<string, unknown>> };
   /** Epoch milliseconds, clamped (and, for a structural move, raised to the hold). */
@@ -393,11 +392,14 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
       const bad = role === 'board' ? (c.boards.has(id) ? null : 'isBoard') : role === 'thread' ? (c.threads.has(id) ? null : 'isThread') : c.isPublic(id) ? null : 'publicCharacter';
       if (bad) return drop(`${path}.demand.params.${name}`, bad);
     }
-    // The kind's shape, with a stand-in for the description the old voice writes later.
-    const params = moveParamsProblems(kind.key, { ...record(m['params']), description: '-' });
+    // The kind's shape. A description the Boss gave is bounded and trimmed there; a missing or blank one is not the Boss's
+    // to lose a move over, so it is checked with a placeholder and left out, and the stock description stands in later.
+    const offered = record(m['params']);
+    const blank = typeof offered['description'] !== 'string' || offered['description'].trim() === '';
+    const params = moveParamsProblems(kind.key, blank ? { ...offered, description: '-' } : offered);
     if (!params.ok) return drop(`${path}.params.${params.path}`, params.predicate);
     const given = { ...(params.value as Record<string, unknown>) };
-    delete given['description'];
+    if (blank) delete given['description'];
     if (kind.key === 'renameBoard') {
       const name = String(given['name']);
       const style = c.system.nameStyle(name);

@@ -21,8 +21,7 @@
  * between two meetings: the previous meeting's finish time would skip what happened between its slot and its close.
  *
  * **Cost does not grow with the instance.** One strong-tier call per meeting, a digest bounded by the settings' ceilings
- * (engine/system/digest.ts), a memory bounded by its caps, at most `bankCap` (28) description completions on the light end of
- * the old voice, and one fetch per configured feed with a short timeout. Nothing here reads a row per player, character or Act.
+ * (engine/system/digest.ts), a memory bounded by its caps, and one fetch per configured feed with a short timeout. Nothing here reads a row per player, character or Act.
  *
  * Nothing private reaches the model: the digest is built by a role that reads public relations only, and the characters the
  * model names are checked against `characters_public`.
@@ -48,7 +47,7 @@ import {
 } from '../../../engine/system/meeting.ts';
 import type { Models } from '../../../engine/system/model.ts';
 import { phaseAt } from '../../../engine/system/phases.ts';
-import { cutCompletion, type Trim } from '../../../engine/system/validate.ts';
+import { type Trim } from '../../../engine/system/validate.ts';
 import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { AnswerRejected, LedgerWriteFailed } from '../_shared/models/index.ts';
@@ -255,7 +254,7 @@ export async function runMeeting(
     }
 
     const trims: Trim[] = [...repaired.trims];
-    const moves = await Promise.all(repaired.moves.map((m, i) => withDescription(models, tuned, m, i, bossKey, meeting, trims, notes)));
+    const moves = repaired.moves.map((m, i) => withDescription(tuned, m, i, notes));
 
     const record = {
       phase: phase.phase,
@@ -313,49 +312,17 @@ export async function runMeeting(
   }
 }
 
-/** A move with its params complete: a rename gets the old voice's description, or the instance's stock one when the voice cannot. */
-async function withDescription(
-  models: Models,
-  instance: Instance,
-  move: PlannedMove,
-  index: number,
-  staff: string,
-  meeting: number,
-  trims: Trim[],
-  notes: string[],
-): Promise<PlannedMove> {
+/** A move with its params complete: a rename keeps the Boss's own description, or takes the instance's stock one when the Boss gave none. */
+function withDescription(instance: Instance, move: PlannedMove, index: number, notes: string[]): PlannedMove {
   if (move.kind !== 'renameBoard') return move;
+  if (typeof move.params['description'] === 'string' && move.params['description'] !== '') return move;
   const name = String(move.params['name']);
-  const frame = instance.system.oldVoice({ name, premise: String(move.params['premise']) });
-  const stock = (why: string): PlannedMove => {
-    const lines = instance.system.stockLines.boardDescription;
-    // The same name always draws the same line, so a retried meeting writes what the first would have.
-    let h = 0;
-    for (const ch of name) h = (h * 31 + ch.codePointAt(0)!) >>> 0;
-    notes.push(`moves[${index}]: the old voice could not write a description (${why}); a stock description stands in.`);
-    return { ...move, params: { ...move.params, description: lines[h % lines.length]!.replaceAll('{board}', name) } };
-  };
-  try {
-    const out = await models.complete({
-      duty: 'meeting',
-      staff,
-      meeting,
-      prompt: frame.prompt,
-      temperature: 0.9,
-      topP: 0.95,
-      stop: frame.stop,
-      maxTokens: 120,
-      maxChars: 400,
-    });
-    const cut = cutCompletion(out.value, frame.stop, 400);
-    if (!cut.ok) return stock(cut.predicate);
-    trims.push(...cut.trims.map((t) => ({ ...t, path: `moves[${index}].params.description` })));
-    return { ...move, params: { ...move.params, description: cut.text } };
-  } catch (e) {
-    // A completion failing never fails the meeting; only a call the ledger could not record is not trusted.
-    if (e instanceof LedgerWriteFailed) throw e;
-    return stock(said(e));
-  }
+  const lines = instance.system.stockLines.boardDescription;
+  // The same name always draws the same line, so a retried meeting writes what the first would have.
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.codePointAt(0)!) >>> 0;
+  notes.push(`moves[${index}]: the Boss gave no description; a stock description stands in.`);
+  return { ...move, params: { ...move.params, description: lines[h % lines.length]!.replaceAll('{board}', name) } };
 }
 
 /**

@@ -27,7 +27,7 @@ const memory = (hobby = 'pro wrestling'): Memory => ({ hobby: { name: hobby, sin
 function rename(i: number, extra: Record<string, unknown> = {}) {
   return {
     kind: 'renameBoard',
-    params: { board: BOARD, name: NAMES[i % NAMES.length], premise: `Everything about thing number ${i}.` },
+    params: { board: BOARD, name: NAMES[i % NAMES.length], premise: `Everything about thing number ${i}.`, description: `The Boss's words for number ${i}.` },
     demand: { kind: 'postsOnBoard', params: { board: BOARD, count: 10 } },
     go_live_at: new Date(NOW + 30 * H).toISOString(),
     expires_in_hours: 72,
@@ -150,7 +150,7 @@ test('seven moves with a bank of five and nine tenths queue five, and the trim i
   assert.deepEqual(payload.moves.map((x: any) => x.params.name), NAMES.slice(0, 5), 'the first five, in order: the last are cut');
   assert.ok(out.trims.some((t: any) => t.path === 'moves' && t.predicate === 'atMost(5)' && t.before === 7 && t.after === 5), JSON.stringify(out.trims));
   assert.ok(payload.record.trims.some((t: any) => t.predicate === 'atMost(5)'), 'the row the meeting closes with carries the trims');
-  assert.equal(m.completions.length, 5, 'the old voice writes for the five kept and not for the two cut');
+  assert.equal(m.completions.length, 0, 'a meeting never calls the completion model');
   assert.equal(payload.moves.length, 5);
   assert.equal(payload.boss, BOSS);
   assert.deepEqual([payload.weekly_moves, payload.bank_cap], [5, 10], 'the reign\'s numbers: the database debits from the bank it computes itself');
@@ -184,7 +184,7 @@ test('a rename whose name fails the style is dropped, not rewritten', async () =
   const names = d.state.applied[0]!.payload.moves.map((x: any) => x.params.name);
   assert.deepEqual(names, [NAMES[1]]);
   assert.ok(out.trims.some((t: any) => t.path === 'moves[0].params.name' && t.predicate === 'nameStyle'), JSON.stringify(out.trims));
-  assert.equal(m.completions.length, 1, 'no description is written for a move that is dropped');
+  assert.equal(m.completions.length, 0, 'a meeting never calls the completion model');
 });
 
 test('a name past boardNameMaxLength, a board that is not a board, a kind or demand outside the catalogs, and a reaction threshold at the cap are each dropped and recorded', async () => {
@@ -234,29 +234,39 @@ test('go-live times are clamped into the next day and expiries into the settings
   assert.ok(out.trims.some((t: any) => t.path === 'moves[1].expires_in_hours' && t.after === 672));
 });
 
-test('the old voice writes the description from the instance\'s frame, cut to one line', async () => {
+test('a rename answered with a description keeps it word for word, and no completion is called', async () => {
   const d = fakeDb();
-  const m = fakeModels(answer([rename(0)]), '  ur board is sooo cool!!!\nBoard: Next');
-  await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
-  assert.equal(d.state.applied[0]!.payload.moves[0].params.description, 'ur board is sooo cool!!!');
-  const c = m.completions[0]!;
-  assert.match(c.prompt, /Board: Pirate Puns Palace/);
-  assert.match(c.prompt, /Subject: Everything about thing number 0/);
-  assert.ok(c.stop.includes('\n'));
-  assert.equal(c.staff, BOSS);
-  assert.equal(c.meeting, 7);
+  const words = '  Where the pirates park their puns.\nA second line, kept too.  ';
+  const m = fakeModels(answer([rename(0, { params: { board: BOARD, name: NAMES[0], premise: 'Pirates.', description: words } })]));
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'ok');
+  assert.equal(d.state.applied[0]!.payload.moves[0].params.description, words);
+  assert.equal(m.completions.length, 0);
+  assert.ok(!out.notes.some((n: string) => /description/i.test(n)), 'no stock line stood in');
 });
 
-test('the completion endpoint failing, or its text rejected, leaves the stock description and does not fail the meeting', async () => {
-  for (const completion of [new Error('endpoint down'), new AnswerRejected('empty', 'nonEmpty'), '\n\n']) {
+test('a description over 2000 is trimmed to 2000 and the trim is recorded', async () => {
+  const d = fakeDb();
+  const m = fakeModels(answer([rename(0, { params: { board: BOARD, name: NAMES[0], premise: 'Pirates.', description: 'w'.repeat(2500) } })]));
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'ok');
+  assert.equal(d.state.applied[0]!.payload.moves[0].params.description, 'w'.repeat(2000));
+  assert.ok(out.trims.some((t: any) => t.path === 'moves[0].params.description' && t.predicate === 'maxLength(2000)' && t.before === 2500 && t.after === 2000), JSON.stringify(out.trims));
+});
+
+test('a rename with an empty or missing description takes the stock line, with a note, and the move is kept', async () => {
+  for (const description of ['', '   ', undefined]) {
     const d = fakeDb();
-    const m = fakeModels(answer([rename(0)]), completion);
+    const params: Record<string, unknown> = { board: BOARD, name: NAMES[0], premise: 'Pirates.' };
+    if (description !== undefined) params['description'] = description;
+    const m = fakeModels(answer([rename(0, { params })]));
     const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
     assert.equal(out.status, 'ok');
-    const description = d.state.applied[0]!.payload.moves[0].params.description as string;
+    const got = d.state.applied[0]!.payload.moves[0].params.description as string;
     const stock = dividedWorld.system.stockLines.boardDescription.map((l) => l.replaceAll('{board}', NAMES[0]!));
-    assert.ok(stock.includes(description), `${String(completion)}: ${description}`);
-    assert.ok(out.notes.some((n: string) => /old voice|description/i.test(n)), 'the result says the stock line stood in');
+    assert.ok(stock.includes(got), `${JSON.stringify(description)}: ${got}`);
+    assert.ok(out.notes.some((n: string) => /description/i.test(n)), 'the result says the stock line stood in');
+    assert.equal(m.completions.length, 0);
   }
 });
 

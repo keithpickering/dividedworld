@@ -8,7 +8,7 @@
  *                     plain facts, and a link to Write an update with those facts filled in. It is the admin's to write, and no model writes any
  *                     of it. It goes away when an update is posted after the handover, or when an admin dismisses it.
  *   Waiting to land   queued moves, soonest first: the countdown and time, the full proposal (the move in the engine's words, its new
- *                     subject, its demand, the description in the Boss's old voice) and the Boss's own `why`, quoted as its words;
+ *                     subject, its demand, the description, which is the Boss's own words) and the Boss's own `why`, quoted as its words;
  *                     a move the tick could not land says why. HOLD, on these and nowhere else.
  *   In force          landed moves with no end: since and until, the demand with a progress bar and its why. REVERSE, on these
  *                     and nowhere else.
