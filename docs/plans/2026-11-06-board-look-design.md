@@ -5,8 +5,8 @@ the board world's screens as the backfill session drew them for the glass
 (`docs/plans/2026-11-05-backfill-boards-design.md`), so a build session has an accurate reference. The owner: the board
 should look "very quaint. But still well organized ... the best version of an old school forum", and asked whether the
 house theme could be more period-accurate than "maximum simplicity", whether image buttons could be simulated with CSS,
-and what support exists for themes beyond light and dark. This document is written in rounds as the session goes; the
-plan follows once the screen boards are approved.
+and what support exists for themes beyond light and dark. The boards are
+`docs/research/2026-11-06-board-look/`. The plan is `docs/plans/2026-11-06-board-look-plan.md`.
 
 ## 0. Where it starts
 
@@ -327,8 +327,13 @@ and `20-theme-picker-one-mode` (Hot Rod chosen), 1440 by 1120, and `21-theme-pic
   keeps a compact form: the tiles alone.
 - Copy drafts for the owner: "Applies to the board at once, on every device you sign in on." and the two Mode notes.
 
+**Batch 6 approved by the owner** ("Approved, board as its own section makes sense").
+
 ## Open
 
-- Fan Site's name, now that it salutes one board's blue.
-- The legend's words.
-- Batch 6's approval, and The board as a section of its own.
+- Fan Site's name, now that it salutes one board's blue (the plan ships it as "Fan Site" until the owner names it).
+- The copy drafts, reviewed with the plan: the legend's "Hot: {n} replies this week"; New thread's "Ctrl+Enter or
+  Command+Enter starts it"; the staff board's description and tag and General's new description; the not-found
+  messages; the theme picker's notes.
+- #278: whether the season's reveal keeps a thread on the board.
+- #279: member groups.
