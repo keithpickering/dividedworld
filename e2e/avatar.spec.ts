@@ -5,6 +5,8 @@ import { webpChunks, webpProblem, webpSize } from '../engine/ui/profile-edit/web
 async function pipewrench(page: Page) {
   await page.getByRole('tablist', { name: /^Roster, /u }).getByRole('tab', { name: /^Pipewrench/u }).click();
   await page.getByRole('tabpanel', { name: 'Pipewrench' }).getByRole('link', { name: 'Edit profile' }).click();
+  /* The profile editor loads on first use (web/src/App.tsx): a test reaches for its file input once the screen has landed. */
+  await expect(page.locator('input[type="file"]')).toBeAttached();
 }
 
 /* Safari's canvas gives a PNG when asked for a WebP; a page can be made to do the same. */

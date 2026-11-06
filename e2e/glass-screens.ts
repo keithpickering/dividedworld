@@ -160,7 +160,8 @@ export const FIXTURE_OVERLAYS: readonly Screen[] = [
  */
 export const SETTLEMENT: Screen = { name: 'The settlement\'s summary, on the Settlement board\'s moment', path: '/?fixture=boards&moment=09-settlement' };
 /** A Lens story opens its Lens on its own once the thread is read; the lines are read when it stands. */
-const lensOpen = async (page: Page) => { await expect(page.getByRole('dialog', { name: 'Cards on this post' })).toBeVisible({ timeout: 15_000 }); };
+/* The Lens opens over a post whose card effects load on first use (instances/divided-world/ui/cards.ts); its text is read once they have landed, as the page behind it is then what the reader sees. */
+const lensOpen = async (page: Page) => { await expect(page.getByRole('dialog', { name: 'Cards on this post' })).toBeVisible({ timeout: 15_000 }); await page.waitForLoadState('networkidle'); };
 export const STORIES: readonly Screen[] = [
   { name: 'My log, on the Log board\'s moment', path: '/?fixture=boards&moment=12-log' },
   SETTLEMENT,
