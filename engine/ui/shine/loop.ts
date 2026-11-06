@@ -17,6 +17,7 @@
  */
 import { motionReduced, subscribeMotion } from '../appearance.ts';
 import { watchInView } from './inView.ts';
+import { watchTilt } from './tilt.ts';
 import { ease, light, lightAt, type Light } from './light.ts';
 
 export interface ShineFrame {
@@ -59,6 +60,8 @@ let last = 0;
 let frameCount = 0;
 let made = 0;
 let unsubscribeMotion: (() => void) | null = null;
+/* Held while any host is registered: the device's tilt probe runs for a page that shines (tilt.ts). */
+let releaseTilt: (() => void) | null = null;
 
 const sum = (a: Light, b: Light) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 
@@ -134,6 +137,7 @@ export function register(
   };
   hosts.set(host, reg);
   watchMotion();
+  releaseTilt ??= watchTilt();
   light.attach(host);
   reg.stop = watchInView(canvas, (inView) => {
     if (hosts.get(host) !== reg || reg.inView === inView) return;
@@ -152,7 +156,7 @@ export function unregister(host: object): void {
   hosts.delete(host);
   r.stop();
   light.detach(host);
-  if (hosts.size === 0) unwatchMotion();
+  if (hosts.size === 0) { unwatchMotion(); releaseTilt?.(); releaseTilt = null; }
 }
 
 /** The host has something new in flight (a burst): make sure a frame is coming. A host out of view waits until it is seen. */
@@ -174,6 +178,8 @@ export const probe = {
     for (const [host, r] of hosts) { r.stop(); light.detach(host); }
     hosts.clear();
     unwatchMotion();
+    releaseTilt?.();
+    releaseTilt = null;
     frameCount = 0; made = 0; last = 0;
   },
 };

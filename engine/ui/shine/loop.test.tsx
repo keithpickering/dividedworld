@@ -1,6 +1,7 @@
 /* A .test.tsx because the loop reads the DOM (rects, IntersectionObserver, rAF) and needs jsdom; `test:engine` runs .test.ts under plain node. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { light, lightAt, REST } from './light.ts';
+import { setTiltPreference, tiltState } from './tilt.ts';
 import { probe, register, unregister, wake, type ShineFrame } from './loop.ts';
 
 /* A fake rAF: frames run only when the test flushes one, at the time it names. */
@@ -45,6 +46,29 @@ afterEach(() => {
   document.documentElement.removeAttribute('data-kb-motion');
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+describe('the loop and the tilt probe', () => {
+  it('a shiny page runs the probe while a host is registered, and lets it go with the last one', () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('DeviceOrientationEvent', function DeviceOrientationEvent() {});
+    try {
+      setTiltPreference('on');
+      expect(vi.getTimerCount()).toBe(0);
+      const a = {}, b = {};
+      register(a, canvas(), BOX, 1, () => false);
+      expect(vi.getTimerCount()).toBe(1);
+      register(b, canvas(), BOX, 1, () => false);
+      unregister(a);
+      expect(vi.getTimerCount()).toBe(1);
+      unregister(b);
+      expect(vi.getTimerCount()).toBe(0);
+      register(a, canvas(), BOX, 1, () => false);
+      vi.advanceTimersByTime(1100);
+      expect(tiltState()).toBe('unsupported');
+      probe.reset();
+    } finally { setTiltPreference('off'); vi.useRealTimers(); }
+  });
 });
 
 describe('the shine loop', () => {

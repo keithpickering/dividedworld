@@ -654,6 +654,18 @@ describe('Settings › Accessibility › Tilt', () => {
     expect(screen.queryByRole('button', { name: 'Allow on this phone' })).toBeNull();
   });
 
+  test('needs-allow after a request that threw: the row says the browser did not answer, and the next tap asks again', async () => {
+    const ask = vi.fn(async () => { throw new Error('needs a gesture'); });
+    device(ask);
+    const { sw } = await opened('on');
+    expect(says(sw)).not.toMatch(/didn't answer/u);
+    await userEvent.click(screen.getByRole('button', { name: 'Allow on this phone' }));
+    await waitFor(() => expect(says(sw)).toMatch(/Your browser didn't answer\. Tap Allow on this phone to ask again\./u));
+    expect(screen.getByRole('button', { name: 'Allow on this phone' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Allow on this phone' }));
+    expect(ask).toHaveBeenCalledTimes(2);
+  });
+
   test('denied: the browser\'s refusal, where to change it, and no second ask without a tap', async () => {
     const ask = vi.fn(async () => 'denied');
     device(ask);

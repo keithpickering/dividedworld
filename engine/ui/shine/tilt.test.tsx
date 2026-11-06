@@ -54,6 +54,7 @@ describe('tiltState', () => {
   it('is unsupported once a second of listening brings no reading, and on once one comes', () => {
     vi.useFakeTimers();
     stubDevice();
+    setTiltPreference('on');
     const release = watchTilt();
     expect(tiltState('on')).toBe('on');
     vi.advanceTimersByTime(999);
@@ -62,11 +63,13 @@ describe('tiltState', () => {
     expect(tiltState('on')).toBe('unsupported');
     release();
     resetTilt();
+    setTiltPreference('on');
     const again = watchTilt();
     orient(null, null);
     vi.advanceTimersByTime(1100);
     expect(tiltState('on')).toBe('unsupported');
     resetTilt();
+    setTiltPreference('on');
     watchTilt();
     orient(4, -3);
     vi.advanceTimersByTime(1100);
@@ -88,12 +91,50 @@ describe('tiltState', () => {
   it('stops listening when the last watcher lets go', () => {
     vi.useFakeTimers();
     stubDevice();
+    setTiltPreference('on');
     const a = watchTilt();
     const b = watchTilt();
     expect(vi.getTimerCount()).toBe(1);
     a();
     expect(vi.getTimerCount()).toBe(1);
     b();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('the probe runs only for a watched page with the tilt on', () => {
+  const listens = (spy: { mock: { calls: unknown[][] } }) => spy.mock.calls.filter((c) => c[0] === 'deviceorientation').length;
+  it('starts nothing while the preference is off, starts when it goes on, and ends in unsupported after a second of silence', () => {
+    vi.useFakeTimers();
+    const add = vi.spyOn(window, 'addEventListener');
+    stubDevice();
+    watchTilt();
+    expect(listens(add)).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+    setTiltPreference('on');
+    expect(listens(add)).toBe(1);
+    expect(vi.getTimerCount()).toBe(1);
+    vi.advanceTimersByTime(1100);
+    expect(tiltState()).toBe('unsupported');
+  });
+  it('stops an idle probe when the preference goes off', () => {
+    vi.useFakeTimers();
+    stubDevice();
+    watchTilt();
+    setTiltPreference('on');
+    expect(vi.getTimerCount()).toBe(1);
+    setTiltPreference('off');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it('starts nothing under reduced motion, and nothing with no watcher', () => {
+    vi.useFakeTimers();
+    stubDevice();
+    setTiltPreference('on');
+    expect(vi.getTimerCount()).toBe(0);
+    resetTilt();
+    root.setAttribute('data-kb-motion', 'reduce');
+    watchTilt();
+    setTiltPreference('on');
     expect(vi.getTimerCount()).toBe(0);
   });
 });

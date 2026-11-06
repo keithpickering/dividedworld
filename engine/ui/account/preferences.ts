@@ -16,6 +16,7 @@ import { useKayfa } from '../context.tsx';
 import { LOST_ANSWER, type Answer, type Preferences, type PreferencesPatch } from '../data/api.ts';
 import { applyAppearance } from '../appearance.ts';
 import { announceToastChoice } from '../alerts/toast-choice.ts';
+import { setTiltPreference } from '../shine/tilt.ts';
 
 /** A patch of exactly one setting: `change` saves one at a time, so it takes one. */
 export type SinglePatch = { readonly [K in keyof PreferencesPatch]-?: { readonly [P in K]: Required<PreferencesPatch>[K] } }[keyof PreferencesPatch];
@@ -67,7 +68,7 @@ export function usePreferenceSaves(account: string | null): SavedPreferences {
   useEffect(() => {
     if (!account) return undefined;
     let live = true;
-    void api.preferences().then((p) => { if (live) { current.current = p; confirmed.current = p; setRead({ account, prefs: p }); } }, () => { if (live) setRefusal({ account, text: 'Your settings could not be read right now. Reload the page to try again.' }); });
+    void api.preferences().then((p) => { if (live) { current.current = p; confirmed.current = p; setRead({ account, prefs: p }); setTiltPreference(p.tilt); } }, () => { if (live) setRefusal({ account, text: 'Your settings could not be read right now. Reload the page to try again.' }); });
     return () => { live = false; };
   }, [api, account]);
 
@@ -77,7 +78,7 @@ export function usePreferenceSaves(account: string | null): SavedPreferences {
     const mine = ++queued.current;
     const madeFor = account;
     if (madeFor === null || current.current === null) return;
-    const show = (next: Preferences) => { current.current = next; setRead({ account: madeFor, prefs: next }); applyAppearance(document, next, ui.themes, ui.glass); };
+    const show = (next: Preferences) => { current.current = next; setRead({ account: madeFor, prefs: next }); applyAppearance(document, next, ui.themes, ui.glass); setTiltPreference(next.tilt); };
     show({ ...current.current, ...patch });
     setRefusal(null);
     setSaved(null);

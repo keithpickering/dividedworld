@@ -9,6 +9,8 @@ import { startLoad } from '../../engine/ui/log/Settlement.tsx';
 import { seedDemo } from './demo.ts';
 import { seedMoves } from '../../engine/ui/board/move-world.ts';
 import { fallbackSettings } from './data/settings.ts';
+import { light } from '../../engine/ui/shine/light.ts';
+import { resetTilt, tiltState } from '../../engine/ui/shine/tilt.ts';
 
 beforeEach(() => { localStorage.clear(); sessionStorage.clear(); window.history.pushState(null, '', '/'); });
 afterEach(() => { vi.restoreAllMocks(); });
@@ -349,6 +351,23 @@ test('the account\'s glass preferences are applied as the app loads them: smoke,
   await fake.signOut();
   await waitFor(() => expect(root).toHaveAttribute('data-kb-glass-key', 'standard'));
   expect(root).not.toHaveAttribute('data-kb-text-size');
+});
+
+test('the account\'s tilt choice reaches the light wherever the app is, and goes when the account does', async () => {
+  vi.stubGlobal('DeviceOrientationEvent', function DeviceOrientationEvent() {});
+  resetTilt();
+  try {
+    const fake = createFake({ instance, settings: fallbackSettings });
+    seedDemo(fake);
+    await fake.setPreferences({ tilt: 'on' });
+    expect(tiltState()).toBe('off');
+    render(<App api={fake} />);
+    await waitFor(() => expect(tiltState()).toBe('on'));
+    expect(light.input().tilt).toBe(true);
+    await fake.signOut();
+    await waitFor(() => expect(tiltState()).toBe('off'));
+    expect(light.input().tilt).toBe(false);
+  } finally { vi.unstubAllGlobals(); resetTilt(); }
 });
 
 /*

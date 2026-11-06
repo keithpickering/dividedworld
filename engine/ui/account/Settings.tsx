@@ -34,7 +34,6 @@ import { Link, useLocation, useNavigate } from '../router.tsx';
 import { Choice, MotionRow, TextSizeRow, ThemeRow, TiltRow, type Option } from './appearanceRows.tsx';
 import { Invites } from './Invites.tsx';
 import { usePreferenceSaves, type TipsChange } from './preferences.ts';
-import { setTiltPreference } from '../shine/tilt.ts';
 import { useSession } from './session.ts';
 import './account.css';
 import { CalmRegion } from '../glass/Calm.tsx';
@@ -183,10 +182,6 @@ export function SettingsScreen() {
     void api.signInAddress().then((a) => { if (live) setAddressRead({ account, address: a }); }, () => { if (live) setAddressRead({ account, address: null }); });
     return () => { live = false; };
   }, [api, account]);
-
-  /* The tilt module learns the account's choice here, as it is read and as it changes. */
-  const tiltChoice = prefs?.tilt;
-  useEffect(() => { if (tiltChoice) setTiltPreference(tiltChoice); }, [tiltChoice]);
 
   if (session === null) return <div className="kb-acct" aria-busy="true" />;
   if (!session.signedIn || !account) {

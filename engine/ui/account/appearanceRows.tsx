@@ -7,7 +7,7 @@ import { useEffect, useId, useSyncExternalStore, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Preferences } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
-import { allowTilt, subscribeTilt, tiltState, tiltSupported, watchTilt, type TiltState } from '../shine/tilt.ts';
+import { allowTilt, subscribeTilt, tiltAskFailed, tiltState, tiltSupported, watchTilt, type TiltState } from '../shine/tilt.ts';
 import './account.css';
 
 export interface Option<V extends string | number> { readonly value: V; readonly label: string }
@@ -89,6 +89,9 @@ const TILT_SAYS: Readonly<Record<TiltState, string>> = {
   held: 'Off while motion is reduced. Shiny cards hold their light still.',
 };
 
+/* DRAFT for owner review, like the sentences above: shown on a phone that still needs the grant after a tap whose request to the browser threw. */
+const TILT_NO_ANSWER = 'Your browser didn\'t answer. Tap Allow on this phone to ask again.';
+
 /** Whether this device can use tilt at all: a coarse pointer, or an orientation API. The account's choice saves from any device either way. */
 export const tiltRowShown = (): boolean => tiltSupported() || (window.matchMedia?.('(pointer: coarse)').matches ?? false);
 
@@ -99,6 +102,7 @@ export const tiltRowShown = (): boolean => tiltSupported() || (window.matchMedia
 export function TiltRow({ value, onChange }: { readonly value: Preferences['tilt']; readonly onChange: (v: Preferences['tilt']) => void }) {
   const id = useId();
   const state = useSyncExternalStore(subscribeTilt, () => tiltState(value), () => tiltState('off'));
+  const noAnswer = useSyncExternalStore(subscribeTilt, tiltAskFailed, () => false);
   /* The device is listened to only while the choice is on and this row is drawn. */
   useEffect(() => (value === 'on' ? watchTilt() : undefined), [value]);
   if (!tiltRowShown()) return null;
@@ -116,7 +120,7 @@ export function TiltRow({ value, onChange }: { readonly value: Preferences['tilt
           <input type="checkbox" role="switch" checked={value === 'on'} onChange={(e) => turn(e.target.checked)} aria-labelledby={`${id}-name`} aria-describedby={`${id}-says`} />
           <span className="kb-acct-seg-face kb-glass-skew" aria-hidden="true"><b className="kb-glass-upright">{value === 'on' ? 'On' : 'Off'}</b></span>
         </label>
-        <p id={`${id}-says`} className="kb-acct-row-sentence">{TILT_SAYS[state]}</p>
+        <p id={`${id}-says`} className="kb-acct-row-sentence">{TILT_SAYS[state]}{state === 'needs-allow' && noAnswer ? ` ${TILT_NO_ANSWER}` : ''}</p>
         {state === 'needs-allow' && <ButtonRow><GlassButton onClick={() => void allowTilt()}>Allow on this phone</GlassButton></ButtonRow>}
       </div>
     </div>

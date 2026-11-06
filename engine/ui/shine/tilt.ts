@@ -14,8 +14,8 @@
  * that hold it tell this module through `setTiltPreference`.
  *
  * Listening for the one-second "does this device report tilt" probe costs a listener and a timer, so it runs only while
- * something has asked to watch (`watchTilt`: the Appearance row while the preference is on, and any host that shines).
- * A page with no use for tilt starts nothing.
+ * something has asked to watch (`watchTilt`: the Appearance row while the preference is on, and the shine loop while any
+ * host is registered) and the preference is on and motion is not reduced. A page with no use for tilt starts nothing.
  *
  * Engine code: it names no card and no instance.
  */
@@ -53,6 +53,8 @@ let probe: 'idle' | 'listening' | 'seen' | 'silent' = 'idle';
 let timer: ReturnType<typeof setTimeout> | undefined;
 let watchers = 0;
 let preference: TiltPreference = 'off';
+/** The last tap's request to the browser threw, so it was no answer (the row says so). */
+let askFailed = false;
 const listeners = new Set<() => void>();
 const notify = (): void => { for (const l of [...listeners]) l(); };
 
@@ -73,7 +75,7 @@ function stopListening(): void {
 const ready = (): boolean => tiltSupported() && (!needsGrant() || stored() === 'granted');
 
 function startProbe(): void {
-  if (watchers === 0 || probe !== 'idle' || !ready()) return;
+  if (watchers === 0 || probe !== 'idle' || preference !== 'on' || motionReduced() || !ready()) return;
   probe = 'listening';
   window.addEventListener('deviceorientation', onProbe, { passive: true });
   timer = setTimeout(() => { timer = undefined; if (probe === 'listening') { window.removeEventListener('deviceorientation', onProbe); probe = 'silent'; notify(); } }, PROBE_MS);
@@ -106,6 +108,9 @@ export function tiltState(pref: TiltPreference = preference): TiltState {
 export function setTiltPreference(pref: TiltPreference): void {
   if (pref === preference) return;
   preference = pref;
+  askFailed = false;
+  if (pref === 'on') startProbe();
+  else if (probe === 'listening') { stopListening(); probe = 'idle'; }
   notify();
 }
 
@@ -118,10 +123,11 @@ export function setTiltPreference(pref: TiltPreference): void {
 export async function allowTilt(): Promise<TiltState> {
   const ask = orientationEvent()?.requestPermission;
   if (typeof ask === 'function') {
+    askFailed = false;
     try {
       const answer = await ask.call(orientationEvent());
       store(answer === 'granted' ? 'granted' : 'denied');
-    } catch { /* Not an answer. */ }
+    } catch { askFailed = true; /* Not an answer; the row says so. */ }
   }
   if (probe !== 'listening') probe = 'idle';
   startProbe();
@@ -129,10 +135,14 @@ export async function allowTilt(): Promise<TiltState> {
   return tiltState();
 }
 
+/** Whether the last tap's request to the browser threw, so the row can say the browser gave no answer. */
+export const tiltAskFailed = (): boolean => askFailed;
+
 /** For `useSyncExternalStore`: the device's answer, the probe, the preference and the motion setting changing. */
 export function subscribeTilt(onChange: () => void): () => void {
   listeners.add(onChange);
-  const off = subscribeMotion(onChange);
+  /* Motion turned back on is when a probe held back by reduced motion may start. */
+  const off = subscribeMotion(() => { startProbe(); onChange(); });
   return () => { listeners.delete(onChange); off(); };
 }
 
@@ -142,6 +152,7 @@ export function resetTilt(): void {
   probe = 'idle';
   watchers = 0;
   preference = 'off';
+  askFailed = false;
   listeners.clear();
 }
 

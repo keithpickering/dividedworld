@@ -5,6 +5,7 @@
 import { useEffect, useLayoutEffect, useState } from 'react';
 import type { KayfaApi, ScreenSettings } from '../../engine/ui/data/api.ts';
 import { applyAppearance } from '../../engine/ui/appearance.ts';
+import { setTiltPreference } from '../../engine/ui/shine/tilt.ts';
 import { KayfaProvider } from '../../engine/ui/context.tsx';
 import { QueueScreen } from '../../engine/ui/admin/Queue.tsx';
 import { BoardScreen } from '../../engine/ui/board/Board.tsx';
@@ -134,9 +135,10 @@ function Appearance({ api }: { readonly api: KayfaApi }) {
   useEffect(() => {
     /* The device's look first, on every change of account: the last account's never stands for the next. */
     applyAppearance(document, { theme: 'system', motion: 'system' }, instanceUi.themes, instanceUi.glass);
+    setTiltPreference('off');
     if (!session.account) return;
     let live = true;
-    void api.preferences().then((p) => { if (live) applyAppearance(document, p, instanceUi.themes, instanceUi.glass); }, () => { /* keep the device's choice */ });
+    void api.preferences().then((p) => { if (live) { applyAppearance(document, p, instanceUi.themes, instanceUi.glass); setTiltPreference(p.tilt); } }, () => { /* keep the device's choice */ });
     return () => { live = false; };
   }, [api, session.account]);
   return null;
