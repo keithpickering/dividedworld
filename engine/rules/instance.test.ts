@@ -101,7 +101,7 @@ const good: Instance = {
   boards: [{ slug: 'general', name: 'General', description: 'Anything.' }, { slug: 'the-system', name: 'The System', description: 'Its own.', system: true }],
   ranks: [{ name: 'Rookie', from: 0 }, { name: 'Regular', from: 100 }, { name: 'Legend', from: 1000 }],
   pipStyles: [{ key: 'default', name: 'Default', full: 'pip-full.svg', empty: 'pip-empty.svg' }],
-  copy: { turnsThreadTitle: 'Season {season}: Turns', revealTitle: 'Season {season}: The Reveal', revealBody: 'All of it.' },
+  copy: { announcementsThreadTitle: 'Season {season}: Promos' },
   system,
 };
 
@@ -333,9 +333,11 @@ test('deepFreeze reaches inside an object already frozen at the top, and survive
 });
 
 test('an instance says The System\'s words, each title naming its season', () => {
-  assert.match(instanceProblems({ ...good, copy: { ...good.copy, revealBody: ' ' } }).join('\n'), /no copy for revealBody/);
-  assert.match(instanceProblems({ ...good, copy: { ...good.copy, revealTitle: 'The Reveal' } }).join('\n'), /revealTitle does not say which season/);
-  assert.match(instanceProblems({ ...good, copy: undefined } as unknown as Instance).join('\n'), /no copy for turnsThreadTitle/);
+  assert.match(instanceProblems({ ...good, copy: { ...good.copy, announcementsThreadTitle: ' ' } }).join('\n'), /no copy for announcementsThreadTitle/);
+  assert.match(instanceProblems({ ...good, copy: { ...good.copy, announcementsThreadTitle: 'Promos' } }).join('\n'), /announcementsThreadTitle does not say which season/);
+  assert.match(instanceProblems({ ...good, copy: undefined } as unknown as Instance).join('\n'), /no copy for announcementsThreadTitle/);
+  // The old keys are gone: a copy that only has them lacks the new one.
+  assert.match(instanceProblems({ ...good, copy: { revealTitle: 'Season {season}', revealBody: 'x', turnsThreadTitle: 'S{season}' } } as unknown as Instance).join('\n'), /no copy for announcementsThreadTitle/);
 });
 
 /* ------------------------------------------------------------------------ The System's content ---- */

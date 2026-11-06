@@ -165,7 +165,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     return a;
   };
   const checked = [...input.reactions]
-    /* A reaction to one of The System's own Acts (a tally, the reveal) is no character's to be
+    /* A reaction to one of The System's own Acts (an old tally, the old reveal) is no character's to be
        paid for, and moves nobody's Aura, the reactor's included: no class is given it. */
     .filter((r) => r.at < window.to && !systemActs.has(r.act))
     .sort((a, b) => a.at - b.at || cmp(a.act, b.act) || cmp(a.player, b.player) || cmp(a.character, b.character) || cmp(a.kind, b.kind))
@@ -393,7 +393,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
         character: c.id,
         from: stretch.from,
         to: stretch.to,
-        // Posts alone: a card, a spin and a reveal (`unmask`) are the character's Acts, never its posts.
+        // Posts alone: a card, a spin, a reveal (`unmask`) and an announce are the character's Acts, never its posts.
         posts: inside((windowActsBy.get(c.id) ?? []).filter((a) => a.kind === 'post')).map((a) => ({ act: a.id, at: a.at })),
         received: inside(received.get(c.id)).sort(byTime),
         given: inside(given.get(c.id)).sort(byTime),

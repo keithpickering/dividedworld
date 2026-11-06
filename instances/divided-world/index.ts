@@ -13,17 +13,13 @@ import { system } from './system/index.ts';
 
 const boards = deepFreeze([
   { slug: 'general', name: 'General', description: 'Anything and everything. The System is watching.' },
-  // Only The System posts here: each night's tally, each season's reveal. The description is the owner's copy to give.
+  // Only the staff and The System post here: the Boss's arrivals and farewells, the characters' Promos. The description is the owner's copy to give.
   { slug: 'the-system', name: 'The System', description: 'What The System says. Reply by spinning a thread.', system: true },
 ]);
 
 /** The System's words, in its own voice. */
 const copy = deepFreeze({
-  // The Promos thread's title (0099 asks for it); Task 3 of the season end plan makes it the engine's one key and drops the three below.
   announcementsThreadTitle: 'Season {season}: Promos',
-  turnsThreadTitle: 'Season {season}: Who Turned',
-  revealTitle: 'Season {season}: The System Remembers Everything',
-  revealBody: 'Every mask, every class, every Turn, the quiet ones too. Who wore them, The System keeps to itself.',
 });
 
 /** A 2003 member rank from the settled season standing. The names are the owner's placeholders, and the thresholds are the owner's to set. */

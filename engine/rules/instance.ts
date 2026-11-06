@@ -272,10 +272,10 @@ export function instanceProblems(instance: Instance): string[] {
     if (typeof p.key !== 'string' || !/^[a-z][a-z0-9-]*$/.test(p.key)) out.push(`pip style key "${p.key}" is not lowercase words joined by hyphens`);
     for (const part of ['name', 'full', 'empty'] as const) if (typeof p[part] !== 'string' || p[part].trim() === '') out.push(`pip style "${p.key}" has no ${part}`);
   }
-  for (const key of ['turnsThreadTitle', 'revealTitle', 'revealBody'] as const) {
+  for (const key of ['announcementsThreadTitle'] as const) {
     const words = instance.copy?.[key];
     if (typeof words !== 'string' || words.trim() === '') out.push(`the instance has no copy for ${key}`);
-    else if (key !== 'revealBody' && !words.includes('{season}')) out.push(`the copy for ${key} does not say which season ({season})`);
+    else if (!words.includes('{season}')) out.push(`the copy for ${key} does not say which season ({season})`);
   }
   const settingsSay = settingsProblems(instance.settings);
   out.push(...settingsSay);

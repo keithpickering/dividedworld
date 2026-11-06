@@ -40,7 +40,7 @@ const instance: Instance = {
     settlementLength: { unit: 'day', count: 1 }, seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite', postMaxLength: 20000, titleMaxLength: 120, postsPerPage: 20, hotReplies: 10, cardSettings: {}, economy: { 'splat.price': 100 }, ...systemSettings,
   },
   ranks: [{ name: 'Rookie', from: 0 }], pipStyles: [{ key: 'default', name: 'Default', full: '●', empty: '○' }], boards: [{ slug: 'general', name: 'General', description: '' }],
-  copy: { turnsThreadTitle: 'S{season} Turns', revealTitle: 'S{season} Reveal', revealBody: 'All.' },
+  copy: { announcementsThreadTitle: 'S{season} Promos' },
 };
 
 const H = 3_600_000;
@@ -821,6 +821,21 @@ test('a reveal is an Act of its character like a card: its reactions are scored,
   const received = inputs.filter((i) => i.character === 'ann-quiet').flatMap((i) => i.received);
   assert.deepEqual(received.map((x) => [x.act, x.actKind]), [['u1', 'unmask']], 'a class reads a reveal\'s reactions, named as a reveal\'s');
   assert.deepEqual(inputs.filter((i) => i.character === 'ann-quiet').flatMap((i) => i.posts), [], 'a reveal is not a post');
+});
+
+test('an announce is an Act of its character like an unmask: its reactions are scored', () => {
+  const { rules, inputs } = recorder();
+  const b = base();
+  const announce: InputAct = { id: 'a1', character: 'ann-fan', kind: 'announce', at: FROM + 30 * 60_000, thread: 't1' };
+  const input: SettlementInput = { ...b, acts: [announce, ...b.acts], reactions: [react('a1', 'bob', 'bob-1', 'fire', FROM + 3 * H), ...b.reactions] };
+  const r = settle(input, instance);
+  assert.deepEqual(r.details.filter((d) => d.act === 'a1').map((d) => [d.reason, d.amount]), [['fan.love', 10]], 'its cheer pays its character\'s class');
+  settle({ ...input, acts: [{ ...announce, character: 'ann-quiet' }, ...b.acts] }, withClasses(rules));
+  const received = inputs.filter((i) => i.character === 'ann-quiet').flatMap((i) => i.received);
+  assert.deepEqual(received.map((x) => [x.act, x.actKind]), [['a1', 'announce']]);
+  assert.deepEqual(inputs.filter((i) => i.character === 'ann-quiet').flatMap((i) => i.posts), [], 'an announce is not a post');
+  // Not a System Act's reaction: nothing lists it in systemActs, so it moves its character's Aura.
+  assert.notDeepEqual(r.entries, settle({ ...input, reactions: b.reactions }, instance).entries);
 });
 
 /* ---- the shares: each entry split across the posts the live estimate valued ---- */

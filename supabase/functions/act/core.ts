@@ -65,8 +65,8 @@ const thread = (t: unknown): Broadcast[] => (t && typeof t === 'object' && (t as
 
 const announcement = (a: Row): Broadcast[] => {
   const told = a.announcement as Row | null | undefined;
-  // A drop announced with its class: the character's own unmask follows the tally (0028_loud_classes.sql).
-  return told ? [...thread(told.thread), ...act(told.act), ...act(told.unmask)] : [];
+  // A drop announced is one announce Act, after the Promos thread when this opened it (supabase/migrations/0100_announce.sql).
+  return told ? [...thread(told.thread), ...act(told.act)] : [];
 };
 
 /**
@@ -102,8 +102,8 @@ const BROADCASTS: Record<string, (answer: Row) => Broadcast[]> = {
   save_effect_state: (a) => (a.thread ? [{ topic: `thread:${a.thread}`, event: 'effect', payload: { play: a.play, saved_at: a.saved_at } }] : []),
   buy_card: () => [],
   // A player's own: a character appears on the next load of who is here, and an invite or an
-  // account is nobody else's to hear of. A drop announced is The System's tally of one, sent now
-  // with the Turns thread it opened, as the settlement sends a tally (0024_debuts.sql).
+  // account is nobody else's to hear of. A drop announced is the character's announce Act, sent now
+  // with the Promos thread it opened (0100_announce.sql).
   create_character: (a) => announcement(a),
   set_debut: (a) => announcement(a),
   create_invite: () => [],

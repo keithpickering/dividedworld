@@ -27,7 +27,7 @@ const settings: Settings = {
 const earn = () => [];
 const instance: Instance = {
   key: 'test', name: 'Test',
-  copy: { turnsThreadTitle: 'Turns {season}', revealTitle: 'Reveal {season}', revealBody: 'All.' },
+  copy: { announcementsThreadTitle: 'Promos {season}' },
   classes: [{ key: 'face', name: 'Face', earn }, { key: 'heel', name: 'Heel', earn }, { key: 'lurker', name: 'Lurker', earn }],
   cards: [],
   reactions: [
