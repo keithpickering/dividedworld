@@ -199,9 +199,10 @@ test('an instance exported and imported into a fresh database is the same instan
       kept := (write_staff_act('exp-boss', 'move', t, null, jsonb_build_object('kind', 'renameBoard', 'body', 'The System has spoken.', 'expires_at', now() + interval '2 days',
         'params', jsonb_build_object('board', gen, 'name', 'Exported Palace', 'premise', 'p', 'description', 'd'),
         'demand', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', gen, 'count', 2)))) ->> 'id')::uuid;
-      insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural, landed_act)
+      -- Its cause (0104): the Act that drew a move, carried across with the row.
+      insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural, landed_act, cause_act)
       select max(m.id), 'exp-boss', 'renameBoard', '{"board": "x", "name": "Exported Palace"}', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', gen, 'count', 2)), 'Because the toast was cold.',
-             now() - interval '1 day', now() + interval '2 days', true, kept from meetings m;
+             now() - interval '1 day', now() + interval '2 days', true, kept, p from meetings m;
       -- A Mod's order from that meeting (0101), and a visit by the Mod on the post with its open row (0103), one failed attempt to draw a visit and one to file it, so the
       -- tables the Mod Bots add are carried across with the Acts that name them. The order hands out nothing: an
       -- allowance left unspent here would be returned to the Boss's bank by e2e/0011's meeting, which counts the bank.

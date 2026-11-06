@@ -136,7 +136,7 @@ function capLength(text: string, most: number): string {
  * or at the length where none does. The sentence cut keeps at least a fifth of the room, so a long first sentence is not cut to a
  * stub when the length would keep more of what was said.
  */
-function cutAtSentence(text: string, most: number): string {
+export function cutAtSentence(text: string, most: number): string {
   const head = capLength(text, most);
   let end = -1;
   for (const m of head.matchAll(/[.!?]["')\]]*/g)) {
@@ -287,7 +287,7 @@ const clip = (s: string, n: number): string => {
   return line.length <= n ? line : `${capLength(line, n).trimEnd()}…`;
 };
 
-function memoryLines(memory: Memory | null, names: (id: string) => string): string[] {
+export function memoryLines(memory: Memory | null, names: (id: string) => string): string[] {
   if (memory === null) return [];
   const out = [`Your hobby: ${clip(memory.hobby.name, 80)}.`];
   for (const o of memory.opinions.slice(0, 8)) out.push(`Opinion of ${clip(names(o.character), 60)}: ${o.score}. ${clip(o.note, 120)}`);

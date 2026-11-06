@@ -130,6 +130,7 @@ async function load(db, dir, manifest) {
   select schedule_view_counts() where exists (select 1 from settings where key = 'viewCountCron');
   select schedule_meeting() where exists (select 1 from settings where key = 'meetingCron');
   select schedule_chatter() where exists (select 1 from settings where key = 'pool');
+  select schedule_staff() where exists (select 1 from settings where key = 'modBots');
   select schedule_system_tick() where exists (select 1 from settings where key = 'systemEnabled');
   commit;\n`);
   if (!exited) child.stdin.end();

@@ -41,7 +41,7 @@ content_path = "./supabase/templates/sign-up.html"
 # Every function turns the platform's JWT check off and authorizes in its own code
 # (docs/plans/2026-11-02-api-keys-design.md, section 2). That check takes the legacy keys only,
 # and Supabase's signing-keys guide says it breaks under the asymmetric session JWTs new projects
-# use. settle, meet, chatter and seed accept only the secret key named kayfabb_jobs, in apikey
+# use. settle, meet, chatter, staff and seed accept only the secret key named kayfabb_jobs, in apikey
 # (fromTheService, supabase/functions/_shared/serve.ts); act, avatar and estimate do nothing as
 # the service before whoami(), read with the caller's session, names an account; account calls
 # Auth with the publishable key, as any visitor may.
@@ -55,6 +55,9 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.chatter]
+verify_jwt = false
+
+[functions.staff]
 verify_jwt = false
 
 [functions.estimate]
