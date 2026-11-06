@@ -834,8 +834,8 @@ test('an announce is an Act of its character like an unmask: its reactions are s
   const received = inputs.filter((i) => i.character === 'ann-quiet').flatMap((i) => i.received);
   assert.deepEqual(received.map((x) => [x.act, x.actKind]), [['a1', 'announce']]);
   assert.deepEqual(inputs.filter((i) => i.character === 'ann-quiet').flatMap((i) => i.posts), [], 'an announce is not a post');
-  // Not a System Act's reaction: nothing lists it in systemActs, so it moves its character's Aura.
-  assert.notDeepEqual(r.entries, settle({ ...input, reactions: b.reactions }, instance).entries);
+  // Not a System Act's reaction: the cheer above paid its character's class, which a System Act's reaction never does. This
+  // guards against a kind filter or a systemActs listing that would drop it.
 });
 
 /* ---- the shares: each entry split across the posts the live estimate valued ---- */

@@ -336,7 +336,7 @@ test('an instance says The System\'s words, each title naming its season', () =>
   assert.match(instanceProblems({ ...good, copy: { ...good.copy, announcementsThreadTitle: ' ' } }).join('\n'), /no copy for announcementsThreadTitle/);
   assert.match(instanceProblems({ ...good, copy: { ...good.copy, announcementsThreadTitle: 'Promos' } }).join('\n'), /announcementsThreadTitle does not say which season/);
   assert.match(instanceProblems({ ...good, copy: undefined } as unknown as Instance).join('\n'), /no copy for announcementsThreadTitle/);
-  // The old keys are gone: a copy that only has them lacks the new one.
+  // A copy written before 0099 holds only the old keys, and so lacks the one now asked for (unknown keys are not refused).
   assert.match(instanceProblems({ ...good, copy: { revealTitle: 'Season {season}', revealBody: 'x', turnsThreadTitle: 'S{season}' } } as unknown as Instance).join('\n'), /no copy for announcementsThreadTitle/);
 });
 
