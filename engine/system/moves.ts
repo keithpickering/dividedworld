@@ -37,7 +37,7 @@ export type Office = 'boss' | 'mod';
 
 export interface MoveKind {
   readonly key: string;
-  /** The offices that may make it. The database refuses a move whose kind does not name the staff member's office (`move_kinds.offices`). */
+  /** The offices that may make it. The catalog names them and seeds them to `move_kinds.offices`; the queue's guard enforces them from the Mod Bots plan's Task 4. */
   readonly offices: readonly Office[];
   /** A structural move reshapes a board, or names a successor, and waits in the admin queue before it lands. */
   readonly structural: boolean;

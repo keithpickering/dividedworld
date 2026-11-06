@@ -262,6 +262,7 @@ declare
   ba uuid := pg_temp.board('rp-num-a');
   bb uuid := pg_temp.board('rp-num-b');
   m1 uuid; m2 uuid; h1 uuid; h2 uuid; n1 uuid;
+  hbase integer := (select count(*) from acts where kind = 'move' and payload ->> 'kind' = 'setRule' and payload #>> '{params,board}' is null);
 begin
   m1 := pg_temp.rule(ba, 'noAllCaps', null, 'minor');
   h1 := pg_temp.rule(null, 'noDoublePost', null, 'moderate');
@@ -270,14 +271,17 @@ begin
   h2 := pg_temp.rule(null, 'noNecropost', to_jsonb(30), 'minor');
   if (select number from rules_now where move_act = m1) <> 1 or (select number from rules_now where move_act = m2) <> 2 then raise exception 'board A''s rules are not numbered 1, 2 in landing order'; end if;
   if (select number from rules_now where move_act = n1) <> 1 then raise exception 'board B''s first rule is not number 1'; end if;
-  if (select number from rules_now where move_act = h1) <> 1 or (select number from rules_now where move_act = h2) <> 2 then raise exception 'the every-board rules are not numbered on their own'; end if;
+  if (select number from rules_now where move_act = h1) <> hbase + 1 or (select number from rules_now where move_act = h2) <> hbase + 2 then raise exception 'the every-board rules are not numbered on their own'; end if;
   if (select board from rules_now where move_act = h1) is not null then raise exception 'an every-board rule has a board'; end if;
   if (select staff from rules_now where move_act = m1) is distinct from 'rp-boss' then raise exception 'the rule does not name the staff member who made it'; end if;
   if (select (predicate, param, band) from rules_now where move_act = m2)::text is distinct from '(minLength,12,severe)' then raise exception 'rules_now read the params wrongly: %', (select (predicate, param, band) from rules_now where move_act = m2); end if;
   if (select param from rules_now where move_act = m1) is not null then raise exception 'a rule with no parameter has one: %', (select param from rules_now where move_act = m1); end if;
   perform end_move(m1, 'expired', 'test');
   if exists (select 1 from rules_now where move_act = m1) then raise exception 'an ended rule is still in force'; end if;
-  if (select number from rules_now where move_act = m2) <> 1 then raise exception 'board A''s remaining rule is not number 1 once the earlier one ended'; end if;
+  if (select number from rules_now where move_act = m2) <> 2 then raise exception 'an earlier rule ending renumbered board A''s remaining rule: %', (select number from rules_now where move_act = m2); end if;
+  perform end_move(h1, 'expired', 'test');
+  if (select number from rules_now where move_act = h2) <> hbase + 2 then raise exception 'an ended house rule renumbered the next'; end if;
+  if (select number from rules_now where move_act = pg_temp.rule(ba, 'noDoublePost')) <> 3 then raise exception 'a new rule on board A is not number 3, after one that ended'; end if;
   if exists (select 1 from rules_now where move_act in (select id from acts where kind = 'move' and payload ->> 'kind' = 'renameBoard')) then raise exception 'a rename is a rule'; end if;
   perform pg_temp.end_all();
 end $$;
@@ -296,6 +300,7 @@ begin
   if got is null or got !~ 'Toast' then raise exception 'requiring a banned word was allowed: %', got; end if;
   if rule_conflict(ba, 'requiredWord', to_jsonb('jam'::text)) is not null then raise exception 'requiring another word conflicted'; end if;
   if rule_conflict(bb, 'requiredWord', to_jsonb('toast'::text)) is not null then raise exception 'a word banned on board A conflicted on board B'; end if;
+  if rule_conflict(ba, 'bannedWord', to_jsonb('toast'::text)) is null then raise exception 'the same banned word in another case was allowed twice'; end if;
   if rule_conflict(null, 'requiredWord', to_jsonb('toast'::text)) is null then raise exception 'requiring on every board a word one board bans was allowed'; end if;
   perform pg_temp.end_all();
   perform pg_temp.rule(ba, 'requiredWord', to_jsonb('please'::text));
@@ -377,6 +382,7 @@ declare
   q bigint;
   mv uuid;
   line text;
+  house integer;
 begin
   -- Whatever section 7 left waiting lands first, and ends, so the numbers below are of this section's rules alone.
   perform system_tick();
@@ -392,11 +398,36 @@ begin
   if (select number from rules_now where move_act = mv) is distinct from 2 then raise exception 'the landed rule is not numbered 2'; end if;
   perform pg_temp.end_all();
   q := pg_temp.queue_rule(jsonb_build_object('board', null, 'predicate', 'minLength', 'param', 25, 'band', 'minor'));
+  house := (select count(*) from acts where kind = 'move' and payload ->> 'kind' = 'setRule' and payload #>> '{params,board}' is null) + 1;
   perform system_tick();
   mv := (select landed_act from queued_moves where id = q);
   line := (select payload ->> 'body' from acts where id = mv);
-  if line is distinct from 'On every board: House Rule 1: posts of at least 25 characters.' then raise exception 'the house rule''s landing line is "%"', line; end if;
+  if line is distinct from format('On every board: House Rule %s: posts of at least 25 characters.', house) then raise exception 'the house rule''s landing line is "%"', line; end if;
   -- A kind with no rule is said as ever.
   if system_line('moveLanded', 'renameBoard', jsonb_build_object('name', 'X'), 'rp-boss') is distinct from 'It is done: the renaming of a board to "X".' then raise exception 'a rename''s line changed'; end if;
+  perform pg_temp.end_all();
+end $$;
+
+-- ---- 9. Two conflicting rules may both wait, but not both land: the tick rechecks at landing, and the one that cannot lands never does ----
+do $$
+declare
+  ba uuid := pg_temp.board('rp-race');
+  q1 bigint;
+  q2 bigint;
+  landed integer;
+begin
+  perform system_tick();
+  perform pg_temp.end_all();
+  q1 := pg_temp.queue_rule(jsonb_build_object('board', ba, 'predicate', 'bannedWord', 'param', 'Toast', 'band', 'minor'));
+  q2 := pg_temp.queue_rule(jsonb_build_object('board', ba, 'predicate', 'requiredWord', 'param', 'toast', 'band', 'minor'));
+  perform system_tick();
+  if (select landed_act is null from queued_moves where id = q1) then raise exception 'the first of two conflicting rules did not land'; end if;
+  if (select landed_act is not null from queued_moves where id = q2) then raise exception 'both conflicting rules landed'; end if;
+  if (select failure !~ 'bans the word' or failed_at is null from queued_moves where id = q2) then raise exception 'the refused rule carries no reason: %', (select failure from queued_moves where id = q2); end if;
+  if (select count(*) from rules_now where board = ba) <> 1 then raise exception 'two rules in force'; end if;
+  -- A final refusal: a later tick does not try it again, and the reason stays as first written.
+  perform pg_sleep(0.01);
+  landed := (system_tick() ->> 'failed')::integer;
+  if landed <> 0 then raise exception 'the tick tried the refused rule again (% failed)', landed; end if;
   perform pg_temp.end_all();
 end $$;

@@ -202,7 +202,18 @@ begin
     'reactions', (select count(*) from reaction_kinds), 'cards', (select count(*) from card_kinds), 'boards', (select count(*) from boards));
 end $$;
 
+-- A queued rule the tick found, at landing, would leave no compliant post: refused for good, with the reason in `failure`. Unlike a
+-- failure that may pass (a missing thread), it is never tried again. It stays visible in the admin queue with its reason.
+alter table queued_moves add column refused_at timestamptz;
+-- The tick finds what is due by this alone (0046), and a refused row is not due.
+drop index queued_moves_due;
+create index queued_moves_due on queued_moves (go_live_at) where landed_act is null and held_at is null and refused_at is null;
+
 -- ---------------------------------------------------------------------------------------- indexes ----
+
+-- Every setRule Act by board (empty text: every board), oldest first: a rule's number is its place here, and a post is checked against
+-- only the rules in force, each numbered by one range count.
+create index acts_rules_by_board on acts ((coalesce(payload #>> '{params,board}', '')), created_at, id) where kind = 'move' and payload ->> 'kind' = 'setRule';
 
 -- A board's live titles, for noDuplicateTitle: one probe per new thread, by the title as the rule reads it (case and edge space ignored).
 create index threads_board_title on threads (board, lower(btrim(title)));
@@ -210,15 +221,19 @@ create index threads_board_title on threads (board, lower(btrim(title)));
 -- ---------------------------------------------------------------------------------------- rules_now ----
 
 -- The rules in force: each open `setRule` move with its board (null: every board), predicate, parameter (null: none), band, number, and
--- the staff member who made it. A rule is numbered among its board's rules in landing order ("Rule 2"); the every-board rules are
--- numbered on their own ("House Rule 2"). The number is of the rules in force, so it falls when an earlier rule ends.
+-- the staff member who made it. A rule is numbered among every rule that ever landed on its board, in landing order ("Rule 2"); the
+-- every-board rules are numbered on their own ("House Rule 2"). The number is stable: a rule ending never renumbers the rest, so
+-- "Rule 2" always names one rule.
 create view rules_now as
   select o.move_act,
          nullif(a.payload #>> '{params,board}', '')::uuid as board,
          a.payload #>> '{params,predicate}' as predicate,
          nullif(a.payload #> '{params,param}', 'null'::jsonb) as param,
          a.payload #>> '{params,band}' as band,
-         (row_number() over (partition by (a.payload #>> '{params,board}') order by o.landed_at, o.move_act))::integer as number,
+         (select count(*) from acts p
+          where p.kind = 'move' and p.payload ->> 'kind' = 'setRule'
+            and coalesce(p.payload #>> '{params,board}', '') = coalesce(a.payload #>> '{params,board}', '')
+            and (p.created_at, p.id) <= (a.created_at, a.id))::integer as number,
          c.staff as staff,
          o.landed_at,
          (a.payload ->> 'expires_at')::timestamptz as expires_at
@@ -284,7 +299,7 @@ begin
   for r in select * from rules_now x where rule_conflict.board is null or x.board is null or x.board = rule_conflict.board order by x.board nulls last, x.number loop
     theirs := r.param;
     where_ := case when r.board is null then 'a house rule' else 'Rule ' || r.number end;
-    if r.predicate = predicate and theirs is not distinct from mine then
+    if r.predicate = predicate and (theirs is not distinct from mine or (jsonb_typeof(theirs) = 'string' and jsonb_typeof(mine) = 'string' and lower(theirs #>> '{}') = lower(mine #>> '{}'))) then
       return format('%s already says that', where_);
     elsif r.predicate = 'bannedWord' and predicate = 'requiredWord' and lower(theirs #>> '{}') = lower(mine #>> '{}') then
       return format('%s bans the word "%s", which this rule would require', where_, theirs #>> '{}');
@@ -439,7 +454,7 @@ begin
       if rule_board is null then board_name := 'every board'; end if;
       select fill_tokens(x.plain, jsonb_build_object('param', coalesce(params #>> '{param}', ''))) into predicate_words from rule_predicates x where x.key = params ->> 'predicate';
       rule_words := case when rule_board is null then 'House Rule ' else 'Rule ' end
-        || ((select count(*) from rules_now r where r.board is not distinct from rule_board) + 1)::text
+        || ((select count(*) from acts p where p.kind = 'move' and p.payload ->> 'kind' = 'setRule' and coalesce(p.payload #>> '{params,board}', '') = coalesce(rule_board::text, '')) + 1)::text
         || ': ' || coalesce(predicate_words, 'a rule');
     end if;
   end if;
@@ -452,7 +467,8 @@ begin
   return fill_tokens(line, jsonb_build_object('boss', coalesce(boss_name, ''), 'board', board_name, 'move', words, 'rule', rule_words));
 end $$;
 
--- system_tick (0099), saying a landed setRule in its own stock line (`ruleSet`). Everything else as 0099 wrote it.
+-- system_tick (0099), saying a landed setRule in its own stock line (`ruleSet`) and refusing for good a rule that now conflicts with one in
+-- force. Everything else as 0099 wrote it.
 create or replace function system_tick() returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -465,6 +481,7 @@ declare
   inforce record;
   written uuid;
   why text;
+  clash text;
   ended_by text;
   counted jsonb;
   expires timestamptz;
@@ -485,9 +502,17 @@ begin
   -- 1. Landing: only while The System is on, and only where there is a thread to say it in.
   if enabled and ann is not null then
     for due in
-      select q.id, q.staff, q.kind, q.params, q.demand, q.expires_at, q.admin_description from queued_moves q where q.landed_act is null and q.held_at is null and q.go_live_at <= now() order by q.go_live_at, q.id for update skip locked
+      select q.id, q.staff, q.kind, q.params, q.demand, q.expires_at, q.admin_description from queued_moves q where q.landed_act is null and q.held_at is null and q.refused_at is null and q.go_live_at <= now() order by q.go_live_at, q.id for update skip locked
     loop
       begin
+        -- Two rules that conflict may have waited together; the one that lands second meets the first. It is refused for good, with the reason.
+        if due.kind = 'setRule' then
+          clash := rule_conflict(nullif(due.params ->> 'board', '')::uuid, due.params ->> 'predicate', nullif(due.params -> 'param', 'null'::jsonb));
+          if clash is not null then
+            update queued_moves set failed_at = now(), failure = left('that rule would leave no post that follows the rules: ' || clash, 500), refused_at = now() where id = due.id;
+            continue;
+          end if;
+        end if;
         written := (write_staff_act(due.staff, 'move', ann, null,
           jsonb_build_object('kind', due.kind, 'params', due.params, 'body', system_line(case when due.kind = 'setRule' then 'ruleSet' else 'moveLanded' end, due.kind, due.params, due.staff))
           || case when due.demand is not null then jsonb_build_object('demand', due.demand) else '{}'::jsonb end
