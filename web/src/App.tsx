@@ -32,8 +32,10 @@ import { instanceUi } from '../../instances/divided-world/ui/index.ts';
 
 /*
  * The glass screens, the admin queue and the vending machine load on first use, so the board's first script is the board's
- * (the forum-load plan, Task 15). Each glass route is drawn inside a Suspense whose fallback is nothing: the glass page's
- * own `main` is already on screen around it, empty until the screen lands.
+ * (the forum-load plan, Task 15). Each glass route is drawn inside a Suspense whose fallback is an empty block marked
+ * aria-busy: the glass page's own `main` is already on screen around it, and says it is loading until the screen lands, as a
+ * screen that reads its data does (My characters until the player is read). What lands can move the page (the roster scrolls
+ * to the chosen character), so nothing should read the empty page as the screen.
  */
 const SignInScreen = lazy(() => import('../../engine/ui/account/SignIn.tsx').then((m) => ({ default: m.SignInScreen })));
 const Characters = lazy(() => import('../../engine/ui/characters/Characters.tsx').then((m) => ({ default: m.Characters })));
@@ -194,7 +196,7 @@ function Shell({ routes }: { readonly routes: readonly Route[] }) {
   }
   const content = (
     <AccountGate>
-      <Suspense fallback={null}>
+      <Suspense fallback={<div aria-busy="true" />}>
         <Routes key={mountedFor.n} routes={routes} />
       </Suspense>
       {/* The first load of a board page after a settlement the device has not seen opens its summary (engine/ui/log/Settlement.tsx). */}

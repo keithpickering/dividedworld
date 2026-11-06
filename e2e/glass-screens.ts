@@ -230,6 +230,12 @@ export async function open(page: Page, s: Probe) {
     : page.getByRole('navigation', { name: 'Menu' }).or(page.getByRole('region', { name: 'Game HUD' })).or(page.getByRole('heading', { level: 1, name: 'While you were away' })).first();
   await expect(ready).toBeVisible();
   await s.then?.(page);
+  /*
+   * The screen is drawn, not only its frame: a glass screen loads on first use (web/src/App.tsx), and one that reads its data says
+   * so with aria-busy until it lands (My characters, until the player is read). What lands can move the page: the roster opens on
+   * the chosen character and scrolls it into view, 343px down at 200% text on a phone, under a measure that had already begun.
+   */
+  await expect(page.locator('[aria-busy="true"]')).toHaveCount(0);
   await page.evaluate(() => document.fonts.ready);
 }
 

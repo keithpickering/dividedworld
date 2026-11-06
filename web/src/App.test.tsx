@@ -14,6 +14,27 @@ import { fallbackSettings } from './data/settings.ts';
 beforeEach(() => { localStorage.clear(); sessionStorage.clear(); window.history.pushState(null, '', '/'); });
 afterEach(() => { vi.restoreAllMocks(); });
 
+/*
+ * A glass screen loads on first use, inside the glass page that is already drawn (its menu bar and smoke). Until it lands the page
+ * says it is loading: a reader is told, and nothing reads the empty page as the screen. First in this file, so the screen's chunk
+ * has not been loaded by an earlier test.
+ */
+test('a glass screen that has not landed yet leaves its page marked busy', async () => {
+  window.history.pushState(null, '', '/updates');
+  const fake = createFake({ instance, settings: fallbackSettings });
+  seedDemo(fake);
+  const bare: string[] = [];
+  const watch = new MutationObserver(() => {
+    const menu = document.querySelector('nav[aria-label="Menu"]');
+    if (menu && !document.querySelector('main h1') && !document.querySelector('[aria-busy="true"]')) bare.push(document.body.innerHTML.slice(0, 200));
+  });
+  watch.observe(document.body, { childList: true, subtree: true, attributes: true });
+  render(<App api={fake} />);
+  await screen.findByRole('heading', { level: 1, name: /Updates/u });
+  watch.disconnect();
+  expect(bare).toEqual([]);
+});
+
 test('the app runs on the demo world: the frame, the HUD with its character and orbs', async () => {
   const fake = createFake({ instance, settings: fallbackSettings });
   seedDemo(fake);
