@@ -300,7 +300,7 @@
 }
 
 /*
- * A play's actions, React, Spin thread, As it landed and Go to post: a two-by-two grid of equal tiles (board 28), the play's reaction chips
+ * A play's actions, React, Spin thread, As it landed and Go to post: a two-by-two grid of equal tiles (board 28), the play's reaction tiles
  * over it on a line of their own. The reactions' box and the actions' wrapper take no box of their own, so every tile is the grid's.
  */
 .kb-lens-row-foot {
@@ -314,9 +314,16 @@
   display: contents;
 }
 
-.kb-lens-row-foot .kb-chips {
+/* The play's reaction tiles (meta tiles, 36px) stand over the grid on a line of their own. */
+.kb-lens-row-foot .kb-reaction-list {
   grid-column: 1 / -1;
   margin: 0;
+}
+
+/* The React tile is one of the grid's four: it fills its cell and stands as tall as the kit tiles beside it, so the tiles stay equal. */
+.kb-lens-row-foot .kb-react-button {
+  height: auto;
+  min-height: 44px;
 }
 
 .kb-lens-actions {
@@ -329,7 +336,7 @@
 }
 
 /* An odd number of tiles leaves the last alone in its row: it spans both columns (Lens.tsx marks it). */
-.kb-lens-row-foot .kb-kit-tile[data-kb-span] {
+.kb-lens-row-foot [data-kb-span] {
   grid-column: 1 / -1;
 }
 

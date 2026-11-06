@@ -399,13 +399,13 @@ function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, mo
   const yours = play.caster !== null && characters.some((c) => c.id === play.caster);
   /* In a Lens a takeover hosts, the page is inert behind it: the spin form opens there, where it cannot be used. */
   const hosted = useLensHost() !== document.body;
-  /* The foot is a grid of two columns whose wrappers take no box (lens.css), so how many tiles it holds is read from the page: an odd last one spans both. */
+  /* The foot is a grid of two columns whose wrappers take no box (lens.css), so how many tiles it holds (the React meta tile among the kit tiles) is read from the page: an odd last one spans both. */
   const foot = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const el = foot.current;
     if (!el) return undefined;
     const count = () => {
-      const tiles = [...el.querySelectorAll<HTMLElement>('.kb-kit-tile')];
+      const tiles = [...el.querySelectorAll<HTMLElement>('.kb-react-button, .kb-kit-tile')];
       tiles.forEach((t, i) => {
         const span = tiles.length % 2 === 1 && i === tiles.length - 1;
         if (span !== t.hasAttribute('data-kb-span')) { if (span) t.setAttribute('data-kb-span', ''); else t.removeAttribute('data-kb-span'); }
@@ -425,7 +425,7 @@ function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, mo
       {more && <p className="kb-lens-more">More reactions than the post</p>}
       {yours && <p className="kb-lens-yours">Your play</p>}
       <div ref={foot} className="kb-lens-row-foot">
-        <Reactions act={play.id} author={play.caster} authorName={caster} subject={name} tallies={tallies} mine={mine} look="glass" pickerAt="button" />
+        <Reactions act={play.id} author={play.caster} authorName={caster} subject={name} tallies={tallies} mine={mine} pickerAt="button" />
         <div className="kb-lens-actions">
           {hosted
             ? <p className="kb-lens-note">Spin a thread from this play once you are free of the hold.</p>

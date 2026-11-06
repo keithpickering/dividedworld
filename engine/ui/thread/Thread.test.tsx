@@ -758,10 +758,10 @@ describe('live updates', () => {
     open(w);
     await screen.findByRole('article', { name: /^Post 3 /u });
     deliver(() => tapped().onTally?.(w.ids[2]!, { fire: 2 }));
-    await waitFor(() => expect(within(post(3)).getByText('Fire, 2')).toBeInTheDocument());
+    await waitFor(() => expect(within(post(3)).getByRole('button', { name: /^Fire, 2\./u })).toBeInTheDocument());
     deliver(() => tapped().onTally?.(w.ids[2]!, { fire: 1, tea: 1 }));
-    await waitFor(() => expect(within(post(3)).getByText('Tea, 1')).toBeInTheDocument());
-    expect(within(post(3)).getByText('Fire, 2')).toBeInTheDocument();
+    await waitFor(() => expect(within(post(3)).getByRole('button', { name: /^Tea, 1\./u })).toBeInTheDocument());
+    expect(within(post(3)).getByRole('button', { name: /^Fire, 2\./u })).toBeInTheDocument();
     expect(within(post(2)).queryByText(/^Fire, /u)).toBeNull();
   });
 

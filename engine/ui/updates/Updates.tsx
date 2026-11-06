@@ -75,7 +75,7 @@ function Post({ update }: { readonly update: Update }) {
   return (
     <UpdateArticle update={update}>
       <div className="kb-updates-acts">
-        <Reactions act={update.act} author={update.character} authorName={update.name} tallies={tallies} mine={mine} subject={`the update “${update.title}”`} look="glass" />
+        <Reactions act={update.act} author={update.character} authorName={update.name} tallies={tallies} mine={mine} subject={`the update “${update.title}”`} />
         <GlassButton aria-expanded={spinning} onClick={() => setSpinning(!spinning)}>Spin a thread on the board</GlassButton>
       </div>
       {spinning && (

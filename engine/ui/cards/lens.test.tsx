@@ -306,7 +306,9 @@ describe('what the Lens says and offers', () => {
     const picker = screen.getByRole('dialog', { name: 'React to Spritey\'s Card 2' });
     await userEvent.click(within(picker).getByRole('button', { name: 'Tea, Calm' }));
     await waitFor(() => expect(react).toHaveBeenCalledWith(theirs, w.pipe, 'tea'));
-    await waitFor(() => expect(within(lens()).getByText(/^Tea, 1/u)).toBeInTheDocument());
+    await waitFor(() => expect(within(lens()).getByRole('button', { name: /^Tea, 1/u })).toBeInTheDocument());
+    expect(lens().querySelector('.kb-reactions')).toHaveAttribute('data-kb-over-ink');
+    expect(lens().querySelector('[data-kb-look]')).toBeNull();
   });
 
   test('Esc closes a picker opened from the Lens first, and the Lens only the next time', async () => {
@@ -363,8 +365,10 @@ describe('what the Lens says and offers', () => {
     const controls = [...lens().querySelectorAll<HTMLElement>('.kb-lens-row :is(button, a)')];
     expect(controls.map((c) => c.textContent)).toEqual(expect.arrayContaining(['+ React', 'Spin thread', 'Go to post']));
     for (const c of controls) {
-      expect(c, c.textContent ?? '').toHaveClass('kb-kit-tile');
-      expect(c.querySelector(':scope > .kb-kit-tile-label'), `${c.textContent}'s words stand upright on the skew`).not.toBeNull();
+      /* React is the meta tile (glass/meta-tile.css), the others the kit's: both skew, both stand their words upright. */
+      const meta = c.classList.contains('kb-meta-tile');
+      expect(c, c.textContent ?? '').toHaveClass(meta ? 'kb-meta-tile' : 'kb-kit-tile');
+      expect(c.querySelector(meta ? ':scope > .kb-meta-tile-in' : ':scope > .kb-kit-tile-label'), `${c.textContent}'s words stand upright on the skew`).not.toBeNull();
     }
   });
 });
@@ -1096,7 +1100,7 @@ describe('the buttons, odd and even', () => {
     await userEvent.click(await markOf(2, 'Card 2'));
     await userEvent.click(whoButton());
     const foot = lens().querySelector<HTMLElement>('.kb-lens-row-foot')!;
-    const tiles = () => [...foot.querySelectorAll<HTMLElement>('.kb-kit-tile')];
+    const tiles = () => [...foot.querySelectorAll<HTMLElement>('.kb-react-button, .kb-kit-tile')];
     const spans = () => tiles().filter((t) => t.hasAttribute('data-kb-span'));
     expect(tiles()).toHaveLength(4);
     expect(spans()).toHaveLength(0);
@@ -1104,7 +1108,7 @@ describe('the buttons, odd and even', () => {
     await act(async () => { foot.querySelector('.kb-lens-actions > .kb-kit-tile:nth-child(2)')!.remove(); });
     expect(tiles()).toHaveLength(3);
     await waitFor(() => expect(spans()).toEqual([tiles()[2]]));
-    expect(ruleOf(".kb-lens-row-foot .kb-kit-tile[data-kb-span]")).toMatch(/grid-column:\s*1\s*\/\s*-1/u);
+    expect(ruleOf(".kb-lens-row-foot [data-kb-span]")).toMatch(/grid-column:\s*1\s*\/\s*-1/u);
   });
 });
 
@@ -1117,7 +1121,7 @@ describe('the buttons', () => {
     await userEvent.click(await markOf(2, 'Card 2'));
     await userEvent.click(whoButton());
     const foot = lens().querySelector<HTMLElement>('.kb-lens-row-foot')!;
-    const tiles = [...foot.querySelectorAll<HTMLElement>('.kb-kit-tile')];
+    const tiles = [...foot.querySelectorAll<HTMLElement>('.kb-react-button, .kb-kit-tile')];
     expect(tiles.map((t) => t.textContent?.trim())).toEqual(['+ React', 'Spin thread', 'As it landed', 'Go to post']);
     const grid = ruleOf('.kb-lens-row-foot');
     expect(grid).toMatch(/display:\s*grid/u);
@@ -1125,5 +1129,8 @@ describe('the buttons', () => {
     /* The wrappers around the tiles take no box, so each tile is a cell of the grid. */
     expect(ruleOf('.kb-lens-row-foot .kb-reactions')).toMatch(/display:\s*contents/u);
     expect(ruleOf('.kb-lens-actions')).toMatch(/display:\s*contents/u);
+    /* The React meta tile (36px) stands as tall as the kit tiles (44px), and the reaction tiles keep a line of their own over the grid. */
+    expect(ruleOf('.kb-lens-row-foot .kb-react-button')).toMatch(/min-height:\s*44px/u);
+    expect(ruleOf('.kb-lens-row-foot .kb-reaction-list')).toMatch(/grid-column:\s*1\s*\/\s*-1/u);
   });
 });

@@ -23,7 +23,8 @@ vi.mock('../player.tsx', async (original) => {
 });
 
 beforeEach(() => { landed.mockClear(); });
-afterEach(() => { vi.unstubAllGlobals(); });
+/* The HUD's chosen character is kept in the browser (player.tsx): a test that swaps it must not leave the choice for the next. */
+afterEach(() => { vi.unstubAllGlobals(); localStorage.clear(); });
 
 /** A phone's window, narrower than the popover's room, where the picker is the sheet (jsdom's own window is 1024px wide). */
 function onAPhone() {
@@ -61,42 +62,243 @@ const open = async () => {
 };
 
 describe('the chips', () => {
-  /* What the engine lifts over a card's ink is marked, so an effect starts no stroke on it (the Whoops! refinements design's section 5). */
-  test('the board\'s row is marked as lifted over ink, and the glass\'s is not', () => {
-    const w = world();
-    const board = show(w, w.theirs, w.spritey);
-    act(() => { board.tallies.merge(w.theirs, { fire: 1 }); });
-    expect(board.container.querySelector('.kb-reactions')).toHaveAttribute('data-kb-over-ink');
-    board.unmount();
-    const tallies = createTallies();
-    tallies.merge(w.theirs, { fire: 1 });
-    const glass = renderIn(w.fake, <Reactions act={w.theirs} author={w.spritey} authorName="Spritey" tallies={tallies} mine={createMine()} look="glass" />);
-    expect(glass.container.querySelector('.kb-reactions')).not.toBeNull();
-    expect(glass.container.querySelector('.kb-reactions')).not.toHaveAttribute('data-kb-over-ink');
+  /* The reactions are meta tiles (the meta acts design, sections 1, 5 and 6): buttons where the player can react, plain tiles where not. */
+  describe('as tiles', () => {
+    const tile = (name: string | RegExp) => screen.getByRole('button', { name });
+
+    test('on another player\'s post each shown kind is a button named by its count and the character it reacts as', async () => {
+      const w = world();
+      const v = show(w, w.theirs, w.spritey);
+      act(() => { v.tallies.merge(w.theirs, { fire: 2, tea: 1 }); });
+      await screen.findByRole('button', { name: 'React' });
+      const list = screen.getByRole('list', { name: 'Reactions' });
+      expect(list).toHaveClass('kb-reaction-list');
+      const fire = within(list).getByRole('button', { name: 'Fire, 2. React as Mrs. Hooligan' });
+      expect(fire).toHaveClass('kb-meta-tile', 'kb-reaction');
+      expect(fire).toHaveAttribute('data-kb-reaction', 'fire');
+      expect(fire.closest('li')).not.toBeNull();
+      expect(fire.querySelector('.kb-meta-tile-in')).toHaveAttribute('aria-hidden', 'true');
+      expect(within(list).getByRole('button', { name: 'Tea, 1. React as Mrs. Hooligan' })).toBeInTheDocument();
+      expect(within(list).queryByRole('button', { name: /Tomato/u })).toBeNull();
+    });
+
+    test('on the HUD character\'s own post they are no buttons, there is no React, and each is named in its hidden span', async () => {
+      const w = world();
+      const v = show(w, w.sibling, w.hooligan);
+      act(() => { v.tallies.merge(w.sibling, { fire: 2, tea: 1 }); v.mine.add({ act: w.sibling, kind: 'tea', character: w.pipe }); });
+      const list = await screen.findByRole('list', { name: 'Reactions' });
+      expect(within(list).queryAllByRole('button')).toHaveLength(0);
+      expect(screen.queryByRole('button', { name: 'React' })).toBeNull();
+      const fire = within(list).getByText('Fire, 2');
+      expect(fire).toHaveClass('kb-visually-hidden');
+      expect(fire.closest('.kb-reaction')!.tagName).toBe('SPAN');
+      expect(fire.closest('.kb-reaction')).toHaveAttribute('data-kb-reaction', 'fire');
+      expect(within(list).getByText('Tea, 1, including yours').closest('li')!.querySelector('.kb-reaction')).toHaveAttribute('data-kb-own', '');
+    });
+
+    test('your own kind is aria-disabled and named "including yours"; with the cap reached a free kind says so', async () => {
+      const w = world();
+      const v = show(w, w.theirs, w.spritey);
+      act(() => { v.tallies.merge(w.theirs, { fire: 2, tea: 1 }); v.mine.add({ act: w.theirs, kind: 'fire', character: w.pipe }); });
+      const own = await screen.findByRole('button', { name: 'Fire, 2, including yours' });
+      expect(own).toHaveAttribute('aria-disabled', 'true');
+      expect(own).toHaveAttribute('data-kb-own', '');
+      expect(tile('Tea, 1. React as Mrs. Hooligan')).not.toHaveAttribute('aria-disabled');
+      act(() => { v.mine.add({ act: w.theirs, kind: 'tomato', character: w.pipe }); v.mine.add({ act: w.theirs, kind: 'zzz', character: w.hooligan }); });
+      const capped = tile('Tea, 1. You have left all 3 of your reactions on this post');
+      expect(capped).toHaveAttribute('aria-disabled', 'true');
+      expect(capped).not.toHaveAttribute('data-kb-own');
+      expect(tile('Fire, 2, including yours')).toHaveAttribute('aria-disabled', 'true');
+    });
+
+    test('pressing a free tile reacts as the HUD character, raises its count, marks it yours, keeps focus and says so in the row', async () => {
+      const w = world();
+      const v = show(w, w.theirs, w.spritey);
+      /* Another player's fire is on the post already, as the server counts it: the press makes two. */
+      const fan = w.fake.seed.account('fan');
+      w.fake.seed.react(fan, w.fake.seed.character(fan, 'Fan', 'face'), w.theirs, 'fire');
+      act(() => { v.tallies.merge(w.theirs, { fire: 1 }); });
+      const react = vi.spyOn(w.fake, 'react');
+      await userEvent.click(await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' }));
+      const done = await screen.findByRole('button', { name: 'Fire, 2, including yours' });
+      expect(react).toHaveBeenCalledTimes(1);
+      expect(react).toHaveBeenCalledWith(w.theirs, w.hooligan, 'fire');
+      expect(v.mine.get(w.theirs)).toEqual([{ act: w.theirs, kind: 'fire', character: w.hooligan }]);
+      expect(done).toHaveAttribute('data-kb-own', '');
+      expect(done).toHaveAttribute('aria-disabled', 'true');
+      expect(done).toHaveFocus();
+      expect(screen.getByRole('status')).toHaveTextContent('Reacted with Fire as Mrs. Hooligan');
+      expect(screen.getByRole('status')).toHaveClass('kb-visually-hidden');
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(landed).toHaveBeenCalledTimes(1);
+    });
+
+    test('the status sentence is cleared when the HUD character changes', async () => {
+      const w = world();
+      const tallies = createTallies();
+      const Swap = () => { const p = usePlayer(); return <button type="button" onClick={() => p.setHudCharacter(w.pipe)}>Swap mask</button>; };
+      renderIn(w.fake, <><Reactions act={w.theirs} author={w.spritey} authorName="Spritey" tallies={tallies} mine={createMine()} /><Swap /></>);
+      act(() => { tallies.merge(w.theirs, { fire: 2 }); });
+      await userEvent.click(await screen.findByRole('button', { name: 'Fire, 2. React as Mrs. Hooligan' }));
+      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Reacted with Fire'));
+      await userEvent.click(screen.getByRole('button', { name: 'Swap mask' }));
+      await waitFor(() => expect(screen.getByRole('status')).toBeEmptyDOMElement());
+    });
+
+    test('pressing a disabled tile sends nothing', async () => {
+      const w = world();
+      const v = show(w, w.theirs, w.spritey);
+      act(() => { v.tallies.merge(w.theirs, { fire: 2 }); v.mine.add({ act: w.theirs, kind: 'fire', character: w.pipe }); });
+      const react = vi.spyOn(w.fake, 'react');
+      await userEvent.click(await screen.findByRole('button', { name: 'Fire, 2, including yours' }));
+      await new Promise((r) => setTimeout(r, 30));
+      expect(react).not.toHaveBeenCalled();
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    test('a refusal opens the picker with the refusal in its alert, and its Close returns focus to React', async () => {
+      const w = world();
+      const v = show(w, w.theirs, w.spritey);
+      act(() => { v.tallies.merge(w.theirs, { fire: 2 }); });
+      w.fake.react = async () => ({ ok: false as const, error: 'you have left 3 reactions here, the most there are' });
+      await userEvent.click(await screen.findByRole('button', { name: 'Fire, 2. React as Mrs. Hooligan' }));
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent('you have left 3 reactions here, the most there are');
+      expect(picker()).toContainElement(alert);
+      await userEvent.click(within(picker()).getByRole('button', { name: 'Close' }));
+      expect(screen.queryByRole('dialog')).toBeNull();
+      await waitFor(() => expect(screen.getByRole('button', { name: 'React' })).toHaveFocus());
+    });
+
+    test('a refusal that arrives after the HUD character changed opens no picker and says nothing', async () => {
+      const w = world();
+      const tallies = createTallies();
+      const Swap = () => { const p = usePlayer(); return <button type="button" onClick={() => p.setHudCharacter(w.pipe)}>Swap mask</button>; };
+      renderIn(w.fake, <><Reactions act={w.theirs} author={w.spritey} authorName="Spritey" tallies={tallies} mine={createMine()} /><Swap /></>);
+      act(() => { tallies.merge(w.theirs, { fire: 1 }); });
+      let release!: () => void;
+      const gate = new Promise<void>((r) => { release = r; });
+      w.fake.react = async () => { await gate; return { ok: false as const, error: 'too late to matter' }; };
+      await userEvent.click(await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Swap mask' }));
+      release();
+      await new Promise((r) => setTimeout(r, 50));
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+
+    test('a refusal clears the sentence of the reaction before it', async () => {
+      const w = world();
+      const v = show(w, w.theirs, w.spritey);
+      act(() => { v.tallies.merge(w.theirs, { fire: 1, tea: 1 }); });
+      await userEvent.click(await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' }));
+      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Reacted with Fire'));
+      w.fake.react = async () => ({ ok: false as const, error: 'no more for you' });
+      await userEvent.click(screen.getByRole('button', { name: 'Tea, 1. React as Mrs. Hooligan' }));
+      await screen.findByRole('alert');
+      expect(screen.getAllByRole('status').some((x) => /Reacted with/u.test(x.textContent ?? ''))).toBe(false);
+    });
+
+    test('a second press while one is in flight sends once, and the row is busy meanwhile', async () => {
+      const w = world();
+      const v = show(w, w.theirs, w.spritey);
+      const fan = w.fake.seed.account('fan');
+      w.fake.seed.react(fan, w.fake.seed.character(fan, 'Fan', 'face'), w.theirs, 'fire');
+      act(() => { v.tallies.merge(w.theirs, { fire: 1, tea: 1 }); });
+      const original = w.fake.react.bind(w.fake);
+      let release!: () => void;
+      const gate = new Promise<void>((r) => { release = r; });
+      const react = vi.fn(async (...a: Parameters<typeof original>) => { await gate; return original(...a); });
+      w.fake.react = react as typeof w.fake.react;
+      const fire = await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' });
+      await userEvent.click(fire);
+      await userEvent.click(screen.getByRole('button', { name: 'Tea, 1. React as Mrs. Hooligan' }));
+      expect(react).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('list', { name: 'Reactions' }).closest('.kb-reactions')).toHaveAttribute('aria-busy', 'true');
+      release();
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Fire, 2, including yours' })).toBeInTheDocument());
+      expect(screen.getByRole('list', { name: 'Reactions' }).closest('.kb-reactions')).not.toHaveAttribute('aria-busy');
+    });
+
+    test('the row is one tab stop: Tab reaches React first, arrows move without wrapping, Home and End go to the ends, and Tab back returns to the last one', async () => {
+      const w = world();
+      const v = show(w, w.theirs, w.spritey);
+      act(() => { v.tallies.merge(w.theirs, { fire: 2, tea: 1, zzz: 1 }); v.mine.add({ act: w.theirs, kind: 'tea', character: w.pipe }); });
+      await screen.findByRole('button', { name: 'React' });
+      await userEvent.tab();
+      expect(screen.getByRole('button', { name: 'React' })).toHaveFocus();
+      await userEvent.tab();
+      expect(document.body).toHaveFocus();
+      await userEvent.tab({ shift: true });
+      expect(screen.getByRole('button', { name: 'React' })).toHaveFocus();
+      await userEvent.keyboard('{ArrowRight}');
+      expect(screen.getByRole('button', { name: 'React' })).toHaveFocus();
+      await userEvent.keyboard('{ArrowLeft}');
+      const buttons = within(screen.getByRole('list', { name: 'Reactions' })).getAllByRole('button');
+      expect(buttons).toHaveLength(3);
+      expect(buttons[2]).toHaveFocus();
+      await userEvent.keyboard('{Home}');
+      /* Walking the row from its start reaches the disabled tile too. */
+      const reached: string[] = [];
+      for (let i = 0; i < 3; i++) {
+        if (i > 0) await userEvent.keyboard('{ArrowRight}');
+        if ((document.activeElement as HTMLElement).getAttribute('aria-disabled') === 'true') reached.push(document.activeElement!.getAttribute('data-kb-reaction')!);
+      }
+      expect(reached).toEqual(['tea']);
+      await userEvent.keyboard('{Home}');
+      expect(buttons[0]).toHaveFocus();
+      await userEvent.keyboard('{ArrowLeft}');
+      expect(buttons[0]).toHaveFocus();
+      await userEvent.keyboard('{End}');
+      expect(screen.getByRole('button', { name: 'React' })).toHaveFocus();
+      await userEvent.keyboard('{Home}{ArrowRight}');
+      expect(buttons[1]).toHaveFocus();
+      await userEvent.tab();
+      await userEvent.tab({ shift: true });
+      expect(buttons[1]).toHaveFocus();
+    });
+
+    test('the row carries data-kb-over-ink in a post, and nothing wears data-kb-look', async () => {
+      const w = world();
+      const v = show(w, w.theirs, w.spritey);
+      act(() => { v.tallies.merge(w.theirs, { fire: 1 }); });
+      expect(v.container.querySelector('.kb-reactions')).toHaveAttribute('data-kb-over-ink');
+      expect(v.container.querySelector('[data-kb-look]')).toBeNull();
+    });
+
+    test('React is a meta tile too, its plus hidden from its name', async () => {
+      const w = world();
+      show(w, w.theirs, w.spritey);
+      const react = await screen.findByRole('button', { name: 'React' });
+      expect(react).toHaveClass('kb-meta-tile', 'kb-reaction', 'kb-react-button');
+      expect(react.querySelector('.kb-meta-tile-in > span[aria-hidden="true"]')).toHaveTextContent('+');
+    });
   });
 
   test('show each kind with its count, and name the player\'s own as theirs', async () => {
     const w = world();
     const v = show(w, w.theirs, w.spritey);
+    await screen.findByRole('button', { name: 'React' });
     act(() => { v.tallies.merge(w.theirs, { fire: 2, tea: 1 }); v.mine.add({ act: w.theirs, kind: 'fire', character: w.pipe }); });
-    expect(screen.getByText('Fire, 2, including yours')).toBeInTheDocument();
-    expect(screen.getByText('Tea, 1')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Fire, 2, including yours' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tea, 1. React as Mrs. Hooligan' })).toBeInTheDocument();
     expect(screen.queryByText(/Tomato/u)).toBeNull();
-    const own = screen.getByText('Fire, 2, including yours').closest('li')!;
+    const own = screen.getByRole('button', { name: 'Fire, 2, including yours' });
     expect(own).toHaveAttribute('data-kb-own', '');
-    expect(screen.getByText('Tea, 1').closest('li')).not.toHaveAttribute('data-kb-own');
+    expect(screen.getByRole('button', { name: 'Tea, 1. React as Mrs. Hooligan' })).not.toHaveAttribute('data-kb-own');
   });
 
   test('converge when counts arrive twice or out of order: each kind keeps its largest', async () => {
     const w = world();
     const v = show(w, w.theirs, w.spritey);
+    await screen.findByRole('button', { name: 'React' });
     act(() => { v.tallies.merge(w.theirs, { fire: 3 }); });
     act(() => { v.tallies.merge(w.theirs, { fire: 2 }); });
     act(() => { v.tallies.merge(w.theirs, { fire: 3, tea: 1 }); });
     act(() => { v.tallies.merge(w.theirs, { fire: 3, tea: 1 }); });
     act(() => { v.tallies.merge(w.theirs, { tea: 0, fire: 1 }); });
-    expect(screen.getByText('Fire, 3')).toBeInTheDocument();
-    expect(screen.getByText('Tea, 1')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Fire, 3. React as Mrs. Hooligan' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tea, 1. React as Mrs. Hooligan' })).toBeInTheDocument();
   });
 
   test('make an emoji name of a key', () => {
@@ -324,7 +526,7 @@ describe('reacting', () => {
     const react = vi.spyOn(w.fake, 'react');
     const p = await open();
     await userEvent.click(p.getByRole('button', { name: 'Fire, Hype' }));
-    await waitFor(() => expect(screen.getByText('Fire, 1, including yours')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Fire, 1, including yours' })).toBeInTheDocument());
     expect(react).toHaveBeenCalledWith(w.theirs, w.hooligan, 'fire');
     expect(v.mine.get(w.theirs)).toEqual([{ act: w.theirs, kind: 'fire', character: w.hooligan }]);
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -361,7 +563,7 @@ describe('in a thread', () => {
     w.fake.seed.react(w.me, w.pipe, w.theirs, 'tea');
     w.fake.seed.react(w.other, w.spritey, w.mine, 'fire');
     renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}` });
-    expect(await screen.findByText('Tea, 1, including yours')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Tea, 1, including yours' })).toBeInTheDocument();
     const own = screen.getByRole('article', { name: /^Post 2 /u });
     expect(within(own).getByText('Fire, 1')).toBeInTheDocument();
     expect(within(own).queryByRole('button', { name: 'React' })).toBeNull();
@@ -431,7 +633,7 @@ describe('from the Task 6 quality review', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'React' })).toHaveFocus());
     act(() => screen.getByLabelText('before').focus());
     gate.release();
-    await waitFor(() => expect(screen.getByText('Fire, 1, including yours')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Fire, 1, including yours' })).toBeInTheDocument());
     expect(v.mine.get(w.theirs)).toHaveLength(1);
     expect(landed).toHaveBeenCalledTimes(1);
     expect(screen.getByLabelText('before')).toHaveFocus();

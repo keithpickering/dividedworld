@@ -33,6 +33,7 @@ import { GhostMark, ReachGhost, type ReachAt } from './PlayActions.tsx';
 import { MARKS_NARROW, MARKS_WIDE, backWords, kindsOf, markName, moreName, sumOf } from './marks.ts';
 import { inPlayOrder, isBack, markedPlays, shownPlays, usePlays, type Plays } from './plays.ts';
 import type { CardPlay } from './types.ts';
+import '../glass/meta-tile.css';
 import './marks.css';
 
 export { MARKS_NARROW, MARKS_WIDE, kindsOf };
@@ -112,12 +113,12 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
   return (
     <>
     <button
-      ref={button} type="button" className="kb-mark" data-kb-card={kind} data-kb-plays={plays.length} data-kb-alignment={back && !revealed ? undefined : rules?.alignment} data-kb-edge={progress === null ? undefined : 'true'}
+      ref={button} type="button" className="kb-mark kb-meta-tile" data-kb-card={kind} data-kb-plays={plays.length} data-kb-alignment={back && !revealed ? undefined : rules?.alignment} data-kb-edge={progress === null ? undefined : 'true'}
       data-kb-back={back ? (revealed ? 'sprung' : 'down') : undefined} data-kb-caught={caught ? 'true' : undefined}
       aria-label={markName({ card: name, plays: plays.length, state: back ? '' : view.state, more, yours: view.yours, where })} aria-haspopup="dialog" aria-expanded={expanded} aria-describedby={callout ?? undefined}
       style={style} onClick={(e) => onOpen(kind, e.currentTarget)}
     >
-      <span className="kb-mark-in" aria-hidden="true">
+      <span className="kb-meta-tile-in" aria-hidden="true">
         {back && !revealed ? <span className="kb-card-back" /> : icon ? <img className="kb-mark-icon" src={icon} alt="" draggable={false} /> : <span className="kb-mark-swatch" />}
         {ownArt && (ownArt.mark ?? ownArt.image) && <img className="kb-mark-face" src={ownArt.mark ?? ownArt.image} alt="" draggable={false} data-kb-face={ownFace} />}
         {plays.length > 1 && <span className="kb-mark-count">×{plays.length}</span>}
@@ -135,10 +136,10 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
 function More({ hidden, first, expanded, onOpen }: { readonly hidden: number; readonly first: string; readonly expanded: boolean; readonly onOpen: Open }) {
   return (
     <button
-      type="button" className="kb-mark kb-mark-more" aria-label={moreName(hidden)} aria-haspopup="dialog" aria-expanded={expanded}
+      type="button" className="kb-mark kb-meta-tile kb-mark-more" aria-label={moreName(hidden)} aria-haspopup="dialog" aria-expanded={expanded}
       onClick={(e) => onOpen(first, e.currentTarget)}
     >
-      <span className="kb-mark-in" aria-hidden="true"><span className="kb-mark-count">+{hidden}</span></span>
+      <span className="kb-meta-tile-in" aria-hidden="true"><span className="kb-mark-count">+{hidden}</span></span>
     </button>
   );
 }
