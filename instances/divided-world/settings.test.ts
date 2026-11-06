@@ -98,6 +98,7 @@ test('the system settings are the plan\'s numbers, and the System ships switched
   assert.equal(defaults.boardNameMaxLength, 60);
   assert.equal(defaults.demandCheckMinutes, 5);
   assert.equal(defaults.demandChecksPerTick, 40);
+  assert.deepEqual(defaults.modBots, { allowanceMost: 3, ruleDaysMost: 7, visitHours: { least: 2, most: 12 }, patrolsPerDay: 6, patrolSample: 5, reportPrice: 25, reportsPerDay: 3, judgmentsPerDay: 60, filingLinesPerDay: 60, appealPrice: 50, tailHours: 24, cap: { punishments: 3, days: 7 }, filingCron: '*/5 * * * *', filingGraceMinutes: 10 });
   assert.deepEqual(defaults.modelTiers, { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' });
   assert.ok(Object.isFrozen(defaults.phases) && Object.isFrozen(defaults.phases.reign) && Object.isFrozen(defaults.modelTiers));
 });

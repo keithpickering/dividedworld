@@ -45,7 +45,8 @@ export function instanceSeed(instance: Instance) {
     system: {
       staff: [
         // Every persona alike; seed_instance (0082) debuts the first Boss and the first staff and leaves the rest waiting.
-        ...instance.system.roster.map((p) => ({ key: p.key, name: p.name, title: p.title, signature: p.signature })),
+        // `beats` are the slugs of the kinds of board a persona likes to watch (0101): beat_of falls back to them for a board no Mod's order names.
+        ...instance.system.roster.map((p) => ({ key: p.key, name: p.name, title: p.title, signature: p.signature, beats: [...p.beats] })),
       ],
       firstStaff: [...instance.system.firstStaff],
       // The member group every staff character is in, named by the instance.

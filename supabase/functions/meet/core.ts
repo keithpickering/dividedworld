@@ -43,8 +43,10 @@ import {
   repairAnswer,
   ruleSchema,
   type InheritedMove,
+  type ModFacts,
   type PlannedMove,
 } from '../../../engine/system/meeting.ts';
+import type { RuleInForce } from '../../../engine/rules/predicates.ts';
 import type { Models } from '../../../engine/system/model.ts';
 import { phaseAt } from '../../../engine/system/phases.ts';
 import { type Trim } from '../../../engine/system/validate.ts';
@@ -89,6 +91,10 @@ interface Context {
   readonly successors?: readonly string[];
   /** The moves of an earlier Boss, still in force and shaping a board, that this Boss has neither kept nor ended (0051); absent from an older database. */
   readonly inheritanceDue?: readonly InheritedMove[];
+  /** The Mod Bots on staff (0101): each one's latest order, and the allowance it has not spent (which returns to the Boss's bank before the meeting counts it). Absent from an older database. */
+  readonly mods?: readonly { readonly key: string; readonly allowance: number; readonly granted: number | null; readonly boards: readonly string[]; readonly order: string | null }[];
+  /** The rules in force (0101), so a rule that would leave no compliant post is dropped here; absent from an older database. */
+  readonly rules?: readonly RuleInForce[];
 }
 
 /** How long one feed may take: outside material is a garnish, not a dependency. */
@@ -175,7 +181,37 @@ export async function runMeeting(
       most: settings.pool.notesRead,
     });
 
-    const bank = await db.rpc<number>('bank_now', { staff: bossKey, weekly_moves: phase.numbers.weeklyMoves, bank_cap: phase.numbers.bankCap });
+    const bankNow = await db.rpc<number>('bank_now', { staff: bossKey, weekly_moves: phase.numbers.weeklyMoves, bank_cap: phase.numbers.bankCap });
+
+    // The Mods on staff. What they did not spend goes back to the Boss's bank when the meeting is applied, before the bank is read, never above the cap: the
+    // prompt and the repair work from that bank, so what the Boss is told it holds is what the database will hold.
+    const staffMods = context.mods ?? [];
+    const bank = Math.min(phase.numbers.bankCap, bankNow + staffMods.reduce((n, m) => n + m.allowance, 0));
+    const boardNames = new Map(context.boards.map((b) => [b.id, b.name]));
+    const mods: ModFacts[] = [];
+    for (const m of staffMods) {
+      const persona = tuned.system.roster.find((p) => p.key === m.key);
+      const modMemory = await db.rpc<Memory | null>('staff_memory_latest', { staff: m.key });
+      const modMemoryAt = modMemory ? await db.rpc<string | null>('staff_memory_at', { staff: m.key }) : null;
+      mods.push({
+        key: m.key,
+        name: persona?.name ?? m.key,
+        temperament: persona?.temperament ?? '',
+        beats: persona?.beats ?? [],
+        petRules: persona?.petRules ?? [],
+        career: await db.rpc<Career>('staff_career', { of_staff: m.key }),
+        notes: await db.rpc<string[]>('staff_notes_recent', {
+          of_staff: m.key,
+          since: modMemoryAt ? new Date(Date.parse(modMemoryAt)).toISOString() : null,
+          most: settings.pool.notesRead,
+        }),
+        memory: modMemory,
+        granted: m.granted,
+        unspent: m.allowance,
+        boards: m.boards.filter((id) => boardNames.has(id)).map((id) => ({ id, name: boardNames.get(id)! })),
+        order: m.order,
+      });
+    }
 
     const { titles, skipped } = await readFeeds(tuned.system.feeds, fetchFeed);
 
@@ -187,6 +223,9 @@ export async function runMeeting(
       settings,
       phase,
       bank,
+      mods,
+      // A name for a character a memory mentions: the digest's own names, and 'someone' for any other.
+      characterName: (id) => digest.characters.find((c) => c.id === id)?.name ?? 'someone',
       successorAllowed,
       career,
       notes: bossNotes,
@@ -238,6 +277,8 @@ export async function runMeeting(
       boss: bossKey,
       phase,
       bank,
+      mods: new Set(mods.map((m) => m.key)),
+      rules: context.rules ?? [],
       now,
       boards: new Set(context.boards.map((b) => b.id)),
       // The threads the model was shown (the reference list is bounded), the only ones a demand may name.
@@ -264,6 +305,8 @@ export async function runMeeting(
       feedsSkipped: skipped,
       inherited: repaired.inherited,
       successor: repaired.successor,
+      // The patrols the Boss scheduled for the Mods: kept on the record for the patrol run (Task 11).
+      patrols: repaired.patrols,
     };
     const applied = await db.rpc<{ status: 'applied' | 'already applied'; queued?: number; bank_before?: number; bank_after?: number }>('apply_meeting', {
       meeting,
@@ -282,6 +325,8 @@ export async function runMeeting(
         // The handover's two answers (the database acts on them: a nomination is queued, each inherited move kept or ended, none at the bank's cost).
         successor: repaired.successor,
         inherited: repaired.inherited,
+        // The Mods' orders: each with its beat, its line, its allowance (out of the Boss's bank, which the database charges) and its new memory.
+        orders: repaired.orders.map((o) => ({ mod: o.mod, boards: o.boards, order: o.order, allowance: o.allowance, ...(o.memory ? { memory: o.memory } : {}) })),
         // The database computes the bank itself, in the transaction, from these numbers, so a delayed apply debits the true balance.
         weekly_moves: phase.numbers.weeklyMoves,
         bank_cap: phase.numbers.bankCap,

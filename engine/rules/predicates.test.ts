@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PREDICATES, predicate, predicateProblems } from './predicates.ts';
+import { PREDICATES, predicate, predicateProblems, ruleConflict, type RuleInForce } from './predicates.ts';
 import { BBCODE_TAGS } from '../bbcode/parse.ts';
 
 const keys = ['minLength', 'maxLength', 'noAllCaps', 'noDoublePost', 'noNecropost', 'noDuplicateTitle', 'bannedWord', 'requiredWord', 'noTag', 'repliesOnly'];
@@ -68,4 +68,24 @@ test('every predicate says itself in plain words with nothing unfilled', () => {
   assert.equal(predicate('noDoublePost')!.plain(null), 'no double posting');
   assert.match(predicate('minLength')!.plain(5), /5/);
   assert.match(predicate('bannedWord')!.plain('toast'), /toast/);
+});
+
+const B1 = '11111111-1111-4111-8111-111111111111';
+const B2 = '22222222-2222-4222-8222-222222222222';
+const inForce = (board: string | null, predicate: string, param: unknown, number = 1): RuleInForce => ({ board, predicate, param, number });
+
+test('ruleConflict mirrors the database: the same pairs on the boards they share, and nothing else', () => {
+  assert.equal(ruleConflict([], B1, 'bannedWord', 'toast'), null);
+  assert.match(ruleConflict([inForce(B1, 'bannedWord', 'Toast', 2)], B1, 'requiredWord', 'toast')!, /Rule 2 bans the word "Toast", which this rule would require/);
+  assert.match(ruleConflict([inForce(B1, 'requiredWord', 'toast')], B1, 'bannedWord', 'TOAST')!, /requires the word/);
+  assert.match(ruleConflict([inForce(B1, 'maxLength', 100)], B1, 'minLength', 101)!, /allows at most 100/);
+  assert.equal(ruleConflict([inForce(B1, 'maxLength', 100)], B1, 'minLength', 100), null);
+  assert.match(ruleConflict([inForce(B1, 'minLength', 50)], B1, 'maxLength', 49)!, /requires at least 50/);
+  assert.match(ruleConflict([inForce(B1, 'noAllCaps', null, 3)], B1, 'noAllCaps', null)!, /Rule 3 already says that/);
+  assert.match(ruleConflict([inForce(B1, 'bannedWord', 'Toast')], B1, 'bannedWord', 'toast')!, /already says that/);
+  // A rule on another board does not meet this one; a house rule meets every board's; a board's rule and a house rule may both say it.
+  assert.equal(ruleConflict([inForce(B2, 'bannedWord', 'toast')], B1, 'requiredWord', 'toast'), null);
+  assert.match(ruleConflict([inForce(null, 'bannedWord', 'toast', 4)], B1, 'requiredWord', 'toast')!, /a house rule bans/);
+  assert.equal(ruleConflict([inForce(null, 'noAllCaps', null)], B1, 'noAllCaps', null), null);
+  assert.match(ruleConflict([inForce(B2, 'bannedWord', 'toast')], null, 'requiredWord', 'toast')!, /Rule 1 bans/);
 });

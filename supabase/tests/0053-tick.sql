@@ -308,7 +308,10 @@ declare
 begin
   insert into characters (name, staff, staff_kind, debuted_at) values ('Tk Retired Boss', 'tk-boss-retired', 'persona', now());
   update characters set retired_at = now() where staff = 'tk-boss-retired';
+  -- It was the Boss when it queued the move (the queue refuses a move from anyone who holds no office that makes it), and retired since.
+  update seasons set boss = 'tk-boss-retired' where ends_at is null;
   bad := pg_temp.queued('Bad Boss Bay', now() - interval '2 hours', false, 'tk-boss-retired');
+  update seasons set boss = 'tk-boss' where ends_at is null;
   good := pg_temp.queued('Good Boss Bay', now() - interval '1 hour');
   ran := system_tick();
   if (ran ->> 'landed')::integer <> 1 or (ran ->> 'failed')::integer <> 1 then raise exception 'the tick counted %', ran; end if;

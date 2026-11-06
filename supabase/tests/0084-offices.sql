@@ -325,15 +325,15 @@ declare
   said text;
 begin
   perform pg_temp.admin_sets('of-w3', 'benched');
-  said := pg_temp.refused('select pg_temp.queue_nomination(''of-mod'', ''of-w3'')');
+  said := pg_temp.refused('select pg_temp.queue_nomination(pg_temp.boss(), ''of-w3'')');
   if said is null or said !~ 'roster' then raise exception 'a benched persona was nominated: %', said; end if;
-  q := pg_temp.queue_nomination('of-mod', 'of-w1');
+  q := pg_temp.queue_nomination(pg_temp.boss(), 'of-w1');
   perform tests.become(admin);
   said := pg_temp.refused(format('select replace_successor(%s, ''of-w3'')', q));
   perform tests.unbecome();
   if said is null or said !~ 'roster' then raise exception 'a benched persona replaced a successor: %', said; end if;
   update characters set retired_at = now() where staff = 'of-w4';
-  said := pg_temp.refused('select pg_temp.queue_nomination(''of-mod'', ''of-w4'')');
+  said := pg_temp.refused('select pg_temp.queue_nomination(pg_temp.boss(), ''of-w4'')');
   if said is null or said !~ 'roster' then raise exception 'a retired persona was nominated: %', said; end if;
   perform tests.become(admin);
   said := pg_temp.refused(format('select replace_successor(%s, ''of-w4'')', q));

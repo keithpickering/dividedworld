@@ -32,6 +32,8 @@ const ctx = (): RepairContext => ({
   isPublic: (id) => id === ANN || id === BOB,
   successorAllowed: false,
   successors: new Set(['some-boss']),
+  mods: new Set(),
+  rules: [],
 });
 const move = (demand: unknown) => ({
   kind: 'renameBoard',
@@ -114,7 +116,7 @@ test('the inheritance section is in plain words, says reviewing is free and what
 
 test('the system prompt carries the Boss\'s career as plain facts, and says so when there is none', () => {
   const facts = {
-    boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: false, roster: [], notes: [],
+    boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [],
   };
   const served = meetingSystemPrompt({ ...facts, career: { led: [{ season: 3, since: '2026-04-01T00:00:00+00:00', until: null, how: 'nomination' }], offices: [] } });
   assert.ok(served.includes('Your career, as plain facts'), served);
@@ -124,7 +126,7 @@ test('the system prompt carries the Boss\'s career as plain facts, and says so w
 
 test('the Boss\'s recent notes are in the prompt as its own thoughts, capped at notesRead with the newest kept, and the section is absent when there are none', () => {
   const facts = {
-    boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: false, roster: [],
+    boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [],
     career: { led: [], offices: [] },
   };
   const notes = Array.from({ length: settings.pool.notesRead + 3 }, (_, i) => `thought number ${i + 1}`);
@@ -149,7 +151,7 @@ test('the rule\'s schema lists description among the rename\'s params, and the p
   const params = schema.properties.moves.items.properties.params;
   assert.ok('description' in params.properties, JSON.stringify(Object.keys(params.properties)));
   assert.ok(!params.required.includes('description'), 'optional: a Boss that gives none gets the stock line');
-  const prompt = meetingSystemPrompt({ boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] } });
+  const prompt = meetingSystemPrompt({ boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] } });
   const rename = prompt
     .split('\n').find((l) => l.startsWith('- renameBoard'))!;
   assert.match(rename, /description \(text\)/);
@@ -193,7 +195,148 @@ test('a setRule on a board outside the meeting\'s list, or with a param its pred
 });
 
 test('the prompt lists the predicates a rule may use', () => {
-  const text = meetingSystemPrompt({ boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] } });
+  const text = meetingSystemPrompt({ boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] } });
   assert.match(text, /setRule: set a rule/);
   for (const key of ['minLength', 'noDoublePost', 'repliesOnly']) assert.ok(text.includes(key), key);
+});
+
+/* ------------------------------------------------------------------ orders, patrols and the Mods' memory (Mod Bots plan, Task 4) ---- */
+
+const M1 = 'mod-one';
+const M2 = 'mod-two';
+const M3 = 'mod-three';
+const B2 = '55555555-5555-4555-8555-555555555555';
+const B3 = '66666666-6666-4666-8666-666666666666';
+const modCtx = (extra: Partial<RepairContext> = {}): RepairContext => ({ ...ctx(), mods: new Set([M1, M2, M3]), boards: new Set([BOARD, B2, B3]), ...extra });
+const order = (mod: string, boards: string[], allowance: number, extra: Record<string, unknown> = {}) => ({ mod, boards, order: `Watch ${mod}'s boards.`, allowance, ...extra });
+const withOrders = (orders: unknown[], extra: Record<string, unknown> = {}) => ({ ...answer(null), moves: [], orders, ...extra });
+const memoryOf = (hobby: string, extra: Record<string, unknown> = {}) => ({ hobby: { name: hobby, since: '2026-11-01', from: 'Ann' }, opinions: [], grudges: [], wheelhouse: [], realWorld: [], marks: [], ...extra });
+
+test('an order for a key not on staff is dropped and recorded; the orders of the Mods on staff are kept', () => {
+  const r = repairAnswer(withOrders([order(M1, [BOARD], 1), order('nobody', [B2], 1)]), modCtx());
+  assert.ok(r.ok);
+  assert.deepEqual(r.orders.map((o) => o.mod), [M1]);
+  assert.ok(r.trims.some((t) => t.path === 'orders[1].mod' && t.predicate === 'modOnStaff'), JSON.stringify(r.trims));
+  const twice = repairAnswer(withOrders([order(M1, [BOARD], 1), order(M1, [B2], 2)]), modCtx());
+  assert.ok(twice.ok && twice.orders.length === 1 && twice.orders[0]!.boards[0] === BOARD);
+  assert.ok(twice.ok && twice.trims.some((t) => t.path === 'orders[1].mod' && t.predicate === 'uniqueMod'));
+});
+
+test('a board that is not a board is dropped from an order, and a board named in two orders stays with the first', () => {
+  const r = repairAnswer(withOrders([order(M1, [BOARD, OTHER_BOARD, B2], 0), order(M2, [B2, B3, B3], 0)]), modCtx());
+  assert.ok(r.ok);
+  assert.deepEqual(r.orders.map((o) => o.boards), [[BOARD, B2], [B3]]);
+  assert.ok(r.trims.some((t) => t.path === 'orders[0].boards[1]' && t.predicate === 'isBoard'), JSON.stringify(r.trims));
+  assert.ok(r.trims.some((t) => t.path === 'orders[1].boards[0]' && t.predicate === 'uniqueBoard'));
+  assert.ok(r.trims.some((t) => t.path === 'orders[1].boards[2]' && t.predicate === 'uniqueBoard'), 'a board named twice in one order is once');
+  // A board named by an order dropped for its key is not claimed.
+  const free = repairAnswer(withOrders([order('nobody', [BOARD], 1), order(M1, [BOARD], 0)]), modCtx());
+  assert.ok(free.ok && free.orders[0]!.boards[0] === BOARD);
+});
+
+test('an allowance is made whole and clamped to allowanceMost with a trim, never rejected', () => {
+  const r = repairAnswer(withOrders([order(M1, [], 9), order(M2, [], 1.7), order(M3, [], -2)]), modCtx({ bank: 20 }));
+  assert.ok(r.ok);
+  assert.deepEqual(r.orders.map((o) => o.allowance), [3, 1, 0]);
+  assert.ok(r.trims.some((t) => t.path === 'orders[0].allowance' && t.predicate === 'atMost(3)' && t.before === 9 && t.after === 3), JSON.stringify(r.trims));
+  assert.ok(r.trims.some((t) => t.path === 'orders[1].allowance' && t.predicate === 'wholeNumberAtLeast(0)' && t.before === 1.7 && t.after === 1));
+  assert.ok(r.trims.some((t) => t.path === 'orders[2].allowance' && t.before === -2 && t.after === 0));
+});
+
+test('the allowances together are cut from the last order backward to what the bank holds after the Boss\'s own moves', () => {
+  const rename = (i: number) => ({ ...move({ kind: 'postsOnBoard', params: { board: BOARD, count: 5 } }), params: { board: BOARD, name: `Pirate Puns Palace ${'Q'.repeat(i)}`, premise: 'x' } });
+  // A bank of 5 less one move leaves 4 for three orders asking 3 + 2 + 3.
+  const r = repairAnswer(withOrders([order(M1, [], 3), order(M2, [], 2), order(M3, [], 3)], { moves: [rename(0)] }), modCtx({ bank: 5 }));
+  assert.ok(r.ok);
+  assert.equal(r.moves.length, 1);
+  assert.deepEqual(r.orders.map((o) => o.allowance), [3, 1, 0]);
+  assert.ok(r.trims.some((t) => t.path === 'orders[2].allowance' && t.predicate === 'withinBank' && t.before === 3 && t.after === 0), JSON.stringify(r.trims));
+  assert.ok(r.trims.some((t) => t.path === 'orders[1].allowance' && t.predicate === 'withinBank' && t.before === 2 && t.after === 1));
+  assert.ok(!r.trims.some((t) => t.path === 'orders[0].allowance' && t.predicate === 'withinBank'), 'the first order is not touched while the later ones can pay');
+  // The Boss's own moves come first: a bank of 1 and a move leaves nothing to hand out.
+  const none = repairAnswer(withOrders([order(M1, [], 2)], { moves: [rename(0)] }), modCtx({ bank: 1.9 }));
+  assert.ok(none.ok && none.moves.length === 1 && none.orders[0]!.allowance === 0);
+});
+
+test('an order may carry a new memory, repaired as the Boss\'s is (a character not public dropped, recorded under the order); one without leaves the Mod\'s memory alone', () => {
+  const r = repairAnswer(withOrders([
+    order(M1, [BOARD], 1, { memory: memoryOf('crosswords', { opinions: [{ character: ANN, score: 9, note: 'Fair.' }, { character: HIDDEN, score: 1, note: 'Who?' }] }) }),
+    order(M2, [B2], 1),
+  ]), modCtx());
+  assert.ok(r.ok);
+  assert.equal(r.orders[0]!.memory?.hobby.name, 'crosswords');
+  assert.deepEqual(r.orders[0]!.memory?.opinions.map((o) => [o.character, o.score]), [[ANN, 5]], 'public only, scored within -5..5');
+  assert.ok(r.trims.some((t) => t.path === 'orders[0].memory.opinions[1]' && t.predicate === 'publicCharacter'), JSON.stringify(r.trims));
+  assert.ok(r.trims.some((t) => t.path === 'orders[0].memory.opinions[0].score'));
+  assert.equal(r.orders[1]!.memory, null);
+  assert.deepEqual(namedCharacters(withOrders([order(M1, [], 0, { memory: memoryOf('x', { opinions: [{ character: HIDDEN, score: 1, note: '.' }], grudges: [{ character: BOB, note: '.' }] }) })])).sort(), [BOB, HIDDEN]);
+});
+
+test('an answer with no orders and no patrols is whole: the database carries each Mod\'s beat and order, and the Boss need not answer them', () => {
+  const r = repairAnswer(answer({ kind: 'postsOnBoard', params: { board: BOARD, count: 5 } }), modCtx());
+  assert.ok(r.ok && r.orders.length === 0 && r.patrols.length === 0);
+});
+
+test('patrols for a Mod not on staff or at no time are dropped, a time is moved into today, and past patrolsPerDay they are cut from the end', () => {
+  const most = settings.modBots.patrolsPerDay;
+  const at = (h: number) => new Date(NOW + h * H).toISOString();
+  const raw = withOrders([], { patrols: [{ mod: 'nobody', at: at(1) }, { mod: M1, at: 'noon-ish' }, { mod: M1, at: at(-5) }, { mod: M2, at: at(90) }, ...Array.from({ length: most + 2 }, (_, i) => ({ mod: M3, at: at(i + 1) }))] });
+  const r = repairAnswer(raw, modCtx());
+  assert.ok(r.ok);
+  assert.equal(r.patrols.length, most);
+  assert.deepEqual(r.patrols.slice(0, 2), [{ mod: M1, at: at(0) }, { mod: M2, at: at(24) }], 'the past is now, the far future a day on');
+  assert.ok(r.trims.some((t) => t.path === 'patrols[0].mod' && t.predicate === 'modOnStaff'));
+  assert.ok(r.trims.some((t) => t.path === 'patrols[1].at' && t.predicate === 'isTime'));
+  assert.ok(r.trims.some((t) => t.path === 'patrols' && t.predicate === `atMost(${most})` && t.before === most + 2 + 2 && t.after === most), JSON.stringify(r.trims));
+});
+
+const inForce = [{ board: BOARD, predicate: 'bannedWord', param: 'toast', number: 2 }, { board: null, predicate: 'minLength', param: 100, number: 1 }];
+
+test('a rule that conflicts with the rules in force is dropped and recorded, and spends nothing', () => {
+  const clash = ruleMove({ board: BOARD, predicate: 'requiredWord', param: 'Toast', band: 'minor' });
+  const houseClash = ruleMove({ board: B2, predicate: 'maxLength', param: 50, band: 'minor' });
+  const fine = ruleMove({ board: BOARD, predicate: 'noAllCaps', band: 'minor' });
+  const r = repairAnswer({ ...answer(null), moves: [clash, houseClash, fine] }, modCtx({ rules: inForce, bank: 1 }));
+  assert.ok(r.ok);
+  assert.deepEqual(r.moves.map((m) => m.params['predicate']), ['noAllCaps'], 'the bank of one still pays for the rule that is whole');
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].params' && t.predicate === 'compliantPost(Rule 2 bans the word "toast", which this rule would require)'), JSON.stringify(r.trims));
+  assert.ok(r.trims.some((t) => t.path === 'moves[1].params' && t.predicate.startsWith('compliantPost(a house rule requires at least 100 characters')), JSON.stringify(r.trims));
+  assert.ok(!r.trims.some((t) => t.path === 'moves' && t.predicate.startsWith('atMost')), 'nothing was cut by the bank');
+  // A rule on a board the rules in force do not reach is whole.
+  const other = repairAnswer({ ...answer(null), moves: [ruleMove({ board: B2, predicate: 'requiredWord', param: 'toast', band: 'minor' })] }, modCtx({ rules: [inForce[0]!] }));
+  assert.ok(other.ok && other.moves.length === 1);
+});
+
+test('the prompt shows each Mod: its name, career, beat preferences, pet rules, temperament, notes, memory and what it spent; and which kinds a Mod may make', () => {
+  const mod = {
+    key: M1, name: 'Sir Patrols-a-Lot', temperament: 'fussy about bumps', beats: ['games', 'general'], petRules: ['noDoublePost'],
+    career: { led: [], offices: [{ office: 'mod', since: '2026-10-01T00:00:00+00:00', until: null, cause: 'seed' }] }, notes: ['Saw a bump in Games.'],
+    memory: memoryOf('birdwatching', { opinions: [{ character: ANN, score: 2, note: 'Polite.' }] }),
+    granted: 3, unspent: 1, boards: [{ id: BOARD, name: 'Mario Fan Games' }], order: 'Crack down on bumping.',
+  };
+  const facts = { boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] }, characterName: (id: string) => (id === ANN ? 'Ann the Great' : 'someone') };
+  const text = meetingSystemPrompt({ ...facts, mods: [mod] });
+  for (const piece of ['Sir Patrols-a-Lot', `key ${M1}`, 'Mod Bot from 2026-10-01', 'games, general', 'noDoublePost', 'fussy about bumps', 'Saw a bump in Games.', 'birdwatching', 'Ann the Great 2', 'it spent 2 and 1 goes back to your bank', `Mario Fan Games (${BOARD})`, 'Crack down on bumping.']) {
+    assert.ok(text.includes(piece), `${piece} is in the prompt`);
+  }
+  assert.match(text, /setRule[^\n]*Made by the Boss or a Mod Bot/);
+  assert.match(text, /renameBoard[^\n]*Made by the Boss\./);
+  assert.match(text, /\(setRule; every other kind stays yours\)/);
+  assert.match(text, /a rule a Mod sets lasts at most 7 days/);
+  assert.match(text, /at most 6 patrols/);
+  assert.ok(!/owner|class|reactor/i.test(text.slice(text.indexOf('Your Mod Bots.'), text.indexOf('Answer only'))), 'nothing about who owns a mask, a class or a reactor');
+  assert.match(meetingSystemPrompt({ ...facts, mods: [] }), /You have no Mod Bots on staff\. Do not answer with orders or patrols\./);
+  const fresh = meetingSystemPrompt({ ...facts, mods: [{ ...mod, granted: null, unspent: 0, memory: null, order: null, boards: [], notes: [] }] });
+  assert.match(fresh, /You have never handed it an allowance/);
+  assert.match(fresh, /It has no memory yet/);
+  assert.match(fresh, /Its beat is empty now/);
+});
+
+test('the rule\'s schema offers orders and patrols, both optional, and an order\'s memory is optional', () => {
+  const schema = ruleSchema(MEETING_RULE) as any;
+  assert.ok('orders' in schema.properties && 'patrols' in schema.properties);
+  assert.ok(!schema.required.includes('orders') && !schema.required.includes('patrols'));
+  const item = schema.properties.orders.items;
+  assert.deepEqual([...item.required].sort(), ['allowance', 'boards', 'mod', 'order']);
+  assert.ok('memory' in item.properties);
 });

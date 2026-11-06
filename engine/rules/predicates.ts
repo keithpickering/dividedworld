@@ -77,3 +77,37 @@ export function predicateProblems(key: string, param: unknown): PredicateProblem
       return typeof param === 'string' && BBCODE_TAGS.includes(param) ? null : no(`oneOf(${BBCODE_TAGS.join(', ')})`);
   }
 }
+
+/** A rule in force, as the meeting is shown it (`meeting_context().rules`, read from `rules_now`). */
+export interface RuleInForce {
+  /** The board it is on; null for a house rule, on every board. */
+  readonly board: string | null;
+  readonly predicate: string;
+  readonly param: unknown;
+  /** Its number among the rules that landed on its board ("Rule 2"). */
+  readonly number: number;
+}
+
+const sameWord = (a: unknown, b: unknown): boolean => typeof a === 'string' && typeof b === 'string' && a.toLowerCase() === b.toLowerCase();
+
+/**
+ * The plain reason a new rule would leave no compliant post against the rules in force where it would apply, or null. It mirrors
+ * `rule_conflict` (supabase/migrations/0100_rules.sql) pair for pair, so the meeting drops a rule the queue would refuse: a rule on one
+ * board meets that board's rules and the every-board rules, and an every-board rule meets all of them. A banned word that is also required,
+ * a minimum length above a maximum, and the same rule twice on the same scope are the conflicts.
+ */
+export function ruleConflict(rules: readonly RuleInForce[], board: string | null, predicate: string, param: unknown): string | null {
+  const mine = param === undefined ? null : param;
+  const num = (v: unknown): number => Number(v);
+  for (const r of rules) {
+    if (board !== null && r.board !== null && r.board !== board) continue;
+    const theirs = r.param === undefined ? null : r.param;
+    const where = r.board === null ? 'a house rule' : `Rule ${r.number}`;
+    if (r.predicate === predicate && r.board === board && (theirs === mine || sameWord(theirs, mine))) return `${where} already says that`;
+    if (r.predicate === 'bannedWord' && predicate === 'requiredWord' && sameWord(theirs, mine)) return `${where} bans the word "${String(theirs)}", which this rule would require`;
+    if (r.predicate === 'requiredWord' && predicate === 'bannedWord' && sameWord(theirs, mine)) return `${where} requires the word "${String(theirs)}", which this rule would ban`;
+    if (r.predicate === 'maxLength' && predicate === 'minLength' && num(mine) > num(theirs)) return `${where} allows at most ${String(theirs)} characters, below the ${String(mine)} this rule would require`;
+    if (r.predicate === 'minLength' && predicate === 'maxLength' && num(theirs) > num(mine)) return `${where} requires at least ${String(theirs)} characters, above the ${String(mine)} this rule would allow`;
+  }
+  return null;
+}

@@ -90,6 +90,13 @@ export const defaults: Settings = deepFreeze<Settings>({
     strengths: { ...DEFAULT_STRENGTHS },
     chatterCron: '37 17 * * *',
   },
+  /**
+   * The Mod Bots (the Mod Bots design): a Mod holds at most three moves the Boss hands it and sets a rule for at most a week; a visit lasts two to twelve
+   * hours; six patrols a day, each reading five posts; a report costs 0.25 Orbs and an appeal 0.50 (refunded when upheld); sixty judgments and sixty filing
+   * lines a day; a tail lasts a day; no more than three public punishments of one character in a week; the filing run looks every five minutes and files
+   * a visit left ten minutes past due as it stands.
+   */
+  modBots: { allowanceMost: 3, ruleDaysMost: 7, visitHours: { least: 2, most: 12 }, patrolsPerDay: 6, patrolSample: 5, reportPrice: 25, reportsPerDay: 3, judgmentsPerDay: 60, filingLinesPerDay: 60, appealPrice: 50, tailHours: 24, cap: { punishments: 3, days: 7 }, filingCron: '*/5 * * * *', filingGraceMinutes: 10 },
   /** A board's name is at most 60 characters, whoever proposes it. */
   boardNameMaxLength: 60,
   /** A starting point: no move runs longer than six weeks. */

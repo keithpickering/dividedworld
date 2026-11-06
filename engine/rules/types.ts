@@ -66,6 +66,41 @@ export interface PoolSettings {
   readonly chatterCron: string;
 }
 
+/**
+ * The Mod Bots' numbers (`Settings.modBots`; the Mod Bots design, sections 2 to 8). A starting point each: the owner tunes them with a row,
+ * never a deploy. Money is in hundredths of an orb.
+ */
+export interface ModBotSettings {
+  /** The most moves the Boss hands one Mod at a meeting (and the most one Mod holds at once); the code clamps and records a trim. */
+  readonly allowanceMost: number;
+  /** The most days a rule set by a Mod lasts. */
+  readonly ruleDaysMost: number;
+  /** How long a visit lasts before the Mod files, in hours: the range every persona's own strictness is clamped into. */
+  readonly visitHours: { readonly least: number; readonly most: number };
+  /** The most patrols the Boss's meeting schedules for the Mods in a day; the rest are cut from the end. */
+  readonly patrolsPerDay: number;
+  /** How many of a board's recent posts one patrol's judgment reads (a bounded read of public posts). */
+  readonly patrolSample: number;
+  /** What a report costs the reporter, and is refunded when it is upheld. */
+  readonly reportPrice: Hundredths;
+  /** The most reports one character may file in a day. */
+  readonly reportsPerDay: number;
+  /** The most Mod judgments (patrols, reports, appeals) the instance pays for in a day. */
+  readonly judgmentsPerDay: number;
+  /** The most filing lines (a visit's arrival and filing) the instance pays for in a day. */
+  readonly filingLinesPerDay: number;
+  /** What an appeal costs, and is refunded when it is upheld. */
+  readonly appealPrice: Hundredths;
+  /** How long a tail on a character lasts, in hours. */
+  readonly tailHours: number;
+  /** The targeting cap: no more than this many public punishments of one character in this many days. */
+  readonly cap: { readonly punishments: number; readonly days: number };
+  /** When the filing run looks for visits due, as a five-field cron expression in UTC. */
+  readonly filingCron: string;
+  /** How long past its due time a visit may wait before the filing run files it as it stands, in minutes. */
+  readonly filingGraceMinutes: number;
+}
+
 /** The settings the engine itself reads. A class's own numbers live with the class. */
 export interface Settings {
   /** The most a wallet holds; Aura past it leaves the wallet and stays in the standing. */
@@ -192,6 +227,8 @@ export interface Settings {
    * for, how a day's pick is made, and the numbers the pool's other readers share (notes, cards, priority). A starting point each.
    */
   readonly pool: PoolSettings;
+  /** The Mod Bots' numbers: allowances, rule lengths, visits, patrols, reports, appeals, tails and the targeting cap. */
+  readonly modBots: ModBotSettings;
   /** The longest a board's name may be, in characters, whether The System or a player proposes it. */
   readonly boardNameMaxLength: number;
   /** The most days any move may last, whatever its phase allows. A starting point. */

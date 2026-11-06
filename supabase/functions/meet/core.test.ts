@@ -65,6 +65,12 @@ interface World {
   notes?: string[];
   /** When the Boss's latest memory version was written (staff_memory_at; default: with the last meeting's slot). */
   memoryAt?: string;
+  /** The Mods on staff as meeting_context() lists them (0101); absent: an older database that does not. */
+  mods?: { key: string; allowance: number; granted: number | null; boards: string[]; order: string | null }[];
+  /** The rules in force as meeting_context() lists them (0101). */
+  rules?: { board: string | null; predicate: string; param: unknown; number: number }[];
+  /** What the apply says it returned from the Mods (default: nothing is said). */
+  applyThrows?: boolean;
 }
 function fakeDb(w: World = {}) {
   const calls: { fn: string; args: Record<string, any> }[] = [];
@@ -82,7 +88,7 @@ function fakeDb(w: World = {}) {
           return { status: 'begun', meeting: state.meeting } as T;
         case 'fail_meeting': state.failed.push(args); state.closed = true; return { status: 'closed' } as T;
         case 'meeting_context':
-          return { season: { startsAt: NOW - 30 * DAY, endsAt: NOW + (w.endsIn ?? 60 * DAY) }, boss: w.boss ?? BOSS, lastSlot: '2026-10-31T09:23:00.000Z', boards: [{ id: BOARD, name: 'Mario Fan Games' }, { id: BOARD2, name: 'Off Topic' }], successors: w.successors ?? dividedWorld.system.roster.map((b) => b.key).filter((k) => k !== (w.boss ?? BOSS)), ...(w.inheritanceDue ? { inheritanceDue: w.inheritanceDue } : {}) } as T;
+          return { season: { startsAt: NOW - 30 * DAY, endsAt: NOW + (w.endsIn ?? 60 * DAY) }, boss: w.boss ?? BOSS, lastSlot: '2026-10-31T09:23:00.000Z', boards: [{ id: BOARD, name: 'Mario Fan Games' }, { id: BOARD2, name: 'Off Topic' }], successors: w.successors ?? dividedWorld.system.roster.map((b) => b.key).filter((k) => k !== (w.boss ?? BOSS)), ...(w.inheritanceDue ? { inheritanceDue: w.inheritanceDue } : {}), ...(w.mods ? { mods: w.mods } : {}), ...(w.rules ? { rules: w.rules } : {}) } as T;
         case 'system_digest':
           return { since: args.since, until: args.until, threads: [{ thread: HOT, title: 'Pineapple', board: 'Mario Fan Games', posts: 4, heat: 1, controversy: 0.5, length: 9 }], standings: [], moves: [], quotes: [], bossReactions: [], excerpts: [], characters: [{ id: ANN, name: 'Ann the Great', staff: false }] } as T;
         case 'staff_notes_recent': return (w.notes ?? []) as T;
@@ -92,6 +98,7 @@ function fakeDb(w: World = {}) {
         case 'bank_now': return (w.bank ?? 5.9) as T;
         case 'public_characters': return (args.ids as string[]).filter((id) => (w.publicIds ?? [ANN, BOB]).includes(id)) as T;
         case 'apply_meeting':
+          if (w.applyThrows) throw new DatabaseError('apply_meeting: the moves and allowances cost 9 and the bank holds 2', '23514', 400);
           if (state.closed) return { status: 'already applied' } as T;
           state.applied.push(args);
           state.closed = true;
@@ -565,4 +572,99 @@ test('the Boss\'s notes are read since its latest memory version, not the last r
   await run(served.db, fakeModels(answer([])).models, quiet, SLOT, clock, noFeeds);
   const read = served.calls.find((c) => c.fn === 'staff_notes_recent')!;
   assert.equal(read.args.since, '2026-10-29T08:00:00.000Z', 'earlier than the recorded slot (2026-10-31T09:23Z), where the memory was last saved');
+});
+
+/* ------------------------------------------------------------------ orders, allowances and the Mods' memory (Mod Bots plan, Task 4) ---- */
+
+const MODS = dividedWorld.system.firstStaff.slice(0, 1).concat(dividedWorld.system.roster.filter((b) => b.key !== BOSS && !dividedWorld.system.firstStaff.includes(b.key)).slice(0, 1).map((b) => b.key));
+const [MOD_A, MOD_B] = [MODS[0]!, MODS[1]!];
+const modWorld = (extra: World = {}): World => ({
+  mods: [
+    { key: MOD_A, allowance: 2, granted: 3, boards: [BOARD], order: 'Keep the peace.' },
+    { key: MOD_B, allowance: 0, granted: null, boards: [], order: null },
+  ],
+  memories: { [MOD_A]: memory('birdwatching') },
+  notes: [],
+  ...extra,
+});
+const orderFor = (mod: string, boards: string[], allowance: number, extra: Record<string, unknown> = {}) => ({ mod, boards, order: `Watch ${mod}'s boards.`, allowance, ...extra });
+
+test('a meeting with two Mods writes both orders and memories in the apply, and the bank it works from holds what the Mods did not spend', async () => {
+  // The bank holds 3.5 and Mod A did not spend 2: the Boss is told it holds 5.5 (the database returns them first), under the reign's cap of 10.
+  const d = fakeDb(modWorld({ bank: 3.5 }));
+  const m = fakeModels(answer([], {
+    orders: [orderFor(MOD_A, [BOARD], 2, { memory: memory('crosswords') }), orderFor(MOD_B, [BOARD2, BOARD], 1, { memory: memory('birds') })],
+    patrols: [{ mod: MOD_A, at: new Date(NOW + H).toISOString() }, { mod: 'nobody', at: new Date(NOW + H).toISOString() }],
+  }));
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'ok', JSON.stringify(out));
+  const payload = d.state.applied[0]!.payload;
+  assert.deepEqual(payload.orders.map((o: any) => [o.mod, o.boards, o.allowance, o.memory.hobby.name]), [[MOD_A, [BOARD], 2, 'crosswords'], [MOD_B, [BOARD2], 1, 'birds']], 'a board named twice stays with the first');
+  assert.ok(out.trims.some((t: any) => t.path === 'orders[1].boards[1]' && t.predicate === 'uniqueBoard'), JSON.stringify(out.trims));
+  assert.match(m.chats[0]!.system, /Your bank is 5\.50, so you may make 5 moves/);
+  assert.match(m.chats[0]!.system, new RegExp(`key ${MOD_A}`));
+  assert.match(m.chats[0]!.system, /birdwatching/, 'the Mod\'s own memory is shown to the Boss');
+  assert.match(m.chats[0]!.system, /it spent 1 and 2 go back to your bank/);
+  assert.deepEqual(payload.record.patrols.map((p: any) => p.mod), [MOD_A], 'a patrol for a Mod not on staff is dropped, the rest kept on the record');
+  assert.ok(out.trims.some((t: any) => t.path === 'patrols[1].mod' && t.predicate === 'modOnStaff'));
+  // Each Mod's memory, career and notes were read for the prompt; the Boss's calls are unchanged.
+  assert.equal(d.calls.filter((c) => c.fn === 'staff_memory_latest').length, 1 + 2, 'the Boss\'s and each Mod\'s');
+  assert.equal(d.calls.filter((c) => c.fn === 'staff_career').length, 3);
+});
+
+test('allowances are cut to the bank the Boss was told, from the last order backward, and recorded', async () => {
+  const d = fakeDb(modWorld({ bank: 1.2 }));
+  const m = fakeModels(answer([rename(0)], { orders: [orderFor(MOD_A, [BOARD], 3), orderFor(MOD_B, [BOARD2], 3)] }));
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'ok', JSON.stringify(out));
+  // Bank 1.2 + 2 unspent = 3.2: floor 3, less the one move leaves 2 for the allowances.
+  assert.deepEqual(d.state.applied[0]!.payload.orders.map((o: any) => o.allowance), [2, 0]);
+  assert.ok(out.trims.some((t: any) => t.path === 'orders[1].allowance' && t.predicate === 'withinBank' && t.before === 3 && t.after === 0), JSON.stringify(out.trims));
+  assert.ok(out.trims.some((t: any) => t.path === 'orders[0].allowance' && t.predicate === 'withinBank' && t.before === 3 && t.after === 2));
+});
+
+test('a rule in conflict with the rules in force is dropped and recorded, and the meeting still applies', async () => {
+  const rule = (predicate: string, param: unknown) => rename(0, { kind: 'setRule', params: { board: BOARD, predicate, param, band: 'minor' }, demand: { kind: 'postsOnBoard', params: { board: BOARD, count: 5 } } });
+  const d = fakeDb(modWorld({ bank: 5, rules: [{ board: BOARD, predicate: 'bannedWord', param: 'toast', number: 1 }] }));
+  const m = fakeModels(answer([rule('requiredWord', 'toast'), rule('noAllCaps', null)]));
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'ok', JSON.stringify(out));
+  assert.deepEqual(d.state.applied[0]!.payload.moves.map((x: any) => x.params.predicate), ['noAllCaps']);
+  assert.ok(out.trims.some((t: any) => t.path === 'moves[0].params' && t.predicate.startsWith('compliantPost(Rule 1 bans the word "toast"')), JSON.stringify(out.trims));
+});
+
+test('a meeting whose apply fails on the bank throws after closing the row failed: the Mods\' allowances are not returned (the apply is one transaction)', async () => {
+  const d = fakeDb(modWorld({ applyThrows: true }));
+  const m = fakeModels(answer([], { orders: [orderFor(MOD_A, [BOARD], 3)] }));
+  await assert.rejects(run(d.db, m.models, quiet, SLOT, clock, noFeeds), /bank holds 2/);
+  assert.equal(d.state.failed.length, 1, 'the row is closed failed with the error');
+  assert.equal(d.state.failed[0]!.outcome, 'failed');
+});
+
+test('a retried slot after the apply does nothing: no second call to the model, no second apply', async () => {
+  const d = fakeDb(modWorld());
+  const m = fakeModels(answer([], { orders: [orderFor(MOD_A, [BOARD], 1)] }));
+  assert.equal((await run(d.db, m.models, quiet, SLOT, clock, noFeeds)).status, 'ok');
+  const again = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(again.status, 'already met');
+  assert.equal(d.count('apply_meeting'), 1);
+  assert.equal(m.chats.length, 1);
+});
+
+test('an older database (no mods and no rules in the context) holds a meeting as before: no orders asked, none sent', async () => {
+  const d = fakeDb({});
+  const m = fakeModels(answer([rename(0)]));
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'ok');
+  assert.match(m.chats[0]!.system, /You have no Mod Bots on staff/);
+  assert.deepEqual(d.state.applied[0]!.payload.orders, []);
+});
+
+test('no judgment reads who owns a mask: the meeting reads no owner, class or reactor from the database for a Mod', async () => {
+  const d = fakeDb(modWorld());
+  const m = fakeModels(answer([], { orders: [orderFor(MOD_A, [BOARD], 1)] }));
+  await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  const reads = new Set(d.calls.map((c) => c.fn));
+  assert.deepEqual([...reads].filter((fn) => /owner|class|reactor|reaction/.test(fn)), []);
+  assert.ok(!/owner|reactor/i.test(m.chats[0]!.system.slice(m.chats[0]!.system.indexOf('Your Mod Bots.'))));
 });

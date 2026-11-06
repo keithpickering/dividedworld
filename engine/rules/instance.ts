@@ -129,6 +129,37 @@ function poolRule(v: unknown): string | null {
   return null;
 }
 
+/**
+ * The Mod Bots' settings (`Settings.modBots`): exactly the fields of ModBotSettings, each held as its own words say. Mirrors `setting_modbots`
+ * in supabase/migrations/0101_orders.sql, and supabase/tests/0079-settings-held.sql lists its poisons and goods.
+ */
+const MOD_BOTS_WHOLE = { allowanceMost: 1, ruleDaysMost: 1, patrolsPerDay: 0, reportPrice: 0, reportsPerDay: 1, judgmentsPerDay: 1, filingLinesPerDay: 1, appealPrice: 0, tailHours: 1, filingGraceMinutes: 1 } as const;
+/** The most a patrol's judgment reads: a bounded read. */
+export const PATROL_SAMPLE_MOST = 25;
+const MOD_BOTS_KEYS = [...Object.keys(MOD_BOTS_WHOLE), 'patrolSample', 'visitHours', 'cap', 'filingCron'].sort();
+function modBotsRule(v: unknown): string | null {
+  const shape = `an object giving allowanceMost, ruleDaysMost, reportsPerDay, judgmentsPerDay, filingLinesPerDay, tailHours and filingGraceMinutes (whole numbers, at least 1), patrolsPerDay, reportPrice and appealPrice (whole numbers, at least 0), patrolSample (a whole number from 1 to ${PATROL_SAMPLE_MOST}), visitHours (least and most, whole hours, at least 1, most not below least), cap (punishments and days, whole numbers, at least 1) and filingCron (a five-field cron expression, each field inside its range)`;
+  const object = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
+  if (!object(v)) return shape;
+  const extra = Object.keys(v).find((k) => !MOD_BOTS_KEYS.includes(k));
+  if (extra !== undefined) return `${shape}; "${extra}" is not one of its fields`;
+  for (const [k, least] of Object.entries(MOD_BOTS_WHOLE)) if (!isWhole(v[k], least)) return `${shape}; "${k}" is not`;
+  if (!isWhole(v.patrolSample, 1) || (v.patrolSample as number) > PATROL_SAMPLE_MOST) return `${shape}; "patrolSample" is not`;
+  const pair = (name: 'visitHours' | 'cap', a: string, b: string): string | null => {
+    const o = v[name];
+    if (!object(o) || Object.keys(o).length !== 2 || !isWhole(o[a], 1) || !isWhole(o[b], 1)) return `${shape}; "${name}" is not`;
+    return null;
+  };
+  const hours = pair('visitHours', 'least', 'most');
+  if (hours) return hours;
+  const vh = v.visitHours as { least: number; most: number };
+  if (vh.most < vh.least) return `${shape}; "visitHours" is not`;
+  const cap = pair('cap', 'punishments', 'days');
+  if (cap) return cap;
+  if (!isCron(v.filingCron)) return `${shape}; "filingCron" is not`;
+  return null;
+}
+
 /** Every setting the engine reads, each with what it must be. */
 const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | null } = {
   walletCap: (v) => (isWhole(v, 1) ? null : 'a whole number of hundredths, at least 1'),
@@ -175,6 +206,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   memoryWheelhouse: whole(1, 'subjects'),
   memoryRealWorld: whole(1, 'subjects'),
   pool: poolRule,
+  modBots: modBotsRule,
   boardNameMaxLength: whole(1, 'characters'),
   moveExpiryMostDays: whole(1, 'days'),
   moveExpiryLeastHours: whole(1, 'hours'),
