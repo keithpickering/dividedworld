@@ -1,0 +1,941 @@
+<!--
+  Record, written 2026-11-06. The Shine bench: the design session's interactive mockup for
+  docs/plans/2026-11-06-shine-design.md, as the owner approved it (contrast held everywhere, idle shimmer on, more
+  movement on scroll). A standalone page: open it in a browser. It is a reference for how the effects look and feel,
+  not code to copy. The tilt pad stands in for a phone's gyroscope, which the mockup's frame could not read.
+-->
+<title>Shine Bench</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: the 2003 board's posts in one column at the board's reference width, a bench of controls above, notes below. The bench chrome is the board's black on white; the board itself switches between its light and dark looks. */
+:root {
+  --paper: #ffffff;
+  --ink: #000000;
+  --rule: #000000;
+  --muted: #555555;
+  --shade: #f1f1ef;
+  --flag: #c8102e;
+  --glass: #0f1218;
+  --glass-ink: #e8ecf4;
+  --glass-edge: #6fd3ff;
+  --font: Verdana, Geneva, sans-serif;
+  --mono: "Courier New", Courier, monospace;
+  --size-body: 15px;
+  --size-small: 13.75px;
+  --size-fine: 12.5px;
+  --size-title: 22.5px;
+  color-scheme: light;
+}
+body {
+  background: var(--paper); color: var(--ink);
+  font: var(--size-body)/1.45 var(--font);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 56px;
+}
+h1 { font-size: var(--size-title); margin: 0; text-wrap: balance; }
+h2 { font-size: var(--size-body); margin: 0 0 .4em; text-wrap: balance; }
+p { margin: 0 0 .8em; }
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+.head { max-width: 988px; display: grid; gap: .4em; margin-bottom: 18px; }
+.head p { color: var(--muted); margin: 0; max-width: 70ch; font-size: var(--size-small); }
+
+.bench {
+  max-width: 988px; border: 1px solid var(--rule);
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-bottom: 22px;
+}
+.bench fieldset {
+  border: 0; border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+  margin: 0 -1px -1px 0; padding: 10px 12px 12px; min-width: 0;
+  display: grid; gap: 6px; align-content: start; font-size: var(--size-fine);
+}
+.bench legend {
+  float: left; width: 100%; padding: 0; margin-bottom: 4px; font-weight: bold;
+  font-size: var(--size-fine); letter-spacing: .06em; text-transform: uppercase;
+}
+.bench label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.bench .hint { color: var(--muted); }
+.open-q { border-left: 3px solid var(--flag); padding-left: 8px; display: grid; gap: 4px; }
+.slider { display: grid; grid-template-columns: 6.5em 1fr 3em; align-items: center; gap: 6px; }
+.slider output { font-variant-numeric: tabular-nums; text-align: right; }
+.slider input { width: 100%; min-width: 0; }
+.buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+button.b {
+  font: inherit; font-size: var(--size-fine); padding: 3px 10px; background: var(--paper);
+  color: var(--ink); border: 1px solid var(--rule); cursor: pointer;
+}
+button.b:hover { background: var(--shade); }
+button.b:disabled { color: var(--muted); border-color: var(--muted); cursor: default; background: var(--paper); }
+.pad-row { display: flex; gap: 10px; align-items: center; }
+#pad { width: 96px; height: 96px; border: 1px solid var(--rule); border-radius: 14px; touch-action: none; cursor: grab; flex: none; background: var(--paper); }
+#pad[aria-disabled="true"] { cursor: not-allowed; opacity: .45; }
+
+/* The board: its two looks, by the engine's tokens (engine/ui/tokens.css). */
+.boardwrap {
+  --kb-fg: #000; --kb-bg: #fff; --kb-muted: #555; --kb-link: #000; --kb-link-visited: #333; --kb-rule: #000;
+  max-width: 988px; background: var(--kb-bg); color: var(--kb-fg); display: grid; gap: 14px; padding: 14px 0;
+}
+.boardwrap[data-board="dark"] {
+  --kb-fg: #fff; --kb-bg: #000; --kb-muted: #aaa; --kb-link: #fff; --kb-link-visited: #ccc; --kb-rule: #fff;
+  padding: 14px; outline: 14px solid #000; outline-offset: -1px;
+}
+.board-label { font-size: var(--size-fine); letter-spacing: .06em; text-transform: uppercase; font-weight: bold; color: var(--kb-fg); }
+
+.act {
+  display: grid; grid-template-columns: minmax(8em, min(18%, 14em)) minmax(0, 1fr);
+  grid-template-areas: "bit meta" "bit main" "bit foot"; grid-template-rows: auto 1fr auto;
+  border: 1px solid var(--kb-rule); background: var(--kb-bg); color: var(--kb-fg);
+  container: post / inline-size;
+}
+.bit {
+  grid-area: bit; padding: .5em 6%; border-right: 1px solid var(--kb-rule);
+  display: flex; flex-direction: column; gap: .3em; font-size: var(--size-fine); min-width: 0;
+}
+.bit .name { font-weight: bold; font-size: var(--size-body); }
+.bit .avatar {
+  aspect-ratio: 1 / 1; width: 100%; max-width: 100px; border: 1px solid var(--kb-rule);
+  display: grid; place-items: center; font-family: var(--mono); font-weight: bold; font-size: 18px;
+}
+.bit .counts { color: var(--kb-muted); }
+.meta, .foot {
+  display: flex; justify-content: space-between; gap: 1em; padding: .25em 1%; font-size: var(--size-fine); color: var(--kb-muted);
+}
+.meta { grid-area: meta; border-bottom: 1px solid var(--kb-rule); flex-wrap: wrap; }
+.meta .card { color: var(--kb-fg); font-weight: bold; }
+.foot { grid-area: foot; border-top: 1px solid var(--kb-rule); font-size: var(--size-small); }
+.foot nav { display: flex; gap: .9em; flex-wrap: wrap; }
+.main { grid-area: main; position: relative; isolation: isolate; overflow: hidden; padding: .5em 1%; min-width: 0; }
+.main canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.main canvas.under { z-index: 0; }
+.main canvas.over { z-index: 2; }
+.words { position: relative; z-index: 1; }
+.words a { color: var(--kb-link); }
+.words a.v { color: var(--kb-link-visited); }
+.shiny .words { text-shadow: 0 0 2px var(--kb-bg), 0 0 6px var(--kb-bg); }
+.boardwrap[data-contrast="halo"] .shiny .words {
+  text-shadow: 0 0 1px var(--kb-bg), 0 0 2px var(--kb-bg), 0 0 3px var(--kb-bg), 0 0 6px var(--kb-bg), 0 0 10px var(--kb-bg);
+}
+.quote-label { font-size: var(--size-fine); font-weight: bold; margin: 0 0 .2em 1.5em; color: var(--kb-muted); }
+blockquote { margin: 0 0 .9em 1.5em; padding: .4em .7em; border: 1px solid var(--kb-rule); font-size: var(--size-small); }
+.edit-note { font-size: var(--size-fine); color: var(--kb-muted); font-style: italic; }
+@container post (max-width: 560px) {
+  .act { grid-template-columns: minmax(0, 1fr); grid-template-areas: "bit" "meta" "main" "foot"; grid-template-rows: none; }
+  .bit { border-right: 0; border-bottom: 1px solid var(--kb-rule); flex-direction: row; flex-wrap: wrap; align-items: center; column-gap: .9em; padding: .4em 3%; }
+  .bit .avatar { width: 40px; font-size: 12px; }
+  .main { padding: .5em 3%; }
+  .meta, .foot { padding: .25em 3%; }
+}
+
+/* The glass: the plain out-of-character screens, here just the setting and the tip as they would read. */
+.glass-row { max-width: 988px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 22px; }
+.glass {
+  background: radial-gradient(120% 140% at 0% 0%, #1b2433 0%, var(--glass) 60%); color: var(--glass-ink);
+  border: 1px solid color-mix(in srgb, var(--glass-edge) 45%, transparent); border-radius: 10px;
+  padding: 12px 14px; font-size: var(--size-small); display: grid; gap: 8px;
+  box-shadow: 0 0 18px color-mix(in srgb, var(--glass-edge) 18%, transparent) inset;
+}
+.glass .eyebrow { font-size: var(--size-fine); letter-spacing: .08em; text-transform: uppercase; color: color-mix(in srgb, var(--glass-ink) 70%, transparent); }
+.glass label { display: flex; gap: 8px; align-items: center; font-weight: bold; }
+.glass p { margin: 0; color: color-mix(in srgb, var(--glass-ink) 85%, transparent); }
+.glass .acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.glass button {
+  font: inherit; font-size: var(--size-fine); padding: 4px 12px; border-radius: 999px; cursor: pointer;
+  background: transparent; color: var(--glass-ink); border: 1px solid color-mix(in srgb, var(--glass-edge) 70%, transparent);
+}
+.glass button.primary { background: color-mix(in srgb, var(--glass-edge) 22%, transparent); }
+.draft { font-size: var(--size-fine); color: var(--muted); }
+
+.notes { max-width: 988px; margin-top: 30px; display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.notes section { border-top: 1px solid var(--rule); padding-top: 10px; font-size: var(--size-small); }
+.notes ul { margin: 0; padding-left: 1.2em; display: grid; gap: .35em; }
+.notes .muted { color: var(--muted); }
+
+#overlay { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 50; }
+</style>
+
+<div class="head">
+  <h1>Shine bench</h1>
+  <p>Feelin' Fab as holographic foil and Glitter Bomb as real glitter, both lit by one light for the whole page. Move your mouse, scroll, or drag the tilt pad to stand in for tilting a phone. The light rests when nothing moves. The fourth post wears no card: glitter you carry off the Glitter Bomb post falls onto it.</p>
+</div>
+
+<form class="bench" id="bench" onsubmit="return false">
+  <fieldset>
+    <legend>Board</legend>
+    <label><input type="radio" name="board" value="light" id="boardLight" checked> Light board</label>
+    <label><input type="radio" name="board" value="dark" id="boardDark"> Dark board</label>
+    <legend style="margin-top:8px">Motion</legend>
+    <label><input type="checkbox" id="reduce"> Reduce motion</label>
+    <label><input type="checkbox" id="idle" checked> Idle shimmer</label>
+    <span class="hint">Decided: a faint drift of the light while nothing moves, so a few glints still wink on a still screen.</span>
+  </fieldset>
+  <fieldset>
+    <legend>Light comes from</legend>
+    <label><input type="checkbox" id="usePointer" checked> The mouse</label>
+    <label><input type="checkbox" id="useScroll" checked> Scrolling</label>
+    <label><input type="checkbox" id="useTilt" checked> Phone tilt (the pad)</label>
+    <div class="pad-row">
+      <canvas id="pad" width="192" height="192" aria-label="Tilt pad: drag to tilt the stand-in phone" role="img"></canvas>
+      <div style="display:grid;gap:4px">
+        <label><input type="radio" name="perm" value="granted" id="permGranted" checked> Allowed</label>
+        <label><input type="radio" name="perm" value="denied" id="permDenied"> Denied</label>
+        <label><input type="radio" name="perm" value="none" id="permNone"> No sensor</label>
+        <button type="button" class="b" id="level">Hold level</button>
+      </div>
+    </div>
+  </fieldset>
+  <fieldset>
+    <legend>Contrast under the shine</legend>
+    <div class="open-q">
+      <label><input type="radio" name="contrast" value="bounded" id="cBounded" checked> Held to 4.5:1 everywhere (decided)</label>
+      <label><input type="radio" name="contrast" value="letters" id="cLetters"> Held to 4.5:1 under letters</label>
+      <label><input type="radio" name="contrast" value="halo" id="cHalo"> Free, with a halo on the words</label>
+      <span class="hint">Decided: held everywhere. On the dark board the shine underneath stays below about 5% luminance, so it reads as deep jewel tones. The other two are kept here for comparison.</span>
+    </div>
+    <div class="slider"><label for="scrimPad">Solid pad</label><input type="range" id="scrimPad" min="0" max="20" step="1" value="6"><output id="scrimPadOut">6px</output></div>
+    <div class="slider"><label for="scrimFeather">Feather</label><input type="range" id="scrimFeather" min="4" max="80" step="2" value="28"><output id="scrimFeatherOut">28px</output></div>
+    <label><input type="checkbox" id="showMask"> Show the scrim</label>
+  </fieldset>
+  <fieldset>
+    <legend>Glitter</legend>
+    <div class="buttons">
+      <button type="button" class="b" id="replay">Set off the bomb again</button>
+      <button type="button" class="b" id="sweep">Sweep up loose glitter</button>
+    </div>
+    <label><input type="checkbox" id="cling" checked> Glitter clings to the mouse</label>
+    <span class="hint">The bomb goes off the first time its post scrolls into view. Pass the mouse over the glitter, then over the plain post.</span>
+  </fieldset>
+</form>
+
+<div class="boardwrap" id="boardwrap" data-board="light" data-contrast="bounded">
+  <span class="board-label" id="boardLabel">Light board</span>
+</div>
+
+<div class="glass-row">
+  <div class="glass" id="setting">
+    <span class="eyebrow">Settings › Appearance</span>
+    <label><input type="checkbox" id="settingBox" checked> Tilt shiny cards with your phone</label>
+    <p id="settingWords"></p>
+  </div>
+  <div class="glass" id="tip">
+    <span class="eyebrow">Tip</span>
+    <p>This post is shiny. Tilt your phone and the light moves across it, like tilting a real foil card.</p>
+    <div class="acts"><button type="button" class="primary" id="tipOn">Turn on tilt</button><button type="button" id="tipNo">Not now</button></div>
+  </div>
+</div>
+<p class="draft">The setting and the tip are draft copy for the glass and the onboarding tips, which the owner approves in review.</p>
+
+<div class="notes">
+  <section>
+    <h2>What to try</h2>
+    <ul>
+      <li><b>Feelin' Fab, three grades of foil.</b> One is a pearl sheen, two is holo bands that slide with the light, and three is cracked-ice prism holo with starbursts. Each starburst flashes when the light lines up with it.</li>
+      <li><b>Glitter Bomb.</b> Thousands of rainbow foil flakes, each tilted its own way, so only a few catch the light at once. The silver ones are holographic and flash whatever hue their tilt throws. The bomb puffs and the flakes tumble down and land. Faster mouse moves throw more flashes.</li>
+      <li><b>Glitter gets everywhere.</b> Pass the mouse over the bombed post and it picks up flakes. They drop off over whatever you pass next. That glitter is only on your screen and gone on reload.</li>
+      <li><b>Dark board.</b> Switch to it, then compare the three contrast choices. Turn on "Show the scrim" and tune its pad and feather.</li>
+      <li><b>Reduce motion.</b> The light is held where it rests, the bomb has already landed, and nothing clings.</li>
+    </ul>
+  </section>
+  <section>
+    <h2>Not in this mockup</h2>
+    <ul class="muted">
+      <li>A real gyroscope. The artifact frame can't read one, so the pad stands in for it.</li>
+      <li>Drawing only near the viewport, the shared observer, and the frame budget on a busy page. The plan sets those.</li>
+      <li>The card faces' foil. The same light and holo would serve a foil variant on a postcard later.</li>
+      <li>Here the contrast is computed per pixel from the board's tokens. The real check would sample the material across every light angle.</li>
+    </ul>
+  </section>
+</div>
+
+<template id="post">
+  <article class="act">
+    <div class="bit">
+      <div class="avatar" aria-hidden="true"></div>
+      <div><div class="name"></div><div class="rank"></div></div>
+      <div class="counts"></div>
+    </div>
+    <div class="meta"><span class="when"></span><span class="card"></span></div>
+    <div class="main">
+      <canvas class="under" aria-hidden="true"></canvas>
+      <div class="words"></div>
+      <canvas class="over" aria-hidden="true"></canvas>
+    </div>
+    <div class="foot"><nav><a href="#q" onclick="return false">Quote</a><a href="#s" onclick="return false">Spin thread</a><a href="#h" onclick="return false">History</a></nav></div>
+  </article>
+</template>
+
+<canvas id="overlay" aria-hidden="true"></canvas>
+
+<script>
+(() => {
+  'use strict';
+  /* ------------------------------------------------------------- settings ---- */
+  const FAB = {
+    light: ['#ffb9be', '#ffc09f', '#fff2a0', '#a8e6a1', '#9fd3ff', '#d8c0ff'],
+    dark: ['#7f0c1e', '#682d06', '#4a3d00', '#0d471e', '#133b84', '#522191'],
+  };
+  /* Rainbow glitter: seven inks, and silver holo flakes (the last ink) that flash whatever hue their tilt throws. */
+  const GLITTER = ['#ff3b4a', '#ff9a2e', '#ffd23f', '#3ddc6b', '#2fd6ff', '#4a6bff', '#b65cff', '#dfe4ec', '#dfe4ec', '#dfe4ec'];
+  const HOLO = 7;
+  const STARS = [0, 4, 8, 10];
+  /* Bands that keep the board's every post ink at 4.5:1: the light board's darkest ink is its muted #555, the dark board's lightest is its muted #aaa. */
+  const BAND = { light: { lo: 0.59, hi: 1 }, dark: { lo: 0, hi: 0.048 } };
+  const REST = { x: -0.35, y: -0.45 };
+  const CELL = 3;
+  const S = {
+    board: 'light', reduce: matchMedia('(prefers-reduced-motion: reduce)').matches, idle: false,
+    usePointer: true, useScroll: true, useTilt: true, perm: 'granted', contrast: 'bounded', showMask: false, cling: true,
+    px: 0, py: 0, tx: 0, ty: 0, scrimPad: 6, scrimFeather: 28,
+  };
+  S.idle = true;
+
+  /* --------------------------------------------------------------- colour ---- */
+  const s2l = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const LUT = new Uint8ClampedArray(4097);
+  for (let i = 0; i <= 4096; i++) { const l = i / 4096; LUT[i] = Math.round(255 * (l <= 0.0031308 ? l * 12.92 : 1.055 * l ** (1 / 2.4) - 0.055)); }
+  const l2s = (l) => LUT[Math.max(0, Math.min(4096, (l * 4096) | 0))];
+  const lin = (hex) => [1, 3, 5].map((i) => s2l(parseInt(hex.slice(i, i + 2), 16) / 255));
+  let PAL = FAB.light.map(lin);
+  const GL = GLITTER.map(lin);
+  const out = [0, 0, 0];
+  function pal(t) {
+    t = ((t % 1) + 1) % 1;
+    const x = t * 6, i = x | 0, f = x - i, a = PAL[i], b = PAL[(i + 1) % 6];
+    out[0] = a[0] + (b[0] - a[0]) * f; out[1] = a[1] + (b[1] - a[1]) * f; out[2] = a[2] + (b[2] - a[2]) * f;
+    return out;
+  }
+  /* Hold a colour's luminance inside [lo, hi] and keep its hue: darken by scaling, lighten toward white. */
+  function clampLum(c, lo, hi) {
+    let L = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    if (L > hi) { const k = hi / L; c[0] *= k; c[1] *= k; c[2] *= k; }
+    else if (L < lo) { const k = (lo - L) / (1 - L); c[0] += (1 - c[0]) * k; c[1] += (1 - c[1]) * k; c[2] += (1 - c[2]) * k; }
+    return c;
+  }
+  function bandAt(m) {
+    const b = BAND[S.board];
+    if (S.contrast === 'halo') m = 0; else if (S.contrast === 'bounded') m = 1;
+    return [b.lo * m, b.hi * m + (1 - m)];
+  }
+
+  function rng(str) {
+    let h = 2166136261;
+    for (const ch of str) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+    return () => {
+      h = Math.imul(h ^ (h >>> 15), 2246822507);
+      h = Math.imul(h ^ (h >>> 13), 3266489909);
+      return ((h ^= h >>> 16) >>> 0) / 4294967296;
+    };
+  }
+
+  /* --------------------------------------------------------------- sprites ---- */
+  function starSprite() {
+    const Z = 64, c = document.createElement('canvas'); c.width = c.height = Z;
+    const g = c.getContext('2d'), m = Z / 2;
+    const glow = g.createRadialGradient(m, m, 0, m, m, m);
+    glow.addColorStop(0, 'rgba(255,255,255,0.95)'); glow.addColorStop(0.18, 'rgba(255,255,255,0.45)'); glow.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = glow; g.fillRect(0, 0, Z, Z);
+    g.fillStyle = '#fff';
+    for (const [w, h] of [[2.4, m], [m, 2.4]]) {
+      const gr = g.createRadialGradient(m, m, 0, m, m, m);
+      gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr;
+      g.beginPath(); g.ellipse(m, m, w === 2.4 ? 1.6 : m, w === 2.4 ? m : 1.6, 0, 0, Math.PI * 2); g.fill();
+    }
+    g.save(); g.translate(m, m); g.rotate(Math.PI / 4);
+    const gr2 = g.createRadialGradient(0, 0, 0, 0, 0, m * 0.55);
+    gr2.addColorStop(0, 'rgba(255,255,255,0.8)'); gr2.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr2;
+    g.beginPath(); g.ellipse(0, 0, 1, m * 0.55, 0, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.ellipse(0, 0, m * 0.55, 1, 0, 0, Math.PI * 2); g.fill();
+    g.restore();
+    return c;
+  }
+  const STAR = starSprite();
+
+  /* ----------------------------------------------------------------- posts ---- */
+  const POSTS = [
+    {
+      id: 'p101', kind: 'fab', level: 1, who: 'Spritey', rank: 'Pixel Pusher', av: 'SP', counts: 'Posts: 388<br>Aura: 12.0',
+      when: 'Thu Nov 5, 2026 9:14 pm', card: "Feelin' Fab ×1",
+      words: `<p>Finally got the walk cycle on my blob guy to stop moonwalking. Turns out the frames were in the right order the whole time. I'd just flipped the sprite and not the hitbox, so he was walking forward with his body and backward with his soul.</p><p>Anyway, eight frames, 12 fps, and he squishes on landing now. Feels good. <a href="#wip" onclick="return false">WIP gif here</a> if anyone wants to tell me the squish is too much.</p>`,
+    },
+    {
+      id: 'p102', kind: 'fab', level: 2, who: 'Koopa Kid Kevin', rank: 'Shell Collector', av: 'KK', counts: 'Posts: 2,051<br>Aura: 44.5',
+      when: 'Thu Nov 5, 2026 10:02 pm', card: "Feelin' Fab ×2",
+      words: `<p>Reminder that the contest deadline is Sunday at midnight, board time. One level, any engine, and it has to fit the theme "everything is slightly too big." Late entries get played on stream, but they don't place.</p><p class="quote-label">Gloomba wrote:</p><blockquote>can the level be slightly too big</blockquote><p>Yes, that is the theme. Please read the theme. <a class="v" href="#rules" onclick="return false">Full rules</a> are pinned.</p>`,
+    },
+    {
+      id: 'p103', kind: 'fab', level: 3, who: 'Pipewrench', rank: "Plumber's Mate", av: 'PW', counts: 'Posts: 1,204<br>Aura: 31.5',
+      when: 'Thu Nov 5, 2026 11:42 pm', card: "Feelin' Fab ×3",
+      words: `<p>I just want to say this board got me through a rough year. I showed up with one broken level and a palette I stole from a cereal box, and every one of you played it and told me exactly what was wrong with it. Kindly. Mostly.</p><p>Next round of fan art requests is open. I'll draw anyone's character as a vegetable, no questions asked.</p><p class="edit-note">Edit: yes, Kevin, you can be a gourd.</p>`,
+    },
+    {
+      id: 'p104', kind: 'glitter', level: 0, who: 'Gloomba', rank: 'Pit Enjoyer', av: 'GL', counts: 'Posts: 966<br>Aura: −3.0',
+      when: 'Fri Nov 6, 2026 12:08 am', card: 'Glitter Bomb · 6 days left',
+      words: `<p>Okay, who did this. I log on to post my contest entry and every single one of my posts looks like a craft store exploded on it.</p><p>The entry is called "Big Pit." It is a pit, and it is slightly too big. I think it's my best work. <a href="#entry" onclick="return false">Download it here</a> and please don't tell me it's just a pit, because I know, and that's the point.</p><p>Also if I find out who glitter bombed me, I'm Whoops!ing every post you've ever made.</p>`,
+    },
+    {
+      id: 'p105', kind: 'plain', level: 0, who: 'Mod Bot Tess', rank: 'Hall Monitor', av: 'MT', counts: 'Posts: 77<br>Aura: —',
+      when: 'Fri Nov 6, 2026 12:15 am', card: 'no card',
+      words: `<p>Reminder: please keep contest discussion in the contest thread. This post has no card on it. If glitter shows up here, someone tracked it in from Gloomba's post.</p>`,
+    },
+  ];
+
+  const wrap = document.getElementById('boardwrap');
+  const tpl = document.getElementById('post');
+  const posts = POSTS.map((d) => {
+    const n = tpl.content.cloneNode(true);
+    const el = n.querySelector('.act');
+    el.querySelector('.avatar').textContent = d.av;
+    el.querySelector('.name').textContent = d.who;
+    el.querySelector('.rank').textContent = d.rank;
+    el.querySelector('.counts').innerHTML = d.counts;
+    el.querySelector('.when').textContent = d.when;
+    el.querySelector('.card').textContent = d.card;
+    el.querySelector('.words').innerHTML = d.words;
+    if (d.kind !== 'plain') el.classList.add('shiny');
+    wrap.append(n);
+    const main = el.querySelector('.main');
+    const under = main.querySelector('canvas.under'), over = main.querySelector('canvas.over');
+    return {
+      d, el, main, under, over, uctx: under.getContext('2d'), octx: over.getContext('2d'), small: document.createElement('canvas'),
+      W: 0, H: 0, q: 1, gw: 0, gh: 0, mask: null, cellMap: null, cells: null, img: null,
+      flakes: [], loose: [], burst: [], puff: null, fired: false, visible: false,
+      cur: { ...REST }, drawn: { x: 99, y: 99 }, dirty: true, overClear: true, stars: [],
+    };
+  });
+
+  /*
+   * Where the words are, as the glass's calm: full strength over every letter and a solid pad around it, then a long feather
+   * outward, so the bound reads as a soft scrim rather than a slab per line.
+   */
+  function buildMask(p) {
+    const { gw, gh } = p;
+    const raw = new Float32Array(gw * gh);
+    const base = p.main.getBoundingClientRect();
+    const walker = document.createTreeWalker(p.main.querySelector('.words'), NodeFilter.SHOW_TEXT);
+    const range = document.createRange();
+    const pad = S.scrimPad;
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (!node.textContent.trim()) continue;
+      range.selectNodeContents(node);
+      for (const r of range.getClientRects()) {
+        const x0 = Math.max(0, Math.floor((r.left - base.left - pad) / CELL)), x1 = Math.min(gw - 1, Math.ceil((r.right - base.left + pad) / CELL));
+        const y0 = Math.max(0, Math.floor((r.top - base.top - pad) / CELL)), y1 = Math.min(gh - 1, Math.ceil((r.bottom - base.top + pad) / CELL));
+        for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) raw[y * gw + x] = 1;
+      }
+    }
+    /* Feather: three passes of a running box blur approach a gaussian about the feather wide. */
+    const rad = Math.max(1, Math.round(S.scrimFeather / CELL / 2.2));
+    let a = Float32Array.from(raw), b = new Float32Array(gw * gh);
+    const w = 2 * rad + 1;
+    for (let pass = 0; pass < 3; pass++) {
+      for (let y = 0; y < gh; y++) {
+        let s = 0; const row = y * gw;
+        for (let k = -rad; k <= rad; k++) s += a[row + Math.max(0, Math.min(gw - 1, k))];
+        for (let x = 0; x < gw; x++) {
+          b[row + x] = s / w;
+          s += a[row + Math.min(gw - 1, x + rad + 1)] - a[row + Math.max(0, x - rad)];
+        }
+      }
+      [a, b] = [b, a];
+      for (let x = 0; x < gw; x++) {
+        let s = 0;
+        for (let k = -rad; k <= rad; k++) s += a[Math.max(0, Math.min(gh - 1, k)) * gw + x];
+        for (let y = 0; y < gh; y++) {
+          b[y * gw + x] = s / w;
+          s += a[Math.min(gh - 1, y + rad + 1) * gw + x] - a[Math.max(0, y - rad) * gw + x];
+        }
+      }
+      [a, b] = [b, a];
+    }
+    for (let i = 0; i < raw.length; i++) {
+      if (raw[i]) { a[i] = 1; continue; }
+      const v = Math.min(1, a[i] * 2);
+      a[i] = v * v * (3 - 2 * v);
+    }
+    p.mask = a;
+  }
+  const maskAt = (p, x, y) => {
+    if (!p.mask) return 1;
+    const i = Math.max(0, Math.min(p.gw - 1, (x / CELL) | 0)), j = Math.max(0, Math.min(p.gh - 1, (y / CELL) | 0));
+    return p.mask[j * p.gw + i];
+  };
+
+  /* Level 3's cracked ice: seeded cells, each a facet tilted its own way. */
+  function buildCells(p) {
+    const r = rng(p.d.id + ':ice');
+    const pts = [], step = 17;
+    for (let y = -step; y < p.H + step; y += step) for (let x = -step; x < p.W + step; x += step) {
+      const a = r() * Math.PI * 2, m = Math.sqrt(r()) * 1.25;
+      pts.push({ x: x + r() * step, y: y + r() * step, nx: Math.cos(a) * m, ny: Math.sin(a) * m, ph: r() });
+    }
+    const cols = Math.ceil((p.W + 2 * step) / step);
+    const map = new Uint16Array(p.gw * p.gh);
+    for (let j = 0; j < p.gh; j++) for (let i = 0; i < p.gw; i++) {
+      const x = (i + 0.5) * CELL, y = (j + 0.5) * CELL;
+      const ci = Math.floor((x + step) / step), cj = Math.floor((y + step) / step);
+      let best = 0, bd = 1e9;
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+        const k = (cj + dj) * cols + (ci + di), q = pts[k];
+        if (!q) continue;
+        const d = (q.x - x) ** 2 + (q.y - y) ** 2;
+        if (d < bd) { bd = d; best = k; }
+      }
+      map[j * p.gw + i] = best;
+    }
+    p.cells = pts; p.cellMap = map;
+  }
+
+  function buildStars(p) {
+    const r = rng(p.d.id + ':stars');
+    p.stars = Array.from({ length: STARS[p.d.level] || 0 }, () => {
+      const a = r() * Math.PI * 2, m = 0.2 + r() * 1.0;
+      return { x: (r() * 0.94 + 0.03) * p.W, y: (r() * 0.88 + 0.06) * p.H, s: 18 + r() * 22, nx: Math.cos(a) * m, ny: Math.sin(a) * m };
+    });
+  }
+
+  /* Glitter: flakes spread over the post, thickest around where the bomb went off, each with its own tilt and ink. */
+  function buildFlakes(p) {
+    const r = rng(p.d.id + ':glitter');
+    p.origin = { x: (0.25 + r() * 0.5) * p.W, y: (0.25 + r() * 0.4) * p.H };
+    const n = Math.round((p.W * p.H) / 70);
+    p.flakes = [];
+    for (let i = 0; i < n; i++) {
+      let x, y;
+      if (r() < 0.42) {
+        const a = r() * Math.PI * 2, d = Math.sqrt(-2 * Math.log(1 - r() * 0.999)) * Math.min(p.W, p.H) * 0.28;
+        x = p.origin.x + Math.cos(a) * d * 1.4; y = p.origin.y + Math.sin(a) * d;
+      } else { x = r() * p.W; y = r() * p.H; }
+      if (x < 0 || y < 0 || x > p.W || y > p.H) { i--; continue; }
+      p.flakes.push(flake(r, x, y));
+    }
+  }
+  function flake(r, x, y) {
+    const a = r() * Math.PI * 2, m = Math.sqrt(r()) * 1.3;
+    return { x, y, s: 1.2 + r() * r() * 2.2, rot: r() * Math.PI, nx: Math.cos(a) * m, ny: Math.sin(a) * m, ink: (r() * GL.length) | 0, tw: r() < 0.12 ? 0.5 + r() * 1.2 : 0, tph: r() * 100 };
+  }
+
+  function rebuild(p) {
+    p.W = p.main.clientWidth; p.H = p.main.clientHeight;
+    p.q = Math.min(2, window.devicePixelRatio || 1);
+    for (const c of [p.under, p.over]) { c.width = Math.ceil(p.W * p.q); c.height = Math.ceil(p.H * p.q); }
+    p.gw = Math.ceil(p.W / CELL); p.gh = Math.ceil(p.H / CELL);
+    p.small.width = p.gw; p.small.height = p.gh;
+    p.img = p.small.getContext('2d').createImageData(p.gw, p.gh);
+    buildMask(p);
+    if (p.d.kind === 'fab') { buildStars(p); if (p.d.level === 3) buildCells(p); }
+    if (p.d.kind === 'glitter') {
+      const landed = p.flakes.filter((f) => f.landed);
+      buildFlakes(p);
+      if (!p.fired && !S.reduce) p.flakes.length = Math.round(p.flakes.length * 0.15);
+    }
+    p.loose = p.loose.filter((f) => f.x < p.W && f.y < p.H);
+    p.dirty = true;
+  }
+
+  /* ------------------------------------------------------------- the foil ---- */
+  function foil(p, lx, ly) {
+    const { gw, gh, W, H, img } = p, px = img.data, lvl = p.d.level;
+    const seed = p.d.id === 'p101' ? 0.12 : p.d.id === 'p102' ? 0.47 : 0.81;
+    const dark = S.board === 'dark';
+    const c = [0, 0, 0];
+    const cosT = Math.cos(1.75), sinT = Math.sin(1.75);
+    const cxs = W * (0.5 + 0.42 * lx), cys = H * (0.5 + 0.42 * ly), R2 = (Math.max(W, H) * 0.42) ** 2;
+    const bandPos = 0.5 + 0.55 * lx + 0.25 * ly;
+    for (let j = 0; j < gh; j++) {
+      const y = (j + 0.5) * CELL;
+      for (let i = 0; i < gw; i++) {
+        const x = (i + 0.5) * CELL, idx = j * gw + i;
+        let h = 0, base;
+        if (lvl === 1) {
+          /* Pearl: a milky ground whose hue turns as the light moves, and one broad soft sheen where it lands. */
+          /* The whole rainbow lies across the post at once, in slow soft swirls, and turns as the light moves. */
+          const swirl = 0.09 * Math.sin(x / W * 5.1 + y / H * 2.3 + seed * 9) + 0.06 * Math.sin(y / H * 6.2 - x / W * 3.4);
+          base = pal(seed + 0.32 * lx + 0.18 * ly + (x / W) * 0.85 + (y / H) * 0.3 + swirl);
+          c[0] = base[0]; c[1] = base[1]; c[2] = base[2];
+          const s = Math.exp(-((x - cxs) ** 2 + (y - cys) ** 2) / (R2 * 0.6));
+          const fringe = pal(seed + 0.5 + (x / W) * 0.85 + 0.32 * lx);
+          const f = s * (1 - s) * 1.2;
+          c[0] += (fringe[0] - c[0]) * f; c[1] += (fringe[1] - c[1]) * f; c[2] += (fringe[2] - c[2]) * f;
+          h = s * 0.3;
+        } else if (lvl === 2) {
+          /* Holo bands: diagonal rainbow stripes with fine diffraction lines, and a bright stripe where the light catches. */
+          const d = x * cosT + y * sinT;
+          base = pal(seed + d / Math.min(W * 0.4, 360) + 0.9 * lx + 0.45 * ly);
+          const lines = 0.5 + 0.5 * Math.sin(d * 0.85 + lx * 24 + ly * 9);
+          c[0] = base[0] * (0.9 + 0.1 * lines); c[1] = base[1] * (0.9 + 0.1 * lines); c[2] = base[2] * (0.9 + 0.1 * lines);
+          const prj = (x * cosT + y * sinT) / (W * Math.abs(cosT) + H * Math.abs(sinT)) + 0.5;
+          const sp = Math.exp(-(((prj - bandPos) * 7) ** 2));
+          h = sp * 0.5 + lines * sp * 0.12;
+        } else {
+          /* Prism: every facet of the cracked ice throws its own colour, spreading out from the middle, and flashes when it faces the light. */
+          const k = p.cellMap[idx], cell = p.cells[k];
+          const rr = Math.hypot((x - W / 2) / W, (y - H / 2) / H);
+          const face = cell.nx * lx + cell.ny * ly;
+          base = pal(seed + cell.ph * 0.45 + rr * 1.6 + 0.55 * face + 0.25 * lx);
+          c[0] = base[0]; c[1] = base[1]; c[2] = base[2];
+          const a = Math.exp(-((cell.nx - lx) ** 2 + (cell.ny - ly) ** 2) / 0.07);
+          h = a * 0.7;
+          const right = i < gw - 1 ? p.cellMap[idx + 1] : k, down = j < gh - 1 ? p.cellMap[idx + gw] : k;
+          if (right !== k || down !== k) { const sh = dark ? 0.78 : 0.94; c[0] *= sh; c[1] *= sh; c[2] *= sh; h *= 0.5; }
+        }
+        if (dark) {
+          const alt = pal(seed + 0.5 + 0.3 * lx);
+          const t = h * 0.6;
+          c[0] += (alt[0] - c[0]) * t; c[1] += (alt[1] - c[1]) * t; c[2] += (alt[2] - c[2]) * t;
+          const g = h * 0.75;
+          c[0] += (1 - c[0]) * g; c[1] += (1 - c[1]) * g; c[2] += (1 - c[2]) * g;
+        } else {
+          c[0] += (1 - c[0]) * h; c[1] += (1 - c[1]) * h; c[2] += (1 - c[2]) * h;
+        }
+        const [lo, hi] = bandAt(p.mask[idx]);
+        clampLum(c, lo, hi);
+        const o = idx * 4;
+        px[o] = l2s(c[0]); px[o + 1] = l2s(c[1]); px[o + 2] = l2s(c[2]); px[o + 3] = 255;
+      }
+    }
+    p.small.getContext('2d').putImageData(img, 0, 0);
+    const g = p.uctx;
+    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+    g.drawImage(p.small, 0, 0, W, H);
+    /* Starbursts: each faces its own way and flares when the light lines up with it. */
+    g.globalCompositeOperation = 'lighter';
+    const now = performance.now() / 1000, idle = S.idle && !S.reduce;
+    for (const s of p.stars) {
+      let a = Math.exp(-((s.nx - lx) ** 2 + (s.ny - ly) ** 2) / 0.12);
+      if (idle) a = Math.max(a, 0.85 * Math.max(0, Math.sin(now * 0.9 + s.x * 0.05)) ** 24);
+      let alpha = 0.12 + 0.88 * a;
+      if (dark) { const [, hi] = bandAt(maskAt(p, s.x, s.y)); alpha *= Math.max(0, (hi - 0.048) / 0.952); }
+      if (alpha < 0.02) continue;
+      const z = s.s * (0.55 + 0.6 * a);
+      g.globalAlpha = Math.min(1, alpha);
+      g.drawImage(STAR, s.x - z / 2, s.y - z / 2, z, z);
+    }
+    g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+  }
+
+  /* -------------------------------------------------------------- glitter ---- */
+  const fc = [0, 0, 0];
+  const RAINBOW = ['#ff3b4a', '#ff9a2e', '#ffd23f', '#3ddc6b', '#2fd6ff', '#4a6bff', '#b65cff'].map(lin);
+  const holoInk = [0, 0, 0];
+  function holoAt(f, lx, ly) {
+    let t = (Math.atan2(f.ny - ly, f.nx - lx) / (Math.PI * 2) + 1 + f.rot * 0.2) % 1;
+    const x = t * 7, i = x | 0, k = x - i, a = RAINBOW[i], b = RAINBOW[(i + 1) % 7];
+    holoInk[0] = a[0] + (b[0] - a[0]) * k; holoInk[1] = a[1] + (b[1] - a[1]) * k; holoInk[2] = a[2] + (b[2] - a[2]) * k;
+    return holoInk;
+  }
+  function flakeColour(f, a, m, lx, ly) {
+    const ink = f.ink >= HOLO ? (a > 0.15 ? holoAt(f, lx, ly) : GL[f.ink]) : GL[f.ink], dark = S.board === 'dark';
+    if (dark) { fc[0] = ink[0] * (0.05 + 0.95 * a); fc[1] = ink[1] * (0.05 + 0.95 * a); fc[2] = ink[2] * (0.05 + 0.95 * a); }
+    else { const k = 0.38 + 0.62 * a; fc[0] = 1 + (ink[0] - 1) * k; fc[1] = 1 + (ink[1] - 1) * k; fc[2] = 1 + (ink[2] - 1) * k; }
+    if (a > 0.6) { const w = (a - 0.6) / 0.4; fc[0] += (1 - fc[0]) * w; fc[1] += (1 - fc[1]) * w; fc[2] += (1 - fc[2]) * w; }
+    const [lo, hi] = bandAt(m);
+    clampLum(fc, lo, hi);
+    return `rgb(${l2s(fc[0])},${l2s(fc[1])},${l2s(fc[2])})`;
+  }
+  function drawFlakes(p, list, lx, ly, sharp = 0.03) {
+    const g = p.uctx;
+    const flares = [];
+    const now = performance.now() / 1000, idle = S.idle && !S.reduce;
+    for (const f of list) {
+      let a = Math.exp(-((f.nx - lx) ** 2 + (f.ny - ly) ** 2) / sharp);
+      /* Idle twinkle: about one flake in eight winks on its own now and then, whatever the light is doing. */
+      if (idle && f.tw) a = Math.max(a, Math.max(0, Math.sin(now * f.tw + f.tph)) ** 60);
+      const m = maskAt(p, f.x, f.y);
+      g.fillStyle = flakeColour(f, a, m, lx, ly);
+      g.save(); g.translate(f.x, f.y); g.rotate(f.rot);
+      g.fillRect(-f.s / 2, -f.s * 0.42, f.s, f.s * 0.84);
+      g.restore();
+      if (a > 0.75) flares.push([f, a, m]);
+    }
+    g.globalCompositeOperation = 'lighter';
+    for (const [f, a, m] of flares) {
+      let alpha = (a - 0.75) / 0.25;
+      if (S.board === 'dark') { const [, hi] = bandAt(m); alpha *= Math.max(0, (hi - 0.048) / 0.952); }
+      else { const [, hi] = bandAt(m); alpha *= hi; }
+      if (alpha < 0.03) continue;
+      const z = 7 + f.s * 4;
+      g.globalAlpha = alpha; g.drawImage(STAR, f.x - z / 2, f.y - z / 2, z, z);
+    }
+    g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+  }
+
+  function render(p, lx, ly) {
+    const g = p.uctx;
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, p.under.width, p.under.height);
+    g.setTransform(p.q, 0, 0, p.q, 0, 0);
+    if (p.d.kind === 'fab') foil(p, lx, ly);
+    if (p.d.kind === 'glitter') drawFlakes(p, p.flakes, lx, ly);
+    if (p.loose.length) drawFlakes(p, p.loose, lx, ly);
+    p.drawn.x = lx; p.drawn.y = ly; p.dirty = false;
+  }
+
+  /* --------------------------------------------------------------- the bomb ---- */
+  function fire(p) {
+    p.fired = true;
+    if (S.reduce) { buildFlakes(p); p.dirty = true; return; }
+    const r = rng(p.d.id + ':burst:' + performance.now());
+    const t = performance.now();
+    p.puff = { born: t };
+    const target = [];
+    const full = Math.round((p.W * p.H) / 70);
+    const all = (() => { const keep = p.flakes; buildFlakes(p); const whole = p.flakes; p.flakes = keep; return whole; })();
+    for (let i = p.flakes.length; i < full; i++) target.push(all[i]);
+    for (const f of target) {
+      const a = -Math.PI / 2 + (r() - 0.5) * Math.PI * 1.7, sp = 160 + r() * 420;
+      p.burst.push({
+        f, x: p.origin.x + (r() - 0.5) * 6, y: p.origin.y + (r() - 0.5) * 6, vx: Math.cos(a) * sp * 1.3, vy: Math.sin(a) * sp,
+        spin: 6 + r() * 18, ph: r() * 6, sway: 10 + r() * 30, wph: r() * 6, born: t, delay: r() * 120,
+      });
+    }
+  }
+
+  function stepBurst(p, t, dt) {
+    const g = p.octx;
+    const busy = p.burst.length || p.puff || S.showMask;
+    if (!busy) { if (!p.overClear) { g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, p.over.width, p.over.height); p.overClear = true; } return; }
+    p.overClear = false;
+    g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, p.over.width, p.over.height); g.setTransform(p.q, 0, 0, p.q, 0, 0);
+    if (S.showMask && p.mask) {
+      for (let j = 0; j < p.gh; j++) for (let i = 0; i < p.gw; i++) {
+        const v = p.mask[j * p.gw + i];
+        if (v > 0.02) { g.fillStyle = `rgba(200,16,46,${(v * 0.35).toFixed(3)})`; g.fillRect(i * CELL, j * CELL, CELL, CELL); }
+      }
+    }
+    if (p.puff) {
+      const k = (t - p.puff.born) / 650;
+      if (k >= 1) p.puff = null;
+      else {
+        const R = 20 + k * 140;
+        const gr = g.createRadialGradient(p.origin.x, p.origin.y, 0, p.origin.x, p.origin.y, R);
+        const a = (1 - k) * (S.board === 'dark' ? 0.55 : 0.7);
+        gr.addColorStop(0, `rgba(255,250,235,${a})`); gr.addColorStop(0.5, `rgba(255,214,120,${a * 0.35})`); gr.addColorStop(1, 'rgba(255,255,255,0)');
+        g.fillStyle = gr; g.beginPath(); g.arc(p.origin.x, p.origin.y, R, 0, Math.PI * 2); g.fill();
+        g.strokeStyle = `rgba(255,236,170,${(1 - k) * 0.8})`; g.lineWidth = 2 * (1 - k);
+        g.beginPath(); g.arc(p.origin.x, p.origin.y, R * 0.8, 0, Math.PI * 2); g.stroke();
+      }
+    }
+    const landed = [];
+    for (let i = p.burst.length - 1; i >= 0; i--) {
+      const b = p.burst[i];
+      if (t - b.born < b.delay) continue;
+      b.vy += 520 * dt; b.vx *= Math.exp(-dt * 2.6); b.vy *= Math.exp(-dt * 3.4);
+      b.x += (b.vx + Math.sin((t - b.born) / 1000 * 4 + b.wph) * b.sway) * dt; b.y += b.vy * dt; b.ph += b.spin * dt;
+      const dx = b.f.x - b.x, dy = b.f.y - b.y;
+      /* Once it is falling, each flake drifts toward the spot it will rest on, and lands when it reaches it. */
+      if (b.vy > 0) { b.x += dx * Math.min(1, dt * 1.6); b.y += Math.max(0, dy) * Math.min(1, dt * 1.2); }
+      if (b.vy > 0 && Math.abs(dy) < 3 && Math.abs(dx) < 3 || t - b.born > 3200) { landed.push(b.f); p.burst.splice(i, 1); continue; }
+      const flash = Math.abs(Math.sin(b.ph)) ** 10;
+      const ink = GL[b.f.ink];
+      const k = S.board === 'dark' ? 0.25 + 0.75 * flash : 0.55 + 0.45 * flash;
+      g.fillStyle = `rgb(${l2s(ink[0] * k + (1 - k) * (S.board === 'dark' ? 0 : 1) * 0.3)},${l2s(ink[1] * k)},${l2s(ink[2] * k)})`;
+      const w = b.f.s * (0.3 + 0.7 * Math.abs(Math.cos(b.ph)));
+      g.save(); g.translate(b.x, b.y); g.rotate(b.f.rot + b.ph * 0.2); g.fillRect(-w / 2, -b.f.s * 0.42, w, b.f.s * 0.84); g.restore();
+      if (flash > 0.8) { g.globalCompositeOperation = 'lighter'; g.globalAlpha = (flash - 0.8) * 5 * 0.8; const z = 9 + b.f.s * 3; g.drawImage(STAR, b.x - z / 2, b.y - z / 2, z, z); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; }
+    }
+    if (landed.length) { p.flakes.push(...landed); p.dirty = true; }
+  }
+
+  /* -------------------------------------------------------------- the light ---- */
+  function lightFor(p, t) {
+    if (S.reduce) return REST;
+    let x = REST.x * 0.4, y = REST.y * 0.4;
+    if (S.usePointer) { x += S.px * 0.9; y += S.py * 0.55; }
+    if (S.useScroll) {
+      const r = p.el.getBoundingClientRect();
+      y += ((r.top + r.height / 2) / innerHeight - 0.5) * 2.8;
+      x += ((r.top + r.height / 2) / innerHeight - 0.5) * 0.9;
+    }
+    if (S.useTilt && S.perm === 'granted' && S.settingOn) { x += S.tx * 1.1; y += S.ty * 1.1; }
+    if (S.idle) {
+      x += Math.sin(t / 1700 + p.el.offsetTop) * 0.1 + Math.sin(t / 640 + p.el.offsetTop * 0.3) * 0.025;
+      y += Math.cos(t / 2100) * 0.08 + Math.cos(t / 530 + p.el.offsetTop) * 0.02;
+    }
+    return { x: Math.max(-1.5, Math.min(1.5, x)), y: Math.max(-1.5, Math.min(1.5, y)) };
+  }
+
+  /* --------------------------------------------------------------- clinging ---- */
+  const ov = document.getElementById('overlay'), og = ov.getContext('2d');
+  let odpr = 1, ovClear = true;
+  function sizeOverlay() { odpr = Math.min(2, devicePixelRatio || 1); ov.width = Math.ceil(innerWidth * odpr); ov.height = Math.ceil(innerHeight * odpr); }
+  sizeOverlay();
+  const carried = [], falling = [];
+  const cr = rng('cursor');
+  let mouse = null;
+  const postAt = (x, y) => {
+    for (const p of posts) { const r = p.main.getBoundingClientRect(); if (x >= r.left && x < r.right && y >= r.top && y < r.bottom) return [p, x - r.left, y - r.top]; }
+    return null;
+  };
+  addEventListener('pointermove', (e) => {
+    if (e.pointerType === 'mouse' || e.pointerType === 'pen') {
+      S.px = (e.clientX / innerWidth - 0.5) * 2; S.py = (e.clientY / innerHeight - 0.5) * 2;
+    }
+    if (e.pointerType !== 'mouse') return;
+    const moved = mouse ? Math.hypot(e.clientX - mouse.x, e.clientY - mouse.y) : 0;
+    mouse = { x: e.clientX, y: e.clientY, speed: moved };
+    if (S.reduce || !S.cling) return;
+    const hit = postAt(e.clientX, e.clientY);
+    if (hit && hit[0].d.kind === 'glitter' && carried.length < 26 && cr() < Math.min(0.6, moved / 40)) {
+      const a = cr() * Math.PI * 2, d = 4 + cr() * 14;
+      carried.push({ ...flake(cr, 0, 0), ox: Math.cos(a) * d + 6, oy: Math.sin(a) * d + 10, ph: cr() * 6 });
+    }
+    if (!hit || hit[0].d.kind !== 'glitter') {
+      for (let i = carried.length - 1; i >= 0; i--) {
+        if (cr() < moved * 0.006) {
+          const c = carried.splice(i, 1)[0];
+          falling.push({ f: c, x: e.clientX + c.ox, y: e.clientY + c.oy, vy: 20 + cr() * 40, vx: (cr() - 0.5) * 30, land: 10 + cr() * 26, fallen: 0, ph: c.ph, born: performance.now() });
+        }
+      }
+    }
+  });
+
+  function stepOverlay(t, dt) {
+    if (!carried.length && !falling.length) { if (!ovClear) { og.setTransform(1, 0, 0, 1, 0, 0); og.clearRect(0, 0, ov.width, ov.height); ovClear = true; } return; }
+    ovClear = false;
+    og.setTransform(1, 0, 0, 1, 0, 0); og.clearRect(0, 0, ov.width, ov.height); og.setTransform(odpr, 0, 0, odpr, 0, 0);
+    const draw = (f, x, y, ph) => {
+      const flash = Math.abs(Math.sin(ph)) ** 8, ink = GL[f.ink];
+      const k = 0.45 + 0.55 * flash;
+      og.fillStyle = `rgb(${l2s(ink[0] * k)},${l2s(ink[1] * k)},${l2s(ink[2] * k)})`;
+      og.save(); og.translate(x, y); og.rotate(f.rot + ph * 0.3);
+      og.fillRect(-f.s / 2, -f.s * 0.42, f.s * (0.4 + 0.6 * Math.abs(Math.cos(ph))), f.s * 0.84);
+      og.strokeStyle = 'rgba(0,0,0,0.35)'; og.lineWidth = 0.5; og.strokeRect(-f.s / 2, -f.s * 0.42, f.s * (0.4 + 0.6 * Math.abs(Math.cos(ph))), f.s * 0.84);
+      og.restore();
+      if (flash > 0.85) { og.globalCompositeOperation = S.board === 'dark' ? 'lighter' : 'source-over'; og.globalAlpha = (flash - 0.85) * 6; const z = 10 + f.s * 3; og.drawImage(STAR, x - z / 2, y - z / 2, z, z); og.globalAlpha = 1; og.globalCompositeOperation = 'source-over'; }
+    };
+    const sp = mouse ? mouse.speed : 0;
+    if (mouse) for (const c of carried) { c.ph += dt * (2 + sp * 0.4); draw(c, mouse.x + c.ox, mouse.y + c.oy, c.ph); }
+    if (mouse) mouse.speed *= Math.exp(-dt * 8);
+    for (let i = falling.length - 1; i >= 0; i--) {
+      const b = falling[i];
+      b.vy = Math.min(90, b.vy + 300 * dt); b.x += b.vx * dt; b.y += b.vy * dt; b.fallen += b.vy * dt; b.ph += dt * 12;
+      if (b.fallen >= b.land) {
+        falling.splice(i, 1);
+        const hit = postAt(b.x, b.y);
+        if (hit) {
+          const [p, x, y] = hit;
+          p.loose.push({ ...b.f, x, y });
+          if (p.loose.length > 300) p.loose.shift();
+          p.dirty = true;
+        }
+        continue;
+      }
+      draw(b.f, b.x, b.y, b.ph);
+    }
+  }
+
+  /* ---------------------------------------------------------------- the loop ---- */
+  const seen = new IntersectionObserver((entries) => {
+    for (const en of entries) {
+      const p = posts.find((q) => q.el === en.target);
+      p.visible = en.isIntersecting;
+      if (p.d.kind === 'glitter' && en.intersectionRatio >= 0.4 && !p.fired) fire(p);
+    }
+  }, { threshold: [0, 0.4] });
+  for (const p of posts) seen.observe(p.el);
+
+  let last = performance.now();
+  function step(t) {
+    const dt = Math.min(0.05, Math.max(0, (t - last) / 1000)); last = t;
+    for (const p of posts) {
+      if (!p.W) continue;
+      const target = lightFor(p, t);
+      if (S.reduce) { p.cur.x = target.x; p.cur.y = target.y; }
+      else { const k = 1 - Math.exp(-dt / 0.11); p.cur.x += (target.x - p.cur.x) * k; p.cur.y += (target.y - p.cur.y) * k; }
+      if (p.visible && (p.dirty || Math.abs(p.cur.x - p.drawn.x) + Math.abs(p.cur.y - p.drawn.y) > 0.004)) render(p, p.cur.x, p.cur.y);
+      stepBurst(p, t, dt);
+    }
+    stepOverlay(t, dt);
+    drawPad();
+  }
+  function frame(t) { requestAnimationFrame(frame); try { step(t); } catch (err) { console.error(err); } }
+
+  /* ------------------------------------------------------------ the tilt pad ---- */
+  const pad = document.getElementById('pad'), pg = pad.getContext('2d');
+  let padDrag = false, padDrawn = '';
+  function drawPad() {
+    const key = `${S.tx.toFixed(3)},${S.ty.toFixed(3)},${S.perm},${S.settingOn}`;
+    if (key === padDrawn) return; padDrawn = key;
+    const Z = pad.width, m = Z / 2;
+    pg.clearRect(0, 0, Z, Z);
+    pg.strokeStyle = '#000'; pg.lineWidth = 2;
+    pg.beginPath(); pg.arc(m, m, m * 0.82, 0, Math.PI * 2); pg.stroke();
+    pg.beginPath(); pg.moveTo(m - 10, m); pg.lineTo(m + 10, m); pg.moveTo(m, m - 10); pg.lineTo(m, m + 10); pg.stroke();
+    const x = m + S.tx * m * 0.72, y = m + S.ty * m * 0.72;
+    pg.save(); pg.translate(x, y); pg.rotate(S.tx * 0.5);
+    pg.fillStyle = '#fff'; pg.strokeStyle = '#000'; pg.lineWidth = 3;
+    pg.beginPath(); pg.roundRect(-20 * (1 - Math.abs(S.tx) * 0.25), -34 * (1 - Math.abs(S.ty) * 0.25), 40 * (1 - Math.abs(S.tx) * 0.25), 68 * (1 - Math.abs(S.ty) * 0.25), 8); pg.fill(); pg.stroke();
+    pg.restore();
+    const on = S.perm === 'granted' && S.settingOn;
+    pad.setAttribute('aria-disabled', on ? 'false' : 'true');
+  }
+  function padAt(e) {
+    const r = pad.getBoundingClientRect();
+    S.tx = Math.max(-1, Math.min(1, ((e.clientX - r.left) / r.width - 0.5) * 2.4));
+    S.ty = Math.max(-1, Math.min(1, ((e.clientY - r.top) / r.height - 0.5) * 2.4));
+  }
+  pad.addEventListener('pointerdown', (e) => { if (S.perm !== 'granted' || !S.settingOn) return; padDrag = true; pad.setPointerCapture(e.pointerId); padAt(e); e.preventDefault(); });
+  pad.addEventListener('pointermove', (e) => { if (padDrag) padAt(e); });
+  pad.addEventListener('pointerup', () => { padDrag = false; });
+  pad.addEventListener('pointercancel', () => { padDrag = false; });
+  document.getElementById('level').addEventListener('click', () => { S.tx = 0; S.ty = 0; });
+
+  /* ------------------------------------------------------------- the setting ---- */
+  S.settingOn = true;
+  const settingBox = document.getElementById('settingBox'), settingWords = document.getElementById('settingWords');
+  function settingCopy() {
+    if (S.reduce) { settingBox.disabled = true; settingWords.textContent = 'Off while motion is reduced. Shiny cards hold their light still.'; return; }
+    settingBox.disabled = S.perm === 'none';
+    if (S.perm === 'none') { settingBox.checked = false; settingWords.textContent = "This device doesn't report tilt, so shiny cards follow your scrolling and your pointer instead."; return; }
+    if (S.perm === 'denied') { settingBox.checked = false; S.settingOn = false; settingWords.textContent = "Your browser said no, so shiny cards follow your scrolling instead. To change that, allow Motion & Orientation Access for dw.gripe in your browser's settings, then turn this on again."; return; }
+    settingBox.checked = S.settingOn;
+    settingWords.textContent = S.settingOn
+      ? 'On. Tilting your phone moves the light across Feelin’ Fab and Glitter Bomb. Your browser asked once and remembers.'
+      : 'Feelin’ Fab and Glitter Bomb catch the light as you tilt your phone. Turning this on asks your browser to use motion.';
+  }
+  settingBox.addEventListener('change', () => { S.settingOn = settingBox.checked; settingCopy(); padDrawn = ''; });
+  document.getElementById('tipOn').addEventListener('click', () => { if (S.perm === 'granted') { S.settingOn = true; } settingCopy(); padDrawn = ''; document.getElementById('tip').hidden = true; });
+  document.getElementById('tipNo').addEventListener('click', () => { document.getElementById('tip').hidden = true; });
+
+  /* ---------------------------------------------------------------- the bench ---- */
+  const $ = (id) => document.getElementById(id);
+  const all = () => { for (const p of posts) p.dirty = true; };
+  function setBoard(b) {
+    S.board = b; wrap.dataset.board = b; $('boardLabel').textContent = b === 'dark' ? 'Dark board' : 'Light board';
+    PAL = FAB[b].map(lin); all();
+  }
+  $('boardLight').addEventListener('change', () => setBoard('light'));
+  $('boardDark').addEventListener('change', () => setBoard('dark'));
+  $('reduce').checked = S.reduce;
+  $('reduce').addEventListener('change', (e) => {
+    S.reduce = e.target.checked;
+    if (S.reduce) { carried.length = 0; falling.length = 0; for (const p of posts) if (p.d.kind === 'glitter') { p.burst.length = 0; p.puff = null; buildFlakes(p); p.fired = true; } }
+    settingCopy(); all();
+  });
+  $('idle').addEventListener('change', (e) => { S.idle = e.target.checked; });
+  for (const k of ['usePointer', 'useScroll', 'useTilt']) $(k).addEventListener('change', (e) => { S[k] = e.target.checked; });
+  for (const [id, v] of [['permGranted', 'granted'], ['permDenied', 'denied'], ['permNone', 'none']]) $(id).addEventListener('change', () => { S.perm = v; if (v === 'granted') S.settingOn = true; settingCopy(); padDrawn = ''; });
+  for (const [id, v] of [['cLetters', 'letters'], ['cBounded', 'bounded'], ['cHalo', 'halo']]) $(id).addEventListener('change', () => { S.contrast = v; wrap.dataset.contrast = v; all(); });
+  $('showMask').addEventListener('change', (e) => { S.showMask = e.target.checked; });
+  for (const k of ['scrimPad', 'scrimFeather']) $(k).addEventListener('input', (e) => {
+    S[k] = +e.target.value; $(k + 'Out').textContent = e.target.value + 'px';
+    for (const p of posts) { if (p.W) { buildMask(p); p.dirty = true; } }
+  });
+  $('cling').addEventListener('change', (e) => { S.cling = e.target.checked; if (!S.cling) carried.length = 0; });
+  $('replay').addEventListener('click', () => {
+    const p = posts.find((q) => q.d.kind === 'glitter');
+    p.burst.length = 0; buildFlakes(p); p.flakes.length = Math.round(p.flakes.length * 0.15); p.dirty = true;
+    fire(p);
+    if (!p.visible) p.el.scrollIntoView({ behavior: S.reduce ? 'auto' : 'smooth', block: 'center' });
+  });
+  $('sweep').addEventListener('click', () => { for (const p of posts) { if (p.loose.length) { p.loose.length = 0; p.dirty = true; } } carried.length = 0; falling.length = 0; });
+
+  const ro = new ResizeObserver(() => { for (const p of posts) rebuild(p); });
+  function boot() { for (const p of posts) rebuild(p); for (const p of posts) ro.observe(p.main); settingCopy(); requestAnimationFrame(frame); }
+  addEventListener('resize', sizeOverlay);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(boot); else boot();
+})();
+</script>
