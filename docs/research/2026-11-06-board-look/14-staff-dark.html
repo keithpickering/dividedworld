@@ -338,6 +338,31 @@ table.modlog td.end { width: 220px; font-size: 13.75px; color: var(--kb-muted); 
 .phone .glasslabel { right: 6px; left: 6px; top: -14px; flex-wrap: wrap; justify-content: flex-end; }
 .phone .glasslabel span { font-size: 13px; padding: 4px 8px; white-space: nowrap; }
 .phone .notice-wrap { margin-top: 30px; }
+/* ---------- batch 5: the errors ---------- */
+/* Not found is the forum answering, in its own skin: a period "Information" box. */
+table.info h1.barh { font: inherit; margin: 0; }
+table.info td.msg { padding: 14px 16px; }
+table.info td.msg p { margin: 0 0 10px; }
+table.info td.msg ul { margin: 0 0 4px; padding-left: 1.3em; }
+table.info td.msg li { margin-bottom: 4px; }
+table.info td.addr { background: var(--kb-row-3) !important; font-size: 13.75px; color: var(--kb-muted); }
+/* Cannot display is the browser failing: its own plain white page, as the IE pastiche draws it, inside the frame. */
+.ie { background: #fff; color: #000; border: 1px solid var(--kb-frame); padding: 26px 32px 22px; display: grid; grid-template-columns: 48px 1fr; gap: 0 16px; font: 15px/1.5 Verdana, Tahoma, Geneva, sans-serif; }
+.ie .glyph { width: 40px; height: 48px; border: 2px solid #555; clip-path: polygon(0 0, 70% 0, 100% 25%, 100% 100%, 0 100%); background: linear-gradient(225deg, #555 0 17%, #fff 17%); }
+.ie h1 { font: bold 19px/1.3 Verdana, Tahoma, sans-serif; margin: 0 0 8px; padding-bottom: 8px; border-bottom: 1px solid #000; }
+.ie p { margin: 0 0 10px; } .ie ul { margin: 0 0 10px; padding-left: 1.3em; } .ie li { margin-bottom: 4px; }
+.ie a { color: #000; }
+.ie button { font: 15px Verdana, sans-serif; background: none; border: 0; padding: 0; text-decoration: underline; cursor: pointer; color: #000; }
+.ie .foot2 { border-top: 1px solid #000; padding-top: 8px; color: #555; font-size: 13.75px; margin: 4px 0 0; }
+.phone .ie { grid-template-columns: 1fr; padding: 18px 16px; }
+.phone table.info, .phone .ie { margin-top: 14px; }
+/* in dark mode the browser's page is charcoal: a dark-mode reader gets no white flash, and the glyph and the rules still make it the browser's page */
+:root[data-kb-mode="dark"] .ie, .screen[data-kb-mode="dark"] .ie { background: #1c1c1c; color: #e8e8e8; }
+:root[data-kb-mode="dark"] .ie :is(a, button), .screen[data-kb-mode="dark"] .ie :is(a, button) { color: #fff; }
+:root[data-kb-mode="dark"] .ie :is(h1, .foot2), .screen[data-kb-mode="dark"] .ie :is(h1, .foot2) { border-color: #8a8a8a; }
+:root[data-kb-mode="dark"] .ie .foot2, .screen[data-kb-mode="dark"] .ie .foot2 { color: #b0b0b0; }
+:root[data-kb-mode="dark"] .ie .glyph, .screen[data-kb-mode="dark"] .ie .glyph { border-color: #b0b0b0; background: linear-gradient(225deg, #b0b0b0 0 17%, #1c1c1c 17%); }
+.phone .ie .glyph { margin-bottom: 10px; }
 
 body { width: 1440px; height: 1000px; }
 </style>

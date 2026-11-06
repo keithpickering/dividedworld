@@ -312,6 +312,31 @@ table.modlog td.end { width: 220px; font-size: 13.75px; color: var(--kb-muted); 
 .phone .glasslabel { right: 6px; left: 6px; top: -14px; flex-wrap: wrap; justify-content: flex-end; }
 .phone .glasslabel span { font-size: 13px; padding: 4px 8px; white-space: nowrap; }
 .phone .notice-wrap { margin-top: 30px; }
+/* ---------- batch 5: the errors ---------- */
+/* Not found is the forum answering, in its own skin: a period "Information" box. */
+table.info h1.barh { font: inherit; margin: 0; }
+table.info td.msg { padding: 14px 16px; }
+table.info td.msg p { margin: 0 0 10px; }
+table.info td.msg ul { margin: 0 0 4px; padding-left: 1.3em; }
+table.info td.msg li { margin-bottom: 4px; }
+table.info td.addr { background: var(--kb-row-3) !important; font-size: 13.75px; color: var(--kb-muted); }
+/* Cannot display is the browser failing: its own plain white page, as the IE pastiche draws it, inside the frame. */
+.ie { background: #fff; color: #000; border: 1px solid var(--kb-frame); padding: 26px 32px 22px; display: grid; grid-template-columns: 48px 1fr; gap: 0 16px; font: 15px/1.5 Verdana, Tahoma, Geneva, sans-serif; }
+.ie .glyph { width: 40px; height: 48px; border: 2px solid #555; clip-path: polygon(0 0, 70% 0, 100% 25%, 100% 100%, 0 100%); background: linear-gradient(225deg, #555 0 17%, #fff 17%); }
+.ie h1 { font: bold 19px/1.3 Verdana, Tahoma, sans-serif; margin: 0 0 8px; padding-bottom: 8px; border-bottom: 1px solid #000; }
+.ie p { margin: 0 0 10px; } .ie ul { margin: 0 0 10px; padding-left: 1.3em; } .ie li { margin-bottom: 4px; }
+.ie a { color: #000; }
+.ie button { font: 15px Verdana, sans-serif; background: none; border: 0; padding: 0; text-decoration: underline; cursor: pointer; color: #000; }
+.ie .foot2 { border-top: 1px solid #000; padding-top: 8px; color: #555; font-size: 13.75px; margin: 4px 0 0; }
+.phone .ie { grid-template-columns: 1fr; padding: 18px 16px; }
+.phone table.info, .phone .ie { margin-top: 14px; }
+/* in dark mode the browser's page is charcoal: a dark-mode reader gets no white flash, and the glyph and the rules still make it the browser's page */
+:root[data-kb-mode="dark"] .ie, .screen[data-kb-mode="dark"] .ie { background: #1c1c1c; color: #e8e8e8; }
+:root[data-kb-mode="dark"] .ie :is(a, button), .screen[data-kb-mode="dark"] .ie :is(a, button) { color: #fff; }
+:root[data-kb-mode="dark"] .ie :is(h1, .foot2), .screen[data-kb-mode="dark"] .ie :is(h1, .foot2) { border-color: #8a8a8a; }
+:root[data-kb-mode="dark"] .ie .foot2, .screen[data-kb-mode="dark"] .ie .foot2 { color: #b0b0b0; }
+:root[data-kb-mode="dark"] .ie .glyph, .screen[data-kb-mode="dark"] .ie .glyph { border-color: #b0b0b0; background: linear-gradient(225deg, #b0b0b0 0 17%, #1c1c1c 17%); }
+.phone .ie .glyph { margin-bottom: 10px; }
 `;
 
 /* ---------- content ---------- */
@@ -818,3 +843,33 @@ fs.writeFileSync(path.join(here, '15-phone.html'), page({
   body: `<style>${PHONE_CSS_DARK}</style><div style="display:flex;gap:24px">${phoneScreen(NOTICE_PHONE, 'light')}${phoneScreen(REVEAL_PHONE, 'light')}${phoneScreen(STAFF_PHONE, 'light')}${phoneScreen(REVEAL_PHONE, 'dark')}</div>`,
 }));
 console.log('wrote the batch 4 boards');
+
+/* ================= batch 5: the errors (engine/ui/frame/Unavailable.tsx), their words as built ================= */
+const NOTFOUND = (addr) => `
+  <table class="t info"><caption class="vh">The page cannot be found</caption>
+    <thead><tr><td class="bar"><h1 class="barh">The page cannot be found</h1></td></tr></thead>
+    <tbody>
+      <tr><td class="msg"><p>The page you are looking for might have been removed, had its name changed, or never existed.</p>
+        <p>Please try the following:</p>
+        <ul><li>If you typed the page address, make sure that it is spelled correctly.</li><li>Open the <a href="#">index</a>, and then look for links to the page you want.</li><li>Click your browser’s Back button to try another link.</li></ul></td></tr>
+      <tr><td class="addr">Page not found: ${addr}</td></tr>
+    </tbody></table>`;
+const CANNOT = (addr) => `
+  <div class="ie" role="group" aria-labelledby="ie-h"><div class="glyph" aria-hidden="true"></div><div>
+    <h1 id="ie-h">The page cannot be displayed</h1>
+    <p>The page you are looking for is currently unavailable. Divided World did not answer in time, or the connection dropped on the way.</p>
+    <p>Please try the following:</p>
+    <ul><li>Click <button type="button">Try again</button>, or try again in a moment.</li><li>Check that your connection is working.</li><li>Go <a href="#">back to the index</a>.</li><li>Click your browser’s Back button to return to the page you were on.</li></ul>
+    <p class="foot2">Cannot load ${addr}</p></div></div>`;
+for (const [file, title, content] of [['16-not-found', 'The page cannot be found, Silver', NOTFOUND('/t/00000000-0000-4000-8000-00000000dead')], ['17-cannot-display', 'The page cannot be displayed, Silver', CANNOT('dw.gripe/t/3f2a9c1e')]]) {
+  for (const mode of ['light', 'dark']) {
+    fs.writeFileSync(path.join(here, `${file}${mode === 'dark' ? '-dark' : ''}.html`), page({ title: `${title} ${mode}`, mode, width: 1440, height: 1000, body: desk(content),
+      comment: `A board of the board look design session (docs/plans/2026-11-06-board-look-design.md), batch 5, 1440 by 1000, written by gen.mjs.` }));
+  }
+}
+fs.writeFileSync(path.join(here, '18-phone.html'), page({
+  title: 'The errors on the phone, Silver', mode: 'light', width: 4 * 390 + 3 * 24, height: 844,
+  comment: 'A board of the board look design session, batch 5: four phone screens at 390 by 844, not found and cannot be displayed in light, then in dark, 24px apart. Written by gen.mjs.',
+  body: `<style>${PHONE_CSS_DARK}</style><div style="display:flex;gap:24px">${phoneScreen(NOTFOUND('/c/nobody'), 'light')}${phoneScreen(CANNOT('dw.gripe/t/3f2a9c1e'), 'light')}${phoneScreen(NOTFOUND('/c/nobody'), 'dark')}${phoneScreen(CANNOT('dw.gripe/t/3f2a9c1e'), 'dark')}</div>`,
+}));
+console.log('wrote the batch 5 boards');
