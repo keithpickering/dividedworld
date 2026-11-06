@@ -4,6 +4,11 @@
  * Settings and the welcome page's Before you start draw their rows with one control each (appearanceRows.tsx) and save them with this, so
  * a choice made on either behaves the same.
  *
+ * The page has one holder of the account's choices (pagePreferences.ts), and every screen that saves reads from it and writes to it: a
+ * choice shown here is merged onto the latest the page holds (a choice made on another screen since this one read is kept), a screen
+ * that mounts later starts from it, and what boot read when the page loaded (`supplied`) is used only while the holder knows nothing of
+ * the account. So no screen's own copy, boot's least of all, stands in for what the account has now.
+ *
  * What the screen read is kept with the account it was read for and returned only while that account is the one signed in: when the
  * session changes in another tab, the next account's reads are still out for a commit or more, and the last account's choices never
  * stand in. A refusal puts back that choice alone, to what the account last confirmed for it, and only while the screen still shows the
@@ -17,6 +22,7 @@ import { LOST_ANSWER, type Answer, type Preferences, type PreferencesPatch } fro
 import { applyAppearance } from '../appearance.ts';
 import { announceToastChoice } from '../alerts/toast-choice.ts';
 import { setTiltPreference } from '../shine/tilt.ts';
+import { pagePreferences } from './pagePreferences.ts';
 
 /** A patch of exactly one setting: `change` saves one at a time, so it takes one. */
 export type SinglePatch = { readonly [K in keyof PreferencesPatch]-?: { readonly [P in K]: Required<PreferencesPatch>[K] } }[keyof PreferencesPatch];
@@ -44,7 +50,8 @@ export interface SavedPreferences {
 
 /**
  * `supplied` is for a caller that has read the account's preferences itself (the tips' provider, which reads them once for the page):
- * `undefined` reads them here, `null` waits for the caller's read, and a value stands for what the account has, with no read of its own.
+ * `undefined` reads them here, `null` waits for the caller's read, and a value stands for what the account had when the page loaded:
+ * it is used, with no read of its own, only while the page's holder knows nothing of the account, and then it is what the holder holds.
  */
 export function usePreferenceSaves(account: string | null, supplied?: Preferences | null): SavedPreferences {
   const { api, ui } = useKayfa();
@@ -69,16 +76,40 @@ export function usePreferenceSaves(account: string | null, supplied?: Preference
     return () => { showing.current = null; };
   }, [account]);
 
+  /* The page's latest choices for this account are held in one place; this screen's `current` follows it, so a choice made on another screen is this one's starting point. */
   useEffect(() => {
     if (!account) return undefined;
+    return pagePreferences.subscribe((who, p) => {
+      if (who !== account || p === current.current) return;
+      current.current = p;
+      setRead({ account, prefs: p });
+    });
+  }, [account]);
+
+  useEffect(() => {
+    if (!account) { pagePreferences.clear(); return undefined; }
     let live = true;
+    /* What the account has: a read, or what the page already holds, or (only with nothing held) what the caller supplied. */
+    const take = (p: Preferences) => { current.current = p; confirmed.current = p; setRead({ account, prefs: p }); setTiltPreference(p.tilt); };
     if (supplied !== undefined) {
-      if (supplied !== null) { current.current = supplied; confirmed.current = supplied; setRead({ account, prefs: supplied }); setTiltPreference(supplied.tilt); }
+      const held = pagePreferences.get(account);
+      const known = held ?? supplied;
+      if (known !== null) {
+        if (held === undefined) pagePreferences.set(account, known);
+        take(known);
+      }
       return () => { live = false; };
     }
-    void api.preferences().then((p) => { if (live) { current.current = p; confirmed.current = p; setRead({ account, prefs: p }); setTiltPreference(p.tilt); } }, () => { if (live) setRefusal({ account, text: 'Your settings could not be read right now. Reload the page to try again.' }); });
+    void api.preferences().then((p) => { if (live) { pagePreferences.set(account, p); take(p); } }, () => { if (live) setRefusal({ account, text: 'Your settings could not be read right now. Reload the page to try again.' }); });
     return () => { live = false; };
   }, [api, account, supplied]);
+
+  /* Shows a value for the account and makes it the page's: every screen's copy follows. */
+  const commit = useCallback((who: string, next: Preferences) => {
+    current.current = next;
+    pagePreferences.set(who, next);
+    setRead({ account: who, prefs: next });
+  }, []);
 
   const change = useCallback((patch: SinglePatch) => {
     const key = Object.keys(patch)[0] as keyof PreferencesPatch;
@@ -86,7 +117,7 @@ export function usePreferenceSaves(account: string | null, supplied?: Preference
     const mine = ++queued.current;
     const madeFor = account;
     if (madeFor === null || current.current === null) return;
-    const show = (next: Preferences) => { current.current = next; setRead({ account: madeFor, prefs: next }); applyAppearance(document, next, ui.themes, ui.glass); setTiltPreference(next.tilt); };
+    const show = (next: Preferences) => { commit(madeFor, next); applyAppearance(document, next, ui.themes, ui.glass); setTiltPreference(next.tilt); };
     show({ ...current.current, ...patch });
     setRefusal(null);
     setSaved(null);
@@ -109,7 +140,7 @@ export function usePreferenceSaves(account: string | null, supplied?: Preference
       if (current.current && confirmed.current && current.current[key] === asked) show({ ...current.current, [key]: confirmed.current[key] });
       setRefusal({ account: madeFor, text: LOST_ANSWER });
     });
-  }, [api, ui, account]);
+  }, [api, ui, account, commit]);
 
   /*
    * It waits its turn behind the choices before it. `skip` and `resume` are shown at once, as `change` shows a choice, and put back on a
@@ -123,16 +154,14 @@ export function usePreferenceSaves(account: string | null, supplied?: Preference
     const asked = how === 'skip' ? 'off' : how === 'resume' ? 'on' : null;
     if (asked !== null) {
       ++switchClicks.current;
-      current.current = { ...current.current, tips: asked };
-      setRead({ account: madeFor, prefs: current.current });
+      commit(madeFor, { ...current.current, tips: asked });
     }
     setRefusal(null);
     setSaved(null);
     const clicks = switchClicks.current;
     const putBack = () => {
       if (asked !== null && current.current && confirmed.current && current.current.tips === asked) {
-        current.current = { ...current.current, tips: confirmed.current.tips };
-        setRead({ account: madeFor, prefs: current.current });
+        commit(madeFor, { ...current.current, tips: confirmed.current.tips });
       }
     };
     line.current = line.current.then(async () => {
@@ -143,15 +172,14 @@ export function usePreferenceSaves(account: string | null, supplied?: Preference
         const kept = { cardsMet: r.value.cardsMet, tips: r.value.tips, tipsSeen: r.value.tipsSeen, welcomedAt: r.value.welcomedAt };
         confirmed.current = { ...confirmed.current!, ...kept };
         /* A later click on the switch (not on another choice) is still to be saved: the screen keeps what it shows for it. */
-        current.current = { ...current.current!, ...kept, tips: switchClicks.current === clicks ? kept.tips : current.current!.tips };
-        setRead({ account: madeFor, prefs: current.current });
+        commit(madeFor, { ...current.current!, ...kept, tips: switchClicks.current === clicks ? kept.tips : current.current!.tips });
         if (queued.current === mine) setSaved(madeFor);
         return;
       }
       putBack();
       setRefusal({ account: madeFor, text: r.error });
     }).catch(() => { if (showing.current === madeFor) { putBack(); setRefusal({ account: madeFor, text: LOST_ANSWER }); } });
-  }, [api, account]);
+  }, [api, account, commit]);
 
   const refuse = useCallback((text: string) => { if (account !== null) setRefusal({ account, text }); }, [account]);
 

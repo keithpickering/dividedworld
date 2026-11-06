@@ -14,6 +14,9 @@ import { probe, register, unregister } from '../shine/loop.ts';
 import { resetTilt, setTiltPreference, tiltState } from '../shine/tilt.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
 import { TipsProvider, useTip } from './Tips.tsx';
+import { usePreferenceSaves } from '../account/preferences.ts';
+import { pagePreferences } from '../account/pagePreferences.ts';
+import { usePlayer } from '../player.tsx';
 
 const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 25)); });
 const dialog = () => screen.queryByRole('dialog');
@@ -59,8 +62,8 @@ beforeEach(() => { observers = []; Element.prototype.scrollIntoView = vi.fn(); l
 afterEach(() => {
   for (const h of hosts.splice(0)) unregister(h);
   document.querySelectorAll('canvas').forEach((c) => c.remove());
-  probe.reset(); light.reset(); resetTilt();
-  root.removeAttribute('data-kb-motion');
+  probe.reset(); light.reset(); resetTilt(); pagePreferences.clear();
+  for (const a of ['data-kb-motion', 'data-kb-text-size', 'data-kb-contrast']) root.removeAttribute(a);
   vi.unstubAllGlobals(); vi.restoreAllMocks();
 });
 
@@ -295,6 +298,31 @@ describe('the shine tip', () => {
     shiny();
     await screen.findByRole('dialog', { name: 'Title of shine' });
     expect(read).not.toHaveBeenCalled();
+  });
+
+  /* A setting changed in Settings after the page loaded is the account's, whatever boot read: the tip's save must not apply boot's look over it. */
+  test('the tip\'s action keeps a text size and contrast chosen in Settings after the page loaded', async () => {
+    phone();
+    const fake = signedIn();
+    const boot = await fake.boot();
+    function Settingsish() {
+      const { session } = usePlayer();
+      const { change } = usePreferenceSaves(session.account);
+      return <><button onClick={() => change({ textSize: 200 })}>bigger</button><button onClick={() => change({ contrast: 'high' })}>higher</button></>;
+    }
+    renderIn(fake, <><Settingsish /><TipsProvider><p>page</p></TipsProvider></>, { boot });
+    await settle();
+    fireEvent.click(screen.getByText('bigger'));
+    fireEvent.click(screen.getByText('higher'));
+    await settle();
+    expect(root.getAttribute('data-kb-text-size')).toBe('200');
+    shiny();
+    const tip = await screen.findByRole('dialog', { name: 'Title of shine' });
+    fireEvent.click(within(tip).getByRole('button', { name: 'Action of shine' }));
+    await waitFor(async () => expect((await fake.preferences()).tilt).toBe('on'));
+    expect(root.getAttribute('data-kb-text-size'), 'the tip\'s save carried boot\'s text size over the one chosen after').toBe('200');
+    expect(root.getAttribute('data-kb-contrast')).toBe('high');
+    expect(pagePreferences.get(boot.account as string)?.textSize).toBe(200);
   });
 
   test('does not show to a visitor', async () => {

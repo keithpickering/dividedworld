@@ -5,7 +5,8 @@
  *
  * A component asks with `useTip(key, target, { when, step, group })`; the provider shows it when the page's budget, the account's
  * state and the pacing allow, and not otherwise. Got it calls `seeTip`; Skip all tips calls `skipTips`. A visitor has no account to
- * remember a tip on, so none shows.
+ * remember a tip on, so none shows. The provider's own preferences (the tilt choice its shine tip turns on) are saved through the page's one
+ * holder of the account's choices (account/pagePreferences.ts), never from what boot read when the page loaded.
  */
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react';
 import { useBoot } from '../boot.tsx';
@@ -44,13 +45,15 @@ export function TipsProvider({ children }: { readonly children: ReactNode }) {
     let live = true;
     store.load(null);
     setAccount(null);
-    /* Boot's preferences are the account's for this page, for the tips and the tilt choice alike; a session that changed after boot reads its own. */
+    /* Boot's preferences are the account's as the page loaded, for the tips: a session that changed after boot reads its own. The tilt choice and
+       every other setting come from the page's holder of the account's choices (account/pagePreferences.ts), which boot only seeds when it holds nothing. */
     if (boot) { store.load({ tips: boot.preferences.tips, seen: boot.preferences.tipsSeen, welcomedAt: boot.preferences.welcomedAt }); setAccount(boot.preferences); }
     else if (session.signedIn) void api.preferences().then((p) => { if (live) { store.load({ tips: p.tips, seen: p.tipsSeen, welcomedAt: p.welcomedAt }); setAccount(p); } }, () => {});
     return () => { live = false; };
   }, [api, store, session.signedIn, boot]);
 
-  /* The tilt choice is saved the way Settings saves it (a refusal puts it back), and the account's choice is read for the tilt state with it. */
+  /* The tilt choice is saved the way Settings saves it (a refusal puts it back), merged onto the choices the page holds now, so a setting changed
+     in Settings after the page loaded is never put back to boot's; and the account's choice is read for the tilt state with it. */
   const { prefs, change } = usePreferenceSaves(session.account, account);
   const changeRef = useRef(change);
   changeRef.current = change;
