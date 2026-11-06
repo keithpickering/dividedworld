@@ -86,7 +86,7 @@ const manifest: BoardManifest = {
     {
       id: 'face-words', role: 'text',
       name: 'Earns from hype on its posts and cards, and from Sweet cards it plays on others\' posts that then draw hype.',
-      buildName: 'The crowd\'s favorite. Earns from excited, positive reactions, and from the cheers a post draws after its Sweet card lands there. Hurt by bored reactions, and by a card that outdraws the post it was played on.',
+      buildName: 'The crowd\'s favorite. Earns from excited, positive reactions, and from the cheers a post draws after its Sweet card lands there.',
       within: 'classes', box: 'none',
     },
 

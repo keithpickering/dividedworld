@@ -96,13 +96,54 @@ describe('profile edit', () => {
     expect((await w.fake.characters([w.pipe]))[0]).toMatchObject({ title: 'Professional Wrench', signature: 'I [b]brought[/b] a wrench.' });
   });
 
-  test('previews the signature as it will be drawn', async () => {
+  test('previews the postbit as the board will draw it, beside the fields, following what is typed and sending nothing', async () => {
+    const w = world();
+    const setProfile = vi.spyOn(w.fake, 'setProfile');
+    await open(w);
+    const aside = await screen.findByRole('complementary', { name: 'What everyone will see' });
+    const postbit = await within(aside).findByRole('group', { name: 'About Pipewrench' });
+    /* The page is two columns: the fields, and the preview beside them. */
+    expect(aside.closest('.kb-profile-columns')).toBe(screen.getByLabelText('Title').closest('.kb-profile-columns'));
+    expect(within(postbit).queryByText('Magenta enthusiast')).toBeNull();
+    await userEvent.type(screen.getByLabelText('Title'), 'Magenta enthusiast');
+    expect(within(postbit).getByText('Magenta enthusiast')).toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText('Signature'));
+    await userEvent.paste('I [b]brought[/b] it.');
+    expect(within(aside).getByText('brought').tagName).toBe('STRONG');
+    expect(within(postbit).getByText(/^Posts: \d+$/u)).toBeInTheDocument();
+    /* The preview is the form's own values: nothing was sent, and the post is drawn as the thread draws it, a name that links nowhere. */
+    expect(setProfile).not.toHaveBeenCalled();
+    expect(within(postbit).queryByRole('link')).toBeNull();
+    expect(aside).toHaveTextContent('The preview follows what you type. Nothing changes on the board until you save.');
+  });
+
+  test('the preview says the class its player made public, as the thread does, and no more', async () => {
+    const w = world();
+    const { thread } = w.fake.seed.thread('general', w.pipe, 'A thread', 'Hi.');
+    expect((await w.fake.unmask(w.pipe, thread, '')).ok).toBe(true);
+    await open(w);
+    const postbit = await within(await screen.findByRole('complementary', { name: 'What everyone will see' })).findByRole('group', { name: 'About Pipewrench' });
+    expect(postbit).toHaveTextContent(/Revealed: Face/u);
+    expect(postbit).not.toHaveTextContent(/Has Turned/u);
+  });
+
+  test('says the title and the signature each on their count line, the hint at the left', async () => {
     const w = world();
     await open(w);
-    await userEvent.click(await screen.findByLabelText('Signature'));
-    await userEvent.paste('I [b]brought[/b] it.');
-    const preview = screen.getByRole('group', { name: 'Signature preview' });
-    expect(within(preview).getByText('brought').tagName).toBe('STRONG');
+    const title = await screen.findByLabelText('Title');
+    const titleCount = document.getElementById(title.getAttribute('aria-describedby')!)!;
+    expect(titleCount.children[0]).toHaveTextContent('Under the name on every post.');
+    expect(titleCount.children[1]).toHaveTextContent('0 of 40');
+    const signatureCount = document.getElementById(screen.getByLabelText('Signature').getAttribute('aria-describedby')!)!;
+    expect(signatureCount.children[0]).toHaveTextContent('BBCode, as in a post.');
+    expect(signatureCount.children[1]).toHaveTextContent('0 of 500');
+  });
+
+  test('sets the lead under the title', async () => {
+    const w = world();
+    await open(w);
+    await screen.findByLabelText('Title');
+    expect(screen.getByText(/What you set here is public/u).closest('.kb-page-head')).toHaveAttribute('data-kb-lead', 'under');
   });
 
   test('holds the title to 40 characters and the signature to 500, and counts them', async () => {
@@ -112,7 +153,7 @@ describe('profile edit', () => {
     expect(title).toHaveAttribute('maxlength', '40');
     expect(screen.getByLabelText('Signature')).toHaveAttribute('maxlength', '500');
     await userEvent.type(title, 'abc');
-    expect(screen.getByText('3 of 40')).toBeInTheDocument();
+    expect(screen.getAllByText('3 of 40')).toHaveLength(1);
   });
 
   test('shows a refusal in the server\'s words', async () => {
@@ -124,9 +165,21 @@ describe('profile edit', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('a title is at most 40 characters');
   });
 
-  test('has the avatar cropper', async () => {
+  test('has the avatar cropper: a secondary button labels a file input the eye never sees, beside the two crops\' frames', async () => {
     const w = world();
     await open(w);
-    expect(await screen.findByLabelText('Choose a picture')).toBeInTheDocument();
+    const input = await screen.findByLabelText('Choose a picture');
+    expect(input).toHaveAttribute('type', 'file');
+    expect(input).toHaveClass('kb-visually-hidden');
+    const button = screen.getByRole('button', { name: 'Choose a picture' });
+    expect(button).toHaveAttribute('data-kb-kind', 'secondary');
+    /* The button opens the picker the input holds; the input itself is out of the tab order, as the button stands for it. */
+    const picker = vi.spyOn(input as HTMLInputElement, 'click');
+    await userEvent.click(button);
+    expect(picker).toHaveBeenCalled();
+    expect(input).toHaveAttribute('tabindex', '-1');
+    const frames = document.querySelectorAll('.kb-avatar-frame');
+    expect([...frames].map((f) => f.getAttribute('data-kb-frame'))).toEqual(['portrait', 'square']);
+    expect(screen.getByText('No picture yet.')).toBeInTheDocument();
   });
 });

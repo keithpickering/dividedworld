@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -126,11 +129,90 @@ describe('New character', () => {
   });
 });
 
+/* The Turn board's footer, the lead under the title, and the name's count (the New character board). */
+describe('New character\'s head, name and foot', () => {
+  test('sets the lead under the title, in the page head', async () => {
+    open(world());
+    await form();
+    const lead = screen.getByText('This page is out of character and only you can see it. Nobody else can tell who plays a character.');
+    expect(lead.closest('.kb-page-head')).toHaveAttribute('data-kb-lead', 'under');
+  });
+
+  test('counts the name beside its hint, on a line of its own the name is described by', async () => {
+    open(world());
+    const f = await form();
+    const name = within(f).getByLabelText('Name');
+    await userEvent.type(name, 'Waiting Wanda');
+    expect(name).toHaveAccessibleDescription('Letters, marks, digits and single spaces. Names are unique, look-alikes included. 13 of 40');
+  });
+
+  test('sets each section a section gap from the next in one flex column', () => {
+    const css = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'characters.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(/\.kb-new-form\s*\{[^}]*gap:\s*var\(--kb-glass-section-gap\)/u.test(css)).toBe(true);
+    expect(/\.kb-debut,\s*\.kb-reveal\s*\{[^}]*gap:\s*var\(--kb-glass-section-gap\)/u.test(css)).toBe(true);
+  });
+
+  test('keeps the carousel\'s arrows a skew\'s lean inside the row\'s right edge, so a clip there never cuts one', () => {
+    const css = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'characters.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const nav = /^\.kb-class-nav\s*\{([^}]*)\}/mu.exec(css)![1]!;
+    /* Half the arrow's height times the tangent of the skew's 10 degrees: 3.85px at the board's 44px, more as the arrows grow with the text. */
+    expect(nav).toMatch(/right:\s*calc\(var\(--kb-glass-size-display-s\) \* 44 \/ 26 \* 0\.0875\)/u);
+  });
+
+  test('says in one line, beside Cancel and Make the character, what will happen, as the form is filled', async () => {
+    open(world());
+    const f = await form();
+    const line = () => f.querySelector('.kb-glass-form-foot-line')!;
+    expect(line()).toHaveTextContent('Your character is on the board as soon as you make it, and The System announces it. Its class stays yours alone.');
+    await userEvent.type(within(f).getByLabelText('Name'), 'Waiting Wanda');
+    expect(line()).toHaveTextContent('Waiting Wanda is on the board as soon as you make it, and The System announces it. Its class stays yours alone.');
+    await userEvent.click(within(f).getByRole('radio', { name: /^Silent/u }));
+    expect(line()).toHaveTextContent('Waiting Wanda is on the board as soon as you make it. Nobody is told, and its first post is its entrance. Its class stays yours alone.');
+    await userEvent.click(within(f).getByRole('radio', { name: /^Debut at the settlement/u }));
+    expect(line()).toHaveTextContent('Waiting Wanda waits, seen by no one but you, and appears at the next settlement without a word. Its class stays yours alone.');
+    await userEvent.click(within(f).getByRole('radio', { name: /^Announced, with its class/u }));
+    expect(line()).toHaveTextContent("Waiting Wanda waits, seen by no one but you, and debuts at the next settlement, announced with the class you choose. That stays public, and can't be taken back.");
+    await userEvent.click(within(f).getByRole('radio', { name: /^Heel/u }));
+    expect(line()).toHaveTextContent("Waiting Wanda waits, seen by no one but you, and debuts at the next settlement, announced as a Heel. That stays public, and can't be taken back.");
+    const foot = f.querySelector('.kb-glass-form-foot') as HTMLElement;
+    expect(within(foot).getByRole('link', { name: 'Cancel' })).toHaveAttribute('href', '/characters');
+    expect(within(foot).getByRole('button', { name: 'Make the character' })).toBeEnabled();
+  });
+});
+
+/* A class card is two facts: how the class earns, and under it what hurts it, set apart in the hurt color (the backfill design, section 5). */
+describe('New character\'s class cards, earns and hurts', () => {
+  test('set the description and then the hurt as two paragraphs, the second the hurt', async () => {
+    open(world());
+    const f = await form();
+    const heel = within(f).getByRole('radio', { name: /^Heel/u }).closest('label')!;
+    const earns = within(heel).getByText('Earns heat: boos and tomatoes.');
+    const hurts = within(heel).getByText('Hurt by the polite shrug.');
+    expect(earns).toHaveClass('kb-class-description');
+    expect(hurts).toHaveClass('kb-class-hurt');
+    expect(earns.nextElementSibling).toBe(hurts);
+    expect(heel).not.toHaveTextContent('Earns heat: boos and tomatoes. Hurt by the polite shrug. Hurt by');
+  });
+
+  test('describe the radio by both, then the marks', async () => {
+    open(world());
+    const f = await form();
+    expect(within(f).getByRole('radio', { name: /^Heel/u })).toHaveAccessibleDescription('Earns heat: boos and tomatoes. Hurt by the polite shrug. Earns from heat, hurt by the calm');
+  });
+
+  test('say nothing under a description for a class with no hurt', async () => {
+    const looks: Readonly<Record<string, ClassLook>> = { face: { color: 'currentColor', description: () => 'Reads the room.', hurtsBy: () => '', marks: { label: 'Face marks', earns: [], hurts: [] } } };
+    renderIn(world().fake, <NewCharacter />, { path: '/characters/new', classLooks: looks });
+    const f = await form();
+    expect(within(f).getByRole('radio', { name: /^Face/u }).closest('label')!.querySelector('.kb-class-hurt')).toBeNull();
+  });
+});
+
 /* A class card's words are told the settlement span in force, as they are told the economy (#179). */
 describe('New character\'s class cards', () => {
   test('pass the settlement span in force to each class\'s description', async () => {
     const looks: Readonly<Record<string, ClassLook>> = {
-      face: { color: 'currentColor', description: (_e, span) => `Counts per window of ${span.count} ${span.unit}.`, marks: { label: 'Face marks', earns: [], hurts: [] } },
+      face: { color: 'currentColor', description: (_e, span) => `Counts per window of ${span.count} ${span.unit}.`, hurtsBy: () => 'Hurt by nothing.', marks: { label: 'Face marks', earns: [], hurts: [] } },
     };
     const fake = buildWorld({ charactersPerPlayer: 3, settlementLength: { unit: 'week', count: 1 } });
     fake.signInAs(fake.seed.account('me'));

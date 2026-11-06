@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { instanceUiProblems } from './problems.ts';
 import { TIP_KEYS } from './keys.ts';
 import type { CardUi } from '../cards/types.ts';
-import type { FrontDoorUi, OnboardingUi } from '../types.ts';
+import type { FrontDoorUi, InstanceUi, OnboardingUi } from '../types.ts';
 
 const tips = () => Object.fromEntries(TIP_KEYS.map((k) => [k, { title: `T ${k}`, line: `L ${k}` }])) as unknown as Record<string, { title: string; line: string }>;
 /** The rules the front door is held to: two reactions, three ranks and two classes. */
@@ -18,9 +18,14 @@ const goodDoor = (): FrontDoorUi => ({
   ],
 });
 const cards = [{ key: 'whoops', status: 'Ink on this post' }] as unknown as readonly CardUi[];
+/** Each class's look as the cards need it: how it earns in `description`, what hurts it in `hurtsBy`. */
+const looks = (): Record<string, unknown> => ({
+  face: { description: () => 'The crowd favorite. Earns from cheers.', hurtsBy: () => 'Hurt by boos.' },
+  heel: { description: () => 'Earns heat.', hurtsBy: () => 'Hurt by the polite shrug.' },
+});
 const copy = { siteName: 'S', siteTagline: 't', shopName: 'Shop', reducedMotionCard: 'x' };
 const ui = (onboarding: unknown, frontDoor: unknown = goodDoor(), marquees?: unknown) => ({
-  onboarding: onboarding as OnboardingUi, frontDoor: frontDoor as FrontDoorUi, cards,
+  onboarding: onboarding as OnboardingUi, frontDoor: frontDoor as FrontDoorUi, cards, classLooks: looks() as unknown as InstanceUi['classLooks'],
   copy: { ...copy, ...(marquees === undefined ? {} : { marquees: marquees as readonly string[] }) },
 });
 const good = { tips: tips(), letter: 'Hi.' };
@@ -31,6 +36,18 @@ const door = (change: (d: { -readonly [K in keyof FrontDoorUi]: FrontDoorUi[K] }
 };
 
 describe('instanceUiProblems', () => {
+  test("refuses a class with no hurtsBy, naming it: its card could not set the hurt apart", () => {
+    const withLooks = (l: Record<string, unknown>) => ({ ...ui(good), classLooks: l as unknown as InstanceUi['classLooks'] });
+    const { heel: _heel, ...face } = looks();
+    assert.deepEqual(instanceUiProblems(withLooks({ ...face, heel: { description: () => 'Earns heat.' } }), rules), ['the class "heel" has no hurtsBy, so its card cannot set what hurts it apart']);
+    assert.deepEqual(instanceUiProblems(withLooks(face), rules), ['the class "heel" has no look, so its card has no earns and no hurtsBy']);
+    assert.deepEqual(instanceUiProblems(withLooks({ ...face, heel: { description: () => 'Earns heat.', hurtsBy: () => '  ' } }), rules), ['the class "heel" has a hurtsBy with no words in it']);
+  });
+  test("refuses a class whose description still says \"Hurt by\": the split was not made, and the hurt would be said twice", () => {
+    const withLooks = (l: Record<string, unknown>) => ({ ...ui(good), classLooks: l as unknown as InstanceUi['classLooks'] });
+    const problems = instanceUiProblems(withLooks({ ...looks(), face: { description: () => 'The crowd favorite. Earns from cheers. Hurt by boos.', hurtsBy: () => 'Hurt by boos.' } }), rules);
+    assert.deepEqual(problems, ['the class "face" has a description that still says "Hurt by"; what hurts it belongs in hurtsBy']);
+  });
   test("refuses a card's status that is a sentence or runs past six words, naming the card (the Lens's roles)", () => {
     const withCards = (list: unknown[]) => ({ ...ui(good), cards: [{ key: 'whoops', status: 'Ink on this post' }, ...list] as unknown as readonly CardUi[] });
     const eight = 'Turning away every card up to the rarity';

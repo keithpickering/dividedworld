@@ -205,18 +205,18 @@ describe('the classes marker', () => {
     page('## Classes\n\n<!-- kayfabb:classes -->');
     const classes = sectionOf('Classes');
     const face = within(classes).getByRole('group', { name: 'Face' });
-    expect(within(face).getByText('The crowd favorite: earns from cheers.')).toBeInTheDocument();
+    expect(within(face).getByText('The crowd favorite: earns from cheers. Hurt by boos.')).toBeInTheDocument();
     expect(within(face).getByText(HINTS.face)).toBeInTheDocument();
     expect(within(face).queryByText(HINTS.heel)).toBeNull();
     const heel = within(classes).getByRole('group', { name: 'Heel' });
-    expect(within(heel).getByText('Earns heat: boos and tomatoes.')).toBeInTheDocument();
+    expect(within(heel).getByText('Earns heat: boos and tomatoes. Hurt by the polite shrug.')).toBeInTheDocument();
     expect(within(heel).getByText(HINTS.heel)).toBeInTheDocument();
   });
 
   test('a class\'s description is told the settlement span in force, as the class cards are (#179)', () => {
-    const looks: Readonly<Record<string, ClassLook>> = { face: { color: 'currentColor', description: (_e, span) => `Counts per window of ${span.count} ${span.unit}.`, marks: { label: 'Face marks', earns: [], hurts: [] } } };
+    const looks: Readonly<Record<string, ClassLook>> = { face: { color: 'currentColor', description: (_e, span) => `Counts per window of ${span.count} ${span.unit}.`, hurtsBy: () => 'Hurt by nothing.', marks: { label: 'Face marks', earns: [], hurts: [] } } };
     renderInWorld(<Guide />, { path: '/guide', instance, guide: guide('## Classes\n\n<!-- kayfabb:classes -->'), settings: { settlementLength: { unit: 'week', count: 1 } }, classLooks: looks });
-    expect(within(screen.getByRole('group', { name: 'Face' })).getByText('Counts per window of 1 week.')).toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: 'Face' })).getByText('Counts per window of 1 week. Hurt by nothing.')).toBeInTheDocument();
   });
 
   test('the hint is labeled as Gabe\'s, in words and not by color', () => {

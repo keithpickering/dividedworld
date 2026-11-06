@@ -51,6 +51,9 @@
           },
           "--kb-glass-over": {
             "body": 0.0536
+          },
+          "--kb-glass-hurt": {
+            "body": 0.0591
           }
         }
       },
@@ -104,6 +107,9 @@
           },
           "--kb-glass-over": {
             "body": 0.0536
+          },
+          "--kb-glass-hurt": {
+            "body": 0.0591
           }
         }
       },
@@ -157,6 +163,9 @@
           },
           "--kb-glass-over": {
             "body": 0.0536
+          },
+          "--kb-glass-hurt": {
+            "body": 0.0591
           }
         }
       },
@@ -208,6 +217,9 @@
           },
           "--kb-glass-over": {
             "body": 0.0536
+          },
+          "--kb-glass-hurt": {
+            "body": 0.0591
           }
         },
         "classLarge": "full",
@@ -277,6 +289,9 @@
           },
           "--kb-glass-over": {
             "body": 0.0536
+          },
+          "--kb-glass-hurt": {
+            "body": 0.0591
           }
         },
         "classLarge": "full",
@@ -346,6 +361,9 @@
           },
           "--kb-glass-over": {
             "body": 0.0536
+          },
+          "--kb-glass-hurt": {
+            "body": 0.0591
           }
         }
       },
@@ -397,6 +415,9 @@
           },
           "--kb-glass-over": {
             "body": 0.0536
+          },
+          "--kb-glass-hurt": {
+            "body": 0.0591
           }
         }
       },
@@ -448,6 +469,9 @@
           },
           "--kb-glass-over": {
             "body": 0.0536
+          },
+          "--kb-glass-hurt": {
+            "body": 0.0591
           }
         }
       },
@@ -499,6 +523,9 @@
           },
           "--kb-glass-over": {
             "body": 0.0536
+          },
+          "--kb-glass-hurt": {
+            "body": 0.0591
           }
         }
       },
@@ -550,6 +577,9 @@
           },
           "--kb-glass-over": {
             "body": 0.0536
+          },
+          "--kb-glass-hurt": {
+            "body": 0.0591
           }
         }
       },
@@ -601,6 +631,9 @@
           },
           "--kb-glass-over": {
             "body": 0.0536
+          },
+          "--kb-glass-hurt": {
+            "body": 0.0591
           }
         }
       },
@@ -652,6 +685,9 @@
           },
           "--kb-glass-over": {
             "body": 0.0536
+          },
+          "--kb-glass-hurt": {
+            "body": 0.0591
           }
         }
       },
@@ -703,6 +739,9 @@
           },
           "--kb-glass-over": {
             "body": 0.0536
+          },
+          "--kb-glass-hurt": {
+            "body": 0.0591
           }
         },
         "classLarge": "calmed",

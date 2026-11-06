@@ -1,27 +1,33 @@
 /**
  * A waiting character's dialog: drop it now, or change how it debuts at the settlement. Until the
  * tally it can be dropped or its announcement changed; neither is final until it debuts. It is a
- * glass overlay over My characters, as the Turn is, on the Turn's smoke (Overlay.tsx).
+ * glass overlay over My characters, as the Turn is, on the Turn's smoke (Overlay.tsx). On the
+ * phone it is a sheet with its two buttons at its foot (characters.css).
  */
 import { useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { DebutLoudness, DebutTiming, MyCharacter } from '../data/api.ts';
-import { ButtonRow, GlassButton } from '../glass/Button.tsx';
+import { GlassButton } from '../glass/Button.tsx';
+import { FormFoot } from '../glass/FormFoot.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
 import { usePlayer } from '../player.tsx';
 import { DebutChoice } from './DebutChoice.tsx';
+import { debutFooter } from './footers.ts';
+import { untilWords } from './format.ts';
 import './characters.css';
 
 export interface DebutDialogProps {
   readonly character: MyCharacter;
   /** `now` drops it; `tally` changes how it debuts at the settlement. */
   readonly timing: DebutTiming;
+  /** When the next settlement runs (an ISO time), where it is known: the footer says how far off it is. */
+  readonly nextSettlement?: string | null;
   readonly onClose: () => void;
   readonly onDone: (message: string) => void;
   readonly returnFocusTo?: () => HTMLElement | null;
 }
 
-export function DebutDialog({ character, timing, onClose, onDone, returnFocusTo }: DebutDialogProps) {
+export function DebutDialog({ character, timing, nextSettlement = null, onClose, onDone, returnFocusTo }: DebutDialogProps) {
   const { api, instance } = useKayfa();
   const { refresh } = usePlayer();
   const [loudness, setLoudness] = useState<DebutLoudness>(character.debutLoudness ?? 'announced');
@@ -51,10 +57,10 @@ export function DebutDialog({ character, timing, onClose, onDone, returnFocusTo 
       <form className="kb-debut" onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); void submit(); }}>
         <DebutChoice name={character.name} className={className} timing={timing} loudness={loudness} onLoudness={setLoudness} />
         {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
-        <ButtonRow>
+        <FormFoot line={debutFooter({ name: character.name, timing, until: nextSettlement ? untilWords(nextSettlement) : null })}>
           <GlassButton onClick={onClose}>Cancel</GlassButton>
           <GlassButton type="submit" kind="primary" disabled={busy}>{drop ? `Drop ${character.name} now` : `Save how ${character.name} debuts`}</GlassButton>
-        </ButtonRow>
+        </FormFoot>
       </form>
     </Overlay>
   );

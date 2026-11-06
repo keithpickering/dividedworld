@@ -135,6 +135,9 @@ describe('My characters', () => {
     expect(within(r).getByText(/announced/iu)).toBeInTheDocument();
     expect(within(r).getByRole('button', { name: 'Drop Spritey now' })).toBeInTheDocument();
     expect(within(r).getByRole('button', { name: 'Change how Spritey debuts' })).toBeInTheDocument();
+    /* What is drawn on each is in its name (the label in the name, WCAG 2.5.3): the character's own, so the names a screen reader hears match the words on the screen. */
+    expect(within(r).getByRole('button', { name: 'Drop Spritey now' })).toHaveTextContent('Drop Spritey now…');
+    expect(within(r).getByRole('button', { name: 'Change how Spritey debuts' })).toHaveTextContent('Change how Spritey debuts…');
     expect(within(r).queryByRole('button', { name: /^Turn/u })).toBeNull();
     expect(within(r).queryByRole('link', { name: 'Edit profile' })).toBeNull();
     /* Absent from every public read. */
@@ -945,6 +948,75 @@ describe('the panel\'s pip style (the Roster board)', () => {
   });
 });
 
+describe('the Reveal over My characters: its fields and its foot (the Reveal board)', () => {
+  const page = (w: World) => renderIn(w.fake, <Page surface="characters"><Characters /></Page>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
+  const reveal = async (w: World) => {
+    page(w);
+    await ready();
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Reveal Pipewrench\'s class' }));
+    return screen.findByRole('dialog', { name: 'Reveal Pipewrench\'s class' });
+  };
+
+  test('Board and Thread are one row of two fields, and the character\'s words count on their own line, the hint at its left', async () => {
+    const dialog = await reveal(world());
+    const where = dialog.querySelector('.kb-reveal-where')!;
+    expect([...where.children].map((f) => f.textContent?.replace(/Choose.*/u, ''))).toEqual(['Board', 'Thread']);
+    const words = within(dialog).getByLabelText(/In the character.s words/u);
+    const count = document.getElementById(words.getAttribute('aria-describedby')!)!;
+    expect(count).toHaveClass('kb-glass-field-count');
+    expect(count.children[0]).toHaveTextContent('Plain text.');
+    expect(count.children[1]).toHaveTextContent('0 of 200');
+    await userEvent.type(words, 'It was me.');
+    expect(count.children[1]).toHaveTextContent('10 of 200');
+    expect(words).toHaveAccessibleDescription('Plain text. 10 of 200');
+  });
+
+  test('says in one plain line, beside Cancel and the reveal, what will happen', async () => {
+    const dialog = await reveal(world());
+    const foot = dialog.querySelector('.kb-glass-form-foot')!;
+    expect(foot.children[0]).toHaveTextContent('The reveal is checked by The System and posted at once.');
+    expect(within(foot as HTMLElement).getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+    expect(within(foot as HTMLElement).getByRole('button', { name: 'Reveal Pipewrench as a Face' })).toBeInTheDocument();
+  });
+});
+
+describe('the Debut dialog\'s foot (the Debut boards)', () => {
+  const page = (w: World) => renderIn(w.fake, <Page surface="characters"><Characters /></Page>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
+
+  test('changing how it debuts says when it debuts, how far off, and that it can be dropped now', async () => {
+    const w = world();
+    w.fake.seed.nextSettlementAt(w.fake.clock.now() + (7 * 60 + 42) * 60_000);
+    page(w);
+    await ready();
+    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Change how Spritey debuts' }));
+    const dialog = await screen.findByRole('dialog', { name: 'How Spritey debuts' });
+    expect(dialog.querySelector('.kb-glass-form-foot-line')).toHaveTextContent('It debuts at the next settlement, in 7 h 42 min. Until then you can drop it now instead.');
+    /* How loud is the dialog\'s only choice, one row of three. */
+    expect(within(dialog).getAllByRole('radio')).toHaveLength(3);
+    expect(dialog.querySelector('fieldset.kb-choice-loud')).not.toBeNull();
+  });
+
+  test('with no settlement known it says so without a time', async () => {
+    const w = world();
+    w.fake.seed.nextSettlementAt(null);
+    page(w);
+    await ready();
+    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Change how Spritey debuts' }));
+    const dialog = await screen.findByRole('dialog', { name: 'How Spritey debuts' });
+    expect(dialog.querySelector('.kb-glass-form-foot-line')).toHaveTextContent(/^It debuts at the next settlement\. Until then you can drop it now instead\.$/u);
+  });
+
+  test('dropping it now says it goes on the board and can post at once', async () => {
+    const w = world();
+    page(w);
+    await ready();
+    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Drop Spritey now' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Drop Spritey now' });
+    expect(dialog.querySelector('.kb-glass-form-foot-line')).toHaveTextContent('Spritey goes on the board at once and can post at once, instead of at the next settlement.');
+    expect(within(dialog.querySelector('.kb-glass-form-foot') as HTMLElement).getByRole('button', { name: 'Drop Spritey now' })).toBeInTheDocument();
+  });
+});
+
 describe('the class cards\' radios', () => {
   test('are each named by the class alone and described by its words, then its marks\' words', async () => {
     const w = world();
@@ -953,7 +1025,7 @@ describe('the class cards\' radios', () => {
     await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Turn Pipewrench' }));
     const dialog = await screen.findByRole('dialog', { name: 'Turn Pipewrench' });
     const heel = within(dialog).getByRole('radio', { name: 'Heel' });
-    expect(heel).toHaveAccessibleDescription('Earns heat: boos and tomatoes. Earns from heat, hurt by the calm');
+    expect(heel).toHaveAccessibleDescription('Earns heat: boos and tomatoes. Hurt by the polite shrug. Earns from heat, hurt by the calm');
     expect(within(heel.closest('label')!).getByRole('img', { name: 'Earns from heat, hurt by the calm' })).toBeInTheDocument();
   });
 });

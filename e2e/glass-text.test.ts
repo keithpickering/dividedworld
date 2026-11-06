@@ -294,6 +294,8 @@ describe('what the measurement does not read', () => {
       <span data-kb-art><b id="art">VEND</b></span>
       <div class="kb-hand-board-post-bar"><span id="bar">Spritey · #41</span></div>
       <div class="kb-hand-board-post-foot"><span id="foot">quote</span></div>
+      <div class="kb-profile-preview-post"><span id="postbit">Mrs. Hooligan</span><div><i id="signed">the signature</i></div></div>
+      <p class="kb-profile-preview-postal" id="postLookalike">A glass line whose class only starts like the profile preview's post</p>
       <p class="kb-hand-board-post-barely" id="barLookalike">A glass line whose class only starts like the bar's</p>
       <p class="kb-hand-board-post-footer" id="footLookalike">A glass line whose class only starts like the foot's</p>
     </div></body>`) as { window: { document: Document } }).window.document;
@@ -312,6 +314,12 @@ describe('what the measurement does not read', () => {
     expect(isSkipped(at('outside'))).toBe(false);
     expect(isSkipped(at('barLookalike'))).toBe(false);
     expect(isSkipped(at('footLookalike'))).toBe(false);
+  });
+
+  test('a node inside the postbit Edit profile previews as the thread will draw it is skipped, however deep, and a glass line beside it is not', () => {
+    expect(isSkipped(at('postbit'))).toBe(true);
+    expect(isSkipped(at('signed'))).toBe(true);
+    expect(isSkipped(at('postLookalike'))).toBe(false);
   });
 
   test('the instance\'s art is skipped too', () => {

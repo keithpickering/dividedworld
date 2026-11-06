@@ -280,8 +280,8 @@ export function Characters() {
               <span> It will debut {LOUD[c.debutLoudness ?? 'announced']}.</span>
             </p>
             <ButtonRow>
-              <GlassButton data-kb-return="" aria-label={`Drop ${c.name} now`} onClick={() => show({ kind: 'drop', id: c.id })}>Drop now…</GlassButton>
-              <GlassButton aria-label={`Change how ${c.name} debuts`} onClick={() => show({ kind: 'debut', id: c.id })}>Change how it debuts…</GlassButton>
+              <GlassButton data-kb-return="" aria-label={`Drop ${c.name} now`} onClick={() => show({ kind: 'drop', id: c.id })}>Drop {c.name} now…</GlassButton>
+              <GlassButton aria-label={`Change how ${c.name} debuts`} onClick={() => show({ kind: 'debut', id: c.id })}>Change how {c.name} debuts…</GlassButton>
             </ButtonRow>
           </div>
         )}
@@ -390,8 +390,8 @@ export function Characters() {
 
       {dialog && target && dialog.kind === 'turn' && <TurnDialog character={target} face={faces.get(target.id)} standing={standings[target.id]} nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
       {dialog && target && dialog.kind === 'reveal' && <RevealOverlay character={target} onClose={() => setDialog(null)} onDone={setFlash} returnFocusTo={returnTo(target.id)} />}
-      {dialog && target && dialog.kind === 'drop' && <DebutDialog character={target} timing="now" onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
-      {dialog && target && dialog.kind === 'debut' && <DebutDialog character={target} timing="tally" onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
+      {dialog && target && dialog.kind === 'drop' && <DebutDialog character={target} timing="now" nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
+      {dialog && target && dialog.kind === 'debut' && <DebutDialog character={target} timing="tally" nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
     </div>
   );
 }

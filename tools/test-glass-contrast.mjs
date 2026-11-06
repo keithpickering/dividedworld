@@ -110,6 +110,16 @@ check('the real glass is clean', glassFaults(real).length === 0, text(glassFault
   check('the field is four layers and three narrow, each drifting at its own rate', real.smoke.field?.layers.length === 4 && real.smoke.field?.narrow?.length === 3 && new Set(real.smoke.field.layers.map((l) => l.drift.seconds)).size === 4, JSON.stringify(real.smoke.field?.layers.map((l) => l.drift)));
 }
 
+/* ---- the hurt color: what hurts a class, set under how it earns on the class card (the backfill plan, Task 8) ---- */
+{
+  check('the real glass has --kb-glass-hurt as a body token in both keys, held at 4.5:1 like the other text colors', ['standard', 'high'].every((k) => real.keys[k]['--kb-glass-hurt']?.tags?.includes('body')), JSON.stringify(real.keys.standard['--kb-glass-hurt']));
+  const g = fresh();
+  g.keys.standard['--kb-glass-hurt'].value = '#7a2f46';
+  const r = named(glassFaults(g), '--kb-glass-hurt', 'body');
+  check('a hurt color too dark for the card fires, naming the token and the 4.5 it needs', r.length > 0 && r.every((f) => /needs 4\.5/.test(f.why)), text(glassFaults(g)).slice(0, 600));
+  check('the real hurt color does not fire', named(glassFaults(fresh()), '--kb-glass-hurt').length === 0);
+}
+
 /* ---- the web plan's seven poisons ---- */
 {
   const g = fresh();

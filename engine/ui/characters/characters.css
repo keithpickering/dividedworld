@@ -393,13 +393,21 @@
 
 .kb-glass-select {
   min-width: 190px;
-  min-height: 52px;
+  /* The character forms' boards draw every field and select 56px tall. */
+  min-height: 56px;
   padding: 4px 10px;
   border: 1px solid var(--kb-glass-neon);
   background: var(--kb-glass-field);
   font: inherit;
+  font-size: var(--kb-glass-size-body);
   font-weight: 700;
   color: var(--kb-glass-text);
+}
+
+/* A select in a labeled field is the field's whole width, as the boards draw it. */
+.kb-glass-field > .kb-glass-select {
+  box-sizing: border-box;
+  width: 100%;
 }
 
 /* The characters screens' own choices: Settings' rows set theirs (account.css). */
@@ -481,7 +489,8 @@
  */
 .kb-class-nav {
   position: absolute;
-  right: 0;
+  /* The arrows are skewed controls, which lean past their own box: kept that lean inside the row's right edge, so nothing that clips there cuts one (half the arrow's height times the tangent of the skew's 10 degrees). */
+  right: calc(var(--kb-glass-size-display-s) * 44 / 26 * 0.0875);
   bottom: calc(100% - 30px + 10px + var(--kb-glass-size-body) * 0.6 - var(--kb-glass-size-display-s) * 22 / 26);
   display: flex;
   gap: 10px;
@@ -684,11 +693,19 @@
   border: 1.5px dotted var(--kb-class-fill);
 }
 
-.kb-class-description {
+.kb-class-description,
+.kb-class-hurt {
   font-size: var(--kb-glass-size-body);
   font-weight: 600;
   line-height: 1.5;
   color: var(--kb-glass-text-2);
+}
+
+/* What hurts the class, set apart under how it earns: the hurt color, and its words begin "Hurt by", so it is never told by the color alone. */
+.kb-class-hurt {
+  /* The board sets the hurt 12px under how the class earns (the card's flex gap is 10px). */
+  margin-top: 2px;
+  color: var(--kb-glass-hurt);
 }
 
 /* ---- how loud, and when ---- */
@@ -702,6 +719,22 @@
 
 .kb-choice > legend {
   margin-bottom: 10px;
+}
+
+/*
+ * How loud is one row of three (the Turn's loud tiles name theirs, .kb-turn-loud): the three options share the row, and past 100% text,
+ * where an option's words at ten times their type no longer fit a third of the row, they fall back to the auto-fit above. The phone stacks them.
+ */
+.kb-choice-loud {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+:where(:root[data-kb-text-size]:not([data-kb-text-size='100'])) .kb-choice-loud {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, max(240px, calc(10 * var(--kb-glass-size-body) + 90px))), 1fr));
+}
+
+:where(:root[data-kb-layout='phone']) .kb-choice-loud {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .kb-choice-option {
@@ -849,7 +882,8 @@
 
 .kb-debut-dialog,
 .kb-reveal-dialog {
-  width: min(100%, 960px);
+  /* The Debut and Reveal boards' dialog: 1100px, the words 40px in. */
+  width: min(100%, 1100px);
 }
 
 .kb-turn-dialog .kb-glass-dialog-head,
@@ -1096,7 +1130,8 @@
 .kb-reveal {
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  /* Every section the same distance from the next, the form pages' gap. */
+  gap: var(--kb-glass-section-gap);
   margin-top: 24px;
 }
 
@@ -1115,13 +1150,25 @@
 }
 
 .kb-reveal-where {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px 30px;
+  display: grid;
+  /* Board and Thread, two equal fields in one row; the phone stacks them. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 24px;
 }
 
 .kb-reveal-where .kb-glass-select {
+  box-sizing: border-box;
+  width: 100%;
   max-width: 100%;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-reveal-where {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* The words field and its count are one section. */
+.kb-reveal-words {
+  min-width: 0;
 }
 
 /* ---- the Turn button, a roster piece (Task 5 gives the roster its own parts) ---- */
@@ -1160,8 +1207,18 @@
 .kb-new-form {
   display: flex;
   flex-direction: column;
-  gap: 28px;
-  margin-top: 28px;
+  /* Every section 44px from the next (the board's), the dialogs' gap too. */
+  gap: var(--kb-glass-section-gap);
+}
+
+/* The class cards and the note under them are one section. */
+.kb-new-classes > .kb-roster-line {
+  margin-top: 14px;
+}
+
+/* On the phone past 100% text the class cards' arrows come into the flow and hang 30px below the cards' frame (the Turn's map starts under them, the same): the note starts under them too. */
+:where(:root[data-kb-layout='phone'][data-kb-text-size]:not([data-kb-text-size='100'])) .kb-new-classes > .kb-roster-line {
+  margin-top: 36px;
 }
 
 .kb-new-name {
@@ -1171,26 +1228,37 @@
 .kb-glass-field {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  font-size: var(--kb-glass-size-body);
+  gap: 10px;
+  /* The character forms' boards set every field's label at the lead's 24px, 1.5px apart, in the text color (boards 23 to 26). */
+  font-size: var(--kb-glass-size-lead);
   font-weight: 800;
-  letter-spacing: 3px;
+  line-height: 1.1;
+  letter-spacing: 1.5px;
   text-transform: uppercase;
-  color: var(--kb-glass-text-2);
+  color: var(--kb-glass-text);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-glass-field {
+  font-size: var(--kb-glass-size-phone-display);
 }
 
 .kb-glass-input {
-  min-height: 52px;
+  min-height: 56px;
   box-sizing: border-box;
   width: 100%;
   padding: 4px 12px;
   border: 1px solid var(--kb-glass-neon);
   background: var(--kb-glass-field);
   font: inherit;
+  font-size: var(--kb-glass-size-body);
   font-weight: 700;
   letter-spacing: 0;
   text-transform: none;
   color: var(--kb-glass-text);
+}
+
+:where(:root[data-kb-layout='phone']) :is(.kb-glass-input, .kb-glass-select) {
+  font-size: var(--kb-glass-size-phone-body);
 }
 
 /* ---- the Phone board's layout ---- */
@@ -1298,7 +1366,7 @@
   font-size: var(--kb-glass-size-phone-display);
 }
 
-:where(:root[data-kb-layout='phone']) :is(.kb-characters, .kb-new-character, .kb-turn-dialog, .kb-debut-dialog, .kb-reveal-dialog) :is(.kb-reveal-line, .kb-roster-line, .kb-roster-rank, .kb-roster-turn, .kb-roster-facts, .kb-turn-facts, .kb-turn-line, .kb-turn-map, .kb-class-description, .kb-choice-option, .kb-turn-toggle, .kb-notice, .kb-glass-field, legend, .kb-preview-head, .kb-turn-rank, .kb-characters-empty, .kb-characters-new) {
+:where(:root[data-kb-layout='phone']) :is(.kb-characters, .kb-new-character, .kb-turn-dialog, .kb-debut-dialog, .kb-reveal-dialog) :is(.kb-reveal-line, .kb-roster-line, .kb-roster-rank, .kb-roster-turn, .kb-roster-facts, .kb-turn-facts, .kb-turn-line, .kb-turn-map, .kb-class-description, .kb-class-hurt, .kb-choice-option, .kb-turn-toggle, .kb-notice, legend, .kb-preview-head, .kb-turn-rank, .kb-characters-empty, .kb-characters-new) {
   font-size: var(--kb-glass-size-phone-body);
 }
 
@@ -1310,6 +1378,30 @@
   min-height: 48px;
   padding: 0 20px;
   font-size: var(--kb-glass-size-phone-display);
+}
+
+/*
+ * The Debut dialog on the phone is a sheet (the Phone board's second screen): it stands on the window's foot, the window's width less the
+ * overlay's 8px, and its two buttons stand at its foot, Cancel one part wide and the action two where both words fit one line. It is as tall
+ * as its words and no taller: a sheet stretched to the window (the board's, from 40px under the top) moved what the calm covers at 200% text,
+ * which the contrast measurement (e2e/glass-text.spec.ts) reads, and the buttons are at its foot all the same.
+ */
+:where(:root[data-kb-layout='phone']) .kb-debut-dialog {
+  align-self: end;
+  width: 100%;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-debut-dialog .kb-glass-form-foot > .kb-button-row {
+  flex: 1 1 100%;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-debut-dialog .kb-glass-form-foot > .kb-button-row > :first-child {
+  flex: 1 1 auto;
+}
+
+/* The action twice as wide as Cancel where both words fit one line; where its words are longer than that, it takes a line of its own (never a label split across a shared line). */
+:where(:root[data-kb-layout='phone']) .kb-debut-dialog .kb-glass-form-foot > .kb-button-row > :last-child {
+  flex: 2 1 auto;
 }
 
 /* ---- the reveal's board modal (RevealModal.tsx) ---- */
