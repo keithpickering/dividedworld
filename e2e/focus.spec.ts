@@ -113,6 +113,29 @@ for (const how of ['Back', 'Esc'] as const) {
 }
 
 /*
+ * The crossing at full motion (the glass polish plan, Task 13): the menu opens and Esc is pressed at once, while the board is still held
+ * under the glass. The crossing reverses from where it is, the board is back with focus where it was, and at no moment is there more
+ * than one main for a keyboard or a reader to reach.
+ */
+test('Esc pressed the moment the menu opens, at full motion, returns to the same post with only one main reachable', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.goto('/b/general');
+  await page.getByRole('link', { name: 'The long one', exact: true }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'The long one' })).toBeVisible();
+  const thread = new URL(page.url()).pathname;
+  const post = page.locator('#post-6');
+  await post.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  await expect.poll(() => post.evaluate((el) => Math.round(el.getBoundingClientRect().top))).toBeLessThan(40);
+  await page.getByRole('region', { name: 'Game HUD' }).getByRole('button', { name: 'Menu' }).click();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('heading', { level: 1, name: 'The long one' })).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe(thread);
+  await expect(page.locator('.kb-world')).toHaveCount(1);
+  await expect(page.getByRole('main')).toHaveCount(1);
+  await expect(post).toBeFocused();
+});
+
+/*
  * Every way into the glass keeps the board's place, not only the HUD's Menu (keepBoardPlace,
  * engine/ui/glass/back.ts): the reply box's "Make a character", for an account with none, is a
  * plain link, and Back from where it leads still lands at the post that was in view. And the

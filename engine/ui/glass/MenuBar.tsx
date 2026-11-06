@@ -32,12 +32,14 @@
  * once. Back stays out of the strip, so no tab ever slides under it.
  */
 import { useEffect, useRef, useState } from 'react';
+import { motion } from 'motion/react';
 import { motionReduced } from '../appearance.ts';
 import { useKayfa } from '../context.tsx';
 import { usePlayer } from '../player.tsx';
 import { Link, useLocation } from '../router.tsx';
 import { backHref, boardPlace, useBackToBoard } from './back.ts';
 import { pageEscape, plainClick } from './keys.ts';
+import { bezier, useFeel } from './motion.ts';
 import { GLASS_NAV } from './nav.ts';
 import './shell.css';
 
@@ -57,13 +59,19 @@ const TABS: readonly Tab[] = [
 /** The admin queue's tab, after the others, shown only to an admin (the server decides who is one; a refused or failed ask shows no tab). */
 const ADMIN: Tab = { label: 'Admin', to: GLASS_NAV.admin, current: (p) => p === GLASS_NAV.admin || p.startsWith('/admin/') };
 
+/** Where the page at `path` stands among the tabs, the admin's last (-1 on a page with none): the order Page takes a screen change's direction from. */
+export function tabIndex(path: string): number {
+  return [...TABS, ADMIN].findIndex((t) => t.current(path));
+}
+
 /** How crowded a bar of this many tabs is ('few' is an instance with five or fewer tabs), which the stylesheet steps the tabs' padding and spacing down on (the boards' `many` and `most`). */
 function density(count: number): 'few' | 'many' | 'most' {
   return count > 8 ? 'most' : count > 5 ? 'many' : 'few';
 }
 
 export function MenuBar() {
-  const { api } = useKayfa();
+  const { api, ui } = useKayfa();
+  const feel = useFeel(ui.glass.motion);
   const { session } = usePlayer();
   const [admin, setAdmin] = useState(false);
   useEffect(() => {
@@ -173,6 +181,8 @@ export function MenuBar() {
             {shown.map((t) => (
               <li key={t.label}>
                 <Link to={t.to} className="kb-glass-menu-tab kb-glass-skew" aria-current={t.current(path) ? 'page' : undefined}><span className="kb-glass-upright">{t.label}</span></Link>
+                {/* One element for the whole bar: it glides to the tab chosen (the layoutId), and under Off it is simply there. It sits in the item, not the skewed link, so its box is measured straight. */}
+                {t.current(path) && <motion.span layoutId="kb-glass-menu-underline" className="kb-glass-menu-underline" aria-hidden="true" transition={feel ? (feel.spring ? { type: 'spring', stiffness: feel.spring.stiffness, damping: feel.spring.damping } : { duration: feel.screen / 1000, ease: bezier(feel.ease) }) : { duration: 0 }} />}
               </li>
             ))}
           </ul>

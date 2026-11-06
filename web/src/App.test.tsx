@@ -764,3 +764,80 @@ describe('after the first load', () => {
     await waitFor(() => expect(within(screen.getByRole('region', { name: 'Game HUD' })).getByRole('img', { name: /0\.85 pending/u })).toBeInTheDocument(), { timeout: 3000 });
   });
 });
+
+/*
+ * The crossing between the board and the glass (the glass polish plan, Task 13). Motion runs in jsdom on its own clock (requestAnimationFrame), so
+ * an exit really takes the feel's time: the tests look right after the move, while the exit is held, and then wait for it to end. Which motion
+ * the app is in is the account's setting, set before the first render (the root's mark alone is reset by Appearance to the device's).
+ */
+describe('the crossing', () => {
+  const open = async (motion: 'full' | 'reduce') => {
+    const fake = createFake({ instance, settings: fallbackSettings });
+    seedDemo(fake);
+    await fake.setPreferences({ motion });
+    render(<App api={fake} />);
+    const hud = await screen.findByRole('region', { name: 'Game HUD' });
+    await waitFor(() => expect(document.documentElement.getAttribute('data-kb-motion')).toBe(motion));
+    return { hud, menu: await within(hud).findByRole('button', { name: /Menu/u }) };
+  };
+  const worlds = () => Array.from(document.querySelectorAll<HTMLElement>('.kb-world'));
+
+  test('at full motion the board is held while the glass opens, inert and hidden from the first frame, and only the glass has a main to reach', async () => {
+    const { menu } = await open('full');
+    await userEvent.click(menu);
+    await screen.findByRole('navigation', { name: 'Menu' });
+    /* Two worlds are in the page, so this is not the single-world case. */
+    expect(worlds().map((w) => w.dataset.kbWorld)).toEqual(['board', 'glass']);
+    const [board, glass] = worlds();
+    expect(board).toHaveAttribute('inert');
+    expect(board).toHaveAttribute('aria-hidden', 'true');
+    expect(glass).not.toHaveAttribute('inert');
+    expect(document.querySelectorAll('main')).toHaveLength(2);
+    expect(screen.getAllByRole('main')).toHaveLength(1);
+    expect(screen.getByRole('main')).toBe(glass!.querySelector('main'));
+    /* The board leaves when its hold ends, and the glass is alone. */
+    await waitFor(() => expect(worlds().map((w) => w.dataset.kbWorld)).toEqual(['glass']), { timeout: 3000 });
+    expect(screen.getAllByRole('main')).toHaveLength(1);
+  });
+
+  test('Back mid-crossing brings the board back, present again and not remounted', async () => {
+    const { menu } = await open('full');
+    await userEvent.click(menu);
+    await screen.findByRole('navigation', { name: 'Menu' });
+    const board = worlds()[0]!;
+    const page = board.querySelector('main');
+    await userEvent.click(within(screen.getByRole('navigation', { name: 'Menu' })).getByRole('link', { name: 'Back to the board' }));
+    /* At once the glass is the one that is held: hidden and inert, and the board it came from is present. */
+    expect(screen.queryByRole('navigation', { name: 'Menu' })).toBeNull();
+    expect(screen.getAllByRole('main')).toHaveLength(1);
+    expect(board).not.toHaveAttribute('inert');
+    await waitFor(() => expect(worlds().map((w) => w.dataset.kbWorld)).toEqual(['board']), { timeout: 3000 });
+    expect(worlds()[0]).toBe(board);
+    expect(board).not.toHaveAttribute('inert');
+    expect(board.querySelector('main')).toBe(page);
+  });
+
+  test('under Off the new world is drawn in the same frame and the old one is gone at once', async () => {
+    const { menu } = await open('reduce');
+    await userEvent.click(menu);
+    await screen.findByRole('navigation', { name: 'Menu' });
+    expect(worlds().map((w) => w.dataset.kbWorld)).toEqual(['glass']);
+    expect(document.querySelectorAll('main')).toHaveLength(1);
+    expect(screen.getAllByRole('main')).toHaveLength(1);
+  });
+
+  test('a glass screen that leaves is hidden and inert while the next arrives, and the old one stays the page it was', async () => {
+    const { menu } = await open('full');
+    await userEvent.click(menu);
+    const bar = await screen.findByRole('navigation', { name: 'Menu' });
+    await screen.findByRole('heading', { level: 1 });
+    await userEvent.click(within(bar).getByRole('link', { name: 'Settings' }));
+    const screens = Array.from(document.querySelectorAll<HTMLElement>('.kb-glass-screen'));
+    expect(screens).toHaveLength(2);
+    expect(screens[0]).toHaveAttribute('inert');
+    expect(screens[0]).toHaveAttribute('aria-hidden', 'true');
+    expect(screens[0]!.querySelector('h1')).not.toHaveTextContent(/Settings/u);
+    expect(screen.getAllByRole('main')).toHaveLength(1);
+    await waitFor(() => expect(document.querySelectorAll('.kb-glass-screen')).toHaveLength(1), { timeout: 3000 });
+  });
+});

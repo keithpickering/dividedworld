@@ -11,10 +11,14 @@
  * Phone board's below it, the switch the HUD makes at the same width; between that width and
  * 1440px the Main board's is drawn at the window's scale (shell.css).
  */
-import { useEffect, useRef, type ReactNode } from 'react';
+import { AnimatePresence } from 'motion/react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useKayfa } from '../context.tsx';
 import { useLocation } from '../router.tsx';
 import type { GlassSurface } from '../types.ts';
-import { MenuBar } from './MenuBar.tsx';
+import { Leaving } from './Held.tsx';
+import { MenuBar, tabIndex } from './MenuBar.tsx';
+import { screen, useFeel } from './motion.ts';
 import { Smoke, useSurfaceStyle } from './Smoke.tsx';
 import { useBoard } from './useBoard.ts';
 import './shell.css';
@@ -35,6 +39,20 @@ export function Page({ surface, menu = true, children }: PageProps) {
   const calm = useSurfaceStyle(surface);
   /* The page's layout is the board's the window is wide enough for, as the HUD's is: the two switch at one width. */
   useBoard();
+  /*
+   * A change between screens: the old content leaves toward the side of the tab being left, the new enters from the side of the tab chosen
+   * (motion.ts `screen`), by the tabs' order in the menu bar. A page with no tab (the settlement's summary) or a move within one tab keeps the
+   * direction it had. The direction is decided in the render that changes the path, from the two paths alone.
+   */
+  const { ui } = useKayfa();
+  const feel = useFeel(ui.glass.motion);
+  const at = tabIndex(path);
+  const [seen, setSeen] = useState(at);
+  const [dir, setDir] = useState<1 | -1>(1);
+  if (at !== seen) {
+    if (at >= 0 && seen >= 0) setDir(at > seen ? 1 : -1);
+    setSeen(at);
+  }
   const first = useRef(true);
   useEffect(() => {
     if (first.current) { first.current = false; return; }
@@ -47,7 +65,9 @@ export function Page({ surface, menu = true, children }: PageProps) {
       <Smoke surface={surface}>
         {menu && <MenuBar />}
         <main ref={main} className="kb-glass-content" tabIndex={-1}>
-          {children}
+          <AnimatePresence initial={false} custom={dir}>
+            <Leaving key={path} custom={dir} className="kb-glass-screen" {...screen(feel)}>{children}</Leaving>
+          </AnimatePresence>
         </main>
       </Smoke>
     </div>

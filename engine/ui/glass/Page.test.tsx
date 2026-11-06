@@ -53,7 +53,10 @@ describe('the content, once Part 2 restyled every glass page', () => {
     const { container } = renderInWorld(<Page surface="settings"><p>words</p></Page>, { path: '/settings', seed: signedIn });
     await screen.findByRole('navigation', { name: 'Menu' });
     expect(container.querySelector('.kb-glass-content-panel')).toBeNull();
-    expect(screen.getByRole('main').firstElementChild).toHaveTextContent('words');
-    expect(screen.getByRole('main').firstElementChild?.tagName).toBe('P');
+    /* The content is the keyed screen's (the screen change's), whose first child is the words themselves. */
+    const shown = screen.getByRole('main').firstElementChild!;
+    expect(shown).toHaveClass('kb-glass-screen');
+    expect(shown.firstElementChild).toHaveTextContent('words');
+    expect(shown.firstElementChild?.tagName).toBe('P');
   });
 });

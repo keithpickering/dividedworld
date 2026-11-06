@@ -43,6 +43,7 @@ import type { Character } from '../data/api.ts';
 import { useKayfa } from '../context.tsx';
 import { usePlayer } from '../player.tsx';
 import { registerHref, signInHref } from '../account/next.ts';
+import { publishHudTab } from './hud-tab.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { useBoot } from '../boot.tsx';
 import { Link, searchOf, useLocation, useNavigate, useRouterInternals } from '../router.tsx';
@@ -213,6 +214,12 @@ export function Hud() {
     return () => { watch.disconnect(); root.style.removeProperty('--kb-hud-measured'); };
   }, [signedIn, board, scale]);
 
+  /* The tab's box on the window, for the crossing to open from and close back into (hud-tab.ts); read when the crossing starts, so it is never stale. */
+  useEffect(() => publishHudTab(() => {
+    const a = aura.current?.getBoundingClientRect() ?? section.current?.getBoundingClientRect();
+    return a && a.width > 0 ? { x: a.left, y: a.top, width: a.width, height: a.height } : null;
+  }), []);
+
   /*
    * Menu is its word unless the word would cut the mask's name. The name is measured as the picker draws it (a hidden copy of it, in the picker's
    * face), against the picker's room as it would be with Menu's word: the room now, less what shortening gave it. Judged that way the answer does
@@ -263,6 +270,8 @@ export function Hud() {
     if (!signedIn) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented || e.repeat || e.isComposing) return;
+      /* A frame that is leaving (the crossing holds it, inert, under the glass) takes no key: input is the arriving page's from the first frame. */
+      if (section.current?.closest('[inert]')) return;
       /* An armed card is put back first, and the hand, if it is open, stays; the next Esc is the hand's. */
       if (armed !== null) {
         e.preventDefault();

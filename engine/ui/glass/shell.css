@@ -165,7 +165,19 @@
 .kb-glass-menu-tab[aria-current='page'] {
   color: var(--kb-glass-text-hi);
   background: color-mix(in srgb, var(--kb-glass-neon) 16%, transparent);
-  box-shadow: inset 0 -3px 0 var(--kb-glass-neon);
+}
+
+/* The selected tab's neon rule: one element that glides between tabs (MenuBar.tsx); it does not animate under Off, where it has no transition to run. */
+.kb-glass-menu-list > li {
+  position: relative;
+}
+
+.kb-glass-menu-underline {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 3px;
+  background: var(--kb-glass-neon);
+  pointer-events: none;
 }
 
 /* The arrow and the key cap: empty, hidden elements the stylesheet writes into. The arrow is the phone's. */
@@ -261,6 +273,17 @@
  */
 .kb-glass-content {
   overflow-x: clip;
+  position: relative;
+}
+
+/*
+ * A glass screen change (Page.tsx): the screen that is leaving stays over the one arriving until it is gone, out of the reading
+ * order (inert and aria-hidden are set with it) and out of the layout, so the new screen is where it will stay.
+ */
+.kb-glass-screen[data-kb-exiting] {
+  position: absolute;
+  inset: 0 var(--kb-glass-gutter) auto;
+  pointer-events: none;
 }
 
 /* ---- the overlay ---- */
@@ -533,4 +556,23 @@
   border-color: var(--kb-glass-neon);
   background: color-mix(in srgb, var(--kb-glass-neon) 18%, transparent);
   color: var(--kb-glass-text-hi);
+}
+
+/* ---- the crossing between the board and the glass (web/src/App.tsx; engine/ui/glass/Held.tsx) ---- */
+
+/* The glass stands over the board while the two share the window. */
+.kb-world[data-kb-world='glass'] {
+  position: relative;
+  z-index: 2;
+}
+
+/*
+ * The world that is leaving is lifted out of the layout and held where it stood (Held.tsx sets its offset to the scroll), so the one arriving
+ * takes the page's layout and the window's scroll at once. It takes no pointer, and is inert besides.
+ */
+.kb-world[data-kb-exiting] {
+  position: fixed;
+  left: 0;
+  right: 0;
+  pointer-events: none;
 }
