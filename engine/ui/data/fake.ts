@@ -134,7 +134,8 @@ export interface Seed {
   announceTurn(character: Id, thread: Id, options?: { was?: string; class?: string; since?: string; at?: number }): Id;
   /**
    * A character's announce Act (0100) in the Promos thread of the season open at `at` (else now), which this opens on The System's board where the
-   * season has none. A debut names no `was`, and one that names its `class` is that class's reveal. Throws as the guard refuses.
+   * season has none. A debut names no `was`, and one that names its `class` is that class's reveal. Throws on a debut naming `was`; unlike the
+   * guard, it does not check that `class` is the one the character holds, so a seed states what the board shows.
    */
   announce(character: Id, what: 'debut' | 'turn', options?: { was?: string; class?: string; at?: number }): Id;
   /**
@@ -733,8 +734,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
   const names = (v: unknown): TallyName[] => (Array.isArray(v) ? (v as Record<string, unknown>[]) : []).map((e) => ({
     character: String(e['character']), name: String(e['name']), class: typeof e['class'] === 'string' ? e['class'] : null, was: typeof e['was'] === 'string' ? e['was'] : null }));
-  /** A character's past seasons (profile_page, record_page, 0099): its row in each season's results, newest first, at most 50. */
-  const seasonsOf = (id: Id): SeasonRecordRow[] => [...results.entries()].sort(([x], [y]) => y - x).flatMap(([season, r]) => {
+  /** A character's past seasons (profile_page, record_page, 0099): its row in each season's results, by when they landed and then number, newest first, at most 50. */
+  const seasonsOf = (id: Id): SeasonRecordRow[] => [...results.entries()].sort(([x, a], [y, b]) => b.at - a.at || y - x).flatMap(([season, r]) => {
     const row = r.rows.find((x) => x.character === id);
     return row ? [{ season, place: row.place, standing: row.standing, at: iso(r.at) }] : [];
   }).slice(0, 50);
