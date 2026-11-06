@@ -107,7 +107,42 @@ which the app does not have, and both are gone.
 
 **Batch 1 approved by the owner** ("Looks great, approved"), after the nits above.
 
+## 3. Batch 2: a thread, the reply box, Start a thread
+
+Drawn on main (354dbc4)'s screens (`engine/ui/thread/Thread.tsx` and `Post.tsx`, `engine/ui/composer/Composer.tsx` and
+`Editor.tsx`, `engine/ui/board/NewThread.tsx`) in Silver: `04-thread` (page 3 of "who keeps splatting my posts", the
+Main board's thread, with Pipewrench on the HUD), `05-reply` (the same thread scrolled to its foot), `06-new-thread`
+(General with Start a thread open), each light and dark at 1440 by 1000, and `07-phone`. The game's pieces on the thread
+(the reactions, the Whoops! mark, its ink) are drawn for place and keep their own look; Whoops!'s ink is held by its own
+boards and `e2e/whoops.spec.ts`.
+
+- **The crumb names the board** (Index › General › the thread). `Thread.tsx` draws Index › the thread today, though
+  `ThreadSummary.board` names it.
+- **A post's actions are small Chrome buttons in a foot band** of the third gray; today they are underlined links at the
+  body's weight.
+- **Posts are split by a 4px spacer row** of the third gray, so each post is one block from name to actions.
+- **The pager's current page is a small band** in the column head's gradient.
+- **The post line's rule is the grid's gray**, quieter than the black rule it has now.
+- **Send and Start thread are the one primary button** of their form: Chrome on the column head's dark gradient, larger
+  than Preview and Reveal…, which today stand at the same weight.
+- **Unfollow this thread shares the bottom pager's row**, at its right.
+- **The text box is inset** under a 1px inner shadow (`--kb-input-bg`, `--kb-input-edge`, `--kb-input-shadow`).
+- **Start a thread stays pressed in** while its form is open, an inset Chrome button, where today it inverts.
+- **On the phone** the postbit is a band over its post (the avatar at its left, the name, rank and pips beside it), the
+  nine formatting buttons fit one row, the reply box drops the keyboard hint, and a date in the current year drops its
+  year, as batch 1's thread list does.
+- **Kept as built:** the postbit's order and sizes, the Author and Message heads. `e2e/boards/01-main.ts` compares this
+  thread's board-world type and places today; the plan moves those landmarks to this batch's manifests, and 01-main
+  keeps the HUD, the hand and the game's pieces.
+
+Asked of the owner with the boards:
+- **New thread's editor.** `NewThread.tsx` draws a bare textarea, with no toolbar, no Preview and no Ctrl+Enter, where
+  a reply and an edit share `Editor.tsx`. The boards draw the first post with the shared editor ("Ctrl+Enter or
+  Command+Enter starts it", a draft); recommended, since a first post is a post.
+- **The phone postbit drops Posts and Joined**, which the profile carries a tap away.
+
 ## Open
 
 - Fan Site's name, now that it salutes one board's blue.
 - The legend's words.
+- Batch 2's approval, New thread's editor, and the phone postbit's counts.

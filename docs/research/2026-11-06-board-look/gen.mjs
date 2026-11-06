@@ -28,6 +28,7 @@ const LIGHT = {
   '--kb-button-fg': '#111', '--kb-button-fg-shadow': '0 1px 0 rgb(255 255 255 / 0.9), 0 0 5px rgb(255 255 255 / 0.7)',
   '--kb-badge-a': '#3a3a3a', '--kb-badge-a-fg': '#fff', '--kb-badge-b': '#e8e8e8', '--kb-badge-b-fg': '#000',
   '--kb-vignette-color': '#1e083c', '--kb-vignette-edge': '0.32',
+  '--kb-input-bg': '#fff', '--kb-input-edge': '#7a7a7a', '--kb-input-shadow': 'inset 1px 1px 2px rgb(0 0 0 / 0.18)', '--kb-chip-bg': '#fff',
 };
 const DARK = {
   '--kb-bg': '#141414', '--kb-fg': '#e8e8e8', '--kb-muted': '#b0b0b0', '--kb-link': '#fff', '--kb-link-hover': '#cfcfcf',
@@ -42,6 +43,7 @@ const DARK = {
   '--kb-button-fg': '#fff', '--kb-button-fg-shadow': '0 1px 0 #000, 0 0 5px rgb(255 255 255 / 0.35)',
   '--kb-badge-a': '#e8e8e8', '--kb-badge-a-fg': '#000', '--kb-badge-b': '#2a2a2a', '--kb-badge-b-fg': '#e8e8e8',
   '--kb-vignette-color': '#3c1478', '--kb-vignette-edge': '0.55',
+  '--kb-input-bg': '#151515', '--kb-input-edge': '#5e5e5e', '--kb-input-shadow': 'inset 1px 1px 2px rgb(0 0 0 / 0.6)', '--kb-chip-bg': '#1a1a1a',
 };
 const decl = (o) => Object.entries(o).map(([k, v]) => `  ${k}: ${v};`).join('\n');
 
@@ -181,6 +183,60 @@ table.t { width: 100%; border-collapse: separate; border-spacing: 1px; backgroun
 .phone .hud .orbs { gap: 6px; width: 100%; } .phone .hud .orbs i { width: 30px; height: 30px; }
 .phone .hud .hand { font-size: 18px; padding: 8px 14px; }
 .phone .foot { margin-bottom: 12px; }
+/* ---------- batch 2: the thread, the reply box, New thread ---------- */
+.head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin: 0 0 8px; }
+.head h1.title { margin: 0; }
+.pager { display: flex; align-items: center; gap: 10px; font-size: 13.75px; font-variant-numeric: tabular-nums; }
+.pager .here { font-weight: bold; padding: 1px 6px; background: var(--kb-head-bg); color: var(--kb-head-fg); border: 1px solid var(--kb-frame); }
+.pager .where { font-weight: bold; }
+table.posts td.bit { width: 216px; }
+.pname { font-weight: bold; }
+.prank { margin: 4px 0 2px; font-size: 15px; }
+.pips { display: inline-flex; gap: 2px; margin: 2px 0 8px; }
+.pips i { width: 13px; height: 13px; border: 1px solid var(--kb-fg); }
+.pips i.on { background: var(--kb-fg); }
+.ava { width: 48px; height: 48px; border: 1px solid var(--kb-fg); background: var(--kb-mini-bg); display: grid; place-items: center; font: bold 17px "Courier New", monospace; margin-bottom: 10px; }
+.pcounts { font-size: 13.75px; color: var(--kb-muted); line-height: 1.6; }
+.pline { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: var(--kb-muted); padding-bottom: 6px; border-bottom: 1px solid var(--kb-grid); margin-bottom: 10px; }
+.pline .r { display: inline-flex; align-items: center; gap: 8px; }
+.pline a { color: var(--kb-muted); }
+.pbody { position: relative; min-height: 70px; }
+.pbody p { margin: 0 0 12px; position: relative; }
+.quote { margin: 0 0 12px; border: 1px solid var(--kb-grid); background: var(--kb-row-1); font-size: 13.75px; }
+.quote b { display: block; font: bold 12.5px "Courier New", monospace; padding: 4px 8px; background: var(--kb-row-3); border-bottom: 1px solid var(--kb-grid); }
+.quote div { padding: 8px; }
+/* the reactions are game pieces: their chips keep the house's own chip tokens */
+.reacts { display: flex; gap: 6px; margin-top: 4px; position: relative; z-index: 3; }
+.reacts span { display: inline-flex; gap: 5px; align-items: center; padding: 2px 7px; background: var(--kb-chip-bg); border: 1px solid var(--kb-fg); font-size: 13.75px; font-variant-numeric: tabular-nums; }
+td.foot { background: var(--kb-row-3) !important; padding: 6px 10px !important; }
+.acts { display: flex; gap: 6px; flex-wrap: wrap; }
+.b.sm { font-size: 11.25px; padding: 4px 8px; letter-spacing: 0.04em; gap: 5px; }
+.b.primary { background: var(--kb-head-bg); color: var(--kb-head-fg); text-shadow: 0 1px 0 #000, 0 0 5px rgb(255 255 255 / 0.35); border-color: #000; }
+.b.pressed { box-shadow: inset 1px 2px 3px rgb(0 0 0 / 0.45); filter: brightness(0.92); }
+.markw { display: inline-grid; place-items: center; width: 26px; height: 20px; background: #160a1c; border: 1px solid #ff4fd8; box-shadow: 0 0 6px rgb(255 79 216 / 0.7); transform: skewX(-12deg); }
+.markw i { width: 9px; height: 9px; background: #ff4fd8; clip-path: polygon(50% 0, 62% 35%, 100% 50%, 62% 65%, 50% 100%, 38% 65%, 0 50%, 38% 35%); }
+.splat { position: absolute; z-index: 2; left: 230px; top: -12px; width: 560px; height: 190px; pointer-events: none; }
+.below { display: flex; justify-content: space-between; align-items: center; margin: 0 0 14px; }
+/* the reply box and New thread */
+.form td { padding: 12px 14px; }
+.as { font-size: 13.75px; margin: 0 0 10px; }
+.field { display: block; font-weight: bold; font-size: 13.75px; margin: 0 0 4px; }
+.input { height: 30px; border: 1px solid var(--kb-input-edge); background: var(--kb-input-bg); box-shadow: var(--kb-input-shadow); margin: 0 0 12px; }
+.area { height: 150px; border: 1px solid var(--kb-input-edge); background: var(--kb-input-bg); box-shadow: var(--kb-input-shadow); }
+.tools { display: flex; gap: 4px; flex-wrap: wrap; margin: 0 0 6px; }
+.tools .b { min-width: 30px; justify-content: center; }
+.formfoot { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 8px; font-size: 13.75px; color: var(--kb-muted); }
+.formfoot .go { display: flex; align-items: center; gap: 8px; }
+.phone .head { flex-direction: column; align-items: flex-start; gap: 6px; }
+.phone .t td.pbit { padding: 8px; }
+.phone .bitrow { display: flex; gap: 10px; align-items: flex-start; }
+.phone .bitrow .ava { margin: 0; }
+.phone .splat { left: 20px; top: 10px; width: 320px; height: 110px; }
+.phone .area { height: 110px; }
+.phone .formfoot { flex-wrap: wrap; }
+/* nine formatting buttons in one row at 390: each sized to its word */
+.phone .tools { gap: 3px; }
+.phone .tools .b.sm { min-width: 0; padding: 4px 5px; letter-spacing: 0.02em; }
 `;
 
 /* ---------- content ---------- */
@@ -319,3 +375,115 @@ fs.writeFileSync(path.join(here, '03-phone.html'), page({
   body: `<style>${PHONE_CSS_DARK}</style><div style="display:flex;gap:24px">${phoneScreen(INDEX_PHONE, 'light')}${phoneScreen(BOARD_PHONE, 'light')}${phoneScreen(INDEX_PHONE, 'dark')}${phoneScreen(BOARD_PHONE, 'dark')}</div>`,
 }));
 console.log('wrote the batch 1 boards');
+
+/* ================= batch 2: a thread, the reply box, New thread ================= */
+/* Page 3 of "who keeps splatting my posts", the Main board's thread (docs/research/2026-10-29-two-worlds/01-main.html). */
+/* The splat is drawn for place only: Whoops!'s ink is a game piece, held by its own boards and e2e/whoops.spec.ts. */
+const SPLAT = `<svg class="splat" aria-hidden="true" viewBox="0 0 560 190" preserveAspectRatio="none"><g fill="#d93fbf">
+  <ellipse cx="250" cy="92" rx="150" ry="62"/><ellipse cx="380" cy="70" rx="90" ry="48"/><ellipse cx="150" cy="120" rx="80" ry="40"/>
+  <path d="M60,150 C110,120 150,110 190,118 L170,140 C130,148 95,160 60,150 Z"/><path d="M430,40 C470,20 520,24 540,10 C520,40 480,60 440,70 Z"/>
+  <circle cx="40" cy="160" r="9"/><circle cx="18" cy="150" r="5"/><circle cx="520" cy="60" r="8"/><circle cx="545" cy="80" r="5"/><circle cx="300" cy="170" r="10"/><circle cx="330" cy="182" r="5"/><circle cx="120" cy="60" r="7"/></g>
+  <g fill="#ff7fe0" opacity="0.55"><ellipse cx="230" cy="70" rx="70" ry="16"/><ellipse cx="370" cy="52" rx="38" ry="10"/></g></svg>`;
+const POSTS = [
+  { n: 41, who: 'Spritey', rank: 'Main Eventer', pips: 4, posts: 13, at: 'Oct 29, 2026, 9:14 PM', mark: true, splat: true,
+    body: '<p>Third time this week. I wrote four whole paragraphs about the new level editor and the ink went down before anyone got past the first sentence.</p><p>I\'m not mad. I\'m documenting.</p><p>Posting this one in pencil.</p>',
+    reacts: [['🔥', 4], ['🙏', 1], ['🙄', 2]], edit: false },
+  { n: 42, who: 'Mrs. Hooligan', rank: 'Midcarder', pips: 3, posts: 11, at: 'Oct 29, 2026, 9:20 PM',
+    body: '<p>Magenta is a very popular color. Half this board would pick magenta. I would pick something classier, personally, if I were the kind of person who did that, which I\'m not.</p><p>Also you double-posted the changelog in the other thread so honestly it\'s a public service.</p>',
+    reacts: [['🍅', 2], ['🤮', 3], ['🙏', 1], ['🙂', 1]], edit: false },
+  { n: 43, who: 'Pipewrench', rank: 'Enhancement Talent', pips: 2, posts: 10, at: 'Oct 29, 2026, 9:31 PM',
+    body: '<div class="quote"><b>Mrs. Hooligan wrote:</b><div>I would pick something classier, personally.</div></div><p>Can confirm Mrs. Hooligan has never once been seen in the same thread as a bucket of ink. Suspicious in its own way, if you think about it.</p>',
+    reacts: [], edit: true },
+];
+const pips = (n) => `<span class="pips" aria-label="Rank ${n} of 6">${Array.from({ length: 6 }, (_, i) => `<i${i < n ? ' class="on"' : ''}></i>`).join('')}</span>`;
+const reacts = (p) => (p.reacts.length ? `<div class="reacts">${p.reacts.map(([e, c]) => `<span>${e} ${c}</span>`).join('')}</div>` : '');
+const actions = (p) => `<div class="acts"><button class="b sm" type="button">Quote</button><button class="b sm" type="button">Spin thread</button>${p.edit ? '<button class="b sm" type="button">Edit</button>' : ''}<button class="b sm" type="button">History</button></div>`;
+const postDesk = (p, i, last) => `
+    <tbody>
+      <tr><td class="bit" rowspan="2"><a class="pname" href="#">${p.who}</a><div class="prank">${p.rank}</div>${pips(p.pips)}<div class="ava">${p.who[0]}</div><div class="pcounts">Posts: ${p.posts}<br>Joined Oct 2026</div></td>
+        <td><div class="pline"><span>${p.at}</span><span class="r">${p.mark ? '<span class="markw"><i></i></span>' : ''}<a href="#">#${p.n}</a></span></div>
+          <div class="pbody">${p.splat ? SPLAT : ''}${p.body}${reacts(p)}</div></td></tr>
+      <tr><td class="foot">${actions(p)}</td></tr>
+    </tbody>${i < last ? '<tbody><tr class="gap"><td colspan="2"></td></tr></tbody>' : ''}`;
+const PAGER = `<nav class="pager" aria-label="Pages, top"><span class="where">Page 3 of 3</span><a href="#">1</a><a href="#">2</a><span class="here" aria-current="page">3</span><a href="#">Jump to latest</a></nav>`;
+const THREAD_DESK = `
+  <p class="crumb"><a href="#">Index</a> › <a href="#">General</a> › who keeps splatting my posts</p>
+  <div class="head"><h1 class="title">who keeps splatting my posts</h1>${PAGER}</div>
+  <table class="t posts"><thead><tr><th scope="col" style="width:216px">Author</th><th scope="col">Message</th></tr></thead>${POSTS.map((p, i) => postDesk(p, i, POSTS.length - 1)).join('')}</table>`;
+
+const TOOLS = ['<b>B</b>', '<i>I</i>', '<u>U</u>', '<s>S</s>', 'Link', 'Image', 'Quote', 'Code', 'List'].map((t) => `<button class="b sm" type="button">${t}</button>`).join('');
+const reply = (hint) => `
+  <table class="t form"><tbody>
+    <tr><td class="bar"><h2 class="barh">Reply</h2></td></tr>
+    <tr><td><p class="as">Posting as <b>Pipewrench</b></p><div class="tools" role="toolbar" aria-label="Formatting">${TOOLS}</div><div class="area"></div>
+      <div class="formfoot"><span>0 of 20000</span><span class="go">${hint ? 'Ctrl+Enter or Command+Enter sends ' : ''}<button class="b sm" type="button">Preview</button><button class="b primary" type="button">Send</button><button class="b sm" type="button">Reveal…</button></span></div></td></tr>
+  </tbody></table>`;
+/* The thread's foot, scrolled to: the last post, the pager, Follow, the reply box, who is reading. */
+const REPLY_DESK = `
+  <table class="t posts" style="margin-top:14px">${postDesk(POSTS[2], 0, 0)}</table>
+  <div class="below">${PAGER.replace('Pages, top', 'Pages, bottom')}<button class="b sm" type="button">Unfollow this thread</button></div>
+  ${reply(true)}
+  <table class="t"><tbody><tr><td class="bar" colspan="2"><h2 class="barh">Users browsing this thread</h2></td></tr><tr><td class="ico">${px('who')}</td><td><a href="#">Pipewrench</a>, <a href="#">Spritey</a></td></tr></tbody></table>`;
+
+const newForm = (hint, h) => `
+  <table class="t form"><tbody>
+    <tr><td class="bar"><h2 class="barh">Start a thread</h2></td></tr>
+    <tr><td><p class="as">Posting as <b>Mrs. Hooligan</b></p>
+      <label class="field">Title</label><div class="input"></div>
+      <label class="field">First post</label><div class="tools" role="toolbar" aria-label="Formatting">${TOOLS}</div><div class="area" style="height:${h}px"></div>
+      <div class="formfoot"><span>0 of 20000</span><span class="go">${hint ? 'Ctrl+Enter or Command+Enter starts it ' : ''}<button class="b sm" type="button">Preview</button><button class="b primary" type="button">Start thread</button></span></div></td></tr>
+  </tbody></table>`;
+const NEW_DESK = `
+  <p class="crumb"><a href="#">Index</a> › General</p>
+  <h1 class="title">General</h1>
+  <p class="desc">Anything and everything. The System is watching.</p>
+  <div class="over"><button class="b pressed" type="button" aria-expanded="true">${px('start')}Start a thread</button></div>
+  ${newForm(true, 120)}
+  <table class="t"><thead><tr><th scope="col" style="width:48px"><span class="vh">Status</span></th><th scope="col">Thread</th><th scope="col" class="n" style="width:100px">Replies</th><th scope="col" class="n" style="width:100px">Views</th><th scope="col" style="width:280px">Last post</th></tr></thead>
+    <tbody>${ROWS.map(rowDesk).join('')}</tbody></table>`;
+
+/* the phone: a post stacked, its postbit a band over it */
+const postPhone = (p) => `
+    <tbody>
+      <tr><td class="pbit"><div class="bitrow"><div class="ava">${p.who[0]}</div><div><a class="pname" href="#">${p.who}</a><div class="prank" style="font-size:13.75px">${p.rank}</div>${pips(p.pips)}</div></div></td></tr>
+      <tr><td><div class="pline"><span>${p.at.replace(', 2026', '')}</span><span class="r">${p.mark ? '<span class="markw"><i></i></span>' : ''}<a href="#">#${p.n}</a></span></div>
+        <div class="pbody">${p.splat ? SPLAT : ''}${p.body}${reacts(p)}</div></td></tr>
+      <tr><td class="foot">${actions(p)}</td></tr>
+    </tbody>`;
+const THREAD_PHONE = `
+  <p class="crumb"><a href="#">Index</a> › <a href="#">General</a> › who keeps splatting my posts</p>
+  <div class="head"><h1 class="title">who keeps splatting my posts</h1>${PAGER}</div>
+  <table class="t posts">${postPhone(POSTS[0])}<tbody><tr class="gap"><td></td></tr></tbody>${postPhone(POSTS[1])}</table>`;
+const REPLY_PHONE = `
+  <table class="t posts" style="margin-top:0">${postPhone(POSTS[2])}</table>
+  <div class="below">${PAGER.replace('Pages, top', 'Pages, bottom')}</div>
+  <div class="below"><button class="b sm" type="button">Unfollow this thread</button></div>
+  ${reply(false)}`;
+const NEW_PHONE = `
+  <p class="crumb"><a href="#">Index</a> › General</p>
+  <h1 class="title">General</h1>
+  <div class="over"><button class="b pressed" type="button" aria-expanded="true">${px('start')}Start a thread</button></div>
+  ${newForm(false, 110)}`;
+
+const withHud = (html, who) => html.replace('>M</span><span class="nm">Mrs. Hooligan<', `>${who[0]}</span><span class="nm">${who}<`);
+/* the reply board is the thread scrolled to its foot: no banner, the HUD in place */
+const scrolled = (content) => `<div class="screen desk" style="width:1440px;height:1000px"><div class="col">${content}${FOOT}</div>${HUD}</div>`;
+const batch2 = [
+  ['04-thread.html', 'A thread, Silver light', 'light', withHud(desk(THREAD_DESK), 'Pipewrench')],
+  ['04-thread-dark.html', 'A thread, Silver dark', 'dark', withHud(desk(THREAD_DESK), 'Pipewrench')],
+  ['05-reply.html', 'The reply box at a thread\'s foot, Silver light', 'light', withHud(scrolled(REPLY_DESK), 'Pipewrench')],
+  ['05-reply-dark.html', 'The reply box at a thread\'s foot, Silver dark', 'dark', withHud(scrolled(REPLY_DESK), 'Pipewrench')],
+  ['06-new-thread.html', 'Start a thread, Silver light', 'light', desk(NEW_DESK)],
+  ['06-new-thread-dark.html', 'Start a thread, Silver dark', 'dark', desk(NEW_DESK)],
+];
+for (const [file, title, mode, body] of batch2) {
+  fs.writeFileSync(path.join(here, file), page({ title, mode, width: 1440, height: 1000, body,
+    comment: `A board of the board look design session (docs/plans/2026-11-06-board-look-design.md), batch 2, 1440 by 1000, written by gen.mjs.` }));
+}
+const phoneScrolled = (content, mode) => `<div class="screen phone" ${mode === 'dark' ? 'data-kb-mode="dark"' : ''} style="width:390px;height:844px"><div class="col">${content}</div>${HUD}</div>`;
+fs.writeFileSync(path.join(here, '07-phone.html'), page({
+  title: 'A thread, the reply box and Start a thread on the phone, Silver', mode: 'light', width: 4 * 390 + 3 * 24, height: 844,
+  comment: 'A board of the board look design session, batch 2: four phone screens at 390 by 844 (a thread, its reply box and Start a thread in light; the thread in dark), 24px apart. Written by gen.mjs.',
+  body: `<style>${PHONE_CSS_DARK}</style><div style="display:flex;gap:24px">${withHud(phoneScreen(THREAD_PHONE, 'light'), 'Pipewrench')}${withHud(phoneScrolled(REPLY_PHONE, 'light'), 'Pipewrench')}${phoneScreen(NEW_PHONE, 'light')}${withHud(phoneScreen(THREAD_PHONE, 'dark'), 'Pipewrench')}</div>`,
+}));
+console.log('wrote the batch 2 boards');
