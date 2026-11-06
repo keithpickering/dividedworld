@@ -154,3 +154,30 @@ begin
   if pg_temp.refusal(format('select thread_page(%L, 1, null, 20, %L)', t, '{}')) is distinct from '42501' then raise exception 'anon reads a thread page'; end if;
   perform tests.unbecome();
 end $$;
+
+-- An admin's end of a play on a post (0092's card_end) comes with the page's plays, as cardsOnMany answers it: the client marks a play
+-- reversed only from its card_end (engine/ui/cards/plays.ts), so a page without it draws an ended splat over the post's words for every
+-- reader. The plays are the page's layers (at most 8 a post) and the card_end of each, and nothing else.
+do $$
+declare
+  admin_acc uuid := tests.account('tp-admin');
+  reader uuid := tests.account('tp-reader');
+  author uuid := tests.character(tests.account('tp-author'), 'Page Author');
+  caster uuid := tests.character(tests.account('tp-caster'), 'Page Caster');
+  t uuid := tests.thread('Ended on a post');
+  p uuid := tests.post(author, t, 'Words under an ended splat.');
+  ended uuid := tests.act(caster, 'card', t, '{"card": "splat"}', p);
+  live uuid := tests.act(caster, 'card', t, '{"card": "splat"}', p);
+  r jsonb;
+begin
+  insert into admins (account) values (admin_acc);
+  perform tests.become(admin_acc); perform reverse_card(ended); perform tests.unbecome();
+  perform tests.become(reader);
+  r := thread_page(t, 1, null, 20, array['splat']);
+  perform tests.unbecome();
+  if not exists (select 1 from jsonb_array_elements(r -> 'plays') x where x ->> 'kind' = 'card_end' and (x ->> 'target_act_id')::uuid = ended) then
+    raise exception 'thread_page carries no card_end for the reversed play on its post: %', r -> 'plays'; end if;
+  if (r -> 'plays') is distinct from (select jsonb_agg(to_jsonb(a) order by a.created_at, a.id) from acts_public a
+                                      where a.id in (ended, live) or (a.kind = 'card_end' and a.target_act_id in (ended, live))) then
+    raise exception 'plays are not the post''s layers and their ends: %', r -> 'plays'; end if;
+end $$;

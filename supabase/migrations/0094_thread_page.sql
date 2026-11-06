@@ -5,7 +5,7 @@
 -- the caller follows the thread, the presence box and the unread count. Each piece is the same projection (the same columns, the same order) the
 -- browser reads today through web/src/data/supabase.ts, so the screen moves to it without a change in what it shows.
 -- The bound: a page is at most 100 Acts (per_page is refused outside 1 to 100; null is the instance's own postsPerPage setting, read here, so a
--- first load needs no round trip to learn it), their distinct authors and casters, at most PLAYS_PER_POST (8) plays
+-- first load needs no round trip to learn it), their distinct authors and casters, at most PLAYS_PER_POST (8) plays (each with its card_end, 0092, one at most)
 -- a post, and at most SPUN_FROM_MAX (200) threads spun from any one Act, so a busy instance's thread costs the same as a quiet one's.
 -- What it reads: only public projections (acts_public, thread_open, thread_list, characters_public, ...) and the caller's own rows (my_reactions,
 -- my_face_down, effect_releases, reading), as the caller: it is security invoker, so the caller's policies apply as they do to the browser's own
@@ -61,6 +61,11 @@ begin atomic
       from acts_public a where a.kind in ('card', 'set', 'spring') and a.target_act_id in (select p.id from posts p)
     ) l where l.n <= 8
   ),
+  -- An admin's end of each of those plays (0092), as cardsOnMany answers it beside them: the client marks a play reversed only from
+  -- its card_end (engine/ui/cards/plays.ts), so a page without it would draw an ended effect over its post. One per play at most.
+  ends_on_posts as materialized (
+    select a.* from acts_public a where a.kind = 'card_end' and a.target_act_id in (select o.id from on_posts o)
+  ),
   above as materialized (
     select x.play, x.reach, x.target, x.ends_at, x.act
     from effects_above(array(select distinct p.character from posts p where p.character is not null), (select rng.id from rng), (select rng.board from rng)) x
@@ -99,7 +104,11 @@ begin atomic
                   from turns_announced u where u.character = c.id)
       ) order by c.id), '[]'::jsonb)
       from characters_public c where c.id in (select w.c from who w)),
-    'plays', (select coalesce(jsonb_agg(to_jsonb(o) - 'n' order by o.created_at, o.id), '[]'::jsonb) from on_posts o),
+    'plays', (select coalesce(jsonb_agg(x.j order by x.created_at, x.id), '[]'::jsonb) from (
+                select to_jsonb(o) - 'n' as j, o.created_at, o.id from on_posts o
+                union all
+                select to_jsonb(e), e.created_at, e.id from ends_on_posts e
+              ) x),
     'above', (select coalesce(jsonb_agg(jsonb_build_object('play', x.play, 'reach', x.reach, 'target', x.target, 'ends_at', x.ends_at, 'act', x.act)
                 order by (x.act ->> 'created_at')::timestamptz, x.play), '[]'::jsonb) from above x),
     'faces', (select coalesce(jsonb_agg(jsonb_build_object('play', f.play, 'card', f.card)), '[]'::jsonb)
