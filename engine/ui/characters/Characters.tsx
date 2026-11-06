@@ -33,6 +33,7 @@ import { dayAndTime, figure, inDays, spanWords } from './format.ts';
 import { RevealOverlay } from './RevealOverlay.tsx';
 import { TurnDialog } from './TurnDialog.tsx';
 import './characters.css';
+import { CalmRegion } from '../glass/Calm.tsx';
 
 type Dialog =
   | { readonly kind: 'turn' | 'reveal' | 'drop' | 'debut'; readonly id: Id };
@@ -121,7 +122,7 @@ export function Characters() {
 
   if (signedIn === null || (signedIn && !player.loaded)) return <div className="kb-characters" aria-busy="true" />;
   if (!signedIn) return <div className="kb-characters"><SignInPrompt /></div>;
-  if (failed) return <div className="kb-characters"><p className="kb-notice kb-calm" data-kb-tone="refusal">Your characters could not be loaded. Reload the page to try again.</p></div>;
+  if (failed) return <div className="kb-characters"><CalmRegion as="p" className="kb-notice" data-kb-tone="refusal">Your characters could not be loaded. Reload the page to try again.</CalmRegion></div>;
 
   const active = mine.filter((c) => c.retiredAt === null);
   const per = settings.charactersPerPlayer;
@@ -266,7 +267,7 @@ export function Characters() {
     const posts = counts?.id === c.id ? counts.counts.posts : null;
     const before = was.get(c.id);
     return (
-      <section id={carouselPanelId(rosterId)} role="tabpanel" className="kb-roster-panel kb-glass-cut-panel kb-calm" aria-labelledby={`${carouselTabId(rosterId, c.id)}-name`} data-kb-character={c.id}>
+      <CalmRegion as="section" id={carouselPanelId(rosterId)} role="tabpanel" className="kb-roster-panel kb-glass-cut-panel" aria-labelledby={`${carouselTabId(rosterId, c.id)}-name`} data-kb-character={c.id}>
         <div className="kb-roster-panel-head">
           <p className="kb-roster-selected">Selected</p>
           <h2 className="kb-roster-panel-name kb-glass-display">{c.name}</h2>
@@ -336,16 +337,16 @@ export function Characters() {
           {live && <GlassButton aria-label={`Reveal ${c.name}'s class`} onClick={() => show({ kind: 'reveal', id: c.id })}>Reveal…</GlassButton>}
         </div>
         <p className="kb-roster-line kb-roster-most">{per} characters at most. To free a slot, ask an admin to retire one; every Act it made stays on the board.</p>
-      </section>
+      </CalmRegion>
     );
   };
 
   return (
     <div className="kb-characters">
       <PageHead size="roster" title="Your characters" count={`(${active.length} of ${per})`} lead="This page is out of character and only you can see it. Classes are shown here and nowhere else unless you reveal them." />
-      <div role="status" className="kb-flash">{flash && <p className="kb-notice kb-calm">{flash}</p>}</div>
+      <div role="status" className="kb-flash">{flash && <CalmRegion as="p" className="kb-notice">{flash}</CalmRegion>}</div>
 
-      {mine.length === 0 && <p className="kb-characters-empty kb-calm">You have no characters yet. <Link to="/characters/new">Make one</Link> to start playing.</p>}
+      {mine.length === 0 && <CalmRegion as="p" className="kb-characters-empty">You have no characters yet. <Link to="/characters/new">Make one</Link> to start playing.</CalmRegion>}
 
       <div className="kb-roster-layout">
           <Carousel
@@ -370,20 +371,20 @@ export function Characters() {
               );
             }}
             after={open > 0 ? (
-              <div className="kb-roster-new kb-calm">
+              <CalmRegion className="kb-roster-new">
                 <Link to="/characters/new" className="kb-roster-new-link">
                   <svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><path d="M22 6 V38 M6 22 H38" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
                   <span className="kb-glass-display">New character</span>
                 </Link>
                 <span className="kb-roster-slots">You have {open} open {open === 1 ? 'slot' : 'slots'}.</span>
-              </div>
+              </CalmRegion>
             ) : undefined}
           />
         {selected && panel(selected)}
           {open === 0 && (
-            <p className="kb-characters-new kb-calm">
+            <CalmRegion as="p" className="kb-characters-new">
               You play {active.length} of {per} characters, the most there are. There is no way to free a slot yet; an admin can retire a character on request, and keeps every Act it made.
-            </p>
+            </CalmRegion>
           )}
       </div>
 

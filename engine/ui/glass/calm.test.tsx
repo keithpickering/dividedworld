@@ -1,26 +1,31 @@
 /**
- * The calm the screen draws on a surface is the one the contrast guard reads it at
- * (tools/check-glass-contrast.mjs, `calmOf`): a recipe's own calm where it has one (the glass plan,
- * section 6: "the calm's opacity for this surface, default the theme's"), the theme's otherwise. A
- * guard that read a calm the screen never drew would pass text the player cannot read, so each
- * surface's text is held here to the guard's own number.
+ * The calm (engine/ui/glass/Calm.tsx): a region of a page registers its box with the smoke it
+ * stands on, and the smoke takes itself away there, one blurred rect for each region
+ * (docs/plans/2026-11-05-backfill-boards-design.md, section 3). jsdom lays nothing out and loads no
+ * stylesheet, so these stand a box in for each region (the browser's getBoundingClientRect is the
+ * one thing replaced) and read the rect the smoke draws and the stylesheets as text, as
+ * base.test.tsx does; what the page looks like is e2e/glass-text.spec.ts's measurement.
  *
- * What is drawn under a text block is `--kb-glass-calm-opacity` as calm.css reads it: the nearest
- * element that sets it, else the root, where applyGlass puts the theme's.
+ * The calm drawn on a surface is also the calm the contrast guard reads it at
+ * (tools/check-glass-contrast.mjs, `calmOf`): a recipe's own calm where it has one, the theme's
+ * otherwise, set on the surface's own element, which the rect inherits from.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { screen, waitFor } from '@testing-library/react';
-import { describe, expect, test } from 'vitest';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { calmOf } from '../../../tools/check-glass-contrast.mjs';
+import { KayfaProvider, type Kayfa } from '../context.tsx';
 import type { Fake } from '../data/fake.ts';
 import { Frame } from '../frame/Frame.tsx';
 import { renderInWorld, testGlass } from '../test-world.tsx';
 import type { GlassSurface, GlassTheme } from '../types.ts';
 import { surfaceCalm } from './apply.ts';
+import { CalmRegion, MAX_WATCHED } from './Calm.tsx';
 import { Overlay } from './Overlay.tsx';
 import { Page } from './Page.tsx';
+import { Smoke } from './Smoke.tsx';
 
 /** testGlass with a recipe of its own calm, 0.6 against the theme's 0.85, on some surfaces and not others. */
 const glass = {
@@ -36,7 +41,7 @@ const recipeOf = (surface: GlassSurface) => glass.smoke.recipes[glass.smoke.surf
 /** What the guard reads the surface's text at. */
 const guarded = (surface: GlassSurface): number => calmOf(glass, recipeOf(surface));
 
-/** The calm's opacity calm.css draws under `el`: the nearest that sets it, else the theme's on the root. */
+/** The calm's opacity the rects drawn under `el` take: the nearest that sets it, else the theme's on the root. */
 function drawn(el: Element): number {
   for (let at: Element | null = el; at; at = at.parentElement) {
     const v = (at as HTMLElement).style?.getPropertyValue('--kb-glass-calm-opacity');
@@ -47,7 +52,6 @@ function drawn(el: Element): number {
 
 const signedIn = (fake: Fake) => fake.signInAs(fake.seed.account('me'));
 
-
 describe('the calm drawn on a surface is the calm the guard reads it at', { timeout: 15_000 }, () => {
   test('a recipe with its own calm sets it on its surface; one without leaves the theme\'s', () => {
     expect(surfaceCalm(glass, 'characters')).toEqual({ '--kb-glass-calm-opacity': '0.6' });
@@ -55,17 +59,22 @@ describe('the calm drawn on a surface is the calm the guard reads it at', { time
   });
   for (const surface of ['characters', 'settings'] as const) {
     test(`a glass page on the ${surface} surface`, async () => {
-      renderInWorld(<Page surface={surface}><p className="kb-calm">words</p></Page>, { path: '/settings', seed: signedIn, glass });
+      const { container } = renderInWorld(<Page surface={surface}><CalmRegion><p>words</p></CalmRegion></Page>, { path: '/settings', seed: signedIn, glass });
       expect(guarded(surface)).toBe(surface === 'characters' ? 0.6 : 0.85);
-      expect(drawn(await screen.findByText('words'))).toBe(guarded(surface));
+      await screen.findByText('words');
+      const rect = container.querySelector<HTMLElement>('.kb-smoke-calm')!;
+      expect(rect).not.toBeNull();
+      expect(drawn(rect)).toBe(guarded(surface));
     });
   }
   test('an overlay on its own surface, though it is drawn outside the page that opened it', async () => {
     renderInWorld(
-      <Page surface="settings"><Overlay title="React" surface="react" onClose={() => {}}><p className="kb-calm">in the overlay</p></Overlay></Page>,
+      <Page surface="settings"><Overlay title="React" surface="react" onClose={() => {}}><CalmRegion><p>in the overlay</p></CalmRegion></Overlay></Page>,
       { path: '/settings', seed: signedIn, glass },
     );
-    expect(drawn(await screen.findByText('in the overlay'))).toBe(guarded('react'));
+    await screen.findByText('in the overlay');
+    const rect = screen.getByRole('dialog').querySelector<HTMLElement>('.kb-smoke-calm')!;
+    expect(drawn(rect)).toBe(guarded('react'));
   });
   test('the Game HUD and the hand, each on its own', async () => {
     const { container } = renderInWorld(<Frame><p>page</p></Frame>, { path: '/', seed: signedIn, glass });
@@ -77,11 +86,220 @@ describe('the calm drawn on a surface is the calm the guard reads it at', { time
   });
 });
 
-/*
- * The calm feathers outward: the backing reaches the feather past the element's box, and the element
- * adds no padding of its own. jsdom loads no stylesheet, so these read calm.css as text, as
- * base.test.tsx does.
- */
+/** The boxes the stand-in lays out, by what the element is. The smoke's frame is at (10, 5); a region's box is what its data says. */
+const FRAME = { left: 10, top: 5, width: 800, height: 600 };
+const boxes = new Map<Element, { left: number; top: number; width: number; height: number }>();
+
+function box(r: { left: number; top: number; width: number; height: number }): DOMRect {
+  return { ...r, x: r.left, y: r.top, right: r.left + r.width, bottom: r.top + r.height, toJSON: () => ({}) } as DOMRect;
+}
+
+let frames: FrameRequestCallback[] = [];
+const nextFrame = () => act(() => { const run = frames; frames = []; for (const f of run) f(0); });
+
+beforeEach(() => {
+  frames = [];
+  boxes.clear();
+  vi.stubGlobal('requestAnimationFrame', (f: FrameRequestCallback) => { frames.push(f); return frames.length; });
+  vi.stubGlobal('cancelAnimationFrame', () => {});
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    if (this.classList.contains('kb-smoke')) return box(FRAME);
+    return box(boxes.get(this) ?? { left: 0, top: 0, width: 0, height: 0 });
+  });
+});
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+const world = { ui: { glass } } as unknown as Kayfa;
+const inWorld = (node: React.ReactNode) => <KayfaProvider value={world}>{node}</KayfaProvider>;
+const rects = (c: ParentNode = document) => [...c.querySelectorAll<HTMLElement>('.kb-smoke-calm')];
+/** Stands a box in for the element a region draws. */
+const stand = (el: Element, r: { left: number; top: number; width: number; height: number }) => boxes.set(el, r);
+
+function Toggle({ withSecond }: { readonly withSecond: boolean }) {
+  return (
+    <Smoke surface="characters">
+      <CalmRegion data-testid="column"><p>column</p></CalmRegion>
+      {withSecond && <CalmRegion as="aside" data-testid="aside"><p>aside</p></CalmRegion>}
+    </Smoke>
+  );
+}
+
+describe('a region puts one rect in the smoke it stands on', () => {
+  test('a CalmRegion inside a Smoke draws one rect at its box, in the smoke\'s own coordinates, and removing the region removes the rect', async () => {
+    const { rerender } = render(inWorld(<Toggle withSecond />));
+    expect(rects()).toHaveLength(2);
+    const column = screen.getByTestId('column');
+    stand(column, { left: 110, top: 105, width: 300, height: 200 });
+    await nextFrame();
+    window.dispatchEvent(new Event('resize'));
+    await nextFrame();
+    const r = rects()[0]!;
+    expect(r.style.getPropertyValue('--kb-calm-x')).toBe('100px');
+    expect(r.style.getPropertyValue('--kb-calm-y')).toBe('100px');
+    expect(r.style.width).toBe('300px');
+    expect(r.style.height).toBe('200px');
+    rerender(inWorld(<Toggle withSecond={false} />));
+    expect(rects()).toHaveLength(1);
+  });
+
+  test('a region renders the element it is asked for, with its own props, and a region with no smoke draws only that', () => {
+    render(<CalmRegion as="section" aria-label="alone" className="mine"><p>x</p></CalmRegion>);
+    const el = screen.getByRole('region', { name: 'alone' });
+    expect(el.tagName).toBe('SECTION');
+    expect(el).toHaveClass('mine');
+    expect(el).toHaveAttribute('data-kb-calm-region');
+    expect(rects()).toHaveLength(0);
+  });
+
+  test('the box follows the page: a scroll, gathered into one frame, measures each region once', async () => {
+    render(inWorld(<Toggle withSecond={false} />));
+    const column = screen.getByTestId('column');
+    stand(column, { left: 110, top: 105, width: 300, height: 200 });
+    const spy = vi.mocked(HTMLElement.prototype.getBoundingClientRect);
+    await nextFrame();
+    spy.mockClear();
+    stand(column, { left: 110, top: 55, width: 300, height: 200 });
+    for (let i = 0; i < 5; i++) window.dispatchEvent(new Event('scroll'));
+    expect(frames).toHaveLength(1);
+    await nextFrame();
+    expect(rects()[0]!.style.getPropertyValue('--kb-calm-y')).toBe('50px');
+    expect(spy.mock.contexts.filter((c) => c === column)).toHaveLength(1);
+  });
+
+  test('a region that resizes is measured again', async () => {
+    let resized: () => void = () => {};
+    vi.stubGlobal('ResizeObserver', class { constructor(f: () => void) { resized = f; } observe() {} disconnect() {} unobserve() {} });
+    render(inWorld(<Toggle withSecond={false} />));
+    const column = screen.getByTestId('column');
+    stand(column, { left: 110, top: 105, width: 300, height: 200 });
+    resized();
+    await nextFrame();
+    expect(rects()[0]!.style.height).toBe('200px');
+    stand(column, { left: 110, top: 105, width: 300, height: 260 });
+    resized();
+    await nextFrame();
+    expect(rects()[0]!.style.height).toBe('260px');
+  });
+
+  test('a region whose element changes under it (a placeholder becoming the section it stands for) calms the new element, not the one that went', async () => {
+    function Swap({ as }: { readonly as: 'div' | 'section' }) {
+      return <Smoke surface="characters"><CalmRegion as={as} data-testid="region"><p>x</p></CalmRegion></Smoke>;
+    }
+    const { rerender } = render(inWorld(<Swap as="div" />));
+    rerender(inWorld(<Swap as="section" />));
+    const now = screen.getByTestId('region');
+    expect(now.tagName).toBe('SECTION');
+    stand(now, { left: 110, top: 105, width: 300, height: 200 });
+    window.dispatchEvent(new Event('resize'));
+    await nextFrame();
+    expect(rects()).toHaveLength(1);
+    expect((rects()[0] as HTMLElement & { kbRegion?: Element }).kbRegion).toBe(now);
+    expect(rects()[0]!.style.width).toBe('300px');
+  });
+
+  test('a region is watched with the boxes whose size can move it: its ancestors and the siblings before it and before them', () => {
+    const watched = new Set<Element>();
+    vi.stubGlobal('ResizeObserver', class { constructor(_f: () => void) {} observe(el: Element) { watched.add(el); } disconnect() {} unobserve() {} });
+    render(inWorld(<Smoke surface="characters"><main><h1 data-testid="title">Title</h1><div data-testid="wrap"><p data-testid="before">b</p><CalmRegion data-testid="column"><p>c</p></CalmRegion></div></main></Smoke>));
+    for (const id of ['column', 'before', 'wrap', 'title']) expect(watched.has(screen.getByTestId(id)), id).toBe(true);
+  });
+
+  test('a block inserted above a region moves its rect: the boxes watched are found again as the page changes, not once', async () => {
+    render(inWorld(<Smoke surface="characters"><main data-testid="page"><CalmRegion data-testid="column"><p>c</p></CalmRegion></main></Smoke>));
+    const column = screen.getByTestId('column');
+    stand(column, { left: 110, top: 105, width: 300, height: 200 });
+    window.dispatchEvent(new Event('resize'));
+    await nextFrame();
+    expect(rects()[0]!.style.getPropertyValue('--kb-calm-y')).toBe('100px');
+    /* A banner arrives above the column, in a parent nothing was watching for size, and pushes the column down. */
+    const banner = document.createElement('div');
+    stand(column, { left: 110, top: 165, width: 300, height: 200 });
+    await act(async () => { screen.getByTestId('page').prepend(banner); await Promise.resolve(); });
+    await nextFrame();
+    expect(rects()[0]!.style.getPropertyValue('--kb-calm-y')).toBe('160px');
+  });
+
+  test('a scroll that changes only the position writes only the position', async () => {
+    render(inWorld(<Toggle withSecond={false} />));
+    const column = screen.getByTestId('column');
+    stand(column, { left: 110, top: 105, width: 300, height: 200 });
+    window.dispatchEvent(new Event('resize'));
+    await nextFrame();
+    const written: string[] = [];
+    const set = CSSStyleDeclaration.prototype.setProperty;
+    vi.spyOn(CSSStyleDeclaration.prototype, 'setProperty').mockImplementation(function (this: CSSStyleDeclaration, name: string, value: string | null) { written.push(name); return set.call(this, name, value); });
+    stand(column, { left: 110, top: 55, width: 300, height: 200 });
+    window.dispatchEvent(new Event('scroll'));
+    await nextFrame();
+    expect(written.sort()).toEqual(['--kb-calm-y']);
+    expect(rects()[0]!.style.width).toBe('300px');
+  });
+
+  test('every box is read before any is written: a frame is one layout, not one for each region', async () => {
+    render(inWorld(<Toggle withSecond />));
+    stand(screen.getByTestId('column'), { left: 110, top: 105, width: 300, height: 200 });
+    stand(screen.getByTestId('aside'), { left: 410, top: 105, width: 200, height: 200 });
+    const order: string[] = [];
+    vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(function (this: HTMLElement) {
+      order.push('read');
+      if (this.classList.contains('kb-smoke')) return box(FRAME);
+      return box(boxes.get(this) ?? { left: 0, top: 0, width: 0, height: 0 });
+    });
+    const set = CSSStyleDeclaration.prototype.setProperty;
+    vi.spyOn(CSSStyleDeclaration.prototype, 'setProperty').mockImplementation(function (this: CSSStyleDeclaration, name: string, value: string | null) { order.push('write'); return set.call(this, name, value); });
+    window.dispatchEvent(new Event('resize'));
+    await nextFrame();
+    expect(order.lastIndexOf('read')).toBeLessThan(order.indexOf('write'));
+  });
+
+  test('what is watched is bounded by the budget, not by the sibling limit: many regions, none with fifty siblings, still watch no more than MAX_WATCHED', () => {
+    const watched = new Set<Element>();
+    vi.stubGlobal('ResizeObserver', class { constructor(_f: () => void) {} observe(el: Element) { watched.add(el); } unobserve(el: Element) { watched.delete(el); } disconnect() {} });
+    /* 40 sections of 20 paragraphs and a region: about 880 boxes the regions could watch, no box with more than 50 siblings before it. */
+    const sections = Array.from({ length: 40 }, (_, i) => <section key={i}>{Array.from({ length: 20 }, (_, j) => <p key={j}>{j}</p>)}<CalmRegion><p>c</p></CalmRegion></section>);
+    render(inWorld(<Smoke surface="characters"><main>{sections}</main></Smoke>));
+    /* The smoke's own frame is watched besides the budget. */
+    expect(watched.size).toBeGreaterThanOrEqual(MAX_WATCHED);
+    expect(watched.size).toBeLessThanOrEqual(MAX_WATCHED + 1);
+  });
+
+  test('unmounting disconnects every observer and cancels a pending frame, and a smoke that is off listens to nothing', async () => {
+    let disconnected = 0;
+    vi.stubGlobal('ResizeObserver', class { constructor(_f: () => void) {} observe() {} unobserve() {} disconnect() { disconnected += 1; } });
+    const mutations = vi.spyOn(MutationObserver.prototype, 'disconnect');
+    const cancelled = vi.fn();
+    vi.stubGlobal('cancelAnimationFrame', cancelled);
+    const { unmount } = render(inWorld(<Toggle withSecond={false} />));
+    window.dispatchEvent(new Event('scroll'));
+    mutations.mockClear();
+    unmount();
+    expect(disconnected).toBeGreaterThanOrEqual(1);
+    expect(mutations).toHaveBeenCalled();
+    expect(cancelled).toHaveBeenCalled();
+    /* The smoke's own field listens to the window (rasters); a region adds nothing of its own to that while nothing is drawn. */
+    const add = vi.spyOn(window, 'addEventListener');
+    const heard = (node: React.ReactNode) => { add.mockClear(); const r = render(inWorld(node)); const n = add.mock.calls.map(([t]) => String(t)).sort(); r.unmount(); return n; };
+    expect(heard(<Smoke surface="characters" level="off"><CalmRegion><p>x</p></CalmRegion></Smoke>)).toEqual(heard(<Smoke surface="characters" level="off"><p>x</p></Smoke>));
+  });
+
+  test('a rect is drawn only where the smoke is: none under off, and the ground is never one', () => {
+    const { container } = render(inWorld(<Smoke surface="characters" level="off"><CalmRegion><p>x</p></CalmRegion></Smoke>));
+    expect(rects(container)).toHaveLength(0);
+    expect(container.querySelector('[data-kb-ground]')).not.toBeNull();
+    expect(container.querySelector('[data-kb-ground] .kb-smoke-calm')).toBeNull();
+  });
+
+  test('the rect is drawn between the smoke\'s layers and the page: after the layers, inside the smoke\'s own frame', () => {
+    const { container } = render(inWorld(<Smoke surface="characters"><CalmRegion><p>x</p></CalmRegion></Smoke>));
+    const frame = container.querySelector('.kb-smoke')!;
+    const kids = [...frame.children].map((c) => c.className);
+    expect(kids.indexOf('kb-smoke-calm')).toBeGreaterThan(kids.indexOf('kb-smoke-layers'));
+    expect(frame.contains(rects(container)[0]!)).toBe(true);
+    /* A region's own element is outside the smoke: the smoke says nothing to a screen reader and the region does. */
+    expect(frame.querySelector('[data-kb-calm-region]')).toBeNull();
+  });
+});
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 const sheet = (name: string) => fs.readFileSync(path.join(here, name), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
 const squash = (s: string) => s.replace(/\s+/g, ' ').trim();
@@ -99,70 +317,69 @@ function declsOf(css: string, selector: string): Record<string, string> {
   return out;
 }
 
-describe('the calm is drawn outside its element', () => {
+describe('the rect is blurred by the theme\'s feather, at the calm\'s opacity, in the ground\'s color', () => {
   const calm = sheet('calm.css');
-
-  test('its backing reaches the feather past the element\'s box', () => {
-    /* (The rule inside `@supports not (mask-image)` sets inset 0 on the same selector: no feather to reach there.) */
-    expect(squash(calm)).toContain('inset: calc(var(--kb-calm-feather) * -1);');
+  test('its blur reads --kb-glass-calm-feather (the phone\'s is half of it) and its opacity reads --kb-glass-calm-opacity', () => {
+    const body = declsOf(calm, '.kb-smoke-calm::before');
+    expect(body.filter).toBe('blur(var(--kb-calm-blur))');
+    expect(body.opacity).toBe('var(--kb-glass-calm-opacity)');
+    expect(body.background).toBe('var(--kb-glass-ground)');
+    expect(declsOf(calm, '.kb-smoke-calm')['--kb-calm-blur']).toBe('var(--kb-glass-calm-feather)');
+    expect(declsOf(calm, ":where(:root[data-kb-layout='phone']) .kb-smoke-calm")['--kb-calm-blur']).toBe('calc(var(--kb-glass-calm-feather) / 2)');
   });
-  test('the element adds no padding of its own', () => {
-    for (const sel of ['.kb-calm', '.kb-calm.kb-calm']) expect(declsOf(calm, sel).padding).toBeUndefined();
+  test('the falloff lies outside the region\'s box: the rect is drawn out past it, so every word inside is on the calm in full', () => {
+    expect(declsOf(calm, '.kb-smoke-calm::before').inset).toMatch(/^calc\(var\(--kb-calm-blur\) \* var\(--kb-glass-calm-reach\) \* -1\)$/);
   });
-  test('the mask ramps over the same feather the backing reaches', () => {
-    expect(calm).toMatch(/var\(--kb-calm-feather\),/);
-    expect(calm).not.toMatch(/currentColor var\(--kb-glass-calm-feather\)/);
+  /* The instance's own feather (glass.json) is held in its own test: the engine never reads an instance's files. */
+  test('the engine\'s default feather is 60px, so the phone\'s is 30px', () => {
+    expect(declsOf(sheet('tokens.css'), ':root')['--kb-glass-calm-feather']).toBe('60px');
   });
-  test('a calm in a framed panel (the HUD, a dialog, the hand, the class rail) keeps the soft feather: no override', () => {
-    /* Without a backing the panels' words fail their ceilings, and a hard box shows as a rectangle; the layout check exempts a panel's own content instead. */
-    for (const sel of ['.kb-hud', '.kb-hand-drawer', '.kb-class-rail']) expect(calm).not.toContain(`${sel} .kb-calm`);
-    /* (A dialog on the phone has the 12px its padding gives, below: a fix for a cut at the window, not a harder edge.) */
+  test('the rect only takes smoke away: it lies in the smoke and never takes pointer events', () => {
+    expect(declsOf(calm, '.kb-smoke-calm').position).toBe('absolute');
+    expect(declsOf(calm, '.kb-smoke-calm')['pointer-events']).toBe('none');
   });
-  test('a calm in a dialog has a 12px feather, so it stays inside a dialog that stands against the window\'s or the overlay\'s edge', () => {
-    expect(declsOf(calm, '.kb-glass-dialog .kb-calm')['--kb-calm-feather']).toBe('min(var(--kb-glass-calm-feather), 12px)');
-  });
-  test('each calm resolves its feather from the theme\'s, and on the phone the smaller of it and the column\'s gutter', () => {
-    const phone = ':where(:root[data-kb-layout=\'phone\'])';
-    expect(declsOf(calm, '.kb-calm')['--kb-calm-feather']).toBe('var(--kb-glass-calm-feather)');
-    expect(declsOf(calm, `${phone} .kb-calm`)['--kb-calm-feather']).toBe('min(var(--kb-glass-calm-feather), var(--kb-glass-gutter, 32px))');
+  test('no stylesheet still names a text element\'s calm', () => {
+    for (const f of ['calm.css', 'contrast.css', 'parts.css', 'tokens.css']) expect(sheet(f)).not.toMatch(/kb-calm\b(?!-)/);
+    expect(calm).not.toContain('--kb-calm-feather');
   });
 });
 
-describe('a feather capped at the gap to the title states the gap once', () => {
-  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-  const sheets = (dir: string): string[] => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? sheets(path.join(dir, e.name)) : e.name.endsWith('.css') ? [path.join(dir, e.name)] : []));
-  const css = sheets(root).filter((f) => !f.endsWith('glass/calm.css'));
-  const text = (f: string) => fs.readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+describe('under high contrast every region\'s rect is the ground, whole', () => {
+  test('opacity 1, no blur, drawn at the region\'s box', () => {
+    const high = sheet('contrast.css');
+    const body = declsOf(high, ":root[data-kb-contrast='high'] .kb-smoke-calm::before");
+    expect(body.opacity).toBe('1');
+    expect(body.filter).toBe('none');
+    expect(body.inset).toBe('0');
+  });
+});
 
-  /*
-   * A page sheet caps its feather in one of three ways, each for a reason, and none by a literal length (a literal is a gap stated twice):
-   *  - at the title gap, where the calm stands as near the title as the board sets it;
-   *  - at the class card's inset (characters.css), where the title's calm stands in a card at the edge of a row that clips, so its feather
-   *    ends where the card does;
-   *  - to nothing (`0px`), for the roster's tablist, which stands at its row's clipping edge and would have its feather cut on a straight line.
-   */
-  const CAPS = new Set([
-    'min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap))',
-    'min(var(--kb-glass-calm-feather), var(--kb-class-card-inset))',
-    '0px',
-  ]);
-  test('every page sheet that caps its feather caps it at the title gap, the class card\'s inset or nothing, never at another literal', () => {
-    const capped = css.filter((f) => text(f).includes('--kb-calm-feather:'));
-    expect(capped.length).toBeGreaterThanOrEqual(8);
-    for (const f of capped) {
-      for (const m of text(f).matchAll(/--kb-calm-feather:\s*([^;]+);/g)) {
-        expect(CAPS.has(squash(m[1]!)), `${path.basename(f)}: ${squash(m[1]!)}`).toBe(true);
-      }
-    }
+describe('no page caps a feather any more', () => {
+  test('the blur is outside the region and costs no space: no sheet states a per-element feather, and the title gap is parts.css\'s alone', () => {
+    const root = path.resolve(here, '..');
+    const sheets = (dir: string): string[] => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? sheets(path.join(dir, e.name)) : e.name.endsWith('.css') ? [path.join(dir, e.name)] : []));
+    const css = sheets(root).map((f) => [f, fs.readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')] as const);
+    expect(css.filter(([, t]) => t.includes('--kb-calm-feather')).map(([f]) => path.basename(f))).toEqual([]);
+    const gap = css.filter(([, t]) => t.includes('--kb-glass-title-gap:')).map(([f]) => path.basename(f));
+    expect(gap).toEqual(['parts.css']);
+    const parts = sheet('parts.css');
+    expect(declsOf(parts, ':root')['--kb-glass-title-gap']).toBe('12px');
+    expect(declsOf(parts, ":root[data-kb-layout='phone']")['--kb-glass-title-gap']).toBe('8px');
   });
-  test('the capping test refuses a literal length: 17px is no cap it knows', () => {
-    expect(CAPS.has(squash('min(var(--kb-glass-calm-feather), 17px)'))).toBe(false);
-    expect(CAPS.has(squash('12px'))).toBe(false);
+});
+
+describe('what stands under a line is never the frame\'s neon', () => {
+  const read = (rel: string) => fs.readFileSync(path.join(here, rel), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  test('a dialog\'s ground follows its own scroll, one border in, so a scrolled line is over the ground and not the border\'s color', () => {
+    const d = declsOf(sheet('shell.css'), '.kb-glass-dialog');
+    expect(d['background-attachment']).toBe('local');
+    expect(d['background-clip']).toBe('padding-box');
+    expect(d['background-image']).toBe('linear-gradient(var(--kb-glass-ground), var(--kb-glass-ground))');
   });
-  test('the gap is declared in one place: 12px, and the phone\'s 8px', () => {
-    const calm = sheet('calm.css');
-    expect(declsOf(calm, ':root')['--kb-glass-title-gap']).toBe('12px');
-    expect(declsOf(calm, ":root[data-kb-layout='phone']")['--kb-glass-title-gap']).toBe('8px');
-    expect(css.filter((f) => text(f).includes('--kb-glass-title-gap:'))).toEqual([]);
+  test('the Vending Machine\'s wallet words stand clear of the panel\'s border on the phone', () => {
+    expect(declsOf(read('../vending/vending.css'), ":where(:root[data-kb-layout='phone']) .kb-vending-wallet-in")['padding-inline']).toBe('16px');
+  });
+  test('the picker\'s axis labels have room in the field that grows with the label, so they are never over the grid\'s tiles', () => {
+    expect(declsOf(read('../reactions/reactions.css'), '.kb-picker-field').padding).toBe('max(28px, calc(var(--kb-glass-size-label) * 1.4)) 0');
   });
 });

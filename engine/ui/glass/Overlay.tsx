@@ -30,7 +30,9 @@ import { useModalLayer } from '../modal.tsx';
 import type { GlassSurface } from '../types.ts';
 import { hudTopOf, placePopover } from './place.ts';
 import { CloseCross, DialogBar, FRAME } from './Frame.tsx';
-import { FIELD_PLACED, Smoke, useSurfaceStyle } from './Smoke.tsx';
+import { CalmRegion } from './Calm.tsx';
+import { FIELD_PLACED } from './field.ts';
+import { Smoke, useSurfaceStyle } from './Smoke.tsx';
 import './shell.css';
 
 export interface OverlayProps {
@@ -192,17 +194,18 @@ export function Overlay({ title, onClose, children, surface, returnFocusTo, labe
         style={{ ...calm, ...style, ...(anchor ? { position: 'absolute' } : {}) }}
         {...Object.fromEntries(Object.entries(data ?? {}).map(([k, v]) => [`data-${k}`, v]))}
       >
-        <Smoke surface={surface} />
-        <DialogBar close={closeAt === 'bar' ? <CloseCross buttonRef={closeButton} onClick={onClose} /> : undefined}>
-          {kicker ? (
-            <div className="kb-glass-dialog-titles">
-              <p className="kb-glass-dialog-kicker">{kicker}</p>
-              <h2 id={id} className="kb-glass-dialog-head kb-glass-display">{title}</h2>
-            </div>
-          ) : <h2 id={id} className="kb-glass-dialog-head kb-glass-display">{title}</h2>}
-          {aside}
-        </DialogBar>
-        <div className="kb-glass-dialog-body">{children}</div>
+        <Smoke surface={surface}>
+          <DialogBar close={closeAt === 'bar' ? <CloseCross buttonRef={closeButton} onClick={onClose} /> : undefined}>
+            {kicker ? (
+              <div className="kb-glass-dialog-titles">
+                <p className="kb-glass-dialog-kicker">{kicker}</p>
+                <h2 id={id} className="kb-glass-dialog-head kb-glass-display">{title}</h2>
+              </div>
+            ) : <h2 id={id} className="kb-glass-dialog-head kb-glass-display">{title}</h2>}
+            {aside}
+          </DialogBar>
+          <CalmRegion className="kb-glass-dialog-body">{children}</CalmRegion>
+        </Smoke>
       </div>
       {onBeside && <div ref={besideRef} className="kb-glass-overlay-beside" />}
     </div>,

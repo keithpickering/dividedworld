@@ -48,6 +48,7 @@ import { cascade, CASCADE_BEAT_MS } from '../orbs/fill.ts';
 import { usePlayer } from '../player.tsx';
 import { Link, searchOf, useLocation } from '../router.tsx';
 import './vending.css';
+import { CalmRegion } from '../glass/Calm.tsx';
 
 /* The refusal's words are the cards' (the play form says them too); the Vending Machine's tests and callers still reach them here. */
 export { plainRefusal };
@@ -288,9 +289,9 @@ export function Vending() {
   if (!player.session.signedIn) {
     return (
       <div className="kb-vending">
-        <p className="kb-vending-signin kb-calm">
+        <CalmRegion as="p" className="kb-vending-signin">
           The Vending Machine is for players. <Link to={signInHref(location.path, searchOf(location.query))}>Sign in</Link> to spend your Aura here.
-        </p>
+        </CalmRegion>
       </div>
     );
   }
@@ -304,33 +305,33 @@ export function Vending() {
     <div className="kb-vending-frame">
     <div className="kb-vending">
       <aside className="kb-vending-side">
-        <div className="kb-vending-head kb-calm">
+        <CalmRegion className="kb-vending-head">
           <p className="kb-vending-eyebrow">Spend Aura</p>
           <h1 className="kb-vending-title kb-glass-display">Vending Machine</h1>
-        </div>
+        </CalmRegion>
         <section className="kb-vending-wallet kb-glass-cut-panel" aria-label="Your wallet">
-          <div className="kb-vending-wallet-in">
-            <p className="kb-vending-label kb-calm">Wallet · solid only</p>
+          <CalmRegion className="kb-vending-wallet-in">
+            <p className="kb-vending-label">Wallet · solid only</p>
             <div className="kb-vending-orbs">
               <Orbs settled={balance} pending={after !== null && picked ? -picked.price : 0} cap={cap} cascadeFrom={drainFrom} figures={false} label={walletName} />
             </div>
-            <p className="kb-vending-sum kb-num kb-calm">
+            <p className="kb-vending-sum kb-num">
               {orbs(balance)}{after !== null ? <> → <b>{orbs(after)}</b></> : null}
             </p>
-            <p className="kb-vending-fine kb-calm">
+            <p className="kb-vending-fine">
               {!picked ? 'Pick a slot to see what it costs.' : picked.extra > 0
                 ? `Playing it on a long post costs up to ${orbs(picked.extra)} more, never more than ${orbs(picked.price + picked.extra)} in all.`
                 : 'Playing it costs nothing more.'}
             </p>
-            {short && !outcome && <p className="kb-vending-fine kb-calm">{shortWords}</p>}
+            {short && !outcome && <p className="kb-vending-fine">{shortWords}</p>}
             {/*
               * Each on the page from the start and empty until it speaks, so a screen reader hears the outcome (WCAG 4.1.3; #89 P2-1): a
               * purchase made politely, a refusal at once.
               */}
-            <p className="kb-vending-fine kb-vending-outcome kb-calm" role="status" aria-live="polite" data-kb-tone="done">{outcome?.tone === 'refusal' ? '' : outcome?.text ?? ''}</p>
-            <p className="kb-vending-fine kb-vending-outcome kb-calm" role="alert" data-kb-tone="refusal">{outcome?.tone === 'refusal' ? outcome.text : ''}</p>
-            <p className="kb-vending-fine kb-calm">The ghost estimate can't be spent. What you buy is private: nobody else sees it until you play it.</p>
-          </div>
+            <p className="kb-vending-fine kb-vending-outcome" role="status" aria-live="polite" data-kb-tone="done">{outcome?.tone === 'refusal' ? '' : outcome?.text ?? ''}</p>
+            <p className="kb-vending-fine kb-vending-outcome" role="alert" data-kb-tone="refusal">{outcome?.tone === 'refusal' ? outcome.text : ''}</p>
+            <p className="kb-vending-fine">The ghost estimate can't be spent. What you buy is private: nobody else sees it until you play it.</p>
+          </CalmRegion>
         </section>
         <Link to={handLink} className="kb-vending-hand kb-glass-skew">
           <span className="kb-vending-hand-word kb-glass-upright">Your hand</span>{' '}
@@ -348,7 +349,7 @@ export function Vending() {
 
       {aboutFace && (
         <Overlay title={aboutFace.name} surface="vending" className="kb-vending-about-dialog" onClose={() => setAbout(null)} returnFocusTo={() => aboutButton.current}>
-          <div className="kb-vending-about-body kb-calm" data-kb-alignment={aboutFace.alignment}>
+          <div className="kb-vending-about-body" data-kb-alignment={aboutFace.alignment}>
             <p className="kb-vending-about-price kb-num">{priceOf(aboutFace)}</p>
             <p className="kb-vending-about-says">{aboutFace.describe}</p>
           </div>
@@ -356,10 +357,10 @@ export function Vending() {
       )}
 
       {faces.length < slotsFor(faces.length) && (
-        <div className="kb-vending-empty-line kb-calm">
+        <CalmRegion className="kb-vending-empty-line">
           <p className="kb-vending-empty-line-row">{slotsFor(faces.length) - faces.length} {slotsFor(faces.length) - faces.length === 1 ? 'slot' : 'slots'} empty</p>
           <p className="kb-vending-empty-line-says">More postcards arrive in later seasons.</p>
-        </div>
+        </CalmRegion>
       )}
     </div>
     </div>

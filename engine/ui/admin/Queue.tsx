@@ -43,6 +43,7 @@ import { shortDate } from '../postbit/dates.ts';
 import { todoFacts, todoSentence } from './handover-words.ts';
 import { AdminContact } from './AdminContact.tsx';
 import './queue.css';
+import { CalmRegion } from '../glass/Calm.tsx';
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -101,14 +102,14 @@ export function QueueScreen({ now }: { readonly now?: number }) {
     <div className="kb-queue">
       <PageHead title="The System's moves" />
       {!admin
-        ? <p className="kb-queue-lead kb-calm">The admin queue is for admins.</p>
+        ? <CalmRegion as="p" className="kb-queue-lead">The admin queue is for admins.</CalmRegion>
         : (
           <>
-            <p className="kb-queue-lead kb-calm">
+            <CalmRegion as="p" className="kb-queue-lead">
               Moves that reshape a board wait here before they land, and land unless you hold them. Anything in force can be reversed. Players never see a held move.
-            </p>
+            </CalmRegion>
             <AdminContact />
-            {failed && <p className="kb-queue-note kb-calm" role="alert">The queue could not be read. Reload the page to try again.</p>}
+            {failed && <CalmRegion as="p" className="kb-queue-note" role="alert">The queue could not be read. Reload the page to try again.</CalmRegion>}
             {queue && (
               <>
                 <Todos rows={queue.todos} onDismissed={load} />
@@ -142,7 +143,7 @@ export function QueueScreen({ now }: { readonly now?: number }) {
 
 function GroupHead({ id, title, count, more }: { readonly id: string; readonly title: string; readonly count: number; readonly more: boolean }) {
   return (
-    <h2 id={id} tabIndex={-1} className="kb-queue-group-head kb-glass-display kb-calm">
+    <h2 id={id} tabIndex={-1} className="kb-queue-group-head kb-glass-display">
       {title} <span className="kb-queue-count" aria-label={more ? `${count} or more` : `${count}`}>{count}{more ? '+' : ''}</span>
     </h2>
   );
@@ -213,12 +214,12 @@ function Todos({ rows, onDismissed }: { readonly rows: readonly HandoverTodo[]; 
     }
   };
   return (
-    <section className="kb-queue-group" aria-labelledby="queue-todo" data-kb-group="todo">
+    <CalmRegion as="section" className="kb-queue-group" aria-labelledby="queue-todo" data-kb-group="todo">
       <GroupHead id="queue-todo" title="To do" count={rows.length} more={false} />
-      {rows.length === 0 && <p className="kb-queue-empty kb-calm">Nothing to do.</p>}
+      {rows.length === 0 && <p className="kb-queue-empty">Nothing to do.</p>}
       {refusal && <p role="alert" className="kb-queue-failure">{refusal}</p>}
       {rows.map((t) => (
-        <article key={t.season} className="kb-queue-move kb-calm" data-kb-state="todo">
+        <article key={t.season} className="kb-queue-move" data-kb-state="todo">
           <div className="kb-queue-when">
             <p className="kb-queue-countdown">SINCE {shortDate(t.landedAt).toUpperCase()}</p>
           </div>
@@ -235,20 +236,20 @@ function Todos({ rows, onDismissed }: { readonly rows: readonly HandoverTodo[]; 
           </div>
         </article>
       ))}
-    </section>
+    </CalmRegion>
   );
 }
 
 function Waiting({ rows, more, boards, bosses, roster, now, onHold, onReplaced }: { readonly rows: readonly QueuedMove[]; readonly more: boolean; readonly boards: readonly BoardName[]; readonly bosses: readonly Roster[]; readonly roster: readonly Roster[]; readonly now: number; readonly onHold: (row: QueuedMove) => void; readonly onReplaced: () => Promise<void> }) {
   return (
-    <section className="kb-queue-group" aria-labelledby="queue-waiting" data-kb-group="waiting">
+    <CalmRegion as="section" className="kb-queue-group" aria-labelledby="queue-waiting" data-kb-group="waiting">
       <GroupHead id="queue-waiting" title="Waiting to land" count={rows.length} more={more} />
-      {rows.length === 0 && <p className="kb-queue-empty kb-calm">Nothing is waiting.</p>}
+      {rows.length === 0 && <p className="kb-queue-empty">Nothing is waiting.</p>}
       {rows.map((q) => {
         const description = typeof q.params['description'] === 'string' ? q.params['description'] : '';
         const premise = typeof q.params['premise'] === 'string' ? q.params['premise'] : '';
         return (
-          <article key={q.id} className="kb-queue-move kb-calm" data-kb-state="waiting">
+          <article key={q.id} className="kb-queue-move" data-kb-state="waiting">
             <div className="kb-queue-when">
               <p className="kb-queue-countdown">{countdown(q.goLiveAt, now)}</p>
               <p className="kb-queue-time">{dayAndTime(q.goLiveAt)}</p>
@@ -274,20 +275,20 @@ function Waiting({ rows, more, boards, bosses, roster, now, onHold, onReplaced }
           </article>
         );
       })}
-    </section>
+    </CalmRegion>
   );
 }
 
 function InForce({ rows, more, boards, bosses, onReverse }: { readonly rows: readonly MoveInForce[]; readonly more: boolean; readonly boards: readonly BoardName[]; readonly bosses: readonly Roster[]; readonly onReverse: (row: MoveInForce) => void }) {
   return (
-    <section className="kb-queue-group" aria-labelledby="queue-in-force" data-kb-group="in-force">
+    <CalmRegion as="section" className="kb-queue-group" aria-labelledby="queue-in-force" data-kb-group="in-force">
       <GroupHead id="queue-in-force" title="In force" count={rows.length} more={more} />
-      {rows.length === 0 && <p className="kb-queue-empty kb-calm">Nothing is in force.</p>}
+      {rows.length === 0 && <p className="kb-queue-empty">Nothing is in force.</p>}
       {rows.map((m) => {
         const ok = m.progress.of > 0 && !m.progress.error;
         const known = m.demand !== null && demandKind(m.demand.kind) !== undefined;
         return (
-          <article key={m.act} className="kb-queue-move kb-calm" data-kb-state="in-force">
+          <article key={m.act} className="kb-queue-move" data-kb-state="in-force">
             <div className="kb-queue-when">
               <p className="kb-queue-countdown">SINCE {shortDate(m.landedAt).toUpperCase()}</p>
               {m.expiresAt && <p className="kb-queue-time">ends {shortDate(m.expiresAt)}</p>}
@@ -311,18 +312,18 @@ function InForce({ rows, more, boards, bosses, onReverse }: { readonly rows: rea
           </article>
         );
       })}
-    </section>
+    </CalmRegion>
   );
 }
 
 /** The Mod Bots' cards still in force: an admin may end one (the same confirm as the Lens's), and the card's layer comes off for everyone. */
 function StaffCards({ rows, more, onEnd }: { readonly rows: readonly StaffCardPlay[]; readonly more: boolean; readonly onEnd: (row: StaffCardPlay) => void }) {
   return (
-    <section className="kb-queue-group" aria-labelledby="queue-staff-cards" data-kb-group="staff-cards">
+    <CalmRegion as="section" className="kb-queue-group" aria-labelledby="queue-staff-cards" data-kb-group="staff-cards">
       <GroupHead id="queue-staff-cards" title="Mod Bots' cards" count={rows.length} more={more} />
-      {rows.length === 0 && <p className="kb-queue-empty kb-calm">No Mod Bot has a card in force.</p>}
+      {rows.length === 0 && <p className="kb-queue-empty">No Mod Bot has a card in force.</p>}
       {rows.map((c) => (
-        <article key={c.play} className="kb-queue-move kb-calm" data-kb-state="staff-card">
+        <article key={c.play} className="kb-queue-move" data-kb-state="staff-card">
           <div className="kb-queue-when">
             <p className="kb-queue-countdown">SINCE {shortDate(c.at).toUpperCase()}</p>
           </div>
@@ -335,7 +336,7 @@ function StaffCards({ rows, more, onEnd }: { readonly rows: readonly StaffCardPl
           </div>
         </article>
       ))}
-    </section>
+    </CalmRegion>
   );
 }
 
@@ -355,20 +356,20 @@ function Ended({ rows, more, boards, bosses }: { readonly rows: readonly MoveEnd
   /* With nothing to unfold there is no fold: the line is shown under the head, not hidden in a closed details. */
   if (rows.length === 0) {
     return (
-      <section className="kb-queue-group" aria-labelledby="queue-ended" data-kb-group="ended">
+      <CalmRegion as="section" className="kb-queue-group" aria-labelledby="queue-ended" data-kb-group="ended">
         <GroupHead id="queue-ended" title="Ended" count={0} more={more} />
-        <p className="kb-queue-empty kb-calm">Nothing has ended in the last 30 days.</p>
-      </section>
+        <p className="kb-queue-empty">Nothing has ended in the last 30 days.</p>
+      </CalmRegion>
     );
   }
   return (
-    <section className="kb-queue-group" aria-labelledby="queue-ended" data-kb-group="ended">
+    <CalmRegion as="section" className="kb-queue-group" aria-labelledby="queue-ended" data-kb-group="ended">
       <details className="kb-queue-ended">
-        <summary className="kb-queue-group-head kb-glass-display kb-calm" id="queue-ended" tabIndex={-1}>
+        <summary className="kb-queue-group-head kb-glass-display" id="queue-ended" tabIndex={-1}>
           Ended <span className="kb-queue-count">{rows.length}{more ? '+' : ''}</span> <span className="kb-queue-fold">· the last 30 days, with how each ended ›</span>
         </summary>
         {rows.map((e) => (
-          <article key={`${e.act ?? 'q'}${e.id ?? ''}${e.at}`} className="kb-queue-move kb-calm" data-kb-state="ended" data-kb-how={e.how}>
+          <article key={`${e.act ?? 'q'}${e.id ?? ''}${e.at}`} className="kb-queue-move" data-kb-state="ended" data-kb-how={e.how}>
             <div className="kb-queue-body">
               <h3 className="kb-queue-sentence">
                 {e.card != null ? `${e.card}${e.boss ? ` by ${e.boss}` : ''}` : <MoveSentence kind={e.kind} params={e.params} boards={boards} bosses={bosses} tense={e.how === 'held' ? 'plan' : 'done'} />}
@@ -378,7 +379,7 @@ function Ended({ rows, more, boards, bosses }: { readonly rows: readonly MoveEnd
           </article>
         ))}
       </details>
-    </section>
+    </CalmRegion>
   );
 }
 

@@ -36,10 +36,10 @@ describe('PageHead', () => {
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     const h1 = container.querySelector('h1')!;
     expect(h1).toHaveTextContent('Rankings');
-    expect(h1).not.toHaveClass('kb-calm');
+    expect(h1.closest('[data-kb-calm-region]')).toBeNull();
     expect(h1).toHaveClass('kb-glass-display');
     const lead = container.querySelector('p.kb-page-head-lead')!;
-    expect(lead).toHaveClass('kb-calm');
+    expect(lead).toHaveAttribute('data-kb-calm-region');
     expect(lead).toHaveTextContent('Who is up.');
     expect(h1.compareDocumentPosition(lead) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Go' })).toBeInTheDocument();
@@ -55,11 +55,11 @@ describe('PageHead', () => {
     expect(container.querySelector('.kb-page-head')).toHaveAttribute('data-kb-size', 'roster');
   });
 
-  test('the lead\'s and the eyebrow\'s feather is capped at the row gap, which is the title gap', () => {
+  test('the row gap is the title gap, and the eyebrow is a calm region too', () => {
     const css = sheet('parts.css');
     expect(declsOf(css, '.kb-page-head')['row-gap']).toBe('var(--kb-glass-title-gap)');
-    expect(declsOf(css, '.kb-page-head-lead')['--kb-calm-feather']).toBe('min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap))');
-    expect(declsOf(css, '.kb-page-head-eyebrow')['--kb-calm-feather']).toBe('min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap))');
+    const { container } = renderInWorld(<PageHead title="Log" eyebrow="Week 3" />);
+    expect(container.querySelector('p.kb-page-head-eyebrow')).toHaveAttribute('data-kb-calm-region');
     expect(declsOf(css, '.kb-page-head')['margin-bottom']).toBe('36px');
   });
 

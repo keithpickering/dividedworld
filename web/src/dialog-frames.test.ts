@@ -113,12 +113,36 @@ describe('the stylesheets: no dialog draws its own frame', () => {
   });
   /** The compound a selector ends in, its pseudo-classes and attribute tests left off. */
   const last = (sel: string) => sel.split(/[ >+~]+/u).pop()!.replace(/\[[^\]]*\]|:[a-z-]+(\([^)]*\))?/gu, '');
-  const isBox = (sel: string) => !/::/u.test(sel) && last(sel).split('.').filter(Boolean).some((c) => BOXES.includes(c));
+  /**
+   * A compound is a dialog's box when it names a class an Overlay or a Float is given, or names a frame class and nothing else. The frame
+   * classes are also the chamfer shapes a few non-dialog pieces borrow (a post, an article, a podium); such a piece sets its own cut, border
+   * and sheet in a compound like `.kb-glass-cut-dialog.kb-welcome-post`, and that is not a dialog drawing its own frame. This is sound, and not circular:
+   * BOXES is read from the AST of every Overlay and Float className, and the `unread` test fails on any className it cannot read,
+   * so a class outside BOXES is not a dialog by construction. The limit: a frame class plus a modifier added only in CSS or at runtime
+   * (`.kb-glass-dialog.kb-some-state`) is not counted as a box.
+   */
+  const isBoxSel = (sel: string, boxes: string[], frames: string[]) => {
+    if (/::/u.test(sel)) return false;
+    const cs = last(sel).split('.').filter(Boolean);
+    return cs.some((c) => boxes.includes(c) && !frames.includes(c)) || (cs.length > 0 && cs.every((c) => frames.includes(c)));
+  };
+  const isBox = (sel: string) => isBoxSel(sel, BOXES, FRAME_CLASSES);
 
   test('only the shell sets the dialogs\' cut, border, sheet and glow', () => {
     const own = rules.filter((r) => !SHELL.includes(r.file))
       .flatMap((r) => r.selectors.filter(isBox).flatMap((s) => r.props.filter((p) => FRAME_PROPS.test(p)).map((p) => `${r.file}: ${s} sets ${p}`)));
     expect(own).toEqual([]);
+  });
+
+  test('a planted dialog frame outside the shell is still caught, and a borrowed shape is not', () => {
+    expect(isBox('.kb-glass-cut-dialog.kb-turn-dialog')).toBe(true);
+    expect(isBox('.kb-glass-cut-dialog')).toBe(true);
+    expect(isBox('.kb-glass-dialog:hover')).toBe(true);
+    expect(isBox('.x .kb-glass-cut-dialog.kb-turn-dialog')).toBe(true);
+    /* The stated limit: a modifier that no Overlay or Float names is not a dialog's class, so this compound is not counted. */
+    expect(isBox('.kb-glass-dialog.kb-some-state')).toBe(false);
+    expect(isBox('.kb-glass-cut-dialog.kb-welcome-post')).toBe(false);
+    expect(isBox('.kb-glass-cut-dialog.kb-welcome-post::before')).toBe(false);
   });
 
   test('only the shell styles Close', () => {

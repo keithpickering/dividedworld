@@ -40,6 +40,7 @@ import { tabsOf, type LogOpening } from './Log.tsx';
 import { useLog } from './useLog.ts';
 import { economyNow, paramsOf } from '../economy.ts';
 import './settlement.css';
+import { CalmRegion } from '../glass/Calm.tsx';
 
 /** The character whose tab the summary shows: the one picked, else the first with a line in the newest settlement, else the first. */
 function shownTab(data: LogData, tab: Id | null) {
@@ -71,25 +72,25 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
         eyebrow={`Settled ${utcWhen(s.endsAt)} UTC`}
         title="While you were away"
         tabs={tabs.length > 0 && (
-          <nav aria-label="Your characters" className="kb-calm">
+          <CalmRegion as="nav" aria-label="Your characters">
             <ButtonRow>
               {tabs.map((c) => (
                 <GlassButton key={c.id} kind={c.id === current?.id ? 'primary' : 'secondary'} aria-pressed={c.id === current?.id} onClick={() => onTab(c.id)}>{c.name}</GlassButton>
               ))}
             </ButtonRow>
-          </nav>
+          </CalmRegion>
         )}
       />
 
-      <div className="kb-settled-body">
+      <CalmRegion className="kb-settled-body">
         <section aria-label="Wallet" className="kb-settled-wallet">
           {event
             ? (
               <>
-                <div className="kb-settled-orbs kb-calm">
+                <div className="kb-settled-orbs">
                   <Orbs settled={event.balanceAfter} pending={0} cap={settings.walletCap} figures={false} cascadeFrom={event.balanceAfter - event.change} label={`Wallet now ${plain(event.balanceAfter)} of ${plain(settings.walletCap)}`} />
                 </div>
-                <p className="kb-settled-move kb-calm">
+                <p className="kb-settled-move">
                   <span className="kb-settled-was">{plain(event.balanceAfter - event.change)} →</span>
                   <span className="kb-settled-now kb-glass-display">{plain(event.balanceAfter)}</span>
                   <span className="kb-settled-change" data-kb-sign={Math.sign(event.change)}>{signed(event.change)}</span>
@@ -98,10 +99,10 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
                 </p>
               </>
             )
-            : <p className="kb-settled-move kb-calm">Your wallet did not move.</p>}
+            : <p className="kb-settled-move">Your wallet did not move.</p>}
           {lines.length > 0
             ? (
-              <div className="kb-settled-why kb-calm">
+              <div className="kb-settled-why">
                 <h2 className="kb-settled-why-head" id="kb-settled-why">{why}</h2>
                 <ul className="kb-settled-lines" aria-labelledby="kb-settled-why">
                   {lines.map((l) => (
@@ -114,12 +115,12 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
                 {held && <p className="kb-settled-held">{held}</p>}
               </div>
             )
-            : <p className="kb-settled-why kb-calm">Nothing was settled for {current?.name ?? 'you'} in this window.</p>}
+            : <p className="kb-settled-why">Nothing was settled for {current?.name ?? 'you'} in this window.</p>}
         </section>
 
         <div className="kb-settled-cards">
           {rank && (
-            <section aria-label={rank.rankNow > rank.rankWas ? 'Rank up' : 'Rank down'} className="kb-settled-rank">
+            <section aria-label={rank.rankNow > rank.rankWas ? 'Rank up' : 'Rank down'} className="kb-glass-cut-dialog kb-settled-rank">
               <div className="kb-settled-card-label">{rank.rankNow > rank.rankWas ? 'New rank' : 'Rank down'}</div>
               <div className="kb-settled-rank-was">{instance.ranks[rank.rankWas]?.name}</div>
               <div className="kb-settled-rank-now kb-glass-display">{instance.ranks[rank.rankNow]?.name}</div>
@@ -144,7 +145,7 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
             </section>
           )}
         </div>
-      </div>
+      </CalmRegion>
 
     </>
   );
@@ -183,18 +184,18 @@ export function SettlementScreen() {
   const ready = state.status === 'ready' && newest ? state.data : undefined;
   const opening: LogOpening | undefined = ready && newest ? { open: newest.id, character: shownTab(ready, tab)?.id } : undefined;
   const content = signedIn === false
-    ? <div className="kb-calm"><SignInPrompt /></div>
+    ? <CalmRegion><SignInPrompt /></CalmRegion>
     : signedIn === null || state.status === 'loading'
       ? <div className="kb-settled-wait" aria-busy="true" />
       : state.status === 'failed'
-        ? <p className="kb-calm">The settlement could not be loaded. Reload the page to try again.</p>
+        ? <CalmRegion as="p">The settlement could not be loaded. Reload the page to try again.</CalmRegion>
         : ready
           ? <Summary data={ready} tab={tab} onTab={setPicked} />
-          : <p className="kb-calm">Nothing has settled for you yet.</p>;
+          : <CalmRegion as="p">Nothing has settled for you yet.</CalmRegion>;
   return (
     <div className="kb-settled">
       {content}
-      <div className="kb-settled-ways kb-calm">
+      <CalmRegion className="kb-settled-ways">
         <ButtonRow>
           {opening && <GlassButton to="/log" state={opening}>Open my log</GlassButton>}
           <GlassButton
@@ -206,7 +207,7 @@ export function SettlementScreen() {
             Back to the board
           </GlassButton>
         </ButtonRow>
-      </div>
+      </CalmRegion>
     </div>
   );
 }

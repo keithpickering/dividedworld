@@ -32,6 +32,7 @@ import { todoDraft } from '../admin/handover-words.ts';
 import { WriteUpdate } from '../admin/WriteUpdate.tsx';
 import '../cards/kit.css';
 import './updates.css';
+import { CalmRegion } from '../glass/Calm.tsx';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const two = (n: number) => String(n).padStart(2, '0');
@@ -87,7 +88,7 @@ function Post({ update }: { readonly update: Update }) {
   }, [api, update.act, update.thread, tallies, mine]);
 
   return (
-    <article className="kb-updates-post" aria-labelledby={headline}>
+    <article className="kb-glass-cut-dialog kb-updates-post" aria-labelledby={headline}>
       <div className="kb-updates-by">
         <PersonaMark name={update.name} picture={picture} />
         <div>
@@ -128,12 +129,12 @@ export function Updates({ updates, open, more, onMore, admin, onWritten, initial
       <PageHead title="Updates" />
       <div className="kb-updates-cols">
         <aside className="kb-updates-side">
-          <p className="kb-updates-lede kb-calm">
+          <CalmRegion as="p" className="kb-updates-lede">
             What changed in the game, from the people who make it.
             {voice !== undefined && <> The voice is {possessive(voice)}; every fact in it is true.</>}
-          </p>
+          </CalmRegion>
           {updates.length > 0 && (
-            <nav aria-label="All updates" className="kb-updates-archive kb-calm">
+            <CalmRegion as="nav" aria-label="All updates" className="kb-updates-archive">
               <ul>
                 {updates.map((u) => (
                   <li key={u.act}>
@@ -145,7 +146,7 @@ export function Updates({ updates, open, more, onMore, admin, onWritten, initial
                 ))}
               </ul>
               {more && <ButtonRow><GlassButton className="kb-updates-more" onClick={onMore}>Show earlier updates</GlassButton></ButtonRow>}
-            </nav>
+            </CalmRegion>
           )}
         </aside>
         <div className="kb-updates-main">
@@ -157,7 +158,7 @@ export function Updates({ updates, open, more, onMore, admin, onWritten, initial
               {writing && <WriteUpdate key={initial?.title ?? ''} onWritten={onWritten} initial={initial} />}
             </div>
           )}
-          {current ? <Post key={current.act} update={current} /> : <p className="kb-updates-empty kb-calm">Nothing here yet. When the developers post an update, it is here, and in everyone&apos;s alerts.</p>}
+          {current ? <Post key={current.act} update={current} /> : <CalmRegion as="p" className="kb-updates-empty">Nothing here yet. When the developers post an update, it is here, and in everyone&apos;s alerts.</CalmRegion>}
         </div>
       </div>
     </div>
@@ -203,9 +204,9 @@ export function UpdatesScreen() {
     return () => { live = false; };
   }, [api, signedIn]);
 
-  if (signedIn === false) return <div className="kb-updates"><div className="kb-updates-empty kb-calm"><SignInPrompt /></div></div>;
+  if (signedIn === false) return <div className="kb-updates"><CalmRegion className="kb-updates-empty"><SignInPrompt /></CalmRegion></div>;
   if (signedIn === null || state.status === 'loading') return <div className="kb-updates" aria-busy="true" />;
-  if (state.status === 'failed') return <div className="kb-updates"><p className="kb-updates-empty kb-calm">The updates could not be loaded. Reload the page to try again.</p></div>;
+  if (state.status === 'failed') return <div className="kb-updates"><CalmRegion as="p" className="kb-updates-empty">The updates could not be loaded. Reload the page to try again.</CalmRegion></div>;
 
   const asksHandover = query.get('write') === 'handover';
   const problem = asksHandover && season === null ? 'The address names no season, so there is no handover to write about. Open the to-do from the admin queue.'

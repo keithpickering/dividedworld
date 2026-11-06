@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type HTMLAttributes, type KeyboardEvent, type ReactNode } from 'react';
 import { motionReduced } from '../appearance.ts';
 import { shownRange } from '../characters/carousel.ts';
+import { CalmRegion } from './Calm.tsx';
 
 /** The ids a tablist's tabs and its panel carry, from the `id` the caller gave the carousel. */
 export const carouselTabId = (id: string, key: string) => `${id}-tab-${key}`;
@@ -169,11 +170,11 @@ export function Carousel<T extends { readonly key: string }>({ role, label, item
         style={{ '--kb-class-peek-before': `${row.peekBefore}px`, '--kb-class-peek-after': `${row.peekAfter}px` } as CSSProperties}
       >
         {/* The tablist holds the tabs and is a box of its own (a link is no tab, so New character stands beside it in the row). */}
-        {tabs ? <div role="tablist" aria-label={label} className="kb-carousel-tablist kb-calm">{drawn}</div> : drawn}
+        {tabs ? <CalmRegion role="tablist" aria-label={label} className="kb-carousel-tablist">{drawn}</CalmRegion> : drawn}
         {after && <div className="kb-carousel-after" data-kb-item="after">{after}</div>}
       </div>
       {row.overflow && (
-        <div className="kb-class-nav kb-calm">
+        <CalmRegion className="kb-class-nav">
           <span className="kb-class-count">{`${row.first}–${row.last} of ${count}`}</span>
           <button ref={earlier} type="button" className="kb-class-arrow" aria-label={tabs ? 'Earlier characters' : 'Earlier classes'} disabled={!row.before} onClick={() => move(-1)}>
             <span aria-hidden="true">‹</span>
@@ -181,7 +182,7 @@ export function Carousel<T extends { readonly key: string }>({ role, label, item
           <button ref={more} type="button" className="kb-class-arrow" aria-label={tabs ? 'More characters' : 'More classes'} disabled={!row.after} onClick={() => move(1)}>
             <span aria-hidden="true">›</span>
           </button>
-        </div>
+        </CalmRegion>
       )}
     </div>
   );

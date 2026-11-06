@@ -80,6 +80,8 @@ export const STEPS = [
   'node tools/check-ui-tokens.mjs',
   'node tools/test-css-classes.mjs',
   'node tools/check-css-classes.mjs',
+  'node tools/test-chamfer-borders.mjs',
+  'node tools/check-chamfer-borders.mjs',
   'node tools/test-glass-contrast.mjs',
   'node tools/check-glass-contrast.mjs',
   'node tools/test-theme.mjs',

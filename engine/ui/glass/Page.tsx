@@ -44,11 +44,12 @@ export function Page({ surface, menu = true, children }: PageProps) {
   }, [path]);
   return (
     <div className="kb-glass kb-glass-page" data-kb-surface={surface} style={calm}>
-      <Smoke surface={surface} />
-      {menu && <MenuBar />}
-      <main ref={main} className="kb-glass-content" tabIndex={-1}>
-        {children}
-      </main>
+      <Smoke surface={surface}>
+        {menu && <MenuBar />}
+        <main ref={main} className="kb-glass-content" tabIndex={-1}>
+          {children}
+        </main>
+      </Smoke>
     </div>
   );
 }

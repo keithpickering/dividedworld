@@ -19,6 +19,7 @@ import { useNavigate } from '../router.tsx';
 import { ClassCards } from './ClassCards.tsx';
 import { DebutChoice } from './DebutChoice.tsx';
 import './characters.css';
+import { CalmRegion } from '../glass/Calm.tsx';
 
 export function NewCharacter() {
   const { api, instance, settings } = useKayfa();
@@ -40,10 +41,10 @@ export function NewCharacter() {
     return (
       <div className="kb-new-character">
         <PageHead size="roster" title="New character" />
-        <p className="kb-notice kb-calm">
+        <CalmRegion as="p" className="kb-notice">
           You play {active} of {settings.charactersPerPlayer} characters, the most there are. There is no way to free a slot yet; an admin can retire a character on request, and keeps every Act it made.
-        </p>
-        <div className="kb-calm"><ButtonRow><GlassButton to="/characters">Back to your characters</GlassButton></ButtonRow></div>
+        </CalmRegion>
+        <CalmRegion><ButtonRow><GlassButton to="/characters">Back to your characters</GlassButton></ButtonRow></CalmRegion>
       </div>
     );
   }
@@ -70,26 +71,26 @@ export function NewCharacter() {
   return (
     <div className="kb-new-character">
       <PageHead size="roster" title="New character" lead="This page is out of character and only you can see it. Nobody else can tell who plays a character." />
-      <form className="kb-new-form" aria-label="New character" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
-        <div className="kb-new-name kb-calm">
+      <CalmRegion as="form" className="kb-new-form" aria-label="New character" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
+        <div className="kb-new-name">
           <label className="kb-glass-field">
             <span>Name</span>
             <input className="kb-glass-input" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} autoComplete="off" aria-describedby="new-name-hint" />
           </label>
           <p id="new-name-hint" className="kb-roster-line">1 to 40 characters. Letters, marks, digits and single spaces. Names are unique, look-alikes included.</p>
         </div>
-        <div className="kb-calm"><ClassCards legend="Class" value={cls} onChange={setCls} /></div>
-        <p className="kb-roster-line kb-calm">Only you will know its class, unless you choose to reveal it.</p>
-        <div className="kb-calm"><DebutChoice name={name} className={className} timing={timing} loudness={loudness} onTiming={setTiming} onLoudness={setLoudness} /></div>
-        {refusal && <p role="alert" className="kb-notice kb-calm" data-kb-tone="refusal">{refusal}</p>}
+        <div><ClassCards legend="Class" value={cls} onChange={setCls} /></div>
+        <p className="kb-roster-line">Only you will know its class, unless you choose to reveal it.</p>
+        <div><DebutChoice name={name} className={className} timing={timing} loudness={loudness} onTiming={setTiming} onLoudness={setLoudness} /></div>
+        {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
         {/* In a calm, since "Make the character" waits drawn as text on a dashed edge until a name and a class are chosen. */}
-        <div className="kb-calm">
+        <div>
           <ButtonRow>
             <GlassButton to="/characters">Cancel</GlassButton>
             <GlassButton type="submit" kind="primary" disabled={!cls || name.trim() === '' || busy}>Make the character</GlassButton>
           </ButtonRow>
         </div>
-      </form>
+      </CalmRegion>
     </div>
   );
 }

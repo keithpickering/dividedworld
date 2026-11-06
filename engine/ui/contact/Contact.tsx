@@ -20,6 +20,7 @@ import { Link } from '../router.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import '../account/account.css';
 import './contact.css';
+import { CalmRegion } from '../glass/Calm.tsx';
 
 /** Where the page is. */
 export const CONTACT_PATH = '/contact';
@@ -40,7 +41,7 @@ export function Contact({ links }: { readonly links: readonly ContactLink[] | nu
   return (
     <div className="kb-acct kb-contact" aria-busy={links === null || undefined}>
       <PageHead title="Reach a person" />
-      <div className="kb-acct-panel kb-calm">
+      <CalmRegion className="kb-acct-panel">
         <p className="kb-acct-lead">The admins run this instance. Write to them if something looks broken, if you&apos;re stuck with no way out, or about anything that isn&apos;t part of the game.</p>
         {links !== null && links.length === 0 && <p className="kb-acct-text">This instance&apos;s admins haven&apos;t added a way to reach them yet.</p>}
         {links !== null && links.length > 0 && (
@@ -53,7 +54,7 @@ export function Contact({ links }: { readonly links: readonly ContactLink[] | nu
             ))}
           </ul>
         )}
-      </div>
+      </CalmRegion>
     </div>
   );
 }
@@ -72,9 +73,9 @@ export function ContactScreen() {
   return (
     <div className="kb-acct kb-contact">
       <PageHead title="Reach a person" />
-      <div className="kb-acct-panel kb-calm">
+      <CalmRegion className="kb-acct-panel">
         <p role="alert" className="kb-acct-refusal">The admins&apos; contact could not be read. Reload the page to try again.</p>
-      </div>
+      </CalmRegion>
     </div>
   );
 }

@@ -19,6 +19,7 @@ import { AvatarEditor } from './Cropper.tsx';
 import type { PictureIo } from './crops.ts';
 import '../characters/characters.css';
 import './profile-edit.css';
+import { CalmRegion } from '../glass/Calm.tsx';
 
 const TITLE_MAX = 40;
 const SIGNATURE_MAX = 500;
@@ -64,23 +65,23 @@ export function ProfileEdit({ io }: { readonly io?: PictureIo }) {
   if (signedIn === null || (signedIn && !loaded)) return <div className="kb-profile-edit" aria-busy="true" />;
   if (!signedIn) return <div className="kb-profile-edit"><SignInPrompt /></div>;
 
-  const back = <div className="kb-calm"><ButtonRow><GlassButton to="/characters" state={id === null ? undefined : { character: id }}>Back to your characters</GlassButton></ButtonRow></div>;
+  const back = <CalmRegion><ButtonRow><GlassButton to="/characters" state={id === null ? undefined : { character: id }}>Back to your characters</GlassButton></ButtonRow></CalmRegion>;
   if (!mine || id === null) {
     return (
       <div className="kb-profile-edit">
         <PageHead size="roster" title="Edit profile" />
-        <p className="kb-notice kb-calm">You have no characters yet, so there is no profile here for you to edit. <Link to="/characters/new">Make a character</Link> first.</p>
+        <CalmRegion as="p" className="kb-notice">You have no characters yet, so there is no profile here for you to edit. <Link to="/characters/new">Make a character</Link> first.</CalmRegion>
         {back}
       </div>
     );
   }
   const picker = (
-    <label className="kb-field kb-calm">
+    <CalmRegion as="label" className="kb-field">
       <span>Character</span>
       <select className="kb-select" value={id} onChange={(e) => setPicked(e.target.value)}>
         {characters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
       </select>
-    </label>
+    </CalmRegion>
   );
   /* The same head in every state, so the select keeps its place in the tree (and its open list) while a profile loads. */
   const head = (
@@ -93,7 +94,7 @@ export function ProfileEdit({ io }: { readonly io?: PictureIo }) {
     return (
       <div className="kb-profile-edit">
         {head}
-        <p className="kb-notice kb-calm">{mine.name} is retired. An admin can restore it; until then its profile cannot be edited.</p>
+        <CalmRegion as="p" className="kb-notice">{mine.name} is retired. An admin can restore it; until then its profile cannot be edited.</CalmRegion>
         {back}
       </div>
     );
@@ -102,12 +103,12 @@ export function ProfileEdit({ io }: { readonly io?: PictureIo }) {
     return (
       <div className="kb-profile-edit">
         {head}
-        <p className="kb-notice kb-calm">{mine.name} is waiting to debut at the next settlement. It has no profile to edit until it has debuted.</p>
+        <CalmRegion as="p" className="kb-notice">{mine.name} is waiting to debut at the next settlement. It has no profile to edit until it has debuted.</CalmRegion>
         {back}
       </div>
     );
   }
-  if (profile === 'failed') return <div className="kb-profile-edit">{head}<p className="kb-notice kb-calm" data-kb-tone="refusal">The profile could not be loaded. Reload the page to try again.</p></div>;
+  if (profile === 'failed') return <div className="kb-profile-edit">{head}<CalmRegion as="p" className="kb-notice" data-kb-tone="refusal">The profile could not be loaded. Reload the page to try again.</CalmRegion></div>;
   if (profile === null) return <div className="kb-profile-edit">{head}<div aria-busy="true" /></div>;
 
   const save = async () => {
@@ -130,8 +131,8 @@ export function ProfileEdit({ io }: { readonly io?: PictureIo }) {
   return (
     <div className="kb-profile-edit">
       {head}
-      <p className="kb-muted kb-small kb-calm">What you set here is public: it shows beside {mine.name}&apos;s posts.</p>
-      <form className="kb-calm" onSubmit={(e) => { e.preventDefault(); void save(); }}>
+      <CalmRegion as="p" className="kb-muted kb-small">What you set here is public: it shows beside {mine.name}&apos;s posts.</CalmRegion>
+      <CalmRegion as="form" onSubmit={(e) => { e.preventDefault(); void save(); }}>
         <label className="kb-field">
           <span>Title</span>
           <input className="kb-input kb-wide" value={title} maxLength={TITLE_MAX} onChange={(e) => setTitle(e.target.value)} aria-describedby="pe-title-count" />
@@ -153,11 +154,11 @@ export function ProfileEdit({ io }: { readonly io?: PictureIo }) {
             {instance.pipStyles.map((p) => <option key={p.key} value={p.key}>{p.name}</option>)}
           </select>
         </label>
-        {refusal && <p role="alert" className="kb-notice kb-calm" data-kb-tone="refusal">{refusal}</p>}
+        {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
         <ButtonRow><GlassButton type="submit" kind="primary" disabled={busy}>Save the profile</GlassButton></ButtonRow>
-        <div role="status">{saved && <p className="kb-notice kb-calm">{saved}</p>}</div>
-      </form>
-      <div className="kb-calm"><AvatarEditor character={profile} onSaved={setProfile} io={io} /></div>
+        <div role="status">{saved && <p className="kb-notice">{saved}</p>}</div>
+      </CalmRegion>
+      <CalmRegion><AvatarEditor character={profile} onSaved={setProfile} io={io} /></CalmRegion>
     </div>
   );
 }

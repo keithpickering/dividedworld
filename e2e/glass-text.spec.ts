@@ -4,7 +4,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { judge, paletteOf, type CeilingsFile, type GlassColors, type SurfaceCeilings, type TextFact } from './glass-text.ts';
 import { signInUnseasonedOnBoard } from './onboarding.ts';
 import type * as Gatherer from './glass-text-page.ts';
-import { FIXTURE_OVERLAYS, OVERLAYS, PAGES, SETTLEMENT, STORIES, open, type Screen } from './glass-screens.ts';
+import { FIXTURE_OVERLAYS, OVERLAYS, PAGES, SETTLEMENT, STORIES, open, type Probe, type Screen } from './glass-screens.ts';
 
 /**
  * The rendered glass measurement (the web plan's glass amendment to Task 12; the glass build's
@@ -62,12 +62,8 @@ async function measure(page: Page, panel?: string): Promise<string[]> {
   const palette = paletteOf(glass, key);
   const facts = new Map<string, TextFact>();
   const seen = new Map<string, string>();
-  for (let y = 0; ; y += height - OVERLAP) {
-    const at = await page.evaluate((top) => {
-      const scroller = document.querySelector('.kb-glass-overlay') ?? document.scrollingElement!;
-      scroller.scrollTop = top;
-      return new Promise<{ top: number; max: number }>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done({ top: scroller.scrollTop, max: scroller.scrollHeight - scroller.clientHeight }))));
-    }, y);
+  /* A dialog that scrolls itself (an anchored popover has only the room above its post) is read a window at a time as well. */
+  const readWindow = async () => {
     const lines = await page.evaluate((only) => (globalThis as Bundled).kbGlassText.gather(only), panel);
     for (const l of lines) seen.set(l.key, l.name);
     const fresh = lines.filter((l) => l.inView && !facts.has(l.key));
@@ -82,6 +78,23 @@ async function measure(page: Page, panel?: string): Promise<string[]> {
       await page.evaluate(() => (globalThis as Bundled).kbGlassText.hideText(false));
       const stats = await page.evaluate(([shot, boxes, without]) => (globalThis as Bundled).kbGlassText.pixels(shot, boxes, without), [png, fresh.map((l) => l.box), bare] as const);
       fresh.forEach((l, i) => facts.set(l.key, { ...l, ...stats[i]! }));
+    }
+  };
+  for (let y = 0; ; y += height - OVERLAP) {
+    const at = await page.evaluate((top) => {
+      const scroller = document.querySelector('.kb-glass-overlay') ?? document.scrollingElement!;
+      scroller.scrollTop = top;
+      return new Promise<{ top: number; max: number }>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done({ top: scroller.scrollTop, max: scroller.scrollHeight - scroller.clientHeight }))));
+    }, y);
+    for (let d = 0; ; d += 1) {
+      const dlg = await page.evaluate((step) => {
+        const el = document.querySelector<HTMLElement>('.kb-glass-dialog');
+        if (!el) return { top: 0, max: 0 };
+        el.scrollTop = step;
+        return new Promise<{ top: number; max: number }>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done({ top: el.scrollTop, max: el.scrollHeight - el.clientHeight }))));
+      }, d * (await page.evaluate(() => Math.max(60, (document.querySelector('.kb-glass-dialog')?.clientHeight ?? 400) - 100))));
+      await readWindow();
+      if (dlg.top >= dlg.max) break;
     }
     if (panel || at.top >= at.max) break;
   }
@@ -109,27 +122,26 @@ for (const [label, viewport] of SIZES) {
 }
 
 /*
- * The calm is drawn outside its element (engine/ui/glass/calm.css): the element adds no padding, and
- * its backing reaches the feather past its box on every side. 32px on the main layout, the phone
- * layout's own where the theme gives one; read as the browser computes it, which an inline root
- * style must not outrank.
+ * The calm is drawn outside its element (engine/ui/glass/Calm.tsx, calm.css): the region adds no padding,
+ * and the rect the smoke draws for it is blurred by the theme's feather, 60px (the phone's half of it,
+ * 30px), and drawn out past the region's box by two blurs on every side, so the falloff lies outside the
+ * box. Read as the browser computes it, which an inline root style must not outrank.
  */
-for (const [label, viewport, phone] of [['1440 wide', { width: 1440, height: 900 }, false], ['the phone, 390 wide', { width: 390, height: 844 }, true]] as const) {
-  test(`the calm adds no padding and its backing reaches the feather past the element, at ${label}`, async ({ page }) => {
+for (const [label, viewport, blur] of [['1440 wide', { width: 1440, height: 900 }, 60], ['the phone, 390 wide', { width: 390, height: 844 }, 30]] as const) {
+  test(`a calm region adds no padding, and its rect is blurred by the feather and drawn out past the box by two blurs, at ${label}`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await open(page, PAGES.find((p) => p.path === '/season?tab=rankings')!);
-    /* 32px, the theme's; on the phone the smaller of it and the column's gutter, so the column's clip never cuts it. */
-    const gutter = await page.locator('.kb-glass-content').evaluate((el) => parseFloat(getComputedStyle(el).paddingLeft));
-    const feather = phone ? Math.min(32, gutter) : 32;
-    if (phone) expect(feather, 'the phone gutter is under the 32px feather').toBeLessThan(32);
-    for (const sel of ['.kb-rankings-lead.kb-calm', '.kb-rankings-board.kb-calm']) {
-      const got = await page.locator(sel).evaluate((el) => {
+    for (const sel of ['.kb-rankings-lead', '.kb-rankings-board']) {
+      const got = await page.locator(`${sel}[data-kb-calm-region]`).evaluate((el) => {
         const s = getComputedStyle(el);
-        const b = getComputedStyle(el, '::before');
-        return { padding: [s.paddingTop, s.paddingRight, s.paddingBottom, s.paddingLeft], inset: [b.top, b.right, b.bottom, b.left] };
+        const rect = [...document.querySelectorAll('.kb-smoke-calm')].find((r) => (r as Element & { kbRegion?: Element }).kbRegion === el)!;
+        const b = getComputedStyle(rect, '::before');
+        return { padding: [s.paddingTop, s.paddingRight, s.paddingBottom, s.paddingLeft], inset: [b.top, b.right, b.bottom, b.left], filter: b.filter, opacity: b.opacity };
       });
       expect(got.padding, `${sel} padding`).toEqual(['0px', '0px', '0px', '0px']);
-      expect(got.inset.map(parseFloat).map((v) => Math.round(v * 100) / 100), `${sel} backing`).toEqual(Array(4).fill(-Math.round(feather * 100) / 100));
+      expect(got.filter, `${sel} blur`).toBe(`blur(${blur}px)`);
+      expect(got.inset.map(parseFloat), `${sel} backing`).toEqual(Array(4).fill(-2 * blur));
+      expect(parseFloat(got.opacity), `${sel} opacity`).toBeCloseTo(0.85, 5);
     }
   });
 }
@@ -207,7 +219,7 @@ async function chooseHighContrast(page: Page) {
 }
 
 /* The boards' fixture signs in its own account, which has no preference; the HUD is read on the demo world's board, as the player who chose it. */
-const onTheAccount = (s: Screen): Screen => (s.path.includes('fixture=boards') ? { name: 'The HUD, on a board page', path: '/b/general' } : s);
+const onTheAccount = (s: Probe): Probe => (s.path.includes('fixture=boards') ? { name: 'The HUD, on a board page', path: '/b/general' } : s);
 
 /*
  * Text size (Settings › Accessibility): the glass's words grow with the player's choice, from 150% up
@@ -317,8 +329,8 @@ test.describe('under high contrast', () => {
     await page.setViewportSize({ width: 1920, height: 1080 });
     await chooseHighContrast(page);
     await open(page, PAGES.find((p) => p.path === '/season?tab=rankings')!);
-    /* The lead's calm is the solid ground under high contrast; drawn white, it is still solid, and far too bright for the high key's white text. */
-    await plant(page, '.kb-rankings-lead.kb-calm::before { background: #ffffff !important; }');
+    /* The column is laid on the ground under high contrast (contrast.css); drawn white, it is still solid, and far too bright for the high key's white text. */
+    await plant(page, '.kb-glass-content { background: #ffffff !important; }');
     expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-rankings-lead \(surface rankings\): under high contrast its brightest pixel, luminance 1\.0000, is not under the 7:1 ceiling 0\.1 for its color, rgb\(255, 255, 255\)$/u));
   });
 
@@ -351,7 +363,7 @@ test.describe('the instance\'s drawn art', () => {
     const plantLine = (art: boolean) => page.locator('.kb-vending-panel').evaluate((list, marked) => {
       document.querySelector('.kb-planted')?.remove();
       const p = document.createElement('p');
-      p.className = 'kb-planted kb-calm';
+      p.className = 'kb-planted';
       p.style.cssText = 'color: #2ef0a0; font-size: 21px; margin: 0';
       if (marked) p.setAttribute('data-kb-art', '');
       p.textContent = 'A line printed on the machine in a color no token names.';
@@ -445,30 +457,30 @@ test.describe('the poisons, planted in a real page', () => {
 
   test('a calm moved off its text', async ({ page }) => {
     await open(page, rankings);
-    await plant(page, '.kb-rankings-lead.kb-calm::before { transform: translateX(900px); }');
+    await plant(page, '.kb-smoke-calm::before { transform: translateX(900px); }');
     /* The page recipe's full worst, 0.231, is over the lead's ceiling, so the calm is still what it needs. */
-    expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-rankings-lead \(surface rankings\): lies outside its calm's interior .* by 900px, and its recipe's full worst, 0\.231, is not under the ceiling 0\.152/u));
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-rankings-lead \(surface rankings\): lies outside its calm's interior .* by [\d.]+px, and its recipe's full worst, 0\.231, is not under the ceiling 0\.152/u));
   });
 
   test('an uncalmed line on a recipe too bright for its color', async ({ page }) => {
     /* The owner's answer on #53 lets a line stand bare on a recipe dim enough (the Turn modal's); the characters recipe's full worst, 0.196, is over every body ceiling. */
     await open(page, PAGES.find((p) => p.path === '/characters')!);
-    await page.locator('.kb-page-head-lead').evaluate((el) => el.classList.remove('kb-calm'));
+    await page.locator('.kb-page-head-lead').evaluate((el) => el.removeAttribute('data-kb-calm-region'));
     expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-page-head-lead \(surface characters\): stands in no calm and on no panel as solid as the calm \(0\.85\), and its recipe's full worst, 0\.196, is not under the ceiling 0\.1288 for --kb-glass-text-2 as body text on surface characters \(recipe characters\)/u));
   });
 
   test('a feather that reaches into the text', async ({ page }) => {
     await open(page, rankings);
-    await plant(page, '.kb-rankings-lead.kb-calm::before { inset: -4px; }');
-    expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-rankings-lead \(surface rankings\): lies outside its calm's interior \(its backing inset by its 32px feather\)/u));
+    await plant(page, '.kb-smoke-calm::before { inset: -4px !important; }');
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-rankings-lead \(surface rankings\): lies outside its calm's interior \(its backing inset by its 120px feather\)/u));
   });
 
-  test('a joined calm whose outer edge still feathers into the text', async ({ page }) => {
-    /* The phone's HUD door and actions join, with no feather where they face (frame.css); the door's title stands in the door's own calm, whose top edge still ramps, so a backing pulled in on it is named. */
+  test('a rect pulled in on the phone\'s HUD door', async ({ page }) => {
+    /* The phone's HUD door stands in its own region; a rect drawn only to its box, with none of the reach, leaves the door's title in the falloff, and is named. */
     await page.setViewportSize({ width: 390, height: 844 });
     await open(page, { name: 'The HUD, signed out', path: '/b/general', signedOut: true });
-    await plant(page, '.kb-hud-door.kb-calm::before { top: 0; }');
-    expect(await measure(page)).toContainEqual(expect.stringMatching(/ h2\.kb-hud-door-title\.kb-glass-display \(surface hud\): lies outside its calm's interior \(its backing inset by its 32px feather\)/u));
+    await plant(page, '.kb-smoke-calm::before { inset: 0 !important; }');
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/ h2\.kb-hud-door-title\.kb-glass-display \(surface hud\): lies outside its calm's interior \(its backing inset by its 60px feather\)/u));
   });
 
   test('a 19px label', async ({ page }) => {
@@ -489,13 +501,15 @@ test.describe('the poisons, planted in a real page', () => {
     /* The picker's quadrant labels back at the board's 22px: Heel's #ff959f is then body text, and the react recipe's worst is over its 4.5:1 ceiling. */
     await open(page, OVERLAYS.find((o) => o.name.startsWith('The React picker'))!);
     await plant(page, '.kb-picker-label { font-size: 22px !important; }');
+    /* The dialog's body is a region now, so the labels stand in a calm; taken out of it they stand bare, as the board draws them. */
+    await page.locator('.kb-glass-dialog-body').evaluate((el) => el.removeAttribute('data-kb-calm-region'));
     expect(await measure(page)).toContainEqual(expect.stringMatching(/^"Heat" in .*div\.kb-picker-label[^(]* \(surface react\): stands in no calm and on no panel as solid as the calm \(0\.85\), and its recipe's full worst, 0\.0875, is not under the ceiling 0\.0617 for class heel's large color as body text .* \(this is 22px at weight 400\)/u));
   });
 
   test('a calm shrunk by a transform, which leaves its text outside', async ({ page }) => {
     await open(page, rankings);
-    await plant(page, '.kb-rankings-lead.kb-calm::before { transform: scale(0.5); }');
-    expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-rankings-lead \(surface rankings\): lies outside its calm's interior \(its backing inset by its 16px feather\)/u));
+    await plant(page, '.kb-smoke-calm::before { transform: scale(0.5); }');
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-rankings-lead \(surface rankings\): lies outside its calm's interior \(its backing inset by its 60px feather\)/u));
   });
 
   test('a label shrunk by a transform above it is measured at the size it is drawn', async ({ page }) => {
@@ -515,7 +529,7 @@ test.describe('the poisons, planted in a real page', () => {
     await open(page, rankings);
     await page.locator('.kb-glass-page').evaluate((glassPage) => {
       const p = document.createElement('p');
-      p.className = 'kb-calm kb-planted';
+      p.className = 'kb-planted';
       p.style.cssText = 'position: fixed; left: 40px; bottom: -12px; margin: 0';
       p.textContent = 'A line the window always cuts';
       glassPage.append(p);
@@ -538,7 +552,7 @@ test.describe('the poisons, planted in a real page', () => {
     await dockHud(page);
     await page.locator('.kb-glass-page').evaluate((glassPage) => {
       const p = document.createElement('p');
-      p.className = 'kb-calm kb-planted';
+      p.className = 'kb-planted';
       p.style.cssText = 'position: fixed; left: 40px; bottom: 30px; margin: 0; z-index: 1';
       p.textContent = 'A line the HUD always covers';
       glassPage.append(p);
@@ -550,11 +564,11 @@ test.describe('the poisons, planted in a real page', () => {
     await page.setViewportSize({ width: 1920, height: 1080 });
     await open(page, rankings);
     await dockHud(page);
-    await page.locator('main').evaluate((main) => {
+    await page.locator('.kb-rankings-board').evaluate((main) => {
       /* In the first window the line lies under the HUD; a window down it stands clear on the smoke. */
       const spacer = document.createElement('div');
       const p = document.createElement('p');
-      p.className = 'kb-calm kb-planted';
+      p.className = 'kb-planted';
       p.textContent = 'A line the HUD covers at first';
       const tail = document.createElement('div');
       tail.style.height = '1800px';
@@ -586,7 +600,7 @@ test.describe('the poisons, planted in a real page', () => {
       const spacer = document.createElement('div');
       spacer.style.height = '3600px';
       const p = document.createElement('p');
-      p.className = 'kb-calm kb-planted';
+      p.className = 'kb-planted';
       p.style.color = 'rgba(241, 236, 255, 0.8)';
       p.textContent = 'A line three windows down';
       main.append(spacer, p);
@@ -625,7 +639,7 @@ test.describe('the poisons, planted in a real page', () => {
 
   test('the settlement\'s title stands on the bare smoke, and is legible there', async ({ page }) => {
     await open(page, SETTLEMENT);
-    expect(await page.locator('.kb-page-head-title').evaluate((el) => el.classList.contains('kb-calm'))).toBe(false);
+    expect(await page.locator('.kb-page-head-title').evaluate((el) => el.closest('[data-kb-calm-region]') !== null)).toBe(false);
     expect(await measure(page)).toEqual([]);
   });
 
@@ -633,7 +647,7 @@ test.describe('the poisons, planted in a real page', () => {
     await open(page, PAGES.find((p) => p.path === '/characters')!);
     await page.locator('main').evaluate((main) => {
       const p = document.createElement('p');
-      p.className = 'kb-calm kb-planted';
+      p.className = 'kb-planted';
       p.style.cssText = 'margin: 48px 0; font: 400 40px/1 var(--kb-glass-font-display); color: var(--kb-glass-class-face-large)';
       p.textContent = 'Face';
       main.prepend(p);

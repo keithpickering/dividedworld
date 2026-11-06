@@ -56,9 +56,9 @@
   --kb-glass-size-phone-body: 17px;
   --kb-glass-size-phone-display: 20px;
 
-  /* The calm: how much of the ground a text block's backing lays over the smoke, and its feathered edge. */
+  /* The calm: how much of the ground a region lays over the smoke, and the blur of its edge (the boards' Gaussian). */
   --kb-glass-calm-opacity: 0.85;
-  --kb-glass-calm-feather: 32px;
+  --kb-glass-calm-feather: 60px;
 
   /* The skewed controls (Button.tsx): m and s, the Main layout's measure and then the phone layout's (parts.css swaps them on the element). */
   --kb-glass-control-m-height: 48px;

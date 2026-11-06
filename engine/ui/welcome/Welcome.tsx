@@ -30,6 +30,7 @@ import { useLocation, useNavigate } from '../router.tsx';
 import { usePlayer } from '../player.tsx';
 import { PersonaMark } from '../updates/Persona.tsx';
 import './welcome.css';
+import { CalmRegion } from '../glass/Calm.tsx';
 
 export const WELCOME_PATH = '/welcome';
 
@@ -73,7 +74,7 @@ export function Welcome() {
     <div className="kb-welcome">
       <PageHead title="Welcome" />
       <div className="kb-welcome-cols">
-        <article className="kb-welcome-post" aria-labelledby={letter.title === null ? undefined : headline}>
+        <article className="kb-glass-cut-dialog kb-welcome-post" aria-labelledby={letter.title === null ? undefined : headline}>
           <div className="kb-updates-by">
             <PersonaMark name={persona.name} picture={picture} />
             <div>
@@ -108,10 +109,10 @@ export function Welcome() {
           </div>
         </article>
         <aside className="kb-welcome-side" aria-label="What happens next">
-          <p className="kb-welcome-lede kb-calm">You&apos;re in. One letter, three settings, then your first character.</p>
-          <ul className="kb-welcome-next kb-calm">
+          <CalmRegion as="p" className="kb-welcome-lede">You&apos;re in. One letter, three settings, then your first character.</CalmRegion>
+          <CalmRegion as="ul" className="kb-welcome-next">
             {NEXT.map((n) => <li key={n.title}><b>{n.title}</b>{n.line}</li>)}
-          </ul>
+          </CalmRegion>
         </aside>
       </div>
     </div>
@@ -122,7 +123,7 @@ export function Welcome() {
 export function WelcomeScreen() {
   const { api } = useKayfa();
   const signedIn = useSignedIn(api);
-  if (signedIn === false) return <div className="kb-welcome"><div className="kb-welcome-empty kb-calm"><SignInPrompt /></div></div>;
+  if (signedIn === false) return <div className="kb-welcome"><CalmRegion className="kb-welcome-empty"><SignInPrompt /></CalmRegion></div>;
   if (signedIn === null) return <div className="kb-welcome" aria-busy="true" />;
   return <Welcome />;
 }

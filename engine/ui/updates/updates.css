@@ -105,12 +105,16 @@
   margin-top: 16px;
 }
 
-.kb-updates-post {
+.kb-glass-cut-dialog.kb-updates-post {
   padding: 36px 44px 32px;
-  background: color-mix(in srgb, var(--kb-glass-ground) 86%, transparent);
-  outline: 1px solid color-mix(in srgb, var(--kb-glass-pale) 55%, transparent);
-  outline-offset: -1px;
-  clip-path: polygon(0 0, calc(100% - 24px) 0, 100% 24px, 100% 100%, 24px 100%, 0 calc(100% - 24px));
+  --kb-cut: 24px;
+  --kb-border: 1px;
+  background: color-mix(in srgb, var(--kb-glass-pale) 55%, var(--kb-glass-ground));
+}
+
+/* The panel, one border in; the element above is the border's color (glass/base.css). */
+.kb-glass-cut-dialog.kb-updates-post::after {
+  background: var(--kb-glass-ground);
 }
 
 .kb-updates-headline {
@@ -249,7 +253,8 @@
   font-size: var(--kb-glass-size-phone-small);
 }
 
-:where(:root[data-kb-layout='phone']) .kb-updates-post {
+/* The compound is repeated on purpose: the base rule is .kb-glass-cut-dialog.kb-updates-post, and a lone class loses to it. */
+:where(:root[data-kb-layout='phone']) .kb-glass-cut-dialog.kb-updates-post {
   padding: 20px 16px 20px;
 }
 
@@ -258,7 +263,3 @@
   font-size: var(--kb-glass-size-display-m);
 }
 
-/* The lede stands as near the title as the board sets it, so its feather is capped at the title gap (calm.css) and lies on nothing but it. */
-.kb-updates-lede {
-  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
-}

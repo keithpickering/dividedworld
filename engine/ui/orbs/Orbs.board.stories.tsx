@@ -84,7 +84,7 @@ function OrbsBoard({ when }: OrbsBoardProps) {
 
       <div className="kb-orbs-board-states">
         {STATES.map((s) => (
-          <section key={s.title} className="kb-orbs-board-state" data-kb-tone={s.tone} aria-labelledby={`kb-orbs-state-${s.tone}`}>
+          <section key={s.title} className="kb-glass-cut-panel kb-orbs-board-state" data-kb-tone={s.tone} aria-labelledby={`kb-orbs-state-${s.tone}`}>
             <h2 id={`kb-orbs-state-${s.tone}`} className="kb-glass-display">{s.title}</h2>
             <Orbs settled={s.settled} pending={s.pending} cap={600} figures={false} />
             <p><b className="kb-num">{s.figure}</b>{s.says}</p>

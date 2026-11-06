@@ -126,14 +126,18 @@
 
 /* ---- the article ---- */
 
-.kb-guide-article {
+.kb-glass-cut-dialog.kb-guide-article {
   box-sizing: border-box;
   min-width: 0;
   padding: 32px 44px 40px;
-  background: color-mix(in srgb, var(--kb-glass-ground) 86%, transparent);
-  outline: 1px solid color-mix(in srgb, var(--kb-glass-pale) 55%, transparent);
-  outline-offset: -1px;
-  clip-path: polygon(0 0, calc(100% - 24px) 0, 100% 24px, 100% 100%, 24px 100%, 0 calc(100% - 24px));
+  --kb-cut: 24px;
+  --kb-border: 1px;
+  background: color-mix(in srgb, var(--kb-glass-pale) 55%, var(--kb-glass-ground));
+}
+
+/* The panel, one border in; the element above is the border's color (glass/base.css). */
+.kb-glass-cut-dialog.kb-guide-article::after {
+  background: var(--kb-glass-ground);
 }
 
 /* A section scrolled to stops short of the window's top, which the contents' own top matches. */
@@ -516,7 +520,8 @@
   padding-left: 12px;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-guide-article {
+/* The compound is repeated on purpose: the base rule is .kb-glass-cut-dialog.kb-guide-article, and a lone class loses to it. */
+:where(:root[data-kb-layout='phone']) .kb-glass-cut-dialog.kb-guide-article {
   padding: 20px 16px;
 }
 
@@ -572,10 +577,6 @@
   font-size: var(--kb-glass-size-phone-small);
 }
 
-/* The lede stands as near the title and the contents button as the board sets them, so its feather is capped at the title gap (calm.css) and lies on nothing but it. */
-.kb-guide-lede {
-  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
-}
 
 .kb-guide-toc a:hover {
   color: var(--kb-glass-text-hi);

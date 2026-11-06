@@ -28,17 +28,21 @@
   grid-row: 1;
 }
 
-.kb-welcome-post {
+.kb-glass-cut-dialog.kb-welcome-post {
   grid-column: 2;
   grid-row: 1;
   min-width: 0;
   /* The post sits 30px below the lede's top, as the board sets it. */
   margin-top: 20px;
   padding: 36px 44px 40px;
-  background: color-mix(in srgb, var(--kb-glass-ground) 86%, transparent);
-  outline: 1px solid color-mix(in srgb, var(--kb-glass-pale) 55%, transparent);
-  outline-offset: -1px;
-  clip-path: polygon(0 0, calc(100% - 24px) 0, 100% 24px, 100% 100%, 24px 100%, 0 calc(100% - 24px));
+  --kb-cut: 24px;
+  --kb-border: 1px;
+  background: color-mix(in srgb, var(--kb-glass-pale) 55%, var(--kb-glass-ground));
+}
+
+/* The panel, one border in; the element above is the border's color (glass/base.css). */
+.kb-glass-cut-dialog.kb-welcome-post::after {
+  background: var(--kb-glass-ground);
 }
 
 .kb-welcome-empty {
@@ -151,13 +155,15 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
+/* The post's compound is repeated on purpose: its base rule is .kb-glass-cut-dialog.kb-welcome-post, and a lone class loses to it. */
 :where(:root[data-kb-layout='phone']) .kb-welcome-side,
-:where(:root[data-kb-layout='phone']) .kb-welcome-post {
+:where(:root[data-kb-layout='phone']) .kb-glass-cut-dialog.kb-welcome-post {
   grid-column: 1;
   grid-row: auto;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-welcome-post {
+/* The compound is repeated on purpose: the base rule is .kb-glass-cut-dialog.kb-welcome-post, and a lone class loses to it. */
+:where(:root[data-kb-layout='phone']) .kb-glass-cut-dialog.kb-welcome-post {
   margin-top: 0;
   padding: 20px 16px 20px;
 }
@@ -193,7 +199,3 @@
   padding-top: 20px;
 }
 
-/* The lede stands as near the title as the board sets it, so its feather is capped at the title gap (calm.css) and lies on nothing but it. */
-.kb-welcome-lede {
-  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
-}

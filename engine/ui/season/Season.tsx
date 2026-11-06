@@ -26,6 +26,7 @@ import { RankingsScreen } from '../rankings/Rankings.tsx';
 import { Link, useLocation, useNavigate } from '../router.tsx';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import './season.css';
+import { CalmRegion } from '../glass/Calm.tsx';
 
 export type SeasonTab = 'rankings' | 'news';
 const TABS: readonly { readonly key: SeasonTab; readonly label: string }[] = [{ key: 'rankings', label: 'Rankings' }, { key: 'news', label: 'News' }];
@@ -78,7 +79,7 @@ function Results({ item, own, className }: { readonly item: SeasonNewsItem; read
           {item.top.map((r, i) => {
             const s = stated(r);
             return (
-              <li key={r.character} className="kb-season-podium">
+              <li key={r.character} className="kb-glass-cut-dialog kb-season-podium">
                 <span className="kb-season-place">{PLACES[i] ?? `Place ${r.place}`}</span>
                 <b className="kb-season-name"><Link to={`/c/${encodeURIComponent(r.character)}`}>{r.name}</Link></b>
                 <span className="kb-season-standing">
@@ -163,15 +164,15 @@ export function News({ items, mine, season, perPage, more, onMore }: NewsProps) 
   const boss = season ? items.find((i) => i.kind === 'bossArrived' && i.season === season.number)?.name ?? null : null;
   return (
     <div className="kb-season-news">
-      <p className="kb-season-lede kb-calm">
+      <CalmRegion as="p" className="kb-season-lede">
         {season ? `Season ${season.number} began ${dayAndTime(season.startsAt)}.` : ''}
         {boss !== null && ` The Boss this season is ${boss}.`}
         {' '}Everything here is public: results, debuts, Turns, and the Boss coming and going.
-      </p>
+      </CalmRegion>
       {items.length === 0
-        ? <p className="kb-season-empty kb-calm">Nothing yet. The first settlement, a debut, a Turn or a new Boss puts the news here, and in everyone&apos;s alerts.</p>
+        ? <CalmRegion as="p" className="kb-season-empty">Nothing yet. The first settlement, a debut, a Turn or a new Boss puts the news here, and in everyone&apos;s alerts.</CalmRegion>
         : (
-          <ul className="kb-season-feed kb-calm">
+          <CalmRegion as="ul" className="kb-season-feed">
             {items.flatMap((item) => {
               const key = item.act ?? `${item.kind}:${item.at}:${item.name ?? ''}`;
               if (item.kind === 'results') return [<Row key={key} at={item.at}><Results item={item} own={own} className={className} /></Row>];
@@ -183,7 +184,7 @@ export function News({ items, mine, season, perPage, more, onMore }: NewsProps) 
               }
               return [<Row key={key} at={item.at}><Boss item={item} perPage={perPage} /></Row>];
             })}
-          </ul>
+          </CalmRegion>
         )}
       {more && <ButtonRow><GlassButton className="kb-season-more" onClick={onMore}>Show earlier news</GlassButton></ButtonRow>}
     </div>
@@ -213,7 +214,7 @@ function NewsPanel({ season }: { readonly season: Season | null }) {
     return () => { live = false; };
   }, [api, key]);
   if (state.status === 'loading') return <div aria-busy="true" />;
-  if (state.status === 'failed') return <p className="kb-season-empty kb-calm">The news could not be loaded. Reload the page to try again.</p>;
+  if (state.status === 'failed') return <CalmRegion as="p" className="kb-season-empty">The news could not be loaded. Reload the page to try again.</CalmRegion>;
   const more = () => {
     const last = state.items.at(-1);
     if (!last || paging) return;
@@ -251,13 +252,13 @@ export function SeasonScreen() {
     document.getElementById(`${ids}-tab-${TABS[next]!.key}`)?.focus();
   };
 
-  if (signedIn === false) return <div className="kb-season"><div className="kb-season-empty kb-calm"><SignInPrompt /></div></div>;
+  if (signedIn === false) return <div className="kb-season"><CalmRegion className="kb-season-empty"><SignInPrompt /></CalmRegion></div>;
   return (
     <div className="kb-season">
       <PageHead
         title={season ? `Season ${season.number}` : 'Season'}
         tabs={(
-          <div role="tablist" aria-label="Season" className="kb-calm">
+          <CalmRegion role="tablist" aria-label="Season">
             <ButtonRow>
               {TABS.map((t, i) => (
                 <GlassButton
@@ -276,7 +277,7 @@ export function SeasonScreen() {
                 </GlassButton>
               ))}
             </ButtonRow>
-          </div>
+          </CalmRegion>
         )}
       />
       <div role="tabpanel" id={`${ids}-panel`} aria-labelledby={`${ids}-tab-${tab}`} className="kb-season-panel">

@@ -23,6 +23,7 @@ import { safeNext } from './next.ts';
 import { OpenAccount } from './OpenAccount.tsx';
 import { setWhy, useSession } from './session.ts';
 import './account.css';
+import { CalmRegion } from '../glass/Calm.tsx';
 
 type Sent = { readonly message: string; readonly invite?: string };
 type Field = 'email' | 'invite' | 'ack' | 'code';
@@ -58,7 +59,7 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
 
   const title = <PageHead title={registering ? 'Register' : 'Sign in'} />;
   if (session === null) return <div className="kb-acct" aria-busy="true" />;
-  if (session.signedIn && !session.account) return <div className="kb-acct">{title}<div className="kb-acct-panel kb-calm"><OpenAccount /></div></div>;
+  if (session.signedIn && !session.account) return <div className="kb-acct">{title}<CalmRegion className="kb-acct-panel"><OpenAccount /></CalmRegion></div>;
 
   const ask = async (e?: FormEvent, again = false) => {
     e?.preventDefault();
@@ -112,7 +113,7 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
   return (
     <div className="kb-acct kb-sign-in">
       {title}
-      <div className="kb-acct-panel kb-calm">
+      <CalmRegion className="kb-acct-panel">
       {registering && closed && (
         <p className="kb-acct-notice">Registration is closed. When an admin opens it, your next sign-in opens your account. If you already have an account, <Link to={toOther('/sign-in')}>sign in</Link>.</p>
       )}
@@ -160,7 +161,7 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
         </form>
       )}
       <p className="kb-acct-text"><ReachAPerson /></p>
-      </div>
+      </CalmRegion>
     </div>
   );
 }

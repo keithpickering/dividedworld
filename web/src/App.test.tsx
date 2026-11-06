@@ -10,7 +10,7 @@ import { seedDemo } from './demo.ts';
 import { seedMoves } from '../../engine/ui/board/move-world.ts';
 import { fallbackSettings } from './data/settings.ts';
 
-beforeEach(() => { localStorage.clear(); window.history.pushState(null, '', '/'); });
+beforeEach(() => { localStorage.clear(); sessionStorage.clear(); window.history.pushState(null, '', '/'); });
 afterEach(() => { vi.restoreAllMocks(); });
 
 test('the app runs on the demo world: the frame, the HUD with its character and orbs', async () => {

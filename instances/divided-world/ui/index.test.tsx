@@ -219,6 +219,10 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     }
     expect(new Set(worn).size).toBe(QUADRANTS.length);
   });
+  test('the calm\'s feather is 60px, so the phone\'s is 30px (docs/plans/2026-11-05-backfill-boards-plan.md, Task 3)', () => {
+    const dir = path.dirname(fileURLToPath(import.meta.url));
+    expect((JSON.parse(fs.readFileSync(path.join(dir, 'glass.json'), 'utf8')) as { calm: { feather: number } }).calm.feather).toBe(60);
+  });
   test('every font file glass.json names exists, and the glass holds the URL it resolved to', () => {
     const dir = path.dirname(fileURLToPath(import.meta.url));
     const named = JSON.parse(fs.readFileSync(path.join(dir, 'glass.json'), 'utf8')).fonts as { file: string }[];

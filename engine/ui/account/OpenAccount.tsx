@@ -12,6 +12,7 @@ import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { useLocation, useNavigate } from '../router.tsx';
 import { useSession, useWhy } from './session.ts';
 import './account.css';
+import { CalmRegion } from '../glass/Calm.tsx';
 
 export function OpenAccount() {
   const { api, settings } = useKayfa();
@@ -82,7 +83,7 @@ export function AccountGate({ children }: { readonly children: ReactNode }) {
   const session = useSession(api);
   const { path } = useLocation();
   if (session?.signedIn && !session.account && path !== '/sign-in' && path !== '/register' && path !== CONTACT_PATH) {
-    return <div className="kb-acct"><div className="kb-acct-panel kb-calm"><OpenAccount /></div></div>;
+    return <div className="kb-acct"><CalmRegion className="kb-acct-panel"><OpenAccount /></CalmRegion></div>;
   }
   return <>{children}</>;
 }

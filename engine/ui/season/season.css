@@ -103,12 +103,16 @@
   list-style: none;
 }
 
-.kb-season-podium {
+.kb-glass-cut-dialog.kb-season-podium {
   padding: 16px 18px;
-  background: color-mix(in srgb, var(--kb-glass-ground) 86%, transparent);
-  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
-  outline: 1px solid color-mix(in srgb, var(--kb-glass-neon) 55%, transparent);
-  outline-offset: -1px;
+  --kb-cut: 14px;
+  --kb-border: 1px;
+  background: color-mix(in srgb, var(--kb-glass-neon) 55%, var(--kb-glass-ground));
+}
+
+/* The panel, one border in; the element above is the border's color (glass/base.css). */
+.kb-glass-cut-dialog.kb-season-podium::after {
+  background: var(--kb-glass-ground);
 }
 
 .kb-season-place {
@@ -155,7 +159,3 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
-/* The lede stands as near the title as the board sets them (the head's 12px gap), so its feather is no wider than that and lies on nothing but the gap. */
-.kb-season-lede {
-  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
-}

@@ -405,7 +405,10 @@ describe('the measured HUD height', () => {
   beforeEach(() => {
     height = 57.2;
     disconnected = 0;
-    vi.stubGlobal('ResizeObserver', class { constructor(cb: () => void) { tell = cb; } observe() {} disconnect() { disconnected += 1; } });
+    /* The HUD's observer is not the only one on the page (the calm regions in it watch their own boxes): a resize is told to all of them. */
+    const told: (() => void)[] = [];
+    tell = () => told.forEach((cb) => cb());
+    vi.stubGlobal('ResizeObserver', class { constructor(cb: () => void) { told.push(cb); } observe() {} unobserve() {} disconnect() { disconnected += 1; } });
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => ({ height, left: 0, width: 0, top: 0, bottom: height }) as DOMRect);
   });
 
@@ -433,7 +436,7 @@ describe('the tab\'s points on the scaled Main board', () => {
   test('are the aura\'s edges in the HUD\'s own px, divided by the board\'s scale where currentCSSZoom is undefined', async () => {
     width(1296);
     let tell: () => void = () => {};
-    vi.stubGlobal('ResizeObserver', class { constructor(cb: () => void) { tell = cb; } observe() {} disconnect() {} });
+    vi.stubGlobal('ResizeObserver', class { constructor(cb: () => void) { tell = cb; } observe() {} unobserve() {} disconnect() {} });
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
       if (this.classList.contains('kb-hud-aura')) return { left: 450, width: 452 * 0.9, top: 0, height: 100, bottom: 100, right: 450 + 452 * 0.9 } as DOMRect;
       if (this.classList.contains('kb-hud')) return { left: 0, width: 1296, top: 0, height: 190, bottom: 190, right: 1296 } as DOMRect;
@@ -638,7 +641,7 @@ describe('the HUD\'s Alerts button and the toasts (the alerts plan, Task 10)', (
     const callbacks: (() => void)[] = [];
     beforeEach(() => {
       picker = 200; name = 120; callbacks.length = 0;
-      vi.stubGlobal('ResizeObserver', class { constructor(cb: () => void) { callbacks.push(cb); } observe() {} disconnect() {} });
+      vi.stubGlobal('ResizeObserver', class { constructor(cb: () => void) { callbacks.push(cb); } observe() {} unobserve() {} disconnect() {} });
       vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
         const cls = this.classList;
         const w = cls.contains('kb-hud-name-probe') ? name : cls.contains('kb-hud-select') ? picker : cls.contains('kb-hud-menu') ? (this.querySelector('.kb-hud-menu-glyph') ? 52 : 90) : 0;

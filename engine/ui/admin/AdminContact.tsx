@@ -18,6 +18,7 @@ import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, type ContactLink } from '../data/api.ts';
 import './write-update.css';
 import './admin-contact.css';
+import { CalmRegion } from '../glass/Calm.tsx';
 
 /** A row with anything in it but the contact's whitespace: what the server keeps rather than drops as empty. */
 const VISIBLE = new RegExp(`[^${CONTACT_WS}]`, 'u');
@@ -62,7 +63,7 @@ export function AdminContact() {
     return () => { live = false; };
   }, [api]); /* read once, when the screen opens */
 
-  if (failed) return <section className="kb-admin-contact" aria-labelledby={`${id}-head`}><h2 id={`${id}-head`} className="kb-queue-group-head kb-glass-display">How players reach you</h2><p role="alert" className="kb-queue-note kb-calm">The contact could not be read. Reload the page to try again.</p></section>;
+  if (failed) return <CalmRegion as="section" className="kb-admin-contact" aria-labelledby={`${id}-head`}><h2 id={`${id}-head`} className="kb-queue-group-head kb-glass-display">How players reach you</h2><p role="alert" className="kb-queue-note">The contact could not be read. Reload the page to try again.</p></CalmRegion>;
   if (rows === null) return <section className="kb-admin-contact" aria-busy="true" />;
 
   const edit = () => { setRefusal(null); setSaved(false); };
@@ -111,7 +112,7 @@ export function AdminContact() {
   const named = refusal === null ? null : rowNamed(refusal, rows.length);
   const empty = stored !== null && stored.length === 0;
   return (
-    <section className="kb-admin-contact" aria-labelledby={`${id}-head`}>
+    <CalmRegion as="section" className="kb-admin-contact" aria-labelledby={`${id}-head`}>
       <h2 id={`${id}-head`} className="kb-queue-group-head kb-glass-display">How players reach you</h2>
       <form ref={form} className="kb-write-update" aria-labelledby={`${id}-head`} onSubmit={(e) => void submit(e)} noValidate>
         <p className="kb-write-update-note">
@@ -140,6 +141,6 @@ export function AdminContact() {
         <div role="status" className="kb-write-update-status">{busy ? 'Saving…' : saved ? 'Saved. Players see it on the Reach a person page.' : ''}</div>
         {refusal !== null && named === null && <p role="alert" className="kb-write-update-refusal">{refusal}</p>}
       </form>
-    </section>
+    </CalmRegion>
   );
 }

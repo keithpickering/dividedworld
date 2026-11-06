@@ -10,7 +10,7 @@
  * name, and a pending map that has gone stale fails, so a board cannot be left out by forgetting it.
  */
 import { describe, expect, test } from 'vitest';
-import { boardsToRun, compareBoard, compareSides, type BoardManifest, type Landmark, type Shot, type Snapshot, type TypeRead } from './board-match.ts';
+import { boardIds, boardsToRun, compareBoard, compareSides, phoneSizeProblems, screensWithoutBoards, type BoardManifest, type Landmark, type Shot, type Snapshot, type TypeRead } from './board-match.ts';
 
 const BARLOW: TypeRead = { family: 'Barlow Condensed', size: 18, weight: 500, color: 'rgb(228, 222, 247)', letterSpacing: 0.4 };
 const shot = (id: string, box: Shot['box'], type: TypeRead | null = BARLOW): Shot => (type ? { id, found: true, box, type } : { id, found: true, box });
@@ -348,6 +348,44 @@ describe('boardsToRun: the folder\'s boards against the manifests and the pendin
   });
 });
 
+describe('boardIds: a board\'s id from its folder', () => {
+  test('a .src.html beside its board is a generator source and gives one id', () => {
+    const r = boardIds([{ name: 'a', files: ['01-x.html', '01-x.src.html', '01-x.png'] }], 1);
+    expect(r.shared).toEqual([]);
+    expect(r.boards).toEqual([{ id: '01-x', folder: 'a', file: '01-x.html' }]);
+  });
+
+  test('later folders each holding 05-admin.html give two ids, named by folder', () => {
+    const r = boardIds([{ name: 'first', files: ['01-main.html'] }, { name: 'p', files: ['05-admin.html'] }, { name: 'c', files: ['05-admin.html'] }], 1);
+    expect(r.shared).toEqual([]);
+    expect(r.boards.map((b) => b.id)).toEqual(['01-main', 'p/05-admin', 'c/05-admin']);
+  });
+
+  test('a bare-id folder keeps the bare id, and two of them sharing a name is reported', () => {
+    const r = boardIds([{ name: 'a', files: ['01-main.html'] }, { name: 'b', files: ['01-main.html'] }], 2);
+    expect(r.boards.map((b) => b.id)).toEqual(['01-main']);
+    expect(r.shared).toEqual(['01-main is drawn in two board folders']);
+  });
+
+  test('a later folder\'s board with neither a manifest nor a PENDING entry is a problem named by its id', () => {
+    const ids = boardIds([{ name: 'a', files: ['01-main.html'] }, { name: 'later', files: ['14-sign-in.html', '15-register.html'] }], 1).boards.map((b) => `${b.id}.html`);
+    const r = boardsToRun(ids, ['01-main'], { 'later/15-register': 'Task 6' });
+    expect(r.problems).toHaveLength(1);
+    expect(r.problems[0]).toContain('later/14-sign-in');
+    expect(r.pending).toEqual(['later/15-register']);
+  });
+
+  test('a PENDING entry with a manifest under a later folder is a problem', () => {
+    const r = boardsToRun(['later/14-sign-in.html'], ['later/14-sign-in'], { 'later/14-sign-in': 'Task 6' });
+    expect(r.problems).toHaveLength(1);
+    expect(r.problems[0]).toContain('later/14-sign-in');
+  });
+
+  test('a .src.html in the file list is not a board', () => {
+    expect(boardsToRun(['01-main.html', '01-main.src.html'], ['01-main'], {}).problems).toEqual([]);
+  });
+});
+
 describe('compareBoard: the color syntaxes a browser or a board may hand back', () => {
   const colored = (color: string): Snapshot => retype('line', { color });
   const colorOf = (a: string, b: string) => compareBoard(retype('line', { color: a }), retype('line', { color: b }), manifest(lm('line'))).map((m) => m.message);
@@ -402,5 +440,74 @@ describe('compareSides: the further build sides of a board', () => {
 
   test('a board with no further side is read once', async () => {
     expect(await compareSides(manifest(lm('sheet')), async () => [])).toEqual([]);
+  });
+});
+
+describe('screensWithoutBoards: every glass screen names a board or says why it has none', () => {
+  const ids = ['01-main', 'later/14-sign-in'];
+  const pending = { 'later/15-register': 'Task 6' };
+  const screen = (name: string, board?: unknown) => (board === undefined ? { name } : { name, board }) as { name: string; board: string | { none: string } };
+
+  test('screens naming boards, pending boards and honest reasons are clean', () => {
+    expect(screensWithoutBoards([screen('A', '01-main'), screen('B', 'later/14-sign-in'), screen('C', 'later/15-register'), screen('D', { none: 'the board world waits for a pass of its own' })], ids, pending)).toEqual([]);
+  });
+
+  test('a screen with neither a board nor a reason is one problem naming it', () => {
+    const r = screensWithoutBoards([screen('Lonely')], ids, pending);
+    expect(r).toHaveLength(1);
+    expect(r[0]).toContain('Lonely');
+  });
+
+  test('a board that is no board\'s id is one problem naming the screen and the id', () => {
+    const r = screensWithoutBoards([screen('Typo', '14-sign-in')], ids, pending);
+    expect(r).toHaveLength(1);
+    expect(r[0]).toContain('Typo');
+    expect(r[0]).toContain('14-sign-in');
+  });
+
+  test('a reason that is empty or only whitespace is one problem each', () => {
+    const r = screensWithoutBoards([screen('Empty', { none: '' }), screen('Blank', { none: '  \n ' })], ids, pending);
+    expect(r).toHaveLength(2);
+    expect(r[0]).toContain('Empty');
+    expect(r[1]).toContain('Blank');
+  });
+});
+
+describe('boardsToRun: a phone board whose manifest is another file\'s `phone` export', () => {
+  const files = ['later/18-door-phone.html', 'later/17-front-door.html'];
+  test('counts as having a manifest, and is not run on its own: its parent runs it', () => {
+    const r = boardsToRun(files, ['later/17-front-door'], {}, ['later/18-door-phone']);
+    expect(r).toEqual({ run: ['later/17-front-door'], pending: [], problems: [] });
+  });
+
+  test('without the phone export it still needs a manifest or PENDING', () => {
+    const r = boardsToRun(files, ['later/17-front-door'], {});
+    expect(r.problems).toEqual([expect.stringContaining('later/18-door-phone')]);
+  });
+
+  test('a phone board still in PENDING is a stale map, like any board with a manifest', () => {
+    const r = boardsToRun(files, ['later/17-front-door'], { 'later/18-door-phone': 'Task 6' }, ['later/18-door-phone']);
+    expect(r.problems).toEqual([expect.stringContaining('later/18-door-phone has a manifest and is still in PENDING')]);
+  });
+
+  test('a phone export naming no board file is a problem, and a board with both its own manifest and a phone export is one', () => {
+    expect(boardsToRun(files, ['later/17-front-door'], {}, ['later/18-door-phone', 'later/99-ghost']).problems).toEqual([expect.stringContaining('later/99-ghost')]);
+    expect(boardsToRun(files, ['later/17-front-door', 'later/18-door-phone'], {}, ['later/18-door-phone']).problems).toEqual([expect.stringContaining('later/18-door-phone')]);
+  });
+});
+
+describe('phone boards: one export per board, at the phone size', () => {
+  const files = ['later/17-front-door.html', 'later/18-door-phone.html', 'later/19-welcome.html'];
+  test('two manifests whose phone export names the same board are a problem naming it', () => {
+    const r = boardsToRun(files, ['later/17-front-door', 'later/19-welcome'], {}, ['later/18-door-phone', 'later/18-door-phone']);
+    expect(r.problems).toEqual([expect.stringContaining('later/18-door-phone is the phone board of more than one manifest')]);
+  });
+
+  test('a phone export at 390 by 844 is clean; at 391 by 844 or 390 by 800 it is one problem each, naming its parent', () => {
+    expect(phoneSizeProblems([{ parent: 'a', size: { width: 390, height: 844 } }])).toEqual([]);
+    const r = phoneSizeProblems([{ parent: 'a', size: { width: 391, height: 844 } }, { parent: 'b', size: { width: 390, height: 800 } }]);
+    expect(r).toHaveLength(2);
+    expect(r[0]).toContain('a');
+    expect(r[1]).toContain('b');
   });
 });
