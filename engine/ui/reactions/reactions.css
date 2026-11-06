@@ -47,7 +47,7 @@
 }
 
 .kb-reaction .kb-reaction-emoji {
-  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", var(--kb-glass-font-body), sans-serif;
+  font-family: var(--kb-glass-font-emoji);
 }
 
 /* Your own kind: a ring (the ground's gap, then the ink), on your screen only. */
