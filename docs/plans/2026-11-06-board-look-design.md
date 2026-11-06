@@ -105,7 +105,9 @@ which the app does not have, and both are gone.
   each takes a line and a phone shows two and a half threads; the index folds the same way, and a date never breaks.
   Boards is a Chrome button in the banner.
 
+**Batch 1 approved by the owner** ("Looks great, approved"), after the nits above.
+
 ## Open
 
 - Fan Site's name, now that it salutes one board's blue.
-- Batch 1's approval after the owner's nits, and the legend's words.
+- The legend's words.
