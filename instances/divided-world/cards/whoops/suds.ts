@@ -25,6 +25,10 @@ const LATHER_S = 2.2;
 const DRIPS = 2;
 const BUBBLES = 1;
 const WET_MS = 3500;
+/** The most canvas px a host's wet sheen may hold, and the most travel one wash call spawns for, CSS px. */
+const WET_PX = 4_000_000;
+const MAX_DIST = 400;
+const TINTS = 16;
 const DEFAULT_INK = '#1a1a1a';
 
 type Kind = 'bubble' | 'foam' | 'run' | 'ring' | 'spray';
@@ -44,6 +48,9 @@ let last = 0;
 let bubbleFrames: HTMLCanvasElement[] | null = null;
 let plainFoam: HTMLCanvasElement | null = null;
 const tinted = new Map<string, Tinted>();
+
+/** Canvas px per CSS px for a host's sheen: the screen's density, less where that would pass `WET_PX` on a tall box. */
+const wetScale = (box: Box, density: number) => Math.min(density, Math.sqrt(WET_PX / Math.max(1, box.w * box.h)));
 
 const now = () => performance.now();
 const rnd = () => Math.random();
@@ -106,11 +113,14 @@ function dropSprite(rgb: readonly number[], alpha: number): HTMLCanvasElement {
 function sprites(ink: string): { bubbles: HTMLCanvasElement[]; foam: HTMLCanvasElement; tint: Tinted } {
   bubbleFrames ??= bubbleSprites();
   plainFoam ??= foamSprite(null);
-  let tint = tinted.get(ink);
+  /* Keyed by the color, not its spelling, and held to `TINTS`: the oldest goes first. */
+  const key = rgbOf(ink).join(',');
+  let tint = tinted.get(key);
   if (!tint) {
     const rgb = dirty(ink);
-    tint = { foam: foamSprite(ink), drop: dropSprite(rgb, 0.75), rgb };
-    tinted.set(ink, tint);
+    tint = { foam: foamSprite(`rgb(${key})`), drop: dropSprite(rgb, 0.75), rgb };
+    tinted.set(key, tint);
+    if (tinted.size > TINTS) tinted.delete(tinted.keys().next().value!);
   }
   return { bubbles: bubbleFrames, foam: plainFoam, tint };
 }
@@ -128,7 +138,9 @@ export function register(host: object, canvas: HTMLCanvasElement, box: Box, dens
   let tone = ink;
   try { rgbOf(ink); } catch { tone = DEFAULT_INK; }
   const old = hosts.get(host);
-  hosts.set(host, { canvas, box, density, ink: tone, wet: old?.wet ?? null, wetUntil: old?.wetUntil ?? 0, clear: old ? old.clear && old.canvas === canvas : false });
+  /* A sheen drawn for another box or density would be clipped or stretched on this one. */
+  const same = old !== undefined && old.box.w === box.w && old.box.h === box.h && old.density === density;
+  hosts.set(host, { canvas, box, density, ink: tone, wet: same ? old.wet : null, wetUntil: old?.wetUntil ?? 0, clear: old ? old.clear && old.canvas === canvas : false });
 }
 
 /** Drops the host's particles and never draws its canvas again. */
@@ -141,7 +153,8 @@ export function unregister(host: object): void {
 export function wash(host: object, from: Pt, to: Pt, overInk: boolean): void {
   const reg = hosts.get(host);
   if (!reg || motionReduced()) return;
-  const t = now(), dist = Math.hypot(to.x - from.x, to.y - from.y) || 4, r = BRUSH_PX / 2;
+  /* Spawning follows the travel, but one call's is capped: a 20,000px jump is no more lather than a 400px one. */
+  const t = now(), dist = Math.min(MAX_DIST, Math.hypot(to.x - from.x, to.y - from.y) || 4), r = BRUSH_PX / 2;
   const nb = Math.floor((BUBBLES * dist) / 16 + rnd());
   for (let i = 0; i < nb; i++) {
     const br = 2 + rnd() ** 2 * 9;
@@ -159,8 +172,10 @@ export function wash(host: object, from: Pt, to: Pt, overInk: boolean): void {
   }
   /* The wet sheen: the path just washed holds a film of dirty water that dries. */
   const [dr, dg, db] = sprites(reg.ink).tint.rgb;
-  reg.wet ??= make(Math.max(1, Math.ceil(reg.box.w)), Math.max(1, Math.ceil(reg.box.h)));
+  const sc = wetScale(reg.box, reg.density);
+  reg.wet ??= make(Math.max(1, Math.floor(reg.box.w * sc)), Math.max(1, Math.floor(reg.box.h * sc)));
   const w = reg.wet.getContext('2d')!;
+  w.setTransform(sc, 0, 0, sc, 0, 0);
   w.strokeStyle = `rgb(${dr},${dg},${db})`; w.lineCap = 'round'; w.lineWidth = BRUSH_PX * 0.92;
   w.beginPath(); w.moveTo(from.x, from.y); w.lineTo(to.x + 0.01, to.y); w.stroke();
   reg.wetUntil = t + WET_MS;
@@ -183,6 +198,8 @@ function popAt(host: object, x: number, y: number, r: number, t: number): void {
 
 function drawHost(host: object, reg: Reg, mine: Part[], t: number, dt: number): void {
   const { canvas } = reg, g = canvas.getContext('2d')!;
+  /* A dried sheen is let go: the canvas is not held, and the decay's 8-bit residue goes with it. */
+  if (reg.wet && reg.wetUntil <= t) reg.wet = null;
   const wet = reg.wetUntil > t && reg.wet !== null;
   if (!mine.length && !wet) {
     if (!reg.clear) { g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, canvas.width, canvas.height); reg.clear = true; }
@@ -195,6 +212,7 @@ function drawHost(host: object, reg: Reg, mine: Part[], t: number, dt: number): 
   g.setTransform(reg.density, 0, 0, reg.density, 0, 0);
   if (wet) {
     const w = reg.wet!.getContext('2d')!;
+    w.setTransform(1, 0, 0, 1, 0, 0);
     w.globalCompositeOperation = 'destination-out';
     w.fillStyle = `rgba(0,0,0,${1 - Math.exp(-dt / 0.6)})`;
     w.fillRect(0, 0, reg.wet!.width, reg.wet!.height);
@@ -286,8 +304,11 @@ export const probe = {
   size: () => parts.length,
   count: (kind: Kind) => parts.filter((p) => p.kind === kind).length,
   running: () => handle !== null,
+  /** How many hosts hold a sheen canvas, and how many tinted sprite sets are cached. */
+  sheens: () => [...hosts.values()].filter((r) => r.wet !== null).length,
+  tints: () => tinted.size,
   reset(): void {
     if (handle !== null) cancelAnimationFrame(handle);
-    handle = null; parts.length = 0; hosts.clear();
+    handle = null; parts.length = 0; hosts.clear(); tinted.clear();
   },
 };

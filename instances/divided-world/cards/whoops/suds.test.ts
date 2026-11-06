@@ -33,6 +33,9 @@ let clock = 0;
 let pending = new Map<number, (t: number) => void>();
 let nextId = 1;
 let reduced = false;
+let made: Canvas[] = [];
+/** The sheen canvases made so far: the ones not the sprites' (sprites are 64, 32 and 24x36 px or smaller). */
+const sheens = () => made.filter((c) => c.width * c.height > 64 * 64);
 const realRandom = Math.random;
 const glob = globalThis as Record<string, unknown>;
 const saved: Record<string, PropertyDescriptor | undefined> = {};
@@ -49,8 +52,9 @@ const seed = (a: number) => () => { a = (a + 0x6d2b79f5) | 0; let t = Math.imul(
 
 beforeEach(() => {
   clock = 1000; pending = new Map(); nextId = 1; reduced = false;
+  made = [];
   set('document', {
-    createElement: () => canvas(),
+    createElement: () => { const c = canvas(); made.push(c); return c; },
     documentElement: { getAttribute: () => (reduced ? 'reduce' : 'full') },
     defaultView: null,
   });
@@ -197,4 +201,57 @@ test('when everything is gone the canvas is cleared once and left alone', () => 
   assert.ok(cleared > 0);
   tick(50);
   assert.equal(cv.clears, cleared);
+});
+
+test('the wet sheen is held to 4M canvas px on a very tall box, and is let go once it has dried', () => {
+  const host = {}, cv = canvas(390 * 2, 20000 * 2);
+  register(host, asCanvas(cv), { w: 390, h: 20000 }, 2);
+  wash(host, { x: 10, y: 100 }, { x: 200, y: 100 }, true);
+  const [sheen] = sheens();
+  assert.ok(sheen, 'a sheen canvas was made');
+  assert.ok(sheen.width * sheen.height <= 4_000_000, `${sheen.width}x${sheen.height}`);
+  for (let i = 0; i < 400 && probe.running(); i++) tick(50);
+  assert.equal(probe.sheens(), 0, 'the dried host holds no sheen canvas');
+});
+
+test('a sheen on a small box keeps the screen\'s density, so it is not blurry', () => {
+  const { host } = mount();
+  wash(host, A, B, true);
+  const [sheen] = sheens();
+  assert.equal(sheen!.width, BOX.w * 2);
+  assert.equal(sheen!.height, BOX.h * 2);
+});
+
+test('registering a host with a new box or density drops the old sheen', () => {
+  const { host, cv } = mount();
+  wash(host, A, B, true);
+  assert.equal(probe.sheens(), 1);
+  register(host, asCanvas(cv), { w: 500, h: 300 }, 2, '#cc2222');
+  assert.equal(probe.sheens(), 0, 'a new box');
+  wash(host, A, B, true);
+  assert.equal(sheens().at(-1)!.width, 1000);
+  register(host, asCanvas(cv), { w: 500, h: 300 }, 1, '#cc2222');
+  assert.equal(probe.sheens(), 0, 'a new density');
+  wash(host, A, B, true);
+  register(host, asCanvas(cv), { w: 500, h: 300 }, 1, '#cc2222');
+  assert.equal(probe.sheens(), 1, 'the same box and density keeps it');
+});
+
+test('the tinted sprites are keyed by the ink\'s color and held to 16', () => {
+  const { host } = mount();
+  for (const ink of ['#CC2222', '#cc2222', '#c22']) { register(host, asCanvas(canvas()), BOX, 2, ink); wash(host, A, B, true); }
+  assert.equal(probe.tints(), 1, 'one color spelled three ways');
+  for (let i = 0; i < 40; i++) { register(host, asCanvas(canvas()), BOX, 2, `#${(i + 16).toString(16)}0${(i + 16).toString(16)}0ff`); wash(host, A, B, true); }
+  assert.ok(probe.tints() <= 16, `${probe.tints()} kept`);
+});
+
+test('a very long move spawns no more than a 400px one does', () => {
+  const { host } = mount();
+  wash(host, { x: 0, y: 10 }, { x: 400, y: 10 }, true);
+  const ref = probe.size();
+  unregister(host);
+  const again = mount();
+  wash(again.host, { x: 0, y: 10 }, { x: 20000, y: 10 }, true);
+  assert.ok(probe.size() <= 400 / 8 + 400 / 16 + 1 + 12, `${probe.size()} spawned`);
+  assert.ok(ref > 0);
 });

@@ -68,8 +68,13 @@ export function fitStroke(stroke: Stroke, minStep: Pt): Stroke[] {
     if (last && Math.hypot((p[0] - last[0]) / minStep[0], (p[1] - last[1]) / minStep[1]) < 1) continue;
     kept.push(p);
   }
+  /* The stroke ends where the pen did: a last point too close to the last one kept takes its place (a lone point stays a dab). */
   const lastIn = stroke.points[stroke.points.length - 1];
-  if (kept.length === 0 && lastIn) kept.push(held(lastIn[0], lastIn[1]));
+  if (lastIn) {
+    const end = held(lastIn[0], lastIn[1]);
+    if (kept.length === 0) kept.push(end);
+    else if (kept.length > 1) kept[kept.length - 1] = end;
+  }
   const width = tenThousandth(clamp(stroke.width, 0.0001, STROKES.widest));
   const aspect = Number(clamp(stroke.aspect, 0.001, 1000).toPrecision(3));
   const out: Stroke[] = [];
@@ -88,7 +93,11 @@ export function fits(strokes: readonly Stroke[]): boolean {
 
 /* --------------------------------------------------------------------- a layer's ink ---- */
 
-/** How many points' answers a layer keeps of its splat's outline: a post's lines sampled across (a few thousand), with room to spare. */
+/**
+ * How many points' answers a layer keeps of its splat's outline, at most, checked on every insert. It serves `has`
+ * (a post's lines sampled across, a few thousand points, and the pointer's own); the constructor's grid pass asks
+ * `covers` directly, since each grid point is asked once and a memory of it would only fill and thrash.
+ */
 const MEMO_MOST = 20_000;
 
 /** Squared distance from (px, py) to the segment a-b. */
@@ -158,7 +167,7 @@ export class LayerInk {
     this.counted = new Uint8Array(this.nx * this.ny);
     for (let j = 0; j < this.ny; j++) {
       for (let i = 0; i < this.nx; i++) {
-        if (this.splatCovers((i + 0.5) / this.nx, (j + 0.5) / this.ny)) {
+        if (covers(this.splat, this.box, (i + 0.5) / this.nx, (j + 0.5) / this.ny)) {
           this.alive[j * this.nx + i] = 1;
           this.counted[j * this.nx + i] = 1;
           this.total++;
@@ -192,24 +201,23 @@ export class LayerInk {
   /**
    * Whether the splat's own outline holds a point. The outline never changes, and the lines under ink are asked about the same
    * points again at each refresh of a sweep, so an answer is kept (by the point, exactly) rather than worked out again from every
-   * ball of the splat. The memory is bounded: past `MEMO_MOST` points it starts over.
+   * ball of the splat. The memory is bounded: it never holds more than `MEMO_MOST` points, and starts over when it would.
    */
   private splatCovers(x: number, y: number): boolean {
+    let held = this.memo.get(x)?.get(y);
+    if (held !== undefined) return held;
+    held = covers(this.splat, this.box, x, y);
+    if (this.memoed >= MEMO_MOST) {
+      this.memo.clear();
+      this.memoed = 0;
+    }
     let column = this.memo.get(x);
     if (!column) {
-      if (this.memoed >= MEMO_MOST) {
-        this.memo.clear();
-        this.memoed = 0;
-      }
       column = new Map();
       this.memo.set(x, column);
     }
-    let held = column.get(y);
-    if (held === undefined) {
-      held = covers(this.splat, this.box, x, y);
-      column.set(y, held);
-      this.memoed++;
-    }
+    column.set(y, held);
+    this.memoed++;
     return held;
   }
 
@@ -333,6 +341,8 @@ export function sweepStep(
   rows: readonly number[], at: Sweep, dt: number, span?: (row: number) => readonly [number, number] | null,
 ): { readonly sweep: Sweep; readonly point: Pt; readonly idle: boolean } {
   let { row, x } = at;
+  /* A resize can leave a saved row past the box's last: the sweep resumes on the last. */
+  row = Math.min(Math.max(0, row), Math.max(0, rows.length - 1));
   x += dt * SWEEP_SPEED;
   let hops = 0;
   for (;;) {
@@ -342,7 +352,7 @@ export function sweepStep(
       if (span && s) x = Math.max(x, s[0]);
       break;
     }
-    if (++hops > rows.length) return { sweep: at, point: [at.x, rows[at.row] ?? 0], idle: true };
+    if (++hops > rows.length) return { sweep: { row, x: at.x }, point: [at.x, rows[row] ?? 0], idle: true };
     row = (row + 1) % rows.length;
     x = 0;
   }

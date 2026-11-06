@@ -135,7 +135,7 @@ test('a drag\'s near-duplicate points are thinned out of what is kept', () => {
   const step = minStepOf(DESK);
   const b = brushOf(BRUSH_PX, DESK);
   const crawl: Stroke = { tool: 'wash', ...b, points: [[0.2, 0.5], [0.2005, 0.5], [0.201, 0.5], [0.2015, 0.5], [0.4, 0.5], [0.4004, 0.5]] };
-  assert.deepEqual(fitStroke(crawl, step)[0]!.points, [[0.2, 0.5], [0.4, 0.5]], 'points under a step from the last one kept are dropped');
+  assert.deepEqual(fitStroke(crawl, step)[0]!.points, [[0.2, 0.5], [0.4004, 0.5]], 'points under a step from the last one kept are dropped, but the stroke still ends where the pen did');
   const dab: Stroke = { tool: 'wash', ...b, points: [[0.5, 0.5], [0.5002, 0.5]] };
   assert.deepEqual(fitStroke(dab, step)[0]!.points, [[0.5, 0.5]], 'a dab is one point');
   // The step is 5px on each axis: a tall box takes a smaller share down than across.
@@ -312,4 +312,30 @@ test('a point has ink as the last stroke over it says, else the splat does: the 
     assert.equal(ink.has(x, y), brute(x, y), `(${x}, ${y})`);
     assert.equal(ink.has(x, y), brute(x, y), `asked again: (${x}, ${y})`);
   }
+});
+
+test('a stroke always ends on its last point, even one under a step from the last kept', () => {
+  const step = minStepOf(DESK);
+  const b = brushOf(PEN_PX, DESK);
+  const [end] = fitStroke({ tool: 'wash', ...b, points: [[0, 0], [0.5, 0], [0.5001, 0]] }, step);
+  assert.deepEqual(end!.points, [[0, 0], [0.5001, 0]], 'the last point replaces the one it is too close to');
+  const [dab] = fitStroke({ tool: 'wash', ...b, points: [[0, 0], [0.0001, 0]] }, [0.05, 0.05]);
+  assert.deepEqual(dab!.points, [[0, 0]], 'a lone point stays a dab');
+});
+
+test('a sweep saved on a row past a shrunken box is clamped to its last row', () => {
+  const rows = bandsOf({ w: 400, h: 100 });
+  const { sweep, point } = sweepStep(rows, { row: rows.length + 5, x: 0.2 }, 1 / 60);
+  assert.ok(sweep.row < rows.length);
+  assert.ok(Number.isFinite(point[0]) && Number.isFinite(point[1]));
+});
+
+test('a layer on a very tall box keeps its splat memory to the stated bound', () => {
+  const box: Box = { w: 390, h: 20000 };
+  const ink = new LayerInk(splatOf(3), [], box);
+  const held = () => [...(ink as unknown as { memo: Map<number, Map<number, boolean>> }).memo.values()].reduce((n, c) => n + c.size, 0);
+  assert.ok(held() <= 20_000, `memo holds ${held()} after the grid pass`);
+  let most = 0;
+  for (let k = 0; k < 30_000; k++) { ink.has(Math.random(), Math.random()); if (k % 500 === 0) most = Math.max(most, held()); }
+  assert.ok(most <= 20_000 && held() <= 20_000, `memo holds ${Math.max(most, held())}`);
 });
