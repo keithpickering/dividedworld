@@ -15,7 +15,7 @@
  *
  * Engine code: it names no card and no instance.
  */
-import { motionReduced } from '../appearance.ts';
+import { motionReduced, subscribeMotion } from '../appearance.ts';
 import { watchInView } from './inView.ts';
 import { ease, light, lightAt, type Light } from './light.ts';
 
@@ -58,6 +58,7 @@ let handle: number | null = null;
 let last = 0;
 let frameCount = 0;
 let made = 0;
+let unsubscribeMotion: (() => void) | null = null;
 
 const sum = (a: Light, b: Light) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 
@@ -99,6 +100,17 @@ function frame(t: number): void {
   if (!anyWants()) { cancelAnimationFrame(handle); handle = null; }
 }
 
+/**
+ * Reduced motion changed while the page was open (a setting, or the device's). Every host redraws once from a fresh light,
+ * which under reduced motion is REST, and the loop then stops by itself; turned off, shimmer wakes a loop that had stopped.
+ */
+function onMotionChange(): void {
+  for (const r of hosts.values()) { r.fresh = true; r.cur = null; }
+  start();
+}
+const watchMotion = (): void => { unsubscribeMotion ??= subscribeMotion(onMotionChange); };
+const unwatchMotion = (): void => { unsubscribeMotion?.(); unsubscribeMotion = null; };
+
 function start(): void {
   if (handle !== null || !anyWants()) return;
   last = performance.now();
@@ -121,6 +133,7 @@ export function register(
     inView: false, fresh: true, busy: false, settling: false, cur: old?.cur ?? null, drawn: null, draws: old?.draws ?? 0, stop: () => {},
   };
   hosts.set(host, reg);
+  watchMotion();
   light.attach(host);
   reg.stop = watchInView(canvas, (inView) => {
     if (hosts.get(host) !== reg || reg.inView === inView) return;
@@ -139,6 +152,7 @@ export function unregister(host: object): void {
   hosts.delete(host);
   r.stop();
   light.detach(host);
+  if (hosts.size === 0) unwatchMotion();
 }
 
 /** The host has something new in flight (a burst): make sure a frame is coming. A host out of view waits until it is seen. */
@@ -159,6 +173,7 @@ export const probe = {
     handle = null;
     for (const [host, r] of hosts) { r.stop(); light.detach(host); }
     hosts.clear();
+    unwatchMotion();
     frameCount = 0; made = 0; last = 0;
   },
 };

@@ -119,7 +119,7 @@ export function useTextSize(): 100 | 125 | 150 | 200 {
 export function useMotionReduced(): boolean {
   return useSyncExternalStore(subscribeMotion, () => motionReduced(), () => false);
 }
-function subscribeMotion(onChange: () => void): () => void {
+export function subscribeMotion(onChange: () => void): () => void {
   const off = subscribeRoot(onChange);
   const query = typeof window !== 'undefined' ? window.matchMedia?.('(prefers-reduced-motion: reduce)') : undefined;
   query?.addEventListener?.('change', onChange);
