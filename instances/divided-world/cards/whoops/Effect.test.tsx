@@ -1719,3 +1719,40 @@ describe('in a moment, still', () => {
     expect(lastView(three.shown).state).toBe('Spritey\'s yellow, 0% washed; Gloomba\'s cyan, washed clean; Mrs. Hooligan\'s magenta, 0% washed');
   });
 });
+
+describe('the canvas, with the frame offset in the cell', () => {
+  const realRect = Element.prototype.getBoundingClientRect;
+  afterEach(() => { Element.prototype.getBoundingClientRect = realRect; });
+
+  test('the ink is drawn at the box\'s origin in its canvas, whatever the frame\'s offset in the cell', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame', 'performance'] });
+    (globalThis as { Path2D?: unknown }).Path2D ??= class {};
+    /* The frame sits 9.875px right and 7.5px down in the cell. */
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      const at = this.classList.contains('kb-whoops-frame') ? { left: 9.875, top: 7.5 } : { left: 0, top: 0 };
+      return { ...at, right: at.left, bottom: at.top, width: 0, height: 0, x: at.left, y: at.top, toJSON() {} } as DOMRect;
+    };
+    const drawn: unknown[][] = [];
+    const moved: unknown[][] = [];
+    const canvases = new Map<HTMLCanvasElement, string>();
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement) {
+      if (!canvases.has(this)) canvases.set(this, canvases.size === 0 ? 'main' : 'work');
+      const state: Record<string, unknown> = {};
+      return new Proxy({}, {
+        get: (_t, key: string) => (key in state ? state[key] : (...args: unknown[]) => {
+          if (key === 'drawImage' && args.length === 5) drawn.push(args);
+          if (key === 'setTransform') moved.push(args);
+          if (key === 'createImageData') return { data: new Uint8ClampedArray(Number(args[0]) * Number(args[1]) * 4) };
+          if (key === 'createRadialGradient' || key === 'createLinearGradient') return { addColorStop() {} };
+          return undefined;
+        }),
+        set: (_t, key: string, value) => { state[key] = value; return true; },
+      });
+    } as unknown as HTMLCanvasElement['getContext'];
+    mount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    expect(drawn.length).toBeGreaterThan(0);
+    for (const [, x, y] of drawn) expect([x, y]).toEqual([0, 0]);
+    for (const m of moved) expect([m[4], m[5]]).toEqual([0, 0]);
+  });
+});

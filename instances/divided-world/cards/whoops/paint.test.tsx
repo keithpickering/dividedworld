@@ -112,6 +112,27 @@ describe('paint, scratch and degenerate boxes', () => {
     for (const d of calls.filter((c) => c.who === 'main' && c.op === 'drawImage')) expect(d.style.shadowBlur ?? 0).toBe(0);
   });
 
+  test('the shared scratch is sized to the canvas being painted, so a tall canvas after a wide one never grows it past MAX_CANVAS_PX', () => {
+    const calls = recording();
+    const sized = (w: number, h: number) => {
+      const c = document.createElement('canvas');
+      c.width = w;
+      c.height = h;
+      return c;
+    };
+    const scratchAfter = (w: number, h: number): [number, number] => {
+      calls.length = 0;
+      paint(sized(w, h), { dpr: 1, box: { w, h }, top: 0, left: 0 }, [layer([])]);
+      const scratch = calls.find((c) => c.op === 'drawImage' && c.args.length === 9)!.args[0] as HTMLCanvasElement;
+      return [scratch.width, scratch.height];
+    };
+    for (const [w, h] of [[780, 600], [279, 14307], [988, 4000]] as const) {
+      const [sw, sh] = scratchAfter(w, h);
+      expect([sw, sh], `the scratch after a ${w} by ${h} canvas`).toEqual([w, h]);
+      expect(sw * sh).toBeLessThanOrEqual(MAX_CANVAS_PX);
+    }
+  });
+
   test.each([[0, 200], [400, 0], [Number.NaN, 200], [400, Infinity]])('a box of %s by %s draws nothing', (w, h) => {
     const calls = recording();
     const wash: Stroke = { tool: 'wash', width: 0.1, aspect: 2, points: [[0.2, 0.5], [0.4, 0.5]] };

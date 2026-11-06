@@ -5,7 +5,7 @@
  * every rule here is testable in Node.
  *
  * Everything is in shares of the post body's box on this screen: a point is across 0 to 1 and down 0 to 1, so a
- * stroke lands on the same words wherever the box is and survives an edit. A brush is a size on the screen, so
+ * stroke lands on the same shares of the box, not the same words, wherever the box is, and survives an edit. A brush is a size on the screen, so
  * its measures are in px; a stroke keeps its brush as a share of the box's width (`width`) and the drawer's box's
  * proportions (`aspect`), which makes it an ellipse of `width / 2` across and `width / 2 * aspect` down, in shares,
  * on any box: round on the drawer's screen, stretched with the box on another. A layer's ink is the seeded splat

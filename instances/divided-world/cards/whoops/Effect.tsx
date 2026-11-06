@@ -431,7 +431,8 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     const canvas = canvasRef.current;
     const { layers: all, size: sz, dpr: density } = now.current;
     if (!canvas || !now.current.near || sz.box.w <= 0 || sz.box.h <= 0 || inks.current.length !== all.length) return;
-    const geometry: Geometry = { dpr: density, box: sz.box, left: sz.left, top: sz.top };
+    /* The ink canvas is placed at the box's origin (`onBox`: left -size.left, top -size.top from the frame), so the box's origin is (0, 0) in the canvas's own frame; the frame's offset in the cell is where the canvas sits, never where the box lies in it. */
+    const geometry: Geometry = { dpr: density, box: sz.box, left: 0, top: 0 };
     const reduced = motionReduced();
     const stroking = live.current;
     let fading = false;

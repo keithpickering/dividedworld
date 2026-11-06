@@ -379,3 +379,33 @@ test.describe('in forced colors', () => {
     expect(marks.other.style).not.toBe('solid');
   });
 });
+
+test('a mouse dab washes the ink where the pointer pressed, not offset by the frame\'s place in the cell', async ({ page }) => {
+  await page.goto('/?fixture=boards&moment=01-main');
+  await expect(page.locator('#post-41 .kb-whoops-ink')).toBeVisible();
+  await expect.poll(() => inked(page)).toBeGreaterThan(1000);
+  await page.locator('#post-41 .kb-whoops-ink').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  const at = await solidInk(page, '#post-41 .kb-whoops-ink', 150, 900);
+  expect(at.len).toBeGreaterThan(100);
+  /* The ink's pixels before and after, and the press in the canvas's own CSS px. */
+  const alphas = () => page.evaluate(() => {
+    const c = document.querySelector<HTMLCanvasElement>('#post-41 .kb-whoops-ink')!;
+    return { w: c.width, h: c.height, css: c.getBoundingClientRect().width, a: Array.from(c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data.filter((_, i) => i % 4 === 3)) };
+  });
+  const before = await alphas();
+  const rect = await page.locator('#post-41 .kb-whoops-ink').boundingBox();
+  await page.mouse.move(at.x - 4, at.y);
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  await page.mouse.up();
+  await expect.poll(async () => (await alphas()).a.filter((v) => v > 40).length).toBeLessThan(before.a.filter((v) => v > 40).length);
+  const after = await alphas();
+  const k = before.w / before.css;
+  let n = 0, sx = 0, sy = 0;
+  for (let i = 0; i < before.a.length; i++) {
+    if (before.a[i]! > 40 && after.a[i]! <= 40) { n++; sx += (i % before.w) / k; sy += Math.floor(i / before.w) / k; }
+  }
+  expect(n).toBeGreaterThan(20);
+  expect(Math.abs(sx / n - (at.x - rect!.x))).toBeLessThan(2);
+  expect(Math.abs(sy / n - (at.y - rect!.y))).toBeLessThan(2);
+});

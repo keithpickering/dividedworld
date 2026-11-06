@@ -118,11 +118,14 @@ export function paintSplat(splat: Splat, color: string, box: Box, density: numbe
 
 let scratch: HTMLCanvasElement | null = null;
 
-/** The one scratch canvas, at least this big, shared by every post. */
+/**
+ * The one scratch canvas, shared by every post and sized to the canvas being painted: never larger than the largest single ink
+ * canvas (each at most MAX_CANVAS_PX), since growing it to the widest and tallest seen apart would pass a browser's canvas limit.
+ */
 function scratchOf(width: number, height: number): CanvasRenderingContext2D | null {
   scratch ??= document.createElement('canvas');
-  if (scratch.width < width) scratch.width = width;
-  if (scratch.height < height) scratch.height = height;
+  if (scratch.width !== width) scratch.width = width;
+  if (scratch.height !== height) scratch.height = height;
   return scratch.getContext('2d', { willReadFrequently: false });
 }
 
