@@ -23,6 +23,9 @@
  * Units: a box is CSS px {w, h}; a cell is 3 CSS px; `density` is canvas pixels per CSS px; a light is {x, y} in -1.5..1.5;
  * colors are computed in LINEAR light and written as 8-bit sRGB; `now` is milliseconds, as the page's loop gives it.
  *
+ * `draw` takes any 2D context: a Feelin' Fab's foil is drawn in a worker on an OffscreenCanvas's (foilServe.ts), or on the page's own canvas
+ * where the browser cannot (foilClient.ts), the same bytes and the same draw either way.
+ *
  * Canvases come from `createCanvas` (default: an OffscreenCanvas, else a document canvas), so Node can run everything but
  * the drawing itself. Seeded, never `Math.random`. Engine code: it names no card and no instance.
  */
