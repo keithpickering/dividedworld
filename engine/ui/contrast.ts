@@ -20,7 +20,7 @@ export type Tokens = Readonly<Record<string, string>>;
 function declarations(body: string): Record<string, string> {
   const out: Record<string, string> = {};
   /* The last declaration of a block may omit its semicolon. */
-  for (const m of body.matchAll(/(--kb-[a-z0-9-]+)\s*:\s*([^;]+)(?:;|$)/gu)) out[m[1]!] = m[2]!.trim();
+  for (const m of body.matchAll(/(--kb-[a-z0-9-]+)\s*:\s*([^;]+)(?:;|$)/gu)) out[m[1]!] = m[2]!.replace(/\s*!\s*important\s*$/iu, '').trim();
   return out;
 }
 
@@ -176,7 +176,11 @@ function substitute(tokens: Tokens, value: string, seen: readonly string[]): str
 
 const GRADIENT = /^(?:repeating-)?(?:linear|radial|conic)-gradient\((.*)\)$/isu;
 /** What a gradient's argument may be when it holds no color: a direction, a shape or position, an interpolation, a hint. */
-const NO_COLOR = /^(?:to\s|in\s|from\s|at\s|circle|ellipse|closest-|farthest-|[-+]?\d*\.?\d+(?:deg|grad|rad|turn|%|px|em|rem)?$)/iu;
+const WORD = '(?:to|in|from|at|circle|ellipse|closest-side|closest-corner|farthest-side|farthest-corner|left|right|top|bottom|center'
+  + '|srgb|srgb-linear|lab|oklab|lch|oklch|hsl|hwb|xyz|xyz-d50|xyz-d65|shorter|longer|increasing|decreasing|hue)';
+const NUM = '[-+]?\\d*\\.?\\d+(?:deg|grad|rad|turn|%|px|em|rem)?';
+/* A whole argument made only of these words and numbers holds no color, so `circle banana` is not skipped but fails. */
+const NO_COLOR = new RegExp(`^(?:${WORD}|${NUM})(?:\\s+(?:${WORD}|${NUM}))*$`, 'iu');
 const COLOR = /^(#[0-9a-f]{3,6}|rgba?\([^)]*\))(?:\s+[-+]?\d*\.?\d+(?:%|px|em|rem|deg|turn)?){0,2}$/iu;
 
 /**
@@ -210,6 +214,8 @@ export const PAIRS: readonly (readonly [string, string, number, string])[] = [
   ['--kb-fg', '--kb-hud-bg', 4.5, 'text on the HUD'],
   ['--kb-muted', '--kb-hud-bg', 4.5, 'muted text on the HUD'],
   ['--kb-link', '--kb-hud-bg', 4.5, 'links on the HUD'],
+  ['--kb-link-hover', '--kb-bg', 4.5, 'hovered links'],
+  ['--kb-link-hover', '--kb-hud-bg', 4.5, 'hovered links on the HUD'],
   ['--kb-selection-fg', '--kb-selection-bg', 4.5, 'selected text'],
   ['--kb-meter-fill', '--kb-meter-face', 3, 'the loading meter\'s fill in its well'],
   ['--kb-fg', '--kb-chip-bg', 4.5, 'text on a reaction chip'],
@@ -226,6 +232,7 @@ export const PAIRS: readonly (readonly [string, string, number, string])[] = [
     ['--kb-fg', row, 4.5, `text on table row ${i + 1}`],
     ['--kb-muted', row, 4.5, `muted text on table row ${i + 1}`],
     ['--kb-link', row, 4.5, `links on table row ${i + 1}`],
+    ['--kb-link-hover', row, 4.5, `hovered links on table row ${i + 1}`],
   ]),
   ['--kb-head-fg', '--kb-head-bg', 4.5, 'column head text on the head band'],
   ['--kb-bar-fg', '--kb-bar-bg', 4.5, 'section heading on the light band'],
@@ -239,7 +246,7 @@ export const PAIRS: readonly (readonly [string, string, number, string])[] = [
 ];
 
 /** The worst ratio of `fg` over every stop of `bg`; throws on a value that cannot be read. */
-function worstRatio(tokens: Tokens, fg: string, bg: string): number {
+export function worstRatio(tokens: Tokens, fg: string, bg: string): number {
   const text = resolveToken(tokens, fg);
   parseColor(text);
   return Math.min(...backgroundStops(resolveToken(tokens, bg)).map((stop) => ratio(text, stop)));

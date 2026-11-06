@@ -78,7 +78,16 @@ const GOOD = `/* a theme */
   check('--kb-banner-bg: url(https://example.com/x.gif) fires', r.length === 1 && /url\(/.test(r[0]?.why ?? '') && /banner-bg/.test(r[0]?.why ?? ''), JSON.stringify(r));
   check('a url() hidden in a layer, in uppercase, or with a space is still refused',
     [`linear-gradient(#fff, #eee), url(x.png)`, `URL(x.png)`, `url (x.png)`, `image-set(url("x.png") 1x)`].every((v) => fires(`:root { --kb-head-bg: ${v}; }`).length === 1));
-  check('in the dark blocks too', fires(`${GOOD}`.replace('--kb-fg: #fff; }\n}', '--kb-fg: #fff; --kb-nav-bg: url(//x.test/a.png); }\n}')).length === 1);
+  check('a CSS escape in a function name is refused: browsers decode \\75rl( into url(',
+  [String.raw`\75rl(x.png)`, String.raw`u\72l(x.png)`, String.raw`\55RL(x.png)`, String.raw`linear-gradient(#fff, #eee), \75 rl(x.png)`, String.raw`i\6d age-set("x.png" 1x)`, String.raw`#fff \
+`].every((v) => fires(`:root { --kb-head-bg: ${v}; }`).length === 1),
+  JSON.stringify([String.raw`\75rl(x.png)`, String.raw`u\72l(x.png)`, String.raw`\55RL(x.png)`].map((v) => fires(`:root { --kb-head-bg: ${v}; }`).length)));
+check('a backslash inside a quoted string is not an escape in a function name and is let through',
+  fires(`:root { --kb-font-x: "a\\"b"; }`).length === 0);
+check('image(), cross-fade(), -webkit-cross-fade() and element() fetch or copy a picture and are refused',
+  ['image(x.png)', 'IMAGE (x.png)', 'cross-fade(#fff, #000)', '-webkit-cross-fade(#fff, #000)', 'element(#a)', 'linear-gradient(#fff, #eee), image("x.png")'].every((v) => fires(`:root { --kb-head-bg: ${v}; }`).length === 1));
+check('a trailing !important does not hide a fetch', fires(`:root { --kb-head-bg: url(x.png) !important; }`).length === 1);
+check('in the dark blocks too', fires(`${GOOD}`.replace('--kb-fg: #fff; }\n}', '--kb-fg: #fff; --kb-nav-bg: url(//x.test/a.png); }\n}')).length === 1);
   check('a gradient is clean', fires(`:root { --kb-head-bg: linear-gradient(#fff, #2b2b2b); }`).length === 0);
 }
 

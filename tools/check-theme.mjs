@@ -25,8 +25,10 @@
  * positive, so it is refused, and 0 or less hides the text it sizes. A theme may add a size token the
  * engine does not name; the engine ignores it.
  *
- * No token's value may name `url(` (or `image-set(`): an image a theme fetches can watch who reads a page, so a
- * theme draws with gradients and colors, and any art is the instance's own file (the screens design, section 12).
+ * No token's value may name `url(`, `image-set(`, `src(`, `image(`, `cross-fade(` or `element(`: an image a theme fetches
+ * can watch who reads a page, so a theme draws with gradients and colors, and any art is the instance's own file (the
+ * screens design, section 12). Spelling cannot be matched closed, since CSS decodes `\75rl(` and `u\72l(` into `url(`, so
+ * a backslash in a value outside a quoted string is refused outright; a quoted string is let through, as it names no function.
  *
  * Also read: each instance's `ui/index.ts`. Every `href` in its `themes` list must be an identifier
  * imported from a `*.css?url` file that sits in that instance's own ui/ folder and is in the tree, so
@@ -50,8 +52,13 @@ export const UI_INDEX = /^instances\/([^/]+)\/ui\/index\.ts$/;
 const SELECTORS = new Set([':root', ':root[data-kb-mode="dark"]', ':root[data-kb-mode="light"]']);
 const DEVICE_QUERY = '@media(prefers-color-scheme:dark)';
 const DEVICE_SELECTOR = ':root:not([data-kb-mode="light"])';
-/* A fetch: url( in any spelling, or image-set()/src() which take a bare string as a url. Case-blind, space before the paren allowed. */
-const FETCHES = /\b(?:url|image-set|-webkit-image-set|src)\s*\(/i;
+/* A fetch: url( in any spelling, image-set()/src() which take a bare string as a url, and image()/cross-fade()/element(),
+   which name or copy a picture. Case-blind, space before the paren allowed. A CSS escape in the name (\75rl) is caught by ESCAPE. */
+const FETCHES = /(?<![a-z0-9_])(?:url|image-set|-webkit-image-set|src|image|cross-fade|-webkit-cross-fade|element|-moz-element)\s*\(/i;
+/* Browsers decode a backslash escape in a function name (`\75rl(` is `url(`), so no pattern on the spelling can be closed:
+   a backslash anywhere in a value outside a quoted string is refused instead, and no token a theme needs has one. */
+const ESCAPE = /\\/;
+const withoutStrings = (v) => v.replace(/"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'/g, '""');
 const SIZE_TOKEN = /^--kb-(size-[a-z0-9-]+|line|board-max)$/;
 
 /** A stylesheet with its comments blanked to spaces, so lines keep their numbers; strings are skipped whole. */
@@ -124,6 +131,8 @@ function declarationFaults(body, at, lineOf, file, out) {
     const value = colon === -1 ? '' : decl.slice(colon + 1).replace(/!\s*important\s*$/i, '').trim();
     if (!/^--kb-[a-z0-9-]+$/.test(name)) {
       out.push({ file, line, why: `"${name.slice(0, 40)}" is not a --kb-* custom property; a theme sets tokens and nothing else` });
+    } else if (ESCAPE.test(withoutStrings(value))) {
+      out.push({ file, line, why: `${name}: has a backslash outside a quoted string; an escape can spell url() and fetch an image, so a theme value has none` });
     } else if (FETCHES.test(value)) {
       out.push({ file, line, why: `${name}: names url(), and a theme's art must be the instance's own file, never a fetch; an outside image can watch who reads a page` });
     } else if (SIZE_TOKEN.test(name)) {
