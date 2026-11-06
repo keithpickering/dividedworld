@@ -38,12 +38,15 @@ export interface TipRequest {
   readonly step?: TipStep;
   /** Tips of one group share the page's budget in turn (the tour's steps); the default is the key's own. */
   readonly group?: string;
+  /** A button before Got it: pressing it runs this (inside the click, so a browser's permission prompt sees the tap) and then sees the tip. */
+  readonly action?: { readonly run: () => void };
 }
 
 export interface ActiveTip {
   readonly key: TipKey;
   readonly target: HTMLElement;
   readonly step: TipStep | undefined;
+  readonly action: { readonly run: () => void } | undefined;
 }
 
 export interface TipsHandlers {
@@ -125,7 +128,7 @@ export function createTipsStore(handlers: TipsHandlers, options: { readonly unga
       queue.splice(queue.indexOf(e), 1);
       settled.add(e.request.key);
       spent = e.group;
-      current = { entry: e, view: { key: e.request.key, target, step: e.request.step } };
+      current = { entry: e, view: { key: e.request.key, target, step: e.request.step, action: e.request.action } };
     }
   };
   const drop = (e: Entry) => { queue.splice(queue.indexOf(e), 1); settled.add(e.request.key); };

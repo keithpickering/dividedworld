@@ -2,11 +2,11 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { instanceUiProblems } from './problems.ts';
-import { TIP_KEYS } from './keys.ts';
+import { ACTION_TIPS, TIP_KEYS } from './keys.ts';
 import type { CardUi } from '../cards/types.ts';
 import type { FrontDoorUi, OnboardingUi } from '../types.ts';
 
-const tips = () => Object.fromEntries(TIP_KEYS.map((k) => [k, { title: `T ${k}`, line: `L ${k}` }])) as unknown as Record<string, { title: string; line: string }>;
+const tips = () => Object.fromEntries(TIP_KEYS.map((k) => [k, { title: `T ${k}`, line: `L ${k}`, ...((ACTION_TIPS as readonly string[]).includes(k) ? { action: `A ${k}` } : {}) }])) as unknown as Record<string, { title: string; line: string }>;
 /** The rules the front door is held to: two reactions, three ranks and two classes. */
 const rules = { reactions: [{ key: 'fire' }, { key: 'tea' }], ranks: [{ name: 'A' }, { name: 'B' }, { name: 'C' }], classes: [{ key: 'face' }, { key: 'heel' }] } as never;
 const goodDoor = (): FrontDoorUi => ({
@@ -31,6 +31,13 @@ const door = (change: (d: { -readonly [K in keyof FrontDoorUi]: FrontDoorUi[K] }
 };
 
 describe('instanceUiProblems', () => {
+  test('refuses a shine tip with no action label, or a blank one', () => {
+    for (const action of [undefined, '  ']) {
+      const t = tips();
+      t['shine'] = { title: 'T', line: 'L', ...(action === undefined ? {} : { action }) } as never;
+      assert.deepEqual(instanceUiProblems(ui({ tips: t, letter: 'Hi.' }), rules), ['the tip "shine" has an action button and no action label']);
+    }
+  });
   test('passes an instance that fills every tip exactly', () => {
     assert.deepEqual(instanceUiProblems(ui({ tips: tips(), letter: 'Hi.' }), rules), []);
   });

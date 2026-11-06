@@ -7,11 +7,14 @@
  * state and the pacing allow, and not otherwise. Got it calls `seeTip`; Skip all tips calls `skipTips`. A visitor has no account to
  * remember a tip on, so none shows.
  */
-import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useSyncExternalStore, type ReactNode, type RefObject } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react';
 import { useKayfa } from '../context.tsx';
 import { usePlayer } from '../player.tsx';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import type { TipKey } from './keys.ts';
+import { motionReduced } from '../appearance.ts';
+import { watchFirstInView } from '../shine/loop.ts';
+import { allowTilt, setTiltPreference, tiltAnswered, tiltState, tiltSupported } from '../shine/tilt.ts';
 import { Spotlight } from './Spotlight.tsx';
 import { createTipsStore, type TipStep, type TipsStore } from './store.ts';
 
@@ -31,13 +34,45 @@ export function TipsProvider({ children }: { readonly children: ReactNode }) {
   apiRef.current = api;
   const store = useMemo(() => createTipsStore({ see: (key) => apiRef.current.seeTip(key), skip: () => apiRef.current.skipTips() }), []);
 
+  const [tilt, setTilt] = useState<'on' | 'off' | null>(null);
+
   /* The account's own state, read once for the page: a visitor, or a failed read, has none and nothing shows. */
   useEffect(() => {
     let live = true;
     store.load(null);
-    if (session.signedIn) void api.preferences().then((p) => { if (live) store.load({ tips: p.tips, seen: p.tipsSeen, welcomedAt: p.welcomedAt }); }, () => {});
+    setTilt(null);
+    if (session.signedIn) void api.preferences().then((p) => { if (live) { store.load({ tips: p.tips, seen: p.tipsSeen, welcomedAt: p.welcomedAt }); setTilt(p.tilt); } }, () => {});
     return () => { live = false; };
   }, [api, store, session.signedIn]);
+
+  /* The shine tip: the first shiny post in view, on a phone that can tilt and has not been asked (design section 4). The loop names the
+     host's canvas; this decides whether to ask, by the account's tilt choice read with its tips above. */
+  useEffect(() => {
+    if (tilt === null) return undefined;
+    let live = true;
+    let unwant: (() => void) | null = null;
+    let canvas: HTMLCanvasElement | null = null;
+    const sync = () => {
+      unwant?.();
+      unwant = null;
+      if (!live || canvas === null || !askForTilt(tilt)) return;
+      const target = canvas;
+      unwant = store.want({
+        key: 'shine',
+        target: () => target,
+        action: {
+          run: () => {
+            /* Synchronously, in the tap: iOS asks for the orientation only here. Then the same choice Settings saves. */
+            void allowTilt();
+            setTiltPreference('on');
+            void apiRef.current.setPreferences({ tilt: 'on' }).catch(() => {});
+          },
+        },
+      });
+    };
+    const stop = watchFirstInView((c) => { if (c === canvas) return; canvas = c; sync(); });
+    return () => { live = false; stop(); unwant?.(); };
+  }, [store, tilt]);
 
   const active = useSyncExternalStore(store.subscribe, store.active, store.active);
   const persona = instance.developer ?? DEFAULT_DEVELOPER;
@@ -53,12 +88,20 @@ export function TipsProvider({ children }: { readonly children: ReactNode }) {
           step={active.step}
           target={active.target}
           persona={{ name: persona.name, picture: persona.avatar === undefined ? undefined : ui.avatars?.[persona.avatar] }}
+          action={active.action && words.action !== undefined ? { label: words.action, run: active.action.run } : undefined}
           onGotIt={store.see}
           onSkip={store.skip}
         />
       )}
     </TipsCtx.Provider>
   );
+}
+
+/** Whether a tip about turning tilt on is wanted: a coarse pointer that can tilt, under full motion, not yet asked, and not already on. */
+function askForTilt(pref: 'on' | 'off'): boolean {
+  if (motionReduced() || !tiltSupported() || !(window.matchMedia?.('(pointer: coarse)').matches ?? false)) return false;
+  const state = tiltState(pref);
+  return state === 'needs-allow' || (state === 'off' && !tiltAnswered());
 }
 
 export interface TipOptions {
@@ -68,6 +111,8 @@ export interface TipOptions {
   readonly step?: TipStep;
   /** Tips of one group take turns on the page's budget (the tour's steps share one). */
   readonly group?: string;
+  /** A button before Got it (the instance words its label, `InstanceUi.onboarding.tips`); it runs inside the click, then the tip is seen. */
+  readonly action?: { readonly run: () => void };
 }
 
 /**
@@ -77,13 +122,13 @@ export interface TipOptions {
  */
 export function useTip(key: TipKey, target: RefObject<HTMLElement | null>, options: TipOptions = {}): void {
   const store = useTipsStore();
-  const { when = true, group } = options;
+  const { when = true, group, action } = options;
   const n = options.step?.n;
   const of = options.step?.of;
   useEffect(() => {
     if (!when) return;
-    return store.want({ key, target: () => target.current, group, ...(n !== undefined && of !== undefined ? { step: { n, of } } : {}) });
-  }, [store, key, target, when, group, n, of]);
+    return store.want({ key, target: () => target.current, group, ...(action ? { action } : {}), ...(n !== undefined && of !== undefined ? { step: { n, of } } : {}) });
+  }, [store, key, target, when, group, action, n, of]);
 }
 
 /** Say that a game effect holds the screen while `held` (a takeover, Stick Around's view); a tip is not shown over it. */

@@ -375,6 +375,6 @@ export interface GuideUi {
  * welcome page's letter, Markdown (Task 7 draws it).
  */
 export interface OnboardingUi {
-  readonly tips: Readonly<Record<TipKey, { readonly title: string; readonly line: string }>>;
+  readonly tips: Readonly<Record<TipKey, { readonly title: string; readonly line: string; /** The label of the button the engine gives this tip (`ACTION_TIPS`, engine/ui/tips/keys.ts). */ readonly action?: string }>>;
   readonly letter: string;
 }

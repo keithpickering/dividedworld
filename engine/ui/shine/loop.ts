@@ -63,6 +63,31 @@ let unsubscribeMotion: (() => void) | null = null;
 /* Held while any host is registered: the device's tilt probe runs for a page that shines (tilt.ts). */
 let releaseTilt: (() => void) | null = null;
 
+/* Who wants to know the first registered host that is in view (the shine tip, engine/ui/tips/Tips.tsx). */
+const firstWatchers = new Set<(canvas: HTMLCanvasElement | null) => void>();
+let announced: HTMLCanvasElement | null = null;
+const firstInView = (): HTMLCanvasElement | null => {
+  const first = hosts.values().next().value as Reg | undefined;
+  return first?.inView ? first.canvas : null;
+};
+/** Tells the watchers when the first registered host's canvas, if it is in view, changes. */
+function announce(): void {
+  const now = firstInView();
+  if (now === announced) return;
+  announced = now;
+  for (const w of [...firstWatchers]) w(now);
+}
+
+/**
+ * Calls `onChange` with the canvas of the first registered host while it is in view (null when there is none, or it is out of
+ * view), now and whenever that changes. The loop reaches no React and no tip; whoever draws a tip subscribes here. Returns the stop.
+ */
+export function watchFirstInView(onChange: (canvas: HTMLCanvasElement | null) => void): () => void {
+  firstWatchers.add(onChange);
+  onChange(firstInView());
+  return () => { firstWatchers.delete(onChange); };
+}
+
 const sum = (a: Light, b: Light) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 
 /** Whether this host wants the next frame. */
@@ -142,10 +167,12 @@ export function register(
   reg.stop = watchInView(canvas, (inView) => {
     if (hosts.get(host) !== reg || reg.inView === inView) return;
     reg.inView = inView;
+    announce();
     if (inView) { reg.fresh = true; reg.drawn = null; reg.cur = null; start(); return; }
     reg.busy = false;
     try { reg.hidden?.(); } catch (err) { console.error(err); }
   });
+  announce();
   return capped;
 }
 
@@ -156,6 +183,7 @@ export function unregister(host: object): void {
   hosts.delete(host);
   r.stop();
   light.detach(host);
+  announce();
   if (hosts.size === 0) { unwatchMotion(); releaseTilt?.(); releaseTilt = null; }
 }
 
@@ -177,6 +205,7 @@ export const probe = {
     handle = null;
     for (const [host, r] of hosts) { r.stop(); light.detach(host); }
     hosts.clear();
+    announce();
     unwatchMotion();
     releaseTilt?.();
     releaseTilt = null;

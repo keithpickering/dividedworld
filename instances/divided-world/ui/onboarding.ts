@@ -35,6 +35,11 @@ export const onboarding: OnboardingUi = Object.freeze({
       title: 'That is a card',
       line: 'Press a card\'s mark to open the Lens. It says what the card is doing to the post and how it ends.',
     },
+    shine: {
+      title: 'This post is shiny',
+      line: 'Tilt your phone and the light moves across it, like tilting a real foil card.',
+      action: 'Turn on tilt',
+    },
   }),
   letter: [
     '## After nine years of development',
