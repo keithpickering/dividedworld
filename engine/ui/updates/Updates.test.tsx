@@ -14,6 +14,7 @@ import type { Instance } from '../../rules/types.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { UpdatesScreen } from './Updates.tsx';
+import { LoadedThread } from '../loaded.tsx';
 
 beforeEach(() => { localStorage.clear(); });
 afterEach(() => { vi.restoreAllMocks(); });
@@ -255,7 +256,7 @@ describe('a thread spun from an update', () => {
     const w = world();
     Element.prototype.scrollIntoView = vi.fn();
     const spun = must(await w.fake.spin(w.newest, w.pipe, 'Pinned forever', 'Argue.'));
-    renderIn(w.fake, <ThreadScreen thread={spun.thread.id} />, { path: `/t/${spun.thread.id}`, instance });
+    renderIn(w.fake, <LoadedThread thread={spun.thread.id} />, { path: `/t/${spun.thread.id}`, instance });
     const origin = await screen.findByRole('group', { name: 'Origin' });
     await waitFor(() => expect(within(origin).getByText('Traps now bite board cards')).toBeInTheDocument());
     expect(within(origin).getByText('The trap was right to be offended.')).toBeInTheDocument();

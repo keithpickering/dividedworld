@@ -8,12 +8,13 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Frame } from '../frame/Frame.tsx';
 import { IndexScreen } from '../index/Index.tsx';
 import type { World } from '../story.tsx';
+import { LoadedIndex } from '../loaded.tsx';
 
 /** No one signed in: who the front door is for. */
 const visitor: World = () => {};
 
 function FrontDoorStory() {
-  return <Frame><IndexScreen /></Frame>;
+  return <Frame><LoadedIndex /></Frame>;
 }
 
 const meta: Meta<typeof FrontDoorStory> = {

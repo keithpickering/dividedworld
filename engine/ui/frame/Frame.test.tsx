@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -6,10 +7,11 @@ import { ALERTS_UNREAD_BOUND } from '../data/api.ts';
 import { KayfaProvider, type Kayfa } from '../context.tsx';
 import { PlayerProvider } from '../player.tsx';
 import { RouterProvider } from '../router.tsx';
+import { Routes } from '../routes.tsx';
 import { testGlass } from '../test-world.tsx';
 import { boardPlace, forgetBoard, keepBoardPlace } from '../glass/back.ts';
 import { boardSwitch } from '../glass/board.ts';
-import { Link } from '../router.tsx';
+import { Link, useLocation } from '../router.tsx';
 import { Frame } from './Frame.tsx';
 
 const mine = (id: string, name: string, cls = 'heel'): MyCharacter => ({
@@ -394,6 +396,18 @@ describe('from the Task 3 quality review', () => {
     await userEvent.click(await screen.findByRole('link', { name: 'General' }));
     expect(screen.getByRole('main')).toHaveFocus();
   });
+  test('a page that put focus inside itself as it arrived keeps it: the frame takes focus only where the page left none', async () => {
+    /* The page's effects run before the frame's, as a screen that came with the move does (a spun thread's ORIGIN box). */
+    function Placing() {
+      const path = useLocation().path;
+      const box = useRef<HTMLButtonElement>(null);
+      useEffect(() => { if (path === '/b/general') box.current?.focus(); }, [path]);
+      return <button ref={box} type="button">placed</button>;
+    }
+    setup(true, undefined, <Placing />);
+    await userEvent.click(await screen.findByRole('link', { name: 'General' }));
+    expect(screen.getByRole('button', { name: 'placed' })).toHaveFocus();
+  });
 });
 
 describe('the measured HUD height', () => {
@@ -696,5 +710,29 @@ describe('the HUD\'s Alerts button and the toasts (the alerts plan, Task 10)', (
       expect(menu.querySelector('.kb-hud-menu-glyph')).toBeNull();
       expect(document.querySelector('.kb-hud-name-probe')).toBeNull();
     });
+  });
+});
+
+describe('the frame while a page opens', () => {
+  test('main is busy and the frame carries the loading mark exactly while a click\'s load is out', async () => {
+    let answer!: (doc: unknown) => void;
+    const page = (
+      <Routes routes={[
+        { path: '/', render: () => <Link to="/slow">slow</Link> },
+        { path: '/slow', load: () => new Promise<unknown>((r) => { answer = r; }), render: () => <p>slow page</p> },
+      ]} />
+    );
+    setup(true, undefined, page);
+    const frame = () => document.querySelector('.kb-frame')!;
+    const main = () => screen.getByRole('main');
+    expect(main()).not.toHaveAttribute('aria-busy');
+    expect(frame()).not.toHaveAttribute('data-kb-loading');
+    fireEvent.click(await screen.findByRole('link', { name: 'slow' }));
+    await waitFor(() => expect(main()).toHaveAttribute('aria-busy', 'true'));
+    expect(frame()).toHaveAttribute('data-kb-loading');
+    await act(async () => { answer('ok'); });
+    await screen.findByText('slow page');
+    expect(main()).not.toHaveAttribute('aria-busy');
+    expect(frame()).not.toHaveAttribute('data-kb-loading');
   });
 });

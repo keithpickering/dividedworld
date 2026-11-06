@@ -14,6 +14,7 @@ import { ThreadScreen } from '../thread/Thread.tsx';
 import { createCalloutStore } from './Callout.tsx';
 import { LensHost } from './Lens.tsx';
 import type { CardUi, EffectProps } from './types.ts';
+import { LoadedThread } from '../loaded.tsx';
 
 beforeEach(() => { Element.prototype.scrollIntoView = vi.fn(); localStorage.clear(); });
 afterEach(() => { vi.restoreAllMocks(); });
@@ -42,7 +43,7 @@ function world(signedIn = true) {
   const play = (kind: string, on: Id) => { fake.clock.advance(60_000); return fake.seed.card(spritey, on, kind, { message: '' }); };
   return { fake, me, thread, second, third, fourth, play };
 }
-const open = (w: ReturnType<typeof world>, ui: readonly CardUi[]) => renderIn(w.fake, <ThreadScreen thread={w.thread} />, { path: `/t/${w.thread}`, instance, cards: ui });
+const open = (w: ReturnType<typeof world>, ui: readonly CardUi[]) => renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance, cards: ui });
 const tips = () => screen.queryAllByRole('note');
 const hinted = [cardUi('k1', { hint: 'Do the first thing.' }), cardUi('k2', { hint: 'Do the second thing.' }), cardUi('k3')];
 

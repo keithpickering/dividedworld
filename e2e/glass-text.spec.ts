@@ -53,6 +53,16 @@ const OVERLAP = 240;
 
 /** Every line of glass text on the page as it stands, read and judged; [] is clean. With `panel`, the lines of that overlay panel alone (the spotlight's), read against `overlays.tips`. */
 async function measure(page: Page, panel?: string): Promise<string[]> {
+  /*
+   * The smoke as it is drawn, not its ground alone: every smoke on the page has each layer's raster (Smoke.tsx marks it drawn), and
+   * each mask image is decoded, so the next frame paints it. A layer made late reads as solid ground, and a line on it as legible.
+   */
+  await page.waitForFunction(() => [...document.querySelectorAll('.kb-smoke-layers')].every((el) => el.hasAttribute('data-kb-drawn')), null, { timeout: 30_000 });
+  await page.evaluate(async () => {
+    const urls = new Set([...document.querySelectorAll<HTMLElement>('.kb-smoke-layer')].map((el) => /url\("?([^")]+)"?\)/u.exec(el.style.getPropertyValue('--kb-field-mask'))?.[1]).filter((u): u is string => !!u));
+    await Promise.all([...urls].map(async (src) => { const img = new Image(); img.src = src; await img.decode().catch(() => undefined); }));
+    await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+  });
   await page.addScriptTag({ content: GATHERER });
   const { phone, key, height } = await page.evaluate(() => ({
     phone: document.documentElement.dataset.kbLayout === 'phone',
@@ -334,7 +344,21 @@ test.describe('under high contrast', () => {
     expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-rankings-lead \(surface rankings\): under high contrast its brightest pixel, luminance 1\.0000, is not under the 7:1 ceiling 0\.1 for its color, rgb\(255, 255, 255\)$/u));
   });
 
-  test('the poison: one line left on the smoke is named', async ({ page }) => {
+  /*
+   * The smoke draws a layer only once its raster is made (engine/ui/glass/field.ts, a canvas encoded to a PNG off the main path),
+   * and until then shows its ground alone, which the high key reads as solid. Under load that came after the shots: CI read the
+   * line below as on solid ground and found nothing. The rasters are made late here, by 3s, so a measure that does not wait for
+   * the smoke to be drawn reads it bare.
+   */
+  for (const late of [false, true]) test(`the poison: one line left on the smoke is named${late ? ', with the smoke\'s rasters made late' : ''}`, async ({ page }) => {
+    if (late) {
+      await page.addInitScript(() => {
+        const toBlob = HTMLCanvasElement.prototype.toBlob;
+        HTMLCanvasElement.prototype.toBlob = function (this: HTMLCanvasElement, done: BlobCallback, ...rest: unknown[]) {
+          toBlob.call(this, (b) => setTimeout(() => done(b), 3000), ...(rest as [string?, number?]));
+        };
+      });
+    }
     await page.setViewportSize({ width: 1920, height: 1080 });
     await chooseHighContrast(page);
     await open(page, PAGES.find((p) => p.path === '/season?tab=rankings')!);

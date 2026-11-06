@@ -8,6 +8,7 @@
  * remember a tip on, so none shows.
  */
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useSyncExternalStore, type ReactNode, type RefObject } from 'react';
+import { useBoot } from '../boot.tsx';
 import { useKayfa } from '../context.tsx';
 import { usePlayer } from '../player.tsx';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
@@ -27,6 +28,7 @@ export const useTipsStore = (): TipsStore => useContext(TipsCtx);
 export function TipsProvider({ children }: { readonly children: ReactNode }) {
   const { api, instance, ui } = useKayfa();
   const { session } = usePlayer();
+  const boot = useBoot();
   const apiRef = useRef(api);
   apiRef.current = api;
   const store = useMemo(() => createTipsStore({ see: (key) => apiRef.current.seeTip(key), skip: () => apiRef.current.skipTips() }), []);
@@ -35,9 +37,11 @@ export function TipsProvider({ children }: { readonly children: ReactNode }) {
   useEffect(() => {
     let live = true;
     store.load(null);
-    if (session.signedIn) void api.preferences().then((p) => { if (live) store.load({ tips: p.tips, seen: p.tipsSeen, welcomedAt: p.welcomedAt }); }, () => {});
+    /* Boot's preferences are the account's for this page; a session that changed after boot reads its own. */
+    if (boot) store.load({ tips: boot.preferences.tips, seen: boot.preferences.tipsSeen, welcomedAt: boot.preferences.welcomedAt });
+    else if (session.signedIn) void api.preferences().then((p) => { if (live) store.load({ tips: p.tips, seen: p.tipsSeen, welcomedAt: p.welcomedAt }); }, () => {});
     return () => { live = false; };
-  }, [api, store, session.signedIn]);
+  }, [api, store, session.signedIn, boot]);
 
   const active = useSyncExternalStore(store.subscribe, store.active, store.active);
   const persona = instance.developer ?? DEFAULT_DEVELOPER;

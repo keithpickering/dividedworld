@@ -45,8 +45,8 @@ export function writeDraft(key: string, draft: Draft): void {
  * Who a draft is being written as. `as` follows the HUD while nothing is written; once something
  * is, a different HUD character is `changed`, and stays so until `confirm` or the HUD swaps back.
  */
-export function useWhoPosts(hud: Id | null, dirty: boolean) {
-  const [as, setAs] = useState<Id | null>(null);
+export function useWhoPosts(hud: Id | null, dirty: boolean, kept: Id | null = null) {
+  const [as, setAs] = useState<Id | null>(kept ?? hud);
   useEffect(() => {
     if (hud !== null && (as === null || !dirty)) setAs(hud);
   }, [hud, dirty, as]);

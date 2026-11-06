@@ -20,6 +20,7 @@ import type { Quadrant, Span } from '../../rules/types.ts';
 import type { BeyondPost, Reach } from '../../rules/cards.ts';
 import type { AlertKind } from '../../rules/alerts.ts';
 import type { Career } from '../../system/career.ts';
+import type { RecordKind } from '../profile/record.ts';
 
 export type Id = string;
 
@@ -1046,6 +1047,134 @@ export interface PlayMoment {
   readonly recorded: boolean;
 }
 
+/* ------------------------------------------------------------- one call per screen ---- */
+
+/*
+ * A screen's document is the answers of the methods its load calls today, in one request. Each field is typed as that method's
+ * answer (`Awaited<ReturnType<KayfaApi['tallies']>>` and so on), so the screens hydrate the stores they hydrate today from the
+ * same shapes, and the fake builds each document from its own methods. The `unread` of a page is the bell's count (`alertsUnread`).
+ */
+
+/** The frame and the HUD in one read (boot, 0097): what the first load asks of a dozen methods. */
+export interface Boot {
+  readonly settings: ScreenSettings;
+  /** `session().account`: null for a signed-in caller with no account yet. */
+  readonly account: Session['account'];
+  readonly preferences: Preferences;
+  readonly characters: Awaited<ReturnType<KayfaApi['myCharacters']>>;
+  /** The public face of each of the player's characters (`characters(ids)`), in the order of `characters`. */
+  readonly faces: Awaited<ReturnType<KayfaApi['characters']>>;
+  readonly wallet: Wallet;
+  readonly cards: Awaited<ReturnType<KayfaApi['myCards']>>;
+  readonly boards: Awaited<ReturnType<KayfaApi['boards']>>;
+  /** `isAdmin()`: whether the caller is an admin. */
+  readonly admin: boolean;
+  readonly unread: number;
+  readonly nextSettlementAt: Awaited<ReturnType<KayfaApi['nextSettlementAt']>>;
+  readonly lastSettledAt: Awaited<ReturnType<KayfaApi['lastSettledAt']>>;
+  /** The end of the newest settlement the caller has ledger lines in: `log().settlements[0]?.endsAt`. */
+  readonly newestSettlement: string | null;
+}
+
+/** The index (index_page, 0095): the boards, the characters who posted last on them, and who is online. */
+export interface IndexPage {
+  readonly boards: Awaited<ReturnType<KayfaApi['boards']>>;
+  readonly characters: Awaited<ReturnType<KayfaApi['characters']>>;
+  readonly presence: Presence;
+  readonly unread: number;
+}
+
+/** A board's page (board_page, 0095). `page` is the page shown, clamped to the board's last. */
+export interface BoardPage {
+  readonly board: Board;
+  readonly total: number;
+  readonly page: number;
+  readonly threads: readonly ThreadSummary[];
+  readonly pins: Awaited<ReturnType<KayfaApi['pinnedThreads']>>;
+  /** The board's own live card plays (`effectsAbove([], null, board)`). */
+  readonly banner: Awaited<ReturnType<KayfaApi['effectsAbove']>>;
+  readonly states: Awaited<ReturnType<KayfaApi['effectStates']>>;
+  readonly releases: Awaited<ReturnType<KayfaApi['myReleases']>>;
+  readonly tallies: Awaited<ReturnType<KayfaApi['tallies']>>;
+  readonly mine: Awaited<ReturnType<KayfaApi['myReactions']>>;
+  readonly reading: Awaited<ReturnType<KayfaApi['reading']>>;
+  readonly views: Awaited<ReturnType<KayfaApi['viewCounts']>>;
+  readonly characters: Awaited<ReturnType<KayfaApi['characters']>>;
+  readonly presence: Presence;
+  readonly unread: number;
+}
+
+/** A character on a thread's page: what the postbit draws, from the methods the thread reads people by. */
+export interface ThreadPerson {
+  readonly character: Character;
+  /** `characterStats([id])[id].posts` */
+  readonly posts: number;
+  /** `standingAmounts([id])[id]`, hundredths. */
+  readonly standing: number;
+  readonly reveals: readonly ClassReveal[];
+  readonly turns: readonly TurnAnnounced[];
+}
+
+/** A thread's page (thread_page, 0094): the page a page number or a seq lands on, with everything it draws. */
+export interface ThreadPage {
+  /** `thread(id)` */
+  readonly thread: ThreadSummary;
+  readonly page: number;
+  /** `acts(thread, first, last)` of the page. */
+  readonly acts: readonly Act[];
+  /** The authors and casters on the page. */
+  readonly people: readonly ThreadPerson[];
+  /** The plays on the page's posts (`cardsOnMany`). */
+  readonly plays: Awaited<ReturnType<KayfaApi['cardsOnMany']>>;
+  readonly above: Awaited<ReturnType<KayfaApi['effectsAbove']>>;
+  readonly faces: Awaited<ReturnType<KayfaApi['myFaceDown']>>;
+  readonly states: Awaited<ReturnType<KayfaApi['effectStates']>>;
+  readonly releases: Awaited<ReturnType<KayfaApi['myReleases']>>;
+  readonly tallies: Awaited<ReturnType<KayfaApi['tallies']>>;
+  readonly mine: Awaited<ReturnType<KayfaApi['myReactions']>>;
+  readonly spun: Awaited<ReturnType<KayfaApi['spunFromMany']>>;
+  /** `reading([thread])` */
+  readonly reading: Awaited<ReturnType<KayfaApi['reading']>>;
+  /** `board(thread.board)`; null where it cannot be read. */
+  readonly board: Board | null;
+  readonly following: boolean;
+  readonly presence: Presence;
+  readonly unread: number;
+}
+
+/** A character's profile page (profile_page, 0096). */
+export interface ProfilePage {
+  readonly character: Character;
+  readonly counts: CharacterCounts;
+  readonly standing: Awaited<ReturnType<KayfaApi['standingPlace']>>;
+  readonly settledAt: Awaited<ReturnType<KayfaApi['lastSettledAt']>>;
+  readonly season: Awaited<ReturnType<KayfaApi['season']>>;
+  readonly reveals: Awaited<ReturnType<KayfaApi['classReveals']>>;
+  readonly turns: Awaited<ReturnType<KayfaApi['turnsAnnounced']>>;
+  /** `characterActs(id, ['post', 'spin', 'card'], { offset: 0, limit: PROFILE_ROWS })` */
+  readonly acts: Awaited<ReturnType<KayfaApi['characterActs']>>;
+  /** The card plays' target Acts and the Turns' Acts (`actsById`). */
+  readonly targets: Awaited<ReturnType<KayfaApi['actsById']>>;
+  readonly seasons: Awaited<ReturnType<KayfaApi['characterReveals']>>;
+  readonly unread: number;
+}
+
+/** A page of a character's public record (record_page, 0096). */
+export interface RecordPage {
+  readonly kind: RecordKind;
+  readonly page: number;
+  readonly character: Character;
+  readonly counts: CharacterCounts;
+  readonly reveals: Awaited<ReturnType<KayfaApi['classReveals']>>;
+  readonly turns: Awaited<ReturnType<KayfaApi['turnsAnnounced']>>;
+  readonly seasons: Awaited<ReturnType<KayfaApi['characterReveals']>>;
+  /** The window of the character's own Acts (`characterActs`) starting at row `from`: for `all`, the extras ahead of the window push the read down by their number. */
+  readonly acts: Awaited<ReturnType<KayfaApi['characterActs']>>;
+  readonly windowFrom: number;
+  readonly targets: Awaited<ReturnType<KayfaApi['actsById']>>;
+  readonly unread: number;
+}
+
 export interface KayfaApi {
   /* Signing in: passwordless, through the account function only, in the same words for every address. */
   session(): Promise<Session>;
@@ -1225,6 +1354,20 @@ export interface KayfaApi {
    * through another mask never removes this one. Rejects on a refusal or a lost answer, so the caller counts failures.
    */
   here(place: PresencePlace, through: Id | null): Promise<Presence>;
+  /** The frame and the HUD in one read. Refused for a visitor, as the server refuses it. */
+  boot(): Promise<Boot>;
+  /** The index in one read. */
+  indexPage(): Promise<IndexPage>;
+  /** A board's page in one read; null where the board does not exist. `effectCards` names the cards the instance draws an effect for. */
+  boardPage(slug: string, page: number, effectCards: readonly string[]): Promise<BoardPage | null>;
+  /** A thread's page in one read, at a page or around a seq (the seq wins); null where the thread does not exist. Also the read for a next page and a gap. A null `perPage` is the instance's own postsPerPage, which the server reads (a first load does not know it yet). */
+  threadPage(thread: Id, at: { readonly page?: number | null; readonly seq?: number | null }, perPage: number | null, effectCards: readonly string[]): Promise<ThreadPage | null>;
+  /** A character's profile page in one read; null where the character is not shown. */
+  profilePage(character: Id): Promise<ProfilePage | null>;
+  /** A page of a character's record in one read; null where the character is not shown. */
+  recordPage(character: Id, kind: RecordKind, page: number): Promise<RecordPage | null>;
+  /** A place's presence box on its own: it marks no one present, which is `here`'s. */
+  presenceBox(place: PresencePlace): Promise<Presence>;
   /** Hides a mask of the player's from every presence box, or shows it again; answers whether it is now hidden. */
   setPresenceHidden(character: Id, hidden: boolean): Promise<Answer<boolean>>;
   preferences(): Promise<Preferences>;

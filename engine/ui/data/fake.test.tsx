@@ -2381,3 +2381,74 @@ describe('the contact is written as set_admin_contact writes it (0081), with the
     expect(await fake.adminContact()).toEqual(one('Keep', 'https://keep.example'));
   });
 });
+
+describe('a screen in one call is what the separate calls answer', () => {
+  /** A long thread (postsPerPage is 2, so many pages), reacted to, spun from, with a reveal and a card on a post. */
+  function longWorld() {
+    const w = world();
+    for (let i = 0; i < 9; i++) w.fake.seed.post(w.thread, i % 2 ? w.anaFace : w.boFace, `reply ${i}`);
+    return w;
+  }
+
+  test('threadPage of the long thread, by page and by seq, equals the existing calls for the same page', async () => {
+    const { fake, thread, anaFace, boFace } = longWorld();
+    const page = await fake.threadPage(thread, { page: 2 }, 3, []);
+    const summary = await fake.thread(thread);
+    const acts = await fake.acts(thread, 4, 6);
+    const ids = acts.map((a) => a.id);
+    expect(page?.thread).toEqual(summary);
+    expect(page?.page).toBe(2);
+    expect(page?.acts).toEqual(acts);
+    expect(page?.tallies).toEqual(await fake.tallies(ids));
+    expect(page?.mine).toEqual(await fake.myReactions(ids));
+    expect(page?.reading).toEqual(await fake.reading([thread]));
+    expect(page?.board).toEqual(await fake.board(summary!.board));
+    expect(page?.following).toBe(await fake.following(thread));
+    expect(page?.presence).toEqual(await fake.presenceBox({ kind: 'thread', thread }));
+    expect(page?.unread).toBe(await fake.alertsUnread());
+    expect(page?.people.map((p) => p.character)).toEqual(await fake.characters([anaFace, boFace].sort()));
+    expect(page?.people.map((p) => p.posts)).toEqual(Object.values(await fake.characterStats([anaFace, boFace].sort())).map((x) => x.posts));
+    expect(await fake.threadPage(thread, { seq: 4 }, 3, [])).toEqual(page);
+    expect(await fake.threadPage(thread, { page: 99 }, 3, [])).toMatchObject({ page: 4 });
+    expect(await fake.threadPage('00000000-0000-4000-8000-000000000000', { page: 1 }, 3, [])).toBeNull();
+  });
+
+  test('threadPage with no per_page is the instance\'s own postsPerPage, as the server reads it', async () => {
+    const { fake, thread } = longWorld();
+    const size = (await fake.settings()).postsPerPage;
+    expect(size).toBe(2);
+    expect(await fake.threadPage(thread, { page: 2 }, null, [])).toEqual(await fake.threadPage(thread, { page: 2 }, size, []));
+  });
+
+  test('presenceBox marks no one present, as here does', async () => {
+    const { fake, thread, anaFace } = world();
+    expect((await fake.presenceBox({ kind: 'thread', thread })).names).toEqual([]);
+    expect((await fake.here({ kind: 'thread', thread }, anaFace)).names.map((n) => n.name)).toEqual(['Ana Face']);
+    expect((await fake.presenceBox({ kind: 'thread', thread })).names.map((n) => n.name)).toEqual(['Ana Face']);
+  });
+
+  test('boardPage, indexPage, profilePage, recordPage and boot are built of the existing calls\' answers', async () => {
+    const { fake, thread, anaFace } = longWorld();
+    const boards = await fake.boards();
+    const general = boards.find((b) => b.slug === 'general')!;
+    const board = await fake.boardPage('general', 1, []);
+    expect(board).toMatchObject({ board: await fake.board('general'), total: general.threadCount, page: 1, pins: [], banner: [] });
+    expect(board?.threads).toEqual((await fake.threads(general.id, { offset: 0, limit: 20 })).threads);
+    expect(board?.views).toEqual(await fake.viewCounts([thread]));
+    expect(await fake.boardPage('nowhere', 1, [])).toBeNull();
+    const index = await fake.indexPage();
+    expect(index.boards).toEqual(boards);
+    expect(index.characters).toEqual(await fake.characters(boards.flatMap((b) => (b.lastCharacter ? [b.lastCharacter] : [])).filter((id, i, all) => all.indexOf(id) === i)));
+    const profile = await fake.profilePage(anaFace);
+    expect(profile).toMatchObject({ counts: await fake.characterCounts(anaFace), standing: await fake.standingPlace(anaFace), settledAt: await fake.lastSettledAt(), season: await fake.season() });
+    expect(profile?.character).toEqual((await fake.characters([anaFace]))[0]);
+    expect(profile?.acts).toEqual(await fake.characterActs(anaFace, ['post', 'spin', 'card'], { offset: 0, limit: 5 }));
+    expect(await fake.profilePage('00000000-0000-4000-8000-000000000000')).toBeNull();
+    const record = await fake.recordPage(anaFace, 'post', 2);
+    expect(record).toMatchObject({ kind: 'post', page: 2, windowFrom: 20, acts: await fake.characterActs(anaFace, ['post'], { offset: 20, limit: 20 }), counts: await fake.characterCounts(anaFace) });
+    expect((await fake.recordPage(anaFace, 'nonsense' as never, 0))).toMatchObject({ kind: 'all', page: 1, windowFrom: 0 });
+    const boot = await fake.boot();
+    expect(boot).toMatchObject({ settings: await fake.settings(), preferences: await fake.preferences(), characters: await fake.myCharacters(), wallet: await fake.wallet(), boards, unread: await fake.alertsUnread() });
+    expect(boot.faces.map((f) => f.name)).toEqual(['Ana Face', 'Ana Heel']);
+  });
+});

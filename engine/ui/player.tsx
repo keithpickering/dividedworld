@@ -17,7 +17,7 @@
  * is where the orbs' cascade runs from.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { Answer, Bought, Estimate, HeldCard, Id, KayfaApi, MyCharacter, Session, Wallet } from './data/api.ts';
+import type { Answer, Boot, Bought, Estimate, HeldCard, Id, KayfaApi, MyCharacter, Session, Wallet } from './data/api.ts';
 import { clearDrafts } from './composer/draft.ts';
 
 export interface Player {
@@ -85,9 +85,33 @@ interface Held {
 /** Nothing read yet for `account`. */
 const emptyFor = (account: Id | null): Held => ({ for: account, characters: [], chosen: null, wallet: null, walletSeen: null, cards: [], loaded: false });
 
-export function PlayerProvider({ api, children }: { readonly api: KayfaApi; readonly children: ReactNode }) {
-  const [session, setSession] = useState<Session>(SIGNED_OUT);
-  const [sessionKnown, setSessionKnown] = useState(false);
+/**
+ * What the first load already read (the forum-load plan, Task 12): the session, boot's rows and the estimate if it landed in time
+ * (else its ask, still out, which lands in the provider on its own). The provider starts from these, reads none of them again on mount,
+ * and refreshes as it always did.
+ */
+export interface PlayerInitial {
+  readonly session: Session;
+  readonly boot: Boot | null;
+  readonly estimate: Estimate | null;
+  /** The estimate's ask when it had not landed: its answer is taken as an ask's own; a failure is no estimate. */
+  readonly estimateLater?: Promise<Estimate | null>;
+}
+
+/** The rows boot brought, held for its account as a refresh would hold them. */
+function heldFrom(boot: Boot): Held {
+  const account = boot.account;
+  const seen = account ? store.get(`kb-wallet-seen:${account}`) : null;
+  return {
+    for: account, characters: boot.characters, wallet: boot.wallet, cards: boot.cards, loaded: true,
+    walletSeen: seen !== null && Number(seen) !== boot.wallet.balance ? Number(seen) : null,
+    chosen: account ? store.get(hudKey(account)) : null,
+  };
+}
+
+export function PlayerProvider({ api, initial, children }: { readonly api: KayfaApi; readonly initial?: PlayerInitial; readonly children: ReactNode }) {
+  const [session, setSession] = useState<Session>(() => initial?.session ?? SIGNED_OUT);
+  const [sessionKnown, setSessionKnown] = useState(() => initial !== undefined);
   /*
    * What the provider holds is kept with the account it was read for, and read in render against
    * the account signed in now: a value read for another account, or for none, reads as not loaded
@@ -95,8 +119,10 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
    * load never shows the empty roster for a commit, and the next player on a shared device never
    * sees the last one's characters, wallet, cards or HUD character (issue #56).
    */
-  const [held, setHeld] = useState<Held>(() => emptyFor(null));
-  const [estimateHeld, setEstimateHeld] = useState<{ readonly for: Id | null; readonly estimate: Estimate | null }>({ for: null, estimate: null });
+  const [held, setHeld] = useState<Held>(() => (initial?.boot ? heldFrom(initial.boot) : emptyFor(null)));
+  const [estimateHeld, setEstimateHeld] = useState<{ readonly for: Id | null; readonly estimate: Estimate | null }>(() => ({ for: initial?.boot ? initial.boot.account : null, estimate: initial?.boot ? initial.estimate : null }));
+  /* What the first load read, for the account it was read for: nothing is read again for it on mount (until the account changes). */
+  const adopted = useRef(initial?.boot ?? null);
 
   const account = session.account;
   /* Nothing read yet for the account signed in now: one value per account, not a new one each render. */
@@ -130,8 +156,22 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
 
   useEffect(() => {
     let live = true;
-    void api.session().then((s) => { if (live) { setSession(s); setSessionKnown(true); } });
+    /*
+     * A session that cannot be read is read as signed out, so a screen shows its sign-in line rather than nothing. With the first load's
+     * session in hand it is read once more here, since a change between the first load and this effect (before the subscription below) would
+     * otherwise be lost: that read is taken only if no change was heard meanwhile and it differs from what is held, and a failure keeps it.
+     */
+    let heard = false;
+    void api.session().then(
+      (s) => {
+        if (!live) return;
+        if (!initial) { setSession(s); setSessionKnown(true); return; }
+        if (!heard && (s.signedIn !== initial.session.signedIn || s.account !== initial.session.account)) setSession(s);
+      },
+      () => { if (live && !initial) { setSession(SIGNED_OUT); setSessionKnown(true); } },
+    );
     const off = api.onSession((s) => {
+      heard = true;
       /*
        * Signing out, or switching to another account, takes the account's unsent drafts off this
        * device; signed in with no account for a moment (a token refresh, a whoami that failed) keeps them.
@@ -142,10 +182,16 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
       setSessionKnown(true);
     });
     return () => { live = false; off(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `initial` is the first load's, read on mount only
   }, [api]);
 
   useEffect(() => {
-    if (account) void refresh();
+    /* The first load's rows are kept only for the account they were read for: any other state, signed out included, forgets them, so signing in again as the same account reads afresh. */
+    if (adopted.current && adopted.current.account !== account) adopted.current = null;
+    if (!account) return;
+    /* The rows the first load brought are the account's already: read again only for another account, or after an action. */
+    if (adopted.current?.account === account) return;
+    void refresh();
   }, [account, refresh]);
 
   /*
@@ -153,7 +199,8 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
    * freshAfter. Each account has its own generation: what an earlier one asked lands nowhere.
    */
   const asking = useRef<{ gen: number; out: boolean; held: boolean; timer: ReturnType<typeof setTimeout> | null; freshAt: number }>({ gen: 0, out: false, held: false, timer: null, freshAt: 0 });
-  const ask = useCallback(() => {
+  /* One ask at a time: `source` is an ask already out (the first load's), else the estimate is asked now. */
+  const run = useCallback((source?: Promise<Estimate | null>) => {
     const a = asking.current;
     /*
      * An ask is its account's: kept by something that outlived the account (the picker's choose,
@@ -167,16 +214,16 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
      * cleanup that resets them. This one is the check the tests hold.
      */
     const gen = a.gen;
-    const later = (ms: number) => { a.timer = setTimeout(() => { if (a.gen !== gen || current.current !== account) return; a.timer = null; a.held = false; ask(); }, ms); };
+    const later = (ms: number) => { a.timer = setTimeout(() => { if (a.gen !== gen || current.current !== account) return; a.timer = null; a.held = false; run(); }, ms); };
     const wait = a.freshAt - Date.now();
-    if (a.out || wait > 0) {
+    if (!source && (a.out || wait > 0)) {
       a.held = true;
       if (!a.out && a.timer === null) later(wait);
       return;
     }
     a.out = true;
-    void api.estimate().then((e) => {
-      if (a.gen !== gen || current.current !== account) return;
+    void (source ?? api.estimate()).then((e) => {
+      if (a.gen !== gen || current.current !== account || !e) return;
       setEstimateHeld({ for: account, estimate: e });
       /* Counted from receipt, as the function's header says: freshAfter - asOf from now. */
       const hold = e.asOf && e.freshAfter ? Date.parse(e.freshAfter) - Date.parse(e.asOf) : 0;
@@ -187,11 +234,20 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
       if (a.held && a.timer === null) later(Math.max(0, a.freshAt - Date.now()));
     });
   }, [api, account]);
+  const ask = useCallback(() => run(), [run]);
 
   useEffect(() => {
     if (!account) return;
-    ask();
     const a = asking.current;
+    const first = adopted.current;
+    if (first?.account === account) {
+      /* The first load's estimate: held already if it landed in time, else its ask is taken as the one out; a failed one is no estimate. */
+      const e = initial?.estimate ?? null;
+      if (e) {
+        const hold = e.asOf && e.freshAfter ? Date.parse(e.freshAfter) - Date.parse(e.asOf) : 0;
+        a.freshAt = Date.now() + Math.max(0, hold);
+      } else run(initial?.estimateLater ?? Promise.resolve(null));
+    } else ask();
     return () => {
       if (a.timer) clearTimeout(a.timer);
       a.gen += 1;
@@ -200,7 +256,8 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
       a.held = false;
       a.freshAt = 0;
     };
-  }, [account, ask]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `initial` is the first load's, read for its own account only
+  }, [account, ask, run]);
 
   const buyCard = useCallback(async (card: string): Promise<Answer<Bought>> => {
     const bought = await api.buyCard(card);

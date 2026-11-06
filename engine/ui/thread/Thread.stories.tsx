@@ -5,6 +5,7 @@ import { useKayfa } from '../context.tsx';
 import type { Fake } from '../data/fake.ts';
 import type { World } from '../story.tsx';
 import { ThreadScreen } from './Thread.tsx';
+import { LoadedThread } from '../loaded.tsx';
 
 /** The screen for the thread of a story's world with this title: a story cannot know the id its world gives it. */
 function ThreadTitled({ title }: { readonly title: string }) {
@@ -18,7 +19,7 @@ function ThreadTitled({ title }: { readonly title: string }) {
       }
     })();
   }, [api, title]);
-  return id ? <ThreadScreen thread={id} /> : <div aria-busy="true" />;
+  return id ? <LoadedThread thread={id} /> : <div aria-busy="true" />;
 }
 
 const meta: Meta<typeof ThreadTitled> = { title: 'Thread/Thread', component: ThreadTitled };

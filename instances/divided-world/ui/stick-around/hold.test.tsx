@@ -22,6 +22,7 @@ import type { Act } from '../../../../engine/ui/data/api.ts';
 import type { CardPlay, CardUi, EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { HoldStage, StickAroundEffect } from './Effect.tsx';
 import { ESC_QUIET_MS } from './takeover.ts';
+import { LoadedThread } from '../../../../engine/ui/loaded.tsx';
 
 const SENTENCE = 'I have read every word of Spritey\'s changelog and I feel changed.';
 const WINDOW = 800;
@@ -94,7 +95,7 @@ type World = ReturnType<typeof world>;
 async function openThread(w: World, cards: readonly CardUi[] = instanceUi.cards) {
   vi.useRealTimers();
   geometry.post = { top: 5000, bottom: 5320 };
-  const rendered = renderIn(w.fake, <ThreadScreen thread={w.thread} />, { path: `/t/${w.thread}?page=1`, cards });
+  const rendered = renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}?page=1`, cards });
   await screen.findByText(/Please read it this time/u);
   await new Promise((r) => setTimeout(r, TUNING.settleMs + 60));
   vi.useFakeTimers();
@@ -205,7 +206,7 @@ describe('the take-over', () => {
       const tips = useTipsStore();
       return <p data-testid="held">{useSyncExternalStore(tips.subscribe, tips.holding, tips.holding) ? 'held' : 'free'}</p>;
     }
-    renderIn(w.fake, <TipsProvider><Held /><ThreadScreen thread={w.thread} /></TipsProvider>, { path: `/t/${w.thread}?page=1`, cards: instanceUi.cards });
+    renderIn(w.fake, <TipsProvider><Held /><LoadedThread thread={w.thread} /></TipsProvider>, { path: `/t/${w.thread}?page=1`, cards: instanceUi.cards });
     await screen.findByText(/Please read it this time/u);
     await new Promise((r) => setTimeout(r, TUNING.settleMs + 60));
     vi.useFakeTimers();

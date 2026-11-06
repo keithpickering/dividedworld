@@ -5,6 +5,7 @@ import type { Id } from '../data/api.ts';
 import type { World } from '../story.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { userEvent, within } from 'storybook/test';
+import { LoadedThread } from '../loaded.tsx';
 
 function ThreadTitled({ title }: { readonly title: string }) {
   const { api } = useKayfa();
@@ -17,7 +18,7 @@ function ThreadTitled({ title }: { readonly title: string }) {
       }
     })();
   }, [api, title]);
-  return id ? <ThreadScreen thread={id} /> : <div aria-busy="true" />;
+  return id ? <LoadedThread thread={id} /> : <div aria-busy="true" />;
 }
 
 const meta: Meta<typeof ThreadTitled> = { title: 'Reactions/Reactions', component: ThreadTitled, args: { title: 'Hot take' } };
