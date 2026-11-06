@@ -52,7 +52,7 @@ import { useKayfa } from '../../../../engine/ui/context.tsx';
 import type { CardPlay, CardView, EffectProps, KitControl } from '../../../../engine/ui/cards/types.ts';
 import { cursor, type CursorMode } from './cursor.ts';
 import { readLines } from './lines.ts';
-import { MAX_DPR, paint, paintSplat, type Geometry, type PaintLayer } from './paint.ts';
+import { MAX_CANVAS_PX, MAX_DPR, paint, paintSplat, type Geometry, type PaintLayer } from './paint.ts';
 import {
   BRUSH_PX, LayerInk, PEN_PX, ROW_PX, SWEEP_BRUSH_ROWS, bandsOf, brushOf, coveredLines, fits, fitStroke, minStepOf, sweepStep, topLayer,
   type Pt, type Stroke, type Sweep, type TextLine,
@@ -77,8 +77,6 @@ const REFRESH_MS = 150;
 /** A press held this long on ink grabs it (a finger), and one that moves this far (px) before then is a swipe, up or down the page's and sideways a wipe. */
 export const HOLD_MS = 180;
 export const SLOP_PX = 8;
-/** The most pixels one post's ink canvas holds: a tall phone body lowers the density rather than hold a bigger canvas. */
-const MAX_INK_PIXELS = 4_000_000;
 /** The ink of a play whose config carries none we can draw (the server keeps one, so this is a safeguard). */
 const FALLBACK_INK = '#ff2bd6';
 
@@ -141,11 +139,16 @@ interface Live { readonly layer: number; readonly tool: 'wash' | 'ink'; readonly
 /** What a finger is doing: waiting to be told apart, wiping, or the page's. */
 interface Gesture { readonly id: number; readonly x0: number; readonly y0: number; cx: number; cy: number; state: 'wait' | 'wipe' | 'page'; timer: ReturnType<typeof setTimeout> | null }
 
-/** The pixel density of a box's ink canvas: the screen's, at most `MAX_DPR`, and low enough that the canvas holds at most `MAX_INK_PIXELS`. */
+/**
+ * The pixel density of a box's ink canvas: the screen's, at most `MAX_DPR`, and low enough that the canvas, ceil(box ·
+ * density) both ways, holds at most `MAX_CANVAS_PX`: a tall phone body lowers the density rather than hold a bigger canvas.
+ */
 function densityOf(box: Box): number {
   const screen = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
   const area = box.w * box.h;
-  return Math.min(MAX_DPR, screen, area > 0 ? Math.sqrt(MAX_INK_PIXELS / area) : MAX_DPR);
+  let d = Math.min(MAX_DPR, screen, area > 0 ? Math.sqrt(MAX_CANVAS_PX / area) : MAX_DPR);
+  while (d > 0 && Math.ceil(box.w * d) * Math.ceil(box.h * d) > MAX_CANVAS_PX) d *= 0.9999;
+  return d;
 }
 
 /**
@@ -197,7 +200,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   /** How many layers' ink grids are held: none for a post that has left the viewport. */
   const [held, setHeld] = useState(0);
 
-  /** In the thread the frame is the post's whole body and the ink runs to its borders, the reactions drawn in front of it, and the header and footer bars outside it. */
+  /** In the thread the box is the post's whole body (the cell), the frame sits inside it, and the ink runs from the frame out to the body's borders, what the engine lifts drawn in front of it. */
   const bleed = place === 'thread';
   const frameRef = useRef<HTMLDivElement>(null);
   const layoutRef = useRef<HTMLDivElement>(null);

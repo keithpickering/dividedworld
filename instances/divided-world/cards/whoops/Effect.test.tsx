@@ -908,7 +908,7 @@ describe('the body\'s box', () => {
     const { root } = mount();
     const canvas = root.querySelector('canvas[data-kb-effect-ink]') as HTMLCanvasElement;
     expect(canvas.width).toBeLessThan(390);
-    expect(canvas.width * canvas.height).toBeLessThanOrEqual(4_000_000 * 1.01);
+    expect(canvas.width * canvas.height).toBeLessThanOrEqual(4_000_000);
   });
 
   test('the suds canvas is the ink\'s size and place, registered while the post is near with its box and density, and let go when it leaves', () => {
