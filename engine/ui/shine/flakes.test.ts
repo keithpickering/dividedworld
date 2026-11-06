@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, test } from 'node:test';
@@ -12,6 +13,8 @@ import { burst, burstProbe, drawBurst, makeFlakes, MAX_IN_FLIGHT, release, sampl
 const GLITTER = ['#ff3b4a', '#ff9a2e', '#ffd23f', '#3ddc6b', '#2fd6ff', '#4a6bff', '#b65cff', '#dfe4ec', '#dfe4ec', '#dfe4ec'];
 const HOLO = 7;
 const BOX = { w: 988, h: 300 };
+/* Digest of what `draw` painted for `shot()` before the draw was restructured to one transform per flake. */
+const LOOK = 'ef2c407d43c607a7ce58c815efdec0b3a104d064d6e3ecb51b6cf81eaa6a8ed1';
 const make = (seed = 'p1', box = BOX): Flakes => makeFlakes({ seed, box, inks: GLITTER, holo: HOLO, density: 70 });
 
 const tokens = tokensOf(readFileSync(join(process.cwd(), 'engine/ui/tokens.css'), 'utf8'));
@@ -44,6 +47,38 @@ function recorder() {
     },
   }) as unknown as CanvasRenderingContext2D;
   return { ctx, calls, alphas, styles, stops, strokes, count: (k: string) => calls.filter((c) => c === k).length };
+}
+
+/**
+ * A context that tracks the transform, so a draw can be judged by what lands where (the corners of each rect in canvas px, the
+ * fill it carries) and not by how it got there: `save/translate/rotate` and a single `setTransform` give the same lines.
+ * It starts at the host's base transform, the density scale.
+ */
+function tracked(density = 1) {
+  type M = [number, number, number, number, number, number];
+  let m: M = [density, 0, 0, density, 0, 0];
+  const stack: M[] = [];
+  const lines: string[] = [];
+  const n = { save: 0, restore: 0, setTransform: 0, fillStyleSets: 0, fillRect: 0, drawImage: 0 };
+  let style = '', alpha = 1, comp = 'source-over';
+  const r3 = (x: number): string => String(+x.toFixed(3));
+  const at = (x: number, y: number): string => `${r3(m[0] * x + m[2] * y + m[4])},${r3(m[1] * x + m[3] * y + m[5])}`;
+  const ctx = {
+    save: () => { n.save++; stack.push([...m]); },
+    restore: () => { n.restore++; m = stack.pop() ?? m; },
+    translate: (x: number, y: number) => { m = [m[0], m[1], m[2], m[3], m[4] + m[0] * x + m[2] * y, m[5] + m[1] * x + m[3] * y]; },
+    rotate: (t: number) => {
+      const c = Math.cos(t), s = Math.sin(t);
+      m = [m[0] * c + m[2] * s, m[1] * c + m[3] * s, -m[0] * s + m[2] * c, -m[1] * s + m[3] * c, m[4], m[5]];
+    },
+    setTransform: (...a: number[]) => { n.setTransform++; m = a as M; },
+    fillRect: (x: number, y: number, w: number, h: number) => { n.fillRect++; lines.push(`rect ${style} ${[at(x, y), at(x + w, y), at(x + w, y + h), at(x, y + h)].join(' ')}`); },
+    drawImage: (_i: unknown, x: number, y: number, w: number, h: number) => { n.drawImage++; lines.push(`img ${comp} ${r3(alpha)} ${at(x, y)} ${at(x + w, y + h)}`); },
+    get fillStyle() { return style; }, set fillStyle(v: string) { n.fillStyleSets++; style = v; },
+    get globalAlpha() { return alpha; }, set globalAlpha(v: number) { alpha = v; },
+    get globalCompositeOperation() { return comp; }, set globalCompositeOperation(v: string) { comp = v; },
+  };
+  return { ctx: ctx as unknown as CanvasRenderingContext2D, n, lines, matrix: () => m, digest: () => createHash('sha256').update([...lines].sort().join('\n')).digest('hex') };
 }
 
 const all = (f: Flakes) => [...f.settled];
@@ -129,6 +164,41 @@ describe('flakes', () => {
     }
   });
 
+  /* The look, pinned: what the pre-restructure code drew (every rect's corners in canvas px and its fill, every flare), as a
+     digest of the sorted lines, for a seed, three lights, both boards, at density 2. The draw order of overlapping flakes is
+     not part of the look; where each one lands and what color it is, is. */
+  const SHOT: Array<[string, { x: number; y: number } | 'lit', { lo: number; hi: number }, number]> = [
+    ['light board', { x: -0.35, y: -0.45 }, bands.light, 1234],
+    ['flares', 'lit', { lo: 0.1, hi: 1 }, 5],
+    ['dark board', { x: 0.3, y: 0.2 }, bands.dark, 777],
+  ];
+  function shot(): { digest: string; images: number; t: ReturnType<typeof tracked> } {
+    const f = makeFlakes({ seed: 'look', box: BOX, inks: GLITTER, holo: HOLO, density: 70, star: {} as CanvasImageSource });
+    landEverything(f);
+    const t = tracked(2);
+    for (const [, l, band, now] of SHOT) f.draw(t.ctx, l === 'lit' ? { x: f.settled[3]!.nx, y: f.settled[3]!.ny } : l, band, now, true, 2);
+    return { digest: t.digest(), images: t.n.drawImage, t };
+  }
+
+  test('the look is unchanged: the same rects, colors and flares land in the same places', () => {
+    const s = shot();
+    assert.ok(s.images >= 1, 'the flare scene has flares');
+    assert.equal(s.digest, LOOK);
+  });
+
+  test('a redraw costs no save per flake, and a fill color is set once per color, not per flake', () => {
+    const f = makeFlakes({ seed: 'look', box: BOX, inks: GLITTER, holo: HOLO, density: 70, star: {} as CanvasImageSource });
+    landEverything(f);
+    const t = tracked(2);
+    f.draw(t.ctx, { x: -0.35, y: -0.45 }, bands.light, 1234, true, 2);
+    const seen = new Set(t.lines.filter((l) => l.startsWith('rect ')).map((l) => l.split(' ')[1]));
+    assert.equal(t.n.fillRect, f.settled.length);
+    assert.ok(t.n.save + t.n.restore <= 2, `${t.n.save} saves and ${t.n.restore} restores for ${f.settled.length} flakes`);
+    assert.ok(t.n.fillStyleSets <= seen.size + 2, `${t.n.fillStyleSets} fill assignments for ${seen.size} colors`);
+    assert.ok(t.n.fillStyleSets < f.settled.length / 4, `${t.n.fillStyleSets} fill assignments for ${f.settled.length} flakes`);
+    assert.deepEqual(t.matrix(), [2, 0, 0, 2, 0, 0], 'the transform is back to the density scale');
+  });
+
   test('drawing makes one color string per distinct color, not per flake', () => {
     const f = make();
     landEverything(f);
@@ -184,6 +254,36 @@ describe('the burst', () => {
     assert.equal(f.flying, 0);
     assert.equal(stepBurst(f, 16), false);
     assert.equal(burstProbe.inFlight(), 0);
+  });
+
+  test('reduced motion turned on mid-burst lands every flake at once and gives the cap back', () => {
+    const f = make('mid', { w: 400, h: 200 });
+    burst(f, 0);
+    assert.equal(stepBurst(f, 16), true);
+    assert.ok(f.flying > 0);
+    motion = 'reduce';
+    assert.equal(stepBurst(f, 32), false);
+    assert.equal(f.flying, 0);
+    assert.equal(f.settled.length, f.total);
+    assert.equal(new Set(f.settled).size, f.total, 'each flake once');
+    assert.equal(burstProbe.inFlight(), 0);
+  });
+
+  /* The page-wide cap decides how many of a burst fly and how many land at once; where every flake ends up is the post's own. */
+  test('the settled outcome is the same whether or not another post used up the cap', () => {
+    const keys = (f: Flakes) => f.settled.map((k) => `${k.x},${k.y},${k.ink}`).sort();
+    const alone = make('cap', { w: 400, h: 200 });
+    landEverything(alone);
+    burstProbe.reset();
+    const hog = make('hog');
+    burst(hog, 0);
+    assert.equal(burstProbe.inFlight(), MAX_IN_FLIGHT);
+    const crowded = make('cap', { w: 400, h: 200 });
+    burst(crowded, 0);
+    assert.equal(crowded.flying, 0, 'no room: all of it lands at once');
+    landEverything(crowded);
+    assert.deepEqual(keys(crowded), keys(alone));
+    assert.equal(crowded.settled.length, crowded.total);
   });
 
   test('a full-width post is capped: 1,500 of its 3,600 fly and the rest are down at once', () => {
@@ -289,6 +389,21 @@ describe('release', () => {
     const b = make('rel-b');
     burst(b, 20);
     assert.equal(b.flying, MAX_IN_FLIGHT, 'the second post flies its full share');
+  });
+
+  test('releasing twice while another post flies leaves that post its share', () => {
+    const a = make('rel-d'), b = make('rel-e');
+    burst(a, 0);
+    burst(b, 0);
+    assert.equal(burstProbe.inFlight(), MAX_IN_FLIGHT, 'b found no room');
+    release(a);
+    assert.equal(burstProbe.inFlight(), 0);
+    const c = make('rel-f');
+    burst(c, 5);
+    assert.equal(burstProbe.inFlight(), MAX_IN_FLIGHT);
+    release(a); release(a);
+    assert.equal(burstProbe.inFlight(), MAX_IN_FLIGHT, 'a second release of a is a no-op');
+    assert.equal(a.settled.length, a.total);
   });
 
   test('releasing a post that never burst changes nothing', () => {

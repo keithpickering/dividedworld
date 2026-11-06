@@ -22,13 +22,22 @@ const fakeCtx = new Proxy({}, {
   },
 });
 let fine = true;
+let reduceDevice = false;
 let clock = 0;
+/* What the page was asked: media queries made, listeners added and removed, rects measured. */
+const asked = { matchMedia: 0, adds: 0, removes: 0, rects: 0, styles: 0 };
+let queries: Array<{ q: string; ls: Set<(e: { matches: boolean }) => void> }> = [];
+/** Each host's rect, so the pointer's target can be found without measuring (what the browser tells an event). */
+let placed: Array<{ el: HTMLElement; left: number; top: number; w: number; h: number }> = [];
+const elAt = (x: number, y: number): Element =>
+  placed.find((p) => x >= p.left && x < p.left + p.w && y >= p.top && y < p.top + p.h)?.el ?? document.body;
 
 function host(left: number, top: number, w = 300, h = 300): HTMLElement {
   const el = document.createElement('div');
   /* The board's tokens, as the page resolves them on a light board: the band each flake is lent against. */
   for (const k of ['--kb-bg', ...POST_INK]) el.style.setProperty(k, light[k]!);
-  el.getBoundingClientRect = () => ({ left, top, right: left + w, bottom: top + h, width: w, height: h, x: left, y: top, toJSON() {} });
+  placed.push({ el, left, top, w, h });
+  el.getBoundingClientRect = () => (asked.rects++, { left, top, right: left + w, bottom: top + h, width: w, height: h, x: left, y: top, toJSON() {} });
   document.body.append(el);
   return el;
 }
@@ -36,6 +45,7 @@ function pointer(type: string, x: number, y: number, t?: number): PointerEvent {
   const e = new MouseEvent('pointermove', { clientX: x, clientY: y, bubbles: true });
   Object.defineProperty(e, 'pointerType', { value: type });
   Object.defineProperty(e, 'timeStamp', { value: t ?? (clock += 1) });
+  Object.defineProperty(e, 'target', { value: elAt(x, y) });
   return e as PointerEvent;
 }
 const move = (x: number, y: number, type = 'mouse') => window.dispatchEvent(pointer(type, x, y));
@@ -44,10 +54,25 @@ const layer = () => document.querySelector('canvas[data-kb-shine="cling"]');
 beforeEach(() => {
   vi.useFakeTimers();
   fine = true;
+  reduceDevice = false;
   clock = 0;
+  placed = []; queries = [];
+  Object.assign(asked, { matchMedia: 0, adds: 0, removes: 0, rects: 0, styles: 0 });
   drawn.fills.clear(); drawn.strokes.clear(); drawn.alphas.length = 0;
   document.documentElement.setAttribute('data-kb-motion', 'full');
-  vi.stubGlobal('matchMedia', (q: string) => ({ matches: q.includes('hover: hover') ? fine : false, addEventListener() {}, removeEventListener() {} }));
+  vi.stubGlobal('matchMedia', (q: string) => {
+    asked.matchMedia++;
+    const ls = new Set<(e: { matches: boolean }) => void>();
+    queries.push({ q, ls });
+    return {
+      get matches() { return q.includes('hover: hover') ? fine : q.includes('reduced-motion') ? reduceDevice : false; },
+      addEventListener(_t: string, fn: (e: { matches: boolean }) => void) { asked.adds++; ls.add(fn); },
+      removeEventListener(_t: string, fn: (e: { matches: boolean }) => void) { asked.removes++; ls.delete(fn); },
+    };
+  });
+  const realStyle = window.getComputedStyle.bind(window);
+  vi.stubGlobal('getComputedStyle', (el: Element) => (asked.styles++, realStyle(el)));
+  document.elementFromPoint = (x: number, y: number) => elAt(x, y);
   window.matchMedia = globalThis.matchMedia;
   vi.stubGlobal('requestAnimationFrame', () => 1);
   vi.stubGlobal('cancelAnimationFrame', () => {});
@@ -238,5 +263,87 @@ describe('the cling layer', () => {
     cling.tick(0);
     expect(cling.carried()).toBe(0);
     expect(cling.falling()).toBe(0);
+  });
+});
+
+describe('what the layer asks the page', () => {
+  /** A page of 20 posts, the first sticky. */
+  function crowd() {
+    const flakes = makeFlakes({ seed: 'crowd', box: { w: 300, h: 300 }, inks: GLITTER, holo: 7, density: 70 });
+    const hs = Array.from({ length: 20 }, (_, i) => host(i * 400, 0));
+    cling.register(hs[0]!, { sticky: true, flakes });
+    for (const h of hs.slice(1)) cling.register(h, {});
+    return hs;
+  }
+
+  it('asks the browser about the pointer and motion once, not on every pointer move', () => {
+    page();
+    for (let i = 0; i < 10; i++) cling.over(pointer('mouse', 10 + (i % 2) * 120, 100));
+    const early = asked.matchMedia;
+    for (let i = 0; i < 1000; i++) { cling.over(pointer('mouse', 10 + (i % 2) * 120, 100)); move(10 + (i % 2) * 120, 100); }
+    expect(asked.matchMedia).toBe(early);
+    expect(early).toBeLessThanOrEqual(2);
+  });
+
+  it('measures no post on a pointer move, however many are registered', () => {
+    crowd();
+    load();
+    expect(cling.carried()).toBeGreaterThan(0);
+    for (let i = 0; i < 400; i++) move(500 + (i % 2) * 120, 100);
+    expect(asked.rects).toBe(0);
+  });
+
+  it('measures at most the post a flake lands on, once, when it lands', () => {
+    const hs = crowd();
+    load();
+    for (let i = 0; i < 400 && cling.carried(); i++) move(hs.length * 400 - 700 + (i % 2) * 120, 100);
+    asked.rects = 0;
+    let landed = 0;
+    cling.register(hs[18]!, { landed: () => landed++ });
+    for (let t = 0; (cling.falling() || cling.carried()) && t < 10000; t += 16) cling.tick(t);
+    expect(landed).toBeGreaterThan(0);
+    expect(asked.rects).toBeLessThanOrEqual(landed);
+  });
+
+  it('reads a board\'s computed style at most once per 100 ms of pickups', () => {
+    page();
+    for (let i = 0; i < 60; i++) cling.over(pointer('mouse', 10 + (i % 2) * 120, 100, 5000 + i));
+    for (let i = 0; i < 60; i++) move(10 + (i % 2) * 120, 100);
+    expect(cling.carried()).toBeGreaterThan(5);
+    expect(asked.styles).toBeLessThanOrEqual(2);
+  });
+
+  it('follows the device when the pointer or motion query changes', () => {
+    page();
+    cling.over(pointer('mouse', 10, 100));
+    fine = false;
+    for (const q of queries.filter((x) => x.q.includes('hover: hover'))) for (const fn of q.ls) fn({ matches: false });
+    load();
+    expect(cling.carried()).toBe(0);
+    fine = true;
+    for (const q of queries.filter((x) => x.q.includes('hover: hover'))) for (const fn of q.ls) fn({ matches: true });
+    document.documentElement.removeAttribute('data-kb-motion');
+    for (const q of queries.filter((x) => x.q.includes('reduced-motion'))) for (const fn of q.ls) fn({ matches: true });
+    load();
+    expect(cling.carried()).toBe(0);
+  });
+
+  it('takes its listeners off again when it is reset', () => {
+    page();
+    load();
+    expect(asked.adds).toBeGreaterThan(0);
+    cling.reset();
+    expect(asked.removes).toBe(asked.adds);
+  });
+
+  it('picks flakes up again right after the layer was disposed', () => {
+    page();
+    carryOver();
+    cling.tick(20000);
+    vi.advanceTimersByTime(IDLE_MS + 10);
+    expect(cling.active()).toBe(false);
+    load();
+    expect(cling.active()).toBe(true);
+    expect(cling.carried()).toBe(MAX_CARRIED);
   });
 });

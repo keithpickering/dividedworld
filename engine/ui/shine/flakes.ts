@@ -38,6 +38,7 @@ const FLIGHT_MS = 1850;
 const DELAY_MS = 120;
 const PUFF_MS = 650;
 const FINE = '(hover: hover) and (pointer: fine)';
+const REDUCE = '(prefers-reduced-motion: reduce)';
 
 /** The inks a flakes object draws from, in linear light; `rainbow` are the ones a holographic flake throws. */
 export interface Palette { readonly lin: readonly Rgb[]; readonly rainbow: readonly Rgb[]; readonly holo: number }
@@ -45,6 +46,8 @@ export interface Palette { readonly lin: readonly Rgb[]; readonly rainbow: reado
 export interface Flake {
   x: number; y: number; s: number; rot: number; nx: number; ny: number; ink: number; tw: number; tph: number;
   pal: Palette;
+  /** `cos(rot)` and `sin(rot)`, made on a flake's first draw. */
+  cs?: number; sn?: number;
 }
 
 interface Particle {
@@ -78,8 +81,11 @@ export interface Flakes {
   readonly fired: boolean;
   /** How many of this post's flakes are in the air now. */
   readonly flying: number;
-  /** Paint the settled flakes under the words. `idle` turns the twinkle on. */
-  draw(ctx: CanvasRenderingContext2D, light: Light, band: Band, now: number, idle: boolean): void;
+  /**
+   * Paint the settled flakes under the words. `idle` turns the twinkle on. `density` is the canvas's px per CSS px (default 1):
+   * the draw sets the transform per flake and leaves it at that scale, which is the host's base transform.
+   */
+  draw(ctx: CanvasRenderingContext2D, light: Light, band: Band, now: number, idle: boolean, density?: number): void;
 }
 
 interface Inner extends Flakes {
@@ -168,7 +174,7 @@ export function makeFlakes(opts: FlakesOptions): Flakes {
     box: opts.box, palette: pal, origin, total: all.length,
     settled: all.slice(0, keep), rest: all.slice(keep),
     fired: false, flying: 0, parts: [], puff: null, last: null, star: opts.star, rng: seededRng(`${opts.seed}:burst`),
-    draw: (ctx, light, band, now, idle) => drawList(ctx, self.settled, light, band, now, idle, self.star === undefined ? (self.star = starSprite()) : self.star),
+    draw: (ctx, light, band, now, idle, density = 1) => drawList(ctx, self.settled, light, band, now, idle, self.star === undefined ? (self.star = starSprite()) : self.star, density),
   };
   return self;
 }
@@ -227,31 +233,63 @@ function litness(f: Flake, lx: number, ly: number, now: number, idle: boolean, s
   return a;
 }
 
+/* Per-draw scratch, grown to the longest list and reused: a redraw allocates nothing per flake. */
+const colorIds = new Map<string, number>();
+const colorNames: string[] = [];
+let colorOf = new Int32Array(0);
+let order = new Int32Array(0);
+let starts = new Int32Array(0);
+const flareAt: number[] = [];
+const flareA: number[] = [];
+
+/**
+ * Paints a list of flakes. One `setTransform` places each (no save/restore), the fill is set once per color (flakes are drawn
+ * a color at a time, in list order within a color: overlapping flakes of different colors may stack differently than in list
+ * order, which a glitter does not show), and the flares reuse the lit flakes found while coloring. Leaves the transform at the
+ * density scale.
+ */
 function drawList(
   ctx: CanvasRenderingContext2D, list: readonly Flake[], light: Light, band: Band, now: number, idle: boolean,
-  star: CanvasImageSource | null,
+  star: CanvasImageSource | null, density = 1,
 ): void {
+  const n = list.length;
+  if (!n) return;
   const { x: lx, y: ly } = light;
-  /* A flare adds white, which only stays in the band where the band reaches white: the light board. Nowhere else is one drawn. */
-  const whiteFits = band.hi >= 1;
-  let flares = 0;
-  for (let i = 0; i < list.length; i++) {
+  if (colorOf.length < n) { colorOf = new Int32Array(n); order = new Int32Array(n); }
+  colorIds.clear(); colorNames.length = 0; flareAt.length = 0; flareA.length = 0;
+  for (let i = 0; i < n; i++) {
     const f = list[i]!;
     const a = litness(f, lx, ly, now, idle);
-    ctx.fillStyle = flakeColour(f, a, band, lx, ly);
-    ctx.save(); ctx.translate(f.x, f.y); ctx.rotate(f.rot);
-    ctx.fillRect(-f.s / 2, -f.s * 0.42, f.s, f.s * 0.84);
-    ctx.restore();
-    if (a > 0.75) flares++;
+    const name = flakeColour(f, a, band, lx, ly);
+    let id = colorIds.get(name);
+    if (id === undefined) { id = colorNames.length; colorIds.set(name, id); colorNames.push(name); }
+    colorOf[i] = id;
+    if (a > 0.75) { flareAt.push(i); flareA.push(a); }
   }
-  if (!whiteFits || !flares || !star) return;
-  /* A second pass over the same list: the flares are the few flakes facing the light, drawn additively after the rest. */
+  /* A counting sort by color id: stable, so the order within a color is the list's. */
+  const k = colorNames.length;
+  if (starts.length < k + 1) starts = new Int32Array(k + 1);
+  starts.fill(0, 0, k + 1);
+  for (let i = 0; i < n; i++) starts[colorOf[i]! + 1]!++;
+  for (let c = 0; c < k; c++) starts[c + 1]! += starts[c]!;
+  for (let i = 0; i < n; i++) order[starts[colorOf[i]!]!++] = i;
+  const d = density;
+  let cur = -1;
+  for (let j = 0; j < n; j++) {
+    const i = order[j]!, f = list[i]!;
+    if (colorOf[i] !== cur) { cur = colorOf[i]!; ctx.fillStyle = colorNames[cur]!; }
+    const cos = (f.cs ??= Math.cos(f.rot)), sin = (f.sn ??= Math.sin(f.rot));
+    ctx.setTransform(cos * d, sin * d, -sin * d, cos * d, f.x * d, f.y * d);
+    ctx.fillRect(-f.s / 2, -f.s * 0.42, f.s, f.s * 0.84);
+  }
+  ctx.setTransform(d, 0, 0, d, 0, 0);
+  /* A flare adds white, which only stays in the band where the band reaches white: the light board. Nowhere else is one drawn. */
+  if (band.hi < 1 || !flareAt.length || !star) return;
+  /* The flares are the few flakes facing the light, drawn additively after the rest. */
   ctx.globalCompositeOperation = 'lighter';
-  for (let i = 0; i < list.length; i++) {
-    const f = list[i]!;
-    const a = litness(f, lx, ly, now, idle);
-    if (a <= 0.75) continue;
-    const alpha = (a - 0.75) / 0.25;
+  for (let j = 0; j < flareAt.length; j++) {
+    const f = list[flareAt[j]!]!;
+    const alpha = (flareA[j]! - 0.75) / 0.25;
     if (alpha < 0.03) continue;
     const z = 7 + f.s * 4;
     ctx.globalAlpha = alpha; ctx.drawImage(star, f.x - z / 2, f.y - z / 2, z, z);
@@ -290,6 +328,10 @@ export function sampleFlakes(flakes: Flakes, light: Light, band: Band, now: numb
  * Starts the burst, once per flakes object. Under reduced motion it places every flake at once and flies nothing. At most
  * `MAX_IN_FLIGHT` fly across the page; the rest of this post's flakes land at once. Returns whether a frame is needed
  * (`stepBurst` from then on, and `drawBurst`).
+ *
+ * Determinism: the glitter a post ends with (which flakes, where, in what ink) is fixed by its seed and is the same however the
+ * burst went. The split between flying and landing at once depends on how much of the page-wide cap other posts hold at the
+ * time, and the order flakes settle in follows from it, so only the settled SET is reproducible, not the frame-by-frame show.
  */
 export function burst(flakes: Flakes, now: number): boolean {
   const f = flakes as Inner;
@@ -326,6 +368,8 @@ const ease01 = (k: number) => k * k * (3 - 2 * k);
 export function stepBurst(flakes: Flakes, now: number): boolean {
   const f = flakes as Inner;
   if (!f.fired) return false;
+  /* Reduced motion turned on mid-burst: what is in the air lands where it was headed, now. */
+  if (f.parts.length && reduced()) { release(f); return false; }
   const dt = f.last === null ? 0 : Math.min(0.05, Math.max(0, (now - f.last) / 1000));
   f.last = now;
   if (f.puff !== null && now - f.puff >= PUFF_MS) f.puff = null;
@@ -464,9 +508,9 @@ export function loose(host: object): Flake[] {
 }
 
 /** Paints a host's loose flakes, as `draw` paints its settled ones. */
-export function drawLoose(host: object, ctx: CanvasRenderingContext2D, light: Light, band: Band, now: number, idle: boolean): void {
+export function drawLoose(host: object, ctx: CanvasRenderingContext2D, light: Light, band: Band, now: number, idle: boolean, density = 1): void {
   const list = looseByHost.get(host);
-  if (list?.length) drawList(ctx, list, light, band, now, idle, starSprite());
+  if (list?.length) drawList(ctx, list, light, band, now, idle, starSprite(), density);
 }
 
 function addLoose(host: object, f: Flake): void {
@@ -500,7 +544,8 @@ export interface ClingOptions {
    (`bandFor` on that host's element at pickup): that is the board whose post inks it was lent against, and the layer is only
    ever drawn over registered hosts' boards. The page's root would be wrong the day a card themes a board of its own. */
 interface Carried { f: Flake; ox: number; oy: number; ph: number; band: Band }
-interface Falling { f: Flake; x: number; y: number; vx: number; vy: number; land: number; fallen: number; ph: number; band: Band }
+/* `over`: whether a registered host is under the flake, asked once when it starts to fade (and once more when it lands). */
+interface Falling { f: Flake; x: number; y: number; vx: number; vy: number; land: number; fallen: number; ph: number; band: Band; over?: boolean }
 
 const hosts = new Map<HTMLElement, ClingOptions>();
 let canvas: HTMLCanvasElement | null = null;
@@ -517,16 +562,53 @@ let lastTick: number | null = null;
 let cr = seededRng('cursor');
 let cleared = true;
 
-const canAct = (e: Pick<PointerEvent, 'pointerType'>): boolean =>
-  e.pointerType === 'mouse' && (typeof window !== 'undefined' && (window.matchMedia?.(FINE).matches ?? false));
+/* The pointer and motion queries, asked of the browser once and kept current by their change events; the listeners come off with
+   the layer (`dispose`) and are made again by the next use. A pointer move asks nothing of the browser. */
+interface Media { fine: boolean; reduce: boolean; off: () => void }
+let media: Media | null = null;
 
-const hostAt = (x: number, y: number): { host: HTMLElement; x: number; y: number } | null => {
-  for (const host of hosts.keys()) {
-    const r = host.getBoundingClientRect();
-    if (x >= r.left && x < r.right && y >= r.top && y < r.bottom) return { host, x: x - r.left, y: y - r.top };
-  }
+function watch(): Media {
+  if (media) return media;
+  const m: Media = { fine: false, reduce: false, off() {} };
+  media = m;
+  if (typeof window === 'undefined' || !window.matchMedia) return m;
+  const fine = window.matchMedia(FINE), reduce = window.matchMedia(REDUCE);
+  m.fine = fine.matches; m.reduce = reduce.matches;
+  const onFine = (e: MediaQueryListEvent): void => { m.fine = e.matches; };
+  const onReduce = (e: MediaQueryListEvent): void => { m.reduce = e.matches; };
+  fine.addEventListener?.('change', onFine); reduce.addEventListener?.('change', onReduce);
+  m.off = () => { fine.removeEventListener?.('change', onFine); reduce.removeEventListener?.('change', onReduce); };
+  return m;
+}
+
+/* `motionReduced` with the device's setting read from the kept query: the player's override on the root still wins, by the one
+   rule `appearance.ts` holds, and nothing is asked of the browser per event. */
+const kept = { get documentElement() { return document.documentElement; }, defaultView: { matchMedia: () => ({ matches: watch().reduce }) } } as unknown as Document;
+const clingReduced = (): boolean => typeof document !== 'undefined' && motionReduced(kept);
+
+const canAct = (e: Pick<PointerEvent, 'pointerType'>): boolean => e.pointerType === 'mouse' && watch().fine;
+
+/** The registered host that holds this node, if any: a walk up from the node, no measuring. */
+function hostOf(n: EventTarget | null | undefined): HTMLElement | null {
+  for (let el = n instanceof Element ? n : null; el; el = el.parentElement) if (hosts.has(el as HTMLElement)) return el as HTMLElement;
   return null;
-};
+}
+
+/** The registered host under a viewport point, as the browser hit-tests it. */
+const hostUnder = (x: number, y: number): HTMLElement | null =>
+  typeof document === 'undefined' || !document.elementFromPoint ? null : hostOf(document.elementFromPoint(x, y));
+
+/** A band read from a board's computed style is kept per host for this long: a sweep over a post asks the browser once, not per flake. */
+const BAND_MS = 100;
+let bands = new WeakMap<HTMLElement, { at: number; band: Band | null }>();
+function bandAt(host: HTMLElement, now: number): Band | null {
+  const had = bands.get(host);
+  if (had && now - had.at >= 0 && now - had.at < BAND_MS) return had.band;
+  let band: Band | null = null;
+  try { band = bandFor(host); } catch { /* no band */ }
+  bands.set(host, { at: now, band });
+  return band;
+}
 
 function sizeCanvas(): void {
   if (!canvas) return;
@@ -559,6 +641,8 @@ function dispose(): void {
   canvas = null; ctx = null;
   removeEventListener('resize', sizeCanvas);
   removeEventListener('pointermove', onMove);
+  media?.off(); media = null;
+  bands = new WeakMap();
   cancelAnimationFrame(frame);
   frame = 0;
   carried = []; falling = []; mouse = null; lastTick = null;
@@ -576,17 +660,16 @@ function loop(t: number): void {
 
 /** Every pointer move on the page while the layer exists, and the first one over a sticky host that creates it. */
 function onMove(e: PointerEvent): void {
-  if (!canAct(e) || reduced()) return;
+  if (!canAct(e) || clingReduced()) return;
   /* The last position is seeded afresh after a gap: leaving a post and coming back elsewhere is not one huge move. */
   const moved = mouse && e.timeStamp - mouse.t < STALE_MS ? Math.hypot(e.clientX - mouse.x, e.clientY - mouse.y) : 0;
   mouse = { x: e.clientX, y: e.clientY, speed: moved, t: e.timeStamp };
-  const hit = hostAt(e.clientX, e.clientY);
-  const opts = hit ? hosts.get(hit.host) : undefined;
+  const host = hostOf(e.target);
+  const opts = host ? hosts.get(host) : undefined;
   if (opts?.sticky && opts.flakes) {
     if (carried.length < MAX_CARRIED && cr() < Math.min(0.6, moved / 40)) {
       /* A board whose band cannot be computed gets no glitter lent from it: nothing is drawn that has no band to hold. */
-      let band: Band | null = null;
-      try { band = bandFor(hit!.host); } catch { /* no band */ }
+      const band = bandAt(host!, e.timeStamp);
       if (band) {
         ensure();
         const a = cr() * Math.PI * 2, d = 4 + cr() * 14;
@@ -597,7 +680,7 @@ function onMove(e: PointerEvent): void {
     for (let i = carried.length - 1; i >= 0; i--) {
       if (cr() < moved * 0.006) {
         const c = carried.splice(i, 1)[0]!;
-        falling.push({ f: c.f, x: e.clientX + c.ox, y: e.clientY + c.oy, vy: 20 + cr() * 40, vx: (cr() - 0.5) * 30, land: 10 + cr() * 26, fallen: 0, ph: c.ph, band: c.band });
+        falling.push({ f: c.f, x: e.clientX + c.ox, y: e.clientY + c.oy, vy: 20 + cr() * 40, vx: (cr() - 0.5) * 30, land: 10 + cr() * 26, fallen: 0, ph: c.ph, band: c.band, over: undefined });
       }
     }
   }
@@ -655,7 +738,7 @@ export const cling = {
   tick(now: number): void {
     const dt = lastTick === null ? 0 : Math.min(0.05, Math.max(0, (now - lastTick) / 1000));
     lastTick = now;
-    if (reduced()) { carried = []; falling = []; }
+    if (clingReduced()) { carried = []; falling = []; }
     for (const h of hosts.keys()) if (!h.isConnected) hosts.delete(h);
     if (!ctx || !canvas) return;
     if (!carried.length && !falling.length) {
@@ -676,15 +759,18 @@ export const cling = {
       b.vy = Math.min(90, b.vy + 300 * dt); b.x += b.vx * dt; b.y += b.vy * dt; b.fallen += b.vy * dt; b.ph += dt * 12;
       if (b.fallen >= b.land) {
         falling.splice(i, 1);
-        const hit = hostAt(b.x, b.y);
-        if (hit) {
-          addLoose(hit.host, { ...b.f, x: hit.x, y: hit.y });
-          try { hosts.get(hit.host)?.landed?.(); } catch (err) { console.error(err); }
+        const host = hostUnder(b.x, b.y);
+        if (host) {
+          /* The one measure a flake costs: the post it lands on, to put it in that post's own px. */
+          const r = host.getBoundingClientRect();
+          addLoose(host, { ...b.f, x: b.x - r.left, y: b.y - r.top });
+          try { hosts.get(host)?.landed?.(); } catch (err) { console.error(err); }
         }
         continue;
       }
       /* A flake with nowhere to land fades through the last third of its fall. */
-      const fade = b.fallen > b.land * 0.67 && !hostAt(b.x, b.y) ? Math.max(0, 1 - (b.fallen - b.land * 0.67) / (b.land * 0.33)) : 1;
+      if (b.over === undefined && b.fallen > b.land * 0.67) b.over = hostUnder(b.x, b.y) !== null;
+      const fade = b.over === false ? Math.max(0, 1 - (b.fallen - b.land * 0.67) / (b.land * 0.33)) : 1;
       paint(ctx, b.f, b.x, b.y, b.ph, fade, b.band);
     }
     if (!carried.length && !falling.length) settle();
