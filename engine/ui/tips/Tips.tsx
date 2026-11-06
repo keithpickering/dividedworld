@@ -60,12 +60,19 @@ export function TipsProvider({ children }: { readonly children: ReactNode }) {
     let wanted: HTMLCanvasElement | null = null;
     let unwant: (() => void) | null = null;
     const sync = () => {
-      const next = canvas !== null && askForTilt() ? canvas : null;
-      if (next === wanted) return;
+      /* The state no longer calls for the tip (a grant or a choice made elsewhere): withdrawn, open or not. */
+      if (!askForTilt()) {
+        unwant?.();
+        unwant = null;
+        wanted = null;
+        return;
+      }
+      if (canvas === null || canvas === wanted) return;
+      /* Open, the tip is being read: a new host in view does not take it away, and it stays on the post it opened on. */
+      if (unwant && store.isOpen('shine')) return;
       unwant?.();
-      unwant = null;
+      const next = canvas;
       wanted = next;
-      if (next === null) return;
       unwant = store.want({
         key: 'shine',
         target: () => next,
@@ -132,12 +139,16 @@ export interface TipOptions {
 export function useTip(key: TipKey, target: RefObject<HTMLElement | null>, options: TipOptions = {}): void {
   const store = useTipsStore();
   const { when = true, group, action } = options;
+  /* The action's identity is not a reason to ask again: an inline `{ run }` is new every render. Whether there is one is. */
+  const actionRef = useRef(action);
+  actionRef.current = action;
+  const hasAction = action !== undefined;
   const n = options.step?.n;
   const of = options.step?.of;
   useEffect(() => {
     if (!when) return;
-    return store.want({ key, target: () => target.current, group, ...(action ? { action } : {}), ...(n !== undefined && of !== undefined ? { step: { n, of } } : {}) });
-  }, [store, key, target, when, group, action, n, of]);
+    return store.want({ key, target: () => target.current, group, ...(hasAction ? { action: { run: () => actionRef.current?.run() } } : {}), ...(n !== undefined && of !== undefined ? { step: { n, of } } : {}) });
+  }, [store, key, target, when, group, hasAction, n, of]);
 }
 
 /** Say that a game effect holds the screen while `held` (a takeover, Stick Around's view); a tip is not shown over it. */

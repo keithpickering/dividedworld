@@ -149,7 +149,11 @@ export function Spotlight({ tipKey, title, line, step, target, persona, action, 
             )}
             {/* The close button's place is Skip all tips: the layer starts focus on the first control that is not it, which is Got it. */}
             <button ref={closeButton} type="button" className="kb-tips-button kb-glass-skew" onClick={onSkip}><b className="kb-glass-upright">Skip all tips</b></button>
-            {action && <button type="button" className="kb-tips-button kb-glass-skew" onClick={() => { action.run(); onGotIt(); }}><b className="kb-glass-upright">{action.label}</b></button>}
+            {action && <button type="button" className="kb-tips-button kb-glass-skew" onClick={() => {
+              /* Seen first: the action may change the state that withdrew the tip, and the tip is seen whatever it does. Both run inside the click. */
+              onGotIt();
+              try { action.run(); } catch (error) { console.error('A tip action failed', error); }
+            }}><b className="kb-glass-upright">{action.label}</b></button>}
             <button ref={gotIt} type="button" className="kb-tips-button kb-tips-go kb-glass-skew" onClick={onGotIt}><b className="kb-glass-upright">Got it</b></button>
           </div>
         </Fragment>

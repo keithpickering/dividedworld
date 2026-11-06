@@ -3,6 +3,7 @@
  * tilt and has not been asked, shows a tip with a button that turns tilt on. The button runs `allowTilt` inside its own click (a
  * browser's permission prompt needs the tap), sets the account's preference to on, and the tip is seen.
  */
+import { useRef, useState } from 'react';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -12,7 +13,7 @@ import { light } from '../shine/light.ts';
 import { probe, register, unregister } from '../shine/loop.ts';
 import { resetTilt, setTiltPreference, tiltState } from '../shine/tilt.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
-import { TipsProvider } from './Tips.tsx';
+import { TipsProvider, useTip } from './Tips.tsx';
 
 const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 25)); });
 const dialog = () => screen.queryByRole('dialog');
@@ -117,6 +118,69 @@ describe('the shine tip', () => {
     await settle();
     shiny();
     expect(await screen.findByRole('dialog', { name: 'Title of shine' })).toBeInTheDocument();
+  });
+
+  test('a browser with no permission prompt: the action still sees the tip and turns tilt on', async () => {
+    phone({ permission: false });
+    const fake = signedIn();
+    const save = vi.spyOn(fake, 'setPreferences');
+    open(fake);
+    await settle();
+    shiny();
+    const tip = await screen.findByRole('dialog', { name: 'Title of shine' });
+    fireEvent.click(within(tip).getByRole('button', { name: 'Action of shine' }));
+    await settle();
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ tilt: 'on' }));
+    expect((await fake.preferences()).tipsSeen).toContain('shine');
+    expect(dialog()).toBeNull();
+  });
+
+  test('an action that throws is reported, and the tip is still seen', async () => {
+    const report = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fake = signedIn();
+    function Boom() {
+      const el = useRef<HTMLButtonElement>(null);
+      useTip('shine', el, { action: { run: () => { throw new Error('boom'); } } });
+      return <button type="button" ref={el}>target</button>;
+    }
+    renderIn(fake, <TipsProvider><Boom /></TipsProvider>);
+    const tip = await screen.findByRole('dialog', { name: 'Title of shine' });
+    expect(() => fireEvent.click(within(tip).getByRole('button', { name: 'Action of shine' }))).not.toThrow();
+    await settle();
+    expect(report).toHaveBeenCalled();
+    expect((await fake.preferences()).tipsSeen).toContain('shine');
+    expect(dialog()).toBeNull();
+  });
+
+  test('a tip with an inline action is not withdrawn by a re-render', async () => {
+    const fake = signedIn();
+    let bump!: () => void;
+    function Inline() {
+      const el = useRef<HTMLButtonElement>(null);
+      const [n, setN] = useState(0);
+      bump = () => setN((x) => x + 1);
+      useTip('shine', el, { action: { run: () => { void n; } } });
+      return <button type="button" ref={el}>target</button>;
+    }
+    renderIn(fake, <TipsProvider><Inline /></TipsProvider>);
+    await screen.findByRole('dialog', { name: 'Title of shine' });
+    act(() => bump());
+    act(() => bump());
+    await settle();
+    expect(dialog()).not.toBeNull();
+  });
+
+  test('an open tip stays open when the host in view changes', async () => {
+    phone();
+    vi.stubGlobal('IntersectionObserver', FakeObserver);
+    open(signedIn());
+    await settle();
+    const first = shiny(), second = shiny();
+    see(first, true);
+    await screen.findByRole('dialog', { name: 'Title of shine' });
+    act(() => { see(first, false); see(second, true); });
+    await settle();
+    expect(dialog()).not.toBeNull();
   });
 
   test('does not show on a fine pointer', async () => {

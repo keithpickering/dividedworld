@@ -77,6 +77,8 @@ export interface TipsStore {
   holding(): boolean;
   /** A game effect holds the screen (Stick Around's view) or lets it go; `who` names the effect. */
   hold(who: string, held: boolean): void;
+  /** Whether the tip `key` has been decided and is up now (shown, or hidden only by a hold). */
+  isOpen(key: TipKey): boolean;
   /** Got it: the active tip is seen. */
   see(): void;
   /** Skip all tips: every tip, and every callout, is over until the account restores them. */
@@ -166,6 +168,7 @@ export function createTipsStore(handlers: TipsHandlers, options: { readonly unga
       decide();
     },
     done(key) { carried.delete(key); },
+    isOpen: (key) => current?.view.key === key,
     holding: () => holders.size > 0,
     hold(who, held) {
       if (held ? holders.has(who) : !holders.has(who)) return;
