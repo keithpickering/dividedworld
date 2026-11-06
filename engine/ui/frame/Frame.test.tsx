@@ -405,7 +405,10 @@ describe('the measured HUD height', () => {
   beforeEach(() => {
     height = 57.2;
     disconnected = 0;
-    vi.stubGlobal('ResizeObserver', class { constructor(cb: () => void) { tell = cb; } observe() {} disconnect() { disconnected += 1; } });
+    /* The HUD's observer is not the only one on the page (the calm regions in it watch their own boxes): a resize is told to all of them. */
+    const told: (() => void)[] = [];
+    tell = () => told.forEach((cb) => cb());
+    vi.stubGlobal('ResizeObserver', class { constructor(cb: () => void) { told.push(cb); } observe() {} disconnect() { disconnected += 1; } });
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => ({ height, left: 0, width: 0, top: 0, bottom: height }) as DOMRect);
   });
 

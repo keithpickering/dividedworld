@@ -159,7 +159,3 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
-/* The lede stands as near the title as the board sets them (the head's 12px gap), so its feather is no wider than that and lies on nothing but the gap. */
-.kb-season-lede {
-  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
-}

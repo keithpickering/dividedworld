@@ -479,7 +479,7 @@ button.kb-vending-slot {
 /* ---- the sealed slots' line ---- */
 
 /* The line about the empty slots, near the slots, as the board draws it; the rules of each card are in its info button's overlay. */
-.kb-vending-empty-line.kb-calm {
+.kb-vending-empty-line {
   --kb-card-color: var(--kb-glass-ready);
   position: relative;
   padding: 14px 16px;
@@ -572,7 +572,8 @@ button.kb-vending-slot {
 }
 
 :where(:root[data-kb-layout='phone']) .kb-vending-wallet-in {
-  padding-inline: 0;
+  /* The words stand clear of the panel's border: a line that touches it is read over the border's neon, which a calm in the smoke cannot dim. */
+  padding-inline: 16px;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-vending-label {

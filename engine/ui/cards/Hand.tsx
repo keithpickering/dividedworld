@@ -24,6 +24,7 @@ import { useBoard } from '../glass/useBoard.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Postcard, cardLabel } from './Postcard.tsx';
 import type { CardFace } from './faces.ts';
+import { CalmRegion } from '../glass/Calm.tsx';
 
 /** The most faces drawn for one kind of card. */
 const COPIES_SHOWN = 2;
@@ -79,13 +80,13 @@ export function Hand({ held, faces, armed = null, onPick, onClose, vendingHref }
   return (
     <>
       <div className="kb-hand-bar">
-        <h2 className="kb-hand-head kb-glass-display">Hand <span className="kb-hand-head-count kb-num kb-calm">· {count}</span></h2>
+        <h2 className="kb-hand-head kb-glass-display">Hand <CalmRegion as="span" className="kb-hand-head-count kb-num">· {count}</CalmRegion></h2>
         <button type="button" className="kb-hand-close" aria-label="Close the hand" onClick={onClose}>
           <svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 16 16"><path d="M3 3 L13 13 M13 3 L3 13" /></svg>
         </button>
       </div>
       {cards.length === 0 ? (
-        <p className="kb-hand-empty kb-calm">No postcards in your hand. The Vending Machine sells them.</p>
+        <CalmRegion as="p" className="kb-hand-empty">No postcards in your hand. The Vending Machine sells them.</CalmRegion>
       ) : (
         <ul className="kb-hand-cards">
           {cards.map(({ face, copy, total }, i) => {
@@ -120,13 +121,13 @@ export function Hand({ held, faces, armed = null, onPick, onClose, vendingHref }
         </ul>
       )}
       {inView && cards.length > 0 && (
-        <p className="kb-hand-says kb-calm">
+        <CalmRegion as="p" className="kb-hand-says">
           {armed === inView.key
             ? <>{inView.name} is armed. Every post it can land on now shows a dashed <b>+ mark</b> beside its date, named Play {inView.name} on that post. Press it to play {inView.name} there.</>
             : <><b>{inView.name}.</b> {inView.summary}</>}
-        </p>
+        </CalmRegion>
       )}
-      <div className="kb-hand-vending kb-calm"><ButtonRow align="center"><GlassButton to={vendingHref}>Vending Machine</GlassButton></ButtonRow></div>
+      <CalmRegion className="kb-hand-vending"><ButtonRow align="center"><GlassButton to={vendingHref}>Vending Machine</GlassButton></ButtonRow></CalmRegion>
     </>
   );
 }

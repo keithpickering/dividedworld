@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { ButtonRow } from './Button.tsx';
+import { CalmRegion } from './Calm.tsx';
 
 /**
  * The head every glass page opens with: the title in the display face, an eyebrow above it, a lead
@@ -20,13 +21,13 @@ export function PageHead({ title, eyebrow, lead, actions, count, size, tabs }: {
 }) {
   return (
     <div className="kb-page-head" data-kb-size={size}>
-      {eyebrow !== undefined && <p className="kb-page-head-eyebrow kb-calm">{eyebrow}</p>}
+      {eyebrow !== undefined && <CalmRegion as="p" className="kb-page-head-eyebrow">{eyebrow}</CalmRegion>}
       <h1 className="kb-page-head-title kb-glass-display">
         {title}
         {count !== undefined && <> <span className="kb-page-head-count">{count}</span></>}
       </h1>
       {tabs && <div className="kb-page-head-tabs">{tabs}</div>}
-      {lead !== undefined && <p className="kb-page-head-lead kb-calm">{lead}</p>}
+      {lead !== undefined && <CalmRegion as="p" className="kb-page-head-lead">{lead}</CalmRegion>}
       {actions !== undefined && <ButtonRow>{actions}</ButtonRow>}
     </div>
   );

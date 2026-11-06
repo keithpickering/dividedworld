@@ -18,12 +18,12 @@
  * Each line is read as the browser lays it out (a Range's client rects), narrowed to the band its
  * glyphs ink (inkBand) and clipped by any ancestor that clips, with: its color as drawn (`-webkit-text-fill-color`, which is the color unless a
  * rule sets it) times every opacity above it; its face's ink at its size, measured by the canvas
- * over INK_SAMPLE in the loaded face; its nearest calm, the calm's `::before` backing as laid out
- * (its insets and its translation) and its feather as its mask draws it; and the panels between it
+ * over INK_SAMPLE in the loaded face; its nearest calm region and the rect the smoke draws for it
+ * (its insets and its blur); and the panels between it
  * and its surface's element. A panel under the smoke (the dialog's own ground, under its smoke) is
  * not under the text, so the walk stops at the surface's element.
  */
-import { feathersOf, isSkipped, parseColor, pixelStats, type Backing, type Box, type Calm, type Rgba, type TextFact } from './glass-text.ts';
+import { isSkipped, parseColor, pixelStats, type Backing, type Box, type Calm, type Rgba, type TextFact } from './glass-text.ts';
 
 /**
  * What a face inks is read over a string with an ascender and a descender: the design's "ascender
@@ -100,7 +100,21 @@ function visiblePart(line: Box, el: Element): Box | null {
   for (let a: Element | null = el; a && box; a = a.parentElement) {
     if (a === document.body || a === document.documentElement) break;
     const s = getComputedStyle(a);
-    if (s.overflowX !== 'visible' || s.overflowY !== 'visible') box = intersect(box, toBox(a.getBoundingClientRect()));
+    if (s.overflowX !== 'visible' || s.overflowY !== 'visible') {
+      /* An overflow clip lies at the padding box: the border outside it is not under the clipped text, and is not what the line stands on. */
+      const r = a.getBoundingClientRect();
+      const z = zoomOf(a);
+      const n = (v: string) => (parseFloat(v) || 0) * z;
+      /*
+       * A framed piece (`.kb-glass-cut-dialog`, `-panel`: base.css) draws its border as a ring inside its own box: the piece's background
+       * (the border's color, --kb-border thick), with its panel (`::after`) one border in. It has no CSS border, so the padding box
+       * includes the ring, and what the piece clips stands inside the ring and not on it.
+       */
+      const ring = a.matches('.kb-glass-cut-dialog, .kb-glass-cut-panel') ? n(s.getPropertyValue('--kb-border')) : 0;
+      const bl = n(s.borderLeftWidth) + ring, bt = n(s.borderTopWidth) + ring, br = n(s.borderRightWidth) + ring, bb = n(s.borderBottomWidth) + ring;
+      const inner = { x: r.left + bl, y: r.top + bt, width: r.width - bl - br, height: r.height - bt - bb };
+      box = intersect(box, inner);
+    }
   }
   return box;
 }
@@ -175,42 +189,54 @@ export function pseudoBox(el: Element, ps: CSSStyleDeclaration): Box & { readonl
   };
 }
 
-export const drawn = (ps: CSSStyleDeclaration) => ps.content !== 'none' && ps.content !== 'normal' && ps.display !== 'none';
+const drawn = (ps: CSSStyleDeclaration) => ps.content !== 'none' && ps.content !== 'normal' && ps.display !== 'none';
 
-/** The nearest calm drawn on `el` or above it, inside the surface's element; a calm whose backing is not drawn is passed over. */
-function calmOf(el: Element, holder: Element): Calm | null {
-  let c = el.closest('.kb-calm');
-  let ps: CSSStyleDeclaration | null = null;
-  for (; c && c !== holder && holder.contains(c); c = c.parentElement?.closest('.kb-calm') ?? null) {
-    ps = getComputedStyle(c, '::before');
-    if (drawn(ps)) break;
+/**
+ * The nearest calm region around `el`, inside the surface's element, as its rect in the smoke draws it (engine/ui/glass/Calm.tsx):
+ * the region's border box is the calm's interior, since the rect is drawn out past it by the blur's reach so the falloff lies outside;
+ * the backing is that rect as laid out (its `::before`'s insets), the feather the blur its `filter` names, and the opacity the rect's own.
+ * A region whose rect is not drawn (the smoke is off, or the region is not on a smoke) is passed over.
+ */
+function calmOf(el: Element, holder: Element, rects: ReadonlyMap<Element, Element>): Calm | null {
+  let c = el.closest('[data-kb-calm-region]');
+  let rect: Element | undefined;
+  for (; c && c !== holder && holder.contains(c); c = c.parentElement?.closest('[data-kb-calm-region]') ?? null) {
+    rect = rects.get(c);
+    if (rect) break;
   }
-  if (!c || c === holder || !holder.contains(c) || !ps) return null;
-  const { scale, ...backing } = pseudoBox(c, ps);
-  const k = scaleOf(c);
-  /* The feather is drawn by the backing's mask, so it shrinks with the backing and with the element. */
-  const unit = zoomOf(c) * scale * Math.min(k.x, k.y);
-  const edges = feathersOf(ps.maskImage || ps.getPropertyValue('-webkit-mask-image'), `${c.localName}${c.className ? `.${String(c.className).trim().split(/\s+/u).join('.')}` : ''}`);
-  const l = edges.left * unit, r = edges.right * unit, t = edges.top * unit, b = edges.bottom * unit;
-  const feather = Math.max(l, r, t, b);
-  const bg = parseColor(ps.backgroundColor);
-  const opacity = (bg ? bg[3] : parseFloat(getComputedStyle(c).getPropertyValue('--kb-glass-calm-opacity'))) * opacityOf(c);
-  const box = { x: backing.x + l, y: backing.y + t, width: backing.width - l - r, height: backing.height - t - b };
-  return { backing, feather, box, opacity, element: toBox(c.getBoundingClientRect()) };
+  if (!c || !rect || c === holder || !holder.contains(c)) return null;
+  const ps = getComputedStyle(rect, '::before');
+  if (!drawn(ps)) return null;
+  /* The backing is where the rect's `::before` is drawn: from the rect's box (the place Calm.tsx gave it), by its insets and its own transform. */
+  const { scale, ...backing } = pseudoBox(rect, ps);
+  const k = scaleOf(rect);
+  /* Lengths the rect names (its blur, the reach it is drawn out by) shrink with the backing and with the rect, and grow with a zoomed window (the HUD below 1440px). */
+  const unit = zoomOf(rect) * scale * Math.min(k.x, k.y);
+  /* A rect drawn with no blur (high contrast) says `none`; any other filter must be a blur in px, or the feather would silently be read as nothing and the interior as the whole backing. */
+  const named = /^blur\(([\d.]+)px\)$/u.exec(ps.filter);
+  if (!named && ps.filter !== 'none') throw new Error(`The calm of ${c.localName}.${String((c as HTMLElement).className).trim().split(/\s+/u).join('.')} cannot be read: its filter is ${ps.filter}, not a blur in px`);
+  const blur = parseFloat(named?.[1] ?? '0') * unit;
+  /*
+   * The interior is what the falloff leaves at the calm in full: the backing less the reach, in blurs, that the rect is meant to be
+   * drawn out by (calm.css), so a backing pulled in, shrunk or moved leaves the words outside it. That reach is the "feather" the
+   * judgment names: how far inside its backing a line must stand.
+   */
+  const feather = (parseFloat(getComputedStyle(rect).getPropertyValue('--kb-glass-calm-reach')) || 0) * blur;
+  const box = { x: backing.x + feather, y: backing.y + feather, width: Math.max(0, backing.width - 2 * feather), height: Math.max(0, backing.height - 2 * feather) };
+  return { backing, feather, box, opacity: parseFloat(ps.opacity), element: toBox(c.getBoundingClientRect()) };
 }
 
 /**
  * The panels between `el` and the surface's element. On each element the topmost drawn background
  * is the one the text stands on: a positioned `::after` or `::before` with a background (a cut
  * panel's, base.css) is drawn over the element's own (the cut panel's border color), so it is read
- * in its place. A calm's `::before` is the calm's, not a panel.
+ * in its place.
  */
 function panelsOf(el: Element, holder: Element): Backing[] {
   const out: Backing[] = [];
   for (let a: Element | null = el; a && a !== holder; a = a.parentElement) {
     const o = opacityOf(a);
     const pseudo = (['::after', '::before'] as const)
-      .filter((p) => !(p === '::before' && a!.classList.contains('kb-calm')))
       .map((p) => getComputedStyle(a!, p))
       .filter((ps) => drawn(ps) && (ps.position === 'absolute' || ps.position === 'fixed'))
       .map((ps) => ({ ps, bg: parseColor(ps.backgroundColor) }))
@@ -284,7 +310,7 @@ function inkBand(line: Box, m: Metrics): Box {
 
 function nameOf(text: string, el: Element): string {
   const words = text.replace(/\s+/g, ' ').trim();
-  const cls = [...el.classList].filter((c) => c !== 'kb-calm').slice(0, 2).map((c) => `.${c}`).join('');
+  const cls = [...el.classList].slice(0, 2).map((c) => `.${c}`).join('');
   const parent = el.parentElement;
   const up = parent ? `${parent.tagName.toLowerCase()}${[...parent.classList].slice(0, 1).map((c) => `.${c}`).join('')} > ` : '';
   return `"${words.length > 40 ? `${words.slice(0, 39)}…` : words}" in ${up}${el.tagName.toLowerCase()}${cls}`;
@@ -304,6 +330,9 @@ export async function gather(panel?: string): Promise<Gathered[]> {
   const view: Box = { x: 0, y: 0, width: innerWidth, height: innerHeight };
   const hudEl = document.querySelector('[aria-label="Game HUD"]');
   const hud = hudEl && getComputedStyle(hudEl).position === 'fixed' ? Object.assign(hudEl.getBoundingClientRect(), { contains: (n: Node) => hudEl.contains(n) }) : null;
+  /* Each region's rect in its smoke, found once for the page as it stands (Calm.tsx gives the rect a pointer back to its region). */
+  const rects = new Map<Element, Element>();
+  for (const r of document.querySelectorAll('.kb-smoke-calm')) { const region = (r as Element & { kbRegion?: Element }).kbRegion; if (region) rects.set(region, r); }
   const out: Gathered[] = [];
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   for (let n = walker.nextNode() as Text | null; n; n = walker.nextNode() as Text | null) {
@@ -328,15 +357,18 @@ export async function gather(panel?: string): Promise<Gathered[]> {
     const size = parseFloat(s.fontSize) * zoomOf(el) * scaleOf(el).y;
     const m = await metricsOf(s.fontStyle, s.fontWeight, s.fontFamily, size, nameOf(n.data, el));
     const ink = m.inkUp + m.inkDown;
-    const calm = calmOf(el, ground.holder);
+    const calm = calmOf(el, ground.holder, rects);
     const panels = panelsOf(el, ground.holder);
     const calmOpacity = parseFloat(s.getPropertyValue('--kb-glass-calm-opacity')) || 1;
     lines.forEach((line, i) => {
-      const box = visiblePart(inkBand(toBox(line), m), el);
+      const full = inkBand(toBox(line), m);
+      const box = visiblePart(full, el);
       if (!box || box.width < 2 || box.height < 2) return;
+      /* A line the dialog's own scroll cuts (a dialog capped to the room an anchored popover has) is read where the dialog has scrolled it whole: it is not in view until then. */
+      const cutByDialog = box.height < full.height - 0.5 && el.closest('.kb-glass-dialog') !== null;
       /* The HUD is docked over the window's foot: a line of the page lying behind it is read in a later window, where it is clear. An open overlay stands above the HUD, so its lines are not behind it. */
       const seen = hud && hud.top > 0 && hud.top < view.height && !hud.contains(el) && !overlay?.contains(el) ? { ...view, height: hud.top } : view;
-      const inView = intersect(box, seen)?.width === box.width && intersect(box, seen)?.height === box.height;
+      const inView = !cutByDialog && intersect(box, seen)?.width === box.width && intersect(box, seen)?.height === box.height;
       out.push({
         key: `${idOf(n)}:${i}`, inView, name: nameOf(n.data, el), surface: ground.surface, box, color,
         family: s.fontFamily.split(',')[0]!.replace(/["']/g, '').trim(), size, weight: parseFloat(s.fontWeight), ink, calm, calmOpacity, panels,
@@ -350,8 +382,7 @@ const HIDE_ID = 'kb-glass-text-hidden';
 
 /**
  * Makes all text transparent, or shows it again. The fill is cleared rather than the color,
- * because a calm's mask is drawn in `currentColor` (calm.css), and a transparent color would take
- * the calm with it. Shadows, strokes, decorations and focus rings go with the text, since none is
+ * because it is the fill and not the color that hides a line; the color is left as it is. Shadows, strokes, decorations and focus rings go with the text, since none is
  * the ground the text stands on. With `smoke` false the smoke's layers go too, leaving its ground:
  * the window without the smoke, which high contrast's solid ground must not differ from.
  */

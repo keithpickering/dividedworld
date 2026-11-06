@@ -4,7 +4,7 @@ import type { Box } from './glass-text.ts';
  * The layout check's judgment: what e2e/glass-layout.spec.ts makes of the facts
  * e2e/glass-layout-page.ts gathers from a screen at one viewport and one text size. Pure, as
  * `judge` in e2e/glass-text.ts is, so e2e/glass-layout.test.ts drives each refusal red on plain
- * data. It refuses six things, each named with the element's selector path and the screen:
+ * data. It refuses five things, each named with the element's selector path and the screen:
  *
  *   1. a squeezed block: an element holding text that wraps, narrower than 10 * its font size
  *      when its column (its parent's content width) could have given it more room, as a sibling
@@ -20,40 +20,17 @@ import type { Box } from './glass-text.ts';
  *      line, whose heights (to within 1px, on one line: a control alone on its line may be taller for a wrapped label) or computed type sizes differ;
  *   4. a cut control: a control whose box crosses into the cut corner of the clip-path polygon of
  *      the panel it sits in;
- *   5. a calm cut: a `.kb-calm` backing whose drawn rect (its feather included) crosses the box
- *      of an ancestor that clips overflow, on an axis it clips, where the calm's own element lies
- *      inside that box: the feather is cut on a straight line (the phone Settings, on main);
- *   6. a calm over other content: a `.kb-calm` backing whose drawn rect overlaps the box of a text
- *      block or a control (the backing as the clipping ancestors leave it) that is neither inside this calm nor inside another calm, taking
- *      of that block or control only the part nothing else is drawn over, and only where the calm
- *      PAINTS OVER it. Two calms' feathers meeting is a staggered backing and is not refused.
+ *   5. text outside the calm: a text block on the glass of a surface that is `calmAll` (the
+ *      engine's ceilings say which, e2e/glass-ceilings.json) whose box does not lie inside the
+ *      border box of any calm region (`CalmRegion`, engine/ui/glass/Calm.tsx). On such a surface the
+ *      promise the contrast model rests on is that every text node stands in a calm, large or not,
+ *      so a paragraph placed beside its page's column region, not inside it, is refused. The
+ *      menu bar's words stand on its own panel and are not on the glass in this sense.
  *
- *      The defect this refusal exists for is a backing painted over content, which dims it: the
- *      swap's calm is a stacking context (`isolation: isolate`) and painted its 85% ground over the
- *      phone avatar, which faded. A feather that lies UNDER a neighbor, the neighbor painting
- *      above it, dims nothing: the HUD's avatar, bell, Menu and Hand stand in the swap's and the
- *      Aura's feathers on main, and that is the approved look. So the judgment reads paint order, not
- *      overlap alone. The gatherer asks the page (`document.elementsFromPoint`, with the backing
- *      made hit-testable for the question) at sample points in the overlap of the backing and the
- *      block, and records, as `CalmFact.above`, the paths whose element comes before the calm's in
- *      that list, which is the topmost first: they paint above the backing. Where no sample can be
- *      asked (the overlap is off the window, covered by another layer), the block is not listed, and
- *      so is judged as overlapping: the check errs toward refusing what it could not see. The pair
- *      that goes red is a calm with a control in its feather and the control in the page's flow
- *      after it (a stacking context paints above static content); the same geometry with the
- *      control positioned above the calm passes (e2e/glass-layout-page.spec.ts).
- *
- *   A calm inside a FRAMED PANEL (the HUD's glass, a dialog, the hand's drawer, the class rail) is
- *   judged by 6 only over content inside the same panel, and by 5 only for a clipper outside it
- *   (below). The panel is a layer of its own: it clips what lies past its edge
- *   and is drawn over whatever lies under it, so a calm in it is a quiet patch of the panel's
- *   ground, soft at its edge as the board has it, and its feather cannot lie on page content that
- *   the panel already covers. Drawing no backing there fails the glass-text ceilings (53 screens
- *   went red when it was tried), and a hard-edged box shows as a rectangle on the HUD, so the
- *   feather stays and the judgment steps aside for what the panel covers. A calm in the panel
- *   lying over uncalmed content in the same panel is still refused. A calm outside
- *   any panel is judged as ever, and a clipper outside the panel still counts for 5, except the
- *   overlay a dialog scrolls in (a dialog taller than the window is cut at its edge, as its calm is).
+ *   The two refusals the calm needed while it was drawn on the text's own element (a calm cut by
+ *   a column's clip, a calm painted over content it was not meant to dim) are retired: a calm is
+ *   a rect in the smoke (Calm.tsx), behind the page and clipped by nothing but the smoke's own
+ *   frame, so it can do neither.
  *
  * The decisions the gatherer makes, so a reader of a refusal knows what was and was not looked at
  * (they are made in the page, where the styles are; they are written here because they are the
@@ -80,7 +57,10 @@ import type { Box } from './glass-text.ts';
  *     `[hidden]` or `[inert]`. An ancestor that clips (`overflow-x: clip`, as the glass content
  *     does) excuses nothing: what it hides, the player loses, so a block squeezed or pushed past
  *     the edge inside it is still refused.
- *   - A CALM'S DRAWN BACKING includes any transform on it (e2e/glass-text-page.ts's pseudoBox).
+ *   - A CALM REGION is an element marked `data-kb-calm-region` (CalmRegion); its box is its border box.
+ *   - A BLOCK IS ON THE GLASS when an ancestor of it, inside a glass root (`.kb-glass`), holds the
+ *     surface's smoke (`.kb-smoke`, which names the surface) that does not hold the block, and the
+ *     block is not in the menu bar; the facts name that surface.
  */
 
 /** A visible element's rect, with a path that is unique in the page (`tag.class:nth-child(n)` joined by ` > `). */
@@ -98,6 +78,8 @@ export interface BlockFact extends Located {
   readonly column: number;
   /** Card-face art (aria-hidden or `data-kb-art` text on a postcard face): exempt from refusal 1. */
   readonly art?: boolean;
+  /** The surface whose smoke the block stands on, when it is glass text; absent for the board's own. */
+  readonly surface?: string;
 }
 
 export interface ControlInRow extends Located { readonly fontSize: number; readonly glass: boolean }
@@ -114,8 +96,6 @@ export interface ControlFact extends Located { readonly seen?: Box | null; reado
 /** An ancestor that clips overflow: its box, and the axes it clips on. */
 export interface ClipFact extends Located { readonly x: boolean; readonly y: boolean }
 
-/** A calm: its drawn backing (feather included), its element's border box, and the ancestors that clip it. */
-export interface CalmFact { readonly path: string; readonly backing: Box; readonly element: Box; readonly clips: readonly ClipFact[]; /** The paths of blocks and controls that paint ABOVE this calm's backing where they overlap it (read from the page's paint order): the calm lies under them and dims nothing. Absent: none are known to be. */ readonly above?: readonly string[]; /** The part of `backing` nothing else is drawn over, as for a block's `seen`. Absent: all of it. */ readonly seen?: Box | null }
 
 export interface LayoutFacts {
   readonly screen: string;
@@ -127,7 +107,10 @@ export interface LayoutFacts {
   readonly extents: readonly Located[];
   readonly rows: readonly RowFact[];
   readonly controls: readonly ControlFact[];
-  readonly calms: readonly CalmFact[];
+  /** Each calm region's border box. */
+  readonly regions: readonly Located[];
+  /** The surfaces whose every text node stands in a calm (e2e/glass-ceilings.json's `calmAll`). */
+  readonly calmAll: readonly string[];
 }
 
 /** Heights are compared to within this, in px. */
@@ -230,69 +213,13 @@ export function judgeLayout(facts: LayoutFacts): string[] {
     if (deep.length > 0) at('cut control', c.path, `its box at ${deep.map(([x, y]) => `${px(x)},${px(y)} (${where(r, x, y)})`).join(' ')} is cut off by ${shortPath(p.path)}`);
   }
 
-  /* The framed panel a path lies in: the path up to its first element whose classes name one (a class that only starts with the name is not one). */
-  const panelOf = (path: string): string | null => {
-    const segs = path.split(' > ');
-    const i = segs.findIndex((g) => /\.(?:kb-hud|kb-hand-drawer|kb-glass-dialog)(?![\w-])/.test(g));
-    return i < 0 ? null : segs.slice(0, i + 1).join(' > ');
-  };
-  const inPanel = (path: string, panel: string | null) => panel !== null && (path === panel || path.startsWith(`${panel} > `));
-
-  /* 5. a calm cut */
-  for (const m of facts.calms) {
-    const b = m.backing;
-    const e = m.element;
-    const panel5 = panelOf(m.path);
-    for (const c of m.clips) {
-      if (inPanel(c.path, panel5)) continue;
-      /* The overlay a dialog scrolls in: a dialog taller than the window is cut at its edge, and so is the calm at the dialog's own edge. */
-      if (panel5 !== null && /\.kb-glass-overlay(?![\w-])[^>]*$/.test(c.path) && panel5.startsWith(`${c.path} > `)) continue;
-      const r = c.rect;
-      const sides: string[] = [];
-      /* Only where the element itself is in the clipper's box on that axis: a calm scrolled out of a track is not drawn there, a cut feather is. */
-      if (c.x && e.x >= r.x - EDGE && e.x + e.width <= r.x + r.width + EDGE) {
-        if (r.x - b.x > EDGE) sides.push(`left ${px(r.x - b.x)}`);
-        if (b.x + b.width - (r.x + r.width) > EDGE) sides.push(`right ${px(b.x + b.width - (r.x + r.width))}`);
-      }
-      if (c.y && e.y >= r.y - EDGE && e.y + e.height <= r.y + r.height + EDGE) {
-        if (r.y - b.y > EDGE) sides.push(`top ${px(r.y - b.y)}`);
-        if (b.y + b.height - (r.y + r.height) > EDGE) sides.push(`bottom ${px(b.y + b.height - (r.y + r.height))}`);
-      }
-      if (sides.length > 0) at('calm cut', m.path, `its backing reaches past the box of ${shortPath(c.path)}, which clips it, by ${sides.join(', ')}`);
-    }
-  }
-
-  /* 6. a calm over other content */
-  const within = (path: string, of: string) => path === of || path.startsWith(`${of} > `);
-  const overlaps = (a: Box, b: Box) => Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x) > EDGE && Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y) > EDGE;
-  const others: readonly Located[] = [...facts.blocks, ...facts.controls];
-  for (const m of facts.calms) {
-    /* What is drawn: the backing less what an ancestor that clips hides of it (that is refusal 5's to name). */
-    let drawn: Box = m.backing;
-    for (const c of m.clips) {
-      const x0 = c.x ? Math.max(drawn.x, c.rect.x) : drawn.x;
-      const x1 = c.x ? Math.min(drawn.x + drawn.width, c.rect.x + c.rect.width) : drawn.x + drawn.width;
-      const y0 = c.y ? Math.max(drawn.y, c.rect.y) : drawn.y;
-      const y1 = c.y ? Math.min(drawn.y + drawn.height, c.rect.y + c.rect.height) : drawn.y + drawn.height;
-      drawn = { x: x0, y: y0, width: Math.max(0, x1 - x0), height: Math.max(0, y1 - y0) };
-    }
-    /* And what of it the page's other layers leave in view (a dialog drawn over the HUD's calm covers it: the calm is under, not over). */
-    if (m.seen !== undefined) {
-      drawn = m.seen === null ? { ...drawn, width: 0, height: 0 } : { x: Math.max(drawn.x, m.seen.x), y: Math.max(drawn.y, m.seen.y), width: Math.max(0, Math.min(drawn.x + drawn.width, m.seen.x + m.seen.width) - Math.max(drawn.x, m.seen.x)), height: Math.max(0, Math.min(drawn.y + drawn.height, m.seen.y + m.seen.height) - Math.max(drawn.y, m.seen.y)) };
-    }
-    /* A calm in a framed panel is judged over the panel's own content; what lies outside the panel, the panel covers. */
-    const panel6 = panelOf(m.path);
-    for (const o of others) {
-      if (panel6 !== null && !inPanel(o.path, panel6)) continue;
-      /* Inside this calm, inside another, or holding this calm: the calm is under it or it is under the calm. */
-      if (within(o.path, m.path) || within(m.path, o.path) || facts.calms.some((c) => within(o.path, c.path))) continue;
-      /* What the player sees of it: the part nothing else is drawn over. */
-      const seen = (o as { seen?: Box | null }).seen;
-      if (seen === null) continue;
-      /* Painted above the backing: the calm is under it, and a feather under a neighbor dims nothing of it. */
-      if (m.above?.includes(o.path)) continue;
-      if (overlaps(drawn, seen ?? o.rect)) at('calm over other content', m.path, `its backing, ${px(drawn.width)} by ${px(drawn.height)} with its feather and as its ancestors leave it, lies on ${shortPath(o.path)}, which is in no calm`);
-    }
+  /* 5. text outside the calm */
+  for (const b of facts.blocks) {
+    if (b.surface === undefined || !facts.calmAll.includes(b.surface)) continue;
+    if (b.seen === null) continue;
+    const r = b.rect;
+    const inside = facts.regions.some((g) => r.x >= g.rect.x - EDGE && r.y >= g.rect.y - EDGE && r.x + r.width <= g.rect.x + g.rect.width + EDGE && r.y + r.height <= g.rect.y + g.rect.height + EDGE);
+    if (!inside) at('text outside the calm', b.path, `${px(r.width)} by ${px(r.height)} on surface ${b.surface}, which is calmAll, lies inside no calm region's box`);
   }
 
   return out;

@@ -8,8 +8,8 @@
  * So a glass page's column and its menu bar are each laid on the ground, within their gutters
  * (`background-clip: content-box`), and the page's smoke stays in the gutters and below the
  * content; the smaller glass (the HUD, the hand, an overlay's dialog) has no gutter to keep it in,
- * so its smoke is not drawn and its own opaque ground shows. Every calm becomes a solid block of the
- * ground, unfeathered, where it would otherwise thin the smoke. tools/check-glass-contrast.mjs holds
+ * so its smoke is not drawn and its own opaque ground shows. Every region's calm becomes a solid block of the
+ * ground at its box, unblurred, where it would otherwise thin the smoke. tools/check-glass-contrast.mjs holds
  * the `high` key at 7:1 against the bare ground; e2e/glass-preferences.spec.ts holds that each
  * line stands on solid ground.
  */
@@ -28,9 +28,8 @@
   display: block;
 }
 
-:root[data-kb-contrast='high'] .kb-calm::before {
+:root[data-kb-contrast='high'] .kb-smoke-calm::before {
   inset: 0;
-  background: var(--kb-glass-ground);
-  -webkit-mask-image: none;
-  mask-image: none;
+  opacity: 1;
+  filter: none;
 }

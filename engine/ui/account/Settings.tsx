@@ -36,6 +36,7 @@ import { Invites } from './Invites.tsx';
 import { usePreferenceSaves, type TipsChange } from './preferences.ts';
 import { useSession } from './session.ts';
 import './account.css';
+import { CalmRegion } from '../glass/Calm.tsx';
 
 const SMOKE: readonly Option<Preferences['smoke']>[] = [
   { value: 'full', label: 'Full' },
@@ -143,7 +144,7 @@ function Frame({ section, children }: { readonly section: Section | null; readon
       <PageHead title="Settings" />
       <div className="kb-settings-body">
         {section && (
-          <nav className="kb-settings-nav kb-calm" aria-label="Settings sections">
+          <CalmRegion as="nav" className="kb-settings-nav" aria-label="Settings sections">
             <ul>
               {SECTIONS.map((s) => (
                 <li key={s.key}>
@@ -151,12 +152,12 @@ function Frame({ section, children }: { readonly section: Section | null; readon
                 </li>
               ))}
             </ul>
-          </nav>
+          </CalmRegion>
         )}
         {children}
       </div>
       {/* Every screen of Settings says how to reach a person; /contact is readable signed out, and the player who needs it may not be signed in. */}
-      <p className="kb-acct-text kb-calm kb-settings-reach"><ReachAPerson /></p>
+      <CalmRegion as="p" className="kb-acct-text kb-settings-reach"><ReachAPerson /></CalmRegion>
     </div>
   );
 }
@@ -184,10 +185,10 @@ export function SettingsScreen() {
 
   if (session === null) return <div className="kb-acct" aria-busy="true" />;
   if (!session.signedIn || !account) {
-    return <Frame section={null}><p className="kb-acct-lead kb-calm"><Link to="/sign-in">Sign in</Link> to change your settings.</p></Frame>;
+    return <Frame section={null}><CalmRegion as="p" className="kb-acct-lead"><Link to="/sign-in">Sign in</Link> to change your settings.</CalmRegion></Frame>;
   }
   if (prefs === null) {
-    return <Frame section={section}><div className="kb-settings-section" aria-busy="true">{refusal && <p role="alert" className="kb-acct-refusal kb-calm">{refusal}</p>}</div></Frame>;
+    return <Frame section={section}><CalmRegion className="kb-settings-section" aria-busy="true">{refusal && <p role="alert" className="kb-acct-refusal">{refusal}</p>}</CalmRegion></Frame>;
   }
 
   const signOut = async () => {
@@ -201,7 +202,7 @@ export function SettingsScreen() {
 
   const said = (
     <>
-      {refusal && <p role="alert" className="kb-acct-refusal kb-calm">{refusal}</p>}
+      {refusal && <p role="alert" className="kb-acct-refusal">{refusal}</p>}
       <p role="status" className="kb-acct-note">{saved && !refusal ? 'Saved to your account.' : ''}</p>
     </>
   );
@@ -209,7 +210,7 @@ export function SettingsScreen() {
   if (section === 'account') {
     return (
       <Frame section={section}>
-        <section className="kb-settings-section kb-calm" aria-labelledby="kb-settings-account">
+        <CalmRegion as="section" className="kb-settings-section" aria-labelledby="kb-settings-account">
           <h2 id="kb-settings-account" className="kb-acct-section-title kb-glass-display">Account</h2>
           <p className="kb-acct-lead">Out of character: what you sign in with, and who you bring in.</p>
           <Row label="Sign-in address" sentence="The address the code and the link come to. It is not shown to anyone else.">
@@ -222,7 +223,7 @@ export function SettingsScreen() {
           <Row label="Sign out" sentence="Ends this session on this device. Your characters and settings stay with your account.">
             <ButtonRow><GlassButton onClick={() => void signOut()}>Sign out</GlassButton></ButtonRow>
           </Row>
-        </section>
+        </CalmRegion>
       </Frame>
     );
   }
@@ -233,7 +234,7 @@ export function SettingsScreen() {
     const flip = (kind: AlertKind, on: boolean) => change({ toasts: ALERT_KINDS.filter((k) => (k === kind ? on : keptOn.includes(k))) });
     return (
       <Frame section={section}>
-        <section className="kb-settings-section kb-calm" aria-labelledby="kb-settings-notifications">
+        <CalmRegion as="section" className="kb-settings-section" aria-labelledby="kb-settings-notifications">
           <h2 id="kb-settings-notifications" className="kb-acct-section-title kb-glass-display">Notifications</h2>
           <p className="kb-acct-lead">Every alert still counts and waits in Alerts. These switches choose which kinds also pop up as a toast while you read.</p>
           <div role="group" aria-label="Which alerts toast">
@@ -246,14 +247,14 @@ export function SettingsScreen() {
           </Row>
           {said}
           <p className="kb-acct-foot">Changes save as you make them.</p>
-        </section>
+        </CalmRegion>
       </Frame>
     );
   }
 
   return (
     <Frame section={section}>
-      <section className="kb-settings-section kb-calm" aria-labelledby="kb-settings-accessibility">
+      <CalmRegion as="section" className="kb-settings-section" aria-labelledby="kb-settings-accessibility">
         <h2 id="kb-settings-accessibility" className="kb-acct-section-title kb-glass-display">Accessibility</h2>
         <p className="kb-acct-lead">These change how the board and the glass look, read and move. They never change how hard a card is to get through.</p>
         <MotionRow value={prefs.motion} onChange={(v) => change({ motion: v })} />
@@ -268,7 +269,7 @@ export function SettingsScreen() {
         <TipsRow on={prefs.tips === 'on'} change={changeTips} />
         {said}
         <p className="kb-acct-foot">Changes save as you make them.</p>
-      </section>
+      </CalmRegion>
     </Frame>
   );
 }

@@ -219,7 +219,7 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
   return (
     <Overlay
       title={face.name}
-      kicker={<span className="kb-calm">{how === 'set' ? 'Set a card face down' : how === 'use' ? 'Use a card' : 'Play a card'}</span>}
+      kicker={<span>{how === 'set' ? 'Set a card face down' : how === 'use' ? 'Use a card' : 'Play a card'}</span>}
       surface="play"
       className="kb-play-dialog"
       onClose={onClose}
@@ -227,19 +227,19 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
     >
       <form className="kb-play" data-kb-alignment={face.alignment} style={{ '--kb-card-color': face.art.color } as React.CSSProperties} onSubmit={(e) => void submit(e)} noValidate>
         <div className="kb-play-fields">
-          <p className="kb-play-target kb-calm">
+          <p className="kb-play-target">
             {beyond || !post
               ? <>On <Link to={target.to} onClick={onClose}>{beyond?.name ?? target.title}</Link>{beyond?.reach === 'character' ? `, on every post of theirs` : beyond?.reach === 'thread' ? ', the whole thread' : beyond?.reach === 'board' ? ', the whole board' : ''}, until its time is up.</>
               : <>On <Link to={target.to} onClick={onClose}>{target.author}'s post #{post.seq}</Link> in “{target.title}”, {length} {length === 1 ? 'character' : 'characters'} long.</>}
           </p>
-          {ownBoth && <p className="kb-play-both kb-calm">You play both. It costs the same; your log will say so.</p>}
-          {how === 'set' && <p className="kb-play-both kb-calm">Everyone sees a card back on your post, the same as any card set face down; only you see which card it is.{struck && configRules ? ` If it springs, it lays ${configRules.name} with these settings.` : ''}</p>}
-          {Config && post && <div className="kb-calm"><Config config={config} onChange={setConfig} post={post} id={id} /></div>}
+          {ownBoth && <p className="kb-play-both">You play both. It costs the same; your log will say so.</p>}
+          {how === 'set' && <p className="kb-play-both">Everyone sees a card back on your post, the same as any card set face down; only you see which card it is.{struck && configRules ? ` If it springs, it lays ${configRules.name} with these settings.` : ''}</p>}
+          {Config && post && <div><Config config={config} onChange={setConfig} post={post} id={id} /></div>}
           {/* A Set's Act says nothing, so it carries no message: a Bluff's and a trap's are alike. */}
           {how !== 'set' && <div className="kb-play-message">
-            <label htmlFor={`${id}-message`} className="kb-play-label kb-calm">Your message</label>
+            <label htmlFor={`${id}-message`} className="kb-play-label">Your message</label>
             <textarea id={`${id}-message`} className="kb-play-input" rows={3} value={message} aria-describedby={hint} onChange={(e) => change(e.target.value)} />
-            <div className="kb-play-count kb-calm">
+            <div className="kb-play-count">
               <span id={hint}>Shown on the card's Act. Plain text.</span>
               {/* In the face's own figures, as the board draws it: tabular ones are wider, and the board match refuses the difference. */}
               <span>{`${[...message].length} / ${MESSAGE_MOST}`}</span>
@@ -247,7 +247,7 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
             </div>
           </div>}
           <div className="kb-play-sum">
-            <dl className="kb-play-cost kb-calm">
+            <dl className="kb-play-cost">
               <div><dt>Card</dt><dd>Paid</dd></div>
               <div><dt>{surcharge}</dt><dd className="kb-num">{orbs(price)}</dd></div>
               <div className="kb-play-total"><dt>To pay now</dt><dd className="kb-num">{orbs(price)}</dd></div>
@@ -255,12 +255,12 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
             {wallet && after !== null && (
               <div className="kb-play-wallet">
                 <Orbs settled={wallet.balance} pending={-price} cap={wallet.cap} figures={false} label={`Wallet after playing: ${orbs(Math.max(0, after))} of ${orbs(wallet.cap)}`} />
-                <span className="kb-play-wallet-sum kb-num kb-calm">{orbs(wallet.balance)} → <b>{orbs(Math.max(0, after))}</b> solid</span>
+                <span className="kb-play-wallet-sum kb-num">{orbs(wallet.balance)} → <b>{orbs(Math.max(0, after))}</b> solid</span>
               </div>
             )}
-            <p className="kb-play-fine kb-calm" role="status" aria-label="Cost">{shortWords || (!lands.ok ? plainRefusal(lands.why) : '')}</p>
+            <p className="kb-play-fine" role="status" aria-label="Cost">{shortWords || (!lands.ok ? plainRefusal(lands.why) : '')}</p>
           </div>
-          <p className="kb-play-fine kb-calm">
+          <p className="kb-play-fine">
             {verb === 'Play' ? 'Playing' : verb === 'Set' ? 'Setting' : 'Using'} is a public Act{hud ? ` under ${hud.name}'s name` : ''}. Only solid Aura is spent; the ghost doesn't count.
           </p>
         </div>

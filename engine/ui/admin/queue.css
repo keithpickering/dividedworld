@@ -12,7 +12,7 @@
 
 .kb-queue-lead {
   max-width: 820px;
-  margin: 8px 0 calc(var(--kb-glass-calm-feather) + 8px);
+  margin: 8px 0 40px;
   font-size: var(--kb-glass-size-body);
   font-weight: 600;
   line-height: 1.5;
@@ -26,12 +26,12 @@
 
 /* A calm ends a group with its backing a feather below its box, so the next group's head (or the contact form's) starts past it. */
 .kb-queue-group {
-  margin: calc(var(--kb-glass-calm-feather) + 8px) 0 0;
+  margin: 40px 0 0;
 }
 
-/* A calm under the head (an empty line, a move) draws its backing a feather above its box; the head clears it and a little more, so the backing lies on nothing but the group. */
+/* The head stands clear of the group under it. */
 .kb-queue-group-head {
-  margin: 0 0 calc(var(--kb-calm-feather, var(--kb-glass-calm-feather)) + 8px);
+  margin: 0 0 40px;
   font-size: var(--kb-glass-size-display-m);
   line-height: 1;
   color: var(--kb-glass-text);

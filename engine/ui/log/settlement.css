@@ -297,10 +297,6 @@
   justify-content: flex-end;
 }
 
-/* The ways stand as near the cards' words as the board sets them, so their feather is capped at the title gap (calm.css) and lies on nothing but it. */
-.kb-settled-ways {
-  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
-}
 
 /* ---- the Phone board's layout ---- */
 

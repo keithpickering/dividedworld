@@ -142,17 +142,17 @@ export function Picker({ act, subject, as, own, tallies, mine, anchor, onClose }
   const at = cells(GRID.map((q) => instance.reactions.filter((r) => r.quadrant === q).length), columns);
   return (
     <Overlay
-      title={<span className="kb-calm">React</span>} label={`React to ${subject}`} surface="react" className="kb-picker"
+      title={<span>React</span>} label={`React to ${subject}`} surface="react" className="kb-picker"
       describedBy={describedId} anchor={anchor} sheetBelow={POPOVER_ROOM} onPlace={setPlaced} onClose={() => onClose(true)}
-      aside={<span id={countId} className="kb-picker-left kb-calm" role="status">{left} of {cap} left</span>}
+      aside={<span id={countId} className="kb-picker-left" role="status">{left} of {cap} left</span>}
     >
       {/* What the dialog is described by: the count, and the mask the reaction goes out under (the HUD's, which the overlay dims). */}
       <span id={describedId} hidden>{left} of {cap} left, reacting as {as?.name ?? 'your character'}</span>
       <div className="kb-picker-body" aria-busy={busy || undefined} onKeyDown={move}>
-        {left === 0 && <p className="kb-picker-none kb-calm">You have left all {cap} of your reactions on this post. You cannot leave another.</p>}
+        {left === 0 && <p className="kb-picker-none">You have left all {cap} of your reactions on this post. You cannot leave another.</p>}
         {left > 0 && (
           <div className="kb-picker-field">
-            <span className="kb-picker-axis kb-calm" data-kb-axis="top" aria-hidden="true">Excited</span>
+            <span className="kb-picker-axis" data-kb-axis="top" aria-hidden="true">Excited</span>
             <div ref={grid} className="kb-picker-grid" data-kb-columns={columns} style={{ '--kb-picker-columns': columns } as CSSProperties}>
               {GRID.map((q, qi) => {
                 const cls = ui.quadrantClasses?.[q];
@@ -162,7 +162,7 @@ export function Picker({ act, subject, as, own, tallies, mine, anchor, onClose }
                 } as CSSProperties);
                 return (
                   <div key={q} className="kb-picker-quad" role="group" aria-labelledby={`${countId}-${q}`} data-kb-quadrant={q} style={worn}>
-                    <div id={`${countId}-${q}`} className="kb-picker-label kb-glass-display kb-calm">{ui.quadrantLabels[q]}</div>
+                    <div id={`${countId}-${q}`} className="kb-picker-label kb-glass-display">{ui.quadrantLabels[q]}</div>
                     <div className="kb-picker-kinds">
                       {instance.reactions.filter((r) => r.quadrant === q).map((r, ki) => {
                         const ok = free(r.key);
@@ -184,13 +184,13 @@ export function Picker({ act, subject, as, own, tallies, mine, anchor, onClose }
                 );
               })}
             </div>
-            <span className="kb-picker-axis kb-calm" data-kb-axis="bottom" aria-hidden="true">Low-key</span>
+            <span className="kb-picker-axis" data-kb-axis="bottom" aria-hidden="true">Low-key</span>
             <span className="kb-picker-cross" data-kb-cross="across" aria-hidden="true" />
             <span className="kb-picker-cross" data-kb-cross="down" aria-hidden="true" />
           </div>
         )}
-        {refusal && <p className="kb-notice kb-picker-refusal kb-calm" data-kb-tone="refusal" role="alert">{refusal}</p>}
-        {left > 0 && <p className="kb-picker-hint kb-calm">Arrow keys move, Enter reacts. Outlined: yours.</p>}
+        {refusal && <p className="kb-notice kb-picker-refusal" data-kb-tone="refusal" role="alert">{refusal}</p>}
+        {left > 0 && <p className="kb-picker-hint">Arrow keys move, Enter reacts. Outlined: yours.</p>}
       </div>
     </Overlay>
   );

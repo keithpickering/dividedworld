@@ -11,17 +11,18 @@
  * The five poisons are the five refusals: a squeezed block (the phone My characters head as found,
  * a lead of 0px by 547px), an overflow (a panel 20px past the right edge, and the same inside a
  * scrolling track, which passes), a mismatched row (Cancel 44px and 18px beside Reveal 48px and
- * 21px), a cut control (a button whose top-right corner lies in its panel's 24px chamfer), and two
- * for the calm: a calm cut (a 32px feather past the right edge of a column that clips, the phone
- * Settings as found on main, where a 17px gutter cut it) and a calm over other content (a feather
- * lying on a heading that stands in no calm). Two calms whose feathers overlap are not refused.
+ * 21px), a cut control (a button whose top-right corner lies in its panel's 24px chamfer), and the
+ * calm's: a text node on the glass of a calmAll surface outside every calm region's box (a
+ * paragraph placed beside its page's column region, not inside it). A calm that is a rect in the
+ * smoke can be neither cut by a column's clip nor painted over content, so those two refusals the
+ * text-element calm needed are gone with it.
  */
 import { describe, expect, test } from 'vitest';
 import { judgeLayout, type LayoutFacts } from './glass-layout.ts';
 
 const SCREEN = 'My characters, on a phone';
 
-/** A phone screen that passes: a head, a row of two matching buttons, a button clear of its panel's cut, a calm whose feather has room in the column that clips it. */
+/** A phone screen that passes: a head, a row of two matching buttons, a button clear of its panel's cut, and a column that is one calm region on a surface that is calmAll. */
 const clean: LayoutFacts = {
   screen: SCREEN,
   viewport: { width: 390, height: 844, scrollWidth: 390 },
@@ -46,7 +47,8 @@ const clean: LayoutFacts = {
       panel: { path: 'main:nth-child(1) > section:nth-child(4)', rect: { x: 100, y: 200, width: 400, height: 200 }, polygon: [[100, 200], [476, 200], [500, 224], [500, 400], [100, 400]] },
     },
   ],
-  calms: [{ path: 'main:nth-child(1) > header:nth-child(1)', backing: { x: 0, y: 4, width: 390, height: 142 }, element: { x: 16, y: 20, width: 358, height: 110 }, clips: [{ path: 'main:nth-child(1)', rect: { x: 0, y: 0, width: 390, height: 900 }, x: true, y: false }] }],
+  regions: [{ path: 'main:nth-child(1) > div.kb-col:nth-child(2)', rect: { x: 16, y: 20, width: 358, height: 500 } }],
+  calmAll: ['characters'],
 };
 
 const refusals = (change: Partial<LayoutFacts>) => judgeLayout({ ...clean, ...change });
@@ -243,160 +245,41 @@ describe('the layout judgment', () => {
     expect(refusals({ controls: [{ path: 'main > section > button.skewed', rect: { x: 386, y: 210, width: 80, height: 40 }, quad: clear, panel }] })).toEqual([]);
   });
 
-  /* The calm: a header at 16..374, its feather 16px (the phone's gutter) a side, in a column that clips sideways at 0..390. */
-  const headerPath = 'main:nth-child(1) > header:nth-child(1)';
-  const el = { x: 16, y: 20, width: 358, height: 110 };
-  const column = { path: 'main:nth-child(1)', rect: { x: 17, y: 0, width: 356, height: 900 }, x: true, y: false };
+  /* The calm: a page's column is one region, the head above it another; the paragraph below stands in neither when it is placed beside them. */
+  const column = { path: 'main:nth-child(1) > div.kb-col:nth-child(2)', rect: { x: 16, y: 20, width: 358, height: 500 } };
+  const paragraph = { path: 'main:nth-child(1) > div.kb-col:nth-child(2) > p:nth-child(1)', rect: { x: 16, y: 200, width: 358, height: 60 }, fontSize: 21, longestWord: 60, wraps: true, textWidth: 330, column: 358, surface: 'characters' };
 
-  test('refuses a calm cut: a 32px feather past the right edge of the column that clips it', () => {
-    const out = refusals({ calms: [{ path: headerPath, element: { ...el, x: 17, width: 356 }, backing: { x: -15, y: -12, width: 420, height: 174 }, clips: [column] }] });
+  test('a paragraph in its page\'s column region is not refused, on a surface that is calmAll', () => {
+    expect(refusals({ blocks: [...clean.blocks, paragraph] })).toEqual([]);
+  });
+
+  test('refuses a text node on the glass outside every region\'s box, on a calmAll surface: a paragraph beside its page\'s column, not inside it', () => {
+    const beside = { ...paragraph, path: 'main:nth-child(1) > p.kb-beside:nth-child(3)', rect: { x: 16, y: 560, width: 358, height: 60 } };
+    const out = refusals({ blocks: [...clean.blocks, beside] });
     expect(out).toHaveLength(1);
-    expect(out[0]).toContain('calm cut');
-    expect(out[0]).toContain('header');
-    expect(out[0]).toContain('main');
-    expect(out[0]).toContain('right');
+    expect(out[0]).toContain('text outside the calm');
+    expect(out[0]).toContain('p.kb-beside');
     expect(out[0]).toContain(SCREEN);
+    expect(out[0]).toContain('characters');
   });
 
-  test('does not call a calm cut by an axis its ancestor does not clip, nor by a scroller its element is scrolled out of', () => {
-    const backing = { x: -15, y: -12, width: 420, height: 174 };
-    expect(refusals({ calms: [{ path: headerPath, element: { ...el, x: 17, width: 356 }, backing, clips: [{ ...column, rect: { ...column.rect, y: -100 }, x: false, y: true }] }] })).toEqual([]);
-    /* A calm in a track, wholly past the track's box, is not drawn there at all. */
-    expect(refusals({ calms: [{ path: headerPath, element: { x: 500, y: 20, width: 100, height: 40 }, backing: { x: 468, y: -12, width: 164, height: 104 }, clips: [{ path: 'main > ul', rect: { x: 0, y: 0, width: 390, height: 900 }, x: true, y: false }] }] })).toEqual([]);
+  test('a paragraph that sticks out of the region by more than a pixel is outside it; one within a pixel is not', () => {
+    const sticks = { ...paragraph, rect: { x: 16, y: 480, width: 358, height: 60 } };
+    expect(refusals({ blocks: [...clean.blocks, sticks] })).toHaveLength(1);
+    expect(refusals({ blocks: [...clean.blocks, { ...paragraph, rect: { x: 16, y: 460.5, width: 358, height: 60 } }] })).toEqual([]);
   });
 
-  test('a calm whose feather lies inside the column that clips it is not refused, nor one with no clipping ancestor', () => {
-    expect(refusals({ calms: [{ path: headerPath, element: el, backing: { x: 0, y: 4, width: 390, height: 142 }, clips: [{ ...column, rect: { x: 0, y: 0, width: 390, height: 900 } }] }] })).toEqual([]);
-    expect(refusals({ calms: [{ path: headerPath, element: el, backing: { x: -16, y: 4, width: 422, height: 142 }, clips: [] }] })).toEqual([]);
+  test('a paragraph outside every region is not refused on a surface that is not calmAll, nor when it is not on the glass', () => {
+    const beside = { ...paragraph, path: 'main:nth-child(1) > p.kb-beside:nth-child(3)', rect: { x: 16, y: 560, width: 358, height: 60 } };
+    expect(refusals({ blocks: [...clean.blocks, { ...beside, surface: 'rankings' }] })).toEqual([]);
+    const { surface: _surface, ...board } = beside;
+    expect(refusals({ blocks: [...clean.blocks, board] })).toEqual([]);
   });
 
-  test('an unframed class is no panel: a calm cut by the row that holds it is refused, and so is one over a heading beside it', () => {
-    /* The roster's rail has no clip-path and no ground (characters.css), so a calm under it is judged as one in the page: the row that scrolls clips its feather. */
-    const rail = 'main:nth-child(1) > div.kb-class-rail:nth-child(2)';
-    const grid = { path: `${rail} > div.kb-class-grid:nth-child(1)`, rect: { x: 0, y: 200, width: 390, height: 300 }, x: true, y: true };
-    const tabs = { path: `${grid.path} > div.kb-carousel-tablist.kb-calm:nth-child(1)`, element: { x: 0, y: 232, width: 390, height: 236 }, backing: { x: -32, y: 200, width: 454, height: 300 }, clips: [grid] };
-    const cut = refusals({ calms: [tabs] });
-    expect(cut.some((o) => o.includes('calm cut') && o.includes('div.kb-class-grid'))).toBe(true);
-    /* A framed panel (a class that names one) stays excused, so the exemption is the panel's and not the geometry's. */
-    const framed = 'main:nth-child(1) > div.kb-hud:nth-child(2)';
-    const inHud = { ...tabs, path: `${framed} > div.kb-carousel-tablist.kb-calm:nth-child(1)`, clips: [{ ...grid, path: `${framed} > div.kb-class-grid:nth-child(1)` }] };
-    expect(refusals({ calms: [inHud] })).toEqual([]);
-    /* And a heading the rail's calm lies on, beside it in the page, is refused as over other content. */
-    const head = { path: 'main:nth-child(1) > h2:nth-child(1)', rect: { x: 16, y: 190, width: 200, height: 30 }, fontSize: 30, longestWord: 100, wraps: false, textWidth: 150, column: 358 };
-    const over = refusals({ blocks: [...clean.blocks, head], calms: [{ ...tabs, clips: [] }] });
-    expect(over.some((o) => o.includes('calm over other content') && o.includes('h2'))).toBe(true);
-  });
-
-  /* A heading that stands in no calm, 20px under the header's foot, inside the header's 16px feather. */
-  const heading = { path: 'main:nth-child(1) > h2:nth-child(2)', rect: { x: 16, y: 138, width: 200, height: 30 }, fontSize: 30, longestWord: 100, wraps: false, textWidth: 150, column: 358 };
-  const calmed = { path: headerPath, element: el, backing: { x: 0, y: 4, width: 390, height: 142 }, clips: [] };
-
-  test('refuses a calm over other content: its feather lies on a heading that stands in no calm', () => {
-    const out = refusals({ blocks: [...clean.blocks, heading], calms: [calmed] });
-    expect(out).toHaveLength(1);
-    expect(out[0]).toContain('calm over other content');
-    expect(out[0]).toContain('header');
-    expect(out[0]).toContain('h2');
-    expect(out[0]).toContain(SCREEN);
-  });
-
-  test('refuses a calm over a control that stands in no calm', () => {
-    const control = { path: 'main:nth-child(1) > button:nth-child(2)', rect: { x: 16, y: 140, width: 100, height: 48 }, panel: null };
-    const out = refusals({ controls: [...clean.controls, control], calms: [calmed] });
-    expect(out).toHaveLength(1);
-    expect(out[0]).toContain('calm over other content');
-    expect(out[0]).toContain('button');
-  });
-
-  test('a heading clear of the feather, one inside this calm and one in another calm are not refused', () => {
-    expect(refusals({ blocks: [...clean.blocks, { ...heading, rect: { ...heading.rect, y: 150 } }], calms: [calmed] })).toEqual([]);
-    expect(refusals({ blocks: [...clean.blocks, { ...heading, path: `${headerPath} > h2:nth-child(3)`, rect: { ...heading.rect, y: 100 } }], calms: [calmed] })).toEqual([]);
-    const other = { path: 'main:nth-child(1) > section:nth-child(2)', element: { x: 16, y: 150, width: 300, height: 60 }, backing: { x: 0, y: 134, width: 332, height: 92 }, clips: [] };
-    expect(refusals({ blocks: [...clean.blocks, { ...heading, path: `${other.path} > h2:nth-child(1)` }], calms: [calmed, other] })).toEqual([]);
-  });
-
-  test('a calm in a framed panel is refused over uncalmed content in the same panel, and excused over content outside it', () => {
-    const hudHeader = { ...calmed, path: 'div.kb-hud:nth-child(1) > header:nth-child(1)' };
-    const inside = { ...heading, path: 'div.kb-hud:nth-child(1) > h2:nth-child(2)' };
-    const out = refusals({ blocks: [...clean.blocks, inside], calms: [hudHeader] });
-    expect(out).toHaveLength(1);
-    expect(out[0]).toContain('calm over other content');
-    /* The panel covers what lies outside it, so a heading of the page under the panel is not what the calm lies on. */
-    expect(refusals({ blocks: [...clean.blocks, heading], calms: [hudHeader] })).toEqual([]);
-    /* In another calm of the same panel it is a staggered backing. */
-    const sibling = { path: 'div.kb-hud:nth-child(1) > section:nth-child(2)', element: { x: 16, y: 150, width: 300, height: 60 }, backing: { x: 0, y: 134, width: 332, height: 92 }, clips: [] };
-    expect(refusals({ blocks: [...clean.blocks, { ...inside, path: `${sibling.path} > h2:nth-child(1)` }], calms: [hudHeader, sibling] })).toEqual([]);
-  });
-
-  test('a calm lies under content that paints above its backing: it dims nothing, so it is not refused; painted over it, it is', () => {
-    /* The faded avatar: the swap's calm painted its 85% ground over the avatar in its feather. The gatherer reads the paint order, and lists what is above. */
-    const control = { path: 'main:nth-child(1) > button:nth-child(2)', rect: { x: 16, y: 140, width: 100, height: 48 }, panel: null };
-    const poison = refusals({ controls: [...clean.controls, control], calms: [{ ...calmed, above: [] }] });
-    expect(poison).toHaveLength(1);
-    expect(poison[0]).toContain('calm over other content');
-    expect(poison[0]).toContain('button');
-    /* The same geometry with the control above the backing passes, for a control and for a block. */
-    expect(refusals({ controls: [...clean.controls, control], calms: [{ ...calmed, above: [control.path] }] })).toEqual([]);
-    expect(refusals({ blocks: [...clean.blocks, heading], calms: [{ ...calmed, above: [heading.path] }] })).toEqual([]);
-    /* Another element being above is no excuse for this one. */
-    expect(refusals({ blocks: [...clean.blocks, heading], calms: [{ ...calmed, above: [control.path] }] })).toHaveLength(1);
-  });
-
-  test('a heading with something drawn over all of it is not what the calm lies on', () => {
-    expect(refusals({ blocks: [...clean.blocks, { ...heading, seen: null }], calms: [calmed] })).toEqual([]);
-  });
-
-  test('a heading under the part of the feather a clipping ancestor hides is not what the calm lies on', () => {
-    /* The column ends at y 140, so the feather below it is not drawn; the heading at 138 to 168 still meets the drawn part, the one at 145 does not. */
-    const clip = { path: 'main:nth-child(1)', rect: { x: 0, y: 0, width: 390, height: 140 }, x: false, y: true };
-    const over = (blocks: LayoutFacts['blocks']) => refusals({ blocks, calms: [{ ...calmed, clips: [clip] }] }).filter((r) => r.startsWith('calm over'));
-    expect(over([...clean.blocks, heading])).toHaveLength(1);
-    expect(over([...clean.blocks, { ...heading, rect: { ...heading.rect, y: 145 } }])).toEqual([]);
-  });
-
-  test('a heading half covered is judged by the half that is seen', () => {
-    /* The heading spans y 138 to 168; the lower half, from 153, is drawn over by something else, and the feather ends at 146. */
-    expect(refusals({ blocks: [...clean.blocks, { ...heading, seen: { x: 16, y: 138, width: 200, height: 8 } }], calms: [calmed] })).toHaveLength(1);
-    expect(refusals({ blocks: [...clean.blocks, { ...heading, seen: { x: 16, y: 150, width: 200, height: 18 } }], calms: [calmed] })).toEqual([]);
-  });
-
-  test('a calm with another layer drawn over it (a dialog over the HUD) is under that content, not over it', () => {
-    expect(refusals({ blocks: [...clean.blocks, heading], calms: [{ ...calmed, seen: null }] })).toEqual([]);
-    /* Seen only down to y 100, above the heading, which is at 138. */
-    expect(refusals({ blocks: [...clean.blocks, heading], calms: [{ ...calmed, seen: { x: 0, y: 4, width: 390, height: 96 } }] })).toEqual([]);
-    expect(refusals({ blocks: [...clean.blocks, heading], calms: [{ ...calmed, seen: { x: 0, y: 4, width: 390, height: 142 } }] })).toHaveLength(1);
-  });
-
-  test('two calms whose feathers overlap are not refused: a staggered backing', () => {
-    const other = { path: 'main:nth-child(1) > section:nth-child(2)', element: { x: 16, y: 140, width: 300, height: 60 }, backing: { x: 0, y: 124, width: 332, height: 92 }, clips: [] };
-    const para = { path: `${other.path} > p:nth-child(1)`, rect: { x: 16, y: 140, width: 300, height: 60 }, fontSize: 21, longestWord: 60, wraps: true, textWidth: 290, column: 358 };
-    expect(refusals({ blocks: [...clean.blocks, para], calms: [calmed, other] })).toEqual([]);
-  });
-
-  /* A calm in a framed panel (the HUD's glass, here) and a heading beside it in the same panel, inside its feather. */
-  const hudCalm = { path: 'main:nth-child(1) > section.kb-hud:nth-child(2) > div.kb-hud-bar:nth-child(1) > div.kb-hud-aura.kb-calm:nth-child(2)', element: el, backing: { x: 0, y: 4, width: 390, height: 142 }, clips: [] };
-  const hudHeading = { ...heading, path: 'main:nth-child(1) > section.kb-hud:nth-child(2) > div.kb-hud-bar:nth-child(1) > span.kb-hud-name:nth-child(1)' };
-  const aboveHud = { ...heading, path: 'main:nth-child(1) > h2:nth-child(3)' };
-
-  test('a calm in a framed panel is not refused for lying on the page\'s content the panel covers, only on its own', () => {
-    expect(refusals({ blocks: [aboveHud], calms: [hudCalm] })).toEqual([]);
-    expect(refusals({ blocks: [hudHeading], calms: [hudCalm] })).toHaveLength(1);
-    /* The poison: the same geometry outside a framed panel is refused, so the exemption is the panel's and not the geometry's. */
-    expect(refusals({ blocks: [heading], calms: [{ ...hudCalm, path: calmed.path }] })).toHaveLength(1);
-    /* A class that only starts with a panel's name is not a panel. */
-    expect(refusals({ blocks: [heading], calms: [{ ...hudCalm, path: 'main:nth-child(1) > section.kb-hud-extra:nth-child(2) > p.kb-calm:nth-child(1)' }] })).toHaveLength(1);
-  });
-
-  test('a calm cut by the framed panel it stands in, or by a clipper inside it, is not refused; one cut by a clipper outside it still is', () => {
-    const hudClip = { path: 'main:nth-child(1) > section.kb-hud:nth-child(2) > div.kb-hud-glass:nth-child(1)', rect: { x: 16, y: 0, width: 358, height: 900 }, x: true, y: false };
-    const calm = { ...hudCalm, element: { x: 16, y: 20, width: 358, height: 110 }, backing: { x: -16, y: 4, width: 422, height: 142 } };
-    expect(refusals({ calms: [{ ...calm, clips: [hudClip] }] })).toEqual([]);
-    const outside = { ...hudClip, path: 'main:nth-child(1)' };
-    expect(refusals({ calms: [{ ...calm, clips: [outside] }] }).filter((r) => r.startsWith('calm cut'))).toHaveLength(1);
-    /* The overlay a dialog stands in is not "outside": the dialog taller than the window is cut there. */
-    const dlg = { ...calm, path: 'body > div.kb-glass.kb-glass-overlay:nth-child(1) > div.kb-glass-dialog:nth-child(1) > h2:nth-child(1) > span.kb-calm' };
-    const overlay = { path: 'body > div.kb-glass.kb-glass-overlay:nth-child(1)', rect: { x: 16, y: 0, width: 358, height: 900 }, x: true, y: false };
-    expect(refusals({ calms: [{ ...dlg, clips: [overlay] }] })).toEqual([]);
-    expect(refusals({ calms: [{ ...dlg, path: dlg.path.replace('kb-glass-dialog', 'kb-card'), clips: [overlay] }] }).filter((r) => r.startsWith('calm cut'))).toHaveLength(1);
+  test('a paragraph in either of two regions is inside one', () => {
+    const aside = { path: 'main:nth-child(1) > aside:nth-child(3)', rect: { x: 16, y: 540, width: 358, height: 200 } };
+    const beside = { ...paragraph, path: 'main:nth-child(1) > aside:nth-child(3) > p:nth-child(1)', rect: { x: 16, y: 560, width: 358, height: 60 } };
+    expect(refusals({ blocks: [...clean.blocks, beside] })).toHaveLength(1);
+    expect(refusals({ blocks: [...clean.blocks, beside], regions: [...clean.regions, aside] })).toEqual([]);
   });
 });

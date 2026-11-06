@@ -73,7 +73,8 @@
 .kb-picker-field {
   position: relative;
   margin: 10px 0 0;
-  padding: 28px 0;
+  /* The axis labels stand in this padding, above and below the grid: it grows with the label, so at a larger text size the label is never over the grid's tiles and their borders. */
+  padding: max(28px, calc(var(--kb-glass-size-label) * 1.4)) 0;
 }
 
 .kb-picker-axis {
@@ -202,15 +203,6 @@
   font-size: var(--kb-glass-size-phone-display);
   /* Room in its own box for its descender, inside its calm's interior. */
   line-height: 1.15;
-}
-
-/*
- * The labels' calm: at 24px they are large (#54) and stand bare on the popover's smoke, as the React
- * board draws them; on the phone's sheet they are the phone's display size, under the large size,
- * so there they stand in their calm, as body text does.
- */
-.kb-picker:not([data-kb-place='sheet']) .kb-picker-label.kb-calm::before {
-  content: none;
 }
 
 .kb-picker[data-kb-place='sheet'] .kb-picker-left,

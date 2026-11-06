@@ -26,6 +26,7 @@ import { AlertIcon } from './AlertIcon.tsx';
 import { rowKey, useAlerts, type AlertsRead } from './useAlerts.ts';
 import { batchWords, targetKey, wordsFor, type Part, type Said, type WordsContext } from './words.ts';
 import './alerts.css';
+import { CalmRegion } from '../glass/Calm.tsx';
 
 /** One line of the list: a single alert, or the cards played on one target among the new. */
 interface Item { readonly key: string; readonly rows: readonly Alert[] }
@@ -172,20 +173,20 @@ export function Alerts({ data, older, onOlder, onUnfollow, notes }: AlertsProps)
       <PageHead
         title="Alerts"
         tabs={mine.length > 1 && (
-          <nav aria-label="Whose alerts" className="kb-calm">
+          <CalmRegion as="nav" aria-label="Whose alerts">
             <ButtonRow>
               <GlassButton kind={current === null ? 'primary' : 'secondary'} aria-pressed={current === null} onClick={() => setPicked(null)}>All</GlassButton>
               {mine.map((c) => (
                 <GlassButton key={c.id} kind={current?.id === c.id ? 'primary' : 'secondary'} aria-pressed={current?.id === c.id} onClick={() => setPicked(c.id)}>{c.name}</GlassButton>
               ))}
             </ButtonRow>
-          </nav>
+          </CalmRegion>
         )}
       />
-      <p className="kb-alerts-lede kb-calm">
+      <CalmRegion as="p" className="kb-alerts-lede">
         What happened to your characters, and what&apos;s new in the game. Every alert is true, and each one is also in your log or on the board. A thread drops off this list once you&apos;ve read it.
-      </p>
-      <div ref={list} role="group" aria-label="Your alerts" className="kb-alerts-board kb-calm" tabIndex={-1}>
+      </CalmRegion>
+      <CalmRegion ref={list} role="group" aria-label="Your alerts" className="kb-alerts-board" tabIndex={-1}>
         {data.rows.length === 0 && <p className="kb-alerts-empty">Nothing here yet. When something happens to one of your characters, or the game has news, it shows up here.</p>}
         {data.rows.length > 0 && current !== null && shown.length === 0 && <p className="kb-alerts-empty">Nothing for {current.name} yet. All shows everyone&apos;s.</p>}
         {fresh.length > 0 && (
@@ -207,7 +208,7 @@ export function Alerts({ data, older, onOlder, onUnfollow, notes }: AlertsProps)
             {older === 'failed' && <span className="kb-alerts-older-failed" role="alert"> The older alerts could not be read. Try again.</span>}
           </p>
         )}
-      </div>
+      </CalmRegion>
     </div>
   );
 }
@@ -229,16 +230,16 @@ export function AlertsScreen() {
     } catch { note(thread, 'That did not go through. Try again.'); }
     return false;
   };
-  if (signedIn === false) return <div className="kb-alerts"><div className="kb-alerts-empty kb-calm"><SignInPrompt /></div></div>;
+  if (signedIn === false) return <div className="kb-alerts"><CalmRegion className="kb-alerts-empty"><SignInPrompt /></CalmRegion></div>;
   if (signedIn === null || state.status === 'loading') return <div className="kb-alerts" role="status"><p className="kb-visually-hidden">Reading your alerts</p></div>;
   if (state.status === 'failed') {
     return (
       <div className="kb-alerts">
         <PageHead title="Alerts" />
-        <p className="kb-alerts-empty kb-calm" role="alert">
+        <CalmRegion as="p" className="kb-alerts-empty" role="alert">
           Your alerts could not be read. Nothing is lost; they are still in your log and on the board.{' '}
           <button type="button" className="kb-alerts-unfollow" onClick={retry}>Try again</button>
-        </p>
+        </CalmRegion>
       </div>
     );
   }

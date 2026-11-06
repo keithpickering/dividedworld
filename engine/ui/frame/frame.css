@@ -801,36 +801,10 @@
   font-size: var(--kb-glass-size-phone-small);
 }
 
-/*
- * The door and the actions stand one above the other on the phone, and each calm is its own stacking context, so the later paints over the
- * earlier: a calm feathered into the gap would dim the other's words. The two calms join instead. Each reaches to the middle of the bar's
- * row gap and stops there, with no feather on the edge that faces the other, and ramps only on its outer edge; the sides ramp as ever
- * (calm.css). Neither backing lies over the other's text, and together they read as one panel. The gap is the bar's own row gap.
- */
+/* The door and the actions stand one above the other on the phone, a row gap apart; the bar's own row gap. */
 :where(:root[data-kb-layout='phone']) .kb-hud-bar {
   --kb-hud-row-gap: 8px;
   --kb-hud-pad-top: 8px;
-  --kb-hud-join: calc(var(--kb-hud-row-gap) / 2);
-}
-
-:where(:root[data-kb-layout='phone']) .kb-hud-door.kb-calm::before {
-  bottom: calc(var(--kb-hud-join) * -1);
-  -webkit-mask-image:
-    linear-gradient(to right, transparent, currentColor var(--kb-glass-calm-feather), currentColor calc(100% - var(--kb-glass-calm-feather)), transparent),
-    linear-gradient(to bottom, transparent, currentColor var(--kb-glass-calm-feather));
-  mask-image:
-    linear-gradient(to right, transparent, currentColor var(--kb-glass-calm-feather), currentColor calc(100% - var(--kb-glass-calm-feather)), transparent),
-    linear-gradient(to bottom, transparent, currentColor var(--kb-glass-calm-feather));
-}
-
-:where(:root[data-kb-layout='phone']) .kb-hud-door-actions.kb-calm::before {
-  top: calc(var(--kb-hud-join) * -1);
-  -webkit-mask-image:
-    linear-gradient(to right, transparent, currentColor var(--kb-glass-calm-feather), currentColor calc(100% - var(--kb-glass-calm-feather)), transparent),
-    linear-gradient(to bottom, currentColor calc(100% - var(--kb-glass-calm-feather)), transparent);
-  mask-image:
-    linear-gradient(to right, transparent, currentColor var(--kb-glass-calm-feather), currentColor calc(100% - var(--kb-glass-calm-feather)), transparent),
-    linear-gradient(to bottom, currentColor calc(100% - var(--kb-glass-calm-feather)), transparent);
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hud-door-actions {
@@ -1185,22 +1159,7 @@
   display: contents;
 }
 
-/*
- * The calms: the Main board calms the plate, the Aura readout and the clock, the Phone board the
- * whole bar. On the Main board's layout the plate's calm holds the mask picker; on the phone the
- * plate is not drawn (display: contents), so neither is its calm, and the picker and the aura row
- * carry their own.
- */
-:where(:root:not([data-kb-layout='phone'])) .kb-hud-swap.kb-calm::before,
-:where(:root[data-kb-layout='phone']) .kb-hud-plate--cast.kb-calm::before {
-  content: none;
-}
-
-/*
- * The avatar is above its neighbors' calms: each is a stacking context of its own, which paints over a static sibling, so the swap's
- * backing would lie over the avatar and fade it. (The calms' reach stays: the avatar, the Menu and the hand stand in their feathers, which
- * e2e/glass-text.spec.ts holds to their ceilings.)
- */
+/* The avatar stands above its neighbors on the phone. */
 :where(:root[data-kb-layout='phone']) .kb-hud-plate--cast .kb-hud-avatar {
   position: relative;
   /* The desk layout's offsets (left, top) would move a relative box off its cell. */

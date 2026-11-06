@@ -255,7 +255,3 @@
   font-size: var(--kb-glass-size-phone-small);
 }
 
-/* The lede and the tabs stand as near the title as the board sets them, so their feather is capped at the title gap (calm.css) and lies on nothing but it. */
-.kb-alerts-lede {
-  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
-}

@@ -63,18 +63,9 @@
 }
 
 .kb-roster-layout > .kb-roster-panel {
-  /* The panel's calm feathers past its edge and must not lie on the cards above it, which stand in no calm (the layout check). */
-  margin-top: calc(var(--kb-calm-feather) + 8px);
+  margin-top: 40px;
   /* A readable measure on a wide layout, about the roster row of three cards; the phone's width is below it, so it fills. */
   max-width: 52em;
-}
-
-/*
- * The row clips at its own left edge (it scrolls), and the tablist's calm stands at that edge: its feather would be cut on a straight line
- * there, so it has none. The cards in it carry their own panels.
- */
-.kb-carousel-tablist.kb-calm {
-  --kb-calm-feather: 0px;
 }
 
 /* The tablist is a row of its own beside New character, at the row's gap; the wrappers that only group draw no box. */
@@ -445,20 +436,20 @@
 }
 
 /*
- * The row and its count and arrows. The row's block padding holds the chosen card's glow and the feather of a calm on a card, which
- * the scroll would clip (a calm's backing reaches its feather past its box: 32px, so the padding is no less); the rail gives that room
+ * The row and its count and arrows. The row's block padding holds the chosen card's glow, which
+ * the scroll would clip (32px, so the padding is no less); the rail gives that room
  * back above and below, so the cards stand the board's 10px under the legend. (The margins are the rail's, not the row's, so none
  * collapses through it.) The rail is no framed panel: it has no clip-path and no ground, and the layout check does not treat it as one.
  */
 .kb-class-rail {
   position: relative;
-  margin-block: calc(10px - var(--kb-glass-calm-feather)) calc(-1 * var(--kb-glass-calm-feather));
+  margin-block: -22px -32px;
 }
 
 .kb-class-grid {
   display: flex;
   gap: 14px;
-  padding-block: var(--kb-glass-calm-feather);
+  padding-block: 32px;
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scroll-snap-type: x mandatory;
@@ -596,11 +587,6 @@
   gap: 10px;
 }
 
-/* The title's calm stands 17px (the card's border and padding) in from the card, and a first card is the row's edge, which clips: its feather ends there. */
-.kb-class-title.kb-calm {
-  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-class-card-inset));
-}
-
 /* On the phone the title has its calm's box, which the radio (top right) must not lie under: the box ends before it. */
 :where(:root[data-kb-layout='phone']) .kb-class-title {
   margin-right: 26px;
@@ -614,15 +600,6 @@
 :where(:root[data-kb-text-size]:not([data-kb-text-size='100'])) .kb-class-name {
   min-width: 0;
   overflow-wrap: anywhere;
-}
-
-/*
- * A class's name and its Now tag are its large colors. At the Main board's 40px they are large and
- * stand bare on the smoke, as the Turn board draws them; on the phone they are under WCAG's large
- * size, body text by the owner's answer on #54, so there they stand in their calm.
- */
-:where(:root:not([data-kb-layout='phone'])) .kb-class-title.kb-calm::before {
-  content: none;
 }
 
 /*
@@ -1113,15 +1090,6 @@
 .kb-turn-effect {
   flex: 1 1 400px;
   margin-right: auto;
-}
-
-/*
- * On the Main board's layout the foot's line stands bare on the modal's smoke, as the Turn board
- * draws it; on the phone, body text stands in its calm (#54), since the smoke's brighter patches
- * can scroll behind it there.
- */
-:where(:root:not([data-kb-layout='phone'])) .kb-turn-effect.kb-calm::before {
-  content: none;
 }
 
 .kb-debut,

@@ -23,7 +23,8 @@ import type { GlassSurface } from '../types.ts';
 import { pageEscape } from './keys.ts';
 import { hudTopOf, placePopover } from './place.ts';
 import { FRAME } from './Frame.tsx';
-import { FIELD_PLACED, Smoke, useSurfaceStyle } from './Smoke.tsx';
+import { FIELD_PLACED } from './field.ts';
+import { Smoke, useSurfaceStyle } from './Smoke.tsx';
 import './shell.css';
 
 /** Where a float stands: beside the post, under its anchor, over it where there is no room under, or the narrow width's sheet. */

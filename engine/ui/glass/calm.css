@@ -1,74 +1,48 @@
 /*
- * The calm: a backing of the ground, laid over the smoke under a block of text, so the words stand
- * on a quieter pixel than the smoke's worst. It is drawn on the text's own element (`kb-calm`), as
- * a `::before` sized by the block and feathered at its edge with a mask, so it follows its text
- * when the text reflows. (The boards draw their calms as masks on the smoke; the build draws them
- * on the words.) tools/check-glass-contrast.mjs reads a calmed pixel as the smoke thinned to what
- * the calm leaves, and holds every `body` token to 4.5:1 on it. The opacity is the theme's, set on
- * the root, unless the surface's recipe has its own, which the surface sets on its element
- * (surfaceCalm, apply.ts).
+ * The calm: the smoke taken away where a region of a page stands, so the words in it stand on a
+ * quieter pixel than the smoke's worst (Calm.tsx has how a region registers and why the rect is
+ * laid on the layers and not a mask over them). The rect is one element in the smoke's frame for
+ * each region (`kb-smoke-calm`), which Calm.tsx places and sizes to the region's box, and its
+ * `::before` is the drawing: the ground's color at the calm's opacity, blurred by the feather, and
+ * drawn out past the box by `--kb-glass-calm-reach` blurs on each side, so the blur's falloff lies
+ * outside the box and every word inside it is on the calm in full. tools/check-glass-contrast.mjs
+ * reads a calmed pixel as the smoke thinned to what the calm leaves, and holds every `body` token
+ * to 4.5:1 on it. The opacity is the theme's, set on the root, unless the surface's recipe has its
+ * own, which the surface sets on its element (surfaceCalm, apply.ts).
  *
- * A browser with no mask-image gets a hard-edged panel of the same backing: the edge is not
- * feathered, and the words are as legible.
+ * Its size is bounded: Calm.tsx cuts the rect's box to the smoke's frame and 720px past it on each
+ * side, and the `::before` reaches two blurs (120px at the theme's 60) further, so one rect is at
+ * most the frame plus 1680px in each dimension however long the page. The reach is stated here and
+ * not in tokens.css, which holds only what the instance's theme writes (the glass's token test
+ * holds the two lists equal).
+ *
+ * The rect only takes smoke away. It lies in the smoke, behind the page, takes no pointer events,
+ * and nothing clips it but the smoke's own frame. A browser with no `filter` draws the rect
+ * unblurred, a hard-edged patch of the same backing, and the words are as legible.
  */
-/*
- * The gap between a page's title and the lede or tabs under it, stated once: those calms cap their
- * feather at it (`min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap))`), so it lies on
- * nothing but the gap. The phone sets its blocks closer.
- */
-:root {
-  --kb-glass-title-gap: 12px;
+.kb-smoke-calm {
+  /* The blur, as a length: the theme's feather, and on the phone half of it (the boards' 60px and 30px). */
+  --kb-calm-blur: var(--kb-glass-calm-feather);
+  /* How many blurs the rect is drawn out past the region's box: at 2 the box's edge is at 97.7% of the falloff, so the words inside are on the calm in full. */
+  --kb-glass-calm-reach: 2;
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* Calm.tsx writes the region's place and size; a scroll changes the place only, and a translate is the compositor's. */
+  translate: var(--kb-calm-x, 0px) var(--kb-calm-y, 0px);
+  pointer-events: none;
+  will-change: translate;
 }
 
-:root[data-kb-layout='phone'] {
-  --kb-glass-title-gap: 8px;
+:where(:root[data-kb-layout='phone']) .kb-smoke-calm {
+  --kb-calm-blur: calc(var(--kb-glass-calm-feather) / 2);
 }
 
-.kb-calm {
-  position: relative;
-  isolation: isolate;
-  --kb-calm-feather: var(--kb-glass-calm-feather);
-}
-
-/*
- * On the phone the feather never reaches past the content column's gutter (shell.css), since the
- * column clips at its own edge and a feather wider than the gutter would be cut there on a straight
- * line. The root's feather is written inline by applyGlass, which no stylesheet rule outranks, so
- * each calm resolves its own from it and the phone's is the smaller of the two.
- */
-:where(:root[data-kb-layout='phone']) .kb-calm {
-  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-gutter, 32px));
-}
-
-/*
- * A dialog taller than the window stands against its edge, and a dialog's words stand 12px from its
- * own edge on the phone (shell.css), so a 32px feather would reach past the window or the overlay,
- * where the page's clip cuts it on a straight line. In a dialog it is 12px, which stays on its ground.
- */
-.kb-glass-dialog .kb-calm {
-  --kb-calm-feather: min(var(--kb-glass-calm-feather), 12px);
-}
-
-.kb-calm::before {
+.kb-smoke-calm::before {
   content: '';
   position: absolute;
-  z-index: -1;
-  inset: calc(var(--kb-calm-feather) * -1);
-  pointer-events: none;
-  background: color-mix(in srgb, var(--kb-glass-ground) calc(var(--kb-glass-calm-opacity) * 100%), transparent);
-  /* Alpha is all a mask reads: the edge ramps over the feather on each axis, and the axes intersect. */
-  -webkit-mask-image:
-    linear-gradient(to right, transparent, currentColor var(--kb-calm-feather), currentColor calc(100% - var(--kb-calm-feather)), transparent),
-    linear-gradient(to bottom, transparent, currentColor var(--kb-calm-feather), currentColor calc(100% - var(--kb-calm-feather)), transparent);
-  -webkit-mask-composite: source-in;
-  mask-image:
-    linear-gradient(to right, transparent, currentColor var(--kb-calm-feather), currentColor calc(100% - var(--kb-calm-feather)), transparent),
-    linear-gradient(to bottom, transparent, currentColor var(--kb-calm-feather), currentColor calc(100% - var(--kb-calm-feather)), transparent);
-  mask-composite: intersect;
-}
-
-@supports not (mask-image: linear-gradient(currentColor, currentColor)) {
-  .kb-calm::before {
-    inset: 0;
-  }
+  inset: calc(var(--kb-calm-blur) * var(--kb-glass-calm-reach) * -1);
+  background: var(--kb-glass-ground);
+  opacity: var(--kb-glass-calm-opacity);
+  filter: blur(var(--kb-calm-blur));
 }

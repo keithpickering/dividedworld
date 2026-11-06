@@ -22,6 +22,7 @@ import { facesOf } from './faces.ts';
 import type { CardPlay } from './types.ts';
 import './marks.css';
 import './hand-board.css';
+import { CalmRegion } from '../glass/Calm.tsx';
 
 /** Where the board stands each card, by its place in the hand: its left, its top and how far it turns; the sealed slot stands after the last. */
 const PLACES = [{ left: 64, top: 204, turn: -4 }, { left: 372, top: 178, turn: 2 }, { left: 668, top: 204, turn: 5 }] as const;
@@ -42,9 +43,9 @@ function HandSheet() {
   };
   return (
     <div className="kb-glass kb-hand-board" style={calm}>
-      <Smoke surface="hand" />
+      <Smoke surface="hand">
       <header className="kb-hand-board-head">
-        <p className="kb-hand-board-eyebrow kb-calm">Your hand · {count} {count === 1 ? 'card' : 'cards'}</p>
+        <CalmRegion as="p" className="kb-hand-board-eyebrow">Your hand · {count} {count === 1 ? 'card' : 'cards'}</CalmRegion>
         <h1 className="kb-hand-board-title kb-glass-display">Postcards</h1>
       </header>
 
@@ -62,18 +63,18 @@ function HandSheet() {
 
       <article className="kb-hand-board-sealed" aria-label="An empty slot for a future postcard" style={{ left: PLACES[2].left, top: PLACES[2].top, transform: `rotate(${PLACES[2].turn}deg)` }}>
         <span className="kb-hand-board-mark" aria-hidden="true">?</span>
-        <h2 className="kb-hand-board-sealed-head kb-glass-display kb-calm">Sealed</h2>
-        <p className="kb-hand-board-sealed-says kb-calm">A slot in the Vending Machine waiting for the next postcard.</p>
+        <CalmRegion as="h2" className="kb-hand-board-sealed-head kb-glass-display">Sealed</CalmRegion>
+        <CalmRegion as="p" className="kb-hand-board-sealed-says">A slot in the Vending Machine waiting for the next postcard.</CalmRegion>
       </article>
 
-      <div className="kb-hand-board-chips kb-calm">
+      <CalmRegion className="kb-hand-board-chips">
         <span className="kb-hand-board-chip" data-kb-chip="held">In hand</span>
         <span className="kb-hand-board-chip" data-kb-chip="armed">Armed · pick a post</span>
         <span className="kb-hand-board-chip" data-kb-chip="later">Coming later</span>
-      </div>
+      </CalmRegion>
 
       <section className="kb-hand-board-onboard" aria-label="How it reads on the board">
-        <p className="kb-hand-board-onboard-head kb-calm">On the board, the same card reads like this</p>
+        <CalmRegion as="p" className="kb-hand-board-onboard-head">On the board, the same card reads like this</CalmRegion>
         <div className="kb-hand-board-post">
           <div className="kb-hand-board-post-bar"><span>Spritey · #41</span><span>who keeps splatting my posts</span></div>
           {play && (
@@ -90,6 +91,7 @@ function HandSheet() {
           </div>
         </div>
       </section>
+      </Smoke>
     </div>
   );
 }

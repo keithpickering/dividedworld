@@ -61,6 +61,7 @@ import { GLASS_NAV } from '../glass/nav.ts';
 import { useBoard } from '../glass/useBoard.ts';
 import { useTour } from '../tips/tour.ts';
 import { useTip, useTipsStore } from '../tips/Tips.tsx';
+import { CalmRegion } from '../glass/Calm.tsx';
 
 /** The tab's slopes: 28px across, 24px tall, its top 20px wider than the aura each side, as the Main board draws them. */
 const SLOPE = 28;
@@ -288,155 +289,157 @@ export function Hud() {
     <>
       {signedIn && (
         <div ref={drawer} id={drawerId} className="kb-glass kb-hand-drawer" role="region" aria-label="Your hand" tabIndex={-1} hidden={!handOpen} style={handCalm}>
-          <Smoke surface="hand" />
-          <Hand
-            held={player.cards} faces={faces} vendingHref={GLASS_NAV.vending}
-            armed={armed}
-            onPick={hud ? pick : undefined}
-            onClose={() => { setHandOpen(false); handButton.current?.focus(); }}
-          />
+          <Smoke surface="hand">
+            <Hand
+              held={player.cards} faces={faces} vendingHref={GLASS_NAV.vending}
+              armed={armed}
+              onPick={hud ? pick : undefined}
+              onClose={() => { setHandOpen(false); handButton.current?.focus(); }}
+            />
+          </Smoke>
         </div>
       )}
       <section ref={section} className={HUD_CLASS} aria-label="Game HUD" style={tabVars}>
         <div className="kb-glass kb-hud-glass" style={hudCalm}>
-          <div className="kb-hud-ground kb-glass-hud-tab" aria-hidden="true"><Smoke surface="hud" /></div>
-          <svg className="kb-hud-seam" aria-hidden="true" focusable="false" preserveAspectRatio="none">
-            <polyline className="kb-glass-seam-glow" points={seam} />
-            <polyline className="kb-glass-seam-core" points={seam} />
-          </svg>
-          <div className="kb-hud-bar">
-            <div ref={plate} className={`kb-hud-plate${!signedIn ? ' kb-hud-plate--door' : signedIn && player.loaded && hud ? ' kb-hud-plate--cast kb-calm' : ''}`}>
-              <div className="kb-hud-plate-in">
-                {!signedIn ? (
-                  <div className="kb-hud-door kb-calm">
-                    <span className="kb-hud-door-mark" aria-hidden="true">?</span>
-                    <div className="kb-hud-door-words">
-                      {/* A heading, not a bare element: the HUD is a labeled region, and its prompt is what a screen reader should find in it; it sits under the page's h1 in rank, though the HUD comes first in the document. */}
-                      <h2 className="kb-hud-door-title kb-glass-display">{ui.frontDoor.prompt.title}</h2>
-                      <p className="kb-hud-door-line">{ui.frontDoor.prompt.line}</p>
-                    </div>
-                  </div>
-                ) : !player.loaded ? null : !hud ? (
-                  <Link to="/characters/new" className="kb-hud-make kb-glass-cut-button">Make a character</Link>
-                ) : (
-                  <>
-                    <Link
-                      to={GLASS_NAV.characters}
-                      className="kb-hud-avatar"
-                      aria-label="My characters"
-                    >
-                      {face?.avatarSquare ? <img src={face.avatarSquare} alt="" /> : <span className="kb-hud-avatar-none" aria-hidden="true">{hud.name.slice(0, 1)}</span>}
-                    </Link>
-                    <span className="kb-hud-who">
-                      <span className="kb-hud-name kb-glass-display" style={{ '--kb-name-chars': hud.name.length } as CSSProperties}>{hud.name}</span>
-                      <span className="kb-hud-class-line">
-                        <span className="kb-hud-class kb-glass-skew-tag" style={{ '--kb-hud-class-fill': `var(--kb-glass-class-${hud.class}-fill)`, '--kb-hud-class-ink': `var(--kb-glass-class-${hud.class}-ink)` } as CSSProperties}>
-                          {className}
+          <Smoke surface="hud" holder="kb-hud-ground kb-glass-hud-tab">
+            <svg className="kb-hud-seam" aria-hidden="true" focusable="false" preserveAspectRatio="none">
+              <polyline className="kb-glass-seam-glow" points={seam} />
+              <polyline className="kb-glass-seam-core" points={seam} />
+            </svg>
+            <div className="kb-hud-bar">
+              <CalmRegion calm={wide} ref={plate} className={`kb-hud-plate${!signedIn ? ' kb-hud-plate--door' : signedIn && player.loaded && hud ? ' kb-hud-plate--cast' : ''}`}>
+                <div className="kb-hud-plate-in">
+                  {!signedIn ? (
+                    <CalmRegion calm={!wide} className="kb-hud-door">
+                      <span className="kb-hud-door-mark" aria-hidden="true">?</span>
+                      <div className="kb-hud-door-words">
+                        {/* A heading, not a bare element: the HUD is a labeled region, and its prompt is what a screen reader should find in it; it sits under the page's h1 in rank, though the HUD comes first in the document. */}
+                        <h2 className="kb-hud-door-title kb-glass-display">{ui.frontDoor.prompt.title}</h2>
+                        <p className="kb-hud-door-line">{ui.frontDoor.prompt.line}</p>
+                      </div>
+                    </CalmRegion>
+                  ) : !player.loaded ? null : !hud ? (
+                    <Link to="/characters/new" className="kb-hud-make kb-glass-cut-button">Make a character</Link>
+                  ) : (
+                    <>
+                      <Link
+                        to={GLASS_NAV.characters}
+                        className="kb-hud-avatar"
+                        aria-label="My characters"
+                      >
+                        {face?.avatarSquare ? <img src={face.avatarSquare} alt="" /> : <span className="kb-hud-avatar-none" aria-hidden="true">{hud.name.slice(0, 1)}</span>}
+                      </Link>
+                      <span className="kb-hud-who">
+                        <span className="kb-hud-name kb-glass-display" style={{ '--kb-name-chars': hud.name.length } as CSSProperties}>{hud.name}</span>
+                        <span className="kb-hud-class-line">
+                          <span className="kb-hud-class kb-glass-skew-tag" style={{ '--kb-hud-class-fill': `var(--kb-glass-class-${hud.class}-fill)`, '--kb-hud-class-ink': `var(--kb-glass-class-${hud.class}-ink)` } as CSSProperties}>
+                            {className}
+                          </span>
+                          <span className="kb-hud-secret">
+                            <svg aria-hidden="true" focusable="false" width="15" height="16" viewBox="0 0 11 12"><rect x="1" y="5" width="9" height="6.5" rx="1" /><path d="M3 5 V3.4 a2.5 2.5 0 0 1 5 0 V5" /></svg>
+                            Only you see this
+                          </span>
+                          {wide && hiddenMark}
                         </span>
-                        <span className="kb-hud-secret">
-                          <svg aria-hidden="true" focusable="false" width="15" height="16" viewBox="0 0 11 12"><rect x="1" y="5" width="9" height="6.5" rx="1" /><path d="M3 5 V3.4 a2.5 2.5 0 0 1 5 0 V5" /></svg>
-                          Only you see this
-                        </span>
-                        {wide && hiddenMark}
                       </span>
-                    </span>
-                    <span className="kb-hud-swap kb-calm">
-                      <label htmlFor={selectId} className="kb-hud-swap-label">{wide ? 'Swap mask' : 'Posting as'}</label>
-                      {/* The phone's HUD has no name line: the mark stands by the mask it names. */}
-                      {!wide && hiddenMark}
-                      {!wide && <span ref={probe} className="kb-hud-name-probe" aria-hidden="true">{hud.name}</span>}
-                      <select ref={picker} id={selectId} className="kb-hud-select" value={hud.id} onChange={(e) => player.setHudCharacter(e.target.value)}>
-                        {player.actingCharacters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                      </select>
-                    </span>
-                  </>
-                )}
-              </div>
-            </div>
-            {signedIn && (
-              <div ref={aura} className="kb-hud-aura kb-calm">
-                <p className="kb-hud-aura-legend"><span>Aura</span><span className="kb-hud-aura-ghost">Ghost = estimate until settlement</span></p>
-                {player.wallet && (
-                  <Link
-                    to={GLASS_NAV.log}
-                    className="kb-hud-orbs"
-                  >
-                    <span className="kb-visually-hidden">My log: </span>
-                    <Orbs settled={player.wallet.balance} pending={player.pending} cap={player.wallet.cap ?? settings.walletCap} cascadeFrom={player.walletSeen} />
-                  </Link>
-                )}
-              </div>
-            )}
-            {!signedIn && (
-              <div className="kb-hud-door-actions kb-calm">
-                {settings.registrationMode !== 'closed' && (
-                  <Link to={registerHref(location.path, searchOf(location.query))} className="kb-hud-sign-in kb-hud-door-register kb-glass-cut-button">
-                    {settings.registrationMode === 'invite' ? 'Register with an invite' : 'Register'}
-                  </Link>
-                )}
-                {settings.registrationMode === 'invite' && <p className="kb-hud-door-note">No invite? Ask someone who plays.</p>}
-                {settings.registrationMode === 'closed' && <p className="kb-hud-door-note">Registration is closed for now.</p>}
-                <Link
-                  to={signInHref(location.path, searchOf(location.query))}
-                  className={`kb-hud-door-sign-in${settings.registrationMode === 'closed' ? ' kb-hud-sign-in kb-glass-cut-button' : ''}`}
-                >
-                  Sign in
-                </Link>
-              </div>
-            )}
-            {signedIn && (
-              <div className="kb-hud-side">
-                <p className="kb-hud-clock kb-calm">
-                  <span className="kb-hud-clock-label">Next settlement</span>
-                  {next ? <time className="kb-hud-clock-time kb-num" dateTime={next}>{dayAndTime(next)}</time> : <span className="kb-hud-clock-time">not yet set</span>}
-                </p>
-                <Link
-                  to={GLASS_NAV.alerts}
-                  className="kb-hud-alerts kb-glass-skew"
-                  data-kb-held={handOpen ? '' : undefined}
-                  aria-label={unread === null ? 'Alerts' : `Alerts ${unread} new`}
-                >
-                  <svg className="kb-hud-bell kb-glass-upright" aria-hidden="true" focusable="false" width="22" height="24" viewBox="0 0 22 24">
-                    <path d="M11 2.5c-3.6 0-6.2 2.8-6.2 6.4v4.6L2.5 17.6h17l-2.3-4.1V8.9c0-3.6-2.6-6.4-6.2-6.4z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-                    <path d="M8.2 20.2a2.9 2.9 0 0 0 5.6 0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                  </svg>
-                  <span className="kb-hud-alerts-word kb-glass-upright">Alerts</span>
-                  {' '}
-                  {unread !== null && <span className="kb-hud-alerts-count kb-glass-upright kb-num" aria-hidden="true">{unread}</span>}
-                </Link>
-                <div className="kb-hud-actions">
-                  <button
-                    ref={menuButton}
-                    type="button"
-                    className="kb-hud-menu kb-glass-skew"
-                    aria-keyshortcuts="Escape"
-                    onClick={() => navigate(GLASS_NAV.characters)}
-                  >
-                    <kbd className="kb-hud-key kb-glass-upright" aria-hidden="true">ESC</kbd>
-                    <span className={compact ? 'kb-visually-hidden' : 'kb-glass-upright'}>Menu</span>
-                    {compact && (
-                      <svg className="kb-hud-menu-glyph kb-glass-upright" aria-hidden="true" focusable="false" width="22" height="18" viewBox="0 0 22 18">
-                        <path d="M2 3h18M2 9h18M2 15h18" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
-                      </svg>
-                    )}
-                  </button>
-                  <button
-                    ref={handButton}
-                    type="button"
-                    className="kb-hud-hand kb-glass-skew"
-                    {...(armedName === null ? { 'aria-expanded': handOpen, 'aria-controls': drawerId } : {})}
-                    aria-label={handName}
-                    data-kb-armed={armedName !== null ? 'true' : undefined}
-                    onClick={() => (armedName !== null ? play.arm(null) : setHandOpen(!handOpen))}
-                  >
-                    {armedName !== null
-                      ? <span className="kb-hud-hand-armed kb-glass-upright">Armed · {armedName}</span>
-                      : <><span className="kb-glass-upright">Hand</span> <span className="kb-hud-hand-count kb-glass-upright kb-num">{held}</span></>}
-                  </button>
+                      <CalmRegion as="span" calm={!wide} className="kb-hud-swap">
+                        <label htmlFor={selectId} className="kb-hud-swap-label">{wide ? 'Swap mask' : 'Posting as'}</label>
+                        {/* The phone's HUD has no name line: the mark stands by the mask it names. */}
+                        {!wide && hiddenMark}
+                        {!wide && <span ref={probe} className="kb-hud-name-probe" aria-hidden="true">{hud.name}</span>}
+                        <select ref={picker} id={selectId} className="kb-hud-select" value={hud.id} onChange={(e) => player.setHudCharacter(e.target.value)}>
+                          {player.actingCharacters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                      </CalmRegion>
+                    </>
+                  )}
                 </div>
-              </div>
-            )}
-          </div>
+              </CalmRegion>
+              {signedIn && (
+                <CalmRegion ref={aura} className="kb-hud-aura">
+                  <p className="kb-hud-aura-legend"><span>Aura</span><span className="kb-hud-aura-ghost">Ghost = estimate until settlement</span></p>
+                  {player.wallet && (
+                    <Link
+                      to={GLASS_NAV.log}
+                      className="kb-hud-orbs"
+                    >
+                      <span className="kb-visually-hidden">My log: </span>
+                      <Orbs settled={player.wallet.balance} pending={player.pending} cap={player.wallet.cap ?? settings.walletCap} cascadeFrom={player.walletSeen} />
+                    </Link>
+                  )}
+                </CalmRegion>
+              )}
+              {!signedIn && (
+                <CalmRegion className="kb-hud-door-actions">
+                  {settings.registrationMode !== 'closed' && (
+                    <Link to={registerHref(location.path, searchOf(location.query))} className="kb-hud-sign-in kb-hud-door-register kb-glass-cut-button">
+                      {settings.registrationMode === 'invite' ? 'Register with an invite' : 'Register'}
+                    </Link>
+                  )}
+                  {settings.registrationMode === 'invite' && <p className="kb-hud-door-note">No invite? Ask someone who plays.</p>}
+                  {settings.registrationMode === 'closed' && <p className="kb-hud-door-note">Registration is closed for now.</p>}
+                  <Link
+                    to={signInHref(location.path, searchOf(location.query))}
+                    className={`kb-hud-door-sign-in${settings.registrationMode === 'closed' ? ' kb-hud-sign-in kb-glass-cut-button' : ''}`}
+                  >
+                    Sign in
+                  </Link>
+                </CalmRegion>
+              )}
+              {signedIn && (
+                <div className="kb-hud-side">
+                  <CalmRegion as="p" className="kb-hud-clock">
+                    <span className="kb-hud-clock-label">Next settlement</span>
+                    {next ? <time className="kb-hud-clock-time kb-num" dateTime={next}>{dayAndTime(next)}</time> : <span className="kb-hud-clock-time">not yet set</span>}
+                  </CalmRegion>
+                  <Link
+                    to={GLASS_NAV.alerts}
+                    className="kb-hud-alerts kb-glass-skew"
+                    data-kb-held={handOpen ? '' : undefined}
+                    aria-label={unread === null ? 'Alerts' : `Alerts ${unread} new`}
+                  >
+                    <svg className="kb-hud-bell kb-glass-upright" aria-hidden="true" focusable="false" width="22" height="24" viewBox="0 0 22 24">
+                      <path d="M11 2.5c-3.6 0-6.2 2.8-6.2 6.4v4.6L2.5 17.6h17l-2.3-4.1V8.9c0-3.6-2.6-6.4-6.2-6.4z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+                      <path d="M8.2 20.2a2.9 2.9 0 0 0 5.6 0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    </svg>
+                    <span className="kb-hud-alerts-word kb-glass-upright">Alerts</span>
+                    {' '}
+                    {unread !== null && <span className="kb-hud-alerts-count kb-glass-upright kb-num" aria-hidden="true">{unread}</span>}
+                  </Link>
+                  <div className="kb-hud-actions">
+                    <button
+                      ref={menuButton}
+                      type="button"
+                      className="kb-hud-menu kb-glass-skew"
+                      aria-keyshortcuts="Escape"
+                      onClick={() => navigate(GLASS_NAV.characters)}
+                    >
+                      <kbd className="kb-hud-key kb-glass-upright" aria-hidden="true">ESC</kbd>
+                      <span className={compact ? 'kb-visually-hidden' : 'kb-glass-upright'}>Menu</span>
+                      {compact && (
+                        <svg className="kb-hud-menu-glyph kb-glass-upright" aria-hidden="true" focusable="false" width="22" height="18" viewBox="0 0 22 18">
+                          <path d="M2 3h18M2 9h18M2 15h18" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+                        </svg>
+                      )}
+                    </button>
+                    <button
+                      ref={handButton}
+                      type="button"
+                      className="kb-hud-hand kb-glass-skew"
+                      {...(armedName === null ? { 'aria-expanded': handOpen, 'aria-controls': drawerId } : {})}
+                      aria-label={handName}
+                      data-kb-armed={armedName !== null ? 'true' : undefined}
+                      onClick={() => (armedName !== null ? play.arm(null) : setHandOpen(!handOpen))}
+                    >
+                      {armedName !== null
+                        ? <span className="kb-hud-hand-armed kb-glass-upright">Armed · {armedName}</span>
+                        : <><span className="kb-glass-upright">Hand</span> <span className="kb-hud-hand-count kb-glass-upright kb-num">{held}</span></>}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </Smoke>
         </div>
       </section>
       {signedIn && (

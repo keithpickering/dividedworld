@@ -22,6 +22,7 @@ import { Classes, CardList, Letter, ReactionGrid } from './markers.tsx';
 import { parse, sectionsOf, settingText, type MarkerName } from './markdown.ts';
 import { Blocks, DASH, type Fill } from './render.tsx';
 import './guide.css';
+import { CalmRegion } from '../glass/Calm.tsx';
 
 const possessive = (name: string) => (name.endsWith('s') ? `${name}'` : `${name}'s`);
 
@@ -103,10 +104,10 @@ export function Guide() {
       <PageHead title="Strategy Guide" />
       <div className="kb-guide-cols">
         <aside className="kb-guide-side">
-          <p className="kb-guide-lede kb-calm">
+          <CalmRegion as="p" className="kb-guide-lede">
             How the game works, from the people who made it.
             {voice !== undefined && <> The voice is {possessive(voice)}; every fact in it is true, and every number is today&apos;s.</>}
-          </p>
+          </CalmRegion>
           <nav
             aria-label="Guide contents" className="kb-guide-contents" data-open={open || undefined}
             onKeyDown={(e) => {
@@ -120,13 +121,13 @@ export function Guide() {
               <span>Contents{here ? ` · ${here.title}` : ''}</span>
               <svg aria-hidden="true" width="14" height="10" viewBox="0 0 14 10"><path d="M1 2l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" /></svg>
             </button>
-            <ul id={list} className="kb-guide-toc kb-calm">
+            <CalmRegion as="ul" id={list} className="kb-guide-toc">
               {sections.map((s) => (
                 <li key={s.id}>
                   <Link to={`${path}#${s.id}`} aria-current={s.id === current ? 'location' : undefined} onClick={() => choose(s.id)}>{s.title}</Link>
                 </li>
               ))}
-            </ul>
+            </CalmRegion>
           </nav>
         </aside>
         <article className="kb-glass-cut-dialog kb-guide-article">
@@ -149,7 +150,7 @@ export function Guide() {
 export function GuideScreen() {
   const { api } = useKayfa();
   const signedIn = useSignedIn(api);
-  if (signedIn === false) return <div className="kb-guide"><div className="kb-guide-empty kb-calm"><SignInPrompt /></div></div>;
+  if (signedIn === false) return <div className="kb-guide"><CalmRegion className="kb-guide-empty"><SignInPrompt /></CalmRegion></div>;
   if (signedIn === null) return <div className="kb-guide" aria-busy="true" />;
   return <Guide />;
 }

@@ -566,7 +566,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
             return (
               <button
                 key={kind} ref={(el) => { if (el) tabs.current.set(kind, el); else tabs.current.delete(kind); }}
-                type="button" role="tab" id={tabId(kind)} className="kb-lens-tab kb-glass-display kb-calm" aria-selected={selected} aria-controls={selected ? panelId : undefined}
+                type="button" role="tab" id={tabId(kind)} className="kb-lens-tab kb-glass-display" aria-selected={selected} aria-controls={selected ? panelId : undefined}
                 tabIndex={selected ? 0 : -1} data-kb-card={kind} onClick={() => store.select(kind)}
               >{label}</button>
             );

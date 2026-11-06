@@ -173,7 +173,7 @@
       "settlement": "settlement"
     }
   },
-  "calm": { "opacity": 0.85, "feather": 32 },
+  "calm": { "opacity": 0.85, "feather": 60 },
   "controls": {
     "m": { "height": 48, "pad": 22, "size": "body" },
     "s": { "height": 36, "pad": 16, "size": "label" },

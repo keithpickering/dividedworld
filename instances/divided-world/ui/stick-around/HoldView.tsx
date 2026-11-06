@@ -230,7 +230,7 @@ export function HoldView({ post, play, stage, release, onBreakFree, marks, words
   return (
     <Overlay
       title="Stick Around" label="Stick Around" className="kb-hold-view" onBeside={setLensHost} surface="effect" closeAt="none" onClose={onClose}
-      aside={<p className="kb-hold-tag"><span className="kb-calm">{names.caster}{play.message ? `: “${play.message}”` : ''}</span></p>}
+      aside={<p className="kb-hold-tag"><span>{names.caster}{play.message ? `: “${play.message}”` : ''}</span></p>}
     >
       <LensHost host={lensHost}>
       <div ref={inner} className="kb-hold-inner">

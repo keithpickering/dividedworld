@@ -263,7 +263,3 @@
   font-size: var(--kb-glass-size-display-m);
 }
 
-/* The lede stands as near the title as the board sets it, so its feather is capped at the title gap (calm.css) and lies on nothing but it. */
-.kb-updates-lede {
-  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
-}

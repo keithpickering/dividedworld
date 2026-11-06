@@ -21,10 +21,10 @@
  * drift) is not in the model: where a cloud falls is not a question of how bright the brightest is. Only the colors are
  * quantized to 8 bits (the browser rounds a matrix's constant color to a byte); opacities and the calm
  * are not. That is the worst pixel. The calmed worst is the same with each layer's opacity scaled by (1 - calm): a calm is
- * the ground laid over the smoke at the calm's opacity under a text block (engine/ui/glass/calm.css),
- * so the smoke shows through at what is left. The calm's feather sits outside the text's box
- * (calm.css insets the backing by the feather on every side), so the text is in the full-strength
- * region and the calmed worst applies to every pixel under it. A recipe's own `calm` (the glass plan,
+ * the ground laid over the smoke at the calm's opacity under a region of the page (engine/ui/glass/Calm.tsx,
+ * calm.css: a blurred rect in the smoke), so the smoke shows through at what is left. The blur's falloff sits outside the
+ * region's box (calm.css draws the rect out past the box by two blurs on every side), so the text is in the
+ * full-strength region and the calmed worst applies to every pixel under it. A recipe's own `calm` (the glass plan,
  * section 6: "the calm's opacity for this surface, default the theme's") is read in the theme's
  * place, and the screen draws that same number on each surface that uses the recipe (surfaceCalm,
  * engine/ui/glass/apply.ts; engine/ui/glass/calm.test.tsx holds the two equal), so it is held, as

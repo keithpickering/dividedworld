@@ -236,7 +236,7 @@
 /* ---- the content column ---- */
 
 .kb-glass-content {
-  /* The column's side gutter; calm.css reads it, so on the phone a calm's feather stays inside the column's clip. */
+  /* The column's side gutter. */
   --kb-glass-gutter: clamp(16px, 4.44vw, 64px);
   display: block;
   max-width: 1312px;
@@ -255,12 +255,9 @@
 }
 
 /*
- * A calm's feather reaches 32px past its words (calm.css), wider than the phone's 16px gutter, so a
- * calm on text that runs to the column's edge would push the page sideways. The column clips
- * sideways at its own edge, which is the window's on a phone and past the gutters everywhere else,
- * so no glass page scrolls sideways for its feathers. `clip` makes no scroll container, so nothing
- * else about the column changes. (An `overflow-clip-margin` would be ignored here: Chromium reads
- * it only where both axes clip.)
+ * The column clips sideways at its own edge, which is the window's on a phone and past the gutters
+ * everywhere else, so no glass page scrolls sideways however wide a child runs. `clip` makes no
+ * scroll container, so nothing else about the column changes.
  */
 .kb-glass-content {
   overflow-x: clip;
@@ -309,6 +306,18 @@
   box-sizing: border-box;
   /* The foot is never less than the cut leaves it: a control in the bottom left corner stands clear of the chamfer. */
   padding: 0 var(--kb-dialog-pad-x) max(var(--kb-dialog-pad-bottom), calc(var(--kb-cut) - var(--kb-dialog-pad-x) + var(--kb-border)));
+  /*
+   * A dialog taller than its room scrolls itself, and its panel (::after) and smoke are as tall as the room, not the content: scrolled,
+   * the frame's own neon (the background color, the border's) showed below them as a bright band under the words. The ground follows
+   * the scroll (`local`), one border in, so under any line there is the ground and never the neon.
+   */
+  background-image: linear-gradient(var(--kb-glass-ground), var(--kb-glass-ground));
+  background-repeat: no-repeat;
+  background-attachment: local;
+  background-origin: padding-box;
+  background-clip: padding-box;
+  background-position: center;
+  background-size: calc(100% - var(--kb-border) * 2) calc(100% - var(--kb-border) * 2);
 }
 
 .kb-glass-dialog::after {
@@ -400,7 +409,7 @@
 }
 
 .kb-glass-dialog-head {
-  /* Above the kicker's calm, whose feather lies over it. */
+  /* Above the kicker. */
   position: relative;
   z-index: 1;
   margin: 0;
