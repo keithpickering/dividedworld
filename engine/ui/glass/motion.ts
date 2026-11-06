@@ -46,7 +46,7 @@ export function currentFeel(doc: Document = document): Feel | 'off' {
   return root.getAttribute('data-kb-motion-feel') === 'snappy' ? 'snappy' : 'smooth';
 }
 
-/** The feel in force, kept current as the root's marks and the device's setting change. `overrides` is the instance's `glass.motion`. */
+/** The feel in force, kept current as the root's marks and the device's setting change. `overrides` is the instance's `glass.motion`; pass a stable object (e.g. `ui.glass.motion`), since the result is memoized on its identity. */
 export function useFeel(overrides?: GlassMotion): ActiveFeel {
   const name = useSyncExternalStore(subscribeMotion, () => currentFeel(), () => 'smooth' as const);
   return useMemo(() => (name === 'off' ? null : { name, ...feelTokens(name, overrides) }), [name, overrides]);
@@ -71,19 +71,27 @@ function landing(f: NonNullable<ActiveFeel>, ms: number, delay = 0): Transition 
 const eased = (f: NonNullable<ActiveFeel>, ms = f.exit): Transition => ({ duration: sec(ms), ease: bezier(f.ease) });
 
 /** Half the slant of an edge `h` px tall, by the glass's skew: a CSS length. */
-const slant = (h: number | string) => `calc(tan(var(--kb-glass-skew)) * ${typeof h === 'number' ? `${h / 2}px` : h})`;
+const slant = (h: number) => `calc(tan(var(--kb-glass-skew)) * ${h / 2}px)`;
+
+/** The slant of a wipe's edge as a percent of the element's width (a fixed ratio, so it holds for an element of any size). */
+const WIPE_SLANT = 'calc(tan(var(--kb-glass-skew)) * 50%)';
+/** The farthest the skew can lean a wipe's edge, as a percent of the width (a -45deg skew would be 50). Hidden stands clear of it; the tokens stay within 20deg. */
+const WIPE_HIDDEN_AT = -25;
+const WIPE_SHOWN_AT = 150;
 
 /**
- * A polygon that reveals everything left of a slanted vertical edge at `pct` of the width. Every
- * coordinate has the same `calc(N% + slant)` shape so Motion can interpolate two of them. -25 hides
- * all of it, 125 shows all of it, whatever the slant.
+ * A polygon that reveals everything left of a slanted vertical edge at `pct` of the width. The
+ * polygon reaches from -50% to 150% on both axes, so shown (`WIPE_SHOWN_AT`) clips nothing within a
+ * generous margin (box-shadow and focus outlines survive), and hidden (`WIPE_HIDDEN_AT`) has every
+ * point at or left of the box's left edge, so it shows none of an element of any size. Both have the
+ * same `calc(N% ± slant)` shape so Motion can interpolate between them.
  */
 export function wipe(pct: number): string {
-  const s = slant('50vh');
-  return `polygon(0% 0%, calc(${pct}% + ${s}) 0%, calc(${pct}% - ${s}) 100%, 0% 100%)`;
+  const s = WIPE_SLANT;
+  return `polygon(-50% -50%, calc(${pct}% + ${s}) -50%, calc(${pct}% - ${s}) 150%, -50% 150%)`;
 }
-const WIPE_HIDDEN = wipe(-25);
-const WIPE_SHOWN = wipe(125);
+const WIPE_HIDDEN = wipe(WIPE_HIDDEN_AT);
+const WIPE_SHOWN = wipe(WIPE_SHOWN_AT);
 
 /** A slanted rectangle, px: the rect with its left and right edges leaning along the skew. */
 export function slantedRect(r: Rect): string {
@@ -91,6 +99,9 @@ export function slantedRect(r: Rect): string {
   const [l, t, rt, b] = [r.x, r.y, r.x + r.width, r.y + r.height];
   return `polygon(calc(${l}px + ${s}) ${t}px, calc(${rt}px + ${s}) ${t}px, calc(${rt}px - ${s}) ${b}px, calc(${l}px - ${s}) ${b}px)`;
 }
+
+/** Smooth's crossing grows from at most this scale: the window has to start visibly small, from the HUD tab, where an enter's own 0.98 would barely move. A starting number to tune in the prototype story. */
+const CROSSING_SCALE = 0.9;
 
 const BLUR = (px: number) => `blur(${px}px)`;
 
@@ -105,7 +116,9 @@ export function crossing(feel: ActiveFeel, args: { readonly from: Rect; readonly
   const { from, within } = args;
   if (feel.mask === 'skew') {
     const closed = slantedRect(from);
-    const open = slantedRect({ x: 0, y: 0, width: within.width, height: within.height });
+    /* Open reaches half the screen's longer side past it on every side: the slant leans each edge by less than that, so nothing of the screen is clipped. */
+    const slack = Math.max(within.width, within.height) / 2;
+    const open = slantedRect({ x: -slack, y: -slack, width: within.width + 2 * slack, height: within.height + 2 * slack });
     return {
       initial: { clipPath: closed, opacity: 0 },
       animate: { clipPath: open, opacity: 1, transition: landing(feel, feel.screen) },
@@ -113,7 +126,7 @@ export function crossing(feel: ActiveFeel, args: { readonly from: Rect; readonly
     };
   }
   const origin = `${from.x + from.width / 2}px ${from.y + from.height / 2}px`;
-  const closed = { opacity: 0, scale: Math.min(feel.scale, 0.9), filter: BLUR(feel.blur), transformOrigin: origin };
+  const closed = { opacity: 0, scale: Math.min(feel.scale, CROSSING_SCALE), filter: BLUR(feel.blur), transformOrigin: origin };
   return {
     initial: closed,
     animate: { opacity: 1, scale: 1, filter: BLUR(0), transformOrigin: origin, transition: landing(feel, feel.screen) },

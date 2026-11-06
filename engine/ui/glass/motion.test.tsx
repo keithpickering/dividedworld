@@ -5,7 +5,7 @@
  */
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { backdrop, crossing, currentFeel, feelTokens, modal, overlay, screen, stagger, staggerItem, swap, useFeel, type ActiveFeel } from './motion.ts';
+import { wipe, backdrop, crossing, currentFeel, feelTokens, modal, overlay, screen, stagger, staggerItem, swap, useFeel, type ActiveFeel } from './motion.ts';
 
 const rect = { x: 10, y: 20, width: 100, height: 40 };
 const within = { width: 1000, height: 700 };
@@ -59,14 +59,38 @@ describe('the presets', () => {
     }
   }
 
+  /* Each point of a polygon as [x, y] percents; the slant is worst-case 9% of the width either way (tan 10deg times 50). */
+  const points = (poly: string, lean: number) => poly.replace(/^polygon\(|\)$/g, '').replaceAll('calc(tan(var(--kb-glass-skew)) * 50%)', 'LEAN').split(/, (?![^(]*\))/).map((pt) => {
+    const [xs, ys] = pt.split(/ (?=-?[\d.]+%$)/) as [string, string];
+    const m = /^calc\(([-\d.]+)% ([+-]) LEAN\)$/.exec(xs);
+    const x = m ? parseFloat(m[1]!) + (m[2] === '+' ? lean : -lean) : parseFloat(xs);
+    return [x, parseFloat(ys)] as const;
+  });
+
+  it('wipe: shown clips nothing around the box and hidden shows none of it, for an element of any size', () => {
+    for (const lean of [-9, 9]) {
+      const shown = points(wipe(150), lean);
+      expect(shown).toHaveLength(4);
+      for (const [x, y] of shown) {
+        expect(x <= 0 || x >= 100).toBe(true);
+        expect(y <= 0 || y >= 100).toBe(true);
+      }
+      const hidden = points(wipe(-25), lean);
+      expect(hidden).toHaveLength(4);
+      for (const [x] of hidden) expect(x).toBeLessThanOrEqual(0);
+    }
+  });
+
   it('crossing (Snappy) starts its clip at the given rect and ends at the full screen', () => {
     const p = crossing(snappy, { from: rect, within });
     const clip = (t: unknown) => (t as { clipPath: string }).clipPath;
     expect(clip(p.initial)).toContain('10px');
     expect(clip(p.initial)).toContain('110px');
     expect(clip(p.initial)).toContain('60px');
-    expect(clip(p.animate)).toContain('1000px');
-    expect(clip(p.animate)).toContain('700px');
+    /* Open reaches past the screen on every side, so the slant clips none of it. */
+    const nums = [...clip(p.animate).matchAll(/calc\((-?[\d.]+)px/g)].map((m) => Number(m[1]));
+    expect(Math.min(...nums)).toBeLessThan(0);
+    expect(Math.max(...nums)).toBeGreaterThan(1000);
     expect(clip(p.exit)).toBe(clip(p.initial));
   });
 })

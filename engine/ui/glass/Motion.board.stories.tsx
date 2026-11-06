@@ -37,7 +37,7 @@ const NAMES = ['Gabe', 'Mandy', 'Piranha'] as const;
 function Demo({ title, children, replay }: { title: string; children: React.ReactNode; replay: React.ReactNode }) {
   return (
     <section style={{ marginBottom: 32 }}>
-      <h2 style={{ font: 'var(--kb-glass-size-body) var(--kb-glass-font-body, sans-serif)' }}>{title}</h2>
+      <h2 style={{ font: 'var(--kb-glass-size-body) var(--kb-glass-font-body)' }}>{title}</h2>
       <div style={STAGE}>{children}</div>
       <ButtonRow>{replay}</ButtonRow>
     </section>
@@ -91,7 +91,7 @@ function Modal({ feel }: { feel: ReturnType<typeof useFeel> }) {
   return (
     <Demo title="A modal" replay={<GlassButton size="s" onClick={() => setOpen(!open)}>{open ? 'Close the modal' : 'Open the modal'}</GlassButton>}>
       <AnimatePresence>
-        {open && <motion.div key="dim" {...backdrop(feel)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)' }} />}
+        {open && <motion.div key="dim" {...backdrop(feel)} style={{ position: 'absolute', inset: 0, background: 'var(--kb-overlay)' }} />}
         {open && <motion.div key="m" {...modal(feel)} style={{ ...CARD, position: 'absolute', left: '25%', top: 40, width: '50%' }}>A modal, with the board dimmed in step.</motion.div>}
       </AnimatePresence>
     </Demo>
