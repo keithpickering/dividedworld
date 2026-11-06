@@ -51,7 +51,7 @@ describe('the foil', () => {
       const failures = shineIsReadable(tokens, (mode, light) => {
         const band = bandOf(tokens[mode]);
         if (!foils.has(mode)) foils.set(mode, foilFor(pattern, modeOf(band)));
-        return new Set(sampleFoil(foils.get(mode)!, { w: 120, h: 60 }, light, band));
+        return new Set(sampleFoil(foils.get(mode)!, { w: 240, h: 120 }, light, band));
       });
       assert.deepEqual(failures.slice(0, 3), [], `${pattern}`);
     }
