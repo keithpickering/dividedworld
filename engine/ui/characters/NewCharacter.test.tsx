@@ -131,6 +131,18 @@ describe('New character', () => {
 
 /* The Turn board's footer, the lead under the title, and the name's count (the New character board). */
 describe('New character\'s head, name and foot', () => {
+  test('holds Make the character while the name is past the most, as Reveal holds its own over a count, and frees it again', async () => {
+    open(world());
+    const f = await form();
+    await userEvent.click(within(f).getByRole('radio', { name: /^Heel/u }));
+    await userEvent.type(within(f).getByLabelText('Name'), 'x'.repeat(41));
+    const make = within(f).getByRole('button', { name: 'Make the character' });
+    expect(f.querySelector('.kb-glass-field-tally')).toHaveTextContent('41 of 40');
+    expect(make).toBeDisabled();
+    await userEvent.type(within(f).getByLabelText('Name'), '{Backspace}');
+    expect(make).toBeEnabled();
+  });
+
   test('sets the lead under the title, in the page head', async () => {
     open(world());
     await form();

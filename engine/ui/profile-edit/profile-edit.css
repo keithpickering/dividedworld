@@ -276,6 +276,12 @@
   min-width: 0;
 }
 
+/* Held only while what the postbit shows is read, so the column does not jump when it arrives (a portrait slot, name, title, rank, pips,
+   counts); once it has, the postbit sets its own height, which on the phone's stacked postbit is far less. */
+.kb-glass .kb-profile-preview-side[aria-busy='true'] {
+  min-height: 330px;
+}
+
 .kb-glass .kb-profile-preview-body {
   display: flex;
   flex-direction: column;

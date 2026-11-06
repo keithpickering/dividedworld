@@ -191,7 +191,7 @@ export function AvatarEditor({ character, onSaved, io = browserIo }: AvatarEdito
           {/* The button stands for the file input, which only a screen reader hears by name: a secondary glass button, as every action is. */}
           <GlassButton id={`${helpId}-choose`} onClick={() => fileInput.current?.click()}>Choose a picture</GlassButton>
           <input
-            ref={fileInput} className="kb-visually-hidden" type="file" accept="image/*" tabIndex={-1} aria-labelledby={`${helpId}-choose`}
+            ref={fileInput} className="kb-visually-hidden" type="file" accept="image/*" tabIndex={-1} aria-hidden="true" aria-labelledby={`${helpId}-choose`}
             onChange={(e) => { void choose(e.target.files?.[0]); e.target.value = ''; }}
           />
         </div>

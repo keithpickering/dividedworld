@@ -46,7 +46,7 @@ const manifest: BoardManifest = {
   board: '2026-11-05-backfill/24-debut',
   size: { width: 1440, height: 1000 },
   build: { story: 'boards-00-characters--waiting' },
-  press: [{ role: 'button', name: 'Change how Waiting Wanda debuts' }],
+  press: [{ role: 'button', name: 'Change how Waiting Wanda debuts…' }],
   landmarks: debutLandmarks({
     title: "HOW WAITING WANDA DEBUTS", buildTitle: 'How Waiting Wanda debuts',
     foot: 'It debuts at the next settlement, in 7 h 42 min. Until then you can drop it now instead.',

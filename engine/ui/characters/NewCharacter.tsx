@@ -58,7 +58,7 @@ export function NewCharacter() {
   const className = instance.classes.find((c) => c.key === cls)?.name ?? '';
 
   const submit = async () => {
-    if (!cls || name.trim() === '' || busy) return;
+    if (!cls || name.trim() === '' || [...name].length > NAME_MAX || busy) return;
     setBusy(true);
     setRefusal(null);
     try {
@@ -94,7 +94,7 @@ export function NewCharacter() {
         {/* In a calm, since "Make the character" waits drawn as text on a dashed edge until a name and a class are chosen. */}
         <FormFoot line={newCharacterFooter({ name, className, timing, loudness })}>
           <GlassButton to="/characters">Cancel</GlassButton>
-          <GlassButton type="submit" kind="primary" disabled={!cls || name.trim() === '' || busy}>Make the character</GlassButton>
+          <GlassButton type="submit" kind="primary" disabled={!cls || name.trim() === '' || [...name].length > NAME_MAX || busy}>Make the character</GlassButton>
         </FormFoot>
       </CalmRegion>
     </div>

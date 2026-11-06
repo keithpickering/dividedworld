@@ -117,6 +117,22 @@ describe('profile edit', () => {
     expect(aside).toHaveTextContent('The preview follows what you type. Nothing changes on the board until you save.');
   });
 
+  test('reserves the postbit column and says it is busy until what it shows has been read', async () => {
+    const w = world();
+    let release!: () => void;
+    const real = w.fake.characterCounts.bind(w.fake);
+    vi.spyOn(w.fake, 'characterCounts').mockImplementation(async (id) => { await new Promise<void>((r) => { release = r; }); return real(id); });
+    await open(w);
+    const aside = await screen.findByRole('complementary', { name: 'What everyone will see' });
+    const side = aside.querySelector('.kb-profile-preview-side')!;
+    expect(side).toHaveAttribute('aria-busy', 'true');
+    expect(within(aside).queryByRole('group', { name: 'About Pipewrench' })).toBeNull();
+    await waitFor(() => expect(release).toBeDefined());
+    release();
+    await within(aside).findByRole('group', { name: 'About Pipewrench' });
+    expect(side).not.toHaveAttribute('aria-busy', 'true');
+  });
+
   test('the preview says the class its player made public, as the thread does, and no more', async () => {
     const w = world();
     const { thread } = w.fake.seed.thread('general', w.pipe, 'A thread', 'Hi.');
@@ -170,6 +186,10 @@ describe('profile edit', () => {
     await open(w);
     const input = await screen.findByLabelText('Choose a picture');
     expect(input).toHaveAttribute('type', 'file');
+    /* Only the button is in the accessibility tree: one control named Choose a picture, not two. */
+    expect(input).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getAllByRole('button', { name: 'Choose a picture' })).toHaveLength(1);
+    expect(document.querySelectorAll('input[type=file]:not([aria-hidden=true])')).toHaveLength(0);
     expect(input).toHaveClass('kb-visually-hidden');
     const button = screen.getByRole('button', { name: 'Choose a picture' });
     expect(button).toHaveAttribute('data-kb-kind', 'secondary');

@@ -280,8 +280,8 @@ export function Characters() {
               <span> It will debut {LOUD[c.debutLoudness ?? 'announced']}.</span>
             </p>
             <ButtonRow>
-              <GlassButton data-kb-return="" aria-label={`Drop ${c.name} now`} onClick={() => show({ kind: 'drop', id: c.id })}>Drop {c.name} now…</GlassButton>
-              <GlassButton aria-label={`Change how ${c.name} debuts`} onClick={() => show({ kind: 'debut', id: c.id })}>Change how {c.name} debuts…</GlassButton>
+              <GlassButton data-kb-return="" onClick={() => show({ kind: 'drop', id: c.id })}>Drop {c.name} now…</GlassButton>
+              <GlassButton onClick={() => show({ kind: 'debut', id: c.id })}>Change how {c.name} debuts…</GlassButton>
             </ButtonRow>
           </div>
         )}

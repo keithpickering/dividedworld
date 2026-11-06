@@ -48,7 +48,7 @@ export function ProfilePreview({ character, title, signature, pipStyle }: {
       {facts === 'failed' && <p className="kb-notice" data-kb-tone="refusal">The preview could not be loaded. Saving still works.</p>}
       {facts !== 'failed' && (
         <div className="kb-profile-preview-post">
-          <div className="kb-profile-preview-side">
+          <div className="kb-profile-preview-side" aria-busy={facts === null ? true : undefined}>
             {facts && <Postbit person={{ character: shown, posts: facts.posts, standing: facts.standing, revealed: facts.revealed, turnedAt: facts.turnedAt }} layout="side" link={false} />}
           </div>
           <div className="kb-profile-preview-body">

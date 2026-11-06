@@ -133,11 +133,10 @@ describe('My characters', () => {
     const r = row('Spritey');
     expect(within(r).getByText(/waiting to debut at the next settlement/iu)).toBeInTheDocument();
     expect(within(r).getByText(/announced/iu)).toBeInTheDocument();
-    expect(within(r).getByRole('button', { name: 'Drop Spritey now' })).toBeInTheDocument();
-    expect(within(r).getByRole('button', { name: 'Change how Spritey debuts' })).toBeInTheDocument();
-    /* What is drawn on each is in its name (the label in the name, WCAG 2.5.3): the character's own, so the names a screen reader hears match the words on the screen. */
-    expect(within(r).getByRole('button', { name: 'Drop Spritey now' })).toHaveTextContent('Drop Spritey now…');
-    expect(within(r).getByRole('button', { name: 'Change how Spritey debuts' })).toHaveTextContent('Change how Spritey debuts…');
+    expect(within(r).getByRole('button', { name: 'Drop Spritey now…' })).toBeInTheDocument();
+    expect(within(r).getByRole('button', { name: 'Change how Spritey debuts…' })).toBeInTheDocument();
+    /* No aria-label: each is named by what is drawn on it (the label in the name, WCAG 2.5.3). */
+    expect(within(r).getByRole('button', { name: 'Drop Spritey now…' })).not.toHaveAttribute('aria-label');
     expect(within(r).queryByRole('button', { name: /^Turn/u })).toBeNull();
     expect(within(r).queryByRole('link', { name: 'Edit profile' })).toBeNull();
     /* Absent from every public read. */
@@ -155,7 +154,7 @@ describe('My characters', () => {
     const setDebut = vi.spyOn(w.fake, 'setDebut');
     open(w);
     await ready();
-    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Change how Spritey debuts' }));
+    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Change how Spritey debuts…' }));
     const dialog = await screen.findByRole('dialog', { name: /Spritey/u });
     await userEvent.click(within(dialog).getByRole('radio', { name: /^Silent/u }));
     expect(within(dialog).getByText(/Nothing is posted/u)).toBeInTheDocument();
@@ -164,7 +163,7 @@ describe('My characters', () => {
     await waitFor(() => expect(within(row('Spritey')).getByText(/silently/iu)).toBeInTheDocument());
     expect(await w.fake.characters([w.waiting])).toEqual([]);
 
-    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Drop Spritey now' }));
+    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Drop Spritey now…' }));
     const drop = await screen.findByRole('dialog', { name: /Spritey/u });
     await userEvent.click(within(drop).getByRole('button', { name: 'Drop Spritey now' }));
     await waitFor(() => expect(setDebut).toHaveBeenLastCalledWith(w.waiting, 'now', 'silent'));
@@ -988,7 +987,7 @@ describe('the Debut dialog\'s foot (the Debut boards)', () => {
     w.fake.seed.nextSettlementAt(w.fake.clock.now() + (7 * 60 + 42) * 60_000);
     page(w);
     await ready();
-    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Change how Spritey debuts' }));
+    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Change how Spritey debuts…' }));
     const dialog = await screen.findByRole('dialog', { name: 'How Spritey debuts' });
     expect(dialog.querySelector('.kb-glass-form-foot-line')).toHaveTextContent('It debuts at the next settlement, in 7 h 42 min. Until then you can drop it now instead.');
     /* How loud is the dialog\'s only choice, one row of three. */
@@ -1001,7 +1000,7 @@ describe('the Debut dialog\'s foot (the Debut boards)', () => {
     w.fake.seed.nextSettlementAt(null);
     page(w);
     await ready();
-    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Change how Spritey debuts' }));
+    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Change how Spritey debuts…' }));
     const dialog = await screen.findByRole('dialog', { name: 'How Spritey debuts' });
     expect(dialog.querySelector('.kb-glass-form-foot-line')).toHaveTextContent(/^It debuts at the next settlement\. Until then you can drop it now instead\.$/u);
   });
@@ -1010,7 +1009,7 @@ describe('the Debut dialog\'s foot (the Debut boards)', () => {
     const w = world();
     page(w);
     await ready();
-    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Drop Spritey now' }));
+    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Drop Spritey now…' }));
     const dialog = await screen.findByRole('dialog', { name: 'Drop Spritey now' });
     expect(dialog.querySelector('.kb-glass-form-foot-line')).toHaveTextContent('Spritey goes on the board at once and can post at once, instead of at the next settlement.');
     expect(within(dialog.querySelector('.kb-glass-form-foot') as HTMLElement).getByRole('button', { name: 'Drop Spritey now' })).toBeInTheDocument();

@@ -125,7 +125,7 @@ export const phone: BoardManifest = {
     {
       name: 'The Debut sheet',
       build: { story: 'boards-00-characters--waiting-phone' },
-      press: [{ role: 'button', name: 'Change how Waiting Wanda debuts' }],
+      press: [{ role: 'button', name: 'Change how Waiting Wanda debuts…' }],
       landmarks: [
         { id: 'kicker', role: 'text', name: 'MY CHARACTERS › DEBUT', buildName: 'My characters › Debut', nth: 0, type: false, box: 'none' },
         held('kicker', 'title', 'heading', 'HOW WAITING WANDA DEBUTS', { y: 44 }, { buildName: 'How Waiting Wanda debuts' }),

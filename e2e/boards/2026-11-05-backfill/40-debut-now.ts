@@ -12,7 +12,7 @@ const manifest: BoardManifest = {
   board: '2026-11-05-backfill/40-debut-now',
   size: { width: 1440, height: 1000 },
   build: { story: 'boards-00-characters--waiting' },
-  press: [{ role: 'button', name: 'Drop Waiting Wanda now' }],
+  press: [{ role: 'button', name: 'Drop Waiting Wanda now…' }],
   landmarks: debutLandmarks({
     title: 'DROP WAITING WANDA NOW', buildTitle: 'Drop Waiting Wanda now',
     foot: 'Waiting Wanda goes on the board at once and can post at once, instead of at the next settlement.',
