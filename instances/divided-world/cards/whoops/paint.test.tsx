@@ -5,7 +5,7 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { covers, fieldGrid, makeSplat, THRESHOLD, type Box } from './splat.ts';
-import { paint, paintSplat, type PaintLayer } from './paint.ts';
+import { MAX_CANVAS_PX, paint, paintSplat, type PaintLayer } from './paint.ts';
 import { type Stroke } from './scrub.ts';
 
 const realGetContext = HTMLCanvasElement.prototype.getContext;
@@ -91,6 +91,35 @@ describe('paint', () => {
   });
 });
 
+describe('paint, scratch and degenerate boxes', () => {
+  beforeEach(() => { (globalThis as { Path2D?: unknown }).Path2D ??= class {}; });
+
+  test('the shared scratch is cleared for each layer, and a wash\'s shadow does not leak into the next layer\'s drawImage', () => {
+    const calls = recording();
+    const wash: Stroke = { tool: 'wash', width: 0.1, aspect: 2, points: [[0.2, 0.5], [0.4, 0.5]] };
+    paint(canvasOf(), geo, [layer([wash]), layer([])]);
+    const work = calls.filter((c) => c.who === 'work');
+    expect(work.filter((c) => c.op === 'clearRect')).toHaveLength(2);
+    const clears = work.map((c, i) => (c.op === 'clearRect' ? i : -1)).filter((i) => i >= 0);
+    const draws = work.map((c, i) => (c.op === 'drawImage' ? i : -1)).filter((i) => i >= 0);
+    expect(clears[0]).toBeLessThan(draws[0]!);
+    expect(clears[1]).toBeGreaterThan(draws[0]!);
+    expect(clears[1]).toBeLessThan(draws[1]!);
+    const second = work[draws[1]!]!;
+    expect(second.style.shadowBlur).toBe(0);
+    expect(second.style.shadowColor).toBe('transparent');
+    expect(second.style.globalCompositeOperation).toBe('source-over');
+    for (const d of calls.filter((c) => c.who === 'main' && c.op === 'drawImage')) expect(d.style.shadowBlur ?? 0).toBe(0);
+  });
+
+  test.each([[0, 200], [400, 0], [Number.NaN, 200], [400, Infinity]])('a box of %s by %s draws nothing', (w, h) => {
+    const calls = recording();
+    const wash: Stroke = { tool: 'wash', width: 0.1, aspect: 2, points: [[0.2, 0.5], [0.4, 0.5]] };
+    expect(() => paint(canvasOf(), { dpr: 1, box: { w, h }, top: 0, left: 0 }, [layer([wash])])).not.toThrow();
+    expect(calls.filter((c) => c.op === 'drawImage' || c.op === 'stroke')).toHaveLength(0);
+  });
+});
+
 describe('paintSplat', () => {
   /** A context that keeps ImageData, so the pixels written can be read back. */
   function keeping() {
@@ -130,15 +159,24 @@ describe('paintSplat', () => {
     paintSplat(splat, '#ff2bd6', box, 1);
     const img = read();
     let checked = 0, partial = 0;
+    const grid = fieldGrid(splat, box, 1);
     for (let y = 0; y < box.h; y++) for (let x = 0; x < box.w; x++) {
       const alpha = img.data[(y * box.w + x) * 4 + 3]!;
-      const f = fieldGrid(splat, box, 1)[y * box.w + x]!;
+      const f = grid[y * box.w + x]!;
       if (Math.abs(f - THRESHOLD) < 0.02) { partial += alpha > 0 && alpha < 255 ? 1 : 0; continue; }
       checked++;
       expect(alpha > 127).toBe(covers(splat, box, (x + 0.5) / box.w, (y + 0.5) / box.h));
     }
     expect(checked).toBeGreaterThan(box.w * box.h * 0.9);
     expect(partial).toBeGreaterThan(0);
+  });
+
+  test('a very tall box is capped at MAX_CANVAS_PX pixels, whatever the density', () => {
+    keeping();
+    expect(MAX_CANVAS_PX).toBe(4_000_000);
+    const cv = paintSplat(splat, '#101010', { w: 390, h: 20000 }, 1);
+    expect(cv.width * cv.height).toBeLessThanOrEqual(MAX_CANVAS_PX);
+    expect(cv.width * cv.height).toBeGreaterThan(MAX_CANVAS_PX * 0.9);
   });
 
   test('a dark ink has a lit rim: an edge facing the light is brighter than the ink, the far one darker', () => {

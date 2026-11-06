@@ -17,6 +17,34 @@ function form(config?: Record<string, unknown>) {
   return { onChange, ...view };
 }
 
+describe('the preview canvas', () => {
+  test('is painted when it appears, and painted again when the color changes', () => {
+    const real = HTMLCanvasElement.prototype.getContext;
+    const ops: string[] = [];
+    HTMLCanvasElement.prototype.getContext = function () {
+      return new Proxy({}, {
+        get: (_t, key: string) => (...args: unknown[]) => {
+          ops.push(key);
+          if (key === 'createImageData') return { data: new Uint8ClampedArray(args[0] as number * (args[1] as number) * 4) };
+          if (key.startsWith('create')) return { addColorStop() {} };
+          return undefined;
+        },
+        set: () => true,
+      });
+    } as unknown as HTMLCanvasElement['getContext'];
+    try {
+      const view = form({ color: '#ff2bd6' });
+      expect(ops).toContain('putImageData');
+      expect(ops.filter((o) => o === 'drawImage')).toHaveLength(1);
+      view.rerender(<ConfigForm config={{ color: '#19e3ff' }} onChange={view.onChange} post={POST} id="play" />);
+      expect(ops.filter((o) => o === 'drawImage')).toHaveLength(2);
+      expect(ops.filter((o) => o === 'putImageData')).toHaveLength(2);
+    } finally {
+      HTMLCanvasElement.prototype.getContext = real;
+    }
+  });
+});
+
 describe('the ink color', () => {
   test('is a radiogroup of the card\'s swatches, Magenta chosen, each named by its color', () => {
     form({ color: '#ff2bd6' });

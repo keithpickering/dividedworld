@@ -22,6 +22,9 @@ import { type Stroke } from './scrub.ts';
 /** The pixel density a splat is drawn at: past two the extra pixels show nothing on soft ink and cost a quarter more memory each step. */
 export const MAX_DPR = 2;
 
+/** The most pixels one post's ink canvas, and each splat painted for it, may have: past it iOS fails silently, and three layers of it would be about 94 MB. */
+export const MAX_CANVAS_PX = 4_000_000;
+
 /** Where the box lies in the ink canvas. */
 export interface Geometry {
   /** Pixels per CSS pixel. */
@@ -44,12 +47,16 @@ export interface PaintLayer {
 }
 
 /**
- * The splat as wet ink on a canvas of ceil(box.w * d) by ceil(box.h * d) pixels, d being `density` (at most 1).
+ * The splat as wet ink on a canvas of ceil(box.w * d) by ceil(box.h * d) pixels, d being `density`, at most 1 and
+ * at most what keeps the canvas within MAX_CANVAS_PX.
  * A browser with no 2D context gives a blank canvas.
  */
 export function paintSplat(splat: Splat, color: string, box: Box, density: number): HTMLCanvasElement {
-  const q = Math.min(1, density);
-  const w = Math.ceil(box.w * q), h = Math.ceil(box.h * q);
+  const area = box.w * box.h;
+  const q = Math.min(1, density, area > 0 ? Math.sqrt(MAX_CANVAS_PX / area) : 1);
+  /* ceil can add a pixel a side; floor the size when it would pass the cap. */
+  let w = Math.ceil(box.w * q), h = Math.ceil(box.h * q);
+  while (w * h > MAX_CANVAS_PX && (w > 1 || h > 1)) { if (w >= h) w--; else h--; }
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
@@ -133,6 +140,7 @@ export function paint(canvas: HTMLCanvasElement, geo: Geometry, layers: readonly
   const work = scratchOf(canvas.width, canvas.height);
   if (!ctx || !work) return;
   const { dpr, box } = geo;
+  if (!(box.w > 0 && box.h > 0 && Number.isFinite(box.w) && Number.isFinite(box.h))) return;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   for (const layer of layers) {
