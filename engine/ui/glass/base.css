@@ -12,6 +12,13 @@
   font-size: var(--kb-glass-size-body);
   font-weight: 600;
   color: var(--kb-glass-text);
+}
+
+/*
+ * The ground is the glass's default, at no specificity: a glass part that sets its own (the overlay's smoke over the page, a panel) wins
+ * whichever stylesheet the browser has read last. The screens load on first use (web/src/App.tsx), so this file may come after theirs.
+ */
+:where(.kb-glass) {
   background: var(--kb-glass-ground);
 }
 

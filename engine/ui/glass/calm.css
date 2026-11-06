@@ -24,8 +24,16 @@
   --kb-glass-title-gap: 8px;
 }
 
-.kb-calm {
+/*
+ * Relative is the calm's default, at no specificity: a calm that is placed by its own rule (the picker's axis words, absolute) keeps its place
+ * whichever stylesheet the browser has read last. The screens load on first use (web/src/App.tsx), so this file may come after theirs.
+ * Absolute, fixed and sticky are all positioned, which is all the calm's ::before needs of it.
+ */
+:where(.kb-calm) {
   position: relative;
+}
+
+.kb-calm {
   isolation: isolate;
   --kb-calm-feather: var(--kb-glass-calm-feather);
 }
