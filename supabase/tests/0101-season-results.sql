@@ -170,13 +170,14 @@ declare
   viewer uuid := tests.account('sr-viewer');
   s2 bigint; i integer; denied text; p integer;
   last_spot uuid;
+  big_owner uuid := tests.account('sr-big');
 begin
   select * into f from pg_temp.sr;
   -- A second finished season of 60 characters.
   insert into seasons (number, starts_at, ends_at, results_at) values (50, '1990-01-01', '1990-02-01', '1990-02-01') returning id into s2;
   for i in 1..60 loop
     insert into characters (owner, name, created_at, debuted_at)
-    values (tests.account('sr-big-' || (i / 6)), 'Big ' || lpad(i::text, 3, '0'), now() - interval '40 days', now() - interval '40 days');
+    values (big_owner, 'Big ' || lpad(i::text, 3, '0'), now() - interval '40 days', now() - interval '40 days');
   end loop;
   insert into season_results (season, character, name, place, standing)
   select s2, c.id, c.name, (substring(c.name from 5))::integer, 1000 - (substring(c.name from 5))::integer from characters c where c.name like 'Big %';

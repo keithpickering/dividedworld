@@ -265,7 +265,8 @@ begin
             from turns_announced t where t.character = c.id and t.at >= s.starts_at and t.at < ended
           ) x), '[]'::jsonb)
     from characters c left join standings st on st.character = c.id and st.season = s.id
-    where c.debuted_at < ended and c.staff is null;
+    where c.debuted_at < ended and c.staff is null
+    order by coalesce(st.amount, 0) desc, c.name, c.id;
   get diagnostics written = row_count;
   update seasons set results_at = now() where id = s.id;
   perform broadcast_later('reach', 'news', jsonb_build_object('kind', 'seasonNews', 'sub', 'results', 'season', s.number, 'act', null, 'at', now()));
