@@ -576,18 +576,25 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     };
   }, [flush]);
 
-  /** A layer washed to the instance's share is clean: for this screen, and for everyone when the author did it. */
-  const checkClean = useCallback(() => {
+  /**
+   * A layer washed to the instance's share is clean: for this screen, and for everyone when the author did it. It is checked as the
+   * ink is washed, on every move of a stroke and every frame of the sweep, so a layer clears the moment it reaches the share and not
+   * when the hand lifts. True when a layer was cleared just now.
+   */
+  const checkClean = useCallback((): boolean => {
     const { layers: all, threshold, reader: who } = now.current;
+    let cleared = false;
     all.forEach((layer, i) => {
       const ink = inks.current[i];
       if (!ink || cleanOf(i) || ink.washed < threshold) return;
+      cleared = true;
       localClean.current.add(layer.play.id);
       if (who.author) {
         wantClean.current.add(layer.play.id);
         queueSave(layer.play.id);
       }
     });
+    return cleared;
   }, [cleanOf, queueSave]);
 
   /** A finished stroke is kept: in memory for a reader, and also to be saved for the author. */
@@ -673,6 +680,8 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
       const over = liveInks().some((ink) => ink?.has(p[0], p[1]));
       inks.current[s.layer]?.wash([last, p], s.width, s.aspect);
       throwSuds(last, p, over);
+      /* A layer that reaches the share clears under the hand; the stroke goes on, and is kept with the mark when it ends. */
+      if (checkClean()) refresh();
     } else {
       inks.current[s.layer]?.pen([last, p], s.width, s.aspect);
     }
