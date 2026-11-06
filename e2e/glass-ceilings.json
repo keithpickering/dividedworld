@@ -728,7 +728,7 @@
     "overlays": {
       "tips": {
         "scrim": 72,
-        "worst": 0.0098,
+        "worst": 0.0018,
         "tokens": {
           "--kb-glass-text": {
             "body": 0.152

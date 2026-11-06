@@ -153,6 +153,8 @@
 
 .kb-guide-section-title {
   margin: 0;
+  /* A section's heading is set as the instance writes it (the board's "Classes", not "CLASSES"); the page title and labels keep their capitals. */
+  text-transform: none;
   font-size: 4rem;
   line-height: 1.02;
   letter-spacing: 0.5px;

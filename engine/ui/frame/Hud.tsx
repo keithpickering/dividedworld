@@ -70,6 +70,8 @@ const TAB = 24;
 const TAB_OUT = 20;
 /** The room the mask picker's arrow takes beside the name, in the phone's px. */
 const PICKER_ARROW = 28;
+/** The room the picker's own chevron takes at the name's right, in the phone's px (the name is drawn by the HUD, and stops short of it). */
+const PICKER_CHEVRON = 16;
 
 /** The count as the HUD says it: nothing at none, the number to 9, "9+" at the bound. */
 export const unreadText = (n: number | null): string | null => (n === null || n <= 0 ? null : n >= ALERTS_UNREAD_BOUND ? `${ALERTS_UNREAD_BOUND - 1}+` : String(n));
@@ -92,6 +94,9 @@ export function Hud() {
   const menuButton = useRef<HTMLButtonElement>(null);
   const picker = useRef<HTMLSelectElement>(null);
   const probe = useRef<HTMLSpanElement>(null);
+  const wordProbe = useRef<HTMLSpanElement>(null);
+  /* How much of the phone's name size the picker's name keeps so its widest word fits its room, from 0 to 1 (frame.css floors the size, then wraps inside a word). */
+  const [fit, setFit] = useState(1);
   /* On the Phone board: Menu is its glyph, because the row would cut the mask's name with the word; and Menu's width with the word, kept for judging that. */
   const [compact, setCompact] = useState(false);
   const menuWide = useRef(0);
@@ -217,8 +222,9 @@ export function Hud() {
     const bar = section.current;
     const choose = picker.current;
     const word = probe.current;
+    const widest = wordProbe.current;
     const menu = menuButton.current;
-    if (wide || !bar || !choose || !word || !menu || typeof ResizeObserver === 'undefined') { setCompact(false); return undefined; }
+    if (wide || !bar || !choose || !word || !widest || !menu || typeof ResizeObserver === 'undefined') { setCompact(false); setFit(1); return undefined; }
     const judge = () => {
       const menuNow = menu.getBoundingClientRect().width;
       if (!shortened.current) menuWide.current = menuNow;
@@ -227,10 +233,14 @@ export function Hud() {
       const cut = word.getBoundingClientRect().width + PICKER_ARROW > room;
       shortened.current = cut;
       setCompact(cut);
+      /* The name is drawn over the picker (frame.css) and wraps at its spaces, so what must fit is its widest word: the size it keeps is what the room allows. */
+      const wordWidth = widest.getBoundingClientRect().width;
+      const roomNow = choose.getBoundingClientRect().width - PICKER_CHEVRON;
+      setFit(wordWidth > 0 && roomNow > 0 ? Math.min(1, roomNow / wordWidth) : 1);
     };
     judge();
     const watch = new ResizeObserver(judge);
-    for (const el of [bar, choose, word]) watch.observe(el);
+    for (const el of [bar, choose, word, widest]) watch.observe(el);
     return () => watch.disconnect();
   }, [wide, hudName, board, scale, size, redraw]);
 
@@ -348,9 +358,15 @@ export function Hud() {
                         {/* The phone's HUD has no name line: the mark stands by the mask it names. */}
                         {!wide && hiddenMark}
                         {!wide && <span ref={probe} className="kb-hud-name-probe" aria-hidden="true">{hud.name}</span>}
-                        <select ref={picker} id={selectId} className="kb-hud-select" value={hud.id} onChange={(e) => player.setHudCharacter(e.target.value)}>
-                          {player.actingCharacters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                        </select>
+                        {!wide && <span ref={wordProbe} className="kb-hud-name-probe kb-hud-name-probe--word" aria-hidden="true">{hud.name}</span>}
+                        <span className="kb-hud-pick" style={{ '--kb-hud-chevron': `${PICKER_CHEVRON}px` } as CSSProperties}>
+                          <select ref={picker} id={selectId} className="kb-hud-select" value={hud.id} onChange={(e) => player.setHudCharacter(e.target.value)}>
+                            {player.actingCharacters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                          </select>
+                          {/* The phone's picker shows the name here, over its own text (which is clear): a native picker clips the name to its box, this wraps it and sizes it to fit. */}
+                          {!wide && <span className="kb-hud-picked" aria-hidden="true" style={{ '--kb-hud-pick-fit': fit } as CSSProperties}>{hud.name}</span>}
+                          {!wide && <svg className="kb-hud-chevron" aria-hidden="true" focusable="false" width="14" height="10" viewBox="0 0 14 10"><path d="M1 2l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" /></svg>}
+                        </span>
                       </CalmRegion>
                     </>
                   )}

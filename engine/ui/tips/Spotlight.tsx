@@ -36,12 +36,39 @@ const GAP = 26;
 /** The panel's width on a wide screen, in px (it is narrower where the window is). */
 const WIDE = 580;
 const EDGE = 8;
+/** The panel's border, in px: the arrow starts this far inside the panel's edge. It is `--kb-border` of the glass's cut dialog (glass/base.css, 1.5px) and is written twice, here and there; e2e/onboarding-polish.spec.ts reads the gap, so a change in one goes red. */
+const BORDER = 1.5;
 
 interface Frame { readonly x: number; readonly y: number; readonly w: number; readonly h: number; readonly vw: number; readonly vh: number }
 
+/**
+ * The box a target occupies. A target with no box of its own (`display: contents`, which the phone's HUD gives the character plate so its parts
+ * lay out in the bar's grid) is the union of its descendants' boxes: measured as it is it is a zero box at the window's corner, and the ring
+ * and the cut-out are drawn there, a stray square, instead of round the plate.
+ */
+function boxOf(target: HTMLElement): { readonly left: number; readonly top: number; readonly width: number; readonly height: number } {
+  const own = target.getBoundingClientRect();
+  if (own.width > 0 || own.height > 0) return own;
+  let left = Infinity;
+  let top = Infinity;
+  let right = -Infinity;
+  let bottom = -Infinity;
+  for (const el of target.querySelectorAll('*')) {
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) continue;
+    /* A hidden copy (the HUD's measuring probes) takes a box but is not part of what the player sees. */
+    if (getComputedStyle(el).visibility === 'hidden') continue;
+    left = Math.min(left, r.left);
+    top = Math.min(top, r.top);
+    right = Math.max(right, r.right);
+    bottom = Math.max(bottom, r.bottom);
+  }
+  return right >= left ? { left, top, width: right - left, height: bottom - top } : own;
+}
+
 /** The cut-out in whole pixels, clipped to the screen: each edge is clamped, and the size is what is left between them. */
 function measure(target: HTMLElement): Frame {
-  const r = target.getBoundingClientRect();
+  const r = boxOf(target);
   const vw = Math.round(document.documentElement.clientWidth || window.innerWidth);
   const vh = Math.round(window.innerHeight);
   const x0 = Math.round(Math.max(0, r.left - PAD));
@@ -151,7 +178,8 @@ export function Spotlight({ tipKey, title, line, step, target, persona, onGotIt,
           </div>
         </Fragment>
       </div>
-      <div className="kb-tips-arrow" aria-hidden="true" style={{ left: centre, top: below ? y + h + 4 : y - 4 }} />
+      {/* The tip's foot is at `top + panelHeight` (above its target) or its head at `top` (below it); the arrow starts one border inside that edge. */}
+      <div className="kb-tips-arrow" aria-hidden="true" style={{ left: centre, top: below ? top + BORDER : top + panelHeight - BORDER }} />
     </motion.div>,
     document.body,
   );

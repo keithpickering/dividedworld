@@ -1,6 +1,7 @@
 /**
  * The tips' spotlight, drawn as stories against the boards `docs/research/2026-11-02-onboarding/03-spotlight.html` (step 2 of the HUD tour at
- * 1440 by 1120) and `04-phone.html` (step 3 docked as a sheet above the HUD at 390 by 844). One story per tour step, each asking for its tip
+ * 1440 by 1120) and `04-phone.html` (step 3 docked as a sheet above the HUD at 390 by 844), and the backfill's `docs/research/2026-11-05-backfill/21-spotlight.html`
+ * (step 2 at 1440 by 1000) and `22-onboarding-phone.html` (step 2 on the phone). One story per tour step, each asking for its tip
  * the way the tour will (Task 5 sequences it: the same `useTip`, a `tour` group and a step "N of 3"), pointed at the HUD's real plate, orbs
  * and hand, in a signed-in world where nothing has been seen. The words are the instance's own (`InstanceUi.onboarding`).
  */
@@ -34,6 +35,12 @@ export const TourPlate: Story = { args: { tip: 'tour-plate', n: 1, selector: '.k
 export const TourOrbs: Story = { args: { tip: 'tour-orbs', n: 2, selector: '.kb-hud-aura' } };
 /** Step 3 of 3: the hand. */
 export const TourHand: Story = { args: { tip: 'tour-hand', n: 3, selector: '.kb-hud-hand' } };
+/** Step 2 of 3 on the Phone board's layout, the panel docked as a sheet above the HUD (the backfill's 22-onboarding-phone.html). */
+export const TourOrbsPhone: Story = {
+  name: 'Tour orbs, phone 390 × 844',
+  args: { tip: 'tour-orbs', n: 2, selector: '.kb-hud-aura' },
+  globals: { viewport: { value: 'glassPhone390', isRotated: false } },
+};
 /** Step 3 of 3 on the Phone board's layout, the panel docked as a sheet above the HUD (04-phone.html). */
 export const TourHandPhone: Story = {
   name: 'Tour hand, phone 390 × 844',

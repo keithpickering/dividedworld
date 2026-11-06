@@ -301,16 +301,16 @@ function readOverlays() {
 }
 export const OVERLAYS = readOverlays();
 
-/** The sheet token every overlay draws, and the text tokens read on it. */
-const SHEET = '--kb-glass-sheet';
+/** The token every overlay's panel stands on (the spotlight's tip is the glass's opaque ground, laid inside its border), and the text tokens read on it. */
+const GROUND = '--kb-glass-ground';
 /** The ratio of the panel's border (a non-text boundary) against the scrim over white. */
 const BORDER_NEED = 3;
 
 /**
  * One rule for each `GlassOverlay`: the stylesheet it is drawn in, the rule whose `color-mix(... var(--kb-glass-ground) N%, transparent)`
- * is its scrim, the panel's rule whose `background` is the base its sheet is laid on, the text tokens it draws and its border token.
- * The spotlight's panel (engine/ui/tips/tips.css) is `--kb-glass-pale` (the border) with its `::after` sheet laid inside it, so the sheet
- * stands on pale, and the panel stands in a scrim of the ground over the page, which can be white.
+ * is its scrim, the panel's rule whose `background` is the base its ground is laid on, the text tokens it draws and its border token.
+ * The spotlight's panel (engine/ui/tips/tips.css) is `--kb-glass-violet` (the border) with its `::after` ground laid inside it, so the ground
+ * stands on the violet edge, and the panel stands in a scrim of the ground over the page, which can be white.
  * Each rule is read where it is first declared, after a closing brace: a comment or a grouped selector in front of it makes the reader
  * refuse the stylesheet by name, and a later rule that overrides the property (a phone layout's, say) is not read.
  */
@@ -320,7 +320,7 @@ export const OVERLAY_RULES = {
     scrim: '.kb-tips-dim',
     panel: '.kb-tips .kb-tips-panel',
     tokens: ['--kb-glass-text', '--kb-glass-text-hi', '--kb-glass-text-2', '--kb-glass-pale'],
-    border: '--kb-glass-pale',
+    border: '--kb-glass-violet',
   },
 };
 
@@ -371,7 +371,7 @@ export function overlayReadFaults(readings = OVERLAY_READINGS, rules = OVERLAY_R
     const rule = rules[o];
     if (!rule) continue;
     if (r.percent === null) out.push({ where: `overlay ${o}`, why: `cannot find ${rule.scrim}'s background: color-mix(in srgb, var(--kb-glass-ground) N%, transparent) in ${rule.css}; the scrim's share is what the sheet's worst pixel is read under` });
-    if (r.base === null) out.push({ where: `overlay ${o}`, why: `cannot find ${rule.panel}'s background: var(--token) in ${rule.css}; the base the sheet is laid on is what its worst pixel is read over` });
+    if (r.base === null) out.push({ where: `overlay ${o}`, why: `cannot find ${rule.panel}'s background: var(--token) in ${rule.css}; the base the ground is laid on is what its worst pixel is read over` });
   }
   return out;
 }
@@ -381,21 +381,21 @@ const mix = (top, a, under) => [0, 1, 2].map((i) => byte(a * top[i] + (1 - a) * 
 
 /**
  * The worst pixel under an overlay's panel text in one key: white (the brightest page any theme draws) under the ground at `percent`
- * (the scrim, `scrim`), and the sheet at its alpha (opaque in the high key) over the brighter of that and the panel's base token
+ * (the scrim, `scrim`), and the panel's ground at its alpha (opaque in both keys) over the brighter of that and the panel's base token
  * (`base`, null for none), each composite rounded to bytes as the browser draws it. `{ rgb, scrim, luminance }`, or null where the key has
- * no sheet that is a color. It rounds each layer to bytes, unlike the smoke's `composite()`, because a sheet is two flat layers the
+ * no ground that is a color. It rounds each layer to bytes, unlike the smoke's `composite()`, because the ground is two flat layers the
  * browser stores as bytes; merging the two would move the pinned numbers.
  */
 export function overlayWorst(glass, keyName, percent, base) {
   const key = glass.keys?.[keyName] ?? {};
-  const sheet = parseColor(key[SHEET]?.value);
-  if (!sheet) return null;
+  const ground = parseColor(key[GROUND]?.value);
+  if (!ground) return null;
   const g = parseColor((key['--kb-glass-ground'] ?? glass.keys?.standard?.['--kb-glass-ground'])?.value) ?? { r: 0, g: 0, b: 0 };
   const scrim = mix([g.r, g.g, g.b], percent / 100, [255, 255, 255]);
   const under = [scrim];
   const b = base ? parseColor(key[base]?.value) : null;
   if (b) under.push([b.r, b.g, b.b]);
-  const rgb = under.map((u) => mix([sheet.r, sheet.g, sheet.b], sheet.a, u)).sort((x, y) => luminance(y) - luminance(x))[0];
+  const rgb = under.map((u) => mix([ground.r, ground.g, ground.b], ground.a, u)).sort((x, y) => luminance(y) - luminance(x))[0];
   return { rgb, scrim, luminance: luminance(rgb) };
 }
 
@@ -410,12 +410,12 @@ export function overlayFaults(glass, readings = OVERLAY_READINGS, rules = OVERLA
       const key = glass.keys?.[keyName] ?? {};
       const need = keyName === 'high' ? HIGH : NEED.standard.body;
       const w = overlayWorst(glass, keyName, reading.percent, reading.base);
-      if (!w) { out.push({ where, why: `${keyName} key: ${SHEET} ${key[SHEET] ? JSON.stringify(key[SHEET].value) + ' is not a color the guard can read' : 'is missing; the overlay\'s sheet is read in every key'}` }); continue; }
+      if (!w) { out.push({ where, why: `${keyName} key: ${GROUND} ${key[GROUND] ? JSON.stringify(key[GROUND].value) + ' is not a color the guard can read' : 'is missing; the overlay\'s ground is read in every key'}` }); continue; }
       for (const t of rule.tokens) {
         const c = parseColor(key[t]?.value);
         if (!c) { out.push({ where, why: `${keyName} key: ${t} is missing or not a color, and the overlay draws it` }); continue; }
         const r = contrastRatio([c.r, c.g, c.b], w.rgb);
-        if (r < need) out.push({ where, why: `${keyName} key: ${t} ${key[t].value} on the worst pixel ${rgbText(w.rgb)} (${SHEET} over ${o}'s panel base, ${reading.percent}% scrim) is ${fmt(r, need)}, needs ${need}:1` });
+        if (r < need) out.push({ where, why: `${keyName} key: ${t} ${key[t].value} on the worst pixel ${rgbText(w.rgb)} (${GROUND} over ${o}'s panel base, ${reading.percent}% scrim) is ${fmt(r, need)}, needs ${need}:1` });
       }
       const b = parseColor(key[rule.border]?.value);
       if (b) {

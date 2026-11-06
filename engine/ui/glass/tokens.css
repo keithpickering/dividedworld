@@ -23,6 +23,8 @@
   --kb-glass-text-2: #ddd;
   --kb-glass-text-hi: #fff;
   --kb-glass-pale: #eee;
+  /* The edge of the persona's tour tip and its arrow (the spotlight, engine/ui/tips/tips.css): a non-text boundary, so it carries no contrast tag. */
+  --kb-glass-violet: #fff;
   --kb-glass-neon-text: #fff;
   --kb-glass-neon: #fff;
   --kb-glass-sweet: #fff;

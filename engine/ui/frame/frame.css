@@ -364,6 +364,11 @@
   color: var(--kb-glass-text-2);
 }
 
+/* The picker's wrapper holds the phone's drawn name and chevron over the select; wide, it is not a box (the select is the swap's own flex item). */
+.kb-hud-pick {
+  display: contents;
+}
+
 .kb-hud-select {
   min-height: 3.25rem;
   min-width: 0;
@@ -1242,6 +1247,11 @@
   line-height: normal;
 }
 
+:where(:root[data-kb-layout='phone']) .kb-hud-pick {
+  position: relative;
+  display: block;
+}
+
 :where(:root[data-kb-layout='phone']) .kb-hud-select {
   display: block;
   width: 100%;
@@ -1256,6 +1266,70 @@
   background: transparent;
   border: 0;
   border-bottom: 1px solid var(--kb-glass-neon);
+  /*
+   * The name is drawn over the picker by .kb-hud-picked, which wraps it and sizes it to fit where a native picker clips it to its box (and
+   * draws its own arrow over the last letter), so the picker's own text and arrow are clear. It stays the control: it takes the press, the
+   * keyboard and the focus ring, and a screen reader reads it. Its list's items keep their own colors.
+   */
+  appearance: none;
+  color: transparent;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-select option {
+  color: var(--kb-glass-text);
+  background: var(--kb-glass-field);
+}
+
+/*
+ * The mask's name, whole: it takes the picker's width less the chevron's room, wraps at its spaces, and steps down in size until its widest word
+ * fits (--kb-hud-pick-fit, set by Hud.tsx from the room it measures), to the label's phone size and no further; below that a word wraps inside
+ * itself before the name is ever cut (e2e/onboarding-polish.spec.ts reads that it is whole).
+ */
+:where(:root[data-kb-layout='phone']) .kb-hud-picked {
+  position: absolute;
+  top: 0;
+  bottom: 1px;
+  left: 0;
+  width: calc(100% - var(--kb-hud-chevron, 16px));
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-family: var(--kb-glass-font-display);
+  font-size: max(var(--kb-glass-size-phone-small), calc(var(--kb-glass-size-phone-display) * var(--kb-hud-pick-fit, 1)));
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: var(--kb-glass-text);
+  pointer-events: none;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-chevron {
+  position: absolute;
+  right: 2px;
+  top: calc(50% - 5px);
+  color: var(--kb-glass-text);
+  pointer-events: none;
+}
+
+/* The word probe is the name's widest word: as wide as its longest word, in the drawn name's own face (Hud.tsx). */
+.kb-hud-name-probe--word {
+  width: min-content;
+  white-space: normal;
+  letter-spacing: 0;
+}
+
+/* Forced colors sets the picker's text itself, so the picker keeps its own text and arrow, and the HUD's drawn name and chevron are not drawn. */
+@media (forced-colors: active) {
+  :where(:root[data-kb-layout='phone']) .kb-hud-select {
+    appearance: auto;
+  }
+
+  :where(:root[data-kb-layout='phone']) .kb-hud-picked,
+  :where(:root[data-kb-layout='phone']) .kb-hud-chevron {
+    display: none;
+  }
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hud-make {

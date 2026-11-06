@@ -146,6 +146,8 @@ describe('the career\'s loading and failure', () => {
     open('director', (f) => { f.staffCareer = () => new Promise((res) => { arrive = () => res({ led: [], offices: [] }); }); });
     const career = await screen.findByRole('region', { name: 'Career' });
     expect(within(career).getByRole('status')).toHaveTextContent('Reading the career');
+    /* The region is drawn before its request is made (the executor below runs when the screen asks), so under load `arrive` is not set yet. */
+    await waitFor(() => expect(arrive).toBeTypeOf('function'));
     arrive();
     await waitFor(() => expect(within(career).getByRole('status')).toBeEmptyDOMElement());
   });

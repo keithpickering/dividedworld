@@ -408,7 +408,7 @@ test.describe('the picked slot and the armed card in forced colors', () => {
 
 /*
  * The spotlight's panel (engine/ui/tips/Spotlight.tsx), the HUD tour's first step as a new account sees it (e2e/onboarding.ts). It stands on
- * `--kb-glass-sheet` over a scrim over the board, not on smoke, so tools/check-glass-contrast.mjs reads it as an overlay sheet and writes
+ * `--kb-glass-ground` (opaque, inside its violet edge) over a scrim over the board, not on smoke, so tools/check-glass-contrast.mjs reads it as an overlay sheet and writes
  * its worst pixel and each token's ceiling (`overlays.tips`); the lines of the panel are read here against those. One scene is the panel
  * beside its target over a light board page at 1920×1080, the other the phone's sheet at 390×844 over the board on the phone layout.
  */
@@ -431,9 +431,9 @@ test.describe('the spotlight\'s first step', () => {
       expect(await measure(page, PANEL)).toEqual([]);
     });
 
-    test('the poison: a sheet drawn at 0.3 is named', async ({ page }) => {
+    test('the poison: a ground drawn at 0.3 is named', async ({ page }) => {
       await open(page);
-      await plant(page, '.kb-tips { --kb-glass-sheet: rgba(9, 5, 18, 0.3) !important; }');
+      await plant(page, '.kb-tips { --kb-glass-ground: rgba(7, 5, 13, 0.3) !important; }');
       expect(await measure(page, PANEL)).toContainEqual(expect.stringMatching(/\(surface tips\): its brightest pixel, luminance 0\.\d+, is not under the ceiling 0\.\d+ for --kb-glass-[\w-]+ as body text on surface tips \(recipe tips\)$/u));
     });
   });
