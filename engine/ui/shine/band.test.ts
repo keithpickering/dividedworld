@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ratio, tokensOf, type Mode } from '../contrast.ts';
-import { POST_INK, bandFor, bandOf, clampInto, shineIsReadable, toHex, toLinear, toSrgb8, type Band, type Rgb } from './band.ts';
+import { POST_INK, bandFor, bandOf, clampInto, shineIsReadable, toHex, toLinear, toSrgb8, type Rgb } from './band.ts';
 
 const tokens = tokensOf(readFileSync(join(process.cwd(), 'engine/ui/tokens.css'), 'utf8'));
 const boards = [['light', tokens.light], ['dark', tokens.dark]] as const;
@@ -92,9 +92,15 @@ describe('shineIsReadable', () => {
   });
 
   test('poison: a white on the dark board is named', () => {
-    const failures = shineIsReadable(tokens, (mode) => (mode === 'dark' ? ['#ffffff'] : ['#000000'].slice(0, 0)));
+    const failures = shineIsReadable(tokens, (mode) => (mode === 'dark' ? ['#ffffff'] : []));
     assert.ok(failures.length > 0);
     assert.match(failures[0]!, /^dark: #ffffff is \d+\.\d:1 against --kb-\w+ at light \(-1\.5, -1\.5\)$/);
+  });
+
+  test('a mode missing from the tokens is named, never skipped', () => {
+    const { dark: _dark, ...rest } = tokens;
+    const failures = shineIsReadable(rest as typeof tokens, (m, l) => clampedSample(m, l));
+    assert.deepEqual(failures, ['dark: no tokens to check against']);
   });
 
   test('poison: a sampler that skips the clamp on one light angle is caught', () => {

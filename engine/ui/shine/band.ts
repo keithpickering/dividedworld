@@ -10,7 +10,7 @@
  *
  * Engine code: it names no card and no instance.
  */
-import { ratio, type Mode, type Tokens } from '../contrast.ts';
+import { MODES, ratio, type Mode, type Tokens } from '../contrast.ts';
 
 /** The tokens that color text inside a post: its words, links, visited links, and muted words such as a quote's byline. */
 export const POST_INK = ['--kb-fg', '--kb-link', '--kb-link-visited', '--kb-muted'] as const;
@@ -99,8 +99,12 @@ export function shineIsReadable(
   sample: (mode: Mode, light: Light) => Iterable<string>,
 ): string[] {
   const failures: string[] = [];
-  for (const mode of Object.keys(tokensByMode) as Mode[]) {
+  for (const mode of MODES) {
     const tokens = tokensByMode[mode];
+    if (!tokens) {
+      failures.push(`${mode}: no tokens to check against`);
+      continue;
+    }
     for (let i = 0; i < GRID; i++) {
       for (let j = 0; j < GRID; j++) {
         const light = { x: -SPAN + (2 * SPAN * i) / (GRID - 1), y: -SPAN + (2 * SPAN * j) / (GRID - 1) };
