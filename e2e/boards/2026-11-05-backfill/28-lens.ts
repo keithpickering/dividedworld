@@ -76,6 +76,10 @@ export default manifest;
  * held by its place; the sheet's board has no role or name (its first screen is a `figure`), so its parts are found by their words and held from the WHOOPS! tab; the Lens's words
  * are the build's (the state "32% washed for you" where the board's older "3 layers · top: Gloomba's yellow, 41% washed"); the empty row's sentence is the one the desktop says, in the build's truer words
  * (the board's phone draws only its second half, which the build does not say, so the build's is found and not placed); the board's sheet is 420px tall, the build's 55% of the room above the HUD (the Float's SHEET_SHARE).
+ * STICK AROUND stands 8px right of the board's (`x: 8`) because the WHOOPS! tab before it is set at the phone's 21px where the board draws
+ * 19px, and a tab's place is held from the first tab's left edge, so it carries the first tab's width. The shift is CI's measure (8.5px; 7.8px
+ * here, and it did not go red here). A tab held from the previous tab's right edge would carry no shift, but an `originEdge` acts on y only
+ * today: that is a follow-up, not this board's.
  */
 const PHONE = '2026-11-05-backfill/32-lens-log-phone';
 
@@ -96,7 +100,7 @@ export const phone: BoardManifest = {
   build: { story: 'boards-01-lens--lens-whoops-phone' },
   landmarks: [
     { id: 'tab', role: 'text', name: 'WHOOPS!', box: 'none', type: false },
-    sheet('tab-stick-around', 'text', 'STICK AROUND'),
+    sheet('tab-stick-around', 'text', 'STICK AROUND', { x: 8 }),
     sheet('headline', 'text', "3 layers · top: Gloomba's yellow, 41% washed", { x: -9, y: -8.5 }, { buildName: '32% washed for you' }),
     sheet('hold', 'text', 'HOLD TO SCRUB', { x: -11.2, y: -25 }, { buildName: 'Hold to scrub' }),
     sheet('fold', 'text', '⌄ 3 plays · Gloomba, Pipewrench, Mrs. Hooligan', {}, { box: 'none', buildName: '3 plays · Gloomba, Pipewrench, Mrs. Hooligan' }),

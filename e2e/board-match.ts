@@ -85,8 +85,15 @@ export interface BoardManifest {
   readonly also?: readonly BoardSide[];
 }
 
-/** A control pressed on the build's page: found by role and whole name, the `nth` match of those (the first by default; -1 is the last). */
-export interface Press {
+/**
+ * A control pressed on the build's page: found by role and whole name, the `nth` match of those (the first by default; -1 is the last). Or `{ scroll: 'top' }`, which
+ * returns the page to its top, as a reader arrives at it: a fill scrolls the page to bring its field into view, by an amount that follows how the words above the field wrap,
+ * and a sticky bar (the phone's menu) then stands at the window's top over a page whose parts have moved by that scroll, so a part measured from the bar moves with how the
+ * words above it wrap. A manifest whose parts are measured from such a bar ends its presses with it.
+ */
+export type Press = ControlPress | { readonly scroll: 'top' };
+
+export interface ControlPress {
   readonly role: string;
   readonly name: string;
   readonly nth?: number;

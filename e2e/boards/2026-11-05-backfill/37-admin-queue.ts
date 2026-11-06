@@ -79,8 +79,10 @@ const on = (id: string, role: string, name: string, more: Partial<Landmark> = {}
  * What the phone board draws that the build does not follow, by decision: the board's screens are cut from the middle of each page (the queue from its
  * Waiting group, Write an update from its head), where the build draws the whole page: the title and lead and To do above the queue, and Updates' title, lede
  * and the Write an update button above the form, which also has its note under the head. So a screen's first part stands lower than the board's, by the shift
- * measured, and each part under it is held from that first part, at the shift the build's fuller words and spacing make. The phone's menu is a Back row with the tabs in
- * a row of their own under it, which the board draws as Back alone, so the bar is not compared by its size. No type on this board is compared (the build sets a phone in
+ * measured, and each part under it is held from that first part, at the shift the build's fuller words and spacing make. Write an update's
+ * head stands 266.5px lower: the page's title and lede are above the form. Its presses end with `scroll: 'top'`, since a fill scrolls the page
+ * by how the hint under What changed wraps, and the sticky bar then stands over a page that has moved with it (CI's narrower text moved it
+ * 26px). The phone's menu is a Back row with the tabs in a row of their own under it, which the board draws as Back alone, so the bar is not compared by its size. No type on this board is compared (the build sets a phone in
  * the glass's phone tokens), and a button's measure is the glass's own.
  */
 export const phone: BoardManifest = {
@@ -108,10 +110,11 @@ export const phone: BoardManifest = {
         { role: 'textbox', name: 'Words', fill: 'A long post still costs more to splat.' },
         { role: 'textbox', name: 'Change 1 label', fill: 'Whoops!' },
         { role: 'textbox', name: 'Change 1 text', fill: '0.25 more for every 500 characters.' },
+        { scroll: 'top' },
       ],
       landmarks: [
         ...bar(1),
-        on('head', 'heading', 'WRITE AN UPDATE', { buildName: 'Write an update', buildShift: { x: 17.3, y: 61.5 } }),
+        on('head', 'heading', 'WRITE AN UPDATE', { buildName: 'Write an update', buildShift: { x: 17.3, y: 266.5 } }),
         on('title-label', 'text', 'TITLE', { origin: 'head', buildShift: { y: 102.5 } }),
         on('words-label', 'text', 'WORDS', { origin: 'head', buildShift: { y: 104.1 } }),
         on('count', 'text', '38 of 20000', { origin: 'head', buildName: '38 of 20000', buildShift: { x: -22, y: 136.7 } }),
