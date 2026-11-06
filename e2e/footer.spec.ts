@@ -6,7 +6,7 @@ import { expect, test, type Page } from '@playwright/test';
  * So the action row (Quote, Spin thread, Edit, History) stands on an opaque bar of its own, drawn like the header bar, and the
  * splat fills the body between the two bars and never lies under either. #41 is splatted in the lightest and the darkest ink
  * (instances/divided-world/ui/whoops/Footer.board.stories.tsx), at 390 and 1440, and every footer control's text is read against the bar's own
- * ground (the 2003 body text's 4.5:1), each reaction chip's text against the chip's own ground (the owner: "reactions are
+ * ground (the 2003 body text's 4.5:1), each reaction tile's text against the tile's own ground (the owner: "reactions are
  * fine as is. They already each have an individual solid background+border"), and the bar's ground is opaque.
  *
  * The poison plants the defect the check exists to catch, the bar made transparent, and expects it named.
@@ -15,7 +15,7 @@ test.use({ reducedMotion: 'reduce', bypassCSP: true });
 
 type Rgba = readonly [number, number, number, number];
 
-/** Every fault in the post's footer bar and reaction chips as the page stands; [] is clean. */
+/** Every fault in the post's footer bar and reaction tiles as the page stands; [] is clean. */
 async function faults(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const parse = (c: string): Rgba => {
@@ -71,7 +71,7 @@ for (const [width, height, label] of [[1440, 1120, '1440'], [390, 844, '390']] a
     test.describe(`#41 splatted in the ${ink} ink at ${label}`, () => {
       test.use({ viewport: { width, height } });
 
-      test('the footer bar is opaque, its controls and the reaction chips read at 4.5:1 on their own grounds', async ({ page }) => {
+      test('the footer bar is opaque, its controls and the reaction tiles read at 4.5:1 on their own grounds', async ({ page }) => {
         await page.goto(`/?fixture=boards&story=${id}`);
         await expect(page.locator('#post-41 .kb-whoops-ink')).toBeVisible();
         /* The extra layer is heard live: it is on the post once its tag says so. */

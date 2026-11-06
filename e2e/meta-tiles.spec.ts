@@ -213,10 +213,15 @@ test.describe('a reaction tile that is a button', () => {
     const stop = page.locator('#post-41 .kb-reactions [data-kb-stop][tabindex="0"]');
     await stop.focus();
     await expect(stop).toBeFocused();
+    /* The stop starts on React, the row's last button, where Tab leaves the row whatever the others are: Home takes the stop to the first tile, and from there a Tab must still pass the rest. */
+    await page.keyboard.press('Home');
+    const first = page.locator('#post-41 .kb-reactions [data-kb-stop]').first();
+    await expect(first).toBeFocused();
+    await expect(page.locator('#post-41 .kb-reactions [data-kb-stop][tabindex="0"]')).toHaveCount(1);
     await page.keyboard.press('Tab');
     const inRow = await page.evaluate(() => !!document.activeElement?.closest('#post-41 .kb-reactions'));
     expect(inRow).toBe(false);
-    /* And from the second row's stop, back with Shift+Tab, it is not in the first row's tiles either: the first row held one stop. */
+    /* And from the second row's stop, Shift+Tab leaves the second row too: it holds one stop. */
     const second = page.locator('#post-42 .kb-reactions [data-kb-stop][tabindex="0"]');
     await second.focus();
     await page.keyboard.press('Shift+Tab');

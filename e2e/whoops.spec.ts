@@ -191,11 +191,11 @@ test.describe('with a finger on a phone', () => {
 });
 
 /*
- * The reactions row is as wide as its chips, so ink stands to the right of it, and a press there washes (the row's own children are the
+ * The reactions row is as wide as its tiles, so ink stands to the right of it, and a press there washes (the row's own children are the
  * only thing the ink leaves to the page). The mouse over ink wears the drawn sponge and the body's own cursor is none; over the React
  * button it is the ordinary arrow.
  */
-test('a press on ink beside the reactions row starts a stroke, and the row is as wide as its chips', async ({ page }) => {
+test('a press on ink beside the reactions row starts a stroke, and the row is as wide as its tiles', async ({ page }) => {
   await page.goto('/?fixture=boards&moment=01-main');
   await expect(page.locator('#post-41 .kb-whoops-ink')).toBeVisible();
   await expect.poll(() => inked(page)).toBeGreaterThan(1000);
@@ -209,7 +209,7 @@ test('a press on ink beside the reactions row starts a stroke, and the row is as
   expect(read.kidsLeft - read.row.left).toBeLessThanOrEqual(1);
   const body = (await page.locator('#post-41 .kb-act-main').boundingBox())!;
   expect(body.x + body.width - read.row.right).toBeGreaterThan(150);
-  /* A point of ink on the row's own band, past the last chip (a press starts a stroke only on ink). */
+  /* A point of ink on the row's own band, past the last tile (a press starts a stroke only on ink). */
   const spot = await page.evaluate((r) => {
     const c = document.querySelector<HTMLCanvasElement>('#post-41 .kb-whoops-ink')!;
     const box = c.getBoundingClientRect();
@@ -275,16 +275,16 @@ test('the ink reaches the post body\'s padding box edges, the reactions are in f
       return ink.left < r.right && ink.right > r.left && ink.top < r.bottom && ink.bottom > r.top;
     };
     return { body, ink: { top: ink.top, bottom: ink.bottom, left: ink.left, right: ink.right },
-      chip: over('#post-41 .kb-reaction'), links: ink.bottom > document.querySelector('#post-41 .kb-act-foot')!.getBoundingClientRect().top + 1 };
+      tile: over('#post-41 .kb-reaction'), links: ink.bottom > document.querySelector('#post-41 .kb-act-foot')!.getBoundingClientRect().top + 1 };
   });
   /* Up to the body's top edge inside its border, and across to its sides. */
   expect(read.ink.top).toBeCloseTo(read.body.top, 0);
   expect(read.ink.left).toBeCloseTo(read.body.left, 0);
   expect(read.ink.right).toBeCloseTo(read.body.right, 0);
   expect(read.ink.bottom).toBeGreaterThan(read.body.top + 100);
-  expect(read.chip).toBe(true);
+  expect(read.tile).toBe(true);
   expect(read.links).toBe(false);
-  /* The chip is under the canvas's box and still what a click reaches (a trial click fails if anything else would take it); the links are on the bar. */
+  /* The tile is under the canvas's box and still what a click reaches (a trial click fails if anything else would take it); the links are on the bar. */
   await page.locator('#post-41 .kb-act-links').getByRole('button', { name: 'Quote' }).click({ trial: true });
   await page.locator('#post-41 .kb-act-links').getByRole('button', { name: 'Spin thread' }).click({ trial: true });
   await page.locator('#post-41 .kb-reaction').first().click({ trial: true });
