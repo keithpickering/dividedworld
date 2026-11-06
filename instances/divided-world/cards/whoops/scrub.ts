@@ -1,112 +1,81 @@
 /**
- * Whoops!'s scrubbing, the pure half of its drawing (design section 11; cards plan Task 5): the fixed
- * layout's arithmetic, what a layer's ink is after the strokes on it, which layer a stroke scrubs, the
- * bounds a saved stroke keeps to, the accessible sweep's pace, and which lines of text lie under ink.
- * No DOM and no canvas: `Effect.tsx` draws what this decides, and every rule here is testable in Node.
+ * Whoops!'s scrubbing, the pure half of its drawing (refinements design sections 3 and 4): what a layer's ink is
+ * after the strokes on it, which layer a stroke scrubs, the bounds a saved stroke keeps to, the accessible sweep's
+ * pace, and which lines of text lie under ink. No DOM and no canvas: `Effect.tsx` draws what this decides, and
+ * every rule here is testable in Node.
  *
- * Everything is in widths of the post's fixed layout (`REF_WIDTH` px wide, scaled as a whole to the
- * screen), the unit the card's strokes are kept in (whoops.ts), so a stroke lands on the same words
- * at every screen width and survives an edit. A layer's ink is the seeded splat (splat.ts) less the
- * washed strokes on it; "does this point still have ink" is geometry (the splat's outline, and the
- * distance to a wash's path), never a read of pixels, so the answer is the same on every screen and
- * costs no canvas.
+ * Everything is in shares of the post body's box on this screen: a point is across 0 to 1 and down 0 to 1, so a
+ * stroke lands on the same words wherever the box is and survives an edit. A brush is a size on the screen, so
+ * its measures are in px; a stroke keeps its brush as a share of the box's width (`width`) and the drawer's box's
+ * proportions (`aspect`), which makes it an ellipse of `width / 2` across and `width / 2 * aspect` down, in shares,
+ * on any box: round on the drawer's screen, stretched with the box on another. A layer's ink is the seeded splat
+ * (splat.ts) over the box, less the washed strokes on it; "does this point still have ink" is geometry (the
+ * splat's outline, and the distance to a stroke's path in the ellipse's own unit circle), never a read of pixels,
+ * so it costs no canvas. Each screen's model is its own; for the same strokes the shares are close, not equal.
  */
 import { STROKES } from '../whoops.ts';
-import { covers, type Splat } from './splat.ts';
+import { covers, type Box, type Splat } from './splat.ts';
 
-/*
- * The reference width is derived, not chosen: it is the width of a post's body in the thread at the board's widest, so a
- * splatted post is laid out as any other post is at its widest and its lines break in the same places (the owner's word, the
- * cards plan's Task 5 amendment of 2026-10-30 and the glass plan's section 8). Every number below is the thread's own
- * (engine/ui/tokens.css and engine/ui/thread/thread.css), at the board's 15px type:
- *
- *   the board's column                                  1200  (`--kb-board-max`)
- *   less the table's border, 1px each side              -2    = 1198
- *   less the postbit column, minmax(8em, min(18%, 14em)) -210  (18% of 1198 is 215.6, and 14em is 210)
- *   = the post's body, border to border                 988
- *
- * The body is the layer's box: the splat covers it edge to edge, the words inside it keep the post's own gutters (1% of the
- * body each side), so they break as the same words would unsplatted. A theme or a player's own theme may change the
- * board's max; this does not follow it, because the layout must be one width for every viewer of a play (a saved stroke
- * is in widths of it). A narrower board is only scaled down as a whole, as a narrow window is.
- *
- * Strokes saved before this (no instance is deployed and there are no players, so none exists outside a test) were in widths
- * of a 360px layout; read at 988 they would land at 0.36 times the place and size they were drawn. They are not converted
- * (CLAUDE.md, "Nobody is waiting on a hotfix"): a stroke is kept in widths, and the width it is kept in is this one.
- *
- * The board was scaled by 1.25 (column 960 to 1200, type 12px to 15px; the glass-polish design's section 7). The layout scales with it
- * in proportion (790 to 988, 1.25 times), so a stroke kept in widths of it lands where it was drawn and the words break in the same
- * places. Only the 1px table borders do not scale, a 0.05% shift. The brush, the row and the stroke and hit-test steps (MIN_STEP,
- * CELL, BUCKET) are scaled by 1.25 with the type, so they keep their size in widths.
- */
-const BOARD_MAX = 1200;
-const TABLE_BORDERS = 2;
-const BODY_PX = 15;
-const POSTBIT = { share: 0.18, least: 8 * BODY_PX, most: 14 * BODY_PX };
-const TABLE = BOARD_MAX - TABLE_BORDERS;
-/** The width the post's body is laid out at, in px, whatever the screen: lines break in the same places everywhere. 988. */
-export const REF_WIDTH = TABLE - Math.max(POSTBIT.least, Math.min(POSTBIT.share * TABLE, POSTBIT.most));
-/** The post's own gutter each side of its words, as a share of the body (`.kb-act-main`, thread.css): the layout keeps it, so its lines break as the post's. */
-export const BODY_GUTTER = 0.01;
-/** How far the layout may grow: not at all (#76). A splatted post keeps the board's 15px type in its full-width column, and is scaled down on a narrow screen. */
-export const MAX_SCALE = 1;
-/** A length at the reference layout, px, as the widths the strokes are kept in: the card's measures keep their physical size at the board's widest. */
-const px = (n: number) => n / REF_WIDTH;
-/** The wash's brush and the author's pen, in widths (30px at the reference width, 24 scaled by 1.25: a splat that spans a 988px body is washed with a hand-sized brush, not a pen's). */
-export const BRUSH = px(30);
-export const PEN = BRUSH * 0.3;
-/** A line of the post's text, in widths (22.5px at the reference width, the board's 15px type at about 1.5): the accessible sweep's band. */
-export const ROW = px(BODY_PX * 1.5);
-/** The accessible sweep's pace, in widths a second: a line a little under two seconds, as a hand takes. */
+/** The wash's brush and the author's pen, in px: a hand-sized brush on the board's 15px type, the pen a third of it. */
+export const BRUSH_PX = 30;
+export const PEN_PX = 9;
+/** A line of the post's text, px (the board's 15px type at about 1.5): the accessible sweep's band. */
+export const ROW_PX = 22.5;
+/** The sweep's brush, in rows: a little over its band, so the bands leave no sliver between them. */
+export const SWEEP_BRUSH_ROWS = 1.15;
+/** The accessible sweep's pace, in shares of the box's width a second: a line a little under two seconds, as a hand takes. */
 export const SWEEP_SPEED = 0.55;
-/** The sweep's brush: a little over its band, so the bands leave no sliver between them. */
-export const SWEEP_BRUSH = ROW * 1.15;
+/** The spacing of the points a layer's remaining ink is counted at, px (under half the brush). */
+export const CELL_PX = 12.5;
+/** The side of the squares `has` files a stroke's segments under, px (a few cells, a little over a brush). */
+export const BUCKET_PX = 50;
+/** Points closer than this to the one before are dropped, px: a drag reports far more than a path needs. */
+export const MIN_STEP_PX = 5;
 
 export type Pt = readonly [number, number];
 export type Stroke =
-  | { readonly tool: 'wash'; readonly width: number; readonly points: readonly Pt[] }
-  | { readonly tool: 'ink'; readonly color: string; readonly width: number; readonly points: readonly Pt[] };
+  | { readonly tool: 'wash'; readonly width: number; readonly aspect: number; readonly points: readonly Pt[] }
+  | { readonly tool: 'ink'; readonly color: string; readonly width: number; readonly aspect: number; readonly points: readonly Pt[] };
 
-/** The layout in a frame `frame` px wide: its scale, its width in px and how far in from the frame's left it starts. */
-export function layoutOf(frame: number): { readonly scale: number; readonly width: number; readonly offset: number } {
-  const scale = Math.min(MAX_SCALE, frame / REF_WIDTH);
-  const width = REF_WIDTH * scale;
-  return { scale, width, offset: (frame - width) / 2 };
+/** A brush `px` across on a drawer's `box`, as a stroke keeps it. */
+export function brushOf(px: number, box: Box): { readonly width: number; readonly aspect: number } {
+  return { width: px / box.w, aspect: box.w / box.h };
 }
 
-/** A point in px from the frame's top left, in widths of the layout. */
-export function toLayout([px, py]: Pt, frame: number): Pt {
-  const { width, offset } = layoutOf(frame);
-  return [(px - offset) / width, py / width];
+/** `MIN_STEP_PX` as the shares across and down of `box`, for `fitStroke`. */
+export function minStepOf(box: Box): Pt {
+  return [MIN_STEP_PX / box.w, MIN_STEP_PX / box.h];
 }
 
 /* ------------------------------------------------------------------ what a stroke may be ---- */
 
-const thousandth = (n: number) => Math.round(n * 1000) / 1000;
+const tenThousandth = (n: number) => Math.round(n * 10_000) / 10_000;
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
-/** Points closer than this to the one before are dropped: a drag reports far more than a path needs, and a layer's points are bounded. */
-const MIN_STEP = px(5);
 
 /**
- * A stroke as the card keeps it: points held to the layout (across 0 to 1, down 0 to `STROKES.deepest`), to a
- * thousandth, thinned of the ones that add nothing, and cut into strokes of at most `STROKES.points` points
- * (each starting on the point the last ended on, so a long drag is one unbroken line).
+ * A stroke as the card keeps it: points held to the box (0 to 1 both ways) to a ten-thousandth, `width` to a
+ * ten-thousandth (never 0), `aspect` to three significant figures, the points thinned of the ones that add
+ * nothing (`minStep`, the shares across and down a point must be from the last one kept: see `minStepOf`), and cut
+ * into strokes of at most `STROKES.points` points (each starting on the point the last ended on, so a long drag
+ * is one unbroken line).
  */
-export function fitStroke(stroke: Stroke): Stroke[] {
+export function fitStroke(stroke: Stroke, minStep: Pt): Stroke[] {
+  const held = (x: number, y: number): Pt => [tenThousandth(clamp(x, 0, 1)), tenThousandth(clamp(y, 0, STROKES.deepest))];
   const kept: Pt[] = [];
   for (const [x, y] of stroke.points) {
-    const p: Pt = [thousandth(clamp(x, 0, 1)), thousandth(clamp(y, 0, STROKES.deepest))];
+    const p = held(x, y);
     const last = kept[kept.length - 1];
-    if (last && Math.hypot(p[0] - last[0], p[1] - last[1]) < MIN_STEP) continue;
+    if (last && Math.hypot((p[0] - last[0]) / minStep[0], (p[1] - last[1]) / minStep[1]) < 1) continue;
     kept.push(p);
   }
   const lastIn = stroke.points[stroke.points.length - 1];
-  if (kept.length === 0 && lastIn) kept.push([thousandth(clamp(lastIn[0], 0, 1)), thousandth(clamp(lastIn[1], 0, STROKES.deepest))]);
-  const width = thousandth(clamp(stroke.width, 0.001, STROKES.widest));
+  if (kept.length === 0 && lastIn) kept.push(held(lastIn[0], lastIn[1]));
+  const width = tenThousandth(clamp(stroke.width, 0.0001, STROKES.widest));
+  const aspect = Number(clamp(stroke.aspect, 0.001, 1000).toPrecision(3));
   const out: Stroke[] = [];
   for (let at = 0; at < kept.length || at === 0; at += STROKES.points - 1) {
     const points = kept.slice(at, at + STROKES.points);
-    out.push(stroke.tool === 'ink' ? { tool: 'ink', color: stroke.color, width, points } : { tool: 'wash', width, points });
+    out.push(stroke.tool === 'ink' ? { tool: 'ink', color: stroke.color, width, aspect, points } : { tool: 'wash', width, aspect, points });
     if (at + STROKES.points >= kept.length) break;
   }
   return out;
@@ -119,16 +88,8 @@ export function fits(strokes: readonly Stroke[]): boolean {
 
 /* --------------------------------------------------------------------- a layer's ink ---- */
 
-/** The spacing of the points a layer's remaining ink is counted at, in widths (12.5px at the reference width, under half the brush). */
-const CELL = px(12.5);
-
 /** How many points' answers a layer keeps of its splat's outline: a post's lines sampled across (a few thousand), with room to spare. */
 const MEMO_MOST = 20_000;
-
-/** The side of the squares `has` files a stroke's segments under, in widths (about 50px at the reference width: a few cells, a little over a brush). */
-const BUCKET = px(50);
-/** A bucket's key: its column and row (a stroke is held to the card's bounds, so both are small) as one number. */
-const bucketKey = (i: number, j: number) => (j + 4096) * 8192 + (i + 4096);
 
 /** Squared distance from (px, py) to the segment a-b. */
 function segment2(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
@@ -139,72 +100,65 @@ function segment2(px: number, py: number, ax: number, ay: number, bx: number, by
   return cx * cx + cy * cy;
 }
 
-/** A rectangle in widths of the layout. */
-export interface Region { readonly minX: number; readonly maxX: number; readonly minY: number; readonly maxY: number }
+/** Whether (x, y) is within the segment a-b's ellipse of radii rx across and ry down: the distance measured after scaling into its unit circle. */
+function reaches(x: number, y: number, ax: number, ay: number, bx: number, by: number, rx: number, ry: number): boolean {
+  return segment2(x / rx, y / ry, ax / rx, ay / ry, bx / rx, by / ry) <= 1;
+}
+
+/** A segment of a stroke, in shares: ax, ay, bx, by, the radii across and down, and whether it is a pen (1) or a wash (0). */
+type Segment = readonly [number, number, number, number, number, number, number];
 
 /**
- * One layer: its splat, less the washes on it, plus the author's pen strokes written back in it. The strokes
- * apply in the order they were made, so a pen written over a wash is ink again and a wash after it removes
- * it: a pen stroke belongs to its layer and is scrubbed like the rest of its ink. `has` asks whether a point
- * still has ink (the last stroke that reaches it, else the splat's outline); `washed` is the share of the
- * layer's ink washed away, counted at a grid of points over the splat and wherever a pen can write, kept as
- * strokes are added so a stroke costs the cells it passes. A pen stroke counts at the cells it passes (a thin
- * pen rounded out to the grid's spacing), wherever it lies, so the share and the sweep find it as a hand does.
+ * One layer on one screen: its splat over the body's box, less the washes on it, plus the author's pen strokes
+ * written back in it. The strokes apply in the order they were made, so a pen written over a wash is ink again and
+ * a wash after it removes it: a pen stroke belongs to its layer and is scrubbed like the rest of its ink. `has`
+ * asks whether a point (shares of the box) still has ink (the last stroke that reaches it, else the splat's
+ * outline); `washed` is the share of the layer's ink washed away, counted at a grid of `CELL_PX` px cells over the
+ * box and wherever a pen can write, kept as strokes are added so a stroke costs the cells it passes. A pen stroke
+ * counts at the cells it passes (a thin pen rounded out to the grid's spacing), so the share and the sweep find it
+ * as a hand does.
  *
- * `region` is where a stroke can reach: the post's own box. The ink runs past it into the margins (and a
- * stroke is kept to across 0 to 1 and down the post), so ink out there can never be washed; counting it
- * would leave a layer short of clean for good. Only the ink inside the region is counted and swept.
+ * The grid is the box, so the splat's ink that runs past the box (where no stroke can reach) is never counted:
+ * counting it would leave a layer short of clean for good.
  */
 export class LayerInk {
   readonly splat: Splat;
-  /** Each stroke as a segment, its radius and whether it is a pen (1) or a wash (0), in the order made: ax, ay, bx, by, r, pen. */
-  private readonly segments: [number, number, number, number, number, number][] = [];
+  readonly box: Box;
+  /** Each stroke as segments, in the order made. */
+  private readonly segments: Segment[] = [];
   /** The segments (by index, in the order made) whose reach overlaps each bucket of the plane, so `has` reads the few near a point and not every segment ever made. */
+  private readonly buckets = new Map<number, number[]>();
+  /** The splat's outline, by point, as asked. */
   private readonly memo = new Map<number, Map<number, boolean>>();
   private memoed = 0;
-  private readonly buckets = new Map<number, number[]>();
-  private readonly region: Region | undefined;
-  /** Where the grid starts: its left and top, in widths. */
-  private readonly gx: number;
-  private readonly gy: number;
-  /** The cells that count toward the share: the splat's, and those a pen has written on. */
-  private readonly counted: Uint8Array;
+  /** The buckets' size in shares across and down, and how many lie across and down the box. */
+  private readonly bw: number;
+  private readonly bh: number;
+  private readonly bnx: number;
+  private readonly bny: number;
+  /** The grid's cells across and down the box. */
   private readonly nx: number;
   private readonly ny: number;
+  /** The cells that count toward the share: the splat's, and those a pen has written on. */
+  private readonly counted: Uint8Array;
   private readonly alive: Uint8Array;
   private left = 0;
   private total = 0;
 
-  constructor(splat: Splat, strokes: readonly Stroke[], region?: Region) {
+  constructor(splat: Splat, strokes: readonly Stroke[], box: Box) {
     this.splat = splat;
-    this.region = region;
-    /* The grid reaches the splat and wherever a pen can write: the post's box when it is given, and the pen strokes already made, held to the card's bounds. */
-    let { minX, maxX, minY, maxY } = splat.bounds;
-    if (region) {
-      minX = Math.min(minX, region.minX);
-      maxX = Math.max(maxX, region.maxX);
-      minY = Math.min(minY, region.minY);
-      maxY = Math.max(maxY, region.maxY);
-    }
-    for (const s of strokes) {
-      if (s.tool !== 'ink') continue;
-      for (const [px, py] of s.points) {
-        minX = Math.min(minX, clamp(px, 0, 1));
-        maxX = Math.max(maxX, clamp(px, 0, 1));
-        minY = Math.min(minY, clamp(py, 0, STROKES.deepest));
-        maxY = Math.max(maxY, clamp(py, 0, STROKES.deepest));
-      }
-    }
-    this.gx = minX;
-    this.gy = minY;
-    this.nx = Math.max(1, Math.ceil((maxX - minX) / CELL));
-    this.ny = Math.max(1, Math.ceil((maxY - minY) / CELL));
+    this.box = box;
+    this.bw = BUCKET_PX / box.w;
+    this.bh = BUCKET_PX / box.h;
+    this.bnx = Math.ceil(1 / this.bw);
+    this.bny = Math.ceil(1 / this.bh);
+    this.nx = Math.max(1, Math.ceil(box.w / CELL_PX));
+    this.ny = Math.max(1, Math.ceil(box.h / CELL_PX));
     this.alive = new Uint8Array(this.nx * this.ny);
     this.counted = new Uint8Array(this.nx * this.ny);
     for (let j = 0; j < this.ny; j++) {
       for (let i = 0; i < this.nx; i++) {
-        const x = minX + (i + 0.5) * CELL, y = minY + (j + 0.5) * CELL;
-        if ((!region || (x >= region.minX && x <= region.maxX && y >= region.minY && y <= region.maxY)) && covers(splat, x, y)) {
+        if (this.splatCovers((i + 0.5) / this.nx, (j + 0.5) / this.ny)) {
           this.alive[j * this.nx + i] = 1;
           this.counted[j * this.nx + i] = 1;
           this.total++;
@@ -213,19 +167,24 @@ export class LayerInk {
     }
     this.left = this.total;
     for (const s of strokes) {
-      if (s.tool === 'wash') this.wash(s.points, s.width);
-      else this.pen(s.points, s.width);
+      if (s.tool === 'wash') this.wash(s.points, s.width, s.aspect);
+      else this.pen(s.points, s.width, s.aspect);
     }
   }
 
-  /** Whether a point still has ink on this layer: the last stroke that reaches it decides, and with none the splat does. */
+  /** A bucket's key. Points past the box share the bucket at its edge, so a segment's range and a query clamp alike. */
+  private bucketKey(i: number, j: number): number {
+    return (clamp(j, -1, this.bny) + 1) * (this.bnx + 3) + clamp(i, -1, this.bnx) + 1;
+  }
+
+  /** Whether a point (shares of the box) still has ink on this layer: the last stroke that reaches it decides, and with none the splat does. */
   has(x: number, y: number): boolean {
     /* Only the segments whose reach touches this point's bucket can reach the point, and each bucket keeps them in the order made, so the latest is still read first. */
-    const near = this.buckets.get(bucketKey(Math.floor(x / BUCKET), Math.floor(y / BUCKET)));
+    const near = this.buckets.get(this.bucketKey(Math.floor(x / this.bw), Math.floor(y / this.bh)));
     for (let k = (near?.length ?? 0) - 1; k >= 0; k--) {
-      const [ax, ay, bx, by, r, pen] = this.segments[near![k]!]!;
-      if (x < Math.min(ax, bx) - r || x > Math.max(ax, bx) + r || y < Math.min(ay, by) - r || y > Math.max(ay, by) + r) continue;
-      if (segment2(x, y, ax, ay, bx, by) <= r * r) return pen === 1;
+      const [ax, ay, bx, by, rx, ry, pen] = this.segments[near![k]!]!;
+      if (x < Math.min(ax, bx) - rx || x > Math.max(ax, bx) + rx || y < Math.min(ay, by) - ry || y > Math.max(ay, by) + ry) continue;
+      if (reaches(x, y, ax, ay, bx, by, rx, ry)) return pen === 1;
     }
     return this.splatCovers(x, y);
   }
@@ -233,7 +192,7 @@ export class LayerInk {
   /**
    * Whether the splat's own outline holds a point. The outline never changes, and the lines under ink are asked about the same
    * points again at each refresh of a sweep, so an answer is kept (by the point, exactly) rather than worked out again from every
-   * circle and vertex of the splat. The memory is bounded: past `MEMO_MOST` points it starts over.
+   * ball of the splat. The memory is bounded: past `MEMO_MOST` points it starts over.
    */
   private splatCovers(x: number, y: number): boolean {
     let column = this.memo.get(x);
@@ -247,30 +206,32 @@ export class LayerInk {
     }
     let held = column.get(y);
     if (held === undefined) {
-      held = covers(this.splat, x, y);
+      held = covers(this.splat, this.box, x, y);
       column.set(y, held);
       this.memoed++;
     }
     return held;
   }
 
-  /** A brush of `width` passing through `points` washes the ink under it; one point washes a round dab. */
-  wash(points: readonly Pt[], width: number): void {
-    this.stroke(points, width, false);
+  /** A brush of `width` (a share of the box's width) and `aspect` passing through `points` washes the ink under it; one point washes a dab. */
+  wash(points: readonly Pt[], width: number, aspect: number): void {
+    this.stroke(points, width, aspect, false);
   }
 
-  /** The author's pen of `width` passing through `points` writes ink back where it passes; one point is a dab. */
-  pen(points: readonly Pt[], width: number): void {
-    this.stroke(points, width, true);
+  /** The author's pen of `width` and `aspect` passing through `points` writes ink back where it passes; one point is a dab. */
+  pen(points: readonly Pt[], width: number, aspect: number): void {
+    this.stroke(points, width, aspect, true);
   }
 
-  private addSegment(seg: [number, number, number, number, number, number]): void {
-    const [ax, ay, bx, by, r] = seg;
+  private addSegment(seg: Segment): void {
+    const [ax, ay, bx, by, rx, ry] = seg;
     const at = this.segments.push(seg) - 1;
-    const i1 = Math.floor((Math.max(ax, bx) + r) / BUCKET), j1 = Math.floor((Math.max(ay, by) + r) / BUCKET);
-    for (let j = Math.floor((Math.min(ay, by) - r) / BUCKET); j <= j1; j++) {
-      for (let i = Math.floor((Math.min(ax, bx) - r) / BUCKET); i <= i1; i++) {
-        const key = bucketKey(i, j);
+    const i0 = Math.floor((Math.min(ax, bx) - rx) / this.bw), i1 = Math.floor((Math.max(ax, bx) + rx) / this.bw);
+    const j0 = Math.floor((Math.min(ay, by) - ry) / this.bh), j1 = Math.floor((Math.max(ay, by) + ry) / this.bh);
+    /* A brush can be wider than the box: only the buckets the box holds, and the two edge buckets for what lies past it, are visited. */
+    for (let j = Math.max(j0, -1); j <= Math.min(j1, this.bny); j++) {
+      for (let i = Math.max(i0, -1); i <= Math.min(i1, this.bnx); i++) {
+        const key = this.bucketKey(i, j);
         const list = this.buckets.get(key);
         if (list) list.push(at);
         else this.buckets.set(key, [at]);
@@ -278,24 +239,22 @@ export class LayerInk {
     }
   }
 
-  private stroke(points: readonly Pt[], width: number, pen: boolean): void {
-    const r = width / 2;
+  private stroke(points: readonly Pt[], width: number, aspect: number, pen: boolean): void {
+    const rx = width / 2, ry = (width / 2) * aspect;
     /* The grid is coarser than a pen is thick, so a pen takes the cells whose area it crosses. */
-    const reach = pen ? r + CELL / 2 : r;
-    const minX = this.gx, minY = this.gy;
+    const reachX = pen ? rx + 0.5 / this.nx : rx, reachY = pen ? ry + 0.5 / this.ny : ry;
     for (let k = 0; k < Math.max(1, points.length - 1); k++) {
       const [ax, ay] = points[k]!;
       const [bx, by] = points[k + 1] ?? points[k]!;
-      this.addSegment([ax, ay, bx, by, r, pen ? 1 : 0]);
-      const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - reach - minX) / CELL));
-      const i1 = Math.min(this.nx - 1, Math.floor((Math.max(ax, bx) + reach - minX) / CELL));
-      const j0 = Math.max(0, Math.floor((Math.min(ay, by) - reach - minY) / CELL));
-      const j1 = Math.min(this.ny - 1, Math.floor((Math.max(ay, by) + reach - minY) / CELL));
+      this.addSegment([ax, ay, bx, by, rx, ry, pen ? 1 : 0]);
+      const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - reachX) * this.nx));
+      const i1 = Math.min(this.nx - 1, Math.floor((Math.max(ax, bx) + reachX) * this.nx));
+      const j0 = Math.max(0, Math.floor((Math.min(ay, by) - reachY) * this.ny));
+      const j1 = Math.min(this.ny - 1, Math.floor((Math.max(ay, by) + reachY) * this.ny));
       for (let j = j0; j <= j1; j++) {
         for (let i = i0; i <= i1; i++) {
           const at = j * this.nx + i;
-          const x = minX + (i + 0.5) * CELL, y = minY + (j + 0.5) * CELL;
-          if (segment2(x, y, ax, ay, bx, by) > reach * reach) continue;
+          if (!reaches((i + 0.5) / this.nx, (j + 0.5) / this.ny, ax, ay, bx, by, reachX, reachY)) continue;
           if (!pen) {
             if (this.alive[at]) {
               this.alive[at] = 0;
@@ -303,8 +262,6 @@ export class LayerInk {
             }
             continue;
           }
-          const box = this.region;
-          if (box && (x < box.minX || x > box.maxX || y < box.minY || y > box.maxY)) continue;
           if (!this.counted[at]) {
             this.counted[at] = 1;
             this.total++;
@@ -318,22 +275,21 @@ export class LayerInk {
     }
   }
 
-  /** The share of the splat washed away, 0 to 1 (a splat with no area is already clean). */
+  /** The share of the layer's ink washed away, 0 to 1 (a layer with no ink is already clean). */
   get washed(): number {
     return this.total === 0 ? 1 : 1 - this.left / this.total;
   }
 
-  /** The cells of the grid in the band y ± half that still hold ink: their left and right edges, or null with none. */
+  /** The cells of the grid in the band y ± half (shares of the box's height) that still hold ink: their left and right edges, across, or null with none. */
   inkSpan(y: number, half: number): readonly [number, number] | null {
-    const minX = this.gx, minY = this.gy;
-    const j0 = Math.max(0, Math.floor((y - half - minY) / CELL));
-    const j1 = Math.min(this.ny - 1, Math.floor((y + half - minY) / CELL));
+    const j0 = Math.max(0, Math.floor((y - half) * this.ny));
+    const j1 = Math.min(this.ny - 1, Math.floor((y + half) * this.ny));
     let lo = Infinity, hi = -Infinity;
     for (let j = j0; j <= j1; j++) {
       for (let i = 0; i < this.nx; i++) {
         if (this.alive[j * this.nx + i]) {
-          lo = Math.min(lo, minX + i * CELL);
-          hi = Math.max(hi, minX + (i + 1) * CELL);
+          lo = Math.min(lo, i / this.nx);
+          hi = Math.max(hi, (i + 1) / this.nx);
         }
       }
     }
@@ -357,10 +313,10 @@ export function topLayer(inks: readonly (LayerInk | null)[], x: number, y: numbe
 
 /* ------------------------------------------------------------- the accessible sweep ---- */
 
-/** The sweep's bands for a post `height` widths tall: the centers of its lines, top to bottom. */
-export function bandsOf(height: number): number[] {
-  const n = Math.max(1, Math.floor(height / ROW));
-  return Array.from({ length: n }, (_, k) => (k + 0.5) * ROW);
+/** The sweep's bands for a box: the centers of its lines, `ROW_PX` tall, top to bottom, in shares of its height. */
+export function bandsOf(box: Box): number[] {
+  const n = Math.max(1, Math.floor(box.h / ROW_PX));
+  return Array.from({ length: n }, (_, k) => ((k + 0.5) * ROW_PX) / box.h);
 }
 
 /** Where the sweep is: the band it is on and how far across (0 to 1). */
@@ -395,7 +351,7 @@ export function sweepStep(
 
 /* ------------------------------------------------------------ lines under the ink ---- */
 
-/** A line of the post's text: where it lies down the layout, in widths, and its words. */
+/** A line of the post's text: where it lies down the box, in shares of its height, and its words. */
 export interface TextLine { readonly top: number; readonly bottom: number; readonly text: string }
 
 /** A line is under ink when this share of its length has ink on some layer; a reader sees too little of it otherwise to read it. */
