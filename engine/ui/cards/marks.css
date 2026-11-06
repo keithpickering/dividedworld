@@ -30,9 +30,11 @@
 
 .kb-marks {
   position: absolute;
-  top: -0.2rem;
+  /* Centered on its anchor, which is as tall as the row: a 36px tile hangs a few pixels over a bar about 30px tall. */
+  top: 50%;
   right: 0;
   z-index: 3;
+  transform: translateY(-50%);
   display: flex;
   align-items: center;
   gap: 0.4rem;
@@ -135,7 +137,7 @@
 /* The ORIGIN box's head carries the strip the same way: a cell of the head with the strip's width, and the head's words wrap in the room left. */
 .kb-origin-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.5em;
 }
 
@@ -288,7 +290,6 @@
 .kb-thread-pin-mark .kb-marks {
   right: auto;
   left: 0;
-  top: 0.1rem;
 }
 /*
  * A postbit's strip is laid over the postbit's top corner, out of its flow, as a post's strip is over its date row: arming a character
@@ -298,7 +299,7 @@
   position: relative;
 }
 .kb-postbit:has(.kb-postbit-marks) .kb-postbit-name {
-  padding-inline-end: 2.2rem;
+  padding-inline-end: calc(var(--kb-meta-tile) + 0.5rem);
 }
 .kb-postbit .kb-postbit-marks {
   position: absolute;
@@ -312,6 +313,9 @@
 .kb-postbit-marks .kb-marks {
   left: auto;
   right: 0;
+  /* Hung from the strip's own top, not centered: the postbit's strip is out of the flow at its corner. */
+  top: 0;
+  transform: none;
 }
 .kb-thread-head-marks {
   flex: 0 0 auto;
@@ -324,6 +328,8 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.2em 1em;
+  /* Always room for the strip's tile, so a play landing never makes the banner taller. */
+  min-height: var(--kb-meta-tile);
 }
 .kb-board-banner-marks {
   flex: 0 0 auto;
@@ -333,6 +339,9 @@
   display: inline-flex;
   vertical-align: middle;
   margin-inline-start: 0.5em;
+  /* The tile straddles its row: only the row's line of words counts toward the row's height. */
+  min-height: var(--kb-meta-tile);
+  margin-block: calc((var(--kb-meta-tile) - 1lh) / -2);
 }
 /* A pinned row reads as one above the list: the board's own rule under the last of them. */
 .kb-thread-pinned > tr:last-child > td {
