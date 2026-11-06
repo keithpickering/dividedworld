@@ -92,8 +92,9 @@ begin
   end if;
   if new.kind = 'infraction' then
     perform (new.payload ->> 'expires_at')::timestamptz;
-    if not exists (select 1 from acts p where p.id = (new.payload ->> 'about_act')::uuid and p.kind = 'post' and p.thread = new.thread) then
-      raise exception 'an infraction is about a post, in its thread' using hint = 'kayfabb.refusal', errcode = '23514';
+    if not exists (select 1 from acts p where p.id = (new.payload ->> 'about_act')::uuid and p.kind = 'post' and p.thread = new.thread
+                   and p.character = (new.payload ->> 'character')::uuid) then
+      raise exception 'an infraction is about a post of that character''s, in its thread' using hint = 'kayfabb.refusal', errcode = '23514';
     end if;
     if jsonb_typeof(new.payload -> 'visit_act') = 'string' and not exists (select 1 from acts v where v.id = (new.payload ->> 'visit_act')::uuid) then
       raise exception 'an infraction names a visit that is an Act' using hint = 'kayfabb.refusal', errcode = '23514';
@@ -266,14 +267,15 @@ revoke execute on function banned_until(uuid) from public, anon;
 grant execute on function banned_until(uuid) to authenticated, service_role;
 
 -- The refusal every action of a banned character meets, called by each right after played_by has shown the caller plays `who`. Plain, true and out of
--- character: whose ban, when it ends (UTC), that it ends by itself, and that it holds only this character.
+-- character: whose ban, when it ends (UTC, rounded up to the minute so the time named is never before the real end), that it ends by itself, and that it holds
+-- only this character.
 create function not_banned(who uuid) returns void
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare until timestamptz := banned_until(who);
 begin
   if until is not null then
-    raise exception 'this character is banned until % UTC; the ban ends by itself then, and it holds only this character, not your others',
-      to_char(until at time zone 'UTC', 'YYYY-MM-DD HH24:MI') using hint = 'kayfabb.refusal', errcode = '55000';
+    raise exception 'this character is banned until % UTC; the ban ends by itself then, and it holds only this character, not your other characters',
+      to_char(date_trunc('minute', until + interval '59.999999 seconds') at time zone 'UTC', 'YYYY-MM-DD HH24:MI') using hint = 'kayfabb.refusal', errcode = '55000';
   end if;
 end $$;
 revoke execute on function not_banned(uuid) from public, anon, authenticated;
@@ -285,11 +287,11 @@ grant execute on function not_banned(uuid) to service_role;
 create function infract(who uuid, band text, about_act uuid, staff text, rule_number integer default null, visit_act uuid default null) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
-  bar jsonb := setting('warnBar');
+  bar jsonb;
   pts integer;
   in_thread uuid;
   on_board uuid;
-  at timestamptz := clock_timestamp();
+  at timestamptz;
   inf uuid;
   total integer;
   made uuid;
@@ -304,9 +306,12 @@ begin
   if staff is null or staff = '' then raise exception 'an infraction names the Mod that filed it' using errcode = '22023'; end if;
   perform 1 from characters c where c.id = who and c.staff is null for no key update;
   if not found then raise exception 'there is no player character to warn' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
-  select a.thread, t.board into in_thread, on_board from acts a join threads t on t.id = a.thread where a.id = about_act and a.kind = 'post';
-  if in_thread is null then raise exception 'an infraction is for a post' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  select a.thread, t.board into in_thread, on_board from acts a join threads t on t.id = a.thread where a.id = about_act and a.kind = 'post' and a.character = who;
+  if in_thread is null then raise exception 'an infraction is for a post this character wrote' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
   if visit_act is not null and not exists (select 1 from acts v where v.id = visit_act) then raise exception 'there is no such visit' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  -- The time and the bar are taken with the row held: a filing that waited for another's ban lands after it, and sees its bar.
+  at := clock_timestamp();
+  bar := setting('warnBar');
   pts := (bar -> 'bands' ->> band)::integer;
   perform set_config('kayfabb.warn_writer', 'on', true);
   insert into acts (character, kind, thread, payload, created_at)
@@ -317,7 +322,8 @@ begin
   total := warn_points(who);
   if total >= (bar ->> 'size')::integer then
     -- This season's bans of this character, this one counting: a new season has none, so the ladder starts again.
-    season_no := coalesce((select s.number from seasons s where s.ends_at is null order by s.number desc limit 1), 0);
+    -- With no season open (between one and the next) it is the latest season's; 0 only where no season was ever made.
+    season_no := coalesce((select max(s.number) from seasons s), 0);
     select count(*) into prior from acts b where b.kind = 'ban' and b.payload ->> 'character' = who::text and (b.payload ->> 'season')::integer = season_no;
     steps := bar -> 'banDays';
     days := (steps ->> least(prior, jsonb_array_length(steps) - 1))::integer;

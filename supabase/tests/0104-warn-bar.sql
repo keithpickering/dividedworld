@@ -13,10 +13,57 @@ exception when others then
   return sqlerrm || ' [' || sqlstate || ']';
 end $$;
 
--- The text a ban's refusal must carry: its end, in UTC, to the minute.
+-- The text a ban's refusal must carry: its end, in UTC, to the minute rounded up, so the time named is never before the real end.
 create function pg_temp.ends(c uuid) returns text language sql as $$
-  select to_char(banned_until(c) at time zone 'UTC', 'YYYY-MM-DD HH24:MI')
+  select to_char(date_trunc('minute', banned_until(c) + interval '59.999999 seconds') at time zone 'UTC', 'YYYY-MM-DD HH24:MI')
 $$;
+
+-- ---- Two filings at once: an infraction takes its time after it holds the character's row, so one filed after a ban counts toward the new bar ----
+-- A second session holds the character's row and files the infraction that fills the bar (a ban); a first filing, begun before that, waits on the row. Once the
+-- ban commits, the waiting infraction lands after it and counts: 2 points, not 0. Committed rows, so first, and removed at the end.
+do $$
+declare
+  u uuid := gen_random_uuid(); c uuid := gen_random_uuid(); t uuid := gen_random_uuid(); p uuid := gen_random_uuid();
+  tries integer := 0;
+  got jsonb;
+begin
+  perform tests.commit(format($sql$
+    insert into settings (key, value) values ('warnBar', '{"size": 10, "bands": {"minor": 2, "moderate": 4, "severe": 7}, "decay": {"unit": "day", "count": 14}, "banDays": [1, 3, 7]}');
+    insert into auth.users (id, email) values (%1$L, 'wb-race@test.invalid');
+    insert into accounts (id) values (%1$L);
+    insert into characters (id, owner, name, created_at, debuted_at) values (%2$L, %1$L, 'Wb Racer', now(), now());
+    insert into class_history (character, class_key, started_at) values (%2$L, 'alpha', now());
+    insert into threads (id, board, title) select %3$L, b.id, 'Wb race' from boards b where b.slug = 'general';
+    insert into acts (id, character, kind, thread, payload) values (%4$L, %2$L, 'post', %3$L, '{"body": "A racing post."}');
+    do $d$ begin perform infract(%2$L, 'severe', %4$L, 'wb-mod'); end $d$;
+  $sql$, u, c, t, p));
+  perform extensions.dblink_connect('wbr_h', current_setting('kayfabb.scratch_url'));
+  perform extensions.dblink_connect('wbr_a', current_setting('kayfabb.scratch_url'));
+  perform extensions.dblink_exec('wbr_h', 'begin');
+  perform * from extensions.dblink('wbr_h', format('select 1 from characters where id = %L for no key update', c)) as x(n integer);
+  perform extensions.dblink_send_query('wbr_a', format('select /* wbr_a */ infract(%L, ''minor'', %L, ''wb-mod'')', c, p));
+  -- The first filing has begun and waits on the row.
+  loop
+    exit when exists (select 1 from pg_stat_activity a where a.query like '%/* wbr_a */%' and a.pid <> pg_backend_pid() and a.wait_event_type = 'Lock');
+    tries := tries + 1;
+    if tries > 400 then raise exception 'the first filing never waited on the character''s row'; end if;
+    perform pg_sleep(0.025);
+  end loop;
+  perform pg_sleep(0.05);
+  perform * from extensions.dblink('wbr_h', format('select infract(%L, ''severe'', %L, ''wb-mod'')', c, p)) as x(r jsonb);
+  perform extensions.dblink_exec('wbr_h', 'commit');
+  select r into got from extensions.dblink_get_result('wbr_a') as x(r jsonb);
+  perform extensions.dblink_disconnect('wbr_h');
+  perform extensions.dblink_disconnect('wbr_a');
+  if (select count(*) from acts where kind = 'ban' and payload ->> 'character' = c::text) <> 1 then raise exception 'the second session''s filing banned once'; end if;
+  if (select i.created_at from acts i where i.id = (got ->> 'infraction')::uuid) < (select b.created_at from acts b where b.kind = 'ban' and b.payload ->> 'character' = c::text) then
+    raise exception 'an infraction that waited on the row for a ban is stamped before the ban';
+  end if;
+  if warn_points(c) <> 2 then raise exception 'an infraction filed after a ban counts toward the new bar: 2, got %', warn_points(c); end if;
+  perform tests.commit(format($sql$
+    delete from settings where key = 'warnBar';
+  $sql$));
+end $$;
 
 -- Fixtures: two players (the first with two masks), the bar's numbers, a thread with a post of Other's to react to, and a card in each hand.
 do $$
@@ -101,6 +148,8 @@ begin
   if why is null or why not like '%band%' then raise exception 'an unknown band is refused, got %', why; end if;
   why := pg_temp.refusal(format('select infract(%L, ''minor'', %L, ''wb-mod'')', c, card));
   if why is null or why not like '%post%' then raise exception 'an infraction is for a post, got %', why; end if;
+  why := pg_temp.refusal(format('select infract(%L, ''minor'', %L, ''wb-mod'')', c, pg_temp.post_of('Wb Other', 'Other''s post.')));
+  if why is null or why not like '%post this character wrote%' then raise exception 'an infraction is for a post the character wrote, got %', why; end if;
   why := pg_temp.refusal(format('select infract(%L, ''minor'', %L, '''')', c, p));
   if why is null then raise exception 'an infraction names the Mod that filed it'; end if;
   why := pg_temp.refusal(format('select infract(%L, ''minor'', %L, ''wb-mod'')', gen_random_uuid(), p));
@@ -201,6 +250,50 @@ begin
   update settings set value = '{"size": 10, "bands": {"minor": 2, "moderate": 4, "severe": 7}, "decay": {"unit": "day", "count": 14}, "banDays": [1, 3, 7]}' where key = 'warnBar';
 end $$;
 
+-- ---- No open season: the ban takes the latest season's number (not 0), the ladder goes on, and the ban ends at its own `until` whatever the season does ----
+do $$
+declare
+  c uuid := tests.character(tests.account('wb-gap'), 'Wb Gap');
+  t uuid := (select thread from acts where payload ->> 'body' = 'Other''s post.');
+  p uuid := tests.post(c, t, 'A gap post.');
+  got jsonb;
+  b acts%rowtype;
+  latest integer := (select max(number) from seasons);
+begin
+  update seasons set ends_at = now() where ends_at is null;
+  if exists (select 1 from seasons where ends_at is null) then raise exception 'no season is open'; end if;
+  got := pg_temp.fill(c, p);
+  select * into b from acts where id = (got ->> 'ban')::uuid;
+  if (b.payload ->> 'season')::int <> latest then raise exception 'with no open season a ban takes the latest season''s number %, got %', latest, b.payload; end if;
+  got := pg_temp.fill(c, p);
+  if ((select payload from acts where id = (got ->> 'ban')::uuid) ->> 'days')::int <> 3 then raise exception 'the ladder goes on through the gap'; end if;
+  -- A season's end does not end its bans: banned_until is the ban's own end.
+  if banned_until(c) <> (select max((x.payload ->> 'until')::timestamptz) from acts x where x.kind = 'ban' and x.payload ->> 'character' = c::text)
+     or banned_until(c) < now() + interval '2 days' then
+    raise exception 'a ban ends at its own until after its season has ended, got %', banned_until(c);
+  end if;
+end $$;
+
+-- ---- An infraction filed while banned counts toward the next bar; a second, overlapping ban makes banned_until the later end ----
+do $$
+declare
+  c uuid := tests.character(tests.account('wb-overlap'), 'Wb Overlap');
+  t uuid := (select thread from acts where payload ->> 'body' = 'Other''s post.');
+  p uuid := tests.post(c, t, 'An overlap post.');
+  first_ban acts%rowtype;
+  second_ban acts%rowtype;
+begin
+  update settings set value = '{"size": 10, "bands": {"minor": 2, "moderate": 4, "severe": 7}, "decay": {"unit": "day", "count": 14}, "banDays": [7, 1]}' where key = 'warnBar';
+  select * into first_ban from acts where id = (pg_temp.fill(c, p) ->> 'ban')::uuid;
+  perform infract(c, 'severe', p, 'wb-mod');
+  if warn_points(c) <> 7 then raise exception 'an infraction filed while banned counts toward the next bar, got %', warn_points(c); end if;
+  select * into second_ban from acts where id = (infract(c, 'severe', p, 'wb-mod') ->> 'ban')::uuid;
+  if (second_ban.payload ->> 'days')::int <> 1 then raise exception 'the second ban steps the ladder: %', second_ban.payload; end if;
+  if (second_ban.payload ->> 'until')::timestamptz >= (first_ban.payload ->> 'until')::timestamptz then raise exception 'the second ban ends before the first'; end if;
+  if banned_until(c) <> (first_ban.payload ->> 'until')::timestamptz then raise exception 'overlapping bans: banned_until is the later end, got %', banned_until(c); end if;
+  update settings set value = '{"size": 10, "bands": {"minor": 2, "moderate": 4, "severe": 7}, "decay": {"unit": "day", "count": 14}, "banDays": [1, 3, 7]}' where key = 'warnBar';
+end $$;
+
 -- ---- The ladder resets in a new season ----
 do $$
 declare
@@ -219,6 +312,7 @@ begin
   end if;
   got := pg_temp.fill(c, p);
   if ((select payload from acts where id = (got ->> 'ban')::uuid) ->> 'days')::int <> 3 then raise exception 'and steps again from there'; end if;
+  if banned_until(pg_temp.id('Wb Gap')) < now() + interval '2 days' then raise exception 'a ban from an earlier season runs to its own end after the next season begins'; end if;
 end $$;
 
 -- ---- Refusals: a banned character cannot post, start a thread, spin, edit, react, unmask or play a card; the message says when it ends ----
@@ -238,6 +332,12 @@ begin
   perform infract(one, 'severe', ones_post, 'wb-mod');
   ends := pg_temp.ends(one);
   if ends is null then raise exception 'Mask One is banned'; end if;
+  if pg_temp.refusal(format('select not_banned(%L)', one)) not like '%holds only this character, not your other characters%' then raise exception 'the refusal says what the ban holds'; end if;
+  -- The time named is never before the real end (it is rounded up to the minute).
+  if (substr(pg_temp.refusal(format('select not_banned(%L)', one)), position('banned until ' in pg_temp.refusal(format('select not_banned(%L)', one))) + 13, 16) || ':00+00')::timestamptz < banned_until(one)
+     or (substr(pg_temp.refusal(format('select not_banned(%L)', one)), position('banned until ' in pg_temp.refusal(format('select not_banned(%L)', one))) + 13, 16) || ':00+00')::timestamptz >= banned_until(one) + interval '1 minute' then
+    raise exception 'the refusal names a minute at or after the real end, within a minute of it';
+  end if;
 
   perform tests.become(ann);
   why := pg_temp.refusal(format('select post(%L, %L, ''Still talking.'')', t, one));
