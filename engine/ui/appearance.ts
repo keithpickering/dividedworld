@@ -4,8 +4,9 @@
  * The device decides by default: its light or dark (the theme's prefers-color-scheme), its
  * reduced motion. A player overrides either, saved to the account (account_preferences, read
  * through the data layer) so it follows them across devices. The engine marks only an override on
- * <html>, `data-kb-mode` and `data-kb-motion` (Snappy is full motion, and also marks `data-kb-motion-feel`), so a theme's own media query holds otherwise
- * (engine/ui/tokens.css says the shape every theme follows).
+ * <html>, `data-kb-mode` and `data-kb-motion` (Smooth and Snappy are both full motion, and also
+ * mark `data-kb-motion-feel`), so a theme's own media query holds otherwise (engine/ui/tokens.css
+ * says the shape every theme follows).
  *
  * The glass's three preferences (the web plan's glass amendment to Task 11) are marked the same
  * way, only when they leave their default: `data-kb-smoke-level` (low or off; Smoke.tsx reads it),
@@ -68,8 +69,9 @@ export function applyAppearance(doc: Document, pref: AppearancePreference, theme
   else root.removeAttribute('data-kb-mode');
   if (a.motion) root.setAttribute('data-kb-motion', a.motion);
   else root.removeAttribute('data-kb-motion');
-  /* The feel is marked with the player's Smooth or Snappy; the device's own choice, and Off, leave it unmarked. */
-  mark(root, 'data-kb-motion-feel', pref.motion === 'full' || pref.motion === 'snappy' ? a.feel : null);
+  /* The feel is marked with the player's Smooth or Snappy; the device's own choice, and Off, leave
+     it unmarked. */
+  mark(root, 'data-kb-motion-feel', a.motion === 'full' ? a.feel : null);
   /* A preference the engine does not know is its default, as a theme it does not know is the device's. */
   const smoke = pref.smoke === 'low' || pref.smoke === 'off' ? pref.smoke : null;
   const high = pref.contrast === 'high';
