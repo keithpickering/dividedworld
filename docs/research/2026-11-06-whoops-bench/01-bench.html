@@ -1,0 +1,1054 @@
+<!--
+  Record, written 2026-11-06. The Whoops! bench: the design session's interactive mockup for
+  docs/plans/2026-11-06-whoops-refinements-design.md, as the owner approved it (drips at 2x, the splat kept round).
+  A standalone page: open it in a browser. It is a reference for how the effect looks and feels, not code to copy.
+-->
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Whoops! Bench</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: the 2003 board's own post, drawn at three fixed board widths, with a bench of controls above it. One deliberate light look: the board is black on white. */
+:root {
+  --paper: #ffffff;
+  --ink: #000000;
+  --rule: #000000;
+  --muted: #555555;
+  --shade: #f1f1ef;
+  --flag: #c8102e;
+  --font: Verdana, Geneva, sans-serif;
+  --mono: "Courier New", Courier, monospace;
+  --size-body: 15px;
+  --size-small: 13.75px;
+  --size-fine: 12.5px;
+  --size-title: 22.5px;
+  color-scheme: light;
+}
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font: var(--size-body)/1.45 var(--font);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 56px;
+}
+h1 { font-size: var(--size-title); margin: 0; text-wrap: balance; }
+h2 { font-size: var(--size-body); margin: 0 0 .4em; }
+p { margin: 0 0 .8em; }
+a { color: var(--ink); }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+.head { max-width: 1200px; display: grid; gap: .4em; margin-bottom: 18px; }
+.head p { color: var(--muted); margin: 0; max-width: 68ch; font-size: var(--size-small); }
+
+/* The bench: one bordered table of controls, the board's way. */
+.bench {
+  max-width: 1200px;
+  border: 1px solid var(--rule);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  margin-bottom: 26px;
+}
+.bench fieldset {
+  border: 0;
+  border-right: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  margin: 0 -1px -1px 0;
+  padding: 10px 12px 12px;
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  font-size: var(--size-fine);
+}
+.bench legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+  margin-bottom: 4px;
+  font-weight: bold;
+  font-size: var(--size-fine);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.bench label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.bench .hint { color: var(--muted); }
+.swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.swatches input {
+  appearance: none; margin: 0; width: 26px; height: 26px; border-radius: 50%;
+  background: var(--sw); border: 1px solid var(--rule); cursor: pointer;
+}
+.swatches input:checked { box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--ink); }
+.buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+button.b {
+  font: inherit; font-size: var(--size-fine); padding: 3px 10px; background: var(--paper);
+  color: var(--ink); border: 1px solid var(--rule); cursor: pointer;
+}
+button.b:hover { background: var(--shade); }
+.slider { display: grid; grid-template-columns: 7.5em 1fr 3.2em; align-items: center; gap: 6px; }
+.slider output { font-variant-numeric: tabular-nums; text-align: right; }
+.slider input { width: 100%; min-width: 0; }
+.open-q { border-left: 3px solid var(--flag); padding-left: 8px; }
+
+/* The stages: each post at a fixed board width, scrolling sideways inside its own box where the window is narrower. */
+.stages { display: grid; gap: 30px; }
+.row { display: flex; flex-wrap: wrap; gap: 30px; align-items: flex-start; }
+figure { margin: 0; min-width: 0; max-width: 100%; }
+figcaption {
+  display: flex; justify-content: space-between; gap: 1em; align-items: baseline;
+  font-size: var(--size-fine); margin-bottom: 6px;
+}
+figcaption b { letter-spacing: .06em; text-transform: uppercase; }
+figcaption .washed { font-variant-numeric: tabular-nums; color: var(--muted); }
+.scroller { overflow-x: auto; max-width: 100%; }
+.board { container: board / inline-size; }
+.board[data-w="390"] { width: min(390px, calc(100vw - 32px)); }
+.board[data-w="768"] { width: 768px; }
+.board[data-w="1200"] { width: 1200px; }
+
+/* The post: the thread's grid (engine/ui/thread/thread.css), postbit left, the body between its two opaque bars. */
+.act {
+  display: grid;
+  grid-template-columns: minmax(8em, min(18%, 14em)) minmax(0, 1fr);
+  grid-template-areas: "bit meta" "bit main" "bit foot";
+  grid-template-rows: auto 1fr auto;
+  border: 1px solid var(--rule);
+}
+.bit {
+  grid-area: bit; padding: .5em 6%; border-right: 1px solid var(--rule);
+  display: flex; flex-direction: column; gap: .3em; font-size: var(--size-fine); min-width: 0;
+}
+.bit .name { font-weight: bold; font-size: var(--size-body); }
+.bit .avatar {
+  aspect-ratio: 1 / 1; width: 100%; max-width: 120px; border: 1px solid var(--rule);
+  background:
+    repeating-linear-gradient(45deg, transparent 0 6px, rgb(0 0 0 / .06) 6px 12px),
+    var(--shade);
+  display: grid; place-items: center; font-family: var(--mono); font-weight: bold; font-size: 20px;
+}
+.bit .counts { color: var(--muted); }
+.meta, .foot {
+  display: flex; justify-content: space-between; gap: 1em; padding: .25em 1%;
+  background: var(--paper); font-size: var(--size-fine); color: var(--muted);
+}
+.meta { grid-area: meta; border-bottom: 1px solid var(--rule); }
+.foot { grid-area: foot; border-top: 1px solid var(--rule); font-size: var(--size-small); }
+.foot nav { display: flex; gap: .9em; flex-wrap: wrap; }
+.foot a, .meta a { color: inherit; }
+.main {
+  grid-area: main; position: relative; isolation: isolate; overflow: hidden;
+  padding: .5em 1%; min-width: 0; touch-action: pan-y pinch-zoom;
+}
+.main .words { position: relative; }
+.main canvas.ink, .main canvas.suds { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+.quote-label { font-size: var(--size-fine); font-weight: bold; margin: 0 0 .2em 1.5em; }
+blockquote {
+  margin: 0 0 .9em 1.5em; padding: .4em .7em; border: 1px solid var(--rule);
+  font-size: var(--size-small);
+}
+.edit-note { font-size: var(--size-fine); color: var(--muted); font-style: italic; }
+
+/* The reactions row, lifted over the ink. Fit to its chips is the fix; full width is today's. */
+.rx {
+  position: relative; z-index: 2; display: flex; flex-wrap: wrap; gap: .4em; align-items: center;
+  margin: .6em 0 0;
+}
+.rx[data-fit="true"] { width: fit-content; max-width: 100%; }
+.rx[data-outline="true"] { outline: 2px dashed var(--flag); outline-offset: 2px; }
+.chip {
+  font: inherit; font-size: var(--size-small); border: 1px solid var(--rule); background: var(--paper);
+  color: var(--ink); padding: 0 .5em; white-space: nowrap; cursor: pointer;
+}
+.chip[aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: 1px; font-weight: bold; }
+.chip.react { border-style: dashed; }
+
+@container board (max-width: 600px) {
+  .act { grid-template-columns: minmax(0, 1fr); grid-template-areas: "bit" "meta" "main" "foot"; grid-template-rows: none; }
+  .bit { border-right: 0; border-bottom: 1px solid var(--rule); padding: .4em 3%; flex-direction: row; flex-wrap: wrap; align-items: center; column-gap: .9em; }
+  .bit .avatar { width: 44px; font-size: 13px; }
+  .main { padding: .5em 3%; }
+  .meta, .foot { padding: .25em 3%; }
+}
+
+.notes { max-width: 1200px; margin-top: 34px; display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.notes section { border-top: 1px solid var(--rule); padding-top: 10px; font-size: var(--size-small); }
+.notes ul { margin: 0; padding-left: 1.2em; display: grid; gap: .35em; }
+.notes .muted { color: var(--muted); }
+
+/* What draws over everything: the suds and the drips, and the sponge. */
+#overlay { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 50; }
+#sponge {
+  position: fixed; left: 0; top: 0; width: 60px; height: 45px; pointer-events: none; z-index: 60;
+  will-change: transform;
+}
+#sponge[hidden], #toast[hidden] { display: none; }
+#sponge .squish { transform-origin: 30px 40px; transition: transform 90ms ease-out; transform-box: view-box; }
+#sponge.pressing .squish { transform: scale(1.07, .84); }
+#toast {
+  position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+  background: var(--ink); color: var(--paper); padding: 6px 12px; font-size: var(--size-fine); z-index: 70;
+  max-width: calc(100vw - 32px);
+}
+</style>
+
+<div class="head">
+  <h1>Whoops! bench</h1>
+  <p>One post at three board widths. Wipe the ink with a mouse or a finger. The text keeps its real size everywhere, and the ink is stretched to each post's body. The smiley was wiped by the author on the desktop post, so it shows on every width.</p>
+</div>
+
+<form class="bench" id="bench" onsubmit="return false">
+  <fieldset>
+    <legend>Ink</legend>
+    <div class="swatches" id="swatches"></div>
+    <div class="buttons">
+      <button type="button" class="b" id="newSplat">New splat</button>
+      <button type="button" class="b" id="reset">Bring the ink back</button>
+    </div>
+  </fieldset>
+  <fieldset>
+    <legend>Whose strokes</legend>
+    <label><input type="radio" name="mode" value="author" id="modeAuthor" checked> Author: every width sees them</label>
+    <label><input type="radio" name="mode" value="reader" id="modeReader"> Reader: only this width</label>
+    <legend style="margin-top:8px">Reactions row</legend>
+    <label><input type="radio" name="rx" value="fit" id="rxFit" checked> Fit to its chips (the fix)</label>
+    <label><input type="radio" name="rx" value="full" id="rxFull"> Full width (today)</label>
+    <label><input type="checkbox" id="rxOutline"> Outline the row</label>
+  </fieldset>
+  <fieldset>
+    <legend>Splat shape</legend>
+    <div class="open-q">
+      <label><input type="radio" name="shape" value="stretch" id="shapeStretch"> Stretched with the post</label>
+      <label><input type="radio" name="shape" value="round" id="shapeRound" checked> Kept round on each screen</label>
+      <span class="hint">The owner chose round on 2026-11-06. Stretched is kept here for comparison.</span>
+    </div>
+  </fieldset>
+  <fieldset>
+    <legend>Tuning</legend>
+    <div class="slider"><label for="brush">Brush</label><input type="range" id="brush" min="16" max="56" step="1" value="30"><output for="brush" id="brushOut">30px</output></div>
+    <div class="slider"><label for="bubbles">Bubbles</label><input type="range" id="bubbles" min="0" max="3" step="0.1" value="1"><output for="bubbles" id="bubblesOut">1.0×</output></div>
+    <div class="slider"><label for="lather">Lather lasts</label><input type="range" id="lather" min="0.4" max="6" step="0.1" value="2.2"><output for="lather" id="latherOut">2.2s</output></div>
+    <div class="slider"><label for="drips">Drips</label><input type="range" id="drips" min="0" max="4" step="0.1" value="2"><output for="drips" id="dripsOut">2.0×</output></div>
+    <label><input type="checkbox" id="reduce"> Reduce motion (no suds or drips, as today)</label>
+  </fieldset>
+</form>
+
+<div class="stages">
+  <div class="row">
+    <figure><figcaption><b>Phone · 390px</b><span class="washed" data-for="0"></span></figcaption><div class="scroller"><div class="board" data-w="390"></div></div></figure>
+    <figure><figcaption><b>Tablet · 768px</b><span class="washed" data-for="1"></span></figcaption><div class="scroller"><div class="board" data-w="768"></div></div></figure>
+  </div>
+  <figure><figcaption><b>Desktop · 1200px board</b><span class="washed" data-for="2"></span></figcaption><div class="scroller"><div class="board" data-w="1200"></div></div></figure>
+</div>
+
+<div class="notes">
+  <section>
+    <h2>What to try</h2>
+    <ul>
+      <li><b>Suds.</b> Bubbles with a rainbow film that drift and pop, lather that stays where you scrubbed and slowly breaks up, and dirty water that runs down the post.</li>
+      <li><b>Reactions row.</b> Wipe beside the chips. Then pick "Full width (today)" and outline it to see the strip nobody can wipe.</li>
+      <li><b>Sponge.</b> With a mouse over ink you get a dripping sponge. It squishes when you press. Over the reactions, or a link you've uncovered, the normal cursor comes back.</li>
+      <li><b>Splat.</b> Every join is rounded now. "New splat" draws another seed.</li>
+      <li><b>On a phone.</b> A quick swipe up or down scrolls the page. A sideways swipe wipes. Press and hold for a moment, then wipe in any direction.</li>
+    </ul>
+  </section>
+  <section>
+    <h2>Not in this mockup</h2>
+    <ul class="muted">
+      <li>Hold to scrub, the Lens, saving, the author's Write in ink, and the screen-reader lines.</li>
+      <li>Washed percentages here are counted on a 4px grid. The real effect counts them from geometry.</li>
+      <li>Clean happens at 95%, as the instance's setting says today.</li>
+    </ul>
+  </section>
+</div>
+
+<template id="post">
+  <article class="act">
+    <div class="bit">
+      <div class="avatar" aria-hidden="true">PW</div>
+      <div><div class="name">Pipewrench</div><div>Plumber's Mate</div></div>
+      <div class="counts">Posts: 1,204<br>Aura: 31.5</div>
+    </div>
+    <div class="meta"><span>Thu Nov 5, 2026 11:42 pm</span><a href="#post-42" data-fake>#42</a></div>
+    <div class="main">
+      <div class="words">
+        <p>Okay, confession time. My first level had a pit at the very start. No warning, no coins hinting at it, just a pit. I called it "Trust Exercise" and I was proud of it for about a week.</p>
+        <p>Then Gloomba played it on stream and fell in eleven times. Eleven. Chat started counting. Somebody made a tally emote and it's still in the emote list, I checked.</p>
+        <p class="quote-label">Gloomba wrote:</p>
+        <blockquote>in my defense the pit was the same color as the floor</blockquote>
+        <p>So here's my rule now: if a player dies before they've had time to read the level's name, that's on me, not them. Post your own worst one below, and link the file if you still have it. Mine is still up on <a href="#old-uploads" data-fake>the old uploads page</a> for anyone who wants to suffer.</p>
+        <p class="edit-note">Edit: no, I will not be fixing it. It's a museum piece now.</p>
+      </div>
+      <div class="rx" data-fit="true">
+        <button type="button" class="chip" aria-pressed="false">lol · 4</button>
+        <button type="button" class="chip" aria-pressed="false">+1 · 2</button>
+        <button type="button" class="chip" aria-pressed="false">oof · 1</button>
+        <button type="button" class="chip react" data-fake>React</button>
+      </div>
+      <canvas class="ink" aria-hidden="true"></canvas>
+      <canvas class="suds" aria-hidden="true"></canvas>
+    </div>
+    <div class="foot"><nav><a href="#quote" data-fake>Quote</a><a href="#spin" data-fake>Spin thread</a><a href="#edit" data-fake>Edit</a><a href="#history" data-fake>History</a></nav></div>
+  </article>
+</template>
+
+<canvas id="overlay" aria-hidden="true"></canvas>
+<svg id="sponge" viewBox="0 0 64 48" aria-hidden="true" hidden>
+  <defs>
+    <linearGradient id="spBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe680"></stop><stop offset=".6" stop-color="#f5c842"></stop><stop offset="1" stop-color="#d9a326"></stop>
+    </linearGradient>
+    <linearGradient id="spPad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5fbf6a"></stop><stop offset="1" stop-color="#2c7a39"></stop>
+    </linearGradient>
+    <pattern id="spPores" width="7" height="6" patternUnits="userSpaceOnUse">
+      <ellipse cx="2" cy="2" rx="1.25" ry=".95" fill="#b98316" opacity=".6"></ellipse>
+      <ellipse cx="5.4" cy="4.6" rx=".85" ry=".65" fill="#b98316" opacity=".5"></ellipse>
+    </pattern>
+    <pattern id="spScour" width="4" height="4" patternUnits="userSpaceOnUse">
+      <path d="M0 4 L4 0" stroke="#1f5c2a" stroke-width=".8" opacity=".55"></path>
+    </pattern>
+  </defs>
+  <g transform="rotate(-12 32 26)">
+    <g class="squish">
+      <rect x="6" y="9" width="52" height="11" rx="4" fill="url(#spPad)"></rect>
+      <rect x="6" y="9" width="52" height="11" rx="4" fill="url(#spScour)"></rect>
+      <rect x="6" y="17" width="52" height="24" rx="6" fill="url(#spBody)"></rect>
+      <rect x="6" y="17" width="52" height="24" rx="6" fill="url(#spPores)"></rect>
+      <rect x="10" y="19.5" width="30" height="2.6" rx="1.3" fill="#fff" opacity=".45"></rect>
+      <rect x="6" y="17" width="52" height="24" rx="6" fill="none" stroke="#8a6210" stroke-width=".9" opacity=".7"></rect>
+      <g fill="#fff" stroke="#6b7c92" stroke-width=".6" stroke-opacity=".5">
+        <circle cx="11" cy="41" r="3"></circle><circle cx="16.5" cy="42.2" r="2.4"></circle><circle cx="22" cy="41.4" r="3.3"></circle>
+        <circle cx="28" cy="42.4" r="2.2"></circle><circle cx="33.5" cy="41.2" r="3.1"></circle><circle cx="39.5" cy="42.3" r="2.5"></circle>
+        <circle cx="45" cy="41.3" r="3"></circle><circle cx="50.5" cy="42" r="2.3"></circle><circle cx="54.5" cy="40.6" r="2"></circle>
+      </g>
+      <g fill="#fff" opacity=".9"><circle cx="21" cy="40.2" r=".9"></circle><circle cx="32.6" cy="40" r=".8"></circle><circle cx="44.2" cy="40.1" r=".8"></circle></g>
+    </g>
+  </g>
+</svg>
+<div id="toast" role="status" hidden></div>
+
+<script>
+(() => {
+  'use strict';
+  /* ---------------------------------------------------------------- settings ---- */
+  const DW = 1.25, DH = 1;          // the splat's design box: a little wider than tall
+  const T = 0.42;                   // the field's iso level: a lone ball's edge sits at its radius
+  const CELL = 4;                   // the washed-share grid, CSS px
+  const CLEAN = 0.95;
+  const FADE_MS = 700;
+  const INKS = [['crimson', '#dc143c'], ['teal', '#008080'], ['gold', '#ffd700'], ['purple', '#800080'], ['lime', '#32cd32'], ['black', '#111111'], ['pink', '#ffc0cb'], ['white', '#ffffff']];
+  const reduceQuery = matchMedia('(prefers-reduced-motion: reduce)');
+  const fineQuery = matchMedia('(hover: hover) and (pointer: fine)');
+  const S = {
+    seed: 61828, ink: '#dc143c', mode: 'author', shape: 'round', rxFit: true, rxOutline: false,
+    brush: 30, bubbles: 1, lather: 2.2, drips: 2, reduce: reduceQuery.matches,
+  };
+
+  /* ------------------------------------------------------------------ colour ---- */
+  const rgbOf = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  const lumOf = (hex) => {
+    const [r, g, b] = rgbOf(hex).map((c) => c / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  /* Dirty water: the ink a wash lifts, thinned into grey-blue. */
+  const dirty = (hex, share = 0.35) => {
+    const [r, g, b] = rgbOf(hex), w = [159, 180, 200];
+    return [0, 1, 2].map((i) => Math.round(w[i] * (1 - share) + [r, g, b][i] * share));
+  };
+
+  /* ------------------------------------------------------------------- splat ---- */
+  function mulberry32(seed) {
+    let a = seed | 0;
+    return () => {
+      a = (a + 0x6d2b79f5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  /* A splat is a field of balls (metaballs): every join between the body, its arms and their bulbs is rounded, and only droplets stand apart. */
+  function makeSplat(seed) {
+    const r = mulberry32(seed);
+    const balls = [];
+    const cx = DW / 2 + (r() - 0.5) * 0.14, cy = DH / 2 + (r() - 0.5) * 0.1;
+    const harm = [2, 3, 4, 5, 7].map((k) => ({ k, a: (0.05 + r() * 0.11) / Math.sqrt(k / 2), p: r() * Math.PI * 2 }));
+    const swell = (th) => { let m = 1; for (const h of harm) m += h.a * Math.sin(h.k * th + h.p); return Math.max(0.65, Math.min(1.3, m)); };
+    const R0 = 0.27;
+    balls.push({ x: cx, y: cy, r: 0.22 });
+    for (let i = 0; i < 6; i++) {
+      const th = r() * Math.PI * 2, d = r() * 0.14;
+      balls.push({ x: cx + Math.cos(th) * d * 1.25, y: cy + Math.sin(th) * d, r: 0.14 + r() * 0.05 });
+    }
+    const ring = 15;
+    for (let i = 0; i < ring; i++) {
+      const th = ((i + (r() - 0.5) * 0.5) / ring) * Math.PI * 2, m = swell(th);
+      balls.push({ x: cx + Math.cos(th) * R0 * m * 1.3, y: cy + Math.sin(th) * R0 * m, r: 0.1 + r() * 0.06 });
+    }
+    const arms = 9 + Math.floor(r() * 7);
+    for (let a = 0; a < arms; a++) {
+      const th = r() * Math.PI * 2, m = swell(th);
+      const sx = cx + Math.cos(th) * R0 * m * 1.3 * 0.95, sy = cy + Math.sin(th) * R0 * m * 0.95;
+      const len = 0.14 + r() * 0.32, w = 0.03 + r() * 0.035, bend = (r() - 0.5) * 0.7, beads = 10;
+      for (let k = 1; k <= beads; k++) {
+        const f = k / beads, ang = th + bend * f * f, d = len * f;
+        balls.push({ x: sx + Math.cos(ang) * d, y: sy + Math.sin(ang) * d, r: w * (1 - 0.62 * f) });
+      }
+      const ang = th + bend;
+      balls.push({ x: sx + Math.cos(ang) * len, y: sy + Math.sin(ang) * len, r: w * 0.72 });
+      const drops = 1 + Math.floor(r() * 3);
+      for (let j = 0; j < drops; j++) {
+        const d = len + 0.05 + r() * 0.14, aj = ang + (r() - 0.5) * 0.35;
+        balls.push({ x: sx + Math.cos(aj) * d, y: sy + Math.sin(aj) * d, r: w * (0.28 + r() * 0.42) });
+      }
+    }
+    const flecks = 5 + Math.floor(r() * 7);
+    for (let i = 0; i < flecks; i++) {
+      const th = r() * Math.PI * 2, d = 0.55 + r() * 0.25;
+      balls.push({ x: cx + Math.cos(th) * d * 1.3, y: cy + Math.sin(th) * d, r: 0.008 + r() * 0.02 });
+    }
+    return balls;
+  }
+  let splat = makeSplat(S.seed);
+
+  /* --------------------------------------------------------------- the stages ---- */
+  const tpl = document.getElementById('post');
+  const stages = [...document.querySelectorAll('.board')].map((board, index) => {
+    board.append(tpl.content.cloneNode(true));
+    const main = board.querySelector('.main');
+    const ink = main.querySelector('canvas.ink');
+    const mk = () => document.createElement('canvas');
+    const sudsCv = main.querySelector('canvas.suds');
+    return {
+      index, board, main, ink, inkCtx: ink.getContext('2d'),
+      splatCv: mk(), maskCv: mk(), wetCv: mk(), sudsCv, sudsCtx: sudsCv.getContext('2d'), sudsClear: true,
+      W: 0, H: 0, q: 1, pw: 0, ph: 0, gw: 0, gh: 0,
+      cov: null, washed: null, covCount: 0, washCount: 0,
+      clean: false, fade: 1, fadeStart: 0, dirty: true, wetUntil: 0,
+      suppress: false, readout: document.querySelector(`.washed[data-for="${index}"]`),
+    };
+  });
+
+  /* Strokes, kept in shares of the box they were made in, with that box's size so a round brush there is the same ellipse everywhere. */
+  const strokes = [];
+  (function seedSmiley() {
+    const W = 988, H = 330, w = 30, cx = 0.47, cy = 0.4;
+    const smile = [];
+    for (let i = 0; i <= 16; i++) { const a = (15 + (150 * i) / 16) * Math.PI / 180; smile.push([cx + Math.cos(a) * 0.085, cy + Math.sin(a) * 0.22]); }
+    strokes.push({ target: null, W, H, w, pts: [[cx - 0.04, 0.3], [cx - 0.039, 0.305]] });
+    strokes.push({ target: null, W, H, w, pts: [[cx + 0.04, 0.3], [cx + 0.041, 0.305]] });
+    strokes.push({ target: null, W, H, w, pts: smile });
+  })();
+  const touches = (s, st) => s.target === null || s.target === st.index;
+
+  function renderSplat(st) {
+    const { pw: w, ph: h } = st;
+    if (!w || !h) return;
+    const f = new Float32Array(w * h);
+    let ax, ay;
+    if (S.shape === 'stretch') { ax = DW / w; ay = DH / h; } else { ax = ay = Math.sqrt((DW * DH) / (w * h)); }
+    for (const b of splat) {
+      const R = b.r * 2, R2 = R * R, cxp = (b.x / DW) * w, cyp = (b.y / DH) * h;
+      const x0 = Math.max(0, Math.floor(cxp - R / ax)), x1 = Math.min(w - 1, Math.ceil(cxp + R / ax));
+      const y0 = Math.max(0, Math.floor(cyp - R / ay)), y1 = Math.min(h - 1, Math.ceil(cyp + R / ay));
+      for (let y = y0; y <= y1; y++) {
+        const dy = (y + 0.5 - cyp) * ay, dy2 = dy * dy;
+        if (dy2 >= R2) continue;
+        const row = y * w;
+        for (let x = x0; x <= x1; x++) {
+          const dx = (x + 0.5 - cxp) * ax, d2 = dx * dx + dy2;
+          if (d2 < R2) { const t = 1 - d2 / R2; f[row + x] += t * t * t; }
+        }
+      }
+    }
+    /* Shade it as wet ink: flat in the middle, a meniscus at every edge that catches the light up and to the left. */
+    st.splatCv.width = w; st.splatCv.height = h;
+    const g = st.splatCv.getContext('2d');
+    const img = g.createImageData(w, h), px = img.data;
+    const [ir, ig, ib] = rgbOf(S.ink), L = lumOf(S.ink);
+    let lx = -0.45, ly = -0.65, lz = 0.62; { const n = Math.hypot(lx, ly, lz); lx /= n; ly /= n; lz /= n; }
+    let hx = lx, hy = ly, hz = lz + 1; { const n = Math.hypot(hx, hy, hz); hx /= n; hy /= n; hz /= n; }
+    const men = 3.5 * st.q, rimW = 1.6 * st.q, specK = 0.55 + 0.45 * (1 - L);
+    for (let y = 0; y < h; y++) {
+      const up = y > 0 ? -w : 0, dn = y < h - 1 ? w : 0;
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x, v = f[i];
+        if (v < T * 0.4) continue;
+        const gx = (f[i + (x < w - 1 ? 1 : 0)] - f[i - (x > 0 ? 1 : 0)]) * 0.5, gy = (f[i + dn] - f[i + up]) * 0.5;
+        const gm = Math.hypot(gx, gy) + 1e-6;
+        const sd = (v - T) / gm;
+        const a = Math.min(1, Math.max(0, sd + 0.5));
+        if (a <= 0) continue;
+        const e = Math.exp(-Math.max(0, sd) / men), slope = 1.5 * e;
+        let nx = (-gx / gm) * slope, ny = (-gy / gm) * slope, nz = 1;
+        const nn = Math.hypot(nx, ny, nz); nx /= nn; ny /= nn; nz /= nn;
+        const diff = nx * lx + ny * ly + nz * lz;
+        const shade = 0.86 + 0.6 * (diff - lz);
+        const spec = Math.pow(Math.max(0, nx * hx + ny * hy + nz * hz), 60) * specK;
+        const rim = L * 0.5 * Math.exp(-Math.max(0, sd) / rimW);
+        const k = Math.max(0, shade * (1 - rim));
+        const o = i * 4;
+        px[o] = Math.min(255, ir * k + 255 * spec);
+        px[o + 1] = Math.min(255, ig * k + 255 * spec);
+        px[o + 2] = Math.min(255, ib * k + 255 * spec);
+        px[o + 3] = a * 255;
+      }
+    }
+    g.putImageData(img, 0, 0);
+    /* A broad wet gloss and a darker underside, laid on the ink alone. */
+    g.globalCompositeOperation = 'source-atop';
+    const gl = g.createRadialGradient(w * 0.32, h * 0.28, 0, w * 0.32, h * 0.28, Math.max(w, h) * 0.7);
+    gl.addColorStop(0, `rgba(255,255,255,${0.2 * (1 - L) + 0.04})`); gl.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gl; g.fillRect(0, 0, w, h);
+    const lo = g.createLinearGradient(0, h * 0.35, 0, h);
+    lo.addColorStop(0, 'rgba(0,0,0,0)'); lo.addColorStop(1, `rgba(0,0,0,${0.06 + 0.12 * L})`);
+    g.fillStyle = lo; g.fillRect(0, 0, w, h);
+    g.globalCompositeOperation = 'source-over';
+    /* Which grid cells hold ink, for the washed share and the cursor. */
+    st.cov = new Uint8Array(st.gw * st.gh); st.covCount = 0;
+    for (let j = 0; j < st.gh; j++) for (let i = 0; i < st.gw; i++) {
+      const fx = Math.min(w - 1, Math.floor((i + 0.5) * CELL * st.q)), fy = Math.min(h - 1, Math.floor((j + 0.5) * CELL * st.q));
+      if (f[fy * w + fx] >= T) { st.cov[j * st.gw + i] = 1; st.covCount++; }
+    }
+    recount(st);
+  }
+
+  function recount(st) {
+    st.washCount = 0;
+    if (st.cov && st.washed) for (let i = 0; i < st.cov.length; i++) if (st.cov[i] && st.washed[i]) st.washCount++;
+    readout(st);
+  }
+
+  function readout(st) {
+    const share = st.covCount ? st.washCount / st.covCount : 1;
+    if (!st.clean && share >= CLEAN) {
+      st.clean = true; st.fadeStart = performance.now();
+      if (S.reduce) st.fade = 0;
+    }
+    st.readout.textContent = st.clean ? 'Washed clean' : `${Math.min(99, Math.round(share * 100))}% washed`;
+  }
+
+  /* A stroke's segment on a stage: the mask the ink is cut by, and the grid of washed cells. */
+  function segment(st, s, a, b) {
+    const g = st.maskCv.getContext('2d');
+    const sx = (st.q * st.W) / s.W, sy = (st.q * st.H) / s.H;
+    g.setTransform(sx, 0, 0, sy, 0, 0);
+    g.lineCap = g.lineJoin = 'round';
+    g.lineWidth = s.w;
+    g.strokeStyle = '#000';
+    g.shadowColor = '#000';
+    g.shadowBlur = 2.5 * st.q;
+    g.beginPath();
+    g.moveTo(a[0] * s.W, a[1] * s.H);
+    g.lineTo(b[0] * s.W + (a === b ? 0.01 : 0), b[1] * s.H);
+    g.stroke();
+    const rx = ((s.w / 2) * st.W) / s.W, ry = ((s.w / 2) * st.H) / s.H;
+    const ax = a[0] * st.W, ay = a[1] * st.H, bx = b[0] * st.W, by = b[1] * st.H;
+    const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - rx) / CELL)), i1 = Math.min(st.gw - 1, Math.floor((Math.max(ax, bx) + rx) / CELL));
+    const j0 = Math.max(0, Math.floor((Math.min(ay, by) - ry) / CELL)), j1 = Math.min(st.gh - 1, Math.floor((Math.max(ay, by) + ry) / CELL));
+    const dx = (bx - ax) / rx, dy = (by - ay) / ry, len2 = dx * dx + dy * dy;
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const k = j * st.gw + i;
+      if (st.washed[k]) continue;
+      const px = ((i + 0.5) * CELL - ax) / rx, py = ((j + 0.5) * CELL - ay) / ry;
+      const t = len2 ? Math.max(0, Math.min(1, (px * dx + py * dy) / len2)) : 0;
+      const ex = px - t * dx, ey = py - t * dy;
+      if (ex * ex + ey * ey <= 1) { st.washed[k] = 1; if (st.cov && st.cov[k]) st.washCount++; }
+    }
+    st.dirty = true;
+  }
+
+  function replay(st) {
+    const g = st.maskCv.getContext('2d');
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, st.maskCv.width, st.maskCv.height);
+    st.washed = new Uint8Array(st.gw * st.gh);
+    for (const s of strokes) {
+      if (!touches(s, st)) continue;
+      if (s.pts.length === 1) segment(st, s, s.pts[0], s.pts[0]);
+      for (let i = 1; i < s.pts.length; i++) segment(st, s, s.pts[i - 1], s.pts[i]);
+    }
+    recount(st);
+  }
+
+  function rebuild(st) {
+    st.W = st.main.clientWidth; st.H = st.main.clientHeight;
+    st.q = Math.min(2, window.devicePixelRatio || 1);
+    st.pw = Math.ceil(st.W * st.q); st.ph = Math.ceil(st.H * st.q);
+    st.gw = Math.ceil(st.W / CELL); st.gh = Math.ceil(st.H / CELL);
+    st.ink.width = st.pw; st.ink.height = st.ph;
+    st.maskCv.width = st.pw; st.maskCv.height = st.ph;
+    st.wetCv.width = Math.ceil(st.W); st.wetCv.height = Math.ceil(st.H);
+    st.sudsCv.width = st.pw; st.sudsCv.height = st.ph; st.sudsClear = true;
+    st.washed = new Uint8Array(st.gw * st.gh);
+    renderSplat(st);
+    replay(st);
+    st.dirty = true;
+  }
+
+  function compose(st) {
+    const g = st.inkCtx;
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, st.pw, st.ph);
+    if (st.fade <= 0) return;
+    g.globalAlpha = st.fade;
+    g.drawImage(st.splatCv, 0, 0);
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = 'destination-out';
+    g.drawImage(st.maskCv, 0, 0);
+    g.globalCompositeOperation = 'source-over';
+  }
+
+  const inkAt = (st, x, y) => {
+    if (st.clean || !st.cov) return false;
+    const i = Math.floor(x / CELL), j = Math.floor(y / CELL);
+    if (i < 0 || j < 0 || i >= st.gw || j >= st.gh) return false;
+    const k = j * st.gw + i;
+    return st.cov[k] === 1 && st.washed[k] === 0;
+  };
+
+  /* ------------------------------------------------------------------ sprites ---- */
+  function bubbleSprites() {
+    const out = [], Z = 64;
+    for (let k = 0; k < 12; k++) {
+      const c = document.createElement('canvas'); c.width = c.height = Z;
+      const g = c.getContext('2d'), m = Z / 2, R = Z / 2 - 2;
+      const body = g.createRadialGradient(m - R * 0.25, m - R * 0.25, R * 0.1, m, m, R);
+      body.addColorStop(0, 'rgba(255,255,255,0.03)'); body.addColorStop(0.72, 'rgba(220,236,255,0.10)'); body.addColorStop(1, 'rgba(255,255,255,0.42)');
+      g.fillStyle = body; g.beginPath(); g.arc(m, m, R, 0, Math.PI * 2); g.fill();
+      let rim = 'rgba(190,215,255,0.55)';
+      if (g.createConicGradient) {
+        rim = g.createConicGradient((k / 12) * Math.PI * 2, m, m);
+        const hs = [300, 195, 55, 330, 165, 40, 300];
+        hs.forEach((hh, i) => rim.addColorStop(i / (hs.length - 1), `hsla(${hh},95%,60%,0.6)`));
+      }
+      g.strokeStyle = rim; g.lineWidth = Z * 0.075; g.beginPath(); g.arc(m, m, R - Z * 0.04, 0, Math.PI * 2); g.stroke();
+      g.strokeStyle = 'rgba(40,60,95,0.42)'; g.lineWidth = 1.3; g.beginPath(); g.arc(m, m, R, 0, Math.PI * 2); g.stroke();
+      g.fillStyle = 'rgba(255,255,255,0.95)'; g.beginPath(); g.ellipse(m - R * 0.38, m - R * 0.4, R * 0.27, R * 0.13, -Math.PI / 4, 0, Math.PI * 2); g.fill();
+      g.fillStyle = 'rgba(255,255,255,0.6)'; g.beginPath(); g.arc(m + R * 0.42, m + R * 0.38, R * 0.08, 0, Math.PI * 2); g.fill();
+      out.push(c);
+    }
+    return out;
+  }
+  function foamSprite(tint) {
+    const Z = 32, c = document.createElement('canvas'); c.width = c.height = Z;
+    const g = c.getContext('2d'), m = Z / 2, R = Z / 2 - 1.5;
+    const grd = g.createRadialGradient(Z * 0.38, Z * 0.35, 0, m, m, R);
+    grd.addColorStop(0, '#ffffff'); grd.addColorStop(0.6, '#f4f7fb'); grd.addColorStop(1, '#c9d3e0');
+    g.fillStyle = grd; g.beginPath(); g.arc(m, m, R, 0, Math.PI * 2); g.fill();
+    if (tint) { g.globalCompositeOperation = 'source-atop'; g.globalAlpha = 0.18; g.fillStyle = tint; g.fillRect(0, 0, Z, Z); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; }
+    g.strokeStyle = 'rgba(55,70,95,0.4)'; g.lineWidth = 1.2; g.beginPath(); g.arc(m, m, R, 0, Math.PI * 2); g.stroke();
+    g.fillStyle = 'rgba(255,255,255,1)'; g.beginPath(); g.arc(Z * 0.36, Z * 0.33, Z * 0.12, 0, Math.PI * 2); g.fill();
+    return c;
+  }
+  function dropSprite(rgb, alpha) {
+    const c = document.createElement('canvas'); c.width = 24; c.height = 36;
+    const g = c.getContext('2d');
+    g.beginPath();
+    g.moveTo(12, 2); g.bezierCurveTo(14, 10, 21, 16, 21, 24); g.arc(12, 24, 9, 0, Math.PI); g.bezierCurveTo(3, 16, 10, 10, 12, 2); g.closePath();
+    const grd = g.createLinearGradient(4, 8, 20, 34);
+    grd.addColorStop(0, `rgba(${rgb.join(',')},${alpha * 0.55})`); grd.addColorStop(1, `rgba(${rgb.map((v) => Math.round(v * 0.75)).join(',')},${alpha})`);
+    g.fillStyle = grd; g.fill();
+    g.strokeStyle = 'rgba(30,55,85,0.5)'; g.lineWidth = 1.2; g.stroke();
+    g.fillStyle = 'rgba(255,255,255,0.9)'; g.beginPath(); g.ellipse(8.6, 21, 2.2, 3.4, -0.4, 0, Math.PI * 2); g.fill();
+    return c;
+  }
+  const SPR = { bubbles: bubbleSprites(), foam: foamSprite(null), foamInk: null, drop: dropSprite([200, 222, 245], 0.7), dropDirty: null, dirtyRgb: null };
+  function tintSprites() {
+    SPR.foamInk = foamSprite(S.ink);
+    SPR.dirtyRgb = dirty(S.ink);
+    SPR.dropDirty = dropSprite(SPR.dirtyRgb, 0.75);
+  }
+  tintSprites();
+
+  /* ---------------------------------------------------------------- particles ---- */
+  const parts = [];
+  const MAX_PARTS = 900;
+  const rnd = Math.random;
+  function add(p) {
+    if (parts.length >= MAX_PARTS) {
+      const i = parts.findIndex((q) => q.type === 'foam');
+      parts.splice(i >= 0 ? i : 0, 1);
+    }
+    parts.push(p);
+  }
+  const motion = () => !S.reduce;
+
+  /* What a wash throws up where the brush moved from (x0, y0) to (x, y), in the stage's own px. */
+  function suds(st, x0, y0, x, y, over) {
+    if (!motion()) return;
+    const t = performance.now(), dist = Math.hypot(x - x0, y - y0) || 4, r = S.brush / 2;
+    const nb = Math.floor((S.bubbles * dist) / 16 + rnd());
+    for (let i = 0; i < nb; i++) {
+      const br = 2 + rnd() ** 2 * 9;
+      add({ type: 'bubble', st, x: x + (rnd() - 0.5) * r * 1.4, y: y + (rnd() - 0.5) * r * 1.2, vx: (rnd() - 0.5) * 50, vy: -(14 + rnd() * 46), r: br, born: t, life: 0.9 + rnd() * 1.8, hue: (rnd() * 12) | 0, pop: rnd() < 0.65, ph: rnd() * 6 });
+    }
+    const nf = Math.floor(dist / 8 + rnd());
+    for (let i = 0; i < nf; i++) {
+      const f = rnd(), cxp = x0 + (x - x0) * f + (rnd() - 0.5) * r * 1.2, cyp = y0 + (y - y0) * f + (rnd() - 0.5) * r * 1.1;
+      const cells = [];
+      const n = 3 + ((rnd() * 5) | 0);
+      for (let k = 0; k < n; k++) cells.push({ dx: (rnd() - 0.5) * 9, dy: (rnd() - 0.5) * 7, r: 1.4 + rnd() * 3.4, die: 0.35 + rnd() * 0.65 });
+      add({ type: 'foam', st, x: cxp, y: cyp, born: t, life: S.lather * (0.55 + rnd() * 0.9), cells, ink: over });
+    }
+    if (rnd() < (S.drips * dist) / 140 * (over ? 1 : 0.35)) {
+      add({ type: 'run', st, x: x + (rnd() - 0.5) * r * 0.9, y0: y + r * 0.35, v: 8 + rnd() * 18, acc: 10 + rnd() * 30, r: 1.7 + rnd() * 1.8, born: t, life: 1.3 + rnd() * 1.8 });
+    }
+    const g = st.wetCv.getContext('2d');
+    const [dr, dg, db] = SPR.dirtyRgb;
+    g.strokeStyle = `rgb(${dr},${dg},${db})`; g.lineCap = 'round'; g.lineWidth = S.brush * 0.92;
+    g.beginPath(); g.moveTo(x0, y0); g.lineTo(x + 0.01, y); g.stroke();
+    st.wetUntil = t + 3500;
+  }
+
+  function popAt(st, x, y, r, t) {
+    add({ type: 'ring', st, x, y, r, born: t, life: 0.16 });
+    const n = 4 + ((rnd() * 3) | 0);
+    for (let i = 0; i < n; i++) {
+      const a = rnd() * Math.PI * 2, sp = 50 + rnd() * 90;
+      add({ type: 'spray', st, x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, born: t, life: 0.22 + rnd() * 0.12 });
+    }
+  }
+
+  /* ------------------------------------------------------------------ drawing ---- */
+  /* Each post draws its own suds on a canvas inside its body, so they scroll with it. Only the sponge's drips, which fall from the mouse, use the window's overlay. */
+  const ov = document.getElementById('overlay');
+  const og = ov.getContext('2d');
+  let odpr = 1;
+  function sizeOverlay() {
+    odpr = Math.min(2, window.devicePixelRatio || 1);
+    ov.width = Math.ceil(innerWidth * odpr); ov.height = Math.ceil(innerHeight * odpr);
+  }
+  sizeOverlay();
+  addEventListener('resize', sizeOverlay);
+
+  let last = performance.now(), ovClear = true;
+  const sponge = { el: document.getElementById('sponge'), on: false, x: 0, y: 0, speed: 0, acc: 0, pressing: false, lastT: 0 };
+
+  function drawStage(st, t, dt) {
+    const mine = parts.filter((p) => p.st === st);
+    const wet = st.wetUntil > t;
+    const g = st.sudsCtx;
+    if (!mine.length && !wet) {
+      if (!st.sudsClear) { g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, st.sudsCv.width, st.sudsCv.height); st.sudsClear = true; }
+      return;
+    }
+    st.sudsClear = false;
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, st.sudsCv.width, st.sudsCv.height);
+    g.setTransform(st.q, 0, 0, st.q, 0, 0);
+    if (wet) {
+      const w = st.wetCv.getContext('2d');
+      w.globalCompositeOperation = 'destination-out';
+      w.fillStyle = `rgba(0,0,0,${1 - Math.exp(-dt / 0.6)})`;
+      w.fillRect(0, 0, st.wetCv.width, st.wetCv.height);
+      w.globalCompositeOperation = 'source-over';
+      g.globalAlpha = 0.3; g.drawImage(st.wetCv, 0, 0, st.W, st.H); g.globalAlpha = 1;
+    }
+    for (const p of mine) {
+      const age = Math.max(0, (t - p.born) / 1000), k = age / p.life;
+      if (p.type === 'foam') {
+        const spr = p.ink ? SPR.foamInk : SPR.foam, sag = age * 3;
+        for (const c of p.cells) {
+          const s = 1 - Math.min(1, Math.max(0, (k - (c.die - 0.18)) / 0.18));
+          const rr = c.r * s * Math.min(1, age * 8);
+          if (rr <= 0.05) continue;
+          g.drawImage(spr, p.x + c.dx - rr, p.y + c.dy + sag - rr, rr * 2, rr * 2);
+        }
+      } else if (p.type === 'run') {
+        const y = p.y0 + p.v * age + 0.5 * p.acc * age * age, fade = 1 - Math.max(0, (k - 0.7) / 0.3);
+        const [dr, dg, db] = SPR.dirtyRgb;
+        if (y - p.y0 > 0.5) {
+          const grd = g.createLinearGradient(0, p.y0, 0, y);
+          grd.addColorStop(0, `rgba(${dr},${dg},${db},0)`); grd.addColorStop(1, `rgba(${dr},${dg},${db},${0.35 * fade})`);
+          g.strokeStyle = grd; g.lineWidth = p.r * 1.1; g.lineCap = 'round';
+          g.beginPath(); g.moveTo(p.x, p.y0); g.lineTo(p.x, y); g.stroke();
+        }
+        g.globalAlpha = fade;
+        g.drawImage(SPR.dropDirty, p.x - p.r, y - p.r * 2, p.r * 2, p.r * 3);
+        g.globalAlpha = 1;
+      } else if (p.type === 'bubble') {
+        const a = Math.min(1, age * 10) * (p.pop ? 1 : 1 - Math.max(0, (k - 0.75) / 0.25));
+        const spr = SPR.bubbles[(p.hue + Math.floor(age * 7)) % 12];
+        const rr = p.r * (1 + 0.05 * Math.sin(age * 11 + p.ph));
+        g.globalAlpha = a;
+        g.drawImage(spr, p.x - rr, p.y - rr * (1 - 0.04 * Math.sin(age * 9)), rr * 2, rr * 2);
+        g.globalAlpha = 1;
+      } else if (p.type === 'ring') {
+        const rr = p.r * (1 + Math.min(1, k) * 0.7);
+        g.strokeStyle = `rgba(40,60,95,${0.45 * (1 - Math.min(1, k))})`; g.lineWidth = 1;
+        g.beginPath(); g.arc(p.x, p.y, rr, 0, Math.PI * 2); g.stroke();
+      } else if (p.type === 'spray') {
+        g.fillStyle = `rgba(110,145,185,${0.75 * (1 - Math.min(1, k))})`;
+        g.beginPath(); g.arc(p.x, p.y, 0.9, 0, Math.PI * 2); g.fill();
+      }
+    }
+  }
+
+  function step(t) {
+    const dt = Math.min(0.05, Math.max(0, (t - last) / 1000));
+    last = t;
+    for (const st of stages) {
+      if (st.clean && st.fade > 0) {
+        st.fade = S.reduce ? 0 : Math.max(0, 1 - (t - st.fadeStart) / FADE_MS);
+        st.dirty = true;
+      }
+      if (st.dirty) { st.dirty = false; compose(st); }
+    }
+    if (sponge.on && motion() && S.drips > 0) {
+      sponge.acc += dt * S.drips * (0.9 + sponge.speed / 260 + (sponge.pressing ? 1.4 : 0));
+      while (sponge.acc > 1) {
+        sponge.acc -= 1;
+        add({ type: 'fall', st: null, x: sponge.x + (rnd() - 0.5) * 36, y: sponge.y + 12 + rnd() * 4, vx: (rnd() - 0.5) * 10, vy: 20 + rnd() * 40, r: 2 + rnd() * 1.6, born: t, life: 0.9 });
+      }
+    }
+    sponge.speed *= Math.exp(-dt * 6);
+
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const p = parts[i], age = (t - p.born) / 1000;
+      if (age >= p.life) {
+        parts.splice(i, 1);
+        if (p.type === 'bubble' && p.pop) popAt(p.st, p.x, p.y, p.r, t);
+        continue;
+      }
+      if (p.type === 'bubble') {
+        p.vy -= 9 * dt; p.vx *= Math.exp(-dt * 1.5);
+        p.x += (p.vx + Math.sin(age * 5 + p.ph) * 8) * dt; p.y += p.vy * dt;
+      } else if (p.type === 'spray') {
+        p.vy += 260 * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+      } else if (p.type === 'fall') {
+        p.vy += 900 * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+      }
+    }
+    for (const st of stages) drawStage(st, t, dt);
+
+    const falls = parts.filter((p) => p.type === 'fall');
+    if (!falls.length) {
+      if (!ovClear) { og.setTransform(1, 0, 0, 1, 0, 0); og.clearRect(0, 0, ov.width, ov.height); ovClear = true; }
+      return;
+    }
+    ovClear = false;
+    og.setTransform(1, 0, 0, 1, 0, 0);
+    og.clearRect(0, 0, ov.width, ov.height);
+    og.setTransform(odpr, 0, 0, odpr, 0, 0);
+    for (const p of falls) {
+      const k = Math.max(0, (t - p.born) / 1000) / p.life, stretch = 1 + Math.min(0.8, p.vy / 900);
+      og.globalAlpha = 1 - Math.max(0, (k - 0.6) / 0.4);
+      og.drawImage(SPR.drop, p.x - p.r, p.y - p.r * 2 * stretch, p.r * 2, p.r * 3 * stretch);
+      og.globalAlpha = 1;
+    }
+  }
+  /* A frame that throws never stops the loop: the next one is asked for first. */
+  function frame(t) {
+    requestAnimationFrame(frame);
+    try { step(t); } catch (err) { console.error(err); }
+  }
+  requestAnimationFrame(frame);
+
+  /* ------------------------------------------------------------------ strokes ---- */
+  let live = null; // { st, s, id, lx, ly, touch }
+  const local = (st, cx, cy) => { const r = st.main.getBoundingClientRect(); return [cx - r.left, cy - r.top]; };
+  const lifted = (el) => el instanceof Element && el.closest('.rx');
+
+  function begin(st, x, y, id, touch) {
+    const s = { target: S.mode === 'author' ? null : st.index, W: st.W, H: st.H, w: S.brush, pts: [[x / st.W, y / st.H]] };
+    strokes.push(s);
+    live = { st, s, id, lx: x, ly: y, touch };
+    st.suppress = true;
+    for (const o of stages) if (touches(s, o)) { segment(o, s, s.pts[0], s.pts[0]); readout(o); }
+    suds(st, x, y, x, y, true);
+  }
+  function extend(x, y) {
+    const { st, s } = live;
+    if (Math.hypot(x - live.lx, y - live.ly) < 2) return;
+    const a = s.pts[s.pts.length - 1], b = [x / st.W, y / st.H];
+    const over = inkAt(st, x, y);
+    s.pts.push(b);
+    for (const o of stages) if (touches(s, o)) { segment(o, s, a, b); readout(o); }
+    suds(st, live.lx, live.ly, x, y, over);
+    live.lx = x; live.ly = y;
+  }
+
+  /* ------------------------------------------------------------- the mouse ---- */
+  function setSponge(st, on, e) {
+    const want = on && fineQuery.matches && e.pointerType === 'mouse';
+    st.main.style.cursor = want ? 'none' : '';
+    sponge.on = want;
+    sponge.el.hidden = !want;
+    if (want) placeSponge(e);
+  }
+  function placeSponge(e) {
+    const t = performance.now();
+    const d = Math.hypot(e.clientX - sponge.x, e.clientY - sponge.y), dt = Math.max(1, t - sponge.lastT) / 1000;
+    sponge.speed = Math.min(2000, sponge.speed * 0.7 + (d / dt) * 0.3);
+    sponge.x = e.clientX; sponge.y = e.clientY; sponge.lastT = t;
+    sponge.el.style.transform = `translate(${e.clientX - 30}px, ${e.clientY - 28}px)`;
+  }
+
+  /*
+   * A finger, by touch events, so the page's scroll can be refused while there is still time to: a quick swipe up or down scrolls and
+   * washes nothing, a sideways swipe wipes, and a press held a moment wipes in any direction. A second finger is a scroll or a pinch.
+   */
+  const HOLD_MS = 180, SLOP = 8;
+  let gesture = null; // { st, id, x0, y0, t0, cx, cy, state: 'wait' | 'wipe' | 'page', timer }
+
+  for (const st of stages) {
+    const m = st.main;
+    m.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'touch') return;
+      if (live || (e.pointerType === 'mouse' && e.button !== 0) || lifted(e.target)) return;
+      const [x, y] = local(st, e.clientX, e.clientY);
+      if (!inkAt(st, x, y)) return;
+      e.preventDefault();
+      m.setPointerCapture(e.pointerId);
+      begin(st, x, y, e.pointerId, false);
+      sponge.pressing = true; sponge.el.classList.add('pressing');
+      setSponge(st, true, e);
+    });
+    m.addEventListener('pointermove', (e) => {
+      if (e.pointerType === 'touch') return;
+      const [x, y] = local(st, e.clientX, e.clientY);
+      if (live && !live.touch && live.st === st && e.pointerId === live.id) { placeSponge(e); extend(x, y); return; }
+      if (e.pointerType !== 'mouse') return;
+      setSponge(st, !lifted(e.target) && inkAt(st, x, y), e);
+    });
+    const end = (e) => {
+      if (e.pointerType === 'touch' || !live || live.touch || live.st !== st || e.pointerId !== live.id) return;
+      live = null;
+      sponge.pressing = false; sponge.el.classList.remove('pressing');
+      const [x, y] = local(st, e.clientX, e.clientY);
+      setSponge(st, e.type !== 'pointercancel' && !lifted(e.target) && inkAt(st, x, y), e);
+    };
+    m.addEventListener('pointerup', end);
+    m.addEventListener('pointercancel', end);
+    m.addEventListener('pointerleave', (e) => { if (!live && e.pointerType === 'mouse') setSponge(st, false, e); });
+    m.addEventListener('click', (e) => { if (st.suppress) { st.suppress = false; e.preventDefault(); e.stopPropagation(); } }, true);
+
+    m.addEventListener('touchstart', (e) => {
+      if (e.touches.length > 1) {
+        /* A second finger: the page's. A wipe already started stays as far as it got. */
+        if (gesture) { clearTimeout(gesture.timer); gesture.state = 'page'; }
+        if (live && live.touch) live = null;
+        return;
+      }
+      const tc = e.changedTouches[0];
+      if (lifted(e.target)) return;
+      const [x, y] = local(st, tc.clientX, tc.clientY);
+      if (!inkAt(st, x, y)) return;
+      gesture = { st, id: tc.identifier, x0: tc.clientX, y0: tc.clientY, cx: tc.clientX, cy: tc.clientY, t0: performance.now(), state: 'wait', timer: 0 };
+      const g = gesture;
+      g.timer = setTimeout(() => {
+        if (gesture !== g || g.state !== 'wait') return;
+        g.state = 'wipe';
+        const [lx, ly] = local(st, g.cx, g.cy);
+        begin(st, lx, ly, g.id, true);
+        suds(st, lx - 6, ly, lx + 6, ly, true);
+        try { navigator.vibrate?.(8); } catch { /* not offered here */ }
+      }, HOLD_MS);
+    }, { passive: true });
+
+    m.addEventListener('touchmove', (e) => {
+      const g = gesture;
+      if (!g || g.st !== st) return;
+      const tc = [...e.changedTouches].find((c) => c.identifier === g.id);
+      if (!tc) return;
+      g.cx = tc.clientX; g.cy = tc.clientY;
+      if (g.state === 'page') return;
+      if (g.state === 'wait') {
+        const dx = tc.clientX - g.x0, dy = tc.clientY - g.y0;
+        if (Math.hypot(dx, dy) < SLOP) return;
+        clearTimeout(g.timer);
+        if (Math.abs(dy) > Math.abs(dx)) { g.state = 'page'; return; }
+        g.state = 'wipe';
+        const [sx, sy] = local(st, g.x0, g.y0);
+        begin(st, sx, sy, g.id, true);
+      }
+      if (e.cancelable) e.preventDefault();
+      if (live && live.touch) { const [x, y] = local(st, tc.clientX, tc.clientY); extend(x, y); }
+    }, { passive: false });
+
+    const touchEnd = (e) => {
+      const g = gesture;
+      if (!g || g.st !== st || ![...e.changedTouches].some((c) => c.identifier === g.id)) return;
+      clearTimeout(g.timer);
+      /* A tap on the ink: one dab, as a click is. */
+      if (e.type === 'touchend' && g.state === 'wait') {
+        const [x, y] = local(st, g.x0, g.y0);
+        begin(st, x, y, g.id, true);
+      }
+      if (g.state === 'wipe' || g.state === 'wait') st.suppress = true;
+      gesture = null;
+      if (live && live.touch) live = null;
+    };
+    m.addEventListener('touchend', touchEnd);
+    m.addEventListener('touchcancel', touchEnd);
+  }
+
+  /* ------------------------------------------------------------- the post's own ---- */
+  const toast = document.getElementById('toast');
+  let toastTimer = 0;
+  const say = (words) => { toast.textContent = words; toast.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { toast.hidden = true; }, 1800); };
+  document.addEventListener('click', (e) => {
+    const el = e.target instanceof Element ? e.target.closest('[data-fake]') : null;
+    if (el) { e.preventDefault(); say(`You pressed "${el.textContent.trim()}". It works under the ink once the ink is washed off it.`); return; }
+    const chip = e.target instanceof Element ? e.target.closest('.chip') : null;
+    if (chip) chip.setAttribute('aria-pressed', chip.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+  });
+
+  /* ------------------------------------------------------------------ the bench ---- */
+  const sw = document.getElementById('swatches');
+  for (const [name, hex] of INKS) {
+    const input = document.createElement('input');
+    input.type = 'radio'; input.name = 'ink'; input.value = hex; input.id = `ink-${name}`;
+    input.setAttribute('aria-label', name); input.title = name;
+    input.style.setProperty('--sw', hex);
+    if (hex === S.ink) input.checked = true;
+    input.addEventListener('change', () => { S.ink = hex; tintSprites(); for (const st of stages) { renderSplat(st); st.dirty = true; } });
+    sw.append(input);
+  }
+  const fresh = () => { for (const st of stages) { st.clean = false; st.fade = 1; } };
+  document.getElementById('newSplat').addEventListener('click', () => {
+    S.seed = (Math.random() * 2 ** 31) | 0; splat = makeSplat(S.seed); fresh();
+    for (const st of stages) { renderSplat(st); st.dirty = true; }
+  });
+  document.getElementById('reset').addEventListener('click', () => {
+    strokes.length = 0; fresh();
+    for (const st of stages) { replay(st); st.dirty = true; }
+  });
+  for (const id of ['modeAuthor', 'modeReader']) document.getElementById(id).addEventListener('change', (e) => { S.mode = e.target.value; });
+  for (const id of ['shapeStretch', 'shapeRound']) document.getElementById(id).addEventListener('change', (e) => {
+    S.shape = e.target.value; fresh();
+    for (const st of stages) { renderSplat(st); st.dirty = true; }
+  });
+  const rxApply = () => document.querySelectorAll('.rx').forEach((r) => { r.dataset.fit = String(S.rxFit); r.dataset.outline = String(S.rxOutline); });
+  for (const id of ['rxFit', 'rxFull']) document.getElementById(id).addEventListener('change', (e) => { S.rxFit = e.target.value === 'fit'; rxApply(); });
+  document.getElementById('rxOutline').addEventListener('change', (e) => { S.rxOutline = e.target.checked; rxApply(); });
+  const slider = (id, key, fmt) => {
+    const el = document.getElementById(id), out = document.getElementById(`${id}Out`);
+    const set = () => { S[key] = Number(el.value); out.textContent = fmt(S[key]); };
+    el.addEventListener('input', set); set();
+  };
+  slider('brush', 'brush', (v) => `${v}px`);
+  slider('bubbles', 'bubbles', (v) => `${v.toFixed(1)}×`);
+  slider('lather', 'lather', (v) => `${v.toFixed(1)}s`);
+  slider('drips', 'drips', (v) => `${v.toFixed(1)}×`);
+  const reduce = document.getElementById('reduce');
+  reduce.checked = S.reduce;
+  reduce.addEventListener('change', () => { S.reduce = reduce.checked; if (S.reduce) parts.length = 0; });
+
+  /* ------------------------------------------------------------------ sizing ---- */
+  const queued = new Set();
+  const ro = new ResizeObserver((entries) => {
+    for (const en of entries) { const st = stages.find((s) => s.main === en.target); if (st) queued.add(st); }
+    requestAnimationFrame(() => {
+      for (const st of queued) {
+        if (st.main.clientWidth !== st.W || st.main.clientHeight !== st.H) rebuild(st);
+      }
+      queued.clear();
+    });
+  });
+  for (const st of stages) { rebuild(st); ro.observe(st.main); }
+})();
+</script>
+
+</html>
