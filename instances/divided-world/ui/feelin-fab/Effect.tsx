@@ -1,115 +1,126 @@
 /**
- * Feelin' Fab's effect (docs/plans/2026-11-02-onboarding-design.md, sections 5 and 6): a rainbow under the post's words, by the
- * count of Feelin' Fabs up on the post, one to three. Level 1 cycles the rainbow's stops slowly; level 2 is an animated linear
- * rainbow; level 3 an animated radial one; each with twinkles at spots placed from the plays' own ids, so every reader sees the
- * same ones, and more of them on the higher levels. It is decoration, never an obstacle: the words are drawn above the rainbow
- * with a text shadow in the board's ground, and every stop holds the theme's post text, links, visited links and muted words (a
- * quote's byline) at 4.5:1 (`stopsAreReadable`, which the effect's test drives red). So its accessible path is reduced motion
- * alone ("An accessible path costs what the obstacle costs"): level 1 sits on one stop, chosen at random on each load in the
- * reader's own browser and never stored or sent; levels 2 and 3 stay gradients; the twinkles stay where they are. The player's
- * reduced motion is read live. The animation runs only while the post is in view (inView.ts), as a sliding pre-painted layer
- * and twinkling shapes (transform and opacity on the compositor), never layout or repaint.
+ * Feelin' Fab's effect (docs/plans/2026-11-06-shine-design.md, sections 1, 3, 5 and 6): a holographic foil under the post's words,
+ * by the count of Feelin' Fabs up on the post, one to three: level 1 is the pearl, level 2 the holo bands, level 3 the prism
+ * (engine/ui/shine/foil.ts), each with 4, 8 or 10 starbursts at spots seeded from the post's and the plays' own ids, so every
+ * reader sees the same ones. The foil is drawn on a canvas that fills the post and lies under the words, takes no pointer and is
+ * hidden from assistive tech; the words keep their text shadow in the board's ground. It is decoration, never an obstacle, and
+ * every pixel of it is held inside the readable band (engine/ui/shine/band.ts) that the board leaves free of the post's inks, so
+ * nothing here needs to prove a palette's contrast at run time (the engine's check does, over the foil itself).
  *
- * The palettes are the two the board has: pastels under black text on the light board, deep colors under white text on the dark
- * one. FAB_STOPS and FAB_TWINKLE stay in TypeScript as the one list, because the contrast test reads them against the theme's
- * tokens. They reach the stylesheet as custom properties in the post's style prop, from one frozen object built once at module load
- * (`PALETTE`), not as a style element: the site's CSP is `style-src 'self'` (web/headers.ts, netlify.toml), which blocks inline
- * style elements but allows the CSSOM that React's style prop writes through. fab.css picks the pair for the mode.
+ * The palettes are the two the board has, pastels for the light board and deep colors for the dark one, chosen per post by the
+ * band: the board is dark where its band tops out under 0.5. FAB_STOPS stays in TypeScript as the one list. The band is read from
+ * the tokens the board resolves for this post, after mount (it needs the element in the document), and on every draw (it is cached
+ * by the tokens' text, so a draw pays a few property reads); a board that cannot be read draws nothing and leaves the words bare.
+ * Because a board can change while the loop sleeps (reduced motion, a post out of view), a change of `data-kb-mode` on the root or of
+ * the device's color scheme asks for one more draw by itself.
+ *
+ * The page's one loop (engine/ui/shine/loop.ts) serves the post: it draws only while the post is in view, when the light moved, and
+ * on the idle shimmer's cadence; reduced motion holds the light at rest, so it draws once. The accessible path is that stillness,
+ * and it gives the same foil ("An accessible path costs what the obstacle costs"). A play's moment (`still`) is drawn once at
+ * the rest light and registers nothing that moves. Nothing here reads who owns a post, who played on it, or any class: the seed is
+ * `post.id` and the plays' ids, which are public.
+ *
+ * Units: the box is CSS px (the host's layout size); the canvas is sized to round(box x density) with the density the loop returns
+ * (at most 2), and its CSS size is the host's through the stylesheet (100%), so a resize registers again and redraws fresh.
  */
-import { useMemo, useRef, useState, type CSSProperties } from 'react';
-import { ratio, type Mode, type Tokens } from '../../../../engine/ui/contrast.ts';
-import { POST_INK } from '../../../../engine/ui/shine/band.ts';
-import { useMotionReduced } from '../../../../engine/ui/appearance.ts';
+import { useEffect, useRef } from 'react';
+import { bandFor, type Band } from '../../../../engine/ui/shine/band.ts';
+import { makeFoil, type Foil, type FoilPattern } from '../../../../engine/ui/shine/foil.ts';
+import { REST, type Light } from '../../../../engine/ui/shine/light.ts';
+import { register, unregister, wake } from '../../../../engine/ui/shine/loop.ts';
 import type { EffectProps } from '../../../../engine/ui/cards/types.ts';
-import { seeded } from '../seeded.ts';
-import { useInView } from '../../../../engine/ui/shine/inView.ts';
 import './fab.css';
 
-/** The rainbow's stops, red to violet, for each board: pastels under black text, deep colors under white. */
+/** The rainbow's stops, red to violet, for each board: pastels for the light board, deep colors for the dark one. */
 export const FAB_STOPS: { readonly light: readonly string[]; readonly dark: readonly string[] } = Object.freeze({
   light: Object.freeze(['#ffb9be', '#ffc09f', '#fff2a0', '#a8e6a1', '#9fd3ff', '#d8c0ff']),
   dark: Object.freeze(['#7f0c1e', '#682d06', '#4a3d00', '#0d471e', '#133b84', '#522191']),
 });
-/** The twinkles' ink on each board: white on the pastels, black on the deep colors, so a twinkle never lessens the text's
- * contrast. */
-export const FAB_TWINKLE = Object.freeze({ light: '#ffffff', dark: '#000000' });
-/** How many twinkles a level carries. */
+/** The starbursts' highlight, in every grade on both boards (the engine names no color; this is Divided World's). It only lightens, inside the band. */
+export const FAB_GLINT = '#ffffff';
+/** How many starbursts a level carries. */
 const TWINKLES = [0, 4, 8, 10] as const;
 /** The most Feelin' Fabs that count: the card's stack. */
 const MOST = 3;
-const SHAPE = ['', 'cycle', 'linear', 'radial'] as const;
+const PATTERN: readonly (FoilPattern | '')[] = ['', 'pearl', 'bands', 'prism'];
 
-/** The palettes as custom properties, built once from FAB_STOPS and FAB_TWINKLE and shared by every post's style prop. */
-const PALETTE: Readonly<Record<string, string>> = Object.freeze(
-  Object.fromEntries([
-    ['--dw-fab-twinkle-light', FAB_TWINKLE.light],
-    ['--dw-fab-twinkle-dark', FAB_TWINKLE.dark],
-    ...FAB_STOPS.light.map((c, i) => [`--dw-fab-light-${i + 1}`, c]),
-    ...FAB_STOPS.dark.map((c, i) => [`--dw-fab-dark-${i + 1}`, c]),
-  ]),
-);
+type Board = 'light' | 'dark';
 
-/** Every stop and twinkle that fails 4.5:1 against any text color inside a post on its board, in words; none when all hold. */
-export function stopsAreReadable(
-  tokens: Readonly<Record<Mode, Tokens>>,
-  stops: { readonly light: readonly string[]; readonly dark: readonly string[] },
-  twinkle: { readonly light: string; readonly dark: string },
-): string[] {
-  const failures: string[] = [];
-  const boards = [['light', ['light', 'light (chosen)']], ['dark', ['dark', 'dark (device)']]] as const;
-  for (const [board, modes] of boards) {
-    for (const ink of [...stops[board], twinkle[board]]) {
-      for (const mode of modes) {
-        for (const token of POST_INK) {
-          const r = ratio(tokens[mode][token]!, ink);
-          if (r < 4.5) {
-            failures.push(`${board} palette: ${ink} is ${r.toFixed(2)}:1 against ${token} in ${mode}, under 4.5:1`);
-          }
-        }
-      }
-    }
-  }
-  return failures;
-}
-
-export function FeelinFabEffect({ post, plays, children }: EffectProps) {
-  /* A play's moment (`still`) draws it as live: the level is the count of plays the moment caught, and the rainbow's motion is
-     decoration that changes no state, so it runs there too. Reduced motion holds it in a moment as it does on a live post. */
-  const moving = !useMotionReduced();
-  const box = useRef<HTMLDivElement>(null);
-  const running = useInView(box);
+export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
+  const host = useRef<HTMLDivElement>(null);
+  const canvas = useRef<HTMLCanvasElement>(null);
   const level = Math.max(1, Math.min(MOST, plays.length));
-  /* Chosen in this browser on each load, never stored or sent; read only when level 1 is held still. */
-  const [stop] = useState(() => 1 + Math.floor(Math.random() * FAB_STOPS.light.length));
   const seed = `${post.id}:${plays.map((p) => p.id).join(',')}`;
-  const twinkles = useMemo(() => {
-    const next = seeded(seed);
-    return Array.from({ length: TWINKLES[level]! }, () => ({
-      left: `${(next() * 94 + 3).toFixed(1)}%`,
-      top: `${(next() * 88 + 6).toFixed(1)}%`,
-      size: `${(next() * 0.6 + 0.7).toFixed(2)}em`,
-      delay: `${(next() * 3).toFixed(2)}s`,
-    }));
-  }, [seed, level]);
-  const held = !moving && level === 1;
+
+  useEffect(() => {
+    const el = host.current, cv = canvas.current;
+    if (!el || !cv) return;
+    const pattern = PATTERN[level] as FoilPattern;
+    const foils: Partial<Record<Board, Foil>> = {};
+    const release = (): void => { for (const f of Object.values(foils)) f?.release(); };
+    let box = { w: 0, h: 0 };
+    let density = 1;
+
+    /* The band where this post sits, or null when the board's tokens cannot be read (nothing is drawn then). */
+    const readBand = (): Band | null => {
+      try { return bandFor(el); } catch (err) { console.error(err); return null; }
+    };
+    const paint = (light: Light, now: number, idle: boolean): void => {
+      const ctx = cv.getContext('2d');
+      if (!ctx) return;
+      const band = readBand();
+      if (!band) { ctx.clearRect(0, 0, cv.width, cv.height); return; }
+      const board: Board = band.hi < 0.5 ? 'dark' : 'light';
+      /* The other board's foil is let go: a board change leaves only the one in use holding buffers. */
+      foils[board === 'dark' ? 'light' : 'dark']?.release();
+      const foil = (foils[board] ??= makeFoil({ seed, pattern, palette: FAB_STOPS[board], stars: TWINKLES[level]!, glint: FAB_GLINT }));
+      foil.draw(ctx, box, density, light, band, now, idle);
+    };
+    const size = (): void => {
+      cv.width = Math.round(box.w * density);
+      cv.height = Math.round(box.h * density);
+    };
+    const setup = (): void => {
+      box = { w: el.offsetWidth, h: el.offsetHeight };
+      if (still) {
+        density = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+        size();
+        paint(REST, 0, false);
+        return;
+      }
+      density = register(el, cv, box, window.devicePixelRatio || 1, (frame) => { paint(frame.light, frame.t, frame.idle); return false; }, {
+        hidden: release,
+      });
+      size();
+    };
+    setup();
+
+    /* A resize registers again at the new size; the loop draws it fresh. */
+    const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(() => {
+      if (el.offsetWidth === box.w && el.offsetHeight === box.h) return;
+      setup();
+    }) : null;
+    resize?.observe(el);
+
+    /* The board switched (the player's choice on the root, or the device's color scheme) while nothing was drawing. */
+    const boardChanged = (): void => { if (still) paint(REST, 0, false); else wake(el); };
+    const mode = typeof MutationObserver === 'function' ? new MutationObserver(boardChanged) : null;
+    mode?.observe(document.documentElement, { attributes: true, attributeFilter: ['data-kb-mode'] });
+    const scheme = window.matchMedia?.('(prefers-color-scheme: dark)');
+    scheme?.addEventListener?.('change', boardChanged);
+
+    return () => {
+      scheme?.removeEventListener?.('change', boardChanged);
+      mode?.disconnect();
+      resize?.disconnect();
+      if (!still) unregister(el);
+      release();
+    };
+  }, [level, seed, still]);
+
   return (
-    <div
-      ref={box} className={`dw-fab dw-fab-${SHAPE[level]}`} data-kb-fab="" data-kb-level={level}
-      data-kb-moving={moving ? 'true' : 'false'} data-kb-running={running ? 'true' : 'false'}
-      data-kb-still={held ? stop : undefined}
-      style={(held ? { ...PALETTE, '--dw-fab-still': String(stop) } : PALETTE) as CSSProperties}
-    >
-      <span className="dw-fab-ground" aria-hidden="true">
-        <span className="dw-fab-layer" />
-        {twinkles.map((t, i) => (
-          <svg
-            key={i} className="dw-fab-twinkle" viewBox="0 0 100 100" focusable="false"
-            style={{ left: t.left, top: t.top, width: t.size, height: t.size, animationDelay: t.delay }}
-          >
-            <polygon points="50,0 62,38 100,50 62,62 50,100 38,62 0,50 38,38" />
-          </svg>
-        ))}
-      </span>
+    <div ref={host} className="dw-fab" data-kb-fab="" data-kb-level={level}>
+      <canvas ref={canvas} className="dw-fab-foil" aria-hidden="true" />
       <div className="dw-fab-words">{children}</div>
     </div>
   );

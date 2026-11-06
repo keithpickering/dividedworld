@@ -1,9 +1,12 @@
 /**
  * Feelin' Fab's three levels as stories for the owner's word (docs/plans/2026-11-02-onboarding-plan.md, Task 10): post #41 of the boards
  * fixture at the Main board's moment with one, two and three Feelin' Fabs up, on the light board and the dark board, and under reduced
- * motion (level 1 on one random stop, levels 2 and 3 still gradients). The plays come from #42's author, who is not #41's. Open them at
- * 1440 by 1120; scroll #41 into view, since the rainbow moves only while its post is. The Twenty stories are the plan's scroll check: a
+ * motion (the foil drawn once, at rest). The plays come from #42's author, who is not #41's. Open them at
+ * 1440 by 1120; scroll #41 into view, since the foil is drawn only while its post is. The Twenty stories are the plan's scroll check: a
  * thread of twenty Feelin' Fab posts (a whole page, #41 to #60), mixed levels, to scroll and watch for dropped frames.
+ *
+ * The story page hands e2e/fab.spec.ts the loop's probe (`window.__kbShineDraws(n)`: how many times the loop has drawn the nth
+ * Feelin' Fab on the page), the way the other board stories reach their internals; the app itself exposes nothing.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect } from 'react';
@@ -11,7 +14,10 @@ import { Frame } from '../../../../engine/ui/frame/Frame.tsx';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
 import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import { useLocation } from '../../../../engine/ui/router.tsx';
+import { probe } from '../../../../engine/ui/shine/loop.ts';
 import { ThreadScreen } from '../../../../engine/ui/thread/Thread.tsx';
+
+declare global { interface Window { __kbShineDraws?: (nth: number) => number } }
 
 interface Args {
   readonly level: 1 | 2 | 3;
@@ -31,6 +37,10 @@ function Fabbed({ level, mode, reduced, many = false }: Args) {
     if (reduced) root.setAttribute('data-kb-motion', 'reduce'); else root.setAttribute('data-kb-motion', 'full');
     return () => { root.removeAttribute('data-kb-mode'); root.removeAttribute('data-kb-motion'); };
   }, [mode, reduced]);
+  useEffect(() => {
+    window.__kbShineDraws = (nth) => probe.draws(document.querySelectorAll('[data-kb-fab]')[nth] ?? {});
+    return () => { delete window.__kbShineDraws; };
+  }, []);
   useEffect(() => {
     if (thread === null) return;
     void (async () => {
