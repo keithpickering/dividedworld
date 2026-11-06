@@ -30,6 +30,26 @@ async function openLens(page: Page) {
   return lens;
 }
 
+/**
+ * Waits until the Lens's body has stopped changing size: its head, its heading and its list arrive a few frames after it opens and grow it by a hundred
+ * pixels or so, with no scroll event, so a position taken before that is short of the end the body ends up with. Settled is 30 frames (half a second) of
+ * the same scroll height and client height.
+ */
+async function bodySettled(page: Page) {
+  await page.evaluate(() => new Promise<void>((done) => {
+    const body = document.querySelector<HTMLElement>('.kb-lens-body')!;
+    let still = 0;
+    let last = '';
+    const frame = () => {
+      const now = `${body.scrollHeight}/${body.clientHeight}`;
+      still = now === last ? still + 1 : 0;
+      last = now;
+      if (still >= 30) done(); else requestAnimationFrame(frame);
+    };
+    frame();
+  }));
+}
+
 /** Scrolls whatever the Lens scrolls to its end: the first of the panel and its descendants that holds more than it shows. */
 async function scrollToEnd(page: Page) {
   return page.evaluate(() => {
@@ -67,6 +87,7 @@ for (const { label, width, height, place } of VIEWPORTS) {
 
     test('scrolled to its end, its last control lies inside the panel and above the HUD, and is what a pointer finds there', async ({ page }) => {
       const lens = await openLens(page);
+      await bodySettled(page);
       const scrolled = await scrollToEnd(page);
       expect(scrolled.scrolled, 'the Lens holds more than it shows, so something in it scrolls').toBe(true);
       /* The panel places itself again as the body scrolls; the control is read until it is where it will stay. */
@@ -150,6 +171,8 @@ for (const { label, width, height, place } of VIEWPORTS) {
       await expect(lens).toHaveAttribute('data-kb-more', 'true');
       const fade = lens.locator('.kb-lens-fade');
       await expect(fade).toBeVisible();
+      /* The body's size is settled first, so the end scrolled to is the end it will keep. */
+      await bodySettled(page);
       await scrollToEnd(page);
       await expect(lens).toHaveAttribute('data-kb-more', 'false');
       await expect(fade).toBeHidden();
