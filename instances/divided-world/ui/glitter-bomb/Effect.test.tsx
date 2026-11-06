@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { StrictMode } from 'react';
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Act } from '../../../../engine/ui/data/api.ts';
@@ -40,6 +41,7 @@ vi.mock('../../../../engine/ui/shine/band.ts', async (importOriginal) => {
   const real = await importOriginal<typeof import('../../../../engine/ui/shine/band.ts')>();
   return { ...real, bandFor: vi.fn(() => ({ lo: 0.59, hi: 1 })) };
 });
+import { bandFor } from '../../../../engine/ui/shine/band.ts';
 import * as flakesModule from '../../../../engine/ui/shine/flakes.ts';
 import { GLITTER_GLINT, GLITTER_HOLO, GLITTER_INKS, GlitterBombEffect } from './Effect.tsx';
 
@@ -82,7 +84,15 @@ const see = (ratio: number, fill?: number) => act(() => {
   const geometry = fill === undefined ? {} : { intersectionRect: { height: fill * 800 }, rootBounds: { height: 800 } };
   for (const o of observers) for (const el of o.seen) o.cb([{ target: el, isIntersecting: ratio > 0, intersectionRatio: ratio, ...geometry } as IntersectionObserverEntry], o as unknown as IntersectionObserver);
 });
-class FakeResize { observe() {} unobserve() {} disconnect() {} }
+let resizes: { cb: () => void; watching: Set<Element> }[] = [];
+class FakeResize {
+  readonly entry = { cb: undefined as unknown as () => void, watching: new Set<Element>() };
+  constructor(cb: () => void) { this.entry.cb = cb; resizes.push(this.entry); }
+  observe(el: Element) { this.entry.watching.add(el); }
+  unobserve(el: Element) { this.entry.watching.delete(el); }
+  disconnect() { this.entry.watching.clear(); }
+}
+let size = { w: 300, h: 120 };
 
 /* A canvas context that takes any call, so the engine's real drawing runs. */
 const gradient = { addColorStop: () => {} };
@@ -92,16 +102,18 @@ const ctx = new Proxy({} as Record<string, unknown>, {
 });
 
 beforeEach(() => {
-  queue = new Map(); nextId = 1; observers = [];
+  queue = new Map(); nextId = 1; observers = []; resizes = []; size = { w: 300, h: 120 };
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { const id = nextId++; queue.set(id, cb); return id; });
   vi.stubGlobal('cancelAnimationFrame', (id: number) => { queue.delete(id); });
   vi.stubGlobal('IntersectionObserver', FakeObserver);
   vi.stubGlobal('ResizeObserver', FakeResize);
   vi.stubGlobal('devicePixelRatio', 1);
-  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(() => 300);
-  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(() => 120);
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(() => ({ x: 0, y: 0, left: 0, top: 0, right: size.w, bottom: size.h, width: size.w, height: size.h, toJSON: () => ({}) }));
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => ctx) as never);
   document.documentElement.setAttribute('data-kb-motion', 'full');
+  document.documentElement.removeAttribute('data-kb-mode');
+  vi.mocked(bandFor).mockReset();
+  vi.mocked(bandFor).mockImplementation(() => ({ lo: 0.59, hi: 1 }));
   for (const f of [makeFlakes, burst, drawBurst, release, landAll, dropLoose, flakesModule.stepBurst as ReturnType<typeof vi.fn>]) f.mockClear();
   Object.values(spies).forEach((s) => s.mockClear());
   flakesModule.burstProbe.reset();
@@ -112,6 +124,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   document.documentElement.removeAttribute('data-kb-motion');
+  document.documentElement.removeAttribute('data-kb-mode');
 });
 
 const lastFlakes = () => makeFlakes.mock.results.at(-1)!.value as flakesModule.Flakes;
@@ -275,6 +288,196 @@ describe('Glitter Bomb', () => {
     expect(burst.mock.calls.filter(([f]) => f === again)).toHaveLength(0);
     expect(flakesModule.burstProbe.inFlight()).toBe(0);
     expect((spies.clingRegister.mock.calls.at(-1)![1] as { flakes: unknown }).flakes).toBe(again);
+  });
+});
+
+describe('Glitter Bomb holds its band and frees its canvases', () => {
+  const boardChange = (mode: string) => act(async () => { document.documentElement.setAttribute('data-kb-mode', mode); await Promise.resolve(); });
+
+  test('the band is read in setup and when the board changes, never per draw', async () => {
+    render(<GlitterBombEffect {...props()} />);
+    see(1); frames(40);
+    expect(probe.draws(box())).toBeGreaterThan(10);
+    expect(vi.mocked(bandFor).mock.calls.length).toBeLessThanOrEqual(1);
+    const before = vi.mocked(bandFor).mock.calls.length;
+    const draws = probe.draws(box());
+    await boardChange('dark');
+    frames(10, 1000);
+    expect(vi.mocked(bandFor).mock.calls.length).toBe(before + 1);
+    expect(probe.draws(box())).toBeGreaterThan(draws);
+  });
+
+  test('a band that could not be read is tried again at the board change, not on every draw, and nothing is drawn meanwhile', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(bandFor).mockImplementation(() => { throw new Error('not a hex color'); });
+    render(<GlitterBombEffect {...props()} />);
+    see(1); frames(10);
+    expect(makeFlakes).not.toHaveBeenCalled();
+    expect(vi.mocked(bandFor).mock.calls.length).toBeLessThanOrEqual(1);
+    vi.mocked(bandFor).mockImplementation(() => ({ lo: 0.59, hi: 1 }));
+    await boardChange('dark');
+    frames(5, 500);
+    expect(makeFlakes).toHaveBeenCalledTimes(1);
+  });
+
+  test('a moment (still) redraws when the board changes, with one more read', async () => {
+    render(<GlitterBombEffect {...props(true)} />);
+    const before = vi.mocked(bandFor).mock.calls.length;
+    await boardChange('dark');
+    expect(vi.mocked(bandFor).mock.calls.length).toBe(before + 1);
+  });
+
+  test('the box is measured by getBoundingClientRect, fractions included, and the backing store is round(box x density)', () => {
+    size = { w: 300.4, h: 119.6 };
+    vi.stubGlobal('devicePixelRatio', 1.5);
+    render(<GlitterBombEffect {...props()} />);
+    expect(under().width).toBe(Math.round(300.4 * 1.5));
+    expect(under().height).toBe(Math.round(119.6 * 1.5));
+    see(1); frames(2);
+    expect(makeFlakes.mock.calls[0]![0].box).toEqual({ w: 300.4, h: 119.6 });
+  });
+
+  test('the over canvas is sized only while a burst runs, zeroed when it ends, and never sized for still', () => {
+    render(<GlitterBombEffect {...props()} />);
+    expect(over().width).toBe(0);
+    see(0.2); frames(3);
+    expect(over().width).toBe(0);
+    see(0.5); frames(3, 100);
+    expect(lastFlakes().flying).toBeGreaterThan(0);
+    expect(over().width).toBe(300);
+    expect(over().height).toBe(120);
+    frames(160, 300);
+    expect(lastFlakes().flying).toBe(0);
+    expect(over().width).toBe(0);
+    expect(over().height).toBe(0);
+    expect(under().width).toBe(300);
+    cleanup();
+    render(<GlitterBombEffect {...props(true)} />);
+    expect(over().width).toBe(0);
+    expect(under().width).toBe(300);
+  });
+
+  test('out of view both backing stores are freed, and the return sizes the under canvas again (the over one only if a burst runs)', () => {
+    render(<GlitterBombEffect {...props()} />);
+    see(1); frames(3);
+    expect(under().width).toBe(300);
+    expect(over().width).toBe(300);
+    see(0);
+    for (const c of [under(), over()]) { expect(c.width).toBe(0); expect(c.height).toBe(0); }
+    frames(4, 100);
+    see(1); frames(3, 1000);
+    expect(under().width).toBe(300);
+    expect(under().height).toBe(120);
+    expect(over().width).toBe(0);
+  });
+
+  test('a resize while out of view keeps the backing stores freed, and the return sizes to the new box', () => {
+    render(<GlitterBombEffect {...props()} />);
+    see(1); frames(3);
+    see(0);
+    size = { w: 200, h: 80 };
+    act(() => resizes[0]!.cb());
+    expect(under().width).toBe(0);
+    see(1); frames(3, 1000);
+    expect(under().width).toBe(200);
+    expect(under().height).toBe(80);
+  });
+
+  test('a resize repaints the under canvas at once with the held light and band, before any frame', async () => {
+    const real = await vi.importActual<typeof import('../../../../engine/ui/shine/flakes.ts')>('../../../../engine/ui/shine/flakes.ts');
+    const drawn: ReturnType<typeof vi.fn>[] = [];
+    makeFlakes.mockImplementation((o) => { const f = real.makeFlakes(o); drawn.push(vi.spyOn(f, 'draw')); return f; });
+    render(<GlitterBombEffect {...props()} />);
+    see(1); frames(3);
+    const lastLight = drawn[0]!.mock.calls.at(-1)![1];
+    const reads = vi.mocked(bandFor).mock.calls.length;
+    size = { w: 200, h: 80 };
+    act(() => resizes[0]!.cb());
+    /* No frame has run: the resize cleared the canvas, so it is painted in the same task, from the held light and band. */
+    expect(drawn).toHaveLength(2);
+    expect(makeFlakes.mock.calls.at(-1)![0].box).toEqual({ w: 200, h: 80 });
+    const call = drawn[1]!.mock.calls.at(-1)!;
+    expect(call[1]).toEqual(lastLight);
+    expect(call[2]).toEqual({ lo: 0.59, hi: 1 });
+    expect(under().width).toBe(200);
+    expect(vi.mocked(bandFor).mock.calls.length).toBe(reads + 1);
+  });
+
+  test('a resize before anything was drawn has no light to repaint with, and waits for the loop', () => {
+    render(<GlitterBombEffect {...props()} />);
+    size = { w: 200, h: 80 };
+    act(() => resizes[0]!.cb());
+    expect(makeFlakes).not.toHaveBeenCalled();
+  });
+
+  test('once the burst has fired the 40% watcher is stopped: no more threshold callbacks are handled', () => {
+    render(<GlitterBombEffect {...props()} />);
+    const mine = observers.find((o) => Array.isArray(o.opts?.threshold) && o.opts.threshold.includes(0.4))!;
+    see(0.5); frames(3);
+    expect(burst).toHaveBeenCalledTimes(1);
+    expect(mine.seen.has(box())).toBe(false);
+  });
+
+  test('reduced motion turned on mid-burst lands what is in the air at rest and frees the over canvas', async () => {
+    render(<GlitterBombEffect {...props()} />);
+    see(1); frames(3);
+    const f = lastFlakes();
+    expect(f.flying).toBeGreaterThan(0);
+    expect(over().width).toBe(300);
+    await act(async () => { document.documentElement.setAttribute('data-kb-motion', 'reduce'); await Promise.resolve(); });
+    frames(3, 200);
+    expect(release).toHaveBeenCalledWith(f);
+    expect(f.flying).toBe(0);
+    expect(f.settled.length).toBe(f.total);
+    expect(flakesModule.burstProbe.inFlight()).toBe(0);
+    expect(over().width).toBe(0);
+    expect(over().height).toBe(0);
+  });
+});
+
+describe('Glitter Bomb teardown', () => {
+  test('unmounting disconnects the resize and mode observers and removes the color-scheme listener it added', () => {
+    const disconnect = vi.spyOn(MutationObserver.prototype, 'disconnect');
+    const observe = vi.spyOn(MutationObserver.prototype, 'observe');
+    const queries = new Map<string, { addEventListener: ReturnType<typeof vi.fn>; removeEventListener: ReturnType<typeof vi.fn> }>();
+    vi.stubGlobal('matchMedia', (q: string) => {
+      if (!queries.has(q)) queries.set(q, { addEventListener: vi.fn(), removeEventListener: vi.fn() });
+      return { matches: false, media: q, ...queries.get(q)! };
+    });
+    const r = render(<GlitterBombEffect {...props()} />);
+    const scheme = queries.get('(prefers-color-scheme: dark)')!;
+    expect(scheme.addEventListener).toHaveBeenCalledTimes(1);
+    expect(resizes.reduce((n, o) => n + o.watching.size, 0)).toBe(1);
+    const at = observe.mock.calls.findIndex(([, o]) => (o as MutationObserverInit | undefined)?.attributeFilter?.includes('data-kb-mode'));
+    expect(at).toBeGreaterThanOrEqual(0);
+    const mine = observe.mock.contexts[at];
+    expect(disconnect.mock.contexts).not.toContain(mine);
+    r.unmount();
+    expect(disconnect.mock.contexts).toContain(mine);
+    expect(resizes.every((o) => o.watching.size === 0)).toBe(true);
+    expect(scheme.removeEventListener).toHaveBeenCalledTimes(1);
+    expect(scheme.removeEventListener.mock.calls[0]).toEqual(scheme.addEventListener.mock.calls[0]);
+  });
+
+  test('a StrictMode mount (mount, cleanup, mount) leaves one registration, one resize watch, one 40% watch and no leaked flakes', () => {
+    const r = render(<StrictMode><GlitterBombEffect {...props()} /></StrictMode>);
+    const host = box();
+    expect(observers.reduce((n, o) => n + o.seen.size, 0)).toBe(2);
+    expect(resizes.reduce((n, o) => n + o.watching.size, 0)).toBe(1);
+    see(1); frames(3);
+    expect(probe.draws(host)).toBeGreaterThanOrEqual(1);
+    r.unmount();
+    expect(observers.reduce((n, o) => n + o.seen.size, 0)).toBe(0);
+    expect(resizes.reduce((n, o) => n + o.watching.size, 0)).toBe(0);
+    expect(flakesModule.burstProbe.inFlight()).toBe(0);
+    frames(3, 500);
+    expect(probe.running()).toBe(false);
+  });
+
+  test('the story\'s window.__kbShineDraws hook is removed on unmount', async () => {
+    const src = read('Glitter.board.stories.tsx');
+    expect(src).toMatch(/window\.__kbShineDraws = /u);
+    expect(src).toMatch(/delete window\.__kbShineDraws/u);
   });
 });
 

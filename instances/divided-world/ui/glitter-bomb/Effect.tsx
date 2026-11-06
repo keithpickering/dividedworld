@@ -18,11 +18,20 @@
  *
  * The seed is `${play.id}:${post.id}`, both public, so every reader sees the same glitter on the same post and two posts of one
  * character differ. Nothing here reads who owns a post, who played on it, or any class. The page's one loop (loop.ts) draws the post
- * only while it is in view, and the band is read after mount and on every draw; a board that cannot be read draws nothing and leaves
- * the words bare. A change of `data-kb-mode` on the root or of the device's color scheme asks for one more draw by itself.
+ * only while it is in view. The band is read from the tokens the board resolves for this post, after mount, and held: they change
+ * only with `data-kb-mode` on the root or the device's color scheme, so it is read in setup (mount and resize) and when either
+ * changes, never per draw (a getComputedStyle and a few property reads, ~30 times a second per post). A board that cannot be read
+ * draws nothing and leaves the words bare, and is read again at the next setup or board change. That change also asks for one
+ * more draw by itself, since a board can change while the loop sleeps.
  *
- * Units: the box is CSS px (the host's layout size); the canvases are sized to round(box x density) with the density the loop returns
- * (at most 2), and their CSS size is the host's through the stylesheet (100%), so a resize builds the flakes again and draws fresh.
+ * Units: the box is CSS px (the host's getBoundingClientRect size, fractions kept); the canvases are sized to round(box x density)
+ * with the density the loop returns (at most 2), and their CSS size is the host's through the stylesheet (100%). A resize builds
+ * the flakes again and, because sizing the backing store clears it, repaints the under canvas at once with the last light and the
+ * band already held.
+ *
+ * Memory: the over canvas has a backing store only while a burst is in the air (sized when it runs, zeroed when it ends, never
+ * sized for `still`); a post out of view zeroes both. Reduced motion turned on mid-burst lands what is in the air at rest. The
+ * 40% watcher stops once the burst has fired.
  */
 import { useEffect, useRef } from 'react';
 import { motionReduced } from '../../../../engine/ui/appearance.ts';
@@ -63,9 +72,16 @@ export function GlitterBombEffect({ post, plays, still, children }: EffectProps)
     let box = { w: 0, h: 0 };
     let density = 1;
 
+    /* The band where this post sits, or null when the board's tokens cannot be read (nothing is drawn then). */
     const readBand = (): Band | null => {
       try { return bandFor(el); } catch (err) { console.error(err); return null; }
     };
+    /* The band as last read; null until read, and again after a board that could not be read. Draws use it and never read. */
+    let band: Band | null = null;
+    /* True while the backing stores are freed (out of view); the next draw sizes the under canvas again. */
+    let freed = false;
+    /* The last light and time drawn, for a synchronous repaint after a resize cleared the canvas. */
+    let last: { light: Light; t: number } | null = null;
     const unclingNow = (): void => { unclung?.(); unclung = null; };
     /* Lets go of the flakes: what is in the air lands and gives the page-wide cap back, and the cling registration goes. */
     const drop = (): void => {
@@ -83,27 +99,44 @@ export function GlitterBombEffect({ post, plays, still, children }: EffectProps)
       if (!still) unclung = cling.register(el, { sticky: true, flakes, landed: redraw });
       return flakes;
     };
+    /* The over canvas has a backing store only while a burst is in the air. */
+    const sizeOver = (): void => {
+      const w = Math.round(box.w * density), h = Math.round(box.h * density);
+      if (above.width !== w || above.height !== h) { above.width = w; above.height = h; }
+    };
+    const freeOver = (): void => { if (above.width !== 0 || above.height !== 0) { above.width = 0; above.height = 0; } };
     const paint = (light: Light, now: number, idle: boolean): boolean => {
-      const u = below.getContext('2d'), o = above.getContext('2d');
-      if (!u || !o) return false;
+      const u = below.getContext('2d');
+      if (!u) return false;
       u.setTransform(1, 0, 0, 1, 0, 0); u.clearRect(0, 0, below.width, below.height);
-      o.setTransform(1, 0, 0, 1, 0, 0); o.clearRect(0, 0, above.width, above.height);
-      const band = readBand();
       const f = band ? ensure() : null;
-      if (!band || !f) return false;
+      if (!band || !f) { freeOver(); return false; }
       /* Reduced motion has no burst: the flakes are placed at once. Otherwise it waits for the 40%. */
-      if (!fired && (seen || motionReduced())) { fired = true; burst(f, now); }
+      if (!fired && (seen || motionReduced())) { fired = true; stopWatching(); burst(f, now); }
+      /* Reduced motion turned on mid-burst: what is in the air lands where it was headed (release), and the over canvas goes. */
+      if (f.flying > 0 && motionReduced()) release(f);
       const busy = fired && !still ? stepBurst(f, now) : false;
       f.draw(u, light, band, now, idle, density);
       drawLoose(el, u, light, band, now, idle, density);
-      if (busy) drawBurst(o, f, band, now, density);
+      if (busy) {
+        sizeOver();
+        const o = above.getContext('2d');
+        if (o) { o.setTransform(1, 0, 0, 1, 0, 0); o.clearRect(0, 0, above.width, above.height); drawBurst(o, f, band, now, density); }
+      } else freeOver();
       return busy;
     };
     const size = (): void => {
-      for (const c of [below, above]) { c.width = Math.round(box.w * density); c.height = Math.round(box.h * density); }
+      below.width = Math.round(box.w * density);
+      below.height = Math.round(box.h * density);
+      freeOver();
+      freed = false;
     };
+    /* Out of view: the flakes and both backing stores go; the next draw sizes the under canvas and builds the flakes fresh. */
+    const leave = (): void => { drop(); below.width = below.height = 0; freeOver(); freed = true; };
+    const measure = (): { w: number; h: number } => { const r = el.getBoundingClientRect(); return { w: r.width, h: r.height }; };
     const setup = (): void => {
-      box = { w: el.offsetWidth, h: el.offsetHeight };
+      band = readBand();
+      box = measure();
       drop();
       if (still) {
         density = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
@@ -111,33 +144,47 @@ export function GlitterBombEffect({ post, plays, still, children }: EffectProps)
         paint(REST, 0, false);
         return;
       }
-      density = register(el, below, box, window.devicePixelRatio || 1, (frame) => paint(frame.light, frame.t, frame.idle), { hidden: drop });
+      density = register(el, below, box, window.devicePixelRatio || 1, (frame) => {
+        if (freed) size();
+        last = { light: frame.light, t: frame.t };
+        return paint(frame.light, frame.t, frame.idle);
+      }, { hidden: leave });
+      /* Resizing the backing store clears it, and the loop's next draw waits for the in-view callback: repaint now, with the
+         light and band already held, so the post never shows a bare frame. A freed canvas (out of view) stays freed. */
+      if (freed) return;
       size();
+      if (last) paint(last.light, last.t, false);
     };
+    /* The burst's own watch: the post at least 40% showing, the first time. The loop draws it (it waits for the post to be seen).
+       It stops once the burst has fired, so a long scroll past the post handles no more of its threshold callbacks. */
+    let stopWatch: () => void = () => {};
+    const stopWatching = (): void => { stopWatch(); stopWatch = () => {}; };
     setup();
-
-    /* The burst's own watch: the post at least 40% showing, the first time. The loop draws it (it waits for the post to be seen). */
-    const stopWatching = still ? () => {} : watchInView(el, (showing) => {
-      if (!showing || seen) return;
-      seen = true;
-      wake(el);
-    }, { threshold: BURST_AT });
+    if (!still && !fired) {
+      stopWatch = watchInView(el, (showing) => {
+        if (!showing || seen) return;
+        seen = true;
+        wake(el);
+      }, { threshold: BURST_AT });
+    }
 
     /* A resize builds the flakes again at the new size; the loop draws it fresh. */
     const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(() => {
-      if (el.offsetWidth === box.w && el.offsetHeight === box.h) return;
+      const now = measure();
+      if (now.w === box.w && now.h === box.h) return;
       setup();
     }) : null;
     resize?.observe(el);
 
     /* The board switched (the player's choice on the root, or the device's color scheme) while nothing was drawing. */
-    const mode = typeof MutationObserver === 'function' ? new MutationObserver(redraw) : null;
+    const boardChanged = (): void => { band = readBand(); redraw(); };
+    const mode = typeof MutationObserver === 'function' ? new MutationObserver(boardChanged) : null;
     mode?.observe(document.documentElement, { attributes: true, attributeFilter: ['data-kb-mode'] });
     const scheme = window.matchMedia?.('(prefers-color-scheme: dark)');
-    scheme?.addEventListener?.('change', redraw);
+    scheme?.addEventListener?.('change', boardChanged);
 
     return () => {
-      scheme?.removeEventListener?.('change', redraw);
+      scheme?.removeEventListener?.('change', boardChanged);
       mode?.disconnect();
       resize?.disconnect();
       stopWatching();
