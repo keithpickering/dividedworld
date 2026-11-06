@@ -405,3 +405,143 @@ begin
     raise exception 'a visit did not spring the trap set on its post: %', v;
   end if;
 end $$;
+
+-- ---- 12. A spin opener is checked like any post: too short, and a live title, each draw a visit that files an infraction ----
+do $$
+declare
+  side uuid;
+  c uuid := tests.character(tests.account('vs-cy'), 'Vs Spinner');
+  t uuid;
+  origin uuid;
+  made jsonb;
+  opener uuid;
+  v uuid;
+  page jsonb;
+begin
+  insert into boards (slug, name) values ('vs-side', 'Vs Side') returning id into side;
+  insert into rule_predicates (key, param_kind, least, most, plain) values ('minLength', 'count', 1, 200, 'posts of at least {param} characters'), ('noDuplicateTitle', 'none', null, null, 'no duplicate thread titles')
+    on conflict (key) do nothing;
+  perform pg_temp.rule(side, 'minLength', '20'::jsonb, 'minor');
+  perform pg_temp.rule(side, 'noDuplicateTitle', null, 'moderate');
+  insert into threads (board, title) values (side, 'Vs live title') returning id into t;
+  origin := tests.post(c, t, 'The origin post, long enough for anyone.');
+  perform tests.become((select owner from characters where id = c));
+  made := spin(origin, c, 'Vs fresh title', 'short');
+  perform tests.unbecome();
+  opener := (made #>> '{act,id}')::uuid;
+  v := pg_temp.visit_of(opener);
+  if v is null then raise exception 'a spin opener that breaks minLength drew no visit'; end if;
+  perform file_visit(v, null);
+  if (select i.payload ->> 'points' from acts i where i.kind = 'infraction' and i.payload ->> 'about_act' = opener::text) is distinct from '2' then raise exception 'the spin opener''s filing wrote no 2-point infraction'; end if;
+  perform tests.become((select owner from characters where id = c));
+  page := thread_page((made #>> '{thread,id}')::uuid, 1, null, 20, '{}');
+  perform tests.unbecome();
+  if not exists (select 1 from jsonb_array_elements(page -> 'visits') e where e ->> 'post' = opener::text and e #>> '{end,outcome}' = 'filed') then raise exception 'thread_page does not carry a spin opener''s visit: %', page -> 'visits'; end if;
+  -- A live title.
+  perform tests.become((select owner from characters where id = c));
+  made := spin(origin, c, 'Vs live title', 'A body that is long enough to pass.');
+  perform tests.unbecome();
+  opener := (made #>> '{act,id}')::uuid;
+  v := pg_temp.visit_of(opener);
+  if v is null or (select a.payload #>> '{charges,0,rule_number}' from acts a where a.id = v) <> '2' then raise exception 'a spin opener with a live title drew no visit for Rule 2'; end if;
+  perform file_visit(v, null);
+  if (select i.payload ->> 'points' from acts i where i.kind = 'infraction' and i.payload ->> 'about_act' = opener::text) is distinct from '4' then raise exception 'the live-title infraction is not 4 points'; end if;
+end $$;
+
+-- ---- 13. Nothing starts while The System is off; a visit already open still files ----
+do $$
+declare
+  c uuid := tests.character(tests.account('vs-di'), 'Vs Switch');
+  t uuid := tests.thread('Switch');
+  open_post uuid := pg_temp.say(c, t, 'SHOUTING BEFORE THE SWITCH');
+  v uuid := pg_temp.visit_of(open_post);
+  off_post uuid;
+begin
+  if v is null then raise exception 'no visit while The System is on'; end if;
+  update settings set value = 'false'::jsonb where key = 'systemEnabled';
+  off_post := pg_temp.say(c, t, 'SHOUTING AFTER THE SWITCH');
+  if pg_temp.visit_of(off_post) is not null then raise exception 'a visit started while systemEnabled is false'; end if;
+  update visits_open set ends_at = now() - interval '11 minutes' where visit_act = v;
+  perform system_tick();
+  if not exists (select 1 from acts where kind = 'visit_end' and target_act_id = v and payload ->> 'outcome' = 'filed') then raise exception 'an open visit was not filed with the switch off'; end if;
+  update settings set value = 'true'::jsonb where key = 'systemEnabled';
+end $$;
+
+-- ---- 14. The repeat path: one charge once; a reversed visit's rule can be charged again; premise charges are told apart by their words ----
+do $$
+declare
+  c uuid := tests.character(tests.account('vs-ed'), 'Vs Repeat');
+  t uuid := tests.thread('Repeat');
+  p uuid := tests.post(c, t, 'A quiet post, charged by hand.');
+  b uuid := (select board from threads where id = t);
+  a jsonb := jsonb_build_object('rule_number', 1, 'board', b, 'band', 'minor', 'cause', 'rule', 'about_act', p, 'rule', 'Rule 1: no all-caps posts');
+  got jsonb;
+  v uuid;
+begin
+  got := start_visit(p, 'vs-m1', a);
+  v := (got ->> 'visit')::uuid;
+  got := start_visit(p, 'vs-m1', a);
+  if (got ->> 'joined')::boolean is not false or (select count(*) from acts where kind = 'visit_join' and target_act_id = v) <> 0 then raise exception 'the same rule twice made two charges: %', got; end if;
+  -- Two different premise charges both land (the second joins), the same one twice does not.
+  got := start_visit(p, 'vs-m1', jsonb_build_object('rule_number', null, 'board', b, 'band', 'minor', 'cause', 'report', 'about_act', p, 'rule', 'Premise: rudeness'));
+  if (got ->> 'joined')::boolean is not true then raise exception 'a premise charge did not join: %', got; end if;
+  got := start_visit(p, 'vs-m1', jsonb_build_object('rule_number', null, 'board', b, 'band', 'minor', 'cause', 'report', 'about_act', p, 'rule', 'Premise: spam'));
+  if (got ->> 'joined')::boolean is not true then raise exception 'a second, different premise charge did not join: %', got; end if;
+  got := start_visit(p, 'vs-m1', jsonb_build_object('rule_number', null, 'board', b, 'band', 'minor', 'cause', 'report', 'about_act', p, 'rule', 'Premise: spam'));
+  if (got ->> 'joined')::boolean is not false then raise exception 'the same premise charge joined twice: %', got; end if;
+  if jsonb_array_length(visit_charges(v)) <> 3 then raise exception 'the visit should hold 3 charges: %', visit_charges(v); end if;
+  -- Filed, the rule is not charged again; reversed, it can be.
+  perform file_visit(v, null);
+  got := start_visit(p, 'vs-m1', a);
+  if (got ->> 'repeat')::boolean is not true then raise exception 'a filed visit''s rule was charged again: %', got; end if;
+end $$;
+do $$
+declare
+  c uuid := tests.character(tests.account('vs-ed2'), 'Vs Reversed');
+  t uuid := tests.thread('Reversed');
+  p uuid := tests.post(c, t, 'A quiet post, reversed and charged again.');
+  a jsonb := jsonb_build_object('rule_number', 1, 'board', (select board from threads where id = t), 'band', 'minor', 'cause', 'rule', 'about_act', p, 'rule', 'Rule 1: no all-caps posts');
+  v uuid := (start_visit(p, 'vs-m1', a) ->> 'visit')::uuid;
+  got jsonb;
+begin
+  perform end_visit(v, 'reversed', null, 'Reversed.');
+  got := start_visit(p, 'vs-m1', a);
+  if got ->> 'visit' is null or (got ->> 'visit')::uuid = v then raise exception 'a reversed visit barred the rule from being charged again: %', got; end if;
+end $$;
+
+-- ---- 15. One failing rule does not drop the others, and leaves a trace an admin can read; the post still goes up ----
+do $$
+declare
+  bad uuid;
+  c uuid := tests.character(tests.account('vs-flo'), 'Vs Unlucky');
+  t uuid;
+  p uuid;
+  v uuid;
+begin
+  insert into boards (slug, name) values ('vs-bad', 'Vs Bad') returning id into bad;
+  insert into rule_predicates (key, param_kind, plain) values ('noBranch', 'none', 'a rule with no check');
+  perform pg_temp.rule(bad, 'noBranch', null, 'minor');
+  perform pg_temp.rule(bad, 'minLength', '20'::jsonb, 'severe');
+  insert into threads (board, title) values (bad, 'Vs bad thread') returning id into t;
+  p := pg_temp.say(c, t, 'short');
+  if not exists (select 1 from acts where id = p and kind = 'post') then raise exception 'the post did not go up'; end if;
+  v := pg_temp.visit_of(p);
+  if v is null or (select a.payload #>> '{charges,0,rule_number}' from acts a where a.id = v) <> '2' then raise exception 'the other rule''s visit was dropped by the failing rule: %', (select payload from acts where id = v); end if;
+  if not exists (select 1 from visit_draw_failures f where f.post_act = p and f.rule_number = 1 and f.error like '%no check for predicate noBranch%') then raise exception 'the failure left no trace: %', (select count(*) from visit_draw_failures); end if;
+  if has_table_privilege('authenticated', 'visit_draw_failures', 'select') or has_table_privilege('anon', 'visit_draw_failures', 'select') then raise exception 'the failure table is readable by a client'; end if;
+  if not (select relrowsecurity from pg_class where relname = 'visit_draw_failures') then raise exception 'the failure table has no RLS'; end if;
+end $$;
+
+-- ---- 16. A raw visit_end insert is refused, by a player's session and by a superuser's alike ----
+do $$
+declare
+  c uuid := tests.character(tests.account('vs-gus'), 'Vs Forger');
+  t uuid := tests.thread('Forged');
+  p uuid := pg_temp.say(c, t, 'FORGING AN END');
+  v uuid := pg_temp.visit_of(p);
+  said text;
+begin
+  said := pg_temp.refusal(format($q$insert into acts (character, kind, thread, target_act_id, payload) values (null, 'visit_end', %L, %L, '{"visit_act": "%s", "outcome": "reversed", "line": "x"}')$q$, t, v, v));
+  if said is null or said not like '42501:%' then raise exception 'a raw visit_end was not refused as a forbidden write: %', said; end if;
+  if exists (select 1 from acts where kind = 'visit_end' and target_act_id = v) or not exists (select 1 from visits_open where visit_act = v) then raise exception 'the forged end landed'; end if;
+end $$;

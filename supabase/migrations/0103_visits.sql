@@ -8,9 +8,11 @@
 --
 -- What starts one. `post()` and `start_thread()` call `draw_visits` after the insert: each rule in force that the post breaks (`rule_breaks`, plain code) becomes
 -- a charge, started by `start_visit` with the Mod on the post's board's beat (`beat_of`). A rule never refuses a post: with no Mod on staff beat_of answers null
--- and no visit starts; a post by a staff character starts none; and whatever draw_visits meets, it is caught (a warning), so the post goes up. rule_breaks runs
--- only on a new post and a new thread, never on `edit_post`: an edit is not checked (the design's rules are read against a post as it was made). A spin's opening
--- post is not hooked either: `infract` is for a `post` (Task 5), and a visit that could never file would be a trap. A character with an open tail (Task 9; the
+-- and no visit starts; a post by a staff character starts none; no visit starts while `systemEnabled` is false (the tick still files every visit already open,
+-- whatever the switch says, so none is ever stuck); each rule is drawn in a block of its own, and whatever one meets is caught and recorded in `visit_draw_failures`
+-- (an admin reads it; no client can) with a warning, so the post goes up and the other rules still draw. rule_breaks runs
+-- only on a new post and a new thread (a thread opened by `start_thread` or by `spin`), never on `edit_post`: an edit is not checked (the design's rules are read
+-- against a post as it was made). A spin opener is a post for all of this: it is visited, charged and filed like a reply. A character with an open tail (Task 9; the
 -- hook `open_tail_staff` is empty until then) draws a visit for Obstruction on its next post.
 --
 -- Its window. The persona's hours (`staff_visit_traits`, seeded from `Persona.strictness.visitHours`) are clamped into `modBots.visitHours`, and the hours are
@@ -176,7 +178,7 @@ begin
   end if;
   select * into t from acts where id = new.target_act_id;
   if new.kind = 'visit' then
-    if t.kind is distinct from 'post' or t.thread <> new.thread or exists (select 1 from characters c where c.id = t.character and c.staff is not null) then
+    if t.kind not in ('post', 'spin') or t.thread <> new.thread or exists (select 1 from characters c where c.id = t.character and c.staff is not null) then
       raise exception 'a visit is of a player''s post, in its thread' using hint = 'kayfabb.refusal', errcode = '23514';
     end if;
     perform (new.payload ->> 'ends_at')::timestamptz;
@@ -338,7 +340,7 @@ declare
   sprung jsonb;
 begin
   select a.id, a.thread, t.board, c.staff is not null as by_staff into p
-  from acts a join threads t on t.id = a.thread join characters c on c.id = a.character where a.id = post_act and a.kind = 'post';
+  from acts a join threads t on t.id = a.thread join characters c on c.id = a.character where a.id = post_act and a.kind in ('post', 'spin');
   if not found then raise exception 'there is no such post to visit' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
   if p.by_staff then return null; end if;
   if jsonb_typeof(charge) is distinct from 'object' or charge ->> 'band' is null or charge ->> 'band' not in ('minor', 'moderate', 'severe') or charge ->> 'cause' is null or charge ->> 'cause' not in ('rule', 'report', 'patrol', 'tail') then
@@ -351,10 +353,13 @@ begin
   perform pg_advisory_xact_lock(hashtextextended('kayfabb.visit:' || post_act::text, 0));
   select o.visit_act into open_visit from visits_open o where o.post = post_act;
   -- The charge may already be on this post, on an open visit or an ended one.
+  -- A visit that ended `reversed` is as if it had not been: its rule can be charged again. A charge with no rule number (a premise, Obstruction) is told apart by its words.
   select exists (
     select 1 from acts x, jsonb_array_elements(case x.kind when 'visit' then x.payload -> 'charges' else jsonb_build_array(x.payload -> 'charge') end) c
     where (x.kind = 'visit' and x.target_act_id = post_act or x.kind = 'visit_join' and x.target_act_id in (select v.id from acts v where v.kind = 'visit' and v.target_act_id = post_act))
-      and c ->> 'cause' = ch ->> 'cause' and c ->> 'rule_number' is not distinct from ch ->> 'rule_number' and c ->> 'board' = ch ->> 'board') into same;
+      and not exists (select 1 from acts e where e.kind = 'visit_end' and e.payload ->> 'outcome' = 'reversed' and e.target_act_id = case x.kind when 'visit' then x.id else x.target_act_id end)
+      and c ->> 'cause' = ch ->> 'cause' and c ->> 'rule_number' is not distinct from ch ->> 'rule_number' and c ->> 'board' = ch ->> 'board'
+      and (c ->> 'rule_number' is not null or c ->> 'rule' is not distinct from ch ->> 'rule')) into same;
   if same then
     return case when open_visit is not null then jsonb_build_object('visit', open_visit, 'joined', false) else jsonb_build_object('visit', null, 'repeat', true) end;
   end if;
@@ -377,8 +382,19 @@ revoke execute on function start_visit(uuid, text, jsonb) from public, anon, aut
 grant execute on function start_visit(uuid, text, jsonb) to service_role;
 
 -- What a new post draws: each rule in force that it breaks becomes a charge on the beat Mod's visit, and a character under a tail draws Obstruction (minor, no rule).
--- Called by post() and start_thread() after the insert. It never refuses and never raises: no Mod on staff is no visit, a post by a staff character is none, and
--- anything unforeseen is a warning, so the post goes up. A post is checked as it was made; an edit is not.
+-- Called by post(), start_thread() and spin() after the insert. It never refuses and never raises: nothing starts while The System is off, no Mod on staff is no
+-- visit, a post by a staff character is none, and each rule is drawn in a block of its own, so one that fails (an error in a check, a Mod who cannot write) is
+-- recorded in visit_draw_failures and the others still draw. A post is checked as it was made; an edit is not.
+create table visit_draw_failures (
+  id bigint generated always as identity primary key,
+  post_act uuid not null references acts (id),
+  rule_number integer,
+  error text not null,
+  at timestamptz not null default now()
+);
+alter table visit_draw_failures enable row level security;
+revoke all on visit_draw_failures from public, anon, authenticated;
+
 create function draw_visits(post_act uuid) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -387,28 +403,40 @@ declare
   who text;
   tail text;
   words text;
+  broke integer;
 begin
+  if not coalesce((select s.value = 'true'::jsonb from settings s where s.key = 'systemEnabled'), false) then return; end if;
   select a.character, t.board, c.staff is not null as by_staff into p
-  from acts a join threads t on t.id = a.thread join characters c on c.id = a.character where a.id = post_act and a.kind = 'post';
+  from acts a join threads t on t.id = a.thread join characters c on c.id = a.character where a.id = post_act and a.kind in ('post', 'spin');
   if not found or p.by_staff then return; end if;
+  for r in select * from rules_now x where x.board is null or x.board = p.board order by x.board nulls first, x.number loop
+    begin
+      select count(*) into broke from rule_breaks(post_act, r.move_act);
+      if broke > 0 then
+        if who is null then who := beat_of(p.board); end if;
+        exit when who is null;
+        select 'Rule ' || r.number || ': ' || fill_tokens(x.plain, jsonb_build_object('param', coalesce(r.param #>> '{}', ''))) into words from rule_predicates x where x.key = r.predicate;
+        if r.board is null then words := 'House ' || words; end if;
+        perform start_visit(post_act, who, jsonb_build_object('rule_number', r.number, 'board', p.board, 'band', r.band, 'cause', 'rule', 'about_act', post_act,
+          'predicate', r.predicate, 'rule', words));
+      end if;
+    exception when others then
+      raise warning 'draw_visits: post % drew no visit for rule %: % (%)', post_act, r.number, sqlerrm, sqlstate;
+      insert into visit_draw_failures (post_act, rule_number, error) values (post_act, r.number, left(sqlerrm || ' (' || sqlstate || ')', 500));
+    end;
+  end loop;
   begin
-    for r in select * from rule_breaks(post_act) loop
-      if who is null then who := beat_of(p.board); end if;
-      exit when who is null;
-      select 'Rule ' || r.number || ': ' || fill_tokens(x.plain, jsonb_build_object('param', coalesce(r.param #>> '{}', ''))) into words from rule_predicates x where x.key = r.predicate;
-      if r.board is null then words := 'House ' || words; end if;
-      perform start_visit(post_act, who, jsonb_build_object('rule_number', r.number, 'board', p.board, 'band', r.band, 'cause', 'rule', 'about_act', post_act,
-        'predicate', r.predicate, 'rule', words));
-    end loop;
     tail := open_tail_staff(p.character);
     if tail is not null then
       who := coalesce(who, beat_of(p.board));
-      if who is null then return; end if;
-      perform start_visit(post_act, coalesce((select n.staff from staff_now n where n.staff = tail), who), jsonb_build_object('rule_number', null, 'board', p.board, 'band', 'minor',
-        'cause', 'tail', 'about_act', post_act, 'rule', 'Obstruction'));
+      if who is not null then
+        perform start_visit(post_act, coalesce((select n.staff from staff_now n where n.staff = tail), who), jsonb_build_object('rule_number', null, 'board', p.board, 'band', 'minor',
+          'cause', 'tail', 'about_act', post_act, 'rule', 'Obstruction'));
+      end if;
     end if;
   exception when others then
-    raise warning 'draw_visits: post % drew no visit: % (%)', post_act, sqlerrm, sqlstate;
+    raise warning 'draw_visits: post % drew no tail visit: % (%)', post_act, sqlerrm, sqlstate;
+    insert into visit_draw_failures (post_act, rule_number, error) values (post_act, null, left(sqlerrm || ' (' || sqlstate || ')', 500));
   end;
 end $$;
 revoke execute on function draw_visits(uuid) from public, anon, authenticated;
@@ -773,6 +801,74 @@ begin
   return jsonb_build_object('thread', thread_projection(made), 'act', act_projection(written));
 end $function$;
 
+-- rule_breaks (0100), able to check one rule alone (`only_move`: the rule's move Act), so draw_visits can draw each rule in a block of its own. Called with the post alone
+-- it is 0100's, unchanged: every rule in force on the board and every board.
+drop function rule_breaks(uuid);
+create function rule_breaks(post_act uuid, only_move uuid default null) returns setof rules_now
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare
+  p record;
+  prev record;
+  r rules_now%rowtype;
+  body text;
+  broken boolean;
+begin
+  select a.character, a.thread, a.seq, a.created_at, coalesce(a.payload ->> 'body', '') as body, t.board, t.title into p
+  from acts a join threads t on t.id = a.thread where a.id = post_act and a.kind in ('post', 'spin');
+  if not found then return; end if;
+  body := p.body;
+  -- The post before this one in the thread: the unique (thread, seq) index walked back. A thread's opener has none.
+  select x.character, x.created_at into prev from acts x
+  where x.thread = p.thread and x.seq < p.seq and x.kind in ('post', 'spin') order by x.seq desc limit 1;
+  for r in select * from rules_now x where (x.board is null or x.board = p.board) and (only_move is null or x.move_act = only_move) order by x.board nulls first, x.number loop
+    broken := case r.predicate
+      when 'minLength' then char_length(body) < (r.param #>> '{}')::integer
+      when 'maxLength' then char_length(body) > (r.param #>> '{}')::integer
+      when 'noAllCaps' then (
+        select w.letters > 0 and w.uppers * 2 > w.letters
+        from (select length(regexp_replace(q.s, '[^[:alpha:]]', '', 'g')) as letters, length(regexp_replace(q.s, '[^[:upper:]]', '', 'g')) as uppers
+              from (select regexp_replace(body, '\[/?[a-zA-Z*]+(=[^\]]*)?\]', '', 'g') as s) q) w)
+      when 'noDoublePost' then prev.character is not null and prev.character = p.character
+      when 'noNecropost' then prev.created_at is not null and p.created_at - prev.created_at > make_interval(days => (r.param #>> '{}')::integer)
+      when 'noDuplicateTitle' then p.seq = 1 and exists (
+        select 1 from threads o where o.board = p.board and o.id <> p.thread and lower(btrim(o.title)) = lower(btrim(p.title)))
+      when 'bannedWord' then body ~* ('(^|[^[:alnum:]_])' || regex_escape(r.param #>> '{}') || '([^[:alnum:]_]|$)')
+      when 'requiredWord' then body !~* ('(^|[^[:alnum:]_])' || regex_escape(r.param #>> '{}') || '([^[:alnum:]_]|$)')
+      when 'noTag' then body ~* ('\[' || regex_escape(r.param #>> '{}') || '([=\] ]|$)')
+      when 'repliesOnly' then p.seq = 1
+      else null end;
+    if broken is null then raise exception 'no check for predicate %', r.predicate using errcode = '0A000'; end if;
+    if broken then return next r; end if;
+  end loop;
+end $$;
+revoke execute on function rule_breaks(uuid, uuid) from public, anon, authenticated;
+
+-- spin (0102), checking the opening post the same way. Everything else as 0102 wrote it.
+CREATE OR REPLACE FUNCTION public.spin(origin uuid, through uuid, title text, body text DEFAULT ''::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  on_board uuid;
+  made uuid;
+  written uuid;
+begin
+  perform acting(through);
+  perform not_banned(through);
+  perform within('title', title, 'titleMaxLength');
+  perform within('body', coalesce(body, ''), 'postMaxLength', true);
+  select case when b.is_system then players_board() else b.id end into on_board
+  from acts a join threads t on t.id = a.thread join boards b on b.id = t.board where a.id = origin and a.kind <> 'edit';
+  if on_board is null then raise exception 'there is no such Act to spin from' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  insert into threads (board, title, origin_act_id) values (on_board, title, origin) returning id into made;
+  insert into acts (character, kind, thread, target_act_id, payload)
+  values (through, 'spin', made, origin, jsonb_build_object('title', title, 'body', coalesce(body, ''))) returning id into written;
+  perform draw_visits(written);
+  return jsonb_build_object('thread', thread_projection(made), 'act', act_projection(written));
+end $function$;
+
 -- ------------------------------------------------------------------------------------------------------ the tick ----
 
 -- system_tick (0100), also filing the visits that are due (step 4, above its return). Everything else as 0100 wrote it.
@@ -989,7 +1085,7 @@ begin atomic
   -- challenge, whitelisted to the kind and the number, never an answer; and its end if it has one.
   vis as materialized (
     select distinct on (v.target_act_id) v.id, v.target_act_id as post, v.character, v.created_at, v.payload
-    from acts_public v where v.kind = 'visit' and v.target_act_id in (select p.id from posts p)
+    from acts_public v where v.kind = 'visit' and v.target_act_id in (select a.id from page_acts a where a.kind in ('post', 'spin'))
     order by v.target_act_id, v.created_at desc, v.id desc
   ),
   ids as materialized (select a.id from page_acts a union select p.id from played p),

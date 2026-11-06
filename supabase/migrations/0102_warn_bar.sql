@@ -92,7 +92,7 @@ begin
   end if;
   if new.kind = 'infraction' then
     perform (new.payload ->> 'expires_at')::timestamptz;
-    if not exists (select 1 from acts p where p.id = (new.payload ->> 'about_act')::uuid and p.kind = 'post' and p.thread = new.thread
+    if not exists (select 1 from acts p where p.id = (new.payload ->> 'about_act')::uuid and p.kind in ('post', 'spin') and p.thread = new.thread
                    and p.character = (new.payload ->> 'character')::uuid) then
       raise exception 'an infraction is about a post of that character''s, in its thread' using hint = 'kayfabb.refusal', errcode = '23514';
     end if;
@@ -306,7 +306,7 @@ begin
   if staff is null or staff = '' then raise exception 'an infraction names the Mod that filed it' using errcode = '22023'; end if;
   perform 1 from characters c where c.id = who and c.staff is null for no key update;
   if not found then raise exception 'there is no player character to warn' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
-  select a.thread, t.board into in_thread, on_board from acts a join threads t on t.id = a.thread where a.id = about_act and a.kind = 'post' and a.character = who;
+  select a.thread, t.board into in_thread, on_board from acts a join threads t on t.id = a.thread where a.id = about_act and a.kind in ('post', 'spin') and a.character = who;
   if in_thread is null then raise exception 'an infraction is for a post this character wrote' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
   if visit_act is not null and not exists (select 1 from acts v where v.id = visit_act) then raise exception 'there is no such visit' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
   -- The time and the bar are taken with the row held: a filing that waited for another's ban lands after it, and sees its bar.
