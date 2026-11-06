@@ -35,7 +35,7 @@ type Open = 'none' | 'whoops' | 'stick-around';
 /* Strokes across the top band of a 988x330 body, in shares with its aspect, a brush apart: enough to wash part of a splat, never all of it. */
 const WHERE = brushOf(BRUSH_PX, { w: 988, h: 330 });
 const PARTLY = Array.from({ length: 14 }, (_, i) => {
-  const y = 0.05 + i * ((WHERE.width * WHERE.aspect) / 2) * 0.7;
+  const y = 0.05 + i * (WHERE.width * WHERE.aspect) * 0.7;
   return { tool: 'wash' as const, ...WHERE, points: [[0, y], [1, y]] as [number, number][] };
 });
 

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 
 /**
@@ -7,6 +8,9 @@ import { expect, test, type Page } from '@playwright/test';
  */
 test.use({ viewport: { width: 1440, height: 1120 }, reducedMotion: 'reduce' });
 
+/* The hold's length, read from the effect's own source (importing it would pull in React and its stylesheet): a wait below it is not a hold. */
+const HOLD_MS = Number(/export const HOLD_MS = (\d+)/.exec(readFileSync(new URL('../instances/divided-world/cards/whoops/Effect.tsx', import.meta.url), 'utf8'))?.[1]);
+
 const inked = (page: Page, selector = '#post-41 .kb-whoops-ink') => page.evaluate((sel) => {
   const c = document.querySelector<HTMLCanvasElement>(sel);
   if (!c) return 0;
@@ -15,6 +19,35 @@ const inked = (page: Page, selector = '#post-41 .kb-whoops-ink') => page.evaluat
   for (let i = 3; i < d.length; i += 4) if (d[i]! > 40) n++;
   return n;
 }, selector);
+
+/**
+ * The middle of the longest run of solid ink on a row between viewport heights `from` and `to`, clear of the tip card, the sticky
+ * banner and what the engine lifts over the ink (`[data-kb-over-ink]`), and standing in the ink's own post body.
+ */
+const solidInk = (page: Page, selector: string, from: number, to: number) => page.evaluate(([sel, top, bottom]) => {
+  const c = document.querySelector<HTMLCanvasElement>(sel as string)!;
+  const post = c.closest('.kb-act-main');
+  const r = c.getBoundingClientRect();
+  const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+  const k = c.width / r.width;
+  const solid = (x: number, y: number) => {
+    for (let dx = -12; dx <= 12; dx += 6) for (let dy = -12; dy <= 12; dy += 6) {
+      const px = Math.floor((x + dx) * k), py = Math.floor((y + dy) * k);
+      if (px < 0 || py < 0 || px >= c.width || py >= c.height || d[(py * c.width + px) * 4 + 3]! <= 40) return false;
+    }
+    const e = document.elementFromPoint(r.left + x, r.top + y);
+    return e !== null && e.closest('.kb-callout, [data-kb-over-ink]') === null && post !== null && post.contains(e);
+  };
+  let best = { len: 0, x: 0, y: 0 };
+  for (let y = Math.max(0, Math.ceil((top as number) - r.top)); y < Math.min(r.height, (bottom as number) - r.top); y += 6) {
+    let run = 0;
+    for (let x = 0; x < r.width; x += 2) {
+      run = solid(x, y) ? run + 2 : 0;
+      if (run > best.len) best = { len: run, x: x - run / 2, y };
+    }
+  }
+  return { x: r.left + best.x, y: r.top + best.y, len: best.len };
+}, [selector, from, to] as const);
 
 test('the splat on #41 is drawn, scrubbed by a drag, and back after a reload', async ({ page }) => {
   await page.goto('/?fixture=boards&moment=01-main');
@@ -113,30 +146,7 @@ test.describe('with a finger on a phone', () => {
     /* A point on the ink, in the viewport and above the reactions row, which the post's words fill. */
     await page.locator('#post-41 .kb-whoops-ink').evaluate((el) => el.scrollIntoView({ block: 'start' }));
     await page.evaluate(() => window.scrollBy(0, -300));
-    /* The middle of the longest run of solid ink on a row in the viewport (clear of the tip card on the post, and of the sticky banner). */
-    const at = await page.evaluate(() => {
-      const c = document.querySelector<HTMLCanvasElement>('#post-41 .kb-whoops-ink')!;
-      const r = c.getBoundingClientRect();
-      const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
-      const k = c.width / r.width;
-      const solid = (x: number, y: number) => {
-        for (let dx = -12; dx <= 12; dx += 6) for (let dy = -12; dy <= 12; dy += 6) {
-          const px = Math.floor((x + dx) * k), py = Math.floor((y + dy) * k);
-          if (px < 0 || py < 0 || px >= c.width || py >= c.height || d[(py * c.width + px) * 4 + 3]! <= 40) return false;
-        }
-        const e = document.elementFromPoint(r.left + x, r.top + y);
-        return e !== null && e.closest('.kb-callout, [data-kb-over-ink]') === null && e.closest('#post-41') !== null;
-      };
-      let best = { len: 0, x: 0, y: 0 };
-      for (let y = Math.max(0, Math.ceil(280 - r.top)); y < Math.min(r.height, 700 - r.top); y += 6) {
-        let run = 0;
-        for (let x = 0; x < r.width; x += 2) {
-          run = solid(x, y) ? run + 2 : 0;
-          if (run > best.len) best = { len: run, x: x - run / 2, y };
-        }
-      }
-      return { x: r.left + best.x, y: r.top + best.y, len: best.len };
-    });
+    const at = await solidInk(page, '#post-41 .kb-whoops-ink', 280, 700);
     expect(at.len).toBeGreaterThan(220);
     const cdp = await page.context().newCDPSession(page);
     const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', x?: number, y?: number) =>
@@ -144,21 +154,24 @@ test.describe('with a finger on a phone', () => {
     return { at, touch, scrollY: () => page.evaluate(() => window.scrollY) };
   };
 
-  test('a sideways drag washes', async ({ page }) => {
-    const { at, touch } = await setup(page);
+  test('a sideways drag washes and does not scroll', async ({ page }) => {
+    const { at, touch, scrollY } = await setup(page);
+    const y0 = await scrollY();
     const before = await inked(page);
     await touch('touchStart', at.x - 100, at.y);
     for (let i = 1; i <= 10; i++) { await touch('touchMove', at.x - 100 + i * 20, at.y); await page.waitForTimeout(16); }
     await touch('touchEnd');
     await expect.poll(() => inked(page)).toBeLessThan(before);
+    expect(await scrollY()).toBe(y0);
   });
 
   test('a quick vertical swipe scrolls the page and washes nothing', async ({ page }) => {
     const { at, touch, scrollY } = await setup(page);
     const before = await inked(page);
     const y0 = await scrollY();
-    await touch('touchStart', at.x, at.y + 100);
-    for (let i = 1; i <= 8; i++) { await touch('touchMove', at.x, at.y + 100 - i * 20); await page.waitForTimeout(8); }
+    /* From solid ink, so a dab on the touch's start would show in the count. */
+    await touch('touchStart', at.x, at.y);
+    for (let i = 1; i <= 8; i++) { await touch('touchMove', at.x, at.y - i * 20); await page.waitForTimeout(8); }
     await touch('touchEnd');
     await expect.poll(scrollY).toBeGreaterThan(y0);
     expect(await inked(page)).toBe(before);
@@ -169,7 +182,7 @@ test.describe('with a finger on a phone', () => {
     const before = await inked(page);
     const y0 = await scrollY();
     await touch('touchStart', at.x, at.y);
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(HOLD_MS + 120);
     for (let i = 1; i <= 10; i++) { await touch('touchMove', at.x, at.y + i * 12); await page.waitForTimeout(16); }
     await touch('touchEnd');
     await expect.poll(() => inked(page)).toBeLessThan(before);
@@ -226,37 +239,45 @@ test('with a mouse over ink the sponge is drawn and the body\'s cursor is none; 
   await expect(page.locator('.kb-whoops-ink')).toBeVisible();
   await expect.poll(() => inked(page, '.kb-whoops-ink')).toBeGreaterThan(1000);
   const sponge = page.locator('[data-kb-cursor="sponge"]');
-  const box = (await page.locator('.kb-whoops-ink').boundingBox())!;
   const cursor = () => page.locator('.kb-act-main').evaluate((el) => getComputedStyle(el).cursor);
-  await page.mouse.move(box.x + box.width * 0.4, box.y + 40);
-  await page.mouse.move(box.x + box.width * 0.45, box.y + 45);
+  /* The body's own cursor with no pointer yet over the ink, which is what it must be again once the pointer is off the ink. */
+  const plain = await cursor();
+  expect(plain).not.toBe('none');
+  await page.locator('.kb-whoops-ink').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  const spot = await solidInk(page, '.kb-whoops-ink', 150, 900);
+  expect(spot.len).toBeGreaterThan(100);
+  await page.mouse.move(spot.x - 5, spot.y);
+  await page.mouse.move(spot.x, spot.y + 2);
   await expect(sponge).toBeVisible();
   expect(await cursor()).toBe('none');
   const button = (await page.locator('.kb-react-button').boundingBox())!;
   await page.mouse.move(button.x + button.width / 2, button.y + button.height / 2, { steps: 4 });
   await expect(sponge).toBeHidden();
-  expect(await cursor()).not.toBe('none');
+  expect(await cursor()).toBe(plain);
 });
 
 /*
  * The owner on the spill: "the spill still has edges that end before the black post borders ... such things can just render in front
- * of the splat". The ink runs to the post body's borders on every side, and the reactions are drawn in front of it, visible and
+ * of the splat". The ink runs to the post body's borders on every side (its padding box, inside the border), and the reactions are drawn in front of it, visible and
  * usable. The action row is on the footer bar below the body (the owner's word of 2026-10-31), never under the ink (e2e/footer.spec.ts).
  */
-test('the ink reaches the post body\'s borders, the reactions are in front of it, clickable, and the action links stand on the footer bar clear of it', async ({ page }) => {
+test('the ink reaches the post body\'s padding box edges, the reactions are in front of it, clickable, and the action links stand on the footer bar clear of it', async ({ page }) => {
   await page.goto('/?fixture=boards&moment=01-main');
   await expect(page.locator('#post-41 .kb-whoops-ink')).toBeVisible();
   const read = await page.evaluate(() => {
-    const body = document.querySelector('#post-41 .kb-act-main')!.getBoundingClientRect();
+    const main = document.querySelector('#post-41 .kb-act-main')!;
+    const b = main.getBoundingClientRect();
+    /* The ink canvas covers the body's padding box: inside the border, which the frame's own border is. */
+    const body = { top: b.top + main.clientTop, bottom: b.top + main.clientTop + main.clientHeight, left: b.left + main.clientLeft, right: b.left + main.clientLeft + main.clientWidth };
     const ink = document.querySelector('#post-41 .kb-whoops-ink')!.getBoundingClientRect();
     const over = (sel: string) => {
       const r = document.querySelector(sel)!.getBoundingClientRect();
       return ink.left < r.right && ink.right > r.left && ink.top < r.bottom && ink.bottom > r.top;
     };
-    return { body: { top: body.top, bottom: body.bottom, left: body.left, right: body.right }, ink: { top: ink.top, bottom: ink.bottom, left: ink.left, right: ink.right },
+    return { body, ink: { top: ink.top, bottom: ink.bottom, left: ink.left, right: ink.right },
       chip: over('#post-41 .kb-chip'), links: ink.bottom > document.querySelector('#post-41 .kb-act-foot')!.getBoundingClientRect().top + 1 };
   });
-  /* Down to the body's top border, and across to its sides: the ink's canvas starts at the body's top. */
+  /* Up to the body's top edge inside its border, and across to its sides. */
   expect(read.ink.top).toBeCloseTo(read.body.top, 0);
   expect(read.ink.left).toBeCloseTo(read.body.left, 0);
   expect(read.ink.right).toBeCloseTo(read.body.right, 0);
@@ -296,15 +317,17 @@ test('with a held Stick Around around the ink, the marks, the reactions and the 
 /*
  * Stick Around moves the post's words into the post after they are mounted (the takeover draws them once and moves their element), so
  * Whoops! finds the post body it bleeds over each time it measures. In the thread, with a hold around the ink, the ink still reaches
- * the post body's borders.
+ * the post body's padding box (inside its borders).
  */
-test('with a held Stick Around around the ink, the ink still reaches the post body\'s borders', async ({ page }) => {
+test('with a held Stick Around around the ink, the ink still reaches the post body\'s padding box', async ({ page }) => {
   await page.goto('/?fixture=boards&story=boards-08-hold--whoops-under-hold');
   await expect(page.locator('.kb-whoops-ink')).toBeVisible();
   await expect.poll(() => page.evaluate(() => {
-    const body = document.querySelector('.kb-act-main')!.getBoundingClientRect();
+    const main = document.querySelector('.kb-act-main')!;
+    const body = main.getBoundingClientRect();
     const ink = document.querySelector('.kb-whoops-ink')!.getBoundingClientRect();
-    return [ink.left - body.left, ink.right - body.right, ink.top - body.top].map((d) => Math.round(Math.abs(d)));
+    /* The padding box: inside the body's border. */
+    return [ink.left - (body.left + main.clientLeft), ink.right - (body.left + main.clientLeft + main.clientWidth), ink.top - (body.top + main.clientTop)].map((d) => Math.round(Math.abs(d)));
   })).toEqual([0, 0, 0]);
 });
 
