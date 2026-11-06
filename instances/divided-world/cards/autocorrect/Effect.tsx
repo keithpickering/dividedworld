@@ -278,8 +278,8 @@ export function AutocorrectEffect({ post, plays, states, reader, save, show, met
   const all = shown.length + peeled.length;
   const view: CardView = {
     progress: all ? peeled.length / all : null,
-    state: all ? `${all} ${all === 1 ? 'strip' : 'strips'}, ${peeled.length} peeled` : 'Its phrase is not in this version of the post',
-    ends: 'Peel a strip to read what is under it',
+    state: all ? `${all} ${all === 1 ? 'strip' : 'strips'}, ${peeled.length} peeled` : 'Phrase not in this version',
+    ends: 'Ends on your screen as you peel each strip.',
     yours: reader.author && shown.length > 0,
     controls: [],
     notes: Object.fromEntries(configs.map((c) => [c.id, `“${c.phrase}” → “${c.replacement}”, ${total[c.id] ?? 0} ${(total[c.id] ?? 0) === 1 ? 'place' : 'places'}`])),

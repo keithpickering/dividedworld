@@ -7,12 +7,14 @@
  */
 import type { Instance } from '../../rules/types.ts';
 import type { InstanceUi } from '../types.ts';
+import type { CardPlay, CardUi } from '../cards/types.ts';
 import { TIP_KEYS } from './keys.ts';
+import { wordsProblems } from '../cards/lens-words.ts';
 
 /** The longest a marquee name may be: the sign's width at 390px. */
 export const MARQUEE_MAX = 20;
 
-export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 'frontDoor' | 'cards'>, instance: Pick<Instance, 'reactions' | 'ranks' | 'classes'>): string[] {
+export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 'frontDoor' | 'cards'>, instance: Pick<Instance, 'reactions' | 'ranks' | 'classes' | 'cards'>): string[] {
   const out: string[] = [];
   const marquees: unknown = ui.copy?.marquees;
   if (marquees !== undefined) {
@@ -38,7 +40,18 @@ export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 
   for (const key of Object.keys(tips)) if (!(TIP_KEYS as readonly string[]).includes(key)) out.push(`the onboarding has a tip "${key}", which is not one of the engine's tips`);
   if (typeof on.letter !== 'string' || on.letter.trim() === '') out.push('the onboarding has no letter');
   out.push(...frontDoorProblems(ui, instance));
+  /* The Lens's heading for a card with no live view: a short status, never a sentence (cards/lens-words.ts). */
+  for (const card of ui.cards ?? []) {
+    if (card.status === undefined) out.push(`the card "${card.key}" has no status, so its Lens heading would be a sentence`);
+    else for (const words of statusWords(card.status, instance.cards?.find((c) => c.key === card.key)?.stack ?? 1)) out.push(...wordsProblems('status', words).map((p) => `the card "${card.key}": ${p}`));
+  }
   return out;
+}
+
+/** Every status a card can show: the one string, or a function's answer for 1 to the card's `stack` plays. */
+function statusWords(status: NonNullable<CardUi['status']>, stack: number): string[] {
+  if (typeof status === 'string') return [status];
+  return Array.from({ length: stack }, (_, i) => status(Array.from({ length: i + 1 }, () => ({}) as CardPlay)));
 }
 
 /** The front door held to the instance: each problem names the post by its index. */

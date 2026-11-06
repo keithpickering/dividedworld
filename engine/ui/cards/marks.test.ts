@@ -1,7 +1,12 @@
 /** `kindsOf`: the card kinds of a post's plays, in the order each first appears in billing (marks-and-the-lens design, section 1). */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { backWords, caughtWords, endedWords, kindsOf, MARKS_NARROW, MARKS_WIDE, utcDate, wardWords } from './marks.ts';
+import { backWords, CAUGHT_STATE, caughtWords, endedWords, endsWords, kindsOf, MARKS_NARROW, MARKS_WIDE, utcDate, wardWords } from './marks.ts';
+import { dayAndTime } from '../characters/format.ts';
+/* The reader's zone, as the words say a date: pinned, so 02:00 UTC on Oct 30 is still Oct 29 here. */
+process.env.TZ = 'America/Los_Angeles';
+const localDate = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+import { wordsProblems } from './lens-words.ts';
 import type { CardPlay } from './types.ts';
 
 const play = (id: string, card: string): CardPlay => ({ id, card, layer: 1, caster: null, message: '', config: {}, playedAt: '2026-10-29T12:00:00Z', post: 'p' });
@@ -27,25 +32,30 @@ describe('a card back, a ward and a caught play, in words', () => {
   const setLasts = { unit: 'day' as const, count: 7 };
   const day = (iso: string) => utcDate(iso);
 
-  test('a back says who set it, when, and when it ends, the same for a trap and a Bluff to any reader but the setter', () => {
+  test('a back says "Face down on this post", the engine\'s own words; who set it and when is its note, and when it ends its way out, the same for a trap and a Bluff to any reader but the setter', () => {
     const words = backWords(back(), 'PIPEWRENCH', setLasts, () => 'Trap Card');
-    assert.deepEqual(words, { name: 'A card set face down by PIPEWRENCH', state: 'A card set face down by PIPEWRENCH, on Oct 29.', ends: 'Ends by itself on Nov 5, unless it springs first.' });
+    assert.deepEqual(words, { name: 'A card set face down by PIPEWRENCH', state: 'Face down on this post', note: `Set face down by PIPEWRENCH on ${localDate('2026-10-29T12:00:00.000Z')}.`, ends: `${endsWords('2026-11-05T12:00:00.000Z')}, unless it springs first.` });
+    assert.deepEqual(wordsProblems('state', words.state), []);
     assert.deepEqual(backWords(back(), 'PIPEWRENCH', setLasts, () => 'Bluff'), words, 'the card behind it changes nothing');
   });
 
   test('a back that sprang names its card, which is public from then', () => {
-    const words = backWords(back({ revealed: { card: 'trap-card', spring: 'sp', at: '2026-10-30T09:00:00.000Z' } }), 'PIPEWRENCH', setLasts, () => 'Trap Card');
-    assert.deepEqual(words, { name: 'Trap Card, set face down by PIPEWRENCH', state: 'A Trap Card set face down by PIPEWRENCH sprang on Oct 30.', ends: 'It has sprung, and ended.' });
+    const words = backWords(back({ revealed: { card: 'trap-card', spring: 'sp', at: '2026-10-30T02:00:00.000Z' } }), 'PIPEWRENCH', setLasts, () => 'Trap Card');
+    assert.deepEqual(words, { name: 'Trap Card, set face down by PIPEWRENCH', state: `Sprang on ${localDate('2026-10-30T02:00:00.000Z')}`, note: 'A Trap Card set face down by PIPEWRENCH.', ends: 'It has sprung, and ended.' });
+    assert.deepEqual(wordsProblems('state', words.state), []);
   });
 
   test('a ward says what it turns away and when it ends', () => {
-    assert.deepEqual(wardWords('Force Field', 'uncommon', '2026-11-06T10:00:00.000Z', new Date('2026-11-01T00:00:00.000Z')), { state: 'Turns away cards up to uncommon.', ends: `Ends on ${day('2026-11-06T10:00:00.000Z')}.` });
-    assert.deepEqual(wardWords('Force Field', 'uncommon', '2026-10-31T10:00:00.000Z', new Date('2026-11-01T00:00:00.000Z')), { state: 'Force Field has ended; it turns nothing away.', ends: `Ended on ${day('2026-10-31T10:00:00.000Z')}.` });
+    assert.deepEqual(wardWords('uncommon', '2026-11-06T10:00:00.000Z', new Date('2026-11-01T00:00:00.000Z')), { state: 'Turning away cards up to uncommon', ends: `Ends ${dayAndTime('2026-11-06T10:00:00.000Z')}` });
+    assert.deepEqual(wardWords('uncommon', '2026-10-31T10:00:00.000Z', new Date('2026-11-01T00:00:00.000Z')), { state: 'Ended, turning nothing away', ends: `Ended ${dayAndTime('2026-10-31T10:00:00.000Z')}` });
+    assert.deepEqual(wordsProblems('state', wardWords('uncommon', undefined).state), []);
   });
 
   test('a caught play says what caught it', () => {
     assert.equal(caughtWords('Trap Card'), 'Caught by a Trap Card. It did nothing, and its card is spent.');
     assert.equal(caughtWords(null), 'Caught by a trap. It did nothing, and its card is spent.');
+    assert.deepEqual(wordsProblems('state', CAUGHT_STATE), []);
+    assert.equal(CAUGHT_STATE, 'Caught, did nothing');
   });
 });
 

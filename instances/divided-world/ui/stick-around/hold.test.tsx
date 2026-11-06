@@ -20,6 +20,7 @@ import { instanceUi } from '../index.ts';
 import { TUNING } from '../../cards/stick-around/hold.ts';
 import type { Act } from '../../../../engine/ui/data/api.ts';
 import type { CardPlay, CardUi, EffectProps } from '../../../../engine/ui/cards/types.ts';
+import { viewProblems } from '../../../../engine/ui/cards/lens-words.ts';
 import { HoldStage, StickAroundEffect } from './Effect.tsx';
 import { ESC_QUIET_MS } from './takeover.ts';
 
@@ -867,8 +868,11 @@ describe('Stick Around\'s State in the Lens', () => {
   test('a reader it can hold is told how it holds and how it ends, with no controls and no edge', async () => {
     await openThread(world(), instanceUi.cards);
     const dialog = await stateOfHold();
-    expect(dialog).toHaveTextContent('Holds you on this post until you check the caster\'s sentence, or break free for this visit');
-    expect(dialog).toHaveTextContent('Scroll past either end of the post, press Break free, or check the box.');
+    expect(dialog).toHaveTextContent('Holding you on this post');
+    expect(dialog).not.toHaveTextContent('until you check');
+    expect(dialog).toHaveTextContent('Ends when you check the caster\'s sentence, scroll past either end of the post, or press Break free.');
+    const said = { progress: null, state: dialog.querySelector('.kb-lens-line')!.textContent!, ends: dialog.querySelector('.kb-lens-ends')?.textContent ?? undefined, yours: false, controls: [], notes: {} };
+    expect(viewProblems(said, { holds: true, covers: true }), 'a view that holds the reader and covers the post says how it ends').toEqual([]);
     expect(within(dialog).queryByRole('button', { name: /scrub|wash/iu })).toBeNull();
     expect(document.querySelector('.kb-mark[data-kb-card="stick-around"]')).not.toHaveAttribute('data-kb-edge');
   });
@@ -878,7 +882,7 @@ describe('Stick Around\'s State in the Lens', () => {
     atEnd('bottom');
     for (let i = 0; i < 60 * 6 && view() !== null; i++) await frames(1, pushing(scroller(), 40));
     expect(view()).toBeNull();
-    expect(await stateOfHold()).toHaveTextContent('You broke free this visit');
+    expect(await stateOfHold()).toHaveTextContent('Broke free this visit');
   });
 
   test('once released it will not hold again', async () => {
@@ -886,16 +890,16 @@ describe('Stick Around\'s State in the Lens', () => {
     fireEvent.click(within(view()!).getByRole('checkbox'));
     await wait(50);
     expect(view()).toBeNull();
-    expect(await stateOfHold()).toHaveTextContent('It will not hold you again');
+    expect(await stateOfHold()).toHaveTextContent('Done holding you');
   });
 
   test('the post\'s author and the card\'s caster are told it never holds them', async () => {
     const author = world('author');
     const first = await openThread(author, instanceUi.cards);
-    expect(await stateOfHold()).toHaveTextContent('It never holds you: you wrote this post');
+    expect(await stateOfHold()).toHaveTextContent('Not holding you · you wrote it');
     first.unmount();
     const caster = world('caster');
     await openThread(caster, instanceUi.cards);
-    expect(await stateOfHold()).toHaveTextContent('It never holds you: you played it');
+    expect(await stateOfHold()).toHaveTextContent('Not holding you · you played it');
   });
 });

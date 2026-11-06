@@ -82,20 +82,26 @@ export type KitControl =
  * What one card says about itself on one post, on this screen only (never saved or sent): the Lens and the marks are
  * drawn from it. An effect sets it as its state changes (`EffectProps.show`) and the engine draws a card with none from
  * `defaultView`.
+ *
+ * Each block of the Lens's words has one job (backfill-boards design, section 6; `lens-words.ts` checks what can be checked
+ * from the words): the tab is the card's name; `state` is what the card is doing to this reader on this post now, a short
+ * status, never a sentence and never how it ends; `ends` is the way out, present whenever the card holds the reader or
+ * covers the post; a play's note is that play's own part only; `report` is said only where there is more to say; and
+ * `CardUi.hint` is the first-meet line.
  */
 export interface CardView {
   /** How far the effect has gone, 0 to 1, drawn as the mark's edge; null draws no edge. */
   readonly progress: number | null;
-  /** The card's state in plain words ("18% washed"). */
+  /** What the card is doing to this reader on this post now, as a short status of at most 6 words ("41% washed for you", "Holding you on this post"): never a sentence, never how it ends. */
   readonly state: string;
-  /** When or how the state ends, in plain words, if it does ("Ends when you scroll past it"). */
+  /** The way out, in plain words ("Ends when you press Break free."): present whenever the card holds the reader or covers the post, and said for any state that ends. */
   readonly ends?: string;
   /** The reader has something to do with this card on this post now: the mark's notch. */
   readonly yours: boolean;
   readonly controls: readonly KitControl[];
-  /** A line about each play, by play: what the notes were ("Layer 3 of 3, on top · 40% washed"). */
+  /** A line about each play, by play: that play's own part only ("Layer 3 of 3, on top · 40% washed"), never the whole card's. */
   readonly notes: Readonly<Record<Id, string>>;
-  /** A longer plain-words report for the Lens, when the card has one. */
+  /** A longer plain-words report for the Lens, only where the card has more to say than its status and its way out. */
   readonly report?: string;
 }
 
@@ -229,8 +235,17 @@ export interface CardUi {
   readonly summary?: string;
   /** The effect covers the post (the reader cannot read it as it stands), so the Lens leads with the card's controls. */
   readonly takeover?: boolean;
-  /** One short line the Lens gives a reader who has not yet met the card's effect. */
+  /** One short line the Lens gives a reader who has not yet met the card's effect: the first-meet line. */
   readonly hint?: string;
+  /**
+   * The status a card with no live view of its own shows as the Lens's heading (`CardView.state`), in place of `summary`: a short
+   * status of at most 6 words, never a sentence ("Sparkling every post of theirs"). A card whose status depends on how many of
+   * its plays are on the post (Feelin' Fab's "2 of 3 stacked") gives a function of those plays. A card face down has the engine's
+   * own, the same for every card that can be face down ("Face down on this post"), so one card's cannot be told from another's.
+   * `instanceUiProblems` holds every card to having one, and to these words (lens-words.ts): the heading falls back to `summary`,
+   * a sentence, without it.
+   */
+  readonly status?: string | ((plays: readonly CardPlay[]) => string);
   readonly art: CardArt;
   /**
    * What the player's log says of a state the post's author saved on a play of this card on one of the player's posts, where the

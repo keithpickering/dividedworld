@@ -100,7 +100,7 @@ describe('the plays above a page', () => {
     await user.click(within(lens).getByRole('button', { name: '1 play · Gloomba' }));
     expect(within(lens).getByRole('button', { name: 'React' })).toBeInTheDocument();
     expect(lens).toHaveTextContent('Shine.');
-    expect(lens).toHaveTextContent(/Ends by itself on /u);
+    expect(lens).toHaveTextContent(/Ends \w+ \d+, \d+:\d\d\s[AP]M/u);
   });
 
   test('a thread\'s live play is a mark on the thread\'s head', async () => {
