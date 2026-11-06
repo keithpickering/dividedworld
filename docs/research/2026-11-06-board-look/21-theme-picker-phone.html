@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1250">
+<title>Settings, The board, on the phone: the board look board</title>
+<!-- A board of the board look design session (docs/plans/2026-11-06-board-look-design.md), batch 6: Settings › The board at 390 by 844, House chosen and then Hot Rod, written by gen.mjs from the backfill phone Settings board's markup. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:inherit}a:hover{color:inherit;text-decoration:none}
+a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid #ffffff;outline-offset:3px}
+.tab{display:flex;align-items:center;min-height:52px;padding:0 20px;white-space:nowrap;transform:skewX(-10deg);text-decoration:none;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#e4def7}
+button.tab{background:none;border:0;cursor:pointer}
+.many .tab{padding:0 13px;letter-spacing:1.5px}
+.most .tab{padding:0 10px;letter-spacing:1px}
+.tab b{display:inline-block;transform:skewX(10deg);font-weight:800}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:52px;padding:0 26px;transform:skewX(-10deg);text-decoration:none;border:1px solid rgba(241,236,255,.6);background:none;cursor:pointer;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#f1ecff}
+.btn b{display:inline-block;transform:skewX(10deg);font-weight:800}
+.btn.primary{background:#19e3ff;border-color:#19e3ff;color:#03141a;box-shadow:0 0 18px rgba(25,227,255,.6)}
+.btn.big{min-height:64px;padding:0 34px;font:400 30px Anton,Impact,sans-serif;letter-spacing:1px}
+.btn.big b{font-weight:400}
+.btns{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+.lead{margin:0;max-width:680px;font:600 21px/1.5 'Barlow Condensed',sans-serif;color:#f1ecff}
+.note{margin:12px 0 0;max-width:680px;font:500 21px/1.5 'Barlow Condensed',sans-serif;color:#e4def7}
+.row{display:grid;grid-template-columns:230px 1fr;column-gap:32px;padding:24px 0;border-top:1px solid rgba(241,236,255,.22)}
+.row h3,.k{margin:0;padding-top:12px;font:800 24px/1.1 'Barlow Condensed',sans-serif;letter-spacing:1.5px}
+.field label{display:block;margin:0 0 10px;font:800 24px/1.1 'Barlow Condensed',sans-serif;letter-spacing:1.5px}
+.field input[type=email],.field input[type=text]{box-sizing:border-box;width:100%;height:56px;padding:0 16px;background:rgba(18,12,36,.9);border:1px solid #19e3ff;color:#f1ecff;font:600 22px 'Barlow Condensed',sans-serif}
+.check{display:flex;gap:16px;align-items:center;min-height:52px;cursor:pointer;font:700 22px 'Barlow Condensed',sans-serif}
+.check input{width:30px;height:30px;margin:0;accent-color:#19e3ff;flex:none}
+.aside h2{margin:0 0 10px;font:800 24px/1.1 'Barlow Condensed',sans-serif;letter-spacing:1.5px;color:#f1ecff}
+.aside p{margin:0 0 18px;font:500 21px/1.5 'Barlow Condensed',sans-serif;color:#e4def7}
+.aside section+section{margin-top:34px;padding-top:30px;border-top:1px solid rgba(241,236,255,.22)}
+.lnk{font:700 21px 'Barlow Condensed',sans-serif;color:#c9f8ff;text-decoration-thickness:2px;text-underline-offset:4px}
+.seg{display:flex;flex-wrap:wrap;gap:10px}
+.seg label{position:relative;cursor:pointer}
+.seg input{position:absolute;opacity:0;width:1px;height:1px}
+.seg span{display:inline-flex;align-items:center;min-height:52px;padding:0 22px;transform:skewX(-10deg);border:1px solid rgba(241,236,255,.6);font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:1.5px;color:#f1ecff}
+.seg span b{display:inline-block;transform:skewX(10deg);font-weight:800}
+.seg input:checked + span{background:#19e3ff;border-color:#19e3ff;color:#03141a;box-shadow:0 0 18px rgba(25,227,255,.6)}
+.piece{--cut:22px;--edge:rgba(201,248,255,.55);--ground:rgba(7,5,13,.94);position:relative;isolation:isolate;background:var(--edge);clip-path:polygon(0 0,calc(100% - var(--cut)) 0,100% var(--cut),100% 100%,var(--cut) 100%,0 calc(100% - var(--cut)))}
+.piece::before{content:'';position:absolute;z-index:-1;inset:1.5px;background:var(--ground);clip-path:polygon(0 0,calc(100% - var(--cut) + .62px) 0,100% calc(var(--cut) - .62px),100% 100%,calc(var(--cut) - .62px) 100%,0 calc(100% - var(--cut) + .62px))}
+.by{display:flex;gap:18px;align-items:center}
+.by img{width:76px;height:76px;border:2px solid #a78bfa;image-rendering:pixelated}
+.by b{display:block;font:34px/1 Anton,Impact,sans-serif;letter-spacing:.5px}
+.by span{font:600 20px 'Barlow Condensed',sans-serif;color:#e4def7}
+.body p{margin:0 0 16px;font:500 21px/1.55 'Barlow Condensed',sans-serif;color:#f1ecff;max-width:760px}
+.rail p{margin:0;font:500 20px/1.5 'Barlow Condensed',sans-serif;color:#e4def7}
+.rail h3{margin:0 0 4px;font:700 21px 'Barlow Condensed',sans-serif;color:#f1ecff}
+.rail section{padding:16px 0;border-top:1px solid rgba(241,236,255,.22)}
+.opt{position:relative;display:block;box-sizing:border-box;padding:16px 18px 16px 52px;border:1px solid rgba(241,236,255,.45);background:rgba(7,5,13,.6);cursor:pointer}
+.opt input{position:absolute;left:18px;top:19px;width:22px;height:22px;margin:0;accent-color:#19e3ff}
+.opt b{display:block;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:1.5px}
+.opt span{display:block;margin-top:4px;font:500 20px/1.4 'Barlow Condensed',sans-serif;color:#e4def7}
+.opt.on{border:2px solid #19e3ff;background:rgba(25,227,255,.08);box-shadow:0 0 18px rgba(25,227,255,.35)}
+.sec{margin:0 0 14px;font:800 22px 'Barlow Condensed',sans-serif;letter-spacing:3px}
+.count{display:flex;justify-content:space-between;margin-top:8px;font:500 19px 'Barlow Condensed',sans-serif;color:#e4def7}
+.cls{position:relative;flex:none;box-sizing:border-box;width:236px;padding:18px 18px 20px;border:1px solid var(--c);background:rgba(7,5,13,.7)}
+.cls h4{margin:0 30px 0 0;font:38px/1 Anton,Impact,sans-serif;color:var(--c)}
+.cls p{margin:12px 0 0;font:500 20px/1.45 'Barlow Condensed',sans-serif;color:#f1ecff}
+.cls p.hurt{color:#ff8fb1}
+.cls input{position:absolute;right:16px;top:20px;width:22px;height:22px;margin:0;accent-color:#19e3ff}
+.cls.on{border:2px solid #19e3ff;box-shadow:0 0 18px rgba(25,227,255,.4);background:rgba(25,227,255,.07)}
+.preview{border:1.5px solid rgba(201,248,255,.7);box-shadow:0 0 14px rgba(25,227,255,.3);background:#fff;color:#000;display:grid;grid-template-columns:160px 1fr;font:12px/1.45 Verdana,sans-serif}
+.preview>div{padding:8px 10px}
+.preview>div+div{border-left:1px solid #000}
+.sel{box-sizing:border-box;height:56px;padding:0 16px;background:rgba(18,12,36,.9);border:1px solid #19e3ff;color:#f1ecff;font:700 21px 'Barlow Condensed',sans-serif}
+
+.tp-big{width:100%;box-sizing:border-box;padding:12px 16px 14px;background:var(--page);font:11px/1.4 Verdana,Geneva,sans-serif;color:var(--fg);border:1.5px solid rgba(201,248,255,.7);box-shadow:0 0 14px rgba(25,227,255,.3)}
+.tp-banner{display:flex;justify-content:space-between;align-items:center;background:var(--banner);padding:8px 10px;border:1px solid var(--grid)}
+.tp-banner b{font:bold 17px/1 "Courier New",monospace;letter-spacing:.09em;color:var(--logo)}
+.tp-banner i{width:56px;height:7px;background:#d4d0c8;box-shadow:inset 1px 1px #808080}
+.tp-nav{display:flex;gap:12px;padding:4px 10px;background:var(--nav);color:var(--navfg);border:1px solid var(--grid);border-top:0;text-decoration:underline}
+.tp-title{font:bold 14px "Courier New",monospace;margin:8px 0 5px}
+.tp-btn{display:inline-block;margin:0 0 6px;padding:3px 9px;font:bold 10px Verdana,sans-serif;letter-spacing:.05em;color:#111;background:var(--button,linear-gradient(#fcfcfc,#d8d8d8 48%,#b4b4b4 52%,#e6e6e6));border:1px solid #3a3a3a;box-shadow:1px 1px 2px rgb(0 0 0/.35)}
+.tp-table{background:var(--grid);padding:1px;display:grid;gap:1px}
+.tp-h,.tp-r{display:grid;grid-template-columns:26px 1fr 60px 150px;gap:1px}
+.tp-h span{background:var(--head);color:var(--headfg);font:bold 10px "Courier New",monospace;padding:3px 6px}
+.tp-r span{background:var(--rb);padding:4px 6px;min-width:0}
+.tp-r span.c{background:var(--r3);text-align:center}
+.tp-r u{display:block;color:var(--link);font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tp-r small{display:block;font-size:10px;opacity:.8}
+.tp-f{display:block;width:16px;height:12px;margin:2px auto;border:1px solid var(--fg);background:var(--r1)}
+.tp-f.n{background:var(--fg)}
+.tp-tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:16px}
+.tp-tile{position:relative;display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid rgba(241,236,255,.45);background:rgba(7,5,13,.6);cursor:pointer}
+.tp-tile input{position:absolute;opacity:0;width:1px;height:1px}
+.tp-tile.on{border:2px solid #19e3ff;padding:7px;background:rgba(25,227,255,.08);box-shadow:0 0 18px rgba(25,227,255,.35)}
+.tp-tile b{font:800 19px/1 'Barlow Condensed',sans-serif;letter-spacing:1.2px;color:#f1ecff}
+.tp-tile > span:last-child{font:500 18px/1.1 'Barlow Condensed',sans-serif;color:#e4def7}
+.tp-thumb{display:flex;flex-direction:column;gap:2px;height:72px;padding:4px;background:var(--page);border:1px solid #000}
+.tp-thumb i{display:block}
+.tp-thumb .tb{height:11px;background:var(--banner)}
+.tp-thumb .tn{height:5px;background:var(--nav)}
+.tp-thumb .th{height:7px;background:var(--head);margin-top:2px}
+.tp-thumb .tr{flex:1;display:grid;grid-template-columns:1fr 18px;gap:1px;background:var(--grid);padding:0 1px}
+.tp-thumb .tr s{background:var(--r1);display:flex;align-items:center;padding:0 3px;text-decoration:none}
+.tp-thumb .tr:nth-child(odd) s{background:var(--r2)}
+.tp-thumb .tr s:first-child::before{content:"";height:2px;width:70%;background:var(--link)}
+.seg label.off span{opacity:.4}
+
+.ph .tp-big{padding:8px 8px 10px;font-size:9px}
+.ph .tp-banner b{font-size:12px}
+.ph .tp-h,.ph .tp-r{grid-template-columns:18px 1fr 48px}
+.ph .tp-h span:last-child,.ph .tp-r span:last-child{display:none}
+.ph .tp-tiles{grid-template-columns:repeat(3,1fr) !important;gap:8px}
+.ph .tp-tile{padding:6px}
+.ph .tp-tile.on{padding:5px}
+.ph .tp-thumb{height:52px}
+.ph .tp-tile b{font-size:16px;letter-spacing:.6px}
+.ph .tp-tile > span:last-child{font-size:15px}
+.ph .seg{flex-direction:column}
+.ph .seg span{width:100%;box-sizing:border-box}
+</style>
+</head>
+<body>
+<div style="width: 840px; height: 884px; display: flex; gap: 20px; padding: 20px; box-sizing: border-box; background: #2a2833; font-family: 'Barlow Condensed', sans-serif">
+  <figure aria-label="The board, House" style="margin: 0; width: 390px; height: 844px; position: relative; overflow: hidden; background: #07050d; color: #f1ecff; flex: none">
+    <svg aria-hidden="true" width="390" height="844" style="position: absolute; left: 0; top: 0">
+    <defs>
+      <filter id="sAp1" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.0022 0.004" numOctaves="5" seed="23"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.74"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="sBp1" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.003 0.005" numOctaves="4" seed="61"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.85  0 0 0 0 1  0 2 0 0 -1.0"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="softp1" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="30"></feGaussianBlur></filter>
+      <mask id="calmp1" maskUnits="userSpaceOnUse" x="0" y="0" width="390" height="844">
+        <rect width="390" height="844" fill="#ffffff"></rect>
+        <rect x="0" y="80" width="390" height="620" fill="#000000" opacity="0.9" filter="url(#softp1)"></rect>
+      </mask>
+    </defs>
+    <g mask="url(#calmp1)">
+      <rect width="390" height="844" filter="url(#sAp1)" opacity="0.95"></rect>
+      <rect width="390" height="844" filter="url(#sBp1)" opacity="0.5"></rect>
+    </g>
+  </svg>
+    <nav aria-label="Menu" style="position: absolute; left: 0; right: 0; top: 0; height: 70px; z-index: 5; display: flex; align-items: center; padding: 0 12px; background: rgba(7,5,13,.9); border-bottom: 1px solid rgba(201,248,255,.5); box-shadow: 0 1px 16px rgba(25,227,255,.35)">
+      <a href="#" class="tab" style="border: 1px solid #ffffff; color: #ffffff; min-height: 46px; font-size: 20px"><b>&lsaquo; BACK TO THE BOARD</b></a>
+    </nav>
+    
+    <section class="ph" style="position: absolute; left: 16px; top: 90px; width: 358px">
+      <h2 style="margin: 0 0 8px; font: 44px/1 Anton, Impact, sans-serif">THE BOARD</h2>
+      
+    <div style="padding: 14px 0; border-top: 1px solid rgba(241,236,255,.22)"><div class="k" style="padding: 0 0 8px">THEME</div><div>
+      <div class="tp-big" role="img" aria-label="Preview: House, light" style="--page:#d9d9d9;--banner:linear-gradient(#fff,#cfcfcf);--logo:#111;--nav:linear-gradient(#5e5e5e,#3a3a3a);--navfg:#fff;--head:linear-gradient(#6a6a6a,#474747 50%,#383838 51%,#2b2b2b);--headfg:#fff;--grid:#8a8a8a;--r1:#f7f7f7;--r2:#ebebeb;--r3:#dedede;--fg:#000;--link:#000">
+  <div class="tp-banner"><b>DIVIDED WORLD</b><i></i></div>
+  <div class="tp-nav"><span>Index</span><span>General</span><span>Staff Announcements</span></div>
+  <div class="tp-title">General</div>
+  <div class="tp-btn">start a thread</div>
+  <div class="tp-table"><div class="tp-h"><span></span><span>Thread</span><span>Replies</span><span>Last post</span></div>
+    <div class="tp-r" style="--rb:var(--r1)"><span><i class="tp-f n"></i></span><span><u>Rate my avatar</u><small>Mrs. Hooligan</small></span><span class="c">0</span><span><u>Mrs. Hooligan</u><small>Oct 6, 2026</small></span></div><div class="tp-r" style="--rb:var(--r2)"><span><i class="tp-f n"></i></span><span><u>The long one</u><small>Spritey</small></span><span class="c">169</span><span><u>Spritey</u><small>Oct 6, 2026</small></span></div><div class="tp-r" style="--rb:var(--r1)"><span><i class="tp-f"></i></span><span><u>Who keeps reacting with a thumbs up?</u><small>Spritey</small></span><span class="c">3</span><span><u>Spritey</u><small>Oct 6, 2026</small></span></div>
+  </div></div>
+      <div class="tp-tiles" role="radiogroup" aria-label="Theme" style="grid-template-columns:repeat(2,1fr)"><label class="tp-tile on"><input type="radio" name="theme" checked>
+  <span class="tp-thumb" style="--page:#d9d9d9;--banner:linear-gradient(#fff,#cfcfcf);--logo:#111;--nav:linear-gradient(#5e5e5e,#3a3a3a);--navfg:#fff;--head:linear-gradient(#6a6a6a,#474747 50%,#383838 51%,#2b2b2b);--headfg:#fff;--grid:#8a8a8a;--r1:#f7f7f7;--r2:#ebebeb;--r3:#dedede;--fg:#000;--link:#000" aria-hidden="true"><i class="tb"></i><i class="tn"></i><i class="th"></i><i class="tr"><s></s><s></s></i><i class="tr"><s></s><s></s></i><i class="tr"><s></s><s></s></i></span>
+  <b>HOUSE</b><span>Light and dark</span></label><label class="tp-tile"><input type="radio" name="theme">
+  <span class="tp-thumb" style="--page:#e5e5e5;--banner:linear-gradient(#fff,#dee3e7);--logo:#00507a;--nav:#d1d7dc;--navfg:#00507a;--head:linear-gradient(#3b8ac2,#0b6aa1 50%,#005c8f 51%,#004a75);--headfg:#ffc37a;--grid:#a9b8c2;--r1:#efefef;--r2:#dee3e7;--r3:#d1d7dc;--fg:#000;--link:#00507a" aria-hidden="true"><i class="tb"></i><i class="tn"></i><i class="th"></i><i class="tr"><s></s><s></s></i><i class="tr"><s></s><s></s></i><i class="tr"><s></s><s></s></i></span>
+  <b>BLUE STEEL</b><span>Light only</span></label><label class="tp-tile"><input type="radio" name="theme">
+  <span class="tp-thumb" style="--page:#0c121b;--banner:linear-gradient(#1f3046,#0c121b);--logo:#eaf2fb;--nav:#16202c;--navfg:#9cc9ff;--head:linear-gradient(#41658a,#2b4a6b 50%,#203a56 51%,#182c42);--headfg:#eaf2fb;--grid:#2a3a4d;--r1:#1a2533;--r2:#16202c;--r3:#1f2d3d;--fg:#d8dee6;--link:#9cc9ff" aria-hidden="true"><i class="tb"></i><i class="tn"></i><i class="th"></i><i class="tr"><s></s><s></s></i><i class="tr"><s></s><s></s></i><i class="tr"><s></s><s></s></i></span>
+  <b>MIDNIGHT</b><span>Dark only</span></label><label class="tp-tile"><input type="radio" name="theme">
+  <span class="tp-thumb" style="--page:#000;--banner:linear-gradient(#000 40%,#4a0e00 80%,#b82a00);--logo:#ffcc00;--nav:#140906;--navfg:#ffcc00;--head:linear-gradient(#ffe36a,#ffae00 35%,#ff5a00 65%,#b81200);--headfg:#1a0500;--grid:#4a1606;--r1:#140906;--r2:#1d0d07;--r3:#26110a;--fg:#f2e6d8;--link:#ffcc00;--button:radial-gradient(ellipse 75% 70% at 50% 45%,#f4f4f4,#d2d2d2 40%,#9c9c9c 82%,#6e6e6e)" aria-hidden="true"><i class="tb"></i><i class="tn"></i><i class="th"></i><i class="tr"><s></s><s></s></i><i class="tr"><s></s><s></s></i><i class="tr"><s></s><s></s></i></span>
+  <b>HOT ROD</b><span>Dark only</span></label><label class="tp-tile"><input type="radio" name="theme">
+  <span class="tp-thumb" style="--page:radial-gradient(ellipse 13px 10px at 19px 17px,#0a1448 0 70%,transparent 74%) 0 0/75px 60px,#000;--banner:linear-gradient(90deg,#12207a,#1d36b8 60%,#12207a);--logo:#ff3a2a;--nav:#05082a;--navfg:#ffff66;--head:repeating-linear-gradient(90deg,rgb(150 190 255/.22) 0 3px,transparent 3px 4px),repeating-linear-gradient(0deg,rgb(150 190 255/.22) 0 3px,transparent 3px 4px),linear-gradient(#3a5be0,#1a2fa8 55%,#0a1468);--headfg:#22d4ff;--grid:#0a1250;--r1:#2234a8;--r2:#1d2e98;--r3:#18268a;--fg:#c4d8ff;--link:#fff" aria-hidden="true"><i class="tb"></i><i class="tn"></i><i class="th"></i><i class="tr"><s></s><s></s></i><i class="tr"><s></s><s></s></i><i class="tr"><s></s><s></s></i></span>
+  <b>FAN SITE</b><span>Dark only</span></label></div>
+      <p class="note" style="font-size:19px">Applies to the board at once, on every device you sign in on.</p></div></div>
+    <div style="padding: 14px 0; border-top: 1px solid rgba(241,236,255,.22)"><div class="k" style="padding: 0 0 8px">MODE</div><div><div class="seg" role="radiogroup" aria-label="Mode"><label class=""><input type="radio" name="mode" checked><span><b>FOLLOW MY DEVICE</b></span></label><label class=""><input type="radio" name="mode"><span><b>LIGHT</b></span></label><label class=""><input type="radio" name="mode"><span><b>DARK</b></span></label></div><p class="note" style="font-size:19px">The 2003 board stays 2003 whichever you choose. Only its look changes. The game’s own pieces (orbs, cards, reactions, marks) keep theirs.</p></div></div>
+    </section>
+  </figure>
+  <figure aria-label="The board, Hot Rod" style="margin: 0; width: 390px; height: 844px; position: relative; overflow: hidden; background: #07050d; color: #f1ecff; flex: none">
+    <svg aria-hidden="true" width="390" height="844" style="position: absolute; left: 0; top: 0">
+    <defs>
+      <filter id="sAp2" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.0022 0.004" numOctaves="5" seed="23"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.74"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="sBp2" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.003 0.005" numOctaves="4" seed="61"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.85  0 0 0 0 1  0 2 0 0 -1.0"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="softp2" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="30"></feGaussianBlur></filter>
+      <mask id="calmp2" maskUnits="userSpaceOnUse" x="0" y="0" width="390" height="844">
+        <rect width="390" height="844" fill="#ffffff"></rect>
+        <rect x="0" y="80" width="390" height="620" fill="#000000" opacity="0.9" filter="url(#softp2)"></rect>
+      </mask>
+    </defs>
+    <g mask="url(#calmp2)">
+      <rect width="390" height="844" filter="url(#sAp2)" opacity="0.95"></rect>
+      <rect width="390" height="844" filter="url(#sBp2)" opacity="0.5"></rect>
+    </g>
+  </svg>
+    <nav aria-label="Menu" style="position: absolute; left: 0; right: 0; top: 0; height: 70px; z-index: 5; display: flex; align-items: center; padding: 0 12px; background: rgba(7,5,13,.9); border-bottom: 1px solid rgba(201,248,255,.5); box-shadow: 0 1px 16px rgba(25,227,255,.35)">
+      <a href="#" class="tab" style="border: 1px solid #ffffff; color: #ffffff; min-height: 46px; font-size: 20px"><b>&lsaquo; BACK TO THE BOARD</b></a>
+    </nav>
+    
+    <section class="ph" style="position: absolute; left: 16px; top: 90px; width: 358px">
+      <h2 style="margin: 0 0 8px; font: 44px/1 Anton, Impact, sans-serif">THE BOARD</h2>
+      
+    <div style="padding: 14px 0; border-top: 1px solid rgba(241,236,255,.22)"><div class="k" style="padding: 0 0 8px">THEME</div><div>
+      <div class="tp-big" role="img" aria-label="Preview: Hot Rod, dark" style="--page:#000;--banner:linear-gradient(#000 40%,#4a0e00 80%,#b82a00);--logo:#ffcc00;--nav:#140906;--navfg:#ffcc00;--head:linear-gradient(#ffe36a,#ffae00 35%,#ff5a00 65%,#b81200);--headfg:#1a0500;--grid:#4a1606;--r1:#140906;--r2:#1d0d07;--r3:#26110a;--fg:#f2e6d8;--link:#ffcc00;--button:radial-gradient(ellipse 75% 70% at 50% 45%,#f4f4f4,#d2d2d2 40%,#9c9c9c 82%,#6e6e6e)">
+  <div class="tp-banner"><b>DIVIDED WORLD</b><i></i></div>
+  <div class="tp-nav"><span>Index</span><span>General</span><span>Staff Announcements</span></div>
+  <div class="tp-title">General</div>
+  <div class="tp-btn">start a thread</div>
+  <div class="tp-table"><div class="tp-h"><span></span><span>Thread</span><span>Replies</span><span>Last post</span></div>
+    <div class="tp-r" style="--rb:var(--r1)"><span><i class="tp-f n"></i></span><span><u>Rate my avatar</u><small>Mrs. Hooligan</small></span><span class="c">0</span><span><u>Mrs. Hooligan</u><small>Oct 6, 2026</small></span></div><div class="tp-r" style="--rb:var(--r2)"><span><i class="tp-f n"></i></span><span><u>The long one</u><small>Spritey</small></span><span class="c">169</span><span><u>Spritey</u><small>Oct 6, 2026</small></span></div><div class="tp-r" style="--rb:var(--r1)"><span><i class="tp-f"></i></span><span><u>Who keeps reacting with a thumbs up?</u><small>Spritey</small></span><span class="c">3</span><span><u>Spritey</u><small>Oct 6, 2026</small></span></div>
+  </div></div>
+      <div class="tp-tiles" role="radiogroup" aria-label="Theme" style="grid-template-columns:repeat(2,1fr)"><label class="tp-tile"><input type="radio" name="theme">
+  <span class="tp-thumb" style="--page:#d9d9d9;--banner:linear-gradient(#fff,#cfcfcf);--logo:#111;--nav:linear-gradient(#5e5e5e,#3a3a3a);--navfg:#fff;--head:linear-gradient(#6a6a6a,#474747 50%,#383838 51%,#2b2b2b);--headfg:#fff;--grid:#8a8a8a;--r1:#f7f7f7;--r2:#ebebeb;--r3:#dedede;--fg:#000;--link:#000" aria-hidden="true"><i class="tb"></i><i class="tn"></i><i class="th"></i><i class="tr"><s></s><s></s></i><i class="tr"><s></s><s></s></i><i class="tr"><s></s><s></s></i></span>
+  <b>HOUSE</b><span>Light and dark</span></label><label class="tp-tile"><input type="radio" name="theme">
+  <span class="tp-thumb" style="--page:#e5e5e5;--banner:linear-gradient(#fff,#dee3e7);--logo:#00507a;--nav:#d1d7dc;--navfg:#00507a;--head:linear-gradient(#3b8ac2,#0b6aa1 50%,#005c8f 51%,#004a75);--headfg:#ffc37a;--grid:#a9b8c2;--r1:#efefef;--r2:#dee3e7;--r3:#d1d7dc;--fg:#000;--link:#00507a" aria-hidden="true"><i class="tb"></i><i class="tn"></i><i class="th"></i><i class="tr"><s></s><s></s></i><i class="tr"><s></s><s></s></i><i class="tr"><s></s><s></s></i></span>
+  <b>BLUE STEEL</b><span>Light only</span></label><label class="tp-tile"><input type="radio" name="theme">
+  <span class="tp-thumb" style="--page:#0c121b;--banner:linear-gradient(#1f3046,#0c121b);--logo:#eaf2fb;--nav:#16202c;--navfg:#9cc9ff;--head:linear-gradient(#41658a,#2b4a6b 50%,#203a56 51%,#182c42);--headfg:#eaf2fb;--grid:#2a3a4d;--r1:#1a2533;--r2:#16202c;--r3:#1f2d3d;--fg:#d8dee6;--link:#9cc9ff" aria-hidden="true"><i class="tb"></i><i class="tn"></i><i class="th"></i><i class="tr"><s></s><s></s></i><i class="tr"><s></s><s></s></i><i class="tr"><s></s><s></s></i></span>
+  <b>MIDNIGHT</b><span>Dark only</span></label><label class="tp-tile on"><input type="radio" name="theme" checked>
+  <span class="tp-thumb" style="--page:#000;--banner:linear-gradient(#000 40%,#4a0e00 80%,#b82a00);--logo:#ffcc00;--nav:#140906;--navfg:#ffcc00;--head:linear-gradient(#ffe36a,#ffae00 35%,#ff5a00 65%,#b81200);--headfg:#1a0500;--grid:#4a1606;--r1:#140906;--r2:#1d0d07;--r3:#26110a;--fg:#f2e6d8;--link:#ffcc00;--button:radial-gradient(ellipse 75% 70% at 50% 45%,#f4f4f4,#d2d2d2 40%,#9c9c9c 82%,#6e6e6e)" aria-hidden="true"><i class="tb"></i><i class="tn"></i><i class="th"></i><i class="tr"><s></s><s></s></i><i class="tr"><s></s><s></s></i><i class="tr"><s></s><s></s></i></span>
+  <b>HOT ROD</b><span>Dark only</span></label><label class="tp-tile"><input type="radio" name="theme">
+  <span class="tp-thumb" style="--page:radial-gradient(ellipse 13px 10px at 19px 17px,#0a1448 0 70%,transparent 74%) 0 0/75px 60px,#000;--banner:linear-gradient(90deg,#12207a,#1d36b8 60%,#12207a);--logo:#ff3a2a;--nav:#05082a;--navfg:#ffff66;--head:repeating-linear-gradient(90deg,rgb(150 190 255/.22) 0 3px,transparent 3px 4px),repeating-linear-gradient(0deg,rgb(150 190 255/.22) 0 3px,transparent 3px 4px),linear-gradient(#3a5be0,#1a2fa8 55%,#0a1468);--headfg:#22d4ff;--grid:#0a1250;--r1:#2234a8;--r2:#1d2e98;--r3:#18268a;--fg:#c4d8ff;--link:#fff" aria-hidden="true"><i class="tb"></i><i class="tn"></i><i class="th"></i><i class="tr"><s></s><s></s></i><i class="tr"><s></s><s></s></i><i class="tr"><s></s><s></s></i></span>
+  <b>FAN SITE</b><span>Dark only</span></label></div>
+      <p class="note" style="font-size:19px">Applies to the board at once, on every device you sign in on.</p></div></div>
+    <div style="padding: 14px 0; border-top: 1px solid rgba(241,236,255,.22)"><div class="k" style="padding: 0 0 8px">MODE</div><div><div class="seg" role="radiogroup" aria-label="Mode"><label class="off"><input type="radio" name="mode" disabled><span><b>FOLLOW MY DEVICE</b></span></label><label class="off"><input type="radio" name="mode" disabled><span><b>LIGHT</b></span></label><label class=""><input type="radio" name="mode" checked disabled><span><b>DARK</b></span></label></div><p class="note" style="font-size:19px">Hot Rod comes in dark only, so the board stays dark whatever your device says. Choose House for light and dark.</p></div></div>
+    </section>
+  </figure>
+</div>
+</body>
+</html>
