@@ -60,14 +60,19 @@ describe('the ink color', () => {
 
   test('is previewed with its shading: a wet highlight on a dark ink, an edge shadow on a pale one', () => {
     const dark = form({ color: '#101010' });
-    const hi = (c: HTMLElement) => Number(c.querySelector('[data-kb-highlight]')!.getAttribute('data-kb-highlight'));
-    const edge = (c: HTMLElement) => Number(c.querySelector('[data-kb-edge-shadow]')!.getAttribute('data-kb-edge-shadow'));
+    const hi = (c: HTMLElement) => Number(c.querySelector('canvas[data-kb-highlight]')!.getAttribute('data-kb-highlight'));
+    const edge = (c: HTMLElement) => Number(c.querySelector('canvas[data-kb-edge-shadow]')!.getAttribute('data-kb-edge-shadow'));
     const darkHi = hi(dark.container);
     const darkEdge = edge(dark.container);
     dark.unmount();
     const pale = form({ color: '#f4f4c8' });
     expect(darkHi).toBeGreaterThan(hi(pale.container));
     expect(edge(pale.container)).toBeGreaterThan(darkEdge);
-    expect(pale.container.querySelector('[role="img"]')).toHaveAccessibleName('Preview of the ink');
+    /* The preview is a canvas, painted by paintSplat on a 360 x 220 box. */
+    const canvas = pale.container.querySelector('canvas')!;
+    expect(canvas).toHaveAttribute('role', 'img');
+    expect(canvas).toHaveAccessibleName('Preview of the ink');
+    expect([canvas.width, canvas.height]).toEqual([360, 220]);
+    expect(pale.container.querySelector('svg.kb-whoops-preview')).toBeNull();
   });
 });
