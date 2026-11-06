@@ -183,21 +183,38 @@ test('a line of text is covered when the ink over it is most of its length, and 
   assert.deepEqual(coveredLines([{ top: 0.9, bottom: 0.95, text: 'under a pen' }], [new LayerInk(splatOf(41), [penIn(DESK, [[0, 0.925], [0.5, 0.925]])], DESK)]), [true], 'half its length under ink is covered');
 });
 
-test('a drawing keeps its place: a stroke lands at the same shares on two boxes', () => {
-  const [cx, cy] = heart(61);
+test('a drawing keeps its place: a stroke\'s points land at the same shares on two boxes, and its washed cells on each match the shares it passed', () => {
+  const seed = 61;
+  const [cx, cy] = heart(seed);
   const stroke = washIn(DESK, [[cx - 0.1, cy], [cx + 0.1, cy]]);
-  for (const box of [DESK, PHONE, { w: 700, h: 500 }]) {
-    const ink = new LayerInk(splatOf(61), [stroke], box);
-    assert.equal(ink.has(cx, cy), false, `heart washed on ${box.w}x${box.h}`);
-    assert.equal(ink.has(cx - 0.1, cy), false, 'its start');
-    assert.equal(ink.has(cx + 0.1, cy), false, 'its end');
-    assert.ok(ink.washed > 0, 'the cells it passed are counted');
-    // Cells along the stroke's path (the brush's down radius, in shares, is the same on every box) are washed.
-    const wide = new LayerInk(splatOf(61), [], box);
-    const before = wide.washed;
-    assert.equal(before, 0);
-    assert.equal(ink.has(cx, cy + (stroke.width / 2) * (stroke as { aspect: number }).aspect * 0.8), false, 'within the brush down');
+  const rx = stroke.width / 2, ry = (stroke.width / 2) * stroke.aspect;
+  const share: number[] = [];
+  for (const box of [DESK, PHONE]) {
+    const label = `${box.w}x${box.h}`;
+    const ink = new LayerInk(splatOf(seed), [stroke], box);
+    const fresh = new LayerInk(splatOf(seed), [], box);
+    // On the path, to half the brush's reach down, every point is washed.
+    for (let x = cx - 0.1; x <= cx + 0.1 + 1e-9; x += 0.02) {
+      for (const f of [0, 0.5, -0.5]) assert.equal(ink.has(x, cy + f * ry), false, `on the path at ${x.toFixed(2)},${f} on ${label}`);
+    }
+    // Well past the brush's ellipse (1.5 radii down, 2 across past the ends) a point is as the splat left it, and some of them are ink.
+    let ink_beyond = 0;
+    const beyond: Pt[] = [];
+    for (let x = cx - 0.1; x <= cx + 0.1 + 1e-9; x += 0.02) beyond.push([x, cy + 1.5 * ry], [x, cy - 1.5 * ry]);
+    beyond.push([cx - 0.1 - 2 * rx, cy], [cx + 0.1 + 2 * rx, cy]);
+    for (const [x, y] of beyond) {
+      if (x < 0 || x > 1 || y < 0 || y > 1) continue;
+      assert.equal(ink.has(x, y), covers(splatOf(seed), box, x, y), `beyond the brush at ${x.toFixed(3)},${y.toFixed(3)} on ${label}`);
+      if (covers(splatOf(seed), box, x, y)) { ink_beyond++; assert.equal(ink.has(x, y), true); }
+    }
+    assert.ok(ink_beyond >= 3, `the splat has ink just past the path on ${label} (${ink_beyond})`);
+    assert.equal(fresh.washed, 0);
+    assert.ok(ink.washed > 0 && ink.washed < 1, `the cells it passed are counted on ${label} (${ink.washed})`);
+    share.push(ink.washed);
   }
+  // The same shares of the same splat, counted on grids of different cell counts: they agree to within half a point of the layer (the
+  // grid's rounding of the band's edges, about 0.0005 apart today), where a brush that ignored the box's shape would be far off.
+  assert.ok(Math.abs(share[0]! - share[1]!) < 0.005, `washed share ${share[0]} on the desk, ${share[1]} on the phone`);
 });
 
 /* ------------------------------------------------------- the author's pen belongs to its layer ---- */
