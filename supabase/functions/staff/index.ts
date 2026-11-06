@@ -4,8 +4,8 @@
  * (supabase/functions/_shared/models/) and an answer that says what happened. No secret is ever logged or returned: the model key is read by the adapter from `Deno.env`
  * and appears in no message.
  *
- * The database client does not repeat a write after a failure that may have followed its commit (`safeToRepeat`). Of this run's writes only the ledger's row is not
- * idempotent: `file_visit` finds a visit already ended and `apply_mod_move` finds the move of its cause, so a repeat of either writes nothing a second time and is sent again.
+ * The database client does not repeat a write after a failure that may have followed its commit (`safeToRepeat`). Of this run's writes the ledger's row and the call's
+ * record are not idempotent (`record_staff_call` numbers each call it is sent): `file_visit` finds a visit already ended and `apply_mod_move` finds the move of its cause, so a repeat of either writes nothing a second time and is sent again.
  */
 import { runFilings } from './core.ts';
 import { chooseInstance } from '../_shared/instance.ts';
@@ -16,7 +16,7 @@ import { ledgerWriter } from '../_shared/models/ledger.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 
 /** The calls that write and are not idempotent: not sent again after an answer that may have been lost on the way back. */
-const WRITES = new Set(['record_model_call']);
+const WRITES = new Set(['record_model_call', 'record_staff_call']);
 
 Deno.serve(async (request) => {
   const env = environment((name) => Deno.env.get(name));
