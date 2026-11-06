@@ -943,7 +943,7 @@ declare
   filed integer := 0;
   tries integer;
   late record;
-  filing_grace interval := make_interval(mins => coalesce((select (s.value #>> '{modBots,filingGraceMinutes}')::integer from settings s where s.key = 'modBots'), 10));
+  filing_grace interval := make_interval(mins => coalesce((select (s.value #>> '{filingGraceMinutes}')::integer from settings s where s.key = 'modBots'), 10));
   boss text := current_boss();
   season_start timestamptz := (select x.starts_at from seasons x where x.ends_at is null);
   grace interval := make_interval(days => coalesce((select (s.value #>> '{}')::integer from settings s where s.key = 'inheritanceGraceDays'), 3));

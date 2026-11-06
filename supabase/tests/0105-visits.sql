@@ -277,7 +277,12 @@ begin
   update visits_open set ends_at = now() - interval '5 minutes' where visit_act = v;
   ran := system_tick();
   if exists (select 1 from acts where kind = 'visit_end' and target_act_id = v) then raise exception 'the tick filed a visit inside its grace'; end if;
+  -- The grace is the instance's setting, not a constant: at 30 minutes, 11 past the end is still inside it.
+  update settings set value = jsonb_set(value, '{filingGraceMinutes}', '30') where key = 'modBots';
   update visits_open set ends_at = now() - interval '11 minutes' where visit_act = v;
+  ran := system_tick();
+  if exists (select 1 from acts where kind = 'visit_end' and target_act_id = v) then raise exception 'the tick ignored a filingGraceMinutes of 30'; end if;
+  update settings set value = jsonb_set(value, '{filingGraceMinutes}', '10') where key = 'modBots';
   ran := system_tick();
   if not exists (select 1 from acts where kind = 'visit_end' and target_act_id = v) then raise exception 'the tick did not file an overdue visit: %', ran; end if;
   if (ran ->> 'visits')::integer < 1 then raise exception 'the tick does not say it filed: %', ran; end if;
