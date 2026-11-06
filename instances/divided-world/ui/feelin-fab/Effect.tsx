@@ -9,8 +9,10 @@
  *
  * The palettes are the two the board has, pastels for the light board and deep colors for the dark one, chosen per post by the
  * band: the board is dark where its band tops out under 0.5. FAB_STOPS stays in TypeScript as the one list. The band is read from
- * the tokens the board resolves for this post, after mount (it needs the element in the document), and on every draw (it is cached
- * by the tokens' text, so a draw pays a few property reads); a board that cannot be read draws nothing and leaves the words bare.
+ * the tokens the board resolves for this post, after mount (it needs the element in the document), and kept: the tokens change only
+ * with `data-kb-mode` on the root or the device's color scheme, so the band is read again in setup (mount and resize) and when
+ * either changes, never per draw (a draw is ~30 a second per post, a read is a getComputedStyle and a few property reads). A board
+ * that cannot be read draws nothing and leaves the words bare, and is read again at the next setup or board change.
  * Because a board can change while the loop sleeps (reduced motion, a post out of view), a change of `data-kb-mode` on the root or of
  * the device's color scheme asks for one more draw by itself.
  *
@@ -65,10 +67,11 @@ export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
     const readBand = (): Band | null => {
       try { return bandFor(el); } catch (err) { console.error(err); return null; }
     };
+    /* The band as last read; null until read, and again after a board that could not be read. Draws use it and never read. */
+    let band: Band | null = null;
     const paint = (light: Light, now: number, idle: boolean): void => {
       const ctx = cv.getContext('2d');
       if (!ctx) return;
-      const band = readBand();
       if (!band) { ctx.clearRect(0, 0, cv.width, cv.height); return; }
       const board: Board = band.hi < 0.5 ? 'dark' : 'light';
       /* The other board's foil is let go: a board change leaves only the one in use holding buffers. */
@@ -81,6 +84,7 @@ export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
       cv.height = Math.round(box.h * density);
     };
     const setup = (): void => {
+      band = readBand();
       box = { w: el.offsetWidth, h: el.offsetHeight };
       if (still) {
         density = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
@@ -103,7 +107,7 @@ export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
     resize?.observe(el);
 
     /* The board switched (the player's choice on the root, or the device's color scheme) while nothing was drawing. */
-    const boardChanged = (): void => { if (still) paint(REST, 0, false); else wake(el); };
+    const boardChanged = (): void => { band = readBand(); if (still) paint(REST, 0, false); else wake(el); };
     const mode = typeof MutationObserver === 'function' ? new MutationObserver(boardChanged) : null;
     mode?.observe(document.documentElement, { attributes: true, attributeFilter: ['data-kb-mode'] });
     const scheme = window.matchMedia?.('(prefers-color-scheme: dark)');

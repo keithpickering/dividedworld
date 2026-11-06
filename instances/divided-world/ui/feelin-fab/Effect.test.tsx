@@ -31,7 +31,8 @@ vi.mock('../../../../engine/ui/shine/band.ts', async (importOriginal) => {
   const real = await importOriginal<typeof import('../../../../engine/ui/shine/band.ts')>();
   return {
     ...real,
-    bandFor: vi.fn(() => {
+    bandFor: vi.fn((el: Element) => {
+      window.getComputedStyle(el); /* the real bandFor reads the tokens through getComputedStyle; the spy counts that cost */
       if (bandState.throws) throw new Error('shine band: not a hex color');
       return document.documentElement.getAttribute('data-kb-mode') === 'dark' ? { lo: 0, hi: 0.048 } : { lo: 0.59, hi: 1 };
     }),
@@ -285,12 +286,30 @@ describe("Feelin' Fab", () => {
     expect(probe.running()).toBe(false);
   });
 
-  test('while shimmer runs, every draw reads the band again, so a switch is never a frame late', () => {
+  test('while shimmer runs, the band is read when the board changes and not on every draw, and a switch is still never missed', async () => {
+    const styles = vi.spyOn(window, 'getComputedStyle');
     render(<FeelinFabEffect {...props(1)} />);
-    void see(canvas(), true); frames(2);
+    void see(canvas(), true); frames(30);
+    expect(draws()).toBeGreaterThan(5);
+    expect(styles.mock.calls.length).toBeLessThanOrEqual(1);
     expect(made[0]!.opts.palette).toEqual(FAB_STOPS.light);
-    document.documentElement.setAttribute('data-kb-mode', 'dark');
-    frames(6, 100);
+    const before = styles.mock.calls.length;
+    await act(async () => { document.documentElement.setAttribute('data-kb-mode', 'dark'); await Promise.resolve(); });
+    frames(30, 1000);
+    expect(styles.mock.calls.length).toBe(before + 1);
+    expect(made.some((f) => f.opts.palette === FAB_STOPS.dark && f.draw.mock.calls.length > 0)).toBe(true);
+  });
+
+  test('a band that could not be read is tried again when the board changes, not on every draw', async () => {
+    bandState.throws = true;
+    const styles = vi.spyOn(window, 'getComputedStyle');
+    render(<FeelinFabEffect {...props(1)} />);
+    void see(canvas(), true); frames(10);
+    expect(draws()).toBe(0);
+    expect(styles.mock.calls.length).toBeLessThanOrEqual(1);
+    bandState.throws = false;
+    await act(async () => { document.documentElement.setAttribute('data-kb-mode', 'dark'); await Promise.resolve(); });
+    frames(5, 500);
     expect(made.some((f) => f.opts.palette === FAB_STOPS.dark && f.draw.mock.calls.length > 0)).toBe(true);
   });
 

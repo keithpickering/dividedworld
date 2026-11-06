@@ -147,4 +147,10 @@ test.describe('the poisons, planted in a real page', () => {
     await plant(page, '.dw-fab-foil { pointer-events: auto !important }');
     expect(await layoutProblems(page, 0)).toContain('canvas takes the pointer (pointer-events auto)');
   });
+
+  test('a canvas that is raised and takes the pointer together is named by the element at the words\' point', async ({ page }) => {
+    await open(page, 'two-light');
+    await plant(page, '.dw-fab-foil { pointer-events: auto !important; z-index: 5 !important }');
+    expect(await layoutProblems(page, 0)).toContain('the canvas lies over the words');
+  });
 });
