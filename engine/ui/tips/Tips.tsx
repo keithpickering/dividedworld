@@ -13,8 +13,10 @@ import { usePlayer } from '../player.tsx';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import type { TipKey } from './keys.ts';
 import { motionReduced } from '../appearance.ts';
-import { watchFirstInView } from '../shine/loop.ts';
-import { allowTilt, setTiltPreference, tiltAnswered, tiltState, tiltSupported } from '../shine/tilt.ts';
+import { watchShinyInView } from '../shine/loop.ts';
+import { allowTilt, subscribeTilt, tiltAnswered, tiltState, tiltSupported } from '../shine/tilt.ts';
+import type { Preferences } from '../data/api.ts';
+import { usePreferenceSaves } from '../account/preferences.ts';
 import { Spotlight } from './Spotlight.tsx';
 import { createTipsStore, type TipStep, type TipsStore } from './store.ts';
 
@@ -34,45 +36,52 @@ export function TipsProvider({ children }: { readonly children: ReactNode }) {
   apiRef.current = api;
   const store = useMemo(() => createTipsStore({ see: (key) => apiRef.current.seeTip(key), skip: () => apiRef.current.skipTips() }), []);
 
-  const [tilt, setTilt] = useState<'on' | 'off' | null>(null);
-
   /* The account's own state, read once for the page: a visitor, or a failed read, has none and nothing shows. */
+  const [account, setAccount] = useState<Preferences | null>(null);
   useEffect(() => {
     let live = true;
     store.load(null);
-    setTilt(null);
-    if (session.signedIn) void api.preferences().then((p) => { if (live) { store.load({ tips: p.tips, seen: p.tipsSeen, welcomedAt: p.welcomedAt }); setTilt(p.tilt); } }, () => {});
+    setAccount(null);
+    if (session.signedIn) void api.preferences().then((p) => { if (live) { store.load({ tips: p.tips, seen: p.tipsSeen, welcomedAt: p.welcomedAt }); setAccount(p); } }, () => {});
     return () => { live = false; };
   }, [api, store, session.signedIn]);
 
+  /* The tilt choice is saved the way Settings saves it (a refusal puts it back), and the account's choice is read for the tilt state with it. */
+  const { prefs, change } = usePreferenceSaves(session.account, account);
+  const changeRef = useRef(change);
+  changeRef.current = change;
+  const read = prefs !== null;
+
   /* The shine tip: the first shiny post in view, on a phone that can tilt and has not been asked (design section 4). The loop names the
-     host's canvas; this decides whether to ask, by the account's tilt choice read with its tips above. */
+     host's canvas; this asks again whenever the canvas or the tilt state changes (a grant or a choice made elsewhere withdraws it). */
   useEffect(() => {
-    if (tilt === null) return undefined;
-    let live = true;
-    let unwant: (() => void) | null = null;
+    if (!read) return undefined;
     let canvas: HTMLCanvasElement | null = null;
+    let wanted: HTMLCanvasElement | null = null;
+    let unwant: (() => void) | null = null;
     const sync = () => {
+      const next = canvas !== null && askForTilt() ? canvas : null;
+      if (next === wanted) return;
       unwant?.();
       unwant = null;
-      if (!live || canvas === null || !askForTilt(tilt)) return;
-      const target = canvas;
+      wanted = next;
+      if (next === null) return;
       unwant = store.want({
         key: 'shine',
-        target: () => target,
+        target: () => next,
         action: {
           run: () => {
-            /* Synchronously, in the tap: iOS asks for the orientation only here. Then the same choice Settings saves. */
+            /* Synchronously, in the tap: iOS asks for the orientation only here. Then the same choice, saved the way Settings saves it. */
             void allowTilt();
-            setTiltPreference('on');
-            void apiRef.current.setPreferences({ tilt: 'on' }).catch(() => {});
+            changeRef.current({ tilt: 'on' });
           },
         },
       });
     };
-    const stop = watchFirstInView((c) => { if (c === canvas) return; canvas = c; sync(); });
-    return () => { live = false; stop(); unwant?.(); };
-  }, [store, tilt]);
+    const stop = watchShinyInView((c) => { canvas = c; sync(); });
+    const unsubscribe = subscribeTilt(sync);
+    return () => { stop(); unsubscribe(); unwant?.(); };
+  }, [store, read]);
 
   const active = useSyncExternalStore(store.subscribe, store.active, store.active);
   const persona = instance.developer ?? DEFAULT_DEVELOPER;
@@ -98,9 +107,9 @@ export function TipsProvider({ children }: { readonly children: ReactNode }) {
 }
 
 /** Whether a tip about turning tilt on is wanted: a coarse pointer that can tilt, under full motion, not yet asked, and not already on. */
-function askForTilt(pref: 'on' | 'off'): boolean {
+function askForTilt(): boolean {
   if (motionReduced() || !tiltSupported() || !(window.matchMedia?.('(pointer: coarse)').matches ?? false)) return false;
-  const state = tiltState(pref);
+  const state = tiltState();
   return state === 'needs-allow' || (state === 'off' && !tiltAnswered());
 }
 

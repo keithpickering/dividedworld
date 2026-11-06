@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { light, lightAt, REST } from './light.ts';
 import { setTiltPreference, tiltState } from './tilt.ts';
-import { probe, register, unregister, wake, type ShineFrame } from './loop.ts';
+import { probe, register, unregister, wake, watchShinyInView, type ShineFrame } from './loop.ts';
 
 /* A fake rAF: frames run only when the test flushes one, at the time it names. */
 let queue = new Map<number, FrameRequestCallback>();
@@ -333,5 +333,24 @@ describe('the shine loop', () => {
     expect(seen).toHaveLength(before + 1);
     const want = lightAt(light.input(), { top, height: 50 }, { height: window.innerHeight }, t, 0);
     expect(seen[before]!.light).toEqual(want);
+  });
+
+  it('reports the first registered host that is in view, and changes when that set changes', () => {
+    const a = {}, b = {}, ca = canvas(), cb = canvas();
+    const heard: (HTMLCanvasElement | null)[] = [];
+    const stop = watchShinyInView((c) => heard.push(c));
+    register(a, ca, BOX, 1, () => false);
+    register(b, cb, BOX, 1, () => false);
+    expect(heard).toEqual([null]); /* both registered, neither seen yet */
+    see(cb, true);
+    expect(heard.at(-1), 'the first registered host is out of view: the second is the one in view').toBe(cb);
+    see(ca, true);
+    expect(heard.at(-1), 'both in view: the first registered').toBe(ca);
+    see(ca, false);
+    expect(heard.at(-1)).toBe(cb);
+    see(cb, false);
+    expect(heard.at(-1)).toBeNull();
+    stop();
+    unregister(a); unregister(b);
   });
 });

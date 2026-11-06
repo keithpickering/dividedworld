@@ -63,29 +63,30 @@ let unsubscribeMotion: (() => void) | null = null;
 /* Held while any host is registered: the device's tilt probe runs for a page that shines (tilt.ts). */
 let releaseTilt: (() => void) | null = null;
 
-/* Who wants to know the first registered host that is in view (the shine tip, engine/ui/tips/Tips.tsx). */
-const firstWatchers = new Set<(canvas: HTMLCanvasElement | null) => void>();
+/* Who wants to know which shiny post is in view (the shine tip, engine/ui/tips/Tips.tsx). */
+const shinyWatchers = new Set<(canvas: HTMLCanvasElement | null) => void>();
 let announced: HTMLCanvasElement | null = null;
-const firstInView = (): HTMLCanvasElement | null => {
-  const first = hosts.values().next().value as Reg | undefined;
-  return first?.inView ? first.canvas : null;
+/** The first registered host among those in view: the design's "first time a shiny post is in view" is any shiny post, not the page's first. */
+const shinyInView = (): HTMLCanvasElement | null => {
+  for (const r of hosts.values()) if (r.inView) return r.canvas;
+  return null;
 };
-/** Tells the watchers when the first registered host's canvas, if it is in view, changes. */
+/** Tells the watchers when the canvas of the first registered host in view changes. */
 function announce(): void {
-  const now = firstInView();
+  const now = shinyInView();
   if (now === announced) return;
   announced = now;
-  for (const w of [...firstWatchers]) w(now);
+  for (const w of [...shinyWatchers]) w(now);
 }
 
 /**
- * Calls `onChange` with the canvas of the first registered host while it is in view (null when there is none, or it is out of
- * view), now and whenever that changes. The loop reaches no React and no tip; whoever draws a tip subscribes here. Returns the stop.
+ * Calls `onChange` with the canvas of the first registered host that is in view (null when none is), now and whenever that
+ * changes. The loop reaches no React and no tip; whoever draws a tip subscribes here. Returns the stop.
  */
-export function watchFirstInView(onChange: (canvas: HTMLCanvasElement | null) => void): () => void {
-  firstWatchers.add(onChange);
-  onChange(firstInView());
-  return () => { firstWatchers.delete(onChange); };
+export function watchShinyInView(onChange: (canvas: HTMLCanvasElement | null) => void): () => void {
+  shinyWatchers.add(onChange);
+  onChange(shinyInView());
+  return () => { shinyWatchers.delete(onChange); };
 }
 
 const sum = (a: Light, b: Light) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);

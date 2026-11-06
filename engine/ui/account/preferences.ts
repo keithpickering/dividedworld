@@ -42,7 +42,11 @@ export interface SavedPreferences {
   readonly refuse: (text: string) => void;
 }
 
-export function usePreferenceSaves(account: string | null): SavedPreferences {
+/**
+ * `supplied` is for a caller that has read the account's preferences itself (the tips' provider, which reads them once for the page):
+ * `undefined` reads them here, `null` waits for the caller's read, and a value stands for what the account has, with no read of its own.
+ */
+export function usePreferenceSaves(account: string | null, supplied?: Preferences | null): SavedPreferences {
   const { api, ui } = useKayfa();
   const [read, setRead] = useState<{ readonly account: string; readonly prefs: Preferences } | null>(null);
   const [refusalFor, setRefusal] = useState<{ readonly account: string | null; readonly text: string } | null>(null);
@@ -68,9 +72,13 @@ export function usePreferenceSaves(account: string | null): SavedPreferences {
   useEffect(() => {
     if (!account) return undefined;
     let live = true;
+    if (supplied !== undefined) {
+      if (supplied !== null) { current.current = supplied; confirmed.current = supplied; setRead({ account, prefs: supplied }); setTiltPreference(supplied.tilt); }
+      return () => { live = false; };
+    }
     void api.preferences().then((p) => { if (live) { current.current = p; confirmed.current = p; setRead({ account, prefs: p }); setTiltPreference(p.tilt); } }, () => { if (live) setRefusal({ account, text: 'Your settings could not be read right now. Reload the page to try again.' }); });
     return () => { live = false; };
-  }, [api, account]);
+  }, [api, account, supplied]);
 
   const change = useCallback((patch: SinglePatch) => {
     const key = Object.keys(patch)[0] as keyof PreferencesPatch;

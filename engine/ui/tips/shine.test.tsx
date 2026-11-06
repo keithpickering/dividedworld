@@ -10,7 +10,7 @@ import { axeViolations, describeViolations } from '../a11y.ts';
 import type { Fake } from '../data/fake.ts';
 import { light } from '../shine/light.ts';
 import { probe, register, unregister } from '../shine/loop.ts';
-import { resetTilt, tiltState } from '../shine/tilt.ts';
+import { resetTilt, setTiltPreference, tiltState } from '../shine/tilt.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
 import { TipsProvider } from './Tips.tsx';
 
@@ -28,6 +28,19 @@ function shiny(): HTMLCanvasElement {
   register(host, c, { w: 100, h: 50 }, 1, () => false);
   return c;
 }
+/* A fake IntersectionObserver the test drives by hand: nothing is in view until it says so. */
+let observers: FakeObserver[] = [];
+class FakeObserver {
+  readonly seen = new Set<Element>();
+  constructor(readonly cb: IntersectionObserverCallback) { observers.push(this); }
+  observe(el: Element) { this.seen.add(el); }
+  unobserve(el: Element) { this.seen.delete(el); }
+  disconnect() { this.seen.clear(); }
+  takeRecords() { return []; }
+}
+const see = (el: Element, isIntersecting: boolean) => {
+  for (const o of observers) if (o.seen.has(el)) o.cb([{ target: el, isIntersecting } as unknown as IntersectionObserverEntry], o as unknown as IntersectionObserver);
+};
 function phone(opts: { coarse?: boolean; permission?: boolean } = {}) {
   const { coarse = true, permission = true } = opts;
   vi.stubGlobal('matchMedia', (q: string) => ({ matches: coarse && q.includes('coarse'), media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }));
@@ -41,7 +54,7 @@ function signedIn(): Fake {
 }
 const open = (fake: Fake) => renderIn(fake, <TipsProvider><p>page</p></TipsProvider>);
 
-beforeEach(() => { Element.prototype.scrollIntoView = vi.fn(); localStorage.clear(); resetTilt(); root.setAttribute('data-kb-motion', 'full'); });
+beforeEach(() => { observers = []; Element.prototype.scrollIntoView = vi.fn(); localStorage.clear(); resetTilt(); root.setAttribute('data-kb-motion', 'full'); });
 afterEach(() => {
   for (const h of hosts.splice(0)) unregister(h);
   document.querySelectorAll('canvas').forEach((c) => c.remove());
@@ -143,6 +156,57 @@ describe('the shine tip', () => {
     shiny();
     await settle();
     expect(dialog()).toBeNull();
+  });
+
+  test('does not show when tilt is already on and the device has allowed it', async () => {
+    phone();
+    localStorage.setItem('kb-tilt-device', 'granted');
+    const fake = signedIn();
+    await fake.setPreferences({ tilt: 'on' });
+    open(fake);
+    await settle();
+    shiny();
+    await settle();
+    expect(dialog()).toBeNull();
+  });
+
+  test('points at a shiny post that is in view, not the first one registered', async () => {
+    phone();
+    vi.stubGlobal('IntersectionObserver', FakeObserver);
+    open(signedIn());
+    await settle();
+    const first = shiny(), second = shiny();
+    see(second, true);
+    await screen.findByRole('dialog', { name: 'Title of shine' });
+    const scrolled = vi.mocked(Element.prototype.scrollIntoView).mock.contexts;
+    expect(scrolled, 'the spotlight points at the canvas that is in view').toContain(second);
+    expect(scrolled).not.toContain(first);
+  });
+
+  test('a failed save puts the choice back as Settings does, so the device and the account agree', async () => {
+    phone();
+    const fake = signedIn();
+    vi.spyOn(fake, 'setPreferences').mockResolvedValue({ ok: false, error: 'Nope.' });
+    open(fake);
+    await settle();
+    shiny();
+    const tip = await screen.findByRole('dialog', { name: 'Title of shine' });
+    fireEvent.click(within(tip).getByRole('button', { name: 'Action of shine' }));
+    expect(ask).toHaveBeenCalledTimes(1);
+    await settle();
+    expect((await fake.preferences()).tilt).toBe('off');
+    expect(tiltState(), 'the page is not left on while the account says off').toBe('off');
+  });
+
+  test('a grant or a choice made elsewhere withdraws the tip', async () => {
+    phone();
+    open(signedIn());
+    await settle();
+    shiny();
+    await screen.findByRole('dialog', { name: 'Title of shine' });
+    localStorage.setItem('kb-tilt-device', 'granted');
+    act(() => setTiltPreference('on'));
+    await waitFor(() => expect(dialog()).toBeNull());
   });
 
   test('does not show once seen', async () => {
