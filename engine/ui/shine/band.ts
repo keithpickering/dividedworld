@@ -24,15 +24,15 @@ const MARGIN = 0.004;
 
 const s2l = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
 
-/** Linear light to 8-bit sRGB, 4,097 entries. */
-const LUT = new Uint8ClampedArray(4097);
+/** Linear light to 8-bit sRGB, 4,097 entries: entry `round(l * 4096)` is `l`'s value. Read-only; a renderer's inner loop reads it directly. */
+export const SRGB8 = new Uint8ClampedArray(4097);
 for (let i = 0; i <= 4096; i++) {
   const l = i / 4096;
-  LUT[i] = Math.round(255 * (l <= 0.0031308 ? l * 12.92 : 1.055 * l ** (1 / 2.4) - 0.055));
+  SRGB8[i] = Math.round(255 * (l <= 0.0031308 ? l * 12.92 : 1.055 * l ** (1 / 2.4) - 0.055));
 }
 
 /** One linear channel (0..1) as an 8-bit sRGB value. */
-export const toSrgb8 = (l: number): number => LUT[Math.max(0, Math.min(4096, Math.round(l * 4096)))]!;
+export const toSrgb8 = (l: number): number => SRGB8[Math.max(0, Math.min(4096, Math.round(l * 4096)))]!;
 
 /** A `#rrggbb` or `#rgb` color as linear [r, g, b], each 0..1. */
 export const toLinear = (hex: string): Rgb => {

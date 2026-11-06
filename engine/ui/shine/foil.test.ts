@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, mock, test } from 'node:test';
@@ -127,19 +128,58 @@ describe('the foil', () => {
     assert.ok(max > 65535, `the largest facet id is ${max}`);
   });
 
-  test('one 988 x 300 render takes under 40ms in Node', () => {
+  /* The bytes of every pattern on both boards, at two boxes (one ragged) and six lights, as the bench's per-cell code wrote them
+   * before the render precomputed what the light does not move (3d6e4fa). The faster render must write the same bytes. */
+  const BYTES: Record<string, string> = {
+    'pearl/light': '635afb47213222bf2911710f023f25371eb7004607e93295c0f39e9dc447f4f7',
+    'pearl/dark': '8a83d47ce72381ccce2143559f4714162ab9f7d7a2428940e9be5f52cb99c5c7',
+    'bands/light': '3e25f9eef716cc751b9070662b6d30fe440b98b7ee6a011480acd41b795bf3e5',
+    'bands/dark': 'cd1005e3c5f9579e644c7c8044843d69da0d815c0d3b823f60355cb801484ae3',
+    'prism/light': '33ef4409f395f93ac67eae0c7f310d7703b5f2be19c1071ad32a8e43feb9a289',
+    'prism/dark': 'e5a27e75964abd4ed6cc5163c7a857abd595155eb918e0d44bcbb7bfb6b13736',
+  };
+  const LIGHTS = [REST, { x: -1.5, y: -1.5 }, { x: 1.5, y: 1.5 }, { x: 0.4, y: -0.3 }, { x: -0.9, y: 1.2 }, { x: 0.05, y: 0.77 }];
+  const digest = (pattern: (typeof PATTERNS)[number], mode: Board, palette = PALETTES[mode]): string => {
+    const h = createHash('sha256');
+    for (const box of [{ w: 988, h: 300 }, { w: 301, h: 121 }]) {
+      const foil = foilFor(pattern, mode, 'play:post', palette);
+      const px = new Uint8ClampedArray(Math.ceil(box.w / 3) * Math.ceil(box.h / 3) * 4);
+      for (const light of LIGHTS) { foil.render(box, light, bands[mode], px); h.update(px); }
+    }
+    return h.digest('hex');
+  };
+
+  test('every pattern writes the bench\'s bytes, to the last bit, on both boards at six lights', () => {
+    for (const pattern of PATTERNS) {
+      for (const mode of ['light', 'dark'] as const) assert.equal(digest(pattern, mode), BYTES[`${pattern}/${mode}`], `${pattern}/${mode}`);
+    }
+  });
+
+  test('POISON: one stop moved by one step of eight bits changes the digest', () => {
+    const moved = ['#ffb9bf', ...PALETTES.light.slice(1)];
+    for (const pattern of PATTERNS) assert.notEqual(digest(pattern, 'light', moved), BYTES[`${pattern}/light`], pattern);
+  });
+
+  /* A scroll redraws every post in view each frame, about five of them (the design's section 6), so one render is a fifth of the
+   * page's frame at most. Measured at 1.1 to 1.8 ms a render here (the bench's per-cell code took 5.4 to 9.4); the bound is
+   * about twice the slowest, so a render that slides back toward the old cost goes red. The best of three renders is timed, so
+   * one collector pause on a busy machine does not count. */
+  test('one 988 x 300 render takes under 4ms in Node', () => {
     const box = { w: 988, h: 300 };
     const px = new Uint8ClampedArray(Math.ceil(box.w / 3) * Math.ceil(box.h / 3) * 4);
     const times: string[] = [];
     for (const pattern of PATTERNS) {
       for (const mode of ['light', 'dark'] as const) {
         const foil = foilFor(pattern, mode);
-        foil.render(box, REST, bands[mode], px);
-        const t0 = performance.now();
-        foil.render(box, { x: 0.2, y: 0.1 }, bands[mode], px);
-        const ms = performance.now() - t0;
+        for (let k = 0; k < 20; k++) foil.render(box, { x: k * 0.05, y: -k * 0.03 }, bands[mode], px);
+        let ms = Infinity;
+        for (let k = 0; k < 3; k++) {
+          const t0 = performance.now();
+          foil.render(box, { x: 0.2 + k * 0.01, y: 0.1 }, bands[mode], px);
+          ms = Math.min(ms, performance.now() - t0);
+        }
         times.push(`${pattern}/${mode} ${ms.toFixed(1)}ms`);
-        assert.ok(ms < 40, `${pattern}/${mode} took ${ms}ms`);
+        assert.ok(ms < 4, `${pattern}/${mode} took ${ms}ms`);
       }
     }
     console.log('render times:', times.join('; '));

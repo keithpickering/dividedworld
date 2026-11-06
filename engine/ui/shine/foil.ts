@@ -7,7 +7,12 @@
  * into any `Uint8ClampedArray`); `draw` puts those bytes in an ImageData on a small grid canvas and draws it scaled with
  * smoothing (at the rounded whole-pixel W x H, so a 988.4px box leaves a 0.4px strip unpainted at its far edge; the host sizes
  * its canvas in whole px, so the edge is under one pixel), then the starbursts on top; `sampleFoil` reads the same cells back as hex for the readable-band check. Every
- * cell goes through `clampInto`, so no cell leaves the band whatever the palette or the light.
+ * cell goes through `clampInto`'s arithmetic (inlined, in `finishRow`), so no cell leaves the band whatever the palette or the light.
+ *
+ * Cost: during a scroll every post in view redraws each frame, so a render is the busy page's frame budget. What no light moves
+ * (the pearl's swirl, the prism's facet map, hue and seams) is computed once per layout; what moves with the light but not
+ * with the cell (a column's fringe, a facet's flash, the dark board's opposite stop) once per frame; the per-cell rest keeps
+ * the bench's arithmetic in its order, so the bytes are the bench's to the last bit, and foil.test.ts holds them by digest.
  *
  * Units: a box is CSS px {w, h}; a cell is 3 CSS px; `density` is canvas pixels per CSS px; a light is {x, y} in -1.5..1.5;
  * colors are computed in LINEAR light and written as 8-bit sRGB; `now` is milliseconds, as the page's loop gives it.
@@ -15,7 +20,7 @@
  * Canvases come from `createCanvas` (default: an OffscreenCanvas, else a document canvas), so Node can run everything but
  * the drawing itself. Seeded, never `Math.random`. Engine code: it names no card and no instance.
  */
-import { clampInto, toHexA, toLinear, toSrgb8, type Band, type Light, type Rgb } from './band.ts';
+import { SRGB8, toHexA, toLinear, type Band, type Light, type Rgb } from './band.ts';
 import { seededRng } from './seeded.ts';
 
 export type FoilPattern = 'pearl' | 'bands' | 'prism';
@@ -55,6 +60,8 @@ type Facet = { x: number; y: number; nx: number; ny: number; ph: number };
 type Layout = {
   W: number; H: number; gw: number; gh: number;
   cells?: Facet[]; cellMap?: Uint32Array;
+  /* What no light moves, per cell: the pearl's swirl; the prism's hue before the light and whether the cell is on a seam. */
+  swirl?: Float64Array; hue?: Float64Array; seam?: Uint8Array; scratch?: Float64Array; row?: Float64Array;
   small?: FoilCanvas; img?: ImageData;
 };
 
@@ -91,6 +98,55 @@ function starSprite(make: (w: number, h: number) => FoilCanvas, glint: Readonly<
   return c;
 }
 
+/**
+ * `toSrgb8` as a table indexed by truncation: entry k is SRGB8[(k + 1) >> 1], so TO8[(l * 8192) | 0] is SRGB8[Math.round(l * 4096)]
+ * for every l in 0..1, to the last bit (l * 8192 is exact, and the truncation's k picks the same rounding, ties up), without
+ * Math.round, which costs more in a renderer's inner loop than all the rest of a cell's last steps. A channel here never leaves
+ * 0..1: every step is a blend of colors in 0..1, a scale by at most 1, or a mix toward white.
+ */
+const TO8 = new Uint8Array(8193);
+for (let k = 0; k <= 8192; k++) TO8[k] = SRGB8[(k + 1) >> 1]!;
+
+/** A frame's constants for `finishRow`: the board, its band, and the dark board's opposite stop. */
+type Finish = { readonly dark: boolean; readonly lo: number; readonly hi: number; readonly ar: number; readonly ag: number; readonly ab: number };
+
+/**
+ * A row's last steps, on numbers: `row` holds each cell's linear r, g, b and highlight h. The highlight goes toward the
+ * opposite stop and white on the dark board, toward white on the light one; then `clampInto` (scale down past hi, mix toward
+ * white under lo, keeping hue); then 8-bit sRGB through the table, written from cell `at` on. The same arithmetic in the same
+ * order as band.ts's helpers. One call a row, so the per-cell work is one loop over locals.
+ */
+function finishRow(row: Float64Array, n: number, f: Finish, px: Uint8ClampedArray, u32: Uint32Array | null, at: number): void {
+  const { dark, lo, hi, ar, ag, ab } = f;
+  for (let i = 0; i < n; i++) {
+    const q = i * 4;
+    let r = row[q]!, g = row[q + 1]!, b = row[q + 2]!;
+    const h = row[q + 3]!;
+    if (dark) {
+      const t = h * 0.6;
+      r += (ar - r) * t; g += (ag - g) * t; b += (ab - b) * t;
+      const w = h * 0.75;
+      r += (1 - r) * w; g += (1 - g) * w; b += (1 - b) * w;
+    } else {
+      r += (1 - r) * h; g += (1 - g) * h; b += (1 - b) * h;
+    }
+    const Y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    if (Y > hi) {
+      const k = hi / Y;
+      r *= k; g *= k; b *= k;
+    } else if (Y < lo) {
+      const k = (lo - Y) / (1 - Y);
+      r += (1 - r) * k; g += (1 - g) * k; b += (1 - b) * k;
+    }
+    const R = TO8[(r * 8192) | 0]!;
+    const G = TO8[(g * 8192) | 0]!;
+    const B = TO8[(b * 8192) | 0]!;
+    /* A little-endian word r | g << 8 | b << 16 | 255 << 24, as a signed int so it stays small; a Uint32Array stores the same bits. */
+    if (u32) u32[at + i] = 0xff000000 | (B << 16) | (G << 8) | R;
+    else { const o = (at + i) * 4; px[o] = R; px[o + 1] = G; px[o + 2] = B; px[o + 3] = 255; }
+  }
+}
+
 export function makeFoil(opts: FoilOptions): Foil {
   if (!/^#[0-9a-f]{6}$/iu.test(opts.glint)) throw new Error(`foil: the glint needs a #rrggbb color, got ${JSON.stringify(opts.glint)}`);
   const GLINT = toLinear(opts.glint);
@@ -106,15 +162,6 @@ export function makeFoil(opts: FoilOptions): Foil {
     const a = starRand() * Math.PI * 2, m = 0.2 + starRand() * 1.0;
     return { u: starRand() * 0.94 + 0.03, v: starRand() * 0.88 + 0.06, s: 18 + starRand() * 22, nx: Math.cos(a) * m, ny: Math.sin(a) * m };
   });
-
-  const out: Rgb = [0, 0, 0];
-  /** The palette at t (wrapping), blended in linear light; the result is shared, so copy it before the next call. */
-  function pal(t: number): Rgb {
-    t = ((t % 1) + 1) % 1;
-    const x = t * 6, i = x | 0, f = x - i, a = PAL[i]!, b = PAL[(i + 1) % 6]!;
-    out[0] = a[0] + (b[0] - a[0]) * f; out[1] = a[1] + (b[1] - a[1]) * f; out[2] = a[2] + (b[2] - a[2]) * f;
-    return out;
-  }
 
   let layout: Layout | undefined;
   let sprite: FoilCanvas | undefined;
@@ -168,70 +215,163 @@ export function makeFoil(opts: FoilOptions): Foil {
   }
 
   const cosT = Math.cos(1.75), sinT = Math.sin(1.75);
-  const c: Rgb = [0, 0, 0];
+  /* The palette as a flat table, stop 0 repeated after stop 5 so a blend never wraps its index. */
+  const PF = new Float64Array(21);
+  for (let k = 0; k < 7; k++) { const p = PAL[k % 6]!; PF[k * 3] = p[0]; PF[k * 3 + 1] = p[1]; PF[k * 3 + 2] = p[2]; }
+  /* `palAt` writes the palette at t (wrapping) here; a frame's few lookups use it, the per-cell loops blend PF inline. */
+  const C = new Float64Array(3);
+  function palAt(t: number): Float64Array {
+    /* t - floor(t) is ((t % 1) + 1) % 1 to the last bit, except that it can round up to 1 where that gives 0. */
+    let u = t - Math.floor(t);
+    if (u >= 1) u = 0;
+    const x = u * 6, i = x | 0, f = x - i, a = i * 3;
+    C[0] = PF[a]! + (PF[a + 3]! - PF[a]!) * f; C[1] = PF[a + 1]! + (PF[a + 4]! - PF[a + 1]!) * f; C[2] = PF[a + 2]! + (PF[a + 5]! - PF[a + 2]!) * f;
+    return C;
+  }
 
-  /** The pure per-cell computation both `draw` and `sampleFoil` share. */
-  function renderInto(L: Layout, light: Light, band: Band, px: Uint8ClampedArray): void {
+  /** What no light moves, computed once per layout: the pearl's swirl per cell; the prism's per-cell hue and seams. */
+  function pearlOf(L: Layout): Float64Array {
+    if (L.swirl) return L.swirl;
     const { gw, gh, W, H } = L;
-    const lx = light.x, ly = light.y;
-    const dark = band.hi < 0.5;
-    const pattern = opts.pattern;
-    const cellMap = pattern === 'prism' ? facetsOf(L) : undefined;
-    const cells = L.cells;
-    const cxs = W * (0.5 + 0.42 * lx), cys = H * (0.5 + 0.42 * ly), R2 = (Math.max(W, H) * 0.42) ** 2;
-    const bandPos = 0.5 + 0.55 * lx + 0.25 * ly;
-    const period = Math.min(W * 0.4, 360);
-    const span = W * Math.abs(cosT) + H * Math.abs(sinT);
+    const sw = new Float64Array(gw * gh);
     for (let j = 0; j < gh; j++) {
       const y = (j + 0.5) * CELL;
       for (let i = 0; i < gw; i++) {
-        const x = (i + 0.5) * CELL, idx = j * gw + i;
-        let h = 0;
-        if (pattern === 'pearl') {
-          /* A milky ground whose hue turns as the light moves; the whole rainbow lies across the post in slow soft swirls. */
-          const swirl = 0.09 * Math.sin(x / W * 5.1 + y / H * 2.3 + seed * 9) + 0.06 * Math.sin(y / H * 6.2 - x / W * 3.4);
-          const base = pal(seed + 0.32 * lx + 0.18 * ly + (x / W) * 0.85 + (y / H) * 0.3 + swirl);
-          c[0] = base[0]; c[1] = base[1]; c[2] = base[2];
-          const s = Math.exp(-((x - cxs) ** 2 + (y - cys) ** 2) / (R2 * 0.6));
-          const fringe = pal(seed + 0.5 + (x / W) * 0.85 + 0.32 * lx);
-          const f = s * (1 - s) * 1.2;
-          c[0] += (fringe[0] - c[0]) * f; c[1] += (fringe[1] - c[1]) * f; c[2] += (fringe[2] - c[2]) * f;
-          h = s * 0.3;
-        } else if (pattern === 'bands') {
-          /* Diagonal rainbow stripes with fine diffraction lines, and a bright stripe where the light catches. */
+        const x = (i + 0.5) * CELL;
+        sw[j * gw + i] = 0.09 * Math.sin(x / W * 5.1 + y / H * 2.3 + seed * 9) + 0.06 * Math.sin(y / H * 6.2 - x / W * 3.4);
+      }
+    }
+    L.swirl = sw;
+    return sw;
+  }
+  function prismOf(L: Layout): { hue: Float64Array; seam: Uint8Array } {
+    if (L.hue && L.seam) return { hue: L.hue, seam: L.seam };
+    const map = facetsOf(L), cells = L.cells!;
+    const { gw, gh, W, H } = L;
+    const hue = new Float64Array(gw * gh), seam = new Uint8Array(gw * gh);
+    for (let j = 0; j < gh; j++) {
+      const y = (j + 0.5) * CELL;
+      for (let i = 0; i < gw; i++) {
+        const x = (i + 0.5) * CELL, idx = j * gw + i, k = map[idx]!;
+        const rr = Math.hypot((x - W / 2) / W, (y - H / 2) / H);
+        hue[idx] = seed + cells[k]!.ph * 0.45 + rr * 1.6;
+        const right = i < gw - 1 ? map[idx + 1]! : k, down = j < gh - 1 ? map[idx + gw]! : k;
+        seam[idx] = right !== k || down !== k ? 1 : 0;
+      }
+    }
+    L.hue = hue; L.seam = seam;
+    return { hue, seam };
+  }
+
+  /* A little-endian Uint32 view packs a cell as one write; a big-endian machine, or a buffer off a 4-byte boundary, writes bytes. */
+  const LITTLE = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
+  let view: { px: Uint8ClampedArray; u32: Uint32Array | null } | undefined;
+  const wordsOf = (px: Uint8ClampedArray): Uint32Array | null => {
+    if (view?.px === px) return view.u32;
+    const u32 = LITTLE && px.byteOffset % 4 === 0 ? new Uint32Array(px.buffer, px.byteOffset, px.length >> 2) : null;
+    view = { px, u32 };
+    return u32;
+  };
+  /** A row of cells before their last steps: r, g, b and the highlight, four numbers a cell. */
+  const rowOf = (L: Layout): Float64Array => (L.row ??= new Float64Array(L.gw * 4));
+  /** A frame's per-column or per-facet numbers, in a buffer the layout keeps so a frame allocates nothing. */
+  const scratch = (L: Layout, n: number): Float64Array => (L.scratch && L.scratch.length >= n ? L.scratch : (L.scratch = new Float64Array(n)));
+
+  /**
+   * The pure per-cell computation both `draw` and `sampleFoil` share (the split by cost is in the header). The per-cell loops
+   * keep the color in locals and blend the palette inline, and each row ends in one `finishRow` call: a helper called per cell,
+   * or one that wrote shared state, cost more than the math.
+   */
+  function renderInto(L: Layout, light: Light, band: Band, px: Uint8ClampedArray): void {
+    const { gw, gh, W, H } = L;
+    const lx = light.x, ly = light.y;
+    const pattern = opts.pattern;
+    const u32 = wordsOf(px);
+    /* The dark board's highlights turn toward the palette's opposite stop: one stop a frame, the same for every cell. */
+    const alt = palAt(seed + 0.5 + 0.3 * lx);
+    const f: Finish = { dark: band.hi < 0.5, lo: band.lo, hi: band.hi, ar: alt[0]!, ag: alt[1]!, ab: alt[2]! };
+    const row = rowOf(L);
+
+    if (pattern === 'pearl') {
+      /* A milky ground whose hue turns as the light moves; the whole rainbow lies across the post in slow soft swirls. */
+      const swirl = pearlOf(L);
+      const cxs = W * (0.5 + 0.42 * lx), cys = H * (0.5 + 0.42 * ly), R2 = (Math.max(W, H) * 0.42) ** 2;
+      const turn = seed + 0.32 * lx + 0.18 * ly, R6 = R2 * 0.6;
+      /* Per column: its share of the hue, its distance from the light, and the fringe it throws (no row moves either). */
+      const col = scratch(L, gw * 5);
+      for (let i = 0; i < gw; i++) {
+        const x = (i + 0.5) * CELL, fr = palAt(seed + 0.5 + (x / W) * 0.85 + 0.32 * lx), o = i * 5;
+        col[o] = (x / W) * 0.85; col[o + 1] = (x - cxs) ** 2; col[o + 2] = fr[0]!; col[o + 3] = fr[1]!; col[o + 4] = fr[2]!;
+      }
+      for (let j = 0; j < gh; j++) {
+        const y = (j + 0.5) * CELL;
+        const rowHue = (y / H) * 0.3, rowD = (y - cys) ** 2;
+        for (let i = 0, idx = j * gw; i < gw; i++, idx++) {
+          const o = i * 5;
+          const t = turn + col[o]! + rowHue + swirl[idx]!;
+          let u = t - Math.floor(t);
+          if (u >= 1) u = 0;
+          const x6 = u * 6, p = x6 | 0, fp = x6 - p, a = p * 3;
+          let r = PF[a]! + (PF[a + 3]! - PF[a]!) * fp, g = PF[a + 1]! + (PF[a + 4]! - PF[a + 1]!) * fp, b = PF[a + 2]! + (PF[a + 5]! - PF[a + 2]!) * fp;
+          const s = Math.exp(-(col[o + 1]! + rowD) / R6);
+          const k = s * (1 - s) * 1.2;
+          r += (col[o + 2]! - r) * k; g += (col[o + 3]! - g) * k; b += (col[o + 4]! - b) * k;
+          const q = i * 4;
+          row[q] = r; row[q + 1] = g; row[q + 2] = b; row[q + 3] = s * 0.3;
+        }
+        finishRow(row, gw, f, px, u32, j * gw);
+      }
+    } else if (pattern === 'bands') {
+      /* Diagonal rainbow stripes with fine diffraction lines, and a bright stripe where the light catches. */
+      const bandPos = 0.5 + 0.55 * lx + 0.25 * ly;
+      const period = Math.min(W * 0.4, 360);
+      const span = W * Math.abs(cosT) + H * Math.abs(sinT);
+      const hx = 0.9 * lx, hy = 0.45 * ly, sx = lx * 24, sy = ly * 9;
+      for (let j = 0; j < gh; j++) {
+        const y = (j + 0.5) * CELL;
+        for (let i = 0, idx = j * gw; i < gw; i++, idx++) {
+          const x = (i + 0.5) * CELL;
           const d = x * cosT + y * sinT;
-          const base = pal(seed + d / period + 0.9 * lx + 0.45 * ly);
-          const lines = 0.5 + 0.5 * Math.sin(d * 0.85 + lx * 24 + ly * 9);
+          const t = seed + d / period + hx + hy;
+          let u = t - Math.floor(t);
+          if (u >= 1) u = 0;
+          const x6 = u * 6, p = x6 | 0, fp = x6 - p, a = p * 3;
+          const lines = 0.5 + 0.5 * Math.sin(d * 0.85 + sx + sy);
           const k = 0.9 + 0.1 * lines;
-          c[0] = base[0] * k; c[1] = base[1] * k; c[2] = base[2] * k;
+          const r = (PF[a]! + (PF[a + 3]! - PF[a]!) * fp) * k, g = (PF[a + 1]! + (PF[a + 4]! - PF[a + 1]!) * fp) * k, b = (PF[a + 2]! + (PF[a + 5]! - PF[a + 2]!) * fp) * k;
           const prj = d / span + 0.5;
           const sp = Math.exp(-(((prj - bandPos) * 7) ** 2));
-          h = sp * 0.5 + lines * sp * 0.12;
-        } else {
-          /* Every facet throws its own color, spreading out from the middle, and flashes when it faces the light. */
-          const k = cellMap![idx]!, cell = cells![k]!;
-          const rr = Math.hypot((x - W / 2) / W, (y - H / 2) / H);
-          const face = cell.nx * lx + cell.ny * ly;
-          const base = pal(seed + cell.ph * 0.45 + rr * 1.6 + 0.55 * face + 0.25 * lx);
-          c[0] = base[0]; c[1] = base[1]; c[2] = base[2];
-          const a = Math.exp(-((cell.nx - lx) ** 2 + (cell.ny - ly) ** 2) / 0.07);
-          h = a * 0.7;
-          const right = i < gw - 1 ? cellMap![idx + 1]! : k, down = j < gh - 1 ? cellMap![idx + gw]! : k;
-          if (right !== k || down !== k) { const sh = dark ? 0.78 : 0.94; c[0] *= sh; c[1] *= sh; c[2] *= sh; h *= 0.5; }
+          const q = i * 4;
+          row[q] = r; row[q + 1] = g; row[q + 2] = b; row[q + 3] = sp * 0.5 + lines * sp * 0.12;
         }
-        if (dark) {
-          /* Highlights turn toward the palette's opposite stop before the clamp, so deep jewel tones shift hue with the light. */
-          const alt = pal(seed + 0.5 + 0.3 * lx);
-          const t = h * 0.6;
-          c[0] += (alt[0] - c[0]) * t; c[1] += (alt[1] - c[1]) * t; c[2] += (alt[2] - c[2]) * t;
-          const g = h * 0.75;
-          c[0] += (1 - c[0]) * g; c[1] += (1 - c[1]) * g; c[2] += (1 - c[2]) * g;
-        } else {
-          c[0] += (1 - c[0]) * h; c[1] += (1 - c[1]) * h; c[2] += (1 - c[2]) * h;
+        finishRow(row, gw, f, px, u32, j * gw);
+      }
+    } else {
+      /* Every facet throws its own color, spreading out from the middle, and flashes when it faces the light. */
+      const map = facetsOf(L), cells = L.cells!;
+      const { hue, seam } = prismOf(L);
+      /* Per facet: how far the light turns its color, and how bright it flashes. */
+      const n = cells.length, per = scratch(L, n * 2);
+      for (let k = 0; k < n; k++) {
+        const cell = cells[k]!;
+        per[k * 2] = 0.55 * (cell.nx * lx + cell.ny * ly);
+        per[k * 2 + 1] = Math.exp(-((cell.nx - lx) ** 2 + (cell.ny - ly) ** 2) / 0.07) * 0.7;
+      }
+      const shift = 0.25 * lx, sh = f.dark ? 0.78 : 0.94;
+      for (let j = 0; j < gh; j++) {
+        for (let i = 0, idx = j * gw; i < gw; i++, idx++) {
+          const k = map[idx]! * 2;
+          const t = hue[idx]! + per[k]! + shift;
+          let u = t - Math.floor(t);
+          if (u >= 1) u = 0;
+          const x6 = u * 6, p = x6 | 0, fp = x6 - p, a = p * 3;
+          let r = PF[a]! + (PF[a + 3]! - PF[a]!) * fp, g = PF[a + 1]! + (PF[a + 4]! - PF[a + 1]!) * fp, b = PF[a + 2]! + (PF[a + 5]! - PF[a + 2]!) * fp;
+          let h = per[k + 1]!;
+          if (seam[idx]) { r *= sh; g *= sh; b *= sh; h *= 0.5; }
+          const q = i * 4;
+          row[q] = r; row[q + 1] = g; row[q + 2] = b; row[q + 3] = h;
         }
-        clampInto(c, band);
-        const o = idx * 4;
-        px[o] = toSrgb8(c[0]); px[o + 1] = toSrgb8(c[1]); px[o + 2] = toSrgb8(c[2]); px[o + 3] = 255;
+        finishRow(row, gw, f, px, u32, j * gw);
       }
     }
   }
@@ -262,9 +402,10 @@ export function makeFoil(opts: FoilOptions): Foil {
       /* Zero the canvases so their backing stores are freed now, not when the collector gets to them. */
       if (layout?.small) { layout.small.width = 0; layout.small.height = 0; }
       if (sprite) { sprite.width = 0; sprite.height = 0; }
-      layout = undefined; sprite = undefined;
+      layout = undefined; sprite = undefined; view = undefined;
     },
-    holds: () => layout !== undefined && (layout.img !== undefined || layout.cellMap !== undefined || layout.small !== undefined),
+    holds: () => layout !== undefined && (layout.img !== undefined || layout.cellMap !== undefined || layout.small !== undefined ||
+      layout.swirl !== undefined || layout.hue !== undefined || layout.row !== undefined || layout.scratch !== undefined),
   };
 
   function paint(ctx: CanvasRenderingContext2D, L: Layout, density: number, light: Light, band: Band, now: number, idle: boolean): void {

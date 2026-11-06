@@ -27,9 +27,10 @@ const SHINY = 16;
 const LAG = 2;
 /**
  * The 95th percentile of the loop's own time in a frame while the page scrolls, in ms. Measured here (software-drawn headless Chromium,
- * all sixteen posts, five in view) at 11.6 to 12.5 ms over eight timed runs: above the 10 ms the design hoped for, because the draws run
- * synchronously on the software rasterizer. The budget is that plus about a third, and under one 16.7 ms frame: a loop that costs more
- * than a frame cannot keep its frames, and the 25 ms poisoned draw below is far past it.
+ * all sixteen posts, five in view) at 11.6 to 12.5 ms over eight timed runs while the foil's render did every cell's math each frame, and
+ * at 3.9 to 4.4 ms once it precomputed what the light does not move (engine/ui/shine/foil.ts): most of the loop was that render. The
+ * budget is under one 16.7 ms frame: a loop that costs more than a frame cannot keep its frames, and the 25 ms poisoned draw below is far
+ * past it.
  */
 const WORK_BUDGET = 16;
 /** Out of view "beyond a margin": a post this many px past the viewport's edge has freed its canvases. */
@@ -192,7 +193,17 @@ test.describe('a busy thread', () => {
     }
     const timed = runs.slice(1);
     const passed = timed.findIndex((m) => holds(m).gap && holds(m).work);
-    console.log(`passed in timed run ${passed + 1} of ${timed.length}: gap p95 ${timed[passed]?.gap.toFixed(1)} ms (bound ${GAP_BOUND}), loop own time p95 ${timed[passed]?.work.toFixed(2)} ms (budget ${WORK_BUDGET})`);
+    if (passed >= 0) {
+      console.log(`passed in timed run ${passed + 1} of ${timed.length}: gap p95 ${timed[passed]!.gap.toFixed(1)} ms (bound ${GAP_BOUND}), loop own time p95 ${timed[passed]!.work.toFixed(2)} ms (budget ${WORK_BUDGET})`);
+    } else {
+      /* No run met both: name each, with what it missed. */
+      const missed = timed.map((m, k) => {
+        const h = holds(m);
+        const what = [!h.gap && 'gap', !h.work && 'loop time'].filter(Boolean).join(' and ');
+        return `run ${k + 1} missed ${what}: gap p95 ${m.gap.toFixed(1)} ms (bound ${GAP_BOUND}), loop own time p95 ${m.work.toFixed(2)} ms (budget ${WORK_BUDGET})`;
+      });
+      console.log(`no timed run of ${timed.length} met both bounds; ${missed.join('; ')}`);
+    }
     expect(Math.min(...timed.map((m) => m.work)), `the loop's own time, 95th percentile, under ${WORK_BUDGET} ms`).toBeLessThan(WORK_BUDGET);
     expect(Math.min(...timed.map((m) => m.gap)), 'the frame gap, 95th percentile (the backstop)').toBeLessThan(GAP_BOUND);
     expect(passed, 'one run met both').toBeGreaterThanOrEqual(0);
