@@ -180,8 +180,14 @@ begin
   if d.id is null then raise exception 'landing the rename wrote no describe Act'; end if;
   if (select count(*) from acts where kind = 'describe') <> 1 then raise exception 'one describe Act expected, got %', (select count(*) from acts where kind = 'describe'); end if;
   if d.character is not null or d.target_act_id is distinct from mv or d.payload ->> 'move_act' is distinct from mv::text
-     or d.payload ->> 'description' is distinct from 'Second admin words.' or d.payload ->> 'admin' is distinct from (select described_by::text from queued_moves where id = q) then
+     or d.payload ->> 'description' is distinct from 'Second admin words.' then
     raise exception 'the describe Act is wrong: %', to_jsonb(d);
+  end if;
+  -- Every signed-in player reads an Act's payload: it says an admin did it, never which account.
+  if d.payload ->> 'by' is distinct from 'admin' or d.payload ? 'admin'
+     or d.payload::text like '%' || (select described_by::text from queued_moves where id = q) || '%'
+     or d.payload::text like '%' || (select id::text from auth.users where email = 'db-admin@test.invalid') || '%' then
+    raise exception 'the describe Act''s payload names an account or not "by admin": %', d.payload;
   end if;
   if d.created_at <= (select created_at from acts where id = mv) then raise exception 'the describe Act is not after the move Act'; end if;
   if (select move_act from boards_now where id = b) is distinct from mv then raise exception 'the board does not name the rename'; end if;
@@ -251,7 +257,7 @@ declare
   ann uuid := (select (value #>> '{}')::uuid from settings where key = 'systemAnnouncements');
   got text;
 begin
-  got := pg_temp.refusal(format($q$insert into acts (character, kind, thread, payload) values (null, 'describe', %L, jsonb_build_object('description', 'Forged.', 'move_act', null, 'admin', %L, 'board', %L))$q$, ann, admin, b));
+  got := pg_temp.refusal(format($q$insert into acts (character, kind, thread, payload) values (null, 'describe', %L, jsonb_build_object('description', 'Forged.', 'move_act', null, 'by', 'admin', 'board', %L))$q$, ann, b));
   if got is distinct from '42501' then raise exception 'a describe was written outside its functions: %', got; end if;
   perform tests.become(admin);
   got := pg_temp.refusal(format('select describe_board(%L, %L)', gen_random_uuid(), 'Nowhere.'));

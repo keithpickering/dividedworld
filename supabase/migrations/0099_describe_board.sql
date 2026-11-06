@@ -3,7 +3,8 @@
 --
 --   describe   An admin's replacement of a board's description. No character; the thread is the rename's, or the announcements thread when
 --              no rename is open; target_act_id is the rename's move Act or null. Payload: exactly {description (1-2000), move_act
---              (uuid or null, the open rename it replaces the words of), admin (the admin's account), board (the board)}. The plan named
+--              (uuid or null, the open rename it replaces the words of), by ('admin'), board (the board)}. The admin's account is
+--              not on the Act, as with a move_end and a card_end: every signed-in player reads an Act's payload. The plan named
 --              no `board` key ("target the board"), but an Act has no board column and a describe with no rename open names no move, so the
 --              board rides in the payload (PLAN GAP). It takes no seq, as a card_end takes none (0092): it is not a post in any
 --              thread, and no thread page lists it. Written only by write_describe, which sets `kayfabb.describe_writer` for the insert.
@@ -37,10 +38,10 @@ alter table acts add constraint acts_seq_check check ((kind = 'edit') = (seq is 
 
 -- Each field named; `is true` so a missing key fails the check instead of passing as null. The move it names is its target.
 alter table acts add constraint acts_describe_payload check (kind <> 'describe' or (
-  payload - 'description' - 'move_act' - 'admin' - 'board' = '{}'::jsonb
+  payload - 'description' - 'move_act' - 'by' - 'board' = '{}'::jsonb
   and jsonb_typeof(payload -> 'description') = 'string' and char_length(payload ->> 'description') between 1 and 2000
   and jsonb_typeof(payload -> 'board') = 'string' and payload ->> 'board' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-  and jsonb_typeof(payload -> 'admin') = 'string' and payload ->> 'admin' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  and payload -> 'by' = '"admin"'::jsonb
   and jsonb_typeof(payload -> 'move_act') in ('string', 'null')
   and (payload ->> 'move_act' is null or payload ->> 'move_act' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
   and payload ->> 'move_act' is not distinct from target_act_id::text) is true);
@@ -151,9 +152,9 @@ end $$;
 
 -- ------------------------------------------------------------------------------------ the writers ----
 
--- The one place a describe Act is written. The thread is the rename's, or the announcements thread; created_at is the clock's, not the
+-- The one place a describe Act is written (who wrote it is on the queue row for a queued one, and nowhere public). The thread is the rename's, or the announcements thread; created_at is the clock's, not the
 -- transaction's, so a describe written beside the move it replaces the words of is strictly after it. Not callable by a client.
-create function write_describe(board uuid, description text, move_act uuid, admin uuid) returns uuid
+create function write_describe(board uuid, description text, move_act uuid) returns uuid
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   in_thread uuid;
@@ -168,12 +169,12 @@ begin
   perform set_config('kayfabb.describe_writer', 'on', true);
   insert into acts (character, kind, thread, target_act_id, payload, created_at)
   values (null, 'describe', in_thread, move_act,
-    jsonb_build_object('description', description, 'move_act', move_act, 'admin', admin, 'board', board), clock_timestamp()) returning id into written;
+    jsonb_build_object('description', description, 'move_act', move_act, 'by', 'admin', 'board', board), clock_timestamp()) returning id into written;
   perform set_config('kayfabb.describe_writer', '', true);
   return written;
 end $$;
-revoke execute on function write_describe(uuid, text, uuid, uuid) from public, anon, authenticated;
-grant execute on function write_describe(uuid, text, uuid, uuid) to service_role;
+revoke execute on function write_describe(uuid, text, uuid) from public, anon, authenticated;
+grant execute on function write_describe(uuid, text, uuid) to service_role;
 
 -- The words of a description, or the refusal naming what is wrong with them.
 create function description_problem(words text) returns text
@@ -213,7 +214,7 @@ begin
   if not exists (select 1 from boards b where b.id = describe_board.board) then raise exception 'there is no such board' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
   if description_problem(description) is not null then raise exception '%', description_problem(description) using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   now_move := (select b.move_act from boards_now b where b.id = describe_board.board);
-  written := write_describe(describe_board.board, description, now_move, auth.uid());
+  written := write_describe(describe_board.board, description, now_move);
   return jsonb_build_object('act', written, 'board', describe_board.board, 'description', description, 'move_act', now_move);
 end $$;
 revoke execute on function describe_board(uuid, text) from public, anon;
@@ -292,7 +293,7 @@ begin
           || case when due.expires_at is not null then jsonb_build_object('expires_at', due.expires_at) else '{}'::jsonb end) ->> 'id')::uuid;
         update queued_moves set landed_act = written where id = due.id;
         if due.kind = 'renameBoard' and due.admin_description is not null then
-          perform write_describe((due.params ->> 'board')::uuid, due.admin_description, written, due.described_by);
+          perform write_describe((due.params ->> 'board')::uuid, due.admin_description, written);
         end if;
         landed := landed + 1;
       exception when others then
