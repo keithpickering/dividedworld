@@ -337,8 +337,9 @@ begin
     -- news_landed carries no thread and no instant of the Acts (landed_at is its own), so no unique index can say "one landing per thread and
     -- instant". Two transactions landing Acts of one thread at one instant could each find none under read committed and each insert a row,
     -- splitting one landing into two News items. So the check is serialized: the lock is on the landing's (thread, instant), held to commit, and
-    -- the second transaction's `exists` runs after the first has committed and sees its row.
-    perform pg_advisory_xact_lock(hashtextextended(new.thread::text || '|' || new.created_at::text, 0));
+    -- the second transaction's `exists` runs after the first has committed and sees its row. The instant is keyed as epoch microseconds, never
+    -- as text, which would follow each session's TimeZone and give two sessions two locks for one landing.
+    perform pg_advisory_xact_lock(hashtextextended(new.thread::text || '|' || (extract(epoch from new.created_at) * 1000000)::bigint::text, 0));
     if not exists (select 1 from acts x join news_landed n on n.act = x.id
                    where x.kind = 'announce' and x.thread = new.thread and x.created_at = new.created_at and n.kind = 'announcements') then
       insert into news_landed (act, kind) values (new.id, 'announcements');

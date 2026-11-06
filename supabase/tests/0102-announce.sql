@@ -195,8 +195,10 @@ declare
   c uuid := tests.character(ann, 'An Lock', 'alpha', now() - interval '10 days');
   th uuid := (select turns_thread from seasons where ends_at is null);
   at timestamptz := now() + interval '6 minutes';
-  k bigint := hashtextextended(th::text || '|' || at::text, 0);
+  k bigint := hashtextextended(th::text || '|' || (extract(epoch from at) * 1000000)::bigint::text, 0);
 begin
+  -- The key is the same whatever the session's zone: a drop and a settlement may run under different ones.
+  set local timezone = 'America/New_York';
   if exists (select 1 from pg_locks where locktype = 'advisory' and pid = pg_backend_pid() and classid = ((k >> 32) & 4294967295)::oid and objid = (k & 4294967295)::oid) then
     raise exception 'the landing''s lock is held before any Act lands';
   end if;
@@ -204,6 +206,7 @@ begin
   if not exists (select 1 from pg_locks where locktype = 'advisory' and pid = pg_backend_pid() and classid = ((k >> 32) & 4294967295)::oid and objid = (k & 4294967295)::oid and objsubid = 1) then
     raise exception 'landing an announce took no lock on its thread and instant';
   end if;
+  reset timezone;
 end $$;
 
 -- ---- A drop announced with its class writes one announce at once, and opens the thread when it is the season's first ----
