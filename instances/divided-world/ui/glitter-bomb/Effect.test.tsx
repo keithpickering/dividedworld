@@ -1,97 +1,270 @@
 /**
- * Glitter Bomb's effect (docs/plans/2026-11-01-card-reach-plan.md, Task 7): the character's posts sparkle while it is up. It is
- * decoration, so its accessible path is reduced motion alone, which holds the sparkle still; and the words stay readable at the house
- * style's contrast with the sparkle on, in every mode.
+ * Glitter Bomb's effect on the flakes (docs/plans/2026-11-06-shine-plan.md, Task 10; the design's sections 2, 3, 5, 6 and 8): the
+ * character's posts glitter while the card is up. Two canvases go around the words, the settled and loose flakes under them and the
+ * burst over them, neither taking the pointer; the burst fires once per mount, the first time the post is 40% in view, and never
+ * under reduced motion or `still`; the flakes are seeded from public ids only; a post out of view gives its flakes back and builds
+ * them again, landed, when it returns. The flakes themselves are the engine's (their tests are there); here the engine's functions
+ * are spies over the real ones, so what the Effect hands them and when is what is read.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { act, render, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, test } from 'vitest';
-import { parseColor, ratio, tokensOf } from '../../../../engine/ui/contrast.ts';
+import { act, cleanup, fireEvent, render } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Act } from '../../../../engine/ui/data/api.ts';
 import type { CardPlay, EffectProps } from '../../../../engine/ui/cards/types.ts';
-import { GLITTER_ALPHA, GLITTER_INKS, GlitterBombEffect } from './Effect.tsx';
+import { light as pageLight } from '../../../../engine/ui/shine/light.ts';
+import { probe } from '../../../../engine/ui/shine/loop.ts';
+import { boardStoryIds } from '../../../../e2e/board-stories.ts';
+
+const spies = vi.hoisted(() => ({ clingOver: vi.fn(), clingRegister: vi.fn(), clingUnregister: vi.fn() }));
+vi.mock('../../../../engine/ui/shine/flakes.ts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../../../engine/ui/shine/flakes.ts')>();
+  return {
+    ...real,
+    makeFlakes: vi.fn(real.makeFlakes),
+    burst: vi.fn(real.burst),
+    stepBurst: vi.fn(real.stepBurst),
+    drawBurst: vi.fn(real.drawBurst),
+    release: vi.fn(real.release),
+    cling: {
+      ...real.cling,
+      register: (host: HTMLElement, options: unknown) => { spies.clingRegister(host, options); return () => spies.clingUnregister(host); },
+      over: spies.clingOver,
+    },
+  };
+});
+vi.mock('../../../../engine/ui/shine/band.ts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../../../engine/ui/shine/band.ts')>();
+  return { ...real, bandFor: vi.fn(() => ({ lo: 0.59, hi: 1 })) };
+});
+import * as flakesModule from '../../../../engine/ui/shine/flakes.ts';
+import { GLITTER_GLINT, GLITTER_HOLO, GLITTER_INKS, GlitterBombEffect } from './Effect.tsx';
+
+const makeFlakes = vi.mocked(flakesModule.makeFlakes);
+const burst = vi.mocked(flakesModule.burst);
+const drawBurst = vi.mocked(flakesModule.drawBurst);
+const release = vi.mocked(flakesModule.release);
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const read = (p: string) => fs.readFileSync(path.resolve(here, p), 'utf8');
 
 const post: Act = { id: 'p1', character: 'c1', kind: 'post', thread: 't1', targetActId: null, seq: 1, createdAt: '2026-11-01T12:00:00Z', payload: { body: 'hi' }, currentPayload: { body: 'hi' }, editedAt: null, shownEditedAt: null };
 const play: CardPlay = { id: 'g1', card: 'glitter-bomb', layer: 1, caster: 'c2', message: '', config: {}, playedAt: '2026-11-01T12:00:00Z', post: 'p1', reach: 'character', on: 'c1', ends: '2099-01-01T00:00:00Z' };
-const props = (): EffectProps => ({
-  post, plays: [play], states: {}, released: new Set(), reader: { author: false, caster: false }, place: 'thread', reach: 'character', still: false,
+const props = (still = false): EffectProps => ({
+  post, plays: [play], states: {}, released: new Set(), reader: { author: false, caster: false }, place: 'thread', reach: 'character', still,
   show: () => {}, met: () => {}, holdScreen: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: async () => ({ ok: false, error: 'no' }), nameOf: () => 'Spritey',
   children: <p data-kb-words>Hello there.</p>,
 });
+const box = () => document.querySelector('[data-kb-glitter]') as HTMLElement;
+const under = () => box().querySelector('canvas.dw-glitter-under') as HTMLCanvasElement;
+const over = () => box().querySelector('canvas.dw-glitter-over') as HTMLCanvasElement;
 
-afterEach(() => document.documentElement.removeAttribute('data-kb-motion'));
+let queue = new Map<number, FrameRequestCallback>();
+let nextId = 1;
+const flush = (t: number) => { const run = [...queue.values()]; queue.clear(); for (const cb of run) cb(t); };
+const frames = (n: number, from = 0, step = 16) => { for (let i = 1; i <= n; i++) flush(from + i * step); };
+let observers: { cb: IntersectionObserverCallback; seen: Set<Element>; opts?: IntersectionObserverInit }[] = [];
+class FakeObserver {
+  readonly entry = { cb: undefined as unknown as IntersectionObserverCallback, seen: new Set<Element>(), opts: undefined as IntersectionObserverInit | undefined };
+  constructor(cb: IntersectionObserverCallback, opts?: IntersectionObserverInit) { this.entry.cb = cb; this.entry.opts = opts; observers.push(this.entry); }
+  observe(el: Element) { this.entry.seen.add(el); }
+  unobserve(el: Element) { this.entry.seen.delete(el); }
+  disconnect() { this.entry.seen.clear(); }
+  takeRecords() { return []; }
+}
+/** The post comes into view with `ratio` of it showing (0 is out of view): the loop's any-overlap observer and the burst's 40% one hear it. */
+const see = (ratio: number) => act(() => {
+  for (const o of observers) for (const el of o.seen) o.cb([{ target: el, isIntersecting: ratio > 0, intersectionRatio: ratio } as IntersectionObserverEntry], o as unknown as IntersectionObserver);
+});
+class FakeResize { observe() {} unobserve() {} disconnect() {} }
+
+/* A canvas context that takes any call, so the engine's real drawing runs. */
+const gradient = { addColorStop: () => {} };
+const ctx = new Proxy({} as Record<string, unknown>, {
+  get: (t, k: string) => (k in t ? t[k] : k.startsWith('create') ? () => gradient : () => {}),
+  set: (t, k: string, v) => { t[k] = v; return true; },
+});
+
+beforeEach(() => {
+  queue = new Map(); nextId = 1; observers = [];
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { const id = nextId++; queue.set(id, cb); return id; });
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => { queue.delete(id); });
+  vi.stubGlobal('IntersectionObserver', FakeObserver);
+  vi.stubGlobal('ResizeObserver', FakeResize);
+  vi.stubGlobal('devicePixelRatio', 1);
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(() => 300);
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(() => 120);
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => ctx) as never);
+  document.documentElement.setAttribute('data-kb-motion', 'full');
+  for (const f of [makeFlakes, burst, drawBurst, release, flakesModule.stepBurst as ReturnType<typeof vi.fn>]) f.mockClear();
+  Object.values(spies).forEach((s) => s.mockClear());
+  flakesModule.burstProbe.reset();
+});
+afterEach(() => {
+  cleanup();
+  probe.reset(); pageLight.reset();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  document.documentElement.removeAttribute('data-kb-motion');
+});
+
+const lastFlakes = () => makeFlakes.mock.results.at(-1)!.value as flakesModule.Flakes;
 
 describe('Glitter Bomb', () => {
-  test('sparkles around the words, never over them, and hides the sparkle from a screen reader', () => {
+  test('the layout: the under canvas below the words and the over canvas above them, hidden from assistive tech, neither taking the pointer', () => {
     render(<GlitterBombEffect {...props()} />);
-    const box = document.querySelector('[data-kb-glitter]') as HTMLElement;
-    expect(box).not.toBeNull();
-    expect(box.querySelector('[data-kb-words]')).toHaveTextContent('Hello there.');
-    const sparkle = box.querySelector('.dw-glitter-sparkle') as HTMLElement;
-    expect(sparkle).toHaveAttribute('aria-hidden', 'true');
-    expect(sparkle.querySelectorAll('.dw-glint').length).toBeGreaterThan(0);
+    expect(box().querySelector('[data-kb-words]')).toHaveTextContent('Hello there.');
+    for (const c of [under(), over()]) expect(c).toHaveAttribute('aria-hidden', 'true');
+    const css = read('glitter.css').replace(/\/\*[\s\S]*?\*\//gu, '');
+    /* Every block whose selector list names the class, together. */
+    const rule = (selector: string) => [...css.matchAll(/([^{}]+)\{([^}]*)\}/gu)].filter(([, sel]) => sel!.split(',').some((x) => x.trim() === selector)).map(([, , body]) => body).join(';');
+    const z = (selector: string) => Number(/z-index:\s*(-?\d+)/u.exec(rule(selector))?.[1]);
+    for (const s of ['.dw-glitter-under', '.dw-glitter-over']) {
+      expect(rule(s), s).toMatch(/pointer-events:\s*none/u);
+      expect(rule(s), s).toMatch(/position:\s*absolute/u);
+    }
+    expect(z('.dw-glitter-under')).toBeLessThan(z('.dw-glitter-words'));
+    expect(z('.dw-glitter-words')).toBeLessThan(z('.dw-glitter-over'));
+    /* The same order in the document, and the old layer and its alpha are gone. */
+    const order = [...box().children].map((el) => el.className);
+    expect(order).toEqual(['dw-glitter-under', 'dw-glitter-words', 'dw-glitter-over']);
+    expect(box().querySelector('.dw-glint, .dw-glitter-sparkle')).toBeNull();
+    expect(css).not.toMatch(/twinkle|opacity/u);
   });
 
-  test('under reduced motion it draws no animation: the sparkle holds still', () => {
+  test('the inks are the seven rainbow inks then silver three times, and the glint is a #rrggbb', () => {
+    expect(GLITTER_INKS).toEqual(['#ff3b4a', '#ff9a2e', '#ffd23f', '#3ddc6b', '#2fd6ff', '#4a6bff', '#b65cff', '#dfe4ec', '#dfe4ec', '#dfe4ec']);
+    expect(GLITTER_HOLO).toBe(7);
+    expect(GLITTER_GLINT).toMatch(/^#[0-9a-f]{6}$/u);
+  });
+
+  test('the seed is public ids only: the play and the post', () => {
+    render(<GlitterBombEffect {...props()} />);
+    see(1);
+    frames(2);
+    expect(makeFlakes).toHaveBeenCalledTimes(1);
+    const opts = makeFlakes.mock.calls[0]![0];
+    expect(opts.seed).toBe('g1:p1');
+    expect(opts.inks).toEqual(GLITTER_INKS);
+    expect(opts.holo).toBe(GLITTER_HOLO);
+    expect(opts.glint).toBe(GLITTER_GLINT);
+    expect(JSON.stringify(opts.seed)).not.toMatch(/c1|c2/u);
+    expect(read('Effect.tsx')).not.toMatch(/\.character|\.caster|owner|\.on\b/u);
+  });
+
+  test('before the post is 40% in view the flakes sit settled; the burst fires the first time it is, and once per mount', () => {
+    render(<GlitterBombEffect {...props()} />);
+    see(0.2);
+    frames(3);
+    const first = lastFlakes();
+    expect(burst).not.toHaveBeenCalled();
+    expect(first.fired).toBe(false);
+    see(0.5);
+    frames(2, 100);
+    expect(burst.mock.calls.filter(([f]) => f === first)).toHaveLength(1);
+    expect(first.fired).toBe(true);
+    expect(first.flying).toBeGreaterThan(0);
+    frames(10, 200);
+    expect(drawBurst).toHaveBeenCalled();
+    /* It lands, and leaving and coming back at 40% again does not fire it a second time. */
+    frames(140, 300);
+    expect(first.flying).toBe(0);
+    see(0.1); see(0.9); frames(5, 3000);
+    expect(burst.mock.calls.filter(([f]) => f === first)).toHaveLength(1);
+    expect(burst.mock.calls.filter(([f]) => f !== first && f.flying > 0)).toHaveLength(0);
+  });
+
+  test('the burst second observer is at 40%', () => {
+    render(<GlitterBombEffect {...props()} />);
+    expect(observers.some((o) => JSON.stringify(o.opts?.threshold) === '[0,0.4]' && o.seen.has(box()))).toBe(true);
+  });
+
+  test('under reduced motion there is no burst: every flake is placed at once, and nothing is drawn over the words', () => {
     document.documentElement.setAttribute('data-kb-motion', 'reduce');
     render(<GlitterBombEffect {...props()} />);
-    const box = document.querySelector('[data-kb-glitter]') as HTMLElement;
-    expect(box).toHaveAttribute('data-kb-moving', 'false');
-    for (const glint of box.querySelectorAll<HTMLElement>('.dw-glint')) expect(glint.style.animationName).toBe('none');
-    /* And the stylesheet holds it still too, for the device's own setting. */
-    expect(read('glitter.css')).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\.dw-glint \{\s*animation: none;\s*\}/u);
-    expect(read('glitter.css')).toMatch(/\.dw-glitter\[data-kb-moving="false"\] \.dw-glint \{\s*animation: none;\s*\}/u);
+    see(1);
+    frames(3);
+    const f = lastFlakes();
+    expect(f.flying).toBe(0);
+    expect(f.settled.length).toBe(f.total);
+    expect(drawBurst).not.toHaveBeenCalled();
+    expect(flakesModule.burstProbe.inFlight()).toBe(0);
   });
 
-  test('holds still the moment the player reduces motion, on a post already drawn, and moves again when they undo it', async () => {
-    document.documentElement.setAttribute('data-kb-motion', 'full');
-    render(<GlitterBombEffect {...props()} />);
-    const box = () => document.querySelector('[data-kb-glitter]') as HTMLElement;
-    expect(box()).toHaveAttribute('data-kb-moving', 'true');
-    await act(async () => { document.documentElement.setAttribute('data-kb-motion', 'reduce'); });
-    await waitFor(() => expect(box()).toHaveAttribute('data-kb-moving', 'false'));
-    for (const glint of box().querySelectorAll<HTMLElement>('.dw-glint')) expect(glint.style.animationName).toBe('none');
-    await act(async () => { document.documentElement.setAttribute('data-kb-motion', 'full'); });
-    await waitFor(() => expect(box()).toHaveAttribute('data-kb-moving', 'true'));
+  test('a play\'s moment (still) draws every flake landed at rest, with no burst and no cling, and registers nothing that moves', () => {
+    render(<GlitterBombEffect {...props(true)} />);
+    const f = lastFlakes();
+    expect(f.flying).toBe(0);
+    expect(f.settled.length).toBe(f.total);
+    expect(drawBurst).not.toHaveBeenCalled();
+    expect(spies.clingRegister).not.toHaveBeenCalled();
+    fireEvent.pointerMove(box(), { clientX: 10, clientY: 10, pointerType: 'mouse' });
+    expect(spies.clingOver).not.toHaveBeenCalled();
+    expect(observers).toHaveLength(0);
+    see(1); frames(3);
+    expect(probe.draws(box())).toBe(0);
   });
 
-  test('moves where motion is not reduced', () => {
-    document.documentElement.setAttribute('data-kb-motion', 'full');
-    render(<GlitterBombEffect {...props()} />);
-    expect(document.querySelector('[data-kb-glitter]')).toHaveAttribute('data-kb-moving', 'true');
+  test('the host is sticky for cling, hands the pointer to it, and unmounting unregisters it, leaves the loop and drops the loose flakes', () => {
+    const r = render(<GlitterBombEffect {...props()} />);
+    see(1);
+    frames(2);
+    const el = box();
+    expect(spies.clingRegister).toHaveBeenCalled();
+    const [host, options] = spies.clingRegister.mock.calls.at(-1)! as [HTMLElement, { sticky?: boolean; flakes?: unknown }];
+    expect(host).toBe(el);
+    expect(options.sticky).toBe(true);
+    expect(options.flakes).toBe(lastFlakes());
+    fireEvent.pointerMove(el, { clientX: 10, clientY: 10, pointerType: 'mouse' });
+    expect(spies.clingOver).toHaveBeenCalledTimes(1);
+    flakesModule.loose(el).push({ ...lastFlakes().settled[0]! });
+    expect(flakesModule.loose(el)).toHaveLength(1);
+    r.unmount();
+    expect(spies.clingUnregister).toHaveBeenCalledWith(el);
+    expect(flakesModule.loose(el)).toHaveLength(0);
+    expect(release).toHaveBeenCalled();
+    expect(observers.every((o) => o.seen.size === 0)).toBe(true);
+    const drawsBefore = probe.draws(el);
+    frames(5, 500);
+    expect(probe.draws(el)).toBe(drawsBefore);
   });
 
-  test('keeps the post\'s text at the house style\'s contrast with the sparkle on, in every mode, however the glints overlap', () => {
-    const tokens = tokensOf(read('../../../../engine/ui/tokens.css'), read('../theme.css'));
-    const mix = (fg: string, bg: string, a: number) => {
-      const [f, b] = [parseColor(fg), parseColor(bg)];
-      return `#${f.map((c, i) => Math.round(c * a + b[i]! * (1 - a)).toString(16).padStart(2, '0')).join('')}`;
-    };
-    /* The layer is drawn at GLITTER_ALPHA, and nothing in it is lighter than solid: so one ink at GLITTER_ALPHA is the most a spot is covered. */
+  test('out of view the flakes are released and dropped, and a return builds them again from the seed, landed, with no second burst', () => {
     render(<GlitterBombEffect {...props()} />);
-    expect((document.querySelector('.dw-glitter-sparkle') as HTMLElement).style.opacity).toBe(String(GLITTER_ALPHA));
-    const css = read('glitter.css').replace(/\/\*[\s\S]*?\*\//gu, '');
-    expect(css).not.toMatch(/opacity/u);
-    expect(css).not.toMatch(/mix-blend-mode|filter:/u);
-    const rule = (selector: string) => { const at = css.indexOf(`${selector} {`); return at < 0 ? '' : css.slice(at, css.indexOf('}', at)); };
-    expect(rule('.dw-glitter-sparkle')).toMatch(/pointer-events:\s*none/u);
-    expect(rule('.dw-glitter-sparkle')).toMatch(/z-index:\s*0/u);
-    expect(rule('.dw-glitter-words')).toMatch(/z-index:\s*1/u);
-    expect(GLITTER_ALPHA).toBeGreaterThan(0);
-    for (const [mode, t] of Object.entries(tokens)) {
-      for (const surface of ['--kb-bg', '--kb-chip-bg']) {
-        for (const ink of GLITTER_INKS) {
-          const under = mix(ink, t[surface]!, GLITTER_ALPHA);
-          for (const fg of ['--kb-fg', '--kb-link', '--kb-link-visited', '--kb-muted']) {
-            expect(ratio(t[fg]!, under), `${mode}: ${fg} on ${ink} at ${GLITTER_ALPHA} over ${surface}`).toBeGreaterThanOrEqual(4.5);
-          }
-        }
-      }
-    }
+    see(1);
+    frames(2);
+    const first = lastFlakes();
+    expect(first.fired).toBe(true);
+    expect(first.flying).toBeGreaterThan(0);
+    expect(flakesModule.burstProbe.inFlight()).toBeGreaterThan(0);
+    see(0);
+    expect(release).toHaveBeenCalledWith(first);
+    expect(flakesModule.burstProbe.inFlight()).toBe(0);
+    expect(spies.clingUnregister).toHaveBeenCalled();
+    see(1);
+    frames(3, 1000);
+    expect(makeFlakes).toHaveBeenCalledTimes(2);
+    const again = lastFlakes();
+    expect(again).not.toBe(first);
+    expect(again.flying).toBe(0);
+    expect(again.settled.length).toBe(again.total);
+    expect(again.total).toBe(first.total);
+    expect(again.settled.map((x) => [x.x, x.y])).toEqual(expect.arrayContaining(first.settled.slice(0, 20).map((x) => [x.x, x.y])));
+    expect(burst.mock.calls.filter(([f]) => f === again && f.flying > 0)).toHaveLength(0);
+    expect(flakesModule.burstProbe.inFlight()).toBe(0);
+    expect((spies.clingRegister.mock.calls.at(-1)![1] as { flakes: unknown }).flakes).toBe(again);
+  });
+});
+
+describe('the board stories', () => {
+  test('the Glitter Bomb stories show the light and the dark board, and the still one, and are listed', () => {
+    const src = read('Glitter.board.stories.tsx');
+    expect(src).toMatch(/title: 'Boards\/09 Glitter Bomb'/u);
+    expect(src).toMatch(/export const Light: Story = \{[^}]*mode: 'light'/u);
+    expect(src).toMatch(/export const Dark: Story = \{[^}]*mode: 'dark'/u);
+    expect(src).toMatch(/export const Still: Story = \{[^}]*reduced: true/u);
+    expect(src).toMatch(/data-kb-glitter/u);
+    expect(boardStoryIds()).toEqual(expect.arrayContaining(['boards-09-glitter-bomb--light', 'boards-09-glitter-bomb--dark', 'boards-09-glitter-bomb--still']));
   });
 });

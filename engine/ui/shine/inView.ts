@@ -8,26 +8,42 @@ import { useEffect, useState, type RefObject } from 'react';
 
 type Watcher = (inView: boolean) => void;
 
-let observer: IntersectionObserver | null = null;
-const watchers = new Map<Element, Watcher>();
+/** `threshold`: the share of the element that must show to count as in view (default: any of it). A threshold has its own observer. */
+export interface WatchOptions { readonly threshold?: number }
+
+interface Shared { observer: IntersectionObserver; watchers: Map<Element, Watcher> }
+/** One observer per threshold, so a page of posts watched alike shares one. */
+const shared = new Map<number, Shared>();
 
 /** Calls `onChange` with whether `el` is in view now and whenever that changes; the returned function stops watching. */
-export function watchInView(el: Element, onChange: Watcher): () => void {
+export function watchInView(el: Element, onChange: Watcher, options: WatchOptions = {}): () => void {
   if (typeof IntersectionObserver === 'undefined') {
     onChange(true);
     return () => {};
   }
-  observer ??= new IntersectionObserver((entries) => {
-    for (const entry of entries) watchers.get(entry.target)?.(entry.isIntersecting);
-  });
+  const threshold = Math.min(1, Math.max(0, options.threshold ?? 0));
+  let mine = shared.get(threshold);
+  if (!mine) {
+    const watchers = new Map<Element, Watcher>();
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        /* Past a threshold, "in view" is the share showing, not any overlap. */
+        const showing = entry.isIntersecting && (threshold === 0 || entry.intersectionRatio === undefined || entry.intersectionRatio >= threshold);
+        watchers.get(entry.target)?.(showing);
+      }
+    }, threshold > 0 ? { threshold: [0, threshold] } : undefined);
+    mine = { observer, watchers };
+    shared.set(threshold, mine);
+  }
+  const { observer, watchers } = mine;
   watchers.set(el, onChange);
   observer.observe(el);
   return () => {
     watchers.delete(el);
-    observer?.unobserve(el);
-    if (watchers.size === 0) {
-      observer?.disconnect();
-      observer = null;
+    observer.unobserve(el);
+    if (watchers.size === 0 && shared.get(threshold) === mine) {
+      observer.disconnect();
+      shared.delete(threshold);
     }
   };
 }
