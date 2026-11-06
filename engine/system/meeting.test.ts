@@ -337,6 +337,12 @@ test('the rule\'s schema offers orders and patrols, both optional, and an order\
   assert.ok('orders' in schema.properties && 'patrols' in schema.properties);
   assert.ok(!schema.required.includes('orders') && !schema.required.includes('patrols'));
   const item = schema.properties.orders.items;
-  assert.deepEqual([...item.required].sort(), ['allowance', 'boards', 'mod', 'order']);
+  assert.deepEqual([...item.required].sort(), ['mod']);
   assert.ok('memory' in item.properties);
+});
+
+test('an order with no line, no boards and no allowance is kept, not a reason to reject the answer', () => {
+  const r = repairAnswer(withOrders([{ mod: M1 }, { mod: M2, order: '', boards: [] }]), modCtx());
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.deepEqual(r.orders.map((o) => [o.mod, o.boards, o.order, o.allowance]), [[M1, [], '', 0], [M2, [], '', 0]]);
 });

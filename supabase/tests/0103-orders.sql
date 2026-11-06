@@ -231,6 +231,29 @@ begin
   perform pg_temp.queue('od-boss', null, m);
 end $$;
 
+-- ---- 4b. One statement cannot spend what is not there: od-m1 holds 3, and four rows in one insert are refused whole; three are queued ----
+do $$
+declare
+  general uuid := pg_temp.board('od-general');
+  m bigint := (select max(id) from meetings where outcome = 'ok');
+  five text := format($q$ insert into queued_moves (meeting, staff, kind, params, why, go_live_at, expires_at, structural)
+    select %s, 'od-m1', 'setRule', jsonb_build_object('board', %L::uuid, 'predicate', 'noAllCaps', 'param', null, 'band', 'minor'), 'Because.', now() + interval '1 hour', now() + interval '2 days', false
+    from generate_series(1, %%s) $q$, m, general);
+  said text;
+begin
+  said := pg_temp.refusal(format(five, 4));
+  if said is null or said not like '23514%' then raise exception 'four rules from an allowance of three were queued by one statement: %', said; end if;
+  if mod_allowance('od-m1') is distinct from 3 or exists (select 1 from queued_moves where staff = 'od-m1') then raise exception 'a refused statement left rows behind'; end if;
+  begin
+    execute format(five, 3);
+    if mod_allowance('od-m1') is distinct from 0 then raise exception 'three rows from one statement left an allowance of %', mod_allowance('od-m1'); end if;
+    if (select count(*) from queued_moves where staff = 'od-m1' and spent_order = (select max(id) from staff_orders where staff = 'od-m1')) is distinct from 3::bigint then
+      raise exception 'the rows are not stamped with the order they spend against'; end if;
+    raise exception 'rollback' using errcode = 'P0002';
+  exception when sqlstate 'P0002' then null; end;
+  if mod_allowance('od-m1') is distinct from 3 then raise exception 'the test left rows behind'; end if;
+end $$;
+
 -- ---- 5. mod_allowance does not count a rule the tick refused at landing, nor one an admin held ----
 do $$
 declare
@@ -286,10 +309,10 @@ begin
   if pg_temp.bank() is distinct from 0::numeric or (select count(*) from staff_orders) is distinct from orders_before or mod_allowance('od-m1') is distinct from 2 then
     raise exception 'a retried meeting returned or charged again: bank % orders % allowance %', pg_temp.bank(), (select count(*) from staff_orders), mod_allowance('od-m1'); end if;
 
-  -- A meeting that fails in the database (an order the bank cannot pay: od-m1's 2 return, 3 are asked) rolls back whole: nothing returned, nothing written.
+  -- A meeting that fails in the database (three moves the bank cannot pay: od-m1's 2 return) rolls back whole: nothing returned, nothing written.
   m := (begin_meeting('2031-01-05T09:00:00Z') ->> 'meeting')::bigint;
-  denied := pg_temp.refusal(format('select apply_meeting(%s, %L::jsonb)', m, pg_temp.payload('[]', jsonb_build_array(pg_temp.order_for('od-m1', jsonb_build_array(general), 3)))));
-  if denied is null or denied not like '23514%' then raise exception 'an order the bank cannot pay was applied: %', denied; end if;
+  denied := pg_temp.refusal(format('select apply_meeting(%s, %L::jsonb)', m, pg_temp.payload(jsonb_build_array(pg_temp.rule_move(general, 'noAllCaps'), pg_temp.rule_move(general, 'noAllCaps'), pg_temp.rule_move(general, 'noAllCaps')), jsonb_build_array(pg_temp.order_for('od-m1', jsonb_build_array(general), 3)))));
+  if denied is null or denied not like '23514%' then raise exception 'moves the bank cannot pay were applied: %', denied; end if;
   if pg_temp.bank() is distinct from 0::numeric or (select count(*) from staff_orders) is distinct from orders_before or mod_allowance('od-m1') is distinct from 2
      or (select finished_at from meetings where id = m) is not null then
     raise exception 'a failed meeting left something behind: bank % allowance %', pg_temp.bank(), mod_allowance('od-m1'); end if;
@@ -317,6 +340,30 @@ begin
   if beat_of(general) is distinct from 'od-m2' then raise exception 'a benched Mod''s board was not given to the Mod on staff: %', beat_of(general); end if;
   -- Nothing is lost to the Mods: the bank never holds a fraction of what was handed away.
   if exists (select 1 from staff_orders where allowance < 0) then raise exception 'a negative allowance'; end if;
+end $$;
+
+-- ---- 6b. A Mod that queues between the meeting's read and its apply does not fail the meeting; the allowances are trimmed, and what returned is what was added ----
+do $$
+declare
+  offtopic uuid := pg_temp.board('od-offtopic');
+  m bigint;
+  r jsonb;
+begin
+  m := (begin_meeting('2031-01-09T09:00:00Z') ->> 'meeting')::bigint;
+  perform apply_meeting(m, pg_temp.payload('[]', jsonb_build_array(pg_temp.order_for('od-m2', jsonb_build_array(offtopic), 2))));
+  if pg_temp.bank() is distinct from 0::numeric or mod_allowance('od-m2') is distinct from 2 then raise exception 'the setup: bank %, allowance %', pg_temp.bank(), mod_allowance('od-m2'); end if;
+  -- The Edge Function read an unspent 2 (a bank of 2); then the Mod queued one.
+  perform pg_temp.queue('od-m2', offtopic, m);
+  m := (begin_meeting('2031-01-10T09:00:00Z') ->> 'meeting')::bigint;
+  r := apply_meeting(m, pg_temp.payload('[]', jsonb_build_array(pg_temp.order_for('od-m2', jsonb_build_array(offtopic), 2)), 10));
+  if r ->> 'status' is distinct from 'applied' or (r ->> 'handed')::integer is distinct from 1 then raise exception 'the allowance was not trimmed to the bank: %', r; end if;
+  if (select allowance from staff_orders where meeting = m and staff = 'od-m2') is distinct from 1 or pg_temp.bank() is distinct from 0::numeric then raise exception 'the trimmed order or the bank'; end if;
+  if (select (record #>> '{allowances,clamped}')::integer from meetings where id = m) is distinct from 1 then raise exception 'the trim is not recorded: %', (select record from meetings where id = m); end if;
+  -- od-m2 holds 1 unspent. With a cap of 0 nothing can be added to the bank, and the record says what was added, not the sum.
+  m := (begin_meeting('2031-01-11T09:00:00Z') ->> 'meeting')::bigint;
+  r := apply_meeting(m, pg_temp.payload('[]', '[]', 0));
+  if (select (record #>> '{allowances,returned}')::numeric from meetings where id = m) is distinct from 0::numeric or pg_temp.bank() is distinct from 0::numeric then
+    raise exception 'returned records the uncapped sum: %', (select record from meetings where id = m); end if;
 end $$;
 
 -- ---- 7. No client reaches any of it ----

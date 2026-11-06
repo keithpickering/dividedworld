@@ -12,6 +12,9 @@
 -- with the fewest boards, then the first by key. It answers whenever a Mod is on staff. It reads the Mods on staff (a handful, bounded by the roster)
 -- and each one's latest order by (staff, id desc), never a scan of boards or Acts, so it is cheap to call on every rule-breaking post.
 --
+-- A known bound: a move the tick refuses or an admin holds after the next meeting has returned the count is never refunded (its order is no longer the
+-- Mod's latest), so at most one move is lost per refusal, and the bank is the Boss's, not a player's.
+--
 -- Ways out: nothing here holds a player. An allowance that is not spent returns to the Boss; a Mod that leaves the staff has its unspent allowance
 -- returned at the next meeting; a Mod's rule that is refused or held spends nothing.
 
@@ -38,8 +41,6 @@ create table staff_orders (
   order_line text not null check (char_length(order_line) <= 200),
   -- Moves handed out of the Boss's bank: a whole number, at most `modBots.allowanceMost` (held by apply_meeting).
   allowance integer not null check (allowance >= 0),
-  -- The highest queued_moves id when this order was written: a Mod's moves after it are spent against this allowance.
-  last_move bigint not null,
   at timestamptz not null default now(),
   unique (meeting, staff)
 );
@@ -59,18 +60,20 @@ alter table staff_orders enable always trigger staff_orders_no_update;
 alter table staff_orders enable always trigger staff_orders_no_truncate;
 revoke execute on function staff_orders_append_only() from public, anon, authenticated;
 
--- A Mod's moves are counted by staff and id: the allowance left is one range count on this.
-create index queued_moves_staff on queued_moves (staff, id);
+-- The order a Mod's move spends against, stamped by the queue guard under the Mod's lock (null for the Boss's moves): the allowance left is one count on
+-- this index, and a move can never be charged to the wrong order, however moves and meetings interleave.
+alter table queued_moves add column spent_order bigint references staff_orders (id);
+create index queued_moves_spent_order on queued_moves (spent_order) where spent_order is not null;
 
 -- ----------------------------------------------------------------------------------------------------- allowances ----
 
--- What the latest order handed a persona, less the moves it queued since. A rule the tick refused at landing (`refused_at`) and one an admin held
+-- What the latest order handed a persona, less the moves stamped as spent against it. A rule the tick refused at landing (`refused_at`) and one an admin held
 -- (`held_at`) spend nothing; a move that failed to land for a reason that may pass is tried again and stays spent. Whether the persona is still a Mod
 -- is no business of this: apply_meeting returns an unspent allowance even from one that has left the staff.
 create function order_unspent(who text) returns integer
-language sql stable security definer set search_path = public, pg_temp as $$
+language sql volatile security definer set search_path = public, pg_temp as $$
   select coalesce((
-    select greatest(0, o.allowance - (select count(*) from queued_moves q where q.staff = o.staff and q.id > o.last_move and q.refused_at is null and q.held_at is null))::integer
+    select greatest(0, o.allowance - (select count(*) from queued_moves q where q.spent_order = o.id and q.refused_at is null and q.held_at is null))::integer
     from staff_orders o where o.staff = who order by o.id desc limit 1), 0)
 $$;
 revoke execute on function order_unspent(text) from public, anon, authenticated;
@@ -78,7 +81,7 @@ grant execute on function order_unspent(text) to service_role;
 
 -- The moves a Mod on staff may still queue; zero for anyone else.
 create function mod_allowance(staff text) returns integer
-language sql stable security definer set search_path = public, pg_temp as $$
+language sql volatile security definer set search_path = public, pg_temp as $$
   select case when exists (select 1 from staff_now n where n.staff = mod_allowance.staff) then order_unspent(mod_allowance.staff) else 0 end
 $$;
 revoke execute on function mod_allowance(text) from public, anon, authenticated;
@@ -461,19 +464,22 @@ begin
     -- A Mod's move names a board of its beat and spends an allowance (0101). The board is the beat_of answer for it, so a board the Boss's order left out is
     -- still some Mod's; the allowance is counted under a lock of the Mod's own, so two moves queued at once cannot spend the one left.
     if holder = 'mod' then
+      -- The Mod's own lock comes first: the beat and the allowance are read under it, so two moves queued at once (two sessions, or two rows of one insert,
+      -- which are counted because these functions are volatile) cannot spend the one left.
+      perform pg_advisory_xact_lock(hashtextextended('kayfabb.allowance.' || new.staff, 0));
       watched := case when (new.params ->> 'board') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (new.params ->> 'board')::uuid end;
       if watched is null then raise exception 'a Mod''s move names the board it watches' using errcode = '23514'; end if;
       if beat_of(watched) is distinct from new.staff then raise exception 'that board is not on %''s beat', new.staff using errcode = '23514'; end if;
-      perform pg_advisory_xact_lock(hashtextextended('kayfabb.allowance.' || new.staff, 0));
       if mod_allowance(new.staff) < 1 then raise exception '% has no allowance left; the Boss hands out more at its meeting', new.staff using errcode = '23514'; end if;
+      new.spent_order := (select x.id from staff_orders x where x.staff = new.staff order by x.id desc limit 1);
     end if;
   else
     params_ok := new.params is not distinct from old.params
       or (old.kind = 'nameSuccessor' and old.landed_act is null and old.held_at is null
           and new.params - 'boss' = old.params - 'boss' and jsonb_typeof(new.params -> 'boss') = 'string');
     if not params_ok
-       or (new.id, new.meeting, new.staff, new.kind, new.demand, new.why, new.go_live_at, new.expires_at, new.structural)
-          is distinct from (old.id, old.meeting, old.staff, old.kind, old.demand, old.why, old.go_live_at, old.expires_at, old.structural) then
+       or (new.id, new.meeting, new.staff, new.kind, new.demand, new.why, new.go_live_at, new.expires_at, new.structural, new.spent_order)
+          is distinct from (old.id, old.meeting, old.staff, old.kind, old.demand, old.why, old.go_live_at, old.expires_at, old.structural, old.spent_order) then
       raise exception 'a queued move is only ever held or landed' using errcode = '23514';
     end if;
     -- Who replaced a nomination and when change only with the Boss they replace, and with each other.
@@ -578,7 +584,8 @@ declare
   clamped integer := 0;
   planned_mods text[] := '{}';
   prev staff_orders%rowtype;
-  after_move bigint;
+  at_order integer;
+  room integer;
 begin
   perform pg_advisory_xact_lock(hashtextextended('kayfabb.meeting.' || apply_meeting.meeting, 0));
   if not exists (select 1 from meetings x where x.id = apply_meeting.meeting) then
@@ -650,10 +657,27 @@ begin
     perform pg_advisory_xact_lock(hashtextextended('kayfabb.allowance.' || who, 0));
     returned := returned + order_unspent(who);
   end loop;
+  -- What was added is what the cap allowed, and that is what is recorded.
   bal2 := least(cap, bal + returned);
-  if spent + handed > floor(bal2) then
-    raise exception 'the moves and allowances cost % and the bank holds %', spent + handed, bal2 using errcode = '23514';
+  returned := bal2 - bal;
+  -- The Boss's own moves are its own: they must be paid, else this raises, as it always has. The allowances are what is left. A Mod that queued between the
+  -- meeting's read and this apply spent some of what the answer counted on; the answer is not failed for it: the allowances are trimmed from the last
+  -- order backward to the bank, and the trims are recorded.
+  if spent > floor(bal2) then
+    raise exception 'the moves cost % and the bank holds %', spent, bal2 using errcode = '23514';
   end if;
+  room := floor(bal2)::integer - spent;
+  at_order := jsonb_array_length(planned);
+  while handed > room and at_order > 0 loop
+    amount := (planned -> (at_order - 1) ->> 'allowance')::integer;
+    if amount > 0 then
+      asked := least(amount, handed - room);
+      planned := jsonb_set(planned, array[(at_order - 1)::text, 'allowance'], to_jsonb(amount - asked::integer));
+      handed := handed - asked::integer;
+      clamped := clamped + 1;
+    end if;
+    at_order := at_order - 1;
+  end loop;
 
   -- Only debuted public characters are named: the engine checks this too, and the database keeps it whatever the caller sent.
   if jsonb_typeof(memory) = 'object' then
@@ -704,13 +728,12 @@ begin
     end if;
   end loop;
 
-  -- The orders are written after the moves, so `last_move` is past every move this meeting queued. An answer that left a persona with an order out
+  -- An answer that left a persona with an order out
   -- carries it forward: its beat (less what another order claimed, and nothing once it is off staff) and its line, with an allowance of 0, because
   -- what it had was returned above. After this meeting every persona with an order has its latest from it.
-  after_move := (select coalesce(max(q.id), 0) from queued_moves q);
   for ord in select value from jsonb_array_elements(planned) loop
-    insert into staff_orders (meeting, staff, boards, order_line, allowance, last_move)
-    values (apply_meeting.meeting, ord ->> 'mod', array(select jsonb_array_elements_text(ord -> 'boards'))::uuid[], ord ->> 'order', (ord ->> 'allowance')::integer, after_move);
+    insert into staff_orders (meeting, staff, boards, order_line, allowance)
+    values (apply_meeting.meeting, ord ->> 'mod', array(select jsonb_array_elements_text(ord -> 'boards'))::uuid[], ord ->> 'order', (ord ->> 'allowance')::integer);
     if jsonb_typeof(ord -> 'memory') = 'object' then
       insert into staff_memory (staff, meeting, body) values (ord ->> 'mod', apply_meeting.meeting, ord -> 'memory');
     end if;
@@ -720,10 +743,10 @@ begin
     where o.meeting <> apply_meeting.meeting and o.staff <> all (planned_mods) order by o.staff
   loop
     select * into prev from staff_orders o where o.staff = who and o.meeting <> apply_meeting.meeting order by o.id desc limit 1;
-    insert into staff_orders (meeting, staff, boards, order_line, allowance, last_move)
+    insert into staff_orders (meeting, staff, boards, order_line, allowance)
     values (apply_meeting.meeting, who,
       case when exists (select 1 from staff_now n where n.staff = who) then array(select x from unnest(prev.boards) x where x <> all (claimed)) else '{}' end,
-      prev.order_line, 0, after_move);
+      prev.order_line, 0);
   end loop;
 
   insert into move_bank (staff, balance, as_of) values (boss, bal2 - spent - handed, now())

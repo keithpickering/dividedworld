@@ -124,9 +124,10 @@ export const MEETING_RULE: Rule = {
         type: 'object',
         fields: {
           mod: { type: 'string', maxLength: 80 },
-          boards: { type: 'list', of: { type: 'string', maxLength: 64 } },
-          order: { type: 'string', maxLength: ORDER_MOST, minLength: 1 },
-          allowance: { type: 'number' },
+          // Only the Mod is needed: a missing line keeps the Mod's last one, missing boards are none, a missing allowance is 0 (apply_meeting reads them so).
+          boards: { type: 'list', of: { type: 'string', maxLength: 64 }, optional: true },
+          order: { type: 'string', maxLength: ORDER_MOST, optional: true },
+          allowance: { type: 'number', optional: true },
           memory: { ...MEMORY_RULE, optional: true },
         },
       },
@@ -585,14 +586,14 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     if (!c.mods.has(mod)) return drop(`${path}.mod`, 'modOnStaff');
     if (orders.some((x) => x.order.mod === mod)) return drop(`${path}.mod`, 'uniqueMod');
     const boards: string[] = [];
-    (o['boards'] as string[]).forEach((b, j) => {
+    ((o['boards'] ?? []) as string[]).forEach((b, j) => {
       const id = b.toLowerCase();
       if (!UUID.test(id) || !c.boards.has(id)) drop(`${path}.boards[${j}]`, 'isBoard');
       else if (claimed.has(id) || boards.includes(id)) drop(`${path}.boards[${j}]`, 'uniqueBoard');
       else boards.push(id);
     });
     boards.forEach((b) => claimed.add(b));
-    const asked = o['allowance'] as number;
+    const asked = (o['allowance'] ?? 0) as number;
     const whole = Number.isFinite(asked) ? Math.max(0, Math.floor(asked)) : 0;
     if (whole !== asked) trims.push({ path: `${path}.allowance`, predicate: 'wholeNumberAtLeast(0)', before: asked, after: whole });
     const allowance = Math.min(whole, s.modBots.allowanceMost);
@@ -605,7 +606,7 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
         trims.push(...m.trims.map((t) => ({ ...t, path: t.path ? `${path}.memory.${t.path}` : `${path}.memory` })));
       } else drop(`${path}.memory.${m.path}`, m.predicate);
     }
-    orders.push({ index: i, order: { mod, boards, order: o['order'] as string, allowance, memory: kept } });
+    orders.push({ index: i, order: { mod, boards, order: (o['order'] ?? '') as string, allowance, memory: kept } });
   });
   let owed = orders.reduce((n, x) => n + x.order.allowance, 0) - Math.max(0, affordable - moves.length);
   for (let k = orders.length - 1; k >= 0 && owed > 0; k--) {
