@@ -17,18 +17,38 @@
   line-height: var(--kb-line);
 }
 
+/*
+ * The page with its corner folded. A polygon clip would cut a border off the diagonal (tools/check-chamfer-borders.mjs), so
+ * the edge is drawn as base.css's cut pieces draw theirs: the element is the edge's color, cut, and its ::after is the page
+ * one edge in, cut by the line moved in by 0.5858 of the edge, so the diagonal carries a line as wide as the sides'.
+ */
 .kb-unavailable-glyph {
+  --kb-glyph-edge: 2px;
+  --kb-glyph-cut: 12px;
+  --kb-glyph-cut-in: calc(var(--kb-glyph-cut) - var(--kb-glyph-edge) * 0.5858);
   position: absolute;
   left: 16px;
   top: 4px;
   width: 40px;
   height: 48px;
-  box-sizing: border-box;
-  border: 2px solid var(--kb-muted);
-  border-radius: 2px;
+  isolation: isolate;
+  background: var(--kb-muted);
+  clip-path: polygon(0 0, calc(100% - var(--kb-glyph-cut)) 0, 100% var(--kb-glyph-cut), 100% 100%, 0 100%);
+}
+
+.kb-unavailable-glyph::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: var(--kb-glyph-edge);
   background: var(--kb-bg);
-  /* The page's folded corner: a square of the page's own color, turned on the diagonal. */
-  clip-path: polygon(0 0, 70% 0, 100% 30%, 100% 100%, 0 100%);
+  clip-path: polygon(0 0, calc(100% - var(--kb-glyph-cut-in)) 0, 100% var(--kb-glyph-cut-in), 100% 100%, 0 100%);
+}
+
+/* Forced colors would turn both the edge and the page Canvas; the system colors keep the edge. */
+@media (forced-colors: active) {
+  .kb-unavailable-glyph { background: CanvasText !important; }
+  .kb-unavailable-glyph::after { background: Canvas !important; }
 }
 
 .kb-unavailable h1 {
