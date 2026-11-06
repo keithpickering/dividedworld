@@ -14,7 +14,7 @@ import { useKayfa } from '../../../../engine/ui/context.tsx';
 import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import { useLocation } from '../../../../engine/ui/router.tsx';
 import { probe } from '../../../../engine/ui/shine/loop.ts';
-import { ThreadScreen } from '../../../../engine/ui/thread/Thread.tsx';
+import { LoadedThread } from '../../../../engine/ui/loaded.tsx';
 
 declare global { interface Window { __kbShineDraws?: (nth: number) => number } }
 
@@ -51,7 +51,7 @@ function Glittering({ mode, reduced }: Args) {
     })().catch((e: unknown) => { console.error('the Glitter Bomb could not be seeded', e); });
     return () => { live = false; };
   }, [api, thread]);
-  return <Frame>{thread && ready ? <ThreadScreen thread={thread} /> : <div aria-busy="true" />}</Frame>;
+  return <Frame>{thread && ready ? <LoadedThread thread={thread} /> : <div aria-busy="true" />}</Frame>;
 }
 
 const meta: Meta<typeof Glittering> = {

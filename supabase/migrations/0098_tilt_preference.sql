@@ -1,7 +1,8 @@
 -- The tilt preference (docs/plans/2026-11-06-shine-plan.md, Task 4): whether the glass tilts a card or avatar toward the pointer, 'off' by
 -- default and the account's own, read by that account alone like the rest of account_preferences. set_preferences is dropped and made
 -- again with `tilt` after text_size, as 0033 and 0064 did, because two signatures would make every call ambiguous; its body is 0092's
--- with the one new choice. preferences_answer gains the key, and the grants are restated.
+-- with the one new choice. preferences_answer gains the key, and the grants are restated. boot() (0097) gains the column
+-- at the end of this file.
 
 alter table account_preferences add column tilt text not null default 'off' check (tilt in ('off', 'on'));
 
@@ -55,3 +56,44 @@ end $$;
 
 revoke execute on function set_preferences(text, text, text, text, text, integer, text, text[], boolean) from public, anon;
 grant execute on function set_preferences(text, text, text, text, text, integer, text, text[], boolean) to authenticated;
+
+-- boot() (0097) reads the preferences from an explicit column list, so it is made again with `tilt` after text_size, the same columns the
+-- adapter's own preferences read selects; without it the page loaded from boot would draw every account's tilt as off. Its signature is
+-- unchanged, so it is replaced in place; the body is 0097's with the one new column, and the grants are restated as 0097 states them.
+
+create or replace function boot() returns jsonb
+language sql stable security invoker set search_path = public, pg_temp
+begin atomic
+  select jsonb_build_object(
+    'settings', (select s.settings from screen_settings s limit 1),
+    'account', (select to_jsonb(whoami())),
+    'preferences', (select to_jsonb(p) from (
+      select a.theme, a.postbit, a.motion, a.smoke, a.contrast, a.text_size, a.tilt, a.cards_met, a.alerts_seen_at, a.settlement_seen, a.toasts, a.welcomed_at, a.tips, a.tips_seen
+      from account_preferences a limit 1) p),
+    'characters', coalesce((select jsonb_agg(to_jsonb(c) order by c.name) from my_characters c), '[]'::jsonb),
+    'faces', coalesce((
+      select jsonb_agg(f.face order by f.name) from (
+        select cp.name, to_jsonb(cp) || jsonb_build_object('profile', (
+          select to_jsonb(p) from (
+            select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style
+            from character_profiles r where r.character = cp.id) p)) as face
+        from characters_public cp where cp.id in (select m.id from my_characters m)) f), '[]'::jsonb),
+    'wallet', (select to_jsonb(w) from (select mw.balance, mw.cap from my_wallet mw limit 1) w),
+    'cards', coalesce((select jsonb_agg(to_jsonb(k) order by k.card) from (select mc.card, mc.held from my_cards mc) k), '[]'::jsonb),
+    'boards', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'id', b.id, 'slug', b.slug, 'name', b.name, 'description', b.description, 'is_system', b.is_system, 'move_act', b.move_act,
+        'thread_count', coalesce(bc.threads, 0), 'last_at', l.last_at, 'last_character', l.last_character, 'last_thread', l.id) order by b.created_at, b.id)
+      from boards_now b
+      left join board_counts bc on bc.board = b.id
+      left join lateral (select t.id, t.last_at, t.last_character from thread_list t where t.board = b.id order by t.last_at desc limit 1) l on true), '[]'::jsonb),
+    'admin', coalesce(is_admin(), false),
+    'unread', case when whoami() is null then 0 else my_alerts_unread() end,
+    'nextSettlementAt', next_settlement_at(),
+    'lastSettledAt', (select s.ends_at from settlements s order by s.ends_at desc limit 1),
+    'newestSettlement', (select s.ends_at from settlements s where s.id = (select max(l.settlement) from my_ledger l))
+  );
+end;
+
+revoke all on function boot() from public, anon, authenticated;
+grant execute on function boot() to authenticated;

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createFake } from '../../engine/ui/data/fake.ts';
 import { instance } from '../../instances/divided-world/index.ts';
 import { instanceUi } from '../../instances/divided-world/ui/index.ts';
-import { App, NO_MENU } from './App.tsx';
+import { App, ESTIMATE_WAIT_MS, NO_MENU } from './App.tsx';
 import { startLoad } from '../../engine/ui/log/Settlement.tsx';
 import { seedDemo } from './demo.ts';
 import { seedMoves } from '../../engine/ui/board/move-world.ts';
@@ -12,8 +12,30 @@ import { fallbackSettings } from './data/settings.ts';
 import { light } from '../../engine/ui/shine/light.ts';
 import { resetTilt, tiltState } from '../../engine/ui/shine/tilt.ts';
 
+/* The demo keeps a player's preferences in session storage (web/src/demo.ts): one test's must not be the next one's account's. */
 beforeEach(() => { localStorage.clear(); sessionStorage.clear(); window.history.pushState(null, '', '/'); });
 afterEach(() => { vi.restoreAllMocks(); });
+
+/*
+ * A glass screen loads on first use, inside the glass page that is already drawn (its menu bar and smoke). Until it lands the page
+ * says it is loading: a reader is told, and nothing reads the empty page as the screen. First in this file, so the screen's chunk
+ * has not been loaded by an earlier test.
+ */
+test('a glass screen that has not landed yet leaves its page marked busy', async () => {
+  window.history.pushState(null, '', '/updates');
+  const fake = createFake({ instance, settings: fallbackSettings });
+  seedDemo(fake);
+  const bare: string[] = [];
+  const watch = new MutationObserver(() => {
+    const menu = document.querySelector('nav[aria-label="Menu"]');
+    if (menu && !document.querySelector('main h1') && !document.querySelector('[aria-busy="true"]')) bare.push(document.body.innerHTML.slice(0, 200));
+  });
+  watch.observe(document.body, { childList: true, subtree: true, attributes: true });
+  render(<App api={fake} />);
+  await screen.findByRole('heading', { level: 1, name: /Updates/u });
+  watch.disconnect();
+  expect(bare).toEqual([]);
+});
 
 test('the app runs on the demo world: the frame, the HUD with its character and orbs', async () => {
   const fake = createFake({ instance, settings: fallbackSettings });
@@ -370,6 +392,24 @@ test('the account\'s tilt choice reaches the light wherever the app is, and goes
   } finally { vi.unstubAllGlobals(); resetTilt(); }
 });
 
+/* A glass page has no frame and so no tips provider, whose own read of the preferences would hand the tilt over on the board's pages: here the
+ * app's own appearance is what hands it over, from boot when the page loaded with boot. */
+test('the account\'s tilt choice reaches the light on a glass page, from boot', async () => {
+  vi.stubGlobal('DeviceOrientationEvent', function DeviceOrientationEvent() {});
+  resetTilt();
+  try {
+    const fake = createFake({ instance, settings: fallbackSettings });
+    seedDemo(fake);
+    await fake.setPreferences({ tilt: 'on' });
+    const boot = vi.spyOn(fake, 'boot');
+    window.history.pushState(null, '', '/log');
+    render(<App api={fake} />);
+    await waitFor(() => expect(boot).toHaveBeenCalled());
+    await waitFor(() => expect(tiltState()).toBe('on'));
+    expect(light.input().tilt).toBe(true);
+  } finally { vi.unstubAllGlobals(); resetTilt(); }
+});
+
 /*
  * A page drawn with no menu bar has no bar's Back, and a touch screen has no Esc: every state of every such page carries
  * Back to the board itself (#90). The set is read from the app, so a page added to it is held here too.
@@ -445,8 +485,6 @@ describe('the welcome', () => {
   }
   /** Let what the settled reads set going run to its end: every microtask, then a render. */
   const flush = () => act(async () => { await new Promise((r) => setTimeout(r, 0)); });
-  /** The player's own read is the first of each; the second is `SendToWelcome`'s. */
-  const sendersReadsSettled = (seen: ReturnType<typeof watchReads>) => vi.waitFor(() => { expect(seen.settledCharacters).toBeGreaterThanOrEqual(2); expect(seen.settledPreferences).toBeGreaterThanOrEqual(2); });
   const move = (path: string) => act(() => { window.history.pushState(null, '', path); window.dispatchEvent(new PopStateEvent('popstate')); });
 
   /** An account the invite opened just now, on a board page: the state `openAccount` leaves. */
@@ -506,58 +544,62 @@ describe('the welcome', () => {
     expect(window.location.pathname).not.toBe('/welcome');
   });
 
-  test('a load of the board by an account that has seen the welcome and has no character goes nowhere', async () => {
+  test('a load of the board by an account that has seen the welcome and has no character goes nowhere, and asks for nothing but boot', async () => {
     const fake = createFake({ instance, settings: fallbackSettings });
     fake.signInAs(fake.seed.account('seen'));
     await fake.seeWelcome();
     const seen = watchReads(fake);
     render(<App api={fake} />);
     await screen.findByRole('region', { name: 'Game HUD' });
-    await sendersReadsSettled(seen);
     await flush();
     expect(window.location.pathname).toBe('/');
+    /* The sender decides from boot's preferences and roster: it reads neither again. */
+    expect(seen.characters).toBe(0);
+    expect(seen.preferences).toBe(0);
   });
 
-  test('a read that fails sends nobody', async () => {
+  test('a boot that fails sends nobody: the page cannot be displayed, with the way to try again', async () => {
     const fake = createFake({ instance, settings: fallbackSettings });
     fake.signInAs(fake.seed.account('unread'));
-    const seen = watchReads(fake, { preferences: (call, real) => (call >= 2 ? Promise.reject(new Error('down')) : real()) });
+    vi.spyOn(fake, 'boot').mockRejectedValue(new Error('down'));
     render(<App api={fake} />);
-    await screen.findByRole('region', { name: 'Game HUD' });
-    await sendersReadsSettled(seen);
+    expect(await screen.findByRole('heading', { level: 1, name: 'The page cannot be displayed' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
     await flush();
     expect(window.location.pathname).toBe('/');
     expect(screen.queryByRole('heading', { level: 1, name: 'Welcome' })).toBeNull();
   });
 
-  test('a player whose rows failed to load but who has characters is not sent: the roster is read again', async () => {
+  test('a player whose roster boot brought, with a character, is not sent, and the roster is not read again', async () => {
     const fake = createFake({ instance, settings: fallbackSettings });
     const me = fake.seed.account('veteran');
     fake.seed.character(me, 'Old Hand', 'heel');
     fake.signInAs(me);
-    /* The player's own read fails, so its rows read as empty; the sender's read is the one that tells. */
-    const seen = watchReads(fake, { characters: (call, real) => (call === 1 ? Promise.reject(new Error('down')) : real()) });
+    const seen = watchReads(fake);
     render(<App api={fake} />);
     await screen.findByRole('region', { name: 'Game HUD' });
-    await sendersReadsSettled(seen);
-    expect((await fake.preferences()).welcomedAt).toBeNull();
     await flush();
+    expect((await fake.preferences()).welcomedAt).toBeNull();
+    expect(seen.characters).toBe(0);
     expect(window.location.pathname).toBe('/');
   });
 
-  test('an answer that arrives after the player opened Settings does not pull them away from it', async () => {
+  test('a sign-in on the page, before boot is read again, reads for itself; an answer that arrives after the player opened Settings does not pull them away from it', async () => {
     const fake = createFake({ instance, settings: fallbackSettings });
-    fake.signInAs(fake.seed.account('quick'));
+    const quick = fake.seed.account('quick');
+    /* The page loads signed out (boot is not asked), then the account signs in; boot cannot be read, so the sender reads the roster itself. */
+    vi.spyOn(fake, 'boot').mockRejectedValue(new Error('down'));
     let release: () => void = () => undefined;
     const held = new Promise<void>((r) => { release = r; });
     const seen = watchReads(fake, { characters: async (call, real) => { if (call >= 2) await held; return real(); } });
     render(<App api={fake} />);
     await screen.findByRole('region', { name: 'Game HUD' });
+    act(() => { fake.signInAs(quick); });
     await vi.waitFor(() => expect(seen.characters).toBeGreaterThanOrEqual(2));
     await move('/settings');
     await screen.findByRole('heading', { level: 1, name: 'Settings' });
     release();
-    await sendersReadsSettled(seen);
+    await vi.waitFor(() => expect(seen.settledCharacters).toBeGreaterThanOrEqual(2));
     await flush();
     expect(window.location.pathname).toBe('/settings');
     expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
@@ -572,13 +614,12 @@ describe('the welcome', () => {
       fake.seed.character(me, 'Old Hand', 'heel', options);
       fake.signInAs(me);
       expect((await fake.preferences()).welcomedAt).toBeNull();
-      /* It reads nothing for an account that has a character: the player's own read of the roster is the only one. */
+      /* It reads nothing for an account that has a character: boot's roster is the only one. */
       const seen = watchReads(fake);
       render(<App api={fake} />);
       await screen.findByRole('region', { name: 'Game HUD' });
-      await vi.waitFor(() => expect(seen.settledCharacters).toBeGreaterThanOrEqual(1));
       await flush();
-      expect(seen.characters).toBe(1);
+      expect(seen.characters).toBe(0);
       expect(window.location.pathname).toBe('/');
     }
   });
@@ -604,5 +645,122 @@ describe('the welcome', () => {
     const menu = await screen.findByRole('navigation', { name: 'Menu' });
     expect(within(menu).getByRole('link', { name: 'Back to the board' })).toBeInTheDocument();
     for (const tab of ['Alerts', 'Vending Machine', 'My characters', 'Season', 'My log', 'Guide', 'Updates', 'Settings']) expect(await within(menu).findByRole('link', { name: new RegExp(`^${tab}`, 'iu') })).toBeInTheDocument();
+  });
+});
+
+/*
+ * The first page draws once (the forum-load plan, Task 12): the banner's links, the HUD and the screen arrive together, from one `boot`
+ * and one `estimate`, with none of the reads the frame and the HUD made one by one.
+ */
+describe('the first load draws once, from boot', () => {
+  /* What the first load of a thread may ask, and how many times; every method not named here is held to zero. */
+  const ASKED: Readonly<Record<string, number>> = {
+    boot: 1,
+    estimate: 1,
+    /* The thread draws from its document (Task 13): one read, started with boot and not after it. */
+    threadPage: 1,
+    /* The live window's catch-up (the thread's summary, one row) after the subscription: the only read the thread makes of its own. */
+    thread: 1,
+  };
+  const HELD_TO_ZERO = ['boards', 'myCharacters', 'wallet', 'myCards', 'alertsUnread', 'nextSettlementAt', 'lastSettledAt', 'log', 'preferences', 'characters', 'acts', 'reading', 'board', 'tallies', 'myReactions', 'cardsOnMany', 'effectsAbove', 'following', 'characterStats', 'standingAmounts', 'classReveals', 'turnsAnnounced'] as const;
+
+  test('/t/<id> asks boot and the estimate once and none of the frame\'s own reads, and the banner and HUD are in the first render after aria-busy clears', async () => {
+    const fake = createFake({ instance, settings: fallbackSettings });
+    const demo = seedDemo(fake);
+    window.history.pushState(null, '', `/t/${demo.thread}`);
+    const firstPost = String((await fake.acts(demo.thread, 1, 1))[0]!.currentPayload.body).replace(/\[[^\]]*\]/gu, '').slice(0, 20);
+    const names = [...Object.keys(ASKED), ...HELD_TO_ZERO];
+    const counted = new Map<string, number>();
+    for (const name of new Set(names)) {
+      const real = (fake as unknown as Record<string, (...a: unknown[]) => unknown>)[name]!.bind(fake);
+      (fake as unknown as Record<string, unknown>)[name] = (...a: unknown[]) => { counted.set(name, (counted.get(name) ?? 0) + 1); return real(...a); };
+    }
+    /* The first commit in which the page's main is no longer busy: what stands in the frame at that moment. */
+    let first: { banner: string; hud: string; main: string } | null = null;
+    const look = () => {
+      if (first) return;
+      const main = document.querySelector('main');
+      if (!main || main.getAttribute('aria-busy') === 'true') return;
+      first = { banner: document.querySelector('nav[aria-label="Main"]')?.textContent ?? '', hud: document.querySelector('[aria-label="Game HUD"]')?.textContent ?? '', main: main.textContent ?? '' };
+    };
+    const observer = new MutationObserver(look);
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+    render(<App api={fake} />);
+    await screen.findByRole('region', { name: 'Game HUD' });
+    await new Promise((r) => setTimeout(r, 700));
+    observer.disconnect();
+    for (const name of new Set(names)) expect({ name, n: counted.get(name) ?? 0 }).toEqual({ name, n: ASKED[name] ?? 0 });
+    expect(first).not.toBeNull();
+    expect(first!.banner).toContain('General');
+    expect(first!.hud).toContain('Pipewrench');
+    /* The first post is in the same first render: the thread drew from its document. */
+    expect(first!.main).toContain(firstPost);
+  });
+
+  test('a switch of account after the first load reads boot again, so the HUD never shows the last account\'s mask', async () => {
+    const fake = createFake({ instance, settings: fallbackSettings });
+    const one = fake.seed.account('one');
+    fake.seed.character(one, 'First Mask', 'heel');
+    const two = fake.seed.account('two');
+    fake.seed.character(two, 'Second Mask', 'face');
+    fake.signInAs(one);
+    const booted = vi.spyOn(fake, 'boot');
+    render(<App api={fake} />);
+    const hud = await screen.findByRole('region', { name: 'Game HUD' });
+    await waitFor(() => expect(hud).toHaveTextContent('First Mask'));
+    expect(booted).toHaveBeenCalledTimes(1);
+    act(() => { fake.signInAs(two); });
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Game HUD' })).toHaveTextContent('Second Mask'));
+    expect(screen.getByRole('region', { name: 'Game HUD' })).not.toHaveTextContent('First Mask');
+    expect(booted).toHaveBeenCalledTimes(2);
+  });
+});
+
+/*
+ * The first load's rows are an account's own (the forum-load plan, Task 12 review): a sign-out forgets them, so signing in again as the same
+ * account reads them afresh; a failed boot can be tried again; an estimate that was late still reaches the HUD.
+ */
+describe('after the first load', () => {
+  test('signing out and in again as the same account reads boot, the wallet and the estimate afresh', async () => {
+    const fake = createFake({ instance, settings: fallbackSettings });
+    const demo = seedDemo(fake);
+    const booted = vi.spyOn(fake, 'boot');
+    const wallet = vi.spyOn(fake, 'wallet');
+    const estimate = vi.spyOn(fake, 'estimate');
+    render(<App api={fake} />);
+    const hud = await screen.findByRole('region', { name: 'Game HUD' });
+    await waitFor(() => expect(hud).toHaveTextContent('Pipewrench'));
+    expect([booted.mock.calls.length, wallet.mock.calls.length, estimate.mock.calls.length]).toEqual([1, 0, 1]);
+    act(() => { fake.signInAs(null); });
+    await waitFor(() => expect(within(screen.getByRole('region', { name: 'Game HUD' })).getByRole('link', { name: 'Sign in' })).toBeInTheDocument());
+    act(() => { fake.signInAs(demo.me); });
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Game HUD' })).toHaveTextContent('Pipewrench'));
+    await waitFor(() => expect(booted).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(wallet).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(estimate).toHaveBeenCalledTimes(2));
+  });
+
+  test('Try again after a failed boot reads boot again and draws the page', async () => {
+    const fake = createFake({ instance, settings: fallbackSettings });
+    seedDemo(fake);
+    const booted = vi.spyOn(fake, 'boot').mockRejectedValueOnce(new Error('down'));
+    render(<App api={fake} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+    expect(await screen.findByRole('region', { name: 'Game HUD' })).toHaveTextContent('Pipewrench');
+    expect(booted).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+  });
+
+  test('an estimate that lands after the wait reaches the HUD', async () => {
+    const fake = createFake({ instance, settings: fallbackSettings });
+    seedDemo(fake);
+    const real = fake.estimate.bind(fake);
+    vi.spyOn(fake, 'estimate').mockImplementation(() => new Promise((done) => { setTimeout(() => done(real()), ESTIMATE_WAIT_MS + 400); }));
+    render(<App api={fake} />);
+    const hud = await screen.findByRole('region', { name: 'Game HUD' });
+    /* The page drew without it... */
+    expect(within(hud).queryByRole('img', { name: /0\.85 pending/u })).toBeNull();
+    /* ...and it fills in when it lands. */
+    await waitFor(() => expect(within(screen.getByRole('region', { name: 'Game HUD' })).getByRole('img', { name: /0\.85 pending/u })).toBeInTheDocument(), { timeout: 3000 });
   });
 });

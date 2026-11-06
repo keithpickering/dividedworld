@@ -51,7 +51,6 @@ export const ALLOWED_HOOKS = new Set([
   'kb-contact',
   'kb-staff',
   'kb-open-account',
-  'kb-not-found',
   'kb-edit-post',
   'kb-editor',
   'kb-season-news',

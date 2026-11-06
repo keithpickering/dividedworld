@@ -142,7 +142,8 @@ export function Smoke({ surface, level: asked, children, holder }: SmokeProps) {
     <div ref={root} className="kb-smoke" data-kb-surface={surface} aria-hidden="true">
       <div className="kb-smoke-ground" data-kb-ground="" style={{ background: 'var(--kb-glass-ground)' }} />
       {recipe && level !== 'off' ? (
-        <div className="kb-smoke-layers" data-kb-smoke={surfaces[surface]}>
+        /* Marked drawn once every layer has its raster, so a measurement of the smoke (e2e/glass-text.spec.ts) reads it and not the ground alone. */
+        <div className="kb-smoke-layers" data-kb-smoke={surfaces[surface]} data-kb-drawn={layers.every((_, i) => urls[i]) ? '' : undefined}>
           {layers.map((layer, i) => {
             const url = urls[i];
             const key = `${isNarrow ? 'n' : 'w'}${i}`;

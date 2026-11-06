@@ -9,7 +9,8 @@ import type { ReactElement } from 'react';
 import type { Instance, Settings } from '../rules/types.ts';
 import { KayfaProvider, type Kayfa } from './context.tsx';
 import { createFake, type Fake } from './data/fake.ts';
-import type { ScreenSettings } from './data/api.ts';
+import type { Boot, ScreenSettings } from './data/api.ts';
+import { BootProvider } from './boot.tsx';
 import { PlayerProvider } from './player.tsx';
 import { ACTION_TIPS, TIP_KEYS } from './tips/keys.ts';
 import type { GuideUi } from './types.ts';
@@ -112,6 +113,23 @@ export interface WorldOptions {
   readonly copy?: Partial<Kayfa['ui']['copy']>;
   /** The random function the screens draw from (`Kayfa.random`), fixed by a test that picks. */
   readonly random?: () => number;
+  /** The first load's boot (`fake.boot()`): the player's provider starts from it as the app's does, and the screen takes the frame's rows from it. */
+  readonly boot?: Boot;
+}
+
+/**
+ * Holds the backend to the reads a screen makes after it has landed: every other method of the api throws and is recorded, so a test that
+ * renders a screen from its document finds any read it still makes in the first render (and, being recorded, one the screen swallows).
+ * `signInAs`, the seeds, the clock and the live subscriptions are not reads.
+ */
+export function holdReads(fake: Fake, allowed: readonly string[] = []): readonly string[] {
+  const skip = new Set(['signInAs', 'emailOf', 'clock', 'broadcast', 'seed', 'loseNextAnswer', 'onSession', ...allowed]);
+  const read: string[] = [];
+  for (const [name, value] of Object.entries(fake)) {
+    if (typeof value !== 'function' || skip.has(name) || name.startsWith('subscribe')) continue;
+    (fake as unknown as Record<string, unknown>)[name] = () => { read.push(name); return Promise.reject(new Error(`the first render read ${name}`)); };
+  }
+  return read;
 }
 
 /** The backend alone, for a test that must do something asynchronous (a spin) before it renders. */
@@ -128,7 +146,9 @@ export function renderIn(fake: Fake, element: ReactElement, options: WorldOption
     ...render(
       <RouterProvider>
         <KayfaProvider value={kayfa}>
-          <PlayerProvider api={fake}>{element}</PlayerProvider>
+          <PlayerProvider api={fake} {...(options.boot ? { initial: { session: { signedIn: true, account: options.boot.account }, boot: options.boot, estimate: null } } : {})}>
+            <BootProvider boot={options.boot ?? null}>{element}</BootProvider>
+          </PlayerProvider>
         </KayfaProvider>
       </RouterProvider>,
     ),

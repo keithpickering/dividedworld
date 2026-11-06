@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import { seedMoves } from '../board/move-world.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from './Thread.tsx';
+import { LoadedThread } from '../loaded.tsx';
 
 beforeEach(() => localStorage.clear());
 
@@ -19,7 +20,7 @@ function announcements() {
 describe('the Boss on The System\'s board', () => {
   test('its post is a post by a character with the ADMINISTRATOR badge and its title', async () => {
     const { fake, thread } = announcements();
-    renderIn(fake, <ThreadScreen thread={thread} />, { path: `/t/${thread}` });
+    renderIn(fake, <LoadedThread thread={thread} />, { path: `/t/${thread}` });
     const post = (await screen.findByText('Good morning, everyone. Toast is non-negotiable.')).closest('article')!;
     const bit = await within(post).findByRole('group', { name: 'About The Director' });
     expect(within(bit).getByText('ADMINISTRATOR')).toBeInTheDocument();
@@ -30,7 +31,7 @@ describe('the Boss on The System\'s board', () => {
   test('its move Act is a post that carries the same glass label as the board\'s notice, in the engine\'s words, and its stock line as its own', async () => {
     const { fake, w } = announcements();
     const moveThread = (await fake.act(w.inForce))!.thread;
-    renderIn(fake, <ThreadScreen thread={moveThread} />, { path: `/t/${moveThread}` });
+    renderIn(fake, <LoadedThread thread={moveThread} />, { path: `/t/${moveThread}` });
     const post = (await screen.findByText(/This board has been IMPROVED/u)).closest('article')!;
     expect(post).toHaveAttribute('data-kb-kind', 'move');
     expect(within(post).getByText('THE SYSTEM RENAMED THIS BOARD')).toBeInTheDocument();
@@ -42,7 +43,7 @@ describe('the Boss on The System\'s board', () => {
   test('a move\'s end is a plain line in the thread, never in the Boss\'s voice', async () => {
     const { fake, w } = announcements();
     const moveThread = (await fake.act(w.reversed))!.thread;
-    renderIn(fake, <ThreadScreen thread={moveThread} />, { path: `/t/${moveThread}` });
+    renderIn(fake, <LoadedThread thread={moveThread} />, { path: `/t/${moveThread}` });
     await waitFor(() => expect(screen.getAllByText('A move has ended: an admin reversed it.').length).toBeGreaterThan(0));
     await waitFor(() => expect(screen.getAllByText('A move has ended: its demand was met.').length).toBeGreaterThan(0));
   });
@@ -57,7 +58,7 @@ describe('the Boss on The System\'s board', () => {
     const kept = fake.seed.move('director', { board: w.general, name: 'Kept Kiosk Court' });
     fake.seed.keepMove(kept, 'the-clerk');
     const moveThread = (await fake.act(kept))!.thread;
-    renderIn(fake, <ThreadScreen thread={moveThread} />, { path: `/t/${moveThread}` });
+    renderIn(fake, <LoadedThread thread={moveThread} />, { path: `/t/${moveThread}` });
     await waitFor(() => expect(screen.getAllByText('A move has ended: it ended at the handover.').length).toBeGreaterThan(0));
     expect(screen.getAllByText('A move has ended: it was used up at the handover.').length).toBeGreaterThan(0);
     expect(screen.getAllByText('The Clerk kept a move of an earlier Boss. It is now its own.').length).toBeGreaterThan(0);

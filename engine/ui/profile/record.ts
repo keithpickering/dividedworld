@@ -3,7 +3,7 @@
  * made public (reveals) and its announced Turns. Everything here is what anyone could have watched;
  * a Turn names its old class only if it was announced with it ("A response never proves a private fact").
  */
-import type { Act, ClassReveal, Id, KayfaApi, TurnAnnounced } from '../data/api.ts';
+import type { Act, ClassReveal, Id, TurnAnnounced } from '../data/api.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 
 export type RecordKind = 'all' | 'post' | 'spin' | 'card' | 'class' | 'seasons';
@@ -44,11 +44,9 @@ export function excerpt(body: string, max = 100): string {
  * the thread's tag does. A page reads its targets once, never one read per row; a play whose target
  * cannot be read has no entry and its row falls back to the thread.
  */
-export async function playLinks(api: KayfaApi, acts: readonly Act[], perPage: number): Promise<ReadonlyMap<Id, string>> {
+export function playLinksFrom(targets: readonly Act[], acts: readonly Act[], perPage: number): ReadonlyMap<Id, string> {
   const out = new Map<Id, string>();
-  const targets = [...new Set(acts.flatMap((a) => (a.kind === 'card' && a.targetActId !== null ? [a.targetActId] : [])))];
-  if (targets.length === 0) return out;
-  const by = new Map((await api.actsById(targets)).map((t) => [t.id, t]));
+  const by = new Map(targets.map((t) => [t.id, t]));
   for (const a of acts) {
     const t = a.kind === 'card' && a.targetActId !== null ? by.get(a.targetActId) : undefined;
     if (t && t.seq !== null) out.set(a.id, threadHref(t.thread, pageOf(t.seq, perPage), t.seq));
@@ -71,10 +69,9 @@ export function actRow(a: Act, w: Words, plays: ReadonlyMap<Id, string> = new Ma
 export const revealRow = (r: ClassReveal, w: Words): RecordRow => ({ key: r.act, at: r.at, text: `Revealed: ${w.className(r.class)}`, href: `/t/${r.thread}` });
 
 /** Where each announced Turn's tally is, from one batched read of those Acts (a Turn whose tally cannot be read has no link). */
-export async function turnLinks(api: KayfaApi, turns: readonly TurnAnnounced[], perPage: number): Promise<ReadonlyMap<Id, string>> {
+export function turnLinksFrom(targets: readonly Act[], perPage: number): ReadonlyMap<Id, string> {
   const out = new Map<Id, string>();
-  if (turns.length === 0) return out;
-  for (const a of await api.actsById([...new Set(turns.map((t) => t.act))])) {
+  for (const a of targets) {
     if (a.seq !== null) out.set(a.id, threadHref(a.thread, pageOf(a.seq, perPage), a.seq));
   }
   return out;

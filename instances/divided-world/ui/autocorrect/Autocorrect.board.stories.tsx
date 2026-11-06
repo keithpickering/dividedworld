@@ -6,12 +6,13 @@
  * 1440 by 1120 and at 390 by 844. (The story lives under ui/, where Storybook looks; the card's screens are in cards/autocorrect/.)
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Frame } from '../../../../engine/ui/frame/Frame.tsx';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
 import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import { useLocation } from '../../../../engine/ui/router.tsx';
 import { ThreadScreen } from '../../../../engine/ui/thread/Thread.tsx';
+import { LoadedThread } from '../../../../engine/ui/loaded.tsx';
 
 type Case = 'one' | 'stack' | 'bold' | 'long';
 
@@ -37,6 +38,8 @@ const PLAYS: Record<Case, readonly { phrase: string; replacement: string }[]> = 
 function Autocorrected({ shown, mode, reduced }: Args) {
   const { api } = useKayfa();
   const thread = /^\/t\/([^/]+)/u.exec(useLocation().path)?.[1] ?? null;
+  /* The thread is drawn once the plays are seeded: its page is read once, so a play seeded after the read and before the page listens is never drawn. */
+  const [seeded, setSeeded] = useState<string | null>(null);
   useEffect(() => {
     const root = document.documentElement;
     root.setAttribute('data-kb-mode', mode);
@@ -45,15 +48,18 @@ function Autocorrected({ shown, mode, reduced }: Args) {
   }, [mode, reduced]);
   useEffect(() => {
     if (thread === null) return;
+    let live = true;
     void (async () => {
       const [[author], [caster]] = await Promise.all([api.acts(thread, 41, 41), api.acts(thread, 42, 42)]);
       if (!author?.character || !caster?.character) return;
       const fake = api as Fake;
       const post = fake.seed.post(thread, author.character, BODY[shown]);
       PLAYS[shown].forEach((config, i) => fake.seed.card(caster.character!, post, 'autocorrect', { layer: i + 1, live: true, config, message: '' }));
+      if (live) setSeeded(thread);
     })();
+    return () => { live = false; };
   }, [api, thread, shown]);
-  return <Frame>{thread ? <ThreadScreen thread={thread} /> : <div aria-busy="true" />}</Frame>;
+  return <Frame>{thread && seeded === thread ? <LoadedThread thread={thread} /> : <div aria-busy="true" />}</Frame>;
 }
 
 const meta: Meta<typeof Autocorrected> = {

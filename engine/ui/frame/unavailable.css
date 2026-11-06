@@ -1,0 +1,111 @@
+/*
+ * The two error pages (Unavailable.tsx): the frame's type and rules, the body in Verdana 13px and the heading in bold
+ * 16px, the glyph a gray page drawn in CSS. The colors are the tokens' (engine/ui/tokens.css), so the dark theme reads
+ * as the board's own dark theme does; the house theme is black on white.
+ */
+.kb-unavailable {
+  box-sizing: border-box;
+  width: min(96%, var(--kb-board-max));
+  margin: 24px auto;
+  padding: 0 0 0 72px;
+  position: relative;
+  min-height: 96px;
+  color: var(--kb-fg);
+  background: var(--kb-bg);
+  font-family: var(--kb-font-body);
+  font-size: var(--kb-size-body);
+  line-height: var(--kb-line);
+}
+
+/*
+ * The page with its corner folded. A polygon clip would cut a border off the diagonal (tools/check-chamfer-borders.mjs), so
+ * the edge is drawn as base.css's cut pieces draw theirs: the element is the edge's color, cut, and its ::after is the page
+ * one edge in, cut by the line moved in by 0.5858 of the edge, so the diagonal carries a line as wide as the sides'.
+ */
+.kb-unavailable-glyph {
+  --kb-glyph-edge: 2px;
+  --kb-glyph-cut: 12px;
+  --kb-glyph-cut-in: calc(var(--kb-glyph-cut) - var(--kb-glyph-edge) * 0.5858);
+  position: absolute;
+  left: 16px;
+  top: 4px;
+  width: 40px;
+  height: 48px;
+  isolation: isolate;
+  background: var(--kb-muted);
+  clip-path: polygon(0 0, calc(100% - var(--kb-glyph-cut)) 0, 100% var(--kb-glyph-cut), 100% 100%, 0 100%);
+}
+
+.kb-unavailable-glyph::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: var(--kb-glyph-edge);
+  background: var(--kb-bg);
+  clip-path: polygon(0 0, calc(100% - var(--kb-glyph-cut-in)) 0, 100% var(--kb-glyph-cut-in), 100% 100%, 0 100%);
+}
+
+/* Forced colors would turn both the edge and the page Canvas; the system colors keep the edge. */
+@media (forced-colors: active) {
+  .kb-unavailable-glyph { background: CanvasText !important; }
+  .kb-unavailable-glyph::after { background: Canvas !important; }
+}
+
+.kb-unavailable h1 {
+  margin: 0 0 6px;
+  font-family: var(--kb-font-body);
+  font-size: var(--kb-size-heading);
+  font-weight: bold;
+  line-height: 1.2;
+}
+
+.kb-unavailable-rule {
+  border: 0;
+  border-top: 1px solid var(--kb-rule);
+  margin: 6px 0 10px;
+  height: 0;
+}
+
+.kb-unavailable p {
+  margin: 0 0 10px;
+}
+
+.kb-unavailable ul {
+  margin: 0 0 10px;
+  padding-left: 24px;
+}
+
+.kb-unavailable li {
+  margin: 0 0 4px;
+}
+
+.kb-unavailable a {
+  color: var(--kb-link);
+}
+
+.kb-unavailable-retry {
+  font: inherit;
+  color: var(--kb-link);
+  background: none;
+  border: 0;
+  padding: 0;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.kb-unavailable-footer {
+  color: var(--kb-muted);
+  margin-bottom: 0;
+}
+
+@media (max-width: 480px) {
+  .kb-unavailable {
+    padding-left: 0;
+    padding-top: 64px;
+  }
+
+  .kb-unavailable-glyph {
+    left: 0;
+    top: 0;
+  }
+}

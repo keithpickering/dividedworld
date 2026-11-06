@@ -60,8 +60,10 @@ export function Composer(props: ComposerProps) {
 function ComposerBody({ thread, latest, since, onPosted, ref, account }: ComposerProps & { readonly account: Id }) {
   const { api, settings } = useKayfa();
   const { hudCharacter, characters, refresh } = usePlayer();
-  const [text, setText] = useState('');
-  const [restored, setRestored] = useState(false);
+  const key = draftKey(account, thread);
+  /* The kept draft, read before the first frame so the box is drawn with the page, with the character it was being written as. */
+  const [kept] = useState(() => readDraft(key));
+  const [text, setText] = useState(kept?.text ?? '');
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   /* The last send got no answer and the thread does not hold it: the next press sends anyway. */
@@ -71,20 +73,11 @@ function ComposerBody({ thread, latest, since, onPosted, ref, account }: Compose
   const editor = useRef<EditorHandle>(null);
   const [revealing, setRevealing] = useState(false);
   const hud = hudCharacter?.id ?? null;
-  const who = useWhoPosts(hud, text.trim() !== '');
-  const key = draftKey(account, thread);
+  const who = useWhoPosts(hud, text.trim() !== '', kept?.as ?? null);
 
-  /* The kept draft comes back with the character it was being written as. */
   const { adopt } = who;
-  useEffect(() => {
-    const kept = readDraft(key);
-    if (kept) { setText(kept.text); adopt(kept.as); }
-    setRestored(true);
-  }, [key, adopt]);
   const as = who.as;
-  useEffect(() => {
-    if (restored) writeDraft(key, { text, as });
-  }, [key, restored, text, as]);
+  useEffect(() => { writeDraft(key, { text, as }); }, [key, text, as]);
 
   /* The same draft in another tab: what it keeps or clears here is kept or cleared. */
   useEffect(() => {
@@ -113,7 +106,6 @@ function ComposerBody({ thread, latest, since, onPosted, ref, account }: Compose
   const over = [...text].length > max;
   useEffect(() => { if (!over) setQuoted(false); }, [over]);
 
-  if (!restored) return null;
   if (!hudCharacter) {
     return (
       <p className="kb-composer-note kb-notice">

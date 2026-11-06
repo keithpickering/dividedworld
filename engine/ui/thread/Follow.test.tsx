@@ -1,8 +1,9 @@
 import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { buildWorld, renderIn } from '../test-world.tsx';
+import { buildWorld, holdReads, renderIn } from '../test-world.tsx';
 import { ThreadScreen } from './Thread.tsx';
+import { LoadedThread } from '../loaded.tsx';
 
 /* The Follow / Unfollow control on the thread page (the alerts plan, Task 4; the alerts design, sections 4 and 12): in the glass, a real
    labeled button, drawn from the server's answer to "does the caller follow this thread". */
@@ -28,7 +29,7 @@ function world() {
   fake.signInAs(me);
   return { fake, started, elsewhere };
 }
-const show = (w: ReturnType<typeof world>, thread: string) => renderIn(w.fake, <ThreadScreen thread={thread} />, { path: `/t/${thread}` });
+const show = (w: ReturnType<typeof world>, thread: string) => renderIn(w.fake, <LoadedThread thread={thread} />, { path: `/t/${thread}` });
 
 describe('the follow control', () => {
   test('a thread the player did not start offers Follow, from the server, and following it offers Unfollow', async () => {
@@ -106,12 +107,20 @@ describe('the follow control', () => {
     expect(screen.getByRole('button', { name: 'Follow this thread' })).toBeInTheDocument();
   });
 
-  test('when the state cannot be read there is no control to mislead', async () => {
+  test('it reads nothing of its own: the state is the document\'s, and only its button asks', async () => {
     const w = world();
-    w.fake.following = (() => { throw new Error('not read'); }) as unknown as typeof w.fake.following;
-    show(w, w.elsewhere);
-    await screen.findByRole('heading', { name: 'Theirs to read' });
+    await w.fake.follow(w.elsewhere, true);
+    const boot = await w.fake.boot();
+    const doc = (await w.fake.threadPage(w.elsewhere, { page: 1 }, 20, []))!;
+    const asked = vi.spyOn(w.fake, 'following');
+    const read = holdReads(w.fake, ['session', 'thread', 'here', 'markRead', 'follow']);
+    renderIn(w.fake, <ThreadScreen thread={w.elsewhere} doc={doc} />, { path: `/t/${w.elsewhere}`, boot });
+    /* In the first render, with no wait: the label the document's state gives. */
+    expect(screen.getByRole('button', { name: 'Unfollow this thread' })).toBeInTheDocument();
     await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
-    await waitFor(() => expect(screen.queryByRole('button', { name: /follow this thread/i })).toBeNull());
+    expect(asked).not.toHaveBeenCalled();
+    expect(read).toEqual([]);
+    await userEvent.click(screen.getByRole('button', { name: 'Unfollow this thread' }));
+    expect(await screen.findByRole('button', { name: 'Follow this thread' })).toBeInTheDocument();
   });
 });

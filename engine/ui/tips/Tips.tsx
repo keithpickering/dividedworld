@@ -8,6 +8,7 @@
  * remember a tip on, so none shows.
  */
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react';
+import { useBoot } from '../boot.tsx';
 import { useKayfa } from '../context.tsx';
 import { usePlayer } from '../player.tsx';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
@@ -32,6 +33,7 @@ export const useTipsStore = (): TipsStore => useContext(TipsCtx);
 export function TipsProvider({ children }: { readonly children: ReactNode }) {
   const { api, instance, ui } = useKayfa();
   const { session } = usePlayer();
+  const boot = useBoot();
   const apiRef = useRef(api);
   apiRef.current = api;
   const store = useMemo(() => createTipsStore({ see: (key) => apiRef.current.seeTip(key), skip: () => apiRef.current.skipTips() }), []);
@@ -42,9 +44,11 @@ export function TipsProvider({ children }: { readonly children: ReactNode }) {
     let live = true;
     store.load(null);
     setAccount(null);
-    if (session.signedIn) void api.preferences().then((p) => { if (live) { store.load({ tips: p.tips, seen: p.tipsSeen, welcomedAt: p.welcomedAt }); setAccount(p); } }, () => {});
+    /* Boot's preferences are the account's for this page, for the tips and the tilt choice alike; a session that changed after boot reads its own. */
+    if (boot) { store.load({ tips: boot.preferences.tips, seen: boot.preferences.tipsSeen, welcomedAt: boot.preferences.welcomedAt }); setAccount(boot.preferences); }
+    else if (session.signedIn) void api.preferences().then((p) => { if (live) { store.load({ tips: p.tips, seen: p.tipsSeen, welcomedAt: p.welcomedAt }); setAccount(p); } }, () => {});
     return () => { live = false; };
-  }, [api, store, session.signedIn]);
+  }, [api, store, session.signedIn, boot]);
 
   /* The tilt choice is saved the way Settings saves it (a refusal puts it back), and the account's choice is read for the tilt state with it. */
   const { prefs, change } = usePreferenceSaves(session.account, account);

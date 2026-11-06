@@ -265,3 +265,61 @@ describe('polling', () => {
     expect(screen.queryByRole('region', { name: HEADING })).toBeNull();
   });
 });
+
+/* The page document's snapshot (the forum-load design, section 4): shown at once with the reader's own mask added, until the heartbeat answers. */
+describe('a snapshot from the page\'s document', () => {
+  const place = (thread: string) => ({ kind: 'thread', thread }) as const;
+
+  test('shows at once, with the HUD\'s mask added at the end of the names, before any heartbeat has answered', async () => {
+    const { fake, seeded } = crowd(['Pipewrench', 'Mrs. Hooligan']);
+    const boot = await fake.boot();
+    const snapshot = await fake.presenceBox(place(seeded.thread));
+    vi.spyOn(fake, 'here').mockImplementation(() => new Promise(() => {}));
+    renderIn(fake, <PresenceBox place={place(seeded.thread)} heading={HEADING} snapshot={snapshot} />, { boot });
+    const box = screen.getByRole('region', { name: HEADING });
+    expect(within(box).getAllByRole('link').map((a) => a.textContent)).toEqual(['Pipewrench', 'Mrs. Hooligan', 'Spritey']);
+  });
+
+  test('the first heartbeat\'s answer replaces it, and a mask it already lists is not added twice', async () => {
+    const { fake, seeded } = crowd(['Pipewrench']);
+    const boot = await fake.boot();
+    const snapshot = await fake.presenceBox(place(seeded.thread));
+    renderIn(fake, <PresenceBox place={place(seeded.thread)} heading={HEADING} snapshot={snapshot} />, { boot });
+    const box = await screen.findByRole('region', { name: HEADING });
+    await vi.waitFor(() => expect(within(box).getAllByRole('link').map((a) => a.textContent)).toEqual(['Pipewrench', 'Spritey']));
+    /* A snapshot that already lists the mask shows it once. */
+    cleanup();
+    const listed = await fake.here(place(seeded.thread), seeded.mine);
+    vi.spyOn(fake, 'here').mockImplementation(() => new Promise(() => {}));
+    renderIn(fake, <PresenceBox place={place(seeded.thread)} heading={HEADING} snapshot={listed} />, { boot });
+    expect(within(screen.getByRole('region', { name: HEADING })).getAllByRole('link').map((a) => a.textContent)).toEqual(['Pipewrench', 'Spritey']);
+  });
+
+  test('is not added when the mask\'s presence is hidden: the box draws it in italics itself, once', async () => {
+    const { fake, seeded } = crowd(['Pipewrench'], { hidden: true });
+    const boot = await fake.boot();
+    const snapshot = await fake.presenceBox(place(seeded.thread));
+    vi.spyOn(fake, 'here').mockImplementation(() => new Promise(() => {}));
+    renderIn(fake, <PresenceBox place={place(seeded.thread)} heading={HEADING} snapshot={snapshot} />, { boot });
+    const box = screen.getByRole('region', { name: HEADING });
+    expect(within(box).getAllByRole('link').map((a) => a.textContent)).toEqual(['Pipewrench', 'Spritey']);
+    expect(box.querySelectorAll('em')).toHaveLength(1);
+    expect(box).toHaveTextContent('Spritey (hidden, only you see this)');
+  });
+
+  test('a full box counts the mask among the others, as the first heartbeat would', async () => {
+    const { fake, seeded } = crowd(['A1', 'B2', 'C3', 'D4'], { presenceNames: 2 });
+    const boot = await fake.boot();
+    const snapshot = await fake.presenceBox(place(seeded.thread));
+    expect(snapshot).toMatchObject({ others: 2 });
+    vi.spyOn(fake, 'here').mockImplementation(() => new Promise(() => {}));
+    renderIn(fake, <PresenceBox place={place(seeded.thread)} heading={HEADING} snapshot={snapshot} />, { boot });
+    expect(screen.getByRole('region', { name: HEADING })).toHaveTextContent(/A1, B2 and 3 others$/u);
+  });
+
+  test('signed out, a snapshot shows nothing', () => {
+    const fake = buildWorld();
+    renderIn(fake, <PresenceBox place={{ kind: 'index' }} heading="Who is online" snapshot={{ names: [{ id: 'x', name: 'Ghost', staff: false }], others: 0 }} />);
+    expect(screen.queryByRole('region', { name: 'Who is online' })).toBeNull();
+  });
+});

@@ -13,6 +13,7 @@ import { usePlayer } from '../player.tsx';
 import { createTallies } from '../thread/tallies.ts';
 import { createMine } from './mine.ts';
 import { Reactions, readable } from './Reactions.tsx';
+import { LoadedThread } from '../loaded.tsx';
 
 /* The HUD's estimate is asked for through the player; this file watches that call. */
 const landed = vi.hoisted(() => vi.fn());
@@ -359,7 +360,7 @@ describe('in a thread', () => {
     const w = world();
     w.fake.seed.react(w.me, w.pipe, w.theirs, 'tea');
     w.fake.seed.react(w.other, w.spritey, w.mine, 'fire');
-    renderIn(w.fake, <ThreadScreen thread={w.thread} />, { path: `/t/${w.thread}` });
+    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}` });
     expect(await screen.findByText('Tea, 1, including yours')).toBeInTheDocument();
     const own = screen.getByRole('article', { name: /^Post 2 /u });
     expect(within(own).getByText('Fire, 1')).toBeInTheDocument();

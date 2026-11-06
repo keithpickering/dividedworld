@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { lazy, useEffect } from 'react';
 import { act, screen, within } from '@testing-library/react';
 import { describe, expect, test } from 'vitest';
 import type { EffectProps, CardUi } from '../cards/types.ts';
@@ -120,5 +120,18 @@ describe('the front door', () => {
     draw();
     expect(within(screen.getByRole('group', { name: 'About Ann' })).getByText('Jobber')).toBeInTheDocument();
     expect(within(screen.getByRole('group', { name: 'About Bo' })).getByText('Main Eventer')).toBeInTheDocument();
+  });
+});
+
+describe('the front door with an effect that loads on first use', () => {
+  test('the post shows its words before the effect lands, and inside it after', async () => {
+    let land!: () => void;
+    const gate = new Promise<void>((resolve) => { land = resolve; });
+    const Effect = lazy(async () => { await gate; return { default: (props: EffectProps) => <div data-testid="effect">{props.children}</div> }; });
+    renderInWorld(<FrontDoor />, { cards: [{ ...test_card, Effect }] });
+    expect(screen.getByText('It plays up to 3 characters.')).toBeInTheDocument();
+    expect(screen.queryByTestId('effect')).toBeNull();
+    await act(async () => { land(); await gate; });
+    expect(screen.getByTestId('effect')).toHaveTextContent('It plays up to 3 characters.');
   });
 });

@@ -21,6 +21,7 @@ import { usePlay } from './play.tsx';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import type { CardUi, ConfigFormProps } from './types.ts';
+import { LoadedThread } from '../loaded.tsx';
 
 const economy = { 'whoops.price': 100, 'whoops.perLength': 25, 'whoops.lengthStep': 500, 'stick.price': 100 };
 
@@ -91,7 +92,7 @@ function world(server: Instance = instance) {
 
 async function open(w: ReturnType<typeof world>, ui: CardUi[] = cards) {
   /* The screens on the compiled instance, given the settings the backend reads, as the app gives them (web/src/App.tsx). */
-  renderIn(w.fake, <Frame><ThreadScreen thread={w.thread} /></Frame>, { path: `/t/${w.thread}`, instance, cards: ui, settings: { postMaxLength: 1000, cardEconomy: (await w.fake.settings()).cardEconomy } });
+  renderIn(w.fake, <Frame><LoadedThread thread={w.thread} /></Frame>, { path: `/t/${w.thread}`, instance, cards: ui, settings: { postMaxLength: 1000, cardEconomy: (await w.fake.settings()).cardEconomy } });
   await screen.findByRole('article', { name: /^Post 4 /u });
   await screen.findByRole('button', { name: /^Hand, 3 postcards/u });
 }
@@ -163,7 +164,7 @@ describe('where the ghost mark stands', () => {
   test('a strip a takeover hosts (Stick Around\'s view) has no ghost mark: the play form would open under the view', async () => {
     const user = userEvent.setup();
     const w = world();
-    renderIn(w.fake, <Frame><LensHost host={document.createElement('div')}><ThreadScreen thread={w.thread} /></LensHost></Frame>, { path: `/t/${w.thread}`, instance, cards, settings: { postMaxLength: 1000, cardEconomy: (await w.fake.settings()).cardEconomy } });
+    renderIn(w.fake, <Frame><LensHost host={document.createElement('div')}><LoadedThread thread={w.thread} /></LensHost></Frame>, { path: `/t/${w.thread}`, instance, cards, settings: { postMaxLength: 1000, cardEconomy: (await w.fake.settings()).cardEconomy } });
     await screen.findByRole('article', { name: /^Post 4 /u });
     await screen.findByRole('button', { name: /^Hand, 3 postcards/u });
     await arm(user);
@@ -616,7 +617,7 @@ describe('from the Task 3 quality review', () => {
         seen.push({ account, armed: play?.armed ?? null });
         return null;
       }
-      renderIn(w.fake, <Frame><Probe /><ThreadScreen thread={w.thread} /></Frame>, { path: `/t/${w.thread}`, instance, cards, settings: { postMaxLength: 1000 } });
+      renderIn(w.fake, <Frame><Probe /><LoadedThread thread={w.thread} /></Frame>, { path: `/t/${w.thread}`, instance, cards, settings: { postMaxLength: 1000 } });
       await screen.findByRole('button', { name: /^Hand, 3 postcards/u });
       await arm(user);
       expect(seen.some((s) => s.account === w.me && s.armed === 'whoops')).toBe(true);

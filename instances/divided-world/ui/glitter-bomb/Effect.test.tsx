@@ -511,7 +511,7 @@ describe('Glitter Bomb teardown', () => {
 describe('the board stories', () => {
   test('the story seeds its play before the page mounts (e2e/glitter.spec.ts proves the glitter shows)', () => {
     const src = read('Glitter.board.stories.tsx');
-    expect(src).toMatch(/thread && ready \? <ThreadScreen/u);
+    expect(src).toMatch(/thread && ready \? <LoadedThread/u);
     expect(src).toMatch(/setReady\(true\)/u);
   });
 

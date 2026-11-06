@@ -5,6 +5,7 @@ import { seedMoves } from '../board/move-world.ts';
 import { MOVES_LOG_PAGE } from '../data/api.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ProfileScreen } from './Profile.tsx';
+import { LoadedProfile } from '../loaded.tsx';
 
 beforeEach(() => localStorage.clear());
 
@@ -13,7 +14,7 @@ function open(who: 'director' | 'bot' | 'spritey', build?: (fake: ReturnType<typ
   const w = seedMoves(fake, testInstance);
   build?.(fake, w);
   const id = { director: w.director, bot: w.bot, spritey: w.spritey }[who];
-  renderIn(fake, <ProfileScreen id={id} />, { path: `/c/${id}` });
+  renderIn(fake, <LoadedProfile id={id} />, { path: `/c/${id}` });
   return { fake, w };
 }
 
@@ -125,7 +126,7 @@ describe('a member or benched persona\'s profile', () => {
     const fake = buildWorld();
     fake.signInAs(fake.seed.account('reader'));
     const id = fake.seed.staff(`p-${office}`, 'Backup Persona', office, { title: 'Understudy', at: fake.clock.now() - 86_400_000 });
-    renderIn(fake, <ProfileScreen id={id} />, { path: `/c/${id}` });
+    renderIn(fake, <LoadedProfile id={id} />, { path: `/c/${id}` });
     await screen.findByRole('heading', { level: 1, name: 'Backup Persona' });
     const card = await screen.findByRole('region', { name: 'About Backup Persona' });
     expect(within(card).getByText('Test Cores')).toBeInTheDocument();

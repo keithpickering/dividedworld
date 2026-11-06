@@ -284,6 +284,19 @@ describe('the shine tip', () => {
     expect(dialog()).toBeNull();
   });
 
+  /* A page loaded with boot reads no preferences of its own: the account's choice the tip turns on comes from boot, and so does the tip. */
+  test('on a page loaded with boot, shows from boot\'s preferences and reads none of its own', async () => {
+    phone();
+    const fake = signedIn();
+    const boot = await fake.boot();
+    const read = vi.spyOn(fake, 'preferences');
+    renderIn(fake, <TipsProvider><p>page</p></TipsProvider>, { boot });
+    await settle();
+    shiny();
+    await screen.findByRole('dialog', { name: 'Title of shine' });
+    expect(read).not.toHaveBeenCalled();
+  });
+
   test('does not show to a visitor', async () => {
     phone();
     open(buildWorld());

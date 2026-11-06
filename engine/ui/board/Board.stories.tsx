@@ -2,12 +2,12 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import type { Fake } from '../data/fake.ts';
 import type { Instance } from '../../rules/types.ts';
 import type { World } from '../story.tsx';
-import { BoardScreen } from './Board.tsx';
+import { LoadedBoard } from '../loaded.tsx';
 
-const meta: Meta<typeof BoardScreen> = { title: 'Board/Thread list', component: BoardScreen, args: { slug: 'general' } };
+const meta: Meta<typeof LoadedBoard> = { title: 'Board/Thread list', component: LoadedBoard, args: { slug: 'general' } };
 export default meta;
 
-type Story = StoryObj<typeof BoardScreen>;
+type Story = StoryObj<typeof LoadedBoard>;
 
 const T0 = Date.UTC(2026, 9, 20, 12);
 const HOUR = 3_600_000;

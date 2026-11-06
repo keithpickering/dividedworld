@@ -133,6 +133,7 @@ export const PAIRS: readonly (readonly [string, string, number, string])[] = [
   ['--kb-muted', '--kb-hud-bg', 4.5, 'muted text on the HUD'],
   ['--kb-link', '--kb-hud-bg', 4.5, 'links on the HUD'],
   ['--kb-selection-fg', '--kb-selection-bg', 4.5, 'selected text'],
+  ['--kb-meter-fill', '--kb-meter-face', 3, 'the loading meter\'s fill in its well'],
   ['--kb-fg', '--kb-chip-bg', 4.5, 'text on a reaction chip'],
   ['--kb-muted', '--kb-chip-bg', 4.5, 'muted text on a reaction chip'],
   ['--kb-rule', '--kb-bg', 3, 'rules and control borders'],
