@@ -446,7 +446,7 @@ const PREMISE: ReportCharge = { rule_number: null, house: false, band: 'minor' }
 /**
  * A visit verdict's charge, repaired. The Mod names a rule in force ("Rule 2", "House Rule 1"; or rule_number and house), and the charge then takes THAT rule's
  * band whatever band it asked for (a rule's seriousness is the rule's). It names the board's premise ("premise", or no rule number) and keeps the band it gave, or
- * minor where that is none. A charge naming no rule in force on the board (a number nobody set, a house rule that is not there, words that are no rule) cannot be
+ * minor where that is none (a premise charge keeps the Mod's band: The System may be harsh). A charge naming no rule in force on the board (a number nobody set, a house rule that is not there, words that are no rule) cannot be
  * repaired without inventing one: it becomes the premise at the minor band, and the predicate that failed is named. The database does the same again.
  */
 function repairCharge(raw: unknown, rules: readonly RuleLine[], dropped: Dropped[]): ReportCharge {

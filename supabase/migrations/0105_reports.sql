@@ -5,8 +5,8 @@
 -- the Mod grumbles in public) or `backfire` (a visit to the reporter's latest post, for wasting the staff's time). Neither takes a seq in its thread.
 --
 --   open_report(through, post, reason)   the player's door. It verifies the caller plays `through` (acting) and that the character is not banned (not_banned), so the
---                                        Edge Function around it can be bypassed to no effect. In this order: the reason, The System on, the post (a player's post), a Mod
---                                        on the board's beat, THEN the instance's daily judgment budget (`modBots.judgmentsPerDay`, one instance-wide count: the
+--                                        Edge Function around it can be bypassed to no effect. In this order: acting, not_banned, THEN the reason, The System on, the post (a player's
+--                                        post), a Mod on the board's beat, THEN the instance's daily judgment budget (`modBots.judgmentsPerDay`, one instance-wide count: the
 --                                        day's billed judgments plus every report paid and still in flight, and the same refusal in the same words whoever asks), then the
 --                                        character's quota (`reportsPerDay`: per CHARACTER, never per account; a report refunded for a failed judgment is not counted, one
 --                                        swept for never being judged is), THEN the price (`reportPrice`, wallet_spend, kind 'report'), and
@@ -33,7 +33,7 @@
 -- spent its Aura on purpose (the Mod's grumble is the game); the visit a report draws has every way out a visit has. Concurrency: a report's decisions are made under an
 -- advisory lock of its own (close and refund take the same one, so a report is closed once or refunded once, never both), and opening takes one instance-wide lock for
 -- its checks, so the quota and the budget are not read twice at once. The budget's bound: a report counts from the moment it is paid (judgment_load_today), under that lock,
--- so reports never take the day past `judgmentsPerDay` by themselves; the other judgments (patrols, appeals) are counted by the ledger once billed and are not under this
+-- so reports never take the day past `judgmentsPerDay` by themselves, and an unjudged report holds its room for at most 150 seconds (report_in_flight_window), never until the sweep; the other judgments (patrols, appeals) are counted by the ledger once billed and are not under this
 -- lock, so a day can pass the budget by the number of those in flight at the same instant, and by no more.
 
 -- ------------------------------------------------------------------------------------------------------ the Acts ----
@@ -92,7 +92,7 @@ begin
     if new.character is null or exists (select 1 from characters c where c.id = new.character and c.staff is not null) then
       raise exception 'a report is a player''s character''s Act' using hint = 'kayfabb.refusal', errcode = '42501';
     end if;
-    if t.kind not in ('post', 'spin') or t.thread <> new.thread or exists (select 1 from characters c where c.id = t.character and c.staff is not null) then
+    if t.kind is distinct from 'post' and t.kind is distinct from 'spin' or t.thread is distinct from new.thread or exists (select 1 from characters c where c.id = t.character and c.staff is not null) then
       raise exception 'a report is of a player''s post, in its thread' using hint = 'kayfabb.refusal', errcode = '23514';
     end if;
   else
@@ -273,13 +273,21 @@ $$;
 revoke execute on function judgment_calls_today() from public, anon, authenticated;
 grant execute on function judgment_calls_today() to service_role;
 
--- What the budget is counted against: the ledger's judgments, plus every report paid today that is still in flight (no verdict, no refund, and no billed call of its own yet:
--- once its call is billed the ledger counts it). So a burst of reports cannot all pass a check made before any of them is judged.
+-- What the budget is counted against: the ledger's judgments, plus every report paid within the window (below) that is still in flight (no verdict, no refund, and no billed
+-- call of its own yet: once its call is billed the ledger counts it). So a burst of reports cannot all pass a check made before any of them is judged.
+-- A report counts only while a judgment could still be running for it: it was paid within the staff function's limit (150 seconds, the `timeout_milliseconds` of the
+-- schedule and the platform's own cap). An older one with no verdict was never judged (a client called open_report and went no further, or the function died), so it holds
+-- no room while it waits to be swept; the sweep and the quota do not read this window.
+create function report_in_flight_window() returns interval
+language sql immutable set search_path = public, pg_temp as $$ select interval '150 seconds' $$;
+revoke execute on function report_in_flight_window() from public, anon, authenticated;
+
 create function judgment_load_today() returns integer
 language sql stable security definer set search_path = public, pg_temp as $$
   select judgment_calls_today() + (
     select count(*)::integer from acts r
     where r.kind = 'report' and r.created_at >= date_trunc('day', now() at time zone 'utc') at time zone 'utc'
+      and r.created_at > now() - report_in_flight_window()
       and not exists (select 1 from acts v where v.kind = 'report_verdict' and v.target_act_id = r.id)
       and not exists (select 1 from report_refunds f where f.report_act = r.id)
       and not exists (select 1 from staff_call_records c where c.cause_act = r.id and c.duty = 'reportJudge'))
@@ -371,6 +379,8 @@ grant execute on function open_report(uuid, uuid, text) to authenticated, servic
 
 -- ----------------------------------------------------------------------------------------------------- close_report ----
 
+-- A visit verdict's charge: a rule in force takes the rule's own band; a premise charge the Mod meant keeps the Mod's band (The System may be harsh: it is a fixed list of
+-- choices with a visit's own ways out); a charge naming no rule in force on the board cannot be repaired without inventing one, so it becomes the premise at the minor band.
 create function close_report(report_act uuid, verdict text, line text default null, charge jsonb default null, staff text default null) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare

@@ -575,6 +575,30 @@ begin
   update settings set value = was where key = 'modBots';
 end $$;
 
+-- ---- 7c. An unjudged report holds the budget only while a judgment could still be running for it ----
+do $$
+declare
+  ann_b uuid := (select id from characters where name = 'Rp Ann B');
+  t uuid := tests.thread('Reports window');
+  p uuid := pg_temp.victim(t);
+  before_load integer := judgment_load_today();
+  aged uuid;
+begin
+  -- A report paid an hour ago, never judged (opened directly, say): no judgment can still be running for it, so it holds no room.
+  perform set_config('kayfabb.report_writer', 'on', true);
+  insert into acts (character, kind, thread, target_act_id, payload, created_at) values (ann_b, 'report', t, p, '{"reason": "an hour old"}', now() - interval '1 hour') returning id into aged;
+  perform set_config('kayfabb.report_writer', '', true);
+  if judgment_load_today() is distinct from before_load then raise exception 'an unjudged report past the window held the budget: % -> %', before_load, judgment_load_today(); end if;
+  -- A fresh one does.
+  perform set_config('kayfabb.report_writer', 'on', true);
+  insert into acts (character, kind, thread, target_act_id, payload) values (ann_b, 'report', t, p, '{"reason": "just now"}');
+  perform set_config('kayfabb.report_writer', '', true);
+  if judgment_load_today() is distinct from before_load + 1 then raise exception 'a fresh unjudged report did not hold the budget: % -> %', before_load, judgment_load_today(); end if;
+  -- It still counts toward its character's quota once swept (the quota does not read the window).
+  perform refund_stale_reports(10);
+  if (select why from report_refunds where report_act = aged) is distinct from 'stale' then raise exception 'the sweep did not take the old report'; end if;
+end $$;
+
 -- ---- 8. The doors ----
 do $$
 declare
