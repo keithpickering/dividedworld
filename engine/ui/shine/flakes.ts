@@ -27,8 +27,13 @@ export type Box = { readonly w: number; readonly h: number };
 
 /** The share of a post's flakes it shows before its burst. */
 const SHOWN_BEFORE = 0.15;
-/** Burst flakes in flight across the page, loose flakes across the page, flakes on the pointer. */
-export const MAX_IN_FLIGHT = 1500;
+/**
+ * Burst flakes in flight across the page, loose flakes across the page, flakes on the pointer. The in-flight cap is the
+ * owner's decision on #268: about 4,000, so one full-width post (988 by 300: 4,234 flakes, 635 shown before the burst, about
+ * 3,600 flying) bursts whole and a second post bursting at once shares what is left. A flake in the air costs one fill and
+ * one transform, so a full cap costs about 2.7 times what the old 1,500 did.
+ */
+export const MAX_IN_FLIGHT = 4000;
 export const MAX_LOOSE = 300;
 export const MAX_CARRIED = 26;
 /** How long the cling layer outlives the last flake carried or falling. */

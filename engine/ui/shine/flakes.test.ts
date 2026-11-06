@@ -17,6 +17,8 @@ const GLINT = '#ffffff';
 const BOX = { w: 988, h: 300 };
 /* Digest of what `draw` painted for `shot()` before the draw was restructured to one transform per flake. */
 const LOOK = 'ef2c407d43c607a7ce58c815efdec0b3a104d064d6e3ecb51b6cf81eaa6a8ed1';
+/* A box wide enough that one post alone has more burst flakes than the page-wide cap holds. */
+const HUGE = { w: 1400, h: 300 };
 const make = (seed = 'p1', box = BOX): Flakes => makeFlakes({ seed, box, inks: GLITTER, holo: HOLO, density: 70, glint: GLINT });
 
 const tokens = tokensOf(readFileSync(join(process.cwd(), 'engine/ui/tokens.css'), 'utf8'));
@@ -106,7 +108,8 @@ function tracked(density = 1) {
 
 /* Digests of what `drawBurst` painted for `burstShot()` before it was restructured to one transform per flake. */
 const BURST_LIGHT = 'fa65bbf1abf6d450f0477a6349f3f37c1a7d6147f2f97afabae1cea87599e77e';
-const BURST_DARK_FLAKES = '6407913fab1144941d2af38d0f789aa6d8b1ed38c3149266cd82fd9e897679b2';
+/* (Pinned with the dark post bursting on its own: before the cap rose it shared the page with the light shot's burst above and flew only the 530 flakes left of 1,500.) */
+const BURST_DARK_FLAKES = 'f543e0dd4bc0e30128c0102fb60fafe64e4ef4b76e6a57ce761bf571339cdfe3';
 function burstShot(band: { lo: number; hi: number }, onlyFlakes: boolean): { digest: string; t: ReturnType<typeof tracked>; flying: number } {
   const f = makeFlakes({ seed: 'burst-look', box: { w: 400, h: 200 }, inks: GLITTER, holo: HOLO, density: 70, glint: GLINT, star: {} as CanvasImageSource });
   burst(f, 0);
@@ -357,6 +360,7 @@ describe('the burst', () => {
     assert.ok(light.flying > 100 && light.t.n.drawImage >= 1, 'a busy burst with flares');
     assert.equal(light.digest, BURST_LIGHT);
     /* The dark board's puff is tinted from the glint now (it was a fixed gold); its flakes are what they were. */
+    burstProbe.reset(); // the light burst above is still in the air; the dark one is its own post and gets the whole cap
     assert.equal(burstShot(bands.dark, true).digest, BURST_DARK_FLAKES);
   });
 
@@ -481,8 +485,7 @@ describe('the burst', () => {
     const alone = make('cap', { w: 400, h: 200 });
     landEverything(alone);
     burstProbe.reset();
-    const hog = make('hog');
-    burst(hog, 0);
+    fillCap('hog');
     assert.equal(burstProbe.inFlight(), MAX_IN_FLIGHT);
     const crowded = make('cap', { w: 400, h: 200 });
     burst(crowded, 0);
@@ -492,24 +495,41 @@ describe('the burst', () => {
     assert.equal(crowded.settled.length, crowded.total);
   });
 
-  test('a full-width post is capped: 1,500 of its 3,600 fly and the rest are down at once', () => {
+  /* Owner's decision on #268: a full-width post (988 by 300: 4,234 flakes, 635 shown before the burst) bursts whole. */
+  test('a full-width post bursts whole: every flake that leaves its rest is in flight and none lands at once', () => {
     const f = make();
+    const rest = f.total - f.settled.length;
+    assert.ok(rest > 3500, 'about 3,600 leave their rest');
+    burst(f, 0);
+    assert.equal(f.flying, rest);
+    assert.equal(f.settled.length + f.flying, f.total);
+    assert.equal(burstProbe.inFlight(), rest);
+  });
+
+  test('a post with more burst flakes than the cap holds is capped: MAX_IN_FLIGHT fly and the rest are down at once', () => {
+    const f = make('huge', HUGE);
+    assert.ok(f.total - f.settled.length > MAX_IN_FLIGHT);
     burst(f, 0);
     assert.equal(f.flying, MAX_IN_FLIGHT);
     assert.equal(f.settled.length + f.flying, f.total);
   });
 
-  test('no more than 1,500 fly across the page, and the rest of a burst lands at once', () => {
+  test('a second post bursting at once gets only what is left of the page-wide cap and lands the rest at once', () => {
     const posts = [make('a'), make('b'), make('c')];
+    const aRest = posts[0]!.total - posts[0]!.settled.length;
+    const bRest = posts[1]!.total - posts[1]!.settled.length;
     for (const p of posts) burst(p, 0);
+    assert.equal(posts[0]!.flying, aRest, 'the first flies whole');
+    assert.equal(posts[1]!.flying, MAX_IN_FLIGHT - aRest, 'the second shares the remainder');
+    assert.ok(posts[1]!.flying > 0 && posts[1]!.flying < bRest);
+    assert.equal(posts[1]!.settled.length + posts[1]!.flying, posts[1]!.total, 'the rest of the second is down');
+    assert.equal(posts[2]!.flying, 0);
+    assert.equal(posts[2]!.settled.length, posts[2]!.total, 'the whole of the third post is down');
     assert.equal(burstProbe.inFlight(), MAX_IN_FLIGHT);
-    assert.equal(posts[0]!.flying, MAX_IN_FLIGHT);
-    assert.equal(posts[1]!.flying, 0);
-    assert.equal(posts[1]!.settled.length, posts[1]!.total, 'the whole of the second post is down');
-    assert.equal(posts[2]!.settled.length, posts[2]!.total);
-    for (let t = 0; stepBurst(posts[0]!, t) && t < 5000; t += 16);
+    for (let t = 0; (stepBurst(posts[0]!, t) || stepBurst(posts[1]!, t)) && t < 5000; t += 16);
     assert.equal(burstProbe.inFlight(), 0);
     assert.equal(posts[0]!.settled.length, posts[0]!.total);
+    assert.equal(posts[1]!.settled.length, posts[1]!.total);
     const later = make('d');
     burst(later, 6000);
     assert.equal(later.flying, later.total - later.settled.length, 'room again once they landed');
@@ -581,9 +601,16 @@ describe('everything over the words stays in the band', () => {
   });
 });
 
+/* Bursts full-width posts until the page-wide cap is used up; returns them. */
+const fillCap = (prefix: string): Flakes[] => {
+  const posts: Flakes[] = [];
+  for (let i = 0; burstProbe.inFlight() < MAX_IN_FLIGHT; i++) { const p = make(`${prefix}${i}`); burst(p, 0); posts.push(p); }
+  return posts;
+};
+
 describe('release', () => {
   test('a post dropped mid-burst gives its share of the cap back', () => {
-    const a = make('rel-a');
+    const a = make('rel-a', HUGE);
     burst(a, 0);
     assert.equal(burstProbe.inFlight(), MAX_IN_FLIGHT);
     release(a);
@@ -593,19 +620,20 @@ describe('release', () => {
     assert.equal(stepBurst(a, 16), false);
     release(a);
     assert.equal(burstProbe.inFlight(), 0, 'twice does no harm');
-    const b = make('rel-b');
+    const b = make('rel-b', HUGE);
     burst(b, 20);
     assert.equal(b.flying, MAX_IN_FLIGHT, 'the second post flies its full share');
   });
 
   test('releasing twice while another post flies leaves that post its share', () => {
-    const a = make('rel-d'), b = make('rel-e');
+    const a = make('rel-d', HUGE), b = make('rel-e', HUGE);
     burst(a, 0);
     burst(b, 0);
-    assert.equal(burstProbe.inFlight(), MAX_IN_FLIGHT, 'b found no room');
+    assert.equal(b.flying, 0, 'b found no room');
+    assert.equal(burstProbe.inFlight(), MAX_IN_FLIGHT);
     release(a);
     assert.equal(burstProbe.inFlight(), 0);
-    const c = make('rel-f');
+    const c = make('rel-f', HUGE);
     burst(c, 5);
     assert.equal(burstProbe.inFlight(), MAX_IN_FLIGHT);
     release(a); release(a);
@@ -624,8 +652,7 @@ describe('release', () => {
 
 describe('landAll', () => {
   test('places every flake at rest with the in-flight cap fully used by another post, and leaves the count alone', () => {
-    const other = make('land-a');
-    burst(other, 0);
+    fillCap('land-a');
     assert.equal(burstProbe.inFlight(), MAX_IN_FLIGHT);
     const b = make('land-b');
     landAll(b);
