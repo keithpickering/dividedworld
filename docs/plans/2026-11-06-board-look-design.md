@@ -300,7 +300,35 @@ dark at 1440 by 1000, and `18-phone`. Their words are kept as built (plain, sayi
 
 **Batch 5 approved by the owner** ("This works"), with the not-found copy above.
 
+## 9. Batch 6: the theme picker
+
+Drawn in the glass, on the backfill session's Settings boards' own markup, smoke and menu bar
+(`docs/research/2026-11-05-backfill/33-settings-account.html`, `36-account-phone.html`): `19-theme-picker` (House chosen)
+and `20-theme-picker-one-mode` (Hot Rod chosen), 1440 by 1120, and `21-theme-picker-phone`, two screens at 390 by 844.
+
+- **The board is a Settings section of its own**, between Accessibility and Notifications. Today the board's look is
+  `ThemeRow` (`engine/ui/account/appearanceRows.tsx`), one row of skewed radios under Accessibility, fifth of six; five
+  themes with a preview do not fit a row, and choosing a skin is not an accessibility setting.
+- **Theme** is a large preview over a row of five tiles. The preview is the board's first screen in miniature (banner,
+  boards bar, a title, Start a thread, the thread list) in the chosen theme and mode; each tile is a thumbnail of its
+  theme, its name, and the modes it holds. **Every preview is drawn from that theme's own tokens**, which the build reads
+  from the theme's file (the same parse `tools/check-theme.mjs` makes) into the instance's theme list, so a preview never
+  drifts from its theme (CLAUDE.md, "Two lists that must agree are one list"). The tiles are one radio group: arrows move
+  between them, and a choice applies at once, as today.
+- **Mode is its own row** (Follow my device, Light, Dark). Today the house's light and dark are two of the theme row's
+  choices; split, a player chooses a theme and a mode once each, and the account's preference holds the two apart (the
+  plan names the change to `account_preferences` and `AppearancePreference`). A theme that holds one mode holds the Mode
+  row to it, the other two greyed, and says why on the screen: "Hot Rod comes in dark only, so the board stays dark
+  whatever your device says. Choose House for light and dark." The player's own mode is kept, so choosing House again
+  returns them to it.
+- The note under Mode says what no theme changes: the game's own pieces (orbs, cards, reactions, marks).
+- **On the phone** the preview drops its Last post column, the tiles are a three-column grid so every theme and the
+  current choice show at once, and Mode's choices stack. The welcome page's Before you start, which shares the control,
+  keeps a compact form: the tiles alone.
+- Copy drafts for the owner: "Applies to the board at once, on every device you sign in on." and the two Mode notes.
+
 ## Open
 
 - Fan Site's name, now that it salutes one board's blue.
 - The legend's words.
+- Batch 6's approval, and The board as a section of its own.

@@ -876,3 +876,140 @@ fs.writeFileSync(path.join(here, '18-phone.html'), page({
   body: `<style>${PHONE_CSS_DARK}</style><div style="display:flex;gap:24px">${phoneScreen(NOTFOUND('/c/nobody'), 'light')}${phoneScreen(CANNOT('dw.gripe/t/3f2a9c1e'), 'light')}${phoneScreen(NOTFOUND('/c/nobody'), 'dark')}${phoneScreen(CANNOT('dw.gripe/t/3f2a9c1e'), 'dark')}</div>`,
 }));
 console.log('wrote the batch 5 boards');
+
+/* ================= batch 6: the theme picker (the glass: Settings › The board) ================= */
+/* Drawn on the backfill Settings board's own markup (docs/research/2026-11-05-backfill/33-settings-account.html): its style, smoke,
+   menu bar, title and section rail, with The board as a section of its own. Each preview is drawn from that theme's own tokens, which
+   the build reads from the theme's file at build time, so a preview never drifts from its theme. */
+const TPL = fs.readFileSync(path.join(here, '../2026-11-05-backfill/33-settings-account.html'), 'utf8');
+const THEMES = [
+  { key: 'house', name: 'House', modes: 'Light and dark', t: { page: '#d9d9d9', banner: 'linear-gradient(#fff,#cfcfcf)', logo: '#111', nav: 'linear-gradient(#5e5e5e,#3a3a3a)', navfg: '#fff', head: 'linear-gradient(#6a6a6a,#474747 50%,#383838 51%,#2b2b2b)', headfg: '#fff', grid: '#8a8a8a', r1: '#f7f7f7', r2: '#ebebeb', r3: '#dedede', fg: '#000', link: '#000' },
+    dark: { page: '#141414', banner: 'linear-gradient(#323232,#121212)', logo: '#f2f2f2', nav: 'linear-gradient(#3a3a3a,#262626)', navfg: '#fff', head: 'linear-gradient(#5a5a5a,#3c3c3c 50%,#2c2c2c 51%,#202020)', headfg: '#fff', grid: '#4a4a4a', r1: '#262626', r2: '#1f1f1f', r3: '#2e2e2e', fg: '#e8e8e8', link: '#fff' } },
+  { key: 'steel', name: 'Blue Steel', modes: 'Light only', t: { page: '#e5e5e5', banner: 'linear-gradient(#fff,#dee3e7)', logo: '#00507a', nav: '#d1d7dc', navfg: '#00507a', head: 'linear-gradient(#3b8ac2,#0b6aa1 50%,#005c8f 51%,#004a75)', headfg: '#ffc37a', grid: '#a9b8c2', r1: '#efefef', r2: '#dee3e7', r3: '#d1d7dc', fg: '#000', link: '#00507a' } },
+  { key: 'midnight', name: 'Midnight', modes: 'Dark only', t: { page: '#0c121b', banner: 'linear-gradient(#1f3046,#0c121b)', logo: '#eaf2fb', nav: '#16202c', navfg: '#9cc9ff', head: 'linear-gradient(#41658a,#2b4a6b 50%,#203a56 51%,#182c42)', headfg: '#eaf2fb', grid: '#2a3a4d', r1: '#1a2533', r2: '#16202c', r3: '#1f2d3d', fg: '#d8dee6', link: '#9cc9ff' } },
+  { key: 'hotrod', name: 'Hot Rod', modes: 'Dark only', t: { page: '#000', banner: 'linear-gradient(#000 40%,#4a0e00 80%,#b82a00)', logo: '#ffcc00', nav: '#140906', navfg: '#ffcc00', head: 'linear-gradient(#ffe36a,#ffae00 35%,#ff5a00 65%,#b81200)', headfg: '#1a0500', grid: '#4a1606', r1: '#140906', r2: '#1d0d07', r3: '#26110a', fg: '#f2e6d8', link: '#ffcc00', button: 'radial-gradient(ellipse 75% 70% at 50% 45%,#f4f4f4,#d2d2d2 40%,#9c9c9c 82%,#6e6e6e)' } },
+  { key: 'fansite', name: 'Fan Site', modes: 'Dark only', t: { page: 'radial-gradient(ellipse 13px 10px at 19px 17px,#0a1448 0 70%,transparent 74%) 0 0/75px 60px,#000', banner: 'linear-gradient(90deg,#12207a,#1d36b8 60%,#12207a)', logo: '#ff3a2a', nav: '#05082a', navfg: '#ffff66', head: 'repeating-linear-gradient(90deg,rgb(150 190 255/.22) 0 3px,transparent 3px 4px),repeating-linear-gradient(0deg,rgb(150 190 255/.22) 0 3px,transparent 3px 4px),linear-gradient(#3a5be0,#1a2fa8 55%,#0a1468)', headfg: '#22d4ff', grid: '#0a1250', r1: '#2234a8', r2: '#1d2e98', r3: '#18268a', fg: '#c4d8ff', link: '#fff' } },
+];
+const vars = (t) => Object.entries(t).map(([k, v]) => `--${k}:${v}`).join(';');
+/* the large preview: a board's first screen in miniature, real text at small sizes */
+const bigPreview = (t, label) => `<div class="tp-big" role="img" aria-label="${label}" style="${vars(t)}">
+  <div class="tp-banner"><b>DIVIDED WORLD</b><i></i></div>
+  <div class="tp-nav"><span>Index</span><span>General</span><span>Staff Announcements</span></div>
+  <div class="tp-title">General</div>
+  <div class="tp-btn">start a thread</div>
+  <div class="tp-table"><div class="tp-h"><span></span><span>Thread</span><span>Replies</span><span>Last post</span></div>
+    ${[['Rate my avatar', 'Mrs. Hooligan', '0', true], ['The long one', 'Spritey', '169', true], ['Who keeps reacting with a thumbs up?', 'Spritey', '3', false]].map(([ti, by, n, isNew], i) => `<div class="tp-r" style="--rb:var(--${i % 2 ? 'r2' : 'r1'})"><span><i class="tp-f${isNew ? ' n' : ''}"></i></span><span><u>${ti}</u><small>${by}</small></span><span class="c">${n}</span><span><u>${by}</u><small>Oct 6, 2026</small></span></div>`).join('')}
+  </div></div>`;
+const tile = (th, on) => `<label class="tp-tile${on ? ' on' : ''}"><input type="radio" name="theme"${on ? ' checked' : ''}>
+  <span class="tp-thumb" style="${vars(th.t)}" aria-hidden="true"><i class="tb"></i><i class="tn"></i><i class="th"></i><i class="tr"><s></s><s></s></i><i class="tr"><s></s><s></s></i><i class="tr"><s></s><s></s></i></span>
+  <b>${th.name.toUpperCase()}</b><span>${th.modes}</span></label>`;
+const PICKER_CSS = `
+.tp-big{width:100%;box-sizing:border-box;padding:12px 16px 14px;background:var(--page);font:11px/1.4 Verdana,Geneva,sans-serif;color:var(--fg);border:1.5px solid rgba(201,248,255,.7);box-shadow:0 0 14px rgba(25,227,255,.3)}
+.tp-banner{display:flex;justify-content:space-between;align-items:center;background:var(--banner);padding:8px 10px;border:1px solid var(--grid)}
+.tp-banner b{font:bold 17px/1 "Courier New",monospace;letter-spacing:.09em;color:var(--logo)}
+.tp-banner i{width:56px;height:7px;background:#d4d0c8;box-shadow:inset 1px 1px #808080}
+.tp-nav{display:flex;gap:12px;padding:4px 10px;background:var(--nav);color:var(--navfg);border:1px solid var(--grid);border-top:0;text-decoration:underline}
+.tp-title{font:bold 14px "Courier New",monospace;margin:8px 0 5px}
+.tp-btn{display:inline-block;margin:0 0 6px;padding:3px 9px;font:bold 10px Verdana,sans-serif;letter-spacing:.05em;color:#111;background:var(--button,linear-gradient(#fcfcfc,#d8d8d8 48%,#b4b4b4 52%,#e6e6e6));border:1px solid #3a3a3a;box-shadow:1px 1px 2px rgb(0 0 0/.35)}
+.tp-table{background:var(--grid);padding:1px;display:grid;gap:1px}
+.tp-h,.tp-r{display:grid;grid-template-columns:26px 1fr 60px 150px;gap:1px}
+.tp-h span{background:var(--head);color:var(--headfg);font:bold 10px "Courier New",monospace;padding:3px 6px}
+.tp-r span{background:var(--rb);padding:4px 6px;min-width:0}
+.tp-r span.c{background:var(--r3);text-align:center}
+.tp-r u{display:block;color:var(--link);font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tp-r small{display:block;font-size:10px;opacity:.8}
+.tp-f{display:block;width:16px;height:12px;margin:2px auto;border:1px solid var(--fg);background:var(--r1)}
+.tp-f.n{background:var(--fg)}
+.tp-tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:16px}
+.tp-tile{position:relative;display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid rgba(241,236,255,.45);background:rgba(7,5,13,.6);cursor:pointer}
+.tp-tile input{position:absolute;opacity:0;width:1px;height:1px}
+.tp-tile.on{border:2px solid #19e3ff;padding:7px;background:rgba(25,227,255,.08);box-shadow:0 0 18px rgba(25,227,255,.35)}
+.tp-tile b{font:800 19px/1 'Barlow Condensed',sans-serif;letter-spacing:1.2px;color:#f1ecff}
+.tp-tile > span:last-child{font:500 18px/1.1 'Barlow Condensed',sans-serif;color:#e4def7}
+.tp-thumb{display:flex;flex-direction:column;gap:2px;height:72px;padding:4px;background:var(--page);border:1px solid #000}
+.tp-thumb i{display:block}
+.tp-thumb .tb{height:11px;background:var(--banner)}
+.tp-thumb .tn{height:5px;background:var(--nav)}
+.tp-thumb .th{height:7px;background:var(--head);margin-top:2px}
+.tp-thumb .tr{flex:1;display:grid;grid-template-columns:1fr 18px;gap:1px;background:var(--grid);padding:0 1px}
+.tp-thumb .tr s{background:var(--r1);display:flex;align-items:center;padding:0 3px;text-decoration:none}
+.tp-thumb .tr:nth-child(odd) s{background:var(--r2)}
+.tp-thumb .tr s:first-child::before{content:"";height:2px;width:70%;background:var(--link)}
+.seg label.off span{opacity:.4}
+`;
+function picker(selected, modeOn, phone) {
+  const th = THEMES.find((x) => x.key === selected);
+  const both = th.modes === 'Light and dark';
+  const shown = both && modeOn === 'dark' ? th.dark : th.t;
+  const modeLabel = both ? (modeOn === 'dark' ? 'dark' : 'light') : th.modes.split(' ')[0].toLowerCase();
+  const seg = ['FOLLOW MY DEVICE', 'LIGHT', 'DARK'].map((m) => {
+    const key = m === 'FOLLOW MY DEVICE' ? 'device' : m.toLowerCase();
+    const checked = both ? key === modeOn : key === modeLabel;
+    return `<label class="${!both && !checked ? 'off' : ''}"><input type="radio" name="mode"${checked ? ' checked' : ''}${!both ? ' disabled' : ''}><span><b>${m}</b></span></label>`;
+  }).join('');
+  const note = both
+    ? 'The 2003 board stays 2003 whichever you choose. Only its look changes. The game’s own pieces (orbs, cards, reactions, marks) keep theirs.'
+    : `${th.name} comes in ${modeLabel} only, so the board stays ${modeLabel} whatever your device says. Choose House for light and dark.`;
+  return `
+    <div class="row"><h3>THEME</h3><div>
+      ${bigPreview(shown, `Preview: ${th.name}, ${modeLabel}`)}
+      <div class="tp-tiles" role="radiogroup" aria-label="Theme" ${phone ? 'style="grid-template-columns:repeat(2,1fr)"' : ''}>${THEMES.map((x) => tile(x, x.key === selected)).join('')}</div>
+      <p class="note">Applies to the board at once, on every device you sign in on.</p></div></div>
+    <div class="row" style="border-bottom:1px solid rgba(241,236,255,.22)"><h3>MODE</h3><div><div class="seg" role="radiogroup" aria-label="Mode">${seg}</div><p class="note">${note}</p></div></div>`;
+}
+const head = TPL.slice(0, TPL.indexOf('</style>')).replace(/<title>[^<]*<\/title>/, '<title>Settings, The board: the board look board</title>')
+  .replace(/<!--[\s\S]*?-->/, '<!-- A board of the board look design session (docs/plans/2026-11-06-board-look-design.md), batch 6, 1440 by 1000, written by gen.mjs from the backfill Settings board\'s markup. Settings › The board: the theme picker. -->').replace('batch 6, 1440 by 1000', 'batch 6, 1440 by 1120') + PICKER_CSS + '</style>';
+/* the board is 1120 tall, so the Mode row's note is whole: the backfill board's 1000 grows by 120, its smoke and calm with it */
+const bodyStart = TPL.slice(TPL.indexOf('</style>') + 8, TPL.indexOf('<nav aria-label="Settings sections"'))
+  .replace(/height: 1000px/g, 'height: 1120px').replace(/height="1000"/g, 'height="1120"').replace('height="700"', 'height="820"');
+const RAIL = `<nav aria-label="Settings sections" style="position: absolute; left: 64px; top: 262px; width: 254px"><ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px">${['ACCOUNT', 'ACCESSIBILITY', 'THE BOARD', 'NOTIFICATIONS'].map((s) => `<li><a href="#" class="btn${s === 'THE BOARD' ? ' primary' : ''}" style="display: flex; justify-content: flex-start"${s === 'THE BOARD' ? ' aria-current="page"' : ''}><b>${s}</b></a></li>`).join('')}</ul>
+    <p style="margin: 34px 0 0; padding-top: 22px; border-top: 1px solid rgba(241,236,255,.22)"><a href="#" class="lnk">Reach a person</a></p></nav>`;
+const deskPicker = (sel, mode) => `${head}\n</head>\n<body>${bodyStart}${RAIL}
+  <section aria-labelledby="bH" style="position: absolute; left: 370px; top: 262px; width: 920px">
+    <h2 id="bH" style="margin: 0 0 12px; font: 52px/1 Anton, Impact, sans-serif; letter-spacing: .5px">THE BOARD</h2>
+    ${picker(sel, mode, false)}
+  </section>
+</div>
+</body>
+</html>
+`;
+fs.writeFileSync(path.join(here, '19-theme-picker.html'), deskPicker('house', 'device'));
+fs.writeFileSync(path.join(here, '20-theme-picker-one-mode.html'), deskPicker('hotrod', 'device').replace('Settings › The board: the theme picker.', 'Settings › The board with Hot Rod chosen: a theme that holds one mode, the Mode row held to it.'));
+console.log('wrote the batch 6 boards');
+
+/* the phone: Settings › The board at 390, drawn on the backfill phone Settings board's markup (36-account-phone.html) */
+const TPLP = fs.readFileSync(path.join(here, '../2026-11-05-backfill/36-account-phone.html'), 'utf8');
+const headP = TPLP.slice(0, TPLP.indexOf('</style>')).replace(/<title>[^<]*<\/title>/, '<title>Settings, The board, on the phone: the board look board</title>')
+  .replace(/<!--[\s\S]*?-->/, '<!-- A board of the board look design session (docs/plans/2026-11-06-board-look-design.md), batch 6: Settings › The board at 390 by 844, House chosen and then Hot Rod, written by gen.mjs from the backfill phone Settings board\'s markup. -->')
+  + PICKER_CSS + `
+.ph .tp-big{padding:8px 8px 10px;font-size:9px}
+.ph .tp-banner b{font-size:12px}
+.ph .tp-h,.ph .tp-r{grid-template-columns:18px 1fr 48px}
+.ph .tp-h span:last-child,.ph .tp-r span:last-child{display:none}
+.ph .tp-tiles{grid-template-columns:repeat(3,1fr) !important;gap:8px}
+.ph .tp-tile{padding:6px}
+.ph .tp-tile.on{padding:5px}
+.ph .tp-thumb{height:52px}
+.ph .tp-tile b{font-size:16px;letter-spacing:.6px}
+.ph .tp-tile > span:last-child{font-size:15px}
+.ph .seg{flex-direction:column}
+.ph .seg span{width:100%;box-sizing:border-box}
+</style>`;
+const FIG = TPLP.slice(TPLP.indexOf('<figure'), TPLP.indexOf('<section style="position: absolute; left: 16px; top: 90px; width: 358px">'));
+const phoneFig = (n, sel, label) => FIG.replace(/t1/g, `p${n}`).replace('aria-label="Account"', `aria-label="${label}"`) + `
+    <section class="ph" style="position: absolute; left: 16px; top: 90px; width: 358px">
+      <h2 style="margin: 0 0 8px; font: 44px/1 Anton, Impact, sans-serif">THE BOARD</h2>
+      ${picker(sel, 'device', true).replace(/<div class="row"( style="[^"]*")?><h3>([A-Z]+)<\/h3><div>/g, '<div style="padding: 14px 0; border-top: 1px solid rgba(241,236,255,.22)"><div class="k" style="padding: 0 0 8px">$2</div><div>').replace(/class="note"/g, 'class="note" style="font-size:19px"')}
+    </section>
+  </figure>`;
+fs.writeFileSync(path.join(here, '21-theme-picker-phone.html'), `${headP}
+</head>
+<body>
+<div style="width: 840px; height: 884px; display: flex; gap: 20px; padding: 20px; box-sizing: border-box; background: #2a2833; font-family: 'Barlow Condensed', sans-serif">
+  ${phoneFig(1, 'house', 'The board, House')}
+  ${phoneFig(2, 'hotrod', 'The board, Hot Rod')}
+</div>
+</body>
+</html>
+`);
+console.log('wrote the batch 6 phone board');
