@@ -180,6 +180,15 @@ describe('draw, against a fake context', () => {
     assert.equal(calls.filter((c) => c[0] === 'ctx.drawImage').length, 1, 'only the grid');
   });
 
+  test('a dark board whose ceiling lets some light through still draws no white starburst', () => {
+    // Pure white is inside a band only when its ceiling is 1; on any lower ceiling, ‘lighter’ white could lift a cell out.
+    const calls: Call[] = [];
+    const foil = makeFoil({ seed: 's', pattern: 'pearl', palette: PALETTES.dark, stars: 10, createCanvas: () => fakeCanvas(calls, 'c') });
+    const ctx = fakeCanvas(calls, 'ctx').getContext('2d') as unknown as CanvasRenderingContext2D;
+    foil.draw(ctx, { w: 600, h: 200 }, 1, { x: 0, y: 0 }, { lo: 0, hi: 0.3 }, 0, false);
+    assert.equal(calls.filter((c) => c[0] === 'ctx.drawImage').length, 1, 'only the grid');
+  });
+
   test('the idle wink raises a starburst that the light is not facing', () => {
     const alphas = (idle: boolean, now: number) => {
       const seen: number[] = [];

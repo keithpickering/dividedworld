@@ -47,8 +47,6 @@ export type Foil = {
 
 const CELL = 3;
 const FACET = 17;
-/** A band whose ceiling is under this lets no white through: the starbursts are white. */
-const DARK_FLOOR = 0.05;
 
 type Facet = { x: number; y: number; nx: number; ny: number; ph: number };
 type Layout = {
@@ -247,9 +245,9 @@ export function makeFoil(opts: FoilOptions): Foil {
       ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(L.small as unknown as CanvasImageSource, 0, 0, L.W, L.H);
       /* Starbursts: each faces its own way and flares when the light lines up with it. Their white is let through only as
-       * far as the band allows it: none on the dark board. */
-      const through = band.hi >= 1 ? 1 : Math.max(0, (band.hi - DARK_FLOOR) / (1 - DARK_FLOOR));
-      if (stars.length === 0 || through === 0) return;
+       * far as the band allows it, and a band lets pure white through only when its ceiling is 1: on any lower ceiling
+       * (every dark board, whatever its inks) 'lighter' white could lift a cell out of the band, so none is drawn. */
+      if (stars.length === 0 || band.hi < 1) return;
       if (!sprite) sprite = starSprite(make);
       const t = now / 1000;
       ctx.globalCompositeOperation = 'lighter';
@@ -257,7 +255,7 @@ export function makeFoil(opts: FoilOptions): Foil {
         const sx = s.u * L.W, sy = s.v * L.H;
         let a = Math.exp(-((s.nx - light.x) ** 2 + (s.ny - light.y) ** 2) / 0.12);
         if (idle) a = Math.max(a, 0.85 * Math.max(0, Math.sin(t * 0.9 + sx * 0.05)) ** 24);
-        const alpha = (0.12 + 0.88 * a) * through;
+        const alpha = 0.12 + 0.88 * a;
         if (alpha < 0.02) continue;
         const z = s.s * (0.55 + 0.6 * a);
         ctx.globalAlpha = Math.min(1, alpha);
