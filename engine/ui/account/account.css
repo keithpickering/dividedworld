@@ -458,6 +458,8 @@
   text-decoration-thickness: 2px;
 }
 
+/* The door sits inside .kb-acct, so its phone rules below carry .kb-acct too: the generic phone rules (`.kb-acct .kb-acct-row`, further down) have the
+   same weight, and a door rule without it would lose to them or win only by coming later. */
 /* On the phone the aside stacks under the form, a rule and 24px of room between. */
 :where(:root[data-kb-layout='phone']) .kb-door {
   grid-template-columns: minmax(0, 1fr);
@@ -465,25 +467,25 @@
   margin-top: 24px;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-door .kb-acct-row {
+:where(:root[data-kb-layout='phone']) .kb-acct .kb-door .kb-acct-row {
   /* The phone's rows (above) pad 16px; the door's fields are bare. */
   padding: 0;
   margin-top: 1.125rem;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-door .kb-acct-lead + .kb-acct-row {
+:where(:root[data-kb-layout='phone']) .kb-acct .kb-door .kb-acct-lead + .kb-acct-row {
   margin-top: 1.5rem;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-door .kb-acct-row-label {
+:where(:root[data-kb-layout='phone']) .kb-acct .kb-door .kb-acct-row-label {
   font-size: var(--kb-glass-size-phone-display);
 }
 
-:where(:root[data-kb-layout='phone']) .kb-door .kb-acct-input {
+:where(:root[data-kb-layout='phone']) .kb-acct .kb-door .kb-acct-input {
   min-height: 3rem;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-door .kb-button-row > .kb-glass-button {
+:where(:root[data-kb-layout='phone']) .kb-acct .kb-door .kb-button-row > .kb-glass-button {
   flex: 1 1 100%;
 }
 

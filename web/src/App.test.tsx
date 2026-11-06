@@ -558,11 +558,11 @@ describe('the welcome', () => {
     render(<App api={fake} />);
     await screen.findByRole('region', { name: 'Game HUD' });
     act(() => { fake.signInAs(quick); });
-    await vi.waitFor(() => expect(seen.characters).toBeGreaterThanOrEqual(2));
+    await waitFor(() => expect(seen.characters).toBeGreaterThanOrEqual(2));
     await move('/settings');
     await screen.findByRole('heading', { level: 1, name: 'Settings' });
     release();
-    await vi.waitFor(() => expect(seen.settledCharacters).toBeGreaterThanOrEqual(2));
+    await waitFor(() => expect(seen.settledCharacters).toBeGreaterThanOrEqual(2));
     await flush();
     expect(window.location.pathname).toBe('/settings');
     expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
