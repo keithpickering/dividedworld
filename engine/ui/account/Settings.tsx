@@ -5,7 +5,7 @@
  * for a design), and the section beside it.
  *
  * Accessibility: motion (its sentence naming the instance's own card, `InstanceUi.copy`), smoke, contrast, text size, the board's colors (the device's, black on
- * white, white on black, then the instance's own themes) and the post style, each a row of skewed
+ * white, white on black, then the instance's own themes) the post style and tilt, each a row of skewed
  * choices with its sentence. Each is saved to the account the moment it is chosen and applied to the
  * page at once (applyAppearance): the theme restyles the board only, the smoke, contrast and text
  * size the glass and the board together. The thread reads the post style when it opens, so a change
@@ -31,9 +31,10 @@ import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import { ReachAPerson } from '../contact/Contact.tsx';
 import { Link, useLocation, useNavigate } from '../router.tsx';
-import { Choice, MotionRow, TextSizeRow, ThemeRow, type Option } from './appearanceRows.tsx';
+import { Choice, MotionRow, TextSizeRow, ThemeRow, TiltRow, type Option } from './appearanceRows.tsx';
 import { Invites } from './Invites.tsx';
 import { usePreferenceSaves, type TipsChange } from './preferences.ts';
+import { setTiltPreference } from '../shine/tilt.ts';
 import { useSession } from './session.ts';
 import './account.css';
 import { CalmRegion } from '../glass/Calm.tsx';
@@ -183,6 +184,10 @@ export function SettingsScreen() {
     return () => { live = false; };
   }, [api, account]);
 
+  /* The tilt module learns the account's choice here, as it is read and as it changes. */
+  const tiltChoice = prefs?.tilt;
+  useEffect(() => { if (tiltChoice) setTiltPreference(tiltChoice); }, [tiltChoice]);
+
   if (session === null) return <div className="kb-acct" aria-busy="true" />;
   if (!session.signedIn || !account) {
     return <Frame section={null}><CalmRegion as="p" className="kb-acct-lead"><Link to="/sign-in">Sign in</Link> to change your settings.</CalmRegion></Frame>;
@@ -264,6 +269,7 @@ export function SettingsScreen() {
           sentence="High puts solid black behind every line of text on the glass and lifts it all to at least 7:1. The smoke stays at the edges of the screen." />
         <TextSizeRow value={prefs.textSize} onChange={(v) => change({ textSize: v })} />
         <ThemeRow value={prefs.theme} onChange={(v) => change({ theme: v })} />
+        <TiltRow value={prefs.tilt} onChange={(v) => change({ tilt: v })} />
         <Choice legend="Posts" options={POSTBIT} value={prefs.postbit} onChange={(v) => change({ postbit: v })}
           sentence="Side by side puts the character beside each post, as on a classic forum. Stacked puts it above each post, for narrow screens." />
         <TipsRow on={prefs.tips === 'on'} change={changeTips} />

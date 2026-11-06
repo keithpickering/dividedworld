@@ -1,6 +1,8 @@
 import { act, cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { axeViolations, describeViolations } from '../a11y.ts';
+import { resetTilt, tiltState } from '../shine/tilt.ts';
 import { DEFAULT_PREFERENCES, type Answer, type Preferences, type PreferencesPatch } from '../data/api.ts';
 import { Smoke } from '../glass/Smoke.tsx';
 import { applyAppearance } from '../appearance.ts';
@@ -603,5 +605,119 @@ describe('Settings › Account', () => {
     await userEvent.click(buttons.at(-1)!);
     await waitFor(async () => expect((await w.fake.session()).signedIn).toBe(false));
     expect(window.location.pathname).toBe('/');
+  });
+});
+
+describe('Settings › Accessibility › Tilt', () => {
+  const NAME = 'Tilt shiny cards with your phone';
+  const root = document.documentElement;
+  const device = (requestPermission?: () => Promise<string>) => {
+    const E = function DeviceOrientationEvent() {} as unknown as { requestPermission?: () => Promise<string> };
+    if (requestPermission) E.requestPermission = requestPermission;
+    vi.stubGlobal('DeviceOrientationEvent', E);
+  };
+  const says = (sw: HTMLElement) => document.getElementById(sw.getAttribute('aria-describedby')!)!.textContent!;
+  beforeEach(() => { resetTilt(); });
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); resetTilt(); root.removeAttribute('data-kb-motion'); });
+
+  async function opened(tilt: 'off' | 'on') {
+    const w = world();
+    if (tilt === 'on') await w.fake.setPreferences({ tilt: 'on' });
+    open(w.fake);
+    return { w, sw: await screen.findByRole('switch', { name: NAME }) };
+  }
+
+  test('is a switch under a heading in the glass\'s words, off until chosen, and off says so plainly', async () => {
+    device();
+    const { sw } = await opened('off');
+    expect(screen.getByRole('heading', { level: 3, name: NAME })).toBeInTheDocument();
+    expect(sw).not.toBeChecked();
+    expect(says(sw)).toMatch(/^Off\./u);
+  });
+
+  test('on, on a device that needs no grant', async () => {
+    device();
+    const { sw } = await opened('on');
+    expect(sw).toBeChecked();
+    expect(says(sw)).toBe('On. Tilting your phone moves the light across shiny cards.');
+  });
+
+  test('needs-allow: a button, and nothing asks the browser until it is pressed', async () => {
+    const ask = vi.fn(async () => 'granted');
+    device(ask);
+    const { sw } = await opened('on');
+    const button = screen.getByRole('button', { name: 'Allow on this phone' });
+    expect(ask).not.toHaveBeenCalled();
+    await userEvent.click(button);
+    expect(ask).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(says(sw)).toMatch(/^On\./u));
+    expect(screen.queryByRole('button', { name: 'Allow on this phone' })).toBeNull();
+  });
+
+  test('denied: the browser\'s refusal, where to change it, and no second ask without a tap', async () => {
+    const ask = vi.fn(async () => 'denied');
+    device(ask);
+    localStorage.setItem('kb-tilt-device', 'denied');
+    const { sw } = await opened('on');
+    expect(says(sw)).toBe('Your browser said no, so shiny cards follow your scrolling instead. To change that, allow motion and orientation access for this site in your browser\'s settings, then turn this on again.');
+    expect(ask).not.toHaveBeenCalled();
+    /* Turning it off and on again is two taps, and the second asks. */
+    await userEvent.click(sw);
+    await userEvent.click(sw);
+    expect(ask).toHaveBeenCalledTimes(1);
+  });
+
+  test('unsupported: a device that sends no tilt for a second', async () => {
+    device();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { sw } = await opened('on');
+      await act(async () => { await vi.advanceTimersByTimeAsync(1100); });
+      expect(says(sw)).toBe('This device doesn\'t report tilt, so shiny cards follow your scrolling and your pointer instead.');
+    } finally { vi.useRealTimers(); }
+  });
+
+  test('held while motion is reduced', async () => {
+    device();
+    root.setAttribute('data-kb-motion', 'reduce');
+    const { sw } = await opened('on');
+    expect(says(sw)).toBe('Off while motion is reduced. Shiny cards hold their light still.');
+    expect(tiltState('on')).toBe('held');
+  });
+
+  test('the row is not drawn on a device with no coarse pointer and no orientation API, but the choice still saves from any device', async () => {
+    vi.stubGlobal('DeviceOrientationEvent', undefined);
+    const w = world();
+    await w.fake.setPreferences({ tilt: 'on' });
+    open(w.fake);
+    await screen.findByRole('switch', { name: 'Tips' });
+    expect(screen.queryByRole('switch', { name: NAME })).toBeNull();
+    cleanup();
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: q.includes('pointer: coarse'), media: q, addEventListener() {}, removeEventListener() {} }));
+    open(w.fake);
+    expect(await screen.findByRole('switch', { name: NAME })).toBeChecked();
+  });
+
+  test('a choice is saved through the account and kept on a fresh load', async () => {
+    device();
+    const { w, sw } = await opened('off');
+    await userEvent.click(sw);
+    await waitFor(async () => expect((await w.fake.preferences()).tilt).toBe('on'));
+    expect(sw).toBeChecked();
+    cleanup();
+    open(w.fake);
+    expect(await screen.findByRole('switch', { name: NAME })).toBeChecked();
+    await userEvent.click(screen.getByRole('switch', { name: NAME }));
+    await waitFor(async () => expect((await w.fake.preferences()).tilt).toBe('off'));
+  });
+
+  test.each(['light', 'dark'])('passes the accessibility check in the %s glass', async (mode) => {
+    device(async () => 'granted');
+    root.setAttribute('data-kb-mode', mode);
+    await opened('on');
+    const row = screen.getByRole('switch', { name: NAME }).closest('.kb-acct-row')!;
+    expect(screen.getByRole('button', { name: 'Allow on this phone' })).toBeInTheDocument();
+    const found = await axeViolations(row);
+    expect(found, describeViolations(found)).toEqual([]);
   });
 });
