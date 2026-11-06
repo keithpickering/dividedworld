@@ -23,7 +23,7 @@ const LIGHT = {
   '--kb-banner-bg': 'linear-gradient(#ffffff, #cfcfcf)', '--kb-logo-fg': '#111', '--kb-logo-shadow': '1px 1px 0 #fff, 2px 2px 0 #9a9a9a',
   '--kb-nav-bg': 'linear-gradient(#5e5e5e, #3a3a3a)', '--kb-nav-fg': '#fff',
   '--kb-tag-bg': '#fff', '--kb-mini-bg': '#fff', '--kb-mini-rule': '#000',
-  '--kb-icon-ink': '#1a1a1a', '--kb-icon-fill': '#fff', '--kb-icon-new': '#6a6a6a', '--kb-icon-hi': '#fff', '--kb-icon-hot': '#000',
+  '--kb-icon-ink': '#1a1a1a', '--kb-icon-back': '#b8b8b8', '--kb-icon-front': '#f0f0f0', '--kb-icon-new': '#6e6e6e', '--kb-icon-hi': '#fff', '--kb-icon-line': '#8a8a8a', '--kb-icon-hot': '#4a4a4a',
   '--kb-button-bg': 'linear-gradient(#fcfcfc 0%, #d8d8d8 48%, #b4b4b4 52%, #e6e6e6 100%)', '--kb-button-edge': '#3a3a3a',
   '--kb-button-fg': '#111', '--kb-button-fg-shadow': '0 1px 0 rgb(255 255 255 / 0.9), 0 0 5px rgb(255 255 255 / 0.7)',
   '--kb-badge-a': '#3a3a3a', '--kb-badge-a-fg': '#fff', '--kb-badge-b': '#e8e8e8', '--kb-badge-b-fg': '#000',
@@ -37,7 +37,7 @@ const DARK = {
   '--kb-banner-bg': 'linear-gradient(#323232, #121212)', '--kb-logo-fg': '#f2f2f2', '--kb-logo-shadow': '1px 1px 0 #000, 2px 2px 0 #555',
   '--kb-nav-bg': 'linear-gradient(#3a3a3a, #262626)', '--kb-nav-fg': '#fff',
   '--kb-tag-bg': '#1a1a1a', '--kb-mini-bg': '#1a1a1a', '--kb-mini-rule': '#e8e8e8',
-  '--kb-icon-ink': '#e8e8e8', '--kb-icon-fill': '#262626', '--kb-icon-new': '#9a9a9a', '--kb-icon-hi': '#262626', '--kb-icon-hot': '#fff',
+  '--kb-icon-ink': '#000', '--kb-icon-back': '#8c8c8c', '--kb-icon-front': '#d8d8d8', '--kb-icon-new': '#555', '--kb-icon-hi': '#f4f4f4', '--kb-icon-line': '#8a8a8a', '--kb-icon-hot': '#bdbdbd',
   '--kb-button-bg': 'linear-gradient(#6a6a6a 0%, #454545 48%, #2a2a2a 52%, #3c3c3c 100%)', '--kb-button-edge': '#000',
   '--kb-button-fg': '#fff', '--kb-button-fg-shadow': '0 1px 0 #000, 0 0 5px rgb(255 255 255 / 0.35)',
   '--kb-badge-a': '#e8e8e8', '--kb-badge-a-fg': '#000', '--kb-badge-b': '#2a2a2a', '--kb-badge-b-fg': '#e8e8e8',
@@ -45,27 +45,23 @@ const DARK = {
 };
 const decl = (o) => Object.entries(o).map(([k, v]) => `  ${k}: ${v};`).join('\n');
 
-/* ---------- pixel icons: k ink, o fill, n the new fill, w highlight, h the hot mark ---------- */
-const FOLDER = (body, hot) => {
-  const rows = ['..kkkkk.........', '.kooooook.......', 'kooooooookkkkkk.', 'kooooooooooooook', 'kkkkkkkkkkkkkkkk', 'kwwwwwwwwwwwwwwk', ...Array(6).fill(`k${body.repeat(14)}k`), 'kkkkkkkkkkkkkkkk'];
-  if (!hot) return rows;
-  /* a three-tongue flame stood in the folder's top-right corner */
-  const flame = ['...........h....', '..........hh..h.', '..kkkkk..hhh.hh.', '.kooooook.hhhhh.', 'kooooooookhhhhhk', 'kooooooooooooook'];
-  return [...flame, ...rows.slice(4)];
-};
+/* ---------- icons: drawn as 2003 icon GIFs were, a few flat tones, a 1px outline and a highlight, at a whole-pixel size ---------- */
+/* Every stroke sits on a half pixel and every icon is drawn at its viewBox's own size, so its lines land on the screen's pixels. */
+const FLAME = '<path class="hot" d="M19.5,0.5 C21,2.5 23.5,4 22.8,7 C22.3,9 20,9.5 18.8,8.6 C17.5,7.6 17.8,5.8 19,4.8 C17.4,5 16.5,6.5 16.8,8.2 C15,6.5 16.5,2.5 19.5,0.5 Z"/><path class="hi" d="M20,4.6 C21,5.6 21.6,6.6 21,7.6 C20.5,8.1 19.7,7.8 19.7,7 Z"/>';
+const SHEET = '<path class="paper" d="M5.5,2.5 H17.5 V11.5 H5.5 Z"/><path class="line" d="M7.5,5.5 H15.5 M7.5,7.5 H15.5 M7.5,9.5 H12.5"/>';
+const folder = (isNew, hot) => [24, 20,
+  '<path class="back" d="M2.5,3.5 H9.5 L11.5,5.5 H21.5 V17.5 H2.5 Z"/>' + (isNew ? SHEET : '') +
+  `<path class="${isNew ? 'front-new' : 'front'}" d="M2.5,17.5 L4.5,9.5 H23.5 L21.5,17.5 Z"/><path class="shine" d="M5.4,10.5 H22.3"/>` + (hot ? FLAME : '')];
 const ICONS = {
-  old: FOLDER('o', false), new: FOLDER('n', false), hot: FOLDER('o', true), 'new-hot': FOLDER('n', true),
-  home: ['......kk......', '....kkookk....', '..kkoooooookk.', 'kkoooooooooookk', '.kooookkkooook.', '.kooookookooook', '.kooookookooook', '.kkkkkkkkkkkkkk'],
-  board: ['kkkkkkkkkk', 'kwwwwwwwwk', 'kokkkkkkok', 'kooooooook', 'kokkkkkook', 'kooooooook', 'kokkkkkkok', 'kkkkkkkkkk'],
-  who: ['.....kkk....', '....kooook..', '....kooook..', '....kooook..', '.....kook...', '.kkk.kkk....', 'kooook.kkk..', 'kooook.kook.', 'kooook.kook.', '.kook.kooook', 'kkkkkkkooook', 'koooookkkkkk'],
-  start: ['.kkkkkkkk..', '.kwwwwwwk..', '.kokkkkok..', '.kooooook.k', '.kokkkkokkkk', '.koooooook.k', '.kkkkkkkkk..'],
+  old: folder(false, false), new: folder(true, false), hot: folder(false, true), 'new-hot': folder(true, true),
+  who: [24, 20, '<circle class="back" cx="15.5" cy="6" r="3.5"/><path class="back" d="M9.5,17.5 C9.5,11.5 21.5,11.5 21.5,17.5 Z"/><circle class="front" cx="9" cy="8.5" r="3.8"/><path class="front" d="M2.5,19.5 C2.5,13 15.5,13 15.5,19.5 Z"/>'],
+  home: [16, 14, '<path class="s" d="M1.5,7.5 L8,1.5 L14.5,7.5 M3.5,6.5 V12.5 H12.5 V6.5 M7,12.5 V9.5 H9 V12.5"/>'],
+  board: [16, 14, '<path class="s" d="M1.5,2.5 H14.5 V12.5 H1.5 Z M4,5.5 H12 M4,7.5 H12 M4,9.5 H9"/>'],
+  start: [14, 14, '<path class="s" d="M2.5,1.5 H9.5 L11.5,3.5 V12.5 H2.5 Z M5,7.5 H9 M7,5.5 V9.5"/>'],
 };
-function px(name, scale) {
-  const map = ICONS[name];
-  const h = map.length, w = Math.max(...map.map((r) => r.length));
-  let rects = '';
-  map.forEach((row, y) => [...row].forEach((c, x) => { if (c !== '.') rects += `<rect class="${c}" x="${x}" y="${y}" width="1" height="1"/>`; }));
-  return `<svg class="px" aria-hidden="true" width="${w * scale}" height="${h * scale}" viewBox="0 0 ${w} ${h}" shape-rendering="crispEdges">${rects}</svg>`;
+function px(name) {
+  const [w, h, body] = ICONS[name];
+  return `<svg class="ic" aria-hidden="true" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${body}</svg>`;
 }
 
 /* ---------- the look's CSS ---------- */
@@ -98,7 +94,6 @@ a:hover { color: var(--kb-link-hover); }
 .meter { display: block; width: 94px; height: 11px; background: #d4d0c8; box-shadow: inset 1px 1px #808080, inset -1px -1px #fff; }
 .nav { display: flex; gap: 18px; padding: 8px 12px; background: var(--kb-nav-bg); border: 1px solid var(--kb-frame); border-top: 0; font-size: 13.75px; margin: 0 0 16px; }
 .nav a { color: var(--kb-nav-fg); display: inline-flex; gap: 6px; align-items: center; }
-.nav .px .k { fill: var(--kb-nav-fg); } .nav .px .o, .nav .px .w { fill: transparent; }
 
 .crumb { font-size: 13.75px; margin: 0 0 4px; }
 h1.title { font: bold 22.5px/1.2 "Courier New", Courier, monospace; margin: 0 0 6px; }
@@ -122,7 +117,10 @@ table.t { width: 100%; border-collapse: separate; border-spacing: 1px; backgroun
 .meta { font-size: 13.75px; color: var(--kb-muted); margin-top: 3px; }
 .meta a { color: var(--kb-link); }
 .last { font-size: 13.75px; line-height: 1.65; }
-.mini { display: inline-flex; align-items: center; justify-content: center; width: 19px; height: 19px; border: 1px solid var(--kb-mini-rule); background: var(--kb-mini-bg); font: bold 11px/1 "Courier New", monospace; vertical-align: -4px; margin-right: 5px; }
+.mini { display: inline-flex; align-items: center; justify-content: center; width: 19px; height: 19px; border: 1px solid var(--kb-mini-rule); background: var(--kb-mini-bg); font: bold 11px/1 "Courier New", monospace; }
+/* centered on the name's capitals, not its line box: Verdana's line box holds more room under its capitals than over them, 2px of it at these sizes */
+.who { display: inline-flex; align-items: center; gap: 5px; }
+.who .mini { position: relative; top: -2px; }
 .tag { font: bold 12px/1 "Courier New", monospace; border: 1px dashed var(--kb-fg); background: var(--kb-tag-bg); padding: 2px 5px; margin-left: 6px; vertical-align: 2px; }
 .sysname { font-weight: bold; }
 
@@ -131,14 +129,18 @@ table.t { width: 100%; border-collapse: separate; border-spacing: 1px; backgroun
 .pin i { width: 10px; height: 8px; background: #3ee6ff; }
 
 /* the folder icons */
-.px { display: inline-block; vertical-align: middle; }
-.px .k { fill: var(--kb-icon-ink); } .px .o { fill: var(--kb-icon-fill); } .px .n { fill: var(--kb-icon-new); } .px .w { fill: var(--kb-icon-hi); } .px .h { fill: var(--kb-icon-hot); }
+.ic { display: inline-block; vertical-align: middle; flex: none; }
+.ic path, .ic circle { stroke: var(--kb-icon-ink); stroke-width: 1; stroke-linejoin: round; }
+.ic .back { fill: var(--kb-icon-back); } .ic .front { fill: var(--kb-icon-front); } .ic .front-new { fill: var(--kb-icon-new); }
+.ic .paper { fill: var(--kb-icon-hi); } .ic .line { stroke: var(--kb-icon-line); fill: none; } .ic .shine { stroke: var(--kb-icon-hi); fill: none; }
+.ic .hot { fill: var(--kb-icon-hot); } .ic .hi { fill: var(--kb-icon-hi); stroke: none; }
+.ic .s { fill: none; stroke: currentColor; }
 
 /* Chrome: a 2003 Photoshop button, every layer style on, over real text */
 .b { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--kb-button-edge); background: var(--kb-button-bg); color: var(--kb-button-fg);
   font: bold 13.75px/1 Verdana, Geneva, sans-serif; text-transform: lowercase; letter-spacing: 0.06em; padding: 7px 14px; text-shadow: var(--kb-button-fg-shadow);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.55), inset 0 -1px 0 rgb(0 0 0 / 0.25), 1px 2px 3px rgb(0 0 0 / 0.35); cursor: pointer; }
-.b .px .k { fill: var(--kb-button-fg); } .b .px .o, .b .px .w { fill: transparent; }
+
 
 .legend td { font-size: 12.5px; background: var(--kb-row-3) !important; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; margin-right: 22px; }
@@ -187,11 +189,11 @@ const BANNER = (phone) => `
     <div><p class="logo">DIVIDED WORLD</p>${phone ? `<div class="host">dw.gripe <span class="meter"></span></div>` : ''}</div>
     ${phone ? `<button class="b boards" type="button">Boards</button>` : `<div class="host">dw.gripe <span class="meter"></span></div>`}
   </header>
-  <nav class="nav" aria-label="Boards"><a href="#">${px('home', 1.5)}Index</a><a href="#">${px('board', 1.5)}General</a><a href="#">${px('board', 1.5)}The System</a></nav>`;
+  <nav class="nav" aria-label="Boards"><a href="#">${px('home')}Index</a><a href="#">${px('board')}General</a><a href="#">${px('board')}The System</a></nav>`;
 
 const FOOT = `
   <footer class="foot">Powered by KayfaBB
-    <div class="badges" aria-hidden="true"><span class="b80"><span>Kayfa</span><span>BB</span></span><span class="b80"><span>BBCode</span><span>On</span></span><span class="b80"><span>dw</span><span>.gripe</span></span></div>
+    <div class="badges" aria-hidden="true"><span class="b80"><span>Game</span><span>On</span></span><span class="b80"><span>Masks</span><span>On</span></span><span class="b80"><span>Kilter</span><span>Off</span></span></div>
   </footer>`;
 
 const HUD = `
@@ -205,7 +207,7 @@ const INDEX_DESK = `
     <thead><tr><th scope="col">Board</th><th scope="col" class="n" style="width:120px">Threads</th><th scope="col" style="width:300px">Last post</th></tr></thead>
     <tbody>
       <tr><td><a class="name" href="#">General</a><div class="meta">Anything and everything. The System is watching.</div></td><td class="n">3</td>
-        <td class="last"><span class="mini">M</span><a href="#">Mrs. Hooligan</a><br><a class="muted" href="#">Oct 6, 2026</a></td></tr>
+        <td class="last"><span class="who"><span class="mini">M</span><a href="#">Mrs. Hooligan</a></span><br><a class="muted" href="#">Oct 6, 2026</a></td></tr>
       <tr><td><a class="name" href="#">The System</a><span class="tag">The System posts; you react and spin</span><div class="meta">What The System says. Reply by spinning a thread.</div></td><td class="n">0</td>
         <td class="last muted">None yet</td></tr>
     </tbody>
@@ -213,7 +215,7 @@ const INDEX_DESK = `
   <table class="t">
     <tbody>
       <tr><td class="bar" colspan="2"><h2 class="barh">Who is online</h2></td></tr>
-      <tr><td class="ico">${px('who', 2)}</td><td><a href="#">Mrs. Hooligan</a>, <a href="#">Spritey</a><div class="meta">Characters active in the past 5 minutes</div></td></tr>
+      <tr><td class="ico">${px('who')}</td><td><a href="#">Mrs. Hooligan</a>, <a href="#">Spritey</a><div class="meta">Characters active in the past 5 minutes</div></td></tr>
     </tbody>
   </table>`;
 
@@ -225,28 +227,28 @@ const ROWS = [
 const PIN = { icon: 'hot', state: 'Hot', title: 'who keeps splatting my posts', by: ['S', 'Spritey'], unread: false, pages: '<a href="#">1</a> <a href="#">2</a> <a href="#">3</a>', replies: 45, views: 12, last: ['G', 'Gloomba', 'Oct 6, 2026'], pin: true };
 
 const rowDesk = (r) => `
-      <tr><td class="ico">${px(r.icon, 2)}<span class="vh">${r.state}</span></td>
+      <tr><td class="ico">${px(r.icon)}<span class="vh">${r.state}</span></td>
         <td><a class="name" href="#">${r.title}</a>${r.pin ? '<span class="pin" title="Pinned by a card"><i></i></span>' : ''}${r.spun ? ` <span class="small muted">↳ spun from <a href="#">${r.spun}</a></span>` : ''}
-          <div class="meta"><span class="mini">${r.by[0]}</span><a href="#">${r.by[1]}</a>${r.unread ? ' · <a href="#">first unread</a>' : ''}${r.pages ? ` · pages: ${r.pages}` : ''}</div></td>
+          <div class="meta"><span class="who"><span class="mini">${r.by[0]}</span><a href="#">${r.by[1]}</a></span>${r.unread ? ' · <a href="#">first unread</a>' : ''}${r.pages ? ` · pages: ${r.pages}` : ''}</div></td>
         <td class="n">${r.replies}</td><td class="n">${r.views}</td>
-        <td class="last"><span class="mini">${r.last[0]}</span><a href="#">${r.last[1]}</a><br><a class="muted" href="#">${r.last[2]}</a></td></tr>`;
+        <td class="last"><span class="who"><span class="mini">${r.last[0]}</span><a href="#">${r.last[1]}</a></span><br><a class="muted" href="#">${r.last[2]}</a></td></tr>`;
 
 const BOARD_DESK = `
   <p class="crumb"><a href="#">Index</a> › General</p>
   <h1 class="title">General</h1>
   <p class="desc">Anything and everything. The System is watching.</p>
-  <div class="over"><button class="b" type="button">${px('start', 1.5)}Start a thread</button></div>
+  <div class="over"><button class="b" type="button">${px('start')}Start a thread</button></div>
   <table class="t">
     <caption class="vh">Threads on General, most recently posted first</caption>
     <thead><tr><th scope="col" style="width:48px"><span class="vh">Status</span></th><th scope="col">Thread</th><th scope="col" class="n" style="width:100px">Replies</th><th scope="col" class="n" style="width:100px">Views</th><th scope="col" style="width:280px">Last post</th></tr></thead>
     <tbody class="pins">${rowDesk(PIN)}<tr class="gap"><td colspan="5"></td></tr></tbody>
     <tbody>${ROWS.map(rowDesk).join('')}</tbody>
   </table>
-  <table class="t legend"><tbody><tr><td><span>${px('new', 1)} New posts</span><span>${px('old', 1)} No new posts</span><span>${px('hot', 1)} Hot: 10 replies this week</span><span><span class="pin" style="margin:0"><i></i></span> Pinned by a card</span></td></tr></tbody></table>
+  <table class="t legend"><tbody><tr><td><span>${px('new')} New posts</span><span>${px('old')} No new posts</span><span>${px('hot')} Hot: 10 replies this week</span></td></tr></tbody></table>
   <table class="t">
     <tbody>
       <tr><td class="bar" colspan="2"><h2 class="barh">Users browsing this board</h2></td></tr>
-      <tr><td class="ico">${px('who', 2)}</td><td><a href="#">Mrs. Hooligan</a></td></tr>
+      <tr><td class="ico">${px('who')}</td><td><a href="#">Mrs. Hooligan</a></td></tr>
     </tbody>
   </table>`;
 
@@ -255,23 +257,23 @@ const INDEX_PHONE = `
   <table class="t"><caption class="vh">Boards</caption>
     <tbody>
       <tr><td><a class="name" href="#">General</a><div class="meta">Anything and everything. The System is watching.</div>
-        <div class="row-meta"><b>3</b> threads · last: <span class="mini">M</span><a href="#">Mrs. Hooligan</a>, <a class="muted" href="#">Oct 6</a></div></td></tr>
+        <div class="row-meta"><b>3</b> threads · last: <span class="who"><span class="mini">M</span><a href="#">Mrs. Hooligan</a></span>, <a class="muted" href="#">Oct 6</a></div></td></tr>
       <tr><td><a class="name" href="#">The System</a><div style="margin-top:4px"><span class="tag" style="margin:0">The System posts; you react and spin</span></div><div class="meta">What The System says. Reply by spinning a thread.</div>
         <div class="row-meta"><b>0</b> threads · none yet</div></td></tr>
     </tbody></table>
   <table class="t"><tbody><tr><td class="bar"><h2 class="barh">Who is online</h2></td></tr><tr><td><a href="#">Mrs. Hooligan</a>, <a href="#">Spritey</a><div class="meta">Characters active in the past 5 minutes</div></td></tr></tbody></table>`;
 
 const rowPhone = (r) => `
-      <tr><td class="ico">${px(r.icon, 1.5)}<span class="vh">${r.state}</span></td>
+      <tr><td class="ico">${px(r.icon)}<span class="vh">${r.state}</span></td>
         <td><a class="name" href="#">${r.title}</a>${r.pin ? '<span class="pin"><i></i></span>' : ''}
-          <div class="meta"><span class="mini">${r.by[0]}</span><a href="#">${r.by[1]}</a>${r.unread ? ' · <a href="#">first unread</a>' : ''}${r.pages ? ` · pages: ${r.pages}` : ''}</div>
+          <div class="meta"><span class="who"><span class="mini">${r.by[0]}</span><a href="#">${r.by[1]}</a></span>${r.unread ? ' · <a href="#">first unread</a>' : ''}${r.pages ? ` · pages: ${r.pages}` : ''}</div>
           <div class="row-meta"><b>${r.replies}</b> replies · <b>${r.views}</b> views · last: <a href="#">${r.last[1]}</a>, <a class="muted nowrap" href="#">${r.last[2].replace(', 2026', '')}</a></div></td></tr>`;
 
 const BOARD_PHONE = `
   <p class="crumb"><a href="#">Index</a> › General</p>
   <h1 class="title">General</h1>
   <p class="desc small">Anything and everything. The System is watching.</p>
-  <div class="over"><button class="b" type="button">${px('start', 1.5)}Start a thread</button></div>
+  <div class="over"><button class="b" type="button">${px('start')}Start a thread</button></div>
   <table class="t"><caption class="vh">Threads on General, most recently posted first</caption>
     <tbody class="pins">${rowPhone(PIN)}<tr class="gap"><td colspan="2"></td></tr></tbody>
     <tbody>${ROWS.map(rowPhone).join('')}</tbody></table>`;

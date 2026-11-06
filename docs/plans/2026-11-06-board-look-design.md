@@ -79,18 +79,28 @@ which the app does not have, and both are gone.
 
 - **Folder icons on the thread list only.** A thread row's NEW and HOT chips become a folder icon, with four states from
   those two facts: new posts filled, none hollow, and either with a flame when the thread is hot
-  (`settings.hotReplies` replies this week). Each icon carries its state as hidden text ("New, hot"). The index draws no
+  (`settings.hotReplies` replies this week). Each icon carries its state as hidden text ("New, hot"). The owner: the
+  first pixel icons "end up getting rendered at an arbitrary size and the pixel grid gets messed up. Also they are a bit
+  more 1990 than 2003". So the icons are drawn as 2003 icon GIFs were, a few flat tones with a 1px outline and a
+  highlight line (new posts a sheet in a dark folder, none an empty light one), as vectors drawn at their own viewBox's
+  whole-pixel size with every stroke on a half pixel, so no icon is ever scaled. Their tones are theme tokens
+  (`--kb-icon-ink`, `-back`, `-front`, `-new`, `-hi`, `-line`, `-hot`). The index draws no
   icon, because it has no state to show (`Index.tsx`: a board's unread count would need a read of every thread).
-- **A legend** under the thread list names the icons and the pin, in plain words: "Hot: 10 replies this week" takes its
-  number from the setting. Its words are a draft for the owner's review.
+- **A legend** under the thread list names the icons, in plain words: "Hot: 10 replies this week" takes its number from
+  the setting, and is a draft for the owner's review. The pin is not in it (the owner: a mark in the legend "is a bit of
+  an antipattern (pressing it gives this info regardless, and it's intermingling with the board world in a sort of
+  illusion-breaking way)"); the board's key speaks only of the board's own things.
+- **A character's mini avatar and name are one unit**, the box centered on the name's capitals rather than its line box,
+  which in Verdana holds more room under the capitals than over them (2px at these sizes in the boards, which render a
+  Verdana substitute; the build measures it on Verdana itself). The owner found the first boards' avatars misaligned.
 - **No category bar.** Divided World's boards are not grouped; the light band heads real sections only (Who is online,
   Users browsing this board), each an `h2`.
 - **The banner and the boards' bar are one block**, the logo on the light gradient and the board links on the dark bar.
 - **Pinned threads are a group of their own** above the rest, split by a 4px row in the third gray; the pin's mark keeps
   the glass's cyan, as a card's mark is a game piece.
 - **Counts sit in the third gray** with tabular figures.
-- **A footer ends every board page**: "Powered by KayfaBB" and three 80×15 badges (KayfaBB, BBCode On, dw.gripe), hidden
-  from assistive tech, every word true. It links nothing on the glass: every way into the glass is the HUD's.
+- **A footer ends every board page**: "Powered by KayfaBB" and three 80×15 badges reading GAME ON, MASKS ON and KILTER
+  OFF (the owner's words), hidden from assistive tech. It links nothing on the glass: every way into the glass is the HUD's.
 - **On the phone a row's counts fold into one line** ("169 replies · 4 views · last: Pipewrench, Oct 5"), where today
   each takes a line and a phone shows two and a half threads; the index folds the same way, and a date never breaks.
   Boards is a Chrome button in the banner.
@@ -98,4 +108,4 @@ which the app does not have, and both are gone.
 ## Open
 
 - Fan Site's name, now that it salutes one board's blue.
-- Batch 1's approval, and the legend's and badges' words.
+- Batch 1's approval after the owner's nits, and the legend's words.
