@@ -937,20 +937,21 @@ describe('the body\'s box', () => {
     const { cell, frame, root } = mount();
     const away = document.createElement('div');
     document.body.append(away);
-    frameBox = { w: 600, h: 300 };
+    const moved: Box = { w: 600, h: 300 };
+    frameBox = moved;
     away.append(root);
-    const [x, y] = inkSpot(new LayerInk(splatFor(0), [], frameBox));
+    const [x, y] = inkSpot(new LayerInk(splatFor(0), [], moved));
     const at = (b: Box, dx = 0) => ({ clientX: (x + dx) * b.w, clientY: y * b.h, pointerId: 1, button: 0, pointerType: 'mouse' as const });
     /* The old cell is told nothing and does nothing. */
-    expect(fireEvent.pointerDown(cell, at(frameBox)), 'the cell it left takes nothing').toBe(true);
+    expect(fireEvent.pointerDown(cell, at(moved)), 'the cell it left takes nothing').toBe(true);
     expect(washed(root)[0]).toBe(0);
-    act(() => { fireEvent.pointerDown(frame, at(frameBox)); });
-    act(() => { fireEvent.pointerMove(frame, at(frameBox, 0.06)); });
-    act(() => { fireEvent.pointerUp(frame, at(frameBox, 0.06)); });
+    act(() => { fireEvent.pointerDown(frame, at(moved)); });
+    act(() => { fireEvent.pointerMove(frame, at(moved, 0.06)); });
+    act(() => { fireEvent.pointerUp(frame, at(moved, 0.06)); });
     const canvas = root.querySelector('canvas[data-kb-effect-ink]') as HTMLCanvasElement;
     expect(washed(root)[0], 'the frame takes the press where it now lives').toBeGreaterThan(0);
     expect(canvas.width, 'in the frame\'s box, not the cell\'s').toBe(600);
-    const expected = new LayerInk(splatFor(0), [{ tool: 'wash', ...brushOf(BRUSH_PX, frameBox), points: [[x, y], [x + 0.06, y]] }], frameBox).washed;
+    const expected = new LayerInk(splatFor(0), [{ tool: 'wash', ...brushOf(BRUSH_PX, moved), points: [[x, y], [x + 0.06, y]] }], moved).washed;
     expect(washed(root)[0]).toBeCloseTo(expected, 1);
     const before = washed(root)[0]!;
     /* Back in the cell by appendChild alone: a press in its gutter, outside the frame, washes again. */
