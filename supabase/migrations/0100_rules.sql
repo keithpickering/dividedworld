@@ -27,6 +27,8 @@ create table rule_predicates (
   param_kind text not null check (param_kind in ('none', 'count', 'word', 'tag')),
   least integer,
   most integer,
+  -- For a tag parameter, the tags the BBCode parser knows (engine/bbcode/parse.ts BBCODE_TAGS), seeded from the engine.
+  tags text[],
   plain text not null
 );
 alter table rule_predicates enable row level security;
@@ -139,10 +141,11 @@ begin
   on conflict (key) do update set structural = excluded.structural, shapes_board = excluded.shapes_board, offices = excluded.offices;
   -- The rule predicates (0100), as the engine lists them (engine/rules/predicates.ts). A reseed upserts; a predicate is never removed,
   -- since a landed rule may name it.
-  insert into rule_predicates (key, param_kind, least, most, plain)
-  select e ->> 'key', e ->> 'param', (e ->> 'least')::integer, (e ->> 'most')::integer, e ->> 'plain'
+  insert into rule_predicates (key, param_kind, least, most, tags, plain)
+  select e ->> 'key', e ->> 'param', (e ->> 'least')::integer, (e ->> 'most')::integer,
+         case when jsonb_typeof(e -> 'tags') = 'array' then array(select jsonb_array_elements_text(e -> 'tags')) end, e ->> 'plain'
   from jsonb_array_elements(coalesce(payload -> 'system' -> 'predicates', '[]')) e
-  on conflict (key) do update set param_kind = excluded.param_kind, least = excluded.least, most = excluded.most, plain = excluded.plain;
+  on conflict (key) do update set param_kind = excluded.param_kind, least = excluded.least, most = excluded.most, tags = excluded.tags, plain = excluded.plain;
   insert into demand_kinds (key) select e ->> 'key' from jsonb_array_elements(coalesce(payload -> 'system' -> 'demands', '[]')) e
   on conflict (key) do nothing;
   -- The roster's order (0051): the seed's personas, in the order it lists them, so the rotation has one to follow. A seed with no
@@ -222,7 +225,8 @@ create index threads_board_title on threads (board, lower(btrim(title)));
 
 -- The rules in force: each open `setRule` move with its board (null: every board), predicate, parameter (null: none), band, number, and
 -- the staff member who made it. A rule is numbered among every rule that ever landed on its board, in landing order ("Rule 2"); the
--- every-board rules are numbered on their own ("House Rule 2"). The number is stable: a rule ending never renumbers the rest, so
+-- every-board rules are numbered on their own ("House Rule 2"). Reading it costs a range count by the acts_rules_by_board index for each
+-- rule in force (a handful, read per post by rule_breaks), never a scan of Acts. The number is stable: a rule ending never renumbers the rest, so
 -- "Rule 2" always names one rule.
 create view rules_now as
   select o.move_act,
@@ -277,7 +281,7 @@ begin
     if jsonb_typeof(given) <> 'string' or char_length(given #>> '{}') not between p.least and p.most or (given #>> '{}') ~ '\s' then
       return format('%s takes one word of %s to %s characters', p.key, p.least, p.most); end if;
   elsif p.param_kind = 'tag' then
-    if jsonb_typeof(given) <> 'string' or (given #>> '{}') !~ '^[a-z]+$' then return format('%s takes a tag name', p.key); end if;
+    if jsonb_typeof(given) <> 'string' or not ((given #>> '{}') = any (coalesce(p.tags, '{}'))) then return format('%s takes a tag the BBCode parser knows', p.key); end if;
   end if;
   return null;
 end $$;
@@ -287,7 +291,8 @@ revoke execute on function rule_params_problem(jsonb) from public, anon, authent
 -- applies there and wherever an every-board rule does; an every-board rule applies on every board, so it meets the rules of all of them.
 -- The pairs: a banned word that is also required (either way round); a minimum length above a maximum (either way round); a tag that a
 -- required word is only written with (none is today: a word is plain text and a tag is not part of one, kept as the pattern for the day a
--- predicate makes one); a second rule of the same predicate and parameter.
+-- predicate makes one); a second rule of the same predicate and parameter on the same scope (a board's rule and a house rule may both
+-- say it).
 create function rule_conflict(board uuid, predicate text, param jsonb) returns text
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
@@ -299,7 +304,8 @@ begin
   for r in select * from rules_now x where rule_conflict.board is null or x.board is null or x.board = rule_conflict.board order by x.board nulls last, x.number loop
     theirs := r.param;
     where_ := case when r.board is null then 'a house rule' else 'Rule ' || r.number end;
-    if r.predicate = predicate and (theirs is not distinct from mine or (jsonb_typeof(theirs) = 'string' and jsonb_typeof(mine) = 'string' and lower(theirs #>> '{}') = lower(mine #>> '{}'))) then
+    -- The same rule twice is of one scope: the same board, or both every-board. The pairs below clash across scopes.
+    if r.predicate = predicate and r.board is not distinct from rule_conflict.board and (theirs is not distinct from mine or (jsonb_typeof(theirs) = 'string' and jsonb_typeof(mine) = 'string' and lower(theirs #>> '{}') = lower(mine #>> '{}'))) then
       return format('%s already says that', where_);
     elsif r.predicate = 'bannedWord' and predicate = 'requiredWord' and lower(theirs #>> '{}') = lower(mine #>> '{}') then
       return format('%s bans the word "%s", which this rule would require', where_, theirs #>> '{}');
@@ -348,6 +354,9 @@ begin
     end if;
     if new.admin_description is not null then raise exception 'a queued move is queued without an admin''s replacement' using errcode = '23514'; end if;
     if new.kind = 'setRule' then
+      -- A rule ends by its expiry, so none waits on an admin; the board is stored in lowercase, the one form numbering and indexes compare.
+      if new.expires_at is null then raise exception 'a rule needs an expiry' using errcode = '23514'; end if;
+      if jsonb_typeof(new.params -> 'board') = 'string' then new.params := jsonb_set(new.params, '{board}', to_jsonb(lower(new.params ->> 'board'))); end if;
       problem := rule_params_problem(new.params);
       if problem is not null then raise exception 'a rule is malformed: %', problem using errcode = '23514'; end if;
       problem := rule_conflict(nullif(new.params ->> 'board', '')::uuid, new.params ->> 'predicate', nullif(new.params -> 'param', 'null'::jsonb));
@@ -372,6 +381,11 @@ begin
        and (old.kind <> 'renameBoard' or old.landed_act is not null or old.held_at is not null or new.admin_description is null) then
       raise exception 'only a rename that is still waiting takes an admin''s description' using errcode = '23514';
     end if;
+    -- A refusal at landing is final: set once, on a row still waiting, and never changed or taken back.
+    if (new.refused_at, new.failed_at, new.failure) is distinct from (old.refused_at, old.failed_at, old.failure)
+       and (old.refused_at is not null or (new.refused_at is not null and (old.landed_act is not null or old.held_at is not null or new.failure is null))) then
+      raise exception 'a refused rule stays refused' using errcode = '23514';
+    end if;
     if (old.held_at is not null and (new.held_at, new.held_by) is distinct from (old.held_at, old.held_by))
        or (old.landed_act is not null and new.landed_act is distinct from old.landed_act) then
       raise exception 'a queued move that is held or landed stays so' using errcode = '23514';
@@ -383,7 +397,8 @@ end $$;
 -- ----------------------------------------------------------------------------------- rule_breaks ----
 
 -- The rules a post breaks: the rules in force on its thread's board and every board, each checked by plain code from the post, its thread
--- and its previous post in the thread. A rule never refuses a post, and a post by a staff character is the caller's to skip (Task 6). Takes
+-- and its previous post in the thread. It is called at post time (the visits, Task 6) and reads the rules in force then: a rule that landed
+-- after a post is not read back against it. Lengths and words count the raw BBCode body, as postMaxLength does. A rule never refuses a post, and a post by a staff character is the caller's to skip (Task 6). Takes
 -- a post or the spin that opens a thread. A key with no branch raises, so a predicate added to the catalog and not here fails loudly.
 create function rule_breaks(post_act uuid) returns setof rules_now
 language plpgsql stable security definer set search_path = public, pg_temp as $$
@@ -603,4 +618,137 @@ begin
 
   return jsonb_build_object('landed', landed, 'met', met, 'expired', expired, 'superseded', superseded, 'failed', failed, 'checked', checked, 'budget', out_of_time,
     'noThread', enabled and ann is null);
+end $$;
+
+-- admin_queue (0099), a rule refused when it came to land (queued_moves.refused_at) is no longer waiting: it is listed with the ended, as
+-- how = 'refused' with its reason. It will not land, so it never takes a place ahead of the rows that will. Everything else as 0099 wrote it.
+create or replace function admin_queue() returns jsonb
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare
+  cap constant integer := 100;
+  uuid_re constant text := '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+  win constant timestamptz := now() - interval '30 days';
+  waiting jsonb; waiting_more boolean;
+  in_force jsonb; in_force_more boolean;
+  staff_cards jsonb; staff_cards_more boolean;
+  ended jsonb; ended_more boolean;
+  roster jsonb;
+  todos jsonb;
+  latest_update timestamptz;
+begin
+  perform only_admins('reads the queue');
+
+  -- The Bosses that can take a nomination's seat, by the roster's own rule and order (boss_roster): not retired, debuted.
+  select coalesce(jsonb_agg(jsonb_build_object('staff', c.staff, 'name', c.name) order by r.ord), '[]'::jsonb) into roster
+  from unnest(boss_roster()) with ordinality r(staff, ord) join characters c on c.staff = r.staff;
+
+  select coalesce(jsonb_agg(x.j order by x.n) filter (where x.n <= cap), '[]'::jsonb), coalesce(bool_or(x.n > cap), false) into waiting, waiting_more from (
+    select row_number() over (order by q.go_live_at, q.id) as n,
+           jsonb_build_object('id', q.id, 'staff', q.staff, 'boss', (select c.name from characters c where c.staff = q.staff), 'kind', q.kind,
+             'params', q.params, 'demand', q.demand, 'why', q.why, 'goLiveAt', q.go_live_at, 'expiresAt', q.expires_at, 'structural', q.structural,
+             'failedAt', q.failed_at, 'failure', q.failure, 'replacedAt', q.replaced_at,
+             'adminDescription', q.admin_description,
+             'boardName', case when q.kind = 'renameBoard' and lower(q.params ->> 'board') ~ uuid_re
+                               then (select b.name from boards_now b where b.id = (q.params ->> 'board')::uuid) end) as j
+    from queued_moves q where q.landed_act is null and q.held_at is null and q.refused_at is null
+    order by q.go_live_at, q.id limit cap + 1
+  ) x;
+
+  select coalesce(jsonb_agg(x.j order by x.n) filter (where x.n <= cap), '[]'::jsonb), coalesce(bool_or(x.n > cap), false) into in_force, in_force_more from (
+    select row_number() over (order by a.created_at desc, a.id) as n,
+           jsonb_build_object('act', a.id, 'id', q.id, 'staff', c.staff, 'boss', c.name, 'kind', a.payload ->> 'kind', 'params', a.payload -> 'params',
+             'demand', a.payload -> 'demand', 'why', q.why, 'landedAt', a.created_at, 'expiresAt', a.payload -> 'expires_at',
+             'progress', case when o.progress is null then jsonb_build_object('checkedAt', null)
+                              else o.progress || jsonb_build_object('checkedAt', o.checked_at) end) as j
+    from open_moves o
+    join acts a on a.id = o.move_act
+    left join characters c on c.id = a.character
+    left join queued_moves q on q.landed_act = a.id
+    order by a.created_at desc, a.id limit cap + 1
+  ) x;
+
+  -- The Mod Bots' cards (Task 7): the face-up plays of staff characters in the last 30 days that are still in force: not caught, not worn
+  -- off (by the play's own end or its reach's), not ended by an admin. A Set is a `set` Act, never a `card`, so a face-down card is not
+  -- here until it springs; its strike is a `card` Act and is. Per staff character a probe of acts_card_plays (character, created_at desc)
+  -- reads only that character's plays in the window, newest first and cut at cap + 1 inside the probe, so the cost is the staff roster
+  -- times cap and never the history of Acts or the players' plays. The names are public ones (the card's, the persona's, the post
+  -- author's or the target the play named); nothing private is read.
+  select coalesce(jsonb_agg(x.j order by x.n) filter (where x.n <= cap), '[]'::jsonb), coalesce(bool_or(x.n > cap), false) into staff_cards, staff_cards_more from (
+    select row_number() over (order by k.created_at desc, k.id) as n,
+           jsonb_build_object('play', k.id, 'card', k.payload ->> 'card', 'cardName', (select ck.name from card_kinds ck where ck.key = k.payload ->> 'card'),
+             'staff', c.staff, 'persona', c.name,
+             'targetName', coalesce(k.payload ->> 'targetName', (select tc.name from acts pa join characters tc on tc.id = pa.character where pa.id = k.target_act_id)),
+             'thread', k.thread, 'threadTitle', (select th.title from threads th where th.id = k.thread), 'at', k.created_at) as j
+    from characters c
+    cross join lateral (
+      select p.* from acts p
+      where p.character = c.id and p.kind = 'card' and p.created_at >= win
+        and not (p.payload ? 'caught')
+        and (p.payload ->> 'ends' is null or (p.payload ->> 'ends')::timestamptz > now())
+        and not exists (select 1 from play_reach r where r.play = p.id and r.ends_at <= now())
+        and not exists (select 1 from acts e where e.kind = 'card_end' and e.target_act_id = p.id)
+      order by p.created_at desc, p.id desc limit cap + 1
+    ) k
+    where c.staff is not null
+    order by k.created_at desc, k.id limit cap + 1
+  ) x;
+
+  -- Ended and held, merged: each side cut at cap + 1 first, so the merge never reads more than 2 * (cap + 1) rows.
+  select coalesce(jsonb_agg(x.j order by x.n) filter (where x.n <= cap), '[]'::jsonb), coalesce(bool_or(x.n > cap), false) into ended, ended_more from (
+    select row_number() over (order by u.at desc, u.tie) as n, u.j from (
+      (select e.created_at as at, e.id::text as tie,
+              jsonb_build_object('how', e.payload ->> 'why', 'by', e.payload ->> 'by', 'at', e.created_at, 'act', a.id, 'id', q.id, 'staff', c.staff, 'boss', c.name,
+                'kind', a.payload ->> 'kind', 'params', a.payload -> 'params', 'demand', a.payload -> 'demand', 'why', q.why, 'landedAt', a.created_at) as j
+       from acts e
+       join acts a on a.id = e.target_act_id
+       left join characters c on c.id = a.character
+       left join queued_moves q on q.landed_act = a.id
+       where e.kind = 'move_end' and e.created_at >= win
+       order by e.created_at desc, e.id desc limit cap + 1)
+      union all
+      (select e.created_at, e.id::text,
+              jsonb_build_object('how', 'reversed', 'by', 'admin', 'at', e.created_at, 'act', p.id, 'id', null, 'staff', c.staff, 'boss', c.name,
+                'kind', 'card', 'params', '{}'::jsonb, 'demand', null, 'why', null, 'landedAt', p.created_at,
+                'card', coalesce((select ck.name from card_kinds ck where ck.key = p.payload ->> 'card'), p.payload ->> 'card'))
+       from acts e
+       join acts p on p.id = e.target_act_id
+       left join characters c on c.id = p.character
+       where e.kind = 'card_end' and e.created_at >= win
+       order by e.created_at desc, e.id desc limit cap + 1)
+      union all
+      (select h.held_at, 'q' || h.id::text,
+              jsonb_build_object('how', 'held', 'by', 'admin', 'at', h.held_at, 'act', null, 'id', h.id, 'staff', h.staff, 'boss', c.name,
+                'kind', h.kind, 'params', h.params, 'demand', h.demand, 'why', h.why, 'landedAt', null)
+       from queued_moves h
+       left join characters c on c.staff = h.staff
+       where h.held_at is not null and h.held_at >= win
+       order by h.held_at desc, h.id desc limit cap + 1)
+      union all
+      (select h.refused_at, 'r' || h.id::text,
+              jsonb_build_object('how', 'refused', 'by', 'tick', 'at', h.refused_at, 'act', null, 'id', h.id, 'staff', h.staff, 'boss', c.name,
+                'kind', h.kind, 'params', h.params, 'demand', h.demand, 'why', h.why, 'landedAt', null, 'reason', h.failure)
+       from queued_moves h
+       left join characters c on c.staff = h.staff
+       where h.refused_at is not null and h.held_at is null and h.refused_at >= win
+       order by h.refused_at desc, h.id desc limit cap + 1)
+    ) u order by u.at desc, u.tie limit cap + 1
+  ) x;
+
+  -- The to-dos (the staff roster design, section 11): each handover that changed the Boss, until an update is posted after it landed or an
+  -- admin dismisses it. "An update after it" is one read of the newest update (the acts_updates index, 0062) against each handover's instant.
+  latest_update := (select a.created_at from acts a where a.kind = 'update' order by a.created_at desc, a.id desc limit 1);
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'season', t.number, 'boss', t.boss, 'bossName', bc.name,
+           'bossWas', (select o.office from staff_offices o where o.staff = t.boss and o.at <= t.landed_at order by o.id desc limit 1),
+           'outgoing', t.outgoing, 'outgoingName', oc.name, 'outgoingOffice', (select n.office from staff_office_now n where n.staff = t.outgoing),
+           'how', h.how, 'landedAt', t.landed_at) order by t.landed_at desc, t.number desc), '[]'::jsonb) into todos
+  from season_boss_changes t
+  join season_handovers h on h.season = t.season
+  join characters bc on bc.staff = t.boss
+  left join characters oc on oc.staff = t.outgoing
+  where (latest_update is null or latest_update <= t.landed_at)
+    and not exists (select 1 from handover_dismissals d where d.season = t.season);
+
+  return jsonb_build_object('cap', cap, 'waiting', waiting, 'inForce', in_force, 'staffCards', staff_cards, 'ended', ended, 'roster', roster, 'todos', todos,
+    'more', jsonb_build_object('waiting', waiting_more, 'inForce', in_force_more, 'staffCards', staff_cards_more, 'ended', ended_more));
 end $$;

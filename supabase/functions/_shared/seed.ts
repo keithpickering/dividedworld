@@ -9,6 +9,7 @@
 import type { Instance } from '../../../engine/rules/types.ts';
 import { DEFAULT_DEVELOPER } from '../../../engine/rules/instance.ts';
 import { MOVE_KINDS } from '../../../engine/system/moves.ts';
+import { BBCODE_TAGS } from '../../../engine/bbcode/parse.ts';
 import { PREDICATES } from '../../../engine/rules/predicates.ts';
 import { DEMAND_KINDS } from '../../../engine/system/demands.ts';
 
@@ -58,7 +59,7 @@ export function instanceSeed(instance: Instance) {
       moves: MOVE_KINDS.map((m) => ({ key: m.key, structural: m.structural, shapesBoard: m.shapesBoard, offices: [...m.offices] })),
       // The rule predicates (0100): the keys `rule_breaks` has a branch for, the kind and bounds of each parameter, and the rule in plain
       // words with `{param}` where the parameter goes (`system_line` fills it).
-      predicates: PREDICATES.map((p) => ({ key: p.key, param: p.param, least: p.bounds?.least ?? null, most: p.bounds?.most ?? null, plain: p.plain('{param}') })),
+      predicates: PREDICATES.map((p) => ({ key: p.key, param: p.param, least: p.bounds?.least ?? null, most: p.bounds?.most ?? null, plain: p.plain('{param}'), ...(p.param === 'tag' ? { tags: [...BBCODE_TAGS] } : {}) })),
       demands: DEMAND_KINDS.map((d) => ({ key: d.key })),
     },
   };

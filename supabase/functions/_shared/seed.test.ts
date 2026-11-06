@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { instanceSeed } from './seed.ts';
 import { chooseInstance, instance } from './instance.ts';
 import { MOVE_KINDS } from '../../../engine/system/moves.ts';
+import { BBCODE_TAGS } from '../../../engine/bbcode/parse.ts';
 import { PREDICATES } from '../../../engine/rules/predicates.ts';
 import { DEMAND_KINDS } from '../../../engine/system/demands.ts';
 
@@ -67,6 +68,8 @@ test('the seed carries the rule predicates, each with its parameter kind, its bo
   assert.deepEqual(by['noDoublePost'], { key: 'noDoublePost', param: 'none', least: null, most: null, plain: 'no double posting' });
   assert.deepEqual(by['bannedWord'], { key: 'bannedWord', param: 'word', least: 1, most: 40, plain: 'the word "{param}" is banned' });
   assert.equal(by['noTag']!.param, 'tag');
+  assert.deepEqual((by['noTag'] as { tags?: string[] }).tags, [...BBCODE_TAGS], 'the tags a rule may name are the parser\'s');
+  assert.ok(predicates.filter((p) => p.key !== 'noTag').every((p) => !('tags' in p)));
 });
 
 test('the deployed instance is chosen by profile: the playtest\'s shorter season, or the defaults', () => {

@@ -98,6 +98,16 @@ describe('the admin queue', () => {
     expect(ended).toHaveTextContent('It never landed.');
   });
 
+  test('a rule refused when it came to land is not waiting: it is with the ended, saying why and that it will not land', async () => {
+    open({ build: (fake, w) => { fake.seed.queueMove('director', { board: w.second, name: 'Clashing Hall', goLiveAt: fake.clock.now() - 60_000, refusal: { at: fake.clock.now() - 30_000, text: 'Rule 1 bans the word "toast", which this rule would require' } }); } });
+    const waiting = await group(/^Waiting to land/u);
+    expect(waiting).not.toHaveTextContent('Clashing Hall');
+    expect(waiting).not.toHaveTextContent(/tried again/u);
+    const ended = (await group(/^Ended/u)).querySelector('details')!;
+    await userEvent.click(ended.querySelector('summary')!);
+    expect(ended).toHaveTextContent('Refused when it came to land: Rule 1 bans the word "toast", which this rule would require. It will not land.');
+  });
+
   test('speaks plainly and never as the Boss: the Boss\'s why is quoted and named as its words', async () => {
     open();
     const waiting = await group(/^Waiting to land/u);

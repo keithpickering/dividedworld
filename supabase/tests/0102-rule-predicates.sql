@@ -35,7 +35,7 @@ begin
         jsonb_build_object('key', 'noDuplicateTitle', 'param', 'none', 'least', null, 'most', null, 'plain', 'no thread titled like a live one on the board'),
         jsonb_build_object('key', 'bannedWord', 'param', 'word', 'least', 1, 'most', 40, 'plain', 'the word "{param}" is banned'),
         jsonb_build_object('key', 'requiredWord', 'param', 'word', 'least', 1, 'most', 40, 'plain', 'every post says "{param}"'),
-        jsonb_build_object('key', 'noTag', 'param', 'tag', 'least', null, 'most', null, 'plain', 'no [{param}] tags'),
+        jsonb_build_object('key', 'noTag', 'param', 'tag', 'least', null, 'most', null, 'plain', 'no [{param}] tags', 'tags', jsonb_build_array('b', 'i', 'u', 's', 'color', 'size', 'url', 'img', 'code', 'quote', 'list')),
         jsonb_build_object('key', 'repliesOnly', 'param', 'none', 'least', null, 'most', null, 'plain', 'replies only, no new threads'))));
   perform seed_instance(seed);
   perform seed_instance(seed);
@@ -50,6 +50,7 @@ begin
   begin insert into move_kinds (key, structural, offices) values ('deputy', false, '{deputy}'); raise exception 'a move kind with an unknown office was seeded';
   exception when check_violation then null; end;
   perform tests.account('rp-x');
+  insert into admins (account) values (tests.account('rp-admin'));
   perform tests.account('rp-y');
 end $$;
 
@@ -327,6 +328,10 @@ begin
   if rule_conflict(ba, 'noAllCaps', null) is null or rule_conflict(ba, 'noAllCaps', 'null'::jsonb) is null then raise exception 'the same rule with no parameter twice was allowed'; end if;
   hit := rule_conflict(ba, 'noDoublePost', null);
   if hit is not null then raise exception 'two different rules with no parameter conflicted: %', hit; end if;
+  if rule_conflict(null, 'noAllCaps', null) is not null then raise exception 'a house rule was refused as a copy of a board''s rule'; end if;
+  perform pg_temp.rule(null, 'noAllCaps');
+  if rule_conflict(bb, 'noAllCaps', null) is not null then raise exception 'a board''s rule was refused as a copy of a house rule'; end if;
+  if rule_conflict(null, 'noAllCaps', null) is null then raise exception 'two house rules of the same predicate were allowed'; end if;
   perform pg_temp.end_all();
   if rule_conflict(ba, 'noAllCaps', null) is not null then raise exception 'a rule that ended still conflicts'; end if;
 end $$;
@@ -371,6 +376,17 @@ begin
   if got is null or got !~ 'the band is minor, moderate or severe' then raise exception 'an unknown band was queued: %', got; end if;
   got := pg_temp.refusal(format('select pg_temp.queue_rule(%L)', jsonb_build_object('board', gen_random_uuid(), 'predicate', 'noAllCaps', 'band', 'minor')));
   if got is null or got !~ 'no board' then raise exception 'a rule on no board was queued: %', got; end if;
+  got := pg_temp.refusal(format('select pg_temp.queue_rule(%L)', jsonb_build_object('board', ba, 'predicate', 'noTag', 'param', 'blink', 'band', 'minor')));
+  if got is null or got !~ 'a tag the BBCode parser knows' then raise exception 'a tag the parser does not know was queued: %', got; end if;
+  got := pg_temp.refusal(format('select pg_temp.queue_rule(%L)', jsonb_build_object('board', ba, 'predicate', 'noTag', 'param', 'quote', 'band', 'minor')));
+  if got is not null then raise exception 'a known tag was refused: %', got; end if;
+  -- The board is stored in one form, lowercase, so numbering and indexes compare one.
+  q := pg_temp.queue_rule(jsonb_build_object('board', upper(ba::text), 'predicate', 'noAllCaps', 'band', 'minor'));
+  if (select params ->> 'board' from queued_moves where id = q) is distinct from ba::text then raise exception 'an uppercase board was stored as written: %', (select params ->> 'board' from queued_moves where id = q); end if;
+  -- A rule carries an expiry, so none waits on an admin to end it.
+  got := pg_temp.refusal(format($f$insert into queued_moves (meeting, staff, kind, params, why, go_live_at, expires_at, structural)
+    values ((select max(id) from meetings), 'rp-boss', 'setRule', %L, 'because', now(), null, false)$f$, jsonb_build_object('board', ba, 'predicate', 'noAllCaps', 'band', 'minor')));
+  if got is null or got !~ '^23514: a rule needs an expiry' then raise exception 'a rule with no expiry was queued: %', got; end if;
   got := pg_temp.refusal(format('select pg_temp.queue_rule(%L)', jsonb_build_object('board', null, 'predicate', 'noAllCaps', 'band', 'minor')));
   if got is not null then raise exception 'a rule on every board (a null board) was refused: %', got; end if;
 end $$;
@@ -415,6 +431,7 @@ declare
   q1 bigint;
   q2 bigint;
   landed integer;
+  got text;
 begin
   perform system_tick();
   perform pg_temp.end_all();
@@ -429,5 +446,17 @@ begin
   perform pg_sleep(0.01);
   landed := (system_tick() ->> 'failed')::integer;
   if landed <> 0 then raise exception 'the tick tried the refused rule again (% failed)', landed; end if;
+
+  -- The admin queue does not list the refused rule as waiting: it is with the ended, with its reason.
+  perform tests.become((select id from auth.users where email = 'rp-admin@test.invalid'));
+  if exists (select 1 from jsonb_array_elements(admin_queue() -> 'waiting') w where (w ->> 'id')::bigint = q2) then raise exception 'a refused rule is listed as waiting'; end if;
+  if (select e ->> 'how' from jsonb_array_elements(admin_queue() -> 'ended') e where (e ->> 'id')::bigint = q2) is distinct from 'refused' then raise exception 'a refused rule is not listed as refused'; end if;
+  if (select e ->> 'reason' from jsonb_array_elements(admin_queue() -> 'ended') e where (e ->> 'id')::bigint = q2) !~ 'bans the word' then raise exception 'a refused rule does not carry its reason'; end if;
+  perform tests.unbecome();
+  -- A refusal is final: it does not change once set.
+  got := pg_temp.refusal(format('update queued_moves set refused_at = null, failed_at = null, failure = null where id = %s', q2));
+  if got is null or got !~ '^23514' then raise exception 'a refusal was undone: %', got; end if;
+  got := pg_temp.refusal(format($f$update queued_moves set failure = 'something else' where id = %s$f$, q2));
+  if got is null or got !~ '^23514' then raise exception 'a refusal''s reason was changed: %', got; end if;
   perform pg_temp.end_all();
 end $$;

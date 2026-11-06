@@ -415,9 +415,9 @@ export interface MoveInForce {
   readonly progress: DemandProgress;
 }
 
-/** A move that ended, or was held and never landed, in the last 30 days (admin_queue). */
+/** A move that ended, or was held or refused and never landed, in the last 30 days (admin_queue). */
 export interface MoveEnded {
-  readonly how: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent' | 'held';
+  readonly how: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent' | 'held' | 'refused';
   readonly by: string | null;
   readonly at: string;
   /** Null for a held move, which was never an Act. */
@@ -432,6 +432,8 @@ export interface MoveEnded {
   readonly landedAt: string | null;
   /** A card an admin ended (admin_queue): the card's name; its caster's name is `boss`. Absent on a move. */
   readonly card?: string | null;
+  /** For a rule refused when it came to land (`how: 'refused'`): the server's reason, in its words. */
+  readonly reason?: string | null;
 }
 
 /** A face-up play of a staff character, still in force (admin_queue's `staffCards`), for an admin to end. */

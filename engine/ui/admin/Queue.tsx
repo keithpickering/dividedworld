@@ -14,7 +14,7 @@
  *                     and nowhere else.
  *   Mod Bots' cards   the face-up cards of staff characters still in force (last 30 days): the card, its persona, whom it was played on, and
  *                     where. END, on these and nowhere else, asks first (the Lens's confirm) and takes the card's layer off for everyone.
- *   Ended             folded; the last 30 days, with how each ended: its demand met, run out, reversed, or held (never landed).
+ *   Ended             folded; the last 30 days, with how each ended: its demand met, run out, reversed, held or refused (never landed).
  *
  * Above the groups stands How players reach you (AdminContact.tsx): the links the public Reach a person page shows, which only an admin sets.
  *
@@ -409,6 +409,7 @@ function StaffCards({ rows, more, onEnd }: { readonly rows: readonly StaffCardPl
 function endedLine(e: MoveEnded): string {
   if (e.card != null) return `Ended by an admin on ${shortDate(e.at)}. Its layer came off for everyone.`;
   switch (e.how) {
+    case 'refused': return `Refused when it came to land: ${(e.reason ?? 'it would leave no post that follows the rules').replace(/^that rule would leave no post that follows the rules: /u, '')}. It will not land.`;
     case 'held': return `Held by an admin on ${shortDate(e.at)}. It never landed.`;
     case 'met': return `${e.landedAt ? `${shortDate(e.landedAt)} to ${shortDate(e.at)}. ` : ''}Undone when its demand was met.`;
     case 'expired': return `${e.landedAt ? `${shortDate(e.landedAt)} to ${shortDate(e.at)}. ` : ''}Ran out on its own.`;
@@ -438,7 +439,7 @@ function Ended({ rows, more, boards, bosses }: { readonly rows: readonly MoveEnd
           <article key={`${e.act ?? 'q'}${e.id ?? ''}${e.at}`} className="kb-queue-move" data-kb-state="ended" data-kb-how={e.how}>
             <div className="kb-queue-body">
               <h3 className="kb-queue-sentence">
-                {e.card != null ? `${e.card}${e.boss ? ` by ${e.boss}` : ''}` : <MoveSentence kind={e.kind} params={e.params} boards={boards} bosses={bosses} tense={e.how === 'held' ? 'plan' : 'done'} />}
+                {e.card != null ? `${e.card}${e.boss ? ` by ${e.boss}` : ''}` : <MoveSentence kind={e.kind} params={e.params} boards={boards} bosses={bosses} tense={e.how === 'held' || e.how === 'refused' ? 'plan' : 'done'} />}
               </h3>
               <p>{endedLine(e)}</p>
             </div>

@@ -150,7 +150,7 @@ export interface Seed {
   /** The new Boss keeps a move of an earlier Boss after a handover (a `move_keep` Act): the move's log row says who keeps it. */
   keepMove(act: Id, staff: string, options?: { at?: number }): Id;
   /** A move the Boss chose that waits in the admin queue; returns its queue id. */
-  queueMove(staff: string, move: SeedMove & { goLiveAt: number; why?: string; failure?: { at: number; text: string } }): number;
+  queueMove(staff: string, move: SeedMove & { goLiveAt: number; why?: string; failure?: { at: number; text: string }; refusal?: { at: number; text: string } }): number;
   /** A nomination of a successor waiting in the admin queue (`boss` is a roster key); returns its queue id. */
   queueSuccessor(staff: string, boss: string, options: { goLiveAt: number; why?: string }): number;
   /** An admin's hold on a queued move, dated `at`: it never lands. */
@@ -355,7 +355,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const moveEnds = new Map<Id, { why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent'; by: string; at: number }>();
   const careers = new Map<string, Career>();
   const staffProfiles: { key: string; at: number; interests: string[]; favorites: Id[]; mood: string; signature: string }[] = [];
-  interface QueueRec { id: number; staff: string; successor?: string; move: SeedMove; why: string; goLiveAt: number; failure: { at: number; text: string } | null; heldAt: number | null; landed: Id | null; replacedAt?: number; adminDescription?: string }
+  interface QueueRec { id: number; staff: string; successor?: string; move: SeedMove; why: string; goLiveAt: number; failure: { at: number; text: string } | null; refusal?: { at: number; text: string }; heldAt: number | null; landed: Id | null; replacedAt?: number; adminDescription?: string }
   const queue: QueueRec[] = [];
   /** The staff key of the Boss that keeps each move after a handover, by the move's Act. */
   const moveKeeps = new Map<Id, string>();
@@ -1506,7 +1506,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const nameOf = (staff: string | null) => (staff === null ? null : [...characters.values()].find((c) => c.staff?.key === staff)?.name ?? null);
       const paramsOf = moveParams;
       const demandFor = moveDemand;
-      const waiting = queue.filter((q) => q.landed === null && q.heldAt === null).sort((a, b) => a.goLiveAt - b.goLiveAt || a.id - b.id).map((q): QueuedMove => q.successor !== undefined ? ({
+      const waiting = queue.filter((q) => q.landed === null && q.heldAt === null && !q.refusal).sort((a, b) => a.goLiveAt - b.goLiveAt || a.id - b.id).map((q): QueuedMove => q.successor !== undefined ? ({
         id: q.id, staff: q.staff, boss: nameOf(q.staff), kind: 'nameSuccessor', params: { boss: q.successor }, demand: null, why: q.why, goLiveAt: iso(q.goLiveAt),
         expiresAt: null, structural: true, boardName: null, failedAt: null, failure: null, replacedAt: q.replacedAt === undefined ? null : iso(q.replacedAt), adminDescription: null,
       }) : ({
@@ -1541,6 +1541,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
             card: instance.cards.find((c) => c.key === play.payload.card)?.name ?? String(play.payload.card ?? ''),
           };
         }),
+        ...queue.filter((q) => q.refusal && q.heldAt === null && q.refusal.at >= since).map((q): MoveEnded => ({
+          how: 'refused', by: 'tick', at: iso(q.refusal!.at), act: null, id: q.id, staff: q.staff, boss: nameOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, landedAt: null, reason: q.refusal!.text,
+        })),
         ...queue.filter((q) => q.heldAt !== null && q.heldAt >= since).map((q): MoveEnded => ({
           how: 'held', by: 'admin', at: iso(q.heldAt!), act: null, id: q.id, staff: q.staff, boss: nameOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, landedAt: null,
         })),
@@ -2524,7 +2527,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     queueMove(staff, m) {
       staffId(staff);
-      const rec: QueueRec = { id: queue.length + 1, staff, move: m, why: m.why ?? 'it seemed time', goLiveAt: m.goLiveAt, failure: m.failure ?? null, heldAt: null, landed: null };
+      const rec: QueueRec = { id: queue.length + 1, staff, move: m, why: m.why ?? 'it seemed time', goLiveAt: m.goLiveAt, failure: m.failure ?? null, ...(m.refusal ? { refusal: m.refusal } : {}), heldAt: null, landed: null };
       queue.push(rec);
       return rec.id;
     },

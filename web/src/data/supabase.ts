@@ -335,9 +335,9 @@ function toInForce(r: Row): MoveInForce {
 function toEnded(r: Row): MoveEnded {
   const how = r['how'];
   return {
-    how: how === 'met' || how === 'expired' || how === 'reversed' || how === 'superseded' || how === 'spent' ? how : 'held', by: orNull(r['by']), at: String(r['at'] ?? ''), act: orNull(r['act']),
+    how: how === 'met' || how === 'expired' || how === 'reversed' || how === 'superseded' || how === 'spent' || how === 'refused' ? how : 'held', by: orNull(r['by']), at: String(r['at'] ?? ''), act: orNull(r['act']),
     id: typeof r['id'] === 'number' ? r['id'] : null, staff: orNull(r['staff']), boss: orNull(r['boss']), kind: String(r['kind'] ?? ''), params: params(r['params']),
-    demand: toDemand(r['demand']), why: orNull(r['why']), landedAt: orNull(r['landedAt']), card: orNull(r['card']),
+    demand: toDemand(r['demand']), why: orNull(r['why']), landedAt: orNull(r['landedAt']), card: orNull(r['card']), reason: orNull(r['reason']),
   };
 }
 
