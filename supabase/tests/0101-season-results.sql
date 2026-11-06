@@ -62,7 +62,9 @@ begin
   insert into class_history (character, class_key, started_at) values (gloom, 'beta', t0 + interval '5 hours');
   insert into standings (character, season, amount) values (sprit, in_season, 650), (gloom, in_season, 400), (hooli, in_season, 300), (pipe, in_season, 100)
   on conflict (season, character) do update set amount = excluded.amount;
-  perform post_tally(in_season, '[]'::jsonb, jsonb_build_array(jsonb_build_object('character', pipe, 'name', 'Pipewrench', 'loudness', 'revealed', 'was', 'alpha', 'since', t0)), t0 + interval '4 hours');
+  -- An old tally, as an instance written before the announce Act holds it.
+  perform tests.act(null, 'tally', promos_thread(in_season), jsonb_build_object('season', 1, 'part', 1, 'of', 1, 'debuts', '[]'::jsonb,
+    'turns', jsonb_build_array(jsonb_build_object('character', pipe, 'name', 'Pipewrench', 'loudness', 'revealed', 'was', 'alpha', 'since', t0))), null, t0 + interval '4 hours');
   before_threads := (select count(*) from threads);
   ended := t0 + interval '1 day';
   rolled := reveal_season(ended);

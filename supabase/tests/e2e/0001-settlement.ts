@@ -169,7 +169,7 @@ test('two missed days settle as two windows through the real migrations, the hal
   assert.equal(Number(sql(`select sum(amount) from ledger where character = '${characters['Missed Heel']}' and reason = 'heel.drewHeat'`)), 20, 'a whole vote each day, never halved across the two');
 });
 
-test('the settlement of a season\'s last window posts its tally and its reveal, and sends both live', async () => {
+test('the settlement of a season\'s last window announces its debuts and ends in results, and sends both live', async () => {
   const db = psqlDb();
   const start = sql(`select to_jsonb(max(ends_at))#>>'{}' from settlements`);
   const at = (hours: number) => new Date(Date.parse(start) + hours * 3_600_000).toISOString();
@@ -184,9 +184,9 @@ test('the settlement of a season\'s last window posts its tally and its reveal, 
   const sent: { topic: string; event: string; payload: { kind?: string; id?: string } }[] = [];
   const out = await runSettlement(db, instance, at(24), { deliver: async (m) => { sent.push(...(m as typeof sent)); return 'sent' as const; } });
   assert.equal(out.status, 'applied', JSON.stringify(out));
-  const tally = sql(`select id from acts where kind = 'tally' and payload -> 'debuts' @> '[{"name": "Debutante"}]'`);
-  assert.ok(tally, 'the tally names the debut');
-  assert.ok(sent.some((m) => m.event === 'act' && m.payload.id === tally), 'the tally is sent live');
+  const tally = sql(`select id from acts where kind = 'announce' and character = '${made}' and payload = '{"what": "debut"}'`);
+  assert.ok(tally, 'the debut is announced as the character\'s own Act');
+  assert.ok(sent.some((m) => m.event === 'act' && m.payload.id === tally), 'the announcement is sent live');
   // The season's end writes no Act and opens no thread: its results are rows, and the news of them is sent live.
   assert.equal(sql(`select count(*) from acts where kind = 'reveal' and created_at = '${at(24)}'`), '0', 'a season\'s end writes no reveal Act');
   assert.ok(Number(sql(`select count(*) from season_results r join seasons s on s.id = r.season where s.ends_at = '${at(24)}'`)) > 0, 'the season\'s results are written');

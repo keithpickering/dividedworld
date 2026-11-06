@@ -103,7 +103,7 @@ begin
   update seasons set starts_at = season_start where ends_at is null;
   insert into class_history (character, class_key, started_at) values (a, 'beta', next_start - interval '10 days');
   -- Bob's character reveals itself in the season, then Turns, announced naming both classes, which
-  -- writes its unmask at the tally's instant, after the tally.
+  -- is announced, as its own Act, with the class it Turned to.
   unmasked := write_unmask(says, t, 'act', season_start + interval '1 day', 'Alpha, and proud.');
   perform tests.become(bob);
   perform turn(says, 'beta', 'announced', true, true);
@@ -151,13 +151,13 @@ begin
   if exists (select 1 from season_results where season = sid and to_jsonb(season_results)::text like '%beta%' and character <> says) then raise exception 'the results said what a silent Turn took'; end if;
   select to_jsonb(r) into entry from season_results r where r.season = sid and r.character = m;
   if entry -> 'shown' is distinct from '[]'::jsonb or entry ? 'classes' then raise exception 'a character made mid-season with nothing public shows nothing: %', entry; end if;
-  -- What its player made public, dated, in order: its reveal, the Turn announced with its old class, then the unmask that Turn wrote.
+  -- What its player made public, dated, in order: its reveal, the Turn announced with its old class, then the reveal of the class that Turn named.
   select shown into entry2 from season_results where season = sid and character = says;
-  -- At one instant, the Turn's tally before the unmask it wrote, as they stand in the thread.
+  -- At one instant, and of one Act: the announcement is both the Turn and the reveal of the class it Turned to, the Turn first.
   if entry2 is distinct from jsonb_build_array(
        jsonb_build_object('kind', 'reveal', 'act', unmasked ->> 'id', 'at', season_start + interval '1 day', 'class', 'alpha', 'via', 'act'),
        jsonb_build_object('kind', 'turn', 'act', tally, 'at', told_at, 'was', 'alpha'),
-       jsonb_build_object('kind', 'reveal', 'act', (select id from acts where kind = 'unmask' and character = says and payload ->> 'via' = 'turn'), 'at', told_at, 'class', 'beta', 'via', 'turn')) then
+       jsonb_build_object('kind', 'reveal', 'act', (select id from acts where kind = 'announce' and character = says), 'at', told_at, 'class', 'beta', 'via', 'turn')) then
     raise exception 'the results show what its player made public in the season, dated, in order: %', entry2;
   end if;
   if exists (select 1 from season_results where season = sid and (to_jsonb(season_results)::text like '%' || ann || '%' or to_jsonb(season_results)::text like '%' || bob || '%')) then raise exception 'the results named a player'; end if;

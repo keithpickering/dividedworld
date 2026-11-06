@@ -186,7 +186,7 @@ begin
 end $$;
 
 -- ---- A Turn names the class it Turns to (show_to), from (show_from), both, or neither; naming
--- the class it Turns to writes the character's unmask Act after the tally (the class reveal
+-- the class it Turns to makes the character's announcement that class's reveal (the season-end
 -- plan, Task 2) ----
 do $$
 declare
@@ -218,32 +218,35 @@ begin
   perform tests.unbecome();
   update pending_turns set asked_at = window_end - interval '30 seconds' where character in (plain, from_only, to_only, named_both);
   first_tally := masks_change(window_end);
+  -- Each announced Turn is its character's own Act, in the season's Promos thread, dated at the window's end, and says only what its player chose.
   select * into tally from acts where id = first_tally;
-  select x into entry from jsonb_array_elements(tally.payload -> 'turns') x where x ->> 'character' = plain::text;
-  if entry is distinct from jsonb_build_object('character', plain, 'name', 'Turns Plainly', 'loudness', 'announced') then raise exception 'a plain announced Turn names no class: %', entry; end if;
-  select x into entry from jsonb_array_elements(tally.payload -> 'turns') x where x ->> 'character' = from_only::text;
+  if tally.kind is distinct from 'announce' or tally.character is null then raise exception 'the settlement returns the first announcement: %', to_jsonb(tally); end if;
+  select x.payload into entry from acts x where x.kind = 'announce' and x.character = plain;
+  if entry is distinct from '{"what": "turn"}'::jsonb then raise exception 'a plain announced Turn names no class: %', entry; end if;
+  select x.payload into entry from acts x where x.kind = 'announce' and x.character = from_only;
   if entry ->> 'was' is distinct from 'alpha' or entry ? 'class' then raise exception 'a Turn naming its old class names it alone: %', entry; end if;
-  select x into entry from jsonb_array_elements(tally.payload -> 'turns') x where x ->> 'character' = to_only::text;
+  select x.payload into entry from acts x where x.kind = 'announce' and x.character = to_only;
   if entry ->> 'class' is distinct from 'beta' or entry ? 'was' then raise exception 'a Turn naming its new class names it alone: %', entry; end if;
-  select x into entry from jsonb_array_elements(tally.payload -> 'turns') x where x ->> 'character' = named_both::text;
+  select x.payload into entry from acts x where x.kind = 'announce' and x.character = named_both;
   if (entry ->> 'was', entry ->> 'class') is distinct from ('alpha'::text, 'beta'::text) then raise exception 'a Turn naming both names both: %', entry; end if;
-  -- Naming the new class writes the character's unmask, after the tally, dated at it.
-  for u in select * from acts where kind = 'unmask' and character in (to_only, named_both) loop
-    if u.thread is distinct from tally.thread or u.seq <= tally.seq or u.created_at is distinct from window_end or u.payload is distinct from '{"class": "beta", "message": "", "via": "turn"}'::jsonb then
-      raise exception 'a Turn naming its new class is unmasked after its tally, dated at it: %', to_jsonb(u);
+  -- Naming the new class is the class reveal, in the same Act: no separate unmask is written.
+  for u in select * from acts where kind = 'announce' and character in (plain, from_only, to_only, named_both) loop
+    if u.thread is distinct from tally.thread or u.created_at is distinct from window_end or u.payload ->> 'what' is distinct from 'turn' then
+      raise exception 'a Turn is announced in the Promos thread, dated at the window''s end: %', to_jsonb(u);
     end if;
   end loop;
-  if (select count(*) from acts where kind = 'unmask' and character in (to_only, named_both)) is distinct from 2::bigint then raise exception 'each Turn naming its new class writes one unmask'; end if;
-  if exists (select 1 from acts where kind = 'unmask' and character in (plain, from_only)) then raise exception 'a Turn naming only its old class, or none, wrote an unmask'; end if;
-  if (select (class, at, via) from class_reveals where character = to_only) is distinct from ('beta'::text, window_end, 'turn'::text) then raise exception 'class_reveals reads a Turn''s unmask'; end if;
+  if (select count(*) from acts where kind = 'announce' and character in (plain, from_only, to_only, named_both)) is distinct from 4::bigint then raise exception 'each announced Turn writes one Act'; end if;
+  if exists (select 1 from acts where kind = 'unmask' and character in (plain, from_only, to_only, named_both)) then raise exception 'a Turn wrote an unmask beside its announcement'; end if;
+  if (select (class, at, via) from class_reveals where character = to_only) is distinct from ('beta'::text, window_end, 'turn'::text) then raise exception 'class_reveals reads a Turn naming its new class'; end if;
+  if exists (select 1 from class_reveals where character in (plain, from_only)) then raise exception 'a Turn naming no new class is a class reveal'; end if;
   -- Reacted to and spun by another player, as any reveal is.
-  select * into u from acts where kind = 'unmask' and character = to_only;
+  select * into u from acts where kind = 'announce' and character = to_only;
   perform tests.become(bob);
   perform react(u.id, watcher, 'up');
   perform spin(u.id, watcher, 'That Turn', '');
   perform tests.unbecome();
-  if (select count from reaction_tallies where act = u.id and kind = 'up') is distinct from 1 then raise exception 'a Turn''s unmask is reacted to'; end if;
-  if not exists (select 1 from threads where origin_act_id = u.id and board = players_board()) then raise exception 'a thread is spun from a Turn''s unmask, on the players'' board'; end if;
+  if (select count from reaction_tallies where act = u.id and kind = 'up') is distinct from 1 then raise exception 'a Turn''s announcement is reacted to'; end if;
+  if not exists (select 1 from threads where origin_act_id = u.id and board = players_board()) then raise exception 'a thread is spun from a Turn''s announcement, on the players'' board'; end if;
 end $$;
 
 -- ---- The old three-argument turn() still takes an older client's "revealed": announced, naming its old class ----

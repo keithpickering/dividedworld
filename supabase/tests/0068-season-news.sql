@@ -43,7 +43,7 @@ end $$;
 
 create function pg_temp.ann() returns uuid language sql as $$ select (value #>> '{}')::uuid from settings where key = 'systemAnnouncements' $$;
 
--- ---- A season played, two tallies, a reveal and a handover ----
+-- ---- A season played, an announced debut and an old tally, a reveal and a handover ----
 do $$
 declare
   ann uuid := tests.account('sn-ann');
@@ -63,9 +63,11 @@ begin
   perform write_unmask(sprit, th, 'act', t0 + interval '2 hours', 'Alpha, and proud.');
   insert into standings (character, season, amount) values (sprit, in_season, 650), (gloom, in_season, 400), (hooli, in_season, 300), (pipe, in_season, 100)
   on conflict (season, character) do update set amount = excluded.amount;
-  -- One tally names a debut, another a Turn announced with its old class.
-  perform post_tally(in_season, jsonb_build_array(jsonb_build_object('character', hooli, 'name', 'Mrs. Hooligan')), '[]'::jsonb, t0 + interval '3 hours');
-  perform post_tally(in_season, '[]'::jsonb, jsonb_build_array(jsonb_build_object('character', pipe, 'name', 'Pipewrench', 'loudness', 'revealed', 'was', 'alpha', 'since', t0)), t0 + interval '4 hours');
+  -- One announcement is a debut; an old tally names a Turn announced with its old class.
+  perform write_announce(hooli, promos_thread(in_season), 'debut', null, null, t0 + interval '3 hours');
+  -- An old tally, as an instance written before the announce Act holds it.
+  perform tests.act(null, 'tally', promos_thread(in_season), jsonb_build_object('season', 1, 'part', 1, 'of', 1, 'debuts', '[]'::jsonb,
+    'turns', jsonb_build_array(jsonb_build_object('character', pipe, 'name', 'Pipewrench', 'loudness', 'revealed', 'was', 'alpha', 'since', t0))), null, t0 + interval '4 hours');
   rolled := reveal_season(t0 + interval '1 day');
   if rolled is null then raise exception 'the season did not roll over'; end if;
 end $$;
@@ -108,7 +110,7 @@ begin
   if (select count(*) from pg_temp.sn() where kind = 'tally' and thread = tthread and detail #>> '{turns,0,name}' = 'Pipewrench' and detail #>> '{turns,0,was}' = 'alpha' and jsonb_array_length(detail -> 'debuts') = 0 and count = 1) is distinct from 1 then
     raise exception 'the Turn tally: %', rows;
   end if;
-  if exists (select 1 from pg_temp.sn() x where x.kind = 'tally' and not exists (select 1 from acts a where a.id = x.act and a.kind = 'tally')) then raise exception 'a tally item links its tally Act'; end if;
+  if exists (select 1 from pg_temp.sn() x where x.kind = 'tally' and not exists (select 1 from acts a where a.id = x.act and a.kind in ('tally', 'announce'))) then raise exception 'a tally item links its tally or announce Act'; end if;
 
   -- The Boss: the arrival quotes its first words and links its post in the announcements thread; so does the departure.
   select a.id into b_post from acts a join characters c on c.id = a.character where c.staff = 'sn-b' and a.kind = 'post' and a.thread = pg_temp.ann();
@@ -236,7 +238,7 @@ declare
   s2 seasons%rowtype;
 begin
   select * into s2 from seasons where ends_at is null;
-  perform post_tally(s2.id, jsonb_build_array(jsonb_build_object('character', (select id from characters where name = 'Gloomba'), 'name', 'Gloomba')), '[]'::jsonb, s2.starts_at + interval '1 hour');
+  perform write_announce((select id from characters where name = 'Gloomba'), promos_thread(s2.id), 'debut', null, null, s2.starts_at + interval '1 hour');
   perform reveal_season(s2.starts_at + interval '1 day');
   if (select count(*) from thread_open where board = sys) is distinct from before_all + 1 then raise exception 'a Turns thread was made, and no reveal thread'; end if;
   if (select count(*) from thread_list where board = sys) is distinct from before_list + 1 then raise exception 'the new thread is listed'; end if;
@@ -279,9 +281,9 @@ begin
   perform tests.become(cat);
   if my_alerts_unread() is distinct from least(10, n0) then raise exception 'what landed after the mark is new: % of %', my_alerts_unread(), n0; end if;
   perform tests.unbecome();
-  perform post_tally((select id from seasons where ends_at is null), '[]'::jsonb, jsonb_build_array(jsonb_build_object('character', (select id from characters where name = 'Gloomba'), 'name', 'Gloomba', 'loudness', 'announced')), now() + interval '1 hour');
+  perform write_announce((select id from characters where name = 'Gloomba'), promos_thread((select id from seasons where ends_at is null)), 'turn', null, null, now() + interval '1 hour');
   perform tests.become(cat);
-  if my_alerts_unread() is distinct from least(10, n0 + 1) then raise exception 'a new tally is one new alert: %', my_alerts_unread(); end if;
+  if my_alerts_unread() is distinct from least(10, n0 + 1) then raise exception 'a new announcement is one new alert: %', my_alerts_unread(); end if;
   perform tests.unbecome();
 end $$;
 
@@ -437,8 +439,8 @@ begin
   if (select count(*) from unlisted_threads where thread in (select r.thread from seasons s join acts r on r.id = s.reveal_act)) is distinct from gone then
     raise exception 'every reveal thread is recorded as unlisted again';
   end if;
-  if (select count(*) from news_landed) is distinct from (select count(*) from acts where kind = 'tally' and tally_names(payload) > 0) then
-    raise exception 'every old tally gets a landing time, and no reveal header does';
+  if (select count(*) from news_landed) is distinct from (select count(*) from acts where kind = 'tally' and tally_names(payload) > 0) + (select count(*) from (select distinct thread, created_at from acts where kind = 'announce') l) then
+    raise exception 'every old tally and every landing of announcements gets a landing time, and no reveal header does';
   end if;
   if exists (select 1 from news_landed n join acts a on a.id = n.act where n.landed_at is distinct from a.created_at) then raise exception 'an old item landed when it is dated'; end if;
   -- Run again, it changes nothing.

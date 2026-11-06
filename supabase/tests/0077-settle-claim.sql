@@ -214,9 +214,9 @@ end $$;
 
 -- ---- Task 2: a Turn never takes effect behind a reveal (the backstop) ----
 
--- Whether a tally names the character.
+-- Whether an announcement of a Turn is the character's.
 create function pg_temp.tallied(a uuid) returns boolean language sql as $$
-  select exists (select 1 from acts x where x.kind = 'tally' and x.payload -> 'turns' @> jsonb_build_array(jsonb_build_object('character', a)))
+  select exists (select 1 from acts x where x.kind = 'announce' and x.character = a and x.payload ->> 'what' = 'turn')
 $$;
 
 create function pg_temp.class_due_at(a uuid) returns timestamptz language plpgsql as $$
@@ -244,21 +244,20 @@ begin
     if (select p.due_at from pending_turns p where p.character = a) is distinct from w1 then
       raise exception 'the Turn still waits, due at the window it was passed over at: %', (select to_jsonb(p) from pending_turns p where p.character = a);
     end if;
-    if pg_temp.tallied(a) then raise exception 'no tally names a Turn that did not take effect'; end if;
-    -- At the next window it lands, with the date it was due at, and its tally at the window it took effect at.
+    if pg_temp.tallied(a) then raise exception 'no announcement names a Turn that did not take effect'; end if;
+    -- At the next window it lands, with the date it was due at, and its announcement at the window it took effect at.
     perform masks_change(w2);
     if (select class_key from class_now(a, 'infinity')) is distinct from 'beta' then raise exception 'the passed-over Turn lands at the next window'; end if;
     if exists (select 1 from pending_turns p where p.character = a) then raise exception 'a Turn that landed no longer waits'; end if;
     if (select h.due_at from class_history h where h.character = a and h.class_key = 'beta') is distinct from w1 then raise exception 'class_history says when the Turn was due'; end if;
     if (select h.started_at from class_history h where h.character = a and h.class_key = 'beta') is distinct from w2 then raise exception 'the Turn took effect at the second window'; end if;
     if pg_temp.class_due_at(a) is distinct from w1 then raise exception 'my_characters says when the Turn was due: %', pg_temp.class_due_at(a); end if;
-    if (select x.created_at from acts x where x.kind = 'tally' and x.payload -> 'turns' @> jsonb_build_array(jsonb_build_object('character', a))) is distinct from w2 then
-      raise exception 'an announced Turn''s tally is at the window it took effect at';
+    if (select x.created_at from acts x where x.kind = 'announce' and x.character = a and x.payload ->> 'what' = 'turn') is distinct from w2 then
+      raise exception 'an announced Turn''s announcement is at the window it took effect at';
     end if;
-    -- The tally carries nothing that marks the Turn as late.
-    if exists (select 1 from acts x cross join lateral jsonb_array_elements(x.payload -> 'turns') e
-               where x.kind = 'tally' and e ->> 'character' = a::text and e - 'character' - 'name' - 'loudness' - 'class' <> '{}'::jsonb) then
-      raise exception 'the tally says nothing of when the Turn was due';
+    -- The announcement carries nothing that marks the Turn as late.
+    if exists (select 1 from acts x where x.kind = 'announce' and x.character = a and x.payload - 'what' - 'was' - 'class' <> '{}'::jsonb) then
+      raise exception 'the announcement says nothing of when the Turn was due';
     end if;
     raise exception 'undone' using errcode = 'KB001';
   exception when sqlstate 'KB001' then null;
@@ -347,7 +346,7 @@ begin
     perform masks_change(w1);
     if (select class_key from class_now(a, 'infinity')) is distinct from 'beta' then raise exception 'a debut''s own reveal does not hold back its Turn'; end if;
     if (select class_key from class_now(b, 'infinity')) is distinct from 'beta' then raise exception 'a Turn''s own reveal does not hold back its Turn'; end if;
-    if not exists (select 1 from acts x where x.character = a and x.kind = 'unmask' and x.created_at = w1 and x.payload ->> 'class' = 'beta') then
+    if not exists (select 1 from acts x where x.character = a and x.kind = 'announce' and x.created_at = w1 and x.payload = '{"what": "debut", "class": "beta"}'::jsonb) then
       raise exception 'the debut names the class the Turn took';
     end if;
     if exists (select 1 from pending_turns p where p.character in (a, b)) then raise exception 'both Turns landed'; end if;
