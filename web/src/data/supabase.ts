@@ -314,7 +314,7 @@ function toQueued(r: Row): QueuedMove {
   return {
     id: num(r['id']), staff: String(r['staff'] ?? ''), boss: orNull(r['boss']), kind: String(r['kind'] ?? ''), params: params(r['params']), demand: toDemand(r['demand']),
     why: String(r['why'] ?? ''), goLiveAt: String(r['goLiveAt'] ?? ''), expiresAt: orNull(r['expiresAt']), structural: r['structural'] === true, boardName: orNull(r['boardName']),
-    failedAt: orNull(r['failedAt']), failure: orNull(r['failure']), replacedAt: orNull(r['replacedAt']),
+    failedAt: orNull(r['failedAt']), failure: orNull(r['failure']), replacedAt: orNull(r['replacedAt']), adminDescription: orNull(r['adminDescription']),
   };
 }
 
@@ -835,6 +835,14 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     async replaceSuccessor(id, boss) {
       const a = await rpcWrite(() => client.rpc('replace_successor', { id, boss }));
       return a.ok ? { ok: true, value: { id: num(a.value['id']), boss: String(a.value['boss'] ?? '') } } : a;
+    },
+    async replaceQueuedDescription(id, description) {
+      const a = await rpcWrite(() => client.rpc('replace_queued_description', { id, description }));
+      return a.ok ? { ok: true, value: { id: num(a.value['id']), description: String(a.value['description'] ?? '') } } : a;
+    },
+    async describeBoard(board, description) {
+      const a = await rpcWrite(() => client.rpc('describe_board', { board, description }));
+      return a.ok ? { ok: true, value: { board: String(a.value['board'] ?? board), description: String(a.value['description'] ?? '') } } : a;
     },
     /* The Boss list is the database's roster (`boss_roster_names`, 0082, an admin's read): a waiting persona's name is in no public view. */
     async bosses() {

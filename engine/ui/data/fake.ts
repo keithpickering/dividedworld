@@ -350,10 +350,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   let nextSettlement: number | null = null;
   const boards: Board[] = options.instance.boards.map((b) => ({ id: uuid(), slug: b.slug, name: b.name, description: b.description, isSystem: b.system === true, moveAct: null }));
   /* Moves: how each landed move ended, the staff profiles (versions, newest read), and the admin queue's own rows. */
+  /** An admin's descriptions in the order given (`describe` Acts): the board, the rename each names (or none), the words. */
+  const describes: { board: Id; moveAct: Id | null; text: string }[] = [];
   const moveEnds = new Map<Id, { why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent'; by: string; at: number }>();
   const careers = new Map<string, Career>();
   const staffProfiles: { key: string; at: number; interests: string[]; favorites: Id[]; mood: string; signature: string }[] = [];
-  interface QueueRec { id: number; staff: string; successor?: string; move: SeedMove; why: string; goLiveAt: number; failure: { at: number; text: string } | null; heldAt: number | null; landed: Id | null; replacedAt?: number }
+  interface QueueRec { id: number; staff: string; successor?: string; move: SeedMove; why: string; goLiveAt: number; failure: { at: number; text: string } | null; heldAt: number | null; landed: Id | null; replacedAt?: number; adminDescription?: string }
   const queue: QueueRec[] = [];
   /** The staff key of the Boss that keeps each move after a handover, by the move's Act. */
   const moveKeeps = new Map<Id, string>();
@@ -550,9 +552,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** A board as it is called now: its latest rename in force, else its own row (boards_now). */
   function boardNow(b: Board): Board {
     const m = inForce().find((a) => a.payload['kind'] === 'renameBoard' && (a.payload['params'] as Record<string, unknown>)['board'] === b.id);
-    if (!m) return b;
+    /* The latest describe naming the open rename (or, with none open, naming no move), else the rename's own words, else the board's. */
+    const said = describes.filter((d) => d.board === b.id && d.moveAct === (m?.id ?? null)).at(-1)?.text;
+    if (!m) return said === undefined ? b : { ...b, description: said };
     const p = m.payload['params'] as Record<string, unknown>;
-    return { ...b, name: String(p['name']), description: String(p['description'] ?? b.description), moveAct: m.id };
+    return { ...b, name: String(p['name']), description: said ?? String(p['description'] ?? b.description), moveAct: m.id };
   }
 
   /** A seeded rename's params and demand as a move Act carries them: boards by id. */
@@ -1504,11 +1508,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const demandFor = moveDemand;
       const waiting = queue.filter((q) => q.landed === null && q.heldAt === null).sort((a, b) => a.goLiveAt - b.goLiveAt || a.id - b.id).map((q): QueuedMove => q.successor !== undefined ? ({
         id: q.id, staff: q.staff, boss: nameOf(q.staff), kind: 'nameSuccessor', params: { boss: q.successor }, demand: null, why: q.why, goLiveAt: iso(q.goLiveAt),
-        expiresAt: null, structural: true, boardName: null, failedAt: null, failure: null, replacedAt: q.replacedAt === undefined ? null : iso(q.replacedAt),
+        expiresAt: null, structural: true, boardName: null, failedAt: null, failure: null, replacedAt: q.replacedAt === undefined ? null : iso(q.replacedAt), adminDescription: null,
       }) : ({
         id: q.id, staff: q.staff, boss: nameOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, goLiveAt: iso(q.goLiveAt),
         expiresAt: q.move.expiresAt === undefined ? null : iso(q.move.expiresAt), structural: true, boardName: boards.find((b) => b.slug === q.move.board) ? boardNow(boards.find((b) => b.slug === q.move.board)!).name : null,
-        failedAt: q.failure ? iso(q.failure.at) : null, failure: q.failure?.text ?? null, replacedAt: null,
+        failedAt: q.failure ? iso(q.failure.at) : null, failure: q.failure?.text ?? null, replacedAt: null, adminDescription: q.adminDescription ?? null,
       }));
       const rowOf = (a: ActRec) => {
         const q = queue.find((x) => x.landed === a.id);
@@ -1587,6 +1591,27 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       q.successor = boss;
       q.replacedAt = now();
       return ok({ id, boss });
+    },
+    replaceQueuedDescription(id, description) {
+      if (!me()?.admin) return refuse('only an admin replaces a description');
+      const q = queue.find((x) => x.id === id);
+      if (!q) return refuse('there is no such queued move');
+      if (q.successor !== undefined) return refuse('that move renames no board');
+      if (q.landed !== null) return refuse('that rename has already landed; describe the board instead');
+      if (q.heldAt !== null) return refuse('that rename is held');
+      if (description.trim() === '') return refuse('a description needs words');
+      if (description.length > 2000) return refuse('a description is at most 2000 characters');
+      q.adminDescription = description;
+      return ok({ id, description });
+    },
+    describeBoard(board, description) {
+      if (!me()?.admin) return refuse('only an admin describes a board');
+      const b = boards.find((x) => x.id === board);
+      if (!b) return refuse('there is no such board');
+      if (description.trim() === '') return refuse('a description needs words');
+      if (description.length > 2000) return refuse('a description is at most 2000 characters');
+      describes.push({ board, moveAct: boardNow(b).moveAct, text: description });
+      return ok({ board, description });
     },
     /* boss_roster_names (0082): the roster's own list, a waiting persona's name included, for an admin alone. */
     bosses() {

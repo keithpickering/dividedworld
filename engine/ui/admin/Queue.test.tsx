@@ -484,7 +484,7 @@ describe('How players reach you, on the admin screen', () => {
       expect(g).toHaveTextContent('Whoops! by Hall Monitor');
       expect(g).toHaveTextContent('Played on Pipewrench in Cards thread.');
       expect(within(g).getAllByRole('button', { name: /^End:/u })).toHaveLength(1);
-      expect(screen.getAllByRole('region').map((r) => r.getAttribute('data-kb-group')).slice(-3)).toEqual(['in-force', 'staff-cards', 'ended']);
+      expect(screen.getAllByRole('region').map((r) => r.getAttribute('data-kb-group')).slice(-4)).toEqual(['in-force', 'staff-cards', 'ended', 'boards']);
     });
 
     test('END asks first, in plain words; ending calls reverseCard, the card leaves the group and enters Ended', async () => {
@@ -514,5 +514,54 @@ describe('How players reach you, on the admin screen', () => {
       expect(await within(dialog).findByRole('alert')).toHaveTextContent('that card has already worn off');
       expect(screen.getByRole('dialog')).toBeInTheDocument();
     });
+  });
+});
+
+describe('replacing a description', () => {
+  test('a waiting rename takes an admin\'s words, shows them beside the Boss\'s, and a second save replaces the first', async () => {
+    const { fake } = open();
+    const waiting = await group(/^Waiting to land/u);
+    const field = within(waiting).getByRole('textbox', { name: /^Replace description/u });
+    const save = within(waiting).getByRole('button', { name: /^Save the description of/u });
+    expect(save).toBeDisabled();
+    await userEvent.type(field, 'Order restored.');
+    await userEvent.click(save);
+    await waitFor(() => expect(waiting).toHaveTextContent('“Order restored.”'));
+    expect(waiting).toHaveTextContent('Description: “Commando Elite members only. Gorgonites will be processed.”');
+    expect(within(waiting).getByRole('status')).toHaveTextContent('Saved.');
+    expect((await fake.adminQueue()).waiting[0]!.adminDescription).toBe('Order restored.');
+    await userEvent.type(within(waiting).getByRole('textbox', { name: /^Replace description/u }), 'Order, again.');
+    await userEvent.click(within(waiting).getByRole('button', { name: /^Save the description of/u }));
+    await waitFor(() => expect(waiting).toHaveTextContent('“Order, again.”'));
+    expect(waiting).not.toHaveTextContent('Order restored.');
+  });
+
+  test('a nomination has no description to replace', async () => {
+    open({ build: (fake) => { fake.seed.staff('the-clerk', 'The Clerk', 'boss', { title: 'Keeper of Forms' }); fake.seed.queueSuccessor('director', 'the-clerk', { goLiveAt: fake.clock.now() + 3_600_000 }); } });
+    const waiting = await group(/^Waiting to land/u);
+    expect(within(waiting).getAllByRole('textbox', { name: /^Replace description/u })).toHaveLength(1);
+  });
+
+  test('the Boards group lists each board with its description now, and a board\'s description is replaced at once', async () => {
+    const { fake } = open();
+    const boards = await group(/^Boards/u);
+    const first = (await fake.boards())[0]!;
+    const card = within(boards).getByRole('article', { name: first.name });
+    expect(card).toHaveTextContent(`Description: “${first.description}”`);
+    await userEvent.type(within(card).getByRole('textbox', { name: /^Replace description/u }), 'Words from an admin.');
+    await userEvent.click(within(card).getByRole('button', { name: `Save the description of ${first.name}` }));
+    await waitFor(() => expect(card).toHaveTextContent('Description: “Words from an admin.”'));
+    expect((await fake.boards())[0]!.description).toBe('Words from an admin.');
+  });
+
+  test('a refusal is shown in the server\'s words', async () => {
+    const { fake } = open();
+    const boards = await group(/^Boards/u);
+    const first = (await fake.boards())[0]!;
+    const card = within(boards).getByRole('article', { name: first.name });
+    await userEvent.type(within(card).getByRole('textbox', { name: /^Replace description/u }), '   x');
+    vi.spyOn(fake, 'describeBoard').mockResolvedValueOnce({ ok: false, error: 'there is no such board' });
+    await userEvent.click(within(card).getByRole('button', { name: `Save the description of ${first.name}` }));
+    expect(await within(card).findByRole('alert')).toHaveTextContent('there is no such board');
   });
 });

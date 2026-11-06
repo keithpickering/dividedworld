@@ -35,7 +35,7 @@ import { demandNeeds } from '../board/move-words.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { useKayfa } from '../context.tsx';
 import { EndCardDialog } from '../cards/Lens.tsx';
-import type { AdminQueue, BoardName, HandoverTodo, MoveEnded, MoveInForce, QueuedMove, StaffCardPlay } from '../data/api.ts';
+import type { AdminQueue, Answer, BoardName, BoardSummary, HandoverTodo, MoveEnded, MoveInForce, QueuedMove, StaffCardPlay } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
@@ -69,6 +69,7 @@ export function QueueScreen({ now }: { readonly now?: number }) {
   const [admin, setAdmin] = useState<boolean | null>(null);
   const [queue, setQueue] = useState<AdminQueue | null>(null);
   const [boards, setBoards] = useState<readonly BoardName[]>([]);
+  const [summaries, setSummaries] = useState<readonly BoardSummary[]>([]);
   const [bosses, setBosses] = useState<readonly Roster[]>([]);
   const [failed, setFailed] = useState(false);
   const [asked, setAsked] = useState<Asked | null>(null);
@@ -78,9 +79,10 @@ export function QueueScreen({ now }: { readonly now?: number }) {
   const load = useCallback(async () => {
     try {
       /* The roster's names make a nomination read as a name; a roster that cannot be read leaves keys, and the replacing choice empty. */
-      const [q, names, roster] = await Promise.all([api.adminQueue(), api.boardNames(), api.bosses().catch((): readonly Roster[] => [])]);
+      const [q, names, roster, all] = await Promise.all([api.adminQueue(), api.boardNames(), api.bosses().catch((): readonly Roster[] => []), api.boards().catch((): readonly BoardSummary[] => [])]);
       setQueue(q);
       setBoards(names);
+      setSummaries(all);
       setBosses(roster);
       setFailed(false);
     } catch {
@@ -117,6 +119,7 @@ export function QueueScreen({ now }: { readonly now?: number }) {
                 <InForce rows={queue.inForce} more={queue.more.inForce} boards={boards} bosses={bosses} onReverse={(row) => setAsked({ kind: 'reverse', row })} />
                 <StaffCards rows={queue.staffCards} more={queue.more.staffCards} onEnd={setEnding} />
                 <Ended rows={queue.ended} more={queue.more.ended} boards={boards} bosses={bosses} />
+                <Boards rows={summaries} onDescribed={load} />
               </>
             )}
           </>
@@ -193,6 +196,65 @@ function Replace({ row, roster, bosses, onReplaced }: { readonly row: QueuedMove
   );
 }
 
+/**
+ * An admin's words in the place of a description: for a waiting rename (they land beside it) or for a board now. The Boss's words are
+ * never edited; the server holds the same bounds (1 to 2000 characters) and answers in its own words.
+ */
+function ReplaceDescription({ id, about, save, onSaved }: { readonly id: string; readonly about: string; readonly save: (words: string) => Promise<Answer<unknown>>; readonly onSaved: () => Promise<void> }) {
+  const [words, setWords] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const submit = async () => {
+    if (words.trim() === '' || busy) return;
+    setBusy(true);
+    setRefusal(null);
+    setDone(null);
+    try {
+      const answer = await save(words);
+      if (!answer.ok) { setRefusal(answer.error); await onSaved(); return; }
+      setDone('Saved. This is the description now.');
+      setWords('');
+      await onSaved();
+    } catch {
+      setRefusal('That could not be sent. Check your connection and look at the queue before you try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="kb-queue-replace">
+      <label htmlFor={`${id}-words`}>Replace description<span className="kb-visually-hidden"> of {about}</span></label>
+      <textarea id={`${id}-words`} className="kb-queue-select kb-queue-text" rows={3} maxLength={2000} value={words} onChange={(e) => setWords(e.target.value)} />
+      <ButtonRow><GlassButton size="s" disabled={words.trim() === '' || busy} aria-label={`Save the description of ${about}`} onClick={() => void submit()}>SAVE</GlassButton></ButtonRow>
+      {refusal && <p role="alert" className="kb-queue-failure">{refusal}</p>}
+      {done && <p role="status" className="kb-small kb-muted">{done}</p>}
+    </div>
+  );
+}
+
+/** Every board with the description it shows now, and the means to replace it at any time. A rename in force keeps its own words, and the new ones end with it. */
+function Boards({ rows, onDescribed }: { readonly rows: readonly BoardSummary[]; readonly onDescribed: () => Promise<void> }) {
+  const { api } = useKayfa();
+  return (
+    <CalmRegion as="section" className="kb-queue-group" aria-labelledby="queue-boards" data-kb-group="boards">
+      <GroupHead id="queue-boards" title="Boards" count={rows.length} more={false} />
+      <p className="kb-queue-note">New words replace the description at once. If a rename of the board is in force, they stay only as long as it does.</p>
+      {rows.map((b) => (
+        <article key={b.id} className="kb-queue-move" data-kb-board={b.slug} aria-label={b.name}>
+          <div className="kb-queue-body">
+            <h3 className="kb-queue-sentence">{b.name}</h3>
+            <p className="kb-queue-quote">Description: “{b.description}”</p>
+          </div>
+          <div className="kb-queue-act">
+            <ReplaceDescription id={`queue-board-${b.id}`} about={b.name} save={(words) => api.describeBoard(b.id, words)} onSaved={onDescribed} />
+          </div>
+        </article>
+      ))}
+    </CalmRegion>
+  );
+}
+
 /** The handovers waiting for an announcement. Dismiss is not asked twice: it only puts a reminder away, and the form stays open to any admin. */
 function Todos({ rows, onDismissed }: { readonly rows: readonly HandoverTodo[]; readonly onDismissed: () => Promise<void> }) {
   const { api } = useKayfa();
@@ -241,6 +303,7 @@ function Todos({ rows, onDismissed }: { readonly rows: readonly HandoverTodo[]; 
 }
 
 function Waiting({ rows, more, boards, bosses, roster, now, onHold, onReplaced }: { readonly rows: readonly QueuedMove[]; readonly more: boolean; readonly boards: readonly BoardName[]; readonly bosses: readonly Roster[]; readonly roster: readonly Roster[]; readonly now: number; readonly onHold: (row: QueuedMove) => void; readonly onReplaced: () => Promise<void> }) {
+  const { api } = useKayfa();
   return (
     <CalmRegion as="section" className="kb-queue-group" aria-labelledby="queue-waiting" data-kb-group="waiting">
       <GroupHead id="queue-waiting" title="Waiting to land" count={rows.length} more={more} />
@@ -261,6 +324,7 @@ function Waiting({ rows, more, boards, bosses, roster, now, onHold, onReplaced }
               {q.kind === 'nameSuccessor' && <p>If it lands and is not held or reversed, the Boss it names takes the seat when the season rolls over. Otherwise the roster&apos;s rotation chooses.</p>}
               {q.replacedAt && <p>An admin put this Boss in the nomination&apos;s place on {dayAndTime(q.replacedAt)}.</p>}
               {description && <p className="kb-queue-quote">Description: “{description}”</p>}
+              {q.adminDescription && <p className="kb-queue-quote">An admin&apos;s replacement, which lands beside it: “{q.adminDescription}”</p>}
               {q.why && <p className="kb-queue-quote">Why, in {q.boss ?? 'the Boss'}&apos;s words: “{q.why}”</p>}
               {q.failedAt && (
                 <p className="kb-queue-failure" role="note">
@@ -271,6 +335,7 @@ function Waiting({ rows, more, boards, bosses, roster, now, onHold, onReplaced }
             <div className="kb-queue-act">
               <ButtonRow><GlassButton aria-label={`Hold: ${q.params['name'] ?? (q.kind === 'nameSuccessor' ? 'the naming of a successor' : 'this move')}`} onClick={() => onHold(q)}>HOLD</GlassButton></ButtonRow>
               {q.kind === 'nameSuccessor' && <Replace row={q} roster={roster} bosses={bosses} onReplaced={onReplaced} />}
+              {q.kind === 'renameBoard' && <ReplaceDescription id={`queue-rename-${q.id}`} about={String(q.params['name'] ?? 'this rename')} save={(words) => api.replaceQueuedDescription(q.id, words)} onSaved={onReplaced} />}
             </div>
           </article>
         );

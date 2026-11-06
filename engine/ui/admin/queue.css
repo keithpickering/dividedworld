@@ -172,6 +172,14 @@
   font-size: var(--kb-glass-size-body);
 }
 
+.kb-queue-text {
+  min-height: 88px;
+  padding: 8px 10px;
+  resize: vertical;
+  width: 100%;
+  box-sizing: border-box;
+}
+
 /* A phone: one column, the act under the move. */
 :where(:root[data-kb-layout='phone']) .kb-queue-move {
   grid-template-columns: minmax(0, 1fr);

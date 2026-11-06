@@ -396,6 +396,8 @@ export interface QueuedMove {
   readonly failure: string | null;
   /** When an admin put another Boss in a nomination's place; null when none did. Not who: admins do not need each other's accounts here. */
   readonly replacedAt: string | null;
+  /** The words an admin has put in the place of the rename's description (`replace_queued_description`, 0099); null when none did. The Boss's own stay in `params`. */
+  readonly adminDescription: string | null;
 }
 
 /** A landed move with no end yet (admin_queue). */
@@ -1223,6 +1225,17 @@ export interface KayfaApi {
   reverseCard(play: Id): Promise<Answer<{ readonly act: Id; readonly play: Id }>>;
   /** Puts another Boss of the roster in a waiting nomination's place (`id` is the queue row's). An admin's alone; a nomination that has landed or been held is refused. */
   replaceSuccessor(id: number, boss: string): Promise<Answer<{ readonly id: number; readonly boss: string }>>;
+  /**
+   * Puts an admin's words in the place of a waiting rename's description (`replace_queued_description`, 0099): when the rename lands they
+   * become a `describe` Act beside it, and the Boss's words stay on the rename. `id` is the queue row's. An admin's alone; a row that has
+   * landed or been held, a move that is no rename, and a description empty or over 2000 characters are refused. A second call replaces the first.
+   */
+  replaceQueuedDescription(id: number, description: string): Promise<Answer<{ readonly id: number; readonly description: string }>>;
+  /**
+   * Replaces a board's description at any time (`describe_board`, 0099), by a `describe` Act that names the board's open rename, if there is
+   * one, and so ends with it. An admin's alone; a board that is not there and a description empty or over 2000 characters are refused.
+   */
+  describeBoard(board: Id, description: string): Promise<Answer<{ readonly board: Id; readonly description: string }>>;
   /** The instance's whole roster by staff key and name, a waiting persona included (`boss_roster_names`): an admin's alone; anyone else is refused (the call throws). */
   bosses(): Promise<readonly { readonly staff: string; readonly name: string }[]>;
   /** The names of staff who have debuted, by staff key (`characters_public`): public, so a waiting persona is not in it. The public moderation log names a nominee and a keeper from it. */
