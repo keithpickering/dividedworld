@@ -200,6 +200,7 @@ export function SettlementScreen() {
           {opening && <GlassButton to="/log" state={opening}>Open my log</GlassButton>}
           <GlassButton
             to={backHref(boardPlace())}
+            early={false}
             kind="primary"
             aria-keyshortcuts="Escape"
             onClick={(e: MouseEvent<HTMLAnchorElement>) => { if (!plainClick(e)) return; e.preventDefault(); back(); }}

@@ -189,6 +189,14 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
   const leave = useCallback(() => {
     const e = entryRef.current ? cache.current.get(entryRef.current) : undefined;
     if (e) { e.scrollY = w.scrollY; e.at = Date.now(); }
+    /*
+     * A prefetch bridges a pointer's rest and the click that follows it. Once the reader has moved, what was read early is of before the
+     * move (a page's address read at a hover, and moved to again after a visit elsewhere, would show the page as it was), so the answered
+     * ones go; those still being read are another link's, and the move's own load has already taken the one it joined.
+     */
+    for (const [k, p] of prefetched.current) {
+      if (p.settledAt !== null) { clearTimeout(p.timer); prefetched.current.delete(k); }
+    }
   }, [w]);
   const remember = useCallback((entry: string, doc: unknown) => {
     cache.current.delete(entry);
@@ -505,16 +513,20 @@ export function useNavigate(): Router['navigate'] {
 }
 
 /** A link that moves within the app without a reload; a modified click opens as the browser would. */
-export function Link({ to, replace, state, onClick, onPointerEnter, onPointerLeave, onPointerDown, onFocus, onBlur, ...rest }: { readonly to: string; readonly replace?: boolean; readonly state?: unknown } & AnchorHTMLAttributes<HTMLAnchorElement>) {
+export function Link({ to, replace, state, early: readEarly = true, onClick, onPointerEnter, onPointerLeave, onPointerDown, onFocus, onBlur, ...rest }: { readonly to: string; readonly replace?: boolean; readonly state?: unknown; readonly early?: boolean } & AnchorHTMLAttributes<HTMLAnchorElement>) {
   const navigate = useNavigate();
   const prefetch = usePrefetch();
   /* The pointer's rest and the keyboard's focus each wait REST_MS, so holding Tab through a list reads nothing. */
   const pointerRest = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const focusRest = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => { clearTimeout(pointerRest.current); clearTimeout(focusRest.current); }, []);
-  /* A link that would be left to the browser (a target, a download) is not read early; the router's own prefetch refuses another site. */
+  /*
+   * A link that would be left to the browser (a target, a download) is not read early; the router's own prefetch refuses another site. A link
+   * that says `early={false}` is never read ahead: Back to the board reopens a page that changes while the reader is away, and the menu's focus
+   * would have it read as the menu opens, kept thirty seconds and shown stale.
+   */
   const early = () => {
-    if (rest.target || rest.download !== undefined) return;
+    if (!readEarly || rest.target || rest.download !== undefined) return;
     prefetch(to);
   };
   const click = (e: MouseEvent<HTMLAnchorElement>) => {

@@ -212,6 +212,19 @@ describe('from the Task 10 review', () => {
     act(() => nav('/t/a'));
     expect(load).toHaveBeenCalledTimes(2);
   });
+  test('a prefetch answered before a move is gone after it: the same address moved to later loads again, within the thirty seconds', async () => {
+    const { load, calls } = manualLoader();
+    mount(load);
+    act(() => prefetch('/t/a'));
+    await answer(calls[0], 'P1');
+    act(() => nav('/t/b'));
+    await answer(calls[1], 'B1');
+    expect(load).toHaveBeenCalledTimes(2);
+    act(() => nav('/t/a'));
+    expect(load).toHaveBeenCalledTimes(3);
+    await answer(calls[2], 'A2');
+    expect(screen.getByText('thread a: A2')).toBeInTheDocument();
+  });
   test('onMove is told when a load lands, not at the click', async () => {
     const { load, calls } = manualLoader();
     const told: string[] = [];
@@ -634,7 +647,7 @@ describe('a link starts its load early', () => {
     window.history.replaceState(null, '', '/');
     render(<KayfaProvider value={kayfa}><RouterProvider>
       <Link to="/t/a">thread</Link><Link to="/plain/x">plain</Link><Link to="https://evil.example/t/a">out</Link>
-      <Link to="/t/b" target="_blank">blank</Link><Link to="/t/c" download>get</Link><Routes routes={routes} />
+      <Link to="/t/b" target="_blank">blank</Link><Link to="/t/c" download>get</Link><Link to="/t/d" early={false}>again</Link><Routes routes={routes} />
     </RouterProvider></KayfaProvider>);
     return { load, calls, link: (name: string) => screen.getByRole('link', { name }) };
   }
@@ -670,6 +683,15 @@ describe('a link starts its load early', () => {
     const again = setupLinks();
     fireEvent.pointerDown(again.link('thread'));
     expect(again.load).toHaveBeenCalledTimes(1);
+  });
+  test('a link that says early={false} starts none, by rest, focus or pointerdown: Back to the board must read the page as it is when it is followed', () => {
+    vi.useFakeTimers();
+    const { load, link } = setupLinks();
+    fireEvent.focus(link('again'));
+    fireEvent.pointerEnter(link('again'));
+    fireEvent.pointerDown(link('again'));
+    act(() => { vi.advanceTimersByTime(300); });
+    expect(load).not.toHaveBeenCalled();
   });
   test('a link to a route with no loader, an off-site link, a target and a download start none, nor does a modified pointerdown', () => {
     vi.useFakeTimers();

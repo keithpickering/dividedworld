@@ -118,6 +118,7 @@ export function MenuBar() {
       <div className="kb-glass-menu-row">
         <Link
           to={backHref(boardPlace())}
+          early={false}
           className="kb-glass-menu-back kb-glass-skew"
           aria-keyshortcuts="Escape"
           onClick={(e) => { if (!plainClick(e)) return; e.preventDefault(); back(); }}
