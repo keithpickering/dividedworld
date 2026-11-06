@@ -114,7 +114,7 @@ export function AdminContact() {
   return (
     <CalmRegion as="section" className="kb-admin-contact" aria-labelledby={`${id}-head`}>
       <h2 id={`${id}-head`} className="kb-queue-group-head kb-glass-display">How players reach you</h2>
-      <form ref={form} className="kb-write-update" aria-labelledby={`${id}-head`} onSubmit={(e) => void submit(e)} noValidate>
+      <form ref={form} className="kb-write-update kb-admin-contact-form" aria-labelledby={`${id}-head`} onSubmit={(e) => void submit(e)} noValidate>
         <p className="kb-write-update-note">
           Players read these on the Reach a person page, which they can open signed out. Up to {CONTACT_MOST} links, each a label and an address: a web address that starts with https://, or an email address.
         </p>
@@ -124,11 +124,17 @@ export function AdminContact() {
           return (
             <div key={r.key} role="group" aria-label={`Link ${i + 1}`} className="kb-admin-contact-line">
               <div className="kb-write-update-row">
-                <input className="kb-write-update-input kb-write-update-label" aria-label={`Link ${i + 1} label`} placeholder="Label" value={r.label} maxLength={CONTACT_LABEL_MAX * 2} autoComplete="off"
-                  aria-invalid={mine || undefined} aria-describedby={mine ? `${id}-r${r.key}` : undefined} onChange={(e) => setRow(r.key, 'label', e.target.value)} />
-                <input className="kb-write-update-input kb-write-update-text" aria-label={`Link ${i + 1} address`} placeholder="https://… or name@example.com" value={r.href} maxLength={CONTACT_HREF_MAX * 2} autoComplete="off" inputMode="url"
-                  aria-invalid={mine || undefined} aria-describedby={mine ? `${id}-r${r.key}` : undefined} onChange={(e) => setRow(r.key, 'href', e.target.value)} />
-                <GlassButton size="s" onClick={() => remove(r.key)}>Remove link {i + 1}</GlassButton>
+                <div className="kb-admin-contact-field">
+                  <label htmlFor={`${id}-l${r.key}`} className="kb-admin-contact-key">Label</label>
+                  <input id={`${id}-l${r.key}`} className="kb-write-update-input kb-write-update-label" aria-label={`Link ${i + 1} label`} value={r.label} maxLength={CONTACT_LABEL_MAX * 2} autoComplete="off"
+                    aria-invalid={mine || undefined} aria-describedby={mine ? `${id}-r${r.key}` : undefined} onChange={(e) => setRow(r.key, 'label', e.target.value)} />
+                </div>
+                <div className="kb-admin-contact-field">
+                  <label htmlFor={`${id}-a${r.key}`} className="kb-admin-contact-key">Address</label>
+                  <input id={`${id}-a${r.key}`} className="kb-write-update-input kb-write-update-text" aria-label={`Link ${i + 1} address`} placeholder="https://… or name@example.com" value={r.href} maxLength={CONTACT_HREF_MAX * 2} autoComplete="off" inputMode="url"
+                    aria-invalid={mine || undefined} aria-describedby={mine ? `${id}-r${r.key}` : undefined} onChange={(e) => setRow(r.key, 'href', e.target.value)} />
+                </div>
+                <GlassButton size="s" onClick={() => remove(r.key)}>Remove{' '}<span className="kb-visually-hidden">link {i + 1}</span></GlassButton>
               </div>
               {mine && <p role="alert" id={`${id}-r${r.key}`} className="kb-write-update-refusal">{refusal}</p>}
             </div>

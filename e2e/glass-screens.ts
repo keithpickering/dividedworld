@@ -69,6 +69,11 @@ export const PAGES: readonly Screen[] = [
   { name: 'Settings', board: '11-settings', path: '/settings' },
   /* The admin queue, with the form for how players reach the admins (AdminContact), read as an admin. */
   { name: 'The admin queue', board: '2026-11-05-backfill/37-admin-queue', path: '/admin/queue', asAdmin: true },
+  /* Updates as an admin with Write an update open, and its preview of what everyone will see. */
+  {
+    name: 'Updates, with Write an update open', board: '2026-11-05-backfill/38-write-update', path: '/updates', asAdmin: true,
+    then: async (page) => { await page.getByRole('button', { name: 'Write an update' }).click(); await expect(page.getByRole('form', { name: 'Write an update' })).toBeVisible(); },
+  },
   { name: 'Settings › Account, with the invites', board: '2026-11-05-backfill/33-settings-account', path: '/settings?section=account' },
   { name: 'Sign in', board: '2026-11-05-backfill/14-sign-in', path: '/sign-in', signedOut: true },
   { name: 'Register', board: '2026-11-05-backfill/15-register', path: '/register?invite=ab12cd34', signedOut: true },
