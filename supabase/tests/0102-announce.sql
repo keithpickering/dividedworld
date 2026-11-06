@@ -266,11 +266,15 @@ end $$;
 do $$
 declare
   th uuid := (select turns_thread from seasons where ends_at is null);
-  reveal_thread uuid;
+  reveal_thread uuid; old_season bigint; hdr uuid;
 begin
   if not exists (select 1 from thread_list where id = th) then raise exception 'the Promos thread is in thread_list'; end if;
-  reveal_thread := tests.thread('An Old Reveal');
-  perform net_unlisted_thread(reveal_thread);
-  if exists (select 1 from thread_list where id = reveal_thread) then raise exception 'an unlisted thread is in thread_list'; end if;
+  -- An earlier season's end wrote its reveal thread and pointed the season at its header; seasons_net_threads (0099) unlists it.
+  insert into seasons (number, starts_at, ends_at) values (80, '1985-05-01', '1985-06-01') returning id into old_season;
+  reveal_thread := tests.thread('Season 80: The Reveal');
+  hdr := tests.act(null, 'reveal', reveal_thread, jsonb_build_object('season', 80, 'from', '1985-05-01'::timestamptz, 'to', '1985-06-01'::timestamptz, 'body', 'Every mask.', 'characters', 0), null, '1985-06-01'::timestamptz);
+  if not exists (select 1 from thread_list where id = reveal_thread) then raise exception 'the reveal thread is listed until its season points at it'; end if;
+  update seasons set reveal_act = hdr where id = old_season;
+  if exists (select 1 from thread_list where id = reveal_thread) then raise exception 'an old season''s reveal thread is in thread_list'; end if;
   if exists (select 1 from unlisted_threads where thread = th) then raise exception 'the Promos thread is unlisted'; end if;
 end $$;
