@@ -118,3 +118,21 @@ test.describe('the strips beyond a post add no height', () => {
     expect(Math.abs(rows.pinned - rows.other)).toBeLessThanOrEqual(1.5);
   });
 });
+
+test('a ghost mark has no glow', async ({ page }) => {
+  await page.goto('/?fixture=boards&story=boards-01-marks--armed');
+  const ghost = page.locator('#post-41 .kb-ghost-mark');
+  await expect(ghost).toBeVisible();
+  expect(await ghost.evaluate((el) => getComputedStyle(el).boxShadow)).toBe('none');
+});
+
+test('forced colors: a hovered mark takes a system color border', async ({ page }) => {
+  await page.emulateMedia({ forcedColors: 'active' });
+  await page.goto('/?fixture=boards&moment=01-main');
+  const first = page.locator('.kb-mark').first();
+  await expect(first).toBeVisible();
+  await first.hover();
+  const hover = await first.evaluate((el) => getComputedStyle(el).borderTopColor);
+  const probe = await page.evaluate(() => { const d = document.createElement('div'); d.style.color = 'Highlight'; document.body.append(d); const c = getComputedStyle(d).color; d.remove(); return c; });
+  expect(hover).toBe(probe);
+});
