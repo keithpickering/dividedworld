@@ -1,4 +1,7 @@
 /*
+ * This file must load after glass/meta-tile.css (Marks.tsx imports them in that order): a mark's rules here tie the tile's shared ones
+ * in specificity and win by coming later.
+ *
  * The marks over a post (Marks.tsx; marks-and-the-lens design, section 1): small glass tiles on the post's date row, at
  * its right, ending just left of its number, hanging a little over the body's first line. They are positioned and never
  * in the page's flow: the anchor is an empty flexible cell of the date row, and the strip is absolute inside it, so a post
@@ -46,6 +49,7 @@
   position: relative;
 }
 
+/* The glow marks a play that has landed; a ghost is not one, so it has none and its dashed tint reads as not landed. */
 .kb-mark.kb-meta-tile:not(:focus-visible, .kb-ghost-mark) {
   box-shadow: 0 0 8px color-mix(in srgb, var(--kb-meta-line) 55%, transparent);
 }
@@ -120,11 +124,11 @@
 .kb-mark.kb-ghost-mark {
   --kb-mark-line: var(--kb-mark-color, var(--kb-glass-sweet));
   border-style: dashed;
-  box-shadow: none;
   color: var(--kb-glass-text-hi);
   background: color-mix(in srgb, var(--kb-mark-line) 28%, var(--kb-glass-field));
 }
 
+/* The shared hover would otherwise beat the expanded fill and make a hovered open mark look less open. */
 .kb-mark.kb-meta-tile[aria-expanded="true"]:hover:not([aria-disabled="true"]) {
   background: color-mix(in srgb, var(--kb-meta-line) 34%, var(--kb-glass-field));
 }
@@ -171,6 +175,7 @@
     box-shadow: none;
   }
 
+  /* Chromium already forces this border to a system color, so no test can see this rule; it is here for engines that do not. */
   .kb-mark.kb-meta-tile:hover:not([aria-disabled="true"]) {
     border-color: Highlight;
   }
