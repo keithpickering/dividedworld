@@ -88,7 +88,7 @@ export const wordsRead: Readonly<Record<string, readonly string[]>> = Object.fre
 });
 
 export const instanceUi: InstanceUi = Object.freeze({
-  themes: Object.freeze([{ key: 'house', name: 'House (black and white)', href: theme, modes: 'both' as const }]),
+  themes: Object.freeze([{ key: 'house', name: 'House', href: theme, modes: 'both' as const }]),
   // Placeholders until the owner names them.
   quadrantLabels: Object.freeze({
     excitedNegative: 'Heat',
