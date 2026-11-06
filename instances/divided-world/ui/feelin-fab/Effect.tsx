@@ -22,7 +22,7 @@ import { POST_INK } from '../../../../engine/ui/shine/band.ts';
 import { useMotionReduced } from '../../../../engine/ui/appearance.ts';
 import type { EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { seeded } from '../seeded.ts';
-import { useInView } from './inView.ts';
+import { useInView } from '../../../../engine/ui/shine/inView.ts';
 import './fab.css';
 
 /** The rainbow's stops, red to violet, for each board: pastels under black text, deep colors under white. */
