@@ -66,8 +66,7 @@ describe('the full public record', () => {
   test('"All" pages the merge exactly: every row once, in order, across the pages', async () => {
     const fake = buildWorld();
     const w = world(fake);
-    const sys = fake.seed.thread('the-system', null, 'Reveal', '');
-    for (const d of [0.5, 25, 40]) fake.seed.post(sys.thread, null, '', { kind: 'reveal', at: T0 + d * DAY, payload: { season: 1, character: w.spritey, name: 'Spritey', place: 1, standing: 0, shown: [] } });
+    [0.5, 25, 40].forEach((d, i) => fake.seed.seasonResults(i + 1, [{ character: w.spritey, place: 1, standing: 0 }], { at: T0 + d * DAY }));
     const seen: string[] = [];
     for (const page of [1, 2, 3]) {
       const { unmount } = open(fake, w.spritey, `?page=${page}`);
@@ -78,10 +77,10 @@ describe('the full public record', () => {
     expect(seen).toHaveLength(51);
     /* Each row has its own time or words, so none appears twice. */
     expect(new Set(seen).size).toBe(51);
-    expect(seen.filter((t) => /reveal: finished/u.test(t))).toHaveLength(3);
+    expect(seen.filter((t) => /Season \d: finished/u.test(t))).toHaveLength(3);
     /* newest first: the day-40 and day-25 season rows come before the Turn, day 3's. */
     const turn = seen.findIndex((t) => /Announced a Turn/u.test(t));
-    expect(seen.findIndex((t) => /Season 1 reveal/u.test(t))).toBeLessThan(turn);
+    expect(seen.findIndex((t) => /Season 3: finished/u.test(t))).toBeLessThan(turn);
   });
 
   test('?page=3 shows the rest, and the pager links by keyboard', async () => {
@@ -120,21 +119,30 @@ describe('the full public record', () => {
     expect(screen.getByRole('table')).toHaveTextContent('Revealed: Face');
   });
 
-  test('the seasons filter lists the character\'s past reveal posts and links to them, and a Turn links to its tally', async () => {
+  test('the seasons filter lists the character\'s past seasons and links each to its row on Rankings', async () => {
     const fake = buildWorld();
     const w = world(fake);
-    const sys = fake.seed.thread('the-system', null, 'Reveal', '');
-    fake.seed.post(sys.thread, null, '', { kind: 'reveal', payload: { season: 1, character: w.spritey, name: 'Spritey', place: 4, standing: 0, shown: [] } });
+    fake.seed.seasonResults(1, [{ character: w.spritey, place: 4, standing: 0 }]);
     open(fake, w.spritey, '?kind=seasons');
-    const link = await screen.findByRole('link', { name: 'Season 1 reveal: finished #4' });
-    expect(link).toHaveAttribute('href', `/t/${sys.thread}?page=1#post-2`);
+    const link = await screen.findByRole('link', { name: 'Season 1: finished #4' });
+    expect(link).toHaveAttribute('href', `/season?tab=rankings&season=1&character=${w.spritey}`);
+  });
+
+  test('a Turn that names its class is one Act in both the class statements and the Turns, and the class view draws both rows', async () => {
+    const fake = buildWorld();
+    const w = world(fake);
+    fake.seed.announce(w.spritey, 'turn', { was: 'face', class: 'heel', at: T0 + 50 * DAY });
+    open(fake, w.spritey, '?kind=class');
+    await waitFor(() => expect(screen.getByRole('table')).toHaveTextContent('Revealed: Heel'));
+    expect(screen.getByRole('table')).toHaveTextContent('Announced a Turn from Face');
+    expect(dataRows()).toHaveLength(4);
   });
 
   test('the seasons view says it lists the latest fifty', async () => {
     const fake = buildWorld();
     const w = world(fake);
     open(fake, w.spritey, '?kind=seasons');
-    expect(await screen.findByText('The latest 50 season reveal posts.')).toBeInTheDocument();
+    expect(await screen.findByText('The latest 50 seasons.')).toBeInTheDocument();
   });
 
   test('a page past the end, or a waiting character, is plain', async () => {

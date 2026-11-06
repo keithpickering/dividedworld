@@ -25,15 +25,14 @@ import { usePlayer } from '../player.tsx';
 import { RankingsScreen } from '../rankings/Rankings.tsx';
 import { Link, useLocation, useNavigate } from '../router.tsx';
 import { pageOf, threadHref } from '../thread/pages.ts';
+import { finalClass } from '../reveal/statements.ts';
+import { seasonAt, type SeasonTab } from './address.ts';
 import './season.css';
 import { CalmRegion } from '../glass/Calm.tsx';
 
-export type SeasonTab = 'rankings' | 'news';
+export { seasonAt, type SeasonTab };
 const TABS: readonly { readonly key: SeasonTab; readonly label: string }[] = [{ key: 'rankings', label: 'Rankings' }, { key: 'news', label: 'News' }];
 
-/** The address of the season page's tab (and of a page of the rankings, which is its own query on the Rankings tab). */
-export const seasonAt = (tab: SeasonTab, page?: number): string => `/season?tab=${tab}${page !== undefined && page > 1 ? `&page=${page}` : ''}`;
-const rankingsAt = (page: number) => seasonAt('rankings', page);
 
 const PLACES = ['First', 'Second', 'Third'];
 const BBCODE = /\[\/?[a-z*]+(?:=[^\]]*)?\]/giu;
@@ -64,9 +63,8 @@ function ClassChip({ cls, name }: { readonly cls: string; readonly name: string 
 
 /** What a result's player made public of its class that season: the last class it revealed, and whether a Turn was announced after. */
 function stated(r: SeasonResult): { readonly cls: string; readonly turned: boolean } | null {
-  let at = -1;
-  r.shown.forEach((x, i) => { if (x.kind === 'reveal' && x.class !== null) at = i; });
-  return at < 0 ? null : { cls: r.shown[at]!.class!, turned: r.shown.slice(at + 1).some((x) => x.kind === 'turn') };
+  const f = finalClass(r.shown);
+  return f === null ? null : { cls: f.cls, turned: f.turnedAt !== null };
 }
 
 function Results({ item, own, className }: { readonly item: SeasonNewsItem; readonly own: ReadonlySet<Id>; readonly className: (key: string) => string }) {
@@ -93,9 +91,7 @@ function Results({ item, own, className }: { readonly item: SeasonNewsItem; read
           })}
         </ol>
       )}
-      {item.thread !== null && (
-        <p><Link className="kb-season-link" to={`/t/${encodeURIComponent(item.thread)}`}>{item.count !== null ? `All ${item.count} characters and their standings` : 'All the standings'}</Link></p>
-      )}
+      <p><Link className="kb-season-link" to={seasonAt('rankings', 1, item.season)}>{item.count !== null ? `All ${item.count} characters and their standings` : 'All the standings'}</Link></p>
     </>
   );
 }
@@ -236,6 +232,11 @@ export function SeasonScreen() {
   const ids = useId();
   const [season, setSeason] = useState<Season | null>(null);
   const tab: SeasonTab = query.get('tab') === 'news' ? 'news' : 'rankings';
+  /* A finished season's final table, and the character whose row opens highlighted: from the address, as the Record's Seasons rows and News link them. */
+  const asked = Number.parseInt(query.get('season') ?? '', 10);
+  const shownSeason = Number.isInteger(asked) && asked >= 1 ? asked : undefined;
+  const shownCharacter = shownSeason === undefined ? undefined : query.get('character') ?? undefined;
+  const rankingsAt = (page: number) => seasonAt('rankings', page, shownSeason);
 
   useEffect(() => {
     if (!signedIn) return undefined;
@@ -281,7 +282,7 @@ export function SeasonScreen() {
         )}
       />
       <div role="tabpanel" id={`${ids}-panel`} aria-labelledby={`${ids}-tab-${tab}`} className="kb-season-panel">
-        {tab === 'rankings' ? <RankingsScreen embedded href={rankingsAt} /> : signedIn === null ? <div aria-busy="true" /> : <NewsPanel season={season} />}
+        {tab === 'rankings' ? <RankingsScreen embedded season={shownSeason} character={shownCharacter} href={rankingsAt} /> : signedIn === null ? <div aria-busy="true" /> : <NewsPanel season={season} />}
       </div>
     </div>
   );

@@ -31,18 +31,17 @@ function world() {
   const announcements = seed.thread('the-system', null, 'Announcements', 'Welcome.', { at: at(1) });
   const said = seed.thread('general', spritey, 'here it is', 'Fine.', { at: at(3) });
   seed.reveal(spritey, said.thread, { at: at(3, 13), class: 'face' });
-  /* Season 1's reveal: a header and one Act per character in the order of final standing, as reveal_season writes them. */
-  const reveal = seed.thread('the-system', null, 'Season 1 results', '', { at: at(28), kind: 'reveal', payload: { season: 1, from: '', to: '', body: 'Done.', characters: 4 } });
-  const shown = [{ kind: 'reveal', act: said.act, at: new Date(at(3, 13)).toISOString(), class: 'face' }];
-  seed.post(reveal.thread, null, '', { at: at(28), kind: 'reveal', payload: { season: 1, character: spritey, name: 'Spritey', place: 1, standing: 985, shown } });
-  seed.post(reveal.thread, null, '', { at: at(28), kind: 'reveal', payload: { season: 1, character: gloomba, name: 'Gloomba', place: 2, standing: 840, shown: [] } });
-  seed.post(reveal.thread, null, '', { at: at(28), kind: 'reveal', payload: { season: 1, character: mrs, name: 'Mrs. Hooligan', place: 3, standing: 795, shown: [] } });
-  seed.post(reveal.thread, null, '', { at: at(28), kind: 'reveal', payload: { season: 1, character: pipe, name: 'Pipewrench', place: 4, standing: 100, shown: [] } });
-  /* Season 1's Turns thread: a debut, then a Turn announced with its old class. */
-  const turns = seed.thread('the-system', null, 'Season 1: who turned', 'All of them.', { at: at(2) });
-  seed.post(turns.thread, null, '', { at: at(26, 8), kind: 'tally', payload: { season: 1, part: 1, of: 1, debuts: [{ character: thwomp, name: 'Thwompson' }], turns: [] } });
-  seed.announceTurn(pipe, turns.thread, { at: at(27, 8), was: 'heel' });
-  seed.season({ number: 1, endsAt: new Date(at(28)).toISOString(), turnsThread: turns.thread, revealAct: reveal.act });
+  seed.season({ number: 1, startsAt: new Date(at(1)).toISOString(), endsAt: new Date(at(28)).toISOString() });
+  /* Season 1's results are rows, not Acts: the final table as it stood. */
+  seed.seasonResults(1, [
+    { character: spritey, place: 1, standing: 985, shown: [{ kind: 'reveal', act: said.act, at: new Date(at(3, 13)).toISOString(), class: 'face', was: null }] },
+    { character: gloomba, place: 2, standing: 840 },
+    { character: mrs, place: 3, standing: 795 },
+    { character: pipe, place: 4, standing: 100 },
+  ], { at: at(28) });
+  /* Season 1's Promos: a debut, then a Turn announced with its old class. */
+  seed.announce(thwomp, 'debut', { at: at(26, 8) });
+  const turned = seed.announce(pipe, 'turn', { at: at(27, 8), was: 'heel' });
   seed.season({ number: 2, startsAt: new Date(at(28)).toISOString() });
   /* The Boss changed at the roll-over, and each said a line in the announcements thread. */
   seed.staffPost(bossA, announcements.thread, 'My [b]ledger[/b] is closed. Goodbye.', { at: at(28) });
@@ -50,7 +49,7 @@ function world() {
   seed.handover({ outgoing: 'lady-ledger', boss: 'mister-spreadsheet', at: at(28) });
   seed.settle({ at: at(29, 8), debut: false, standings: { [spritey]: 50, [pipe]: 30 } });
   fake.signInAs(me);
-  return { fake, me, other, pipe, mrs, spritey, gloomba, thwomp, reveal, turns, announcements };
+  return { fake, me, other, pipe, mrs, spritey, gloomba, thwomp, turned, announcements };
 }
 
 function Probe() {
@@ -158,7 +157,7 @@ describe('the News tab', () => {
     expect(podium[2]).toHaveTextContent('Mrs. Hooligan');
     expect(within(item).queryByText('Pipewrench')).toBeNull();
     expect(within(podium[0]!).getByRole('link', { name: 'Spritey' })).toHaveAttribute('href', `/c/${w.spritey}`);
-    expect(within(item).getByRole('link', { name: 'All 4 characters and their standings' })).toHaveAttribute('href', `/t/${w.reveal.thread}`);
+    expect(within(item).getByRole('link', { name: 'All 4 characters and their standings' })).toHaveAttribute('href', '/season?tab=rankings&season=1');
   });
 
   test('the player\'s own characters are marked yours, by the screen, in the results and in the Turns', async () => {
@@ -235,15 +234,16 @@ describe('the News tab', () => {
     expect(await screen.findByText(/Nothing yet\./u)).toBeInTheDocument();
   });
 
-  test('the reveal and Turns threads are not in The System\'s board\'s list and open by their link', async () => {
+  test('an announcements landing is one item that lists its names, as a tally did', async () => {
     const w = world();
-    const system = (await w.fake.boards()).find((b) => b.isSystem)!;
-    const listed = (await w.fake.threads(system.id, { offset: 0, limit: 50 })).threads.map((t) => t.id);
-    expect(listed).toContain(w.announcements.thread);
-    expect(listed).not.toContain(w.reveal.thread);
-    expect(listed).not.toContain(w.turns.thread);
-    expect((await w.fake.thread(w.reveal.thread))?.title).toBe('Season 1 results');
-    expect((await w.fake.thread(w.turns.thread))?.title).toBe('Season 1: who turned');
+    w.fake.seed.announce(w.gloomba, 'turn', { at: at(27, 8), was: 'face', class: 'heel' });
+    show(w.fake);
+    const item = await waitFor(() => itemOf('2 characters turned'));
+    const names = within(item).getAllByRole('listitem');
+    expect(names.map((n) => within(n).getByRole('link').textContent)).toEqual(['Pipewrench', 'Gloomba']);
+    expect(names[0]).toHaveTextContent('Pipewrench was a Heel');
+    expect(names[1]).toHaveTextContent('Gloomba was a Face, now a Heel');
+    expect(within(names[0]!).getByText('Yours')).toBeInTheDocument();
   });
 
   test('each item is one seasonNews alert, the same for every player', async () => {

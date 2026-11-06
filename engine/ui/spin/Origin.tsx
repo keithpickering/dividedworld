@@ -18,7 +18,7 @@ import { createPlays, effectCards, holdsEffects, playOf, readEffects, usePlays, 
 import { useKayfa } from '../context.tsx';
 import type { Act, Character, Id, ThreadSummary } from '../data/api.ts';
 import { newer } from '../thread/feed.ts';
-import { LastEdited, SystemPost, UnmaskLine, quoteLink, text, useHistory, when } from '../thread/lines.tsx';
+import { AnnounceLine, LastEdited, SystemPost, UnmaskLine, quoteLink, text, useHistory, when } from '../thread/lines.tsx';
 import { useThread } from '../thread/context.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { useLocated } from '../thread/locate.tsx';
@@ -183,6 +183,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
             bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteLink={quoteLink} />} />
         );
       case 'unmask': return <UnmaskLine act={act} name={name} />;
+      case 'announce': return <AnnounceLine act={act} name={name} />;
       case 'tally':
       case 'reveal': return <SystemPost act={act} />;
       default:

@@ -4,6 +4,7 @@
  * a Turn names its old class only if it was announced with it ("A response never proves a private fact").
  */
 import type { Act, ClassReveal, Id, SeasonRecordRow, TurnAnnounced } from '../data/api.ts';
+import { seasonAt } from '../season/address.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 
 export type RecordKind = 'all' | 'post' | 'spin' | 'card' | 'class' | 'seasons';
@@ -12,7 +13,7 @@ export const RECORD_LABELS: Readonly<Record<RecordKind, string>> = { all: 'All',
 export const RECORD_PAGE = 20;
 /** How many rows the profile shows before it links to the full record. */
 export const PROFILE_ROWS = 5;
-/** How many season reveal posts the Seasons view reads (the newest). */
+/** How many past seasons the Seasons view reads (the newest). */
 export const SEASONS_SHOWN = 50;
 
 export const recordKind = (v: string | null): RecordKind => (RECORD_KINDS as readonly string[]).includes(v ?? '') ? (v as RecordKind) : 'all';
@@ -77,9 +78,9 @@ export function turnLinksFrom(targets: readonly Act[], perPage: number): Readonl
   return out;
 }
 
-/** A past season of this character, from its row in the season's results. */
-export function seasonRow(s: SeasonRecordRow, _w: Words): RecordRow {
-  return { key: `season-${s.season}`, at: s.at, text: `Season ${s.season}: finished #${s.place}`, href: null };
+/** A past season of this character, from its row in the season's results, linked to that row on Rankings. */
+export function seasonRow(s: SeasonRecordRow, character: Id, _w: Words): RecordRow {
+  return { key: `season-${s.season}`, at: s.at, text: `Season ${s.season}: finished #${s.place}`, href: seasonAt('rankings', 1, s.season, character) };
 }
 
 export function turnRow(t: TurnAnnounced, w: Words, links: ReadonlyMap<Id, string> = new Map()): RecordRow {

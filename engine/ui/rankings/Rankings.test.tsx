@@ -12,6 +12,13 @@ import type { Fake } from '../data/fake.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
 import { useLocation } from '../router.tsx';
 import { RankingsScreen } from './Rankings.tsx';
+import userEvent from '@testing-library/user-event';
+import { addressOf } from '../router.tsx';
+
+function Where() {
+  const l = useLocation();
+  return <output data-testid="where">{addressOf(l)}</output>;
+}
 
 const at = (day: number, hour = 12) => Date.UTC(2026, 9, day, hour);
 
@@ -57,6 +64,95 @@ const goTo = (path: string) => act(() => {
 const bodyRows = () => screen.getAllByRole('row').slice(1);
 const rowOf = (name: string) => bodyRows().find((r) => within(r).queryByRole('rowheader', { name: new RegExp(`^${name}`, 'u') }))!;
 const names = () => bodyRows().map((r) => within(r).getByRole('link').textContent);
+
+/** Season 1 ended Oct 30 with `count` characters ranked and results landed; season 2 is open. Signed in as the owner of the character named `Name 060`. */
+function finished(count = 120) {
+  const fake = buildWorld();
+  const { seed } = fake;
+  const me = seed.account('me');
+  const other = seed.account('other');
+  const ids: string[] = [];
+  for (let i = 0; i < count; i++) ids.push(seed.character(i === 60 ? me : other, `Name ${String(i).padStart(3, '0')}`, 'face', { at: at(1) }));
+  const shown = [
+    { kind: 'reveal' as const, act: 'a1', at: new Date(at(3)).toISOString(), class: 'heel', was: null },
+    { kind: 'turn' as const, act: 'a2', at: new Date(at(9)).toISOString(), class: null, was: null },
+  ];
+  seed.season({ number: 1, endsAt: new Date(at(30)).toISOString() });
+  seed.season({ number: 2, startsAt: new Date(at(30)).toISOString() });
+  seed.seasonResults(1, ids.map((character, i) => ({ character, place: i + 1, standing: 1000 - i, shown: i === 0 ? shown : [] })), { at: at(30, 9) });
+  fake.signInAs(me);
+  return { fake, ids, me };
+}
+
+describe('a finished season', () => {
+  test('draws its first page of fifty, headed with its number, final standings and end date', async () => {
+    const w = finished();
+    renderIn(w.fake, <RankingsScreen embedded season={1} />, { path: '/season?tab=rankings&season=1' });
+    await waitFor(() => expect(bodyRows()).toHaveLength(50));
+    expect(screen.getByText('Season 1 · Final standings · Ended Oct 30')).toBeInTheDocument();
+    expect(names()[0]).toBe('Name 000');
+    expect(names()[49]).toBe('Name 049');
+    expect(screen.getByText(/Page 1 of 3/u)).toBeInTheDocument();
+  });
+
+  test('shows the class its player made public, with the Turn after it, and no class for anyone else', async () => {
+    const w = finished();
+    renderIn(w.fake, <RankingsScreen embedded season={1} />, { path: '/season?tab=rankings&season=1' });
+    await waitFor(() => expect(bodyRows()).toHaveLength(50));
+    const first = rowOf('Name 000');
+    expect(first).toHaveTextContent('Heel');
+    expect(within(first).getByText('Revealed Oct 3')).toBeInTheDocument();
+    expect(within(first).getByText('Has Turned since Oct 9')).toBeInTheDocument();
+    expect(rowOf('Name 001')).toHaveTextContent('Not revealed');
+  });
+
+  test('the select is labeled Season, lists this season as now and then the finished ones, and navigates with replace', async () => {
+    const w = finished();
+    const user = userEvent.setup();
+    renderIn(w.fake, <><RankingsScreen embedded season={1} /><Where /></>, { path: '/season?tab=rankings&season=1' });
+    const select = await screen.findByRole('combobox', { name: 'Season' });
+    expect(select.tagName).toBe('SELECT');
+    expect([...select.querySelectorAll('option')].map((o) => o.textContent)).toEqual(['Season 2 (now)', 'Season 1']);
+    expect(select).toHaveValue('1');
+    const before = window.history.length;
+    await user.selectOptions(select, 'Season 2 (now)');
+    expect(screen.getByTestId('where')).toHaveTextContent('/season?tab=rankings');
+    expect(screen.getByTestId('where')).not.toHaveTextContent('season=');
+    expect(window.history.length).toBe(before);
+  });
+
+  test('a character in the link opens the page holding its row, highlighted, and marks the player\'s own', async () => {
+    const w = finished();
+    renderIn(w.fake, <RankingsScreen embedded season={1} character={w.ids[60]} />, { path: `/season?tab=rankings&season=1&character=${w.ids[60]}` });
+    await waitFor(() => expect(screen.getByText(/Page 2 of 3/u)).toBeInTheDocument());
+    const row = rowOf('Name 060');
+    expect(row).toHaveAttribute('data-kb-highlight');
+    expect(row).toHaveAttribute('aria-current', 'true');
+    expect(within(row).getByText('Yours')).toBeInTheDocument();
+    expect(bodyRows().filter((r) => r.hasAttribute('data-kb-highlight'))).toHaveLength(1);
+    expect(names()[0]).toBe('Name 050');
+  });
+
+  test('the pager keeps to the season', async () => {
+    const w = finished();
+    renderIn(w.fake, <RankingsScreen embedded season={1} href={(p) => `/season?tab=rankings&season=1&page=${p}`} />, { path: '/season?tab=rankings&season=1' });
+    expect(await screen.findByRole('link', { name: 'Next page' })).toHaveAttribute('href', '/season?tab=rankings&season=1&page=2');
+  });
+
+  test('the current season, named or not, is today\'s standings', async () => {
+    const w = finished(3);
+    renderIn(w.fake, <RankingsScreen embedded season={2} />, { path: '/season?tab=rankings&season=2' });
+    await screen.findByRole('table');
+    expect(screen.queryByText(/Final standings/u)).toBeNull();
+    expect(screen.getByRole('combobox', { name: 'Season' })).toHaveValue('');
+  });
+
+  test('a season with no final standings says so', async () => {
+    const w = finished(3);
+    renderIn(w.fake, <RankingsScreen embedded season={7} />, { path: '/season?tab=rankings&season=7' });
+    expect(await screen.findByText('Season 7 has no final standings.')).toBeInTheDocument();
+  });
+});
 
 describe('Rankings', () => {
   test('a character with no reveal shows no class', async () => {

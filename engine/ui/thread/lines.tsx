@@ -73,6 +73,27 @@ export function UnmaskLine({ act, name }: { readonly act: Act; readonly name: st
   return <p className="kb-act-line">{name} revealed: {cls}{message && <> — “{message}”</>}</p>;
 }
 
+/**
+ * An announcement (the season-end design, section 4): the character's own Act, saying what its player chose to make public of a debut or a Turn
+ * and nothing more. The class names are the instance's own. A class the Act does not name stays unnamed here, as it is everywhere.
+ */
+export function announceWords(what: string, was: string, to: string, className: (key: string) => string): string {
+  if (what === 'debut') {
+    const named = to === '' ? '' : className(to);
+    return named === '' ? 'debuts.' : `debuts as ${/^[aeiou]/iu.test(named) ? 'an' : 'a'} ${named}.`;
+  }
+  if (was !== '' && to !== '') return `has Turned from ${className(was)} to ${className(to)}.`;
+  if (was !== '') return `has Turned, leaving ${className(was)}.`;
+  if (to !== '') return `has Turned to ${className(to)}.`;
+  return 'has Turned.';
+}
+
+export function AnnounceLine({ act, name }: { readonly act: Act; readonly name: string }) {
+  const { instance } = useKayfa();
+  const className = (key: string) => instance.classes.find((c) => c.key === key)?.name ?? key;
+  return <p className="kb-act-line">{name} {announceWords(text(act.payload.what), text(act.payload.was), text(act.payload.class), className)}</p>;
+}
+
 /** The plain record that a move is over, in the engine's words and never the Boss's (the log never lies): how it ended, by whom. */
 export function MoveEndLine({ act }: { readonly act: Act }) {
   const why = text(act.payload.why);
