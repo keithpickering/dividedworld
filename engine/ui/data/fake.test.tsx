@@ -441,8 +441,10 @@ describe('what the public reads never prove', () => {
     ]);
     const said = fake.seed.thread('the-system', null, 'Turns', '').thread;
     const tally = fake.seed.announceTurn(anaFace, said, { was: 'face', since: '2026-09-01T00:00:00.000Z' });
+    const announced = fake.seed.announceTurn(anaFace, said, { was: 'heel' });
     expect(await fake.turnsAnnounced([anaFace])).toEqual([
       { act: tally, character: anaFace, at: (await fake.act(tally))!.createdAt, was: 'face' },
+      { act: announced, character: anaFace, at: (await fake.act(announced))!.createdAt, was: 'heel' },
     ]);
   });
   test('an unmask is refused on The System\'s board, and past 200 characters', async () => {
@@ -1258,16 +1260,136 @@ describe('one board', () => {
   });
 });
 
-describe('a character\'s season reveal posts and the season\'s size', () => {
-  test('characterReveals returns the reveal Acts that name the character, newest first, bounded', async () => {
+describe('a finished season\'s results and its announcements', () => {
+  const at = (day: number, hour = 0) => Date.UTC(2026, 9, day, hour);
+  /** Season 1 ended and its results landed; Ana Face 2nd, Bo Face 1st, Ana Heel 3rd (tied standings, so place 3 and 3 by name). */
+  function ended() {
+    const w = world();
+    w.fake.seed.season({ number: 1, startsAt: new Date(at(1)).toISOString(), endsAt: new Date(at(28)).toISOString() });
+    w.fake.seed.season({ number: 2, startsAt: new Date(at(28)).toISOString() });
+    w.fake.seed.seasonResults(1, [
+      { character: w.anaFace, place: 2, standing: 400, shown: [{ kind: 'reveal', act: w.opener, at: new Date(at(3)).toISOString(), class: 'face', was: null }] },
+      { character: w.boFace, place: 1, standing: 900 },
+      { character: w.anaHeel, name: 'Ana Heel (then)', place: 3, standing: 100 },
+    ], { at: at(28, 12) });
+    return w;
+  }
+
+  test('finishedSeasons lists the seasons whose results landed, newest first, with the character count', async () => {
+    const { fake } = ended();
+    expect(await fake.finishedSeasons()).toEqual([
+      { number: 1, startsAt: new Date(at(1)).toISOString(), endsAt: new Date(at(28)).toISOString(), resultsAt: new Date(at(28, 12)).toISOString(), characters: 3 },
+    ]);
+    fake.seed.seasonResults(2, [{ character: fake.seed.character(fake.seed.account('cy'), 'Cy', 'face'), place: 1, standing: 5 }], { at: at(29) });
+    expect((await fake.finishedSeasons()).map((x) => x.number)).toEqual([2, 1]);
+    expect((await createFake({ instance }).finishedSeasons())).toEqual([]);
+  });
+
+  test('resultsPage is the final table by place, then name, 50 to a page, with the name as it was then; a page past the end is empty', async () => {
+    const { fake, boFace, anaFace, anaHeel, opener } = ended();
+    expect(await fake.resultsPage(1, 1)).toEqual([
+      { character: boFace, name: 'Bo Face', place: 1, standing: 900, shown: [] },
+      { character: anaFace, name: 'Ana Face', place: 2, standing: 400, shown: [{ kind: 'reveal', act: opener, at: new Date(at(3)).toISOString(), class: 'face', was: null }] },
+      { character: anaHeel, name: 'Ana Heel (then)', place: 3, standing: 100, shown: [] },
+    ]);
+    expect(await fake.resultsPage(1, 0)).toHaveLength(3);
+    expect(await fake.resultsPage(1, 2)).toEqual([]);
+    expect(await fake.resultsPage(7, 1)).toEqual([]);
+    const many = world();
+    many.fake.seed.season({ number: 1, endsAt: new Date(at(28)).toISOString() });
+    const who = many.fake.seed.account('crowd');
+    many.fake.seed.seasonResults(1, Array.from({ length: 120 }, (_, i) => ({ character: many.fake.seed.character(who, `C${String(i).padStart(3, '0')}`, 'face'), place: i + 1, standing: 1000 - i })));
+    expect((await many.fake.resultsPage(1, 1))).toHaveLength(50);
+    expect((await many.fake.resultsPage(1, 3)).map((r) => r.place)).toEqual(Array.from({ length: 20 }, (_, i) => 101 + i));
+  });
+
+  test('resultPlace is the character\'s 0-based index in that order, so its page is floor(index / 50) + 1; null where the season has no row for it', async () => {
+    const { fake, boFace, anaFace, anaHeel } = ended();
+    expect([await fake.resultPlace(1, boFace), await fake.resultPlace(1, anaFace), await fake.resultPlace(1, anaHeel)]).toEqual([0, 1, 2]);
+    expect(await fake.resultPlace(1, 'nobody')).toBeNull();
+    expect(await fake.resultPlace(2, boFace)).toBeNull();
+    const many = world();
+    many.fake.seed.season({ number: 1, endsAt: new Date(at(28)).toISOString() });
+    const who = many.fake.seed.account('crowd');
+    const ids = Array.from({ length: 60 }, (_, i) => many.fake.seed.character(who, `C${String(i).padStart(2, '0')}`, 'face'));
+    many.fake.seed.seasonResults(1, ids.map((character, i) => ({ character, place: i + 1, standing: 100 - i })));
+    const idx = (await many.fake.resultPlace(1, ids[55]!))!;
+    expect(idx).toBe(55);
+    expect((await many.fake.resultsPage(1, Math.floor(idx / 50) + 1)).some((r) => r.character === ids[55])).toBe(true);
+  });
+
+  test('a character\'s profile and record carry its seasons from the results, newest first, as { season, place, standing, at }', async () => {
+    const { fake, anaFace, boFace } = ended();
+    fake.seed.seasonResults(2, [{ character: anaFace, place: 5, standing: 20 }], { at: at(29) });
+    const seasons = [
+      { season: 2, place: 5, standing: 20, at: new Date(at(29)).toISOString() },
+      { season: 1, place: 2, standing: 400, at: new Date(at(28, 12)).toISOString() },
+    ];
+    expect((await fake.profilePage(anaFace))?.seasons).toEqual(seasons);
+    expect((await fake.recordPage(anaFace, 'seasons', 1))?.seasons).toEqual(seasons);
+    expect((await fake.recordPage(anaFace, 'post', 1))?.seasons).toEqual([]);
+    expect((await fake.profilePage(boFace))?.seasons).toEqual([{ season: 1, place: 1, standing: 900, at: new Date(at(28, 12)).toISOString() }]);
+  });
+
+  test('season news has a results item with no Act, thread or sequence number, from the rows, with the top three', async () => {
+    const { fake, boFace, anaFace, anaHeel } = ended();
+    const [item] = await fake.seasonNews();
+    expect(item).toMatchObject({ kind: 'results', act: null, thread: null, seq: null, season: 1, count: 3, at: new Date(at(28, 12)).toISOString() });
+    expect(item!.top.map((t) => [t.character, t.place])).toEqual([[boFace, 1], [anaFace, 2], [anaHeel, 3]]);
+  });
+
+  test('seed.announce writes the character\'s own announce Act in the season\'s Promos thread, which a board lists', async () => {
     const { fake, anaFace, boFace } = world();
-    const sys = fake.seed.thread('the-system', null, 'Reveal', '', { kind: 'reveal', payload: { season: 1, from: 'a', to: 'b', body: 'Over.', characters: 2 } });
-    const one = fake.seed.post(sys.thread, null, '', { kind: 'reveal', at: Date.UTC(2026, 9, 1), payload: { season: 1, character: anaFace, name: 'Ana', place: 1, standing: 1, shown: [] } });
-    fake.seed.post(sys.thread, null, '', { kind: 'reveal', at: Date.UTC(2026, 9, 2), payload: { season: 1, character: boFace, name: 'Bo', place: 2, standing: 0, shown: [] } });
-    const two = fake.seed.post(sys.thread, null, '', { kind: 'reveal', at: Date.UTC(2026, 11, 1), payload: { season: 2, character: anaFace, name: 'Ana', place: 1, standing: 1, shown: [] } });
-    expect((await fake.characterReveals(anaFace)).map((a) => a.id)).toEqual([two, one]);
-    expect((await fake.characterReveals(anaFace, 1)).map((a) => a.id)).toEqual([two]);
-    expect(await fake.characterReveals('nobody')).toEqual([]);
+    const first = fake.seed.announce(anaFace, 'debut', { class: 'face', at: at(5, 8) });
+    const second = fake.seed.announce(boFace, 'turn', { was: 'heel', class: 'face', at: at(5, 8) });
+    const a = (await fake.act(first))!;
+    expect(a).toMatchObject({ kind: 'announce', character: anaFace, payload: { what: 'debut', class: 'face' } });
+    expect((await fake.act(second))!.thread).toBe(a.thread);
+    expect((await fake.act(second))!.payload).toEqual({ what: 'turn', was: 'heel', class: 'face' });
+    expect((await fake.thread(a.thread))?.title).toBe('Promos 1');
+    expect((await fake.season())?.turnsThread).toBe(a.thread);
+    const board = (await fake.boards()).find((b) => b.slug === 'the-system')!;
+    expect((await fake.threads(board.id, { offset: 0, limit: 20 })).threads.map((t) => t.id)).toContain(a.thread);
+    expect(() => fake.seed.announce(anaFace, 'debut', { was: 'face' })).toThrow('a debut has no class it was');
+  });
+
+  test('an announcements item is one landing: the announce Acts of a thread at one instant, debuts then Turns, at most 20 names, count of them all', async () => {
+    const { fake, anaFace, anaHeel, boFace } = world();
+    fake.seed.announce(boFace, 'turn', { was: 'heel', class: 'face', at: at(5, 8) });
+    fake.seed.announce(anaFace, 'debut', { class: 'face', at: at(5, 8) });
+    fake.seed.announce(anaHeel, 'debut', { at: at(5, 8) });
+    fake.seed.announce(anaHeel, 'turn', { at: at(6, 8) });
+    const items = (await fake.seasonNews()).filter((n) => n.kind === 'tally');
+    expect(items).toHaveLength(2);
+    const [later, landing] = items;
+    expect(later).toMatchObject({ count: 1, season: 1, debuts: [], turns: [{ character: anaHeel, name: 'Ana Heel', class: null, was: null }] });
+    expect(landing).toMatchObject({ count: 3, season: 1, thread: expect.any(String), seq: 1, at: new Date(at(5, 8)).toISOString() });
+    expect(landing!.debuts).toEqual([{ character: anaFace, name: 'Ana Face', class: 'face', was: null }, { character: anaHeel, name: 'Ana Heel', class: null, was: null }]);
+    expect(landing!.turns).toEqual([{ character: boFace, name: 'Bo Face', class: 'face', was: 'heel' }]);
+    const crowd = world();
+    const who = crowd.fake.seed.account('crowd');
+    for (let i = 0; i < 25; i++) crowd.fake.seed.announce(crowd.fake.seed.character(who, `D${String(i).padStart(2, '0')}`, 'face'), 'debut', { at: at(7, 8) });
+    const [big] = (await crowd.fake.seasonNews()).filter((n) => n.kind === 'tally');
+    expect(big).toMatchObject({ count: 25 });
+    expect(big!.debuts).toHaveLength(20);
+  });
+
+  test('classReveals and turnsAnnounced read announce Acts beside the old: a class named is a reveal, a Turn is announced, with its old class where it said it', async () => {
+    const { fake, anaFace, anaHeel, boFace } = world();
+    const debut = fake.seed.announce(anaFace, 'debut', { class: 'face', at: at(5, 8) });
+    const bare = fake.seed.announce(anaHeel, 'debut', { at: at(5, 8) });
+    const turn = fake.seed.announce(boFace, 'turn', { was: 'heel', class: 'face', at: at(6, 8) });
+    const quiet = fake.seed.announceTurn(boFace, (await fake.act(debut))!.thread, { at: at(7, 8) });
+    const thread = (await fake.act(debut))!.thread;
+    expect(await fake.classReveals([anaFace, anaHeel, boFace])).toEqual([
+      { act: debut, character: anaFace, class: 'face', at: new Date(at(5, 8)).toISOString(), via: 'debut', thread },
+      { act: turn, character: boFace, class: 'face', at: new Date(at(6, 8)).toISOString(), via: 'turn', thread },
+    ]);
+    expect(bare).toBeTruthy();
+    expect(await fake.turnsAnnounced([anaFace, anaHeel, boFace])).toEqual([
+      { act: turn, character: boFace, at: new Date(at(6, 8)).toISOString(), was: 'heel' },
+      { act: quiet, character: boFace, at: new Date(at(7, 8)).toISOString(), was: null },
+    ]);
   });
 
   test('standingsCount is the number of debuted characters, as the standings list them', async () => {

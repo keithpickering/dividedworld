@@ -3,7 +3,7 @@
  * made public (reveals) and its announced Turns. Everything here is what anyone could have watched;
  * a Turn names its old class only if it was announced with it ("A response never proves a private fact").
  */
-import type { Act, ClassReveal, Id, TurnAnnounced } from '../data/api.ts';
+import type { Act, ClassReveal, Id, SeasonRecordRow, TurnAnnounced } from '../data/api.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 
 export type RecordKind = 'all' | 'post' | 'spin' | 'card' | 'class' | 'seasons';
@@ -77,12 +77,9 @@ export function turnLinksFrom(targets: readonly Act[], perPage: number): Readonl
   return out;
 }
 
-/** A past season's reveal post for this character. */
-export function seasonRow(a: Act, w: Words): RecordRow {
-  const n = typeof a.payload.season === 'number' ? a.payload.season : null;
-  const place = typeof a.payload.place === 'number' ? a.payload.place : null;
-  const text = `Season ${n ?? ''}${n === null ? '' : ' '}reveal${place === null ? '' : `: finished #${place}`}`;
-  return { key: a.id, at: a.createdAt, text, href: a.seq === null ? `/t/${a.thread}` : threadHref(a.thread, pageOf(a.seq, w.perPage), a.seq) };
+/** A past season of this character, from its row in the season's results. */
+export function seasonRow(s: SeasonRecordRow, _w: Words): RecordRow {
+  return { key: `season-${s.season}`, at: s.at, text: `Season ${s.season}: finished #${s.place}`, href: null };
 }
 
 export function turnRow(t: TurnAnnounced, w: Words, links: ReadonlyMap<Id, string> = new Map()): RecordRow {

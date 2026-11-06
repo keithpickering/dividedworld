@@ -214,7 +214,7 @@ describe('past seasons, announced Turns and the size of the season', () => {
     const fake = buildWorld();
     const w = withReveals(fake);
     const page = vi.spyOn(fake, 'profilePage');
-    const names = ['actsById', 'characterReveals', 'standingPlace', 'characterActs', 'standingsPage', 'standingsCount', 'characterCounts', 'classReveals', 'turnsAnnounced', 'characters', 'lastSettledAt', 'season'] as const;
+    const names = ['actsById', 'standingPlace', 'characterActs', 'standingsPage', 'standingsCount', 'characterCounts', 'classReveals', 'turnsAnnounced', 'characters', 'lastSettledAt', 'season'] as const;
     const spies = names.map((n) => [n, vi.spyOn(fake, n)] as const);
     open(w.pipe, fake);
     await screen.findByRole('link', { name: 'Announced a Turn' });

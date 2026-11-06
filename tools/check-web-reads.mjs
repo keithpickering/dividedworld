@@ -61,6 +61,8 @@ export const ALLOWED_READS = Object.freeze([
   'boards', 'boards_now', 'moves_log', 'staff_profile_now', 'threads', 'thread_list', 'thread_open', 'acts_public', 'characters_public', 'character_profiles', 'class_kinds', 'reaction_kinds', 'card_kinds',
   'reaction_tallies', 'effect_state', 'pip_styles', 'thread_view_counts', 'settlements',
   'class_reveals', 'turns_announced', 'screen_settings', 'character_post_counts', 'season_size', 'board_counts',
+  // A finished season's frozen results; who plays whom is in none of it (0099). The record and results pages read them for their callers, so a dependency check in e2e 0016 names them.
+  'season_results', 'seasons_finished',
   // A character's standing in the season the standings read, through standings_season() on the server. The
   // standings table itself is not here: a read of it must choose a season, and the rule for which is written
   // once, in SQL (supabase/migrations/0030_screens_reads.sql), not again in the app.
@@ -82,7 +84,7 @@ export const ALLOWED_READS = Object.freeze([
 export const ALLOWED_COUNTS = Object.freeze(/** @type {readonly { table: string, count: string, why?: string }[]} */ ([]));
 
 /** The SQL functions a screen may call directly; every other write goes through the `act` function. */
-export const ALLOWED_RPCS = Object.freeze(['whoami', 'is_admin', 'next_settlement_at', 'mark_read', 'set_preferences', 'meet_card', 'see_welcome', 'see_tip', 'skip_tips', 'restore_tips', 'resume_tips', 'replay_tour', 'my_account_opened', 'see_alerts', 'see_settlement', 'follow_thread', 'following_thread', 'my_alerts', 'my_alerts_unread', 'my_settlement_moved', 'set_profile', 'release_effect', 'card_target', 'standing_place', 'standings_page', 'admin_queue', 'hold_move', 'reverse_move', 'replace_successor', 'move_progress', 'here', 'presence_box', 'screen_refusal', 'boot', 'index_page', 'board_page', 'thread_page', 'profile_page', 'record_page', 'set_presence_hidden', 'effects_above', 'pinned_threads', 'play_moment', 'updates', 'season_news', 'post_update', 'staff_career', 'boss_roster_names', 'dismiss_handover_todo', 'admin_contact', 'set_admin_contact']);
+export const ALLOWED_RPCS = Object.freeze(['whoami', 'is_admin', 'next_settlement_at', 'mark_read', 'set_preferences', 'meet_card', 'see_welcome', 'see_tip', 'skip_tips', 'restore_tips', 'resume_tips', 'replay_tour', 'my_account_opened', 'see_alerts', 'see_settlement', 'follow_thread', 'following_thread', 'my_alerts', 'my_alerts_unread', 'my_settlement_moved', 'set_profile', 'release_effect', 'card_target', 'standing_place', 'standings_page', 'admin_queue', 'hold_move', 'reverse_move', 'replace_successor', 'move_progress', 'here', 'presence_box', 'screen_refusal', 'boot', 'index_page', 'board_page', 'thread_page', 'profile_page', 'record_page', 'set_presence_hidden', 'effects_above', 'pinned_threads', 'play_moment', 'updates', 'season_news', 'finished_seasons', 'results_page', 'result_place', 'post_update', 'staff_career', 'boss_roster_names', 'dismiss_handover_todo', 'admin_contact', 'set_admin_contact']);
 
 const WRITES = new Set(['insert', 'upsert', 'update', 'delete']);
 const NOT_A_CLIENT = new Set(['Array', 'Buffer', 'Object', 'Uint8Array', 'Set', 'Map']);

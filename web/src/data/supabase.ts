@@ -40,7 +40,7 @@ import type { Career } from '../../../engine/system/career.ts';
 import type {
   AdminQueue, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEnded, CardEvent, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd, FaceDownPass,
-  Alert, ContactLink, EffectState, SeasonNewsItem, SeasonResult, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
+  Alert, ContactLink, EffectState, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
   Boot, BoardPage, IndexPage, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson,
 } from '../../../engine/ui/data/api.ts';
@@ -159,20 +159,29 @@ function toTallyNames(v: unknown): TallyName[] {
   return (Array.isArray(v) ? (v as Row[]) : []).flatMap((e) => (typeof e?.['character'] === 'string' && typeof e['name'] === 'string'
     ? [{ character: e['character'], name: e['name'], class: str(e['class']), was: str(e['was']) }] : []));
 }
-/** One row of `season_news` (0063). Its public detail is read as the Acts wrote it; what is not in the shape is left out. */
+/** What a player made public in a season: an entry that is neither a reveal nor a Turn is no line. */
+function toShown(v: unknown): SeasonShown[] {
+  return rowsOf(v).flatMap((x): SeasonShown[] => (x?.['kind'] === 'reveal' || x?.['kind'] === 'turn'
+    ? [{ kind: x['kind'], act: String(x['act']), at: String(x['at']), class: str(x['class']), was: str(x['was']) }] : []));
+}
+/** One row of a finished season's table (`results_page`), or one of the top three a results item carries. A row with no character is no row. */
+function toResult(t: Row): SeasonResultRow[] {
+  return typeof t?.['character'] === 'string'
+    ? [{ character: t['character'], name: String(t['name'] ?? ''), place: num(t['place']), standing: num(t['standing']), shown: toShown(t['shown']) }] : [];
+}
+/** One row of `season_news` (0063, 0099, 0100). Its public detail is read as the server wrote it; what is not in the shape is left out. A results item has no Act, thread or sequence number. */
 function toSeasonNews(r: Row): SeasonNewsItem {
   const detail = (r['detail'] ?? {}) as Row;
-  const top = (Array.isArray(detail['top']) ? (detail['top'] as Row[]) : []).flatMap((t): SeasonResult[] => (typeof t?.['character'] === 'string'
-    ? [{
-      character: t['character'], name: String(t['name'] ?? ''), place: num(t['place']), standing: num(t['standing']),
-      shown: (Array.isArray(t['shown']) ? (t['shown'] as Row[]) : []).flatMap((x): SeasonShown[] => (x?.['kind'] === 'reveal' || x?.['kind'] === 'turn'
-        ? [{ kind: x['kind'], act: String(x['act']), at: String(x['at']), class: str(x['class']), was: str(x['was']) }] : [])),
-    }] : []));
+  const top = rowsOf(detail['top']).flatMap(toResult);
   return {
     kind: r['kind'], act: r['act'] ?? null, thread: r['thread'] ?? null, seq: r['seq'] === null || r['seq'] === undefined ? null : num(r['seq']), at: String(r['at']),
     season: num(r['season']), name: str(r['name']), quote: str(r['quote']), count: r['count'] === null || r['count'] === undefined ? null : num(r['count']),
     top, debuts: toTallyNames(detail['debuts']), turns: toTallyNames(detail['turns']),
   };
+}
+/** One of a character's past seasons, as profile_page and record_page answer it; a row with no season number is no row. */
+function toSeasonRecord(r: Row): SeasonRecordRow[] {
+  return typeof r?.['season'] === 'number' ? [{ season: r['season'], place: num(r['place']), standing: num(r['standing']), at: String(r['at']) }] : [];
 }
 
 function toThread(r: Row): ThreadSummary {
@@ -809,6 +818,23 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const r = await read(() => client.rpc('updates', { before: before ?? null, most: UPDATES_PAGE }));
       return (Array.isArray(r.data) ? (r.data as Row[]) : []).map(toUpdate);
     },
+    /* The seasons whose results landed (`finished_seasons`, 0099): public, newest first. */
+    async finishedSeasons() {
+      const r = await read(() => client.rpc('finished_seasons'));
+      return rowsOf(r.data).flatMap((x): SeasonFinished[] => (typeof x?.['number'] === 'number'
+        ? [{ number: x['number'], startsAt: String(x['starts_at']), endsAt: String(x['ends_at']), resultsAt: String(x['results_at']), characters: num(x['characters']) }] : []));
+    },
+    /* A page of a finished season's final table (`results_page`, 0099): 50 rows. */
+    async resultsPage(season, page) {
+      const r = await read(() => client.rpc('results_page', { in_season: season, page }));
+      return rowsOf(r.data).flatMap(toResult);
+    },
+    /* A character's 0-based index in that table (`result_place`, 0099), or null where the season has no row for it. */
+    async resultPlace(season, character) {
+      if (!idOk(character)) return null;
+      const r = await read(() => client.rpc('result_place', { in_season: season, in_character: character }));
+      return typeof r.data === 'number' ? r.data : null;
+    },
     /* A page of the season's news (`season_news`, 0063): public, the same for every reader, newest first. */
     async seasonNews(before) {
       const r = await read(() => client.rpc('season_news', { before: before ?? null, most: SEASON_NEWS_PAGE }));
@@ -1001,11 +1027,6 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       true);
       return (Array.isArray(r.data) ? (r.data as Row[]) : []).map(toAct);
     },
-    async characterReveals(id, limit = 50) {
-      if (!idOk(id)) return [];
-      const rows = await list(() => client.from('acts_public').select('*').eq('kind', 'reveal').eq('payload->>character', id).order('created_at', { ascending: false }).limit(rowLimit(limit)));
-      return rows.map(toAct);
-    },
     async tallies(acts) {
       const out: Record<Id, Record<string, number>> = Object.fromEntries(acts.map((a) => [a, {}]));
       if (acts.length === 0) return out;
@@ -1179,7 +1200,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         character: toCharacter(d['character'] as Row, isObject(d['profile']) ? d['profile'] : undefined), counts: toCounts(d['counts']),
         standing: toStandingPlace(d['standing']), settledAt: str(d['settled_at']), season: isObject(d['season']) ? toSeason(d['season']) : null,
         reveals: rowsOf(d['reveals']).map(toClassReveal), turns: rowsOf(d['turns']).map(toTurn), acts: rowsOf(d['acts']).map(toAct),
-        targets: rowsOf(d['targets']).map(toAct), seasons: rowsOf(d['seasons']).map(toAct), unread: toUnread(d['unread']),
+        targets: rowsOf(d['targets']).map(toAct), seasons: rowsOf(d['seasons']).flatMap(toSeasonRecord), unread: toUnread(d['unread']),
       };
     },
     async recordPage(character, kind, page): Promise<RecordPage | null> {
@@ -1188,7 +1209,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (!isObject(d)) return null;
       const reveals = rowsOf(d['reveals']).map(toClassReveal);
       const turns = rowsOf(d['turns']).map(toTurn);
-      const seasons = rowsOf(d['seasons']).map(toAct);
+      const seasons = rowsOf(d['seasons']).flatMap(toSeasonRecord);
       const shown = num(d['page'], 1);
       const kindShown = (['all', 'post', 'spin', 'card', 'class', 'seasons'] as const).find((k) => k === d['kind']) ?? 'all';
       /* The window's first row: for `all`, the extras merged in ahead of it push the read down by their number (the function's own rule). */

@@ -158,7 +158,7 @@ describe('the full public record', () => {
     const fake = buildWorld();
     const w = world(fake);
     const page = vi.spyOn(fake, 'recordPage');
-    const names = ['characterCounts', 'characterActs', 'actsById', 'characters', 'classReveals', 'turnsAnnounced', 'characterReveals'] as const;
+    const names = ['characterCounts', 'characterActs', 'actsById', 'characters', 'classReveals', 'turnsAnnounced'] as const;
     const spies = names.map((n) => [n, vi.spyOn(fake, n)] as const);
     open(fake, w.spritey, '?kind=post');
     await screen.findByRole('table');
