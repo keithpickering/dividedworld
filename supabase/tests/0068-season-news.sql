@@ -1,7 +1,7 @@
 -- Season news (supabase/migrations/0063_season_news.sql; the alerts plan, Task 8; the alerts design, sections 4 and 7): the season page's
--- News tab reads the Acts already written (the reveal's header and its top three, each tally's debuts and Turns, the Boss's arrival and
--- departure), each kind once, with its Act to link, the same for every reader; the reveal and Turns threads leave The System's board's
--- list and still open by id; nothing is edited; each news item is one `seasonNews` alert for every player.
+-- News tab reads what is already written (a season's results, as the season_results rows with their top three, each tally's debuts and Turns,
+-- the Boss's arrival and departure), each kind once, the same for every reader; an old reveal thread leaves The System's board's list and still
+-- opens by id, and the season's Promos thread is listed; nothing is edited; each news item is one `seasonNews` alert for every player.
 
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
 begin
@@ -13,9 +13,9 @@ end $$;
 
 -- A suite shares one database, and earlier files commit tallies and seasons of their own: this file reads the news it makes, which is what
 -- `sn()` returns (the items there were not before the file's setup).
-create temp table news_before as select kind, act, name from season_news(null, 50);
+create temp table news_before as select kind, act, name, season from season_news(null, 50);
 create function pg_temp.sn() returns setof season_news_row language sql as $$
-  select x.* from season_news(null, 50) x where not exists (select 1 from news_before b where b.kind = x.kind and b.act is not distinct from x.act and b.name is not distinct from x.name)
+  select x.* from season_news(null, 50) x where not exists (select 1 from news_before b where b.kind = x.kind and b.act is not distinct from x.act and b.name is not distinct from x.name and b.season is not distinct from x.season)
 $$;
 
 -- The migration exists at all (so a missing one fails here, on an assertion, and not on a missing function below).
@@ -74,14 +74,11 @@ end $$;
 do $$
 declare
   rows jsonb;
-  hdr uuid := (select reveal_act from seasons where number = 1);
-  rthread uuid;
   tthread uuid := (select turns_thread from seasons where number = 1);
   a_post uuid;
   b_post uuid;
   n record;
 begin
-  select thread into rthread from acts where id = hdr;
   select coalesce(jsonb_agg(to_jsonb(x) order by x.at, x.kind, x.act), '[]') into rows from pg_temp.sn() x;
   if jsonb_array_length(rows) is distinct from 5 then raise exception 'five items: the results, two tallies, the Boss''s arrival and departure: %', rows; end if;
   if (select count(*) from pg_temp.sn() where kind = 'results') is distinct from 1 or (select count(*) from pg_temp.sn() where kind = 'tally') is distinct from 2
@@ -89,10 +86,10 @@ begin
     raise exception 'each kind appears once (the tally per Act): %', rows;
   end if;
 
-  -- The results: the header Act, the reveal thread, the top three with place, standing and what is public of their class.
+  -- The results: no Act and no thread to link, season 1 of four characters, the top three with place, standing and what is public of their class.
   select * into n from pg_temp.sn() where kind = 'results';
-  if n.act is distinct from hdr or n.thread is distinct from rthread or n.season is distinct from 1 or n.count is distinct from 4 then
-    raise exception 'the results link the reveal''s header Act in the reveal thread, season 1, of four characters: %', to_jsonb(n);
+  if n.act is not null or n.thread is not null or n.seq is not null or n.season is distinct from 1 or n.count is distinct from 4 then
+    raise exception 'the results link nothing, season 1, of four characters: %', to_jsonb(n);
   end if;
   if jsonb_array_length(n.detail -> 'top') is distinct from 3 then raise exception 'the top three: %', n.detail; end if;
   if (select array_agg(e ->> 'name' order by (e ->> 'place')::int) from jsonb_array_elements(n.detail -> 'top') e) is distinct from array['Spritey', 'Gloomba', 'Mrs. Hooligan'] then
@@ -152,7 +149,7 @@ do $$
 begin
   update news_landed set landed_at = now() - interval '3 hours' where act = (select act from pg_temp.sn() where kind = 'tally' and detail #>> '{debuts,0,name}' = 'Mrs. Hooligan');
   update news_landed set landed_at = now() - interval '2 hours' where act = (select act from pg_temp.sn() where kind = 'tally' and detail #>> '{turns,0,name}' = 'Pipewrench');
-  update news_landed set landed_at = now() - interval '1 hour' where act = (select act from pg_temp.sn() where kind = 'results');
+  update seasons set results_at = now() - interval '1 hour' where number = 1;
   if (select array_agg(kind) from pg_temp.sn()) is distinct from array['bossArrived', 'bossLeft', 'results', 'tally', 'tally'] then
     raise exception 'newest first by when each landed: %', (select array_agg(kind || ' ' || at) from pg_temp.sn());
   end if;
@@ -199,21 +196,27 @@ begin
   if denied is null or denied not like '42501%' then raise exception 'a visitor reads no season news: %', denied; end if;
 end $$;
 
--- ---- The reveal and Turns threads leave The System's board's list and still open by id; no Act is edited ----
+-- ---- The Promos thread is listed; an old reveal thread leaves the list and still opens by id; no Act is edited ----
 do $$
 declare
-  hdr uuid := (select reveal_act from seasons where number = 1);
-  rthread uuid := (select thread from acts where id = (select reveal_act from seasons where number = 1));
   tthread uuid := (select turns_thread from seasons where number = 1);
+  rthread uuid;
+  hdr uuid;
   sys uuid := system_board();
-  acts_before bigint;
+  list_before bigint := (select count(*) from thread_list where board = sys);
 begin
-  if rthread is null or tthread is null then raise exception 'the season has a reveal thread and a Turns thread'; end if;
-  if exists (select 1 from thread_list where id in (rthread, tthread)) then raise exception 'the reveal and Turns threads are not in thread_list'; end if;
-  if exists (select 1 from thread_list where board = sys and title in (select title from threads where id in (rthread, tthread))) then raise exception 'neither is in The System''s board''s list'; end if;
+  if tthread is null then raise exception 'the season has a Turns thread'; end if;
+  if not exists (select 1 from thread_list where id = tthread) then raise exception 'the season''s thread is listed on The System''s board'; end if;
+  if (select reveal_act from seasons where number = 1) is not null then raise exception 'a season''s end points at no reveal Act'; end if;
+  -- An old season's reveal thread, as an earlier season's end wrote it, is netted out of the list when the season points at it.
+  insert into threads (board, title) values (sys, 'Season 1: The Reveal') returning id into rthread;
+  list_before := (select count(*) from thread_list where board = sys) - 1;
+  hdr := tests.act(null, 'reveal', rthread, jsonb_build_object('season', 1, 'body', 'Every mask.', 'characters', 4));
+  update seasons set reveal_act = hdr where number = 1;
+  if exists (select 1 from thread_list where id = rthread) then raise exception 'an old reveal thread is not in thread_list'; end if;
+  if (select count(*) from thread_list where board = sys) is distinct from list_before then raise exception 'neither is the reveal thread in The System''s board''s list'; end if;
   if (select count(*) from thread_open where id in (rthread, tthread)) is distinct from 2 then raise exception 'a link to either still opens it by id'; end if;
-  if (select board from thread_open where id = rthread) is distinct from sys then raise exception 'thread_open reads the thread as it is'; end if;
-  if (select count(*) from acts_public where thread = rthread) < 5 then raise exception 'the reveal''s Acts are read as they were written'; end if;
+  if (select count(*) from acts_public where thread = rthread) < 1 then raise exception 'the reveal''s Acts are read as they were written'; end if;
   -- The board's counter is still the length of its list.
   if (select count(*) from thread_list where board = sys) is distinct from coalesce((select threads from board_counts where board = sys), 0) then
     raise exception 'the system board''s counter (%) is not its list (%)', (select threads from board_counts where board = sys), (select count(*) from thread_list where board = sys);
@@ -224,7 +227,7 @@ begin
   if pg_temp.refusal(format('update acts set payload = ''{}'' where id = %L', hdr)) is null then raise exception 'an Act cannot be edited'; end if;
 end $$;
 
--- A second roll-over's threads leave the list as they are made (the counter follows).
+-- A second roll-over opens a Turns thread that is listed, and no reveal thread.
 do $$
 declare
   sys uuid := system_board();
@@ -235,8 +238,8 @@ begin
   select * into s2 from seasons where ends_at is null;
   perform post_tally(s2.id, jsonb_build_array(jsonb_build_object('character', (select id from characters where name = 'Gloomba'), 'name', 'Gloomba')), '[]'::jsonb, s2.starts_at + interval '1 hour');
   perform reveal_season(s2.starts_at + interval '1 day');
-  if (select count(*) from thread_open where board = sys) is distinct from before_all + 2 then raise exception 'a Turns thread and a reveal thread were made'; end if;
-  if (select count(*) from thread_list where board = sys) is distinct from before_list then raise exception 'neither new thread is listed'; end if;
+  if (select count(*) from thread_open where board = sys) is distinct from before_all + 1 then raise exception 'a Turns thread was made, and no reveal thread'; end if;
+  if (select count(*) from thread_list where board = sys) is distinct from before_list + 1 then raise exception 'the new thread is listed'; end if;
   if (select count(*) from thread_list where board = sys) is distinct from (select threads from board_counts where board = sys) then raise exception 'the counter follows the list'; end if;
 end $$;
 
@@ -392,11 +395,10 @@ begin
   update seasons set reveal_act = reveal_act, turns_thread = turns_thread where number = 1;
   perform net_unlisted_thread(rthread);
   perform net_unlisted_thread(rthread);
-  perform net_unlisted_thread(tthread);
   if (select threads from board_counts where board = sys) is distinct from counter or (select count(*) from unlisted_threads) is distinct from marked then
     raise exception 'netting a thread twice moved the counter (% to %)', counter, (select threads from board_counts where board = sys);
   end if;
-  -- A season's row pointed at a thread it already named, or cleared and set again, nets once.
+  -- A season's row pointed at a thread it already named, or cleared and set again, nets nothing: the Turns thread is listed.
   update seasons set turns_thread = null where number = 1;
   update seasons set turns_thread = tthread where number = 1;
   if (select threads from board_counts where board = sys) is distinct from counter then raise exception 'clearing and setting the Turns thread netted it again'; end if;
@@ -408,7 +410,7 @@ begin
 end $$;
 
 -- ---- The migration's backfill, over seasons that existed before it ----
--- A database that predates 0063 has seasons with a reveal and a Turns thread, tallies and a reveal header without a landing time, and a counter that
+-- A database that predates 0063 has seasons with a reveal thread, tallies without a landing time, and a counter that
 -- counted every thread but the updates thread. One file cannot be that database, so it is made here: the new tables emptied and the counter put
 -- back as it stood, then the two functions the migration runs for the old rows.
 do $$
@@ -418,27 +420,25 @@ declare
   gone integer;
 begin
   with gone as (
-    delete from unlisted_threads where thread in (
-      select turns_thread from seasons where turns_thread is not null union select r.thread from seasons s join acts r on r.id = s.reveal_act)
+    delete from unlisted_threads where thread in (select r.thread from seasons s join acts r on r.id = s.reveal_act)
     returning thread
   )
   select count(*) into gone from gone g;
   delete from news_landed;
   update board_thread_counts set threads = threads + gone where board = sys and shard = 0;
   if (select threads from board_counts where board = sys) is not distinct from listed then
-    raise exception 'the staged old database counts the reveal and Turns threads (the test would prove nothing)';
+    raise exception 'the staged old database counts the reveal threads (the test would prove nothing)';
   end if;
   perform backfill_unlisted_threads();
   perform backfill_news_landed();
   if (select threads from board_counts where board = sys) is distinct from listed or (select count(*)::integer from thread_list where board = sys) is distinct from listed then
-    raise exception 'the backfill nets the old reveal and Turns threads out of the counter: % of %', (select threads from board_counts where board = sys), listed;
+    raise exception 'the backfill nets the old reveal threads out of the counter: % of %', (select threads from board_counts where board = sys), listed;
   end if;
-  if (select count(*) from unlisted_threads where thread in (
-        select turns_thread from seasons where turns_thread is not null union select r.thread from seasons s join acts r on r.id = s.reveal_act)) is distinct from gone then
-    raise exception 'every season thread is recorded as unlisted again';
+  if (select count(*) from unlisted_threads where thread in (select r.thread from seasons s join acts r on r.id = s.reveal_act)) is distinct from gone then
+    raise exception 'every reveal thread is recorded as unlisted again';
   end if;
-  if (select count(*) from news_landed) is distinct from (select count(*) from acts where (kind = 'tally' and tally_names(payload) > 0) or (kind = 'reveal' and not (payload ? 'character'))) then
-    raise exception 'every old tally and reveal header gets a landing time';
+  if (select count(*) from news_landed) is distinct from (select count(*) from acts where kind = 'tally' and tally_names(payload) > 0) then
+    raise exception 'every old tally gets a landing time, and no reveal header does';
   end if;
   if exists (select 1 from news_landed n join acts a on a.id = n.act where n.landed_at is distinct from a.created_at) then raise exception 'an old item landed when it is dated'; end if;
   -- Run again, it changes nothing.

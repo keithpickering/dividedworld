@@ -411,34 +411,33 @@ begin
   if (settled ->> 'revealed')::integer is distinct from season_no then raise exception 'the settlement of the season''s last window reveals it: %', settled; end if;
   if (select ends_at from seasons where number = season_no) is distinct from next_start + interval '1 day 12 hours' then raise exception 'the season ends where its last window does'; end if;
   if (select starts_at from seasons where ends_at is null) is distinct from next_start + interval '1 day 12 hours' then raise exception 'the next season opens as the last ends'; end if;
-  if exists (select 1 from acts where kind = 'reveal' and payload ->> 'season' = season_no::text and payload ->> 'name' in ('Debuts At The Reveal', 'Still Waiting')) then
-    raise exception 'the reveal named a character that played no part in the season';
+  if exists (select 1 from season_results where season = (select id from seasons where number = season_no) and name in ('Debuts At The Reveal', 'Still Waiting')) then
+    raise exception 'the results named a character that played no part in the season';
   end if;
-  if (select (payload ->> 'characters')::integer from acts where kind = 'reveal' and payload ->> 'season' = season_no::text and payload ? 'body')
-     is distinct from (select count(*) from characters where debuted_at < next_start + interval '1 day 12 hours') then
-    raise exception 'the reveal counted a character that played no part in the season';
+  if (select count(*) from season_results where season = (select id from seasons where number = season_no))
+     is distinct from (select count(*) from characters where debuted_at < next_start + interval '1 day 12 hours' and staff is null) then
+    raise exception 'the results counted a character that played no part in the season';
   end if;
   -- Two Turns made minutes apart read as two made hours apart: each is dated by its window.
-  select jsonb_object_agg(payload ->> 'name', payload -> 'shown') into revealed from acts
-  where kind = 'reveal' and payload ->> 'season' = season_no::text and payload ->> 'name' like '% Pair %';
+  select jsonb_object_agg(name, shown) into revealed from season_results
+  where season = (select id from seasons where number = season_no) and name like '% Pair %';
   if revealed -> 'Quick Pair One' is distinct from revealed -> 'Quick Pair Two' or revealed -> 'Quick Pair One' is distinct from revealed -> 'Slow Pair One' or revealed -> 'Slow Pair One' is distinct from revealed -> 'Slow Pair Two' then
-    raise exception 'Turns in one window are told apart in the reveal: %', revealed;
+    raise exception 'Turns in one window are told apart in the results: %', revealed;
   end if;
   if (revealed -> 'Quick Pair One' -> 0 ->> 'at')::timestamptz is distinct from next_start + interval '1 day' then raise exception 'a Turn is dated by the window it took effect at: %', revealed; end if;
-  -- The reveal's Acts wait in the outbox, its thread for its board and each Act for the thread.
+  -- The season's end writes no Act and opens no thread, so there is nothing of it to broadcast but the news.
   perform set_config('role', 'service_role', true);
   due := due_broadcasts();
   perform tests.unbecome();
-  if (select count(*) from jsonb_array_elements(due) m where m ->> 'event' = 'act' and m -> 'payload' ->> 'kind' = 'reveal')
-     is distinct from (select count(*) from acts where kind = 'reveal' and payload ->> 'season' = season_no::text) then
-    raise exception 'every Act of the reveal is broadcast: %', due;
+  if exists (select 1 from jsonb_array_elements(due) m where m ->> 'event' = 'act' and m -> 'payload' ->> 'kind' = 'reveal') then
+    raise exception 'the season''s end broadcasts no reveal Act: %', due;
   end if;
-  if not exists (select 1 from jsonb_array_elements(due) m where m ->> 'event' = 'thread' and m ->> 'topic' = 'board:' || system_board()) then raise exception 'the reveal''s thread is broadcast on its board'; end if;
+  if not exists (select 1 from jsonb_array_elements(due) m where m ->> 'topic' = 'reach' and m ->> 'event' = 'news' and m -> 'payload' ->> 'sub' = 'results') then raise exception 'the results are announced as news'; end if;
   -- Revealed once, however often the window is applied.
   perform set_config('role', 'service_role', true);
   perform apply_settlement((w ->> 'start')::timestamptz, (w ->> 'end')::timestamptz, '[]');
   perform tests.unbecome();
-  if (select count(*) from acts where kind = 'reveal' and payload ->> 'season' = season_no::text and payload ? 'body') is distinct from 1 then raise exception 'a season was revealed twice'; end if;
+  if (select count(*) from season_results where season = (select id from seasons where number = season_no) and name = 'Quick Pair One') is distinct from 1 then raise exception 'a season was revealed twice'; end if;
   -- No hourly job reveals a season any more.
   if exists (select 1 from cron.job where jobname = 'kayfabb-reveal') then raise exception 'the hourly reveal job is still scheduled'; end if;
 end $$;

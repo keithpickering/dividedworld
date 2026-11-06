@@ -332,7 +332,7 @@ begin
   perform tests.unbecome();
   ended := (select starts_at from seasons where ends_at is null) + span_interval(setting('seasonLength'));
   perform reveal_season(ended);
-  if not exists (select 1 from acts where kind = 'reveal' and payload ->> 'character' = quiet::text) then raise exception 'the season''s reveal names a silently dropped character'; end if;
+  if not exists (select 1 from season_results where character = quiet) then raise exception 'the season''s results name a silently dropped character'; end if;
 end $$;
 
 -- ---- A debut announced with its class names it in the tally, and writes the character's own

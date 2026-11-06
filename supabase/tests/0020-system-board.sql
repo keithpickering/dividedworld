@@ -70,10 +70,10 @@ begin
   if (spun -> 'thread' ->> 'board')::uuid is distinct from general then raise exception 'a spin from the players'' board moved'; end if;
   perform tests.unbecome();
 
-  -- The reveal opens on The System's board.
+  -- A season's end opens no thread on any board: its results are rows (0099).
   update settings set value = '{"unit": "day", "count": 1}' where key = 'seasonLength';
   settled := reveal_season(now());
-  if (settled -> 'thread' ->> 'board')::uuid is distinct from sys then raise exception 'the reveal opened on another board: %', settled; end if;
+  if settled is null or settled ? 'thread' or (settled ->> 'results')::integer < 1 then raise exception 'the season''s end answers its results and opens no thread: %', settled; end if;
 end $$;
 
 -- ---- A board for players can be spun onto even when The System's was made first ----

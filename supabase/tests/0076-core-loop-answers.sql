@@ -212,7 +212,7 @@ begin
     end if;
     ended := (select starts_at from seasons where ends_at is null) + span_interval(setting('seasonLength'));
     perform reveal_season(ended);
-    select x.payload -> 'shown' into shown from acts x where x.kind = 'reveal' and x.payload ->> 'character' = a::text;
+    select x.shown into shown from season_results x where x.character = a;
     if shown is null or not exists (select 1 from jsonb_array_elements(shown) e where e ->> 'kind' = 'turn' and e ->> 'was' = 'beta') then
       raise exception 'the season''s reveal lists the announced Turn with the class it left: %', shown;
     end if;

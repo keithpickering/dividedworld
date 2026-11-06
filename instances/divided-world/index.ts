@@ -19,6 +19,8 @@ const boards = deepFreeze([
 
 /** The System's words, in its own voice. */
 const copy = deepFreeze({
+  // The Promos thread's title (0099 asks for it); Task 3 of the season end plan makes it the engine's one key and drops the three below.
+  announcementsThreadTitle: 'Season {season}: Promos',
   turnsThreadTitle: 'Season {season}: Who Turned',
   revealTitle: 'Season {season}: The System Remembers Everything',
   revealBody: 'Every mask, every class, every Turn, the quiet ones too. Who wore them, The System keeps to itself.',

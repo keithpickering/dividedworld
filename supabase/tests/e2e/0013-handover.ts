@@ -95,6 +95,7 @@ test('the outgoing Boss names a successor, the season rolls over, and the new Bo
   // The season rolls over. The nominated Boss arrives, not the rotation's.
   const before = sql(`select clock_timestamp()`);
   assert.equal(sql(`select reveal_season(starts_at + span_interval(setting('seasonLength'))) is not null from seasons where ends_at is null`), 't');
+  assert.equal(sql(`select count(*) > 0 from season_results where season = (select id from seasons where ends_at is not null order by number desc limit 1)`), 't', 'the season\'s end wrote its results');
   assert.equal(sql(`select boss from seasons where ends_at is null`), NOMINEE);
   assert.equal(sql(`select how from season_handovers where season = (select id from seasons where ends_at is null)`), 'nomination');
   assert.equal(sql(`select payload ->> 'why' || '/' || (payload ->> 'by') from acts where kind = 'move_end' and target_act_id = '${nominationAct}'`), 'spent/handover');

@@ -34,7 +34,9 @@ insert into settings (key, value) values
   ('reachLasts', '{"character": {"unit": "day", "count": 7}, "thread": {"unit": "day", "count": 1}, "board": {"unit": "day", "count": 1}}'),
   ('cardSettings', '{"whoops.clean": 95}'),
   ('economy', '{"sweetie.price": 100, "splat.price": 100, "blot.price": 100}'),
-  ('copy', '{"turnsThreadTitle": "Season {season}: Turns", "revealTitle": "Season {season}: The Reveal", "revealBody": "Every mask, season {season}."}');
+  -- The Promos thread's title is the one word The System needs (0099). The three older keys stay in this row because the e2e files that load it
+  -- onto the migrations before 0099 (e2e/0008, 0010, 0014) meet the check those migrations kept; 0099 stops asking for them.
+  ('copy', '{"announcementsThreadTitle": "Season {season}: Promos", "turnsThreadTitle": "Season {season}: Turns", "revealTitle": "Season {season}: The Reveal", "revealBody": "Every mask, season {season}."}');
 insert into class_kinds (key, name) values ('alpha', 'Alpha'), ('beta', 'Beta');
 insert into reaction_kinds (key, emoji, quadrant) values
   ('up', '⬆️', 'excitedPositive'), ('boo', '👻', 'excitedNegative'),
