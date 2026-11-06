@@ -170,6 +170,35 @@ describe('the chips', () => {
       await waitFor(() => expect(screen.getByRole('button', { name: 'React' })).toHaveFocus());
     });
 
+    test('a refusal that arrives after the HUD character changed opens no picker and says nothing', async () => {
+      const w = world();
+      const tallies = createTallies();
+      const Swap = () => { const p = usePlayer(); return <button type="button" onClick={() => p.setHudCharacter(w.pipe)}>Swap mask</button>; };
+      renderIn(w.fake, <><Reactions act={w.theirs} author={w.spritey} authorName="Spritey" tallies={tallies} mine={createMine()} /><Swap /></>);
+      act(() => { tallies.merge(w.theirs, { fire: 1 }); });
+      let release!: () => void;
+      const gate = new Promise<void>((r) => { release = r; });
+      w.fake.react = async () => { await gate; return { ok: false as const, error: 'too late to matter' }; };
+      await userEvent.click(await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Swap mask' }));
+      release();
+      await new Promise((r) => setTimeout(r, 50));
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+
+    test('a refusal clears the sentence of the reaction before it', async () => {
+      const w = world();
+      const v = show(w, w.theirs, w.spritey);
+      act(() => { v.tallies.merge(w.theirs, { fire: 1, tea: 1 }); });
+      await userEvent.click(await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' }));
+      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Reacted with Fire'));
+      w.fake.react = async () => ({ ok: false as const, error: 'no more for you' });
+      await userEvent.click(screen.getByRole('button', { name: 'Tea, 1. React as Mrs. Hooligan' }));
+      await screen.findByRole('alert');
+      expect(screen.getAllByRole('status').some((x) => /Reacted with/u.test(x.textContent ?? ''))).toBe(false);
+    });
+
     test('a second press while one is in flight sends once, and the row is busy meanwhile', async () => {
       const w = world();
       const v = show(w, w.theirs, w.spritey);

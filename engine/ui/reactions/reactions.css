@@ -61,9 +61,15 @@
   box-shadow: 0 0 0 2px var(--kb-glass-ground), 0 0 0 4px var(--kb-glass-text-hi);
 }
 
-/* Focus on your own kind stands outside its ring. */
+/* Focus on your own kind: the ring stays, and the outline stands beyond it in the post's ink (meta-tile.css's white ring would vanish on a white post, and its ink doubling is the shadow the ring takes). */
 .kb-reaction[data-kb-own]:focus-visible {
+  outline-color: var(--kb-fg);
   outline-offset: 7px;
+}
+
+.kb-lens .kb-reaction[data-kb-own]:focus-visible,
+.kb-updates-acts .kb-reaction[data-kb-own]:focus-visible {
+  outline-color: var(--kb-glass-text-hi);
 }
 
 /* A tile that is no button: no hover, no pointer. */
@@ -92,6 +98,12 @@
     box-shadow: none;
     outline: 2px solid Highlight;
     outline-offset: 2px;
+  }
+
+  /* Focus is thicker and farther out than the unfocused outline, in the focus color. */
+  .kb-reaction[data-kb-own]:focus-visible {
+    outline: 4px solid Highlight;
+    outline-offset: 4px;
   }
 }
 

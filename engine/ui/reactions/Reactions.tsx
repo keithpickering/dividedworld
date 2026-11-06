@@ -37,7 +37,7 @@ interface Props {
 }
 
 /** The tab stop of the React tile; a kind's is its key. */
-const REACT_STOP = '\u0000react';
+const REACT_STOP = ' react'; /* a space: no reaction key has one */
 
 export function Reactions({ act, author, authorName = 'this character', tallies, mine, subject }: Props) {
   const { instance, settings } = useKayfa();
@@ -60,6 +60,9 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
   /* A picker is for the character it was opened for: another character in the HUD closes it, and what was said of a reaction as the last one goes. */
   const asId = as?.id;
   useEffect(() => { setOpen(false); setSaid(''); }, [asId]);
+  /* What an answer that comes back late is checked against: the HUD character and whether a press is possible now. */
+  const live = useRef({ asId, canReact });
+  live.current = { asId, canReact };
   if (shown.length === 0 && !canReact) return null;
 
   const kinds = new Set(own.map((o) => o.kind));
@@ -70,8 +73,12 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
 
   const press = async (key: string) => {
     if (left === 0 || kinds.has(key)) return;
+    const pressedAs = asId;
     const answer = await send(key);
     if (answer === 'busy') return;
+    /* The press was for the character it was made as: another in the HUD, or no right to react now, and its answer is dropped. */
+    if (live.current.asId !== pressedAs || !live.current.canReact) return;
+    setSaid('');
     if (answer === 'sent') { setSaid(`Reacted with ${readable(key)} as ${as?.name ?? 'your character'}`); return; }
     /* The picker opens as it does from React, and gives focus back to it on Close: the modal layer returns focus to what held it as it opened. */
     button.current?.focus();
