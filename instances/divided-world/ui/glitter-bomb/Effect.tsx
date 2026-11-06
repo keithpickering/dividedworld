@@ -26,7 +26,7 @@
  * draws nothing and leaves the words bare, and is read again at the next setup or board change. That change also asks for one
  * more draw by itself, since a board can change while the loop sleeps.
  *
- * Where. The glitter covers the post, not only its words (the owner: "the card effect should apply to the entire post in all cases"):
+ * Where. The glitter covers the post, not only its words (2026-11-06: "the card effect should apply to the entire post in all cases"):
  * the three canvases stand on one surface, an element placed inline over the box the effect paints (engine/ui/cards/body.ts): in the
  * thread the post body's padding box (`.kb-act-main`, bar to bar), anywhere else (the ORIGIN box, Stick Around's view) the host's own.
  * The surface is what cling knows, so a flake that falls lands anywhere on the post, in the surface's px. Painting the body, the host
@@ -81,7 +81,9 @@ export function GlitterBombEffect({ post, plays, place, still, children }: Effec
     /* Whether this mount's burst has fired, and whether the post has been 40% in view: both outlive a flakes object. */
     let fired = still;
     let seen = false;
-    let box: BodyBox = { left: 0, top: 0, w: 0, h: 0 };
+    /* The size painted (what the loop and the drawing are handed) and where it stands from the host (the layer's placement). */
+    let box = { w: 0, h: 0 };
+    let placed: BodyBox = { left: 0, top: 0, w: 0, h: 0 };
     let density = 1;
 
     /* The band where this post sits, or null when the board's tokens cannot be read (nothing is drawn then). */
@@ -189,8 +191,9 @@ export function GlitterBombEffect({ post, plays, place, still, children }: Effec
     };
     const setup = (): void => {
       band = readBand();
-      box = measure();
-      placeLayer(face, box);
+      placed = measure();
+      box = { w: placed.w, h: placed.h };
+      placeLayer(face, placed);
       drop();
       if (still) {
         density = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
@@ -215,13 +218,13 @@ export function GlitterBombEffect({ post, plays, place, still, children }: Effec
     const stopWatching = (): void => { stopWatch(); stopWatch = () => {}; };
     /* A resize (of the host or of the body it paints) builds the flakes again at the new size; the loop draws it fresh. */
     const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(() => {
-      if (sameBox(measure(), box)) return;
+      if (sameBox(measure(), placed)) return;
       setup();
     }) : null;
     resize?.observe(el);
     setup();
     if (!still && !fired) {
-      stopWatch = watchInView(face, (showing) => {
+      stopWatch = watchInView(el, (showing) => {
         if (!showing || seen) return;
         seen = true;
         wake(el);
@@ -250,10 +253,10 @@ export function GlitterBombEffect({ post, plays, place, still, children }: Effec
 
   return (
     <div ref={host} className="dw-glitter" data-kb-glitter="">
-      <div ref={surface} className="dw-glitter-surface" aria-hidden="true">
-        <canvas ref={under} className="dw-glitter-under" />
-        <canvas ref={flash} className="dw-glitter-flash" />
-        <canvas ref={over} className="dw-glitter-over" />
+      <div ref={surface} className="dw-glitter-surface">
+        <canvas ref={under} className="dw-glitter-under" aria-hidden="true" />
+        <canvas ref={flash} className="dw-glitter-flash" aria-hidden="true" />
+        <canvas ref={over} className="dw-glitter-over" aria-hidden="true" />
       </div>
       <div className="dw-glitter-words">{children}</div>
     </div>

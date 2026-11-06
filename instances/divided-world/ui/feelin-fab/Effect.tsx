@@ -34,7 +34,7 @@
  * gets a fresh element. A development build under React's StrictMode would run the effect twice on one element and the second
  * hand-over is refused after the first transferred it (logged, the post bare); the app does not use StrictMode.
  *
- * Where. The foil fills the post, not only its words (the owner: "the card effect should apply to the entire post in all cases"): in
+ * Where. The foil fills the post, not only its words (2026-11-06: "the card effect should apply to the entire post in all cases"): in
  * the thread the box is the post body's padding box (engine/ui/cards/body.ts, `.kb-act-main`, bar to bar), and the canvas is placed
  * over it from the host, inline; anywhere else (the ORIGIN box, Stick Around's view) it is the host's own box. Painting the body, the
  * host marks itself `data-kb-bleed` and fab.css puts the foil under everything in the body (its reactions, its signature, an ORIGIN
@@ -97,7 +97,9 @@ export function FeelinFabEffect({ post, plays, place, still, children }: EffectP
     const specs: Partial<Record<Board, FoilSpec>> = {};
     const foils: Partial<Record<Board, Foil>> = {};
     const release = (): void => { for (const f of Object.values(foils)) f?.release(); };
-    let box: BodyBox = { left: 0, top: 0, w: 0, h: 0 };
+    /* The size painted (what the loop and the drawing are handed) and where it stands from the host (the layer's placement). */
+    let box = { w: 0, h: 0 };
+    let placed: BodyBox = { left: 0, top: 0, w: 0, h: 0 };
     let density = 1;
     /* The board whose foil is in use; the other is let go once, when this changes, and its reference dropped. */
     let current: Board | null = null;
@@ -158,8 +160,9 @@ export function FeelinFabEffect({ post, plays, place, still, children }: EffectP
     };
     const setup = (): void => {
       band = readBand();
-      box = measure();
-      placeLayer(cv, box);
+      placed = measure();
+      box = { w: placed.w, h: placed.h };
+      placeLayer(cv, placed);
       if (still) {
         density = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
         size();
@@ -181,7 +184,7 @@ export function FeelinFabEffect({ post, plays, place, still, children }: EffectP
 
     /* A resize (of the host or of the body it paints) registers again at the new size; the loop draws it fresh. */
     const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(() => {
-      if (sameBox(measure(), box)) return;
+      if (sameBox(measure(), placed)) return;
       setup();
     }) : null;
     resize?.observe(el);

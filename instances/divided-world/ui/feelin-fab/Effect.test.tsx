@@ -184,12 +184,13 @@ describe("Feelin' Fab", () => {
     expect(band).toEqual({ lo: 0.59, hi: 1 });
   });
 
-  test('the canvas is sized to the box at the density the loop returns, and its CSS size is the box (the stylesheet\'s 100%)', () => {
+  test('the canvas is sized to the box at the density the loop returns, and its CSS size is the box, placed inline (engine/ui/cards/body.ts)', () => {
     size = { w: 301, h: 119 };
     render(<FeelinFabEffect {...props(1)} />);
     expect(canvas().width).toBe(Math.round(301 * 1.5));
     expect(canvas().height).toBe(Math.round(119 * 1.5));
-    expect(canvas().style.width).toBe('');
+    /* With no post body around it (no thread here) the box is the host's own, from its top-left. */
+    expect([canvas().style.left, canvas().style.top, canvas().style.width, canvas().style.height]).toEqual(['0px', '0px', '301px', '119px']);
     vi.stubGlobal('devicePixelRatio', 5);
     cleanup();
     render(<FeelinFabEffect {...props(1)} />);

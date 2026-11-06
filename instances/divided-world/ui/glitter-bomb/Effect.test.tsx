@@ -146,9 +146,12 @@ describe('Glitter Bomb', () => {
     expect(z('.dw-glitter-under')).toBeLessThan(z('.dw-glitter-words'));
     expect(z('.dw-glitter-flash')).toBeLessThan(z('.dw-glitter-words'));
     expect(z('.dw-glitter-words')).toBeLessThan(z('.dw-glitter-over'));
-    /* The same order in the document, and the old layer and its alpha are gone. */
+    /* The same order in the document: the canvases on one surface (placed over the box the post paints) before the words; the old layer and its alpha are gone. */
     const order = [...box().children].map((el) => el.className);
-    expect(order).toEqual(['dw-glitter-under', 'dw-glitter-flash', 'dw-glitter-words', 'dw-glitter-over']);
+    expect(order).toEqual(['dw-glitter-surface', 'dw-glitter-words']);
+    expect([...box().querySelector('.dw-glitter-surface')!.children].map((el) => el.className)).toEqual(['dw-glitter-under', 'dw-glitter-flash', 'dw-glitter-over']);
+    expect(rule('.dw-glitter-surface')).toMatch(/pointer-events:\s*none/u);
+    expect(rule('.dw-glitter-surface')).not.toMatch(/z-index/u);
     expect(box().querySelector('.dw-glint, .dw-glitter-sparkle')).toBeNull();
     expect(css).not.toMatch(/twinkle|opacity/u);
   });
@@ -240,24 +243,26 @@ describe('Glitter Bomb', () => {
     expect(probe.draws(box())).toBe(0);
   });
 
-  test('the host is sticky for cling, hands the pointer to it, and unmounting unregisters it, leaves the loop and drops the loose flakes', () => {
+  test('the surface is sticky for cling, the host hands the pointer to it, and unmounting unregisters it, leaves the loop and drops the loose flakes', () => {
     const r = render(<GlitterBombEffect {...props()} />);
     see(1);
     frames(2);
     const el = box();
+    /* What cling knows is the surface the glitter paints (the post's whole body in a thread, the host here, where there is none). */
+    const face = el.querySelector<HTMLElement>('.dw-glitter-surface')!;
     expect(spies.clingRegister).toHaveBeenCalled();
     const [host, options] = spies.clingRegister.mock.calls.at(-1)! as [HTMLElement, { sticky?: boolean; flakes?: unknown }];
-    expect(host).toBe(el);
+    expect(host).toBe(face);
     expect(options.sticky).toBe(true);
     expect(options.flakes).toBe(lastFlakes());
     fireEvent.pointerMove(el, { clientX: 10, clientY: 10, pointerType: 'mouse' });
     expect(spies.clingOver).toHaveBeenCalledTimes(1);
-    flakesModule.loose(el).push({ ...lastFlakes().settled[0]! });
-    expect(flakesModule.loose(el)).toHaveLength(1);
+    flakesModule.loose(face).push({ ...lastFlakes().settled[0]! });
+    expect(flakesModule.loose(face)).toHaveLength(1);
     r.unmount();
-    expect(spies.clingUnregister).toHaveBeenCalledWith(el);
-    expect(flakesModule.loose(el)).toHaveLength(0);
-    expect(dropLoose).toHaveBeenCalledWith(el);
+    expect(spies.clingUnregister).toHaveBeenCalledWith(face);
+    expect(flakesModule.loose(face)).toHaveLength(0);
+    expect(dropLoose).toHaveBeenCalledWith(face);
     expect(release).toHaveBeenCalled();
     expect(observers.every((o) => o.seen.size === 0)).toBe(true);
     const drawsBefore = probe.draws(el);
