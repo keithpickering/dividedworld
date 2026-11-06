@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ratio, tokensOf, type Mode } from '../contrast.ts';
+import { MODES, ratio, tokensOf, type Mode } from '../contrast.ts';
 import { POST_INK, bandFor, bandOf, clampInto, shineIsReadable, toHex, toLinear, toSrgb8, type Rgb } from './band.ts';
 
 const tokens = tokensOf(readFileSync(join(process.cwd(), 'engine/ui/tokens.css'), 'utf8'));
@@ -34,6 +34,28 @@ describe('the readable band', () => {
     assert.equal(toHex(toLinear('#2a1b55')), '#2a1b55');
     assert.equal(toSrgb8(1), 255);
     assert.equal(toSrgb8(0), 0);
+  });
+
+  test('every one of the 256 sRGB values round-trips through linear light and the lookup table', () => {
+    for (let v = 0; v < 256; v++) {
+      const h = v.toString(16).padStart(2, '0');
+      for (const hex of [`#${h}${h}${h}`, `#${h}0000`, `#00${h}00`, `#0000${h}`]) assert.equal(toHex(toLinear(hex)), hex);
+    }
+  });
+
+  test('a clamp lands on the band edge it was moved to, not somewhere inside', () => {
+    const lum = (c: Rgb) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    for (const board of ['light', 'dark'] as const) {
+      const band = bandOfBoard[board];
+      const bright = clampInto([1, 0.9, 0.8], band);
+      const dim = clampInto([0.001, 0.002, 0.001], band);
+      if (board === 'dark') near(lum(bright), band.hi, 0.01);
+      else near(lum(dim), band.lo, 0.01);
+    }
+    /* The other direction, on a band with room on both sides. */
+    const mid = { lo: 0.3, hi: 0.6 };
+    near(lum(clampInto([1, 1, 1], mid)), mid.hi, 0.01);
+    near(lum(clampInto([0, 0, 0], mid)), mid.lo, 0.01);
   });
 
   test('after the clamp, 4,096 colors hold 4.5:1 against every ink on both boards', () => {
@@ -79,6 +101,48 @@ describe('bandFor reads the board as it resolved', () => {
       globalThis.getComputedStyle = real;
     }
   });
+
+  test('a different board reads a different band, never the cached one', () => {
+    const real = globalThis.getComputedStyle;
+    const board = { current: tokens.dark };
+    globalThis.getComputedStyle = (() => ({ getPropertyValue: (k: string) => board.current[k] ?? '' })) as never;
+    try {
+      const dark = bandFor({} as Element);
+      board.current = tokens.light;
+      const light = bandFor({} as Element);
+      assert.deepEqual(dark, bandOfBoard.dark);
+      assert.deepEqual(light, bandOfBoard.light);
+    } finally {
+      globalThis.getComputedStyle = real;
+    }
+  });
+
+  test('an unparseable or empty token throws a named error, and nothing is cached', () => {
+    const real = globalThis.getComputedStyle;
+    try {
+      for (const bad of ['rgb(1,2,3)', '', 'red']) {
+        globalThis.getComputedStyle = (() => ({ getPropertyValue: (k: string) => (k === '--kb-fg' ? bad : tokens.dark[k]) })) as never;
+        assert.throws(() => bandFor({} as Element), /shine band: --kb-fg is not a hex color/, bad);
+        assert.throws(() => bandOf({ ...tokens.dark, '--kb-fg': bad }), /shine band: --kb-fg is not a hex color/, bad);
+      }
+      globalThis.getComputedStyle = (() => ({ getPropertyValue: (k: string) => (k === '--kb-bg' ? '' : tokens.dark[k]) })) as never;
+      assert.throws(() => bandFor({} as Element), /shine band: --kb-bg is not a hex color/);
+    } finally {
+      globalThis.getComputedStyle = real;
+    }
+  });
+});
+
+describe('bandOf with no room', () => {
+  const flat = (ink: string, bg: string) => ({ '--kb-bg': bg, '--kb-fg': ink, '--kb-link': ink, '--kb-link-visited': ink, '--kb-muted': ink });
+
+  test('mid-gray inks on a lighter ground leave no light band: it throws, naming the board', () => {
+    assert.throws(() => bandOf(flat('#808080', '#ffffff')), /shine band: no luminance is readable against inks that light on a light ground/);
+  });
+
+  test('black inks on a black ground leave no dark band: it throws', () => {
+    assert.throws(() => bandOf(flat('#000000', '#000000')), /shine band: no luminance is readable against inks that dark on a dark ground/);
+  });
 });
 
 describe('shineIsReadable', () => {
@@ -101,6 +165,30 @@ describe('shineIsReadable', () => {
     const { dark: _dark, ...rest } = tokens;
     const failures = shineIsReadable(rest as typeof tokens, (m, l) => clampedSample(m, l));
     assert.deepEqual(failures, ['dark: no tokens to check against']);
+  });
+
+  test('all four modes are walked: a sampler is asked for each, and a missing chosen or device mode is named', () => {
+    const asked = new Set<Mode>();
+    shineIsReadable(tokens, (m, l) => { asked.add(m); return clampedSample(m, l); });
+    assert.deepEqual([...asked].sort(), [...MODES].sort());
+    for (const gone of ['light (chosen)', 'dark (device)'] as const) {
+      const { [gone]: _g, ...rest } = tokens;
+      assert.deepEqual(shineIsReadable(rest as typeof tokens, (m, l) => clampedSample(m, l)), [`${gone}: no tokens to check against`]);
+    }
+  });
+
+  test('the 4.5 edge: about 4.4 against the tightest ink is named, about 4.6 passes', () => {
+    const minRatio = (t: Record<string, string>, hex: string) => Math.min(...POST_INK.map((k) => ratio(t[k]!, hex)));
+    const grays = Array.from({ length: 256 }, (_, v) => `#${v.toString(16).padStart(2, '0').repeat(3)}`);
+    const t = tokens.light;
+    const below = grays.filter((g) => minRatio(t, g) < 4.5).sort((a, b) => minRatio(t, b) - minRatio(t, a))[0]!;
+    const above = grays.filter((g) => minRatio(t, g) >= 4.5).sort((a, b) => minRatio(t, a) - minRatio(t, b))[0]!;
+    near(minRatio(t, below), 4.4, 0.15);
+    near(minRatio(t, above), 4.6, 0.15);
+    const only = (c: string) => shineIsReadable(tokens, (m) => (m === 'light' ? [c] : []));
+    assert.ok(only(below).length > 0, `${below} at ${minRatio(t, below).toFixed(2)}:1 should be named`);
+    assert.ok(only(below).every((f) => f.includes(below)));
+    assert.deepEqual(only(above), [], `${above} at ${minRatio(t, above).toFixed(2)}:1 should pass`);
   });
 
   test('poison: a sampler that skips the clamp on one light angle is caught', () => {

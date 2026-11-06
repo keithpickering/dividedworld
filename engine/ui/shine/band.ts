@@ -46,15 +46,28 @@ export const toHex = (c: Readonly<Rgb>): string =>
 
 export const luminanceOf = (c: Readonly<Rgb>): number => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
 
-/** The luminance a post's inks leave free on the board these tokens describe. */
+/** The linear luminance of one token, or a named error: a band computed from a color that did not parse would be NaN. */
+function luminanceOfToken(tokens: Tokens, k: string): number {
+  const v = tokens[k];
+  if (typeof v !== 'string' || !/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/iu.test(v)) {
+    throw new Error(`shine band: ${k} is not a hex color (${JSON.stringify(v ?? null)})`);
+  }
+  return luminanceOf(toLinear(v));
+}
+
+/** The luminance a post's inks leave free on the board these tokens describe; throws when none is left. */
 export function bandOf(tokens: Tokens): Band {
-  const L = POST_INK.map((k) => luminanceOf(toLinear(tokens[k]!)));
-  const bg = luminanceOf(toLinear(tokens['--kb-bg']!));
+  const L = POST_INK.map((k) => luminanceOfToken(tokens, k));
+  const bg = luminanceOfToken(tokens, '--kb-bg');
   if (Math.max(...L) < bg) {
     /* Dark inks on a light ground: the shine must stay light enough. */
-    return { lo: Math.max(...L.map((l) => 4.5 * (l + 0.05) - 0.05)) + MARGIN, hi: 1 };
+    const lo = Math.max(...L.map((l) => 4.5 * (l + 0.05) - 0.05)) + MARGIN;
+    if (lo > 1) throw new Error('shine band: no luminance is readable against inks that light on a light ground');
+    return { lo, hi: 1 };
   }
-  return { lo: 0, hi: Math.min(...L.map((l) => (l + 0.05) / 4.5 - 0.05)) - MARGIN };
+  const hi = Math.min(...L.map((l) => (l + 0.05) / 4.5 - 0.05)) - MARGIN;
+  if (hi < 0) throw new Error('shine band: no luminance is readable against inks that dark on a dark ground');
+  return { lo: 0, hi };
 }
 
 const BAND_TOKENS = ['--kb-bg', ...POST_INK] as const;
