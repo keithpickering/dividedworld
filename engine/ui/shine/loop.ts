@@ -138,7 +138,7 @@ export function register(
   reg.stop = watchInView(canvas, (inView) => {
     if (hosts.get(host) !== reg || reg.inView === inView) return;
     reg.inView = inView;
-    if (inView) { reg.fresh = true; reg.drawn = null; start(); return; }
+    if (inView) { reg.fresh = true; reg.drawn = null; reg.cur = null; start(); return; }
     reg.busy = false;
     try { reg.hidden?.(); } catch (err) { console.error(err); }
   });

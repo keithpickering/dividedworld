@@ -1,6 +1,6 @@
 /* A .test.tsx because the loop reads the DOM (rects, IntersectionObserver, rAF) and needs jsdom; `test:engine` runs .test.ts under plain node. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { light, REST } from './light.ts';
+import { light, lightAt, REST } from './light.ts';
 import { probe, register, unregister, wake, type ShineFrame } from './loop.ts';
 
 /* A fake rAF: frames run only when the test flushes one, at the time it names. */
@@ -234,10 +234,21 @@ describe('the shine loop', () => {
     see(c, true);
     let t = 0;
     const tick = () => flush((t += 16));
-    for (let i = 0; i < 8; i++) tick();
+    for (let i = 0; i < 400; i++) tick();
     expect(seen[0]!.n).toBe(1);
     expect(seen.slice(1).every((s) => s.f.idle && !s.f.moved && s.n % 2 === 0)).toBe(true);
 
+    /* Measured: the idle drift's largest single-frame step at 16ms frames is about 0.002 and the eased light follows it
+       more softly, so every odd frame sits under MOVED = 0.004 with 2x to spare. A MOVED of 0.003 could not be told apart
+       here: drift alone reaches 0.002, and a rect step is the only thing that crosses (the cases below). */
+    let worst = 0;
+    for (let k = 1; k <= 400; k++) {
+      const a = lightAt(light.input(), { top: 300, height: 50 }, { height: window.innerHeight }, k * 16, 0);
+      const b = lightAt(light.input(), { top: 300, height: 50 }, { height: window.innerHeight }, (k + 1) * 16, 0);
+      worst = Math.max(worst, Math.abs(a.x - b.x) + Math.abs(a.y - b.y));
+    }
+    expect(worst).toBeGreaterThan(0.0015);
+    expect(worst).toBeLessThan(0.0025);
     top += 0.1; /* about 0.0001 of light once eased: under MOVED */
     const small = seen.length;
     for (let i = 0; i < 6; i++) tick();
@@ -251,5 +262,52 @@ describe('the shine loop', () => {
     expect(seen[big]!.f.moved).toBe(true);
     expect(seen[big]!.f.idle).toBe(false);
     expect(seen[big]!.n % 2).toBe(1);
+  });
+
+  it('a light still easing toward its target keeps the loop alive until it settles, then stops', () => {
+    /* Shimmer first, so the host's eased light sits away from REST; then reduced motion is switched on and the frames
+       run before the MutationObserver's microtask, so no reset happens: the target is REST, the eased light is not,
+       and nothing but `settling` asks for the next frame. */
+    shimmer();
+    let top = 600;
+    const host = {}, c = canvas(), seen: ShineFrame[] = [];
+    c.getBoundingClientRect = () => ({ top, height: 50, left: 0, width: 100, bottom: top + 50, right: 100, x: 0, y: top, toJSON: () => ({}) });
+    register(host, c, BOX, 1, (f) => { seen.push(f); return false; });
+    see(c, true);
+    let t = 0;
+    const tick = () => flush((t += 16));
+    for (let i = 0; i < 6; i++) tick();
+    expect(Math.abs(seen.at(-1)!.light.y - REST.y)).toBeGreaterThan(0.5);
+    still();
+    let n = 0;
+    while (probe.running() && n < 200) { tick(); n++; }
+    expect(n).toBeGreaterThan(10); /* eased over many frames, not one */
+    expect(n).toBeLessThan(200);
+    expect(probe.running()).toBe(false);
+    const last = seen.at(-1)!.light;
+    expect(Math.abs(last.x - REST.x) + Math.abs(last.y - REST.y)).toBeLessThan(0.002);
+    const draws = probe.draws(host);
+    for (let i = 0; i < 4; i++) tick();
+    expect(probe.draws(host)).toBe(draws);
+  });
+
+  it('a host back in view starts from its own light now, not the one it eased to before it left', () => {
+    shimmer();
+    let top = 100;
+    const host = {}, c = canvas(), seen: ShineFrame[] = [];
+    c.getBoundingClientRect = () => ({ top, height: 50, left: 0, width: 100, bottom: top + 50, right: 100, x: 0, y: top, toJSON: () => ({}) });
+    register(host, c, BOX, 1, (f) => { seen.push(f); return false; }, { phase: 0 });
+    see(c, true);
+    let t = 0;
+    const tick = () => flush((t += 16));
+    for (let i = 0; i < 6; i++) tick();
+    see(c, false);
+    top = 700;
+    see(c, true);
+    const before = seen.length;
+    tick();
+    expect(seen).toHaveLength(before + 1);
+    const want = lightAt(light.input(), { top, height: 50 }, { height: window.innerHeight }, t, 0);
+    expect(seen[before]!.light).toEqual(want);
   });
 });
