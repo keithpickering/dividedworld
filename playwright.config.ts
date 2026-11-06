@@ -14,7 +14,7 @@ export default defineConfig({
   testMatch: '**/*.spec.ts',
   timeout: 30_000,
   /* Tests, not files, are spread over the workers and over CI's shards (.github/workflows/web.yml), so a long spec (a11y) is split
-     too. No spec shares state between its tests: none has a beforeAll, a serial block or a module-level variable a test writes. */
+     too. No spec shares state between its tests: none has a beforeAll or a module-level variable a test writes. The one serial block (e2e/shine.spec.ts's timing tests) shares nothing either; it only keeps those tests from slowing each other's frames. */
   fullyParallel: true,
   use: { baseURL: `http://localhost:${port}` },
   webServer: {

@@ -576,6 +576,8 @@ export interface Preferences {
   readonly contrast: 'standard' | 'high';
   /** The text's size for the board and the glass together, in percent; from 150 up the glass is one column. */
   readonly textSize: 100 | 125 | 150 | 200;
+  /** Whether a card or avatar tilts toward the pointer; off until the player turns it on. */
+  readonly tilt: 'off' | 'on';
   /**
    * The card kinds (their keys) this account has met: a kind's first mark on a page shows its callout until the kind is in this
    * set. Changed only by `meetCard` and `restoreTips`, never by `setPreferences`; at most 64, read by its own account alone.
@@ -608,7 +610,7 @@ export interface Preferences {
 export type PreferencesPatch = Partial<Omit<Preferences, 'cardsMet' | 'alertsSeenAt' | 'settlementSeen' | 'welcomedAt' | 'tips' | 'tipsSeen'>>;
 
 /** What an account's preferences are before it has set any (account_preferences' defaults). */
-export const DEFAULT_PREFERENCES: Preferences = { theme: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100, cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] };
+export const DEFAULT_PREFERENCES: Preferences = { theme: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100, tilt: 'off', cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] };
 
 export interface MyInvite {
   readonly id: number;

@@ -44,7 +44,7 @@ begin
   if got -> 'settings' is distinct from (select settings from screen_settings) then raise exception 'settings: %', got -> 'settings'; end if;
   if got ->> 'account' is distinct from ann::text then raise exception 'account: %', got -> 'account'; end if;
   if got #>> '{preferences,theme}' is distinct from 'dusk' or got #>> '{preferences,postbit}' is distinct from 'stacked'
-     or got -> 'preferences' is distinct from (select to_jsonb(p) - 'account' from (select theme, postbit, motion, smoke, contrast, text_size, cards_met, alerts_seen_at, settlement_seen, toasts, welcomed_at, tips, tips_seen from account_preferences) p) then
+     or got -> 'preferences' is distinct from (select to_jsonb(p) - 'account' from (select theme, postbit, motion, smoke, contrast, text_size, tilt, cards_met, alerts_seen_at, settlement_seen, toasts, welcomed_at, tips, tips_seen from account_preferences) p) then
     raise exception 'preferences: %', got -> 'preferences';
   end if;
   if jsonb_array_length(got -> 'characters') is distinct from 2 then raise exception 'two characters of Ann''s: %', got -> 'characters'; end if;

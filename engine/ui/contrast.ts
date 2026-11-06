@@ -13,6 +13,8 @@
 
 /** Light as the device shows it, light as a player who chose it, and dark both ways. */
 export type Mode = 'light' | 'light (chosen)' | 'dark' | 'dark (device)';
+/** Every mode a board can resolve to, in the order `tokensOf` builds them. */
+export const MODES: readonly Mode[] = ['light', 'light (chosen)', 'dark', 'dark (device)'];
 export type Tokens = Readonly<Record<string, string>>;
 
 function declarations(body: string): Record<string, string> {

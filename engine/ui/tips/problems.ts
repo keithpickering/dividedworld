@@ -8,7 +8,7 @@
 import type { Instance } from '../../rules/types.ts';
 import type { InstanceUi } from '../types.ts';
 import type { CardPlay, CardUi } from '../cards/types.ts';
-import { TIP_KEYS } from './keys.ts';
+import { ACTION_TIPS, TIP_KEYS } from './keys.ts';
 import { wordsProblems } from '../cards/lens-words.ts';
 
 /** The longest a marquee name may be: the sign's width at 390px. */
@@ -28,13 +28,14 @@ export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 
   }
   const on = ui.onboarding;
   if (typeof on !== 'object' || on === null) return ['the instance UI has no onboarding'];
-  const tips: Record<string, { title?: unknown; line?: unknown } | undefined> = on.tips ?? {};
+  const tips: Record<string, { title?: unknown; line?: unknown; action?: unknown } | undefined> = on.tips ?? {};
   for (const key of TIP_KEYS) {
     const tip = tips[key];
     if (tip === undefined) out.push(`the onboarding has no tip "${key}"`);
     else {
       if (typeof tip.title !== 'string' || tip.title.trim() === '') out.push(`the tip "${key}" has no title`);
       if (typeof tip.line !== 'string' || tip.line.trim() === '') out.push(`the tip "${key}" has no line`);
+      if ((ACTION_TIPS as readonly string[]).includes(key) && (typeof tip.action !== 'string' || tip.action.trim() === '')) out.push(`the tip "${key}" has an action button and no action label`);
     }
   }
   for (const key of Object.keys(tips)) if (!(TIP_KEYS as readonly string[]).includes(key)) out.push(`the onboarding has a tip "${key}", which is not one of the engine's tips`);

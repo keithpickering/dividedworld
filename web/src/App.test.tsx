@@ -9,6 +9,8 @@ import { startLoad } from '../../engine/ui/log/Settlement.tsx';
 import { seedDemo } from './demo.ts';
 import { seedMoves } from '../../engine/ui/board/move-world.ts';
 import { fallbackSettings } from './data/settings.ts';
+import { light } from '../../engine/ui/shine/light.ts';
+import { resetTilt, tiltState } from '../../engine/ui/shine/tilt.ts';
 
 /* The demo keeps a player's preferences in session storage (web/src/demo.ts): one test's must not be the next one's account's. */
 beforeEach(() => { localStorage.clear(); sessionStorage.clear(); window.history.pushState(null, '', '/'); });
@@ -371,6 +373,41 @@ test('the account\'s glass preferences are applied as the app loads them: smoke,
   await fake.signOut();
   await waitFor(() => expect(root).toHaveAttribute('data-kb-glass-key', 'standard'));
   expect(root).not.toHaveAttribute('data-kb-text-size');
+});
+
+test('the account\'s tilt choice reaches the light wherever the app is, and goes when the account does', async () => {
+  vi.stubGlobal('DeviceOrientationEvent', function DeviceOrientationEvent() {});
+  resetTilt();
+  try {
+    const fake = createFake({ instance, settings: fallbackSettings });
+    seedDemo(fake);
+    await fake.setPreferences({ tilt: 'on' });
+    expect(tiltState()).toBe('off');
+    render(<App api={fake} />);
+    await waitFor(() => expect(tiltState()).toBe('on'));
+    expect(light.input().tilt).toBe(true);
+    await fake.signOut();
+    await waitFor(() => expect(tiltState()).toBe('off'));
+    expect(light.input().tilt).toBe(false);
+  } finally { vi.unstubAllGlobals(); resetTilt(); }
+});
+
+/* A glass page has no frame and so no tips provider, whose own read of the preferences would hand the tilt over on the board's pages: here the
+ * app's own appearance is what hands it over, from boot when the page loaded with boot. */
+test('the account\'s tilt choice reaches the light on a glass page, from boot', async () => {
+  vi.stubGlobal('DeviceOrientationEvent', function DeviceOrientationEvent() {});
+  resetTilt();
+  try {
+    const fake = createFake({ instance, settings: fallbackSettings });
+    seedDemo(fake);
+    await fake.setPreferences({ tilt: 'on' });
+    const boot = vi.spyOn(fake, 'boot');
+    window.history.pushState(null, '', '/log');
+    render(<App api={fake} />);
+    await waitFor(() => expect(boot).toHaveBeenCalled());
+    await waitFor(() => expect(tiltState()).toBe('on'));
+    expect(light.input().tilt).toBe(true);
+  } finally { vi.unstubAllGlobals(); resetTilt(); }
 });
 
 /*

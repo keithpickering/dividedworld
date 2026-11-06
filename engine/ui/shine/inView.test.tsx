@@ -8,11 +8,11 @@ import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { useInView, watchInView } from './inView.ts';
 
-type Fake = { cb: IntersectionObserverCallback; seen: Set<Element>; disconnected: boolean };
+type Fake = { cb: IntersectionObserverCallback; opts?: IntersectionObserverInit; seen: Set<Element>; disconnected: boolean };
 let made: Fake[] = [];
 class FakeObserver {
   readonly entry: Fake = { cb: undefined as unknown as IntersectionObserverCallback, seen: new Set<Element>(), disconnected: false };
-  constructor(cb: IntersectionObserverCallback) { this.entry.cb = cb; made.push(this.entry); }
+  constructor(cb: IntersectionObserverCallback, opts?: IntersectionObserverInit) { this.entry.cb = cb; this.entry.opts = opts; made.push(this.entry); }
   observe(el: Element) { this.entry.seen.add(el); }
   unobserve(el: Element) { this.entry.seen.delete(el); }
   disconnect() { this.entry.seen.clear(); this.entry.disconnected = true; }
@@ -77,5 +77,52 @@ describe('inView', () => {
     expect(renderToString(<Probe id="a" />)).toContain('data-in-view="false"');
     const r = render(<Probe id="a" />);
     expect(r.getByTestId('a')).toHaveAttribute('data-in-view', 'true');
+  });
+
+  test('a threshold has its own observer, shared by the elements that watch at it, and counts the share showing', () => {
+    const a = document.createElement('div'), b = document.createElement('div');
+    const plain: boolean[] = [], deep: boolean[] = [];
+    const stopPlain = watchInView(a, (v) => plain.push(v));
+    const stopDeep = watchInView(a, (v) => deep.push(v), { threshold: 0.4 });
+    const stopDeep2 = watchInView(b, () => {}, { threshold: 0.4 });
+    expect(made).toHaveLength(2);
+    expect(made[1]!.opts?.threshold).toEqual([0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]);
+    const report = (o: Fake, ratio: number) => act(() => { o.cb([{ target: a, isIntersecting: ratio > 0, intersectionRatio: ratio } as unknown as IntersectionObserverEntry], {} as IntersectionObserver); });
+    report(made[1]!, 0.1);
+    report(made[1]!, 0.5);
+    report(made[1]!, 0.2);
+    expect(deep).toEqual([false, true, false]);
+    report(made[0]!, 0.1);
+    expect(plain).toEqual([true]);
+    stopDeep(); stopDeep2();
+    expect(made[1]!.disconnected).toBe(true);
+    expect(made[0]!.disconnected).toBe(false);
+    stopPlain();
+    expect(made[0]!.disconnected).toBe(true);
+  });
+
+  test('a tall element counts as showing when its visible height fills the threshold share of the viewport, though its own ratio stays below', () => {
+    const a = document.createElement('div');
+    const deep: boolean[] = [];
+    const stop = watchInView(a, (v) => deep.push(v), { threshold: 0.4 });
+    const entry = (ratio: number, visible: number, root: number) => ({
+      target: a, isIntersecting: ratio > 0, intersectionRatio: ratio, intersectionRect: { height: visible }, rootBounds: { height: root },
+    }) as unknown as IntersectionObserverEntry;
+    const report = (e: IntersectionObserverEntry) => act(() => { made[0]!.cb([e], {} as IntersectionObserver); });
+    report(entry(0.1, 200, 800));
+    report(entry(0.3, 400, 800));
+    report(entry(0.3, 200, 800));
+    expect(deep).toEqual([false, true, false]);
+    stop();
+  });
+
+  test('without rootBounds the viewport is innerHeight', () => {
+    vi.stubGlobal('innerHeight', 1000);
+    const a = document.createElement('div');
+    const deep: boolean[] = [];
+    const stop = watchInView(a, (v) => deep.push(v), { threshold: 0.4 });
+    act(() => { made[0]!.cb([{ target: a, isIntersecting: true, intersectionRatio: 0.2, intersectionRect: { height: 500 }, rootBounds: null } as unknown as IntersectionObserverEntry], {} as IntersectionObserver); });
+    expect(deep).toEqual([true]);
+    stop();
   });
 });

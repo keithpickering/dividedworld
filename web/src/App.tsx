@@ -8,6 +8,7 @@ import { fallbackSettings } from './data/settings.ts';
 import { BootProvider } from '../../engine/ui/boot.tsx';
 import { CannotDisplay } from '../../engine/ui/frame/Unavailable.tsx';
 import { applyAppearance } from '../../engine/ui/appearance.ts';
+import { setTiltPreference } from '../../engine/ui/shine/tilt.ts';
 import { KayfaProvider } from '../../engine/ui/context.tsx';
 import { BoardScreen } from '../../engine/ui/board/Board.tsx';
 import { AccountGate } from '../../engine/ui/account/OpenAccount.tsx';
@@ -162,11 +163,12 @@ function Appearance({ api, boot }: { readonly api: KayfaApi; readonly boot: Boot
   useEffect(() => {
     /* The device's look first, on every change of account: the last account's never stands for the next. */
     applyAppearance(document, { theme: 'system', motion: 'system' }, instanceUi.themes, instanceUi.glass);
+    setTiltPreference('off');
     if (!session.account) return;
     /* Boot's preferences are this account's; a session that changed after boot is read again until boot is. */
-    if (boot) { applyAppearance(document, boot.preferences, instanceUi.themes, instanceUi.glass); return; }
+    if (boot) { applyAppearance(document, boot.preferences, instanceUi.themes, instanceUi.glass); setTiltPreference(boot.preferences.tilt); return; }
     let live = true;
-    void api.preferences().then((p) => { if (live) applyAppearance(document, p, instanceUi.themes, instanceUi.glass); }, () => { /* keep the device's choice */ });
+    void api.preferences().then((p) => { if (live) { applyAppearance(document, p, instanceUi.themes, instanceUi.glass); setTiltPreference(p.tilt); } }, () => { /* keep the device's choice */ });
     return () => { live = false; };
   }, [api, session.account, boot]);
   return null;

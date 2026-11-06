@@ -3,9 +3,11 @@
  * one control and one sentence each, and a choice made on either is the same choice. Each row is a fieldset of skewed radios whose legend
  * is the row's label; what to do with a choice is the screen's (preferences.ts saves it).
  */
-import { useId, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useSyncExternalStore, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Preferences } from '../data/api.ts';
+import { ButtonRow, GlassButton } from '../glass/Button.tsx';
+import { allowTilt, subscribeTilt, tiltAskFailed, tiltState, tiltSupported, watchTilt, type TiltState } from '../shine/tilt.ts';
 import './account.css';
 
 export interface Option<V extends string | number> { readonly value: V; readonly label: string }
@@ -74,5 +76,62 @@ export function ThemeRow({ value, onChange, legend = 'The board', level }: { rea
   return (
     <Choice legend={legend} options={options} value={shown} onChange={onChange} level={level}
       sentence="The 2003 board stays 2003 whichever you choose. Only its colors swap." />
+  );
+}
+
+/** What the Tilt row says in each state: the glass's own plain voice, out of character and true. */
+const TILT_SAYS: Readonly<Record<TiltState, string>> = {
+  on: 'On. Tilting your phone moves the light across shiny cards.',
+  off: 'Off. Shiny cards follow your scrolling and your pointer.',
+  'needs-allow': 'On for your account, but this phone has not allowed it yet. Your browser asks first.',
+  denied: 'Your browser said no, so shiny cards follow your scrolling instead. To change that, allow motion and orientation access for this site in your browser\'s settings, then turn this on again.',
+  unsupported: 'This device doesn\'t report tilt, so shiny cards follow your scrolling and your pointer instead.',
+  held: 'Off while motion is reduced. Shiny cards hold their light still.',
+};
+
+/* DRAFT for owner review, like the sentences above: shown on a phone that still needs the grant after a tap whose request to the browser threw. */
+const TILT_NO_ANSWER = 'Your browser didn\'t answer. Tap Allow on this phone to ask again.';
+
+/** Whether this device can use tilt at all: a coarse pointer, or an orientation API. The account's choice saves from any device either way. */
+export const tiltRowShown = (): boolean => tiltSupported() || (window.matchMedia?.('(pointer: coarse)').matches ?? false);
+
+/**
+ * Whether shiny cards follow the phone's tilt: a switch for the account, and where this phone has not yet allowed it, the button that asks
+ * the browser. The browser is asked only from a tap on this row (the switch turned on, or the button), never on its own.
+ */
+export function TiltRow({ value, onChange }: { readonly value: Preferences['tilt']; readonly onChange: (v: Preferences['tilt']) => void }) {
+  const id = useId();
+  const switchRef = useRef<HTMLInputElement>(null);
+  const state = useSyncExternalStore(subscribeTilt, () => tiltState(value), () => tiltState('off'));
+  const noAnswer = useSyncExternalStore(subscribeTilt, tiltAskFailed, () => false);
+  /* The device is listened to only while the choice is on and this row is drawn. */
+  useEffect(() => (value === 'on' ? watchTilt() : undefined), [value]);
+  if (!tiltRowShown()) return null;
+  /* The ask is made synchronously inside the tap (iOS refuses it elsewhere); only the focus waits for the answer. When the Allow button
+     went away with the answer, focus fell to the page, so it goes to the switch the button belonged to. */
+  const allow = () => {
+    void allowTilt().then(() => {
+      const a = document.activeElement;
+      if (!a || a === document.body) switchRef.current?.focus();
+    });
+  };
+  const turn = (on: boolean) => {
+    onChange(on ? 'on' : 'off');
+    /* Turning it on after a refusal is the tap that asks again. */
+    const asked = tiltState('on');
+    if (on && (asked === 'denied' || asked === 'needs-allow')) allow();
+  };
+  return (
+    <div className="kb-acct-row">
+      <h3 id={`${id}-name`} className="kb-acct-row-label">Tilt shiny cards with your phone</h3>
+      <div className="kb-acct-row-body">
+        <label className="kb-acct-seg-option">
+          <input ref={switchRef} type="checkbox" role="switch" checked={value === 'on'} onChange={(e) => turn(e.target.checked)} aria-labelledby={`${id}-name`} aria-describedby={`${id}-says`} />
+          <span className="kb-acct-seg-face kb-glass-skew" aria-hidden="true"><b className="kb-glass-upright">{value === 'on' ? 'On' : 'Off'}</b></span>
+        </label>
+        <p id={`${id}-says`} className="kb-acct-row-sentence" role="status">{TILT_SAYS[state]}{state === 'needs-allow' && noAnswer ? ` ${TILT_NO_ANSWER}` : ''}</p>
+        {state === 'needs-allow' && <ButtonRow><GlassButton onClick={allow}>Allow on this phone</GlassButton></ButtonRow>}
+      </div>
+    </div>
   );
 }

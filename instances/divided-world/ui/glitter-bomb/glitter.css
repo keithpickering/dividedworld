@@ -1,41 +1,34 @@
 /*
- * Glitter Bomb (Effect.tsx): the glints sit behind the words, in a layer that takes no pointer and no room, so the post reads and
- * lays out as it would bare. Each glint is a solid four-point star in its ink, twinkling in place by its size alone; the layer as a
- * whole is drawn at Effect.tsx's GLITTER_ALPHA (set on it inline), so glints that overlap never cover the page more than one does.
- * Reduced motion, the device's or the player's, holds every glint still where it is.
+ * Glitter Bomb (Effect.tsx): three canvases go around the words. Under them, one holds the settled flakes unlit and the one over it
+ * what the light changes (the lit flakes, the flares and the loose glitter); over the words, one holds the burst while it flies. All
+ * fill the post, take no pointer and no room, so the post reads and lays out as it would
+ * bare. The canvases are sized in whole device pixels by Effect.tsx (the box times the loop's density); their CSS size is the
+ * post's, here. They hold no color: the flakes' inks are in Effect.tsx and every pixel is held in the board's readable band by the
+ * engine. The words keep a text shadow in the board's ground.
  */
 .dw-glitter {
   position: relative;
   isolation: isolate;
 }
-.dw-glitter-sparkle {
+.dw-glitter-under,
+.dw-glitter-flash,
+.dw-glitter-over {
   position: absolute;
-  inset: 0;
-  z-index: 0;
-  overflow: hidden;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
+}
+.dw-glitter-under,
+.dw-glitter-flash {
+  z-index: 0;
 }
 .dw-glitter-words {
   position: relative;
   z-index: 1;
+  text-shadow: 0 0 2px var(--kb-bg), 0 0 6px var(--kb-bg);
 }
-.dw-glint {
-  position: absolute;
-  background: var(--dw-glint-ink);
-  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
-  animation-duration: 2.4s;
-  animation-iteration-count: infinite;
-  animation-timing-function: ease-in-out;
-}
-@keyframes dw-twinkle {
-  0%, 100% { transform: scale(0.55) rotate(0deg); }
-  50% { transform: scale(1) rotate(45deg); }
-}
-.dw-glitter[data-kb-moving="false"] .dw-glint {
-  animation: none;
-}
-@media (prefers-reduced-motion: reduce) {
-  .dw-glint {
-    animation: none;
-  }
+.dw-glitter-over {
+  z-index: 2;
 }

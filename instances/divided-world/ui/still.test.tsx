@@ -29,10 +29,11 @@ afterEach(() => {
   delete (HTMLElement.prototype as { offsetHeight?: unknown }).offsetHeight;
 });
 
-const drawn = instanceUi.cards.filter((c) => c.Effect && drawnInMoment(instance.cards.find((r) => r.key === c.key)!));
+/* Glitter Bomb lands beyond a post, so a moment names it and never draws it; if one is ever drawn (a post's own Effect, still), it keeps the contract too. */
+const drawn = instanceUi.cards.filter((c) => c.Effect && (c.key === 'glitter-bomb' || drawnInMoment(instance.cards.find((r) => r.key === c.key)!)));
 
-test('the instance has cards a moment draws, Whoops! and Feelin\' Fab among them', () => {
-  expect(drawn.map((c) => c.key)).toEqual(expect.arrayContaining(['whoops', 'feelin-fab']));
+test('the instance has cards a moment draws, Whoops! and Feelin\' Fab among them, and Glitter Bomb is held to the same contract', () => {
+  expect(drawn.map((c) => c.key)).toEqual(expect.arrayContaining(['whoops', 'feelin-fab', 'glitter-bomb']));
 });
 
 test.each(drawn.map((c) => [c.key, c] as const))('%s, drawn still, saves, releases, meets and holds nothing, whatever is pressed', (key, card) => {
