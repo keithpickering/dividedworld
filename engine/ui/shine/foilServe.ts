@@ -28,7 +28,7 @@ import type { FoilDraw, FromWorker, ToWorker } from './foilProtocol.ts';
 
 /** The part of a worker's global scope this needs. */
 export interface FoilScope {
-  addEventListener(type: 'message', listener: (event: { data: unknown }) => void): void;
+  addEventListener(type: 'message' | 'messageerror', listener: (event: { data: unknown }) => void): void;
   postMessage(message: unknown): void;
 }
 
@@ -106,9 +106,12 @@ export function serveFoils(scope: FoilScope, hooks: ServeHooks = {}): { canvas(i
       case 'drop': {
         const h = typeof m.id === 'number' ? held.get(m.id) : undefined;
         if (!h) return;
-        release(h);
-        h.canvas.width = 0; h.canvas.height = 0;
+        /* Forgotten first, so a canvas that throws on its way out is not kept: one canvas's failure ends no one else's. */
         if (m.kind === 'drop') held.delete(m.id!);
+        try {
+          release(h);
+          h.canvas.width = 0; h.canvas.height = 0;
+        } catch (err) { console.error(err); }
         return;
       }
       case 'probe': {
@@ -119,17 +122,26 @@ export function serveFoils(scope: FoilScope, hooks: ServeHooks = {}): { canvas(i
           const count = Math.min(Math.max(0, m.n ?? KEEP), KEEP, batches);
           answer({ kind: 'probe', nonce, ask: 'work', batches, work: Array.from({ length: count }, (_, i) => worked[(batches - count + i) % KEEP]!) });
         } else if (m.ask === 'pixels') {
-          const h = held.get(m.id as number);
-          const ctx = h?.canvas.getContext('2d');
-          if (!h || !ctx || h.canvas.width === 0 || h.canvas.height === 0) { answer({ kind: 'probe', nonce, ask: 'pixels', width: 0, height: 0, data: null }); return; }
-          const img = ctx.getImageData(0, 0, h.canvas.width, h.canvas.height);
-          answer({ kind: 'probe', nonce, ask: 'pixels', width: img.width, height: img.height, data: img.data });
+          const none: FromWorker = { kind: 'probe', nonce, ask: 'pixels', width: 0, height: 0, data: null };
+          try {
+            const h = held.get(m.id as number);
+            const ctx = h?.canvas.getContext('2d');
+            if (!h || !ctx || h.canvas.width === 0 || h.canvas.height === 0) { answer(none); return; }
+            const img = ctx.getImageData(0, 0, h.canvas.width, h.canvas.height);
+            answer({ kind: 'probe', nonce, ask: 'pixels', width: img.width, height: img.height, data: img.data });
+          } catch (err) { console.error(err); answer(none); }
         }
         return;
       }
       default:
         return;
     }
+  });
+
+  /* A frame the worker cannot read is never drawn: it is acknowledged all the same, or the page would wait on it for good. */
+  scope.addEventListener('messageerror', () => {
+    console.error('the foil worker received a message that could not be read');
+    scope.postMessage({ kind: 'ack' } satisfies FromWorker);
   });
 
   return { canvas: (id) => held.get(id)?.canvas };

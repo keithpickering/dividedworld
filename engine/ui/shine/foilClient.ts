@@ -16,8 +16,8 @@
  *
  * `offscreenFoils()` says whether the browser can do this at all (a worker, an OffscreenCanvas, and a canvas element that can hand
  * control over); where it cannot, the host draws on the main thread as it always did, and the look and motion are the same. A worker
- * that fails to start throws from `adoptFoil` before anything is transferred, so the host draws on the page; one that fails once
- * running (an `error` or `messageerror`) is logged and let go: nothing is posted to it again, probe asks waiting on it settle with no
+ * that fails to start throws from `adoptFoil` before anything is transferred, so the host draws on the page; one that fails to load (an `error`
+ * before it has answered) or sends a message that cannot be read is logged and let go: nothing is posted to it again, its canvases' handles go dead, probe asks waiting on it settle with no
  * answer, and the canvases it held stay as they were, the posts' words readable over whatever is under them.
  *
  * `setFoilWorker` is a seam for a story, which runs its own worker entry (the foil server plus its probes). `foilProbe` is for tests
@@ -84,7 +84,7 @@ function sendBatch(): void {
   if (inFlight || pending.size === 0 || !worker) return;
   const draws = [...pending.values()];
   pending = new Map();
-  try { send({ kind: 'frame', t: draws[0]!.now, draws }); inFlight = true; } catch (err) { console.error(err); }
+  try { send({ kind: 'frame', t: Math.max(...draws.map((d) => d.now)), draws }); inFlight = true; } catch (err) { console.error(err); }
 }
 
 function flush(): void {
@@ -99,6 +99,9 @@ function end(w: Worker): void {
   w.terminate();
   worker = null;
   pending = new Map(); inFlight = false; scheduled = false;
+  /* Its canvases went with it: their handles are dead (live no longer names them), and cannot post into the next worker or hold off its idle end. */
+  for (const c of live.values()) idOfCanvas.delete(c);
+  live.clear();
   settleAsks();
 }
 
@@ -106,15 +109,17 @@ function start(): Worker {
   clearTimeout(idle); idle = undefined;
   if (worker) return worker;
   const w = make();
-  /* A worker that fails is let go: frames are not posted to a dead one, and what waits on it settles. */
+  /* Heard from: it loaded and answered. An `error` before that is a load failure, and the worker is let go; frames are not posted to a dead one, and what waits on it settles. Afterwards an `error` is one uncaught throw, logged, and the worker serves on. */
+  let heard = false;
   w.addEventListener('error', (e) => {
     const where = e.filename ? ` (${e.filename}:${e.lineno})` : '';
     console.error(`the foil worker failed: ${e.message || 'no message'}${where}`);
-    end(w);
+    if (!heard) end(w);
   });
   w.addEventListener('messageerror', () => { console.error('the foil worker sent a message that could not be read'); end(w); });
   w.addEventListener('message', (e: MessageEvent<FromWorker>) => {
     if (worker !== w) return;
+    heard = true;
     const m = e.data;
     if (m?.kind === 'ack') { inFlight = false; sendBatch(); } else if (m?.kind === 'probe') answers.get(m.nonce)?.(m);
   });

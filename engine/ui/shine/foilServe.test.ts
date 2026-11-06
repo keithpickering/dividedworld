@@ -35,9 +35,10 @@ class FakeOffscreen {
 /* A scope that hands what the test posts to the listeners, and keeps what the worker posts back. */
 function scopeOf() {
   const listeners: ((e: { data: unknown }) => void)[] = [];
+  const unreadable: ((e: { data: unknown }) => void)[] = [];
   const out: FromWorker[] = [];
-  const scope: FoilScope = { addEventListener: (_t, fn) => { listeners.push(fn); }, postMessage: (m) => { out.push(m as FromWorker); } };
-  return { scope, out, send: (data: unknown) => { for (const l of listeners) l({ data }); } };
+  const scope: FoilScope = { addEventListener: (t, fn) => { (t === 'message' ? listeners : unreadable).push(fn); }, postMessage: (m) => { out.push(m as FromWorker); } };
+  return { scope, out, send: (data: unknown) => { for (const l of listeners) l({ data }); }, unreadable: () => { for (const l of unreadable) l({ data: null }); } };
 }
 
 const LIGHT_BAND: Band = { lo: 0.59, hi: 1 };
@@ -219,6 +220,40 @@ describe('the foil worker', () => {
     assert.deepEqual(seen, ['ran 5 acks 0', 'ran 6 acks 1']);
     send({ kind: 'frame', t: 7, draws: [draw(404)] });
     assert.equal(out.length, 3, 'a batch of draws for unknown canvases is acknowledged too');
+  });
+
+  test('a free or drop that throws costs only that canvas, and says so; the worker lives on', () => {
+    const { scope, send } = scopeOf();
+    serveFoils(scope);
+    const a = adopt(send, 1), b = adopt(send, 2);
+    const err = mock.method(console, 'error', () => {});
+    Object.defineProperty(a, 'width', { get: () => 5, set() { throw new Error('no resize'); } });
+    assert.doesNotThrow(() => send({ kind: 'free', id: 1 }));
+    assert.doesNotThrow(() => send({ kind: 'drop', id: 1 }));
+    assert.equal(err.mock.calls.length, 2);
+    assert.doesNotThrow(() => send({ kind: 'free', id: 2 }));
+    assert.deepEqual([b.width, b.height], [0, 0]);
+  });
+
+  test('a pixels probe that throws is answered with null', () => {
+    const { scope, send, out } = scopeOf();
+    serveFoils(scope);
+    const c = adopt(send, 1);
+    send({ kind: 'frame', t: 1, draws: [draw(1)] });
+    const err = mock.method(console, 'error', () => {});
+    (c.ctx as { getImageData: () => never }).getImageData = () => { throw new Error('tainted'); };
+    assert.doesNotThrow(() => send({ kind: 'probe', nonce: 9, ask: 'pixels', id: 1 }));
+    assert.deepEqual(out.at(-1), { kind: 'probe', nonce: 9, ask: 'pixels', width: 0, height: 0, data: null });
+    assert.equal(err.mock.calls.length, 1);
+  });
+
+  test('a message it cannot read is logged and acknowledged, so the page does not wait on it for good', () => {
+    const { scope, out, unreadable } = scopeOf();
+    serveFoils(scope);
+    const err = mock.method(console, 'error', () => {});
+    unreadable();
+    assert.equal(err.mock.calls.length, 1);
+    assert.deepEqual(out, [{ kind: 'ack' }]);
   });
 
   test('the server hands back a canvas by id, for a story\'s worker entry', () => {

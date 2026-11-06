@@ -228,6 +228,53 @@ describe('the foil client', () => {
     expect(foilProbe.worker()).toBeNull();
   });
 
+  it('an error after the worker has been heard from is logged only: one throw does not end every foil on the page', async () => {
+    supported();
+    const a = adoptFoil(document.createElement('canvas'));
+    const w = FakeWorker.made[0]!;
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    a.draw(...drawArgs(16));
+    await flushMicrotasks();
+    w.ack();
+    w.emit('error', { message: 'a draw threw', preventDefault() {} });
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(w.terminated).toBe(false);
+    a.draw(...drawArgs(32));
+    await flushMicrotasks();
+    expect(w.of('frame')).toHaveLength(2);
+  });
+
+  it('after a failure the dead worker\'s handles are dead: nothing they do reaches the next worker or holds off its idle end', async () => {
+    vi.useFakeTimers();
+    try {
+      supported();
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const cv = document.createElement('canvas');
+      const old = adoptFoil(cv);
+      FakeWorker.made[0]!.emit('error', { message: 'load failed', preventDefault() {} });
+      expect(isTransferred(cv)).toBe(true);
+      expect(foilProbe.idOf(cv)).toBeUndefined();
+      const fresh = adoptFoil(document.createElement('canvas'));
+      const w2 = FakeWorker.made[1]!;
+      old.draw(...drawArgs(16)); old.free(); old.drop();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(w2.sent.map((m) => m.message.kind)).toEqual(['adopt']);
+      fresh.drop();
+      await vi.advanceTimersByTimeAsync(IDLE_MS);
+      expect(w2.terminated, 'only the live canvas counted toward the idle end').toBe(true);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('a batch\'s t is the largest now among its draws', async () => {
+    supported();
+    const a = adoptFoil(document.createElement('canvas')), b = adoptFoil(document.createElement('canvas'));
+    const w = FakeWorker.made[0]!;
+    a.draw(...drawArgs(16)); await flushMicrotasks();
+    a.draw(...drawArgs(32)); b.draw(...drawArgs(48)); await flushMicrotasks();
+    w.ack();
+    expect((w.of('frame')[1]!.message as { t: number }).t).toBe(48);
+  });
+
   it('a messageerror also marks the worker failed', async () => {
     supported();
     const a = adoptFoil(document.createElement('canvas'));
