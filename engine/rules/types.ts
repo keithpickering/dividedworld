@@ -81,7 +81,7 @@ export interface ModBotSettings {
   readonly patrolsPerDay: number;
   /** How many of a board's recent posts one patrol's judgment reads (a bounded read of public posts). */
   readonly patrolSample: number;
-  /** What a report costs the reporter, and is refunded when it is upheld. */
+  /** What a report costs the reporter: spent on every judged report, whatever the verdict, and refunded only when the judgment fails. */
   readonly reportPrice: Hundredths;
   /** The most reports one character may file in a day. */
   readonly reportsPerDay: number;

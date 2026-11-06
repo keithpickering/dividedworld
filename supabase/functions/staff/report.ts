@@ -1,6 +1,6 @@
 /**
  * A player's report of a post, as a pure module (the Mod Bots design, section 7; its plan, Task 8): it takes the player's `Db` (the player's own session, as
- * supabase/functions/act/ is called), the service's `Db`, the `Models` and the instance, and answers the request. supabase/functions/staff/index.ts is the thin Edge
+ * supabase/functions/act/ is called), the service's `Db`, a way to build the `Models` (its tiers are a service read, so it is asked for only after the report is taken) and the instance, and answers the request. supabase/functions/staff/index.ts is the thin Edge
  * Function around it; this file is what Node tests (report.test.ts) and Deno both run. The engine's side of the call (the prompt, the shape of the answer, its repair)
  * is engine/system/judgment.ts.
  *
@@ -31,6 +31,7 @@ import { REPORT_RULE, repairReport, reportPrompt, type RuleLine } from '../../..
 import type { Models } from '../../../engine/system/model.ts';
 import type { Trim } from '../../../engine/system/validate.ts';
 import { DatabaseError, TransportError, sessionRefused, type Db } from '../_shared/rpc.ts';
+import { CORS, boundedJson } from '../_shared/serve.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { AnswerRejected } from '../_shared/models/index.ts';
 import { learnMod, said } from './core.ts';
@@ -71,7 +72,7 @@ interface Closed {
 
 const answer = (status: number, body: Record<string, unknown>): ReportAnswer => ({ status, body });
 
-export async function runReport(dbs: { player: Db; service: Db }, models: Models, instance: Instance, request: unknown): Promise<ReportAnswer> {
+export async function runReport(dbs: { player: Db; service: Db }, getModels: () => Promise<Models>, instance: Instance, request: unknown): Promise<ReportAnswer> {
   const req = request as { through?: unknown; post?: unknown; reason?: unknown } | null;
   if (typeof req !== 'object' || req === null) return answer(400, { error: 'a report names the character reporting, the post and a reason' });
   if (typeof req.through !== 'string' || !UUID.test(req.through)) return answer(400, { field: 'through', error: 'a report is made through one of your characters' });
@@ -93,7 +94,7 @@ export async function runReport(dbs: { player: Db; service: Db }, models: Models
 
   // The report is paid. From here it is answered or refunded.
   try {
-    return await judge(dbs.service, models, instance, opened);
+    return await judge(dbs.service, getModels, instance, opened);
   } catch (e) {
     console.error('a report was not judged', opened.report, e instanceof Error ? e.message : 'unknown');
     return await refund(dbs.service, opened);
@@ -112,7 +113,7 @@ async function refund(db: Db, opened: Opened): Promise<ReportAnswer> {
   }
 }
 
-async function judge(db: Db, models: Models, instance: Instance, opened: Opened): Promise<ReportAnswer> {
+async function judge(db: Db, getModels: () => Promise<Models>, instance: Instance, opened: Opened): Promise<ReportAnswer> {
   const tuned = await withDatabaseSettings(instance, db);
   const settings = tuned.settings;
   const mod = await learnMod(db, tuned.system.roster, settings, opened.staff);
@@ -136,7 +137,7 @@ async function judge(db: Db, models: Models, instance: Instance, opened: Opened)
   let trims: readonly Trim[] = [];
   let repaired: ReturnType<typeof repairReport> | undefined;
   try {
-    const out = await models.chat({
+    const out = await (await getModels()).chat({
       duty: 'reportJudge', tier: DUTY_SPECS.reportJudge.tier, staff: opened.staff, system: frame.system, messages: [{ role: 'user', content: frame.message }],
       schema: frame.schema, rules: REPORT_RULE, maxTokens: 1_000,
     });
@@ -173,4 +174,40 @@ async function judge(db: Db, models: Models, instance: Instance, opened: Opened)
     report: opened.report, verdict: closed.verdict ?? verdict, line: closed.line ?? repaired.line, visit: closed.visit ?? null,
     ...(move !== undefined ? { move } : {}),
   });
+}
+
+
+/** A report is a reason of 280 characters, ids and a little more. */
+export const MOST_REPORT_BYTES = 8 * 1024;
+
+export interface DoorDeps {
+  readonly instance: Instance;
+  /** The two connections for a request: as the player (their session), and as the service. Making them reads nothing. */
+  readonly dbs: (session: string) => { player: Db; service: Db };
+  /** The models, built from the instance's tiers as the database holds them now (a service read): asked for only once the report has been taken as the player. */
+  readonly models: (service: Db) => Promise<Models>;
+}
+
+const reply = (status: number, body: unknown): Response => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...CORS } });
+
+/**
+ * The player's door to a report (the edge of staff/index.ts for a request that is not the service's): the method, the session and the size of the body are checked before
+ * any connection is made, and nothing is read or done as the service until `open_report`, called with the player's own session, has taken the report. A request with no
+ * session is a 401 whoever its target is.
+ */
+export async function reportDoor(request: Request, d: DoorDeps): Promise<Response> {
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
+  if (request.method !== 'POST') return reply(405, { error: 'reports are posted' });
+  const session = (request.headers.get('Authorization') ?? '').replace(/^Bearer\s*/i, '').trim();
+  if (!session) return reply(401, { error: 'sign in to report' });
+  const { tooLong, body } = await boundedJson(request, MOST_REPORT_BYTES);
+  if (tooLong) return reply(413, { error: 'that report is too long' });
+  try {
+    const dbs = d.dbs(session);
+    const out = await runReport(dbs, () => d.models(dbs.service), d.instance, body);
+    return reply(out.status, out.body);
+  } catch (e) {
+    console.error('report failed', e instanceof Error ? e.message : 'unknown');
+    return reply(500, { error: 'the report could not be made; try again' });
+  }
 }

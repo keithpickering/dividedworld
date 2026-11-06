@@ -6,9 +6,10 @@
 --
 --   open_report(through, post, reason)   the player's door. It verifies the caller plays `through` (acting) and that the character is not banned (not_banned), so the
 --                                        Edge Function around it can be bypassed to no effect. In this order: the reason, The System on, the post (a player's post), a Mod
---                                        on the board's beat, THEN the instance's daily judgment budget (`modBots.judgmentsPerDay`, one instance-wide count of the
---                                        day's billed judgments, and the same refusal in the same words whoever asks), then the character's quota (`reportsPerDay`: per
---                                        CHARACTER, never per account; a refunded report is not counted), THEN the price (`reportPrice`, wallet_spend, kind 'report'), and
+--                                        on the board's beat, THEN the instance's daily judgment budget (`modBots.judgmentsPerDay`, one instance-wide count: the
+--                                        day's billed judgments plus every report paid and still in flight, and the same refusal in the same words whoever asks), then the
+--                                        character's quota (`reportsPerDay`: per CHARACTER, never per account; a report refunded for a failed judgment is not counted, one
+--                                        swept for never being judged is), THEN the price (`reportPrice`, wallet_spend, kind 'report'), and
 --                                        the `report` Act. A report across one's own masks is allowed: no refusal depends on who owns the post.
 --   close_report(report, verdict, line, charge, staff)   the service's: writes the verdict by the Mod and, for a visit or a backfire, starts the visit (start_visit; the
 --                                        backfire's cause is 'backfire'). Once: a report already closed returns its verdict and writes nothing, and a report refunded is not
@@ -31,7 +32,9 @@
 -- Ways out. A report whose judgment fails is refunded and can be made again; a report whose function died is refunded by refund_stale_reports; a dismissed report has
 -- spent its Aura on purpose (the Mod's grumble is the game); the visit a report draws has every way out a visit has. Concurrency: a report's decisions are made under an
 -- advisory lock of its own (close and refund take the same one, so a report is closed once or refunded once, never both), and opening takes one instance-wide lock for
--- its checks, so the quota and the budget are not read twice at once.
+-- its checks, so the quota and the budget are not read twice at once. The budget's bound: a report counts from the moment it is paid (judgment_load_today), under that lock,
+-- so reports never take the day past `judgmentsPerDay` by themselves; the other judgments (patrols, appeals) are counted by the ledger once billed and are not under this
+-- lock, so a day can pass the budget by the number of those in flight at the same instant, and by no more.
 
 -- ------------------------------------------------------------------------------------------------------ the Acts ----
 
@@ -241,6 +244,9 @@ alter table wallet_events add constraint wallet_events_kind_check check (kind in
 create table report_refunds (
   report_act uuid primary key references acts (id),
   amount integer not null check (amount >= 0),
+  -- Why: 'failed' (the judgment failed, so the player may report again) or 'stale' (the report was never judged; it still counts toward the character's quota, so a direct
+  -- open_report cannot make free public reports without end).
+  why text not null default 'failed' check (why in ('failed', 'stale')),
   at timestamptz not null default now()
 );
 alter table report_refunds enable row level security;
@@ -266,6 +272,20 @@ language sql stable security definer set search_path = public, pg_temp as $$
 $$;
 revoke execute on function judgment_calls_today() from public, anon, authenticated;
 grant execute on function judgment_calls_today() to service_role;
+
+-- What the budget is counted against: the ledger's judgments, plus every report paid today that is still in flight (no verdict, no refund, and no billed call of its own yet:
+-- once its call is billed the ledger counts it). So a burst of reports cannot all pass a check made before any of them is judged.
+create function judgment_load_today() returns integer
+language sql stable security definer set search_path = public, pg_temp as $$
+  select judgment_calls_today() + (
+    select count(*)::integer from acts r
+    where r.kind = 'report' and r.created_at >= date_trunc('day', now() at time zone 'utc') at time zone 'utc'
+      and not exists (select 1 from acts v where v.kind = 'report_verdict' and v.target_act_id = r.id)
+      and not exists (select 1 from report_refunds f where f.report_act = r.id)
+      and not exists (select 1 from staff_call_records c where c.cause_act = r.id and c.duty = 'reportJudge'))
+$$;
+revoke execute on function judgment_load_today() from public, anon, authenticated;
+grant execute on function judgment_load_today() to service_role;
 
 -- A Mod's line on a report from the instance's stock lines (`reportDismissed`, `reportBackfired`): {mod} is the Mod's name and {reporter} the reporter's. Where the
 -- instance gave none the plain default says the same.
@@ -323,13 +343,14 @@ begin
 
   -- The checks and the write are one decision: one lock for the instance, taken before the count of the day is read.
   perform pg_advisory_xact_lock(hashtextextended('kayfabb.reports', 0));
-  -- The instance's budget first, and before anything is paid: one count, and the same words for everyone.
-  if judgment_calls_today() >= budget then
+  -- The instance's budget first, and before anything is paid: one count (the ledger's judgments and the reports in flight), and the same words for everyone.
+  if judgment_load_today() >= budget then
     raise exception 'the Mods have heard all the reports they will today; reports open again after midnight UTC' using hint = 'kayfabb.refusal', errcode = '55000';
   end if;
-  -- This character's quota, and only this character's: a refunded report is not one of the day's.
+  -- This character's quota, and only this character's: a report refunded for a failed judgment is not one of the day's (the player may report again); one swept for
+  -- never being judged is.
   if (select count(*) from acts r where r.kind = 'report' and r.character = open_report.through and r.created_at >= day_start
-        and not exists (select 1 from report_refunds f where f.report_act = r.id)) >= per_day then
+        and not exists (select 1 from report_refunds f where f.report_act = r.id and f.why = 'failed')) >= per_day then
     raise exception 'this character has made its % reports for today', per_day using hint = 'kayfabb.refusal', errcode = '55000';
   end if;
 
@@ -439,7 +460,7 @@ grant execute on function close_report(uuid, text, text, jsonb, text) to service
 
 -- ---------------------------------------------------------------------------------------------------- refund_report ----
 
-create function refund_report(report_act uuid) returns jsonb
+create function refund_report(report_act uuid, why text default 'failed') returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   r acts%rowtype;
@@ -457,12 +478,12 @@ begin
   end if;
   select w.account, -w.change as price into paid from wallet_events w where w.kind = 'report' and w.ref = r.id;
   amount := coalesce(paid.price, 0);
-  insert into report_refunds (report_act, amount) values (r.id, amount);
+  insert into report_refunds (report_act, amount, why) values (r.id, amount, coalesce(refund_report.why, 'failed'));
   if amount > 0 then perform wallet_move(paid.account, amount, 'refund', null, r.id); end if;
   return jsonb_build_object('refunded', true, 'amount', amount);
 end $$;
-revoke execute on function refund_report(uuid) from public, anon, authenticated;
-grant execute on function refund_report(uuid) to service_role;
+revoke execute on function refund_report(uuid, text) from public, anon, authenticated;
+grant execute on function refund_report(uuid, text) to service_role;
 
 -- Reports whose judgment never came back (the function died between the payment and the answer, or a client called open_report and went no further): refunded, oldest
 -- first, at most `most` at a time. Read by the report index on the day's reports; a report that already has a verdict or a refund is skipped.
@@ -480,7 +501,7 @@ begin
       and not exists (select 1 from report_refunds f where f.report_act = r.id)
     order by r.created_at, r.id limit greatest(refund_stale_reports.most, 0)
   loop
-    if (refund_report(stale) ->> 'refunded')::boolean then n := n + 1; end if;
+    if (refund_report(stale, 'stale') ->> 'refunded')::boolean then n := n + 1; end if;
   end loop;
   return n;
 end $$;

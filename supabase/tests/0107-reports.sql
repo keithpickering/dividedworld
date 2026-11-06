@@ -508,6 +508,73 @@ begin
   if refund_stale_reports(10) is distinct from 0 then raise exception 'the sweep refunded again'; end if;
 end $$;
 
+-- ---- 7b. Reports in flight count toward the budget; a swept report counts toward its quota, a failed judgment's refund does not ----
+do $$
+declare
+  ann_b uuid := (select id from characters where name = 'Rp Ann B');
+  bob_b uuid := (select id from characters where name = 'Rp Bob B');
+  t uuid := tests.thread('Reports in flight');
+  p uuid := pg_temp.victim(t);
+  day_start timestamptz := date_trunc('day', now() at time zone 'utc') at time zone 'utc';
+  pending bigint;
+  r1 jsonb; r2 jsonb;
+  said text;
+  qc uuid := tests.character(pg_temp.ann(), 'Rp Ann Quota');
+  q1 jsonb;
+  old uuid;
+  annu uuid := pg_temp.ann();
+  was jsonb := (select value from settings where key = 'modBots');
+begin
+  update wallets set balance = 500 where account in (annu, pg_temp.bob());
+  -- The budget leaves room for two more reports than the ledger and the unanswered reports already hold. Two are opened (nothing judged yet); the third is refused.
+  pending := (select count(*) from acts r where r.kind = 'report' and r.created_at >= day_start
+                and not exists (select 1 from acts v where v.kind = 'report_verdict' and v.target_act_id = r.id)
+                and not exists (select 1 from report_refunds f where f.report_act = r.id)
+                and not exists (select 1 from staff_call_records c where c.cause_act = r.id and c.duty = 'reportJudge'));
+  update settings set value = jsonb_set(value, '{judgmentsPerDay}', to_jsonb(judgment_calls_today() + pending + 2)) where key = 'modBots';
+  r1 := pg_temp.report(ann_b, p, 'In flight one.');
+  r2 := pg_temp.report(bob_b, p, 'In flight two.');
+  perform tests.become(annu);
+  said := pg_temp.refusal(format('select open_report(%L, %L, %L)', ann_b, p, 'In flight three.'));
+  perform tests.unbecome();
+  if said is null or said not like '%all the reports they will today%' then raise exception 'unjudged reports in flight did not count toward the budget: %', said; end if;
+  -- A refunded one is no longer in flight, and a billed one is counted once (by the ledger): the next report is taken.
+  perform refund_report((r1 ->> 'report')::uuid);
+  q1 := pg_temp.report(ann_b, p, 'In flight four.');
+  if q1 ->> 'report' is null then raise exception 'a refunded report still counted toward the budget'; end if;
+  perform tests.become(annu);
+  said := pg_temp.refusal(format('select open_report(%L, %L, %L)', ann_b, p, 'In flight five.'));
+  perform tests.unbecome();
+  if said is null then raise exception 'the budget''s edge moved'; end if;
+  insert into staff_call_records (cause_act, duty, staff, record) values ((r2 ->> 'report')::uuid, 'reportJudge', 'rp-m1', '{}');
+  insert into model_calls (duty, staff, provider, model, cost_microdollars, outcome) values ('reportJudge', 'rp-m1', 'fake', 'fake', 0, 'ok');
+  perform close_report((r2 ->> 'report')::uuid, 'dismissed');
+  -- r2 is now the ledger's (one row) and not also in flight: the count is unchanged, so the edge still holds.
+  perform tests.become(annu);
+  said := pg_temp.refusal(format('select open_report(%L, %L, %L)', ann_b, p, 'In flight six.'));
+  perform tests.unbecome();
+  if said is null then raise exception 'a judged report opened room by leaving the flight count'; end if;
+  update settings set value = was where key = 'modBots';
+
+  -- The quota: a report swept for never being judged still counts, so a direct open_report cannot spam free public reports; one refunded for a failed judgment does not.
+  update settings set value = jsonb_set(value, '{reportsPerDay}', '2') where key = 'modBots';
+  q1 := pg_temp.report(qc, p, 'Quota one.');
+  perform set_config('kayfabb.report_writer', 'on', true);
+  insert into acts (character, kind, thread, target_act_id, payload, created_at) values (qc, 'report', t, p, '{"reason": "never judged"}', now() - interval '1 hour') returning id into old;
+  perform set_config('kayfabb.report_writer', '', true);
+  if refund_stale_reports(10) is distinct from 1 then raise exception 'the sweep did not take the old report'; end if;
+  if (select why from report_refunds where report_act = old) is distinct from 'stale' then raise exception 'the sweep''s refund is not marked stale: %', (select why from report_refunds where report_act = old); end if;
+  perform tests.become(annu);
+  said := pg_temp.refusal(format('select open_report(%L, %L, %L)', qc, p, 'Quota three.'));
+  perform tests.unbecome();
+  if said is null or said not like '%2 reports%' then raise exception 'a swept report did not count toward the quota: %', said; end if;
+  perform refund_report((q1 ->> 'report')::uuid);
+  if (select why from report_refunds where report_act = (q1 ->> 'report')::uuid) is distinct from 'failed' then raise exception 'a failed judgment''s refund is not marked failed'; end if;
+  q1 := pg_temp.report(qc, p, 'Quota again.');
+  if q1 ->> 'report' is null then raise exception 'a refund for a failed judgment still counted toward the quota'; end if;
+  update settings set value = was where key = 'modBots';
+end $$;
+
 -- ---- 8. The doors ----
 do $$
 declare

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { runReport } from './report.ts';
+import { reportDoor, runReport } from './report.ts';
 import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
 import { instance as dividedWorld } from '../_shared/instance.ts';
 import { AnswerRejected } from '../_shared/models/index.ts';
@@ -79,7 +79,7 @@ function fakeModels(reply: (r: ChatRequest) => unknown) {
   return { models, chats };
 }
 const move = (over: Record<string, unknown> = {}) => ({ kind: 'setRule', params: { board: GAMES, predicate: 'noAllCaps', param: '', band: 'minor' }, expires_in_hours: 48, why: 'Too much shouting.', ...over });
-const go = (d: ReturnType<typeof fakeDbs>, m: { models: Models }, req: unknown = body) => runReport(d.dbs, m.models, dividedWorld, req);
+const go = (d: ReturnType<typeof fakeDbs>, m: { models: Models }, req: unknown = body) => runReport(d.dbs, async () => m.models, dividedWorld, req);
 
 test('a visit verdict: the report is opened as the player, judged on the reportJudge duty, recorded, and closed with its repaired charge', async () => {
   const d = fakeDbs();
@@ -232,4 +232,54 @@ test('no judgment reads who owns a mask: no owner, class or reactor is read, and
   assert.ok(text.includes('Ann') && text.includes('This one bumps.') && text.includes('Odyssey. Odyssey.') && text.includes('Talk about games.') && text.includes('Rule 2: no double posting'));
   // The player's session never reaches the model or its prompt, and the service never calls open_report.
   assert.ok(!text.includes(THROUGH), 'the reporter\'s character id is not told to the model');
+});
+
+/* ------------------------------------------------------------------------------------------------------ the door ---- */
+
+function door(w: World = {}, reply: () => unknown = () => ({ verdict: 'dismissed', line: 'No.' })) {
+  const d = fakeDbs(w);
+  const m = fakeModels(reply);
+  const made = { dbs: 0, models: 0, sessions: [] as string[] };
+  const deps = {
+    instance: dividedWorld,
+    dbs: (session: string) => { made.dbs++; made.sessions.push(session); return d.dbs; },
+    models: async () => { made.models++; return m.models; },
+  };
+  const send = (init: RequestInit & { headers?: Record<string, string> }) => reportDoor(new Request('https://x.test/functions/v1/staff', init), deps);
+  return { d, m, made, send };
+}
+const post = (extra: Record<string, string> = {}, text = JSON.stringify(body)) => ({ method: 'POST', headers: { 'Content-Type': 'application/json', ...extra }, body: text });
+
+test('the door: no session is a 401 with no database made and no service call; the wrong method is a 405; an oversize body is a 413', async () => {
+  const t = door();
+  const none = await t.send(post());
+  assert.equal(none.status, 401);
+  assert.equal((await t.send({ method: 'GET' })).status, 405);
+  assert.equal((await t.send(post({ Authorization: 'Bearer abc' }, JSON.stringify({ ...body, reason: 'x'.repeat(20_000) })))).status, 413);
+  assert.equal((await t.send(post({ Authorization: 'Bearer ' }))).status, 401, 'an empty bearer is no session');
+  assert.equal((await t.send({ method: 'OPTIONS' })).status, 204);
+  assert.equal(t.made.dbs, 0, 'no connection is made for any of these');
+  assert.equal(t.made.models, 0);
+  assert.equal(t.d.calls.length, 0);
+});
+
+test('the door: a session the database refuses, or a refusal of the report, reaches no service read and builds no model', async () => {
+  for (const open of [new DatabaseError('', '', 401, '', ''), new DatabaseError('x', '55000', 400, 'banned until later', 'kayfabb.refusal')]) {
+    const t = door({ open });
+    const out = await t.send(post({ Authorization: 'Bearer abc' }));
+    assert.ok(out.status === 401 || out.status === 400);
+    assert.deepEqual(t.d.calls.map((c) => `${c.db}:${c.fn}`), ['player:open_report'], 'only the player\'s open_report was called: no settings, no tiers');
+    assert.equal(t.made.models, 0, 'no model is built (its tiers are a service read) before the report is taken');
+  }
+});
+
+test('the door: a taken report is judged with the player\'s session passed on, and the models are built only after open_report', async () => {
+  const t = door();
+  const out = await t.send(post({ Authorization: 'Bearer abc' }));
+  assert.equal(out.status, 200);
+  assert.deepEqual(t.made.sessions, ['abc']);
+  assert.equal(t.made.models, 1);
+  assert.equal(t.d.calls[0]!.fn, 'open_report');
+  assert.equal(t.d.calls[0]!.db, 'player');
+  assert.equal(((await out.json()) as Record<string, unknown>)['verdict'], 'dismissed');
 });
