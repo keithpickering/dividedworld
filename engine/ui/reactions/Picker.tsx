@@ -19,11 +19,11 @@ import { useKayfa } from '../context.tsx';
 import type { Id, MyCharacter, MyReaction } from '../data/api.ts';
 import type { Quadrant } from '../../rules/types.ts';
 import { Overlay, type Placed } from '../glass/Overlay.tsx';
-import { usePlayer } from '../player.tsx';
 import { useTip } from '../tips/Tips.tsx';
 import type { Tallies } from '../thread/tallies.ts';
 import type { Mine } from './mine.ts';
 import { readable } from './Reactions.tsx';
+import { useReactionSend } from './send.ts';
 
 /** Top-left, top-right, bottom-left, bottom-right. */
 const GRID: readonly Quadrant[] = ['excitedNegative', 'excitedPositive', 'boredNegative', 'calmPositive'];
@@ -77,13 +77,11 @@ interface Props {
 }
 
 export function Picker({ act, subject, as, own, tallies, mine, anchor, onClose }: Props) {
-  const { api, instance, ui, settings } = useKayfa();
-  const player = usePlayer();
+  const { instance, ui, settings } = useKayfa();
   const [placed, setPlaced] = useState<Placed | null>(null);
   const grid = useRef<HTMLDivElement>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const sending = useRef(false);
+  const { send, busy } = useReactionSend({ act, as, tallies, mine });
   const alive = useRef(true);
   const countId = useId();
   const describedId = useId();
@@ -113,29 +111,12 @@ export function Picker({ act, subject, as, own, tallies, mine, anchor, onClose }
   };
 
   const choose = async (kind: string) => {
-    if (!as || sending.current) return;
-    sending.current = true;
-    setBusy(true);
     setRefusal(null);
-    try {
-      const answer = await api.react(act, as.id, kind);
-      if (!answer.ok) {
-        setRefusal(answer.error);
-        /* A refusal may mean what this screen holds is stale (another tab left that kind): read the player's own again. */
-        mine.merge(act, await api.myReactions([act]).catch(() => []));
-        return;
-      }
-      mine.add({ act, kind, character: as.id });
-      tallies.merge(act, answer.value.tally);
-      player.reactionLanded();
-      /* Closed meanwhile (Esc, Close): the reaction still counts, but focus is not taken back. */
-      if (alive.current) onClose(true);
-    } catch {
-      setRefusal('The reaction could not be sent. Try again.');
-    } finally {
-      sending.current = false;
-      if (alive.current) setBusy(false);
-    }
+    const answer = await send(kind);
+    if (answer === 'busy') return;
+    if (answer !== 'sent') { setRefusal(answer.refusal); return; }
+    /* Closed meanwhile (Esc, Close): the reaction still counts, but focus is not taken back. */
+    if (alive.current) onClose(true);
   };
 
   let first = true;
