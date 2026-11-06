@@ -3,8 +3,9 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { tokensOf } from '../contrast.ts';
-import { bandOf, shineIsReadable } from './band.ts';
-import { burst, burstProbe, drawBurst, makeFlakes, MAX_IN_FLIGHT, sampleFlakes, stepBurst, type Flakes } from './flakes.ts';
+import { ratio, MODES } from '../contrast.ts';
+import { bandOf, luminanceOf, POST_INK, shineIsReadable, toLinear } from './band.ts';
+import { burst, burstProbe, drawBurst, makeFlakes, MAX_IN_FLIGHT, release, sampleBurst, sampleCling, sampleFlakes, stepBurst, type Flakes } from './flakes.ts';
 
 /* The bench's GLITTER inks (docs/research/2026-11-06-shine-bench/01-bench.html): seven rainbow inks, then silver for the
    holographic flakes from index 7. They are the reference inks for these tests, copied as literals. */
@@ -31,11 +32,18 @@ function recorder() {
   const calls: string[] = [];
   const alphas: number[] = [];
   const styles = new Set<string>();
+  const stops: string[] = [];
+  const strokes = new Set<string>();
   const ctx = new Proxy({} as Record<string, unknown>, {
-    get: (_t, k: string) => (k === 'createRadialGradient' ? () => ({ addColorStop() {} }) : (...a: unknown[]) => { calls.push(k); void a; }),
-    set: (_t, k: string, v) => { if (k === 'globalAlpha') alphas.push(v as number); if (k === 'fillStyle') styles.add(String(v)); return true; },
+    get: (_t, k: string) => (k === 'createRadialGradient' ? () => ({ addColorStop: (_o: number, c: string) => stops.push(c) }) : (...a: unknown[]) => { calls.push(k); void a; }),
+    set: (_t, k: string, v) => {
+      if (k === 'globalAlpha') alphas.push(v as number);
+      if (k === 'fillStyle' && typeof v === 'string') styles.add(v);
+      if (k === 'strokeStyle') strokes.add(String(v));
+      return true;
+    },
   }) as unknown as CanvasRenderingContext2D;
-  return { ctx, calls, alphas, styles, count: (k: string) => calls.filter((c) => c === k).length };
+  return { ctx, calls, alphas, styles, stops, strokes, count: (k: string) => calls.filter((c) => c === k).length };
 }
 
 const all = (f: Flakes) => [...f.settled];
@@ -100,7 +108,7 @@ describe('flakes', () => {
     assert.deepEqual(failures.slice(0, 5), []);
   });
 
-  test('drawing paints each settled flake once, makes a flare for a lit one, and scales the flare by the band', () => {
+  test('drawing paints each settled flake once; a flare is white, so it is drawn only where the band reaches white', () => {
     const f = makeFlakes({ seed: 'fl', box: { w: 200, h: 100 }, inks: GLITTER, holo: HOLO, density: 70, star: {} as CanvasImageSource });
     landEverything(f);
     const r = recorder();
@@ -108,14 +116,17 @@ describe('flakes', () => {
     assert.equal(r.count('fillRect'), f.settled.length);
     assert.equal(r.count('drawImage'), 0, 'no flake faces a light that far off');
     const k = f.settled[0]!;
-    const band = { lo: 0.1, hi: 0.5 };
+    const light = { x: k.nx, y: k.ny };
     const lit = recorder();
-    f.draw(lit.ctx, { x: k.nx, y: k.ny }, band, 0, false);
-    assert.ok(lit.count('drawImage') >= 1);
-    assert.ok(lit.alphas.some((a) => Math.abs(a - 0.5) < 1e-9), `flare alpha scaled by the band: ${lit.alphas}`);
-    const dark = recorder();
-    f.draw(dark.ctx, { x: k.nx, y: k.ny }, bands.dark, 0, false);
-    assert.equal(dark.count('drawImage'), 0, 'the dark board has no room for a flare');
+    f.draw(lit.ctx, light, { lo: 0.1, hi: 1 }, 0, false);
+    assert.ok(lit.count('drawImage') >= 1, 'flares where hi is 1');
+    assert.ok(lit.alphas.some((a) => a > 0.999), `a flare at full tilt has the plain alpha: ${lit.alphas}`);
+    assert.ok(lit.alphas.every((a) => a >= 0 && a <= 1));
+    for (const band of [{ lo: 0, hi: 0.3 }, { lo: 0, hi: 0.999 }, bands.dark]) {
+      const none = recorder();
+      f.draw(none.ctx, light, band, 0, false);
+      assert.equal(none.count('drawImage'), 0, `no flare under hi ${band.hi}`);
+    }
   });
 
   test('drawing makes one color string per distinct color, not per flake', () => {
@@ -196,5 +207,95 @@ describe('the burst', () => {
     const later = make('d');
     burst(later, 6000);
     assert.equal(later.flying, later.total - later.settled.length, 'room again once they landed');
+  });
+});
+
+
+/** The post-ink failures among `#rrggbb` strings, on one board. */
+function failures(mode: (typeof MODES)[number], colors: Iterable<string>): string[] {
+  const out: string[] = [];
+  for (const c of colors) for (const ink of POST_INK) { const r = ratio(tokens[mode][ink]!, c); if (r < 4.5) out.push(`${mode} ${c} ${r.toFixed(1)}:1 on ${ink}`); }
+  return out;
+}
+const rgbaHex = (c: string): string => {
+  const m = /^rgba\((\d+),(\d+),(\d+),/u.exec(c)!;
+  return `#${[1, 2, 3].map((i) => Number(m[i]).toString(16).padStart(2, '0')).join('')}`;
+};
+
+describe('everything over the words stays in the band', () => {
+  test('the burst: every flake color it draws, and the sampler, hold 4.5:1 on both boards at several moments', () => {
+    for (const mode of MODES) {
+      const f = make(`rb-${mode}`, { w: 400, h: 200 });
+      burst(f, 0);
+      const drawn = new Set<string>();
+      for (let t = 0; t <= 1600; t += 80) {
+        stepBurst(f, t);
+        const r = recorder();
+        drawBurst(r.ctx, f, bandOf(tokens[mode]), t);
+        for (const c of r.styles) if (c.startsWith('#')) drawn.add(c);
+        for (const c of r.stops) drawn.add(rgbaHex(c));
+        for (const c of sampleBurst(f, bandOf(tokens[mode]), t)) drawn.add(c);
+      }
+      assert.ok(drawn.size > 3, 'colors were drawn');
+      assert.deepEqual(failures(mode, drawn).slice(0, 5), []);
+    }
+  });
+
+  test('the sampler agrees with the page check across a grid of times', () => {
+    const f = make('rb2', { w: 300, h: 150 });
+    burst(f, 0);
+    let t = 0;
+    const fails = shineIsReadable(tokens, (mode) => { t += 37; stepBurst(f, t % 1600); return sampleBurst(f, bandOf(tokens[mode]), t % 1600); });
+    assert.deepEqual(fails.slice(0, 5), []);
+  });
+
+  test('the puff is white only where the band reaches white, and a tint inside the band elsewhere', () => {
+    const f = make('puff', { w: 300, h: 150 });
+    burst(f, 0);
+    const light = recorder();
+    drawBurst(light.ctx, f, { lo: 0.5, hi: 1 }, 100);
+    assert.ok(light.stops.length >= 3);
+    for (const c of light.stops) assert.ok(c.startsWith('rgba(255,255,255,'), `white on the light board: ${c}`);
+    for (const band of [{ lo: 0, hi: 0.3 }, bands.dark]) {
+      const dark = recorder();
+      drawBurst(dark.ctx, f, band, 100);
+      assert.ok(dark.stops.length >= 3);
+      for (const c of [...dark.stops, ...dark.strokes]) {
+        const L = luminanceOf(toLinear(rgbaHex(c)));
+        assert.ok(L <= band.hi + 0.004, /* band.ts rounds inside its own 0.004 margin */ `${c} has luminance ${L} over the ceiling ${band.hi}`);
+      }
+    }
+  });
+
+  test('the cling layer: every color it can paint holds 4.5:1 on both boards', () => {
+    const f = make('cl');
+    const fails = shineIsReadable(tokens, (mode) => sampleCling(f, bandOf(tokens[mode])));
+    assert.deepEqual(fails.slice(0, 5), []);
+  });
+});
+
+describe('release', () => {
+  test('a post dropped mid-burst gives its share of the cap back', () => {
+    const a = make('rel-a');
+    burst(a, 0);
+    assert.equal(burstProbe.inFlight(), MAX_IN_FLIGHT);
+    release(a);
+    assert.equal(burstProbe.inFlight(), 0);
+    assert.equal(a.flying, 0);
+    assert.equal(a.settled.length, a.total, 'its flakes are down where they were headed');
+    assert.equal(stepBurst(a, 16), false);
+    release(a);
+    assert.equal(burstProbe.inFlight(), 0, 'twice does no harm');
+    const b = make('rel-b');
+    burst(b, 20);
+    assert.equal(b.flying, MAX_IN_FLIGHT, 'the second post flies its full share');
+  });
+
+  test('releasing a post that never burst changes nothing', () => {
+    const a = make('rel-c', { w: 200, h: 100 });
+    const n = a.settled.length;
+    release(a);
+    assert.equal(burstProbe.inFlight(), 0);
+    assert.equal(a.settled.length, n);
   });
 });

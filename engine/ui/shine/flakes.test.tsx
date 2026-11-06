@@ -1,21 +1,41 @@
 /* A .test.tsx because the cling layer reads the DOM (rects, the pointer query, the body) and needs jsdom. */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { tokensOf, ratio } from '../contrast.ts';
+import { POST_INK } from './band.ts';
 import { cling, IDLE_MS, loose, MAX_CARRIED, MAX_LOOSE, makeFlakes, sweepLoose } from './flakes.ts';
 
 const GLITTER = ['#ff3b4a', '#ff9a2e', '#ffd23f', '#3ddc6b', '#2fd6ff', '#4a6bff', '#b65cff', '#dfe4ec', '#dfe4ec', '#dfe4ec'];
 
-const fakeCtx = new Proxy({}, { get: (_t, k) => (k === 'createRadialGradient' ? () => ({ addColorStop() {} }) : () => {}), set: () => true });
+const light = tokensOf(readFileSync(join(process.cwd(), 'engine/ui/tokens.css'), 'utf8')).light;
+
+/* What the cling layer's context was told to draw. */
+const drawn = { fills: new Set<string>(), strokes: new Set<string>(), alphas: [] as number[] };
+const fakeCtx = new Proxy({}, {
+  get: (_t, k) => (k === 'createRadialGradient' ? () => ({ addColorStop() {} }) : () => {}),
+  set: (_t, k, v) => {
+    if (k === 'fillStyle') drawn.fills.add(String(v));
+    if (k === 'strokeStyle') drawn.strokes.add(String(v));
+    if (k === 'globalAlpha') drawn.alphas.push(v as number);
+    return true;
+  },
+});
 let fine = true;
+let clock = 0;
 
 function host(left: number, top: number, w = 300, h = 300): HTMLElement {
   const el = document.createElement('div');
+  /* The board's tokens, as the page resolves them on a light board: the band each flake is lent against. */
+  for (const k of ['--kb-bg', ...POST_INK]) el.style.setProperty(k, light[k]!);
   el.getBoundingClientRect = () => ({ left, top, right: left + w, bottom: top + h, width: w, height: h, x: left, y: top, toJSON() {} });
   document.body.append(el);
   return el;
 }
-function pointer(type: string, x: number, y: number): PointerEvent {
+function pointer(type: string, x: number, y: number, t?: number): PointerEvent {
   const e = new MouseEvent('pointermove', { clientX: x, clientY: y, bubbles: true });
   Object.defineProperty(e, 'pointerType', { value: type });
+  Object.defineProperty(e, 'timeStamp', { value: t ?? (clock += 1) });
   return e as PointerEvent;
 }
 const move = (x: number, y: number, type = 'mouse') => window.dispatchEvent(pointer(type, x, y));
@@ -24,6 +44,8 @@ const layer = () => document.querySelector('canvas[data-kb-shine="cling"]');
 beforeEach(() => {
   vi.useFakeTimers();
   fine = true;
+  clock = 0;
+  drawn.fills.clear(); drawn.strokes.clear(); drawn.alphas.length = 0;
   document.documentElement.setAttribute('data-kb-motion', 'full');
   vi.stubGlobal('matchMedia', (q: string) => ({ matches: q.includes('hover: hover') ? fine : false, addEventListener() {}, removeEventListener() {} }));
   window.matchMedia = globalThis.matchMedia;
@@ -52,9 +74,9 @@ function load() {
   for (let i = 0; i < 400; i++) { cling.over(pointer('mouse', 10 + (i % 2) * 120, 100)); move(10 + (i % 2) * 120, 100); }
 }
 /** Carries a load off the post onto the plain one, and steps time until all has landed. */
-function carryOver() {
+function carryOver(x = 2100) {
   load();
-  for (let i = 0; i < 400 && cling.carried(); i++) move(2100 + (i % 2) * 120, 100);
+  for (let i = 0; i < 400 && cling.carried(); i++) move(x + (i % 2) * 120, 100);
   for (let t = 0; (cling.falling() || cling.carried()) && t < 10000; t += 16) cling.tick(t);
 }
 
@@ -152,5 +174,69 @@ describe('the cling layer', () => {
     expect(loose(b)).not.toContain(first);
     sweepLoose();
     expect(loose(b)).toHaveLength(0);
+  });
+
+  it('paints only colors that hold 4.5:1 against every post ink on the light board, and draws no dark outline', () => {
+    page();
+    carryOver();
+    const hex = [...drawn.fills].filter((c) => c.startsWith('#'));
+    expect(hex.length).toBeGreaterThan(3);
+    const bad = hex.flatMap((c) => POST_INK.filter((ink) => ratio(light[ink]!, c) < 4.5).map((ink) => `${c} on ${ink}`));
+    expect(bad.slice(0, 5)).toEqual([]);
+    expect([...drawn.strokes].filter((c) => c.startsWith('rgba(0,0,0'))).toEqual([]);
+  });
+
+  it('keeps the oldest-first cap of 300 across two hosts', () => {
+    const { b } = page();
+    const c = host(4000, 0);
+    cling.register(c, {});
+    carryOver();
+    const oldest = loose(b)[0]!;
+    for (let n = 0; n < 40; n++) carryOver();
+    expect(loose(b)).toHaveLength(MAX_LOOSE);
+    const bNewest = loose(b)[MAX_LOOSE - 1]!;
+    for (let n = 0; n < 5; n++) carryOver(4100);
+    expect(loose(c).length).toBeGreaterThan(0);
+    expect(loose(b).length + loose(c).length).toBe(MAX_LOOSE);
+    expect(loose(b)).not.toContain(oldest);
+    expect(loose(b)).toContain(bNewest);
+    expect(loose(b)[0]).not.toBe(oldest);
+  });
+
+  it('a pointer that left and came back elsewhere is not one huge move', () => {
+    page();
+    for (let i = 0; i < 40; i++) {
+      cling.over(pointer('mouse', 10, 100, 1000 * (2 * i + 1)));
+      cling.over(pointer('mouse', 250, 100, 1000 * (2 * i + 2)));
+    }
+    expect(cling.carried()).toBe(0);
+    expect(layer()).toBeNull();
+  });
+
+  it('the fade of a flake with nowhere to land lowers its alpha', () => {
+    page();
+    load();
+    for (let i = 0; i < 400 && cling.carried(); i++) move(1000 + (i % 2) * 120, 100);
+    drawn.alphas.length = 0;
+    const perTick: number[] = [];
+    for (let t = 0; (cling.falling() || cling.carried()) && t < 10000; t += 16) {
+      const before = drawn.alphas.length;
+      cling.tick(t);
+      const a = drawn.alphas.slice(before).filter((v) => v < 1);
+      if (a.length) perTick.push(Math.min(...a));
+    }
+    expect(perTick.length).toBeGreaterThan(2);
+    expect(perTick[perTick.length - 1]!).toBeLessThan(perTick[0]!);
+    expect(Math.min(...perTick)).toBeLessThan(0.5);
+  });
+
+  it('switching to reduced motion while flakes are carried clears them on the next tick', () => {
+    page();
+    load();
+    expect(cling.carried()).toBeGreaterThan(0);
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    cling.tick(0);
+    expect(cling.carried()).toBe(0);
+    expect(cling.falling()).toBe(0);
   });
 });

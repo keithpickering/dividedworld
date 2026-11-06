@@ -20,7 +20,7 @@
  * light's units. Seeded, never `Math.random`. Engine code: it names no card and no instance.
  */
 import { motionReduced } from '../appearance.ts';
-import { clampInto, toLinear, toSrgb8, type Band, type Light, type Rgb } from './band.ts';
+import { bandFor, clampInto, toLinear, toSrgb8, type Band, type Light, type Rgb } from './band.ts';
 import { seededRng } from './seeded.ts';
 
 export type Box = { readonly w: number; readonly h: number };
@@ -38,8 +38,6 @@ const FLIGHT_MS = 1850;
 const DELAY_MS = 120;
 const PUFF_MS = 650;
 const FINE = '(hover: hover) and (pointer: fine)';
-/** The dark board's ceiling on the engine's tokens; a flare adds white, so it is scaled by what the ceiling leaves above it. */
-const DARK_HI = 0.048;
 
 /** The inks a flakes object draws from, in linear light; `rainbow` are the ones a holographic flake throws. */
 export interface Palette { readonly lin: readonly Rgb[]; readonly rainbow: readonly Rgb[]; readonly holo: number }
@@ -229,17 +227,13 @@ function litness(f: Flake, lx: number, ly: number, now: number, idle: boolean, s
   return a;
 }
 
-/** The scale of a flare's alpha: a flare adds white, so the band's ceiling decides how much of it a board can take. */
-function flareScale(band: Band): number {
-  return band.lo === 0 ? Math.max(0, (band.hi - DARK_HI) / (1 - DARK_HI)) : band.hi;
-}
-
 function drawList(
   ctx: CanvasRenderingContext2D, list: readonly Flake[], light: Light, band: Band, now: number, idle: boolean,
   star: CanvasImageSource | null,
 ): void {
   const { x: lx, y: ly } = light;
-  const scale = flareScale(band);
+  /* A flare adds white, which only stays in the band where the band reaches white: the light board. Nowhere else is one drawn. */
+  const whiteFits = band.hi >= 1;
   let flares = 0;
   for (let i = 0; i < list.length; i++) {
     const f = list[i]!;
@@ -250,14 +244,14 @@ function drawList(
     ctx.restore();
     if (a > 0.75) flares++;
   }
-  if (!flares || !star || scale < 0.03) return;
+  if (!whiteFits || !flares || !star) return;
   /* A second pass over the same list: the flares are the few flakes facing the light, drawn additively after the rest. */
   ctx.globalCompositeOperation = 'lighter';
   for (let i = 0; i < list.length; i++) {
     const f = list[i]!;
     const a = litness(f, lx, ly, now, idle);
     if (a <= 0.75) continue;
-    const alpha = ((a - 0.75) / 0.25) * scale;
+    const alpha = (a - 0.75) / 0.25;
     if (alpha < 0.03) continue;
     const z = 7 + f.s * 4;
     ctx.globalAlpha = alpha; ctx.drawImage(star, f.x - z / 2, f.y - z / 2, z, z);
@@ -360,30 +354,52 @@ export function stepBurst(flakes: Flakes, now: number): boolean {
   return parts.length > 0 || f.puff !== null;
 }
 
+/** The color of a flake in the air, in the band, at a flash of 0..1 (the bench's burst coloring, then moved into the band). */
+function burstColor(f: Flake, flash: number, band: Band): string {
+  const ink = f.pal.lin[f.ink]!;
+  const dark = band.lo === 0;
+  const k = dark ? 0.25 + 0.75 * flash : 0.55 + 0.45 * flash;
+  const w0 = dark ? 0 : 1;
+  scratch[0] = ink[0] * k + (1 - k) * w0 * 0.3; scratch[1] = ink[1] * k; scratch[2] = ink[2] * k;
+  return hexFor(clampInto(scratch, band));
+}
+
+/**
+ * The puff's color as 8-bit sRGB. It is a translucent gradient over whatever lies under it, so no single color is its
+ * composite; instead every stop is one color that is itself in the band, and over cells that are in the band the mix stays in
+ * it. Where the band reaches white (the light board) that color is white, which only lightens a cell inside [lo, 1]. Where
+ * it does not, it is a gold tint moved into the band: both ends are then at most `hi`, and a mix of two such colors in
+ * gamma space is at most `hi` in luminance, because the sRGB curve is convex.
+ */
+function puffRgb(band: Band): readonly [number, number, number] {
+  if (band.hi >= 1) return [255, 255, 255];
+  const c = clampInto([1, 0.72, 0.28], band);
+  return [toSrgb8(c[0]), toSrgb8(c[1]), toSrgb8(c[2])];
+}
+const hex8 = (c: readonly [number, number, number]): string => `#${((c[0] << 16) | (c[1] << 8) | c[2]).toString(16).padStart(6, '0')}`;
+
 /** Paints the burst on the canvas over the words: the puff and every flake in the air. Clearing the canvas is the host's. */
 export function drawBurst(ctx: CanvasRenderingContext2D, flakes: Flakes, band: Band, now: number): void {
   const f = flakes as Inner;
-  const dark = band.lo === 0;
+  const whiteFits = band.hi >= 1;
   if (f.puff !== null) {
     const k = (now - f.puff) / PUFF_MS;
     if (k >= 0 && k < 1) {
-      const R = 20 + k * 140, a = (1 - k) * (dark ? 0.55 : 0.7), { x, y } = f.origin;
+      const R = 20 + k * 140, a = (1 - k) * (band.lo === 0 ? 0.55 : 0.7), { x, y } = f.origin;
+      const [r, g, b] = puffRgb(band);
       const gr = ctx.createRadialGradient(x, y, 0, x, y, R);
-      gr.addColorStop(0, `rgba(255,250,235,${a})`); gr.addColorStop(0.5, `rgba(255,214,120,${a * 0.35})`); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      gr.addColorStop(0, `rgba(${r},${g},${b},${a})`); gr.addColorStop(0.5, `rgba(${r},${g},${b},${a * 0.35})`); gr.addColorStop(1, `rgba(${r},${g},${b},0)`);
       ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(x, y, R, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = `rgba(255,236,170,${(1 - k) * 0.8})`; ctx.lineWidth = 2 * (1 - k);
+      ctx.strokeStyle = `rgba(${r},${g},${b},${(1 - k) * 0.8})`; ctx.lineWidth = 2 * (1 - k);
       ctx.beginPath(); ctx.arc(x, y, R * 0.8, 0, Math.PI * 2); ctx.stroke();
     }
   }
-  const star = f.star === undefined ? (f.star = starSprite()) : f.star;
+  const star = whiteFits ? (f.star === undefined ? (f.star = starSprite()) : f.star) : null;
   for (let i = 0; i < f.parts.length; i++) {
     const b = f.parts[i]!;
     if (now - b.born < b.delay) continue;
-    const flash = Math.abs(Math.sin(b.ph)) ** 10, ink = b.f.pal.lin[b.f.ink]!;
-    const k = dark ? 0.25 + 0.75 * flash : 0.55 + 0.45 * flash;
-    const w0 = dark ? 0 : 1;
-    scratch[0] = ink[0] * k + (1 - k) * w0 * 0.3; scratch[1] = ink[1] * k; scratch[2] = ink[2] * k;
-    ctx.fillStyle = hexFor(scratch);
+    const flash = Math.abs(Math.sin(b.ph)) ** 10;
+    ctx.fillStyle = burstColor(b.f, flash, band);
     const w = b.f.s * (0.3 + 0.7 * Math.abs(Math.cos(b.ph)));
     ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.f.rot + b.ph * 0.2);
     ctx.fillRect(-w / 2, -b.f.s * 0.42, w, b.f.s * 0.84);
@@ -395,6 +411,37 @@ export function drawBurst(ctx: CanvasRenderingContext2D, flakes: Flakes, band: B
       ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
     }
   }
+}
+
+/**
+ * Every color `drawBurst` paints at `now`, as `#rrggbb`: each flake in the air as it is now, each of the post's inks at
+ * three flashes, and the puff's one color while the puff shows. For the readable-band check.
+ */
+export function sampleBurst(flakes: Flakes, band: Band, now: number): Set<string> {
+  const f = flakes as Inner;
+  const out = new Set<string>();
+  for (const b of f.parts) {
+    if (now - b.born < b.delay) continue;
+    out.add(burstColor(b.f, Math.abs(Math.sin(b.ph)) ** 10, band));
+  }
+  const probe: Flake = { x: 0, y: 0, s: 1, rot: 0, nx: 0, ny: 0, ink: 0, tw: 0, tph: 0, pal: flakes.palette };
+  for (let i = 0; i < flakes.palette.lin.length; i++) {
+    probe.ink = i;
+    for (const flash of [0, 0.5, 1]) out.add(burstColor(probe, flash, band));
+  }
+  if (f.puff !== null && now - f.puff >= 0 && now - f.puff < PUFF_MS) out.add(hex8(puffRgb(band)));
+  return out;
+}
+
+/**
+ * Lands this post's flakes in the air where they were headed and gives their share of the page-wide cap back. A host calls
+ * it when the post unregisters or unmounts: a flakes object dropped mid-burst would otherwise keep the cap consumed for good.
+ */
+export function release(flakes: Flakes): void {
+  const f = flakes as Inner;
+  inFlight = Math.max(0, inFlight - f.parts.length);
+  for (const b of f.parts) f.settled.push(b.f);
+  f.parts = []; f.puff = null; f.last = null; f.flying = 0;
 }
 
 /** For tests only: flakes in the air across the page, and a way back to a fresh page. */
@@ -449,8 +496,11 @@ export interface ClingOptions {
   readonly landed?: () => void;
 }
 
-interface Carried { f: Flake; ox: number; oy: number; ph: number }
-interface Falling { f: Flake; x: number; y: number; vx: number; vy: number; land: number; fallen: number; ph: number }
+/* The cling layer is page-fixed and has no host of its own, so each flake keeps the band of the host it was picked up from
+   (`bandFor` on that host's element at pickup): that is the board whose post inks it was lent against, and the layer is only
+   ever drawn over registered hosts' boards. The page's root would be wrong the day a card themes a board of its own. */
+interface Carried { f: Flake; ox: number; oy: number; ph: number; band: Band }
+interface Falling { f: Flake; x: number; y: number; vx: number; vy: number; land: number; fallen: number; ph: number; band: Band }
 
 const hosts = new Map<HTMLElement, ClingOptions>();
 let canvas: HTMLCanvasElement | null = null;
@@ -460,7 +510,9 @@ let frame = 0;
 let idleTimer: ReturnType<typeof setTimeout> | undefined;
 let carried: Carried[] = [];
 let falling: Falling[] = [];
-let mouse: { x: number; y: number; speed: number } | null = null;
+let mouse: { x: number; y: number; speed: number; t: number } | null = null;
+/** A pointer that was last seen longer ago than this is a new visit, not a very fast move. */
+const STALE_MS = 100;
 let lastTick: number | null = null;
 let cr = seededRng('cursor');
 let cleared = true;
@@ -525,37 +577,58 @@ function loop(t: number): void {
 /** Every pointer move on the page while the layer exists, and the first one over a sticky host that creates it. */
 function onMove(e: PointerEvent): void {
   if (!canAct(e) || reduced()) return;
-  const moved = mouse ? Math.hypot(e.clientX - mouse.x, e.clientY - mouse.y) : 0;
-  mouse = { x: e.clientX, y: e.clientY, speed: moved };
+  /* The last position is seeded afresh after a gap: leaving a post and coming back elsewhere is not one huge move. */
+  const moved = mouse && e.timeStamp - mouse.t < STALE_MS ? Math.hypot(e.clientX - mouse.x, e.clientY - mouse.y) : 0;
+  mouse = { x: e.clientX, y: e.clientY, speed: moved, t: e.timeStamp };
   const hit = hostAt(e.clientX, e.clientY);
   const opts = hit ? hosts.get(hit.host) : undefined;
   if (opts?.sticky && opts.flakes) {
     if (carried.length < MAX_CARRIED && cr() < Math.min(0.6, moved / 40)) {
-      ensure();
-      const a = cr() * Math.PI * 2, d = 4 + cr() * 14;
-      carried.push({ f: flake(cr, 0, 0, opts.flakes.palette), ox: Math.cos(a) * d + 6, oy: Math.sin(a) * d + 10, ph: cr() * 6 });
+      /* A board whose band cannot be computed gets no glitter lent from it: nothing is drawn that has no band to hold. */
+      let band: Band | null = null;
+      try { band = bandFor(hit!.host); } catch { /* no band */ }
+      if (band) {
+        ensure();
+        const a = cr() * Math.PI * 2, d = 4 + cr() * 14;
+        carried.push({ f: flake(cr, 0, 0, opts.flakes.palette), ox: Math.cos(a) * d + 6, oy: Math.sin(a) * d + 10, ph: cr() * 6, band });
+      }
     }
   } else {
     for (let i = carried.length - 1; i >= 0; i--) {
       if (cr() < moved * 0.006) {
         const c = carried.splice(i, 1)[0]!;
-        falling.push({ f: c.f, x: e.clientX + c.ox, y: e.clientY + c.oy, vy: 20 + cr() * 40, vx: (cr() - 0.5) * 30, land: 10 + cr() * 26, fallen: 0, ph: c.ph });
+        falling.push({ f: c.f, x: e.clientX + c.ox, y: e.clientY + c.oy, vy: 20 + cr() * 40, vx: (cr() - 0.5) * 30, land: 10 + cr() * 26, fallen: 0, ph: c.ph, band: c.band });
       }
     }
   }
   if ((carried.length || falling.length) && !frame) frame = requestAnimationFrame(loop);
 }
 
-function paint(c: CanvasRenderingContext2D, f: Flake, x: number, y: number, ph: number, alpha: number): void {
+/** The color of a carried or falling flake at a phase, in the band it was lent against. The old dark outline is gone: it could fall below the light board's floor. */
+function clingColor(f: Flake, ph: number, band: Band): string {
   const flash = Math.abs(Math.sin(ph)) ** 8, ink = f.pal.lin[f.ink]!;
   const k = 0.45 + 0.55 * flash;
   scratch[0] = ink[0] * k; scratch[1] = ink[1] * k; scratch[2] = ink[2] * k;
+  return hexFor(clampInto(scratch, band));
+}
+
+/** Every color the cling layer paints for flakes of these inks in this band, as `#rrggbb`. For the readable-band check. */
+export function sampleCling(flakes: Flakes, band: Band): Set<string> {
+  const out = new Set<string>();
+  const probe: Flake = { x: 0, y: 0, s: 1, rot: 0, nx: 0, ny: 0, ink: 0, tw: 0, tph: 0, pal: flakes.palette };
+  for (let i = 0; i < flakes.palette.lin.length; i++) {
+    probe.ink = i;
+    for (let j = 0; j <= 16; j++) out.add(clingColor(probe, (j / 16) * Math.PI, band));
+  }
+  return out;
+}
+
+function paint(c: CanvasRenderingContext2D, f: Flake, x: number, y: number, ph: number, alpha: number, band: Band): void {
   const w = f.s * (0.4 + 0.6 * Math.abs(Math.cos(ph)));
   c.globalAlpha = alpha;
-  c.fillStyle = hexFor(scratch);
+  c.fillStyle = clingColor(f, ph, band);
   c.save(); c.translate(x, y); c.rotate(f.rot + ph * 0.3);
   c.fillRect(-f.s / 2, -f.s * 0.42, w, f.s * 0.84);
-  c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = 0.5; c.strokeRect(-f.s / 2, -f.s * 0.42, w, f.s * 0.84);
   c.restore();
   c.globalAlpha = 1;
 }
@@ -595,7 +668,7 @@ export const cling = {
     sizeCanvas();
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     if (mouse) {
-      for (const c of carried) { c.ph += dt * (2 + mouse.speed * 0.4); paint(ctx, c.f, mouse.x + c.ox, mouse.y + c.oy, c.ph, 1); }
+      for (const c of carried) { c.ph += dt * (2 + mouse.speed * 0.4); paint(ctx, c.f, mouse.x + c.ox, mouse.y + c.oy, c.ph, 1, c.band); }
       mouse.speed *= Math.exp(-dt * 8);
     }
     for (let i = falling.length - 1; i >= 0; i--) {
@@ -612,7 +685,7 @@ export const cling = {
       }
       /* A flake with nowhere to land fades through the last third of its fall. */
       const fade = b.fallen > b.land * 0.67 && !hostAt(b.x, b.y) ? Math.max(0, 1 - (b.fallen - b.land * 0.67) / (b.land * 0.33)) : 1;
-      paint(ctx, b.f, b.x, b.y, b.ph, fade);
+      paint(ctx, b.f, b.x, b.y, b.ph, fade, b.band);
     }
     if (!carried.length && !falling.length) settle();
   },
