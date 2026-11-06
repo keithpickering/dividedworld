@@ -122,7 +122,7 @@ revoke all on tails from public, anon, authenticated;
 create table tail_visits (
   tail uuid not null references tails (id),
   visit_act uuid not null references acts (id),
-  primary key (tail, visit_act)
+  primary key (tail)
 );
 create index tail_visits_by_visit on tail_visits (visit_act);
 alter table tail_visits enable row level security;
@@ -310,6 +310,12 @@ begin
     end;
   end loop;
   begin
+    -- A tailed character's posts are drawn one at a time: two posts at once would each find the tail open. The lock is taken only for a character with a tail not yet run out
+    -- (the index on tails), and held to the end of the post's transaction, so the second finds the tail spent. Several open tails draw one Obstruction visit between them (the
+    -- latest tail's Mod's, or the beat's where it has left), and all are spent by it.
+    if exists (select 1 from tails k where k.character = p.character and k.until > now()) then
+      perform pg_advisory_xact_lock(hashtextextended('kayfabb.tail:' || p.character::text, 0));
+    end if;
     tail := open_tail_staff(p.character);
     if tail is not null then
       who := coalesce(who, beat_of(p.board));
@@ -341,7 +347,8 @@ revoke execute on function draw_visits(uuid) from public, anon, authenticated;
 -- ------------------------------------------------------------------------------------------------------- the seed ----
 
 -- What is wrong with a persona's quiz, or null (engine/rules/instance.ts holds the same for the TypeScript side): a quiz persona carries as many questions as its challenge
--- says, each a question, two to eight distinct choices and an answer that is one of them; any other persona carries none.
+-- says, each a question, two to eight distinct choices and an answer that is one of them, none with a space at its start or end (an answer is trimmed when it is given, so it
+-- would never match); any other persona carries none.
 create function quiz_problem(challenge jsonb, quiz jsonb) returns text
 language plpgsql immutable set search_path = public, pg_temp as $$
 declare
@@ -361,10 +368,12 @@ begin
     n := n + 1;
     if jsonb_typeof(q) <> 'object' or q - 'question' - 'choices' - 'answer' <> '{}'::jsonb then return format('quiz question %s is a question, its choices and its answer', n); end if;
     if jsonb_typeof(q -> 'question') is distinct from 'string' or btrim(q ->> 'question') = '' or char_length(q ->> 'question') > 280 then return format('quiz question %s has no question to ask (at most 280 characters)', n); end if;
+    if q ->> 'question' <> btrim(q ->> 'question') then return format('quiz question %s has a space at the start or the end of its question', n); end if;
     if jsonb_typeof(q -> 'choices') is distinct from 'array' or jsonb_array_length(q -> 'choices') not between 2 and 8
        or exists (select 1 from jsonb_array_elements(q -> 'choices') c where jsonb_typeof(c) <> 'string' or btrim(c #>> '{}') = '' or char_length(c #>> '{}') > 200) then
       return format('quiz question %s has two to eight choices, each text of at most 200 characters', n);
     end if;
+    if exists (select 1 from jsonb_array_elements_text(q -> 'choices') c where c <> btrim(c)) then return format('quiz question %s has a choice with a space at the start or the end', n); end if;
     if (select count(distinct c) from jsonb_array_elements_text(q -> 'choices') c) <> jsonb_array_length(q -> 'choices') then return format('quiz question %s lists a choice twice', n); end if;
     if jsonb_typeof(q -> 'answer') is distinct from 'string' or not (q -> 'choices') ? (q ->> 'answer') then return format('quiz question %s has an answer that is not one of its choices', n); end if;
   end loop;
@@ -922,6 +931,7 @@ declare
   me text;
   said text := btrim(coalesce(answer, ''));
   wanted text;
+  shown jsonb;
   ok boolean;
   iid uuid;
   until timestamptz;
@@ -943,8 +953,10 @@ begin
   select c.name into me from characters c where c.id = through;
   if ckind = 'quiz' then
     if said = '' then raise exception 'pick an answer' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
-    select q.answer into wanted from staff_quiz_questions q where q.staff = mod_key and q.idx = (v.payload #>> '{challenge,question_index}')::integer;
+    select q.answer, q.choices into wanted, shown from staff_quiz_questions q where q.staff = mod_key and q.idx = (v.payload #>> '{challenge,question_index}')::integer;
     if not found then raise exception 'this Mod has no question to ask right now; the visit ends by itself at its time' using hint = 'kayfabb.refusal', errcode = '55000'; end if;
+    -- An answer is one of the choices shown: anything else (or something far too long) is refused the same way for everyone, before anything is written.
+    if char_length(said) > 200 or not shown ? said then raise exception 'pick one of the answers shown' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
     ok := said = wanted;
   elsif ckind = 'bribe' then
     price := (v.payload #>> '{challenge,price}')::integer;

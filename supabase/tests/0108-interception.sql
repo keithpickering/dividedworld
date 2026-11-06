@@ -72,6 +72,45 @@ create function pg_temp.wrong(visit uuid) returns text language sql as $$
 $$;
 create function pg_temp.end_of(visit uuid) returns acts language sql as $$ select e from acts e where e.kind = 'visit_end' and e.target_act_id = visit $$;
 
+-- ---- 0a. Two posts by a tailed character at once draw one Obstruction visit between them, and spend the tail once (first: the committed rows must not meet this file's own locks) ----
+do $$
+declare
+  u uuid := gen_random_uuid(); c uuid := gen_random_uuid(); m uuid := gen_random_uuid(); t uuid := gen_random_uuid();
+  p0 uuid := gen_random_uuid(); v0 uuid := gen_random_uuid(); i0 uuid := gen_random_uuid(); p1 uuid := gen_random_uuid(); p2 uuid := gen_random_uuid(); k uuid := gen_random_uuid();
+  was jsonb := (select s.value from settings s where s.key = 'systemEnabled');
+  said text[];
+begin
+  perform tests.commit(format($sql$
+    insert into settings (key, value) values ('systemEnabled', 'true') on conflict (key) do update set value = 'true';
+    insert into auth.users (id, email) values (%1$L, 'ic-race@test.invalid');
+    insert into accounts (id) values (%1$L);
+    insert into characters (id, owner, name, created_at, debuted_at) values (%2$L, %1$L, 'Ic Racer', now(), now());
+    insert into class_history (character, class_key, started_at) values (%2$L, 'alpha', now());
+    insert into characters (id, name, staff, staff_kind, debuted_at) values (%3$L, 'Ic Race Mod', 'ic-race-mod', 'persona', now());
+    insert into staff_offices (staff, office, cause) values ('ic-race-mod', 'mod', 'admin');
+    insert into threads (id, board, title) select %4$L, b.id, 'Ic race' from boards b where b.slug = 'general';
+    insert into acts (id, character, kind, thread, payload) values (%5$L, %2$L, 'post', %4$L, '{"body": "An old post."}'), (%8$L, %2$L, 'post', %4$L, '{"body": "A racing post."}'), (%9$L, %2$L, 'post', %4$L, '{"body": "Another racing post."}');
+    set kayfabb.staff_writer = 'on';
+    insert into acts (id, character, kind, thread, target_act_id, payload) values (%6$L, %3$L, 'visit', %4$L, %5$L, jsonb_build_object(
+      'charges', jsonb_build_array(jsonb_build_object('rule_number', 1, 'board', (select board from threads where id = %4$L), 'band', 'minor', 'cause', 'patrol', 'about_act', %5$L::text)),
+      'ends_at', now() + interval '1 hour', 'challenge', jsonb_build_object('kind', 'distraction'), 'line', 'Looking.'));
+    reset kayfabb.staff_writer;
+    set kayfabb.intercept_writer = 'on';
+    insert into acts (id, character, kind, thread, target_act_id, payload) values (%7$L, %2$L, 'intercept', %4$L, %5$L, jsonb_build_object('visit_act', %6$L::text, 'kind', 'distraction', 'succeeded', false));
+    reset kayfabb.intercept_writer;
+    insert into tails (id, character, staff, intercept_act, until) values (%10$L, %2$L, 'ic-race-mod', %7$L, now() + interval '1 hour');
+  $sql$, u, c, m, t, p0, v0, i0, p1, p2, k));
+  said := tests.race_service(format('select draw_visits(%L)', p1), format('select draw_visits(%L)', p2));
+  if said[1] is not null or said[2] is not null then raise exception 'a racing draw failed: %', said; end if;
+  if (select count(*) from acts a where a.kind = 'visit' and a.target_act_id in (p1, p2)) is distinct from 1::bigint then
+    raise exception 'two posts at once drew % Obstruction visits', (select count(*) from acts a where a.kind = 'visit' and a.target_act_id in (p1, p2));
+  end if;
+  if (select count(*) from tail_visits where tail = k) is distinct from 1::bigint then raise exception 'the tail was spent % times', (select count(*) from tail_visits where tail = k); end if;
+  -- The racing Mod is put off the staff and the setting put back, so no later file finds either.
+  perform tests.commit(format($sql$ insert into staff_offices (staff, office, cause) values ('ic-race-mod', 'benched', 'admin'); %s $sql$,
+    case when was is null then 'delete from settings where key = ''systemEnabled'';' else format('update settings set value = %L where key = ''systemEnabled'';', was) end));
+end $$;
+
 -- ---- 0. The world: a Boss, three Mods (a quiz, a bribe, a distraction), three players ----
 do $$
 declare
@@ -153,6 +192,10 @@ begin
   if why is null then raise exception 'a choice twice was accepted'; end if;
   why := pg_temp.refusal(format('select seed_instance(%L::jsonb)', jsonb_set(seed, '{system,staff,0,quiz,1,choices}', '["Drum"]')));
   if why is null then raise exception 'a single choice was accepted'; end if;
+  why := pg_temp.refusal(format('select seed_instance(%L::jsonb)', jsonb_set(jsonb_set(seed, '{system,staff,0,quiz,0,choices}', '["Moss", " Stone", "Dust"]'), '{system,staff,0,quiz,0,answer}', '" Stone"')));
+  if why is null or why not like '%space%' then raise exception 'a choice with leading space was accepted: %', why; end if;
+  why := pg_temp.refusal(format('select seed_instance(%L::jsonb)', jsonb_set(seed, '{system,staff,0,quiz,0,question}', '"Which is the oldest? "')));
+  if why is null or why not like '%space%' then raise exception 'a question with trailing space was accepted: %', why; end if;
   if (select count(*) from staff_quiz_questions where staff = 'ic-m1') is distinct from 2::bigint then raise exception 'a refused seed changed the quiz'; end if;
 end $$;
 
@@ -244,6 +287,15 @@ begin
   v := pg_temp.visit(tests.post(author, t, 'Yet another quiet post.'), 'ic-m1');
   if pg_temp.tried(eve, v, null) is null then raise exception 'a quiz with no answer was taken'; end if;
   if pg_temp.tried(eve, gen_random_uuid(), 'x') is null then raise exception 'a visit that is not there was taken'; end if;
+  -- An answer that is none of the choices shown, or is far too long, is refused in the same plain words for everyone, and writes nothing.
+  why := pg_temp.tried(eve, v, 'Pebble');
+  if why is null or why not like '%pick one of the answers shown%' then raise exception 'an answer that is no choice was taken: %', why; end if;
+  if pg_temp.tried(ann_b, v, 'Pebble') is distinct from why or pg_temp.tried(ann_b, v, repeat('x', 300)) is distinct from why or pg_temp.tried(eve, v, repeat('x', 300)) is distinct from why then
+    raise exception 'the refusal of an answer that is no choice differs: %', why;
+  end if;
+  if exists (select 1 from acts x where x.kind = 'intercept' and x.payload ->> 'visit_act' = v::text) then
+    raise exception 'a refused answer left something behind';
+  end if;
   if (select count(*) from acts where kind = 'intercept') is distinct from n0 + 2 then raise exception 'a refusal wrote an Act'; end if;
 end $$;
 

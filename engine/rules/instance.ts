@@ -479,6 +479,8 @@ function systemProblems(instance: Instance): string[] {
         const at = `${who}'s quiz question ${i + 1}`;
         if (typeof q.question !== 'string' || !q.question.trim() || q.question.length > 280) out.push(`${at} has no question to ask; a question is text of at most 280 characters`);
         if (Array.isArray(q.choices) && (q.choices.length > 8 || q.choices.some((c) => typeof c !== 'string' || !c.trim() || c.length > 200))) out.push(`${at} has more than eight choices, or a choice that is blank or over 200 characters`);
+        if (typeof q.question === 'string' && q.question !== q.question.trim()) out.push(`${at} has a space at the start or the end of its question`);
+        if (Array.isArray(q.choices) && q.choices.some((c) => typeof c === 'string' && c !== c.trim())) out.push(`${at} has a choice with a space at the start or the end`);
         if (!Array.isArray(q.choices) || q.choices.length < 2) out.push(`${at} has fewer than two choices; it needs at least two choices`);
         else if (new Set(q.choices).size !== q.choices.length) out.push(`${at} lists a choice twice`);
         if (!Array.isArray(q.choices) || !q.choices.includes(q.answer)) out.push(`${at} has the answer ${JSON.stringify(q.answer)}, which is not one of its choices`);

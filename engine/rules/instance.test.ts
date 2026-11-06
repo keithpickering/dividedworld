@@ -427,6 +427,8 @@ test('a quiz needs a question, and each question\'s answer must be one of its ch
   assert.match(said(quiz([{ question: 'Q?', choices: ['a', 'a'], answer: 'a' }])), /quiz.*twice/);
   assert.match(said(quiz([{ question: ' ', choices: ['a', 'b'], answer: 'a' }])), /quiz.*no question to ask/);
   assert.match(said(quiz([{ question: 'Q?', choices: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'], answer: 'a' }])), /quiz.*more than eight choices/);
+  assert.match(said(quiz([{ question: 'Q? ', choices: ['a', 'b'], answer: 'a' }])), /quiz.*space at the start or the end of its question/);
+  assert.match(said(quiz([{ question: 'Q?', choices: ['a', ' b'], answer: 'a' }])), /quiz.*choice with a space/);
   assert.deepEqual(instanceProblems(quiz([{ question: 'Q?', choices: ['a', 'b'], answer: 'b' }])), []);
 });
 
