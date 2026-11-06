@@ -275,7 +275,7 @@ test('the ink reaches the post body\'s padding box edges, the reactions are in f
       return ink.left < r.right && ink.right > r.left && ink.top < r.bottom && ink.bottom > r.top;
     };
     return { body, ink: { top: ink.top, bottom: ink.bottom, left: ink.left, right: ink.right },
-      chip: over('#post-41 .kb-chip'), links: ink.bottom > document.querySelector('#post-41 .kb-act-foot')!.getBoundingClientRect().top + 1 };
+      chip: over('#post-41 .kb-reaction'), links: ink.bottom > document.querySelector('#post-41 .kb-act-foot')!.getBoundingClientRect().top + 1 };
   });
   /* Up to the body's top edge inside its border, and across to its sides. */
   expect(read.ink.top).toBeCloseTo(read.body.top, 0);
@@ -287,7 +287,7 @@ test('the ink reaches the post body\'s padding box edges, the reactions are in f
   /* The chip is under the canvas's box and still what a click reaches (a trial click fails if anything else would take it); the links are on the bar. */
   await page.locator('#post-41 .kb-act-links').getByRole('button', { name: 'Quote' }).click({ trial: true });
   await page.locator('#post-41 .kb-act-links').getByRole('button', { name: 'Spin thread' }).click({ trial: true });
-  await page.locator('#post-41 .kb-chip').first().click({ trial: true });
+  await page.locator('#post-41 .kb-reaction').first().click({ trial: true });
 });
 
 /*

@@ -43,14 +43,14 @@ async function faults(page: Page): Promise<string[]> {
       const r = ratio(text, ground);
       if (r < 4.5) out.push(`${el.textContent}: ${r.toFixed(2)}:1 on the bar's ground, under 4.5:1`);
     }
-    const chips = [...post.querySelectorAll<HTMLElement>('.kb-chip')];
-    if (chips.length === 0) out.push('#41 has no reaction chips');
-    for (const el of chips) {
+    const tiles = [...post.querySelectorAll<HTMLElement>('.kb-reaction')];
+    if (tiles.length === 0) out.push('#41 has no reaction tiles');
+    for (const el of tiles) {
       const s = getComputedStyle(el);
       const bg = parse(s.backgroundColor);
-      if (bg[3] !== 1) out.push(`reaction chip "${el.textContent}": its ground is not opaque`);
+      if (bg[3] !== 1) out.push(`reaction tile "${el.textContent}": its ground is not opaque`);
       const r = ratio(parse(s.color), bg);
-      if (r < 4.5) out.push(`reaction chip "${el.textContent}": ${r.toFixed(2)}:1 on its own ground, under 4.5:1`);
+      if (r < 4.5) out.push(`reaction tile "${el.textContent}": ${r.toFixed(2)}:1 on its own ground, under 4.5:1`);
     }
     /* The bars are never inked: nothing of the splat's canvas reaches into either bar. */
     const ink = post.querySelector('.kb-whoops-ink')?.getBoundingClientRect();

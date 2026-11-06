@@ -166,3 +166,90 @@ test('a focused ghost mark keeps the ring\'s ink layer', async ({ page }) => {
   expect(await ghost.evaluate((el) => el.matches(':focus-visible'))).toBe(true);
   expect(await ghost.evaluate((el) => getComputedStyle(el).boxShadow)).not.toBe('none');
 });
+
+/* Reactions are tiles too (meta acts design, sections 1 and 6): 36px, a button where the player may react, one tab stop for a row. */
+test('every reaction tile is 36px tall', async ({ page }) => {
+  await page.goto('/?fixture=boards&moment=01-main');
+  const tiles = page.locator('.kb-reaction');
+  await expect(tiles.first()).toBeVisible();
+  const heights = await tiles.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height));
+  expect(heights.length).toBeGreaterThan(0);
+  for (const h of heights) expect(Math.abs(h - 36)).toBeLessThanOrEqual(1);
+});
+
+/* `01-main`'s posts that are another's carry no reactions yet, so the tiles that are buttons are read on `03-react`, the same thread with the HUD character on another's post. */
+test.describe('a reaction tile that is a button', () => {
+  const MOMENT = '/?fixture=boards&moment=03-react';
+
+  test('the first free tile on another\'s post answers a hover, and pressing it raises its count by one and keeps focus', async ({ page }) => {
+    await page.goto(MOMENT);
+    await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; animation: none !important; }' });
+    const tile = page.locator('#post-41 button.kb-reaction:not([aria-disabled="true"]):not(.kb-react-button)').first();
+    await expect(tile).toBeVisible();
+    expect(Math.abs((await tile.boundingBox())!.height - 36)).toBeLessThanOrEqual(1);
+    const look = () => tile.evaluate((el) => { const cs = getComputedStyle(el); return `${cs.borderTopColor}|${cs.backgroundColor}`; });
+    await page.mouse.move(0, 0);
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    const before = await look();
+    await tile.hover();
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    expect(await look()).not.toBe(before);
+
+    /* The tile is free until pressed, so it is held by its kind from here. */
+    const key = (await tile.getAttribute('data-kb-reaction'))!;
+    const same = page.locator(`#post-41 [data-kb-reaction="${key}"]`);
+    const count = async () => Number((await same.locator('.kb-meta-tile-in').textContent())!.trim().split(/\s+/).pop());
+    const n = await count();
+    await same.click();
+    await expect.poll(count).toBe(n + 1);
+    await expect(same).toBeFocused();
+  });
+
+  test('two posts\' rows each take one Tab: from the first row\'s stop, Tab goes past the rest of that row', async ({ page }) => {
+    await page.goto(MOMENT);
+    const rows = page.locator('#post-41 .kb-reactions, #post-42 .kb-reactions');
+    await expect(rows).toHaveCount(2);
+    for (const row of await rows.all()) expect(await row.locator('[data-kb-stop][tabindex="0"]').count()).toBe(1);
+    const stop = page.locator('#post-41 .kb-reactions [data-kb-stop][tabindex="0"]');
+    await stop.focus();
+    await expect(stop).toBeFocused();
+    await page.keyboard.press('Tab');
+    const inRow = await page.evaluate(() => !!document.activeElement?.closest('#post-41 .kb-reactions'));
+    expect(inRow).toBe(false);
+    /* And from the second row's stop, back with Shift+Tab, it is not in the first row's tiles either: the first row held one stop. */
+    const second = page.locator('#post-42 .kb-reactions [data-kb-stop][tabindex="0"]');
+    await second.focus();
+    await page.keyboard.press('Shift+Tab');
+    expect(await page.evaluate(() => !!document.activeElement?.closest('#post-42 .kb-reactions'))).toBe(false);
+  });
+
+  test('keyboard focus on your own kind is visible on a light post: an outline of 3:1 against the post, other than the unfocused one', async ({ page }) => {
+    await page.goto(MOMENT);
+    const own = page.locator('#post-42 button.kb-reaction[data-kb-own]');
+    await expect(own).toBeVisible();
+    await page.keyboard.press('Tab'); /* keyboard modality, so a script focus matches :focus-visible */
+    const read = () => own.evaluate((el) => {
+      const px = (css: string): [number, number, number, number] => {
+        const c = document.createElement('canvas').getContext('2d', { willReadFrequently: true })!;
+        c.clearRect(0, 0, 1, 1); c.fillStyle = css; c.fillRect(0, 0, 1, 1);
+        const d = c.getImageData(0, 0, 1, 1).data;
+        return [d[0]!, d[1]!, d[2]!, d[3]! / 255];
+      };
+      const lum = ([r, g, b]: number[]) => { const f = (v: number) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r!) + 0.7152 * f(g!) + 0.0722 * f(b!); };
+      /* The post's ground: the nearest ancestor with an opaque background. */
+      let ground: [number, number, number, number] = [255, 255, 255, 1];
+      for (let n: Element | null = el.parentElement; n; n = n.parentElement) { const p = px(getComputedStyle(n).backgroundColor); if (p[3] === 1) { ground = p; break; } }
+      const cs = getComputedStyle(el);
+      const o = px(cs.outlineColor);
+      const [hi, lo] = [lum(o), lum(ground)].sort((a, b) => b - a);
+      return { focusVisible: el.matches(':focus-visible'), outline: cs.outlineColor, width: cs.outlineWidth, style: cs.outlineStyle, ratio: (hi! + 0.05) / (lo! + 0.05) };
+    });
+    const unfocused = await read();
+    await own.focus();
+    const focused = await read();
+    expect(focused.focusVisible).toBe(true);
+    expect(focused.style).not.toBe('none');
+    expect(focused.outline).not.toBe(unfocused.outline);
+    expect(focused.ratio, `outline ${focused.outline} on the post's ground`).toBeGreaterThanOrEqual(3);
+  });
+});
