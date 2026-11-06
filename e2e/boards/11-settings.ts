@@ -81,8 +81,8 @@ const manifest: BoardManifest = {
     { id: 'accessibility', role: 'heading', name: 'Accessibility', box: 'across' },
     { id: 'lead', role: 'text', origin: 'accessibility', name: 'These change how the board and the glass look, read and move. They never change how hard a card is to get through.' },
 
-    ...row('motion', 'Motion', 'Motion', ['Follow my device', 'Reduced', 'Full'],
-      'Reduced stops the drifting smoke, the pulses and the orb shine. A card\'s effect stays: Stick Around still snaps you back, only instantly.'),
+    ...row('motion', 'Motion', 'Motion', ['Follow my device', 'Off', 'Smooth', 'Snappy'],
+      'Off stops every animation. A card\'s effect still happens: Stick Around still snaps you back, only instantly. Smooth and Snappy are two speeds of the same animations.'),
     ...row('smoke', 'Smoke', 'Smoke', ['Full', 'Low', 'Off'], 'How much cloud sits behind the glass. Off leaves plain black. Text is readable at every setting.'),
     ...row('contrast', 'Contrast', 'Contrast', ['Standard', 'High'],
       'High puts solid black behind every line of text on the glass and lifts it all to at least 7:1. The smoke stays at the edges of the screen.'),

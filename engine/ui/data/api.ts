@@ -569,7 +569,7 @@ export interface Preferences {
   /** "system", "light", "dark", or an instance theme's key. */
   readonly theme: string;
   readonly postbit: 'side' | 'stacked';
-  readonly motion: 'system' | 'reduce' | 'full';
+  readonly motion: 'system' | 'reduce' | 'full' | 'snappy';
   /** How much smoke stands behind the glass: all of it, a third of each layer, or none (plain ground). */
   readonly smoke: 'full' | 'low' | 'off';
   /** High puts solid ground under every line of glass text and switches the glass to its `high` key. */

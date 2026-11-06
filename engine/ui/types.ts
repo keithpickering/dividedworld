@@ -82,8 +82,8 @@ export interface UiCopy {
    */
   readonly marquees?: readonly string[];
   /**
-   * How a card's effect stays under reduced motion, in Settings' Motion sentence after "A card's
-   * effect stays: ", naming the instance's own card the way its players know it (the engine names
+   * How a card's effect still happens with motion Off, in Settings' Motion sentence after "A card's
+   * effect still happens: ", naming the instance's own card the way its players know it (the engine names
    * none), such as "a card that holds you in place still does, only instantly."
    */
   readonly reducedMotionCard: string;

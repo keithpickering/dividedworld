@@ -2037,7 +2037,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!account) return refuse('sign in with an account first');
       if (p.theme !== undefined && !/^[a-z][a-z0-9-]{0,39}$/.test(p.theme)) return refuse('a theme is named in lowercase words joined by hyphens');
       if (p.postbit !== undefined && p.postbit !== 'side' && p.postbit !== 'stacked') return refuse('the postbit is side or stacked');
-      if (p.motion !== undefined && p.motion !== 'system' && p.motion !== 'reduce' && p.motion !== 'full') return refuse('motion follows the system, or is reduced or full');
+      if (p.motion !== undefined && p.motion !== 'system' && p.motion !== 'reduce' && p.motion !== 'full' && p.motion !== 'snappy') return refuse('motion follows the system, or is off, smooth or snappy');
       if (p.smoke !== undefined && !['full', 'low', 'off'].includes(p.smoke)) return refuse('the smoke is full, low or off');
       if (p.contrast !== undefined && p.contrast !== 'standard' && p.contrast !== 'high') return refuse('contrast is standard or high');
       if (p.textSize !== undefined && ![100, 125, 150, 200].includes(p.textSize)) return refuse('text size is 100, 125, 150 or 200 percent');
