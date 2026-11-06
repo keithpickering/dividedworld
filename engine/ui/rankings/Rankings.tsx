@@ -152,7 +152,7 @@ export function Rankings({ season, settledAt, standings, reveals, turns, mine, t
   const chosen = loading ? (asked !== null && asked !== season?.number ? asked : null) : final === null ? null : done ? done.season.number : missing;
   const choice = seasons.length > 0 ? <SeasonChoice now={season} seasons={seasons} chosen={chosen} /> : null;
   return (
-    <div className="kb-rankings" ref={root} aria-busy={loading ? 'true' : undefined}>
+    <div className="kb-rankings" ref={root}>
       {embedded
         ? (
           <div className="kb-rankings-bar">
@@ -166,6 +166,9 @@ export function Rankings({ season, settledAt, standings, reveals, turns, mine, t
             {choice}
           </>
         )}
+      {/* One persistent status, in the DOM before any read starts: its words change, so a screen reader hears the loading and then the done. aria-busy is on the table area below it, never on the focused select. */}
+      <p role="status" className={loading ? 'kb-rankings-empty' : 'kb-visually-hidden'}>{loading ? 'Loading the standings.' : done ? `Showing Season ${done.season.number}'s final standings.` : final === null && season ? `Showing Season ${season.number}'s standings.` : ''}</p>
+      <div className="kb-rankings-area" aria-busy={loading ? 'true' : undefined}>
       {!loading && (
       <CalmRegion as="p" className="kb-rankings-lead">
         {done
@@ -175,7 +178,7 @@ export function Rankings({ season, settledAt, standings, reveals, turns, mine, t
       </CalmRegion>
       )}
       {loading
-        ? <p className="kb-rankings-empty" role="status">Loading the standings.</p>
+        ? null
         : missing !== null
         ? <CalmRegion as="p" className="kb-rankings-empty">{`Season ${missing} has no final standings.`}{' '}<Link to={seasonAt('rankings')}>Today&apos;s standings</Link></CalmRegion>
         : rows.length === 0
@@ -205,7 +208,7 @@ export function Rankings({ season, settledAt, standings, reveals, turns, mine, t
                       <td role="cell" className="kb-rankings-place kb-num">{s.place}</td>
                       <th scope="row" role="rowheader" className="kb-rankings-name">
                         <Link to={`/c/${encodeURIComponent(s.character)}`}>{s.name}</Link>
-                        {marked && <span className="kb-visually-hidden"> (linked)</span>}
+                        {marked && <span className="kb-visually-hidden"> (the character you followed)</span>}
                         {mineHere && <> <span className="kb-rankings-yours kb-glass-skew-tag"><span className="kb-glass-upright">Yours</span></span></>}
                       </th>
                       <td role="cell" className="kb-rankings-rank">{rank}</td>
@@ -226,6 +229,7 @@ export function Rankings({ season, settledAt, standings, reveals, turns, mine, t
           <PageLinks label="Pages of the rankings" page={page} pages={pages} href={href} />
         </CalmRegion>
       )}
+      </div>
     </div>
   );
 }
@@ -270,9 +274,14 @@ export function RankingsScreen({ embedded = false, href = rankingsPage, season, 
         const mine = await api.myCharacters();
         if (!ended) return { page: 1, props: { season: current, settledAt: null, standings: [], reveals: [], turns: [], mine, seasons, final: { missing: season! } } };
         /* A finished season's table is public and asked the same for every player: the row of the linked character picks the page, and no more is read for it. */
-        const index = character !== undefined ? await api.resultPlace(ended.number, character) : null;
-        const page = Math.min(MAX_PAGE, Math.max(1, Number.isNaN(asked) ? (index === null ? 1 : Math.floor(index / PER_PAGE) + 1) : asked));
-        const rows = await api.resultsPage(ended.number, page);
+        const known = !Number.isNaN(asked);
+        /* With the page already named, the place and the page do not wait on each other. */
+        const knownPage = Math.min(MAX_PAGE, Math.max(1, asked));
+        const [index, early] = known
+          ? await Promise.all([character !== undefined ? api.resultPlace(ended.number, character) : null, api.resultsPage(ended.number, knownPage)])
+          : [character !== undefined ? await api.resultPlace(ended.number, character) : null, null];
+        const page = known ? knownPage : Math.min(MAX_PAGE, Math.max(1, index === null ? 1 : Math.floor(index / PER_PAGE) + 1));
+        const rows = early ?? await api.resultsPage(ended.number, page);
         return { page, props: { season: current, settledAt: null, standings: [], reveals: [], turns: [], mine, seasons, final: { season: ended, rows, highlight: character ?? null, unplaced: character !== undefined && index === null } } };
       }
       const page = Math.min(MAX_PAGE, Math.max(1, Number.isNaN(asked) ? 1 : asked || 1));

@@ -176,9 +176,15 @@ describe('a finished season, beyond what the eye sees', () => {
     /* While it loads: the same select, still focused, and the table area says so. */
     expect(screen.getByRole('combobox', { name: 'Season' })).toBe(select);
     expect(document.activeElement).toBe(select);
-    expect(document.querySelector('.kb-rankings[aria-busy="true"]')).not.toBeNull();
+    /* aria-busy sits on the table area only, never on an ancestor of the focused select; one status node says the loading, then the done. */
+    expect(document.querySelector('.kb-rankings-area[aria-busy="true"]')).not.toBeNull();
+    expect(select.closest('[aria-busy]')).toBeNull();
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('Loading the standings.');
     await act(async () => { answer(await real(0, 50)); });
     await screen.findByRole('table');
+    expect(screen.getByRole('status')).toBe(status);
+    expect(status).toHaveTextContent("Showing Season 2's standings.");
     expect(screen.getByRole('combobox', { name: 'Season' })).toBe(select);
     expect(document.activeElement).toBe(select);
   });
@@ -208,8 +214,8 @@ describe('a finished season, beyond what the eye sees', () => {
     try {
       renderIn(w.fake, <RankingsScreen embedded season={1} character={w.ids[60]} />, { path: `/season?tab=rankings&season=1&character=${w.ids[60]}` });
       await waitFor(() => expect(screen.getByText(/Page 2 of 3/u)).toBeInTheDocument());
-      expect(within(rowOf('Name 060')).getByText('(linked)')).toBeInTheDocument();
-      expect(within(rowOf('Name 061')).queryByText('(linked)')).toBeNull();
+      expect(within(rowOf('Name 060')).getByText('(the character you followed)')).toBeInTheDocument();
+      expect(within(rowOf('Name 061')).queryByText('(the character you followed)')).toBeNull();
       expect(scroll).toHaveBeenCalledTimes(1);
       expect(scroll.mock.contexts[0]).toBe(rowOf('Name 060'));
     } finally {
@@ -347,7 +353,8 @@ describe('Rankings', () => {
     await goTo('/rankings?page=2');
     expect(screen.queryByRole('link', { name: 'Name 000' })).toBeNull();
     expect(screen.queryByText(/Page 1 of 3/u)).toBeNull();
-    expect(document.querySelector('.kb-rankings[aria-busy="true"]')).not.toBeNull();
+    expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
+    expect(screen.getByRole('status')).toHaveTextContent('Loading the standings.');
   });
 
   test('a failed read is tried again on a page change, and its error does not stay while it is', async () => {
