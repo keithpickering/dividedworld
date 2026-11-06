@@ -5,7 +5,8 @@
  *
  * The color of every 3px cell is a pure function of the grid, the light and the band (`render`, which writes sRGB bytes
  * into any `Uint8ClampedArray`); `draw` puts those bytes in an ImageData on a small grid canvas and draws it scaled with
- * smoothing, then the starbursts on top; `sampleFoil` reads the same cells back as hex for the readable-band check. Every
+ * smoothing (at the rounded whole-pixel W x H, so a 988.4px box leaves a 0.4px strip unpainted at its far edge; the host sizes
+ * its canvas in whole px, so the edge is under one pixel), then the starbursts on top; `sampleFoil` reads the same cells back as hex for the readable-band check. Every
  * cell goes through `clampInto`, so no cell leaves the band whatever the palette or the light.
  *
  * Units: a box is CSS px {w, h}; a cell is 3 CSS px; `density` is canvas pixels per CSS px; a light is {x, y} in -1.5..1.5;
@@ -121,6 +122,8 @@ export function makeFoil(opts: FoilOptions): Foil {
     /* Whole CSS px: a sub-pixel resize must not rebuild the grid canvas, the image and the cell map. */
     const W = Math.max(1, Math.round(box.w)), H = Math.max(1, Math.round(box.h));
     if (layout && layout.W === W && layout.H === H) return layout;
+    /* The old grid canvas is dropped with its layout; zero it so its pixel memory is freed now, as `release` does. */
+    if (layout?.small) { layout.small.width = 0; layout.small.height = 0; }
     const L: Layout = { W, H, gw: Math.ceil(W / CELL), gh: Math.ceil(H / CELL) };
     layout = L;
     return L;

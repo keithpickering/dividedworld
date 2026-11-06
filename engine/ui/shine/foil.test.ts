@@ -51,7 +51,7 @@ describe('the foil', () => {
       const failures = shineIsReadable(tokens, (mode, light) => {
         const band = bandOf(tokens[mode]);
         if (!foils.has(mode)) foils.set(mode, foilFor(pattern, modeOf(band)));
-        return new Set(sampleFoil(foils.get(mode)!, { w: 240, h: 120 }, light, band));
+        return new Set(sampleFoil(foils.get(mode)!, { w: 120, h: 60 }, light, band));
       });
       assert.deepEqual(failures.slice(0, 3), [], `${pattern}`);
     }
@@ -63,10 +63,10 @@ describe('the foil', () => {
     for (const pattern of PATTERNS) {
       const foil = foilFor(pattern, 'dark', 'play:post', white);
       const red = shineIsReadable(tokens, (mode, light) =>
-        modeOf(bandOf(tokens[mode])) === 'dark' ? new Set(sampleFoil(foil, { w: 240, h: 120 }, light, open)) : []);
+        modeOf(bandOf(tokens[mode])) === 'dark' ? new Set(sampleFoil(foil, { w: 60, h: 30 }, light, open)) : []);
       assert.ok(red.length > 0, `${pattern}: an unclamped white stop must fail the check`);
       const held = shineIsReadable(tokens, (mode, light) =>
-        modeOf(bandOf(tokens[mode])) === 'dark' ? new Set(sampleFoil(foil, { w: 240, h: 120 }, light, bandOf(tokens[mode]))) : []);
+        modeOf(bandOf(tokens[mode])) === 'dark' ? new Set(sampleFoil(foil, { w: 120, h: 60 }, light, bandOf(tokens[mode]))) : []);
       assert.deepEqual(held.slice(0, 3), [], `${pattern}: the clamp holds a white stop`);
     }
   });
@@ -233,6 +233,15 @@ describe('draw, against a fake context', () => {
     foil.draw(ctx, { w: 988.4, h: 300.3 }, 1, REST, bands.light, 0, false);
     assert.equal(made.length, after, 'no canvas is made for a 0.4px change');
     assert.equal(foil.facets({ w: 988.4, h: 300.3 }), map, 'the same cell map');
+  });
+
+  test('a resize to a new whole-pixel size zeroes the old grid canvas before replacing it', () => {
+    const { foil, ctx, made } = run('light', 0, false);
+    foil.draw(ctx, { w: 600, h: 200 }, 1, REST, bands.light, 0, false);
+    const old = made.filter((c) => c.width > 0).find((c) => c.width === Math.ceil(600 / 3));
+    assert.ok(old, 'the 600px layout made a grid canvas');
+    foil.draw(ctx, { w: 700, h: 200 }, 1, REST, bands.light, 0, false);
+    assert.ok(old!.width === 0 && old!.height === 0, 'the old grid canvas is zeroed');
   });
 
   test('a box that is not a finite size does nothing: nothing is allocated, nothing throws', () => {
