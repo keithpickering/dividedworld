@@ -61,7 +61,8 @@ export const ALLOWED_READS = Object.freeze([
   'boards', 'boards_now', 'moves_log', 'staff_profile_now', 'threads', 'thread_list', 'thread_open', 'acts_public', 'characters_public', 'character_profiles', 'class_kinds', 'reaction_kinds', 'card_kinds',
   'reaction_tallies', 'effect_state', 'pip_styles', 'thread_view_counts', 'settlements',
   'class_reveals', 'turns_announced', 'screen_settings', 'character_post_counts', 'season_size', 'board_counts',
-  // A finished season's frozen results; who plays whom is in none of it (0099). The record and results pages read them for their callers, so a dependency check in e2e 0016 names them.
+  // Public: a finished season's frozen results; who plays whom is in none of it (supabase/migrations/0099_season_results.sql). The web reads them only
+  // through profile_page, record_page, results_page, result_place and finished_seasons, whose dependencies supabase/tests/e2e/0016-screen-reads.ts checks.
   'season_results', 'seasons_finished',
   // A character's standing in the season the standings read, through standings_season() on the server. The
   // standings table itself is not here: a read of it must choose a season, and the rule for which is written

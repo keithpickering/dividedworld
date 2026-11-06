@@ -1976,6 +1976,7 @@ describe('a screen in one call', () => {
     const seasons = once('finished_seasons', [
       { number: 2, starts_at: '2026-10-01T00:00:00+00:00', ends_at: '2026-10-28T12:00:00+00:00', results_at: '2026-10-28T12:00:05+00:00', characters: 51 },
       { number: 1, starts_at: '2026-09-01T00:00:00+00:00', ends_at: '2026-09-28T12:00:00+00:00', results_at: '2026-09-28T12:00:05+00:00', characters: 3 },
+      { starts_at: '2026-08-01T00:00:00+00:00', characters: 9 },
     ]);
     expect(await seasons.api.finishedSeasons()).toEqual([
       { number: 2, startsAt: '2026-10-01T00:00:00+00:00', endsAt: '2026-10-28T12:00:00+00:00', resultsAt: '2026-10-28T12:00:05+00:00', characters: 51 },
