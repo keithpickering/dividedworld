@@ -7,13 +7,54 @@
  *
  * It must be the direct child of the `AnimatePresence` (or sit under it with nothing between), since presence is read from context.
  */
-import { motion, useIsPresent, type HTMLMotionProps } from 'motion/react';
-import { useLayoutEffect, useRef, type ReactNode } from 'react';
+import { motion, usePresence, type HTMLMotionProps } from 'motion/react';
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { RouterHold } from '../router.tsx';
 
-export function Leaving({ pin = false, children, ...rest }: Omit<HTMLMotionProps<'div'>, 'children'> & { readonly pin?: boolean; readonly children: ReactNode }) {
-  const present = useIsPresent();
+export function Leaving({ pin = false, holdUntil, children, ...rest }: Omit<HTMLMotionProps<'div'>, 'children'> & {
+  readonly pin?: boolean;
+  /** Keeps a leaving tree under the one arriving until `release` is called (or the returned cleanup runs): for a tree with no exit of its own. */
+  readonly holdUntil?: (release: () => void) => () => void;
+  readonly children: ReactNode;
+}) {
+  const [present, safeToRemove] = usePresence(holdUntil !== undefined);
   const el = useRef<HTMLDivElement>(null);
+  const isPresent = useRef(present);
+  isPresent.current = present;
+  useEffect(() => {
+    if (present || !holdUntil) return;
+    return holdUntil(() => safeToRemove?.());
+  }, [present, holdUntil, safeToRemove]);
+  /*
+   * At rest a tree carries no filter and no clip-path: an enter ends on `blur(0px)` and a clip that shows everything (Motion cannot end on
+   * `none`, it interpolates to it), and a filter makes the tree the containing block of the glass's fixed smoke and overlays. Motion writes
+   * its frames to the style until it is done, whether it animates or sets the values at mount, so the style is cleared once it has been quiet
+   * for a few frames while the tree is present. Motion keeps its own values, so an exit starts from where they were. The transform is `none`
+   * at rest on its own.
+   */
+  useEffect(() => {
+    const node = el.current;
+    if (!node) return;
+    let frame = 0;
+    let quiet = 0;
+    let own = false;
+    const tick = () => {
+      if (++quiet < 3) { frame = requestAnimationFrame(tick); return; }
+      if (!isPresent.current || !(node.style.filter || node.style.clipPath)) return;
+      own = true;
+      node.style.removeProperty('filter');
+      node.style.removeProperty('clip-path');
+    };
+    const watch = new MutationObserver(() => {
+      if (own) { own = false; return; }
+      quiet = 0;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(tick);
+    });
+    watch.observe(node, { attributes: true, attributeFilter: ['style'] });
+    frame = requestAnimationFrame(tick);
+    return () => { watch.disconnect(); cancelAnimationFrame(frame); };
+  }, []);
   /* Lifted out where it stood: the window's scroll, as the tree last drew it, becomes its offset. Before paint, ahead of any scroll to the top. */
   useLayoutEffect(() => {
     if (!pin || !el.current) return;
@@ -21,7 +62,11 @@ export function Leaving({ pin = false, children, ...rest }: Omit<HTMLMotionProps
   }, [pin, present]);
   const marks = present ? {} : { inert: true, 'aria-hidden': true as const, 'data-kb-exiting': true as const };
   return (
-    <motion.div ref={el} {...rest} {...marks}>
+    <motion.div
+      ref={el}
+      {...rest}
+      {...marks}
+    >
       <RouterHold held={!present}>{children}</RouterHold>
     </motion.div>
   );

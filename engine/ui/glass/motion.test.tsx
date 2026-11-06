@@ -5,7 +5,7 @@
  */
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { wipe, backdrop, crossing, currentFeel, feelTokens, modal, overlay, screen, stagger, staggerItem, swap, useFeel, type ActiveFeel } from './motion.ts';
+import { wipe, backdrop, crossing, crossingPinned, currentFeel, feelTokens, modal, overlay, screen, stagger, staggerItem, swap, useFeel, type ActiveFeel } from './motion.ts';
 
 const rect = { x: 10, y: 20, width: 100, height: 40 };
 const within = { width: 1000, height: 700 };
@@ -94,6 +94,29 @@ describe('the presets', () => {
     expect(clip(p.exit)).toBe(clip(p.initial));
   });
 })
+
+describe('the crossing of a pinned world', () => {
+  const exitOf = (p: ReturnType<typeof crossingPinned>, scrollY: number) => ((p.variants as Record<string, (n: number) => Record<string, unknown>>).leave!)(scrollY);
+
+  it('closes (Snappy) into the rect as the window sees it, wherever the world was scrolled', () => {
+    const p = crossingPinned(snappy, { from: rect, within });
+    /* Pinned 300px up, the world's own y of the rect is 300 lower; at no scroll it is the rect as it is. */
+    expect(exitOf(p, 0).clipPath).toBe((crossing(snappy, { from: rect, within }).exit as { clipPath: string }).clipPath);
+    expect(exitOf(p, 300).clipPath).toBe((crossing(snappy, { from: { ...rect, y: rect.y + 300 }, within }).exit as { clipPath: string }).clipPath);
+    expect(exitOf(p, 300).clipPath).not.toBe(exitOf(p, 0).clipPath);
+  });
+
+  it('closes (Smooth) from the rect centre as the window sees it', () => {
+    const p = crossingPinned(smooth, { from: rect, within });
+    expect(exitOf(p, 300).transformOrigin).toBe(`${rect.x + rect.width / 2}px ${rect.y + 300 + rect.height / 2}px`);
+  });
+
+  it('enters and exits as the plain crossing does, and is empty under Off', () => {
+    const p = crossingPinned(smooth, { from: rect, within });
+    expect((p.variants as Record<string, unknown>).closed).toEqual(crossing(smooth, { from: rect, within }).initial);
+    expect(crossingPinned(null, { from: rect, within })).toEqual({});
+  });
+});
 
 describe('stagger', () => {
   for (const count of [1, 2, 20, 200]) {

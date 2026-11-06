@@ -135,6 +135,20 @@ test('Esc pressed the moment the menu opens, at full motion, returns to the same
   await expect(post).toBeFocused();
 });
 
+/* At rest the glass world and its screen carry no filter, transform or clip-path: any of them would make it the containing block of the glass's fixed smoke and overlays. */
+for (const feel of ['smooth', 'snappy'] as const) {
+  test(`${feel}: once the crossing has settled the glass world and its screen have no filter, transform or clip-path`, async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await page.goto('/b/general');
+    await page.evaluate((f) => { document.documentElement.setAttribute('data-kb-motion', 'full'); document.documentElement.setAttribute('data-kb-motion-feel', f); }, feel);
+    await page.getByRole('region', { name: 'Game HUD' }).getByRole('button', { name: 'Menu' }).click();
+    await expect(page.locator('.kb-world')).toHaveCount(1);
+    for (const sel of ['.kb-world', '.kb-glass-screen']) {
+      await expect.poll(() => page.locator(sel).evaluate((el) => { const c = getComputedStyle(el); return [c.filter, c.transform, c.clipPath].join('|'); })).toBe('none|none|none');
+    }
+  });
+}
+
 /*
  * Every way into the glass keeps the board's place, not only the HUD's Menu (keepBoardPlace,
  * engine/ui/glass/back.ts): the reply box's "Make a character", for an account with none, is a

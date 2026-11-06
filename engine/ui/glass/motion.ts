@@ -135,6 +135,24 @@ export function crossing(feel: ActiveFeel, args: { readonly from: Rect; readonly
 }
 
 /**
+ * The crossing for a world that is pinned where it stood when it leaves (engine/ui/glass/Held.tsx): the same props as `crossing`, as variants
+ * (`closed`, `open`, `leave`), with the exit's `custom` the window's scroll offset. A pinned world sits `scrollY` px above the window's top,
+ * so its exit closes into the rect shifted down by that much, which is the HUD's rect in the window. The caller passes the offset as `custom` on
+ * `AnimatePresence` (read as the exit starts) and on the child.
+ */
+export function crossingPinned(feel: ActiveFeel, args: { readonly from: Rect; readonly within: { readonly width: number; readonly height: number } }): MotionProps {
+  if (!feel) return {};
+  const { from, within } = args;
+  const enter = crossing(feel, args);
+  const variants: Variants = {
+    closed: enter.initial as TargetAndTransition,
+    open: enter.animate as TargetAndTransition,
+    leave: (scrollY: number) => crossing(feel, { from: { ...from, y: from.y + scrollY }, within }).exit as TargetAndTransition,
+  };
+  return { variants, initial: 'closed', animate: 'open', exit: 'leave' };
+}
+
+/**
  * A change between glass screens, as variants resolved by the direction passed as `custom` (see the
  * header): +1 when the tab chosen lies to the right of the one being left, so the outgoing content
  * leaves toward the left and the new content enters from the right (-1 the other way).

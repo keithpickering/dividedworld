@@ -518,7 +518,7 @@ describe('the welcome', () => {
     await screen.findByRole('heading', { level: 2, name: 'You are signed in, with no account yet' });
     await fake.openAccount(code);
     const before = await screen.findByRole('region', { name: 'Before you start' });
-    await userEvent.click(await within(before).findByRole('radio', { name: 'Reduced' }));
+    await userEvent.click(await within(before).findByRole('radio', { name: 'Off' }));
     await waitFor(async () => expect((await fake.preferences()).motion).toBe('reduce'));
     await userEvent.click(screen.getByRole('link', { name: 'Make your first character' }));
     expect(await screen.findByRole('textbox', { name: /name/iu })).toBeInTheDocument();
@@ -771,13 +771,13 @@ describe('after the first load', () => {
  * the app is in is the account's setting, set before the first render (the root's mark alone is reset by Appearance to the device's).
  */
 describe('the crossing', () => {
-  const open = async (motion: 'full' | 'reduce') => {
+  const open = async (motion: 'full' | 'reduce' | 'snappy') => {
     const fake = createFake({ instance, settings: fallbackSettings });
     seedDemo(fake);
     await fake.setPreferences({ motion });
     render(<App api={fake} />);
     const hud = await screen.findByRole('region', { name: 'Game HUD' });
-    await waitFor(() => expect(document.documentElement.getAttribute('data-kb-motion')).toBe(motion));
+    await waitFor(() => expect(document.documentElement.getAttribute('data-kb-motion')).toBe(motion === 'reduce' ? 'reduce' : 'full'));
     return { hud, menu: await within(hud).findByRole('button', { name: /Menu/u }) };
   };
   const worlds = () => Array.from(document.querySelectorAll<HTMLElement>('.kb-world'));
@@ -815,6 +815,43 @@ describe('the crossing', () => {
     expect(worlds()[0]).toBe(board);
     expect(board).not.toHaveAttribute('inert');
     expect(board.querySelector('main')).toBe(page);
+  });
+
+  test('at Snappy the board is held until the glass has opened, then goes, and the glass is never held', async () => {
+    const { menu } = await open('snappy');
+    await userEvent.click(menu);
+    await screen.findByRole('navigation', { name: 'Menu' });
+    expect(worlds().map((w) => w.dataset.kbWorld)).toEqual(['board', 'glass']);
+    expect(worlds()[1]).not.toHaveAttribute('inert');
+    await waitFor(() => expect(worlds().map((w) => w.dataset.kbWorld)).toEqual(['glass']), { timeout: 4000 });
+  });
+
+  test('once the crossing has settled, the glass world and its screen carry no filter, transform or clip-path', async () => {
+    const { menu } = await open('full');
+    await userEvent.click(menu);
+    await screen.findByRole('navigation', { name: 'Menu' });
+    await waitFor(() => expect(worlds().map((w) => w.dataset.kbWorld)).toEqual(['glass']), { timeout: 3000 });
+    const glass = worlds()[0]!;
+    const content = glass.querySelector<HTMLElement>('.kb-glass-screen')!;
+    await waitFor(() => {
+      for (const el of [glass, content]) {
+        expect(['', 'none']).toContain(el.style.filter);
+        expect(['', 'none']).toContain(el.style.transform);
+        expect(['', 'none']).toContain(el.style.clipPath);
+      }
+    }, { timeout: 3000 });
+  });
+
+  test('a glass world that leaves is pinned where the window was scrolled', async () => {
+    const { menu } = await open('full');
+    await userEvent.click(menu);
+    await screen.findByRole('navigation', { name: 'Menu' });
+    await waitFor(() => expect(worlds().map((w) => w.dataset.kbWorld)).toEqual(['glass']), { timeout: 3000 });
+    Object.defineProperty(window, 'scrollY', { value: 300, configurable: true, writable: true });
+    await userEvent.click(within(screen.getByRole('navigation', { name: 'Menu' })).getByRole('link', { name: 'Back to the board' }));
+    const leaving = worlds().find((w) => w.dataset.kbWorld === 'glass')!;
+    expect(leaving.style.top).toBe('-300px');
+    Object.defineProperty(window, 'scrollY', { value: 0, configurable: true, writable: true });
   });
 
   test('under Off the new world is drawn in the same frame and the old one is gone at once', async () => {

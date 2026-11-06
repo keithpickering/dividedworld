@@ -18,7 +18,7 @@ import { RecordScreen } from '../../engine/ui/profile/Record.tsx';
 import { Frame } from '../../engine/ui/frame/Frame.tsx';
 import { keepBoardPlace } from '../../engine/ui/glass/back.ts';
 import { Leaving } from '../../engine/ui/glass/Held.tsx';
-import { crossing, useFeel } from '../../engine/ui/glass/motion.ts';
+import { crossingPinned, useFeel } from '../../engine/ui/glass/motion.ts';
 import { hudTabRect } from '../../engine/ui/frame/hud-tab.ts';
 import { applyGlass, installGlassFonts, type GlassSurface } from '../../engine/ui/glass/index.ts';
 import { Page as GlassPage } from '../../engine/ui/glass/Page.tsx';
@@ -234,20 +234,38 @@ function Shell({ routes }: { readonly routes: readonly Route[] }) {
   const feel = useFeel(instanceUi.glass.motion);
   const within = { width: window.innerWidth, height: window.innerHeight };
   const glassMotion = useMemo(
-    () => (world === 'glass' ? crossing(feel, { from: hudTabRect(within), within }) : {}),
+    () => (world === 'glass' ? crossingPinned(feel, { from: hudTabRect(within), within }) : {}),
     // The window's size is read when the world changes, not on every render: an exit closes into the box it opened from.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [feel, world],
   );
-  const hold = feel ? { initial: false as const, animate: { opacity: 1 }, exit: { opacity: 0.99, transition: { duration: feel.screen / 1000, ease: 'linear' as const } } } : {};
+  /* The board keeps under the glass until the glass has opened, whatever its spring takes; a stalled enter lets go after a while. */
+  const opened = useRef(new Set<() => void>());
+  const holdBoard = useCallback((release: () => void) => {
+    opened.current.add(release);
+    const stalled = setTimeout(release, BOARD_HOLD_LIMIT_MS);
+    return () => { opened.current.delete(release); clearTimeout(stalled); };
+  }, []);
+  /* An exit reads the offset from the window's scroll as it starts: the leaving world is pinned that far up (Held.tsx). */
+  const scrolled = window.scrollY;
   return (
-    <AnimatePresence initial={false}>
+    <AnimatePresence initial={false} custom={scrolled}>
       {surface
-        ? <Leaving key="glass" pin className="kb-world" data-kb-world="glass" {...glassMotion}><GlassPage surface={surface} menu={!NO_MENU.has(path)}>{content}</GlassPage></Leaving>
-        : <Leaving key="board" pin className="kb-world" data-kb-world="board" {...hold}><Frame>{content}</Frame></Leaving>}
+        ? (
+          <Leaving
+            key="glass" pin custom={scrolled} className="kb-world" data-kb-world="glass" {...glassMotion}
+            onAnimationComplete={(def) => { if (def === 'open') for (const release of [...opened.current]) release(); }}
+          >
+            <GlassPage surface={surface} menu={!NO_MENU.has(path)}>{content}</GlassPage>
+          </Leaving>
+        )
+        : <Leaving key="board" pin holdUntil={feel ? holdBoard : undefined} className="kb-world" data-kb-world="board"><Frame>{content}</Frame></Leaving>}
     </AnimatePresence>
   );
 }
+
+/** The longest the board is held under a glass whose enter has not ended (a tab in the background pauses animation frames). */
+const BOARD_HOLD_LIMIT_MS = 2000;
 
 /** The instance's glass on the page: its standard key's tokens and colors on the root, and its fonts. */
 function useGlass() {
