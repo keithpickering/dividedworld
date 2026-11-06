@@ -55,7 +55,7 @@ begin
   select r into got from extensions.dblink_get_result('wbr_a') as x(r jsonb);
   perform extensions.dblink_disconnect('wbr_h');
   perform extensions.dblink_disconnect('wbr_a');
-  if (select count(*) from acts where kind = 'ban' and payload ->> 'character' = c::text) <> 1 then raise exception 'the second session''s filing banned once'; end if;
+  if (select count(*) from acts where kind = 'ban' and payload ->> 'character' = c::text) is distinct from 1 then raise exception 'the second session''s filing banned once'; end if;
   if (select i.created_at from acts i where i.id = (got ->> 'infraction')::uuid) < (select b.created_at from acts b where b.kind = 'ban' and b.payload ->> 'character' = c::text) then
     raise exception 'an infraction that waited on the row for a ban is stamped before the ban';
   end if;
@@ -110,7 +110,7 @@ begin
   select * into row_ from acts where id = (got ->> 'infraction')::uuid;
   if row_.kind <> 'infraction' or row_.character is not null then raise exception 'an infraction is an Act of no character'; end if;
   if row_.thread <> t or row_.seq is not null then raise exception 'it sits in the post''s thread and takes no seq'; end if;
-  if (select next_seq from threads where id = t) <> threads_before then raise exception 'it leaves its thread''s counters alone'; end if;
+  if (select next_seq from threads where id = t) is distinct from threads_before then raise exception 'it leaves its thread''s counters alone'; end if;
   if row_.payload ->> 'character' <> c::text or row_.payload ->> 'band' <> 'minor' or (row_.payload ->> 'points')::int <> 2
      or (row_.payload ->> 'rule_number')::int <> 3 or row_.payload ->> 'staff' <> 'wb-mod' or row_.payload ->> 'about_act' <> p::text
      or jsonb_typeof(row_.payload -> 'visit_act') <> 'null' or (row_.payload ->> 'board')::uuid <> (select board from threads where id = t) then
@@ -227,7 +227,7 @@ begin
       if warn_points(c) <> 2 then raise exception 'ban %: only what lands after the last ban counts, got %', step, warn_points(c); end if;
     end if;
   end loop;
-  if (select count(*) from acts where kind = 'ban' and payload ->> 'character' = c::text) <> 4 then raise exception 'four bans in all'; end if;
+  if (select count(*) from acts where kind = 'ban' and payload ->> 'character' = c::text) is distinct from 4 then raise exception 'four bans in all'; end if;
 end $$;
 
 -- ---- A bar filled exactly reaches the size; one point short does not ----
@@ -427,7 +427,7 @@ declare
   person jsonb;
   box jsonb;
 begin
-  if (select warn_points from characters_public where id = c) <> 6 or (select banned_until from characters_public where id = c) is not null then
+  if (select warn_points from characters_public where id = c) is distinct from 6 or (select banned_until from characters_public where id = c) is not null then
     raise exception 'characters_public carries the bar and no ban for the pointed';
   end if;
   if (select banned_until from characters_public where id = banned) is distinct from banned_until(banned) or banned_until(banned) is null then
@@ -435,7 +435,7 @@ begin
   end if;
   -- Every signed-in player reads them: an infraction is a public Act.
   perform tests.become(ann);
-  if (select warn_points from characters_public where id = c) <> 6 then raise exception 'a player reads the bar'; end if;
+  if (select warn_points from characters_public where id = c) is distinct from 6 then raise exception 'a player reads the bar'; end if;
   page := thread_page(pt, 1, null, null, array[]::text[]);
   person := (select p from jsonb_array_elements(page -> 'people') p where p -> 'character' ->> 'id' = c::text);
   if (person -> 'character' ->> 'warn_points')::int <> 6 or jsonb_typeof(person -> 'character' -> 'banned_until') <> 'null' then raise exception 'thread_page carries them: %', person -> 'character'; end if;

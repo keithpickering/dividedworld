@@ -180,7 +180,7 @@ begin
   if (select payload #>> '{params,description}' from acts where id = mv) is distinct from 'Boss words.' then raise exception 'the Boss''s words changed on the move Act'; end if;
   select * into d from acts where kind = 'describe' and payload ->> 'board' = b::text;
   if d.id is null then raise exception 'landing the rename wrote no describe Act'; end if;
-  if (select count(*) from acts where kind = 'describe') <> 1 then raise exception 'one describe Act expected, got %', (select count(*) from acts where kind = 'describe'); end if;
+  if (select count(*) from acts where kind = 'describe') is distinct from 1 then raise exception 'one describe Act expected, got %', (select count(*) from acts where kind = 'describe'); end if;
   if d.character is not null or d.target_act_id is distinct from mv or d.payload ->> 'move_act' is distinct from mv::text
      or d.payload ->> 'description' is distinct from 'Second admin words.' then
     raise exception 'the describe Act is wrong: %', to_jsonb(d);
@@ -299,8 +299,8 @@ begin
   perform system_tick();
   mv := (select landed_act from queued_moves where id = q);
   if mv is null then raise exception 'the rename did not land once the fault was gone'; end if;
-  if (select count(*) from acts where kind = 'move' and payload #>> '{params,name}' = 'Fault Field') <> 1
-     or (select count(*) from acts where kind = 'describe' and payload ->> 'description' = 'Fault admin words.' and payload ->> 'move_act' = mv::text) <> 1 then
+  if (select count(*) from acts where kind = 'move' and payload #>> '{params,name}' = 'Fault Field') is distinct from 1
+     or (select count(*) from acts where kind = 'describe' and payload ->> 'description' = 'Fault admin words.' and payload ->> 'move_act' = mv::text) is distinct from 1 then
     raise exception 'exactly one move and one describe expected after the fault';
   end if;
   perform pg_temp.all_say('Fault admin words.', 'a board whose rename landed late with its replacement');

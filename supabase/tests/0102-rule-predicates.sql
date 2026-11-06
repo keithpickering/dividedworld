@@ -41,7 +41,7 @@ begin
   perform seed_instance(seed);
   if (select offices from move_kinds where key = 'renameBoard') is distinct from array['boss'] then raise exception 'renameBoard is not the Boss''s alone: %', (select offices from move_kinds where key = 'renameBoard'); end if;
   if (select offices from move_kinds where key = 'setRule') is distinct from array['boss', 'mod'] then raise exception 'setRule is not the Boss''s and a Mod''s'; end if;
-  if (select count(*) from rule_predicates) <> 10 then raise exception 'the seed did not carry ten predicates (twice is once): %', (select count(*) from rule_predicates); end if;
+  if (select count(*) from rule_predicates) is distinct from 10 then raise exception 'the seed did not carry ten predicates (twice is once): %', (select count(*) from rule_predicates); end if;
   if (select param_kind || least || most from rule_predicates where key = 'minLength') is distinct from 'count1200' then raise exception 'minLength lost its kind or its bounds'; end if;
   if (select plain from rule_predicates where key = 'noDoublePost') is distinct from 'no double posting' then raise exception 'a predicate lost its words'; end if;
   if exists (select 1 from move_kinds where offices = '{}' or offices is null) then raise exception 'a move kind has no office'; end if;
@@ -126,7 +126,7 @@ begin
     perform rule_breaks(post);
     perform pg_temp.end_all();
   end loop;
-  if (select count(*) from rule_predicates where key <> 'noPoison') <> 10 then raise exception 'the walk did not see the catalog'; end if;
+  if (select count(*) from rule_predicates where key <> 'noPoison') is distinct from 10 then raise exception 'the walk did not see the catalog'; end if;
 end $$;
 
 -- ---- 3. Each key: a breaking post and a compliant post, one row and none ----
@@ -262,7 +262,7 @@ do $$
 declare
   ba uuid := pg_temp.board('rp-num-a');
   bb uuid := pg_temp.board('rp-num-b');
-  m1 uuid; m2 uuid; h1 uuid; h2 uuid; n1 uuid;
+  m1 uuid; m2 uuid; m3 uuid; h1 uuid; h2 uuid; n1 uuid;
   hbase integer := (select count(*) from acts where kind = 'move' and payload ->> 'kind' = 'setRule' and payload #>> '{params,board}' is null);
 begin
   m1 := pg_temp.rule(ba, 'noAllCaps', null, 'minor');
@@ -270,19 +270,20 @@ begin
   m2 := pg_temp.rule(ba, 'minLength', to_jsonb(12), 'severe');
   n1 := pg_temp.rule(bb, 'bannedWord', to_jsonb('toast'::text), 'minor');
   h2 := pg_temp.rule(null, 'noNecropost', to_jsonb(30), 'minor');
-  if (select number from rules_now where move_act = m1) <> 1 or (select number from rules_now where move_act = m2) <> 2 then raise exception 'board A''s rules are not numbered 1, 2 in landing order'; end if;
-  if (select number from rules_now where move_act = n1) <> 1 then raise exception 'board B''s first rule is not number 1'; end if;
-  if (select number from rules_now where move_act = h1) <> hbase + 1 or (select number from rules_now where move_act = h2) <> hbase + 2 then raise exception 'the every-board rules are not numbered on their own'; end if;
+  if (select number from rules_now where move_act = m1) is distinct from 1 or (select number from rules_now where move_act = m2) is distinct from 2 then raise exception 'board A''s rules are not numbered 1, 2 in landing order'; end if;
+  if (select number from rules_now where move_act = n1) is distinct from 1 then raise exception 'board B''s first rule is not number 1'; end if;
+  if (select number from rules_now where move_act = h1) is distinct from hbase + 1 or (select number from rules_now where move_act = h2) is distinct from hbase + 2 then raise exception 'the every-board rules are not numbered on their own'; end if;
   if (select board from rules_now where move_act = h1) is not null then raise exception 'an every-board rule has a board'; end if;
   if (select staff from rules_now where move_act = m1) is distinct from 'rp-boss' then raise exception 'the rule does not name the staff member who made it'; end if;
   if (select (predicate, param, band) from rules_now where move_act = m2)::text is distinct from '(minLength,12,severe)' then raise exception 'rules_now read the params wrongly: %', (select (predicate, param, band) from rules_now where move_act = m2); end if;
   if (select param from rules_now where move_act = m1) is not null then raise exception 'a rule with no parameter has one: %', (select param from rules_now where move_act = m1); end if;
   perform end_move(m1, 'expired', 'test');
   if exists (select 1 from rules_now where move_act = m1) then raise exception 'an ended rule is still in force'; end if;
-  if (select number from rules_now where move_act = m2) <> 2 then raise exception 'an earlier rule ending renumbered board A''s remaining rule: %', (select number from rules_now where move_act = m2); end if;
+  if (select number from rules_now where move_act = m2) is distinct from 2 then raise exception 'an earlier rule ending renumbered board A''s remaining rule: %', (select number from rules_now where move_act = m2); end if;
   perform end_move(h1, 'expired', 'test');
-  if (select number from rules_now where move_act = h2) <> hbase + 2 then raise exception 'an ended house rule renumbered the next'; end if;
-  if (select number from rules_now where move_act = pg_temp.rule(ba, 'noDoublePost')) <> 3 then raise exception 'a new rule on board A is not number 3, after one that ended'; end if;
+  if (select number from rules_now where move_act = h2) is distinct from hbase + 2 then raise exception 'an ended house rule renumbered the next'; end if;
+  m3 := pg_temp.rule(ba, 'noDoublePost');
+  if (select number from rules_now where move_act = m3) is distinct from 3 then raise exception 'a new rule on board A is not number 3, after one that ended'; end if;
   if exists (select 1 from rules_now where move_act in (select id from acts where kind = 'move' and payload ->> 'kind' = 'renameBoard')) then raise exception 'a rename is a rule'; end if;
   perform pg_temp.end_all();
 end $$;
@@ -441,7 +442,7 @@ begin
   if (select landed_act is null from queued_moves where id = q1) then raise exception 'the first of two conflicting rules did not land'; end if;
   if (select landed_act is not null from queued_moves where id = q2) then raise exception 'both conflicting rules landed'; end if;
   if (select failure !~ 'bans the word' or failed_at is null from queued_moves where id = q2) then raise exception 'the refused rule carries no reason: %', (select failure from queued_moves where id = q2); end if;
-  if (select count(*) from rules_now where board = ba) <> 1 then raise exception 'two rules in force'; end if;
+  if (select count(*) from rules_now where board = ba) is distinct from 1 then raise exception 'two rules in force'; end if;
   -- A final refusal: a later tick does not try it again, and the reason stays as first written.
   perform pg_sleep(0.01);
   landed := (system_tick() ->> 'failed')::integer;
