@@ -2,7 +2,7 @@
  * A character's full public record at /c/:id/record: its Acts, paged twenty to a page and filtered
  * by kind (?kind=post|spin|card|class, ?page=N; links, not a form). "All" is the character's own
  * Acts (posts, spins, card plays); its reveals and announced Turns are the "Class statements"
- * filter and its past seasons' reveal posts the "Seasons" filter, short lists read whole and paged here. Out of character and plain.
+ * filter and its past seasons the "Seasons" filter, short lists read whole and paged here. Out of character and plain.
  */
 import { useMemo } from 'react';
 import { useKayfa } from '../context.tsx';
@@ -34,10 +34,10 @@ function rowsOfPage(doc: RecordPage, words: Words): { readonly rows: readonly Re
   const reveals = doc.reveals.map((x) => revealRow(x, words));
   const turns = doc.turns.map((x) => turnRow(x, words, links));
   if (kind === 'class') return paged(newest([...reveals, ...turns]));
-  if (kind === 'seasons') return paged(doc.seasons.slice(0, SEASONS_SHOWN).map((a) => seasonRow(a, words)));
+  if (kind === 'seasons') return paged(doc.seasons.slice(0, SEASONS_SHOWN).map((a) => seasonRow(a, doc.character.id, words)));
   const acts = doc.acts.map((a) => actRow(a, words, plays));
   if (kind === 'all') {
-    const more = newest([...reveals, ...turns, ...doc.seasons.map((a) => seasonRow(a, words))]);
+    const more = newest([...reveals, ...turns, ...doc.seasons.map((a) => seasonRow(a, doc.character.id, words))]);
     return { rows: mergeWindow(more, acts, windowFrom, offset, RECORD_PAGE), total: totalOf(doc.counts) + more.length };
   }
   return { rows: acts, total: totalOf(doc.counts) };
@@ -67,8 +67,8 @@ function Record({ id, doc }: { readonly id: Id; readonly doc: RecordPage }) {
           ? <span key={k} className="kb-record-kind" aria-current="true">{RECORD_LABELS[k]}</span>
           : <Link key={k} className="kb-record-kind" to={recordHref(id, k)}>{RECORD_LABELS[k]}</Link>))}
       </nav>
-      {kind === 'seasons' && <p className="kb-small kb-muted">The latest {SEASONS_SHOWN} season reveal posts.</p>}
-      {kind === 'all' && <p className="kb-small kb-muted">Its Acts with its reveals, announced Turns and season reveal posts, newest first.</p>}
+      {kind === 'seasons' && <p className="kb-small kb-muted">The latest {SEASONS_SHOWN} seasons.</p>}
+      {kind === 'all' && <p className="kb-small kb-muted">Its Acts with its reveals, announced Turns and past seasons, newest first.</p>}
       <Rows id={id} kind={kind} page={page} rows={loaded.rows} total={loaded.total} />
     </div>
   );

@@ -78,6 +78,7 @@ test('the Boss is named and a mod quoted, the season is handed over, and the poo
   // ---- The season is handed over: OLD becomes a member, NEXT debuts as Boss. ----
   const before = sql(`select clock_timestamp()`);
   assert.equal(sql(`select reveal_season(starts_at + span_interval(setting('seasonLength'))) is not null from seasons where ends_at is null`), 't');
+  assert.equal(sql(`select count(*) > 0 from season_results where season = (select id from seasons where ends_at is not null order by number desc limit 1)`), 't', 'the season\'s end wrote its results');
   assert.equal(sql(`select boss from seasons where ends_at is null`), NEXT, 'the waiting persona is the new Boss');
   assert.notEqual(sql(`select debuted_at from characters where staff = '${NEXT}'`), '', 'and it has debuted');
   assert.match(sql(`select office from staff_office_now where staff = '${OLD}'`), /^(member|mod)$/, 'the old Boss is off the Boss\'s seat');

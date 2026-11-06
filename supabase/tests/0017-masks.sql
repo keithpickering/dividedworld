@@ -1,7 +1,7 @@
 -- Masks change at the tally (supabase/migrations/0007_seasons.sql, 0009_registration.sql and
 -- 0003's apply_settlement): a character made between settlements debuts at the next one, a Turn
 -- takes effect there, and an invite reads as used only once one has run after its account
--- opened; The System's tally names the debuts and the announced Turns; the season's reveal runs
+-- opened; The System announces the debuts and the announced Turns as the characters' own Acts; the season's reveal runs
 -- from the settlement of its last window; and what The System posts reaches its readers live,
 -- through an outbox that a failed send leaves for the next run. The fix round's Task F; the
 -- owner's answers 16 and 17, on #4.
@@ -72,7 +72,7 @@ begin
     raise exception 'an Act by a waiting character was written past every action';
   end if;
 
-  -- The settlement after it was made debuts it, and its tally names it.
+  -- The settlement after it was made debuts it, and The System announces it.
   settled := pg_temp.settle_day();
   if (select debuted_at from characters where id = fresh) is distinct from (settled ->> 'end')::timestamptz then raise exception 'it debuts at the end of the window it was made in'; end if;
   perform tests.become(bob);
@@ -81,8 +81,8 @@ begin
   perform tests.become(ann);
   perform post(t, fresh, 'Here now.');
   perform tests.unbecome();
-  if not coalesce((select payload -> 'debuts' from acts where kind = 'tally' and id = (settled ->> 'tally')::uuid) @> jsonb_build_array(jsonb_build_object('character', fresh, 'name', 'Fresh Face')), false) then
-    raise exception 'the tally names the debut: %', (select payload from acts where id = (settled ->> 'tally')::uuid);
+  if not exists (select 1 from acts where kind = 'announce' and character = fresh and payload = '{"what": "debut"}'::jsonb and id = (settled ->> 'tally')::uuid) then
+    raise exception 'The System announces the debut as the character''s own Act: %', (select jsonb_agg(to_jsonb(a)) from acts a where a.kind = 'announce' and a.character = fresh);
   end if;
 end $$;
 
@@ -99,7 +99,6 @@ declare
   input jsonb;
   settled jsonb;
   window_end timestamptz;
-  tally jsonb;
   seen text;
 begin
   perform tests.become(bob);
@@ -146,20 +145,19 @@ begin
   end if;
   if exists (select 1 from pending_turns where character in (loud, shy, late)) then raise exception 'a Turn that took effect still waits'; end if;
   if exists (select 1 from class_history where character = gone and class_key = 'beta') then raise exception 'a withdrawn Turn took effect'; end if;
-  -- The tally names the announced and revealed Turns, never a silent one, never to what.
-  select payload into tally from acts where id = (settled ->> 'tally')::uuid;
-  if tally is null or (select kind from acts where id = (settled ->> 'tally')::uuid) is distinct from 'tally' or (select character from acts where id = (settled ->> 'tally')::uuid) is not null then
-    raise exception 'the settlement posts The System''s tally: %', settled;
+  -- The announced and revealed Turns are each its character's own Act, never a silent one, never to what.
+  if (select kind from acts where id = (settled ->> 'tally')::uuid) is distinct from 'announce' or (select character from acts where id = (settled ->> 'tally')::uuid) is null then
+    raise exception 'the settlement announces as the characters'' own Acts: %', settled;
   end if;
-  if (select jsonb_agg(x ->> 'name' order by x ->> 'name') from jsonb_array_elements(tally -> 'turns') x) is distinct from '["Late Turner", "Loud Turner"]' then
-    raise exception 'the tally names the loud Turns and only those: %', tally;
+  if (select jsonb_agg(c.name order by c.name) from acts a join characters c on c.id = a.character where a.kind = 'announce' and a.created_at = window_end) is distinct from '["Late Turner", "Loud Turner"]' then
+    raise exception 'the announcements are the loud Turns and only those: %', (select jsonb_agg(to_jsonb(a)) from acts a where a.kind = 'announce' and a.created_at = window_end);
   end if;
-  if (select x ->> 'was' from jsonb_array_elements(tally -> 'turns') x where x ->> 'name' = 'Loud Turner') is distinct from 'alpha' then raise exception 'a revealed Turn says what it was: %', tally; end if;
-  if (select x ? 'was' from jsonb_array_elements(tally -> 'turns') x where x ->> 'name' = 'Late Turner') then raise exception 'an announced Turn says nothing of its class: %', tally; end if;
-  if tally::text like '%beta%' then raise exception 'the tally said what a mask Turned to'; end if;
-  -- It is posted in the season's Turns thread, once.
-  if (select thread from acts where id = (settled ->> 'tally')::uuid) is distinct from (select turns_thread from seasons where ends_at is null) then raise exception 'the tally is in the season''s Turns thread'; end if;
-  if (pg_temp.settle_day() ->> 'tally') is not null then raise exception 'a settlement with no debut and no loud Turn posts no tally'; end if;
+  if (select a.payload from acts a where a.kind = 'announce' and a.character = loud) is distinct from '{"what": "turn", "was": "alpha"}'::jsonb then raise exception 'a revealed Turn says what it was'; end if;
+  if (select a.payload from acts a where a.kind = 'announce' and a.character = late) is distinct from '{"what": "turn"}'::jsonb then raise exception 'an announced Turn says nothing of its class'; end if;
+  if exists (select 1 from acts a where a.kind = 'announce' and a.created_at = window_end and a.payload::text like '%beta%') then raise exception 'an announcement said what a mask Turned to'; end if;
+  -- It is posted in the season's Promos thread, once.
+  if (select thread from acts where id = (settled ->> 'tally')::uuid) is distinct from (select turns_thread from seasons where ends_at is null) then raise exception 'the announcement is in the season''s Promos thread'; end if;
+  if (pg_temp.settle_day() ->> 'tally') is not null then raise exception 'a settlement with no debut and no loud Turn announces nothing'; end if;
 
   -- The cooldown runs from when a Turn took effect.
   perform tests.become(ann);
@@ -169,7 +167,7 @@ begin
   perform tests.unbecome();
 end $$;
 
--- ---- A settlement applied twice posts its tally once; what it posts waits in the outbox until sent ----
+-- ---- A settlement applied twice announces once; what it posts waits in the outbox until sent ----
 do $$
 declare
   ann uuid := tests.account('out-ann');
@@ -185,17 +183,17 @@ begin
   -- A row from a send that failed a run ago (a day, at a daily cron) is still sent.
   insert into broadcasts_due (topic, event, payload, made_at) values ('thread:late', 'act', '{"id": "late"}', now() - interval '2 days');
   said := pg_temp.settle_day();
-  tallies := (select count(*) from acts where kind = 'tally');
+  tallies := (select count(*) from acts where kind = 'announce');
   perform set_config('role', 'service_role', true);
   if (apply_settlement(start_at, start_at + interval '1 day', '[]') ->> 'applied')::boolean then raise exception 'a window applied twice'; end if;
   due := due_broadcasts();
   perform tests.unbecome();
-  if (select count(*) from acts where kind = 'tally') is distinct from tallies then raise exception 'a window applied twice posted its tally twice'; end if;
+  if (select count(*) from acts where kind = 'announce') is distinct from tallies then raise exception 'a window applied twice announced twice'; end if;
   if not exists (select 1 from jsonb_array_elements(due) m where m ->> 'event' = 'act' and m -> 'payload' ->> 'id' = said ->> 'tally'
                  and m ->> 'topic' = 'thread:' || (select thread from acts where id = (said ->> 'tally')::uuid)) then
-    raise exception 'the tally waits to be broadcast on its thread: %', due;
+    raise exception 'the announcement waits to be broadcast on its thread: %', due;
   end if;
-  if (select count(*) from jsonb_array_elements(due) m where m -> 'payload' ->> 'id' = said ->> 'tally') is distinct from 1 then raise exception 'the tally is broadcast once: %', due; end if;
+  if (select count(*) from jsonb_array_elements(due) m where m -> 'payload' ->> 'id' = said ->> 'tally') is distinct from 1 then raise exception 'the announcement is broadcast once: %', due; end if;
   if not exists (select 1 from jsonb_array_elements(due) m where m -> 'payload' ->> 'id' = 'late') then raise exception 'a broadcast a failed send left was dropped before the next run sent it'; end if;
   -- Sent, it is gone; unsent, it waits for the next run, however long that is.
   perform set_config('role', 'service_role', true);
@@ -246,7 +244,7 @@ begin
   perform tests.unbecome();
 end $$;
 
--- ---- The edges: what the settlement's window holds, and what it does not; a tally of any size ----
+-- ---- The edges: what the settlement's window holds, and what it does not; an announcement of any size ----
 do $$
 declare
   ann uuid := tests.account('edge-ann');
@@ -259,7 +257,6 @@ declare
   tallies integer;
   due jsonb;
   ids jsonb;
-  biggest integer;
 begin
   -- A character made after the window's end, and a Turn asked then, wait for the next one.
   insert into characters (owner, name, created_at) values (ann, 'Made After The Window', window_end + interval '1 minute') returning id into later;
@@ -279,28 +276,26 @@ begin
   end if;
   perform tests.unbecome();
   update pending_turns set asked_at = window_end where character = turner;
-  -- A tally of many debuts is several Acts of at most a hundred names each, never one payload holding all.
   for i in 1..150 loop
     insert into characters (owner, name, created_at) values (tests.account('edge-many-' || i), 'Many Masks ' || i, start_at + interval '1 hour');
   end loop;
   -- The season's first loud Turn or debut opens its Turns thread, and says so to its board.
   update seasons set turns_thread = null where ends_at is null;
   delete from broadcasts_due;
-  tallies := (select count(*) from acts where kind = 'tally');
+  tallies := (select count(*) from acts where kind = 'announce');
   said := pg_temp.settle_day();
   if (select debuted_at from characters where id = later) is not null then raise exception 'a character made after the window debuted at its end'; end if;
   if not exists (select 1 from pending_turns where character = turner) then raise exception 'a Turn asked at the window''s end took effect at it'; end if;
-  if (select count(*) from acts where kind = 'tally') - tallies < 2 then raise exception 'a tally of 150 debuts was one Act'; end if;
-  select max(jsonb_array_length(payload -> 'debuts') + jsonb_array_length(payload -> 'turns')) into biggest from acts where kind = 'tally';
-  if biggest > 100 then raise exception 'a tally Act names % masks', biggest; end if;
-  if (select count(*) from acts a, jsonb_array_elements(a.payload -> 'debuts') d where a.kind = 'tally' and d ->> 'name' like 'Many Masks %') is distinct from 150 then
-    raise exception 'every debut is named, once';
+  -- Each debut is its own Act, whatever the size of the landing: never one payload holding all.
+  if (select count(*) from acts where kind = 'announce') - tallies < 150 then raise exception 'a landing of 150 debuts wrote % Acts', (select count(*) from acts where kind = 'announce') - tallies; end if;
+  if (select count(*) from acts a join characters c on c.id = a.character where a.kind = 'announce' and c.name like 'Many Masks %') is distinct from 150::bigint then
+    raise exception 'every debut is announced, once';
   end if;
   perform set_config('role', 'service_role', true);
   due := due_broadcasts();
   perform tests.unbecome();
   if not exists (select 1 from jsonb_array_elements(due) m where m ->> 'event' = 'thread' and m ->> 'topic' = 'board:' || system_board()) then
-    raise exception 'a Turns thread the tally opened was not told to its board';
+    raise exception 'a Promos thread the announcement opened was not told to its board';
   end if;
   -- Oldest first, and only what was sent is cleared.
   if (select array_agg((m ->> 'id')::bigint order by o) from jsonb_array_elements(due) with ordinality as x(m, o))
@@ -316,7 +311,7 @@ begin
   if reveal_season(now()) is not null then raise exception 'a season not yet at its end was revealed'; end if;
 end $$;
 
--- ---- A tally that cannot be written does not hold the settlement back ----
+-- ---- An announcement that cannot be written does not hold the settlement back ----
 do $$
 declare
   ann uuid := tests.account('stuck-ann');
@@ -329,12 +324,12 @@ begin
   -- The instance's words lost (only by hand: settings_copy_kept holds them otherwise).
   alter table settings disable trigger settings_copy_kept;
   delete from settings where key = 'copy';
-  -- A season with no Turns thread yet, whose tally needs the words to title one.
+  -- A season with no Turns thread yet, whose Promos thread needs the words to title one.
   update seasons set turns_thread = null where ends_at is null;
   said := pg_temp.settle_day();
-  if not (said ->> 'applied')::boolean then raise exception 'a settlement whose tally failed was not applied: %', said; end if;
+  if not (said ->> 'applied')::boolean then raise exception 'a settlement whose announcement failed was not applied: %', said; end if;
   if said ->> 'masks' is null or said ->> 'masks' not like '%copy%' then raise exception 'the settlement should say why its masks did not change: %', said; end if;
-  if (select debuted_at from characters where id = waiting) is not null then raise exception 'a debut went ahead with no tally to name it'; end if;
+  if (select debuted_at from characters where id = waiting) is not null then raise exception 'a debut went ahead with no announcement to name it'; end if;
   -- Once the words are back, the next settlement debuts it.
   insert into settings (key, value) values ('copy', words);
   alter table settings enable trigger settings_copy_kept;
@@ -411,34 +406,34 @@ begin
   if (settled ->> 'revealed')::integer is distinct from season_no then raise exception 'the settlement of the season''s last window reveals it: %', settled; end if;
   if (select ends_at from seasons where number = season_no) is distinct from next_start + interval '1 day 12 hours' then raise exception 'the season ends where its last window does'; end if;
   if (select starts_at from seasons where ends_at is null) is distinct from next_start + interval '1 day 12 hours' then raise exception 'the next season opens as the last ends'; end if;
-  if exists (select 1 from acts where kind = 'reveal' and payload ->> 'season' = season_no::text and payload ->> 'name' in ('Debuts At The Reveal', 'Still Waiting')) then
-    raise exception 'the reveal named a character that played no part in the season';
+  if exists (select 1 from season_results where season = (select id from seasons where number = season_no) and name in ('Debuts At The Reveal', 'Still Waiting')) then
+    raise exception 'the results named a character that played no part in the season';
   end if;
-  if (select (payload ->> 'characters')::integer from acts where kind = 'reveal' and payload ->> 'season' = season_no::text and payload ? 'body')
-     is distinct from (select count(*) from characters where debuted_at < next_start + interval '1 day 12 hours') then
-    raise exception 'the reveal counted a character that played no part in the season';
+  if (select count(*) from season_results where season = (select id from seasons where number = season_no))
+     is distinct from (select count(*) from characters where debuted_at < next_start + interval '1 day 12 hours' and staff is null) then
+    raise exception 'the results counted a character that played no part in the season';
   end if;
   -- Two Turns made minutes apart read as two made hours apart: each is dated by its window.
-  select jsonb_object_agg(payload ->> 'name', payload -> 'shown') into revealed from acts
-  where kind = 'reveal' and payload ->> 'season' = season_no::text and payload ->> 'name' like '% Pair %';
+  -- (Each Turn is its own character's Act, so the Acts differ; what the results say of when does not.)
+  select jsonb_object_agg(name, (select coalesce(jsonb_agg(e - 'act'), '[]'::jsonb) from jsonb_array_elements(shown) e)) into revealed from season_results
+  where season = (select id from seasons where number = season_no) and name like '% Pair %';
   if revealed -> 'Quick Pair One' is distinct from revealed -> 'Quick Pair Two' or revealed -> 'Quick Pair One' is distinct from revealed -> 'Slow Pair One' or revealed -> 'Slow Pair One' is distinct from revealed -> 'Slow Pair Two' then
-    raise exception 'Turns in one window are told apart in the reveal: %', revealed;
+    raise exception 'Turns in one window are told apart in the results: %', revealed;
   end if;
   if (revealed -> 'Quick Pair One' -> 0 ->> 'at')::timestamptz is distinct from next_start + interval '1 day' then raise exception 'a Turn is dated by the window it took effect at: %', revealed; end if;
-  -- The reveal's Acts wait in the outbox, its thread for its board and each Act for the thread.
+  -- The season's end writes no Act and opens no thread, so there is nothing of it to broadcast but the news.
   perform set_config('role', 'service_role', true);
   due := due_broadcasts();
   perform tests.unbecome();
-  if (select count(*) from jsonb_array_elements(due) m where m ->> 'event' = 'act' and m -> 'payload' ->> 'kind' = 'reveal')
-     is distinct from (select count(*) from acts where kind = 'reveal' and payload ->> 'season' = season_no::text) then
-    raise exception 'every Act of the reveal is broadcast: %', due;
+  if exists (select 1 from jsonb_array_elements(due) m where m ->> 'event' = 'act' and m -> 'payload' ->> 'kind' = 'reveal') then
+    raise exception 'the season''s end broadcasts no reveal Act: %', due;
   end if;
-  if not exists (select 1 from jsonb_array_elements(due) m where m ->> 'event' = 'thread' and m ->> 'topic' = 'board:' || system_board()) then raise exception 'the reveal''s thread is broadcast on its board'; end if;
+  if not exists (select 1 from jsonb_array_elements(due) m where m ->> 'topic' = 'reach' and m ->> 'event' = 'news' and m -> 'payload' ->> 'sub' = 'results') then raise exception 'the results are announced as news'; end if;
   -- Revealed once, however often the window is applied.
   perform set_config('role', 'service_role', true);
   perform apply_settlement((w ->> 'start')::timestamptz, (w ->> 'end')::timestamptz, '[]');
   perform tests.unbecome();
-  if (select count(*) from acts where kind = 'reveal' and payload ->> 'season' = season_no::text and payload ? 'body') is distinct from 1 then raise exception 'a season was revealed twice'; end if;
+  if (select count(*) from season_results where season = (select id from seasons where number = season_no) and name = 'Quick Pair One') is distinct from 1 then raise exception 'a season was revealed twice'; end if;
   -- No hourly job reveals a season any more.
   if exists (select 1 from cron.job where jobname = 'kayfabb-reveal') then raise exception 'the hourly reveal job is still scheduled'; end if;
 end $$;

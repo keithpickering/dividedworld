@@ -198,13 +198,13 @@ begin
     update seasons set starts_at = now() - interval '10 days' where ends_at is null;
     insert into class_kinds (key, name) values ('gamma', 'Gamma') on conflict (key) do nothing;
     a := tests.character(ann, 'Core Turner', 'alpha', now() - interval '9 days');
-    -- A silent Turn to beta five days ago: it is in no tally, and nothing public dates it.
+    -- A silent Turn to beta five days ago: it is announced by no Act, and nothing public dates it.
     insert into class_history (character, class_key, started_at) values (a, 'beta', now() - interval '5 days');
     -- Then a Turn to gamma that names the class it leaves.
     insert into pending_turns (character, class_key, loudness, asked_at, show_from, show_to) values (a, 'gamma', 'announced', now() - interval '1 hour', true, false);
     tally := masks_change(now() - interval '30 minutes');
-    select e into entry from acts x cross join lateral jsonb_array_elements(x.payload -> 'turns') e where x.id = tally and e ->> 'character' = a::text;
-    if entry - 'character' - 'name' - 'loudness' is distinct from '{"was": "beta"}'::jsonb then
+    select x.payload into entry from acts x where x.id = tally and x.character = a;
+    if entry - 'what' is distinct from '{"was": "beta"}'::jsonb then
       raise exception 'an announced Turn says the class it leaves, and not since when: %', entry;
     end if;
     if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'turns_announced' and column_name = 'since') then
@@ -212,7 +212,7 @@ begin
     end if;
     ended := (select starts_at from seasons where ends_at is null) + span_interval(setting('seasonLength'));
     perform reveal_season(ended);
-    select x.payload -> 'shown' into shown from acts x where x.kind = 'reveal' and x.payload ->> 'character' = a::text;
+    select x.shown into shown from season_results x where x.character = a;
     if shown is null or not exists (select 1 from jsonb_array_elements(shown) e where e ->> 'kind' = 'turn' and e ->> 'was' = 'beta') then
       raise exception 'the season''s reveal lists the announced Turn with the class it left: %', shown;
     end if;

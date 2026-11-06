@@ -59,7 +59,7 @@ function Profile({ character: c, doc }: { readonly character: Character; readonl
     const links = turnLinksFrom(doc.targets, words.perPage);
     const plays = playLinksFrom(doc.targets, doc.acts, words.perPage);
     /* The newest few of everything: the newest few Acts, with every reveal and Turn, hold the newest few overall. */
-    const extras = newest([...doc.reveals.map((r) => revealRow(r, words)), ...doc.turns.map((t) => turnRow(t, words, links)), ...doc.seasons.map((a) => seasonRow(a, words))]);
+    const extras = newest([...doc.reveals.map((r) => revealRow(r, words)), ...doc.turns.map((t) => turnRow(t, words, links)), ...doc.seasons.map((a) => seasonRow(a, c.id, words))]);
     const rows = mergeWindow(extras, doc.acts.map((a) => actRow(a, words, plays)), 0, 0, PROFILE_ROWS);
     return { counts: doc.counts, standing: doc.standing, settledAt: doc.settledAt, season: doc.season?.number ?? null, reveals: doc.reveals, turns: doc.turns, rows };
   }, [doc, instance, settings.postsPerPage]);

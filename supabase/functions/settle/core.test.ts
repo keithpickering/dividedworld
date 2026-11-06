@@ -135,7 +135,7 @@ test('the call to apply_settlement carries each entry\'s shares, which add up to
 });
 
 test('the settings rows reach the settlement: an admin\'s tuning of a vote or a class\'s number is what pays', async () => {
-  const { db, calls } = fakeDb(day, { vote: 20, economy: { ...instance.settings.economy, 'lurker.earlyMatch': 40 }, copy: { turnsThreadTitle: 'x' } });
+  const { db, calls } = fakeDb(day, { vote: 20, economy: { ...instance.settings.economy, 'lurker.earlyMatch': 40 }, copy: { announcementsThreadTitle: 'x' } });
   await runSettlement(db, instance, new Date(TO).toISOString());
   const entries = calls.find((c) => c.fn === 'apply_settlement')!.args.entries as { reason: string; amount: number }[];
   assert.equal(entries.find((e) => e.reason === 'heel.drewHeat')?.amount, 70, 'three and a half votes of heat at 20 each');
@@ -221,15 +221,15 @@ test('a settlement whose tally or reveal could not be written says so in the log
   const apply = db.rpc;
   db.rpc = async <T>(fn: string, args: Record<string, unknown>) => {
     const out = await apply<T>(fn, args);
-    return (fn === 'apply_settlement' ? { ...(out as object), masks: 'the instance gives no words for copy.turnsThreadTitle; seed them' } : out) as T;
+    return (fn === 'apply_settlement' ? { ...(out as object), masks: 'the instance gives no words for copy.announcementsThreadTitle; seed them' } : out) as T;
   };
   const errors: unknown[] = [];
   const log = console.error;
   console.error = (...a: unknown[]) => { errors.push(a); };
   let out;
   try { out = await runSettlement(db, instance, new Date(TO).toISOString()); } finally { console.error = log; }
-  assert.equal(out.status === 'applied' && out.windows[0]!.masks, 'the instance gives no words for copy.turnsThreadTitle; seed them');
-  assert.ok(errors.some((e) => JSON.stringify(e).includes('copy.turnsThreadTitle')), 'logged for an operator');
+  assert.equal(out.status === 'applied' && out.windows[0]!.masks, 'the instance gives no words for copy.announcementsThreadTitle; seed them');
+  assert.ok(errors.some((e) => JSON.stringify(e).includes('copy.announcementsThreadTitle')), 'logged for an operator');
 });
 
 test('a run that stops behind still sends what waits', async () => {

@@ -24,6 +24,7 @@ declare
   tally uuid;
   said jsonb;
   input jsonb;
+  announced uuid;
 begin
   insert into threads (board, title) values (system_board(), 'Said') returning id into t;
   insert into acts (character, kind, thread, payload) values (null, 'reveal', t, '{}') returning id into reveal;
@@ -51,6 +52,18 @@ begin
   input := settlement_input(now() - interval '1 hour', now() + interval '1 hour');
   if not (input -> 'systemActs') @> jsonb_build_array(reveal, tally) then raise exception 'the settlement is not told the reveal and tally are The System''s: %', input -> 'systemActs'; end if;
   if exists (select 1 from jsonb_array_elements(input -> 'acts') x where x ->> 'id' in (reveal::text, tally::text)) then raise exception 'The System''s Acts reached the settlement as a character''s'; end if;
+  -- An announced debut is its character's own Act, not The System's: its reactions are scored for the character, so it is named among the
+  -- Acts the settlement pays for and is not among The System's (the tally above stays The System's, as the old Act it is).
+  announced := (write_announce(b, t, 'debut', null, null, now()) ->> 'id')::uuid;
+  perform tests.become(ann);
+  perform react(announced, a1, 'up');
+  perform tests.unbecome();
+  input := settlement_input(now() - interval '1 hour', now() + interval '1 hour');
+  if (input -> 'systemActs') ? announced::text then raise exception 'an announcement was named as The System''s Act: %', input -> 'systemActs'; end if;
+  if not exists (select 1 from jsonb_array_elements(input -> 'acts') x where x ->> 'id' = announced::text and x ->> 'character' = b::text) then
+    raise exception 'an announcement did not reach the settlement as its character''s Act: %', input -> 'acts';
+  end if;
+  if not exists (select 1 from jsonb_array_elements(input -> 'reactions') r where r ->> 'act' = announced::text) then raise exception 'a reaction to an announcement did not reach the settlement'; end if;
   -- Nothing that does not exist is reacted to.
   perform tests.become(ann);
   if pg_temp.refusal(format('select react(%L, %L, %L)', gen_random_uuid(), a1, 'up')) is distinct from 'there is no such Act' then raise exception 'reacting to nothing'; end if;

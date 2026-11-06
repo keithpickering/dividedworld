@@ -42,14 +42,19 @@ test('a season revealed before 0029 keeps its Acts, every class in them; the nex
     assert.match(before, /"classes": \[\{"from": "[^"]+", "class": "alpha"\}, \{"from": "[^"]+", "class": "beta"\}\]/, 'the old reveal showed every class, the silent Turn among them');
     for (const m of all.filter((f) => f >= '0029')) psqlOn(db.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
     assert.equal(psqlOn(db.toString(), `select jsonb_agg(to_jsonb(a) order by a.seq)::text from acts a where a.kind = 'reveal'`), before, 'the earlier season\'s reveal is as it was written');
+    // The migrations that came after copied the old reveal's facts into the season's results, and left its Acts alone (0099): the old reveal
+    // showed every class in `classes` and no `shown`, so the character shows nothing public.
+    assert.equal(psqlOn(db.toString(), `select name || '/' || place || '/' || shown::text from season_results where name = 'Revealed Before' and season = (select id from seasons where number = 1)`), 'Revealed Before/1/[]', 'the old reveal is copied into the results');
+    assert.notEqual(psqlOn(db.toString(), `select results_at from seasons where number = 1`), '', 'and the season says when its results landed');
     // Season 2 revealed after it: the same character, whose player made nothing public, shows no class.
     const after = psqlOn(db.toString(), `
       select reveal_season(starts_at + span_interval(setting('seasonLength'))) is not null from seasons where ends_at is null;
-      select a.payload::text from acts a where a.kind = 'reveal' and a.payload ->> 'name' = 'Revealed Before' and a.payload ->> 'season' = '2';`).split('\n').at(-1)!;
+      select to_jsonb(r)::text from season_results r where r.name = 'Revealed Before' and r.season = (select id from seasons where number = 2);`).split('\n').at(-1)!;
     const entry = JSON.parse(after);
     assert.deepEqual(entry.shown, [], 'nothing was made public');
     assert.equal('classes' in entry, false);
     assert.doesNotMatch(after, /alpha|beta/);
+    assert.equal(psqlOn(db.toString(), `select jsonb_agg(to_jsonb(a) order by a.seq)::text from acts a where a.kind = 'reveal'`), before, 'and no reveal Act was written for the second season');
   } finally {
     psqlOn(server.toString(), `drop database if exists ${name} with (force);`);
   }

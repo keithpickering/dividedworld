@@ -110,7 +110,7 @@ describe('what the adapter may request', () => {
     const api = h.api;
     await Promise.allSettled([
       api.settings(), api.boards(), api.board('general'), api.board(C), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.actsById([A]), api.history(A), api.spunFrom(A), api.spunFromMany([A], 10), api.cardsOn(A, 10), api.cardsOnMany([A], 10), api.effectStates([A]), api.playMoment(A), api.myReleases([A]), api.releaseEffect(A),
-      api.characters([B]), api.characterCounts(B), api.characterStats([B]), api.standingAmounts([B]), api.standingPlace(B), api.characterActs(B, ['post'], { offset: 0, limit: 5 }), api.characterReveals(B), api.standingsCount(), api.standingsPage(0, 5), api.tallies([A]), api.viewCounts([T]), api.season(),
+      api.characters([B]), api.characterCounts(B), api.characterStats([B]), api.standingAmounts([B]), api.standingPlace(B), api.characterActs(B, ['post'], { offset: 0, limit: 5 }), api.finishedSeasons(), api.resultsPage(1, 2), api.resultPlace(1, B), api.standingsCount(), api.standingsPage(0, 5), api.tallies([A]), api.viewCounts([T]), api.season(),
       api.boardNames(), api.moveNotice(A), api.movesLog('director'), api.movesLog('director', { at: '2026-10-01T10:00:00+00:00', act: A }), api.staffProfile('director'), api.adminQueue(), api.holdMove(1), api.reverseMove(A), api.updates(), api.updates('2026-10-01T10:00:00+00:00'), api.postUpdate('T', 'B', []),
       api.lastSettledAt(), api.classReveals([B]), api.turnsAnnounced([B]), api.nextSettlementAt(), api.myCharacters(), api.wallet(),
       api.boot(), api.indexPage(), api.boardPage('general', 1, []), api.threadPage(T, { page: 1 }, 20, []), api.profilePage(B), api.recordPage(B, 'all', 1), api.presenceBox({ kind: 'index' }),
@@ -252,7 +252,7 @@ describe('reads and their rows', () => {
   it('reads a page of the season\'s news, newest first, and keeps only what the shape holds', async () => {
     const top = [{ character: A, name: 'Spritey', place: 1, standing: 985, shown: [{ kind: 'reveal', act: B, at: '2026-10-03T13:00:00Z', class: 'face' }, { kind: 'odd', act: B, at: 'x' }] }, { name: 'no id' }];
     const h = harness(() => rows([
-      { kind: 'results', act: B, thread: C, seq: 1, at: '2026-10-28T12:00:00Z', season: 1, name: null, quote: null, count: 4, detail: { top } },
+      { kind: 'results', act: null, thread: null, seq: null, at: '2026-10-28T12:00:00Z', season: 1, name: null, quote: null, count: 4, detail: { top } },
       { kind: 'tally', act: A, thread: C, seq: 2, at: '2026-10-26T08:00:00Z', season: 1, name: null, quote: null, count: 2,
         detail: { debuts: [{ character: A, name: 'Thwompson' }, { name: 'no id' }], turns: [{ character: B, name: 'Pipewrench', was: 'heel' }] } },
       { kind: 'bossArrived', act: null, thread: null, seq: null, at: '2026-10-28T12:00:00Z', season: 2, name: 'Mister Spreadsheet', quote: null, count: null, detail: null },
@@ -265,6 +265,14 @@ describe('reads and their rows', () => {
     expect(news[0]?.top).toEqual([{ character: A, name: 'Spritey', place: 1, standing: 985, shown: [{ kind: 'reveal', act: B, at: '2026-10-03T13:00:00Z', class: 'face', was: null }] }]);
     expect(news[1]?.debuts).toEqual([{ character: A, name: 'Thwompson', class: null, was: null }]);
     expect(news[1]?.turns).toEqual([{ character: B, name: 'Pipewrench', class: null, was: 'heel' }]);
+    /* The results item names no Act, thread or sequence number: it opens the Rankings of its season. */
+    expect(news[0]).toMatchObject({ act: null, thread: null, seq: null, season: 1, count: 4 });
+    /* An announcements item (an announce landing) reads like a tally: its names carry the class and the old class where the Acts named them. */
+    const landing = await harness(() => rows([{ kind: 'tally', act: A, thread: C, seq: 3, at: '2026-10-27T08:00:00Z', season: 1, name: null, quote: null, count: 2,
+      detail: { debuts: [{ character: A, name: 'Thwompson', class: 'face' }], turns: [{ character: B, name: 'Pipewrench', class: 'heel', was: 'face' }] } }])).api.seasonNews();
+    expect(landing[0]).toMatchObject({ kind: 'tally', act: A, thread: C, seq: 3, count: 2 });
+    expect(landing[0]?.debuts).toEqual([{ character: A, name: 'Thwompson', class: 'face', was: null }]);
+    expect(landing[0]?.turns).toEqual([{ character: B, name: 'Pipewrench', class: 'heel', was: 'face' }]);
     expect(news[2]).toMatchObject({ act: null, thread: null, seq: null, quote: null, name: 'Mister Spreadsheet', top: [], debuts: [], turns: [] });
   });
 
@@ -329,19 +337,6 @@ describe('reads and their rows', () => {
     expect(await harness(() => json({})).api.standingPlace('not-an-id')).toBeNull();
   });
 
-  it('reads a character\'s reveal posts from acts_public: kind reveal, naming the character, newest first, limited', async () => {
-    const h = harness(() => rows([{ ...ACT_ROW, character: null, kind: 'reveal', payload: { character: B } }]));
-    const acts = await h.api.characterReveals(B, 7);
-    const [req] = h.to('acts_public');
-    const p = req?.url.searchParams;
-    expect(p?.get('kind')).toBe('eq.reveal');
-    expect(p?.get('payload->>character')).toBe(`eq.${B}`);
-    expect(p?.get('order')).toBe('created_at.desc');
-    expect(p?.get('limit')).toBe('7');
-    expect(acts).toHaveLength(1);
-    expect(acts[0]?.kind).toBe('reveal');
-    expect(await harness(() => rows([])).api.characterReveals('not-an-id')).toEqual([]);
-  });
 
   it('says the season\'s size from the counter of debuted characters, one row, never a count of the standings', async () => {
     const h = harness(() => rows([{ characters: 22 }]));
@@ -1944,14 +1939,15 @@ describe('a screen in one call', () => {
     const answer = {
       character: CHAR, profile: PROFILE, counts: { character: B, posts: 4, spins: 1, cards: 2 }, standing: { standing: 300, place: 2, of: 40 }, settled_at: '2026-10-01T08:17:00+00:00',
       season: { id: 3, number: 2, starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, turns_thread: null, reveal_act: null },
-      reveals: [{ act: A, character: B, class: 'face', at: '2026-10-01T10:00:00+00:00', via: 'debut', thread: T }], turns: [], acts: [ACT_ROW], targets: [PLAY_ROW], seasons: [], unread: 1,
+      reveals: [{ act: A, character: B, class: 'face', at: '2026-10-01T10:00:00+00:00', via: 'debut', thread: T }], turns: [], acts: [ACT_ROW], targets: [PLAY_ROW], seasons: [{ season: 2, place: 3, standing: 410, at: '2026-10-28T12:00:00+00:00' }, { season: 1, place: 1, standing: 985, at: '2026-09-28T12:00:00+00:00' }, { place: 'x' }], unread: 1,
     };
     const h = once('profile_page', answer);
     const page = await h.api.profilePage(B);
     expect(only(h, 'profile_page')).toEqual({ in_character: B });
     expect(page).toMatchObject({
       character: BEA, counts: { posts: 4, spins: 1, cards: 2 }, standing: { standing: 300, place: 2, of: 40 }, settledAt: '2026-10-01T08:17:00+00:00',
-      season: { id: 3, number: 2, endsAt: null }, turns: [], seasons: [], unread: 1,
+      season: { id: 3, number: 2, endsAt: null }, turns: [], unread: 1,
+      seasons: [{ season: 2, place: 3, standing: 410, at: '2026-10-28T12:00:00+00:00' }, { season: 1, place: 1, standing: 985, at: '2026-09-28T12:00:00+00:00' }],
     });
     expect(page?.reveals[0]).toMatchObject({ class: 'face', via: 'debut' });
     expect(page?.acts[0]?.currentPayload).toEqual({ body: 'hello' });
@@ -1963,17 +1959,51 @@ describe('a screen in one call', () => {
     const answer = {
       kind: 'all', page: 2, character: CHAR, profile: null, counts: null,
       reveals: [{ act: A, character: B, class: 'face', at: '2026-10-01T10:00:00+00:00', via: 'act', thread: T }], turns: [{ act: C, character: B, at: '2026-10-02T10:00:00+00:00', was: 'heel' }],
-      seasons: [], acts: [ACT_ROW], targets: [], unread: 0,
+      seasons: [{ season: 1, place: 4, standing: -20, at: '2026-09-28T12:00:00+00:00' }], acts: [ACT_ROW], targets: [], unread: 0,
     };
     const h = once('record_page', answer);
     const page = await h.api.recordPage(B, 'all', 2);
     expect(only(h, 'record_page')).toEqual({ in_character: B, in_kind: 'all', in_page: 2 });
-    expect(page).toMatchObject({ kind: 'all', page: 2, windowFrom: 18, counts: { posts: 0, spins: 0, cards: 0 }, targets: [], seasons: [], unread: 0 });
+    expect(page).toMatchObject({ kind: 'all', page: 2, windowFrom: 17, counts: { posts: 0, spins: 0, cards: 0 }, targets: [], seasons: [{ season: 1, place: 4, standing: -20, at: '2026-09-28T12:00:00+00:00' }], unread: 0 });
     expect(page?.turns).toEqual([{ act: C, character: B, at: '2026-10-02T10:00:00+00:00', was: 'heel' }]);
     expect(page?.acts[0]?.currentPayload).toEqual({ body: 'hello' });
     const posts = await once('record_page', { ...answer, kind: 'post' }).api.recordPage(B, 'post', 2);
     expect(posts).toMatchObject({ kind: 'post', page: 2, windowFrom: 20 });
     expect(await once('record_page', null).api.recordPage(B, 'all', 1)).toBeNull();
+  });
+
+  it('finished_seasons, results_page and result_place: send their names and keys, and map what they answer', async () => {
+    const seasons = once('finished_seasons', [
+      { number: 2, starts_at: '2026-10-01T00:00:00+00:00', ends_at: '2026-10-28T12:00:00+00:00', results_at: '2026-10-28T12:00:05+00:00', characters: 51 },
+      { number: 1, starts_at: '2026-09-01T00:00:00+00:00', ends_at: '2026-09-28T12:00:00+00:00', results_at: '2026-09-28T12:00:05+00:00', characters: 3 },
+      { starts_at: '2026-08-01T00:00:00+00:00', characters: 9 },
+    ]);
+    expect(await seasons.api.finishedSeasons()).toEqual([
+      { number: 2, startsAt: '2026-10-01T00:00:00+00:00', endsAt: '2026-10-28T12:00:00+00:00', resultsAt: '2026-10-28T12:00:05+00:00', characters: 51 },
+      { number: 1, startsAt: '2026-09-01T00:00:00+00:00', endsAt: '2026-09-28T12:00:00+00:00', resultsAt: '2026-09-28T12:00:05+00:00', characters: 3 },
+    ]);
+    expect(only(seasons, 'finished_seasons')).toEqual({});
+    expect(await once('finished_seasons', null).api.finishedSeasons()).toEqual([]);
+    const page = once('results_page', [
+      { character: A, name: 'Spritey', place: 1, standing: 985, shown: [{ kind: 'reveal', act: B, at: '2026-10-03T13:00:00Z', class: 'face' }, { kind: 'odd', act: B, at: 'x' }] },
+      { name: 'no id' },
+      { character: B, name: 'Pipewrench', place: 2, standing: 40, shown: null },
+    ]);
+    expect(await page.api.resultsPage(2, 3)).toEqual([
+      { character: A, name: 'Spritey', place: 1, standing: 985, shown: [{ kind: 'reveal', act: B, at: '2026-10-03T13:00:00Z', class: 'face', was: null }] },
+      { character: B, name: 'Pipewrench', place: 2, standing: 40, shown: [] },
+    ]);
+    expect(only(page, 'results_page')).toEqual({ in_season: 2, page: 3 });
+    expect(await once('results_page', null).api.resultsPage(2, 1)).toEqual([]);
+    const place = once('result_place', 51);
+    expect(await place.api.resultPlace(2, B)).toBe(51);
+    expect(only(place, 'result_place')).toEqual({ in_season: 2, in_character: B });
+    expect(await once('result_place', 0).api.resultPlace(2, B)).toBe(0);
+    expect(await once('result_place', null).api.resultPlace(2, B)).toBeNull();
+    /* An address that is no id is no character, and no request. */
+    const none = harness(() => json(5));
+    expect(await none.api.resultPlace(2, 'not-an-id')).toBeNull();
+    expect(none.to('rpc/result_place')).toEqual([]);
   });
 
   it('presence_box: sends the place by name, reads nothing else, and answers as here does', async () => {

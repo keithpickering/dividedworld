@@ -161,7 +161,7 @@ export type OriginPlace =
   /* `card` is the card's key, null for a face-down set. `on` is null when the target cannot be placed. */
   | { readonly kind: 'play'; readonly card: string | null; readonly on: PlaceOn | null };
 
-export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | 'unmask' | 'move' | 'move_end' | 'move_keep' | 'set' | 'spring' | 'update' | 'card_end';
+export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | 'unmask' | 'move' | 'move_end' | 'move_keep' | 'set' | 'spring' | 'update' | 'card_end' | 'announce';
 
 /** An Act as every reader sees it (acts_public): the original and, where edited, what it shows now. */
 export interface Act {
@@ -808,6 +808,29 @@ export interface SeasonResult {
   readonly standing: number;
   readonly shown: readonly SeasonShown[];
 }
+/** A finished season (`finished_seasons`, 0099): one whose results have landed, with the number of characters its final table ranks. */
+export interface SeasonFinished {
+  readonly number: number;
+  readonly startsAt: string;
+  readonly endsAt: string;
+  readonly resultsAt: string;
+  readonly characters: number;
+}
+/** One row of a finished season's final table (`results_page`, 0099): the name as it was then, the place, the standing and what the player made public. */
+export interface SeasonResultRow {
+  readonly character: Id;
+  readonly name: string;
+  readonly place: number;
+  readonly standing: number;
+  readonly shown: readonly SeasonShown[];
+}
+/** One of a character's past seasons (`profile_page` and `record_page`, 0099): where it finished, and when the results landed. */
+export interface SeasonRecordRow {
+  readonly season: number;
+  readonly place: number;
+  readonly standing: number;
+  readonly at: string;
+}
 /** A name a tally Act holds: a debut, or a Turn (with the class it left where its player announced that, and the class it took where announced). */
 export interface TallyName {
   readonly character: Id;
@@ -817,9 +840,11 @@ export interface TallyName {
 }
 export type SeasonNewsKind = 'results' | 'tally' | 'bossArrived' | 'bossLeft';
 /**
- * One item of season news (`season_news`, supabase/migrations/0063_season_news.sql): public, and the same for every reader. `act`, `thread` and
- * `seq` name the Act to link (the reveal's header, the tally, or the Boss's post, which is null where the instance wrote no line for it).
- * `results` carries the top three and `count`, the characters ranked; `tally` its debuts and Turns; a Boss row its `name` and the `quote` of its post.
+ * One item of season news (`season_news`, supabase/migrations/0063_season_news.sql, 0099, 0100): public, and the same for every reader. `act`, `thread` and
+ * `seq` name the Act to link (a landing's first announce Act, or the Boss's post, which is null where the instance wrote no line for it). A `results`
+ * item has none of the three: a season's results are rows, not an Act, and the item opens the glass's Rankings of its season.
+ * `results` carries the top three and `count`, the characters ranked; `tally` (a landing of announcements, or an old tally Act) its debuts and Turns,
+ * at most 20 names with `count` the whole; a Boss row its `name` and the `quote` of its post.
  */
 export interface SeasonNewsItem {
   readonly kind: SeasonNewsKind;
@@ -1157,7 +1182,7 @@ export interface ProfilePage {
   readonly acts: Awaited<ReturnType<KayfaApi['characterActs']>>;
   /** The card plays' target Acts and the Turns' Acts (`actsById`). */
   readonly targets: Awaited<ReturnType<KayfaApi['actsById']>>;
-  readonly seasons: Awaited<ReturnType<KayfaApi['characterReveals']>>;
+  readonly seasons: readonly SeasonRecordRow[];
   readonly unread: number;
 }
 
@@ -1169,7 +1194,7 @@ export interface RecordPage {
   readonly counts: CharacterCounts;
   readonly reveals: Awaited<ReturnType<KayfaApi['classReveals']>>;
   readonly turns: Awaited<ReturnType<KayfaApi['turnsAnnounced']>>;
-  readonly seasons: Awaited<ReturnType<KayfaApi['characterReveals']>>;
+  readonly seasons: readonly SeasonRecordRow[];
   /** The window of the character's own Acts (`characterActs`) starting at row `from`: for `all`, the extras ahead of the window push the read down by their number. */
   readonly acts: Awaited<ReturnType<KayfaApi['characterActs']>>;
   readonly windowFrom: number;
@@ -1303,8 +1328,6 @@ export interface KayfaApi {
    * totals are `characterCounts` (posts, spins, cards).
    */
   characterActs(id: Id, kinds: readonly ActKind[], page: { readonly offset: number; readonly limit: number }): Promise<readonly Act[]>;
-  /** The season reveal posts that name this character (kind reveal, `payload.character`), newest first, at most `limit` (default 50): its past seasons. */
-  characterReveals(id: Id, limit?: number): Promise<readonly Act[]>;
   /** Every Act asked about, with an empty tally where none has been left. */
   tallies(acts: readonly Id[]): Promise<Readonly<Record<Id, Tally>>>;
   /** Every thread asked about, 0 where none has been counted yet (the count moves hourly, never live). */
@@ -1442,6 +1465,15 @@ export interface KayfaApi {
    * player's own (a screen marks them from `myCharacters`).
    */
   seasonNews(before?: string | null): Promise<readonly SeasonNewsItem[]>;
+  /** The seasons whose results have landed (`finished_seasons`, 0099), newest first, at most 200. Public. */
+  finishedSeasons(): Promise<readonly SeasonFinished[]>;
+  /** A page of a finished season's final table (`results_page`, 0099): 50 rows by place, then name, then character; a season without results, or a page past the end, is empty. */
+  resultsPage(season: number, page: number): Promise<readonly SeasonResultRow[]>;
+  /**
+   * A character's index in that table's order (`result_place`, 0099), counted from 0 and not a place number, so the page holding it is
+   * `Math.floor(index / 50) + 1`; null where the season has no row for it.
+   */
+  resultPlace(season: number, character: Id): Promise<number | null>;
   estimate(): Promise<Estimate>;
   /** A page of the player's own log (`Log`): the newest with no cursor, then each older page from the last one's `before`. */
   log(before?: string | null): Promise<Log>;

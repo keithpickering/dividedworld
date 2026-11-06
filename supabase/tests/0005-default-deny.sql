@@ -10,7 +10,7 @@ declare
   -- What the API roles are granted, on purpose; a new grant joins this list with its migration.
   readable text[] := array['class_kinds', 'reaction_kinds', 'card_kinds', 'boards', 'threads', 'acts',
                            'characters_public', 'acts_public', 'accounts', 'characters', 'class_history', 'reaction_tallies',
-                           'seasons', 'settlements', 'standings', 'ledger', 'wallets', 'wallet_events',
+                           'seasons', 'season_results', 'seasons_finished', 'settlements', 'standings', 'ledger', 'wallets', 'wallet_events',
                            'card_ledger', 'my_cards', 'effect_state', 'my_invites', 'pending_turns', 'effect_releases',
                            'reading', 'my_reactions', 'thread_view_counts',
                            'pip_styles', 'account_preferences', 'character_profiles',
@@ -29,6 +29,8 @@ declare
                            'board_page(text,integer,text[])', 'index_page()',
                            -- A character's two pages, each in one read (0096): invoker and stable, held to the web's read lists by the screen-function guard.
                            'profile_page(uuid)', 'record_page(uuid,text,integer)',
+                           -- A finished season's results (0099): its list, a page of 50 and a character's place, invoker reads for a signed-in player.
+                           'finished_seasons()', 'results_page(integer,integer)', 'result_place(integer,uuid)',
                            -- A thread's page in one read (0094), a security invoker function.
                            'thread_page(uuid,integer,integer,integer,text[])',
                            -- The frame and the HUD in one read (0097): a signed-in player's own boot document, stable, writing nothing.

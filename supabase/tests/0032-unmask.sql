@@ -122,7 +122,7 @@ begin
     raise exception 'a character whose player made nothing public is in a view of what was made public';
   end if;
   if (select (act, at, was) from turns_announced where character = loud) is distinct from (tally, now() + interval '1 minute', null::text) then
-    raise exception 'an announced Turn is dated at its tally and names no old class: %', (select to_jsonb(x) from turns_announced x where character = loud);
+    raise exception 'an announced Turn is dated at its announcement and names no old class: %', (select to_jsonb(x) from turns_announced x where character = loud);
   end if;
   if (select (at, was) from turns_announced where character = told) is distinct from (now() + interval '1 minute', 'alpha'::text) then
     raise exception 'a Turn announced with its old class names it: %', (select to_jsonb(x) from turns_announced x where character = told);
@@ -179,6 +179,10 @@ begin
   if p !~ 'Index Cond: \("character" = ANY' then raise exception 'class_reveals for a page of characters is no probe by character:%', E'\n' || p; end if;
   p := pg_temp.plan_of('select * from turns_announced where character in ' || page);
   if p !~ 'Bitmap Index Scan on acts_tally_turns' then raise exception 'turns_announced for a page of characters is no probe of acts_tally_turns:%', E'\n' || p; end if;
+  -- And the announce Acts it reads beside them are probed by character too, in both views.
+  if p !~ 'acts_announce_character' then raise exception 'turns_announced for a page of characters does not probe acts_announce_character:%', E'\n' || p; end if;
+  p := pg_temp.plan_of('select * from class_reveals where character in ' || page);
+  if p !~ 'acts_announce_character' then raise exception 'class_reveals for a page of characters does not probe acts_announce_character:%', E'\n' || p; end if;
 end $$;
 
 -- ---- The settlement and the estimate read a reveal as its character's Act ----

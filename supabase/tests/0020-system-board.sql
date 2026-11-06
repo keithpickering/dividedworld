@@ -43,12 +43,12 @@ begin
     raise exception 'a second board was flagged as The System''s';
   end if;
 
-  -- The tally opens on The System's board.
+  -- The announcement opens its thread on The System's board.
   settled := pg_temp.settle_day_with_debut(ann, 'Sys Debut');
   tally := (settled ->> 'tally')::uuid;
-  if tally is null then raise exception 'the settlement posted no tally: %', settled; end if;
+  if tally is null then raise exception 'the settlement announced nothing: %', settled; end if;
   if (select t.board from acts x join threads t on t.id = x.thread where x.id = tally) is distinct from sys then
-    raise exception 'the tally opened on another board than The System''s';
+    raise exception 'the announcement opened on another board than The System''s';
   end if;
   t := (select thread from acts where id = tally);
 
@@ -61,19 +61,19 @@ begin
   why := pg_temp.refusal(format('select post(%L, %L, %L, %L)', t, a, 'A quote.', tally));
   if why is distinct from 'only The System posts here; spin a thread from what it said' then raise exception 'a quoting reply on The System''s board: %', why; end if;
 
-  -- A spin from the tally opens on the players' board, and points back at it.
+  -- A spin from the announcement opens on the players' board, and points back at it.
   spun := spin(tally, a, 'About last night', 'Who is Sys Debut?');
   if (spun -> 'thread' ->> 'board')::uuid is distinct from general then raise exception 'a spin from The System''s Act opened on %, not the players'' board', spun -> 'thread' ->> 'board'; end if;
-  if (spun -> 'thread' ->> 'origin_act_id')::uuid is distinct from tally then raise exception 'the spin points at the tally'; end if;
+  if (spun -> 'thread' ->> 'origin_act_id')::uuid is distinct from tally then raise exception 'the spin points at the announcement'; end if;
   -- And a spin from an ordinary post stays on its own board.
   spun := spin((spun -> 'act' ->> 'id')::uuid, a, 'Again', '');
   if (spun -> 'thread' ->> 'board')::uuid is distinct from general then raise exception 'a spin from the players'' board moved'; end if;
   perform tests.unbecome();
 
-  -- The reveal opens on The System's board.
+  -- A season's end opens no thread on any board: its results are rows (0099).
   update settings set value = '{"unit": "day", "count": 1}' where key = 'seasonLength';
   settled := reveal_season(now());
-  if (settled -> 'thread' ->> 'board')::uuid is distinct from sys then raise exception 'the reveal opened on another board: %', settled; end if;
+  if settled is null or settled ? 'thread' or (settled ->> 'results')::integer < 1 then raise exception 'the season''s end answers its results and opens no thread: %', settled; end if;
 end $$;
 
 -- ---- A board for players can be spun onto even when The System's was made first ----
@@ -109,11 +109,11 @@ begin
   -- As it stood: no board flagged, so The System posted on the first board.
   update boards set is_system = false;
   if system_board() is distinct from general then raise exception 'an instance with no board flagged posts on its first, as before'; end if;
-  -- No Turns thread yet, so the tally opens one afresh on the board The System posts on now.
+  -- No Turns thread yet, so the announcement opens one afresh on the board The System posts on now.
   update seasons set turns_thread = null;
   settled := pg_temp.settle_day_with_debut(ann, 'Sys Old Debut');
   old_turns := (select thread from acts where id = (settled ->> 'tally')::uuid);
-  if (select board from threads where id = old_turns) is distinct from general then raise exception 'the old instance''s tally opened on its first board'; end if;
+  if (select board from threads where id = old_turns) is distinct from general then raise exception 'the old instance''s announcement opened on its first board'; end if;
   -- Players still post on its first board.
   perform tests.become(ann);
   old_post := (post(old_turns, a, 'Before the flag.') ->> 'id')::uuid;
