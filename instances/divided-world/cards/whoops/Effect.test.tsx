@@ -880,6 +880,56 @@ describe('the body\'s box', () => {
     expect(onChip).not.toHaveBeenCalled();
   });
 
+  test('the cell\'s listeners are all taken off when the effect goes, and a press on the cell then washes nothing', () => {
+    const { cell, unmount } = mount();
+    const off = vi.spyOn(EventTarget.prototype, 'removeEventListener');
+    unmount();
+    const removedFromCell = new Set(off.mock.calls.filter((_, i) => off.mock.contexts[i] === cell).map((c) => c[0]));
+    off.mockRestore();
+    for (const kind of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'pointerleave', 'touchstart', 'touchmove', 'touchend', 'touchcancel', 'click']) {
+      expect(removedFromCell.has(kind), kind).toBe(true);
+    }
+    const [x, y] = inkSpot(inkOf(0));
+    expect(fireEvent.pointerDown(cell, { clientX: px(x, y)[0], clientY: px(x, y)[1], pointerId: 1, button: 0, pointerType: 'mouse' }), 'nothing takes the press').toBe(true);
+  });
+
+  test('a stroke under way when the effect goes is kept and saved, not lost', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { cell, save, unmount } = mount({ author: true });
+    const [x, y] = inkSpot(inkOf(0));
+    const [a, b] = [px(x, y), px(x + 0.06, y)];
+    act(() => { fireEvent.pointerDown(cell, { clientX: a[0], clientY: a[1], pointerId: 1, button: 0, pointerType: 'mouse' }); });
+    act(() => { fireEvent.pointerMove(cell, { clientX: b[0], clientY: b[1], pointerId: 1, pointerType: 'mouse' }); });
+    unmount();
+    act(() => { vi.advanceTimersByTime(SAVE_AFTER_MS * 2); });
+    expect(save).toHaveBeenCalledTimes(1);
+    expect((save.mock.calls[0]![1] as { strokes: unknown[] }).strokes).toHaveLength(1);
+  });
+
+  test('when the words are moved out of the cell (Stick Around\'s view), the next render finds the frame\'s own surface; moved back, the cell again', () => {
+    const { cell, frame, root, replay } = mount();
+    const away = document.createElement('div');
+    document.body.append(away);
+    away.append(root);
+    replay();
+    const [x, y] = inkSpot(inkOf(0));
+    const [a, b] = [px(x, y), px(x + 0.06, y)];
+    const stroke = (target: HTMLElement, id: number, dy = 0) => {
+      act(() => { fireEvent.pointerDown(target, { clientX: a[0], clientY: a[1] + dy, pointerId: id, button: 0, pointerType: 'mouse' }); });
+      act(() => { fireEvent.pointerMove(target, { clientX: b[0], clientY: b[1] + dy, pointerId: id, pointerType: 'mouse' }); });
+      act(() => { fireEvent.pointerUp(target, { clientX: b[0], clientY: b[1] + dy, pointerId: id, pointerType: 'mouse' }); });
+    };
+    stroke(frame, 1);
+    expect(washed(root)[0], 'the frame takes the press where it now lives').toBeGreaterThan(0);
+    expect(cell.style.touchAction, 'the cell it left is let go').toBe('');
+    cell.append(root);
+    replay();
+    const before = washed(root)[0]!;
+    stroke(cell, 2, 6 * LINE_PX);
+    expect(washed(root)[0], 'the cell takes it again').toBeGreaterThan(before);
+    away.remove();
+  });
+
   test('in the ORIGIN box the frame is the surface and the box', () => {
     const { frame, root } = mount({ place: 'origin' });
     const [x, y] = inkSpot(inkOf(0));
@@ -909,6 +959,18 @@ describe('the body\'s box', () => {
     const canvas = root.querySelector('canvas[data-kb-effect-ink]') as HTMLCanvasElement;
     expect(canvas.width).toBeLessThan(390);
     expect(canvas.width * canvas.height).toBeLessThanOrEqual(4_000_000);
+  });
+
+  test('the suds stay registered when the top ink changes mid-wash (a layer going clean): they are re-registered with the new ink, and let go only when the post goes', () => {
+    const { frame, root, unmount } = mount({ layers: 2 });
+    const before = vi.mocked(suds.register).mock.calls.at(-1)!;
+    expect(before[4]).toBe(COLORS[1]);
+    scrubTo(frame, root, 1, inkOf(1), 0.97);
+    expect(states(root)[1]).toBe('clean');
+    expect(vi.mocked(suds.register).mock.calls.at(-1)![4], 'the new top ink').toBe(COLORS[0]);
+    expect(vi.mocked(suds.unregister)).not.toHaveBeenCalled();
+    unmount();
+    expect(vi.mocked(suds.unregister)).toHaveBeenCalledTimes(1);
   });
 
   test('the suds canvas is the ink\'s size and place, registered while the post is near with its box and density, and let go when it leaves', () => {
@@ -1087,6 +1149,43 @@ describe('a finger', () => {
     expect(washed(root)[0]).toBeCloseTo(inkOf(0, [washStroke([[x, y]])]).washed, 3);
     expect(washed(root)[0]).toBeGreaterThan(0);
     expect(fireEvent.click(cell)).toBe(false);
+  });
+
+  test('a touch the browser cancels leaves no click to swallow: the next click on the cell goes through', () => {
+    clock();
+    const { cell } = mount({ beside: <button type="button">React</button> });
+    const chip = screen.getByRole('button', { name: 'React' });
+    const p0 = spot();
+    touch(cell, 'touchstart', [{ id: 1, at: p0 }], [{ id: 1, at: p0 }]);
+    touch(cell, 'touchcancel', [], [{ id: 1, at: p0 }]);
+    expect(fireEvent.click(chip), 'a cancel while waiting').toBe(true);
+    touch(cell, 'touchstart', [{ id: 1, at: p0 }], [{ id: 1, at: p0 }]);
+    act(() => { vi.advanceTimersByTime(180); });
+    const p1 = shifted(p0, 0, 40);
+    touch(cell, 'touchmove', [{ id: 1, at: p1 }], [{ id: 1, at: p1 }]);
+    touch(cell, 'touchcancel', [], [{ id: 1, at: p1 }]);
+    expect(fireEvent.click(chip), 'a cancel mid-wipe').toBe(true);
+  });
+
+  test('the click a touch end asks to swallow does not linger: a click long after goes through', () => {
+    clock();
+    const { cell } = mount({ beside: <button type="button">React</button> });
+    const p0 = spot();
+    touch(cell, 'touchstart', [{ id: 1, at: p0 }], [{ id: 1, at: p0 }]);
+    touch(cell, 'touchend', [], [{ id: 1, at: p0 }]);
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(fireEvent.click(screen.getByRole('button', { name: 'React' }))).toBe(true);
+  });
+
+  test('the hold timer is cleared by a touch end: no puff or buzz follows a quick tap', () => {
+    clock();
+    const { cell } = mount();
+    const p0 = spot();
+    touch(cell, 'touchstart', [{ id: 1, at: p0 }], [{ id: 1, at: p0 }]);
+    touch(cell, 'touchend', [], [{ id: 1, at: p0 }]);
+    act(() => { vi.advanceTimersByTime(200); });
+    expect(vi.mocked(suds.puff)).not.toHaveBeenCalled();
+    expect(vibrate).not.toHaveBeenCalled();
   });
 
   test('a second finger is the page\'s: it stops the wipe where it got to', () => {

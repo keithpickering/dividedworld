@@ -76,6 +76,8 @@ const FADE_MS = 700;
 const REFRESH_MS = 150;
 /** A press held this long on ink grabs it (a finger), and one that moves this far (px) before then is a swipe, up or down the page's and sideways a wipe. */
 export const HOLD_MS = 180;
+/** How long after a touch ends the click that follows it is still swallowed. */
+const SUPPRESS_MS = 400;
 export const SLOP_PX = 8;
 /** The ink of a play whose config carries none we can draw (the server keeps one, so this is a safeguard). */
 const FALLBACK_INK = '#ff2bd6';
@@ -250,6 +252,8 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
 
   /* ------------------------------------------------------------------ measuring ---- */
 
+  /** Measures again now: set by the effect below, called by whatever may have moved the words (a render, the viewport observer). */
+  const remeasure = useRef<(() => void) | null>(null);
   useLayoutEffect(() => {
     const f = frameRef.current;
     if (!f) return;
@@ -286,15 +290,27 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
       watch.observe(f);
     }
     measure();
-    if (!watch) return;
-    return () => watch?.disconnect();
+    remeasure.current = measure;
+    return () => { remeasure.current = null; watch?.disconnect(); };
   }, [bleed]);
+
+  /*
+   * A takeover (Stick Around) moves the words' element, the frame with it, between the post's cell and its view, which may change
+   * no size and wakes no observer, and a lift does not render this effect for certain. So each render checks, cheaply, that the cell
+   * found from the frame is still the surface it listens on, and the viewport observer below checks as well.
+   */
+  useLayoutEffect(() => {
+    const f = frameRef.current;
+    if (!f || !remeasure.current) return;
+    const cell = bleed ? f.closest<HTMLElement>('.kb-act-main') : null;
+    if ((cell ?? f) !== now.current.surface) remeasure.current();
+  });
 
   /* Only a post near the viewport is drawn: past a screen above or below, the canvas is dropped. */
   useEffect(() => {
     const f = frameRef.current;
     if (!f || typeof IntersectionObserver !== 'function') return;
-    const watch = new IntersectionObserver((entries) => setNear(entries.some((e) => e.isIntersecting)), { rootMargin: '100% 0px' });
+    const watch = new IntersectionObserver((entries) => { setNear(entries.some((e) => e.isIntersecting)); remeasure.current?.(); }, { rootMargin: '100% 0px' });
     setNear(false);
     watch.observe(f);
     return () => watch.disconnect();
@@ -462,8 +478,13 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     const host = sudsHost.current;
     if (!near || !built || !fixed || !canvas) return;
     suds.register(host, canvas, box, dpr, topInk);
-    return () => suds.unregister(host);
   }, [near, built, fixed, box, dpr, topInk]);
+  /* Let go only when the post leaves or goes: a change of ink or box re-registers above, and the module keeps what is live. */
+  useEffect(() => {
+    if (!near || !built || !fixed) return;
+    const host = sudsHost.current;
+    return () => suds.unregister(host);
+  }, [near, built, fixed]);
 
   /** What a move of the brush from `a` to `b` (shares of the box) throws up, in px of the box. */
   const throwSuds = useCallback((a: Pt, b: Pt, overInk: boolean) => {
@@ -603,6 +624,18 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   }, [checkClean, keep, refresh, schedulePaint]);
 
   const suppress = useRef(false);
+  const suppressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearSuppress = () => {
+    if (suppressTimer.current) clearTimeout(suppressTimer.current);
+    suppressTimer.current = null;
+    suppress.current = false;
+  };
+  /** After a touch ends the click that follows it is swallowed; if none comes it is forgotten shortly, so it never takes a later, unrelated click. */
+  const armSuppress = () => {
+    clearSuppress();
+    suppress.current = true;
+    suppressTimer.current = setTimeout(clearSuppress, SUPPRESS_MS);
+  };
   /** What the drawn cursor shows, kept while a stroke is under way. */
   const shown = useRef<{ mode: CursorMode; ink?: string }>({ mode: null });
 
@@ -753,7 +786,9 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     settle(g);
     /* A tap on the ink washes one dab, as a click does. */
     if (e.type === 'touchend' && g.state === 'wait') begin(shareAt(g.x0, g.y0), g.id, true);
-    if (g.state === 'wipe' || g.state === 'wait') suppress.current = true;
+    /* A lifted finger is followed by a click; a cancelled touch is followed by none, so it clears whatever a wipe left. */
+    if (e.type === 'touchcancel') clearSuppress();
+    else if (g.state === 'wipe' || g.state === 'wait') armSuppress();
     gesture.current = null;
     if (live.current?.touch) finish();
   };
@@ -764,6 +799,8 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
    * calls the latest handler, so none is stale. The surface keeps `touch-action: pan-y pinch-zoom` so a sideways swipe never waits
    * on the browser.
    */
+  const finishNow = useRef(finish);
+  finishNow.current = finish;
   const handlers = useRef({ onPointerDown, onPointerMove, onPointerEnd, onPointerLeave, onTouchStart, onTouchMove, onTouchEnd });
   handlers.current = { onPointerDown, onPointerMove, onPointerEnd, onPointerLeave, onTouchStart, onTouchMove, onTouchEnd };
   useEffect(() => {
@@ -778,7 +815,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     const tstart = (e: TouchEvent) => handlers.current.onTouchStart(e);
     const tmove = (e: TouchEvent) => handlers.current.onTouchMove(e);
     const tend = (e: TouchEvent) => handlers.current.onTouchEnd(e);
-    const click = (e: MouseEvent) => { if (suppress.current) { suppress.current = false; e.preventDefault(); e.stopPropagation(); } };
+    const click = (e: MouseEvent) => { if (suppress.current) { clearSuppress(); e.preventDefault(); e.stopPropagation(); } };
     el.addEventListener('pointerdown', down);
     el.addEventListener('pointermove', move);
     el.addEventListener('pointerup', end);
@@ -802,6 +839,9 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
       el.removeEventListener('click', click, true);
       el.style.touchAction = was;
       if (gesture.current) { settle(gesture.current); gesture.current = null; }
+      /* A stroke under way when the surface goes is the author's work: it is kept and saved as at any end. */
+      finishNow.current();
+      clearSuppress();
       cursor.leave(el);
     };
   }, [surface, still]);
