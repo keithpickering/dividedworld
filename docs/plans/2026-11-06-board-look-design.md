@@ -69,6 +69,33 @@ a theme picker on the glass.
    thread; 3. a profile and its record; 4. the standings and the reveal; 5. The System's profile and the move notice;
    6. the errors and Unavailable; 7. the theme picker.
 
+## 2. Batch 1: the index and a board
+
+Drawn on main (354dbc4)'s screens (`engine/ui/index/Index.tsx`, `engine/ui/board/Board.tsx`) in Silver, light and dark:
+`docs/research/2026-11-06-board-look/01-index.html` and `-dark`, `02-board.html` and `-dark` at 1440 by 1000, and
+`03-phone.html`, the four at 390 by 844 side by side, all written by `gen.mjs` in the token names this design proposes.
+The boards draw only what the screens show; round one's mock had a locked thread and a "new posts" state on the index,
+which the app does not have, and both are gone.
+
+- **Folder icons on the thread list only.** A thread row's NEW and HOT chips become a folder icon, with four states from
+  those two facts: new posts filled, none hollow, and either with a flame when the thread is hot
+  (`settings.hotReplies` replies this week). Each icon carries its state as hidden text ("New, hot"). The index draws no
+  icon, because it has no state to show (`Index.tsx`: a board's unread count would need a read of every thread).
+- **A legend** under the thread list names the icons and the pin, in plain words: "Hot: 10 replies this week" takes its
+  number from the setting. Its words are a draft for the owner's review.
+- **No category bar.** Divided World's boards are not grouped; the light band heads real sections only (Who is online,
+  Users browsing this board), each an `h2`.
+- **The banner and the boards' bar are one block**, the logo on the light gradient and the board links on the dark bar.
+- **Pinned threads are a group of their own** above the rest, split by a 4px row in the third gray; the pin's mark keeps
+  the glass's cyan, as a card's mark is a game piece.
+- **Counts sit in the third gray** with tabular figures.
+- **A footer ends every board page**: "Powered by KayfaBB" and three 80×15 badges (KayfaBB, BBCode On, dw.gripe), hidden
+  from assistive tech, every word true. It links nothing on the glass: every way into the glass is the HUD's.
+- **On the phone a row's counts fold into one line** ("169 replies · 4 views · last: Pipewrench, Oct 5"), where today
+  each takes a line and a phone shows two and a half threads; the index folds the same way, and a date never breaks.
+  Boards is a Chrome button in the banner.
+
 ## Open
 
 - Fan Site's name, now that it salutes one board's blue.
+- Batch 1's approval, and the legend's and badges' words.
