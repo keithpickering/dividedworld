@@ -19,8 +19,16 @@
   position: absolute;
   inset: 0;
   background: color-mix(in srgb, var(--kb-glass-ground) 72%, transparent);
-  backdrop-filter: blur(6px) saturate(0.7);
-  -webkit-backdrop-filter: blur(6px) saturate(0.7);
+  /* The page behind is blurred as well as dimmed, so the cut-out is the one sharp thing (the board draws it at 5px). */
+  /* Only the unprefixed property is written: the build's minifier adds the prefixed one itself, and given both it keeps only the prefixed, which Chromium does not read. */
+  backdrop-filter: blur(5px) saturate(0.7);
+}
+
+/* Where the platform asks for less transparency, the dim is only dimmed: the blur is a see-through effect. */
+@media (prefers-reduced-transparency: reduce) {
+  .kb-tips-dim {
+    backdrop-filter: none;
+  }
 }
 
 .kb-tips-ring {
@@ -40,12 +48,13 @@
   width: var(--kb-tip-width);
   box-sizing: border-box;
   padding: 22px 26px 20px;
-  background: var(--kb-glass-pale);
+  /* The edge is the glass's violet, along the cut (glass/base.css); the panel is the glass's own ground, not a lighter sheet. */
+  background: var(--kb-glass-violet);
   outline: none;
 }
 
 .kb-tips .kb-tips-panel::after {
-  background: var(--kb-glass-sheet);
+  background: var(--kb-glass-ground);
 }
 
 .kb-tips-who {
@@ -183,14 +192,15 @@
   pointer-events: none;
 }
 
+/* The arrow is drawn after the panel and starts one border (--kb-border, 1.5px) inside its foot, so the two read as one piece (Spotlight.tsx places it). */
 .kb-tips[data-kb-tips-place='above'] .kb-tips-arrow {
-  transform: translate(-50%, -100%);
-  border-top: 18px solid var(--kb-glass-pale);
+  transform: translate(-50%, 0);
+  border-top: 18px solid var(--kb-glass-violet);
 }
 
 .kb-tips[data-kb-tips-place='below'] .kb-tips-arrow {
-  transform: translate(-50%, 0);
-  border-bottom: 18px solid var(--kb-glass-pale);
+  transform: translate(-50%, -100%);
+  border-bottom: 18px solid var(--kb-glass-violet);
 }
 
 /* The Phone board's layout (data-kb-layout, set from the glass's sizes): the panel docks as a sheet above the HUD, full width, and the pointer goes. */

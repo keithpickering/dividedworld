@@ -21,6 +21,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { BrowserContext, Locator, Page } from '@playwright/test';
 import type { BoardManifest, Box, Landmark, Shot, Snapshot, TypeRead } from './board-match.ts';
+import { loadFaces } from './fonts.ts';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const UI_DIR = path.join(repoRoot, 'instances', 'divided-world', 'ui');
@@ -190,7 +191,7 @@ const sameSnapshot = (a: Snapshot, b: Snapshot) => JSON.stringify(a) === JSON.st
 export async function settledSnapshot(page: Page, manifest: BoardManifest, side: 'board' | 'build', timeout = 5000): Promise<Snapshot> {
   const until = Date.now() + timeout;
   const read = async () => {
-    await page.evaluate(() => document.fonts.ready);
+    await loadFaces(page);
     return snapshotPage(page, manifest, side);
   };
   let last = await read();

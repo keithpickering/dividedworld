@@ -1,45 +1,39 @@
 /*
- * Reach a person (Contact.tsx): the account screens' frame (account.css: the heading, the panel, the lead) with the admins' links under the
- * lead, one to a row. Sizes are the glass's tokens, never px (engine/ui/glass/board.test.tsx reads this file); a link is the glass's pale,
- * underlined like every link on the account screens, and an address shown as text is selectable and wraps rather than widening a phone.
+ * Reach a person (Contact.tsx): the account screens' frame (account.css: the heading, the panel, the lead) with the admins' ways under the
+ * lead, each a row in the Settings idiom (.kb-acct-row: its label in the label column, its link in the other; board 16-contact). A way
+ * that is a web address is a secondary GlassButton; an email address is the link itself, as text that is selectable and wraps rather than
+ * widening a phone. Sizes are the glass's tokens, never px (engine/ui/glass/board.test.tsx reads this file).
  */
 .kb-contact-list {
-  display: grid;
-  gap: 12px;
-  max-width: 680px;
+  max-width: 920px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.kb-contact-item {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 16px;
-  font-size: var(--kb-glass-size-body);
-  font-weight: 700;
-  line-height: 1.5;
-  color: var(--kb-glass-text);
+/* The rows are ruled off above each and the last below, as the board draws them. */
+.kb-contact-list > .kb-acct-row:last-child {
+  border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-text) 22%, transparent);
 }
 
-.kb-contact-item a {
+.kb-contact-link {
+  /* Level with the label's first line: the label sits 12px down and the address 10px, where a button's own height carries it. */
+  display: inline-block;
+  margin-top: 10px;
+  font-size: var(--kb-glass-size-lead);
+  font-weight: 700;
+  line-height: normal;
   color: var(--kb-glass-pale);
   text-underline-offset: 4px;
-}
-
-.kb-contact-address {
-  font-weight: 500;
-  color: var(--kb-glass-text-2);
-  overflow-wrap: anywhere;
-  user-select: all;
-}
-
-:where(:root[data-kb-layout='phone']) .kb-contact-item {
-  font-size: var(--kb-glass-size-phone-body);
-}
-
-.kb-contact-item a:hover {
-  color: var(--kb-glass-text-hi);
   text-decoration-thickness: 2px;
+  overflow-wrap: anywhere;
+}
+
+.kb-contact-link:hover {
+  color: var(--kb-glass-text-hi);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-contact-link {
+  margin-top: 0;
+  font-size: var(--kb-glass-size-phone-display);
 }

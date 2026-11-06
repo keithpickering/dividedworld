@@ -12,14 +12,20 @@ import { useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { DebutLoudness, DebutTiming } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
+import { FieldCount } from '../glass/FieldCount.tsx';
+import { FormFoot } from '../glass/FormFoot.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import { SignInPrompt, useSignedIn } from '../mini.tsx';
 import { usePlayer } from '../player.tsx';
 import { useNavigate } from '../router.tsx';
 import { ClassCards } from './ClassCards.tsx';
 import { DebutChoice } from './DebutChoice.tsx';
+import { newCharacterFooter } from './footers.ts';
 import './characters.css';
 import { CalmRegion } from '../glass/Calm.tsx';
+
+/** The most characters of a name, as the server holds it. */
+const NAME_MAX = 40;
 
 export function NewCharacter() {
   const { api, instance, settings } = useKayfa();
@@ -52,7 +58,7 @@ export function NewCharacter() {
   const className = instance.classes.find((c) => c.key === cls)?.name ?? '';
 
   const submit = async () => {
-    if (!cls || name.trim() === '' || busy) return;
+    if (!cls || name.trim() === '' || [...name].length > NAME_MAX || busy) return;
     setBusy(true);
     setRefusal(null);
     try {
@@ -70,26 +76,26 @@ export function NewCharacter() {
 
   return (
     <div className="kb-new-character">
-      <PageHead size="roster" title="New character" lead="This page is out of character and only you can see it. Nobody else can tell who plays a character." />
+      <PageHead size="roster" title="New character" lead="This page is out of character and only you can see it. Nobody else can tell who plays a character." leadUnder />
       <CalmRegion as="form" className="kb-new-form" aria-label="New character" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
         <div className="kb-new-name">
           <label className="kb-glass-field">
             <span>Name</span>
             <input className="kb-glass-input" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} autoComplete="off" aria-describedby="new-name-hint" />
           </label>
-          <p id="new-name-hint" className="kb-roster-line">1 to 40 characters. Letters, marks, digits and single spaces. Names are unique, look-alikes included.</p>
+          <FieldCount id="new-name-hint" hint="Letters, marks, digits and single spaces. Names are unique, look-alikes included." text={name} max={NAME_MAX} />
         </div>
-        <div><ClassCards legend="Class" value={cls} onChange={setCls} /></div>
-        <p className="kb-roster-line">Only you will know its class, unless you choose to reveal it.</p>
-        <div><DebutChoice name={name} className={className} timing={timing} loudness={loudness} onTiming={setTiming} onLoudness={setLoudness} /></div>
+        <div className="kb-new-classes">
+          <ClassCards legend="Class" value={cls} onChange={setCls} />
+          <p className="kb-roster-line">Only you will know its class, unless you choose to reveal it.</p>
+        </div>
+        <DebutChoice name={name} className={className} timing={timing} loudness={loudness} onTiming={setTiming} onLoudness={setLoudness} />
         {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
         {/* In a calm, since "Make the character" waits drawn as text on a dashed edge until a name and a class are chosen. */}
-        <div>
-          <ButtonRow>
-            <GlassButton to="/characters">Cancel</GlassButton>
-            <GlassButton type="submit" kind="primary" disabled={!cls || name.trim() === '' || busy}>Make the character</GlassButton>
-          </ButtonRow>
-        </div>
+        <FormFoot line={newCharacterFooter({ name, className, timing, loudness })}>
+          <GlassButton to="/characters">Cancel</GlassButton>
+          <GlassButton type="submit" kind="primary" disabled={!cls || name.trim() === '' || [...name].length > NAME_MAX || busy}>Make the character</GlassButton>
+        </FormFoot>
       </CalmRegion>
     </div>
   );

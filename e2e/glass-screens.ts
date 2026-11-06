@@ -1,6 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 import type { Fake } from '../engine/ui/data/fake.ts';
 import type { Demo } from '../web/src/demo.ts';
+import { loadFaces } from './fonts.ts';
 
 /**
  * Every screen the glass is measured on, shared by the specs that visit them all
@@ -236,6 +237,6 @@ export async function open(page: Page, s: Probe) {
    * the chosen character and scrolls it into view, 343px down at 200% text on a phone, under a measure that had already begun.
    */
   await expect(page.locator('[aria-busy="true"]')).toHaveCount(0);
-  await page.evaluate(() => document.fonts.ready);
+  await loadFaces(page);
 }
 

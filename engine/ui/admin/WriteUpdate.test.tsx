@@ -107,6 +107,16 @@ describe('Write an update', () => {
     expect(post).toBeDisabled();
   });
 
+  test('counts on the shared FieldCount line, the glass part the character forms use', async () => {
+    renderIn(world(), <WriteUpdate />, { instance });
+    const words = within(form()).getByLabelText('Words');
+    const line = document.getElementById(words.getAttribute('aria-describedby')!)!;
+    expect(line).toHaveClass('kb-glass-field-count');
+    expect(line.children[1]).toHaveClass('kb-glass-field-tally');
+    expect(line.children[1]).toHaveTextContent('0 of 200');
+    expect(form().querySelector('.kb-write-update-count')).toBeNull();
+  });
+
   test('says why the button is held: a blank form is described by a hint, and too long by a live line with the count', async () => {
     renderIn(world(), <WriteUpdate />, { instance });
     const post = within(form()).getByRole('button', { name: 'Post update' });

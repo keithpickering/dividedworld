@@ -58,10 +58,11 @@ describe('Divided World\'s Strategy Guide', () => {
 });
 
 describe('Divided World\'s InstanceUi covers its rules', () => {
-  test('every class has a look and a description', () => {
+  test('every class has a look, a description and a hurtsBy', () => {
     for (const c of instance.classes) {
       expect(instanceUi.classLooks[c.key], c.key).toBeDefined();
       expect(instanceUi.classLooks[c.key]?.description(instance.settings.economy, instance.settings.settlementLength).length, c.key).toBeGreaterThan(0);
+      expect(instanceUi.classLooks[c.key]?.hurtsBy(instance.settings.economy, instance.settings.settlementLength), c.key).toMatch(/^Hurt by /u);
     }
   });
 
@@ -72,7 +73,9 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   const spelled = (n: number) => (n >= 1 && n <= 20 ? NUMBER_WORDS[n - 1]! : String(n));
   const holdsNumber = (text: string) => /\d/u.test(text) || new RegExp(`\\b(${NUMBER_WORDS.join('|')})\\b`, 'iu').test(text);
   const said = (key: string, economy: Readonly<Record<string, number>>) =>
-    (instanceUi.classLooks[key] ? instanceUi.classLooks[key]!.description(economy, instance.settings.settlementLength) : instanceUi.reasonWords(key, economy));
+    (instanceUi.classLooks[key]
+      ? `${instanceUi.classLooks[key]!.description(economy, instance.settings.settlementLength)} ${instanceUi.classLooks[key]!.hurtsBy(economy, instance.settings.settlementLength)}`
+      : instanceUi.reasonWords(key, economy));
   const economy = instance.settings.economy;
   test('each class\'s words say the numbers in force: shifted by 17, the shifted number is said and the default is not', () => {
     expect(Object.keys(wordsRead).length).toBeGreaterThan(0);
@@ -179,9 +182,9 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   test('the Lurker counts its posts per settlement window and says the span in force (#179)', () => {
     const lurker = instanceUi.classLooks.lurker!;
     const two = { ...economy, 'lurker.postsAllowed': 2 };
-    expect(lurker.description(two, { unit: 'week', count: 1 })).toContain('posting more than twice in one settlement window (1 week).');
-    expect(lurker.description(two, { unit: 'day', count: 1 })).toContain('posting more than twice in one settlement window (1 day).');
-    expect(lurker.description(two, { unit: 'day', count: 1 })).not.toMatch(/a day/u);
+    expect(lurker.hurtsBy(two, { unit: 'week', count: 1 })).toContain('posting more than twice in one settlement window (1 week).');
+    expect(lurker.hurtsBy(two, { unit: 'day', count: 1 })).toContain('posting more than twice in one settlement window (1 day).');
+    expect(lurker.hurtsBy(two, { unit: 'day', count: 1 })).not.toMatch(/a day/u);
     expect(instanceUi.reasonWords('lurker.postedTooMuch', two)).toBe('Posted too much: a post past two in one settlement window');
   });
   test('"Stole the thunder" names what it counted and when: votes, this window (#111)', () => {

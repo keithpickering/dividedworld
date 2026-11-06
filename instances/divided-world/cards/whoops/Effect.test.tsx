@@ -16,6 +16,7 @@ import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { STROKES, whoops } from '../whoops.ts';
 import { LOST_ANSWER } from '../../../../engine/ui/data/api.ts';
 import { Effect, MAX_SAVE_RETRIES, RETRY_AFTER_MS, SAVE_AFTER_MS, percentWashed } from './Effect.tsx';
+import { viewProblems } from '../../../../engine/ui/cards/lens-words.ts';
 import { cursor } from './cursor.ts';
 import { paint, type PaintLayer } from './paint.ts';
 import { BRUSH_PX, LayerInk, PEN_PX, ROW_PX, brushOf, coveredLines, type Pt, type Stroke } from './scrub.ts';
@@ -471,21 +472,22 @@ describe('the view the effect publishes (marks-and-the-lens design, sections 3 a
   test('one layer, nothing washed: the state names the layer and its ink, the edge is at nothing, and the reader has nothing of their own to do', () => {
     const { shown } = mount({ layers: 1 });
     expect(last(shown)).toMatchObject({
-      progress: 0, state: "1 layer · top: Mrs. Hooligan's magenta, 0% washed", yours: false,
+      progress: 0, state: '0% washed for you', yours: false,
       ends: 'Ends on your screen when you scrub every layer off. The author can wash it for everyone.',
       notes: { 'play-1': 'Layer 1 of 1, on top · 0% washed' },
     });
     expect(last(shown).report).toBeUndefined();
+    expect(viewProblems(last(shown), { holds: false, covers: false })).toEqual([]);
   });
   test('two layers and three read the same way: the top layer that holds ink, with every layer counted', () => {
-    expect(last(mount({ layers: 2 }).shown).state).toBe("2 layers · top: Gloomba's cyan, 0% washed");
+    expect(last(mount({ layers: 2 }).shown).state).toBe('0% washed for you');
     const three = last(mount({ layers: 3 }).shown);
-    expect(three.state).toBe("3 layers · top: Spritey's yellow, 0% washed");
+    expect(three.state).toBe('0% washed for you');
     expect(three.notes).toEqual({ 'play-3': 'Layer 3 of 3, on top · 0% washed', 'play-2': 'Layer 2 of 3 · 0% washed', 'play-1': 'Layer 1 of 3 · 0% washed' });
   });
   test('a layer washed clean: the next one is on top, the notes say Washed clean, and progress is the mean share of the layers that still hold ink', () => {
     const { shown, frame, root } = mount({ layers: 3, states: { 'play-3': { state: { strokes: [], clean: true }, savedAt: '2026-10-29T22:00:00.000Z' } } });
-    expect(last(shown).state).toBe("3 layers · top: Gloomba's cyan, 0% washed");
+    expect(last(shown).state).toBe('0% washed for you');
     expect(last(shown).notes).toEqual({ 'play-3': 'Washed clean', 'play-2': 'Layer 2 of 3, on top · 0% washed', 'play-1': 'Layer 1 of 3 · 0% washed' });
     const ink = inkOf(1);
     scrubTo(frame, root, 1, ink, 0.4);
@@ -493,12 +495,16 @@ describe('the view the effect publishes (marks-and-the-lens design, sections 3 a
     const first = Math.min(1, washed(root)[0]!);
     expect(second).toBeGreaterThan(0);
     expect(last(shown).progress).toBeCloseTo((first + second) / 2, 2);
-    expect(last(shown).state).toBe(`3 layers · top: Gloomba's cyan, ${Math.round(100 * second)}% washed`);
+    expect(last(shown).state).toBe(`${percentWashed((first + second) / 2, false)}% washed for you`);
+    expect(viewProblems(last(shown), { holds: false, covers: false })).toEqual([]);
   });
   test('every layer washed clean: no edge, no controls, nothing to end, and each note reads Washed clean', () => {
     const { shown } = mount({ layers: 2, states: { 'play-1': clean(), 'play-2': clean() } });
     expect(last(shown)).toMatchObject({ progress: null, state: 'Washed clean', yours: false, controls: [], notes: { 'play-1': 'Washed clean', 'play-2': 'Washed clean' } });
     expect(last(shown).ends).toBeUndefined();
+  });
+  test("the author's line says they can wash it for everyone, as its author", () => {
+    expect(last(mount({ layers: 1, author: true }).shown).ends).toBe('Ends on your screen when you scrub every layer off. As its author, you can wash it for everyone.');
   });
   test('a layer that still holds ink never reads 100% washed, and one washed clean always does', () => {
     expect(percentWashed(0.996, false)).toBe(99);
@@ -1758,10 +1764,14 @@ describe('in a moment, still', () => {
   test('its words: one layer as its caster\'s ink and share washed, three top first, a clean one "washed clean"', () => {
     const wash = savedWash(0, 0.4);
     const one = mount({ still: true, states: { 'play-1': { state: wash.state, savedAt: at } } });
-    expect(lastView(one.shown).state).toBe(`Mrs. Hooligan's magenta, ${percentWashed(wash.washed, false)}% washed`);
+    expect(lastView(one.shown).state).toBe('As it landed');
+    expect(lastView(one.shown).notes).toEqual({ 'play-1': `Mrs. Hooligan's magenta, ${percentWashed(wash.washed, false)}% washed` });
+    expect(viewProblems(lastView(one.shown), { holds: false, covers: false })).toEqual([]);
     one.unmount();
     const three = mount({ still: true, layers: 3, states: { 'play-2': { state: { strokes: [], clean: true }, savedAt: at } } });
-    expect(lastView(three.shown).state).toBe('Spritey\'s yellow, 0% washed; Gloomba\'s cyan, washed clean; Mrs. Hooligan\'s magenta, 0% washed');
+    expect(lastView(three.shown).state).toBe('As it landed');
+    expect(lastView(three.shown).notes).toEqual({ 'play-3': "Spritey's yellow, 0% washed", 'play-2': "Gloomba's cyan, washed clean", 'play-1': "Mrs. Hooligan's magenta, 0% washed" });
+    expect(viewProblems(lastView(three.shown), { holds: false, covers: false })).toEqual([]);
   });
 });
 

@@ -333,6 +333,33 @@ describe('signed out and new', () => {
     expect(within(h).queryByRole('button')).toBeNull();
     expect(within(h).queryByText('?')?.closest('[aria-hidden="true"]')).not.toBeNull();
   });
+  test('signed out, the HUD is the signed-in HUD\'s frame: the Aura notch with six empty sockets and its line, and Sign in and Register as one row of buttons', async () => {
+    setup(false);
+    const h = await hud();
+    await act(async () => {});
+    const notch = h.querySelector('.kb-hud-aura');
+    expect(notch).not.toBeNull();
+    expect(within(notch as HTMLElement).getByText('Aura')).toBeInTheDocument();
+    const sockets = (notch as HTMLElement).querySelectorAll('.kb-hud-socket');
+    expect(sockets).toHaveLength(6);
+    for (const socket of sockets) expect(socket.closest('[aria-hidden="true"]')).not.toBeNull();
+    expect(within(notch as HTMLElement).getByText('No mask, no Aura, no hand yet. Your first character fills them.')).toBeInTheDocument();
+    const row = h.querySelector('.kb-button-row') as HTMLElement;
+    expect(within(row).getAllByRole('link').map((a) => [a.textContent, a.getAttribute('data-kb-kind')])).toEqual([['Sign in', 'secondary'], ['Register with an invite', 'primary']]);
+    expect(h.querySelector('.kb-hud-plate--cast')).not.toBeNull();
+  });
+  test('the two buttons tab in the order they are drawn: Sign in then Register on the Main board, Register then Sign in on the Phone board', async () => {
+    width(1600);
+    const main = setup(false);
+    const names = async () => within((await hud()).querySelector('.kb-button-row') as HTMLElement).getAllByRole('link').map((a) => a.textContent);
+    await act(async () => {});
+    expect(await names()).toEqual(['Sign in', 'Register with an invite']);
+    main.unmount();
+    width(1151);
+    setup(false);
+    await act(async () => {});
+    expect(await names()).toEqual(['Register with an invite', 'Sign in']);
+  });
   test.each([
     ['invite', '/b/general?page=3', 'Register with an invite', '/register?next=%2Fb%2Fgeneral%3Fpage%3D3', 'No invite? Ask someone who plays.'],
     ['open', '/b/general?page=3', 'Register', '/register?next=%2Fb%2Fgeneral%3Fpage%3D3', null],

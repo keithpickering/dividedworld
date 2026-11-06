@@ -9,7 +9,10 @@ import { useEffect, useRef, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Board, MyCharacter, ThreadSummary } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
+import { FieldCount } from '../glass/FieldCount.tsx';
+import { FormFoot } from '../glass/FormFoot.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
+import { revealFooter } from './footers.ts';
 import { PreviewBox } from './PreviewBox.tsx';
 import { revealPreview } from './previews.ts';
 import { MAX, revealWords, useReveal } from './reveal.ts';
@@ -110,18 +113,20 @@ export function RevealOverlay({ character, onClose, onDone, returnFocusTo }: Rev
         {total !== null && threads.length < total && (
           <ButtonRow><GlassButton size="s" disabled={more} onClick={() => void older()}>Show older threads</GlassButton></ButtonRow>
         )}
-        <label className="kb-glass-field">
-          <span>In the character&apos;s words (optional)</span>
-          <input className="kb-glass-input" value={r.message} onChange={(e) => r.setMessage(e.target.value)} aria-describedby="reveal-count" />
-        </label>
-        <p id="reveal-count" className="kb-reveal-line">{r.count} of {MAX} characters. Plain text.</p>
+        <div className="kb-reveal-words">
+          <label className="kb-glass-field">
+            <span>In the character&apos;s words (optional)</span>
+            <input className="kb-glass-input" value={r.message} onChange={(e) => r.setMessage(e.target.value)} aria-describedby="reveal-count" />
+          </label>
+          <FieldCount id="reveal-count" hint="Plain text." text={r.message} max={MAX} />
+        </div>
         <PreviewBox preview={revealPreview({ name: character.name, className: r.className, message: r.message, threadTitle: title })} />
         {r.over && <p role="alert" className="kb-notice" data-kb-tone="refusal">The message is at most {MAX} characters.</p>}
         {r.refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{r.refusal}</p>}
-        <ButtonRow>
+        <FormFoot line={revealFooter()}>
           <GlassButton onClick={onClose}>Cancel</GlassButton>
           <GlassButton type="submit" kind="primary" disabled={!chosen || r.over || r.busy}>{words.button}</GlassButton>
-        </ButtonRow>
+        </FormFoot>
       </form>
     </Overlay>
   );

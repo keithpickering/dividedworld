@@ -22,7 +22,7 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import { createPortal } from 'react-dom';
 import type { EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { useLensStore } from '../../../../engine/ui/cards/Lens.tsx';
-import { HoldView, WAYS_OUT } from './HoldView.tsx';
+import { HoldView } from './HoldView.tsx';
 import { isHeld, releaseSide } from '../../cards/stick-around/hold.ts';
 import { placeBeside, swallowEscAfterRelease, useTakeover } from './takeover.ts';
 import './hold.css';
@@ -43,14 +43,17 @@ export type HoldStageValue =
   | { readonly mode: 'view'; readonly level: number; readonly scrolled?: number };
 export const HoldStage = createContext<HoldStageValue>({ mode: 'live' });
 
-/** What the card says of itself in the Lens on this post, for this reader. */
+/** What the card is doing to this reader on this post, as the Lens's short status (never a sentence, never how it ends). */
 function stateOf({ author, caster, over, away }: { author: boolean; caster: boolean; over: boolean; away: boolean }): string {
-  if (author) return 'It never holds you: you wrote this post';
-  if (caster) return 'It never holds you: you played it';
-  if (over) return 'It will not hold you again';
-  if (away) return 'You broke free this visit';
-  return 'Holds you on this post until you check the caster\'s sentence, or break free for this visit';
+  if (author) return 'Not holding you · you wrote it';
+  if (caster) return 'Not holding you · you played it';
+  if (over) return 'Done holding you';
+  if (away) return 'Broke free this visit';
+  return 'Holding you on this post';
 }
+
+/** The Lens's way out of the hold (HoldView's `WAYS_OUT` is the view's own, in the same ways: change one, change both), said only while it holds the reader (a reader it does not hold has nothing to get out of). */
+export const LENS_ENDS = 'Ends when you check the caster\'s sentence, scroll past either end of the post, or press Break free.';
 
 export function StickAroundEffect({ post, plays, released, reader, release, show, holdScreen, marks, children }: EffectProps) {
   const stage = useContext(HoldStage);
@@ -68,8 +71,8 @@ export function StickAroundEffect({ post, plays, released, reader, release, show
   /* What the Lens says of the hold: no edge, no controls, its way out in a sentence. */
   const state = stateOf({ author: reader.author, caster: reader.caster, over: play === undefined, away });
   useEffect(() => {
-    show({ progress: null, state, ends: WAYS_OUT, yours: false, controls: [], notes: {} });
-  }, [show, state]);
+    show({ progress: null, state, ...(held ? { ends: LENS_ENDS } : null), yours: false, controls: [], notes: {} });
+  }, [show, state, held]);
 
   /*
    * The words' own element, made once and kept; the thread's place for it and the view's. Drawn once through the portal whatever

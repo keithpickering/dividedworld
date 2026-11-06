@@ -36,3 +36,9 @@ export const ClassesPhone: Story = {
 };
 /** From the top, with the welcome letter as its first section. */
 export const Top: Story = { parameters: { path: '/guide' } };
+/** From the top on the Phone board's layout, at 390 by 844: the title, the lede and the folded contents (the backfill's 22-onboarding-phone.html). */
+export const TopPhone: Story = {
+  name: 'Top, phone 390 × 844',
+  parameters: { path: '/guide' },
+  globals: { viewport: { value: 'glassPhone390', isRotated: false } },
+};

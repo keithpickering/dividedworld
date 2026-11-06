@@ -4,6 +4,7 @@
  * strip was, and a strip that falls away (or fades, under reduced motion).
  */
 import { act, fireEvent, screen } from '@testing-library/react';
+import { viewProblems } from '../../../../engine/ui/cards/lens-words.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -136,6 +137,8 @@ describe('Autocorrect', () => {
     expect(last.state).toBe('3 strips, 1 peeled');
     expect(last.progress).toBeCloseTo(1 / 3);
     expect(last.notes.k1).toBe('“mario” → “Luigi”, 3 places');
+    expect(last.ends).toBe('Ends on your screen as you peel each strip.');
+    expect(viewProblems(last, { holds: false, covers: false })).toEqual([]);
   });
 
   test('the tape\'s typing reads at 7:1 on its paper, and at 4.5:1 under a hold\'s shade; the strip is drawn in exactly those colors', () => {

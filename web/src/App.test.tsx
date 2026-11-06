@@ -325,7 +325,7 @@ test('/contact, signed out, is a glass page on the settings smoke that shows the
   fake.seed.contact([{ label: 'Email', href: 'admin@example.test' }]);
   render(<App api={fake} />);
   expect(await screen.findByRole('heading', { level: 1, name: 'Reach a person' })).toBeInTheDocument();
-  expect(await screen.findByRole('link', { name: 'Email' })).toHaveAttribute('href', 'mailto:admin@example.test');
+  expect(await screen.findByRole('link', { name: 'admin@example.test' })).toHaveAttribute('href', 'mailto:admin@example.test');
   expect(screen.queryByRole('banner')).toBeNull();
   expect(screen.queryByRole('region', { name: 'Game HUD' })).toBeNull();
   expect(document.querySelector('.kb-glass-content-panel')).toBeNull();
@@ -595,11 +595,11 @@ describe('the welcome', () => {
     render(<App api={fake} />);
     await screen.findByRole('region', { name: 'Game HUD' });
     act(() => { fake.signInAs(quick); });
-    await vi.waitFor(() => expect(seen.characters).toBeGreaterThanOrEqual(2));
+    await waitFor(() => expect(seen.characters).toBeGreaterThanOrEqual(2));
     await move('/settings');
     await screen.findByRole('heading', { level: 1, name: 'Settings' });
     release();
-    await vi.waitFor(() => expect(seen.settledCharacters).toBeGreaterThanOrEqual(2));
+    await waitFor(() => expect(seen.settledCharacters).toBeGreaterThanOrEqual(2));
     await flush();
     expect(window.location.pathname).toBe('/settings');
     expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();

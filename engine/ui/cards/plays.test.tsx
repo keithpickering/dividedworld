@@ -255,6 +255,18 @@ describe('the default view', () => {
     expect(defaultView(rules, { describe: () => 'Splats ink on a post. It costs 2 and washes off.' }, settings).state).toBe('Splats ink on a post.');
     expect(defaultView(rules, { describe: () => 'No full stop here' }, settings).state).toBe('No full stop here');
   });
+  test('says the card\'s status in place of its summary, from the plays it has when the status is a function of them', () => {
+    expect(defaultView(rules, { status: 'Sparkling every post of theirs', summary: 'Cast on a character.', describe: () => 'x' }, settings).state).toBe('Sparkling every post of theirs');
+    const stacked = { status: (plays: readonly unknown[]) => `${plays.length} of 3 stacked`, describe: () => 'x' };
+    expect(defaultView(rules, stacked, settings, undefined, [{}, {}] as never).state).toBe('2 of 3 stacked');
+    expect(defaultView(rules, stacked, settings).state).toBe('0 of 3 stacked');
+  });
+  test('gives a play that ends on a timer an ends, "Ends Nov 7, 9:14 PM", in the reader\'s zone', () => {
+    expect(process.env.TZ).toBe('America/Los_Angeles');
+    const view = defaultView(rules, { status: 'Pinned', describe: () => 'x' }, settings, '2026-11-08T05:14:00.000Z');
+    expect(view.ends).toMatch(/^Ends Nov 7, 9:14\sPM$/u);
+    expect(defaultView(rules, { status: 'Pinned', describe: () => 'x' }, settings).ends).toBeUndefined();
+  });
   test('falls back to the card\'s name where there is nothing to say it with', () => {
     expect(defaultView(rules, undefined).state).toBe('Whoops!');
   });
