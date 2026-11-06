@@ -531,7 +531,8 @@ html[data-kb-float='sheet'] .kb-frame {
   line-height: normal;
 }
 
-.kb-hud-orbs .kb-orbs-pending {
+.kb-hud-orbs .kb-orbs-pending,
+.kb-hud-orbs .kb-orbs-over {
   margin-left: auto;
   padding: 0 8px;
   text-transform: uppercase;
@@ -1194,10 +1195,9 @@ html[data-kb-float='sheet'] .kb-frame {
 
 /*
  * The Phone board's glass is 124px, and so is this one while what it holds fits. It grows past
- * that rather than cut its last row at the window's foot: a wallet past its cap, which the board
- * does not draw, or text spaced wider by the reader, needs more. Its border is inside those 124px
- * (border-box), as the board draws it. A wallet past its cap is a mark on the last orb here, not
- * words (issue 48), so it no longer grows the glass.
+ * that rather than cut its last row at the window's foot: a wallet past its cap, which says its
+ * figure and the way out in a line under the orbs (board 36), or text spaced wider by the reader,
+ * needs more. Its border is inside those 124px (border-box), as the board draws it.
  */
 :where(:root[data-kb-layout='phone']) .kb-hud-glass {
   box-sizing: border-box;
@@ -1489,9 +1489,9 @@ html[data-kb-float='sheet'] .kb-frame {
 
 /*
  * The Phone board's orbs are 30px; the row under the mask picker has 41px of the glass's 124. What
- * the row holds wraps rather than runs past the window's edge: a wallet past its cap, which the
- * board does not draw, is shown by a mark on the last orb and not in words (issue 48), so the
- * glass keeps its 124px; the words stay in the orbs' name. The estimate keeps its words on one line.
+ * the row holds wraps rather than runs past the window's edge: a wallet past its cap is shown by a
+ * mark on the last orb and, under the row, its figure and the way out (board 36), which grows the
+ * glass by that line. The estimate keeps its words on one line.
  */
 :where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs {
   --kb-orb-size: 30px;
@@ -1526,8 +1526,28 @@ html[data-kb-float='sheet'] .kb-frame {
   border: 0;
 }
 
+/*
+ * Past the cap, the phone says it in the one line the board draws (board 36): the figure bold and the way out after it, wrapping under the
+ * orbs, with the mark on the last orb beside it. It stands under the row, so the row keeps the figure and the orbs on their line.
+ */
+:where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs-note {
+  display: block;
+  flex-basis: 100%;
+  margin-top: 6px;
+  font-size: var(--kb-glass-size-phone-body);
+  line-height: 1.3;
+}
+
 :where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs-over {
-  display: none;
+  margin-left: 0;
+  padding: 0;
+  font-size: inherit;
+  text-transform: none;
+  border: 0;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs-way {
+  font-size: inherit;
 }
 
 @media (max-width: 40em) {

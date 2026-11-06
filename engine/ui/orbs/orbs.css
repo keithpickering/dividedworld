@@ -93,6 +93,21 @@
 }
 
 /*
+ * What an estimate past the cap says: the figure, and under it the way out (the backfill design, section 7; boards 35 and 36). Where the row is
+ * a flex row (the HUD's), the note's two parts are its items; the way out takes a line to itself. The phone's HUD sets the note as one paragraph.
+ */
+.kb-orbs-note {
+  display: contents;
+}
+
+.kb-orbs-way {
+  flex-basis: 100%;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 600;
+  color: var(--kb-glass-estimate);
+}
+
+/*
  * A wallet past its cap, marked on the last orb where the Phone board's layout leaves the words out: a
  * disc in the over-cap color, ringed and crossed with a "+" in the ground's, so it stands apart from the
  * liquid under it whatever the orb's color, and no text is drawn (its words are the row's name). The

@@ -69,10 +69,7 @@ const PENDING: Readonly<Record<string, string>> = {
   '2026-11-04-cosmetics/04-event': 'docs/plans/2026-11-04-cosmetics-plan.md',
   '2026-11-04-cosmetics/05-admin': 'docs/plans/2026-11-04-cosmetics-plan.md',
   '2026-11-05-card-template/01-layouts': 'docs/plans/2026-11-05-card-template-plan.md',
-  '2026-11-05-backfill/33-settings-account': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 11',
-  '2026-11-05-backfill/34-vending-info': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 11',
-  '2026-11-05-backfill/35-hud-cap': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 11',
-  '2026-11-05-backfill/36-account-phone': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 11',
+  '2026-11-05-backfill/34-vending-info': 'docs/plans/2026-11-05-card-template-plan.md (the card info, backfill Task 11)',
 };
 
 /** Where each board's file is, by its id; a bare id two of the first folders share is a problem the first test reports. */

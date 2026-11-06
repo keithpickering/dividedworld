@@ -1,15 +1,15 @@
 /**
- * Invites, the Invites row of Settings › Account (Settings.tsx; the glass plan, section 8): make one
- * (a link to copy), the cap and expiry said plainly before the cap is hit, and reissue. A code is
- * shown once, when it is made or reissued; the server never shows it again. An admin holds any
- * number, and the row says so instead of a cap. Settings shows it only to a signed-in account.
+ * Invites, the Invites row of Settings › Account (Settings.tsx; the glass plan, section 8; the backfill design, section 7, board 33):
+ * the cap and expiry said plainly before the cap is hit, a row for each invite (which one it is, its state and when, and Reissue while
+ * it is unused), then Make an invite (a link to copy). A code is shown once, when it is made or reissued; the server never shows it
+ * again, so a row never carries it. An admin holds any number, and the row says so instead of a cap. Settings shows it only to a
+ * signed-in account.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { LOST_ANSWER } from '../data/api.ts';
 import { useKayfa } from '../context.tsx';
 import type { MyInvite } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
-import { Ago } from '../mini.tsx';
 import { spanWords } from './words.ts';
 import './account.css';
 
@@ -24,6 +24,19 @@ const linkTo = (code: string) => `${globalThis.location.origin}/register?invite=
 function statusOf(i: MyInvite): string {
   if (i.used) return 'Used';
   return i.expired ? 'Expired' : 'Open';
+}
+
+const day = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+/** The date an invite's words rest on, as the account holds it: when it expires (or did), and for a used one, when it was made (the account keeps no date of its use). */
+const whenIso = (i: MyInvite): string | null => (i.used ? i.createdAt : i.expiresAt);
+
+/** An invite's "when", the board's: "expires Nov 12" while open, "since Nov 12" once expired, "made Nov 2" once used. */
+function whenWords(i: MyInvite): string {
+  const at = whenIso(i);
+  if (at === null) return '';
+  if (i.used) return `made ${day(at)}`;
+  return `${i.expired ? 'since' : 'expires'} ${day(at)}`;
 }
 
 export function Invites() {
@@ -52,6 +65,8 @@ export function Invites() {
 
   if (rows === null) return <div className="kb-invites" aria-busy="true">{refusal && <p role="alert" className="kb-acct-refusal">{refusal}</p>}</div>;
 
+  /* A row is numbered by the player's own count, oldest first: the id is one sequence for every account, so it would show the gaps other players' invites leave. */
+  const ordinal = new Map([...rows].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || a.id - b.id).map((i, n) => [i.id, n + 1]));
   const cap = settings.invitesPerPlayer;
   const open = rows.filter((i) => !i.used && !i.expired).length;
   const atCap = !admin && open >= cap;
@@ -65,6 +80,8 @@ export function Invites() {
     try {
       const r = await make();
       if (r.ok) {
+        /* The code is shown at once: the server gives it this once, so nothing waits in front of it. The list is read
+           again below, and the head names the invite's number among the player's own once that read lands. */
         setShown({ invite: r.value.invite, link: linkTo(r.value.code), reissued });
         justShown.current = true;
       } else {
@@ -99,6 +116,28 @@ export function Invites() {
           : `You hold ${open} of ${cap} open invites${atCap ? ', the most there are' : ''}.`}{' '}
         An invite is one use, and expires {lifetime} after it is made or reissued. {admin ? '' : 'One used or expired frees one.'}
       </p>
+
+      {rows.length === 0 ? (
+        <p className="kb-acct-text">You have made no invites.</p>
+      ) : (
+        <ul className="kb-invite-list" aria-label="Your invites">
+          {rows.map((i) => (
+            <li key={i.id} className="kb-invite-row">
+              {/* The server shows a code once, when it is made or reissued, so a row is named by its number among the player's own. */}
+              <span className="kb-invite-code">Invite {ordinal.get(i.id)}</span>
+              <span className="kb-invite-state">
+                <b className={`kb-invite-status kb-invite-status--${statusOf(i).toLowerCase()}`}>{statusOf(i)}</b>
+                {' · '}
+                <span title={whenIso(i) ? new Date(whenIso(i)!).toLocaleString('en-US') : undefined}>{whenWords(i)}</span>
+              </span>
+              <span className="kb-invite-actions">
+                {!i.used && <GlassButton size="s" disabled={busy} aria-label={`Reissue invite ${ordinal.get(i.id)}`} onClick={() => void run(() => api.reissueInvite(i.id), true)}>Reissue</GlassButton>}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
       <ButtonRow>
         <GlassButton kind="primary" disabled={busy || atCap} aria-describedby="kb-invite-count" onClick={() => void run(() => api.createInvite(), false)}>Make an invite</GlassButton>
       </ButtonRow>
@@ -107,7 +146,9 @@ export function Invites() {
 
       {shown && (
         <section className="kb-invite-new kb-glass-cut-panel" aria-label="Your new invite">
-          <p className="kb-invite-new-head">{shown.reissued ? 'A new code for invite' : 'Invite'} {shown.invite}</p>
+          <p className="kb-invite-new-head">
+            {ordinal.has(shown.invite) ? `${shown.reissued ? 'A new code for invite' : 'Invite'} ${ordinal.get(shown.invite)}` : shown.reissued ? 'A new code for your invite' : 'Your new invite'}
+          </p>
           <label className="kb-acct-field">
             <span className="kb-acct-field-label">Invite link</span>
             <input ref={linkField} className="kb-acct-input kb-invite-link" readOnly value={shown.link} onFocus={(e) => e.currentTarget.select()} />
@@ -115,29 +156,6 @@ export function Invites() {
           <ButtonRow><GlassButton onClick={() => void copy()}>Copy the link</GlassButton></ButtonRow>
           <p className="kb-acct-text">This link will not be shown again. Copy it now and send it to the person you invite; anyone who has it can use it once. If you lose it, reissue the invite for a new one.</p>
         </section>
-      )}
-
-      {rows.length === 0 ? (
-        <p className="kb-acct-text">You have made no invites.</p>
-      ) : (
-        <table className="kb-invite-table">
-          <caption className="kb-visually-hidden">Your invites</caption>
-          <thead><tr><th scope="col">Made</th><th scope="col">Status</th><th scope="col"><span className="kb-visually-hidden">Actions</span></th></tr></thead>
-          <tbody>
-            {rows.map((i) => (
-              <tr key={i.id}>
-                <td><Ago at={i.createdAt} /></td>
-                <td>
-                  {statusOf(i)}
-                  {!i.used && i.expiresAt && <> <span className="kb-invite-when">{i.expired ? 'since' : 'expires'} <Ago at={i.expiresAt} /></span></>}
-                </td>
-                <td>
-                  {!i.used && <GlassButton size="s" disabled={busy} onClick={() => void run(() => api.reissueInvite(i.id), true)}>Reissue<span className="kb-visually-hidden"> invite {i.id}</span></GlassButton>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       )}
     </div>
   );

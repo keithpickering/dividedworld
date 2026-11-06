@@ -38,6 +38,12 @@
   margin-top: 28px;
 }
 
+/* The rail: the sections' nav, then Reach a person ruled off under it. min-width 0 keeps a long line from widening the
+   column's track. */
+.kb-settings-rail {
+  min-width: 0;
+}
+
 .kb-settings-nav ul {
   display: flex;
   flex-direction: column;
@@ -293,6 +299,12 @@
   min-height: 0;
 }
 
+/* Nothing said, nothing in the way: the invites' note and the saves' note are always on the page and say nothing most of the time, so their room goes when they do (board 33's rows stand where it draws them). */
+.kb-invites .kb-acct-note:empty,
+.kb-settings-section > .kb-acct-note:empty {
+  margin: 0;
+}
+
 /* ---- invites ---- */
 
 .kb-invites > p:first-child {
@@ -326,40 +338,60 @@
   max-width: 100%;
 }
 
-.kb-invite-table {
-  width: 100%;
-  margin-top: 16px;
-  border-collapse: collapse;
+.kb-invite-list {
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-text) 14%, transparent);
 }
 
-.kb-invite-table th {
-  padding: 0 16px 12px 0;
-  text-align: left;
-  font-size: var(--kb-glass-size-label);
-  font-weight: 800;
+/* A row per invite, as board 33 draws it: which one, its state and when, and Reissue at the right while it is unused. */
+.kb-invite-row {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 0;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 14%, transparent);
+}
+
+.kb-invite-code {
+  font-size: var(--kb-glass-size-lead);
+  line-height: 1.1;
+  font-weight: 700;
   letter-spacing: 2px;
-  text-transform: uppercase;
-  color: var(--kb-glass-neon-text);
-  border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-pale) 55%, transparent);
-}
-
-.kb-invite-table td {
-  padding: 12px 16px 12px 0;
-  vertical-align: middle;
-  font-size: var(--kb-glass-size-body);
-  font-weight: 500;
-  line-height: 1.5;
   color: var(--kb-glass-text);
-  border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-text) 20%, transparent);
 }
 
-.kb-invite-table td:last-child {
-  padding-right: 0;
-  text-align: right;
-}
-
-.kb-invite-when {
+.kb-invite-state {
+  font-size: var(--kb-glass-size-label);
+  font-weight: 500;
   color: var(--kb-glass-text-2);
+}
+
+.kb-invite-status {
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-invite-status--open {
+  color: var(--kb-glass-neon-text);
+}
+
+.kb-invite-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Reissue is 44px tall, as the board draws it (a touch target, and the row's height). */
+.kb-invite-actions .kb-glass-button {
+  min-height: 44px;
+}
+
+.kb-invites > .kb-button-row {
+  margin-top: 18px;
 }
 
 /* ---- the door: Sign in and Register (the backfill design, section 2; boards 14, 15 and 18) ---- */
@@ -558,8 +590,7 @@
 :where(:root[data-kb-layout='phone']) .kb-acct-refusal,
 :where(:root[data-kb-layout='phone']) .kb-acct-note,
 :where(:root[data-kb-layout='phone']) .kb-acct-ack,
-:where(:root[data-kb-layout='phone']) .kb-acct-input,
-:where(:root[data-kb-layout='phone']) .kb-invite-table td {
+:where(:root[data-kb-layout='phone']) .kb-acct-input {
   font-size: var(--kb-glass-size-phone-body);
 }
 
@@ -571,48 +602,60 @@
   min-height: 48px;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-invite-table th,
 :where(:root[data-kb-layout='phone']) .kb-invite-new-head,
 :where(:root[data-kb-layout='phone']) .kb-invite-new .kb-acct-field-label {
   font-size: var(--kb-glass-size-phone-small);
 }
 
-/* Each invite a block of its own lines, since three columns and a button do not fit a phone. */
-:where(:root[data-kb-layout='phone']) .kb-invite-table,
-:where(:root[data-kb-layout='phone']) .kb-invite-table tbody,
-:where(:root[data-kb-layout='phone']) .kb-invite-table tr,
-:where(:root[data-kb-layout='phone']) .kb-invite-table td {
+:where(:root[data-kb-layout='phone']) .kb-invite-code,
+:where(:root[data-kb-layout='phone']) .kb-invite-state {
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+/* Each invite on its own lines on a phone (board 36): its number and state, and Reissue under them. */
+:where(:root[data-kb-layout='phone']) .kb-invite-row {
   display: block;
-}
-
-:where(:root[data-kb-layout='phone']) .kb-invite-table thead {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-:where(:root[data-kb-layout='phone']) .kb-invite-table tr {
   padding: 12px 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-text) 20%, transparent);
 }
 
-:where(:root[data-kb-layout='phone']) .kb-invite-table td {
-  padding: 0;
-  border: 0;
-  text-align: left;
+:where(:root[data-kb-layout='phone']) .kb-invites > #kb-invite-count {
+  margin-bottom: 0;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-invite-table td:last-child {
-  margin-top: 8px;
-  text-align: left;
+:where(:root[data-kb-layout='phone']) .kb-invite-list {
+  margin-top: 12px;
 }
 
-/* The link under Settings' sections to Reach a person (Contact.tsx): clear of the last section, at the section's own measure. */
+:where(:root[data-kb-layout='phone']) .kb-invite-code {
+  margin-right: 10px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-invite-actions:not(:empty) {
+  margin-top: 10px;
+}
+
+/* Signed out, with no rail: the link to Reach a person (Contact.tsx) at the page's foot, clear of the heading, at the section's own measure. */
 .kb-settings-reach {
   margin-top: 36px;
+}
+
+/* Under the sections' rail, ruled off, as board 33 draws it (34px under the last section, 22px of room under the rule). */
+.kb-settings-rail-reach {
+  margin: 34px 0 0;
+  padding-top: 22px;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 22%, transparent);
+  font-size: var(--kb-glass-size-body);
+}
+
+.kb-settings-rail-reach a {
+  font-weight: 700;
+  text-decoration-thickness: 2px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-settings-rail-reach {
+  margin-top: 16px;
+  padding-top: 16px;
+  font-size: var(--kb-glass-size-phone-body);
 }
 
 /* A segment answers a pointer: the neon's edge and a wash of it; the chosen one lights its glow (e2e/glass-hover.spec.ts). */

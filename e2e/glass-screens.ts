@@ -93,7 +93,7 @@ export const PAGES: readonly Screen[] = [
       });
       await expect(page.locator('.kb-hud-orbs')).toHaveCount(0);
       await page.evaluate(() => { const w = globalThis as E2eWindow; w.__kbFake.signInAs(w.__kbDemo.me); });
-      await expect(page.locator('.kb-hud-orbs .kb-orbs-over')).toHaveText(/^\+\d\.\d\d past the cap$/u);
+      await expect(page.locator('.kb-hud-orbs .kb-orbs-over')).toHaveText(/^\+\d\.\d\d est\. past the cap$/u);
     },
   },
 ];

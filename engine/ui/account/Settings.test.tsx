@@ -49,6 +49,24 @@ describe('Settings, as board 11 draws it', () => {
     expect(screen.getByRole('link', { name: 'Reach a person' })).toHaveAttribute('href', '/contact');
   });
 
+  test('Reach a person stands right after the section rail, ruled off, a sibling of the navigation, and not stranded at the foot of the page', async () => {
+    open(world().fake, '/settings?section=account');
+    const rail = await screen.findByRole('navigation', { name: 'Settings sections' });
+    expect(within(rail).queryByRole('link', { name: 'Reach a person' })).toBeNull();
+    const reach = screen.getByRole('link', { name: 'Reach a person' });
+    const last = within(rail).getByRole('link', { name: 'Notifications' });
+    expect(rail.nextElementSibling).toContainElement(reach);
+    expect(last.compareDocumentPosition(reach) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getAllByRole('link', { name: 'Reach a person' })).toHaveLength(1);
+  });
+
+  test('signed out, with no rail, Reach a person is still there', async () => {
+    const fake = buildWorld();
+    open(fake);
+    expect(await screen.findByRole('link', { name: 'Reach a person' })).toHaveAttribute('href', '/contact');
+    expect(screen.queryByRole('navigation', { name: 'Settings sections' })).toBeNull();
+  });
+
   test('its sections are a navigation of Account, Accessibility and Notifications, and the page opens on Accessibility', async () => {
     open(world().fake);
     expect(await screen.findByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
