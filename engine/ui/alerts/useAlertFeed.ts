@@ -47,8 +47,21 @@ export const COUNT_AFTER_MS = 250;
 
 export const newsKey = (n: LiveNews) => `news|${n.kind}|${n.sub ?? ''}|${n.act ?? ''}|${n.at}`;
 
-export function useAlertFeed(api: KayfaApi, account: Id | null, path: string): { readonly unread: number | null; readonly arrivals: readonly Arrival[] } {
-  const [held, setHeld] = useState<{ readonly account: Id | null; readonly unread: number | null; readonly arrivals: readonly Arrival[] }>({ account, unread: null, arrivals: [] });
+/**
+ * Where the count may come from without a read (the forum-load plan, Task 12): `boot` is the first load's, for this account; a route with a
+ * `loader` shows its document's `doc` count (null where the document carries none), and reads nothing on a move; a route without one reads
+ * `alertsUnread()` on each move, as it always did.
+ */
+export interface UnreadSeed {
+  readonly boot: number | null;
+  readonly loader: boolean;
+  readonly doc: number | null;
+}
+
+export function useAlertFeed(api: KayfaApi, account: Id | null, path: string, seed: UnreadSeed = { boot: null, loader: false, doc: null }): { readonly unread: number | null; readonly arrivals: readonly Arrival[] } {
+  const [held, setHeld] = useState<{ readonly account: Id | null; readonly unread: number | null; readonly arrivals: readonly Arrival[] }>({ account, unread: seed.boot, arrivals: [] });
+  const bootUnread = useRef(seed.boot);
+  bootUnread.current = seed.boot;
   const seen = useRef(new Set<string>());
   const asked = useRef(0);
   const soon = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -71,7 +84,7 @@ export function useAlertFeed(api: KayfaApi, account: Id | null, path: string): {
 
   useEffect(() => {
     seen.current = new Set();
-    setHeld({ account, unread: null, arrivals: [] });
+    setHeld({ account, unread: bootUnread.current, arrivals: [] });
     if (account === null) return undefined;
     const timers = new Set<ReturnType<typeof setTimeout>>();
     const pending = new Set<string>();
@@ -129,8 +142,24 @@ export function useAlertFeed(api: KayfaApi, account: Id | null, path: string): {
     };
   }, [api, account, countSoon]);
 
-  /* Each page read. */
-  useEffect(() => { count(); }, [count, path]);
+  /* A boot read for this account after the feed opened (a sign-in on this page) is its count. */
+  useEffect(() => {
+    if (seed.boot !== null) setHeld((h) => (h.account === account ? { ...h, unread: seed.boot } : h));
+  }, [account, seed.boot]);
+
+  /* Each page: the shown document's count where the route loads one; else boot's count at the first, else a read. */
+  const firstPage = useRef(true);
+  useEffect(() => {
+    const first = firstPage.current;
+    firstPage.current = false;
+    if (seed.loader) {
+      if (seed.doc !== null) setHeld((h) => (h.account === account ? { ...h, unread: seed.doc } : h));
+      return;
+    }
+    if (first && seed.boot !== null) return;
+    count();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- a move, or the shown document, decides; the seed's other fields are read as they stand
+  }, [count, path, seed.loader, seed.doc]);
 
   const mine = held.account === account;
   return { unread: mine ? held.unread : null, arrivals: mine ? held.arrivals : [] };

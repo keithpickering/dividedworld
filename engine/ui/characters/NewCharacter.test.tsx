@@ -95,7 +95,7 @@ describe('New character', () => {
     expect((await w.fake.characters(mine.map((c) => c.id))).map((c) => c.name)).toEqual(['Pipewrench']);
     /* My characters opens on the new one: the navigation carries it in history.state, never in the address. */
     expect(window.location.search + window.location.hash).toBe('');
-    expect(window.history.state).toEqual({ character: mine.find((c) => c.name === 'Spritey')!.id });
+    expect((window.history.state as { state: unknown }).state).toEqual({ character: mine.find((c) => c.name === 'Spritey')!.id });
   });
 
   test('drops at once, silently, with only the loudness changed', async () => {

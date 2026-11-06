@@ -28,11 +28,14 @@ import type { Career } from '../../system/career.ts';
 import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
+import { PLAYS_PER_POST } from '../cards/plays.ts';
+import { PROFILE_ROWS, RECORD_PAGE, type RecordKind } from '../profile/record.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
   AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, AccountListener, ActKind, Alert, ContactLink, SeasonNewsItem, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
+  Boot, BoardPage, IndexPage, ProfilePage, RecordPage, ThreadPage, ThreadPerson,
   Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
 
@@ -1366,6 +1369,42 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       .map((s): Standing => ({ ...s, place: 1 + listed.filter((o) => o.standing > s.standing).length }))
       .sort((a, b) => a.place - b.place || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   };
+  /** A place's presence box (presence_box, 0093): the characters present within the window, longest there first. It marks no one present. */
+  function presenceAt(where: PresencePlace): Presence {
+    let place: Id | null = null;
+    let board: Id | null = null;
+    if (where.kind === 'thread') {
+      const t = threads.get(where.thread);
+      if (!t) throw new Error('there is no such thread');
+      place = t.id;
+      board = t.board;
+    } else if (where.kind === 'board') {
+      if (!boards.some((b) => b.id === where.board)) throw new Error('there is no such board');
+      place = where.board;
+      board = where.board;
+    }
+    const win = span(settings.presenceWindow);
+    const at = now();
+      const listed = [...presence.entries()].flatMap(([id, row]) => {
+        const c = characters.get(id)!;
+        if (row.seenAt < at - win || c.debutedAt === null || c.retiredAt !== null || c.presenceHidden) return [];
+        if (where.kind === 'thread' && !(row.kind === 'thread' && row.place === place)) return [];
+        if (where.kind === 'board' && row.board !== board) return [];
+        return [{ id, name: c.name, staff: false, since: where.kind === 'index' ? row.onlineSince : row.placeSince }];
+      }).concat(
+        /* A staff character (not the developer) is listed in a thread's and a board's box for the window after its own post there (0084), read from
+           public posts; the index never lists it, and a board lists it once however many of its threads it posted in. */
+        where.kind === 'index' ? [] : [...characters.values()].flatMap((c) => {
+          if (!c.staff || c.staff.office === 'developer' || c.debutedAt === null || c.retiredAt !== null) return [];
+          const posts = [...acts.values()].filter((a) => a.kind === 'post' && a.character === c.id && a.at >= at - win && a.thread !== null && threads.has(a.thread)
+            && (where.kind === 'thread' ? a.thread === place : threads.get(a.thread)!.board === board));
+          if (posts.length === 0) return [];
+          return [{ id: c.id, name: c.name, staff: true, since: Math.min(...posts.map((a) => a.at)) }];
+        }),
+      ).sort((a, b) => a.since - b.since || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      const shown = listed.slice(0, settings.presenceNames);
+      return { names: shown.map(({ id, name, staff }) => ({ id, name, staff })), others: listed.length - shown.length };
+  }
   const core: Sync<KayfaApi> = {
     session: () => sessionNow(),
     onSession(listener) { sessionListeners.add(listener); return () => { sessionListeners.delete(listener); }; },
@@ -1831,25 +1870,107 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           presence.set(c.id, { kind: where.kind, place, board, placeSince: moved ? at : was.placeSince, onlineSince: fresh ? at : was.onlineSince, seenAt: at });
         }
       }
-      const listed = [...presence.entries()].flatMap(([id, row]) => {
-        const c = characters.get(id)!;
-        if (row.seenAt < at - win || c.debutedAt === null || c.retiredAt !== null || c.presenceHidden) return [];
-        if (where.kind === 'thread' && !(row.kind === 'thread' && row.place === place)) return [];
-        if (where.kind === 'board' && row.board !== board) return [];
-        return [{ id, name: c.name, staff: false, since: where.kind === 'index' ? row.onlineSince : row.placeSince }];
-      }).concat(
-        /* A staff character (not the developer) is listed in a thread's and a board's box for the window after its own post there (0084), read from
-           public posts; the index never lists it, and a board lists it once however many of its threads it posted in. */
-        where.kind === 'index' ? [] : [...characters.values()].flatMap((c) => {
-          if (!c.staff || c.staff.office === 'developer' || c.debutedAt === null || c.retiredAt !== null) return [];
-          const posts = [...acts.values()].filter((a) => a.kind === 'post' && a.character === c.id && a.at >= at - win && a.thread !== null && threads.has(a.thread)
-            && (where.kind === 'thread' ? a.thread === place : threads.get(a.thread)!.board === board));
-          if (posts.length === 0) return [];
-          return [{ id: c.id, name: c.name, staff: true, since: Math.min(...posts.map((a) => a.at)) }];
-        }),
-      ).sort((a, b) => a.since - b.since || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-      const shown = listed.slice(0, settings.presenceNames);
-      return { names: shown.map(({ id, name, staff }) => ({ id, name, staff })), others: listed.length - shown.length };
+      return presenceAt(where);
+    },
+    presenceBox: (place) => presenceAt(place),
+
+    /* The screens' documents, each composed of the fake's own methods the document's types name, so a screen sees the same answers either way. */
+    boot(): Boot {
+      if (session.email === null) throw new Error('sign in first');
+      const mine = core.myCharacters();
+      return {
+        settings: core.settings(), account: session.account, preferences: core.preferences(), characters: mine, faces: core.characters(mine.map((c) => c.id)),
+        wallet: core.wallet(), cards: core.myCards(), boards: core.boards(), unread: me() ? core.alertsUnread() : 0, admin: me()?.admin ?? false,
+        nextSettlementAt: core.nextSettlementAt(), lastSettledAt: core.lastSettledAt(), newestSettlement: core.log().settlements[0]?.endsAt ?? null,
+      };
+    },
+    indexPage(): IndexPage {
+      const boards = core.boards();
+      const people = [...new Set(boards.flatMap((b) => (b.lastCharacter === null ? [] : [b.lastCharacter])))];
+      return { boards, characters: core.characters(people), presence: presenceAt({ kind: 'index' }), unread: core.alertsUnread() };
+    },
+    boardPage(slug, page, effectCards): BoardPage | null {
+      const board = core.board(slug);
+      if (!board) return null;
+      const THREADS = 20; // THREADS_PER_PAGE (engine/ui/board/Board.tsx), which the SQL's board_page also holds.
+      const want = Math.max(1, page);
+      let listed = core.threads(board.id, { offset: (want - 1) * THREADS, limit: THREADS });
+      const shown = Math.min(want, Math.max(1, Math.ceil(listed.total / THREADS)));
+      if (shown !== want) listed = core.threads(board.id, { offset: (shown - 1) * THREADS, limit: THREADS });
+      const pins = shown === 1 ? core.pinnedThreads(board.id) : [];
+      const banner = core.effectsAbove([], null, board.id);
+      const marked = [...banner.map((p) => p.act), ...pins.map((p) => p.act)];
+      const wanted = marked.filter((a) => typeof a.payload.card === 'string' && effectCards.includes(a.payload.card)).map((a) => a.id);
+      const threads = [...pins.map((p) => p.thread), ...listed.threads];
+      const ids = [...new Set(threads.map((t) => t.id))];
+      const people = [...new Set([...threads.flatMap((t) => [t.firstCharacter, t.lastCharacter]), ...marked.map((a) => a.character)].filter((c): c is Id => c !== null))];
+      return {
+        board, total: listed.total, page: shown, threads: listed.threads, pins, banner, states: core.effectStates(wanted), releases: core.myReleases(wanted),
+        tallies: core.tallies(marked.map((a) => a.id)), mine: core.myReactions(marked.map((a) => a.id)), reading: core.reading(ids), views: core.viewCounts(ids),
+        characters: core.characters(people), presence: presenceAt({ kind: 'board', board: board.id }), unread: core.alertsUnread(),
+      };
+    },
+    threadPage(thread, at, askedPerPage, effectCards): ThreadPage | null {
+      const summary = core.thread(thread);
+      if (!summary) return null;
+      /* No per_page is the instance's own setting, as the server reads it. */
+      const perPage = askedPerPage ?? settings.postsPerPage;
+      if (!Number.isInteger(perPage) || perPage < 1 || perPage > 100) throw new Error('a page holds 1 to 100 Acts');
+      const last = Math.max(1, Math.ceil(summary.lastSeq / perPage));
+      const want = at.seq != null ? Math.max(1, Math.ceil(at.seq / perPage)) : at.page ?? 1;
+      const page = Math.min(last, Math.max(1, want));
+      const acts = core.acts(thread, (page - 1) * perPage + 1, page * perPage);
+      const posts = acts.filter((a) => a.kind === 'post');
+      const plays = posts.length ? core.cardsOnMany(posts.map((a) => a.id), posts.length * PLAYS_PER_POST) : [];
+      const above = core.effectsAbove([...new Set(posts.flatMap((a) => (a.character === null ? [] : [a.character])))], thread, summary.board);
+      const played = [...plays, ...above.map((p) => p.act)];
+      const wanted = played.filter((a) => typeof a.payload.card === 'string' && effectCards.includes(a.payload.card)).map((a) => a.id);
+      const ids = [...acts, ...played].map((a) => a.id);
+      const who = [...new Set([...acts, ...played].flatMap((a) => (a.character === null ? [] : [a.character])))].sort();
+      const [chars, stats, standings, reveals, turns] = [core.characters(who), core.characterStats(who), core.standingAmounts(who), core.classReveals(who), core.turnsAnnounced(who)];
+      return {
+        thread: summary, page, acts,
+        people: chars.map((character): ThreadPerson => ({
+          character, posts: stats[character.id]?.posts ?? 0, standing: standings[character.id] ?? 0,
+          reveals: reveals.filter((r) => r.character === character.id), turns: turns.filter((t) => t.character === character.id),
+        })),
+        plays, above, faces: core.myFaceDown(played.filter((a) => a.kind === 'set').map((a) => a.id)), states: core.effectStates(wanted), releases: core.myReleases(wanted),
+        tallies: core.tallies(ids), mine: core.myReactions(ids), spun: core.spunFromMany(ids, SPUN_FROM_MAX), reading: core.reading([thread]),
+        board: core.board(summary.board), following: core.following(thread), presence: presenceAt({ kind: 'thread', thread }), unread: core.alertsUnread(),
+      };
+    },
+    profilePage(id): ProfilePage | null {
+      const character = core.characters([id])[0];
+      if (!character) return null;
+      const reveals = core.classReveals([id]);
+      const turns = core.turnsAnnounced([id]);
+      const acts = core.characterActs(id, ['post', 'spin', 'card'], { offset: 0, limit: PROFILE_ROWS });
+      return {
+        character, counts: core.characterCounts(id), standing: core.standingPlace(id), settledAt: core.lastSettledAt(), season: core.season(), reveals, turns, acts,
+        targets: core.actsById([...acts.flatMap((a) => (a.kind === 'card' && a.targetActId !== null ? [a.targetActId] : [])), ...turns.map((t) => t.act)]),
+        seasons: core.characterReveals(id), unread: core.alertsUnread(),
+      };
+    },
+    recordPage(id, asked, page): RecordPage | null {
+      const character = core.characters([id])[0];
+      if (!character) return null;
+      const RECORD = RECORD_PAGE;
+      const kind: RecordKind = (['all', 'post', 'spin', 'card', 'class', 'seasons'] as const).find((k) => k === asked) ?? 'all';
+      const shown = Math.min(Math.max(page, 1), 10_000);
+      const reveals = kind === 'all' || kind === 'class' ? core.classReveals([id]) : [];
+      const turns = kind === 'all' || kind === 'class' ? core.turnsAnnounced([id]) : [];
+      const seasons = kind === 'all' || kind === 'seasons' ? core.characterReveals(id, 50) : [];
+      const kinds: Record<RecordKind, readonly ActKind[]> = { all: ['post', 'spin', 'card'], post: ['post'], spin: ['spin'], card: ['card'], class: [], seasons: [] };
+      const from = kind === 'all' ? Math.max(0, (shown - 1) * RECORD - (reveals.length + turns.length + seasons.length)) : (shown - 1) * RECORD;
+      const limit = kind === 'all' ? shown * RECORD - from : RECORD;
+      const acts = core.characterActs(id, kinds[kind], { offset: from, limit });
+      return {
+        kind, page: shown, character,
+        /* record_page reads no counters for the class and seasons views, and the adapter reads its null as zeros. */
+        counts: kind === 'class' || kind === 'seasons' ? { posts: 0, spins: 0, cards: 0 } : core.characterCounts(id), reveals, turns, seasons, acts, windowFrom: from,
+        targets: core.actsById([...acts.flatMap((a) => (a.kind === 'card' && a.targetActId !== null ? [a.targetActId] : [])), ...turns.map((t) => t.act)]),
+        unread: core.alertsUnread(),
+      };
     },
     setPresenceHidden(character, hidden) {
       if (!me()) return refuse('sign in with an account first');

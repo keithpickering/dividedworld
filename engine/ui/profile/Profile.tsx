@@ -11,13 +11,13 @@
  *
  * Out of character and plain.
  */
-import { useEffect, useState } from 'react';
+import { useMemo } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { useKayfa } from '../context.tsx';
-import type { Character, CharacterCounts, ClassReveal, Id, StandingPlace, TurnAnnounced } from '../data/api.ts';
+import type { Character, CharacterCounts, ClassReveal, Id, ProfilePage, StandingPlace, TurnAnnounced } from '../data/api.ts';
 import { rankIndex } from '../../rules/ranks.ts';
 import { dayAndTime, figure } from '../characters/format.ts';
-import { Ago, useSignedIn } from '../mini.tsx';
+import { Ago } from '../mini.tsx';
 import { FrontDoor } from '../front-door/FrontDoor.tsx';
 import { Pips } from '../postbit/Postbit.tsx';
 import { Avatar } from './Avatar.tsx';
@@ -25,9 +25,9 @@ import { StaffProfile } from './Staff.tsx';
 import { monthYear, shortDate } from '../postbit/dates.ts';
 import { reveals } from '../postbit/reveals.ts';
 import { Link } from '../router.tsx';
-import { PROFILE_ROWS, actRow, mergeWindow, newest, playLinks, revealRow, seasonRow, turnLinks, turnRow, type RecordRow, type Words } from './record.ts';
-import { NotFound, recordHref } from './Record.tsx';
-import { useCharacter } from './useCharacter.ts';
+import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
+import { PROFILE_ROWS, actRow, mergeWindow, newest, playLinksFrom, revealRow, seasonRow, turnLinksFrom, turnRow, type RecordRow, type Words } from './record.ts';
+import { recordHref } from './Record.tsx';
 import './profile.css';
 
 interface Loaded {
@@ -40,60 +40,44 @@ interface Loaded {
   readonly rows: readonly RecordRow[];
 }
 
-export function ProfileScreen({ id }: { readonly id: Id }) {
-  const { api } = useKayfa();
-  const signedIn = useSignedIn(api);
-  const found = useCharacter(api, id);
-  if (signedIn === null || found.status === 'loading') return <div className="kb-profile" aria-busy="true" />;
-  if (!signedIn) return <FrontDoor />;
-  if (found.status === 'failed') return <div className="kb-profile"><p className="kb-notice" data-kb-tone="refusal">The profile could not be loaded. Reload the page to try again.</p></div>;
-  if (found.status === 'missing') return <NotFound />;
+/** The profile draws its document (the forum-load plan, Task 13): whole on the first frame. A character not shown is the router's "cannot find"; signed out, the marker is the front door. */
+export function ProfileScreen({ id: _id, doc }: { readonly id: Id; readonly doc: ScreenDoc<ProfilePage> }) {
+  if (isSignedOutDoc(doc)) return <FrontDoor />;
   /* A Boss or a Mod Bot is a profile of its own kind: no standing, no class, no season record; its moderation log instead. */
-  return found.character.staff ? <StaffProfile character={found.character} /> : <Profile character={found.character} />;
+  return doc.character.staff ? <StaffProfile character={doc.character} /> : <Profile character={doc.character} doc={doc} />;
 }
 
-function Profile({ character: c }: { readonly character: Character }) {
-  const { api, instance, ui, settings } = useKayfa();
-  const [loaded, setLoaded] = useState<Loaded | 'failed' | null>(null);
-  useEffect(() => {
-    let live = true;
+function Profile({ character: c, doc }: { readonly character: Character; readonly doc: ProfilePage }) {
+  const { instance, ui, settings } = useKayfa();
+  const data = useMemo<Loaded>(() => {
     const words: Words = {
       className: (k) => instance.classes.find((x) => x.key === k)?.name ?? k,
       cardName: (k) => instance.cards.find((x) => x.key === k)?.name ?? (k || 'a card'),
       perPage: settings.postsPerPage,
     };
-    Promise.all([
-      /* Every read here costs the page and not the history: counters (the counts, the place) and a few newest rows with no count. */
-      api.characterCounts(c.id), api.standingPlace(c.id), api.lastSettledAt(), api.season(),
-      api.classReveals([c.id]), api.turnsAnnounced([c.id]), api.characterActs(c.id, ['post', 'spin', 'card'], { offset: 0, limit: PROFILE_ROWS }),
-      api.characterReveals(c.id),
-    ]).then(async ([counts, standing, settledAt, season, revealed, turns, acts, seasons]) => {
-      /* The Turns' tallies and the card plays' target posts are each placed with one batched read. */
-      const [links, plays] = await Promise.all([turnLinks(api, turns, words.perPage), playLinks(api, acts, words.perPage)]);
-      /* The newest few of everything: the newest few Acts, with every reveal and Turn, hold the newest few overall. */
-      const extras = newest([...revealed.map((r) => revealRow(r, words)), ...turns.map((t) => turnRow(t, words, links)), ...seasons.map((a) => seasonRow(a, words))]);
-      const rows = mergeWindow(extras, acts.map((a) => actRow(a, words, plays)), 0, 0, PROFILE_ROWS);
-      if (live) setLoaded({ counts, standing, settledAt, season: season?.number ?? null, reveals: revealed, turns, rows });
-    }, () => { if (live) setLoaded('failed'); });
-    return () => { live = false; };
-  }, [api, c.id, instance, settings.postsPerPage]);
+    /* The Turns' tallies and the card plays' target posts come with the document. */
+    const links = turnLinksFrom(doc.targets, words.perPage);
+    const plays = playLinksFrom(doc.targets, doc.acts, words.perPage);
+    /* The newest few of everything: the newest few Acts, with every reveal and Turn, hold the newest few overall. */
+    const extras = newest([...doc.reveals.map((r) => revealRow(r, words)), ...doc.turns.map((t) => turnRow(t, words, links)), ...doc.seasons.map((a) => seasonRow(a, words))]);
+    const rows = mergeWindow(extras, doc.acts.map((a) => actRow(a, words, plays)), 0, 0, PROFILE_ROWS);
+    return { counts: doc.counts, standing: doc.standing, settledAt: doc.settledAt, season: doc.season?.number ?? null, reveals: doc.reveals, turns: doc.turns, rows };
+  }, [doc, instance, settings.postsPerPage]);
 
-  const data = loaded && loaded !== 'failed' ? loaded : null;
-  const standing = data?.standing?.standing ?? null;
+  const standing = data.standing?.standing ?? null;
   const index = rankIndex(instance.ranks, standing);
   const rank = instance.ranks[index]?.name ?? '';
-  const stated = data ? reveals(data.reveals, data.turns).get(c.id) : undefined;
+  const stated = reveals(data.reveals, data.turns).get(c.id);
   const className = (k: string) => instance.classes.find((x) => x.key === k)?.name ?? k;
   const pips = ui.pips?.[c.pipStyle] ?? ui.pips?.default;
   return (
-    <div className="kb-profile" aria-busy={loaded === null || undefined}>
+    <div className="kb-profile">
       <p className="kb-crumb"><Link to="/">Index</Link> › {c.name}</p>
       <h1 className="kb-heading kb-profile-name">{c.name}</h1>
       <section className="kb-profile-card kb-box" aria-label={`About ${c.name}`}>
         <Avatar character={c} />
         <div className="kb-profile-facts">
           {c.title && <p className="kb-profile-title kb-muted">{c.title}</p>}
-          {loaded === 'failed' && <p className="kb-notice" data-kb-tone="refusal">Its standing and record could not be loaded. Reload the page to try again.</p>}
           {data && (
             <>
               {data.standing && instance.ranks.length > 0 && (

@@ -15,6 +15,7 @@ import { ThreadScreen } from '../thread/Thread.tsx';
 import { fadeOf, LensProvider, moreBelow, useLensFor, useLensStore } from './Lens.tsx';
 import lensCss from './lens.css?raw';
 import type { CardUi, EffectProps } from './types.ts';
+import { LoadedThread } from '../loaded.tsx';
 
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
@@ -72,7 +73,7 @@ function world() {
 }
 type World = ReturnType<typeof world>;
 const open = (w: { fake: Fake; thread: Id }, ui: readonly CardUi[] = cards) =>
-  renderIn(w.fake, <ThreadScreen thread={w.thread} />, { path: `/t/${w.thread}`, instance, cards: ui });
+  renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance, cards: ui });
 const article = (seq: number) => screen.findByRole('article', { name: new RegExp(`^Post ${seq} `, 'u') });
 const markOf = async (seq: number, card: string) => within(await article(seq)).findByRole('button', { name: new RegExp(`^${card}, \\d plays?`, 'u') });
 const lens = () => screen.getByRole('dialog', { name: 'Cards on this post' });

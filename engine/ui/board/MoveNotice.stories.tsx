@@ -8,6 +8,7 @@ import { useKayfa } from '../context.tsx';
 import type { World } from '../story.tsx';
 import { BoardScreen } from './Board.tsx';
 import { seedMoves } from './move-world.ts';
+import { LoadedBoard } from '../loaded.tsx';
 
 const meta: Meta<typeof BoardScreen> = { title: 'Board/Move notice', component: BoardScreen };
 export default meta;
@@ -19,7 +20,7 @@ const world: World = (fake, instance) => { seedMoves(fake, instance); };
 /** The instance's first board, whatever it is called: the board the move renamed. */
 function First() {
   const { instance } = useKayfa();
-  return <BoardScreen slug={instance.boards.find((b) => !b.system)!.slug} />;
+  return <LoadedBoard slug={instance.boards.find((b) => !b.system)!.slug} />;
 }
 
 export const InForce: Story = { render: () => <First />, parameters: { world, path: '/b/general' } };

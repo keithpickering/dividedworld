@@ -14,6 +14,7 @@ import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import type { CardUi, EffectProps } from './types.ts';
 import { wordsProblems } from './lens-words.ts';
+import { LoadedThread } from '../loaded.tsx';
 
 const base = { priceKey: 'x.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
 const blot: CardRules = { ...base, key: 'blot', name: 'Blot', alignment: 'salty', rarity: 'common', canApply: (t, e, _config, now) => landsOn({ key: 'blot' }, t, e, now) };
@@ -74,7 +75,7 @@ async function world() {
   return { fake, me, other, pipe, spritey, thread, trapped, bluffed, mine, set };
 }
 async function open(w: Awaited<ReturnType<typeof world>>) {
-  renderIn(w.fake, <Frame><ThreadScreen thread={w.thread} /></Frame>, { path: `/t/${w.thread}`, instance, cards, settings: { postMaxLength: 1000 } });
+  renderIn(w.fake, <Frame><LoadedThread thread={w.thread} /></Frame>, { path: `/t/${w.thread}`, instance, cards, settings: { postMaxLength: 1000 } });
   await screen.findByRole('article', { name: /^Post 4 /u });
 }
 const post = (seq: number) => document.getElementById(`post-${seq}`)!;

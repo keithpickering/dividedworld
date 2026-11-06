@@ -13,6 +13,7 @@ import type { Fake } from '../data/fake.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import type { CardUi, CardView, EffectProps } from './types.ts';
+import { LoadedThread } from '../loaded.tsx';
 
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
@@ -51,7 +52,7 @@ function world() {
   return { fake, me, pipe, spritey, thread, second, mineToo, play };
 }
 const open = (w: { fake: Fake; thread: Id }, ui: readonly CardUi[] = cards) =>
-  renderIn(w.fake, <ThreadScreen thread={w.thread} />, { path: `/t/${w.thread}`, instance, cards: ui });
+  renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance, cards: ui });
 const article = (seq: number) => screen.findByRole('article', { name: new RegExp(`^Post ${seq} `, 'u') });
 /** The marks a reader can reach on a post, in the order they are drawn. */
 const marks = (post: HTMLElement) => within(post).queryAllByRole('button', { name: /Opens the cards on this post\.|cards played on this post$/u });

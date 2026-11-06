@@ -344,6 +344,13 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
   for (const step of steps.filter((s) => s.at <= now).sort((a, b) => a.at - b.at)) step.run(step.at);
 
   fake.signInAs({ player, rival, reader }[MOMENTS[moment].account]);
+  /*
+   * A player who has been through the day has seen its settlement: the app opens the summary on the first load after one the account has not
+   * seen (engine/ui/log/Settlement.tsx), and only the settlement's own moment is that first load. The others show their board, so the mark is
+   * set at the newest settlement there is by then.
+   */
+  const settledAt = [SETTLE_1, SETTLE_2].filter((t) => t <= now).pop();
+  if (settledAt !== undefined && moment !== '09-settlement') void fake.seeSettlement(new Date(settledAt).toISOString());
   if (moment === '01-board-toasts') armToasts(fake, player, [
     ['ruling', posts[43]!, pipewrench], ['trapStruck', posts[41]!, spritey], ['ruling', posts[42]!, hooligan], ['trapStruck', posts[43]!, pipewrench], ['ruling', posts[41]!, spritey],
   ]);

@@ -1,11 +1,11 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import type { World } from '../story.tsx';
-import { IndexScreen } from './Index.tsx';
+import { LoadedIndex } from '../loaded.tsx';
 
-const meta: Meta<typeof IndexScreen> = { title: 'Index/Index', component: IndexScreen };
+const meta: Meta<typeof LoadedIndex> = { title: 'Index/Index', component: LoadedIndex };
 export default meta;
 
-type Story = StoryObj<typeof IndexScreen>;
+type Story = StoryObj<typeof LoadedIndex>;
 
 const T0 = Date.UTC(2026, 9, 20, 12);
 

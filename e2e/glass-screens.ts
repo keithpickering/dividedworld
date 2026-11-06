@@ -187,7 +187,8 @@ export const FIXTURE_OVERLAYS: readonly Screen[] = [
  */
 export const SETTLEMENT: Screen = { name: 'The settlement\'s summary, on the Settlement board\'s moment', board: '09-settlement', path: '/?fixture=boards&moment=09-settlement' };
 /** A Lens story opens its Lens on its own once the thread is read; the lines are read when it stands. */
-const lensOpen = async (page: Page) => { await expect(page.getByRole('dialog', { name: 'Cards on this post' })).toBeVisible({ timeout: 15_000 }); };
+/* The Lens opens over a post whose card effects load on first use (instances/divided-world/ui/cards.ts); its text is read once they have landed, as the page behind it is then what the reader sees. */
+const lensOpen = async (page: Page) => { await expect(page.getByRole('dialog', { name: 'Cards on this post' })).toBeVisible({ timeout: 15_000 }); await page.waitForLoadState('networkidle'); };
 export const STORIES: readonly Screen[] = [
   { name: 'My log, on the Log board\'s moment', board: '12-log', path: '/?fixture=boards&moment=12-log' },
   SETTLEMENT,
@@ -238,6 +239,12 @@ export async function open(page: Page, s: Probe) {
     : page.getByRole('navigation', { name: 'Menu' }).or(page.getByRole('region', { name: 'Game HUD' })).or(page.getByRole('heading', { level: 1, name: 'While you were away' })).first();
   await expect(ready).toBeVisible();
   await s.then?.(page);
+  /*
+   * The screen is drawn, not only its frame: a glass screen loads on first use (web/src/App.tsx), and one that reads its data says
+   * so with aria-busy until it lands (My characters, until the player is read). What lands can move the page: the roster opens on
+   * the chosen character and scrolls it into view, 343px down at 200% text on a phone, under a measure that had already begun.
+   */
+  await expect(page.locator('[aria-busy="true"]')).toHaveCount(0);
   await loadFaces(page);
 }
 

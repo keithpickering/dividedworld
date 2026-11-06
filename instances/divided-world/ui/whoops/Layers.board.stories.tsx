@@ -16,8 +16,8 @@ import { useKayfa } from '../../../../engine/ui/context.tsx';
 import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import { Frame } from '../../../../engine/ui/frame/Frame.tsx';
 import { useLocation } from '../../../../engine/ui/router.tsx';
-import { ThreadScreen } from '../../../../engine/ui/thread/Thread.tsx';
 import { BRUSH_PX, brushOf } from '../../cards/whoops/scrub.ts';
+import { LoadedThread } from '../../../../engine/ui/loaded.tsx';
 
 const MINUTE = 60_000;
 const YELLOW = '#ffd93d';
@@ -91,7 +91,7 @@ function Layered({ layers, washed }: { readonly layers: Layers; readonly washed:
   return (
     <Frame>
       <Look />
-      {thread && ready ? <ThreadScreen thread={thread} /> : <div aria-busy="true" />}
+      {thread && ready ? <LoadedThread thread={thread} /> : <div aria-busy="true" />}
     </Frame>
   );
 }

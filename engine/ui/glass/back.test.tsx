@@ -231,7 +231,7 @@ describe('Back, with the rule in the router', () => {
     scrolled();
     act(() => go('/characters'));
     act(() => back());
-    expect(returnOf(window.history.state)).toEqual({ shown: 2, known: 2 });
+    expect(returnOf((window.history.state as { state: unknown }).state)).toEqual({ shown: 2, known: 2 });
   });
 });
 

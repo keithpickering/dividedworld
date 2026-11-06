@@ -6,6 +6,8 @@
 import { useEffect, useState } from 'react';
 import type { Character, KayfaApi } from './data/api.ts';
 import { Link } from './router.tsx';
+import { usePlayer } from './player.tsx';
+import { useBoot } from './boot.tsx';
 import './mini.css';
 
 /** A character's square avatar, or its initial where it has none. Decoration: the name beside it says who. */
@@ -34,28 +36,31 @@ export function Ago({ at, now }: { readonly at: string; readonly now?: number })
   return <time dateTime={at} title={new Date(at).toLocaleString('en-US')}>{ago(at, now)}</time>;
 }
 
-/** Whether the visitor is signed in: null until the session is known. */
-export function useSignedIn(api: KayfaApi): boolean | null {
-  const [signedIn, setSignedIn] = useState<boolean | null>(null);
-  useEffect(() => {
-    let live = true;
-    void api.session().then((s) => { if (live) setSignedIn(s.signedIn); }, () => { if (live) setSignedIn(false); });
-    const off = api.onSession((s) => setSignedIn(s.signedIn));
-    return () => { live = false; off(); };
-  }, [api]);
-  return signedIn;
+/**
+ * Whether the reader is signed in, as the PlayerProvider already knows it: null until it does.
+ * It asks the server nothing of its own (the provider has read the session), so a screen's first
+ * read never waits a round trip on it. `api` is unused, kept so the screens' call sites stand.
+ */
+export function useSignedIn(_api: KayfaApi): boolean | null {
+  const { session, sessionKnown } = usePlayer();
+  return sessionKnown ? session.signedIn : null;
 }
 
-/** Whether the signed-in reader is an admin (`api.isAdmin`): false until known, and for a read that fails, so an admin's control is never offered on a guess. */
+/**
+ * Whether the signed-in reader is an admin: boot's answer when the first load read it (a screen then reads nothing of its own), else
+ * `api.isAdmin`. False until known, and for a read that fails, so an admin's control is never offered on a guess.
+ */
 export function useIsAdmin(api: KayfaApi, signedIn: boolean | null): boolean {
+  const booted = useBoot();
   const [admin, setAdmin] = useState(false);
   useEffect(() => {
+    if (booted !== null) return undefined;
     if (!signedIn) { setAdmin(false); return undefined; }
     let live = true;
     void api.isAdmin().then((a) => { if (live) setAdmin(a); }, () => { if (live) setAdmin(false); });
     return () => { live = false; };
-  }, [api, signedIn]);
-  return admin;
+  }, [api, signedIn, booted]);
+  return booted !== null ? signedIn === true && booted.admin : admin;
 }
 
 export function SignInPrompt() {

@@ -28,6 +28,67 @@
   margin-inline: auto;
 }
 
+/*
+ * The loading meter, beside the host in the banner (Loading.tsx): a 96 by 12 well, sunken, with a fill of
+ * blocks 8px wide and 2px apart. Its colors are the game piece's own tokens (engine/ui/tokens.css).
+ */
+.kb-address {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+  font-size: var(--kb-size-small);
+}
+
+/* The host is never cut short: a long one (or a large text size) folds anywhere, and the meter drops under it where the two do not fit a row. */
+.kb-address-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.kb-meter {
+  box-sizing: border-box;
+  flex: none;
+  display: block;
+  width: 96px;
+  height: 12px;
+  padding: 1px;
+  background: var(--kb-meter-face);
+  border: 1px solid;
+  border-color: var(--kb-meter-lo) var(--kb-meter-hi) var(--kb-meter-hi) var(--kb-meter-lo);
+  box-shadow: inset 1px 1px 0 var(--kb-meter-dark);
+}
+
+.kb-meter-fill {
+  display: block;
+  height: 100%;
+  background: repeating-linear-gradient(90deg, var(--kb-meter-fill) 0 8px, transparent 8px 10px);
+  transition: width 0.12s steps(3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-kb-motion="full"]) .kb-meter-fill {
+    transition: none;
+  }
+}
+
+:root[data-kb-motion="reduce"] .kb-meter-fill {
+  transition: none;
+}
+
+.kb-frame[data-kb-loading] {
+  cursor: progress;
+}
+
+/*
+ * On a phone the Boards control stays beside the name, as the Phone board draws it, and the host with its meter takes the row under them.
+ */
+@media (max-width: 40em) {
+  .kb-banner > .kb-menu-button { order: 1; }
+  .kb-banner > .kb-address { order: 2; flex: 1 0 100%; }
+}
+
 .kb-logo {
   /*
    * The site's name is one line wherever it fits: the banner wraps what is beside it first, and a flex line breaks before it shrinks an

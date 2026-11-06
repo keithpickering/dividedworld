@@ -15,6 +15,7 @@ import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import type { TipKey } from './keys.ts';
 import { TipsProvider, useHoldScreen, useTip, type TipOptions } from './Tips.tsx';
+import { LoadedThread } from '../loaded.tsx';
 
 beforeEach(() => { Element.prototype.scrollIntoView = vi.fn(); localStorage.clear(); });
 afterEach(() => { vi.restoreAllMocks(); });
@@ -332,7 +333,7 @@ describe('the card callouts join the tips', () => {
     fake.signInAs(me);
     return { fake, thread };
   }
-  const page = (w: ReturnType<typeof world>, extra?: ReactElement) => open(w.fake, <>{extra}<ThreadScreen thread={w.thread} /></>, { path: `/t/${w.thread}`, instance, cards });
+  const page = (w: ReturnType<typeof world>, extra?: ReactElement) => open(w.fake, <>{extra}<LoadedThread thread={w.thread} /></>, { path: `/t/${w.thread}`, instance, cards });
 
   test('a callout shows when no spotlight is wanted, and spends the page\'s budget', async () => {
     const w = world();

@@ -86,7 +86,7 @@ describe('the bar re-measures when its holders\' padding changes', () => {
 describe('the stylesheets: the shell holds the frame', () => {
   test('the shell sets the cut once, to the fifth chamfer, and the border once, 1.5px', () => {
     const base = fs.readFileSync(path.join(root, 'engine/ui/glass/base.css'), 'utf8');
-    expect(base).toMatch(/\.kb-glass-cut-dialog \{ --kb-cut: var\(--kb-glass-chamfer-5\); \}/u);
+    expect(base).toMatch(/:where\(\.kb-glass-cut-dialog\) \{ --kb-cut: var\(--kb-glass-chamfer-5\); \}/u);
     expect(base).toMatch(/--kb-border: 1\.5px;/u);
   });
 });

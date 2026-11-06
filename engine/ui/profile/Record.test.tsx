@@ -1,10 +1,11 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
-import { buildWorld, renderIn } from '../test-world.tsx';
+import { buildWorld, holdReads, renderIn } from '../test-world.tsx';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { RecordScreen } from './Record.tsx';
+import { LoadedRecord } from '../loaded.tsx';
 
 const DAY = 86_400_000;
 const T0 = Date.UTC(2026, 9, 1, 12);
@@ -22,7 +23,7 @@ function world(fake: Fake, posts = 45) {
   fake.signInAs(me);
   return { spritey, thread };
 }
-const open = (fake: Fake, id: string, query = '') => renderIn(fake, <RecordScreen id={id} />, { path: `/c/${id}/record${query}` });
+const open = (fake: Fake, id: string, query = '') => renderIn(fake, <LoadedRecord id={id} />, { path: `/c/${id}/record${query}` });
 const dataRows = () => screen.getAllByRole('row').slice(1);
 
 describe('the full public record', () => {
@@ -147,30 +148,44 @@ describe('the full public record', () => {
   test('an absurd page number is read as a sane one', async () => {
     const fake = buildWorld();
     const w = world(fake);
-    const spy = vi.spyOn(fake, 'characterActs');
+    const spy = vi.spyOn(fake, 'recordPage');
     open(fake, w.spritey, '?page=99999999999');
     await screen.findByText('Nothing on this page.');
-    expect(spy.mock.calls[0]![2].offset).toBeLessThanOrEqual(10_000 * 20);
+    expect(spy.mock.calls[0]![2]).toBe(10_000);
   });
 
-  test('the pager\'s total is the character\'s counters, read once; the Acts are a page with no count', async () => {
+  test('a record page is one recordPage read, with the kind and page the address names, and none of the reads it replaces', async () => {
     const fake = buildWorld();
     const w = world(fake);
-    const counts = vi.spyOn(fake, 'characterCounts');
-    const page = vi.spyOn(fake, 'characterActs');
+    const page = vi.spyOn(fake, 'recordPage');
+    const names = ['characterCounts', 'characterActs', 'actsById', 'characters', 'classReveals', 'turnsAnnounced', 'characterReveals'] as const;
+    const spies = names.map((n) => [n, vi.spyOn(fake, n)] as const);
     open(fake, w.spritey, '?kind=post');
     await screen.findByRole('table');
-    expect(counts).toHaveBeenCalledTimes(1);
     expect(page).toHaveBeenCalledTimes(1);
-    expect(page.mock.calls[0]![1]).toEqual(['post']);
-    expect(Array.isArray(await page.mock.results[0]!.value)).toBe(true);
+    expect(page.mock.calls[0]).toEqual([w.spritey, 'post', 1]);
+    expect(spies.map(([n, spy]) => [n, spy.mock.calls.length])).toEqual(names.map((n) => [n, 0]));
   });
 
-  test('a character that does not exist is not found', async () => {
+  test('its whole page is in the first render, from the document, and nothing is read for it', async () => {
+    const fake = buildWorld();
+    const w = world(fake);
+    const boot = await fake.boot();
+    const doc = (await fake.recordPage(w.spritey, 'all', 2))!;
+    const read = holdReads(fake, ['session']);
+    renderIn(fake, <RecordScreen id={w.spritey} doc={doc} />, { path: `/c/${w.spritey}/record?page=2`, boot });
+    expect(screen.getByRole('heading', { level: 1, name: /Spritey.s public record/u })).toBeInTheDocument();
+    expect(screen.getByText(/Page 2 of 3/u)).toBeInTheDocument();
+    expect(dataRows().length).toBeGreaterThan(0);
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+    expect(read).toEqual([]);
+  });
+
+  test('a character that does not exist is the router\'s "cannot be found"', async () => {
     const fake = buildWorld();
     world(fake);
     open(fake, 'nope');
-    expect(await screen.findByRole('heading', { level: 1, name: 'No such character' })).toBeInTheDocument();
-    void within;
+    expect(await screen.findByRole('heading', { level: 1, name: 'The page cannot be found' })).toBeInTheDocument();
   });
 });

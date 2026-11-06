@@ -9,6 +9,13 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 
+/**
+ * A card's effect loads the first time a post wears it (instances/divided-world/ui/cards.ts), and until it lands the post shows its words
+ * (engine/ui/cards/Effects.tsx), so a post is measured once its effects have: no script is on its way. A post measured before is the
+ * words' height, which the effect then replaces.
+ */
+const effectsLanded = (page: Page) => page.waitForLoadState('networkidle');
+
 for (const [label, viewport, story] of [
   ['the Main board', { width: 1440, height: 1120 }, 'boards-01-marks--six-kinds'],
   ['the Phone board', { width: 390, height: 844 }, 'boards-01-marks--six-kinds-phone'],
@@ -24,6 +31,7 @@ for (const [label, viewport, story] of [
       /* Six real kinds: the strip draws what it has room for, and the rest fold into "+N". */
       await expect(marks).toHaveCount(viewport.width <= 640 ? 4 : 5);
       await expect(post.locator('.kb-mark-more')).toHaveText(viewport.width <= 640 ? '+3' : '+2');
+      await effectsLanded(page);
       const height = async () => (await post.boundingBox())!.height;
       const drawn = await height();
       for (const box of await marks.evaluateAll((els) => els.map((el) => { const r = el.getBoundingClientRect(); return { x: r.x, right: r.right }; }))) {
@@ -79,6 +87,7 @@ for (const [label, viewport] of [['1440', { width: 1440, height: 1120 }], ['390'
       const post = page.locator('#post-41');
       await expect(post.locator('.kb-ghost-mark')).toBeVisible();
       await expect(post.locator('.kb-mark[data-kb-card]:not(.kb-ghost-mark)').first()).toBeVisible();
+      await effectsLanded(page);
       const height = async () => (await post.boundingBox())!.height;
       const before = await height();
       await post.locator('.kb-marks').evaluate((strip) => {
@@ -292,6 +301,8 @@ test.describe('glass in the 2003 board, reduced motion', () => {
     await expectGlassFaces(page, 'kb-ghost-mark');
     await openWhoopsLens(page);
     const f = await faces(page);
+    /* The tiles are the Lens's rows' own, drawn once the plays it lists have landed. */
+    await expect(page.locator('.kb-lens .kb-kit-tile').first()).toBeVisible();
     const tiles = await page.locator('.kb-lens .kb-kit-tile').evaluateAll((els) => els.map((el) => ({ text: (el.textContent ?? '').trim(), family: getComputedStyle(el).fontFamily })));
     expect(tiles.length).toBeGreaterThan(0);
     for (const t of tiles) {

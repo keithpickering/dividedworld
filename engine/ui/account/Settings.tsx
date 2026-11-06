@@ -194,7 +194,8 @@ export function SettingsScreen() {
   const signOut = async () => {
     try {
       await api.signOut();
-      navigate('/');
+      /* The move to the index is the signed-out session's: the router may hear of the account's end after this call (engine/ui/router.tsx). */
+      navigate('/', { afterAccountChange: true });
     } catch {
       refuse('Signing out could not be done right now; try again.');
     }

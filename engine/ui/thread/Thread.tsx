@@ -33,20 +33,22 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import { billPost, drawnOf } from '../cards/billing.ts';
 import { CalloutProvider } from '../cards/Callout.tsx';
 import { LensProvider } from '../cards/Lens.tsx';
-import { createPlays, effectCards, readAbove, readEffects, readPlays } from '../cards/plays.ts';
+import { createPlays, effectCards, hydrate, readEffects } from '../cards/plays.ts';
 import { Composer, SystemBoardNote, type ComposerHandle } from '../composer/Composer.tsx';
 import { useKayfa } from '../context.tsx';
-import type { Act, Id, ThreadListener } from '../data/api.ts';
-import { pageList, useIsAdmin, useSignedIn } from '../mini.tsx';
+import type { Act, Id, ThreadListener, ThreadPage, ThreadSummary } from '../data/api.ts';
+import { pageList, useIsAdmin } from '../mini.tsx';
+import { useBoot } from '../boot.tsx';
+import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import { FrontDoor } from '../front-door/FrontDoor.tsx';
 import { motionReduced } from '../appearance.ts';
 import { usePlayer } from '../player.tsx';
 import { PresenceBox } from '../presence/PresenceBox.tsx';
 import type { PostbitLayout, PostbitPerson } from '../postbit/Postbit.tsx';
 import { reveals } from '../postbit/reveals.ts';
-import { Link, useLocation, useNavigate } from '../router.tsx';
-import { returnOf } from '../glass/back.ts';
-import { emptyFeed, feedReducer, newer, ordered, shownEnd, waitingPosts } from './feed.ts';
+import { Link, useLocation, useNavigate, useNavigation } from '../router.tsx';
+import { returnOf, type ThreadReturn } from '../glass/back.ts';
+import { emptyFeed, feedReducer, newer, ordered, shownEnd, waitingPosts, type Feed, type FeedAction } from './feed.ts';
 import { ActIndex, actLoader, type Located } from './locate.tsx';
 import { pageEndsThread, pageOf, pageRange, seqOfHash, threadHref } from './pages.ts';
 import { FollowControl } from './Follow.tsx';
@@ -54,7 +56,7 @@ import { ActArticle, ThreadHead } from './Post.tsx';
 import { ThreadCtx, type ThreadContext } from './context.ts';
 import { text } from './lines.tsx';
 import { createMine } from '../reactions/mine.ts';
-import { primeSpun, spunCount } from '../spin/spun.ts';
+import { spunCount, spunLoader, type Spun } from '../spin/spun.ts';
 import { createTallies } from './tallies.ts';
 import './thread.css';
 
@@ -67,34 +69,40 @@ export const GAP_RETRY_MAX_MS = 30_000;
 /** The announcer keeps the last few lines; a screen reader hears what is added. */
 const ANNOUNCED = 4;
 
-type Status = 'loading' | 'missing' | 'failed' | 'ready';
+/**
+ * The thread screen draws its document (the forum-load plan, Task 13): the page the router loaded, whole on the first frame. Signed out, the
+ * loader's marker is the front door.
+ */
+export function ThreadScreen({ thread, doc }: { readonly thread: Id; readonly doc: ScreenDoc<ThreadPage> }) {
+  if (isSignedOutDoc(doc)) return <FrontDoor />;
+  return <ThreadView key={thread} thread={thread} doc={doc} />;
+}
 
-export function ThreadScreen({ thread }: { readonly thread: Id }) {
-  const { api } = useKayfa();
-  const signedIn = useSignedIn(api);
-  if (signedIn === null) return <div className="kb-thread" aria-busy="true" />;
-  if (!signedIn) return <FrontDoor />;
-  return <ThreadView key={thread} thread={thread} />;
+/** The feed's first (or a new) page, from a document: the Acts it holds and whether they reach the thread's last. */
+function loadedFrom(page: ThreadPage, perPage: number, back: ThreadReturn | null): FeedAction {
+  const { start, end } = pageRange(page.page, perPage);
+  const ends = pageEndsThread(page.acts.length, { start, end }, page.thread.lastSeq);
+  return { type: 'loaded', summary: page.thread, firstPage: page.page, lastPage: page.page, acts: page.acts, tailLoaded: ends, through: ends ? page.thread.lastSeq : end, back };
 }
 
 const keyOf = (l: { query: URLSearchParams; hash: string }) => `${l.query.toString() ? `?${l.query.toString()}` : ''}${l.hash ? `#${l.hash}` : ''}`;
 
-function ThreadView({ thread }: { readonly thread: Id }) {
+function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: ThreadPage }) {
   const { api, settings, ui } = useKayfa();
   const P = settings.postsPerPage;
   const player = usePlayer();
   /* Only an admin's Lens offers "End this card": the page asks once, as Updates does. */
   const admin = useIsAdmin(api, player.session.signedIn);
   const navigate = useNavigate();
+  const { track } = useNavigation();
   const loc = useLocation();
+  const boot = useBoot();
 
-  const [status, setStatus] = useState<Status>('loading');
-  const [feed, dispatch] = useReducer(feedReducer, emptyFeed);
-  const feedRef = useRef(feed);
-  feedRef.current = feed;
-  /* The thread's board, known from the first read's summary before the feed holds it: what the page's board card is read on. */
-  const boardOf = useRef<Id | null>(null);
-  const [layout, setLayout] = useState<PostbitLayout>('side');
+  const feedRef = useRef<Feed>(emptyFeed);
+  /* The thread's board, known from the document's summary before the feed holds it: what the page's board card is read on. */
+  const boardOf = useRef<Id | null>(doc.thread.board);
+  /* The preferences boot brought; a screen with no boot (a story, a sign-in on this page) reads them once, after it has landed. */
+  const [layout, setLayout] = useState<PostbitLayout>(boot?.preferences.postbit ?? 'side');
   const [busy, setBusy] = useState(false);
   const [atBottom, setAtBottom] = useState(() => typeof IntersectionObserver === 'undefined');
   const [lines, setLines] = useState<readonly { readonly key: number; readonly text: string }[]>([]);
@@ -103,10 +111,11 @@ function ThreadView({ thread }: { readonly thread: Id }) {
   /* The card plays on the posts on screen (engine/ui/cards/plays.ts), and which cards the instance draws an effect for: only theirs have a state to read. */
   const plays = useMemo(() => createPlays(), []);
   const effects = useMemo(() => effectCards(ui), [ui]);
+  const effectList = useMemo(() => [...effects], [effects]);
   /* Whether this is a thread of The System's board, where replies are spins and there is no reply box. */
-  const [systemBoard, setSystemBoard] = useState<boolean | null>(null);
+  const [systemBoard, setSystemBoard] = useState<boolean | null>(() => (doc.board ? doc.board.isSystem : null));
   /* The boards could not be read, so which kind of board this is is unknown: neither the reply box nor the System's note is shown. */
-  const [boardUnread, setBoardUnread] = useState(false);
+  const [boardUnread, setBoardUnread] = useState(() => !doc.board);
   const composer = useRef<ComposerHandle>(null);
 
   /* The player, read by callbacks that must not change when it does. */
@@ -148,40 +157,50 @@ function ThreadView({ thread }: { readonly thread: Id }) {
   const nameOf = useCallback((id: Id | null) => (id === null ? 'The System' : people.current.get(id)?.character.name ?? 'A character'), []);
 
   /*
-   * The posts of a read, with the plays on them, their tallies, the player's own reactions and the threads spun from
-   * them, ready to show. A play is an Act like a post: its tally and the player's reactions to it join the posts' in
-   * one read each, and its spins go through the line's batched read, never one per post or per play. Each post's plays
-   * are then billed (cards/billing.ts), once for this read: a live count moves no tag.
+   * A page document taken into the stores: its authors, the plays on its posts and above them with their saved states, the player's releases
+   * and card backs, the tallies, the player's own reactions and the threads spun from them, all ready to show, and each post's plays billed
+   * (cards/billing.ts), once for this page: a live count moves no tag. No read: the document holds what a page used to read in a dozen.
    */
-  const prepare = useCallback(async (acts: readonly Act[]) => {
-    await ensurePeople(acts.map((a) => a.character));
-    if (acts.length > 0) {
-      /* Every play on the page's posts in one read; a play takes no number, so it is found through its post. */
-      const posts = acts.filter((a) => a.kind === 'post').map((a) => a.id);
-      /* And every live play above them, on the page's distinct authors, its thread and its board, in one read (effects_above). */
-      const authors = acts.filter((a) => a.kind === 'post').map((a) => a.character);
-      const [onPosts, above] = await Promise.all([
-        readPlays(api, plays, posts, effects),
-        readAbove(api, plays, authors, thread, feedRef.current.summary?.board ?? boardOf.current, effects),
-      ]);
-      const played = [...onPosts, ...above];
-      /* The reader's own card backs among them, by set: drawn under the back on their screen alone. */
-      const sets = played.filter((a) => a.kind === 'set').map((a) => a.id);
-      if (sets.length > 0) plays.setFaces(await api.myFaceDown(sets).catch(() => ({})));
-      const ids = [...acts.map((a) => a.id), ...played.map((a) => a.id)];
-      const [counted, own, spun] = await Promise.all([
-        api.tallies(ids),
-        /* The player's own reactions: if they cannot be read the server still refuses a repeat, in its words. */
-        api.myReactions(ids).catch(() => []),
-        primeSpun(api, ids),
-        /* A play's caster is named before it is drawn. */
-        ensurePeople(played.map((a) => a.character)),
-      ]);
-      for (const [id, t] of Object.entries(counted)) tallies.merge(id, t);
-      for (const id of ids) mine.merge(id, own.filter((r) => r.act === id));
-      for (const post of posts) billPost(plays, post, spun, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!)));
+  const absorb = useCallback((page: ThreadPage) => {
+    const said = reveals(page.people.flatMap((p) => p.reveals), page.people.flatMap((p) => p.turns));
+    for (const p of page.people) {
+      const statement = said.get(p.character.id);
+      people.current.set(p.character.id, {
+        character: p.character, posts: p.posts, standing: p.standing,
+        revealed: statement?.revealed ?? null, turnedAt: statement?.turnedAt ?? null,
+      });
+      asked.current.set(p.character.id, Promise.resolve());
     }
-  }, [api, ensurePeople, tallies, mine, plays, effects, thread]);
+    const played = [...page.plays, ...page.above.map((x) => x.act)];
+    hydrate(plays, played, page.states, page.releases, page.faces);
+    const posts = page.acts.filter((a) => a.kind === 'post').map((a) => a.id);
+    const ids = [...new Set([...page.acts.map((a) => a.id), ...played.map((a) => a.id)])];
+    for (const [id, t] of Object.entries(page.tallies)) tallies.merge(id, t);
+    for (const id of ids) mine.merge(id, page.mine.filter((r) => r.act === id));
+    const loader = spunLoader(api);
+    const from = new Map<Id, ThreadSummary[]>();
+    for (const t of page.spun) if (t.originActId !== null) from.set(t.originActId, [...(from.get(t.originActId) ?? []), t]);
+    const spun = new Map<Id, Spun>();
+    for (const id of ids) { loader.seed(id, from.get(id) ?? []); spun.set(id, loader.peek(id)!); }
+    for (const post of posts) billPost(plays, post, spun, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!)));
+  }, [api, tallies, mine, plays]);
+
+  /* The first page: from the document, before the first render, so the first frame is whole. */
+  /* What the thread showed and knew of when the reader left for the glass, when Back brought them here; the first page only. */
+  const back = useRef(returnOf(loc.state));
+  const [feed, dispatch] = useReducer(feedReducer, undefined, () => {
+    absorb(doc);
+    return feedReducer(emptyFeed, loadedFrom(doc, P, back.current));
+  });
+  feedRef.current = feed;
+
+  /* A page read from the server (a next page, a gap, a move to a page not shown): one request, on the meter. */
+  const readPage = useCallback(async (at: { readonly page?: number | null; readonly seq?: number | null }): Promise<ThreadPage> => {
+    const page = await track(api.threadPage(thread, at, P, effectList));
+    if (!page) throw new Error('the thread could not be read');
+    absorb(page);
+    return page;
+  }, [api, thread, P, effectList, track, absorb]);
 
   /* ----------------------------------------------------------------- where to scroll ---- */
   const scrollTo = useRef<{ readonly seq: number; readonly scroll: boolean; readonly focus: boolean } | null>(null);
@@ -192,15 +211,12 @@ function ThreadView({ thread }: { readonly thread: Id }) {
     seq: seqOfHash(loc.hash),
   });
   const [loadKey, setLoadKey] = useState(0);
-  /* The card kinds this account has met, as the page's last read had them (the first-time callout, cards/Callout.tsx). */
-  const [cardsMet, setCardsMet] = useState<readonly string[] | null>(null);
-  /* Set once the first read has landed: a later one is the reader's own move, and focus follows it. */
-  const reloaded = useRef(false);
-  /* What the thread showed and knew of when the reader left for the glass, when Back brought them here; the first read only. */
-  const back = useRef(returnOf(loc.state));
+  /* The card kinds this account has met (the first-time callout, cards/Callout.tsx), as boot brought them. */
+  const [cardsMet, setCardsMet] = useState<readonly string[] | null>(() => boot?.preferences.cardsMet ?? null);
 
   /* ---------------------------------------------------------------------- reading ---- */
-  const sent = useRef(0);
+  /* How far the reader has read, as the document says; never lower than what was sent. */
+  const sent = useRef(doc.reading[thread] ?? 0);
   const seen = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flush = useCallback(() => {
@@ -242,45 +258,59 @@ function ThreadView({ thread }: { readonly thread: Id }) {
   useEffect(() => () => bottomObserver?.disconnect(), [bottomObserver]);
 
   /* -------------------------------------------------------------------------- load ---- */
+  /*
+   * Where a page landed: its canonical address (the page, and the post when one was asked for) and where to scroll. The first page is
+   * the document's, drawn already; a later one is the reader's own move, and lands at it.
+   */
+  const settle = useCallback((page: ThreadPage, first: boolean) => {
+    const seq = goal.current.seq !== null && goal.current.seq <= page.thread.lastSeq ? goal.current.seq : null;
+    const to_ = threadHref(thread, page.page, seq ?? undefined);
+    selfNav.current = to_.slice(to_.indexOf('?'));
+    navigate(to_, { replace: true });
+    /* A page opened with no post asked stays at its top, where its title and pages are. */
+    scrollTo.current = { seq: seq ?? pageRange(page.page, P).start, scroll: seq !== null || !first, focus: seq !== null || !first };
+  }, [thread, P, navigate]);
+
+  /* The document has landed: its address, made canonical, and its place. Nothing is read. */
   useEffect(() => {
+    settle(doc, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, for the document the screen was given
+  }, []);
+
+  /* A screen with no boot reads the preferences it draws by, once, after it has landed. */
+  useEffect(() => {
+    if (boot) return undefined;
+    let live = true;
+    void api.preferences().then((prefs) => { if (live) { setLayout(prefs.postbit); setCardsMet(prefs.cardsMet); } }, () => { /* the defaults stand */ });
+    return () => { live = false; };
+  }, [api, boot]);
+
+  /* A move to a page that is not on screen (an address the reader chose): one read, replacing the pages shown. */
+  useEffect(() => {
+    if (loadKey === 0) return undefined;
     let live = true;
     setBusy(true);
     void (async () => {
-      const summary = await api.thread(thread);
+      const page = await readPage({ page: goal.current.page, seq: goal.current.seq });
       if (!live) return;
-      if (!summary) { setStatus('missing'); return; }
-      boardOf.current = summary.board;
-      const last = pageOf(summary.lastSeq, P);
-      const wanted = goal.current.seq !== null ? pageOf(goal.current.seq, P) : goal.current.page ?? 1;
-      const page = Math.min(Math.max(1, wanted), last);
-      const { start, end } = pageRange(page, P);
-      const [acts, reading, prefs, board] = await Promise.all([api.acts(thread, start, end), api.reading([thread]), api.preferences(), api.board(summary.board).catch(() => null)]);
-      await prepare(acts);
-      if (!live) return;
-      sent.current = Math.max(sent.current, reading[thread] ?? 0);
-      setLayout(prefs.postbit);
-      setCardsMet(prefs.cardsMet);
+      boardOf.current = page.thread.board;
+      sent.current = Math.max(sent.current, page.reading[thread] ?? 0);
       /* Known before the first post is drawn, so the reply box and the posts' Quote links do not change the page after it. */
-      setSystemBoard(board ? board.isSystem : null);
-      setBoardUnread(!board);
-      const ends = pageEndsThread(acts.length, { start, end }, summary.lastSeq);
-      dispatch({ type: 'loaded', summary, firstPage: page, lastPage: page, acts, tailLoaded: ends, through: ends ? summary.lastSeq : end, back: reloaded.current ? null : back.current });
-      setStatus('ready');
-      const seq = goal.current.seq !== null && goal.current.seq <= summary.lastSeq ? goal.current.seq : null;
-      /* The canonical address of where this landed: the page, and the post when one was asked for. */
-      const to_ = threadHref(thread, page, seq ?? undefined);
-      selfNav.current = to_.slice(to_.indexOf('?'));
-      navigate(to_, { replace: true });
-      /* A page opened with no post asked stays at its top, where its title and pages are; a later read is the reader's move, and lands at it. */
-      scrollTo.current = { seq: seq ?? start, scroll: seq !== null || reloaded.current, focus: seq !== null || reloaded.current };
-      reloaded.current = true;
-    })().catch(() => { if (live) setStatus((s) => (s === 'ready' ? s : 'failed')); }).finally(() => { if (live) setBusy(false); });
+      setSystemBoard(page.board ? page.board.isSystem : null);
+      setBoardUnread(!page.board);
+      dispatch(loadedFrom(page, P, null));
+      settle(page, false);
+    })().catch(() => { /* the address stays as it is; the reader can try again */ }).finally(() => { if (live) setBusy(false); });
     return () => { live = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- a new read is asked for by loadKey; the rest are stable for the thread
-  }, [api, thread, loadKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- a new read is asked for by loadKey
+  }, [loadKey]);
 
   /* The address changed by the reader (a link, back, a pager): show it, reading more only when it is not on screen. */
+  const handled = useRef(loc);
   useEffect(() => {
+    /* The address the screen opened at is the document's: nothing to do for it. */
+    if (handled.current === loc) return;
+    handled.current = loc;
     const f = feedRef.current;
     if (!f.ready) return;
     const key = keyOf(loc);
@@ -319,8 +349,8 @@ function ThreadView({ thread }: { readonly thread: Id }) {
     try {
       const page = f.lastPage + 1;
       const { start, end } = pageRange(page, P);
-      const acts = await api.acts(thread, start, end);
-      await prepare(acts);
+      const read = await readPage({ page });
+      const acts = read.acts;
       /* Posts held behind a return's bar that the run now passes come in before the page read. What
          is shown and held is read as it stands after the read, not as it stood when the reader asked. */
       const now = feedRef.current;
@@ -342,7 +372,7 @@ function ThreadView({ thread }: { readonly thread: Id }) {
       more.current = false;
       setBusy(false);
     }
-  }, [api, thread, P, prepare, navigate]);
+  }, [thread, P, readPage, navigate]);
 
   /* ----------------------------------------------------------------------- live ---- */
   /* A live Act's follow-up read that goes wrong is dropped: the next read of the page shows what it would have, and nothing is thrown at the page. */
@@ -409,6 +439,31 @@ function ThreadView({ thread }: { readonly thread: Id }) {
     return api.subscribeThread(thread, listener);
   }, [api, thread, ensurePeople, tallies, plays, effects]);
 
+  /*
+   * The window between the server reading the document and the subscription above being set up: a post written in it is neither in the
+   * document nor heard. One cheap check once subscribed (the thread's summary, one row) finds it, and the existing gap read brings it in,
+   * on the meter. A tally that grew in the window is not re-read here: the next `onTally` for that Act carries the whole count
+   * (a tally only grows and each event is the Act's total), so a later reaction corrects it; until then it shows the document's count.
+   * Only the open tail is caught up: a page that is not the last takes what lies beyond it from its own next-page read.
+   */
+  useEffect(() => {
+    let live = true;
+    void api.thread(thread).then(async (summary) => {
+      const f = feedRef.current;
+      if (!live || !summary || !f.ready || !f.tailLoaded || summary.lastSeq <= f.knownLast) return;
+      const acts: Act[] = [];
+      for (let from = f.knownLast + 1; from <= summary.lastSeq; ) {
+        const read = await readPage({ seq: from });
+        acts.push(...read.acts.filter((a) => a.seq !== null && a.seq >= from && a.seq <= summary.lastSeq));
+        const next = pageRange(read.page, P).end + 1;
+        if (next <= from) break;
+        from = next;
+      }
+      if (live) dispatch({ type: 'fill', acts });
+    }).catch(() => { /* a later live Act shows the gap, as before */ });
+    return () => { live = false; };
+  }, [api, thread, P, readPage]);
+
   /* A play beyond a post is announced on `reach`, which every signed-in page hears, since it is played from a post in some other thread
      as often as this one (a character's) and on The System's announcements thread (a board's). This page keeps the plays whose target it
      shows: this thread, this thread's board, or a character with a post in view; the rest are dropped, so its memory is its screen's.
@@ -444,10 +499,17 @@ function ThreadView({ thread }: { readonly thread: Id }) {
   /* Which gap has waited its time: only then does the bar offer the held posts, so an Act a moment ahead of its predecessor does not flash it. */
   const [gapWaited, setGapWaited] = useState<number | null>(null);
   const readGap = useCallback(async (start: number) => {
-    const acts = await api.acts(thread, start, feedRef.current.knownLast);
-    await prepare(acts);
+    /* The gap is read from the page that holds its start; a gap longer than a page takes a read for each page it spans. */
+    const acts: Act[] = [];
+    for (let from = start; from <= feedRef.current.knownLast; ) {
+      const read = await readPage({ seq: from });
+      acts.push(...read.acts.filter((a) => a.seq !== null && a.seq >= from && a.seq <= feedRef.current.knownLast));
+      const next = pageRange(read.page, P).end + 1;
+      if (next <= from) break;
+      from = next;
+    }
     dispatch({ type: 'fill', acts });
-  }, [api, thread, prepare]);
+  }, [P, readPage]);
   useEffect(() => {
     if (gapStart === null) { setGapWaited(null); return; }
     let live = true;
@@ -521,16 +583,7 @@ function ThreadView({ thread }: { readonly thread: Id }) {
   };
 
   /* ------------------------------------------------------------------------- render ---- */
-  if (status === 'loading') return <div className="kb-thread" aria-busy="true" />;
-  if (status === 'failed') return <div className="kb-thread"><p className="kb-notice" data-kb-tone="refusal">The thread could not be loaded. Reload the page to try again.</p></div>;
-  if (status === 'missing' || !context || !feed.summary) {
-    return (
-      <div className="kb-thread">
-        <h1 className="kb-heading">No such thread</h1>
-        <p>There is no such thread. <Link to="/">Back to the index</Link>.</p>
-      </div>
-    );
-  }
+  if (!context || !feed.summary) return <div className="kb-thread" aria-busy="true" />;
 
   const summary = feed.summary;
   const lastPage = pageOf(feed.knownLast, P);
@@ -594,7 +647,7 @@ function ThreadView({ thread }: { readonly thread: Id }) {
       )}
       {pager('bottom')}
       {/* Follow sits after the last post, where a reader decides whether to keep up: the board draws no control above the thread, so a strip there would push it down. */}
-      {player.session.signedIn && <FollowControl thread={thread} />}
+      {player.session.signedIn && <FollowControl thread={thread} following={doc.following} />}
       {systemBoard !== null && (
         <ActIndex.Provider value={index}>
           <ThreadCtx.Provider value={context}>
@@ -607,7 +660,7 @@ function ThreadView({ thread }: { readonly thread: Id }) {
           The board this thread is on could not be read, so the reply box is left out. <button type="button" className="kb-link-button" onClick={() => void readBoard()}>Try again</button>
         </p>
       )}
-      <PresenceBox place={{ kind: 'thread', thread }} heading="Users browsing this thread" />
+      <PresenceBox place={{ kind: 'thread', thread }} heading="Users browsing this thread" snapshot={doc.presence} />
       <div className="kb-visually-hidden" role="status" aria-live="polite" aria-atomic="false">
         {lines.map((l) => <p key={l.key}>{l.text}</p>)}
       </div>

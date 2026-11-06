@@ -25,6 +25,7 @@ import { ThreadScreen } from '../thread/Thread.tsx';
 import { landsOn, ok, reachesOf, type CardRules } from '../../rules/cards.ts';
 import { usePlay } from './play.tsx';
 import type { CardUi } from './types.ts';
+import { LoadedBoard, LoadedThread } from '../loaded.tsx';
 
 type Scene = 'character' | 'still' | 'armed' | 'thread' | 'banner' | 'pinned';
 
@@ -128,7 +129,7 @@ function Drawn({ scene }: { readonly scene: Scene }) {
       {scene === 'armed' && <ArmCharacter />}
       {scene === 'still' && <Still />}
       {!onBoard && <Look />}
-      {!thread || !ready ? <div aria-busy="true" /> : onBoard && board ? <BoardScreen slug={board} /> : <ThreadScreen thread={thread} />}
+      {!thread || !ready ? <div aria-busy="true" /> : onBoard && board ? <LoadedBoard slug={board} /> : <LoadedThread thread={thread} />}
     </Frame>
   );
 }

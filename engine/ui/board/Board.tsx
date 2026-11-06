@@ -11,14 +11,14 @@
  * screen's own constant: `postsPerPage` counts posts inside a thread, and a list of threads is paged
  * for a different reason (the list's weight on a phone), so the two do not share a setting.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { Act, Board, Character, Id, PinnedThread, ThreadSummary } from '../data/api.ts';
+import type { Act, Board, BoardPage, Character, Id, PinnedThread, ThreadSummary } from '../data/api.ts';
 import { useUntil } from '../cards/Effects.tsx';
 import { LensProvider } from '../cards/Lens.tsx';
 import { PostMarks } from '../cards/Marks.tsx';
 import { useReachShown } from '../cards/PlayActions.tsx';
-import { createPlays, effectCards, homeOf, livePlays, playOf, readAbove, readEffects, type Plays } from '../cards/plays.ts';
+import { createPlays, effectCards, homeOf, hydrate, livePlays, playOf, readEffects, type Plays } from '../cards/plays.ts';
 import { createMine, type Mine } from '../reactions/mine.ts';
 import { OriginLink } from '../spin/OriginLink.tsx';
 import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
@@ -26,7 +26,8 @@ import { createTallies, type Tallies } from '../thread/tallies.ts';
 import type { SpinOrigin } from '../thread/Post.tsx';
 import { Ago, Mini, pageList, useIsAdmin, useSignedIn } from '../mini.tsx';
 import { FrontDoor } from '../front-door/FrontDoor.tsx';
-import { Link, useLocation } from '../router.tsx';
+import { Link } from '../router.tsx';
+import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import { MoveNotice } from './MoveNotice.tsx';
 import { PresenceBox } from '../presence/PresenceBox.tsx';
 import { NewThread } from './NewThread.tsx';
@@ -47,125 +48,95 @@ interface Loaded {
   readonly pins: readonly PinnedThread[];
 }
 
-type State = { readonly status: 'loading' } | { readonly status: 'missing' } | { readonly status: 'failed' } | ({ readonly status: 'ready' } & Loaded);
-
 const threadHref = (thread: Id, page: number, seq?: number) => `/t/${thread}?page=${page}${seq === undefined ? '' : `#post-${seq}`}`;
 const pageOf = (seq: number, perPage: number) => Math.max(1, Math.ceil(seq / perPage));
 
-export function BoardScreen({ slug }: { readonly slug: string }) {
+/**
+ * The board screen draws its document (the forum-load plan, Task 13): the page the router loaded, whole on the first frame. A page turn is a
+ * navigation, so the old page stays until the next has landed and this screen is given the next page's document. Signed out, the loader's
+ * marker is the front door.
+ */
+export function BoardScreen({ slug, doc }: { readonly slug: string; readonly doc: ScreenDoc<BoardPage> }) {
+  if (isSignedOutDoc(doc)) return <FrontDoor />;
+  return <BoardView key={slug} slug={slug} doc={doc} />;
+}
+
+function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPage }) {
   const { api, settings, ui } = useKayfa();
   /* The board's own card plays (its banner's) and its pins' plays, with their tallies and the reader's reactions, for their marks and the Lens. */
-  const plays = useMemo(() => createPlays(), [slug]);
-  const tallies = useMemo(() => createTallies(), [slug]);
-  const mine = useMemo(() => createMine(), [slug]);
+  const plays = useMemo(() => createPlays(), []);
+  const tallies = useMemo(() => createTallies(), []);
+  const mine = useMemo(() => createMine(), []);
   const effects = useMemo(() => effectCards(ui), [ui]);
   /* A play's Spin, from the banner's Lens or a pin's: its form opens under the banner. */
   const [spinOrigin, setSpinOrigin] = useState<SpinOrigin | null>(null);
   const drafts = useSpinDrafts();
-  useEffect(() => setSpinOrigin(null), [slug]);
-  const { query } = useLocation();
+  /* Only an admin's Lens offers "End this card": the page asks once. */
   const signedIn = useSignedIn(api);
   const admin = useIsAdmin(api, signedIn);
-  const asked = Number.parseInt(query.get('page') ?? '1', 10);
-  const [state, setState] = useState<State>({ status: 'loading' });
-  /* A page turn keeps the list on screen, marked busy, until the next page lands; a new board starts empty. */
-  const [turning, setTurning] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
   const shownPage = useRef<number | null>(null);
 
-  useEffect(() => {
-    if (!signedIn) return;
-    let live = true;
-    setState((s) => (s.status === 'ready' && s.board.slug === slug ? s : { status: 'loading' }));
-    setTurning(true);
-    void (async () => {
-      const board = await api.board(slug);
-      if (!board) { if (live) setState({ status: 'missing' }); return; }
-      const want = Number.isFinite(asked) && asked > 0 ? asked : 1;
-      let listed = await api.threads(board.id, { offset: (want - 1) * THREADS_PER_PAGE, limit: THREADS_PER_PAGE });
-      const last = Math.max(1, Math.ceil(listed.total / THREADS_PER_PAGE));
-      const page = Math.min(want, last);
-      if (page !== want) listed = await api.threads(board.id, { offset: (page - 1) * THREADS_PER_PAGE, limit: THREADS_PER_PAGE });
-      /* Page 1 alone shows the pins, in one read of the board's live pins; the board's own card is read beside them. */
-      const [pins, banner] = await Promise.all([
-        page === 1 ? api.pinnedThreads(board.id).catch((): readonly PinnedThread[] => []) : Promise.resolve([]),
-        readAbove(api, plays, [], null, board.id, effects),
-      ]);
-      const pinActs = pins.map((p) => p.act);
-      plays.add(pinActs);
-      await readEffects(api, plays, pinActs, effects);
-      const marked: readonly Act[] = [...banner, ...pinActs];
-      if (marked.length) {
-        const [counted, own] = await Promise.all([api.tallies(marked.map((a) => a.id)).catch(() => ({})), api.myReactions(marked.map((a) => a.id)).catch(() => [])]);
-        for (const [id, t] of Object.entries(counted)) tallies.merge(id, t);
-        for (const a of marked) mine.merge(a.id, own.filter((r) => r.act === a.id));
-      }
-      const listedThreads = [...pins.map((p) => p.thread), ...listed.threads];
-      const ids = listedThreads.map((t) => t.id);
-      const people = [...new Set([...listedThreads.flatMap((t) => [t.firstCharacter, t.lastCharacter]), ...marked.map((a) => a.character)].filter((c): c is Id => c !== null))];
-      const [reading, views, characters] = await Promise.all([
-        ids.length ? api.reading(ids) : {},
-        ids.length ? api.viewCounts(ids) : {},
-        people.length ? api.characters(people) : [],
-      ]);
-      if (!live) return;
-      setState({
-        status: 'ready', board, threads: listed.threads, total: listed.total, page, reading, views,
-        characters: new Map(characters.map((c) => [c.id, c])), pins,
-      });
-    })().catch(() => { if (live) setState({ status: 'failed' }); }).finally(() => { if (live) setTurning(false); });
-    return () => { live = false; };
-  }, [api, slug, asked, signedIn, plays, tallies, mine, effects]);
+  /*
+   * The document into the stores: the banner's and the pins' plays with their states, tallies and the reader's reactions. The first frame is
+   * whole, so the first document goes in during the first render, into stores nothing listens to yet. A later document (a page turn) goes in
+   * in a layout effect, before paint: a store with listeners notifies as it is written, which a render must not do.
+   */
+  const hydrated = useRef<BoardPage | null>(null);
+  const hydrate1 = (d: BoardPage) => {
+    const marked: readonly Act[] = [...d.banner.map((p) => p.act), ...d.pins.map((p) => p.act)];
+    hydrate(plays, marked, d.states, d.releases);
+    for (const [id, t] of Object.entries(d.tallies)) tallies.merge(id, t);
+    for (const a of marked) mine.merge(a.id, d.mine.filter((r) => r.act === a.id));
+  };
+  if (hydrated.current === null) { hydrated.current = doc; hydrate1(doc); }
+  useLayoutEffect(() => {
+    if (hydrated.current === doc) return;
+    hydrated.current = doc;
+    hydrate1(doc);
+  }, [doc]); // eslint-disable-line react-hooks/exhaustive-deps -- the stores are this view's own and never change
+  const state = useMemo<Loaded>(() => ({
+    board: doc.board, threads: doc.threads, total: doc.total, page: doc.page, reading: doc.reading, views: doc.views,
+    characters: new Map(doc.characters.map((c) => [c.id, c])), pins: doc.pins,
+  }), [doc]);
+  /* A page turn is a navigation to the next page's document: what a spin form held open belonged to the page before. */
+  useEffect(() => setSpinOrigin(null), [doc]);
+
+  /* Characters named by a live play, beside the document's. */
+  const [extra, setExtra] = useState<ReadonlyMap<Id, Character>>(() => new Map());
+  const characters = useMemo(() => (extra.size === 0 ? state.characters : new Map([...state.characters, ...extra])), [state.characters, extra]);
+  const loaded = useMemo<Loaded>(() => ({ ...state, characters }), [state, characters]);
 
   /* A board card is announced on `reach`, which every signed-in page hears, and not on this board's own topic: this banner keeps the
      plays on its board and drops the rest. The caster is read first, so the mark names them as the banner reads one on load. */
-  const boardId = state.status === 'ready' ? state.board.id : null;
-  useEffect(() => {
-    if (boardId === null) return undefined;
-    return api.subscribeReach({
-      onPlay(a) {
-        /* The end of a play names only its play: the store marks it if it is one this banner keeps, and holds it otherwise. */
-        if (a.kind === 'card_end') { plays.add([a]); return; }
-        if (a.kind !== 'card' || a.payload.reach !== 'board' || a.payload.board !== boardId) return;
-        void (async () => {
-          const who = a.character === null ? [] : await api.characters([a.character]).catch(() => []);
-          if (who.length) setState((s) => (s.status === 'ready' && s.board.id === boardId ? { ...s, characters: new Map([...s.characters, ...who.map((c) => [c.id, c] as const)]) } : s));
-          plays.add([a]);
-          await readEffects(api, plays, [a], effects);
-        })().catch(() => { /* the next read of the board shows it */ });
-      },
-    });
-  }, [api, boardId, plays, effects]);
+  const boardId = doc.board.id;
+  useEffect(() => api.subscribeReach({
+    onPlay(a) {
+      /* The end of a play names only its play: the store marks it if it is one this banner keeps, and holds it otherwise. */
+      if (a.kind === 'card_end') { plays.add([a]); return; }
+      if (a.kind !== 'card' || a.payload.reach !== 'board' || a.payload.board !== boardId) return;
+      void (async () => {
+        const who = a.character === null ? [] : await api.characters([a.character]).catch(() => []);
+        if (who.length) setExtra((m) => new Map([...m, ...who.map((c) => [c.id, c] as const)]));
+        plays.add([a]);
+        await readEffects(api, plays, [a], effects);
+      })().catch(() => { /* the next read of the board shows it */ });
+    },
+  }), [api, boardId, plays, effects]);
 
   /* After a page turn, focus goes to the board's heading, so a keyboard starts the new page at its top, never on the page's body. */
-  const readyPage = state.status === 'ready' ? `${state.board.slug}:${state.page}` : null;
   useEffect(() => {
-    if (readyPage === null) return;
-    const page = Number(readyPage.split(':')[1]);
-    if (shownPage.current !== null && shownPage.current !== page) heading.current?.focus();
-    shownPage.current = page;
-  }, [readyPage]);
-
-  if (signedIn === null) return <div className="kb-board" aria-busy="true" />;
-  if (!signedIn) return <FrontDoor />;
-  if (state.status === 'loading') return <div className="kb-board" aria-busy="true" />;
-  if (state.status === 'failed') return <div className="kb-board"><p className="kb-notice" data-kb-tone="refusal">The board could not be loaded. Reload the page to try again.</p></div>;
-  if (state.status === 'missing') {
-    return (
-      <div className="kb-board">
-        <h1 className="kb-heading">No such board</h1>
-        <p>There is no such board. <Link to="/">Back to the index</Link>.</p>
-      </div>
-    );
-  }
+    if (shownPage.current !== null && shownPage.current !== doc.page) heading.current?.focus();
+    shownPage.current = doc.page;
+  }, [doc.page]);
 
   const { board, threads, total, page } = state;
   const pages = Math.max(1, Math.ceil(total / THREADS_PER_PAGE));
   const pager = (where: 'top' | 'bottom') => pages > 1 && <Pager slug={slug} page={page} pages={pages} where={where} />;
 
-  const nameOf = (id: Id | null) => (id === null ? 'The System' : state.characters.get(id)?.name ?? 'A character');
+  const nameOf = (id: Id | null) => (id === null ? 'The System' : characters.get(id)?.name ?? 'A character');
   return (
-    <div className="kb-board" data-kb-board={board.slug} aria-busy={turning || undefined}>
+    <div className="kb-board" data-kb-board={board.slug}>
       <LensProvider admin={admin}>
       <p className="kb-crumb"><Link to="/">Index</Link> › {board.name}</p>
       <BoardBanner board={board} plays={plays} tallies={tallies} mine={mine} nameOf={nameOf} heading={heading} onSpin={setSpinOrigin} />
@@ -198,16 +169,16 @@ export function BoardScreen({ slug }: { readonly slug: string }) {
                 <th role="columnheader" scope="col">Last post</th>
               </tr>
             </thead>
-            <Pinned loaded={state} plays={plays} tallies={tallies} mine={mine} nameOf={nameOf} perPage={settings.postsPerPage} hot={settings.hotReplies} onSpin={setSpinOrigin} />
+            <Pinned loaded={loaded} plays={plays} tallies={tallies} mine={mine} nameOf={nameOf} perPage={settings.postsPerPage} hot={settings.hotReplies} onSpin={setSpinOrigin} />
             <tbody role="rowgroup">
-              {threads.filter((t) => !state.pins.some((p) => p.thread.id === t.id)).map((t) => <ThreadRow key={t.id} t={t} loaded={state} perPage={settings.postsPerPage} hot={settings.hotReplies} />)}
+              {threads.filter((t) => !state.pins.some((p) => p.thread.id === t.id)).map((t) => <ThreadRow key={t.id} t={t} loaded={loaded} perPage={settings.postsPerPage} hot={settings.hotReplies} />)}
             </tbody>
           </table>
           </div>
           {pager('bottom')}
         </>
       )}
-      <PresenceBox place={{ kind: 'board', board: board.id }} heading="Users browsing this board" />
+      <PresenceBox place={{ kind: 'board', board: board.id }} heading="Users browsing this board" snapshot={doc.presence} />
       </LensProvider>
     </div>
   );
