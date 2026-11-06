@@ -280,6 +280,38 @@ table.lineage td.span { width: 220px; font-variant-numeric: tabular-nums; }
 .phone .portrait { width: 76px; height: 152px; }
 .phone table.trophies td.badge { width: 48px; padding: 8px 4px; }
 .phone .trophy .on { display: block; font-size: 12.5px; color: var(--kb-muted); margin-top: 2px; }
+/* ---------- batch 4: The System on the board ---------- */
+.notice-wrap { position: relative; margin: 0 0 14px; }
+.notice-wrap table.t { margin: 0; }
+.notice .says { font-weight: bold; }
+.notice td.words { padding: 10px 12px; }
+/* the move's label is the glass's own, breaking the notice's frame at its corner as a card's mark breaks a post's */
+.glasslabel { position: absolute; right: 14px; top: -14px; z-index: 2; display: flex; transform: skewX(-12deg); box-shadow: 0 0 12px rgb(62 230 255 / 0.65); }
+.glasslabel span { display: block; font: 700 18px/1 "Barlow Condensed", sans-serif; text-transform: uppercase; letter-spacing: 0.04em; padding: 6px 14px; }
+.glasslabel .l { background: #0d0814; color: #9ef3ff; border: 1px solid #3ee6ff; font-style: italic; }
+.glasslabel .w { background: #0d0814; color: #fff; border: 1px solid #3ee6ff; border-left: 1px solid #5b4a7c; }
+.sysname { font-weight: bold; font-size: 15px; }
+.sysnote { font-size: 12.5px; color: var(--kb-muted); margin-top: 6px; }
+.revealline { margin: 0 0 8px; }
+/* the class bar is a game piece: the classes' looks, a pattern beside each color */
+.classbar { display: flex; height: 26px; border: 1px solid #000; margin: 0 0 6px; }
+.classbar span { flex: 1; display: grid; place-items: center; }
+.classbar i { font: bold 12.5px/1 "Courier New", monospace; font-style: normal; background: #fff; color: #000; border: 1px solid #000; padding: 2px 4px; }
+.classbar .face { background: #2e86de; }
+.classbar .heel { background: repeating-linear-gradient(135deg, rgb(0 0 0 / 0.35) 0 2px, transparent 2px 6px), #c0392b; }
+.stated { margin: 0; padding-left: 1.2em; font-size: 13.75px; }
+.syslist { margin: 0 0 8px; padding-left: 1.2em; }
+.staffbadges { display: inline-flex; gap: 6px; align-items: center; }
+.coinbadge { display: inline-flex; gap: 5px; align-items: center; border: 1px solid var(--kb-fg); padding: 1px 6px; font: bold 12.5px/1.3 "Courier New", monospace; background: var(--kb-mini-bg); }
+.coinbadge i { width: 11px; height: 11px; border-radius: 50%; background: #d4a017; border: 1px solid #000; }
+.adminbadge { font: bold 12.5px/1.3 "Courier New", monospace; letter-spacing: 0.06em; background: var(--kb-head-bg); color: var(--kb-head-fg); border: 1px solid #000; padding: 1px 6px; }
+table.modlog td.when { width: 110px; font-size: 13.75px; }
+table.modlog td.end { width: 220px; font-size: 13.75px; color: var(--kb-muted); }
+.lognote { font-size: 13.75px; color: var(--kb-muted); margin: -6px 0 14px; }
+/* on the phone each segment keeps its words whole, and the way out wraps under the label when the row is full */
+.phone .glasslabel { right: 6px; left: 6px; top: -14px; flex-wrap: wrap; justify-content: flex-end; }
+.phone .glasslabel span { font-size: 13px; padding: 4px 8px; white-space: nowrap; }
+.phone .notice-wrap { margin-top: 30px; }
 `;
 
 /* ---------- content ---------- */
@@ -647,3 +679,138 @@ fs.writeFileSync(path.join(here, '10-phone.html'), page({
   body: `<style>${PHONE_CSS_DARK}</style><div style="display:flex;gap:24px">${phoneScreen(PROFILE_PHONE, 'light')}${phoneScrolled(CASE_PHONE, 'light')}${phoneScreen(RECORD_PHONE, 'light')}${phoneScreen(PROFILE_PHONE, 'dark')}</div>`,
 }));
 console.log('wrote the batch 3 boards');
+
+/* ================= batch 4: The System on the board ================= */
+/* The move notice (engine/ui/board/MoveNotice.tsx), the reveal and tally posts (engine/ui/reveal/Reveal.tsx) and a staff profile
+   (engine/ui/profile/Staff.tsx), on their stories' content. The System's words and the Director's are in character and may bluff;
+   the glass label, the moderation log and the notes are the engine's plain words. */
+const notice = (phone) => `
+  <div class="notice-wrap">
+    <div class="glasslabel"><span class="l">The System renamed this board</span><span class="w">Way out: 5 of 12 posters ›</span></div>
+    <table class="t notice"><tbody>
+      <tr><td class="bar"><span class="says">Announcement from <a href="#">The Director</a></span></td></tr>
+      <tr><td class="words">This board has been IMPROVED. From now on we talk about toast. Show me twelve of you can handle it and maybe I will think about it.
+        ${reacts({ reacts: [['🔥', 9], ['🍅', 6], ['👍', 3]] })}</td></tr>
+    </tbody></table>
+  </div>`;
+const TOAST_ROW = { icon: 'new', state: 'New', title: 'toast is a sandwich and I can prove it', by: ['S', 'Spritey'], unread: true, pages: '', replies: 4, views: 0, last: ['P', 'Poster 4', '8 days ago'] };
+const NOTICE_DESK = `
+  <p class="crumb"><a href="#">Index</a> › Pointless Toast Palace</p>
+  <h1 class="title">Pointless Toast Palace</h1>
+  <p class="desc">Welcome to the Pointless Toast Palace. Please butter responsibly.</p>
+  ${notice(false)}
+  <div class="over"><button class="b" type="button">${px('start')}Start a thread</button></div>
+  <table class="t"><thead><tr><th scope="col" style="width:48px"><span class="vh">Status</span></th><th scope="col">Thread</th><th scope="col" class="n" style="width:100px">Replies</th><th scope="col" class="n" style="width:100px">Views</th><th scope="col" style="width:280px">Last post</th></tr></thead>
+    <tbody>${rowDesk(TOAST_ROW)}</tbody></table>
+  <table class="t"><tbody><tr><td class="bar" colspan="2"><h2 class="barh">Users browsing this board</h2></td></tr><tr><td class="ico">${px('who')}</td><td><a href="#">Pipewrench</a></td></tr></tbody></table>`;
+
+/* The System's posts: its postbit is its name alone, and it never edits. */
+const sysPost = (n, at, body, rx, i, phone) => phone ? `
+    <tbody>
+      <tr><td class="pbit"><span class="sysname">The System</span></td></tr>
+      <tr><td class="pline">${pline({ n }, at)}</td></tr>
+      <tr><td><div class="pbody">${body}${reacts({ reacts: rx })}</div></td></tr>
+      <tr><td class="foot"><div class="acts"><button class="b sm" type="button">Quote</button><button class="b sm" type="button">Spin thread</button><button class="b sm" type="button">History</button></div></td></tr>
+    </tbody>` : `
+    <tbody${i % 2 ? ' class="alt"' : ''}>
+      <tr><td class="bit" rowspan="3"><span class="sysname">The System</span></td><td class="pline">${pline({ n }, at)}</td></tr>
+      <tr><td><div class="pbody">${body}${reacts({ reacts: rx })}</div></td></tr>
+      <tr><td class="foot"><div class="acts"><button class="b sm" type="button">Quote</button><button class="b sm" type="button">Spin thread</button><button class="b sm" type="button">History</button></div></td></tr>
+    </tbody>`;
+const gap = (cols) => `<tbody><tr class="gap"><td colspan="${cols}"></td></tr></tbody>`;
+const REVEALS = [
+  [1, 'Oct 31, 2026, 12:00 PM', '<p>Season 1 is over. Here is everyone, unmasked as far as they let me. Try to act surprised.</p>', [['🔥', 7], ['🙄', 3]]],
+  [2, 'Oct 31, 2026, 12:00 PM', `<p class="revealline"><b><a href="#">Spritey</a></b>: finished #1, <b>Legend</b> ${pips(6)}, 52.10.</p>
+    <div class="classbar" role="img" aria-label="Classes its player made public: Face, revealed Oct 20."><span class="face"><i aria-hidden="true">Face</i></span></div>
+    <ul class="stated"><li>Face, revealed Oct 20</li></ul>`, [['🔥', 4], ['🙏', 2]]],
+  [3, 'Oct 31, 2026, 12:00 PM', `<p class="revealline"><b><a href="#">Mrs. Hooligan</a></b>: finished #2, <b>Main Eventer</b> ${pips(4)}, 47.35.</p>
+    <p class="small muted">Its player made nothing about its class public.</p>`, [['🤔', 5]]],
+  [4, 'Oct 31, 2026, 12:00 PM', `<p class="revealline"><b><a href="#">Pipewrench</a></b>: finished #3, <b>Legend</b> ${pips(6)}, 41.70.</p>
+    <div class="classbar" role="img" aria-label="Classes its player made public: Face, until its Turn on Oct 20; Heel, revealed Oct 21."><span class="face"><i aria-hidden="true">Face</i></span><span class="heel"><i aria-hidden="true">Heel</i></span></div>
+    <ul class="stated"><li>Face, until its Turn on Oct 20</li><li>Heel, revealed Oct 21</li></ul>`, [['🍅', 6], ['🔥', 2]]],
+];
+const revealPosts = (phone, from) => REVEALS.slice(from).map(([n, at, body, rx], i) => sysPost(n, at, body, rx, i, phone)).join(gap(phone ? 1 : 2));
+const REVEAL_DESK = `
+  <p class="crumb"><a href="#">Index</a> › <a href="#">The System</a> › Season 1: the reveal</p>
+  <div class="head"><h1 class="title">Season 1: the reveal</h1></div>
+  <table class="t posts"><thead><tr><th scope="col" style="width:216px">Author</th><th scope="col">Message</th></tr></thead>${revealPosts(false, 0)}</table>`;
+const TALLY_DESK = `
+  <p class="crumb"><a href="#">Index</a> › <a href="#">The System</a> › Tonight’s settlement</p>
+  <div class="head"><h1 class="title">Tonight’s settlement</h1></div>
+  <table class="t posts"><thead><tr><th scope="col" style="width:216px">Author</th><th scope="col">Message</th></tr></thead>
+  ${sysPost(1, 'Oct 30, 2026, 8:17 AM', `<p>The numbers are in. Some of you did well. I will not say who, except that I will, below.</p>
+    <ul class="syslist"><li><a href="#">Spritey</a> debuts</li><li><a href="#">Pipewrench</a> has Turned</li></ul>`, [['🔥', 3], ['🙏', 1]], 0, false)}</table>
+  <table class="t"><tbody><tr><td class="small">Replies here are spins. Use “Spin thread” on any post to start a thread of your own from it.</td></tr></tbody></table>`;
+
+const STAFF_FACTS = [
+  ['Staff', '<span class="staffbadges"><span class="coinbadge"><i></i>Personality Cores</span><span class="adminbadge">ADMINISTRATOR</span></span>'],
+  ['Title', 'Head of Board Operations (Toast Division)'],
+  ['Interests', 'toast, artisanal breads, the 1998 film Small Soldiers (since Tuesday)'],
+  ['Favorite members', '<a href="#">Spritey</a>, <a href="#">Pipewrench</a>'],
+  ['Current mood', 'Disappointed but Hopeful'],
+  ['Career', 'No office held yet.'],
+  ['Posts', '0'], ['Joined', 'Aug 2026'],
+];
+const STAFF_NOTE = '<p class="sysnote">The interests, favorites, mood and signature are what it says about itself, in character, and it may bluff. The moderation log is a plain record.</p>';
+const MODLOG = [
+  ['Oct 28', 'Renamed <a href="#">General</a> to <a href="#">Pointless Toast Palace</a>', 'in force'],
+  ['Oct 25', 'Renamed <a href="#">General</a> to <a href="#">Lawn Bowling Lounge</a>', 'undone: 12 posted'],
+  ['Oct 22', 'Renamed <a href="#">General</a> to <a href="#">Pirate Puns Palace</a>', 'ran out Oct 25'],
+  ['Oct 20', 'Renamed <a href="#">General</a> to <a href="#">Small Soldiers Situation Room</a>', 'reversed by an admin'],
+];
+const modlog = (phone) => `
+  <table class="t modlog"><caption class="vh">The Director’s moves, newest first</caption>
+    <thead><tr><td class="bar" colspan="${phone ? 1 : 3}"><h2 class="barh">Moderation log</h2></td></tr>${phone ? '' : '<tr><th scope="col">When</th><th scope="col">What it did</th><th scope="col">How it ended</th></tr>'}</thead>
+    <tbody>${MODLOG.map(([w, what, end]) => phone
+      ? `<tr><td><span class="when-above">${w}</span>${what}<br><span class="muted small">${end}</span></td></tr>`
+      : `<tr><td class="when">${w}</td><td>${what}</td><td class="end">${end}</td></tr>`).join('')}</tbody></table>
+  <p class="lognote">Every move this staff member has made, newest first.</p>`;
+const STAFF_DESK = `
+  <p class="crumb"><a href="#">Index</a> › The Director</p>
+  <h1 class="title">The Director</h1>
+  <table class="t about"><caption class="vh">About The Director</caption>
+    <thead><tr><th scope="col" colspan="3">About The Director</th></tr></thead>
+    <tbody>
+      ${STAFF_FACTS.map(([k, v], i) => `<tr>${i === 0 ? `<td class="avacell" rowspan="${STAFF_FACTS.length + 1}"><div class="bigava">T</div></td>` : ''}<th scope="row" class="k">${k}</th><td class="v">${v}</td></tr>`).join('')}
+      <tr><td class="v" colspan="2"><div class="sig"><hr>A forum is like a loaf of bread. Somebody has to slice it.</div>${STAFF_NOTE}</td></tr>
+    </tbody></table>
+  ${modlog(false)}`;
+
+const NOTICE_PHONE = `
+  <p class="crumb"><a href="#">Index</a> › Pointless Toast Palace</p>
+  <h1 class="title">Pointless Toast Palace</h1>
+  <p class="desc small">Welcome to the Pointless Toast Palace. Please butter responsibly.</p>
+  ${notice(true)}
+  <div class="over"><button class="b" type="button">${px('start')}Start a thread</button></div>
+  <table class="t"><tbody>${rowPhone(TOAST_ROW)}</tbody></table>`;
+const REVEAL_PHONE = `
+  <p class="crumb"><a href="#">Index</a> › <a href="#">The System</a> › Season 1: the reveal</p>
+  <div class="head"><h1 class="title">Season 1: the reveal</h1></div>
+  <table class="t posts">${revealPosts(true, 1)}</table>`;
+const STAFF_PHONE = `
+  <p class="crumb"><a href="#">Index</a> › The Director</p>
+  <h1 class="title">The Director</h1>
+  <table class="t about"><tbody>
+    <tr><td class="avacell"><div class="bigava">T</div></td><td>${STAFF_FACTS[0][1]}<div class="muted small" style="margin-top:6px">Head of Board Operations (Toast Division)</div></td></tr>
+  </tbody></table>
+  <table class="t about"><tbody>${STAFF_FACTS.slice(2).map(([k, v]) => `<tr><th scope="row" class="k">${k}</th><td class="v">${v}</td></tr>`).join('')}</tbody></table>
+  ${modlog(true)}`;
+
+const batch4 = [
+  ['11-move-notice', 'A move in force on its board, Silver', NOTICE_DESK],
+  ['12-reveal', 'The season’s reveal, Silver', REVEAL_DESK],
+  ['13-tally', 'A settlement’s tally, Silver', TALLY_DESK],
+  ['14-staff', 'The Director’s profile, Silver', STAFF_DESK],
+];
+for (const [file, title, content] of batch4) {
+  for (const mode of ['light', 'dark']) {
+    fs.writeFileSync(path.join(here, `${file}${mode === 'dark' ? '-dark' : ''}.html`), page({ title: `${title} ${mode}`, mode, width: 1440, height: 1000, body: desk(content),
+      comment: `A board of the board look design session (docs/plans/2026-11-06-board-look-design.md), batch 4, 1440 by 1000, written by gen.mjs.` }));
+  }
+}
+fs.writeFileSync(path.join(here, '15-phone.html'), page({
+  title: 'The System on the board on the phone, Silver', mode: 'light', width: 4 * 390 + 3 * 24, height: 844,
+  comment: 'A board of the board look design session, batch 4: four phone screens at 390 by 844 (the move notice, the reveal and the Director’s profile in light; the reveal in dark), 24px apart. Written by gen.mjs.',
+  body: `<style>${PHONE_CSS_DARK}</style><div style="display:flex;gap:24px">${phoneScreen(NOTICE_PHONE, 'light')}${phoneScreen(REVEAL_PHONE, 'light')}${phoneScreen(STAFF_PHONE, 'light')}${phoneScreen(REVEAL_PHONE, 'dark')}</div>`,
+}));
+console.log('wrote the batch 4 boards');

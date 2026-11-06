@@ -158,7 +158,7 @@ title, a settled standing, a revealed class and a signature) and `09-record`, li
 - **The profile's facts are a table of labels and values**: Title, Rank, Aura this season, Place, Posts, Threads spun,
   Cards played, Joined, Class, each a row with its label (a row header) in the third gray, right-aligned and bold. Today
   they run on three lines joined by middots, and the 1:2 avatar leaves most of the card empty beside them. Every fact's
-  wording and link is kept; the character's own title line gains the label "Title", a draft for the owner.
+  wording and link is kept; the character's own title line gains the label "Title" (the owner: "'Title' is fine").
 - **The signature closes the card** under a short rule.
 - **The profile's record has its band and its heads in one table**, five rows, then See the full record at its right.
 - **The record's kind filter is a row of small Chrome buttons**, the current one pressed in, where today it is a row of
@@ -193,8 +193,31 @@ are read on The System's reveal and tally posts. So batches 4 and 5 are one: **T
 tally posts (`engine/ui/reveal/Reveal.tsx`), the move notice (`engine/ui/board/MoveNotice.tsx`) and its profile
 (`engine/ui/profile/Staff.tsx`). Then the errors and Unavailable, then the theme picker.
 
+## 6. Batch 4: The System on the board
+
+Drawn on main (354dbc4)'s `engine/ui/board/MoveNotice.tsx`, `engine/ui/reveal/Reveal.tsx` and `engine/ui/profile/Staff.tsx`,
+on their stories' content (shot from Storybook), in Silver: `11-move-notice`, `12-reveal`, `13-tally`, `14-staff`, light
+and dark at 1440 by 1000, and `15-phone`. The two voices stay where they are: The System's and the Director's words in
+character, the glass label, the moderation log and the notes plain. The boards give each the house's frame and change no
+word of either.
+
+- **The move notice is a period announcement**: a light band reading "Announcement from The Director", the words under
+  it, its top reactions as mark tiles. The glass label (the move's long label, and Way out, the button that opens the
+  overlay) stays on its corner, breaking the frame as a card's mark does; on the phone each segment keeps its words
+  whole and Way out wraps under the label when the row is full.
+- **The System's posts take batch 2's post frame**: three cells of one color, alternating, with Quote, Spin thread and
+  History; its postbit is its name alone. The reveal's class bar keeps its game-piece look (each class's color with its
+  pattern, one equal segment per statement) with its words listed under it, and a character whose player made nothing
+  public says so. The tally lists who debuts and who has Turned under The System's words.
+- **On The System's board the composer's place holds its note** ("Replies here are spins. …", `SystemBoardNote`) in a
+  banded cell.
+- **A staff profile takes batch 3's card**: its badges, title, interests, favorite members, mood and career as label
+  rows beside the avatar, where today they are a small nested table and Career a heading floating between card and log;
+  the plain note stays under the signature; the moderation log is one full-width table under the card (When, What it
+  did, How it ended), where today it is a narrow column beside it.
+
 ## Open
 
 - Fan Site's name, now that it salutes one board's blue.
 - The legend's words.
-- The profile's "Title" label.
+- Batch 4's approval.
