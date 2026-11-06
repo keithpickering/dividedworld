@@ -13,11 +13,16 @@ import { BBCODE_TAGS } from '../../../engine/bbcode/parse.ts';
 import { PREDICATES } from '../../../engine/rules/predicates.ts';
 import { DEMAND_KINDS } from '../../../engine/system/demands.ts';
 
-/** What a persona's visits can be talked down with, as the seed carries it: the kind and its number, never a quiz's questions or answers. */
+/** What a persona's visits can be talked down with, as the seed carries it in `challenge`: the kind and its number, never a quiz's questions or answers (those travel in `quiz`). */
 function challengeOf(w: Weakness): { kind: string; questions?: number; price?: number } {
   if (w.kind === 'quiz') return { kind: 'quiz', questions: w.questions.length };
   if (w.kind === 'bribe') return { kind: 'bribe', price: w.price };
   return { kind: 'distraction' };
+}
+
+/** A quiz persona's questions with their choices and answers, as `seed_instance` keeps them (0106) in a table no client can read; no other persona has any. */
+function quizOf(w: Weakness): { quiz: { question: string; choices: string[]; answer: string }[] } | Record<string, never> {
+  return w.kind === 'quiz' ? { quiz: w.questions.map((q) => ({ question: q.question, choices: [...q.choices], answer: q.answer })) } : {};
 }
 
 export function instanceSeed(instance: Instance) {
@@ -54,9 +59,9 @@ export function instanceSeed(instance: Instance) {
         // Every persona alike; seed_instance (0082) debuts the first Boss and the first staff and leaves the rest waiting.
         // `beats` are the slugs of the kinds of board a persona likes to watch (0101): beat_of falls back to them for a board no Mod's order names.
         // `visitHours` and `challenge` are what a persona's visits are like (0103): the hours it runs them and what talks it down. A quiz's challenge carries how many
-        // questions it has and never one of them or its answer; the interception (the plan's Task 9) seeds those where a client cannot read them.
+        // questions it has and never one of them or its answer. The questions and answers travel beside it in `quiz` (0106), which seed_instance writes where no client can read it.
         ...instance.system.roster.map((p) => ({ key: p.key, name: p.name, title: p.title, signature: p.signature, beats: [...p.beats],
-          visitHours: { least: p.strictness.visitHours.least, most: p.strictness.visitHours.most }, challenge: challengeOf(p.weakness) })),
+          visitHours: { least: p.strictness.visitHours.least, most: p.strictness.visitHours.most }, challenge: challengeOf(p.weakness), ...quizOf(p.weakness) })),
       ],
       firstStaff: [...instance.system.firstStaff],
       // The member group every staff character is in, named by the instance.

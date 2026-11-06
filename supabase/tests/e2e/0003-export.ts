@@ -225,6 +225,15 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into wallet_events (account, kind, change, balance_after, ref) select bob, 'refund', 25, 25, id from acts where kind = 'report' and payload ->> 'reason' = 'Carried across 2';
       insert into visit_draw_failures (post_act, rule_number, error) values (p, 1, 'planted: carried across');
       insert into visit_file_failures (visit_act, error) select id, 'planted: carried across' from acts where kind = 'visit' and target_act_id = p;
+      -- Bob's mask tried that visit and failed, and the tail it left, the visit the tail drew, and a quiz persona's question with its answer (0106): carried across with the
+      -- Acts that name them.
+      perform set_config('kayfabb.intercept_writer', 'on', true);
+      insert into acts (character, kind, thread, target_act_id, payload) select b, 'intercept', t, p, jsonb_build_object('visit_act', v.id, 'kind', 'distraction', 'succeeded', false)
+        from acts v where v.kind = 'visit' and v.target_act_id = p;
+      perform set_config('kayfabb.intercept_writer', '', true);
+      insert into tails (character, staff, intercept_act, until) select b, 'exp-bot', i.id, now() + interval '1 day' from acts i where i.kind = 'intercept' and i.character = b;
+      insert into tail_visits (tail, visit_act) select k.id, v.id from tails k, acts v where k.character = b and v.kind = 'visit' and v.target_act_id = p;
+      insert into staff_quiz_questions (staff, idx, question, choices, answer) values ('exp-bot', 0, 'Which carries across?', '["The quiz", "Nothing"]', 'The quiz');
       -- The open season revealed at its end, as the settlement of its last window would.
       perform reveal_season((select starts_at from seasons where ends_at is null) + span_interval(setting('seasonLength')));
     end $$;
@@ -234,7 +243,7 @@ test('an instance exported and imported into a fresh database is the same instan
     insert into public.export_probe values (1, 12.50, array['a,b', 'q"uote', null], 'astral 😀 and \\. alone');`);
   const before = contents(from);
   // The staff roster's tables hold a row in the fixture, so the comparison below carries each (an empty table would round-trip as well, and prove nothing).
-  for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'report_refunds']) {
+  for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'report_refunds', 'tails', 'tail_visits', 'staff_quiz_questions']) {
     const rows = before.get(`public.${t}`);
     assert.ok(rows !== undefined && rows !== '[]', `${t} holds a row in the fixture (got ${rows === undefined ? 'no such table' : rows})`);
   }
@@ -420,7 +429,7 @@ test('an instance exported and imported into a fresh database is the same instan
     const after = contents(fresh.toString());
     assert.deepEqual([...after.keys()], [...before.keys()]);
     for (const [t, rows] of before) assert.equal(after.get(t), rows, `${t} differs after the round trip`);
-    for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'report_refunds']) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
+    for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'report_refunds', 'tails', 'tail_visits', 'staff_quiz_questions']) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
     // The contact an admin set is the same contact in the imported instance, as the page's read answers it (0081).
     const contact = (url: string) => psqlOn(url, `select admin_contact()::text`);
     assert.match(contact(from), /Exported mail/, 'the exported instance holds the contact');

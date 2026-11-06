@@ -145,7 +145,11 @@ begin
         jsonb_build_object('key', 'vs-boss', 'name', 'Visit Boss', 'title', 'Boss', 'signature', 'Hi', 'beats', '[]'::jsonb),
         -- Its hours (2 to 4) are clamped into the settings' 3 to 5: the window is 3 or 4 hours.
         jsonb_build_object('key', 'vs-m1', 'name', 'Visit Mod One', 'title', 'Mod', 'signature', 'Hi', 'beats', '[]'::jsonb,
-          'visitHours', jsonb_build_object('least', 2, 'most', 4), 'challenge', jsonb_build_object('kind', 'quiz', 'questions', 3)),
+          'visitHours', jsonb_build_object('least', 2, 'most', 4), 'challenge', jsonb_build_object('kind', 'quiz', 'questions', 3),
+          'quiz', jsonb_build_array(
+            jsonb_build_object('question', 'Which is first?', 'choices', jsonb_build_array('One', 'Two'), 'answer', 'One'),
+            jsonb_build_object('question', 'Which is second?', 'choices', jsonb_build_array('One', 'Two'), 'answer', 'Two'),
+            jsonb_build_object('question', 'Which is third?', 'choices', jsonb_build_array('Three', 'Four'), 'answer', 'Three'))),
         -- Its hours (6 to 9) are clamped to 5.
         jsonb_build_object('key', 'vs-m2', 'name', 'Visit Mod Two', 'title', 'Mod', 'signature', 'Hi', 'beats', '[]'::jsonb,
           'visitHours', jsonb_build_object('least', 6, 'most', 9), 'challenge', jsonb_build_object('kind', 'bribe', 'price', 50))),
@@ -429,10 +433,10 @@ begin
   perform tests.unbecome();
   opener := (made #>> '{act,id}')::uuid;
   if pg_temp.visit_of(opener) is null then raise exception 'a new thread''s opening post that breaks a rule drew no visit'; end if;
-  if open_tail_staff(c) is not null then raise exception 'the tail hook says a tail is open before Task 9 exists'; end if;
+  if open_tail_staff(c) is not null then raise exception 'a character that failed no interception is under a tail'; end if;
 end $$;
 
--- ---- 11. A trap set on a post springs when a visit starts on it, behind the check Task 9 removes ----
+-- ---- 11. A trap set on a post springs when a visit starts on it (and the sprung trap ends the visit: 0108 shows it) ----
 do $$
 declare
   c uuid := tests.character(pg_temp.ann(), 'Vs Trapper');
@@ -441,12 +445,9 @@ declare
   setting_ uuid;
   v jsonb;
 begin
-  -- Task 9 lifts the table's own refusal of a visit trigger (card_kinds_trap_shape, 0054) with the others; here it is lifted for this file's transaction.
-  alter table card_kinds drop constraint card_kinds_trap_shape;
   update settings set value = value || '{"bluffy.price": 25}' where key = 'economy';
   insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap, ward, lasts)
     values ('vs-trap', 'Vs Trap', 'pepperoni', 'bluffy.price', 'common', 'set', '{"trigger": {"on": "visit"}, "outcome": {"do": "nullify"}}', false, null) on conflict (key) do nothing;
-  if not visit_traps_wired() then raise exception 'a card with a visit trap does not wire the check'; end if;
   setting_ := tests.act(c, 'set', t, '{}', p);
   insert into face_down (play, account, card, post, thread, round, ends_at) values (setting_, pg_temp.ann(), 'vs-trap', p, t, 1, now() + interval '1 day');
   v := start_visit(p, 'vs-m1', jsonb_build_object('rule_number', 1, 'board', (select board from threads where id = t), 'band', 'minor', 'cause', 'patrol', 'about_act', p));

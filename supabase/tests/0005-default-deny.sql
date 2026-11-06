@@ -51,6 +51,9 @@ declare
                            'warn_points(uuid)', 'banned_until(uuid)',
                            -- A report (0105): the player's door, which verifies the caller plays the character and is not banned. Its closing, its refund and its budget are the service's.
                            'open_report(uuid,uuid,text)',
+                           -- An interception (0106): the player's door, which verifies the caller plays the character, that it is not banned and its own wallet. And the question a quiz visit asks,
+                           -- with its choices and never its answer, which thread_page (invoker) reads for the signed-in player.
+                           'intercept(uuid,uuid,text)', 'visit_quiz(uuid,integer)',
                            -- Pure predicates a CHECK calls, granted to PUBLIC by 0080 so a direct writer is not refused (each reads no table).
                            'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])'];
   -- What a visitor (anon) may execute, on purpose; each is also in the list above.

@@ -393,12 +393,11 @@ function playProblems(c: CardRules, cards: readonly CardRules[]): string[] {
   if (trap !== undefined) {
     const on = (trap.trigger as { on?: unknown } | undefined)?.on;
     if (!TRIGGERS.includes(on as never)) out.push(`${who} springs on ${JSON.stringify(on)}; a trap springs on ${TRIGGERS.join(', ')}`);
-    else if (on === 'visit') out.push(`${who} springs on a visit, which is not wired until the staff build adds Mod Bot visits`);
     else if (on === 'reaction' && !QUADRANTS.includes((trap.trigger as { quadrant?: never }).quadrant!)) out.push(`${who} springs on a reaction of ${JSON.stringify((trap.trigger as { quadrant?: unknown }).quadrant)}, which is no quadrant; it names one of ${QUADRANTS.join(', ')}`);
     const outcome = trap.outcome as { do?: unknown; card?: unknown } | undefined;
     if (!OUTCOMES.includes(outcome?.do as never)) out.push(`${who} does ${JSON.stringify(outcome?.do)} when it springs; a trap does ${OUTCOMES.join(', ')}`);
     else if (outcome!.do === 'payout' && on !== 'cast' && TRIGGERS.includes(on as never)) out.push(`${who} pays out on a ${String(on)}; it pays out only on a cast, since only a cast is paid for`);
-    else if (outcome!.do === 'strike' && (on === 'cast' || on === 'reaction')) out.push(`${who} strikes on a ${on}; a strike lays its card on a reply or a quote, until cards reach characters`);
+    else if (outcome!.do === 'strike' && (on === 'cast' || on === 'reaction' || on === 'visit')) out.push(`${who} strikes on a ${on}; a strike lays its card on a reply or a quote, until cards reach characters`);
     else if (outcome!.do === 'strike') {
       const struck = cards.find((k) => k.key === outcome!.card);
       if (!struck) out.push(`${who} strikes with ${JSON.stringify(outcome!.card)}, which the instance does not have`);
@@ -478,6 +477,8 @@ function systemProblems(instance: Instance): string[] {
       if (!Array.isArray(w.questions) || !w.questions.length) out.push(`${who} has a quiz with no question; a quiz needs at least one question`);
       else w.questions.forEach((q: QuizQuestion, i: number) => {
         const at = `${who}'s quiz question ${i + 1}`;
+        if (typeof q.question !== 'string' || !q.question.trim() || q.question.length > 280) out.push(`${at} has no question to ask; a question is text of at most 280 characters`);
+        if (Array.isArray(q.choices) && (q.choices.length > 8 || q.choices.some((c) => typeof c !== 'string' || !c.trim() || c.length > 200))) out.push(`${at} has more than eight choices, or a choice that is blank or over 200 characters`);
         if (!Array.isArray(q.choices) || q.choices.length < 2) out.push(`${at} has fewer than two choices; it needs at least two choices`);
         else if (new Set(q.choices).size !== q.choices.length) out.push(`${at} lists a choice twice`);
         if (!Array.isArray(q.choices) || !q.choices.includes(q.answer)) out.push(`${at} has the answer ${JSON.stringify(q.answer)}, which is not one of its choices`);

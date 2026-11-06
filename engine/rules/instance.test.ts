@@ -425,6 +425,8 @@ test('a quiz needs a question, and each question\'s answer must be one of its ch
   assert.match(said(quiz([])), /quiz.*at least one question/);
   assert.match(said(quiz([{ question: 'Q?', choices: ['a'], answer: 'a' }])), /quiz.*at least two choices/);
   assert.match(said(quiz([{ question: 'Q?', choices: ['a', 'a'], answer: 'a' }])), /quiz.*twice/);
+  assert.match(said(quiz([{ question: ' ', choices: ['a', 'b'], answer: 'a' }])), /quiz.*no question to ask/);
+  assert.match(said(quiz([{ question: 'Q?', choices: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'], answer: 'a' }])), /quiz.*more than eight choices/);
   assert.deepEqual(instanceProblems(quiz([{ question: 'Q?', choices: ['a', 'b'], answer: 'b' }])), []);
 });
 
@@ -650,8 +652,10 @@ test('a strike names a card the instance has, at or below the trap\'s rarity', (
   assert.match(instanceProblems(withCards(striker('splat'), { key: 'splat', rarity: 'rare' })).join('\n'), /card "striker" strikes with "splat", which is rare, rarer than the trap \(uncommon\)/);
 });
 
-test('no card springs on a visit, until the staff build wires visits', () => {
-  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'visit' }, outcome: { do: 'nullify' } } })).join('\n'), /card "splat" springs on a visit, which is not wired until the staff build adds Mod Bot visits/);
+test('a card may spring on a visit, and nullify it; a payout or a strike on one is refused', () => {
+  assert.deepEqual(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'visit' }, outcome: { do: 'nullify' } } })), []);
+  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'visit' }, outcome: { do: 'payout' } } })).join('\n'), /card "splat" pays out on a visit; it pays out only on a cast/);
+  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'visit' }, outcome: { do: 'strike', card: 'splat' } } })).join('\n'), /card "splat" strikes on a visit; a strike lays its card on a reply or a quote/);
 });
 
 test('no card is a Keep, until Keep is designed', () => {
