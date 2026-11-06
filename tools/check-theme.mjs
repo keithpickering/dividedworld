@@ -25,6 +25,9 @@
  * positive, so it is refused, and 0 or less hides the text it sizes. A theme may add a size token the
  * engine does not name; the engine ignores it.
  *
+ * No token's value may name `url(` (or `image-set(`): an image a theme fetches can watch who reads a page, so a
+ * theme draws with gradients and colors, and any art is the instance's own file (the screens design, section 12).
+ *
  * Also read: each instance's `ui/index.ts`. Every `href` in its `themes` list must be an identifier
  * imported from a `*.css?url` file that sits in that instance's own ui/ folder and is in the tree, so
  * the file the page loads as a theme is a file this check has read.
@@ -47,6 +50,8 @@ export const UI_INDEX = /^instances\/([^/]+)\/ui\/index\.ts$/;
 const SELECTORS = new Set([':root', ':root[data-kb-mode="dark"]', ':root[data-kb-mode="light"]']);
 const DEVICE_QUERY = '@media(prefers-color-scheme:dark)';
 const DEVICE_SELECTOR = ':root:not([data-kb-mode="light"])';
+/* A fetch: url( in any spelling, or image-set()/src() which take a bare string as a url. Case-blind, space before the paren allowed. */
+const FETCHES = /\b(?:url|image-set|-webkit-image-set|src)\s*\(/i;
 const SIZE_TOKEN = /^--kb-(size-[a-z0-9-]+|line|board-max)$/;
 
 /** A stylesheet with its comments blanked to spaces, so lines keep their numbers; strings are skipped whole. */
@@ -119,6 +124,8 @@ function declarationFaults(body, at, lineOf, file, out) {
     const value = colon === -1 ? '' : decl.slice(colon + 1).replace(/!\s*important\s*$/i, '').trim();
     if (!/^--kb-[a-z0-9-]+$/.test(name)) {
       out.push({ file, line, why: `"${name.slice(0, 40)}" is not a --kb-* custom property; a theme sets tokens and nothing else` });
+    } else if (FETCHES.test(value)) {
+      out.push({ file, line, why: `${name}: names url(), and a theme's art must be the instance's own file, never a fetch; an outside image can watch who reads a page` });
     } else if (SIZE_TOKEN.test(name)) {
       const m = value.match(/^(\d*\.?\d+)([a-z%]*)$/i);
       if (!m) out.push({ file, line, why: `${name}: ${value} is not a plain positive number with an optional unit, so it cannot be shown to size text above zero` });

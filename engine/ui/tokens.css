@@ -85,6 +85,57 @@
   --kb-meter-hi: #fff;
   --kb-meter-dark: #404040;
   --kb-meter-fill: #0a246a;
+
+  /*
+   * The period skin (docs/plans/2026-11-06-board-look-plan.md, Task 1). Each default draws the plain black-and-white board, by
+   * pointing at a token above, so the dark blocks need none of their own: a var() here follows --kb-bg and --kb-fg into dark. A
+   * theme gives the look. A background token may hold a gradient or layers of them, never a url() (tools/check-theme.mjs), and
+   * contrast.ts reads every stop of it.
+   */
+  --kb-grid: var(--kb-rule);
+  --kb-frame: var(--kb-rule);
+  --kb-row-1: var(--kb-bg);
+  --kb-row-2: var(--kb-bg);
+  --kb-row-3: var(--kb-bg);
+  --kb-head-bg: var(--kb-bg);
+  --kb-head-fg: var(--kb-fg);
+  --kb-head-shadow: none;
+  --kb-bar-bg: var(--kb-bg);
+  --kb-bar-fg: var(--kb-fg);
+  --kb-bar-shadow: none;
+  --kb-banner-bg: var(--kb-bg);
+  --kb-logo-fg: var(--kb-fg);
+  --kb-logo-shadow: none;
+  --kb-nav-bg: var(--kb-bg);
+  --kb-nav-fg: var(--kb-link);
+  --kb-link-hover: var(--kb-link);
+  --kb-input-bg: var(--kb-bg);
+  --kb-input-edge: var(--kb-rule);
+  --kb-input-shadow: none;
+  --kb-button-bg: var(--kb-bg);
+  --kb-button-edge: var(--kb-rule);
+  --kb-button-fg: var(--kb-fg);
+  --kb-button-fg-shadow: none;
+  --kb-button-case: none;
+  --kb-button-radius: 0;
+  --kb-button-primary-bg: var(--kb-fg);
+  --kb-button-primary-fg: var(--kb-bg);
+  /* The folder and nav icons (Task 5): black and white, following the mode. */
+  --kb-icon-ink: var(--kb-fg);
+  --kb-icon-back: var(--kb-bg);
+  --kb-icon-front: var(--kb-bg);
+  --kb-icon-new: var(--kb-fg);
+  --kb-icon-hi: var(--kb-bg);
+  --kb-icon-line: var(--kb-fg);
+  --kb-icon-hot: var(--kb-fg);
+  /* The footer's 80x15 badges. */
+  --kb-badge-a: var(--kb-fg);
+  --kb-badge-a-fg: var(--kb-bg);
+  --kb-badge-b: var(--kb-bg);
+  --kb-badge-b-fg: var(--kb-fg);
+  /* The page's scrollbar (scrollbar-color): the browser's own. */
+  --kb-scrollbar-thumb: auto;
+  --kb-scrollbar-track: auto;
 }
 
 @media (prefers-color-scheme: dark) {

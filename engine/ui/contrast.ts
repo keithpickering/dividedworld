@@ -106,11 +106,17 @@ export function darkBlocksDisagree(sheet: string): string[] {
 }
 
 export function parseColor(value: string): [number, number, number] {
-  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/iu.exec(value.trim());
-  if (!hex) throw new Error(`not a hex color: ${value}`);
-  let h = hex[1]!;
-  if (h.length === 3) h = [...h].map((c) => c + c).join('');
-  return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)) as [number, number, number];
+  const v = value.trim();
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/iu.exec(v);
+  if (hex) {
+    let h = hex[1]!;
+    if (h.length === 3) h = [...h].map((c) => c + c).join('');
+    return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)) as [number, number, number];
+  }
+  /* An opaque rgb(): three channels, commas or spaces. An alpha is not read, since what lies under it is not known. */
+  const rgb = /^rgba?\(\s*(\d{1,3})\s*[,\s]\s*(\d{1,3})\s*[,\s]\s*(\d{1,3})\s*\)$/iu.exec(v);
+  if (rgb && [rgb[1]!, rgb[2]!, rgb[3]!].every((n) => Number(n) <= 255)) return [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])];
+  throw new Error(`not a color this check can read: ${value}`);
 }
 
 function luminance([r, g, b]: [number, number, number]): number {
@@ -121,6 +127,78 @@ function luminance([r, g, b]: [number, number, number]): number {
 export function ratio(a: string, b: string): number {
   const [x, y] = [luminance(parseColor(a)), luminance(parseColor(b))];
   return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
+
+/** `s` split at the commas outside parentheses. */
+function splitTop(s: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let from = 0;
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '(') depth++;
+    else if (s[i] === ')') depth--;
+    else if (s[i] === ',' && depth === 0) { out.push(s.slice(from, i)); from = i + 1; }
+  }
+  out.push(s.slice(from));
+  return out.map((x) => x.trim());
+}
+
+/**
+ * A token's value with each var() followed to the token it names (or its fallback when that is unset), as the browser
+ * computes it. A loop, or a var() with nothing to follow, throws.
+ */
+export function resolveToken(tokens: Tokens, name: string, seen: readonly string[] = []): string {
+  if (seen.includes(name)) throw new Error(`${name} refers to itself`);
+  const raw = tokens[name];
+  if (raw === undefined) throw new Error(`${name} is not set`);
+  return substitute(tokens, raw, [...seen, name]);
+}
+
+function substitute(tokens: Tokens, value: string, seen: readonly string[]): string {
+  for (;;) {
+    const at = value.search(/var\(/u);
+    if (at < 0) return value;
+    let depth = 0;
+    let close = -1;
+    for (let i = at + 3; i < value.length; i++) {
+      if (value[i] === '(') depth++;
+      else if (value[i] === ')' && --depth === 0) { close = i; break; }
+    }
+    if (close < 0) throw new Error(`unclosed var() in ${value}`);
+    const [ref, ...fallback] = splitTop(value.slice(at + 4, close));
+    let got: string;
+    if (ref !== undefined && /^--[a-z0-9-]+$/iu.test(ref) && tokens[ref] !== undefined) got = resolveToken(tokens, ref, seen);
+    else if (fallback.length) got = substitute(tokens, fallback.join(','), seen);
+    else throw new Error(`${ref ?? ''} is not set`);
+    value = value.slice(0, at) + got + value.slice(close + 1);
+  }
+}
+
+const GRADIENT = /^(?:repeating-)?(?:linear|radial|conic)-gradient\((.*)\)$/isu;
+/** What a gradient's argument may be when it holds no color: a direction, a shape or position, an interpolation, a hint. */
+const NO_COLOR = /^(?:to\s|in\s|from\s|at\s|circle|ellipse|closest-|farthest-|[-+]?\d*\.?\d+(?:deg|grad|rad|turn|%|px|em|rem)?$)/iu;
+const COLOR = /^(#[0-9a-f]{3,6}|rgba?\([^)]*\))(?:\s+[-+]?\d*\.?\d+(?:%|px|em|rem|deg|turn)?){0,2}$/iu;
+
+/**
+ * Every color a background value paints, stop by stop: a plain color, a gradient (linear, radial, conic, repeating) or
+ * layers of them separated by commas. A value that holds anything else (a url(), a named color, a color with alpha, a
+ * gradient it cannot take apart) throws, so the check fails on it rather than passing over it.
+ */
+export function backgroundStops(value: string): string[] {
+  const stops: string[] = [];
+  for (const layer of splitTop(value)) {
+    if (layer === '') throw new Error(`an empty layer in ${value}`);
+    const g = GRADIENT.exec(layer);
+    if (!g) { parseColor(layer); stops.push(layer); continue; }
+    const before = stops.length;
+    for (const arg of splitTop(g[1]!)) {
+      const c = COLOR.exec(arg);
+      if (c) { parseColor(c[1]!); stops.push(c[1]!); }
+      else if (!NO_COLOR.test(arg)) throw new Error(`not a color stop this check can read: ${arg}`);
+    }
+    if (stops.length - before < 1) throw new Error(`a gradient with no color stop: ${layer}`);
+  }
+  return stops;
 }
 
 /** [foreground token, background token, least ratio, what it is] */
@@ -143,7 +221,29 @@ export const PAIRS: readonly (readonly [string, string, number, string])[] = [
   ['--kb-focus', '--kb-hud-bg', 3, 'the focus ring on the HUD'],
   ['--kb-chip-own', '--kb-chip-bg', 3, 'the outline of your own reaction'],
   ['--kb-pip', '--kb-bg', 3, 'a full pip'],
+  /* The period skin. A background here may be a gradient: the text is held on every stop of it. */
+  ...(['--kb-row-1', '--kb-row-2', '--kb-row-3'] as const).flatMap((row, i): [string, string, number, string][] => [
+    ['--kb-fg', row, 4.5, `text on table row ${i + 1}`],
+    ['--kb-muted', row, 4.5, `muted text on table row ${i + 1}`],
+    ['--kb-link', row, 4.5, `links on table row ${i + 1}`],
+  ]),
+  ['--kb-head-fg', '--kb-head-bg', 4.5, 'column head text on the head band'],
+  ['--kb-bar-fg', '--kb-bar-bg', 4.5, 'section heading on the light band'],
+  ['--kb-nav-fg', '--kb-nav-bg', 4.5, 'links on the boards\' bar'],
+  ['--kb-logo-fg', '--kb-banner-bg', 3, 'the logo on the banner (large text)'],
+  ['--kb-button-fg', '--kb-button-bg', 4.5, 'a Chrome button\'s label'],
+  ['--kb-button-primary-fg', '--kb-button-primary-bg', 4.5, 'a primary Chrome button\'s label'],
+  ['--kb-fg', '--kb-input-bg', 4.5, 'text in a text box'],
+  ['--kb-badge-a-fg', '--kb-badge-a', 3, 'the first footer badge (decorative)'],
+  ['--kb-badge-b-fg', '--kb-badge-b', 3, 'the second footer badge (decorative)'],
 ];
+
+/** The worst ratio of `fg` over every stop of `bg`; throws on a value that cannot be read. */
+function worstRatio(tokens: Tokens, fg: string, bg: string): number {
+  const text = resolveToken(tokens, fg);
+  parseColor(text);
+  return Math.min(...backgroundStops(resolveToken(tokens, bg)).map((stop) => ratio(text, stop)));
+}
 
 /** The pairs below their least ratio, or naming a token that is not set; empty when the tokens are sound. */
 export function contrastFailures(...sheets: string[]): string[] {
@@ -151,8 +251,10 @@ export function contrastFailures(...sheets: string[]): string[] {
   for (const [mode, tokens] of Object.entries(tokensOf(...sheets)) as [Mode, Tokens][]) {
     for (const [fg, bg, least, what] of PAIRS) {
       if (!tokens[fg] || !tokens[bg]) { failures.push(`${mode}: ${what} needs ${!tokens[fg] ? fg : bg}, which no stylesheet sets`); continue; }
-      const got = ratio(tokens[fg], tokens[bg]);
-      if (got < least) failures.push(`${mode}: ${what} (${fg} ${tokens[fg]} on ${bg} ${tokens[bg]}) is ${got.toFixed(2)}:1, needs ${least}:1`);
+      let got: number;
+      try { got = worstRatio(tokens, fg, bg); }
+      catch (e) { failures.push(`${mode}: ${what} (${fg} on ${bg}) cannot be read: ${(e as Error).message}`); continue; }
+      if (got < least) failures.push(`${mode}: ${what} (${fg} ${tokens[fg]} on ${bg} ${tokens[bg]}) is ${got.toFixed(2)}:1 at its worst stop, needs ${least}:1`);
     }
   }
   return failures;

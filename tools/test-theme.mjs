@@ -72,12 +72,22 @@ const GOOD = `/* a theme */
   check('--kb-board-max: 960px is clean', fires(GOOD.replace('--kb-line: 1.45;', '--kb-line: 1.45; --kb-board-max: 960px;')).length === 0);
 }
 
+/* ---- an outside image can watch who reads a page ---- */
+{
+  const r = fires(GOOD.replace(':root { --kb-fg: #000;', ':root { --kb-banner-bg: url(https://example.com/x.gif); --kb-fg: #000;'));
+  check('--kb-banner-bg: url(https://example.com/x.gif) fires', r.length === 1 && /url\(/.test(r[0]?.why ?? '') && /banner-bg/.test(r[0]?.why ?? ''), JSON.stringify(r));
+  check('a url() hidden in a layer, in uppercase, or with a space is still refused',
+    [`linear-gradient(#fff, #eee), url(x.png)`, `URL(x.png)`, `url (x.png)`, `image-set(url("x.png") 1x)`].every((v) => fires(`:root { --kb-head-bg: ${v}; }`).length === 1));
+  check('in the dark blocks too', fires(`${GOOD}`.replace('--kb-fg: #fff; }\n}', '--kb-fg: #fff; --kb-nav-bg: url(//x.test/a.png); }\n}')).length === 1);
+  check('a gradient is clean', fires(`:root { --kb-head-bg: linear-gradient(#fff, #2b2b2b); }`).length === 0);
+}
+
 /* ---- clean ---- */
 check('a theme in the contract\'s shape is clean', fires(GOOD).length === 0, JSON.stringify(fires(GOOD)));
 check('an empty theme is clean', fires('/* nothing yet */').length === 0);
 check('a comment holding a rule is not a rule', fires(`/* .kb-hud { display: none } */\n${GOOD}`).length === 0);
 check('a selector list formatted over lines, with extra spaces, is the same selector', fires(`:root   {\n --kb-fg: #000;\n}`).length === 0);
-check('a value holding a semicolon in a string or url() is one declaration', fires(`:root { --kb-x: url("data:image/svg+xml;utf8,<svg/>"); --kb-fg: #000; }`).length === 0);
+check('a value holding a semicolon in a string is one declaration', fires(`:root { --kb-x: "a;b"; --kb-fg: #000; }`).length === 0);
 
 /* ---- selectors ---- */
 check('a class rule fires', fires(`${GOOD}\n.kb-box { border: 0; }`).length === 1);
