@@ -5,11 +5,12 @@
  * which the card's `validateConfig` takes (whoops.ts); the server chooses the seed.
  *
  * The swatches are the card's art, so their colors are written here, in the instance, and nowhere in the
- * engine. The preview draws a fixed splat in the ink with the numbers `shading()` gives it, in SVG, so a
- * dark ink shows its wet highlight and a pale one its outline and darker underside as they will on the post.
+ * engine. The preview is a canvas: a fixed splat painted by the same `paintSplat` the post uses, on a 360 by 220
+ * box, and it says its `shading()` in data attributes, so a dark ink shows its wet highlight and a pale one its outline and darker underside as they will on the post.
  */
-import { useEffect, useId } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import type { ConfigFormProps } from '../../../../engine/ui/cards/types.ts';
+import { paintSplat } from './paint.ts';
 import { luminance, makeSplat, shading } from './splat.ts';
 import './whoops.css';
 import { SWATCHES } from './names.ts';
@@ -34,38 +35,23 @@ function drawable(color: unknown): string {
   }
 }
 
+/** The preview's box, CSS px. */
+const PREVIEW_BOX = { w: 360, h: 220 } as const;
+
 function Preview({ color }: { readonly color: string }) {
-  const uid = useId();
+  const ref = useRef<HTMLCanvasElement>(null);
   const sh = shading(color);
-  const { cx, cy, rx, ry } = PREVIEW.placement;
-  const { minX, maxX, minY, maxY } = PREVIEW.bounds;
-  const pad = 0.06;
+  useEffect(() => {
+    const g = ref.current?.getContext('2d');
+    if (!g) return;
+    g.clearRect(0, 0, PREVIEW_BOX.w, PREVIEW_BOX.h);
+    g.drawImage(paintSplat(PREVIEW, color, PREVIEW_BOX, 1), 0, 0);
+  }, [color]);
   return (
-    <svg
-      className="kb-whoops-preview" role="img" aria-label="Preview of the ink"
-      viewBox={`${minX - pad} ${minY - pad} ${maxX - minX + 2 * pad} ${maxY - minY + 2 * pad}`} preserveAspectRatio="xMidYMid meet"
-    >
-      <defs>
-        <clipPath id={`${uid}-clip`}><path d={PREVIEW.path} /></clipPath>
-        <radialGradient id={`${uid}-hi`} cx={cx - rx * 0.2} cy={cy - ry * 0.4} r={rx * 1.1} gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="white" stopOpacity={sh.highlight} />
-          <stop offset="1" stopColor="white" stopOpacity="0" />
-        </radialGradient>
-        <radialGradient id={`${uid}-lo`} cx={cx + rx * 0.25} cy={cy + ry * 0.55} r={rx * 1.5} gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="black" stopOpacity="0" />
-          <stop offset="1" stopColor="black" stopOpacity={sh.underside} />
-        </radialGradient>
-      </defs>
-      {/* A pale ink's soft shadow around the outside edge, so it has an outline on a white page. */}
-      <path
-        d={PREVIEW.path} fill={color} data-kb-edge-shadow={sh.edgeShadow}
-        style={{ filter: `drop-shadow(0 ${sh.edgeOffset / 360}px ${sh.edgeBlur / 360}px rgb(0 0 0 / ${sh.edgeShadow}))` }}
-      />
-      <g clipPath={`url(#${uid}-clip)`}>
-        <rect x={minX - pad} y={minY - pad} width={maxX - minX + 2 * pad} height={maxY - minY + 2 * pad} fill={`url(#${uid}-hi)`} data-kb-highlight={sh.highlight} />
-        <rect x={minX - pad} y={minY - pad} width={maxX - minX + 2 * pad} height={maxY - minY + 2 * pad} fill={`url(#${uid}-lo)`} />
-      </g>
-    </svg>
+    <canvas
+      ref={ref} className="kb-whoops-preview" role="img" aria-label="Preview of the ink" width={PREVIEW_BOX.w} height={PREVIEW_BOX.h}
+      style={{ objectFit: 'contain' }} data-kb-highlight={sh.highlight} data-kb-edge-shadow={sh.edgeShadow}
+    />
   );
 }
 

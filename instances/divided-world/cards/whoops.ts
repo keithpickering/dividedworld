@@ -7,22 +7,25 @@
  * base price; playing it on a long post costs the rest, 0.25 per 500 characters, never more than
  * 3.00 in all (the core loop's design, section 10).
  *
- * While a post is splatted its text is laid out at one fixed width and scaled as a whole, so a
- * stroke is measured in widths of that layout: across from 0 to 1, down from 0 to 64, kept to a
- * thousandth. A post laid out taller than 64 widths has text below any stroke's reach; the screens
- * hold the splat within the first 64, and `clean` still washes the whole layer away. A stroke
- * keeps its place when an edit reflows the text under it. A stroke washes (no color) or inks
- * (the author writing back, in a color); its width is kept to a thousandth too. `clean` is the
+ * A stroke is kept in shares of the post body's box, with the proportions of the box it was made in,
+ * never in widths of a fixed layout: across from 0 to 1 and down from 0 to 1, to a ten-thousandth,
+ * so a point lands at the same share of the body on every screen. A stroke's `width` is the brush's
+ * diameter as a share of the box's width, and its `aspect` is the drawer's box width over its
+ * height (three significant figures), so a round brush on the drawer's screen is the same ellipse
+ * in shares on every other (the refinements design, section 3). A stroke washes (no color) or inks
+ * (the author writing back, in a color). `clean` is the
  * author's save saying the layer is washed clean, so it fades for everyone. Counts, points and widths are bounded so the largest save
  * there can be fits the database's bound on it (effect_state, supabase/migrations/0006_cards.sql),
  * which cards.test.ts measures as Postgres writes it.
  */
 import { basePrice, color, economyOf, landsOn, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
 
-export const STROKES = { most: 200, points: 500, totalPoints: 12_000, widest: 64, deepest: 64 } as const;
-const thousandth = (n: number) => Math.round(n * 1000) / 1000;
+export const STROKES = { most: 200, points: 500, totalPoints: 12_000, widest: 1, deepest: 1 } as const;
+const tenThousandth = (n: number) => Math.round(n * 10_000) / 10_000;
+const threeFigures = (n: number) => Number(n.toPrecision(3));
+const ASPECT = { least: 0.001, most: 1000 } as const;
 
-type Stroke = { tool: 'wash'; width: number; points: [number, number][] } | { tool: 'ink'; color: string; width: number; points: [number, number][] };
+type Stroke = { tool: 'wash'; width: number; aspect: number; points: [number, number][] } | { tool: 'ink'; color: string; width: number; aspect: number; points: [number, number][] };
 
 export const whoops: CardRules<{ color: string }> = {
   key: 'whoops',
@@ -60,23 +63,25 @@ export const whoops: CardRules<{ color: string }> = {
     let total = 0;
     for (const s of strokes) {
       if (typeof s !== 'object' || s === null) return refuse('a stroke is a path');
-      const { tool, color: c, width, points } = s as { tool?: unknown; color?: unknown; width?: unknown; points?: unknown };
+      const { tool, color: c, width, aspect, points } = s as { tool?: unknown; color?: unknown; width?: unknown; aspect?: unknown; points?: unknown };
       if (tool !== 'wash' && tool !== 'ink') return refuse('a stroke washes or inks');
       const ink = tool === 'ink' ? color(c) : null;
       if (tool === 'ink' && !ink) return refuse('an ink stroke\'s color is a color');
       if (tool === 'wash' && c !== undefined) return refuse('a wash stroke has no color');
-      if (typeof width !== 'number' || !(thousandth(width) > 0 && width <= STROKES.widest)) return refuse(`a stroke is between 0 and ${STROKES.widest} wide`);
+      if (typeof width !== 'number' || !(tenThousandth(width) > 0 && width <= STROKES.widest)) return refuse(`a stroke is wide from over 0 to ${STROKES.widest} of the box's width`);
+      if (typeof aspect !== 'number' || !(aspect >= ASPECT.least && aspect <= ASPECT.most)) return refuse(`a stroke's aspect is the drawer's box width over its height, from ${ASPECT.least} to ${ASPECT.most}`);
       if (!Array.isArray(points) || points.length < 1 || points.length > STROKES.points) return refuse(`a stroke has 1 to ${STROKES.points} points`);
       total += points.length;
       if (total > STROKES.totalPoints) return refuse(`at most ${STROKES.totalPoints} points in all`);
       for (const p of points) {
-        if (!Array.isArray(p) || p.length !== 2 || !p.every((n) => typeof n === 'number' && Number.isFinite(n)) || !(p[0] >= 0 && p[0] <= 1 && p[1] >= 0 && p[1] <= STROKES.deepest)) {
-          return refuse(`a point is across from 0 to 1 and down from 0 to ${STROKES.deepest}, in widths of the layout`);
-        }
+        if (!Array.isArray(p) || p.length !== 2 || !p.every((n) => typeof n === 'number' && Number.isFinite(n))) return refuse('a point is two numbers, across then down');
+        if (!(p[0] >= 0 && p[0] <= 1)) return refuse('a point is across from 0 to 1, in shares of the box');
+        if (!(p[1] >= 0 && p[1] <= STROKES.deepest)) return refuse(`a point is down from 0 to ${STROKES.deepest}, in shares of the box`);
       }
-      const kept = (points as [number, number][]).map(([x, y]): [number, number] => [thousandth(x), thousandth(y)]);
-      const w = thousandth(width);
-      out.push(tool === 'ink' ? { tool, color: ink!, width: w, points: kept } : { tool, width: w, points: kept });
+      const kept = (points as [number, number][]).map(([x, y]): [number, number] => [tenThousandth(x), tenThousandth(y)]);
+      const w = tenThousandth(width);
+      const a = threeFigures(aspect);
+      out.push(tool === 'ink' ? { tool, color: ink!, width: w, aspect: a, points: kept } : { tool, width: w, aspect: a, points: kept });
     }
     return ok(clean === undefined ? { strokes: out } : { strokes: out, clean });
   },

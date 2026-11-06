@@ -22,7 +22,7 @@ export function SpunInto({ act }: { readonly act: Id }) {
   };
   const rest = `${spun.more}${spun.atLeast ? ' or more' : ''}`;
   return (
-    <p className="kb-spun kb-small">
+    <p className="kb-spun kb-small" data-kb-over-ink="">
       ↳ Spun into:{' '}
       {threads.map((t, i) => (
         <span key={t.id}>

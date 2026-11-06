@@ -107,8 +107,8 @@ const manifest: BoardManifest = {
 
     /*
      * The posts. A card play takes no number and shows as its tag on its post (cards Task 3), so the page holds #41 to #46 and
-     * nothing else. #41 is splatted (cards Task 5): its body is laid out at the width the post body has at the board's 1200px,
-     * so it breaks its lines as an unsplatted post does, and its splat covers the body edge to edge (the owner's word, the cards
+     * nothing else. #41 is splatted (cards Task 5): its words are laid out at natural size in the post body, so it breaks its lines
+     * as any post does, and its splat covers the body edge to edge (the owner's word, the cards
      * plan's Task 5 amendment of 2026-10-30). The board is drawn across the 1440px window and the build stands in a 1200px
      * column, so a post's x and width, and the heights of #41 (its words wrap more in the narrower column) are the owner's word
      * and not compared (see `post`); what is inside a post is compared from the post's own corner. #42 and #43 are compared by

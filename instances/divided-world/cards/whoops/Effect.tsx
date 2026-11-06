@@ -3,19 +3,25 @@
  * seeded ink laid over the post's words, a reader's scrubbing on their own screen, the author's saved for
  * everyone, and the keyboard path ("Hold to scrub").
  *
- * The post stays the board's 2003 post. While it is splatted its body is laid out once at a reference
- * width, the post body's at the board's widest (scrub.ts `REF_WIDTH`), and scaled as a whole to the frame
- * (`layoutOf`), centered, so lines break in the same places everywhere, and as the post's own would. In the
- * thread the frame is the post's whole body, border to border (whoops.css bleeds it over the body's gutters,
- * and the layout keeps them as padding), so the ink covers the body edge to edge and lies within 0 to 1 of
- * the layout's width, where a stroke can wash it. In the ORIGIN box the frame is the box's content, as it was.
- * Every stroke, kept in widths of that layout, lands on the same words. The ink is a canvas laid over it; the tag is the glass reaching in (`tag` in cards.ts draws it), and the card's
- * state and controls are the Lens's and the kit's, from the view the effect publishes (`show`, below).
+ * The post stays the board's 2003 post: its words are laid out like any other post's, at their natural size and width, and the ink
+ * is fitted to the post body's box (refinements design, section 1). In the thread that box is the body's padding box
+ * (`.kb-act-main`, the cell this sits in, border to border and bar to bar); in the ORIGIN box it is the frame. Every position the
+ * effect keeps is a share of that box, across from 0 to 1 and down from 0 to 1, and each screen maps the shares onto its own box,
+ * so a body whose height changes stretches its ink and its strokes with it. The ink is a canvas laid over the words, sized to
+ * the box and reaching out of the frame to the cell's corner; the tag is the glass reaching in (`tag` in cards.ts draws it), and
+ * the card's state and controls are the Lens's and the kit's, from the view the effect publishes (`show`, below).
+ *
+ * Input. The effect takes its pointer and touch input on the frame, and in the thread on the cell too, so a press beside the reactions, on the tag's row
+ * or in the body's gutters reaches it wherever there is ink; the cell's handler leaves a press inside the frame to the frame's, and takes nothing while the words are away from it. A press whose target is
+ * inside `[data-kb-over-ink]` (what the engine lifts over the ink: the reactions row, the spun line) starts nothing. A mouse or pen
+ * is read by pointer events, a finger by touch events (design section 6): a quick swipe up or down is the page's and washes nothing,
+ * a sideways swipe or a press held 180ms wipes, a tap washes a dab, and a second finger is the page's. Pointer events of type touch
+ * are ignored, so a finger is never read twice.
  *
  * What is the model and what is drawn. A layer's ink is the seeded splat less the strokes washed on it
  * (scrub.ts `LayerInk`), which is geometry and costs no canvas, so which layer a stroke scrubs, how much
- * of a layer is washed and which lines of text lie under ink are answered without reading a pixel and
- * are the same on every screen. The author's pen strokes (written back in a layer's ink) are that layer's ink
+ * of a layer is washed and which lines of text lie under ink are answered without reading a pixel,
+ * each screen's own. The author's pen strokes (written back in a layer's ink) are that layer's ink
  * like the splat: a reader's stroke scrubs them on their screen, a line under one is hidden from a screen reader,
  * and the layers above them cover them. The canvas (paint.ts) only draws that model, and only for a post near
  * the viewport: a page can hold many splatted posts and a canvas is megabytes. The grids the model keeps
@@ -39,18 +45,20 @@
  * the view's state is the moment's words for the frame, each layer top first ("Gloomba's yellow, 40% washed; Spritey's cyan, washed
  * clean"), with no controls.
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { motionReduced } from '../../../../engine/ui/appearance.ts';
 import { LOST_ANSWER, type Answer } from '../../../../engine/ui/data/api.ts';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
 import type { CardPlay, CardView, EffectProps, KitControl } from '../../../../engine/ui/cards/types.ts';
+import { cursor, type CursorMode } from './cursor.ts';
 import { readLines } from './lines.ts';
-import { MAX_DPR, paint, type Geometry, type PaintLayer } from './paint.ts';
+import { MAX_CANVAS_PX, MAX_DPR, paint, paintSplat, type Geometry, type PaintLayer } from './paint.ts';
 import {
-  BODY_GUTTER, BRUSH, LayerInk, PEN, REF_WIDTH, SWEEP_BRUSH, ROW, bandsOf, coveredLines, fits, fitStroke, layoutOf, sweepStep, toLayout, topLayer,
+  BRUSH_PX, LayerInk, PEN_PX, ROW_PX, SWEEP_BRUSH_ROWS, bandsOf, brushOf, coveredLines, fits, fitStroke, minStepOf, sweepStep, topLayer,
   type Pt, type Stroke, type Sweep, type TextLine,
 } from './scrub.ts';
-import { luminance, makeSplat, type Splat } from './splat.ts';
+import { luminance, makeSplat, type Box, type Splat } from './splat.ts';
+import * as suds from './suds.ts';
 import './whoops.css';
 import { inkName } from './names.ts';
 
@@ -66,6 +74,11 @@ const DEFAULT_CLEAN = 95;
 const FADE_MS = 700;
 /** How often the model's published numbers and covered lines are recomputed while a sweep runs. */
 const REFRESH_MS = 150;
+/** A press held this long on ink grabs it (a finger), and one that moves this far (px) before then is a swipe, up or down the page's and sideways a wipe. */
+export const HOLD_MS = 180;
+/** How long after a touch ends the click that follows it is still swallowed. */
+const SUPPRESS_MS = 400;
+export const SLOP_PX = 8;
 /** The ink of a play whose config carries none we can draw (the server keeps one, so this is a safeguard). */
 const FALLBACK_INK = '#ff2bd6';
 
@@ -100,16 +113,20 @@ function seedOf(play: CardPlay): number {
 
 const isPoint = (p: unknown): p is Pt => Array.isArray(p) && p.length === 2 && typeof p[0] === 'number' && typeof p[1] === 'number';
 
-/** A play's saved state, read defensively: the server checked it, but a state is data from outside. */
+/**
+ * A play's saved state, read defensively: the server checked it, but a state is data from outside. A stroke saved before strokes kept
+ * their proportions (no `aspect`), or one with a point outside the box, is dropped, as a malformed one is.
+ */
 function savedOf(saved: unknown): { strokes: Stroke[]; clean: boolean } {
   const state = typeof saved === 'object' && saved !== null ? (saved as Record<string, unknown>) : undefined;
   const raw = state?.strokes;
   const strokes: Stroke[] = [];
   if (Array.isArray(raw)) {
     for (const s of raw as Record<string, unknown>[]) {
-      if (typeof s !== 'object' || s === null || typeof s.width !== 'number' || !Array.isArray(s.points) || !s.points.every(isPoint)) continue;
-      if (s.tool === 'wash') strokes.push({ tool: 'wash', width: s.width, points: s.points as Pt[] });
-      else if (s.tool === 'ink' && typeof s.color === 'string') strokes.push({ tool: 'ink', color: s.color, width: s.width, points: s.points as Pt[] });
+      if (typeof s !== 'object' || s === null || typeof s.width !== 'number' || !(s.width > 0) || typeof s.aspect !== 'number' || !(s.aspect > 0) || !Number.isFinite(s.aspect)) continue;
+      if (!Array.isArray(s.points) || !s.points.every(isPoint) || !(s.points as Pt[]).every(([x, y]) => x >= 0 && x <= 1 && y >= 0 && y <= 1)) continue;
+      if (s.tool === 'wash') strokes.push({ tool: 'wash', width: s.width, aspect: s.aspect, points: s.points as Pt[] });
+      else if (s.tool === 'ink' && typeof s.color === 'string') strokes.push({ tool: 'ink', color: s.color, width: s.width, aspect: s.aspect, points: s.points as Pt[] });
     }
   }
   return { strokes, clean: state?.clean === true };
@@ -118,8 +135,23 @@ function savedOf(saved: unknown): { strokes: Stroke[]; clean: boolean } {
 /** A saved state as one string, whatever order the server's copy lists its keys in, to tell a copy of what was just sent from a different state. */
 const canonical = (state: unknown): string => JSON.stringify(savedOf(state));
 
-/** A stroke being made. */
-interface Live { readonly layer: number; readonly tool: 'wash' | 'ink'; readonly width: number; readonly color: string; readonly points: Pt[]; readonly pointer: number | null }
+/** A stroke being made: its brush as the card keeps it (a share of the box's width, and the box's proportions), and its points in shares of the box. */
+interface Live { readonly layer: number; readonly tool: 'wash' | 'ink'; readonly width: number; readonly aspect: number; readonly color: string; readonly points: Pt[]; readonly pointer: number | null; readonly touch?: true }
+
+/** What a finger is doing: waiting to be told apart, wiping, or the page's. */
+interface Gesture { readonly id: number; readonly x0: number; readonly y0: number; cx: number; cy: number; state: 'wait' | 'wipe' | 'page'; timer: ReturnType<typeof setTimeout> | null }
+
+/**
+ * The pixel density of a box's ink canvas: the screen's, at most `MAX_DPR`, and low enough that the canvas, ceil(box ·
+ * density) both ways, holds at most `MAX_CANVAS_PX`: a tall phone body lowers the density rather than hold a bigger canvas.
+ */
+function densityOf(box: Box): number {
+  const screen = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
+  const area = box.w * box.h;
+  let d = Math.min(MAX_DPR, screen, area > 0 ? Math.sqrt(MAX_CANVAS_PX / area) : MAX_DPR);
+  while (d > 0 && Math.ceil(box.w * d) * Math.ceil(box.h * d) > MAX_CANVAS_PX) d *= 0.9999;
+  return d;
+}
 
 /**
  * A layer's share washed as the readout and its panel say it, a whole percent: one washed clean is 100, and one that still
@@ -142,7 +174,12 @@ interface View {
 export function Effect({ post, plays, states, reader, save, place, show, met, nameOf, still, children }: EffectProps) {
   const { settings } = useKayfa();
   const layers = useMemo<readonly Layer[]>(() => plays.map((play) => ({ play, color: inkOf(play), seed: seedOf(play) })), [plays]);
-  const [size, setSize] = useState({ frame: 0, height: 0, above: 0, cell: 0 });
+  /** The body's box on this screen, and the frame's offset in it (px): the ink canvas reaches out of the frame to the box's corner. */
+  const [size, setSize] = useState<{ box: Box; left: number; top: number }>({ box: { w: 0, h: 0 }, left: 0, top: 0 });
+  /** What input is taken on: the cell in the thread, the frame in the ORIGIN box. */
+  const [surface, setSurface] = useState<HTMLElement | null>(null);
+  /** The cell the frame was last found in (thread only): its listeners stay while the words are away, and ignore everything until they are back. */
+  const [cellEl, setCellEl] = useState<HTMLElement | null>(null);
   const [near, setNear] = useState(true);
   const [built, setBuilt] = useState(false);
   const [tool, setTool] = useState<'wash' | 'ink'>('wash');
@@ -167,16 +204,20 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   /** How many layers' ink grids are held: none for a post that has left the viewport. */
   const [held, setHeld] = useState(0);
 
-  /** In the thread the frame is the post's whole body and the ink runs to its borders, the reactions drawn in front of it, and the header and footer bars outside it. */
+  /** In the thread the box is the post's whole body (the cell), the frame sits inside it, and the ink runs from the frame out to the body's borders, what the engine lifts drawn in front of it. */
   const bleed = place === 'thread';
   const frameRef = useRef<HTMLDivElement>(null);
   const layoutRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const sudsRef = useRef<HTMLDivElement>(null);
+  const sudsRef = useRef<HTMLCanvasElement>(null);
+  /** This post's key with the suds module, and each layer's painted splat (by seed, color and box), kept while the post is near. */
+  const sudsHost = useRef({});
+  const painted = useRef(new Map<string, HTMLCanvasElement>());
 
   /* What the handlers read: the latest of everything, so a handler made once is never stale. */
-  const now = useRef({ layers, states, reader, save, tool, threshold: (settings.cardSettings['whoops.clean'] ?? DEFAULT_CLEAN) / 100, size, near });
-  now.current = { layers, states, reader, save, tool, threshold: (settings.cardSettings['whoops.clean'] ?? DEFAULT_CLEAN) / 100, size, near };
+  const dpr = densityOf(size.box);
+  const now = useRef({ layers, states, reader, save, tool, threshold: (settings.cardSettings['whoops.clean'] ?? DEFAULT_CLEAN) / 100, size, near, dpr, built, surface });
+  now.current = { layers, states, reader, save, tool, threshold: (settings.cardSettings['whoops.clean'] ?? DEFAULT_CLEAN) / 100, size, near, dpr, built, surface };
   /** Drawn in a play's moment: as the saved states say, taking no input, saving, meeting and fading nothing. */
   const stillNow = useRef(still);
   stillNow.current = still;
@@ -197,7 +238,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   const gone = useRef(false);
   const say = useCallback((words: string) => { if (!gone.current) setReport(words); }, []);
   /** What the ink grids were built from, so a state that changes nothing in them does not build them again. */
-  const builtFrom = useRef<{ splats: readonly Splat[]; height: number; payload: unknown; states: Map<string, string> } | null>(null);
+  const builtFrom = useRef<{ splats: readonly Splat[]; w: number; h: number; top: number; payload: unknown; states: Map<string, string> } | null>(null);
   const cleanedAt = useRef(new Map<string, number>());
   const wasClean = useRef<readonly boolean[] | null>(null);
   const live = useRef<Live | null>(null);
@@ -208,25 +249,22 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   /* A fade still running when the post leaves the page is let go with it: nothing redraws a post that is gone. */
   useEffect(() => () => { if (fadeTimer.current) clearTimeout(fadeTimer.current); }, []);
 
-  const frame = size.frame;
-  const fixed = frame > 0;
-  const geo = layoutOf(frame || REF_WIDTH);
-  const height = size.height / REF_WIDTH;
-  /* The sweep reads the layout's geometry as it is each frame, not as it was when the sweep began: a resize mid-sweep moves the suds with the words. */
-  const geoNow = useRef(geo);
-  geoNow.current = geo;
+  const { box } = size;
+  const fixed = box.w > 0 && box.h > 0;
 
   /* ------------------------------------------------------------------ measuring ---- */
 
+  /** Measures again now: set by the effect below, called by whatever may have moved the words (a render, the viewport observer). */
+  const remeasure = useRef<(() => void) | null>(null);
   useLayoutEffect(() => {
     const f = frameRef.current;
-    const l = layoutRef.current;
-    if (!f || !l) return;
+    if (!f) return;
     /*
-     * In the thread the ink reaches the post body's borders (the owner's word), so the body, the cell this sits in, is measured too: how
-     * far down it the frame starts and how tall it is. The cell is found at each measure and not once: under a takeover (Stick Around)
-     * the words are mounted in an element that is moved into the post afterwards, and moved again into its view, so the cell is not
-     * there when this first runs and changes when the words move. The observer follows whichever cell there is.
+     * In the thread the box is the post body's padding box (the owner's word: the ink reaches the body's borders), so the body, the cell
+     * this sits in, is measured: its client size, and where the frame starts in it, from the two rects. The cell is found at each measure
+     * and not once: under a takeover (Stick Around) the words are mounted in an element that is moved into the post afterwards, and
+     * moved again into its view, so the cell is not there when this first runs and changes when the words move. The observer follows
+     * whichever cell there is. With no cell (or in the ORIGIN box) the frame is the box.
      */
     let watched: HTMLElement | null = null;
     let watch: ResizeObserver | null = null;
@@ -237,26 +275,48 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
         if (cell) watch.observe(cell);
         watched = cell;
       }
-      setSize((prev) => {
-        const next = { frame: f.clientWidth, height: l.offsetHeight, above: cell ? f.getBoundingClientRect().top - cell.getBoundingClientRect().top : 0, cell: cell ? cell.clientHeight : 0 };
-        return prev.frame === next.frame && prev.height === next.height && prev.above === next.above && prev.cell === next.cell ? prev : next;
-      });
+      if (cell) setCellEl((prev) => (prev === cell ? prev : cell));
+      /* The handlers read `now`, so what is measured is put there at once: a press that finds the words moved measures first and reads the right box in the same event. */
+      const surf = cell ?? f;
+      let next: { box: Box; left: number; top: number };
+      if (cell) {
+        const fr = f.getBoundingClientRect(), cr = cell.getBoundingClientRect();
+        next = { box: { w: cell.clientWidth, h: cell.clientHeight }, left: fr.left - cr.left - cell.clientLeft, top: fr.top - cr.top - cell.clientTop };
+      } else {
+        next = { box: { w: f.clientWidth, h: f.clientHeight }, left: 0, top: 0 };
+      }
+      const was = now.current.size;
+      const kept = was.box.w === next.box.w && was.box.h === next.box.h && was.left === next.left && was.top === next.top ? was : next;
+      now.current = { ...now.current, surface: surf, size: kept };
+      setSurface((prev) => (prev === surf ? prev : surf));
+      setSize((prev) => (prev.box.w === kept.box.w && prev.box.h === kept.box.h && prev.left === kept.left && prev.top === kept.top ? prev : kept));
     };
     if (typeof ResizeObserver === 'function') {
       watch = new ResizeObserver(measure);
       watch.observe(f);
-      watch.observe(l);
     }
     measure();
-    if (!watch) return;
-    return () => watch?.disconnect();
-  }, []);
+    remeasure.current = measure;
+    return () => { remeasure.current = null; watch?.disconnect(); };
+  }, [bleed]);
+
+  /*
+   * A takeover (Stick Around) moves the words' element, the frame with it, between the post's cell and its view, which may change
+   * no size and wakes no observer, and a lift does not render this effect for certain. So each render checks, cheaply, that the cell
+   * found from the frame is still the surface it listens on, and the viewport observer below checks as well.
+   */
+  useLayoutEffect(() => {
+    const f = frameRef.current;
+    if (!f || !remeasure.current) return;
+    const cell = bleed ? f.closest<HTMLElement>('.kb-act-main') : null;
+    if ((cell ?? f) !== now.current.surface) remeasure.current();
+  });
 
   /* Only a post near the viewport is drawn: past a screen above or below, the canvas is dropped. */
   useEffect(() => {
     const f = frameRef.current;
     if (!f || typeof IntersectionObserver !== 'function') return;
-    const watch = new IntersectionObserver((entries) => setNear(entries.some((e) => e.isIntersecting)), { rootMargin: '100% 0px' });
+    const watch = new IntersectionObserver((entries) => { setNear(entries.some((e) => e.isIntersecting)); remeasure.current?.(); }, { rootMargin: '100% 0px' });
     setNear(false);
     watch.observe(f);
     return () => watch.disconnect();
@@ -305,13 +365,14 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     });
   }, [cleanOf]);
 
-  /* Rebuild every layer's ink when the splats change (the post's height, the plays) or a saved state arrives, and let it go when the post is far from the viewport. */
+  /* Rebuild every layer's ink when the splats change (the plays), the box changes (the body's size, or where the frame lies in it) or a saved state arrives, and let it go when the post is far from the viewport. */
   const splats = useMemo<readonly Splat[] | null>(() => (built ? layers.map((l) => makeSplat(l.seed)) : null), [built, layers]);
   useEffect(() => {
     if (!splats) return;
     if (!near) {
-      /* Only the grids go: the strokes made on this screen are in `mine`, the saved ones are in the states, and both come back with the grids. */
+      /* Only the grids and the painted splats go: the strokes made on this screen are in `mine`, the saved ones are in the states, and both come back with the grids. */
       inks.current = [];
+      painted.current.clear();
       builtFrom.current = null;
       setHeld(0);
       return;
@@ -319,9 +380,9 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     const fromStates = new Map(layers.map((l) => [l.play.id, canonical(states[l.play.id]?.state)]));
     const was = builtFrom.current;
     /* The state that comes back from this screen's own save is what the grids already hold (the strokes in it were washed into them as they were made). */
-    const echo = was !== null && inks.current.length === layers.length && was.splats === splats && was.height === height && was.payload === post.currentPayload
+    const echo = was !== null && inks.current.length === layers.length && was.splats === splats && was.w === box.w && was.h === box.h && was.top === size.top && was.payload === post.currentPayload
       && layers.every((l) => fromStates.get(l.play.id) === was.states.get(l.play.id) || fromStates.get(l.play.id) === lastSent.current.get(l.play.id));
-    builtFrom.current = { splats, height, payload: post.currentPayload, states: fromStates };
+    builtFrom.current = { splats, w: box.w, h: box.h, top: size.top, payload: post.currentPayload, states: fromStates };
     if (echo) {
       refresh();
       schedulePaint();
@@ -329,50 +390,53 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     }
     inks.current = splats.map((splat, i) => {
       const id = layers[i]!.play.id;
-      const ink = new LayerInk(splat, savedOf(states[id]?.state).strokes, { minX: 0, maxX: 1, minY: 0, maxY: height });
+      const ink = new LayerInk(splat, savedOf(states[id]?.state).strokes, box);
       for (const s of mine.current.get(id) ?? []) {
-        if (s.tool === 'wash') ink.wash(s.points, s.width);
-        else ink.pen(s.points, s.width);
+        if (s.tool === 'wash') ink.wash(s.points, s.width, s.aspect);
+        else ink.pen(s.points, s.width, s.aspect);
       }
       return ink;
     });
     setHeld(inks.current.length);
     const body = layoutRef.current;
     if (body) {
-      const read = readLines(body, layoutOf(now.current.size.frame || REF_WIDTH).scale);
-      textLines.current = read.length > 0 ? read : [{ top: 0, bottom: height, text: body.textContent ?? '' }];
+      /* The lines are read from the layout, whose top is the frame's, and are shares of the box: the frame's offset in it is added. */
+      const read = readLines(body, box);
+      const off = size.top / box.h;
+      textLines.current = read.length > 0 ? read.map((l) => ({ ...l, top: l.top + off, bottom: l.bottom + off })) : [{ top: 0, bottom: 1, text: body.textContent ?? '' }];
     }
     refresh();
     schedulePaint();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [splats, states, post.currentPayload, height, near]);
+  }, [splats, states, post.currentPayload, box.w, box.h, size.top, near]);
 
   /* ----------------------------------------------------------------- the canvas ---- */
 
-  const dpr = typeof window === 'undefined' ? 1 : Math.min(MAX_DPR, window.devicePixelRatio || 1);
-  /** The rows the splats reach, in px down the frame: the canvas covers these and nothing more. */
-  const band = useMemo(() => {
-    if (!splats || !fixed) return { top: 0, height: 0 };
-    const lo = Math.min(...splats.map((s) => s.bounds.minY)) * geo.width - 8;
-    const hi = Math.max(...splats.map((s) => s.bounds.maxY)) * geo.width + 8;
-    /* The canvas may reach up and down the post's body past the words (the tag above, the reactions below) when it has a body to reach; otherwise it stops at the words. */
-    const floor = size.cell > 0 ? -size.above : 0;
-    const ceiling = size.cell > 0 ? size.cell - size.above : size.height * geo.scale;
-    const top = Math.max(floor, lo);
-    return { top, height: Math.max(1, Math.min(ceiling, hi) - top) };
-  }, [splats, fixed, geo.width, geo.scale, size.height, size.cell, size.above]);
+  /** A layer's splat as `paintSplat` paints it for this box, kept by (seed, color, box) while the post is near, one pixel to the CSS px at most. */
+  const paintedFor = useCallback((i: number, ink: LayerInk, color: string, seed: number, b: Box, density: number): HTMLCanvasElement => {
+    const q = Math.min(1, density);
+    const key = `${seed}|${color}|${b.w}|${b.h}|${q}`;
+    let held = painted.current.get(`${i}|${key}`);
+    if (!held) {
+      /* A box that changed leaves its older splat behind: this layer's other keys go. */
+      for (const k of painted.current.keys()) if (k.startsWith(`${i}|`)) painted.current.delete(k);
+      held = paintSplat(ink.splat, color, b, q);
+      painted.current.set(`${i}|${key}`, held);
+    }
+    return held;
+  }, []);
 
   const paintNow = useCallback(() => {
     paintQueued.current = 0;
     const canvas = canvasRef.current;
-    const { layers: all, size: sz } = now.current;
-    if (!canvas || !now.current.near || sz.frame <= 0 || inks.current.length !== all.length) return;
-    const g = layoutOf(sz.frame);
-    const geometry: Geometry = { dpr, width: g.width, offset: g.offset, top: band.top, scale: g.scale };
+    const { layers: all, size: sz, dpr: density } = now.current;
+    if (!canvas || !now.current.near || sz.box.w <= 0 || sz.box.h <= 0 || inks.current.length !== all.length) return;
+    /* The ink canvas is placed at the box's origin (`onBox`: left -size.left, top -size.top from the frame), so the box's origin is (0, 0) in the canvas's own frame; the frame's offset in the cell is where the canvas sits, never where the box lies in it. */
+    const geometry: Geometry = { dpr: density, box: sz.box, left: 0, top: 0 };
     const reduced = motionReduced();
     const stroking = live.current;
     let fading = false;
-    const painted: PaintLayer[] = [];
+    const layersOut: PaintLayer[] = [];
     all.forEach((layer, i) => {
       const id = layer.play.id;
       const clean = savedFor(id).clean || localClean.current.has(id);
@@ -384,54 +448,56 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
       }
       const strokes = [...savedFor(id).strokes, ...(mine.current.get(id) ?? [])];
       if (stroking && stroking.layer === i) {
-        strokes.push(stroking.tool === 'wash' ? { tool: 'wash', width: stroking.width, points: stroking.points } : { tool: 'ink', color: stroking.color, width: stroking.width, points: stroking.points });
+        strokes.push(stroking.tool === 'wash'
+          ? { tool: 'wash', width: stroking.width, aspect: stroking.aspect, points: stroking.points }
+          : { tool: 'ink', color: stroking.color, width: stroking.width, aspect: stroking.aspect, points: stroking.points });
       }
-      if (alpha > 0) painted.push({ splat: inks.current[i]!.splat, color: layer.color, strokes, alpha });
+      if (alpha > 0) layersOut.push({ painted: paintedFor(i, inks.current[i]!, layer.color, layer.seed, sz.box, density), color: layer.color, strokes, alpha });
     });
-    paint(canvas, geometry, painted);
+    paint(canvas, geometry, layersOut);
     if (fading) schedulePaint();
-  }, [band.top, dpr, savedFor]);
+  }, [savedFor, paintedFor]);
 
   const schedulePaint = useCallback(() => {
     if (paintQueued.current) return;
     paintQueued.current = requestAnimationFrame(paintNow);
   }, [paintNow]);
 
-  /* A canvas of the right size whenever the frame, the layers or the post's nearness change. */
+  /* Canvases of the right size whenever the box, the layers or the post's nearness change: the ink's, and the suds' over it. */
   useLayoutEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !fixed) return;
-    canvas.width = Math.ceil(frame * dpr);
-    canvas.height = Math.ceil(band.height * dpr);
+    if (!fixed) return;
+    for (const canvas of [canvasRef.current, sudsRef.current]) {
+      if (!canvas) continue;
+      canvas.width = Math.ceil(box.w * dpr);
+      canvas.height = Math.ceil(box.h * dpr);
+    }
     schedulePaint();
-  }, [near, built, fixed, frame, band.height, dpr, schedulePaint]);
+  }, [near, built, fixed, box.w, box.h, dpr, schedulePaint]);
 
   useEffect(() => () => { if (paintQueued.current) cancelAnimationFrame(paintQueued.current); }, []);
 
   /* ------------------------------------------------------------------ the suds ---- */
 
-  const lastSud = useRef(0);
-  const sud = useCallback((x: number, y: number) => {
-    const host = sudsRef.current;
-    if (!host || motionReduced()) return;
-    const t = performance.now();
-    if (t - lastSud.current < 45) return;
-    lastSud.current = t;
-    while (host.childElementCount >= 24) host.firstElementChild?.remove();
-    for (let k = 0; k < 2; k++) {
-      const bubble = document.createElement('span');
-      bubble.className = 'kb-whoops-sud';
-      const d = 4 + Math.random() * 8;
-      bubble.style.cssText = `left:${x - d / 2}px;top:${y - d / 2}px;width:${d}px;height:${d}px`;
-      host.append(bubble);
-      const dx = (Math.random() - 0.5) * 36;
-      const rise = -(8 + Math.random() * 26);
-      if (typeof bubble.animate === 'function') {
-        bubble.animate([{ transform: 'translate(0, 0) scale(1)', opacity: 0.9 }, { transform: `translate(${dx}px, ${rise}px) scale(0.2)`, opacity: 0 }], { duration: 600 + Math.random() * 300, easing: 'ease-out' }).onfinish = () => bubble.remove();
-      } else {
-        setTimeout(() => bubble.remove(), 700);
-      }
-    }
+  /* The suds module draws on this post's own canvas while the post is near (the ink's box, in px), and lets it go when the post leaves or goes. */
+  const topInk = layers.reduce((color, l, i) => (view?.clean[i] ? color : l.color), layers[0]?.color ?? FALLBACK_INK);
+  useEffect(() => {
+    const canvas = sudsRef.current;
+    const host = sudsHost.current;
+    if (!near || !built || !fixed || !canvas) return;
+    suds.register(host, canvas, box, dpr, topInk);
+  }, [near, built, fixed, box, dpr, topInk]);
+  /* Let go only when the post leaves or goes: a change of ink or box re-registers above, and the module keeps what is live. */
+  useEffect(() => {
+    if (!near || !built || !fixed) return;
+    const host = sudsHost.current;
+    return () => suds.unregister(host);
+  }, [near, built, fixed]);
+
+  /** What a move of the brush from `a` to `b` (shares of the box) throws up, in px of the box. */
+  const throwSuds = useCallback((a: Pt, b: Pt, overInk: boolean) => {
+    if (motionReduced()) return;
+    const { box: bx } = now.current.size;
+    suds.wash(sudsHost.current, { x: a[0] * bx.w, y: a[1] * bx.h }, { x: b[0] * bx.w, y: b[1] * bx.h }, overInk);
   }, []);
 
   /* ------------------------------------------------------------------- saving ---- */
@@ -528,21 +594,30 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   const keep = useCallback((s: Live) => {
     const id = now.current.layers[s.layer]?.play.id;
     if (!id || s.points.length === 0) return;
-    const stroke: Stroke = s.tool === 'wash' ? { tool: 'wash', width: s.width, points: s.points } : { tool: 'ink', color: s.color, width: s.width, points: s.points };
-    const kept = fitStroke(stroke);
+    const stroke: Stroke = s.tool === 'wash'
+      ? { tool: 'wash', width: s.width, aspect: s.aspect, points: s.points }
+      : { tool: 'ink', color: s.color, width: s.width, aspect: s.aspect, points: s.points };
+    const kept = fitStroke(stroke, minStepOf(now.current.size.box));
     mine.current.set(id, [...(mine.current.get(id) ?? []), ...kept]);
     if (now.current.reader.author) queueSave(id);
   }, [queueSave]);
 
   /* ------------------------------------------------------------------ a stroke ---- */
 
-  const at = (e: ReactPointerEvent): Pt => {
-    const rect = frameRef.current!.getBoundingClientRect();
-    return toLayout([e.clientX - rect.left, e.clientY - rect.top], now.current.size.frame);
+  /** Where a point of the screen lies in the body's box, in shares of it. */
+  const shareAt = (clientX: number, clientY: number): Pt => {
+    const el = now.current.surface ?? frameRef.current!;
+    const rect = el.getBoundingClientRect();
+    const { box: b } = now.current.size;
+    return [(clientX - rect.left - el.clientLeft) / b.w, (clientY - rect.top - el.clientTop) / b.h];
   };
-  const screenAt = (e: ReactPointerEvent): Pt => {
-    const rect = frameRef.current!.getBoundingClientRect();
-    return [e.clientX - rect.left, e.clientY - rect.top];
+  /** Whether a press lands on something the engine lifts over the ink: it is that control's, and starts no stroke. */
+  const overInk = (target: EventTarget | null) => target instanceof Element && target.closest('[data-kb-over-ink]') !== null;
+  const writing = () => now.current.reader.author && now.current.tool === 'ink';
+  /** The layer a stroke starting at `p` takes: the top one with ink there, or, for the author's pen, the top live one. */
+  const layerAt = (p: Pt): number => {
+    const lives = liveInks();
+    return writing() ? lives.reduce((top, ink, i) => (ink ? i : top), -1) : topLayer(lives, p[0], p[1]);
   };
 
   const finish = useCallback(() => {
@@ -556,50 +631,265 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   }, [checkClean, keep, refresh, schedulePaint]);
 
   const suppress = useRef(false);
+  const suppressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearSuppress = () => {
+    if (suppressTimer.current) clearTimeout(suppressTimer.current);
+    suppressTimer.current = null;
+    suppress.current = false;
+  };
+  /** After a touch ends the click that follows it is swallowed; if none comes it is forgotten shortly, so it never takes a later, unrelated click. */
+  const armSuppress = () => {
+    clearSuppress();
+    suppress.current = true;
+    suppressTimer.current = setTimeout(clearSuppress, SUPPRESS_MS);
+  };
+  /** What the drawn cursor shows, kept while a stroke is under way. */
+  const shown = useRef<{ mode: CursorMode; ink?: string }>({ mode: null });
 
-  const onPointerDown = (e: ReactPointerEvent) => {
-    if (!built || live.current || (e.pointerType === 'mouse' && e.button !== 0)) return;
-    const p = at(e);
-    const lives = liveInks();
-    const topAny = lives.reduce((top, ink, i) => (ink ? i : top), -1);
-    const pen = now.current.reader.author && now.current.tool === 'ink';
-    const layer = pen ? topAny : topLayer(lives, p[0], p[1]);
-    /* No ink under the finger, or no layer to write in: the page has the touch, for a link or a scroll. */
-    if (layer < 0) return;
+  /** Begins a stroke at `p`, on the layer it takes: false when there is none. */
+  const begin = (p: Pt, pointer: number, touch: boolean): boolean => {
+    const layer = layerAt(p);
+    if (layer < 0) return false;
     meet();
-    e.preventDefault();
-    frameRef.current?.setPointerCapture?.(e.pointerId);
+    const pen = writing();
+    const brush = brushOf(pen ? PEN_PX : BRUSH_PX, now.current.size.box);
     live.current = pen
-      ? { layer, tool: 'ink', width: PEN, color: now.current.layers[layer]!.color, points: [p], pointer: e.pointerId }
-      : { layer, tool: 'wash', width: BRUSH, color: '', points: [p], pointer: e.pointerId };
-    if (pen) inks.current[layer]!.pen([p], PEN);
-    else inks.current[layer]!.wash([p], BRUSH);
+      ? { layer, tool: 'ink', ...brush, color: now.current.layers[layer]!.color, points: [p], pointer, ...(touch ? { touch: true as const } : null) }
+      : { layer, tool: 'wash', ...brush, color: '', points: [p], pointer, ...(touch ? { touch: true as const } : null) };
+    if (pen) inks.current[layer]!.pen([p], brush.width, brush.aspect);
+    else inks.current[layer]!.wash([p], brush.width, brush.aspect);
     suppress.current = false;
     schedulePaint();
+    return true;
   };
 
-  const onPointerMove = (e: ReactPointerEvent) => {
-    const s = live.current;
-    if (!s || (s.pointer !== null && e.pointerId !== s.pointer)) return;
-    const p = at(e);
+  /** Carries the stroke to `p`: the ink under the brush is washed (or written), and the suds go up. */
+  const extend = (s: Live, p: Pt) => {
     const last = s.points[s.points.length - 1]!;
     if (Math.hypot(p[0] - last[0], p[1] - last[1]) === 0) return;
     s.points.push(p);
     suppress.current = true;
     if (s.tool === 'wash') {
-      inks.current[s.layer]?.wash([last, p], BRUSH);
-      const [sx, sy] = screenAt(e);
-      sud(sx, sy);
+      const over = liveInks().some((ink) => ink?.has(p[0], p[1]));
+      inks.current[s.layer]?.wash([last, p], s.width, s.aspect);
+      throwSuds(last, p, over);
     } else {
-      inks.current[s.layer]?.pen([last, p], PEN);
+      inks.current[s.layer]?.pen([last, p], s.width, s.aspect);
     }
     schedulePaint();
   };
 
-  const onPointerEnd = (e: ReactPointerEvent) => {
-    if (live.current && live.current.pointer !== null && e.pointerId !== live.current.pointer) return;
-    finish();
+  /** What the cursor shows at a pointer event: nothing over what the engine lifts, the author's pen while they write, the sponge over ink a stroke would take. */
+  const cursorAt = (e: PointerEvent): { mode: CursorMode; ink?: string } => {
+    if (live.current && !live.current.touch) return shown.current;
+    if (overInk(e.target)) return { mode: null };
+    const lives = liveInks();
+    if (writing()) {
+      const top = lives.reduce((at, ink, i) => (ink ? i : at), -1);
+      if (top >= 0) return { mode: 'pen', ink: now.current.layers[top]!.color };
+    }
+    const p = shareAt(e.clientX, e.clientY);
+    return topLayer(lives, p[0], p[1]) >= 0 ? { mode: 'sponge' } : { mode: null };
   };
+  const showCursor = (e: PointerEvent) => {
+    const el = now.current.surface;
+    if (!el) return;
+    shown.current = cursorAt(e);
+    cursor.over(el, e, shown.current.mode, shown.current.ink);
+  };
+
+  /**
+   * Called first by every press and pointer move: the words may have been moved between the cell and a view (Stick Around) with no render
+   * and no observer callback, so the surface measured is checked against where the frame is now, and measured again at once if it differs.
+   */
+  const ensure = () => {
+    const f = frameRef.current;
+    if (!f) return;
+    const cell = bleed ? f.closest<HTMLElement>('.kb-act-main') : null;
+    if ((cell ?? f) !== now.current.surface) remeasure.current?.();
+  };
+
+  const onPointerDown = (e: PointerEvent) => {
+    ensure();
+    if (e.pointerType === 'touch' || !now.current.built || live.current || (e.pointerType === 'mouse' && e.button !== 0) || overInk(e.target)) return;
+    const [x, y] = shareAt(e.clientX, e.clientY);
+    /* No ink under the pointer, or no layer to write in: the page has it, for a link or a scroll. */
+    if (!begin([x, y], e.pointerId, false)) return;
+    e.preventDefault();
+    (e.currentTarget as Element | null)?.setPointerCapture?.(e.pointerId);
+    shown.current = { mode: writing() ? 'pen' : 'sponge', ink: writing() ? live.current!.color : undefined };
+    cursor.press(true);
+    if (now.current.surface) cursor.over(now.current.surface, e, shown.current.mode, shown.current.ink);
+  };
+
+  const onPointerMove = (e: PointerEvent) => {
+    if (e.pointerType === 'touch') return;
+    ensure();
+    const s = live.current;
+    if (s && !s.touch && (s.pointer === null || e.pointerId === s.pointer)) extend(s, shareAt(e.clientX, e.clientY));
+    showCursor(e);
+  };
+
+  const onPointerEnd = (e: PointerEvent) => {
+    if (e.pointerType === 'touch') return;
+    if (live.current && !live.current.touch && live.current.pointer !== null && e.pointerId !== live.current.pointer) return;
+    const was = live.current;
+    finish();
+    if (was) {
+      cursor.press(false);
+      if (e.type === 'pointerup') showCursor(e);
+      else if (now.current.surface) cursor.leave(now.current.surface);
+    }
+  };
+
+  const onPointerLeave = (e: PointerEvent) => {
+    if (e.pointerType === 'touch' || live.current) return;
+    if (now.current.surface) cursor.leave(now.current.surface);
+  };
+
+  /* ---------------------------------------------------------------------- a finger ---- */
+
+  const gesture = useRef<Gesture | null>(null);
+  const settle = (g: Gesture) => { if (g.timer) clearTimeout(g.timer); g.timer = null; };
+
+  const onTouchStart = (e: TouchEvent) => {
+    ensure();
+    if (e.touches.length > 1) {
+      /* A second finger is the page's: a pinch or a scroll. A wipe already under way stops where it got to. */
+      if (gesture.current) { settle(gesture.current); gesture.current.state = 'page'; }
+      if (live.current?.touch) finish();
+      return;
+    }
+    const tc = e.changedTouches[0];
+    if (!tc || !now.current.built || overInk(e.target)) return;
+    suppress.current = false;
+    if (layerAt(shareAt(tc.clientX, tc.clientY)) < 0) return;
+    const g: Gesture = { id: tc.identifier, x0: tc.clientX, y0: tc.clientY, cx: tc.clientX, cy: tc.clientY, state: 'wait', timer: null };
+    gesture.current = g;
+    g.timer = setTimeout(() => {
+      if (gesture.current !== g || g.state !== 'wait') return;
+      /* Held: the ink is grabbed, with a puff of suds and a short buzz where the device allows it. */
+      g.state = 'wipe';
+      begin(shareAt(g.x0, g.y0), g.id, true);
+      const { box: b } = now.current.size;
+      const [hx, hy] = shareAt(g.cx, g.cy);
+      if (!motionReduced()) suds.puff(sudsHost.current, { x: hx * b.w, y: hy * b.h });
+      try { navigator.vibrate?.(8); } catch { /* not offered here */ }
+    }, HOLD_MS);
+  };
+
+  const onTouchMove = (e: TouchEvent) => {
+    const g = gesture.current;
+    if (!g) return;
+    const tc = Array.from(e.changedTouches).find((c) => c.identifier === g.id);
+    if (!tc) return;
+    g.cx = tc.clientX;
+    g.cy = tc.clientY;
+    if (g.state === 'page') return;
+    if (g.state === 'wait') {
+      const dx = tc.clientX - g.x0, dy = tc.clientY - g.y0;
+      if (Math.hypot(dx, dy) < SLOP_PX) return;
+      settle(g);
+      /* A swipe mostly up or down is the page's scroll, and washes nothing; a sideways one wipes. */
+      if (Math.abs(dy) > Math.abs(dx)) { g.state = 'page'; return; }
+      g.state = 'wipe';
+      begin(shareAt(g.x0, g.y0), g.id, true);
+    }
+    /* Wiping: the page's scroll is refused for the rest of the touch. */
+    if (e.cancelable) e.preventDefault();
+    const s = live.current;
+    if (s?.touch) extend(s, shareAt(tc.clientX, tc.clientY));
+  };
+
+  const onTouchEnd = (e: TouchEvent) => {
+    const g = gesture.current;
+    if (!g || !Array.from(e.changedTouches).some((c) => c.identifier === g.id)) return;
+    settle(g);
+    /* A tap on the ink washes one dab, as a click does. */
+    if (e.type === 'touchend' && g.state === 'wait') begin(shareAt(g.x0, g.y0), g.id, true);
+    /* A lifted finger is followed by a click; a cancelled touch is followed by none, so it clears whatever a wipe left. */
+    if (e.type === 'touchcancel') clearSuppress();
+    else if (g.state === 'wipe' || g.state === 'wait') armSuppress();
+    gesture.current = null;
+    if (live.current?.touch) finish();
+  };
+
+  /*
+   * The input: the frame always, and in the thread the cell too (see the effect). The listeners are native, added here and taken off on
+   * cleanup or when the cell changes, because the cell is the engine's and a touch move must not be passive (React's are). Each
+   * calls the latest handler, so none is stale. The surface keeps `touch-action: pan-y pinch-zoom` so a sideways swipe never waits
+   * on the browser.
+   */
+  const finishNow = useRef(finish);
+  finishNow.current = finish;
+  const handlers = useRef({ onPointerDown, onPointerMove, onPointerEnd, onPointerLeave, onTouchStart, onTouchMove, onTouchEnd });
+  handlers.current = { onPointerDown, onPointerMove, onPointerEnd, onPointerLeave, onTouchStart, onTouchMove, onTouchEnd };
+  useEffect(() => {
+    const f = frameRef.current;
+    if (!f || still) return;
+    /*
+     * Listeners are always on the frame, and in the thread on the cell as well. The words can be moved between the cell and a view with
+     * no render, so neither element's place is trusted: the cell's handler takes nothing while the frame is not inside it, and nothing
+     * whose target is inside the frame (the frame's own handler takes that), so a press is taken once and a stale cell never acts.
+     */
+    const els = [f, ...(cellEl && cellEl !== f ? [cellEl] : [])];
+    const wasTouch = new Map(els.map((el) => [el, el.style.touchAction]));
+    const grip = () => {
+      f.style.touchAction = 'pan-y pinch-zoom';
+      if (cellEl) {
+        const want = cellEl.contains(f) ? 'pan-y pinch-zoom' : wasTouch.get(cellEl)!;
+        if (cellEl.style.touchAction !== want) cellEl.style.touchAction = want;
+      }
+    };
+    grip();
+    const mine = (el: HTMLElement, e: Event) => {
+      grip();
+      if (el === f) return true;
+      const t = e.target;
+      return el.contains(f) && !(t instanceof Node && f.contains(t));
+    };
+    const offs = els.map((el) => {
+      const down = (e: PointerEvent) => { if (mine(el, e)) handlers.current.onPointerDown(e); };
+      const move = (e: PointerEvent) => { if (mine(el, e)) handlers.current.onPointerMove(e); };
+      const end = (e: PointerEvent) => { if (mine(el, e)) handlers.current.onPointerEnd(e); };
+      const leave = (e: PointerEvent) => { if (mine(el, e)) handlers.current.onPointerLeave(e); };
+      const tstart = (e: TouchEvent) => { if (mine(el, e)) handlers.current.onTouchStart(e); };
+      const tmove = (e: TouchEvent) => { if (mine(el, e)) handlers.current.onTouchMove(e); };
+      const tend = (e: TouchEvent) => { if (mine(el, e)) handlers.current.onTouchEnd(e); };
+      const click = (e: MouseEvent) => { if (mine(el, e) && suppress.current) { clearSuppress(); e.preventDefault(); e.stopPropagation(); } };
+      el.addEventListener('pointerdown', down);
+      el.addEventListener('pointermove', move);
+      el.addEventListener('pointerup', end);
+      el.addEventListener('pointercancel', end);
+      el.addEventListener('pointerleave', leave);
+      el.addEventListener('touchstart', tstart, { passive: true });
+      el.addEventListener('touchmove', tmove, { passive: false });
+      el.addEventListener('touchend', tend);
+      el.addEventListener('touchcancel', tend);
+      el.addEventListener('click', click, true);
+      return () => {
+        el.removeEventListener('pointerdown', down);
+        el.removeEventListener('pointermove', move);
+        el.removeEventListener('pointerup', end);
+        el.removeEventListener('pointercancel', end);
+        el.removeEventListener('pointerleave', leave);
+        el.removeEventListener('touchstart', tstart);
+        el.removeEventListener('touchmove', tmove);
+        el.removeEventListener('touchend', tend);
+        el.removeEventListener('touchcancel', tend);
+        el.removeEventListener('click', click, true);
+        el.style.touchAction = wasTouch.get(el)!;
+        cursor.leave(el);
+      };
+    });
+    return () => {
+      for (const off of offs) off();
+      if (gesture.current) { settle(gesture.current); gesture.current = null; }
+      /* A stroke under way when the listeners go is the author's work: it is kept and saved as at any end. */
+      finishNow.current();
+      clearSuppress();
+    };
+  }, [cellEl, still]);
 
   /* ------------------------------------------------------------ the keyboard path ---- */
 
@@ -628,7 +918,10 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
 
   const startSweep = useCallback(() => {
     if (stillNow.current || sweeping.current || !built || inks.current.length !== now.current.layers.length) return;
-    const rows = bandsOf(now.current.size.height / REF_WIDTH);
+    const b = now.current.size.box;
+    const rows = bandsOf(b);
+    const brush = brushOf(SWEEP_BRUSH_ROWS * ROW_PX, b);
+    const half = ROW_PX / 2 / b.h;
     const run = { raf: 0, last: performance.now(), sweep: { row: Math.min(sweepFrom.current, rows.length - 1), x: 0 } as Sweep, row: -1 };
     sweeping.current = run;
     const tick = (t: number) => {
@@ -639,7 +932,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
       const span = (row: number): readonly [number, number] | null => {
         let lo = Infinity, hi = -Infinity;
         for (const ink of lives) {
-          const s = ink?.inkSpan(rows[row]!, ROW / 2);
+          const s = ink?.inkSpan(rows[row]!, half);
           if (s) { lo = Math.min(lo, s[0]); hi = Math.max(hi, s[1]); }
         }
         return lo <= hi ? [lo, hi] : null;
@@ -654,7 +947,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
       let layer = topLayer(lives, p[0], p[1]);
       const open = sweepStroke.current;
       const sameBand = open !== null && step.sweep.row === run.sweep.row;
-      if (layer < 0) layer = sameBand ? open.layer : lives.reduce((top, ink, i) => (ink?.inkNear(rows[step.sweep.row]!, ROW / 2) ? i : top), -1);
+      if (layer < 0) layer = sameBand ? open.layer : lives.reduce((top, ink, i) => (ink?.inkNear(rows[step.sweep.row]!, half) ? i : top), -1);
       if (open && (!sameBand || open.layer !== layer)) closeSweepStroke();
       if (layer >= 0) {
         meet();
@@ -662,12 +955,13 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
         if (cur) {
           const last = cur.points[cur.points.length - 1]!;
           cur.points.push(p);
-          inks.current[layer]!.wash([last, p], SWEEP_BRUSH);
+          inks.current[layer]!.wash([last, p], brush.width, brush.aspect);
+          throwSuds(last, p, true);
         } else {
-          sweepStroke.current = { layer, tool: 'wash', width: SWEEP_BRUSH, color: '', points: [p], pointer: null };
-          inks.current[layer]!.wash([p], SWEEP_BRUSH);
+          sweepStroke.current = { layer, tool: 'wash', ...brush, color: '', points: [p], pointer: null };
+          inks.current[layer]!.wash([p], brush.width, brush.aspect);
+          throwSuds(p, p, true);
         }
-        sud(p[0] * geoNow.current.width + geoNow.current.offset, p[1] * geoNow.current.width);
       }
       run.sweep = step.sweep;
       checkClean();
@@ -679,7 +973,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
       run.raf = requestAnimationFrame(tick);
     };
     run.raf = requestAnimationFrame(tick);
-  }, [built, checkClean, closeSweepStroke, liveInks, meet, refresh, schedulePaint, stopSweep, sud]);
+  }, [built, checkClean, closeSweepStroke, liveInks, meet, refresh, schedulePaint, stopSweep, throwSuds]);
 
   /* The latest stop, called once on unmount: a sweep is not stopped each time a callback is made again. */
   const stopLatest = useRef(stopSweep);
@@ -760,6 +1054,8 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   viewNow.current = cardView;
   useEffect(() => { show(viewNow.current); }, [viewKey, controls, show]);
 
+  /* The canvases are the box's size, reaching out of the frame to the box's corner. */
+  const onBox = { left: -size.left, top: -size.top, width: box.w, height: box.h };
   return (
     <div
       className="kb-whoops" data-kb-whoops
@@ -768,24 +1064,18 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
       data-kb-fading={view?.fading ? 'true' : undefined}
       data-kb-place={place}
       data-kb-held={held}
-      data-kb-splat={splats?.map((sp) => `${sp.placement.cx},${sp.placement.cy},${sp.placement.rx},${sp.placement.ry}`).join(' ')}
+      data-kb-splat={splats?.map((sp) => `${sp.placement.cx},${sp.placement.cy}`).join(' ')}
     >
-      <div
-        ref={frameRef} className="kb-whoops-frame"
-        style={fixed ? { height: size.height * geo.scale, ...(bleed ? { overflow: 'visible' } : null) } : undefined}
-        onPointerDown={anyLive && !still ? onPointerDown : undefined} onPointerMove={still ? undefined : onPointerMove} onPointerUp={still ? undefined : onPointerEnd} onPointerCancel={still ? undefined : onPointerEnd}
-        onClickCapture={(e) => { if (suppress.current) { suppress.current = false; e.preventDefault(); e.stopPropagation(); } }}
-      >
-        <div
-          ref={layoutRef} className="kb-whoops-layout" inert={hidden && !still}
-          style={fixed ? { width: REF_WIDTH, transform: `translateX(${geo.offset}px) scale(${geo.scale})`, ...(place === 'thread' ? { paddingInline: REF_WIDTH * BODY_GUTTER } : null) } : undefined}
-        >
+      <div ref={frameRef} className="kb-whoops-frame" style={bleed ? { overflow: 'visible' } : undefined}>
+        <div ref={layoutRef} data-kb-whoops-layout="" inert={hidden && !still}>
           {children}
         </div>
         {near && fixed && built && (
-          <canvas ref={canvasRef} className="kb-whoops-ink" data-kb-effect-ink aria-hidden="true" style={{ top: band.top, height: band.height }} />
+          <>
+            <canvas ref={canvasRef} className="kb-whoops-ink" data-kb-effect-ink aria-hidden="true" style={onBox} />
+            <canvas ref={sudsRef} className="kb-whoops-suds" data-kb-effect-ink aria-hidden="true" style={onBox} />
+          </>
         )}
-        <div ref={sudsRef} className="kb-whoops-suds" aria-hidden="true" />
       </div>
       {read && read.length > 0 && (
         <div className="kb-visually-hidden" data-kb-readout>
