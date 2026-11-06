@@ -12,7 +12,7 @@
 --                            Mod's lock) and the cap. It writes nothing and says why when the guard refuses or the move is malformed, and it also refuses a cause that is a visit that
 --                            ended any way but filed. It raises only for a missing cause_act (a caller's bug): a move that does not hold must not cost the filing it rode in on. An expiry past the cap is clamped here first, and the clamp is returned (`trimmed`). It is idempotent
 --                            on the cause.
---   staff_call_records / record_staff_call   the repair's trims and drops for each judged call, kept once and never edited.
+--   staff_call_records / record_staff_call   the repair's trims and drops for each billed call (a retry is the next attempt), never edited.
 --   filings_due              the visits whose end is past and that are still open, oldest first, bounded: what the filing run reads. Never before ends_at (the tick's grace,
 --                            `filingGraceMinutes`, gives the run the first chance), and never a visit the tick has already failed to file (it is the tick's, and goes behind).
 --   mod_standing             a persona's office, what it has left to spend, the Boss's last order to it and the boards of its beat.
@@ -92,9 +92,9 @@ begin
       watched := case when (new.params ->> 'board') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (new.params ->> 'board')::uuid end;
       if watched is null then raise exception 'a Mod''s move names the board it watches' using errcode = '23514'; end if;
       if beat_of(watched) is distinct from new.staff then raise exception 'that board is not on %''s beat', new.staff using errcode = '23514'; end if;
-      -- A rule a Mod sets lasts at most `modBots.ruleDaysMost` days (7 where the setting is not there yet): the Boss's phase bounds the Boss's, and nothing but this bounds a Mod's.
-      if new.kind = 'setRule' and new.expires_at > new.go_live_at + make_interval(days => coalesce((select (s.value ->> 'ruleDaysMost')::integer from settings s where s.key = 'modBots'), 7)) then
-        raise exception 'a rule a Mod sets lasts at most % days', coalesce((select (s.value ->> 'ruleDaysMost')::integer from settings s where s.key = 'modBots'), 7) using errcode = '23514';
+      -- A rule a Mod sets lasts at most `modBots.ruleDaysMost` days (7 where the setting is not there yet; setting_modbots holds it a whole number, and it is read as numeric all the same): the Boss's phase bounds the Boss's, and nothing but this bounds a Mod's.
+      if new.kind = 'setRule' and new.expires_at > new.go_live_at + coalesce((select (s.value ->> 'ruleDaysMost')::numeric from settings s where s.key = 'modBots'), 7) * interval '1 day' then
+        raise exception 'a rule a Mod sets lasts at most % days', coalesce((select (s.value ->> 'ruleDaysMost')::numeric from settings s where s.key = 'modBots'), 7)::numeric(10,0) using errcode = '23514';
       end if;
       if mod_allowance(new.staff) < 1 then raise exception '% has no allowance left; the Boss hands out more at its meeting', new.staff using errcode = '23514'; end if;
       new.spent_order := (select x.id from staff_orders x where x.staff = new.staff order by x.id desc limit 1);
@@ -189,24 +189,28 @@ begin
     when unique_violation then
       select q.id into existing from queued_moves q where q.staff = apply_mod_move.staff and q.cause_act = apply_mod_move.cause_act;
       return jsonb_build_object('move', existing, 'queued', false, 'existing', true);
-    when others then
-      -- The guard's refusals (check_violation) and a malformed move (a cast, a null, a wrong type) alike: a bad answer is a refusal, so the filing it rode in on is not left open to pay for the call again.
-      return jsonb_build_object('move', null, 'queued', false, 'reason', sqlerrm);
+    when check_violation or not_null_violation or invalid_text_representation or numeric_value_out_of_range or datetime_field_overflow or data_exception then
+      -- The guard's refusals and a malformed move (a cast, a null, a wrong type) are refusals: the filing it rode in on is not left open to pay for the call again. Anything
+      -- else (a lock timeout, a deadlock, a failing trigger, a resource error) is not a verdict on the move, and raises: the visit stays open and the next run tries again.
+      return jsonb_build_object('move', null, 'queued', false, 'reason', case when sqlstate in ('23514', '23502') then sqlerrm else 'the move is malformed' end);
   end;
   return jsonb_build_object('move', made, 'queued', true, 'existing', false) || case when trimmed = '{}'::jsonb then '{}'::jsonb else jsonb_build_object('trimmed', trimmed) end;
 end $$;
 
 -- -------------------------------------------------------------------------------------------- the call's record ----
 
--- What a judged call came to, kept where an admin can read it ("Cost is a column": the ledger holds the model layer's result, this holds the repair's): the trims made and
--- what was dropped, with the predicate that failed, one row per call (the Act that drew it, the duty, the Mod). Written once, never edited. No client reads it.
+-- What a judged call came to, kept in the database ("Cost is a column": the ledger holds the model layer's result, this holds the repair's): the trims made and
+-- what was dropped, with the predicate that failed, one row per billed call (the Act that drew it, the duty, the Mod, the attempt). Written once, never edited. No client
+-- reads it and no admin screen shows it yet: it is read in SQL.
 create table staff_call_records (
   cause_act uuid not null references acts (id),
   duty text not null check (duty in ('filing', 'reportJudge', 'patrolJudge', 'appeal')),
   staff text not null references characters (staff),
   record jsonb not null check (jsonb_typeof(record) = 'object'),
+  -- Each billed call has a record: a retry of the same cause is the next attempt.
+  attempt integer not null default 1 check (attempt >= 1),
   at timestamptz not null default now(),
-  primary key (cause_act, duty, staff)
+  primary key (cause_act, duty, staff, attempt)
 );
 alter table staff_call_records enable row level security;
 revoke all on staff_call_records from public, anon, authenticated;
@@ -221,15 +225,16 @@ alter table staff_call_records enable always trigger staff_call_records_no_updat
 alter table staff_call_records enable always trigger staff_call_records_no_truncate;
 revoke execute on function staff_call_records_append_only() from public, anon, authenticated;
 
--- Keeps a call's record once: a retry of the same call finds it and writes nothing. Returns {recorded}.
+-- Keeps a call's record. Every billed call has one: a retry of the same cause, duty and Mod is the next attempt (counted under a lock of its own, so two runs at once
+-- take two numbers). Returns {recorded, attempt}.
 create function record_staff_call(cause_act uuid, duty text, staff text, record jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare n integer;
 begin
-  insert into staff_call_records (cause_act, duty, staff, record) values (record_staff_call.cause_act, record_staff_call.duty, record_staff_call.staff, record_staff_call.record)
-  on conflict do nothing;
-  get diagnostics n = row_count;
-  return jsonb_build_object('recorded', n = 1);
+  perform pg_advisory_xact_lock(hashtextextended('kayfabb.call_record.' || record_staff_call.cause_act::text || record_staff_call.duty || record_staff_call.staff, 0));
+  select count(*) + 1 into n from staff_call_records r where r.cause_act = record_staff_call.cause_act and r.duty = record_staff_call.duty and r.staff = record_staff_call.staff;
+  insert into staff_call_records (cause_act, duty, staff, record, attempt) values (record_staff_call.cause_act, record_staff_call.duty, record_staff_call.staff, record_staff_call.record, n);
+  return jsonb_build_object('recorded', true, 'attempt', n);
 end $$;
 revoke execute on function record_staff_call(uuid, text, text, jsonb) from public, anon, authenticated;
 grant execute on function record_staff_call(uuid, text, text, jsonb) to service_role;

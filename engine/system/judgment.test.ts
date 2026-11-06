@@ -85,6 +85,13 @@ test('an expiry past the most days a Mod\'s rule lasts is clamped with a trim, a
   assert.deepEqual(part.trims, []);
 });
 
+test('an expiry given as digits is read as a number, with a recorded trim', () => {
+  const out = repairModMove({ ...good, expires_in_hours: ' 48 ' }, ctx);
+  assert.equal(out.move?.expires_in_hours, 48);
+  assert.deepEqual(out.trims, [{ path: 'move.expires_in_hours', predicate: 'asNumber', before: 4, after: 48 }]);
+  assert.equal(repairModMove({ ...good, expires_in_hours: '500' }, ctx).move?.expires_in_hours, 168);
+});
+
 test('an expiry that is missing or no number cannot be repaired without inventing one, so the move is dropped', () => {
   const { expires_in_hours: _x, ...without } = good;
   assert.deepEqual(repairModMove(without, ctx).dropped, { path: 'move.expires_in_hours', predicate: 'required' });

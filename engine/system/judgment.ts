@@ -157,7 +157,13 @@ export function repairModMove(raw: unknown, ctx: ModMoveContext): RepairedMove {
   }
 
   // How long it runs: whole hours, from the fewest any move lasts to the most days a Mod's rule may.
-  const hoursRaw = raw['expires_in_hours'];
+  let hoursRaw = raw['expires_in_hours'];
+  // Digits given as text are the number they spell, as a count's parameter is: coerced, with the trim named.
+  if (typeof hoursRaw === 'string' && /^\s*\d+(\.\d+)?\s*$/.test(hoursRaw)) {
+    const as = Number(hoursRaw);
+    trims.push({ path: 'move.expires_in_hours', predicate: 'asNumber', before: hoursRaw.length, after: as });
+    hoursRaw = as;
+  }
   if (hoursRaw === undefined || hoursRaw === null) return no('move.expires_in_hours', 'required', trims);
   if (typeof hoursRaw !== 'number' || !Number.isFinite(hoursRaw)) return no('move.expires_in_hours', 'isNumber', trims);
   const most = ctx.ruleDaysMost * 24;

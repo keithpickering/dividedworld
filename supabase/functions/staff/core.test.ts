@@ -94,7 +94,6 @@ function fakeDb(w: World = {}) {
           return { move: m.id, queued: true, existing: false } as T;
         }
         case 'record_staff_call': {
-          if (state.records.some((r) => r.cause_act === args.cause_act && r.staff === args.staff)) return { recorded: false } as T;
           state.records.push({ cause_act: String(args.cause_act), duty: String(args.duty), staff: String(args.staff), record: args.record });
           return { recorded: true } as T;
         }
@@ -385,6 +384,7 @@ test('a crash between the move and the filing: the retry finds the move by its c
   assert.equal(second.filings[0]!.status, 'filed');
   assert.equal(d.state.moves.length, 1, 'one cause, one move');
   assert.equal(d.state.allowance.get(MON), 1, 'the allowance was spent once');
+  assert.equal(d.state.records.length, 2, 'each billed call has its record, the retry\'s too');
   assert.equal(d.state.filed.get(V1), 'Second try.');
   assert.equal((second.filings[0]!.move as { existing: boolean }).existing, true);
 });

@@ -229,6 +229,21 @@ begin
   perform t;
 end $$;
 
+-- ---- 3d. An error that is no refusal (a trigger failing, a lock timeout) raises, so the filing is left open to try again; it is never read as a refusal ----
+do $$
+declare
+  general uuid := pg_temp.board('mm-general');
+  c uuid := pg_temp.cause('eight');
+  said text;
+begin
+  create function pg_temp.plant() returns trigger language plpgsql as $f$ begin if new.why = 'plant' then raise exception 'planted failure' using errcode = 'P0001'; end if; return new; end $f$;
+  create trigger zz_plant before insert on queued_moves for each row execute function pg_temp.plant();
+  said := pg_temp.refusal(format('select apply_mod_move(%L, %L::jsonb, %L)', 'mm-m2', pg_temp.mv(general, 48, 'noAllCaps', 'plant'), c));
+  if said is null or said not like 'P0001%' then raise exception 'a failing trigger was read as a refusal: %', said; end if;
+  if exists (select 1 from queued_moves where cause_act = c) then raise exception 'a failed move left a row'; end if;
+  drop trigger zz_plant on queued_moves;
+end $$;
+
 -- ---- 3c. The call's record: trims and drops are kept in the database, once per call, never edited ----
 do $$
 declare
@@ -239,9 +254,10 @@ begin
   got := record_staff_call(c, 'filing', 'mm-m1', '{"trims": [{"path": "move.expires_in_hours", "predicate": "atMost(168)", "before": 900, "after": 168}], "dropped": []}');
   if (got ->> 'recorded')::boolean is distinct from true then raise exception 'the record was not kept: %', got; end if;
   if (select record #>> '{trims,0,predicate}' from staff_call_records where cause_act = c and duty = 'filing' and staff = 'mm-m1') is distinct from 'atMost(168)' then raise exception 'the trim is not on the record'; end if;
-  got := record_staff_call(c, 'filing', 'mm-m1', '{"trims": [], "dropped": []}');
-  if (got ->> 'recorded')::boolean is distinct from false then raise exception 'a retry wrote a second record: %', got; end if;
-  if (select count(*) from staff_call_records where cause_act = c) is distinct from 1::bigint then raise exception 'two records for one call'; end if;
+  got := record_staff_call(c, 'filing', 'mm-m1', '{"trims": [], "dropped": [], "retry": true}');
+  if (got ->> 'recorded')::boolean is distinct from true or (got ->> 'attempt')::integer is distinct from 2 then raise exception 'a retry''s billed call has no record of its own: %', got; end if;
+  if (select array_agg(attempt order by attempt) from staff_call_records where cause_act = c) is distinct from array[1, 2] then raise exception 'the attempts are not 1 and 2'; end if;
+  if (select record ->> 'retry' from staff_call_records where cause_act = c and attempt = 2) is distinct from 'true' then raise exception 'the second record is not the retry''s'; end if;
   said := pg_temp.refusal(format('update staff_call_records set record = ''{}'' where cause_act = %L', c));
   if said is null then raise exception 'a call record was edited'; end if;
   said := pg_temp.refusal(format('delete from staff_call_records where cause_act = %L', c));
