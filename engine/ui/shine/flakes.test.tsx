@@ -6,14 +6,21 @@ import { tokensOf, ratio } from '../contrast.ts';
 import { POST_INK } from './band.ts';
 import { cling, IDLE_MS, loose, MAX_CARRIED, MAX_LOOSE, makeFlakes, sweepLoose } from './flakes.ts';
 
+/* Divided World's glint (the engine may not import the instance, so the tests carry a copy). */
+const GLINT = '#ffffff';
 const GLITTER = ['#ff3b4a', '#ff9a2e', '#ffd23f', '#3ddc6b', '#2fd6ff', '#4a6bff', '#b65cff', '#dfe4ec', '#dfe4ec', '#dfe4ec'];
 
 const light = tokensOf(readFileSync(join(process.cwd(), 'engine/ui/tokens.css'), 'utf8')).light;
 
 /* What the cling layer's context was told to draw. */
 const drawn = { fills: new Set<string>(), strokes: new Set<string>(), alphas: [] as number[] };
+const ops = { save: 0, restore: 0, fillRect: 0 };
 const fakeCtx = new Proxy({}, {
-  get: (_t, k) => (k === 'createRadialGradient' ? () => ({ addColorStop() {} }) : () => {}),
+  get: (_t, k) => {
+    if (k === 'createRadialGradient') return () => ({ addColorStop() {} });
+    if (k === 'save' || k === 'restore' || k === 'fillRect') return () => { ops[k]++; };
+    return () => {};
+  },
   set: (_t, k, v) => {
     if (k === 'fillStyle') drawn.fills.add(String(v));
     if (k === 'strokeStyle') drawn.strokes.add(String(v));
@@ -53,6 +60,7 @@ const layer = () => document.querySelector('canvas[data-kb-shine="cling"]');
 
 beforeEach(() => {
   vi.useFakeTimers();
+  ops.save = 0; ops.restore = 0; ops.fillRect = 0;
   fine = true;
   reduceDevice = false;
   clock = 0;
@@ -87,7 +95,7 @@ afterEach(() => {
 
 /** A sticky post at the left of the page, a plain one far to the right, and nothing between. */
 function page() {
-  const flakes = makeFlakes({ seed: 'sticky', box: { w: 300, h: 300 }, inks: GLITTER, holo: 7, density: 70 });
+  const flakes = makeFlakes({ seed: 'sticky', box: { w: 300, h: 300 }, inks: GLITTER, holo: 7, density: 70, glint: GLINT });
   const a = host(0, 0), b = host(2000, 0);
   let landed = 0;
   cling.register(a, { sticky: true, flakes });
@@ -116,6 +124,13 @@ describe('the cling layer', () => {
     expect(c.style.pointerEvents).toBe('none');
     expect(c.style.position).toBe('fixed');
     expect(document.querySelectorAll('canvas[data-kb-shine="cling"]')).toHaveLength(1);
+  });
+
+  it('paints each carried and falling flake with one transform, not a save and restore', () => {
+    page();
+    carryOver();
+    expect(ops.fillRect).toBeGreaterThan(100);
+    expect(ops.save + ops.restore).toBeLessThanOrEqual(2);
   });
 
   it('is removed after IDLE_MS with nothing carried or falling, and not before', () => {
@@ -208,7 +223,7 @@ describe('the cling layer', () => {
     expect(hex.length).toBeGreaterThan(3);
     const bad = hex.flatMap((c) => POST_INK.filter((ink) => ratio(light[ink]!, c) < 4.5).map((ink) => `${c} on ${ink}`));
     expect(bad.slice(0, 5)).toEqual([]);
-    expect([...drawn.strokes].filter((c) => c.startsWith('rgba(0,0,0'))).toEqual([]);
+    expect([...drawn.strokes].filter((c) => c.startsWith('#000000'))).toEqual([]);
   });
 
   it('keeps the oldest-first cap of 300 across two hosts', () => {
@@ -269,7 +284,7 @@ describe('the cling layer', () => {
 describe('what the layer asks the page', () => {
   /** A page of 20 posts, the first sticky. */
   function crowd() {
-    const flakes = makeFlakes({ seed: 'crowd', box: { w: 300, h: 300 }, inks: GLITTER, holo: 7, density: 70 });
+    const flakes = makeFlakes({ seed: 'crowd', box: { w: 300, h: 300 }, inks: GLITTER, holo: 7, density: 70, glint: GLINT });
     const hs = Array.from({ length: 20 }, (_, i) => host(i * 400, 0));
     cling.register(hs[0]!, { sticky: true, flakes });
     for (const h of hs.slice(1)) cling.register(h, {});

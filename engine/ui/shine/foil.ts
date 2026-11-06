@@ -15,7 +15,7 @@
  * Canvases come from `createCanvas` (default: an OffscreenCanvas, else a document canvas), so Node can run everything but
  * the drawing itself. Seeded, never `Math.random`. Engine code: it names no card and no instance.
  */
-import { clampInto, toLinear, toSrgb8, type Band, type Light, type Rgb } from './band.ts';
+import { clampInto, toHexA, toLinear, toSrgb8, type Band, type Light, type Rgb } from './band.ts';
 import { seededRng } from './seeded.ts';
 
 export type FoilPattern = 'pearl' | 'bands' | 'prism';
@@ -30,6 +30,8 @@ export type FoilOptions = {
   readonly palette: readonly string[];
   /** How many starbursts. */
   readonly stars: number;
+  /** The highlight the starbursts are drawn in, sRGB `#rrggbb` (an instance's: the engine names no color). Added over cells, so it only lightens. */
+  readonly glint: string;
   /** Where canvases come from; tests pass a fake. */
   readonly createCanvas?: (w: number, h: number) => FoilCanvas;
 };
@@ -63,24 +65,25 @@ function defaultCanvas(w: number, h: number): FoilCanvas {
   return c as unknown as FoilCanvas;
 }
 
-/** The starburst sprite: a soft glow, a cross and a fainter diagonal cross, white on transparent. */
-function starSprite(make: (w: number, h: number) => FoilCanvas): FoilCanvas {
+/** The starburst sprite: a soft glow, a cross and a fainter diagonal cross, in the glint on transparent. */
+function starSprite(make: (w: number, h: number) => FoilCanvas, glint: Readonly<Rgb>): FoilCanvas {
+  const at = (a: number): string => toHexA(glint, a);
   const Z = 64, m = Z / 2;
   const c = make(Z, Z);
   const g = c.getContext('2d');
   if (!g) return c;
   const glow = g.createRadialGradient(m, m, 0, m, m, m);
-  glow.addColorStop(0, 'rgba(255,255,255,0.95)'); glow.addColorStop(0.18, 'rgba(255,255,255,0.45)'); glow.addColorStop(1, 'rgba(255,255,255,0)');
+  glow.addColorStop(0, at(0.95)); glow.addColorStop(0.18, at(0.45)); glow.addColorStop(1, at(0));
   g.fillStyle = glow; g.fillRect(0, 0, Z, Z);
   for (const vertical of [true, false]) {
     const gr = g.createRadialGradient(m, m, 0, m, m, m);
-    gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    gr.addColorStop(0, at(1)); gr.addColorStop(1, at(0));
     g.fillStyle = gr;
     g.beginPath(); g.ellipse(m, m, vertical ? 1.6 : m, vertical ? m : 1.6, 0, 0, Math.PI * 2); g.fill();
   }
   g.save(); g.translate(m, m); g.rotate(Math.PI / 4);
   const gr2 = g.createRadialGradient(0, 0, 0, 0, 0, m * 0.55);
-  gr2.addColorStop(0, 'rgba(255,255,255,0.8)'); gr2.addColorStop(1, 'rgba(255,255,255,0)');
+  gr2.addColorStop(0, at(0.8)); gr2.addColorStop(1, at(0));
   g.fillStyle = gr2;
   g.beginPath(); g.ellipse(0, 0, 1, m * 0.55, 0, 0, Math.PI * 2); g.fill();
   g.beginPath(); g.ellipse(0, 0, m * 0.55, 1, 0, 0, Math.PI * 2); g.fill();
@@ -89,6 +92,8 @@ function starSprite(make: (w: number, h: number) => FoilCanvas): FoilCanvas {
 }
 
 export function makeFoil(opts: FoilOptions): Foil {
+  if (!/^#[0-9a-f]{6}$/iu.test(opts.glint)) throw new Error(`foil: the glint needs a #rrggbb color, got ${JSON.stringify(opts.glint)}`);
+  const GLINT = toLinear(opts.glint);
   if (opts.palette.length !== 6) throw new Error(`foil: the palette needs six stops, got ${opts.palette.length}`);
   const make = opts.createCanvas ?? defaultCanvas;
   const PAL = opts.palette.map(toLinear);
@@ -277,7 +282,7 @@ export function makeFoil(opts: FoilOptions): Foil {
      * far as the band allows it, and a band lets pure white through only when its ceiling is 1: on any lower ceiling
      * (every dark board, whatever its inks) 'lighter' white could lift a cell out of the band, so none is drawn. */
     if (stars.length === 0 || band.hi < 1) return;
-    if (!sprite) sprite = starSprite(make);
+    if (!sprite) sprite = starSprite(make, GLINT);
     const t = now / 1000;
     ctx.globalCompositeOperation = 'lighter';
     for (const s of stars) {

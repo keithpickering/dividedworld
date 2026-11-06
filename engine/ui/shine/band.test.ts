@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { MODES, ratio, tokensOf, type Mode } from '../contrast.ts';
-import { POST_INK, bandFor, bandOf, clampInto, shineIsReadable, toHex, toLinear, toSrgb8, type Rgb } from './band.ts';
+import { POST_INK, bandFor, bandOf, clampInto, shineIsReadable, toHex, toHexA, toLinear, toSrgb8, type Rgb } from './band.ts';
 
 const tokens = tokensOf(readFileSync(join(process.cwd(), 'engine/ui/tokens.css'), 'utf8'));
 const boards = [['light', tokens.light], ['dark', tokens.dark]] as const;
@@ -195,5 +195,34 @@ describe('shineIsReadable', () => {
     const failures = shineIsReadable(tokens, (m, l) => clampedSample(m, l, l.x === 0.75 && l.y === -1.5));
     assert.ok(failures.length > 0);
     assert.ok(failures.every((f) => f.endsWith('at light (0.75, -1.5)')), failures[0]);
+  });
+});
+
+describe('toHexA', () => {
+  test('is toHex with the alpha as two more hex digits, and round-trips through toLinear', () => {
+    for (const hex of ['#000000', '#ffffff', '#ffeecc', '#2a1b55', '#00ccff']) {
+      assert.equal(toHexA(toLinear(hex), 1), `${hex}ff`);
+      assert.equal(toHexA(toLinear(hex), 0), `${hex}00`);
+      assert.equal(toHexA(toLinear(hex), 0.45).slice(0, 7), hex);
+    }
+  });
+
+  test('rounds alpha to 8 bits: 0.45 is 0x73, 0.95 is 0xf2, 0.5 is 0x80', () => {
+    const c = toLinear('#ffffff');
+    assert.equal(toHexA(c, 0.45), '#ffffff73');
+    assert.equal(toHexA(c, 0.95), '#fffffff2');
+    assert.equal(toHexA(c, 0.5), '#ffffff80');
+  });
+
+  test('clamps alpha to 0..1, and a NaN alpha is clear', () => {
+    const c = toLinear('#336699');
+    assert.equal(toHexA(c, 2), '#336699ff');
+    assert.equal(toHexA(c, -1), '#33669900');
+    assert.equal(toHexA(c, Infinity), '#336699ff');
+    assert.equal(toHexA(c, NaN), '#33669900');
+  });
+
+  test('holds a linear channel outside 0..1 to the nearest color, as toHex does', () => {
+    assert.equal(toHexA([2, -1, 0.5], 1).slice(0, 7), toHex([2, -1, 0.5]));
   });
 });

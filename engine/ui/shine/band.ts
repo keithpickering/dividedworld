@@ -44,6 +44,15 @@ export const toLinear = (hex: string): Rgb => {
 export const toHex = (c: Readonly<Rgb>): string =>
   `#${c.map((v) => toSrgb8(v).toString(16).padStart(2, '0')).join('')}`;
 
+/**
+ * Linear [r, g, b] with an alpha as `#rrggbbaa`: the one place the engine writes a color that has transparency, so no screen
+ * carries a color-function literal. `alpha` is clamped to 0..1 (NaN is 0) and rounded to 8 bits, as the color is.
+ */
+export const toHexA = (c: Readonly<Rgb>, alpha: number): string => {
+  const a = Number.isNaN(alpha) ? 0 : Math.max(0, Math.min(1, alpha));
+  return `${toHex(c)}${Math.round(a * 255).toString(16).padStart(2, '0')}`;
+};
+
 export const luminanceOf = (c: Readonly<Rgb>): number => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
 
 /** The linear luminance of one token, or a named error: a band computed from a color that did not parse would be NaN. */

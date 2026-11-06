@@ -20,7 +20,7 @@
  * light's units. Seeded, never `Math.random`. Engine code: it names no card and no instance.
  */
 import { motionReduced } from '../appearance.ts';
-import { bandFor, clampInto, toLinear, toSrgb8, type Band, type Light, type Rgb } from './band.ts';
+import { bandFor, clampInto, toHex, toHexA, toLinear, toSrgb8, type Band, type Light, type Rgb } from './band.ts';
 import { seededRng } from './seeded.ts';
 
 export type Box = { readonly w: number; readonly h: number };
@@ -41,7 +41,11 @@ const FINE = '(hover: hover) and (pointer: fine)';
 const REDUCE = '(prefers-reduced-motion: reduce)';
 
 /** The inks a flakes object draws from, in linear light; `rainbow` are the ones a holographic flake throws. */
-export interface Palette { readonly lin: readonly Rgb[]; readonly rainbow: readonly Rgb[]; readonly holo: number }
+export interface Palette {
+  readonly lin: readonly Rgb[]; readonly rainbow: readonly Rgb[]; readonly holo: number;
+  /** The instance's highlight, as `#rrggbb` (the sprite cache's key) and in linear light. */
+  readonly glint: string; readonly glintLin: Rgb;
+}
 
 export interface Flake {
   x: number; y: number; s: number; rot: number; nx: number; ny: number; ink: number; tw: number; tph: number;
@@ -64,6 +68,8 @@ export interface FlakesOptions {
   readonly holo: number;
   /** CSS px squared per flake (70). */
   readonly density: number;
+  /** The instance's highlight, sRGB `#rrggbb`: the flare, and the puff's tint (moved into the band). The engine names no color. */
+  readonly glint: string;
   /** The four-point flare drawn over the brightest flakes; by default one is made on first use, when a canvas can be made. */
   readonly star?: CanvasImageSource | null;
 }
@@ -105,9 +111,10 @@ let inFlight = 0;
 
 const reduced = (): boolean => typeof document !== 'undefined' && motionReduced();
 
-function paletteOf(inks: readonly string[], holo: number): Palette {
+function paletteOf(inks: readonly string[], holo: number, glint: string): Palette {
+  if (!/^#[0-9a-f]{6}$/iu.test(glint)) throw new Error(`flakes: the glint needs a #rrggbb color, got ${JSON.stringify(glint)}`);
   const lin = inks.map(toLinear);
-  return { lin, rainbow: lin.slice(0, Math.max(1, Math.min(holo, lin.length))), holo };
+  return { lin, rainbow: lin.slice(0, Math.max(1, Math.min(holo, lin.length))), holo, glint, glintLin: toLinear(glint) };
 }
 
 /** The bench's `flake`. */
@@ -119,11 +126,13 @@ function flake(r: () => number, x: number, y: number, pal: Palette): Flake {
   };
 }
 
-/** A four-point flare, made once if a canvas can be made here (the bench's `starSprite`). */
-let sharedStar: CanvasImageSource | null | undefined;
-function starSprite(): CanvasImageSource | null {
-  if (sharedStar !== undefined) return sharedStar;
-  sharedStar = null;
+/** A four-point flare in the glint, made once per glint if a canvas can be made here (the bench's `starSprite`). */
+const sharedStars = new Map<string, CanvasImageSource | null>();
+function starSprite(pal: Palette): CanvasImageSource | null {
+  const have = sharedStars.get(pal.glint);
+  if (have !== undefined) return have;
+  sharedStars.set(pal.glint, null);
+  const at = (a: number): string => toHexA(pal.glintLin, a);
   try {
     const Z = 64, m = Z / 2;
     const c: HTMLCanvasElement | OffscreenCanvas | null = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(Z, Z)
@@ -131,30 +140,30 @@ function starSprite(): CanvasImageSource | null {
     const g = c?.getContext('2d') as CanvasRenderingContext2D | null | undefined;
     if (!c || !g) return null;
     const glow = g.createRadialGradient(m, m, 0, m, m, m);
-    glow.addColorStop(0, 'rgba(255,255,255,0.95)'); glow.addColorStop(0.18, 'rgba(255,255,255,0.45)'); glow.addColorStop(1, 'rgba(255,255,255,0)');
+    glow.addColorStop(0, at(0.95)); glow.addColorStop(0.18, at(0.45)); glow.addColorStop(1, at(0));
     g.fillStyle = glow; g.fillRect(0, 0, Z, Z);
     for (const vertical of [true, false]) {
       const gr = g.createRadialGradient(m, m, 0, m, m, m);
-      gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      gr.addColorStop(0, at(1)); gr.addColorStop(1, at(0));
       g.fillStyle = gr;
       g.beginPath(); g.ellipse(m, m, vertical ? 1.6 : m, vertical ? m : 1.6, 0, 0, Math.PI * 2); g.fill();
     }
     g.save(); g.translate(m, m); g.rotate(Math.PI / 4);
     const gr2 = g.createRadialGradient(0, 0, 0, 0, 0, m * 0.55);
-    gr2.addColorStop(0, 'rgba(255,255,255,0.8)'); gr2.addColorStop(1, 'rgba(255,255,255,0)');
+    gr2.addColorStop(0, at(0.8)); gr2.addColorStop(1, at(0));
     g.fillStyle = gr2;
     g.beginPath(); g.ellipse(0, 0, 1, m * 0.55, 0, 0, Math.PI * 2); g.fill();
     g.beginPath(); g.ellipse(0, 0, m * 0.55, 1, 0, 0, Math.PI * 2); g.fill();
     g.restore();
-    sharedStar = c as CanvasImageSource;
-  } catch { sharedStar = null; }
-  return sharedStar;
+    sharedStars.set(pal.glint, c as CanvasImageSource);
+  } catch { sharedStars.set(pal.glint, null); }
+  return sharedStars.get(pal.glint)!;
 }
 
 /** Places a post's flakes. Nothing flies until `burst`; 15% are settled until then. */
 export function makeFlakes(opts: FlakesOptions): Flakes {
   const { w: W, h: H } = opts.box;
-  const pal = paletteOf(opts.inks, opts.holo);
+  const pal = paletteOf(opts.inks, opts.holo, opts.glint);
   const r = seededRng(`${opts.seed}:flakes`);
   const origin = { x: (0.25 + r() * 0.5) * W, y: (0.25 + r() * 0.4) * H };
   const n = Math.max(0, Math.round((W * H) / opts.density));
@@ -174,7 +183,7 @@ export function makeFlakes(opts: FlakesOptions): Flakes {
     box: opts.box, palette: pal, origin, total: all.length,
     settled: all.slice(0, keep), rest: all.slice(keep),
     fired: false, flying: 0, parts: [], puff: null, last: null, star: opts.star, rng: seededRng(`${opts.seed}:burst`),
-    draw: (ctx, light, band, now, idle, density = 1) => drawList(ctx, self.settled, light, band, now, idle, self.star === undefined ? (self.star = starSprite()) : self.star, density),
+    draw: (ctx, light, band, now, idle, density = 1) => drawList(ctx, self.settled, light, band, now, idle, self.star === undefined ? (self.star = starSprite(pal)) : self.star, density),
   };
   return self;
 }
@@ -409,52 +418,59 @@ function burstColor(f: Flake, flash: number, band: Band): string {
 }
 
 /**
- * The puff's color as 8-bit sRGB. It is a translucent gradient over whatever lies under it, so no single color is its
- * composite; instead every stop is one color that is itself in the band, and over cells that are in the band the mix stays in
- * it. Where the band reaches white (the light board) that color is white, which only lightens a cell inside [lo, 1]. Where
- * it does not, it is a gold tint moved into the band: both ends are then at most `hi`, and a mix of two such colors in
- * gamma space is at most `hi` in luminance, because the sRGB curve is convex.
+ * The puff's one color, linear: the instance's glint moved into the band, so every stop is a color that is itself in the band,
+ * and over cells that are in the band the mix stays in it. Where the band reaches white (the light board) the glint can only
+ * lighten or hold a cell inside [lo, 1] once `clampInto` has lifted it to `lo` if it is darker. Where it does not, the clamp
+ * scales it to at most `hi`: both ends are then at most `hi`, and a mix of two such colors in gamma space is at most `hi` in
+ * luminance, because the sRGB curve is convex. The clamp keeps the glint's hue; a white glint on the dark board is a gray.
  */
-function puffRgb(band: Band): readonly [number, number, number] {
-  if (band.hi >= 1) return [255, 255, 255];
-  const c = clampInto([1, 0.72, 0.28], band);
-  return [toSrgb8(c[0]), toSrgb8(c[1]), toSrgb8(c[2])];
+const puffTint: Rgb = [0, 0, 0];
+function puffColor(pal: Palette, band: Band): Readonly<Rgb> {
+  const g = pal.glintLin;
+  puffTint[0] = g[0]; puffTint[1] = g[1]; puffTint[2] = g[2];
+  return clampInto(puffTint, band);
 }
-const hex8 = (c: readonly [number, number, number]): string => `#${((c[0] << 16) | (c[1] << 8) | c[2]).toString(16).padStart(6, '0')}`;
 
-/** Paints the burst on the canvas over the words: the puff and every flake in the air. Clearing the canvas is the host's. */
-export function drawBurst(ctx: CanvasRenderingContext2D, flakes: Flakes, band: Band, now: number): void {
+/**
+ * Paints the burst on the canvas over the words: the puff and every flake in the air. Clearing the canvas is the host's.
+ * `density` is the canvas's px per CSS px (default 1): each flake is placed by one `setTransform`, and the transform is left at
+ * that scale, the host's base transform.
+ */
+export function drawBurst(ctx: CanvasRenderingContext2D, flakes: Flakes, band: Band, now: number, density = 1): void {
   const f = flakes as Inner;
+  const d = density;
   const whiteFits = band.hi >= 1;
   if (f.puff !== null) {
     const k = (now - f.puff) / PUFF_MS;
     if (k >= 0 && k < 1) {
       const R = 20 + k * 140, a = (1 - k) * (band.lo === 0 ? 0.55 : 0.7), { x, y } = f.origin;
-      const [r, g, b] = puffRgb(band);
+      const c = puffColor(f.palette, band);
       const gr = ctx.createRadialGradient(x, y, 0, x, y, R);
-      gr.addColorStop(0, `rgba(${r},${g},${b},${a})`); gr.addColorStop(0.5, `rgba(${r},${g},${b},${a * 0.35})`); gr.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      gr.addColorStop(0, toHexA(c, a)); gr.addColorStop(0.5, toHexA(c, a * 0.35)); gr.addColorStop(1, toHexA(c, 0));
       ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(x, y, R, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = `rgba(${r},${g},${b},${(1 - k) * 0.8})`; ctx.lineWidth = 2 * (1 - k);
+      ctx.strokeStyle = toHexA(c, (1 - k) * 0.8); ctx.lineWidth = 2 * (1 - k);
       ctx.beginPath(); ctx.arc(x, y, R * 0.8, 0, Math.PI * 2); ctx.stroke();
     }
   }
-  const star = whiteFits ? (f.star === undefined ? (f.star = starSprite()) : f.star) : null;
+  const star = whiteFits ? (f.star === undefined ? (f.star = starSprite(f.palette)) : f.star) : null;
   for (let i = 0; i < f.parts.length; i++) {
     const b = f.parts[i]!;
     if (now - b.born < b.delay) continue;
     const flash = Math.abs(Math.sin(b.ph)) ** 10;
     ctx.fillStyle = burstColor(b.f, flash, band);
     const w = b.f.s * (0.3 + 0.7 * Math.abs(Math.cos(b.ph)));
-    ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.f.rot + b.ph * 0.2);
+    const rot = b.f.rot + b.ph * 0.2, cos = Math.cos(rot), sin = Math.sin(rot);
+    ctx.setTransform(cos * d, sin * d, -sin * d, cos * d, b.x * d, b.y * d);
     ctx.fillRect(-w / 2, -b.f.s * 0.42, w, b.f.s * 0.84);
-    ctx.restore();
     if (flash > 0.8 && star) {
+      ctx.setTransform(d, 0, 0, d, 0, 0);
       ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = (flash - 0.8) * 5 * 0.8;
       const z = 9 + b.f.s * 3;
       ctx.drawImage(star, b.x - z / 2, b.y - z / 2, z, z);
       ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
     }
   }
+  ctx.setTransform(d, 0, 0, d, 0, 0);
 }
 
 /**
@@ -473,7 +489,7 @@ export function sampleBurst(flakes: Flakes, band: Band, now: number): Set<string
     probe.ink = i;
     for (const flash of [0, 0.5, 1]) out.add(burstColor(probe, flash, band));
   }
-  if (f.puff !== null && now - f.puff >= 0 && now - f.puff < PUFF_MS) out.add(hex8(puffRgb(band)));
+  if (f.puff !== null && now - f.puff >= 0 && now - f.puff < PUFF_MS) out.add(toHex(puffColor(flakes.palette, band)));
   return out;
 }
 
@@ -510,7 +526,7 @@ export function loose(host: object): Flake[] {
 /** Paints a host's loose flakes, as `draw` paints its settled ones. */
 export function drawLoose(host: object, ctx: CanvasRenderingContext2D, light: Light, band: Band, now: number, idle: boolean, density = 1): void {
   const list = looseByHost.get(host);
-  if (list?.length) drawList(ctx, list, light, band, now, idle, starSprite(), density);
+  if (list?.length) drawList(ctx, list, light, band, now, idle, starSprite(list[0]!.pal), density);
 }
 
 function addLoose(host: object, f: Flake): void {
@@ -706,13 +722,14 @@ export function sampleCling(flakes: Flakes, band: Band): Set<string> {
   return out;
 }
 
-function paint(c: CanvasRenderingContext2D, f: Flake, x: number, y: number, ph: number, alpha: number, band: Band): void {
+/** One flake of the cling layer: one `setTransform` places it (no save/restore); the host's base transform is `d`, the canvas's px per CSS px. */
+function paint(c: CanvasRenderingContext2D, f: Flake, x: number, y: number, ph: number, alpha: number, band: Band, d: number): void {
   const w = f.s * (0.4 + 0.6 * Math.abs(Math.cos(ph)));
+  const rot = f.rot + ph * 0.3, cos = Math.cos(rot), sin = Math.sin(rot);
   c.globalAlpha = alpha;
   c.fillStyle = clingColor(f, ph, band);
-  c.save(); c.translate(x, y); c.rotate(f.rot + ph * 0.3);
+  c.setTransform(cos * d, sin * d, -sin * d, cos * d, x * d, y * d);
   c.fillRect(-f.s / 2, -f.s * 0.42, w, f.s * 0.84);
-  c.restore();
   c.globalAlpha = 1;
 }
 
@@ -751,7 +768,7 @@ export const cling = {
     sizeCanvas();
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     if (mouse) {
-      for (const c of carried) { c.ph += dt * (2 + mouse.speed * 0.4); paint(ctx, c.f, mouse.x + c.ox, mouse.y + c.oy, c.ph, 1, c.band); }
+      for (const c of carried) { c.ph += dt * (2 + mouse.speed * 0.4); paint(ctx, c.f, mouse.x + c.ox, mouse.y + c.oy, c.ph, 1, c.band, ratio); }
       mouse.speed *= Math.exp(-dt * 8);
     }
     for (let i = falling.length - 1; i >= 0; i--) {
@@ -771,8 +788,9 @@ export const cling = {
       /* A flake with nowhere to land fades through the last third of its fall. */
       if (b.over === undefined && b.fallen > b.land * 0.67) b.over = hostUnder(b.x, b.y) !== null;
       const fade = b.over === false ? Math.max(0, 1 - (b.fallen - b.land * 0.67) / (b.land * 0.33)) : 1;
-      paint(ctx, b.f, b.x, b.y, b.ph, fade, b.band);
+      paint(ctx, b.f, b.x, b.y, b.ph, fade, b.band, ratio);
     }
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     if (!carried.length && !falling.length) settle();
   },
 

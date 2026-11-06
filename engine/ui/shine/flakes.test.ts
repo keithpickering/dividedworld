@@ -12,10 +12,12 @@ import { burst, burstProbe, drawBurst, makeFlakes, MAX_IN_FLIGHT, release, sampl
    holographic flakes from index 7. They are the reference inks for these tests, copied as literals. */
 const GLITTER = ['#ff3b4a', '#ff9a2e', '#ffd23f', '#3ddc6b', '#2fd6ff', '#4a6bff', '#b65cff', '#dfe4ec', '#dfe4ec', '#dfe4ec'];
 const HOLO = 7;
+/* Divided World's glint (the engine may not import the instance, so the tests carry a copy). */
+const GLINT = '#ffffff';
 const BOX = { w: 988, h: 300 };
 /* Digest of what `draw` painted for `shot()` before the draw was restructured to one transform per flake. */
 const LOOK = 'ef2c407d43c607a7ce58c815efdec0b3a104d064d6e3ecb51b6cf81eaa6a8ed1';
-const make = (seed = 'p1', box = BOX): Flakes => makeFlakes({ seed, box, inks: GLITTER, holo: HOLO, density: 70 });
+const make = (seed = 'p1', box = BOX): Flakes => makeFlakes({ seed, box, inks: GLITTER, holo: HOLO, density: 70, glint: GLINT });
 
 const tokens = tokensOf(readFileSync(join(process.cwd(), 'engine/ui/tokens.css'), 'utf8'));
 const bands = { light: bandOf(tokens.light), dark: bandOf(tokens.dark) };
@@ -49,6 +51,15 @@ function recorder() {
   return { ctx, calls, alphas, styles, stops, strokes, count: (k: string) => calls.filter((c) => c === k).length };
 }
 
+/** A color string as `r,g,b,a8` whether it is `#rrggbb`, `#rrggbbaa` or a color function, so a digest holds across formats. */
+function norm(c: string): string {
+  const h = /^#([0-9a-f]{6})([0-9a-f]{2})?$/u.exec(c);
+  if (h) return `${[0, 2, 4].map((i) => parseInt(h[1]!.slice(i, i + 2), 16)).join(',')},${h[2] ? parseInt(h[2], 16) : 255}`;
+  const f = /^rgba?\((\d+),(\d+),(\d+)(?:,([\d.e-]+))?\)$/u.exec(c);
+  if (f) return `${f[1]},${f[2]},${f[3]},${Math.round(Number(f[4] ?? 1) * 255)}`;
+  return c;
+}
+
 /**
  * A context that tracks the transform, so a draw can be judged by what lands where (the corners of each rect in canvas px, the
  * fill it carries) and not by how it got there: `save/translate/rotate` and a single `setTransform` give the same lines.
@@ -60,7 +71,8 @@ function tracked(density = 1) {
   const stack: M[] = [];
   const lines: string[] = [];
   const n = { save: 0, restore: 0, setTransform: 0, fillStyleSets: 0, fillRect: 0, drawImage: 0 };
-  let style = '', alpha = 1, comp = 'source-over';
+  let style = '', alpha = 1, comp = 'source-over', stroke = '', lineWidth = 1;
+  const arcs: string[] = [];
   const r3 = (x: number): string => String(+x.toFixed(3));
   const at = (x: number, y: number): string => `${r3(m[0] * x + m[2] * y + m[4])},${r3(m[1] * x + m[3] * y + m[5])}`;
   const ctx = {
@@ -74,11 +86,34 @@ function tracked(density = 1) {
     setTransform: (...a: number[]) => { n.setTransform++; m = a as M; },
     fillRect: (x: number, y: number, w: number, h: number) => { n.fillRect++; lines.push(`rect ${style} ${[at(x, y), at(x + w, y), at(x + w, y + h), at(x, y + h)].join(' ')}`); },
     drawImage: (_i: unknown, x: number, y: number, w: number, h: number) => { n.drawImage++; lines.push(`img ${comp} ${r3(alpha)} ${at(x, y)} ${at(x + w, y + h)}`); },
+    createRadialGradient: () => {
+      const stops: string[] = [];
+      return { stops, addColorStop: (o: number, c: string) => stops.push(`${o}:${norm(c)}`) };
+    },
+    beginPath: () => { arcs.length = 0; },
+    arc: (x: number, y: number, r: number) => { arcs.push(`${at(x, y)} r${r3(r * Math.hypot(m[0], m[1]))}`); },
+    fill: () => { lines.push(`fill ${(style as unknown as { stops: string[] }).stops.join(' ')} ${arcs.join(' ')}`); },
+    stroke: () => { lines.push(`stroke ${norm(String(stroke))} ${r3(lineWidth)} ${arcs.join(' ')}`); },
+    get lineWidth() { return lineWidth; }, set lineWidth(v: number) { lineWidth = v; },
+    get strokeStyle() { return stroke; }, set strokeStyle(v: string) { stroke = v; },
     get fillStyle() { return style; }, set fillStyle(v: string) { n.fillStyleSets++; style = v; },
     get globalAlpha() { return alpha; }, set globalAlpha(v: number) { alpha = v; },
     get globalCompositeOperation() { return comp; }, set globalCompositeOperation(v: string) { comp = v; },
   };
   return { ctx: ctx as unknown as CanvasRenderingContext2D, n, lines, matrix: () => m, digest: () => createHash('sha256').update([...lines].sort().join('\n')).digest('hex') };
+}
+
+/* Digests of what `drawBurst` painted for `burstShot()` before it was restructured to one transform per flake. */
+const BURST_LIGHT = 'fa65bbf1abf6d450f0477a6349f3f37c1a7d6147f2f97afabae1cea87599e77e';
+const BURST_DARK_FLAKES = '6407913fab1144941d2af38d0f789aa6d8b1ed38c3149266cd82fd9e897679b2';
+function burstShot(band: { lo: number; hi: number }, onlyFlakes: boolean): { digest: string; t: ReturnType<typeof tracked>; flying: number } {
+  const f = makeFlakes({ seed: 'burst-look', box: { w: 400, h: 200 }, inks: GLITTER, holo: HOLO, density: 70, glint: GLINT, star: {} as CanvasImageSource });
+  burst(f, 0);
+  const t = tracked(2);
+  let flying = 0;
+  for (const now of [40, 160, 400, 800, 1200]) { stepBurst(f, now); flying = Math.max(flying, f.flying); drawBurst(t.ctx, f, band, now, 2); }
+  const lines = onlyFlakes ? t.lines.filter((l) => l.startsWith('rect ') || l.startsWith('img ')) : t.lines;
+  return { digest: createHash('sha256').update([...lines].sort().join('\n')).digest('hex'), t, flying };
 }
 
 const all = (f: Flakes) => [...f.settled];
@@ -144,7 +179,7 @@ describe('flakes', () => {
   });
 
   test('drawing paints each settled flake once; a flare is white, so it is drawn only where the band reaches white', () => {
-    const f = makeFlakes({ seed: 'fl', box: { w: 200, h: 100 }, inks: GLITTER, holo: HOLO, density: 70, star: {} as CanvasImageSource });
+    const f = makeFlakes({ seed: 'fl', box: { w: 200, h: 100 }, inks: GLITTER, holo: HOLO, density: 70, glint: GLINT, star: {} as CanvasImageSource });
     landEverything(f);
     const r = recorder();
     f.draw(r.ctx, { x: 9, y: 9 }, bands.light, 0, false);
@@ -173,7 +208,7 @@ describe('flakes', () => {
     ['dark board', { x: 0.3, y: 0.2 }, bands.dark, 777],
   ];
   function shot(): { digest: string; images: number; t: ReturnType<typeof tracked> } {
-    const f = makeFlakes({ seed: 'look', box: BOX, inks: GLITTER, holo: HOLO, density: 70, star: {} as CanvasImageSource });
+    const f = makeFlakes({ seed: 'look', box: BOX, inks: GLITTER, holo: HOLO, density: 70, glint: GLINT, star: {} as CanvasImageSource });
     landEverything(f);
     const t = tracked(2);
     for (const [, l, band, now] of SHOT) f.draw(t.ctx, l === 'lit' ? { x: f.settled[3]!.nx, y: f.settled[3]!.ny } : l, band, now, true, 2);
@@ -187,7 +222,7 @@ describe('flakes', () => {
   });
 
   test('a redraw costs no save per flake, and a fill color is set once per color, not per flake', () => {
-    const f = makeFlakes({ seed: 'look', box: BOX, inks: GLITTER, holo: HOLO, density: 70, star: {} as CanvasImageSource });
+    const f = makeFlakes({ seed: 'look', box: BOX, inks: GLITTER, holo: HOLO, density: 70, glint: GLINT, star: {} as CanvasImageSource });
     landEverything(f);
     const t = tracked(2);
     f.draw(t.ctx, { x: -0.35, y: -0.45 }, bands.light, 1234, true, 2);
@@ -209,6 +244,69 @@ describe('flakes', () => {
 });
 
 describe('the burst', () => {
+  test('the look is unchanged: the puff, the flakes and the flares land in the same places in the same colors', () => {
+    const light = burstShot(bands.light, false);
+    assert.ok(light.flying > 100 && light.t.n.drawImage >= 1, 'a busy burst with flares');
+    assert.equal(light.digest, BURST_LIGHT);
+    /* The dark board's puff is tinted from the glint now (it was a fixed gold); its flakes are what they were. */
+    assert.equal(burstShot(bands.dark, true).digest, BURST_DARK_FLAKES);
+  });
+
+  test('the puff and the flare are drawn in the glint it is handed: a warm glint shows in every stop and stroke, and is moved into the band', () => {
+    const WARM = '#ffeecc';
+    const f = makeFlakes({ seed: 'puff', box: { w: 300, h: 150 }, inks: GLITTER, holo: HOLO, density: 70, glint: WARM });
+    burst(f, 0);
+    const lit = recorder();
+    drawBurst(lit.ctx, f, { lo: 0.5, hi: 1 }, 100);
+    assert.ok(lit.stops.length >= 3 && lit.strokes.size === 1);
+    for (const c of [...lit.stops, ...lit.strokes]) assert.ok(c.startsWith('#ffeecc'), `the glint, not white: ${c}`);
+    /* A glint darker than the band's floor is lifted to it, so a source-over puff cannot pull a cell under the floor. */
+    const floor = recorder();
+    drawBurst(floor.ctx, f, { lo: 0.95, hi: 1 }, 100);
+    assert.ok(luminanceOf(toLinear(rgbaHex(floor.stops[0]!))) >= 0.95 - 0.004, floor.stops[0]);
+    /* On a board with a lower ceiling the same glint is scaled under the ceiling, keeping its hue (red >= green >= blue). */
+    const dark = recorder();
+    drawBurst(dark.ctx, f, { lo: 0, hi: 0.1 }, 100);
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(rgbaHex(dark.stops[0]!).slice(i, i + 2), 16)) as [number, number, number];
+    assert.ok(r >= g && g >= b && r < 255, `scaled: ${dark.stops[0]}`);
+    assert.ok(luminanceOf(toLinear(rgbaHex(dark.stops[0]!))) <= 0.1 + 0.004);
+    assert.deepEqual([...sampleBurst(f, { lo: 0.5, hi: 1 }, 100)].filter((c) => c === WARM), [WARM], 'the sampler reports the same color');
+  });
+
+  test('the flare sprite is built from the glint, one per glint', () => {
+    const stops: string[] = [];
+    const g = globalThis as unknown as { OffscreenCanvas?: unknown };
+    g.OffscreenCanvas = class {
+      getContext() {
+        return new Proxy({}, {
+          get: (_t, k: string) => (k === 'createRadialGradient' ? () => ({ addColorStop: (_o: number, c: string) => stops.push(c) }) : () => undefined),
+          set: () => true,
+        });
+      }
+    };
+    try {
+      for (const glint of ['#ffeecc', '#ffeecc', '#aaccff']) {
+        const f = makeFlakes({ seed: 'spr', box: { w: 100, h: 60 }, inks: GLITTER, holo: HOLO, density: 70, glint });
+        landEverything(f);
+        f.draw(tracked(1).ctx, { x: 0, y: 0 }, bands.light, 0, false);
+        const made = stops.splice(0);
+        if (glint === '#ffeecc' && made.length === 0) continue;
+        assert.ok(made.length > 0 && made.every((c) => c.startsWith(glint)), `${glint}: ${made.join(' ')}`);
+      }
+    } finally { delete g.OffscreenCanvas; }
+  });
+
+  test('a burst frame costs no save per flake', () => {
+    const f = makeFlakes({ seed: 'burst-look', box: { w: 400, h: 200 }, inks: GLITTER, holo: HOLO, density: 70, glint: GLINT, star: {} as CanvasImageSource });
+    burst(f, 0);
+    stepBurst(f, 400);
+    const t = tracked(2);
+    drawBurst(t.ctx, f, bands.light, 400, 2);
+    assert.ok(t.n.fillRect > 500, `${t.n.fillRect} flakes in the air`);
+    assert.ok(t.n.save + t.n.restore <= 2, `${t.n.save} saves and ${t.n.restore} restores for ${t.n.fillRect} flakes`);
+    assert.deepEqual(t.matrix(), [2, 0, 0, 2, 0, 0], 'the transform is back to the density scale');
+  });
+
   test('lands every flake, none lost, over the words for under two seconds and done within 3.5 seconds', () => {
     const f = make('burst', { w: 400, h: 200 });
     const before = f.settled.length;
@@ -317,9 +415,10 @@ function failures(mode: (typeof MODES)[number], colors: Iterable<string>): strin
   for (const c of colors) for (const ink of POST_INK) { const r = ratio(tokens[mode][ink]!, c); if (r < 4.5) out.push(`${mode} ${c} ${r.toFixed(1)}:1 on ${ink}`); }
   return out;
 }
+/** The `#rrggbb` of a `#rrggbbaa` stop. */
 const rgbaHex = (c: string): string => {
-  const m = /^rgba\((\d+),(\d+),(\d+),/u.exec(c)!;
-  return `#${[1, 2, 3].map((i) => Number(m[i]).toString(16).padStart(2, '0')).join('')}`;
+  assert.match(c, /^#[0-9a-f]{8}$/u, 'a stop with alpha is #rrggbbaa');
+  return c.slice(0, 7);
 };
 
 describe('everything over the words stays in the band', () => {
@@ -355,7 +454,7 @@ describe('everything over the words stays in the band', () => {
     const light = recorder();
     drawBurst(light.ctx, f, { lo: 0.5, hi: 1 }, 100);
     assert.ok(light.stops.length >= 3);
-    for (const c of light.stops) assert.ok(c.startsWith('rgba(255,255,255,'), `white on the light board: ${c}`);
+    for (const c of light.stops) assert.ok(c.startsWith('#ffffff'), `white on the light board: ${c}`);
     for (const band of [{ lo: 0, hi: 0.3 }, bands.dark]) {
       const dark = recorder();
       drawBurst(dark.ctx, f, band, 100);

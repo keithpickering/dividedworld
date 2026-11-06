@@ -17,10 +17,12 @@ const PALETTES: Record<Board, readonly string[]> = {
   light: ['#ffb9be', '#ffc09f', '#fff2a0', '#a8e6a1', '#9fd3ff', '#d8c0ff'],
   dark: ['#7f0c1e', '#682d06', '#4a3d00', '#0d471e', '#133b84', '#522191'],
 };
+/* Divided World's glint (instances/divided-world has the real one; the engine may not import it). */
+const GLINT = '#ffffff';
 const PATTERNS = ['pearl', 'bands', 'prism'] as const;
 const modeOf = (band: Band): Board => (band.hi < 0.5 ? 'dark' : 'light');
 const foilFor = (pattern: (typeof PATTERNS)[number], mode: Board, seed = 'play:post', palette = PALETTES[mode]) =>
-  makeFoil({ seed, pattern, palette, stars: 8 });
+  makeFoil({ seed, pattern, palette, stars: 8, glint: GLINT });
 
 describe('the foil', () => {
   test('one seed gives the same cells twice, and Math.random is never read', () => {
@@ -165,7 +167,7 @@ describe('draw, against a fake context', () => {
   function run(mode: Board, now: number, idle: boolean, light = REST) {
     const calls: Call[] = [];
     const made: Fake[] = [];
-    const foil = makeFoil({ seed: 's', pattern: 'prism', palette: PALETTES[mode], stars: 8, createCanvas: (w, h) => { const c = fakeCanvas(calls, `c${made.length}`, w, h); made.push(c); return c; } });
+    const foil = makeFoil({ seed: 's', pattern: 'prism', palette: PALETTES[mode], stars: 8, glint: GLINT, createCanvas: (w, h) => { const c = fakeCanvas(calls, `c${made.length}`, w, h); made.push(c); return c; } });
     const ctx = fakeCanvas(calls, 'ctx').getContext('2d') as unknown as CanvasRenderingContext2D;
     foil.draw(ctx, { w: 300, h: 120 }, 2, light, bands[mode], now, idle);
     return { calls, foil, ctx, made };
@@ -184,6 +186,31 @@ describe('draw, against a fake context', () => {
     assert.ok(calls.indexOf(stars[0]!) > calls.indexOf(grid!), 'stars come after');
   });
 
+  test('the starburst sprite is built from the glint it is handed', () => {
+    const stops: string[] = [];
+    const calls: Call[] = [];
+    const sprite = (w: number, h: number) => {
+      const c = fakeCanvas(calls, 's', w, h);
+      const ctx = c.getContext('2d') as unknown as { createRadialGradient: () => unknown };
+      const orig = ctx.createRadialGradient.bind(ctx);
+      ctx.createRadialGradient = () => { const gr = orig() as { addColorStop: (o: number, s: string) => void }; const add = gr.addColorStop.bind(gr); gr.addColorStop = (o, s) => { stops.push(s); add(o, s); }; return gr; };
+      return c;
+    };
+    for (const glint of ['#ffeecc', '#ffffff']) {
+      const foil = makeFoil({ seed: 's', pattern: 'pearl', palette: PALETTES.light, stars: 3, glint, createCanvas: sprite });
+      const ctx = fakeCanvas(calls, 'ctx').getContext('2d') as unknown as CanvasRenderingContext2D;
+      foil.draw(ctx, { w: 300, h: 120 }, 1, REST, bands.light, 0, false);
+      assert.ok(stops.length >= 8, `${stops.length} stops`);
+      assert.ok(stops.every((c) => c.startsWith(glint)), `${glint}: ${stops.join(' ')}`);
+      assert.ok(stops.includes(`${glint}f2`) && stops.includes(`${glint}00`), 'the falloff keeps its alphas (0.95 and 0)');
+      stops.length = 0;
+    }
+  });
+
+  test('a glint that is not #rrggbb is refused by name', () => {
+    assert.throws(() => makeFoil({ seed: 's', pattern: 'pearl', palette: PALETTES.light, stars: 1, glint: 'white' }), /glint/);
+  });
+
   test('on the dark board the starbursts have no alpha and are not drawn', () => {
     const { calls } = run('dark', 0, true);
     assert.equal(calls.filter((c) => c[0] === 'ctx.drawImage').length, 1, 'only the grid');
@@ -192,7 +219,7 @@ describe('draw, against a fake context', () => {
   test('a dark board whose ceiling lets some light through still draws no white starburst', () => {
     // Pure white is inside a band only when its ceiling is 1; on any lower ceiling, ‘lighter’ white could lift a cell out.
     const calls: Call[] = [];
-    const foil = makeFoil({ seed: 's', pattern: 'pearl', palette: PALETTES.dark, stars: 10, createCanvas: () => fakeCanvas(calls, 'c') });
+    const foil = makeFoil({ seed: 's', pattern: 'pearl', palette: PALETTES.dark, stars: 10, glint: GLINT, createCanvas: () => fakeCanvas(calls, 'c') });
     const ctx = fakeCanvas(calls, 'ctx').getContext('2d') as unknown as CanvasRenderingContext2D;
     foil.draw(ctx, { w: 600, h: 200 }, 1, { x: 0, y: 0 }, { lo: 0, hi: 0.3 }, 0, false);
     assert.equal(calls.filter((c) => c[0] === 'ctx.drawImage').length, 1, 'only the grid');
@@ -202,7 +229,7 @@ describe('draw, against a fake context', () => {
     const alphas = (idle: boolean, now: number) => {
       const seen: number[] = [];
       const calls: Call[] = [];
-      const foil = makeFoil({ seed: 's', pattern: 'pearl', palette: PALETTES.light, stars: 10, createCanvas: () => fakeCanvas(calls, 'c') });
+      const foil = makeFoil({ seed: 's', pattern: 'pearl', palette: PALETTES.light, stars: 10, glint: GLINT, createCanvas: () => fakeCanvas(calls, 'c') });
       const ctx = fakeCanvas(calls, 'ctx').getContext('2d') as unknown as CanvasRenderingContext2D;
       const orig = ctx.drawImage.bind(ctx);
       (ctx as unknown as { drawImage: (...a: unknown[]) => void }).drawImage = (...a: unknown[]) => { seen.push(ctx.globalAlpha); orig(...(a as Parameters<typeof orig>)); };
@@ -261,7 +288,7 @@ describe('draw, against a fake context', () => {
 
   test('draw puts into the image the same bytes render gives for the same inputs', () => {
     const calls: Call[] = [];
-    const foil = makeFoil({ seed: 's', pattern: 'prism', palette: PALETTES.light, stars: 0, createCanvas: (w, h) => fakeCanvas(calls, 'g', w, h) });
+    const foil = makeFoil({ seed: 's', pattern: 'prism', palette: PALETTES.light, stars: 0, glint: GLINT, createCanvas: (w, h) => fakeCanvas(calls, 'g', w, h) });
     const ctx = fakeCanvas(calls, 'ctx').getContext('2d') as unknown as CanvasRenderingContext2D;
     const box = { w: 301, h: 121 }, light = { x: 0.4, y: -0.3 };
     foil.draw(ctx, box, 1, light, bands.light, 0, false);
@@ -280,7 +307,7 @@ describe('draw, against a fake context', () => {
     assert.equal(mine.filter((x) => x === 'ctx.restore').length, 1);
 
     const calls2: Call[] = [];
-    const foil = makeFoil({ seed: 's', pattern: 'pearl', palette: PALETTES.light, stars: 4, createCanvas: (w, h) => fakeCanvas(calls2, 'n', w, h, true) });
+    const foil = makeFoil({ seed: 's', pattern: 'pearl', palette: PALETTES.light, stars: 4, glint: GLINT, createCanvas: (w, h) => fakeCanvas(calls2, 'n', w, h, true) });
     const ctx = fakeCanvas(calls2, 'ctx').getContext('2d') as unknown as CanvasRenderingContext2D;
     foil.draw(ctx, { w: 300, h: 120 }, 1, REST, bands.light, 0, false);
     assert.deepEqual(calls2.map((c) => c[0]), ['ctx.save', 'ctx.restore']);
