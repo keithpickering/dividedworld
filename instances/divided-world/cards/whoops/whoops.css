@@ -174,3 +174,46 @@
     box-shadow: none;
   }
 }
+
+/*
+ * The drawn cursor (cursor.ts): a sponge or a pen that follows a mouse over ink, and the canvas its drops fall on. Fixed to the window,
+ * above the page, never a target. The sponge squishes while pressed; cursor.ts adds the class not at all under reduced motion.
+ */
+.kb-whoops-cursor {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 60px;
+  height: 45px;
+  z-index: 60;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.kb-whoops-cursor[data-kb-cursor="pen"] {
+  width: 48px;
+  height: 48px;
+}
+
+.kb-whoops-cursor[hidden] {
+  display: none;
+}
+
+.kb-whoops-squish {
+  transform-origin: 30px 40px;
+  transform-box: view-box;
+  transition: transform 90ms ease-out;
+}
+
+.kb-whoops-pressing .kb-whoops-squish {
+  transform: scale(1.07, 0.84);
+}
+
+.kb-whoops-drips {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 50;
+  pointer-events: none;
+}
