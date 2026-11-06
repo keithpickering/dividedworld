@@ -120,13 +120,26 @@ revoke execute on function visit_traits_problem(jsonb, jsonb) from public, anon,
 create table visits_open (
   visit_act uuid primary key references acts (id),
   post uuid not null references acts (id),
-  ends_at timestamptz not null
+  ends_at timestamptz not null,
+  -- The tick's last failed attempt to file it (null: none), so a visit that keeps failing goes behind the others and never starves them.
+  failed_at timestamptz,
+  attempts integer not null default 0
 );
 create unique index visits_open_post on visits_open (post);
 -- The tick's read: the visits whose time (and grace) is past, oldest first.
 create index visits_open_due on visits_open (ends_at, visit_act);
 alter table visits_open enable row level security;
 revoke all on visits_open from public, anon, authenticated;
+
+-- Why a visit would not file, one row per failed attempt, for an admin to read. No client can.
+create table visit_file_failures (
+  id bigint generated always as identity primary key,
+  visit_act uuid not null references acts (id),
+  error text not null,
+  at timestamptz not null default now()
+);
+alter table visit_file_failures enable row level security;
+revoke all on visit_file_failures from public, anon, authenticated;
 
 create function acts_track_visits() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -183,7 +196,8 @@ begin
     end if;
     perform (new.payload ->> 'ends_at')::timestamptz;
   elsif new.kind = 'visit_join' then
-    if t.kind is distinct from 'visit' or t.thread <> new.thread or not exists (select 1 from visits_open o where o.visit_act = t.id) then
+    -- The open row is taken for update, so a join cannot commit after the end that is being written (end_visit takes the same row): it waits, then finds none.
+    if t.kind is distinct from 'visit' or t.thread <> new.thread or not exists (select 1 from visits_open o where o.visit_act = t.id for update) then
       raise exception 'a visit_join is of an open visit, in its thread' using hint = 'kayfabb.refusal', errcode = '23514';
     end if;
   else
@@ -320,6 +334,29 @@ revoke execute on function visit_traps_wired() from public, anon, authenticated;
 
 -- ------------------------------------------------------------------------------------------------------ start_visit ----
 
+-- Whether a charge is already on a post: on one of its visits, open or ended, or on a join to one. A visit that ended `reversed` is as if it had not been: its rule can be
+-- charged again. A charge with no rule number (a premise, Obstruction) is told apart by its words. Read by index: the post's visits by acts_visits_by_post, their joins by
+-- acts_visit_joins and their ends by acts_one_visit_end; never a scan of Acts.
+create function visit_charge_matches(post uuid, ch jsonb) returns setof integer
+language sql stable as $$
+    select 1 from public.acts v, jsonb_array_elements(v.payload -> 'charges') c
+    where v.kind = 'visit' and v.target_act_id = post
+      and not exists (select 1 from public.acts e where e.kind = 'visit_end' and e.target_act_id = v.id and e.payload ->> 'outcome' = 'reversed')
+      and c ->> 'cause' = ch ->> 'cause' and c ->> 'rule_number' is not distinct from ch ->> 'rule_number' and c ->> 'board' = ch ->> 'board'
+      and (c ->> 'rule_number' is not null or c ->> 'rule' is not distinct from ch ->> 'rule')
+    union all
+    select 1 from public.acts v join public.acts j on j.kind = 'visit_join' and j.target_act_id = v.id
+    where v.kind = 'visit' and v.target_act_id = post
+      and not exists (select 1 from public.acts e where e.kind = 'visit_end' and e.target_act_id = v.id and e.payload ->> 'outcome' = 'reversed')
+      and j.payload #>> '{charge,cause}' = ch ->> 'cause' and j.payload #>> '{charge,rule_number}' is not distinct from ch ->> 'rule_number' and j.payload #>> '{charge,board}' = ch ->> 'board'
+      and (j.payload #>> '{charge,rule_number}' is not null or j.payload #>> '{charge,rule}' is not distinct from ch ->> 'rule')
+$$;
+revoke execute on function visit_charge_matches(uuid, jsonb) from public, anon, authenticated;
+
+create function visit_charge_repeats(post uuid, ch jsonb) returns boolean
+language sql stable security definer set search_path = public, pg_temp as $$ select exists (select 1 from visit_charge_matches(post, ch)) $$;
+revoke execute on function visit_charge_repeats(uuid, jsonb) from public, anon, authenticated;
+
 -- A Mod's visit starts on a post, or a charge joins the visit already open on it. `charge` is {rule_number (null where none), board, band, cause (rule | report |
 -- patrol | tail), about_act, predicate?, rule? (the rule in words)}; about_act is taken to be the post when it is left out. Returns {visit, joined, ends_at, sprung}:
 -- joined is true when a visit_join was written, false when the charge was already on the open visit; {visit: null, repeat: true} when an earlier visit of the post
@@ -351,15 +388,10 @@ begin
     'about_act', coalesce(charge ->> 'about_act', post_act::text));
   -- One decision per post at a time: two charges drawn at once meet here, and the second joins.
   perform pg_advisory_xact_lock(hashtextextended('kayfabb.visit:' || post_act::text, 0));
-  select o.visit_act into open_visit from visits_open o where o.post = post_act;
-  -- The charge may already be on this post, on an open visit or an ended one.
-  -- A visit that ended `reversed` is as if it had not been: its rule can be charged again. A charge with no rule number (a premise, Obstruction) is told apart by its words.
-  select exists (
-    select 1 from acts x, jsonb_array_elements(case x.kind when 'visit' then x.payload -> 'charges' else jsonb_build_array(x.payload -> 'charge') end) c
-    where (x.kind = 'visit' and x.target_act_id = post_act or x.kind = 'visit_join' and x.target_act_id in (select v.id from acts v where v.kind = 'visit' and v.target_act_id = post_act))
-      and not exists (select 1 from acts e where e.kind = 'visit_end' and e.payload ->> 'outcome' = 'reversed' and e.target_act_id = case x.kind when 'visit' then x.id else x.target_act_id end)
-      and c ->> 'cause' = ch ->> 'cause' and c ->> 'rule_number' is not distinct from ch ->> 'rule_number' and c ->> 'board' = ch ->> 'board'
-      and (c ->> 'rule_number' is not null or c ->> 'rule' is not distinct from ch ->> 'rule')) into same;
+  -- The open row is taken for update: a filing (or any end) holding it makes this wait, and then it finds the visit gone and decides afresh, never joining a visit that
+  -- has ended.
+  select o.visit_act into open_visit from visits_open o where o.post = post_act for update;
+  same := visit_charge_repeats(post_act, ch);
   if same then
     return case when open_visit is not null then jsonb_build_object('visit', open_visit, 'joined', false) else jsonb_build_object('visit', null, 'repeat', true) end;
   end if;
@@ -405,6 +437,7 @@ declare
   words text;
   broke integer;
 begin
+  begin
   if not coalesce((select s.value = 'true'::jsonb from settings s where s.key = 'systemEnabled'), false) then return; end if;
   select a.character, t.board, c.staff is not null as by_staff into p
   from acts a join threads t on t.id = a.thread join characters c on c.id = a.character where a.id = post_act and a.kind in ('post', 'spin');
@@ -437,6 +470,14 @@ begin
   exception when others then
     raise warning 'draw_visits: post % drew no tail visit: % (%)', post_act, sqlerrm, sqlstate;
     insert into visit_draw_failures (post_act, rule_number, error) values (post_act, null, left(sqlerrm || ' (' || sqlstate || ')', 500));
+  end;
+  -- Nothing raises out of here, not even the reads above: the post is already written.
+  exception when others then
+    raise warning 'draw_visits: post % was not checked: % (%)', post_act, sqlerrm, sqlstate;
+    begin
+      insert into visit_draw_failures (post_act, rule_number, error) values (post_act, null, left(sqlerrm || ' (' || sqlstate || ')', 500));
+    exception when others then null;
+    end;
   end;
 end $$;
 revoke execute on function draw_visits(uuid) from public, anon, authenticated;
@@ -1009,9 +1050,10 @@ begin
 
   -- 4. Visits: each open visit `filingGraceMinutes` past its end is filed with the stock line, so nothing waits on a model. Whatever the switch says: a
   -- visit that has started is filed even if The System is turned off, and even if its Mod has left the staff. By visits_open_due, oldest first, and none once
-  -- the budget is spent; file_visit locks the visit, so the filing cron racing this files it once. One that fails is left for the next tick.
+  -- the budget is spent, at most `demandChecksPerTick` (the tick's one count for work per run; visits have no setting of their own); one that has failed goes behind the
+  -- rest, by its last failure; file_visit locks the visit, so the filing cron racing this files it once. One that fails is left for the next tick.
   for late in
-    select o.visit_act from visits_open o where o.ends_at <= now() - filing_grace order by o.ends_at, o.visit_act limit cap
+    select o.visit_act from visits_open o where o.ends_at <= now() - filing_grace order by o.failed_at nulls first, o.ends_at, o.visit_act limit cap
   loop
     if clock_timestamp() > budget_ends then out_of_time := true; exit; end if;
     begin
@@ -1019,6 +1061,9 @@ begin
     exception when others then
       failed := failed + 1;
       raise warning 'system_tick: visit % did not file: % (%)', late.visit_act, sqlerrm, sqlstate;
+      -- Recorded, and sent behind the others (the order above), so a visit that keeps failing never starves the rest.
+      update visits_open set failed_at = now(), attempts = attempts + 1 where visit_act = late.visit_act;
+      insert into visit_file_failures (visit_act, error) values (late.visit_act, left(sqlerrm || ' (' || sqlstate || ')', 500));
     end;
   end loop;
 

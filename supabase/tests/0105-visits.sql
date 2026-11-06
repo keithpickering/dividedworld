@@ -73,9 +73,53 @@ begin
   $sql$, u, c, m, t, p, v));
   said := tests.race_service(format('select file_visit(%L, ''One.'')', v), format('select file_visit(%L, ''Two.'')', v));
   if said[1] is not null or said[2] is not null then raise exception 'a racing filing failed: %', said; end if;
-  if (select count(*) from acts where kind = 'visit_end' and target_act_id = v) <> 1 then raise exception 'two sessions ended the visit % times', (select count(*) from acts where kind = 'visit_end' and target_act_id = v); end if;
-  if (select count(*) from acts where kind = 'infraction' and payload ->> 'visit_act' = v::text) <> 1 then raise exception 'two sessions filed % infractions', (select count(*) from acts where kind = 'infraction' and payload ->> 'visit_act' = v::text); end if;
+  if (select count(*) from acts where kind = 'visit_end' and target_act_id = v) is distinct from 1 then raise exception 'two sessions ended the visit % times', (select count(*) from acts where kind = 'visit_end' and target_act_id = v); end if;
+  if (select count(*) from acts where kind = 'infraction' and payload ->> 'visit_act' = v::text) is distinct from 1 then raise exception 'two sessions filed % infractions', (select count(*) from acts where kind = 'infraction' and payload ->> 'visit_act' = v::text); end if;
   if warn_points(c) <> 4 then raise exception 'the racing filings moved the bar to %', warn_points(c); end if;
+  perform tests.commit($sql$ delete from settings where key = 'warnBar' $sql$);
+end $$;
+
+-- ---- 0b. A join racing a filing never commits after the end: it waits for the filing, finds the visit ended and starts a fresh visit ----
+do $$
+declare
+  u uuid := gen_random_uuid(); c uuid := gen_random_uuid(); m uuid := gen_random_uuid(); t uuid := gen_random_uuid(); p uuid := gen_random_uuid(); v uuid := gen_random_uuid();
+  tries integer := 0;
+  got jsonb;
+begin
+  perform tests.commit(format($sql$
+    insert into settings (key, value) values ('warnBar', '{"size": 10, "bands": {"minor": 2, "moderate": 4, "severe": 7}, "decay": {"unit": "day", "count": 14}, "banDays": [1, 3, 7]}') on conflict (key) do nothing;
+    insert into auth.users (id, email) values (%1$L, 'vs-race2@test.invalid');
+    insert into accounts (id) values (%1$L);
+    insert into characters (id, owner, name, created_at, debuted_at) values (%2$L, %1$L, 'Vs Racer Two', now(), now());
+    insert into class_history (character, class_key, started_at) values (%2$L, 'alpha', now());
+    insert into characters (id, name, staff, staff_kind, debuted_at) values (%3$L, 'Vs Race Mod Two', 'vs-race-mod2', 'persona', now());
+    insert into threads (id, board, title) select %4$L, b.id, 'Vs race two' from boards b where b.slug = 'general';
+    insert into acts (id, character, kind, thread, payload) values (%5$L, %2$L, 'post', %4$L, '{"body": "A racing post."}');
+    set kayfabb.staff_writer = 'on';
+    insert into acts (id, character, kind, thread, target_act_id, payload) values (%6$L, %3$L, 'visit', %4$L, %5$L, jsonb_build_object(
+      'charges', jsonb_build_array(jsonb_build_object('rule_number', 1, 'board', (select board from threads where id = %4$L), 'band', 'minor', 'cause', 'rule', 'about_act', %5$L::text)),
+      'ends_at', now() + interval '1 hour', 'challenge', jsonb_build_object('kind', 'distraction'), 'line', 'Looking.'));
+    reset kayfabb.staff_writer;
+  $sql$, u, c, m, t, p, v));
+  perform extensions.dblink_connect('vj_h', current_setting('kayfabb.scratch_url'));
+  perform extensions.dblink_connect('vj_a', current_setting('kayfabb.scratch_url'));
+  perform extensions.dblink_exec('vj_h', 'begin');
+  perform * from extensions.dblink('vj_h', format('select file_visit(%L, ''Filed.'')', v)) as x(r jsonb);
+  perform extensions.dblink_send_query('vj_a', format('select /* vj_a */ start_visit(%L, ''vs-race-mod2'', %L::jsonb)', p,
+    jsonb_build_object('rule_number', 2, 'board', (select board from threads where id = t), 'band', 'severe', 'cause', 'rule', 'about_act', p)));
+  loop
+    exit when exists (select 1 from pg_stat_activity a where a.query like '%/* vj_a */%' and a.pid <> pg_backend_pid() and a.wait_event_type = 'Lock');
+    tries := tries + 1;
+    if tries > 400 then raise exception 'the join never waited on the filing'; end if;
+    perform pg_sleep(0.025);
+  end loop;
+  perform extensions.dblink_exec('vj_h', 'commit');
+  select r into got from extensions.dblink_get_result('vj_a') as x(r jsonb);
+  perform extensions.dblink_disconnect('vj_h');
+  perform extensions.dblink_disconnect('vj_a');
+  if exists (select 1 from acts j where j.kind = 'visit_join' and j.target_act_id = v) then raise exception 'a join committed after the visit''s end (an orphan join)'; end if;
+  if got ->> 'visit' is null or (got ->> 'visit')::uuid = v or (got ->> 'joined')::boolean then raise exception 'the waiting charge did not start a fresh visit: %', got; end if;
+  if (select count(*) from visits_open where post = p) is distinct from 1 then raise exception 'the post should have exactly the fresh open visit'; end if;
   perform tests.commit($sql$ delete from settings where key = 'warnBar' $sql$);
 end $$;
 
@@ -114,7 +158,7 @@ begin
   perform seed_instance(seed);
   -- A reseed replaces a persona's traits, once.
   perform seed_instance(seed);
-  if (select count(*) from staff_visit_traits where staff like 'vs-%') <> 2 then raise exception 'the seed did not carry two personas'' traits once: %', (select count(*) from staff_visit_traits); end if;
+  if (select count(*) from staff_visit_traits where staff like 'vs-%') is distinct from 2 then raise exception 'the seed did not carry two personas'' traits once: %', (select count(*) from staff_visit_traits); end if;
   if (select (visit_least, visit_most, challenge)::text from staff_visit_traits where staff = 'vs-m1') is distinct from '(2,4,"{""kind"": ""quiz"", ""questions"": 3}")' then
     raise exception 'vs-m1''s traits are wrong: %', (select (visit_least, visit_most, challenge)::text from staff_visit_traits where staff = 'vs-m1');
   end if;
@@ -182,33 +226,33 @@ declare
   got jsonb;
 begin
   if v is null then raise exception 'no visit'; end if;
-  if (select count(*) from acts where kind = 'visit' and target_act_id = p) <> 1 then raise exception 'two rules drew two visits on one post'; end if;
-  if (select count(*) from acts where kind = 'visit_join' and target_act_id = v) <> 1 then raise exception 'the second charge did not join: %', (select count(*) from acts where kind = 'visit_join' and target_act_id = v); end if;
-  if (select count(*) from visits_open where post = p) <> 1 then raise exception 'a post has more than one open visit'; end if;
-  if (select j.payload ->> 'band' from acts j where j.kind = 'visit_join' and j.target_act_id = v) <> 'severe' or (select j.payload #>> '{charge,rule_number}' from acts j where j.kind = 'visit_join' and j.target_act_id = v) <> '2' then
+  if (select count(*) from acts where kind = 'visit' and target_act_id = p) is distinct from 1 then raise exception 'two rules drew two visits on one post'; end if;
+  if (select count(*) from acts where kind = 'visit_join' and target_act_id = v) is distinct from 1 then raise exception 'the second charge did not join: %', (select count(*) from acts where kind = 'visit_join' and target_act_id = v); end if;
+  if (select count(*) from visits_open where post = p) is distinct from 1 then raise exception 'a post has more than one open visit'; end if;
+  if (select j.payload ->> 'band' from acts j where j.kind = 'visit_join' and j.target_act_id = v) is distinct from 'severe' or (select j.payload #>> '{charge,rule_number}' from acts j where j.kind = 'visit_join' and j.target_act_id = v) is distinct from '2' then
     raise exception 'the join does not carry the severe Rule 2: %', (select j.payload from acts j where j.kind = 'visit_join' and j.target_act_id = v);
   end if;
   -- The same charge again joins nothing.
   mod_ := (select c2.staff from acts a join characters c2 on c2.id = a.character where a.id = v);
   got := start_visit(p, mod_, (select a.payload -> 'charges' -> 0 from acts a where a.id = v));
-  if (select count(*) from acts where kind = 'visit_join' and target_act_id = v) <> 1 then raise exception 'the same charge joined twice'; end if;
+  if (select count(*) from acts where kind = 'visit_join' and target_act_id = v) is distinct from 1 then raise exception 'the same charge joined twice'; end if;
   -- Filing: one infraction, the highest band's points (severe: 7), carrying the highest band's rule.
   got := file_visit(v, null);
-  if (select count(*) from acts i where i.kind = 'infraction' and i.payload ->> 'visit_act' = v::text) <> 1 then raise exception 'filing did not write exactly one infraction'; end if;
-  if (select i.payload ->> 'points' from acts i where i.kind = 'infraction' and i.payload ->> 'visit_act' = v::text) <> '7' then raise exception 'the points are not the highest band''s'; end if;
-  if (select i.payload ->> 'rule_number' from acts i where i.kind = 'infraction' and i.payload ->> 'visit_act' = v::text) <> '2' then raise exception 'the infraction does not carry the highest band''s rule'; end if;
+  if (select count(*) from acts i where i.kind = 'infraction' and i.payload ->> 'visit_act' = v::text) is distinct from 1 then raise exception 'filing did not write exactly one infraction'; end if;
+  if (select i.payload ->> 'points' from acts i where i.kind = 'infraction' and i.payload ->> 'visit_act' = v::text) is distinct from '7' then raise exception 'the points are not the highest band''s'; end if;
+  if (select i.payload ->> 'rule_number' from acts i where i.kind = 'infraction' and i.payload ->> 'visit_act' = v::text) is distinct from '2' then raise exception 'the infraction does not carry the highest band''s rule'; end if;
   if warn_points(c) <> 7 then raise exception 'the bar should hold 7, got %', warn_points(c); end if;
   if exists (select 1 from visits_open where post = p) then raise exception 'a filed visit is still open'; end if;
   -- A second filing is a no-op that returns the end.
   got := file_visit(v, 'Another line.');
   if (got ->> 'filed')::boolean is not false then raise exception 'a second filing says it filed: %', got; end if;
-  if (select count(*) from acts where kind = 'visit_end' and target_act_id = v) <> 1 then raise exception 'file_visit twice ended the visit twice'; end if;
-  if (select count(*) from acts i where i.kind = 'infraction' and i.payload ->> 'visit_act' = v::text) <> 1 then raise exception 'file_visit twice wrote two infractions'; end if;
+  if (select count(*) from acts where kind = 'visit_end' and target_act_id = v) is distinct from 1 then raise exception 'file_visit twice ended the visit twice'; end if;
+  if (select count(*) from acts i where i.kind = 'infraction' and i.payload ->> 'visit_act' = v::text) is distinct from 1 then raise exception 'file_visit twice wrote two infractions'; end if;
   if warn_points(c) <> 7 then raise exception 'file_visit twice moved the bar'; end if;
   if (select payload ->> 'line' from acts where kind = 'visit_end' and target_act_id = v) not like '% filed this post under Rule 1: no all-caps posts; Rule 2: the word "frobnicate" is banned.' then
     raise exception 'the filing line is not the stock line filled with the charges: %', (select payload ->> 'line' from acts where kind = 'visit_end' and target_act_id = v);
   end if;
-  if (select character from acts where kind = 'visit_end' and target_act_id = v) is not null or (select payload ->> 'outcome' from acts where kind = 'visit_end' and target_act_id = v) <> 'filed' then
+  if (select character from acts where kind = 'visit_end' and target_act_id = v) is not null or (select payload ->> 'outcome' from acts where kind = 'visit_end' and target_act_id = v) is distinct from 'filed' then
     raise exception 'a visit_end is of no character and says filed';
   end if;
   -- A visit_end is written only through end_visit.
@@ -275,7 +319,7 @@ begin
   if visit_challenge(p, 'vs-m2') is distinct from jsonb_build_object('kind', 'bribe', 'price', 50) then raise exception 'a bribe challenge is wrong: %', visit_challenge(p, 'vs-m2'); end if;
   -- The visit written for a post uses the same window and challenge.
   perform start_visit(p, 'vs-m1', jsonb_build_object('rule_number', 1, 'board', (select board from threads where id = t), 'band', 'minor', 'cause', 'patrol', 'about_act', p, 'predicate', 'noAllCaps', 'rule', 'Rule 1: no all-caps posts'));
-  if (select (a.payload ->> 'ends_at')::timestamptz - a.created_at from acts a where a.kind = 'visit' and a.target_act_id = p) <> visit_window(p, 'vs-m1') then
+  if (select (a.payload ->> 'ends_at')::timestamptz - a.created_at from acts a where a.kind = 'visit' and a.target_act_id = p) is distinct from visit_window(p, 'vs-m1') then
     raise exception 'start_visit did not use the drawn window';
   end if;
   if (select a.payload -> 'challenge' from acts a where a.kind = 'visit' and a.target_act_id = p) is distinct from visit_challenge(p, 'vs-m1') then raise exception 'start_visit did not use the drawn challenge'; end if;
@@ -443,7 +487,7 @@ begin
   perform tests.unbecome();
   opener := (made #>> '{act,id}')::uuid;
   v := pg_temp.visit_of(opener);
-  if v is null or (select a.payload #>> '{charges,0,rule_number}' from acts a where a.id = v) <> '2' then raise exception 'a spin opener with a live title drew no visit for Rule 2'; end if;
+  if v is null or (select a.payload #>> '{charges,0,rule_number}' from acts a where a.id = v) is distinct from '2' then raise exception 'a spin opener with a live title drew no visit for Rule 2'; end if;
   perform file_visit(v, null);
   if (select i.payload ->> 'points' from acts i where i.kind = 'infraction' and i.payload ->> 'about_act' = opener::text) is distinct from '4' then raise exception 'the live-title infraction is not 4 points'; end if;
 end $$;
@@ -481,7 +525,7 @@ begin
   got := start_visit(p, 'vs-m1', a);
   v := (got ->> 'visit')::uuid;
   got := start_visit(p, 'vs-m1', a);
-  if (got ->> 'joined')::boolean is not false or (select count(*) from acts where kind = 'visit_join' and target_act_id = v) <> 0 then raise exception 'the same rule twice made two charges: %', got; end if;
+  if (got ->> 'joined')::boolean is not false or (select count(*) from acts where kind = 'visit_join' and target_act_id = v) is distinct from 0 then raise exception 'the same rule twice made two charges: %', got; end if;
   -- Two different premise charges both land (the second joins), the same one twice does not.
   got := start_visit(p, 'vs-m1', jsonb_build_object('rule_number', null, 'board', b, 'band', 'minor', 'cause', 'report', 'about_act', p, 'rule', 'Premise: rudeness'));
   if (got ->> 'joined')::boolean is not true then raise exception 'a premise charge did not join: %', got; end if;
@@ -526,7 +570,7 @@ begin
   p := pg_temp.say(c, t, 'short');
   if not exists (select 1 from acts where id = p and kind = 'post') then raise exception 'the post did not go up'; end if;
   v := pg_temp.visit_of(p);
-  if v is null or (select a.payload #>> '{charges,0,rule_number}' from acts a where a.id = v) <> '2' then raise exception 'the other rule''s visit was dropped by the failing rule: %', (select payload from acts where id = v); end if;
+  if v is null or (select a.payload #>> '{charges,0,rule_number}' from acts a where a.id = v) is distinct from '2' then raise exception 'the other rule''s visit was dropped by the failing rule: %', (select payload from acts where id = v); end if;
   if not exists (select 1 from visit_draw_failures f where f.post_act = p and f.rule_number = 1 and f.error like '%no check for predicate noBranch%') then raise exception 'the failure left no trace: %', (select count(*) from visit_draw_failures); end if;
   if has_table_privilege('authenticated', 'visit_draw_failures', 'select') or has_table_privilege('anon', 'visit_draw_failures', 'select') then raise exception 'the failure table is readable by a client'; end if;
   if not (select relrowsecurity from pg_class where relname = 'visit_draw_failures') then raise exception 'the failure table has no RLS'; end if;
@@ -544,4 +588,87 @@ begin
   said := pg_temp.refusal(format($q$insert into acts (character, kind, thread, target_act_id, payload) values (null, 'visit_end', %L, %L, '{"visit_act": "%s", "outcome": "reversed", "line": "x"}')$q$, t, v, v));
   if said is null or said not like '42501:%' then raise exception 'a raw visit_end was not refused as a forbidden write: %', said; end if;
   if exists (select 1 from acts where kind = 'visit_end' and target_act_id = v) or not exists (select 1 from visits_open where visit_act = v) then raise exception 'the forged end landed'; end if;
+end $$;
+
+-- ---- 17. The repeat-charge lookup is read by index: the post's visits by acts_visits_by_post, their joins by acts_visit_joins ----
+do $$
+declare
+  plan text := '';
+  ln record;
+  p uuid := (select a.id from acts a where a.kind = 'post' limit 1);
+begin
+  set local enable_seqscan = off;
+  for ln in execute format('explain select * from visit_charge_matches(%L, %L::jsonb)', p, '{"cause": "rule", "rule_number": 1, "board": "x"}') loop
+    plan := plan || E'\n' || ln."QUERY PLAN";
+  end loop;
+  set local enable_seqscan = on;
+  if plan not like '%acts_visits_by_post%' or plan not like '%acts_visit_joins%' or plan not like '%acts_one_visit_end%' or plan not like '%Index Cond%' then
+    raise exception 'the repeat-charge lookup is not read by the visit, join and end indexes: %', plan;
+  end if;
+end $$;
+
+-- ---- 18. thread_page drops anything but kind, question index and price from a challenge ----
+do $$
+declare
+  c uuid := tests.character(tests.account('vs-hal'), 'Vs Leaky');
+  t uuid := tests.thread('Leaky');
+  p uuid := tests.post(c, t, 'A post under a leaky visit.');
+  v uuid;
+  page jsonb;
+  ch jsonb;
+begin
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  v := tests.act((select id from characters where staff = 'vs-m1'), 'visit', t, jsonb_build_object(
+    'charges', jsonb_build_array(jsonb_build_object('rule_number', 1, 'board', (select board from threads where id = t), 'band', 'minor', 'cause', 'rule', 'about_act', p::text)),
+    'ends_at', now() + interval '1 hour', 'line', 'Looking.',
+    'challenge', jsonb_build_object('kind', 'quiz', 'question_index', 1, 'price', 5, 'answer', 'SECRET', 'answers', jsonb_build_array('SECRET'))), p);
+  perform set_config('kayfabb.staff_writer', '', true);
+  perform tests.become((select owner from characters where id = c));
+  page := thread_page(t, 1, null, 20, '{}');
+  perform tests.unbecome();
+  ch := (select e -> 'challenge' from jsonb_array_elements(page -> 'visits') e where e ->> 'post' = p::text);
+  if ch is null or ch <> jsonb_build_object('kind', 'quiz', 'question_index', 1, 'price', 5) then raise exception 'the page''s challenge is not whitelisted: %', ch; end if;
+  if page::text like '%SECRET%' then raise exception 'thread_page carried a planted answer'; end if;
+end $$;
+
+-- ---- 19. A visit that keeps failing is recorded and does not starve the rest: a poisoned filing does not stop a later one, and goes behind it next tick ----
+do $$
+declare
+  c uuid := tests.character(tests.account('vs-ida'), 'Vs Starved');
+  t uuid := tests.thread('Starved');
+  bad_p uuid := pg_temp.say(c, t, 'SHOUTING, POISONED');
+  good_p uuid := pg_temp.say(tests.character(tests.account('vs-ida2'), 'Vs Fine'), t, 'SHOUTING, FINE');
+  bad uuid := pg_temp.visit_of(bad_p);
+  good uuid := pg_temp.visit_of(good_p);
+begin
+  execute format($f$create function pg_temp.poison() returns trigger language plpgsql as $b$ begin
+    if new.payload ->> 'visit_act' = %L then raise exception 'a poisoned filing'; end if; return new; end $b$ $f$, bad);
+  create trigger vs_poison before insert on acts for each row when (new.kind = 'infraction') execute function pg_temp.poison();
+  -- Both due, the poisoned one first; a cap of one a tick.
+  insert into settings (key, value) values ('demandChecksPerTick', '1') on conflict (key) do update set value = '1';
+  update visits_open set ends_at = now() - interval '3 hours' where visit_act = bad;
+  update visits_open set ends_at = now() - interval '2 hours' where visit_act = good;
+  perform system_tick();
+  if not exists (select 1 from visit_file_failures f where f.visit_act = bad and f.error like '%a poisoned filing%') then raise exception 'the failed filing left no trace'; end if;
+  if exists (select 1 from acts where kind = 'visit_end' and target_act_id in (bad, good)) then raise exception 'a poisoned visit ended, or the cap was not one'; end if;
+  perform system_tick();
+  if not exists (select 1 from acts where kind = 'visit_end' and target_act_id = good) then raise exception 'a visit that keeps failing starved the one behind it'; end if;
+  if exists (select 1 from acts where kind = 'visit_end' and target_act_id = bad) then raise exception 'the poisoned visit filed'; end if;
+  -- With room for both in a tick, the later one files in the same tick the earlier fails.
+  update settings set value = '5' where key = 'demandChecksPerTick';
+  drop trigger vs_poison on acts;
+  delete from settings where key = 'demandChecksPerTick';
+end $$;
+
+-- ---- 20. Nothing raises out of draw_visits, even its first reads; the failure is recorded ----
+do $$
+declare
+  c uuid := tests.character(tests.account('vs-jo'), 'Vs Unreadable');
+  t uuid := tests.thread('Unreadable');
+  p uuid := tests.post(c, t, 'A post whose reads fail.');
+begin
+  alter table settings rename column value to value_gone;
+  perform draw_visits(p);
+  alter table settings rename column value_gone to value;
+  if not exists (select 1 from visit_draw_failures f where f.post_act = p and f.rule_number is null and f.error like '%value%') then raise exception 'a failure in draw_visits'' own reads left no trace'; end if;
 end $$;
