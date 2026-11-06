@@ -1,0 +1,407 @@
+-- Visits (supabase/migrations/0103_visits.sql; the Mod Bots design, section 6; its plan, Task 6).
+--
+-- 1. The seed carries each persona's visit hours and challenge (staff_visit_traits), never a quiz answer.
+-- 2. A post that breaks a rule in force goes up, and the board's beat Mod's visit starts on it (a `visit` Act). A rule never refuses a post: with no Mod on staff
+--    no visit starts and the post is still up; a post by a staff character starts none; an edit starts none.
+-- 3. A second charge on an open visit joins it (a `visit_join`), and the band is the highest; the same charge twice joins once.
+-- 4. The window is the persona's hours clamped into modBots.visitHours, drawn by a hash of the post, so the same post draws the same window and challenge.
+-- 5. The tick files an overdue visit (past ends_at + filingGraceMinutes) with the stock line; the points land once, by the highest band; a visit whose Mod has
+--    left the staff files all the same.
+-- 6. file_visit twice files once (and two sessions at once file once); a visit already ended returns its end.
+-- 7. thread_page carries each post's visit with its charges and challenge, never an answer.
+
+create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
+begin
+  execute stmt;
+  return null;
+exception when others then
+  return sqlstate || ': ' || sqlerrm;
+end $$;
+
+create function pg_temp.announcements() returns uuid language sql as $$
+  select (s.value #>> '{}')::uuid from settings s where s.key = 'systemAnnouncements'
+$$;
+
+-- A setRule move in force, as the tick will have landed it.
+create function pg_temp.rule(on_board uuid, predicate text, param jsonb default null, band text default 'minor') returns uuid language plpgsql as $$
+declare written uuid;
+begin
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  written := tests.act((select id from characters where staff = 'vs-boss'), 'move', pg_temp.announcements(),
+    jsonb_build_object('kind', 'setRule', 'body', 'A rule.',
+      'params', jsonb_build_object('board', on_board, 'predicate', predicate, 'param', param, 'band', band)),
+    null, clock_timestamp());
+  perform set_config('kayfabb.staff_writer', '', true);
+  return written;
+end $$;
+
+-- A player says something through the real post(), as the account that owns the character.
+create function pg_temp.say(by_character uuid, in_thread uuid, body text) returns uuid language plpgsql as $$
+declare made jsonb;
+begin
+  perform tests.become((select owner from characters where id = by_character));
+  made := post(in_thread, by_character, body);
+  perform tests.unbecome();
+  return (made ->> 'id')::uuid;
+end $$;
+
+create function pg_temp.visit_of(post_act uuid) returns uuid language sql as $$
+  select v.id from acts v where v.kind = 'visit' and v.target_act_id = post_act order by v.created_at, v.id limit 1
+$$;
+
+-- ---- 0a. Two sessions filing one visit at once file it once (first: the committed rows must not meet this file's own locks) ----
+-- The Mod, the character, the post and the open visit are committed (a second session must read them); the two filings race on the visit's row.
+do $$
+declare
+  u uuid := gen_random_uuid(); c uuid := gen_random_uuid(); m uuid := gen_random_uuid(); t uuid := gen_random_uuid(); p uuid := gen_random_uuid(); v uuid := gen_random_uuid();
+  said text[];
+begin
+  perform tests.commit(format($sql$
+    insert into settings (key, value) values ('warnBar', '{"size": 10, "bands": {"minor": 2, "moderate": 4, "severe": 7}, "decay": {"unit": "day", "count": 14}, "banDays": [1, 3, 7]}') on conflict (key) do nothing;
+    insert into auth.users (id, email) values (%1$L, 'vs-race@test.invalid');
+    insert into accounts (id) values (%1$L);
+    insert into characters (id, owner, name, created_at, debuted_at) values (%2$L, %1$L, 'Vs Racer', now(), now());
+    insert into class_history (character, class_key, started_at) values (%2$L, 'alpha', now());
+    insert into characters (id, name, staff, staff_kind, debuted_at) values (%3$L, 'Vs Race Mod', 'vs-race-mod', 'persona', now());
+    insert into threads (id, board, title) select %4$L, b.id, 'Vs race' from boards b where b.slug = 'general';
+    insert into acts (id, character, kind, thread, payload) values (%5$L, %2$L, 'post', %4$L, '{"body": "A racing post."}');
+    set kayfabb.staff_writer = 'on';
+    insert into acts (id, character, kind, thread, target_act_id, payload) values (%6$L, %3$L, 'visit', %4$L, %5$L, jsonb_build_object(
+      'charges', jsonb_build_array(jsonb_build_object('rule_number', 1, 'board', (select board from threads where id = %4$L), 'band', 'moderate', 'cause', 'patrol', 'about_act', %5$L::text)),
+      'ends_at', now() - interval '1 hour', 'challenge', jsonb_build_object('kind', 'distraction'), 'line', 'Looking.'));
+    reset kayfabb.staff_writer;
+  $sql$, u, c, m, t, p, v));
+  said := tests.race_service(format('select file_visit(%L, ''One.'')', v), format('select file_visit(%L, ''Two.'')', v));
+  if said[1] is not null or said[2] is not null then raise exception 'a racing filing failed: %', said; end if;
+  if (select count(*) from acts where kind = 'visit_end' and target_act_id = v) <> 1 then raise exception 'two sessions ended the visit % times', (select count(*) from acts where kind = 'visit_end' and target_act_id = v); end if;
+  if (select count(*) from acts where kind = 'infraction' and payload ->> 'visit_act' = v::text) <> 1 then raise exception 'two sessions filed % infractions', (select count(*) from acts where kind = 'infraction' and payload ->> 'visit_act' = v::text); end if;
+  if warn_points(c) <> 4 then raise exception 'the racing filings moved the bar to %', warn_points(c); end if;
+  perform tests.commit($sql$ delete from settings where key = 'warnBar' $sql$);
+end $$;
+
+-- ---- 0. The world: a Boss, two Mods on staff (a quiz and a bribe), two players, the settings, two rules on General ----
+do $$
+declare
+  seed jsonb;
+  general uuid := (select id from boards where slug = 'general');
+begin
+  seed := jsonb_build_object(
+    'settings', jsonb_build_object('systemEnabled', true, 'structuralHoldHours', 24,
+      'warnBar', jsonb_build_object('size', 10, 'bands', jsonb_build_object('minor', 2, 'moderate', 4, 'severe', 7), 'decay', jsonb_build_object('unit', 'day', 'count', 14), 'banDays', jsonb_build_array(1, 3, 7)),
+      'modBots', jsonb_build_object('allowanceMost', 3, 'ruleDaysMost', 7, 'visitHours', jsonb_build_object('least', 3, 'most', 5), 'patrolsPerDay', 6, 'patrolSample', 5,
+        'reportPrice', 25, 'reportsPerDay', 3, 'judgmentsPerDay', 60, 'filingLinesPerDay', 60, 'appealPrice', 50, 'tailHours', 24,
+        'cap', jsonb_build_object('punishments', 3, 'days', 7), 'filingCron', '*/5 * * * *', 'filingGraceMinutes', 10),
+      'systemLines', jsonb_build_object('moveLanded', jsonb_build_array('It is done: {move}.'), 'ruleSet', jsonb_build_array('On {board}: {rule}.'),
+        'visitArrived', jsonb_build_array('{mod} is looking at this post under {rule}.'),
+        'visitFiled', jsonb_build_array('{mod} filed this post under {rule}.')),
+      'systemMoveWords', jsonb_build_object('setRule', 'a rule')),
+    'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+    'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'vs-boss',
+      'staff', jsonb_build_array(
+        jsonb_build_object('key', 'vs-boss', 'name', 'Visit Boss', 'title', 'Boss', 'signature', 'Hi', 'beats', '[]'::jsonb),
+        -- Its hours (2 to 4) are clamped into the settings' 3 to 5: the window is 3 or 4 hours.
+        jsonb_build_object('key', 'vs-m1', 'name', 'Visit Mod One', 'title', 'Mod', 'signature', 'Hi', 'beats', '[]'::jsonb,
+          'visitHours', jsonb_build_object('least', 2, 'most', 4), 'challenge', jsonb_build_object('kind', 'quiz', 'questions', 3)),
+        -- Its hours (6 to 9) are clamped to 5.
+        jsonb_build_object('key', 'vs-m2', 'name', 'Visit Mod Two', 'title', 'Mod', 'signature', 'Hi', 'beats', '[]'::jsonb,
+          'visitHours', jsonb_build_object('least', 6, 'most', 9), 'challenge', jsonb_build_object('kind', 'bribe', 'price', 50))),
+      'firstStaff', jsonb_build_array('vs-m1', 'vs-m2'),
+      'moves', jsonb_build_array(jsonb_build_object('key', 'setRule', 'structural', false, 'shapesBoard', false, 'offices', jsonb_build_array('boss', 'mod'))),
+      'demands', jsonb_build_array(jsonb_build_object('key', 'postsOnBoard')),
+      'predicates', jsonb_build_array(
+        jsonb_build_object('key', 'noAllCaps', 'param', 'none', 'least', null, 'most', null, 'plain', 'no all-caps posts'),
+        jsonb_build_object('key', 'bannedWord', 'param', 'word', 'least', 1, 'most', 40, 'plain', 'the word "{param}" is banned'))));
+  perform seed_instance(seed);
+  -- A reseed replaces a persona's traits, once.
+  perform seed_instance(seed);
+  if (select count(*) from staff_visit_traits where staff like 'vs-%') <> 2 then raise exception 'the seed did not carry two personas'' traits once: %', (select count(*) from staff_visit_traits); end if;
+  if (select (visit_least, visit_most, challenge)::text from staff_visit_traits where staff = 'vs-m1') is distinct from '(2,4,"{""kind"": ""quiz"", ""questions"": 3}")' then
+    raise exception 'vs-m1''s traits are wrong: %', (select (visit_least, visit_most, challenge)::text from staff_visit_traits where staff = 'vs-m1');
+  end if;
+  -- A seed that carries a quiz answer is refused, and so is a challenge of no kind: answers are the interception's, and never here.
+  if pg_temp.refusal(format('select seed_instance(%L::jsonb)', jsonb_set(seed, '{system,staff,1,challenge}', '{"kind": "quiz", "questions": 3, "answers": ["a"]}'))) is null then
+    raise exception 'a seed that carries quiz answers was accepted';
+  end if;
+  if pg_temp.refusal(format('select seed_instance(%L::jsonb)', jsonb_set(seed, '{system,staff,1,challenge}', '{"kind": "riddle"}'))) is null then raise exception 'a challenge of no kind was accepted'; end if;
+  if pg_temp.refusal(format('select seed_instance(%L::jsonb)', jsonb_set(seed, '{system,staff,1,visitHours}', '{"least": 5, "most": 2}'))) is null then raise exception 'visit hours that run backward were accepted'; end if;
+  -- Two rules on General: no all-caps (Rule 1, minor) and the word frobnicate banned (Rule 2, severe).
+  perform pg_temp.rule(general, 'noAllCaps', null, 'minor');
+  perform pg_temp.rule(general, 'bannedWord', '"frobnicate"'::jsonb, 'severe');
+  perform tests.account('vs-ann');
+  perform tests.account('vs-bob');
+end $$;
+
+create function pg_temp.ann() returns uuid language sql as $$ select id from auth.users where email = 'vs-ann@test.invalid' $$;
+create function pg_temp.bob() returns uuid language sql as $$ select id from auth.users where email = 'vs-bob@test.invalid' $$;
+
+-- ---- 1. A breaking post goes up and starts a visit by the board's beat Mod; a clean one starts none; an edit starts none ----
+do $$
+declare
+  c uuid := tests.character(pg_temp.ann(), 'Vs Shouter');
+  t uuid := tests.thread('Visits');
+  clean uuid := pg_temp.say(c, t, 'A perfectly quiet post.');
+  loud uuid;
+  v uuid;
+  va acts%rowtype;
+begin
+  if pg_temp.visit_of(clean) is not null then raise exception 'a post that breaks nothing drew a visit'; end if;
+  if not exists (select 1 from acts where id = clean and kind = 'post') then raise exception 'the clean post is missing'; end if;
+  loud := pg_temp.say(c, t, 'THIS IS SHOUTED VERY LOUDLY');
+  if not exists (select 1 from acts where id = loud and kind = 'post') then raise exception 'a breaking post did not go up: a rule never refuses a post'; end if;
+  v := pg_temp.visit_of(loud);
+  if v is null then raise exception 'a post that breaks Rule 1 drew no visit'; end if;
+  select * into va from acts where id = v;
+  if va.character is distinct from (select id from characters where staff = beat_of((select board from threads where id = t))) then raise exception 'the visit is not by the board''s beat Mod'; end if;
+  if va.thread <> t or va.seq is not null then raise exception 'a visit sits in its post''s thread and takes no seq'; end if;
+  if jsonb_array_length(va.payload -> 'charges') <> 1 or va.payload #>> '{charges,0,rule_number}' <> '1' or va.payload #>> '{charges,0,band}' <> 'minor'
+     or va.payload #>> '{charges,0,cause}' <> 'rule' or (va.payload #>> '{charges,0,about_act}')::uuid <> loud then
+    raise exception 'the visit''s charge is wrong: %', va.payload -> 'charges';
+  end if;
+  if va.payload #>> '{charges,0,rule}' is distinct from 'Rule 1: no all-caps posts' then raise exception 'the charge does not say its rule in words: %', va.payload #>> '{charges,0,rule}'; end if;
+  if not exists (select 1 from visits_open o where o.visit_act = v and o.post = loud and o.ends_at = (va.payload ->> 'ends_at')::timestamptz) then raise exception 'the open visit has no row'; end if;
+  if va.payload ->> 'line' is distinct from format('%s is looking at this post under Rule 1: no all-caps posts.', (select name from characters where id = va.character)) then
+    raise exception 'the arrival line is not the stock line: %', va.payload ->> 'line';
+  end if;
+  -- Nothing about the owner: the visit and its charge name the post and the character only.
+  if va.payload::text ~* (pg_temp.ann()::text) then raise exception 'a visit names an account'; end if;
+  -- An edit is not checked: only a new post or a new thread is.
+  perform tests.become(pg_temp.ann());
+  perform edit_post(clean, c, 'AN EDITED POST, SHOUTED');
+  perform tests.unbecome();
+  if pg_temp.visit_of(clean) is not null then raise exception 'an edit drew a visit'; end if;
+end $$;
+
+-- ---- 2. Two rules broken at once: one visit, the second charge joins, and the band is the highest ----
+do $$
+declare
+  c uuid := tests.character(pg_temp.ann(), 'Vs Double');
+  t uuid := tests.thread('Joins');
+  p uuid := pg_temp.say(c, t, 'FROBNICATE EVERYTHING');
+  v uuid := pg_temp.visit_of(p);
+  mod_ text;
+  got jsonb;
+begin
+  if v is null then raise exception 'no visit'; end if;
+  if (select count(*) from acts where kind = 'visit' and target_act_id = p) <> 1 then raise exception 'two rules drew two visits on one post'; end if;
+  if (select count(*) from acts where kind = 'visit_join' and target_act_id = v) <> 1 then raise exception 'the second charge did not join: %', (select count(*) from acts where kind = 'visit_join' and target_act_id = v); end if;
+  if (select count(*) from visits_open where post = p) <> 1 then raise exception 'a post has more than one open visit'; end if;
+  if (select j.payload ->> 'band' from acts j where j.kind = 'visit_join' and j.target_act_id = v) <> 'severe' or (select j.payload #>> '{charge,rule_number}' from acts j where j.kind = 'visit_join' and j.target_act_id = v) <> '2' then
+    raise exception 'the join does not carry the severe Rule 2: %', (select j.payload from acts j where j.kind = 'visit_join' and j.target_act_id = v);
+  end if;
+  -- The same charge again joins nothing.
+  mod_ := (select c2.staff from acts a join characters c2 on c2.id = a.character where a.id = v);
+  got := start_visit(p, mod_, (select a.payload -> 'charges' -> 0 from acts a where a.id = v));
+  if (select count(*) from acts where kind = 'visit_join' and target_act_id = v) <> 1 then raise exception 'the same charge joined twice'; end if;
+  -- Filing: one infraction, the highest band's points (severe: 7), carrying the highest band's rule.
+  got := file_visit(v, null);
+  if (select count(*) from acts i where i.kind = 'infraction' and i.payload ->> 'visit_act' = v::text) <> 1 then raise exception 'filing did not write exactly one infraction'; end if;
+  if (select i.payload ->> 'points' from acts i where i.kind = 'infraction' and i.payload ->> 'visit_act' = v::text) <> '7' then raise exception 'the points are not the highest band''s'; end if;
+  if (select i.payload ->> 'rule_number' from acts i where i.kind = 'infraction' and i.payload ->> 'visit_act' = v::text) <> '2' then raise exception 'the infraction does not carry the highest band''s rule'; end if;
+  if warn_points(c) <> 7 then raise exception 'the bar should hold 7, got %', warn_points(c); end if;
+  if exists (select 1 from visits_open where post = p) then raise exception 'a filed visit is still open'; end if;
+  -- A second filing is a no-op that returns the end.
+  got := file_visit(v, 'Another line.');
+  if (got ->> 'filed')::boolean is not false then raise exception 'a second filing says it filed: %', got; end if;
+  if (select count(*) from acts where kind = 'visit_end' and target_act_id = v) <> 1 then raise exception 'file_visit twice ended the visit twice'; end if;
+  if (select count(*) from acts i where i.kind = 'infraction' and i.payload ->> 'visit_act' = v::text) <> 1 then raise exception 'file_visit twice wrote two infractions'; end if;
+  if warn_points(c) <> 7 then raise exception 'file_visit twice moved the bar'; end if;
+  if (select payload ->> 'line' from acts where kind = 'visit_end' and target_act_id = v) not like '% filed this post under Rule 1: no all-caps posts; Rule 2: the word "frobnicate" is banned.' then
+    raise exception 'the filing line is not the stock line filled with the charges: %', (select payload ->> 'line' from acts where kind = 'visit_end' and target_act_id = v);
+  end if;
+  if (select character from acts where kind = 'visit_end' and target_act_id = v) is not null or (select payload ->> 'outcome' from acts where kind = 'visit_end' and target_act_id = v) <> 'filed' then
+    raise exception 'a visit_end is of no character and says filed';
+  end if;
+  -- A visit_end is written only through end_visit.
+  if pg_temp.refusal(format($q$insert into acts (character, kind, thread, target_act_id, payload) values (null, 'visit_end', %L, %L, '{"visit_act": "%s", "outcome": "filed", "line": "x"}')$q$, t, v, v)) is null then
+    raise exception 'a visit_end was written by hand';
+  end if;
+end $$;
+
+-- ---- 3. The tick files an overdue visit with the stock line, and the points land; not before the grace is past ----
+do $$
+declare
+  c uuid := tests.character(pg_temp.bob(), 'Vs Overdue');
+  t uuid := tests.thread('Overdue');
+  p uuid := pg_temp.say(c, t, 'SHOUTING ONCE MORE');
+  v uuid := pg_temp.visit_of(p);
+  ran jsonb;
+begin
+  if (select o.ends_at from visits_open o where o.visit_act = v) <= now() then raise exception 'a new visit is already over'; end if;
+  ran := system_tick();
+  if exists (select 1 from acts where kind = 'visit_end' and target_act_id = v) then raise exception 'the tick filed a visit that is not over'; end if;
+  -- Over, but inside the grace: not yet.
+  update visits_open set ends_at = now() - interval '5 minutes' where visit_act = v;
+  ran := system_tick();
+  if exists (select 1 from acts where kind = 'visit_end' and target_act_id = v) then raise exception 'the tick filed a visit inside its grace'; end if;
+  update visits_open set ends_at = now() - interval '11 minutes' where visit_act = v;
+  ran := system_tick();
+  if not exists (select 1 from acts where kind = 'visit_end' and target_act_id = v) then raise exception 'the tick did not file an overdue visit: %', ran; end if;
+  if (ran ->> 'visits')::integer < 1 then raise exception 'the tick does not say it filed: %', ran; end if;
+  if (select e.payload ->> 'line' from acts e where e.kind = 'visit_end' and e.target_act_id = v) is distinct from
+     format('%s filed this post under Rule 1: no all-caps posts.', (select name from characters where id = (select character from acts where id = v))) then
+    raise exception 'the tick did not use the stock line: %', (select e.payload ->> 'line' from acts e where e.kind = 'visit_end' and e.target_act_id = v);
+  end if;
+  if warn_points(c) <> 2 then raise exception 'a minor breach should leave 2 points, got %', warn_points(c); end if;
+  ran := system_tick();
+  if warn_points(c) <> 2 then raise exception 'a second tick filed again'; end if;
+end $$;
+
+-- ---- 4. The window stays inside the settings and is the same on a retry; the challenge is drawn the same way ----
+do $$
+declare
+  c uuid := tests.character(pg_temp.bob(), 'Vs Windows');
+  t uuid := tests.thread('Windows');
+  p uuid;
+  seen_one integer[] := '{}';
+  h integer;
+  q integer;
+  qs integer[] := '{}';
+begin
+  for i in 1..40 loop
+    p := tests.post(c, t, 'Quiet post number ' || i);
+    h := extract(epoch from visit_window(p, 'vs-m1'))::integer / 3600;
+    if h < 3 or h > 4 then raise exception 'vs-m1 (2 to 4 hours, settings 3 to 5) drew % hours', h; end if;
+    if h <> extract(epoch from visit_window(p, 'vs-m1'))::integer / 3600 then raise exception 'a retry drew another window'; end if;
+    seen_one := seen_one || h;
+    h := extract(epoch from visit_window(p, 'vs-m2'))::integer / 3600;
+    if h <> 5 then raise exception 'vs-m2 (6 to 9, settings 3 to 5) should draw 5, got %', h; end if;
+    q := (visit_challenge(p, 'vs-m1') ->> 'question_index')::integer;
+    if q is null or q not between 0 and 2 then raise exception 'the quiz question drawn is outside the 3: %', q; end if;
+    if q is distinct from (visit_challenge(p, 'vs-m1') ->> 'question_index')::integer then raise exception 'a retry drew another question'; end if;
+    qs := qs || q;
+  end loop;
+  if not (3 = any (seen_one) and 4 = any (seen_one)) then raise exception 'the window never varied across 40 posts: %', seen_one; end if;
+  if array_length(array(select distinct x from unnest(qs) x), 1) < 2 then raise exception 'the quiz question never varied across 40 posts'; end if;
+  if visit_challenge(p, 'vs-m2') is distinct from jsonb_build_object('kind', 'bribe', 'price', 50) then raise exception 'a bribe challenge is wrong: %', visit_challenge(p, 'vs-m2'); end if;
+  -- The visit written for a post uses the same window and challenge.
+  perform start_visit(p, 'vs-m1', jsonb_build_object('rule_number', 1, 'board', (select board from threads where id = t), 'band', 'minor', 'cause', 'patrol', 'about_act', p, 'predicate', 'noAllCaps', 'rule', 'Rule 1: no all-caps posts'));
+  if (select (a.payload ->> 'ends_at')::timestamptz - a.created_at from acts a where a.kind = 'visit' and a.target_act_id = p) <> visit_window(p, 'vs-m1') then
+    raise exception 'start_visit did not use the drawn window';
+  end if;
+  if (select a.payload -> 'challenge' from acts a where a.kind = 'visit' and a.target_act_id = p) is distinct from visit_challenge(p, 'vs-m1') then raise exception 'start_visit did not use the drawn challenge'; end if;
+end $$;
+
+-- ---- 5. thread_page carries the visit with its charges and challenge, and never an answer ----
+do $$
+declare
+  c uuid := tests.character(pg_temp.bob(), 'Vs Pager');
+  t uuid := tests.thread('Paged');
+  p uuid := pg_temp.say(c, t, 'FROBNICATE THE PAGE');
+  v uuid := pg_temp.visit_of(p);
+  page jsonb;
+  seen jsonb;
+begin
+  perform tests.become(pg_temp.bob());
+  page := thread_page(t, 1, null, 20, '{}');
+  perform tests.unbecome();
+  seen := (select e from jsonb_array_elements(page -> 'visits') e where e ->> 'post' = p::text);
+  if seen is null then raise exception 'the page does not carry the post''s visit: %', page -> 'visits'; end if;
+  if seen ->> 'visit' <> v::text or jsonb_array_length(seen -> 'charges') <> 2 or seen #>> '{challenge,kind}' not in ('quiz', 'bribe', 'distraction') or seen -> 'end' <> 'null'::jsonb then
+    raise exception 'the open visit is wrong on the page: %', seen;
+  end if;
+  if page::text ~* 'answer' then raise exception 'thread_page carries an answer: %', substring(page::text from '.{40}answer.{40}'); end if;
+  if not exists (select 1 from jsonb_array_elements(page -> 'people') x where x #>> '{character,id}' = (select character from acts where id = v)::text) then raise exception 'the Mod is not among the page''s people'; end if;
+  -- Filed, the page carries its end with the line.
+  perform file_visit(v, 'Rule 2 was explained.');
+  perform tests.become(pg_temp.bob());
+  page := thread_page(t, 1, null, 20, '{}');
+  perform tests.unbecome();
+  seen := (select e from jsonb_array_elements(page -> 'visits') e where e ->> 'post' = p::text);
+  if seen #>> '{end,outcome}' <> 'filed' or seen #>> '{end,line}' <> 'Rule 2 was explained.' then raise exception 'a filed visit''s end is not on the page: %', seen; end if;
+  if page::text ~* 'answer' then raise exception 'thread_page carries an answer once filed'; end if;
+end $$;
+
+-- ---- 6. A post by a staff character starts no visit ----
+do $$
+declare
+  t uuid := tests.thread('Staff');
+  sp uuid := (write_staff_act('vs-m2', 'post', t, null, '{"body": "A LOUD MOD POST, FROBNICATE"}') ->> 'id')::uuid;
+begin
+  perform draw_visits(sp);
+  if pg_temp.visit_of(sp) is not null then raise exception 'a post by a staff character drew a visit'; end if;
+  if start_visit(sp, 'vs-m1', jsonb_build_object('rule_number', 1, 'board', (select board from threads where id = t), 'band', 'minor', 'cause', 'patrol', 'about_act', sp)) is not null
+     or pg_temp.visit_of(sp) is not null then
+    raise exception 'start_visit visited a staff character''s post';
+  end if;
+end $$;
+
+-- ---- 7. Ways out: a Mod that leaves the staff before it files still files by the tick, with the stock line ----
+do $$
+declare
+  c uuid := tests.character(pg_temp.ann(), 'Vs Orphan');
+  t uuid := tests.thread('Orphaned');
+  p uuid := pg_temp.say(c, t, 'SHOUTING INTO THE VOID');
+  v uuid := pg_temp.visit_of(p);
+  mod_ text := (select c2.staff from acts a join characters c2 on c2.id = a.character where a.id = v);
+  ran jsonb;
+begin
+  insert into staff_offices (staff, office, cause) values (mod_, 'benched', 'admin');
+  update visits_open set ends_at = now() - interval '11 minutes' where visit_act = v;
+  ran := system_tick();
+  if not exists (select 1 from acts where kind = 'visit_end' and target_act_id = v and payload ->> 'outcome' = 'filed') then raise exception 'a visit whose Mod left the staff was never filed: %', ran; end if;
+  if (select e.payload ->> 'line' from acts e where e.kind = 'visit_end' and e.target_act_id = v) not like '%filed this post under Rule 1%' then raise exception 'the orphaned visit did not file with the stock line'; end if;
+  if (select i.payload ->> 'staff' from acts i where i.kind = 'infraction' and i.payload ->> 'visit_act' = v::text) is distinct from mod_ then raise exception 'the infraction does not name the Mod that visited'; end if;
+  if warn_points(c) <> 2 then raise exception 'the points did not land'; end if;
+  insert into staff_offices (staff, office, cause) values (mod_, 'mod', 'admin');
+end $$;
+
+-- ---- 8. With no Mod on staff the post still goes up and no visit starts ----
+do $$
+declare
+  c uuid := tests.character(pg_temp.ann(), 'Vs Unwatched');
+  t uuid := tests.thread('Unwatched');
+  p uuid;
+begin
+  insert into staff_offices (staff, office, cause) values ('vs-m1', 'benched', 'admin'), ('vs-m2', 'benched', 'admin');
+  if beat_of((select board from threads where id = t)) is not null then raise exception 'a Mod is still on staff'; end if;
+  p := pg_temp.say(c, t, 'FROBNICATE WITH NOBODY WATCHING');
+  if not exists (select 1 from acts where id = p and kind = 'post') then raise exception 'the post did not go up'; end if;
+  if pg_temp.visit_of(p) is not null then raise exception 'a visit started with no Mod on staff'; end if;
+  -- A new thread too.
+  perform tests.become(pg_temp.ann());
+  perform start_thread('general', c, 'Nobody watches', 'FROBNICATE STILL');
+  perform tests.unbecome();
+  if exists (select 1 from acts v where v.kind = 'visit' and v.target_act_id in (select id from acts where character = c and kind = 'post' and payload ->> 'body' = 'FROBNICATE STILL')) then
+    raise exception 'a new thread drew a visit with no Mod on staff';
+  end if;
+  insert into staff_offices (staff, office, cause) values ('vs-m1', 'mod', 'admin'), ('vs-m2', 'mod', 'admin');
+end $$;
+
+-- ---- 9. A new thread's opening post is checked, and the tail hook is there and empty ----
+do $$
+declare
+  c uuid := tests.character(pg_temp.bob(), 'Vs Opener');
+  made jsonb;
+  opener uuid;
+begin
+  if beat_of((select id from boards where slug = 'general')) is null then raise exception 'the Mods are not back'; end if;
+  perform tests.become(pg_temp.bob());
+  made := start_thread('general', c, 'A thread for shouting', 'OPENING WITH A SHOUT');
+  perform tests.unbecome();
+  opener := (made #>> '{act,id}')::uuid;
+  if pg_temp.visit_of(opener) is null then raise exception 'a new thread''s opening post that breaks a rule drew no visit'; end if;
+  if open_tail_staff(c) is not null then raise exception 'the tail hook says a tail is open before Task 9 exists'; end if;
+end $$;
+
+-- ---- 11. A trap set on a post springs when a visit starts on it, behind the check Task 9 removes ----
+do $$
+declare
+  c uuid := tests.character(pg_temp.ann(), 'Vs Trapper');
+  t uuid := tests.thread('Trapped');
+  p uuid := tests.post(c, t, 'A quiet post with a trap under it.');
+  setting_ uuid;
+  v jsonb;
+begin
+  -- Task 9 lifts the table's own refusal of a visit trigger (card_kinds_trap_shape, 0054) with the others; here it is lifted for this file's transaction.
+  alter table card_kinds drop constraint card_kinds_trap_shape;
+  update settings set value = value || '{"bluffy.price": 25}' where key = 'economy';
+  insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap, ward, lasts)
+    values ('vs-trap', 'Vs Trap', 'pepperoni', 'bluffy.price', 'common', 'set', '{"trigger": {"on": "visit"}, "outcome": {"do": "nullify"}}', false, null) on conflict (key) do nothing;
+  if not visit_traps_wired() then raise exception 'a card with a visit trap does not wire the check'; end if;
+  setting_ := tests.act(c, 'set', t, '{}', p);
+  insert into face_down (play, account, card, post, thread, round, ends_at) values (setting_, pg_temp.ann(), 'vs-trap', p, t, 1, now() + interval '1 day');
+  v := start_visit(p, 'vs-m1', jsonb_build_object('rule_number', 1, 'board', (select board from threads where id = t), 'band', 'minor', 'cause', 'patrol', 'about_act', p));
+  if v -> 'sprung' is null or not exists (select 1 from acts s where s.kind = 'spring' and s.payload ->> 'trigger' = 'visit' and s.payload ->> 'set' = setting_::text) then
+    raise exception 'a visit did not spring the trap set on its post: %', v;
+  end if;
+end $$;

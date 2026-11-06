@@ -41,8 +41,13 @@ test('the seed carries the roster as staff characters, one kind of persona, the 
   assert.deepEqual(seed.system.firstStaff, [...firstStaff]);
   assert.equal(seed.system.firstBoss, instance.system.firstBoss, 'the first season\'s Boss');
   for (const s of seed.system.staff) {
-    assert.deepEqual(Object.keys(s).sort(), ['beats', 'key', 'name', 'signature', 'title']);
+    assert.deepEqual(Object.keys(s).sort(), ['beats', 'challenge', 'key', 'name', 'signature', 'title', 'visitHours']);
     assert.deepEqual(s.beats, [...roster.find((p) => p.key === s.key)!.beats], 'the beat preferences travel, for beat_of (0101)');
+    const p = roster.find((r) => r.key === s.key)!;
+    assert.deepEqual(s.visitHours, p.strictness.visitHours, 'the persona\'s visit hours travel, for start_visit (0103)');
+    assert.equal(s.challenge.kind, p.weakness.kind);
+    assert.ok(!JSON.stringify(s.challenge).includes('answer') && !('questions' in s.challenge && typeof s.challenge.questions !== 'number'), 'a challenge carries a count, never a question or an answer');
+    if (p.weakness.kind === 'quiz') assert.equal(s.challenge.questions, p.weakness.questions.length, 'a quiz carries how many questions it has');
     assert.ok(s.title.length <= 40 && s.signature.length <= 500, 'the SQL cuts these in silence; instanceProblems holds them');
   }
   const bytes = JSON.stringify(seed);

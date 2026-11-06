@@ -55,4 +55,15 @@ export const stockLines: StockLines = Object.freeze({
     'Be advised, {board}: {rule}. The System has written it down so nobody can say they were not told.',
     'The System has added to the pile on {board}: {rule}. The System regrets nothing.',
   ]),
+  // First drafts for Task 14 to widen: a Mod arriving on a post, and filing it. `{rule}` is the rules charged, in the engine's words.
+  visitArrived: Object.freeze([
+    '{mod} has taken an interest in this post. {rule}. {mod} will be back.',
+    'This post is now under inspection by {mod}: {rule}.',
+    '{mod} is looking at this post. The charge is {rule}. {mod} takes a long time over these.',
+  ]),
+  visitFiled: Object.freeze([
+    '{mod} has finished with this post and found it in violation of {rule}.',
+    'Inspection over. {mod} files this post under {rule}.',
+    '{mod} found this post in violation of {rule}, and has written it down.',
+  ]),
 });

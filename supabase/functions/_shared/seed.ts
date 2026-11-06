@@ -6,12 +6,19 @@
  * The reactions list is the instance's whole set: seeding deletes a kind the instance dropped, or refuses when one is in
  * use (supabase/migrations/0091_seed_reaction_kinds.sql).
  */
-import type { Instance } from '../../../engine/rules/types.ts';
+import type { Instance, Weakness } from '../../../engine/rules/types.ts';
 import { DEFAULT_DEVELOPER } from '../../../engine/rules/instance.ts';
 import { MOVE_KINDS } from '../../../engine/system/moves.ts';
 import { BBCODE_TAGS } from '../../../engine/bbcode/parse.ts';
 import { PREDICATES } from '../../../engine/rules/predicates.ts';
 import { DEMAND_KINDS } from '../../../engine/system/demands.ts';
+
+/** What a persona's visits can be talked down with, as the seed carries it: the kind and its number, never a quiz's questions or answers. */
+function challengeOf(w: Weakness): { kind: string; questions?: number; price?: number } {
+  if (w.kind === 'quiz') return { kind: 'quiz', questions: w.questions.length };
+  if (w.kind === 'bribe') return { kind: 'bribe', price: w.price };
+  return { kind: 'distraction' };
+}
 
 export function instanceSeed(instance: Instance) {
   const dev = instance.developer ?? DEFAULT_DEVELOPER;
@@ -46,7 +53,10 @@ export function instanceSeed(instance: Instance) {
       staff: [
         // Every persona alike; seed_instance (0082) debuts the first Boss and the first staff and leaves the rest waiting.
         // `beats` are the slugs of the kinds of board a persona likes to watch (0101): beat_of falls back to them for a board no Mod's order names.
-        ...instance.system.roster.map((p) => ({ key: p.key, name: p.name, title: p.title, signature: p.signature, beats: [...p.beats] })),
+        // `visitHours` and `challenge` are what a persona's visits are like (0103): the hours it runs them and what talks it down. A quiz's challenge carries how many
+        // questions it has and never one of them or its answer; the interception (the plan's Task 9) seeds those where a client cannot read them.
+        ...instance.system.roster.map((p) => ({ key: p.key, name: p.name, title: p.title, signature: p.signature, beats: [...p.beats],
+          visitHours: { least: p.strictness.visitHours.least, most: p.strictness.visitHours.most }, challenge: challengeOf(p.weakness) })),
       ],
       firstStaff: [...instance.system.firstStaff],
       // The member group every staff character is in, named by the instance.

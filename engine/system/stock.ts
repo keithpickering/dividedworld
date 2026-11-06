@@ -5,12 +5,12 @@
  *
  * Each key's lines are a list, one chosen at random, so a stock line wears thin more slowly.
  */
-export const STOCK_LINE_KEYS = ['moveLanded', 'moveMet', 'moveExpired', 'moveReversed', 'moveSuperseded', 'bossFarewell', 'bossArrival', 'boardDescription', 'ruleSet'] as const;
+export const STOCK_LINE_KEYS = ['moveLanded', 'moveMet', 'moveExpired', 'moveReversed', 'moveSuperseded', 'bossFarewell', 'bossArrival', 'boardDescription', 'ruleSet', 'visitArrived', 'visitFiled'] as const;
 export type StockLineKey = (typeof STOCK_LINE_KEYS)[number];
 
 /**
  * The `{tokens}` a line may carry, by key: `{move}` is the move's plain name, `{boss}` a Boss's name, `{board}` a board's name ("every board" for a house
- * rule), `{rule}` a rule as it will be numbered and worded in plain words ("Rule 3: no double posting", "House Rule 1: no all-caps posts").
+ * rule), `{rule}` a rule as it will be numbered and worded in plain words ("Rule 3: no double posting", "House Rule 1: no all-caps posts"). For a visit, `{mod}` is the Mod's name and `{rule}` the rules charged, in words, one after another.
  */
 export const STOCK_LINE_TOKENS: Readonly<Record<StockLineKey, readonly string[]>> = {
   moveLanded: ['move'],
@@ -22,4 +22,6 @@ export const STOCK_LINE_TOKENS: Readonly<Record<StockLineKey, readonly string[]>
   bossArrival: ['boss'],
   boardDescription: ['board'],
   ruleSet: ['rule', 'board'],
+  visitArrived: ['mod', 'rule'],
+  visitFiled: ['mod', 'rule'],
 };
