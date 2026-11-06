@@ -10,17 +10,26 @@
   gap: 0.6rem;
 }
 
-.kb-kit-group {
-  display: inline-flex;
+/* A named kit (a choice among its controls): the name over one row of the hold and the options (board 29's "Your tools, as the author"). */
+.kb-kit-named {
+  display: block;
+}
+
+.kb-kit-label {
+  margin: 0 0 8px;
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text);
+}
+
+.kb-kit-row {
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.6rem;
-}
-
-.kb-kit-group-label {
-  font-family: var(--kb-glass-font-body);
-  font-size: var(--kb-glass-size-label);
-  color: var(--kb-glass-text-2);
 }
 
 .kb-kit-tile {

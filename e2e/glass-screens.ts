@@ -186,10 +186,13 @@ const lensOpen = async (page: Page) => { await expect(page.getByRole('dialog', {
 export const STORIES: readonly Screen[] = [
   { name: 'My log, on the Log board\'s moment', board: '12-log', path: '/?fixture=boards&moment=12-log' },
   SETTLEMENT,
+  { name: 'My log before anything has settled, in its story', board: '2026-11-05-backfill/30-log-empty', path: '/?fixture=boards&story=boards-12-log--empty' },
   { name: 'My log with a settlement\'s posts open, in its story', board: '2026-11-05-backfill/31-log-open', path: '/?fixture=boards&story=boards-12-log--open' },
   /* The Lens, on each tab with Who unfolded, for a reader and for the post's author: glass type over the 2003 post. */
   { name: 'The Lens on Whoops!, Who unfolded, in its story', board: '2026-11-05-backfill/28-lens', path: '/?fixture=boards&story=boards-01-lens--lens-whoops-who', then: lensOpen },
-  { name: 'The Lens on Stick Around, Who unfolded, in its story', board: '2026-11-05-backfill/28-lens', path: '/?fixture=boards&story=boards-01-lens--lens-stick-around-who', then: lensOpen },
+  /* Five kinds on the post (Whoops!, Stick Around, Glitter Bomb, Autocorrect, Force Field): the tab strip scrolls, and board 28's manifest holds it. */
+  { name: 'The Lens with five kinds, its tabs one row that scrolls, in its story', board: '2026-11-05-backfill/28-lens', path: '/?fixture=boards&story=boards-01-lens--five-kinds', then: lensOpen },
+  { name: 'The Lens on Stick Around, Who unfolded, in its story', board: '2026-11-05-backfill/29-lens-states', path: '/?fixture=boards&story=boards-01-lens--lens-stick-around-who', then: lensOpen },
   { name: 'The author\'s Lens on Whoops!, in its story', board: '2026-11-05-backfill/29-lens-states', path: '/?fixture=boards&story=boards-01-lens--lens-author-whoops-who', then: lensOpen },
   /*
    * The Lens opened inside Stick Around's view (story `held-inside`) is not read here: the Lens stands over the view's tag and, at a phone,

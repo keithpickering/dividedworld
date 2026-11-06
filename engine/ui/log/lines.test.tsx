@@ -20,7 +20,7 @@ const words: Words = {
   economy: {},
 };
 const data = (over: Partial<LogData>): LogData => ({
-  log: empty, mine: [], estimate: null, standings: {}, season: null, turns: [], acts: new Map(), names: new Map(), titles: new Map(), states: new Map(), ...over,
+  log: empty, mine: [], estimate: null, standings: {}, season: null, turns: [], nextSettlement: null, acts: new Map(), names: new Map(), titles: new Map(), states: new Map(), ...over,
 });
 const season = (startsAt: string) => ({ id: 2, number: 2, startsAt, endsAt: null, turnsThread: null, revealAct: null });
 

@@ -1043,7 +1043,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   /*
    * The controls are made again only when the tool or the author changes: the engine compares a view's controls by function
    * reference (plays.ts `sameView`), so a sweep's numbers changing every few frames must not make new ones. `startSweep` and
-   * `stopSweep` are the hold, and the author's choice is the effect's own `tool` state ("Your tool"): the author's stroke is the
+   * `stopSweep` are the hold, and the author's choice is the effect's own `tool` state ("Your tools, as the author"): the author's stroke is the
    * wash saved for everyone, so there is no third option.
    */
   const chooseTool = useCallback((value: string) => setTool(value === 'ink' ? 'ink' : 'wash'), []);
@@ -1051,7 +1051,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     if (!anyLive || still) return [];
     const hold: KitControl = { kind: 'hold', label: 'Hold to scrub', describe: HOLD_HELP, start: startSweep, stop: stopSweep };
     if (!author) return [hold];
-    return [hold, { kind: 'choose', label: 'Your tool', options: TOOLS, value: tool, choose: chooseTool }];
+    return [hold, { kind: 'choose', label: 'Your tools, as the author', options: TOOLS, value: tool, choose: chooseTool }];
   }, [anyLive, still, author, tool, startSweep, stopSweep, chooseTool]);
   const cardView: CardView = {
     progress, state, ...(anyLive && !still ? { ends: author ? ENDS_AUTHOR : ENDS } : null), yours: author && anyLive && !still, controls, notes, ...(report ? { report } : null),

@@ -46,7 +46,7 @@ for (const [label, viewport, story] of [
       const lens = page.getByRole('dialog', { name: 'Cards on this post' });
       await expect(lens).toBeVisible();
       await expect(lens).toHaveAttribute('aria-modal', 'false');
-      await expect(lens).toHaveAttribute('data-kb-lens', viewport.width <= 640 ? 'sheet' : /^(side|under|above)$/u);
+      await expect(lens).toHaveAttribute('data-kb-lens', viewport.width <= 640 ? 'sheet' : 'dock');
       const box = (await lens.boundingBox())!;
       expect(box.x, 'the Lens starts inside the window').toBeGreaterThanOrEqual(0);
       expect(box.x + box.width, 'and ends inside it').toBeLessThanOrEqual(viewport.width + 1);
@@ -151,28 +151,25 @@ test.describe('the ghost mark and the edge', () => {
 });
 
 /*
- * The Lens never overlaps its post's words where the window has room for its side panel (the critique measured the unstacked list
- * over the plate by 37 to 194px). The mockup's post #41 where the window has room for the side panel: the board is a column at most
- * 1200px wide (engine/ui/tokens.css `--kb-board-max`), the Lens is 340px and wants a gutter, so it stands in the margin from about
- * 1560px wide up, and the post's words and ink are all left of it. At 1440 the margin is 240px, so the Lens stands under its mark
- * (`data-kb-lens="under"`, kept in the window); that it then covers the post's own words is the plan's gap, reported with Task 8. On a
- * phone it is a sheet, which the first describe above measures inside the window.
+ * Where the Lens stands on a wide window is the dock (e2e/lens-frame.spec.ts holds its frame): at the right from 16px under the page's top, and the post
+ * moves aside for it (e2e/lens-room.spec.ts; the owner: "Dock, but move the post"); it dims and blocks nothing, and a stroke is scrubbed with it open.
+ * On a phone it is a sheet, which the first describe above measures inside the window.
  */
 /*
  * The Lens's type is the glass's at its smallest step, so the post's own 15px words are never out-shouted (the design's section 2): it is
- * 340px wide, its body is the label step (20px, 18px of ink in the glass's face), its names the display face's smallest step, and a kit
- * tile is a 36px target, not a slab. Each row is a plate of its own with its play's ink in its corner, and its note stands above its caster.
+ * 460px wide docked (board 28), its body is the label step (20px, 18px of ink in the glass's face), its names the display face's smallest step, and a
+ * tile is a 44px target in a two-by-two grid, not a slab. Each row is a plate of its own with its play's ink in its corner, and its note stands above its caster.
  */
 test.describe('the Lens\'s size and rows at 1920', () => {
   test.use({ viewport: { width: 1920, height: 1080 } });
 
-  test('is 340px wide in the label step, with 36px tiles, its rows apart as plates in their inks, and each note above its caster', async ({ page }) => {
+  test('is 460px wide in the label step, with 44px tiles, its rows apart as plates in their inks, and each note above its caster', async ({ page }) => {
     await page.goto('/?fixture=boards&story=boards-01-lens--lens-author-whoops-who');
     const lens = page.getByRole('dialog', { name: 'Cards on this post' });
     await expect(lens).toBeVisible();
-    expect((await lens.boundingBox())!.width).toBeCloseTo(340, 0);
+    expect((await lens.boundingBox())!.width).toBeCloseTo(460, 0);
     expect(await lens.evaluate((el) => getComputedStyle(el).fontSize)).toBe('20px');
-    for (const h of await lens.locator('.kb-kit-tile').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().height))) expect(h).toBeLessThanOrEqual(40);
+    for (const h of await lens.locator('.kb-kit-tile').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().height))) expect(h).toBeLessThanOrEqual(48);
     const rows = lens.locator('.kb-lens-row');
     await expect(rows).toHaveCount(3);
     const corners = await rows.evaluateAll((els) => els.map((el) => getComputedStyle(el, '::before').backgroundColor));
@@ -196,18 +193,21 @@ for (const [name, story] of [['Whoops!', 'boards-01-lens--lens-whoops-who'], ['S
   test.describe(`the Lens on ${name}, Who unfolded, at 1920`, () => {
     test.use({ viewport: { width: 1920, height: 1080 } });
 
-    test('stands beside the post and never overlaps its words or its ink, and stays in the window', async ({ page }) => {
+    test('stands docked at the right of the window, in the window, with Who unfolded', async ({ page }) => {
       await page.goto(`/?fixture=boards&story=${story}`);
       const lens = page.getByRole('dialog', { name: 'Cards on this post' });
       await expect(lens).toBeVisible();
-      await expect(lens).toHaveAttribute('data-kb-lens', 'side');
+      await expect(lens).toHaveAttribute('data-kb-lens', 'dock');
       await expect(lens.locator('.kb-lens-fold')).toHaveAttribute('aria-expanded', 'true');
-      const [l, body, article] = await Promise.all([lens.boundingBox(), page.locator('#post-41 .kb-act-main').boundingBox(), page.locator('#post-41').boundingBox()]);
-      expect(l!.x, 'the Lens starts right of the post\'s words').toBeGreaterThanOrEqual(body!.x + body!.width - 1);
-      expect(l!.x, 'and of the post').toBeGreaterThanOrEqual(article!.x + article!.width - 1);
-      expect(l!.x + l!.width).toBeLessThanOrEqual(1920 + 1);
-      expect(l!.y).toBeGreaterThanOrEqual(0);
-      expect(l!.y + l!.height).toBeLessThanOrEqual(1080 + 1);
+      const l = (await lens.boundingBox())!;
+      expect(l.x + l.width).toBeCloseTo(1920 - 16, 0);
+      expect(l.y).toBeCloseTo(16, 0);
+      expect(l.y + l.height).toBeLessThanOrEqual(1080);
+      /* The post moves aside for it (e2e/lens-room.spec.ts holds this at every width): its words and the post are all left of the dock. */
+      await page.waitForTimeout(600);
+      const [body, article] = await Promise.all([page.locator('#post-41 .kb-act-main').boundingBox(), page.locator('#post-41').boundingBox()]);
+      expect(body!.x + body!.width, 'the post\'s words end left of the Lens').toBeLessThanOrEqual(l.x);
+      expect(article!.x + article!.width, 'and the post').toBeLessThanOrEqual(l.x);
     });
   });
 }
@@ -339,7 +339,7 @@ test.describe('glass in the 2003 board, reduced motion', () => {
     await expect(page.locator('#post-41').getByRole('button', { name: 'Play Whoops! on post 41' })).toBeVisible();
     /* The moment's player is #41's author (the mark says "Yours to act on"): the hold and the two-tool choice, no more. */
     await expect(page.locator('#post-41 .kb-mark[data-kb-card="whoops"]:not(.kb-ghost-mark)')).toHaveAttribute('aria-label', /Yours to act on/u);
-    await expect(lens.getByRole('group', { name: 'Your tool' })).toBeVisible();
+    await expect(lens.getByRole('group', { name: 'Your tools, as the author' })).toBeVisible();
     for (const name of ['Wash', 'Write in ink']) await expect(lens.getByRole('button', { name })).toHaveAttribute('aria-pressed', /^(true|false)$/u);
     await expect(lens.locator('.kb-kit-tile')).toHaveCount(3);
   });
@@ -356,7 +356,7 @@ test.describe('glass in the 2003 board, reduced motion', () => {
     const lens = page.getByRole('dialog', { name: 'Cards on this post' });
     await expect(lens.getByRole('button', { name: 'Hold to scrub' })).toBeVisible();
     await expect(lens.locator('.kb-kit-tile')).toHaveCount(1);
-    await expect(lens.getByRole('group', { name: 'Your tool' })).toHaveCount(0);
+    await expect(lens.getByRole('group', { name: 'Your tools, as the author' })).toHaveCount(0);
   });
 
 });

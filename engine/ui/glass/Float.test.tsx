@@ -1,13 +1,13 @@
 /**
- * The float's placement (Float.tsx), with stubbed rects: beside the post, under the anchor, or the narrow width's sheet on the
- * HUD; the page scrolled for a sheet on open and when the sheet's size changes, never on every scroll; no placement from an
- * anchor that has left the page, nor when nothing it depends on has moved.
+ * The float's placement (Float.tsx), with stubbed rects: docked at the right from the page's top to 16px above the HUD (board 28), as
+ * wide as `dockWidth` says, or the narrow width's sheet on the HUD, as wide as the window; the page scrolled for a sheet on open and when
+ * the sheet's size changes, never on every scroll; no placement from an anchor that has left the page, nor when nothing it depends on has moved.
  */
 import { act, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { KayfaProvider, type Kayfa } from '../context.tsx';
 import { testGlass } from '../test-world.tsx';
-import { Float, placeFloat } from './Float.tsx';
+import { DOCK_INSET, dockWidth, Float, placeFloat } from './Float.tsx';
 
 const rectOf = (r: { top: number; left: number; right: number; bottom: number }) => () => ({ ...r, x: r.left, y: r.top, width: r.right - r.left, height: r.bottom - r.top, toJSON: () => r }) as DOMRect;
 let height = 300;
@@ -53,53 +53,112 @@ function stage(over: { anchor?: { top: number; left: number; right: number; bott
 }
 
 describe('where the float stands', () => {
-  test('beside the post when the window has its width and a gutter free there', () => {
+  test('docked at the right, 16px from the top and 16px above the HUD, whatever the post and the anchor', () => {
     const s = stage();
-    const out = placeFloat(s.wrap, s.box, s.anchor, s.post, false);
-    expect(out.at).toBe('side');
-    expect(s.wrap.style.left).toBe('412px');
-    expect(s.wrap.style.top).toBe('100px');
+    const out = placeFloat(s.wrap, s.box, s.anchor, false);
+    expect(out.at).toBe('dock');
+    expect([s.wrap.style.top, s.wrap.style.right]).toEqual([`${DOCK_INSET}px`, `${DOCK_INSET}px`]);
+    /* The window is 1000 wide and 800 high, the HUD's top is 700: the panel is as tall as the room between. */
+    expect(s.box.style.height).toBe(`${700 - 2 * DOCK_INSET}px`);
+    expect(s.wrap.style.width).toBe(`${dockWidth(1000)}px`);
+    /* An anchor low on the page does not move it. */
+    holder.innerHTML = '';
+    const low = stage({ anchor: { top: 620, left: 300, right: 330, bottom: 650 } });
+    placeFloat(low.wrap, low.box, low.anchor, false);
+    expect([low.wrap.style.top, low.box.style.height]).toEqual([`${DOCK_INSET}px`, `${700 - 2 * DOCK_INSET}px`]);
   });
 
-  test('under the anchor when there is no room beside the post', () => {
-    const s = stage({ post: { top: 80, left: 100, right: 700, bottom: 400 } });
-    const out = placeFloat(s.wrap, s.box, s.anchor, s.post, false);
-    expect(out.at).toBe('under');
-    expect(s.wrap.style.top).toBe('138px');
+  test('without a HUD it is docked to the window\'s foot', () => {
+    const s = stage({ hud: false });
+    placeFloat(s.wrap, s.box, s.anchor, false);
+    expect(s.box.style.height).toBe(`${800 - 2 * DOCK_INSET}px`);
   });
 
-  test('over the anchor when under it would run into the HUD', () => {
-    const s = stage({ post: { top: 80, left: 100, right: 700, bottom: 400 }, anchor: { top: 600, left: 300, right: 330, bottom: 630 } });
-    expect(placeFloat(s.wrap, s.box, s.anchor, s.post, false).at).toBe('above');
-  });
-
-  test('a sheet on the HUD\'s top edge, the window\'s width, and without a HUD on the window\'s foot', () => {
+  test('its width is 460px at 1440, never under 360, and never wider than the window less its two insets', () => {
+    expect(dockWidth(1440)).toBe(460);
+    expect(dockWidth(1920)).toBe(460);
+    expect(dockWidth(834)).toBe(360);
+    expect(dockWidth(1100)).toBe(360);
+    expect(dockWidth(1300)).toBe(416);
     const s = stage();
-    const out = placeFloat(s.wrap, s.box, s.anchor, s.post, true);
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
+    Object.defineProperty(document.documentElement, 'clientWidth', { configurable: true, value: 390 });
+    placeFloat(s.wrap, s.box, s.anchor, false);
+    expect(s.wrap.style.maxWidth).toBe(`${390 - 2 * DOCK_INSET}px`);
+    delete (document.documentElement as unknown as Record<string, unknown>).clientWidth;
+  });
+
+  test('a sheet on the HUD\'s top edge, as wide as the window (no max-width of the float\'s own), and without a HUD on the window\'s foot', () => {
+    const s = stage();
+    const out = placeFloat(s.wrap, s.box, s.anchor, true);
     expect(out.at).toBe('sheet');
-    expect([s.wrap.style.left, s.wrap.style.right, s.wrap.style.bottom]).toEqual(['0px', '0px', '100px']);
+    expect([s.wrap.style.left, s.wrap.style.right, s.wrap.style.bottom, s.wrap.style.maxWidth]).toEqual(['0px', '0px', '100px', 'none']);
     document.querySelector('.kb-hud')!.remove();
-    placeFloat(s.wrap, s.box, s.anchor, s.post, true);
+    placeFloat(s.wrap, s.box, s.anchor, true);
     expect(s.wrap.style.bottom).toBe('0px');
   });
 
   test('says how far the page must scroll to bring the anchor above a sheet, and none for an anchor already above it', () => {
     const low = stage({ anchor: { top: 620, left: 300, right: 330, bottom: 650 } });
     const sheetTop = 700 - 300;
-    expect(placeFloat(low.wrap, low.box, low.anchor, low.post, true).over).toBe(650 - (sheetTop - 8));
+    expect(placeFloat(low.wrap, low.box, low.anchor, true).over).toBe(650 - (sheetTop - 8));
     holder.innerHTML = '';
     const high = stage();
-    expect(placeFloat(high.wrap, high.box, high.anchor, high.post, true).over).toBeLessThanOrEqual(0);
+    expect(placeFloat(high.wrap, high.box, high.anchor, true).over).toBeLessThanOrEqual(0);
+  });
+});
+
+describe('the room it takes from the page', () => {
+  test('a dock takes its width and both gaps from the right, a sheet its height from the foot', () => {
+    const d = stage();
+    expect(placeFloat(d.wrap, d.box, d.anchor, false).room).toEqual({ right: dockWidth(1000) + 2 * DOCK_INSET, bottom: 0 });
+    holder.innerHTML = '';
+    const s = stage();
+    /* The window is 800 high, the sheet stands from 400 (the HUD's top 700 less its 300) to the HUD. */
+    expect(placeFloat(s.wrap, s.box, s.anchor, true).room).toEqual({ right: 0, bottom: 800 - 400 });
+  });
+
+  test('a sheet brings the whole post above it where the post fits there, and only the mark where it does not', () => {
+    const fits = stage({ anchor: { top: 300, left: 300, right: 330, bottom: 330 } });
+    expect(placeFloat(fits.wrap, fits.box, fits.anchor, true, fits.post).over).toBe(400 - (400 - 8));
+    holder.innerHTML = '';
+    const tall = stage({ anchor: { top: 300, left: 300, right: 330, bottom: 330 }, post: { top: 80, left: 100, right: 400, bottom: 900 } });
+    expect(placeFloat(tall.wrap, tall.box, tall.anchor, true, tall.post).over).toBe(330 - (400 - 8));
+  });
+
+  test('is said on the root element while the float is open, and taken back when it closes', () => {
+    const s = stage();
+    const view = mount(s, false);
+    const root = document.documentElement;
+    expect(root.getAttribute('data-kb-float')).toBe('dock');
+    expect(root.style.getPropertyValue('--kb-float-right')).toBe(`${dockWidth(1000) + 2 * DOCK_INSET}px`);
+    expect(root.style.getPropertyValue('--kb-float-bottom')).toBe('0px');
+    view.unmount();
+    expect(root.getAttribute('data-kb-float')).toBeNull();
+    expect(root.style.getPropertyValue('--kb-float-right')).toBe('');
+  });
+
+  test('a dock that moved the post out of the window scrolls it back in once, and not again for a placement that moves nothing', async () => {
+    const scroll = vi.fn();
+    window.scrollBy = scroll as unknown as typeof window.scrollBy;
+    /* The page narrowed under the dock and the post stands 56px below the line 16px above the HUD (700 - 16 = 684). */
+    const s = stage({ post: { top: 500, left: 100, right: 400, bottom: 740 } });
+    mount(s, false, undefined, s.post);
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(scroll).toHaveBeenLastCalledWith(0, 740 - 684);
+    window.dispatchEvent(new Event('resize'));
+    await frame();
+    expect(scroll).toHaveBeenCalledTimes(1);
   });
 });
 
 const kayfa = { api: {}, instance: {}, ui: { glass: testGlass }, settings: {} } as unknown as Kayfa;
 const frame = () => act(async () => { await new Promise((r) => setTimeout(r, 40)); });
 
-function mount(s: ReturnType<typeof stage>, sheet: boolean, anchorRef?: { current: HTMLElement | null }) {
+function mount(s: ReturnType<typeof stage>, sheet: boolean, anchorRef?: { current: HTMLElement | null }, keep?: HTMLElement) {
   return render(
     <KayfaProvider value={kayfa}>
-      <Float label="Lens" surface="effect" anchor={anchorRef ?? { current: s.anchor }} beside={{ current: s.post }} sheet={sheet} onClose={() => {}}>
+      <Float label="Lens" surface="effect" anchor={anchorRef ?? { current: s.anchor }} keep={keep ? () => keep : undefined} sheet={sheet} onClose={() => {}}>
         <button type="button">x</button>
       </Float>
     </KayfaProvider>,
@@ -138,10 +197,12 @@ describe('placing again', () => {
     window.dispatchEvent(new Event('scroll'));
     await frame();
     expect(wrap.style.top).toBe('1px');
-    s.anchor.getBoundingClientRect = rectOf({ top: 140, left: 300, right: 330, bottom: 170 });
+    /* The HUD's top moved (a HUD that grows): the dock is as tall as the new room. */
+    document.querySelector<HTMLElement>('.kb-hud')!.getBoundingClientRect = rectOf({ top: 600, left: 0, right: 1000, bottom: 800 });
     window.dispatchEvent(new Event('scroll'));
     await frame();
-    expect(wrap.style.top).toBe('140px');
+    expect(wrap.style.top).toBe(`${DOCK_INSET}px`);
+    expect(view.container.ownerDocument.querySelector<HTMLElement>('.kb-float-box')!.style.height).toBe(`${600 - 2 * DOCK_INSET}px`);
   });
 
   test('never from an anchor that has left the page', async () => {
@@ -162,6 +223,6 @@ describe('placing again', () => {
     target.current = mark;
     window.dispatchEvent(new Event('resize'));
     await frame();
-    expect(wrap.style.top).toBe('200px');
+    expect(wrap.style.top).toBe(`${DOCK_INSET}px`);
   });
 });

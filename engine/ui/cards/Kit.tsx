@@ -52,18 +52,12 @@ function Hold({ control }: { readonly control: Extract<KitControl, { kind: 'hold
 }
 
 function One({ control }: { readonly control: KitControl }) {
-  const labelId = useId();
   switch (control.kind) {
     case 'hold': return <Hold control={control} />;
     case 'press': return <Tile onClick={control.run}>{control.label}</Tile>;
     case 'toggle': return <Tile aria-pressed={control.on} onClick={() => control.set(!control.on)}>{control.label}</Tile>;
-    case 'choose':
-      return (
-        <span className="kb-kit-group" role="group" aria-labelledby={labelId}>
-          <span id={labelId} className="kb-kit-group-label">{control.label}</span>
-          {control.options.map((o) => <Tile key={o.value} aria-pressed={o.value === control.value} onClick={() => control.choose(o.value)}>{o.label}</Tile>)}
-        </span>
-      );
+    /* A choice's options stand in the kit's one row with the controls beside them; its label stands over the whole row (Kit). */
+    case 'choose': return <>{control.options.map((o) => <Tile key={o.value} aria-pressed={o.value === control.value} onClick={() => control.choose(o.value)}>{o.label}</Tile>)}</>;
     case 'go': return <Link to={control.to} className="kb-kit-tile"><span className="kb-kit-tile-label">{control.label}</span></Link>;
   }
 }
@@ -75,14 +69,22 @@ export function Kit({ card, controls, ink }: {
   /** The card's color, which lit tiles take; the glass's own sweet when none. */
   readonly ink?: string;
 }) {
+  const labelId = useId();
   if (controls.length > KIT_MAX && import.meta.env.DEV) {
     console.warn(`Kit: card "${card}" gave ${controls.length} controls; only the first ${KIT_MAX} are drawn.`);
   }
   const drawn = controls.slice(0, KIT_MAX);
   if (drawn.length === 0) return null;
-  return (
-    <div className="kb-kit" style={ink ? ({ '--kb-tag': ink } as CSSProperties) : undefined}>
-      {drawn.map((c, i) => <One key={`${c.kind}:${i}`} control={c} />)}
-    </div>
-  );
+  const style = ink ? ({ '--kb-tag': ink } as CSSProperties) : undefined;
+  const row = drawn.map((c, i) => <One key={`${c.kind}:${i}`} control={c} />);
+  const chosen = drawn.find((c): c is Extract<KitControl, { kind: 'choose' }> => c.kind === 'choose');
+  /* A choice is named: its label (Whoops!'s "Your tools, as the author") stands over one row of every control the kit draws, the hold and the options together. */
+  return chosen
+    ? (
+      <div className="kb-kit kb-kit-named" style={style} role="group" aria-labelledby={labelId}>
+        <p id={labelId} className="kb-kit-label">{chosen.label}</p>
+        <div className="kb-kit-row">{row}</div>
+      </div>
+    )
+    : <div className="kb-kit" style={style}>{row}</div>;
 }

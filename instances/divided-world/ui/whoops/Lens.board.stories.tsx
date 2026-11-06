@@ -43,7 +43,7 @@ const PARTLY = Array.from({ length: 14 }, (_, i) => {
  * Hand a post its plays and their reactions, and sign in who is to read it, then say it is ready. `post` is the number the plays
  * go on, `cards` which kinds (Stick Around, as a third, is the caster with the long name's).
  */
-function useSeeded(thread: string | null, viewer: Viewer, post: number, stickAround: boolean, clean = false): boolean {
+function useSeeded(thread: string | null, viewer: Viewer, post: number, stickAround: boolean, clean = false, five = false): boolean {
   const { api, instance } = useKayfa();
   const [ready, setReady] = useState(false);
   useEffect(() => {
@@ -84,6 +84,18 @@ function useSeeded(thread: string | null, viewer: Viewer, post: number, stickAro
       react(second, kinds[2], 1);
       fake.clock.advance(MINUTE);
       const top = fake.seed.card(gloomba, target.id, whoops, { layer: 3, config: { color: YELLOW, seed: 303 }, message: 'fine, I\'ll do it myself' });
+      /*
+       * Five kinds on the post (board 28): a play of each of the instance's other three cards, so the Lens's tab strip has more than it shows. Billing puts the
+       * most drawn kind first (Whoops!) and then the newest, so these are played oldest first and Stick Around, below, last: the tabs stand in the board's order.
+       */
+      if (five) {
+        for (const name of ['Force Field', 'Autocorrect', 'Glitter Bomb']) {
+          const key = instance.cards.find((c) => c.name === name)?.key;
+          if (!key) throw new Error(`the instance has no ${name}`);
+          fake.clock.advance(MINUTE);
+          fake.seed.card(pipewrench, target.id, key, { message: `${name}, as one of five kinds` });
+        }
+      }
       if (stickAround) {
         const account = fake.seed.account('story-long-name');
         const long = fake.seed.character(account, LONG_NAME, instance.classes[0]!.key);
@@ -106,7 +118,7 @@ function useSeeded(thread: string | null, viewer: Viewer, post: number, stickAro
       /* A seed refused leaves the story loading (aria-busy), and says why, rather than drawing a state its name does not. */
     })().catch((e: unknown) => { console.error('the Lens story could not be seeded', e); });
     return () => { live = false; };
-  }, [api, instance, thread, viewer, post, stickAround, clean]);
+  }, [api, instance, thread, viewer, post, stickAround, clean, five]);
   return ready;
 }
 
@@ -131,12 +143,12 @@ function Look({ post, open, who, landed = false }: { readonly post: number; read
   return null;
 }
 
-interface Props { readonly viewer: Viewer; readonly open: Open; readonly who: boolean; readonly landed?: boolean }
+interface Props { readonly viewer: Viewer; readonly open: Open; readonly who: boolean; readonly landed?: boolean; readonly five?: boolean }
 
-function Post({ viewer, open, who, landed = false }: Props) {
+function Post({ viewer, open, who, landed = false, five = false }: Props) {
   const { instance } = useKayfa();
   const thread = /^\/t\/([^/]+)/u.exec(useLocation().path)?.[1] ?? null;
-  const ready = useSeeded(thread, viewer, 41, true, landed);
+  const ready = useSeeded(thread, viewer, 41, true, landed, five);
   const card = open === 'none' ? null : instance.cards.find((c) => c.name === (open === 'whoops' ? 'Whoops!' : 'Stick Around'))?.key ?? null;
   const stage: HoldStageValue = { mode: 'thread' };
   return (
@@ -203,6 +215,8 @@ export const LensStickAround: Story = { args: { viewer: 'reader', open: 'stick-a
 export const LensStickAroundWho: Story = { args: { viewer: 'reader', open: 'stick-around', who: true } };
 /** The author's Lens on Whoops!, Who unfolded: Wash and Write in ink beside Hold to scrub. */
 export const LensAuthorWhoopsWho: Story = { args: { viewer: 'author', open: 'whoops', who: true } };
+/** Five kinds of card on #41 (Whoops!, Stick Around, Glitter Bomb, Autocorrect, Force Field), the Lens on Whoops! with Who unfolded: the tab strip scrolls (board 28). */
+export const FiveKinds: Story = { args: { viewer: 'reader', open: 'whoops', who: true, five: true } };
 /** Stick Around's view with Whoops! played under it, and its Lens opened inside the hold (the mockup's `held.png`). */
 export const HeldInside: StoryObj<typeof Held> = { render: () => <Held />, parameters: { moment: '08-hold' } };
 

@@ -171,7 +171,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     const log: Log = { settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [{ play: 'k1', post: 'post1', savedAt: at }], setEnds: [], setPasses: [], caught: [], ended: [], before: null };
     const mine = [{ id: 'me', name: 'Pipewrench', class: 'heel', classSince: at, classDueAt: null, turnOpensAt: null, debutedAt: at, debutLoudness: 'announced' as const, retiredAt: null, pendingTurn: null, presenceHidden: false }];
     const rows = logRows({
-      log, mine, estimate: null, standings: {}, season: null, turns: [], acts: new Map([post, play, edit].map((a) => [a.id, a])),
+      log, mine, estimate: null, standings: {}, season: null, turns: [], nextSettlement: null, acts: new Map([post, play, edit].map((a) => [a.id, a])),
       names: new Map([['them', 'Spritey']]), titles: new Map(), states: new Map([['k1', { peeled: [0], clean: true }]]),
     }, { instance, ui: instanceUi, postsPerPage: 20, economy: {} }, 600, null);
     const saved = rows.find((r) => r.kind === 'saved')!;

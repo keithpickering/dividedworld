@@ -31,9 +31,11 @@ interface Props {
   readonly subject?: string;
   /** Drawn on the glass (a play's panel), with the same picker, refusals and "your own" outline; the 2003 chrome's otherwise. */
   readonly look?: 'glass';
+  /** What the picker stands by: the whole row (the default), or the React button, for a row that takes no box of its own (the Lens's grid of actions). */
+  readonly pickerAt?: 'row' | 'button';
 }
 
-export function Reactions({ act, author, authorName = 'this character', tallies, mine, subject, look }: Props) {
+export function Reactions({ act, author, authorName = 'this character', tallies, mine, subject, look, pickerAt = 'row' }: Props) {
   const { instance } = useKayfa();
   const player = usePlayer();
   const tally = useTally(tallies, act);
@@ -80,7 +82,7 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
       )}
       {open && canReact && (
         <Picker
-          act={act} subject={subject ?? `${authorName}'s post`} as={as} own={own} tallies={tallies} mine={mine} anchor={row}
+          act={act} subject={subject ?? `${authorName}'s post`} as={as} own={own} tallies={tallies} mine={mine} anchor={pickerAt === 'button' ? button : row}
           onClose={(refocus) => { setOpen(false); if (refocus) button.current?.focus(); }}
         />
       )}
