@@ -9,6 +9,7 @@
 import type { Instance } from '../../../engine/rules/types.ts';
 import { DEFAULT_DEVELOPER } from '../../../engine/rules/instance.ts';
 import { MOVE_KINDS } from '../../../engine/system/moves.ts';
+import { PREDICATES } from '../../../engine/rules/predicates.ts';
 import { DEMAND_KINDS } from '../../../engine/system/demands.ts';
 
 export function instanceSeed(instance: Instance) {
@@ -54,7 +55,10 @@ export function instanceSeed(instance: Instance) {
       announcementsTitle: instance.system.announcementsTitle,
       // The engine's catalogs of moves and demands (0046), so SQL and TypeScript read one list. This file is the composition
       // root: the engine names no instance, and the SQL names no kind of its own.
-      moves: MOVE_KINDS.map((m) => ({ key: m.key, structural: m.structural, shapesBoard: m.shapesBoard })),
+      moves: MOVE_KINDS.map((m) => ({ key: m.key, structural: m.structural, shapesBoard: m.shapesBoard, offices: [...m.offices] })),
+      // The rule predicates (0100): the keys `rule_breaks` has a branch for, the kind and bounds of each parameter, and the rule in plain
+      // words with `{param}` where the parameter goes (`system_line` fills it).
+      predicates: PREDICATES.map((p) => ({ key: p.key, param: p.param, least: p.bounds?.least ?? null, most: p.bounds?.most ?? null, plain: p.plain('{param}') })),
       demands: DEMAND_KINDS.map((d) => ({ key: d.key })),
     },
   };

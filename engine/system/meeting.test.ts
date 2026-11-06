@@ -88,7 +88,7 @@ test('a nomination is not a move the Boss may propose, and the prompt does not o
   const r = repairAnswer({ ...answer({ kind: 'postsOnBoard', params: { board: BOARD, count: 5 } }), moves: [{ ...move({ kind: 'postsOnBoard', params: { board: BOARD, count: 5 } }), kind: 'nameSuccessor', params: { boss: 'someone' } }] }, ctx());
   assert.ok(r.ok);
   assert.equal(r.moves.length, 0);
-  assert.ok(r.trims.some((t) => t.path === 'moves[0].kind' && t.predicate === 'oneOf(renameBoard)'), JSON.stringify(r.trims));
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].kind' && t.predicate === 'oneOf(renameBoard, setRule)'), JSON.stringify(r.trims));
 });
 
 test('an inheritance answer must name a move the Boss was shown, when it was shown a list', () => {
@@ -171,4 +171,29 @@ test('a description the Boss writes is kept, one over 2000 is trimmed with a rec
     const r = withDescription(blank);
     assert.ok(r.ok && r.moves.length === 1 && !('description' in r.moves[0]!.params), JSON.stringify(r));
   }
+});
+
+const ruleMove = (params: unknown) => ({ ...move({ kind: 'postsOnBoard', params: { board: BOARD, count: 5 } }), kind: 'setRule', params });
+const ruleAnswer = (params: unknown) => ({ ...answer(null), moves: [ruleMove(params)] });
+
+test('a setRule on a listed board, or on every board, is kept; a numeric param stays a number', () => {
+  const on = repairAnswer(ruleAnswer({ board: BOARD, predicate: 'minLength', param: 20, band: 'minor' }), ctx());
+  assert.ok(on.ok && on.moves.length === 1, JSON.stringify(on));
+  assert.deepEqual(on.ok && on.moves[0]!.params, { board: BOARD, predicate: 'minLength', param: 20, band: 'minor' });
+  const all = repairAnswer(ruleAnswer({ predicate: 'noDoublePost', band: 'severe' }), ctx());
+  assert.ok(all.ok && all.moves.length === 1, JSON.stringify(all));
+  assert.equal(all.ok && all.moves[0]!.params['board'], null);
+});
+
+test('a setRule on a board outside the meeting\'s list, or with a param its predicate refuses, is dropped and recorded', () => {
+  const off = repairAnswer(ruleAnswer({ board: OTHER_BOARD, predicate: 'noDoublePost', band: 'minor' }), ctx());
+  assert.ok(off.ok && off.moves.length === 0 && off.trims.some((t) => t.path === 'moves[0].params.board' && t.predicate === 'isBoard'), JSON.stringify(off));
+  const high = repairAnswer(ruleAnswer({ board: BOARD, predicate: 'minLength', param: 9000, band: 'minor' }), ctx());
+  assert.ok(high.ok && high.moves.length === 0 && high.trims.some((t) => t.path === 'moves[0].params.param' && t.predicate === 'atMost(200)'), JSON.stringify(high));
+});
+
+test('the prompt lists the predicates a rule may use', () => {
+  const text = meetingSystemPrompt({ boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] } });
+  assert.match(text, /setRule: set a rule/);
+  for (const key of ['minLength', 'noDoublePost', 'repliesOnly']) assert.ok(text.includes(key), key);
 });

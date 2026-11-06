@@ -29,6 +29,7 @@ import type { Persona, Settings, SystemContent } from '../rules/types.ts';
 import { careerText, type Career } from './career.ts';
 import { DEMAND_KINDS, demandProblems } from './demands.ts';
 import { MEMORY_RULE, recentNotes, repairMemory, type Memory } from './memory.ts';
+import { PREDICATES } from '../rules/predicates.ts';
 import { ASKABLE_MOVE_KINDS, UUID, moveKind, moveParamsProblems } from './moves.ts';
 import type { PhaseAt } from './phases.ts';
 import { repair, type Rule, type Trim } from './validate.ts';
@@ -61,7 +62,8 @@ function looseFields(rules: readonly Rule[]): Record<string, Rule> {
       // A string keeps its own bound where that is longer than the loose 500 (a rename's description, 2000), so the loose
       // bound never cuts it short: the answer's own `repair` trims it at that bound and records the trim, once, and
       // `moveParamsProblems` then finds nothing to trim.
-      out[name] = sub.type === 'number' ? { type: 'number', optional: true } : { type: 'string', maxLength: Math.max(500, sub.type === 'string' ? (sub.maxLength ?? 0) : 0), optional: true };
+      // A field of any shape (a rule's parameter, a count or a word) stays so: its kind's `check` holds it to the predicate's.
+      out[name] = sub.type === 'any' ? { type: 'any', optional: true } : sub.type === 'number' ? { type: 'number', optional: true } : { type: 'string', maxLength: Math.max(500, sub.type === 'string' ? (sub.maxLength ?? 0) : 0), optional: true };
     }
   }
   return out;
@@ -163,7 +165,7 @@ export function meetingSystemPrompt(f: PromptFacts): string {
   const whole = Math.floor(f.bank);
   const { settings: s, phase } = f;
   const kinds = ASKABLE_MOVE_KINDS.map(
-    (k) => `- ${k.key}: ${k.label.toLowerCase()}. params: ${fieldsOf(k.params)}.${k.structural ? ` It waits at least ${s.structuralHoldHours} hours in the admin queue before it lands, and an admin can hold it.` : ''}`,
+    (k) => `- ${k.key}: ${k.label.toLowerCase()}. params: ${fieldsOf(k.params)}.${k.key === 'setRule' ? ` A rule never refuses a post; breaking one draws a visit. board is a board's id, or left out for every board. param is ${PREDICATES.map((p) => `${p.key} (${p.param === 'none' ? 'none' : p.param === 'count' ? `a whole number ${p.bounds!.least} to ${p.bounds!.most}` : p.param === 'word' ? 'one word' : 'a BBCode tag'}): ${p.plain('N')}`).join('; ')}.` : ''}${k.structural ? ` It waits at least ${s.structuralHoldHours} hours in the admin queue before it lands, and an admin can hold it.` : ''}`,
   );
   const demands = DEMAND_KINDS.map((d) => `- ${d.key}: params: ${fieldsOf(d.params)}.`);
   const career = careerText(f.career);
@@ -408,6 +410,8 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
       if (name.length > s.boardNameMaxLength) return drop(`${path}.params.name`, `atMost(${s.boardNameMaxLength})`);
       if (!c.boards.has(String(given['board']))) return drop(`${path}.params.board`, 'isBoard');
     }
+    // A rule names a board the meeting was given, or none: every board, the Boss's alone.
+    if (kind.key === 'setRule' && given['board'] !== null && !c.boards.has(String(given['board']))) return drop(`${path}.params.board`, 'isBoard');
     // Times. A go-live that is not a time is now; one outside now..a day is moved to the nearer end.
     let goLive = Date.parse(String(m['go_live_at']));
     const asked = Number.isNaN(goLive) ? c.now : goLive;

@@ -3,7 +3,7 @@
  * or fails (design, section 2), so cost never grows without bound and nothing stalls. In the
  * board's world, so they may bluff; they carry no fact the glass does not show plainly. Each key
  * may use only the tokens the engine gives it (engine/system/stock.ts): `{move}` a move's plain
- * name, `{boss}` a Boss's name, `{board}` a board's name. Several lines a key, so one is not
+ * name, `{boss}` a Boss's name, `{board}` a board's name, `{rule}` a rule's number and words. Several lines a key, so one is not
  * heard every time.
  */
 import type { StockLines } from '../../../engine/rules/types.ts';
@@ -48,5 +48,11 @@ export const stockLines: StockLines = Object.freeze({
     'Welcome to {board}! Posts go here. Posts also go elsewhere. The System has decided this is the better one.',
     '{board}: a board. Please be nice, or at least be interesting.',
     'The System was told to describe {board} and has chosen to give you a feeling instead.',
+  ]),
+  // A first draft for Task 14 to widen: the line says a rule is set, and the rule is named by the engine's words.
+  ruleSet: Object.freeze([
+    'New law on {board}. {rule}. The System expects compliance and will notice either way.',
+    'Be advised, {board}: {rule}. The System has written it down so nobody can say they were not told.',
+    'The System has added to the pile on {board}: {rule}. The System regrets nothing.',
   ]),
 });
