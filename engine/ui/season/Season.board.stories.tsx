@@ -1,7 +1,7 @@
 /**
  * The season page's News tab, drawn as a story against the board `docs/research/2026-11-02-alerts/04-season-news.html` (the alerts plan,
  * Task 8): Season 2 open, and, newest first, a debut, a Turn announced with its old class, the new Boss arriving with its first words,
- * Season 1's results (the top three with their classes, two of them the player's own) and the old Boss leaving. The page is the screen itself
+ * Season 1's results (the top three, from the season's frozen rows, with their classes, two of them the player's own) and the old Boss leaving. The page is the screen itself
  * (`SeasonScreen`) in the glass's page shell, as the route /season puts it (web/src/App.tsx), signed in as the player, on the News tab.
  * The classes are the instance's, by their place in its list, so the story names none. The Rankings tab is two-worlds board 13 under the
  * same heading (`Rankings.board.stories.tsx`).
@@ -34,21 +34,20 @@ const news: World = (fake, instance) => {
   const revealed = seed.reveal(spritey, said.thread, { at: utc(10, 12, 9), class: cls(0) });
   const hooliganSaid = seed.thread(board.slug, hooligan, 'lurkers rule', 'Quiet.', { at: utc(10, 14) });
   const hooliganRevealed = seed.reveal(hooligan, hooliganSaid.thread, { at: utc(10, 14, 1), class: cls(2) });
-  const results = seed.thread(system.slug, null, 'Season 1: the results', '', {
-    at: utc(11, 1), kind: 'reveal', payload: { season: 1, body: 'Season 1 is over.', characters: 14 },
-  });
-  const shown = (act: string, at: number, cls_: string) => [{ kind: 'reveal', act, at: new Date(at).toISOString(), class: cls_ }];
-  seed.post(results.thread, null, '', { at: utc(11, 1), kind: 'reveal', payload: { season: 1, character: spritey, name: 'Spritey', place: 1, standing: 985, shown: shown(revealed, utc(10, 12, 9), cls(0)) } });
-  seed.post(results.thread, null, '', { at: utc(11, 1), kind: 'reveal', payload: { season: 1, character: gloomba, name: 'Gloomba', place: 2, standing: 840, shown: [] } });
-  seed.post(results.thread, null, '', { at: utc(11, 1), kind: 'reveal', payload: { season: 1, character: hooligan, name: 'Mrs. Hooligan', place: 3, standing: 795, shown: shown(hooliganRevealed, utc(10, 14, 1), cls(2)) } });
-  const turns = seed.thread(system.slug, null, 'Season 2: who turned', 'Every Turn, as it was announced.', { at: utc(11, 1) });
-  seed.season({ number: 1, endsAt: new Date(utc(11, 1)).toISOString(), revealAct: results.act });
+  const shown = (act: string, at: number, cls_: string) => [{ kind: 'reveal' as const, act, at: new Date(at).toISOString(), class: cls_, was: null }];
+  const turns = seed.thread(system.slug, null, 'Season 2: Promos', 'Every debut and Turn, as its player announced it.', { at: utc(11, 1) });
+  seed.season({ number: 1, endsAt: new Date(utc(11, 1)).toISOString() });
   seed.season({ number: 2, startsAt: new Date(utc(11, 1)).toISOString(), turnsThread: turns.thread });
+  seed.seasonResults(1, [
+    { character: spritey, place: 1, standing: 985, shown: shown(revealed, utc(10, 12, 9), cls(0)) },
+    { character: gloomba, place: 2, standing: 840 },
+    { character: hooligan, place: 3, standing: 795, shown: shown(hooliganRevealed, utc(10, 14, 1), cls(2)) },
+  ], { at: utc(11, 1) });
   seed.staffPost(lady, announcements.thread, 'The ledger is closed. Balance carried forward.', { at: utc(11, 1, 8, 20) });
   seed.staffPost(mister, announcements.thread, 'Efficiency is a virtue. So is fear. I have reviewed your posting cadence.', { at: utc(11, 1, 8, 21) });
   seed.handover({ outgoing: 'story-lady-ledger', boss: 'story-mister-spreadsheet', at: utc(11, 1) });
-  seed.post(turns.thread, null, '', { at: utc(11, 2), kind: 'tally', payload: { season: 2, part: 1, of: 1, debuts: [{ character: thwompson, name: 'Thwompson' }], turns: [] } });
-  seed.announceTurn(pipewrench, turns.thread, { at: utc(11, 2), was: cls(1) });
+  seed.announce(thwompson, 'debut', { at: utc(11, 2) });
+  seed.announce(pipewrench, 'turn', { at: utc(11, 2), was: cls(1) });
   fake.signInAs(player);
 };
 

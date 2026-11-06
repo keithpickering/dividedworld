@@ -2,7 +2,8 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import type { Act } from '../data/api.ts';
 import { RevealPost, TallyPost } from './Reveal.tsx';
 
-const meta: Meta = { title: 'Reveal/System posts' };
+/** Acts written before the season end design (#278): the screen still draws them, so they are shown here as old Acts. */
+const meta: Meta = { title: 'Reveal/Old Acts' };
 export default meta;
 
 const act = (kind: 'tally' | 'reveal', payload: Record<string, unknown>): Act => ({
