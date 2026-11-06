@@ -636,7 +636,7 @@ begin
   page := thread_page(t, 1, null, 20, '{}');
   perform tests.unbecome();
   ch := (select e -> 'challenge' from jsonb_array_elements(page -> 'visits') e where e ->> 'post' = p::text);
-  if ch is null or ch <> jsonb_build_object('kind', 'quiz', 'question_index', 1, 'price', 5) then raise exception 'the page''s challenge is not whitelisted: %', ch; end if;
+  if ch is null or ch <> jsonb_build_object('kind', 'quiz', 'question_index', 1, 'price', 5, 'question', 'Which is second?', 'choices', jsonb_build_array('One', 'Two')) then raise exception 'the page''s challenge is not whitelisted: %', ch; end if;
   if page::text like '%SECRET%' then raise exception 'thread_page carried a planted answer'; end if;
 end $$;
 

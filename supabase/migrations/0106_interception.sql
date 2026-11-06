@@ -10,9 +10,10 @@
 -- Masks. Every refusal is about the visit, the character's own standing or the caller's own wallet, in the same words for everyone: a visit over, a character that has tried,
 -- a banned character, a short wallet. No result depends on who owns the post or any other character. The quiz's answer is checked in SQL and never read by any page.
 --
--- Tails. A failed quiz writes a row in `tails(character, staff, until)` (append-only; `until` is `modBots.tailHours` on). The tail is OPEN while `until` has not passed and no
--- visit it drew has ended: the next post by the character draws a visit for Obstruction (minor, cause tail) by the Mod that was intercepted, or by the board's beat Mod where
--- that one has left. `tail_visits` records the visits a tail drew (written by `draw_visits`), so the tail ends with the visit's filing, interception, trap or reversal.
+-- Tails. A failed quiz writes a row in `tails(character, staff, until)` (append-only; `until` is `modBots.tailHours` on). The tail is OPEN while `until` has not passed and it has
+-- drawn no visit: the next post by the character, and only that one, draws a visit for Obstruction (minor, cause tail) by the Mod that was intercepted, or by the board's beat Mod
+-- where that one has left. `tail_visits` records the visit a tail drew (written by `draw_visits`), which spends the tail; where no visit is drawn (a repeat charge, no Mod on the
+-- beat) the tail stays open. The visit itself then files, is intercepted, trapped or reversed like any other.
 -- Ways out: a tail ends by itself at its time whether or not its Mod is still on staff, and a visit drawn by a Mod who has left still files (0103).
 --
 -- The visit trap. A trap set on a post springs when a visit starts on it (`start_visit` calls `spring_traps('visit', ...)` always now) and the sprung trap ends the visit
@@ -117,7 +118,7 @@ create index tails_by_character on tails (character, until desc);
 alter table tails enable row level security;
 revoke all on tails from public, anon, authenticated;
 
--- The visits a tail drew: when one of them has ended, the tail is over.
+-- The visit a tail drew: a tail draws one, and is over once it has.
 create table tail_visits (
   tail uuid not null references tails (id),
   visit_act uuid not null references acts (id),
@@ -142,12 +143,12 @@ alter table tail_visits enable always trigger tail_visits_no_update;
 alter table tail_visits enable always trigger tail_visits_no_truncate;
 revoke execute on function tails_append_only() from public, anon, authenticated;
 
--- The tails a character is under now: open while `until` has not passed and no visit the tail drew has ended. By character, never by account. The latest first.
+-- The tails a character is under now: open while `until` has not passed and the tail has drawn no visit. By character, never by account. The latest first.
 create function open_tails(who uuid) returns setof tails
 language sql stable security definer set search_path = public, pg_temp as $$
   select t.* from tails t
   where t.character = who and t.until > now()
-    and not exists (select 1 from tail_visits v join acts e on e.kind = 'visit_end' and e.target_act_id = v.visit_act where v.tail = t.id)
+    and not exists (select 1 from tail_visits v where v.tail = t.id)
   order by t.created_at desc, t.id
 $$;
 revoke execute on function open_tails(uuid) from public, anon, authenticated;
@@ -315,7 +316,7 @@ begin
       if who is not null then
         drew := start_visit(post_act, coalesce((select n.staff from staff_now n where n.staff = tail), who), jsonb_build_object('rule_number', null, 'board', p.board, 'band', 'minor',
           'cause', 'tail', 'about_act', post_act, 'rule', 'Obstruction'));
-        -- The visit is the tail's: when it ends, the tail is over. (A charge that joined a visit already open makes that visit the tail's.)
+        -- The visit is the tail's, and spends it: a tail draws one visit. (A charge that joined a visit already open makes that visit the tail's.)
         if drew ->> 'visit' is not null then
           insert into tail_visits (tail, visit_act) select t.id, (drew ->> 'visit')::uuid from open_tails(p.character) t on conflict do nothing;
         end if;
@@ -581,15 +582,15 @@ end $$;
 
 -- --------------------------------------------------------------------------------------------------------- the page ----
 
--- The question a quiz visit asks and its choices, from the Mod that asked it: all the page may show. Never the answer. Security definer, because the table is no client's.
-create function visit_quiz(mod_character uuid, question_index integer) returns jsonb
+-- The question a quiz visit drew and its choices, for that visit alone (no id of a Mod or a question to walk the bank by): all the page may show. Never the answer. Security definer, because the table is no client's.
+create function visit_quiz(visit uuid) returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
   select jsonb_build_object('question', q.question, 'choices', q.choices)
-  from characters c join staff_quiz_questions q on q.staff = c.staff and q.idx = visit_quiz.question_index
-  where c.id = visit_quiz.mod_character
+  from acts v join characters c on c.id = v.character join staff_quiz_questions q on q.staff = c.staff and q.idx = (v.payload #>> '{challenge,question_index}')::integer
+  where v.id = visit_quiz.visit and v.kind = 'visit'
 $$;
-revoke execute on function visit_quiz(uuid, integer) from public, anon;
-grant execute on function visit_quiz(uuid, integer) to authenticated, service_role;
+revoke execute on function visit_quiz(uuid) from public, anon;
+grant execute on function visit_quiz(uuid) to authenticated, service_role;
 
 -- thread_page (0103), also carrying a quiz visit's question and its choices in its challenge (`visit_quiz`): never which choice is right. Everything else as 0103 wrote it.
 create or replace function thread_page(in_thread uuid, in_page integer, in_seq integer, per_page integer, effect_cards text[]) returns jsonb
@@ -690,7 +691,7 @@ begin atomic
         'visit', v.id, 'post', v.post, 'mod', v.character, 'at', v.created_at, 'ends_at', v.payload -> 'ends_at', 'line', v.payload -> 'line',
         'charges', (v.payload -> 'charges') || coalesce((select jsonb_agg(j.payload -> 'charge' order by j.created_at, j.id) from acts_public j where j.kind = 'visit_join' and j.target_act_id = v.id), '[]'::jsonb),
         'challenge', jsonb_strip_nulls(jsonb_build_object('kind', v.payload #>> '{challenge,kind}', 'question_index', v.payload #> '{challenge,question_index}', 'price', v.payload #> '{challenge,price}'))
-          || coalesce(visit_quiz(v.character, (v.payload #>> '{challenge,question_index}')::integer), '{}'::jsonb),
+          || coalesce(visit_quiz(v.id), '{}'::jsonb),
         'end', (select jsonb_build_object('act', e.id, 'at', e.created_at, 'outcome', e.payload ->> 'outcome', 'by_act', e.payload -> 'by_act', 'line', e.payload -> 'line')
                 from acts_public e where e.kind = 'visit_end' and e.target_act_id = v.id limit 1)
       ) order by v.created_at, v.id), '[]'::jsonb) from vis v),

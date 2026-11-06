@@ -165,6 +165,7 @@ declare
   v uuid := pg_temp.visit(p, 'ic-m1');
   page jsonb;
   seen jsonb;
+  bribe_v uuid;
 begin
   perform tests.become(pg_temp.ann());
   page := thread_page(t, 1, null, 20, '{}');
@@ -175,6 +176,13 @@ begin
   end if;
   if (select q.question from staff_quiz_questions q where q.staff = 'ic-m1' and q.idx = (seen #>> '{challenge,question_index}')::integer) is distinct from seen #>> '{challenge,question}' then raise exception 'the page shows another question'; end if;
   if page::text ~* '"answer"' then raise exception 'thread_page carries an answer key'; end if;
+  -- visit_quiz answers for a visit and nothing else: a post, a character or a made-up id gets nothing, so the bank cannot be walked.
+  bribe_v := pg_temp.visit(tests.post(c, t, 'A bribe post.'), 'ic-m2');
+  perform tests.become(pg_temp.ann());
+  if visit_quiz(v) is distinct from jsonb_build_object('question', seen #>> '{challenge,question}', 'choices', seen #> '{challenge,choices}') then raise exception 'visit_quiz does not answer for its visit: %', visit_quiz(v); end if;
+  if visit_quiz(p) is not null or visit_quiz(c) is not null or visit_quiz(gen_random_uuid()) is not null then raise exception 'visit_quiz answered for something that is no visit'; end if;
+  if visit_quiz(bribe_v) is not null then raise exception 'visit_quiz answered for a visit that asks no question'; end if;
+  perform tests.unbecome();
   if (seen #> '{challenge,choices}') is distinct from (select q.choices from staff_quiz_questions q where q.staff = 'ic-m1' and q.idx = (seen #>> '{challenge,question_index}')::integer) then raise exception 'the choices are not the question''s'; end if;
 end $$;
 
@@ -354,6 +362,7 @@ declare
   v0 uuid := pg_temp.visit(p0, 'ic-m1');
   got jsonb;
   p uuid;
+  p2 uuid;
   v uuid;
   ch jsonb;
   who text;
@@ -368,8 +377,10 @@ begin
   ch := (select (a.payload -> 'charges' -> 0) from acts a where a.id = v);
   if ch ->> 'cause' is distinct from 'tail' or ch ->> 'band' is distinct from 'minor' or ch ->> 'rule' is distinct from 'Obstruction' or ch -> 'rule_number' is distinct from 'null'::jsonb then raise exception 'the tail''s charge is wrong: %', ch; end if;
   if (select c.staff from acts a join characters c on c.id = a.character where a.id = v) is distinct from 'ic-m1' then raise exception 'Obstruction was not drawn by the Mod the tail names'; end if;
-  -- Still open until that visit ends: another post draws another visit.
-  if open_tail_staff(eve) is null then raise exception 'a tail ended before its visit did'; end if;
+  -- A tail draws exactly one visit: it is spent, and another post while that visit is open draws none.
+  if open_tail_staff(eve) is not null then raise exception 'a tail that drew its visit is still open'; end if;
+  p2 := pg_temp.say(eve, t, 'A second quiet post while the Obstruction visit is open.');
+  if exists (select 1 from acts a where a.kind = 'visit' and a.target_act_id = p2) then raise exception 'a tail drew a second visit'; end if;
   -- The visit files: the tail is over, and her next post draws nothing.
   perform file_visit(v, null);
   if open_tail_staff(eve) is not null then raise exception 'a tail outlived the visit it drew'; end if;
