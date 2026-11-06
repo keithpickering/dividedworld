@@ -172,21 +172,22 @@ describe('the page', () => {
 });
 
 describe('React and Spin a thread', () => {
-  test('React is one plain button that reacts as the HUD\'s character; the chips are glass chips', async () => {
+  test('React is one plain button that reacts as the HUD\'s character; the reactions are meta tiles', async () => {
     const w = world();
     show(w.fake);
     const post = await screen.findByRole('article', { name: 'Traps now bite board cards' });
     const reactions = post.querySelector('.kb-reactions')!;
-    expect(reactions).toHaveAttribute('data-kb-look', 'glass');
+    expect(reactions).toHaveAttribute('data-kb-over-ink');
+    expect(post.querySelector('[data-kb-look]')).toBeNull();
     const button = within(post).getByRole('button', { name: 'React' });
-    expect(button).toHaveClass('kb-kit-tile');
+    expect(button).toHaveClass('kb-meta-tile');
     expect(within(post).queryByRole('button', { name: /React as/u })).toBeNull();
     await userEvent.click(button);
     const picker = await screen.findByRole('dialog', { name: /^React to / });
     await userEvent.click(within(picker).getByRole('button', { name: /Fire/u }));
-    await waitFor(() => expect(within(post).getByText(/Fire, 1, including yours/u)).toBeInTheDocument());
-    const chips = post.querySelector('ul.kb-chips')!;
-    expect(chips.closest('.kb-reactions')).toHaveAttribute('data-kb-look', 'glass');
+    await waitFor(() => expect(within(post).getByRole('button', { name: /Fire, 1, including yours/u })).toBeInTheDocument());
+    const chips = post.querySelector('ul.kb-reaction-list')!;
+    expect(chips.closest('.kb-reactions')).toHaveAttribute('data-kb-over-ink');
     expect(within(chips as HTMLElement).getAllByRole('listitem')).toHaveLength(1);
     expect((await w.fake.tallies([w.newest]))[w.newest]).toEqual({ fire: 1 });
     expect((await w.fake.myReactions([w.newest])).map((r) => [r.kind, r.character])).toEqual([['fire', w.pipe]]);
@@ -204,9 +205,9 @@ describe('React and Spin a thread', () => {
     must(await w.fake.react(w.mid, w.pipe, 'tea'));
     show(w.fake);
     await screen.findByRole('article', { name: 'Traps now bite board cards' });
-    expect(screen.queryByText(/Tea, 1/u)).toBeNull();
+    expect(screen.queryByRole('button', { name: /Tea, 1/u })).toBeNull();
     await userEvent.click(screen.getByRole('link', { name: /Washes 20% faster/u }));
-    expect(await screen.findByText(/Tea, 1, including yours/u)).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /Tea, 1, including yours/u })).toBeInTheDocument();
   });
 
   test('Spin a thread opens the spin form for the update, as the HUD\'s character, and goes to the new thread, whose origin is the update', async () => {

@@ -396,7 +396,7 @@ function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, mo
       {more && <p className="kb-lens-more">More reactions than the post</p>}
       {yours && <p className="kb-lens-yours">Your play</p>}
       <div className="kb-lens-row-foot">
-        <Reactions act={play.id} author={play.caster} authorName={caster} subject={name} tallies={tallies} mine={mine} look="glass" />
+        <Reactions act={play.id} author={play.caster} authorName={caster} subject={name} tallies={tallies} mine={mine} />
         <div className="kb-lens-actions">
           {hosted
             ? <p className="kb-lens-note">Spin a thread from this play once you are free of the hold.</p>

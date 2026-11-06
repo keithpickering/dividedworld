@@ -44,6 +44,12 @@ const hot: World = (fake, instance) => {
   fake.seed.react(w.me, w.pipe, t.act, w.kinds[3]!);
 };
 
+/** Another player's post: each kind a tile (button), the player's own kind ringed and disabled, and React; one more tile is pressed. */
+export const Tiles: Story = {
+  parameters: { world: hot },
+  play: async ({ canvasElement }) => { await userEvent.click((await within(canvasElement).findAllByRole('button', { name: /\. React as/u }))[0]!); },
+};
+
 /** The picker open on a desktop, with one of three reactions already left. */
 export const PickerOpen: Story = {
   parameters: { world: hot },
@@ -62,7 +68,7 @@ export const NoneLeft: Story = {
   play: async ({ canvasElement }) => { await userEvent.click(await within(canvasElement).findByRole('button', { name: 'React' })); },
 };
 
-/** A post by one of the player's own characters: its chips, and no React button. */
+/** A post by one of the player's own characters: its tiles, which are no buttons, and no React. */
 export const OwnPost: Story = {
   args: { title: 'My take' },
   parameters: {
