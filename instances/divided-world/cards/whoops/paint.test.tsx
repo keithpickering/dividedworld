@@ -4,7 +4,7 @@
  * ImageData (for the pixels `paintSplat` writes, which the e2e in Task 9 sees in a real browser).
  */
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
-import { covers, fieldGrid, makeSplat, THRESHOLD, type Box } from './splat.ts';
+import { covers, fieldAt, fieldGrid, makeSplat, THRESHOLD, type Box } from './splat.ts';
 import { MAX_CANVAS_PX, paint, paintSplat, type PaintLayer } from './paint.ts';
 import { type Stroke } from './scrub.ts';
 
@@ -177,6 +177,25 @@ describe('paintSplat', () => {
     const cv = paintSplat(splat, '#101010', { w: 390, h: 20000 }, 1);
     expect(cv.width * cv.height).toBeLessThanOrEqual(MAX_CANVAS_PX);
     expect(cv.width * cv.height).toBeGreaterThan(MAX_CANVAS_PX * 0.9);
+  });
+
+  /* Past the cap on a box wider than tall, the canvas is still the field's own grid, so each row of ink lies where the field does. */
+  test('a box wider than tall past the cap is painted where `covers` says, row by row', () => {
+    const read = keeping();
+    const box: Box = { w: 2001, h: 2000 };
+    const cv = paintSplat(splat, '#101010', box, 1);
+    expect(cv.width * cv.height).toBeLessThanOrEqual(MAX_CANVAS_PX);
+    const img = read();
+    expect([img.width, img.height]).toEqual([cv.width, cv.height]);
+    let checked = 0;
+    for (let y = 0; y < cv.height; y += 97) for (let x = 0; x < cv.width; x += 89) {
+      const u = (x + 0.5) / cv.width, v = (y + 0.5) / cv.height;
+      const f = fieldAt(splat, box, u, v);
+      if (f > THRESHOLD * 0.4 && f < THRESHOLD * 2) continue;
+      checked++;
+      expect(img.data[(y * cv.width + x) * 4 + 3]! > 127, `pixel ${x},${y}`).toBe(f >= THRESHOLD * 2);
+    }
+    expect(checked).toBeGreaterThan(300);
   });
 
   test('a dark ink has a lit rim: an edge facing the light is brighter than the ink, the far one darker', () => {

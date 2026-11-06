@@ -53,10 +53,13 @@ export interface PaintLayer {
  */
 export function paintSplat(splat: Splat, color: string, box: Box, density: number): HTMLCanvasElement {
   const area = box.w * box.h;
-  const q = Math.min(1, density, area > 0 ? Math.sqrt(MAX_CANVAS_PX / area) : 1);
-  /* ceil can add a pixel a side; floor the size when it would pass the cap. */
-  let w = Math.ceil(box.w * q), h = Math.ceil(box.h * q);
-  while (w * h > MAX_CANVAS_PX && (w > 1 || h > 1)) { if (w >= h) w--; else h--; }
+  let q = Math.min(1, density, area > 0 ? Math.sqrt(MAX_CANVAS_PX / area) : 1);
+  /*
+   * ceil can add a pixel a side and pass the cap. The density is lowered, never a side trimmed, so the canvas stays
+   * the field's own grid (fieldGrid's ceil(box·q) both ways) and a row's stride is the field's.
+   */
+  while (q > 0 && Math.ceil(box.w * q) * Math.ceil(box.h * q) > MAX_CANVAS_PX) q *= 0.9999;
+  const w = Math.ceil(box.w * q), h = Math.ceil(box.h * q);
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
@@ -140,9 +143,10 @@ export function paint(canvas: HTMLCanvasElement, geo: Geometry, layers: readonly
   const work = scratchOf(canvas.width, canvas.height);
   if (!ctx || !work) return;
   const { dpr, box } = geo;
-  if (!(box.w > 0 && box.h > 0 && Number.isFinite(box.w) && Number.isFinite(box.h))) return;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  /* A box with no area draws nothing, and what was drawn before is cleared. */
+  if (!(box.w > 0 && box.h > 0 && Number.isFinite(box.w) && Number.isFinite(box.h))) return;
   for (const layer of layers) {
     if (layer.alpha <= 0) continue;
     work.setTransform(1, 0, 0, 1, 0, 0);
