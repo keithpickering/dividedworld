@@ -463,6 +463,8 @@ begin
     end if;
     -- A Mod's move names a board of its beat and spends an allowance (0101). The board is the beat_of answer for it, so a board the Boss's order left out is
     -- still some Mod's; the allowance is counted under a lock of the Mod's own, so two moves queued at once cannot spend the one left.
+    -- Only the guard says which order a row spends against: a caller's value is never kept.
+    new.spent_order := null;
     if holder = 'mod' then
       -- The Mod's own lock comes first: the beat and the allowance are read under it, so two moves queued at once (two sessions, or two rows of one insert,
       -- which are counted because these functions are volatile) cannot spend the one left.
@@ -540,7 +542,7 @@ $$;
 --             A Mod left out of the answer keeps its beat (less boards another order claimed) and its line, with an allowance of 0.
 --   moves     a setRule the queue would refuse (malformed, or in conflict with the rules in force, which may have changed since the meeting read
 --             them) is skipped and recorded in the meeting's record under `rulesSkipped`, spending nothing, and never fails the meeting.
--- The meeting's record gains `allowances` {returned, handed, orders, skipped, clamped} and `rulesSkipped` [{index, why}]. Everything else as 0051 wrote it.
+-- The meeting's record gains `allowances` {returned, handed, orders, skipped, clamped (per-order cap), trimmed (orders cut to the bank)} and `rulesSkipped` [{index, why}]. Everything else as 0051 wrote it.
 create or replace function apply_meeting(meeting bigint, payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -582,6 +584,7 @@ declare
   mod_memory jsonb;
   orders_skipped integer := 0;
   clamped integer := 0;
+  trimmed integer := 0;
   planned_mods text[] := '{}';
   prev staff_orders%rowtype;
   at_order integer;
@@ -659,7 +662,7 @@ begin
   end loop;
   -- What was added is what the cap allowed, and that is what is recorded.
   bal2 := least(cap, bal + returned);
-  returned := bal2 - bal;
+  returned := greatest(0, bal2 - bal);
   -- The Boss's own moves are its own: they must be paid, else this raises, as it always has. The allowances are what is left. A Mod that queued between the
   -- meeting's read and this apply spent some of what the answer counted on; the answer is not failed for it: the allowances are trimmed from the last
   -- order backward to the bank, and the trims are recorded.
@@ -674,7 +677,7 @@ begin
       asked := least(amount, handed - room);
       planned := jsonb_set(planned, array[(at_order - 1)::text, 'allowance'], to_jsonb(amount - asked::integer));
       handed := handed - asked::integer;
-      clamped := clamped + 1;
+      trimmed := trimmed + 1;
     end if;
     at_order := at_order - 1;
   end loop;
@@ -754,7 +757,7 @@ begin
   perform close_meeting(apply_meeting.meeting, 'ok', null, bal, bal2 - spent - handed,
     coalesce(payload -> 'record', '{}') || jsonb_build_object(
       'handover', jsonb_build_object('kept', kept, 'ended', ended_n, 'skipped', skipped, 'nominated', nominated),
-      'allowances', jsonb_build_object('returned', returned, 'handed', handed, 'orders', jsonb_array_length(planned), 'skipped', orders_skipped, 'clamped', clamped),
+      'allowances', jsonb_build_object('returned', returned, 'handed', handed, 'orders', jsonb_array_length(planned), 'skipped', orders_skipped, 'clamped', clamped, 'trimmed', trimmed),
       'rulesSkipped', rules_skipped));
   return jsonb_build_object('status', 'applied', 'meeting', apply_meeting.meeting, 'queued', spent, 'bank_before', bal, 'bank_after', bal2 - spent - handed,
     'returned', returned, 'handed', handed);

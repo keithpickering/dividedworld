@@ -228,6 +228,11 @@ begin
   if pg_temp.refusal(format('select pg_temp.queue(%L, %L, %s)', 'od-m2', offtopic, m)) not like '23514%' then raise exception 'a Mod with no allowance left queued a rule'; end if;
   -- The Boss still queues anywhere, with no allowance: the Boss's bank is the apply's.
   perform pg_temp.queue('od-boss', games, m);
+  -- A caller cannot plant the order a row spends against: a Boss's row lands with none.
+  insert into queued_moves (meeting, staff, kind, params, why, go_live_at, expires_at, structural, spent_order)
+  values (m, 'od-boss', 'setRule', jsonb_build_object('board', games, 'predicate', 'noAllCaps', 'param', null, 'band', 'minor'), 'Because.', now() + interval '1 hour', now() + interval '2 days', false,
+    (select max(id) from staff_orders));
+  if exists (select 1 from queued_moves where staff = 'od-boss' and spent_order is not null) then raise exception 'a Boss row kept a planted spent_order'; end if;
   perform pg_temp.queue('od-boss', null, m);
 end $$;
 
@@ -358,7 +363,8 @@ begin
   r := apply_meeting(m, pg_temp.payload('[]', jsonb_build_array(pg_temp.order_for('od-m2', jsonb_build_array(offtopic), 2)), 10));
   if r ->> 'status' is distinct from 'applied' or (r ->> 'handed')::integer is distinct from 1 then raise exception 'the allowance was not trimmed to the bank: %', r; end if;
   if (select allowance from staff_orders where meeting = m and staff = 'od-m2') is distinct from 1 or pg_temp.bank() is distinct from 0::numeric then raise exception 'the trimmed order or the bank'; end if;
-  if (select (record #>> '{allowances,clamped}')::integer from meetings where id = m) is distinct from 1 then raise exception 'the trim is not recorded: %', (select record from meetings where id = m); end if;
+  if (select (record #>> '{allowances,trimmed}')::integer from meetings where id = m) is distinct from 1
+     or (select (record #>> '{allowances,clamped}')::integer from meetings where id = m) is distinct from 0 then raise exception 'the trim is not recorded: %', (select record from meetings where id = m); end if;
   -- od-m2 holds 1 unspent. With a cap of 0 nothing can be added to the bank, and the record says what was added, not the sum.
   m := (begin_meeting('2031-01-11T09:00:00Z') ->> 'meeting')::bigint;
   r := apply_meeting(m, pg_temp.payload('[]', '[]', 0));
