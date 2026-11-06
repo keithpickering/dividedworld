@@ -2,8 +2,8 @@
 <html lang="en" data-kb-mode="dark">
 <head>
 <meta charset="utf-8">
-<title>A profile, Silver dark</title>
-<!-- A board of the board look design session (docs/plans/2026-11-06-board-look-design.md), batch 3, 1440 by 1000, written by gen.mjs. -->
+<title>A profile with its trophy case, Silver dark</title>
+<!-- A board of the board look design session (docs/plans/2026-11-06-board-look-design.md), batch 3, 1440 by 1700, written by gen.mjs. -->
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:wght@600;700&family=Silkscreen&display=swap">
 <style>
 :root {
@@ -291,25 +291,106 @@ table.record td.when { width: 170px; font-size: 13.75px; font-variant-numeric: t
 .phone .about th.k { display: table-cell; width: 112px; text-align: left; padding: 6px 8px; font-size: 12.5px; }
 .phone .about td.v { padding: 6px 8px; font-size: 13.75px; }
 .phone .when-above { display: block; font-size: 12.5px; color: var(--kb-muted); margin-bottom: 2px; }
+/* ---------- the trophy case (docs/plans/2026-11-04-cosmetics-design.md, section 4; its board 03) ---------- */
+.portrait { position: relative; width: 120px; height: 240px; border: 1px solid var(--kb-fg); overflow: visible; }
+.portrait > svg { display: block; width: 100%; height: 100%; }
+.portrait .gear { position: absolute; } .portrait .gear svg { display: block; width: 100%; height: 100%; }
+table.trophies td.badge { width: 72px; text-align: center; vertical-align: middle; }
+table.trophies td.badge svg { width: 30px; height: 30px; display: inline-block; vertical-align: middle; }
+table.trophies td.badge svg.wide { width: 54px; height: 27px; }
+table.trophies td.shown { width: 110px; font-size: 13.75px; vertical-align: middle; color: var(--kb-muted); }
+.trophy b { font-size: 15px; }
+.trophy .by { font-size: 13.75px; color: var(--kb-muted); }
+table.lineage td { font-size: 13.75px; }
+table.lineage td.span { width: 220px; font-variant-numeric: tabular-nums; }
+.phone .portrait { width: 76px; height: 152px; }
+.phone table.trophies td.badge { width: 48px; padding: 8px 4px; }
+.phone .trophy .on { display: block; font-size: 12.5px; color: var(--kb-muted); margin-top: 2px; }
 
-body { width: 1440px; height: 1000px; }
+body { width: 1440px; height: 1700px; }
 </style>
 </head>
 <body>
-<div class="screen desk" style="width:1440px;height:1000px"><div class="col">
+<div class="screen desk" style="width:1440px;height:1700px"><div class="col">
   <header class="banner">
     <div><p class="logo">DIVIDED WORLD</p></div>
     <div class="host">dw.gripe <span class="meter"></span></div>
   </header>
-  <nav class="nav" aria-label="Boards"><a href="#"><svg class="ic" aria-hidden="true" width="16" height="14" viewBox="0 0 16 14"><path class="s" d="M1.5,7.5 L8,1.5 L14.5,7.5 M3.5,6.5 V12.5 H12.5 V6.5 M7,12.5 V9.5 H9 V12.5"/></svg>Index</a><a href="#"><svg class="ic" aria-hidden="true" width="16" height="14" viewBox="0 0 16 14"><path class="s" d="M1.5,2.5 H14.5 V12.5 H1.5 Z M4,5.5 H12 M4,7.5 H12 M4,9.5 H9"/></svg>General</a><a href="#"><svg class="ic" aria-hidden="true" width="16" height="14" viewBox="0 0 16 14"><path class="s" d="M1.5,2.5 H14.5 V12.5 H1.5 Z M4,5.5 H12 M4,7.5 H12 M4,9.5 H9"/></svg>The System</a></nav>
+  <nav class="nav" aria-label="Boards"><a href="#"><svg class="ic" aria-hidden="true" width="16" height="14" viewBox="0 0 16 14"><path class="s" d="M1.5,7.5 L8,1.5 L14.5,7.5 M3.5,6.5 V12.5 H12.5 V6.5 M7,12.5 V9.5 H9 V12.5"/></svg>Index</a><a href="#"><svg class="ic" aria-hidden="true" width="16" height="14" viewBox="0 0 16 14"><path class="s" d="M1.5,2.5 H14.5 V12.5 H1.5 Z M4,5.5 H12 M4,7.5 H12 M4,9.5 H9"/></svg>General</a><a href="#"><svg class="ic" aria-hidden="true" width="16" height="14" viewBox="0 0 16 14"><path class="s" d="M1.5,2.5 H14.5 V12.5 H1.5 Z M4,5.5 H12 M4,7.5 H12 M4,9.5 H9"/></svg>The System</a></nav><svg aria-hidden="true" style="position:absolute;width:0;height:0" xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <!-- Placeholder art for the cosmetics boards, 2026-11-04. The owner's own Minus World gear replaces every piece. -->
+  <!-- A portrait cut 1:2: a figure on sky, as a player's own picture would stand. viewBox 100x200. -->
+  <symbol id="portrait" viewBox="0 0 100 200">
+    <rect width="100" height="200" fill="#8fd3f4"/>
+    <rect y="150" width="100" height="50" fill="#5aa25a"/>
+    <ellipse cx="50" cy="62" rx="22" ry="25" fill="#f2c9a0"/>
+    <path d="M28 98 Q50 86 72 98 L80 160 L20 160 Z" fill="#3b5bdb"/>
+    <rect x="30" y="158" width="16" height="36" fill="#222"/><rect x="54" y="158" width="16" height="36" fill="#222"/>
+    <circle cx="42" cy="60" r="2.4" fill="#222"/><circle cx="58" cy="60" r="2.4" fill="#222"/>
+    <path d="M42 75 Q50 80 58 75" stroke="#222" stroke-width="2" fill="none"/>
+  </symbol>
+  <!-- A portrait cut 1:1.4 -->
+  <symbol id="portrait2" viewBox="0 0 100 140">
+    <rect width="100" height="140" fill="#f4b6c2"/>
+    <ellipse cx="50" cy="58" rx="24" ry="27" fill="#c99366"/>
+    <path d="M22 100 Q50 88 78 100 L86 140 L14 140 Z" fill="#2f9e44"/>
+    <circle cx="41" cy="56" r="2.4" fill="#222"/><circle cx="59" cy="56" r="2.4" fill="#222"/>
+    <path d="M42 72 L58 72" stroke="#222" stroke-width="2"/>
+  </symbol>
+  <symbol id="g-cap" viewBox="0 0 100 60">
+    <path d="M14 46 Q14 6 50 6 Q86 6 86 46 Z" fill="#e03131"/>
+    <path d="M60 42 Q98 40 100 52 Q80 56 56 50 Z" fill="#c92a2a"/>
+    <rect x="12" y="42" width="76" height="8" fill="#fff"/>
+    <circle cx="50" cy="8" r="4" fill="#fff"/>
+  </symbol>
+  <symbol id="g-stache" viewBox="0 0 100 34">
+    <path d="M50 10 Q34 0 18 10 Q6 18 0 12 Q4 30 26 28 Q42 26 50 18 Q58 26 74 28 Q96 30 100 12 Q94 18 82 10 Q66 0 50 10 Z" fill="#3b2412"/>
+  </symbol>
+  <symbol id="g-shades" viewBox="0 0 100 30">
+    <rect x="2" y="4" width="40" height="22" rx="6" fill="#111"/><rect x="58" y="4" width="40" height="22" rx="6" fill="#111"/>
+    <rect x="40" y="10" width="20" height="4" fill="#111"/>
+    <path d="M8 9 L20 9" stroke="#fff" stroke-width="2" opacity=".6"/>
+  </symbol>
+  <symbol id="g-button" viewBox="0 0 60 60">
+    <circle cx="30" cy="30" r="28" fill="#ffd43b" stroke="#222" stroke-width="3"/>
+    <text x="30" y="27" text-anchor="middle" font-family="Verdana" font-weight="bold" font-size="9" fill="#222">I REALLY</text>
+    <text x="30" y="38" text-anchor="middle" font-family="Verdana" font-weight="bold" font-size="7" fill="#222">WISH I WEREN'T</text>
+    <text x="30" y="47" text-anchor="middle" font-family="Verdana" font-weight="bold" font-size="7" fill="#222">HERE</text>
+  </symbol>
+  <symbol id="g-tophat" viewBox="0 0 80 90">
+    <rect x="16" y="4" width="48" height="70" fill="#212529"/><rect x="16" y="54" width="48" height="10" fill="#7048e8"/>
+    <rect x="0" y="72" width="80" height="12" rx="4" fill="#212529"/>
+  </symbol>
+  <!-- trophies: small 2003 badge art, 24x24 -->
+  <symbol id="t-gold" viewBox="0 0 24 24"><path d="M5 3h14v4a7 7 0 0 1-14 0z" fill="#f1c40f" stroke="#000"/><rect x="10" y="14" width="4" height="4" fill="#f1c40f" stroke="#000"/><rect x="7" y="18" width="10" height="3" fill="#000"/></symbol>
+  <symbol id="t-silver" viewBox="0 0 24 24"><path d="M5 3h14v4a7 7 0 0 1-14 0z" fill="#ced4da" stroke="#000"/><rect x="10" y="14" width="4" height="4" fill="#ced4da" stroke="#000"/><rect x="7" y="18" width="10" height="3" fill="#000"/></symbol>
+  <symbol id="t-pet" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#ff6b6b" stroke="#000"/><path d="M12 17 L6 11 a3 3 0 0 1 6 -3 a3 3 0 0 1 6 3 Z" fill="#fff"/></symbol>
+  <symbol id="t-demand" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" fill="#69db7c" stroke="#000"/><path d="M7 12 l4 4 l7 -9" stroke="#000" stroke-width="2.5" fill="none"/></symbol>
+  <symbol id="t-sprite" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" fill="#748ffc" stroke="#000"/><rect x="8" y="7" width="3" height="3" fill="#fff"/><rect x="13" y="7" width="3" height="3" fill="#fff"/><rect x="7" y="14" width="10" height="3" fill="#fff"/></symbol>
+  <symbol id="t-belt" viewBox="0 0 48 24"><rect x="0" y="7" width="48" height="10" fill="#5c3d1e" stroke="#000"/><ellipse cx="24" cy="12" rx="11" ry="10" fill="#f1c40f" stroke="#000"/><path d="M24 5 l2 5 h5 l-4 3 l2 5 l-5 -3 l-5 3 l2 -5 l-4 -3 h5 z" fill="#c92a2a"/></symbol>
+</svg>
+
   <p class="crumb"><a href="#">Index</a> › Spritey</p>
   <h1 class="title">Spritey</h1>
   <table class="t about"><caption class="vh">About Spritey</caption>
     <thead><tr><th scope="col" colspan="3">About Spritey</th></tr></thead>
     <tbody>
-      <tr><td class="avacell" rowspan="10"><div class="bigava">S</div></td><th scope="row" class="k">Title</th><td class="v">Level editor guy</td></tr><tr><th scope="row" class="k">Rank</th><td class="v"><span class="rankline"><b>Main Eventer</b><span class="pips" aria-label="Rank 4 of 6"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span></span></td></tr><tr><th scope="row" class="k">Aura this season</th><td class="v"><b>1.85</b> <span class="muted">(settled Oct 30, 8:17 AM)</span></td></tr><tr><th scope="row" class="k">Place</th><td class="v">1 of 3 in season 1 · <a href="#">season standings</a></td></tr><tr><th scope="row" class="k">Posts</th><td class="v">13</td></tr><tr><th scope="row" class="k">Threads spun</th><td class="v">2</td></tr><tr><th scope="row" class="k">Cards played</th><td class="v">4</td></tr><tr><th scope="row" class="k">Joined</th><td class="v">Oct 2026</td></tr><tr><th scope="row" class="k">Class</th><td class="v">Revealed: Face (Oct 20)</td></tr>
+      <tr><td class="avacell" rowspan="11"><div class="portrait" role="img" aria-label="Spritey's portrait"><svg viewBox="0 0 100 200" aria-hidden="true"><use href="#portrait"/></svg>
+  <span class="gear" style="left:12%;top:-6%;width:76%;height:23%;transform:rotate(-8deg)"><svg viewBox="0 0 100 60" aria-hidden="true"><use href="#g-cap"/></svg></span>
+  <span class="gear" style="left:30%;top:34.5%;width:40%;height:7%"><svg viewBox="0 0 100 34" aria-hidden="true"><use href="#g-stache"/></svg></span>
+  <span class="gear" style="left:56%;top:54%;width:26%;height:13%;transform:rotate(14deg)"><svg viewBox="0 0 60 60" aria-hidden="true"><use href="#g-button"/></svg></span></div></td><th scope="row" class="k">Title</th><td class="v">Level editor guy</td></tr><tr><th scope="row" class="k">Rank</th><td class="v"><span class="rankline"><b>Main Eventer</b><span class="pips" aria-label="Rank 4 of 6"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span></span></td></tr><tr><th scope="row" class="k">Aura this season</th><td class="v"><b>1.85</b> <span class="muted">(settled Oct 30, 8:17 AM)</span></td></tr><tr><th scope="row" class="k">Place</th><td class="v">1 of 3 in season 1 · <a href="#">season standings</a></td></tr><tr><th scope="row" class="k">Posts</th><td class="v">13</td></tr><tr><th scope="row" class="k">Threads spun</th><td class="v">2</td></tr><tr><th scope="row" class="k">Cards played</th><td class="v">4</td></tr><tr><th scope="row" class="k">Joined</th><td class="v">Oct 2026</td></tr><tr><th scope="row" class="k">Wearing</th><td class="v">Baseball Cap, Mustache, “I Really Wish I Weren’t Here” Button</td></tr><tr><th scope="row" class="k">Class</th><td class="v">Revealed: Face (Oct 20)</td></tr>
       <tr><td class="v" colspan="2"><div class="sig"><hr><i>posting in pencil since 2003</i></div></td></tr>
     </tbody></table>
+  
+  <table class="t trophies"><caption class="vh">Spritey’s trophies, newest first</caption>
+    <thead><tr><td class="bar" colspan="3"><h2 class="barh">Trophy case (4)</h2></td></tr></thead>
+    <tbody><tr><td class="badge"><svg viewBox="0 0 48 24" class="wide" aria-hidden="true"><use href="#t-belt"/></svg></td>
+      <td class="trophy"><b>Hardcore Belt</b> · champion since Nov&nbsp;2<br><span class="by">(taken from Sock Puppet by Sighbot, the Boss)</span></td><td class="shown">On posts</td></tr><tr><td class="badge"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#t-sprite"/></svg></td>
+      <td class="trophy"><b>Sprite Contest 2026</b> · “Best walk cycle.”<br><span class="by">Awarded by an admin, Oct 30</span></td><td class="shown">On posts</td></tr><tr><td class="badge"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#t-pet"/></svg></td>
+      <td class="trophy"><b>Boss’s Pet</b><br><span class="by">Given by Sighbot, the Boss, Oct 21 · <a href="#">its post</a></span></td><td class="shown">On posts</td></tr><tr><td class="badge"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#t-demand"/></svg></td>
+      <td class="trophy"><b>Met the Boss’s demand</b> · “12 characters post in Tomato Talk”<br><span class="by">Oct 14 · <a href="#">the move</a></span></td><td class="shown"></td></tr></tbody></table>
+  <table class="t lineage"><caption class="vh">The Hardcore Belt’s holders, newest first</caption>
+    <thead><tr><td class="bar" colspan="3"><h2 class="barh">The Hardcore Belt’s lineage</h2></td></tr></thead>
+    <tbody><tr><td><a href="#">Spritey</a></td><td class="span">Nov 2 – now</td><td class="muted">by Sighbot’s move</td></tr><tr><td><a href="#">Sock Puppet</a></td><td class="span">Oct 18 – Nov 2</td><td class="muted">by Sighbot’s move</td></tr><tr><td><a href="#">Dr. Bones</a></td><td class="span">Oct 9 – Oct 18</td><td class="muted">by an admin (first holder)</td></tr></tbody></table>
   <table class="t record"><caption class="vh">Latest rows of the public record, newest first</caption>
     <thead><tr><td class="bar" colspan="2"><h2 class="barh">Public record</h2></td></tr><tr><th scope="col">When</th><th scope="col">What</th></tr></thead>
     <tbody><tr><td class="when">Oct 29, 2026</td><td><a href="#">Posted: Third time this week. I wrote four whole paragraphs…</a></td></tr><tr><td class="when">Oct 28, 2026</td><td><a href="#">Played Whoops!: “for the changelog”</a></td></tr><tr><td class="when">Oct 27, 2026</td><td><a href="#">Spun a thread: who keeps splatting my posts</a></td></tr><tr><td class="when">Oct 26, 2026</td><td><a href="#">Posted: Who keeps reacting with a thumbs up?</a></td></tr><tr><td class="when">Oct 22, 2026</td><td><a href="#">Played Stick Around</a></td></tr></tbody></table>

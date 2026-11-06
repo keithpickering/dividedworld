@@ -166,6 +166,24 @@ title, a settled standing, a revealed class and a signature) and `09-record`, li
 - **On the phone** the profile leads with the avatar beside the rank and title, then the facts as a two-column table and
   the signature; a record row's date stacks above it (today the When column breaks every date in two), and the six
   kinds fit one row.
+- **The trophy case.** The owner, approving the batch: "we have a plan for trophy cosmetics which adds a 'trophy case' to
+  this page ... make sure our design accounts for the ability to display those cosmetics". That is
+  `docs/plans/2026-11-04-cosmetics-plan.md`, Task 10 (its design's section 4, its board
+  `docs/research/2026-11-04-cosmetics/03-trophy-case.html`), not built yet. `08-profile` is drawn whole at 1440 by 1700
+  with what that task adds, in Silver, on the cosmetics boards' placeholder art (`art.svg`, inlined):
+  - the portrait wearing its gear, the cap reaching above the slot as `gear.reach` allows, and a **Wearing** row naming
+    each piece in words;
+  - the **trophy case** as its own table under the card: a light band with the count, each trophy's badge in a cell of
+    its own, its name and line, who gave it and when in plain words with a link to its post or move, and an On posts
+    column (a held belt always shows);
+  - each **belt's lineage**: holder, reign, and whose move gave it.
+
+  The badges are trophy art and keep their own colors, as the game's pieces do. On the phone (`10-phone`, its second
+  screen) the case folds On posts under each row's line and the lineage to one cell per reign. The cosmetics plan's
+  Task 10 takes its profile's look from `08-profile`, and its board 03 stays the record of what the case holds; its
+  postbit's badges (board 01) sit under the rank in the house's tokens and change nothing in batch 2.
+
+**Batch 3 approved by the owner** ("This is good, approved"), with the trophy case added after.
 
 ## 5. The batches, corrected
 
@@ -179,4 +197,4 @@ tally posts (`engine/ui/reveal/Reveal.tsx`), the move notice (`engine/ui/board/M
 
 - Fan Site's name, now that it salutes one board's blue.
 - The legend's words.
-- Batch 3's approval, and the profile's "Title" label.
+- The profile's "Title" label.

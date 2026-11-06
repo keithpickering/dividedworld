@@ -265,6 +265,21 @@ table.record td.when { width: 170px; font-size: 13.75px; font-variant-numeric: t
 .phone .about th.k { display: table-cell; width: 112px; text-align: left; padding: 6px 8px; font-size: 12.5px; }
 .phone .about td.v { padding: 6px 8px; font-size: 13.75px; }
 .phone .when-above { display: block; font-size: 12.5px; color: var(--kb-muted); margin-bottom: 2px; }
+/* ---------- the trophy case (docs/plans/2026-11-04-cosmetics-design.md, section 4; its board 03) ---------- */
+.portrait { position: relative; width: 120px; height: 240px; border: 1px solid var(--kb-fg); overflow: visible; }
+.portrait > svg { display: block; width: 100%; height: 100%; }
+.portrait .gear { position: absolute; } .portrait .gear svg { display: block; width: 100%; height: 100%; }
+table.trophies td.badge { width: 72px; text-align: center; vertical-align: middle; }
+table.trophies td.badge svg { width: 30px; height: 30px; display: inline-block; vertical-align: middle; }
+table.trophies td.badge svg.wide { width: 54px; height: 27px; }
+table.trophies td.shown { width: 110px; font-size: 13.75px; vertical-align: middle; color: var(--kb-muted); }
+.trophy b { font-size: 15px; }
+.trophy .by { font-size: 13.75px; color: var(--kb-muted); }
+table.lineage td { font-size: 13.75px; }
+table.lineage td.span { width: 220px; font-variant-numeric: tabular-nums; }
+.phone .portrait { width: 76px; height: 152px; }
+.phone table.trophies td.badge { width: 48px; padding: 8px 4px; }
+.phone .trophy .on { display: block; font-size: 12.5px; color: var(--kb-muted); margin-top: 2px; }
 `;
 
 /* ---------- content ---------- */
@@ -521,12 +536,38 @@ console.log('wrote the batch 2 boards');
 
 /* ================= batch 3: a profile and its record ================= */
 /* Spritey's profile, as engine/ui/profile/Profile.tsx draws one that has revealed its class, and its full record (Record.tsx). */
+/* The cosmetics boards' placeholder art (docs/research/2026-11-04-cosmetics/art.svg), inlined so each board stands alone. */
+const ART = fs.readFileSync(path.join(here, '../2026-11-04-cosmetics/art.svg'), 'utf8').replace('<svg ', '<svg aria-hidden="true" style="position:absolute;width:0;height:0" ');
+const use = (id, vb, cls = '') => `<svg viewBox="${vb}"${cls ? ` class="${cls}"` : ''} aria-hidden="true"><use href="#${id}"/></svg>`;
+/* the portrait as the cosmetics board 03 dresses it: a cap reaching above the slot, a mustache, a button */
+const PORTRAIT = `<div class="portrait" role="img" aria-label="Spritey's portrait">${use('portrait', '0 0 100 200')}
+  <span class="gear" style="left:12%;top:-6%;width:76%;height:23%;transform:rotate(-8deg)">${use('g-cap', '0 0 100 60')}</span>
+  <span class="gear" style="left:30%;top:34.5%;width:40%;height:7%">${use('g-stache', '0 0 100 34')}</span>
+  <span class="gear" style="left:56%;top:54%;width:26%;height:13%;transform:rotate(14deg)">${use('g-button', '0 0 60 60')}</span></div>`;
+const TROPHIES = [
+  ['t-belt', '0 0 48 24', 'wide', '<b>Hardcore Belt</b> · champion since Nov&nbsp;2', '(taken from Sock Puppet by Sighbot, the Boss)', true],
+  ['t-sprite', '0 0 24 24', '', '<b>Sprite Contest 2026</b> · “Best walk cycle.”', 'Awarded by an admin, Oct 30', true],
+  ['t-pet', '0 0 24 24', '', '<b>Boss’s Pet</b>', 'Given by Sighbot, the Boss, Oct 21 · <a href="#">its post</a>', true],
+  ['t-demand', '0 0 24 24', '', '<b>Met the Boss’s demand</b> · “12 characters post in Tomato Talk”', 'Oct 14 · <a href="#">the move</a>', false],
+];
+const LINEAGE = [['Spritey', 'Nov 2 – now', 'by Sighbot’s move'], ['Sock Puppet', 'Oct 18 – Nov 2', 'by Sighbot’s move'], ['Dr. Bones', 'Oct 9 – Oct 18', 'by an admin (first holder)']];
+const trophyCase = (phone) => `
+  <table class="t trophies"><caption class="vh">Spritey’s trophies, newest first</caption>
+    <thead><tr><td class="bar" colspan="${phone ? 2 : 3}"><h2 class="barh">Trophy case (${TROPHIES.length})</h2></td></tr></thead>
+    <tbody>${TROPHIES.map(([id, vb, cls, what, by, on]) => `<tr><td class="badge">${use(id, vb, cls)}</td>
+      <td class="trophy">${what}<br><span class="by">${by}</span>${phone && on ? '<span class="on">On posts</span>' : ''}</td>${phone ? '' : `<td class="shown">${on ? 'On posts' : ''}</td>`}</tr>`).join('')}</tbody></table>
+  <table class="t lineage"><caption class="vh">The Hardcore Belt’s holders, newest first</caption>
+    <thead><tr><td class="bar" colspan="${phone ? 1 : 3}"><h2 class="barh">The Hardcore Belt’s lineage</h2></td></tr></thead>
+    <tbody>${LINEAGE.map(([who, span, by]) => phone
+      ? `<tr><td><a href="#">${who}</a> · ${span}<br><span class="muted">${by}</span></td></tr>`
+      : `<tr><td><a href="#">${who}</a></td><td class="span">${span}</td><td class="muted">${by}</td></tr>`).join('')}</tbody></table>`;
 const FACTS = [
   ['Title', 'Level editor guy'],
   ['Rank', `<span class="rankline"><b>Main Eventer</b>${pips(4)}</span>`],
   ['Aura this season', '<b>1.85</b> <span class="muted">(settled Oct 30, 8:17 AM)</span>'],
   ['Place', '1 of 3 in season 1 · <a href="#">season standings</a>'],
   ['Posts', '13'], ['Threads spun', '2'], ['Cards played', '4'], ['Joined', 'Oct 2026'],
+  ['Wearing', 'Baseball Cap, Mustache, “I Really Wish I Weren’t Here” Button'],
   ['Class', 'Revealed: Face (Oct 20)'],
 ];
 const SIG = '<div class="sig"><hr><i>posting in pencil since 2003</i></div>';
@@ -549,15 +590,16 @@ const recordTable = (rows, phone) => `<table class="t record"><caption class="vh
     <tbody>${rows.map(([w, t]) => phone
       ? `<tr><td><span class="when-above">${w.replace(', 2026', '')}</span><a href="#">${t}</a></td></tr>`
       : `<tr><td class="when">${w}</td><td><a href="#">${t}</a></td></tr>`).join('')}</tbody></table>`;
-const PROFILE_DESK = `
+const PROFILE_DESK = `${ART}
   <p class="crumb"><a href="#">Index</a> › Spritey</p>
   <h1 class="title">Spritey</h1>
   <table class="t about"><caption class="vh">About Spritey</caption>
     <thead><tr><th scope="col" colspan="3">About Spritey</th></tr></thead>
     <tbody>
-      ${FACTS.map(([k, v], i) => `<tr>${i === 0 ? `<td class="avacell" rowspan="${FACTS.length + 1}"><div class="bigava">S</div></td>` : ''}<th scope="row" class="k">${k}</th><td class="v">${v}</td></tr>`).join('')}
+      ${FACTS.map(([k, v], i) => `<tr>${i === 0 ? `<td class="avacell" rowspan="${FACTS.length + 1}">${PORTRAIT}</td>` : ''}<th scope="row" class="k">${k}</th><td class="v">${v}</td></tr>`).join('')}
       <tr><td class="v" colspan="2">${SIG}</td></tr>
     </tbody></table>
+  ${trophyCase(false)}
   ${recordTable(RECORD.slice(0, 5), false).replace('Public record, newest first', 'Latest rows of the public record, newest first').replace('<thead>', '<thead><tr><td class="bar" colspan="2"><h2 class="barh">Public record</h2></td></tr>')}
   <p class="seeall"><a href="#">See the full record</a></p>`;
 const KINDS = ['All', 'Posts', 'Spins', 'Cards', 'Class statements', 'Seasons'];
@@ -568,35 +610,40 @@ const RECORD_DESK = `
   <p class="kindnote">Its Acts with its reveals, announced Turns and season reveal posts, newest first.</p>
   ${recordTable(RECORD, false)}
   <div class="below"><nav class="pager" aria-label="Pages of the record"><span class="where">Page 1 of 3</span><span class="here" aria-current="page">1</span><a href="#">2</a><a href="#">3</a><a href="#">Next page</a></nav></div>`;
-const PROFILE_PHONE = `
+const PROFILE_PHONE = `${ART}
   <p class="crumb"><a href="#">Index</a> › Spritey</p>
   <h1 class="title">Spritey</h1>
   <table class="t about"><caption class="vh">About Spritey</caption>
     <tbody>
-      <tr><td class="avacell"><div class="bigava">S</div></td><td><b>Main Eventer</b><br>${pips(4)}<div class="muted small">Level editor guy</div></td></tr>
+      <tr><td class="avacell">${PORTRAIT}</td><td><b>Main Eventer</b><br>${pips(4)}<div class="muted small">Level editor guy</div></td></tr>
     </tbody></table>
   <table class="t about"><tbody>
     ${FACTS.slice(2).map(([k, v]) => `<tr><th scope="row" class="k">${k}</th><td class="v">${v}</td></tr>`).join('')}
     <tr><td class="v" colspan="2">${SIG}</td></tr>
   </tbody></table>`;
+/* the phone profile scrolled to its trophy case */
+const CASE_PHONE = `${ART}${trophyCase(true)}`;
 const RECORD_PHONE = `
   <p class="crumb"><a href="#">Index</a> › <a href="#">Spritey</a> › Public record</p>
   <h1 class="title">Spritey’s public record</h1>
   <nav class="kinds" aria-label="Kind of row">${KINDS.map((k, i) => `<a class="b sm" href="#"${i === 0 ? ' aria-current="true"' : ''}>${k}</a>`).join('')}</nav>
   ${recordTable(RECORD.slice(0, 8), true)}`;
+/* a page drawn whole, 1700 tall, the HUD at its foot */
+const tall = (content) => desk(content).replace('height:1000px', 'height:1700px');
 const batch3 = [
-  ['08-profile.html', 'A profile, Silver light', 'light', desk(PROFILE_DESK)],
-  ['08-profile-dark.html', 'A profile, Silver dark', 'dark', desk(PROFILE_DESK)],
+  ['08-profile.html', 'A profile with its trophy case, Silver light', 'light', tall(PROFILE_DESK)],
+  ['08-profile-dark.html', 'A profile with its trophy case, Silver dark', 'dark', tall(PROFILE_DESK)],
   ['09-record.html', 'A public record, Silver light', 'light', desk(RECORD_DESK)],
   ['09-record-dark.html', 'A public record, Silver dark', 'dark', desk(RECORD_DESK)],
 ];
 for (const [file, title, mode, body] of batch3) {
-  fs.writeFileSync(path.join(here, file), page({ title, mode, width: 1440, height: 1000, body,
-    comment: `A board of the board look design session (docs/plans/2026-11-06-board-look-design.md), batch 3, 1440 by 1000, written by gen.mjs.` }));
+  const h = file.startsWith('08-') ? 1700 : 1000;
+  fs.writeFileSync(path.join(here, file), page({ title, mode, width: 1440, height: h, body,
+    comment: `A board of the board look design session (docs/plans/2026-11-06-board-look-design.md), batch 3, 1440 by ${h}, written by gen.mjs.` }));
 }
 fs.writeFileSync(path.join(here, '10-phone.html'), page({
   title: 'A profile and its record on the phone, Silver', mode: 'light', width: 4 * 390 + 3 * 24, height: 844,
-  comment: 'A board of the board look design session, batch 3: four phone screens at 390 by 844, the profile and its record in light, then in dark, 24px apart. Written by gen.mjs.',
-  body: `<style>${PHONE_CSS_DARK}</style><div style="display:flex;gap:24px">${phoneScreen(PROFILE_PHONE, 'light')}${phoneScreen(RECORD_PHONE, 'light')}${phoneScreen(PROFILE_PHONE, 'dark')}${phoneScreen(RECORD_PHONE, 'dark')}</div>`,
+  comment: 'A board of the board look design session, batch 3: four phone screens at 390 by 844, the profile, its trophy case scrolled to, and its record in light, then the profile in dark, 24px apart. Written by gen.mjs.',
+  body: `<style>${PHONE_CSS_DARK}</style><div style="display:flex;gap:24px">${phoneScreen(PROFILE_PHONE, 'light')}${phoneScrolled(CASE_PHONE, 'light')}${phoneScreen(RECORD_PHONE, 'light')}${phoneScreen(PROFILE_PHONE, 'dark')}</div>`,
 }));
 console.log('wrote the batch 3 boards');
