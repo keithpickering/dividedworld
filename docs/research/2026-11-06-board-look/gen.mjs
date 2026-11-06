@@ -827,8 +827,7 @@ const STAFF_PHONE = `
 
 const batch4 = [
   ['11-move-notice', 'A move in force on its board, Silver', NOTICE_DESK],
-  ['12-reveal', 'The season’s reveal, Silver', REVEAL_DESK],
-  ['13-tally', 'A settlement’s tally, Silver', TALLY_DESK],
+  /* 12-reveal and 13-tally were drawn here and are withdrawn: the season end design (#281) replaces the Boss-signed reveal and tally. */
   ['14-staff', 'The Director’s profile, Silver', STAFF_DESK],
 ];
 for (const [file, title, content] of batch4) {
@@ -839,8 +838,8 @@ for (const [file, title, content] of batch4) {
 }
 fs.writeFileSync(path.join(here, '15-phone.html'), page({
   title: 'The staff on the board on the phone, Silver', mode: 'light', width: 4 * 390 + 3 * 24, height: 844,
-  comment: 'A board of the board look design session, batch 4: four phone screens at 390 by 844 (the move notice, the reveal and the Director’s profile in light; the reveal in dark), 24px apart. Written by gen.mjs.',
-  body: `<style>${PHONE_CSS_DARK}</style><div style="display:flex;gap:24px">${phoneScreen(NOTICE_PHONE, 'light')}${phoneScreen(REVEAL_PHONE, 'light')}${phoneScreen(STAFF_PHONE, 'light')}${phoneScreen(REVEAL_PHONE, 'dark')}</div>`,
+  comment: 'A board of the board look design session, batch 4: four phone screens at 390 by 844 (the move notice and the Director’s profile in light, then in dark), 24px apart. Written by gen.mjs.',
+  body: `<style>${PHONE_CSS_DARK}</style><div style="display:flex;gap:24px">${phoneScreen(NOTICE_PHONE, 'light')}${phoneScreen(STAFF_PHONE, 'light')}${phoneScreen(NOTICE_PHONE, 'dark')}${phoneScreen(STAFF_PHONE, 'dark')}</div>`,
 }));
 console.log('wrote the batch 4 boards');
 

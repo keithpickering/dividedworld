@@ -8,14 +8,14 @@ switchable board and the tribute themes' reference.
 ## The layers
 
 - **The engine** (`engine/ui/`, `engine/system/`, `supabase/`) gains the token vocabulary, the period table, the Chrome
-  button, the folder icons, the post's three cells, the Information box, the staff postbit on a Boss-signed post, the
+  button, the folder icons, the post's three cells, the Information box, the staff postbit on a staff character's post, the
   theme preview's build step, the theme and mode split, and Settings › The board. It names no instance and no theme.
 - **Divided World** (`instances/divided-world/`) supplies the Silver house theme, the four tribute themes, the 80×15
   badges' words, the staff board's name, description and tag, the role word ("The Boss"), the word for an unsigned Act's
-  author, the game's word for itself in the glass ("the game"), and its Bosses' tally and reveal stock lines.
+  author, and the game's word for itself in the glass ("the game").
 - Interfaces that carry it: `InstanceUi.themes` (`engine/ui/types.ts`, `ThemeOption`, which gains `preview`),
   `InstanceUi.copy` (`UiCopy`, which gains the keys Task 11 names), `Instance.boards` (`instances/divided-world/index.ts`),
-  and the stock lines (`engine/system/stock.ts`, which gains `tally` and `reveal`).
+  and the board's own data.
 
 ## The board match
 
@@ -229,9 +229,9 @@ that board draws them).
 Model: sonnet
 
 **Files:** `engine/ui/board/MoveNotice.tsx`, `move.css`; `engine/ui/profile/Staff.tsx`, `profile.css`;
-`engine/ui/postbit/Postbit.tsx`, `StaffBadge.tsx`; manifests `11-move-notice`, `14-staff`.
+`engine/ui/postbit/Postbit.tsx`, `StaffBadge.tsx`; manifests `11-move-notice`, `14-staff`, `15-phone`.
 
-The look is boards `11-move-notice`, `14-staff`, `12-reveal`.
+The look is boards `11-move-notice`, `14-staff` and `15-phone`.
 - **The move notice** is a table: a light band reading "Announcement from {Boss}" (a link), the Boss's words, its top
   reactions; the glass label on the band's corner, breaking the frame, as now. On the phone each label segment keeps its
   words whole and Way out wraps under the label.
@@ -261,8 +261,10 @@ spin"). Each string `engine/ui/` hard-codes as "The System" today moves to these
   they say, and spin a thread from it."); a thread's and a post's name for a null character;
 - the move labels in `engine/system/moves.ts` become templates on the actor's role: "{role} renamed this board", "{role}
   named its successor", the role from `roleWord` (a Mod Bot's move, when Mod Bots move, from its own role word);
-- the glass's plain voice: "The game paid you {n} Aura", "checked by the game", and debut and Turn copy saying the Boss
-  posts the announcement ("{roleWord} posts that {name} debuts"); Season News's "Its first words, on {board}:" from the
+- the glass's plain voice: "The game paid you {n} Aura", "checked by the game", and the debut and Turn copy
+  (`DebutChoice.tsx`, `TurnDialog.tsx`, `footers.ts`) takes the words #281's plan gives it, an announcement being the
+  character's own Promo; where #281 has not landed when this task is built, it says "The board announces it" and names
+  no one; Season News's "Its first words, on {board}:" from the
   board's name.
 Admin screens (`engine/ui/admin/Queue.tsx`) keep "The System's moves".
 
@@ -276,29 +278,12 @@ updated (a mechanical pass, `haiku` may take it as a sub-step).
 `.tsx` under `engine/ui/` except `admin/`, tests and comments, poisoned once with a planted string); the move label reads
 "The Boss renamed this board"; a null-character Act's postbit reads `staffWord`.
 
-## Task 12. The Boss signs the reveal and the tally (engine, SQL, instance)
+## Task 12. Withdrawn
 
-Model: sonnet
-
-**Files:** `supabase/migrations/NNNN_boss_signs.sql` (the next free number) and its SQL test; `engine/system/stock.ts`;
-`instances/divided-world/system/` (each Boss's stock lines); `engine/ui/reveal/Reveal.tsx`; `engine/ui/data/fake.ts`;
-`supabase/functions/_shared/seed.ts`; manifests `12-reveal`, `13-tally`.
-
-The design's section 7, item 2. `STOCK_LINE_KEYS` gains `tally` and `reveal` (no tokens; `reveal` may carry `{season}`),
-and every Divided World Boss gets lines for both in its voice. New versions of `post_tally` (latest `0024_debuts.sql`) and
-`reveal_season` (latest `0073_core_loop_answers.sql`) write their Acts with `character` set to the season's Boss (the
-outgoing Boss for `reveal_season`, which runs at the handover) and the payload's `body` set to one of that Boss's stock
-lines, chosen at random. The rest of the payload (debuts, Turns, places, ranks, figures, the classes each player made
-public) is computed as now and is exact. A season with no Boss does not occur (succession); the function refuses rather
-than writing an unsigned Act, naming the predicate. Acts already written keep `character` null and are never updated;
-they draw `staffWord` as their author. `Reveal.tsx` draws the body above the list, and the post's postbit is Task 10's
-staff postbit.
-
-Whether the season's reveal keeps a thread at all is #278; this task signs it as it stands.
-
-**Tests first:** the SQL test settles a night with an announced debut and reads a tally Act whose `character` is the
-season's Boss and whose body is one of its tally lines; a season's end reads reveal Acts signed by the outgoing Boss; an
-Act written before the migration still has a null `character`; the fake does the same; the two manifests.
+The Boss signing the reveal and the tally is replaced by the season end design and plan
+(`docs/plans/2026-11-06-season-end-design.md` and its plan, #281), which builds the season's results in the glass and the
+characters' `announce` Acts. Nothing of it is built here. The tasks after it keep their numbers, so a reference to Task
+13 to 17 still holds.
 
 ## Task 13. The errors (engine)
 
@@ -404,14 +389,12 @@ shows: the note names the house theme, which holds both. A missing page names th
 ## The masks
 
 - A theme's preview is built from the instance's public theme files; it reads nothing about a player.
-- The Boss's signature on a tally or a reveal reads no private fact: it is the season's Boss, a public fact, and the list
-  is the same public record the Acts hold today.
 - The folder icon's new state is the reader's own reading row, as the NEW chip is now.
 
 ## Review focus
 
-- Acts already written by `post_tally` and `reveal_season` keep a null `character` after Task 12's migration; nothing
-  updates an Act (CLAUDE.md, Append-only), and the season page still reads both kinds.
+- Task 11's `staffWord` on an unsigned Act: the old reveal and tally Acts still draw, named as the staff, after #281's
+  build stops writing them.
 - Task 15's migration of stored `light` and `dark` themes: a player's choice survives as the house theme in that mode,
   and an instance whose first theme is not named "house" still resolves (the engine names no theme).
 - Task 1's gradient parsing: a token holding several layers (Fan Site's head band) is read stop by stop, and a value it

@@ -197,7 +197,8 @@ tally posts (`engine/ui/reveal/Reveal.tsx`), the move notice (`engine/ui/board/M
 
 Drawn on main (354dbc4)'s `engine/ui/board/MoveNotice.tsx`, `engine/ui/reveal/Reveal.tsx` and `engine/ui/profile/Staff.tsx`,
 on their stories' content (shot from Storybook), in Silver: `11-move-notice`, `12-reveal`, `13-tally`, `14-staff`, light
-and dark at 1440 by 1000, and `15-phone`. The two voices stay where they are: The System's and the Director's words in
+and dark at 1440 by 1000, and `15-phone`. `12-reveal` and `13-tally` were withdrawn after the season end design (#281;
+section 7 below), and `15-phone` was redrawn without the reveal. The two voices stay where they are: The System's and the Director's words in
 character, the glass label, the moderation log and the notes plain. The boards give each the house's frame and change no
 word of either.
 
@@ -236,15 +237,15 @@ the alerts design's line holds ("the board never names a mechanic; the glass nev
 
 1. **"The System" is the engine's name for the process, never a voice in a player's copy.** It stays in the code, the
    documents and the admin screens (Queue's "The System's moves", which admins read as the machinery it is).
-2. **On the board every post is signed by a staff character.** The season's reveal and each settlement's tally are
-   signed by the season's Boss (the owner chose the recommendation), the reveal by the outgoing Boss as part of its
-   handover. The post opens with one line in the Boss's voice, in character, which may gloat or bluff; the list under it
-   (debuts, Turns, places, ranks, figures, the classes each player made public) is the engine's and exact, so nothing
-   true is ever the Boss's to change. The line comes from the Boss's roster entry (stock lines, the instance's content),
-   so a settlement never waits on a model and an instance with The System switched off still signs it. Should the
-   finale ever open a gap with no Boss, the season's Mod Bot signs, or the post waits for the arriving Boss; never Gabe.
-   Acts already written with no character are never edited (CLAUDE.md, Append-only): they show the instance's word for
-   the staff as their author.
+2. **Replaced by the season end design** (`docs/plans/2026-11-06-season-end-design.md`, #281, on its own branch when this
+   was written). What this item decided, the season's Boss signing the reveal and each settlement's tally, is withdrawn:
+   a season's end writes no posts (its results become `season_results`, read on Season › Rankings), and each announced
+   debut or Turn is the character's own `announce` Act in the season's thread, listed again as "Season {season}:
+   Promos". The Boss's own posts (its farewell, its arrival, its moves) are unchanged and keep Task 10's staff postbit.
+   Acts already written with no character are never edited and show the instance's word for the staff as their author.
+   The item as first decided, kept for the record: the season's Boss signed the reveal (the outgoing Boss, at the
+   handover) and the tallies, one stock line in its voice over the engine's exact list (the owner chose the
+   recommendation, 2026-11-06).
 3. **The board where only the staff post is Staff Announcements** (the owner, over "The Front Office"): Divided World's
    board content becomes the name "Staff Announcements", the description "Where the staff post. Reply by spinning a
    thread.", and the index's tag "Staff post here; you react and spin". General's description becomes "Anything and
@@ -262,7 +263,7 @@ the alerts design's line holds ("the board never names a mechanic; the glass nev
    the debut and Turn dialogs, the log's lines and the settlement page, Season News) move to it. The plan lists each.
 
 The boards follow: the nav and the index name Staff Announcements; `11-move-notice`'s label reads "The Boss renamed this
-board";
+board"; `12-reveal` and `13-tally`, drawn signed by the Director, are withdrawn with item 2;
 `12-reveal` and `13-tally` are signed by the Director with a staff postbit (its name, its badges, its title, its avatar,
 no rank, since staff are not scored), the reveal opening with its farewell line.
 
@@ -272,7 +273,7 @@ tally hold today.
 **Batch 4 approved by the owner** ("Yep, approved"), with the copy above.
 
 **Filed as their own issues** (the owner: "For the drift we can log separate issues"):
-- **#278, whether the season's reveal still needs a thread on the board.** The owner: "I'm not sure the whole reveal
+- **#278, whether the season's reveal still needs a thread on the board**, since designed (#281, item 2 above). The owner: "I'm not sure the whole reveal
   thread is needed anymore since we decided to make class reveals optional at any time. This would just be an
   announcement of information that is already available, and it also encroaches a bit on the 'forum aware of kayfabe'
   point". `12-reveal` is drawn as things stand and waits on it; the signing decided above holds if the thread stays.
@@ -335,5 +336,7 @@ and `20-theme-picker-one-mode` (Hot Rod chosen), 1440 by 1120, and `21-theme-pic
 - The copy drafts, reviewed with the plan: the legend's "Hot: {n} replies this week"; New thread's "Ctrl+Enter or
   Command+Enter starts it"; the staff board's description and tag and General's new description; the not-found
   messages; the theme picker's notes.
-- #278: whether the season's reveal keeps a thread on the board.
+- The staff board's tag and description after #281: the board now also holds the characters' Promos (their own
+  announced debuts and Turns), so "Staff post here; you react and spin" and "Where the staff post." are no longer the
+  whole truth. For the owner to reword with the plan's copy review.
 - #279: member groups.
