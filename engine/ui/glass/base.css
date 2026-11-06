@@ -121,15 +121,27 @@
  * The inner cut is the outer one less 0.5858 of the border: a 45 degree edge moved in by b along
  * its normal moves its ends along the sides by b (2 - sqrt 2) less than the cut.
  */
+/*
+ * The cut's size and colors are defaults, at no specificity: a piece that sets its own (`--kb-cut`, the edge's color, the
+ * dialog's ground on its ::after) wins whichever stylesheet the browser has read last. The screens and the overlay load on first
+ * use (web/src/App.tsx), so this file may come after theirs.
+ */
+:where(.kb-glass-cut-panel, .kb-glass-cut-dialog, .kb-glass-cut-button) {
+  --kb-cut: var(--kb-glass-chamfer-3);
+  --kb-border: 1.5px;
+  background: var(--kb-glass-neon);
+}
+
+:where(.kb-glass-cut-panel, .kb-glass-cut-dialog, .kb-glass-cut-button)::after {
+  background: var(--kb-glass-panel);
+}
+
 .kb-glass-cut-panel,
 .kb-glass-cut-dialog,
 .kb-glass-cut-button {
-  --kb-cut: var(--kb-glass-chamfer-3);
-  --kb-border: 1.5px;
   --kb-cut-in: calc(var(--kb-cut) - var(--kb-border) * 0.5858);
   position: relative;
   isolation: isolate;
-  background: var(--kb-glass-neon);
 }
 
 .kb-glass-cut-panel::after,
@@ -139,13 +151,12 @@
   position: absolute;
   z-index: -1;
   inset: var(--kb-border);
-  background: var(--kb-glass-panel);
 }
 
 .kb-glass-cut-panel { clip-path: polygon(0 0, calc(100% - var(--kb-cut)) 0, 100% var(--kb-cut), 100% 100%, 0 100%); }
 .kb-glass-cut-panel::after { clip-path: polygon(0 0, calc(100% - var(--kb-cut-in)) 0, 100% var(--kb-cut-in), 100% 100%, 0 100%); }
 
-.kb-glass-cut-dialog { --kb-cut: var(--kb-glass-chamfer-5); }
+:where(.kb-glass-cut-dialog) { --kb-cut: var(--kb-glass-chamfer-5); }
 .kb-glass-cut-dialog { clip-path: polygon(0 0, calc(100% - var(--kb-cut)) 0, 100% var(--kb-cut), 100% 100%, var(--kb-cut) 100%, 0 calc(100% - var(--kb-cut))); }
 .kb-glass-cut-dialog::after { clip-path: polygon(0 0, calc(100% - var(--kb-cut-in)) 0, 100% var(--kb-cut-in), 100% 100%, var(--kb-cut-in) 100%, 0 calc(100% - var(--kb-cut-in))); }
 
