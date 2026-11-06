@@ -6,6 +6,8 @@ import { Loading } from './Loading.tsx';
 
 const meta: Meta<typeof Loading> = {
   title: 'Frame/Loading',
+  /* A path, so the preview gives the story its router and the instance (the pages and the meter read both). */
+  parameters: { path: '/' },
   component: Loading,
   args: { host: 'dw.gripe' },
 };

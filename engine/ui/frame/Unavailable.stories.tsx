@@ -7,6 +7,8 @@ const inMain = (Story: () => ReactNode) => <main><Story /></main>;
 
 const displayMeta: Meta<typeof CannotDisplay> = {
   title: 'Frame/CannotDisplay',
+  /* A path, so the preview gives the story its router and the instance (the pages and the meter read both). */
+  parameters: { path: '/' },
   component: CannotDisplay,
   args: { address: 'dw.gripe/t/3f2a9c1e', onRetry: () => {} },
   decorators: [inMain],
