@@ -54,7 +54,13 @@ a theme picker on the glass.
    files, named for how they look and using no other product's art. The tributes drawn as concepts in round one: Blue
    Steel (light), Midnight (dark), Hot Rod (dark), Fan Site (light).
 
+4. **All four tributes ship** (the owner): Blue Steel, Midnight, Hot Rod and Fan Site are drawn properly and ship
+   with the plan. For Hot Rod and Fan Site the owner is uploading HTML references for direction; those two wait on them.
+5. **Screen boards in the order a reader meets them** (the owner, agreeing with the recommendation), each batch at 1440
+   with one phone board at 390, in Silver light and dark: 1. the index and a board; 2. a thread, the composer and New
+   thread; 3. a profile and its record; 4. the standings and the reveal; 5. The System's profile and the move notice;
+   6. the errors and Unavailable; 7. the theme picker.
+
 ## Open
 
-- Which tributes are drawn properly and ship with the plan.
-- The screen boards, in batches.
+- Hot Rod's and Fan Site's direction, from the owner's references.
