@@ -129,21 +129,21 @@ end $$;
 -- ---------------------------------------------------------------------------------- the writers ----
 
 -- The season's Promos thread, opened on The System's board where the season holds none, titled by the instance's word. The season's row is
--- locked, so two writers at once open one thread between them. Returns the thread; the caller that finds the season's `turns_thread` was null
--- beforehand knows it opened it, and tells the board (post_tally's lines 37 to 42, which this replaces).
-create function promos_thread(in_season bigint) returns uuid
+-- locked, so two writers at once open one thread between them; `opened` is read under that lock, so it is true for exactly one of them, and that
+-- one tells the board (post_tally's lines 37 to 42, which this replaces). A caller never reads `turns_thread` itself beforehand: that read
+-- would come before the lock, and a drop and a settlement racing could both find it null and both broadcast the thread.
+create function promos_thread(in_season bigint, out in_thread uuid, out opened boolean)
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   s seasons%rowtype;
-  in_thread uuid;
 begin
   select * into s from seasons where id = in_season for no key update;
   in_thread := s.turns_thread;
-  if in_thread is null then
+  opened := in_thread is null;
+  if opened then
     insert into threads (board, title) values (system_board(), copy_of('announcementsThreadTitle', s.number)) returning id into in_thread;
     update seasons set turns_thread = in_thread where id = s.id;
   end if;
-  return in_thread;
 end $$;
 
 -- The one writer of an announce Act, whoever asks for it: the settlement's debuts and Turns, and a drop. The guard checks the shape and the class.
@@ -169,8 +169,8 @@ language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   in_season bigint := (select id from seasons where starts_at <= at and (ends_at is null or ends_at > at));
   c characters%rowtype;
-  had uuid;
   in_thread uuid;
+  opened boolean;
   posted jsonb;
 begin
   if in_season is null then
@@ -178,10 +178,9 @@ begin
     return null;
   end if;
   select * into c from characters where id = dropped;
-  had := (select turns_thread from seasons where id = in_season);
-  in_thread := promos_thread(in_season);
+  select p.in_thread, p.opened into in_thread, opened from promos_thread(in_season) p;
   posted := write_announce(c.id, in_thread, 'debut', null, case when c.debut_loudness = 'with_class' then (select class_key from class_now(c.id, at)) end, at);
-  return jsonb_build_object('act', posted, 'thread', case when had is null then thread_projection(in_thread) end);
+  return jsonb_build_object('act', posted, 'thread', case when opened then thread_projection(in_thread) end);
 end $$;
 
 -- masks_change (0074), writing an announce Act for each name where it wrote a tally of names and an unmask after it. Everything up to the rows it
@@ -195,7 +194,7 @@ language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   in_season bigint;
   in_thread uuid;
-  had uuid;
+  opened boolean;
   first_id uuid;
   written jsonb;
   r record;
@@ -252,9 +251,8 @@ begin
   if not exists (select 1 from masks_named m join characters c on c.id = (m.entry ->> 'character')::uuid where c.retired_at is null and c.staff is null) then return null; end if;
 
   select id into in_season from seasons where starts_at < window_end and (ends_at is null or ends_at >= window_end) order by starts_at desc limit 1;
-  had := (select turns_thread from seasons where id = in_season);
-  in_thread := promos_thread(in_season);
-  if had is null then
+  select p.in_thread, p.opened into in_thread, opened from promos_thread(in_season) p;
+  if opened then
     perform broadcast_later('board:' || (select board::text from threads where id = in_thread), 'thread', thread_projection(in_thread));
   end if;
   for r in
@@ -336,6 +334,11 @@ begin
       perform broadcast_later('reach', 'news', jsonb_build_object('kind', 'seasonNews', 'sub', 'tally', 'act', new.id, 'at', now()));
     end if;
   elsif new.kind = 'announce' then
+    -- news_landed carries no thread and no instant of the Acts (landed_at is its own), so no unique index can say "one landing per thread and
+    -- instant". Two transactions landing Acts of one thread at one instant could each find none under read committed and each insert a row,
+    -- splitting one landing into two News items. So the check is serialized: the lock is on the landing's (thread, instant), held to commit, and
+    -- the second transaction's `exists` runs after the first has committed and sees its row.
+    perform pg_advisory_xact_lock(hashtextextended(new.thread::text || '|' || new.created_at::text, 0));
     if not exists (select 1 from acts x join news_landed n on n.act = x.id
                    where x.kind = 'announce' and x.thread = new.thread and x.created_at = new.created_at and n.kind = 'announcements') then
       insert into news_landed (act, kind) values (new.id, 'announcements');

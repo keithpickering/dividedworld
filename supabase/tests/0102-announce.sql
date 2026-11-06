@@ -133,6 +133,79 @@ begin
   if said is not null then raise exception 'an announce naming the class held was refused: %', said; end if;
 end $$;
 
+-- ---- The guard reads the class held at the Act's instant: after a Turn, the old class is refused and the new one accepted ----
+do $$
+declare
+  ann uuid := tests.account('an-guard-turn');
+  c uuid := tests.character(ann, 'An Guard Turned', 'alpha', now() - interval '10 days');
+  th uuid := (select turns_thread from seasons where ends_at is null);
+  said text;
+begin
+  insert into class_history (character, class_key, started_at) values (c, 'beta', now() - interval '1 hour');
+  said := pg_temp.refusal(format('insert into acts (character, kind, thread, payload) values (%L, ''announce'', %L, %L)', c, th, '{"what": "turn", "class": "alpha"}'));
+  if said is null or said not like '23514:%' then raise exception 'an announce naming the class a Turn left was not refused: %', said; end if;
+  said := pg_temp.refusal(format('insert into acts (character, kind, thread, payload) values (%L, ''announce'', %L, %L)', c, th, '{"what": "turn", "class": "beta"}'));
+  if said is not null then raise exception 'an announce naming the class a Turn reached was refused: %', said; end if;
+end $$;
+
+-- ---- A settlement that crashes part way writes nothing, and the run after it writes everything ----
+create function pg_temp.crash_on_turn() returns trigger language plpgsql as $$
+begin
+  if new.kind = 'announce' and new.character = current_setting('tests.crash_character')::uuid then raise exception 'planted crash'; end if;
+  return new;
+end $$;
+do $$
+declare
+  ann uuid := tests.account('an-crash');
+  window_end timestamptz := now() + interval '5 minutes';
+  debut uuid; turner uuid;
+  n bigint := (select count(*) from acts where kind = 'announce');
+  crashed boolean := false;
+begin
+  insert into characters (owner, name, created_at, debut_loudness) values (ann, 'An Crash Debut', now() - interval '1 hour', 'announced') returning id into debut;
+  insert into class_history (character, class_key, started_at) values (debut, 'alpha', now() - interval '1 hour');
+  turner := tests.character(ann, 'An Crash Turn', 'alpha', now() - interval '60 days');
+  perform tests.become(ann); perform turn(turner, 'beta', 'announced', false, false); perform tests.unbecome();
+  -- The Turn's Act is the second written (debuts first): the first is written, then the second fails.
+  perform set_config('tests.crash_character', turner::text, true);
+  create trigger tests_crash before insert on acts for each row execute function pg_temp.crash_on_turn();
+  begin
+    perform masks_change(window_end);
+  exception when others then
+    crashed := true;
+  end;
+  drop trigger tests_crash on acts;
+  if not crashed then raise exception 'the planted crash did not reach masks_change'; end if;
+  if (select count(*) from acts where kind = 'announce') is distinct from n then raise exception 'a crashed settlement left % announcements', (select count(*) from acts where kind = 'announce') - n; end if;
+  if (select debuted_at from characters where id = debut) is not null then raise exception 'a crashed settlement still debuted'; end if;
+  if not exists (select 1 from pending_turns where character = turner) then raise exception 'a crashed settlement lost the pending Turn'; end if;
+  if (select class_key from class_now(turner, 'infinity')) is distinct from 'alpha' then raise exception 'a crashed settlement still Turned'; end if;
+  -- The run after it, with the cause gone, writes both.
+  perform masks_change(window_end);
+  if (select count(*) from acts where kind = 'announce') is distinct from n + 2 then raise exception 'the retried settlement wrote % announcements', (select count(*) from acts where kind = 'announce') - n; end if;
+  if (select debuted_at from characters where id = debut) is distinct from window_end then raise exception 'the retried settlement debuted'; end if;
+  if exists (select 1 from pending_turns where character = turner) then raise exception 'the retried settlement left the Turn pending'; end if;
+end $$;
+
+-- ---- Landing an announce takes the lock on its landing, so two transactions landing one thread and instant cannot split it ----
+-- (A second connection cannot see this file's uncommitted rows, so the race itself is not driven; what the serialization is made of is: the lock.)
+do $$
+declare
+  ann uuid := tests.account('an-lock');
+  c uuid := tests.character(ann, 'An Lock', 'alpha', now() - interval '10 days');
+  th uuid := (select turns_thread from seasons where ends_at is null);
+  at timestamptz := now() + interval '6 minutes';
+  k bigint := hashtextextended(th::text || '|' || at::text, 0);
+begin
+  if exists (select 1 from pg_locks where locktype = 'advisory' and pid = pg_backend_pid() and classid = ((k >> 32) & 4294967295)::oid and objid = (k & 4294967295)::oid) then
+    raise exception 'the landing''s lock is held before any Act lands';
+  end if;
+  perform write_announce(c, th, 'debut', null, null, at);
+  if not exists (select 1 from pg_locks where locktype = 'advisory' and pid = pg_backend_pid() and classid = ((k >> 32) & 4294967295)::oid and objid = (k & 4294967295)::oid and objsubid = 1) then
+    raise exception 'landing an announce took no lock on its thread and instant';
+  end if;
+end $$;
+
 -- ---- A drop announced with its class writes one announce at once, and opens the thread when it is the season's first ----
 do $$
 declare
