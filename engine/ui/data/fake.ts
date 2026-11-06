@@ -1870,6 +1870,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (p.smoke !== undefined && !['full', 'low', 'off'].includes(p.smoke)) return refuse('the smoke is full, low or off');
       if (p.contrast !== undefined && p.contrast !== 'standard' && p.contrast !== 'high') return refuse('contrast is standard or high');
       if (p.textSize !== undefined && ![100, 125, 150, 200].includes(p.textSize)) return refuse('text size is 100, 125, 150 or 200 percent');
+      if (p.tilt !== undefined && p.tilt !== 'off' && p.tilt !== 'on') return refuse('tilt is off or on');
       /* As set_preferences (0064) keeps the toasts: the kinds of alert there are, each once in the order first named, null for the defaults. */
       let toasts = account.prefs.toasts;
       if (p.toasts === null) toasts = null;
