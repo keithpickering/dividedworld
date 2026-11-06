@@ -5,7 +5,7 @@
  * about five are in view, and the rest wait their turn below. `Still` is the same page under reduced motion.
  *
  * The story page hands e2e/shine.spec.ts the loop's probe as `window.__kbShine`: each shiny post's draws, its place on the page (in
- * document order) and its size in device px, the loop's frame count and whether it runs, the size of every canvas each post holds
+ * document order) and its size in device px, both the box it paints (its first canvas's: the post's whole body, engine/ui/cards/body.ts), the loop's frame count and whether it runs, the size of every canvas each post holds
  * (`held`), and the canvas pixels the 2D contexts have rastered (`raster`, below). The application exposes nothing.
  *
  * A Feelin' Fab is drawn in a worker where the browser can (engine/ui/shine/foilClient.ts), a Glitter Bomb on the page, so every
@@ -119,7 +119,7 @@ function workerRaster(): Promise<RasterFrame[]> {
 async function held(): Promise<{ top: number; bottom: number; sizes: { w: number; h: number }[] }[]> {
   const worked = await foilProbe.sizes();
   return [...document.querySelectorAll(SHINY)].map((el) => {
-    const r = el.getBoundingClientRect();
+    const r = painted(el);
     const sizes = [...el.querySelectorAll('canvas')].map((c) => {
       const there = worked.get(c);
       if (there) return there;
@@ -128,6 +128,11 @@ async function held(): Promise<{ top: number; bottom: number; sizes: { w: number
     });
     return { top: r.top, bottom: r.bottom, sizes };
   });
+}
+
+/** The box a shiny post paints, its first canvas's: the post's whole body in the thread, not the words' own box (engine/ui/cards/body.ts). */
+function painted(el: Element): DOMRect {
+  return (el.querySelector('canvas') ?? el).getBoundingClientRect();
 }
 
 interface Args { readonly reduced: boolean }
@@ -153,7 +158,7 @@ function Busy({ reduced }: Args) {
     const tell = (on: boolean): void => { foilProbe.worker()?.postMessage({ kind: 'story', what: 'raster', on } satisfies StoryAsk); };
     window.__kbShine = {
       hosts: () => [...document.querySelectorAll(SHINY)].map((el) => {
-        const r = el.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+        const r = painted(el), d = window.devicePixelRatio || 1;
         return { draws: probe.draws(el), top: r.top, bottom: r.bottom, area: r.width * r.height * d * d };
       }),
       frames: probe.frames,

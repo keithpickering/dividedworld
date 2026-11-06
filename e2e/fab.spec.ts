@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 /**
  * Feelin' Fab's foil as a browser lays it out and draws it (docs/plans/2026-11-06-shine-plan.md, Task 9; the design's sections 1, 3, 5
- * and 6): the canvas (.dw-fab-foil) lies under the words and takes no pointer, a post scrolled out of view draws no frames, reduced
+ * and 6): the canvas (.dw-fab-foil) lies under the words, fills the post's body and takes no pointer, a post scrolled out of view draws no frames, reduced
  * motion draws once, and a switch of the board redraws with the other board's band. The computed styles and the element at a point are
  * read from a real page, so a rule that never wins the cascade is red where a regex over fab.css is green. The poisons plant each
  * defect with a style tag and name it: the check reports a list of problems, [] when the page is right, and each poison test expects
@@ -14,7 +14,7 @@ import { expect, test, type Page } from '@playwright/test';
  * The foil is drawn in a worker, on a canvas whose control the page handed over (engine/ui/shine/foilClient.ts): the page can no longer
  * call getContext on it, so its pixels and size are read from the worker through the story's `window.__kbFabPixels(n)`. That probe
  * reads the worker's own canvas, which cannot show that the worker's frames reach the screen, so one test takes a screenshot of the
- * canvas's box (with the words hidden by a planted style) and compares it with the same box with the canvas hidden; a poison test
+ * canvas's box (with the rest of the post's body hidden by a planted style) and compares it with the same box with the canvas hidden; a poison test
  * hides the canvas and expects the measure to read nothing.
  */
 test.use({ bypassCSP: true });
@@ -52,6 +52,8 @@ async function open(page: Page, name: string, inView = true) {
   }
 }
 const plant = (page: Page, css: string) => page.addStyleTag({ content: css });
+/* Everything the post's body holds but the foil, hidden: the foil paints the whole body, its reactions and signature too, so only it may differ. */
+const HIDE_BODY = '.kb-act-main * { visibility: hidden !important } .dw-fab-foil { visibility: visible !important }';
 const setMode = (page: Page, mode: 'light' | 'dark') => page.evaluate((m) => document.documentElement.setAttribute('data-kb-mode', m), mode);
 
 /** The problems with how the canvas lies under the words; none when it is right. */
@@ -67,8 +69,14 @@ const layoutProblems = (page: Page, post: number): Promise<string[]> =>
     if (c.pointerEvents !== 'none') out.push(`canvas takes the pointer (pointer-events ${c.pointerEvents})`);
     const zc = Number(c.zIndex), zw = Number(w.zIndex);
     if (!(zc < zw)) out.push(`canvas is not under the words (z-index ${c.zIndex} against ${w.zIndex})`);
-    const r = canvas.getBoundingClientRect(), h = host.getBoundingClientRect();
-    if (Math.abs(r.width - h.width) > 1 || Math.abs(r.height - h.height) > 1) out.push(`canvas is ${r.width}x${r.height}, the post is ${h.width}x${h.height}`);
+    /* In the thread the foil fills the post's body (`.kb-act-main`, its padding box, bar to bar), not only the words' own box. */
+    const cell = host.closest<HTMLElement>('.kb-act-main');
+    if (!cell) return ['the post has no body'];
+    const r = canvas.getBoundingClientRect(), b = cell.getBoundingClientRect();
+    const body = { left: b.left + cell.clientLeft, top: b.top + cell.clientTop, width: cell.clientWidth, height: cell.clientHeight };
+    if ([r.left - body.left, r.top - body.top, r.width - body.width, r.height - body.height].some((d) => Math.abs(d) > 1)) {
+      out.push(`canvas is ${Math.round(r.width)}x${Math.round(r.height)} at ${Math.round(r.left)},${Math.round(r.top)}, the body is ${body.width}x${body.height} at ${Math.round(body.left)},${Math.round(body.top)}`);
+    }
     /* Where the words sit, whatever answers a pointer must not be the canvas (a canvas with no pointer is skipped by the browser). */
     const wr = words.getBoundingClientRect();
     const over = document.elementFromPoint(wr.left + wr.width / 2, wr.top + Math.min(8, wr.height / 2));
@@ -99,7 +107,7 @@ const paint = (page: Page, post: number): Promise<{ lum: number; painted: number
 /**
  * The share of the canvas's box on screen that the canvas itself paints: a screenshot of the box's left half (the first tip's card
  * stands over the right of it) as it is, against one with the canvas hidden (the post's own ground), counting the pixels that differ
- * by more than a visible step. Run with the words hidden, so only the canvas can account for the difference.
+ * by more than a visible step. Run with the rest of the body hidden (`HIDE_BODY`), so only the canvas can account for the difference.
  */
 async function onScreen(page: Page, post: number, thresh = 24): Promise<number> {
   const cv = page.locator(FAB).nth(post).locator('canvas.dw-fab-foil');
@@ -128,19 +136,19 @@ async function onScreen(page: Page, post: number, thresh = 24): Promise<number> 
 }
 
 test.describe('the foil in a real page', () => {
-  test('the canvas lies under the words, fills the post and takes no pointer', async ({ page }) => {
+  test('the canvas lies under the words, fills the post\'s body and takes no pointer', async ({ page }) => {
     await open(page, 'two-light');
     expect(await layoutProblems(page, 0)).toEqual([]);
   });
 
-  test('the canvas is painted, at the post\'s size times the device\'s density', async ({ page }) => {
+  test('the canvas is painted, at the post body\'s size times the device\'s density', async ({ page }) => {
     await open(page, 'three-light');
     const { painted } = await paint(page, 0);
     await settle(page);
     const size = await page.evaluate(() => {
-      const r = document.querySelector('[data-kb-fab]')!.getBoundingClientRect();
+      const cell = document.querySelector('[data-kb-fab]')!.closest<HTMLElement>('.kb-act-main')!;
       const dpr = Math.min(2, window.devicePixelRatio || 1);
-      return { w: Math.round(r.width * dpr), h: Math.round(r.height * dpr) };
+      return { w: Math.round(cell.clientWidth * dpr), h: Math.round(cell.clientHeight * dpr) };
     });
     const now = await paint(page, 0);
     expect(now.w).toBe(size.w);
@@ -199,12 +207,12 @@ test.describe('the foil in a real page', () => {
 });
 
 test.describe('the worker\'s frames reach the screen', () => {
-  test('with the words hidden, the canvas\'s box on screen is painted by the canvas, not the post\'s ground', async ({ page }) => {
+  test('with the rest of the body hidden, the canvas\'s box on screen is painted by the canvas, not the post\'s ground', async ({ page }) => {
     await open(page, 'three-light');
     await settle(page);
     /* On the page's own fallback the screenshot would pass too: the canvas must be the worker's. */
     expect(await page.evaluate(() => window.__kbFabAdopted!(0)), 'the canvas was handed to the foil worker').toBe(true);
-    await plant(page, '.dw-fab-words { visibility: hidden !important }');
+    await plant(page, HIDE_BODY);
     await frames(page, 4);
     expect(await onScreen(page, 0)).toBeGreaterThan(0.95);
   });
@@ -218,7 +226,7 @@ test.describe('the poisons, planted in a real page', () => {
   test('a canvas raised over the words is named', async ({ page }) => {
     await open(page, 'two-light');
     await plant(page, '.dw-fab-foil { z-index: 5 !important }');
-    expect(await layoutProblems(page, 0)).toContain('canvas is not under the words (z-index 5 against 1)');
+    expect(await layoutProblems(page, 0)).toContain('canvas is not under the words (z-index 5 against 0)');
   });
 
   test('a canvas that takes the pointer is named', async ({ page }) => {
@@ -236,7 +244,7 @@ test.describe('the poisons, planted in a real page', () => {
   test('a canvas that is not shown leaves the box the post\'s ground, and the on-screen check reads nothing', async ({ page }) => {
     await open(page, 'three-light');
     await settle(page);
-    await plant(page, '.dw-fab-words { visibility: hidden !important }');
+    await plant(page, HIDE_BODY);
     await plant(page, '.dw-fab-foil { opacity: 0 !important }');
     await frames(page, 4);
     expect(await onScreen(page, 0)).toBeLessThan(0.01);

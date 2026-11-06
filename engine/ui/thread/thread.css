@@ -141,6 +141,15 @@
   isolation: isolate;
 }
 
+/*
+ * A post's body is never so short that a card played on it is wasted (the owner, 2026-11-06: "posts should have a min-height so it's
+ * never a waste of time to play a card even if someone wrote a single line with no avatar/sig"): 8em, whether a postbit stands beside it
+ * or the post is stacked. A line of the game's (an unmask, a move's end) is no post and keeps its own height.
+ */
+.kb-act:is([data-kb-kind="post"], [data-kb-kind="spin"]) > .kb-act-main {
+  min-height: 8em;
+}
+
 .kb-act-main [data-kb-effect-ink] {
   z-index: 1;
 }

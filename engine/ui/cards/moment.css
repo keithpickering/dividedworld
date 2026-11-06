@@ -1,11 +1,14 @@
 /*
- * A play's moment on its post (Moment.tsx): a chamfered glass frame around the post's words, in the play's ink (`--kb-moment-ink`,
- * inline) or its card's alignment's color, as the Lens's border is (lens.css). The frame is the ink, cut; its ::after is the board's own
- * ground, one border in and cut by the same line (base.css's chamfers), so the post's words keep the board's look inside it. The glow is
- * the wrapper's drop shadow, since the chamfer's clip-path cuts a box-shadow. The tag hangs on the frame's top edge, over the frame's
- * own padding, and the list stands under the frame: both take room of the moment's own, so neither covers a word outside it (in a
- * play-spun ORIGIN box, which has no Back to now, words covered there would stay covered; e2e/moment.spec.ts holds it). The post's own
- * words are not restyled. Every color is a token or the play's own ink.
+ * A play's moment on its post (Moment.tsx): a chamfered glass ring in the play's ink (`--kb-moment-ink`, inline) or its card's
+ * alignment's color, as the Lens's border is (lens.css), with its glow. In the thread the ring is the post body's own edge: Moment.tsx
+ * places it, inline, over the whole of `.kb-act-main` (thread.css, measured by engine/ui/cards/body.ts), bar to bar, as a card's effect
+ * paints it (the owner, 2026-11-06: the frame "should extend all the way to the edges accordingly, so it can show the effect
+ * accurately"). Elsewhere (the ORIGIN box, or Stick Around's view, which moves the words out of the body) the ring is the moment's own
+ * box, with room inside it for the words. The ring is a layer over everything and takes no pointer, and nothing here clips: an effect
+ * drawn in the moment reaches the body's corners as it did live. The tag stands at the top and the list under the words, each on room
+ * of the moment's own and over any ink, so neither covers a word outside it (in a play-spun ORIGIN box, which has no Back to now,
+ * words covered there would stay covered; e2e/moment.spec.ts holds it). The post's own words are not restyled. Every color is a token
+ * or the play's own ink.
  */
 .kb-moment {
   --kb-moment-ink: var(--kb-glass-sweet);
@@ -13,41 +16,58 @@
   display: flex;
   flex-direction: column;
   margin: 6px 0;
-  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--kb-moment-ink) 55%, transparent));
+  padding: 10px;
 }
 
 .kb-moment[data-kb-alignment="salty"] {
   --kb-moment-ink: var(--kb-glass-salty);
 }
 
-.kb-moment-frame {
+/* In the thread the body's padding is the moment's, and the ring is placed over the body by Moment.tsx (engine/ui/cards/body.ts). */
+.kb-act-main .kb-moment {
+  margin: 0;
+  padding: 0;
+}
+
+/* The ring: the moment's own box until placed (and wherever there is no post body), the ink cut along the chamfer and hollowed one border in (an even-odd polygon, outer edge then inner), the glow its filter's. */
+.kb-moment-ring {
   --kb-cut: var(--kb-glass-chamfer-1);
   --kb-border: 2px;
   --kb-cut-in: calc(var(--kb-cut) - var(--kb-border) * 0.5858);
-  position: relative;
-  isolation: isolate;
-  padding: 12px 10px 10px;
-  background: var(--kb-moment-ink);
-  clip-path: polygon(0 0, calc(100% - var(--kb-cut)) 0, 100% var(--kb-cut), 100% 100%, var(--kb-cut) 100%, 0 calc(100% - var(--kb-cut)));
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  pointer-events: none;
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--kb-moment-ink) 55%, transparent));
 }
 
-.kb-moment-frame::after {
+.kb-moment-ring::before {
   content: '';
   position: absolute;
-  z-index: -1;
-  inset: var(--kb-border);
-  background: var(--kb-bg);
-  clip-path: polygon(0 0, calc(100% - var(--kb-cut-in)) 0, 100% var(--kb-cut-in), 100% 100%, var(--kb-cut-in) 100%, 0 calc(100% - var(--kb-cut-in)));
+  inset: 0;
+  background: var(--kb-moment-ink);
+  clip-path: polygon(evenodd,
+    0 0, calc(100% - var(--kb-cut)) 0, 100% var(--kb-cut), 100% 100%, var(--kb-cut) 100%, 0 calc(100% - var(--kb-cut)), 0 0,
+    var(--kb-border) var(--kb-border),
+    var(--kb-border) calc(100% - var(--kb-border) - var(--kb-cut-in)),
+    calc(var(--kb-border) + var(--kb-cut-in)) calc(100% - var(--kb-border)),
+    calc(100% - var(--kb-border)) calc(100% - var(--kb-border)),
+    calc(100% - var(--kb-border)) calc(var(--kb-border) + var(--kb-cut-in)),
+    calc(100% - var(--kb-border) - var(--kb-cut-in)) var(--kb-border),
+    var(--kb-border) var(--kb-border));
 }
 
-/* The clip-path would cut the tag and the list, so they are the wrapper's, beside the frame: the tag first, reaching 10px down over the frame's top padding. */
+/*
+ * The tag first, over any ink an effect lays in the moment. In the thread Moment.tsx hangs it (`data-kb-hung`) on the post's date bar,
+ * out of the flow, placed inline: its foot on the body's top edge, from the date to short of the marks.
+ */
 .kb-moment-tag {
   position: relative;
-  z-index: 1;
+  z-index: 3;
   order: -1;
   align-self: flex-start;
-  max-width: calc(100% - 24px);
-  margin: 0 12px -10px;
+  max-width: 100%;
+  margin: 0 0 8px;
   padding: 1px 8px;
   /* The glass's panel and text, whose contrast the glass's check holds, edged in the ink: a card's own ink is never a ground for words. */
   border: 2px solid var(--kb-moment-ink);
@@ -62,8 +82,21 @@
   overflow-wrap: anywhere;
 }
 
-.kb-moment-tag time {
-  text-transform: none;
+/*
+ * Hung, it is the date bar's height at least and opaque (the same panel, laid on the glass's ground), so it covers the date it stands in
+ * for; on a phone, where the marks leave it too narrow for one line, its second line covers the foot of the band above as well.
+ */
+.kb-moment-tag[data-kb-hung] {
+  position: absolute;
+  background: linear-gradient(var(--kb-glass-panel-strong), var(--kb-glass-panel-strong)), var(--kb-glass-ground);
+  box-sizing: border-box;
+  min-height: calc(var(--kb-meta-tile) - 0.4rem);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  align-content: center;
+  column-gap: 0.25em;
+  margin: 0;
 }
 
 .kb-moment-back,
@@ -89,6 +122,8 @@
 }
 
 .kb-moment-list {
+  position: relative;
+  z-index: 3;
   align-self: flex-end;
   max-width: min(100%, 36em);
   margin-top: 4px;
@@ -106,4 +141,10 @@
 
 .kb-moment-body {
   position: relative;
+}
+
+@media (forced-colors: active) {
+  .kb-moment-ring::before {
+    background: CanvasText;
+  }
 }

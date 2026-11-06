@@ -34,8 +34,14 @@
  * gets a fresh element. A development build under React's StrictMode would run the effect twice on one element and the second
  * hand-over is refused after the first transferred it (logged, the post bare); the app does not use StrictMode.
  *
- * Units: the box is CSS px (the host's getBoundingClientRect size); the canvas is sized to round(box x density) with the density the
- * loop returns (at most 2), and its CSS size is the host's through the stylesheet (100%). On the page the effect sizes it; in the
+ * Where. The foil fills the post, not only its words (the owner: "the card effect should apply to the entire post in all cases"): in
+ * the thread the box is the post body's padding box (engine/ui/cards/body.ts, `.kb-act-main`, bar to bar), and the canvas is placed
+ * over it from the host, inline; anywhere else (the ORIGIN box, Stick Around's view) it is the host's own box. Painting the body, the
+ * host marks itself `data-kb-bleed` and fab.css puts the foil under everything in the body (its reactions, its signature, an ORIGIN
+ * box above the words), not only under the words. The host watches the body's size as well as its own.
+ *
+ * Units: the box is CSS px (engine/ui/cards/body.ts `bodyBox`); the canvas is sized to round(box x density) with the density the
+ * loop returns (at most 2), and its CSS size is the box's, set inline. On the page the effect sizes it; in the
  * worker the worker does, in the same task as the draw, whenever the box differs. A resize registers again and, because sizing the
  * backing store clears it, repaints at once with the last light and the band already held, rather than waiting for the loop's next draw.
  *
@@ -48,6 +54,7 @@ import { bandFor, type Band } from '../../../../engine/ui/shine/band.ts';
 import { makeFoil, type Foil, type FoilPattern } from '../../../../engine/ui/shine/foil.ts';
 import { adoptFoil, isTransferred, offscreenFoils, type FoilHandle } from '../../../../engine/ui/shine/foilClient.ts';
 import type { FoilSpec } from '../../../../engine/ui/shine/foilProtocol.ts';
+import { bodyBox, bodyOf, placeLayer, sameBox, type BodyBox } from '../../../../engine/ui/cards/body.ts';
 import { REST, type Light } from '../../../../engine/ui/shine/light.ts';
 import { register, unregister, wake } from '../../../../engine/ui/shine/loop.ts';
 import type { EffectProps } from '../../../../engine/ui/cards/types.ts';
@@ -68,7 +75,7 @@ const PATTERN: readonly (FoilPattern | '')[] = ['', 'pearl', 'bands', 'prism'];
 
 type Board = 'light' | 'dark';
 
-export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
+export function FeelinFabEffect({ post, plays, place, still, children }: EffectProps) {
   const host = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const level = Math.max(1, Math.min(MOST, plays.length));
@@ -90,7 +97,7 @@ export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
     const specs: Partial<Record<Board, FoilSpec>> = {};
     const foils: Partial<Record<Board, Foil>> = {};
     const release = (): void => { for (const f of Object.values(foils)) f?.release(); };
-    let box = { w: 0, h: 0 };
+    let box: BodyBox = { left: 0, top: 0, w: 0, h: 0 };
     let density = 1;
     /* The board whose foil is in use; the other is let go once, when this changes, and its reference dropped. */
     let current: Board | null = null;
@@ -137,10 +144,22 @@ export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
       if (remote) remote.free(); else { release(); cv.width = cv.height = 0; }
       freed = true;
     };
-    const measure = (): { w: number; h: number } => { const r = el.getBoundingClientRect(); return { w: r.width, h: r.height }; };
+    /* The body this paints, found again at each measure (a takeover moves the words), and watched for its size as the host is. */
+    let body: HTMLElement | null = null;
+    const measure = (): BodyBox => {
+      const now = bodyOf(el, place);
+      if (now !== body) {
+        if (body) resize?.unobserve(body);
+        if (now) resize?.observe(now);
+        body = now;
+        el.toggleAttribute('data-kb-bleed', body !== null);
+      }
+      return bodyBox(el, body);
+    };
     const setup = (): void => {
       band = readBand();
       box = measure();
+      placeLayer(cv, box);
       if (still) {
         density = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
         size();
@@ -159,15 +178,14 @@ export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
       if (!remote) size();
       if (last) paint(last.light, last.t, false);
     };
-    setup();
 
-    /* A resize registers again at the new size; the loop draws it fresh. */
+    /* A resize (of the host or of the body it paints) registers again at the new size; the loop draws it fresh. */
     const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(() => {
-      const now = measure();
-      if (now.w === box.w && now.h === box.h) return;
+      if (sameBox(measure(), box)) return;
       setup();
     }) : null;
     resize?.observe(el);
+    setup();
 
     /* The board switched (the player's choice on the root, or the device's color scheme) while nothing was drawing. */
     const boardChanged = (): void => { band = readBand(); if (still) paint(REST, 0, false); else wake(el); };
@@ -183,8 +201,9 @@ export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
       if (!still) unregister(el);
       remote?.drop();
       release();
+      el.removeAttribute('data-kb-bleed');
     };
-  }, [level, seed, still]);
+  }, [level, seed, still, place]);
 
   return (
     <div ref={host} className="dw-fab" data-kb-fab="" data-kb-level={level}>
