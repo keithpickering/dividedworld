@@ -11,6 +11,8 @@
  * let the other board's foil go when it drew on the page). `free` releases a canvas's foils and sets it to 0 by 0, as a post out of
  * view does on the page; the next draw sizes it again. `drop` frees and forgets it.
  *
+ * Each batch is acknowledged (`ack`) when it is done: the page keeps one batch in flight and coalesces what waits (foilClient.ts).
+ *
  * Each canvas's draw is wrapped on its own, as loop.ts wraps each host's: one canvas that throws costs only that canvas its frame. The
  * worker's own time for a whole batch (the draws and a hook around them) goes in a ring of the last 600, two clock reads a batch,
  * read by the `work` probe: the page's loop cannot see this time, and the busy page's check needs it (e2e/shine.spec.ts). The probe
@@ -84,6 +86,8 @@ export function serveFoils(scope: FoilScope, hooks: ServeHooks = {}): { canvas(i
     } catch (err) { console.error(err); }
     worked[batches % KEEP] = performance.now() - began;
     batches++;
+    /* After the draws, whatever they did: the page sends its next batch only on this, so a slow worker is never handed a backlog. */
+    scope.postMessage({ kind: 'ack' } satisfies FromWorker);
   };
 
   const answer = (m: FromWorker): void => scope.postMessage(m);

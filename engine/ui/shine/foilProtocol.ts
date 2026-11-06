@@ -45,6 +45,8 @@ export type ToWorker =
   | ({ readonly kind: 'probe'; readonly nonce: number } & ProbeAsk);
 
 export type FromWorker =
+  /** A `frame` batch is drawn (or its draws failed): the page may send the next. One batch is in flight at a time (foilClient.ts). */
+  | { readonly kind: 'ack' }
   | { readonly kind: 'probe'; readonly nonce: number; readonly ask: 'sizes'; readonly sizes: readonly { id: number; width: number; height: number }[] }
   /** `batches` is how many frames the worker has drawn in all; `work` is its own time in the last `n` of them (at most 600), oldest first, in ms. */
   | { readonly kind: 'probe'; readonly nonce: number; readonly ask: 'work'; readonly batches: number; readonly work: readonly number[] }

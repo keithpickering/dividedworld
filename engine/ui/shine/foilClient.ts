@@ -6,15 +6,19 @@
  * work during a busy scroll, move to the worker. A transferred canvas can never be drawn on from the page again, nor transferred a
  * second time, so a host that needs one afterward is given a fresh element (a React `key`), and adopting an element twice throws.
  *
- * One worker serves every canvas on the page. It starts with the first adoption and ends with the last `drop`. A frame's draws are
- * batched: the first draw of a frame queues a microtask and the draws that follow join it, so one `frame` message carries them all
- * and the worker sizes and draws a frame's canvases in one task. A `free` or `drop` takes the canvas's waiting draw out of the batch,
- * so no draw can reach the worker after the canvas was let go and size it again.
+ * One worker serves every canvas. It starts with the first adoption, and ends `IDLE_MS` after the last `drop` (a move to another thread
+ * reuses it; a new adoption cancels the end). A frame's draws are batched: the first draw of a frame queues a microtask and the draws
+ * that follow join it, so one `frame` message carries them all and the worker sizes and draws a frame's canvases in one task. One batch
+ * is in flight at a time: the worker acknowledges each, and while one is unacknowledged a canvas's newer draw replaces its waiting one
+ * (latest wins) and the batch goes on the ack, so a slow worker falls behind by frames dropped, never by a backlog that keeps painting
+ * stale light. A `free` or `drop` goes at once and takes the canvas's waiting draw out, so no draw can reach the worker after the canvas
+ * was let go and size it again.
  *
  * `offscreenFoils()` says whether the browser can do this at all (a worker, an OffscreenCanvas, and a canvas element that can hand
  * control over); where it cannot, the host draws on the main thread as it always did, and the look and motion are the same. A worker
- * that fails to start or throws is logged (`console.error`); the canvases it holds stay as they were and the posts' words stay
- * readable over whatever is under them.
+ * that fails to start throws from `adoptFoil` before anything is transferred, so the host draws on the page; one that fails once
+ * running (an `error` or `messageerror`) is logged and let go: nothing is posted to it again, probe asks waiting on it settle with no
+ * answer, and the canvases it held stay as they were, the posts' words readable over whatever is under them.
  *
  * `setFoilWorker` is a seam for a story, which runs its own worker entry (the foil server plus its probes). `foilProbe` is for tests
  * and stories only: the application reads nothing back.
@@ -46,89 +50,126 @@ let make: () => Worker = defaultWorker;
 /** A story's own worker entry (null: the default). It applies to the next worker started. */
 export function setFoilWorker(maker: (() => Worker) | null): void { make = maker ?? defaultWorker; }
 
+/** How long the worker stays after its last canvas is dropped (a move to another thread starts the next page's posts on the same one). */
+export const IDLE_MS = 30_000;
+
 let worker: Worker | null = null;
+let idle: ReturnType<typeof setTimeout> | undefined;
 let nextId = 1;
-/* The canvases the worker holds, by id, and the id of each; every element ever adopted, since none can be adopted twice. */
+/* The canvases the worker holds, by id, and the id of each; every element ever transferred, since none can be transferred twice. */
 const live = new Map<number, HTMLCanvasElement>();
 const idOfCanvas = new WeakMap<HTMLCanvasElement, number>();
 const adopted = new WeakSet<HTMLCanvasElement>();
-let pending: FoilDraw[] = [];
+/* The draws waiting for the next batch, one per canvas (the latest), and whether a batch is in flight (sent, not yet acknowledged). */
+let pending = new Map<number, FoilDraw>();
 let scheduled = false;
+let inFlight = false;
+
+/* Probe asks in flight, by nonce; settled with no answer when the worker ends. */
+const answers = new Map<number, (m: FromWorker | null) => void>();
+let nonce = 0;
+const settleAsks = (): void => { for (const settle of [...answers.values()]) settle(null); answers.clear(); };
+
+/** Whether this element's control was handed to a worker: it can then never be drawn on from the page, nor handed over again. */
+export function isTransferred(canvas: HTMLCanvasElement): boolean { return adopted.has(canvas); }
 
 const send = (message: object, transfer: Transferable[] = []): void => { worker?.postMessage(message, transfer); };
 
+/**
+ * Sends the waiting draws as one batch, unless one is already in flight: the worker acknowledges each batch, and a slow worker is never
+ * handed a backlog (it would fall further behind the light, and keep painting stale frames after the scroll). What arrives meanwhile
+ * replaces the canvas's waiting draw, and goes on the ack.
+ */
+function sendBatch(): void {
+  if (inFlight || pending.size === 0 || !worker) return;
+  const draws = [...pending.values()];
+  pending = new Map();
+  try { send({ kind: 'frame', t: draws[0]!.now, draws }); inFlight = true; } catch (err) { console.error(err); }
+}
+
 function flush(): void {
   scheduled = false;
-  const draws = pending;
-  pending = [];
-  if (draws.length === 0 || !worker) return;
-  try { send({ kind: 'frame', t: draws[0]!.now, draws }); } catch (err) { console.error(err); }
+  sendBatch();
+}
+
+/** The worker is no more (it failed, or it idled out): nothing waits on it any more. */
+function end(w: Worker): void {
+  if (worker !== w) return;
+  clearTimeout(idle); idle = undefined;
+  w.terminate();
+  worker = null;
+  pending = new Map(); inFlight = false; scheduled = false;
+  settleAsks();
 }
 
 function start(): Worker {
+  clearTimeout(idle); idle = undefined;
   if (worker) return worker;
   const w = make();
+  /* A worker that fails is let go: frames are not posted to a dead one, and what waits on it settles. */
   w.addEventListener('error', (e) => {
     const where = e.filename ? ` (${e.filename}:${e.lineno})` : '';
     console.error(`the foil worker failed: ${e.message || 'no message'}${where}`);
+    end(w);
   });
+  w.addEventListener('messageerror', () => { console.error('the foil worker sent a message that could not be read'); end(w); });
   w.addEventListener('message', (e: MessageEvent<FromWorker>) => {
+    if (worker !== w) return;
     const m = e.data;
-    if (m?.kind === 'probe') answers.get(m.nonce)?.(m);
+    if (m?.kind === 'ack') { inFlight = false; sendBatch(); } else if (m?.kind === 'probe') answers.get(m.nonce)?.(m);
   });
   worker = w;
   return w;
 }
 
+/** The last canvas is gone: the worker waits a while for the next page's posts, then ends. */
+function idleSoon(): void {
+  const w = worker;
+  if (!w || live.size > 0) return;
+  clearTimeout(idle);
+  idle = setTimeout(() => { if (live.size === 0) end(w); }, IDLE_MS);
+}
+
 export function adoptFoil(canvas: HTMLCanvasElement): FoilHandle {
   if (adopted.has(canvas)) throw new Error('foil: this canvas was already handed to the worker; a transferred canvas cannot be transferred again, so give the host a new element');
-  /* Transferring first: if the browser refuses, nothing is half done. */
-  const offscreen = canvas.transferControlToOffscreen();
+  /* The worker first, then the transfer, and nothing is recorded until both worked: a failure leaves the canvas as it was, so the host can draw it on the page. */
+  start();
+  let offscreen: OffscreenCanvas;
+  try { offscreen = canvas.transferControlToOffscreen(); } catch (err) { idleSoon(); throw err; }
   adopted.add(canvas);
   const id = nextId++;
   live.set(id, canvas);
   idOfCanvas.set(canvas, id);
-  start();
   send({ kind: 'adopt', id, canvas: offscreen }, [offscreen]);
 
-  const forget = (): void => { pending = pending.filter((d) => d.id !== id); };
   return {
     draw(spec, key, box, density, light, band, now, idle) {
-      if (!live.has(id)) return;
-      pending.push({ id, spec, key, box, density, light, band, now, idle });
+      if (!live.has(id) || !worker) return;
+      pending.set(id, { id, spec, key, box, density, light, band, now, idle });
       if (!scheduled) { scheduled = true; queueMicrotask(flush); }
     },
     free() {
       if (!live.has(id)) return;
-      forget();
+      pending.delete(id);
       send({ kind: 'free', id });
     },
     drop() {
       if (!live.has(id)) return;
-      forget();
+      pending.delete(id);
       live.delete(id);
       idOfCanvas.delete(canvas);
-      if (live.size === 0) {
-        worker?.terminate();
-        worker = null;
-        pending = [];
-        answers.clear();
-        return;
-      }
       send({ kind: 'drop', id });
+      idleSoon();
     },
   };
 }
 
-/* Probe asks in flight, by nonce. */
-const answers = new Map<number, (m: FromWorker) => void>();
-let nonce = 0;
 function ask<A extends ProbeAsk['ask']>(question: Extract<ProbeAsk, { ask: A }>): Promise<Extract<FromWorker, { ask: A }> | null> {
   const w = worker;
   if (!w) return Promise.resolve(null);
   return new Promise((resolve) => {
     const n = ++nonce;
-    answers.set(n, (m) => { answers.delete(n); resolve(m as Extract<FromWorker, { ask: A }>); });
+    answers.set(n, (m) => { answers.delete(n); resolve(m as Extract<FromWorker, { ask: A }> | null); });
     w.postMessage({ kind: 'probe', nonce: n, ...question });
   });
 }
@@ -139,9 +180,9 @@ export const foilProbe = {
   worker: (): Worker | null => worker,
   /** Ends the worker and forgets every canvas, so a test starts from a page that adopted nothing. */
   reset(): void {
-    worker?.terminate();
-    worker = null;
-    live.clear(); pending = []; scheduled = false; answers.clear();
+    if (worker) end(worker);
+    clearTimeout(idle); idle = undefined;
+    live.clear(); pending = new Map(); scheduled = false; inFlight = false; settleAsks();
   },
   /** Every canvas the worker holds, with the size its backing store has now. */
   async sizes(): Promise<Map<HTMLCanvasElement, { w: number; h: number }>> {

@@ -9,7 +9,8 @@
  * Feelin' Fab on the page), the way the other board stories reach their internals; the app itself exposes nothing. The foil is drawn
  * in a worker where the browser can (engine/ui/shine/foilClient.ts), the application's own worker here, and the page cannot read a
  * transferred canvas: `window.__kbFabPixels(n)` gives the nth foil canvas's pixels as the worker holds them (or, where the browser
- * draws on the page, as the canvas does), with the size they have.
+ * draws on the page, as the canvas does), with the size they have; `window.__kbFabSize(n)` is its size from `foilProbe.sizes`, which says
+ * 0 by 0 for a freed canvas where there are no pixels to read; `window.__kbFabAdopted(n)` is whether it was handed to the worker.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useState } from 'react';
@@ -25,6 +26,10 @@ declare global {
   interface Window {
     __kbShineDraws?: (nth: number) => number;
     __kbFabPixels?: (nth: number) => Promise<{ width: number; height: number; data: Uint8ClampedArray } | null>;
+    /** The nth foil canvas's size as the worker holds it (the canvas's own attributes where the browser draws on the page); 0 by 0 when freed. */
+    __kbFabSize?: (nth: number) => Promise<{ w: number; h: number } | null>;
+    /** Whether the nth foil canvas was handed to the foil worker (false: the page draws it). */
+    __kbFabAdopted?: (nth: number) => boolean;
   }
 }
 
@@ -57,7 +62,15 @@ function Fabbed({ level, mode, reduced, many = false }: Args) {
       const g = cv.getContext('2d');
       return g ? { width: cv.width, height: cv.height, data: g.getImageData(0, 0, cv.width, cv.height).data } : null;
     };
-    return () => { delete window.__kbShineDraws; delete window.__kbFabPixels; };
+    const nthCanvas = (nth: number) => document.querySelectorAll<HTMLCanvasElement>('[data-kb-fab] canvas.dw-fab-foil')[nth];
+    window.__kbFabAdopted = (nth) => { const cv = nthCanvas(nth); return cv !== undefined && foilProbe.idOf(cv) !== undefined; };
+    window.__kbFabSize = async (nth) => {
+      const cv = nthCanvas(nth);
+      if (!cv) return null;
+      if (foilProbe.idOf(cv) === undefined) return { w: cv.width, h: cv.height };
+      return (await foilProbe.sizes()).get(cv) ?? null;
+    };
+    return () => { delete window.__kbShineDraws; delete window.__kbFabPixels; delete window.__kbFabSize; delete window.__kbFabAdopted; };
   }, []);
   useEffect(() => {
     if (thread === null) return;

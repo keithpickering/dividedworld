@@ -39,10 +39,10 @@ const LAG = 2;
  * all sixteen posts, five in view) at 11.6 to 12.5 ms over eight timed runs while the foil's render did every cell's math each frame, and
  * at 3.9 to 4.4 ms once it precomputed what the light does not move (engine/ui/shine/foil.ts): most of the loop was that render. The
  * budget is under one 16.7 ms frame: a loop that costs more than a frame cannot keep its frames, and the 25 ms poisoned draw below is far
- * past it.
+ * past it. The same budget is the foil worker's per batch: its work is a frame's draws, which must fit a frame for the foil to keep
+ * the display's rate.
  */
 const WORK_BUDGET = 16;
-/* The same budget is the foil worker's per batch: its work is a frame's draws, which must fit a frame for the foil to keep the display's rate. */
 /**
  * CPU throttling for a run that stands in for a slower machine than this one (`KB_CPU_THROTTLE=2`: Chrome's throttling of the page's
  * main thread, which is how a busy scroll's cost the loop never sees was found); unset, none.

@@ -12,6 +12,10 @@
  * or scales them at 'high', costs a slow machine its frame, which the loop's own time never shows (e2e/shine.spec.ts). It patches the
  * prototype from the call until `stop`.
  *
+ * The worker-side count is stricter than the page-side count ever was: it also sees the foil's own internal OffscreenCanvases (its
+ * grid canvas's putImageData and the starburst sprite), which the page-side count never saw (they are OffscreenCanvases, whose
+ * contexts are not `CanvasRenderingContext2D`'s). So the share a Feelin' Fab costs is counted more strictly now than it was.
+ *
  * The messages are the story worker's own, beside the foil protocol's (the foil server ignores what it does not know).
  */
 

@@ -159,7 +159,7 @@ describe('the foil worker', () => {
       assert.doesNotThrow(() => send(m));
     }
     assert.doesNotThrow(() => send({ kind: 'frame', t: 1, draws: [draw(42)] }));
-    assert.deepEqual(out, []);
+    assert.deepEqual(out.filter((m) => (m as { kind: string }).kind !== 'ack'), []);
   });
 
   test('the probe reads back sizes, its own time per frame, and a canvas\'s pixels', () => {
@@ -201,6 +201,24 @@ describe('the foil worker', () => {
     send({ kind: 'probe', nonce: 1, ask: 'work', n: 5 });
     const w = out.at(-1) as Extract<FromWorker, { ask: 'work' }>;
     assert.ok(w.work.every((x) => x >= 5), `the hook's 5 ms is in the batch's time: ${w.work.join(', ')}`);
+  });
+
+  test('every batch is acknowledged once it is drawn (so the page keeps one in flight), even when a canvas threw, and never before the draws', () => {
+    const { scope, send, out } = scopeOf();
+    const seen: string[] = [];
+    serveFoils(scope, { frame: (t, run) => { run(); seen.push(`ran ${t} acks ${out.filter((m) => (m as { kind: string }).kind === 'ack').length}`); } });
+    const a = adopt(send, 1);
+    const err = mock.method(console, 'error', () => {});
+    a.throwOnContext = true;
+    send({ kind: 'frame', t: 5, draws: [draw(1)] });
+    assert.equal(err.mock.calls.length, 1);
+    assert.deepEqual(out, [{ kind: 'ack' }]);
+    a.throwOnContext = false;
+    send({ kind: 'frame', t: 6, draws: [draw(1)] });
+    assert.deepEqual(out, [{ kind: 'ack' }, { kind: 'ack' }]);
+    assert.deepEqual(seen, ['ran 5 acks 0', 'ran 6 acks 1']);
+    send({ kind: 'frame', t: 7, draws: [draw(404)] });
+    assert.equal(out.length, 3, 'a batch of draws for unknown canvases is acknowledged too');
   });
 
   test('the server hands back a canvas by id, for a story\'s worker entry', () => {

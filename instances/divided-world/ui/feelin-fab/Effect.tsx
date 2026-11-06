@@ -27,11 +27,12 @@
  * busy scroll. The post hands its canvas over once (`adoptFoil`) and the loop's draw callback posts what the draw needs (the foil's
  * spec, the box, the density, the light and band read here on the main thread, the time) instead of painting; the worker makes the
  * same foil and calls the same `foil.draw`, so the look and the motion are the same. The loop still decides when the post draws, eases
- * its light and counts its draws. Everywhere else, and for a play's moment (`still`, drawn once, so a worker would only add a hop),
- * the post draws on the main thread as it always did. A transferred canvas can never be drawn on from the page again, nor handed over
+ * its light and counts its draws. Everywhere else, where a worker cannot start (the hand-over is refused before anything is
+ * transferred), and for a play's moment (`still`, drawn once, so a worker would only add a hop), the post draws on the main thread as
+ * it always did. A transferred canvas can never be drawn on from the page again, nor handed over
  * a second time, so the `<canvas>` carries a `key` of level, seed and still: an effect that runs again (a level or a seed change)
  * gets a fresh element. A development build under React's StrictMode would run the effect twice on one element and the second
- * hand-over is refused (logged, the post bare); the app does not use StrictMode.
+ * hand-over is refused after the first transferred it (logged, the post bare); the app does not use StrictMode.
  *
  * Units: the box is CSS px (the host's getBoundingClientRect size); the canvas is sized to round(box x density) with the density the
  * loop returns (at most 2), and its CSS size is the host's through the stylesheet (100%). On the page the effect sizes it; in the
@@ -45,7 +46,7 @@
 import { useEffect, useRef } from 'react';
 import { bandFor, type Band } from '../../../../engine/ui/shine/band.ts';
 import { makeFoil, type Foil, type FoilPattern } from '../../../../engine/ui/shine/foil.ts';
-import { adoptFoil, offscreenFoils, type FoilHandle } from '../../../../engine/ui/shine/foilClient.ts';
+import { adoptFoil, isTransferred, offscreenFoils, type FoilHandle } from '../../../../engine/ui/shine/foilClient.ts';
 import type { FoilSpec } from '../../../../engine/ui/shine/foilProtocol.ts';
 import { REST, type Light } from '../../../../engine/ui/shine/light.ts';
 import { register, unregister, wake } from '../../../../engine/ui/shine/loop.ts';
@@ -80,7 +81,11 @@ export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
     /* In a worker, unless this is a play's moment: the canvas is handed over now and cannot be drawn on from here again. */
     let remote: FoilHandle | null = null;
     if (!still && offscreenFoils()) {
-      try { remote = adoptFoil(cv); } catch (err) { console.error(err); return; }
+      try { remote = adoptFoil(cv); } catch (err) {
+        console.error(err);
+        /* Refused before the canvas was handed over (no worker could start): the post draws on the page. Handed over already: it cannot be drawn on, and stays bare. */
+        if (isTransferred(cv)) return;
+      }
     }
     const specs: Partial<Record<Board, FoilSpec>> = {};
     const foils: Partial<Record<Board, Foil>> = {};

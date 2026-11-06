@@ -79,6 +79,10 @@ const layoutProblems = (page: Page, post: number): Promise<string[]> =>
 /** The mean relative luminance of a sample of the canvas's pixels, and how many of them are painted at all (read from the worker that holds them). */
 const paint = (page: Page, post: number): Promise<{ lum: number; painted: number; w: number; h: number }> =>
   page.evaluate(async (nth) => {
+    const size = await window.__kbFabSize!(nth);
+    if (!size) throw new Error('there is no foil canvas to read');
+    /* A canvas that holds nothing (0 by 0) has no pixels to read: it reports its size and nothing painted. */
+    if (size.w === 0 || size.h === 0) return { lum: 0, painted: 0, w: size.w, h: size.h };
     const px = await window.__kbFabPixels!(nth);
     if (!px) throw new Error('the foil canvas holds no pixels');
     const { data } = px;
@@ -89,7 +93,7 @@ const paint = (page: Page, post: number): Promise<{ lum: number; painted: number
       if (data[i + 3]! > 0) painted++;
       sum += 0.2126 * lin(data[i]!) + 0.7152 * lin(data[i + 1]!) + 0.0722 * lin(data[i + 2]!);
     }
-    return { lum: sum / n, painted: painted / n, w: px.width, h: px.height };
+    return { lum: sum / n, painted: painted / n, w: size.w, h: size.h };
   }, post);
 
 /**
@@ -198,6 +202,8 @@ test.describe('the worker\'s frames reach the screen', () => {
   test('with the words hidden, the canvas\'s box on screen is painted by the canvas, not the post\'s ground', async ({ page }) => {
     await open(page, 'three-light');
     await settle(page);
+    /* On the page's own fallback the screenshot would pass too: the canvas must be the worker's. */
+    expect(await page.evaluate(() => window.__kbFabAdopted!(0)), 'the canvas was handed to the foil worker').toBe(true);
     await plant(page, '.dw-fab-words { visibility: hidden !important }');
     await frames(page, 4);
     expect(await onScreen(page, 0)).toBeGreaterThan(0.95);

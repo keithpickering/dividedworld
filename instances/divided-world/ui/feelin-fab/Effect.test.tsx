@@ -17,7 +17,7 @@ import type { CardPlay, EffectProps } from '../../../../engine/ui/cards/types.ts
 import { bandOf, POST_INK } from '../../../../engine/ui/shine/band.ts';
 import { light as pageLight, REST } from '../../../../engine/ui/shine/light.ts';
 import { probe } from '../../../../engine/ui/shine/loop.ts';
-import { foilProbe, setFoilWorker } from '../../../../engine/ui/shine/foilClient.ts';
+import { foilProbe, IDLE_MS, setFoilWorker } from '../../../../engine/ui/shine/foilClient.ts';
 
 /* The foil is a spy that remembers how it was made; the band is the root's board, as bandFor would read it from the tokens. */
 const made = vi.hoisted(() => [] as { opts: { seed: string; pattern: string; palette: readonly string[]; stars: number; glint: string }; draw: ReturnType<typeof vi.fn>; release: ReturnType<typeof vi.fn> }[]);
@@ -509,8 +509,13 @@ describe("Feelin' Fab drawing in a worker", () => {
     readonly sent: Record<string, unknown>[] = [];
     terminated = false;
     constructor() { FakeWorker.made.push(this); }
-    postMessage(message: Record<string, unknown>) { this.sent.push(message); }
-    addEventListener() {}
+    private readonly listeners: ((e: unknown) => void)[] = [];
+    /* A worker that answers each batch, as foilServe does: after the draws, in a microtask. */
+    postMessage(message: Record<string, unknown>) {
+      this.sent.push(message);
+      if (message.kind === 'frame') queueMicrotask(() => { for (const l of this.listeners) l({ data: { kind: 'ack' } }); });
+    }
+    addEventListener(type: string, fn: (e: unknown) => void) { if (type === 'message') this.listeners.push(fn); }
     terminate() { this.terminated = true; }
     of(kind: string) { return this.sent.filter((m) => m.kind === kind); }
   }
@@ -519,7 +524,8 @@ describe("Feelin' Fab drawing in a worker", () => {
   let transferred: HTMLCanvasElement[] = [];
   const worker = () => FakeWorker.made[0]!;
   const posted = (): Sent[] => worker().of('frame') as unknown as Sent[];
-  const tick = () => Promise.resolve();
+  /* Two hops: a batch is posted in a microtask and acknowledged in the next. */
+  const tick = async () => { await Promise.resolve(); await Promise.resolve(); };
   /* Frames one at a time, with the microtask between them that the browser gives: a frame's draws are posted before the next frame runs. */
   const run = async (n: number, from = 0, step = 16) => { for (let i = 1; i <= n; i++) { flush(from + i * step); await tick(); } };
   const pageContexts = () => vi.mocked(HTMLCanvasElement.prototype.getContext).mock.calls.length;
@@ -622,19 +628,25 @@ describe("Feelin' Fab drawing in a worker", () => {
     expect(posted()).toHaveLength(before);
   });
 
-  test('unmounting drops the canvas, and the last drop ends the worker', () => {
-    const one = render(<FeelinFabEffect {...props(1)} />);
-    expect(foilProbe.idOf(canvas())).toBeDefined();
-    one.unmount();
-    expect(worker().terminated, 'the only canvas on the page: nothing left for the worker to serve').toBe(true);
-    const two = render(<div><FeelinFabEffect key="a" {...props(1)} /><FeelinFabEffect key="b" {...props(2)} /></div>);
-    const second = FakeWorker.made[1]!;
-    const ida = foilProbe.idOf(document.querySelectorAll('canvas')[0]!);
-    two.rerender(<div><FeelinFabEffect key="b" {...props(2)} /></div>);
-    expect(second.of('drop')).toEqual([{ kind: 'drop', id: ida }]);
-    expect(second.terminated).toBe(false);
-    two.unmount();
-    expect(second.terminated).toBe(true);
+  test('unmounting drops the canvas; the last drop ends the worker after its idle grace, and a post mounted meanwhile uses the same one', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const one = render(<FeelinFabEffect {...props(1)} />);
+      expect(foilProbe.idOf(canvas())).toBeDefined();
+      one.unmount();
+      expect(worker().of('drop')).toHaveLength(1);
+      expect(worker().terminated, 'in its grace').toBe(false);
+      const two = render(<div><FeelinFabEffect key="a" {...props(1)} /><FeelinFabEffect key="b" {...props(2)} /></div>);
+      expect(FakeWorker.made, 'the next page\'s posts did not start a new worker').toHaveLength(1);
+      const ida = foilProbe.idOf(document.querySelectorAll('canvas')[0]!);
+      two.rerender(<div><FeelinFabEffect key="b" {...props(2)} /></div>);
+      expect(worker().of('drop').at(-1)).toEqual({ kind: 'drop', id: ida });
+      vi.advanceTimersByTime(IDLE_MS * 2);
+      expect(worker().terminated, 'a canvas is still adopted').toBe(false);
+      two.unmount();
+      vi.advanceTimersByTime(IDLE_MS);
+      expect(worker().terminated).toBe(true);
+    } finally { vi.useRealTimers(); }
   });
 
   test('a play\'s moment (still) never adopts: it is drawn once, at rest, on the page, with no worker', () => {
@@ -653,9 +665,23 @@ describe("Feelin' Fab drawing in a worker", () => {
     const second = canvas();
     expect(second).not.toBe(first);
     expect(transferred).toEqual([first, second]);
-    expect(worker().terminated, 'the old canvas was dropped, and it was the last').toBe(true);
+    expect(worker().of('drop')).toHaveLength(1);
+    expect(worker().terminated, 'the worker is kept through the swap').toBe(false);
     void see(second, true); await run(2, 100);
-    expect(FakeWorker.made[1]!.of('frame').at(-1)).toMatchObject({ draws: [{ spec: { pattern: 'bands' } }] });
+    expect(worker().of('frame').at(-1)).toMatchObject({ draws: [{ spec: { pattern: 'bands' } }] });
+  });
+
+  test('a worker that cannot start leaves the post drawing on the page, as it always did', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    setFoilWorker(() => { throw new Error('no worker for you'); });
+    render(<FeelinFabEffect {...props(2)} />);
+    expect(transferred).toEqual([]);
+    expect(canvas().width).toBe(450);
+    void see(canvas(), true);
+    frames(2);
+    expect(made).toHaveLength(1);
+    expect(draws()).toBeGreaterThanOrEqual(1);
+    expect(log).toHaveBeenCalled();
   });
 
   test('reduced motion posts one draw, at the rest light, and the loop stops', async () => {
