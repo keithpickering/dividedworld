@@ -47,6 +47,12 @@ export function Frame({ children }: { readonly children: ReactNode }) {
   useEffect(() => {
     if (first.current) { first.current = false; return; }
     if (!hash && !popped) globalThis.scrollTo?.(0, 0);
+    /*
+     * A screen that came with the move may have put focus where it means it (a spun thread's ORIGIN box). A screen's effects run before this
+     * one, since the new page now commits with the new address; focus already inside the page is left where the screen put it.
+     */
+    const there = document.activeElement;
+    if (there && there !== main.current && main.current?.contains(there)) return;
     main.current?.focus({ preventScroll: true });
   }, [path]);
 

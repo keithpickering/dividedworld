@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -10,7 +11,7 @@ import { Routes } from '../routes.tsx';
 import { testGlass } from '../test-world.tsx';
 import { boardPlace, forgetBoard, keepBoardPlace } from '../glass/back.ts';
 import { boardSwitch } from '../glass/board.ts';
-import { Link } from '../router.tsx';
+import { Link, useLocation } from '../router.tsx';
 import { Frame } from './Frame.tsx';
 
 const mine = (id: string, name: string, cls = 'heel'): MyCharacter => ({
@@ -394,6 +395,18 @@ describe('from the Task 3 quality review', () => {
     setup();
     await userEvent.click(await screen.findByRole('link', { name: 'General' }));
     expect(screen.getByRole('main')).toHaveFocus();
+  });
+  test('a page that put focus inside itself as it arrived keeps it: the frame takes focus only where the page left none', async () => {
+    /* The page's effects run before the frame's, as a screen that came with the move does (a spun thread's ORIGIN box). */
+    function Placing() {
+      const path = useLocation().path;
+      const box = useRef<HTMLButtonElement>(null);
+      useEffect(() => { if (path === '/b/general') box.current?.focus(); }, [path]);
+      return <button ref={box} type="button">placed</button>;
+    }
+    setup(true, undefined, <Placing />);
+    await userEvent.click(await screen.findByRole('link', { name: 'General' }));
+    expect(screen.getByRole('button', { name: 'placed' })).toHaveFocus();
   });
 });
 
