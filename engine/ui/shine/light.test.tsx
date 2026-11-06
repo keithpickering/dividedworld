@@ -33,6 +33,7 @@ describe('lightAt', () => {
   it('tilt counts only when on', () => {
     const off = lightAt({ ...base, tx: 1, ty: -1 }, mid, { height: VH }, 0, 0);
     near(off.x, -0.14);
+    near(off.y, -0.18 + 0.1);
     const on = lightAt({ ...base, tx: 0.5, ty: -0.5, tilt: true }, mid, { height: VH }, 0, 0);
     near(on.x, -0.14 + 0.55);
     near(on.y, -0.18 + 0.1 - 0.55);
@@ -53,6 +54,12 @@ describe('lightAt', () => {
     const lo = lightAt({ ...base, px: -5, py: -5 }, { top: -5000, height: 10 }, { height: VH }, 0, 0);
     expect(lo).toEqual({ x: -1.5, y: -1.5 });
   });
+  it('a viewport of height 0 still gives a finite light (the scroll term is 0)', () => {
+    const l = lightAt(base, { top: 0, height: 0 }, { height: 0 }, 0, 0);
+    expect(Number.isFinite(l.x) && Number.isFinite(l.y)).toBe(true);
+    near(l.x, -0.14);
+    near(l.y, -0.18 + 0.1);
+  });
   it('returns REST under reduced motion, whatever the input', () => {
     document.documentElement.setAttribute('data-kb-motion', 'reduce');
     expect(lightAt({ px: 1, py: 1, tx: 1, ty: 1, tilt: true }, { top: 900, height: 50 }, { height: VH }, 777, 3)).toEqual(REST);
@@ -66,13 +73,34 @@ describe('ease', () => {
     near(ease(2, 2, 0.05), 2);
     near(ease(0, 1, 0), 0);
   });
+  it('a negative dt does not move away from the target', () => {
+    expect(ease(0, 1, -5)).toBeGreaterThanOrEqual(0);
+    expect(ease(0, 1, -5)).toBeLessThanOrEqual(1);
+    near(ease(0.3, 1, -5), 0.3);
+  });
+  it('a huge dt lands on the target', () => {
+    near(ease(-3, 1, 1e9), 1);
+  });
 });
 
 describe('the input store', () => {
   let fine = true;
+  let queries = 0;
+  const changeListeners = new Set<(e: { matches: boolean }) => void>();
+  const setFine = (v: boolean) => { fine = v; for (const l of [...changeListeners]) l({ matches: v }); };
   beforeEach(() => {
     fine = true;
-    window.matchMedia = ((q: string) => ({ matches: q.includes('hover: hover') ? fine : false, media: q })) as unknown as typeof window.matchMedia;
+    queries = 0;
+    changeListeners.clear();
+    window.matchMedia = ((q: string) => {
+      queries++;
+      return {
+        matches: q.includes('hover: hover') ? fine : false,
+        media: q,
+        addEventListener: (_: string, l: (e: { matches: boolean }) => void) => { changeListeners.add(l); },
+        removeEventListener: (_: string, l: (e: { matches: boolean }) => void) => { changeListeners.delete(l); },
+      };
+    }) as unknown as typeof window.matchMedia;
     Object.defineProperty(window, 'innerWidth', { value: 1000, configurable: true });
     Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
     light.reset();
@@ -106,10 +134,49 @@ describe('the input store', () => {
     expect([light.px, light.py]).toEqual([0, 0]);
   });
   it('ignores the pointer without (hover: hover) and (pointer: fine)', () => {
-    light.attach({});
     fine = false;
+    light.attach({});
     move('mouse', 900, 100);
     expect([light.px, light.py]).toEqual([0, 0]);
+  });
+  it('asks matchMedia once however many pointermoves; a change to coarse stops them counting', () => {
+    light.attach({});
+    for (let i = 0; i < 20; i++) move('mouse', 100 + i, 100);
+    expect(queries).toBe(1);
+    near(light.px, (119 / 1000 - 0.5) * 2);
+    setFine(false);
+    move('mouse', 900, 700);
+    near(light.px, (119 / 1000 - 0.5) * 2);
+    setFine(true);
+    move('mouse', 900, 700);
+    near(light.px, 0.8);
+    expect(queries).toBe(1);
+  });
+  it('removes the change listener with the last host', () => {
+    const a = {}, b = {};
+    light.attach(a); light.attach(b);
+    expect(changeListeners.size).toBe(1);
+    light.detach(a);
+    expect(changeListeners.size).toBe(1);
+    light.detach(b);
+    expect(changeListeners.size).toBe(0);
+  });
+  it('a non-finite or missing gamma or beta gives a tilt of 0 on that axis', () => {
+    light.attach({});
+    setTiltGate(() => true);
+    const raw = (gamma: unknown, beta: unknown) => {
+      const e = new Event('deviceorientation');
+      Object.assign(e, { gamma, beta });
+      window.dispatchEvent(e);
+    };
+    for (const [g, b] of [[null, null], [NaN, NaN], [Infinity, -Infinity], [undefined, undefined]] as const) {
+      raw(15, 15);
+      raw(g, b);
+      expect([light.tx, light.ty]).toEqual([0, 0]);
+    }
+    raw(15, null);
+    near(light.tx, 0.5);
+    expect(light.ty).toBe(0);
   });
   it('ignores deviceorientation while the tilt gate is off, uses it when on', () => {
     light.attach({});

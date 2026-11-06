@@ -34,7 +34,7 @@ export function lightAt(
   let y = REST.y * 0.4;
   x += input.px * 0.9;
   y += input.py * 0.55;
-  const s = (rect.top + rect.height / 2) / viewport.height - 0.5;
+  const s = viewport.height > 0 ? (rect.top + rect.height / 2) / viewport.height - 0.5 : 0;
   y += s * 2.8;
   x += s * 0.9;
   if (input.tilt) {
@@ -47,7 +47,7 @@ export function lightAt(
 }
 
 /** One step of the ease toward `target`, with a 110ms time constant. */
-export const ease = (cur: number, target: number, dt: number): number => cur + (target - cur) * (1 - Math.exp(-dt / 0.11));
+export const ease = (cur: number, target: number, dt: number): number => cur + (target - cur) * (1 - Math.exp(-Math.max(0, dt) / 0.11));
 
 let tiltGate: () => boolean = () => false;
 /** Task 5's tilt state wires itself here: the device's orientation counts only while this says true. */
@@ -56,10 +56,25 @@ export const setTiltGate = (gate: () => boolean): void => { tiltGate = gate; };
 const hosts = new Set<object>();
 const state = { px: 0, py: 0, tx: 0, ty: 0 };
 
+/* The pointer query is asked once when the first host attaches and kept current by its `change` event, not per pointermove. */
+let pointerQuery: MediaQueryList | undefined;
+let finePointer = false;
+const onPointerQuery = (e: { matches: boolean }): void => { finePointer = e.matches; };
+function watchPointerQuery(): void {
+  pointerQuery = window.matchMedia?.('(hover: hover) and (pointer: fine)');
+  finePointer = pointerQuery?.matches ?? false;
+  pointerQuery?.addEventListener?.('change', onPointerQuery);
+}
+function unwatchPointerQuery(): void {
+  pointerQuery?.removeEventListener?.('change', onPointerQuery);
+  pointerQuery = undefined;
+  finePointer = false;
+}
+
 function onPointer(e: Event): void {
   const p = e as PointerEvent;
   if (p.pointerType !== 'mouse' && p.pointerType !== 'pen') return;
-  if (!window.matchMedia?.('(hover: hover) and (pointer: fine)').matches) return;
+  if (!finePointer) return;
   state.px = (p.clientX / window.innerWidth - 0.5) * 2;
   state.py = (p.clientY / window.innerHeight - 0.5) * 2;
 }
@@ -67,8 +82,9 @@ function onPointer(e: Event): void {
 function onOrientation(e: Event): void {
   if (!tiltGate()) return;
   const o = e as DeviceOrientationEvent;
-  state.tx = clamp((o.gamma ?? 0) / 30, -1, 1);
-  state.ty = clamp((o.beta ?? 0) / 30, -1, 1);
+  const axis = (v: number | null | undefined) => (Number.isFinite(v) ? clamp((v as number) / 30, -1, 1) : 0);
+  state.tx = axis(o.gamma);
+  state.ty = axis(o.beta);
 }
 
 const LISTEN = { passive: true } as const;
@@ -85,6 +101,7 @@ export const light = {
     if (hosts.has(host)) return;
     hosts.add(host);
     if (hosts.size === 1) {
+      watchPointerQuery();
       window.addEventListener('pointermove', onPointer, LISTEN);
       window.addEventListener('deviceorientation', onOrientation, LISTEN);
     }
@@ -92,12 +109,14 @@ export const light = {
   /** Unregister a host; the last one detaches the listeners. */
   detach(host: object): void {
     if (!hosts.delete(host) || hosts.size > 0) return;
+    unwatchPointerQuery();
     window.removeEventListener('pointermove', onPointer);
     window.removeEventListener('deviceorientation', onOrientation);
   },
   /** For tests: forget every host, drop the listeners and zero the inputs. */
   reset(): void {
     hosts.clear();
+    unwatchPointerQuery();
     window.removeEventListener('pointermove', onPointer);
     window.removeEventListener('deviceorientation', onOrientation);
     state.px = state.py = state.tx = state.ty = 0;
