@@ -160,6 +160,27 @@ function modBotsRule(v: unknown): string | null {
   return null;
 }
 
+/**
+ * The warn bar's settings (`Settings.warnBar`): a bar of whole points, three bands each from 1 to the bar's size, a decay span (minutes allowed, so
+ * a test can set it short) and a ladder of ban days. Mirrors `setting_warnbar` in supabase/migrations/0102_warn_bar.sql, and
+ * supabase/tests/0079-settings-held.sql lists its poisons and goods.
+ */
+const WARN_BAR_BANDS = ['minor', 'moderate', 'severe'] as const;
+function warnBarRule(v: unknown): string | null {
+  const shape = 'an object giving size (a whole number, at least 1), bands (minor, moderate and severe, whole numbers from 1 to size), decay (a span: a unit of minute, day, week or month and a whole count from 1 to 1000) and banDays (a list of one or more whole numbers of days, each at least 1)';
+  const object = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
+  if (!object(v)) return shape;
+  const extra = Object.keys(v).find((k) => !['size', 'bands', 'decay', 'banDays'].includes(k));
+  if (extra !== undefined) return `${shape}; "${extra}" is not one of its fields`;
+  if (!isWhole(v.size, 1)) return `${shape}; "size" is not`;
+  const bands = v.bands;
+  if (!object(bands) || Object.keys(bands).length !== WARN_BAR_BANDS.length) return `${shape}; "bands" is not`;
+  for (const b of WARN_BAR_BANDS) if (!isWhole(bands[b], 1) || (bands[b] as number) > v.size) return `${shape}; "bands.${b}" is not`;
+  if (!isSpan(v.decay, GRACE_UNITS)) return `${shape}; "decay" is not`;
+  if (!Array.isArray(v.banDays) || v.banDays.length < 1 || !v.banDays.every((d) => isWhole(d, 1))) return `${shape}; "banDays" is not`;
+  return null;
+}
+
 /** Every setting the engine reads, each with what it must be. */
 const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | null } = {
   walletCap: (v) => (isWhole(v, 1) ? null : 'a whole number of hundredths, at least 1'),
@@ -207,6 +228,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   memoryRealWorld: whole(1, 'subjects'),
   pool: poolRule,
   modBots: modBotsRule,
+  warnBar: warnBarRule,
   boardNameMaxLength: whole(1, 'characters'),
   moveExpiryMostDays: whole(1, 'days'),
   moveExpiryLeastHours: whole(1, 'hours'),

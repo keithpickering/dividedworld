@@ -47,6 +47,8 @@ declare
                            'staff_career(text)',
                            -- How players reach an admin (0081): a visitor and a player read the contact, an admin writes it.
                            'admin_contact()', 'set_admin_contact(jsonb)',
+                           -- The bar and the ban (0102): columns of characters_public, whose reader executes the functions that compute them; public facts, the same for any id.
+                           'warn_points(uuid)', 'banned_until(uuid)',
                            -- Pure predicates a CHECK calls, granted to PUBLIC by 0080 so a direct writer is not refused (each reads no table).
                            'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])'];
   -- What a visitor (anon) may execute, on purpose; each is also in the list above.

@@ -101,6 +101,21 @@ export interface ModBotSettings {
   readonly filingGraceMinutes: number;
 }
 
+/**
+ * The warn bar's numbers (`Settings.warnBar`; the Mod Bots design, section 5). An infraction adds its band's points when a visit files, drops off
+ * `decay` after it lands, and a bar that reaches `size` brings a timed ban whose length is the season's ladder step.
+ */
+export interface WarnBarSettings {
+  /** What the bar holds: it brings a ban when the points not yet expired reach this many. A whole number, at least 1. */
+  readonly size: number;
+  /** What an infraction of each band adds. Whole numbers from 1 to `size`. */
+  readonly bands: { readonly minor: number; readonly moderate: number; readonly severe: number };
+  /** How long an infraction counts after it lands. */
+  readonly decay: Span;
+  /** The days of a character's first ban in a season, its second, its third; the last step repeats. Whole numbers, at least 1, and at least one step. */
+  readonly banDays: readonly number[];
+}
+
 /** The settings the engine itself reads. A class's own numbers live with the class. */
 export interface Settings {
   /** The most a wallet holds; Aura past it leaves the wallet and stays in the standing. */
@@ -229,6 +244,8 @@ export interface Settings {
   readonly pool: PoolSettings;
   /** The Mod Bots' numbers: allowances, rule lengths, visits, patrols, reports, appeals, tails and the targeting cap. */
   readonly modBots: ModBotSettings;
+  /** The warn bar and the ban ladder: points by band, how long they last, and how long each ban in a season runs. */
+  readonly warnBar: WarnBarSettings;
   /** The longest a board's name may be, in characters, whether The System or a player proposes it. */
   readonly boardNameMaxLength: number;
   /** The most days any move may last, whatever its phase allows. A starting point. */

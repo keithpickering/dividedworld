@@ -15,7 +15,9 @@ export const testPool: Settings['pool'] = {
 /** The Mod Bots' numbers as a test world holds them. */
 export const testModBots: Settings['modBots'] = { allowanceMost: 3, ruleDaysMost: 7, visitHours: { least: 2, most: 12 }, patrolsPerDay: 6, patrolSample: 5, reportPrice: 25, reportsPerDay: 3, judgmentsPerDay: 60, filingLinesPerDay: 60, appealPrice: 50, tailHours: 24, cap: { punishments: 3, days: 7 }, filingCron: '*/5 * * * *', filingGraceMinutes: 10 };
 
-export const systemSettings: Pick<Settings, 'modBots' | 'systemEnabled' | 'meetingCron' | 'phases' | 'inheritanceGraceDays' | 'rosterRecentExcluded' | 'structuralHoldHours' | 'microEventDailyCalls' | 'digestThreads' | 'digestExcerpts' | 'digestExcerptChars' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'pool' | 'boardNameMaxLength' | 'moveExpiryMostDays' | 'moveExpiryLeastHours' | 'demandCheckMinutes' | 'demandChecksPerTick' | 'modelTiers'> = {
+export const testWarnBar: Settings['warnBar'] = { size: 10, bands: { minor: 2, moderate: 4, severe: 7 }, decay: { unit: 'day', count: 14 }, banDays: [1, 3, 7] };
+
+export const systemSettings: Pick<Settings, 'modBots' | 'warnBar' | 'systemEnabled' | 'meetingCron' | 'phases' | 'inheritanceGraceDays' | 'rosterRecentExcluded' | 'structuralHoldHours' | 'microEventDailyCalls' | 'digestThreads' | 'digestExcerpts' | 'digestExcerptChars' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'pool' | 'boardNameMaxLength' | 'moveExpiryMostDays' | 'moveExpiryLeastHours' | 'demandCheckMinutes' | 'demandChecksPerTick' | 'modelTiers'> = {
   systemEnabled: false,
   meetingCron: '23 9 * * *',
   phases: {
@@ -24,7 +26,7 @@ export const systemSettings: Pick<Settings, 'modBots' | 'systemEnabled' | 'meeti
     meltdown: { days: 21, weeklyMoves: 8, bankCap: 14, moveExpiryMostDays: 42 },
   },
   inheritanceGraceDays: 3, rosterRecentExcluded: 2, structuralHoldHours: 24, microEventDailyCalls: 20, digestThreads: 10, digestExcerpts: 8,
-  digestExcerptChars: 280, memoryOpinions: 40, memoryGrudges: 20, memoryWheelhouse: 30, memoryRealWorld: 30, pool: testPool, modBots: testModBots, boardNameMaxLength: 60, moveExpiryMostDays: 42, moveExpiryLeastHours: 24, demandCheckMinutes: 5, demandChecksPerTick: 40,
+  digestExcerptChars: 280, memoryOpinions: 40, memoryGrudges: 20, memoryWheelhouse: 30, memoryRealWorld: 30, pool: testPool, modBots: testModBots, warnBar: testWarnBar, boardNameMaxLength: 60, moveExpiryMostDays: 42, moveExpiryLeastHours: 24, demandCheckMinutes: 5, demandChecksPerTick: 40,
   modelTiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' },
 };
 

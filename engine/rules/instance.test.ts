@@ -51,6 +51,7 @@ const settings: Settings = {
   memoryRealWorld: 30,
   pool: { weekly: 20, holdback: 0.2, threadsWeekly: 1, cardRarityMost: 'common', priorityDays: 28, notesRead: 12, chatterThreadPosts: 8, strengths: { named: 5, quoted: 5, legacy: 5, successorStumbles: 5, oldFlame: 5, homeTurf: 2, seasonTurn: 2, hotOnBeat: 2 }, chatterCron: '37 17 * * *' },
   modBots: { allowanceMost: 3, ruleDaysMost: 7, visitHours: { least: 2, most: 12 }, patrolsPerDay: 6, patrolSample: 5, reportPrice: 25, reportsPerDay: 3, judgmentsPerDay: 60, filingLinesPerDay: 60, appealPrice: 50, tailHours: 24, cap: { punishments: 3, days: 7 }, filingCron: '*/5 * * * *', filingGraceMinutes: 10 },
+  warnBar: { size: 10, bands: { minor: 2, moderate: 4, severe: 7 }, decay: { unit: 'day', count: 14 }, banDays: [1, 3, 7] },
   boardNameMaxLength: 60,
   moveExpiryMostDays: 42,
   demandCheckMinutes: 5,
@@ -536,6 +537,14 @@ test('the new settings are checked like the others', () => {
   }
   assert.match(bad('modelTiers', { strong: 'a' }), /modelTiers/);
   assert.match(bad('modelTiers', { strong: 'a', light: '' }), /modelTiers/);
+  // The warn bar: a band above the bar's size is a problem, as is an empty ladder, a ladder step below one day and a decay that is no span.
+  const wb = settings.warnBar;
+  assert.match(bad('warnBar', { ...wb, bands: { ...wb.bands, severe: wb.size + 1 } }), /warnBar.*bands\.severe/);
+  assert.match(bad('warnBar', { ...wb, size: 0 }), /warnBar.*size/);
+  assert.match(bad('warnBar', { ...wb, banDays: [] }), /warnBar.*banDays/);
+  assert.match(bad('warnBar', { ...wb, banDays: [1, 0] }), /warnBar.*banDays/);
+  assert.match(bad('warnBar', { ...wb, decay: { unit: 'year', count: 1 } }), /warnBar.*decay/);
+  assert.deepEqual(settingsProblems({ ...settings, warnBar: { ...wb, bands: { ...wb.bands, severe: wb.size }, decay: { unit: 'minute', count: 1 } } }), [], 'a band may fill the bar, and a decay may be minutes');
   assert.deepEqual(settingsProblems({ ...settings, microEventDailyCalls: 0, rosterRecentExcluded: 0, inheritanceGraceDays: 0 }), [], 'zero is allowed where it means none');
 });
 

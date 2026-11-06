@@ -102,7 +102,7 @@ begin
 
   -- The answer's names hold an id, a name and the flag, nothing else.
   if exists (select 1 from jsonb_array_elements(box -> 'names') e
-             where (select array_agg(k order by k) from jsonb_object_keys(e) k) is distinct from array['id', 'name', 'staff']) then
-    raise exception 'a name holds id, name and staff: %', box;
+             where (select array_agg(k order by k) from jsonb_object_keys(e) k) is distinct from array['banned_until', 'id', 'name', 'staff']) then
+    raise exception 'a name holds id, name, staff and banned_until: %', box;
   end if;
 end $$;
