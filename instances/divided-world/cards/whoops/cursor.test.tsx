@@ -257,14 +257,14 @@ describe('drawing', () => {
     runFrame(t += 16);
     expect(drips.width).toBe(innerWidth);
     expect(drips.height).toBe(innerHeight);
-    fns.drawImage.mockImplementationOnce(() => { throw new Error('draw failed'); });
+    fns.drawImage!.mockImplementationOnce(() => { throw new Error('draw failed'); });
     const log = vi.spyOn(console, 'error').mockImplementation(() => {});
     runFrame(t += 16);
     expect(log).toHaveBeenCalledOnce();
     expect(pending.size).toBe(1);
-    const before = fns.drawImage.mock.calls.length;
+    const before = fns.drawImage!.mock.calls.length;
     runFrame(t += 16);
-    expect(fns.drawImage.mock.calls.length).toBeGreaterThan(before);
+    expect(fns.drawImage!.mock.calls.length).toBeGreaterThan(before);
   });
 });
 
