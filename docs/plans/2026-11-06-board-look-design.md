@@ -149,7 +149,34 @@ Decided with the owner ("Agreed with your recommendations on 1 and 2"):
 
 **Batch 2 approved by the owner** ("Looking good, approved"), after the nits above.
 
+## 4. Batch 3: a profile and its record
+
+Drawn on main (354dbc4)'s `engine/ui/profile/Profile.tsx` and `Record.tsx` in Silver: `08-profile` (Spritey, with a
+title, a settled standing, a revealed class and a signature) and `09-record`, light and dark at 1440 by 1000, and
+`10-phone`.
+
+- **The profile's facts are a table of labels and values**: Title, Rank, Aura this season, Place, Posts, Threads spun,
+  Cards played, Joined, Class, each a row with its label (a row header) in the third gray, right-aligned and bold. Today
+  they run on three lines joined by middots, and the 1:2 avatar leaves most of the card empty beside them. Every fact's
+  wording and link is kept; the character's own title line gains the label "Title", a draft for the owner.
+- **The signature closes the card** under a short rule.
+- **The profile's record has its band and its heads in one table**, five rows, then See the full record at its right.
+- **The record's kind filter is a row of small Chrome buttons**, the current one pressed in, where today it is a row of
+  bare links with the current one bold.
+- **On the phone** the profile leads with the avatar beside the rank and title, then the facts as a two-column table and
+  the signature; a record row's date stacks above it (today the When column breaks every date in two), and the six
+  kinds fit one row.
+
+## 5. The batches, corrected
+
+Round one's batch list named "the standings" as a board page. It is not one any more: `/standings` moves to the glass's
+Rankings (`web/src/App.tsx`, `MovedToRankings`; the two-worlds design's section 7), and the season's public standings
+are read on The System's reveal and tally posts. So batches 4 and 5 are one: **The System on the board**, its reveal and
+tally posts (`engine/ui/reveal/Reveal.tsx`), the move notice (`engine/ui/board/MoveNotice.tsx`) and its profile
+(`engine/ui/profile/Staff.tsx`). Then the errors and Unavailable, then the theme picker.
+
 ## Open
 
 - Fan Site's name, now that it salutes one board's blue.
 - The legend's words.
+- Batch 3's approval, and the profile's "Title" label.

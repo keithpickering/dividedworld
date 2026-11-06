@@ -243,6 +243,28 @@ td.foot { padding: 6px 10px !important; }
 /* nine formatting buttons in one row at 390: each sized to its word */
 .phone .tools { gap: 3px; }
 .phone .tools .b.sm { min-width: 0; padding: 4px 5px; letter-spacing: 0.02em; }
+/* ---------- batch 3: a profile and its record ---------- */
+table.about td.avacell { width: 152px; vertical-align: top; padding: 14px 16px; }
+.bigava { width: 120px; height: 240px; border: 1px solid var(--kb-fg); background: var(--kb-mini-bg); display: grid; place-items: center; font: bold 40px "Courier New", monospace; }
+.about .k { width: 190px; font-family: Verdana, Geneva, sans-serif; letter-spacing: 0; text-shadow: none; padding: 8px 10px; background: var(--kb-row-3) !important; font-size: 13.75px; font-weight: bold; text-align: right; color: var(--kb-fg); vertical-align: middle; }
+.about td.v { vertical-align: middle; }
+.about .rankline { display: inline-flex; align-items: center; gap: 10px; }
+.about .rankline .pips { margin: 0; }
+.sig { font-size: 13.75px; }
+.sig hr { border: 0; border-top: 1px solid var(--kb-grid); width: 120px; margin: 0 0 8px; }
+table.record td.when { width: 170px; font-size: 13.75px; font-variant-numeric: tabular-nums; }
+.seeall { display: flex; justify-content: flex-end; font-size: 13.75px; margin: -6px 0 14px; }
+.kinds { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 8px; }
+.kinds a.b { text-decoration: none; }
+.phone .kinds { gap: 3px; }
+.phone .kinds .b.sm { padding: 4px 5px; letter-spacing: 0.02em; }
+.kinds .b.sm[aria-current] { box-shadow: inset 1px 2px 3px rgb(0 0 0 / 0.45); filter: brightness(0.9); }
+.kindnote { font-size: 13.75px; color: var(--kb-muted); margin: 0 0 10px; }
+.phone .bigava { width: 76px; height: 152px; font-size: 28px; }
+.phone table.about td.avacell { width: 96px; padding: 8px; }
+.phone .about th.k { display: table-cell; width: 112px; text-align: left; padding: 6px 8px; font-size: 12.5px; }
+.phone .about td.v { padding: 6px 8px; font-size: 13.75px; }
+.phone .when-above { display: block; font-size: 12.5px; color: var(--kb-muted); margin-bottom: 2px; }
 `;
 
 /* ---------- content ---------- */
@@ -496,3 +518,85 @@ fs.writeFileSync(path.join(here, '07-phone.html'), page({
   body: `<style>${PHONE_CSS_DARK}</style><div style="display:flex;gap:24px">${withHud(phoneScreen(THREAD_PHONE, 'light'), 'Pipewrench')}${withHud(phoneScrolled(REPLY_PHONE, 'light'), 'Pipewrench')}${phoneScreen(NEW_PHONE, 'light')}${withHud(phoneScreen(THREAD_PHONE, 'dark'), 'Pipewrench')}</div>`,
 }));
 console.log('wrote the batch 2 boards');
+
+/* ================= batch 3: a profile and its record ================= */
+/* Spritey's profile, as engine/ui/profile/Profile.tsx draws one that has revealed its class, and its full record (Record.tsx). */
+const FACTS = [
+  ['Title', 'Level editor guy'],
+  ['Rank', `<span class="rankline"><b>Main Eventer</b>${pips(4)}</span>`],
+  ['Aura this season', '<b>1.85</b> <span class="muted">(settled Oct 30, 8:17 AM)</span>'],
+  ['Place', '1 of 3 in season 1 · <a href="#">season standings</a>'],
+  ['Posts', '13'], ['Threads spun', '2'], ['Cards played', '4'], ['Joined', 'Oct 2026'],
+  ['Class', 'Revealed: Face (Oct 20)'],
+];
+const SIG = '<div class="sig"><hr><i>posting in pencil since 2003</i></div>';
+const RECORD = [
+  ['Oct 29, 2026', 'Posted: Third time this week. I wrote four whole paragraphs…'],
+  ['Oct 28, 2026', 'Played Whoops!: “for the changelog”'],
+  ['Oct 27, 2026', 'Spun a thread: who keeps splatting my posts'],
+  ['Oct 26, 2026', 'Posted: Who keeps reacting with a thumbs up?'],
+  ['Oct 22, 2026', 'Played Stick Around'],
+  ['Oct 20, 2026', 'Revealed: Face'],
+  ['Oct 19, 2026', 'Posted: Post 168 of the long thread. Still going.'],
+  ['Oct 18, 2026', 'Spun a thread: The long one'],
+  ['Oct 18, 2026', 'Posted: Post 165 of the long thread. Still going.'],
+  ['Oct 17, 2026', 'Played Whoops!'],
+  ['Oct 16, 2026', 'Posted: Post 162 of the long thread. Still going.'],
+  ['Oct 15, 2026', 'Posted: Post 159 of the long thread. Still going.'],
+];
+const recordTable = (rows, phone) => `<table class="t record"><caption class="vh">Public record, newest first</caption>
+    ${phone ? '' : '<thead><tr><th scope="col">When</th><th scope="col">What</th></tr></thead>'}
+    <tbody>${rows.map(([w, t]) => phone
+      ? `<tr><td><span class="when-above">${w.replace(', 2026', '')}</span><a href="#">${t}</a></td></tr>`
+      : `<tr><td class="when">${w}</td><td><a href="#">${t}</a></td></tr>`).join('')}</tbody></table>`;
+const PROFILE_DESK = `
+  <p class="crumb"><a href="#">Index</a> › Spritey</p>
+  <h1 class="title">Spritey</h1>
+  <table class="t about"><caption class="vh">About Spritey</caption>
+    <thead><tr><th scope="col" colspan="3">About Spritey</th></tr></thead>
+    <tbody>
+      ${FACTS.map(([k, v], i) => `<tr>${i === 0 ? `<td class="avacell" rowspan="${FACTS.length + 1}"><div class="bigava">S</div></td>` : ''}<th scope="row" class="k">${k}</th><td class="v">${v}</td></tr>`).join('')}
+      <tr><td class="v" colspan="2">${SIG}</td></tr>
+    </tbody></table>
+  ${recordTable(RECORD.slice(0, 5), false).replace('Public record, newest first', 'Latest rows of the public record, newest first').replace('<thead>', '<thead><tr><td class="bar" colspan="2"><h2 class="barh">Public record</h2></td></tr>')}
+  <p class="seeall"><a href="#">See the full record</a></p>`;
+const KINDS = ['All', 'Posts', 'Spins', 'Cards', 'Class statements', 'Seasons'];
+const RECORD_DESK = `
+  <p class="crumb"><a href="#">Index</a> › <a href="#">Spritey</a> › Public record</p>
+  <h1 class="title">Spritey’s public record</h1>
+  <nav class="kinds" aria-label="Kind of row">${KINDS.map((k, i) => `<a class="b sm" href="#"${i === 0 ? ' aria-current="true"' : ''}>${k}</a>`).join('')}</nav>
+  <p class="kindnote">Its Acts with its reveals, announced Turns and season reveal posts, newest first.</p>
+  ${recordTable(RECORD, false)}
+  <div class="below"><nav class="pager" aria-label="Pages of the record"><span class="where">Page 1 of 3</span><span class="here" aria-current="page">1</span><a href="#">2</a><a href="#">3</a><a href="#">Next page</a></nav></div>`;
+const PROFILE_PHONE = `
+  <p class="crumb"><a href="#">Index</a> › Spritey</p>
+  <h1 class="title">Spritey</h1>
+  <table class="t about"><caption class="vh">About Spritey</caption>
+    <tbody>
+      <tr><td class="avacell"><div class="bigava">S</div></td><td><b>Main Eventer</b><br>${pips(4)}<div class="muted small">Level editor guy</div></td></tr>
+    </tbody></table>
+  <table class="t about"><tbody>
+    ${FACTS.slice(2).map(([k, v]) => `<tr><th scope="row" class="k">${k}</th><td class="v">${v}</td></tr>`).join('')}
+    <tr><td class="v" colspan="2">${SIG}</td></tr>
+  </tbody></table>`;
+const RECORD_PHONE = `
+  <p class="crumb"><a href="#">Index</a> › <a href="#">Spritey</a> › Public record</p>
+  <h1 class="title">Spritey’s public record</h1>
+  <nav class="kinds" aria-label="Kind of row">${KINDS.map((k, i) => `<a class="b sm" href="#"${i === 0 ? ' aria-current="true"' : ''}>${k}</a>`).join('')}</nav>
+  ${recordTable(RECORD.slice(0, 8), true)}`;
+const batch3 = [
+  ['08-profile.html', 'A profile, Silver light', 'light', desk(PROFILE_DESK)],
+  ['08-profile-dark.html', 'A profile, Silver dark', 'dark', desk(PROFILE_DESK)],
+  ['09-record.html', 'A public record, Silver light', 'light', desk(RECORD_DESK)],
+  ['09-record-dark.html', 'A public record, Silver dark', 'dark', desk(RECORD_DESK)],
+];
+for (const [file, title, mode, body] of batch3) {
+  fs.writeFileSync(path.join(here, file), page({ title, mode, width: 1440, height: 1000, body,
+    comment: `A board of the board look design session (docs/plans/2026-11-06-board-look-design.md), batch 3, 1440 by 1000, written by gen.mjs.` }));
+}
+fs.writeFileSync(path.join(here, '10-phone.html'), page({
+  title: 'A profile and its record on the phone, Silver', mode: 'light', width: 4 * 390 + 3 * 24, height: 844,
+  comment: 'A board of the board look design session, batch 3: four phone screens at 390 by 844, the profile and its record in light, then in dark, 24px apart. Written by gen.mjs.',
+  body: `<style>${PHONE_CSS_DARK}</style><div style="display:flex;gap:24px">${phoneScreen(PROFILE_PHONE, 'light')}${phoneScreen(RECORD_PHONE, 'light')}${phoneScreen(PROFILE_PHONE, 'dark')}${phoneScreen(RECORD_PHONE, 'dark')}</div>`,
+}));
+console.log('wrote the batch 3 boards');
