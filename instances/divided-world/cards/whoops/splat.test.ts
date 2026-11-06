@@ -102,7 +102,8 @@ test('rounded joins: from the core out through an arm\'s first bead the field ne
   for (const box of [WIDE, TALL]) {
     for (const seed of [1, 2, 3, 99]) {
       const s = makeSplat(seed);
-      const core = s.balls[0]!, bead = s.balls[22]!; // the core, six inner and fifteen ring balls, then the first arm's first bead
+      // makeSplat builds 1 core + 6 inner + 15 ring balls = 22, so index 22 is the first arm's first bead
+      const core = s.balls[0]!, bead = s.balls[22]!;
       const ax = core.x / DESIGN.w * box.w, ay = core.y * box.h, bx = bead.x / DESIGN.w * box.w, by = bead.y * box.h;
       for (let t = 0; t <= 1; t += 0.02) {
         const v = fieldAt(s, box, (ax + (bx - ax) * t) / box.w, (ay + (by - ay) * t) / box.h);
@@ -112,18 +113,29 @@ test('rounded joins: from the core out through an arm\'s first bead the field ne
   }
 });
 
-test('fieldGrid agrees with fieldAt, and a tall box costs well under 250ms', () => {
-  const s = makeSplat(7), box = { w: 40, h: 50 };
-  const g = fieldGrid(s, box, 1);
-  assert.equal(g.length, 40 * 50);
-  for (const [i, j] of [[3, 4], [20, 25], [39, 49], [10, 40]] as const) {
-    assert.ok(Math.abs(g[j * 40 + i]! - fieldAt(s, box, (i + 0.5) / 40, (j + 0.5) / 50)) < 1e-5);
+test('fieldGrid agrees with fieldAt at every pixel center, on a non-integer box at density 2', () => {
+  const s = makeSplat(7), box = { w: 37.5, h: 41.3 }, density = 2;
+  const g = fieldGrid(s, box, density);
+  const gw = Math.ceil(box.w * density), gh = Math.ceil(box.h * density);
+  assert.equal(g.length, gw * gh);
+  let inked = 0;
+  for (let j = 0; j < gh; j++) {
+    for (let i = 0; i < gw; i++) {
+      const want = fieldAt(s, box, (i + 0.5) / density / box.w, (j + 0.5) / density / box.h);
+      if (want > 0) inked++;
+      assert.ok(Math.abs(g[j * gw + i]! - want) < 1e-5, `pixel ${i},${j}: ${g[j * gw + i]} against ${want}`);
+    }
   }
-  const t0 = performance.now();
-  const big = fieldGrid(makeSplat(7), TALL, 1);
-  const ms = performance.now() - t0;
+  assert.ok(inked > gw * gh * 0.2, `${inked} inked pixels, so the comparison has something to compare`);
+});
+
+test('fieldGrid cost follows the balls\' reach: the inner loop visits under 20% of balls times pixels on a tall box', () => {
+  const s = makeSplat(7), work = { visits: 0 };
+  const big = fieldGrid(s, TALL, 1, work);
   assert.equal(big.length, 390 * 1200);
-  assert.ok(ms < 250, `${ms.toFixed(0)}ms`);
+  const all = s.balls.length * big.length;
+  assert.ok(work.visits > 0);
+  assert.ok(work.visits < all * 0.2, `${work.visits} visits of ${all} (${(100 * work.visits / all).toFixed(1)}%)`);
 });
 
 test('luminance is the WCAG relative luminance of the primaries', () => {

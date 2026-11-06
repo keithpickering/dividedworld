@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { stickAround } from './stick-around.ts';
 import { STROKES, whoops } from './whoops.ts';
+import { NAMED_COLORS } from '../../../engine/bbcode/parse.ts';
 import { cards } from './index.ts';
 import { instance } from '../index.ts';
 import { basePrice, staffConfigOf, decidePlay, decideSet, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
@@ -115,9 +116,18 @@ test('Whoops! strokes wash or ink, in shares of the post body\'s box: across 0 t
     assert.match(String(!r.ok && r.why), why, label);
   };
   assert.equal(whoops.validateState!({ strokes: [{ ...ink, points: [[1, 1]] }] }).ok, true, 'down to 1');
-  refused({ ...ink, points: [[0.5, 1.2]] }, /down/, 'a down of 1.2');
-  refused({ ...ink, points: [[1.01, 0.5]] }, /across/, 'an across of 1.01');
-  refused({ ...ink, points: [[-0.01, 0.5]] }, /across/, 'a negative across');
+  const axis = (point: number[], named: 'across' | 'down', other: 'across' | 'down', label: string) => {
+    const r = whoops.validateState!({ strokes: [{ ...ink, points: [point] }] });
+    assert.equal(r.ok, false, label);
+    const why = String(!r.ok && r.why);
+    assert.match(why, new RegExp(`a point is ${named} from`), label);
+    assert.doesNotMatch(why, new RegExp(other), `${label}: names only the axis that failed`);
+  };
+  axis([0.5, 1.2], 'down', 'across', 'a down of 1.2');
+  axis([1.2, 0.5], 'across', 'down', 'an across of 1.2');
+  axis([1.01, 0.5], 'across', 'down', 'an across of 1.01');
+  axis([-0.01, 0.5], 'across', 'down', 'a negative across');
+  axis([0.5, -0.01], 'down', 'across', 'a negative down');
   refused({ ...ink, aspect: undefined }, /aspect/, 'a missing aspect');
   refused({ ...ink, aspect: 0 }, /aspect/, 'an aspect of 0');
   refused({ ...ink, aspect: 5000 }, /aspect/, 'an aspect of 5000');
@@ -135,11 +145,13 @@ test('Whoops! strokes wash or ink, in shares of the post body\'s box: across 0 t
 });
 
 test('the most strokes Whoops! saves fit the database\'s bound, as Postgres writes them', () => {
-  // Every stroke at its longest, every point at its longest, until the total runs out.
-  const point = [0.123456789, 0.987654321];
-  const strokes = [];
-  let left = STROKES.totalPoints;
-  while (left > 0) { const n = Math.min(STROKES.points, left); strokes.push({ tool: 'ink', color: '#abcdef', width: 0.99994321, aspect: 0.00123456, points: Array(n).fill(point) }); left -= n; }
+  // The true worst case: the most strokes, each with an equal share of the total points, and every key of every stroke at its longest:
+  // the longest named color, four-decimal points and width, a three-figure aspect with the most digits.
+  const longest = [...NAMED_COLORS].reduce((a, b) => (b.length > a.length ? b : a));
+  const point = [0.12345678, 0.98765432];
+  const each = STROKES.totalPoints / STROKES.most;
+  assert.ok(Number.isInteger(each) && each <= STROKES.points);
+  const strokes = Array.from({ length: STROKES.most }, () => ({ tool: 'ink', color: longest, width: 0.99994321, aspect: 0.00123456, points: Array(each).fill(point) }));
   const saved = whoops.validateState!({ strokes, clean: false });
   assert.equal(saved.ok, true);
   // jsonb's text puts a space after every comma and colon.

@@ -74,9 +74,9 @@ export const whoops: CardRules<{ color: string }> = {
       total += points.length;
       if (total > STROKES.totalPoints) return refuse(`at most ${STROKES.totalPoints} points in all`);
       for (const p of points) {
-        if (!Array.isArray(p) || p.length !== 2 || !p.every((n) => typeof n === 'number' && Number.isFinite(n)) || !(p[0] >= 0 && p[0] <= 1 && p[1] >= 0 && p[1] <= STROKES.deepest)) {
-          return refuse(`a point is across from 0 to 1 and down from 0 to ${STROKES.deepest}, in shares of the box`);
-        }
+        if (!Array.isArray(p) || p.length !== 2 || !p.every((n) => typeof n === 'number' && Number.isFinite(n))) return refuse('a point is two numbers, across then down');
+        if (!(p[0] >= 0 && p[0] <= 1)) return refuse('a point is across from 0 to 1, in shares of the box');
+        if (!(p[1] >= 0 && p[1] <= STROKES.deepest)) return refuse(`a point is down from 0 to ${STROKES.deepest}, in shares of the box`);
       }
       const kept = (points as [number, number][]).map(([x, y]): [number, number] => [tenThousandth(x), tenThousandth(y)]);
       const w = tenThousandth(width);

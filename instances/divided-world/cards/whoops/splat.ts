@@ -109,8 +109,13 @@ export function covers(splat: Splat, box: Box, u: number, v: number): boolean {
 /**
  * The field over ceil(w * density) by ceil(h * density) pixels, row by row, sampled at pixel centers. Each ball
  * touches only the pixels within its reach, so the cost is the ink's area and not the balls times the box.
+ *
+ * Grid pixel i across is the share (i + 0.5) / density / box.w of the box, and pixel j down the share
+ * (j + 0.5) / density / box.h: the same point `fieldAt` is asked for. The grid accumulates in Float32, so a pixel
+ * can differ from `fieldAt` (and so from `covers`) by about 1e-7, which matters only exactly at THRESHOLD.
+ * `work`, for tests, counts the pixels the inner loop visits, so a test can see that cost follows reach.
  */
-export function fieldGrid(splat: Splat, box: Box, density: number): Float32Array {
+export function fieldGrid(splat: Splat, box: Box, density: number, work?: { visits: number }): Float32Array {
   const gw = Math.ceil(box.w * density), gh = Math.ceil(box.h * density);
   const out = new Float32Array(gw * gh);
   const unit = unitPx(box);
@@ -123,6 +128,7 @@ export function fieldGrid(splat: Splat, box: Box, density: number): Float32Array
     for (let y = y0; y <= y1; y++) {
       const dy = y + 0.5 - by, row = y * gw;
       for (let x = x0; x <= x1; x++) {
+        if (work) work.visits++;
         const dx = x + 0.5 - bx, d2 = dx * dx + dy * dy;
         if (d2 < R2) { const k = 1 - d2 / R2; out[row + x]! += k * k * k; }
       }
