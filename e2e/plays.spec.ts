@@ -301,6 +301,8 @@ test.describe('glass in the 2003 board, reduced motion', () => {
     await expectGlassFaces(page, 'kb-ghost-mark');
     await openWhoopsLens(page);
     const f = await faces(page);
+    /* The tiles are the Lens's rows' own, drawn once the plays it lists have landed. */
+    await expect(page.locator('.kb-lens .kb-kit-tile').first()).toBeVisible();
     const tiles = await page.locator('.kb-lens .kb-kit-tile').evaluateAll((els) => els.map((el) => ({ text: (el.textContent ?? '').trim(), family: getComputedStyle(el).fontFamily })));
     expect(tiles.length).toBeGreaterThan(0);
     for (const t of tiles) {
