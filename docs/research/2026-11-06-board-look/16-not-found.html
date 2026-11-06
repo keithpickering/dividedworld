@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>The page cannot be found, Silver light</title>
+<title>Information: not found, Silver light</title>
 <!-- A board of the board look design session (docs/plans/2026-11-06-board-look-design.md), batch 5, 1440 by 1000, written by gen.mjs. -->
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:wght@600;700&family=Silkscreen&display=swap">
 <style>
@@ -340,7 +340,7 @@ table.modlog td.end { width: 220px; font-size: 13.75px; color: var(--kb-muted); 
 .phone .notice-wrap { margin-top: 30px; }
 /* ---------- batch 5: the errors ---------- */
 /* Not found is the forum answering, in its own skin: a period "Information" box. */
-table.info h1.barh { font: inherit; margin: 0; }
+table.info h1.missing { font: bold 15px/1.45 Verdana, Geneva, sans-serif; margin: 0 0 10px; }
 table.info td.msg { padding: 14px 16px; }
 table.info td.msg p { margin: 0 0 10px; }
 table.info td.msg ul { margin: 0 0 4px; padding-left: 1.3em; }
@@ -374,13 +374,13 @@ body { width: 1440px; height: 1000px; }
     <div class="host">dw.gripe <span class="meter"></span></div>
   </header>
   <nav class="nav" aria-label="Boards"><a href="#"><svg class="ic" aria-hidden="true" width="16" height="14" viewBox="0 0 16 14"><path class="s" d="M1.5,7.5 L8,1.5 L14.5,7.5 M3.5,6.5 V12.5 H12.5 V6.5 M7,12.5 V9.5 H9 V12.5"/></svg>Index</a><a href="#"><svg class="ic" aria-hidden="true" width="16" height="14" viewBox="0 0 16 14"><path class="s" d="M1.5,2.5 H14.5 V12.5 H1.5 Z M4,5.5 H12 M4,7.5 H12 M4,9.5 H9"/></svg>General</a><a href="#"><svg class="ic" aria-hidden="true" width="16" height="14" viewBox="0 0 16 14"><path class="s" d="M1.5,2.5 H14.5 V12.5 H1.5 Z M4,5.5 H12 M4,7.5 H12 M4,9.5 H9"/></svg>Staff Announcements</a></nav>
-  <table class="t info"><caption class="vh">The page cannot be found</caption>
-    <thead><tr><td class="bar"><h1 class="barh">The page cannot be found</h1></td></tr></thead>
+  <table class="t info"><caption class="vh">Information</caption>
+    <thead><tr><td class="bar">Information</td></tr></thead>
     <tbody>
-      <tr><td class="msg"><p>The page you are looking for might have been removed, had its name changed, or never existed.</p>
-        <p>Please try the following:</p>
-        <ul><li>If you typed the page address, make sure that it is spelled correctly.</li><li>Open the <a href="#">index</a>, and then look for links to the page you want.</li><li>Click your browser’s Back button to try another link.</li></ul></td></tr>
-      <tr><td class="addr">Page not found: /t/00000000-0000-4000-8000-00000000dead</td></tr>
+      <tr><td class="msg"><h1 class="missing">The thread you requested does not exist.</h1>
+        <p>If you followed a link here, it may be mistyped or out of date.</p>
+        <p><a href="#">Click here to return to the index</a></p></td></tr>
+      <tr><td class="addr">Address: /t/00000000-0000-4000-8000-00000000dead</td></tr>
     </tbody></table>
   <footer class="foot">Powered by KayfaBB
     <div class="badges" aria-hidden="true"><span class="b80"><span>Game</span><span>On</span></span><span class="b80"><span>Masks</span><span>On</span></span><span class="b80"><span>Kilter</span><span>Off</span></span></div>

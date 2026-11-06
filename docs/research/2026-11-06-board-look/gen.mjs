@@ -314,7 +314,7 @@ table.modlog td.end { width: 220px; font-size: 13.75px; color: var(--kb-muted); 
 .phone .notice-wrap { margin-top: 30px; }
 /* ---------- batch 5: the errors ---------- */
 /* Not found is the forum answering, in its own skin: a period "Information" box. */
-table.info h1.barh { font: inherit; margin: 0; }
+table.info h1.missing { font: bold 15px/1.45 Verdana, Geneva, sans-serif; margin: 0 0 10px; }
 table.info td.msg { padding: 14px 16px; }
 table.info td.msg p { margin: 0 0 10px; }
 table.info td.msg ul { margin: 0 0 4px; padding-left: 1.3em; }
@@ -845,14 +845,17 @@ fs.writeFileSync(path.join(here, '15-phone.html'), page({
 console.log('wrote the batch 4 boards');
 
 /* ================= batch 5: the errors (engine/ui/frame/Unavailable.tsx), their words as built ================= */
+/* Not found speaks as a 2003 board's Information box did, naming what was asked for (the owner: the copy should be "more 'classic forum
+   404' as well to align with the appearance"). It never says a thing was removed: nothing on the board is (Append-only). */
+const MISSING = { t: 'The thread you requested does not exist.', b: 'The board you requested does not exist.', c: 'The character you requested does not exist.' };
 const NOTFOUND = (addr) => `
-  <table class="t info"><caption class="vh">The page cannot be found</caption>
-    <thead><tr><td class="bar"><h1 class="barh">The page cannot be found</h1></td></tr></thead>
+  <table class="t info"><caption class="vh">Information</caption>
+    <thead><tr><td class="bar">Information</td></tr></thead>
     <tbody>
-      <tr><td class="msg"><p>The page you are looking for might have been removed, had its name changed, or never existed.</p>
-        <p>Please try the following:</p>
-        <ul><li>If you typed the page address, make sure that it is spelled correctly.</li><li>Open the <a href="#">index</a>, and then look for links to the page you want.</li><li>Click your browser’s Back button to try another link.</li></ul></td></tr>
-      <tr><td class="addr">Page not found: ${addr}</td></tr>
+      <tr><td class="msg"><h1 class="missing">${MISSING[addr.split('/')[1]] ?? 'There is no page at this address.'}</h1>
+        <p>If you followed a link here, it may be mistyped or out of date.</p>
+        <p><a href="#">Click here to return to the index</a></p></td></tr>
+      <tr><td class="addr">Address: ${addr}</td></tr>
     </tbody></table>`;
 const CANNOT = (addr) => `
   <div class="ie" role="group" aria-labelledby="ie-h"><div class="glyph" aria-hidden="true"></div><div>
@@ -861,7 +864,7 @@ const CANNOT = (addr) => `
     <p>Please try the following:</p>
     <ul><li>Click <button type="button">Try again</button>, or try again in a moment.</li><li>Check that your connection is working.</li><li>Go <a href="#">back to the index</a>.</li><li>Click your browser’s Back button to return to the page you were on.</li></ul>
     <p class="foot2">Cannot load ${addr}</p></div></div>`;
-for (const [file, title, content] of [['16-not-found', 'The page cannot be found, Silver', NOTFOUND('/t/00000000-0000-4000-8000-00000000dead')], ['17-cannot-display', 'The page cannot be displayed, Silver', CANNOT('dw.gripe/t/3f2a9c1e')]]) {
+for (const [file, title, content] of [['16-not-found', 'Information: not found, Silver', NOTFOUND('/t/00000000-0000-4000-8000-00000000dead')], ['17-cannot-display', 'The page cannot be displayed, Silver', CANNOT('dw.gripe/t/3f2a9c1e')]]) {
   for (const mode of ['light', 'dark']) {
     fs.writeFileSync(path.join(here, `${file}${mode === 'dark' ? '-dark' : ''}.html`), page({ title: `${title} ${mode}`, mode, width: 1440, height: 1000, body: desk(content),
       comment: `A board of the board look design session (docs/plans/2026-11-06-board-look-design.md), batch 5, 1440 by 1000, written by gen.mjs.` }));

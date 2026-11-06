@@ -284,17 +284,23 @@ tally hold today.
 Drawn on main (354dbc4)'s `engine/ui/frame/Unavailable.tsx` in Silver: `16-not-found` and `17-cannot-display`, light and
 dark at 1440 by 1000, and `18-phone`. Their words are kept as built (plain, saying what happened and how out).
 
-- **The page cannot be found is the forum answering, in its own skin**: a period "Information" box, the heading on the
-  light band, the same words and the same three ways out, the address in a foot cell of the third gray. Today it draws
-  the same Internet Explorer pastiche as a failed load, though a missing thread, board or profile, or a mistyped
-  address, is the forum saying there is nothing there.
+- **Not found is the forum answering, in its own skin and its own words**: a period "Information" box, the light band
+  reading "Information", then the message naming what was asked for, as the period's software did ("The topic or post
+  you requested does not exist"): "The thread you requested does not exist.", "The board you requested does not
+  exist.", "The character you requested does not exist.", or "There is no page at this address." for any other
+  address (the message is the page's `h1`). Then "If you followed a link here, it may be mistyped or out of date." and
+  "Click here to return to the index", the whole sentence the link so its purpose reads alone; the address ("Address:
+  …") in a foot cell of the third gray. The owner: "if we're getting rid of the IE joke for the regular 404 though, the
+  copy should change to be more 'classic forum 404' as well to align with the appearance." Today it draws the same
+  Internet Explorer pastiche as a failed load, and says the page "might have been removed", which nothing on the board
+  ever is (Append-only). The wording is a draft for the owner's review with the plan.
 - **The page cannot be displayed keeps the pastiche**, the browser failing: a plain sheet inside the frame, the glyph,
   the heading over a rule, Try again, the address. It takes no Silver, since it is not the forum's page. In dark mode the
-  sheet is charcoal, not white, so a dark-mode reader gets no white flash (a draft for the owner: white, as IE was, is
-  the alternative). On the phone its glyph sits above the heading.
+  sheet is charcoal, not white, so a dark-mode reader gets no white flash. On the phone its glyph sits above the heading.
+
+**Batch 5 approved by the owner** ("This works"), with the not-found copy above.
 
 ## Open
 
 - Fan Site's name, now that it salutes one board's blue.
 - The legend's words.
-- Batch 5's approval, and the browser page's color in dark mode.
