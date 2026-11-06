@@ -6,7 +6,7 @@
  * thread of twenty Feelin' Fab posts (a whole page, #41 to #60), mixed levels, to scroll and watch for dropped frames.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Frame } from '../../../../engine/ui/frame/Frame.tsx';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
 import type { Fake } from '../../../../engine/ui/data/fake.ts';
@@ -26,6 +26,8 @@ function Fabbed({ level, mode, reduced, many = false }: Args) {
   const { api } = useKayfa();
   /* The thread the moment opens on (`/t/<thread>`). */
   const thread = /^\/t\/([^/]+)/u.exec(useLocation().path)?.[1] ?? null;
+  /* The thread is drawn once the plays are seeded: its page is read once, so a play seeded after the read, and before the page listens, is never drawn. */
+  const [seeded, setSeeded] = useState<string | null>(null);
   useEffect(() => {
     const root = document.documentElement;
     root.setAttribute('data-kb-mode', mode);
@@ -34,6 +36,7 @@ function Fabbed({ level, mode, reduced, many = false }: Args) {
   }, [mode, reduced]);
   useEffect(() => {
     if (thread === null) return;
+    let live = true;
     void (async () => {
       const [[target], [caster]] = await Promise.all([api.acts(thread, 41, 41), api.acts(thread, 42, 42)]);
       if (!target || !caster?.character) return;
@@ -47,12 +50,14 @@ function Fabbed({ level, mode, reduced, many = false }: Args) {
           const from = post.character === caster.character ? target.character! : caster.character!;
           for (let layer = 1; layer <= (i % 3) + 1; layer += 1) fake.seed.card(from, post.id, 'feelin-fab', { layer, live: true, config: {}, message: `Fab ${layer}` });
         });
-        return;
+      } else {
+        for (let layer = 1; layer <= level; layer += 1) (api as Fake).seed.card(caster.character, target.id, 'feelin-fab', { layer, live: true, config: {}, message: `Fab ${layer}` });
       }
-      for (let layer = 1; layer <= level; layer += 1) (api as Fake).seed.card(caster.character, target.id, 'feelin-fab', { layer, live: true, config: {}, message: `Fab ${layer}` });
+      if (live) setSeeded(thread);
     })();
+    return () => { live = false; };
   }, [api, thread, level, many]);
-  return <Frame>{thread ? <LoadedThread thread={thread} /> : <div aria-busy="true" />}</Frame>;
+  return <Frame>{thread && seeded === thread ? <LoadedThread thread={thread} /> : <div aria-busy="true" />}</Frame>;
 }
 
 const meta: Meta<typeof Fabbed> = {
