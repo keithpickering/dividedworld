@@ -100,10 +100,12 @@ const finished: World = (fake, instance) => {
 /** Season 1's final table, opened on the player's Mrs. Hooligan: the row is found by its name, as the story cannot know the id its world gives it. */
 function FinishedStory() {
   const { api } = useKayfa();
-  const [character, setCharacter] = useState<Id | null>(null);
+  const [character, setCharacter] = useState<Id | null | 'missing'>(null);
   useEffect(() => {
-    void api.resultsPage(1, 1).then((rows) => setCharacter(rows.find((r) => r.name === 'Mrs. Hooligan')?.character ?? null));
+    void api.resultsPage(1, 1).then((rows) => setCharacter(rows.find((r) => r.name === 'Mrs. Hooligan')?.character ?? 'missing'));
   }, [api]);
+  // A world whose first page holds no Mrs. Hooligan says so, never a table quietly drawn with no row highlighted.
+  if (character === 'missing') return <Page surface="rankings"><p role="alert">Season 1's first page of final standings has no Mrs. Hooligan.</p></Page>;
   return <Page surface="rankings">{character ? <RankingsScreen season={1} character={character} /> : <div aria-busy="true" />}</Page>;
 }
 

@@ -11,22 +11,28 @@ import { useKayfa } from '../context.tsx';
 import { LoadedThread } from '../loaded.tsx';
 import type { World } from '../story.tsx';
 
-const TITLE = 'Season 2: Promos';
+const SEASON = 2;
 const T0 = Date.UTC(2026, 10, 2, 8, 17);
 const MIN = 60_000;
 
-/** The thread of this title on The System's board: a story cannot know the id its world gives it. */
+/**
+ * The season's Promos thread on The System's board, by the title the instance's copy gives it: a story cannot know the id its world gives it.
+ * A world that made no such thread says so on the page, never a page left loading.
+ */
 function PromosThread() {
-  const { api } = useKayfa();
-  const [id, setId] = useState<string | null>(null);
+  const { api, instance } = useKayfa();
+  const [id, setId] = useState<string | null | 'missing'>(null);
   useEffect(() => {
+    const title = instance.copy.announcementsThreadTitle.replace('{season}', String(SEASON));
     void (async () => {
       for (const board of await api.boards()) {
-        const found = (await api.threads(board.id, { offset: 0, limit: 200 })).threads.find((t) => t.title === TITLE);
+        const found = (await api.threads(board.id, { offset: 0, limit: 200 })).threads.find((t) => t.title === title);
         if (found) { setId(found.id); return; }
       }
+      setId('missing');
     })();
-  }, [api]);
+  }, [api, instance]);
+  if (id === 'missing') return <p role="alert">The story's world has no thread titled for Season {SEASON}'s Promos.</p>;
   return id ? <LoadedThread thread={id} /> : <div aria-busy="true" />;
 }
 
