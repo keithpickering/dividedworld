@@ -18,6 +18,7 @@
  */
 import { useMemo, useRef, useState, type CSSProperties } from 'react';
 import { ratio, type Mode, type Tokens } from '../../../../engine/ui/contrast.ts';
+import { POST_INK } from '../../../../engine/ui/shine/band.ts';
 import { useMotionReduced } from '../../../../engine/ui/appearance.ts';
 import type { EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { seeded } from '../seeded.ts';
@@ -47,9 +48,6 @@ const PALETTE: Readonly<Record<string, string>> = Object.freeze(
     ...FAB_STOPS.dark.map((c, i) => [`--dw-fab-dark-${i + 1}`, c]),
   ]),
 );
-
-/** The tokens that color text inside a post: its words, links, visited links, and muted words such as a quote's byline. */
-const POST_INK = ['--kb-fg', '--kb-link', '--kb-link-visited', '--kb-muted'] as const;
 
 /** Every stop and twinkle that fails 4.5:1 against any text color inside a post on its board, in words; none when all hold. */
 export function stopsAreReadable(
