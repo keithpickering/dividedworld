@@ -18,7 +18,7 @@ const CSS = `
 .mock-tag { display:inline-block; margin-left:6px; padding:1px 8px; transform:skewX(-12deg); background:#120a24; color:#ffd23d;
   border:2px solid #ffd23d; font:600 13px/1.4 "Barlow Condensed", sans-serif; letter-spacing:.04em; text-transform:uppercase; text-decoration:none; }
 .mock-tag > span { display:inline-block; transform:skewX(12deg); }
-.mock-choices { display:flex; flex-direction:column; gap:8px; margin-top:8px; } .mock-choices .kb-kit-tile { width:100%; justify-content:flex-start; display:flex; } .mock-tight { margin-bottom:2px !important; } .mock-tight + .mock-q { margin-top:0; }
+.mock-choices { display:flex; flex-direction:column; gap:8px; margin-top:8px; } .mock-choices .kb-kit-tile { width:100%; justify-content:center; display:flex; text-align:center; } .mock-tight { margin-bottom:2px !important; } .mock-tight + .mock-q { margin-top:0; }
 .mock-q { font-size: 1.05em; margin: 4px 0 2px; }
 .mock-field { width:100%; min-height:70px; background:#0b0716; color:#fff; border:2px solid #8a7bb8; padding:8px; font:15px Verdana, sans-serif; }
 `;

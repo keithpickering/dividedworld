@@ -221,15 +221,16 @@ Mocks in `docs/research/2026-11-06-mod-bots/`, shot from the built Lens story wi
 (`shoot.cjs` writes them). The owner approved the direction, with three changes that the mocks now carry: "style the
 warning meter like a thermometer, simple vector with a red fill, very era-appropriate"; "make the quiz answers full-width
 block buttons since they're each on their own row anyway"; and the spacing under "Talk it down" matching the heading
-above it.
+above it. Approved then, with the answers' text centered (the owner: "Let's center the text of the full-width buttons. Other
+than that approved").
 
 - **A visit is a mark** (`01-on-a-visit.png`). It sits on the post's date bar with the Marks' glass tile, in the visit's
   yellow, with a stopwatch icon and the time left ("2:41"), or "Filed" once it files. It is a meta act like a card play
   (the meta acts design), so it needs no stamp of its own.
 - **The Lens opens on the visit.** One tab, "On a visit" or "Filed":
   - its plain state (who is visiting, the charge and band, what lands on whom and when);
-  - "Talk it down", with the challenge: the quiz's answers as full-width block buttons, the bribe's price, or a word
-    that a thread-reach card is a distraction;
+  - "Talk it down", with the challenge: the quiz's answers as full-width block buttons with centered text, the bribe's
+    price, or a word that a thread-reach card is a distraction;
   - "How it went": the report, the verdict, each attempt and the filing, as Lens rows, each with React and Spin thread.
 - **Filed, as the author sees it** (`02-filed-author.png`). The board's notice ("This post was found in violation of Rule
   2: No double posting.") is a plain bordered italic line at the top of the post, in the board's world. The Lens shows
