@@ -1,7 +1,7 @@
 /**
  * Glitter Bomb's effect on the flakes (docs/plans/2026-11-06-shine-plan.md, Task 10; the design's sections 2, 3, 5, 6 and 8): the
- * character's posts glitter while the card is up. Two canvases go around the words, the settled and loose flakes under them and the
- * burst over them, neither taking the pointer; the burst fires once per mount, the first time the post is 40% in view, and never
+ * character's posts glitter while the card is up. Three canvases go around the words: under them the settled flakes unlit, painted
+ * only when what they depend on changes, and over that what the light changes; over the words the burst; none takes the pointer; the burst fires once per mount, the first time the post is 40% in view, and never
  * under reduced motion or `still`; the flakes are seeded from public ids only; a post out of view gives its flakes back and builds
  * them again, landed, when it returns. The flakes themselves are the engine's (their tests are there); here the engine's functions
  * are spies over the real ones, so what the Effect hands them and when is what is read.
@@ -64,6 +64,7 @@ const props = (still = false): EffectProps => ({
 });
 const box = () => document.querySelector('[data-kb-glitter]') as HTMLElement;
 const under = () => box().querySelector('canvas.dw-glitter-under') as HTMLCanvasElement;
+const flash = () => box().querySelector('canvas.dw-glitter-flash') as HTMLCanvasElement;
 const over = () => box().querySelector('canvas.dw-glitter-over') as HTMLCanvasElement;
 
 let queue = new Map<number, FrameRequestCallback>();
@@ -130,23 +131,24 @@ afterEach(() => {
 const lastFlakes = () => makeFlakes.mock.results.at(-1)!.value as flakesModule.Flakes;
 
 describe('Glitter Bomb', () => {
-  test('the layout: the under canvas below the words and the over canvas above them, hidden from assistive tech, neither taking the pointer', () => {
+  test('the layout: the base and the lit canvas below the words and the over canvas above them, hidden from assistive tech, none taking the pointer', () => {
     render(<GlitterBombEffect {...props()} />);
     expect(box().querySelector('[data-kb-words]')).toHaveTextContent('Hello there.');
-    for (const c of [under(), over()]) expect(c).toHaveAttribute('aria-hidden', 'true');
+    for (const c of [under(), flash(), over()]) expect(c).toHaveAttribute('aria-hidden', 'true');
     const css = read('glitter.css').replace(/\/\*[\s\S]*?\*\//gu, '');
     /* Every block whose selector list names the class, together. */
     const rule = (selector: string) => [...css.matchAll(/([^{}]+)\{([^}]*)\}/gu)].filter(([, sel]) => sel!.split(',').some((x) => x.trim() === selector)).map(([, , body]) => body).join(';');
     const z = (selector: string) => Number(/z-index:\s*(-?\d+)/u.exec(rule(selector))?.[1]);
-    for (const s of ['.dw-glitter-under', '.dw-glitter-over']) {
+    for (const s of ['.dw-glitter-under', '.dw-glitter-flash', '.dw-glitter-over']) {
       expect(rule(s), s).toMatch(/pointer-events:\s*none/u);
       expect(rule(s), s).toMatch(/position:\s*absolute/u);
     }
     expect(z('.dw-glitter-under')).toBeLessThan(z('.dw-glitter-words'));
+    expect(z('.dw-glitter-flash')).toBeLessThan(z('.dw-glitter-words'));
     expect(z('.dw-glitter-words')).toBeLessThan(z('.dw-glitter-over'));
     /* The same order in the document, and the old layer and its alpha are gone. */
     const order = [...box().children].map((el) => el.className);
-    expect(order).toEqual(['dw-glitter-under', 'dw-glitter-words', 'dw-glitter-over']);
+    expect(order).toEqual(['dw-glitter-under', 'dw-glitter-flash', 'dw-glitter-words', 'dw-glitter-over']);
     expect(box().querySelector('.dw-glint, .dw-glitter-sparkle')).toBeNull();
     expect(css).not.toMatch(/twinkle|opacity/u);
   });
@@ -292,6 +294,26 @@ describe('Glitter Bomb', () => {
 });
 
 describe('Glitter Bomb holds its band and frees its canvases', () => {
+  test('the base is painted when the board, the size or the settled count changes, never for a light that only moved; the lit layer every draw', async () => {
+    const real = await vi.importActual<typeof import('../../../../engine/ui/shine/flakes.ts')>('../../../../engine/ui/shine/flakes.ts');
+    const based: ReturnType<typeof vi.fn>[] = [], lit: ReturnType<typeof vi.fn>[] = [];
+    makeFlakes.mockImplementation((o) => { const f = real.makeFlakes(o); based.push(vi.spyOn(f, 'drawBase')); lit.push(vi.spyOn(f, 'drawLit')); return f; });
+    render(<GlitterBombEffect {...props()} />);
+    see(1); frames(200);
+    expect(lastFlakes().flying, 'the burst has landed').toBe(0);
+    const b = based.at(-1)!, l = lit.at(-1)!;
+    const bases = b.mock.calls.length, lits = l.mock.calls.length;
+    expect(bases).toBeGreaterThanOrEqual(1);
+    /* The shimmer moves the light on every second frame. */
+    frames(20, 4000);
+    expect(l.mock.calls.length).toBeGreaterThanOrEqual(lits + 8);
+    expect(b, 'a moving light paints no base').toHaveBeenCalledTimes(bases);
+    vi.mocked(bandFor).mockImplementation(() => (document.documentElement.getAttribute('data-kb-mode') === 'dark' ? { lo: 0, hi: 0.048 } : { lo: 0.59, hi: 1 }));
+    await act(async () => { document.documentElement.setAttribute('data-kb-mode', 'dark'); await Promise.resolve(); });
+    frames(2, 5000);
+    expect(b, 'a board change paints the base again').toHaveBeenCalledTimes(bases + 1);
+  });
+
   const boardChange = (mode: string) => act(async () => { document.documentElement.setAttribute('data-kb-mode', mode); await Promise.resolve(); });
 
   test('the band is read in setup and when the board changes, never per draw', async () => {
@@ -331,8 +353,10 @@ describe('Glitter Bomb holds its band and frees its canvases', () => {
     size = { w: 300.4, h: 119.6 };
     vi.stubGlobal('devicePixelRatio', 1.5);
     render(<GlitterBombEffect {...props()} />);
-    expect(under().width).toBe(Math.round(300.4 * 1.5));
-    expect(under().height).toBe(Math.round(119.6 * 1.5));
+    for (const c of [under(), flash()]) {
+      expect(c.width).toBe(Math.round(300.4 * 1.5));
+      expect(c.height).toBe(Math.round(119.6 * 1.5));
+    }
     see(1); frames(2);
     expect(makeFlakes.mock.calls[0]![0].box).toEqual({ w: 300.4, h: 119.6 });
   });
@@ -357,17 +381,17 @@ describe('Glitter Bomb holds its band and frees its canvases', () => {
     expect(under().width).toBe(300);
   });
 
-  test('out of view both backing stores are freed, and the return sizes the under canvas again (the over one only if a burst runs)', () => {
+  test('out of view every backing store is freed, and the return sizes the canvases under the words again (the over one only if a burst runs)', () => {
     render(<GlitterBombEffect {...props()} />);
     see(1); frames(3);
     expect(under().width).toBe(300);
+    expect(flash().width).toBe(300);
     expect(over().width).toBe(300);
     see(0);
-    for (const c of [under(), over()]) { expect(c.width).toBe(0); expect(c.height).toBe(0); }
+    for (const c of [under(), flash(), over()]) { expect(c.width).toBe(0); expect(c.height).toBe(0); }
     frames(4, 100);
     see(1); frames(3, 1000);
-    expect(under().width).toBe(300);
-    expect(under().height).toBe(120);
+    for (const c of [under(), flash()]) { expect(c.width).toBe(300); expect(c.height).toBe(120); }
     expect(over().width).toBe(0);
   });
 
@@ -378,15 +402,16 @@ describe('Glitter Bomb holds its band and frees its canvases', () => {
     size = { w: 200, h: 80 };
     act(() => resizes[0]!.cb());
     expect(under().width).toBe(0);
+    expect(flash().width).toBe(0);
     see(1); frames(3, 1000);
-    expect(under().width).toBe(200);
-    expect(under().height).toBe(80);
+    for (const c of [under(), flash()]) { expect(c.width).toBe(200); expect(c.height).toBe(80); }
   });
 
   test('a resize repaints the under canvas at once with the held light and band, before any frame', async () => {
     const real = await vi.importActual<typeof import('../../../../engine/ui/shine/flakes.ts')>('../../../../engine/ui/shine/flakes.ts');
     const drawn: ReturnType<typeof vi.fn>[] = [];
-    makeFlakes.mockImplementation((o) => { const f = real.makeFlakes(o); drawn.push(vi.spyOn(f, 'draw')); return f; });
+    const based: ReturnType<typeof vi.fn>[] = [];
+    makeFlakes.mockImplementation((o) => { const f = real.makeFlakes(o); drawn.push(vi.spyOn(f, 'drawLit')); based.push(vi.spyOn(f, 'drawBase')); return f; });
     render(<GlitterBombEffect {...props()} />);
     see(1); frames(3);
     const lastLight = drawn[0]!.mock.calls.at(-1)![1];
@@ -399,7 +424,9 @@ describe('Glitter Bomb holds its band and frees its canvases', () => {
     const call = drawn[1]!.mock.calls.at(-1)!;
     expect(call[1]).toEqual(lastLight);
     expect(call[2]).toEqual({ lo: 0.59, hi: 1 });
+    expect(based[1]!).toHaveBeenCalledTimes(1);
     expect(under().width).toBe(200);
+    expect(flash().width).toBe(200);
     expect(vi.mocked(bandFor).mock.calls.length).toBe(reads + 1);
   });
 

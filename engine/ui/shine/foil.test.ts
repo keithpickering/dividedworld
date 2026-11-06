@@ -200,7 +200,9 @@ function fakeCanvas(calls: Call[], name: string, w = 0, h = 0, getNull = false):
     beginPath: () => {}, ellipse: () => {}, fill: () => {}, translate: () => {}, rotate: () => {},
     save: () => calls.push([`${name}.save`]), restore: () => calls.push([`${name}.restore`]),
   };
-  return { name, width: w, height: h, getContext: () => (getNull ? null : ctx) } as unknown as Fake;
+  const canvas = { name, width: w, height: h, getContext: () => (getNull ? null : ctx) } as unknown as Fake;
+  Object.assign(ctx, { canvas });
+  return canvas;
 }
 
 describe('draw, against a fake context', () => {
@@ -208,22 +210,32 @@ describe('draw, against a fake context', () => {
     const calls: Call[] = [];
     const made: Fake[] = [];
     const foil = makeFoil({ seed: 's', pattern: 'prism', palette: PALETTES[mode], stars: 8, glint: GLINT, createCanvas: (w, h) => { const c = fakeCanvas(calls, `c${made.length}`, w, h); made.push(c); return c; } });
-    const ctx = fakeCanvas(calls, 'ctx').getContext('2d') as unknown as CanvasRenderingContext2D;
+    const ctx = fakeCanvas(calls, 'ctx', 600, 240).getContext('2d') as unknown as CanvasRenderingContext2D;
     foil.draw(ctx, { w: 300, h: 120 }, 2, light, bands[mode], now, idle);
     return { calls, foil, ctx, made };
   }
   const names = (c: Call[]) => c.map((x) => x[0]);
 
-  test('puts the grid, draws it scaled to the box at the density, then the starbursts on top', () => {
-    const { calls } = run('light', 0, false);
+  test('puts the grid, draws it scaled over every device pixel of the canvas with bilinear smoothing and no clear, then the starbursts on top at the density', () => {
+    const calls: Call[] = [];
+    const smoothing: string[] = [];
+    const foil = makeFoil({ seed: 's', pattern: 'prism', palette: PALETTES.light, stars: 8, glint: GLINT, createCanvas: (w, h) => fakeCanvas(calls, 'c', w, h) });
+    const ctx = fakeCanvas(calls, 'ctx', 600, 240).getContext('2d') as unknown as CanvasRenderingContext2D;
+    const draw = ctx.drawImage.bind(ctx);
+    (ctx as unknown as { drawImage: (...a: unknown[]) => void }).drawImage = (...a: unknown[]) => { smoothing.push(`${ctx.imageSmoothingEnabled}:${ctx.imageSmoothingQuality}`); draw(...(a as Parameters<typeof draw>)); };
+    foil.draw(ctx, { w: 300, h: 120 }, 2, REST, bands.light, 0, false);
     const n = names(calls);
     assert.ok(n.some((x) => x.endsWith('putImageData')));
-    const grid = calls.find((c) => c[0] === 'ctx.drawImage' && c[4] === 300 && c[5] === 120);
-    assert.ok(grid, 'the grid is drawn scaled to 300 x 120 CSS px');
-    assert.ok(calls.some((c) => c[0] === 'ctx.setTransform' && c[1] === 2 && c[4] === 2), 'at the density');
-    const stars = calls.filter((c) => c[0] === 'ctx.drawImage' && c !== grid);
+    const at = calls.findIndex((c) => c[0] === 'ctx.drawImage');
+    assert.deepEqual(calls[at]!.slice(2), [0, 0, 100, 40, 0, 0, 600, 240], 'the whole grid over the whole 600 x 240 canvas');
+    assert.ok(calls.slice(0, at).some((c) => c[0] === 'ctx.setTransform' && c[1] === 1 && c[4] === 1), 'in device px');
+    /* A 'high' smoothing of a post-sized canvas every frame, and a clear before it, cost a slow machine a frame in two (foil.ts). */
+    assert.equal(smoothing[0], 'true:low', 'bilinear');
+    assert.ok(!n.includes('ctx.clearRect'), 'the opaque grid covers the canvas: no clear');
+    assert.ok(calls.slice(at).some((c) => c[0] === 'ctx.setTransform' && c[1] === 2 && c[4] === 2), 'the starbursts at the density');
+    const stars = calls.filter((c, i) => c[0] === 'ctx.drawImage' && i !== at);
     assert.ok(stars.length > 0 && stars.length <= 8);
-    assert.ok(calls.indexOf(stars[0]!) > calls.indexOf(grid!), 'stars come after');
+    assert.ok(calls.indexOf(stars[0]!) > at, 'stars come after');
   });
 
   test('the starburst sprite is built from the glint it is handed', () => {

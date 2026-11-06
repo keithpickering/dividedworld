@@ -1,6 +1,7 @@
 /*
- * Glitter Bomb (Effect.tsx): two canvases go around the words. The one under them holds the settled and loose flakes, the one over
- * them holds the burst while it flies; both fill the post, take no pointer and no room, so the post reads and lays out as it would
+ * Glitter Bomb (Effect.tsx): three canvases go around the words. Under them, one holds the settled flakes unlit and the one over it
+ * what the light changes (the lit flakes, the flares and the loose glitter); over the words, one holds the burst while it flies. All
+ * fill the post, take no pointer and no room, so the post reads and lays out as it would
  * bare. The canvases are sized in whole device pixels by Effect.tsx (the box times the loop's density); their CSS size is the
  * post's, here. They hold no color: the flakes' inks are in Effect.tsx and every pixel is held in the board's readable band by the
  * engine. The words keep a text shadow in the board's ground.
@@ -10,6 +11,7 @@
   isolation: isolate;
 }
 .dw-glitter-under,
+.dw-glitter-flash,
 .dw-glitter-over {
   position: absolute;
   top: 0;
@@ -18,7 +20,8 @@
   height: 100%;
   pointer-events: none;
 }
-.dw-glitter-under {
+.dw-glitter-under,
+.dw-glitter-flash {
   z-index: 0;
 }
 .dw-glitter-words {

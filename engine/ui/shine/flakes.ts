@@ -92,6 +92,18 @@ export interface Flakes {
    * the draw sets the transform per flake and leaves it at that scale, which is the host's base transform.
    */
   draw(ctx: CanvasRenderingContext2D, light: Light, band: Band, now: number, idle: boolean, density?: number): void;
+  /**
+   * The settled flakes split in two layers that together paint what `draw` paints. `drawBase` paints every settled flake unlit,
+   * which no light changes: the host paints it once per board, size and settled count (`baseKey`) on a canvas it leaves alone
+   * between those. `drawLit` paints over it only what the light changes now: the flakes whose color differs from their unlit
+   * one, every flake under a flare (so the flare adds to it, as it does in one pass), and the flares, on a canvas the host clears
+   * each frame, and that layer clears only the squares it drew last time. A post of 4,200 flakes paints a quarter of them at most
+   * in a frame (0 to 23% over flakes.test.ts's scenes), and what the browser re-rasters each frame of a scroll is that sparse layer.
+   */
+  drawBase(ctx: CanvasRenderingContext2D, band: Band, density?: number): void;
+  drawLit(ctx: CanvasRenderingContext2D, light: Light, band: Band, now: number, idle: boolean, density?: number): void;
+  /** What `drawBase` paints depends on: the band and the settled count. Equal keys paint the same base. */
+  baseKey(band: Band): string;
 }
 
 interface Inner extends Flakes {
@@ -104,6 +116,10 @@ interface Inner extends Flakes {
   last: number | null;
   star: CanvasImageSource | null | undefined;
   rng: () => number;
+  /** The base layer's colors, one a settled flake, for the band and settled count in `key`; and where each flake sits, by bucket. */
+  base: { key: string; names: string[]; start: Int32Array; items: Int32Array; cols: number; rows: number } | null;
+  /** What `drawLit` left on its canvas: the context and size, and the square each flake it drew covers (device px, x0 y0 x1 y1). */
+  shown: { ctx: CanvasRenderingContext2D; w: number; h: number; rects: Float64Array; n: number } | null;
 }
 
 /** Flakes in the air across the page, so a page of bursting posts stays bounded. */
@@ -182,11 +198,19 @@ export function makeFlakes(opts: FlakesOptions): Flakes {
   const self: Inner = {
     box: opts.box, palette: pal, origin, total: all.length,
     settled: all.slice(0, keep), rest: all.slice(keep),
-    fired: false, flying: 0, parts: [], puff: null, last: null, star: opts.star, rng: seededRng(`${opts.seed}:burst`),
-    draw: (ctx, light, band, now, idle, density = 1) => drawList(ctx, self.settled, light, band, now, idle, self.star === undefined ? (self.star = starSprite(pal)) : self.star, density),
+    fired: false, flying: 0, parts: [], puff: null, last: null, star: opts.star, rng: seededRng(`${opts.seed}:burst`), base: null, shown: null,
+    draw: (ctx, light, band, now, idle, density = 1) => drawList(ctx, self.settled, light, band, now, idle, starOf(self), density),
+    baseKey: (band) => `${band.lo}:${band.hi}:${self.settled.length}`,
+    drawBase: (ctx, band, density = 1) => {
+      baseOf(self, band);
+      drawList(ctx, self.settled, REST_LIGHT, band, 0, false, null, density, null, true);
+    },
+    drawLit: (ctx, light, band, now, idle, density = 1) => drawLit(self, ctx, light, band, now, idle, density),
   };
   return self;
 }
+
+const starOf = (f: Inner): CanvasImageSource | null => (f.star === undefined ? (f.star = starSprite(f.palette)) : f.star);
 
 /* ---------------------------------------------------------------- color ---- */
 
@@ -252,15 +276,18 @@ const flareAt: number[] = [];
 const flareA: number[] = [];
 
 /**
- * Paints a list of flakes. One `setTransform` places each (no save/restore), the fill is set once per color (flakes are drawn
+ * Paints a list of flakes (or the `pick` of it; `unlit`, all of it at no light, which is the base layer). One `setTransform` places each (no save/restore), the fill is set once per color (flakes are drawn
  * a color at a time, in list order within a color: overlapping flakes of different colors may stack differently than in list
  * order, which a glitter does not show), and the flares reuse the lit flakes found while coloring. Leaves the transform at the
  * density scale.
  */
 function drawList(
-  ctx: CanvasRenderingContext2D, list: readonly Flake[], light: Light, band: Band, now: number, idle: boolean,
-  star: CanvasImageSource | null, density = 1,
+  ctx: CanvasRenderingContext2D, all: readonly Flake[], light: Light, band: Band, now: number, idle: boolean,
+  star: CanvasImageSource | null, density = 1, pick: { readonly idx: Int32Array; readonly n: number; readonly a?: Float64Array; readonly name?: string[] } | null = null, unlit = false,
 ): void {
+  /* `pick` draws only those of `all`, in its order, with each one's litness and color when its caller has them already; `unlit`
+     draws every flake at no light (the base layer: no flare). */
+  const list: readonly Flake[] = pick ? picked(all, pick) : all;
   const n = list.length;
   if (!n) return;
   const { x: lx, y: ly } = light;
@@ -268,8 +295,9 @@ function drawList(
   colorIds.clear(); colorNames.length = 0; flareAt.length = 0; flareA.length = 0;
   for (let i = 0; i < n; i++) {
     const f = list[i]!;
-    const a = litness(f, lx, ly, now, idle);
-    const name = flakeColour(f, a, band, lx, ly);
+    const known = pick?.name?.[i];
+    const a = unlit ? 0 : known !== undefined ? pick!.a![i]! : litness(f, lx, ly, now, idle);
+    const name = known ?? flakeColour(f, a, band, lx, ly);
     let id = colorIds.get(name);
     if (id === undefined) { id = colorNames.length; colorIds.set(name, id); colorNames.push(name); }
     colorOf[i] = id;
@@ -304,6 +332,122 @@ function drawList(
     ctx.globalAlpha = alpha; ctx.drawImage(star, f.x - z / 2, f.y - z / 2, z, z);
   }
   ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+}
+
+/** The picked flakes as a list, in a buffer reused from draw to draw. */
+const pickedList: Flake[] = [];
+function picked(all: readonly Flake[], pick: { readonly idx: Int32Array; readonly n: number }): Flake[] {
+  pickedList.length = pick.n;
+  for (let j = 0; j < pick.n; j++) pickedList[j] = all[pick.idx[j]!]!;
+  return pickedList;
+}
+
+/** The light the base layer is colored at: `drawList` with `unlit` reads it only for a holographic hue, which an unlit flake never throws. */
+const REST_LIGHT: Light = { x: 0, y: 0 };
+/**
+ * A flake whose litness is under this is taken to show its unlit color without computing it: 1e-5 of the way from unlit to lit
+ * moves a channel by under 1e-5 in linear light (a step of eight bits is 3e-4 at its finest), so its eight bits change only where
+ * the unlit value sits that close to a rounding edge. Above it, a flake is lit when
+ * its color differs from its unlit one; flakes.test.ts holds the two layers to one pass's colors, flake by flake.
+ */
+const LIT_MIN = 1e-5;
+/** Litness under LIT_MIN at the sharpness `litness` uses: (dx^2 + dy^2) past this. */
+const UNLIT_D2 = -0.03 * Math.log(LIT_MIN);
+/** The flare's square is 7 + 4s px for a flake of size s, at most 3.4: a flake within half of that plus its own reach is under it. */
+const FLARE_REACH = (7 + 3.4 * 4) / 2 + 3.4;
+const BUCKET = 16;
+
+/** The base layer's colors and buckets for this band and settled count, made when either changed. */
+function baseOf(f: Inner, band: Band): NonNullable<Inner['base']> {
+  const key = f.baseKey(band);
+  if (f.base?.key === key) return f.base;
+  const list = f.settled, n = list.length;
+  const names = new Array<string>(n);
+  for (let i = 0; i < n; i++) names[i] = flakeColour(list[i]!, 0, band, 0, 0);
+  /* Buckets of BUCKET px: a counting sort of the flakes by the bucket their center is in. */
+  const cols = Math.max(1, Math.ceil(f.box.w / BUCKET)), rows = Math.max(1, Math.ceil(f.box.h / BUCKET));
+  const cell = (fl: Flake) => Math.min(rows - 1, Math.max(0, (fl.y / BUCKET) | 0)) * cols + Math.min(cols - 1, Math.max(0, (fl.x / BUCKET) | 0));
+  const start = new Int32Array(cols * rows + 1), items = new Int32Array(n);
+  for (let i = 0; i < n; i++) start[cell(list[i]!) + 1]!++;
+  for (let c = 0; c < cols * rows; c++) start[c + 1]! += start[c]!;
+  const fill = start.slice(0, cols * rows);
+  for (let i = 0; i < n; i++) items[fill[cell(list[i]!)]!++] = i;
+  f.base = { key, names, start, items, cols, rows };
+  return f.base;
+}
+
+/* drawLit's scratch: the flakes it picks, and the draw each was last picked in, so none is picked twice. */
+let litIdx = new Int32Array(0);
+let litMark = new Int32Array(0);
+let litStamp = 0;
+/* The litness and color of each flake picked, in pick order, so the draw does not work them out again. */
+let litA = new Float64Array(0);
+const litName: string[] = [];
+
+/** The layer over the base: the flakes the light changed, the flakes under a flare, and the flares (`Flakes.drawLit`). */
+function drawLit(f: Inner, ctx: CanvasRenderingContext2D, light: Light, band: Band, now: number, idle: boolean, density: number): void {
+  const list = f.settled, n = list.length;
+  const base = baseOf(f, band);
+  if (litIdx.length < n) { litIdx = new Int32Array(n); litMark = new Int32Array(n); litA = new Float64Array(n); litStamp = 0; }
+  if (++litStamp > 0x3fffffff) { litMark.fill(0); litStamp = 1; }
+  const { x: lx, y: ly } = light;
+  const flares = band.hi >= 1 && starOf(f) !== null;
+  let m = 0, lit = 0;
+  for (let i = 0; i < n; i++) {
+    const fl = list[i]!;
+    /* Far from the light and not winking: its unlit color, which the base already shows. */
+    if ((fl.nx - lx) ** 2 + (fl.ny - ly) ** 2 > UNLIT_D2 && !(idle && fl.tw)) continue;
+    const a = litness(fl, lx, ly, now, idle);
+    if (a < LIT_MIN) continue;
+    const name = flakeColour(fl, a, band, lx, ly);
+    if (name === base.names[i] && !(flares && a > 0.75)) continue;
+    litA[m] = a; litName[m] = name;
+    litIdx[m++] = i; litMark[i] = litStamp;
+  }
+  lit = m;
+  /* Every flake under a flare joins, so the flare is added to it as one pass adds it. */
+  if (flares) {
+    const { start, items, cols, rows } = base;
+    for (let j = 0; j < lit; j++) {
+      const fl = list[litIdx[j]!]!;
+      if (litA[j]! <= 0.75) continue;
+      const r = FLARE_REACH;
+      const c0 = Math.max(0, ((fl.x - r) / BUCKET) | 0), c1 = Math.min(cols - 1, ((fl.x + r) / BUCKET) | 0);
+      const r0 = Math.max(0, ((fl.y - r) / BUCKET) | 0), r1 = Math.min(rows - 1, ((fl.y + r) / BUCKET) | 0);
+      for (let row = r0; row <= r1; row++) {
+        for (let k = start[row * cols + c0]!, end = start[row * cols + c1 + 1]!; k < end; k++) {
+          const i = items[k]!;
+          if (litMark[i] === litStamp) continue;
+          const o = list[i]!;
+          if (Math.abs(o.x - fl.x) > r || Math.abs(o.y - fl.y) > r) continue;
+          /* Not lit, or lit by under LIT_MIN: its color is the base's, and it is only here for the flare over it. */
+          const oa = litness(o, lx, ly, now, idle);
+          litA[m] = oa; litName[m] = oa < LIT_MIN ? base.names[i]! : flakeColour(o, oa, band, lx, ly);
+          litIdx[m++] = i; litMark[i] = litStamp;
+        }
+      }
+    }
+  }
+  /* Clear what the last draw left, square by square (all of it when the canvas is new to this flakes object or was resized). */
+  const cw = ctx.canvas?.width ?? 0, ch = ctx.canvas?.height ?? 0;
+  let was = f.shown;
+  if (was && (was.ctx !== ctx || was.w !== cw || was.h !== ch)) was = null;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (!was) ctx.clearRect(0, 0, cw, ch);
+  else for (let k = 0; k < was.n; k++) { const q = k * 4; ctx.clearRect(was.rects[q]!, was.rects[q + 1]!, was.rects[q + 2]! - was.rects[q]!, was.rects[q + 3]! - was.rects[q + 1]!); }
+  const rects = was && was.rects.length >= m * 4 ? was.rects : new Float64Array(Math.max(m, 64) * 4);
+  for (let j = 0; j < m; j++) {
+    const fl = list[litIdx[j]!]!;
+    /* A flake's rect reaches 0.66 s from its center whatever its turn; a flare's square, 3.5 + 2 s; a pixel more for the smoothing. */
+    const r = (flares && litA[j]! > 0.75 ? 3.5 + 2 * fl.s : 0.66 * fl.s) + 1, q = j * 4;
+    rects[q] = Math.floor((fl.x - r) * density); rects[q + 1] = Math.floor((fl.y - r) * density);
+    rects[q + 2] = Math.ceil((fl.x + r) * density); rects[q + 3] = Math.ceil((fl.y + r) * density);
+  }
+  f.shown = { ctx, w: cw, h: ch, rects, n: m };
+  ctx.setTransform(density, 0, 0, density, 0, 0);
+  if (!m) return;
+  litName.length = m;
+  drawList(ctx, list, light, band, now, idle, starOf(f), density, { idx: litIdx, n: m, a: litA, name: litName });
 }
 
 /**

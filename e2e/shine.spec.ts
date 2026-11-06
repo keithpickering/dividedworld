@@ -17,7 +17,8 @@ import { expect, test, type Page } from '@playwright/test';
  * The frame gap sees the page, not the loop: a loop that costs 3 ms of a 16.7 ms frame passes it. So the loop's own time in each frame
  * (`probe.work`, around its step) is read too, and its 95th percentile bounded by `WORK_BUDGET`. And buffers out of view are released:
  * with the page scrolled to the bottom every shiny post fully out of view (beyond a margin) has canvases of width and height 0, and few
- * posts hold any. The story's poison `slow` (25 ms in one post's draw) and `keep` (one post ignores being freed) make those
+ * posts hold any. And what the canvases raster is counted (the story's `raster`, around the page's 2D contexts): a frame of the scroll
+ * rasters under `RASTER_SHARE` of the shiny posts in view, the check a fast machine's frame gap cannot make. The story's poison `slow` (25 ms in one post's draw) and `keep` (one post ignores being freed) make those
  * checks red; the `poisoned` tests below run them and expect the red.
  *
  * Draws and frames are the loop's own, handed over by the story as `window.__kbShine`.
@@ -33,6 +34,25 @@ const LAG = 2;
  * past it.
  */
 const WORK_BUDGET = 16;
+/**
+ * CPU throttling for a run that stands in for a slower machine than this one (`KB_CPU_THROTTLE=2`: Chrome's throttling of the page's
+ * main thread, which is how a busy scroll's cost the loop never sees was found); unset, none.
+ */
+const THROTTLE = Number(process.env.KB_CPU_THROTTLE ?? 1);
+/**
+ * What the canvases raster in a frame of the scroll, read by the story's counter around the page's 2D contexts. A fast machine's
+ * frame gap cannot see this cost and the loop's own time never does: a 2D canvas's draws are rastered when the frame is produced,
+ * outside the loop's step. At 37749ee every Feelin' Fab cleared its post-sized canvas and drew its grid scaled over it with 'high'
+ * smoothing, every frame, and every Glitter Bomb cleared its own and filled all 4,200 flakes: on a slow machine (the CI runner's
+ * software-drawn Chromium, or this one with its CPU throttled to half) the scroll lost a frame in two, with the loop's own time well
+ * inside its budget. Measured here, CPU throttled x2 against the same page held still (16.7 ms): the gap's 95th percentile was 33.4 ms
+ * in every run; a clear plus a bilinear draw, 33.3 in most; a bilinear draw alone, 16.8 in most; the 'high' draw alone, 33.4 in every
+ * run. So two checks: no pixel is scaled at 'high' smoothing in a frame (37749ee: a post-sized canvas a Feelin' Fab), and the pixels
+ * rastered a frame, as a share of the device-px area of the shiny posts in view, stay under `RASTER_SHARE` at the 95th percentile
+ * (37749ee: median 1.8, 95th percentile 2.1; now median 0.9, 95th percentile 1.1, the Feelin' Fabs' one opaque draw each and little
+ * else).
+ */
+const RASTER_SHARE = 1.5;
 /** Out of view "beyond a margin": a post this many px past the viewport's edge has freed its canvases. */
 const FREED_MARGIN = 300;
 
@@ -80,6 +100,7 @@ async function settle(page: Page): Promise<void> {
 
 async function open(page: Page, name: string, poison = ''): Promise<void> {
   await page.setViewportSize({ width: 1200, height: 900 });
+  if (THROTTLE > 1) await (await page.context().newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: THROTTLE });
   /* The app rewrites the address it is given, so the story's poison is handed over before the page loads, not in the query. */
   if (poison) await page.addInitScript((p) => { (window as { __kbPoison?: string }).__kbPoison = p; }, poison);
   await page.goto(STORY(name));
@@ -129,6 +150,29 @@ const measure = (r: { samples: Sample[]; work: number[] }) => {
 const GAP_BOUND = 20;
 /** A timed run holds when its gaps hold; a run holds the loop when its own time does. */
 const holds = (m: { gap: number; work: number }) => ({ gap: m.gap < GAP_BOUND, work: m.work < WORK_BUDGET });
+
+/** A scroll like `scrollRun`'s with the canvas count on: each frame's rastered pixels over the device-px area of the shiny posts in view, and those scaled at 'high'. */
+async function rasterRun(page: Page): Promise<{ share: number; high: number }[]> {
+  await page.evaluate(() => { window.scrollTo(0, 0); window.__kbShine!.raster.start(); });
+  await page.waitForTimeout(500);
+  const run = page.evaluate((ms) => new Promise<{ share: number; high: number }[]>((done) => {
+    const kb = window.__kbShine!, out: { share: number; high: number }[] = [], max = document.documentElement.scrollHeight - window.innerHeight;
+    let t0 = 0;
+    kb.raster.take();
+    const tick = (t: number) => {
+      t0 ||= t;
+      const area = kb.hosts().filter((h) => h.bottom > 0 && h.top < window.innerHeight).reduce((a, h) => a + h.area, 0);
+      const r = kb.raster.take();
+      if (area > 0) out.push({ share: r.px / area, high: r.high });
+      const p = Math.min(1, (t - t0) / ms);
+      window.scrollTo(0, p * max);
+      if (p < 1) requestAnimationFrame(tick); else { kb.raster.stop(); done(out); }
+    };
+    requestAnimationFrame(tick);
+  }), 3000);
+  for (let i = 0; i < 60; i += 1) { await page.mouse.move(100 + (i * 17) % 1000, 100 + (i * 41) % 700); await page.waitForTimeout(45); }
+  return run;
+}
 
 test.describe('the planted samples, red where they should be', () => {
   const frame = (draws: number[], top: number[], bottom = top.map((t) => t + 100)): Sample => ({ t: 0, draws, top, bottom, height: 900 });
@@ -215,6 +259,20 @@ test.describe('a busy thread', () => {
     console.log(`bottom: ${bottom.length} shiny posts, ${r.inView} in view, ${r.holding} holding canvas buffers, held out of view: [${r.held.join(', ')}]`);
     expect(r.held, 'no post far out of view holds a canvas').toEqual([]);
     expect(r.holding, 'few posts hold buffers').toBeLessThanOrEqual(r.inView + 2);
+  });
+
+  test('scrolled with a moving mouse, the page rasters only what the light changes: a small share of the shiny posts in view a frame', async ({ page }) => {
+    test.setTimeout(60_000);
+    await open(page, 'full');
+    await scrollRun(page);
+    const frames = await rasterRun(page);
+    const shares = frames.map((f) => f.share), high = frames.reduce((a, f) => a + f.high, 0);
+    const p95 = percentile(shares, 0.95);
+    console.log(`raster: ${frames.length} frames, share of the posts in view rastered a frame: median ${percentile(shares, 0.5).toFixed(2)}, p95 ${p95.toFixed(2)}, max ${Math.max(...shares).toFixed(2)} (bound ${RASTER_SHARE}); scaled at 'high': ${high} px in ${frames.filter((f) => f.high > 0).length} frames`);
+    expect(frames.length, 'the scroll was sampled across three seconds').toBeGreaterThan(60);
+    expect(percentile(shares, 0.5), 'the shine drew while the page scrolled').toBeGreaterThan(0);
+    expect(high, 'canvas pixels scaled at \'high\' smoothing quality during the scroll').toBe(0);
+    expect(p95, 'canvas pixels rastered a frame, over the shiny posts in view (95th percentile)').toBeLessThan(RASTER_SHARE);
   });
 
   test('poisoned: a draw that takes 25 ms turns the loop-time check and the frame-gap check red', async ({ page }) => {

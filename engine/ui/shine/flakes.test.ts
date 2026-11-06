@@ -84,6 +84,7 @@ function tracked(density = 1) {
       m = [m[0] * c + m[2] * s, m[1] * c + m[3] * s, -m[0] * s + m[2] * c, -m[1] * s + m[3] * c, m[4], m[5]];
     },
     setTransform: (...a: number[]) => { n.setTransform++; m = a as M; },
+    clearRect: () => {},
     fillRect: (x: number, y: number, w: number, h: number) => { n.fillRect++; lines.push(`rect ${style} ${[at(x, y), at(x + w, y), at(x + w, y + h), at(x, y + h)].join(' ')}`); },
     drawImage: (_i: unknown, x: number, y: number, w: number, h: number) => { n.drawImage++; lines.push(`img ${comp} ${r3(alpha)} ${at(x, y)} ${at(x + w, y + h)}`); },
     createRadialGradient: () => {
@@ -219,6 +220,113 @@ describe('flakes', () => {
     const s = shot();
     assert.ok(s.images >= 1, 'the flare scene has flares');
     assert.equal(s.digest, LOOK);
+  });
+
+  /**
+   * The two layers against one pass, for the scenes `shot()` draws and a sweep of lights on both boards: painting the base and then
+   * the lit layer over it leaves every flake showing the color one pass gives it (the last rect painted at each place wins), every
+   * flare where one pass puts it, and every flake under a flare repainted in the lit layer before the flare, so the flare is added
+   * to it there as one pass adds it. The lit layer is a small share of the flakes.
+   */
+  function layered(f: Flakes, light: { x: number; y: number }, band: { lo: number; hi: number }, now: number, idle: boolean) {
+    const one = tracked(2), base = tracked(2), lit = tracked(2);
+    f.draw(one.ctx, light, band, now, idle, 2);
+    f.drawBase(base.ctx, band, 2);
+    f.drawLit(lit.ctx, light, band, now, idle, 2);
+    const shows = (...layers: string[][]) => {
+      const at = new Map<string, string>();
+      for (const lines of layers) for (const l of lines) if (l.startsWith('rect ')) { const [, style, ...corners] = l.split(' '); at.set(corners.join(' '), style!); }
+      return at;
+    };
+    const flares = (lines: string[]) => lines.filter((l) => l.startsWith('img ')).sort();
+    return { one, base, lit, single: shows(one.lines), composite: shows(base.lines, lit.lines), flares: { one: flares(one.lines), lit: flares(lit.lines) } };
+  }
+  const LIGHTS = [{ x: -0.35, y: -0.45 }, { x: 0.3, y: 0.2 }, { x: 1.2, y: -0.9 }, { x: -1.4, y: 1.1 }, { x: 0, y: 0 }, { x: 0.71, y: 0.33 }];
+
+  test('the base and the lit layer over it paint what one pass paints: each flake in its color, each flare in its place', () => {
+    const f = makeFlakes({ seed: 'look', box: BOX, inks: GLITTER, holo: HOLO, density: 70, glint: GLINT, star: {} as CanvasImageSource });
+    landEverything(f);
+    const scenes: Array<[{ x: number; y: number }, { lo: number; hi: number }, number, boolean]> = [
+      ...SHOT.map(([, l, band, now]) => [l === 'lit' ? { x: f.settled[3]!.nx, y: f.settled[3]!.ny } : l, band, now, true] as [{ x: number; y: number }, { lo: number; hi: number }, number, boolean]),
+      ...LIGHTS.flatMap((l, k) => [[l, bands.light, k * 700, k % 2 === 0], [l, bands.dark, k * 700, k % 2 === 1], [l, { lo: 0.1, hi: 1 }, k * 300, true]] as Array<[{ x: number; y: number }, { lo: number; hi: number }, number, boolean]>),
+    ];
+    const shares: string[] = [];
+    for (const [light, band, now, idle] of scenes) {
+      const r = layered(f, light, band, now, idle);
+      assert.equal(r.composite.size, r.single.size, 'every flake is in the base');
+      let differ = 0;
+      for (const [k, v] of r.single) if (r.composite.get(k) !== v) differ++;
+      assert.equal(differ, 0, `${differ} flakes show another color than one pass gives them, at ${JSON.stringify(light)} on ${JSON.stringify(band)}`);
+      assert.deepEqual(r.flares.lit, r.flares.one, 'the flares are the lit layer\'s, the same as one pass\'s');
+      /* Under each flare's square, every flake is in the lit layer, so the flare is added to it on that canvas. */
+      const litAt = new Set(r.lit.lines.filter((l) => l.startsWith('rect ')).map((l) => l.split(' ').slice(2).join(' ')));
+      for (const fl of r.flares.lit) {
+        const [, , , p0, p1] = fl.split(' ');
+        const [x0, y0] = p0!.split(',').map(Number), [x1, y1] = p1!.split(',').map(Number);
+        for (const l of r.one.lines.filter((x) => x.startsWith('rect '))) {
+          const pts = l.split(' ').slice(2).map((p) => p.split(',').map(Number));
+          if (pts.some(([x, y]) => x! >= x0! && x! <= x1! && y! >= y0! && y! <= y1!)) assert.ok(litAt.has(l.split(' ').slice(2).join(' ')), `a flake under a flare is not repainted under it: ${l}`);
+        }
+      }
+      shares.push(`${(100 * r.lit.n.fillRect / f.settled.length).toFixed(1)}%`);
+      assert.ok(r.lit.n.fillRect < f.settled.length * 0.3, `the lit layer paints ${r.lit.n.fillRect} of ${f.settled.length} flakes`);
+    }
+    console.log(`lit layer share of the flakes, per scene: ${shares.join(' ')}`);
+  });
+
+  test('POISON: a lit layer that leaves out the flakes under a flare is caught; one that misses a lit flake is caught', () => {
+    const f = makeFlakes({ seed: 'look', box: BOX, inks: GLITTER, holo: HOLO, density: 70, glint: GLINT, star: {} as CanvasImageSource });
+    landEverything(f);
+    const light = { x: f.settled[3]!.nx, y: f.settled[3]!.ny }, band = { lo: 0.1, hi: 1 };
+    const r = layered(f, light, band, 5, true);
+    /* Drop the lit layer's rects that are not lit themselves (the ones there only for a flare): a flake under a flare goes missing. */
+    const own = new Map(r.single);
+    const flareOnly = r.lit.lines.filter((l) => l.startsWith('rect ') && own.get(l.split(' ').slice(2).join(' ')) === r.base.lines.find((b) => b.split(' ').slice(2).join(' ') === l.split(' ').slice(2).join(' '))?.split(' ')[1]);
+    assert.ok(flareOnly.length > 0, 'the scene has flakes in the lit layer only for a flare');
+    /* Drop one lit flake that shows a color the base does not: the composite differs from one pass. */
+    const lit = r.lit.lines.filter((l) => l.startsWith('rect ') && !flareOnly.includes(l));
+    assert.ok(lit.length > 0);
+    const composite = new Map<string, string>();
+    for (const l of [...r.base.lines, ...r.lit.lines.filter((x) => x !== lit[0])]) if (l.startsWith('rect ')) { const [, style, ...c] = l.split(' '); composite.set(c.join(' '), style!); }
+    let differ = 0;
+    for (const [k, v] of r.single) if (composite.get(k) !== v) differ++;
+    assert.equal(differ, 1);
+  });
+
+  test('the base is one key a board and settled count: the light, the time and the twinkle do not change it', () => {
+    const f = make();
+    landEverything(f);
+    const a = tracked(2), b = tracked(2);
+    f.drawBase(a.ctx, bands.light, 2);
+    f.drawBase(b.ctx, bands.light, 2);
+    assert.equal(a.digest(), b.digest());
+    assert.equal(a.n.drawImage, 0, 'the base has no flare');
+    assert.equal(f.baseKey(bands.light), f.baseKey({ ...bands.light }));
+    assert.notEqual(f.baseKey(bands.light), f.baseKey(bands.dark));
+    const before = makeFlakes({ seed: 'p1', box: BOX, inks: GLITTER, holo: HOLO, density: 70, glint: GLINT });
+    const k = before.baseKey(bands.light);
+    landEverything(before);
+    assert.notEqual(before.baseKey(bands.light), k, 'a burst that lands flakes changes the key');
+  });
+
+  test('the lit layer clears what it drew last time, square by square, and all of its canvas the first time or after a resize', () => {
+    const f = makeFlakes({ seed: 'look', box: BOX, inks: GLITTER, holo: HOLO, density: 70, glint: GLINT, star: {} as CanvasImageSource });
+    landEverything(f);
+    const calls: unknown[][] = [];
+    const canvas = { width: 1976, height: 600 };
+    const t = tracked(2);
+    const ctx = Object.assign(t.ctx, { canvas, clearRect: (...a: number[]) => calls.push(a) });
+    f.drawLit(ctx, { x: 0.3, y: 0.2 }, bands.light, 0, false, 2);
+    assert.deepEqual(calls, [[0, 0, 1976, 600]]);
+    const drawn = t.n.fillRect;
+    calls.length = 0;
+    f.drawLit(ctx, { x: 0.32, y: 0.2 }, bands.light, 16, false, 2);
+    assert.equal(calls.length, drawn, 'one square a flake drawn last time');
+    assert.ok(calls.every(([, , w, h]) => w! > 0 && h! > 0 && w! < 60 && h! < 60), 'each a flake\'s or a flare\'s square');
+    canvas.width = 988;
+    calls.length = 0;
+    f.drawLit(ctx, { x: 0.32, y: 0.2 }, bands.light, 32, false, 1);
+    assert.deepEqual(calls, [[0, 0, 988, 600]]);
   });
 
   test('a redraw costs no save per flake, and a fill color is set once per color, not per flake', () => {

@@ -4,8 +4,9 @@
  * last one plain. The plan's "12 posts" does not add up with its own list (4 x 3 + 4 + 1); this story builds the list. At 1200 by 900
  * about five are in view, and the rest wait their turn below. `Still` is the same page under reduced motion.
  *
- * The story page hands e2e/shine.spec.ts the loop's probe as `window.__kbShine`: each shiny post's draws and its place on the page
- * (in document order), and the loop's frame count and whether it runs. The application exposes nothing.
+ * The story page hands e2e/shine.spec.ts the loop's probe as `window.__kbShine`: each shiny post's draws, its place on the page (in
+ * document order) and its size in device px, the loop's frame count and whether it runs, and the canvas pixels the page's 2D contexts
+ * have rastered since it last asked (`raster`, below). The application exposes nothing.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useState } from 'react';
@@ -20,12 +21,18 @@ declare global {
   interface Window {
     __kbPoison?: string;
     __kbShine?: {
-      /** Every shiny post on the page, top to bottom: the loop's draws of it and its box in the viewport. */
-      hosts: () => { draws: number; top: number; bottom: number }[];
+      /** Every shiny post on the page, top to bottom: the loop's draws of it, its box in the viewport and its area in device px. */
+      hosts: () => { draws: number; top: number; bottom: number; area: number }[];
       frames: () => number;
       /** The loop's own time in each of its last `n` frames, in milliseconds. */
       work: (n: number) => number[];
       running: () => boolean;
+      /**
+       * Counting the canvas pixels the page's 2D contexts raster (`countRaster`): `start` patches the contexts (a timed run leaves it
+       * off, so the count costs the loop nothing there), `take` gives the pixels since the last take (all of them, and those a
+       * drawImage scaled at 'high' smoothing quality), `stop` puts the contexts back.
+       */
+      raster: { start: () => void; take: () => { px: number; high: number }; stop: () => void };
     };
   }
 }
@@ -59,6 +66,53 @@ function plant(poison: string | null): () => void {
   return () => undo.forEach((u) => u());
 }
 
+/**
+ * Counts the canvas pixels the page's 2D contexts raster: the area each clearRect, fillRect, putImageData and drawImage covers, in the
+ * canvas's own px (its transform's scale applied), and a drawImage no larger than the clip it is drawn in when the clip is a set of
+ * rects (`rect` then `clip`). The pixels a drawImage scales with 'high' smoothing quality are counted apart too: that filter costs
+ * far more a pixel than bilinear. A browser rasters what a frame's draws cover when it produces the frame, and then hands each
+ * changed canvas to the compositor; a frame that clears and redraws whole post-sized canvases on every shiny post in view, or scales
+ * them at 'high', costs a slow machine its frame, which the loop's own time never shows (e2e/shine.spec.ts). Story-only: it patches
+ * the prototype from `start` until `stop`.
+ */
+function countRaster(): { take: () => { px: number; high: number }; stop: () => void } {
+  const proto = CanvasRenderingContext2D.prototype;
+  let total = 0, high = 0;
+  const clips = new WeakMap<CanvasRenderingContext2D, { pending: number; clip: number; stack: number[] }>();
+  const of = (c: CanvasRenderingContext2D) => { let s = clips.get(c); if (!s) { s = { pending: 0, clip: Infinity, stack: [] }; clips.set(c, s); } return s; };
+  const scale = (c: CanvasRenderingContext2D) => { const m = c.getTransform(); return Math.abs(m.a * m.d - m.b * m.c); };
+  const orig = {
+    clearRect: proto.clearRect, fillRect: proto.fillRect, putImageData: proto.putImageData, drawImage: proto.drawImage,
+    beginPath: proto.beginPath, rect: proto.rect, clip: proto.clip, save: proto.save, restore: proto.restore,
+  };
+  const area = (c: CanvasRenderingContext2D, w: number, h: number) => Math.min(Math.abs(w * h) * scale(c), c.canvas.width * c.canvas.height);
+  proto.clearRect = function (this: CanvasRenderingContext2D, x, y, w, h) { total += area(this, w, h); orig.clearRect.call(this, x, y, w, h); };
+  proto.fillRect = function (this: CanvasRenderingContext2D, x, y, w, h) { total += area(this, w, h); orig.fillRect.call(this, x, y, w, h); };
+  proto.putImageData = function (this: CanvasRenderingContext2D, ...a: unknown[]) {
+    const img = a[0] as ImageData;
+    total += img.width * img.height;
+    (orig.putImageData as (...b: unknown[]) => void).apply(this, a);
+  };
+  proto.drawImage = function (this: CanvasRenderingContext2D, ...a: unknown[]) {
+    const n = a.length, img = a[0] as { width: number; height: number };
+    const [w, h] = n >= 9 ? [a[7] as number, a[8] as number] : n >= 5 ? [a[3] as number, a[4] as number] : [img.width, img.height];
+    const [sw, sh] = n >= 9 ? [a[3] as number, a[4] as number] : [img.width, img.height];
+    const px = Math.min(area(this, w, h), of(this).clip);
+    total += px;
+    if (this.imageSmoothingEnabled && this.imageSmoothingQuality === 'high' && px > Math.abs(sw * sh) * 1.5) high += px;
+    (orig.drawImage as (...b: unknown[]) => void).apply(this, a);
+  };
+  proto.beginPath = function (this: CanvasRenderingContext2D) { of(this).pending = 0; orig.beginPath.call(this); };
+  proto.rect = function (this: CanvasRenderingContext2D, x, y, w, h) { of(this).pending += area(this, w, h); orig.rect.call(this, x, y, w, h); };
+  proto.clip = function (this: CanvasRenderingContext2D, ...a: unknown[]) { const s = of(this); s.clip = Math.min(s.clip, s.pending); (orig.clip as (...b: unknown[]) => void).apply(this, a); };
+  proto.save = function (this: CanvasRenderingContext2D) { const s = of(this); s.stack.push(s.clip); orig.save.call(this); };
+  proto.restore = function (this: CanvasRenderingContext2D) { const s = of(this); s.clip = s.stack.pop() ?? Infinity; orig.restore.call(this); };
+  return {
+    take: () => { const t = { px: total, high }; total = 0; high = 0; return t; },
+    stop: () => { Object.assign(proto, orig); },
+  };
+}
+
 interface Args { readonly reduced: boolean }
 
 function Busy({ reduced }: Args) {
@@ -73,16 +127,22 @@ function Busy({ reduced }: Args) {
   }, [reduced]);
   useEffect(() => plant(window.__kbPoison ?? null), []);
   useEffect(() => {
+    let raster: ReturnType<typeof countRaster> | null = null;
     window.__kbShine = {
       hosts: () => [...document.querySelectorAll(SHINY)].map((el) => {
-        const r = el.getBoundingClientRect();
-        return { draws: probe.draws(el), top: r.top, bottom: r.bottom };
+        const r = el.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+        return { draws: probe.draws(el), top: r.top, bottom: r.bottom, area: r.width * r.height * d * d };
       }),
       frames: probe.frames,
       work: (n) => probe.work(n),
       running: probe.running,
+      raster: {
+        start: () => { raster ??= countRaster(); },
+        take: () => raster?.take() ?? { px: 0, high: 0 },
+        stop: () => { raster?.stop(); raster = null; },
+      },
     };
-    return () => { delete window.__kbShine; };
+    return () => { raster?.stop(); delete window.__kbShine; };
   }, []);
   useEffect(() => {
     if (thread === null) return;

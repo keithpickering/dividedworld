@@ -5,11 +5,17 @@
  *
  * The color of every 3px cell is a pure function of the grid, the light and the band (`render`, which writes sRGB bytes
  * into any `Uint8ClampedArray`); `draw` puts those bytes in an ImageData on a small grid canvas and draws it scaled with
- * smoothing (at the rounded whole-pixel W x H, so a 988.4px box leaves a 0.4px strip unpainted at its far edge; the host sizes
- * its canvas in whole px, so the edge is under one pixel), then the starbursts on top; `sampleFoil` reads the same cells back as hex for the readable-band check. Every
+ * bilinear smoothing over the whole of the host's canvas (every device pixel of it, so the grid covers it and nothing is
+ * cleared first), then the starbursts on top; `sampleFoil` reads the same cells back as hex for the readable-band check. Every
  * cell goes through `clampInto`'s arithmetic (inlined, in `finishRow`), so no cell leaves the band whatever the palette or the light.
  *
- * Cost: during a scroll every post in view redraws each frame, so a render is the busy page's frame budget. What no light moves
+ * Cost: during a scroll every post in view redraws each frame, so a render is the busy page's frame budget, and so is what
+ * the browser does with the canvas after the loop's step: it rasters the frame's draws when the frame is produced, where the
+ * loop's own time never sees them. A clear and a scaled draw at 'high' smoothing quality (a costlier filter than bilinear, for a
+ * 3x upscale of soft cells that shows no difference) of a post-sized canvas, on every post in view, cost a slow machine (a
+ * software-drawn Chromium, or this one with its CPU throttled to half) a frame in two; one opaque bilinear draw that covers the
+ * canvas does not. Two canvases (the grid stretched by the page, the starbursts on a canvas over it) cost more, not less: each
+ * canvas a frame changes is handed to the compositor on its own. What no light moves
  * (the pearl's swirl, the prism's facet map, hue and seams) is computed once per layout; what moves with the light but not
  * with the cell (a column's fringe, a facet's flash, the dark board's opposite stop) once per frame; the per-cell rest keeps
  * the bench's arithmetic in its order, so the bytes are the bench's to the last bit, and foil.test.ts holds them by digest.
@@ -415,10 +421,13 @@ export function makeFoil(opts: FoilOptions): Foil {
     if (!L.img) L.img = sg.createImageData(L.gw, L.gh);
     renderInto(L, light, band, L.img.data);
     sg.putImageData(L.img, 0, 0);
+    /* Every cell is opaque, and the grid is drawn over every device pixel of the canvas: nothing needs clearing first, and the
+     * starbursts below are added to this frame's foil, never to the last one's. */
+    const cw = ctx.canvas?.width ?? Math.round(L.W * density), ch = ctx.canvas?.height ?? Math.round(L.H * density);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'low';
+    ctx.drawImage(L.small as unknown as CanvasImageSource, 0, 0, L.gw, L.gh, 0, 0, cw, ch);
     ctx.setTransform(density, 0, 0, density, 0, 0);
-    ctx.clearRect(0, 0, L.W, L.H);
-    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(L.small as unknown as CanvasImageSource, 0, 0, L.W, L.H);
     /* Starbursts: each faces its own way and flares when the light lines up with it. Their white is let through only as
      * far as the band allows it, and a band lets pure white through only when its ceiling is 1: on any lower ceiling
      * (every dark board, whatever its inks) 'lighter' white could lift a cell out of the band, so none is drawn. */

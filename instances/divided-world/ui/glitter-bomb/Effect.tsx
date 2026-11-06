@@ -2,9 +2,11 @@
  * Glitter Bomb's effect (docs/plans/2026-11-06-shine-design.md, sections 2, 3, 5 and 6; the card itself,
  * docs/plans/2026-11-01-card-mechanic-design.md, section 8): every post of the character it was cast on glitters while it is up, a
  * week at most, then stops by itself. About 4,200 flakes of a post (one per 70 px squared, thickest around a seeded burst point) are
- * the engine's (engine/ui/shine/flakes.ts); this file is Divided World's inks and the host. It is decoration, never an obstacle: two
- * canvases go around the words, the settled and loose flakes under them and the burst over them, both hidden from assistive tech,
- * neither taking the pointer or any room, and the words keep their text shadow in the board's ground. Every pixel the engine draws
+ * the engine's (engine/ui/shine/flakes.ts); this file is Divided World's inks and the host. It is decoration, never an obstacle: three
+ * canvases go around the words, all hidden from assistive tech, none taking the pointer or any room. Under them, the settled flakes
+ * unlit (the base, painted only when the board, the size or the settled count changes) and over that what the light changes this
+ * frame (the lit flakes, their flares and the loose glitter); over the words, the burst. A canvas the browser re-rasters every frame
+ * of a scroll is then the sparse one, never 4,200 flakes, and the words keep their text shadow in the board's ground. Every pixel the engine draws
  * is held inside the readable band the board leaves free of the post's inks (engine/ui/shine/band.ts), so nothing here proves a
  * palette's contrast at run time. The accessible path is reduced motion: no burst, every flake placed at once, the light at rest.
  *
@@ -26,18 +28,18 @@
  *
  * Units: the box is CSS px (the host's getBoundingClientRect size, fractions kept); the canvases are sized to round(box x density)
  * with the density the loop returns (at most 2), and their CSS size is the host's through the stylesheet (100%). A resize builds
- * the flakes again and, because sizing the backing store clears it, repaints the under canvas at once with the last light and the
+ * the flakes again and, because sizing the backing stores clears them, repaints the canvases under the words at once with the last light and the
  * band already held.
  *
  * Memory: the over canvas has a backing store only while a burst is in the air (sized when it runs, zeroed when it ends, never
- * sized for `still`); a post out of view zeroes both. Reduced motion turned on mid-burst lands what is in the air at rest. The
+ * sized for `still`); a post out of view zeroes all three. Reduced motion turned on mid-burst lands what is in the air at rest. The
  * 40% watcher stops once the burst has fired.
  */
 import { useEffect, useRef } from 'react';
 import { motionReduced } from '../../../../engine/ui/appearance.ts';
 import type { EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { bandFor, type Band } from '../../../../engine/ui/shine/band.ts';
-import { burst, cling, dropLoose, drawBurst, drawLoose, landAll, makeFlakes, release, stepBurst, type Flakes } from '../../../../engine/ui/shine/flakes.ts';
+import { burst, cling, dropLoose, drawBurst, drawLoose, landAll, loose, makeFlakes, release, stepBurst, type Flakes } from '../../../../engine/ui/shine/flakes.ts';
 import { watchInView } from '../../../../engine/ui/shine/inView.ts';
 import { REST, type Light } from '../../../../engine/ui/shine/light.ts';
 import { register, unregister, wake } from '../../../../engine/ui/shine/loop.ts';
@@ -57,13 +59,14 @@ const BURST_AT = 0.4;
 export function GlitterBombEffect({ post, plays, still, children }: EffectProps) {
   const host = useRef<HTMLDivElement>(null);
   const under = useRef<HTMLCanvasElement>(null);
+  const flash = useRef<HTMLCanvasElement>(null);
   const over = useRef<HTMLCanvasElement>(null);
   const play = plays[0]!;
   const seed = `${play.id}:${post.id}`;
 
   useEffect(() => {
-    const el = host.current, below = under.current, above = over.current;
-    if (!el || !below || !above) return;
+    const el = host.current, below = under.current, lit = flash.current, above = over.current;
+    if (!el || !below || !lit || !above) return;
     let flakes: Flakes | null = null;
     let unclung: (() => void) | null = null;
     /* Whether this mount's burst has fired, and whether the post has been 40% in view: both outlive a flakes object. */
@@ -78,8 +81,12 @@ export function GlitterBombEffect({ post, plays, still, children }: EffectProps)
     };
     /* The band as last read; null until read, and again after a board that could not be read. Draws use it and never read. */
     let band: Band | null = null;
-    /* True while the backing stores are freed (out of view); the next draw sizes the under canvas again. */
+    /* True while the backing stores are freed (out of view); the next draw sizes the under canvases again. */
     let freed = false;
+    /* What the under canvas shows: the flakes object and its `baseKey`; null when it was cleared (sized) or shows nothing. */
+    let based: { f: Flakes; key: string } | null = null;
+    /* Whether loose flakes were drawn on the lit canvas last time: the next draw clears it whole. */
+    let looseShown = false;
     /* The last light and time drawn, for a synchronous repaint after a resize cleared the canvas. */
     let last: { light: Light; t: number } | null = null;
     const unclingNow = (): void => { unclung?.(); unclung = null; };
@@ -106,18 +113,31 @@ export function GlitterBombEffect({ post, plays, still, children }: EffectProps)
     };
     const freeOver = (): void => { if (above.width !== 0 || above.height !== 0) { above.width = 0; above.height = 0; } };
     const paint = (light: Light, now: number, idle: boolean): boolean => {
-      const u = below.getContext('2d');
-      if (!u) return false;
-      u.setTransform(1, 0, 0, 1, 0, 0); u.clearRect(0, 0, below.width, below.height);
+      const u = below.getContext('2d'), l = lit.getContext('2d');
+      if (!u || !l) return false;
       const f = band ? ensure() : null;
-      if (!band || !f) { freeOver(); return false; }
+      /* The flakes clear what they drew over the base themselves; loose flakes, which the host draws there, it clears. */
+      if (!band || !f || looseShown) { l.setTransform(1, 0, 0, 1, 0, 0); l.clearRect(0, 0, lit.width, lit.height); looseShown = false; }
+      if (!band || !f) {
+        if (based) { u.setTransform(1, 0, 0, 1, 0, 0); u.clearRect(0, 0, below.width, below.height); based = null; }
+        freeOver();
+        return false;
+      }
       /* Reduced motion has no burst: the flakes are placed at once. Otherwise it waits for the 40%. */
       if (!fired && (seen || motionReduced())) { fired = true; stopWatching(); burst(f, now); }
       /* Reduced motion turned on mid-burst: what is in the air lands where it was headed (release), and the over canvas goes. */
       if (f.flying > 0 && motionReduced()) release(f);
       const busy = fired && !still ? stepBurst(f, now) : false;
-      f.draw(u, light, band, now, idle, density);
-      drawLoose(el, u, light, band, now, idle, density);
+      /* The unlit flakes, only when what they depend on changed; what the light changes goes over them, fresh each draw. */
+      const key = f.baseKey(band);
+      if (based?.f !== f || based.key !== key) {
+        u.setTransform(1, 0, 0, 1, 0, 0); u.clearRect(0, 0, below.width, below.height);
+        f.drawBase(u, band, density);
+        based = { f, key };
+      }
+      f.drawLit(l, light, band, now, idle, density);
+      looseShown = loose(el).length > 0;
+      drawLoose(el, l, light, band, now, idle, density);
       if (busy) {
         sizeOver();
         const o = above.getContext('2d');
@@ -126,13 +146,14 @@ export function GlitterBombEffect({ post, plays, still, children }: EffectProps)
       return busy;
     };
     const size = (): void => {
-      below.width = Math.round(box.w * density);
-      below.height = Math.round(box.h * density);
+      below.width = lit.width = Math.round(box.w * density);
+      below.height = lit.height = Math.round(box.h * density);
+      based = null;
       freeOver();
       freed = false;
     };
-    /* Out of view: the flakes and both backing stores go; the next draw sizes the under canvas and builds the flakes fresh. */
-    const leave = (): void => { drop(); below.width = below.height = 0; freeOver(); freed = true; };
+    /* Out of view: the flakes and every backing store go; the next draw sizes the under canvases and builds the flakes fresh. */
+    const leave = (): void => { drop(); below.width = below.height = lit.width = lit.height = 0; based = null; freeOver(); freed = true; };
     const measure = (): { w: number; h: number } => { const r = el.getBoundingClientRect(); return { w: r.width, h: r.height }; };
     const setup = (): void => {
       band = readBand();
@@ -197,6 +218,7 @@ export function GlitterBombEffect({ post, plays, still, children }: EffectProps)
   return (
     <div ref={host} className="dw-glitter" data-kb-glitter="" onPointerMove={still ? undefined : (e) => cling.over(e.nativeEvent)}>
       <canvas ref={under} className="dw-glitter-under" aria-hidden="true" />
+      <canvas ref={flash} className="dw-glitter-flash" aria-hidden="true" />
       <div className="dw-glitter-words">{children}</div>
       <canvas ref={over} className="dw-glitter-over" aria-hidden="true" />
     </div>
