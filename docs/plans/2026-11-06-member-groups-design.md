@@ -158,3 +158,36 @@ Weighed: admins conferring by hand (B); the Boss only (C).
   Task 2 for the owner's review in the PR.
 - Appeals of a group move, and Mod Bots conferring groups: Part 3 (no plan yet).
 - A restricted board keyed to a group: Part 6.
+
+## 8. After the Mod Bots design (amended 2026-11-06)
+
+The Mod Bots design and plan (`docs/plans/2026-11-06-mod-bots-design.md`, `docs/plans/2026-11-06-mod-bots-plan.md`)
+were merged after this design. A second session with the owner, the same day, reconciled the two. What it decided:
+
+- **Groups build after Mod Bots merges** (the owner chose A). Groups then reuse what Mod Bots builds rather than
+  building beside it: the offices each move kind names (its Task 3), the `staff` Edge Function (Task 7), appeals
+  (Task 10) and the targeting cap's `staff_punishments` and `modBots.cap` setting (Task 11). Two caps, two judge crons
+  or two appeal paths would be two lists that must agree.
+- **A Mod may confer a group** (the owner chose A): punishments only, and only barring a board on its own beat, spent from
+  its allowance as its one move. It judges apologies to its own moves, in its own voice. Favors stay the Boss's, so
+  Teacher's Pet means the Boss itself noticed. `conferGroup` names the offices `boss` and `mod`. Section 7's "Mod Bots
+  through the same move" is this.
+  Weighed: Mods conferring favors too, on their beat; groups the Boss's alone.
+- **A group punishment is appealed** (the owner chose A) through Mod Bots' appeals, to the staff member who made the move,
+  with the same fee, refund and verdicts:
+  - **overturned**: the move ends at once, with the new reason `overturned`, and the fee is refunded;
+  - **upheld**: nothing changes;
+  - **reduced**: the expiry moves halfway to now;
+  - **increased**: the expiry moves later by at most half the move's original length, never past the phase's longest
+    move.
+  The new expiry is carried in the ruling Act and read from there, never edited into the move. The appeal and the
+  apology are separate ways out; a character may use both.
+  Weighed: the Boss hearing every group appeal over its Mods' heads; overturned or upheld only.
+- **No alert when a group move lands** (the owner chose A), as Mod Bots sends none for a visit: the bar shows on every
+  postbit, the log says what was done and when it ends, and the barred box explains itself when the player tries to post.
+  Weighed: an alert for a bar only; an alert for every group move, as this design first planned.
+- **With bans:** a banned character (Mod Bots, section 5) cannot post, so it cannot apologize; its ban ends by itself, then
+  the apology is open again. The reply box shows the ban over the bar. The postbit reads, top down: name, group bar,
+  title or BANNED, pips, warn meter.
+
+The ways-out table above gains: a punishment group's appeal is available now, not "once Part 3 builds it".
