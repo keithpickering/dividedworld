@@ -181,6 +181,28 @@ describe('the shine loop', () => {
     expect(rem.mock.calls.some((x) => x[0] === 'pointermove')).toBe(true);
   });
 
+  it('probe.work() records the loop\'s own time in each frame, the last 600, oldest first', () => {
+    shimmer();
+    let now = 0, k = 0;
+    const clock = vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const host = {}, c = canvas();
+    /* A draw that returns true is in flight, so it is drawn in every frame; frame k's draw takes k ms of the clock. */
+    register(host, c, BOX, 1, () => { now += k; return true; });
+    see(c, true);
+    const run = (frame: number) => { k = frame; flush(frame * 16); };
+    for (let i = 1; i <= 5; i++) run(i);
+    expect(probe.work()).toEqual([1, 2, 3, 4, 5]);
+    expect(probe.work(2)).toEqual([4, 5]);
+    for (let i = 6; i <= 700; i++) run(i);
+    const w = probe.work();
+    expect(w).toHaveLength(600);
+    expect(w[0]).toBe(101);
+    expect(w[599]).toBe(700);
+    probe.reset();
+    expect(probe.work()).toEqual([]);
+    clock.mockRestore();
+  });
+
   it('probe.reset() returns a fresh page', () => {
     shimmer();
     const host = {}, c = canvas();

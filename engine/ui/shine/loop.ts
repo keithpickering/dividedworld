@@ -58,6 +58,9 @@ const hosts = new Map<object, Reg>();
 let handle: number | null = null;
 let last = 0;
 let frameCount = 0;
+/* The loop's own time in each frame (ms, around `step`), for the last WORK_KEEP frames: a ring, two clock reads a frame, read only by `probe.work`. */
+const WORK_KEEP = 600;
+const worked = new Float64Array(WORK_KEEP);
 let made = 0;
 let unsubscribeMotion: (() => void) | null = null;
 /* Held while any host is registered: the device's tilt probe runs for a page that shines (tilt.ts). */
@@ -125,7 +128,9 @@ function step(t: number): void {
 /** A frame that throws never stops the loop: the next one is asked for first. The loop stops itself when no host needs one. */
 function frame(t: number): void {
   handle = requestAnimationFrame(frame);
+  const began = performance.now();
   try { step(t); } catch (err) { console.error(err); }
+  worked[frameCount % WORK_KEEP] = performance.now() - began;
   if (!anyWants()) { cancelAnimationFrame(handle); handle = null; }
 }
 
@@ -200,6 +205,11 @@ export function wake(host: object): void {
 export const probe = {
   draws: (host: object) => hosts.get(host)?.draws ?? 0,
   frames: () => frameCount,
+  /** The loop's own time in each of its last `n` frames (at most 600), oldest first, in milliseconds. */
+  work(n: number = WORK_KEEP): number[] {
+    const count = Math.min(n, WORK_KEEP, frameCount);
+    return Array.from({ length: count }, (_, i) => worked[(frameCount - count + i + 1) % WORK_KEEP]!);
+  },
   running: () => handle !== null,
   reset(): void {
     if (handle !== null) cancelAnimationFrame(handle);
@@ -210,6 +220,6 @@ export const probe = {
     unwatchMotion();
     releaseTilt?.();
     releaseTilt = null;
-    frameCount = 0; made = 0; last = 0;
+    frameCount = 0; made = 0; last = 0; worked.fill(0);
   },
 };

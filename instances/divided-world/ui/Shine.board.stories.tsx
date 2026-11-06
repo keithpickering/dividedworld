@@ -18,16 +18,46 @@ import { ThreadScreen } from '../../../engine/ui/thread/Thread.tsx';
 
 declare global {
   interface Window {
+    __kbPoison?: string;
     __kbShine?: {
       /** Every shiny post on the page, top to bottom: the loop's draws of it and its box in the viewport. */
       hosts: () => { draws: number; top: number; bottom: number }[];
       frames: () => number;
+      /** The loop's own time in each of its last `n` frames, in milliseconds. */
+      work: (n: number) => number[];
       running: () => boolean;
     };
   }
 }
 
 const SHINY = '[data-kb-fab], [data-kb-glitter]';
+
+/**
+ * Story-only poisons for e2e/shine.spec.ts, which plants each to see its check go red (a guard never red is not known to work).
+ * `window.__kbPoison = 'slow'` (set by the spec before the page loads; the app rewrites its address, so a query would not survive) makes the third shiny post's canvas cost 25 ms every time it is drawn on (a busy-wait in `getContext`, which both
+ * effects call on each paint); `'keep'` makes the first shiny post's canvases ignore being freed (a width or height of 0).
+ * Nothing but this story reads the flag, and without it nothing is patched.
+ */
+function plant(poison: string | null): () => void {
+  if (poison !== 'slow' && poison !== 'keep') return () => {};
+  const proto = HTMLCanvasElement.prototype;
+  const nth = (cv: HTMLCanvasElement, n: number) => { const host = cv.closest(SHINY); return host !== null && [...document.querySelectorAll(SHINY)].indexOf(host) === n; };
+  if (poison === 'slow') {
+    const get = proto.getContext;
+    proto.getContext = function (this: HTMLCanvasElement, ...a: Parameters<typeof get>) {
+      if (nth(this, 2)) for (const until = performance.now() + 25; performance.now() < until;) { /* busy */ }
+      return get.apply(this, a);
+    } as typeof get;
+    return () => { proto.getContext = get; };
+  }
+  const undo: (() => void)[] = [];
+  for (const key of ['width', 'height'] as const) {
+    const d = Object.getOwnPropertyDescriptor(proto, key)!;
+    Object.defineProperty(proto, key, { ...d, set(this: HTMLCanvasElement, v: number) { if (v === 0 && nth(this, 0)) return; d.set!.call(this, v); } });
+    undo.push(() => Object.defineProperty(proto, key, d));
+  }
+  return () => undo.forEach((u) => u());
+}
 
 interface Args { readonly reduced: boolean }
 
@@ -41,6 +71,7 @@ function Busy({ reduced }: Args) {
     root.setAttribute('data-kb-motion', reduced ? 'reduce' : 'full');
     return () => { root.removeAttribute('data-kb-mode'); root.removeAttribute('data-kb-motion'); };
   }, [reduced]);
+  useEffect(() => plant(window.__kbPoison ?? null), []);
   useEffect(() => {
     window.__kbShine = {
       hosts: () => [...document.querySelectorAll(SHINY)].map((el) => {
@@ -48,6 +79,7 @@ function Busy({ reduced }: Args) {
         return { draws: probe.draws(el), top: r.top, bottom: r.bottom };
       }),
       frames: probe.frames,
+      work: (n) => probe.work(n),
       running: probe.running,
     };
     return () => { delete window.__kbShine; };

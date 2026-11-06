@@ -14,13 +14,36 @@ import { expect, test, type Page } from '@playwright/test';
  * drawn in the frame it was scrolled out in and the next one: a draw counts against the loop only when the post was fully out of view in
  * this sample and in the two before it (`LAG`). `outOfViewDraws` is checked on planted samples below, red where it should be.
  *
+ * The frame gap sees the page, not the loop: a loop that costs 3 ms of a 16.7 ms frame passes it. So the loop's own time in each frame
+ * (`probe.work`, around its step) is read too, and its 95th percentile bounded by `WORK_BUDGET`. And buffers out of view are released:
+ * with the page scrolled to the bottom every shiny post fully out of view (beyond a margin) has canvases of width and height 0, and few
+ * posts hold any. The story's poison `slow` (25 ms in one post's draw) and `keep` (one post ignores being freed) make those
+ * checks red; the `poisoned` tests below run them and expect the red.
+ *
  * Draws and frames are the loop's own, handed over by the story as `window.__kbShine`.
  */
 const STORY = (name: string) => `/?fixture=boards&story=boards-15-shine--${name}`;
 const SHINY = 16;
 const LAG = 2;
+/**
+ * The 95th percentile of the loop's own time in a frame while the page scrolls, in ms. Measured here (software-drawn headless Chromium,
+ * all sixteen posts, five in view) at 11.6 to 12.5 ms over eight timed runs: above the 10 ms the design hoped for, because the draws run
+ * synchronously on the software rasterizer. The budget is that plus about a third, and under one 16.7 ms frame: a loop that costs more
+ * than a frame cannot keep its frames, and the 25 ms poisoned draw below is far past it.
+ */
+const WORK_BUDGET = 16;
+/** Out of view "beyond a margin": a post this many px past the viewport's edge has freed its canvases. */
+const FREED_MARGIN = 300;
 
 interface Sample { t: number; draws: number[]; top: number[]; bottom: number[]; height: number }
+interface Held { top: number; bottom: number; sizes: { w: number; h: number }[] }
+
+/** The shiny posts that hold canvas buffers while fully out of view by more than `margin`, and how many posts hold any at all. */
+export function heldOutOfView(posts: readonly Held[], height: number, margin = FREED_MARGIN): { held: number[]; holding: number; inView: number } {
+  const held: number[] = [];
+  posts.forEach((p, i) => { if ((p.bottom < -margin || p.top > height + margin) && p.sizes.some((c) => c.w > 0 || c.h > 0)) held.push(i); });
+  return { held, holding: posts.filter((p) => p.sizes.some((c) => c.w > 0 && c.h > 0)).length, inView: posts.filter((p) => p.bottom > 0 && p.top < height).length };
+}
 
 /** The frames in which a post's draw count rose while it had been fully out of view for this sample and the `LAG` before it. */
 export function outOfViewDraws(samples: readonly Sample[], lag = LAG): { frame: number; host: number }[] {
@@ -54,8 +77,10 @@ async function settle(page: Page): Promise<void> {
   }));
 }
 
-async function open(page: Page, name: string): Promise<void> {
+async function open(page: Page, name: string, poison = ''): Promise<void> {
   await page.setViewportSize({ width: 1200, height: 900 });
+  /* The app rewrites the address it is given, so the story's poison is handed over before the page loads, not in the query. */
+  if (poison) await page.addInitScript((p) => { (window as { __kbPoison?: string }).__kbPoison = p; }, poison);
   await page.goto(STORY(name));
   await expect.poll(() => page.evaluate(() => window.__kbShine?.hosts().length ?? 0)).toBe(SHINY);
   await settle(page);
@@ -67,12 +92,63 @@ const inView = (h: { top: number; bottom: number }, height = 900) => h.bottom > 
 const frames = (page: Page, n: number): Promise<void> =>
   page.evaluate((count) => new Promise<void>((done) => { let left = count; const tick = () => (--left <= 0 ? done() : requestAnimationFrame(tick)); requestAnimationFrame(tick); }), n);
 
+/** What the page reports of every shiny post's canvases: its box and the size of each canvas inside it. */
+const held = (page: Page): Promise<Held[]> => page.evaluate(() => [...document.querySelectorAll('[data-kb-fab], [data-kb-glitter]')].map((el) => {
+  const r = el.getBoundingClientRect();
+  return { top: r.top, bottom: r.bottom, sizes: [...el.querySelectorAll('canvas')].map((c) => ({ w: c.width, h: c.height })) };
+}));
+
+/** Scrolls the page from the top to the bottom over three seconds under a moving mouse, sampling every frame and the loop's own time in the frames it ran. */
+async function scrollRun(page: Page): Promise<{ samples: Sample[]; work: number[] }> {
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(500);
+  const run = page.evaluate((ms) => new Promise<{ samples: Sample[]; work: number[] }>((done) => {
+    const kb = window.__kbShine!, out: Sample[] = [], max = document.documentElement.scrollHeight - window.innerHeight, f0 = kb.frames();
+    let t0 = 0;
+    const tick = (t: number) => {
+      t0 ||= t;
+      const hs = kb.hosts();
+      out.push({ t, draws: hs.map((h) => h.draws), top: hs.map((h) => h.top), bottom: hs.map((h) => h.bottom), height: window.innerHeight });
+      const p = Math.min(1, (t - t0) / ms);
+      window.scrollTo(0, p * max);
+      if (p < 1) requestAnimationFrame(tick); else done({ samples: out, work: kb.work(kb.frames() - f0) });
+    };
+    requestAnimationFrame(tick);
+  }), 3000);
+  /* A moving mouse, over the page's width and height, while it scrolls. */
+  for (let i = 0; i < 60; i += 1) { await page.mouse.move(100 + (i * 17) % 1000, 100 + (i * 41) % 700); await page.waitForTimeout(45); }
+  return run;
+}
+
+/** A timed run's two measures: the 95th percentile of the gap between animation frames, and of the loop's own time in a frame. */
+const measure = (r: { samples: Sample[]; work: number[] }) => {
+  const gaps = r.samples.slice(1).map((s, k) => s.t - r.samples[k]!.t);
+  return { gap: percentile(gaps, 0.95), median: percentile(gaps, 0.5), max: Math.max(...gaps), work: percentile(r.work, 0.95), frames: r.samples.length, loopFrames: r.work.length };
+};
+const GAP_BOUND = 20;
+/** A timed run holds when its gaps hold; a run holds the loop when its own time does. */
+const holds = (m: { gap: number; work: number }) => ({ gap: m.gap < GAP_BOUND, work: m.work < WORK_BUDGET });
+
 test.describe('the planted samples, red where they should be', () => {
   const frame = (draws: number[], top: number[], bottom = top.map((t) => t + 100)): Sample => ({ t: 0, draws, top, bottom, height: 900 });
   test('a post drawn while fully out of view is named', () => {
     const away = [2000], seq: Sample[] = [];
     for (let k = 0; k < 6; k += 1) seq.push(frame([k + 1], away));
     expect(outOfViewDraws(seq)).toEqual([{ frame: 2, host: 0 }, { frame: 3, host: 0 }, { frame: 4, host: 0 }, { frame: 5, host: 0 }]);
+  });
+  test('a draw after exactly LAG samples out of view is the loop\'s lag; one more sample out and it is named', () => {
+    const away = [2000];
+    /* In view, then out for LAG samples (indexes 1 and 2), drawn at the second of them: not named. */
+    const lagged = [frame([1], [500]), frame([1], away), frame([2], away)];
+    expect(outOfViewDraws(lagged)).toEqual([]);
+    /* Out for LAG + 1 samples (indexes 1 to 3), drawn at the last: named. */
+    const late = [frame([1], [500]), frame([1], away), frame([1], away), frame([2], away)];
+    expect(outOfViewDraws(late)).toEqual([{ frame: 3, host: 0 }]);
+  });
+  test('a post out of view that still holds a buffer is named, and one in view or near the edge is not', () => {
+    const post = (top: number, w: number, h = w) => ({ top, bottom: top + 100, sizes: [{ w, h }] });
+    expect(heldOutOfView([post(2000, 300), post(2000, 0), post(100, 300), post(1100, 300), post(-500, 300, 0)], 900))
+      .toEqual({ held: [0, 4], holding: 3, inView: 1 });
   });
   test('the frames of the loop\'s lag, and a post in view, are not named', () => {
     const seq = [frame([1], [800]), frame([2], [950]), frame([3], [960]), frame([3], [970]), frame([3], [980]), frame([4], [100])];
@@ -81,39 +157,30 @@ test.describe('the planted samples, red where they should be', () => {
 });
 
 test.describe('a busy thread', () => {
-  test('scrolled top to bottom with a moving mouse, the frames hold and nothing out of view is drawn', async ({ page }) => {
+  /* These tests time the page and the loop, so they run one after another in one worker: two of them in parallel on a software-drawn
+     Chromium on few cores slow each other's frames and make the bound a measure of the machine. */
+  test.describe.configure({ mode: 'serial' });
+
+  test('scrolled top to bottom with a moving mouse, the loop is cheap, the frames hold, nothing out of view is drawn, and its buffers are freed', async ({ page }) => {
+    /* Three tries at a timed run after a warm-up, at about seven seconds each. */
+    test.setTimeout(120_000);
     await open(page, 'full');
     const first = await hosts(page);
     const visible = first.filter((h) => inView(h)).length;
     expect(visible, 'about five shiny posts in view').toBeGreaterThanOrEqual(3);
     expect(visible).toBeLessThanOrEqual(8);
+    expect(heldOutOfView(await held(page), 900).holding, 'at the top the posts in view hold their buffers (the buffer check can see one)').toBeGreaterThanOrEqual(visible);
     /* The first run down the page is a warm-up (the script compiled, each post's buffers and flakes made for the first time) and is not timed.
        A software-drawn headless Chromium drops a frame now and then, and a gap is a whole frame or two (16.7 or 33.3 ms), so one drop too many
-       moves the 95th percentile from 16.8 to 33.3: the bound is met if one of three timed runs meets it. Every run must draw nothing out of
-       view. A loop that costs more than a frame meets the bound in none. */
-    const p95s: number[] = [];
-    for (let attempt = 0; attempt < 4 && !p95s.slice(1).some((p) => p < 20); attempt += 1) {
-      await page.evaluate(() => window.scrollTo(0, 0));
-      await page.waitForTimeout(500);
-      const run = page.evaluate((ms) => new Promise<Sample[]>((done) => {
-        const kb = window.__kbShine!, out: Sample[] = [], max = document.documentElement.scrollHeight - window.innerHeight;
-        let t0 = 0;
-        const tick = (t: number) => {
-          t0 ||= t;
-          const hs = kb.hosts();
-          out.push({ t, draws: hs.map((h) => h.draws), top: hs.map((h) => h.top), bottom: hs.map((h) => h.bottom), height: window.innerHeight });
-          const p = Math.min(1, (t - t0) / ms);
-          window.scrollTo(0, p * max);
-          if (p < 1) requestAnimationFrame(tick); else done(out);
-        };
-        requestAnimationFrame(tick);
-      }), 3000);
-      /* A moving mouse, over the page's width and height, while it scrolls. */
-      for (let i = 0; i < 60; i += 1) { await page.mouse.move(100 + (i * 17) % 1000, 100 + (i * 41) % 700); await page.waitForTimeout(45); }
-      const samples = await run;
-      const gaps = samples.slice(1).map((s, k) => s.t - samples[k]!.t);
-      p95s.push(percentile(gaps, 0.95));
-      console.log(`scroll ${attempt === 0 ? 'warm-up' : attempt}: ${samples.length} frames, p95 ${p95s[attempt]!.toFixed(1)} ms, median ${percentile(gaps, 0.5).toFixed(1)} ms, max ${Math.max(...gaps).toFixed(1)} ms`);
+       moves the 95th percentile from 16.8 to 33.3: the frame-gap bound is met if one of three timed runs meets it. Every run must draw nothing
+       out of view. The loop's own time is the check that sees the loop (a loop that costs 3 ms of a frame passes the gap): its 95th percentile
+       must be under WORK_BUDGET in a timed run too. A loop that costs more than a frame meets neither bound in any run. */
+    const runs: ReturnType<typeof measure>[] = [];
+    for (let attempt = 0; attempt < 4 && !runs.slice(1).some((m) => holds(m).gap && holds(m).work); attempt += 1) {
+      const run = await scrollRun(page), samples = run.samples;
+      const m = measure(run);
+      runs.push(m);
+      console.log(`scroll ${attempt === 0 ? 'warm-up' : attempt}: ${m.frames} frames, gap p95 ${m.gap.toFixed(1)} ms, median ${m.median.toFixed(1)} ms, max ${m.max.toFixed(1)} ms; loop ${m.loopFrames} frames, own time p95 ${m.work.toFixed(2)} ms`);
       expect(samples.length, 'the scroll was sampled across three seconds').toBeGreaterThan(60);
       const last = samples[samples.length - 1]!, firstS = samples[0]!;
       if (attempt === 0) {
@@ -123,7 +190,38 @@ test.describe('a busy thread', () => {
       }
       expect(outOfViewDraws(samples)).toEqual([]);
     }
-    expect(Math.min(...p95s.slice(1))).toBeLessThan(20);
+    const timed = runs.slice(1);
+    const passed = timed.findIndex((m) => holds(m).gap && holds(m).work);
+    console.log(`passed in timed run ${passed + 1} of ${timed.length}: gap p95 ${timed[passed]?.gap.toFixed(1)} ms (bound ${GAP_BOUND}), loop own time p95 ${timed[passed]?.work.toFixed(2)} ms (budget ${WORK_BUDGET})`);
+    expect(Math.min(...timed.map((m) => m.work)), `the loop's own time, 95th percentile, under ${WORK_BUDGET} ms`).toBeLessThan(WORK_BUDGET);
+    expect(Math.min(...timed.map((m) => m.gap)), 'the frame gap, 95th percentile (the backstop)').toBeLessThan(GAP_BOUND);
+    expect(passed, 'one run met both').toBeGreaterThanOrEqual(0);
+
+    /* At the bottom, the posts far out of view have let their buffers go, and few posts hold any. */
+    await frames(page, 10);
+    const bottom = await held(page);
+    const r = heldOutOfView(bottom, 900);
+    console.log(`bottom: ${bottom.length} shiny posts, ${r.inView} in view, ${r.holding} holding canvas buffers, held out of view: [${r.held.join(', ')}]`);
+    expect(r.held, 'no post far out of view holds a canvas').toEqual([]);
+    expect(r.holding, 'few posts hold buffers').toBeLessThanOrEqual(r.inView + 2);
+  });
+
+  test('poisoned: a draw that takes 25 ms turns the loop-time check and the frame-gap check red', async ({ page }) => {
+    test.setTimeout(120_000);
+    await open(page, 'full', 'slow');
+    await scrollRun(page);
+    const m = measure(await scrollRun(page));
+    console.log(`poisoned scroll: gap p95 ${m.gap.toFixed(1)} ms (bound ${GAP_BOUND}), loop own time p95 ${m.work.toFixed(2)} ms (budget ${WORK_BUDGET})`);
+    expect(holds(m), 'both checks are red').toEqual({ gap: false, work: false });
+  });
+
+  test('poisoned: a post that ignores being freed is named by the buffer check', async ({ page }) => {
+    await open(page, 'full', 'keep');
+    await scrollRun(page);
+    await frames(page, 10);
+    const r = heldOutOfView(await held(page), 900);
+    console.log(`poisoned bottom: ${r.holding} holding canvas buffers, ${r.inView} in view, held out of view: [${r.held.join(', ')}]`);
+    expect(r.held).toEqual([0]);
   });
 
   test('at rest with shimmer, each post in view is drawn about thirty times a second', async ({ page }) => {
