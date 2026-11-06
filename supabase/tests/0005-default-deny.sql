@@ -49,6 +49,8 @@ declare
                            'admin_contact()', 'set_admin_contact(jsonb)',
                            -- The bar and the ban (0102): columns of characters_public, whose reader executes the functions that compute them; public facts, the same for any id.
                            'warn_points(uuid)', 'banned_until(uuid)',
+                           -- A report (0105): the player's door, which verifies the caller plays the character and is not banned. Its closing, its refund and its budget are the service's.
+                           'open_report(uuid,uuid,text)',
                            -- Pure predicates a CHECK calls, granted to PUBLIC by 0080 so a direct writer is not refused (each reads no table).
                            'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])'];
   -- What a visitor (anon) may execute, on purpose; each is also in the list above.

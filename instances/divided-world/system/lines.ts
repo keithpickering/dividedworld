@@ -66,4 +66,15 @@ export const stockLines: StockLines = Object.freeze({
     'Inspection over. {mod} files this post under {rule}.',
     '{mod} found this post in violation of {rule}, and has written it down.',
   ]),
+  // First drafts for Task 14 to widen: a report dismissed (the Aura is spent, the Mod grumbles) and one that backfired on the reporter.
+  reportDismissed: Object.freeze([
+    '{mod} has read {reporter}\'s report and dismissed it. {mod} would like it known that reading is not free.',
+    'Report dismissed. {reporter} may have the receipt, which is this sentence.',
+    '{mod} sighs at {reporter}\'s report, files it where reports go, and goes back to the other thing.',
+  ]),
+  reportBackfired: Object.freeze([
+    '{mod} has read {reporter}\'s report and has a few things to say about wasting the staff\'s time.',
+    'The System noticed who sent that report, {reporter}. The System is in a mood.',
+    '{reporter} reported, and {mod} read it, and now {mod} is reading {reporter} instead.',
+  ]),
 });

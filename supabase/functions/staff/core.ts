@@ -64,6 +64,10 @@ import { AnswerRejected, LedgerWriteFailed } from '../_shared/models/index.ts';
 /** The most visits one run files. A busy instance's rest is the next run's (every five minutes), or the tick's. */
 export const FILINGS_PER_RUN = 20;
 
+/** A report with no verdict this many minutes after it was paid is refunded by the run (the report function refunds its own failures at once; this is for one that died). */
+export const STALE_REPORT_MINUTES = 10;
+export const STALE_REPORTS_PER_RUN = 100;
+
 /** How long a run keeps starting visits: well inside the function's 150 seconds, so one run is over before the next is due. */
 export const RUN_BUDGET_MS = 100_000;
 
@@ -79,7 +83,7 @@ interface DueVisit {
   readonly charges: readonly Charge[];
 }
 
-interface Standing {
+export interface Standing {
   readonly office: string | null;
   allowance: number;
   readonly order: string | null;
@@ -116,14 +120,14 @@ export type StaffOutcome =
   | { readonly status: 'off' }
   | { readonly status: 'ok'; readonly due: number; readonly filings: readonly FilingRecord[] };
 
-const clip = (s: string, n: number): string => (s.length <= n ? s : s.slice(0, n));
-const said = (e: unknown): string => clip(e instanceof Error ? e.message : String(e), 500);
+export const clip = (s: string, n: number): string => (s.length <= n ? s : s.slice(0, n));
+export const said = (e: unknown): string => clip(e instanceof Error ? e.message : String(e), 500);
 
 /** Errors that are facts about the ledger or the transport to the database, not about one visit: thrown, stopping the run. */
-const stopsTheRun = (e: unknown): boolean => e instanceof LedgerWriteFailed || e instanceof TransportError;
+export const stopsTheRun = (e: unknown): boolean => e instanceof LedgerWriteFailed || e instanceof TransportError;
 
 /** What a Mod is read for once in a run: its standing, career, memory, notes and the names its memory mentions. */
-interface Known {
+export interface Known {
   readonly persona: Persona | undefined;
   readonly standing: Standing | null;
   readonly career: Career | null;
@@ -132,10 +136,38 @@ interface Known {
   readonly names: Readonly<Record<string, string>>;
 }
 
+/**
+ * Everything a Mod's judgment is told about the Mod, read once: its persona from the roster, its standing (`mod_standing`), and, when it is a Mod now, its career,
+ * memory, notes and the names its memory mentions. Public play and the staff character's own record; never an owner. Shared by the filing run and the report.
+ */
+export async function learnMod(db: Db, roster: readonly Persona[], settings: Pick<Instance['settings'], 'pool'>, staff: string): Promise<Known> {
+  const persona = roster.find((p) => p.key === staff);
+  if (!persona) return { persona, standing: null, career: null, memory: null, notes: [], names: {} };
+  const standing = await db.rpc<Standing>('mod_standing', { staff });
+  if (standing.office !== 'mod') return { persona, standing, career: null, memory: null, notes: [], names: {} };
+  const [career, memory, since] = await Promise.all([
+    db.rpc<Career>('staff_career', { of_staff: staff }),
+    db.rpc<Memory | null>('staff_memory_latest', { staff }),
+    db.rpc<string | null>('staff_memory_at', { staff }),
+  ]);
+  const notes = await db.rpc<string[]>('staff_notes_recent', { of_staff: staff, since: since ? new Date(Date.parse(since)).toISOString() : null, most: settings.pool.notesRead });
+  const mentioned = memory ? [...memory.opinions.map((o) => o.character), ...memory.grudges.map((g) => g.character)] : [];
+  const names = mentioned.length ? await db.rpc<Record<string, string>>('pool_names', { ids: mentioned }) : {};
+  return { persona, standing, career, memory, notes, names };
+}
+
 export async function runFilings(db: Db, models: Models, instance: Instance, slot: string, clock: () => number = Date.now): Promise<StaffOutcome> {
   if (Number.isNaN(Date.parse(slot))) throw new Error(`staff: slot is not a time: ${JSON.stringify(slot)}`);
   const tuned = await withDatabaseSettings(instance, db);
   const settings = tuned.settings;
+  // A report is paid before it is judged (the Mod Bots design, section 7): one whose judgment never came back (the function died between the two) is refunded, so a
+  // player is never out of pocket for it. It is a refund and no model call, so it runs whether The System is on or off, and a failure of it costs the filings nothing.
+  try {
+    await db.rpc('refund_stale_reports', { minutes: STALE_REPORT_MINUTES, most: STALE_REPORTS_PER_RUN });
+  } catch (e) {
+    if (stopsTheRun(e) || !(e instanceof DatabaseError)) throw e;
+    console.warn('the stale reports were not refunded this run', said(e));
+  }
   if (!settings.systemEnabled) return { status: 'off' };
   const started = clock();
 
@@ -153,27 +185,7 @@ export async function runFilings(db: Db, models: Models, instance: Instance, slo
   const learn = async (staff: string): Promise<Known> => {
     const have = known.get(staff);
     if (have) return have;
-    const persona = roster.find((p) => p.key === staff);
-    if (!persona) {
-      const none: Known = { persona, standing: null, career: null, memory: null, notes: [], names: {} };
-      known.set(staff, none);
-      return none;
-    }
-    const standing = await db.rpc<Standing>('mod_standing', { staff });
-    if (standing.office !== 'mod') {
-      const off: Known = { persona, standing, career: null, memory: null, notes: [], names: {} };
-      known.set(staff, off);
-      return off;
-    }
-    const [career, memory, since] = await Promise.all([
-      db.rpc<Career>('staff_career', { of_staff: staff }),
-      db.rpc<Memory | null>('staff_memory_latest', { staff }),
-      db.rpc<string | null>('staff_memory_at', { staff }),
-    ]);
-    const notes = await db.rpc<string[]>('staff_notes_recent', { of_staff: staff, since: since ? new Date(Date.parse(since)).toISOString() : null, most: settings.pool.notesRead });
-    const mentioned = memory ? [...memory.opinions.map((o) => o.character), ...memory.grudges.map((g) => g.character)] : [];
-    const names = mentioned.length ? await db.rpc<Record<string, string>>('pool_names', { ids: mentioned }) : {};
-    const full: Known = { persona, standing, career, memory, notes, names };
+    const full = await learnMod(db, roster, settings, staff);
     known.set(staff, full);
     return full;
   };
