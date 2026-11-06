@@ -128,6 +128,14 @@ describe('the input store', () => {
     near(light.px, -1);
     near(light.py, 1);
   });
+  it('a window of zero width or height leaves that axis of the pointer at 0, never NaN', () => {
+    light.attach({});
+    move('mouse', 750, 200);
+    Object.defineProperty(window, 'innerWidth', { value: 0, configurable: true });
+    Object.defineProperty(window, 'innerHeight', { value: 0, configurable: true });
+    move('mouse', 10, 10);
+    expect([light.px, light.py]).toEqual([0, 0]);
+  });
   it('a touch pointermove does not move the light', () => {
     light.attach({});
     move('touch', 900, 100);

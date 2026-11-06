@@ -75,8 +75,9 @@ function onPointer(e: Event): void {
   const p = e as PointerEvent;
   if (p.pointerType !== 'mouse' && p.pointerType !== 'pen') return;
   if (!finePointer) return;
-  state.px = (p.clientX / window.innerWidth - 0.5) * 2;
-  state.py = (p.clientY / window.innerHeight - 0.5) * 2;
+  // A zero-size window (a hidden frame) has no middle to measure from: that axis rests at 0 rather than going to NaN.
+  state.px = window.innerWidth > 0 ? (p.clientX / window.innerWidth - 0.5) * 2 : 0;
+  state.py = window.innerHeight > 0 ? (p.clientY / window.innerHeight - 0.5) * 2 : 0;
 }
 
 function onOrientation(e: Event): void {
