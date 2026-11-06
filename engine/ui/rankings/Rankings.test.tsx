@@ -14,6 +14,7 @@ import { useLocation } from '../router.tsx';
 import { RankingsScreen } from './Rankings.tsx';
 import userEvent from '@testing-library/user-event';
 import { addressOf } from '../router.tsx';
+import { readFileSync } from 'node:fs';
 
 function Where() {
   const l = useLocation();
@@ -151,6 +152,85 @@ describe('a finished season', () => {
     const w = finished(3);
     renderIn(w.fake, <RankingsScreen embedded season={7} />, { path: '/season?tab=rankings&season=7' });
     expect(await screen.findByText('Season 7 has no final standings.')).toBeInTheDocument();
+  });
+});
+
+/** What the season page does: the season and character come from the address, so a change of the choice changes the props. */
+function Host() {
+  const { query } = useLocation();
+  const s = Number.parseInt(query.get('season') ?? '', 10);
+  return <RankingsScreen embedded season={Number.isNaN(s) ? undefined : s} character={query.get('character') ?? undefined} />;
+}
+
+describe('a finished season, beyond what the eye sees', () => {
+  test('the season choice keeps keyboard focus when it changes, while the new table loads and after', async () => {
+    const w = finished();
+    const user = userEvent.setup();
+    renderIn(w.fake, <Host />, { path: '/season?tab=rankings&season=1' });
+    const select = await screen.findByRole('combobox', { name: 'Season' });
+    select.focus();
+    const real = w.fake.standingsPage.bind(w.fake);
+    let answer: (rows: Awaited<ReturnType<typeof real>>) => void = () => {};
+    vi.spyOn(w.fake, 'standingsPage').mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
+    await user.selectOptions(select, 'Season 2 (now)');
+    /* While it loads: the same select, still focused, and the table area says so. */
+    expect(screen.getByRole('combobox', { name: 'Season' })).toBe(select);
+    expect(document.activeElement).toBe(select);
+    expect(document.querySelector('.kb-rankings[aria-busy="true"]')).not.toBeNull();
+    await act(async () => { answer(await real(0, 50)); });
+    await screen.findByRole('table');
+    expect(screen.getByRole('combobox', { name: 'Season' })).toBe(select);
+    expect(document.activeElement).toBe(select);
+  });
+
+  test('an unknown season is what the select shows, not the current one, and the way back is a link to today\'s standings', async () => {
+    const w = finished(3);
+    renderIn(w.fake, <RankingsScreen embedded season={999} />, { path: '/season?tab=rankings&season=999' });
+    expect(await screen.findByText('Season 999 has no final standings.')).toBeInTheDocument();
+    const select = screen.getByRole('combobox', { name: 'Season' });
+    expect(select).toHaveValue('999');
+    expect(within(select).getByRole('option', { name: 'Season 999' })).toBeDisabled();
+    expect(screen.getByRole('link', { name: 'Today\'s standings' })).toHaveAttribute('href', '/season?tab=rankings');
+  });
+
+  test('with no finished season at all, the unknown season still links back to today\'s standings', async () => {
+    const w = world();
+    w.fake.signInAs(w.me);
+    renderIn(w.fake, <RankingsScreen embedded season={999} />, { path: '/season?tab=rankings&season=999' });
+    expect(await screen.findByText('Season 999 has no final standings.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Today\'s standings' })).toHaveAttribute('href', '/season?tab=rankings');
+  });
+
+  test('the highlighted row says so in words, not only in color, and is scrolled into view', async () => {
+    const w = finished();
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    try {
+      renderIn(w.fake, <RankingsScreen embedded season={1} character={w.ids[60]} />, { path: `/season?tab=rankings&season=1&character=${w.ids[60]}` });
+      await waitFor(() => expect(screen.getByText(/Page 2 of 3/u)).toBeInTheDocument());
+      expect(within(rowOf('Name 060')).getByText('(linked)')).toBeInTheDocument();
+      expect(within(rowOf('Name 061')).queryByText('(linked)')).toBeNull();
+      expect(scroll).toHaveBeenCalledTimes(1);
+      expect(scroll.mock.contexts[0]).toBe(rowOf('Name 060'));
+    } finally {
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    }
+  });
+
+  test('a linked character with no row that season is said plainly above the table', async () => {
+    const w = finished(3);
+    const stranger = w.fake.seed.character(w.me, 'Latecomer', 'face', { at: at(31) });
+    renderIn(w.fake, <RankingsScreen embedded season={1} character={stranger} />, { path: `/season?tab=rankings&season=1&character=${stranger}` });
+    const note = await screen.findByText('That character has no row in Season 1\'s final standings.');
+    const table = await screen.findByRole('table');
+    expect(note.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(bodyRows().filter((r) => r.hasAttribute('data-kb-highlight'))).toHaveLength(0);
+  });
+
+  test('the season choice\'s layout does not depend on the order of the stylesheets', () => {
+    const css = readFileSync('engine/ui/rankings/rankings.css', 'utf8');
+    expect(css).toMatch(/^\.kb-rankings \.kb-rankings-choice \{/mu);
+    expect(css).not.toMatch(/^\.kb-rankings-choice \{/mu);
   });
 });
 

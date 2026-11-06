@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { describe, expect, test } from 'vitest';
 import { useKayfa } from '../context.tsx';
 import type { Act } from '../data/api.ts';
-import { buildWorld, renderIn } from '../test-world.tsx';
+import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { AnnounceLine } from './lines.tsx';
 
 const lines: readonly { readonly what: 'debut' | 'turn'; readonly was?: string; readonly class?: string; readonly says: string }[] = [
@@ -35,5 +35,24 @@ describe('the announce line', () => {
     renderIn(fake, <Line act={act} name="Spritey" />, { path: '/' });
     await waitFor(() => expect(screen.getByText(says)).toBeInTheDocument());
     expect(screen.getByText(says).tagName).toBe('P');
+  });
+
+  test('says "an" before a class whose name starts with a vowel', async () => {
+    const fake = buildWorld();
+    const owner = fake.seed.account('o');
+    const spritey = fake.seed.character(owner, 'Spritey', 'face');
+    const act = fake.seed.announce(spritey, 'debut', { class: 'alpha' });
+    const instance = { ...testInstance, classes: [...testInstance.classes, { key: 'alpha', name: 'Alpha', earn: () => [] }] };
+    renderIn(fake, <Line act={act} name="Spritey" />, { path: '/', instance });
+    await waitFor(() => expect(screen.getByText('Spritey debuts as an Alpha.')).toBeInTheDocument());
+  });
+
+  test('names a class key the instance does not know as the key itself, as it is everywhere', async () => {
+    const fake = buildWorld();
+    const owner = fake.seed.account('o');
+    const spritey = fake.seed.character(owner, 'Spritey', 'face');
+    const act = fake.seed.announce(spritey, 'turn', { was: 'heel', class: 'ghost' });
+    renderIn(fake, <Line act={act} name="Spritey" />, { path: '/' });
+    await waitFor(() => expect(screen.getByText('Spritey has Turned from Heel to ghost.')).toBeInTheDocument());
   });
 });

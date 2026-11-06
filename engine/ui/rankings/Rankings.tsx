@@ -20,7 +20,7 @@
  * among them, so the questions sent never say which rows are the player's. The one read that
  * differs is the player's own rows (`myCharacters`), which only say what the player already knows.
  */
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { rankIndex } from '../../rules/ranks.ts';
 import { dayAndTime, figure } from '../characters/format.ts';
 import { useKayfa } from '../context.tsx';
@@ -56,9 +56,13 @@ export interface RankingsProps {
   /** The seasons whose results have landed (`finishedSeasons`), newest first: with any, the page offers the season choice. */
   readonly seasons?: readonly SeasonFinished[];
   /** A finished season's final table, drawn in place of the standings (`resultsPage`); `highlight` is the character whose row opens marked. */
-  readonly final?: { readonly season: SeasonFinished; readonly rows: readonly SeasonResultRow[]; readonly highlight: Id | null } | { readonly missing: number } | null;
+  readonly final?: { readonly season: SeasonFinished; readonly rows: readonly SeasonResultRow[]; readonly highlight: Id | null; readonly unplaced?: boolean } | { readonly missing: number } | null;
   /** Drawn inside the season page, whose heading and tabs are above: the table and the pager are as ever, the heading is left out. */
   readonly embedded?: boolean;
+  /** The table is being read: the head and the season choice stay mounted (and so keep keyboard focus), the table area says so. */
+  readonly loading?: boolean;
+  /** The season the address asks for, which the choice shows while the read is out. */
+  readonly asked?: number | null;
 }
 
 /** Fifty to a page: a page of the ranking costs a page, however many characters have debuted (the board's standings page, retired with the season page, read fifty as well). */
@@ -103,6 +107,8 @@ function FinalClassCell({ shown, className }: { readonly shown: SeasonResultRow[
 function SeasonChoice({ now, seasons, chosen }: { readonly now: Season | null; readonly seasons: readonly SeasonFinished[]; readonly chosen: number | null }) {
   const navigate = useNavigate();
   const past = seasons.filter((f) => f.number !== now?.number);
+  /* A season the address names that has no final standings is shown as such, never as the current one. */
+  const unknown = chosen !== null && chosen !== now?.number && !past.some((f) => f.number === chosen) ? chosen : null;
   return (
     <label className="kb-glass-field kb-rankings-choice">
       <span>Season</span>
@@ -112,13 +118,22 @@ function SeasonChoice({ now, seasons, chosen }: { readonly now: Season | null; r
       >
         <option value="">{now ? `Season ${now.number} (now)` : 'This season'}</option>
         {past.map((f) => <option key={f.number} value={String(f.number)}>{`Season ${f.number}`}</option>)}
+        {unknown !== null && <option value={String(unknown)} disabled>{`Season ${unknown}`}</option>}
       </select>
     </label>
   );
 }
 
-export function Rankings({ season, settledAt, standings, reveals, turns, mine, total = standings.length, page = 1, href = rankingsPage, embedded = false, seasons = [], final = null }: RankingsProps) {
+export function Rankings({ season, settledAt, standings, reveals, turns, mine, total = standings.length, page = 1, href = rankingsPage, embedded = false, seasons = [], final = null, loading = false, asked = null }: RankingsProps) {
   const { instance } = useKayfa();
+  const root = useRef<HTMLDivElement>(null);
+  const highlighted = final !== null && 'rows' in final ? final.highlight : null;
+  /* The linked row is brought into view when the table first has it. jsdom has no scrollIntoView. */
+  useEffect(() => {
+    if (loading || highlighted === null) return;
+    const row = root.current?.querySelector('tr[data-kb-highlight]');
+    if (row && typeof row.scrollIntoView === 'function') row.scrollIntoView({ block: 'center' });
+  }, [loading, highlighted, page, final]);
   const className = (key: string) => instance.classes.find((c) => c.key === key)?.name ?? key;
   const own = new Map(mine.map((c) => [c.id, c]));
   const stated = statements(reveals, turns);
@@ -127,14 +142,17 @@ export function Rankings({ season, settledAt, standings, reveals, turns, mine, t
   const missing = final !== null && 'missing' in final ? final.missing : null;
   const count = done ? done.season.characters : total;
   const pages = Math.max(1, Math.ceil(count / PER_PAGE));
-  const lead = final === null
+  const lead = loading
+    ? (asked !== null && asked !== season?.number ? `Season ${asked}` : season ? `Season ${season.number}` : 'This season')
+    : final === null
     ? <>{season ? `Season ${season.number}` : 'This season'}{' · '}{settledAt ? `Settled ${dayAndTime(settledAt)}` : 'Nothing settled yet'}</>
     : done
       ? `Season ${done.season.number} · Final standings · Ended ${shortDate(done.season.endsAt)}`
       : `Season ${missing}`;
-  const choice = seasons.length > 0 ? <SeasonChoice now={season} seasons={seasons} chosen={final === null ? null : done ? done.season.number : missing} /> : null;
+  const chosen = loading ? (asked !== null && asked !== season?.number ? asked : null) : final === null ? null : done ? done.season.number : missing;
+  const choice = seasons.length > 0 ? <SeasonChoice now={season} seasons={seasons} chosen={chosen} /> : null;
   return (
-    <div className="kb-rankings">
+    <div className="kb-rankings" ref={root} aria-busy={loading ? 'true' : undefined}>
       {embedded
         ? (
           <div className="kb-rankings-bar">
@@ -148,17 +166,23 @@ export function Rankings({ season, settledAt, standings, reveals, turns, mine, t
             {choice}
           </>
         )}
+      {!loading && (
       <CalmRegion as="p" className="kb-rankings-lead">
         {done
           ? 'The final standings, as the season ended. Your own characters are marked. A class shows only once its player had revealed it that season.'
           : <>The season's standings, as the last settlement left them. Your own characters are marked, with their classes, which
             only you see here. Anyone else's class shows only once its player has revealed it.</>}
       </CalmRegion>
-      {missing !== null
-        ? <CalmRegion as="p" className="kb-rankings-empty">{`Season ${missing} has no final standings.`}</CalmRegion>
+      )}
+      {loading
+        ? <p className="kb-rankings-empty" role="status">Loading the standings.</p>
+        : missing !== null
+        ? <CalmRegion as="p" className="kb-rankings-empty">{`Season ${missing} has no final standings.`}{' '}<Link to={seasonAt('rankings')}>Today&apos;s standings</Link></CalmRegion>
         : rows.length === 0
         ? <CalmRegion as="p" className="kb-rankings-empty">{count === 0 ? 'No character has debuted yet. The first settlement puts them here.' : 'Nothing on this page.'}</CalmRegion>
         : (
+          <>
+          {done?.unplaced && <CalmRegion as="p" className="kb-rankings-empty">{`That character has no row in Season ${done.season.number}'s final standings.`}</CalmRegion>}
           <CalmRegion className="kb-rankings-board">
             <table className="kb-rankings-table" role="table">
               <caption className="kb-visually-hidden">{done ? `Season ${done.season.number} final standings` : season ? `Season ${season.number} rankings` : 'Rankings'}, highest standing first</caption>
@@ -181,6 +205,7 @@ export function Rankings({ season, settledAt, standings, reveals, turns, mine, t
                       <td role="cell" className="kb-rankings-place kb-num">{s.place}</td>
                       <th scope="row" role="rowheader" className="kb-rankings-name">
                         <Link to={`/c/${encodeURIComponent(s.character)}`}>{s.name}</Link>
+                        {marked && <span className="kb-visually-hidden"> (linked)</span>}
                         {mineHere && <> <span className="kb-rankings-yours kb-glass-skew-tag"><span className="kb-glass-upright">Yours</span></span></>}
                       </th>
                       <td role="cell" className="kb-rankings-rank">{rank}</td>
@@ -194,8 +219,9 @@ export function Rankings({ season, settledAt, standings, reveals, turns, mine, t
               </tbody>
             </table>
           </CalmRegion>
+          </>
         )}
-      {(pages > 1 || page > pages) && (
+      {!loading && (pages > 1 || page > pages) && (
         <CalmRegion className="kb-rankings-pages">
           <PageLinks label="Pages of the rankings" page={page} pages={pages} href={href} />
         </CalmRegion>
@@ -223,6 +249,8 @@ export function RankingsScreen({ embedded = false, href = rankingsPage, season, 
   const { query } = useLocation();
   const asked = Number.parseInt(query.get('page') ?? '', 10);
   const [read, setState] = useState<State>({ status: 'loading' });
+  /* What the head and the season choice need while a table is read, kept from the last read so they stay mounted and keep focus. */
+  const [frame, setFrame] = useState<Pick<RankingsProps, 'season' | 'seasons'>>({ season: null, seasons: [] });
   /*
    * A new page, season or account starts from nothing: never the last page's rows, the last
    * account's marks or the last read's error. The read's key is checked as the screen renders, so
@@ -242,10 +270,10 @@ export function RankingsScreen({ embedded = false, href = rankingsPage, season, 
         const mine = await api.myCharacters();
         if (!ended) return { page: 1, props: { season: current, settledAt: null, standings: [], reveals: [], turns: [], mine, seasons, final: { missing: season! } } };
         /* A finished season's table is public and asked the same for every player: the row of the linked character picks the page, and no more is read for it. */
-        const index = character !== undefined && Number.isNaN(asked) ? await api.resultPlace(ended.number, character) : null;
+        const index = character !== undefined ? await api.resultPlace(ended.number, character) : null;
         const page = Math.min(MAX_PAGE, Math.max(1, Number.isNaN(asked) ? (index === null ? 1 : Math.floor(index / PER_PAGE) + 1) : asked));
         const rows = await api.resultsPage(ended.number, page);
-        return { page, props: { season: current, settledAt: null, standings: [], reveals: [], turns: [], mine, seasons, final: { season: ended, rows, highlight: character ?? null } } };
+        return { page, props: { season: current, settledAt: null, standings: [], reveals: [], turns: [], mine, seasons, final: { season: ended, rows, highlight: character ?? null, unplaced: character !== undefined && index === null } } };
       }
       const page = Math.min(MAX_PAGE, Math.max(1, Number.isNaN(asked) ? 1 : asked || 1));
       const [standings, total, settledAt, mine] = await Promise.all([
@@ -256,13 +284,16 @@ export function RankingsScreen({ embedded = false, href = rankingsPage, season, 
       const [reveals, turns] = ids.length === 0 ? [[], []] : await Promise.all([api.classReveals(ids), api.turnsAnnounced(ids)]);
       return { page, props: { standings, total, season: current, settledAt, mine, reveals, turns, seasons } };
     })().then(
-      (done) => { if (live) setState({ status: 'ready', key, ...done }); },
+      (done) => { if (live) { setFrame({ season: done.props.season, seasons: done.props.seasons }); setState({ status: 'ready', key, ...done }); } },
       () => { if (live) setState({ status: 'failed', key }); },
     );
     return () => { live = false; };
   }, [api, asked, season, character, signedIn, key]);
   if (signedIn === false) return <div className="kb-rankings"><CalmRegion className="kb-rankings-empty"><SignInPrompt /></CalmRegion></div>;
-  if (signedIn === null || state.status === 'loading') return <div className="kb-rankings" aria-busy="true" />;
+  if (signedIn === null) return <div className="kb-rankings" aria-busy="true" />;
+  if (state.status === 'loading') {
+    return <Rankings {...frame} settledAt={null} standings={[]} reveals={[]} turns={[]} mine={[]} embedded={embedded} loading asked={season ?? null} />;
+  }
   if (state.status === 'failed') return <div className="kb-rankings"><CalmRegion as="p" className="kb-rankings-empty">The rankings could not be loaded. Reload the page to try again.</CalmRegion></div>;
   return <Rankings {...state.props} page={state.page} href={href} embedded={embedded} />;
 }
