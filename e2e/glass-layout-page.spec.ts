@@ -66,43 +66,44 @@ test('the gatherer hands the judgment what a clipping column holds, and not a sc
 });
 
 /*
- * Paint order (refusal 6): the swap's calm is a stacking context, which paints over a static
- * neighbor and faded the phone avatar; the same neighbor positioned above it is not dimmed. The
- * fixture reproduces both, with the calm's backing as calm.css draws it (a `::before` at
- * z-index -1 in an isolated calm). It also holds the card-face art exemption to marked text inside
- * the card: an aria-hidden ancestor above the card exempts nothing.
+ * Calm regions (refusal 5): the gatherer hands the judgment each region's box and the surface each
+ * block stands on. The fixture is a glass page of a calmAll surface with a column region holding
+ * one paragraph, another paragraph beside it, and the menu bar's words (on their own panel, so not
+ * on the glass). It also holds the card-face art exemption to marked text inside the card: an
+ * aria-hidden ancestor above the card exempts nothing.
  */
 const PAINT = `<!doctype html><meta charset="utf-8"><style>
   body { margin: 0; font: 16px/1.3 sans-serif; }
-  .calm { position: relative; isolation: isolate; margin: 60px 60px 0; width: 200px; height: 40px; }
-  .calm::before { content: ''; position: absolute; z-index: -1; inset: -30px; background: #000; pointer-events: none; }
-  .row { position: relative; height: 0; }
-  button.pic { width: 80px; height: 30px; }
-  button.over { display: block; margin: -20px 0 0 70px; }
-  button.above { position: absolute; left: 70px; top: -20px; z-index: 1; }
+  .kb-glass { position: relative; }
+  .kb-smoke { position: absolute; inset: 0; }
+  .col { margin: 40px; height: 100px; }
+  p { margin: 0 0 20px 40px; width: 300px; }
   .card { display: flex; width: 358px; margin-top: 200px; }
   .card p { width: 100px; margin: 0; }
 </style>
 <main>
-  <div class="calm kb-calm">Calm</div>
-  <button class="pic over">Over</button>
-  <div class="calm kb-calm" style="margin-top: 140px">Calm two</div>
-  <div class="row"><button class="pic above">Above</button></div>
+  <div class="kb-glass kb-glass-page">
+    <div class="kb-smoke" data-kb-surface="calmed"></div>
+    <nav class="kb-glass-menu"><p class="menu">Menu words</p></nav>
+    <div class="col" data-kb-calm-region="r1"><p class="inside">In the column.</p></div>
+    <p class="beside">Beside the column.</p>
+  </div>
   <div aria-hidden="true"><div class="kb-postcard card"><p class="bare">Every character you have made, and where each one stands, on this card.</p><span></span></div></div>
   <div class="kb-postcard card"><p data-kb-art class="marked">Every character you have made, and where each one stands, on this card.</p><span></span></div>
 </main>`;
 
-test('the gatherer reads paint order: a calm painted over a control is refused, one under it is not', async ({ page }) => {
+test('the gatherer hands the judgment the regions and each block\'s surface: a paragraph beside the column is refused on a calmAll surface, one inside it and the menu bar\'s are not', async ({ page }) => {
   await page.setContent(PAINT);
   await page.addScriptTag({ content: GATHERER });
-  const facts = await page.evaluate(() => (globalThis as Bundled).kbGlassLayout.gather());
+  const facts = await page.evaluate(() => (globalThis as Bundled).kbGlassLayout.gather(['calmed']));
+  expect(facts.regions).toHaveLength(1);
   const text = judgeLayout({ screen: 'the fixture', ...facts }).join('\n');
-  expect(text).toMatch(/calm over other content: .*lies on .*button\.pic\.over/u);
-  expect(text).not.toMatch(/lies on .*button\.pic\.above/u);
-  /* The gatherer lists the one it read as above, and not the other. */
-  const listed = facts.calms.flatMap((c) => c.above ?? []);
-  expect(listed.some((p) => p.includes('button.pic.above'))).toBe(true);
-  expect(listed.some((p) => p.includes('button.pic.over'))).toBe(false);
+  expect(text).toMatch(/text outside the calm: .*p\.beside/u);
+  expect(text).not.toMatch(/text outside the calm: .*p\.inside/u);
+  expect(text).not.toMatch(/text outside the calm: .*p\.menu/u);
+  /* The same page on a surface that is not calmAll is not refused. */
+  const other = await page.evaluate(() => (globalThis as Bundled).kbGlassLayout.gather([]));
+  expect(judgeLayout({ screen: 'the fixture', ...other }).join('\n')).not.toMatch(/text outside the calm/u);
 });
 
 test('card-face art is only marked text inside the card, not anything under an aria-hidden ancestor', async ({ page }) => {

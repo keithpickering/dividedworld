@@ -62,7 +62,7 @@
 
 .kb-glass-menu-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 4px;
   width: 100%;
@@ -72,12 +72,66 @@
 
 .kb-glass-menu-list {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  flex: 0 1 auto;
+  min-width: 0;
   align-items: center;
   gap: 4px;
   list-style: none;
-  margin: 0;
-  padding: 0;
+  /* Room inside the clip for a focused tab's ring (base.css: 2px and 2px off; the skew adds about 5px sideways), taken back from the margin so the row and the bar are as tall as before. */
+  margin: -6px -12px;
+  padding: 6px 12px;
+  /* Where the tabs do not fit, the row scrolls sideways (MenuBar.tsx writes data-kb-fade for the edge where more wait). */
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.kb-glass-menu-list::-webkit-scrollbar {
+  display: none;
+}
+
+.kb-glass-menu-list[data-kb-fade='end'] {
+  mask-image: linear-gradient(to right, var(--kb-glass-ground) calc(100% - 40px), transparent);
+}
+
+.kb-glass-menu-list[data-kb-fade='start'] {
+  mask-image: linear-gradient(to left, var(--kb-glass-ground) calc(100% - 40px), transparent);
+}
+
+.kb-glass-menu-list[data-kb-fade='both'] {
+  mask-image: linear-gradient(to right, transparent, var(--kb-glass-ground) 40px, var(--kb-glass-ground) calc(100% - 40px), transparent);
+}
+
+/* Plain modes: the fade would mask a tab's words, and forced colors draw no gradients to begin with. */
+:root[data-kb-contrast='high'] .kb-glass-menu-list {
+  mask-image: none;
+}
+
+@media (forced-colors: active) {
+  .kb-glass-menu-list[data-kb-fade] {
+    mask-image: none;
+  }
+}
+
+/* The tabs step down as their count grows, as the boards draw them (board 37): 13px and 1.5px past five, 10px and 1px past eight. */
+:where(:root[data-kb-layout='main']) .kb-glass-menu-list[data-kb-tabs='many'] .kb-glass-menu-tab {
+  padding: 0 13px;
+  letter-spacing: 1.5px;
+}
+
+:where(:root[data-kb-layout='main']) .kb-glass-menu-list[data-kb-tabs='most'] .kb-glass-menu-tab {
+  padding: 0 10px;
+  letter-spacing: 1px;
+}
+
+.kb-glass-menu-back,
+.kb-glass-menu-tab {
+  white-space: nowrap;
+}
+
+.kb-glass-menu-back {
+  flex: 0 0 auto;
 }
 
 .kb-glass-menu-back,
@@ -157,10 +211,12 @@
 }
 
 :where(:root[data-kb-layout='phone']) .kb-glass-menu-list {
+  /* Under Back, the list's ring room reaches up only as far as the row's gap, so the strip never starts above Back's foot. */
+  margin: -4px 0 -6px;
+  padding-inline: 0;
   flex-wrap: nowrap;
   min-width: 0;
   max-width: 100%;
-  overflow-x: auto;
   font-size: var(--kb-glass-size-phone-body);
 }
 
@@ -180,7 +236,7 @@
 /* ---- the content column ---- */
 
 .kb-glass-content {
-  /* The column's side gutter; calm.css reads it, so on the phone a calm's feather stays inside the column's clip. */
+  /* The column's side gutter. */
   --kb-glass-gutter: clamp(16px, 4.44vw, 64px);
   display: block;
   max-width: 1312px;
@@ -199,12 +255,9 @@
 }
 
 /*
- * A calm's feather reaches 32px past its words (calm.css), wider than the phone's 16px gutter, so a
- * calm on text that runs to the column's edge would push the page sideways. The column clips
- * sideways at its own edge, which is the window's on a phone and past the gutters everywhere else,
- * so no glass page scrolls sideways for its feathers. `clip` makes no scroll container, so nothing
- * else about the column changes. (An `overflow-clip-margin` would be ignored here: Chromium reads
- * it only where both axes clip.)
+ * The column clips sideways at its own edge, which is the window's on a phone and past the gutters
+ * everywhere else, so no glass page scrolls sideways however wide a child runs. `clip` makes no
+ * scroll container, so nothing else about the column changes.
  */
 .kb-glass-content {
   overflow-x: clip;
@@ -253,6 +306,18 @@
   box-sizing: border-box;
   /* The foot is never less than the cut leaves it: a control in the bottom left corner stands clear of the chamfer. */
   padding: 0 var(--kb-dialog-pad-x) max(var(--kb-dialog-pad-bottom), calc(var(--kb-cut) - var(--kb-dialog-pad-x) + var(--kb-border)));
+  /*
+   * A dialog taller than its room scrolls itself, and its panel (::after) and smoke are as tall as the room, not the content: scrolled,
+   * the frame's own neon (the background color, the border's) showed below them as a bright band under the words. The ground follows
+   * the scroll (`local`), one border in, so under any line there is the ground and never the neon.
+   */
+  background-image: linear-gradient(var(--kb-glass-ground), var(--kb-glass-ground));
+  background-repeat: no-repeat;
+  background-attachment: local;
+  background-origin: padding-box;
+  background-clip: padding-box;
+  background-position: center;
+  background-size: calc(100% - var(--kb-border) * 2) calc(100% - var(--kb-border) * 2);
 }
 
 .kb-glass-dialog::after {
@@ -344,7 +409,7 @@
 }
 
 .kb-glass-dialog-head {
-  /* Above the kicker's calm, whose feather lies over it. */
+  /* Above the kicker. */
   position: relative;
   z-index: 1;
   margin: 0;

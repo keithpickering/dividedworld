@@ -32,6 +32,7 @@ import { usePlayer } from '../player.tsx';
 import { reveals as statements, type Statement } from '../postbit/reveals.ts';
 import { Link, useLocation } from '../router.tsx';
 import './rankings.css';
+import { CalmRegion } from '../glass/Calm.tsx';
 
 export interface RankingsProps {
   readonly season: Season | null;
@@ -89,21 +90,21 @@ export function Rankings({ season, settledAt, standings, reveals, turns, mine, t
     <div className="kb-rankings">
       {embedded
         ? (
-          <p className="kb-rankings-season kb-calm">
+          <CalmRegion as="p" className="kb-rankings-season">
             {season ? `Season ${season.number}` : 'This season'}
             {' · '}
             {settledAt ? `Settled ${dayAndTime(settledAt)}` : 'Nothing settled yet'}
-          </p>
+          </CalmRegion>
         )
         : <PageHead title="Rankings" lead={<>{season ? `Season ${season.number}` : 'This season'}{' · '}{settledAt ? `Settled ${dayAndTime(settledAt)}` : 'Nothing settled yet'}</>} />}
-      <p className="kb-rankings-lead kb-calm">
+      <CalmRegion as="p" className="kb-rankings-lead">
         The season's standings, as the last settlement left them. Your own characters are marked, with their classes, which
         only you see here. Anyone else's class shows only once its player has revealed it.
-      </p>
+      </CalmRegion>
       {standings.length === 0
-        ? <p className="kb-rankings-empty kb-calm">{total === 0 ? 'No character has debuted yet. The first settlement puts them here.' : 'Nothing on this page.'}</p>
+        ? <CalmRegion as="p" className="kb-rankings-empty">{total === 0 ? 'No character has debuted yet. The first settlement puts them here.' : 'Nothing on this page.'}</CalmRegion>
         : (
-          <div className="kb-rankings-board kb-calm">
+          <CalmRegion className="kb-rankings-board">
             <table className="kb-rankings-table" role="table">
               <caption className="kb-visually-hidden">{season ? `Season ${season.number} rankings` : 'Rankings'}, highest standing first</caption>
               <thead role="rowgroup">
@@ -134,12 +135,12 @@ export function Rankings({ season, settledAt, standings, reveals, turns, mine, t
                 })}
               </tbody>
             </table>
-          </div>
+          </CalmRegion>
         )}
       {(pages > 1 || page > pages) && (
-        <div className="kb-rankings-pages kb-calm">
+        <CalmRegion className="kb-rankings-pages">
           <PageLinks label="Pages of the rankings" page={page} pages={pages} href={href} />
-        </div>
+        </CalmRegion>
       )}
     </div>
   );
@@ -185,8 +186,8 @@ export function RankingsScreen({ embedded = false, href = rankingsPage }: { read
     );
     return () => { live = false; };
   }, [api, page, signedIn, key]);
-  if (signedIn === false) return <div className="kb-rankings"><div className="kb-rankings-empty kb-calm"><SignInPrompt /></div></div>;
+  if (signedIn === false) return <div className="kb-rankings"><CalmRegion className="kb-rankings-empty"><SignInPrompt /></CalmRegion></div>;
   if (signedIn === null || state.status === 'loading') return <div className="kb-rankings" aria-busy="true" />;
-  if (state.status === 'failed') return <div className="kb-rankings"><p className="kb-rankings-empty kb-calm">The rankings could not be loaded. Reload the page to try again.</p></div>;
+  if (state.status === 'failed') return <div className="kb-rankings"><CalmRegion as="p" className="kb-rankings-empty">The rankings could not be loaded. Reload the page to try again.</CalmRegion></div>;
   return <Rankings {...state.props} page={page} href={href} embedded={embedded} />;
 }

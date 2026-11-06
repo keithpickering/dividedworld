@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { buildSync } from 'esbuild';
 import { expect, test, type Page } from '@playwright/test';
 import { FIXTURE_OVERLAYS, OVERLAYS, PAGES, STORIES, open, type E2eWindow, type Screen } from './glass-screens.ts';
@@ -8,7 +9,7 @@ import type * as Gatherer from './glass-layout-page.ts';
  * The layout check (docs/plans/2026-11-04-glass-polish-design.md, section 3): every glass screen
  * and dialog (e2e/glass-screens.ts), at a phone (390×844), a tablet (834×1112) and a desktop
  * (1440×900), at each text size the preference offers (100, 125, 150, 200%), laid out as the browser
- * lays it out, and judged by e2e/glass-layout.ts, which says the six things it refuses and
+ * lays it out, and judged by e2e/glass-layout.ts, which says the five things it refuses and
  * e2e/glass-layout.test.ts drives each red on plain data. The facts are gathered in the page by
  * e2e/glass-layout-page.ts, bundled here for the browser.
  *
@@ -22,6 +23,10 @@ const GATHERER = buildSync({
   entryPoints: [new URL('./glass-layout-page.ts', import.meta.url).pathname],
   bundle: true, format: 'iife', globalName: 'kbGlassLayout', target: 'es2022', write: false,
 }).outputFiles[0]!.text;
+
+/** The surfaces whose every text node stands in a calm (refusal 5, e2e/glass-layout.ts), from the ceilings the contrast measurement reads. */
+const CEILINGS = JSON.parse(fs.readFileSync(new URL('./glass-ceilings.json', import.meta.url), 'utf8')) as Record<string, { surfaces: Record<string, { calmAll: boolean }>; overlays: Record<string, { calmAll?: boolean }> }>;
+const CALM_ALL = Object.values(CEILINGS).flatMap((i) => [...Object.entries(i.surfaces), ...Object.entries(i.overlays ?? {})].filter(([, v]) => v.calmAll === true).map(([k]) => k));
 
 type Bundled = typeof globalThis & { kbGlassLayout: typeof Gatherer };
 
@@ -40,7 +45,7 @@ async function setTextSize(page: Page, textSize: (typeof TEXT_SIZES)[number]) {
 
 async function judgeScreen(page: Page, name: string): Promise<string[]> {
   await page.addScriptTag({ content: GATHERER });
-  const gathered = await page.evaluate(() => (globalThis as Bundled).kbGlassLayout.gather());
+  const gathered = await page.evaluate((calmAll) => (globalThis as Bundled).kbGlassLayout.gather(calmAll), CALM_ALL);
   const facts: LayoutFacts = { screen: name, ...gathered };
   return judgeLayout(facts);
 }

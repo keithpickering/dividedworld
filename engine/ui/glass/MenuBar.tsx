@@ -23,6 +23,10 @@
  * The bar is sticky: it stays at the top of the window while the page scrolls under it, on its own opaque ground, and the root's
  * scroll padding (shell.css) is its height, so a focused control is never scrolled under it.
  *
+ * At the boards' width the tabs and Back are one row, never two: the tabs' padding and spacing step down as their count grows (the
+ * boards: 13px and 1.5px past five, 10px and 1px past eight), and where they still do not fit the row scrolls sideways as the
+ * phone's does, fading at the edge where more wait (`data-kb-fade`), the current tab scrolled into view.
+ *
  * On a phone Back is on its own row and the pages are a strip under it that scrolls sideways, so
  * the current page's tab is scrolled into view as a page opens; with reduced motion it is there at
  * once. Back stays out of the strip, so no tab ever slides under it.
@@ -53,6 +57,11 @@ const TABS: readonly Tab[] = [
 /** The admin queue's tab, after the others, shown only to an admin (the server decides who is one; a refused or failed ask shows no tab). */
 const ADMIN: Tab = { label: 'Admin', to: GLASS_NAV.admin, current: (p) => p === GLASS_NAV.admin || p.startsWith('/admin/') };
 
+/** How crowded a bar of this many tabs is ('few' is an instance with five or fewer tabs), which the stylesheet steps the tabs' padding and spacing down on (the boards' `many` and `most`). */
+function density(count: number): 'few' | 'many' | 'most' {
+  return count > 8 ? 'most' : count > 5 ? 'many' : 'few';
+}
+
 export function MenuBar() {
   const { api } = useKayfa();
   const { session } = usePlayer();
@@ -67,6 +76,8 @@ export function MenuBar() {
   const { path } = useLocation();
   const back = useBackToBoard();
   const list = useRef<HTMLUListElement>(null);
+  const shown = admin ? [...TABS, ADMIN] : TABS;
+  const [fade, setFade] = useState<'none' | 'start' | 'end' | 'both'>('none');
   const bar = useRef<HTMLElement>(null);
 
   /* The bar stays at the top of the window while the page scrolls under it, so what the page scrolls to (a focused control, a link's target) stands clear of its foot. */
@@ -113,6 +124,34 @@ export function MenuBar() {
     };
   }, [path, session.signedIn, admin]);
 
+  /* Where the tabs still do not fit, the row scrolls sideways and fades at the edge where more wait. */
+  useEffect(() => {
+    const strip = list.current;
+    if (!strip) return;
+    const measure = () => {
+      const more = strip.scrollWidth - strip.clientWidth > 1;
+      const before = more && strip.scrollLeft > 1;
+      const after = more && strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 1;
+      setFade(before && after ? 'both' : before ? 'start' : after ? 'end' : 'none');
+    };
+    measure();
+    let live = true;
+    let frame: number | null = null;
+    const soon = () => { if (frame === null) frame = requestAnimationFrame(() => { frame = null; if (live) measure(); }); };
+    strip.addEventListener('scroll', soon, { passive: true });
+    const watch = typeof ResizeObserver === 'function' ? new ResizeObserver(soon) : null;
+    watch?.observe(strip);
+    /* The tabs widen as the display face loads while the strip's own width stays put. */
+    for (const t of Array.from(strip.children)) watch?.observe(t);
+    void document.fonts?.ready.then(() => { if (live) measure(); });
+    return () => {
+      live = false;
+      if (frame !== null) cancelAnimationFrame(frame);
+      strip.removeEventListener('scroll', soon);
+      watch?.disconnect();
+    };
+  }, [session.signedIn, admin]);
+
   return (
     <nav ref={bar} className="kb-glass-menu" aria-label="Menu">
       <div className="kb-glass-menu-row">
@@ -130,8 +169,8 @@ export function MenuBar() {
           </span>
         </Link>
         {session.signedIn && (
-          <ul ref={list} className="kb-glass-menu-list">
-            {(admin ? [...TABS, ADMIN] : TABS).map((t) => (
+          <ul ref={list} className="kb-glass-menu-list" data-kb-tabs={density(shown.length)} data-kb-fade={fade}>
+            {shown.map((t) => (
               <li key={t.label}>
                 <Link to={t.to} className="kb-glass-menu-tab kb-glass-skew" aria-current={t.current(path) ? 'page' : undefined}><span className="kb-glass-upright">{t.label}</span></Link>
               </li>

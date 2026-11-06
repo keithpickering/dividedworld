@@ -47,6 +47,12 @@ export const NARROW_QUERY = '(max-width: 599.98px)';
 
 /** How long the last window's going away waits for another before the rasters are revoked. */
 export const GRACE_MS = 5000;
+
+/**
+ * Dispatched on `window` by a surface that has moved itself (an overlay, placed by its anchor), so the
+ * windows it holds, and the calm regions on them, measure their place again: a placement is made after its children mount.
+ */
+export const FIELD_PLACED = 'kb-field-placed';
 /** How long the window must be still before a stretched raster is made again. */
 export const RESIZE_MS = 300;
 /** A raster is made again once it would be stretched past this share of its width, or of its height. */

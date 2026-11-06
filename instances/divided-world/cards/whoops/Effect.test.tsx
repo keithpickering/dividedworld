@@ -203,6 +203,22 @@ function scrubTo(frame: HTMLElement, root: HTMLElement, layer: number, ink: Laye
   }
 }
 
+/** One unbroken path across a layer's ink, row after row as a hand scrubs back and forth, ending once the model says it is washed to `share`. */
+function scrubPath(ink: LayerInk, share: number): [number, number][] {
+  const b = brush();
+  const path: [number, number][] = [];
+  let back = false;
+  for (let y = 0; y <= 1 && ink.washed < share; y += (BRUSH_PX * 0.7) / boxNow().h) {
+    const row = rowAcross(ink, y);
+    if (row.length < 2) continue;
+    if (back) row.reverse();
+    back = !back;
+    ink.wash(path.length > 0 ? [path[path.length - 1]!, ...row] : row, b.width, b.aspect);
+    path.push(...row);
+  }
+  return path;
+}
+
 /** The line of the post's text that lies under a layer's ink (the first such, nearest the splat's core), and where its middle is, in shares down the box. */
 function coveredLine(ink: LayerInk): { line: number; y: number } {
   const lines = boxNow().h / LINE_PX;
@@ -387,6 +403,22 @@ describe('scrubbing', () => {
     const state = save.mock.calls.at(-1)![1] as { clean?: boolean; strokes: unknown[] };
     expect(state.clean).toBe(true);
     expect(whoops.validateState!(state).ok).toBe(true);
+  });
+
+  test('a layer reaching the share clears while the stroke is still held, without waiting for the mouse to lift', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { frame, root, save } = mount({ author: true, clean: 40 });
+    const [first, ...rest] = scrubPath(inkOf(0), 0.5).map(([x, y]) => px(x, y));
+    act(() => { fireEvent.pointerDown(frame, { clientX: first![0], clientY: first![1], pointerId: 1, button: 0, pointerType: 'mouse' }); });
+    for (const [x, y] of rest) act(() => { fireEvent.pointerMove(frame, { clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse' }); });
+    expect(states(root), 'clean before the button is let go').toEqual(['clean']);
+    const [lx, ly] = rest[rest.length - 1]!;
+    act(() => { fireEvent.pointerUp(frame, { clientX: lx, clientY: ly, pointerId: 1, pointerType: 'mouse' }); });
+    act(() => { vi.advanceTimersByTime(2000); });
+    expect(states(root)).toEqual(['clean']);
+    const state = save.mock.calls.at(-1)![1] as { clean?: boolean; strokes: unknown[] };
+    expect(state.clean).toBe(true);
+    expect(state.strokes.length, 'the stroke that cleared it is saved with the mark').toBeGreaterThan(0);
   });
 
   test('an author whose layer has no room left for strokes still marks it clean for everyone on reaching the share', async () => {
@@ -1156,6 +1188,19 @@ describe('a finger', () => {
     touch(cell, 'touchend', [], [{ id: 1, at: down }]);
     expect(washed(root)[0]).toBeGreaterThan(0);
     expect(vi.mocked(suds.wash)).toHaveBeenCalled();
+  });
+
+  test('a wipe reaching the share clears while the finger is still down, without waiting for it to lift', () => {
+    clock();
+    const { cell, root } = mount({ clean: 40 });
+    const path = scrubPath(inkOf(0), 0.5).map(([x, y]) => px(x, y));
+    const p0 = path[0]!;
+    touch(cell, 'touchstart', [{ id: 1, at: p0 }], [{ id: 1, at: p0 }]);
+    act(() => { vi.advanceTimersByTime(200); });
+    for (const p of path.slice(1)) touch(cell, 'touchmove', [{ id: 1, at: p }], [{ id: 1, at: p }]);
+    expect(states(root), 'clean before the finger lifts').toEqual(['clean']);
+    touch(cell, 'touchend', [], [{ id: 1, at: path[path.length - 1]! }]);
+    expect(states(root)).toEqual(['clean']);
   });
 
   test('a hold of 180ms, then a vertical drag, washes, its touchmoves are prevented, and the puff is thrown', () => {

@@ -7,20 +7,22 @@
 
 /* ---- the page head ---- */
 
+/* The gap between a page's title and the lede or tabs under it, stated once; the phone sets its blocks closer. */
+:root {
+  --kb-glass-title-gap: 12px;
+}
+
+:root[data-kb-layout='phone'] {
+  --kb-glass-title-gap: 8px;
+}
+
 .kb-page-head {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   column-gap: 28px;
-  /* The row gap is the title gap: the lead's and the eyebrow's calm feather is capped at it (calm.css), so it lies on nothing but the gap, never on the title. */
   row-gap: var(--kb-glass-title-gap);
-  /* The calms of what follows reach 32px up (calm.css); the title stands clear of them. */
   margin-bottom: 36px;
-}
-
-.kb-page-head-eyebrow,
-.kb-page-head-lead {
-  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
 }
 
 .kb-page-head-eyebrow {
@@ -78,10 +80,6 @@
 }
 
 :where(:root[data-kb-layout='phone']) .kb-page-head-tabs { margin-left: 0; }
-
-.kb-page-head-tabs > .kb-calm {
-  --kb-calm-feather: min(var(--kb-glass-calm-feather), var(--kb-glass-title-gap));
-}
 
 .kb-page-head > .kb-button-row {
   flex: 0 0 100%;

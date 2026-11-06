@@ -88,7 +88,7 @@ test.describe('hudCut names what runs past the glass', () => {
       await expect(page.locator('.kb-hud-orbs .kb-orb').first()).toBeVisible();
       await page.addStyleTag({ content: css });
       const names = (await hudCut(page)).map(([name, side]) => `${name}:${side}`);
-      expect(names).toContainEqual(what === 'a calm' ? 'kb-hud-aura kb-calm:bottom' : 'kb-hud-orbs:bottom');
+      expect(names).toContainEqual(what === 'a calm' ? 'kb-hud-aura:bottom' : 'kb-hud-orbs:bottom');
     });
   }
 });
@@ -421,7 +421,7 @@ test.describe('between the boards\' widths', () => {
   });
 
   /*
-   * A calm's feather reaches 32px past its words, wider than the phone's 16px gutter, so a restyled
+   * A text block's backing once reached 32px past its words, wider than the phone's 16px gutter, so a restyled
    * glass page whose text runs to the column's edge would push the page sideways. The page shell
    * contains it for every glass page (shell.css), so no page has to remember to. Read on the
    * Rankings story, a restyled page with calms to the column's edge, and on the restyled pages of

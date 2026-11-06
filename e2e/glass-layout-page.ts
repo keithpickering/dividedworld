@@ -3,12 +3,10 @@
  * in e2e/glass-layout.ts (which says, in its header, what counts as a text block, a control, a
  * scroll on purpose and a hidden element). The spec bundles this file for the browser (esbuild,
  * an IIFE named `kbGlassLayout`) and calls `gather` through one `page.evaluate`; nothing here runs
- * in Node. Its calm backing is read with e2e/glass-text-page.ts's `pseudoBox`, the same
- * arithmetic the contrast measurement uses.
+ * in Node. A calm region is an element marked `data-kb-calm-region` (engine/ui/glass/Calm.tsx).
  */
-import { drawn, pseudoBox } from './glass-text-page.ts';
 import type {
-  BlockFact, CalmFact, ClipFact, ControlFact, ControlInRow, LayoutFacts, Located, PanelFact, RowFact,
+  BlockFact, ControlFact, ControlInRow, LayoutFacts, Located, PanelFact, RowFact,
 } from './glass-layout.ts';
 import type { Box } from './glass-text.ts';
 
@@ -208,71 +206,6 @@ function blockOf(el: Element): BlockFact | null {
   return { path: pathOf(el), rect: content, fontSize, longestWord, wraps, textWidth: widest, column, ...(art ? { art } : {}), seen: seenOf(el, content) };
 }
 
-/* ---- paint order (refusal 6) ---- */
-
-/** Overlap of two boxes, or null. */
-function intersect(a: Box, b: Box): Box | null {
-  const x0 = Math.max(a.x, b.x);
-  const y0 = Math.max(a.y, b.y);
-  const x1 = Math.min(a.x + a.width, b.x + b.width);
-  const y1 = Math.min(a.y + a.height, b.y + b.height);
-  return x1 - x0 > 1 && y1 - y0 > 1 ? { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } : null;
-}
-
-/**
- * Whether the calm's backing paints over `content` (true), lies under it (false), or could not be asked (null). Asked of the
- * page: at a grid of points in the overlap of the backing and the content's box, `elementsFromPoint` lists what is hit,
- * topmost first, so the calm's own element (hit through its `::before`, made hit-testable by the caller) coming before the
- * content's says the backing is drawn over it at that point. One point where the calm is on top is enough to call it over;
- * under it at every point asked is under. A point the page does not answer (off the window, a clip hides the backing there,
- * another layer covers both) is not asked; when none can be, the calm's element is scrolled into view and the question asked
- * again, then the scroll put back.
- */
-function paintsOver(calmEl: Element, content: Element): boolean | null {
-  const ask = (): boolean | null => {
-    const backing = pseudoBox(calmEl, getComputedStyle(calmEl, '::before'));
-    const both = intersect(backing, content.getBoundingClientRect());
-    if (!both) return null;
-    const x0 = Math.max(0, both.x);
-    const y0 = Math.max(0, both.y);
-    const x1 = Math.min(innerWidth - 1, both.x + both.width);
-    const y1 = Math.min(innerHeight - 1, both.y + both.height);
-    if (x1 < x0 || y1 < y0) return null;
-    let under = false;
-    const N = 4;
-    for (let i = 0; i <= N; i++) {
-      for (let j = 0; j <= N; j++) {
-        const list = document.elementsFromPoint(x0 + ((x1 - x0) * i) / N, y0 + ((y1 - y0) * j) / N);
-        const m = list.indexOf(calmEl);
-        const c = list.findIndex((h) => content.contains(h));
-        if (m < 0 || c < 0) continue;
-        if (m < c) return true;
-        under = true;
-      }
-    }
-    return under ? false : null;
-  };
-  const first = ask();
-  if (first !== null) return first;
-  const saved: [Element, number, number][] = [];
-  for (let a: Element | null = calmEl; a; a = a.parentElement) saved.push([a, a.scrollLeft, a.scrollTop]);
-  calmEl.scrollIntoView({ block: 'center', inline: 'nearest' });
-  const again = ask();
-  for (const [a, l, t] of saved) { a.scrollLeft = l; a.scrollTop = t; }
-  return again;
-}
-
-/** The paths of the blocks and controls that paint above the calm's backing, where they overlap it. */
-function aboveOf(calm: CalmFact, calmEl: Element, contents: ReadonlyMap<string, Element>): string[] {
-  const out: string[] = [];
-  for (const [path, el] of contents) {
-    if (el === calmEl || calmEl.contains(el) || el.contains(calmEl)) continue;
-    if (!intersect(calm.backing, el.getBoundingClientRect())) continue;
-    if (paintsOver(calmEl, el) === false) out.push(path);
-  }
-  return out;
-}
-
 /* ---- controls, rows and panels ---- */
 
 const isControl = (el: Element) => el.matches(CONTROL);
@@ -388,34 +321,23 @@ function rowsOf(all: readonly Element[]): RowFact[] {
   return rows;
 }
 
-/** The ancestors of `el` that clip overflow (hidden, clip, scroll or auto on an axis), each as its padding box, which is where the clip lies. */
-function clipsOf(el: Element): ClipFact[] {
-  const out: ClipFact[] = [];
-  for (let a = el.parentElement; a && a !== document.documentElement; a = a.parentElement) {
-    const s = getComputedStyle(a);
-    const x = s.overflowX !== 'visible';
-    const y = s.overflowY !== 'visible';
-    if (!x && !y) continue;
-    const r = a.getBoundingClientRect();
-    const z = zoomOf(a);
-    const n = (v: string) => (parseFloat(v) || 0) * z;
-    out.push({
-      path: pathOf(a), x, y,
-      rect: { x: r.left + n(s.borderLeftWidth), y: r.top + n(s.borderTopWidth), width: r.width - n(s.borderLeftWidth) - n(s.borderRightWidth), height: r.height - n(s.borderTopWidth) - n(s.borderBottomWidth) },
-    });
+/**
+ * The surface whose smoke a block stands on, when it is glass text: the nearest ancestor, inside a glass root, that holds a `.kb-smoke`
+ * which does not hold the block (a page's `.kb-glass-page`, an overlay's dialog, the HUD), read from that smoke's `data-kb-surface`. The
+ * menu bar's words stand on its own panel, and the board's text is under no smoke: neither is on the glass.
+ */
+function surfaceOf(el: Element): string | undefined {
+  if (el.closest('.kb-glass-menu')) return undefined;
+  for (let a: Element | null = el.parentElement; a; a = a.parentElement) {
+    if (a.matches('.kb-glass-menu')) return undefined;
+    const smoke = [...a.children].find((c) => c.matches('.kb-smoke') && !c.contains(el));
+    if (smoke && a.closest('.kb-glass')) return smoke.getAttribute('data-kb-surface') ?? undefined;
   }
-  return out;
-}
-
-function calmOf(el: Element): CalmFact | null {
-  const ps = getComputedStyle(el, '::before');
-  if (!drawn(ps)) return null;
-  const { scale: _scale, ...backing } = pseudoBox(el, ps);
-  return { path: pathOf(el), backing, element: toBox(el.getBoundingClientRect()), clips: clipsOf(el), seen: seenOf(el, backing) };
+  return undefined;
 }
 
 /** Everything the judgment reads, from the page as it stands. */
-export function gather(): Omit<LayoutFacts, 'screen'> {
+export function gather(calmAll: readonly string[] = []): Omit<LayoutFacts, 'screen'> {
   const vw = document.documentElement.clientWidth;
   const all = [...document.body.querySelectorAll('*')].filter((e) => !['SCRIPT', 'STYLE', 'LINK', 'META', 'TEMPLATE'].includes(e.tagName) && !(e instanceof SVGElement && e.tagName !== 'svg'));
   const blocks: BlockFact[] = [];
@@ -423,15 +345,13 @@ export function gather(): Omit<LayoutFacts, 'screen'> {
   const scrollers = new Map<string, Located>();
   const reached = new Set<Element>();
   const controls: ControlFact[] = [];
-  const calms: CalmFact[] = [];
-  const calmEls: Element[] = [];
-  const contents = new Map<string, Element>();
+  const regions: Located[] = [];
   const shown = all.filter(visible);
   for (const el of shown) {
     const { scroller } = containerOf(el);
     if (scrollsOnPurpose(el)) scrollers.set(pathOf(el), { path: pathOf(el), rect: toBox(el.getBoundingClientRect()) });
     const b = blockOf(el);
-    if (b) { blocks.push(b); contents.set(b.path, el); }
+    if (b) { const surface = surfaceOf(el); blocks.push(surface === undefined ? b : { ...b, surface }); }
     const r = el.getBoundingClientRect();
     const out = r.left < -1 || r.right > vw + 1;
     if (out && !scroller && !el.closest('[aria-hidden="true"]') && !(el.parentElement && reached.has(el.parentElement))) {
@@ -440,18 +360,12 @@ export function gather(): Omit<LayoutFacts, 'screen'> {
     if (out) reached.add(el);
     if (isControl(el)) {
       const seen = inView(el);
-      if (seen) { controls.push({ path: pathOf(el), rect: toBox(seen.rect), seen: seenOf(el, toBox(seen.rect)), quad: seen.clipped ? undefined : quadOf(el), panel: panelOf(el) }); contents.set(pathOf(el), el); }
+      if (seen) { controls.push({ path: pathOf(el), rect: toBox(seen.rect), seen: seenOf(el, toBox(seen.rect)), quad: seen.clipped ? undefined : quadOf(el), panel: panelOf(el) }); }
     }
-    if (el.classList.contains('kb-calm')) { const c = calmOf(el); if (c) { calms.push(c); calmEls.push(el); } }
+    if (el.hasAttribute('data-kb-calm-region')) regions.push({ path: pathOf(el), rect: toBox(el.getBoundingClientRect()) });
   }
-  /* Paint order: with every backing made hit-testable for the question (calm.css gives it `pointer-events: none`), which content paints above which calm. */
-  const style = document.createElement('style');
-  style.textContent = '.kb-calm::before { pointer-events: auto !important; }';
-  document.head.append(style);
-  const withOrder = calms.map((c, i) => ({ ...c, above: aboveOf(c, calmEls[i]!, contents) }));
-  style.remove();
   return {
     viewport: { width: vw, height: innerHeight, scrollWidth: document.documentElement.scrollWidth },
-    blocks, scrollers: [...scrollers.values()], extents, rows: rowsOf(shown), controls, calms: withOrder,
+    blocks, scrollers: [...scrollers.values()], extents, rows: rowsOf(shown), controls, regions, calmAll,
   };
 }

@@ -162,7 +162,7 @@ export function FrontDoor() {
           <div className="kb-acts-head" aria-hidden="true"><span>Author</span><span>Message</span></div>
           {staged.map((s) => <Post key={s.act.id} staged={s} cards={ui.cards} fill={fill} nameOf={nameOf} />)}
         </div>
-        <section className="kb-glass kb-front-door-note" aria-labelledby={noteTitle}>
+        <section className="kb-glass kb-glass-cut-dialog kb-front-door-note" aria-labelledby={noteTitle}>
           <h2 id={noteTitle} className="kb-visually-hidden">A note from {persona.name}</h2>
           <div className="kb-updates-by">
             <PersonaMark name={persona.name} picture={picture} />

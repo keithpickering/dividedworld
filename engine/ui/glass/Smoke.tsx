@@ -36,12 +36,14 @@
  * element that holds a surface's smoke and its text takes useSurfaceStyle's style, so every calm
  * on that text is drawn at the number tools/check-glass-contrast.mjs reads it at.
  */
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { GlassSurface, LayerColor, SmokeRecipe } from '../types.ts';
 import { useSmokeLevel } from '../appearance.ts';
 import { surfaceCalm } from './apply.ts';
-import { useFieldEnv, useFieldRasters } from './field.ts';
+import { CalmScope, useCalmRegions } from './Calm.tsx';
+import { FIELD_PLACED, useFieldEnv, useFieldRasters } from './field.ts';
+import { fixedAncestor, frameOf } from './smoke-frame.ts';
 
 /** The player's smoke preference (Settings, Accessibility). */
 export type SmokeLevel = 'full' | 'low' | 'off';
@@ -50,26 +52,21 @@ export interface SmokeProps {
   readonly surface: GlassSurface;
   /** Fixes the level; left out, it is the player's preference (Settings, Accessibility). */
   readonly level?: SmokeLevel;
+  /**
+   * What stands on this smoke: the surface's menu bar, column or panels. The smoke does not wrap it in an element; they are its
+   * siblings. Its `CalmRegion`s register with this smoke and are drawn as rects in it (Calm.tsx).
+   */
+  readonly children?: ReactNode;
+  /** Wraps the smoke's own element in a hidden element of this class (the HUD's ground, which has a place and a shape of its own). */
+  readonly holder?: string;
 }
 
 /** The low preference draws a third of each layer's opacity. */
 const LOW = 1 / 3;
 
-/**
- * Dispatched on `window` by a surface that has moved itself (an overlay, placed by its anchor), so the
- * windows it holds measure their place again: a placement is made after its children mount.
- */
-export const FIELD_PLACED = 'kb-field-placed';
-
 /** Where a window stands in the viewport, in the window's own pixels, and how much it is zoomed. */
 interface Placement { readonly x: number; readonly y: number; readonly zoom: number }
 const HOME: Placement = { x: 0, y: 0, zoom: 1 };
-
-/** The nearest of `el` and its ancestors laid out `position: fixed`, or null where none is. */
-function fixedAncestor(el: HTMLElement): HTMLElement | null {
-  for (let a: HTMLElement | null = el; a; a = a.parentElement) if (getComputedStyle(a).position === 'fixed') return a;
-  return null;
-}
 
 /**
  * The element's place in the viewport, kept current. Measured in a layout effect on mount, so the
@@ -82,10 +79,8 @@ function usePlacement(ref: { readonly current: HTMLElement | null }, active: boo
     const el = ref.current;
     if (!active || !el) return;
     const measure = () => {
-      const r = el.getBoundingClientRect();
-      /* Laid out at `offsetWidth` of its own pixels and drawn `r.width` wide: the zoom, 1 where either is nothing (a hidden drawer, jsdom). */
-      const zoom = el.offsetWidth > 0 && r.width > 0 ? r.width / el.offsetWidth : 1;
-      setAt((was) => (was.x === r.left / zoom && was.y === r.top / zoom && was.zoom === zoom ? was : { x: r.left / zoom, y: r.top / zoom, zoom }));
+      const { left, top, zoom } = frameOf(el);
+      setAt((was) => (was.x === left / zoom && was.y === top / zoom && was.zoom === zoom ? was : { x: left / zoom, y: top / zoom, zoom }));
     };
     measure();
     let frame: number | null = null;
@@ -116,7 +111,7 @@ function usePlacement(ref: { readonly current: HTMLElement | null }, active: boo
   return at;
 }
 
-export function Smoke({ surface, level: asked }: SmokeProps) {
+export function Smoke({ surface, level: asked, children, holder }: SmokeProps) {
   const { ui } = useKayfa();
   /* The player's preference, as the root is marked (appearance.ts), unless the caller fixes one. */
   const chosen = useSmokeLevel();
@@ -132,6 +127,8 @@ export function Smoke({ surface, level: asked }: SmokeProps) {
   const urls = useFieldRasters(drawn ? layers : null, env);
   const root = useRef<HTMLDivElement>(null);
   const at = usePlacement(root, drawn);
+  /* The regions standing on this smoke (Calm.tsx): one rect each, in the ground's color, between the layers and the page. */
+  const calm = useCalmRegions(root, recipe !== undefined && level !== 'off');
   /*
    * The page's clock when each layer's element was first drawn, kept for that element's life: a crossing does not restart
    * the drift. An element is drawn only once its raster is ready, so the animation starts then, and the delay must be
@@ -141,7 +138,7 @@ export function Smoke({ surface, level: asked }: SmokeProps) {
   const born = useRef(new Map<string, number>());
   const scale = level === 'low' ? LOW : 1;
   if (!recipe || level === 'off') born.current.clear();
-  return (
+  const smoke = (
     <div ref={root} className="kb-smoke" data-kb-surface={surface} aria-hidden="true">
       <div className="kb-smoke-ground" data-kb-ground="" style={{ background: 'var(--kb-glass-ground)' }} />
       {recipe && level !== 'off' ? (
@@ -171,7 +168,14 @@ export function Smoke({ surface, level: asked }: SmokeProps) {
           })}
         </div>
       ) : null}
+      {recipe && level !== 'off' ? calm.entries.map((e) => <div key={e.id} ref={calm.refOf(e)} className="kb-smoke-calm" />) : null}
     </div>
+  );
+  return (
+    <CalmScope value={calm.field}>
+      {holder === undefined ? smoke : <div className={holder} aria-hidden="true">{smoke}</div>}
+      {children}
+    </CalmScope>
   );
 }
 

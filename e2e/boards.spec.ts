@@ -2,16 +2,22 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { expect, test, type Browser, type Page } from '@playwright/test';
-import { boardsToRun, compareBoard, compareSides, type BoardManifest, type Mismatch, type Snapshot } from './board-match.ts';
+import { boardIds, boardsToRun, compareBoard, compareSides, phoneSizeProblems, screensWithoutBoards, type BoardManifest, type Mismatch, type Snapshot } from './board-match.ts';
+import { FIXTURE_OVERLAYS, OVERLAYS, PAGES, STORIES } from './glass-screens.ts';
 import { pressControls, routeBoardFonts, settledSnapshot, snapshotPage, standInFaces } from './board-snapshot.ts';
 
 /**
- * The board match, end to end: each board the two-worlds session drew (docs/research/2026-10-29-two-worlds/) and the
- * alerts session (docs/research/2026-11-02-alerts/) opened beside the app at the same size, and the manifest's landmarks compared (e2e/board-match.ts).
+ * The board match, end to end: each board the two-worlds session drew (docs/research/2026-10-29-two-worlds/), the
+ * alerts session (docs/research/2026-11-02-alerts/) and the later sessions (docs/research/2026-11-04-booster-packs/,
+ * 2026-11-04-cosmetics/, 2026-11-05-card-template/ and 2026-11-05-backfill/) opened beside the app at the same size, and the manifest's landmarks compared (e2e/board-match.ts).
  * The list of boards is the folder's, so a board with no manifest fails by name unless PENDING says
- * which part of the glass build builds it; a board in PENDING that has a manifest fails too, so the
- * map cannot go stale. The part that builds a board takes it out of PENDING in the same change that
- * writes its manifest (e2e/boards/<NN>-<name>.ts, a default-exported BoardManifest).
+ * which plan, and which task of it, builds it; a board in PENDING that has a manifest fails too, so the
+ * map cannot go stale. The task that builds a board takes it out of PENDING in the same change that
+ * writes its manifest (e2e/boards/<NN>-<name>.ts, a default-exported BoardManifest; for a board in a folder after the
+ * first two, e2e/boards/<folder>/<NN>-<name>.ts, and its id is <folder>/<NN>-<name>). A manifest may also export `phone`, a
+ * BoardManifest for the same board's phone drawing, compared at 390 by 844 (PHONE_SIZE); that phone board has no manifest file of
+ * its own, one parent names it, and its report goes under the phone board's own id. Every glass screen (e2e/glass-screens.ts) names
+ * the board it is held to or says why it has none, which the second test checks.
  *
  * The board's Google Fonts requests are routed to the instance's own files (the build serves the
  * same files itself), the system faces both name first are set in one stand-in where the machine
@@ -21,7 +27,7 @@ import { pressControls, routeBoardFonts, settledSnapshot, snapshotPage, standInF
  * report's outlines are styles put into the page, which the site's policy would refuse, so it is
  * set aside here (e2e/csp.spec.ts holds the policy). The build is
  * pressed where the manifest says the board draws a state reached by a press, and read once it has
- * rendered (e2e/board-snapshot.ts). A report goes to e2e/report/boards/<board>/ on a
+ * rendered (e2e/board-snapshot.ts). A report goes to e2e/report/boards/<board id>/ on a
  * pass as well as a failure: both screenshots with the manifest's boxes outlined, side by side in an
  * index.html with the mismatches listed, which CI uploads.
  */
@@ -29,35 +35,103 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 /*
  * The boards' folders, in the order the sessions drew them. The two-worlds boards are a record and are not edited; the alerts
  * design's (docs/plans/2026-11-02-alerts-design.md) are drawn over them and revise some of what they show, which the old boards'
- * manifests say where they compare it. A board's id is its file name, so no two folders may hold the same one (checked below).
+ * manifests say where they compare it. The folders after them are the booster packs, cosmetics and card template designs (built later,
+ * so every board of theirs is pending) and the backfill's. A board in the first BARE_FOLDERS folders has its file name as its id, so no
+ * two of them may hold the same one (checked below); a board in a later folder is <folder>/<file name>, since two of them draw a
+ * 05-admin.html. A `.src.html` is a generator's source, not a board.
  */
 const BOARD_FOLDERS = [
   path.join(here, '..', 'docs', 'research', '2026-10-29-two-worlds'),
   path.join(here, '..', 'docs', 'research', '2026-11-02-alerts'),
+  path.join(here, '..', 'docs', 'research', '2026-11-04-booster-packs'),
+  path.join(here, '..', 'docs', 'research', '2026-11-04-cosmetics'),
+  path.join(here, '..', 'docs', 'research', '2026-11-05-card-template'),
+  path.join(here, '..', 'docs', 'research', '2026-11-05-backfill'),
 ];
+const BARE_FOLDERS = 2;
 const MANIFESTS = path.join(here, 'boards');
 const REPORT = path.join(here, 'report', 'boards');
 
-/** The boards not built yet, each with the part of docs/plans/2026-10-30-glass-build-plan.md that builds it. */
-const PENDING: Readonly<Record<string, string>> = {};
+/**
+ * The boards not built yet, each with the plan, and its task, that builds it (a design not planned task by task yet names its
+ * plan alone). A board of a later folder is <folder>/<name>, and its manifest's `board` is that whole id.
+ */
+const PENDING: Readonly<Record<string, string>> = {
+  '2026-11-04-booster-packs/01-machine': 'docs/plans/2026-11-04-booster-packs-plan.md',
+  '2026-11-04-booster-packs/02-reveal': 'docs/plans/2026-11-04-booster-packs-plan.md',
+  '2026-11-04-booster-packs/03-hit': 'docs/plans/2026-11-04-booster-packs-plan.md',
+  '2026-11-04-booster-packs/04-phone': 'docs/plans/2026-11-04-booster-packs-plan.md',
+  '2026-11-04-booster-packs/05-admin': 'docs/plans/2026-11-04-booster-packs-plan.md',
+  '2026-11-04-cosmetics/01-postbit': 'docs/plans/2026-11-04-cosmetics-plan.md',
+  '2026-11-04-cosmetics/02-dressup': 'docs/plans/2026-11-04-cosmetics-plan.md',
+  '2026-11-04-cosmetics/03-trophy-case': 'docs/plans/2026-11-04-cosmetics-plan.md',
+  '2026-11-04-cosmetics/04-event': 'docs/plans/2026-11-04-cosmetics-plan.md',
+  '2026-11-04-cosmetics/05-admin': 'docs/plans/2026-11-04-cosmetics-plan.md',
+  '2026-11-05-card-template/01-layouts': 'docs/plans/2026-11-05-card-template-plan.md',
+  '2026-11-05-backfill/14-sign-in': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 6',
+  '2026-11-05-backfill/15-register': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 6',
+  '2026-11-05-backfill/16-contact': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 6',
+  '2026-11-05-backfill/17-front-door': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 6',
+  '2026-11-05-backfill/18-door-phone': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 6',
+  '2026-11-05-backfill/19-welcome': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 7',
+  '2026-11-05-backfill/20-guide': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 7',
+  '2026-11-05-backfill/21-spotlight': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 7',
+  '2026-11-05-backfill/22-onboarding-phone': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 7',
+  '2026-11-05-backfill/23-new-character': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 8',
+  '2026-11-05-backfill/24-debut': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 8',
+  '2026-11-05-backfill/25-reveal': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 8',
+  '2026-11-05-backfill/26-edit-profile': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 8',
+  '2026-11-05-backfill/27-characters-phone': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 8',
+  '2026-11-05-backfill/28-lens': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 10',
+  '2026-11-05-backfill/29-lens-states': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 10',
+  '2026-11-05-backfill/30-log-empty': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 10',
+  '2026-11-05-backfill/31-log-open': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 10',
+  '2026-11-05-backfill/32-lens-log-phone': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 10',
+  '2026-11-05-backfill/33-settings-account': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 11',
+  '2026-11-05-backfill/34-vending-info': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 11',
+  '2026-11-05-backfill/35-hud-cap': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 11',
+  '2026-11-05-backfill/36-account-phone': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 11',
+  '2026-11-05-backfill/37-admin-queue': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 12',
+  '2026-11-05-backfill/38-write-update': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 12',
+  '2026-11-05-backfill/39-admin-phone': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 12',
+  '2026-11-05-backfill/40-debut-now': 'docs/plans/2026-11-05-backfill-boards-plan.md, Task 8',
+};
 
-/** Where each board's file is, by its id; a name two folders share is a problem the first test reports. */
-const boardFile = new Map<string, string>();
-const shared: string[] = [];
-for (const dir of BOARD_FOLDERS) {
-  for (const name of fs.readdirSync(dir)) {
-    if (!name.endsWith('.html')) continue;
-    const id = name.slice(0, -'.html'.length);
-    if (boardFile.has(id)) shared.push(`${id} is drawn in two board folders`);
-    else boardFile.set(id, path.join(dir, name));
+/** Where each board's file is, by its id; a bare id two of the first folders share is a problem the first test reports. */
+const { boards, shared } = boardIds(BOARD_FOLDERS.map((dir) => ({ name: path.basename(dir), files: fs.readdirSync(dir) })), BARE_FOLDERS);
+const boardFile = new Map(boards.map((b) => [b.id, path.join(BOARD_FOLDERS.find((d) => path.basename(d) === b.folder)!, b.file)]));
+const folder = boards.map((b) => `${b.id}.html`);
+/** A manifest is e2e/boards/<name>.ts, or e2e/boards/<folder>/<name>.ts for a board of a later folder (one level down). */
+const manifestIds: string[] = [];
+if (fs.existsSync(MANIFESTS)) {
+  for (const entry of fs.readdirSync(MANIFESTS, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      for (const f of fs.readdirSync(path.join(MANIFESTS, entry.name))) if (f.endsWith('.ts')) manifestIds.push(`${entry.name}/${f.slice(0, -3)}`);
+    } else if (entry.name.endsWith('.ts')) manifestIds.push(entry.name.slice(0, -3));
   }
 }
-const folder = [...boardFile.keys()].map((id) => `${id}.html`);
-const manifestIds = fs.existsSync(MANIFESTS) ? fs.readdirSync(MANIFESTS).filter((f) => f.endsWith('.ts')).map((f) => f.slice(0, -3)) : [];
-const { run, problems } = boardsToRun(folder, manifestIds, PENDING);
+
+/**
+ * A manifest module may also export `phone`, the same board's phone drawing, compared at 390 by 844 (the board's id is that manifest's
+ * `board`). That board has no file of its own in e2e/boards/, so the modules are read here for the ids their `phone` exports name.
+ */
+const loadManifest = async (id: string) => (await import(pathToFileURL(path.join(MANIFESTS, `${id}.ts`)).href)) as { default: BoardManifest; phone?: BoardManifest };
+const phoneOf = new Map<string, BoardManifest>();
+for (const id of manifestIds) {
+  const phone = (await loadManifest(id)).phone;
+  if (phone) phoneOf.set(id, phone);
+}
+const phoneIds = [...phoneOf.values()].map((p) => p.board);
+const { run, problems } = boardsToRun(folder, manifestIds, PENDING, phoneIds);
+problems.push(...phoneSizeProblems([...phoneOf].map(([parent, phone]) => ({ parent, size: phone.size }))));
 
 test('every board has a manifest or is pending, and the pending map is not stale', () => {
   expect([...shared, ...problems]).toEqual([]);
+});
+
+test('every glass screen names the board it is held to, or says why it has none', () => {
+  const screens = [...PAGES, ...OVERLAYS, ...FIXTURE_OVERLAYS, ...STORIES];
+  expect(screensWithoutBoards(screens, boards.map((b) => b.id), PENDING)).toEqual([]);
 });
 
 const escapeHtml = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -133,11 +207,14 @@ async function compareSide(browser: Browser, baseURL: string | undefined, id: st
 
 for (const id of run) {
   test(`${id} matches its board`, async ({ browser }, testInfo) => {
-    const manifest = (await import(pathToFileURL(path.join(MANIFESTS, `${id}.ts`)).href) as { default: BoardManifest }).default;
+    const { default: manifest, phone } = await loadManifest(id);
     expect(manifest.board).toBe(id);
     const baseURL = testInfo.project.use.baseURL;
     /* The board's own build side, then each further one (the Cards board's play form is the app, its hand sheet a story). */
     const mismatches = await compareSides(manifest, (side, folder) => compareSide(browser, baseURL, id, side, folder));
-    expect(mismatches, `${id} differs from its board; see e2e/report/boards/${id}/index.html`).toEqual([]);
+    /* The same board's phone drawing, at 390 by 844, against the phone board its manifest names. */
+    if (phone) mismatches.push(...(await compareSides(phone, (side, folder) => compareSide(browser, baseURL, phone.board, side, folder))).map((m) => `phone: ${m}`));
+    const reports = phone ? `e2e/report/boards/${id}/index.html, and for a phone: line, e2e/report/boards/${phone.board}/index.html` : `e2e/report/boards/${id}/index.html`;
+    expect(mismatches, `${id} differs from its board; see ${reports}`).toEqual([]);
   });
 }

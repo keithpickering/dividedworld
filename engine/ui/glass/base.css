@@ -153,6 +153,57 @@
 .kb-glass-cut-button::after { clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--kb-cut-in)), calc(100% - var(--kb-cut-in)) 100%, 0 100%); }
 
 /*
+ * Forced colors replaces an author background with the system's, so the edge (the element's background) and the panel (its
+ * ::after) would both turn Canvas and the edge would vanish. System colors are kept: the edge is CanvasText, the panel Canvas. !important, because a piece's own rule
+ * (two classes) sets its colors and outranks this one.
+ */
+@media (forced-colors: active) {
+  .kb-glass-cut-panel,
+  .kb-glass-cut-button { background: CanvasText !important; }
+
+  .kb-glass-cut-panel::after,
+  .kb-glass-cut-dialog::after,
+  .kb-glass-cut-button::after { background: Canvas !important; }
+
+  /*
+   * A glass dialog scrolls itself, and its ::after is only as tall as the frame, so below the first screen the ground is a
+   * background-image on the dialog (shell.css, `local`). Forced colors drops every authored background-image, gradients included,
+   * unless `forced-color-adjust: none`: a longhand background-color alone does not keep it. So a dialog opts out for its own
+   * box (its children, ::before and ::after take the adjustment back), keeps the edge as the background color, lays the ground
+   * back as a Canvas gradient, and strokes its diagonals as gradient layers that stay on the box (`scroll`) where the ::before's
+   * stroke scrolls away. With the adjustment off the UA no longer resets what it would have, so the box says it itself, and
+   * !important, so that a later dialog rule cannot leak an author value: `color`, the scrollbar (engine/ui/base.css colors every
+   * one) and the images. No real border is drawn, so the box does not change size. The other cut pieces keep the plain rule.
+   */
+  .kb-glass-cut-dialog:not(.kb-glass-dialog) { background: CanvasText !important; }
+  .kb-glass-dialog.kb-glass-cut-dialog { background-color: CanvasText !important; }
+  .kb-glass-dialog.kb-glass-cut-dialog {
+    forced-color-adjust: none;
+    color: CanvasText !important;
+    scrollbar-color: auto !important;
+    background-image:
+      linear-gradient(to bottom left, transparent 50%, CanvasText 50%, CanvasText calc(50% + var(--kb-border)), transparent calc(50% + var(--kb-border))),
+      linear-gradient(to top right, transparent 50%, CanvasText 50%, CanvasText calc(50% + var(--kb-border)), transparent calc(50% + var(--kb-border))),
+      linear-gradient(Canvas, Canvas) !important;
+    background-repeat: no-repeat !important;
+    background-attachment: scroll, scroll, local !important;
+    background-origin: border-box, border-box, padding-box !important;
+    background-clip: border-box, border-box, padding-box !important;
+    background-position: top right, bottom left, center !important;
+    background-size: var(--kb-cut) var(--kb-cut), var(--kb-cut) var(--kb-cut), calc(100% - var(--kb-border) * 2) calc(100% - var(--kb-border) * 2) !important;
+  }
+
+  .kb-glass-dialog.kb-glass-cut-dialog > *,
+  .kb-glass-dialog.kb-glass-cut-dialog::before,
+  .kb-glass-dialog.kb-glass-cut-dialog::after { forced-color-adjust: auto; }
+
+  .kb-glass-dialog.kb-glass-cut-dialog:focus-visible { outline-color: Highlight; }
+
+  /* The dialog's smoke is a rectangle one border in, a 35% wash that would dim the diagonals' strokes at the corners; forced colors draws no smoke. */
+  .kb-glass-dialog.kb-glass-cut-dialog > .kb-smoke { display: none; }
+}
+
+/*
  * The HUD's top edge is a tab: 24px tall, 28px slopes, its four points (--tab-a to --tab-d, set
  * from the aura block's own position) following the orbs at every width. The seam is an SVG
  * polyline along the same points at y + 6, drawn twice: the glow under a blur, then the core.

@@ -31,6 +31,7 @@ import { actLink, inOrder, logRows, NO_SHARES, plain, reasonName, SHARES_ARE, si
 import { useLog } from './useLog.ts';
 import { economyNow, paramsOf } from '../economy.ts';
 import './log.css';
+import { CalmRegion } from '../glass/Calm.tsx';
 
 /** What a navigation into the log may carry (router.tsx's state): the tab to open, and a settlement to open on its row. */
 export interface LogOpening {
@@ -175,24 +176,24 @@ export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' 
       <PageHead
         title="My log"
         tabs={tabs.length > 0 && (
-          <nav aria-label="Whose log" className="kb-calm">
+          <CalmRegion as="nav" aria-label="Whose log">
             <ButtonRow>
               <GlassButton kind={current === null ? 'primary' : 'secondary'} aria-pressed={current === null} onClick={() => onTab(null)}>All</GlassButton>
               {tabs.map((c) => (
                 <GlassButton key={c.id} kind={current?.id === c.id ? 'primary' : 'secondary'} aria-pressed={current?.id === c.id} onClick={() => onTab(c.id)}>{c.name}</GlassButton>
               ))}
             </ButtonRow>
-          </nav>
+          </CalmRegion>
         )}
       />
-      <p className="kb-log-lead kb-calm">
+      <CalmRegion as="p" className="kb-log-lead">
         Everything on this page is true. Each line names the Act that did it, what it changed and how much Aura moved. It never says who reacted, or
         any character's class but your own.
-      </p>
+      </CalmRegion>
       {!settled && rows.length === 0
-        ? <p className="kb-log-empty kb-calm">Nothing has settled for you yet. Your first settlement is the first line here.</p>
+        ? <CalmRegion as="p" className="kb-log-empty">Nothing has settled for you yet. Your first settlement is the first line here.</CalmRegion>
         : (
-          <div className="kb-log-board kb-calm">
+          <CalmRegion className="kb-log-board">
             <table ref={table} className="kb-log-table" tabIndex={-1}>
               <caption className="kb-visually-hidden">{current ? `${current.name}'s log` : 'Your log'}, newest first</caption>
               <thead>
@@ -216,9 +217,9 @@ export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' 
                 {older === 'failed' && <span className="kb-log-older-failed"> The older lines could not be read. Try again.</span>}
               </p>
             )}
-          </div>
+          </CalmRegion>
         )}
-      <p className="kb-log-foot kb-calm">If a line here looks wrong, that is a bug and not the game. <Link to={CONTACT_PATH}>Tell an admin</Link>.</p>
+      <CalmRegion as="p" className="kb-log-foot">If a line here looks wrong, that is a bug and not the game. <Link to={CONTACT_PATH}>Tell an admin</Link>.</CalmRegion>
     </div>
   );
 }
@@ -243,9 +244,9 @@ export function LogScreen() {
     setPicked(undefined);
     setOpen(new Set());
   }, [account]);
-  if (signedIn === false) return <div className="kb-log"><div className="kb-log-empty kb-calm"><SignInPrompt /></div></div>;
+  if (signedIn === false) return <div className="kb-log"><CalmRegion className="kb-log-empty"><SignInPrompt /></CalmRegion></div>;
   if (signedIn === null || state.status === 'loading') return <div className="kb-log" aria-busy="true" />;
-  if (state.status === 'failed') return <div className="kb-log"><p className="kb-log-empty kb-calm">Your log could not be loaded. Reload the page to try again.</p></div>;
+  if (state.status === 'failed') return <div className="kb-log"><CalmRegion as="p" className="kb-log-empty">Your log could not be loaded. Reload the page to try again.</CalmRegion></div>;
   const tab = picked !== undefined ? picked : (opening.character ?? hudCharacter?.id ?? null);
   const toggle = (id: number, to?: boolean) => setOpen((now) => {
     const next = new Set(now);
