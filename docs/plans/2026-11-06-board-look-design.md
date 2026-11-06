@@ -55,7 +55,15 @@ a theme picker on the glass.
    Steel (light), Midnight (dark), Hot Rod (dark), Fan Site (light).
 
 4. **All four tributes ship** (the owner): Blue Steel, Midnight, Hot Rod and Fan Site are drawn properly and ship
-   with the plan. For Hot Rod and Fan Site the owner is uploading HTML references for direction; those two wait on them.
+   with the plan. The owner gave screenshots for two of them:
+   - **Hot Rod** keeps round one's flames (the owner: "I like yours better") and takes its buttons from a red
+     proto-MFGG ezboard: gray pillow-shaded GIFs, lit from the center and dark at every edge, black bold lettering in
+     title case. So the button's background and case are tokens a theme sets, not only its gradient's four stops.
+   - **Fan Site** becomes classic MFGG blue (the owner), from a 2008 Invision Power Board capture: a black page under a
+     dim tiled navy pattern, royal-blue panels with pale-blue text, a teal sub-bar, yellow links in the nav, and the
+     column heads in that board's texture, a navy gradient under a grid of small squares fading downward with cyan
+     lettering spaced wide. It is dark only. The tile is drawn from plain shapes, never MFGG's sprite, and its name is
+     open.
 5. **Screen boards in the order a reader meets them** (the owner, agreeing with the recommendation), each batch at 1440
    with one phone board at 390, in Silver light and dark: 1. the index and a board; 2. a thread, the composer and New
    thread; 3. a profile and its record; 4. the standings and the reveal; 5. The System's profile and the move notice;
@@ -63,4 +71,4 @@ a theme picker on the glass.
 
 ## Open
 
-- Hot Rod's and Fan Site's direction, from the owner's references.
+- Fan Site's name, now that it salutes one board's blue.
