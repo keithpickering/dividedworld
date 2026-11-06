@@ -1,4 +1,4 @@
-import { act, cleanup, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { axeViolations, describeViolations } from '../a11y.ts';
@@ -38,6 +38,9 @@ async function persists(w: ReturnType<typeof world>, groupName: string, name: st
   await screen.findByRole('radiogroup', { name: groupName });
   expect(radio(groupName, name)).toBeChecked();
 }
+
+/** The save note's live region; the Tilt row has its own status beside it. */
+const saveNote = () => document.querySelector('.kb-acct-note[role="status"]');
 
 describe('Settings, as board 11 draws it', () => {
   test('every section of the frame ends with a link to reach a person', async () => {
@@ -192,7 +195,7 @@ describe('Settings, as board 11 draws it', () => {
     await userEvent.click(tips);
     await waitFor(async () => expect(await w.fake.preferences()).toMatchObject({ tips: 'off', tipsSeen: ['grid'] }));
     expect(tips).not.toBeChecked();
-    expect(await screen.findByRole('status')).toHaveTextContent('Saved to your account.');
+    await waitFor(() => expect(saveNote()).toHaveTextContent('Saved to your account.'));
     await userEvent.click(tips);
     await waitFor(async () => expect(await w.fake.preferences()).toMatchObject({ tips: 'on', tipsSeen: ['grid'] }));
     expect(tips).toBeChecked();
@@ -211,7 +214,7 @@ describe('Settings, as board 11 draws it', () => {
     expect(tips).toBeChecked();
     await userEvent.click(screen.getByRole('button', { name: 'Show tips again' }));
     await waitFor(async () => expect(await w.fake.preferences()).toMatchObject({ tips: 'on', tipsSeen: [], cardsMet: [] }));
-    expect(await screen.findByRole('status')).toHaveTextContent('Saved to your account.');
+    await waitFor(() => expect(saveNote()).toHaveTextContent('Saved to your account.'));
     /* A spent button stays where it is: a keyboard player is not dropped to the page. */
     expect(screen.getByRole('button', { name: 'Show tips again' })).not.toHaveAttribute('aria-disabled', 'true');
   });
@@ -455,7 +458,7 @@ describe('Settings, as board 11 draws it', () => {
   test('"Saved to your account." is said in a region that is on the page before anything is saved', async () => {
     open(world().fake);
     await screen.findByRole('radiogroup', { name: 'Motion' });
-    expect(screen.getByRole('status')).toBeEmptyDOMElement();
+    expect(saveNote()).toBeEmptyDOMElement();
   });
 
   test('signed out, it points to sign-in', async () => {
@@ -652,6 +655,35 @@ describe('Settings › Accessibility › Tilt', () => {
     expect(ask).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(says(sw)).toMatch(/^On\./u));
     expect(screen.queryByRole('button', { name: 'Allow on this phone' })).toBeNull();
+  });
+
+  test('after a granted allow, the state sentence is a polite status that updates, and focus moves to the switch when the button goes', async () => {
+    device(async () => 'granted');
+    const { sw } = await opened('on');
+    const status = document.getElementById(sw.getAttribute('aria-describedby')!)!;
+    expect(status).toHaveAttribute('role', 'status');
+    expect(status).toHaveTextContent(/not allowed it yet/u);
+    await userEvent.click(screen.getByRole('button', { name: 'Allow on this phone' }));
+    await waitFor(() => expect(status).toHaveTextContent(/^On\./u));
+    expect(screen.queryByRole('button', { name: 'Allow on this phone' })).toBeNull();
+    expect(document.activeElement).toBe(sw);
+  });
+
+  test('the browser is asked synchronously inside the tap on the switch', async () => {
+    const ask = vi.fn(async () => 'granted');
+    device(ask);
+    const { sw } = await opened('off');
+    fireEvent.click(sw);
+    expect(ask).toHaveBeenCalledTimes(1);
+  });
+
+  test('the browser is asked synchronously inside the tap on the Allow button', async () => {
+    const ask = vi.fn(async () => 'granted');
+    device(ask);
+    await opened('on');
+    expect(ask).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Allow on this phone' }));
+    expect(ask).toHaveBeenCalledTimes(1);
   });
 
   test('needs-allow after a request that threw: the row says the browser did not answer, and the next tap asks again', async () => {

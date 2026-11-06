@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { light } from './light.ts';
-import { allowTilt, resetTilt, setTiltPreference, tiltState, watchTilt } from './tilt.ts';
+import { allowTilt, resetTilt, setTiltPreference, subscribeTilt, tiltState, watchTilt } from './tilt.ts';
 
 const KEY = 'kb-tilt-device';
 const root = document.documentElement;
@@ -125,6 +125,35 @@ describe('the probe runs only for a watched page with the tilt on', () => {
     expect(vi.getTimerCount()).toBe(1);
     setTiltPreference('off');
     expect(vi.getTimerCount()).toBe(0);
+  });
+  it('stops the probe when motion turns reduced mid-listen, so reduced then full within a second does not leave unsupported', async () => {
+    vi.useFakeTimers();
+    stubDevice();
+    const off = subscribeTilt(() => {});
+    setTiltPreference('on');
+    watchTilt();
+    expect(vi.getTimerCount()).toBe(1);
+    root.setAttribute('data-kb-motion', 'reduce');
+    await vi.advanceTimersByTimeAsync(500);
+    expect(vi.getTimerCount()).toBe(0);
+    root.removeAttribute('data-kb-motion');
+    await vi.advanceTimersByTimeAsync(10);
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(tiltState()).toBe('on');
+    off();
+  });
+  it('a silent probe starts over when the preference goes off and on', () => {
+    vi.useFakeTimers();
+    stubDevice();
+    watchTilt();
+    setTiltPreference('on');
+    vi.advanceTimersByTime(1100);
+    expect(tiltState()).toBe('unsupported');
+    setTiltPreference('off');
+    setTiltPreference('on');
+    expect(tiltState()).toBe('on');
+    expect(vi.getTimerCount()).toBe(1);
   });
   it('starts nothing under reduced motion, and nothing with no watcher', () => {
     vi.useFakeTimers();

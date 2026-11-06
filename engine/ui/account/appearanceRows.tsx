@@ -3,7 +3,7 @@
  * one control and one sentence each, and a choice made on either is the same choice. Each row is a fieldset of skewed radios whose legend
  * is the row's label; what to do with a choice is the screen's (preferences.ts saves it).
  */
-import { useEffect, useId, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useSyncExternalStore, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Preferences } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
@@ -101,27 +101,36 @@ export const tiltRowShown = (): boolean => tiltSupported() || (window.matchMedia
  */
 export function TiltRow({ value, onChange }: { readonly value: Preferences['tilt']; readonly onChange: (v: Preferences['tilt']) => void }) {
   const id = useId();
+  const switchRef = useRef<HTMLInputElement>(null);
   const state = useSyncExternalStore(subscribeTilt, () => tiltState(value), () => tiltState('off'));
   const noAnswer = useSyncExternalStore(subscribeTilt, tiltAskFailed, () => false);
   /* The device is listened to only while the choice is on and this row is drawn. */
   useEffect(() => (value === 'on' ? watchTilt() : undefined), [value]);
   if (!tiltRowShown()) return null;
+  /* The ask is made synchronously inside the tap (iOS refuses it elsewhere); only the focus waits for the answer. When the Allow button
+     went away with the answer, focus fell to the page, so it goes to the switch the button belonged to. */
+  const allow = () => {
+    void allowTilt().then(() => {
+      const a = document.activeElement;
+      if (!a || a === document.body) switchRef.current?.focus();
+    });
+  };
   const turn = (on: boolean) => {
     onChange(on ? 'on' : 'off');
     /* Turning it on after a refusal is the tap that asks again. */
     const asked = tiltState('on');
-    if (on && (asked === 'denied' || asked === 'needs-allow')) void allowTilt();
+    if (on && (asked === 'denied' || asked === 'needs-allow')) allow();
   };
   return (
     <div className="kb-acct-row">
       <h3 id={`${id}-name`} className="kb-acct-row-label">Tilt shiny cards with your phone</h3>
       <div className="kb-acct-row-body">
         <label className="kb-acct-seg-option">
-          <input type="checkbox" role="switch" checked={value === 'on'} onChange={(e) => turn(e.target.checked)} aria-labelledby={`${id}-name`} aria-describedby={`${id}-says`} />
+          <input ref={switchRef} type="checkbox" role="switch" checked={value === 'on'} onChange={(e) => turn(e.target.checked)} aria-labelledby={`${id}-name`} aria-describedby={`${id}-says`} />
           <span className="kb-acct-seg-face kb-glass-skew" aria-hidden="true"><b className="kb-glass-upright">{value === 'on' ? 'On' : 'Off'}</b></span>
         </label>
-        <p id={`${id}-says`} className="kb-acct-row-sentence">{TILT_SAYS[state]}{state === 'needs-allow' && noAnswer ? ` ${TILT_NO_ANSWER}` : ''}</p>
-        {state === 'needs-allow' && <ButtonRow><GlassButton onClick={() => void allowTilt()}>Allow on this phone</GlassButton></ButtonRow>}
+        <p id={`${id}-says`} className="kb-acct-row-sentence" role="status">{TILT_SAYS[state]}{state === 'needs-allow' && noAnswer ? ` ${TILT_NO_ANSWER}` : ''}</p>
+        {state === 'needs-allow' && <ButtonRow><GlassButton onClick={allow}>Allow on this phone</GlassButton></ButtonRow>}
       </div>
     </div>
   );

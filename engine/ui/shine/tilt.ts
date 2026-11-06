@@ -34,6 +34,9 @@ const orientationEvent = (): (PermissionedEvent & object) | undefined => {
   return typeof e === 'function' || (typeof e === 'object' && e !== null) ? (e as PermissionedEvent & object) : undefined;
 };
 
+/** Whether this device has given the browser's answer to the tilt request (granted or refused) and kept it. */
+export const tiltAnswered = (): boolean => stored() !== null;
+
 /** Whether this browser reports device orientation at all. */
 export const tiltSupported = (): boolean => orientationEvent() !== undefined;
 const needsGrant = (): boolean => typeof orientationEvent()?.requestPermission === 'function';
@@ -110,7 +113,11 @@ export function setTiltPreference(pref: TiltPreference): void {
   preference = pref;
   askFailed = false;
   if (pref === 'on') startProbe();
-  else if (probe === 'listening') { stopListening(); probe = 'idle'; }
+  else {
+    /* Off ends a listen and forgets a silent answer, so turning it on again asks the device again. */
+    if (probe === 'listening') stopListening();
+    if (probe !== 'seen') probe = 'idle';
+  }
   notify();
 }
 
@@ -141,8 +148,12 @@ export const tiltAskFailed = (): boolean => askFailed;
 /** For `useSyncExternalStore`: the device's answer, the probe, the preference and the motion setting changing. */
 export function subscribeTilt(onChange: () => void): () => void {
   listeners.add(onChange);
-  /* Motion turned back on is when a probe held back by reduced motion may start. */
-  const off = subscribeMotion(() => { startProbe(); onChange(); });
+  /* Motion turned reduced ends a listen in progress (a quick toggle back must not read its leftover silence); turned back on, a probe held back may start. */
+  const off = subscribeMotion(() => {
+    if (probe === 'listening' && motionReduced()) { stopListening(); probe = 'idle'; }
+    startProbe();
+    onChange();
+  });
   return () => { listeners.delete(onChange); off(); };
 }
 
