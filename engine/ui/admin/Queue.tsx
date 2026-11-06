@@ -200,7 +200,7 @@ function Replace({ row, roster, bosses, onReplaced }: { readonly row: QueuedMove
  * An admin's words in the place of a description: for a waiting rename (they land beside it) or for a board now. The Boss's words are
  * never edited; the server holds the same bounds (1 to 2000 characters) and answers in its own words.
  */
-function ReplaceDescription({ id, about, save, onSaved }: { readonly id: string; readonly about: string; readonly save: (words: string) => Promise<Answer<unknown>>; readonly onSaved: () => Promise<void> }) {
+function ReplaceDescription({ id, about, saved, save, onSaved }: { readonly id: string; readonly about: string; readonly saved: string; readonly save: (words: string) => Promise<Answer<unknown>>; readonly onSaved: () => Promise<void> }) {
   const [words, setWords] = useState('');
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
@@ -213,7 +213,7 @@ function ReplaceDescription({ id, about, save, onSaved }: { readonly id: string;
     try {
       const answer = await save(words);
       if (!answer.ok) { setRefusal(answer.error); await onSaved(); return; }
-      setDone('Saved. This is the description now.');
+      setDone(saved);
       setWords('');
       await onSaved();
     } catch {
@@ -227,8 +227,9 @@ function ReplaceDescription({ id, about, save, onSaved }: { readonly id: string;
       <label htmlFor={`${id}-words`}>Replace description<span className="kb-visually-hidden"> of {about}</span></label>
       <textarea id={`${id}-words`} className="kb-queue-select kb-queue-text" rows={3} maxLength={2000} value={words} onChange={(e) => setWords(e.target.value)} />
       <ButtonRow><GlassButton size="s" disabled={words.trim() === '' || busy} aria-label={`Save the description of ${about}`} onClick={() => void submit()}>SAVE</GlassButton></ButtonRow>
-      {refusal && <p role="alert" className="kb-queue-failure">{refusal}</p>}
-      {done && <p role="status" className="kb-small kb-muted">{done}</p>}
+      {/* Always in the page, filled on change, so a reader of the page is told of it. */}
+      <p role="alert" className="kb-queue-failure">{refusal}</p>
+      <p role="status" className="kb-small kb-muted">{done}</p>
     </div>
   );
 }
@@ -247,7 +248,7 @@ function Boards({ rows, onDescribed }: { readonly rows: readonly BoardSummary[];
             <p className="kb-queue-quote">Description: “{b.description}”</p>
           </div>
           <div className="kb-queue-act">
-            <ReplaceDescription id={`queue-board-${b.id}`} about={b.name} save={(words) => api.describeBoard(b.id, words)} onSaved={onDescribed} />
+            <ReplaceDescription id={`queue-board-${b.id}`} about={b.name} saved="Saved. This is the description now." save={(words) => api.describeBoard(b.id, words)} onSaved={onDescribed} />
           </div>
         </article>
       ))}
@@ -335,7 +336,7 @@ function Waiting({ rows, more, boards, bosses, roster, now, onHold, onReplaced }
             <div className="kb-queue-act">
               <ButtonRow><GlassButton aria-label={`Hold: ${q.params['name'] ?? (q.kind === 'nameSuccessor' ? 'the naming of a successor' : 'this move')}`} onClick={() => onHold(q)}>HOLD</GlassButton></ButtonRow>
               {q.kind === 'nameSuccessor' && <Replace row={q} roster={roster} bosses={bosses} onReplaced={onReplaced} />}
-              {q.kind === 'renameBoard' && <ReplaceDescription id={`queue-rename-${q.id}`} about={String(q.params['name'] ?? 'this rename')} save={(words) => api.replaceQueuedDescription(q.id, words)} onSaved={onReplaced} />}
+              {q.kind === 'renameBoard' && <ReplaceDescription id={`queue-rename-${q.id}`} about={String(q.params['name'] ?? 'this rename')} saved="Saved. It lands with the rename." save={(words) => api.replaceQueuedDescription(q.id, words)} onSaved={onReplaced} />}
             </div>
           </article>
         );

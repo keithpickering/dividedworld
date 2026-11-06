@@ -210,7 +210,7 @@ describe('a nomination of a successor', () => {
     /* What was chosen is done: the pick is empty and the button waits, and the line in plain words names who will follow. */
     expect(within(waiting).getByRole('combobox', { name: 'Put another Boss in its place' })).toHaveValue('');
     expect(within(waiting).getByRole('button', { name: 'Replace the nominated Boss, Hype Man' })).toBeDisabled();
-    expect(within(waiting).getByRole('status')).toHaveTextContent('Replaced. Hype Man will follow.');
+    expect(within(waiting).getAllByRole('status').map((n) => n.textContent)).toContain('Replaced. Hype Man will follow.');
     expect(waiting).toHaveTextContent('An admin put this Boss in the nomination\'s place on');
   });
 
@@ -528,7 +528,8 @@ describe('replacing a description', () => {
     await userEvent.click(save);
     await waitFor(() => expect(waiting).toHaveTextContent('“Order restored.”'));
     expect(waiting).toHaveTextContent('Description: “Commando Elite members only. Gorgonites will be processed.”');
-    expect(within(waiting).getByRole('status')).toHaveTextContent('Saved.');
+    expect(within(waiting).getByRole('status')).toHaveTextContent('Saved. It lands with the rename.');
+    expect(waiting).not.toHaveTextContent('This is the description now');
     expect((await fake.adminQueue()).waiting[0]!.adminDescription).toBe('Order restored.');
     await userEvent.type(within(waiting).getByRole('textbox', { name: /^Replace description/u }), 'Order, again.');
     await userEvent.click(within(waiting).getByRole('button', { name: /^Save the description of/u }));
@@ -551,6 +552,8 @@ describe('replacing a description', () => {
     await userEvent.type(within(card).getByRole('textbox', { name: /^Replace description/u }), 'Words from an admin.');
     await userEvent.click(within(card).getByRole('button', { name: `Save the description of ${first.name}` }));
     await waitFor(() => expect(card).toHaveTextContent('Description: “Words from an admin.”'));
+    expect(within(card).getByRole('status')).toHaveTextContent('Saved. This is the description now.');
+    expect(within(card).getByRole('alert')).toBeEmptyDOMElement();
     expect((await fake.boards())[0]!.description).toBe('Words from an admin.');
   });
 

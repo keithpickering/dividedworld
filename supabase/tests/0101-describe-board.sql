@@ -131,6 +131,8 @@ begin
   perform replace_queued_description(q, 'Second admin words.');
   got := pg_temp.refusal(format('select replace_queued_description(%s, %L)', q, ''));
   if got is distinct from '22023' then raise exception 'an empty description was accepted: %', got; end if;
+  got := pg_temp.refusal(format('select replace_queued_description(%s, %L)', q, E' \t\n '));
+  if got is distinct from '22023' then raise exception 'a description of whitespace was accepted: %', got; end if;
   got := pg_temp.refusal(format('select replace_queued_description(%s, %L)', q, repeat('x', 2001)));
   if got is distinct from '22023' then raise exception 'a 2001-character description was accepted: %', got; end if;
   perform replace_queued_description(q, repeat('y', 2000));
@@ -221,6 +223,11 @@ begin
   perform end_move(mv, 'reversed', 'admin');
   if (select move_act from boards_now where id = b) is not null then raise exception 'an ended rename still names the board'; end if;
   perform pg_temp.all_say('Base words.', 'a board whose described rename ended');
+  -- A describe naming a rename no longer in force would never show: it is refused where it is written, whoever writes it.
+  if pg_temp.refusal(format('select write_describe(%L, %L, %L)', b, 'Too late.', mv)) is distinct from '23514' then
+    raise exception 'a describe naming an ended rename was written';
+  end if;
+  if exists (select 1 from acts where kind = 'describe' and payload ->> 'description' = 'Too late.') then raise exception 'the refused describe left an Act'; end if;
   if (select name from boards_now where id = b) is distinct from 'Describe Board' then raise exception 'the old name did not return'; end if;
 end $$;
 
@@ -260,10 +267,41 @@ begin
   got := pg_temp.refusal(format($q$insert into acts (character, kind, thread, payload) values (null, 'describe', %L, jsonb_build_object('description', 'Forged.', 'move_act', null, 'by', 'admin', 'board', %L))$q$, ann, b));
   if got is distinct from '42501' then raise exception 'a describe was written outside its functions: %', got; end if;
   perform tests.become(admin);
+  got := pg_temp.refusal(format('select describe_board(%L, %L)', b, E'\n\t'));
+  if got is distinct from '22023' then raise exception 'a description of whitespace was accepted: %', got; end if;
   got := pg_temp.refusal(format('select describe_board(%L, %L)', gen_random_uuid(), 'Nowhere.'));
   if got is distinct from 'P0002' then raise exception 'a board that is not there was described: %', got; end if;
   got := pg_temp.refusal(format('select describe_board(%L, %L)', b, repeat('x', 2001)));
   if got is distinct from '22023' then raise exception 'a 2001-character description was accepted: %', got; end if;
   perform tests.unbecome();
   perform pg_temp.all_say('Standing words.', 'a board after refused descriptions');
+end $$;
+
+-- ---- A describe that cannot be written takes its rename with it, and both land together once the fault is gone ----
+create function pg_temp.fault() returns trigger language plpgsql as $$ begin raise exception 'a planted fault in writing a describe'; end $$;
+
+do $$
+declare
+  b uuid := (select id from boards where slug = 'db-board');
+  q bigint := pg_temp.queue('db-boss', 'Fault Field', 'Fault Boss words.');
+  mv uuid;
+begin
+  update queued_moves set admin_description = 'Fault admin words.', described_by = (select id from auth.users where email = 'db-admin@test.invalid'), described_at = now() where id = q;
+  create trigger plant_fault before insert on acts for each row when (new.kind = 'describe') execute function pg_temp.fault();
+  perform system_tick();
+  if (select landed_act from queued_moves where id = q) is not null or exists (select 1 from acts where kind = 'move' and payload #>> '{params,name}' = 'Fault Field') then
+    raise exception 'a rename landed without its describe';
+  end if;
+  if (select failure from queued_moves where id = q) is null then raise exception 'the failure was not recorded on the row'; end if;
+  if exists (select 1 from acts where kind = 'describe' and payload ->> 'description' = 'Fault admin words.') then raise exception 'a describe landed without its rename'; end if;
+  perform pg_temp.all_say('Standing words.', 'a board whose rename failed to land');
+  drop trigger plant_fault on acts;
+  perform system_tick();
+  mv := (select landed_act from queued_moves where id = q);
+  if mv is null then raise exception 'the rename did not land once the fault was gone'; end if;
+  if (select count(*) from acts where kind = 'move' and payload #>> '{params,name}' = 'Fault Field') <> 1
+     or (select count(*) from acts where kind = 'describe' and payload ->> 'description' = 'Fault admin words.' and payload ->> 'move_act' = mv::text) <> 1 then
+    raise exception 'exactly one move and one describe expected after the fault';
+  end if;
+  perform pg_temp.all_say('Fault admin words.', 'a board whose rename landed late with its replacement');
 end $$;

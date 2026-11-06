@@ -64,7 +64,8 @@ begin
   return new;
 end $$;
 
--- A describe is written only through write_describe, for a board that is there, and when it names a move, a renameBoard move of that board.
+-- A describe is written only through write_describe, for a board that is there, and when it names a move, a renameBoard move of that board
+-- still in force (one naming an ended rename would never show).
 create function acts_describe_guard() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
@@ -76,9 +77,10 @@ begin
       raise exception 'there is no such board' using hint = 'kayfabb.refusal', errcode = 'P0002';
     end if;
     if new.target_act_id is not null and not exists (
-         select 1 from acts m where m.id = new.target_act_id and m.kind = 'move' and m.payload ->> 'kind' = 'renameBoard'
+         select 1 from acts m join open_moves o on o.move_act = m.id
+         where m.id = new.target_act_id and m.kind = 'move' and m.payload ->> 'kind' = 'renameBoard'
            and lower(m.payload #>> '{params,board}') = new.payload ->> 'board') then
-      raise exception 'a describe names a rename of its own board' using hint = 'kayfabb.refusal', errcode = '23514';
+      raise exception 'a describe names a rename of its own board that is still in force' using hint = 'kayfabb.refusal', errcode = '23514';
     end if;
   end if;
   return new;
@@ -179,7 +181,7 @@ grant execute on function write_describe(uuid, text, uuid) to service_role;
 -- The words of a description, or the refusal naming what is wrong with them.
 create function description_problem(words text) returns text
 language sql immutable set search_path = public, pg_temp as $$
-  select case when words is null or btrim(words) = '' then 'a description needs words'
+  select case when words is null or words ~ '^\s*$' then 'a description needs words'
               when char_length(words) > 2000 then 'a description is at most 2000 characters' end
 $$;
 revoke execute on function description_problem(text) from public, anon, authenticated;
@@ -213,7 +215,14 @@ begin
   perform only_admins('describes a board');
   if not exists (select 1 from boards b where b.id = describe_board.board) then raise exception 'there is no such board' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
   if description_problem(description) is not null then raise exception '%', description_problem(description) using hint = 'kayfabb.refusal', errcode = '22023'; end if;
-  now_move := (select b.move_act from boards_now b where b.id = describe_board.board);
+  -- The open rename is read again under end_move's own lock on it, so a tick that ends it between the read and the write is waited for,
+  -- and the describe names the rename still in force at the moment it is written (or none).
+  loop
+    now_move := (select b.move_act from boards_now b where b.id = describe_board.board);
+    exit when now_move is null;
+    perform pg_advisory_xact_lock(hashtext('kayfabb.end_move'), hashtext(now_move::text));
+    exit when exists (select 1 from open_moves o where o.move_act = now_move);
+  end loop;
   written := write_describe(describe_board.board, description, now_move);
   return jsonb_build_object('act', written, 'board', describe_board.board, 'description', description, 'move_act', now_move);
 end $$;
@@ -284,7 +293,7 @@ begin
   -- 1. Landing: only while The System is on, and only where there is a thread to say it in.
   if enabled and ann is not null then
     for due in
-      select q.id, q.staff, q.kind, q.params, q.demand, q.expires_at, q.admin_description, q.described_by from queued_moves q where q.landed_act is null and q.held_at is null and q.go_live_at <= now() order by q.go_live_at, q.id for update skip locked
+      select q.id, q.staff, q.kind, q.params, q.demand, q.expires_at, q.admin_description from queued_moves q where q.landed_act is null and q.held_at is null and q.go_live_at <= now() order by q.go_live_at, q.id for update skip locked
     loop
       begin
         written := (write_staff_act(due.staff, 'move', ann, null,

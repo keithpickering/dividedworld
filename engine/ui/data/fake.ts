@@ -1599,8 +1599,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (q.successor !== undefined) return refuse('that move renames no board');
       if (q.landed !== null) return refuse('that rename has already landed; describe the board instead');
       if (q.heldAt !== null) return refuse('that rename is held');
-      if (description.trim() === '') return refuse('a description needs words');
-      if (description.length > 2000) return refuse('a description is at most 2000 characters');
+      if (/^\s*$/u.test(description)) return refuse('a description needs words');
+      if ([...description].length > 2000) return refuse('a description is at most 2000 characters');
       q.adminDescription = description;
       return ok({ id, description });
     },
@@ -1608,8 +1608,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!me()?.admin) return refuse('only an admin describes a board');
       const b = boards.find((x) => x.id === board);
       if (!b) return refuse('there is no such board');
-      if (description.trim() === '') return refuse('a description needs words');
-      if (description.length > 2000) return refuse('a description is at most 2000 characters');
+      if (/^\s*$/u.test(description)) return refuse('a description needs words');
+      if ([...description].length > 2000) return refuse('a description is at most 2000 characters');
       describes.push({ board, moveAct: boardNow(b).moveAct, text: description });
       return ok({ board, description });
     },
