@@ -1,4 +1,4 @@
--- A character's two pages, each in one read (supabase/migrations/0095_profile_record_pages.sql; the forum-load plan, Task 6).
+-- A character's two pages, each in one read (supabase/migrations/0096_profile_record_pages.sql; the forum-load plan, Task 6).
 -- profile_page and record_page answer, piece by piece, what the views answer read directly as the same caller; a character
 -- characters_public does not show is null (as it is today); kinds and pages window the character's Acts; an unknown kind
 -- answers as `all`; a visitor is refused. The screen-function guard (supabase/tests/e2e/0016-screen-reads.ts) holds them

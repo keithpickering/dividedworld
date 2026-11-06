@@ -58,6 +58,7 @@ const POSTBIT: readonly Option<Preferences['postbit']>[] = [
 const NOTIFICATIONS: readonly { readonly kind: AlertKind; readonly title: string; readonly sentence: string }[] = [
   { kind: 'quote', title: 'Quotes', sentence: 'A post quotes one of your characters.' },
   { kind: 'cardOnYours', title: 'Cards on yours', sentence: 'A card is played on one of your posts.' },
+  { kind: 'cardEnded', title: 'Cards an admin ended', sentence: 'An admin ended a card one of your characters played.' },
   { kind: 'trapStruck', title: 'Traps that hit', sentence: 'A trap struck one of your posts.' },
   { kind: 'trapSprang', title: 'Traps you set', sentence: 'A trap you set sprang.' },
   { kind: 'ruling', title: 'Rulings', sentence: 'A ruling lands on one of your characters.' },

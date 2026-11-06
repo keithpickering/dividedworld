@@ -30,6 +30,8 @@
  *   do not reach back: a window is settled once.
  * - A trap's spring is settled as a play of its trap card on the trapped post, under the card's
  *   alignment; a caught play settles as the play it is.
+ * - A play an admin reversed before the window's end is not in the input, nor are the votes on it
+ *   (settlement_input and estimate_input leave it out), so there is no filter for it here.
  * - A card on a staff post is judged against the post's own reactions (`unscoredTargets`), which
  *   count as for any Act; the post and its reactors are paid nothing for it (#122).
  * - A card "outdraws" its target when it drew more votes in the window than the target did.

@@ -1,7 +1,7 @@
 /** `kindsOf`: the card kinds of a post's plays, in the order each first appears in billing (marks-and-the-lens design, section 1). */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { backWords, caughtWords, kindsOf, MARKS_NARROW, MARKS_WIDE, utcDate, wardWords } from './marks.ts';
+import { backWords, caughtWords, endedWords, kindsOf, MARKS_NARROW, MARKS_WIDE, utcDate, wardWords } from './marks.ts';
 import type { CardPlay } from './types.ts';
 
 const play = (id: string, card: string): CardPlay => ({ id, card, layer: 1, caster: null, message: '', config: {}, playedAt: '2026-10-29T12:00:00Z', post: 'p' });
@@ -46,5 +46,11 @@ describe('a card back, a ward and a caught play, in words', () => {
   test('a caught play says what caught it', () => {
     assert.equal(caughtWords('Trap Card'), 'Caught by a Trap Card. It did nothing, and its card is spent.');
     assert.equal(caughtWords(null), 'Caught by a trap. It did nothing, and its card is spent.');
+  });
+});
+
+describe('endedWords', () => {
+  test('says an admin ended the play, in plain words', () => {
+    assert.equal(endedWords(), 'Ended by an admin');
   });
 });

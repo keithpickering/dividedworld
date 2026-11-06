@@ -3,9 +3,11 @@
  * "2 min ago" with its exact time on hover, and the "sign in" prompt a signed-out visitor sees
  * instead of boards (the API needs a session for reads).
  */
+import { useEffect, useState } from 'react';
 import type { Character, KayfaApi } from './data/api.ts';
 import { Link } from './router.tsx';
 import { usePlayer } from './player.tsx';
+import { useBoot } from './boot.tsx';
 import './mini.css';
 
 /** A character's square avatar, or its initial where it has none. Decoration: the name beside it says who. */
@@ -42,6 +44,23 @@ export function Ago({ at, now }: { readonly at: string; readonly now?: number })
 export function useSignedIn(_api: KayfaApi): boolean | null {
   const { session, sessionKnown } = usePlayer();
   return sessionKnown ? session.signedIn : null;
+}
+
+/**
+ * Whether the signed-in reader is an admin: boot's answer when the first load read it (a screen then reads nothing of its own), else
+ * `api.isAdmin`. False until known, and for a read that fails, so an admin's control is never offered on a guess.
+ */
+export function useIsAdmin(api: KayfaApi, signedIn: boolean | null): boolean {
+  const booted = useBoot();
+  const [admin, setAdmin] = useState(false);
+  useEffect(() => {
+    if (booted !== null) return undefined;
+    if (!signedIn) { setAdmin(false); return undefined; }
+    let live = true;
+    void api.isAdmin().then((a) => { if (live) setAdmin(a); }, () => { if (live) setAdmin(false); });
+    return () => { live = false; };
+  }, [api, signedIn, booted]);
+  return booted !== null ? signedIn === true && booted.admin : admin;
 }
 
 export function SignInPrompt() {

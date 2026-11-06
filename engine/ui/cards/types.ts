@@ -42,6 +42,8 @@ export interface CardPlay {
   readonly revealed?: { readonly card: string; readonly spring: Id; readonly at: string };
   /** A play a trap caught, by the set that caught it: it is spent and does nothing, so no effect is drawn for it. */
   readonly caught?: Id;
+  /** An admin ended this play (a `card_end` Act names it): its layer is off for everyone, though the play and its layer number stay. */
+  readonly reversed?: true;
   /** When a Use's effect ends, as the server wrote it when it landed; a play beyond a post's end, which it is drawn until. */
   readonly ends?: string;
   /**

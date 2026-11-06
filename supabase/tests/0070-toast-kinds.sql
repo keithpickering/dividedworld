@@ -69,6 +69,8 @@ begin
   if (select count(*) from account_preferences where toasts is not null) is distinct from 0 then raise exception 'another account read a choice of the first''s'; end if;
   said := set_preferences(toasts => array['seasonNews']);
   if said -> 'toasts' is distinct from '["seasonNews"]'::jsonb then raise exception 'a second account sets its own: %', said; end if;
+  said := set_preferences(toasts => array['cardEnded', 'quote']);
+  if said -> 'toasts' is distinct from '["cardEnded", "quote"]'::jsonb then raise exception 'cardEnded is a kind of alert a toast may name: %', said; end if;
   perform tests.unbecome();
   if (select toasts from account_preferences where account = ann) is not null then raise exception 'another account''s call moved the first''s choice'; end if;
 

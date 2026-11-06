@@ -66,7 +66,7 @@ afterEach(() => { vi.useRealTimers(); document.documentElement.removeAttribute('
 
 describe('which kinds toast', () => {
   test('the design\'s defaults: quotes, cards on yours, traps, rulings, settlements and updates on; followed threads, hints and season news off', () => {
-    expect(Object.entries(TOAST_DEFAULTS).filter(([, on]) => on).map(([k]) => k).sort()).toEqual(['cardOnYours', 'quote', 'ruling', 'settlement', 'trapSprang', 'trapStruck', 'update']);
+    expect(Object.entries(TOAST_DEFAULTS).filter(([, on]) => on).map(([k]) => k).sort()).toEqual(['cardEnded', 'cardOnYours', 'quote', 'ruling', 'settlement', 'trapSprang', 'trapStruck', 'update']);
     expect(toastsOn(null, 'quote')).toBe(true);
     expect(toastsOn(null, 'seasonNews')).toBe(false);
   });

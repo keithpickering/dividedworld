@@ -10,6 +10,8 @@
 -- A signed-in caller with no account yet gets `account` null and the public pieces (settings, boards, times). A visitor is refused:
 -- a signed-out load reads settings() alone, as today.
 --
+-- `admin` is is_admin(): whether the caller is an admin, so a screen that offers an admin's control (the Lens's "End this card") asks
+-- nothing of its own once boot is read.
 -- `unread` is 0 for a caller with no account, whom my_alerts_unread() refuses.
 -- Settlements are applied one window after another, each starting where the last ended, so the newest id is the newest end: the
 -- newest one holding a line of hers is one ledger_account (account, settlement) probe, not a sort of her whole ledger.
@@ -44,6 +46,7 @@ begin atomic
       from boards_now b
       left join board_counts bc on bc.board = b.id
       left join lateral (select t.id, t.last_at, t.last_character from thread_list t where t.board = b.id order by t.last_at desc limit 1) l on true), '[]'::jsonb),
+    'admin', coalesce(is_admin(), false),
     'unread', case when whoami() is null then 0 else my_alerts_unread() end,
     'nextSettlementAt', next_settlement_at(),
     'lastSettledAt', (select s.ends_at from settlements s order by s.ends_at desc limit 1),

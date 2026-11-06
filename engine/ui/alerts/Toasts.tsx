@@ -57,6 +57,7 @@ export function ago(at: string, now: number = Date.now()): string {
 /** The row an arrival is, with what the words need beside it, read as far as can be. */
 async function read(api: KayfaApi, a: Arrival, base: Pick<WordsContext, 'instance' | 'ui' | 'perPage'>): Promise<{ row: Alert; ctx: WordsContext }> {
   const acts = new Map<Id, Act>();
+  const names = new Map<Id, string>();
   let row: Alert = { kind: a.kind, sub: a.sub, act: a.act, character: a.character, at: a.at, thread: null, name: null, title: null, count: a.count ?? null };
   try {
     if (a.kind === 'update' && a.act !== null) {
@@ -66,6 +67,18 @@ async function read(api: KayfaApi, a: Arrival, base: Pick<WordsContext, 'instanc
       const named = await api.actsById([a.act]);
       for (const x of named) acts.set(x.id, x);
       const play = acts.get(a.act);
+      /* A card an admin ended is the card_end, then the play, then the post it landed on and that post's author. */
+      /* Its own catch: a failed read here costs the toast the post's author, never the caster's name below. */
+      const ofEnd = a.kind === 'cardEnded' && play?.targetActId ? play.targetActId : null;
+      if (ofEnd) {
+        try {
+          for (const x of await api.actsById([ofEnd])) acts.set(x.id, x);
+          const ended = acts.get(ofEnd);
+          if (ended?.targetActId) for (const x of await api.actsById([ended.targetActId])) acts.set(x.id, x);
+          const author = ended?.targetActId ? acts.get(ended.targetActId)?.character : null;
+          if (author) for (const c of await api.characters([author])) names.set(c.id, c.name);
+        } catch { /* the words fall back to "a post" */ }
+      }
       const target = play?.kind === 'card' && play.targetActId ? play.targetActId : null;
       if (target) for (const x of await api.actsById([target])) acts.set(x.id, x);
       const about = (target ? acts.get(target) : undefined) ?? play;
@@ -80,7 +93,7 @@ async function read(api: KayfaApi, a: Arrival, base: Pick<WordsContext, 'instanc
       row = { ...row, name: (await api.characters([a.character]))[0]?.name ?? null };
     }
   } catch { /* the plain words stand */ }
-  return { row, ctx: { ...base, acts, reading: null, startedBy: new Map(), newestSettlement: null } };
+  return { row, ctx: { ...base, acts, names, reading: null, startedBy: new Map(), newestSettlement: null } };
 }
 
 export interface ToastsProps {

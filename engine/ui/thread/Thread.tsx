@@ -37,7 +37,7 @@ import { createPlays, effectCards, hydrate, readEffects } from '../cards/plays.t
 import { Composer, SystemBoardNote, type ComposerHandle } from '../composer/Composer.tsx';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id, ThreadListener, ThreadPage, ThreadSummary } from '../data/api.ts';
-import { pageList } from '../mini.tsx';
+import { pageList, useIsAdmin } from '../mini.tsx';
 import { useBoot } from '../boot.tsx';
 import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import { FrontDoor } from '../front-door/FrontDoor.tsx';
@@ -91,6 +91,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   const { api, settings, ui } = useKayfa();
   const P = settings.postsPerPage;
   const player = usePlayer();
+  /* Only an admin's Lens offers "End this card": the page asks once, as Updates does. */
+  const admin = useIsAdmin(api, player.session.signedIn);
   const navigate = useNavigate();
   const { track } = useNavigation();
   const loc = useLocation();
@@ -394,6 +396,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
           void ensurePeople([a.character]).then(() => { plays.add([a]); return readEffects(api, plays, [a], effects); }).catch(quietly);
           return;
         }
+        /* An admin's end of a play is no tag: it marks its play reversed in the store, wherever the play is (or waits for it). */
+        if (a.kind === 'card_end') { plays.add([a]); return; }
         /* A card set face down is a back on its post; a spring reveals the back in its place, moving no mark (the card mechanic's design). */
         if (a.kind === 'set' || a.kind === 'spring') {
           void ensurePeople([a.character]).then(() => {
@@ -466,6 +470,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
      It then reads the play as it reads one on its own thread (the caster's name first), so the mark is drawn the same. */
   useEffect(() => api.subscribeReach({
     onPlay(a) {
+      /* The end of a play beyond a post names only its play: the store marks it if the play is one this page keeps, and holds it otherwise. */
+      if (a.kind === 'card_end') { plays.add([a]); return; }
       if (a.kind !== 'card') return;
       const reach = a.payload.reach;
       const shown = reach === 'thread' ? a.payload.thread === thread
@@ -614,7 +620,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
       <ActIndex.Provider value={index}>
         <ThreadCtx.Provider value={context}>
           <CalloutProvider met={player.session.signedIn ? cardsMet : null}>
-          <LensProvider>
+          <LensProvider admin={admin}>
             <ThreadHead pager={pager('top')} />
             <div className="kb-acts">
               {/* The 2003 table's column head, over side-by-side posts; each article names its own author for a screen reader. */}

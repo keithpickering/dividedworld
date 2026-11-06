@@ -1,4 +1,4 @@
--- presence_box (supabase/migrations/0092_presence_box.sql; the forum-load plan, Task 2): the box `here` ends with, readable on its own.
+-- presence_box (supabase/migrations/0093_presence_box.sql; the forum-load plan, Task 2): the box `here` ends with, readable on its own.
 -- It answers exactly what here() answers for a place, for a thread, a board and the index; it writes no row (the presence row count and
 -- the caller's seen_at are unchanged); anon is refused; a missing thread, board or kind is refused as here() refuses it.
 

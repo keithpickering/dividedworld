@@ -5,7 +5,7 @@
  * its marks: `OnePlay` (the fixture's one play, its card met before so no callout hangs), `Callout` (the same for a reader who has
  * never met the card, so its one-line callout hangs off the mark), `SixKinds` (six kinds of card on one post: four marks and
  * "+2"), and `Armed` (Whoops! armed the way pressing its card in the hand arms it: the dashed ghost mark ends the strip of every post it
- * can land on, #41 and #42 among them), and `AsItLanded` (the fixture's play's moment shown in #41's body, from its Lens's As it landed). No board draws these. Open each at 1440 by 1120, and its `Phone` twin at 390 by 844.
+ * can land on, #41 and #42 among them), `AsItLanded` (the fixture's play's moment shown in #41's body, from its Lens's As it landed), `EndThisCard` (an admin's Lens, with its End this card) and `EndedByAnAdmin` (the same play after an admin ended it). No board draws these. Open each at 1440 by 1120, and its `Phone` twin at 390 by 844.
  *
  * The story names no instance: the cards are the instance's own, in its order, and the kinds past them are keys no card has, which a
  * mark draws as a swatch under the key's name, so six kinds are six distinct cards on the post.
@@ -24,9 +24,11 @@ import { LoadedThread } from '../loaded.tsx';
 const MINUTE = 60_000;
 
 type Kinds = 1 | 6;
+/** An admin looking at #41's play: its Lens offers "End this card" (`admin`), or the play was ended already and its Lens says so (`ended`). */
+type Ending = 'none' | 'admin' | 'ended';
 
 /** Hand #41 its plays (and, for `quiet`, say every card met), then say the thread is ready to be read. */
-function useSeeded(thread: string | null, kinds: Kinds, quiet: boolean): boolean {
+function useSeeded(thread: string | null, kinds: Kinds, quiet: boolean, ending: Ending): boolean {
   const { api, instance } = useKayfa();
   const [ready, setReady] = useState(false);
   useEffect(() => {
@@ -48,11 +50,24 @@ function useSeeded(thread: string | null, kinds: Kinds, quiet: boolean): boolean
           fake.seed.card(casters[i]!, target.id, card, { layer: 2 + i, message: '' });
         });
       }
+      if (ending !== 'none') {
+        /* The reader is made an admin before the thread is read, as the account is; an ended play is ended by that admin, as the Lens would. */
+        const account = (await api.session()).account;
+        if (account === null) throw new Error('the story needs a signed-in reader to make an admin');
+        fake.seed.admin(account);
+        if (ending === 'ended') {
+          const target = (await api.acts(thread, 41, 41))[0];
+          const play = target && (await api.cardsOn(target.id, 8)).find((a) => a.kind === 'card');
+          if (!play) throw new Error('the boards fixture has no play on #41 to end');
+          const answer = await api.reverseCard(play.id);
+          if (!answer.ok) throw new Error(answer.error);
+        }
+      }
       if (live) setReady(true);
       /* A seed the fake refuses leaves the story loading (aria-busy), and says why, rather than showing fewer kinds than its name. */
     })().catch((e: unknown) => { console.error('the marks story could not be seeded', e); });
     return () => { live = false; };
-  }, [api, instance, thread, kinds, quiet]);
+  }, [api, instance, thread, kinds, quiet, ending]);
   return ready;
 }
 
@@ -118,14 +133,37 @@ function Landed() {
   return null;
 }
 
-function Marked({ kinds, armed, quiet, landed = false }: { readonly kinds: Kinds; readonly armed: boolean; readonly quiet: boolean; readonly landed?: boolean }) {
+/** Opens #41's Lens from its first mark and unfolds Who, as a reader would, so each play's row (and, for an admin, "End this card") is in view. */
+function Opened() {
+  useEffect(() => {
+    let step = 0;
+    const timer = setInterval(() => {
+      if (step === 0) {
+        const mark = document.getElementById('post-41')?.querySelector<HTMLElement>('.kb-mark[data-kb-card]');
+        if (!mark) return;
+        mark.click();
+        step = 1;
+      } else {
+        const fold = document.querySelector<HTMLElement>('.kb-lens-fold');
+        if (!fold) return;
+        clearInterval(timer);
+        if (fold.getAttribute('aria-expanded') === 'false') fold.click();
+      }
+    }, 100);
+    return () => clearInterval(timer);
+  }, []);
+  return null;
+}
+
+function Marked({ kinds, armed, quiet, landed = false, ending = 'none' }: { readonly kinds: Kinds; readonly armed: boolean; readonly quiet: boolean; readonly landed?: boolean; readonly ending?: Ending }) {
   /* The thread the moment opens on (`/t/<thread>`). */
   const thread = /^\/t\/([^/]+)/u.exec(useLocation().path)?.[1] ?? null;
-  const ready = useSeeded(thread, kinds, quiet);
+  const ready = useSeeded(thread, kinds, quiet, ending);
   return (
     <Frame>
       {armed && <Arm />}
       {landed && <Landed />}
+      {ending !== 'none' && <Opened />}
       <Look />
       {thread && ready ? <LoadedThread thread={thread} /> : <div aria-busy="true" />}
     </Frame>
@@ -157,3 +195,9 @@ export const ArmedPhone: Story = { args: { kinds: 1, armed: true, quiet: true },
 /** As it landed (docs/plans/2026-11-03-effect-history-plan.md, Task 5): #41's play's moment in its frame and tag, the Lens open beside it. */
 export const AsItLanded: Story = { args: { kinds: 1, armed: false, quiet: true, landed: true } };
 export const AsItLandedPhone: Story = { args: { kinds: 1, armed: false, quiet: true, landed: true }, ...phone };
+/** An admin's Lens on #41's play: Who unfolded, and "End this card" on the live play. */
+export const EndThisCard: Story = { args: { kinds: 1, armed: false, quiet: true, ending: 'admin' } };
+/** The same play after an admin ended it: its mark is dim and its Lens reads "Ended by an admin"; no button is left. */
+export const EndedByAnAdmin: Story = { args: { kinds: 1, armed: false, quiet: true, ending: 'ended' } };
+export const EndThisCardPhone: Story = { args: { kinds: 1, armed: false, quiet: true, ending: 'admin' }, ...phone };
+export const EndedByAnAdminPhone: Story = { args: { kinds: 1, armed: false, quiet: true, ending: 'ended' }, ...phone };

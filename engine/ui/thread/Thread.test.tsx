@@ -1572,3 +1572,30 @@ describe('a thread drawn from its document (the forum-load plan, Task 13)', () =
     expect(await screen.findByRole('button', { name: '3 new posts' })).toBeInTheDocument();
   });
 });
+
+/* An admin's end of a card (supabase/migrations/0092_card_end.sql): its layer is off for everyone, whether the page read it ended or heard it end. */
+describe('a card an admin ended', () => {
+  test('draws no effect on its post, where the same card live beside it does, and its mark stays', async () => {
+    const w = world(3);
+    w.fake.seed.admin(w.me);
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'live' });
+    const ended = w.fake.seed.card(w.spritey, w.ids[2]!, 'whoops', { message: 'ended' });
+    expect((await w.fake.reverseCard(ended)).ok).toBe(true);
+    openWith(w, [fx('whoops')]);
+    expect(await within(await screen.findByRole('article', { name: /^Post 2 /u })).findByTestId('fx-whoops')).toHaveAttribute('data-plays', '1:live');
+    const third = await screen.findByRole('article', { name: /^Post 3 /u });
+    await within(third).findByRole('button', { name: /^Whoops!, 1 play\b/u });
+    expect(within(third).queryByTestId('fx-whoops')).toBeNull();
+  });
+
+  test('heard on the thread\'s topic while the page is open, it takes the layer off at once', async () => {
+    const w = world(3);
+    w.fake.seed.admin(w.me);
+    const played = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'live' });
+    openWith(w, [fx('whoops')]);
+    expect(await within(await screen.findByRole('article', { name: /^Post 2 /u })).findByTestId('fx-whoops')).toBeInTheDocument();
+    /* The end comes from the admin's call, not the Lens: only the broadcast carries it to this page. */
+    await act(async () => { expect((await w.fake.reverseCard(played)).ok).toBe(true); });
+    await waitFor(() => expect(within(post(2)).queryByTestId('fx-whoops')).toBeNull());
+  });
+});

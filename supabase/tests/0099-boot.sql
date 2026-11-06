@@ -1,4 +1,4 @@
--- boot() (supabase/migrations/0096_boot.sql; the forum-load design, section 2 and 10; its plan, Task 7): the frame and the HUD in one read.
+-- boot() (supabase/migrations/0097_boot.sql; the forum-load design, section 2 and 10; its plan, Task 7): the frame and the HUD in one read.
 -- Each piece equals what the screen reads today, one view or function at a time: a player's own characters and no one else's, her wallet and hand,
 -- her preferences, the public faces of those characters, the boards, the unread count and the settlement marks. A signed-in caller with no account
 -- gets `account` null and the public pieces; a visitor is refused, and reads settings() alone, as today.
@@ -55,6 +55,7 @@ begin
   if not exists (select 1 from jsonb_array_elements(got -> 'faces') f where f ->> 'id' = a1::text and f ->> 'name' = 'Bt Zed' and f #>> '{profile,title}' = 'The Zed') then raise exception 'a face carries its public name and profile: %', got -> 'faces'; end if;
   if got -> 'wallet' is distinct from (select to_jsonb(w) from my_wallet w) or (got #>> '{wallet,balance}')::integer is distinct from 321 then raise exception 'wallet: %', got -> 'wallet'; end if;
   if got -> 'cards' is distinct from (select jsonb_agg(to_jsonb(c) order by c.card) from my_cards c) or (select x ->> 'held' from jsonb_array_elements(got -> 'cards') x where x ->> 'card' = 'blot') is distinct from '2' then raise exception 'cards: %', got -> 'cards'; end if;
+  if got -> 'admin' is distinct from to_jsonb(coalesce(is_admin(), false)) then raise exception 'admin: %', got -> 'admin'; end if;
   if (got ->> 'unread')::integer is distinct from my_alerts_unread() then raise exception 'unread: %', got -> 'unread'; end if;
   if (got ->> 'nextSettlementAt')::timestamptz is distinct from next_settlement_at() then raise exception 'nextSettlementAt: %', got -> 'nextSettlementAt'; end if;
   if (got ->> 'lastSettledAt')::timestamptz is distinct from (select max(ends_at) from settlements) then raise exception 'lastSettledAt: %', got -> 'lastSettledAt'; end if;

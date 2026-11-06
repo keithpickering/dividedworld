@@ -59,7 +59,8 @@ export const testInstance: Instance = {
 export const testGlass = {
   keys: { standard: {}, high: {} },
   smoke: {
-    recipes: { plain: { layers: [] } },
+    field: { layers: [] },
+    recipes: { plain: { colors: [] } },
     surfaces: Object.fromEntries(['hud', 'hand', 'play', 'react', 'turn', 'effect', 'vending', 'characters', 'rankings', 'log', 'settings', 'account', 'settlement'].map((s) => [s, 'plain'])),
   },
   calm: { opacity: 0.85, feather: 32 },

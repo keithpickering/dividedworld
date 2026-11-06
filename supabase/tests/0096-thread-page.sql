@@ -1,4 +1,4 @@
--- thread_page (supabase/migrations/0093_thread_page.sql; the forum-load plan, Task 4): a thread's page in one read. A thread of 45 posts, with a
+-- thread_page (supabase/migrations/0094_thread_page.sql; the forum-load plan, Task 4): a thread's page in one read. A thread of 45 posts, with a
 -- play, a set, a reaction and a spin on page 2. As a player, with per_page 20: page 2 holds seq 21 to 40; a per_page of 500 (or 0) is refused and none is the instance's setting;
 -- in_seq 42 lands on page 3; in_page 9 clamps to 3; each piece equals the matching view read made directly here (the same rows, by id); mine holds
 -- only the caller's reactions and faces only the caller's sets; a missing thread is null; anon is refused. The guard

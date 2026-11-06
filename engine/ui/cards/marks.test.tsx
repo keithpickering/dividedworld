@@ -307,3 +307,20 @@ describe('a strip that compares nothing listens to nothing', () => {
     }
   });
 });
+
+/* An admin's end (supabase/migrations/0092_card_end.sql): a kind whose plays an admin all ended is dimmed as a caught one is, its mark kept to say so. */
+describe('a mark whose plays an admin ended', () => {
+  const dimmed = (post: HTMLElement) => marks(post).map((m) => m.getAttribute('data-kb-caught'));
+
+  test('is dimmed when every play of its kind was ended, and not while one is still in force', async () => {
+    const w = world();
+    w.fake.seed.admin(w.me);
+    const ended = w.play('k1'); const alsoEnded = w.play('k1'); w.play('k2'); const one = w.play('k3'); w.play('k3');
+    for (const p of [ended, alsoEnded, one]) expect((await w.fake.reverseCard(p)).ok).toBe(true);
+    open(w);
+    const post = await article(2);
+    await waitFor(() => expect(marks(post)).toHaveLength(3));
+    /* Billed newest first: k3 (one of two ended), k2 (untouched), k1 (both ended). */
+    expect(dimmed(post)).toEqual([null, null, 'true']);
+  });
+});

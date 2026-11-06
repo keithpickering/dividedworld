@@ -23,25 +23,41 @@
   --kb-selection-bg: #000;
   --kb-hud-bg: #fff;
   --kb-overlay: rgb(0 0 0 / 0.5);
+  /*
+   * The vignette over the board (frame.css): a color and an opacity at the window's corners, and a second color and opacity at the
+   * foot above the HUD. These defaults draw nothing; an instance's theme gives the look. Each color is paired with its own opacity
+   * (a number from 0 to 1) so a theme changes how much without restating which.
+   */
+  --kb-vignette-color: transparent;
+  --kb-vignette-edge: 0;
+  --kb-vignette-foot-color: transparent;
+  --kb-vignette-foot: 0;
+  /* How much of that strength the vignette keeps where it lies over the board's own column, from 0 (none) to 1 (all of it). The default draws nothing there. */
+  --kb-vignette-column: 0;
+  /* The vignette's mask reads alpha only, so its opaque stop is black in every mode, scaled by --kb-vignette-column inside the column and a theme has no reason to set it (a transparent value would empty the mask). */
+  --kb-vignette-mask: #000;
 
   --kb-font-body: Verdana, Geneva, sans-serif;
   --kb-font-mono: "Courier New", Courier, monospace;
-  /* The Main board's sizes: 12px words, 11px links and controls, a 10px post line, an 18px title. */
-  --kb-size-body: 0.75rem;
-  --kb-size-small: 0.6875rem;
-  --kb-size-fine: 0.625rem;
-  --kb-size-heading: 0.9375rem;
-  --kb-size-title: 1.125rem;
-  --kb-size-logo: 1.25rem;
+  /*
+   * The Main board's sizes, the 2003 board's scaled by 1.25 (the glass-polish design's section 7): 15px words, 13.75px links and
+   * controls, a 12.5px post line, a 22.5px title.
+   */
+  --kb-size-body: 0.9375rem;
+  --kb-size-small: 0.859375rem;
+  --kb-size-fine: 0.78125rem;
+  --kb-size-heading: 1.171875rem;
+  --kb-size-title: 1.40625rem;
+  --kb-size-logo: 1.5625rem;
   --kb-line: 1.45;
   /*
    * How wide the board's own pages may be (the banner, the index, the boards, the threads, the profile,
    * the standings): a column at most this wide, centered past it. The owner chose 960px for the 2003
-   * board (the glass plan's section 8): wider and the table looks silly, and Whoops!'s fixed layout is
-   * laid out at the post body this makes (instances/divided-world/cards/whoops/scrub.ts). The glass
-   * keeps its own widths. A theme may set it, as a plain positive length (tools/check-theme.mjs).
+   * board (the glass plan's section 8), and 1200px with the type scaled by 1.25 (the glass-polish design's section 7), so a
+   * line holds about the same words: wider and the table looks silly, and Whoops!'s fixed layout is laid out at the post body
+   * this makes (instances/divided-world/cards/whoops/scrub.ts). The glass keeps its own widths. A theme may set it, as a plain positive length (tools/check-theme.mjs).
    */
-  --kb-board-max: 960px;
+  --kb-board-max: 1200px;
 
   /* The game's pieces: the only color on the board. */
   --kb-orb-1: #777;

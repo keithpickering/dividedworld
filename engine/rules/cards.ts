@@ -177,10 +177,18 @@ export interface CardRules<Config = unknown> {
   /** Checks a caster's configuration and returns it in the card's own shape. */
   validateConfig(config: unknown): Verdict<Config>;
   /**
-   * The configurations a staff persona may play it with, where `validateConfig({})` refuses (Whoops! needs an ink). Plain code picks one,
-   * seeded from the day; the model never chooses a configuration (`staffConfigOf`). A card with neither a default nor this list is not offered to the pool.
+   * The configurations code falls back on for a staff persona's play, where `validateConfig({})` refuses (Whoops! needs an ink): used when the
+   * persona's own options (`staffOptions`) fail the card's validator or the persona gave none. Plain code picks one, seeded from the day
+   * (`staffConfigOf`). A card with neither a default, this list nor `staffOptions` is not offered to the pool.
    */
   readonly staffConfigs?: readonly Config[];
+  /**
+   * What a staff persona may set when it plays the card. `prompt` tells the persona about the options, in the instance's words; `schema` is the
+   * options object's JSON schema for the provider: strings and enums only, since structured output cannot hold a length or a pattern, so
+   * `validateConfig` holds the bounds. Every property the schema names is one `validateConfig` keeps. A card with this is offered to the pool
+   * even with no default configuration and no `staffConfigs`.
+   */
+  readonly staffOptions?: { readonly prompt: string; readonly schema: Record<string, unknown> };
   /** For a card whose effect holds state (Whoops!'s strokes): checks a state to be saved. */
   validateState?(state: unknown): Verdict<unknown>;
 }
@@ -363,8 +371,9 @@ export function landsOn(rules: Pick<CardRules, 'key' | 'stack' | 'reaches'>, tar
 }
 
 /**
- * The configuration the pool plays a card with, chosen by code and never by a model: the card's default where `validateConfig({})` accepts
- * one (played as `{}`, so the database applies the same default), else one of its `staffConfigs` picked by `rng` (in [0, 1)) and returned
+ * The fallback configuration the pool plays a card with when a persona's own options (`staffOptions`) fail or are not given,
+ * chosen by code: the card's default where `validateConfig({})` accepts one (played as `{}`, so the database applies the same
+ * default), else one of its `staffConfigs` picked by `rng` (in [0, 1)) and returned
  * as `validateConfig` shapes it; null where code can build none, and the card is then not offered.
  */
 export function staffConfigOf(card: CardRules, rng: () => number): unknown | null {
@@ -378,4 +387,9 @@ export function staffConfigOf(card: CardRules, rng: () => number): unknown | nul
 /** A color as a post's [color] tag reads one (engine/bbcode/parse.ts), surrounding spaces aside. */
 export function color(value: unknown): string | null {
   return typeof value === 'string' ? safeColor(value.trim()) : null;
+}
+
+/** Whether the pool may offer a card to a staff persona: code can build a configuration for it, or the persona chooses its options. */
+export function staffOffers(card: CardRules): boolean {
+  return staffConfigOf(card, () => 0) !== null || card.staffOptions !== undefined;
 }

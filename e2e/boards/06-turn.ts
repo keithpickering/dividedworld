@@ -102,8 +102,9 @@ const manifest: BoardManifest = {
     { id: 'announced', role: 'text', name: 'ANNOUNCED', buildName: 'Announced.', within: 'loud', box: 'position', origin: 'loud' },
     { id: 'name-old', role: 'text', name: 'ANNOUNCED WITH OLD CLASS', buildName: 'Name the old class.', within: 'loud', box: 'position', origin: 'loud' },
     { id: 'preview-head', role: 'text', name: 'What everyone will see', within: 'dialog', box: 'size' },
-    { id: 'preview-by', role: 'text', name: 'The System', within: 'dialog', box: 'size' },
-    { id: 'preview-line', role: 'text', name: 'Pipewrench has Turned. Now a Face. Before this, Pipewrench was a Heel.', buildName: 'Pipewrench has Turned from Heel', within: 'dialog', box: 'none' },
+    /* The preview's words are the type scale's (the glass polish, design section 7): 15px where the board draws 12px, so "The System" is 1.25 times as wide. */
+    { id: 'preview-by', role: 'text', name: 'The System', within: 'dialog', box: 'size', buildSize: 15, buildShift: { width: 19.8 } },
+    { id: 'preview-line', role: 'text', name: 'Pipewrench has Turned. Now a Face. Before this, Pipewrench was a Heel.', buildName: 'Pipewrench has Turned from Heel', within: 'dialog', box: 'none', buildSize: 15 },
 
     /*
      * The foot: Cancel and Confirm Turn are GlassButtons in one ButtonRow (the glass polish, design section 2, and the owner's correction that Reveal's

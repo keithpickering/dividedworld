@@ -45,7 +45,7 @@ async function open(withCards = false) {
   fake.signInAs(me);
   renderIn(fake, <Frame><LoadedThread thread={here.thread} /></Frame>, { path: `/t/${here.thread}`, instance, ...(withCards ? { cards } : {}) });
   await screen.findByRole('article', { name: /^Post 1 /u });
-  return { fake, spritey, gloomba, here, elsewhere, gloombaThere };
+  return { fake, me, spritey, gloomba, here, elsewhere, gloombaThere };
 }
 const postbit = (seq: number) => document.getElementById(`post-${seq}`)!.querySelector('.kb-postbit') as HTMLElement;
 const sparkleMark = (el: HTMLElement) => within(el).queryByRole('button', { name: /^Sparkle, 1 play\b/u });
@@ -86,5 +86,18 @@ describe('a play beyond a post, heard on reach', () => {
       await new Promise((r) => setTimeout(r, 100));
     } finally { process.off('unhandledRejection', heard); }
     expect(loose).toEqual([]);
+  });
+});
+
+/* An admin's end of a play beyond a post (supabase/migrations/0092_card_end.sql): it is announced on `reach` alone when the play was played
+   from a post in another thread, so only this listener can take the play off a page that shows it. */
+describe('the end of a play beyond a post, heard on reach', () => {
+  test('a play on a character shown here leaves its postbit when an admin ends it', async () => {
+    const w = await open();
+    w.fake.seed.admin(w.me);
+    const played = w.fake.seed.reach(w.spritey, 'character', w.spritey, 'sparkle', { post: w.elsewhere.act, live: true, ends: Date.now() + 3_600_000 });
+    await waitFor(() => expect(sparkleMark(postbit(1))).not.toBeNull());
+    expect((await w.fake.reverseCard(played)).ok).toBe(true);
+    await waitFor(() => expect(sparkleMark(postbit(1))).toBeNull());
   });
 });

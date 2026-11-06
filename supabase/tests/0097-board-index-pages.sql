@@ -1,4 +1,4 @@
--- board_page and index_page (supabase/migrations/0094_board_index_pages.sql; the forum-load plan, Task 5): a board's page and the index in
+-- board_page and index_page (supabase/migrations/0095_board_index_pages.sql; the forum-load plan, Task 5): a board's page and the index in
 -- one read. Two boards with threads: board_page's page 1 and page 2 hold the right threads and page 1 alone the pins; a page past the end
 -- clamps; a missing slug is null; every piece equals the view or function read made directly here; index_page holds each board's newest
 -- thread and count; anon is refused.

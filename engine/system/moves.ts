@@ -1,7 +1,7 @@
 /**
  * The moves The System can make (system design, section 3; the system plan, Task 8): a fixed catalog the code maps to effects
- * with limits. A model proposes a move by key and params; free text it returns is shown, never acted on, so a key outside this
- * list is not a move (the meeting drops it and records it). The catalog is seeded into `move_kinds` by `seed_instance`
+ * with limits. A model proposes a move by key and params; a key outside this list is not a move (the meeting
+ * drops it and records it), and a model's free text is never read as a choice. The catalog is seeded into `move_kinds` by `seed_instance`
  * (supabase/functions/_shared/seed.ts reads it), so SQL and TypeScript read one list ("Two lists that must agree are one list").
  *
  * Part 1 holds two moves. `renameBoard` is structural (design, section 7): it waits in the admin queue about a day before it

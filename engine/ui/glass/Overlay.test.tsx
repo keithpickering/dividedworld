@@ -295,6 +295,14 @@ describe('placing a popover overlay', () => {
   const frame = () => act(() => new Promise<void>((r) => { requestAnimationFrame(() => r()); }));
   const px = (v: string) => parseFloat(v);
 
+  test('tells the windows that it has placed itself, so its smoke reads where the box now stands (the field\'s windows)', async () => {
+    const told = vi.fn();
+    window.addEventListener('kb-field-placed', told);
+    await openIt();
+    window.removeEventListener('kb-field-placed', told);
+    expect(told).toHaveBeenCalled();
+  });
+
   test('stands 30px below its anchor, its left edge at the anchor\'s', async () => {
     const d = await openIt();
     expect(d).toHaveAttribute('data-kb-place', 'below');

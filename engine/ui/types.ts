@@ -125,15 +125,19 @@ export type GlassOverlay = 'tips';
  */
 export type ClassLargeDraw = 'full' | 'calmed' | 'none';
 
+/** How a field layer slides: `seconds` each way across `travel` px, so layers at different rates read as depth. */
+export interface FieldDrift {
+  readonly seconds: number;
+  readonly travel: number;
+}
+
 /**
- * One layer of smoke: SVG fractal noise through a color matrix, blurred. `color` is the matrix's
- * constant color as an 8-bit hex (what the browser quantizes it to); `alpha` is the matrix's alpha
- * row (r, g, b, a, bias), which turns the noise into the layer's cloud; `opacity` is the opacity of
- * the rect the filter is drawn on.
+ * One layer of the field's shape: SVG fractal noise through a color matrix's alpha row, blurred.
+ * The shape is shared by every surface (the glass polish design, section 6); a surface's recipe
+ * gives only the layer's color and opacity (`LayerColor`). `alpha` is the matrix's alpha row
+ * (r, g, b, a, bias), which turns the noise into the layer's cloud.
  */
-export interface SmokeLayer {
-  readonly color: string;
-  readonly opacity: number;
+export interface FieldLayer {
   readonly alpha: readonly number[];
   /** feTurbulence's baseFrequency, x then y. */
   readonly frequency: readonly number[];
@@ -141,26 +145,32 @@ export interface SmokeLayer {
   readonly seed: number;
   /** feGaussianBlur's stdDeviation. */
   readonly blur: number;
-}
-
-/** A strip of smoke wider than its frame that slides `travel` px back and forth, `seconds` each way. */
-export interface SmokeDrift {
-  readonly width: number;
-  readonly seconds: number;
-  readonly travel: number;
+  readonly drift: FieldDrift;
 }
 
 /**
- * The smoke of one kind of screen. `calm` is this surface's calm opacity where it differs from the
- * theme's; `calmAll` says every text node on the surface stands in a calm, large text too (the
- * guard does not hold its large text to the full smoke); `narrow` replaces `layers` below 600px.
+ * What one surface's recipe says of one field layer: the matrix's constant color as an 8-bit hex
+ * (what the browser quantizes it to) and the opacity of the layer's element. An opacity of 0 leaves
+ * the layer out on that surface.
+ */
+export interface LayerColor {
+  readonly color: string;
+  readonly opacity: number;
+}
+
+/**
+ * The smoke of one kind of screen: a color and opacity for each field layer, in the field's order
+ * (`colors`, one per `GlassTheme.smoke.field.layers`). Below 600px the field's `narrow` layers are
+ * drawn instead, in `narrowColors` (one per narrow layer) or, where the recipe has none, in the
+ * first colors. `calm` is this surface's calm opacity where it differs from the theme's; `calmAll`
+ * says every text node on the surface stands in a calm, large text too (the guard does not hold its
+ * large text to the full smoke).
  */
 export interface SmokeRecipe {
-  readonly layers: readonly SmokeLayer[];
-  readonly drift?: SmokeDrift;
+  readonly colors: readonly LayerColor[];
+  readonly narrowColors?: readonly LayerColor[];
   readonly calm?: number;
   readonly calmAll?: boolean;
-  readonly narrow?: readonly SmokeLayer[];
 }
 
 /**
@@ -244,6 +254,8 @@ export interface GlassTheme {
   /** Standard and high contrast: the same tokens, each with its tags, the high key's values reaching 7:1. */
   readonly keys: { readonly standard: GlassKey; readonly high: GlassKey };
   readonly smoke: {
+    /** The one field of clouds every surface is a window onto: its layers, and `narrow` below 600px. At most 4 layers, 3 narrow. */
+    readonly field: { readonly layers: readonly FieldLayer[]; readonly narrow?: readonly FieldLayer[] };
     readonly recipes: Readonly<Record<string, SmokeRecipe>>;
     readonly surfaces: Readonly<Record<GlassSurface, string>>;
   };
