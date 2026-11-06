@@ -335,3 +335,11 @@ begin
   update settings set value = jsonb_build_object('announcementsThreadTitle', 'Season {season}: Promos') where key = 'copy';
   if copy_of('announcementsThreadTitle', 4) is distinct from 'Season 4: Promos' then raise exception 'copy_of fills the season'; end if;
 end $$;
+
+-- ---- The finished seasons' view reads as its caller, so a tighter policy on seasons would hold through it ----
+do $$
+begin
+  if not coalesce((select 'security_invoker=true' = any (reloptions) from pg_class where oid = 'public.seasons_finished'::regclass), false) then
+    raise exception 'seasons_finished reads as its caller (security_invoker)';
+  end if;
+end $$;
