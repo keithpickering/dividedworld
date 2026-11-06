@@ -8,9 +8,16 @@
  * Smooth fades with a slight scale and a blur-in and never uses a clip-path. Snappy springs where a
  * thing lands and wipes with a clip-path whose edges are slanted by the glass's skew
  * (`--kb-glass-skew`, base.css), so a mask cuts along the same angle as the buttons.
+ *
+ * `screen` and `swap` take their direction at exit time, not at render: an exiting element keeps
+ * the props it last rendered with, so a direction baked into them would send it out the wrong way
+ * after a change the other way. They return Motion variants resolved by `custom`: the caller passes
+ * the direction as `custom` on `AnimatePresence` AND on the child, `<AnimatePresence custom={dir}>
+ * <motion.div key={at} custom={dir} {...screen(feel)} />`. +1 means the tab (or character) chosen lies
+ * after the one being left: the new content enters from the +1 side and the old leaves toward -1.
  */
 import { useMemo, useSyncExternalStore } from 'react';
-import type { TargetAndTransition, Transition } from 'motion/react';
+import type { TargetAndTransition, Transition, Variants } from 'motion/react';
 import { motionReduced, subscribeMotion } from '../appearance.ts';
 import type { Feel, FeelTokens, GlassMotion } from '../types.ts';
 import { feelTokens } from './motion-tokens.ts';
@@ -19,9 +26,10 @@ export { DEFAULT_FEELS, FEELS, feelTokens } from './motion-tokens.ts';
 
 /** What a preset returns: spread onto a `motion` element. Empty under Off. */
 export interface MotionProps {
-  readonly initial?: TargetAndTransition;
-  readonly animate?: TargetAndTransition;
-  readonly exit?: TargetAndTransition;
+  readonly variants?: Variants;
+  readonly initial?: TargetAndTransition | string;
+  readonly animate?: TargetAndTransition | string;
+  readonly exit?: TargetAndTransition | string;
   readonly transition?: Transition;
 }
 
@@ -60,7 +68,8 @@ function landing(f: NonNullable<ActiveFeel>, ms: number, delay = 0): Transition 
     : { duration: sec(ms), ease: bezier(f.ease), delay };
 }
 /** How a thing leaves: eased over the feel's exit, never sprung, so an exit ends when it says. */
-const leaving = (f: NonNullable<ActiveFeel>, ms = f.exit): Transition => ({ duration: sec(ms), ease: bezier(f.ease) });
+const eased = (f: NonNullable<ActiveFeel>, ms = f.exit): Transition => ({ duration: sec(ms), ease: bezier(f.ease) });
+const leaving = eased;
 
 /** Half the slant of an edge `h` px tall, by the glass's skew: a CSS length. */
 const slant = (h: number | string) => `calc(tan(var(--kb-glass-skew)) * ${typeof h === 'number' ? `${h / 2}px` : h})`;
@@ -114,25 +123,27 @@ export function crossing(feel: ActiveFeel, args: { readonly from: Rect; readonly
 }
 
 /**
- * A change between glass screens. `direction` is +1 when the tab chosen lies to the right of the one
- * being left: the outgoing content leaves toward the left, the new content enters from the right
- * (-1 the other way).
+ * A change between glass screens, as variants resolved by the direction passed as `custom` (see the
+ * header): +1 when the tab chosen lies to the right of the one being left, so the outgoing content
+ * leaves toward the left and the new content enters from the right (-1 the other way).
  */
-export function screen(feel: ActiveFeel, direction: 1 | -1): MotionProps {
+export function screen(feel: ActiveFeel): MotionProps {
   if (!feel) return {};
-  if (feel.mask === 'skew') {
-    return {
-      initial: { x: direction * feel.distance, clipPath: WIPE_HIDDEN },
-      animate: { x: 0, clipPath: WIPE_SHOWN, transition: landing(feel, feel.screen) },
-      exit: { x: -direction * feel.distance, opacity: 0, transition: leaving(feel, feel.screen) },
-    };
-  }
-  return {
-    initial: { x: direction * feel.distance, opacity: 0, scale: feel.scale, filter: BLUR(feel.blur) },
-    animate: { x: 0, opacity: 1, scale: 1, filter: BLUR(0), transition: landing(feel, feel.screen) },
-    exit: { x: -direction * feel.distance, opacity: 0, scale: feel.scale, filter: BLUR(feel.blur), transition: leaving(feel, feel.screen) },
-  };
+  const variants: Variants = feel.mask === 'skew'
+    ? {
+        enter: (d: Dir) => ({ x: d * feel.distance, clipPath: WIPE_HIDDEN }),
+        center: { x: 0, clipPath: WIPE_SHOWN, transition: landing(feel, feel.screen) },
+        exit: (d: Dir) => ({ x: -d * feel.distance, opacity: 0, transition: leaving(feel, feel.screen) }),
+      }
+    : {
+        enter: (d: Dir) => ({ x: d * feel.distance, opacity: 0, scale: feel.scale, filter: BLUR(feel.blur) }),
+        center: { x: 0, opacity: 1, scale: 1, filter: BLUR(0), transition: landing(feel, feel.screen) },
+        exit: (d: Dir) => ({ x: -d * feel.distance, opacity: 0, scale: feel.scale, filter: BLUR(feel.blur), transition: leaving(feel, feel.screen) }),
+      };
+  return { variants, initial: 'enter', animate: 'center', exit: 'exit' };
 }
+
+type Dir = 1 | -1;
 
 /** An overlay (Overlay, Float, the hand drawer): enters from its `anchor` (px from the element's own top-left), centered where none. */
 export function overlay(feel: ActiveFeel, anchor?: { readonly x: number; readonly y: number }): MotionProps {
@@ -172,7 +183,7 @@ export function modal(feel: ActiveFeel): MotionProps {
 /** The dim behind an overlay or a modal, fading in step with it. */
 export function backdrop(feel: ActiveFeel): MotionProps {
   if (!feel) return {};
-  return { initial: { opacity: 0 }, animate: { opacity: 1, transition: leaving(feel, feel.enter) }, exit: { opacity: 0, transition: leaving(feel) } };
+  return { initial: { opacity: 0 }, animate: { opacity: 1, transition: eased(feel, feel.enter) }, exit: { opacity: 0, transition: leaving(feel) } };
 }
 
 /**
@@ -198,21 +209,22 @@ export function staggerItem(feel: ActiveFeel, delays: readonly number[], index: 
 }
 
 /**
- * The roster's panel changing to another character. `direction` is +1 when the one chosen is below
- * (or after) the one shown: the old panel leaves upward, the new one arrives from below.
+ * The roster's panel changing to another character, as variants resolved by `custom` (see the
+ * header): +1 when the one chosen is below (after) the one shown, so the old panel leaves upward and
+ * the new one arrives from below.
  */
-export function swap(feel: ActiveFeel, direction: 1 | -1): MotionProps {
+export function swap(feel: ActiveFeel): MotionProps {
   if (!feel) return {};
-  if (feel.mask === 'skew') {
-    return {
-      initial: { y: direction * feel.distance, clipPath: WIPE_HIDDEN },
-      animate: { y: 0, clipPath: WIPE_SHOWN, transition: landing(feel, feel.enter) },
-      exit: { y: -direction * feel.distance / 2, opacity: 0, transition: leaving(feel) },
-    };
-  }
-  return {
-    initial: { y: direction * feel.distance, opacity: 0, scale: feel.scale, filter: BLUR(feel.blur) },
-    animate: { y: 0, opacity: 1, scale: 1, filter: BLUR(0), transition: landing(feel, feel.enter) },
-    exit: { y: -direction * feel.distance / 2, opacity: 0, filter: BLUR(feel.blur), transition: leaving(feel) },
-  };
+  const variants: Variants = feel.mask === 'skew'
+    ? {
+        enter: (d: Dir) => ({ y: d * feel.distance, clipPath: WIPE_HIDDEN }),
+        center: { y: 0, clipPath: WIPE_SHOWN, transition: landing(feel, feel.enter) },
+        exit: (d: Dir) => ({ y: -d * feel.distance / 2, opacity: 0, transition: leaving(feel) }),
+      }
+    : {
+        enter: (d: Dir) => ({ y: d * feel.distance, opacity: 0, scale: feel.scale, filter: BLUR(feel.blur) }),
+        center: { y: 0, opacity: 1, scale: 1, filter: BLUR(0), transition: landing(feel, feel.enter) },
+        exit: (d: Dir) => ({ y: -d * feel.distance / 2, opacity: 0, filter: BLUR(feel.blur), transition: leaving(feel) }),
+      };
+  return { variants, initial: 'enter', animate: 'center', exit: 'exit' };
 }

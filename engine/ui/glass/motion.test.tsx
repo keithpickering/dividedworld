@@ -15,9 +15,9 @@ const snappy: ActiveFeel = { name: 'snappy', ...feelTokens('snappy') };
 function presets(f: ActiveFeel) {
   const delays = stagger(f, 5);
   return {
-    crossing: crossing(f, { from: rect, within }), screen: screen(f, 1), screenBack: screen(f, -1),
+    crossing: crossing(f, { from: rect, within }), screen: screen(f),
     overlay: overlay(f, { x: 4, y: 8 }), overlayCentered: overlay(f), modal: modal(f), backdrop: backdrop(f),
-    item: staggerItem(f, delays, 2), swap: swap(f, 1),
+    item: staggerItem(f, delays, 2), swap: swap(f),
   };
 }
 
@@ -34,20 +34,42 @@ describe('the presets', () => {
   });
 
   it('slant Snappy\'s clip along the glass\'s skew', () => {
-    expect(JSON.stringify(screen(snappy, 1))).toContain('var(--kb-glass-skew)');
+    expect(JSON.stringify(screen(snappy))).toContain('var(--kb-glass-skew)');
   });
 
   it('spring where the feel has a spring, and ease where it has none', () => {
-    expect(screen(snappy, 1).animate?.transition).toMatchObject({ type: 'spring', stiffness: 520, damping: 32 });
-    expect(screen(smooth, 1).animate?.transition).toMatchObject({ duration: 0.42, ease: [0.22, 1, 0.36, 1] });
+    const t = (f: ActiveFeel) => (screen(f).variants as Record<string, { transition?: unknown }>).center!.transition;
+    expect(t(snappy)).toMatchObject({ type: 'spring', stiffness: 520, damping: 32 });
+    expect(t(smooth)).toMatchObject({ duration: 0.42, ease: [0.22, 1, 0.36, 1] });
   });
 
-  it('send a screen\'s content out the side it came toward and in from the other', () => {
-    const p = screen(smooth, 1);
-    expect(p.initial?.x).toBe(16);
-    expect(p.exit?.x).toBe(-16);
+  for (const [name, make, axis] of [['screen', screen, 'x'], ['swap', swap, 'y']] as const) {
+    for (const f of [smooth, snappy]) {
+      it(`${name} (${f!.name}) resolves its direction at exit time: the old content leaves toward the side it came from and the new enters from the other`, () => {
+        const p = make(f);
+        expect(p.initial).toBe('enter');
+        expect(p.exit).toBe('exit');
+        const v = p.variants as Record<string, (d: 1 | -1) => Record<string, number>>;
+        expect(v.enter!(1)[axis]).toBeGreaterThan(0);
+        expect(v.exit!(1)[axis]).toBeLessThan(0);
+        /* The same element, rendered for a right change then asked to exit for a left one, leaves the other way. */
+        expect(v.exit!(-1)[axis]).toBeGreaterThan(0);
+        expect(v.enter!(-1)[axis]).toBeLessThan(0);
+      });
+    }
+  }
+
+  it('crossing (Snappy) starts its clip at the given rect and ends at the full screen', () => {
+    const p = crossing(snappy, { from: rect, within });
+    const clip = (t: unknown) => (t as { clipPath: string }).clipPath;
+    expect(clip(p.initial)).toContain('10px');
+    expect(clip(p.initial)).toContain('110px');
+    expect(clip(p.initial)).toContain('60px');
+    expect(clip(p.animate)).toContain('1000px');
+    expect(clip(p.animate)).toContain('700px');
+    expect(clip(p.exit)).toBe(clip(p.initial));
   });
-});
+})
 
 describe('stagger', () => {
   for (const count of [1, 2, 20, 200]) {

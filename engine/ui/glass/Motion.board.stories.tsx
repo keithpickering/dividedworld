@@ -66,7 +66,7 @@ function Screens({ feel }: { feel: ReturnType<typeof useFeel> }) {
       replay={<><GlassButton size="s" onClick={() => go((at + TABS.length - 1) % TABS.length)}>Tab to the left</GlassButton><GlassButton size="s" onClick={() => go((at + 1) % TABS.length)}>Tab to the right</GlassButton></>}
     >
       <AnimatePresence initial={false} custom={dir}>
-        <motion.div key={at} {...screen(feel, dir)} style={{ ...CARD, position: 'absolute', inset: 0 }}>{TABS[at]} screen</motion.div>
+        <motion.div key={at} custom={dir} {...screen(feel)} style={{ ...CARD, position: 'absolute', inset: 0 }}>{TABS[at]} screen</motion.div>
       </AnimatePresence>
     </Demo>
   );
@@ -116,8 +116,8 @@ function Swap({ feel }: { feel: ReturnType<typeof useFeel> }) {
   const go = (to: number) => { setDir(to > at ? 1 : -1); setAt(to); };
   return (
     <Demo title="The roster’s swap" replay={<>{NAMES.map((n, i) => <GlassButton key={n} size="s" kind={i === at ? 'primary' : 'secondary'} onClick={() => go(i)}>{n}</GlassButton>)}</>}>
-      <AnimatePresence initial={false} mode="popLayout">
-        <motion.div key={at} {...swap(feel, dir)} style={{ ...CARD, position: 'absolute', inset: 0 }}>{NAMES[at]}’s panel</motion.div>
+      <AnimatePresence initial={false} mode="popLayout" custom={dir}>
+        <motion.div key={at} custom={dir} {...swap(feel)} style={{ ...CARD, position: 'absolute', inset: 0 }}>{NAMES[at]}’s panel</motion.div>
       </AnimatePresence>
     </Demo>
   );
