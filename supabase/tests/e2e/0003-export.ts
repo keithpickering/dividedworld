@@ -406,7 +406,7 @@ test('an instance exported and imported into a fresh database is the same instan
     for (const [t, rows] of before) assert.equal(after.get(t), rows, `${t} differs after the round trip`);
     for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'season_results']) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
     // A season's frozen results are carried as they were written, and the import (a replica's write, inserts only) leaves their guard firing always (0099).
-    const guards = (url: string) => psqlOn(url, `select string_agg(tgname || ':' || tgenabled, ',' order by tgname) from pg_trigger where tgrelid = 'public.season_results'::regclass and not tgisinternal`);
+    const guards = (url: string) => psqlOn(url, `select string_agg(tgname || ':' || tgenabled::text, ',' order by tgname) from pg_trigger where tgrelid = 'public.season_results'::regclass and not tgisinternal`);
     assert.equal(guards(fresh.toString()), 'season_results_no_truncate:A,season_results_no_update:A', 'the guards on season_results are still enabled always after the import');
     assert.equal(guards(from), guards(fresh.toString()));
     assert.match(psqlOn(fresh.toString(), `select count(*) from public.season_results`), /^[1-9]/, 'the imported instance holds the season\'s results');
