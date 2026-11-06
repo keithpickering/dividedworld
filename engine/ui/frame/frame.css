@@ -217,7 +217,8 @@
   margin-top: 2.5rem;
 }
 
-.kb-hud-plate--cast {
+.kb-hud-plate--cast,
+.kb-hud-plate--door {
   position: relative;
   min-height: 9.375rem;
   transform: skewX(var(--kb-glass-skew));
@@ -651,7 +652,6 @@
   background: var(--kb-glass-ink-salty);
 }
 
-.kb-hud-sign-in,
 .kb-hud-make {
   --kb-cut: var(--kb-glass-chamfer-1);
   display: inline-flex;
@@ -667,20 +667,28 @@
 }
 
 /*
- * Signed out, or with no character yet, the plate holds only this link and no calm; the HUD's
+ * With no character yet, the plate holds only this link and no calm; the HUD's
  * smoke is too bright for its words to stand on bare (e2e/glass-text.spec.ts), so its panel is the
  * strong one, at least as solid as the calm.
  */
-.kb-hud-sign-in::after,
 .kb-hud-make::after {
   background: var(--kb-glass-panel-strong);
 }
 
 /*
- * Signed out, the plate is the front door's question and the side its way in (docs/plans/2026-11-05-front-door-design.md, section 2.3):
- * a square mark with "?", the prompt's title in the display face as a character's name is drawn, the line under it, and on the right the
- * action by registration mode. No type here is under the glass's label step; the phone layout below uses the phone's steps.
+ * Signed out, the HUD is the signed-in one's frame (docs/plans/2026-11-05-backfill-boards-design.md, section 2; board 17-front-door): the mask
+ * panel holds a square mark with "?", the prompt's title in the display face as a character's name is drawn, and the line under it; the Aura
+ * notch under the tab holds six empty sockets and its line; and on the right Sign in and Register are one ButtonRow, the note under it by
+ * registration mode. No type here is under the glass's label step; the phone layout below uses the phone's steps.
  */
+:where(:root:not([data-kb-layout='phone'])) .kb-hud-plate--door > .kb-hud-plate-in {
+  position: relative;
+  box-sizing: border-box;
+  min-height: 9.375rem;
+  padding: 1.25rem 0 0.625rem 0;
+  transform: skewX(calc(var(--kb-glass-skew) * -1));
+}
+
 .kb-hud-door {
   display: flex;
   align-items: flex-start;
@@ -701,8 +709,9 @@
   background: var(--kb-glass-field-2);
   font-family: var(--kb-glass-font-display);
   font-weight: 400;
-  font-size: var(--kb-glass-size-display-m);
-  color: var(--kb-glass-text-2);
+  /* 54px at 100% text, as board 17 draws the mark in its 84px box. */
+  font-size: 3.375rem;
+  color: var(--kb-glass-text);
 }
 
 .kb-hud-door-words {
@@ -711,7 +720,10 @@
 
 .kb-hud-door-title {
   margin: 0;
-  font-size: var(--kb-glass-size-title);
+  /* 30px at 100% text, as board 17 draws it: one line in the plate's 420px, where the 34px a mask's name has runs to two. */
+  font-size: 1.875rem;
+  width: fit-content;
+  max-width: 100%;
   font-weight: 400;
   line-height: 1;
   letter-spacing: 0.5px;
@@ -727,28 +739,40 @@
   color: var(--kb-glass-text-2);
 }
 
-/* The door takes the plate's column and the aura's, which stay empty signed out, so the prompt stands on one line. */
-:where(:root:not([data-kb-layout='phone'])) .kb-hud-plate--door {
-  grid-column: 1 / 4;
+/* The notch's sockets stand where the orbs will: empty, dashed, with the orbs' own gloss faint in them. */
+.kb-hud-sockets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.875rem;
+  margin-top: 0.75rem;
 }
 
-/* Register is the page's one primary action: filled in the glass's neon, as the welcome page's way on is. */
-.kb-hud-door-register {
-  color: var(--kb-glass-ink-neon);
-  box-shadow: 0 0 22px color-mix(in srgb, var(--kb-glass-neon) 55%, transparent);
+.kb-hud-socket {
+  flex: none;
+  width: 3rem;
+  height: 3rem;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1px dashed color-mix(in srgb, var(--kb-glass-text) 45%, transparent);
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--kb-glass-text) 12%, transparent), var(--kb-glass-field-2));
 }
 
-.kb-hud-door-register::after {
-  background: transparent;
+.kb-hud-aura-line {
+  max-width: 27.5rem;
+  margin: 0.75rem 0 0;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--kb-glass-text-2);
 }
 
 .kb-hud-door-actions {
-  grid-column: 5;
+  grid-column: 4 / 6;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  margin-top: 2.5rem;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 3.25rem;
   min-width: 0;
 }
 
@@ -756,16 +780,6 @@
   margin: 0;
   font-size: var(--kb-glass-size-label);
   color: var(--kb-glass-text-2);
-}
-
-.kb-hud-door-sign-in:not(.kb-glass-cut-button) {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  font-size: var(--kb-glass-size-label);
-  font-weight: 700;
-  color: var(--kb-glass-text-hi);
-  text-decoration: underline;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hud-door {
@@ -795,10 +809,14 @@
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hud-door-line,
-:where(:root[data-kb-layout='phone']) .kb-hud-door-note,
-:where(:root[data-kb-layout='phone']) .kb-hud-door-sign-in:not(.kb-glass-cut-button) {
+:where(:root[data-kb-layout='phone']) .kb-hud-door-note {
   margin-top: 4px;
   font-size: var(--kb-glass-size-phone-small);
+}
+
+/* The phone's sheet has no notch: the mark and the prompt, then the way in. */
+:where(:root[data-kb-layout='phone']) .kb-hud-aura--empty {
+  display: none;
 }
 
 /* The door and the actions stand one above the other on the phone, a row gap apart; the bar's own row gap. */
@@ -807,16 +825,36 @@
   --kb-hud-pad-top: 8px;
 }
 
+/* Register fills the sheet's width; under it the note and Sign in share a line, as the Phone board draws them. */
 :where(:root[data-kb-layout='phone']) .kb-hud-door-actions {
   grid-column: 1 / -1;
   grid-row: 2;
-  flex-direction: row;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 4px 16px;
+  gap: 8px 16px;
   margin-top: 0;
 }
 
+:where(:root[data-kb-layout='phone']) .kb-hud-door-actions > .kb-button-row {
+  display: contents;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-door-join {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-door-note {
+  grid-column: 1;
+  grid-row: 2;
+  margin: 0;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-door-in {
+  grid-column: 2;
+  grid-row: 2;
+}
 
 /*
  * The hand (engine/ui/cards/Hand.tsx), one region that is two things by the board's layout.
@@ -1220,7 +1258,6 @@
   border-bottom: 1px solid var(--kb-glass-neon);
 }
 
-:where(:root[data-kb-layout='phone']) .kb-hud-sign-in,
 :where(:root[data-kb-layout='phone']) .kb-hud-make {
   grid-column: 1 / -1;
   min-height: 48px;
@@ -1409,7 +1446,7 @@
   overflow-wrap: anywhere;
 }
 
-/* The HUD's links answer a pointer: the avatar lights its edge and glow, the orbs take the soft plate they take focused, and the door's text link its neon (e2e/glass-hover.spec.ts). */
+/* The HUD's links answer a pointer: the avatar lights its edge and glow, and the orbs take the soft plate they take focused (e2e/glass-hover.spec.ts). */
 .kb-hud-avatar:hover {
   border-color: var(--kb-glass-text-hi);
   box-shadow: 0 0 28px color-mix(in srgb, var(--kb-glass-neon) 90%, transparent);
@@ -1417,8 +1454,4 @@
 
 .kb-hud-orbs:hover {
   background: var(--kb-glass-panel-soft);
-}
-
-.kb-hud-door-sign-in:not(.kb-glass-cut-button):hover {
-  color: var(--kb-glass-neon-text);
 }

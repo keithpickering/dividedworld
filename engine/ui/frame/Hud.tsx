@@ -49,7 +49,7 @@ import { Hand } from '../cards/Hand.tsx';
 import { facesOf, withCardEconomy } from '../cards/faces.ts';
 import { usePlay } from '../cards/play.tsx';
 import { Orbs } from '../orbs/Orbs.tsx';
-import { cascade, CASCADE_BEAT_MS } from '../orbs/fill.ts';
+import { cascade, CASCADE_BEAT_MS, orbFills } from '../orbs/fill.ts';
 import { motionReduced, useTextSize } from '../appearance.ts';
 import { ALERTS_UNREAD_BOUND } from '../data/api.ts';
 import { Toasts } from '../alerts/Toasts.tsx';
@@ -62,6 +62,7 @@ import { useBoard } from '../glass/useBoard.ts';
 import { useTour } from '../tips/tour.ts';
 import { useTip, useTipsStore } from '../tips/Tips.tsx';
 import { CalmRegion } from '../glass/Calm.tsx';
+import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 
 /** The tab's slopes: 28px across, 24px tall, its top 20px wider than the aura each side, as the Main board draws them. */
 const SLOPE = 28;
@@ -307,7 +308,7 @@ export function Hud() {
               <polyline className="kb-glass-seam-core" points={seam} />
             </svg>
             <div className="kb-hud-bar">
-              <CalmRegion calm={wide} ref={plate} className={`kb-hud-plate${!signedIn ? ' kb-hud-plate--door' : signedIn && player.loaded && hud ? ' kb-hud-plate--cast' : ''}`}>
+              <CalmRegion calm={wide} ref={plate} className={`kb-hud-plate${!signedIn ? ' kb-hud-plate--door' : ''}${!signedIn || (player.loaded && hud) ? ' kb-hud-plate--cast' : ''}`}>
                 <div className="kb-hud-plate-in">
                   {!signedIn ? (
                     <CalmRegion calm={!wide} className="kb-hud-door">
@@ -369,21 +370,33 @@ export function Hud() {
                   )}
                 </CalmRegion>
               )}
+              {/* Signed out, the Aura notch is the signed-in one's with its sockets empty, so the door previews the game it opens onto. */}
+              {!signedIn && (
+                <CalmRegion ref={aura} className="kb-hud-aura kb-hud-aura--empty">
+                  <p className="kb-hud-aura-legend"><span>Aura</span></p>
+                  <span className="kb-hud-sockets" aria-hidden="true">
+                    {Array.from({ length: orbFills(0, 0, settings.walletCap).orbs.length }, (_, i) => <span key={i} className="kb-hud-socket" />)}
+                  </span>
+                  <p className="kb-hud-aura-line">No mask, no Aura, no hand yet. Your first character fills them.</p>
+                </CalmRegion>
+              )}
               {!signedIn && (
                 <CalmRegion className="kb-hud-door-actions">
-                  {settings.registrationMode !== 'closed' && (
-                    <Link to={registerHref(location.path, searchOf(location.query))} className="kb-hud-sign-in kb-hud-door-register kb-glass-cut-button">
-                      {settings.registrationMode === 'invite' ? 'Register with an invite' : 'Register'}
-                    </Link>
-                  )}
+                  {/* Tab order is the drawn order: Sign in then Register across the Main board's row, Register (full width) then Sign in on the Phone board's sheet. */}
+                  <ButtonRow align="end">
+                    {(() => {
+                      const signInButton = <GlassButton key="in" to={signInHref(location.path, searchOf(location.query))} kind={settings.registrationMode === 'closed' ? 'primary' : 'secondary'} className="kb-hud-door-in">Sign in</GlassButton>;
+                      if (settings.registrationMode === 'closed') return signInButton;
+                      const registerButton = (
+                        <GlassButton key="join" to={registerHref(location.path, searchOf(location.query))} kind="primary" className="kb-hud-door-join">
+                          {settings.registrationMode === 'invite' ? 'Register with an invite' : 'Register'}
+                        </GlassButton>
+                      );
+                      return wide ? [signInButton, registerButton] : [registerButton, signInButton];
+                    })()}
+                  </ButtonRow>
                   {settings.registrationMode === 'invite' && <p className="kb-hud-door-note">No invite? Ask someone who plays.</p>}
                   {settings.registrationMode === 'closed' && <p className="kb-hud-door-note">Registration is closed for now.</p>}
-                  <Link
-                    to={signInHref(location.path, searchOf(location.query))}
-                    className={`kb-hud-door-sign-in${settings.registrationMode === 'closed' ? ' kb-hud-sign-in kb-glass-cut-button' : ''}`}
-                  >
-                    Sign in
-                  </Link>
                 </CalmRegion>
               )}
               {signedIn && (

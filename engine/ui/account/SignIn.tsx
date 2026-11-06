@@ -4,9 +4,11 @@
  * given and opens nothing otherwise, so the two screens differ only in what they ask for (an
  * invite while the instance is invite-only, and the 18+ acknowledgement on registration).
  *
- * On the glass, in the Settings board's parts (the glass plan, section 8): its heading, its rows (a
- * label column, the field, the sentence under it) and its buttons; signed out the menu bar holds
- * Back to the board alone.
+ * On the glass, in the Settings board's parts (the glass plan, section 8): its heading, its fields and its
+ * buttons; signed out the menu bar holds Back to the board alone. The form stands in a 680px column and the
+ * other ways in in an aside to its right (the backfill design, section 2; boards 14 and 15): on Sign in "New
+ * here?" with Register, on Register "Already playing?" with Sign in, and on both "Stuck?" with Reach a person.
+ * On the phone the aside stacks under the form.
  *
  * Every word about the address is the server's and is the same for every address: this screen
  * never says whether an address has an account, shows no different step, and adds no delay of
@@ -18,7 +20,7 @@ import { LOST_ANSWER } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import { ReachAPerson } from '../contact/Contact.tsx';
-import { Link, useLocation, useNavigate } from '../router.tsx';
+import { useLocation, useNavigate } from '../router.tsx';
 import { safeNext } from './next.ts';
 import { OpenAccount } from './OpenAccount.tsx';
 import { setWhy, useSession } from './session.ts';
@@ -109,59 +111,82 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
     return { 'aria-invalid': refusal?.field === field ? true : undefined, 'aria-describedby': ids || undefined };
   };
   const alert = refusal && <p role="alert" id={errId} className="kb-acct-refusal">{refusal.text}</p>;
+  /* The other ways in: the other screen with why, and a person for the player who cannot get a code. */
+  const aside = (
+    <CalmRegion as="aside" aria-label="Other ways in" className="kb-door-aside">
+      <section aria-labelledby="kb-door-other">
+        <h2 id="kb-door-other" className="kb-door-heading">{registering ? 'Already playing?' : 'New here?'}</h2>
+        <p className="kb-door-text">{registering ? 'Sign in with the email you registered.' : 'Registering takes an invite from someone who plays. The same email code signs you in after.'}</p>
+        <GlassButton to={toOther(registering ? '/sign-in' : '/register')}>{registering ? 'Sign in' : 'Register'}</GlassButton>
+      </section>
+      <section aria-labelledby="kb-door-stuck">
+        <h2 id="kb-door-stuck" className="kb-door-heading">Stuck?</h2>
+        <p className="kb-door-text">No code arrived, or the link has expired. The admins can help.</p>
+        <ReachAPerson />
+      </section>
+    </CalmRegion>
+  );
 
   return (
     <div className="kb-acct kb-sign-in">
       {title}
-      <CalmRegion className="kb-acct-panel">
-      {registering && closed && (
-        <p className="kb-acct-notice">Registration is closed. When an admin opens it, your next sign-in opens your account. If you already have an account, <Link to={toOther('/sign-in')}>sign in</Link>.</p>
-      )}
-      {step === 'email' ? (
-        <form aria-label={registering ? 'Register' : 'Sign in'} aria-busy={busy === 'sending'} onSubmit={(e) => void ask(e)} noValidate>
-          <p className="kb-acct-lead">There is no password. An email brings a code and a link to sign in; {registering ? 'registering and signing in are the same steps' : <>a new player registers first (<Link to={toOther('/register')}>Register</Link>), or gives an invite after the code</>}.</p>
-          <label className="kb-acct-row kb-acct-field">
-            <span className="kb-acct-row-label">Email address</span>
-            <input className="kb-acct-input" type="email" name="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} {...tie('email')} />
-          </label>
-          {asksInvite && (
+      <div className="kb-door">
+        <CalmRegion className="kb-door-form">
+        {registering && closed && (
+          <p className="kb-acct-notice">Registration is closed. When an admin opens it, your next sign-in opens your account.</p>
+        )}
+        {step === 'email' ? (
+          <form aria-label={registering ? 'Register' : 'Sign in'} aria-busy={busy === 'sending'} onSubmit={(e) => void ask(e)} noValidate>
+            <p className="kb-acct-lead">{registering ? 'No password. We email you a code and a link; either one makes your account.' : 'No password. We email you a code and a link; either one signs you in.'}</p>
             <label className="kb-acct-row kb-acct-field">
-              <span className="kb-acct-row-label">Invite</span>
-              <input className="kb-acct-input" name="invite" autoComplete="off" spellCheck={false} value={invite} onChange={(e) => setInvite(e.target.value)} {...tie('invite', 'kb-invite-help')} />
+              <span className="kb-acct-row-label">Email address</span>
+              <input className="kb-acct-input" type="email" name="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} {...tie('email')} />
             </label>
-          )}
-          {asksInvite && <p id="kb-invite-help" className="kb-acct-row-sentence kb-acct-indent">This instance is invite-only for now. A player gives you a link; its code is filled in for you.</p>}
-          {registering && (
-            <label className="kb-acct-ack">
-              <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} {...tie('ack')} /> I am 18 or older. This is an acknowledgement, nothing legally binding.
+            {asksInvite && (
+              <label className="kb-acct-row kb-acct-field">
+                <span className="kb-acct-row-label">Invite</span>
+                <input className="kb-acct-input kb-door-invite" name="invite" autoComplete="off" spellCheck={false} value={invite} onChange={(e) => setInvite(e.target.value)} {...tie('invite', 'kb-invite-help')} />
+              </label>
+            )}
+            {asksInvite && (
+              <p id="kb-invite-help" className="kb-acct-row-sentence">
+                {query.get('invite') ? 'Registration is by invite for now. Your invite link filled this in.' : 'Registration is by invite for now. A player gives you a link; its code is filled in for you.'}
+              </p>
+            )}
+            {registering && (
+              <>
+                <label className="kb-acct-ack">
+                  <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} {...tie('ack', 'kb-ack-note')} /> I am 18 or older.
+                </label>
+                <p id="kb-ack-note" className="kb-acct-row-sentence kb-door-ack-note">An acknowledgement, nothing legally binding.</p>
+              </>
+            )}
+            {alert}
+            <ButtonRow><GlassButton type="submit" kind="primary" disabled={busy !== null}>Send a code</GlassButton></ButtonRow>
+            <p role="status" className="kb-acct-note">{busy === 'sending' ? 'Sending…' : ''}</p>
+          </form>
+        ) : (
+          <form aria-label="Enter the code" aria-busy={busy !== null} onSubmit={(e) => void verify(e)} noValidate>
+            <p className="kb-acct-notice">{sent?.message}</p>
+            {sent?.invite && <p className="kb-acct-notice">{sent.invite}</p>}
+            <label className="kb-acct-row kb-acct-field">
+              <span className="kb-acct-row-label">Code from the email</span>
+              <input ref={codeField} className="kb-acct-input kb-acct-code" name="code" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value)} {...tie('code')} />
             </label>
-          )}
-          {alert}
-          <ButtonRow><GlassButton type="submit" kind="primary" disabled={busy !== null}>Send a code</GlassButton></ButtonRow>
-          <p role="status" className="kb-acct-note">{busy === 'sending' ? 'Sending…' : ''}</p>
-          <p className="kb-acct-text">{registering ? <>Already playing? <Link to={toOther('/sign-in')}>Sign in</Link>.</> : <>New here? <Link to={toOther('/register')}>Register</Link>.</>}</p>
-        </form>
-      ) : (
-        <form aria-label="Enter the code" aria-busy={busy !== null} onSubmit={(e) => void verify(e)} noValidate>
-          <p className="kb-acct-notice">{sent?.message}</p>
-          {sent?.invite && <p className="kb-acct-notice">{sent.invite}</p>}
-          <label className="kb-acct-row kb-acct-field">
-            <span className="kb-acct-row-label">Code from the email</span>
-            <input ref={codeField} className="kb-acct-input kb-acct-code" name="code" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value)} {...tie('code')} />
-          </label>
-          {alert}
-          <ButtonRow>
-            <GlassButton type="submit" kind="primary" disabled={busy !== null}>Sign in</GlassButton>
-            <GlassButton disabled={busy !== null} onClick={() => void ask(undefined, true)}>Send a new code</GlassButton>
-            <GlassButton onClick={() => { setStep('email'); setRefusal(null); }}>Use another address</GlassButton>
-          </ButtonRow>
-          <p role="status" className="kb-acct-note">
-            {busy === 'sending' ? 'Sending…' : busy === 'checking' ? 'Checking the code…' : asked > 0 ? <span key={asked}>Another code was asked for.</span> : ''}
-          </p>
-        </form>
-      )}
-      <p className="kb-acct-text"><ReachAPerson /></p>
-      </CalmRegion>
+            {alert}
+            <ButtonRow>
+              <GlassButton type="submit" kind="primary" disabled={busy !== null}>Sign in</GlassButton>
+              <GlassButton disabled={busy !== null} onClick={() => void ask(undefined, true)}>Send a new code</GlassButton>
+              <GlassButton onClick={() => { setStep('email'); setRefusal(null); }}>Use another address</GlassButton>
+            </ButtonRow>
+            <p role="status" className="kb-acct-note">
+              {busy === 'sending' ? 'Sending…' : busy === 'checking' ? 'Checking the code…' : asked > 0 ? <span key={asked}>Another code was asked for.</span> : ''}
+            </p>
+          </form>
+        )}
+        </CalmRegion>
+        {aside}
+      </div>
     </div>
   );
 }

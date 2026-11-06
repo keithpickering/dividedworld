@@ -1,4 +1,4 @@
-import { cleanup, screen, waitFor } from '@testing-library/react';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { TEST_CODE } from '../data/fake.ts';
@@ -48,12 +48,61 @@ describe('Sign in', () => {
     expect(await screen.findByRole('link', { name: 'Reach a person' })).toHaveAttribute('href', '/contact');
   });
 
-  test('says honestly how a new player gets in: register, or give an invite after the code', async () => {
+  test('says honestly how a new player gets in: one plain lead, and the aside says Register takes an invite', async () => {
     open(world(), 'sign-in');
-    const intro = await screen.findByText(/There is no password/u);
-    expect(intro).not.toHaveTextContent(/first sign-in with an invite/u);
-    expect(intro).toHaveTextContent(/new player registers first/u);
-    expect(intro).toHaveTextContent(/invite after the code/u);
+    expect(await screen.findByText('No password. We email you a code and a link; either one signs you in.')).toBeInTheDocument();
+    const aside = screen.getByRole('complementary', { name: 'Other ways in' });
+    expect(within(aside).getByText('Registering takes an invite from someone who plays. The same email code signs you in after.')).toBeInTheDocument();
+  });
+
+  test('the other ways in are an aside with its headings: New here? and Stuck? on Sign in, Already playing? and Stuck? on Register', async () => {
+    open(world(), 'sign-in');
+    const aside = await screen.findByRole('complementary', { name: 'Other ways in' });
+    expect(within(aside).getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual(['New here?', 'Stuck?']);
+    expect(within(aside).getByText('No code arrived, or the link has expired. The admins can help.')).toBeInTheDocument();
+    expect(within(aside).getByRole('link', { name: 'Reach a person' })).toHaveAttribute('href', '/contact');
+    cleanup();
+    open(world(), 'register');
+    const other = await screen.findByRole('complementary', { name: 'Other ways in' });
+    expect(within(other).getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual(['Already playing?', 'Stuck?']);
+    expect(within(other).getByText('Sign in with the email you registered.')).toBeInTheDocument();
+  });
+
+  test('Sign in has one link to Register, a secondary button in the aside; Register has one to Sign in', async () => {
+    open(world(), 'sign-in');
+    const register = await screen.findAllByRole('link', { name: 'Register' });
+    expect(register).toHaveLength(1);
+    expect(register[0]).toHaveAttribute('data-kb-kind', 'secondary');
+    expect(register[0]!.closest('aside')).not.toBeNull();
+    cleanup();
+    open(world(), 'register');
+    const signIn = await screen.findAllByRole('link', { name: 'Sign in' });
+    expect(signIn).toHaveLength(1);
+    expect(signIn[0]).toHaveAttribute('data-kb-kind', 'secondary');
+    expect(signIn[0]!.closest('aside')).not.toBeNull();
+  });
+
+  test('Register says its lead, the invite note under the filled invite, and the 18+ line as a regular check with its acknowledgement under it', async () => {
+    open(world(), 'register', '/register?invite=ab12cd34');
+    expect(await screen.findByText('No password. We email you a code and a link; either one makes your account.')).toBeInTheDocument();
+    expect(screen.getByText('Registration is by invite for now. Your invite link filled this in.')).toBeInTheDocument();
+    const box = screen.getByRole('checkbox', { name: 'I am 18 or older.' });
+    expect(box.closest('label')).toHaveTextContent(/^I am 18 or older\.$/u);
+    expect(screen.getByText('An acknowledgement, nothing legally binding.')).toBeInTheDocument();
+  });
+
+  test('the invite note says the link filled it in only when one did; open and closed Register have none', async () => {
+    open(world(), 'register', '/register');
+    expect(await screen.findByText('Registration is by invite for now. A player gives you a link; its code is filled in for you.')).toBeInTheDocument();
+    expect(screen.queryByText(/Your invite link filled this in/u)).toBeNull();
+    cleanup();
+    open(world('open'), 'register', '/register', 'open');
+    await screen.findByLabelText('Email address');
+    expect(screen.queryByText(/Registration is by invite/u)).toBeNull();
+    cleanup();
+    open(world('closed'), 'register', '/register', 'closed');
+    await screen.findByLabelText('Email address');
+    expect(screen.queryByText(/Registration is by invite/u)).toBeNull();
   });
 
   test('a code signs a known address in, by keyboard alone', async () => {
@@ -186,7 +235,8 @@ describe('Sign in', () => {
     const alert = await screen.findByRole('alert');
     const box = screen.getByRole('checkbox', { name: /18 or older/u });
     expect(box).toHaveAttribute('aria-invalid', 'true');
-    expect(box.getAttribute('aria-describedby')).toBe(alert.id);
+    /* The alert and the acknowledgement's note both describe it. */
+    expect((box.getAttribute('aria-describedby') ?? '').split(' ').sort()).toEqual([alert.id, 'kb-ack-note'].sort());
   });
 
   /* Every address the screen goes to is recorded. The test renders the screen at any path, so once it reaches the page it

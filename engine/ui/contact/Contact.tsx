@@ -9,14 +9,16 @@
  * `api.adminContact()`. They are the instance's and the same for every reader, signed in or out ("A response never proves a private fact"): the page
  * reads no session, names no account and says nothing about which characters an admin owns.
  *
- * Each link is its label as a link; a `mailto:` link also shows its address as text, so a player whose device has no mail client can still copy
- * it. Only an `https:` or `mailto:` address is drawn as a link, whatever it was handed: the server holds the same line, and this is the second wall.
- * Unset, the page says so plainly.
+ * Each way is a row in the Settings idiom (account.css's `.kb-acct-row`): its label in the label column and its link in the other. An `https:`
+ * link is a secondary GlassButton, "Open the" and the label; a `mailto:` link is its address as the link itself, text a player whose device has
+ * no mail client can still copy. Only an `https:` or `mailto:` address is drawn as a link, whatever it was handed: the server holds the same
+ * line, and this is the second wall. Unset, the page says so plainly.
  */
 import { useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import { CONTACT_WS, type ContactLink } from '../data/api.ts';
 import { Link } from '../router.tsx';
+import { GlassButton } from '../glass/Button.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import '../account/account.css';
 import './contact.css';
@@ -37,7 +39,9 @@ const safe = (href: string): boolean =>
 const address = (href: string): string | null => (/^mailto:/iu.test(href) ? href.replace(/^mailto:/iu, '') : null);
 
 /** The page, handed the links read: `null` while they are read, and an empty list for none. */
-export function Contact({ links }: { readonly links: readonly ContactLink[] | null }) {
+export function Contact({ links: given }: { readonly links: readonly ContactLink[] | null }) {
+  /* A way that is no link is no row: a label with nothing to press says nothing. */
+  const links = given === null ? null : given.filter((l) => safe(l.href));
   return (
     <div className="kb-acct kb-contact" aria-busy={links === null || undefined}>
       <PageHead title="Reach a person" />
@@ -47,9 +51,13 @@ export function Contact({ links }: { readonly links: readonly ContactLink[] | nu
         {links !== null && links.length > 0 && (
           <ul className="kb-contact-list">
             {links.map((l) => (
-              <li key={`${l.label}|${l.href}`} className="kb-contact-item">
-                {safe(l.href) ? <a href={l.href} rel="noopener noreferrer">{l.label}</a> : <span>{l.label}</span>}
-                {safe(l.href) && address(l.href) !== null && <span className="kb-contact-address">{address(l.href)}</span>}
+              <li key={`${l.label}|${l.href}`} className="kb-acct-row">
+                <h2 className="kb-acct-row-label">{l.label}</h2>
+                <div className="kb-acct-row-body">
+                  {address(l.href) !== null
+                    ? <a href={l.href} rel="noopener noreferrer" className="kb-contact-link">{address(l.href)}</a>
+                    : <GlassButton to={l.href} rel="noopener noreferrer">{`Open the ${l.label}`}</GlassButton>}
+                </div>
               </li>
             ))}
           </ul>
