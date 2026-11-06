@@ -152,7 +152,7 @@ function fakeCanvas(calls: Call[], name: string, w = 0, h = 0, getNull = false):
   const ctx = {
     imageSmoothingEnabled: false as boolean, imageSmoothingQuality: '' as string, globalAlpha: 1, globalCompositeOperation: 'source-over',
     createImageData: (cw: number, ch: number) => ({ width: cw, height: ch, data: new Uint8ClampedArray(cw * ch * 4) }),
-    putImageData: (img: ImageData, ...a: unknown[]) => calls.push([`${name}.putImageData`, Uint8ClampedArray.from(img.data), ...a]),
+    putImageData: (img: ImageData, ...a: unknown[]) => calls.push([`${name}.putImageData`, new Uint8ClampedArray(img.data), ...a]),
     drawImage: (...a: unknown[]) => calls.push([`${name}.drawImage`, ...a]),
     setTransform: (...a: unknown[]) => calls.push([`${name}.setTransform`, ...a]),
     clearRect: (...a: unknown[]) => calls.push([`${name}.clearRect`, ...a]),
