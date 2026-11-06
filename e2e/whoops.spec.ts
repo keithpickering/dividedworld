@@ -7,14 +7,14 @@ import { expect, test, type Page } from '@playwright/test';
  */
 test.use({ viewport: { width: 1440, height: 1120 }, reducedMotion: 'reduce' });
 
-const inked = (page: Page) => page.evaluate(() => {
-  const c = document.querySelector<HTMLCanvasElement>('#post-41 .kb-whoops-ink');
+const inked = (page: Page, selector = '#post-41 .kb-whoops-ink') => page.evaluate((sel) => {
+  const c = document.querySelector<HTMLCanvasElement>(sel);
   if (!c) return 0;
   const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
   let n = 0;
   for (let i = 3; i < d.length; i += 4) if (d[i]! > 40) n++;
   return n;
-});
+}, selector);
 
 test('the splat on #41 is drawn, scrubbed by a drag, and back after a reload', async ({ page }) => {
   await page.goto('/?fixture=boards&moment=01-main');
@@ -35,51 +35,207 @@ test('the splat on #41 is drawn, scrubbed by a drag, and back after a reload', a
 });
 
 /*
- * The splatted post is the post at the board's widest (the owner's word: the 2003 board is at most 1200px wide, and Whoops!'s lines break
- * as the same post's would unsplatted): its layer is the post's whole body, border to border, laid out at the width the body has at 1200px,
- * and its words get the width any other post's words get, so they break in the same places.
+ * The splatted post's words are laid out at natural size in the body, as any post's are (the whoops refinements design's section 5): the
+ * layer is the post's whole body, border to border, and its words get the width and the type any other post's words get, so they break
+ * in the same places, at the board's max and on a phone alike.
  */
+const words = (page: Page) => page.evaluate(() => {
+  const px = (v: string) => parseFloat(v) || 0;
+  const wordsOf = (el: Element) => { const c = getComputedStyle(el); return el.clientWidth - px(c.paddingLeft) - px(c.paddingRight); };
+  const layout = document.querySelector('#post-41 .kb-whoops-layout') as HTMLElement;
+  const body = document.querySelector('#post-41 .kb-act-main')!;
+  const ink = document.querySelector('#post-41 .kb-whoops-ink')!.getBoundingClientRect();
+  const rect = body.getBoundingClientRect();
+  const text = layout.querySelector('p, div') ?? layout;
+  return {
+    body: { x: rect.x, width: rect.width, clientWidth: body.clientWidth }, border: body.clientLeft,
+    ink: { x: ink.x, width: ink.width },
+    layoutTransform: layout.style.transform, layoutWidth: layout.style.width,
+    splattedWords: wordsOf(layout),
+    plainWords: wordsOf(document.querySelector('#post-42 .kb-act-main')!),
+    fontSize: getComputedStyle(text).fontSize,
+    plainFontSize: getComputedStyle(document.querySelector('#post-42 .kb-act-main p, #post-42 .kb-act-main')!).fontSize,
+  };
+});
+
 test('at the board\'s max the splat covers the post body edge to edge, and its words are as wide as an unsplatted post\'s', async ({ page }) => {
   await page.goto('/?fixture=boards&moment=01-main');
   await expect(page.locator('#post-41 .kb-whoops-ink')).toBeVisible();
-  const read = await page.evaluate(() => {
-    const px = (v: string) => parseFloat(v) || 0;
-    const wordsOf = (el: Element) => { const c = getComputedStyle(el); return el.clientWidth - px(c.paddingLeft) - px(c.paddingRight); };
-    const body = document.querySelector('#post-41 .kb-act-main')!.getBoundingClientRect();
-    const frame = document.querySelector('#post-41 .kb-whoops-frame')!.getBoundingClientRect();
-    const layout = document.querySelector('#post-41 .kb-whoops-layout') as HTMLElement;
-    return {
-      body: { x: body.x, width: body.width },
-      frame: { x: frame.x, width: frame.width },
-      layoutTransform: layout.style.transform,
-      splattedWords: wordsOf(layout),
-      plainWords: wordsOf(document.querySelector('#post-42 .kb-act-main')!),
-    };
-  });
-  expect(read.frame.x).toBeCloseTo(read.body.x, 0);
-  expect(read.frame.width).toBeCloseTo(read.body.width, 0);
-  expect(read.layoutTransform).toBe('translateX(0px) scale(1)');
+  const read = await words(page);
+  /* The ink canvas covers the body's padding box (which the frame, inside the padding, does not). */
+  expect(read.ink.x).toBeCloseTo(read.body.x + read.border, 0);
+  expect(read.ink.width).toBeCloseTo(read.body.clientWidth, 0);
+  expect(read.layoutTransform).toBe('');
+  expect(read.layoutWidth).toBe('');
   expect(read.splattedWords).toBeCloseTo(read.plainWords, 0);
 });
 
+test.describe('on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test('the splat\'s words are as wide as an unsplatted post\'s and at the board\'s 15px', async ({ page }) => {
+    await page.goto('/?fixture=boards&moment=01-main');
+    await expect(page.locator('#post-41 .kb-whoops-ink')).toBeVisible();
+    const read = await words(page);
+    expect(read.layoutTransform).toBe('');
+    expect(read.splattedWords).toBeCloseTo(read.plainWords, 0);
+    expect(read.fontSize).toBe('15px');
+    expect(read.plainFontSize).toBe('15px');
+  });
+
+  test('the ink canvas covers the body\'s padding box', async ({ page }) => {
+    await page.goto('/?fixture=boards&moment=01-main');
+    await expect(page.locator('#post-41 .kb-whoops-ink')).toBeVisible();
+    const read = await page.evaluate(() => {
+      const body = document.querySelector('#post-41 .kb-act-main') as HTMLElement;
+      const b = body.getBoundingClientRect();
+      const ink = document.querySelector('#post-41 .kb-whoops-ink')!.getBoundingClientRect();
+      return {
+        left: ink.left - (b.left + body.clientLeft), top: ink.top - (b.top + body.clientTop),
+        width: ink.width - body.clientWidth, height: ink.height - body.clientHeight,
+      };
+    });
+    for (const d of Object.values(read)) expect(Math.abs(d)).toBeLessThanOrEqual(1);
+  });
+});
+
 /*
- * A stroke kept in widths lands where it was drawn: the middle of the reference layout is the middle of the post's body at 1440, within a
- * pixel, whatever the board's column and type are scaled to (the glass-polish design's section 7: 1200px and 15px, REF_WIDTH 988).
+ * A finger on the ink (the design's section 6), sent as real touches through the protocol: a sideways drag washes, a quick vertical swipe
+ * is the page's (it scrolls and washes nothing), and a hold then a vertical drag washes and holds the page still.
  */
-test('the post-body layout is 988px wide and centered on the body at 1440px', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
+test.describe('with a finger on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+  const setup = async (page: Page) => {
+    await page.goto('/?fixture=boards&moment=01-main');
+    await expect(page.locator('#post-41 .kb-whoops-ink')).toBeVisible();
+    await expect.poll(() => inked(page)).toBeGreaterThan(1000);
+    /* A point on the ink, in the viewport and above the reactions row, which the post's words fill. */
+    await page.locator('#post-41 .kb-whoops-ink').evaluate((el) => el.scrollIntoView({ block: 'start' }));
+    await page.evaluate(() => window.scrollBy(0, -300));
+    /* The middle of the longest run of solid ink on a row in the viewport (clear of the tip card on the post, and of the sticky banner). */
+    const at = await page.evaluate(() => {
+      const c = document.querySelector<HTMLCanvasElement>('#post-41 .kb-whoops-ink')!;
+      const r = c.getBoundingClientRect();
+      const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+      const k = c.width / r.width;
+      const solid = (x: number, y: number) => {
+        for (let dx = -12; dx <= 12; dx += 6) for (let dy = -12; dy <= 12; dy += 6) {
+          const px = Math.floor((x + dx) * k), py = Math.floor((y + dy) * k);
+          if (px < 0 || py < 0 || px >= c.width || py >= c.height || d[(py * c.width + px) * 4 + 3]! <= 40) return false;
+        }
+        const e = document.elementFromPoint(r.left + x, r.top + y);
+        return e !== null && e.closest('.kb-callout, [data-kb-over-ink]') === null && e.closest('#post-41') !== null;
+      };
+      let best = { len: 0, x: 0, y: 0 };
+      for (let y = Math.max(0, Math.ceil(280 - r.top)); y < Math.min(r.height, 700 - r.top); y += 6) {
+        let run = 0;
+        for (let x = 0; x < r.width; x += 2) {
+          run = solid(x, y) ? run + 2 : 0;
+          if (run > best.len) best = { len: run, x: x - run / 2, y };
+        }
+      }
+      return { x: r.left + best.x, y: r.top + best.y, len: best.len };
+    });
+    expect(at.len).toBeGreaterThan(220);
+    const cdp = await page.context().newCDPSession(page);
+    const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', x?: number, y?: number) =>
+      cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x: x!, y: y! }] });
+    return { at, touch, scrollY: () => page.evaluate(() => window.scrollY) };
+  };
+
+  test('a sideways drag washes', async ({ page }) => {
+    const { at, touch } = await setup(page);
+    const before = await inked(page);
+    await touch('touchStart', at.x - 100, at.y);
+    for (let i = 1; i <= 10; i++) { await touch('touchMove', at.x - 100 + i * 20, at.y); await page.waitForTimeout(16); }
+    await touch('touchEnd');
+    await expect.poll(() => inked(page)).toBeLessThan(before);
+  });
+
+  test('a quick vertical swipe scrolls the page and washes nothing', async ({ page }) => {
+    const { at, touch, scrollY } = await setup(page);
+    const before = await inked(page);
+    const y0 = await scrollY();
+    await touch('touchStart', at.x, at.y + 100);
+    for (let i = 1; i <= 8; i++) { await touch('touchMove', at.x, at.y + 100 - i * 20); await page.waitForTimeout(8); }
+    await touch('touchEnd');
+    await expect.poll(scrollY).toBeGreaterThan(y0);
+    expect(await inked(page)).toBe(before);
+  });
+
+  test('a hold, then a vertical drag washes and does not scroll', async ({ page }) => {
+    const { at, touch, scrollY } = await setup(page);
+    const before = await inked(page);
+    const y0 = await scrollY();
+    await touch('touchStart', at.x, at.y);
+    await page.waitForTimeout(300);
+    for (let i = 1; i <= 10; i++) { await touch('touchMove', at.x, at.y + i * 12); await page.waitForTimeout(16); }
+    await touch('touchEnd');
+    await expect.poll(() => inked(page)).toBeLessThan(before);
+    expect(await scrollY()).toBe(y0);
+  });
+});
+
+/*
+ * The reactions row is as wide as its chips, so ink stands to the right of it, and a press there washes (the row's own children are the
+ * only thing the ink leaves to the page). The mouse over ink wears the drawn sponge and the body's own cursor is none; over the React
+ * button it is the ordinary arrow.
+ */
+test('a press on ink beside the reactions row starts a stroke, and the row is as wide as its chips', async ({ page }) => {
   await page.goto('/?fixture=boards&moment=01-main');
   await expect(page.locator('#post-41 .kb-whoops-ink')).toBeVisible();
+  await expect.poll(() => inked(page)).toBeGreaterThan(1000);
   const read = await page.evaluate(() => {
-    const body = document.querySelector('#post-41 .kb-act-main')!.getBoundingClientRect();
-    const layout = document.querySelector('#post-41 .kb-whoops-layout') as HTMLElement;
-    const box = layout.getBoundingClientRect();
-    return { bodyMiddle: body.x + body.width / 2, layoutMiddle: box.x + box.width / 2, bodyW: body.width, layoutW: layout.offsetWidth, transform: layout.style.transform };
+    const row = document.querySelector('#post-41 [data-kb-over-ink]') as HTMLElement;
+    const kids = [...row.children].map((c) => c.getBoundingClientRect());
+    const r = row.getBoundingClientRect();
+    return { row: { left: r.left, right: r.right, top: r.top, bottom: r.bottom }, kidsRight: Math.max(...kids.map((k) => k.right)), kidsLeft: Math.min(...kids.map((k) => k.left)) };
   });
-  expect(read.layoutW).toBe(988);
-  expect(Math.abs(read.bodyW - read.layoutW)).toBeLessThanOrEqual(1);
-  expect(read.transform).toBe('translateX(0px) scale(1)');
-  expect(Math.abs(read.layoutMiddle - read.bodyMiddle)).toBeLessThanOrEqual(1);
+  expect(read.row.right - read.kidsRight).toBeLessThanOrEqual(1);
+  expect(read.kidsLeft - read.row.left).toBeLessThanOrEqual(1);
+  const body = (await page.locator('#post-41 .kb-act-main').boundingBox())!;
+  expect(body.x + body.width - read.row.right).toBeGreaterThan(150);
+  /* A point of ink on the row's own band, past the last chip (a press starts a stroke only on ink). */
+  const spot = await page.evaluate((r) => {
+    const c = document.querySelector<HTMLCanvasElement>('#post-41 .kb-whoops-ink')!;
+    const box = c.getBoundingClientRect();
+    const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+    const y = (r.top + r.bottom) / 2;
+    /* Ink all round, so the brush has a body to take hold of and not the thin edge of the splat. */
+    const inkAt = (x: number, y: number) => d[(Math.floor(y - box.top) * c.width + Math.floor(x - box.left)) * 4 + 3]! > 40;
+    for (let x = r.right + 20; x < box.right - 40; x++) {
+      let all = true;
+      for (let dx = -12; dx <= 12 && all; dx += 6) for (let dy = -12; dy <= 12 && all; dy += 6) all = inkAt(x + dx, y + dy);
+      if (all) return { x, y };
+    }
+    return null;
+  }, read.row);
+  expect(spot).not.toBeNull();
+  const before = await inked(page);
+  await page.mouse.move(spot!.x, spot!.y);
+  await page.mouse.down();
+  await page.mouse.move(spot!.x + 60, spot!.y, { steps: 10 });
+  await page.mouse.up();
+  await expect.poll(() => inked(page)).toBeLessThan(before);
+});
+
+test('with a mouse over ink the sponge is drawn and the body\'s cursor is none; over the React button the sponge is hidden', async ({ page }) => {
+  /* Post 41 of the moment has no React button (its viewer cannot react to it), so this is the story whose splatted post has one. */
+  await page.goto('/?fixture=boards&story=boards-08-hold--whoops-under-hold');
+  await expect(page.locator('.kb-whoops-ink')).toBeVisible();
+  await expect.poll(() => inked(page, '.kb-whoops-ink')).toBeGreaterThan(1000);
+  const sponge = page.locator('[data-kb-cursor="sponge"]');
+  const box = (await page.locator('.kb-whoops-ink').boundingBox())!;
+  const cursor = () => page.locator('.kb-act-main').evaluate((el) => getComputedStyle(el).cursor);
+  await page.mouse.move(box.x + box.width * 0.4, box.y + 40);
+  await page.mouse.move(box.x + box.width * 0.45, box.y + 45);
+  await expect(sponge).toBeVisible();
+  expect(await cursor()).toBe('none');
+  const button = (await page.locator('.kb-react-button').boundingBox())!;
+  await page.mouse.move(button.x + button.width / 2, button.y + button.height / 2, { steps: 4 });
+  await expect(sponge).toBeHidden();
+  expect(await cursor()).not.toBe('none');
 });
 
 /*

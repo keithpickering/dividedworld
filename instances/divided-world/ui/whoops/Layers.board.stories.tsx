@@ -17,7 +17,7 @@ import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import { Frame } from '../../../../engine/ui/frame/Frame.tsx';
 import { useLocation } from '../../../../engine/ui/router.tsx';
 import { ThreadScreen } from '../../../../engine/ui/thread/Thread.tsx';
-import { BRUSH } from '../../cards/whoops/scrub.ts';
+import { BRUSH_PX, brushOf } from '../../cards/whoops/scrub.ts';
 
 const MINUTE = 60_000;
 const YELLOW = '#ffd93d';
@@ -26,8 +26,12 @@ const CYAN = '#19e3ff';
 type Layers = 1 | 2 | 3;
 type Washed = 'none' | 'partly' | 'bottom-clean';
 
-/* Strokes across the top band of the layout, a brush apart: enough to wash part of a splat, never all of it. */
-const PARTLY = Array.from({ length: 14 }, (_, i) => ({ tool: 'wash' as const, width: BRUSH, points: [[0, 0.1 + i * BRUSH * 0.7], [1, 0.1 + i * BRUSH * 0.7]] }));
+/* Strokes across the top band of a 988x330 body, in shares with its aspect, a brush apart: enough to wash part of a splat, never all of it. */
+const WHERE = brushOf(BRUSH_PX, { w: 988, h: 330 });
+const PARTLY = Array.from({ length: 14 }, (_, i) => {
+  const y = 0.05 + i * ((WHERE.width * WHERE.aspect) / 2) * 0.7;
+  return { tool: 'wash' as const, ...WHERE, points: [[0, y], [1, y]] as [number, number][] };
+});
 
 /** Hand #41 its layers and their washes, then say it is ready to be read. */
 function useSeeded(thread: string | null, layers: Layers, washed: Washed): boolean {
