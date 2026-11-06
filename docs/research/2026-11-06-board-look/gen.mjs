@@ -320,7 +320,7 @@ const BANNER = (phone) => `
     <div><p class="logo">DIVIDED WORLD</p>${phone ? `<div class="host">dw.gripe <span class="meter"></span></div>` : ''}</div>
     ${phone ? `<button class="b boards" type="button">Boards</button>` : `<div class="host">dw.gripe <span class="meter"></span></div>`}
   </header>
-  <nav class="nav" aria-label="Boards"><a href="#">${px('home')}Index</a><a href="#">${px('board')}General</a><a href="#">${px('board')}The System</a></nav>`;
+  <nav class="nav" aria-label="Boards"><a href="#">${px('home')}Index</a><a href="#">${px('board')}General</a><a href="#">${px('board')}Staff Announcements</a></nav>`;
 
 const FOOT = `
   <footer class="foot">Powered by KayfaBB
@@ -337,9 +337,9 @@ const INDEX_DESK = `
     <caption class="vh">Boards</caption>
     <thead><tr><th scope="col">Board</th><th scope="col" class="n" style="width:120px">Threads</th><th scope="col" style="width:300px">Last post</th></tr></thead>
     <tbody>
-      <tr><td><a class="name" href="#">General</a><div class="meta">Anything and everything. The System is watching.</div></td><td class="n">3</td>
+      <tr><td><a class="name" href="#">General</a><div class="meta">Anything and everything. The staff are watching.</div></td><td class="n">3</td>
         <td class="last"><span class="who"><span class="mini">M</span><a href="#">Mrs. Hooligan</a></span><br><a class="muted" href="#">Oct 6, 2026</a></td></tr>
-      <tr><td><a class="name" href="#">The System</a><span class="tag">The System posts; you react and spin</span><div class="meta">What The System says. Reply by spinning a thread.</div></td><td class="n">0</td>
+      <tr><td><a class="name" href="#">Staff Announcements</a><span class="tag">Staff post here; you react and spin</span><div class="meta">Where the staff post. Reply by spinning a thread.</div></td><td class="n">0</td>
         <td class="last muted">None yet</td></tr>
     </tbody>
   </table>
@@ -367,7 +367,7 @@ const rowDesk = (r) => `
 const BOARD_DESK = `
   <p class="crumb"><a href="#">Index</a> › General</p>
   <h1 class="title">General</h1>
-  <p class="desc">Anything and everything. The System is watching.</p>
+  <p class="desc">Anything and everything. The staff are watching.</p>
   <div class="over"><button class="b" type="button">${px('start')}Start a thread</button></div>
   <table class="t">
     <caption class="vh">Threads on General, most recently posted first</caption>
@@ -387,9 +387,9 @@ const INDEX_PHONE = `
   <h1 class="title">Index</h1>
   <table class="t"><caption class="vh">Boards</caption>
     <tbody>
-      <tr><td><a class="name" href="#">General</a><div class="meta">Anything and everything. The System is watching.</div>
+      <tr><td><a class="name" href="#">General</a><div class="meta">Anything and everything. The staff are watching.</div>
         <div class="row-meta"><b>3</b> threads · last: <span class="who"><span class="mini">M</span><a href="#">Mrs. Hooligan</a></span>, <a class="muted" href="#">Oct 6</a></div></td></tr>
-      <tr><td><a class="name" href="#">The System</a><div style="margin-top:4px"><span class="tag" style="margin:0">The System posts; you react and spin</span></div><div class="meta">What The System says. Reply by spinning a thread.</div>
+      <tr><td><a class="name" href="#">Staff Announcements</a><div style="margin-top:4px"><span class="tag" style="margin:0">Staff post here; you react and spin</span></div><div class="meta">Where the staff post. Reply by spinning a thread.</div>
         <div class="row-meta"><b>0</b> threads · none yet</div></td></tr>
     </tbody></table>
   <table class="t"><tbody><tr><td class="bar"><h2 class="barh">Who is online</h2></td></tr><tr><td><a href="#">Mrs. Hooligan</a>, <a href="#">Spritey</a><div class="meta">Characters active in the past 5 minutes</div></td></tr></tbody></table>`;
@@ -403,7 +403,7 @@ const rowPhone = (r) => `
 const BOARD_PHONE = `
   <p class="crumb"><a href="#">Index</a> › General</p>
   <h1 class="title">General</h1>
-  <p class="desc small">Anything and everything. The System is watching.</p>
+  <p class="desc small">Anything and everything. The staff are watching.</p>
   <div class="over"><button class="b" type="button">${px('start')}Start a thread</button></div>
   <table class="t"><caption class="vh">Threads on General, most recently posted first</caption>
     <tbody class="pins">${rowPhone(PIN)}<tr class="gap"><td colspan="2"></td></tr></tbody>
@@ -514,7 +514,7 @@ const newForm = (hint, h) => `
 const NEW_DESK = `
   <p class="crumb"><a href="#">Index</a> › General</p>
   <h1 class="title">General</h1>
-  <p class="desc">Anything and everything. The System is watching.</p>
+  <p class="desc">Anything and everything. The staff are watching.</p>
   <div class="over"><button class="b pressed" type="button" aria-expanded="true">${px('start')}Start a thread</button></div>
   ${newForm(true, 120)}
   <table class="t"><thead><tr><th scope="col" style="width:48px"><span class="vh">Status</span></th><th scope="col">Thread</th><th scope="col" class="n" style="width:100px">Replies</th><th scope="col" class="n" style="width:100px">Views</th><th scope="col" style="width:280px">Last post</th></tr></thead>
@@ -682,11 +682,11 @@ console.log('wrote the batch 3 boards');
 
 /* ================= batch 4: The System on the board ================= */
 /* The move notice (engine/ui/board/MoveNotice.tsx), the reveal and tally posts (engine/ui/reveal/Reveal.tsx) and a staff profile
-   (engine/ui/profile/Staff.tsx), on their stories' content. The System's words and the Director's are in character and may bluff;
+   (engine/ui/profile/Staff.tsx), on their stories' content. The Boss's words are in character and may bluff;
    the glass label, the moderation log and the notes are the engine's plain words. */
 const notice = (phone) => `
   <div class="notice-wrap">
-    <div class="glasslabel"><span class="l">The System renamed this board</span><span class="w">Way out: 5 of 12 posters ›</span></div>
+    <div class="glasslabel"><span class="l">The Director renamed this board</span><span class="w">Way out: 5 of 12 posters ›</span></div>
     <table class="t notice"><tbody>
       <tr><td class="bar"><span class="says">Announcement from <a href="#">The Director</a></span></td></tr>
       <tr><td class="words">This board has been IMPROVED. From now on we talk about toast. Show me twelve of you can handle it and maybe I will think about it.
@@ -704,22 +704,26 @@ const NOTICE_DESK = `
     <tbody>${rowDesk(TOAST_ROW)}</tbody></table>
   <table class="t"><tbody><tr><td class="bar" colspan="2"><h2 class="barh">Users browsing this board</h2></td></tr><tr><td class="ico">${px('who')}</td><td><a href="#">Pipewrench</a></td></tr></tbody></table>`;
 
-/* The System's posts: its postbit is its name alone, and it never edits. */
+/* The Boss's posts: the reveal (signed by the outgoing Boss at the handover) and a settlement's tally. Its postbit is a staff
+   member's: its name, its badges, its title, its avatar, no rank (staff are not scored). Its line is in character; the list under it
+   is the engine's, exact. */
+const BOSSBIT = `<a class="pname" href="#">The Director</a><div style="margin:6px 0 4px"><span class="staffbadges"><span class="coinbadge"><i></i>Personality Cores</span></span></div><div style="margin:0 0 8px"><span class="adminbadge">ADMINISTRATOR</span></div><div class="small muted" style="margin-bottom:8px">Head of Board Operations (Toast Division)</div><div class="ava">T</div><div class="pcounts">Posts: 9<br>Joined Aug 2026</div>`;
+const BOSSBIT_PHONE = `<div class="bitrow"><div class="ava">T</div><div><a class="pname" href="#">The Director</a><div style="margin-top:4px"><span class="adminbadge">ADMINISTRATOR</span></div></div></div>`;
 const sysPost = (n, at, body, rx, i, phone) => phone ? `
     <tbody>
-      <tr><td class="pbit"><span class="sysname">The System</span></td></tr>
+      <tr><td class="pbit">${BOSSBIT_PHONE}</td></tr>
       <tr><td class="pline">${pline({ n }, at)}</td></tr>
       <tr><td><div class="pbody">${body}${reacts({ reacts: rx })}</div></td></tr>
       <tr><td class="foot"><div class="acts"><button class="b sm" type="button">Quote</button><button class="b sm" type="button">Spin thread</button><button class="b sm" type="button">History</button></div></td></tr>
     </tbody>` : `
     <tbody${i % 2 ? ' class="alt"' : ''}>
-      <tr><td class="bit" rowspan="3"><span class="sysname">The System</span></td><td class="pline">${pline({ n }, at)}</td></tr>
+      <tr><td class="bit" rowspan="3">${BOSSBIT}</td><td class="pline">${pline({ n }, at)}</td></tr>
       <tr><td><div class="pbody">${body}${reacts({ reacts: rx })}</div></td></tr>
       <tr><td class="foot"><div class="acts"><button class="b sm" type="button">Quote</button><button class="b sm" type="button">Spin thread</button><button class="b sm" type="button">History</button></div></td></tr>
     </tbody>`;
 const gap = (cols) => `<tbody><tr class="gap"><td colspan="${cols}"></td></tr></tbody>`;
 const REVEALS = [
-  [1, 'Oct 31, 2026, 12:00 PM', '<p>Season 1 is over. Here is everyone, unmasked as far as they let me. Try to act surprised.</p>', [['🔥', 7], ['🙄', 3]]],
+  [1, 'Oct 31, 2026, 12:00 PM', '<p>My last act as your Director: everyone, unmasked as far as you let me. Try to act surprised. I will not be here to see it.</p>', [['🔥', 7], ['🙄', 3]]],
   [2, 'Oct 31, 2026, 12:00 PM', `<p class="revealline"><b><a href="#">Spritey</a></b>: finished #1, <b>Legend</b> ${pips(6)}, 52.10.</p>
     <div class="classbar" role="img" aria-label="Classes its player made public: Face, revealed Oct 20."><span class="face"><i aria-hidden="true">Face</i></span></div>
     <ul class="stated"><li>Face, revealed Oct 20</li></ul>`, [['🔥', 4], ['🙏', 2]]],
@@ -731,11 +735,11 @@ const REVEALS = [
 ];
 const revealPosts = (phone, from) => REVEALS.slice(from).map(([n, at, body, rx], i) => sysPost(n, at, body, rx, i, phone)).join(gap(phone ? 1 : 2));
 const REVEAL_DESK = `
-  <p class="crumb"><a href="#">Index</a> › <a href="#">The System</a> › Season 1: the reveal</p>
+  <p class="crumb"><a href="#">Index</a> › <a href="#">Staff Announcements</a> › Season 1: the reveal</p>
   <div class="head"><h1 class="title">Season 1: the reveal</h1></div>
   <table class="t posts"><thead><tr><th scope="col" style="width:216px">Author</th><th scope="col">Message</th></tr></thead>${revealPosts(false, 0)}</table>`;
 const TALLY_DESK = `
-  <p class="crumb"><a href="#">Index</a> › <a href="#">The System</a> › Tonight’s settlement</p>
+  <p class="crumb"><a href="#">Index</a> › <a href="#">Staff Announcements</a> › Tonight’s settlement</p>
   <div class="head"><h1 class="title">Tonight’s settlement</h1></div>
   <table class="t posts"><thead><tr><th scope="col" style="width:216px">Author</th><th scope="col">Message</th></tr></thead>
   ${sysPost(1, 'Oct 30, 2026, 8:17 AM', `<p>The numbers are in. Some of you did well. I will not say who, except that I will, below.</p>
@@ -784,7 +788,7 @@ const NOTICE_PHONE = `
   <div class="over"><button class="b" type="button">${px('start')}Start a thread</button></div>
   <table class="t"><tbody>${rowPhone(TOAST_ROW)}</tbody></table>`;
 const REVEAL_PHONE = `
-  <p class="crumb"><a href="#">Index</a> › <a href="#">The System</a> › Season 1: the reveal</p>
+  <p class="crumb"><a href="#">Index</a> › <a href="#">Staff Announcements</a> › Season 1: the reveal</p>
   <div class="head"><h1 class="title">Season 1: the reveal</h1></div>
   <table class="t posts">${revealPosts(true, 1)}</table>`;
 const STAFF_PHONE = `
@@ -809,7 +813,7 @@ for (const [file, title, content] of batch4) {
   }
 }
 fs.writeFileSync(path.join(here, '15-phone.html'), page({
-  title: 'The System on the board on the phone, Silver', mode: 'light', width: 4 * 390 + 3 * 24, height: 844,
+  title: 'The staff on the board on the phone, Silver', mode: 'light', width: 4 * 390 + 3 * 24, height: 844,
   comment: 'A board of the board look design session, batch 4: four phone screens at 390 by 844 (the move notice, the reveal and the Director’s profile in light; the reveal in dark), 24px apart. Written by gen.mjs.',
   body: `<style>${PHONE_CSS_DARK}</style><div style="display:flex;gap:24px">${phoneScreen(NOTICE_PHONE, 'light')}${phoneScreen(REVEAL_PHONE, 'light')}${phoneScreen(STAFF_PHONE, 'light')}${phoneScreen(REVEAL_PHONE, 'dark')}</div>`,
 }));

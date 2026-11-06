@@ -216,6 +216,56 @@ word of either.
   the plain note stays under the signature; the moderation log is one full-width table under the card (When, What it
   did, How it ended), where today it is a narrow column beside it.
 
+## 7. Who speaks: "The System" leaves the copy
+
+The owner, after batch 4: the lore now has two voices, "the developer persona (Gabe) who speaks about the metagame openly,
+and personality cores who 'work as the staff', I.e. act as the game's NPCs", and "The System is the underlying process
+behind all of the llm-powered content, but I don't know what role it plays in the actual copy anymore ... these posts
+would more fittingly come from the current Boss". Folded into this design and its plan (the owner: "Let's fold the copy
+into this plan").
+
+What already stood: a move is signed by the staff member who made it (the move notice, the Boss's arrival, farewell and
+announcements, its moderation log); the season's reveal and the settlements' tallies were "not the Boss's"
+(`docs/plans/2026-10-31-seasonal-boss-design.md`, section 1) and moved to the glass's Season › News, their threads
+unlisted (`docs/plans/2026-11-02-alerts-design.md`, section 7; `supabase/migrations/0063_season_news.sql`); the forum is
+never without a Boss (succession), and a defeat is the finale's design, not yet made. Gabe cannot sign a board post:
+CLAUDE.md gives the developer persona to the glass alone, always true and written only by admins, never by a model, and
+the alerts design's line holds ("the board never names a mechanic; the glass never speaks in character").
+
+**Decided:**
+
+1. **"The System" is the engine's name for the process, never a voice in a player's copy.** It stays in the code, the
+   documents and the admin screens (Queue's "The System's moves", which admins read as the machinery it is).
+2. **On the board every post is signed by a staff character.** The season's reveal and each settlement's tally are
+   signed by the season's Boss (the owner chose the recommendation), the reveal by the outgoing Boss as part of its
+   handover. The post opens with one line in the Boss's voice, in character, which may gloat or bluff; the list under it
+   (debuts, Turns, places, ranks, figures, the classes each player made public) is the engine's and exact, so nothing
+   true is ever the Boss's to change. The line comes from the Boss's roster entry (stock lines, the instance's content),
+   so a settlement never waits on a model and an instance with The System switched off still signs it. Should the
+   finale ever open a gap with no Boss, the season's Mod Bot signs, or the post waits for the arriving Boss; never Gabe.
+   Acts already written with no character are never edited (CLAUDE.md, Append-only): they show the instance's word for
+   the staff as their author.
+3. **The board where only the staff post is Staff Announcements** (the owner, over "The Front Office"): Divided World's
+   board content becomes the name "Staff Announcements", the description "Where the staff post. Reply by spinning a
+   thread.", and the index's tag "Staff post here; you react and spin". General's description becomes "Anything and
+   everything. The staff are watching." (drafts for the owner's review with the plan).
+4. **The glass's plain voice names who acted, or the game.** Where a staff member acted, the glass names it: the move's
+   label reads "The Director renamed this board" (the move's actor, from the data), Season News quotes the Boss's first
+   words "on Staff Announcements" (the board's name, from the data). Where a mechanic acted, the glass says "the game":
+   "The game paid you 0.35 Aura", "checked by the game". Debut and Turn copy says the Boss posts the announcement, by the
+   instance's word for the role.
+5. **The engine never names the instance.** Every string above that names a role, the staff, or the staff's board comes
+   from the instance's copy (`InstanceUi.copy`) or the board's own data, and the strings that today hard-code "The
+   System" in `engine/ui/` (the index, board, thread, post, move notice, spin origin, character previews and footers,
+   the debut and Turn dialogs, the log's lines and the settlement page, Season News) move to it. The plan lists each.
+
+The boards follow: the nav and the index name Staff Announcements; `11-move-notice`'s label names the Director;
+`12-reveal` and `13-tally` are signed by the Director with a staff postbit (its name, its badges, its title, its avatar,
+no rank, since staff are not scored), the reveal opening with its farewell line.
+
+The masks: a Boss signing a post reads no private fact; the list it carries is the same public record the reveal and
+tally hold today.
+
 ## Open
 
 - Fan Site's name, now that it salutes one board's blue.
