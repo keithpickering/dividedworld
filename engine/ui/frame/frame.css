@@ -34,17 +34,17 @@
  */
 .kb-address {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px 8px;
   min-width: 0;
   font-size: var(--kb-size-small);
 }
 
+/* The host is never cut short: a long one (or a large text size) folds anywhere, and the meter drops under it where the two do not fit a row. */
 .kb-address-text {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .kb-meter {
@@ -81,10 +81,12 @@
   cursor: progress;
 }
 
+/*
+ * On a phone the Boards control stays beside the name, as the Phone board draws it, and the host with its meter takes the row under them.
+ */
 @media (max-width: 40em) {
-  .kb-address-text {
-    max-width: 40vw;
-  }
+  .kb-banner > .kb-menu-button { order: 1; }
+  .kb-banner > .kb-address { order: 2; flex: 1 0 100%; }
 }
 
 .kb-logo {
