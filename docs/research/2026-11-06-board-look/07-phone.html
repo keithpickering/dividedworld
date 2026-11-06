@@ -132,7 +132,9 @@ h1.title { font: bold 22.5px/1.2 "Courier New", Courier, monospace; margin: 0 0 
 table.t { width: 100%; border-collapse: separate; border-spacing: 1px; background: var(--kb-grid); border: 1px solid var(--kb-frame); margin: 0 0 14px; }
 .t th, .t td { color: var(--kb-fg); font-size: 15px; line-height: 1.45; text-align: left; vertical-align: top; background: var(--kb-row-1); padding: 8px 10px; }
 .t th { background: var(--kb-head-bg); color: var(--kb-head-fg); text-shadow: var(--kb-head-shadow); font: bold 13.75px/1.3 "Courier New", Courier, monospace; letter-spacing: 0.02em; padding: 6px 10px; }
-.t tbody tr:nth-child(even) td { background: var(--kb-row-2); }
+.t:not(.posts) tbody tr:nth-child(even) td { background: var(--kb-row-2); }
+/* a post is one color across its cells, and posts alternate */
+.posts tbody.alt td { background: var(--kb-row-2); }
 .t td.n { background: var(--kb-row-3) !important; text-align: center; font-variant-numeric: tabular-nums; }
 .t th.n { text-align: center; }
 .t td.bar { background: var(--kb-bar-bg) !important; color: var(--kb-bar-fg); text-shadow: var(--kb-bar-shadow); font: bold 15px/1.3 "Courier New", Courier, monospace; padding: 7px 10px; }
@@ -223,24 +225,28 @@ table.posts td.bit { width: 216px; }
 .pips i.on { background: var(--kb-fg); }
 .ava { width: 48px; height: 48px; border: 1px solid var(--kb-fg); background: var(--kb-mini-bg); display: grid; place-items: center; font: bold 17px "Courier New", monospace; margin-bottom: 10px; }
 .pcounts { font-size: 13.75px; color: var(--kb-muted); line-height: 1.6; }
-.pline { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: var(--kb-muted); padding-bottom: 6px; border-bottom: 1px solid var(--kb-grid); margin-bottom: 10px; }
-.pline .r { display: inline-flex; align-items: center; gap: 8px; }
-.pline a { color: var(--kb-muted); }
+.t td.pline { padding: 4px 10px; font-size: 12.5px; color: var(--kb-muted); }
+.pl { display: flex; justify-content: space-between; align-items: center; min-height: 26px; }
+.pl .r { display: inline-flex; align-items: center; gap: 8px; }
+.pl a { color: var(--kb-muted); }
 .pbody { position: relative; min-height: 70px; }
 .pbody p { margin: 0 0 12px; position: relative; }
 .quote { margin: 0 0 12px; border: 1px solid var(--kb-grid); background: var(--kb-row-1); font-size: 13.75px; }
 .quote b { display: block; font: bold 12.5px "Courier New", monospace; padding: 4px 8px; background: var(--kb-row-3); border-bottom: 1px solid var(--kb-grid); }
 .quote div { padding: 8px; }
-/* the reactions are game pieces: their chips keep the house's own chip tokens */
-.reacts { display: flex; gap: 6px; margin-top: 4px; position: relative; z-index: 3; }
-.reacts span { display: inline-flex; gap: 5px; align-items: center; padding: 2px 7px; background: var(--kb-chip-bg); border: 1px solid var(--kb-fg); font-size: 13.75px; font-variant-numeric: tabular-nums; }
-td.foot { background: var(--kb-row-3) !important; padding: 6px 10px !important; }
+/* the reactions are game pieces, drawn as marks are (the reaction-marks build): a skewed glass tile, the emoji and a condensed count */
+.reacts { display: flex; gap: 8px; margin-top: 6px; position: relative; z-index: 3; }
+.react { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; background: #1a1230; border: 2px solid #cfc6ea; transform: skewX(-12deg); }
+.up { display: inline-flex; align-items: center; gap: 6px; transform: skewX(12deg); }
+.react .e { font-size: 18px; line-height: 1; }
+.react b { font: 700 22px/1 "Barlow Condensed", sans-serif; color: #fff; font-variant-numeric: tabular-nums; }
+td.foot { padding: 6px 10px !important; }
 .acts { display: flex; gap: 6px; flex-wrap: wrap; }
 .b.sm { font-size: 11.25px; padding: 4px 8px; letter-spacing: 0.04em; gap: 5px; }
 .b.primary { background: var(--kb-head-bg); color: var(--kb-head-fg); text-shadow: 0 1px 0 #000, 0 0 5px rgb(255 255 255 / 0.35); border-color: #000; }
 .b.pressed { box-shadow: inset 1px 2px 3px rgb(0 0 0 / 0.45); filter: brightness(0.92); }
-.markw { display: inline-grid; place-items: center; width: 26px; height: 20px; background: #160a1c; border: 1px solid #ff4fd8; box-shadow: 0 0 6px rgb(255 79 216 / 0.7); transform: skewX(-12deg); }
-.markw i { width: 9px; height: 9px; background: #ff4fd8; clip-path: polygon(50% 0, 62% 35%, 100% 50%, 62% 65%, 50% 100%, 38% 65%, 0 50%, 38% 35%); }
+.markw { display: inline-grid; place-items: center; width: 40px; height: 32px; margin-block: -6px; background: #1a1230; border: 2px solid #ff4fd8; box-shadow: 0 0 8px rgb(255 79 216 / 0.7); transform: skewX(-12deg); }
+.markw i { display: block; width: 16px; height: 16px; background: #ff4fd8; clip-path: polygon(50% 0, 62% 35%, 100% 50%, 62% 65%, 50% 100%, 38% 65%, 0 50%, 38% 35%); }
 .splat { position: absolute; z-index: 2; left: 230px; top: -12px; width: 560px; height: 190px; pointer-events: none; }
 .below { display: flex; justify-content: space-between; align-items: center; margin: 0 0 14px; }
 /* the reply box and New thread */
@@ -325,18 +331,18 @@ body { width: 1632px; height: 844px; }
   <table class="t posts">
     <tbody>
       <tr><td class="pbit"><div class="bitrow"><div class="ava">S</div><div><a class="pname" href="#">Spritey</a><div class="prank" style="font-size:13.75px">Main Eventer</div><span class="pips" aria-label="Rank 4 of 6"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span></div></div></td></tr>
-      <tr><td><div class="pline"><span>Oct 29, 9:14 PM</span><span class="r"><span class="markw"><i></i></span><a href="#">#41</a></span></div>
-        <div class="pbody"><svg class="splat" aria-hidden="true" viewBox="0 0 560 190" preserveAspectRatio="none"><g fill="#d93fbf">
+      <tr><td class="pline"><div class="pl"><span>Oct 29, 9:14 PM</span><span class="r"><span class="markw"><span class="up"><i></i></span></span><a href="#">#41</a></span></div></td></tr>
+      <tr><td><div class="pbody"><svg class="splat" aria-hidden="true" viewBox="0 0 560 190" preserveAspectRatio="none"><g fill="#d93fbf">
   <ellipse cx="250" cy="92" rx="150" ry="62"/><ellipse cx="380" cy="70" rx="90" ry="48"/><ellipse cx="150" cy="120" rx="80" ry="40"/>
   <path d="M60,150 C110,120 150,110 190,118 L170,140 C130,148 95,160 60,150 Z"/><path d="M430,40 C470,20 520,24 540,10 C520,40 480,60 440,70 Z"/>
   <circle cx="40" cy="160" r="9"/><circle cx="18" cy="150" r="5"/><circle cx="520" cy="60" r="8"/><circle cx="545" cy="80" r="5"/><circle cx="300" cy="170" r="10"/><circle cx="330" cy="182" r="5"/><circle cx="120" cy="60" r="7"/></g>
-  <g fill="#ff7fe0" opacity="0.55"><ellipse cx="230" cy="70" rx="70" ry="16"/><ellipse cx="370" cy="52" rx="38" ry="10"/></g></svg><p>Third time this week. I wrote four whole paragraphs about the new level editor and the ink went down before anyone got past the first sentence.</p><p>I'm not mad. I'm documenting.</p><p>Posting this one in pencil.</p><div class="reacts"><span>🔥 4</span><span>🙏 1</span><span>🙄 2</span></div></div></td></tr>
+  <g fill="#ff7fe0" opacity="0.55"><ellipse cx="230" cy="70" rx="70" ry="16"/><ellipse cx="370" cy="52" rx="38" ry="10"/></g></svg><p>Third time this week. I wrote four whole paragraphs about the new level editor and the ink went down before anyone got past the first sentence.</p><p>I'm not mad. I'm documenting.</p><p>Posting this one in pencil.</p><div class="reacts"><span class="react"><span class="up"><span class="e">🔥</span><b>4</b></span></span><span class="react"><span class="up"><span class="e">🙏</span><b>1</b></span></span><span class="react"><span class="up"><span class="e">🙄</span><b>2</b></span></span></div></div></td></tr>
       <tr><td class="foot"><div class="acts"><button class="b sm" type="button">Quote</button><button class="b sm" type="button">Spin thread</button><button class="b sm" type="button">History</button></div></td></tr>
     </tbody><tbody><tr class="gap"><td></td></tr></tbody>
     <tbody>
       <tr><td class="pbit"><div class="bitrow"><div class="ava">M</div><div><a class="pname" href="#">Mrs. Hooligan</a><div class="prank" style="font-size:13.75px">Midcarder</div><span class="pips" aria-label="Rank 3 of 6"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i></span></div></div></td></tr>
-      <tr><td><div class="pline"><span>Oct 29, 9:20 PM</span><span class="r"><a href="#">#42</a></span></div>
-        <div class="pbody"><p>Magenta is a very popular color. Half this board would pick magenta. I would pick something classier, personally, if I were the kind of person who did that, which I'm not.</p><p>Also you double-posted the changelog in the other thread so honestly it's a public service.</p><div class="reacts"><span>🍅 2</span><span>🤮 3</span><span>🙏 1</span><span>🙂 1</span></div></div></td></tr>
+      <tr><td class="pline"><div class="pl"><span>Oct 29, 9:20 PM</span><span class="r"><a href="#">#42</a></span></div></td></tr>
+      <tr><td><div class="pbody"><p>Magenta is a very popular color. Half this board would pick magenta. I would pick something classier, personally, if I were the kind of person who did that, which I'm not.</p><p>Also you double-posted the changelog in the other thread so honestly it's a public service.</p><div class="reacts"><span class="react"><span class="up"><span class="e">🍅</span><b>2</b></span></span><span class="react"><span class="up"><span class="e">🤮</span><b>3</b></span></span><span class="react"><span class="up"><span class="e">🙏</span><b>1</b></span></span><span class="react"><span class="up"><span class="e">🙂</span><b>1</b></span></span></div></div></td></tr>
       <tr><td class="foot"><div class="acts"><button class="b sm" type="button">Quote</button><button class="b sm" type="button">Spin thread</button><button class="b sm" type="button">History</button></div></td></tr>
     </tbody></table>
   <footer class="foot">Powered by KayfaBB
@@ -347,8 +353,8 @@ body { width: 1632px; height: 844px; }
   <table class="t posts" style="margin-top:0">
     <tbody>
       <tr><td class="pbit"><div class="bitrow"><div class="ava">P</div><div><a class="pname" href="#">Pipewrench</a><div class="prank" style="font-size:13.75px">Enhancement Talent</div><span class="pips" aria-label="Rank 2 of 6"><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i></span></div></div></td></tr>
-      <tr><td><div class="pline"><span>Oct 29, 9:31 PM</span><span class="r"><a href="#">#43</a></span></div>
-        <div class="pbody"><div class="quote"><b>Mrs. Hooligan wrote:</b><div>I would pick something classier, personally.</div></div><p>Can confirm Mrs. Hooligan has never once been seen in the same thread as a bucket of ink. Suspicious in its own way, if you think about it.</p></div></td></tr>
+      <tr><td class="pline"><div class="pl"><span>Oct 29, 9:31 PM</span><span class="r"><a href="#">#43</a></span></div></td></tr>
+      <tr><td><div class="pbody"><div class="quote"><b>Mrs. Hooligan wrote:</b><div>I would pick something classier, personally.</div></div><p>Can confirm Mrs. Hooligan has never once been seen in the same thread as a bucket of ink. Suspicious in its own way, if you think about it.</p></div></td></tr>
       <tr><td class="foot"><div class="acts"><button class="b sm" type="button">Quote</button><button class="b sm" type="button">Spin thread</button><button class="b sm" type="button">Edit</button><button class="b sm" type="button">History</button></div></td></tr>
     </tbody></table>
   <div class="below"><nav class="pager" aria-label="Pages, bottom"><span class="where">Page 3 of 3</span><a href="#">1</a><a href="#">2</a><span class="here" aria-current="page">3</span><a href="#">Jump to latest</a></nav></div>
@@ -392,18 +398,18 @@ body { width: 1632px; height: 844px; }
   <table class="t posts">
     <tbody>
       <tr><td class="pbit"><div class="bitrow"><div class="ava">S</div><div><a class="pname" href="#">Spritey</a><div class="prank" style="font-size:13.75px">Main Eventer</div><span class="pips" aria-label="Rank 4 of 6"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span></div></div></td></tr>
-      <tr><td><div class="pline"><span>Oct 29, 9:14 PM</span><span class="r"><span class="markw"><i></i></span><a href="#">#41</a></span></div>
-        <div class="pbody"><svg class="splat" aria-hidden="true" viewBox="0 0 560 190" preserveAspectRatio="none"><g fill="#d93fbf">
+      <tr><td class="pline"><div class="pl"><span>Oct 29, 9:14 PM</span><span class="r"><span class="markw"><span class="up"><i></i></span></span><a href="#">#41</a></span></div></td></tr>
+      <tr><td><div class="pbody"><svg class="splat" aria-hidden="true" viewBox="0 0 560 190" preserveAspectRatio="none"><g fill="#d93fbf">
   <ellipse cx="250" cy="92" rx="150" ry="62"/><ellipse cx="380" cy="70" rx="90" ry="48"/><ellipse cx="150" cy="120" rx="80" ry="40"/>
   <path d="M60,150 C110,120 150,110 190,118 L170,140 C130,148 95,160 60,150 Z"/><path d="M430,40 C470,20 520,24 540,10 C520,40 480,60 440,70 Z"/>
   <circle cx="40" cy="160" r="9"/><circle cx="18" cy="150" r="5"/><circle cx="520" cy="60" r="8"/><circle cx="545" cy="80" r="5"/><circle cx="300" cy="170" r="10"/><circle cx="330" cy="182" r="5"/><circle cx="120" cy="60" r="7"/></g>
-  <g fill="#ff7fe0" opacity="0.55"><ellipse cx="230" cy="70" rx="70" ry="16"/><ellipse cx="370" cy="52" rx="38" ry="10"/></g></svg><p>Third time this week. I wrote four whole paragraphs about the new level editor and the ink went down before anyone got past the first sentence.</p><p>I'm not mad. I'm documenting.</p><p>Posting this one in pencil.</p><div class="reacts"><span>🔥 4</span><span>🙏 1</span><span>🙄 2</span></div></div></td></tr>
+  <g fill="#ff7fe0" opacity="0.55"><ellipse cx="230" cy="70" rx="70" ry="16"/><ellipse cx="370" cy="52" rx="38" ry="10"/></g></svg><p>Third time this week. I wrote four whole paragraphs about the new level editor and the ink went down before anyone got past the first sentence.</p><p>I'm not mad. I'm documenting.</p><p>Posting this one in pencil.</p><div class="reacts"><span class="react"><span class="up"><span class="e">🔥</span><b>4</b></span></span><span class="react"><span class="up"><span class="e">🙏</span><b>1</b></span></span><span class="react"><span class="up"><span class="e">🙄</span><b>2</b></span></span></div></div></td></tr>
       <tr><td class="foot"><div class="acts"><button class="b sm" type="button">Quote</button><button class="b sm" type="button">Spin thread</button><button class="b sm" type="button">History</button></div></td></tr>
     </tbody><tbody><tr class="gap"><td></td></tr></tbody>
     <tbody>
       <tr><td class="pbit"><div class="bitrow"><div class="ava">M</div><div><a class="pname" href="#">Mrs. Hooligan</a><div class="prank" style="font-size:13.75px">Midcarder</div><span class="pips" aria-label="Rank 3 of 6"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i></span></div></div></td></tr>
-      <tr><td><div class="pline"><span>Oct 29, 9:20 PM</span><span class="r"><a href="#">#42</a></span></div>
-        <div class="pbody"><p>Magenta is a very popular color. Half this board would pick magenta. I would pick something classier, personally, if I were the kind of person who did that, which I'm not.</p><p>Also you double-posted the changelog in the other thread so honestly it's a public service.</p><div class="reacts"><span>🍅 2</span><span>🤮 3</span><span>🙏 1</span><span>🙂 1</span></div></div></td></tr>
+      <tr><td class="pline"><div class="pl"><span>Oct 29, 9:20 PM</span><span class="r"><a href="#">#42</a></span></div></td></tr>
+      <tr><td><div class="pbody"><p>Magenta is a very popular color. Half this board would pick magenta. I would pick something classier, personally, if I were the kind of person who did that, which I'm not.</p><p>Also you double-posted the changelog in the other thread so honestly it's a public service.</p><div class="reacts"><span class="react"><span class="up"><span class="e">🍅</span><b>2</b></span></span><span class="react"><span class="up"><span class="e">🤮</span><b>3</b></span></span><span class="react"><span class="up"><span class="e">🙏</span><b>1</b></span></span><span class="react"><span class="up"><span class="e">🙂</span><b>1</b></span></span></div></div></td></tr>
       <tr><td class="foot"><div class="acts"><button class="b sm" type="button">Quote</button><button class="b sm" type="button">Spin thread</button><button class="b sm" type="button">History</button></div></td></tr>
     </tbody></table>
   <footer class="foot">Powered by KayfaBB

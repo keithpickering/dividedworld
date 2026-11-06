@@ -118,11 +118,17 @@ boards and `e2e/whoops.spec.ts`.
 
 - **The crumb names the board** (Index › General › the thread). `Thread.tsx` draws Index › the thread today, though
   `ThreadSummary.board` names it.
-- **A post's actions are small Chrome buttons in a foot band** of the third gray; today they are underlined links at the
-  body's weight.
-- **Posts are split by a 4px spacer row** of the third gray, so each post is one block from name to actions.
+- **A post is three cells of one color**: the post line, the words, the actions, ruled edge to edge by the table's 1px
+  grid, with posts alternating between the two row grays and split by a 4px spacer row of the third. The owner, on the
+  first draw: keep "the full 'cell' for the row with the datetime and post number, I.e. a border from edge to edge.
+  Provides a better backing for Marks", and give it and the actions' row "the same bg color as the post content itself.
+  Right now the post options are drawing attention away from the post content". The actions are small Chrome buttons;
+  today they are underlined links at the body's weight.
+- **Reactions are drawn as marks are** (the owner: "in another in-progress build, reactions are becoming Mark-styled ...
+  Let's make our designs align with that"): a skewed glass tile with a lavender edge, the emoji and a Barlow Condensed
+  count, as that build draws them. The Whoops! mark is drawn at the same tile size, 32px tall, so the post line's band
+  holds both kinds of piece. Both stay game pieces: no theme token reaches them.
 - **The pager's current page is a small band** in the column head's gradient.
-- **The post line's rule is the grid's gray**, quieter than the black rule it has now.
 - **Send and Start thread are the one primary button** of their form: Chrome on the column head's dark gradient, larger
   than Preview and Reveal…, which today stand at the same weight.
 - **Unfollow this thread shares the bottom pager's row**, at its right.

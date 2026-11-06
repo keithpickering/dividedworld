@@ -106,7 +106,9 @@ h1.title { font: bold 22.5px/1.2 "Courier New", Courier, monospace; margin: 0 0 
 table.t { width: 100%; border-collapse: separate; border-spacing: 1px; background: var(--kb-grid); border: 1px solid var(--kb-frame); margin: 0 0 14px; }
 .t th, .t td { color: var(--kb-fg); font-size: 15px; line-height: 1.45; text-align: left; vertical-align: top; background: var(--kb-row-1); padding: 8px 10px; }
 .t th { background: var(--kb-head-bg); color: var(--kb-head-fg); text-shadow: var(--kb-head-shadow); font: bold 13.75px/1.3 "Courier New", Courier, monospace; letter-spacing: 0.02em; padding: 6px 10px; }
-.t tbody tr:nth-child(even) td { background: var(--kb-row-2); }
+.t:not(.posts) tbody tr:nth-child(even) td { background: var(--kb-row-2); }
+/* a post is one color across its cells, and posts alternate */
+.posts tbody.alt td { background: var(--kb-row-2); }
 .t td.n { background: var(--kb-row-3) !important; text-align: center; font-variant-numeric: tabular-nums; }
 .t th.n { text-align: center; }
 .t td.bar { background: var(--kb-bar-bg) !important; color: var(--kb-bar-fg); text-shadow: var(--kb-bar-shadow); font: bold 15px/1.3 "Courier New", Courier, monospace; padding: 7px 10px; }
@@ -197,24 +199,28 @@ table.posts td.bit { width: 216px; }
 .pips i.on { background: var(--kb-fg); }
 .ava { width: 48px; height: 48px; border: 1px solid var(--kb-fg); background: var(--kb-mini-bg); display: grid; place-items: center; font: bold 17px "Courier New", monospace; margin-bottom: 10px; }
 .pcounts { font-size: 13.75px; color: var(--kb-muted); line-height: 1.6; }
-.pline { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: var(--kb-muted); padding-bottom: 6px; border-bottom: 1px solid var(--kb-grid); margin-bottom: 10px; }
-.pline .r { display: inline-flex; align-items: center; gap: 8px; }
-.pline a { color: var(--kb-muted); }
+.t td.pline { padding: 4px 10px; font-size: 12.5px; color: var(--kb-muted); }
+.pl { display: flex; justify-content: space-between; align-items: center; min-height: 26px; }
+.pl .r { display: inline-flex; align-items: center; gap: 8px; }
+.pl a { color: var(--kb-muted); }
 .pbody { position: relative; min-height: 70px; }
 .pbody p { margin: 0 0 12px; position: relative; }
 .quote { margin: 0 0 12px; border: 1px solid var(--kb-grid); background: var(--kb-row-1); font-size: 13.75px; }
 .quote b { display: block; font: bold 12.5px "Courier New", monospace; padding: 4px 8px; background: var(--kb-row-3); border-bottom: 1px solid var(--kb-grid); }
 .quote div { padding: 8px; }
-/* the reactions are game pieces: their chips keep the house's own chip tokens */
-.reacts { display: flex; gap: 6px; margin-top: 4px; position: relative; z-index: 3; }
-.reacts span { display: inline-flex; gap: 5px; align-items: center; padding: 2px 7px; background: var(--kb-chip-bg); border: 1px solid var(--kb-fg); font-size: 13.75px; font-variant-numeric: tabular-nums; }
-td.foot { background: var(--kb-row-3) !important; padding: 6px 10px !important; }
+/* the reactions are game pieces, drawn as marks are (the reaction-marks build): a skewed glass tile, the emoji and a condensed count */
+.reacts { display: flex; gap: 8px; margin-top: 6px; position: relative; z-index: 3; }
+.react { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; background: #1a1230; border: 2px solid #cfc6ea; transform: skewX(-12deg); }
+.up { display: inline-flex; align-items: center; gap: 6px; transform: skewX(12deg); }
+.react .e { font-size: 18px; line-height: 1; }
+.react b { font: 700 22px/1 "Barlow Condensed", sans-serif; color: #fff; font-variant-numeric: tabular-nums; }
+td.foot { padding: 6px 10px !important; }
 .acts { display: flex; gap: 6px; flex-wrap: wrap; }
 .b.sm { font-size: 11.25px; padding: 4px 8px; letter-spacing: 0.04em; gap: 5px; }
 .b.primary { background: var(--kb-head-bg); color: var(--kb-head-fg); text-shadow: 0 1px 0 #000, 0 0 5px rgb(255 255 255 / 0.35); border-color: #000; }
 .b.pressed { box-shadow: inset 1px 2px 3px rgb(0 0 0 / 0.45); filter: brightness(0.92); }
-.markw { display: inline-grid; place-items: center; width: 26px; height: 20px; background: #160a1c; border: 1px solid #ff4fd8; box-shadow: 0 0 6px rgb(255 79 216 / 0.7); transform: skewX(-12deg); }
-.markw i { width: 9px; height: 9px; background: #ff4fd8; clip-path: polygon(50% 0, 62% 35%, 100% 50%, 62% 65%, 50% 100%, 38% 65%, 0 50%, 38% 35%); }
+.markw { display: inline-grid; place-items: center; width: 40px; height: 32px; margin-block: -6px; background: #1a1230; border: 2px solid #ff4fd8; box-shadow: 0 0 8px rgb(255 79 216 / 0.7); transform: skewX(-12deg); }
+.markw i { display: block; width: 16px; height: 16px; background: #ff4fd8; clip-path: polygon(50% 0, 62% 35%, 100% 50%, 62% 65%, 50% 100%, 38% 65%, 0 50%, 38% 35%); }
 .splat { position: absolute; z-index: 2; left: 230px; top: -12px; width: 560px; height: 190px; pointer-events: none; }
 .below { display: flex; justify-content: space-between; align-items: center; margin: 0 0 14px; }
 /* the reply box and New thread */
@@ -396,12 +402,15 @@ const POSTS = [
     reacts: [], edit: true },
 ];
 const pips = (n) => `<span class="pips" aria-label="Rank ${n} of 6">${Array.from({ length: 6 }, (_, i) => `<i${i < n ? ' class="on"' : ''}></i>`).join('')}</span>`;
-const reacts = (p) => (p.reacts.length ? `<div class="reacts">${p.reacts.map(([e, c]) => `<span>${e} ${c}</span>`).join('')}</div>` : '');
+const reacts = (p) => (p.reacts.length ? `<div class="reacts">${p.reacts.map(([e, c]) => `<span class="react"><span class="up"><span class="e">${e}</span><b>${c}</b></span></span>`).join('')}</div>` : '');
+/* the post line: when, the post's marks, its permalink, in a cell of its own ruled edge to edge, a band for the marks */
+const pline = (p, at) => `<div class="pl"><span>${at}</span><span class="r">${p.mark ? '<span class="markw"><span class="up"><i></i></span></span>' : ''}<a href="#">#${p.n}</a></span></div>`;
 const actions = (p) => `<div class="acts"><button class="b sm" type="button">Quote</button><button class="b sm" type="button">Spin thread</button>${p.edit ? '<button class="b sm" type="button">Edit</button>' : ''}<button class="b sm" type="button">History</button></div>`;
 const postDesk = (p, i, last) => `
-    <tbody>
-      <tr><td class="bit" rowspan="2"><a class="pname" href="#">${p.who}</a><div class="prank">${p.rank}</div>${pips(p.pips)}<div class="ava">${p.who[0]}</div><div class="pcounts">Posts: ${p.posts}<br>Joined Oct 2026</div></td>
-        <td><div class="pline"><span>${p.at}</span><span class="r">${p.mark ? '<span class="markw"><i></i></span>' : ''}<a href="#">#${p.n}</a></span></div>
+    <tbody${i % 2 ? ' class="alt"' : ''}>
+      <tr><td class="bit" rowspan="3"><a class="pname" href="#">${p.who}</a><div class="prank">${p.rank}</div>${pips(p.pips)}<div class="ava">${p.who[0]}</div><div class="pcounts">Posts: ${p.posts}<br>Joined Oct 2026</div></td>
+        <td class="pline">${pline(p, p.at)}</td></tr>
+      <tr><td>
           <div class="pbody">${p.splat ? SPLAT : ''}${p.body}${reacts(p)}</div></td></tr>
       <tr><td class="foot">${actions(p)}</td></tr>
     </tbody>${i < last ? '<tbody><tr class="gap"><td colspan="2"></td></tr></tbody>' : ''}`;
@@ -446,8 +455,8 @@ const NEW_DESK = `
 const postPhone = (p) => `
     <tbody>
       <tr><td class="pbit"><div class="bitrow"><div class="ava">${p.who[0]}</div><div><a class="pname" href="#">${p.who}</a><div class="prank" style="font-size:13.75px">${p.rank}</div>${pips(p.pips)}</div></div></td></tr>
-      <tr><td><div class="pline"><span>${p.at.replace(', 2026', '')}</span><span class="r">${p.mark ? '<span class="markw"><i></i></span>' : ''}<a href="#">#${p.n}</a></span></div>
-        <div class="pbody">${p.splat ? SPLAT : ''}${p.body}${reacts(p)}</div></td></tr>
+      <tr><td class="pline">${pline(p, p.at.replace(', 2026', ''))}</td></tr>
+      <tr><td><div class="pbody">${p.splat ? SPLAT : ''}${p.body}${reacts(p)}</div></td></tr>
       <tr><td class="foot">${actions(p)}</td></tr>
     </tbody>`;
 const THREAD_PHONE = `
