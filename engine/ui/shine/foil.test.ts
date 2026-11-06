@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, mock, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { tokensOf, type Mode } from '../contrast.ts';
-import { bandOf, shineIsReadable, toLinear, toSrgb8, type Band } from './band.ts';
+import { bandOf, shineIsReadable, toLinear, type Band } from './band.ts';
 import { REST } from './light.ts';
 import { makeFoil, sampleFoil, type FoilCanvas } from './foil.ts';
 
@@ -117,6 +117,14 @@ describe('the foil', () => {
     assert.ok(across >= 15 && across <= 20, `${across}`);
   });
 
+  test('the cell map holds more than 65,535 facets without wrapping', () => {
+    const map = foilFor('prism', 'light').facets({ w: 800, h: 24000 });
+    assert.ok(map instanceof Uint32Array);
+    let max = 0;
+    for (let i = 0; i < map.length; i++) if (map[i]! > max) max = map[i]!;
+    assert.ok(max > 65535, `the largest facet id is ${max}`);
+  });
+
   test('one 988 x 300 render takes under 40ms in Node', () => {
     const box = { w: 988, h: 300 };
     const px = new Uint8ClampedArray(Math.ceil(box.w / 3) * Math.ceil(box.h / 3) * 4);
@@ -137,29 +145,30 @@ describe('the foil', () => {
 });
 
 type Call = [string, ...unknown[]];
-function fakeCanvas(calls: Call[], name: string): FoilCanvas {
+type Fake = FoilCanvas & { name: string };
+function fakeCanvas(calls: Call[], name: string, w = 0, h = 0, getNull = false): Fake {
   const ctx = {
     imageSmoothingEnabled: false as boolean, imageSmoothingQuality: '' as string, globalAlpha: 1, globalCompositeOperation: 'source-over',
-    createImageData: (w: number, h: number) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) }),
-    putImageData: (...a: unknown[]) => calls.push([`${name}.putImageData`, ...a]),
+    createImageData: (cw: number, ch: number) => ({ width: cw, height: ch, data: new Uint8ClampedArray(cw * ch * 4) }),
+    putImageData: (img: ImageData, ...a: unknown[]) => calls.push([`${name}.putImageData`, Uint8ClampedArray.from(img.data), ...a]),
     drawImage: (...a: unknown[]) => calls.push([`${name}.drawImage`, ...a]),
     setTransform: (...a: unknown[]) => calls.push([`${name}.setTransform`, ...a]),
     clearRect: (...a: unknown[]) => calls.push([`${name}.clearRect`, ...a]),
     fillRect: () => {}, fillStyle: '', createRadialGradient: () => ({ addColorStop: () => {} }),
-    beginPath: () => {}, ellipse: () => {}, fill: () => {}, save: () => {}, restore: () => {}, translate: () => {}, rotate: () => {},
-    set _g(_v: unknown) {},
+    beginPath: () => {}, ellipse: () => {}, fill: () => {}, translate: () => {}, rotate: () => {},
+    save: () => calls.push([`${name}.save`]), restore: () => calls.push([`${name}.restore`]),
   };
-  return { width: 0, height: 0, getContext: () => ctx } as unknown as FoilCanvas;
+  return { name, width: w, height: h, getContext: () => (getNull ? null : ctx) } as unknown as Fake;
 }
 
 describe('draw, against a fake context', () => {
   function run(mode: Board, now: number, idle: boolean, light = REST) {
     const calls: Call[] = [];
-    let n = 0;
-    const foil = makeFoil({ seed: 's', pattern: 'prism', palette: PALETTES[mode], stars: 8, createCanvas: () => fakeCanvas(calls, `c${n++}`) });
+    const made: Fake[] = [];
+    const foil = makeFoil({ seed: 's', pattern: 'prism', palette: PALETTES[mode], stars: 8, createCanvas: (w, h) => { const c = fakeCanvas(calls, `c${made.length}`, w, h); made.push(c); return c; } });
     const ctx = fakeCanvas(calls, 'ctx').getContext('2d') as unknown as CanvasRenderingContext2D;
     foil.draw(ctx, { w: 300, h: 120 }, 2, light, bands[mode], now, idle);
-    return { calls, foil, ctx };
+    return { calls, foil, ctx, made };
   }
   const names = (c: Call[]) => c.map((x) => x[0]);
 
@@ -205,14 +214,67 @@ describe('draw, against a fake context', () => {
     assert.ok(best > 0.3, `the wink adds ${best}`);
   });
 
-  test('release drops the image and the facet map; drawing again builds them again', () => {
-    const { foil, ctx } = run('light', 0, false);
+  test('release drops the buffers and shrinks the canvases to nothing; drawing again builds them again', () => {
+    const { foil, ctx, made } = run('light', 0, false);
     assert.ok(foil.holds());
+    assert.ok(made.length >= 2 && made.every((c) => c.width > 0 && c.height > 0), 'a grid canvas and a sprite, both with size');
     foil.release();
     assert.ok(!foil.holds());
+    assert.ok(made.every((c) => c.width === 0 && c.height === 0), 'every canvas it made is zeroed');
     foil.draw(ctx, { w: 300, h: 120 }, 1, REST, bands.light, 0, false);
     assert.ok(foil.holds());
   });
+
+  test('a sub-pixel resize keeps the grid canvas, the image and the cell map', () => {
+    const { foil, ctx, made } = run('light', 0, false);
+    foil.draw(ctx, { w: 988, h: 300 }, 1, REST, bands.light, 0, false);
+    const after = made.length;
+    const map = foil.facets({ w: 988, h: 300 });
+    foil.draw(ctx, { w: 988.4, h: 300.3 }, 1, REST, bands.light, 0, false);
+    assert.equal(made.length, after, 'no canvas is made for a 0.4px change');
+    assert.equal(foil.facets({ w: 988.4, h: 300.3 }), map, 'the same cell map');
+  });
+
+  test('a box that is not a finite size does nothing: nothing is allocated, nothing throws', () => {
+    const { foil, ctx, made, calls } = run('light', 0, false);
+    foil.release();
+    made.length = 0; calls.length = 0;
+    for (const box of [{ w: NaN, h: 100 }, { w: 100, h: NaN }, { w: Infinity, h: 100 }, { w: 100, h: -Infinity }]) {
+      foil.draw(ctx, box, 1, REST, bands.light, 0, false);
+      foil.render(box, REST, bands.light, new Uint8ClampedArray(4));
+      assert.equal(foil.facets(box).length, 0);
+      assert.deepEqual(sampleFoil(foil, box, REST, bands.light), []);
+    }
+    assert.equal(made.length, 0, 'no canvas');
+    assert.equal(calls.length, 0, 'no drawing');
+    assert.ok(!foil.holds());
+  });
+
+  test('draw puts into the image the same bytes render gives for the same inputs', () => {
+    const calls: Call[] = [];
+    const foil = makeFoil({ seed: 's', pattern: 'prism', palette: PALETTES.light, stars: 0, createCanvas: (w, h) => fakeCanvas(calls, 'g', w, h) });
+    const ctx = fakeCanvas(calls, 'ctx').getContext('2d') as unknown as CanvasRenderingContext2D;
+    const box = { w: 301, h: 121 }, light = { x: 0.4, y: -0.3 };
+    foil.draw(ctx, box, 1, light, bands.light, 0, false);
+    const put = calls.find((c) => c[0] === 'g.putImageData')![1] as Uint8ClampedArray;
+    const want = new Uint8ClampedArray(Math.ceil(301 / 3) * Math.ceil(121 / 3) * 4);
+    foil.render(box, light, bands.light, want);
+    assert.deepEqual(put, want);
+  });
+
+  test('draw leaves the context as it found it: save first, restore last, even when the grid canvas has no context', () => {
+    const { calls } = run('light', 0, false);
+    const mine = calls.filter((c) => c[0].startsWith('ctx.')).map((c) => c[0]);
+    assert.equal(mine[0], 'ctx.save');
+    assert.equal(mine[mine.length - 1], 'ctx.restore');
+    assert.equal(mine.filter((x) => x === 'ctx.save').length, 1);
+    assert.equal(mine.filter((x) => x === 'ctx.restore').length, 1);
+
+    const calls2: Call[] = [];
+    const foil = makeFoil({ seed: 's', pattern: 'pearl', palette: PALETTES.light, stars: 4, createCanvas: (w, h) => fakeCanvas(calls2, 'n', w, h, true) });
+    const ctx = fakeCanvas(calls2, 'ctx').getContext('2d') as unknown as CanvasRenderingContext2D;
+    foil.draw(ctx, { w: 300, h: 120 }, 1, REST, bands.light, 0, false);
+    assert.deepEqual(calls2.map((c) => c[0]), ['ctx.save', 'ctx.restore']);
+  });
 });
 
-void toSrgb8;

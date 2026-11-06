@@ -38,7 +38,7 @@ export type Foil = {
   render(box: Box, light: Light, band: Band, out: Uint8ClampedArray): void;
   draw(ctx: CanvasRenderingContext2D, box: Box, density: number, light: Light, band: Band, now: number, idle: boolean): void;
   /** The prism's cell map for a box: the facet each 3px cell belongs to. */
-  facets(box: Box): Uint16Array;
+  facets(box: Box): Uint32Array;
   /** Drop the ImageData, the grid canvas and the cell map; the next draw builds them again. */
   release(): void;
   /** Whether any of those buffers is held. */
@@ -51,7 +51,7 @@ const FACET = 17;
 type Facet = { x: number; y: number; nx: number; ny: number; ph: number };
 type Layout = {
   W: number; H: number; gw: number; gh: number;
-  cells?: Facet[]; cellMap?: Uint16Array;
+  cells?: Facet[]; cellMap?: Uint32Array;
   small?: FoilCanvas; img?: ImageData;
 };
 
@@ -113,8 +113,13 @@ export function makeFoil(opts: FoilOptions): Foil {
   let layout: Layout | undefined;
   let sprite: FoilCanvas | undefined;
 
+  /** A box is usable only with a finite size; anything else draws and renders nothing and allocates nothing. */
+  const usable = (box: Box) => Number.isFinite(box.w) && Number.isFinite(box.h);
+  const NONE = new Uint32Array(0);
+
   function layoutFor(box: Box): Layout {
-    const W = Math.max(1, box.w), H = Math.max(1, box.h);
+    /* Whole CSS px: a sub-pixel resize must not rebuild the grid canvas, the image and the cell map. */
+    const W = Math.max(1, Math.round(box.w)), H = Math.max(1, Math.round(box.h));
     if (layout && layout.W === W && layout.H === H) return layout;
     const L: Layout = { W, H, gw: Math.ceil(W / CELL), gh: Math.ceil(H / CELL) };
     layout = L;
@@ -122,7 +127,7 @@ export function makeFoil(opts: FoilOptions): Foil {
   }
 
   /** Level 3's cracked ice: seeded cells, each a facet tilted its own way, and the cell each 3px cell belongs to. */
-  function facetsOf(L: Layout): Uint16Array {
+  function facetsOf(L: Layout): Uint32Array {
     if (L.cellMap && L.cells) return L.cellMap;
     const r = seededRng(`${opts.seed}:ice`);
     const pts: Facet[] = [];
@@ -133,7 +138,7 @@ export function makeFoil(opts: FoilOptions): Foil {
       }
     }
     const cols = Math.ceil((L.W + 2 * FACET) / FACET);
-    const map = new Uint16Array(L.gw * L.gh);
+    const map = new Uint32Array(L.gw * L.gh);
     for (let j = 0; j < L.gh; j++) {
       for (let i = 0; i < L.gw; i++) {
         const x = (i + 0.5) * CELL, y = (j + 0.5) * CELL;
@@ -225,53 +230,70 @@ export function makeFoil(opts: FoilOptions): Foil {
 
   return {
     render(box, light, band, outPx) {
+      if (!usable(box)) return;
       const L = layoutFor(box);
       if (outPx.length < L.gw * L.gh * 4) throw new Error(`foil: the buffer holds ${outPx.length} bytes, ${L.gw * L.gh * 4} needed`);
       renderInto(L, light, band, outPx);
     },
 
-    facets: (box) => facetsOf(layoutFor(box)),
+    facets: (box) => (usable(box) ? facetsOf(layoutFor(box)) : NONE),
 
     draw(ctx, box, density, light, band, now, idle) {
+      if (!usable(box)) return;
       const L = layoutFor(box);
-      if (!L.small) L.small = make(L.gw, L.gh);
-      const sg = L.small.getContext('2d');
-      if (!sg) return;
-      if (!L.img) L.img = sg.createImageData(L.gw, L.gh);
-      renderInto(L, light, band, L.img.data);
-      sg.putImageData(L.img, 0, 0);
-      ctx.setTransform(density, 0, 0, density, 0, 0);
-      ctx.clearRect(0, 0, L.W, L.H);
-      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(L.small as unknown as CanvasImageSource, 0, 0, L.W, L.H);
-      /* Starbursts: each faces its own way and flares when the light lines up with it. Their white is let through only as
-       * far as the band allows it, and a band lets pure white through only when its ceiling is 1: on any lower ceiling
-       * (every dark board, whatever its inks) 'lighter' white could lift a cell out of the band, so none is drawn. */
-      if (stars.length === 0 || band.hi < 1) return;
-      if (!sprite) sprite = starSprite(make);
-      const t = now / 1000;
-      ctx.globalCompositeOperation = 'lighter';
-      for (const s of stars) {
-        const sx = s.u * L.W, sy = s.v * L.H;
-        let a = Math.exp(-((s.nx - light.x) ** 2 + (s.ny - light.y) ** 2) / 0.12);
-        if (idle) a = Math.max(a, 0.85 * Math.max(0, Math.sin(t * 0.9 + sx * 0.05)) ** 24);
-        const alpha = 0.12 + 0.88 * a;
-        if (alpha < 0.02) continue;
-        const z = s.s * (0.55 + 0.6 * a);
-        ctx.globalAlpha = Math.min(1, alpha);
-        ctx.drawImage(sprite as unknown as CanvasImageSource, sx - z / 2, sy - z / 2, z, z);
+      /* The caller's context comes back as it was: transform, smoothing, alpha and composite are all restored. */
+      ctx.save();
+      try {
+        paint(ctx, L, density, light, band, now, idle);
+      } finally {
+        ctx.restore();
       }
-      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
     },
 
-    release() { layout = undefined; sprite = undefined; },
+    release() {
+      /* Zero the canvases so their backing stores are freed now, not when the collector gets to them. */
+      if (layout?.small) { layout.small.width = 0; layout.small.height = 0; }
+      if (sprite) { sprite.width = 0; sprite.height = 0; }
+      layout = undefined; sprite = undefined;
+    },
     holds: () => layout !== undefined && (layout.img !== undefined || layout.cellMap !== undefined || layout.small !== undefined),
   };
+
+  function paint(ctx: CanvasRenderingContext2D, L: Layout, density: number, light: Light, band: Band, now: number, idle: boolean): void {
+    if (!L.small) L.small = make(L.gw, L.gh);
+    const sg = L.small.getContext('2d');
+    if (!sg) return;
+    if (!L.img) L.img = sg.createImageData(L.gw, L.gh);
+    renderInto(L, light, band, L.img.data);
+    sg.putImageData(L.img, 0, 0);
+    ctx.setTransform(density, 0, 0, density, 0, 0);
+    ctx.clearRect(0, 0, L.W, L.H);
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(L.small as unknown as CanvasImageSource, 0, 0, L.W, L.H);
+    /* Starbursts: each faces its own way and flares when the light lines up with it. Their white is let through only as
+     * far as the band allows it, and a band lets pure white through only when its ceiling is 1: on any lower ceiling
+     * (every dark board, whatever its inks) 'lighter' white could lift a cell out of the band, so none is drawn. */
+    if (stars.length === 0 || band.hi < 1) return;
+    if (!sprite) sprite = starSprite(make);
+    const t = now / 1000;
+    ctx.globalCompositeOperation = 'lighter';
+    for (const s of stars) {
+      const sx = s.u * L.W, sy = s.v * L.H;
+      let a = Math.exp(-((s.nx - light.x) ** 2 + (s.ny - light.y) ** 2) / 0.12);
+      if (idle) a = Math.max(a, 0.85 * Math.max(0, Math.sin(t * 0.9 + sx * 0.05)) ** 24);
+      const alpha = 0.12 + 0.88 * a;
+      if (alpha < 0.02) continue;
+      const z = s.s * (0.55 + 0.6 * a);
+      ctx.globalAlpha = Math.min(1, alpha);
+      ctx.drawImage(sprite as unknown as CanvasImageSource, sx - z / 2, sy - z / 2, z, z);
+    }
+  }
 }
 
 /** Every cell's color as `#rrggbb`, for the readable-band check (cells only: the starbursts add white only where the band allows it). */
 export function sampleFoil(foil: Foil, box: Box, light: Light, band: Band): string[] {
-  const n = Math.ceil(Math.max(1, box.w) / CELL) * Math.ceil(Math.max(1, box.h) / CELL);
+  if (!Number.isFinite(box.w) || !Number.isFinite(box.h)) return [];
+  const n = Math.ceil(Math.max(1, Math.round(box.w)) / CELL) * Math.ceil(Math.max(1, Math.round(box.h)) / CELL);
   const px = new Uint8ClampedArray(n * 4);
   foil.render(box, light, band, px);
   const hex = (v: number) => v.toString(16).padStart(2, '0');
