@@ -227,16 +227,17 @@ export interface Settings {
 /**
  * The kinds of Act the settlement reads. An `unmask` is a character's reveal of its own class
  * (supabase/migrations/0027_unmask.sql): an Act of its character like a card, whose reactions are
- * scored and which counts in the halving, and no post. An `announce` is a character's announced debut or Turn,
- * written by The System on its behalf at the moment it takes effect (supabase/migrations/0100_announce.sql): an Act of
- * its character like an unmask, whose reactions are scored and which counts in the halving, and no post.
+ * scored and which counts in the halving, and no post. An `announce` is a character's announced
+ * debut or Turn, written by The System on its behalf at the moment it takes effect
+ * (supabase/migrations/0100_announce.sql): an Act of its character like an unmask, whose reactions
+ * are scored and which counts in the halving, and no post. A set is a card set face down, naming no
+ * card; a spring is a trap sprung, naming it (supabase/migrations/0054_card_plays.sql).
  */
-/** A set is a card set face down, naming no card; a spring is a trap sprung, naming it (supabase/migrations/0054_card_plays.sql). */
 export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'unmask' | 'announce' | 'set' | 'spring';
 
 /**
  * A board the instance starts with. Exactly one is The System's (`system`): only The System posts
- * there (a season's Promos, the arrivals and farewells), and players react to it and spin threads
+ * there (a season's announcements, the arrivals and farewells), and players react to it and spin threads
  * from it onto a board of their own.
  */
 export interface BoardSeed {

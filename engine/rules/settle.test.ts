@@ -829,13 +829,13 @@ test('an announce is an Act of its character like an unmask: its reactions are s
   const announce: InputAct = { id: 'a1', character: 'ann-fan', kind: 'announce', at: FROM + 30 * 60_000, thread: 't1' };
   const input: SettlementInput = { ...b, acts: [announce, ...b.acts], reactions: [react('a1', 'bob', 'bob-1', 'fire', FROM + 3 * H), ...b.reactions] };
   const r = settle(input, instance);
+  // Not a System Act's reaction: the cheer pays its character's class, which a System Act's reaction never does. This
+  // guards against a kind filter or a systemActs listing that would drop it.
   assert.deepEqual(r.details.filter((d) => d.act === 'a1').map((d) => [d.reason, d.amount]), [['fan.love', 10]], 'its cheer pays its character\'s class');
   settle({ ...input, acts: [{ ...announce, character: 'ann-quiet' }, ...b.acts] }, withClasses(rules));
   const received = inputs.filter((i) => i.character === 'ann-quiet').flatMap((i) => i.received);
   assert.deepEqual(received.map((x) => [x.act, x.actKind]), [['a1', 'announce']]);
   assert.deepEqual(inputs.filter((i) => i.character === 'ann-quiet').flatMap((i) => i.posts), [], 'an announce is not a post');
-  // Not a System Act's reaction: the cheer above paid its character's class, which a System Act's reaction never does. This
-  // guards against a kind filter or a systemActs listing that would drop it.
 });
 
 /* ---- the shares: each entry split across the posts the live estimate valued ---- */
