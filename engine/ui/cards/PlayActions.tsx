@@ -52,11 +52,11 @@ export function GhostMark({ act }: { readonly act: Act }) {
   const face = faceOf(rules, ui.cards.find((c) => c.key === rules.key), withCardEconomy(instance.settings, settings.cardEconomy));
   return (
     <button
-      type="button" className="kb-mark kb-ghost-mark" aria-label={ghostName(rules.name, how, act.seq)} data-kb-card={rules.key} data-kb-alignment={rules.alignment}
+      type="button" className="kb-mark kb-meta-tile kb-ghost-mark" aria-label={ghostName(rules.name, how, act.seq)} data-kb-card={rules.key} data-kb-alignment={rules.alignment}
       style={{ '--kb-mark-color': face.art.color } as CSSProperties}
       onClick={() => play.openForm(rules.key, target)}
     >
-      <span className="kb-mark-in" aria-hidden="true">
+      <span className="kb-meta-tile-in" aria-hidden="true">
         {(face.art.mark ?? face.art.image) && <img className="kb-mark-icon kb-ghost-icon" src={face.art.mark ?? face.art.image} alt="" draggable={false} />}
         <span className="kb-mark-plus">+</span>
       </span>
@@ -118,11 +118,11 @@ export function ReachGhost({ at }: { readonly at: ReachAt }) {
   const target: PlayTarget = { post: at.fromPost, reach: { reach: at.reach, target: at.target, name: at.name, above }, title: at.title, author: at.name, to: at.to, plays: at.plays, know: at.know, focusBack: at.focusBack };
   return (
     <button
-      type="button" className="kb-mark kb-ghost-mark" aria-label={reachGhostName(rules.name, how, at.name)} data-kb-card={rules.key} data-kb-alignment={rules.alignment} data-kb-reach={at.reach}
+      type="button" className="kb-mark kb-meta-tile kb-ghost-mark" aria-label={reachGhostName(rules.name, how, at.name)} data-kb-card={rules.key} data-kb-alignment={rules.alignment} data-kb-reach={at.reach}
       style={{ '--kb-mark-color': face.art.color } as CSSProperties}
       onClick={() => play.openForm(rules.key, target)}
     >
-      <span className="kb-mark-in" aria-hidden="true">
+      <span className="kb-meta-tile-in" aria-hidden="true">
         {(face.art.mark ?? face.art.image) && <img className="kb-mark-icon kb-ghost-icon" src={face.art.mark ?? face.art.image} alt="" draggable={false} />}
         <span className="kb-mark-plus">+</span>
       </span>

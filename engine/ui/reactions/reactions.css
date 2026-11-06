@@ -1,4 +1,4 @@
-/* Reactions under a post: chips (a game piece, so color is allowed through tokens), the board's own, and the picker, the glass's. */
+/* Reactions under a post: meta tiles (glass/meta-tile.css; the chips below are MoveNotice's and the front door's), and the picker, the glass's. */
 .kb-reactions {
   position: relative;
   display: flex;
@@ -30,9 +30,81 @@
   font-weight: bold;
 }
 
+.kb-reaction-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3em;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* A reaction's tile: the line is a calm, with no glow; the emoji take the system's emoji faces before the body face. */
+.kb-reaction {
+  --kb-meta-line: var(--kb-glass-text-2);
+  box-shadow: none;
+  white-space: nowrap;
+}
+
+.kb-reaction .kb-reaction-emoji {
+  font-family: var(--kb-font-emoji);
+}
+
+/* Your own kind: a ring (the ground's gap, then the ink), on your screen only. */
+.kb-reaction[data-kb-own] {
+  box-shadow: 0 0 0 2px var(--kb-glass-ground), 0 0 0 4px var(--kb-fg);
+}
+
+/* Inside the glass --kb-fg is not the ground's ink: the ring is the glass's own. */
+.kb-lens .kb-reaction[data-kb-own],
+.kb-updates-acts .kb-reaction[data-kb-own] {
+  box-shadow: 0 0 0 2px var(--kb-glass-ground), 0 0 0 4px var(--kb-glass-text-hi);
+}
+
+/* Focus on your own kind: the ring stays, and the outline stands beyond it in the post's ink (meta-tile.css's white ring would vanish on a white post, and its ink doubling is the shadow the ring takes). */
+.kb-reaction[data-kb-own]:focus-visible {
+  outline-color: var(--kb-fg);
+  outline-offset: 7px;
+}
+
+.kb-lens .kb-reaction[data-kb-own]:focus-visible,
+.kb-updates-acts .kb-reaction[data-kb-own]:focus-visible {
+  outline-color: var(--kb-glass-text-hi);
+}
+
+/* A tile that is no button: no hover, no pointer. */
+.kb-reaction:not(button) {
+  cursor: default;
+}
+
+.kb-reaction.kb-meta-tile:not(button):hover {
+  border-color: var(--kb-meta-line);
+  background: var(--kb-glass-field);
+}
+
+/* A tile already used or out of reach dims its emoji alone, so the count and the ring keep their contrast. */
+.kb-reaction[aria-disabled="true"] .kb-reaction-emoji {
+  opacity: 0.4;
+}
+
+/* React is sweet, as the glass's action tiles are. */
 .kb-react-button {
-  padding: 0 0.6em;
-  border-style: dashed;
+  --kb-meta-line: var(--kb-glass-sweet);
+  background: color-mix(in srgb, var(--kb-glass-sweet) 18%, var(--kb-glass-field));
+}
+
+@media (forced-colors: active) {
+  .kb-reaction[data-kb-own] {
+    box-shadow: none;
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+
+  /* Focus is thicker and farther out than the unfocused outline, in the focus color. */
+  .kb-reaction[data-kb-own]:focus-visible {
+    outline: 4px solid Highlight;
+    outline-offset: 4px;
+  }
 }
 
 /*
@@ -227,31 +299,4 @@
 .kb-picker[data-kb-place='sheet'] .kb-picker-kind {
   width: 48px;
   height: 48px;
-}
-
-/*
- * The reactions in a play's row in the Lens (engine/ui/cards/Lens.tsx): the same chips, picker, refusals and "your own"
- * outline, drawn on the glass, in its tokens rather than the 2003 chrome's.
- */
-.kb-reactions[data-kb-look="glass"] .kb-chip {
-  /* As tall as the tiles beside it, so a row of chips and buttons sits on one line. */
-  display: inline-flex;
-  align-items: center;
-  box-sizing: border-box;
-  min-height: 36px;
-  border-color: var(--kb-glass-text-2);
-  background: var(--kb-glass-ground);
-  color: var(--kb-glass-text);
-}
-
-.kb-reactions[data-kb-look="glass"] .kb-chip[data-kb-own] {
-  outline-color: var(--kb-glass-text-hi);
-}
-
-/*
- * The glass's React is the kit's skewed tile (cards/kit.css), as every control beside it in the Lens is, on the tile's solid edge:
- * the glass keeps a dashed edge for what cannot be pressed yet.
- */
-.kb-reactions[data-kb-look="glass"] .kb-react-button {
-  border-style: solid;
 }

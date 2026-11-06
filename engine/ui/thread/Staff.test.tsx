@@ -37,7 +37,7 @@ describe('the Boss on The System\'s board', () => {
     expect(within(post).getByText('THE SYSTEM RENAMED THIS BOARD')).toBeInTheDocument();
     expect(await within(post).findByRole('group', { name: 'About The Director' })).toHaveTextContent('ADMINISTRATOR');
     /* Reactions are the Act's own, like any post's. */
-    expect(within(post).getByRole('list', { name: 'Reactions' })).toHaveTextContent('Fire, 9');
+    expect(await within(post).findByRole('button', { name: /^Fire, 9\./u })).toBeInTheDocument();
   });
 
   test('a move\'s end is a plain line in the thread, never in the Boss\'s voice', async () => {

@@ -39,6 +39,8 @@
 
   --kb-font-body: Verdana, Geneva, sans-serif;
   --kb-font-mono: "Courier New", Courier, monospace;
+  /* The system emoji faces, then the glass body face, so a reaction tile's emoji draws in color. */
+  --kb-font-emoji: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", var(--kb-glass-font-body);
   /*
    * The Main board's sizes, the 2003 board's scaled by 1.25 (the glass-polish design's section 7): 15px words, 13.75px links and
    * controls, a 12.5px post line, a 22.5px title.

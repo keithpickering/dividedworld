@@ -218,7 +218,7 @@
   letter-spacing: 0.06em;
 }
 
-/* The play's reactions, React, Spin thread and Go to post: one wrapping run of chips and tiles. */
+/* The play's reactions (meta tiles, 36px), React, Spin thread and Go to post (kit tiles, 44px): one wrapping run, centered on one line. */
 .kb-lens-row-foot {
   display: flex;
   flex-wrap: wrap;

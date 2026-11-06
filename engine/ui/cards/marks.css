@@ -1,4 +1,7 @@
 /*
+ * This file must load after glass/meta-tile.css (Marks.tsx imports them in that order): a mark's rules here tie the tile's shared ones
+ * in specificity and win by coming later.
+ *
  * The marks over a post (Marks.tsx; marks-and-the-lens design, section 1): small glass tiles on the post's date row, at
  * its right, ending just left of its number, hanging a little over the body's first line. They are positioned and never
  * in the page's flow: the anchor is an empty flexible cell of the date row, and the strip is absolute inside it, so a post
@@ -29,9 +32,9 @@
 }
 
 .kb-marks {
-  --kb-mark-size: 1.7rem;
   position: absolute;
-  top: -0.2rem;
+  /* Centered on its anchor, which is as tall as the row: a 36px tile hangs a few pixels over a bar about 30px tall. */
+  top: calc(50% - var(--kb-meta-tile) / 2);
   right: 0;
   z-index: 3;
   display: flex;
@@ -39,49 +42,31 @@
   gap: 0.4rem;
 }
 
-.kb-mark {
+.kb-mark.kb-meta-tile {
   --kb-mark-line: var(--kb-glass-sweet);
-  --kb-mark-text: var(--kb-glass-text);
+  --kb-meta-line: var(--kb-mark-ink, var(--kb-mark-line));
   position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  min-width: var(--kb-mark-size);
-  height: var(--kb-mark-size);
-  margin: 0;
-  padding: 0 0.3rem;
-  transform: skewX(var(--kb-glass-skew));
-  border: 2px solid var(--kb-mark-ink, var(--kb-mark-line));
-  background: var(--kb-glass-field);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--kb-mark-ink, var(--kb-mark-line)) 55%, transparent);
-  color: var(--kb-mark-text);
-  font-family: var(--kb-glass-font-body);
-  font-size: var(--kb-glass-size-label);
-  font-weight: 800;
-  line-height: 1;
-  cursor: pointer;
-  user-select: none;
-  -webkit-touch-callout: none;
+}
+
+/* The glow marks a play that has landed; a ghost is not one, so it has none and its dashed tint reads as not landed. */
+.kb-mark.kb-meta-tile:not(:focus-visible, .kb-ghost-mark) {
+  box-shadow: 0 0 8px color-mix(in srgb, var(--kb-meta-line) 55%, transparent);
+}
+
+/* A mark keeps its card's color on a hover: its own line brightened, not the glass's white. */
+.kb-mark.kb-meta-tile:hover:not([aria-disabled="true"]) {
+  border-color: color-mix(in srgb, var(--kb-meta-line) 60%, var(--kb-glass-text-hi));
 }
 
 .kb-mark[data-kb-alignment="salty"] {
   --kb-mark-line: var(--kb-glass-salty);
 }
 
-/* The icon and the count stand upright on the skew, as the kit's tile labels do. */
-.kb-mark-in {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.2rem;
-  transform: skewX(calc(var(--kb-glass-skew) * -1));
-}
-
 .kb-mark-icon,
 .kb-mark-swatch {
   flex: none;
-  width: 1rem;
-  height: 1rem;
+  width: 1.45rem;
+  height: 1.45rem;
   object-fit: contain;
 }
 
@@ -130,13 +115,6 @@
   pointer-events: none;
 }
 
-/* On the post's ground the glass's white ring would vanish on a white post: the ring is doubled by the post's own ink. */
-.kb-mark:focus-visible {
-  outline: 3px solid var(--kb-glass-text-hi);
-  outline-offset: 3px;
-  box-shadow: 0 0 0 5px var(--kb-fg);
-}
-
 .kb-mark[aria-expanded="true"] {
   background: color-mix(in srgb, var(--kb-mark-ink, var(--kb-mark-line)) 22%, var(--kb-glass-field));
 }
@@ -145,9 +123,18 @@
 .kb-mark.kb-ghost-mark {
   --kb-mark-line: var(--kb-mark-color, var(--kb-glass-sweet));
   border-style: dashed;
-  box-shadow: none;
   color: var(--kb-glass-text-hi);
   background: color-mix(in srgb, var(--kb-mark-line) 28%, var(--kb-glass-field));
+}
+
+/* The shared hover would otherwise beat the expanded fill and make a hovered open mark look less open. */
+.kb-mark.kb-meta-tile[aria-expanded="true"]:hover:not([aria-disabled="true"]) {
+  background: color-mix(in srgb, var(--kb-meta-line) 34%, var(--kb-glass-field));
+}
+
+/* A hover lifts the ghost's own tint rather than replacing it. */
+.kb-mark.kb-ghost-mark.kb-meta-tile:hover:not([aria-disabled="true"]) {
+  background: color-mix(in srgb, var(--kb-mark-line) 40%, var(--kb-glass-field));
 }
 
 .kb-mark-plus {
@@ -162,7 +149,7 @@
 /* The ORIGIN box's head carries the strip the same way: a cell of the head with the strip's width, and the head's words wrap in the room left. */
 .kb-origin-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.5em;
 }
 
@@ -175,6 +162,7 @@
   align-self: stretch;
 }
 
+/* The phone keeps the tile's size; only the words on it shrink. */
 :root[data-kb-layout='phone'] .kb-mark,
 :root[data-kb-layout='phone'] .kb-mark-plus {
   font-size: var(--kb-glass-size-phone-small);
@@ -182,9 +170,13 @@
 
 /* Forced colors drop the fills: a mark is outlined in a system color, and its notch and sign are drawn in one. */
 @media (forced-colors: active) {
-  .kb-mark {
-    border-color: ButtonText;
+  .kb-mark.kb-meta-tile:not(:focus-visible) {
     box-shadow: none;
+  }
+
+  /* Chromium already forces this border to a system color, so no test can see this rule; it is here for engines that do not. */
+  .kb-mark.kb-meta-tile:hover:not([aria-disabled="true"]) {
+    border-color: Highlight;
   }
 
   /* The edge keeps its gradient, so progress survives: Highlight is its color, not its whole fill. */
@@ -201,11 +193,6 @@
 
   .kb-mark[aria-expanded="true"] {
     border-color: Highlight;
-  }
-
-  .kb-mark:focus-visible {
-    outline-color: Highlight;
-    box-shadow: none;
   }
 }
 
@@ -273,8 +260,8 @@
 }
 .kb-card-back {
   flex: none;
-  width: 1rem;
-  height: 1rem;
+  width: 1.45rem;
+  height: 1.45rem;
   box-sizing: border-box;
   border: 2px solid var(--kb-glass-text-hi);
   background:
@@ -308,7 +295,6 @@
 .kb-thread-pin-mark {
   display: flex;
   position: relative;
-  min-height: 1.9rem;
 }
 .kb-thread-head-marks > .kb-marks-anchor,
 .kb-board-banner-marks > .kb-marks-anchor,
@@ -320,7 +306,6 @@
 .kb-thread-pin-mark .kb-marks {
   right: auto;
   left: 0;
-  top: 0.1rem;
 }
 /*
  * A postbit's strip is laid over the postbit's top corner, out of its flow, as a post's strip is over its date row: arming a character
@@ -330,13 +315,12 @@
   position: relative;
 }
 .kb-postbit:has(.kb-postbit-marks) .kb-postbit-name {
-  padding-inline-end: 2.2rem;
+  padding-inline-end: calc(var(--kb-meta-tile) + 0.5rem);
 }
 .kb-postbit .kb-postbit-marks {
   position: absolute;
   top: 0.3rem;
   right: 0.3rem;
-  min-height: 0;
 }
 .kb-postbit-marks > .kb-marks-anchor {
   margin-inline-start: auto;
@@ -344,27 +328,34 @@
 .kb-postbit-marks .kb-marks {
   left: auto;
   right: 0;
+  /* Hung from the strip's own top, not centered: the postbit's strip is out of the flow at its corner. */
+  top: 0;
 }
 .kb-thread-head-marks {
   flex: 0 0 auto;
   align-self: center;
-  /* As tall as the title's line already is: a thread card armed adds the strip beside the title, never a taller head. */
-  min-height: 0;
+  /* No height of its own: the strip is out of the flow and the head's min-height does the reserving. */
 }
 .kb-board-banner {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.2em 1em;
+  /* Always room for the strip's tile, so a play landing never makes the banner taller. */
+  min-height: var(--kb-meta-tile);
 }
 .kb-board-banner-marks {
   flex: 0 0 auto;
-  min-height: 0;
+  /* The title's top margin is 1em above its bottom one, so its line sits half an em below the banner's middle: the strip follows it. */
+  margin-top: var(--kb-size-title);
 }
 .kb-thread-pin-mark {
   display: inline-flex;
   vertical-align: middle;
   margin-inline-start: 0.5em;
+  /* The tile straddles its row: only the row's line of words counts toward the row's height. */
+  min-height: var(--kb-meta-tile);
+  margin-block: calc((var(--kb-meta-tile) - 1lh) / -2);
 }
 /* A pinned row reads as one above the list: the board's own rule under the last of them. */
 .kb-thread-pinned > tr:last-child > td {

@@ -188,7 +188,7 @@
   border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 25%, transparent);
 }
 
-/* The reactions are the kit's chips and tile as the thread draws them; here they sit in the row with Spin, with no margin of their own. */
+/* The reactions are the meta tiles (reactions/reactions.css); here they sit in the row with Spin, with no margin of their own. */
 .kb-updates-acts .kb-reactions {
   margin: 0;
 }

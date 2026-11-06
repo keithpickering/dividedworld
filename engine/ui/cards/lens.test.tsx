@@ -304,7 +304,9 @@ describe('what the Lens says and offers', () => {
     const picker = screen.getByRole('dialog', { name: 'React to Spritey\'s Card 2' });
     await userEvent.click(within(picker).getByRole('button', { name: 'Tea, Calm' }));
     await waitFor(() => expect(react).toHaveBeenCalledWith(theirs, w.pipe, 'tea'));
-    await waitFor(() => expect(within(lens()).getByText(/^Tea, 1/u)).toBeInTheDocument());
+    await waitFor(() => expect(within(lens()).getByRole('button', { name: /^Tea, 1/u })).toBeInTheDocument());
+    expect(lens().querySelector('.kb-reactions')).toHaveAttribute('data-kb-over-ink');
+    expect(lens().querySelector('[data-kb-look]')).toBeNull();
   });
 
   test('Esc closes a picker opened from the Lens first, and the Lens only the next time', async () => {
@@ -361,8 +363,10 @@ describe('what the Lens says and offers', () => {
     const controls = [...lens().querySelectorAll<HTMLElement>('.kb-lens-row :is(button, a)')];
     expect(controls.map((c) => c.textContent)).toEqual(expect.arrayContaining(['+ React', 'Spin thread', 'Go to post']));
     for (const c of controls) {
-      expect(c, c.textContent ?? '').toHaveClass('kb-kit-tile');
-      expect(c.querySelector(':scope > .kb-kit-tile-label'), `${c.textContent}'s words stand upright on the skew`).not.toBeNull();
+      /* React is the meta tile (glass/meta-tile.css), the others the kit's: both skew, both stand their words upright. */
+      const meta = c.classList.contains('kb-meta-tile');
+      expect(c, c.textContent ?? '').toHaveClass(meta ? 'kb-meta-tile' : 'kb-kit-tile');
+      expect(c.querySelector(meta ? ':scope > .kb-meta-tile-in' : ':scope > .kb-kit-tile-label'), `${c.textContent}'s words stand upright on the skew`).not.toBeNull();
     }
   });
 });

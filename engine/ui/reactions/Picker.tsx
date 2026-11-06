@@ -16,14 +16,12 @@
  */
 import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent, type RefObject } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { Id, MyCharacter, MyReaction } from '../data/api.ts';
+import type { MyCharacter, MyReaction } from '../data/api.ts';
 import type { Quadrant } from '../../rules/types.ts';
 import { Overlay, type Placed } from '../glass/Overlay.tsx';
-import { usePlayer } from '../player.tsx';
 import { useTip } from '../tips/Tips.tsx';
-import type { Tallies } from '../thread/tallies.ts';
-import type { Mine } from './mine.ts';
 import { readable } from './Reactions.tsx';
+import type { SendAnswer } from './send.ts';
 
 /** Top-left, top-right, bottom-left, bottom-right. */
 const GRID: readonly Quadrant[] = ['excitedNegative', 'excitedPositive', 'boredNegative', 'calmPositive'];
@@ -64,26 +62,28 @@ function target(key: string, all: readonly HTMLButtonElement[], at: number): num
 }
 
 interface Props {
-  readonly act: Id;
   /** What is reacted to, as the thread names it, for the dialog's name ("Alex's post", "Mrs. Hooligan's Whoops!"). */
   readonly subject: string;
   readonly as: MyCharacter | null;
   readonly own: readonly MyReaction[];
-  readonly tallies: Tallies;
-  readonly mine: Mine;
+  /**
+   * The row's one send (`useReactionSend`, called once per Act in Reactions.tsx, so a tile's press and the picker's share one lock),
+   * and whether it is in flight.
+   */
+  readonly send: (kind: string) => Promise<SendAnswer>;
+  readonly busy: boolean;
+  /** A refusal already given (a tile pressed in the row was refused): shown as the picker opens, in the alert. */
+  readonly refusal?: string | null;
   /** The post's reactions row, which the picker opens by. */
   readonly anchor: RefObject<HTMLElement | null>;
   readonly onClose: (refocus: boolean) => void;
 }
 
-export function Picker({ act, subject, as, own, tallies, mine, anchor, onClose }: Props) {
-  const { api, instance, ui, settings } = useKayfa();
-  const player = usePlayer();
+export function Picker({ subject, as, own, send, busy, refusal: given = null, anchor, onClose }: Props) {
+  const { instance, ui, settings } = useKayfa();
   const [placed, setPlaced] = useState<Placed | null>(null);
   const grid = useRef<HTMLDivElement>(null);
-  const [refusal, setRefusal] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const sending = useRef(false);
+  const [refusal, setRefusal] = useState<string | null>(given);
   const alive = useRef(true);
   const countId = useId();
   const describedId = useId();
@@ -113,29 +113,14 @@ export function Picker({ act, subject, as, own, tallies, mine, anchor, onClose }
   };
 
   const choose = async (kind: string) => {
-    if (!as || sending.current) return;
-    sending.current = true;
-    setBusy(true);
+    /* A press dropped for one in flight leaves a refusal on screen as it is. */
+    if (busy) return;
     setRefusal(null);
-    try {
-      const answer = await api.react(act, as.id, kind);
-      if (!answer.ok) {
-        setRefusal(answer.error);
-        /* A refusal may mean what this screen holds is stale (another tab left that kind): read the player's own again. */
-        mine.merge(act, await api.myReactions([act]).catch(() => []));
-        return;
-      }
-      mine.add({ act, kind, character: as.id });
-      tallies.merge(act, answer.value.tally);
-      player.reactionLanded();
-      /* Closed meanwhile (Esc, Close): the reaction still counts, but focus is not taken back. */
-      if (alive.current) onClose(true);
-    } catch {
-      setRefusal('The reaction could not be sent. Try again.');
-    } finally {
-      sending.current = false;
-      if (alive.current) setBusy(false);
-    }
+    const answer = await send(kind);
+    if (answer === 'busy') return;
+    if (answer !== 'sent') { setRefusal(answer.refusal); return; }
+    /* Closed meanwhile (Esc, Close): the reaction still counts, but focus is not taken back. */
+    if (alive.current) onClose(true);
   };
 
   let first = true;
