@@ -1066,7 +1066,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
       data-kb-splat={splats?.map((sp) => `${sp.placement.cx},${sp.placement.cy}`).join(' ')}
     >
       <div ref={frameRef} className="kb-whoops-frame" style={bleed ? { overflow: 'visible' } : undefined}>
-        <div ref={layoutRef} className="kb-whoops-layout" inert={hidden && !still}>
+        <div ref={layoutRef} data-kb-whoops-layout="" inert={hidden && !still}>
           {children}
         </div>
         {near && fixed && built && (

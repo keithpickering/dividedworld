@@ -75,7 +75,7 @@ test('the splat on #41 is drawn, scrubbed by a drag, and back after a reload', a
 const words = (page: Page) => page.evaluate(() => {
   const px = (v: string) => parseFloat(v) || 0;
   const wordsOf = (el: Element) => { const c = getComputedStyle(el); return el.clientWidth - px(c.paddingLeft) - px(c.paddingRight); };
-  const layout = document.querySelector('#post-41 .kb-whoops-layout') as HTMLElement;
+  const layout = document.querySelector('#post-41 [data-kb-whoops-layout]') as HTMLElement;
   const body = document.querySelector('#post-41 .kb-act-main')!;
   const ink = document.querySelector('#post-41 .kb-whoops-ink')!.getBoundingClientRect();
   const rect = body.getBoundingClientRect();

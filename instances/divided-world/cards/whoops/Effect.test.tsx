@@ -230,7 +230,7 @@ describe('the layers', () => {
     for (const width of [MAX_FRAME, PHONE_FRAME]) {
       boxWidth = width;
       const { root, frame, unmount } = mount();
-      const layout = root.querySelector('.kb-whoops-layout') as HTMLElement;
+      const layout = root.querySelector('[data-kb-whoops-layout]') as HTMLElement;
       expect(layout.getAttribute('style') ?? '').toBe('');
       expect(frame.style.height).toBe('');
       /* The ink is fitted to the body: a canvas the body's size, reaching out of the frame to the body's corner. */
@@ -618,7 +618,7 @@ describe('what a screen reader is given', () => {
   test('a line under ink is hidden from a screen reader as it is from the eye, and the lines clear of it are read', () => {
     layoutLines = TEXT_LINES;
     const { root } = mount();
-    const layout = root.querySelector('.kb-whoops-layout') as HTMLElement;
+    const layout = root.querySelector('[data-kb-whoops-layout]') as HTMLElement;
     expect(layout).toHaveAttribute('inert');
     const covered = coveredLine(inkOf(0)).line;
     const text = readout(root);
@@ -639,7 +639,7 @@ describe('what a screen reader is given', () => {
 
   test('with no ink left, the post is plain: nothing hidden, nothing read twice', () => {
     const { root } = mount({ states: { 'play-1': { state: { strokes: [], clean: true }, savedAt: '2026-10-29T22:00:00.000Z' } } });
-    expect(root.querySelector('.kb-whoops-layout')).not.toHaveAttribute('inert');
+    expect(root.querySelector('[data-kb-whoops-layout]')).not.toHaveAttribute('inert');
     expect(root.querySelector('[data-kb-readout]')).toBeNull();
   });
 });
@@ -786,8 +786,8 @@ describe('the author\'s pen strokes belong to their layer', () => {
     act(() => { vi.advanceTimersByTime(120_000); });
     act(() => { fireEvent.keyUp(button, { key: ' ' }); });
     /* Nothing is under ink: the words are plain on the page for a screen reader, with no hidden copy. */
-    expect(root.querySelector('.kb-whoops-layout')).not.toHaveAttribute('inert');
-    expect(root.querySelector('.kb-whoops-layout')).toHaveTextContent(name(penLine));
+    expect(root.querySelector('[data-kb-whoops-layout]')).not.toHaveAttribute('inert');
+    expect(root.querySelector('[data-kb-whoops-layout]')).toHaveTextContent(name(penLine));
     expect(readout(root)).toBe('');
   }, 60_000);
 
