@@ -124,6 +124,18 @@ describe('the other controls', () => {
     expect(choose).toHaveBeenCalledWith('ink');
   });
 
+  test('a named kit stands as one row of the hold and the options under one label, which names the group', () => {
+    const choose = vi.fn();
+    draw([
+      { kind: 'hold', label: 'Hold to scrub', start: vi.fn(), stop: vi.fn() },
+      { kind: 'choose', label: 'Your tools, as the author', options: [{ value: 'wash', label: 'Wash' }, { value: 'ink', label: 'Write in ink' }], value: 'wash', choose },
+    ]);
+    const group = screen.getByRole('group', { name: 'Your tools, as the author' });
+    expect(group.querySelector('.kb-kit-label')).toHaveTextContent('Your tools, as the author');
+    const row = group.querySelector('.kb-kit-row')!;
+    expect([...row.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Hold to scrub', 'Wash', 'Write in ink']);
+  });
+
   test('go is a link to its address', () => {
     draw([{ kind: 'go', label: 'Open the vending machine', to: '/vending' }]);
     expect(screen.getByRole('link', { name: 'Open the vending machine' })).toHaveAttribute('href', '/vending');

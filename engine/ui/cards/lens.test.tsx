@@ -12,7 +12,8 @@ import type { Id } from '../data/api.ts';
 import type { Fake } from '../data/fake.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
-import { LensProvider, useLensFor, useLensStore } from './Lens.tsx';
+import { fadeOf, LensProvider, moreBelow, useLensFor, useLensStore } from './Lens.tsx';
+import lensCss from './lens.css?raw';
 import type { CardUi, EffectProps } from './types.ts';
 import { LoadedThread } from '../loaded.tsx';
 
@@ -22,9 +23,10 @@ beforeEach(() => {
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-function width(phone: boolean) {
+/** A phone (40em or less) is also a sheet's width; a tablet (up to 64em) is a sheet's width with a desktop's marks. */
+function width(phone: boolean, tablet = false) {
   vi.stubGlobal('matchMedia', (q: string) => ({
-    matches: phone && q.includes('max-width: 40em'), media: q, addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {},
+    matches: (phone && q.includes('max-width: 40em')) || ((phone || tablet) && q.includes('max-width: 64em')), media: q, addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {},
   }) as unknown as MediaQueryList);
 }
 
@@ -440,16 +442,26 @@ describe('a Lens that does not block the page', () => {
     expect(lens()).toBeInTheDocument();
   });
 
-  test('it is a sheet under 40em and a side panel or an under panel on a desktop', async () => {
+  test('it is a sheet under 40em and a dock at the right on a desktop', async () => {
     width(false);
     const w = world();
     w.play('k2');
     const view = open(w);
     await userEvent.click(await markOf(2, 'Card 2'));
     await act(async () => {});
-    expect(['side', 'under']).toContain(lens().getAttribute('data-kb-lens'));
+    expect(lens()).toHaveAttribute('data-kb-lens', 'dock');
     view.unmount();
     width(true);
+    open(w);
+    await userEvent.click(await markOf(2, 'Card 2'));
+    await act(async () => {});
+    expect(lens()).toHaveAttribute('data-kb-lens', 'sheet');
+  });
+
+  test('it is a sheet at a tablet\'s width too (up to 64em), where the dock would leave the post too narrow', async () => {
+    width(false, true);
+    const w = world();
+    w.play('k2');
     open(w);
     await userEvent.click(await markOf(2, 'Card 2'));
     await act(async () => {});
@@ -936,5 +948,189 @@ describe('End this card', () => {
     await userEvent.click(screen.getByRole('button', { name: 'End it' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('an admin has already ended that card');
     expect(screen.getByRole('dialog', { name: 'End this card?' })).toBeInTheDocument();
+  });
+});
+
+/*
+ * The Lens's frame, tabs and buttons (backfill-boards plan, Task 10; boards 28 and 29): the open tab filled in the card's ink and the others
+ * outlined, one row of tabs that scrolls with the open one kept in view and a fade where more wait, a foot that fades only while more lies
+ * below, and a play's actions as one grid. What a browser measures (the dock, the sheet, the last control above the HUD) is
+ * e2e/lens-frame.spec.ts's.
+ */
+/** The rule a selector opens in lens.css, its body, with comments gone. */
+const ruleOf = (selector: string): string => {
+  const css = lensCss.replace(/\/\*[\s\S]*?\*\//gu, '');
+  const at = css.split('\n').findIndex((l) => l.trim() === `${selector} {`);
+  if (at < 0) throw new Error(`lens.css has no rule ${selector}`);
+  const rest = css.split('\n').slice(at + 1);
+  return rest.slice(0, rest.findIndex((l) => l.trim() === '}')).join('\n');
+};
+
+describe('the tabs', () => {
+  test('the open tab is filled in the card\'s ink and the others are outlined, never the other way round', () => {
+    const filled = ruleOf('.kb-lens-tab[aria-selected="true"]');
+    expect(filled).toMatch(/background:\s*var\(--kb-lens-ink\)/u);
+    expect(filled).toMatch(/color:\s*var\(--kb-glass-ink-neon\)/u);
+    const rest = ruleOf('.kb-lens-tab');
+    expect(rest).toMatch(/background:\s*transparent/u);
+    expect(rest).toMatch(/border:\s*1px solid/u);
+  });
+
+  test('the open tab says it is open, the other does not, and it moves with the choice', async () => {
+    width(false);
+    const w = world();
+    w.play('k1'); w.play('k2');
+    open(w);
+    await userEvent.click(await markOf(2, 'Card 2'));
+    expect(tab('Card 2')).toHaveAttribute('aria-selected', 'true');
+    expect(tab('Card 1')).toHaveAttribute('aria-selected', 'false');
+    await userEvent.click(tab('Card 1'));
+    expect(tab('Card 1')).toHaveAttribute('aria-selected', 'true');
+    expect(tab('Card 2')).toHaveAttribute('aria-selected', 'false');
+  });
+
+  test('the open tab is scrolled into view when the Lens opens and when another tab is chosen', async () => {
+    width(false);
+    const w = world();
+    w.play('k1'); w.play('k2');
+    open(w);
+    const into = vi.mocked(Element.prototype.scrollIntoView);
+    await userEvent.click(await markOf(2, 'Card 2'));
+    expect(into.mock.instances).toContain(tab('Card 2'));
+    expect(into).toHaveBeenLastCalledWith({ block: 'nearest', inline: 'center' });
+    into.mockClear();
+    await userEvent.click(tab('Card 1'));
+    expect(into.mock.instances).toEqual([tab('Card 1')]);
+  });
+
+  test('the strip says where more wait: none while they all fit, then at the end, at both ends, at the start', async () => {
+    expect(fadeOf({ scrollLeft: 0, clientWidth: 400, scrollWidth: 400 })).toBe('none');
+    expect(fadeOf({ scrollLeft: 0, clientWidth: 330, scrollWidth: 700 })).toBe('end');
+    expect(fadeOf({ scrollLeft: 120, clientWidth: 330, scrollWidth: 700 })).toBe('both');
+    expect(fadeOf({ scrollLeft: 370, clientWidth: 330, scrollWidth: 700 })).toBe('start');
+    width(false);
+    const w = world();
+    w.play('k1'); w.play('k2'); w.play('k3');
+    open(w);
+    await userEvent.click(await markOf(2, 'Card 2'));
+    const row = within(lens()).getByRole('tablist');
+    const strip = row.parentElement!;
+    /* A scroller jsdom does not lay out: its measures are given, and a scroll event reads them. */
+    Object.defineProperty(row, 'clientWidth', { configurable: true, value: 330 });
+    Object.defineProperty(row, 'scrollWidth', { configurable: true, value: 700 });
+    row.scrollLeft = 0;
+    fireEvent.scroll(row);
+    expect(strip).toHaveAttribute('data-kb-fade', 'end');
+    row.scrollLeft = 150;
+    fireEvent.scroll(row);
+    expect(strip).toHaveAttribute('data-kb-fade', 'both');
+  });
+});
+
+describe('the foot', () => {
+  test('it fades only while scrollTop + clientHeight < scrollHeight', async () => {
+    expect(moreBelow({ scrollTop: 0, clientHeight: 500, scrollHeight: 900 })).toBe(true);
+    expect(moreBelow({ scrollTop: 399, clientHeight: 500, scrollHeight: 900 })).toBe(true);
+    expect(moreBelow({ scrollTop: 400, clientHeight: 500, scrollHeight: 900 })).toBe(false);
+    expect(moreBelow({ scrollTop: 0, clientHeight: 500, scrollHeight: 500 })).toBe(false);
+    width(false);
+    const w = world();
+    w.play('k2');
+    open(w);
+    await userEvent.click(await markOf(2, 'Card 2'));
+    const body = within(lens()).getByRole('tabpanel');
+    Object.defineProperty(body, 'clientHeight', { configurable: true, value: 500 });
+    Object.defineProperty(body, 'scrollHeight', { configurable: true, value: 900 });
+    body.scrollTop = 0;
+    fireEvent.scroll(body);
+    expect(lens()).toHaveAttribute('data-kb-more', 'true');
+    body.scrollTop = 400;
+    fireEvent.scroll(body);
+    expect(lens()).toHaveAttribute('data-kb-more', 'false');
+    expect(lens().querySelector('.kb-lens-fade')).not.toBeNull();
+  });
+
+  test('the fade follows the body\'s content: a row added after the Lens opened makes it more, without a scroll', async () => {
+    width(false);
+    const w = world();
+    w.play('k2');
+    open(w);
+    await userEvent.click(await markOf(2, 'Card 2'));
+    const body = within(lens()).getByRole('tabpanel');
+    Object.defineProperty(body, 'clientHeight', { configurable: true, value: 500 });
+    Object.defineProperty(body, 'scrollHeight', { configurable: true, value: 500, writable: true });
+    fireEvent.scroll(body);
+    expect(lens()).toHaveAttribute('data-kb-more', 'false');
+    /* A live play adds a row; the body is taller, and nothing scrolled. */
+    (body as unknown as { scrollHeight: number }).scrollHeight = 900;
+    await act(async () => { body.append(document.createElement('div')); });
+    await waitFor(() => expect(lens()).toHaveAttribute('data-kb-more', 'true'));
+  });
+
+  test('the fade is shown by the panel\'s own state and takes no pointer', () => {
+    expect(ruleOf('.kb-lens-fade')).toMatch(/display:\s*none/u);
+    expect(ruleOf('.kb-lens-fade')).toMatch(/pointer-events:\s*none/u);
+    expect(ruleOf(".kb-lens[data-kb-more='true'] > .kb-lens-fade")).toMatch(/display:\s*block/u);
+  });
+});
+
+describe('the post the Lens keeps whole', () => {
+  test('a Lens opened from an Origin keeps the whole origin in view, as it does an article', async () => {
+    width(false);
+    const w = world();
+    w.play('k2');
+    open(w);
+    const mark = await markOf(2, 'Card 2');
+    /* The mark's nearest origin: the element that is measured to be kept beside the Lens. */
+    const origin = mark.parentElement!;
+    origin.classList.add('kb-origin');
+    const measured = vi.spyOn(origin, 'getBoundingClientRect');
+    await userEvent.click(mark);
+    await act(async () => {});
+    expect(measured, 'the origin is the post kept in view').toHaveBeenCalled();
+  });
+});
+
+describe('the buttons, odd and even', () => {
+  test('a foot with an odd number of tiles lets its last one span both columns, and an even one lets none', async () => {
+    width(false);
+    const w = world();
+    w.play('k2', w.spritey);
+    open(w);
+    await userEvent.click(await markOf(2, 'Card 2'));
+    await userEvent.click(whoButton());
+    const foot = lens().querySelector<HTMLElement>('.kb-lens-row-foot')!;
+    const tiles = () => [...foot.querySelectorAll<HTMLElement>('.kb-react-button, .kb-kit-tile')];
+    const spans = () => tiles().filter((t) => t.hasAttribute('data-kb-span'));
+    expect(tiles()).toHaveLength(4);
+    expect(spans()).toHaveLength(0);
+    /* One tile gone (a card with no moment to look at): three are left, and the last stands across the row. */
+    await act(async () => { foot.querySelector('.kb-lens-actions > .kb-kit-tile:nth-child(2)')!.remove(); });
+    expect(tiles()).toHaveLength(3);
+    await waitFor(() => expect(spans()).toEqual([tiles()[2]]));
+    expect(ruleOf(".kb-lens-row-foot [data-kb-span]")).toMatch(/grid-column:\s*1\s*\/\s*-1/u);
+  });
+});
+
+describe('the buttons', () => {
+  test('a play\'s four actions are one grid of two by two, React, Spin thread, As it landed, Go to post, every one a tile', async () => {
+    width(false);
+    const w = world();
+    w.play('k2', w.spritey);
+    open(w);
+    await userEvent.click(await markOf(2, 'Card 2'));
+    await userEvent.click(whoButton());
+    const foot = lens().querySelector<HTMLElement>('.kb-lens-row-foot')!;
+    const tiles = [...foot.querySelectorAll<HTMLElement>('.kb-react-button, .kb-kit-tile')];
+    expect(tiles.map((t) => t.textContent?.trim())).toEqual(['+ React', 'Spin thread', 'As it landed', 'Go to post']);
+    const grid = ruleOf('.kb-lens-row-foot');
+    expect(grid).toMatch(/display:\s*grid/u);
+    expect(grid).toMatch(/grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/u);
+    /* The wrappers around the tiles take no box, so each tile is a cell of the grid. */
+    expect(ruleOf('.kb-lens-row-foot .kb-reactions')).toMatch(/display:\s*contents/u);
+    expect(ruleOf('.kb-lens-actions')).toMatch(/display:\s*contents/u);
+    /* The React meta tile (36px) stands as tall as the kit tiles (44px), and the reaction tiles keep a line of their own over the grid. */
+    expect(ruleOf('.kb-lens-row-foot .kb-react-button')).toMatch(/min-height:\s*44px/u);
+    expect(ruleOf('.kb-lens-row-foot .kb-reaction-list')).toMatch(/grid-column:\s*1\s*\/\s*-1/u);
   });
 });

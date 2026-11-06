@@ -168,6 +168,10 @@ export async function snapshotPage(page: Page, manifest: BoardManifest, side: 'b
  */
 export async function pressControls(page: Page, controls: BoardManifest['press'] = [], timeout = 5000): Promise<void> {
   for (const control of controls) {
+    if ('scroll' in control) {
+      await page.evaluate(() => window.scrollTo(0, 0));
+      continue;
+    }
     const target = page.getByRole(control.role as Parameters<Page['getByRole']>[0], { name: new RegExp(`^${escapeRegExp(control.name)}$`, 'i') }).nth(control.nth ?? 0);
     try {
       if (control.fill !== undefined) await target.fill(control.fill, { timeout });

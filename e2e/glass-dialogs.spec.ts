@@ -88,7 +88,11 @@ for (const [label, viewport] of VIEWPORTS) {
             await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
             /* Whatever scrolls (the box itself, the overlay it stands in, the window) is scrolled to its foot. */
             /* What scrolls is the box where it has its own room (a popover, a float, a sheet), else the overlay it stands in. */
+            /* The Lens's body scrolls inside its fixed panel (backfill boards, Task 10): where the box's last child is a scroller of its own, that is what scrolls. */
+            const inner = box.lastElementChild as HTMLElement;
+            const innerScrolls = ['auto', 'scroll'].includes(getComputedStyle(inner).overflowY);
             const toFoot = () => {
+              if (innerScrolls) { inner.scrollTop = 1e6; return; }
               const own = box.scrollHeight > box.clientHeight + 1;
               (own ? box : box.parentElement!).scrollTop = 1e6;
             };
@@ -106,8 +110,9 @@ for (const [label, viewport] of VIEWPORTS) {
             const t = title.getBoundingClientRect();
             /* Under the body scrolling the bar has its ground (its own, or the backing it lays once it is stuck), so the body does not show through it. */
             const bs = getComputedStyle(bar);
-            const grounded = bs.backgroundColor !== 'rgba(0, 0, 0, 0)' || getComputedStyle(bar, '::before').opacity === '1';
-            const scrolled = [box, box.parentElement!].some((e) => e.scrollTop > 100);
+            /* A bar that stands outside the scrolling part (the Lens's) has nothing scrolling under it, so it needs no ground. */
+            const grounded = innerScrolls || bs.backgroundColor !== 'rgba(0, 0, 0, 0)' || getComputedStyle(bar, '::before').opacity === '1';
+            const scrolled = [box, box.parentElement!, inner].some((e) => e.scrollTop > 100);
             return { grounded, scrolled, closeInWindow: inWindow(at), titleInWindow: t.top >= -0.5 && t.top < window.innerHeight, hitsClose: hit !== null && close.contains(hit), barTop: Math.round(bar.getBoundingClientRect().top) };
           });
           expect(out.scrolled, 'the dialog was made to scroll').toBe(true);

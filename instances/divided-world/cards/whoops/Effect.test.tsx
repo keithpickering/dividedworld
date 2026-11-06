@@ -516,7 +516,7 @@ describe('the view the effect publishes (marks-and-the-lens design, sections 3 a
     expect(last(mount({ author: true }).shown).yours).toBe(true);
     expect(last(mount({ author: true, states: { 'play-1': clean() } }).shown).yours).toBe(false);
   });
-  test('the reader has one control, the hold, with the help sentence as its description; the author has two, the hold and a "Your tool" choice of Wash and Write in ink; no view has more', () => {
+  test('the reader has one control, the hold, with the help sentence as its description; the author has two, the hold and a "Your tools, as the author" choice of Wash and Write in ink; no view has more', () => {
     const reader = mount({ layers: 3 });
     const author = mount({ layers: 3, author: true });
     const [hold] = last(reader.shown).controls;
@@ -524,7 +524,7 @@ describe('the view the effect publishes (marks-and-the-lens design, sections 3 a
     expect(hold).toMatchObject({ kind: 'hold', label: 'Hold to scrub' });
     expect((hold as { describe?: string }).describe).toMatch(/hold Space or Enter.*never clears the ink all at once/iu);
     expect(last(author.shown).controls.map((c) => c.kind)).toEqual(['hold', 'choose']);
-    expect(last(author.shown).controls[1]).toMatchObject({ label: 'Your tool', options: [{ value: 'wash', label: 'Wash' }, { value: 'ink', label: 'Write in ink' }], value: 'wash' });
+    expect(last(author.shown).controls[1]).toMatchObject({ label: 'Your tools, as the author', options: [{ value: 'wash', label: 'Wash' }, { value: 'ink', label: 'Write in ink' }], value: 'wash' });
     for (const view of [...reader.shown, ...author.shown]) expect(view?.controls.length ?? 0).toBeLessThanOrEqual(2);
   });
   test('choosing a tool is the effect\'s tool state: the published choice follows it, and the next stroke is written in the layer\'s ink, not washed', () => {

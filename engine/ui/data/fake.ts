@@ -119,6 +119,11 @@ export interface Seed {
   cards(account: Id, held: Readonly<Record<string, number>>): void;
   /** The account's settled wallet, as a purchase or a card play leaves it between settlements (`settle` sets it at one, and dates it). Writes no wallet event: it is the state the seed starts from. */
   wallet(account: Id, balance: number): void;
+  /**
+   * An invite the account made, dated `at` (else now), so a list of them can be seeded: `used` is one that someone registered with, which keeps no code a
+   * page could show. It writes no Act and counts toward the account's open invites like a made one (`createInvite` is the action).
+   */
+  invite(account: Id, invite?: { at?: number; used?: boolean }): number;
   /** A purchase from the Vending Machine by an account, dated `at`: `buyCard` as that player, refused as it is, with its wallet event and card ledger row. */
   buy(account: Id, card: string, options?: { at?: number }): void;
   /** A character's Turn asked by its player, waiting for the next settlement; refused in the server's words like any other. */
@@ -2466,6 +2471,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     cards(account, held) { seeded(account).cards = { ...held }; },
     wallet(account, balance) { setWallet(account, balance); },
+    invite(account, o) {
+      if (!accounts.has(account)) throw new Error(`no such account ${account}`);
+      const at = o?.at ?? now();
+      const id = invites.length + 1;
+      /* A used invite's user is an account; the seed has none to name, so the owner stands in (nothing reads who). */
+      invites.push({ id, owner: account, code: newCode(id), createdAt: at, issuedAt: at, usedBy: o?.used === true ? account : null });
+      return id;
+    },
     buy(account, card, o) { accepted(asAt(account, o?.at, () => buyCard(card))); },
     turn(character, to, o) { accepted(as(ownerOf(character), () => turn(character, to, o?.loudness ?? 'silent', o?.showFrom ?? false, o?.showTo ?? false))); },
     estimate(account, e) {

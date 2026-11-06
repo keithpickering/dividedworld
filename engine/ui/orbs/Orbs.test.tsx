@@ -31,7 +31,45 @@ describe('the orbs', () => {
   });
   test('past the cap is said', () => {
     render(<Orbs settled={500} pending={140} cap={600} />);
-    expect(screen.getByText('+0.40 past the cap')).toBeInTheDocument();
+    expect(screen.getByText('+0.40 est. past the cap')).toBeInTheDocument();
+  });
+  describe.each(['main', 'phone'] as const)('a wallet whose estimate lies wholly past the cap, on the %s board layout (1440 and 390 wide)', (layout) => {
+    beforeEach(() => { document.documentElement.setAttribute('data-kb-layout', layout); });
+    afterEach(() => { document.documentElement.removeAttribute('data-kb-layout'); });
+    test('says the figure once, and the way out under it', () => {
+      render(<Orbs settled={600} pending={85} cap={600} />);
+      expect(screen.getAllByText(/\+0\.85/u)).toHaveLength(1);
+      expect(screen.getByText('+0.85 est. past the cap')).toBeInTheDocument();
+      expect(screen.getByText("Spend some before the settlement, or it won't fit.")).toBeInTheDocument();
+    });
+    test('names the figure to nobody twice: no separate estimate chip', () => {
+      render(<Orbs settled={600} pending={85} cap={600} />);
+      expect(screen.queryByText('+0.85 est.')).toBeNull();
+      expect(screen.queryByText('+0.85 past the cap')).toBeNull();
+    });
+  });
+  test('a cascade in progress does not split the figure: it is decided from the settled wallet, not the frame on show', () => {
+    document.documentElement.setAttribute('data-kb-layout', 'phone');
+    render(<Orbs settled={600} pending={85} cap={600} cascadeFrom={300} />);
+    expect(screen.getAllByText(/\+0\.85/u)).toHaveLength(1);
+    expect(screen.getByText('+0.85 est. past the cap')).toBeInTheDocument();
+    expect(screen.getByText("Spend some before the settlement, or it won't fit.")).toBeInTheDocument();
+    act(() => { vi.advanceTimersByTime(1500); });
+    expect(screen.getAllByText(/\+0\.85/u)).toHaveLength(1);
+    document.documentElement.removeAttribute('data-kb-layout');
+  });
+  test('an estimate only partly past the cap keeps its two figures, which differ, and gives the way out once', () => {
+    render(<Orbs settled={500} pending={140} cap={600} />);
+    expect(screen.getByText('+1.40 est.')).toBeInTheDocument();
+    expect(screen.getByText('+0.40 est. past the cap')).toBeInTheDocument();
+    expect(screen.getAllByText("Spend some before the settlement, or it won't fit.")).toHaveLength(1);
+  });
+  test('within the cap there is no way out to say, and a row that leaves the figures to its page does not say it either', () => {
+    const { unmount } = render(<Orbs settled={500} pending={50} cap={600} />);
+    expect(screen.queryByText(/Spend some/u)).toBeNull();
+    unmount();
+    render(<Orbs settled={600} pending={85} cap={600} figures={false} />);
+    expect(screen.queryByText(/Spend some/u)).toBeNull();
   });
   test('a wallet past its cap marks its last orb, hidden from a screen reader since the name says it', () => {
     render(<Orbs settled={500} pending={140} cap={600} />);

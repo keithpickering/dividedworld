@@ -29,12 +29,12 @@ const isGlass = (path: string) => GLASS.has(path);
 /* What the backend says of the player's alerts: the count, and the channel the player's account hears (the test sends on it). */
 const alerts: { unread: number; account: AccountListener | null; subscribed: number; reads: number } = { unread: 0, account: null, subscribed: 0, reads: 0 };
 
-function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b', 'Mrs. Hooligan', 'face')], page = <p>page</p>, registrationMode: 'invite' | 'open' | 'closed' = 'invite') {
+function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b', 'Mrs. Hooligan', 'face')], page = <p>page</p>, registrationMode: 'invite' | 'open' | 'closed' = 'invite', balance = 240) {
   const api = {
     session: async () => ({ signedIn, account: signedIn ? 'acc' : null }),
     onSession: () => () => {},
     myCharacters: async () => characters,
-    wallet: async () => ({ balance: 240, cap: 600 }),
+    wallet: async () => ({ balance, cap: 600 }),
     myCards: async () => [{ card: 'whoops', held: 2 }, { card: 'stick-around', held: 1 }],
     estimate: async () => ({ entries: [{ character: 'a', reason: 'face.cheered', amount: 85 }], lines: [], asOf: null, freshAfter: null }),
     characters: vi.fn(async (ids: readonly string[]) => ids.map((id) => pub(id, id))),
@@ -169,6 +169,15 @@ describe('the HUD: the glass, docked at the bottom', () => {
     width(at - 1);
     setup();
     expect(await within(await hud()).findByRole('combobox', { name: 'Posting as' })).toBeInTheDocument();
+  });
+  test.each([[1440, 'main'], [390, 'phone']] as const)('a full wallet with an estimate on top says the figure once and the way out under it, at %i wide', async (px, layout) => {
+    width(px);
+    setup(true, undefined, undefined, undefined, 600);
+    const h = await hud();
+    await waitFor(() => expect(h.ownerDocument.documentElement).toHaveAttribute('data-kb-layout', layout));
+    await within(h).findByText('+0.85 est. past the cap');
+    expect(within(h).getAllByText(/\+0\.85/u)).toHaveLength(1);
+    expect(within(h).getByText("Spend some before the settlement, or it won't fit.")).toBeInTheDocument();
   });
   test('marks the root with the board\'s layout and the scale the Main board\'s is drawn at, which the stylesheets read', async () => {
     const root = document.documentElement;
