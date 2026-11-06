@@ -20,8 +20,6 @@ import { BRUSH_PX } from './scrub.ts';
 
 export interface Pt { readonly x: number; readonly y: number }
 
-/** The bench's brush, in CSS px, for where suds scatter around the stroke. */
-
 const MAX_PARTS = 900;
 const LATHER_S = 2.2;
 const DRIPS = 2;
@@ -262,7 +260,10 @@ function step(t: number): void {
   }
   const by = new Map<object, Part[]>();
   for (const p of parts) { const l = by.get(p.host); if (l) l.push(p); else by.set(p.host, [p]); }
-  for (const [host, reg] of hosts) drawHost(host, reg, by.get(host) ?? [], t, dt);
+  /* One post's canvas that throws costs only that post its frame. */
+  for (const [host, reg] of hosts) {
+    try { drawHost(host, reg, by.get(host) ?? [], t, dt); } catch (err) { console.error(err); }
+  }
 }
 
 const busy = (t: number) => parts.length > 0 || [...hosts.values()].some((r) => r.wetUntil > t);
