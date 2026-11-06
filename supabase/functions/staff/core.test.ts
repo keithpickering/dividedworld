@@ -49,6 +49,7 @@ function fakeDb(w: World = {}) {
     moves: [] as { id: number; staff: string; cause: string; move: any }[],
     allowance: new Map<string, number>(),
     ticked: new Set<string>(),
+    records: [] as { cause_act: string; duty: string; staff: string; record: any }[],
   };
   const standing = w.standing ?? { [MON]: mod(2), [SIGH]: mod(0) };
   for (const [k, s] of Object.entries(standing)) state.allowance.set(k, s.allowance);
@@ -91,6 +92,11 @@ function fakeDb(w: World = {}) {
           const m = { id: state.moves.length + 1, staff: staffKey, cause: String(args.cause_act), move: args.move };
           state.moves.push(m);
           return { move: m.id, queued: true, existing: false } as T;
+        }
+        case 'record_staff_call': {
+          if (state.records.some((r) => r.cause_act === args.cause_act && r.staff === args.staff)) return { recorded: false } as T;
+          state.records.push({ cause_act: String(args.cause_act), duty: String(args.duty), staff: String(args.staff), record: args.record });
+          return { recorded: true } as T;
         }
         case 'file_visit': {
           const v = String(args.visit_act);
@@ -187,6 +193,29 @@ test('an expiry past ruleDaysMost is clamped with a trim on the record; a board 
   assert.deepEqual(second!.dropped, [{ path: 'move.params.board', predicate: 'onBeat' }]);
   assert.equal(d.of('file_visit').length, 2, 'both visits file');
   assert.ok(d.of('file_visit')[1]!.line, 'a dropped move does not cost the line');
+});
+
+test('the trims and drops of a judged call are kept in the database, once, before the move and the filing', async () => {
+  const d = fakeDb({ visits: [due(V1, P1)] });
+  const m = fakeModels(() => ({ words: 'Filed.', move: move({ expires_in_hours: 900 }) }));
+  await run(d, m);
+  assert.equal(d.state.records.length, 1);
+  const r = d.state.records[0]!;
+  assert.deepEqual([r.cause_act, r.duty, r.staff], [V1, 'filing', MON]);
+  assert.deepEqual(r.record.trims, [{ path: 'move.expires_in_hours', predicate: 'atMost(168)', before: 900, after: 168 }]);
+  assert.equal(r.record.line, 'model');
+  const order = d.calls.map((c) => c.fn).filter((f) => ['record_staff_call', 'apply_mod_move', 'file_visit'].includes(f));
+  assert.deepEqual(order, ['record_staff_call', 'apply_mod_move', 'file_visit']);
+  // A drop is on the record too, with its predicate; a stock line (no call) has none.
+  const e = fakeDb({ visits: [due(V2, P2, SIGH)] });
+  await run(e, fakeModels(() => ({ words: 'Filed.', move: move() })));
+  assert.deepEqual(e.state.records[0]!.record.dropped, [{ path: 'move', predicate: 'allowance' }]);
+  const f = fakeDb({ visits: [due(V1, P1)] });
+  await run(f, fakeModels(() => new Error('overloaded')));
+  assert.match(f.state.records[0]!.record.why, /overloaded/, 'a failed call is on the record');
+  const g = fakeDb({ visits: [due(V1, P1, CLERK)], standing: { [CLERK]: mod(1, { office: 'member' }) } });
+  await run(g, fakeModels(() => ({ words: 'x' })));
+  assert.equal(g.state.records.length, 0, 'no call, no record');
 });
 
 test('with no allowance the Mod is offered no move, and a move it gives anyway is dropped (recorded) and never sent', async () => {

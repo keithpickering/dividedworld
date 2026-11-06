@@ -104,6 +104,14 @@ create function pg_temp.cause(label text) returns uuid language sql as $$
   select tests.post(pg_temp.poster(), tests.thread('Cause ' || label), 'A post.')
 $$;
 
+create function pg_temp.visit(staff text, post uuid, ends timestamptz, rule text default 'Rule 1: no all-caps posts') returns uuid language plpgsql as $$
+declare t uuid := (select thread from acts where id = post);
+begin
+  return (write_staff_act(staff, 'visit', t, post, jsonb_build_object(
+    'charges', jsonb_build_array(jsonb_build_object('rule', rule, 'rule_number', 1, 'board', (select board from threads where id = t), 'band', 'minor', 'cause', 'rule', 'about_act', post::text)),
+    'ends_at', ends, 'challenge', jsonb_build_object('kind', 'distraction'), 'line', 'Looking.')) ->> 'id')::uuid;
+end $$;
+
 -- ---- 1. A Mod's move is queued as the Mod's, now, and spends the allowance ----
 do $$
 declare
@@ -181,6 +189,66 @@ begin
   if got ->> 'move' is null or mod_allowance('mm-m2') is distinct from 0 then raise exception 'mm-m2 could not spend its allowance: %', got; end if;
 end $$;
 
+-- ---- 3b. A malformed move is a refusal, not a raise; a move does not ride on a visit that ended any way but filed ----
+do $$
+declare
+  general uuid := pg_temp.board('mm-general');
+  c uuid := pg_temp.cause('seven');
+  t uuid := (select thread from acts where id = c);
+  got jsonb;
+  v1 uuid; v2 uuid; v3 uuid;
+  bad text;
+begin
+  perform pg_temp.meet('2031-02-03T09:00:00Z', jsonb_build_array(pg_temp.order_for('mm-m2', jsonb_build_array(general), 3)));
+  foreach bad in array array['not-a-uuid', '', '11111111-1111-4111-8111-11111111111Z'] loop
+    got := apply_mod_move('mm-m2', jsonb_set(pg_temp.mv(general), '{params,board}', to_jsonb(bad)), c);
+    if got ->> 'move' is not null or got ->> 'reason' is null then raise exception 'a board "%" was not refused with a reason: %', bad, got; end if;
+  end loop;
+  got := apply_mod_move('mm-m2', jsonb_set(pg_temp.mv(general), '{params,board}', '12345'::jsonb), c);
+  if got ->> 'move' is not null or got ->> 'reason' is null then raise exception 'a numeric board was not refused: %', got; end if;
+  got := apply_mod_move('mm-m2', jsonb_build_object('kind', 'setRule', 'params', '[1]'::jsonb, 'expires_in_hours', 48, 'why', 'x'), c);
+  if got ->> 'move' is not null or got ->> 'reason' is null then raise exception 'array params were not refused: %', got; end if;
+  if mod_allowance('mm-m2') is distinct from 3 then raise exception 'refusals spent the allowance'; end if;
+
+  v1 := pg_temp.visit('mm-m2', pg_temp.cause('v1'), now() - interval '1 hour');
+  v2 := pg_temp.visit('mm-m2', pg_temp.cause('v2'), now() - interval '1 hour');
+  v3 := pg_temp.visit('mm-m2', pg_temp.cause('v3'), now() - interval '1 hour');
+  perform end_visit(v1, 'intercepted', null, 'Talked down.');
+  perform end_visit(v2, 'reversed', null, 'Reversed.');
+  perform end_visit(v3, 'trapped', null, 'Trapped.');
+  foreach bad in array array[v1::text, v2::text, v3::text] loop
+    got := apply_mod_move('mm-m2', pg_temp.mv(general), bad::uuid);
+    if got ->> 'move' is not null or got ->> 'reason' not like '%never filed%' then raise exception 'a move rode on a visit that did not file: %', got; end if;
+  end loop;
+  if exists (select 1 from queued_moves where cause_act in (v1, v2, v3)) then raise exception 'a move was queued on an unfiled visit'; end if;
+  -- A filed visit's move is allowed (a retry after the filing), and an open visit's is the normal case.
+  v1 := pg_temp.visit('mm-m2', pg_temp.cause('v4'), now() - interval '1 hour');
+  perform file_visit(v1, 'Filed.');
+  got := apply_mod_move('mm-m2', pg_temp.mv(general), v1);
+  if got ->> 'move' is null then raise exception 'a move on a filed visit was refused: %', got; end if;
+  perform t;
+end $$;
+
+-- ---- 3c. The call's record: trims and drops are kept in the database, once per call, never edited ----
+do $$
+declare
+  c uuid := pg_temp.cause('rec');
+  got jsonb;
+  said text;
+begin
+  got := record_staff_call(c, 'filing', 'mm-m1', '{"trims": [{"path": "move.expires_in_hours", "predicate": "atMost(168)", "before": 900, "after": 168}], "dropped": []}');
+  if (got ->> 'recorded')::boolean is distinct from true then raise exception 'the record was not kept: %', got; end if;
+  if (select record #>> '{trims,0,predicate}' from staff_call_records where cause_act = c and duty = 'filing' and staff = 'mm-m1') is distinct from 'atMost(168)' then raise exception 'the trim is not on the record'; end if;
+  got := record_staff_call(c, 'filing', 'mm-m1', '{"trims": [], "dropped": []}');
+  if (got ->> 'recorded')::boolean is distinct from false then raise exception 'a retry wrote a second record: %', got; end if;
+  if (select count(*) from staff_call_records where cause_act = c) is distinct from 1::bigint then raise exception 'two records for one call'; end if;
+  said := pg_temp.refusal(format('update staff_call_records set record = ''{}'' where cause_act = %L', c));
+  if said is null then raise exception 'a call record was edited'; end if;
+  said := pg_temp.refusal(format('delete from staff_call_records where cause_act = %L', c));
+  if said is null then raise exception 'a call record was removed'; end if;
+  if pg_temp.refusal(format('select record_staff_call(%L, ''chatter'', ''mm-m1'', ''{}'')', c)) is null then raise exception 'a record for a duty that is no Mod duty was kept'; end if;
+end $$;
+
 -- ---- 4. A Mod's rule lasts at most ruleDaysMost days, in SQL ----
 do $$
 declare
@@ -233,14 +301,6 @@ begin
 end $$;
 
 -- ---- 6. filings_due, mod_standing, rules_in_force, filing_calls_today ----
-create function pg_temp.visit(staff text, post uuid, ends timestamptz, rule text default 'Rule 1: no all-caps posts') returns uuid language plpgsql as $$
-declare t uuid := (select thread from acts where id = post);
-begin
-  return (write_staff_act(staff, 'visit', t, post, jsonb_build_object(
-    'charges', jsonb_build_array(jsonb_build_object('rule', rule, 'rule_number', 1, 'board', (select board from threads where id = t), 'band', 'minor', 'cause', 'rule', 'about_act', post::text)),
-    'ends_at', ends, 'challenge', jsonb_build_object('kind', 'distraction'), 'line', 'Looking.')) ->> 'id')::uuid;
-end $$;
-
 do $$
 declare
   games uuid := pg_temp.board('mm-games');
@@ -315,7 +375,7 @@ begin
     perform set_config('role', who, true);
     foreach fn in array array[
       call_move, 'select filings_due(5)', 'select mod_standing(''mm-m1'')',
-      'select rules_in_force(gen_random_uuid())', 'select filing_calls_today()', 'select schedule_staff()'] loop
+      'select rules_in_force(gen_random_uuid())', 'select filing_calls_today()', 'select schedule_staff()', 'select record_staff_call(gen_random_uuid(), ''filing'', ''mm-m1'', ''{}'')'] loop
       denied := false;
       begin execute fn; exception when insufficient_privilege then denied := true; end;
       if not denied then raise exception '% can call %', who, fn; end if;

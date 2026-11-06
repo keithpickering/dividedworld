@@ -87,7 +87,7 @@ export interface ModBotSettings {
   readonly reportsPerDay: number;
   /** The most Mod judgments (patrols, reports, appeals) the instance pays for in a day. */
   readonly judgmentsPerDay: number;
-  /** The most filing lines (a visit's arrival and filing) the instance pays for in a day. */
+  /** The most filing calls the instance pays for in a day: one a filing, and a second for an old voice's move. Counted from the ledger. */
   readonly filingLinesPerDay: number;
   /** What an appeal costs, and is refunded when it is upheld. */
   readonly appealPrice: Hundredths;

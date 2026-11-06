@@ -209,6 +209,10 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into staff_orders (meeting, staff, boards, order_line, allowance) select max(id), 'exp-bot', '{}', 'Watch the boards.', 0 from meetings;
       perform write_staff_act('exp-bot', 'visit', t, p, jsonb_build_object('charges', jsonb_build_array(jsonb_build_object('rule_number', 1, 'board', gen, 'band', 'minor', 'cause', 'rule', 'about_act', p::text)),
         'ends_at', now() + interval '3 hours', 'challenge', jsonb_build_object('kind', 'distraction'), 'line', 'Looking.'));
+      -- The Mod Bots' settings (so the filing run's job exists, 0104) and one judged call's record.
+      insert into settings (key, value) values ('modBots', '{"allowanceMost": 3, "ruleDaysMost": 7, "visitHours": {"least": 2, "most": 12}, "patrolsPerDay": 6, "patrolSample": 5, "reportPrice": 25, "reportsPerDay": 3, "judgmentsPerDay": 60, "filingLinesPerDay": 60, "appealPrice": 50, "tailHours": 24, "cap": {"punishments": 3, "days": 7}, "filingCron": "*/5 * * * *", "filingGraceMinutes": 10}')
+        on conflict (key) do update set value = excluded.value;
+      perform record_staff_call(p, 'filing', 'exp-bot', '{"trims": [{"path": "move.expires_in_hours", "predicate": "atMost(168)", "before": 900, "after": 168}], "dropped": [], "calls": 1}');
       insert into visit_draw_failures (post_act, rule_number, error) values (p, 1, 'planted: carried across');
       insert into visit_file_failures (visit_act, error) select id, 'planted: carried across' from acts where kind = 'visit' and target_act_id = p;
       -- The open season revealed at its end, as the settlement of its last window would.
@@ -220,7 +224,7 @@ test('an instance exported and imported into a fresh database is the same instan
     insert into public.export_probe values (1, 12.50, array['a,b', 'q"uote', null], 'astral 😀 and \\. alone');`);
   const before = contents(from);
   // The staff roster's tables hold a row in the fixture, so the comparison below carries each (an empty table would round-trip as well, and prove nothing).
-  for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals']) {
+  for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records']) {
     const rows = before.get(`public.${t}`);
     assert.ok(rows !== undefined && rows !== '[]', `${t} holds a row in the fixture (got ${rows === undefined ? 'no such table' : rows})`);
   }
@@ -406,7 +410,7 @@ test('an instance exported and imported into a fresh database is the same instan
     const after = contents(fresh.toString());
     assert.deepEqual([...after.keys()], [...before.keys()]);
     for (const [t, rows] of before) assert.equal(after.get(t), rows, `${t} differs after the round trip`);
-    for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals']) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
+    for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records']) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
     // The contact an admin set is the same contact in the imported instance, as the page's read answers it (0081).
     const contact = (url: string) => psqlOn(url, `select admin_contact()::text`);
     assert.match(contact(from), /Exported mail/, 'the exported instance holds the contact');
@@ -443,7 +447,7 @@ test('an instance exported and imported into a fresh database is the same instan
 
     // The jobs that run the instance are there, each scheduled from the imported settings: the
     // settlement's, the view count's, the Boss's meeting and the pool's chatter.
-    assert.equal(psqlOn(fresh.toString(), `select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'kayfabb-%'`), 'kayfabb-chatter,kayfabb-meet,kayfabb-settle,kayfabb-system-tick,kayfabb-view-counts');
+    assert.equal(psqlOn(fresh.toString(), `select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'kayfabb-%'`), 'kayfabb-chatter,kayfabb-meet,kayfabb-settle,kayfabb-staff,kayfabb-system-tick,kayfabb-view-counts');
 
     // And a second import onto what is no longer a fresh instance is refused, naming why.
     const twice = await run('import-instance.mjs', ['--from', dir, '--to', fresh.toString(), '--storage', newStore.url]);

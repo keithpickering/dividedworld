@@ -27,7 +27,7 @@
  * retries a call. A call that failed or was rejected files the stock line. A database error on one visit is recorded and the run goes on to the next (the visit stays
  * open for the next run, or the tick); a ledger row that could not be written, or a transport failure to the database, stops the run: an unrecorded call is not trusted.
  *
- * **Where the trims and the drops go.** The call's ledger row holds the model layer's result. The trims `repairFiling` makes (a line cut, an expiry clamped, a why
+ * **Where the trims and the drops go.** The call's ledger row holds the model layer's result; `record_staff_call` keeps the repair's, once per call, in `staff_call_records`. The trims `repairFiling` makes (a line cut, an expiry clamped, a why
  * cut) and what it drops (a move off the beat or with no allowance, a line that was blank) are on the filing's record in the result and in the function's console.warn
  * (index.ts); what the database refused is `move.reason` there. `apply_mod_move` returns its own clamp.
  *
@@ -268,6 +268,11 @@ export async function runFilings(db: Db, models: Models, instance: Instance, slo
           dropped.push({ path: 'move', predicate: `callFailed: ${said(e)}` });
         }
       }
+    }
+
+    // The call's record, in the database: the trims and drops, once per call (a retry finds it), before anything that could fail after it.
+    if (calls > 0) {
+      await db.rpc('record_staff_call', { cause_act: v.visit, duty: 'filing', staff: v.staff, record: { line: line === null ? 'stock' : 'model', ...(why ? { why } : {}), trims, dropped, calls } });
     }
 
     // The move first (see the header): the database's guard decides it, and a refusal costs the filing nothing.

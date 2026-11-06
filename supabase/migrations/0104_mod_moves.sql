@@ -9,9 +9,10 @@
 --   queued_moves_guard       (0101) also refusing a rule a Mod sets for longer than `modBots.ruleDaysMost` days, so the cap holds in SQL and not only in the engine's
 --                            repair (Task 4's review), and refusing a change to cause_act.
 --   apply_mod_move           queues the Mod's move as the Mod's, going live now, through the guard: the office, the beat, the allowance (spent by queueing it, under the
---                            Mod's lock) and the cap. It writes nothing and says why when the guard refuses, and never raises for a refusal: a move that does not hold
---                            must not cost the filing it rode in on. An expiry past the cap is clamped here first, and the clamp is returned (`trimmed`). It is idempotent
+--                            Mod's lock) and the cap. It writes nothing and says why when the guard refuses or the move is malformed, and it also refuses a cause that is a visit that
+--                            ended any way but filed. It raises only for a missing cause_act (a caller's bug): a move that does not hold must not cost the filing it rode in on. An expiry past the cap is clamped here first, and the clamp is returned (`trimmed`). It is idempotent
 --                            on the cause.
+--   staff_call_records / record_staff_call   the repair's trims and drops for each judged call, kept once and never edited.
 --   filings_due              the visits whose end is past and that are still open, oldest first, bounded: what the filing run reads. Never before ends_at (the tick's grace,
 --                            `filingGraceMinutes`, gives the run the first chance), and never a visit the tick has already failed to file (it is the tick's, and goes behind).
 --   mod_standing             a persona's office, what it has left to spend, the Boss's last order to it and the boards of its beat.
@@ -68,6 +69,13 @@ begin
       -- A rule ends by its expiry, so none waits on an admin; the board is stored in lowercase, the one form numbering and indexes compare.
       if new.expires_at is null then raise exception 'a rule needs an expiry' using errcode = '23514'; end if;
       if jsonb_typeof(new.params -> 'board') = 'string' then new.params := jsonb_set(new.params, '{board}', to_jsonb(lower(new.params ->> 'board'))); end if;
+      -- The board's shape comes before anything casts it: a board that is no uuid is a malformed rule, never an error in a cast.
+      if jsonb_typeof(new.params -> 'board') is distinct from 'string' and new.params -> 'board' is not null and new.params -> 'board' <> 'null'::jsonb then
+        raise exception 'a rule is malformed: the board is no board of the players' using errcode = '23514';
+      end if;
+      if jsonb_typeof(new.params -> 'board') = 'string' and (new.params ->> 'board') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+        raise exception 'a rule is malformed: the board is no board of the players' using errcode = '23514';
+      end if;
       problem := rule_params_problem(new.params);
       if problem is not null then raise exception 'a rule is malformed: %', problem using errcode = '23514'; end if;
       problem := rule_conflict(nullif(new.params ->> 'board', '')::uuid, new.params ->> 'predicate', nullif(new.params -> 'param', 'null'::jsonb));
@@ -164,6 +172,10 @@ begin
     trimmed := trimmed || jsonb_build_object('expires_in_hours', jsonb_build_object('before', hours, 'after', least));
     hours := least;
   end if;
+  -- A move does not ride on a filing that never happened: a visit ended any way but filed (talked down, trapped, reversed) draws no move.
+  if exists (select 1 from acts e where e.kind = 'visit_end' and e.target_act_id = apply_mod_move.cause_act and e.payload ->> 'outcome' is distinct from 'filed') then
+    return jsonb_build_object('move', null, 'queued', false, 'reason', 'that visit ended and was never filed, so it draws no move');
+  end if;
   select * into ord from staff_orders o where o.staff = apply_mod_move.staff order by o.id desc limit 1;
   if not found then return jsonb_build_object('move', null, 'queued', false, 'reason', apply_mod_move.staff || ' has had no order from the Boss'); end if;
 
@@ -174,14 +186,53 @@ begin
             coalesce((select k.structural from move_kinds k where k.key = kind), false), apply_mod_move.cause_act)
     returning id into made;
   exception
-    when check_violation then
-      return jsonb_build_object('move', null, 'queued', false, 'reason', sqlerrm);
     when unique_violation then
       select q.id into existing from queued_moves q where q.staff = apply_mod_move.staff and q.cause_act = apply_mod_move.cause_act;
       return jsonb_build_object('move', existing, 'queued', false, 'existing', true);
+    when others then
+      -- The guard's refusals (check_violation) and a malformed move (a cast, a null, a wrong type) alike: a bad answer is a refusal, so the filing it rode in on is not left open to pay for the call again.
+      return jsonb_build_object('move', null, 'queued', false, 'reason', sqlerrm);
   end;
   return jsonb_build_object('move', made, 'queued', true, 'existing', false) || case when trimmed = '{}'::jsonb then '{}'::jsonb else jsonb_build_object('trimmed', trimmed) end;
 end $$;
+
+-- -------------------------------------------------------------------------------------------- the call's record ----
+
+-- What a judged call came to, kept where an admin can read it ("Cost is a column": the ledger holds the model layer's result, this holds the repair's): the trims made and
+-- what was dropped, with the predicate that failed, one row per call (the Act that drew it, the duty, the Mod). Written once, never edited. No client reads it.
+create table staff_call_records (
+  cause_act uuid not null references acts (id),
+  duty text not null check (duty in ('filing', 'reportJudge', 'patrolJudge', 'appeal')),
+  staff text not null references characters (staff),
+  record jsonb not null check (jsonb_typeof(record) = 'object'),
+  at timestamptz not null default now(),
+  primary key (cause_act, duty, staff)
+);
+alter table staff_call_records enable row level security;
+revoke all on staff_call_records from public, anon, authenticated;
+create function staff_call_records_append_only() returns trigger
+language plpgsql set search_path = public, pg_temp as $$
+begin
+  raise exception 'a call''s record is never edited or removed (%)', tg_op using errcode = 'P0001';
+end $$;
+create trigger staff_call_records_no_update before update or delete on staff_call_records for each row execute function staff_call_records_append_only();
+create trigger staff_call_records_no_truncate before truncate on staff_call_records for each statement execute function staff_call_records_append_only();
+alter table staff_call_records enable always trigger staff_call_records_no_update;
+alter table staff_call_records enable always trigger staff_call_records_no_truncate;
+revoke execute on function staff_call_records_append_only() from public, anon, authenticated;
+
+-- Keeps a call's record once: a retry of the same call finds it and writes nothing. Returns {recorded}.
+create function record_staff_call(cause_act uuid, duty text, staff text, record jsonb) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare n integer;
+begin
+  insert into staff_call_records (cause_act, duty, staff, record) values (record_staff_call.cause_act, record_staff_call.duty, record_staff_call.staff, record_staff_call.record)
+  on conflict do nothing;
+  get diagnostics n = row_count;
+  return jsonb_build_object('recorded', n = 1);
+end $$;
+revoke execute on function record_staff_call(uuid, text, text, jsonb) from public, anon, authenticated;
+grant execute on function record_staff_call(uuid, text, text, jsonb) to service_role;
 
 -- ------------------------------------------------------------------------------------------------ the filing run ----
 
