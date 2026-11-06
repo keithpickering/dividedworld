@@ -28,7 +28,7 @@ import { useEffect, useRef } from 'react';
 import { motionReduced } from '../../../../engine/ui/appearance.ts';
 import type { EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { bandFor, type Band } from '../../../../engine/ui/shine/band.ts';
-import { burst, cling, drawBurst, drawLoose, loose, makeFlakes, release, stepBurst, type Flakes } from '../../../../engine/ui/shine/flakes.ts';
+import { burst, cling, dropLoose, drawBurst, drawLoose, landAll, makeFlakes, release, stepBurst, type Flakes } from '../../../../engine/ui/shine/flakes.ts';
 import { watchInView } from '../../../../engine/ui/shine/inView.ts';
 import { REST, type Light } from '../../../../engine/ui/shine/light.ts';
 import { register, unregister, wake } from '../../../../engine/ui/shine/loop.ts';
@@ -79,7 +79,7 @@ export function GlitterBombEffect({ post, plays, still, children }: EffectProps)
       if (flakes) return flakes;
       if (box.w <= 0 || box.h <= 0) return null;
       flakes = makeFlakes({ seed, box, inks: GLITTER_INKS, holo: GLITTER_HOLO, density: AREA, glint: GLITTER_GLINT });
-      if (fired) { burst(flakes, 0); release(flakes); }
+      if (fired) landAll(flakes);
       if (!still) unclung = cling.register(el, { sticky: true, flakes, landed: redraw });
       return flakes;
     };
@@ -143,7 +143,7 @@ export function GlitterBombEffect({ post, plays, still, children }: EffectProps)
       stopWatching();
       if (!still) unregister(el);
       drop();
-      loose(el).length = 0;
+      dropLoose(el);
     };
   }, [seed, still]);
 

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tokensOf, ratio } from '../contrast.ts';
 import { POST_INK } from './band.ts';
-import { cling, IDLE_MS, loose, MAX_CARRIED, MAX_LOOSE, makeFlakes, sweepLoose } from './flakes.ts';
+import { cling, dropLoose, IDLE_MS, loose, MAX_CARRIED, MAX_LOOSE, makeFlakes, sweepLoose } from './flakes.ts';
 
 /* Divided World's glint (the engine may not import the instance, so the tests carry a copy). */
 const GLINT = '#ffffff';
@@ -224,6 +224,17 @@ describe('the cling layer', () => {
     const bad = hex.flatMap((c) => POST_INK.filter((ink) => ratio(light[ink]!, c) < 4.5).map((ink) => `${c} on ${ink}`));
     expect(bad.slice(0, 5)).toEqual([]);
     expect([...drawn.strokes].filter((c) => c.startsWith('#000000'))).toEqual([]);
+  });
+
+  it('dropping a host frees its share of the 300 for the others', () => {
+    const { b } = page();
+    for (let n = 0; n < 40; n++) carryOver();
+    expect(loose(b)).toHaveLength(MAX_LOOSE);
+    dropLoose(b);
+    expect(loose(b)).toHaveLength(0);
+    for (let n = 0; n < 40; n++) carryOver();
+    expect(loose(b)).toHaveLength(MAX_LOOSE);
+    sweepLoose();
   });
 
   it('keeps the oldest-first cap of 300 across two hosts', () => {

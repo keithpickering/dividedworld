@@ -27,6 +27,8 @@ vi.mock('../../../../engine/ui/shine/flakes.ts', async (importOriginal) => {
     stepBurst: vi.fn(real.stepBurst),
     drawBurst: vi.fn(real.drawBurst),
     release: vi.fn(real.release),
+    landAll: vi.fn(real.landAll),
+    dropLoose: vi.fn(real.dropLoose),
     cling: {
       ...real.cling,
       register: (host: HTMLElement, options: unknown) => { spies.clingRegister(host, options); return () => spies.clingUnregister(host); },
@@ -45,6 +47,8 @@ const makeFlakes = vi.mocked(flakesModule.makeFlakes);
 const burst = vi.mocked(flakesModule.burst);
 const drawBurst = vi.mocked(flakesModule.drawBurst);
 const release = vi.mocked(flakesModule.release);
+const landAll = vi.mocked(flakesModule.landAll);
+const dropLoose = vi.mocked(flakesModule.dropLoose);
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const read = (p: string) => fs.readFileSync(path.resolve(here, p), 'utf8');
@@ -74,8 +78,9 @@ class FakeObserver {
   takeRecords() { return []; }
 }
 /** The post comes into view with `ratio` of it showing (0 is out of view): the loop's any-overlap observer and the burst's 40% one hear it. */
-const see = (ratio: number) => act(() => {
-  for (const o of observers) for (const el of o.seen) o.cb([{ target: el, isIntersecting: ratio > 0, intersectionRatio: ratio } as IntersectionObserverEntry], o as unknown as IntersectionObserver);
+const see = (ratio: number, fill?: number) => act(() => {
+  const geometry = fill === undefined ? {} : { intersectionRect: { height: fill * 800 }, rootBounds: { height: 800 } };
+  for (const o of observers) for (const el of o.seen) o.cb([{ target: el, isIntersecting: ratio > 0, intersectionRatio: ratio, ...geometry } as IntersectionObserverEntry], o as unknown as IntersectionObserver);
 });
 class FakeResize { observe() {} unobserve() {} disconnect() {} }
 
@@ -97,7 +102,7 @@ beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(() => 120);
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => ctx) as never);
   document.documentElement.setAttribute('data-kb-motion', 'full');
-  for (const f of [makeFlakes, burst, drawBurst, release, flakesModule.stepBurst as ReturnType<typeof vi.fn>]) f.mockClear();
+  for (const f of [makeFlakes, burst, drawBurst, release, landAll, dropLoose, flakesModule.stepBurst as ReturnType<typeof vi.fn>]) f.mockClear();
   Object.values(spies).forEach((s) => s.mockClear());
   flakesModule.burstProbe.reset();
 });
@@ -175,9 +180,21 @@ describe('Glitter Bomb', () => {
     expect(burst.mock.calls.filter(([f]) => f !== first && f.flying > 0)).toHaveLength(0);
   });
 
+  test('a post taller than 2.5 viewports still bursts: its visible height fills 40% of the viewport though its own ratio stays 0.3', () => {
+    render(<GlitterBombEffect {...props()} />);
+    see(0.1, 0.1);
+    frames(3);
+    const first = lastFlakes();
+    expect(first.fired).toBe(false);
+    see(0.3, 0.5);
+    frames(2, 100);
+    expect(burst.mock.calls.filter(([f]) => f === first)).toHaveLength(1);
+    expect(first.flying).toBeGreaterThan(0);
+  });
+
   test('the burst second observer is at 40%', () => {
     render(<GlitterBombEffect {...props()} />);
-    expect(observers.some((o) => JSON.stringify(o.opts?.threshold) === '[0,0.4]' && o.seen.has(box()))).toBe(true);
+    expect(observers.some((o) => Array.isArray(o.opts?.threshold) && o.opts.threshold.includes(0.4) && o.seen.has(box()))).toBe(true);
   });
 
   test('under reduced motion there is no burst: every flake is placed at once, and nothing is drawn over the words', () => {
@@ -197,6 +214,8 @@ describe('Glitter Bomb', () => {
     const f = lastFlakes();
     expect(f.flying).toBe(0);
     expect(f.settled.length).toBe(f.total);
+    expect(landAll).toHaveBeenCalledWith(f);
+    expect(burst).not.toHaveBeenCalled();
     expect(drawBurst).not.toHaveBeenCalled();
     expect(spies.clingRegister).not.toHaveBeenCalled();
     fireEvent.pointerMove(box(), { clientX: 10, clientY: 10, pointerType: 'mouse' });
@@ -223,6 +242,7 @@ describe('Glitter Bomb', () => {
     r.unmount();
     expect(spies.clingUnregister).toHaveBeenCalledWith(el);
     expect(flakesModule.loose(el)).toHaveLength(0);
+    expect(dropLoose).toHaveBeenCalledWith(el);
     expect(release).toHaveBeenCalled();
     expect(observers.every((o) => o.seen.size === 0)).toBe(true);
     const drawsBefore = probe.draws(el);
@@ -251,7 +271,8 @@ describe('Glitter Bomb', () => {
     expect(again.settled.length).toBe(again.total);
     expect(again.total).toBe(first.total);
     expect(again.settled.map((x) => [x.x, x.y])).toEqual(expect.arrayContaining(first.settled.slice(0, 20).map((x) => [x.x, x.y])));
-    expect(burst.mock.calls.filter(([f]) => f === again && f.flying > 0)).toHaveLength(0);
+    expect(landAll).toHaveBeenCalledWith(again);
+    expect(burst.mock.calls.filter(([f]) => f === again)).toHaveLength(0);
     expect(flakesModule.burstProbe.inFlight()).toBe(0);
     expect((spies.clingRegister.mock.calls.at(-1)![1] as { flakes: unknown }).flakes).toBe(again);
   });

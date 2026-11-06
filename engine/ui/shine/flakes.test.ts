@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { tokensOf } from '../contrast.ts';
 import { ratio, MODES } from '../contrast.ts';
 import { bandOf, luminanceOf, POST_INK, shineIsReadable, toLinear } from './band.ts';
-import { burst, burstProbe, drawBurst, makeFlakes, MAX_IN_FLIGHT, release, sampleBurst, sampleCling, sampleFlakes, stepBurst, type Flakes } from './flakes.ts';
+import { burst, burstProbe, drawBurst, landAll, makeFlakes, MAX_IN_FLIGHT, release, sampleBurst, sampleCling, sampleFlakes, stepBurst, type Flakes } from './flakes.ts';
 
 /* The bench's GLITTER inks (docs/research/2026-11-06-shine-bench/01-bench.html): seven rainbow inks, then silver for the
    holographic flakes from index 7. They are the reference inks for these tests, copied as literals. */
@@ -511,5 +511,21 @@ describe('release', () => {
     release(a);
     assert.equal(burstProbe.inFlight(), 0);
     assert.equal(a.settled.length, n);
+  });
+});
+
+describe('landAll', () => {
+  test('places every flake at rest with the in-flight cap fully used by another post, and leaves the count alone', () => {
+    const other = make('land-a');
+    burst(other, 0);
+    assert.equal(burstProbe.inFlight(), MAX_IN_FLIGHT);
+    const b = make('land-b');
+    landAll(b);
+    assert.equal(b.settled.length, b.total);
+    assert.equal(b.flying, 0);
+    assert.equal(b.fired, true);
+    assert.equal(burstProbe.inFlight(), MAX_IN_FLIGHT, 'it used none of the cap');
+    assert.equal(burst(b, 5), false, 'a landed post does not burst');
+    assert.equal(burstProbe.inFlight(), MAX_IN_FLIGHT);
   });
 });

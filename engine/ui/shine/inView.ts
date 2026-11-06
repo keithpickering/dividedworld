@@ -8,12 +8,27 @@ import { useEffect, useState, type RefObject } from 'react';
 
 type Watcher = (inView: boolean) => void;
 
-/** `threshold`: the share of the element that must show to count as in view (default: any of it). A threshold has its own observer. */
+/**
+ * `threshold`: the share that must show to count as in view (default: any of it). An element counts as showing when that share of
+ * itself shows, or when what shows of it fills that share of the viewport, so an element taller than the viewport over the
+ * threshold still counts. A threshold has its own observer.
+ */
 export interface WatchOptions { readonly threshold?: number }
 
 interface Shared { observer: IntersectionObserver; watchers: Map<Element, Watcher> }
 /** One observer per threshold, so a page of posts watched alike shares one. */
 const shared = new Map<number, Shared>();
+
+/** Steps of a tenth, so the callback fires as the visible share grows, whatever the element's height. */
+const LADDER: readonly number[] = Object.freeze(Array.from({ length: 11 }, (_, i) => i / 10));
+
+/** Whether the entry's element shows `threshold` of itself, or its visible height fills `threshold` of the viewport. */
+function fills(entry: IntersectionObserverEntry, threshold: number): boolean {
+  if (entry.intersectionRatio === undefined || entry.intersectionRatio >= threshold) return true;
+  const viewport = entry.rootBounds?.height ?? (typeof innerHeight === 'number' ? innerHeight : 0);
+  const visible = entry.intersectionRect?.height;
+  return viewport > 0 && visible !== undefined && visible / viewport >= threshold;
+}
 
 /** Calls `onChange` with whether `el` is in view now and whenever that changes; the returned function stops watching. */
 export function watchInView(el: Element, onChange: Watcher, options: WatchOptions = {}): () => void {
@@ -28,10 +43,10 @@ export function watchInView(el: Element, onChange: Watcher, options: WatchOption
     const observer = new IntersectionObserver((entries) => {
       for (const entry of entries) {
         /* Past a threshold, "in view" is the share showing, not any overlap. */
-        const showing = entry.isIntersecting && (threshold === 0 || entry.intersectionRatio === undefined || entry.intersectionRatio >= threshold);
+        const showing = entry.isIntersecting && (threshold === 0 || fills(entry, threshold));
         watchers.get(entry.target)?.(showing);
       }
-    }, threshold > 0 ? { threshold: [0, threshold] } : undefined);
+    }, threshold > 0 ? { threshold: [...LADDER] } : undefined);
     mine = { observer, watchers };
     shared.set(threshold, mine);
   }

@@ -504,6 +504,17 @@ export function release(flakes: Flakes): void {
   f.parts = []; f.puff = null; f.last = null; f.flying = 0;
 }
 
+/**
+ * Places every flake at rest at once: no burst, no use of the page-wide in-flight cap, and the burst marked as fired. For a post
+ * that is built again after its burst, and for one shown still.
+ */
+export function landAll(flakes: Flakes): void {
+  const f = flakes as Inner;
+  f.fired = true;
+  f.settled.push(...f.rest);
+  f.rest = [];
+}
+
 /** For tests only: flakes in the air across the page, and a way back to a fresh page. */
 export const burstProbe = {
   inFlight: () => inFlight,
@@ -538,6 +549,12 @@ function addLoose(host: object, f: Flake): void {
     const at = list ? list.indexOf(old.flake) : -1;
     if (list && at >= 0) list.splice(at, 1);
   }
+}
+
+/** Forgets a host's loose flakes and their places in the page-wide 300, as a host does when it unmounts. */
+export function dropLoose(host: object): void {
+  looseByHost.delete(host);
+  for (let i = looseOrder.length - 1; i >= 0; i--) if (looseOrder[i]!.host === host) looseOrder.splice(i, 1);
 }
 
 /** Forgets every loose flake (the reader swept, or left the page). */
