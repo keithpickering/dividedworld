@@ -552,7 +552,7 @@ test.describe('the poisons, planted in a real page', () => {
   test('a line in a face the page has not loaded fails loudly, not in the fallback', async ({ page }) => {
     await open(page, rankings);
     await plant(page, '.kb-rankings-lead { font-family: "Barlow Condensed Missing", sans-serif !important; }');
-    await expect(measure(page)).rejects.toThrow(/The face Barlow Condensed Missing 600 is not loaded \(no such face in the document\), so "The season's standings[^"]*" in div\.kb-rankings > p\.kb-rankings-lead would be measured in a fallback/u);
+    await expect(measure(page)).rejects.toThrow(/The face Barlow Condensed Missing 600 is not loaded \(no such face in the document\), so "The season's standings[^"]*" in div\.kb-rankings-area > p\.kb-rankings-lead would be measured in a fallback/u);
   });
 
   test('a line that never lies wholly in the window is named as cut off', async ({ page }) => {
