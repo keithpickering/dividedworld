@@ -1,24 +1,19 @@
 /**
- * Whoops!'s pure half (the screens' design, section 11): the splat a play's seed draws, and the shading
- * an ink's luminance gives it. No DOM: `Effect.tsx` draws what this returns, and a canvas or a mask asks
- * `covers` which points the ink holds.
+ * Whoops!'s pure half (the screens' design, section 11; refinements design, section 2): the splat a play's seed
+ * draws, and the shading an ink's luminance gives it. No DOM: `Effect.tsx` and the painter draw what this returns,
+ * and a mask asks `covers` which points the ink holds.
  *
- * A play stores only a seed (the server's, a 31-bit integer) and an ink, so every reader rebuilds the
- * same splat from them: the generator is a seeded PRNG and nothing here reads a clock or Math.random.
- * Shapes are in widths of the post's fixed layout, as the card's strokes are (whoops.ts): x across from 0
- * to 1 (the ink may run a little into the margins, so x can fall outside that), y down. The layout is a
- * fixed width scaled as a whole, so a splat is never stretched: its blob keeps the proportions it was
- * drawn with, whatever the post's height.
+ * A play stores only a seed (the server's, a 31-bit integer) and an ink, so every reader rebuilds the same splat
+ * from them: the generator is a seeded PRNG and nothing here reads a clock or Math.random.
  *
- * Where the splat sits is the seed's too, and nothing else's: not the post's height, which an edit changes ("an
- * edit leaves the splat and the saved strokes where they are; new text reflows under them", design section 11).
- * Its center is across the middle of the post (0.42 to 0.58) and down in the first band of it, near the top (about
- * half a radius to a whole one from it, so the blob reaches the post's top rows and a post of a line is inked as a tall
- * one is); its radius across is 0.42 to 0.56 widths and down it is 0.75 to 1.3 times that. The ink may run past the
- * post's top and bottom into the margins, as it may past its sides, and a tall post is splattered in one place at its
- * top, not smeared along its length.
+ * A splat is a field of balls (metaballs). Its ink is wherever the balls' summed field reaches THRESHOLD. Each ball
+ * adds (1 - d^2/R^2)^3 within R = 2r, so a lone ball's edge sits at its radius, and where balls are near each other
+ * their fields add: every join is rounded, and only droplets stand apart, round.
  *
- * A splat's path is about 13 KB, so the Effect draws only the splats near the viewport, never every one on a page.
+ * Kept round: the balls are made in a design box 1.25 wide by 1 tall. A center is placed by shares of the body's box
+ * on the screen, so the spread fits the body; a radius is measured in px, one design unit being
+ * sqrt(w * h / 1.25) px. So a droplet is round on every screen and the splat is never stretched. The outline differs
+ * a little between screens, and nothing that crosses screens depends on it: only strokes and the clean mark travel.
  */
 
 /** A 32-bit PRNG (mulberry32): the same seed always gives the same run of numbers in [0, 1). */
@@ -32,96 +27,108 @@ export function mulberry32(seed: number): () => number {
   };
 }
 
-export type Circle = readonly [x: number, y: number, r: number];
 
+export interface Ball { readonly x: number; readonly y: number; readonly r: number } // design box 1.25 x 1
 export interface Splat {
-  /** The whole splat as one SVG path, filled once with the nonzero rule: blob, arms and droplets together. */
-  readonly path: string;
-  /** The lumpy blob's outline, clockwise on screen. */
-  readonly blob: readonly (readonly [number, number])[];
-  /** Every arm bead and droplet, which the path draws as whole circles. */
-  readonly circles: readonly Circle[];
-  readonly bounds: { readonly minX: number; readonly maxX: number; readonly minY: number; readonly maxY: number };
-  /** The blob's center and radii, where the seed put it on the post. */
-  readonly placement: { readonly cx: number; readonly cy: number; readonly rx: number; readonly ry: number };
+  readonly balls: readonly Ball[];
+  /** The core's center in the design box, where the seed put it. */
+  readonly placement: { cx: number; cy: number };
 }
+/** The body's box on this screen, CSS px. */
+export interface Box { readonly w: number; readonly h: number }
+export const DESIGN = { w: 1.25, h: 1 } as const;
+/** The field's iso level: a lone ball's edge sits at its radius. */
+export const THRESHOLD = 0.42;
 
-const round = (n: number) => Math.round(n * 10_000) / 10_000;
-const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
-/** The most the lumps may swell or shrink the blob's radius: keeps the ink near its place however the harmonics line up. */
-const SWELL = { lowest: 0.55, highest: 1.35 };
-const POINTS = 160;
-
-/** The splat for a seed, in widths of the layout from the post's top. */
+/** The splat for a seed, in the design box: a core, a ring, arms of beads with bulbs and droplets, and flecks. */
 export function makeSplat(seed: number): Splat {
   const r = mulberry32(seed);
-  const rx = 0.42 + r() * 0.14;
-  const ry = rx * (0.75 + r() * 0.55);
-  const cx = 0.42 + r() * 0.16;
-  const cy = ry * (0.5 + r() * 0.5);
-
-  const harmonics = [2, 3, 4, 5, 7, 9].map((k) => ({ k, a: ((0.05 + r() * 0.16) / Math.sqrt(k / 2)) * 0.7, p: r() * Math.PI * 2 }));
-  const blob: [number, number][] = [];
-  for (let i = 0; i < POINTS; i++) {
-    const th = (i / POINTS) * Math.PI * 2;
-    let m = 1;
-    for (const h of harmonics) m += h.a * Math.sin(h.k * th + h.p);
-    m = clamp(m + (r() - 0.5) * 0.025, SWELL.lowest, SWELL.highest); // a ragged edge
-    blob.push([round(cx + Math.cos(th) * rx * m), round(cy + Math.sin(th) * ry * m)]);
+  const balls: Ball[] = [];
+  const cx = DESIGN.w / 2 + (r() - 0.5) * 0.14, cy = DESIGN.h / 2 + (r() - 0.5) * 0.1;
+  const harm = [2, 3, 4, 5, 7].map((k) => ({ k, a: (0.05 + r() * 0.11) / Math.sqrt(k / 2), p: r() * Math.PI * 2 }));
+  const swell = (th: number) => { let m = 1; for (const h of harm) m += h.a * Math.sin(h.k * th + h.p); return Math.max(0.65, Math.min(1.3, m)); };
+  const R0 = 0.27;
+  balls.push({ x: cx, y: cy, r: 0.22 });
+  for (let i = 0; i < 6; i++) {
+    const th = r() * Math.PI * 2, d = r() * 0.14;
+    balls.push({ x: cx + Math.cos(th) * d * 1.25, y: cy + Math.sin(th) * d, r: 0.14 + r() * 0.05 });
   }
-
-  // Splash arms: a run of shrinking blobs ending in a bulb, and droplets thrown beyond each tip.
-  const circles: Circle[] = [];
-  const arms = 5 + Math.floor(r() * 6);
-  for (let i = 0; i < arms; i++) {
-    const th = r() * Math.PI * 2;
-    const len = (0.1 + r() * 0.25) * (rx / 0.5);
-    const wid = 0.025 + r() * 0.045;
-    const bx = cx + Math.cos(th) * rx * 0.92;
-    const by = cy + Math.sin(th) * ry * 0.92;
-    const beads = 14;
-    for (let k = 0; k <= beads; k++) {
-      const f = k / beads;
-      circles.push([round(bx + Math.cos(th) * len * f), round(by + Math.sin(th) * len * f), round(wid * (1 - 0.7 * f) * (0.85 + 0.15 * Math.sin(k * 1.7 + th * 5)))]);
+  const ring = 15;
+  for (let i = 0; i < ring; i++) {
+    const th = ((i + (r() - 0.5) * 0.5) / ring) * Math.PI * 2, m = swell(th);
+    balls.push({ x: cx + Math.cos(th) * R0 * m * 1.3, y: cy + Math.sin(th) * R0 * m, r: 0.1 + r() * 0.06 });
+  }
+  const arms = 9 + Math.floor(r() * 7);
+  for (let a = 0; a < arms; a++) {
+    const th = r() * Math.PI * 2, m = swell(th);
+    const sx = cx + Math.cos(th) * R0 * m * 1.3 * 0.95, sy = cy + Math.sin(th) * R0 * m * 0.95;
+    const len = 0.14 + r() * 0.32, w = 0.03 + r() * 0.035, bend = (r() - 0.5) * 0.7, beads = 10;
+    for (let k = 1; k <= beads; k++) {
+      const f = k / beads, ang = th + bend * f * f, d = len * f;
+      balls.push({ x: sx + Math.cos(ang) * d, y: sy + Math.sin(ang) * d, r: w * (1 - 0.62 * f) });
     }
-    circles.push([round(bx + Math.cos(th) * len), round(by + Math.sin(th) * len), round(wid * 0.6)]);
+    const ang = th + bend;
+    balls.push({ x: sx + Math.cos(ang) * len, y: sy + Math.sin(ang) * len, r: w * 0.72 });
     const drops = 1 + Math.floor(r() * 3);
     for (let j = 0; j < drops; j++) {
-      const d = len + 0.03 + r() * 0.12;
-      const s = wid * (0.25 + r() * 0.6);
-      circles.push([round(bx + Math.cos(th + (r() - 0.5) * 0.3) * d), round(by + Math.sin(th + (r() - 0.5) * 0.3) * d), round(s)]);
+      const d = len + 0.05 + r() * 0.14, aj = ang + (r() - 0.5) * 0.35;
+      balls.push({ x: sx + Math.cos(aj) * d, y: sy + Math.sin(aj) * d, r: w * (0.28 + r() * 0.42) });
     }
   }
+  const flecks = 5 + Math.floor(r() * 7);
+  for (let i = 0; i < flecks; i++) {
+    const th = r() * Math.PI * 2, d = 0.55 + r() * 0.25;
+    balls.push({ x: cx + Math.cos(th) * d * 1.3, y: cy + Math.sin(th) * d, r: 0.008 + r() * 0.02 });
+  }
+  return { balls, placement: { cx, cy } };
+}
 
-  // One path, so a pale ink's shadow traces only the outside edge. Circles are drawn clockwise like the
-  // blob (sweep 1 on a y-down plane), so the nonzero rule fills their union and no overlap cuts a hole.
-  let path = `M${blob[0]![0]} ${blob[0]![1]}`;
-  for (let i = 1; i < blob.length; i++) path += `L${blob[i]![0]} ${blob[i]![1]}`;
-  path += 'Z';
-  for (const [x, y, rad] of circles) path += `M${round(x + rad)} ${y}A${rad} ${rad} 0 1 1 ${round(x - rad)} ${y}A${rad} ${rad} 0 1 1 ${round(x + rad)} ${y}Z`;
+/** How many px a design unit is on this screen: radii scale with the box's area, so a ball stays round. */
+export function unitPx(box: Box): number {
+  return Math.sqrt((box.w * box.h) / DESIGN.w);
+}
 
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  for (const [x, y] of blob) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y); }
-  for (const [x, y, rad] of circles) { minX = Math.min(minX, x - rad); maxX = Math.max(maxX, x + rad); minY = Math.min(minY, y - rad); maxY = Math.max(maxY, y + rad); }
-  return { path, blob, circles, bounds: { minX, maxX, minY, maxY }, placement: { cx: round(cx), cy: round(cy), rx: round(rx), ry: round(ry) } };
+/** The summed field at the point (u * w, v * h) px, u and v being shares of the box. */
+export function fieldAt(splat: Splat, box: Box, u: number, v: number): number {
+  const px = u * box.w, py = v * box.h, unit = unitPx(box);
+  let sum = 0;
+  for (const b of splat.balls) {
+    const R = 2 * b.r * unit;
+    const dx = px - (b.x / DESIGN.w) * box.w, dy = py - b.y * box.h;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < R * R) sum += (1 - d2 / (R * R)) ** 3;
+  }
+  return sum;
+}
+
+/** Whether the splat's ink holds a point (shares of the box). It sums every ball: for a stroke's points, not per pixel. */
+export function covers(splat: Splat, box: Box, u: number, v: number): boolean {
+  return fieldAt(splat, box, u, v) >= THRESHOLD;
 }
 
 /**
- * Whether the splat's ink holds a point, in the same widths: the blob (a ray cast over its outline) or any circle.
- * It costs a pass over every circle and blob vertex, so it is for a stroke's points, a few hundred a play, and not
- * for asking per pixel.
+ * The field over ceil(w * density) by ceil(h * density) pixels, row by row, sampled at pixel centers. Each ball
+ * touches only the pixels within its reach, so the cost is the ink's area and not the balls times the box.
  */
-export function covers(splat: Pick<Splat, 'blob' | 'circles' | 'bounds'>, x: number, y: number): boolean {
-  const { minX, maxX, minY, maxY } = splat.bounds;
-  if (x < minX || x > maxX || y < minY || y > maxY) return false;
-  for (const [cx, cy, r] of splat.circles) if ((x - cx) ** 2 + (y - cy) ** 2 <= r * r) return true;
-  let inside = false;
-  const pts = splat.blob;
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-    const [xi, yi] = pts[i]!, [xj, yj] = pts[j]!;
-    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+export function fieldGrid(splat: Splat, box: Box, density: number): Float32Array {
+  const gw = Math.ceil(box.w * density), gh = Math.ceil(box.h * density);
+  const out = new Float32Array(gw * gh);
+  const unit = unitPx(box);
+  for (const b of splat.balls) {
+    const R = 2 * b.r * unit * density;
+    const bx = (b.x / DESIGN.w) * box.w * density, by = b.y * box.h * density;
+    const x0 = Math.max(0, Math.floor(bx - R)), x1 = Math.min(gw - 1, Math.ceil(bx + R));
+    const y0 = Math.max(0, Math.floor(by - R)), y1 = Math.min(gh - 1, Math.ceil(by + R));
+    const R2 = R * R;
+    for (let y = y0; y <= y1; y++) {
+      const dy = y + 0.5 - by, row = y * gw;
+      for (let x = x0; x <= x1; x++) {
+        const dx = x + 0.5 - bx, d2 = dx * dx + dy * dy;
+        if (d2 < R2) { const k = 1 - d2 / R2; out[row + x]! += k * k * k; }
+      }
+    }
   }
-  return inside;
+  return out;
 }
 
 /**
