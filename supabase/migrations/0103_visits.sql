@@ -28,7 +28,9 @@
 -- Masks. start_visit reads no owner; a visit's charge, window and challenge are public, and a visit's players are characters.
 --
 -- Ways out. A visit ends by itself: the tick files it past its end whether or not its Mod is still on staff (a Mod that has left is named on the infraction all
--- the same), and an interception, a trap or an admin's reversal may end it first. A tick that cannot file one (an error) tries again at the next tick and says so.
+-- the same), and an interception, a trap or an admin's reversal may end it first. A tick that cannot file one (an error) says so: it records the attempt on the visit's open row and in `visit_file_failures` (one row per visit: its attempts and last
+-- error, for an admin), sends the visit behind the others at the next tick (ordered by its last failure) and tries again; after 10 attempts it drops the visit
+-- (`visit_end` reversed, the line "This visit could not be filed and was dropped.", no infraction), so a visit that cannot file is never stuck for good.
 
 -- ---------------------------------------------------------------------------------------------------- the Acts ----
 
@@ -131,10 +133,10 @@ create index visits_open_due on visits_open (ends_at, visit_act);
 alter table visits_open enable row level security;
 revoke all on visits_open from public, anon, authenticated;
 
--- Why a visit would not file, one row per failed attempt, for an admin to read. No client can.
+-- Why a visit would not file, for an admin to read: one row per visit, its attempts so far and the last error and when. No client can.
 create table visit_file_failures (
-  id bigint generated always as identity primary key,
-  visit_act uuid not null references acts (id),
+  visit_act uuid primary key references acts (id),
+  attempts integer not null default 1,
   error text not null,
   at timestamptz not null default now()
 );
@@ -338,7 +340,7 @@ revoke execute on function visit_traps_wired() from public, anon, authenticated;
 -- charged again. A charge with no rule number (a premise, Obstruction) is told apart by its words. Read by index: the post's visits by acts_visits_by_post, their joins by
 -- acts_visit_joins and their ends by acts_one_visit_end; never a scan of Acts.
 create function visit_charge_matches(post uuid, ch jsonb) returns setof integer
-language sql stable as $$
+language sql stable set search_path = public, pg_temp as $$
     select 1 from public.acts v, jsonb_array_elements(v.payload -> 'charges') c
     where v.kind = 'visit' and v.target_act_id = post
       and not exists (select 1 from public.acts e where e.kind = 'visit_end' and e.target_act_id = v.id and e.payload ->> 'outcome' = 'reversed')
@@ -511,7 +513,8 @@ grant execute on function end_visit(uuid, text, uuid, text) to service_role;
 
 -- A visit files: its end (filed) with the line (the stock line `visitFiled` where none is given), then one infraction against the post's author, in the band of the
 -- visit's highest charge and carrying that charge's rule number. Idempotent: a visit already ended returns {filed: false, end_act, outcome} and writes nothing. The
--- Mod need not still be on staff. Returns {filed, end_act, infraction, points, warn_points, ban, until}.
+-- Mod need not still be on staff. The end and the infraction are one transaction: if the infraction fails nothing is written, the visit stays open and the tick records
+-- the failure (visit_file_failures), sends it behind the others and, after 10 attempts, drops it. Returns {filed, end_act, infraction, points, warn_points, ban, until}.
 create function file_visit(visit_act uuid, line text default null) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -938,6 +941,7 @@ declare
   out_of_time boolean := false;
   superseded integer := 0;
   filed integer := 0;
+  tries integer;
   late record;
   filing_grace interval := make_interval(mins => coalesce((select (s.value #>> '{modBots,filingGraceMinutes}')::integer from settings s where s.key = 'modBots'), 10));
   boss text := current_boss();
@@ -1062,8 +1066,17 @@ begin
       failed := failed + 1;
       raise warning 'system_tick: visit % did not file: % (%)', late.visit_act, sqlerrm, sqlstate;
       -- Recorded, and sent behind the others (the order above), so a visit that keeps failing never starves the rest.
-      update visits_open set failed_at = now(), attempts = attempts + 1 where visit_act = late.visit_act;
-      insert into visit_file_failures (visit_act, error) values (late.visit_act, left(sqlerrm || ' (' || sqlstate || ')', 500));
+      update visits_open set failed_at = now(), attempts = attempts + 1 where visit_act = late.visit_act returning attempts into tries;
+      insert into visit_file_failures (visit_act, attempts, error) values (late.visit_act, coalesce(tries, 1), left(sqlerrm || ' (' || sqlstate || ')', 500))
+      on conflict (visit_act) do update set attempts = excluded.attempts, error = excluded.error, at = now();
+      -- The ceiling: a visit that cannot be filed after `visit_file_attempts_most` tries is dropped (reversed, no infraction), so it is never stuck for good.
+      if coalesce(tries, 1) >= 10 then
+        begin
+          perform end_visit(late.visit_act, 'reversed', null, 'This visit could not be filed and was dropped.');
+        exception when others then
+          raise warning 'system_tick: visit % could not be dropped: % (%)', late.visit_act, sqlerrm, sqlstate;
+        end;
+      end if;
     end;
   end loop;
 

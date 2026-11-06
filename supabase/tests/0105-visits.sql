@@ -597,8 +597,11 @@ declare
   ln record;
   p uuid := (select a.id from acts a where a.kind = 'post' limit 1);
 begin
+  -- The function pins its search_path, which keeps EXPLAIN from seeing inside it; its own body, without the pin, is what is explained.
+  execute format('create function pg_temp.matches(post uuid, ch jsonb) returns setof integer language sql stable as %L', (select prosrc from pg_proc where proname = 'visit_charge_matches'));
+  if not exists (select 1 from pg_proc where proname = 'visit_charge_matches' and proconfig @> array['search_path=public, pg_temp']) then raise exception 'visit_charge_matches does not pin its search_path'; end if;
   set local enable_seqscan = off;
-  for ln in execute format('explain select * from visit_charge_matches(%L, %L::jsonb)', p, '{"cause": "rule", "rule_number": 1, "board": "x"}') loop
+  for ln in execute format('explain select * from pg_temp.matches(%L, %L::jsonb)', p, '{"cause": "rule", "rule_number": 1, "board": "x"}') loop
     plan := plan || E'\n' || ln."QUERY PLAN";
   end loop;
   set local enable_seqscan = on;
@@ -654,6 +657,11 @@ begin
   perform system_tick();
   if not exists (select 1 from acts where kind = 'visit_end' and target_act_id = good) then raise exception 'a visit that keeps failing starved the one behind it'; end if;
   if exists (select 1 from acts where kind = 'visit_end' and target_act_id = bad) then raise exception 'the poisoned visit filed'; end if;
+  perform system_tick();
+  perform system_tick();
+  if (select count(*) from visit_file_failures where visit_act = bad) is distinct from 1 or (select attempts from visit_file_failures where visit_act = bad) is distinct from (select attempts from visits_open where visit_act = bad) then
+    raise exception 'a stuck visit should keep one failure row counting its attempts: %', (select jsonb_agg(to_jsonb(f)) from visit_file_failures f where f.visit_act = bad);
+  end if;
   -- With room for both in a tick, the later one files in the same tick the earlier fails.
   update settings set value = '5' where key = 'demandChecksPerTick';
   drop trigger vs_poison on acts;
@@ -671,4 +679,31 @@ begin
   perform draw_visits(p);
   alter table settings rename column value_gone to value;
   if not exists (select 1 from visit_draw_failures f where f.post_act = p and f.rule_number is null and f.error like '%value%') then raise exception 'a failure in draw_visits'' own reads left no trace'; end if;
+end $$;
+
+-- ---- 21. A visit that fails forever is dropped at the ceiling: reversed, a plain line, and nothing lands on the author ----
+do $$
+declare
+  c uuid := tests.character(tests.account('vs-kay'), 'Vs Doomed');
+  t uuid := tests.thread('Doomed');
+  p uuid := pg_temp.say(c, t, 'SHOUTING, FOREVER FAILING');
+  v uuid := pg_temp.visit_of(p);
+  page jsonb;
+begin
+  execute format($f$create function pg_temp.poison2() returns trigger language plpgsql as $b$ begin
+    if new.payload ->> 'visit_act' = %L then raise exception 'a forever failing filing'; end if; return new; end $b$ $f$, v);
+  create trigger vs_poison2 before insert on acts for each row when (new.kind = 'infraction') execute function pg_temp.poison2();
+  update visits_open set ends_at = now() - interval '2 hours', attempts = 8 where visit_act = v;
+  perform system_tick();
+  if exists (select 1 from acts where kind = 'visit_end' and target_act_id = v) then raise exception 'a visit was dropped before the ceiling'; end if;
+  perform system_tick();
+  if not exists (select 1 from acts e where e.kind = 'visit_end' and e.target_act_id = v and e.payload ->> 'outcome' = 'reversed' and e.payload ->> 'line' = 'This visit could not be filed and was dropped.') then
+    raise exception 'a visit that fails forever was not dropped at the ceiling';
+  end if;
+  if exists (select 1 from acts where kind = 'infraction' and payload ->> 'visit_act' = v::text) or warn_points(c) is distinct from 0 then raise exception 'something landed on the author of a dropped visit'; end if;
+  perform tests.become((select owner from characters where id = c));
+  page := thread_page(t, 1, null, 20, '{}');
+  perform tests.unbecome();
+  if not exists (select 1 from jsonb_array_elements(page -> 'visits') e where e ->> 'post' = p::text and e #>> '{end,outcome}' = 'reversed') then raise exception 'the post does not show its visit ended'; end if;
+  drop trigger vs_poison2 on acts;
 end $$;
