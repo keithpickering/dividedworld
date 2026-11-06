@@ -50,7 +50,7 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
   useEffect(() => { setOpen(false); }, [asId]);
   if (shown.length === 0 && !canReact) return null;
   return (
-    <div ref={row} className="kb-reactions" data-kb-look={look}>
+    <div ref={row} className="kb-reactions" data-kb-look={look} data-kb-over-ink={look === 'glass' ? undefined : ''}>
       {shown.length > 0 && (
         <ul className="kb-chips" aria-label="Reactions">
           {shown.map((r) => {

@@ -127,8 +127,10 @@
   /*
    * A card's effect may paint over the post's words, out to the borders of this body (Whoops!'s ink, instances/divided-world/
    * cards/whoops/whoops.css). The effect marks the layer it paints with `data-kb-effect-ink`, wherever another card's effect has
-   * wrapped it, and the controls of the post are lifted over that layer by name, so a reaction or a link is
-   * never covered, whatever lies under it. No wrapper is a stacking context of its own, so the ink is in this one.
+   * wrapped it. What the engine lifts over that layer (the reactions row, the spun line) carries `data-kb-over-ink`: it is
+   * lifted by that mark, as wide as its content, so the rest of its row is ink an effect may take, and an effect starts nothing
+   * on a press inside it. Any control the engine draws over a post's ink carries the mark. No wrapper is a stacking context
+   * of its own, so the ink is in this one.
    */
   isolation: isolate;
 }
@@ -137,10 +139,11 @@
   z-index: 1;
 }
 
-.kb-act-main > .kb-reactions,
-.kb-act-main > .kb-spun {
+.kb-act-main [data-kb-over-ink] {
   position: relative;
   z-index: 2;
+  width: fit-content;
+  max-width: 100%;
 }
 
 /* A line of the game's (an unmask): no postbit, the words across the whole width. */

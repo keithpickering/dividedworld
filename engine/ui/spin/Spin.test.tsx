@@ -717,6 +717,8 @@ describe('Spun into', () => {
     const article = await screen.findByRole('article', { name: /^Post 2 /u });
     const line = await within(article).findByText(/Spun into:/u);
     expect(line.closest('p')).toHaveTextContent('↳ Spun into: Crimson Incident (1 reply) · Is Pipewrench a Heel? (0 replies)');
+    /* Lifted over a card's ink, and marked so that an effect starts no stroke on it (the Whoops! refinements design's section 5). */
+    expect(line.closest('p')).toHaveAttribute('data-kb-over-ink');
     expect(within(article).getByRole('link', { name: 'Crimson Incident' })).toHaveAttribute('href', `/t/${first}`);
     expect(many).not.toHaveBeenCalled();
     expect(one).not.toHaveBeenCalled();

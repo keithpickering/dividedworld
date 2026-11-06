@@ -61,6 +61,20 @@ const open = async () => {
 };
 
 describe('the chips', () => {
+  /* What the engine lifts over a card's ink is marked, so an effect starts no stroke on it (the Whoops! refinements design's section 5). */
+  test('the board\'s row is marked as lifted over ink, and the glass\'s is not', () => {
+    const w = world();
+    const board = show(w, w.theirs, w.spritey);
+    act(() => { board.tallies.merge(w.theirs, { fire: 1 }); });
+    expect(board.container.querySelector('.kb-reactions')).toHaveAttribute('data-kb-over-ink');
+    board.unmount();
+    const tallies = createTallies();
+    tallies.merge(w.theirs, { fire: 1 });
+    const glass = renderIn(w.fake, <Reactions act={w.theirs} author={w.spritey} authorName="Spritey" tallies={tallies} mine={createMine()} look="glass" />);
+    expect(glass.container.querySelector('.kb-reactions')).not.toBeNull();
+    expect(glass.container.querySelector('.kb-reactions')).not.toHaveAttribute('data-kb-over-ink');
+  });
+
   test('show each kind with its count, and name the player\'s own as theirs', async () => {
     const w = world();
     const v = show(w, w.theirs, w.spritey);

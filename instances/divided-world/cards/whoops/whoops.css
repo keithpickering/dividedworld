@@ -1,8 +1,8 @@
 /*
- * Whoops!'s effect on a post: the fixed layout the ink lies over, the canvas and the suds. Its words and controls are the
+ * Whoops!'s effect on a post: the frame the words sit in, and the ink and suds canvases over them. Its words and controls are the
  * Lens's and the kit's (Effect.tsx publishes them as its view), so this sheet draws none; the mark is marks.css's, tinted by the top layer's ink.
- * The post itself stays the board's 2003 post; its words are laid out at a reference width and scaled
- * as a whole (Effect.tsx), so this sheet sets no size on them.
+ * The post stays the board's 2003 post: its words are laid out like any other post's, at their natural size and width, so this sheet
+ * sets no size, margin or transform on them. The ink is fitted to the post body's box (Effect.tsx), which the effect measures.
  *
  * The ink and the suds are the card's art: their colors are written by the splat, not here.
  */
@@ -10,7 +10,11 @@
   position: relative;
 }
 
-/* The frame holds the scaled layout and clips the ink at the post's box; a vertical drag still scrolls the page, a sideways one scrubs. */
+/*
+ * The frame holds the words. In the ORIGIN box it clips the ink at its own edge. In the thread the effect lets the ink out
+ * (Effect.tsx) to the post body's corner, so the ink reaches the body's borders over the tag's row and the reactions row. A vertical
+ * drag still scrolls the page; a sideways one scrubs (the effect keeps the same on the post body it takes touches on).
+ */
 .kb-whoops-frame {
   position: relative;
   overflow: hidden;
@@ -18,55 +22,14 @@
 }
 
 /*
- * In the thread the frame is the post's whole body, border to border: it bleeds out over the gutters the post's body keeps
- * (`.kb-act-main`, engine/ui/thread/thread.css: 1% of the body each side, so the words' own share of the body is 98% and a
- * gutter is 1/98 of it), and the layout keeps them as its own padding (Effect.tsx, BODY_GUTTER), so the words break where the
- * post's would and the ink reaches the body's borders. The origin box has no such gutter and keeps its frame as is.
+ * The ink and the suds canvases are placed and sized by the effect, to the body's box (inline left, top, width and height), and
+ * mark themselves `data-kb-effect-ink`: the thread's sheet (thread/thread.css) puts them above the words and below what the engine
+ * lifts (`data-kb-over-ink`: the reactions row, the spun line), so those stay in front, visible and usable, even when another card's
+ * effect wraps this one. The suds canvas comes after the ink in order, at the same level, so it is drawn over it.
  */
-.kb-whoops[data-kb-place="thread"] > .kb-whoops-frame {
-  margin-inline: calc(-100% / 98);
-}
-
-.kb-whoops-layout {
-  transform-origin: 0 0;
-}
-
-/* Fixed, the layout is laid over its frame (the frame's height is the scaled layout's). */
-.kb-whoops-layout[style*="width"] {
-  position: absolute;
-  top: 0;
-  left: 0;
-  box-sizing: border-box;
-}
-
-.kb-whoops-ink {
-  position: absolute;
-  left: 0;
-  width: 100%;
-  pointer-events: none;
-}
-
-/*
- * In the thread the ink runs to the post body's borders, over the tag's row and the reactions under the words, from the header bar to the footer bar (the bars are the post's, never inked)
- * (the owner: "such things can just render in front of the splat"). The canvas marks itself `data-kb-effect-ink`, and the
- * thread's sheet (thread/thread.css) puts it above the words and below the post's controls, which it lifts by name, so they
- * stay in front, visible and usable, even when another card's effect wraps this one. The frame no longer clips, since the
- * canvas is sized to the body.
- */
-
+.kb-whoops-ink,
 .kb-whoops-suds {
   position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-/* A soap bubble thrown from the brush. */
-.kb-whoops-sud {
-  position: absolute;
-  border-radius: 50%;
-  background: rgb(255 255 255 / 0.85);
-  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.25);
   pointer-events: none;
 }
 
@@ -173,4 +136,47 @@
     border: 4px solid Highlight;
     box-shadow: none;
   }
+}
+
+/*
+ * The drawn cursor (cursor.ts): a sponge or a pen that follows a mouse over ink, and the canvas its drops fall on. Fixed to the window,
+ * above the page, never a target. The sponge squishes while pressed; cursor.ts adds the class not at all under reduced motion.
+ */
+.kb-whoops-cursor {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 60px;
+  height: 45px;
+  z-index: 60;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.kb-whoops-cursor[data-kb-cursor="pen"] {
+  width: 48px;
+  height: 48px;
+}
+
+.kb-whoops-cursor[hidden] {
+  display: none;
+}
+
+.kb-whoops-squish {
+  transform-origin: 30px 40px;
+  transform-box: view-box;
+  transition: transform 90ms ease-out;
+}
+
+.kb-whoops-pressing .kb-whoops-squish {
+  transform: scale(1.07, 0.84);
+}
+
+.kb-whoops-drips {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 50;
+  pointer-events: none;
 }

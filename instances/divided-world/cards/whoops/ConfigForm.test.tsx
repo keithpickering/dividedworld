@@ -17,6 +17,34 @@ function form(config?: Record<string, unknown>) {
   return { onChange, ...view };
 }
 
+describe('the preview canvas', () => {
+  test('is painted when it appears, and painted again when the color changes', () => {
+    const real = HTMLCanvasElement.prototype.getContext;
+    const ops: string[] = [];
+    HTMLCanvasElement.prototype.getContext = function () {
+      return new Proxy({}, {
+        get: (_t, key: string) => (...args: unknown[]) => {
+          ops.push(key);
+          if (key === 'createImageData') return { data: new Uint8ClampedArray(args[0] as number * (args[1] as number) * 4) };
+          if (key.startsWith('create')) return { addColorStop() {} };
+          return undefined;
+        },
+        set: () => true,
+      });
+    } as unknown as HTMLCanvasElement['getContext'];
+    try {
+      const view = form({ color: '#ff2bd6' });
+      expect(ops).toContain('putImageData');
+      expect(ops.filter((o) => o === 'drawImage')).toHaveLength(1);
+      view.rerender(<ConfigForm config={{ color: '#19e3ff' }} onChange={view.onChange} post={POST} id="play" />);
+      expect(ops.filter((o) => o === 'drawImage')).toHaveLength(2);
+      expect(ops.filter((o) => o === 'putImageData')).toHaveLength(2);
+    } finally {
+      HTMLCanvasElement.prototype.getContext = real;
+    }
+  });
+});
+
 describe('the ink color', () => {
   test('is a radiogroup of the card\'s swatches, Magenta chosen, each named by its color', () => {
     form({ color: '#ff2bd6' });
@@ -60,14 +88,19 @@ describe('the ink color', () => {
 
   test('is previewed with its shading: a wet highlight on a dark ink, an edge shadow on a pale one', () => {
     const dark = form({ color: '#101010' });
-    const hi = (c: HTMLElement) => Number(c.querySelector('[data-kb-highlight]')!.getAttribute('data-kb-highlight'));
-    const edge = (c: HTMLElement) => Number(c.querySelector('[data-kb-edge-shadow]')!.getAttribute('data-kb-edge-shadow'));
+    const hi = (c: HTMLElement) => Number(c.querySelector('canvas[data-kb-highlight]')!.getAttribute('data-kb-highlight'));
+    const edge = (c: HTMLElement) => Number(c.querySelector('canvas[data-kb-edge-shadow]')!.getAttribute('data-kb-edge-shadow'));
     const darkHi = hi(dark.container);
     const darkEdge = edge(dark.container);
     dark.unmount();
     const pale = form({ color: '#f4f4c8' });
     expect(darkHi).toBeGreaterThan(hi(pale.container));
     expect(edge(pale.container)).toBeGreaterThan(darkEdge);
-    expect(pale.container.querySelector('[role="img"]')).toHaveAccessibleName('Preview of the ink');
+    /* The preview is a canvas, painted by paintSplat on a 360 x 220 box. */
+    const canvas = pale.container.querySelector('canvas')!;
+    expect(canvas).toHaveAttribute('role', 'img');
+    expect(canvas).toHaveAccessibleName('Preview of the ink');
+    expect([canvas.width, canvas.height]).toEqual([360, 220]);
+    expect(pale.container.querySelector('svg.kb-whoops-preview')).toBeNull();
   });
 });

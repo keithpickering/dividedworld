@@ -1,101 +1,141 @@
 /**
- * Whoops!'s pure half (design, section 11; plan Task 5): the seeded splat and the shading by the ink's luminance.
+ * Whoops!'s pure half (design, section 11; refinements design section 2): the splat as a field of balls, kept round,
+ * and the shading by the ink's luminance.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { contrast, covers, luminance, makeSplat, mulberry32, shading } from './splat.ts';
+import { DESIGN, THRESHOLD, contrast, covers, fieldAt, fieldGrid, luminance, makeSplat, mulberry32, shading, unitPx, type Box, type Splat } from './splat.ts';
 import { NAMED_COLORS } from '../../../../engine/bbcode/parse.ts';
 
-test('the generator is deterministic: one seed and one post height always give one splat', () => {
-  assert.deepEqual(makeSplat(20261029), makeSplat(20261029));
-  assert.equal(makeSplat(7).path, makeSplat(7).path);
+const WIDE: Box = { w: 988, h: 330 };
+const TALL: Box = { w: 390, h: 1200 };
+
+test('seeding: one seed gives the same balls twice, two seeds differ, and nothing reads Math.random', () => {
+  const real = Math.random;
+  let calls = 0;
+  Math.random = () => { calls++; return real(); };
+  try {
+    assert.deepEqual(makeSplat(20261029), makeSplat(20261029));
+    assert.notDeepEqual(makeSplat(1).balls, makeSplat(2).balls);
+    assert.notEqual(makeSplat(1).placement.cx, makeSplat(2).placement.cx);
+  } finally {
+    Math.random = real;
+  }
+  assert.equal(calls, 0);
   const a = mulberry32(5), b = mulberry32(5);
   assert.deepEqual([a(), a(), a()], [b(), b(), b()]);
   assert.notEqual(mulberry32(5)(), mulberry32(6)());
 });
 
-test('different seeds give different splats', () => {
-  const paths = new Set([1, 2, 3, 4, 5, 2 ** 31 - 1].map((s) => makeSplat(s).path));
-  assert.equal(paths.size, 6);
-  assert.notEqual(makeSplat(1).placement.cx, makeSplat(2).placement.cx);
+test('the constants are the design box and the iso level', () => {
+  assert.deepEqual(DESIGN, { w: 1.25, h: 1 });
+  assert.equal(THRESHOLD, 0.42);
+  assert.ok(Math.abs(unitPx({ w: 1000, h: 1250 }) - 1000) < 1e-9);
 });
 
-test('a splat is one closed path in widths of the layout, with a lumpy blob, arms and droplets', () => {
-  for (const seed of [0, 1, 99, 2 ** 31 - 1]) {
-    const s = makeSplat(seed);
-    assert.match(s.path, /^M[-\d. ,MLAZa-z]+Z$/);
-    assert.equal(s.path.includes('NaN'), false);
-    assert.ok(s.blob.length >= 100);
-    assert.ok(s.circles.length >= 10, 'arms and droplets are circles');
-    const { minX, maxX, minY, maxY } = s.bounds;
-    assert.ok(minX < 0.5 && maxX > 0.5 && minY < maxY);
-    assert.ok(minX > -1 && maxX < 2, 'the ink runs a little into the margins and no further');
-    assert.ok(minY >= -1, 'it starts at the top of the post, give or take an arm');
-    assert.ok(covers(s, s.placement.cx, s.placement.cy), 'the center is inked');
-    assert.equal(covers(s, maxX + 1, maxY + 1), false);
+const lone = (r: number): Splat => ({ balls: [{ x: 0.625, y: 0.5, r }], placement: { cx: 0.625, cy: 0.5 } });
+
+test('the threshold: a lone ball\'s edge sits at its radius', () => {
+  for (const box of [WIDE, TALL]) {
+    const r = 0.1, rPx = r * unitPx(box);
+    const cx = box.w / 2, cy = box.h / 2;
+    assert.equal(covers(lone(r), box, (cx + rPx - 0.5) / box.w, cy / box.h), true, 'just inside');
+    assert.equal(covers(lone(r), box, (cx + rPx + 0.5) / box.w, cy / box.h), false, 'just outside');
+    assert.equal(covers(lone(r), box, cx / box.w, cy / box.h), true);
+    assert.equal(fieldAt(lone(r), box, 0, 0), 0);
   }
 });
 
-test('the splat is the seed\'s alone: where it sits does not depend on how tall the post is, so an edit never moves it', () => {
-  // The signature takes no height; a second argument a caller still passes changes nothing.
-  const loose = makeSplat as unknown as (seed: number, height?: number) => ReturnType<typeof makeSplat>;
-  for (const seed of [3, 4, 5, 6, 1234567]) {
-    for (const height of [0.05, 1, 8, 64, Infinity, NaN]) assert.deepEqual(loose(seed, height), makeSplat(seed), `at ${height}`);
-  }
-});
+/** A ball with no other ball within reach of it: a droplet or fleck that stands apart. */
+function isolated(s: Splat) {
+  return s.balls.find((b, i) => b.r > 0.01 && s.balls.every((o, j) => j === i || Math.hypot(o.x - b.x, o.y - b.y) > 2 * (o.r + b.r) + 0.02));
+}
 
-test('the blob is one place, not a smear: its height is at most 1.3 times its width, and its width is the seed\'s', () => {
-  for (let seed = 1; seed <= 40; seed++) {
-    const { rx, ry } = makeSplat(seed).placement;
-    assert.ok(ry <= 1.3 * rx + 1e-3 && ry >= 0.7 * rx - 1e-3, `seed ${seed}: ry ${ry} against rx ${rx}`);
-    assert.ok(rx >= 0.42 - 1e-3 && rx <= 0.56 + 1e-3);
-  }
-});
-
-test('the splat sits in the first band of the post: across its middle, and down from its top, so a post of a line is inked as a tall one is', () => {
-  const centers = new Set<number>();
-  for (let seed = 1; seed <= 200; seed++) {
-    const s = makeSplat(seed);
-    assert.ok(s.placement.cx >= 0.42 - 1e-3 && s.placement.cx <= 0.58 + 1e-3);
-    assert.ok(s.bounds.minY < 0.1, `seed ${seed} starts at ${s.bounds.minY}: it reaches the post's top rows`);
-    assert.ok(s.bounds.maxY < 3, `seed ${seed} ends at ${s.bounds.maxY}: within the first three widths`);
-    assert.ok(s.placement.cy > 0 && s.placement.cy < 1.3, `seed ${seed}'s center is at ${s.placement.cy}`);
-    centers.add(s.placement.cy);
-  }
-  assert.ok(centers.size > 150, 'the center falls in different places for different seeds');
-});
-
-test('covers holds the blob and every arm and droplet circle, and nothing outside', () => {
-  for (const seed of [1, 2, 3, 99]) {
-    const s = makeSplat(seed);
-    const blobOnly = { blob: s.blob, circles: [], bounds: s.bounds };
-    const outside = s.circles.filter(([x, y]) => !covers(blobOnly, x, y));
-    assert.ok(outside.length > 0, 'some arm or droplet sits outside the blob');
-    for (const [x, y, r] of outside) {
-      assert.equal(covers(s, x, y), true, 'the circle\'s center is inked');
-      assert.equal(covers(s, x + r * 0.9, y), true, 'and so is a point just inside its edge');
-    }
-    let rightmost = s.blob[0]!;
-    for (const p of s.blob) if (p[0] > rightmost[0]) rightmost = p;
-    assert.equal(covers(blobOnly, rightmost[0] + 0.001, rightmost[1]), false, 'just outside the blob');
-    assert.equal(covers(blobOnly, s.placement.cx, s.placement.cy), true);
-    const { minX, maxX, minY, maxY } = s.bounds;
-    for (const [x, y] of [[minX - 0.01, s.placement.cy], [maxX + 0.01, s.placement.cy], [s.placement.cx, minY - 0.01], [s.placement.cx, maxY + 0.01]] as const) {
-      assert.equal(covers(s, x, y), false, 'outside the bounds');
+test('kept round: a droplet\'s covered extent across equals its extent down, within a pixel, on a wide and a tall box', () => {
+  let tested = 0;
+  for (let seed = 1; seed <= 20 && tested < 3; seed++) {
+    const s = makeSplat(seed), d = isolated(s);
+    if (!d) continue;
+    tested++;
+    for (const box of [WIDE, TALL]) {
+      const px = d.x / DESIGN.w * box.w, py = d.y * box.h, reach = 2 * d.r * unitPx(box) + 2;
+      const extent = (dx: number, dy: number) => {
+        let n = 0;
+        for (let t = -reach; t <= reach; t += 0.25) if (covers({ balls: [d], placement: s.placement }, box, (px + t * dx) / box.w, (py + t * dy) / box.h)) n += 0.25;
+        return n;
+      };
+      const across = extent(1, 0), down = extent(0, 1);
+      assert.ok(across > 0);
+      assert.ok(Math.abs(across - down) <= 1, `seed ${seed} on ${box.w}x${box.h}: ${across} across, ${down} down`);
+      assert.ok(Math.abs(across - 2 * d.r * unitPx(box)) <= 1);
     }
   }
+  assert.ok(tested >= 1, 'found a standing-apart droplet');
 });
 
-test('the arcs turn the way the blob does, so the nonzero rule fills the union and no overlap cuts a hole', () => {
-  for (const seed of [1, 2, 3, 99]) {
-    const s = makeSplat(seed);
-    let area = 0;
-    for (let i = 0, j = s.blob.length - 1; i < s.blob.length; j = i++) area += s.blob[j]![0] * s.blob[i]![1] - s.blob[i]![0] * s.blob[j]![1];
-    assert.ok(area > 0, 'the blob is clockwise on a y-down plane (positive shoelace area)');
-    const arcs = [...s.path.matchAll(/A([\d.]+) ([\d.]+) 0 (\d) (\d) /g)];
-    assert.equal(arcs.length, s.circles.length * 2, 'two arcs make each circle');
-    for (const arc of arcs) assert.equal(arc[4], '1', 'an arc sweeps clockwise on a y-down plane, as the blob winds');
+/*
+ * The splat spreads over the whole box, not a band at its top. The plan asked for 70% of the grid; the bench's approved splat,
+ * whose constants these are, covers 58 to 71% over seeds 1 to 40 on both boxes, so the floor is 55% (a plan gap in the PR), and
+ * each quarter of the box is reached, top and bottom alike, so a band would fail.
+ */
+test('whole body: at least 55% of a 20 by 20 grid across the box is inked, its center is, and so is each quarter of it', () => {
+  for (const box of [WIDE, TALL]) {
+    for (const seed of [1, 2, 3, 99, 2 ** 31 - 1]) {
+      const s = makeSplat(seed);
+      let hit = 0;
+      const quarters = [0, 0, 0, 0];
+      for (let i = 0; i < 20; i++) {
+        for (let j = 0; j < 20; j++) {
+          if (!covers(s, box, (i + 0.5) / 20, (j + 0.5) / 20)) continue;
+          hit++;
+          quarters[(i < 10 ? 0 : 1) + (j < 10 ? 0 : 2)]!++;
+        }
+      }
+      assert.ok(hit / 400 >= 0.55, `seed ${seed} on ${box.w}x${box.h}: ${hit / 4}%`);
+      assert.equal(covers(s, box, 0.5, 0.5), true, 'the center');
+      for (const [q, n] of quarters.entries()) assert.ok(n / 100 >= 0.4, `seed ${seed} on ${box.w}x${box.h}: quarter ${q} at ${n}%`);
+    }
   }
+});
+
+test('rounded joins: from the core out through an arm\'s first bead the field never dips below the threshold', () => {
+  for (const box of [WIDE, TALL]) {
+    for (const seed of [1, 2, 3, 99]) {
+      const s = makeSplat(seed);
+      // makeSplat builds 1 core + 6 inner + 15 ring balls = 22, so index 22 is the first arm's first bead
+      const core = s.balls[0]!, bead = s.balls[22]!;
+      const ax = core.x / DESIGN.w * box.w, ay = core.y * box.h, bx = bead.x / DESIGN.w * box.w, by = bead.y * box.h;
+      for (let t = 0; t <= 1; t += 0.02) {
+        const v = fieldAt(s, box, (ax + (bx - ax) * t) / box.w, (ay + (by - ay) * t) / box.h);
+        assert.ok(v >= THRESHOLD, `seed ${seed} on ${box.w}x${box.h}: field ${v.toFixed(3)} at ${t.toFixed(2)}`);
+      }
+    }
+  }
+});
+
+test('fieldGrid agrees with fieldAt at every pixel center, on a non-integer box at density 2', () => {
+  const s = makeSplat(7), box = { w: 37.5, h: 41.3 }, density = 2;
+  const g = fieldGrid(s, box, density);
+  const gw = Math.ceil(box.w * density), gh = Math.ceil(box.h * density);
+  assert.equal(g.length, gw * gh);
+  let inked = 0;
+  for (let j = 0; j < gh; j++) {
+    for (let i = 0; i < gw; i++) {
+      const want = fieldAt(s, box, (i + 0.5) / density / box.w, (j + 0.5) / density / box.h);
+      if (want > 0) inked++;
+      assert.ok(Math.abs(g[j * gw + i]! - want) < 1e-5, `pixel ${i},${j}: ${g[j * gw + i]} against ${want}`);
+    }
+  }
+  assert.ok(inked > gw * gh * 0.2, `${inked} inked pixels, so the comparison has something to compare`);
+});
+
+test('fieldGrid cost follows the balls\' reach: the inner loop visits under 20% of balls times pixels on a tall box', () => {
+  const s = makeSplat(7), work = { visits: 0 };
+  const big = fieldGrid(s, TALL, 1, work);
+  assert.equal(big.length, 390 * 1200);
+  const all = s.balls.length * big.length;
+  assert.ok(work.visits > 0);
+  assert.ok(work.visits < all * 0.2, `${work.visits} visits of ${all} (${(100 * work.visits / all).toFixed(1)}%)`);
 });
 
 test('luminance is the WCAG relative luminance of the primaries', () => {
