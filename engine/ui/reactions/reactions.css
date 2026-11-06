@@ -47,7 +47,7 @@
 }
 
 .kb-reaction .kb-reaction-emoji {
-  font-family: var(--kb-glass-font-emoji);
+  font-family: var(--kb-font-emoji);
 }
 
 /* Your own kind: a ring (the ground's gap, then the ink), on your screen only. */

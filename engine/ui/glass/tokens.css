@@ -44,8 +44,6 @@
 
   --kb-glass-font-display: sans-serif;
   --kb-glass-font-body: sans-serif;
-  /* The system emoji faces before the body face, so a reaction tile's emoji draws in color. */
-  --kb-glass-font-emoji: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", var(--kb-glass-font-body);
 
   /* The size steps, in px, as the boards set them. */
   --kb-glass-size-label: 20px;
