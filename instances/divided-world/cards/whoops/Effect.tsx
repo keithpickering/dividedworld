@@ -11,8 +11,8 @@
  * the box and reaching out of the frame to the cell's corner; the tag is the glass reaching in (`tag` in cards.ts draws it), and
  * the card's state and controls are the Lens's and the kit's, from the view the effect publishes (`show`, below).
  *
- * Input. In the thread the effect takes its pointer and touch input on the cell, so a press beside the reactions, on the tag's row
- * or in the body's gutters reaches it wherever there is ink; in the ORIGIN box it takes them on the frame. A press whose target is
+ * Input. The effect takes its pointer and touch input on the frame, and in the thread on the cell too, so a press beside the reactions, on the tag's row
+ * or in the body's gutters reaches it wherever there is ink; the cell's handler leaves a press inside the frame to the frame's, and takes nothing while the words are away from it. A press whose target is
  * inside `[data-kb-over-ink]` (what the engine lifts over the ink: the reactions row, the spun line) starts nothing. A mouse or pen
  * is read by pointer events, a finger by touch events (design section 6): a quick swipe up or down is the page's and washes nothing,
  * a sideways swipe or a press held 180ms wipes, a tap washes a dab, and a second finger is the page's. Pointer events of type touch
@@ -178,6 +178,8 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   const [size, setSize] = useState<{ box: Box; left: number; top: number }>({ box: { w: 0, h: 0 }, left: 0, top: 0 });
   /** What input is taken on: the cell in the thread, the frame in the ORIGIN box. */
   const [surface, setSurface] = useState<HTMLElement | null>(null);
+  /** The cell the frame was last found in (thread only): its listeners stay while the words are away, and ignore everything until they are back. */
+  const [cellEl, setCellEl] = useState<HTMLElement | null>(null);
   const [near, setNear] = useState(true);
   const [built, setBuilt] = useState(false);
   const [tool, setTool] = useState<'wash' | 'ink'>('wash');
@@ -273,17 +275,21 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
         if (cell) watch.observe(cell);
         watched = cell;
       }
-      setSurface((prev) => (prev === (cell ?? f) ? prev : cell ?? f));
-      setSize((prev) => {
-        let next: { box: Box; left: number; top: number };
-        if (cell) {
-          const fr = f.getBoundingClientRect(), cr = cell.getBoundingClientRect();
-          next = { box: { w: cell.clientWidth, h: cell.clientHeight }, left: fr.left - cr.left - cell.clientLeft, top: fr.top - cr.top - cell.clientTop };
-        } else {
-          next = { box: { w: f.clientWidth, h: f.clientHeight }, left: 0, top: 0 };
-        }
-        return prev.box.w === next.box.w && prev.box.h === next.box.h && prev.left === next.left && prev.top === next.top ? prev : next;
-      });
+      if (cell) setCellEl((prev) => (prev === cell ? prev : cell));
+      /* The handlers read `now`, so what is measured is put there at once: a press that finds the words moved measures first and reads the right box in the same event. */
+      const surf = cell ?? f;
+      let next: { box: Box; left: number; top: number };
+      if (cell) {
+        const fr = f.getBoundingClientRect(), cr = cell.getBoundingClientRect();
+        next = { box: { w: cell.clientWidth, h: cell.clientHeight }, left: fr.left - cr.left - cell.clientLeft, top: fr.top - cr.top - cell.clientTop };
+      } else {
+        next = { box: { w: f.clientWidth, h: f.clientHeight }, left: 0, top: 0 };
+      }
+      const was = now.current.size;
+      const kept = was.box.w === next.box.w && was.box.h === next.box.h && was.left === next.left && was.top === next.top ? was : next;
+      now.current = { ...now.current, surface: surf, size: kept };
+      setSurface((prev) => (prev === surf ? prev : surf));
+      setSize((prev) => (prev.box.w === kept.box.w && prev.box.h === kept.box.h && prev.left === kept.left && prev.top === kept.top ? prev : kept));
     };
     if (typeof ResizeObserver === 'function') {
       watch = new ResizeObserver(measure);
@@ -691,13 +697,25 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     cursor.over(el, e, shown.current.mode, shown.current.ink);
   };
 
+  /**
+   * Called first by every press and pointer move: the words may have been moved between the cell and a view (Stick Around) with no render
+   * and no observer callback, so the surface measured is checked against where the frame is now, and measured again at once if it differs.
+   */
+  const ensure = () => {
+    const f = frameRef.current;
+    if (!f) return;
+    const cell = bleed ? f.closest<HTMLElement>('.kb-act-main') : null;
+    if ((cell ?? f) !== now.current.surface) remeasure.current?.();
+  };
+
   const onPointerDown = (e: PointerEvent) => {
+    ensure();
     if (e.pointerType === 'touch' || !now.current.built || live.current || (e.pointerType === 'mouse' && e.button !== 0) || overInk(e.target)) return;
     const [x, y] = shareAt(e.clientX, e.clientY);
     /* No ink under the pointer, or no layer to write in: the page has it, for a link or a scroll. */
     if (!begin([x, y], e.pointerId, false)) return;
     e.preventDefault();
-    now.current.surface?.setPointerCapture?.(e.pointerId);
+    (e.currentTarget as Element | null)?.setPointerCapture?.(e.pointerId);
     shown.current = { mode: writing() ? 'pen' : 'sponge', ink: writing() ? live.current!.color : undefined };
     cursor.press(true);
     if (now.current.surface) cursor.over(now.current.surface, e, shown.current.mode, shown.current.ink);
@@ -705,6 +723,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
 
   const onPointerMove = (e: PointerEvent) => {
     if (e.pointerType === 'touch') return;
+    ensure();
     const s = live.current;
     if (s && !s.touch && (s.pointer === null || e.pointerId === s.pointer)) extend(s, shareAt(e.clientX, e.clientY));
     showCursor(e);
@@ -733,6 +752,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   const settle = (g: Gesture) => { if (g.timer) clearTimeout(g.timer); g.timer = null; };
 
   const onTouchStart = (e: TouchEvent) => {
+    ensure();
     if (e.touches.length > 1) {
       /* A second finger is the page's: a pinch or a scroll. A wipe already under way stops where it got to. */
       if (gesture.current) { settle(gesture.current); gesture.current.state = 'page'; }
@@ -794,8 +814,8 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   };
 
   /*
-   * The input surface: the cell in the thread, the frame in the ORIGIN box. The listeners are native, added here and taken off on
-   * cleanup or when the surface changes, because the cell is the engine's and a touch move must not be passive (React's are). Each
+   * The input: the frame always, and in the thread the cell too (see the effect). The listeners are native, added here and taken off on
+   * cleanup or when the cell changes, because the cell is the engine's and a touch move must not be passive (React's are). Each
    * calls the latest handler, so none is stale. The surface keeps `touch-action: pan-y pinch-zoom` so a sideways swipe never waits
    * on the browser.
    */
@@ -804,47 +824,71 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   const handlers = useRef({ onPointerDown, onPointerMove, onPointerEnd, onPointerLeave, onTouchStart, onTouchMove, onTouchEnd });
   handlers.current = { onPointerDown, onPointerMove, onPointerEnd, onPointerLeave, onTouchStart, onTouchMove, onTouchEnd };
   useEffect(() => {
-    const el = surface;
-    if (!el || still) return;
-    const was = el.style.touchAction;
-    el.style.touchAction = 'pan-y pinch-zoom';
-    const down = (e: PointerEvent) => handlers.current.onPointerDown(e);
-    const move = (e: PointerEvent) => handlers.current.onPointerMove(e);
-    const end = (e: PointerEvent) => handlers.current.onPointerEnd(e);
-    const leave = (e: PointerEvent) => handlers.current.onPointerLeave(e);
-    const tstart = (e: TouchEvent) => handlers.current.onTouchStart(e);
-    const tmove = (e: TouchEvent) => handlers.current.onTouchMove(e);
-    const tend = (e: TouchEvent) => handlers.current.onTouchEnd(e);
-    const click = (e: MouseEvent) => { if (suppress.current) { clearSuppress(); e.preventDefault(); e.stopPropagation(); } };
-    el.addEventListener('pointerdown', down);
-    el.addEventListener('pointermove', move);
-    el.addEventListener('pointerup', end);
-    el.addEventListener('pointercancel', end);
-    el.addEventListener('pointerleave', leave);
-    el.addEventListener('touchstart', tstart, { passive: true });
-    el.addEventListener('touchmove', tmove, { passive: false });
-    el.addEventListener('touchend', tend);
-    el.addEventListener('touchcancel', tend);
-    el.addEventListener('click', click, true);
+    const f = frameRef.current;
+    if (!f || still) return;
+    /*
+     * Listeners are always on the frame, and in the thread on the cell as well. The words can be moved between the cell and a view with
+     * no render, so neither element's place is trusted: the cell's handler takes nothing while the frame is not inside it, and nothing
+     * whose target is inside the frame (the frame's own handler takes that), so a press is taken once and a stale cell never acts.
+     */
+    const els = [f, ...(cellEl && cellEl !== f ? [cellEl] : [])];
+    const wasTouch = new Map(els.map((el) => [el, el.style.touchAction]));
+    const grip = () => {
+      f.style.touchAction = 'pan-y pinch-zoom';
+      if (cellEl) {
+        const want = cellEl.contains(f) ? 'pan-y pinch-zoom' : wasTouch.get(cellEl)!;
+        if (cellEl.style.touchAction !== want) cellEl.style.touchAction = want;
+      }
+    };
+    grip();
+    const mine = (el: HTMLElement, e: Event) => {
+      grip();
+      if (el === f) return true;
+      const t = e.target;
+      return el.contains(f) && !(t instanceof Node && f.contains(t));
+    };
+    const offs = els.map((el) => {
+      const down = (e: PointerEvent) => { if (mine(el, e)) handlers.current.onPointerDown(e); };
+      const move = (e: PointerEvent) => { if (mine(el, e)) handlers.current.onPointerMove(e); };
+      const end = (e: PointerEvent) => { if (mine(el, e)) handlers.current.onPointerEnd(e); };
+      const leave = (e: PointerEvent) => { if (mine(el, e)) handlers.current.onPointerLeave(e); };
+      const tstart = (e: TouchEvent) => { if (mine(el, e)) handlers.current.onTouchStart(e); };
+      const tmove = (e: TouchEvent) => { if (mine(el, e)) handlers.current.onTouchMove(e); };
+      const tend = (e: TouchEvent) => { if (mine(el, e)) handlers.current.onTouchEnd(e); };
+      const click = (e: MouseEvent) => { if (mine(el, e) && suppress.current) { clearSuppress(); e.preventDefault(); e.stopPropagation(); } };
+      el.addEventListener('pointerdown', down);
+      el.addEventListener('pointermove', move);
+      el.addEventListener('pointerup', end);
+      el.addEventListener('pointercancel', end);
+      el.addEventListener('pointerleave', leave);
+      el.addEventListener('touchstart', tstart, { passive: true });
+      el.addEventListener('touchmove', tmove, { passive: false });
+      el.addEventListener('touchend', tend);
+      el.addEventListener('touchcancel', tend);
+      el.addEventListener('click', click, true);
+      return () => {
+        el.removeEventListener('pointerdown', down);
+        el.removeEventListener('pointermove', move);
+        el.removeEventListener('pointerup', end);
+        el.removeEventListener('pointercancel', end);
+        el.removeEventListener('pointerleave', leave);
+        el.removeEventListener('touchstart', tstart);
+        el.removeEventListener('touchmove', tmove);
+        el.removeEventListener('touchend', tend);
+        el.removeEventListener('touchcancel', tend);
+        el.removeEventListener('click', click, true);
+        el.style.touchAction = wasTouch.get(el)!;
+        cursor.leave(el);
+      };
+    });
     return () => {
-      el.removeEventListener('pointerdown', down);
-      el.removeEventListener('pointermove', move);
-      el.removeEventListener('pointerup', end);
-      el.removeEventListener('pointercancel', end);
-      el.removeEventListener('pointerleave', leave);
-      el.removeEventListener('touchstart', tstart);
-      el.removeEventListener('touchmove', tmove);
-      el.removeEventListener('touchend', tend);
-      el.removeEventListener('touchcancel', tend);
-      el.removeEventListener('click', click, true);
-      el.style.touchAction = was;
+      for (const off of offs) off();
       if (gesture.current) { settle(gesture.current); gesture.current = null; }
-      /* A stroke under way when the surface goes is the author's work: it is kept and saved as at any end. */
+      /* A stroke under way when the listeners go is the author's work: it is kept and saved as at any end. */
       finishNow.current();
       clearSuppress();
-      cursor.leave(el);
     };
-  }, [surface, still]);
+  }, [cellEl, still]);
 
   /* ------------------------------------------------------------ the keyboard path ---- */
 

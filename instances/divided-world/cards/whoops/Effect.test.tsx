@@ -55,6 +55,8 @@ let boxWidth = MAX_FRAME;
 let layoutLines = LINES;
 /** A body's height when it is not its lines' (a tall phone body, a short wide one). */
 let boxHeight: number | null = null;
+/** When set, the frame's own client size, apart from the cell's (words moved out of the cell into a view of another size). */
+let frameBox: Box | null = null;
 const boxNow = (): Box => ({ w: boxWidth, h: boxHeight ?? layoutLines * LINE_PX });
 
 const isBox = (el: HTMLElement) => el.classList?.contains('kb-act-main') || el.classList?.contains('kb-whoops-frame');
@@ -63,10 +65,11 @@ beforeEach(() => {
   boxWidth = MAX_FRAME;
   layoutLines = LINES;
   boxHeight = null;
+  frameBox = null;
   vi.clearAllMocks();
   /* The body's box (the cell in the thread, the frame in the ORIGIN box); jsdom lays nothing out, so every rect is at 0, 0 and the frame sits at the cell's corner. */
-  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get(this: HTMLElement) { return isBox(this) ? boxNow().w : 0; } });
-  Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get(this: HTMLElement) { return isBox(this) ? boxNow().h : 0; } });
+  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get(this: HTMLElement) { return this.classList?.contains('kb-whoops-frame') && frameBox ? frameBox.w : isBox(this) ? boxNow().w : 0; } });
+  Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get(this: HTMLElement) { return this.classList?.contains('kb-whoops-frame') && frameBox ? frameBox.h : isBox(this) ? boxNow().h : 0; } });
   /* A word's box: its line down the layout, at its natural size. */
   Range.prototype.getClientRects = function (this: Range) {
     const top = Math.floor(this.startOffset / LINE_CHARS) * LINE_PX;
@@ -928,6 +931,53 @@ describe('the body\'s box', () => {
     stroke(cell, 2, 6 * LINE_PX);
     expect(washed(root)[0], 'the cell takes it again').toBeGreaterThan(before);
     away.remove();
+  });
+
+  test('words moved out of the cell by a plain appendChild, with no render: the frame takes the press in its own box, and the cell it left takes nothing; moved back, the cell\'s gutter washes again', () => {
+    const { cell, frame, root } = mount();
+    const away = document.createElement('div');
+    document.body.append(away);
+    frameBox = { w: 600, h: 300 };
+    away.append(root);
+    const [x, y] = inkSpot(new LayerInk(splatFor(0), [], frameBox));
+    const at = (b: Box, dx = 0) => ({ clientX: (x + dx) * b.w, clientY: y * b.h, pointerId: 1, button: 0, pointerType: 'mouse' as const });
+    /* The old cell is told nothing and does nothing. */
+    expect(fireEvent.pointerDown(cell, at(frameBox)), 'the cell it left takes nothing').toBe(true);
+    expect(washed(root)[0]).toBe(0);
+    act(() => { fireEvent.pointerDown(frame, at(frameBox)); });
+    act(() => { fireEvent.pointerMove(frame, at(frameBox, 0.06)); });
+    act(() => { fireEvent.pointerUp(frame, at(frameBox, 0.06)); });
+    const canvas = root.querySelector('canvas[data-kb-effect-ink]') as HTMLCanvasElement;
+    expect(washed(root)[0], 'the frame takes the press where it now lives').toBeGreaterThan(0);
+    expect(canvas.width, 'in the frame\'s box, not the cell\'s').toBe(600);
+    const expected = new LayerInk(splatFor(0), [{ tool: 'wash', ...brushOf(BRUSH_PX, frameBox), points: [[x, y], [x + 0.06, y]] }], frameBox).washed;
+    expect(washed(root)[0]).toBeCloseTo(expected, 1);
+    const before = washed(root)[0]!;
+    /* Back in the cell by appendChild alone: a press in its gutter, outside the frame, washes again. */
+    frameBox = null;
+    cell.append(root);
+    const [x2, y2] = inkSpot(inkOf(0));
+    const gutter = (dx: number) => ({ clientX: (x2 + dx) * boxNow().w, clientY: (y2 + 6 * LINE_PX / boxNow().h) * boxNow().h, pointerId: 2, button: 0, pointerType: 'mouse' as const });
+    act(() => { fireEvent.pointerDown(cell, gutter(0)); });
+    act(() => { fireEvent.pointerMove(cell, gutter(0.06)); });
+    act(() => { fireEvent.pointerUp(cell, gutter(0.06)); });
+    expect(washed(root)[0], 'the cell takes it again').toBeGreaterThan(before);
+    away.remove();
+  });
+
+  test('a press inside the frame while it is in the cell is taken once, not by the frame and the cell both', () => {
+    const { frame, root } = mount();
+    const [x, y] = inkSpot(inkOf(0));
+    const [a, b] = [px(x, y), px(x + 0.06, y)];
+    act(() => { fireEvent.pointerMove(frame, { clientX: a[0], clientY: a[1], pointerId: 1, pointerType: 'mouse' }); });
+    expect(vi.mocked(cursor.over), 'one move is read once').toHaveBeenCalledTimes(1);
+    vi.mocked(cursor.over).mockClear();
+    act(() => { fireEvent.pointerDown(frame, { clientX: a[0], clientY: a[1], pointerId: 1, button: 0, pointerType: 'mouse' }); });
+    expect(vi.mocked(cursor.press), 'one press is taken once').toHaveBeenCalledTimes(1);
+    act(() => { fireEvent.pointerMove(frame, { clientX: b[0], clientY: b[1], pointerId: 1, pointerType: 'mouse' }); });
+    expect(vi.mocked(suds.wash), 'one move throws its suds once').toHaveBeenCalledTimes(1);
+    act(() => { fireEvent.pointerUp(frame, { clientX: b[0], clientY: b[1], pointerId: 1, pointerType: 'mouse' }); });
+    expect(washed(root)[0]).toBeGreaterThan(0);
   });
 
   test('in the ORIGIN box the frame is the surface and the box', () => {
