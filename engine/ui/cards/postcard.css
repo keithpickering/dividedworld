@@ -284,9 +284,9 @@ button.kb-postcard {
  * The back's cloud: two layers of the glass's noise, white with alpha, tinted by a gradient of the glass's own colors
  * multiplied over them, so the clouds take the colors and the field between them stays dark (the card template design's
  * amendment of 2026-11-07, drawn on the booster packs' boards). The noise's only literals are inside url().
- * A post's face-down mark (`.kb-card-back`, Marks.tsx) is the same back drawn small, so its cloud is these same rules, never a copy
- * (the amendment of 2026-11-07, "The mark's back"). */
-.kb-card-back,
+ * A post's face-down mark (Marks.tsx) is the face-down card itself: its whole tile is filled with this same cloud by these same
+ * rules, on a layer under its border (marks.css), never a copy (the amendment of 2026-11-07, "The mark's back"). */
+.kb-mark[data-kb-back='down'],
 .kb-postcard-back {
   --kb-back-tint: linear-gradient(160deg, var(--kb-glass-violet) 0%, var(--kb-glass-neon) 45%, var(--kb-glass-violet) 72%, var(--kb-glass-salty) 100%);
   --kb-back-glow: var(--kb-glass-neon);
@@ -296,7 +296,7 @@ button.kb-postcard {
   --kb-card-color: var(--kb-glass-text-hi);
 }
 
-.kb-card-back,
+.kb-mark[data-kb-back='down']::before,
 .kb-postcard-back .kb-postcard-canvas {
   background-image:
     var(--kb-back-tint),

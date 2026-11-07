@@ -106,12 +106,12 @@ describe('a card back', () => {
     expect(said.ends).toMatch(/^Ends \w+ \d+, [\d:]+\s[AP]M, unless it springs first\.$/u);
   });
 
-  test('wears the instance\'s mark on the back\'s cloud, and no card\'s', async () => {
+  test('is the face-down card itself: no picture inside, not even the instance\'s mark, and no card\'s alignment', async () => {
     const w = await world();
     await open(w);
     await waitFor(() => expect(back(2)).not.toBeNull());
-    const drawn = back(2)!.querySelector('.kb-card-back')!;
-    expect([...drawn.querySelectorAll('img')].map((i) => i.getAttribute('src'))).toEqual(['/coin.svg']);
+    expect(back(2)!.querySelectorAll('img').length).toBe(0);
+    expect(back(2)!.getAttribute('data-kb-back')).toBe('down');
     expect(back(2)!.hasAttribute('data-kb-alignment')).toBe(false);
   });
 

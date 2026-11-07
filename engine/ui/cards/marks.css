@@ -252,34 +252,38 @@
 
 /*
  * A card set face down (the card mechanic's design, section 3): the engine's own back, the same for every card, so a trap and a
- * Bluff look alike. It is the postcard's back drawn small (the card template design's amendment of 2026-11-07, "The mark's back"):
- * a 2:3 card in the icon's height, its cloud the back's own rules in postcard.css (which load first), and the instance's mark at
- * its center with the back's glow. The setter's own card is named in the Lens, never drawn on the mark. A sprung back shows its
- * card in the same place.
+ * Bluff look alike. The mark is the face-down card itself (the card template design's amendment of 2026-11-07, "The mark's back"):
+ * its tile keeps its shape and a white border, and a layer under the border is filled with the postcard back's cloud, by the back's
+ * own rules in postcard.css (which load first). Nothing is drawn on it but a count; the setter's own card is named in the Lens. A
+ * hover or an open Lens brightens the cloud, since the tile's own fills would sit under it. A sprung back shows its card instead.
  */
 .kb-mark[data-kb-back='down'] {
   --kb-mark-line: var(--kb-glass-text-hi);
 }
-.kb-card-back {
-  position: relative;
-  flex: none;
-  width: 0.97rem;
-  height: 1.45rem;
-  margin-inline: 0.24rem;
-  box-sizing: border-box;
-  border-radius: 0.15rem;
-  box-shadow: 0 0 0 1px var(--kb-glass-text-hi);
-}
-.kb-card-back-mark {
+.kb-mark[data-kb-back='down']::before {
+  content: '';
   position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 72%;
-  aspect-ratio: 1;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  object-fit: contain;
-  box-shadow: 0 0 0.12rem 0.04rem var(--kb-back-glow);
+  inset: 0;
+  pointer-events: none;
+  /* The cloud drawn larger than a card's, so a tile this small shows a few soft clouds rather than fine grain (the owner's ask);
+     the noise keeps a card's 540:840, which its SVG does not hold by itself, and the tint keeps the tile's whole size, so its colors still run corner to corner. */
+  background-size: 100% 100%, 5rem 7.8rem, 5rem 7.8rem;
+  background-position: center;
+}
+.kb-mark[data-kb-back='down']:hover:not([aria-disabled="true"])::before,
+.kb-mark[data-kb-back='down'][aria-expanded="true"]::before {
+  filter: brightness(1.3);
+}
+/* The tile's contents stand over the cloud: an icon-sized space, so a back is as wide as any mark, and a count when there is one. */
+.kb-mark[data-kb-back='down'] > .kb-meta-tile-in {
+  position: relative;
+  color: var(--kb-glass-text-hi);
+  text-shadow: 0 0 3px var(--kb-glass-field), 0 0 2px var(--kb-glass-field);
+}
+.kb-card-back {
+  flex: none;
+  width: 1.45rem;
+  height: 1.45rem;
 }
 /* A caught play is spent and did nothing: its mark is drawn dim, with its name saying so. */
 .kb-mark[data-kb-caught='true'] {

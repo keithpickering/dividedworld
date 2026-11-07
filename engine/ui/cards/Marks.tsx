@@ -120,10 +120,8 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
       style={style} onClick={(e) => onOpen(kind, e.currentTarget)}
     >
       <span className="kb-meta-tile-in" aria-hidden="true">
-        {/* A back is the same for every reader, its setter too, whose card the Lens names (the card template design's amendment of 2026-11-07). */}
-        {back && !revealed
-          ? <span className="kb-card-back">{ui.cardBack && <img className="kb-card-back-mark" src={ui.cardBack.mark} alt="" draggable={false} />}</span>
-          : icon ? <img className="kb-mark-icon" src={icon} alt="" draggable={false} /> : <span className="kb-mark-swatch" />}
+        {/* A back is the face-down card itself, its cloud drawn by the tile (marks.css), and the same for every reader, its setter too, whose card the Lens names (the card template design's amendment of 2026-11-07). */}
+        {back && !revealed ? <span className="kb-card-back" /> : icon ? <img className="kb-mark-icon" src={icon} alt="" draggable={false} /> : <span className="kb-mark-swatch" />}
         {plays.length > 1 && <span className="kb-mark-count">×{plays.length}</span>}
       </span>
       {progress !== null && <span className="kb-mark-edge" aria-hidden="true" />}
