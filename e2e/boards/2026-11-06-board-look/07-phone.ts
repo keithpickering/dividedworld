@@ -15,8 +15,14 @@
  *    permalink stand 13px lower. The rank is set at the post's 15px, where the board draws 13.75px (the type scale).
  *  - The words under the post line are the fixture's, not the board's, so only each post's author, rank, line and permalink are compared.
  *  - The HUD is drawn for place only and is 01-main's.
+ *  - The group bar (docs/plans/2026-11-06-member-groups-design.md, the look the owner approved in docs/research/2026-11-06-member-groups/01-bars.html,
+ *    option A) stands under every character's name, which the board, drawn before it, does not: the rank, and the post's line and permalink under the
+ *    band it lengthens, stand GROUP_BAR lower.
  */
 import type { BoardManifest } from '../../board-match.ts';
+
+/** The group bar's room in the phone's postbit band, in px. */
+const GROUP_BAR = 25;
 
 const manifest: BoardManifest = {
   board: '2026-11-06-board-look/07-phone',
@@ -30,9 +36,9 @@ const manifest: BoardManifest = {
     { id: 'title', role: 'heading', name: 'who keeps splatting my posts', buildShift: { y: 29.3 } },
     { id: 'pager-where', role: 'text', name: 'Page 3 of 3', buildShift: { y: 26.7 } },
     { id: 'post-41-author', role: 'link', name: 'Spritey', box: 'position', buildShift: { y: 23.6 } },
-    { id: 'post-41-rank', role: 'text', name: 'Main Eventer', box: 'position', buildSize: 15, buildShift: { y: 22.6 } },
-    { id: 'post-41-when', role: 'text', name: 'Oct 29, 9:14 PM', box: 'position', buildShift: { y: 13.2 } },
-    { id: 'post-41-permalink', role: 'link', name: '#41', buildName: 'Permalink to post #41', box: 'position', buildShift: { y: 13.2 } },
+    { id: 'post-41-rank', role: 'text', name: 'Main Eventer', box: 'position', buildSize: 15, buildShift: { y: 22.6 + GROUP_BAR } },
+    { id: 'post-41-when', role: 'text', name: 'Oct 29, 9:14 PM', box: 'position', buildShift: { y: 13.2 + GROUP_BAR } },
+    { id: 'post-41-permalink', role: 'link', name: '#41', buildName: 'Permalink to post #41', box: 'position', buildShift: { y: 13.2 + GROUP_BAR } },
   ],
 };
 

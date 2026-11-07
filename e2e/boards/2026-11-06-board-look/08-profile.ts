@@ -13,8 +13,14 @@
  *    1.85 is a Main Eventer's), so a fact is held by its label and its place, never by its value; Place's link and the class fact's words are the same.
  *  - The build's nav is named Main, as in 02-board; the host and tagline are not repeated.
  *  - The story's times are read against the real clock, so no time is a landmark; a record row is held by its place and its words.
+ *  - The Group row (docs/plans/2026-11-06-member-groups-design.md, the member groups plan's Task 12) stands after Rank, which the board, drawn before it,
+ *    does not hold: the About table is that much taller, and every fact under Rank, the signature, the record, See the full record
+ *    and the footer stand GROUP_ROW lower.
  */
 import type { BoardManifest } from '../../board-match.ts';
+
+/** The Group row's room in the About table at 1440, in px: its row and its grid line. */
+const GROUP_ROW = 39.5;
 
 const manifest: BoardManifest = {
   board: '2026-11-06-board-look/08-profile',
@@ -28,26 +34,26 @@ const manifest: BoardManifest = {
     { id: 'nav-system', role: 'link', name: 'Staff Announcements', within: 'nav', box: 'position', type: false },
     { id: 'crumb-index', role: 'link', name: 'Index', nth: 1, buildNth: 1, buildShift: { y: 8.1 } },
     { id: 'title', role: 'heading', name: 'Spritey', buildShift: { y: 35.6 } },
-    { id: 'about', role: 'table', name: 'About Spritey', type: false, buildShift: { y: 38.6, height: -33.4 } },
+    { id: 'about', role: 'table', name: 'About Spritey', type: false, buildShift: { y: 38.6, height: -33.4 + GROUP_ROW } },
     { id: 'about-band', role: 'columnheader', name: 'About Spritey', within: 'about', origin: 'about' },
     { id: 'fact-title', role: 'rowheader', name: 'Title', within: 'about', origin: 'about' },
     { id: 'fact-rank', role: 'rowheader', name: 'Rank', within: 'about', origin: 'about' },
-    { id: 'fact-aura-this-season', role: 'rowheader', name: 'Aura this season', within: 'about', origin: 'about' },
-    { id: 'fact-place', role: 'rowheader', name: 'Place', within: 'about', origin: 'about' },
-    { id: 'fact-posts', role: 'rowheader', name: 'Posts', within: 'about', origin: 'about' },
-    { id: 'fact-threads-spun', role: 'rowheader', name: 'Threads spun', within: 'about', origin: 'about' },
-    { id: 'fact-cards-played', role: 'rowheader', name: 'Cards played', within: 'about', origin: 'about' },
-    { id: 'fact-joined', role: 'rowheader', name: 'Joined', within: 'about', origin: 'about' },
-    { id: 'fact-class', role: 'rowheader', name: 'Class', within: 'about', origin: 'about', buildShift: { y: -34.4 } },
+    { id: 'fact-aura-this-season', role: 'rowheader', name: 'Aura this season', within: 'about', origin: 'about', buildShift: { y: GROUP_ROW } },
+    { id: 'fact-place', role: 'rowheader', name: 'Place', within: 'about', origin: 'about', buildShift: { y: GROUP_ROW } },
+    { id: 'fact-posts', role: 'rowheader', name: 'Posts', within: 'about', origin: 'about', buildShift: { y: GROUP_ROW } },
+    { id: 'fact-threads-spun', role: 'rowheader', name: 'Threads spun', within: 'about', origin: 'about', buildShift: { y: GROUP_ROW } },
+    { id: 'fact-cards-played', role: 'rowheader', name: 'Cards played', within: 'about', origin: 'about', buildShift: { y: GROUP_ROW } },
+    { id: 'fact-joined', role: 'rowheader', name: 'Joined', within: 'about', origin: 'about', buildShift: { y: GROUP_ROW } },
+    { id: 'fact-class', role: 'rowheader', name: 'Class', within: 'about', origin: 'about', buildShift: { y: -34.4 + GROUP_ROW } },
     { id: 'fact-title-words', role: 'cell', name: 'Level editor guy', within: 'about', origin: 'about' },
-    { id: 'standings', role: 'link', name: 'season standings', within: 'about', origin: 'about', box: 'position' },
-    { id: 'signature', role: 'text', name: 'posting in pencil since 2003', within: 'about', origin: 'about', box: 'position', buildShift: { y: -33.6 } },
-    { id: 'record', role: 'table', name: 'Latest rows of the public record, newest first', type: false, buildShift: { y: -451.6, height: 5.4 } },
+    { id: 'standings', role: 'link', name: 'season standings', within: 'about', origin: 'about', box: 'position', buildShift: { y: GROUP_ROW } },
+    { id: 'signature', role: 'text', name: 'posting in pencil since 2003', within: 'about', origin: 'about', box: 'position', buildShift: { y: -33.6 + GROUP_ROW } },
+    { id: 'record', role: 'table', name: 'Latest rows of the public record, newest first', type: false, buildShift: { y: -451.6 + GROUP_ROW, height: 5.4 } },
     { id: 'record-band', role: 'heading', name: 'Public record', within: 'record', origin: 'record' },
     { id: 'record-when', role: 'columnheader', name: 'When', within: 'record', origin: 'record' },
     { id: 'record-what', role: 'columnheader', name: 'What', within: 'record', origin: 'record' },
-    { id: 'see-all', role: 'link', name: 'See the full record', buildShift: { y: -447.7 } },
-    { id: 'footer', role: 'contentinfo', name: '', box: 'position', type: false, buildShift: { y: -448.7 } },
+    { id: 'see-all', role: 'link', name: 'See the full record', buildShift: { y: -447.7 + GROUP_ROW } },
+    { id: 'footer', role: 'contentinfo', name: '', box: 'position', type: false, buildShift: { y: -448.7 + GROUP_ROW } },
   ],
 };
 

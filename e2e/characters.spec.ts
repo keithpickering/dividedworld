@@ -370,12 +370,17 @@ async function fades(dialog: ReturnType<Page['locator']>) {
     return { before: px('before'), after: px('after') };
   });
 }
-/** How much of a card shows inside the row, in whole px, measured from the boxes. */
+/**
+ * How much of a card shows inside the row, in whole px, measured from the boxes. A box is in viewport pixels and the fade in the
+ * row's own CSS pixels, which the Main board's `zoom` (--kb-board-scale) scales: below 1 wherever the root is narrower than 1440,
+ * as a classic scrollbar makes it at a 1440 window, a 52px peek is a 51.46px box. So the box is read back at the row's zoom.
+ */
 async function showing(dialog: ReturnType<Page['locator']>, key: string) {
   return classGroup(dialog).locator('.kb-class-grid').evaluate((row, k) => {
     const r = row.getBoundingClientRect();
     const c = row.querySelector(`[data-kb-class="${k}"]`)!.getBoundingClientRect();
-    return Math.max(0, Math.round(Math.min(r.right, c.right) - Math.max(r.left, c.left)));
+    const zoom = (row as HTMLElement & { currentCSSZoom?: number }).currentCSSZoom ?? 1;
+    return Math.max(0, Math.round((Math.min(r.right, c.right) - Math.max(r.left, c.left)) / zoom));
   }, key);
 }
 
