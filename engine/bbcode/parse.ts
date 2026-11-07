@@ -210,7 +210,7 @@ type QuoteHead =
 
 /**
  * What follows `quote` in a quote opener: nothing, `=<name>`, ` user=<id>` or `=<name> user=<id>`,
- * the name quoted or the words up to ` user=`. A name that is an Act id is a real quote (`user=`
+ * the name quoted or the words up to whitespace and `user=` (in any case). A name that is an Act id is a real quote (`user=`
  * dropped, since the author of a real quote always comes from the post); any other name of 1 to
  * `MAX_QUOTE_NAME` characters is a counterfeit. Null when it is none of these, and the opener is text.
  */
@@ -225,7 +225,8 @@ function quoteHead(rest: string): QuoteHead | null {
       name = v.slice(1, j);
       tail = v.slice(j + 1);
     } else {
-      const at = v.indexOf(' user=');
+      /* `user=` after any run of whitespace, in any case, as the tail's own test reads it, so it is never swallowed into the name. */
+      const at = v.search(/\suser=/i);
       name = at < 0 ? v : v.slice(0, at);
       tail = at < 0 ? '' : v.slice(at);
     }

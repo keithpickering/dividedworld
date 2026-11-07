@@ -187,6 +187,13 @@ test('a counterfeit may name a character by id, with or without a typed name', (
   assert.deepEqual(parse('[quote]hi[/quote]'), [fake(null, null, text('hi'))]);
 });
 
+test('user= is found after any run of whitespace and in any case, never swallowed into the name', () => {
+  assert.deepEqual(parse(`[quote=${ACT} USER=${USER}]hi[/quote]`), [{ type: 'quote', act: ACT, children: [text('hi')] }]);
+  assert.deepEqual(parse(`[quote=Geno User=${USER}]hi[/quote]`), [fake('Geno', USER, text('hi'))]);
+  assert.deepEqual(parse(`[quote=Geno\tuser=${USER}]hi[/quote]`), [fake('Geno', USER, text('hi'))]);
+  assert.deepEqual(parse(`[quote=Geno  user=${USER}]hi[/quote]`), [fake('Geno', USER, text('hi'))]);
+});
+
 test('a name that is an Act id is a real quote, and user= is dropped', () => {
   assert.deepEqual(parse(`[quote=${ACT} user=${USER}]hi[/quote]`), [{ type: 'quote', act: ACT, children: [text('hi')] }]);
   assert.deepEqual(parse(`[quote="${ACT.toUpperCase()}" user=${USER}]hi[/quote]`), [{ type: 'quote', act: ACT, children: [text('hi')] }]);
