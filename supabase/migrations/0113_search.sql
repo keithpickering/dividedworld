@@ -446,8 +446,12 @@ grant select on post_search to authenticated;
 -- btree_gin is a contrib extension that ships with Postgres (and with Supabase): it lets a GIN index hold a plain column beside the words, so one index scan finds the board's matches.
 create extension if not exists btree_gin with schema extensions;
 create index post_search_words on post_search using gin (words);
-create index post_search_board_words on post_search using gin (board, words);
-create index post_search_first_words on post_search using gin (board, words) where first;      -- titles only in a board
+-- These two hold the board as its text, (board::text), and a search with a word asks for it in that form (search_matches_sql): the plain board column is the leading column of the keyset btrees, so a
+-- condition on it could also be met by ANDing a bitmap of the whole board's entries with the word's, and which one the planner took followed its estimate of the word. A condition on the text of the
+-- board can only be met here (or by the word's own index with the board as a filter on the word's matches), so a board's matches are found by this index and cost what they are. The keyset btrees
+-- keep the plain column for a search with no word, which walks them in time order.
+create index post_search_board_words on post_search using gin ((board::text), words);
+create index post_search_first_words on post_search using gin ((board::text), words) where first;      -- titles only in a board
 create index post_search_first_title_words on post_search using gin (words) where first;       -- titles only anywhere: a partial btree on the first posts (post_search_first_newest) has no condition of its own and is read whole as a bitmap leg, so the planner needs a cheaper way to the word's titles than ANDing that leg; (board, words) is costed high for a search with no board
 create index post_search_newest on post_search (created_at desc, act desc);
 create index post_search_board_newest on post_search (board, created_at desc, act desc);       -- the board's posts in time order: the keyset walk of a board filter
@@ -683,9 +687,30 @@ begin
                              coalesce(after_act, case when dir = 'desc' then 'ffffffff-ffff-ffff-ffff-ffffffffffff' else '00000000-0000-0000-0000-000000000000' end::uuid));
   end if;
   if updates is not null then conds := conds || format('p.thread <> %L::uuid', updates); end if;
-  if board is not null then conds := conds || format('p.board = %L::uuid', board); end if;
-  return format('select p.act, p.thread, p.board, t.title, p."character", p.created_at, p.words from post_search p join threads t on t.id = p.thread where %s order by p.created_at %s, p.act %s limit %s',
-                array_to_string(conds, ' and '), dir, dir, greatest(coalesce(lim, 0), 0)::integer);
+  -- With a word and a board the board is asked for as its text, which only post_search_board_words and post_search_first_words hold; with no word it is the column, which the keyset btrees walk.
+  if board is not null then conds := conds || case when tsq is null then format('p.board = %L::uuid', board) else format('p.board::text = %L', board::text) end; end if;
+  -- An author with no board: the author's own posts are the bound. The word's index is closed to the plan (the word is read through a concatenation, which no index holds), so the only way to the matches is the author's
+  -- index, post_search_character, whose rows are the author's own (A), and not the word's matches in every board, which the planner chose for a common word when it had no statistics for the author's column.
+  if tsq is not null and author is not null and board is null then
+    conds := array_replace(conds, format('p.words @@ %L::tsquery', tsq::text), format('(p.words || %L::tsvector) @@ %L::tsquery', '', tsq::text));
+  end if;
+  if tsq is null or not (board is not null or author is not null or coalesce(titles_only, false)) then
+    -- The matches in order, off the keyset btrees (post_search_newest and its board, first-post and character siblings): the walk stops at `lim`. With no word, the filters alone, bounded by the rows it passes, which they
+    -- keep to a share of the table. With a word and neither a board nor titles only, the word is a filter on that walk or the planner finds its matches through the word's index and sorts them, and either way a broad
+    -- word costs what a narrow one does: a common word finds its `lim` matches at the newest rows (the page or the pool, whatever the instance holds), a rare one reads the few rows it is in (post_search_words).
+    return format('select p.act, p.thread, p.board, t.title, p."character", p.created_at, p.words from post_search p join threads t on t.id = p.thread where %s order by p.created_at %s, p.act %s limit %s',
+                  array_to_string(conds, ' and '), dir, dir, greatest(coalesce(lim, 0), 0)::integer);
+  end if;
+  -- With a word and a board, or titles only: the word's matches in that board, or in the first posts, are found first and ordered after. The matches are a `materialized` CTE with no ORDER BY, so the only plans open to the
+  -- planner for it are the ones that find the matches (the GIN indexes on the word, with the board where one is given, or its first posts), and none of them can walk a keyset btree in time order and drop rows that do not
+  -- hold the word. Without this the order by ... limit offered the planner that walk, and whether it took it depended on its estimate of how common the word is: a rare word estimated common, in a board with none of it, read
+  -- every post of the board to find nothing (supabase/tests/0115-search.sql, BOUND-2). Now the rows read are the filter's own matches (M) at most, whatever the statistics say: the worst case of a word found in
+  -- every post of the board is the cost of sorting M, and the page, the pool and the count all take their newest rows from that one sort. A board or titles only is what keeps M to a share of the instance; with
+  -- neither, M is the word's matches in every board, and sorting them is the cost the walk above does not pay. The thread's title is joined after the limit, to the rows that stay.
+  return format('with m as materialized (select p.act, p.thread, p.board, p."character", p.created_at, p.words from post_search p where %s) '
+                'select o.act, o.thread, o.board, t.title, o."character", o.created_at, o.words '
+                'from (select * from m order by m.created_at %s, m.act %s limit %s) o join threads t on t.id = o.thread order by o.created_at %s, o.act %s',
+                array_to_string(conds, ' and '), dir, dir, greatest(coalesce(lim, 0), 0)::integer, dir, dir);
 end $$;
 
 create function search_matches(p_q text, p_author uuid, p_board uuid, p_from_at timestamptz, p_to_at timestamptz, p_titles_only boolean, p_newest boolean, p_after_at timestamptz, p_after_act uuid, p_lim integer)
