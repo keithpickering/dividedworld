@@ -1138,6 +1138,50 @@ begin
       if read_n > allowed then raise exception 'a search by an author read % rows of post_search, and the author has % (% allowed): %', read_n, m_rows, allowed, s; end if;
     end loop;
   end loop;
+  -- A prolific author (BOUND-2, J1): an author with a word and no board is bounded by the keyset walk down the author's index, which stops at its limit; the plan's cost is its limit times the word's density
+  -- there, 2 for the common word (it is in every other post), and not the author's posts (A). The author above has 100 posts, and 2 * A + 256 holds a plan that reads all of them, so it could not be red for a
+  -- plan that does. This one has 40,000 (a fifth of the instance, the figure of a prolific player's character), A well over 5 * 5,001 + 256 (the most any shape below is allowed), and its posts in 2,000 threads of their own, 20 in a row (a thread's next match is then the next row or the one after, as for the unfiltered shapes above, so the probes are not the fixture's), and the statistics
+  -- are present (analyzed, as a deployed instance's are): the author's word is read through `words || ''`, an expression with no statistics of its own, so the planner took 0.5% of A for its matches and, for any
+  -- limit above that (the count's 1,001, the pool's 5,001, the threads walk's budget), planned a read of all of A and a sort (post_search_words_expr, the expression statistics in the migration, are what it is
+  -- costed from). The allowance, per shape: 2 * lim + 256 for the matches (two rows read for each, and the 256 of the other shapes), and for the threads walk 3 * lim more for its probes (2 rows for each match tested here: the match's next row, and the one after). Red without the expression
+  -- statistics (the plan reads 40,000 for the count, the pool and the walk) and red for the materialized form (it reads all of the word's matches in every board).
+  declare
+    pro uuid := '00000000-0000-4000-9000-000000009999';
+  begin
+    insert into characters (id, owner, name, created_at, debuted_at) values (pro, tests.account('prolific owner'), 'Prolific', base, base);
+    insert into threads (id, board, title, created_at, next_seq, last_at, replies)
+    select ('00000000-0000-4000-8100-' || lpad(g::text, 12, '0'))::uuid, scale_board, 'Prolific thread ' || g, base, 21, base + interval '1 day', 19 from generate_series(1, 2000) g;
+    alter table acts disable trigger user;
+    insert into acts (id, character, kind, thread, payload, seq, created_at)
+    select ('00000000-0000-4000-a900-' || lpad(g::text, 12, '0'))::uuid, pro, 'post', ('00000000-0000-4000-8100-' || lpad(((g - 1) / 20 + 1)::text, 12, '0'))::uuid,
+           jsonb_build_object('body', 'Prolific post ' || g || case when g % 2 = 0 then ' common' else '' end), (g - 1) % 20 + 1, base + g * interval '2 seconds'
+    from generate_series(1, 40000) g;
+    insert into post_search (act, thread, board, first, character, created_at, words)
+    select a.id, a.thread, t.board, false, a.character, a.created_at, to_tsvector('english', a.payload ->> 'body') from acts a join threads t on t.id = a.thread where a.character = pro;
+    analyze post_search;
+    if (select count(*) from post_search p where p."character" = pro) is distinct from 40000 then raise exception 'the prolific author does not have 40,000 posts'; end if;
+    for s, ok_n in select v.s, v.n from (values
+      (search_matches_sql('common', pro, null, null, null, false, true, null, null, 21), 21),
+      (search_matches_sql('common', pro, null, null, null, false, false, null, null, 21), 21),
+      (search_matches_sql('common', pro, null, null, null, false, true, null, null, 1001), 1001),
+      (search_matches_sql('common', pro, null, null, null, false, true, null, null, pool + 1), pool + 1),
+      (search_walk_sql('common', pro, null, null, null, false, true, null, null, pool), pool + 1),
+      (search_walk_sql('common', pro, null, null, null, false, false, null, null, pool), pool + 1)
+    ) as v(s, n) loop
+      plan := pg_temp.explain_run(s);
+      read_n := pg_temp.rows_read(plan);
+      allowed := 2 * ok_n + 256 + case when s like '%order by k.created_at%' then 3 * ok_n else 0 end;
+      bounded_shapes := bounded_shapes + 1;
+      worst := greatest(worst, read_n);
+      raise notice 'prolific: % rows read (% allowed) for limit %', read_n, allowed, ok_n;
+      if read_n > allowed then raise exception 'a search by a prolific author (40,000 posts) for the common word read % rows of post_search (% allowed): %', read_n, allowed, s; end if;
+    end loop;
+    -- The fixture is undone by rolling this block back (the acts are append-only, and deleting 40,000 of them checks each against every table that points at one).
+    raise exception 'prolific fixture done' using errcode = 'P0001';
+  exception when sqlstate 'P0001' then
+    if sqlerrm <> 'prolific fixture done' then raise; end if;
+  end;
+  analyze post_search;
   analyze post_search;
   raise notice 'scale: % filtered shapes, the most rows of post_search read by one: %', bounded_shapes, worst;
 

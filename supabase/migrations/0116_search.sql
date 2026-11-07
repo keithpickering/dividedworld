@@ -458,6 +458,13 @@ create index post_search_board_newest on post_search (board, created_at desc, ac
 create index post_search_first_newest on post_search (created_at desc, act desc) where first;  -- the same for titles only
 create index post_search_first_board_newest on post_search (board, created_at desc, act desc) where first;
 create index post_search_character on post_search (character, created_at desc);
+-- Statistics for the expression a word with an author is read through. A search with a word and an author (and no board) asks for `(words || ''::tsvector) @@ q` so that no index on the word is open to the
+-- plan and it walks the author's keyset btree (post_search_character; see search_matches_sql). But an expression has no statistics of its own, so the planner took 0.5% of the author's posts as its matches and,
+-- for any limit above that (the count's 1,001, the relevance pool's 5,001, the threads walk's budget), planned a read of all of the author's posts and a sort: 100,000 rows for a prolific author and a common
+-- word, where the walk reads about twice its limit. Statistics on the expression give it the word's real density (Postgres 14 and later; the build and CI run 16 and 17). They are filled by ANALYZE, which
+-- autovacuum runs on a deployed instance as the table changes, and which this migration runs once below, after the backfill. A rare word still reads the author's posts to find its few: that is the price of
+-- the plan, and the author's own.
+create statistics post_search_words_expr on ((words || ''::tsvector)) from post_search;
 
 -- The stemming language the index is written in: the instance's setting, and the language-neutral `simple` before an instance is seeded.
 create function search_lang() returns regconfig
@@ -528,6 +535,7 @@ begin
   return n;
 end $$;
 select search_backfill();
+analyze post_search;     -- fills the expression statistics above (and the table's own, which a backfilled table has none of)
 
 -- ----------------------------------------------------------------------------------------- the language's way to change ----
 
