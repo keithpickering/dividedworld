@@ -26,7 +26,7 @@ test('the seed carries every setting, class, reaction, card and board of the ins
     key: 'whoops', name: 'Whoops!', alignment: 'salty', stack: 3, seeded: true, reads: ['whoops.perLength', 'whoops.lengthStep', 'whoops.mostAdded'],
     rarity: 'common', play: 'cast', trap: undefined, ward: false, lasts: undefined, reaches: ['post'], pins: false,
   }, 'the stack, the seed, the economy numbers its rules read, its rarity and its play reach the SQL (0039, screen_settings\'s cardEconomy; 0054)');
-  // The packs and the machine's slots (0117): the pulls as the instance writes them, a slot's item flattened to `card` or `pack`, in grid order.
+  // The packs and the machine's slots (0119): the pulls as the instance writes them, a slot's item flattened to `card` or `pack`, in grid order.
   assert.deepEqual(seed.packs.map((p) => [p.key, p.pulls.length, p.leaves]), instance.packs.map((p) => [p.key, p.pulls.length, [...(p.leaves ?? [])]]));
   assert.deepEqual(seed.packs[0]!.pulls[4], { weights: { uncommon: 75, rare: 25 } }, 'the hit pull reaches the SQL as written');
   assert.deepEqual(seed.machine.map((m) => ('card' in m ? m.card : m.pack)), instance.machine.map((m) => ('card' in m.item ? m.item.card : m.item.pack)));

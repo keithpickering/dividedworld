@@ -1127,7 +1127,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }));
   /** A price as the server's refusals say it: hundredths of an orb as orbs (`orbs`, 0117). */
   const orbsOf = (hundredths: number): string => (hundredths / 100).toFixed(2);
-  /** What is wrong with a slot's availability and price (`machine_apply_slot`, 0121), in the server's words, and which of the two. */
+  /** What is wrong with a slot's availability and price (`machine_apply_slot`, 0123), in the server's words, and which of the two. */
   function slotWords(availability: unknown, price: unknown): { readonly error: string; readonly field: 'availability' | 'price' } | null {
     if (availability !== 'onSale' && availability !== 'soldOut' && availability !== 'hidden') return { error: 'a slot is on sale, sold out or hidden', field: 'availability' };
     if (typeof price !== 'number' || !Number.isInteger(price) || price < 1) return { error: 'a price is at least 0.01', field: 'price' };
@@ -1175,7 +1175,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     return ended;
   }
-  /** `slot_for_sale` (0117): the slot as the machine shows it now, from the slot alone and in the same words for every caller, or a refusal. */
+  /** `slot_for_sale` (0119): the slot as the machine shows it now, from the slot alone and in the same words for every caller, or a refusal. */
   function slotForSale(shown: Slot, wants: 'card' | 'pack'): SlotRec | Refusal {
     const seen = slotRecs.find((r) => r.id === shown.id && r.availability !== 'hidden');
     if (!seen) return refuse('the machine has no such slot');

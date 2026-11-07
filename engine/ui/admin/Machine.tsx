@@ -12,7 +12,7 @@
  *   Price         in orbs, stored in hundredths.
  *   The Boss      a Boss move in force on the slot, in plain words, with a link to REVERSE it in the queue.
  *
- * One "Save changes" saves the order, every availability and every price in a single transaction (`saveMachine`, save_machine in 0121); nothing is sent until
+ * One "Save changes" saves the order, every availability and every price in a single transaction (`saveMachine`, save_machine in 0123); nothing is sent until
  * then. A price that is not an amount (0.01 to 1,000,000.00, up to two decimals) refuses the whole save in words beside it and sends nothing; the server's
  * refusal saves nothing either, names the slot and why, and marks that slot's availability or price field invalid. Taking a pack off sale ends the Boss's
  * Pulls of cards that no pack on sale can still give; the status says how many.

@@ -88,7 +88,7 @@ export const ALLOWED_COUNTS = Object.freeze(/** @type {readonly { table: string,
 
 /** The SQL functions a screen may call directly; every other write goes through the `act` function. */
 // intercept (0108): one try to talk a visit down, through a character the caller plays; the server holds every rule (a refusal says why).
-// admin_machine, set_slot, move_slot, save_machine (0121): the machine's admin page, each an admin's alone (only_admins; a player is refused with 42501) and the same for any admin.
+// admin_machine, set_slot, move_slot, save_machine (0123): the machine's admin page, each an admin's alone (only_admins; a player is refused with 42501) and the same for any admin.
 // beat_mod_name (0111): the public name of the Mod on a board's beat and the board's name, the same for everyone (who judges a report).
 // visit_quiz (0108): a thread_page helper that returns one visit's drawn question and its choices, never the answer.
 // search_posts, search_threads and search_suggest (0117) are the search screens' reads, held to the screen-function rules by supabase/tests/e2e/0016-screen-reads.ts. The functions they call (the matches, the

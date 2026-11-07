@@ -86,7 +86,7 @@ end $$;
 
 create function pg_temp.slot(name text) returns uuid language sql as $$ select id from w where w.name = slot.name $$;
 create function pg_temp.row_of(name text) returns machine_slots language sql as $$ select s from machine_slots s where s.id = pg_temp.slot(name) $$;
--- A landed Pull as the tick writes it, whatever the floor says (landing is checked by the tick, 0119; the ending under test is the admin's).
+-- A landed Pull as the tick writes it, whatever the floor says (landing is checked by the tick, 0121; the ending under test is the admin's).
 create function pg_temp.pulled(name text) returns uuid language plpgsql as $$
 begin
   return (write_staff_act('ma-boss', 'move', pg_temp.announcements(), null,

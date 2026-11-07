@@ -60,7 +60,7 @@ create table packs (
   contents text[] not null check (cardinality(contents) >= 1),
   bought_at timestamptz not null default now(),
   opened_at timestamptz,
-  -- Whether the Boss had moved the price when it was bought (0119 writes it; here a pack is never repriced). Recorded with the purchase, so the log can say it was.
+  -- Whether the Boss had moved the price when it was bought (0121 writes it; here a pack is never repriced). Recorded with the purchase, so the log can say it was.
   repriced boolean not null default false
 );
 create index packs_account on packs (account, bought_at);
@@ -75,7 +75,7 @@ alter table card_ledger add constraint card_ledger_kind_check check (kind in ('b
 alter table card_ledger add column pack uuid references packs (id);
 alter table card_ledger add constraint card_ledger_pulled_from_pack check ((kind = 'pulled') = (pack is not null));
 alter table card_ledger add constraint card_ledger_pulled_is_free check (kind <> 'pulled' or price = 0);
--- A bought card's row says whether the Boss had moved the price it was bought at (0119 writes it), written in the purchase's own insert.
+-- A bought card's row says whether the Boss had moved the price it was bought at (0121 writes it), written in the purchase's own insert.
 alter table card_ledger add column repriced boolean not null default false;
 alter table card_ledger add constraint card_ledger_repriced_is_bought check (not repriced or kind = 'bought');
 
@@ -518,7 +518,7 @@ begin
   insert into class_kinds (key, name) select e ->> 'key', e ->> 'name' from jsonb_array_elements(payload -> 'classes') e
   on conflict (key) do update set name = excluded.name;
   -- Reaction kinds are the one vocabulary a seed removes. Classes and cards never are: a card must outlive its slot and its pulls
-  -- (0117). A reaction kind has nothing that must outlive it once nothing uses it, and a kind something does use is never removed.
+  -- (0119). A reaction kind has nothing that must outlive it once nothing uses it, and a kind something does use is never removed.
   if payload ? 'reactions' then
     select string_agg(k.key || ' (' || (select count(*) from reactions r where r.kind = k.key) || ' reactions)', ', ' order by k.key) into unknown
     from reaction_kinds k
@@ -550,7 +550,7 @@ begin
     reaches = excluded.reaches, pins = excluded.pins;
   -- The packs the instance sells (replaced each seed: their pulls are its code), then the slots it names that the database does not hold yet,
   -- at the end of the grid in the instance's order. A slot already holding the item is never touched: its place, availability and price are an
-  -- admin's (0117). A pack or card a slot names must exist, and a missing one is a foreign key's refusal.
+  -- admin's (0119). A pack or card a slot names must exist, and a missing one is a foreign key's refusal.
   insert into pack_kinds (key, pulls, leaves)
   select e ->> 'key', e -> 'pulls', coalesce(array(select jsonb_array_elements_text(e -> 'leaves')), '{}')
   from jsonb_array_elements(coalesce(payload -> 'packs', '[]')) e

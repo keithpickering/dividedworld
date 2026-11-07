@@ -315,7 +315,7 @@ const toClassReveal = (r: Row): ClassReveal => ({ act: r['act'], character: r['c
 const toTurn = (r: Row): TurnAnnounced => ({ act: r['act'], character: r['character'], at: r['at'], was: r['was'] ?? null });
 /** A slot of machine_now (0117_machine.sql): a card's or a pack's, never both; a hidden slot is not in the view. */
 const SLOT_MOVES: readonly SlotMove['kind'][] = ['pullSlot', 'repriceSlot', 'flashSale'];
-/** The move on a slot as machine_now's `move` carries it (0119), or none: a kind this client does not know is no move it can word. */
+/** The move on a slot as machine_now's `move` carries it (0121), or none: a kind this client does not know is no move it can word. */
 const toSlotMove = (v: unknown): SlotMove | null => {
   if (!isObject(v)) return null;
   const kind = SLOT_MOVES.find((k) => k === v['kind']);
@@ -338,7 +338,7 @@ const toSlot = (r: Row): Slot[] => {
     price: num(r['price']), move: toSlotMove(r['move']),
   }];
 };
-/** A slot as admin_machine carries it (0121), or none: a row whose availability is not one of the three is dropped, never shown as something else. */
+/** A slot as admin_machine carries it (0123), or none: a row whose availability is not one of the three is dropped, never shown as something else. */
 const toAdminSlot = (r: Row): AdminSlot[] => {
   const availability = (['onSale', 'soldOut', 'hidden'] as const).find((a) => a === r['availability']);
   if (!availability) return [];

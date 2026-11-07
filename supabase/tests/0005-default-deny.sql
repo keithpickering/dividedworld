@@ -12,7 +12,7 @@ declare
                            'characters_public', 'acts_public', 'accounts', 'characters', 'class_history', 'reaction_tallies',
                            'seasons', 'season_results', 'seasons_finished', 'settlements', 'standings', 'ledger', 'wallets', 'wallet_events',
                            'card_ledger', 'my_cards', 'effect_state',
-                           -- The machine (0117): its slots as players see them, a pack's pulls, and a buyer's own packs. The slots table itself is nobody's to read.
+                           -- The machine (0119): its slots as players see them, a pack's pulls, and a buyer's own packs. The slots table itself is nobody's to read.
                            'machine_now', 'pack_kinds', 'packs', 'my_packs', 'my_invites', 'pending_turns', 'effect_releases',
                            'reading', 'my_reactions', 'thread_view_counts',
                            'pip_styles', 'account_preferences', 'character_profiles',
