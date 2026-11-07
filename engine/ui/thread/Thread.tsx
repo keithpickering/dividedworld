@@ -671,7 +671,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
       {systemBoard !== null && (
         <ActIndex.Provider value={index}>
           <ThreadCtx.Provider value={context}>
-            {systemBoard ? <SystemBoardNote /> : <Composer ref={composer} thread={thread} latest={latest} since={() => feedRef.current.knownLast} onPosted={(a) => void posted(a)} />}
+            {systemBoard ? <SystemBoardNote /> : <Composer ref={composer} thread={thread} board={summary.board} latest={latest} since={() => feedRef.current.knownLast} onPosted={(a) => void posted(a)} />}
           </ThreadCtx.Provider>
         </ActIndex.Provider>
       )}

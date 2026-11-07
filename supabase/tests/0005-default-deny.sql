@@ -58,6 +58,8 @@ declare
                            -- The bar and the apology (0118): barred() is a public fact, from bars_now, for any character and board; apologize() is the barred character's door, which verifies the caller
                            -- plays the character and that it is not banned. The ruling and the judge's queue are the service's.
                            'barred(uuid,uuid)', 'apologize(uuid,uuid,text,text)',
+                           -- The barred box's read (0121): the caller's own character's apologies, empty for any other id.
+                           'my_apologies(uuid)',
                            -- A report (0107): the player's door, which verifies the caller plays the character and is not banned. Its closing, its refund and its budget are the service's.
                            'open_report(uuid,uuid,text)',
                            -- An interception (0108): the player's door, which verifies the caller plays the character, that it is not banned and its own wallet. And the question a quiz visit asks,

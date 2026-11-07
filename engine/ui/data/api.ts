@@ -447,6 +447,23 @@ export interface MoveNotice {
   readonly reactions: readonly { readonly kind: string; readonly count: number }[];
 }
 
+/** A board a character is barred from posting on (`bars_now`, carried by `my_characters.bars`): the move that bars it, the group that move put it in, and when the bar ends if nothing ends it sooner (null: no end is set). */
+export interface Bar {
+  readonly board: Id;
+  readonly move: Id;
+  readonly group: string;
+  readonly expiresAt: string | null;
+}
+
+/** One apology a character wrote to a move (`my_apologies`): `pending` until the move's staff member rules, then `accepted` or `rejected`; `returned` when the judgment failed and the next may be written at once. */
+export interface Apology {
+  readonly move: Id;
+  readonly state: 'pending' | 'accepted' | 'rejected' | 'returned';
+  readonly at: string;
+  /** When the next apology to this move may be written (an ISO time); null for a returned one. */
+  readonly nextAt: string | null;
+}
+
 /** The most reactions a move's notice shows. */
 export const NOTICE_REACTIONS = 3;
 
@@ -643,6 +660,8 @@ export interface MyCharacter {
   readonly presenceHidden: boolean;
   /** When its ban ends (`my_characters.banned_until`, a public fact about it); absent while it is not banned. The composer says so; it ends by itself at that time. */
   readonly bannedUntil?: string;
+  /** The boards it is barred from posting on (`my_characters.bars`, from `bars_now`, a public fact about it); absent while it is barred from none. The composer and New thread say so, and each bar ends by itself at its time. */
+  readonly bars?: readonly Bar[];
 }
 
 /** Where a presence box is: a thread, a board (its page and every thread on it) or the index ("Who is online"). */
@@ -1502,6 +1521,11 @@ export interface KayfaApi {
    * `move_progress`, a public read: it counts characters, posts and public tallies and never players.
    */
   moveNotice(act: Id): Promise<MoveNotice | null>;
+  /**
+   * The caller's own character's apologies, newest first (`my_apologies`, 0121): each one's move, state and when it was written, and when the next may be. Another
+   * player's character, or an id that is no one's, reads none. Rejects when it cannot be read.
+   */
+  myApologies(character: Id): Promise<readonly Apology[]>;
   /** A page of a staff member's moves, newest first, `MOVES_LOG_PAGE` to a page; pass the last page's `older` for the next. */
   movesLog(staff: string, before?: MovesCursor | null): Promise<MovesLog>;
   /** A staff member's latest in-character profile, or null before it has one (a Mod Bot has none until it is asked to write one). */
@@ -1741,6 +1765,12 @@ export interface KayfaApi {
   post(thread: Id, character: Id, body: string, quote: Id | null): Promise<Answer<Act>>;
   edit(post: Id, character: Id, body: string): Promise<Answer<Act>>;
   spin(origin: Id, character: Id, title: string, body: string): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
+  /**
+   * A barred character's apology (`apologize`, 0118): the spin of the move that bars it, onto the board it bars, with the bar the one thing skipped, and a waiting
+   * apology the move's staff member rules on. Refused while the character is banned, on a move that is not this character's or has ended, while one waits, and
+   * within `Settings.apology.apologyEveryHours` of the last (the refusal names the time the next opens).
+   */
+  apologize(move: Id, character: Id, title: string, body: string): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
   /**
    * Buy a card from the Vending Machine at its base price, from the settled wallet only: the ghost estimate cannot be spent. The
    * price is the card's rules' (`basePrice`), never sent by the screen. Private, and nothing about it is broadcast.

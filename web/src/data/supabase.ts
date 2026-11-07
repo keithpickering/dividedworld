@@ -38,7 +38,7 @@ import { RECORD_PAGE } from '../../../engine/ui/profile/record.ts';
 import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import type {
-  AdminQueue, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
+  AdminQueue, Apology, Bar, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEnded, CardEvent, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd, FaceDownPass,
   Alert, ContactLink, EffectState, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
@@ -418,7 +418,14 @@ function toMyCharacter(r: Row): MyCharacter {
     pendingTurn: pending,
     presenceHidden: r['presence_hidden'] === true,
     ...(typeof r['banned_until'] === 'string' && Date.parse(r['banned_until']) > Date.now() ? { bannedUntil: r['banned_until'] } : {}),
+    ...(toBars(r['bars']).length > 0 ? { bars: toBars(r['bars']) } : {}),
   };
+}
+
+/** The bars `my_characters.bars` carries: each board, the move, the group and when it ends; a malformed entry is left out. */
+function toBars(v: unknown): Bar[] {
+  return (Array.isArray(v) ? v : []).filter((b): b is Row => isObject(b) && typeof b['board'] === 'string' && typeof b['move'] === 'string')
+    .map((b): Bar => ({ board: b['board'], move: b['move'], group: typeof b['group'] === 'string' ? b['group'] : '', expiresAt: orNull(b['expires_at']) }));
 }
 
 function toEstimate(r: Row): Estimate {
@@ -803,6 +810,13 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const tally: Record<string, number> = {};
       for (const r of counts) tally[r['kind']] = num(r['count']);
       return buildMoveNotice(toAct(a), tally, progress);
+    },
+    async myApologies(character) {
+      if (!idOk(character)) return [];
+      const rows = await list(() => client.rpc('my_apologies', { in_character: character }));
+      return rows.map((r): Apology => ({
+        move: r['move_act'], state: r['state'] === 'accepted' || r['state'] === 'rejected' || r['state'] === 'returned' ? r['state'] : 'pending', at: String(r['created_at'] ?? ''), nextAt: orNull(r['next_at']),
+      }));
     },
     async movesLog(staff, before): Promise<MovesLog> {
       /* Newest first by (at, id), a page and one more row to know whether older ones remain; the keyset is the last row's, so a page turn reads a page. */
@@ -1571,6 +1585,11 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     post: (thread, character, body, quote) => act({ action: 'post', thread, character, body, ...(quote ? { quote } : {}) }, toAct),
     edit: (post, character, body) => act({ action: 'edit', post, character, body }, toAct),
     spin: (origin, character, title, body) => act({ action: 'spin', origin, character, title, body }, withThread),
+    async apologize(move, character, title, body) {
+      if (!idOk(move) || !idOk(character)) return refusal('that move could not be found');
+      const a = await rpcWrite(() => client.rpc('apologize', { in_move: move, through: character, title, body }));
+      return a.ok ? { ok: true, value: withThread(a.value) } : a;
+    },
     react: (target, character, kind) => act({ action: 'react', act: target, character, kind }, (r) => ({ act: r['act'], tally: (r['tally'] ?? {}) as Tally })),
     turn: (character, to, loudness, showFrom, showTo) =>
       act({ action: 'turn', character, class: to, loudness, showFrom, showTo }, (r): TurnAsked => ({ class: r['class'], loudness: r['loudness'], showFrom: r['show_from'] === true, showTo: r['show_to'] === true, takesEffectAt: r['takes_effect_at'] ?? null })),

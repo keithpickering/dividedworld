@@ -13,6 +13,7 @@
  * the live events a post or a reaction sends and deliver them twice and out of order.
  *
  * Where it differs from the server, and says so:
+ *  - A bar is not refused by post, start thread or spin (the database's `barred()` does); `myApologies` and `apologize` are, and `myCharacters` carries `bars`.
  *  - A month is thirty days (a cooldown, a lifetime); the server counts calendar months.
  *  - A name is taken by the engine's own `sameName` (case and look-alike folding, as the database's).
  *  - A debut dropped "now" writes no announcement Act; tests that need one seed it.
@@ -34,7 +35,7 @@ import { PROFILE_ROWS, RECORD_PAGE, type RecordKind } from '../profile/record.ts
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
   AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
-  Act, AccountListener, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
+  Act, Apology, Bar, AccountListener, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Boot, BoardPage, IndexPage, ProfilePage, RecordPage, ThreadPage, ThreadPerson,
   AppealResult, AppealVerdict, LogAppeal, LogBan, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
@@ -161,7 +162,14 @@ export interface Seed {
   /** A staff member's in-character profile, a version at `at` (the latest is the one read). */
   staffProfile(key: string, profile: { interests?: readonly string[]; favorites?: readonly Id[]; mood?: string; signature?: string; at?: number }): void;
   /** A staff character's post in a thread (The System's board for the Boss; any board for a persona's pool post, which presence lists it for). */
-  staffPost(staff: Id, thread: Id, body: string, options?: { at?: number }): Id;
+  staffPost(staff: Id, thread: Id, body: string, options?: { at?: number; ruling?: { readonly verdict: 'accepted' | 'rejected'; readonly apology: Id } }): Id;
+  /**
+   * A conferGroup move that has landed (what `apply_mod_move`/`apply_meeting` write): `staff` moved `character` into `group` (a key of the instance's groups), barring it from `board` (a
+   * slug; absent: no bar). It asks for an accepted apology (`apologyAccepted`) and runs to `expiresAt` (default three days on). Returns the move's Act.
+   */
+  groupMove(staff: string, move: { readonly character: Id; readonly group: string; readonly board?: string; readonly body?: string; readonly at?: number; readonly expiresAt?: number; readonly demand?: boolean }): Id;
+  /** An apology a character wrote to a move (`apologize`): the spin Act is written as the server writes it, and the row is in `state` (default `pending`) from `at`. Returns the row's apology Act. */
+  apology(character: Id, move: Id, state?: 'pending' | 'accepted' | 'rejected' | 'returned', options?: { at?: number }): Id;
   /**
    * A landed move: the Boss's `move` Act in a thread of The System's board (the first thread there is used, or one is made), as the
    * tick writes it. A rename takes the board's slug; the demand's board is the same board unless the demand names another.
@@ -407,6 +415,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /* Moves: how each landed move ended, the staff profiles (versions, newest read), and the admin queue's own rows. */
   /** An admin's descriptions in the order given (`describe` Acts): the board, the rename each names (or none), the words. */
   const describes: { board: Id; moveAct: Id | null; text: string }[] = [];
+  /** The apologies barred characters wrote (`apologies`, 0117). */
+  const apologies: { move: Id; apology: Id; character: Id; state: 'pending' | 'accepted' | 'rejected' | 'returned'; at: number }[] = [];
   const moveEnds = new Map<Id, { why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent'; by: string; at: number }>();
   const careers = new Map<string, Career>();
   const staffProfiles: { key: string; at: number; interests: string[]; favorites: Id[]; mood: string; signature: string }[] = [];
@@ -654,6 +664,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /* ---------------------------------------------------------------------- moves ---- */
   /** The moves in force, newest first: a landed `move` Act with no end. */
   const inForce = () => [...acts.values()].filter((a) => a.kind === 'move' && !moveEnds.has(a.id)).sort((a, b) => b.at - a.at || b.order - a.order);
+  /** The boards a character is barred from posting on now (bars_now, less a move past its expiry that the tick has not ended). */
+  const barsOf = (character: Id): Bar[] => inForce().filter((a) => {
+    const params = (a.payload['params'] ?? {}) as Record<string, unknown>;
+    return a.payload['kind'] === 'conferGroup' && params['character'] === character && typeof params['board'] === 'string' && Date.parse(String(a.payload['expires_at'])) > now();
+  }).map((a): Bar => {
+    const params = a.payload['params'] as Record<string, unknown>;
+    return { board: String(params['board']), move: a.id, group: String(params['group']), expiresAt: typeof a.payload['expires_at'] === 'string' ? a.payload['expires_at'] : null };
+  });
+  const apologyEveryMs = (): number => 3_600_000 * (settings.apology.apologyEveryHours);
   /** A board as it is called now: its latest rename in force, else its own row (boards_now). */
   function boardNow(b: Board): Board {
     const m = inForce().find((a) => a.payload['kind'] === 'renameBoard' && (a.payload['params'] as Record<string, unknown>)['board'] === b.id);
@@ -1687,6 +1706,35 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!a || a.kind !== 'move') return null;
       return buildMoveNotice(publicAct(a), tallyOf(id), progressOf(a));
     },
+    myApologies(character) {
+      const account = me();
+      if (!account || characters.get(character)?.owner !== account.id) return [];
+      const every = apologyEveryMs();
+      return apologies.filter((a) => a.character === character).sort((x, y) => y.at - x.at)
+        .map((a): Apology => ({ move: a.move, state: a.state, at: iso(a.at), nextAt: a.state === 'returned' ? null : iso(a.at + every) }));
+    },
+    apologize(move, character, title, body) {
+      const c = acting(character);
+      if (isRefusal(c)) return c;
+      const banned = bannedUntilOf(character);
+      if (banned !== null) return refuse(`this character is banned until ${iso(banned)}; the ban ends by itself then`);
+      const m = acts.get(move);
+      const params = (m?.payload['params'] ?? {}) as Record<string, unknown>;
+      const demand = (m?.payload['demand'] ?? {}) as Record<string, unknown>;
+      const live = m !== undefined && m.kind === 'move' && !moveEnds.has(move) && m.payload['kind'] === 'conferGroup' && params['character'] === character && demand['kind'] === 'apologyAccepted'
+        && Date.parse(String(m.payload['expires_at'])) > now();
+      if (!live) return refuse('there is no move of this character\'s that an apology can answer');
+      const mine = apologies.filter((a) => a.move === move);
+      if (mine.some((a) => a.state === 'pending')) return refuse('an apology to that move is still waiting for a ruling');
+      const next = Math.max(0, ...mine.filter((a) => a.character === character && a.state !== 'returned' && a.at > now() - apologyEveryMs()).map((a) => a.at + apologyEveryMs()));
+      if (next > 0) return refuse(`this character has already apologized to that move in the last ${apologyEveryMs() / 3_600_000} hours; the next apology opens at ${iso(next).slice(0, 16).replace('T', ' ')} UTC`);
+      const t = openThread(threads.get(m.thread)!.board, title, move);
+      const written = write({ character, kind: 'spin', thread: t.id, target: move, payload: { title, body } });
+      apologies.push({ move, apology: written.id, character, state: 'pending', at: written.at });
+      sendThread(t);
+      sendAct(written);
+      return ok({ thread: summary(t), act: publicAct(written) });
+    },
     movesLog(staff, before) {
       const who = [...characters.values()].find((c) => c.staff?.key === staff);
       const mine = !who ? [] : [...acts.values()].filter((a) => (a.kind === 'move' || a.kind === 'visit' || a.kind === 'report_verdict' || a.kind === 'appeal_ruling') && a.character === who.id)
@@ -2221,6 +2269,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           pendingTurn: c.pending ? { class: c.pending.class, loudness: c.pending.loudness, showFrom: c.pending.showFrom, showTo: c.pending.showTo, takesEffectAt: takesEffectAt() } : null,
           presenceHidden: c.presenceHidden,
           ...(bannedUntilOf(c.id) !== null ? { bannedUntil: iso(bannedUntilOf(c.id)!) } : {}),
+          ...(barsOf(c.id).length > 0 ? { bars: barsOf(c.id) } : {}),
         };
       });
     },
@@ -2907,7 +2956,28 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     staffPost(staff, thread, body, o) {
       if (!threads.has(thread)) throw new Error(`no such thread ${thread}`);
       if (!characters.get(staff)?.staff) throw new Error('only a staff character posts as staff');
-      return write({ character: staff, kind: 'post', thread, payload: { body }, at: o?.at }).id;
+      return write({ character: staff, kind: 'post', thread, payload: { body, ...(o?.ruling ? { ruling: o.ruling.verdict, apology: o.ruling.apology } : {}) }, at: o?.at }).id;
+    },
+    groupMove(staff, m) {
+      const at = m.at ?? now();
+      const board = m.board === undefined ? undefined : boards.find((b) => b.slug === m.board)?.id;
+      if (m.board !== undefined && !board) throw new Error(`no board ${m.board}`);
+      return write({
+        character: staffId(staff), kind: 'move', thread: announcements(),
+        payload: {
+          kind: 'conferGroup', body: m.body ?? 'You have been moved.', params: { character: m.character, group: m.group, ...(board ? { board } : {}) },
+          ...(m.demand === false ? {} : { demand: { kind: 'apologyAccepted', params: {} } }), expires_at: iso(m.expiresAt ?? at + 3 * DAY),
+        }, at,
+      }).id;
+    },
+    apology(character, move, state = 'pending', o) {
+      const m = acts.get(move);
+      if (!m || m.kind !== 'move') throw new Error(`no such move ${move}`);
+      const at = o?.at ?? now();
+      const t = openThread(threads.get(m.thread)!.board, 'An apology', move, at);
+      const written = write({ character, kind: 'spin', thread: t.id, target: move, payload: { title: 'An apology', body: 'I am sorry.' }, at });
+      apologies.push({ move, apology: written.id, character, state, at });
+      return written.id;
     },
     move(staff, m) {
       const at = m.at ?? now();

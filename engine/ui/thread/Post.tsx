@@ -28,6 +28,7 @@ import { Reactions } from '../reactions/Reactions.tsx';
 import { lowerFirst } from '../copy-words.ts';
 import { useKayfa } from '../context.tsx';
 import { ThreadCtx, useThread, type ThreadContext } from './context.ts';
+import { GroupMoveLine, RulingTag, rulingOf } from './GroupMove.tsx';
 import { AnnounceLine, LastEdited, MoveEndLine, MoveKeepLine, SystemPost, UnmaskLine, quoteLink, text, useHistory, when } from './lines.tsx';
 import { pageOf, threadHref } from './pages.ts';
 
@@ -61,7 +62,8 @@ function Body({ act, name, spoken, person, editing, onDone, marks, visit }: { re
       /* The Boss's move: its stock line in its own voice, under the glass's label of the move, which the engine's catalog words and the Boss cannot change. */
       return (
         <>
-          <MoveTag kind={text(act.payload.kind)} />
+          <MoveTag kind={text(act.payload.kind)} office={person?.character.office} />
+          <GroupMoveLine act={act} office={person?.character.office} />
           <BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} />
           <Reactions act={act.id} author={act.character} authorName={spoken} tallies={tallies} mine={mine} />
           {person && <Signature text={person.character.signature} />}
@@ -79,8 +81,10 @@ function Body({ act, name, spoken, person, editing, onDone, marks, visit }: { re
     default: {
       /* A post, and a spin's first Act, which is a post that opens on its origin. */
       const origin = act.kind === 'spin' && summary.originActId !== null && summary.originThread !== null;
+      const ruling = rulingOf(act);
       return (
         <>
+          {ruling && <RulingTag ruling={ruling} />}
           {origin && <Origin summary={summary} />}
           {!editing && <ViolationNotice visit={visit} />}
           {editing
@@ -211,6 +215,7 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
       data-kb-seq={seq}
       data-kb-parity={seq % 2 === 0 ? 'even' : 'odd'}
       data-kb-kind={act.kind}
+      data-kb-ruling={rulingOf(act) ?? undefined}
       data-kb-postbit={layout}
       data-kb-arrived={slid ? 'slide' : undefined}
     >

@@ -7,8 +7,10 @@
  * Pure: no clock, no screen.
  */
 import { demandAsk, demandKind } from '../../system/demands.ts';
-import { moveKind, type MoveParts } from '../../system/moves.ts';
-import type { Demand, DemandProgress, MoveEnd } from '../data/api.ts';
+import { moveKind, type MoveNames, type MoveParts } from '../../system/moves.ts';
+import { modRole } from '../cards/visit.ts';
+import type { Demand, DemandProgress, MoveEnd, Office } from '../data/api.ts';
+import type { UiCopy } from '../types.ts';
 import { shortDate } from '../postbit/dates.ts';
 
 /**
@@ -16,6 +18,12 @@ import { shortDate } from '../postbit/dates.ts';
  * actor's role (`UiCopy.roleWord`, or a Mod Bot's own role word when Mod Bots move). A kind the catalog lacks is still said plainly.
  */
 export const moveLabel = (kind: string, role: string): string => (moveKind(kind)?.label ?? '{role} made a move').replace('{role}', role);
+
+/**
+ * Who made a move, in the instance's words, as a sentence begins ("The Boss", "A Mod"): the staff character's office now decides, since a Mod may make some of the
+ * Boss's moves. `UiCopy.roleWord` is the Boss's; a Mod's is `UiCopy.modRole`, else the engine's "A Mod". A staff character with no office on the page is the Boss's.
+ */
+export const officeRole = (copy: Pick<UiCopy, 'roleWord' | 'modRole'>, office: Office | undefined): string => (office === 'mod' ? modRole(copy) : copy.roleWord);
 
 /**
  * The glass's short segment: "WAY OUT: 7 OF 12 POSTERS". A move that asks nothing ends only by its expiry or an admin; a demand
@@ -52,9 +60,9 @@ function endedBase(end: MoveEnd | null, demand: Demand | null): string {
   return end.by === 'admin' ? 'reversed by an admin' : 'reversed';
 }
 
-/** A move as one short sentence in pieces (see `MoveKind.parts`); a kind the catalog lacks is named, not guessed at. */
-export function moveParts(kind: string, params: Readonly<Record<string, unknown>>, was: string | null, tense: 'done' | 'plan'): MoveParts {
-  return moveKind(kind)?.parts(params, was, tense) ?? [`${tense === 'plan' ? 'Make' : 'Made'} a move this build has no words for (${kind})`];
+/** A move as one short sentence in pieces (see `MoveKind.parts`); a kind the catalog lacks is named, not guessed at. `names` fills the character, group and board a group move names. */
+export function moveParts(kind: string, params: Readonly<Record<string, unknown>>, was: string | null, tense: 'done' | 'plan', names?: MoveNames): MoveParts {
+  return moveKind(kind)?.parts(params, was, tense, names) ?? [`${tense === 'plan' ? 'Make' : 'Made'} a move this build has no words for (${kind})`];
 }
 
 /** What a move asks, without progress: for a move that has not landed. */

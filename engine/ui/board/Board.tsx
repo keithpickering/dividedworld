@@ -153,7 +153,7 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
       {board.moveAct !== null && <MoveNotice key={board.moveAct} act={board.moveAct} />}
       {board.isSystem
         ? <p className="kb-board-readonly kb-small">Only {lowerFirst(ui.copy.staffWord)} post here. You can react to what they say, and spin a thread from it.</p>
-        : <NewThread key={board.slug} board={board.slug} />}
+        : <NewThread key={board.slug} board={board.slug} boardId={board.id} />}
       {threads.length === 0 && state.pins.length === 0 ? (
         <p className="kb-board-empty">No threads here yet.</p>
       ) : (

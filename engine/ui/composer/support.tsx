@@ -36,8 +36,8 @@ export function Swapper() {
   );
 }
 
-export function openThread(w: { fake: Fake; thread: Id }, path = `/t/${w.thread}`) {
-  return renderIn(w.fake, <><LoadedThread thread={w.thread} /><Swapper /></>, { path });
+export function openThread(w: { fake: Fake; thread: Id }, path = `/t/${w.thread}`, world: Omit<Parameters<typeof renderIn>[2] & object, 'path'> = {}) {
+  return renderIn(w.fake, <><LoadedThread thread={w.thread} /><Swapper /></>, { ...world, path });
 }
 
 /** The composer's box, once the thread has loaded. */
