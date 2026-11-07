@@ -420,10 +420,21 @@ create or replace view screen_settings as
 
 -- ------------------------------------------------------------------------------------------------- the index ----
 
--- One row per post or spin: its Act, thread, author, time and words. The board is not copied (a search joins threads for it). Readable by signed-in players as the Acts are.
+-- One row per post or spin: its Act, thread, board, author, time and words. Readable by signed-in players as the Acts are.
+--
+-- The board is copied onto the row and `first` (the thread's seq-1 post, the one whose words carry the title) is kept beside it, so that a search filtered by board, or by titles only, is
+-- bounded by the matches of that filter and not by every match of its word across the instance ("Weigh a design at the scale of a busy instance"). A filter on a join to threads or to
+-- acts is applied after the word's matches are read: at 200,000 posts, "common" in 66,666 of them, a board holding a tenth of the threads read all 66,666 to keep 5,001, and the pool, the
+-- count and the walk's budget all counted after that filter. With the board on the row, the index (board, words) finds only the board's matches and the keyset index (board, created_at,
+-- act) walks only the board in time order. This amends the design's section 4 ("the board is not copied"), and the sync answers its concern for staleness: the acts trigger and the
+-- backfill write both columns, the rebuild rewrites words alone, and the trigger on threads below rewrites board when a thread's board changes (nothing moves a thread today). The title
+-- is in the first post's words at weight A, so titles only is the partial indexes `where first`, a thread's worth of rows and not a post's. A thread's board and first post never change
+-- otherwise, and the export carries the columns like any others (post_search is a public table).
 create table post_search (
   act uuid primary key references acts (id),
   thread uuid not null,
+  board uuid not null,
+  first boolean not null,
   character uuid,
   created_at timestamptz not null,
   words tsvector not null
@@ -432,8 +443,15 @@ alter table post_search enable row level security;
 create policy post_search_read on post_search for select to authenticated using (true);
 revoke all on post_search from anon, authenticated;
 grant select on post_search to authenticated;
+-- btree_gin is a contrib extension that ships with Postgres (and with Supabase): it lets a GIN index hold a plain column beside the words, so one index scan finds the board's matches.
+create extension if not exists btree_gin with schema extensions;
 create index post_search_words on post_search using gin (words);
+create index post_search_board_words on post_search using gin (board, words);
+create index post_search_first_words on post_search using gin (board, words) where first;      -- titles only, in a board or anywhere (a GIN on a subset of its columns reads those alone)
 create index post_search_newest on post_search (created_at desc, act desc);
+create index post_search_board_newest on post_search (board, created_at desc, act desc);       -- the board's posts in time order: the keyset walk of a board filter
+create index post_search_first_newest on post_search (created_at desc, act desc) where first;  -- the same for titles only
+create index post_search_first_board_newest on post_search (board, created_at desc, act desc) where first;
 create index post_search_character on post_search (character, created_at desc);
 create index post_search_thread on post_search (thread);
 
@@ -464,12 +482,13 @@ create function acts_search() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   title text;
+  tboard uuid;
   tseq integer;
 begin
   if new.kind in ('post', 'spin') then
-    select t.title into title from threads t where t.id = new.thread and new.seq = 1;
-    insert into post_search (act, thread, character, created_at, words)
-    values (new.id, new.thread, new.character, new.created_at, search_words(new.payload ->> 'body', title));
+    select case when new.seq = 1 then t.title end, t.board into title, tboard from threads t where t.id = new.thread;
+    insert into post_search (act, thread, board, first, character, created_at, words)
+    values (new.id, new.thread, tboard, new.seq = 1, new.character, new.created_at, search_words(new.payload ->> 'body', title));
   elsif new.kind = 'edit' then
     if exists (select 1 from acts x where x.kind = 'edit' and x.target_act_id = new.target_act_id and (x.created_at, x.id) > (new.created_at, new.id)) then return null; end if;
     select p.seq into tseq from acts p where p.id = new.target_act_id;
@@ -480,13 +499,24 @@ begin
 end $$;
 create trigger acts_search after insert on acts for each row when (new.kind in ('post', 'spin', 'edit')) execute function acts_search();
 
+-- A thread moved to another board takes its posts with it: the copy of the board is rewritten, so a board-filtered search finds them where the thread is. No migration moves a thread
+-- today; this is the sync that must exist when one does.
+create function threads_search_board() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  update post_search set board = new.board where thread = new.id;
+  return null;
+end $$;
+create trigger threads_search_board after update of board on threads
+  for each row when (old.board is distinct from new.board) execute function threads_search_board();
+
 -- Indexes every post and spin that has no row, by its current version. Run once below for the posts written before the trigger; safe to run again. Returns how many it wrote.
 create function search_backfill() returns bigint
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare n bigint;
 begin
-  insert into post_search (act, thread, character, created_at, words)
-  select a.id, a.thread, a.character, a.created_at, search_words(a.current_payload ->> 'body', case when a.seq = 1 then t.title end)
+  insert into post_search (act, thread, board, first, character, created_at, words)
+  select a.id, a.thread, t.board, a.seq = 1, a.character, a.created_at, search_words(a.current_payload ->> 'body', case when a.seq = 1 then t.title end)
   from acts_public a join threads t on t.id = a.thread
   where a.kind in ('post', 'spin') and not exists (select 1 from post_search p where p.act = a.id)
   on conflict (act) do nothing;
@@ -548,7 +578,7 @@ begin
 end $$;
 select schedule_search_rebuild();
 
-revoke execute on function acts_search(), search_backfill(), search_words_of(uuid, regconfig), settings_search_language(), search_rebuild_step(integer), schedule_search_rebuild()
+revoke execute on function acts_search(), threads_search_board(), search_backfill(), search_words_of(uuid, regconfig), settings_search_language(), search_rebuild_step(integer), schedule_search_rebuild()
   from public, anon, authenticated;
 grant execute on function search_rebuild_step(integer) to service_role;
 -- The reads (Task 3) are security invoker and call these; they say only what a setting and a text are. fold_text is called by whoever writes a thread or a character (an index
@@ -633,7 +663,7 @@ begin
   if author is not null then conds := conds || format('%I."character" = %L::uuid', al, author); end if;
   if from_at is not null then conds := conds || format('%I.created_at >= %L::timestamptz', al, from_at); end if;
   if to_at is not null then conds := conds || format('%I.created_at < %L::timestamptz', al, to_at); end if;
-  if titles_only then conds := conds || format('exists (select 1 from acts f where f.id = %I.act and f.seq = 1)', al); end if;
+  if titles_only then conds := conds || format('%I.first', al); end if;
   return conds;
 end $$;
 
@@ -653,8 +683,8 @@ begin
                              coalesce(after_act, case when dir = 'desc' then 'ffffffff-ffff-ffff-ffff-ffffffffffff' else '00000000-0000-0000-0000-000000000000' end::uuid));
   end if;
   if updates is not null then conds := conds || format('p.thread <> %L::uuid', updates); end if;
-  if board is not null then conds := conds || format('t.board = %L::uuid', board); end if;
-  return format('select p.act, p.thread, t.board, t.title, p."character", p.created_at, p.words from post_search p join threads t on t.id = p.thread where %s order by p.created_at %s, p.act %s limit %s',
+  if board is not null then conds := conds || format('p.board = %L::uuid', board); end if;
+  return format('select p.act, p.thread, p.board, t.title, p."character", p.created_at, p.words from post_search p join threads t on t.id = p.thread where %s order by p.created_at %s, p.act %s limit %s',
                 array_to_string(conds, ' and '), dir, dir, greatest(coalesce(lim, 0), 0)::integer);
 end $$;
 
