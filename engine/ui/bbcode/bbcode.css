@@ -46,3 +46,36 @@
   font-style: normal;
   color: var(--kb-muted);
 }
+
+.kb-bb-spoiler {
+  border: 1px solid var(--kb-rule);
+  margin: 0.4em 0;
+  padding: 0.3em 2%;
+}
+
+.kb-bb-spoiler > summary {
+  cursor: pointer;
+  color: var(--kb-muted);
+  font-size: var(--kb-size-small);
+}
+
+/* Shut, the bar is the ink color on the ink color, so the words are drawn and cannot be read. */
+.kb-bb-ispoiler {
+  font: inherit;
+  white-space: inherit;
+  text-align: inherit;
+  margin: 0;
+  padding: 0 0.15em;
+  border: 0;
+  border-radius: 0;
+  cursor: pointer;
+  color: var(--kb-fg);
+  background: var(--kb-fg);
+  forced-color-adjust: none;
+}
+
+.kb-bb-ispoiler[aria-expanded="true"] {
+  color: inherit;
+  background: transparent;
+  outline: 1px dotted var(--kb-rule);
+}

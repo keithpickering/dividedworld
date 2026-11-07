@@ -1,6 +1,8 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, test } from 'vitest';
 import { BbCode } from './render.tsx';
+import { TextLayer, type TextRun } from './layers.tsx';
+import { axeViolations, describeViolations } from '../a11y.ts';
 import { RouterProvider } from '../router.tsx';
 
 const show = (text: string, quoteLink?: (act: string) => React.ReactNode) =>
@@ -101,5 +103,72 @@ describe('the BBCode renderer', () => {
     show(open);
     expect(out().querySelectorAll('blockquote')).toHaveLength(12);
     expect(out()).toHaveTextContent('bottom');
+  });
+
+  describe('spoilers', () => {
+    test('a spoiler is a details element, shut, with its title as the summary', () => {
+      show('before[spoiler=The ending]she wins[/spoiler]after');
+      const d = out().querySelector('details.kb-bb-spoiler') as HTMLDetailsElement;
+      expect(d).not.toBeNull();
+      expect(d.open).toBe(false);
+      expect(d.querySelector('summary')).toHaveTextContent('The ending');
+      expect(d.querySelector('div')).toHaveTextContent('she wins');
+    });
+
+    test('a spoiler with no title says "Spoiler", and one inside another renders', () => {
+      show('[spoiler=]a[spoiler=inner]b[/spoiler][/spoiler]');
+      const all = out().querySelectorAll('details.kb-bb-spoiler');
+      expect(all).toHaveLength(2);
+      expect(all[0]!.querySelector(':scope > summary')).toHaveTextContent('Spoiler');
+      expect(all[1]!.querySelector(':scope > summary')).toHaveTextContent('inner');
+    });
+
+    test('a spoiler title is text, never markup', () => {
+      show('[spoiler=<b>x</b>]y[/spoiler]');
+      expect(out().querySelector('summary')!.textContent).toBe('<b>x</b>');
+      expect(out().querySelector('summary b')).toBeNull();
+    });
+
+    test('an inline spoiler is a shut button named "Spoiler" until it is pressed, and shuts again on a second press', () => {
+      show('the answer is [ispoiler]42[/ispoiler] ok');
+      const shut = screen.getByRole('button', { name: 'Spoiler' });
+      expect(shut).toHaveAttribute('aria-expanded', 'false');
+      expect(shut).toHaveAttribute('type', 'button');
+      expect(shut).toHaveClass('kb-bb-ispoiler');
+      fireEvent.click(shut);
+      const open = screen.getByRole('button', { name: '42' });
+      expect(open).toHaveAttribute('aria-expanded', 'true');
+      expect(open).not.toHaveAttribute('aria-label');
+      fireEvent.click(open);
+      expect(screen.getByRole('button', { name: 'Spoiler' })).toHaveAttribute('aria-expanded', 'false');
+    });
+
+    test('a block tag inside an inline spoiler is the words as written', () => {
+      show('[ispoiler][quote]x[/quote][/ispoiler]');
+      expect(out().querySelector('blockquote')).toBeNull();
+      expect(out().textContent).toBe('[quote]x[/quote]');
+    });
+
+    test('a text layer\'s run inside a shut inline spoiler is drawn when it opens, and inside a spoiler too', () => {
+      const run = (start: number, end: number): TextRun => ({
+        start, end, key: `r${start}`, z: 0, mode: 'replace',
+        render: ({ text, key }) => <mark key={key} data-covers={text}>dogs</mark>,
+      });
+      render(<RouterProvider><div data-testid="lay"><TextLayer runs={[run(2, 6), run(7, 11)]}><BbCode text={'a [ispoiler]cats[/ispoiler] [spoiler]cats[/spoiler]'} /></TextLayer></div></RouterProvider>);
+      const lay = screen.getByTestId('lay');
+      const button = screen.getByRole('button');
+      expect(button.querySelector('mark')).toHaveAttribute('data-covers', 'cats');
+      fireEvent.click(button);
+      expect(screen.getByRole('button', { name: 'dogs' }).querySelector('mark')).not.toBeNull();
+      expect(lay.querySelector('details mark')).toHaveAttribute('data-covers', 'cats');
+    });
+
+    test('both are axe clean, shut and open', async () => {
+      show('[spoiler=Title]hidden [ispoiler]more[/ispoiler][/spoiler] and [ispoiler]x[/ispoiler]');
+      expect(describeViolations(await axeViolations(out()))).toBe('');
+      fireEvent.click(screen.getAllByRole('button')[0]!);
+      out().querySelector('details')!.open = true;
+      expect(describeViolations(await axeViolations(out()))).toBe('');
+    });
   });
 });

@@ -33,6 +33,10 @@
  *   `MAX_QUOTE_NAME` characters), a bare `[quote]` or `[quote user=<uuid>]` is a `counterfeit`: its
  *   words are the post's own and it names no Act, so the renderer must never draw one as an Act's
  *   words. A `user=` that is not a UUID, a longer name or an empty one makes the opener text.
+ * - `[spoiler=title]` is a block with a plain-text title (at most `MAX_SPOILER_TITLE` characters,
+ *   "Spoiler" when none or an empty one is given; a longer one makes the opener text). `[ispoiler]`
+ *   is inline and holds inline formatting only: while one is open, the opener of a block tag (`BLOCK`)
+ *   is text, and so is its closer, so a closer inside cannot close a block opened outside.
  * - A list's `[*]` is an item marker only directly inside `[list]`; elsewhere it is text.
  *   Blank space before the first item is layout and is not kept; words before it become an
  *   item of their own.
@@ -54,11 +58,18 @@ export type BbNode =
   | { readonly type: 'img'; readonly src: string }
   | { readonly type: 'quote'; readonly act: string; readonly children: readonly BbNode[] }
   | { readonly type: 'counterfeit'; readonly name: string | null; readonly user: string | null; readonly children: readonly BbNode[] }
+  | { readonly type: 'spoiler'; readonly title: string; readonly children: readonly BbNode[] }
+  | { readonly type: 'ispoiler'; readonly children: readonly BbNode[] }
   | { readonly type: 'code'; readonly text: string }
   | { readonly type: 'list'; readonly ordered: boolean; readonly items: readonly (readonly BbNode[])[] };
 
 /** Longest typed name on a counterfeit quote, after trimming; a longer one makes the opener text. */
 export const MAX_QUOTE_NAME = 80;
+
+/** Longest title on a `[spoiler=title]`, after trimming; a longer one makes the opener text. */
+export const MAX_SPOILER_TITLE = 80;
+/** The title of a spoiler that was given none. */
+export const DEFAULT_SPOILER_TITLE = 'Spoiler';
 
 /** Deepest nesting of tags; past it a tag is text. Deep enough for quotes of quotes, shallow enough to render by recursion. */
 export const MAX_DEPTH = 32;
@@ -165,9 +176,17 @@ const SIMPLE: Readonly<Record<string, 'bold' | 'italic' | 'underline' | 'strike'
   s: 'strike',
 };
 /** The tags the parser knows how to open, for a rule that names one (engine/rules/predicates.ts `noTag`). */
-export const BBCODE_TAGS: readonly string[] = ['b', 'i', 'u', 's', 'color', 'size', 'url', 'img', 'code', 'quote', 'list'];
+export const BBCODE_TAGS: readonly string[] = ['b', 'i', 'u', 's', 'color', 'size', 'url', 'img', 'code', 'quote', 'list', 'spoiler', 'ispoiler'];
 const OPENERS: ReadonlySet<string> = new Set(BBCODE_TAGS);
-const CLOSERS = new Set(['b', 'i', 'u', 's', 'color', 'size', 'url', 'quote', 'list']);
+const CLOSERS = new Set(['b', 'i', 'u', 's', 'color', 'size', 'url', 'quote', 'list', 'spoiler', 'ispoiler']);
+/**
+ * The block tags, the ones that cannot stand inside inline text. An `[ispoiler]` holds inline formatting
+ * only, so while one is open the opener and the closer of each of these is text. Tags added later that
+ * are blocks go in this one set.
+ */
+const BLOCK: ReadonlySet<string> = new Set([
+  'quote', 'code', 'list', 'spoiler', 'center', 'left', 'right', 'hr', 'video', 'youtube', 'marquee',
+]);
 
 function pushText(out: Out, text: string): void {
   if (text.length === 0) return;
@@ -263,11 +282,14 @@ export function parse(input: string): BbNode[] {
 
   /** Links that are open and real, which is what a new link must not nest inside. */
   let openUrls = 0;
+  /** Inline spoilers that are open and real, so a block tag inside one is found without a scan. */
+  let openISpoilers = 0;
 
   const pop = (): Frame => {
     const f = stack.pop() as Frame;
     open.set(f.name, (open.get(f.name) ?? 1) - 1);
     if (f.kind !== 'literal' && f.name === 'url') openUrls--;
+    if (f.kind !== 'literal' && f.name === 'ispoiler') openISpoilers--;
     return f;
   };
 
@@ -293,6 +315,7 @@ export function parse(input: string): BbNode[] {
     f.home = f;
     push(f);
     if (name === 'url') openUrls++;
+    if (name === 'ispoiler') openISpoilers++;
   };
 
   /* A new link while a real one is open closes the open one first (with whatever was opened
@@ -373,7 +396,10 @@ export function parse(input: string): BbNode[] {
     textStart = close + 1;
     pos = close + 1;
 
-    if (isCloser) {
+    if (openISpoilers > 0 && name !== '*' && BLOCK.has(name)) {
+      /* Opener or closer, a block tag inside an inline spoiler is the words as written. */
+      pushText(top().home.out, raw);
+    } else if (isCloser) {
       closeTag(name, raw);
     } else if (name === '*') {
       const home = top().home;
@@ -452,6 +478,16 @@ export function parse(input: string): BbNode[] {
         const { name: typed, user } = head;
         openReal(name, raw, 'simple', { build: (children) => ({ type: 'counterfeit', name: typed, user, children }) });
       }
+    } else if (name === 'spoiler') {
+      const title = value === undefined ? '' : value.trim();
+      if (title.length > MAX_SPOILER_TITLE) literalOpen(name, raw);
+      else {
+        const shown = title === '' ? DEFAULT_SPOILER_TITLE : title;
+        openReal(name, raw, 'simple', { build: (children) => ({ type: 'spoiler', title: shown, children }) });
+      }
+    } else if (name === 'ispoiler') {
+      if (value === undefined) openReal(name, raw, 'simple', { build: (children) => ({ type: 'ispoiler', children }) });
+      else literalOpen(name, raw);
     } else if (name === 'list') {
       if (value === undefined || value === '1') {
         const lead: Out = [];

@@ -12,7 +12,7 @@
  * screen's to say, so the screen hands a `quoteLink` that returns the link for an Act's id. With none,
  * the quote is still a quote, without a link.
  */
-import { Fragment, memo, useMemo, type ReactNode } from 'react';
+import { Fragment, memo, useMemo, useState, type ReactNode } from 'react';
 import { parse, type BbNode } from '../../bbcode/parse.ts';
 import { visibleWalk } from '../../bbcode/visible.ts';
 import { stretchesOf, useTextLayers, type Stretch } from './layers.tsx';
@@ -69,6 +69,20 @@ function layeredText(n: Extract<BbNode, { type: 'text' }>, key: number, layered:
   return <Fragment key={key}>{out}</Fragment>;
 }
 
+/**
+ * An inline spoiler: a black bar the width of its words while shut, the words themselves once pressed, and a second press shuts
+ * it. Shut, its name is "Spoiler", so a screen reader does not read what the bar hides; open, its name is its words. The state
+ * is the reader's alone: nothing stores it and nothing is sent.
+ */
+function ISpoiler({ children }: { readonly children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <button type="button" className="kb-bb-ispoiler" aria-expanded={open} aria-label={open ? undefined : 'Spoiler'} onClick={() => setOpen(!open)}>
+      {children}
+    </button>
+  );
+}
+
 function nodes(list: readonly BbNode[], quoteLink: BbCodeProps['quoteLink'], layered?: Layered): ReactNode[] {
   return list.map((n, i) => node(n, i, quoteLink, layered));
 }
@@ -107,6 +121,14 @@ function node(n: BbNode, key: number, quoteLink: BbCodeProps['quoteLink'], layer
           <div className="kb-quote-body">{nodes(n.children, quoteLink, layered)}</div>
         </blockquote>
       );
+    case 'spoiler':
+      return (
+        <details key={key} className="kb-bb-spoiler">
+          <summary>{n.title}</summary>
+          <div>{nodes(n.children, quoteLink, layered)}</div>
+        </details>
+      );
+    case 'ispoiler': return <ISpoiler key={key}>{nodes(n.children, quoteLink, layered)}</ISpoiler>;
     case 'code': return <pre key={key} className="kb-bb-code"><code>{n.text}</code></pre>;
     case 'list': {
       const items = n.items.map((item, i) => <li key={i}>{nodes(item, quoteLink, layered)}</li>);

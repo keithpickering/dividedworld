@@ -59,3 +59,9 @@ test('a tree far deeper than the parser makes is walked without recursion runnin
   const capped = '[b]'.repeat(MAX_DEPTH + 1) + 'deep' + '[/b]'.repeat(MAX_DEPTH + 1);
   assert.equal(seen(capped), '[b]deep[/b]');
 });
+
+test('a spoiler\'s and an inline spoiler\'s words are the post\'s own', () => {
+  assert.equal(seen('a[spoiler=Title]b c[/spoiler]d'), 'ab cd');
+  assert.equal(seen('a[ispoiler]b[/ispoiler]c'), 'abc');
+  assert.equal(seen('[spoiler][ispoiler][b]x[/b][/ispoiler] y[/spoiler]'), 'x y');
+});

@@ -55,7 +55,7 @@ test('tags nest and tag names ignore case', () => {
 });
 
 test('HTML and unknown tags stay text', () => {
-  assertLiteral(['<script>alert(1)</script>', '[spoiler]x[/spoiler]', '[b ]x[/b ]', 'a [] b', '[', ']', '[[b', '[=x]']);
+  assertLiteral(['<script>alert(1)</script>', '[blink]x[/blink]', '[b ]x[/b ]', 'a [] b', '[', ']', '[[b', '[=x]']);
 });
 
 test('color accepts named colors and hex, normalized to lowercase', () => {
@@ -561,4 +561,57 @@ test('many bad img openers before one closer parse in bounded time', () => {
   const tree = parse('[img]x'.repeat(100_000) + '[/img]');
   assert.ok(performance.now() - started < 3000);
   assert.equal(allText(tree), '[img]x'.repeat(100_000) + '[/img]');
+});
+
+const spoiler = (title: string, ...children: BbNode[]): BbNode => ({ type: 'spoiler', title, children });
+const ispoiler = (...children: BbNode[]): BbNode => ({ type: 'ispoiler', children });
+
+test('[spoiler] is a block with a title, "Spoiler" when none or an empty one is given', () => {
+  assert.deepEqual(parse('[spoiler]x[/spoiler]'), [spoiler('Spoiler', text('x'))]);
+  assert.deepEqual(parse('[spoiler=]x[/spoiler]'), [spoiler('Spoiler', text('x'))]);
+  assert.deepEqual(parse('[spoiler=  ]x[/spoiler]'), [spoiler('Spoiler', text('x'))]);
+  assert.deepEqual(parse('[spoiler=The end]x[/spoiler]'), [spoiler('The end', text('x'))]);
+  assert.deepEqual(parse('[spoiler="Quoted title"]x[/spoiler]'), [spoiler('Quoted title', text('x'))]);
+});
+
+test('a spoiler title is at most 80 characters; a longer one makes the opener text', () => {
+  assert.deepEqual(parse(`[spoiler=${'a'.repeat(80)}]x[/spoiler]`), [spoiler('a'.repeat(80), text('x'))]);
+  assertLiteral([`[spoiler=${'a'.repeat(81)}]x[/spoiler]`]);
+});
+
+test('a spoiler holds anything, other spoilers included', () => {
+  assert.deepEqual(parse('[spoiler=a][spoiler=b][b]x[/b][/spoiler][/spoiler]'), [
+    spoiler('a', spoiler('b', { type: 'bold', children: [text('x')] })),
+  ]);
+  assert.equal(parse(`[spoiler][quote=${ACT}]q[/quote][list][*]i[/list][/spoiler]`)[0]?.type, 'spoiler');
+});
+
+test('[ispoiler] is inline and takes inline formatting', () => {
+  assert.deepEqual(parse('a[ispoiler]b[/ispoiler]c'), [text('a'), ispoiler(text('b')), text('c')]);
+  assert.deepEqual(parse('[ispoiler][b]x[/b][/ispoiler]'), [ispoiler({ type: 'bold', children: [text('x')] })]);
+  assert.deepEqual(parse('[ispoiler]x'), [ispoiler(text('x'))]);
+  assertLiteral(['[ispoiler=x]a[/ispoiler]', '[/ispoiler]', '[/spoiler]']);
+});
+
+test('a block tag opened inside [ispoiler] is text, and so is its closer', () => {
+  assert.deepEqual(parse('[ispoiler]a[quote]b[/quote]c[/ispoiler]'), [ispoiler(text('a[quote]b[/quote]c'))]);
+  assert.deepEqual(parse(`[ispoiler][quote=${ACT}]b[/quote][/ispoiler]`), [ispoiler(text(`[quote=${ACT}]b[/quote]`))]);
+  assert.deepEqual(parse('[ispoiler][quote=Geno]b[/quote][/ispoiler]'), [ispoiler(text('[quote=Geno]b[/quote]'))]);
+  assert.deepEqual(parse('[ispoiler][list][*]one[/list][/ispoiler]'), [ispoiler(text('[list][*]one[/list]'))]);
+  assert.deepEqual(parse('[ispoiler][spoiler]s[/spoiler][/ispoiler]'), [ispoiler(text('[spoiler]s[/spoiler]'))]);
+  assert.deepEqual(parse('[ispoiler][code]c[/code][/ispoiler]'), [ispoiler(text('[code]c[/code]'))]);
+});
+
+test('a block closer inside [ispoiler] does not close a block opened outside it', () => {
+  assert.deepEqual(parse('[spoiler=t]a[ispoiler]b[/spoiler]c[/ispoiler]d[/spoiler]'), [
+    spoiler('t', text('a'), ispoiler(text('b[/spoiler]c')), text('d')),
+  ]);
+});
+
+test('a block tag is a tag again once the [ispoiler] is closed', () => {
+  assert.deepEqual(parse('[ispoiler]a[/ispoiler][spoiler]b[/spoiler]'), [ispoiler(text('a')), spoiler('Spoiler', text('b'))]);
+});
+
+test('[ispoiler] works inside [spoiler]', () => {
+  assert.deepEqual(parse('[spoiler]a[ispoiler]b[/ispoiler][/spoiler]'), [spoiler('Spoiler', text('a'), ispoiler(text('b')))]);
 });
