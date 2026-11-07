@@ -21,7 +21,8 @@ export interface BodyBox {
 
 /** The post body an effect drawn at `place` paints, or null where it paints only its own element. Found afresh each time: a takeover may move the element. */
 export function bodyOf(host: Element, place: EffectPlace): HTMLElement | null {
-  return place === 'thread' ? host.closest<HTMLElement>('.kb-act-main') : null;
+  /* EXPERIMENT (throwaway, #304): never paint the body. */
+  void host; void place; return null;
 }
 
 /** The box to paint, from `host`'s top-left: the body's padding box when there is a body, else the host's own box. */
