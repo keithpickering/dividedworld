@@ -60,12 +60,20 @@
 /* The roster is a carousel (engine/ui/glass/Carousel.tsx) with the selected character's panel directly under it, at every width. */
 .kb-roster-layout {
   margin-top: 28px;
+  position: relative;
 }
 
 .kb-roster-layout > .kb-roster-panel {
   margin-top: 40px;
   /* A readable measure on a wide layout, about the roster row of three cards; the phone's width is below it, so it fills. */
   max-width: 52em;
+}
+
+/* The panel a swap is replacing (Characters.tsx) stands where it was, out of the flow, so the one arriving is where it will stay. */
+.kb-roster-layout > .kb-roster-panel[data-kb-exiting] {
+  position: absolute;
+  width: 100%;
+  pointer-events: none;
 }
 
 /* The tablist is a row of its own beside New character, at the row's gap; the wrappers that only group draw no box. */

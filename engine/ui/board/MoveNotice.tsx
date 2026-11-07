@@ -24,6 +24,7 @@ import { BbCode } from '../bbcode/render.tsx';
 import { dayAndTime } from '../characters/format.ts';
 import { useKayfa } from '../context.tsx';
 import type { BoardName, Character, Id, MoveNotice as Notice } from '../data/api.ts';
+import { Layers } from '../glass/layer.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
 import { shortDate } from '../postbit/dates.ts';
 import { readable } from '../reactions/Reactions.tsx';
@@ -115,7 +116,7 @@ export function MoveNotice({ act }: { readonly act: Id }) {
           </tbody>
         </table>
       </div>
-      {open && <MoveDetail loaded={loaded} onClose={() => setOpen(false)} returnFocusTo={() => way.current} />}
+      <Layers>{open && <MoveDetail loaded={loaded} onClose={() => setOpen(false)} returnFocusTo={() => way.current} />}</Layers>
     </>
   );
 }

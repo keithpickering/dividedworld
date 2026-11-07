@@ -411,11 +411,25 @@ test.describe('between the boards\' widths', () => {
         const kids = [...(a.querySelector('.kb-glass-upright') ?? a).childNodes];
         return kids.findIndex((n) => n instanceof Element && n.classList.contains('kb-glass-menu-key')) < kids.findIndex((n) => n.nodeType === Node.TEXT_NODE && /\S/.test(n.textContent ?? ''));
       };
+      /* The boards light the current tab with a neon rule 3px high along its foot, skewed with the tab (an inset shadow); the build draws it as one element that glides between tabs, so it is read as that rule: 3px, neon, on the tab's foot, in a holder skewed as the tab is. */
+      const lit = (a: Element) => {
+        const rule = a.parentElement!.querySelector<HTMLElement>('.kb-glass-menu-underline');
+        if (!rule) return false;
+        const probe = document.createElement('i');
+        probe.style.color = 'var(--kb-glass-neon)';
+        document.body.appendChild(probe);
+        const neon = getComputedStyle(probe).color;
+        probe.remove();
+        const r = rule.getBoundingClientRect();
+        const t = a.getBoundingClientRect();
+        return Math.round(r.height) === 3 && getComputedStyle(rule).backgroundColor === neon && Math.abs(r.bottom - t.bottom) < 0.5
+          && getComputedStyle(rule.parentElement!).transform === getComputedStyle(a).transform;
+      };
       return {
         height: Math.round(nav.getBoundingClientRect().height),
         rule: getComputedStyle(nav).borderBottomStyle,
         back: { ...words(back), border: getComputedStyle(back).borderTopStyle, skewed: getComputedStyle(back).transform !== 'none', keyFirst: keyFirst(back), key: key.content },
-        current: { ...words(tab), skewed: getComputedStyle(tab).transform !== 'none', lit: getComputedStyle(tab).boxShadow.includes('inset') },
+        current: { ...words(tab), skewed: getComputedStyle(tab).transform !== 'none', lit: lit(tab) },
       };
     });
     const type = { family: 'Barlow Condensed', size: '21px', weight: '800', spacing: '1.5px', upper: 'uppercase' };

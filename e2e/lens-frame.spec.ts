@@ -9,6 +9,7 @@
  * tablet's 1024px (64em); up to that a sheet that ends on the HUD's top edge (834 and 390 here). The fade at the foot is there only while more lies below.
  */
 import { expect, test, type Page } from '@playwright/test';
+import { settled } from './settled.ts';
 
 const STORY = '/?fixture=boards&story=boards-01-lens--five-kinds';
 
@@ -27,6 +28,8 @@ async function openLens(page: Page) {
   await expect(lens.getByRole('button', { name: /^3 plays · / })).toHaveAttribute('aria-expanded', 'true');
   /* Unfolding Who grows the panel, which places itself again a frame later: its body is not scrollable (and the fade is not shown) until it has. */
   await expect(lens).toHaveAttribute('data-kb-more', 'true');
+  /* The Lens enters by the feel (it scales up from its button): a measure is taken where it will stand, not mid-way (the smoke drifts for as long as the page is up, so loops are not waited on). */
+  await settled(page, { loops: true });
   return lens;
 }
 

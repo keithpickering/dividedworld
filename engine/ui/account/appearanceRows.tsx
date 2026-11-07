@@ -19,8 +19,9 @@ export interface Option<V extends string | number> {
 
 export const MOTION: readonly Option<Preferences['motion']>[] = [
   { value: 'system', label: 'Follow my device' },
-  { value: 'reduce', label: 'Reduced' },
-  { value: 'full', label: 'Full' },
+  { value: 'reduce', label: 'Off' },
+  { value: 'full', label: 'Smooth' },
+  { value: 'snappy', label: 'Snappy' },
 ];
 export const TEXT_SIZE: readonly Option<Preferences['textSize']>[] = [100, 125, 150, 200].map((n) => ({ value: n as Preferences['textSize'], label: `${n}%` }));
 
@@ -59,7 +60,7 @@ export function MotionRow({ value, onChange, level }: { readonly value: Preferen
   const { ui } = useKayfa();
   return (
     <Choice legend="Motion" options={MOTION} value={value} onChange={onChange} level={level}
-      sentence={`Reduced stops the drifting smoke, the pulses and the orb shine. A card's effect stays: ${ui.copy.reducedMotionCard}`} />
+      sentence={`Off stops every animation. A card's effect still happens: ${ui.copy.reducedMotionCard} Smooth and Snappy are two speeds of the same animations.`} />
   );
 }
 

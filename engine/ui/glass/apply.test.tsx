@@ -22,6 +22,29 @@ const glass = {
   classes: {}, orbs: { gradients: [], body: { core: '', edge: '' } },
 } as unknown as GlassTheme;
 
+describe('glassVars: motion', () => {
+  it('writes each feel\'s durations and easing as --kb-motion-* from the engine\'s defaults', () => {
+    const v = glassVars(glass, 'standard');
+    expect(v['--kb-motion-smooth-enter']).toBe('380ms');
+    expect(v['--kb-motion-smooth-exit']).toBe('300ms');
+    expect(v['--kb-motion-smooth-screen']).toBe('420ms');
+    expect(v['--kb-motion-smooth-stagger']).toBe('30ms');
+    expect(v['--kb-motion-smooth-ease']).toBe('cubic-bezier(0.22, 1, 0.36, 1)');
+    expect(v['--kb-motion-snappy-enter']).toBe('180ms');
+    expect(v['--kb-motion-snappy-exit']).toBe('140ms');
+    expect(v['--kb-motion-snappy-screen']).toBe('220ms');
+    expect(v['--kb-motion-snappy-stagger']).toBe('24ms');
+  });
+
+  it('takes the instance\'s overrides over the defaults, token by token', () => {
+    const v = glassVars({ ...glass, motion: { smooth: { enter: 500, ease: 'cubic-bezier(0, 0, 1, 1)' } } }, 'standard');
+    expect(v['--kb-motion-smooth-enter']).toBe('500ms');
+    expect(v['--kb-motion-smooth-ease']).toBe('cubic-bezier(0, 0, 1, 1)');
+    expect(v['--kb-motion-smooth-exit']).toBe('300ms');
+    expect(v['--kb-motion-snappy-enter']).toBe('180ms');
+  });
+});
+
 describe('glassVars', () => {
   it('names each token of the chosen key by its own name', () => {
     const v = glassVars(glass, 'standard');

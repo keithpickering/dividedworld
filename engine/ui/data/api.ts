@@ -703,7 +703,7 @@ export interface Preferences {
   /** Light or dark, or the device's. A theme with one mode fixes it whatever this says, and this stays stored for the theme that holds both. */
   readonly mode: 'system' | 'light' | 'dark';
   readonly postbit: 'side' | 'stacked';
-  readonly motion: 'system' | 'reduce' | 'full';
+  readonly motion: 'system' | 'reduce' | 'full' | 'snappy';
   /** How much smoke stands behind the glass: all of it, a third of each layer, or none (plain ground). */
   readonly smoke: 'full' | 'low' | 'off';
   /** High puts solid ground under every line of glass text and switches the glass to its `high` key. */

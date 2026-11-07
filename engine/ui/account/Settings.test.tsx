@@ -10,7 +10,7 @@ import { buildWorld, renderIn, testGlass } from '../test-world.tsx';
 import { onToastChoice } from '../alerts/toast-choice.ts';
 import { SettingsScreen } from './Settings.tsx';
 
-const MARKS = ['data-kb-mode', 'data-kb-motion', 'data-kb-smoke-level', 'data-kb-contrast', 'data-kb-text-size', 'data-kb-glass-key'];
+const MARKS = ['data-kb-mode', 'data-kb-motion', 'data-kb-motion-feel', 'data-kb-smoke-level', 'data-kb-contrast', 'data-kb-text-size', 'data-kb-glass-key'];
 beforeEach(() => { localStorage.clear(); for (const m of MARKS) document.documentElement.removeAttribute(m); });
 afterEach(() => { cleanup(); });
 
@@ -87,7 +87,7 @@ describe('Settings, as board 11 draws it', () => {
     open(world().fake);
     await screen.findByRole('radiogroup', { name: 'Motion' });
     const offered = (name: string) => within(group(name)).getAllByRole('radio').map((r) => r.getAttribute('aria-label') ?? r.closest('label')?.textContent);
-    expect(offered('Motion')).toEqual(['Follow my device', 'Reduced', 'Full']);
+    expect(offered('Motion')).toEqual(['Follow my device', 'Off', 'Smooth', 'Snappy']);
     expect(offered('Smoke')).toEqual(['Full', 'Low', 'Off']);
     expect(offered('Contrast')).toEqual(['Standard', 'High']);
     expect(offered('Text size')).toEqual(['100%', '125%', '150%', '200%']);
@@ -102,14 +102,14 @@ describe('Settings, as board 11 draws it', () => {
   test('Motion\'s sentence names the instance\'s own card, in the instance\'s words', async () => {
     open(world().fake);
     await screen.findByRole('radiogroup', { name: 'Motion' });
-    expect(screen.getByText('Reduced stops the drifting smoke, the pulses and the orb shine. A card\'s effect stays: the test card still moves you, only instantly.')).toBeInTheDocument();
+    expect(screen.getByText('Off stops every animation. A card\'s effect still happens: the test card still moves you, only instantly. Smooth and Snappy are two speeds of the same animations.')).toBeInTheDocument();
   });
 
   test('the board\'s colors and motion apply at once and persist across a fresh load', async () => {
     const w = world();
     await persists(w, 'Mode', 'Dark', { theme: 'default', mode: 'dark' }, ['data-kb-mode', 'dark'], '/settings?section=board');
     cleanup();
-    await persists(w, 'Motion', 'Reduced', { motion: 'reduce' }, ['data-kb-motion', 'reduce']);
+    await persists(w, 'Motion', 'Off', { motion: 'reduce' }, ['data-kb-motion', 'reduce']);
   });
 
   test('the post style persists across a fresh load', async () => {
@@ -176,7 +176,7 @@ describe('Settings, as board 11 draws it', () => {
     open(w.fake);
     await screen.findByRole('radiogroup', { name: 'Smoke' });
     await userEvent.click(radio('Smoke', 'Off'));
-    await userEvent.click(radio('Motion', 'Reduced'));
+    await userEvent.click(radio('Motion', 'Off'));
     expect(calls).toHaveLength(1);
     calls[0]!.settle({ ok: false, error: 'the smoke is full, low or off' });
     await waitFor(() => expect(calls).toHaveLength(2));
@@ -184,7 +184,7 @@ describe('Settings, as board 11 draws it', () => {
     calls[1]!.settle({ ok: true, value: { ...DEFAULT_PREFERENCES, motion: 'reduce' } });
     expect(await screen.findByRole('alert')).toHaveTextContent('the smoke is full, low or off');
     expect(radio('Smoke', 'Full')).toBeChecked();
-    expect(radio('Motion', 'Reduced')).toBeChecked();
+    expect(radio('Motion', 'Off')).toBeChecked();
     expect(document.documentElement.getAttribute('data-kb-motion')).toBe('reduce');
     expect(document.documentElement.getAttribute('data-kb-smoke-level')).toBeNull();
   });

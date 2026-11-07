@@ -226,3 +226,21 @@ describe('placing again', () => {
     expect(wrap.style.top).toBe(`${DOCK_INSET}px`);
   });
 });
+
+describe('Esc', () => {
+  test('is not the float\'s while the tree it opened from is leaving (inert, held for an exit)', async () => {
+    const s = stage();
+    const onClose = vi.fn();
+    render(
+      <KayfaProvider value={kayfa}>
+        <Float label="Lens" surface="effect" anchor={{ current: s.anchor }} sheet={false} onClose={onClose}><button type="button">x</button></Float>
+      </KayfaProvider>,
+    );
+    await frame();
+    s.anchor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    s.anchor.setAttribute('inert', '');
+    s.anchor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});

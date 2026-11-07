@@ -1,6 +1,6 @@
--- A theme and a mode, held apart (supabase/migrations/0114_board_mode.sql; board-look plan Task 15): the mode defaults to the device's, is kept,
+-- A theme and a mode, held apart (supabase/migrations/0115_board_mode.sql; board-look plan Task 15): the mode defaults to the device's, is kept,
 -- refused by name when it is none of the three, read by the account alone and carried in boot(). The migration's rewrite of the old mixed theme column
--- is proved on rows as they were by e2e/0018-mode-across-0114.ts.
+-- is proved on rows as they were by e2e/0018-mode-across-0115.ts.
 
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
 begin

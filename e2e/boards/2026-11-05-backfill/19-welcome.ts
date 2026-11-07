@@ -43,7 +43,7 @@ const manifest: BoardManifest = {
     { id: 'start-lede', role: 'text', name: 'How the board and the glass look and move. None of it changes how the game plays.', box: 'position', buildShift: PROSE, origin: 'headline', originEdge: 'bottom' },
     { id: 'theme', role: 'heading', name: 'THEME', box: 'position', buildShift: PROSE, origin: 'headline', originEdge: 'bottom' },
     { id: 'motion', role: 'heading', name: 'MOTION', box: 'position', buildShift: TILES, origin: 'headline', originEdge: 'bottom' },
-    { id: 'motion-note', role: 'text', name: 'Reduced stops the drifting smoke, the pulses and the orb shine. A card\'s effect stays: Stick Around still snaps you back, only instantly.', box: 'position', buildShift: TILES, origin: 'headline', originEdge: 'bottom' },
+    { id: 'motion-note', role: 'text', name: 'Off stops every animation. A card\'s effect still happens: Stick Around still snaps you back, only instantly. Smooth and Snappy are two speeds of the same animations.', box: 'position', buildShift: TILES, origin: 'headline', originEdge: 'bottom' },
     { id: 'size', role: 'heading', name: 'TEXT SIZE', box: 'position', buildShift: TILES, origin: 'headline', originEdge: 'bottom' },
     { id: 'size-note', role: 'text', name: 'Applies to the board and the glass together. Past 150% the glass folds into one column, and nothing is cut off.', box: 'position', buildShift: TILES, origin: 'headline', originEdge: 'bottom' },
     { id: 'make', role: 'link', name: 'MAKE YOUR FIRST CHARACTER', box: 'height', buildShift: { ...TILES, height: -6 }, origin: 'headline', originEdge: 'bottom' },
@@ -64,7 +64,7 @@ export default manifest;
  * "wraps or shrinks to fit before it truncates"; the phone's row cannot hold the whole name on one line beside the bell, Menu and Hand); the welcome's parts are compared from the Before you start heading (the board draws the page scrolled to it, the build from its
  * top), the options wrap one row more in the build's 326px column than the board's 358px, so the label stands 32px higher and the notes 32 and 19px
  * lower (`buildShift`, as the first run measured); the theme row is the tiles, three across (the board look's Task 16), five of them in two rows with Divided World's five themes (Task 17), so its sentence
- * is not on this page and Motion and Text size stand 53px and 41px lower than the board draws them; the guide is compared from its top (the build is one long article, the board draws Classes alone);
+ * is not on this page and Motion and its sentence stand about 53px and 57px lower than the board draws them (Text size is measured from the sentence); the guide is compared from its top (the build is one long article, the board draws Classes alone);
  * and the tour's tip stands 36px lower and 46px shorter than the board's (its docking above the build's own HUD, and its kicker and step on one line).
  */
 const PHONE = '2026-11-05-backfill/22-onboarding-phone';
@@ -78,7 +78,9 @@ export const phone: BoardManifest = {
     { id: 'start', role: 'heading', name: 'BEFORE YOU START', buildSize: 26, box: 'none' },
     { id: 'theme', role: 'text', buildRole: 'heading', name: 'THEME', origin: 'start', box: 'position', type: false, buildShift: { y: -32 } },
     { id: 'motion', role: 'text', buildRole: 'heading', name: 'MOTION', origin: 'start', box: 'position', type: false, buildShift: { y: 53 } },
-    { id: 'size', role: 'text', buildRole: 'heading', name: 'TEXT SIZE', origin: 'start', box: 'position', type: false, buildShift: { y: 40.8 } },
+    /* The phone's Motion sentence is held to its own place, and TEXT SIZE is measured from its bottom edge: the build sets it at 17px and the board at 19px, and it wraps within a few percent of its column's width (boards-wrap.spec.ts). Its buildShift is the measured offset of the build's setting (17px type, shorter column, and the theme tiles' taller row in place of the theme sentence) from the board's. */
+    { id: 'motion-note', role: 'text', name: 'Off stops every animation. A card\'s effect still happens: Stick Around still snaps you back, only instantly. Smooth and Snappy are two speeds of the same animations.', origin: 'start', box: 'position', type: false, buildShift: { y: 56.6 } },
+    { id: 'size', role: 'text', buildRole: 'heading', name: 'TEXT SIZE', origin: 'motion-note', originEdge: 'bottom', box: 'position', type: false },
   ],
   also: [
     {

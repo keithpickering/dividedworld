@@ -9,7 +9,7 @@ const themes: ThemeOption[] = [
 
 describe('the theme a preference resolves to', () => {
   test('"system" is the house theme, following the device', () => {
-    expect(resolveAppearance({ theme: 'default', motion: 'system' }, themes)).toEqual({ href: '/house.css', mode: null, motion: null });
+    expect(resolveAppearance({ theme: 'default', motion: 'system' }, themes)).toEqual({ href: '/house.css', mode: null, motion: null, feel: 'smooth' });
   });
   test('the default theme in a mode the player chose', () => {
     expect(resolveAppearance({ theme: 'default', mode: 'light', motion: 'system' }, themes)).toMatchObject({ href: '/house.css', mode: 'light' });
@@ -17,7 +17,7 @@ describe('the theme a preference resolves to', () => {
     expect(resolveAppearance({ theme: 'default', mode: 'system', motion: 'system' }, themes).mode).toBe(null);
   });
   test('a stored dark theme, once the migration has rewritten it, reads back as the default theme in dark', () => {
-    expect(resolveAppearance({ theme: 'default', mode: 'dark', motion: 'system' }, themes)).toEqual({ href: '/house.css', mode: 'dark', motion: null });
+    expect(resolveAppearance({ theme: 'default', mode: 'dark', motion: 'system' }, themes)).toEqual({ href: '/house.css', mode: 'dark', motion: null, feel: 'smooth' });
   });
   test('the first theme resolves whatever its key is: the engine names no theme', () => {
     const odd: ThemeOption[] = [{ key: 'ink', name: 'Ink', href: '/ink.css', modes: 'both', preview: {} }];
@@ -26,16 +26,16 @@ describe('the theme a preference resolves to', () => {
   });
   test('a one-mode theme fixes the mode whatever mode says, and the stored mode is left alone', () => {
     const pref = { theme: 'midnight', mode: 'light' as const, motion: 'system' as const };
-    expect(resolveAppearance(pref, themes)).toEqual({ href: '/midnight.css', mode: 'dark', motion: null });
+    expect(resolveAppearance(pref, themes)).toEqual({ href: '/midnight.css', mode: 'dark', motion: null, feel: 'smooth' });
     expect(pref.mode).toBe('light');
     /* choosing the house theme again returns the player's own mode */
     expect(resolveAppearance({ ...pref, theme: 'default' }, themes)).toMatchObject({ href: '/house.css', mode: 'light' });
   });
   test('an instance theme with one mode is that mode', () => {
-    expect(resolveAppearance({ theme: 'midnight', motion: 'system' }, themes)).toEqual({ href: '/midnight.css', mode: 'dark', motion: null });
+    expect(resolveAppearance({ theme: 'midnight', motion: 'system' }, themes)).toEqual({ href: '/midnight.css', mode: 'dark', motion: null, feel: 'smooth' });
   });
   test('a theme the instance no longer offers falls back to the house theme on the device', () => {
-    expect(resolveAppearance({ theme: 'gone', motion: 'system' }, themes)).toEqual({ href: '/house.css', mode: null, motion: null });
+    expect(resolveAppearance({ theme: 'gone', motion: 'system' }, themes)).toEqual({ href: '/house.css', mode: null, motion: null, feel: 'smooth' });
   });
   test('a motion the engine does not know follows the device', () => {
     expect(resolveAppearance({ theme: 'default', motion: 'Reduce' as 'reduce' }, themes).motion).toBe(null);
@@ -44,6 +44,16 @@ describe('the theme a preference resolves to', () => {
   test('motion: the device unless overridden', () => {
     expect(resolveAppearance({ theme: 'default', motion: 'reduce' }, themes).motion).toBe('reduce');
     expect(resolveAppearance({ theme: 'default', motion: 'full' }, themes).motion).toBe('full');
+  });
+  test('snappy is full motion at the snappy feel; full is the smooth feel; reduce and system keep the smooth feel', () => {
+    expect(resolveAppearance({ theme: 'default', motion: 'snappy' }, themes)).toMatchObject({ motion: 'full', feel: 'snappy' });
+    expect(resolveAppearance({ theme: 'default', motion: 'full' }, themes)).toMatchObject({ motion: 'full', feel: 'smooth' });
+    expect(resolveAppearance({ theme: 'default', motion: 'reduce' }, themes)).toMatchObject({ motion: 'reduce', feel: 'smooth' });
+    expect(resolveAppearance({ theme: 'default', motion: 'system' }, themes)).toMatchObject({ motion: null, feel: 'smooth' });
+  });
+  test('a stored Snappy survives a theme and a mode chosen beside it', () => {
+    expect(resolveAppearance({ theme: 'default', mode: 'dark', motion: 'snappy' }, themes)).toEqual({ href: '/house.css', mode: 'dark', motion: 'full', feel: 'snappy' });
+    expect(resolveAppearance({ theme: 'midnight', mode: 'light', motion: 'snappy' }, themes)).toEqual({ href: '/midnight.css', mode: 'dark', motion: 'full', feel: 'snappy' });
   });
 });
 
@@ -63,6 +73,23 @@ describe('applying it to the page', () => {
     applyAppearance(document, { theme: 'default', motion: 'system' }, themes);
     expect(document.documentElement.hasAttribute('data-kb-mode')).toBe(false);
     expect(document.documentElement.hasAttribute('data-kb-motion')).toBe(false);
+  });
+});
+
+describe('the motion feel on the page', () => {
+  test('snappy marks full motion and the snappy feel; full the smooth feel; reduce reduce; system neither', () => {
+    const root = document.documentElement;
+    applyAppearance(document, { theme: 'default', motion: 'snappy' }, themes);
+    expect(root.getAttribute('data-kb-motion')).toBe('full');
+    expect(root.getAttribute('data-kb-motion-feel')).toBe('snappy');
+    applyAppearance(document, { theme: 'default', motion: 'full' }, themes);
+    expect(root.getAttribute('data-kb-motion')).toBe('full');
+    expect(root.getAttribute('data-kb-motion-feel')).toBe('smooth');
+    applyAppearance(document, { theme: 'default', motion: 'reduce' }, themes);
+    expect(root.getAttribute('data-kb-motion')).toBe('reduce');
+    applyAppearance(document, { theme: 'default', motion: 'system' }, themes);
+    expect(root.hasAttribute('data-kb-motion')).toBe(false);
+    expect(root.hasAttribute('data-kb-motion-feel')).toBe(false);
   });
 });
 

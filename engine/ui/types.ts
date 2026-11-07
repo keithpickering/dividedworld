@@ -109,8 +109,8 @@ export interface UiCopy {
    */
   readonly badges?: readonly (readonly [string, string])[];
   /**
-   * How a card's effect stays under reduced motion, in Settings' Motion sentence after "A card's
-   * effect stays: ", naming the instance's own card the way its players know it (the engine names
+   * How a card's effect still happens with motion Off, in Settings' Motion sentence after "A card's
+   * effect still happens: ", naming the instance's own card the way its players know it (the engine names
    * none), such as "a card that holds you in place still does, only instantly."
    */
   readonly reducedMotionCard: string;
@@ -286,6 +286,39 @@ export interface GlassControlsInput {
   readonly gap?: number;
 }
 
+/** A feel of the glass's motion: Smooth or Snappy (docs/plans/2026-11-04-glass-polish-design.md, section 9). */
+export type Feel = 'smooth' | 'snappy';
+
+/** One feel's tokens: durations in ms, an ease (a cubic-bezier), an optional spring, and how an enter looks. */
+export interface FeelTokens {
+  /** An enter's duration, ms. */
+  readonly enter: number;
+  /** An exit's duration, ms. */
+  readonly exit: number;
+  /** A screen change's (and a crossing's) duration, ms. */
+  readonly screen: number;
+  /** The gap between one item's entrance and the next's, ms; capped so the last starts within `screen`. */
+  readonly stagger: number;
+  /** A CSS `cubic-bezier(a, b, c, d)`. */
+  readonly ease: string;
+  /** Where a thing lands with a spring (stiffness, damping); absent means eased. */
+  readonly spring?: { readonly stiffness: number; readonly damping: number };
+  /** How far an enter travels, px. */
+  readonly distance: number;
+  /** The blur an enter clears, px. */
+  readonly blur: number;
+  /** The scale an enter grows from. */
+  readonly scale: number;
+  /** What a mask does: a plain fade, or a wipe along the glass's skew. */
+  readonly mask: 'fade' | 'skew';
+}
+
+/** An instance's overrides of either feel's tokens in glass.json; the engine's defaults stand where it gives none. */
+export interface GlassMotion {
+  readonly smooth?: Partial<FeelTokens>;
+  readonly snappy?: Partial<FeelTokens>;
+}
+
 /** The glass: an instance's look for everything outside the board, as data (docs/plans/2026-10-30-glass-to-the-boards-plan.md, sections 4 to 6). */
 export interface GlassTheme {
   /** Standard and high contrast: the same tokens, each with its tags, the high key's values reaching 7:1. */
@@ -300,6 +333,8 @@ export interface GlassTheme {
   readonly calm: { readonly opacity: number; readonly feather: number };
   /** The skewed controls' measure; any field not given is the engine's default, merged field by field (DEFAULT_CONTROLS, engine/ui/glass/apply.ts). */
   readonly controls?: GlassControlsInput;
+  /** Either feel's tokens, over the engine's defaults (engine/ui/glass/motion-tokens.ts). */
+  readonly motion?: GlassMotion;
   readonly sizes: Readonly<Record<string, GlassSize>>;
   readonly fonts: readonly GlassFont[];
   /** Each class's glass colors, by the class's key. */

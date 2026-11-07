@@ -1,6 +1,6 @@
 -- acts_well_formed (0100), its staff refusal in the engine's neutral words: the player reads this message as the backend wrote it
 -- (web/src/data/supabase.ts passes a kayfabb.refusal through), and the engine names no instance's cast, so "The System" is "the game's own
--- moves" here, as 0112 did for not_the_systems. The signature, security settings and search path are 0100's, and so is every other line.
+-- moves" here, as 0113 did for not_the_systems. The signature, security settings and search path are 0100's, and so is every other line.
 -- (0002's "nobody reacts to The System's own Acts" is gone already: react, since 0015, no longer raises it.) The seed-time errors that name
 -- The System's board (22023, raised to an admin running a seed) are left as written: no player reads them.
 create or replace function acts_well_formed() returns trigger

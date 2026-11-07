@@ -309,6 +309,25 @@ describe('the appeal to the Boss of a ban (the design, section 5: "No player is 
     expect(await w.fake.myBan(w.pipe)).toBeNull();
   });
 
+  test('at full motion its close plays the exit: the form stays, inert and hidden from a reader, until the exit ends (layer.tsx)', async () => {
+    const root = document.documentElement;
+    root.setAttribute('data-kb-motion', 'full');
+    try {
+      const w = banned();
+      open(w);
+      await userEvent.click(await screen.findByRole('button', { name: /^Appeal to the Boss/u }));
+      const form = await screen.findByRole('dialog', { name: 'Appeal the ban' });
+      await userEvent.keyboard('{Escape}');
+      const layer = form.closest('[data-kb-exiting]');
+      expect(layer, 'the closed form is still on the page, leaving').not.toBeNull();
+      expect(layer).toHaveAttribute('inert');
+      expect(layer).toHaveAttribute('aria-hidden', 'true');
+      await waitFor(() => expect(form.isConnected).toBe(false));
+    } finally {
+      root.removeAttribute('data-kb-motion');
+    }
+  });
+
   test('passes axe', async () => {
     const w = banned();
     open(w);

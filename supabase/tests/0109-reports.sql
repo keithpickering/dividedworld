@@ -220,7 +220,7 @@ begin
   perform tests.unbecome();
   staff_post := (write_staff_act('rp-m1', 'post', t, null, jsonb_build_object('body', 'The Mod speaks.')) ->> 'id')::uuid;
   perform tests.become(annu);
-  -- In the engine's neutral words (0113): the player reads the refusal as the backend wrote it, and the engine names no instance's cast.
+  -- In the engine's neutral words (0114): the player reads the refusal as the backend wrote it, and the engine names no instance's cast.
   said := pg_temp.refusal(format('select open_report(%L, %L, %L)', ann_a, staff_post, 'Why.'));
   if said is distinct from '55000: a post by the staff is not reported' then raise exception 'a post by the Mod was reported, or refused in other words: %', said; end if;
   perform tests.unbecome();

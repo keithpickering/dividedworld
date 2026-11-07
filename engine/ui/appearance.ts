@@ -4,8 +4,9 @@
  * The device decides by default: its light or dark (the theme's prefers-color-scheme), its
  * reduced motion. A player overrides either, saved to the account (account_preferences, read
  * through the data layer) so it follows them across devices. The engine marks only an override on
- * <html>, `data-kb-mode` and `data-kb-motion`, so a theme's own media query holds otherwise
- * (engine/ui/tokens.css says the shape every theme follows).
+ * <html>, `data-kb-mode` and `data-kb-motion` (Smooth and Snappy are both full motion, and also
+ * mark `data-kb-motion-feel`), so a theme's own media query holds otherwise (engine/ui/tokens.css
+ * says the shape every theme follows).
  *
  * The glass's three preferences (the web plan's glass amendment to Task 11) are marked the same
  * way, only when they leave their default: `data-kb-smoke-level` (low or off; Smoke.tsx reads it),
@@ -25,7 +26,7 @@ export interface AppearancePreference {
   readonly theme: string;
   /** Light, dark or the device's; a theme with one mode fixes it whatever this says. Left out, the device's. */
   readonly mode?: 'system' | 'light' | 'dark';
-  readonly motion: 'system' | 'reduce' | 'full';
+  readonly motion: 'system' | 'reduce' | 'full' | 'snappy';
   readonly smoke?: 'full' | 'low' | 'off';
   readonly contrast?: 'standard' | 'high';
   readonly textSize?: 100 | 125 | 150 | 200;
@@ -37,6 +38,8 @@ export interface Appearance {
   readonly mode: 'light' | 'dark' | null;
   /** Reduced or full when the player overrides the device; null follows it. */
   readonly motion: 'reduce' | 'full' | null;
+  /** How fast the animations run: snappy only when the player chose Snappy, smooth otherwise. */
+  readonly feel: 'smooth' | 'snappy';
 }
 
 /** What a preference resolves to among the instance's themes; the first theme is the house one. */
@@ -44,12 +47,13 @@ export function resolveAppearance(pref: AppearancePreference, themes: readonly T
   const house = themes[0];
   if (!house) throw new Error('an instance offers at least one theme, its house theme');
   /* A preference is a row the server holds; anything but an override it knows follows the device. */
-  const motion = pref.motion === 'reduce' || pref.motion === 'full' ? pref.motion : null;
+  const motion = pref.motion === 'reduce' ? 'reduce' : pref.motion === 'full' || pref.motion === 'snappy' ? 'full' : null;
+  const feel = pref.motion === 'snappy' ? 'snappy' : 'smooth';
   /* The theme is which theme: "default" is the instance's first, and a key it does not offer falls back to it. */
   const chosen = themes.find((t) => t.key === pref.theme && pref.theme !== 'default') ?? house;
   /* A theme with one mode fixes it; otherwise the player's own mode, which stays stored for a theme that holds both. */
   const own = pref.mode === 'light' || pref.mode === 'dark' ? pref.mode : null;
-  return { href: chosen.href, mode: chosen.modes === 'both' ? own : chosen.modes, motion };
+  return { href: chosen.href, mode: chosen.modes === 'both' ? own : chosen.modes, motion, feel };
 }
 
 /** Puts an appearance on the page: one theme link, swapped in place, and the override attributes. */
@@ -68,6 +72,9 @@ export function applyAppearance(doc: Document, pref: AppearancePreference, theme
   else root.removeAttribute('data-kb-mode');
   if (a.motion) root.setAttribute('data-kb-motion', a.motion);
   else root.removeAttribute('data-kb-motion');
+  /* The feel is marked with the player's Smooth or Snappy; the device's own choice, and Off, leave
+     it unmarked. */
+  mark(root, 'data-kb-motion-feel', a.motion === 'full' ? a.feel : null);
   /* A preference the engine does not know is its default, as a theme it does not know is the device's. */
   const smoke = pref.smoke === 'low' || pref.smoke === 'off' ? pref.smoke : null;
   const high = pref.contrast === 'high';
@@ -104,7 +111,7 @@ export function textSize(doc: Document = document): 100 | 125 | 150 | 200 {
 function subscribeRoot(onChange: () => void): () => void {
   if (typeof MutationObserver !== 'function') return () => {};
   const watch = new MutationObserver(onChange);
-  watch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-kb-smoke-level', 'data-kb-text-size', 'data-kb-motion'] });
+  watch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-kb-smoke-level', 'data-kb-text-size', 'data-kb-motion', 'data-kb-motion-feel'] });
   return () => watch.disconnect();
 }
 

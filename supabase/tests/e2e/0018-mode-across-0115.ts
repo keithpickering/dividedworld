@@ -1,8 +1,8 @@
 /**
  * The old theme column's rows are rewritten into a theme and a mode (the board look plan, Task 15): migrating across
- * supabase/migrations/0114_board_mode.sql turns a stored `system` into the default theme following the device, `light` and `dark` into the
+ * supabase/migrations/0115_board_mode.sql turns a stored `system` into the default theme following the device, `light` and `dark` into the
  * default theme in that mode, and any other key into itself with the device's mode. On a database of its own, made here beside the scratch
- * one tools/test-sql.mjs made, from the migrations before 0114 and the test instance's fixtures, because a replay from zero has no rows for
+ * one tools/test-sql.mjs made, from the migrations before 0115 and the test instance's fixtures, because a replay from zero has no rows for
  * the migration's UPDATE to rewrite.
  */
 import { test } from 'node:test';
@@ -27,9 +27,9 @@ test('stored themes system, light, dark and an instance\'s own become a theme an
   psqlOn(server.toString(), `create database ${name};`);
   try {
     const all = fs.readdirSync(migrations).filter((f) => f.endsWith('.sql')).sort();
-    assert.ok(all.includes('0114_board_mode.sql'), 'the migration this holds is there');
+    assert.ok(all.includes('0115_board_mode.sql'), 'the migration this holds is there');
     psqlOn(db.toString(), fs.readFileSync(path.join(root, 'supabase/tests/setup/auth-shim.sql'), 'utf8'));
-    for (const m of all.filter((f) => f < '0114')) psqlOn(db.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
+    for (const m of all.filter((f) => f < '0115')) psqlOn(db.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
     psqlOn(db.toString(), fs.readFileSync(path.join(root, 'supabase/tests/setup/fixtures.sql'), 'utf8'));
     // Before: one account per stored theme, the old column mixing the house theme in a mode with the instance's own keys.
     psqlOn(db.toString(), `
@@ -40,8 +40,8 @@ test('stored themes system, light, dark and an instance\'s own become a theme an
       end $$;`);
     assert.equal(psqlOn(db.toString(), `select string_agg(theme, ',' order by theme) from account_preferences`), 'dark,dusk,light,system');
 
-    psqlOn(db.toString(), fs.readFileSync(path.join(migrations, '0114_board_mode.sql'), 'utf8'));
-    for (const m of all.filter((f) => f > '0114_board_mode.sql')) psqlOn(db.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
+    psqlOn(db.toString(), fs.readFileSync(path.join(migrations, '0115_board_mode.sql'), 'utf8'));
+    for (const m of all.filter((f) => f > '0115_board_mode.sql')) psqlOn(db.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
 
     const after = (label: string) => psqlOn(db.toString(), `select theme || ',' || mode from account_preferences p join auth.users u on u.id = p.account where u.email = '${label}@test.invalid'`);
     assert.equal(after('mode-s'), 'default,system', 'system is the default theme following the device');

@@ -38,11 +38,15 @@
  * at the window's scale below 1440px, and the Phone board's below that width. The glass pages
  * switch at the same width.
  */
-import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import type { Character } from '../data/api.ts';
 import { useKayfa } from '../context.tsx';
+import { playIn, playOut, type Stop } from '../glass/play.ts';
+import { overlay as overlayPreset, useFeel } from '../glass/motion.ts';
 import { usePlayer } from '../player.tsx';
 import { registerHref, signInHref } from '../account/next.ts';
+import { isLeaving } from '../glass/Held.tsx';
+import { publishHudTab } from './hud-tab.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { useBoot } from '../boot.tsx';
 import { Link, searchOf, useLocation, useNavigate, useRouterInternals } from '../router.tsx';
@@ -213,6 +217,12 @@ export function Hud() {
     return () => { watch.disconnect(); root.style.removeProperty('--kb-hud-measured'); };
   }, [signedIn, board, scale]);
 
+  /* The tab's box on the window, for the crossing to open from and close back into (hud-tab.ts); read when the crossing starts, so it is never stale. */
+  useEffect(() => publishHudTab(() => {
+    const a = aura.current?.getBoundingClientRect() ?? section.current?.getBoundingClientRect();
+    return a && a.width > 0 ? { x: a.left, y: a.top, width: a.width, height: a.height } : null;
+  }), []);
+
   /*
    * Menu is its word unless the word would cut the mask's name. The name is measured as the picker draws it (a hidden copy of it, in the picker's
    * face), against the picker's room as it would be with Menu's word: the room now, less what shortening gave it. Judged that way the answer does
@@ -258,11 +268,47 @@ export function Hud() {
   /* The opened hand takes focus, so the keyboard is in it at once. */
   useEffect(() => { if (handOpen) drawer.current?.focus(); }, [handOpen]);
 
+  /*
+   * The hand drawer opens from the hand button and its close plays out (glass/play.ts, motion.ts `overlay`). It stays on the page, so on a close it is
+   * kept shown, inert and hidden from a reader, until its exit ends. Under Off it is hidden at once, as it was.
+   */
+  const feel = useFeel(ui.glass.motion);
+  const [drawerLeaving, setDrawerLeaving] = useState(false);
+  /* Marked in the render that closes it (state set while rendering is re-rendered before it commits), so no commit ever hides the drawer that is about to play out, and it is measured where it stands. */
+  const [shownOpen, setShownOpen] = useState(handOpen);
+  if (shownOpen !== handOpen) {
+    setShownOpen(handOpen);
+    setDrawerLeaving(!handOpen && feel !== null);
+  }
+  const drawerWas = useRef(handOpen);
+  /* The drawer's running play: the next run, and the unmount, stop it, so a superseded exit never clears the entrance that replaced it. */
+  const drawerRun = useRef<Stop | null>(null);
+  useLayoutEffect(() => () => { drawerRun.current?.(); drawerRun.current = null; }, []);
+  useLayoutEffect(() => {
+    if (drawerWas.current === handOpen) return;
+    drawerWas.current = handOpen;
+    drawerRun.current?.();
+    drawerRun.current = null;
+    const el = drawer.current;
+    if (!el || !feel) { setDrawerLeaving(false); return; }
+    const a = handButton.current?.getBoundingClientRect();
+    const place = () => {
+      const b = el.getBoundingClientRect();
+      return a && b.width > 0 ? { x: a.left + a.width / 2 - b.left, y: a.top + a.height / 2 - b.top } : undefined;
+    };
+    if (handOpen) { setDrawerLeaving(false); drawerRun.current = playIn(el, overlayPreset(feel, place())); return; }
+    let over = false;
+    const end = () => { if (!over) { over = true; setDrawerLeaving(false); } };
+    drawerRun.current = playOut(el, overlayPreset(feel, place()), end);
+  }, [handOpen, feel]);
+
   /* Esc on the board: the hand's when it is open, else the menu's. */
   useEffect(() => {
     if (!signedIn) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented || e.repeat || e.isComposing) return;
+      /* A frame that is leaving (the crossing holds it, inert, under the glass) takes no key: input is the arriving page's from the first frame. */
+      if (isLeaving(section.current)) return;
       /* An armed card is put back first, and the hand, if it is open, stays; the next Esc is the hand's. */
       if (armed !== null) {
         e.preventDefault();
@@ -310,7 +356,7 @@ export function Hud() {
   return (
     <>
       {signedIn && (
-        <div ref={drawer} id={drawerId} className="kb-glass kb-hand-drawer" role="region" aria-label="Your hand" tabIndex={-1} hidden={!handOpen} style={handCalm}>
+        <div ref={drawer} id={drawerId} className="kb-glass kb-hand-drawer" role="region" aria-label="Your hand" tabIndex={-1} hidden={!handOpen && !drawerLeaving} {...(drawerLeaving && !handOpen ? { inert: true, 'aria-hidden': true, 'data-kb-exiting': '' } : {})} style={handCalm}>
           <Smoke surface="hand">
             <Hand
               held={player.cards} faces={faces} vendingHref={GLASS_NAV.vending}

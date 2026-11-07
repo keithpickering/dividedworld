@@ -66,15 +66,15 @@ describe('the welcome page', () => {
     await within(before).findAllByRole('radiogroup');
     expect(within(before).getAllByRole('radiogroup').map((g) => within(g).getByRole('heading').textContent)).toEqual(['Theme', 'Motion', 'Text size']);
     expect(within(before).getByRole('radiogroup', { name: 'Motion' })).toBeInTheDocument();
-    expect(within(before).getByText(/Reduced stops the drifting smoke/u)).toBeInTheDocument();
+    expect(within(before).getByText(/Off stops every animation/u)).toBeInTheDocument();
   });
 
   test('choosing a motion changes the account\'s preferences, and says it is saved', async () => {
     const { fake } = page();
     const before = await screen.findByRole('region', { name: 'Before you start' });
-    await userEvent.click(await within(before).findByRole('radio', { name: 'Reduced' }));
+    await userEvent.click(await within(before).findByRole('radio', { name: 'Off' }));
     await waitFor(async () => expect((await fake.preferences()).motion).toBe('reduce'));
-    expect(within(before).getByRole('radio', { name: 'Reduced' })).toBeChecked();
+    expect(within(before).getByRole('radio', { name: 'Off' })).toBeChecked();
     expect(await screen.findByText('Saved to your account.')).toBeInTheDocument();
   });
 
@@ -141,10 +141,10 @@ describe('the welcome page', () => {
   test('a save the account refuses says so in an alert, and puts the choice back', async () => {
     const fake = tamper((f) => { vi.spyOn(f, 'setPreferences').mockResolvedValue({ ok: false, error: 'The account would not take that.' }); });
     const before = await screen.findByRole('region', { name: 'Before you start' });
-    await userEvent.click(await within(before).findByRole('radio', { name: 'Reduced' }));
+    await userEvent.click(await within(before).findByRole('radio', { name: 'Off' }));
     expect(await within(before).findByRole('alert')).toHaveTextContent('The account would not take that.');
     await waitFor(() => expect(within(within(before).getByRole('radiogroup', { name: 'Motion' })).getByRole('radio', { name: 'Follow my device' })).toBeChecked());
-    expect(within(before).getByRole('radio', { name: 'Reduced' })).not.toBeChecked();
+    expect(within(before).getByRole('radio', { name: 'Off' })).not.toBeChecked();
     expect(screen.queryByText('Saved to your account.')).toBeNull();
     expect((await fake.preferences()).motion).toBe('system');
   });
@@ -159,7 +159,7 @@ describe('the welcome page', () => {
     expect(before.querySelector('[aria-busy="true"]')).not.toBeNull();
     expect(within(before).queryAllByRole('radio')).toHaveLength(0);
     release(await fake.preferences());
-    await within(before).findByRole('radio', { name: 'Reduced' });
+    await within(before).findByRole('radio', { name: 'Off' });
     expect(before.querySelector('[aria-busy="true"]')).toBeNull();
   });
 
@@ -183,8 +183,8 @@ describe('the welcome page', () => {
     });
     const before = await screen.findByRole('region', { name: 'Before you start' });
     /* Two choices made while the first save is still out. */
-    await userEvent.click(await within(before).findByRole('radio', { name: 'Reduced' }));
-    await userEvent.click(within(before).getByRole('radio', { name: 'Full' }));
+    await userEvent.click(await within(before).findByRole('radio', { name: 'Off' }));
+    await userEvent.click(within(before).getByRole('radio', { name: 'Smooth' }));
     releaseFirst();
     await waitFor(() => { expect(firstAnswered).toBe(true); expect(secondStarted).toBe(true); });
     await act(async () => { await Promise.resolve(); });

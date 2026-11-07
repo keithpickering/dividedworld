@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { settled } from './settled.ts';
 
 /** Tab forward until `target` has focus (a keyboard reaching a control the way a player would). */
 async function tabTo(page: Page, target: ReturnType<Page['locator']>) {
@@ -139,6 +140,13 @@ test('in forced colors the Turn names still show which is on', async ({ page }) 
   await page.getByRole('tablist', { name: /^Roster, /u }).getByRole('tab', { name: /^Pipewrench/u }).click();
   await page.getByRole('button', { name: 'Turn Pipewrench' }).click();
   const dialog = page.getByRole('dialog', { name: 'Turn Pipewrench' });
+  /*
+   * Playwright scrolls a target into view and then presses at the point it measured. While the dialog is still entering,
+   * that scroll lands on a frame the page has not drawn yet and the press goes to what was under the point a frame
+   * before (the dialog's title, never the radio). A player scrolls by looking, so this is the harness's race, not a
+   * click a player can miss: wait for the entrance, as the measuring specs do.
+   */
+  await settled(page, { loops: true });
   await dialog.getByRole('radio').first().check();
   const on = dialog.getByRole('checkbox', { name: /^Name the old class/u });
   const off = dialog.getByRole('checkbox', { name: /^Name the new class/u });

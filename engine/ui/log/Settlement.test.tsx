@@ -161,6 +161,17 @@ describe('the settlement\'s summary', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(where.path).toBe('/'));
   });
+
+  test('Esc is not the page\'s while its tree is leaving (inert, held for an exit)', async () => {
+    const { fake, me, pipe } = world();
+    window.history.replaceState(null, '', '/log/settlement');
+    openSummary(fake, me, pipe);
+    await screen.findByRole('heading', { level: 1, name: 'While you were away' });
+    document.body.firstElementChild!.setAttribute('inert', '');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(where.path).not.toBe('/');
+  });
 });
 
 /*
