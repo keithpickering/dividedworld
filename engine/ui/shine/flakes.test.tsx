@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tokensOf, ratio } from '../contrast.ts';
 import { POST_INK } from './band.ts';
-import { cling, dropLoose, IDLE_MS, loose, MAX_CARRIED, MAX_LOOSE, makeFlakes, sweepLoose } from './flakes.ts';
+import { cling, dropLoose, IDLE_MS, landAll, loose, MAX_CARRIED, MAX_LOOSE, makeFlakes, shake, SHAKE_SPEED, sweepLoose, burst, type Flakes } from './flakes.ts';
 
 /* Divided World's glint (the engine may not import the instance, so the tests carry a copy). */
 const GLINT = '#ffffff';
@@ -371,5 +371,82 @@ describe('what the layer asks the page', () => {
     load();
     expect(cling.active()).toBe(true);
     expect(cling.carried()).toBe(MAX_CARRIED);
+  });
+});
+
+/**
+ * A fast scroll shakes glitter off (the touch reader's way to move it, where a mouse picks it up): flakes leave the posts on screen,
+ * fall on the page-fixed layer outside the post's box and land on whichever host is under them, or fade.
+ */
+describe('a fast scroll shakes glitter off', () => {
+  /** A sticky post on screen whose burst is over, and one far off screen; the jsdom viewport is 1024 by 768. */
+  function posts() {
+    const f = makeFlakes({ seed: 'shook', box: { w: 300, h: 300 }, inks: GLITTER, holo: 7, density: 70, glint: GLINT });
+    landAll(f);
+    const off = makeFlakes({ seed: 'away', box: { w: 300, h: 300 }, inks: GLITTER, holo: 7, density: 70, glint: GLINT });
+    landAll(off);
+    const a = host(100, 100), far = host(100, 5000);
+    let told = 0;
+    cling.register(a, { sticky: true, flakes: f, landed: () => told++ });
+    cling.register(far, { sticky: true, flakes: off });
+    return { f, off, told: () => told };
+  }
+
+  it('sends copies of flakes on the post on screen into the falling layer and leaves the post as it was, so nothing repaints it', () => {
+    const { f, told } = posts();
+    const before = [...f.settled];
+    const n = shake(SHAKE_SPEED * 2, 0);
+    expect(n).toBeGreaterThan(0);
+    expect(cling.falling()).toBe(n);
+    expect(layer()).not.toBeNull();
+    /* The post keeps every flake where it was, so its base layer's key (and paint) does not change, and it is not told to redraw. */
+    expect(f.settled).toEqual(before);
+    expect(told()).toBe(0);
+  });
+
+  it('throws them the way the page was moving: up the screen on a scroll down, then they fall and land or fade', () => {
+    const { f } = posts();
+    shake(SHAKE_SPEED * 2, 0);
+    const start = cling.falling();
+    cling.tick(0); cling.tick(16);
+    for (let t = 32; cling.falling() && t < 20000; t += 16) cling.tick(t);
+    expect(cling.falling()).toBe(0);
+    /* What landed on the post it came from is loose there; the rest faded over nothing. */
+    expect(loose(document.body.children[0]!).length).toBeLessThanOrEqual(start);
+    expect(f.settled.length).toBe(f.total);
+  });
+
+  it('shakes nothing under its speed, under reduced motion, or off a post still bursting', () => {
+    const { f } = posts();
+    expect(shake(SHAKE_SPEED * 0.5, 0)).toBe(0);
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    expect(shake(SHAKE_SPEED * 3, 0)).toBe(0);
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    cling.reset();
+    const flying: Flakes = makeFlakes({ seed: 'mid', box: { w: 300, h: 300 }, inks: GLITTER, holo: 7, density: 70, glint: GLINT });
+    burst(flying, 0);
+    cling.register(host(100, 100), { sticky: true, flakes: flying });
+    expect(flying.flying).toBeGreaterThan(0);
+    expect(shake(SHAKE_SPEED * 3, 0)).toBe(0);
+    expect(f.settled.length).toBe(f.total);
+  });
+
+  it('at most 8 off a post in a frame, and at most 160 falling across the page, however long the scroll', () => {
+    posts();
+    expect(shake(SHAKE_SPEED * 10, 0)).toBe(8);
+    for (let i = 1; i < 100; i++) shake(SHAKE_SPEED * 10, i);
+    expect(cling.falling()).toBe(160);
+  });
+
+  it('listens to the page\'s scroll only while a sticky post is registered', () => {
+    const adds = vi.spyOn(window, 'addEventListener'), removes = vi.spyOn(window, 'removeEventListener');
+    const off = cling.register(host(0, 0), { landed: () => {} });
+    expect(adds.mock.calls.filter(([t]) => t === 'scroll')).toHaveLength(0);
+    const sticky = cling.register(host(0, 400), { sticky: true, flakes: makeFlakes({ seed: 's', box: { w: 10, h: 10 }, inks: GLITTER, holo: 7, density: 70, glint: GLINT }) });
+    expect(adds.mock.calls.filter(([t]) => t === 'scroll')).toHaveLength(1);
+    expect(adds.mock.calls.find(([t]) => t === 'scroll')![2]).toEqual({ passive: true });
+    sticky();
+    expect(removes.mock.calls.filter(([t]) => t === 'scroll')).toHaveLength(1);
+    off();
   });
 });

@@ -1,26 +1,31 @@
 /**
- * Glitter (docs/plans/2026-11-06-shine-design.md sections 2, 5 and 6), ported from the approved bench's `buildFlakes`, `flake`,
+ * Glitter (docs/plans/2026-11-06-shine-design.md sections 2, 5, 6 and 11), ported from the approved bench's `buildFlakes`, `flake`,
  * `drawFlakes`, `flakeColour`, `holoAt`, `fire` and `stepBurst` and its cling code (docs/research/2026-11-06-shine-bench).
- * Three parts:
+ * Its parts:
  *
  * - `makeFlakes` places a post's flakes, seeded, one per `density` px squared and thickest around a seeded burst point. Before
  *   its burst a post shows 15% of them; `draw` paints the settled ones under the words, every color moved into the band.
- * - `burst` starts the one burst each flakes object gets: about 85% of the flakes fly out over the words and land under them.
- *   The host steps it with `stepBurst(flakes, now)` and paints it with `drawBurst(ctx, flakes, band, now)` on a second canvas
- *   over the words. Both return whether another frame is needed. At most `MAX_IN_FLIGHT` fly across the page; past that a
+ * - `burst` starts the one burst each flakes object gets: about 85% of the flakes fly out over the words and land under them,
+ *   seen from above as the settled ones are (thrown along the post from the burst point, rising toward the reader and settling
+ *   back, never falling down the screen; docs/plans/2026-11-06-shine-design.md section 11). The host steps it with
+ *   `stepBurst(flakes, now)` and paints it with `drawBurst(ctx, flakes, band, now)` on a second canvas over the words. Both return whether another frame is needed. At most `MAX_IN_FLIGHT` fly across the page; past that a
  *   burst lands its remainder at once. Under reduced motion there is no burst and every flake is placed at once.
  * - Cling: a mouse passing over a `sticky` registered host picks flakes up (at most 26), they ride the pointer, drop off over
  *   anything else and land on whichever registered host is under them (or fade). Loose glitter is `loose(host)`, 300 across
  *   the page, oldest first, the reader's own and never saved. One page-fixed canvas draws the flakes in the air; it is made on
  *   the first pickup and removed after `IDLE_MS` with nothing carried or falling, in the shape of Whoops!'s drawn cursor so a
  *   later port to the engine loop is a move.
+ * - Shake: a scroll of the page past `SHAKE_SPEED` shakes settled flakes off the sticky hosts on screen onto that same layer,
+ *   where they fall and land or fade (`shake`): the touch reader's way to move the glitter, where a mouse picks it up.
+ * - The dark board (a band that ends far short of white): each ink is taken at the ceiling, saturated (`ceilingOf`), and a
+ *   flake facing the light flares in its own hue, drawn over it, where the light board's glint is added.
  *
  * Units: a box is CSS px {w, h}; `density` is px squared per flake; a light is {x, y} in -1.5..1.5; `now` is milliseconds, as
  * the page's loop gives it; colors are computed in LINEAR light and written as `#rrggbb`. A flake's `nx, ny` is its tilt, in the
  * light's units. Seeded, never `Math.random`. Engine code: it names no card and no instance.
  */
 import { motionReduced } from '../appearance.ts';
-import { bandFor, clampInto, toHex, toHexA, toLinear, toSrgb8, type Band, type Light, type Rgb } from './band.ts';
+import { bandFor, clampInto, luminanceOf, toHex, toHexA, toLinear, toSrgb8, type Band, type Light, type Rgb } from './band.ts';
 import { seededRng } from './seeded.ts';
 
 export type Box = { readonly w: number; readonly h: number };
@@ -52,6 +57,8 @@ export interface Palette {
   readonly lin: readonly Rgb[]; readonly rainbow: readonly Rgb[]; readonly holo: number;
   /** The instance's highlight, as `#rrggbb` (the sprite cache's key) and in linear light. */
   readonly glint: string; readonly glintLin: Rgb;
+  /** The inks at the dark board's ceiling (`ceilingOf`), made on first use and kept for the last ceiling asked. */
+  ceil?: { readonly hi: number; readonly inks: readonly Rgb[]; readonly rainbow: readonly Rgb[] };
 }
 
 export interface Flake {
@@ -61,8 +68,14 @@ export interface Flake {
   cs?: number; sn?: number;
 }
 
+/**
+ * A flake in the air, seen from above as the settled glitter is: it leaves `sx, sy` (the burst point) along the post's plane for its
+ * resting place, fast at first and slowing as drag takes it, while it rises toward the reader to `peak` and falls back (`z`, 0 on
+ * the post), drawn larger the nearer it is. `dur` is its flight after its `delay`; `sway`, the px it wanders off the straight line.
+ */
 interface Particle {
-  f: Flake; x: number; y: number; vx: number; vy: number; spin: number; ph: number; sway: number; wph: number; born: number; delay: number;
+  f: Flake; sx: number; sy: number; x: number; y: number; z: number; peak: number; dur: number;
+  spin: number; ph: number; sway: number; wph: number; born: number; delay: number;
 }
 
 export interface FlakesOptions {
@@ -156,11 +169,16 @@ function flake(r: () => number, x: number, y: number, pal: Palette): Flake {
 
 /** A four-point flare in the glint, made once per glint if a canvas can be made here (the bench's `starSprite`). */
 const sharedStars = new Map<string, CanvasImageSource | null>();
-function starSprite(pal: Palette): CanvasImageSource | null {
-  const have = sharedStars.get(pal.glint);
+const starSprite = (pal: Palette): CanvasImageSource | null => spriteOf(pal.glint, pal.glintLin);
+/**
+ * The flare in one color (`hex`, and `lin`, the same in linear light): the glint's on a board that reaches white, and on the dark
+ * board a flake's own hue at the band's ceiling (`flareTint`), drawn over it, not added. One sprite per color, at most an ink's worth.
+ */
+function spriteOf(hex: string, lin: Readonly<Rgb>): CanvasImageSource | null {
+  const have = sharedStars.get(hex);
   if (have !== undefined) return have;
-  sharedStars.set(pal.glint, null);
-  const at = (a: number): string => toHexA(pal.glintLin, a);
+  sharedStars.set(hex, null);
+  const at = (a: number): string => toHexA(lin, a);
   try {
     const Z = 64, m = Z / 2;
     const c: HTMLCanvasElement | OffscreenCanvas | null = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(Z, Z)
@@ -183,9 +201,9 @@ function starSprite(pal: Palette): CanvasImageSource | null {
     g.beginPath(); g.ellipse(0, 0, 1, m * 0.55, 0, 0, Math.PI * 2); g.fill();
     g.beginPath(); g.ellipse(0, 0, m * 0.55, 1, 0, 0, Math.PI * 2); g.fill();
     g.restore();
-    sharedStars.set(pal.glint, c as CanvasImageSource);
-  } catch { sharedStars.set(pal.glint, null); }
-  return sharedStars.get(pal.glint)!;
+    sharedStars.set(hex, c as CanvasImageSource);
+  } catch { sharedStars.set(hex, null); }
+  return sharedStars.get(hex)!;
 }
 
 /** Places a post's flakes. Nothing flies until `burst`; 15% are settled until then. */
@@ -242,27 +260,72 @@ function hexFor(c: Readonly<Rgb>): string {
   return s;
 }
 
-/** The bench's `holoAt`: the rainbow hue a holographic flake throws toward a light, into `holoInk`. */
-function holoAt(f: Flake, lx: number, ly: number): Rgb {
-  const rb = f.pal.rainbow, n = rb.length;
-  const t = (Math.atan2(f.ny - ly, f.nx - lx) / (Math.PI * 2) + 1 + f.rot * 0.2) % 1;
-  const x = t * n, i = x | 0, k = x - i, a = rb[i % n]!, b = rb[(i + 1) % n]!;
+/** Where on the rainbow a holographic flake's hue sits toward a light, 0..1. */
+const holoT = (f: Flake, lx: number, ly: number): number => (Math.atan2(f.ny - ly, f.nx - lx) / (Math.PI * 2) + 1 + f.rot * 0.2) % 1;
+
+/** The bench's `holoAt`: the rainbow hue a holographic flake throws toward a light, into `holoInk` (from `rb`, the palette's own by default). */
+function holoAt(f: Flake, lx: number, ly: number, rb: readonly Rgb[] = f.pal.rainbow): Rgb {
+  const n = rb.length;
+  const x = holoT(f, lx, ly) * n, i = x | 0, k = x - i, a = rb[i % n]!, b = rb[(i + 1) % n]!;
   holoInk[0] = a[0] + (b[0] - a[0]) * k; holoInk[1] = a[1] + (b[1] - a[1]) * k; holoInk[2] = a[2] + (b[2] - a[2]) * k;
   return holoInk;
 }
 
+/**
+ * The dark board. Its band ends far short of white (0.048 on the engine's tokens), so a flake mixed toward white there comes out a
+ * flat gray once it is scaled back under the ceiling, and a plain ink scaled down is a muddy one. Real glitter in the dark is a
+ * field of colored points, a few of them flashing: so each ink is taken at the ceiling itself, its chroma pushed by `VIVID`
+ * first (at one luminance a more saturated color reads brighter), and a flake shows `DARK_FLOOR` of that unlit, all of it lit.
+ * A flake facing the light flares in that same hue (`flareTint`), drawn over it rather than added.
+ */
+const VIVID = 1.7;
+const DARK_FLOOR = 0.42;
+
+/** Each ink at the ceiling `hi`, saturated, in linear light, kept on the palette per ceiling; the rainbow's are the first `holo`. */
+function ceilingOf(pal: Palette, hi: number): readonly Rgb[] {
+  const had = pal.ceil;
+  if (had && had.hi === hi) return had.inks;
+  const inks = pal.lin.map((c): Rgb => {
+    const L = luminanceOf(c);
+    const v: Rgb = [0, 1, 2].map((i) => Math.max(0, L + (c[i]! - L) * VIVID)) as Rgb;
+    const k = luminanceOf(v) > 0 ? hi / luminanceOf(v) : 0;
+    /* A channel past 1 is cut there, which only lowers the luminance: the color stays under the ceiling. */
+    return [Math.min(1, v[0] * k), Math.min(1, v[1] * k), Math.min(1, v[2] * k)];
+  });
+  pal.ceil = { hi, inks, rainbow: inks.slice(0, pal.rainbow.length) };
+  return inks;
+}
+const ceilRainbow = (pal: Palette, hi: number): readonly Rgb[] => { ceilingOf(pal, hi); return pal.ceil!.rainbow; };
+
+/** A dark-board flake's hue at the ceiling toward a light, into `holoInk` or as the ink's own. */
+function darkInk(f: Flake, a: number, hi: number, lx: number, ly: number): Readonly<Rgb> {
+  return f.ink >= f.pal.holo && a > 0.15 ? holoAt(f, lx, ly, ceilRainbow(f.pal, hi)) : ceilingOf(f.pal, hi)[f.ink]!;
+}
+
+/**
+ * The color a flake's flare is drawn in on the dark board: its hue at the ceiling, a holographic flake's taken at the nearest of the
+ * rainbow's inks so the sprites are an ink's worth, not one a hue. As `#rrggbb`, with its linear value in `flareLin`.
+ */
+const flareLin: Rgb = [0, 0, 0];
+function flareTint(f: Flake, hi: number, lx: number, ly: number): string {
+  const rb = ceilRainbow(f.pal, hi);
+  const c = f.ink >= f.pal.holo ? rb[Math.round(holoT(f, lx, ly) * rb.length) % rb.length]! : ceilingOf(f.pal, hi)[f.ink]!;
+  flareLin[0] = c[0]; flareLin[1] = c[1]; flareLin[2] = c[2];
+  return hexFor(flareLin);
+}
+
 /** The bench's `flakeColour`: how lit a flake is (`a`, 0..1) at a light, as a `#rrggbb` inside the band. */
 function flakeColour(f: Flake, a: number, band: Band, lx: number, ly: number): string {
+  if (band.lo === 0) {
+    const ink = darkInk(f, a, band.hi, lx, ly);
+    const k = DARK_FLOOR + (1 - DARK_FLOOR) * a;
+    scratch[0] = ink[0] * k; scratch[1] = ink[1] * k; scratch[2] = ink[2] * k;
+    return hexFor(clampInto(scratch, band));
+  }
   const base = f.pal.lin[f.ink]!;
   const ink = f.ink >= f.pal.holo && a > 0.15 ? holoAt(f, lx, ly) : base;
-  if (band.lo === 0) {
-    /* The dark board: deep jewel tones. */
-    const k = 0.05 + 0.95 * a;
-    scratch[0] = ink[0] * k; scratch[1] = ink[1] * k; scratch[2] = ink[2] * k;
-  } else {
-    const k = 0.38 + 0.62 * a;
-    scratch[0] = 1 + (ink[0] - 1) * k; scratch[1] = 1 + (ink[1] - 1) * k; scratch[2] = 1 + (ink[2] - 1) * k;
-  }
+  const k = 0.38 + 0.62 * a;
+  scratch[0] = 1 + (ink[0] - 1) * k; scratch[1] = 1 + (ink[1] - 1) * k; scratch[2] = 1 + (ink[2] - 1) * k;
   if (a > 0.6) {
     const w = (a - 0.6) / 0.4;
     scratch[0] += (1 - scratch[0]) * w; scratch[1] += (1 - scratch[1]) * w; scratch[2] += (1 - scratch[2]) * w;
@@ -332,16 +395,28 @@ function drawList(
     ctx.fillRect(-f.s / 2, -f.s * 0.42, f.s, f.s * 0.84);
   }
   ctx.setTransform(d, 0, 0, d, 0, 0);
-  /* A flare adds white, which only stays in the band where the band reaches white: the light board. Nowhere else is one drawn. */
-  if (band.hi < 1 || !flareAt.length || !star) return;
-  /* The flares are the few flakes facing the light, drawn additively after the rest. */
-  ctx.globalCompositeOperation = 'lighter';
+  if (!flareAt.length) return;
+  drawFlares(ctx, list, band, lx, ly, star);
+}
+
+/**
+ * The flares over the flakes `drawList` found facing the light. A flare adds white where the band reaches white (the light board),
+ * so there it is the glint's sprite, drawn additively. On the dark board white would leave the band, so each flare is drawn over
+ * its flake, not added, in the flake's own hue at the ceiling (`flareTint`): every pixel is then a mix of colors under the
+ * ceiling, which is under it too (puffColor says why). Anywhere else none is drawn.
+ */
+function drawFlares(ctx: CanvasRenderingContext2D, list: readonly Flake[], band: Band, lx: number, ly: number, star: CanvasImageSource | null): void {
+  const white = band.hi >= 1;
+  if (white ? !star : band.lo !== 0) return;
+  if (white) ctx.globalCompositeOperation = 'lighter';
   for (let j = 0; j < flareAt.length; j++) {
     const f = list[flareAt[j]!]!;
     const alpha = (flareA[j]! - 0.75) / 0.25;
     if (alpha < 0.03) continue;
+    const sprite = white ? star : spriteOf(flareTint(f, band.hi, lx, ly), flareLin);
+    if (!sprite) continue;
     const z = 7 + f.s * 4;
-    ctx.globalAlpha = alpha; ctx.drawImage(star, f.x - z / 2, f.y - z / 2, z, z);
+    ctx.globalAlpha = alpha; ctx.drawImage(sprite, f.x - z / 2, f.y - z / 2, z, z);
   }
   ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
 }
@@ -403,7 +478,8 @@ function drawLit(f: Inner, ctx: CanvasRenderingContext2D, light: Light, band: Ba
   if (litIdx.length < n) { litIdx = new Int32Array(n); litMark = new Int32Array(n); litA = new Float64Array(n); litStamp = 0; }
   if (++litStamp > 0x3fffffff) { litMark.fill(0); litStamp = 1; }
   const { x: lx, y: ly } = light;
-  const flares = band.hi >= 1 && starOf(f) !== null;
+  /* Whether a flare can be drawn on this board (drawFlares): the glint's where the band reaches white, a tinted one on the dark board. */
+  const flares = band.hi >= 1 ? starOf(f) !== null : band.lo === 0;
   let m = 0, lit = 0;
   /* A flake reaches FLARE_REACH from its center at most (its flare's square): one centered further off the span paints none of it. */
   const y0 = span ? span.top - FLARE_REACH : -Infinity, y1 = span ? span.bottom + FLARE_REACH : Infinity;
@@ -487,6 +563,11 @@ export function sampleFlakes(flakes: Flakes, light: Light, band: Band, now: numb
       for (const a of [0.2, 0.6, 1]) out.add(flakeColour(probe, a, band, light.x, light.y));
     }
   }
+  /* The dark board's flares, each in its flake's hue at the ceiling (drawFlares): every ink's and every rainbow ink's. */
+  if (band.lo === 0) {
+    for (const c of ceilingOf(pal, band.hi)) out.add(toHex(c));
+    for (const f of list) out.add(flareTint(f, band.hi, light.x, light.y));
+  }
   return out;
 }
 
@@ -512,10 +593,13 @@ export function burst(flakes: Flakes, now: number): boolean {
   for (let i = 0; i < f.rest.length; i++) {
     const target = f.rest[i]!;
     if (i >= fly) { f.settled.push(target); continue; }
-    const a = -Math.PI / 2 + (r() - 0.5) * Math.PI * 1.7, sp = 160 + r() * 420;
+    const sx = f.origin.x + (r() - 0.5) * 6, sy = f.origin.y + (r() - 0.5) * 6;
+    const dist = Math.hypot(target.x - sx, target.y - sy);
     f.parts.push({
-      f: target, x: f.origin.x + (r() - 0.5) * 6, y: f.origin.y + (r() - 0.5) * 6, vx: Math.cos(a) * sp * 1.3, vy: Math.sin(a) * sp,
-      spin: 6 + r() * 18, ph: r() * 6, sway: 10 + r() * 30, wph: r() * 6, born: now, delay: r() * DELAY_MS,
+      f: target, sx, sy, x: sx, y: sy, z: 0, peak: 0.35 + r() * 1.1,
+      /* Further flakes fly longer, and every flight with its delay ends inside FLIGHT_MS. */
+      dur: Math.min(FLIGHT_MS - DELAY_MS, 650 + r() * 450 + dist * 0.9),
+      spin: 6 + r() * 18, ph: r() * 6, sway: (r() - 0.5) * Math.min(40, 6 + dist * 0.12), wph: r() * 6, born: now, delay: r() * DELAY_MS,
     });
   }
   f.rest = [];
@@ -525,13 +609,14 @@ export function burst(flakes: Flakes, now: number): boolean {
   return true;
 }
 
-const ease01 = (k: number) => k * k * (3 - 2 * k);
-
 /**
- * Advances the burst to `now`: moves the flakes in the air and lands the ones that arrived under the words (they join
- * `settled`, so the host redraws its under canvas when this returns true or `flying` changed). Returns whether another
- * frame is needed. The bench's physics for the first part of the flight, then each flake is led to its resting place so that
- * every one lands inside `FLIGHT_MS`.
+ * Advances the burst to `now`: moves the flakes in the air and lands the ones that arrived (they join `settled`, so the host
+ * redraws its under canvas when this returns true or `flying` changed). Returns whether another frame is needed.
+ *
+ * Seen from above, the way the settled glitter is, the whole time: nothing falls down the screen. Each flake is thrown out from the
+ * burst point along the post toward its resting place, quick at first and slowing as the air takes it (an ease-out), wandering a
+ * little off the line, while it rises toward the reader and settles back onto the post; it lands at its place when its flight ends,
+ * inside `FLIGHT_MS`.
  */
 export function stepBurst(flakes: Flakes, now: number): boolean {
   const f = flakes as Inner;
@@ -544,22 +629,25 @@ export function stepBurst(flakes: Flakes, now: number): boolean {
   const parts = f.parts;
   for (let i = parts.length - 1; i >= 0; i--) {
     const b = parts[i]!;
-    const age = now - b.born;
-    if (age < b.delay) continue;
-    b.vy += 520 * dt; b.vx *= Math.exp(-dt * 2.6); b.vy *= Math.exp(-dt * 3.4);
-    b.x += (b.vx + Math.sin((age / 1000) * 4 + b.wph) * b.sway) * dt; b.y += b.vy * dt; b.ph += b.spin * dt;
-    const dx = b.f.x - b.x, dy = b.f.y - b.y;
-    /* Once it is falling, each flake drifts toward the spot it will rest on, and lands when it reaches it. */
-    if (b.vy > 0) { b.x += dx * Math.min(1, dt * 1.6); b.y += Math.max(0, dy) * Math.min(1, dt * 1.2); }
-    /* Past the middle of the flight it is led the rest of the way, so it arrives in time. */
-    const lead = ease01(Math.max(0, Math.min(1, (age - b.delay - FLIGHT_MS * 0.5) / (FLIGHT_MS * 0.5))));
-    if (lead > 0) { b.x += (b.f.x - b.x) * lead * Math.min(1, dt * 12); b.y += (b.f.y - b.y) * lead * Math.min(1, dt * 12); }
-    if ((b.vy > 0 && Math.abs(dy) < 3 && Math.abs(dx) < 3) || age - b.delay >= FLIGHT_MS) {
+    const age = now - b.born - b.delay;
+    if (age < 0) continue;
+    const k = Math.min(1, age / b.dur);
+    if (k >= 1) {
       f.settled.push(b.f);
       parts[i] = parts[parts.length - 1]!;
       parts.pop();
       inFlight--;
+      continue;
     }
+    const p = 1 - (1 - k) ** 3;
+    const dx = b.f.x - b.sx, dy = b.f.y - b.sy, d = Math.hypot(dx, dy) || 1;
+    /* Off the line by up to `sway` px, side to side, none at the start or the end. */
+    const off = b.sway * Math.sin(k * Math.PI) * Math.sin(k * 7 + b.wph);
+    b.x = b.sx + dx * p - (dy / d) * off; b.y = b.sy + dy * p + (dx / d) * off;
+    /* Up quickly and down slowly, as a flake does in air. */
+    const q = k ** 0.6;
+    b.z = b.peak * 4 * q * (1 - q);
+    b.ph += b.spin * dt * (0.35 + 0.65 * (1 - k));
   }
   f.flying = parts.length;
   if (!parts.length && f.puff === null) f.last = null;
@@ -568,11 +656,15 @@ export function stepBurst(flakes: Flakes, now: number): boolean {
 
 /** The color of a flake in the air, in the band, at a flash of 0..1 (the bench's burst coloring, then moved into the band). */
 function burstColor(f: Flake, flash: number, band: Band): string {
+  if (band.lo === 0) {
+    /* The dark board: the ink at the ceiling, as the settled flakes are (ceilingOf), dimmer between its flashes. */
+    const ink = ceilingOf(f.pal, band.hi)[f.ink]!, k = DARK_FLOOR + (1 - DARK_FLOOR) * flash;
+    scratch[0] = ink[0] * k; scratch[1] = ink[1] * k; scratch[2] = ink[2] * k;
+    return hexFor(clampInto(scratch, band));
+  }
   const ink = f.pal.lin[f.ink]!;
-  const dark = band.lo === 0;
-  const k = dark ? 0.25 + 0.75 * flash : 0.55 + 0.45 * flash;
-  const w0 = dark ? 0 : 1;
-  scratch[0] = ink[0] * k + (1 - k) * w0 * 0.3; scratch[1] = ink[1] * k; scratch[2] = ink[2] * k;
+  const k = 0.55 + 0.45 * flash;
+  scratch[0] = ink[0] * k + (1 - k) * 0.3; scratch[1] = ink[1] * k; scratch[2] = ink[2] * k;
   return hexFor(clampInto(scratch, band));
 }
 
@@ -617,15 +709,20 @@ export function drawBurst(ctx: CanvasRenderingContext2D, flakes: Flakes, band: B
     if (now - b.born < b.delay) continue;
     const flash = Math.abs(Math.sin(b.ph)) ** 10;
     ctx.fillStyle = burstColor(b.f, flash, band);
-    const w = b.f.s * (0.3 + 0.7 * Math.abs(Math.cos(b.ph)));
+    /* Nearer the reader, larger: a flake at its peak is up to about twice its size on the post. */
+    const near = 1 + b.z * 0.9, s = b.f.s * near;
+    const w = s * (0.3 + 0.7 * Math.abs(Math.cos(b.ph)));
     const rot = b.f.rot + b.ph * 0.2, cos = Math.cos(rot), sin = Math.sin(rot);
     ctx.setTransform(cos * d, sin * d, -sin * d, cos * d, b.x * d, b.y * d);
-    ctx.fillRect(-w / 2, -b.f.s * 0.42, w, b.f.s * 0.84);
-    if (flash > 0.8 && star) {
+    ctx.fillRect(-w / 2, -s * 0.42, w, s * 0.84);
+    /* A flash: the glint added where the band reaches white, the flake's own hue at the ceiling drawn over it on the dark board. */
+    const sprite = flash <= 0.8 ? null : star ?? (band.lo === 0 ? spriteOf(hexFor(ceilingOf(b.f.pal, band.hi)[b.f.ink]!), ceilingOf(b.f.pal, band.hi)[b.f.ink]!) : null);
+    if (sprite) {
       ctx.setTransform(d, 0, 0, d, 0, 0);
-      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = (flash - 0.8) * 5 * 0.8;
-      const z = 9 + b.f.s * 3;
-      ctx.drawImage(star, b.x - z / 2, b.y - z / 2, z, z);
+      if (star) ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = (flash - 0.8) * 5 * 0.8;
+      const z = (9 + b.f.s * 3) * near;
+      ctx.drawImage(sprite, b.x - z / 2, b.y - z / 2, z, z);
       ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
     }
   }
@@ -879,9 +976,84 @@ function onMove(e: PointerEvent): void {
   if ((carried.length || falling.length) && !frame) frame = requestAnimationFrame(loop);
 }
 
+/* ---------------------------------------------------------------- shake ---- */
+
+/**
+ * A scroll this fast (CSS px a second) shakes glitter off the posts on screen: the touch reader's way to move it, where a mouse
+ * picks it up. What is shaken off falls on the page-fixed layer, so it leaves the post's box, and lands on whichever registered host
+ * is under it or fades, as a dropped flake does. As a mouse's pickup does, it takes a copy of a flake on screen (its ink, size and
+ * turn, where it lies) and leaves the post as it was: taking the flake itself would repaint the post's whole base layer on every
+ * frame of a fast scroll, the most expensive time to (e2e/shine.spec.ts's raster share went from 0.67 to 8.5 of the posts in view).
+ */
+export const SHAKE_SPEED = 2200;
+/** At most this many flakes off one post in a frame, and this many falling across the page. */
+const SHAKE_PER_HOST = 8;
+const MAX_SHAKEN = 160;
+
+let scrollSeen: { y: number; t: number } | null = null;
+let shakeFrame = 0;
+let shakeV = 0;
+let scrollHeard = false;
+
+/** The page's scroll listener: on while a sticky host is registered, off with the last. */
+function hearScroll(on: boolean): void {
+  if (typeof window === 'undefined' || on === scrollHeard) return;
+  scrollHeard = on;
+  if (on) { addEventListener('scroll', onScroll, { passive: true }); return; }
+  removeEventListener('scroll', onScroll);
+  if (shakeFrame) cancelAnimationFrame(shakeFrame);
+  shakeFrame = 0; scrollSeen = null;
+}
+
+/** Every scroll of the page: past `SHAKE_SPEED`, one shake at the next frame, however many scroll events the frame holds. */
+function onScroll(e: Event): void {
+  const t = e.timeStamp, y = window.scrollY;
+  const was = scrollSeen;
+  scrollSeen = { y, t };
+  if (!was || t <= was.t || t - was.t >= STALE_MS) return;
+  const v = (y - was.y) / ((t - was.t) / 1000);
+  if (Math.abs(v) < SHAKE_SPEED) return;
+  shakeV = v;
+  if (!shakeFrame) shakeFrame = requestAnimationFrame((now) => { shakeFrame = 0; try { shake(shakeV, now); } catch (err) { console.error(err); } });
+}
+
+/**
+ * Shakes glitter off the sticky hosts on screen, as a scroll at `v` px a second does (down is positive): copies of settled flakes on
+ * screen, thrown the way the page was moving, falling. The post itself is not redrawn. A post mid-burst sheds nothing, and reduced
+ * motion shakes nothing. Returns how many were shaken off. Exposed so a test can shake.
+ */
+export function shake(v: number, now: number): number {
+  if (typeof document === 'undefined' || Math.abs(v) < SHAKE_SPEED || clingReduced()) return 0;
+  const over = Math.min(1, Math.max(0, (Math.abs(v) - SHAKE_SPEED) / SHAKE_SPEED));
+  const vw = innerWidth, vh = innerHeight;
+  let took = 0;
+  for (const [host, opts] of hosts) {
+    if (falling.length >= MAX_SHAKEN) break;
+    if (!opts.sticky || !opts.flakes || !host.isConnected) continue;
+    const f = opts.flakes as Inner;
+    if (!f.fired || f.parts.length || !f.settled.length) continue;
+    const r = host.getBoundingClientRect();
+    if (r.bottom <= 0 || r.top >= vh || r.right <= 0 || r.left >= vw) continue;
+    const band = bandAt(host, now);
+    if (!band) continue;
+    const n = Math.min(Math.round(2 + over * (SHAKE_PER_HOST - 2)), MAX_SHAKEN - falling.length);
+    let off = 0;
+    for (let tries = 0; off < n && tries < n * 4; tries++) {
+      const fl = f.settled[(cr() * f.settled.length) | 0]!;
+      const x = r.left + fl.x, y = r.top + fl.y;
+      if (x < 0 || y < 0 || x > vw || y > vh) continue;
+      falling.push({ f: { ...fl }, x, y, vx: (cr() - 0.5) * 80, vy: -v * (0.04 + cr() * 0.06), land: 30 + cr() * 140, fallen: 0, ph: cr() * 6, band, over: undefined });
+      off++;
+    }
+    took += off;
+  }
+  if (took) { ensure(); if (!frame) frame = requestAnimationFrame(loop); }
+  return took;
+}
+
 /** The color of a carried or falling flake at a phase, in the band it was lent against. The old dark outline is gone: it could fall below the light board's floor. */
 function clingColor(f: Flake, ph: number, band: Band): string {
-  const flash = Math.abs(Math.sin(ph)) ** 8, ink = f.pal.lin[f.ink]!;
+  const flash = Math.abs(Math.sin(ph)) ** 8, ink = band.lo === 0 ? ceilingOf(f.pal, band.hi)[f.ink]! : f.pal.lin[f.ink]!;
   const k = 0.45 + 0.55 * flash;
   scratch[0] = ink[0] * k; scratch[1] = ink[1] * k; scratch[2] = ink[2] * k;
   return hexFor(clampInto(scratch, band));
@@ -916,7 +1088,11 @@ export const cling = {
    */
   register(host: HTMLElement, options: ClingOptions = {}): () => void {
     hosts.set(host, options);
-    return () => { if (hosts.get(host) === options) hosts.delete(host); };
+    if (options.sticky) hearScroll(true);
+    return () => {
+      if (hosts.get(host) === options) hosts.delete(host);
+      if (![...hosts.values()].some((o) => o.sticky)) hearScroll(false);
+    };
   },
 
   /**
@@ -977,6 +1153,7 @@ export const cling = {
   /** For tests only: forget everything and remove the layer. */
   reset(): void {
     dispose();
+    hearScroll(false);
     clearTimeout(idleTimer);
     idleTimer = undefined;
     hosts.clear();
