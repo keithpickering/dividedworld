@@ -684,12 +684,12 @@ test('an empty [ispoiler] is an empty spoiler node', () => {
   assert.deepEqual(parse('[ispoiler][/ispoiler]'), [ispoiler()]);
 });
 
-test('align takes center, left or right; anything else is text', () => {
+test('center, left and right align a block; they take no attribute, and [align=...] is not a tag', () => {
   for (const a of ['center', 'left', 'right'] as const) {
-    assert.deepEqual(parse(`[align=${a}]x[/align]`), [{ type: 'align', align: a, children: [text('x')] }]);
+    assert.deepEqual(parse(`[${a}]x[/${a}]`), [{ type: 'align', align: a, children: [text('x')] }]);
   }
-  assert.deepEqual(parse('[align=CENTER]x[/align]'), [{ type: 'align', align: 'center', children: [text('x')] }]);
-  assertLiteral(['[align]x[/align]', '[align=justify]x[/align]', '[align=center x]x[/align]']);
+  assert.deepEqual(parse('[CENTER]x[/Center]'), [{ type: 'align', align: 'center', children: [text('x')] }]);
+  assertLiteral(['[center=x]x[/center]', '[align=center]x[/align]', '[align]x[/align]', '[align=left]x[/align]']);
 });
 
 test('hr stands alone, and its closer is text', () => {
@@ -730,21 +730,23 @@ test('highlight takes an optional safe color, yellow by default', () => {
   assertLiteral(['[highlight=expression(x)]x[/highlight]']);
 });
 
-test('noparse is its contents, as one text node', () => {
-  assert.deepEqual(parse('[noparse][b]x[/b][/noparse]'), [text('[b]x[/b]')]);
-  assert.deepEqual(parse('a[NOPARSE][i]x[/NoParse]b'), [text('a[i]xb')]);
-  assert.deepEqual(parse('a[noparse][url=javascript:x]y[/url][/noparse]b'), [text('a[url=javascript:x]y[/url]b')]);
+const noparse = (t: string): BbNode => ({ type: 'noparse', text: t });
+test('noparse is its contents, as one noparse node', () => {
+  assert.deepEqual(parse('[noparse][b]x[/b][/noparse]'), [noparse('[b]x[/b]')]);
+  assert.deepEqual(parse('a[NOPARSE][i]x[/NoParse]b'), [text('a'), noparse('[i]x'), text('b')]);
+  assert.deepEqual(parse('a[noparse][url=javascript:x]y[/url][/noparse]b'), [text('a'), noparse('[url=javascript:x]y[/url]'), text('b')]);
+  assert.deepEqual(parse('[noparse][/noparse]'), []);
   // No closer, or an attribute: only the opener is text, and the rest parses as usual.
   assert.deepEqual(parse('[noparse][b]x[/b]'), [text('[noparse]'), { type: 'bold', children: [text('x')] }]);
   assert.deepEqual(parse('[noparse=1][b]x[/b][/noparse]'), [text('[noparse=1]'), { type: 'bold', children: [text('x')] }, text('[/noparse]')]);
 });
 
 test('a layout tag is text, with its closer, inside an inline spoiler; the inline effects are not', () => {
-  const t = parse('[ispoiler][align=center]x[/align][marquee]y[/marquee][hr][/ispoiler]');
-  assert.deepEqual(t, [{ type: 'ispoiler', children: [text('[align=center]x[/align][marquee]y[/marquee][hr]')] }]);
+  const t = parse('[ispoiler][center]x[/center][left]z[/left][right]w[/right][marquee]y[/marquee][hr][/ispoiler]');
+  assert.deepEqual(t, [{ type: 'ispoiler', children: [text('[center]x[/center][left]z[/left][right]w[/right][marquee]y[/marquee][hr]')] }]);
   assert.deepEqual(parse('[ispoiler][glow]x[/glow][/ispoiler]')[0], { type: 'ispoiler', children: [{ type: 'glow', color: null, children: [text('x')] }] });
 });
 
 test('the new tags are named for a rule that names one', () => {
-  for (const t of ['align', 'hr', 'sub', 'sup', 'font', 'marquee', 'glow', 'shadow', 'rainbow', 'highlight', 'noparse']) assert.ok(BBCODE_TAGS.includes(t), t);
+  for (const t of ['center', 'left', 'right', 'hr', 'sub', 'sup', 'font', 'marquee', 'glow', 'shadow', 'rainbow', 'highlight', 'noparse']) assert.ok(BBCODE_TAGS.includes(t), t);
 });

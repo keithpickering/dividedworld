@@ -53,7 +53,7 @@ function firstAfter(stretches: readonly Stretch[], at: number): number {
 }
 
 /** A text node's words under the layers: plain where no run is, each wrap piece by its run, a replace stretch once where it starts. */
-function layeredText(n: Extract<BbNode, { type: 'text' }>, key: number, layered: Layered): ReactNode {
+function layeredText(n: Extract<BbNode, { type: 'text' | 'noparse' }>, key: number, layered: Layered): ReactNode {
   const at = layered.offsets.get(n);
   if (at === undefined || !n.text) return n.text;
   const end = at + n.text.length;
@@ -97,7 +97,7 @@ function nodes(list: readonly BbNode[], quoteLink: BbCodeProps['quoteLink'], lay
 
 function node(n: BbNode, key: number, quoteLink: BbCodeProps['quoteLink'], layered?: Layered): ReactNode {
   switch (n.type) {
-    case 'text': return layered ? layeredText(n, key, layered) : n.text;
+    case 'text': case 'noparse': return layered ? layeredText(n, key, layered) : n.text;
     case 'bold': return <strong key={key}>{nodes(n.children, quoteLink, layered)}</strong>;
     case 'italic': return <em key={key}>{nodes(n.children, quoteLink, layered)}</em>;
     case 'underline': return <u key={key}>{nodes(n.children, quoteLink, layered)}</u>;

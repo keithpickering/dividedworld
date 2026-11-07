@@ -201,9 +201,10 @@ describe('layout and effects', () => {
   };
 
   test('align is a block with its class; hr is a rule; sub and sup are their elements', () => {
-    show('[align=center]a[/align][align=right]b[/align][hr][sub]c[/sub][sup]d[/sup]');
+    show('[center]a[/center][right]b[/right][left]l[/left][hr][sub]c[/sub][sup]d[/sup]');
     expect(out().querySelector('div.kb-bb-align-center')).toHaveTextContent('a');
     expect(out().querySelector('div.kb-bb-align-right')).toHaveTextContent('b');
+    expect(out().querySelector('div.kb-bb-align-left')).toHaveTextContent('l');
     expect(out().querySelector('hr.kb-bb-hr')).not.toBeNull();
     expect(out().querySelector('sub')).toHaveTextContent('c');
     expect(out().querySelector('sup')).toHaveTextContent('d');
@@ -274,15 +275,24 @@ describe('layout and effects', () => {
   test('text layers draw inside every container', () => {
     const run: TextRun = { start: 0, end: 4, key: 'r', z: 0, mode: 'replace', render: ({ text, key }) => <b key={key} data-covers={text}>dogs</b> };
     const wrap = (t: string) => render(<RouterProvider><div data-testid="lay"><TextLayer runs={[run]}><BbCode text={t} /></TextLayer></div></RouterProvider>);
-    for (const t of ['[align=center]cats[/align]', '[marquee]cats[/marquee]', '[sub]cats[/sub]', '[font=Arial]cats[/font]', '[glow]cats[/glow]', '[rainbow]cats[/rainbow]', '[highlight]cats[/highlight]']) {
+    for (const t of ['[center]cats[/center]', '[marquee]cats[/marquee]', '[sub]cats[/sub]', '[font=Arial]cats[/font]', '[glow]cats[/glow]', '[rainbow]cats[/rainbow]', '[highlight]cats[/highlight]']) {
       const { unmount } = wrap(t);
       expect(screen.getByTestId('lay').querySelector('b[data-covers]'), t).toHaveAttribute('data-covers', 'cats');
       unmount();
     }
   });
 
+  test('noparse draws as plain text, and a text layer covers its words', () => {
+    show('a[noparse][b]x[/b][/noparse]c');
+    expect(out()).toHaveTextContent('a[b]x[/b]c');
+    expect(out().querySelector('strong')).toBeNull();
+    const run: TextRun = { start: 1, end: 4, key: 'r', z: 0, mode: 'replace', render: ({ text, key }) => <b key={key} data-covers={text}>dogs</b> };
+    render(<RouterProvider><div data-testid="lay2"><TextLayer runs={[run]}><BbCode text="a[noparse]cats[/noparse]" /></TextLayer></div></RouterProvider>);
+    expect(screen.getByTestId('lay2').querySelector('b[data-covers]')).toHaveAttribute('data-covers', 'cat');
+  });
+
   test('all of them are axe clean', async () => {
-    show('[align=center]a[/align][hr][sub]b[/sub][sup]c[/sup][font=Georgia]d[/font][marquee]e[/marquee][glow=red]f[/glow][shadow]g[/shadow][rainbow]h[/rainbow][highlight]i[/highlight][noparse][b]j[/b][/noparse]');
+    show('[center]a[/center][hr][sub]b[/sub][sup]c[/sup][font=Georgia]d[/font][marquee]e[/marquee][glow=red]f[/glow][shadow]g[/shadow][rainbow]h[/rainbow][highlight]i[/highlight][noparse][b]j[/b][/noparse]');
     expect(describeViolations(await axeViolations(out()))).toBe('');
   });
 });

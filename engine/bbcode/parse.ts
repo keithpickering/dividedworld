@@ -43,7 +43,7 @@
  *   and an `[ispoiler]` opener are text (the same count, `openISpoilers`), and so is `[/url]`. A
  *   `[/ispoiler]` still closes the open spoiler, else it could never end. An ispoiler's text is never
  *   auto-linked: the autolink pass (Task 5) must skip text inside an `ispoiler` node.
- * - `[noparse]` is taken raw as `[code]` is, but gives a `text` node: its words are the post's own, shown as written. `[hr]` is a
+ * - `[noparse]` is taken raw as `[code]` is, but gives a `noparse` node (a text node by another type, so the autolink pass can skip it): its words are the post's own, shown as written. `[hr]` is a
  *   leaf with no closer (a `[/hr]` is text), and `[font=name]` takes a name from `FONTS` only, so no free text reaches a style.
  * - A list's `[*]` is an item marker only directly inside `[list]`; elsewhere it is text.
  *   Blank space before the first item is layout and is not kept; words before it become an
@@ -72,6 +72,7 @@ export type BbNode =
   | { readonly type: 'spoiler'; readonly title: string; readonly children: readonly BbNode[] }
   | { readonly type: 'ispoiler'; readonly children: readonly BbNode[] }
   | { readonly type: 'code'; readonly text: string }
+  | { readonly type: 'noparse'; readonly text: string }
   | { readonly type: 'align'; readonly align: 'center' | 'left' | 'right'; readonly children: readonly BbNode[] }
   | { readonly type: 'hr' }
   | { readonly type: 'sub' | 'sup' | 'marquee' | 'rainbow'; readonly children: readonly BbNode[] }
@@ -232,16 +233,16 @@ const SIMPLE: Readonly<Record<string, 'bold' | 'italic' | 'underline' | 'strike'
   s: 'strike',
 };
 /** The tags the parser knows how to open, for a rule that names one (engine/rules/predicates.ts `noTag`). */
-export const BBCODE_TAGS: readonly string[] = ['b', 'i', 'u', 's', 'color', 'size', 'url', 'img', 'code', 'quote', 'list', 'spoiler', 'ispoiler', 'video', 'youtube', 'align', 'hr', 'sub', 'sup', 'font', 'marquee', 'glow', 'shadow', 'rainbow', 'highlight', 'noparse'];
+export const BBCODE_TAGS: readonly string[] = ['b', 'i', 'u', 's', 'color', 'size', 'url', 'img', 'code', 'quote', 'list', 'spoiler', 'ispoiler', 'video', 'youtube', 'center', 'left', 'right', 'hr', 'sub', 'sup', 'font', 'marquee', 'glow', 'shadow', 'rainbow', 'highlight', 'noparse'];
 const OPENERS: ReadonlySet<string> = new Set(BBCODE_TAGS);
-const CLOSERS = new Set(['b', 'i', 'u', 's', 'color', 'size', 'url', 'quote', 'list', 'spoiler', 'ispoiler', 'video', 'youtube', 'align', 'sub', 'sup', 'font', 'marquee', 'glow', 'shadow', 'rainbow', 'highlight']);
+const CLOSERS = new Set(['b', 'i', 'u', 's', 'color', 'size', 'url', 'quote', 'list', 'spoiler', 'ispoiler', 'video', 'youtube', 'center', 'left', 'right', 'sub', 'sup', 'font', 'marquee', 'glow', 'shadow', 'rainbow', 'highlight']);
 /**
  * The block tags, the ones that cannot stand inside inline text. An `[ispoiler]` holds inline formatting
  * only, so while one is open the opener and the closer of each of these is text. Tags added later that
  * are blocks go in this one set.
  */
 const BLOCK: ReadonlySet<string> = new Set([
-  'quote', 'code', 'list', 'spoiler', 'align', 'center', 'left', 'right', 'hr', 'video', 'youtube', 'marquee',
+  'quote', 'code', 'list', 'spoiler', 'center', 'left', 'right', 'hr', 'video', 'youtube', 'marquee',
 ]);
 
 function pushText(out: Out, text: string): void {
@@ -326,7 +327,7 @@ export function parse(input: string): BbNode[] {
       into.push({ type: 'list', ordered: f.ordered === true, items });
     } else if (f.kind === 'bareurl') {
       const only = f.out.length === 1 ? f.out[0] : undefined;
-      const href = closer !== null && only && only.type === 'text' ? safeHref(only.text) : null;
+      const href = closer !== null && only && (only.type === 'text' || only.type === 'noparse') ? safeHref(only.text) : null;
       if (href !== null && only) {
         into.push({ type: 'url', href, children: [only] });
       } else {
@@ -492,8 +493,8 @@ export function parse(input: string): BbNode[] {
         home.out.push({ type: 'code', text: input.slice(close + 1, found) });
         textStart = pos = found + '[/code]'.length;
       } else if (name === 'noparse') {
-        /* Its contents are the post's words as written: one text node, which the tree and the visible text treat as any other. */
-        pushText(home.out, input.slice(close + 1, found));
+        /* Its contents are the post's words as written: one `noparse` node, which the visible text and the renderer treat as a text node and the autolink pass skips. */
+        if (found > close + 1) home.out.push({ type: 'noparse', text: input.slice(close + 1, found) });
         textStart = pos = found + '[/noparse]'.length;
       } else if (name === 'video' || name === 'youtube') {
         /* Same bound on work as an image. A video is whatever `videoOf` recognizes; [youtube] also takes a bare id. */
@@ -561,11 +562,9 @@ export function parse(input: string): BbNode[] {
     } else if (name === 'ispoiler') {
       if (value === undefined) openReal(name, raw, 'simple', { build: (children) => ({ type: 'ispoiler', children }) });
       else literalOpen(name, raw);
-    } else if (name === 'align') {
-      const a = value === undefined ? '' : value.toLowerCase();
-      if (a === 'center' || a === 'left' || a === 'right') {
-        openReal(name, raw, 'simple', { build: (children) => ({ type: 'align', align: a, children }) });
-      } else literalOpen(name, raw);
+    } else if (name === 'center' || name === 'left' || name === 'right') {
+      if (value === undefined) openReal(name, raw, 'simple', { build: (children) => ({ type: 'align', align: name, children }) });
+      else literalOpen(name, raw);
     } else if (name === 'hr') {
       /* No closer: it is a rule, whole. A `[/hr]` is not in CLOSERS, so it stays text. */
       if (value === undefined) top().home.out.push({ type: 'hr' });
