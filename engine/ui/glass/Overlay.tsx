@@ -109,15 +109,12 @@ function place(box: HTMLElement, anchor: HTMLElement, sheetBelow: number): Place
     return 'sheet';
   }
   const a = anchor.getBoundingClientRect();
-  /* Measured without the entrance's transform, which the box wears while it arrives. */
-  const worn = box.style.transform;
-  box.style.transform = 'none';
-  const r = box.getBoundingClientRect();
-  box.style.transform = worn;
+  /* Its size is its layout size, which no transform changes: the entrance (Motion runs it as an animation, which a style set here cannot undo) scales the box's rect for as long as it plays, and a width read from the rect would leave the box that far past the window's edge for good, since nothing places it again when the animation ends. */
+  const width = box.offsetWidth;
   /* Placed against the window itself: the anchor's left edge is where the overlay starts. */
   const at = { left: a.left, top: 0, right: a.right, bottom: 0 };
   const p = placePopover({
-    button: a, container: at, size: { width: r.width, height: box.scrollHeight + (r.height - box.clientHeight) },
+    button: a, container: at, size: { width, height: box.scrollHeight + (box.offsetHeight - box.clientHeight) },
     viewport, hudTop, gap: GAP, margin: MARGIN,
   });
   box.style.top = `${p.top}px`;
