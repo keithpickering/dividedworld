@@ -101,10 +101,20 @@ export const settingsSection = (query: Query): SettingsSection => {
 
 export const settingsKey = (query: Query): string => settingsSection(query);
 
-/** Account reads the invites; the other sections read nothing beyond boot, so they are their chunk alone. */
-export function loadSettings(env: GlassEnv, query: Query, preload: Preload): Promise<ScreenDoc<readonly MyInvite[]> | undefined> {
+/** Settings › Account: the caller's invites, and the address they sign in with (null where it could not be read: the row says so, and the section still opens). */
+export interface AccountDoc {
+  readonly invites: readonly MyInvite[];
+  readonly address: string | null;
+}
+
+/** Account reads the invites and the sign-in address, both the caller's own; the other sections read nothing beyond boot, so they are their chunk alone. */
+export function loadSettings(env: GlassEnv, query: Query, preload: Preload): Promise<ScreenDoc<AccountDoc> | undefined> {
   if (settingsSection(query) !== 'account') return loadChunk(preload);
-  return beside(preload, async () => ((await env.signedIn()) ? env.api.invites() : SIGNED_OUT_DOC));
+  return beside(preload, async () => {
+    if (!(await env.signedIn())) return SIGNED_OUT_DOC;
+    const [invites, address] = await Promise.all([env.api.invites(), env.api.signInAddress().catch((): string | null => null)]);
+    return { invites, address };
+  });
 }
 
 

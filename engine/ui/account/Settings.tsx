@@ -24,9 +24,9 @@
  * The section is the address's `?section=`, so the menu bar's Settings stays current on both and the
  * page does not move its focus from the link the player chose.
  */
-import { useEffect, useId, useState, type ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { MyInvite, Preferences } from '../data/api.ts';
+import type { Preferences } from '../data/api.ts';
 import { ALERT_KINDS, type AlertKind } from '../../rules/alerts.ts';
 import { toastDefaultKinds } from '../alerts/toast-kinds.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
@@ -34,7 +34,7 @@ import { PageHead } from '../glass/PageHead.tsx';
 import { ReachAPerson } from '../contact/Contact.tsx';
 import { useLocation, useNavigate } from '../router.tsx';
 import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
-import { settingsSection } from '../glass-docs.ts';
+import { settingsSection, type AccountDoc } from '../glass-docs.ts';
 import { useBoot } from '../boot.tsx';
 import { GlassLink } from '../glass/Link.tsx';
 import { Choice, MotionRow, TextSizeRow, ThemeRow, TiltRow, type Option } from './appearanceRows.tsx';
@@ -173,10 +173,10 @@ function Frame({ section, children }: { readonly section: Section | null; readon
 }
 
 /**
- * The Settings page. Account is drawn from the invites its route loaded (`doc`; the marker, signed out); every other section has no document
+ * The Settings page. Account is drawn from the invites and sign-in address its route loaded (`doc`; the marker, signed out); every other section has no document
  * and is drawn from boot and the player's session. The session is the player's, and the preferences are boot's while it has them.
  */
-export function SettingsScreen({ doc }: { readonly doc?: ScreenDoc<readonly MyInvite[]> }) {
+export function SettingsScreen({ doc }: { readonly doc?: ScreenDoc<AccountDoc> }) {
   const { api, settings } = useKayfa();
   const session = useSession();
   const boot = useBoot();
@@ -186,17 +186,6 @@ export function SettingsScreen({ doc }: { readonly doc?: ScreenDoc<readonly MyIn
   const account = session?.account ?? null;
   /* The preferences, saved as the welcome page's rows save them too (preferences.ts); boot's are the page's start, so none is read for them. */
   const { prefs, refusal, saved, change, changeTips, refuse } = usePreferenceSaves(account, boot ? boot.preferences : undefined);
-  /* The address is read for the account too, and drawn only while that account is the one signed in. */
-  const [addressRead, setAddressRead] = useState<{ readonly account: string; readonly address: string | null } | null>(null);
-  const address = addressRead?.account === account ? addressRead : null;
-
-  useEffect(() => {
-    /* The address is Account's alone. */
-    if (!account || section !== 'account') return;
-    let live = true;
-    void api.signInAddress().then((a) => { if (live) setAddressRead({ account, address: a }); }, () => { if (live) setAddressRead({ account, address: null }); });
-    return () => { live = false; };
-  }, [api, account, section]);
 
   if (session === null) return <div className="kb-acct" aria-busy="true" />;
   if (!session.signedIn || !account) {
@@ -230,12 +219,10 @@ export function SettingsScreen({ doc }: { readonly doc?: ScreenDoc<readonly MyIn
           <h2 id="kb-settings-account" className="kb-acct-section-title kb-glass-display">Account</h2>
           <p className="kb-acct-lead">Out of character: what you sign in with, and who you bring in.</p>
           <Row label="Sign-in address" sentence="The address the code and the link come to. It is not shown to anyone else.">
-            {address === null
-              ? <p className="kb-acct-value" aria-busy="true" />
-              : <p className="kb-acct-value">{address.address ?? 'Your address could not be read right now. Reload the page to try again.'}</p>}
+            <p className="kb-acct-value">{doc === undefined || isSignedOutDoc(doc) ? '' : doc.address ?? 'Your address could not be read right now. Reload the page to try again.'}</p>
           </Row>
           {/* The invites are the route's document; between a change of account and the read that follows it there is none to draw. */}
-          <Row label="Invites">{doc === undefined || isSignedOutDoc(doc) ? <div className="kb-invites" aria-busy="true" /> : <Invites invites={doc} />}</Row>
+          <Row label="Invites">{doc === undefined || isSignedOutDoc(doc) ? <div className="kb-invites" aria-busy="true" /> : <Invites invites={doc.invites} />}</Row>
           {said}
           <Row label="Sign out" sentence="Ends this session on this device. Your characters and settings stay with your account.">
             <ButtonRow><GlassButton onClick={() => void signOut()}>Sign out</GlassButton></ButtonRow>

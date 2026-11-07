@@ -454,19 +454,6 @@ describe('Settings, as board 11 draws it', () => {
     await waitFor(async () => expect(await w.fake.preferences()).toMatchObject({ contrast: 'high' }));
   });
 
-  test('the next account\'s choices answered but its address still out, Settings › Account shows no address of the last account', async () => {
-    const w = world();
-    const mine = (await w.fake.signInAddress())!;
-    open(w.fake, '/settings?section=account');
-    expect(await screen.findByText(mine)).toBeInTheDocument();
-    w.fake.signInAddress = () => new Promise(() => {});
-    w.fake.signInAs(w.fake.seed.account('other'));
-    await screen.findByRole('heading', { name: 'Account' });
-    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
-    expect(screen.queryByText(mine)).toBeNull();
-    expect(screen.queryByText(/could not be read/u)).toBeNull();
-  });
-
   test('a refused save that answers after the screen is gone puts nothing back', async () => {
     const { calls, view } = await leaving('signed out');
     view.unmount();
@@ -787,16 +774,18 @@ describe('Settings › Accessibility › Tilt', () => {
 });
 
 describe('Settings is drawn from its route\'s document', () => {
-  test('Account is whole in the first render, from the invites and boot and the player\'s session; only the sign-in address is read for it', async () => {
+  test('Account is whole in the first render, from the invites, the sign-in address, boot and the player\'s session; nothing is read for it', async () => {
     const w = world();
     await w.fake.createInvite();
     const boot = await w.fake.boot();
-    const doc = await w.fake.invites();
-    const read = holdReads(w.fake, ['session', 'signInAddress']);
+    const doc = { invites: await w.fake.invites(), address: await w.fake.signInAddress() };
+    const read = holdReads(w.fake, ['session']);
     renderIn(w.fake, <SettingsScreen doc={doc} />, { path: '/settings?section=account', boot });
     expect(screen.getByRole('heading', { level: 2, name: 'Account' })).toBeInTheDocument();
     expect(within(screen.getByRole('list', { name: 'Your invites' })).getAllByRole('listitem')).toHaveLength(1);
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(screen.getByText('me@example.test')).toBeInTheDocument();
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
     expect(read).toEqual([]);
   });

@@ -56,7 +56,7 @@ export interface RankingsProps {
   /** The seasons whose results have landed (`finishedSeasons`), newest first: with any, the page offers the season choice. */
   readonly seasons?: readonly SeasonFinished[];
   /** A finished season's final table, drawn in place of the standings (`resultsPage`); `highlight` is the character whose row opens marked. */
-  readonly final?: { readonly season: SeasonFinished; readonly rows: readonly SeasonResultRow[]; readonly highlight: Id | null; readonly unplaced?: boolean } | { readonly missing: number } | null;
+  readonly final?: { readonly season: SeasonFinished; readonly rows: readonly SeasonResultRow[]; readonly highlight: Id | null; readonly unplaced?: boolean } | null;
   /** Drawn inside the season page, whose heading and tabs are above: the table and the pager are as ever, the heading is left out. */
   readonly embedded?: boolean;
 }
@@ -102,8 +102,6 @@ function FinalClassCell({ shown, className }: { readonly shown: SeasonResultRow[
 function SeasonChoice({ now, seasons, chosen }: { readonly now: Season | null; readonly seasons: readonly SeasonFinished[]; readonly chosen: number | null }) {
   const navigate = useNavigate();
   const past = seasons.filter((f) => f.number !== now?.number);
-  /* A season the address names that has no final standings is shown as such, never as the current one. */
-  const unknown = chosen !== null && chosen !== now?.number && !past.some((f) => f.number === chosen) ? chosen : null;
   return (
     <label className="kb-glass-field kb-rankings-choice">
       <span>Season</span>
@@ -113,7 +111,6 @@ function SeasonChoice({ now, seasons, chosen }: { readonly now: Season | null; r
       >
         <option value="">{now ? `Season ${now.number} (now)` : 'This season'}</option>
         {past.map((f) => <option key={f.number} value={String(f.number)}>{`Season ${f.number}`}</option>)}
-        {unknown !== null && <option value={String(unknown)} disabled>{`Season ${unknown}`}</option>}
       </select>
     </label>
   );
@@ -134,15 +131,12 @@ export function Rankings({ season, settledAt, standings, reveals, turns, mine, t
   const stated = statements(reveals, turns);
   const done = final !== null && 'rows' in final ? final : null;
   const rows: readonly (Standing | SeasonResultRow)[] = done ? done.rows : standings;
-  const missing = final !== null && 'missing' in final ? final.missing : null;
   const count = done ? done.season.characters : total;
   const pages = Math.max(1, Math.ceil(count / PER_PAGE));
   const lead = final === null
     ? <>{season ? `Season ${season.number}` : 'This season'}{' · '}{settledAt ? `Settled ${dayAndTime(settledAt)}` : 'Nothing settled yet'}</>
-    : done
-      ? `Season ${done.season.number} · Final standings · Ended ${shortDate(done.season.endsAt)}`
-      : `Season ${missing}`;
-  const chosen = final === null ? null : done ? done.season.number : missing;
+    : `Season ${final.season.number} · Final standings · Ended ${shortDate(final.season.endsAt)}`;
+  const chosen = done ? done.season.number : null;
   const choice = seasons.length > 0 ? <SeasonChoice now={season} seasons={seasons} chosen={chosen} /> : null;
   return (
     <div className="kb-rankings" ref={root}>
@@ -167,9 +161,7 @@ export function Rankings({ season, settledAt, standings, reveals, turns, mine, t
           : <>The season's standings, as the last settlement left them. Your own characters are marked, with their classes, which
             only you see here. Anyone else's class shows only once its player has revealed it.</>}
       </CalmRegion>
-      {missing !== null
-        ? <CalmRegion as="p" className="kb-rankings-empty">{`Season ${missing} has no final standings.`}{' '}<Link to={seasonAt('rankings')}>Today&apos;s standings</Link></CalmRegion>
-        : rows.length === 0
+      {rows.length === 0
         ? <CalmRegion as="p" className="kb-rankings-empty">{count === 0 ? 'No character has debuted yet. The first settlement puts them here.' : 'Nothing on this page.'}</CalmRegion>
         : (
           <>
@@ -244,9 +236,8 @@ export function RankingsScreen({ doc, embedded = false, href = rankingsPage, sea
     return <Rankings season={doc.season} settledAt={boot?.lastSettledAt ?? null} standings={doc.standings} total={doc.size} reveals={doc.reveals} turns={doc.turns} mine={mine} seasons={doc.finished} page={doc.page} href={href} embedded={embedded} />;
   }
   const ended = doc.finished.find((f) => f.number === season);
-  /* The document is of a finished season, so the season is there; a document that does not hold it is said to have no table. */
-  const final = ended
-    ? { season: ended, rows: doc.results, highlight: character ?? null, unplaced: character !== undefined && doc.place === null }
-    : { missing: season ?? 0 };
+  /* The document is of a finished season, so the season is there: a season that is not is a document the server does not answer (the router's "can't be found"). */
+  if (!ended) return null;
+  const final = { season: ended, rows: doc.results, highlight: character ?? null, unplaced: character !== undefined && doc.place === null };
   return <Rankings season={doc.season} settledAt={null} standings={[]} reveals={[]} turns={[]} mine={mine} seasons={doc.finished} final={final} page={doc.page} href={href} embedded={embedded} />;
 }

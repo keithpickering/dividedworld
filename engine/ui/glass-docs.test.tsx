@@ -101,14 +101,19 @@ describe('the loaders', () => {
 
   test('Settings reads the invites in Account alone; every other section is its chunk alone', async () => {
     const invites = vi.fn(() => Promise.resolve([]));
-    const env = { api: apiOf({ invites }), signedIn: signed(true) };
+    const env = { api: apiOf({ invites, signInAddress: () => Promise.resolve('a@b.c') }), signedIn: signed(true) };
     const preload = vi.fn(() => Promise.resolve());
-    expect(await loadSettings(env, q('section=account'), preload)).toEqual([]);
+    expect(await loadSettings(env, q('section=account'), preload)).toEqual({ invites: [], address: 'a@b.c' });
     expect(invites).toHaveBeenCalledTimes(1);
     expect(await loadSettings(env, q(''), preload)).toBeUndefined();
     expect(await loadSettings(env, q('section=notifications'), preload)).toBeUndefined();
     expect(invites).toHaveBeenCalledTimes(1);
     expect(preload).toHaveBeenCalledTimes(3);
+  });
+
+  test('an address that cannot be read does not fail Account: the row says so', async () => {
+    const env = { api: apiOf({ invites: () => Promise.resolve([]), signInAddress: () => Promise.reject(new Error('no')) }), signedIn: signed(true) };
+    expect(await loadSettings(env, q('section=account'), () => Promise.resolve())).toEqual({ invites: [], address: null });
   });
 
   test('a screen with no document loads its chunk and answers nothing', async () => {

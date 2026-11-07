@@ -243,6 +243,9 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
       w.history.replaceState(wrap(entryRef.current, l.state), '', addressOf(l) + (l.hash ? `#${l.hash}` : ''));
     }
   }, [w, report]);
+  /* A silent re-read of the shown page (the router's retry) that is out now, if one is. */
+  const refreshOut = (): boolean => { const p = pendingRef.current; return !!p && p.silent && !p.initial && !p.popped; };
+  const retryRef = useRef<() => void>(() => undefined);
   const takePrefetch = useCallback((address: string): Promise<unknown> | null => {
     const k = `${accountRef.current ?? ''}|${address}`;
     const e = prefetched.current.get(k);
@@ -349,6 +352,7 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
       const kb = unwrap(w.history.state).kb;
       const found = routeFor(location.path);
       const sh = shownRef.current;
+      const refreshing = refreshOut();
       cancelPending(false);
       const key = found ? keyOf(found.route, found.params, location.query, location.path) : null;
       const same = !!found && sh.ready && !sh.failure && sameRoute(sh.route, found.route) && sh.key === key;
@@ -357,6 +361,7 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
         restore.current = kb ? cache.current.get(kb)?.scrollY ?? null : null;
         commit({ location, doc: same ? sh.doc : undefined, ready: true, failure: null, route: found?.route ?? null, key }, kb);
         report('landed');
+        if (refreshing && same) retryRef.current();
         return;
       }
       const cached = kb ? cache.current.get(kb) : undefined;
@@ -389,6 +394,7 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
       return;
     }
     /* A route with no loader, or a move within its key, moves at once. */
+    const refreshing = refreshOut();
     cancelPending();
     const entry = newEntry();
     const state = wrap(entry, options?.state);
@@ -399,6 +405,8 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     remember(entry, same ? sh.doc : undefined);
     commit({ location: read(w), doc: same ? sh.doc : undefined, ready: true, failure: null, route: found?.route ?? null, key }, entry);
     report('landed');
+    /* A re-read of the shown document that was out was read for the address left; it is asked again for the address now shown (its document is the same key's). */
+    if (refreshing && same) retryRef.current();
   }, [w, routeFor, startLoad, cancelPending, leave, remember, commit, report]);
 
   /*
@@ -421,6 +429,8 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     }
     navigate(full, { replace: true });
   }, [navigate, routeFor, startLoad]);
+
+  retryRef.current = retry;
 
   const prefetch = useCallback((to: string) => {
     const url = new URL(to, w.location.href);

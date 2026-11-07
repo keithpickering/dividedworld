@@ -455,6 +455,37 @@ describe('the router loads before it moves', () => {
     act(() => prefetch('/b'));
     expect(load).toHaveBeenCalledTimes(1);
   });
+  test('a move to the sibling that shares the key while a re-read is out does not lose it: the new document is drawn', async () => {
+    const calls: Array<(d: string) => void> = [];
+    const load = vi.fn(() => new Promise<string>((resolve) => { calls.push(resolve); }));
+    const key = () => 'one';
+    const routes: Route[] = [
+      { path: '/a', load, key, render: (_, doc) => <p>a {String(doc)}</p> },
+      { path: '/b', load, key, render: (_, doc) => <p>b {String(doc)}</p> },
+    ];
+    window.history.replaceState(null, '', '/a');
+    render(<KayfaProvider value={kayfa}><RouterProvider><Probe /><Routes routes={routes} /></RouterProvider></KayfaProvider>);
+    await act(async () => { calls[0]!('old'); });
+    expect(screen.getByText('a old')).toBeInTheDocument();
+    act(() => retry());
+    act(() => nav('/b'));
+    expect(screen.getByText('b old')).toBeInTheDocument();
+    await act(async () => { for (const c of calls.slice(1)) c('new'); });
+    expect(screen.getByText('b new')).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/b');
+  });
+  test('a re-read that fails is the page cannot be displayed, and Try again reads it', async () => {
+    const { load, calls } = manualLoader();
+    mount(load);
+    act(() => nav('/t/a'));
+    await answer(calls[0], 'A1');
+    act(() => retry());
+    await act(async () => { calls[1]!.reject(new Error('down')); });
+    expect(screen.getByRole('heading', { name: 'The page cannot be displayed' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await answer(calls[2], 'A3');
+    expect(screen.getByText('thread a: A3')).toBeInTheDocument();
+  });
   test('retry of a shown page reads its document again in place: the old page stays until it lands, no move is told, and Escape does not stop it', async () => {
     const { load, calls } = manualLoader();
     mount(load);

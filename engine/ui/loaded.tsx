@@ -19,17 +19,23 @@ import { addressOf, useLocation } from './router.tsx';
 import { boardKey, loadBoard, loadIndex, loadProfile, loadRecord, loadThread, recordKey, threadKey, type LoadEnv, type ScreenDoc } from './screen-docs.ts';
 import { ThreadScreen } from './thread/Thread.tsx';
 import { Characters } from './characters/Characters.tsx';
+import { NewCharacter } from './characters/NewCharacter.tsx';
 import { ProfileEdit } from './profile-edit/ProfileEdit.tsx';
 import type { PictureIo } from './profile-edit/crops.ts';
 import { SeasonScreen } from './season/Season.tsx';
 import { ContactScreen } from './contact/Contact.tsx';
 import { SettingsScreen } from './account/Settings.tsx';
+import { SignInScreen } from './account/SignIn.tsx';
+import { Vending } from './vending/Vending.tsx';
+import { GuideScreen } from './guide/Guide.tsx';
+import { WelcomeScreen } from './welcome/Welcome.tsx';
 import { AlertsScreen } from './alerts/Alerts.tsx';
 import { UpdatesScreen } from './updates/Updates.tsx';
 import { QueueScreen } from './admin/Queue.tsx';
 import { LogScreen } from './log/Log.tsx';
 import { SettlementScreen } from './log/Settlement.tsx';
-import { alertsKey, charactersKey, loadAlerts, loadContact, loadLog, loadMyCharacters, loadQueue, loadSeason, loadSettings, loadUpdates, logKey, queueKey, seasonKey, settingsKey, updatesKey, type GlassEnv } from './glass-docs.ts';
+import type { GlassEnv } from './glass-docs.ts';
+import { glassRoutes, type GlassScreen, type GlassScreens } from './glass-routes.tsx';
 import { Routes, type Route } from './routes.tsx';
 
 function Loaded<T>({ keyed, load, children }: { readonly keyed: string; readonly load: (env: LoadEnv) => Promise<ScreenDoc<T> | null>; readonly children: (doc: ScreenDoc<T>) => ReactNode }) {
@@ -78,88 +84,48 @@ export function LoadedRecord({ id }: { readonly id: string }) {
 }
 
 /*
- * The glass screens (the glass-load plan, Task 11) are drawn by the router from the document their route loads, so a test or a story that
- * draws one gives it the same route: the app's loaders and keys (glass-docs.ts), over a router of its own, with no chunk to wait for. A
- * refresh after an action (the router's retry of the shown key) is then the real one.
+ * The glass screens (the glass-load plan, Tasks 11 and 12) are drawn by the router from the document their route loads, so a test or a story that
+ * draws one gives it the same route: the app's own table of glass routes (glass-routes.tsx), over the screens imported directly (there is no
+ * chunk to wait for) and a router of its own. A refresh after an action (the router's retry of the shown key) is then the real one.
  */
 function useGlassEnv(): GlassEnv {
   const { api } = useKayfa();
   return useMemo(() => ({ api, signedIn: async () => (await api.session()).signedIn }), [api]);
 }
 
-const noChunk = () => Promise.resolve();
+const direct = <P,>(Component: GlassScreen<P>['Component']): GlassScreen<P> => ({ Component, preload: () => Promise.resolve() });
+
+const SCREENS: GlassScreens = {
+  signIn: direct(SignInScreen), characters: direct(Characters), newCharacter: direct(NewCharacter), profileEdit: direct(ProfileEdit),
+  settings: direct(SettingsScreen), season: direct(SeasonScreen), vending: direct(Vending), alerts: direct(AlertsScreen), updates: direct(UpdatesScreen),
+  guide: direct(GuideScreen), contact: direct(ContactScreen), welcome: direct(WelcomeScreen), queue: direct(QueueScreen), log: direct(LogScreen),
+  settlement: direct(SettlementScreen),
+};
+
+/** The app's glass routes for `paths`, over a router of its own. `extras` fixes what a test fixes (the picture codec, the clock). */
+function Glass({ paths, io, now }: { readonly paths: readonly string[]; readonly io?: PictureIo; readonly now?: number }) {
+  const env = useGlassEnv();
+  const routes = useMemo<readonly Route[]>(() => glassRoutes(env, SCREENS, { io, now }).filter((r) => paths.includes(r.path)), [env, paths, io, now]);
+  return <Routes routes={routes} />;
+}
+
+const CHARACTERS = ['/characters', '/characters/edit'];
+const SEASON = ['/season'];
+const CONTACT = ['/contact'];
+const SETTINGS = ['/settings'];
+const ALERTS = ['/alerts'];
+const UPDATES = ['/updates'];
+const QUEUE = ['/admin/queue'];
+const LOG = ['/log', '/log/settlement'];
 
 /** My characters at `/characters` and Edit profile at `/characters/edit`, one document: the page opens at the address it is given. */
-export function LoadedCharacters({ io }: { readonly io?: PictureIo } = {}) {
-  const env = useGlassEnv();
-  const routes = useMemo<readonly Route[]>(() => {
-    const load = () => loadMyCharacters(env, noChunk);
-    return [
-      { path: '/characters', load, key: charactersKey, render: (_, doc) => <Characters doc={doc as Parameters<typeof Characters>[0]['doc']} /> },
-      { path: '/characters/edit', load, key: charactersKey, render: (_, doc) => <ProfileEdit doc={doc as Parameters<typeof ProfileEdit>[0]['doc']} io={io} /> },
-    ];
-  }, [env, io]);
-  return <Routes routes={routes} />;
-}
-
-export function LoadedSeason() {
-  const env = useGlassEnv();
-  const routes = useMemo<readonly Route[]>(() => [
-    { path: '/season', load: ({ query }) => loadSeason(env, query, noChunk), key: (_, query) => seasonKey(query), render: (_, doc) => <SeasonScreen doc={doc as Parameters<typeof SeasonScreen>[0]['doc']} /> },
-  ], [env]);
-  return <Routes routes={routes} />;
-}
-
-export function LoadedContact() {
-  const env = useGlassEnv();
-  const routes = useMemo<readonly Route[]>(() => [
-    { path: '/contact', load: () => loadContact(env, noChunk), key: () => '/contact', render: (_, doc) => <ContactScreen doc={doc as Parameters<typeof ContactScreen>[0]['doc']} /> },
-  ], [env]);
-  return <Routes routes={routes} />;
-}
-
-export function LoadedSettings() {
-  const env = useGlassEnv();
-  const routes = useMemo<readonly Route[]>(() => [
-    { path: '/settings', load: ({ query }) => loadSettings(env, query, noChunk), key: (_, query) => settingsKey(query), render: (_, doc) => <SettingsScreen doc={doc as Parameters<typeof SettingsScreen>[0]['doc']} /> },
-  ], [env]);
-  return <Routes routes={routes} />;
-}
-
-export function LoadedAlerts() {
-  const env = useGlassEnv();
-  const routes = useMemo<readonly Route[]>(() => [
-    { path: '/alerts', load: () => loadAlerts(env, noChunk), key: alertsKey, render: (_, doc) => <AlertsScreen doc={doc as Parameters<typeof AlertsScreen>[0]['doc']} /> },
-  ], [env]);
-  return <Routes routes={routes} />;
-}
-
-export function LoadedUpdates() {
-  const env = useGlassEnv();
-  const routes = useMemo<readonly Route[]>(() => [
-    { path: '/updates', load: ({ query }) => loadUpdates(env, query, noChunk), key: (_, query) => updatesKey(query), render: (_, doc) => <UpdatesScreen doc={doc as Parameters<typeof UpdatesScreen>[0]['doc']} /> },
-  ], [env]);
-  return <Routes routes={routes} />;
-}
-
+export function LoadedCharacters({ io }: { readonly io?: PictureIo } = {}) { return <Glass paths={CHARACTERS} io={io} />; }
+export function LoadedSeason() { return <Glass paths={SEASON} />; }
+export function LoadedContact() { return <Glass paths={CONTACT} />; }
+export function LoadedSettings() { return <Glass paths={SETTINGS} />; }
+export function LoadedAlerts() { return <Glass paths={ALERTS} />; }
+export function LoadedUpdates() { return <Glass paths={UPDATES} />; }
 /** The admin queue; `now` fixes the clock the countdowns are read against. */
-export function LoadedQueue({ now }: { readonly now?: number } = {}) {
-  const env = useGlassEnv();
-  const routes = useMemo<readonly Route[]>(() => [
-    { path: '/admin/queue', load: () => loadQueue(env, noChunk), key: queueKey, render: (_, doc) => <QueueScreen doc={doc as Parameters<typeof QueueScreen>[0]['doc']} now={now} /> },
-  ], [env, now]);
-  return <Routes routes={routes} />;
-}
-
+export function LoadedQueue({ now }: { readonly now?: number } = {}) { return <Glass paths={QUEUE} now={now} />; }
 /** My log at `/log` and the settlement summary at `/log/settlement`, one document. */
-export function LoadedLog() {
-  const env = useGlassEnv();
-  const routes = useMemo<readonly Route[]>(() => {
-    const load = () => loadLog(env, noChunk);
-    return [
-      { path: '/log', load, key: logKey, render: (_, doc) => <LogScreen doc={doc as Parameters<typeof LogScreen>[0]['doc']} /> },
-      { path: '/log/settlement', load, key: logKey, render: (_, doc) => <SettlementScreen doc={doc as Parameters<typeof SettlementScreen>[0]['doc']} /> },
-    ];
-  }, [env]);
-  return <Routes routes={routes} />;
-}
+export function LoadedLog() { return <Glass paths={LOG} />; }

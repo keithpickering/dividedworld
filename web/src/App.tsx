@@ -31,7 +31,8 @@ import { match, RouterProvider, useLocation, useNavigate, useRouterAccount, useR
 import { effectCards } from '../../engine/ui/cards/plays.ts';
 import { boardKey, loadBoard, loadIndex, loadProfile, loadRecord, loadThread, recordKey, threadKey, type LoadEnv, type ScreenDoc } from '../../engine/ui/screen-docs.ts';
 import { Routes, type Failures, type Route } from '../../engine/ui/routes.tsx';
-import { alertsKey, charactersKey, ESTIMATE_WAIT_MS, lazyScreen, loadAlerts, loadChunk, loadContact, loadLog, loadMyCharacters, loadQueue, loadSeason, loadSettings, loadUpdates, logKey, queueKey, seasonKey, settingsKey, updatesKey, type LogDoc, type NotAdminDoc } from '../../engine/ui/glass-docs.ts';
+import { ESTIMATE_WAIT_MS, lazyScreen } from '../../engine/ui/glass-docs.ts';
+import { glassRoutes, type GlassScreens } from '../../engine/ui/glass-routes.tsx';
 import { GlassCannotDisplay, GlassCannotFind } from '../../engine/ui/glass/Unavailable.tsx';
 import { ThreadScreen } from '../../engine/ui/thread/Thread.tsx';
 import { instance } from '../../instances/divided-world/index.ts';
@@ -43,79 +44,47 @@ import { instanceUi } from '../../instances/divided-world/ui/index.ts';
  * beside its document (the glass-load plan, Task 11), so a route that has landed never draws a Suspense fallback. The fallback below is
  * only the net under that: an empty block marked aria-busy, inside the glass page's own `main`.
  */
-const lazyOf = lazyScreen;
-const SignInScreen = lazyOf(() => import('../../engine/ui/account/SignIn.tsx').then((m) => ({ default: m.SignInScreen })));
-const Characters = lazyOf(() => import('../../engine/ui/characters/Characters.tsx').then((m) => ({ default: m.Characters })));
-const NewCharacter = lazyOf(() => import('../../engine/ui/characters/NewCharacter.tsx').then((m) => ({ default: m.NewCharacter })));
-const ProfileEdit = lazyOf(() => import('../../engine/ui/profile-edit/ProfileEdit.tsx').then((m) => ({ default: m.ProfileEdit })));
-const SettingsScreen = lazyOf(() => import('../../engine/ui/account/Settings.tsx').then((m) => ({ default: m.SettingsScreen })));
-const SeasonScreen = lazyOf(() => import('../../engine/ui/season/Season.tsx').then((m) => ({ default: m.SeasonScreen })));
-const Vending = lazyOf(() => import('../../engine/ui/vending/Vending.tsx').then((m) => ({ default: m.Vending })));
-const AlertsScreen = lazyOf(() => import('../../engine/ui/alerts/Alerts.tsx').then((m) => ({ default: m.AlertsScreen })));
-const UpdatesScreen = lazyOf(() => import('../../engine/ui/updates/Updates.tsx').then((m) => ({ default: m.UpdatesScreen })));
-const GuideScreen = lazyOf(() => import('../../engine/ui/guide/Guide.tsx').then((m) => ({ default: m.GuideScreen })));
-const ContactScreen = lazyOf(() => import('../../engine/ui/contact/Contact.tsx').then((m) => ({ default: m.ContactScreen })));
-const WelcomeScreen = lazyOf(() => import('../../engine/ui/welcome/Welcome.tsx').then((m) => ({ default: m.WelcomeScreen })));
-const QueueScreen = lazyOf(() => import('../../engine/ui/admin/Queue.tsx').then((m) => ({ default: m.QueueScreen })));
-const LogScreen = lazyOf(() => import('../../engine/ui/log/Log.tsx').then((m) => ({ default: m.LogScreen })));
-const SettlementScreen = lazyOf(() => import('../../engine/ui/log/Settlement.tsx').then((m) => ({ default: m.SettlementScreen })));
-
-/** A glass route with no document: its loader is its chunk alone, so its first visit is whole too. */
-const chunkOnly = (screen: { readonly preload: () => Promise<unknown> }) => ({ load: () => loadChunk(screen.preload) });
+const screens: GlassScreens = {
+  signIn: lazyScreen(() => import('../../engine/ui/account/SignIn.tsx').then((m) => ({ default: m.SignInScreen }))),
+  characters: lazyScreen(() => import('../../engine/ui/characters/Characters.tsx').then((m) => ({ default: m.Characters }))),
+  newCharacter: lazyScreen(() => import('../../engine/ui/characters/NewCharacter.tsx').then((m) => ({ default: m.NewCharacter }))),
+  profileEdit: lazyScreen(() => import('../../engine/ui/profile-edit/ProfileEdit.tsx').then((m) => ({ default: m.ProfileEdit }))),
+  settings: lazyScreen(() => import('../../engine/ui/account/Settings.tsx').then((m) => ({ default: m.SettingsScreen }))),
+  season: lazyScreen(() => import('../../engine/ui/season/Season.tsx').then((m) => ({ default: m.SeasonScreen }))),
+  vending: lazyScreen(() => import('../../engine/ui/vending/Vending.tsx').then((m) => ({ default: m.Vending }))),
+  alerts: lazyScreen(() => import('../../engine/ui/alerts/Alerts.tsx').then((m) => ({ default: m.AlertsScreen }))),
+  updates: lazyScreen(() => import('../../engine/ui/updates/Updates.tsx').then((m) => ({ default: m.UpdatesScreen }))),
+  guide: lazyScreen(() => import('../../engine/ui/guide/Guide.tsx').then((m) => ({ default: m.GuideScreen }))),
+  contact: lazyScreen(() => import('../../engine/ui/contact/Contact.tsx').then((m) => ({ default: m.ContactScreen }))),
+  welcome: lazyScreen(() => import('../../engine/ui/welcome/Welcome.tsx').then((m) => ({ default: m.WelcomeScreen }))),
+  queue: lazyScreen(() => import('../../engine/ui/admin/Queue.tsx').then((m) => ({ default: m.QueueScreen }))),
+  log: lazyScreen(() => import('../../engine/ui/log/Log.tsx').then((m) => ({ default: m.LogScreen }))),
+  settlement: lazyScreen(() => import('../../engine/ui/log/Settlement.tsx').then((m) => ({ default: m.SettlementScreen }))),
+};
 
 /**
  * The routes. The board-world routes load their screen's whole document before they move (the forum-load plan, Task 13), and the glass routes
- * that read do too (the glass-load plan, Task 11), each awaiting its screen's chunk beside it; signed out, a document loader answers a marker
- * with no request. The glass routes with no document load their chunk alone. `env` is what a loader needs of the app, read when it runs.
+ * (engine/ui/glass-routes.tsx, one table for the app and the tests) do too, each awaiting its screen's chunk beside its document; signed out, a
+ * document loader answers a marker with no request. `env` is what a loader needs of the app, read when it runs.
  */
 function routesFor(env: LoadEnv): readonly Route[] {
-  /* My characters and Edit profile are one document and so one loader: a move between them reads nothing (the router keeps a document by its loader and key). */
-  const charactersChunks = () => Promise.all([Characters.preload(), ProfileEdit.preload()]);
-  const loadCharacters = () => loadMyCharacters(env, charactersChunks);
-  /* My log and the settlement summary are one document and so one loader. */
-  const logChunks = () => Promise.all([LogScreen.preload(), SettlementScreen.preload()]);
-  const loadLogDoc = () => loadLog(env, logChunks);
   return [
     { path: '/', load: () => loadIndex(env), render: (_, doc) => <IndexScreen doc={doc as ScreenDoc<IndexPage>} /> },
     {
       path: '/b/:slug', load: ({ params, query }) => loadBoard(env, params.slug!, query), key: (params, query) => boardKey(params.slug!, query),
       render: ({ slug }, doc) => <BoardScreen slug={slug!} doc={doc as ScreenDoc<BoardPage>} />,
     },
-    { path: '/characters', load: loadCharacters, key: charactersKey, render: (_, doc) => <Characters.Component doc={doc as ScreenDoc<MyCharactersPage>} /> },
-    { path: '/characters/new', ...chunkOnly(NewCharacter), render: () => <NewCharacter.Component /> },
-    { path: '/characters/edit', load: loadCharacters, key: charactersKey, render: (_, doc) => <ProfileEdit.Component doc={doc as ScreenDoc<MyCharactersPage>} /> },
-    {
-      path: '/season', load: ({ query }) => loadSeason(env, query, SeasonScreen.preload), key: (_, query) => seasonKey(query),
-      render: (_, doc) => <SeasonScreen.Component doc={doc as ScreenDoc<SeasonPage>} />,
-    },
+    ...glassRoutes(env, screens),
     /* The standings and the rankings are the season page's Rankings tab (the alerts design, section 7); `?page=` goes with them. */
     { path: '/standings', render: () => <MovedToRankings /> },
     { path: '/rankings', render: () => <MovedToRankings /> },
-    { path: '/vending', ...chunkOnly(Vending), render: () => <Vending.Component /> },
-    { path: '/alerts', load: () => loadAlerts(env, AlertsScreen.preload), key: alertsKey, render: (_, doc) => <AlertsScreen.Component doc={doc as ScreenDoc<AlertsPage>} /> },
-    {
-      path: '/updates', load: ({ query }) => loadUpdates(env, query, UpdatesScreen.preload), key: (_, query) => updatesKey(query),
-      render: (_, doc) => <UpdatesScreen.Component doc={doc as ScreenDoc<UpdatesPage>} />,
-    },
-    { path: '/guide', ...chunkOnly(GuideScreen), render: () => <GuideScreen.Component /> },
-    { path: '/contact', load: () => loadContact(env, ContactScreen.preload), render: (_, doc) => <ContactScreen.Component doc={doc as readonly ContactLink[]} /> },
-    { path: '/welcome', ...chunkOnly(WelcomeScreen), render: () => <WelcomeScreen.Component /> },
-    { path: '/admin/queue', load: () => loadQueue(env, QueueScreen.preload), key: queueKey, render: (_, doc) => <QueueScreen.Component doc={doc as ScreenDoc<QueuePage> | NotAdminDoc} /> },
-    { path: '/log', load: loadLogDoc, key: logKey, render: (_, doc) => <LogScreen.Component doc={doc as ScreenDoc<LogDoc>} /> },
-    { path: '/log/settlement', load: loadLogDoc, key: logKey, render: (_, doc) => <SettlementScreen.Component doc={doc as ScreenDoc<LogDoc>} /> },
     { path: '/c/:id', load: ({ params }) => loadProfile(env, params.id!), render: ({ id }, doc) => <ProfileScreen id={id!} doc={doc as ScreenDoc<ProfilePage>} /> },
     {
       path: '/c/:id/record', load: ({ params, query }) => loadRecord(env, params.id!, query), key: (params, query) => recordKey(params.id!, query),
       render: ({ id }, doc) => <RecordScreen id={id!} doc={doc as ScreenDoc<RecordPage>} />,
     },
-    { path: '/sign-in', ...chunkOnly(SignInScreen), render: () => <SignInScreen.Component mode="sign-in" /> },
-    { path: '/register', ...chunkOnly(SignInScreen), render: () => <SignInScreen.Component mode="register" /> },
     /* Invites live in Settings › Account (the glass build's Task 2.4); the old address opens it, so a link to it still works. */
     { path: '/invites', render: () => <Moved to={INVITES} /> },
-    {
-      path: '/settings', load: ({ query }) => loadSettings(env, query, SettingsScreen.preload), key: (_, query) => settingsKey(query),
-      render: (_, doc) => <SettingsScreen.Component doc={doc as ScreenDoc<readonly MyInvite[]> | undefined} />,
-    },
     { path: '/t/:thread', load: ({ params, query, hash }) => loadThread(env, params.thread!, query, hash), key: (params) => threadKey(params.thread!), render: ({ thread }, doc) => <ThreadScreen thread={thread!} doc={doc as ScreenDoc<ThreadPage>} /> },
   ];
 }
