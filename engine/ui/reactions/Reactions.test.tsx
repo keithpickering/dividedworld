@@ -14,6 +14,7 @@ import { createTallies } from '../thread/tallies.ts';
 import { createMine } from './mine.ts';
 import { Reactions, readable } from './Reactions.tsx';
 import { LoadedThread } from '../loaded.tsx';
+import { StagedCtx } from '../staged.ts';
 
 /* The HUD's estimate is asked for through the player; this file watches that call. */
 const landed = vi.hoisted(() => vi.fn());
@@ -810,5 +811,67 @@ describe('the popover\'s room', () => {
     const width = /\.kb-glass-dialog\.kb-picker\s*\{[^}]*?\bwidth:\s*(\d+)px/u.exec(css)?.[1];
     expect(Number(width)).toBe(POPOVER_WIDTH);
     expect(POPOVER_ROOM).toBe(Number(width) + 2 * 16);
+  });
+});
+
+describe('on a staged page (the front door)', () => {
+  /* No one signed in, every backend method wrapped: a staged row answers locally and asks the server nothing. */
+  function staged() {
+    const fake = buildWorld();
+    const called: string[] = [];
+    for (const [key, value] of Object.entries(fake)) {
+      if (typeof value === 'function' && (key === 'react' || key === 'myReactions')) {
+        (fake as unknown as Record<string, unknown>)[key] = (...a: unknown[]) => { called.push(key); return (value as (...x: unknown[]) => unknown)(...a); };
+      }
+    }
+    const tallies = createTallies();
+    const mine = createMine();
+    tallies.merge('front-door:0', { fire: 2 });
+    renderIn(fake, <StagedCtx.Provider value={true}><Reactions act="front-door:0" author="front-door:ann" authorName="Ann" tallies={tallies} mine={mine} /></StagedCtx.Provider>);
+    return { called, tallies, mine };
+  }
+
+  test('offers React and its tiles as buttons with no one signed in, and names no mask', async () => {
+    staged();
+    expect(await screen.findByRole('button', { name: 'React' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Fire, 2. React' })).toBeInTheDocument();
+  });
+
+  test('a tile pressed grows its count and is the visitor\'s own, with no request and no estimate', async () => {
+    const { called, tallies, mine } = staged();
+    await userEvent.click(await screen.findByRole('button', { name: 'Fire, 2. React' }));
+    expect(await screen.findByRole('button', { name: 'Fire, 3, including yours' })).toBeInTheDocument();
+    expect(tallies.get('front-door:0')).toEqual({ fire: 3 });
+    expect(mine.get('front-door:0').map((r) => r.kind)).toEqual(['fire']);
+    expect(called).toEqual([]);
+    expect(landed).not.toHaveBeenCalled();
+  });
+
+  test('holds the cap itself, as the server would: two presses in one tick with one reaction left land one', async () => {
+    const { tallies, mine } = staged();
+    act(() => { tallies.merge('front-door:0', { tomato: 1, tea: 1, zzz: 1 }); mine.add({ act: 'front-door:0', kind: 'zzz', character: 'x' }); mine.add({ act: 'front-door:0', kind: 'fire', character: 'x' }); });
+    const tomato = screen.getByRole('button', { name: /^Tomato, 1/ });
+    const tea = screen.getByRole('button', { name: /^Tea, 1/ });
+    await act(async () => { fireEvent.click(tomato); fireEvent.click(tea); });
+    expect(mine.get('front-door:0')).toHaveLength(3);
+    expect((tallies.get('front-door:0').tomato ?? 0) + (tallies.get('front-door:0').tea ?? 0)).toBe(3);
+  });
+
+  test('a kind already the visitor\'s is not counted again', async () => {
+    const { tallies, mine } = staged();
+    const fire = screen.getByRole('button', { name: 'Fire, 2. React' });
+    await act(async () => { fireEvent.click(fire); fireEvent.click(fire); });
+    expect(tallies.get('front-door:0')).toEqual({ fire: 3 });
+    expect(mine.get('front-door:0')).toHaveLength(1);
+  });
+
+  test('the picker is described by what is left alone, and a pick lands locally', async () => {
+    const { called } = staged();
+    await userEvent.click(await screen.findByRole('button', { name: 'React' }));
+    expect(picker()).toHaveAccessibleDescription('3 of 3 left');
+    await userEvent.click(within(picker()).getByRole('button', { name: /^Tomato, / }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByRole('button', { name: 'Tomato, 1, including yours' })).toBeInTheDocument();
+    expect(called).toEqual([]);
   });
 });
