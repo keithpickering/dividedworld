@@ -197,10 +197,11 @@ export function useSearchCombobox<O extends ComboOption = ComboOption>(options: 
         return;
       }
       case 'Escape':
-        if (!open) return;
-        e.preventDefault();
+        /* A reply still on its way is dropped too, so it cannot open the list after Escape; with no list open, Escape goes on to the page (a dialog closes). */
+        cancel();
         setDismissed(true);
         setActive(-1);
+        if (open) e.preventDefault();
         return;
       default:
     }

@@ -154,3 +154,9 @@
 .kb-search-title {
   overflow-wrap: anywhere;
 }
+
+/* Focus moves to the heading when a search or a page turn loads the page with focus lost; the heading is a place to start reading, not a
+   control, so it draws no ring for it, as the frame's page draws none (frame.css, .kb-page:focus). */
+.kb-search-page > h1.kb-heading:focus {
+  outline: none;
+}

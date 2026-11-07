@@ -219,6 +219,19 @@ describe('the keys', () => {
     expect(box()).toHaveAttribute('aria-expanded', 'true');
   });
 
+  test('Escape while a reply is still on its way: the reply does not open the list when it lands', async () => {
+    const replies: Array<(g: readonly ComboGroup[]) => void> = [];
+    const source = vi.fn(() => new Promise<readonly ComboGroup[]>((res) => { replies.push(res); }));
+    const { user } = setup({}, source);
+    await user.type(box(), 'wari');
+    await settle();
+    expect(replies).toHaveLength(1);
+    await user.keyboard('{Escape}');
+    await act(async () => { replies[0]?.(GROUPS); });
+    expect(box()).toHaveAttribute('aria-expanded', 'false');
+    expect(box()).toHaveValue('wari');
+  });
+
   test('a click on an option chooses it', async () => {
     const { user, onChoose } = await opened();
     await user.click(screen.getByRole('option', { name: 'Waribob' }));
