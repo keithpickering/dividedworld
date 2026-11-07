@@ -5,7 +5,7 @@
  * the reader's, and a screen that says them back says more than the reader asked. The frame's own pair (frame/Unavailable.tsx)
  * stays for the board; Routes draws these when the app gives them (its `failures`).
  */
-import { ButtonRow, GlassButton } from './Button.tsx';
+import { GlassButton } from './Button.tsx';
 import { PageHead } from './PageHead.tsx';
 import { useBackToBoard } from './back.ts';
 import './unavailable.css';
@@ -33,7 +33,7 @@ export function GlassCannotFind() {
       <PageHead
         title="There's nothing here"
         lead="Nothing on this address can be shown: it may never have existed, or it has gone."
-        actions={<ButtonRow><GlassButton kind="primary" onClick={back}>Back to the board</GlassButton></ButtonRow>}
+        actions={<GlassButton kind="primary" onClick={back}>Back to the board</GlassButton>}
       />
     </section>
   );
