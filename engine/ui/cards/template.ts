@@ -47,23 +47,22 @@ export function templateVars(size: PostcardSize): Record<string, string> {
  * board's green.
  */
 export function templateSvg(guide: string): string {
-  const GUIDE = guide;
   const { card, border, outerRadius, canvas, keepClear, focus, plateTop } = TEMPLATE;
   const label = (x: number, y: number, text: string, anchor: 'start' | 'end' = 'start') =>
-    `      <text x="${x}" y="${y}" text-anchor="${anchor}" font-family="monospace" font-size="14" font-weight="700" fill="${GUIDE}">${text}</text>`;
+    `      <text x="${x}" y="${y}" text-anchor="${anchor}" font-family="monospace" font-size="14" font-weight="700" fill="${guide}">${text}</text>`;
   const plateH = canvas.y + canvas.h - plateTop;
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd" viewBox="0 0 ${card.w} ${card.h}" width="${card.w}" height="${card.h}">
   <title>Postcard template</title>
   <defs>
     <pattern id="plate-hatch" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
-      <line x1="0" y1="0" x2="0" y2="10" stroke="${GUIDE}" stroke-opacity="0.45" stroke-width="3"/>
+      <line x1="0" y1="0" x2="0" y2="10" stroke="${guide}" stroke-opacity="0.45" stroke-width="3"/>
     </pattern>
   </defs>
   <g id="art" inkscape:groupmode="layer" inkscape:label="Art">
     <rect x="${canvas.x}" y="${canvas.y}" width="${canvas.w}" height="${canvas.h}" fill="none" stroke="none" pointer-events="all"/>
   </g>
-  <g id="guides" inkscape:groupmode="layer" inkscape:label="Guides, locked" sodipodi:insensitive="true" fill="none" stroke="${GUIDE}" stroke-width="1.5">
+  <g id="guides" inkscape:groupmode="layer" inkscape:label="Guides, locked" sodipodi:insensitive="true" fill="none" stroke="${guide}" stroke-width="1.5">
     <rect x="0" y="0" width="${card.w}" height="${card.h}" rx="${outerRadius}" ry="${outerRadius}"/>
     <rect x="${canvas.x}" y="${canvas.y}" width="${canvas.w}" height="${canvas.h}" rx="${canvas.r}" ry="${canvas.r}"/>
     <rect x="${keepClear}" y="${keepClear}" width="${card.w - 2 * keepClear}" height="${card.h - 2 * keepClear}" rx="${outerRadius - keepClear}" ry="${outerRadius - keepClear}" stroke-dasharray="2 4"/>

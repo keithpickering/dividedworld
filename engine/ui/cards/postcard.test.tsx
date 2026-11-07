@@ -100,6 +100,21 @@ describe('what each size holds', () => {
   });
 });
 
+describe('the bottom border\'s row', () => {
+  test('the foot and the price share one flex row, so the foot ends where the price begins at any price width', () => {
+    const card = shown('sheet', faceOf({ ...rules, extra: 0 } as CardRules, ui({}), settings));
+    const base = card.querySelector('.kb-postcard-base')!;
+    expect(base.querySelector(':scope > .kb-postcard-foot')).not.toBeNull();
+    expect(base.querySelector(':scope > .kb-postcard-price')).not.toBeNull();
+    const rule = (sel: string) => new RegExp(`${sel.replace(/\./gu, '\\.')}\\s*\\{([^}]*)\\}`, 'u').exec(css)?.[1] ?? '';
+    expect(rule('.kb-postcard-base')).toMatch(/display:\s*flex/u);
+    expect(rule('.kb-postcard-price')).toMatch(/flex:\s*none/u);
+    expect(rule('.kb-postcard-price')).not.toMatch(/position:\s*absolute/u);
+    expect(rule('.kb-postcard-foot')).toMatch(/min-width:\s*0/u);
+    expect(rule('.kb-postcard-foot')).not.toMatch(/position:\s*absolute/u);
+  });
+});
+
 describe('the canvas', () => {
   test('a face with no canvas draws no img', () => {
     const card = shown('sheet', faceOf(rules, undefined, settings));

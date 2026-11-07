@@ -86,15 +86,16 @@ export function Postcard({ face, size, as: As = 'span', armed = false, className
       {/* How rare it is, as a gem whose shape says it (the card mechanic's design, sections 1 and 2). */}
       <span className="kb-postcard-gem" aria-hidden="true" data-kb-rarity={face.rarity} data-kb-gem={gemOf(face.rarity)} title={rarityName(face.rarity)} />
       {' '}
-      {size === 'sheet' && (
-        <span className="kb-postcard-price kb-num" aria-hidden="true" data-kb-art><span className="kb-postcard-orb" />{priceOf(face)}</span>
-      )}
       {size === 'fan' && face.tagline && <span className="kb-postcard-line" aria-hidden="true" data-kb-art>{face.tagline}</span>}
       {size === 'sheet' && <span className="kb-postcard-line" aria-hidden="true" data-kb-art>{face.summary}</span>}
       {size === 'sheet' && (
-        <span className="kb-postcard-foot" aria-hidden="true" data-kb-art>
-          <span>Postcard · {face.stack > 1 ? `Stacks ${face.stack} deep` : 'One per post'}</span>
-          {credit ? <span className="kb-postcard-credit">Art · {credit}</span> : null}
+        <span className="kb-postcard-base" aria-hidden="true" data-kb-art>
+          <span className="kb-postcard-foot">
+            <span>Postcard · {face.stack > 1 ? `Stacks ${face.stack} deep` : 'One per post'}</span>
+            {credit ? <span className="kb-postcard-credit">Art · {credit}</span> : null}
+          </span>
+          {' '}
+          <span className="kb-postcard-price kb-num"><span className="kb-postcard-orb" />{priceOf(face)}</span>
         </span>
       )}
     </As>
