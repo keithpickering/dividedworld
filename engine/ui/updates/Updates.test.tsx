@@ -70,9 +70,10 @@ describe('the page', () => {
     const sub = vi.spyOn(w.fake, 'subscribeThread');
     show(w.fake);
     await screen.findByRole('navigation', { name: 'All updates' });
-    expect(sub).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(sub).toHaveBeenCalledTimes(1));
     await userEvent.click(screen.getByRole('button', { name: 'Show earlier updates' }));
     await waitFor(() => expect(within(screen.getByRole('navigation', { name: 'All updates' })).getAllByRole('link')).toHaveLength(25));
+    await new Promise((r) => setTimeout(r, 50));
     expect(sub).toHaveBeenCalledTimes(1);
   });
 
