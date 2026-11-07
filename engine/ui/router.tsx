@@ -70,7 +70,7 @@ export interface Navigation {
    * (a Link's own id, or the name a caller gave `navigate`), so the control pressed can show the wait; null for a
    * navigation that named none (a Back or Forward, or a `navigate` with no source).
    */
-  readonly pending: { readonly to: string; readonly startedAt: number; readonly source: string | null } | null;
+  readonly pending: { readonly to: string; readonly startedAt: number; readonly source: string | null; /** A re-read of the shown page in place (the router's retry): no move, and Escape does not stop it. */ readonly silent: boolean } | null;
   /** How many reads a screen has handed to `track` that have not settled. */
   readonly tracking: number;
   /**
@@ -283,7 +283,7 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     const joined = takePrefetch(address);
     startedBy.current = w.event;
     pendingRef.current = { id, to: req.full, controller, startedAt, account: accountRef.current, popped: req.popped, initial: !!req.initial, silent: !!req.silent, joined: joined ? prefetchKey(address) : null, source: req.source ?? null, req };
-    setPending({ to: req.full, startedAt, source: req.source ?? null });
+    setPending({ to: req.full, startedAt, source: req.source ?? null, silent: !!req.silent });
     const promise = joined ?? invoke(found.route, url, found.params, controller.signal);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const outcome = new Promise<Outcome>((resolve) => {

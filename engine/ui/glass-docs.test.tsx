@@ -1,3 +1,5 @@
+import { render } from '@testing-library/react';
+import { Suspense, useEffect } from 'react';
 import { describe, expect, test, vi } from 'vitest';
 import type { KayfaApi } from './data/api.ts';
 import { SIGNED_OUT_DOC } from './screen-docs.ts';
@@ -131,6 +133,36 @@ describe('lazyScreen', () => {
     await screen.preload();
     expect(importer).toHaveBeenCalledTimes(1);
     expect(screen.Component).toBeDefined();
+  });
+
+  test('a screen whose chunk has landed draws its content in the first render, with no Suspense fallback, and keeps its state across re-renders', async () => {
+    let mounts = 0;
+    const Screen = ({ label }: { readonly label: string }) => { useEffect(() => { mounts += 1; }, []); return <p>{label}</p>; };
+    const screen = lazyScreen(() => Promise.resolve({ default: Screen }));
+    await screen.preload();
+    const Shown = screen.Component;
+    const view = render(<Suspense fallback={<div aria-busy="true" data-testid="fallback" />}><Shown label="one" /></Suspense>);
+    /* Synchronously after the render: a lazy component would still be on its fallback here. */
+    expect(view.queryByTestId('fallback')).toBeNull();
+    expect(view.getByText('one')).toBeInTheDocument();
+    view.rerender(<Suspense fallback={<div aria-busy="true" data-testid="fallback" />}><Shown label="two" /></Suspense>);
+    expect(view.getByText('two')).toBeInTheDocument();
+    expect(mounts).toBe(1);
+  });
+
+  test('a screen drawn before its chunk lands falls back, then draws the chunk once and is not remounted when the chunk is in', async () => {
+    let mounts = 0;
+    const Screen = ({ label }: { readonly label: string }) => { useEffect(() => { mounts += 1; }, []); return <p>{label}</p>; };
+    const screen = lazyScreen(() => Promise.resolve({ default: Screen }));
+    const Shown = screen.Component;
+    const tree = (label: string) => <Suspense fallback={<div data-testid="fallback" />}><Shown label={label} /></Suspense>;
+    const view = render(tree('one'));
+    expect(view.getByTestId('fallback')).toBeInTheDocument();
+    await screen.preload();
+    expect(await view.findByText('one')).toBeInTheDocument();
+    view.rerender(tree('two'));
+    expect(view.getByText('two')).toBeInTheDocument();
+    expect(mounts).toBe(1);
   });
 
   test('a chunk that failed is imported again on the next preload', async () => {

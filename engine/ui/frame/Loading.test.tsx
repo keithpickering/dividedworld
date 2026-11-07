@@ -16,7 +16,7 @@ vi.mock('../router.tsx', async (orig) => ({
 }));
 
 const THREAD = '3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b';
-const pending = (to: string): Navigation => ({ pending: { to, startedAt: 0, source: null }, tracking: 0, outcome: null, track: (p) => p });
+const pending = (to: string): Navigation => ({ pending: { to, startedAt: 0, source: null, silent: false }, tracking: 0, outcome: null, track: (p) => p });
 const ended = (kind: 'landed' | 'cancelled' | 'failed', seq = 1): Navigation => ({ pending: null, tracking: 0, outcome: { seq, kind }, track: (p) => p });
 const idle: Navigation = ended('landed');
 const where = (path: string): Location => ({ path, query: new URLSearchParams(), hash: '', popped: false, state: null });

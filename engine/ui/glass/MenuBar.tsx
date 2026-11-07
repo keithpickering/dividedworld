@@ -113,7 +113,7 @@ function Bar() {
   const { pending } = useNavigation();
   /* A load out when Esc is pressed is the router's to stop (router.tsx); this Esc does not start another. */
   const loadOut = useRef(false);
-  loadOut.current = pending !== null;
+  loadOut.current = pending !== null && !pending.silent;
   const waitAtEnd = useUnclaimed(pending ? pending.source : undefined);
   const list = useRef<HTMLUListElement>(null);
   const transition: Transition = feel ? (feel.spring ? { type: 'spring', stiffness: feel.spring.stiffness, damping: feel.spring.damping } : { duration: feel.screen / 1000, ease: bezier(feel.ease) }) : { duration: 0 };

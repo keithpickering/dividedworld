@@ -7,7 +7,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
-import { useNavigate } from '../router.tsx';
+import { useNavigate, useRouterInternals } from '../router.tsx';
 import { Routes, type Route } from '../routes.tsx';
 import { buildWorld, renderIn, renderInWorld } from '../test-world.tsx';
 import { boardPlace, forgetBoard, rememberBoard } from './back.ts';
@@ -312,6 +312,40 @@ describe('a load the menu bar waits on', () => {
     expect(end()).toBeNull();
     await land();
     expect(spinners()).toHaveLength(0);
+  });
+
+  test('an Esc while Back\'s load is out stops it and starts no other: the page stays', async () => {
+    const calls: AbortSignal[] = [];
+    const routes: Route[] = [
+      { path: '/alerts', render: () => <p>alerts</p> },
+      { path: '/', load: ({ signal }) => new Promise<unknown>(() => { calls.push(signal); }), render: () => <p>arrived</p> },
+    ];
+    renderInWorld(<><MenuBar /><Routes routes={routes} /></>, { path: '/alerts', seed: signedIn });
+    await within(bar()).findByRole('link', { name: 'Back to the board' });
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(calls).toHaveLength(1);
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.aborted).toBe(true);
+    expect(window.location.pathname).toBe('/alerts');
+    expect(spinners()).toHaveLength(0);
+  });
+
+  test('a silent re-read of the shown page does not take the Esc: Back still goes', async () => {
+    const calls: AbortSignal[] = [];
+    let retry: () => void = () => undefined;
+    function Retry() { retry = useRouterInternals().retry; return null; }
+    let reads = 0;
+    const routes: Route[] = [
+      { path: '/alerts', load: () => (reads++ === 0 ? Promise.resolve('doc') : new Promise<unknown>(() => undefined)), render: () => <p>alerts</p> },
+      { path: '/', load: ({ signal }) => new Promise<unknown>(() => { calls.push(signal); }), render: () => <p>arrived</p> },
+    ];
+    renderInWorld(<><MenuBar /><Retry /><Routes routes={routes} /></>, { path: '/alerts', seed: signedIn });
+    await screen.findByText('alerts');
+    act(() => retry());
+    expect(reads).toBe(2);
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(calls).toHaveLength(1);
   });
 
   test('pressing Back with the mouse is Back\'s load too', async () => {

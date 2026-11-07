@@ -90,7 +90,8 @@ export function Hud() {
   const navigate = useNavigate();
   /* A load out when Esc is pressed is the router's to stop (router.tsx); this Esc does not start another. */
   const loadOut = useRef(false);
-  loadOut.current = useNavigation().pending !== null;
+  const { pending: loading } = useNavigation();
+  loadOut.current = loading !== null && !loading.silent;
   /* The links and Menu each name their load, so the control pressed shows the wait (the HUD sits on the board, outside any page's claims, so the claim is a no-op here). */
   const avatarWait = usePendingControl();
   const orbsWait = usePendingControl();
