@@ -34,6 +34,61 @@
   outline: none;
 }
 
+/*
+ * Under a feel the pack is two pieces, its body below the tear line and its crimped top above it (PackArt.tsx `part`), one over the other, so together they are the
+ * whole pack. It stands parked: the reveal moves it with transforms from the slot to the middle and back up here. It is the same pack, never faded and redrawn.
+ */
+.kb-opening-pack {
+  --kb-parked-w: 180px;
+  position: absolute;
+  left: 50%;
+  top: -224px;
+  z-index: 1;
+  width: var(--kb-parked-w);
+  height: calc(var(--kb-parked-w) * 1.5);
+  margin-left: calc(var(--kb-parked-w) / -2);
+  filter: drop-shadow(0 6px 14px color-mix(in srgb, var(--kb-glass-ground) 80%, transparent));
+}
+
+.kb-opening-pack-in,
+.kb-opening-pack-top {
+  position: absolute;
+  inset: 0;
+}
+
+.kb-opening-pack .kb-pack {
+  position: absolute;
+  inset: 0;
+}
+
+/* While the cards come out, the pack's body is in front of them; once they clear it they pass in front of the pack. */
+.kb-opening[data-kb-stack='behind'] .kb-opening-pack {
+  z-index: 3;
+}
+
+.kb-opening[data-kb-stage] .kb-opening-row,
+.kb-opening[data-kb-stage] .kb-opening-stage {
+  z-index: 2;
+}
+
+/* A card under a feel is one element, wherever it stands: its row slot keeps its size when it is in the spotlight. */
+.kb-opening-card[data-kb-slot] {
+  width: 150px;
+  min-height: 225px;
+}
+
+.kb-opening-cardbox {
+  display: block;
+  width: fit-content;
+}
+
+.kb-opening-tag-drop {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+
 /* The emptied pack: slid up past the screen's top edge, its foot in view as the head. It is the same pack, never faded and redrawn. */
 .kb-opening-parked {
   position: absolute;
@@ -286,6 +341,11 @@
 
 :where(:root[data-kb-layout='phone']) .kb-opening {
   padding-top: 38px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-opening-pack {
+  --kb-parked-w: 120px;
+  top: -242px;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-opening-parked {

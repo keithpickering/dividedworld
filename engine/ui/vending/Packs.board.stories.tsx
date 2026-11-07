@@ -11,6 +11,8 @@
  * owner's review.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
+import { useEffect, useState } from 'react';
+import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Page } from '../glass/Page.tsx';
 import type { World } from '../story.tsx';
 import { Vending } from './Vending.tsx';
@@ -70,3 +72,40 @@ const phone = { viewport: { value: 'glassPhone390', isRotated: false } } as cons
 export const Machine: Story = {};
 /** The machine on the Phone board's layout, at 390 by 844 (board 04's first screen). */
 export const MachinePhone: Story = { name: 'Machine, phone 390 × 844', globals: phone };
+
+type Setting = 'reduce' | 'smooth' | 'snappy';
+const SETTINGS: ReadonlyArray<readonly [Setting, string]> = [['smooth', 'Smooth'], ['snappy', 'Snappy'], ['reduce', 'Off']];
+
+/** Marks the root the way Settings does for a motion preference (`data-kb-motion`, `data-kb-motion-feel`), so the story shows what the player would get. */
+function setRoot(s: Setting | null): void {
+  const root = document.documentElement;
+  if (s === null) root.removeAttribute('data-kb-motion');
+  else root.setAttribute('data-kb-motion', s === 'reduce' ? 'reduce' : 'full');
+  if (s === 'smooth' || s === 'snappy') root.setAttribute('data-kb-motion-feel', s); else root.removeAttribute('data-kb-motion-feel');
+}
+
+function Feels() {
+  const [setting, setSetting] = useState<Setting>('smooth');
+  useEffect(() => {
+    setRoot(setting);
+    return () => setRoot(null);
+  }, [setting]);
+  return (
+    <Page surface="vending">
+      <ButtonRow>
+        {SETTINGS.map(([key, label]) => <GlassButton key={key} size="s" kind={setting === key ? 'primary' : 'secondary'} aria-pressed={setting === key} onClick={() => setSetting(key)}>{label}</GlassButton>)}
+      </ButtonRow>
+      <Vending />
+    </Page>
+  );
+}
+
+/**
+ * The reveal in motion, at each feel (the design's amendment of 2026-11-07, "The reveal's motion"; plan Task 10): the machine with a switch for Smooth, Snappy and Off,
+ * which sets the root's marks as Settings does. Select the Booster and buy it to play the entrance, turn a card (Space), Turn all, and leave by Done or Esc; buy a
+ * single card to play its drop and flight to the Your hand link. For the owner to tune; no board draws it, so no manifest reads it.
+ */
+export const RevealAtEachFeel: Story = {
+  name: 'Reveal, at each feel',
+  render: () => <Feels />,
+};

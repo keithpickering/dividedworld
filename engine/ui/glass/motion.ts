@@ -42,6 +42,8 @@ export interface MotionProps {
   readonly animate?: TargetAndTransition | string;
   readonly exit?: TargetAndTransition | string;
   readonly transition?: Transition;
+  /** A shared layout (`lift`): the element is moved between places by the layout system, on `transition`. */
+  readonly layout?: boolean;
 }
 
 /** The feel in force: the resolved feel's tokens (with the instance's overrides), or `null` under Off. */
@@ -73,13 +75,13 @@ export function bezier(ease: string): [number, number, number, number] {
 const sec = (ms: number) => ms / 1000;
 
 /** How a thing lands: the feel's spring where it has one, else its ease over `ms`. */
-function landing(f: NonNullable<ActiveFeel>, ms: number, delay = 0): Transition {
+export function landing(f: NonNullable<ActiveFeel>, ms: number, delay = 0): Transition {
   return f.spring
     ? { type: 'spring', stiffness: f.spring.stiffness, damping: f.spring.damping, delay }
     : { duration: sec(ms), ease: bezier(f.ease), delay };
 }
 /** How a thing leaves: eased over the feel's exit, never sprung, so an exit ends when it says. */
-const eased = (f: NonNullable<ActiveFeel>, ms = f.exit): Transition => ({ duration: sec(ms), ease: bezier(f.ease) });
+export const eased = (f: NonNullable<ActiveFeel>, ms = f.exit, delay = 0): Transition => ({ duration: sec(ms), ease: bezier(f.ease), delay });
 
 /** Half the slant of an edge `h` px tall, by the glass's skew: a CSS length. */
 const slant = (h: number) => `calc(tan(var(--kb-glass-skew)) * ${h / 2}px)`;
@@ -289,3 +291,89 @@ export function swap(feel: ActiveFeel): MotionProps {
       };
   return { variants, initial: 'enter', animate: 'center', exit: 'exit' };
 }
+
+/*
+ * The machine's motion (docs/plans/2026-11-04-booster-packs-design.md, amended 2026-11-07, "The reveal's motion"; plan Task 10): one flight to the hand for a
+ * bought card and for each card of a pack, the lift between a row and the spotlight, the turn, the deal and the hit's beat. Pure functions of the feel, `{}`
+ * under Off, on the feel's tokens alone. The pieces of the reveal that are not here (the tear, the rise out of the opening, the park) are the reveal's own beats on
+ * `landing` and `eased`, above.
+ */
+
+/** The point a card flies to: the center of the target's rect, or where the line to it leaves the window when it is outside (the window's edge toward it). */
+function reach(to: Rect): { readonly x: number; readonly y: number } {
+  const w = typeof window === 'undefined' ? 0 : window.innerWidth;
+  const h = typeof window === 'undefined' ? 0 : window.innerHeight;
+  const x = to.x + to.width / 2;
+  const y = to.y + to.height / 2;
+  return { x: w > 0 ? Math.min(w, Math.max(0, x)) : x, y: h > 0 ? Math.min(h, Math.max(0, y)) : y };
+}
+
+/** How far down the fan's middle card the arc's top stands above the straight line, px. */
+const ARC_RISE = 120;
+const ARC_SIDE = 60;
+/** What a card shrinks to as it lands in the hand. */
+const HAND_SCALE = 0.12;
+
+/**
+ * The flight to the hand: a card at `from` (its box on the screen) arcs through a point above and between the two to the center of `to` (the Your hand link's
+ * box; the window's edge toward it where it is outside the window), shrinking to 0.12 and fading, over `screen`, eased (never sprung, so it lands when it says),
+ * after `delay` seconds. The values are offsets from where the card stands: the caller measures both rects when the flight starts and animates the card's
+ * own `x`, `y`, `scale`, `rotate` and `opacity` to these.
+ */
+export function toHand(feel: ActiveFeel, from: Rect, to: Rect, delay: number): MotionProps {
+  if (!feel) return {};
+  const at = reach(to);
+  const dx = at.x - (from.x + from.width / 2);
+  const dy = at.y - (from.y + from.height / 2);
+  const mx = dx / 2 - ARC_SIDE;
+  const my = Math.min(0, dy) - ARC_RISE;
+  return {
+    animate: {
+      x: [0, mx, dx],
+      y: [0, my, dy],
+      scale: [1, (1 + HAND_SCALE) / 2, HAND_SCALE],
+      rotate: [0, -10, -14],
+      opacity: [1, 1, 0],
+      transition: { ...eased(feel, feel.screen, delay), times: [0, 0.5, 1] },
+    },
+  };
+}
+
+/** A card moving between its row slot and the spotlight (a shared layout, one `layoutId` per pull): landing over `enter`. */
+export function lift(feel: ActiveFeel): MotionProps {
+  if (!feel) return {};
+  return { layout: true, transition: landing(feel, feel.enter) };
+}
+
+/** A card turning over on its vertical axis, landing over `enter` x 1.2 (Snappy's spring lands it). Its face and back are two sides with `backface-visibility: hidden`. */
+export function turn(feel: ActiveFeel): MotionProps {
+  if (!feel) return {};
+  return { initial: { rotateY: 0 }, animate: { rotateY: 180, transition: landing(feel, feel.enter * 1.2) } };
+}
+
+/** The tilt of the card at `index` of `count` in the fan, degrees. */
+export const tilt = (index: number, count = 5): number => (index - (count - 1) / 2) * 5;
+
+/**
+ * The deal: a card flies from its place in the fan to its slot, settling from its tilt, landing over `enter`, started by `stagger(feel, 5)` (`delays`) at three
+ * times its step. The caller sets the card at the fan (measured when the beat starts) and animates it to this target.
+ */
+export function deal(feel: ActiveFeel, index: number, delays: readonly number[]): MotionProps {
+  if (!feel) return {};
+  return { animate: { x: 0, y: 0, rotate: 0, scale: 1, transition: landing(feel, feel.enter, (delays[index] ?? 0) * 3) } };
+}
+
+/** The hit's beat: its gold back pulses once, scale 1, 1.05, 1, over `screen`, eased. */
+export function beat(feel: ActiveFeel): MotionProps {
+  if (!feel) return {};
+  return { animate: { scale: [1, 1.05, 1], transition: { ...eased(feel, feel.screen), times: [0, 0.45, 1] } } };
+}
+
+/** The Your hand link as cards land in it: it flares once and settles, over `enter`. Brightness only, so the link's own skew (a transform) is left alone. */
+export function pulse(feel: ActiveFeel): MotionProps {
+  if (!feel) return {};
+  return { animate: { filter: ['brightness(1)', 'brightness(1.5)', 'brightness(1)'], transition: { ...eased(feel, feel.enter), times: [0, 0.35, 1] } } };
+}
+
+/** Whether a reveal or a flight has a feel to run on; the delivery of a single card, ms: its drop, the rest and the flight. */
+export const deliveryMs = (feel: NonNullable<ActiveFeel>): number => feel.enter + feel.screen / 2 + feel.screen;

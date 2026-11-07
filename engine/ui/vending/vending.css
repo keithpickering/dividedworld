@@ -453,9 +453,9 @@ button.kb-vending-slot {
 }
 
 /*
- * The card drops from the slot into the tray, rests a moment, and flies up and left to the hand's
- * link; the machine's page has no HUD, so the link is where the hand is. It is gone from the screen at the end,
- * and the count has moved. Reduced motion shows no drop at all: the count has moved already.
+ * The card bought on its own drops from the slot into the tray on its side, rests, and flies to the hand's link (Vending.tsx's `Flying`, on the glass's
+ * `toHand`). The machine's page has no HUD, so the link is where the hand is; the flight is measured from the card's box to the link's rect when it starts,
+ * wherever the page has scrolled to. Reduced motion draws no card: the count has moved already.
  */
 .kb-vending-drop {
   position: absolute;
@@ -464,21 +464,12 @@ button.kb-vending-slot {
   z-index: 2;
   display: block;
   transform-origin: 50% 50%;
-  animation: kb-vending-drop 1.5s ease-in forwards;
 }
 
-@keyframes kb-vending-drop {
-  0% { transform: translateY(-150px) rotate(-78deg); opacity: 0; }
-  20% { transform: translateY(0) rotate(-78deg); opacity: 1; }
-  45% { transform: translateY(0) rotate(-78deg); opacity: 1; }
-  100% { transform: translate(-380px, -420px) rotate(-8deg) scale(0.6); opacity: 0; }
+.kb-vending-drop-tilt {
+  display: block;
+  transform-origin: 50% 50%;
 }
-
-@media (prefers-reduced-motion: reduce) {
-  :root:not([data-kb-motion='full']) .kb-vending-drop { display: none; }
-}
-
-:root[data-kb-motion='reduce'] .kb-vending-drop { display: none; }
 
 /* ---- the sealed slots' line ---- */
 

@@ -28,6 +28,14 @@
   );
 }
 
+/* The crimped top that tore away: everything above the same jagged line, so with the opened body it is the whole pack. */
+.kb-pack[data-part='top'] {
+  clip-path: polygon(
+    0% var(--kb-crimp), 10% 0, 20% var(--kb-crimp), 30% 0, 40% var(--kb-crimp), 50% 0, 60% var(--kb-crimp), 70% 0, 80% var(--kb-crimp), 90% 0, 100% var(--kb-crimp),
+    100% var(--kb-tear-hi), 91.67% var(--kb-tear-lo), 83.33% var(--kb-tear-hi), 75% var(--kb-tear-lo), 66.67% var(--kb-tear-hi), 58.33% var(--kb-tear-lo), 50% var(--kb-tear-hi), 41.67% var(--kb-tear-lo), 33.33% var(--kb-tear-hi), 25% var(--kb-tear-lo), 16.67% var(--kb-tear-hi), 8.33% var(--kb-tear-lo), 0% var(--kb-tear-hi)
+  );
+}
+
 /* The two seal lines the crimps leave. */
 .kb-pack-seal {
   position: absolute;

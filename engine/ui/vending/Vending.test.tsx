@@ -6,7 +6,14 @@ import type { Instance } from '../../rules/types.ts';
 import type { CardUi } from '../cards/types.ts';
 import type { Fake } from '../data/fake.ts';
 import { testInstance, renderIn, buildWorld } from '../test-world.tsx';
+import * as motionPresets from '../glass/motion.ts';
 import { Vending } from './Vending.tsx';
+
+/* The flight to the hand is watched, not replaced: `toHand` still runs, and the test reads what it was asked. */
+vi.mock('../glass/motion.ts', async (original) => {
+  const actual = await original<typeof import('../glass/motion.ts')>();
+  return { ...actual, toHand: vi.fn(actual.toHand) };
+});
 
 /* Two cards at 1.00; the salty one costs up to 2.00 more on a long post, never more than 3.00 in all. */
 const ok = { ok: true as const, value: undefined };
@@ -293,7 +300,7 @@ describe('a lost answer, two presses in one tick, and a held answer', () => {
     }
     /* The hand holds 4 now; neither card has landed, so it reads 2 (and the pick would make 3). */
     expect(document.querySelector('.kb-vending-hand-count')).toHaveTextContent('2 → 3');
-    await act(async () => { await vi.advanceTimersByTimeAsync(1500 + 400); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(deliveryMs + 400); });
     expect(document.querySelector('.kb-vending-hand-count')).toHaveTextContent('4 → 5');
   });
 
@@ -384,29 +391,24 @@ describe('the cascade, backwards', () => {
   });
 });
 
+/* The Smooth feel's delivery of a single card: the drop (enter), the rest (half of screen) and the flight (screen). */
+const deliveryMs = 380 + 420 / 2 + 420;
+
 describe('the drop and the flight, under full motion', () => {
   test('the card enters the tray, the hand still counts what it held, and the count moves when the card lands', async () => {
     document.documentElement.setAttribute('data-kb-motion', 'full');
     const fake = seeded(562);
     open(fake);
     fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }));
-    vi.useFakeTimers();
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' })); await Promise.resolve(); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' }));
     /* In the tray and on its way: the hand has not received it, so it still reads what it held (the picked card is still picked, so 2 → 3), not 3 → 4. */
-    const drop = document.querySelector('.kb-vending-tray .kb-vending-drop');
-    expect(drop).not.toBeNull();
+    await waitFor(() => expect(document.querySelector('.kb-vending-tray .kb-vending-drop')).not.toBeNull());
     expect(document.querySelector('.kb-vending-hand-count')).toHaveTextContent('2 → 3');
-    /* Mid-flight a second on, it has still not landed. */
-    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    await new Promise((r) => setTimeout(r, 300));
     expect(document.querySelector('.kb-vending-drop')).not.toBeNull();
-    /* The card lands (its animation ends): the tray is empty and the hand holds three. */
-    /* jsdom has no CSS animations, so React listens for the prefixed name there; a browser sends the plain one. Either ends the flight. */
-    await act(async () => {
-      const flying = document.querySelector('.kb-vending-drop')!;
-      for (const name of ['animationend', 'webkitAnimationEnd']) fireEvent(flying, new Event(name, { bubbles: true }));
-    });
-    expect(document.querySelector('.kb-vending-drop')).toBeNull();
+    expect(document.querySelector('.kb-vending-hand-count')).toHaveTextContent('2 → 3');
+    /* The flight ends (the drop, the rest and the flight: the feel's delivery time): the tray is empty and the hand holds three. */
+    await waitFor(() => expect(document.querySelector('.kb-vending-drop')).toBeNull(), { timeout: 3000 });
     expect(screen.getByRole('link', { name: 'Your hand 3 → 4' })).toBeInTheDocument();
   });
 
@@ -422,6 +424,46 @@ describe('the drop and the flight, under full motion', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(1500 + 400); });
     expect(document.querySelector('.kb-vending-drop')).toBeNull();
     expect(screen.getByRole('link', { name: 'Your hand 3 → 4' })).toBeInTheDocument();
+  });
+});
+
+describe('the single buy\'s flight (booster packs plan, Task 10)', () => {
+  const rectOf = (x: number, y: number, width: number, height: number) => ({ x, y, left: x, top: y, right: x + width, bottom: y + height, width, height, toJSON: () => ({}) });
+
+  test('the flying card is aimed at the hand link\'s measured rect, from the card\'s own box', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    document.documentElement.setAttribute('data-kb-motion-feel', 'smooth');
+    const toHand = vi.mocked(motionPresets.toHand);
+    toHand.mockClear();
+    const fake = seeded(562);
+    open(fake);
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }));
+    /* A test double's rects: the link is where the page puts it today, the card in the tray. */
+    const link = document.querySelector('.kb-vending-hand')!;
+    vi.spyOn(link, 'getBoundingClientRect').mockReturnValue(rectOf(40, 60, 170, 52));
+    const proto = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('kb-vending-drop') ? rectOf(500, 600, 86, 129) : link === this ? rectOf(40, 60, 170, 52) : rectOf(0, 0, 0, 0);
+    });
+    vi.useFakeTimers();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' })); await Promise.resolve(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(document.querySelector('.kb-vending-tray .kb-vending-drop')).not.toBeNull();
+    /* Not before the card has dropped and rested. */
+    expect(toHand).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(380 + 210 + 20); });
+    expect(toHand).toHaveBeenCalledTimes(1);
+    const [feel, from, to, delay] = toHand.mock.calls[0]!;
+    expect(feel?.name).toBe('smooth');
+    expect(from).toMatchObject({ x: 500, y: 600, width: 86, height: 129 });
+    expect(to).toMatchObject({ x: 40, y: 60, width: 170, height: 52 });
+    expect(delay).toBe(0);
+    proto.mockRestore();
+  });
+
+  test('the stylesheet has no fixed keyframes for the drop: the flight is the preset\'s', () => {
+    const css = readFileSync('engine/ui/vending/vending.css', 'utf8');
+    expect(css).not.toMatch(/@keyframes\s+kb-vending-drop/u);
+    expect(css).not.toMatch(/animation:[^;]*kb-vending-drop/u);
   });
 });
 

@@ -3,6 +3,7 @@
  * bought pack, face down in pull order, turned one at a time. What it shows is the cards it is given (the purchase's answer), never a roll of its
  * own. Every card is already in the hand, so closing early loses nothing.
  */
+import { useState } from 'react';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { CardRules } from '../../rules/cards.ts';
@@ -30,9 +31,11 @@ function open(o: { onClose?: () => void; note?: string | null; opener?: HTMLElem
   const view = renderIn(buildWorld(), (
     <Layers><PackOpening name="Booster" art={packArt} cards={pulled} note={o.note ?? null} onClose={onClose} {...(o.opener ? { returnFocusTo: () => o.opener! } : {})} /></Layers>
   ));
+  cleanupOpen = () => view.unmount();
   return { onClose, ...view };
 }
 
+let cleanupOpen = () => {};
 const counter = () => screen.getByRole('dialog').querySelector('.kb-opening-count')!;
 const row = () => within(screen.getByRole('list', { name: 'The pack, in the order it was pulled' }));
 const next = () => screen.getByRole('button', { name: /^Turn the next card$|^Done$/u });
@@ -142,6 +145,17 @@ describe('on a phone', () => {
     expect(counter()).toHaveTextContent('2 of 5 turned over');
     drag(200, 220);
     expect(counter()).toHaveTextContent('2 of 5 turned over');
+  });
+
+  test('a drag commits when it passes a third of the card\'s width, and springs back short of it', () => {
+    document.documentElement.setAttribute('data-kb-layout', 'phone');
+    open();
+    const spot = document.querySelector('.kb-opening-spot')!;
+    vi.spyOn(spot, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 300, bottom: 450, width: 300, height: 450, toJSON: () => ({}) });
+    drag(300, 202);
+    expect(counter()).toHaveTextContent('0 of 5 turned over');
+    drag(300, 198);
+    expect(counter()).toHaveTextContent('1 of 5 turned over');
   });
 
   test('on the other layout a press on the spotlight turns nothing: only the next card does', () => {
@@ -275,5 +289,92 @@ describe('motion', () => {
     const second = document.querySelector('.kb-opening-spot .kb-opening-flip')!;
     expect(second).toHaveAttribute('data-kb-turned', '');
     expect(second.querySelector('.kb-postcard:not(.kb-postcard-back)')).toHaveAccessibleName(/Stick Around/u);
+  });
+});
+
+
+/*
+ * The reveal's motion (booster packs plan, Task 10; the design's amendment "The reveal's motion"). Under a feel the cards are one element each, moved between their
+ * row slot and the spotlight, and every input finishes the beats that run and goes on.
+ */
+describe('the reveal\'s motion', () => {
+  beforeEach(() => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    document.documentElement.setAttribute('data-kb-motion-feel', 'smooth');
+  });
+  afterEach(() => { document.documentElement.removeAttribute('data-kb-motion-feel'); });
+  const dialog = () => screen.getByRole('dialog');
+  const card = (i: number) => document.querySelector(`[data-kb-pull="${i}"]`);
+
+  test('the pack is two pieces from the instance\'s pack art, the body below the tear and the crimped top above, and only the body under Off', () => {
+    open();
+    expect(document.querySelectorAll('.kb-opening-pack .kb-pack')).toHaveLength(2);
+    expect(document.querySelector('.kb-opening-pack .kb-pack[data-part="opened"]')).not.toBeNull();
+    expect(document.querySelector('.kb-opening-pack .kb-pack[data-part="top"]')).not.toBeNull();
+    cleanupOpen();
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    open();
+    expect(document.querySelectorAll('.kb-pack')).toHaveLength(1);
+  });
+
+  test('each pull is one element, which stands in its row slot and, once it is the card shown, in the spotlight', () => {
+    open();
+    /* Space: the entrance finishes and the first card turns. */
+    fireEvent.keyDown(dialog(), { key: ' ' });
+    expect(document.querySelectorAll('[data-kb-pull]')).toHaveLength(5);
+    expect(document.querySelector('.kb-opening-spot')).toContainElement(card(0) as HTMLElement);
+    expect(row().getAllByRole('listitem')[0]).not.toContainElement(card(0) as HTMLElement);
+    expect(row().getAllByRole('listitem')[1]).toContainElement(card(1) as HTMLElement);
+    fireEvent.keyDown(dialog(), { key: ' ' });
+    expect(document.querySelectorAll('[data-kb-pull]')).toHaveLength(5);
+    expect(document.querySelector('.kb-opening-spot')).toContainElement(card(1) as HTMLElement);
+    expect(row().getAllByRole('listitem')[0]).toContainElement(card(0) as HTMLElement);
+  });
+
+  test('a Space during the entrance finishes it and turns the first card at once', () => {
+    open();
+    expect(dialog()).toHaveAttribute('data-kb-stage', 'entering');
+    fireEvent.keyDown(dialog(), { key: ' ' });
+    expect(dialog()).toHaveAttribute('data-kb-stage', 'ready');
+    expect(counter()).toHaveTextContent('1 of 5 turned over');
+    expect(document.querySelector('.kb-opening-spot')).toContainElement(card(0) as HTMLElement);
+    expect(card(0)!.querySelector('.kb-postcard:not(.kb-postcard-back)')).toHaveAccessibleName(/Whoops!/u);
+  });
+
+  test('Done during a turn closes at once, and the reveal is inert from that render', async () => {
+    const opener = document.createElement('button');
+    document.body.append(opener);
+    const onClose = vi.fn();
+    function Host() {
+      const [on, setOn] = useState(true);
+      return <Layers>{on && <PackOpening name="Booster" art={packArt} cards={pulled} note={null} onClose={() => { onClose(); setOn(false); }} returnFocusTo={() => opener} />}</Layers>;
+    }
+    renderIn(buildWorld(), <Host />);
+    /* Turn all: the hit's turn is still running when Done is pressed. */
+    fireEvent.click(screen.getByRole('button', { name: 'Turn all' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    const layer = document.querySelector('.kb-opening-layer')!;
+    expect(layer).toHaveAttribute('inert');
+    expect(layer).toHaveAttribute('aria-hidden', 'true');
+    expect(layer).toHaveAttribute('data-kb-exiting');
+    /* Focus is back on the slot as the close starts, not when its picture ends. */
+    await waitFor(() => expect(opener).toHaveFocus());
+    opener.remove();
+  });
+
+  test('Esc during the entrance closes at once too', () => {
+    const { onClose } = open();
+    act(() => { dialog().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  test('a turn pressed while another runs finishes it and turns the next card', () => {
+    open();
+    fireEvent.keyDown(dialog(), { key: ' ' });
+    fireEvent.keyDown(dialog(), { key: ' ' });
+    fireEvent.keyDown(dialog(), { key: ' ' });
+    expect(counter()).toHaveTextContent('3 of 5 turned over');
+    expect(document.querySelector('.kb-opening-spot')).toContainElement(card(2) as HTMLElement);
   });
 });

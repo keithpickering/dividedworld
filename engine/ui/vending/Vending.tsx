@@ -42,6 +42,7 @@
  * read says so plainly and offers to try again.
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { animate, motion } from 'motion/react';
 import type { PackRules } from '../../rules/packs.ts';
 import { motionReduced } from '../appearance.ts';
 import { Postcard, PostcardBack } from '../cards/Postcard.tsx';
@@ -61,6 +62,7 @@ import { Link, searchOf, useLocation } from '../router.tsx';
 import './vending.css';
 import { CalmRegion } from '../glass/Calm.tsx';
 import { Layers } from '../glass/layer.tsx';
+import { deliveryMs, landing, pulse, toHand, useFeel, type ActiveFeel, type Rect } from '../glass/motion.ts';
 import { PackArt } from './PackArt.tsx';
 import { PackOdds } from './PackOdds.tsx';
 import { PackOpening } from './PackOpening.tsx';
@@ -77,9 +79,6 @@ const slotsFor = (items: number) => Math.max(MIN_SLOTS, Math.ceil(items / 2) * 2
 
 /** A slot's code on the machine's front: A1, A2, B1 ... two to a row. */
 const codeOf = (i: number) => `${String.fromCharCode(65 + Math.floor(i / 2))}${(i % 2) + 1}`;
-
-/** How long the card is in flight to the hand, ms: the drop and the flight together. */
-const DELIVERY_MS = 1500;
 
 /** "orb" for one orb exactly, "orbs" for any other amount: the slot's name says "1.00 orb". */
 const orbWord = (hundredths: number) => (hundredths === 100 ? 'orb' : 'orbs');
@@ -127,11 +126,60 @@ const unknownFace = (key: string, like: CardFace | undefined): CardFace => ({
   art: like?.art ?? { color: 'var(--kb-glass-neon)', ink: 'var(--kb-glass-ink-neon)' }, rarity: 'common', play: like?.play ?? 'set',
 });
 
-/** The cards on their way to the hand: the last one's key (a new one restarts the drop) and how many have not landed. */
-interface Drop {
+/** A card bought on its own, on its way to the hand: its place in the order bought and its card. */
+interface Fly {
+  readonly id: number;
   readonly key: string;
+}
+
+/**
+ * The cards on their way to the hand, each its own flight (a second buy while one flies sends both): the count of buys so far, and the ones that have
+ * not landed. How long a delivery takes is the feel's (`deliveryMs`), not a number of this file's.
+ */
+interface Drop {
   readonly n: number;
-  readonly flying: number;
+  readonly flying: readonly Fly[];
+}
+
+/** A DOMRect as the plain rect the presets take. */
+const rectOf = (r: DOMRect): Rect => ({ x: r.x, y: r.y, width: r.width, height: r.height });
+
+/**
+ * One card flying from the tray to the hand (design 2026-11-07, "The reveal's motion", 6): it drops into the tray on its side (`enter`, landing), rests half of
+ * `screen`, then flies by `toHand` from its own box to the hand link's, both measured when the flight starts, so a page scrolled or resized since the buy is
+ * flown over as it stands. `onLanded` is told when it has arrived. The machine only draws this under a feel; under Off the card is in the hand at once.
+ */
+function Flying({ face, feel, hand, onLanded }: { readonly face: CardFace; readonly feel: NonNullable<ActiveFeel>; readonly hand: () => HTMLElement | null; readonly onLanded: () => void }) {
+  const outer = useRef<HTMLSpanElement>(null);
+  const tilt = useRef<HTMLSpanElement>(null);
+  const landed = useRef(onLanded);
+  landed.current = onLanded;
+  useEffect(() => {
+    const el = outer.current;
+    if (!el) return;
+    let live = true;
+    let flight: { readonly stop: () => void; readonly then: (f: () => void) => unknown } | undefined;
+    const start = setTimeout(() => {
+      const from = rectOf(el.getBoundingClientRect());
+      const link = hand()?.getBoundingClientRect();
+      /* A link that is not on the page: the flight goes to the window's top edge, above where the card stands. */
+      const to = link ? rectOf(link) : { x: from.x + from.width / 2, y: -1, width: 0, height: 0 };
+      const { transition, ...values } = toHand(feel, from, to, 0).animate as { transition: never } & Record<string, never>;
+      flight = animate(el, values, transition);
+      if (tilt.current) animate(tilt.current, { rotate: 0 }, transition);
+      flight.then(() => { if (live) landed.current(); });
+    }, feel.enter + feel.screen / 2);
+    return () => { live = false; clearTimeout(start); flight?.stop(); };
+    // One flight per card: it reads the feel and the link as they stand when it starts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <motion.span ref={outer} className="kb-vending-drop" aria-hidden="true" initial={{ y: -150, opacity: 0 }} animate={{ y: 0, opacity: 1, transition: landing(feel, feel.enter) }}>
+      <motion.span ref={tilt} className="kb-vending-drop-tilt" initial={{ rotate: -78 }}>
+        <Postcard face={face} size="slot" />
+      </motion.span>
+    </motion.span>
+  );
 }
 
 /** A pack that has been bought and is being turned over: the slot it came from and what the purchase's answer said it held, in pull order. */
@@ -183,7 +231,7 @@ function InPack({ pack, count, line, mark }: { readonly pack: PackRules; readonl
   );
 }
 
-function Machine({ items, status, picked, onPick, onAbout, onBuy, busy, drop, onLanded, shopName, marquees, random, retry, slotRef, inPack }: {
+function Machine({ items, status, picked, onPick, onAbout, onBuy, busy, drop, feel, hand, cards, onLanded, shopName, marquees, random, retry, slotRef, inPack }: {
   readonly items: readonly Item[];
   readonly status: 'loading' | 'ready' | 'failed';
   readonly picked: Item | null;
@@ -192,7 +240,10 @@ function Machine({ items, status, picked, onPick, onAbout, onBuy, busy, drop, on
   readonly onBuy: () => void;
   readonly busy: boolean;
   readonly drop: Drop | null;
-  readonly onLanded: () => void;
+  readonly feel: ActiveFeel;
+  readonly hand: () => HTMLElement | null;
+  readonly cards: readonly CardFace[];
+  readonly onLanded: (id: number) => void;
   readonly shopName: string;
   readonly marquees: readonly string[] | undefined;
   readonly random: () => number;
@@ -203,7 +254,6 @@ function Machine({ items, status, picked, onPick, onAbout, onBuy, busy, drop, on
   /* The sign is decoration: one name, picked when the screen opens and kept while it is open. */
   const [sign] = useState(() => pick(marquees, shopName, random));
   const total = slotsFor(items.length);
-  const dropped = drop ? items.find((it) => it.face?.key === drop.key) : undefined;
   const pickedWords = picked ? `Selected: ${picked.code}, ${picked.name}, ${orbs(picked.price)}` : 'Nothing selected';
   return (
     <div className="kb-vending-machine" role="group" aria-label={shopName}>
@@ -289,11 +339,10 @@ function Machine({ items, status, picked, onPick, onAbout, onBuy, busy, drop, on
 
       <div className="kb-vending-tray">
         <span className="kb-vending-tray-label" aria-hidden="true" data-kb-art />
-        {dropped && drop && dropped.face && (
-          <span key={drop.n} className="kb-vending-drop" aria-hidden="true" onAnimationEnd={onLanded}>
-            <Postcard face={dropped.face} size="slot" />
-          </span>
-        )}
+        {feel && drop?.flying.map((fly) => {
+          const face = cards.find((c) => c.key === fly.key);
+          return face ? <Flying key={fly.id} face={face} feel={feel} hand={hand} onLanded={() => onLanded(fly.id)} /> : null;
+        })}
         <span className="kb-vending-tray-to" aria-hidden="true" data-kb-art />
         {picked && <span className="kb-visually-hidden">Push {picked.name} to your hand</span>}
       </div>
@@ -333,6 +382,9 @@ export function Vending() {
    * under the next one's wallet.
    */
   const account = player.session.account;
+  const feel = useFeel(ui.glass.motion);
+  /* The Your hand link, which every flight to the hand is measured against when it starts. */
+  const handLinkEl = useRef<HTMLAnchorElement>(null);
   const [kept, setKept] = useState<Kept>(() => emptyFor(null));
   const empty = useMemo(() => emptyFor(account), [account]);
   const mine = kept.for === account ? kept : empty;
@@ -372,7 +424,7 @@ export function Vending() {
   const cap = wallet?.cap ?? 0;
   const heldNow = player.cards.reduce((n, c) => n + c.held, 0);
   /* On their way, the cards have not reached the hand: the count moves when they land. */
-  const held = heldNow - (drop?.flying ?? 0);
+  const held = heldNow - (drop?.flying.length ?? 0);
   const picked = items.find((it) => it.slot.id === pickedId && !it.sold) ?? null;
   const aboutItem = items.find((it) => it.slot.id === about) ?? null;
   const short = picked !== null && balance < picked.price;
@@ -391,7 +443,7 @@ export function Vending() {
   /* A card that never reports landing (a browser without animation events) still reaches the hand. */
   useEffect(() => {
     if (drop === null) return;
-    const t = setTimeout(() => change(account, () => ({ drop: null })), DELIVERY_MS + 400);
+    const t = setTimeout(() => change(account, () => ({ drop: null })), (feel ? deliveryMs(feel) : 0) + 400);
     return () => clearTimeout(t);
   }, [drop, account]);
 
@@ -436,7 +488,7 @@ export function Vending() {
     change(account, (m) => ({
       busy: false,
       outcome: { tone: 'done', text },
-      ...(motionReduced() ? {} : { drainFrom: before, drop: { key: picked.face!.key, n: (m.drop?.n ?? 0) + 1, flying: (m.drop?.flying ?? 0) + 1 } }),
+      ...(motionReduced() ? {} : { drainFrom: before, drop: { n: (m.drop?.n ?? 0) + 1, flying: [...(m.drop?.flying ?? []), { id: (m.drop?.n ?? 0) + 1, key: picked.face!.key }] } }),
     }));
   }
 
@@ -505,7 +557,7 @@ export function Vending() {
             <p className="kb-vending-fine">The ghost estimate can't be spent. What you buy is private: nobody else sees it until you play it.</p>
           </CalmRegion>
         </section>
-        <Link to={handLink} className="kb-vending-hand kb-glass-skew">
+        <Link ref={handLinkEl} to={handLink} className="kb-vending-hand kb-glass-skew">
           <span className="kb-vending-hand-word kb-glass-upright">Your hand</span>{' '}
           <span className="kb-vending-hand-count kb-glass-upright kb-num">{picked && !short ? `${held} → ${held + arrives}` : held}</span>
         </Link>
@@ -516,7 +568,8 @@ export function Vending() {
         onPick={(id) => change(account, () => ({ pickedId: id, outcome: null }))}
         onAbout={(id, button) => { aboutButton.current = button; setAbout(id); }}
         onBuy={() => void buy()}
-        onLanded={() => change(account, () => ({ drop: null }))}
+        feel={feel} hand={() => handLinkEl.current} cards={cardFaces}
+        onLanded={(id) => { change(account, (m) => ({ drop: m.drop && m.drop.flying.length > 1 ? { ...m.drop, flying: m.drop.flying.filter((f) => f.id !== id) } : null })); if (feel && handLinkEl.current) animate(handLinkEl.current, pulse(feel).animate as never); }}
         retry={() => void look()} slotRef={slotRef}
         inPack={pack && picks ? <InPack pack={pack} count={pack.pulls.length} line={picks.line} mark={ui.cardBack?.mark} /> : null}
       />
@@ -563,6 +616,7 @@ export function Vending() {
       )}
       {opening && (
         <PackOpening
+          handLink={() => handLinkEl.current}
           name={opening.name} {...(opening.art ? { art: opening.art } : {})} note={opening.note}
           cards={opening.cards.map((k) => cardFaces.find((f) => f.key === k) ?? unknownFace(k, cardFaces[0]))}
           onClose={() => change(account, () => ({ opening: null }))}

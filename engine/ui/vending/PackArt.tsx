@@ -7,6 +7,9 @@
  * `part="opened"` is the pack after it has torn open: the same wrapper cut along a jagged line, the part below the tear, which the reveal parks at the
  * top of its screen with only its foot in view.
  *
+ * `part="top"` is the other piece of the torn pack: the crimped top above the same tear line, cut along the line's other side. The engine gives the line, so any pack art tears the same
+ * way; the reveal draws the two pieces one over the other (a whole pack) and rips the top away.
+ *
  * Its size is `--kb-pack-w` (86px by default, a card slot's); every measure is a share of it, as a card's are of `--kb-pc-w`.
  */
 import type { CSSProperties } from 'react';
@@ -18,7 +21,7 @@ export interface PackArtProps {
   /** How many cards it holds, said on the wrapper ("5 CARDS"). */
   readonly count: number;
   readonly art?: Pick<CardArt, 'color' | 'ink'> & Partial<Pick<CardArt, 'canvas' | 'mark'>>;
-  readonly part?: 'whole' | 'opened';
+  readonly part?: 'whole' | 'opened' | 'top';
   /** The pack's width in px; the wrapper is a half as tall again. */
   readonly width?: number;
   readonly className?: string;
