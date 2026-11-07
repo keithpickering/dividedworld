@@ -81,9 +81,10 @@ export function Frame({ children }: { readonly children: ReactNode }) {
     ...(session.signedIn ? [] : [{ to: signInHref(path, here), label: 'Sign in' }]),
   ];
   /*
-   * Search (the search design, section 7): signed in, the banner's right side is the search box where the host line stood, and the boards
-   * bar ends in a Search link. On /search the page has its own keyword field, so the host line shows there. Signed out there is neither
-   * (a visitor reads no thread). The loading meter stays beside the box.
+   * Search (the search design, section 7, as amended by the owner): signed in, the banner's right side is a column, the host line with its
+   * loading meter on top and the search box on a row of its own under it (section 7 had the box take the host line's place; the host line
+   * now always shows). The boards bar ends in a Search link. On /search the page has its own keyword field, so the box is not drawn there.
+   * Signed out there is neither (a visitor reads no thread).
    */
   const onSearch = path === '/search';
   const box = session.signedIn && !onSearch;
@@ -95,8 +96,13 @@ export function Frame({ children }: { readonly children: ReactNode }) {
           <Wobble />
           <header className="kb-banner">
             <Link to="/" className="kb-logo">{ui.copy.siteName}</Link>
-            {box ? <BannerSearch /> : <span className="kb-tagline kb-muted kb-small">{ui.copy.siteTagline}</span>}
-            <Loading hostless={box} />
+            <div className="kb-banner-side">
+              <div className="kb-banner-host">
+                <span className="kb-tagline kb-muted kb-small">{ui.copy.siteTagline}</span>
+                <Loading />
+              </div>
+              {box && <BannerSearch />}
+            </div>
             <button type="button" className="kb-button kb-menu-button" aria-expanded={open} aria-controls={navId} onClick={() => setOpen((o) => !o)}>
               Boards
             </button>
@@ -109,11 +115,7 @@ export function Frame({ children }: { readonly children: ReactNode }) {
               {session.signedIn && (
                 <li className="kb-nav-search">
                   <Link to="/search" aria-current={onSearch ? 'page' : undefined} onClick={() => setOpen(false)}>
-                    <svg className="kb-nav-icon" aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" focusable="false">
-                      <circle cx="5.5" cy="5.5" r="4" fill="none" stroke="currentColor" strokeWidth="1" />
-                      <path d="M8.5,8.5 L12.5,12.5" fill="none" stroke="currentColor" strokeWidth="1" />
-                    </svg>
-                    Search
+                    <Icon name="search" />Search
                   </Link>
                 </li>
               )}

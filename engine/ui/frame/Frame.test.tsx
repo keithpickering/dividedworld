@@ -868,10 +868,10 @@ describe('search in the banner (the search plan, Task 6)', () => {
   const hostLine = () => document.querySelector('.kb-tagline');
   beforeEach(() => { window.history.replaceState(null, '', '/'); });
 
-  test('signed in, the banner holds the search box where the host line stands, and the boards bar ends in Search with its magnifier', async () => {
+  test('signed in, the banner holds the search box under the host line (which stays), and the boards bar ends in Search with its magnifier', async () => {
     setup();
     expect(await within(banner()).findByRole('combobox', { name: 'Search the boards' })).toBeInTheDocument();
-    expect(hostLine()).toBeNull();
+    expect(hostLine()).toHaveTextContent('dw.gripe');
     const nav = screen.getByRole('navigation', { name: 'Main' });
     const link = await within(nav).findByRole('link', { name: 'Search' });
     expect(link).toHaveAttribute('href', '/search');
