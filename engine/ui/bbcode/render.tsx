@@ -87,14 +87,14 @@ function layeredText(n: Extract<BbNode, { type: 'text' | 'noparse' | 'autolink' 
 
 /**
  * An inline spoiler: a black bar the width of its words while shut, the words themselves once pressed, and a second press shuts
- * it. Shut, its name is "Spoiler", so a screen reader does not read what the bar hides; open, its name is its words. The state
+ * it. Shut, its words sit in an aria-hidden span and a visually hidden "Spoiler" is its name (from content, so WCAG 2.5.3 holds), so a screen reader does not read what the bar hides; open, its name is its words. The state
  * is the reader's alone: nothing stores it and nothing is sent.
  */
 function ISpoiler({ children }: { readonly children: ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
-    <button type="button" className="kb-bb-ispoiler" aria-expanded={open} aria-label={open ? undefined : 'Spoiler'} onClick={() => setOpen(!open)}>
-      {children}
+    <button type="button" className="kb-bb-ispoiler" aria-expanded={open} onClick={() => setOpen(!open)}>
+      {open ? children : <><span aria-hidden="true">{children}</span><span className="kb-visually-hidden">Spoiler</span></>}
     </button>
   );
 }

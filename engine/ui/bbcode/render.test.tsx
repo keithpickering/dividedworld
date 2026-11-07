@@ -177,10 +177,24 @@ describe('the BBCode renderer', () => {
       expect(screen.getByRole('button', { name: 'Spoiler' })).toHaveAttribute('aria-expanded', 'false');
     });
 
+    test('a shut inline spoiler is named from its content, hides its words from the accessibility tree, and passes axe', async () => {
+      show('the answer is [ispoiler]42[/ispoiler] ok');
+      const shut = screen.getByRole('button', { name: 'Spoiler' });
+      expect(shut).not.toHaveAttribute('aria-label');
+      const words = within(shut).getByText('42');
+      expect(words.closest('[aria-hidden="true"]')).not.toBeNull();
+      const found = await axeViolations(out());
+      expect(found, describeViolations(found)).toEqual([]);
+      fireEvent.click(shut);
+      const open = screen.getByRole('button', { name: '42' });
+      expect(within(open).getByText('42').closest('[aria-hidden="true"]')).toBeNull();
+      expect(open).not.toHaveTextContent('Spoiler');
+    });
+
     test('a block tag inside an inline spoiler is the words as written', () => {
       show('[ispoiler][quote]x[/quote][/ispoiler]');
       expect(out().querySelector('blockquote')).toBeNull();
-      expect(out().textContent).toBe('[quote]x[/quote]');
+      expect(out().querySelector('.kb-bb-ispoiler [aria-hidden="true"]')!.textContent).toBe('[quote]x[/quote]');
     });
 
     test('a text layer\'s run inside a shut inline spoiler is drawn when it opens, and inside a spoiler too', () => {
