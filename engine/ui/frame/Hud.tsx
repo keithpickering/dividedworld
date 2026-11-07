@@ -38,6 +38,7 @@
  * at the window's scale below 1440px, and the Phone board's below that width. The glass pages
  * switch at the same width.
  */
+import { Avatar } from '../glass/Avatar.tsx';
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import type { Character } from '../data/api.ts';
 import { useKayfa } from '../context.tsx';
@@ -395,7 +396,7 @@ export function Hud() {
                         className="kb-hud-avatar"
                         aria-label="My characters"
                       >
-                        {face?.avatarSquare ? <img src={face.avatarSquare} alt="" /> : <span className="kb-hud-avatar-none" aria-hidden="true">{hud.name.slice(0, 1)}</span>}
+                        <Avatar src={face?.avatarSquare ?? null} name={hud.name} />
                       </Link>
                       <span className="kb-hud-who">
                         <span className="kb-hud-name kb-glass-display" style={{ '--kb-name-chars': hud.name.length } as CSSProperties}>{hud.name}</span>
