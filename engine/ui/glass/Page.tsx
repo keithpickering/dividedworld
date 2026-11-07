@@ -12,10 +12,11 @@
  * 1440px the Main board's is drawn at the window's scale (shell.css).
  */
 import { AnimatePresence } from 'motion/react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';
 import { useLocation } from '../router.tsx';
 import type { GlassSurface } from '../types.ts';
+import { enterScreen } from './enter.ts';
 import { Leaving } from './Held.tsx';
 import { MenuBar, tabIndex } from './MenuBar.tsx';
 import { screen, useFeel } from './motion.ts';
@@ -59,6 +60,13 @@ export function Page({ surface, menu = true, children }: PageProps) {
     /* As the frame's: a fragment is the page's to scroll to, and back or forward keeps the browser's scroll. */
     if (!hash && !popped) globalThis.scrollTo?.(0, 0);
     main.current?.focus({ preventScroll: true });
+  }, [path]);
+  /* The screen's head, panels and rows enter by the feel's stagger (enter.ts), once the screen has mounted, before it paints. */
+  useLayoutEffect(() => {
+    const screenEl = main.current?.querySelector<HTMLElement>('.kb-glass-screen:not([data-kb-exiting])');
+    return screenEl ? enterScreen(feel, screenEl) : undefined;
+    // Per screen: a change of feel mid-screen does not replay it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path]);
   return (
     <div className="kb-glass kb-glass-page" data-kb-surface={surface} style={calm}>

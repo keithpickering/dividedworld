@@ -5,6 +5,7 @@ import { judge, paletteOf, type CeilingsFile, type GlassColors, type SurfaceCeil
 import { signInUnseasonedOnBoard } from './onboarding.ts';
 import type * as Gatherer from './glass-text-page.ts';
 import { FIXTURE_OVERLAYS, OVERLAYS, PAGES, SETTLEMENT, STORIES, open, type Probe, type Screen } from './glass-screens.ts';
+import { settled } from './settled.ts';
 
 /**
  * The rendered glass measurement (the web plan's glass amendment to Task 12; the glass build's
@@ -59,6 +60,8 @@ const OVERLAP = 240;
 
 /** Every line of glass text on the page as it stands, read and judged; [] is clean. With `panel`, the lines of that overlay panel alone (the spotlight's), read against `overlays.tips`. */
 async function measure(page: Page, panel?: string): Promise<string[]> {
+  /* Entrances are over: a line is read where it rests and at its full opacity. */
+  await settled(page);
   /*
    * The smoke as it is drawn, not its ground alone: every smoke on the page has each layer's raster (Smoke.tsx marks it drawn), and
    * each mask image is decoded, so the next frame paints it. A layer made late reads as solid ground, and a line on it as legible.

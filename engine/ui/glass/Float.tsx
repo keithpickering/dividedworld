@@ -21,6 +21,7 @@
  */
 import { useLayoutEffect, useRef, type CSSProperties, type KeyboardEventHandler, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
+import { useKayfa } from '../context.tsx';
 import { modalOpen, topModalHolds } from '../modal.tsx';
 import type { GlassSurface } from '../types.ts';
 import { pageEscape } from './keys.ts';
@@ -28,6 +29,7 @@ import { hudTopOf } from './place.ts';
 import { FRAME } from './Frame.tsx';
 import { FIELD_PLACED } from './field.ts';
 import { isLeaving } from './Held.tsx';
+import { useLift } from './lift.ts';
 import { Smoke, useSurfaceStyle } from './Smoke.tsx';
 import './shell.css';
 
@@ -144,6 +146,7 @@ export function Float({ label, surface, onClose, children, anchor, keep, sheet, 
   const wrap = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const calm = useSurfaceStyle(surface);
+  const { ui } = useKayfa();
   const latest = useRef({ onClose, onPlace, returnFocusTo, keep });
   latest.current = { onClose, onPlace, returnFocusTo, keep };
 
@@ -251,10 +254,13 @@ export function Float({ label, surface, onClose, children, anchor, keep, sheet, 
     };
   }, [anchor, sheet]);
 
+  /* Enters from its anchor; no dim (it blocks nothing). The wrapper keeps its glow, so the box is what moves. Its close plays out on a copy (lift.ts). */
+  useLift({ root: wrap, box, kind: 'overlay', anchor, overrides: ui.glass.motion, rootOnly: true });
+
   return createPortal(
     <div ref={wrap} className="kb-glass kb-float" style={wrapStyle}>
       <div
-        ref={box} className={`${FRAME} kb-float-box${className ? ` ${className}` : ''}`} role="dialog" aria-modal="false" aria-label={label} tabIndex={-1} onKeyDown={onKeyDown}
+        ref={box} className={`${FRAME} kb-float-box${className ? ` ${className}` : ''}`} role="dialog" aria-modal="false" data-kb-lift="" aria-label={label} tabIndex={-1} onKeyDown={onKeyDown}
         style={{ ...calm, ...style }}
         {...Object.fromEntries(Object.entries(data ?? {}).map(([k, v]) => [`data-${k}`, v]))}
       >

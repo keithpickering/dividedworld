@@ -251,3 +251,16 @@ describe('useFeel', () => {
     expect(result.current).toBeNull();
   });
 });
+
+describe('the stagger at a busy page\'s length', () => {
+  it.each(['smooth', 'snappy'] as const)('%s: 500 rows (and 5000) start within the screen duration, the step shortened to fit', (name) => {
+    const feel: ActiveFeel = { name, ...feelTokens(name) };
+    for (const count of [1, 2, 20, 500, 5000]) {
+      const delays = stagger(feel, count);
+      expect(delays).toHaveLength(count);
+      expect(Math.max(...delays) * 1000).toBeLessThanOrEqual(feel.screen + 1e-6);
+    }
+    /* A short page keeps the feel's own step. */
+    expect(stagger(feel, 3)[1]! * 1000).toBeCloseTo(feel.stagger);
+  });
+});

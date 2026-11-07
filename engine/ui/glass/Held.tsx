@@ -8,7 +8,7 @@
  * It must be the direct child of the `AnimatePresence` (or sit under it with nothing between), since presence is read from context.
  */
 import { motion, usePresence, type HTMLMotionProps } from 'motion/react';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { RouterHold } from '../router.tsx';
 
 /**
@@ -35,8 +35,11 @@ export function useRest(at: string): { readonly exitRested: boolean; readonly on
   return { exitRested: now.exitRested, onRest };
 }
 
-export function Leaving({ pin = false, holdUntil, children, ...props }: Omit<HTMLMotionProps<'div'>, 'children'> & {
+export function Leaving({ pin = false, holdUntil, tag, children, ...props }: Omit<HTMLMotionProps<'div'>, 'children'> & {
   readonly pin?: boolean;
+  /** The motion element to draw instead of a `div` (`motion.create(Part)`, made once outside the render), for a tree whose root is a part of its own (the roster's panel is a calm region). It is given the ref, the marks and the motion props. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  readonly tag?: ComponentType<any>;
   /** Keeps a leaving tree under the one arriving until `release` is called (or the returned cleanup runs): for a tree with no exit of its own. */
   readonly holdUntil?: (release: () => void) => () => void;
   readonly children: ReactNode;
@@ -53,13 +56,14 @@ export function Leaving({ pin = false, holdUntil, children, ...props }: Omit<HTM
     el.current.style.top = present ? '' : `${-globalThis.scrollY}px`;
   }, [pin, present]);
   const marks = present ? {} : { inert: true, 'aria-hidden': true as const, 'data-kb-exiting': true as const };
+  const Tag = tag ?? motion.div;
   return (
-    <motion.div
+    <Tag
       ref={el}
       {...props}
       {...marks}
     >
       <RouterHold held={!present}>{children}</RouterHold>
-    </motion.div>
+    </Tag>
   );
 }

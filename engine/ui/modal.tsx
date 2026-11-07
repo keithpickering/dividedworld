@@ -14,6 +14,9 @@
  */
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
+import { useKayfaIfAny } from './context.tsx';
+import { isLeaving } from './glass/Held.tsx';
+import { useLift } from './glass/lift.ts';
 import './modal.css';
 
 export interface ModalProps {
@@ -142,7 +145,7 @@ export function useModalLayer({ onClose, returnFocusTo }: Pick<ModalProps, 'onCl
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const dialog = box.current;
-      if (!dialog || !isTop(entry)) return;
+      if (!dialog || !isTop(entry) || isLeaving(dialog)) return;
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
@@ -179,9 +182,11 @@ export function useModalLayer({ onClose, returnFocusTo }: Pick<ModalProps, 'onCl
 export function Modal({ title, onClose, children, returnFocusTo }: ModalProps) {
   const id = useId();
   const { overlay, box, closeButton } = useModalLayer({ onClose, returnFocusTo });
+  /* Rises as the glass's modal does, the dim in step; its close plays out on a copy (glass/lift.ts). */
+  useLift({ root: overlay, box, kind: 'modal', overrides: useKayfaIfAny()?.ui.glass.motion });
   return createPortal(
     <div ref={overlay} className="kb-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div ref={box} className="kb-modal" role="dialog" aria-modal="true" aria-labelledby={id} tabIndex={-1}>
+      <div ref={box} className="kb-modal" data-kb-lift="" role="dialog" aria-modal="true" aria-labelledby={id} tabIndex={-1}>
         <div className="kb-modal-bar">
           <h2 id={id} className="kb-modal-head">{title}</h2>
           <button ref={closeButton} type="button" className="kb-button kb-modal-close" onClick={onClose}>Close</button>

@@ -2,10 +2,12 @@ import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { readFileSync } from 'node:fs';
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { Modal } from './modal.tsx';
 
-afterEach(cleanup);
+/* These tests look at the page the moment a modal closes, as under Off, where it is removed at once; the exit at full motion is glass/lift.test.tsx's. */
+beforeEach(() => document.documentElement.setAttribute('data-kb-motion', 'reduce'));
+afterEach(() => { cleanup(); document.documentElement.removeAttribute('data-kb-motion'); });
 
 function Host({ onClose = () => {}, fallback }: { readonly onClose?: () => void; readonly fallback?: () => HTMLElement | null }) {
   const [open, setOpen] = useState(false);
@@ -265,5 +267,22 @@ describe('two modals open', () => {
     expect(document.body.style.overflow).toBe('hidden');
     await userEvent.keyboard('{Escape}');
     expect(document.body.style.overflow).toBe('');
+  });
+});
+
+describe('a modal that is leaving', () => {
+  test('answers no key: Esc inside a tree held inert does not close it', async () => {
+    const log: string[] = [];
+    render(<Host onClose={() => log.push('closed')} />);
+    await userEvent.click(opener());
+    const dialog = screen.getByRole('dialog');
+    /* A world held for its exit is inert (glass/Held.tsx); the modal's capture handler asks first. */
+    const layer = dialog.parentElement!;
+    layer.setAttribute('inert', '');
+    dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(log).toEqual([]);
+    layer.removeAttribute('inert');
+    dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(log).toEqual(['closed']);
   });
 });

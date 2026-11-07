@@ -26,12 +26,14 @@
  */
 import { useCallback, useId, useLayoutEffect, useRef, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
+import { useKayfa } from '../context.tsx';
 import { useModalLayer } from '../modal.tsx';
 import type { GlassSurface } from '../types.ts';
 import { hudTopOf, placePopover } from './place.ts';
 import { CloseCross, DialogBar, FRAME } from './Frame.tsx';
 import { CalmRegion } from './Calm.tsx';
 import { FIELD_PLACED } from './field.ts';
+import { useLift } from './lift.ts';
 import { Smoke, useSurfaceStyle } from './Smoke.tsx';
 import './shell.css';
 
@@ -124,6 +126,7 @@ export function Overlay({ title, onClose, children, surface, returnFocusTo, labe
   const id = useId();
   const { overlay, box, closeButton, beside } = useModalLayer({ onClose, returnFocusTo });
   const calm = useSurfaceStyle(surface);
+  const { ui } = useKayfa();
   const besideTold = useRef(onBeside);
   besideTold.current = onBeside;
   const besideRef = useCallback((el: HTMLDivElement | null) => { beside.current = el; besideTold.current?.(el); }, [beside]);
@@ -183,13 +186,16 @@ export function Overlay({ title, onClose, children, surface, returnFocusTo, labe
     };
   }, [anchor, box, sheetBelow]);
 
+  /* Enters from its anchor where it has one, the dim in step; its close plays out on a copy (lift.ts), after the placement above has run. */
+  useLift({ root: overlay, box, kind: 'overlay', anchor, overrides: ui.glass.motion });
+
   return createPortal(
     <div
       ref={overlay} className="kb-glass kb-glass-overlay" data-kb-anchored={anchor ? '' : undefined}
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        ref={box} className={`${FRAME}${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true"
+        ref={box} className={`${FRAME}${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true" data-kb-lift=""
         aria-labelledby={label === undefined ? id : undefined} aria-label={label} aria-describedby={describedBy} tabIndex={-1}
         style={{ ...calm, ...style, ...(anchor ? { position: 'absolute' } : {}) }}
         {...Object.fromEntries(Object.entries(data ?? {}).map(([k, v]) => [`data-${k}`, v]))}

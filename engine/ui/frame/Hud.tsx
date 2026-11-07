@@ -38,9 +38,11 @@
  * at the window's scale below 1440px, and the Phone board's below that width. The glass pages
  * switch at the same width.
  */
-import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import type { Character } from '../data/api.ts';
 import { useKayfa } from '../context.tsx';
+import { playIn, playOut } from '../glass/lift.ts';
+import { overlay as overlayPreset, useFeel } from '../glass/motion.ts';
 import { usePlayer } from '../player.tsx';
 import { registerHref, signInHref } from '../account/next.ts';
 import { isLeaving } from '../glass/Held.tsx';
@@ -266,6 +268,30 @@ export function Hud() {
   /* The opened hand takes focus, so the keyboard is in it at once. */
   useEffect(() => { if (handOpen) drawer.current?.focus(); }, [handOpen]);
 
+  /*
+   * The hand drawer opens from the hand button and its close plays out (glass/lift.ts, motion.ts `overlay`). It stays on the page, so on a close it is
+   * kept shown, inert and hidden from a reader, until its exit ends. Under Off it is hidden at once, as it was.
+   */
+  const feel = useFeel(ui.glass.motion);
+  const [drawerLeaving, setDrawerLeaving] = useState(false);
+  const drawerWas = useRef(handOpen);
+  useLayoutEffect(() => {
+    if (drawerWas.current === handOpen) return;
+    drawerWas.current = handOpen;
+    const el = drawer.current;
+    if (!el || !feel) { setDrawerLeaving(false); return; }
+    const a = handButton.current?.getBoundingClientRect();
+    const place = () => {
+      const b = el.getBoundingClientRect();
+      return a && b.width > 0 ? { x: a.left + a.width / 2 - b.left, y: a.top + a.height / 2 - b.top } : undefined;
+    };
+    if (handOpen) { setDrawerLeaving(false); playIn(el, overlayPreset(feel, place())); return; }
+    setDrawerLeaving(true);
+    let over = false;
+    const end = () => { if (!over) { over = true; setDrawerLeaving(false); } };
+    playOut(el, overlayPreset(feel, place()), end);
+  }, [handOpen, feel]);
+
   /* Esc on the board: the hand's when it is open, else the menu's. */
   useEffect(() => {
     if (!signedIn) return;
@@ -320,7 +346,7 @@ export function Hud() {
   return (
     <>
       {signedIn && (
-        <div ref={drawer} id={drawerId} className="kb-glass kb-hand-drawer" role="region" aria-label="Your hand" tabIndex={-1} hidden={!handOpen} style={handCalm}>
+        <div ref={drawer} id={drawerId} className="kb-glass kb-hand-drawer" role="region" aria-label="Your hand" tabIndex={-1} hidden={!handOpen && !drawerLeaving} {...(drawerLeaving && !handOpen ? { inert: true, 'aria-hidden': true, 'data-kb-exiting': '' } : {})} style={handCalm}>
           <Smoke surface="hand">
             <Hand
               held={player.cards} faces={faces} vendingHref={GLASS_NAV.vending}
