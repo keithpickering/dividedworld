@@ -68,6 +68,7 @@ function fakeDb(w: World = {}) {
           return { economy: dividedWorld.settings.economy, systemEnabled: w.enabled ?? true, modBots: { ...dividedWorld.settings.modBots, ...(w.modBots ?? {}) } } as T;
         case 'filings_due': return visits.filter((v) => !state.filed.has(v.visit)).slice(0, Number(args.most)) as T;
         case 'refund_stale_reports': return 0 as T;
+        case 'refund_stale_appeals': return 0 as T;
         case 'filing_calls_today': return (w.today ?? 0) as T;
         case 'mod_standing': {
           const s = standing[String(args.staff)] ?? { office: null, allowance: 0, order: null, beat: [] };
@@ -426,7 +427,7 @@ test('nothing at all while The System is off', async () => {
   const m = fakeModels(() => ({ words: 'No.' }));
   assert.deepEqual(await run(d, m), { status: 'off' });
   // Only the refund of reports already paid (no model call, no filing): the way out of a report whose judgment never came back.
-  assert.deepEqual(d.calls.map((c) => c.fn), ['instance_settings', 'refund_stale_reports']);
+  assert.deepEqual(d.calls.map((c) => c.fn), ['instance_settings', 'refund_stale_reports', 'refund_stale_appeals']);
 });
 
 test('a run refunds the reports whose judgment never came back, and a failure of that costs the filings nothing', async () => {
@@ -437,6 +438,17 @@ test('a run refunds the reports whose judgment never came back, and a failure of
   assert.equal(d.count('refund_stale_reports'), 1);
   assert.deepEqual(d.of('refund_stale_reports')[0], { minutes: 10, most: 100 });
   assert.equal(d.count('file_visit'), 1);
+});
+
+test('a run refunds the appeals whose judgment never came back, whether The System is on or off, and a failure of that costs the filings nothing', async () => {
+  const d = fakeDb({ visits: [due(V1, P1)], failOn: { refund_stale_appeals: 'always' } });
+  const out = await run(d, fakeModels(() => ({ words: 'Filed.' })));
+  assert.equal(out.status, 'ok');
+  assert.deepEqual(d.of('refund_stale_appeals'), [{ minutes: 10, most: 100 }]);
+  assert.equal(d.count('file_visit'), 1);
+  const off = fakeDb({ enabled: false });
+  await run(off, fakeModels(() => ({})));
+  assert.equal(off.count('refund_stale_appeals'), 1, 'a refund is no model call: it runs with The System off');
 });
 
 test('no judgment reads who owns a mask: no owner, class or reactor is read, and none is in the prompts', async () => {

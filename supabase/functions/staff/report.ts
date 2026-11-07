@@ -31,15 +31,12 @@ import { REPORT_RULE, repairReport, reportPrompt, type RuleLine } from '../../..
 import type { Models } from '../../../engine/system/model.ts';
 import type { Trim } from '../../../engine/system/validate.ts';
 import { DatabaseError, TransportError, sessionRefused, type Db } from '../_shared/rpc.ts';
-import { CORS, boundedJson } from '../_shared/serve.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { AnswerRejected } from '../_shared/models/index.ts';
 import { learnMod, said } from './core.ts';
+import { playerDoor, type DoorAnswer, type DoorDeps } from './door.ts';
 
-export interface ReportAnswer {
-  readonly status: number;
-  readonly body: Record<string, unknown>;
-}
+export type ReportAnswer = DoorAnswer;
 
 /** The hint every refusal the player-facing SQL functions raise carries, so their words alone reach a player (the act function's REFUSAL_HINT). */
 const REFUSAL_HINT = 'kayfabb.refusal';
@@ -180,34 +177,9 @@ async function judge(db: Db, getModels: () => Promise<Models>, instance: Instanc
 /** A report is a reason of 280 characters, ids and a little more. */
 export const MOST_REPORT_BYTES = 8 * 1024;
 
-export interface DoorDeps {
-  readonly instance: Instance;
-  /** The two connections for a request: as the player (their session), and as the service. Making them reads nothing. */
-  readonly dbs: (session: string) => { player: Db; service: Db };
-  /** The models, built from the instance's tiers as the database holds them now (a service read): asked for only once the report has been taken as the player. */
-  readonly models: (service: Db) => Promise<Models>;
-}
+export type { DoorDeps };
 
-const reply = (status: number, body: unknown): Response => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...CORS } });
-
-/**
- * The player's door to a report (the edge of staff/index.ts for a request that is not the service's): the method, the session and the size of the body are checked before
- * any connection is made, and nothing is read or done as the service until `open_report`, called with the player's own session, has taken the report. A request with no
- * session is a 401 whoever its target is.
- */
-export async function reportDoor(request: Request, d: DoorDeps): Promise<Response> {
-  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
-  if (request.method !== 'POST') return reply(405, { error: 'reports are posted' });
-  const session = (request.headers.get('Authorization') ?? '').replace(/^Bearer\s*/i, '').trim();
-  if (!session) return reply(401, { error: 'sign in to report' });
-  const { tooLong, body } = await boundedJson(request, MOST_REPORT_BYTES);
-  if (tooLong) return reply(413, { error: 'that report is too long' });
-  try {
-    const dbs = d.dbs(session);
-    const out = await runReport(dbs, () => d.models(dbs.service), d.instance, body);
-    return reply(out.status, out.body);
-  } catch (e) {
-    console.error('report failed', e instanceof Error ? e.message : 'unknown');
-    return reply(500, { error: 'the report could not be made; try again' });
-  }
-}
+/** The player's door to a report: the shared door (door.ts) with a report's words and run. */
+export const reportDoor = (request: Request, d: DoorDeps): Promise<Response> => playerDoor(request, d, runReport, {
+  posted: 'reports are posted', signIn: 'sign in to report', tooLong: 'that report is too long', failed: 'the report could not be made; try again', maxBytes: MOST_REPORT_BYTES,
+});

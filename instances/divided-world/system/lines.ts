@@ -77,4 +77,25 @@ export const stockLines: StockLines = Object.freeze({
     'The System noticed who sent that report, {reporter}. The System is in a mood.',
     '{reporter} reported, and {mod} read it, and now {mod} is reading {reporter} instead.',
   ]),
+  // First drafts for Task 14 to widen: what a hearer says when it has no words of its own for a ruling on an appeal.
+  appealOverturned: Object.freeze([
+    '{mod} has reconsidered {appellant}\'s appeal and is, regrettably, wrong. The Aura goes back.',
+    'Appeal granted. {appellant} may tell everyone, and {mod} will pretend not to listen.',
+    '{mod} looked again at what {appellant} was charged with, and could not find it. Overturned.',
+  ]),
+  appealUpheld: Object.freeze([
+    '{mod} has read {appellant}\'s appeal in full and finds nothing to change.',
+    'Appeal denied. {mod} wishes {appellant} well in the meantime.',
+    '{mod} upholds the ruling. {appellant}\'s plea has been filed with the other pleas.',
+  ]),
+  appealReduced: Object.freeze([
+    '{mod} has taken some of it back for {appellant}. Not all of it. Some.',
+    'Reduced on appeal. {appellant} should consider this a gift, and {mod} should be thanked.',
+    '{mod} splits the difference with {appellant}, in {mod}\'s own favor.',
+  ]),
+  appealIncreased: Object.freeze([
+    '{mod} has heard {appellant}\'s appeal, and it was a mistake to make it. Increased.',
+    'Appeal heard, and the punishment grows. {appellant} asked for a closer look and got one.',
+    '{mod} looked again at {appellant}\'s case and found more of it. Increased.',
+  ]),
 });

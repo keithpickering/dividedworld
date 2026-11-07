@@ -2,8 +2,9 @@
  * The Mod Bots' Edge Function, with two doors. The filing run: pg_cron calls it at the instance's `modBots.filingCron` with the minute it fired
  * (supabase/migrations/0104_mod_moves.sql), and it accepts only the jobs key (kayfabb_jobs, in apikey). A player's report: the client calls it with the player's own
  * session (Authorization), as it calls the act function; nothing is done as the service before the database has taken the report AS THE PLAYER (`open_report` verifies the
- * session, that the caller plays the character, and that it is not banned), and a request with no session is answered 401 the same whoever its target is. The work is
- * core.ts (the run) and report.ts (the report); this is the edge: the environment, the model adapters
+ * session, that the caller plays the character, and that it is not banned), and a request with no session is answered 401 the same whoever its target is. A player's appeal is
+ * the same door at `/staff/appeal` (`open_appeal`, which does not refuse a banned character: a ban is appealed by the banned). The work is
+ * core.ts (the run), report.ts (the report) and appeal.ts (the appeal), through door.ts; this is the edge: the environment, the model adapters
  * (supabase/functions/_shared/models/) and an answer that says what happened. No secret is ever logged or returned: the model key is read by the adapter from `Deno.env`
  * and appears in no message.
  *
@@ -11,6 +12,7 @@
  * record are not idempotent (`record_staff_call` numbers each call it is sent): `file_visit` finds a visit already ended and `apply_mod_move` finds the move of its cause, so a repeat of either writes nothing a second time and is sent again.
  */
 import { runFilings } from './core.ts';
+import { appealDoor } from './appeal.ts';
 import { reportDoor } from './report.ts';
 import { chooseInstance } from '../_shared/instance.ts';
 import { postgrest } from '../_shared/rpc.ts';
@@ -25,10 +27,12 @@ const WRITES = new Set(['record_model_call', 'record_staff_call']);
 Deno.serve(async (request) => {
   const env = environment((name) => Deno.env.get(name));
   if (!fromTheService(request, env.jobs)) {
-    // Not the service: a player's report, with the player's session. Nothing is read as the service until open_report, as the player, has taken it (report.ts).
-    return reportDoor(request, {
+    // Not the service: a player's report or appeal, with the player's session, by the path (`/staff/appeal`; anything else is a report). Nothing is read as the service until
+    // open_report or open_appeal, as the player, has taken it (report.ts, appeal.ts, both through door.ts).
+    const door = new URL(request.url).pathname.replace(/\/+$/, '').endsWith('/appeal') ? appealDoor : reportDoor;
+    return door(request, {
       instance: chooseInstance(Deno.env.get('KAYFABB_PROFILE')),
-      // The player's calls are sent once (a report is paid for: a lost answer is told, not repeated); the service's, as the run's are.
+      // The player's calls are sent once (a report or an appeal is paid for: a lost answer is told, not repeated); the service's, as the run's are.
       dbs: (session) => ({
         player: postgrest({ url: env.url, key: env.publishable, bearer: session, safeToRepeat: () => false }),
         service: postgrest({ url: env.url, key: env.secret, safeToRepeat: (fn) => !WRITES.has(fn) }),

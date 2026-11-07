@@ -67,6 +67,9 @@ export const FILINGS_PER_RUN = 20;
 /** A report with no verdict this many minutes after it was paid is refunded by the run (the report function refunds its own failures at once; this is for one that died). */
 export const STALE_REPORT_MINUTES = 10;
 export const STALE_REPORTS_PER_RUN = 100;
+/** An appeal is paid before it is judged, as a report is: one with no ruling this many minutes after it was paid is refunded by the run. */
+export const STALE_APPEAL_MINUTES = 10;
+export const STALE_APPEALS_PER_RUN = 100;
 
 /** How long a run keeps starting visits: well inside the function's 150 seconds, so one run is over before the next is due. */
 export const RUN_BUDGET_MS = 100_000;
@@ -138,13 +141,14 @@ export interface Known {
 
 /**
  * Everything a Mod's judgment is told about the Mod, read once: its persona from the roster, its standing (`mod_standing`), and, when it is a Mod now, its career,
- * memory, notes and the names its memory mentions. Public play and the staff character's own record; never an owner. Shared by the filing run and the report.
+ * memory, notes and the names its memory mentions. Public play and the staff character's own record; never an owner. Shared by the filing run, the report and the appeal (which a Boss
+ * may hear: it asks for `['mod', 'boss']`).
  */
-export async function learnMod(db: Db, roster: readonly Persona[], settings: Pick<Instance['settings'], 'pool'>, staff: string): Promise<Known> {
+export async function learnMod(db: Db, roster: readonly Persona[], settings: Pick<Instance['settings'], 'pool'>, staff: string, offices: readonly string[] = ['mod']): Promise<Known> {
   const persona = roster.find((p) => p.key === staff);
   if (!persona) return { persona, standing: null, career: null, memory: null, notes: [], names: {} };
   const standing = await db.rpc<Standing>('mod_standing', { staff });
-  if (standing.office !== 'mod') return { persona, standing, career: null, memory: null, notes: [], names: {} };
+  if (standing.office === null || !offices.includes(standing.office)) return { persona, standing, career: null, memory: null, notes: [], names: {} };
   const [career, memory, since] = await Promise.all([
     db.rpc<Career>('staff_career', { of_staff: staff }),
     db.rpc<Memory | null>('staff_memory_latest', { staff }),
@@ -167,6 +171,13 @@ export async function runFilings(db: Db, models: Models, instance: Instance, slo
   } catch (e) {
     if (stopsTheRun(e) || !(e instanceof DatabaseError)) throw e;
     console.warn('the stale reports were not refunded this run', said(e));
+  }
+  // The same for an appeal (the Mod Bots design, section 7): paid before it is judged, and refunded when no ruling came.
+  try {
+    await db.rpc('refund_stale_appeals', { minutes: STALE_APPEAL_MINUTES, most: STALE_APPEALS_PER_RUN });
+  } catch (e) {
+    if (stopsTheRun(e) || !(e instanceof DatabaseError)) throw e;
+    console.warn('the stale appeals were not refunded this run', said(e));
   }
   if (!settings.systemEnabled) return { status: 'off' };
   const started = clock();

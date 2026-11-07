@@ -234,6 +234,18 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into tails (character, staff, intercept_act, until) select b, 'exp-bot', i.id, now() + interval '1 day' from acts i where i.kind = 'intercept' and i.character = b;
       insert into tail_visits (tail, visit_act) select k.id, v.id from tails k, acts v where k.character = b and v.kind = 'visit' and v.target_act_id = p;
       insert into staff_quiz_questions (staff, idx, question, choices, answer) values ('exp-bot', 0, 'Which carries across?', '["The quiz", "Nothing"]', 'The quiz');
+      -- An infraction against Ann's mask for her post, her appeal of it, the Mod's ruling, the price paid and returned, and the refund's own table (0107): carried across with the
+      -- Acts that name them. (The bar's setting is planted where a database made from the migrations alone has none.)
+      insert into settings (key, value) values ('warnBar', '{"size": 10, "bands": {"minor": 2, "moderate": 4, "severe": 7}, "decay": {"unit": "day", "count": 14}, "banDays": [1, 3, 7]}') on conflict (key) do nothing;
+      perform infract(a, 'minor', p, 'exp-bot');
+      perform set_config('kayfabb.appeal_writer', 'on', true);
+      insert into acts (character, kind, thread, target_act_id, payload) select a, 'appeal', t, i.id, '{"plea": "Carried across, and pleading."}' from acts i where i.kind = 'infraction' and i.payload ->> 'character' = a::text;
+      perform set_config('kayfabb.appeal_writer', '', true);
+      perform write_staff_act('exp-bot', 'appeal_ruling', t, x.id, jsonb_build_object('appeal_act', x.id::text, 'verdict', 'overturned', 'points_delta', -2, 'line', 'Overturned, and carried across.'))
+        from acts x where x.kind = 'appeal' and x.character = a;
+      insert into wallet_events (account, kind, change, balance_after, ref) select ann, 'appeal', -50, 0, id from acts where kind = 'appeal' and character = a;
+      insert into appeal_refunds (appeal_act, amount, why) select id, 50, 'overturned' from acts where kind = 'appeal' and character = a;
+      insert into wallet_events (account, kind, change, balance_after, ref) select ann, 'refund', 50, 50, id from acts where kind = 'appeal' and character = a;
       -- The open season revealed at its end, as the settlement of its last window would.
       perform reveal_season((select starts_at from seasons where ends_at is null) + span_interval(setting('seasonLength')));
     end $$;
@@ -243,7 +255,7 @@ test('an instance exported and imported into a fresh database is the same instan
     insert into public.export_probe values (1, 12.50, array['a,b', 'q"uote', null], 'astral 😀 and \\. alone');`);
   const before = contents(from);
   // The staff roster's tables hold a row in the fixture, so the comparison below carries each (an empty table would round-trip as well, and prove nothing).
-  for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'report_refunds', 'tails', 'tail_visits', 'staff_quiz_questions']) {
+  for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions']) {
     const rows = before.get(`public.${t}`);
     assert.ok(rows !== undefined && rows !== '[]', `${t} holds a row in the fixture (got ${rows === undefined ? 'no such table' : rows})`);
   }
@@ -429,7 +441,7 @@ test('an instance exported and imported into a fresh database is the same instan
     const after = contents(fresh.toString());
     assert.deepEqual([...after.keys()], [...before.keys()]);
     for (const [t, rows] of before) assert.equal(after.get(t), rows, `${t} differs after the round trip`);
-    for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'report_refunds', 'tails', 'tail_visits', 'staff_quiz_questions']) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
+    for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions']) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
     // The contact an admin set is the same contact in the imported instance, as the page's read answers it (0081).
     const contact = (url: string) => psqlOn(url, `select admin_contact()::text`);
     assert.match(contact(from), /Exported mail/, 'the exported instance holds the contact');

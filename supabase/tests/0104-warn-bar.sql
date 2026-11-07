@@ -470,13 +470,40 @@ begin
   end if;
 end $$;
 
--- ==================================================================== Task 10 fills this: appeals ====
--- warn_points subtracts infraction_relief(infraction Act) from each infraction's points. Today no appeal Act exists, so every relief is 0. Task 10's appeal_ruling
--- Acts (reduced or overturned) replace infraction_relief's body; the assertions for it go here: a reduced infraction counts its remaining points, an overturned one
--- counts none, and an upheld one is unchanged.
+-- ==================================================================== appeals (0107): infraction_relief ====
+-- warn_points subtracts infraction_relief(infraction Act) from each infraction's points. An appeal's ruling (supabase/migrations/0107_appeals.sql) is what relieves it: an
+-- overturned infraction counts none, a reduced one its remaining points, an upheld one is unchanged, and an increased one is unchanged and a second infraction stands beside it.
+-- (supabase/tests/0109-appeals.sql tests the appeals themselves; this is the bar's side of them.)
 do $$
 declare
-  inf uuid := (select id from acts where kind = 'infraction' limit 1);
+  u uuid := tests.account('wb-relief');
+  c uuid := tests.character(u, 'Wb Relief');
+  t uuid := tests.thread('Wb relief');
+  p uuid := tests.post(c, t, 'A post to be filed.');
+  q uuid := tests.post(c, t, 'Another post.');
+  inf uuid := (infract(c, 'severe', p, 'wb-mod') ->> 'infraction')::uuid;
+  inf2 uuid := (infract(c, 'minor', q, 'wb-mod') ->> 'infraction')::uuid;
+  ap uuid; ap2 uuid; mod_char uuid;
 begin
-  if infraction_relief(inf) <> 0 then raise exception 'before Task 10 no infraction is relieved'; end if;
+  if infraction_relief(inf) <> 0 or warn_points(c) <> 9 then raise exception 'no ruling, no relief: % / %', infraction_relief(inf), warn_points(c); end if;
+  -- The Mod's rulings are written by a staff character; a stand-in one here, as the appeal tests have the real ones.
+  perform set_config('kayfabb.appeal_writer', 'on', true);
+  insert into acts (character, kind, thread, target_act_id, payload) values (c, 'appeal', t, inf, '{"plea": "Please."}') returning id into ap;
+  insert into acts (character, kind, thread, target_act_id, payload) values (c, 'appeal', t, inf2, '{"plea": "Please."}') returning id into ap2;
+  perform set_config('kayfabb.appeal_writer', '', true);
+  mod_char := (select id from characters where staff is not null and staff_kind = 'persona' limit 1);
+  if mod_char is null then
+    -- No staff in this database yet: the relief is what the rulings say, and a ruling needs a staff character, so a minimal one is made.
+    insert into characters (id, name, staff, staff_kind, debuted_at) values (gen_random_uuid(), 'Wb Ruler', 'wb-ruler', 'persona', now()) returning id into mod_char;
+  end if;
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  insert into acts (character, kind, thread, target_act_id, payload) values (mod_char, 'appeal_ruling', t, ap, jsonb_build_object('appeal_act', ap::text, 'verdict', 'reduced', 'points_delta', -4, 'line', 'Less.'));
+  perform set_config('kayfabb.staff_writer', '', true);
+  if infraction_relief(inf) <> 4 or warn_points(c) <> 5 then raise exception 'a reduced infraction counts its remaining points: % / %', infraction_relief(inf), warn_points(c); end if;
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  insert into acts (character, kind, thread, target_act_id, payload) values (mod_char, 'appeal_ruling', t, ap2, jsonb_build_object('appeal_act', ap2::text, 'verdict', 'overturned', 'points_delta', -2, 'line', 'Gone.'));
+  perform set_config('kayfabb.staff_writer', '', true);
+  if infraction_relief(inf2) <> 2 or warn_points(c) <> 3 then raise exception 'an overturned infraction counts none: % / %', infraction_relief(inf2), warn_points(c); end if;
+  -- (An upheld ruling carries points_delta 0 and an increased one adds an infraction beside the original; supabase/tests/0109-appeals.sql shows both relieve nothing.)
+  if (select count(*) from acts where kind = 'infraction' and payload ->> 'character' = c::text) is distinct from 2::bigint then raise exception 'the infractions themselves were touched'; end if;
 end $$;
