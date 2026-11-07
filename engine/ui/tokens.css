@@ -50,7 +50,13 @@
   --kb-size-fine: 0.78125rem;
   --kb-size-heading: 1.171875rem;
   --kb-size-title: 1.40625rem;
-  --kb-size-logo: 1.9375rem;
+  --kb-size-logo: 1.5625rem;
+  /* The name on a phone: the same as anywhere until a theme sets it. */
+  --kb-size-logo-phone: var(--kb-size-logo);
+  --kb-logo-spacing: 0.06em;
+  --kb-logo-leading: 1.2;
+  /* A mini avatar's lift beside its name (mini.css), in em so it follows the text size. */
+  --kb-who-lift: -0.145em;
   --kb-line: 1.45;
   /*
    * How wide the board's own pages may be (the banner, the index, the boards, the threads, the profile,
@@ -133,9 +139,9 @@
   --kb-badge-a-fg: var(--kb-bg);
   --kb-badge-b: var(--kb-bg);
   --kb-badge-b-fg: var(--kb-fg);
-  /* The page's scrollbar (scrollbar-color): the browser's own. */
-  --kb-scrollbar-thumb: auto;
-  --kb-scrollbar-track: auto;
+  /* The page's scrollbar (scrollbar-color): the board's own pair, a muted thumb on the page's ground. */
+  --kb-scrollbar-thumb: var(--kb-muted);
+  --kb-scrollbar-track: var(--kb-bg);
   /* The read-only tag beside a board's name, and the mini avatar's ground and edge: the plain board's, until a theme gives them. */
   --kb-tag-bg: var(--kb-bg);
   --kb-mini-bg: var(--kb-bg);

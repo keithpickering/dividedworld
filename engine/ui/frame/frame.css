@@ -100,8 +100,8 @@
    * the window.
    */
   overflow-wrap: anywhere;
-  font: bold var(--kb-size-logo) / 1 var(--kb-font-mono);
-  letter-spacing: 0.09em;
+  font: bold var(--kb-size-logo) / var(--kb-logo-leading) var(--kb-font-mono);
+  letter-spacing: var(--kb-logo-spacing);
   text-transform: uppercase;
   text-decoration: none;
   color: var(--kb-logo-fg);
@@ -1618,9 +1618,9 @@ html[data-kb-float='sheet'] .kb-frame {
     padding: 6px 16px;
   }
 
-  /* The name at the phone board's size, 22px (the board-look design). */
+  /* The name at the phone board's size (the board-look design: 22px in the house theme). */
   .kb-logo {
-    font-size: 1.375rem;
+    font-size: var(--kb-size-logo-phone);
   }
 
   /* Boards is set in the board's words, as the Phone board draws it, not at a control's smaller size. */

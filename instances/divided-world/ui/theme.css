@@ -66,6 +66,10 @@
   --kb-bar-fg: #000;
   --kb-bar-shadow: 0 1px 0 #fff;
   --kb-banner-bg: linear-gradient(#ffffff, #cfcfcf);
+  --kb-size-logo: 1.9375rem;
+  --kb-size-logo-phone: 1.375rem;
+  --kb-logo-spacing: 0.09em;
+  --kb-logo-leading: 1;
   --kb-logo-fg: #111;
   --kb-logo-shadow: 1px 1px 0 #fff, 2px 2px 0 #9a9a9a;
   --kb-nav-bg: linear-gradient(#5e5e5e, #3a3a3a);

@@ -36,7 +36,7 @@
   height: 1.27em;
   margin-right: 0;
   position: relative;
-  top: var(--kb-who-lift, -0.145em);
+  top: var(--kb-who-lift);
 }
 
 .kb-mini img {

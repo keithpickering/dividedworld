@@ -137,11 +137,11 @@ describe('the skin tokens: the defaults draw today\'s board', () => {
     '--kb-button-bg': '--kb-bg', '--kb-button-edge': '--kb-rule', '--kb-button-fg': '--kb-fg',
     '--kb-button-primary-bg': '--kb-fg', '--kb-button-primary-fg': '--kb-bg',
     '--kb-badge-a': '--kb-fg', '--kb-badge-a-fg': '--kb-bg', '--kb-badge-b': '--kb-bg', '--kb-badge-b-fg': '--kb-fg',
+    '--kb-scrollbar-thumb': '--kb-muted', '--kb-scrollbar-track': '--kb-bg',
   };
   const PLAIN: Record<string, string> = {
     '--kb-head-shadow': 'none', '--kb-bar-shadow': 'none', '--kb-logo-shadow': 'none', '--kb-input-shadow': 'none',
     '--kb-button-fg-shadow': 'none', '--kb-button-case': 'none', '--kb-button-radius': '0',
-    '--kb-scrollbar-thumb': 'auto', '--kb-scrollbar-track': 'auto',
   };
   test.each(['light', 'light (chosen)', 'dark', 'dark (device)'] as const)('%s: every token resolves to the board\'s own color or to nothing', (mode) => {
     const t = seen[mode];
