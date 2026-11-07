@@ -9,7 +9,8 @@
  *
  * - `smoke.jpg`: 1200 by 360 (600 by 180 at 2x). The field's wide layers in the `page` recipe's colors and
  *   opacities, each an element masked by engine/ui/glass/field.ts's `fieldLayerSvg` (the one definition of how
- *   a layer is drawn, imported, never copied), over the ground, as Smoke.tsx composites them, with a linear
+ *   a layer is drawn, imported, never copied), over the ground, as Smoke.tsx composites them (a layer at
+ *   opacity 0 draws nothing, so none is placed), with a linear
  *   fade to the ground over the lower 60%. The JPEG quality is the highest, from 90 down, that keeps the file
  *   at or under 60KB;
  * - `cut-panel.png` and `cut-button.png`: 24 by 24 (12 at 2x), every pixel opaque. The panel's corner is the
@@ -21,7 +22,10 @@
  *
  * and `<ui>/../mail/assets.json`, the SHA-256 of each output and of each source (tools/mail-assets.mjs's
  * `sourceSlices` as canonical JSON, the coin vector and each font), keys sorted, which tools/check-mail.mjs
- * reads against the committed files.
+ * reads against the committed files. The record holds the inputs that come from the glass, the ones a
+ * change to the instance's look would move. The bake's own constants here (the fade's 40%, the corner's
+ * geometry and edge width) are not hashed: a change to them is a change to this tool, made with a re-bake
+ * in the same commit, and the record then reads the new outputs.
  *
  * It is run by hand, never by the build: it draws in Chromium, and the build has no browser
  * (tools/build.mjs, OUTSIDE_THE_BUILD). It uses the Chromium the environment provides and never downloads
@@ -57,8 +61,21 @@ async function drawSmoke(browser, input) {
   const page = await browser.newPage({ deviceScaleFactor: DPR, viewport: { width: SMOKE.width / DPR, height: SMOKE.height / DPR } });
   try {
     await page.setContent(smokeHtml(input));
-    /* The masks are data URLs decoded asynchronously; a frame or two lets the filters run. */
-    await page.waitForTimeout(500);
+    /*
+     * The masks are SVG data URLs the page decodes on its own time, and a screenshot taken before they
+     * are drawn is a smoke without its clouds that still fits the size. So each mask's image is decoded
+     * first (the same URL, so the page's decode is the cached one), then two frames let the masks paint.
+     * A fixed sleep would race a slow machine.
+     */
+    await page.evaluate(async () => {
+      const masked = [...document.querySelectorAll('#b > div')].slice(0, -1); /* the last is the fade */
+      const urls = masked
+        .map((d) => /url\(["']?(data:[^"')]+)/.exec(getComputedStyle(d).maskImage || d.style.webkitMaskImage || '')?.[1])
+        .filter((u) => u);
+      if (urls.length === 0 || urls.length !== masked.length) throw new Error(`found ${urls.length} of ${masked.length} masks to wait on`);
+      await Promise.all(urls.map((u) => { const i = new Image(); i.src = u; return i.decode(); }));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    });
     for (let quality = 90; quality >= 30; quality -= 2) {
       const jpg = await page.locator('#b').screenshot({ type: 'jpeg', quality });
       if (jpg.length <= SMOKE.maxBytes) return jpg;
