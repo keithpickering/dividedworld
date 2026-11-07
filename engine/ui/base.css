@@ -295,6 +295,7 @@ h1 {
   border-color: var(--kb-muted);
   text-shadow: none;
   box-shadow: none;
+  filter: none;
 }
 
 .kb-textarea {
