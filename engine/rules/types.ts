@@ -16,6 +16,9 @@ import type { HintSettings } from './hints.ts';
 import type { AlertKind } from './alerts.ts';
 import type { PhaseOverrides, PhaseSettings } from '../system/phases.ts';
 import type { PoolTrigger } from '../system/pool.ts';
+import type { PronounSet } from './pronouns.ts';
+
+export type { PronounSet };
 
 /** Where a reaction sits on the two axes the classes read: how excited, how positive. */
 export type Quadrant = 'excitedPositive' | 'excitedNegative' | 'calmPositive' | 'boredNegative';
@@ -207,6 +210,8 @@ export interface Settings {
    * do is seen by a player. An instance turns it on only once the screens that show a move's way out exist.
    */
   readonly systemEnabled: boolean;
+  /** The pronouns a staff character has when its persona file names none, and the ones a new character starts with. */
+  readonly pronouns: PronounSet;
   /** When the Boss's meeting runs, as a five-field cron expression in UTC: daily by default, an hour after the settlement so the digest holds the newest standings. */
   readonly meetingCron: string;
   /**
@@ -583,6 +588,8 @@ export interface StaffSeed {
   readonly name: string;
   readonly title: string;
   readonly signature: string;
+  /** Its pronouns; left out, the instance's default (`Settings.pronouns`). */
+  readonly pronouns?: PronounSet;
 }
 
 /* ----------------------------------------------------------------- The System's content ---- */
@@ -684,6 +691,8 @@ export interface DeveloperPersona {
   readonly name: string;
   readonly tagline: string;
   readonly avatar?: string;
+  /** The developer's pronouns; left out, the instance's default (`Settings.pronouns`). */
+  readonly pronouns?: PronounSet;
 }
 
 export interface Instance {
