@@ -17,7 +17,7 @@
 --                                      price>`) names the slot and the field.
 --
 -- The machine's one lock: taking a pack off sale (set_slot, save_machine) and reordering (move_slot) each take pg_advisory_xact_lock(hashtext('kayfabb.machine'))
--- first, so they run one at a time. Without it two admins each taking a different pack off sale could each see the other's pack still on sale, and leave a Pull
+-- first, so they run one at a time, and the Boss's machine landings in system_tick (0117) take the same lock before checking a machine move, so a landing and an admin's change serialize too. Without it two admins each taking a different pack off sale could each see the other's pack still on sale, and leave a Pull
 -- whose card is in no pack on sale: "packs are the floor" would fail by a race. With it the second admin's check reads the first's committed change.
 --
 -- Two private helpers (no grant to the web client): machine_apply_slot validates and writes one slot and says whether a pack just left sale; and

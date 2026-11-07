@@ -18,7 +18,8 @@
 --                                 admin's CURRENT price times the factor. `move` is {kind, act, ends, demand, progress, was, percent, hours}: the demand as the move's Act holds it and
 --                                 its stored progress as move_progress (0053) reads it, `was` the admin's price.
 --   queued_moves_guard (0106)     also refuses a machine move whose params, demand or bounds are wrong.
---   system_tick (0105)            also refuses at landing a machine move the machine can no longer take.
+--   system_tick (0105)            also refuses at landing a machine move the machine can no longer take, under the machine's one lock (pg_advisory_xact_lock(hashtext('kayfabb.machine'))),
+--                                 the same one 0119's admin functions take, so the Boss's landings and an admin's pack change run one at a time ("packs are the floor").
 --   meeting_context (0103)        also carries `machine`: the slots (hidden ones too, for a flash sale), whether a pull could land, the Boss's move on each.
 --
 --   apply_meeting (0110)          also skips and records (`machineSkipped`, as `rulesSkipped` records a rule) a machine move the queue's guard would refuse for what its params, demand
@@ -305,6 +306,12 @@ begin
     for due in
       select q.id, q.staff, q.kind, q.params, q.demand, q.expires_at, q.admin_description from queued_moves q where q.landed_act is null and q.held_at is null and q.refused_at is null and q.go_live_at <= now() order by q.go_live_at, q.id for update skip locked
     loop
+      -- A machine move is checked against the machine as it is now, so it waits for the machine's one lock (0119's admin functions take it to take a pack off sale or
+      -- reorder), taken here and not inside the block below so that a timeout is not swallowed as a failed move. Without it a Pull landing as an admin took the last pack
+      -- holding its card off sale could each miss the other and leave a Pull with no pack on sale. The tick holds only queued_moves rows (and Acts it inserts) when it
+      -- waits here, and those functions never lock those rows, so there is no cycle. Taken only when a machine move is about to be checked, and held to the end of
+      -- the tick, so the checks below read what the admin committed.
+      if due.kind in ('pullSlot', 'repriceSlot', 'flashSale') then perform pg_advisory_xact_lock(hashtext('kayfabb.machine')); end if;
       begin
         -- Two rules that conflict may have waited together; the one that lands second meets the first. It is refused for good, with the reason.
         if due.kind = 'setRule' then

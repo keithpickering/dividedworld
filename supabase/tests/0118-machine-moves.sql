@@ -106,6 +106,36 @@ begin
 end $$;
 create function pg_temp.slot_param(name text) returns jsonb language sql as $$ select jsonb_build_object('slot', pg_temp.slot(name)) $$;
 
+-- ---- 0b. The landing waits for the machine's one lock ----
+-- (Before any landing: a lock taken in a transaction is held to its end, so once this file has landed a machine move it holds the machine's lock itself. The move
+-- queued here is undone at the end of the block, so nothing after it sees it.)
+do $$
+declare
+  q bigint;
+  got queued_moves;
+  acts_held text;
+begin
+  begin
+    -- The landing waits for the machine's one lock (the admin functions' own, 0119): an admin mid-way through taking a pack off sale holds it, and a Pull checked now
+    -- could miss that change. A landing that would otherwise succeed times out instead (55P03, not swallowed as a failed move) and the row is untouched.
+    q := pg_temp.queue('pullSlot', pg_temp.slot_param('A'), pg_temp.demand());
+    perform extensions.dblink_connect('machine_lock', current_setting('kayfabb.scratch_url'));
+    perform extensions.dblink_exec('machine_lock', 'begin');
+    perform 1 from extensions.dblink('machine_lock', $sql$select 1 from (select pg_advisory_xact_lock(hashtext('kayfabb.machine'))) t$sql$) as x(one integer);
+    perform set_config('lock_timeout', '200ms', true);
+    acts_held := pg_temp.refusal('select system_tick()');
+    perform set_config('lock_timeout', '0', true);
+    perform extensions.dblink_exec('machine_lock', 'rollback');
+    perform extensions.dblink_disconnect('machine_lock');
+    perform pg_temp.expect(acts_held like '55P03%', 'a machine landing did not wait for the machine''s lock: ' || coalesce(acts_held, 'it ran'));
+    perform pg_temp.expect((select landed_act is null and refused_at is null and failed_at is null from queued_moves where id = q), 'a landing that timed out left the row due and untouched');
+    got := pg_temp.landing(q);
+    perform pg_temp.expect(got.landed_act is not null, 'with the lock free the same move lands: ' || to_jsonb(got)::text);
+    raise sqlstate 'MV999' using message = 'undo';
+  exception when sqlstate 'MV999' then null;
+  end;
+end $$;
+
 -- ---- 1. The guard: what the params, the demand and the bounds forbid is refused at the queue ----
 do $$
 declare
