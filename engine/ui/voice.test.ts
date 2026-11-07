@@ -14,7 +14,7 @@ function sources(dir: string): string[] {
   });
 }
 
-test('the scan finds a planted "The System" in a string, a template and JSX text, and not in a comment', () => {
+test('the scan finds a planted "The System" in a string, a template, JSX text and a JSX attribute (aria-label, title), and not in a comment', () => {
   const planted = [
     '// The System is said here',
     '/* The System too */',
@@ -22,8 +22,11 @@ test('the scan finds a planted "The System" in a string, a template and JSX text
     'export const b = `${x} and The\n   System announce it`;',
     'export const c = <p>The System speaks</p>;',
     "export const d = 'The Boss speaks';",
+    "export const e = <button aria-label=\"The System's mark\" title='Ask The System'>x</button>;",
+    "export const f = <p aria-label={'The System'} title={`The System`}>y</p>;",
+    'export const g = <p data-x="Not it" aria-label="The Boss">z</p>;',
   ].join('\n');
-  assert.deepEqual(systemStrings('planted.tsx', planted).map((f) => f.line), [3, 4, 6]);
+  assert.deepEqual(systemStrings('planted.tsx', planted).map((f) => f.line), [3, 4, 6, 8, 8, 9, 9]);
 });
 
 test('no screen under engine/ui/ (admin/ and tests apart) says "The System" in a string a player reads', () => {

@@ -59,6 +59,9 @@ export function TurnDialog({ character, face, standing, nextSettlement, onClose,
   const when = pending?.takesEffectAt ?? nextSettlement;
   const index = standing === undefined ? null : rankIndex(instance.ranks, standing);
   const rank = index === null ? undefined : instance.ranks[index];
+  /* The line the post will carry with the given names on: the preview's own function, so an option quotes what is posted. */
+  const postedWith = (was: boolean, toName: boolean) =>
+    turnPreview({ name: character.name, was: now, to: to ? nameOf(to) : '', loudness: 'announced', showFrom: was, showTo: toName && to !== null }).lines[0]?.text ?? '';
   const label = (q: (typeof MAP)[number]) => ui.quadrantLabels[q];
 
   const submit = async () => {
@@ -133,11 +136,11 @@ export function TurnDialog({ character, face, standing, nextSettlement, onClose,
               <legend className="kb-visually-hidden">Name in the post</legend>
               <label className="kb-turn-toggle" data-kb-chosen={showFrom || undefined}>
                 <input type="checkbox" checked={showFrom} onChange={(e) => setNamed({ ...named, was: e.target.checked })} />
-                <span><b>Name the old class.</b> Adds “{now}” to the post.</span>
+                <span><b>Name the old class.</b> Adds “{postedWith(true, showTo)}” to the post.</span>
               </label>
               <label className="kb-turn-toggle" data-kb-chosen={showTo || undefined}>
                 <input type="checkbox" checked={showTo} onChange={(e) => setNamed({ ...named, to: e.target.checked })} />
-                <span><b>Name the new class.</b> {to ? `Adds “${nameOf(to)}” to the post, and reveals it.` : 'Adds the class you choose to the post, and reveals it.'}</span>
+                <span><b>Name the new class.</b> {to ? `Adds “${postedWith(showFrom, true)}” to the post, and reveals it.` : 'Adds the class you choose to the post, and reveals it.'}</span>
               </label>
             </fieldset>
           </fieldset>

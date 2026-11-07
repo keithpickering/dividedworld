@@ -7,11 +7,11 @@ import { QueueScreen } from './Queue.tsx';
 
 beforeEach(() => localStorage.clear());
 
-function open(options: { readonly as?: 'admin' | 'player'; readonly build?: (fake: ReturnType<typeof buildWorld>, w: ReturnType<typeof seedMoves>) => void } = {}) {
+function open(options: { readonly as?: 'admin' | 'player'; readonly build?: (fake: ReturnType<typeof buildWorld>, w: ReturnType<typeof seedMoves>) => void; readonly copy?: { readonly roleWord: string } } = {}) {
   const fake = buildWorld();
   const w = seedMoves(fake, testInstance, { signIn: options.as === 'player' ? 'player' : 'admin' });
   options.build?.(fake, w);
-  renderIn(fake, <QueueScreen now={fake.clock.now()} />, { path: '/admin/queue' });
+  renderIn(fake, <QueueScreen now={fake.clock.now()} />, { path: '/admin/queue', ...(options.copy ? { copy: options.copy } : {}) });
   return { fake, w };
 }
 
@@ -276,12 +276,26 @@ describe('a nomination of a successor', () => {
       open({ build: (fake) => handover(fake) });
       const todo = await group(/^To do/u);
       expect(todo).toHaveTextContent('Season 2 opens with Comptroller.');
-      expect(todo).toHaveTextContent('Season 2\'s Boss: Comptroller (was a Moderator).');
+      expect(todo).toHaveTextContent('Season 2: The Boss is Comptroller (was a Moderator).');
       expect(todo).toHaveTextContent('Old Boss is now a member.');
       expect(within(todo).getByRole('link', { name: 'Write the announcement for season 2' })).toHaveAttribute('href', '/updates?write=handover&season=2');
       expect(within(todo).getByRole('button', { name: 'Dismiss the season 2 to-do' })).toBeInTheDocument();
       const waiting = await group(/^Waiting to land/u);
       expect(todo.compareDocumentPosition(waiting) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    test('says the role in the instance\'s word, never its own: the facts and the confirm dialogs read roleWord', async () => {
+      open({ copy: { roleWord: 'The Champ' }, build: (fake) => { handover(fake); fake.seed.staff('ex', 'Ex Champ', 'mod'); fake.seed.handover({ outgoing: 'comptroller', boss: 'ex', at: fake.clock.now() - 1_800_000, how: 'nomination', bossWas: 'mod', outgoingOffice: 'boss' }); } });
+      const todo = await group(/^To do/u);
+      expect(todo).toHaveTextContent('Season 2: The Champ is Comptroller (was a Moderator).');
+      expect(todo).toHaveTextContent('The Champ was chosen by the roster\'s rotation.');
+      expect(todo).toHaveTextContent('Comptroller is now the Champ.');
+      expect(todo).toHaveTextContent('The Champ was chosen by nomination.');
+      expect(todo).not.toHaveTextContent(/[Tt]he Boss/u);
+      await userEvent.click(await screen.findByRole('button', { name: /^Hold/u }));
+      const hold = await screen.findByRole('dialog', { name: 'Hold this move?' });
+      expect(hold).toHaveTextContent('The Champ chooses its next move at its next meeting');
+      expect(hold).not.toHaveTextContent(/Boss/u);
     });
 
     test('each row\'s Write the announcement link names its season, so two rows are told apart', async () => {

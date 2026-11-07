@@ -315,17 +315,27 @@ describe('the Turn', () => {
       return found![1]!;
     };
 
+    /* The quoted words are the whole line the post will carry, the one the thread draws: not a fragment of it. */
+    const posted = () => Array.from(preview.querySelectorAll('.kb-preview-line')).map((p) => p.textContent);
+
     const old = within(dialog).getByRole('checkbox', { name: /^Name the old class/u });
-    expect(preview).not.toHaveTextContent(quoted(old));
+    expect(posted()).not.toContain(quoted(old));
+    expect(quoted(old)).toBe('Pipewrench has Turned, leaving Face.');
     await userEvent.click(old);
-    expect(preview).toHaveTextContent(quoted(old));
+    expect(posted()).toEqual([quoted(old)]);
     await userEvent.click(old);
 
     const now = within(dialog).getByRole('checkbox', { name: /^Name the new class/u });
-    expect(preview).not.toHaveTextContent(quoted(now));
+    expect(posted()).not.toContain(quoted(now));
+    expect(quoted(now)).toBe('Pipewrench has Turned to Heel.');
     await userEvent.click(now);
-    expect(preview).toHaveTextContent(quoted(now));
+    expect(posted()).toEqual([quoted(now)]);
     expect(now.closest('label')).toHaveTextContent(/reveals/u);
+
+    /* With the other name on, each option quotes the line the post will carry once it is on too. */
+    expect(quoted(old)).toBe('Pipewrench has Turned from Face to Heel.');
+    await userEvent.click(old);
+    expect(posted()).toEqual(['Pipewrench has Turned from Face to Heel.']);
   });
 
   test('cannot be confirmed until a class is chosen', async () => {
