@@ -147,7 +147,7 @@ export const instanceUi: InstanceUi = Object.freeze({
     // What the log and the machine's group label call the shop, in plain words; the sign draws one of `marquees`.
     shopName: 'Vending Machine',
     // The sign's names, one picked each time the Vending screen opens (decoration; none claims anything untrue; at most 20 characters each).
-    marquees: Object.freeze(['[MACHINE NAME]', 'AURA-MATIC 3000', 'VEND-ETTA', 'THE CARD SHARK', 'POSTCARD PALACE', 'COIN-OP KAYFABE', 'MERCH TABLE', 'CHEAP POP', 'FINISHER FRIDGE', 'GIMMICK DISPENSER', 'HEAT LAMP', 'NO FOOD, ONLY CARDS']),
+    marquees: Object.freeze(['FRESH BEEF', 'HAVE U SEEN LUIGI?', 'FAT WARIOS PLZ', 'HAHA, GACHA!', 'FORK IT OVER', 'RIZZY DRINKS', 'YOU EARNED IT', 'GO OFF, JOKER', 'NO SCALPING', 'JUST THIS ONCE', "LET 'EM HAVE IT", 'TCG-WHIZ', 'I CHOOSE YOU!', 'DO NOT SHAKE', 'LOST THE GAME', 'HAPPY TO HELP', 'JUST GLAD 2B HERE', 'WATCHIN U EAT', 'ORB FREAK', '<3 OF THE CARDS', 'YOUR BEST VEND', '[404 NOT FOUND]']),
     // The Settings board's words for Motion (docs/research/2026-10-29-two-worlds/11-settings.html).
     reducedMotionCard: 'Stick Around still snaps you back, only instantly.',
     /* What the glass calls a Mod Bot where the Lens names its role (the Mod Bots design, section 9). */
