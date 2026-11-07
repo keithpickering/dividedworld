@@ -214,9 +214,10 @@ export interface CardUi {
   readonly Effect?: ComponentType<EffectProps>;
   /**
    * The ink of a play's tag where the card chooses it (Whoops!'s top layer takes the ink it splatted),
-   * given the play and all of this card's plays on its post in play order: any CSS color, drawn as the
-   * tag's border and glow on the same glass, the text unchanged. A play it gives none keeps the tag its
-   * alignment draws.
+   * given the play and all of this card's plays on its post in play order: a `#rrggbb` hex or an opaque
+   * `rgb()`, drawn as the tag's border and glow on the same glass, the text unchanged, and lifted toward
+   * white where it is too dark to read there (`glassInk`, ink.ts). A play it gives none, or a color the
+   * engine cannot read, keeps the tag its alignment draws.
    */
   readonly tag?: (play: CardPlay, plays: readonly CardPlay[]) => string | undefined;
   /** The card's own settings in the play form, when it has any (Whoops!'s ink). A card with none gives none. */
