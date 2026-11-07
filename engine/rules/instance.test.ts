@@ -761,4 +761,7 @@ test('a stock line may use a staff token\'s pronoun forms and no other token\'s'
   assert.match(said(line('visitFiled', '{mod.thei} left.')), /stock line "visitFiled".*\{mod\.thei\}.*one of: they, They, them/);
   assert.match(said(line('moveMet', '{boss.they} won.')), /stock line "moveMet".*\{boss\.they\}/);
   assert.match(said(line('visitFiled', '{rule.they}')), /\{rule\.they\}/);
+  assert.deepEqual(instanceProblems(line('visitFiled', '{mod} filed it.')), []);
+  assert.match(said(line('visitFiled', '{mod.} left.')), /stock line "visitFiled".*\{mod\.\}/);
+  assert.match(said(line('visitFiled', '{mod.they.x} left.')), /stock line "visitFiled".*\{mod\.they\.x\}/);
 });

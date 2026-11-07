@@ -84,11 +84,10 @@ export function presetOf(set: PronounSet): PronounPreset | null {
   return null;
 }
 
-const LOWER = ['they', 'them', 'their', 'theirs', 'themself', 'is', 'was', 'has', 'does', 's'] as const;
 /** The fifteen keys of the words table (the amendment, section 1): the they-set's words, each capitalized too, and the verbs. */
 export const PRONOUN_FORMS = [
-  ...LOWER.slice(0, 5).flatMap((w) => [w, w.charAt(0).toUpperCase() + w.slice(1)]),
-  ...LOWER.slice(5),
+  'they', 'They', 'them', 'Them', 'their', 'Their', 'theirs', 'Theirs', 'themself', 'Themself',
+  'is', 'was', 'has', 'does', 's',
 ] as const;
 export type PronounForm = (typeof PRONOUN_FORMS)[number];
 
