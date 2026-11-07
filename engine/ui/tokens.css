@@ -122,6 +122,14 @@
   --kb-button-fg: var(--kb-fg);
   --kb-button-fg-shadow: none;
   --kb-button-case: none;
+  /* The button's decoration: by default none (today's bordered box), a skin draws its highlight, low edge and drop shadow here. */
+  --kb-button-shadow: none;
+  --kb-button-weight: normal;
+  --kb-button-tracking: normal;
+  --kb-button-tracking-small: normal;
+  --kb-button-primary-fg-shadow: none;
+  --kb-button-primary-shadow: inset 0 0 0 1px currentColor;
+  --kb-button-pressed-shadow: inset 1px 2px 3px rgb(0 0 0 / 0.45);
   --kb-button-radius: 0;
   --kb-button-primary-bg: var(--kb-fg);
   --kb-button-primary-fg: var(--kb-bg);

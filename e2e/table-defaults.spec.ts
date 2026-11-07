@@ -52,3 +52,45 @@ for (const scheme of ['light', 'dark'] as const) {
     });
   });
 }
+
+/**
+ * The Chrome button under the engine's tokens alone (board-look plan, Task 4) is today's bordered box: the board's rule for an edge,
+ * the page's own ground and ink, no shadow, the body's weight and spacing, no radius; a primary button is bold with its one
+ * inside pixel. The decoration (shadow, bold, tracking) is the theme's, set in tokens.
+ */
+const BUTTONS = '<button class="kb-button" id="plain">Reply</button><button class="kb-button" data-kb-size="small" id="small">Quote</button><button class="kb-button" data-kb-primary id="primary">Send</button>';
+async function buttonFaults(page: import('@playwright/test').Page, extra = ''): Promise<string[]> {
+  await page.setContent(`<!doctype html><style>${sheet}${extra}</style><body>${BUTTONS}</body>`);
+  return page.evaluate(() => {
+    const out: string[] = [];
+    const is = (what: string, got: string, want: string) => { if (got !== want) out.push(`${what} is ${got}, not ${want}`); };
+    for (const id of ['plain', 'small']) {
+      const c = getComputedStyle(document.getElementById(id)!);
+      is(`a ${id} button's shadow`, c.boxShadow, 'none');
+      is(`a ${id} button's weight`, c.fontWeight, '400');
+      is(`a ${id} button's tracking`, c.letterSpacing, 'normal');
+      is(`a ${id} button's radius`, c.borderTopLeftRadius, '0px');
+      is(`a ${id} button's label shadow`, c.textShadow, 'none');
+      is(`a ${id} button's case`, c.textTransform, 'none');
+    }
+    const p = getComputedStyle(document.getElementById('primary')!);
+    is('a primary button\'s weight', p.fontWeight, '700');
+    is('a primary button\'s label shadow', p.textShadow, 'none');
+    if (!/0px 0px 0px 1px inset/u.test(p.boxShadow)) out.push(`a primary button's shadow is ${p.boxShadow}, not its one inside pixel`);
+    return out;
+  });
+}
+
+for (const scheme of ['light', 'dark'] as const) {
+  test.describe(`button, ${scheme}`, () => {
+    test.use({ colorScheme: scheme });
+    test('a button under the engine\'s tokens alone is today\'s bordered box', async ({ page }) => {
+      expect(await buttonFaults(page)).toEqual([]);
+    });
+    test('poison: a drop shadow and bold added to the button are named', async ({ page }) => {
+      const found = await buttonFaults(page, '.kb-button{box-shadow:1px 2px 3px #000;font-weight:700}');
+      expect(found.some((f) => f.includes('shadow'))).toBe(true);
+      expect(found.some((f) => f.includes('weight'))).toBe(true);
+    });
+  });
+}

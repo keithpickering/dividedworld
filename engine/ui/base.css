@@ -208,8 +208,8 @@ h1 {
   box-sizing: border-box;
   min-height: 1.9em;
   padding: 0.35em 0.9em;
-  font: bold var(--kb-size-small) / 1.2 var(--kb-font-body);
-  letter-spacing: 0.04em;
+  font: var(--kb-button-weight) var(--kb-size-small) / 1.2 var(--kb-font-body);
+  letter-spacing: var(--kb-button-tracking);
   text-transform: var(--kb-button-case);
   text-decoration: none;
   color: var(--kb-button-fg);
@@ -217,8 +217,7 @@ h1 {
   background: var(--kb-button-bg);
   border: 1px solid var(--kb-button-edge);
   border-radius: var(--kb-button-radius);
-  /* The inner highlight and its low edge, then the soft drop shadow. */
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.55), inset 0 -1px 0 rgb(0 0 0 / 0.25), 1px 2px 3px rgb(0 0 0 / 0.35);
+  box-shadow: var(--kb-button-shadow);
   cursor: pointer;
 }
 
@@ -226,6 +225,7 @@ h1 {
   min-height: 0;
   padding: 0.25em 0.6em;
   font-size: var(--kb-size-fine);
+  letter-spacing: var(--kb-button-tracking-small);
   gap: 0.4em;
 }
 
@@ -238,7 +238,10 @@ h1 {
 .kb-button[data-kb-primary] {
   color: var(--kb-button-primary-fg);
   background: var(--kb-button-primary-bg);
-  text-shadow: 0 1px 0 #000, 0 0 5px rgb(255 255 255 / 0.35);
+  font-weight: bold;
+  text-shadow: var(--kb-button-primary-fg-shadow);
+  /* Today's second pixel, drawn inside the first, unless a theme sets its own. */
+  box-shadow: var(--kb-button-primary-shadow);
   padding-inline: 1.3em;
 }
 
@@ -250,7 +253,7 @@ h1 {
 .kb-button[aria-expanded='true'],
 .kb-button[aria-pressed='true'],
 .kb-button[aria-current]:not([aria-current='false']) {
-  box-shadow: inset 1px 2px 3px rgb(0 0 0 / 0.45);
+  box-shadow: var(--kb-button-pressed-shadow);
   filter: brightness(0.92);
 }
 

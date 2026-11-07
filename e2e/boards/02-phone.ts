@@ -32,7 +32,7 @@ const manifest: BoardManifest = {
   landmarks: [
     /* The type scale (the glass polish, design section 7) sets the button's words at 15px where the board draws 12px, so it is 10.4px wider and, held to the right edge, 18.2px further left. */
     /* The banner stands 18px lower (its top margin, the board look's Task 3) and 1px more for its frame. */
-    /* DEPARTURE (the board look's Task 4): the Boards button is a Chrome button now (bold, tracked, in the button's own ink), which this board, a record, draws plain, so its type is not compared (docs/research/2026-11-06-board-look/02-phone.html draws it as built) and its box is 10px wider again, held to the right edge 10.9px further left. */
+    /* DEPARTURE (the board look's Task 4): the Boards button is a Chrome button now (bold, tracked, in the button's own ink), which this board, a record, draws plain, so its type is not compared (docs/research/2026-11-06-board-look/03-phone.html, the batch-1 phone board, draws it as built) and its box is 10px wider again, held to the right edge 10.9px further left. */
     { id: 'boards', role: 'button', name: 'Boards', type: false, buildShift: { x: -29.1, y: 19, width: 20.8 } },
     /* The sheet's box, its heading with the count, and its close button. */
     { id: 'hand', role: 'region', name: 'Your hand', type: false },

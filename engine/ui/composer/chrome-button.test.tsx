@@ -48,7 +48,8 @@ describe('.kb-button in base.css', () => {
     const r = rule('.kb-button');
     for (const t of ['--kb-button-bg', '--kb-button-edge', '--kb-button-fg', '--kb-button-fg-shadow', '--kb-button-case', '--kb-button-radius']) expect(r, t).toContain(t);
     expect(r).toMatch(/text-transform:\s*var\(--kb-button-case\)/u);
-    expect(r).toMatch(/font:\s*bold/u);
+    expect(r).toMatch(/font:\s*var\(--kb-button-weight\)/u);
+    for (const t of ['--kb-button-shadow', '--kb-button-tracking']) expect(r, t).toContain(t);
   });
 
   test('a primary button takes the primary tokens; pressed is aria-expanded or aria-current, drawn with an inset shadow', () => {
