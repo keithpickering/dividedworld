@@ -12,6 +12,9 @@
   font-size: var(--kb-glass-size-body);
   font-weight: 600;
   color: var(--kb-glass-text);
+  /* The board's link tokens are the board theme's, for the board's ground; on the glass's own ground a link takes the glass's ink (links.test.tsx). */
+  --kb-link: var(--kb-glass-pale);
+  --kb-link-visited: var(--kb-glass-pale);
 }
 
 /*
