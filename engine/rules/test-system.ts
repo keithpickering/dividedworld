@@ -3,6 +3,7 @@
  * tests that build an instance of their own to test something else (the settlement, an action).
  * They say nothing about any real instance, and `instance.test.ts` builds its own to test these.
  */
+import { PRONOUN_PRESETS } from './pronouns.ts';
 import type { Settings, SystemContent } from './types.ts';
 import { STOCK_LINE_KEYS } from '../system/stock.ts';
 import { DEFAULT_STRENGTHS } from '../system/pool.ts';
@@ -17,8 +18,9 @@ export const testModBots: Settings['modBots'] = { allowanceMost: 3, ruleDaysMost
 
 export const testWarnBar: Settings['warnBar'] = { size: 10, bands: { minor: 2, moderate: 4, severe: 7 }, decay: { unit: 'day', count: 14 }, banDays: [1, 3, 7] };
 
-export const systemSettings: Pick<Settings, 'modBots' | 'warnBar' | 'systemEnabled' | 'meetingCron' | 'phases' | 'inheritanceGraceDays' | 'rosterRecentExcluded' | 'structuralHoldHours' | 'microEventDailyCalls' | 'digestThreads' | 'digestExcerpts' | 'digestExcerptChars' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'pool' | 'boardNameMaxLength' | 'moveExpiryMostDays' | 'moveExpiryLeastHours' | 'demandCheckMinutes' | 'demandChecksPerTick' | 'modelTiers'> = {
+export const systemSettings: Pick<Settings, 'modBots' | 'warnBar' | 'systemEnabled' | 'pronouns' | 'meetingCron' | 'phases' | 'inheritanceGraceDays' | 'rosterRecentExcluded' | 'structuralHoldHours' | 'microEventDailyCalls' | 'digestThreads' | 'digestExcerpts' | 'digestExcerptChars' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'pool' | 'boardNameMaxLength' | 'moveExpiryMostDays' | 'moveExpiryLeastHours' | 'demandCheckMinutes' | 'demandChecksPerTick' | 'modelTiers'> = {
   systemEnabled: false,
+  pronouns: PRONOUN_PRESETS.it,
   meetingCron: '23 9 * * *',
   phases: {
     honeymoon: { days: 14, weeklyMoves: 2, bankCap: 4, moveExpiryMostDays: 7 },
