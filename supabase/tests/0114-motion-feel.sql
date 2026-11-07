@@ -1,4 +1,4 @@
--- The motion feel (supabase/migrations/0110_motion_feel.sql; docs/plans/2026-11-04-glass-polish-plan.md, Task 11): motion is system, reduce,
+-- The motion feel (supabase/migrations/0112_motion_feel.sql; docs/plans/2026-11-04-glass-polish-plan.md, Task 11): motion is system, reduce,
 -- full or snappy; a saved `full` is unchanged, `snappy` is kept, and anything else is refused by name.
 
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
