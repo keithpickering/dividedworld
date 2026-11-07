@@ -165,9 +165,9 @@ export interface Seed {
   staffPost(staff: Id, thread: Id, body: string, options?: { at?: number; ruling?: { readonly verdict: 'accepted' | 'rejected'; readonly apology: Id } }): Id;
   /**
    * A conferGroup move that has landed (what `apply_mod_move`/`apply_meeting` write): `staff` moved `character` into `group` (a key of the instance's groups), barring it from `board` (a
-   * slug; absent: no bar). It asks for an accepted apology (`apologyAccepted`) and runs to `expiresAt` (default three days on). Returns the move's Act.
+   * slug; absent: no bar). It asks for an accepted apology (`apologyAccepted`) and runs to `expiresAt` (default three days on; null: it has no end date). Returns the move's Act.
    */
-  groupMove(staff: string, move: { readonly office?: 'boss' | 'mod' | null; readonly character: Id; readonly group: string; readonly board?: string; readonly body?: string; readonly at?: number; readonly expiresAt?: number; readonly demand?: boolean }): Id;
+  groupMove(staff: string, move: { readonly office?: 'boss' | 'mod' | null; readonly character: Id; readonly group: string; readonly board?: string; readonly body?: string; readonly at?: number; readonly expiresAt?: number | null; readonly demand?: boolean }): Id;
   /** A staff character's office changes (a handover, a reassignment): moves it made before keep the office stamped on them. */
   setOffice(staff: string, office: 'boss' | 'mod' | 'member' | 'benched'): void;
   /** An apology a character wrote to a move (`apologize`): the spin Act is written as the server writes it, and the row is in `state` (default `pending`) from `at`. Returns the row's apology Act. */
@@ -419,7 +419,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const describes: { board: Id; moveAct: Id | null; text: string }[] = [];
   /** The apologies barred characters wrote (`apologies`, 0117). */
   const apologies: { move: Id; apology: Id; character: Id; state: 'pending' | 'accepted' | 'rejected' | 'returned'; at: number }[] = [];
-  const moveEnds = new Map<Id, { why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent'; by: string; at: number }>();
+  const moveEnds = new Map<Id, { why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent' | 'overturned'; by: string; at: number }>();
   const careers = new Map<string, Career>();
   const staffProfiles: { key: string; at: number; interests: string[]; favorites: Id[]; mood: string; signature: string }[] = [];
   interface QueueRec { id: number; staff: string; successor?: string; move: SeedMove; why: string; goLiveAt: number; failure: { at: number; text: string } | null; refusal?: { at: number; text: string }; heldAt: number | null; landed: Id | null; replacedAt?: number; adminDescription?: string }
@@ -667,12 +667,18 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** The moves in force, newest first: a landed `move` Act with no end. */
   const inForce = () => [...acts.values()].filter((a) => a.kind === 'move' && !moveEnds.has(a.id)).sort((a, b) => b.at - a.at || b.order - a.order);
   /** The boards a character is barred from posting on now (bars_now, less a move past its expiry that the tick has not ended). */
+  /** When a move ends by itself (`move_expires_at`): the latest appeal ruling's `until`, else the move's own expiry; null for a move with no end of its own. */
+  const moveEndsAt = (a: ActRec): string | null => {
+    const ruled = [...acts.values()].filter((r) => r.kind === 'appeal_ruling' && typeof r.payload['until'] === 'string' && acts.get(r.target ?? '')?.target === a.id).sort((x, y) => y.at - x.at)[0];
+    return typeof ruled?.payload['until'] === 'string' ? ruled.payload['until'] : typeof a.payload['expires_at'] === 'string' ? a.payload['expires_at'] : null;
+  };
   const barsOf = (character: Id): Bar[] => inForce().filter((a) => {
     const params = (a.payload['params'] ?? {}) as Record<string, unknown>;
-    return a.payload['kind'] === 'conferGroup' && params['character'] === character && typeof params['board'] === 'string' && Date.parse(String(a.payload['expires_at'])) > now();
+    const end = moveEndsAt(a);
+    return a.payload['kind'] === 'conferGroup' && params['character'] === character && typeof params['board'] === 'string' && (end === null || Date.parse(end) > now());
   }).map((a): Bar => {
     const params = a.payload['params'] as Record<string, unknown>;
-    return { board: String(params['board']), move: a.id, group: String(params['group']), expiresAt: typeof a.payload['expires_at'] === 'string' ? a.payload['expires_at'] : null };
+    return { board: String(params['board']), move: a.id, group: String(params['group']), expiresAt: moveEndsAt(a) };
   });
   const apologyEveryMs = (): number => 3_600_000 * (settings.apology.apologyEveryHours);
   /** A board as it is called now: its latest rename in force, else its own row (boards_now). */
@@ -1646,7 +1652,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           const r = all.find((x) => x.kind === 'appeal_ruling' && x.target === a.id);
           const about = p?.kind === 'ban' ? acts.get(String(p.payload.infraction_act))?.payload.about_act : p?.payload.about_act;
           return {
-            appeal: a.id, character: a.character!, at: iso(a.at), punishment: a.target!, punishmentKind: p?.kind === 'ban' ? 'ban' : 'infraction', postSeq: seqOf(about), thread: a.thread,
+            appeal: a.id, character: a.character!, at: iso(a.at), punishment: a.target!, punishmentKind: p?.kind === 'ban' ? 'ban' : p?.kind === 'move' ? 'move' : 'infraction', postSeq: seqOf(about), thread: a.thread,
             verdict: (r?.payload.verdict as AppealVerdict | undefined) ?? null, ruledAt: r ? iso(r.at) : null, pointsDelta: typeof r?.payload.points_delta === 'number' ? r.payload.points_delta : null,
             hearer: named(r?.character ?? null), refund: refundedAppeals.has(a.id) ? 'failed' : null,
           };
@@ -1733,6 +1739,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const every = apologyEveryMs();
       return apologies.filter((a) => a.character === character).sort((x, y) => y.at - x.at)
         .map((a): Apology => ({ move: a.move, state: a.state, at: iso(a.at), nextAt: a.state === 'returned' ? null : iso(a.at + every) }));
+    },
+    appealedMoves(character) {
+      const account = me();
+      if (!account || characters.get(character)?.owner !== account.id) return [];
+      return [...acts.values()].filter((a) => a.kind === 'appeal' && a.character === character && acts.get(a.target ?? '')?.kind === 'move' && !refundedAppeals.has(a.id)).map((a) => a.target!);
     },
     apologize(move, character, title, body) {
       const c = acting(character);
@@ -2028,9 +2039,18 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (said === '') return refuse('say why this punishment should change', 'plea');
       if (said.length > 1000) return refuse('a plea is at most 1000 characters', 'plea');
       const pun = acts.get(punishment);
-      if (!pun || (pun.kind !== 'infraction' && pun.kind !== 'ban') || pun.payload.character !== through) return refuse('that is not a punishment of this character');
+      /* A group move that punishes (its group's tone, the instance's) and has not ended, of this character's: appealed by the character it moved (params.character). */
+      const params = (pun?.payload['params'] ?? {}) as Record<string, unknown>;
+      const movePunishes = pun?.kind === 'move' && pun.payload['kind'] === 'conferGroup' && params['character'] === through
+        && instance.groups.conferred.find((g) => g.key === params['group'])?.tone === 'punishment';
+      if (!pun || !((pun.kind === 'infraction' || pun.kind === 'ban') && pun.payload.character === through) && !movePunishes) return refuse('that is not a punishment of this character');
+      if (movePunishes) {
+        const end = moveEndsAt(pun);
+        if (moveEnds.has(pun.id) || (end !== null && Date.parse(end) <= now())) return refuse('that punishment has already run out');
+      }
       if ([...acts.values()].some((a) => a.kind === 'appeal' && a.target === punishment && !refundedAppeals.has(a.id))) return refuse('this punishment has already been appealed; each punishment is appealed once');
-      const hearer = [...characters.values()].find((c) => c.staff && c.staff.office === (pun.kind === 'ban' ? 'boss' : 'mod') && c.debutedAt !== null && c.retiredAt === null)
+      const hearer = (movePunishes ? characters.get(pun.character ?? '') : undefined)
+        ?? [...characters.values()].find((c) => c.staff && c.staff.office === (pun.kind === 'ban' ? 'boss' : 'mod') && c.debutedAt !== null && c.retiredAt === null)
         ?? [...characters.values()].find((c) => c.staff && c.debutedAt !== null && c.retiredAt === null && c.staff.office !== 'developer');
       if (!hearer) return refuse('there is no one on duty to hear an appeal right now');
       const account = me()!;
@@ -2049,7 +2069,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const line = `${hearer.name} has heard it: ${verdict}.`;
       /* A ban's ruling names its new end (close_appeal): overturned ends it now, reduced halves it from its start, increased runs it half again. */
       let until: string | undefined;
-      if (pun.kind === 'ban') {
+      if (movePunishes) {
+        /* A move's length is from its landing to its own end; none has no length, so reduced and increased are upheld (close_appeal). Overturned ends it now, why overturned. */
+        const own = typeof pun.payload['expires_at'] === 'string' ? Date.parse(pun.payload['expires_at']) : null;
+        const length = own === null ? null : own - pun.at;
+        const end = verdict === 'overturned' ? now() : length === null ? null : verdict === 'reduced' ? pun.at + length / 2 : verdict === 'increased' ? own! + length / 2 : null;
+        if (end !== null) until = iso(end);
+      } else if (pun.kind === 'ban') {
         const days = Number(pun.payload.days);
         const start = pun.at;
         const was = Date.parse(String(pun.payload.until));
@@ -2057,6 +2083,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         if (end !== null) until = iso(end);
       }
       write({ character: hearer.id, kind: 'appeal_ruling', thread: pun.thread, target: appeal.id, payload: { appeal_act: appeal.id, verdict, points_delta: delta, line, ...(until ? { until } : {}) } });
+      if (movePunishes) {
+        if (verdict === 'overturned') {
+          moveEnds.set(pun.id, { why: 'overturned', by: 'appeal', at: now() });
+          write({ character: null, kind: 'move_end', thread: pun.thread, target: pun.id, payload: { why: 'overturned', by: 'appeal' } });
+        } else if (verdict === 'reduced' && until !== undefined && Date.parse(until) <= now()) {
+          moveEnds.set(pun.id, { why: 'expired', by: 'appeal', at: now() });
+          write({ character: null, kind: 'move_end', thread: pun.thread, target: pun.id, payload: { why: 'expired', by: 'appeal' } });
+        }
+      }
       const refunded = verdict === 'overturned' ? settings.modBots.appealPrice : 0;
       giveBack(account, refunded, appeal.id);
       return ok<AppealResult>({ appeal: appeal.id, verdict, line, pointsDelta: delta, refunded });
@@ -2994,7 +3029,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         character: staffId(staff), kind: 'move', thread: announcements(),
         payload: {
           kind: 'conferGroup', ...(office ? { office } : {}), body: m.body ?? 'You have been moved.', params: { character: m.character, group: m.group, ...(board ? { board } : {}) },
-          ...(m.demand === false ? {} : { demand: { kind: 'apologyAccepted', params: {} } }), expires_at: iso(m.expiresAt ?? at + 3 * DAY),
+          ...(m.demand === false ? {} : { demand: { kind: 'apologyAccepted', params: {} } }), ...(m.expiresAt === null ? {} : { expires_at: iso(m.expiresAt ?? at + 3 * DAY) }),
         }, at,
       }).id;
     },

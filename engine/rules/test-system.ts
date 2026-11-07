@@ -56,5 +56,8 @@ export const testSystem: SystemContent = {
 /** A small valid `groups` for test fakes of an `Instance`: a default rung and a staff rung. */
 export const testGroups: GroupsContent = {
   ladder: [{ key: 'members', name: 'Members', color: '#7a7a7a', when: { kind: 'default' } }, { key: 'staff', name: 'Test Cores', color: '#d4a017', when: { kind: 'staff' } }],
-  conferred: [],
+  conferred: [
+    { key: 'trialMembers', name: 'Trial Members', badge: 'Trial Member', color: '#d2691e', stripe: true, tone: 'punishment' },
+    { key: 'teachersPet', name: 'Teacher\'s Pet', color: '#c2408f', tone: 'favor' },
+  ],
 };

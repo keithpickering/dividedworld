@@ -442,7 +442,10 @@ function modRows(data: LogData, words: Words): LogRow[] {
   for (const a of data.log.appeals) {
     const price = paid('appeal', a.appeal);
     const gone = back(a.appeal);
-    const what = a.punishmentKind === 'ban' ? 'the ban' : 'the warn points';
+    /* A group move is named by its group, and linked to the move's own line in the announcements, where the log holds that move; else it is "a group move". */
+    const moved = a.punishmentKind === 'move' ? data.log.groupMoves.find((g) => g.move === a.punishment) : undefined;
+    const movedGroup = moved ? ([...words.instance.groups.ladder, ...words.instance.groups.conferred].find((x) => x.key === moved.group)?.name ?? moved.group) : null;
+    const what = a.punishmentKind === 'ban' ? 'the ban' : a.punishmentKind === 'move' ? (movedGroup === null ? 'a group move' : `the move into ${movedGroup}`) : 'the warn points';
     const came = price === null ? '' : `, and the ${plain(price)} Aura came back`;
     const ruling = a.verdict === null
       ? (a.refund !== null ? ' No one could hear it, so your Aura came back and you can appeal again.' : ' It has not been ruled on yet. If it cannot be, your Aura comes back by itself.')
@@ -452,7 +455,9 @@ function modRows(data: LogData, words: Words): LogRow[] {
       : ` ${a.hearer ?? 'The hearer'} increased it${a.pointsDelta ? `: ${plural(a.pointsDelta, 'more point', 'more points')} landed` : ''}.`;
     rows.push({
       key: `appeal:${a.appeal}`, kind: 'appeal', at: a.at, what: 'You made an appeal',
-      details: [`${nameOf(a.character)} appealed ${what} from `, post(a.thread, a.postSeq, true), `${forPrice(price)}. The plea is public.${ruling}`],
+      details: a.punishmentKind === 'move'
+        ? [`${nameOf(a.character)} appealed `, moved?.seq == null ? what : { text: what, href: threadHref(moved.thread, pageOf(moved.seq, words.postsPerPage), moved.seq) }, `${forPrice(price)}. The plea is public.${ruling}`]
+        : [`${nameOf(a.character)} appealed ${what} from `, post(a.thread, a.postSeq, true), `${forPrice(price)}. The plea is public.${ruling}`],
       aura: -(price ?? 0) + gone, wallet: null, characters: [a.character],
     });
   }

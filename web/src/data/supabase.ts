@@ -820,6 +820,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         move: r['move_act'], state: r['state'] === 'accepted' || r['state'] === 'rejected' || r['state'] === 'returned' ? r['state'] : 'pending', at: String(r['created_at'] ?? ''), nextAt: orNull(r['next_at']),
       }));
     },
+    async appealedMoves(character) {
+      if (!idOk(character)) return [];
+      /* my_appeals (0111) is the caller's own characters' appeals; one refunded for a failed or stale judgment leaves the move appealable again (appeal_blocks). */
+      const rows = await list(() => client.from('my_appeals').select('punishment,refund').eq('character', character).eq('punishment_kind', 'move'));
+      return rows.filter((r) => r['refund'] !== 'failed' && r['refund'] !== 'stale').map((r): Id => r['punishment']);
+    },
     async movesLog(staff, before): Promise<MovesLog> {
       /* Newest first by (at, id), a page and one more row to know whether older ones remain; the keyset is the last row's, so a page turn reads a page. */
       let q = client.from('moves_log').select('id,kind,params,demand,expires_at,thread,at,ended_why,ended_by,ended_at,kept_by').eq('staff', staff);
@@ -1557,7 +1563,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
             verdict: VERDICTS.find((v) => v === r['verdict']) ?? null, verdictAt: str(r['verdict_at']), mod: str(r['mod_name']), refund: r['refund'] === 'failed' || r['refund'] === 'stale' ? r['refund'] : null,
           })),
           appeals: appealRows.map((r): LogAppeal => ({
-            appeal: r['appeal'], character: r['character'], at: r['at'], punishment: r['punishment'], punishmentKind: r['punishment_kind'] === 'ban' ? 'ban' : 'infraction',
+            appeal: r['appeal'], character: r['character'], at: r['at'], punishment: r['punishment'], punishmentKind: r['punishment_kind'] === 'ban' ? 'ban' : r['punishment_kind'] === 'move' ? 'move' : 'infraction',
             postSeq: typeof r['post_seq'] === 'number' ? r['post_seq'] : null, thread: r['thread'], verdict: RULINGS.find((v) => v === r['verdict']) ?? null, ruledAt: str(r['ruled_at']),
             pointsDelta: typeof r['points_delta'] === 'number' ? r['points_delta'] : null, hearer: str(r['hearer_name']),
             refund: r['refund'] === 'failed' || r['refund'] === 'stale' || r['refund'] === 'expired' ? r['refund'] : null,

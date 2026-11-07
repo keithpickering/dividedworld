@@ -6,12 +6,14 @@
  * It is board copy: plain and true about the game's state, never in the staff member's voice (the fiction may lie; the log never does). It names who made the move by the office
  * the move's staff character held when it landed (stamped on the move's Act; a Mod may make this move), the group by the instance's name for it, the date of the move and the end of the bar. The way out is the
  * apology: **Write an apology** opens the spin form on the move, sent through `apologize`; while one waits it says whom it is with, and after a rejection it says when the next may
- * be written. **See the move** links to the move's post. The Appeal button is the appeals task's (Task 14) and stands after See the move.
+ * be written. **See the move** links to the move's post. **Appeal to the Boss** (or a Mod, whoever made the move) stands after it, with its price, for a punishment move not yet appealed:
+ * it opens the appeal form on the move (cards/Forms.tsx's `MoveAppeal`), and once an appeal is made the box says the move has been appealed, since each move is appealed once.
  *
  * The box belongs to the acting character: the composer swaps it away with the mask. A mask that is also banned is told of its ban instead (the composer does not draw this), so
  * no apology is offered while a ban holds.
  */
 import { useEffect, useId, useRef, useState } from 'react';
+import { MoveAppeal } from '../cards/Forms.tsx';
 import { moveOffice, officeRole } from '../board/move-words.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { useKayfa } from '../context.tsx';
@@ -50,13 +52,18 @@ interface Detail {
   readonly move: Act | null;
   readonly board: string | null;
   readonly apologies: readonly Apology[];
+  /** An appeal of this move is open or used (one appeal per move). */
+  readonly appealed: boolean;
 }
 
 export function BarredNote({ character, bar }: { readonly character: { readonly id: Id; readonly name: string }; readonly bar: Bar }) {
   const head = useId();
-  const { api, ui, settings } = useKayfa();
+  const { api, ui, settings, instance } = useKayfa();
   const [detail, setDetail] = useState<Detail | 'failed' | null>(null);
   const [writing, setWriting] = useState(false);
+  /* An appeal made from this box: it says so where its button was, and takes focus there since the button is gone. */
+  const [made, setMade] = useState(false);
+  const appealedNote = useRef<HTMLParagraphElement>(null);
   const [, tick] = useState(0);
   const write = useRef<HTMLButtonElement>(null);
 
@@ -64,11 +71,12 @@ export function BarredNote({ character, bar }: { readonly character: { readonly 
     let live = true;
     setDetail(null);
     void (async () => {
-      const [move, boards, apologies] = await Promise.all([api.act(bar.move), api.boardNames(), api.myApologies(character.id)]);
-      if (live) setDetail({ move, board: boards.find((b) => b.id === bar.board)?.name ?? null, apologies: apologies.filter((a) => a.move === bar.move) });
+      const [move, boards, apologies, appealed] = await Promise.all([api.act(bar.move), api.boardNames(), api.myApologies(character.id), api.appealedMoves(character.id)]);
+      if (live) setDetail({ move, board: boards.find((b) => b.id === bar.board)?.name ?? null, apologies: apologies.filter((a) => a.move === bar.move), appealed: appealed.includes(bar.move) });
     })().catch(() => { if (live) setDetail('failed'); });
     return () => { live = false; };
   }, [api, bar.move, bar.board, character.id]);
+  useEffect(() => { if (made) appealedNote.current?.focus(); }, [made]);
 
   /* A rejection's wait ends by itself: the box draws the button again at that time. */
   const waitEnds = detail !== null && detail !== 'failed' ? nextWrittenAt(detail.apologies) : null;
@@ -100,6 +108,8 @@ export function BarredNote({ character, bar }: { readonly character: { readonly 
   /* The newest apology came back unjudged: it says so, and the next may be written at once. */
   const returned = !waiting && !accepted && apologies[0]?.state === 'returned';
   const next = waitEnds !== null && waitEnds > Date.now() ? waitEnds : null;
+  const punishment = instance.groups.conferred.find((g) => g.key === bar.group)?.tone === 'punishment';
+  const appealed = detail.appealed;
   const seq = move?.seq ?? null;
   const href = move ? (seq !== null ? threadHref(move.thread, pageOf(seq, settings.postsPerPage), seq) : `/t/${move.thread}`) : null;
   return (
@@ -125,8 +135,15 @@ export function BarredNote({ character, bar }: { readonly character: { readonly 
           <button ref={write} type="button" className="kb-button" data-kb-size="small" onClick={() => setWriting(true)}>Write an apology</button>
         )}
         {href !== null && <Link to={href} className="kb-button" data-kb-size="small">See the move</Link>}
-        {/* The barred box's Appeal (with its price, opening Mod Bots' appeal form on the move) goes here: Task 14. */}
+        {/* Appeal: for a punishment move only (a favor's bar is no punishment), once per move, with its price; the form opens on the move. */}
+        {punishment && !appealed && !made && (
+          <MoveAppeal
+            onUsed={() => setMade(true)}
+            move={{ move: bar.move, character: character.id, name: character.name, group, board, began: move ? move.createdAt : null, until: bar.expiresAt, hearer: who }}
+          />
+        )}
       </div>
+      {punishment && (appealed || made) && <p ref={appealedNote} tabIndex={-1} role="status">This move has been appealed. Each move is appealed once.</p>}
     </section>
   );
 }

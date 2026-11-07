@@ -1272,7 +1272,8 @@ describe('the log', () => {
       if (name === 'my_bans') return rows([{ ban: 'b1', character: B, at: '2026-10-29T20:31:00+00:00', days: 1, until: '2026-10-30T20:31:00+00:00', infraction: 'i1', rule: 'Rule 2: No double posting', thread: T }]);
       if (name === 'my_group_moves') return rows([{ move: 'g1', character: B, at: '2026-10-29T20:32:00+00:00', thread: T, seq: 7, group: 'trialMembers', board: A, board_name: 'General', expires_at: '2026-11-05T20:32:00+00:00', landed_until: '2026-11-04T20:32:00+00:00', check_at: null, demand: 'apologyAccepted', office: 'boss', ended_why: 'met', ended_by: 'demand', ended_at: '2026-10-30T10:00:00+00:00', ruling: 'reduced', ruled_at: '2026-10-29T22:00:00+00:00', ruled_until: '2026-11-05T20:32:00+00:00' }]);
       if (name === 'my_reports') return rows([{ report: 'r1', character: B, at: '2026-10-29T17:00:00+00:00', post: A, post_seq: 41, thread: T, verdict: 'dismissed', verdict_at: '2026-10-29T17:00:03+00:00', mod_name: 'The Clerk', refund: null }]);
-      if (name === 'my_appeals') return rows([{ appeal: 'a1', character: B, at: '2026-10-29T21:00:00+00:00', punishment: 'i1', punishment_kind: 'infraction', post_seq: 41, thread: T, verdict: 'reduced', ruled_at: '2026-10-29T21:00:04+00:00', points_delta: -1, hearer_name: 'The Clerk', refund: null }]);
+      if (name === 'my_appeals') return rows([{ appeal: 'a1', character: B, at: '2026-10-29T21:00:00+00:00', punishment: 'i1', punishment_kind: 'infraction', post_seq: 41, thread: T, verdict: 'reduced', ruled_at: '2026-10-29T21:00:04+00:00', points_delta: -1, hearer_name: 'The Clerk', refund: null },
+        { appeal: 'a2', character: B, at: '2026-10-29T20:50:00+00:00', punishment: 'g1', punishment_kind: 'move', post_seq: null, thread: T, verdict: null, ruled_at: null, points_delta: null, hearer_name: null, refund: null }]);
       return undefined;
     });
   }
@@ -1301,7 +1302,8 @@ describe('the log', () => {
       bans: [{ ban: 'b1', character: B, at: '2026-10-29T20:31:00+00:00', days: 1, until: '2026-10-30T20:31:00+00:00', infraction: 'i1', rule: 'Rule 2: No double posting', thread: T }],
       groupMoves: [{ move: 'g1', character: B, at: '2026-10-29T20:32:00+00:00', thread: T, seq: 7, group: 'trialMembers', board: A, boardName: 'General', expiresAt: '2026-11-05T20:32:00+00:00', landedUntil: '2026-11-04T20:32:00+00:00', checkAt: null, demand: 'apologyAccepted', office: 'boss', endedWhy: 'met', endedBy: 'demand', endedAt: '2026-10-30T10:00:00+00:00', ruling: 'reduced', ruledAt: '2026-10-29T22:00:00+00:00', ruledUntil: '2026-11-05T20:32:00+00:00' }],
       reports: [{ report: 'r1', character: B, at: '2026-10-29T17:00:00+00:00', post: A, postSeq: 41, thread: T, verdict: 'dismissed', verdictAt: '2026-10-29T17:00:03+00:00', mod: 'The Clerk', refund: null }],
-      appeals: [{ appeal: 'a1', character: B, at: '2026-10-29T21:00:00+00:00', punishment: 'i1', punishmentKind: 'infraction', postSeq: 41, thread: T, verdict: 'reduced', ruledAt: '2026-10-29T21:00:04+00:00', pointsDelta: -1, hearer: 'The Clerk', refund: null }],
+      appeals: [{ appeal: 'a1', character: B, at: '2026-10-29T21:00:00+00:00', punishment: 'i1', punishmentKind: 'infraction', postSeq: 41, thread: T, verdict: 'reduced', ruledAt: '2026-10-29T21:00:04+00:00', pointsDelta: -1, hearer: 'The Clerk', refund: null },
+        { appeal: 'a2', character: B, at: '2026-10-29T20:50:00+00:00', punishment: 'g1', punishmentKind: 'move', postSeq: null, thread: T, verdict: null, ruledAt: null, pointsDelta: null, hearer: null, refund: null }],
       before: null,
     });
     const [ledger] = h.to('my_ledger');
@@ -2133,6 +2135,17 @@ describe('reports, appeals and what a page says of a ban', () => {
     const q = h.to('my_bans')[0]!.url.searchParams;
     expect([q.get('character'), q.get('until')?.startsWith('gt.'), q.get('limit')]).toEqual([`eq.${B}`, true, '1']);
     expect(await harness(() => json(null)).api.beatMod(C)).toBeNull();
+  });
+
+  it('reads the moves a character has appealed from my_appeals, leaving out an appeal refunded for a failed or stale judgment, and sends a move\'s appeal as any other', async () => {
+    const h = harness((r) => (r.url.pathname === `${REST}/my_appeals`
+      ? rows([{ punishment: 'm1', refund: null }, { punishment: 'm2', refund: 'failed' }, { punishment: 'm3', refund: 'stale' }, { punishment: 'm4', refund: 'expired' }, { punishment: 'm5', refund: 'overturned' }])
+      : r.url.pathname === '/functions/v1/staff/appeal' ? json({ appeal: 'a1', verdict: 'overturned', line: 'Gone.', points_delta: 0, refunded: 50 }) : undefined));
+    expect(await h.api.appealedMoves(B)).toEqual(['m1', 'm4', 'm5']);
+    const q = h.to('my_appeals')[0]!.url.searchParams;
+    expect([q.get('character'), q.get('punishment_kind')]).toEqual([`eq.${B}`, 'eq.move']);
+    expect(await h.api.appealedMoves('not an id')).toEqual([]);
+    expect(await h.api.fileAppeal(B, PUNISHMENT, 'please')).toMatchObject({ ok: true, value: { verdict: 'overturned', refunded: 50 } });
   });
 
   it('carries the ruling of an appeal heard on a visit\'s infraction, and none where the page says none or says nonsense', async () => {

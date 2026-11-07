@@ -565,7 +565,7 @@ export interface MoveInForce {
 
 /** A move that ended, or was held or refused and never landed, in the last 30 days (admin_queue). */
 export interface MoveEnded {
-  readonly how: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent' | 'held' | 'refused';
+  readonly how: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent' | 'overturned' | 'held' | 'refused';
   readonly by: string | null;
   readonly at: string;
   /** Null for a held move, which was never an Act. */
@@ -1194,7 +1194,8 @@ export interface LogAppeal {
   readonly character: Id;
   readonly at: string;
   readonly punishment: Id;
-  readonly punishmentKind: 'infraction' | 'ban';
+  /** What was appealed: warn points, a ban, or a group move that punishes (`my_appeals.punishment_kind`; a move has no post number). */
+  readonly punishmentKind: 'infraction' | 'ban' | 'move';
   readonly postSeq: number | null;
   readonly thread: Id;
   readonly verdict: AppealVerdict | null;
@@ -1566,6 +1567,11 @@ export interface KayfaApi {
    * player's character, or an id that is no one's, reads none. Rejects when it cannot be read.
    */
   myApologies(character: Id): Promise<readonly Apology[]>;
+  /**
+   * The group moves of one of the player's characters that an appeal was made on and not refunded for a failed judgment (`my_appeals`): each is appealed once, so the barred box stops
+   * offering Appeal on them. A character that is not the player's, or an id that is no one's, reads none. Rejects when it cannot be read.
+   */
+  appealedMoves(character: Id): Promise<readonly Id[]>;
   /** A page of a staff member's moves, newest first, `MOVES_LOG_PAGE` to a page; pass the last page's `older` for the next. */
   movesLog(staff: string, before?: MovesCursor | null): Promise<MovesLog>;
   /** A staff member's latest in-character profile, or null before it has one (a Mod Bot has none until it is asked to write one). */

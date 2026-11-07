@@ -3,7 +3,7 @@
  * conferGroup move bars Pipewrench from General, and where it would reply the page says so, plainly and truthfully, with the way out. The bar is per character, so the same
  * player's other mask posts freely; the three states of an apology (none, waiting, rejected) each say what is true; a banned mask is told of its ban instead.
  */
-import { screen, waitFor, within } from '@testing-library/react';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { axeViolations, describeViolations } from '../a11y.ts';
@@ -24,6 +24,7 @@ afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 /** Pipewrench is barred from General by the Boss (or a Mod, `by: 'mod'`) for three days, and may apologize. */
 function barred(by: 'boss' | 'mod' = 'boss') {
   const w = threadWorld(2, { groups: GROUPS });
+  w.fake.seed.wallet(w.me, 500);
   const boss = w.fake.seed.staff('director', 'The Director', by);
   const at = Date.now() - 3_600_000;
   const move = w.fake.seed.groupMove('director', { character: w.pipe, group: 'trialMembers', board: 'general', at, expiresAt: at + 3 * DAY });
@@ -91,11 +92,70 @@ describe('the box of a barred mask', () => {
     expect(link).toHaveAttribute('href', `/t/${move!.thread}?page=1#post-${move!.seq}`);
   });
 
-  test('holds no Appeal yet: that is the appeal task\'s button', async () => {
+  test('offers Appeal after See the move, naming who hears it and the price', async () => {
     const w = barred();
     openThread(w, undefined, { settings: { groups: GROUPS } });
-    await screen.findByRole('heading', { name: /can't post on General/u });
-    expect(screen.queryByRole('button', { name: /^Appeal/u })).toBeNull();
+    const appeal = await screen.findByRole('button', { name: 'Appeal to the Boss · 0.50 Aura' });
+    const see = await screen.findByRole('link', { name: 'See the move' });
+    expect(see.compareDocumentPosition(appeal) & Node.DOCUMENT_POSITION_FOLLOWING, 'Appeal stands after See the move').toBeTruthy();
+    expect(appeal).toHaveAttribute('aria-haspopup', 'dialog');
+  });
+
+  test('names a Mod where a Mod made the move', async () => {
+    const w = barred('mod');
+    openThread(w, undefined, { settings: { groups: GROUPS } });
+    expect(await screen.findByRole('button', { name: 'Appeal to a Mod · 0.50 Aura' })).toBeInTheDocument();
+  });
+
+  test('opens the appeal form on the move: plain terms of the four rulings, and sends the move\'s Act through fileAppeal', async () => {
+    const w = barred();
+    const file = vi.spyOn(w.fake, 'fileAppeal');
+    w.fake.seed.judging({ appeal: 'reduced' });
+    openThread(w, undefined, { settings: { groups: GROUPS } });
+    await userEvent.click(await screen.findByRole('button', { name: 'Appeal to the Boss · 0.50 Aura' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Appeal the move' });
+    const form = await within(dialog).findByRole('form', { name: 'Appeal' });
+    expect(form).toHaveTextContent(/The punishment: Pipewrench is in Trial Members, which can't post on General\. It began .+ and ends by itself .+\./u);
+    expect(form).toHaveTextContent('The Boss hears it. If it is overturned the move ends at once and your Aura is refunded. If it is upheld nothing changes. If it is reduced the move is cut to half its length, counted from when it began, and ends at once if that time has passed. If it is increased the move runs half its length longer, though never past the longest a move may run. One appeal per move, your plea is public, and an apology can still end the move: whichever comes first does.');
+    await userEvent.type(within(form).getByRole('textbox', { name: 'Your plea (public)' }), 'I have learned.');
+    await userEvent.click(within(form).getByRole('button', { name: 'Appeal · 0.50 Aura' }));
+    await waitFor(() => expect(within(form).getByRole('status')).toHaveTextContent('The Boss heard it and cut the move to half its length.'));
+    expect(file).toHaveBeenCalledWith(w.pipe, w.move, 'I have learned.');
+    expect((await w.fake.log()).appeals[0]).toMatchObject({ punishment: w.move, punishmentKind: 'move', verdict: 'reduced', character: w.pipe });
+    expect(await w.fake.wallet()).toMatchObject({ balance: 450 });
+  });
+
+  test('says plainly that a move with no end date cannot be shortened or lengthened', async () => {
+    const w = threadWorld(2, { groups: GROUPS });
+    w.fake.seed.staff('director', 'The Director', 'boss');
+    w.fake.seed.groupMove('director', { character: w.pipe, group: 'trialMembers', board: 'general', at: Date.now() - 3_600_000, expiresAt: null });
+    openThread(w, undefined, { settings: { groups: GROUPS } });
+    await userEvent.click(await screen.findByRole('button', { name: 'Appeal to the Boss · 0.50 Aura' }));
+    expect(await screen.findByRole('form', { name: 'Appeal' })).toHaveTextContent('It has no end date, so a reduction or an increase changes nothing and is recorded as upheld.');
+  });
+
+  test('is gone once an appeal of this move is used, and comes back when it was refunded', async () => {
+    const w = barred();
+    w.fake.seed.judging({ appeal: 'failed' });
+    await w.fake.fileAppeal(w.pipe, w.move, 'First.');
+    openThread(w, undefined, { settings: { groups: GROUPS } });
+    expect(await screen.findByRole('button', { name: 'Appeal to the Boss · 0.50 Aura' }), 'a failed judgment refunds, so it may be made again').toBeInTheDocument();
+    cleanup();
+    w.fake.seed.judging({ appeal: 'upheld' });
+    await w.fake.fileAppeal(w.pipe, w.move, 'Second.');
+    openThread(w, undefined, { settings: { groups: GROUPS } });
+    await screen.findByRole('link', { name: 'See the move' });
+    expect(screen.queryByRole('button', { name: /^Appeal to/u })).toBeNull();
+    expect(screen.getByText('This move has been appealed. Each move is appealed once.')).toBeInTheDocument();
+  });
+
+  test('is not offered for a bar a favor carries, which is no punishment', async () => {
+    const w = threadWorld(2, { groups: GROUPS });
+    w.fake.seed.staff('director', 'The Director', 'boss');
+    w.fake.seed.groupMove('director', { character: w.pipe, group: 'teachersPet', board: 'general', at: Date.now() - 3_600_000 });
+    openThread(w, undefined, { settings: { groups: GROUPS } });
+    await screen.findByRole('link', { name: 'See the move' });
+    expect(screen.queryByRole('button', { name: /^Appeal to/u })).toBeNull();
   });
 
   test('has no accessibility violations', async () => {
@@ -184,5 +244,8 @@ describe('a mask both barred and banned', () => {
     await screen.findByText(/is banned until/u);
     expect(screen.queryByRole('heading', { name: /can't post on General/u })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Write an apology' })).toBeNull();
+    /* The one Appeal on the page is the ban's, to the Boss; the move's is not offered while the ban holds. */
+    expect(screen.getAllByRole('button', { name: /^Appeal to/u })).toHaveLength(1);
+    expect(screen.queryByRole('dialog', { name: 'Appeal the move' })).toBeNull();
   });
 });
