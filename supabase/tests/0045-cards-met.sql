@@ -22,7 +22,7 @@ begin
   perform tests.become(ann);
   -- A first meeting creates the row with every other preference at its default.
   said := meet_card('whoops');
-  if said -> 'cards_met' is distinct from '["whoops"]'::jsonb or said ->> 'theme' is distinct from 'system' then
+  if said -> 'cards_met' is distinct from '["whoops"]'::jsonb or said ->> 'theme' is distinct from 'default' then
     raise exception 'a first meeting keeps the key and the defaults: %', said;
   end if;
   -- A key added twice is kept once, and the answer is the same shape whether or not it was new.

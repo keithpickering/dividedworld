@@ -32,7 +32,7 @@ export function FollowControl({ thread, following: held }: { readonly thread: Id
   };
   return (
     <div className="kb-thread-controls" role="group" aria-label="Thread controls">
-      <button type="button" className="kb-button kb-thread-follow" aria-disabled={busy || undefined} onClick={() => void toggle()}>
+      <button type="button" className="kb-button kb-thread-follow" data-kb-size="small" aria-disabled={busy || undefined} onClick={() => void toggle()}>
         {following ? 'Unfollow this thread' : 'Follow this thread'}
       </button>
       {refused && <span className="kb-small" role="alert">{refused}</span>}

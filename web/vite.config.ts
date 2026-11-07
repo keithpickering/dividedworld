@@ -10,6 +10,7 @@
  */
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { themePreviewPlugin } from '../tools/theme-preview.mjs';
 import { fileURLToPath } from 'node:url';
 import { SECURITY_HEADERS } from './headers.ts';
 
@@ -18,7 +19,7 @@ const repo = fileURLToPath(new URL('..', import.meta.url));
 export default defineConfig({
   root: fileURLToPath(new URL('.', import.meta.url)),
   publicDir: fileURLToPath(new URL('../instances/divided-world/ui/public', import.meta.url)),
-  plugins: [react()],
+  plugins: [themePreviewPlugin(), react()],
   server: { fs: { allow: [repo] } },
   /* `vite preview` answers with the headers the site is served with (headers.ts), so the e2e run is under the real policy. */
   preview: { headers: { ...SECURITY_HEADERS } },

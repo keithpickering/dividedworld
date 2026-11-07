@@ -293,12 +293,16 @@ export function boardIds(
  * own: `phones` lists the ids those exports name. A phone board counts as having a manifest (so it needs no PENDING entry, and
  * is a stale one if it has it), is not run on its own, since its parent's test runs it, and is a problem if it also has a
  * manifest file of its own or names no board in the folder.
+ *
+ * `colorsOnly` is the boards no task ever gives a manifest (a dark twin, compared on colors by web/contrast.test.tsx, or a reference
+ * drawing): they are neither run nor waiting, and one that gains a manifest, or is also pending, is a problem.
  */
 export function boardsToRun(
   folder: readonly string[],
   manifests: readonly string[],
   pending: Readonly<Record<string, string>>,
   phones: readonly string[] = [],
+  colorsOnly: Readonly<Record<string, string>> = {},
 ): { run: string[]; pending: string[]; problems: string[] } {
   const boards = folder.filter(isBoardFile).map((f) => f.slice(0, -'.html'.length)).sort();
   const has = new Set([...manifests, ...phones]);
@@ -308,7 +312,12 @@ export function boardsToRun(
   const waiting: string[] = [];
   for (const b of boards) {
     const part = pending[b];
-    if (has.has(b)) {
+    const only = colorsOnly[b];
+    if (only !== undefined) {
+      /* A colors-only board (a dark twin, a reference) is held by web/contrast.test.tsx and is never compared by landmarks. */
+      if (has.has(b)) problems.push(`${b} is a colors-only board (${only}) and has a manifest: a colors-only board never has one`);
+      if (part !== undefined) problems.push(`${b} is in both PENDING and COLORS_ONLY: it is one or the other`);
+    } else if (has.has(b)) {
       if (!phone.has(b)) run.push(b);
       if (phone.has(b) && manifests.includes(b)) problems.push(`${b} is a phone export's board and has a manifest file of its own: keep one`);
       if (part !== undefined) problems.push(`${b} has a manifest and is still in PENDING (${part}): remove it from the map`);
@@ -316,6 +325,7 @@ export function boardsToRun(
     else problems.push(`${b} has no manifest and is not in PENDING: write e2e/boards/${b}.ts, or name the part that builds it`);
   }
   for (const name of Object.keys(pending)) if (!boards.includes(name)) problems.push(`PENDING names ${name}, which is no board file in the folder`);
+  for (const name of Object.keys(colorsOnly)) if (!boards.includes(name)) problems.push(`COLORS_ONLY names ${name}, which is no board file in the folder`);
   for (const name of manifests) if (!boards.includes(name)) problems.push(`e2e/boards/${name}.ts is a manifest for no board file in the folder`);
   for (const name of new Set(phones.filter((n, i) => phones.indexOf(n) !== i))) problems.push(`${name} is the phone board of more than one manifest: a phone board has one parent`);
   for (const name of phones) if (!boards.includes(name)) problems.push(`a phone export names ${name}, which is no board file in the folder`);
@@ -341,8 +351,9 @@ export function screensWithoutBoards(
   screens: readonly { readonly name: string; readonly board?: string | { readonly none: string } }[],
   ids: readonly string[],
   pending: Readonly<Record<string, string>>,
+  colorsOnly: Readonly<Record<string, string>> = {},
 ): string[] {
-  const known = new Set([...ids, ...Object.keys(pending)]);
+  const known = new Set([...ids, ...Object.keys(pending), ...Object.keys(colorsOnly)]);
   const problems: string[] = [];
   for (const { name, board } of screens) {
     /* The type requires a board; an entry that reaches here without one is an untyped one (a cast, or a spec's own literal), which is what this catches. */

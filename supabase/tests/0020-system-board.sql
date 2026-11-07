@@ -55,11 +55,11 @@ begin
   -- A player posts nowhere on it: not a thread, not a reply.
   perform tests.become(ann);
   why := pg_temp.refusal(format('select start_thread(%L, %L, %L, %L)', 'the-system', a, 'Mine now', 'Hello.'));
-  if why is distinct from 'only The System posts here; spin a thread from what it said' then raise exception 'a thread on The System''s board: %', why; end if;
+  if why is distinct from 'only the staff post here; spin a thread from what they said' then raise exception 'a thread on The System''s board: %', why; end if;
   why := pg_temp.refusal(format('select post(%L, %L, %L)', t, a, 'A reply.'));
-  if why is distinct from 'only The System posts here; spin a thread from what it said' then raise exception 'a reply on The System''s board: %', why; end if;
+  if why is distinct from 'only the staff post here; spin a thread from what they said' then raise exception 'a reply on The System''s board: %', why; end if;
   why := pg_temp.refusal(format('select post(%L, %L, %L, %L)', t, a, 'A quote.', tally));
-  if why is distinct from 'only The System posts here; spin a thread from what it said' then raise exception 'a quoting reply on The System''s board: %', why; end if;
+  if why is distinct from 'only the staff post here; spin a thread from what they said' then raise exception 'a quoting reply on The System''s board: %', why; end if;
 
   -- A spin from the announcement opens on the players' board, and points back at it.
   spun := spin(tally, a, 'About last night', 'Who is Sys Debut?');

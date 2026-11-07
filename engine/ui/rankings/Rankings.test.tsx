@@ -54,7 +54,7 @@ function world() {
   const spritey = seed.character(other, 'Spritey', 'face', { at: at(1) });
   const gloomba = seed.character(other, 'Gloomba', 'heel', { at: at(1) });
   const quiet = seed.character(other, 'Quiet', 'face', { at: at(1) });
-  const system = seed.thread('the-system', null, 'Turns', 'All of them.', { at: at(1) });
+  const system = seed.thread('announcements', null, 'Turns', 'All of them.', { at: at(1) });
   const said = seed.thread('general', spritey, 'here it is', 'Fine.', { at: at(3) });
   seed.reveal(spritey, said.thread, { at: at(3, 13) });
   const gloat = seed.thread('general', gloomba, 'me too', 'Fine.', { at: at(5) });
@@ -173,8 +173,8 @@ describe('a finished season', () => {
   test('a season with no final standings is a document that is not there: the router says nothing is here', async () => {
     const w = finished(3);
     renderIn(w.fake, <RankingsScreen embedded season={7} />, { path: '/season?tab=rankings&season=7' });
-    expect(await screen.findByRole('heading', { name: 'The page cannot be found' })).toBeInTheDocument();
-    expect(screen.queryByRole('table')).toBeNull();
+    expect(await screen.findByRole('heading', { name: 'There is no page at this address.' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Name 000' })).toBeNull();
   });
 });
 

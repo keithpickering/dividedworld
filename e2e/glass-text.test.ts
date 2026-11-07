@@ -295,6 +295,8 @@ describe('what the measurement does not read', () => {
       <div class="kb-hand-board-post-bar"><span id="bar">Spritey · #41</span></div>
       <div class="kb-hand-board-post-foot"><span id="foot">quote</span></div>
       <div class="kb-profile-preview-post"><span id="postbit">Mrs. Hooligan</span><div><i id="signed">the signature</i></div></div>
+      <div class="kb-tp-big" aria-hidden="true"><b id="mini">DIVIDED WORLD</b><span><u id="miniDeep">Start a thread</u></span></div>
+      <p class="kb-tp-bigger" id="miniLookalike">A glass line whose class only starts like the miniature's</p>
       <p class="kb-profile-preview-postal" id="postLookalike">A glass line whose class only starts like the profile preview's post</p>
       <p class="kb-hand-board-post-barely" id="barLookalike">A glass line whose class only starts like the bar's</p>
       <p class="kb-hand-board-post-footer" id="footLookalike">A glass line whose class only starts like the foot's</p>
@@ -320,6 +322,12 @@ describe('what the measurement does not read', () => {
     expect(isSkipped(at('postbit'))).toBe(true);
     expect(isSkipped(at('signed'))).toBe(true);
     expect(isSkipped(at('postLookalike'))).toBe(false);
+  });
+
+  test('a node inside Settings › The board\'s miniature is skipped, however deep, and a glass line whose class only starts like it is not', () => {
+    expect(isSkipped(at('mini'))).toBe(true);
+    expect(isSkipped(at('miniDeep'))).toBe(true);
+    expect(isSkipped(at('miniLookalike'))).toBe(false);
   });
 
   test('the instance\'s art is skipped too', () => {

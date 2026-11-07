@@ -226,7 +226,7 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
   const gloomba = seed.character(rival, 'Gloomba', 'heel', { at: utc(4, 12, 0) });
   const thwompson = seed.character(reader, 'Thwompson', 'lurker', { at: utc(5, 12, 0) });
   const fans = crowd.map((account, i) => seed.character(account, `Ringside ${i + 1}`, 'lurker', { at: utc(6, 12, i) }));
-  const turns = seed.thread('the-system', null, 'Season 1: Who Turned', 'Every Turn, as it was announced.', { at: utc(1, 12, 0) });
+  const turns = seed.thread('announcements', null, 'Season 1: Who Turned', 'Every Turn, as it was announced.', { at: utc(1, 12, 0) });
   seed.season({ number: 1, turnsThread: turns.thread });
 
   /* ---- the thread: #1 to #40 as filler, then page 3 ---- */

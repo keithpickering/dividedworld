@@ -144,7 +144,7 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
               <p className="kb-settled-card-words">
                 {current?.name}'s Turn took effect. From the {utcDay(s.endsAt)} settlement it scores as {/^[aeiou]/iu.test(className(turn.classNow)) ? 'an' : 'a'} {className(turn.classNow)}.{' '}
                 {turn.announced
-                  ? <>The System announced it{turn.announced.was ? ', with the old class,' : ''} in {turnAct && turnTitle ? <GlassLink to={turnAct.seq !== null ? threadHref(turnAct.thread, pageOf(turnAct.seq, settings.postsPerPage), turnAct.seq) : threadHref(turnAct.thread, 1)}>{turnTitle}</GlassLink> : 'its board'}.</>
+                  ? <>Its own Promo announced it{turn.announced.was ? ', with the old class,' : ''} in {turnAct && turnTitle ? <GlassLink to={turnAct.seq !== null ? threadHref(turnAct.thread, pageOf(turnAct.seq, settings.postsPerPage), turnAct.seq) : threadHref(turnAct.thread, 1)}>{turnTitle}</GlassLink> : 'the board'}.</>
                   : 'It was a silent Turn: no one else was told.'}
               </p>
             </section>

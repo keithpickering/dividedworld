@@ -1,6 +1,12 @@
 /* The index. A phone (40em and under) folds each board into a card. */
+/* The board's heading sits close above its table. */
+.kb-index > h1:first-child {
+  margin-top: 0;
+  margin-bottom: 6px;
+}
+
 .kb-board-main {
-  width: 62%;
+  width: 65%;
   overflow-wrap: anywhere;
 }
 
@@ -10,13 +16,19 @@
 }
 
 .kb-board-last {
+  width: 25%;
   overflow-wrap: anywhere;
 }
 
-.kb-board-last a {
-  /* A target of 24px at the least (WCAG 2.2, 2.5.8). */
-  display: inline-block;
-  padding-block: 0.3rem;
+.kb-board-link {
+  font-size: 1rem;
+}
+
+.kb-board-last > a {
+  /* A target of 24px at the least (WCAG 2.2, 2.5.8) that sits below the name's link without reaching into it: a box of its own, in a line of its own, not padding pulled up by a negative margin. */
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.5rem;
 }
 
 .kb-board-unit,
@@ -27,15 +39,33 @@
 .kb-readonly-tag {
   display: inline-block;
   border: 1px dashed var(--kb-rule);
+  background: var(--kb-tag-bg);
   padding: 0 0.3em;
   font: bold var(--kb-size-small) / 1.3 var(--kb-font-mono);
 }
 
+.kb-board-sep {
+  display: none;
+}
+
 @media (max-width: 40em) {
-  .kb-board-list,
-  .kb-board-list tbody,
-  .kb-board-list tr,
-  .kb-board-list td {
+  /*
+   * A phone folds each board into a row of the same ruled table (docs/research/2026-11-06-board-look/03-phone.html): its name, its words,
+   * and one line of "3 threads · last: Mrs. Hooligan, Oct 6". The table's elements are blocks, so the counts flow as one text.
+   */
+  .kb-board-list {
+    display: grid;
+    gap: 1px;
+    padding: 1px;
+    width: auto;
+  }
+
+  .kb-board-list tbody {
+    display: grid;
+    gap: 1px;
+  }
+
+  .kb-board-list tr {
     display: block;
     width: auto;
   }
@@ -48,30 +78,55 @@
     clip-path: inset(50%);
   }
 
-  .kb-board-row {
-    border: 1px solid var(--kb-rule);
-    padding: 0.4em 3%;
+  .kb-board-list tbody > .kb-board-row {
+    padding: 8px 10px;
+    background: var(--kb-row-1);
   }
 
-  .kb-board-row + .kb-board-row {
-    border-top: 0;
+  .kb-board-list tbody > .kb-board-row:nth-child(even) {
+    background: var(--kb-row-2);
   }
 
-  .kb-board-list td {
-    border: 0;
-    padding: 0.1em 0;
+  .kb-table.kb-board-list .kb-board-row > td {
+    display: block;
     width: auto;
+    padding: 0;
+    background: none;
+    border: 0;
     text-align: left;
   }
 
-  .kb-board-threads,
-  .kb-board-last {
-    display: inline-block;
-    margin-right: 0.8em;
+  .kb-table.kb-board-list .kb-board-row > td.kb-board-main {
+    margin-bottom: 2px;
+  }
+
+  .kb-table.kb-board-list .kb-board-row > td.kb-board-threads,
+  .kb-table.kb-board-list .kb-board-row > td.kb-board-last {
+    display: inline;
+    color: var(--kb-muted);
+    font-size: var(--kb-size-small);
+    line-height: 1.6;
+  }
+
+  .kb-board-threads {
+    white-space: nowrap;
+  }
+
+  .kb-board-threads > span.kb-num {
+    color: var(--kb-fg);
   }
 
   .kb-board-unit,
-  .kb-board-last-label {
+  .kb-board-last-label,
+  .kb-board-sep {
     display: inline;
+  }
+
+  .kb-board-last br {
+    display: none;
+  }
+
+  .kb-board-last > a {
+    white-space: nowrap;
   }
 }

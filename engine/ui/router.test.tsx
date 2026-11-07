@@ -508,9 +508,9 @@ describe('the router loads before it moves', () => {
     mount(load);
     act(() => nav('/t/gone'));
     await answer(calls[0], null);
-    expect(screen.getByRole('heading', { name: 'The page cannot be found' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'The thread you requested does not exist.' })).toBeInTheDocument();
     act(() => nav('/nowhere/at/all'));
-    expect(screen.getByRole('heading', { name: 'The page cannot be found' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'There is no page at this address.' })).toBeInTheDocument();
     expect(window.location.pathname).toBe('/nowhere/at/all');
   });
   test('a move that keeps the route\'s key draws at once with no load', async () => {

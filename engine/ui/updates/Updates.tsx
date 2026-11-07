@@ -172,7 +172,8 @@ export function UpdatesScreen({ doc }: { readonly doc: ScreenDoc<UpdatesPage> })
 }
 
 function UpdatesView({ page }: { readonly page: UpdatesPage }) {
-  const { api } = useKayfa();
+  const { api, ui } = useKayfa();
+  const roleWord = ui.copy.roleWord;
   const { query } = useLocation();
   const navigate = useNavigate();
   const admin = useIsAdmin(api, true);
@@ -214,7 +215,7 @@ function UpdatesView({ page }: { readonly page: UpdatesPage }) {
   };
   return (
     <Updates
-      updates={updates} open={asked.update} more={more} onMore={onMore} paging={paging} scope={scope} entering={enter.entering} admin={admin} onWritten={written} initial={admin && todo !== undefined ? todoDraft(todo) : undefined}
+      updates={updates} open={asked.update} more={more} onMore={onMore} paging={paging} scope={scope} entering={enter.entering} admin={admin} onWritten={written} initial={admin && todo !== undefined ? todoDraft(todo, roleWord) : undefined}
       handoverGone={admin && asked.season !== null && todo === undefined ? asked.season : undefined} handoverProblem={admin ? problem : undefined} seed={seed}
     />
   );

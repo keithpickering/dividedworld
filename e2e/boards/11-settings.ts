@@ -9,8 +9,8 @@
  * Where the build differs by a decision:
  *  - the menu bar holds all six tabs (web Task 3; the glass plan, section 3), as the board draws them
  *    now (it draws Rankings and the Vending Machine too), each compared in full;
- *  - the sections' navigation holds Account and Accessibility (the glass plan, section 9, choice 3):
- *    the board's Notifications, Privacy and Export my data are not built;
+ *  - the sections' navigation holds Account, Accessibility, The board and Notifications (the glass plan, section 9, choice 3; the board look's section 9):
+ *    the board's Privacy and Export my data are not built;
  *  - "The board" is the radiogroup's name, as its row's label, where the board names it "Board colors";
  *    it offers Follow my device and the instance's own themes beside the board's two (section 9,
  *    choice 4), and a row of its own, Posts, follows it, where the board draws Read-outs, which is not
@@ -22,6 +22,9 @@
  * Departures by the glass polish (docs/plans/2026-11-04-glass-polish-design.md, section 2): the head is a PageHead (engine/ui/glass/PageHead.tsx), which
  * leaves 36px under the title where the board leaves 66, so the sections' navigation and the page stand 40px higher than the board draws them: the
  * navigation and the heading are compared across, and what follows the heading from the heading's own corner. The row labels' column is 10px wider.
+ *
+ * The Board colors row (the board's, and once the build's "The board") moved to Settings › The board, between Accessibility and Notifications
+ * (the board look design, section 9; board 19 of 2026-11-06-board-look holds it), so the rail holds a third tab and this page one row fewer.
  *
  * Not compared: the smoke and its calms, which are the guards' (tools/check-glass-contrast.mjs and
  * e2e/glass-text.spec.ts). "Changes save as you make them." follows the build's own rows (Posts, and the card tips'
@@ -88,17 +91,7 @@ const manifest: BoardManifest = {
       'High puts solid black behind every line of text on the glass and lifts it all to at least 7:1. The smoke stays at the edges of the screen.'),
     ...row('text-size', 'Text size', 'Text size', ['100%', '125%', '150%', '200%'],
       'Applies to the board and the glass together. Past 150% the glass folds into one column, and nothing is cut off.'),
-    /*
-     * The board's two colors follow Follow my device in the build, so each stands one choice further
-     * along (box `none`); the board draws Black on white chosen, where the fixture's player follows
-     * the device, so its face is the neon fill on the board and the outline in the build (type not
-     * compared). White on black is the outline on both, and its type is compared.
-     */
-    ...row('board', 'The board', 'Board colors', [],
-      'The 2003 board stays 2003 either way. Only its two colors swap.', 'The board',
-      'The 2003 board stays 2003 whichever you choose. Only its colors swap.'),
-    { id: 'board-black-on-white', role: 'text', name: 'Black on white', within: 'board', box: 'none', type: false },
-    { id: 'board-white-on-black', role: 'text', name: 'White on black', within: 'board', box: 'none' },
+    /* The board's Board colors row is not here: the board look made it Settings › The board, a section of its own (the board look design's section 9), held by board 19 of that folder. */
 
     /* The build's Accessibility sections carry a row the board does not (Tips: its switch, Show tips again and Replay the HUD tour, the onboarding plan's Task 9), so this line stands lower than the board's: held by its words and type alone. */
     { id: 'saves', role: 'text', name: 'Changes save as you make them.', box: 'none' },

@@ -27,8 +27,8 @@ const group = (name: string) => screen.getByRole('radiogroup', { name });
 const radio = (groupName: string, name: string) => within(group(groupName)).getByRole('radio', { name });
 
 /** Choose `name` in `groupName`, wait for the save, then load the screen afresh and find it still chosen. */
-async function persists(w: ReturnType<typeof world>, groupName: string, name: string, saved: Partial<Preferences>, mark?: readonly [string, string]) {
-  open(w.fake);
+async function persists(w: ReturnType<typeof world>, groupName: string, name: string, saved: Partial<Preferences>, mark?: readonly [string, string], path = '/settings') {
+  open(w.fake, path);
   await screen.findByRole('radiogroup', { name: groupName });
   await userEvent.click(radio(groupName, name));
   /* Applied at once, before the save is answered. */
@@ -36,7 +36,7 @@ async function persists(w: ReturnType<typeof world>, groupName: string, name: st
   await waitFor(async () => expect(await w.fake.preferences()).toMatchObject(saved));
   cleanup();
   for (const m of MARKS) document.documentElement.removeAttribute(m);
-  open(w.fake);
+  open(w.fake, path);
   await screen.findByRole('radiogroup', { name: groupName });
   expect(radio(groupName, name)).toBeChecked();
 }
@@ -74,11 +74,11 @@ describe('Settings, as board 11 draws it', () => {
     expect(screen.queryByRole('navigation', { name: 'Settings sections' })).toBeNull();
   });
 
-  test('its sections are a navigation of Account, Accessibility and Notifications, and the page opens on Accessibility', async () => {
+  test('its sections are a navigation of Account, Accessibility, The board and Notifications, and the page opens on Accessibility', async () => {
     open(world().fake);
     expect(await screen.findByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
     const nav = screen.getByRole('navigation', { name: 'Settings sections' });
-    expect(within(nav).getAllByRole('link').map((l) => l.textContent)).toEqual(['Account', 'Accessibility', 'Notifications']);
+    expect(within(nav).getAllByRole('link').map((l) => l.textContent)).toEqual(['Account', 'Accessibility', 'The board', 'Notifications']);
     expect(within(nav).getByRole('link', { name: 'Accessibility' })).toHaveAttribute('aria-current', 'page');
     expect(within(nav).getByRole('link', { name: 'Account' })).toHaveAttribute('href', '/settings?section=account');
     expect(await screen.findByRole('heading', { level: 2, name: 'Accessibility' })).toBeInTheDocument();
@@ -93,10 +93,10 @@ describe('Settings, as board 11 draws it', () => {
     expect(offered('Smoke')).toEqual(['Full', 'Low', 'Off']);
     expect(offered('Contrast')).toEqual(['Standard', 'High']);
     expect(offered('Text size')).toEqual(['100%', '125%', '150%', '200%']);
-    /* The board's colors, then each theme the instance adds (the glass plan, section 9, choice 4). */
-    expect(offered('The board')).toEqual(['Follow my device', 'Black on white', 'White on black', 'Sepia']);
+    /* The board's look is its own section now (Settings › The board), not a row here. */
+    expect(screen.queryByRole('radiogroup', { name: 'The board' })).toBeNull();
     expect(offered('Posts')).toEqual(['Side by side', 'Stacked']);
-    for (const [g, n] of [['Motion', 'Follow my device'], ['Smoke', 'Full'], ['Contrast', 'Standard'], ['Text size', '100%'], ['The board', 'Follow my device'], ['Posts', 'Side by side']] as const) {
+    for (const [g, n] of [['Motion', 'Follow my device'], ['Smoke', 'Full'], ['Contrast', 'Standard'], ['Text size', '100%'], ['Posts', 'Side by side']] as const) {
       expect(radio(g, n)).toBeChecked();
     }
   });
@@ -109,7 +109,7 @@ describe('Settings, as board 11 draws it', () => {
 
   test('the board\'s colors and motion apply at once and persist across a fresh load', async () => {
     const w = world();
-    await persists(w, 'The board', 'White on black', { theme: 'dark' }, ['data-kb-mode', 'dark']);
+    await persists(w, 'Mode', 'Dark', { theme: 'default', mode: 'dark' }, ['data-kb-mode', 'dark'], '/settings?section=board');
     cleanup();
     await persists(w, 'Motion', 'Off', { motion: 'reduce' }, ['data-kb-motion', 'reduce']);
   });
@@ -163,11 +163,11 @@ describe('Settings, as board 11 draws it', () => {
   test('a save that gets no answer puts the choice back and says so', async () => {
     const w = world();
     w.fake.setPreferences = () => Promise.reject(new Error('offline'));
-    open(w.fake);
-    await screen.findByRole('radiogroup', { name: 'The board' });
-    await userEvent.click(radio('The board', 'White on black'));
+    open(w.fake, '/settings?section=board');
+    await screen.findByRole('radiogroup', { name: 'Mode' });
+    await userEvent.click(radio('Mode', 'Dark'));
     expect(await screen.findByRole('alert')).toHaveTextContent(/no answer came back/iu);
-    expect(radio('The board', 'Follow my device')).toBeChecked();
+    expect(radio('Mode', 'Follow my device')).toBeChecked();
     expect(document.documentElement.hasAttribute('data-kb-mode')).toBe(false);
   });
 
@@ -176,19 +176,19 @@ describe('Settings, as board 11 draws it', () => {
     const calls: { patch: PreferencesPatch; settle: (a: Answer<Preferences>) => void }[] = [];
     w.fake.setPreferences = (patch) => new Promise((settle) => { calls.push({ patch, settle }); });
     open(w.fake);
-    await screen.findByRole('radiogroup', { name: 'The board' });
-    await userEvent.click(radio('The board', 'White on black'));
+    await screen.findByRole('radiogroup', { name: 'Smoke' });
+    await userEvent.click(radio('Smoke', 'Off'));
     await userEvent.click(radio('Motion', 'Off'));
     expect(calls).toHaveLength(1);
-    calls[0]!.settle({ ok: false, error: 'a theme is named in lowercase words joined by hyphens' });
+    calls[0]!.settle({ ok: false, error: 'the smoke is full, low or off' });
     await waitFor(() => expect(calls).toHaveLength(2));
     expect(calls[1]!.patch).toEqual({ motion: 'reduce' });
     calls[1]!.settle({ ok: true, value: { ...DEFAULT_PREFERENCES, motion: 'reduce' } });
-    expect(await screen.findByRole('alert')).toHaveTextContent('a theme is named in lowercase words joined by hyphens');
-    expect(radio('The board', 'Follow my device')).toBeChecked();
+    expect(await screen.findByRole('alert')).toHaveTextContent('the smoke is full, low or off');
+    expect(radio('Smoke', 'Full')).toBeChecked();
     expect(radio('Motion', 'Off')).toBeChecked();
     expect(document.documentElement.getAttribute('data-kb-motion')).toBe('reduce');
-    expect(document.documentElement.hasAttribute('data-kb-mode')).toBe(false);
+    expect(document.documentElement.getAttribute('data-kb-smoke-level')).toBeNull();
   });
 
   test('the Tips row is a switch and two buttons in plain words, the switch on while tips are on', async () => {
@@ -278,7 +278,7 @@ describe('Settings, as board 11 draws it', () => {
     const tips = await screen.findByRole('switch', { name: 'Tips' });
     expect(tips).not.toBeChecked();
     await userEvent.click(screen.getByRole('button', { name: 'Show tips again' }));
-    await userEvent.click(radio('The board', 'White on black'));
+    await userEvent.click(radio('Smoke', 'Off'));
     held[0]!.settle();
     await waitFor(async () => expect(await w.fake.preferences()).toMatchObject({ tips: 'on' }));
     await waitFor(() => expect(tips).toBeChecked());
@@ -358,7 +358,7 @@ describe('Settings, as board 11 draws it', () => {
     /* The change reaches the screen, as it reaches the app's Appearance in the same render. */
     await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
     /* What Appearance does on the account's change: the defaults, signed out or before the next account's own arrive. */
-    applyAppearance(document, DEFAULT_PREFERENCES, [{ key: 'house', name: 'House', href: '/house.css', modes: 'both' }], testGlass);
+    applyAppearance(document, DEFAULT_PREFERENCES, [{ key: 'house', name: 'House', href: '/house.css', modes: 'both', preview: {} }], testGlass);
     await waitFor(() => expect(calls).toHaveLength(1));
     return { calls, view };
   }

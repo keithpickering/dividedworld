@@ -11,8 +11,11 @@ import { moveKind, type MoveParts } from '../../system/moves.ts';
 import type { Demand, DemandProgress, MoveEnd } from '../data/api.ts';
 import { shortDate } from '../postbit/dates.ts';
 
-/** The long label of a move's Act, in capitals ("THE SYSTEM RENAMED THIS BOARD"). A kind the catalog lacks is still said plainly. */
-export const moveLabel = (kind: string): string => moveKind(kind)?.label ?? 'THE SYSTEM MADE A MOVE';
+/**
+ * The long label of a move's Act ("The Boss renamed this board"; the glass draws it in capitals), the catalog's template filled with the
+ * actor's role (`UiCopy.roleWord`, or a Mod Bot's own role word when Mod Bots move). A kind the catalog lacks is still said plainly.
+ */
+export const moveLabel = (kind: string, role: string): string => (moveKind(kind)?.label ?? '{role} made a move').replace('{role}', role);
 
 /**
  * The glass's short segment: "WAY OUT: 7 OF 12 POSTERS". A move that asks nothing ends only by its expiry or an admin; a demand

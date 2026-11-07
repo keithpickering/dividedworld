@@ -276,7 +276,7 @@ function Boards({ rows, onDescribed }: { readonly rows: readonly BoardSummary[];
 
 /** The handovers waiting for an announcement. Dismiss is not asked twice: it only puts a reminder away, and the form stays open to any admin. */
 function Todos({ rows, onDismissed }: { readonly rows: readonly HandoverTodo[]; readonly onDismissed: () => Promise<void> }) {
-  const { api } = useKayfa();
+  const { api, ui } = useKayfa();
   const [busy, setBusy] = useState<number | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
   const dismiss = async (season: number) => {
@@ -306,7 +306,7 @@ function Todos({ rows, onDismissed }: { readonly rows: readonly HandoverTodo[]; 
           </div>
           <div className="kb-queue-body">
             <h3 className="kb-queue-sentence">{todoSentence(t)}</h3>
-            {todoFacts(t).map((line) => <p key={line}>{line}</p>)}
+            {todoFacts(t, ui.copy.roleWord).map((line) => <p key={line}>{line}</p>)}
             <p>The announcement is yours to write; no model writes it. This goes away when an update is posted after the handover, or when you dismiss it.</p>
           </div>
           <div className="kb-queue-act">
@@ -478,7 +478,8 @@ function Confirm({ asked, boards, bosses, onClose, onDone, onRefused, returnFocu
   readonly onClose: () => void; readonly onDone: () => Promise<void>; readonly onRefused: () => Promise<void>;
   readonly returnFocusTo: () => HTMLElement | null;
 }) {
-  const { api } = useKayfa();
+  const { api, ui } = useKayfa();
+  const role = ui.copy.roleWord;
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const hold = asked.kind === 'hold';
@@ -506,10 +507,10 @@ function Confirm({ asked, boards, bosses, onClose, onDone, onRefused, returnFocu
         <p className="kb-queue-sentence"><MoveSentence kind={row.kind} params={row.params} boards={boards} bosses={bosses} tense={hold ? 'plan' : 'done'} was={hold ? (row as QueuedMove).boardName : undefined} /></p>
         <p>
           {hold
-            ? 'It will never land, and no player will see it. A hold cannot be taken back. The Boss chooses its next move at its next meeting, and learns of the hold only then.'
+            ? `It will never land, and no player will see it. A hold cannot be taken back. ${role} chooses its next move at its next meeting, and learns of the hold only then.`
             : row.kind === 'nameSuccessor'
-              ? 'It ends now, as reversed by an admin, and the roster\'s rotation chooses the next Boss at the handover. The Boss says so in the move\'s thread, and learns of it at its next meeting.'
-              : 'It ends now, as reversed by an admin, and the old name returns at once. The Boss says so in the move\'s thread, and learns of it at its next meeting.'}
+              ? `It ends now, as reversed by an admin, and the roster's rotation chooses the successor at the handover. ${role} says so in the move's thread, and learns of it at its next meeting.`
+              : `It ends now, as reversed by an admin, and the old name returns at once. ${role} says so in the move's thread, and learns of it at its next meeting.`}
         </p>
         {refusal && <p role="alert" className="kb-queue-failure">{refusal}</p>}
         <ButtonRow align="end">

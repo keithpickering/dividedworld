@@ -60,27 +60,29 @@ test('the spin form: its fields show a focus indicator', async ({ page }) => {
 test('the check finds a link with outline: none, and only that link', async ({ page }) => {
   await page.goto('/b/general');
   await expect(page.getByRole('region', { name: 'Game HUD' })).toBeVisible();
-  await page.addStyleTag({ content: 'a[href="/b/the-system"] { outline: none !important; box-shadow: none !important; }' });
+  await page.addStyleTag({ content: 'a[href="/b/announcements"] { outline: none !important; box-shadow: none !important; }' });
   const bare = await controlsWithoutFocusIndicator(page);
   expect(bare).toHaveLength(1);
-  expect(bare[0]).toContain('The System');
+  expect(bare[0]).toContain('Staff Announcements');
 });
 
 test('the check finds an outline that is transparent or the color of the page', async ({ page }) => {
   await page.goto('/b/general');
   await expect(page.getByRole('region', { name: 'Game HUD' })).toBeVisible();
-  await page.addStyleTag({ content: 'a[href="/b/the-system"] { outline-color: transparent !important; } .kb-nav a[href="/"] { outline-color: rgb(255, 255, 255) !important; }' });
+  /* The color of the page is the theme's own (the Silver house's gray, not white), read where the check reads it. */
+  const ground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  await page.addStyleTag({ content: `a[href="/b/announcements"] { outline-color: transparent !important; } .kb-nav a[href="/"] { outline-color: ${ground} !important; }` });
   const bare = await controlsWithoutFocusIndicator(page);
-  expect(bare.some((b) => b.includes('The System'))).toBe(true);
+  expect(bare.some((b) => b.includes('Staff Announcements'))).toBe(true);
   expect(bare.some((b) => b.includes('Index'))).toBe(true);
 });
 
 test('the check does not count a box-shadow the control always has', async ({ page }) => {
   await page.goto('/b/general');
   await expect(page.getByRole('region', { name: 'Game HUD' })).toBeVisible();
-  await page.addStyleTag({ content: 'a[href="/b/the-system"] { outline: none !important; box-shadow: 0 0 0 2px red !important; }' });
+  await page.addStyleTag({ content: 'a[href="/b/announcements"] { outline: none !important; box-shadow: 0 0 0 2px red !important; }' });
   const bare = await controlsWithoutFocusIndicator(page);
-  expect(bare.some((b) => b.includes('The System'))).toBe(true);
+  expect(bare.some((b) => b.includes('Staff Announcements'))).toBe(true);
 });
 
 test('Tab cycles back to the start on a page, and the check throws when it cannot', async ({ page }) => {

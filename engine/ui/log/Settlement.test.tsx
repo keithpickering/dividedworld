@@ -26,7 +26,7 @@ function world() {
   const me = seed.account('me');
   const pipe = seed.character(me, 'Pipewrench', 'heel', { at: at(2) });
   const hoo = seed.character(me, 'Mrs. Hooligan', 'face', { at: at(3) });
-  const turns = seed.thread('the-system', null, 'Season 1: Who Turned', 'Every Turn.', { at: at(2) });
+  const turns = seed.thread('announcements', null, 'Season 1: Who Turned', 'Every Turn.', { at: at(2) });
   const { thread } = seed.thread('general', pipe, 'a thread', 'Opening.', { at: at(27) });
   const p2 = seed.post(thread, pipe, 'Pipewrench speaks.', { at: at(28, 10) });
   seed.wallet(me, 290);
@@ -98,7 +98,7 @@ describe('the settlement\'s summary', () => {
     const turn = screen.getByRole('region', { name: 'Turn' });
     expect(within(turn).getByText('Heel')).toBeInTheDocument();
     expect(within(turn).getByText('Face')).toBeInTheDocument();
-    expect(turn.textContent).toContain('Pipewrench\'s Turn took effect. From the Oct 29 settlement it scores as a Face. The System announced it, with the old class, in Season 1: Who Turned.');
+    expect(turn.textContent).toContain('Pipewrench\'s Turn took effect. From the Oct 29 settlement it scores as a Face. Its own Promo announced it, with the old class, in Season 1: Who Turned.');
   });
 
   test('each line is the log\'s line for the same reason: the same name and the same amount', async () => {

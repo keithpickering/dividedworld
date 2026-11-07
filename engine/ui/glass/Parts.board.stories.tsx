@@ -40,7 +40,7 @@ function Parts() {
       <ButtonRow align="end">
         <GlassButton kind="quiet">Cancel</GlassButton>
         <GlassButton>Review it</GlassButton>
-        <GlassButton kind="primary">Send it to The System</GlassButton>
+        <GlassButton kind="primary">Send it to the staff</GlassButton>
       </ButtonRow>
     </Page>
   );

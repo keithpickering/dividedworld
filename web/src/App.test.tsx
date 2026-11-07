@@ -51,7 +51,7 @@ test('signing out puts the page back to the device\'s look', async () => {
   document.documentElement.removeAttribute('data-kb-mode');
   const fake = createFake({ instance, settings: fallbackSettings });
   seedDemo(fake);
-  await fake.setPreferences({ theme: 'dark' });
+  await fake.setPreferences({ theme: 'default', mode: 'dark' });
   render(<App api={fake} />);
   await waitFor(() => expect(document.documentElement.getAttribute('data-kb-mode')).toBe('dark'));
   await fake.signOut();

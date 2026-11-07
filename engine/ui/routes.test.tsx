@@ -14,8 +14,8 @@ describe('the routes', () => {
   test('an address that matches nothing says so and links to the index', () => {
     window.history.pushState(null, '', '/nowhere');
     render(<RouterProvider><Routes routes={[{ path: '/', render: () => <p>index</p> }]} /></RouterProvider>);
-    expect(screen.getByRole('heading', { name: 'The page cannot be found' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'index' })).toHaveAttribute('href', '/');
+    expect(screen.getByRole('heading', { name: 'There is no page at this address.' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Click here to return to the index' })).toHaveAttribute('href', '/');
   });
 });
 
@@ -42,7 +42,7 @@ describe('the failure screens', () => {
   test('with failures, an address no route matches draws the glass find screen', () => {
     renderIn(buildWorld(), <Routes routes={failing} failures={failures} />, { path: '/nowhere' });
     expect(screen.getByText('glass find /nowhere')).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'The page cannot be found' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'There is no page at this address.' })).toBeNull();
   });
 
   test('without failures, a failed load draws the board screen', async () => {

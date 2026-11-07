@@ -20,7 +20,7 @@ const updates: World = (fake, instance) => {
   seed.character(me, 'Pipewrench', cls);
   seed.update({
     title: 'Welcome to the playtest', at: utc(10, 28),
-    body: 'The doors are open. Be kind to the System; it has been alone a long time.',
+    body: 'The doors are open. Be kind to the staff; they have been alone a long time.',
     changes: [{ label: 'Everything', text: 'is new, and some of it works.' }],
   });
   seed.update({

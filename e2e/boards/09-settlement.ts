@@ -83,7 +83,7 @@ const manifest: BoardManifest = {
       id: 'turn-words', role: 'text', within: 'turn', box: 'position', buildShift: { y: 58 },
       name: 'Pipewrench\'s Turn took effect. From today it scores as a Face. The System announced it, with the old class, in Season 1: Who Turned.',
       /* The summary opens on a later load too, and by its address, where "today" would be false: the settlement's own day is always true. */
-      buildName: 'Pipewrench\'s Turn took effect. From the Oct 30 settlement it scores as a Face. The System announced it, with the old class, in Season 1: Who Turned.',
+      buildName: 'Pipewrench\'s Turn took effect. From the Oct 30 settlement it scores as a Face. Its own Promo announced it, with the old class, in Season 1: Who Turned.',
     },
 
     /*

@@ -30,10 +30,10 @@ export interface RevealOverlayProps {
 const PAGE = 20;
 
 export function RevealOverlay({ character, onClose, onDone, returnFocusTo }: RevealOverlayProps) {
-  const { api } = useKayfa();
+  const { api, ui } = useKayfa();
   const r = useReveal(character);
   const { setRefusal } = r;
-  const words = revealWords(character, r.className);
+  const words = revealWords(character, r.className, ui.copy.gameWord);
   /* The boards are boot's, read once for the frame: the overlay opens with them in its first render. Only where boot is not there (a story, a screen before boot) are they read. */
   const boot = useBoot();
   const [read, setRead] = useState<readonly Board[]>([]);
@@ -136,7 +136,7 @@ export function RevealOverlay({ character, onClose, onDone, returnFocusTo }: Rev
         <PreviewBox preview={revealPreview({ name: character.name, className: r.className, message: r.message, threadTitle: title })} />
         {r.over && <p role="alert" className="kb-notice" data-kb-tone="refusal">The message is at most {MAX} characters.</p>}
         {r.refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{r.refusal}</p>}
-        <FormFoot line={revealFooter()}>
+        <FormFoot line={revealFooter(ui.copy.gameWord)}>
           <GlassButton onClick={onClose}>Cancel</GlassButton>
           <GlassButton type="submit" kind="primary" busy={r.busy} disabled={!chosen || r.over}>{words.button}</GlassButton>
         </FormFoot>

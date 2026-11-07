@@ -9,14 +9,15 @@
  * same for every reader: no item says whose a character is. The player's own characters are marked "yours" here, by this screen, from
  * the player's own characters (`usePlayer`), as Rankings marks them. The page is drawn from `season_page`'s document: a tab, a season, a
  * page of the rankings or the season choice is another address and so another load, with the tab pressed spinning (web/src/App.tsx). The glass describes the game; it never speaks as
- * The System or a Boss: the Boss's arrival quotes its first words, as words that are its, and links its post on The System's board.
+ * The System or a Boss: the Boss's arrival quotes its first words, as words that are its, and links its post on the staff's board.
  *
  * The tabs are a tablist of links, `?tab=rankings|news` naming the open one (Rankings by default): Left and Right (and Home and End)
  * move between them as a tablist does, the open tab alone is in the tab order, and the open panel is labelled by its tab.
  * `/rankings` and `/standings` open this page (web/src/App.tsx).
  */
-import { useId, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import { dayAndTime, figure } from '../characters/format.ts';
+import { useBoot } from '../boot.tsx';
 import { useKayfa } from '../context.tsx';
 import { SEASON_NEWS_PAGE, type Id, type MyCharacter, type Season, type SeasonNewsItem, type SeasonPage, type SeasonResult, type TallyName } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
@@ -140,17 +141,33 @@ function Names({ names, own, verb, className }: { readonly names: readonly Tally
   );
 }
 
+/** The name of the board only the staff post on, as the board has it now (a move may have renamed it): boot's boards, so the first render has it; only where boot is not there (a story, a screen before boot) is it read, and null until then. */
+function useStaffBoardName(): string | null {
+  const { api } = useKayfa();
+  const boot = useBoot();
+  const [read, setRead] = useState<string | null>(null);
+  useEffect(() => {
+    if (boot) return undefined;
+    let live = true;
+    void api.boards().then((bs) => { if (live) setRead(bs.find((b) => b.isSystem)?.name ?? null); }, () => { /* the words say "the board" */ });
+    return () => { live = false; };
+  }, [api, boot]);
+  return (boot ? boot.boards.find((b) => b.isSystem)?.name : read) ?? null;
+}
+
 function Boss({ item, perPage }: { readonly item: SeasonNewsItem; readonly perPage: number }) {
+  const { ui } = useKayfa();
+  const board = useStaffBoardName() ?? 'the board';
   const arrived = item.kind === 'bossArrived';
-  const name = item.name ?? 'The Boss';
+  const name = item.name ?? ui.copy.roleWord;
   const post = item.act !== null && item.thread !== null && item.seq !== null ? threadHref(item.thread, pageOf(item.seq, perPage), item.seq) : null;
   const words = item.quote === null ? '' : firstWords(item.quote);
   return (
     <>
       <h3>{name} has {arrived ? 'arrived' : 'left'}</h3>
       {arrived
-        ? <p>{name} runs the board for Season {item.season}.{words !== '' && ' Its first words, on The System’s board:'}</p>
-        : <p>Season {item.season}&apos;s Boss has left.{words !== '' && ' Its last words are still on The System’s board.'}</p>}
+        ? <p>{name} runs the board for Season {item.season}.{words !== '' && ` Its first words, on ${board}:`}</p>
+        : <p>Season {item.season}&apos;s Boss has left.{words !== '' && ` Its last words are still on ${board}.`}</p>}
       {words !== '' && <blockquote className="kb-season-quote">{'“'}{words}{'”'}</blockquote>}
       {post !== null && <p><GlassLink className="kb-season-link" to={post}>{arrived ? 'Read its post on the board' : 'Read its last post on the board'}</GlassLink></p>}
     </>
