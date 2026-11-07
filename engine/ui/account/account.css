@@ -743,7 +743,7 @@
   padding: 3px 9px;
   font: bold 0.91em var(--kb-font-body);
   letter-spacing: 0.05em;
-  text-transform: lowercase;
+  text-transform: var(--tp-button-case, none);
   color: var(--tp-button-fg);
   background: var(--tp-button);
   border: 1px solid var(--tp-button-edge);
@@ -843,14 +843,18 @@
   box-shadow: 0 0 18px color-mix(in srgb, var(--kb-glass-neon) 35%, transparent);
 }
 
-/* A tile answers a pointer: the neon's edge and a wash of it; the chosen one lights its glow more (e2e/glass-hover.spec.ts). */
-.kb-tp-tile:hover {
-  border-color: var(--kb-glass-neon);
-  background: color-mix(in srgb, var(--kb-glass-neon) 14%, var(--kb-glass-panel-soft));
-}
+/* A tile answers a pointer: the neon's edge and a wash of it; the chosen one lights its glow more. Only where a pointer can hover, so a
+   touch does not leave the last tile touched lit. e2e/glass-hover.spec.ts holds it: its radio cards on Settings › The board each must change
+   under the pointer. */
+@media (hover: hover) {
+  .kb-tp-tile:hover {
+    border-color: var(--kb-glass-neon);
+    background: color-mix(in srgb, var(--kb-glass-neon) 14%, var(--kb-glass-panel-soft));
+  }
 
-.kb-tp-tile:has(> input:checked):hover {
-  box-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 60%, transparent);
+  .kb-tp-tile:has(> input:checked):hover {
+    box-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 60%, transparent);
+  }
 }
 
 .kb-tp-tile:has(> input:focus-visible) {

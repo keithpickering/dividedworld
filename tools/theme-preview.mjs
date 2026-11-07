@@ -32,7 +32,7 @@ export const REQUIRED_TOKENS = [
   '--kb-head-bg', '--kb-head-fg', '--kb-row-1', '--kb-row-2', '--kb-row-3',
 ];
 /** Tokens the miniature also draws, which a theme may leave to the engine's default. */
-export const OPTIONAL_TOKENS = ['--kb-page-bg', '--kb-button-bg', '--kb-button-edge', '--kb-button-fg'];
+export const OPTIONAL_TOKENS = ['--kb-page-bg', '--kb-button-bg', '--kb-button-edge', '--kb-button-fg', '--kb-button-case'];
 export const PREVIEW_TOKENS = [...REQUIRED_TOKENS, ...OPTIONAL_TOKENS];
 
 /* A fallback may itself hold a var() (`var(--a, var(--b))`): one nesting level is read, and resolve() follows it. */

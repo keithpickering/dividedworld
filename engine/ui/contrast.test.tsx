@@ -192,8 +192,17 @@ describe('the page\'s own ground (--kb-page-bg) is held as the page is', () => {
   const pageFails = (css: string) => fails(THEME_LIGHT(css)).filter((x) => /page/u.test(x));
   test('text is held on every stop of a tiled page, and a tile under the text color fails', () => {
     const tiled = 'repeating-linear-gradient(0deg, #000 0 14px, transparent 14px 20px), repeating-linear-gradient(90deg, #000 0 20px, transparent 20px 26px), #0a1448';
-    expect(pageFails(`--kb-fg: #fff; --kb-muted: #fff; --kb-link: #fff; --kb-page-bg: ${tiled};`)).toEqual([]);
-    expect(pageFails(`--kb-fg: #fff; --kb-muted: #fff; --kb-link: #fff; --kb-page-bg: ${tiled.replace('#0a1448', '#cccccc')};`).length).toBeGreaterThan(0);
+    expect(pageFails(`--kb-fg: #fff; --kb-muted: #fff; --kb-link: #fff; --kb-link-visited: #fff; --kb-link-hover: #fff; --kb-rule: #fff; --kb-focus: #fff; --kb-pip: #fff; --kb-page-bg: ${tiled};`)).toEqual([]);
+    expect(pageFails(`--kb-fg: #fff; --kb-muted: #fff; --kb-link: #fff; --kb-link-visited: #fff; --kb-link-hover: #fff; --kb-rule: #fff; --kb-focus: #fff; --kb-pip: #fff; --kb-page-bg: ${tiled.replace('#0a1448', '#cccccc')};`).length).toBeGreaterThan(0);
+  });
+  test('every pair held against --kb-bg whose element sits on the page is held on the page ground too', () => {
+    /* A dark page ground under light inks passes; one light tile in the ground fails each of them, by the name of its own pair. */
+    const inks = '--kb-bg: #000; --kb-fg: #fff; --kb-muted: #fff; --kb-link: #fff; --kb-link-visited: #fff; --kb-link-hover: #fff; --kb-rule: #fff; --kb-focus: #fff; --kb-pip: #fff;';
+    expect(pageFails(`${inks} --kb-page-bg: #000;`)).toEqual([]);
+    const f = pageFails(`${inks} --kb-page-bg: linear-gradient(#000, #fff);`);
+    for (const what of ['body text', 'muted text', 'links', 'visited links', 'hovered links', 'rules and control borders', 'the focus ring', 'a full pip']) {
+      expect(f.some((x) => x.includes(what) && /page ground/u.test(x)), `${what} on the page ground\n${f.join('\n')}`).toBe(true);
+    }
   });
   test('a page ground it cannot read fails closed', () => {
     expect(pageFails('--kb-page-bg: url(x.png);').some((x) => /cannot (be )?read/u.test(x))).toBe(true);

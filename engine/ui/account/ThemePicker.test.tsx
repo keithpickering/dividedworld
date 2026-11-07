@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
@@ -87,6 +89,20 @@ describe('Settings › The board', () => {
     await userEvent.click(tile(/^Sepia/u));
     expect(preview.style.getPropertyValue('--tp-banner')).toBe('banner-sepia');
     expect(within(preview).getByText('Start a thread')).toBeInTheDocument();
+  });
+
+  test('the miniature\'s button wears the theme\'s own letter case, not one case for every theme', async () => {
+    const w = world();
+    open(w.fake);
+    await screen.findByRole('radiogroup', { name: 'Theme' });
+    const preview = banner().closest<HTMLElement>('.kb-tp-big')!;
+    const start = within(preview).getByText('Start a thread');
+    expect(preview.style.getPropertyValue('--tp-button-case')).toBe('lowercase');
+    expect(start).toBeInTheDocument();
+    /* jsdom does not resolve var(); the rule that reads the property is read from the stylesheet. */
+    expect(readFileSync(join(process.cwd(), 'engine/ui/account/account.css'), 'utf8')).toMatch(/\.kb-tp-btn \{[^}]*text-transform: var\(--tp-button-case/u);
+    await userEvent.click(tile(/^Sepia/u));
+    expect(preview.style.getPropertyValue('--tp-button-case')).toBe('none');
   });
 
   test('a refused theme is put back', async () => {

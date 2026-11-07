@@ -63,7 +63,7 @@ const SCOPE: readonly (readonly [string, string])[] = [
   ['--tp-page', '--kb-bg'], ['--tp-fg', '--kb-fg'], ['--tp-link', '--kb-link'], ['--tp-grid', '--kb-grid'], ['--tp-frame', '--kb-frame'],
   ['--tp-banner', '--kb-banner-bg'], ['--tp-logo', '--kb-logo-fg'], ['--tp-nav', '--kb-nav-bg'], ['--tp-navfg', '--kb-nav-fg'],
   ['--tp-head', '--kb-head-bg'], ['--tp-headfg', '--kb-head-fg'], ['--tp-r1', '--kb-row-1'], ['--tp-r2', '--kb-row-2'], ['--tp-r3', '--kb-row-3'],
-  ['--tp-button', '--kb-button-bg'], ['--tp-button-edge', '--kb-button-edge'], ['--tp-button-fg', '--kb-button-fg'],
+  ['--tp-button', '--kb-button-bg'], ['--tp-button-edge', '--kb-button-edge'], ['--tp-button-fg', '--kb-button-fg'], ['--tp-button-case', '--kb-button-case'],
 ];
 /* The page is drawn from the theme's page ground when it gives one (a tiled page), else from its plain background. */
 const scoped = (p: ThemePreview): CSSProperties => Object.fromEntries([...SCOPE.flatMap(([own, token]) => (p[token] === undefined ? [] : [[own, p[token]]])), ...(p['--kb-page-bg'] === undefined ? [] : [['--tp-page', p['--kb-page-bg']]])]) as CSSProperties;

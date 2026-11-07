@@ -48,6 +48,7 @@ check('a var() loop fires', previewOf(full('--kb-fg: var(--kb-link); --kb-link: 
 check('a var() fallback is used', previewOf(full('--kb-fg: var(--kb-nowhere, #fff);')).light?.['--kb-fg'] === '#fff');
 check('a var() to a theme token is followed', previewOf(full('--kb-fg: var(--kb-bg);')).light?.['--kb-fg'] === '#123456');
 check('an optional token falls to the engine default, resolved in the theme', previewOf(full()).light?.['--kb-button-bg'] === '#123456');
+check('--kb-button-case is read into the preview (the miniature wears the theme\'s own case)', previewOf(full('--kb-button-case: lowercase;')).light?.['--kb-button-case'] === 'lowercase' && previewOf(full()).light?.['--kb-button-case'] === 'none');
 check('a light-only theme fills only light', (() => { const p = previewOf(full()); return p.light !== undefined && p.dark === undefined; })());
 check('a dark-only theme that writes dark blocks fills dark', (() => { const p = previewOf(full() + ':root[data-kb-mode="dark"] { --kb-bg: #000; }'); return p.dark?.['--kb-bg'] === '#000'; })());
 check('a dark-only theme (:root and both dark blocks alike) yields no light', (() => {

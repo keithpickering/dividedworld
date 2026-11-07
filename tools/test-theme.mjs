@@ -10,7 +10,7 @@
  * change no test, so each is planted here and must fire, and the real tree runs last so a guard
  * gone quiet over nothing fails here.
  */
-import { themeFaults, themeHrefFaults, treeFiles } from './check-theme.mjs';
+import { gamePieceFaults, themeFaults, themeHrefFaults, treeFiles } from './check-theme.mjs';
 
 let pass = 0;
 const failures = [];
@@ -174,11 +174,29 @@ check('an instance with no themes list is clean (the engine has its own house th
     themeHrefFaults({ [INDEX]: IDX(`import t from './themes/gone.css?url';`, `{ key: 'x', name: 'X', href: t }`), ...TREE }).length === 1);
 }
 
+/* ---- the game's own pieces are the same in every theme ---- */
+{
+  const real = treeFiles();
+  const HOUSE = 'instances/divided-world/ui/theme.css';
+  const themes = Object.keys(real).filter((f) => /\/ui\/themes\/[^/]+\.css$/.test(f));
+  const piece = (files) => gamePieceFaults(files);
+  check('the real house theme and four tributes agree on the game pieces', themes.length === 4 && piece(real).length === 0, JSON.stringify(piece(real)));
+  for (const t of themes) {
+    const poisoned = { ...real, [t]: real[t].replaceAll('--kb-orb-3: #2ecc71', '--kb-orb-3: #2ecc72') };
+    const r = piece(poisoned);
+    check(`one orb changed in ${t.split('/').pop()} fires`, r.length >= 1 && r.every((f) => f.file === t && /--kb-orb-3/.test(f.why)), JSON.stringify(r));
+  }
+  const gone = { ...real, [themes[0]]: real[themes[0]].replaceAll(/^\s*--kb-gold:.*$/gm, '') };
+  check('a theme that leaves a game piece out fires (the engine default would show gray)', piece(gone).some((f) => /--kb-gold/.test(f.why) && /does not set/.test(f.why)), JSON.stringify(piece(gone)));
+  const sweet = { ...real, [HOUSE]: real[HOUSE].replaceAll('--kb-sweet: #e86fa8', '--kb-sweet: #e86fa9') };
+  check('the house theme changing a piece fires in the tributes', piece(sweet).length >= 4, JSON.stringify(piece(sweet)));
+}
+
 /* ---- the real tree ---- */
 {
   const files = treeFiles();
   check('the real tree holds at least one theme and one ui index', Object.keys(files).some((f) => f.endsWith('.css')) && Object.keys(files).some((f) => f.endsWith('/ui/index.ts')));
-  const r = [...themeFaults(files), ...themeHrefFaults(files)];
+  const r = [...themeFaults(files), ...themeHrefFaults(files), ...gamePieceFaults(files)];
   check('the real tree is clean', r.length === 0, JSON.stringify(r));
 }
 

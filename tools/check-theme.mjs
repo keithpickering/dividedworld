@@ -34,6 +34,10 @@
  * imported from a `*.css?url` file that sits in that instance's own ui/ folder (or its ui/themes/) and is in the tree, so
  * the file the page loads as a theme is a file this check has read.
  *
+ * And the game's own pieces (GAME_PIECE_TOKENS: orbs, sweet, salty, pepperoni, gold, the badge font, the pips) must be the house
+ * theme's value in each theme of `ui/themes/`, in the mode that theme shows: only one sheet loads, so a theme that drifts or
+ * leaves one out changes the game's pieces for every player who picks it.
+ *
  * Read from git, so an untracked scratch file neither fails the build nor makes it pass. The
  * detection is exported and pure so tools/test-theme.mjs drives every branch red.
  */
@@ -298,6 +302,49 @@ export function themeHrefFaults(files) {
   return out;
 }
 
+/**
+ * The game's own pieces: the tokens that are the same in every theme by design (the board look design, section 9: "The game's
+ * own pieces (orbs, cards, reactions, marks) keep theirs"). Only one theme sheet loads (engine/ui/appearance.ts) and the engine's
+ * tokens.css defaults these to gray, so each theme repeats them, and this is the one list that says which. A token a theme
+ * restyles on purpose (the badge colors, the chips, the buttons) is not on it.
+ */
+export const GAME_PIECE_TOKENS = [
+  '--kb-orb-1', '--kb-orb-2', '--kb-orb-3', '--kb-orb-4', '--kb-orb-5', '--kb-orb-6',
+  '--kb-orb-shine', '--kb-orb-rim', '--kb-orb-loss',
+  '--kb-sweet', '--kb-salty', '--kb-pepperoni', '--kb-gold',
+  '--kb-font-badge', '--kb-pip', '--kb-pip-empty',
+];
+
+/**
+ * Every theme in an instance's ui/themes/ whose game pieces differ from the house theme's (ui/theme.css) in the mode it shows,
+ * or lack one: a theme with a dark block is dark only, read as `:root` under the dark block; one without is light only, read as
+ * `:root` under the light block. The house theme's own mode is the one it is compared in.
+ * @param {Record<string, string>} files repository path to text
+ */
+export function gamePieceFaults(files) {
+  const out = [];
+  const effective = (raw) => {
+    const b = themeBlocks(raw);
+    const dark = b.dark.size > 0;
+    return { dark, tokens: new Map([...b.root, ...(dark ? b.dark : b.light)]) };
+  };
+  for (const [file, raw] of Object.entries(files)) {
+    const m = file.match(/^instances\/([^/]+)\/ui\/themes\/[^/]+\.css$/);
+    if (!m) continue;
+    const houseRaw = files[`instances/${m[1]}/ui/theme.css`];
+    if (houseRaw === undefined) { out.push({ file, line: 1, why: `the instance has no ui/theme.css to hold the game's pieces against` }); continue; }
+    const mine = effective(raw);
+    const hb = themeBlocks(houseRaw);
+    const house = new Map([...hb.root, ...(mine.dark ? hb.dark : hb.light)]);
+    for (const name of GAME_PIECE_TOKENS) {
+      if (!house.has(name)) out.push({ file: `instances/${m[1]}/ui/theme.css`, line: 1, why: `${name} is a game piece and the house theme does not set it` });
+      else if (!mine.tokens.has(name)) out.push({ file, line: 1, why: `${name} is a game piece and this theme does not set it, so the engine's gray default shows` });
+      else if (mine.tokens.get(name) !== house.get(name)) out.push({ file, line: 1, why: `${name} is ${mine.tokens.get(name)} here and ${house.get(name)} in the house theme; the game's own pieces keep their colors in every theme` });
+    }
+  }
+  return out;
+}
+
 /** The tracked themes and ui indexes, read from disk. */
 export function treeFiles() {
   const tree = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8', cwd: repoRoot }).split('\0').filter(Boolean);
@@ -315,7 +362,7 @@ function main() {
     console.error('  theme: no instance theme was read, which cannot be right; refusing to report a pass on nothing');
     process.exit(1);
   }
-  const faults = [...themeFaults(files), ...themeHrefFaults(files)];
+  const faults = [...themeFaults(files), ...themeHrefFaults(files), ...gamePieceFaults(files)];
   if (faults.length) {
     console.error(`  theme: ${faults.length} departure(s) from the theme contract:`);
     for (const f of faults) console.error(`    ${f.file}:${f.line}  ${f.why}`);
