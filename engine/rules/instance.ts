@@ -182,6 +182,20 @@ function warnBarRule(v: unknown): string | null {
   return null;
 }
 
+/**
+ * The member groups' settings (`Settings.groups`): exactly the fields of GroupsSettings, each a whole number, at least 1. Mirrors `setting_groups` in
+ * supabase/migrations/0118_bars_apologies.sql, and supabase/tests/0079-settings-held.sql lists its poisons and goods.
+ */
+const GROUPS_KEYS = ['apologyEveryHours', 'apologyJudgeBatch', 'apologyRulingMaxWords'] as const;
+function groupsRule(v: unknown): string | null {
+  const shape = 'an object giving apologyEveryHours (the hours between a character\'s apologies to one move), apologyJudgeBatch (the most apologies one run of the judge hears) and apologyRulingMaxWords (the most words of a ruling), each a whole number, at least 1';
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return shape;
+  const extra = Object.keys(v).find((k) => !(GROUPS_KEYS as readonly string[]).includes(k));
+  if (extra !== undefined) return `${shape}; "${extra}" is not one of its fields`;
+  for (const k of GROUPS_KEYS) if (!isWhole((v as Record<string, unknown>)[k], 1)) return `${shape}; "${k}" is not`;
+  return null;
+}
+
 /** Every setting the engine reads, each with what it must be. */
 const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | null } = {
   walletCap: (v) => (isWhole(v, 1) ? null : 'a whole number of hundredths, at least 1'),
@@ -230,6 +244,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   pool: poolRule,
   modBots: modBotsRule,
   warnBar: warnBarRule,
+  groups: groupsRule,
   boardNameMaxLength: whole(1, 'characters'),
   moveExpiryMostDays: whole(1, 'days'),
   moveExpiryLeastHours: whole(1, 'hours'),

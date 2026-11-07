@@ -642,7 +642,36 @@ insert into poisons (key, value) values
   ('warnBar', '{"size": 10, "bands": {"minor": 2, "moderate": 4, "severe": 7}, "decay": {"unit": "day", "count": 14}, "banDays": [1, 3, 7], "other": 1}'),
   ('warnBar', '"x"'),
   ('warnBar', '[]'),
-  ('warnBar', 'null');
+  ('warnBar', 'null'),
+  ('groups', '{"apologyEveryHours": 0, "apologyJudgeBatch": 10, "apologyRulingMaxWords": 80}'),
+  ('groups', '{"apologyEveryHours": 1.5, "apologyJudgeBatch": 10, "apologyRulingMaxWords": 80}'),
+  ('groups', '{"apologyEveryHours": "5", "apologyJudgeBatch": 10, "apologyRulingMaxWords": 80}'),
+  ('groups', '{"apologyEveryHours": null, "apologyJudgeBatch": 10, "apologyRulingMaxWords": 80}'),
+  ('groups', '{"apologyEveryHours": true, "apologyJudgeBatch": 10, "apologyRulingMaxWords": 80}'),
+  ('groups', '{"apologyEveryHours": -1, "apologyJudgeBatch": 10, "apologyRulingMaxWords": 80}'),
+  ('groups', '{"apologyEveryHours": 9007199254740992, "apologyJudgeBatch": 10, "apologyRulingMaxWords": 80}'),
+  ('groups', '{"apologyJudgeBatch": 10, "apologyRulingMaxWords": 80}'),
+  ('groups', '{"apologyEveryHours": 24, "apologyJudgeBatch": 0, "apologyRulingMaxWords": 80}'),
+  ('groups', '{"apologyEveryHours": 24, "apologyJudgeBatch": 1.5, "apologyRulingMaxWords": 80}'),
+  ('groups', '{"apologyEveryHours": 24, "apologyJudgeBatch": "5", "apologyRulingMaxWords": 80}'),
+  ('groups', '{"apologyEveryHours": 24, "apologyJudgeBatch": null, "apologyRulingMaxWords": 80}'),
+  ('groups', '{"apologyEveryHours": 24, "apologyJudgeBatch": true, "apologyRulingMaxWords": 80}'),
+  ('groups', '{"apologyEveryHours": 24, "apologyJudgeBatch": -1, "apologyRulingMaxWords": 80}'),
+  ('groups', '{"apologyEveryHours": 24, "apologyJudgeBatch": 9007199254740992, "apologyRulingMaxWords": 80}'),
+  ('groups', '{"apologyEveryHours": 24, "apologyRulingMaxWords": 80}'),
+  ('groups', '{"apologyEveryHours": 24, "apologyJudgeBatch": 10, "apologyRulingMaxWords": 0}'),
+  ('groups', '{"apologyEveryHours": 24, "apologyJudgeBatch": 10, "apologyRulingMaxWords": 1.5}'),
+  ('groups', '{"apologyEveryHours": 24, "apologyJudgeBatch": 10, "apologyRulingMaxWords": "5"}'),
+  ('groups', '{"apologyEveryHours": 24, "apologyJudgeBatch": 10, "apologyRulingMaxWords": null}'),
+  ('groups', '{"apologyEveryHours": 24, "apologyJudgeBatch": 10, "apologyRulingMaxWords": true}'),
+  ('groups', '{"apologyEveryHours": 24, "apologyJudgeBatch": 10, "apologyRulingMaxWords": -1}'),
+  ('groups', '{"apologyEveryHours": 24, "apologyJudgeBatch": 10, "apologyRulingMaxWords": 9007199254740992}'),
+  ('groups', '{"apologyEveryHours": 24, "apologyJudgeBatch": 10}'),
+  ('groups', '{"apologyEveryHours": 24, "apologyJudgeBatch": 10, "apologyRulingMaxWords": 80, "other": 1}'),
+  ('groups', '"x"'),
+  ('groups', '[]'),
+  ('groups', 'null'),
+  ('groups', '{}');
 
 create temp table goods (key text, value text);
 insert into goods (key, value) values
@@ -765,7 +794,10 @@ insert into goods (key, value) values
   ('modBots', '{"allowanceMost": 1, "ruleDaysMost": 7, "visitHours": {"least": 1, "most": 1}, "patrolsPerDay": 0, "patrolSample": 25, "reportPrice": 0, "reportsPerDay": 3, "judgmentsPerDay": 60, "filingLinesPerDay": 60, "appealPrice": 50, "tailHours": 24, "cap": {"punishments": 1, "days": 1}, "filingCron": "0 4 * * 1", "filingGraceMinutes": 10}'),
   ('warnBar', '{"size": 10, "bands": {"minor": 2, "moderate": 4, "severe": 7}, "decay": {"unit": "day", "count": 14}, "banDays": [1, 3, 7]}'),
   ('warnBar', '{"size": 1, "bands": {"minor": 1, "moderate": 1, "severe": 1}, "decay": {"unit": "minute", "count": 1}, "banDays": [30]}'),
-  ('warnBar', '{"size": 10, "bands": {"minor": 10, "moderate": 10, "severe": 10}, "decay": {"unit": "month", "count": 1000}, "banDays": [1, 3, 7]}');
+  ('warnBar', '{"size": 10, "bands": {"minor": 10, "moderate": 10, "severe": 10}, "decay": {"unit": "month", "count": 1000}, "banDays": [1, 3, 7]}'),
+  ('groups', '{"apologyEveryHours": 24, "apologyJudgeBatch": 10, "apologyRulingMaxWords": 80}'),
+  ('groups', '{"apologyEveryHours": 1, "apologyJudgeBatch": 1, "apologyRulingMaxWords": 1}'),
+  ('groups', '{"apologyEveryHours": 9007199254740991, "apologyJudgeBatch": 10, "apologyRulingMaxWords": 80}');
 
 do $$
 declare r record; refused boolean; seen integer; first_good text;

@@ -33,6 +33,8 @@ test('each action is decided into the SQL function that writes it, with that fun
     { ok: true, rpc: 'edit_post', args: { target: other, through: id, body: 'Fixed.' } });
   assert.deepEqual(decide({ action: 'spin', origin: other, character: id, title: 'Spun', body: '' }, instance),
     { ok: true, rpc: 'spin', args: { origin: other, through: id, title: 'Spun', body: '' } });
+  assert.deepEqual(decide({ action: 'apologize', move: other, character: id, title: 'Sorry', body: 'I was wrong.' }, instance),
+    { ok: true, rpc: 'apologize', args: { in_move: other, through: id, title: 'Sorry', body: 'I was wrong.' } });
   assert.deepEqual(decide({ action: 'react', act: other, character: id, kind: 'fire' }, instance),
     { ok: true, rpc: 'react', args: { target: other, through: id, reaction: 'fire' } });
 });
@@ -70,6 +72,16 @@ test('a title is something, and no longer than the instance allows', () => {
 test('a spin\'s own words may be empty, and are bounded like a post\'s', () => {
   assert.equal(refusal({ action: 'spin', origin: other, character: id, title: 'Spun' }), null);
   assert.match(refusal({ action: 'spin', origin: other, character: id, title: 'Spun', body: 'x'.repeat(51) }) ?? '', /^body:/);
+});
+
+test('an apology names a move, and has a title and words of its own, bounded like a spin\'s', () => {
+  assert.equal(refusal({ action: 'apologize', move: other, character: id, title: 'Sorry', body: 'x' }), null);
+  assert.match(refusal({ action: 'apologize', character: id, title: 'Sorry', body: 'x' }) ?? '', /^move:/);
+  assert.match(refusal({ action: 'apologize', move: 'nope', character: id, title: 'Sorry', body: 'x' }) ?? '', /^move:/);
+  assert.match(refusal({ action: 'apologize', move: other, character: id, title: ' ', body: 'x' }) ?? '', /^title:/);
+  assert.match(refusal({ action: 'apologize', move: other, character: id, title: 'x'.repeat(11), body: 'x' }) ?? '', /^title:.*10/);
+  assert.match(refusal({ action: 'apologize', move: other, character: id, title: 'Sorry', body: '' }) ?? '', /^body:/);
+  assert.match(refusal({ action: 'apologize', move: other, character: id, title: 'Sorry', body: 'x'.repeat(51) }) ?? '', /^body:/);
 });
 
 test('a reaction the instance does not have is refused', () => {

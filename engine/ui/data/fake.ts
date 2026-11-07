@@ -356,7 +356,10 @@ export const FAKE_BACKEND_MARKER = 'KAYFA_FAKE_BACKEND';
 export function createFake(options: { instance: Instance; settings?: Partial<ScreenSettings>; now?: () => number }): Fake {
   /* A screen's economy (ScreenSettings.economy) is laid over the instance's, as economyNow does, never in place of it: a world given the
      web's fallback, which holds none, keeps the compiled numbers. */
-  const settings: Settings = { ...options.instance.settings, ...options.settings, economy: { ...options.instance.settings.economy, ...options.settings?.economy } };
+  /* `groups` is two things: the engine's `Settings.groups` (the apology's numbers, which a screen never reads) and `ScreenSettings.groups` (every group's look, below). A screen
+     override of the second is never laid over the first. */
+  const { groups: _screenGroups, ...overrides } = options.settings ?? {};
+  const settings: Settings = { ...options.instance.settings, ...overrides, economy: { ...options.instance.settings.economy, ...options.settings?.economy } };
   const instance: Instance = { ...options.instance, settings };
   const screen: ScreenSettings = {
     postsPerPage: settings.postsPerPage, hotReplies: settings.hotReplies, editGrace: settings.editGrace, reactionCap: settings.reactionCap,

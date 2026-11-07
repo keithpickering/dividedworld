@@ -102,6 +102,11 @@ export const defaults: Settings = deepFreeze<Settings>({
    * lands; a full bar brings a ban of 1 day, then 3, then 7, and every later ban in the season is 7 days.
    */
   warnBar: { size: 10, bands: { minor: 2, moderate: 4, severe: 7 }, decay: { unit: 'day', count: 14 }, banDays: [1, 3, 7] },
+  /**
+   * The apology (the member groups design, section 5): a barred character may apologize to one move once a day, the judge hears ten at a run, and its ruling is
+   * at most 80 words.
+   */
+  groups: { apologyEveryHours: 24, apologyJudgeBatch: 10, apologyRulingMaxWords: 80 },
   /** A board's name is at most 60 characters, whoever proposes it. */
   boardNameMaxLength: 60,
   /** A starting point: no move runs longer than six weeks. */

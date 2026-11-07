@@ -55,7 +55,7 @@ const must = <T,>(a: { ok: true; value: T } | Refusal): T => {
 };
 
 /** Ana and Bo, two players; Ana plays Ana Face and Ana Heel, Bo plays Bo Face; a thread on General, signed in as Ana. */
-function world(overrides: Partial<Settings> = {}) {
+function world(overrides: Partial<Omit<Settings, 'groups'>> = {}) {
   const fake = createFake({ instance, settings: overrides });
   const ana = fake.seed.account('ana');
   const bo = fake.seed.account('bo');
