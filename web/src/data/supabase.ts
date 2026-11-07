@@ -35,6 +35,7 @@ import { readLogPage, type LedgerRow, type ShareRow } from '../../../engine/ui/d
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
 import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
 import { RECORD_PAGE } from '../../../engine/ui/profile/record.ts';
+import { ENGINE_DEFAULT_PRONOUNS, type PronounSet } from '../../../engine/rules/pronouns.ts';
 import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import type {
@@ -140,10 +141,13 @@ function toAct(r: Row): Act {
 }
 
 /** One row of `updates`, or post_update's answer, which is the same row. A change that is not a { label, text } of words is no line. */
+/** A staff member's set where a read hands it beside a name: null (a persona with no profile row) is the engine's it/its. */
+const pronounsOrDefault = (v: unknown): PronounSet => (isObject(v) ? (v as unknown as PronounSet) : ENGINE_DEFAULT_PRONOUNS);
+
 function toUpdate(r: Row): Update {
   const changes = Array.isArray(r['changes']) ? (r['changes'] as Row[]) : [];
   return {
-    act: r['act'], thread: r['thread'], character: r['character'], name: String(r['name'] ?? ''), tagline: String(r['tagline'] ?? ''), avatar: str(r['avatar']),
+    act: r['act'], thread: r['thread'], character: r['character'], name: String(r['name'] ?? ''), tagline: String(r['tagline'] ?? ''), pronouns: pronounsOrDefault(r['pronouns']), avatar: str(r['avatar']),
     title: String(r['title'] ?? ''), body: String(r['body'] ?? ''),
     changes: changes.filter((c) => typeof c?.['text'] === 'string').map((c) => ({ label: typeof c['label'] === 'string' ? c['label'] : '', text: String(c['text']) })),
     at: String(r['at']), seq: num(r['seq']),
@@ -359,7 +363,7 @@ const params = (v: unknown): Readonly<Record<string, unknown>> => (v && typeof v
 
 function toQueued(r: Row): QueuedMove {
   return {
-    id: num(r['id']), staff: String(r['staff'] ?? ''), boss: orNull(r['boss']), kind: String(r['kind'] ?? ''), params: params(r['params']), demand: toDemand(r['demand']),
+    id: num(r['id']), staff: String(r['staff'] ?? ''), boss: orNull(r['boss']), bossPronouns: pronounsOrDefault(r['bossPronouns']), kind: String(r['kind'] ?? ''), params: params(r['params']), demand: toDemand(r['demand']),
     why: String(r['why'] ?? ''), goLiveAt: String(r['goLiveAt'] ?? ''), expiresAt: orNull(r['expiresAt']), structural: r['structural'] === true, boardName: orNull(r['boardName']),
     failedAt: orNull(r['failedAt']), failure: orNull(r['failure']), replacedAt: orNull(r['replacedAt']), adminDescription: orNull(r['adminDescription']),
   };
@@ -367,14 +371,14 @@ function toQueued(r: Row): QueuedMove {
 
 function toTodo(r: Row): HandoverTodo {
   return {
-    season: num(r['season']), boss: String(r['boss'] ?? ''), bossName: String(r['bossName'] ?? r['boss'] ?? ''), bossWas: orNull(r['bossWas']), outgoing: orNull(r['outgoing']),
-    outgoingName: orNull(r['outgoingName']), outgoingOffice: orNull(r['outgoingOffice']), how: String(r['how'] ?? ''), landedAt: String(r['landedAt'] ?? ''),
+    season: num(r['season']), boss: String(r['boss'] ?? ''), bossName: String(r['bossName'] ?? r['boss'] ?? ''), bossPronouns: pronounsOrDefault(r['bossPronouns']), bossWas: orNull(r['bossWas']), outgoing: orNull(r['outgoing']),
+    outgoingName: orNull(r['outgoingName']), outgoingPronouns: pronounsOrDefault(r['outgoingPronouns']), outgoingOffice: orNull(r['outgoingOffice']), how: String(r['how'] ?? ''), landedAt: String(r['landedAt'] ?? ''),
   };
 }
 
 function toInForce(r: Row): MoveInForce {
   return {
-    act: r['act'], id: typeof r['id'] === 'number' ? r['id'] : null, staff: orNull(r['staff']), boss: orNull(r['boss']), kind: String(r['kind'] ?? ''), params: params(r['params']),
+    act: r['act'], id: typeof r['id'] === 'number' ? r['id'] : null, staff: orNull(r['staff']), boss: orNull(r['boss']), bossPronouns: pronounsOrDefault(r['bossPronouns']), kind: String(r['kind'] ?? ''), params: params(r['params']),
     demand: toDemand(r['demand']), why: orNull(r['why']), landedAt: String(r['landedAt'] ?? ''), expiresAt: orNull(r['expiresAt']), progress: toProgress(r['progress']),
   };
 }
@@ -383,7 +387,7 @@ function toEnded(r: Row): MoveEnded {
   const how = r['how'];
   return {
     how: how === 'met' || how === 'expired' || how === 'reversed' || how === 'superseded' || how === 'spent' || how === 'refused' ? how : 'held', by: orNull(r['by']), at: String(r['at'] ?? ''), act: orNull(r['act']),
-    id: typeof r['id'] === 'number' ? r['id'] : null, staff: orNull(r['staff']), boss: orNull(r['boss']), kind: String(r['kind'] ?? ''), params: params(r['params']),
+    id: typeof r['id'] === 'number' ? r['id'] : null, staff: orNull(r['staff']), boss: orNull(r['boss']), bossPronouns: pronounsOrDefault(r['bossPronouns']), kind: String(r['kind'] ?? ''), params: params(r['params']),
     demand: toDemand(r['demand']), why: orNull(r['why']), landedAt: orNull(r['landedAt']), card: orNull(r['card']), reason: orNull(r['reason']),
   };
 }
@@ -408,6 +412,7 @@ function toMyCharacter(r: Row): MyCharacter {
   return {
     id: r['id'],
     name: r['name'],
+    pronouns: pronounsOrDefault(r['pronouns']),
     class: r['class'],
     classSince: r['class_since'],
     classDueAt: r['class_due_at'] ?? null,
@@ -599,6 +604,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     squareFrame: toFrame(p?.['square_frame']),
     portraitFrame: toFrame(p?.['portrait_frame']),
     pipStyle: p?.['pip_style'] ?? 'default',
+    /* The set is read from the profile row; the engine's it/its stands only for a character with no profile row at all. */
+    pronouns: p ? (p['pronouns'] as PronounSet) : ENGINE_DEFAULT_PRONOUNS,
     joined: c['joined'] ?? '',
     ...(typeof c['warn_points'] === 'number' && c['warn_points'] > 0 ? { warnPoints: c['warn_points'] } : {}),
     ...(typeof c['banned_until'] === 'string' && Date.parse(c['banned_until']) > Date.now() ? { bannedUntil: c['banned_until'] } : {}),
@@ -612,7 +619,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     if (ids.length === 0) return [];
     const [cs, ps] = await Promise.all([
       byChunks(ids, (part) => list(() => client.from('characters_public').select('id,name,joined,staff,office').in('id', part))),
-      byChunks(ids, (part) => list(() => client.from('character_profiles').select('character,title,signature,avatar_square,avatar_portrait,square_frame,portrait_frame,pip_style').in('character', part))),
+      byChunks(ids, (part) => list(() => client.from('character_profiles').select('character,title,signature,avatar_square,avatar_portrait,square_frame,portrait_frame,pip_style,pronouns').in('character', part))),
     ]);
     const profile = new Map(ps.map((p) => [p['character'] as string, p]));
     const byId = new Map(cs.map((c) => [c['id'] as string, c]));
@@ -847,7 +854,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         cap: num(q['cap']), waiting: rows(q['waiting']).map(toQueued), inForce: rows(q['inForce']).map(toInForce), ended: rows(q['ended']).map(toEnded),
         staffCards: rows(q['staffCards']).map(toStaffCard),
         more: { waiting: more['waiting'] === true, inForce: more['inForce'] === true, staffCards: more['staffCards'] === true, ended: more['ended'] === true },
-        roster: rows(q['roster']).flatMap((r) => (typeof r['staff'] === 'string' ? [{ staff: r['staff'], name: String(r['name'] ?? r['staff']) }] : [])),
+        roster: rows(q['roster']).flatMap((r) => (typeof r['staff'] === 'string' ? [{ staff: r['staff'], name: String(r['name'] ?? r['staff']), pronouns: pronounsOrDefault(r['pronouns']) }] : [])),
         todos: rows(q['todos']).flatMap((r) => (typeof r['boss'] === 'string' ? [toTodo(r)] : [])),
       };
     },
@@ -915,12 +922,14 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     /* The Boss list is the database's roster (`boss_roster_names`, 0082, an admin's read): a waiting persona's name is in no public view. */
     async bosses() {
       const r = (await read(() => client.rpc('boss_roster_names'))).data;
-      return (Array.isArray(r) ? (r as Row[]) : []).flatMap((x) => (typeof x['staff'] === 'string' ? [{ staff: x['staff'], name: String(x['name'] ?? x['staff']) }] : []));
+      return (Array.isArray(r) ? (r as Row[]) : []).flatMap((x) => (typeof x['staff'] === 'string' ? [{ staff: x['staff'], name: String(x['name'] ?? x['staff']), pronouns: pronounsOrDefault(x['pronouns']) }] : []));
     },
     /* The names anyone may read: staff in characters_public, which holds only the debuted. */
     async staffNames() {
-      const rowsOf = await list(() => client.from('characters_public').select('staff,name').not('staff', 'is', null));
-      return rowsOf.flatMap((x) => (typeof x['staff'] === 'string' ? [{ staff: x['staff'], name: String(x['name'] ?? '') }] : []));
+      const rowsOf = await list(() => client.from('characters_public').select('id,staff,name').not('staff', 'is', null));
+      /* Their pronouns are their profiles': one more read of the same characters, public like the names. */
+      const sets = new Map((await byChunks(rowsOf.map((x) => x['id'] as string), (part) => list(() => client.from('character_profiles').select('character,pronouns').in('character', part)))).map((p) => [p['character'], p['pronouns']]));
+      return rowsOf.flatMap((x) => (typeof x['staff'] === 'string' ? [{ staff: x['staff'], name: String(x['name'] ?? ''), pronouns: pronounsOrDefault(sets.get(x['id'])) }] : []));
     },
     async reverseMove(act) {
       const a = await rpcWrite(() => client.rpc('reverse_move', { move_act: act }));
@@ -1305,11 +1314,11 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         return null;
       }
     },
-    async beatMod(board): Promise<{ readonly mod: string; readonly board: string } | null> {
+    async beatMod(board): Promise<{ readonly mod: string; readonly pronouns: PronounSet; readonly board: string } | null> {
       if (!idOk(board)) return null;
       try {
         const d = (await read(() => client.rpc('beat_mod_name', { in_board: board }))).data;
-        return isObject(d) && typeof d['mod'] === 'string' && typeof d['board'] === 'string' ? { mod: d['mod'], board: d['board'] } : null;
+        return isObject(d) && typeof d['mod'] === 'string' && typeof d['board'] === 'string' ? { mod: d['mod'], pronouns: pronounsOrDefault(d['pronouns']), board: d['board'] } : null;
       } catch {
         return null;
       }
@@ -1575,11 +1584,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       act({ action: 'turn', character, class: to, loudness, showFrom, showTo }, (r): TurnAsked => ({ class: r['class'], loudness: r['loudness'], showFrom: r['show_from'] === true, showTo: r['show_to'] === true, takesEffectAt: r['takes_effect_at'] ?? null })),
     withdrawTurn: (character) => act({ action: 'withdrawTurn', character }, () => ({ withdrawn: true as const })),
     unmask: (character, thread, message) => act({ action: 'unmask', character, thread, message }, toAct),
-    createCharacter: (name, cls, timing, loudness) =>
-      act({ action: 'createCharacter', name, class: cls, timing, loudness }, (r): CreatedCharacter => ({ id: r['id'], name: r['name'], class: r['class'], waiting: r['waiting'] === true, loudness: r['loudness'] })),
+    createCharacter: (name, cls, timing, loudness, pronouns) =>
+      act({ action: 'createCharacter', name, class: cls, timing, loudness, ...(pronouns === undefined ? {} : { pronouns }) }, (r): CreatedCharacter => ({ id: r['id'], name: r['name'], class: r['class'], waiting: r['waiting'] === true, loudness: r['loudness'] })),
     setDebut: (character, timing, loudness) => act({ action: 'setDebut', character, timing, loudness }, (r) => ({ id: r['id'], waiting: r['waiting'] === true, loudness: r['loudness'] })),
-    async setProfile(character, title, signature, pipStyle) {
-      const a = await rpcWrite(() => client.rpc('set_profile', { through: character, title, signature, pip_style: pipStyle }));
+    async setProfile(character, title, signature, pipStyle, pronouns) {
+      /* A null set keeps the stored one (set_profile, 0113). */
+      const a = await rpcWrite(() => client.rpc('set_profile', { through: character, title, signature, pip_style: pipStyle, pronouns: pronouns ?? null }));
       return a.ok ? { ok: true, value: await profileCharacter(a.value) } : a;
     },
     async setAvatar(upload: AvatarUpload) {

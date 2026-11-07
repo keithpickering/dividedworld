@@ -95,10 +95,10 @@ begin
   if exists (select 1 from my_characters where pending_class is not null) then raise exception 'Bob read a Turn of Ann''s'; end if;
   perform tests.unbecome();
 
-  -- The columns are exactly these: nothing the tables withhold (banned_until reads public ban Acts, 0111).
+  -- The columns are exactly these: nothing the tables withhold (banned_until reads public ban Acts, 0111; pronouns is the character's public set, 0114).
   if (select array_agg(column_name::text order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'my_characters')
      is distinct from array['id', 'name', 'class', 'class_since', 'turn_opens_at', 'debuted_at', 'debut_loudness', 'retired_at', 'pending_class', 'pending_loudness',
-                            'pending_show_from', 'pending_show_to', 'takes_effect_at', 'presence_hidden', 'class_due_at', 'banned_until'] then
+                            'pending_show_from', 'pending_show_to', 'takes_effect_at', 'presence_hidden', 'class_due_at', 'banned_until', 'pronouns'] then
     raise exception 'my_characters shows more or less than it should';
   end if;
 end $$;

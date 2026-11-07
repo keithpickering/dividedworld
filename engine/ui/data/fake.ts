@@ -24,6 +24,7 @@ import { atOrBelow, basePrice, postTarget, casterMessage, decidePlay, decideSet,
 import { sameName } from '../../rules/names.ts';
 import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
+import { normalizePronouns, pronounProblems, type PronounSet } from '../../rules/pronouns.ts';
 import type { Career } from '../../system/career.ts';
 import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
@@ -69,7 +70,7 @@ export interface Seed {
   account(name: string, options?: { email?: string; admin?: boolean; joinedAt?: number; seasoned?: boolean }): Id;
   admin(account: Id, on?: boolean): void;
   /** A character of an account; debuted unless said otherwise. */
-  character(account: Id, name: string, cls: string, options?: { debuted?: boolean; retired?: boolean; loudness?: DebutLoudness; at?: number }): Id;
+  character(account: Id, name: string, cls: string, options?: { debuted?: boolean; retired?: boolean; loudness?: DebutLoudness; at?: number; pronouns?: PronounSet }): Id;
   retire(character: Id): void;
   /** A thread with its first Act; a null character is The System's, on its board only. */
   thread(board: string, character: Id | null, title: string, body?: string, options?: SeedAct): { thread: Id; act: Id };
@@ -154,7 +155,7 @@ export interface Seed {
   /** A tally on an Act as if that many others had reacted, kind by kind: no one's reaction (no account or character stands behind it), only the counts every reader sees. */
   tally(act: Id, counts: Readonly<Record<string, number>>): void;
   /** A staff character (a Boss or a Mod Bot): debuted, owned by no player, with no class; it acts only through the seed below. */
-  staff(key: string, name: string, office: 'boss' | 'mod' | 'member' | 'benched', options?: { title?: string; signature?: string; at?: number; debuted?: boolean }): Id;
+  staff(key: string, name: string, office: 'boss' | 'mod' | 'member' | 'benched', options?: { title?: string; signature?: string; at?: number; debuted?: boolean; pronouns?: PronounSet }): Id;
   /** A staff member's career as `staff_career` would return it (default: none). */
   career(key: string, career: Career): void;
   /** A staff member's in-character profile, a version at `at` (the latest is the one read). */
@@ -301,6 +302,7 @@ interface CharRec {
   title: string;
   signature: string;
   pipStyle: string;
+  pronouns: PronounSet;
   square: string | null;
   portrait: string | null;
   squareFrame: Frame | null;
@@ -635,7 +637,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   function publicCharacter(c: CharRec): Character {
     return {
       id: c.id, name: c.name, title: c.title, signature: c.signature, avatarSquare: c.square, avatarPortrait: c.portrait, squareFrame: c.squareFrame,
-      portraitFrame: c.portraitFrame, pipStyle: c.pipStyle,
+      portraitFrame: c.portraitFrame, pipStyle: c.pipStyle, pronouns: c.pronouns,
       joined: `${iso(c.debutedAt!).slice(0, 7)}-01`,
       ...(warnOf(c.id) > 0 ? { warnPoints: warnOf(c.id) } : {}),
       ...(bannedUntilOf(c.id) !== null ? { bannedUntil: iso(bannedUntilOf(c.id)!) } : {}),
@@ -725,6 +727,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const c: CharRec = {
       id: uuid(), owner: '', name: persona.name, createdAt: at, debutedAt: at, retiredAt: null, loudness: 'silent', history: [{ cls: '', at }], pending: null, presenceHidden: false,
       title: persona.tagline.slice(0, 40), signature: '', pipStyle: options.instance.pipStyles[0]?.key ?? 'default',
+      pronouns: persona.pronouns ?? settings.pronouns,
       square: null, portrait: null, squareFrame: null, portraitFrame: null, staff: { key: 'developer', office: 'developer' },
     };
     characters.set(c.id, c);
@@ -786,7 +789,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   function updateOf(a: ActRec): Update {
     const c = characters.get(a.character!)!;
     return {
-      act: a.id, thread: a.thread, character: c.id, name: c.name, tagline: c.title, avatar: (options.instance.developer ?? DEFAULT_DEVELOPER).avatar ?? null,
+      act: a.id, thread: a.thread, character: c.id, name: c.name, tagline: c.title, pronouns: c.pronouns, avatar: (options.instance.developer ?? DEFAULT_DEVELOPER).avatar ?? null,
       title: String(a.payload['title']), body: String(a.payload['body']), changes: a.payload['changes'] as UpdateChange[], at: iso(a.at), seq: a.seq!,
     };
   }
@@ -802,7 +805,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const season = i + 2;
       if (h.outgoing === h.boss || latest > h.at || dismissedTodos.has(season)) return [];
       return [{
-        season, boss: h.boss, bossName: staffByKey(h.boss)?.name ?? h.boss, bossWas: h.bossWas, outgoing: h.outgoing, outgoingName: h.outgoing === null ? null : staffByKey(h.outgoing)?.name ?? h.outgoing,
+        season, boss: h.boss, bossName: staffByKey(h.boss)?.name ?? h.boss, bossPronouns: staffByKey(h.boss)?.pronouns ?? settings.pronouns, bossWas: h.bossWas, outgoing: h.outgoing, outgoingName: h.outgoing === null ? null : staffByKey(h.outgoing)?.name ?? h.outgoing,
+        outgoingPronouns: (h.outgoing === null ? undefined : staffByKey(h.outgoing)?.pronouns) ?? settings.pronouns,
         outgoingOffice: h.outgoing === null ? null : h.outgoingOffice, how: h.how, landedAt: iso(h.at),
       }];
     }).reverse();
@@ -1408,16 +1412,21 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok({ withdrawn: true });
   }
 
+  /** The SQL's words (pronouns_hold, 0113): a set is held after it is lowercased, as set_profile and create_character store it. */
+  const PRONOUNS_REFUSAL = 'pronouns are five words of 1 to 12 letters';
+  const pronounsHold = (set: PronounSet) => pronounProblems(normalizePronouns(set)).length === 0;
+
   const ownedCount = (account: Id) => [...characters.values()].filter((c) => c.owner === account && c.retiredAt === null).length;
 
-  function createCharacter(name: string, cls: string, timing: DebutTiming, loudness: DebutLoudness): Answer<CreatedCharacter> {
+  function createCharacter(name: string, cls: string, timing: DebutTiming, loudness: DebutLoudness, pronouns?: PronounSet): Answer<CreatedCharacter> {
     const bad = request({ action: 'createCharacter', name, class: cls, timing, loudness });
     if (bad) return bad;
     const account = me()!;
     const named = name.replace(/^ +| +$/g, '');
     if (ownedCount(account.id) >= settings.charactersPerPlayer) return refuse(`a player runs at most ${settings.charactersPerPlayer} characters`);
     if ([...characters.values()].some((c) => sameName(c.name, named))) return refuse('that name is taken');
-    const c = addCharacter(account.id, named, cls, { debuted: timing === 'now', loudness });
+    if (pronouns !== undefined && !pronounsHold(pronouns)) return refuse(PRONOUNS_REFUSAL);
+    const c = addCharacter(account.id, named, cls, { debuted: timing === 'now', loudness, ...(pronouns === undefined ? {} : { pronouns: normalizePronouns(pronouns) }) });
     return ok({ id: c.id, name: c.name, class: cls, waiting: timing === 'tally', loudness });
   }
 
@@ -1433,11 +1442,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok({ id: c.id, waiting: timing === 'tally', loudness });
   }
 
-  function addCharacter(owner: Id, name: string, cls: string, o: { debuted: boolean; loudness: DebutLoudness; retired?: boolean; at?: number }): CharRec {
+  function addCharacter(owner: Id, name: string, cls: string, o: { debuted: boolean; loudness: DebutLoudness; retired?: boolean; at?: number; pronouns?: PronounSet }): CharRec {
     const at = o.at ?? now();
     const c: CharRec = {
       id: uuid(), owner, name, createdAt: at, debutedAt: o.debuted ? at : null, retiredAt: o.retired ? at : null, loudness: o.loudness,
       history: [{ cls, at }], pending: null, presenceHidden: false, title: '', signature: '', pipStyle: options.instance.pipStyles[0]?.key ?? 'default',
+      pronouns: o.pronouns ?? settings.pronouns,
       square: null, portrait: null, squareFrame: null, portraitFrame: null,
     };
     characters.set(c.id, c);
@@ -1723,25 +1733,26 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     adminQueue() {
       if (!me()?.admin) throw new Error('only an admin reads the queue');
       const nameOf = (staff: string | null) => (staff === null ? null : [...characters.values()].find((c) => c.staff?.key === staff)?.name ?? null);
+      const pronounsOf = (staff: string | null): PronounSet => (staff === null ? undefined : staffByKey(staff)?.pronouns) ?? settings.pronouns;
       const paramsOf = moveParams;
       const demandFor = moveDemand;
       const waiting = queue.filter((q) => q.landed === null && q.heldAt === null && !q.refusal).sort((a, b) => a.goLiveAt - b.goLiveAt || a.id - b.id).map((q): QueuedMove => q.successor !== undefined ? ({
-        id: q.id, staff: q.staff, boss: nameOf(q.staff), kind: 'nameSuccessor', params: { boss: q.successor }, demand: null, why: q.why, goLiveAt: iso(q.goLiveAt),
+        id: q.id, staff: q.staff, boss: nameOf(q.staff), bossPronouns: pronounsOf(q.staff), kind: 'nameSuccessor', params: { boss: q.successor }, demand: null, why: q.why, goLiveAt: iso(q.goLiveAt),
         expiresAt: null, structural: true, boardName: null, failedAt: null, failure: null, replacedAt: q.replacedAt === undefined ? null : iso(q.replacedAt), adminDescription: null,
       }) : ({
-        id: q.id, staff: q.staff, boss: nameOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, goLiveAt: iso(q.goLiveAt),
+        id: q.id, staff: q.staff, boss: nameOf(q.staff), bossPronouns: pronounsOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, goLiveAt: iso(q.goLiveAt),
         expiresAt: q.move.expiresAt === undefined ? null : iso(q.move.expiresAt), structural: true, boardName: boards.find((b) => b.slug === q.move.board) ? boardNow(boards.find((b) => b.slug === q.move.board)!).name : null,
         failedAt: q.failure ? iso(q.failure.at) : null, failure: q.failure?.text ?? null, replacedAt: null, adminDescription: q.adminDescription ?? null,
       }));
       const rowOf = (a: ActRec) => {
         const q = queue.find((x) => x.landed === a.id);
         const who = a.character ? characters.get(a.character) : undefined;
-        return { q, staff: who?.staff?.key ?? null, boss: who?.name ?? null };
+        return { q, staff: who?.staff?.key ?? null, boss: who?.name ?? null, bossPronouns: who?.pronouns ?? settings.pronouns };
       };
       const live = inForce().map((a): MoveInForce => {
-        const { q, staff, boss } = rowOf(a);
+        const { q, staff, boss, bossPronouns } = rowOf(a);
         return {
-          act: a.id, id: q?.id ?? null, staff, boss, kind: String(a.payload['kind']), params: (a.payload['params'] ?? {}) as Record<string, unknown>, demand: demandOf(a.id),
+          act: a.id, id: q?.id ?? null, staff, boss, bossPronouns, kind: String(a.payload['kind']), params: (a.payload['params'] ?? {}) as Record<string, unknown>, demand: demandOf(a.id),
           why: q?.why ?? null, landedAt: iso(a.at), expiresAt: typeof a.payload['expires_at'] === 'string' ? a.payload['expires_at'] : null, progress: toProgress(progressOf(a)),
         };
       });
@@ -1749,22 +1760,22 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const ended: MoveEnded[] = [
         ...[...moveEnds.entries()].filter(([, e]) => e.at >= since).map(([id, e]): MoveEnded => {
           const a = acts.get(id)!;
-          const { q, staff, boss } = rowOf(a);
-          return { how: e.why, by: e.by, at: iso(e.at), act: id, id: q?.id ?? null, staff, boss, kind: String(a.payload['kind']), params: (a.payload['params'] ?? {}) as Record<string, unknown>, demand: demandOf(id), why: q?.why ?? null, landedAt: iso(a.at) };
+          const { q, staff, boss, bossPronouns } = rowOf(a);
+          return { how: e.why, by: e.by, at: iso(e.at), act: id, id: q?.id ?? null, staff, boss, bossPronouns, kind: String(a.payload['kind']), params: (a.payload['params'] ?? {}) as Record<string, unknown>, demand: demandOf(id), why: q?.why ?? null, landedAt: iso(a.at) };
         }),
         ...[...acts.values()].filter((e) => e.kind === 'card_end' && e.target !== null && e.at >= since).map((e): MoveEnded => {
           const play = acts.get(e.target!)!;
           return {
             how: 'reversed', by: 'admin', at: iso(e.at), act: play.id, id: null, staff: play.character ? characters.get(play.character)?.staff?.key ?? null : null,
-            boss: play.character ? characters.get(play.character)?.name ?? null : null, kind: 'card', params: {}, demand: null, why: null, landedAt: iso(play.at),
+            boss: play.character ? characters.get(play.character)?.name ?? null : null, bossPronouns: (play.character ? characters.get(play.character)?.pronouns : undefined) ?? settings.pronouns, kind: 'card', params: {}, demand: null, why: null, landedAt: iso(play.at),
             card: instance.cards.find((c) => c.key === play.payload.card)?.name ?? String(play.payload.card ?? ''),
           };
         }),
         ...queue.filter((q) => q.refusal && q.heldAt === null && q.refusal.at >= since).map((q): MoveEnded => ({
-          how: 'refused', by: 'tick', at: iso(q.refusal!.at), act: null, id: q.id, staff: q.staff, boss: nameOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, landedAt: null, reason: q.refusal!.text,
+          how: 'refused', by: 'tick', at: iso(q.refusal!.at), act: null, id: q.id, staff: q.staff, boss: nameOf(q.staff), bossPronouns: pronounsOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, landedAt: null, reason: q.refusal!.text,
         })),
         ...queue.filter((q) => q.heldAt !== null && q.heldAt >= since).map((q): MoveEnded => ({
-          how: 'held', by: 'admin', at: iso(q.heldAt!), act: null, id: q.id, staff: q.staff, boss: nameOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, landedAt: null,
+          how: 'held', by: 'admin', at: iso(q.heldAt!), act: null, id: q.id, staff: q.staff, boss: nameOf(q.staff), bossPronouns: pronounsOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, landedAt: null,
         })),
       ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
       /* The Mod Bots' cards in force: a face-up `card` Act of a staff character, from the last 30 days, not caught, not worn off, not ended. */
@@ -1783,7 +1794,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         };
       });
       return { cap: 100, waiting, inForce: live, staffCards: staffCards.slice(0, 100), ended, todos: handoverTodos(), more: { waiting: false, inForce: false, staffCards: staffCards.length > 100, ended: false },
-        roster: [...characters.values()].filter((c) => c.staff && c.staff.office !== 'developer' && c.staff.office !== 'benched' && c.retiredAt === null).map((c) => ({ staff: c.staff!.key, name: c.name })) } satisfies AdminQueue;
+        roster: [...characters.values()].filter((c) => c.staff && c.staff.office !== 'developer' && c.staff.office !== 'benched' && c.retiredAt === null).map((c) => ({ staff: c.staff!.key, name: c.name, pronouns: c.pronouns })) } satisfies AdminQueue;
     },
     dismissHandoverTodo(season) {
       if (!me()?.admin) return refuse('only an admin dismisses a to-do');
@@ -1838,11 +1849,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     /* boss_roster_names (0082): the roster's own list, a waiting persona's name included, for an admin alone. */
     bosses() {
       if (!me()?.admin) throw new Error('only an admin reads the Boss list');
-      return [...characters.values()].filter((c) => c.staff && c.staff.office !== 'developer' && c.staff.office !== 'benched' && c.retiredAt === null).map((c) => ({ staff: c.staff!.key, name: c.name }));
+      return [...characters.values()].filter((c) => c.staff && c.staff.office !== 'developer' && c.staff.office !== 'benched' && c.retiredAt === null).map((c) => ({ staff: c.staff!.key, name: c.name, pronouns: c.pronouns }));
     },
     /* characters_public: staff that have debuted, for anyone. */
     staffNames() {
-      return [...characters.values()].filter((c) => c.staff && c.debutedAt !== null).map((c) => ({ staff: c.staff!.key, name: c.name }));
+      return [...characters.values()].filter((c) => c.staff && c.debutedAt !== null).map((c) => ({ staff: c.staff!.key, name: c.name, pronouns: c.pronouns }));
     },
     reverseMove(act) {
       if (!me()?.admin) return refuse('only an admin reverses a move');
@@ -1988,7 +1999,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     beatMod(board) {
       const mod = [...characters.values()].find((c) => c.staff?.office === 'mod' && c.debutedAt !== null && c.retiredAt === null);
       const b = boards.find((x) => x.id === board);
-      return mod && b ? { mod: mod.name, board: boardNow(b).name } : null;
+      return mod && b ? { mod: mod.name, pronouns: mod.pronouns, board: boardNow(b).name } : null;
     },
     myBan(character) {
       const mine = characters.get(character);
@@ -2207,7 +2218,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return [...characters.values()].filter((c) => c.owner === account.id).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)).map((c): MyCharacter => {
         const opens = turnOpens(c);
         return {
-          id: c.id, name: c.name, class: classNow(c).cls, classSince: iso(classNow(c).at), classDueAt: classNow(c).dueAt === undefined ? null : iso(classNow(c).dueAt!),
+          id: c.id, name: c.name, pronouns: c.pronouns, class: classNow(c).cls, classSince: iso(classNow(c).at), classDueAt: classNow(c).dueAt === undefined ? null : iso(classNow(c).dueAt!),
           turnOpensAt: opens === null ? null : iso(opens),
           debutedAt: c.debutedAt === null ? null : iso(c.debutedAt), debutLoudness: c.loudness, retiredAt: c.retiredAt === null ? null : iso(c.retiredAt),
           pendingTurn: c.pending ? { class: c.pending.class, loudness: c.pending.loudness, showFrom: c.pending.showFrom, showTo: c.pending.showTo, takesEffectAt: takesEffectAt() } : null,
@@ -2538,12 +2549,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     createInvite, reissueInvite,
 
     startThread, post: lossy(post), edit: lossy(edit), spin: lossy(spin), react, turn, withdrawTurn, unmask, createCharacter, setDebut,
-    setProfile(character, title, signature, pipStyle) {
+    setProfile(character, title, signature, pipStyle, pronouns) {
       const c = acting(character);
       if (isRefusal(c)) return c;
       if ([...title].length > 40) return refuse('a title is at most 40 characters');
       if ([...signature].length > 500) return refuse('a signature is at most 500 characters');
       if (!options.instance.pipStyles.some((p) => p.key === pipStyle)) return refuse(`there is no pip style "${pipStyle}"`);
+      if (pronouns !== undefined && !pronounsHold(pronouns)) return refuse(PRONOUNS_REFUSAL);
+      if (pronouns !== undefined) c.pronouns = normalizePronouns(pronouns);
       c.title = title;
       c.signature = signature;
       c.pipStyle = pipStyle;
@@ -2725,7 +2738,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     admin(account, on = true) { accounts.get(account)!.admin = on; },
     character(account, name, cls, o) {
       if (!accounts.has(account)) throw new Error(`no such account ${account}`);
-      return addCharacter(account, name, cls, { debuted: o?.debuted ?? true, loudness: o?.loudness ?? 'announced', retired: o?.retired, at: o?.at }).id;
+      return addCharacter(account, name, cls, { debuted: o?.debuted ?? true, loudness: o?.loudness ?? 'announced', retired: o?.retired, at: o?.at, ...(o?.pronouns === undefined ? {} : { pronouns: o.pronouns }) }).id;
     },
     retire(character) {
       const c = characters.get(character)!;
@@ -2882,6 +2895,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const c: CharRec = {
         id: uuid(), owner: '', name, createdAt: at, debutedAt: o?.debuted === false ? null : at, retiredAt: null, loudness: 'silent', history: [{ cls: '', at }], pending: null, presenceHidden: false,
         title: o?.title ?? '', signature: o?.signature ?? '', pipStyle: options.instance.pipStyles[0]?.key ?? 'default',
+        pronouns: o?.pronouns ?? options.instance.system.roster.find((r) => r.key === key)?.pronouns ?? settings.pronouns,
         square: null, portrait: null, squareFrame: null, portraitFrame: null, staff: { key, office },
       };
       characters.set(c.id, c);

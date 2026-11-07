@@ -8,6 +8,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ALLOWED_READS, ALLOWED_RPCS as GUARD_RPCS } from '../../../tools/check-web-reads.mjs';
 import type { Act, KayfaApi, ScreenSettings, ThreadSummary } from '../../../engine/ui/data/api.ts';
+import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../../engine/rules/pronouns.ts';
 import { createSupabaseApi } from './supabase.ts';
 
 /* Built in pieces on purpose: the web-reads guard refuses a path it cannot read to its end. */
@@ -479,14 +480,15 @@ describe('reads and their rows', () => {
   it('joins characters_public with character_profiles in two reads and defaults an absent profile', async () => {
     const h = harness((r) => {
       if (r.url.pathname.endsWith('/characters_public')) return rows([{ id: B, name: 'Bea', joined: '2026-10-01' }, { id: A, name: 'Al', joined: '2026-09-01' }]);
-      return rows([{ character: B, title: 'Champ', signature: '[b]hi[/b]', avatar_square: 'sq.webp', avatar_portrait: 'po.webp', square_frame: { x: 0, y: 0, w: 0.5, h: 0.5 }, portrait_frame: null, pip_style: 'fancy' }]);
+      return rows([{ character: B, title: 'Champ', signature: '[b]hi[/b]', avatar_square: 'sq.webp', avatar_portrait: 'po.webp', square_frame: { x: 0, y: 0, w: 0.5, h: 0.5 }, portrait_frame: null, pip_style: 'fancy', pronouns: PRONOUN_PRESETS.she }]);
     });
     const list = await h.api.characters([B, A]);
     expect(h.to('characters_public')[0]?.url.searchParams.get('id')).toBe(`in.(${B},${A})`);
     expect(h.to('character_profiles')[0]?.url.searchParams.get('character')).toBe(`in.(${B},${A})`);
+    expect(h.to('character_profiles')[0]?.url.searchParams.get('select')?.split(',')).toContain('pronouns');
     expect(list).toEqual([
-      { id: B, name: 'Bea', title: 'Champ', signature: '[b]hi[/b]', avatarSquare: `${URL_}/storage/v1/object/public/avatars/sq.webp`, avatarPortrait: `${URL_}/storage/v1/object/public/avatars/po.webp`, squareFrame: { x: 0, y: 0, w: 0.5, h: 0.5 }, portraitFrame: null, pipStyle: 'fancy', joined: '2026-10-01' },
-      { id: A, name: 'Al', title: '', signature: '', avatarSquare: null, avatarPortrait: null, squareFrame: null, portraitFrame: null, pipStyle: 'default', joined: '2026-09-01' },
+      { id: B, name: 'Bea', title: 'Champ', signature: '[b]hi[/b]', avatarSquare: `${URL_}/storage/v1/object/public/avatars/sq.webp`, avatarPortrait: `${URL_}/storage/v1/object/public/avatars/po.webp`, squareFrame: { x: 0, y: 0, w: 0.5, h: 0.5 }, portraitFrame: null, pipStyle: 'fancy', pronouns: PRONOUN_PRESETS.she, joined: '2026-10-01' },
+      { id: A, name: 'Al', title: '', signature: '', avatarSquare: null, avatarPortrait: null, squareFrame: null, portraitFrame: null, pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '2026-09-01' },
     ]);
   });
 
@@ -508,11 +510,13 @@ describe('reads and their rows', () => {
 
   it('maps my_characters, with a pending Turn only when one is waiting', async () => {
     const base = { name: 'Bea', class: 'face', class_since: '2026-09-01T00:00:00+00:00', turn_opens_at: null, debuted_at: '2026-09-02T00:00:00+00:00', debut_loudness: 'silent', retired_at: null, pending_class: null, pending_loudness: null, pending_show_from: null, pending_show_to: null, takes_effect_at: null, presence_hidden: false, class_due_at: null };
-    const h = harness(() => rows([{ id: B, ...base }, { id: A, ...base, name: 'Al', presence_hidden: true, class_due_at: '2026-10-31T00:00:00+00:00', pending_class: 'heel', pending_loudness: 'announced', pending_show_from: true, pending_show_to: false, takes_effect_at: '2026-11-01T00:00:00+00:00' }]));
+    const h = harness(() => rows([{ id: B, ...base, pronouns: PRONOUN_PRESETS.she }, { id: A, ...base, name: 'Al', presence_hidden: true, class_due_at: '2026-10-31T00:00:00+00:00', pending_class: 'heel', pending_loudness: 'announced', pending_show_from: true, pending_show_to: false, takes_effect_at: '2026-11-01T00:00:00+00:00' }]));
     const mine = await h.api.myCharacters();
     expect(h.rest().map((r) => r.url.pathname)).toEqual(['/rest/v1/my_characters']);
-    expect(mine[0]).toEqual({ id: B, name: 'Bea', class: 'face', classSince: '2026-09-01T00:00:00+00:00', classDueAt: null, turnOpensAt: null, debutedAt: '2026-09-02T00:00:00+00:00', debutLoudness: 'silent', retiredAt: null, pendingTurn: null, presenceHidden: false });
+    expect(mine[0]).toEqual({ id: B, name: 'Bea', pronouns: PRONOUN_PRESETS.she, class: 'face', classSince: '2026-09-01T00:00:00+00:00', classDueAt: null, turnOpensAt: null, debutedAt: '2026-09-02T00:00:00+00:00', debutLoudness: 'silent', retiredAt: null, pendingTurn: null, presenceHidden: false });
     expect(mine[1]?.presenceHidden).toBe(true);
+    // A character with no profile row has no set to say: the engine's it/its.
+    expect(mine[1]?.pronouns).toEqual(ENGINE_DEFAULT_PRONOUNS);
     // When a Turn that waited past a reveal was due (0074): a wiring no other test holds (#179).
     expect(mine[1]?.classDueAt).toBe('2026-10-31T00:00:00+00:00');
     expect(mine[1]?.pendingTurn).toEqual({ class: 'heel', loudness: 'announced', showFrom: true, showTo: false, takesEffectAt: '2026-11-01T00:00:00+00:00' });
@@ -715,6 +719,19 @@ describe('failures', () => {
   it('passes an act refusal through with its field', async () => {
     const h = harness(() => json({ field: 'body', error: 'body is empty' }, 400));
     expect(await h.api.post(T, B, ' ', null)).toEqual({ ok: false, error: 'body is empty', field: 'body' });
+  });
+
+  it('sends the pronouns with createCharacter and set_profile, and nothing when none is given', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/set_profile') ? json({ character: B, title: 'T', signature: 's', pip_style: 'default', pronouns: PRONOUN_PRESETS.she }) : json({ id: B, name: 'Bea', class: 'face', waiting: true, loudness: 'announced', announcement: null })));
+    await h.api.createCharacter('Bea', 'face', 'tally', 'announced', PRONOUN_PRESETS.she);
+    expect(h.log.filter((r) => r.url.pathname === '/functions/v1/act').map((r) => r.body)).toEqual([{ action: 'createCharacter', name: 'Bea', class: 'face', timing: 'tally', loudness: 'announced', pronouns: PRONOUN_PRESETS.she }]);
+    const set = await h.api.setProfile(B, 'T', 's', 'default', PRONOUN_PRESETS.she);
+    await h.api.setProfile(B, 'T', 's', 'default');
+    expect(h.to('rpc/set_profile').map((r) => r.body)).toEqual([
+      { through: B, title: 'T', signature: 's', pip_style: 'default', pronouns: PRONOUN_PRESETS.she },
+      { through: B, title: 'T', signature: 's', pip_style: 'default', pronouns: null },
+    ]);
+    expect(set).toMatchObject({ ok: true, value: { pronouns: PRONOUN_PRESETS.she } });
   });
 
   it('passes an rpc refusal through by its hint, and quotes nothing else', async () => {
@@ -1715,12 +1732,13 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
   it('reads the admin queue in its three groups, and holds and reverses through the admin functions', async () => {
     const queue = {
       cap: 100,
-      waiting: [{ id: 4, staff: 'director', boss: 'The Director', kind: 'renameBoard', params: { board: C, name: 'Toast' }, demand: { kind: 'postsOnBoard', params: { board: C, count: 5 } }, why: 'Toast.', goLiveAt: '2026-10-31T14:10:00+00:00', expiresAt: '2026-11-14T00:00:00+00:00', structural: true, boardName: 'General', failedAt: '2026-10-31T14:11:00+00:00', failure: 'it did not land' }],
-      inForce: [{ act: A, id: 3, staff: 'director', boss: 'The Director', kind: 'renameBoard', params: {}, demand: { kind: 'postsOnBoard', params: { board: C, count: 5 } }, why: 'Why.', landedAt: '2026-10-30T12:00:00+00:00', expiresAt: '2026-11-13T12:00:00+00:00', progress: { done: 2, of: 5, met: false, checkedAt: '2026-11-01T14:05:00+00:00' } }],
-      ended: [{ how: 'held', by: 'admin', at: '2026-10-30T10:00:00+00:00', act: null, id: 2, staff: 'director', boss: 'The Director', kind: 'renameBoard', params: {}, demand: null, why: 'x', landedAt: null }, { how: 'met', by: 'tick', at: '2026-10-29T10:00:00+00:00', act: B, id: 1, staff: 'director', boss: 'The Director', kind: 'renameBoard', params: {}, demand: null, why: null, landedAt: '2026-10-28T10:00:00+00:00' }],
+      waiting: [{ id: 4, staff: 'director', boss: 'The Director', bossPronouns: PRONOUN_PRESETS.she, kind: 'renameBoard', params: { board: C, name: 'Toast' }, demand: { kind: 'postsOnBoard', params: { board: C, count: 5 } }, why: 'Toast.', goLiveAt: '2026-10-31T14:10:00+00:00', expiresAt: '2026-11-14T00:00:00+00:00', structural: true, boardName: 'General', failedAt: '2026-10-31T14:11:00+00:00', failure: 'it did not land' }],
+      inForce: [{ act: A, id: 3, staff: 'director', boss: 'The Director', bossPronouns: PRONOUN_PRESETS.she, kind: 'renameBoard', params: {}, demand: { kind: 'postsOnBoard', params: { board: C, count: 5 } }, why: 'Why.', landedAt: '2026-10-30T12:00:00+00:00', expiresAt: '2026-11-13T12:00:00+00:00', progress: { done: 2, of: 5, met: false, checkedAt: '2026-11-01T14:05:00+00:00' } }],
+      ended: [{ how: 'held', by: 'admin', at: '2026-10-30T10:00:00+00:00', act: null, id: 2, staff: 'director', boss: 'The Director', bossPronouns: PRONOUN_PRESETS.they, kind: 'renameBoard', params: {}, demand: null, why: 'x', landedAt: null }, { how: 'met', by: 'tick', at: '2026-10-29T10:00:00+00:00', act: B, id: 1, staff: 'director', boss: 'The Director', kind: 'renameBoard', params: {}, demand: null, why: null, landedAt: '2026-10-28T10:00:00+00:00' }],
       staffCards: [{ play: A, card: 'whoops', cardName: 'Whoops!', staff: 'hall-monitor', persona: 'Hall Monitor', targetName: 'Ana Face', thread: B, threadTitle: 'A thread', at: '2026-11-01T10:00:00+00:00' }],
       more: { waiting: false, inForce: false, staffCards: false, ended: true },
-      roster: [{ staff: 'the-clerk', name: 'The Clerk' }, { staff: 7, name: 'bad' }],
+      roster: [{ staff: 'the-clerk', name: 'The Clerk', pronouns: PRONOUN_PRESETS.he }, { staff: 7, name: 'bad' }],
+      todos: [{ season: 3, boss: 'the-clerk', bossName: 'The Clerk', bossPronouns: PRONOUN_PRESETS.he, bossWas: 'mod', outgoing: 'director', outgoingName: 'The Director', outgoingPronouns: null, outgoingOffice: 'member', how: 'rotation', landedAt: '2026-11-01T00:00:00+00:00' }],
     };
     const h = harness((r) => {
       if (r.url.pathname.endsWith('/rpc/admin_queue')) return json(queue);
@@ -1734,7 +1752,11 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     expect(q.ended.map((e) => e.how)).toEqual(['held', 'met']);
     expect(q.more).toEqual({ waiting: false, inForce: false, staffCards: false, ended: true });
     expect(q.staffCards).toEqual([{ play: A, card: 'whoops', cardName: 'Whoops!', staff: 'hall-monitor', persona: 'Hall Monitor', targetName: 'Ana Face', thread: B, threadTitle: 'A thread', at: '2026-11-01T10:00:00+00:00' }]);
-    expect(q.roster).toEqual([{ staff: 'the-clerk', name: 'The Clerk' }]);
+    expect(q.roster).toEqual([{ staff: 'the-clerk', name: 'The Clerk', pronouns: PRONOUN_PRESETS.he }]);
+    // The Boss's set comes beside its name, in every group; a name no character holds (a null set) reads as the engine's it/its.
+    expect([q.waiting[0]?.bossPronouns, q.inForce[0]?.bossPronouns, q.ended[0]?.bossPronouns]).toEqual([PRONOUN_PRESETS.she, PRONOUN_PRESETS.she, PRONOUN_PRESETS.they]);
+    expect(q.ended[1]?.bossPronouns).toEqual(ENGINE_DEFAULT_PRONOUNS);
+    expect(q.todos[0]).toMatchObject({ bossPronouns: PRONOUN_PRESETS.he, outgoingPronouns: ENGINE_DEFAULT_PRONOUNS });
     expect(q.waiting[0]?.replacedAt).toBeNull();
     expect(await h.api.holdMove(4)).toEqual({ ok: true, value: { id: 4, heldAt: '2026-10-31T15:00:00+00:00' } });
     expect(h.to('rpc/hold_move')[0]?.body).toEqual({ id: 4 });
@@ -1748,18 +1770,19 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     expect(log.rows.map((r) => [r.end?.why ?? null, r.keptBy])).toEqual([['superseded', null], ['spent', null], [null, 'the-clerk'], [null, null]]);
     const h = harness((r) => {
       if (r.url.pathname.endsWith('/rpc/replace_successor')) return json({ id: 4, boss: 'hype-man' });
-      if (r.url.pathname.endsWith('/rpc/boss_roster_names')) return json([{ staff: 'hype-man', name: 'Hype Man', office: 'member' }, { staff: 'the-clerk', name: 'The Clerk', office: 'waiting' }, { staff: 7, name: 'no key' }]);
+      if (r.url.pathname.endsWith('/rpc/boss_roster_names')) return json([{ staff: 'hype-man', name: 'Hype Man', office: 'member', pronouns: PRONOUN_PRESETS.they }, { staff: 'the-clerk', name: 'The Clerk', office: 'waiting', pronouns: null }, { staff: 7, name: 'no key' }]);
       return json({}, 404);
     });
     expect(h.to('moves_log')).toHaveLength(0);
     /* The Boss list is the database's own roster (waiting personas included, whose names characters_public does not hold), read through the admin function. */
-    expect(await h.api.bosses()).toEqual([{ staff: 'hype-man', name: 'Hype Man' }, { staff: 'the-clerk', name: 'The Clerk' }]);
+    expect(await h.api.bosses()).toEqual([{ staff: 'hype-man', name: 'Hype Man', pronouns: PRONOUN_PRESETS.they }, { staff: 'the-clerk', name: 'The Clerk', pronouns: ENGINE_DEFAULT_PRONOUNS }]);
     expect(h.to('characters_public')).toHaveLength(0);
     expect(h.to('rpc/boss_roster_names')).toHaveLength(1);
     /* The public names come from characters_public alone: debuted staff, by key. */
-    const pub = harness((r) => (r.url.pathname.endsWith('/characters_public') ? rows([{ staff: 'the-clerk', name: 'The Clerk' }, { staff: null, name: 'Al' }]) : rows([])));
-    expect(await pub.api.staffNames()).toEqual([{ staff: 'the-clerk', name: 'The Clerk' }]);
-    expect(pub.to('characters_public')[0]?.url.searchParams.get('select')).toBe('staff,name');
+    const pub = harness((r) => (r.url.pathname.endsWith('/characters_public') ? rows([{ id: B, staff: 'the-clerk', name: 'The Clerk' }, { id: A, staff: 'hall-monitor', name: 'Hall Monitor' }, { id: C, staff: null, name: 'Al' }]) : rows([{ character: B, pronouns: PRONOUN_PRESETS.he }])));
+    expect(await pub.api.staffNames()).toEqual([{ staff: 'the-clerk', name: 'The Clerk', pronouns: PRONOUN_PRESETS.he }, { staff: 'hall-monitor', name: 'Hall Monitor', pronouns: ENGINE_DEFAULT_PRONOUNS }]);
+    expect(pub.to('characters_public')[0]?.url.searchParams.get('select')).toBe('id,staff,name');
+    expect(pub.to('character_profiles')[0]?.url.searchParams.get('select')).toBe('character,pronouns');
     expect(pub.to('rpc/boss_roster_names')).toHaveLength(0);
     expect(await h.api.replaceSuccessor(4, 'hype-man')).toEqual({ ok: true, value: { id: 4, boss: 'hype-man' } });
     expect(h.to('rpc/replace_successor')[0]?.body).toEqual({ id: 4, boss: 'hype-man' });
@@ -1799,13 +1822,13 @@ describe('Contact', () => {
 describe('Updates', () => {
   const ROW = {
     act: A, thread: T, character: B, name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe', title: 'Traps bite', body: 'The trap was offended.',
-    changes: [{ label: 'Trap Card', text: 'catches more.' }], at: '2026-11-02T08:00:00+00:00', seq: 2,
+    changes: [{ label: 'Trap Card', text: 'catches more.' }], at: '2026-11-02T08:00:00+00:00', seq: 2, pronouns: PRONOUN_PRESETS.he,
   };
-  const UPDATE = { act: A, thread: T, character: B, name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe', title: 'Traps bite', body: 'The trap was offended.', changes: [{ label: 'Trap Card', text: 'catches more.' }], at: '2026-11-02T08:00:00+00:00', seq: 2 };
+  const UPDATE = { act: A, thread: T, character: B, name: 'Gabe', tagline: 'Made this. Sorry.', pronouns: PRONOUN_PRESETS.he, avatar: 'gabe', title: 'Traps bite', body: 'The trap was offended.', changes: [{ label: 'Trap Card', text: 'catches more.' }], at: '2026-11-02T08:00:00+00:00', seq: 2 };
 
   it('reads a page through updates, from a cursor, and takes what a row holds as it is', async () => {
-    const h = harness((r) => (r.url.pathname.endsWith('/rpc/updates') ? json([ROW, { ...ROW, act: C, avatar: null, changes: null, tagline: null, seq: 1 }]) : undefined));
-    expect(await h.api.updates()).toEqual([UPDATE, { ...UPDATE, act: C, avatar: null, changes: [], tagline: '', seq: 1 }]);
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/updates') ? json([ROW, { ...ROW, act: C, avatar: null, changes: null, tagline: null, seq: 1, pronouns: null }]) : undefined));
+    expect(await h.api.updates()).toEqual([UPDATE, { ...UPDATE, act: C, avatar: null, changes: [], tagline: '', seq: 1, pronouns: ENGINE_DEFAULT_PRONOUNS }]);
     await h.api.updates('2026-11-02T08:00:00+00:00');
     expect(h.to('rpc/updates').map((r) => r.body)).toEqual([{ before: null, most: 20 }, { before: '2026-11-02T08:00:00+00:00', most: 20 }]);
   });
@@ -1831,9 +1854,9 @@ describe('Updates', () => {
 
 
 describe('a screen in one call', () => {
-  const PROFILE = { title: 'Champ', signature: 'sig', avatar_square: 'sq', avatar_portrait: null, square_frame: { x: 1, y: 2, w: 3, h: 4 }, portrait_frame: null, pip_style: 'star' };
+  const PROFILE = { title: 'Champ', signature: 'sig', avatar_square: 'sq', avatar_portrait: null, square_frame: { x: 1, y: 2, w: 3, h: 4 }, portrait_frame: null, pip_style: 'star', pronouns: PRONOUN_PRESETS.she };
   const CHAR = { id: B, name: 'Bea', joined: '2026-10-01', staff: null, office: null };
-  const BEA = { id: B, name: 'Bea', title: 'Champ', signature: 'sig', avatarSquare: `${URL_}/storage/v1/object/public/avatars/sq`, avatarPortrait: null, squareFrame: { x: 1, y: 2, w: 3, h: 4 }, portraitFrame: null, pipStyle: 'star', joined: '2026-10-01' };
+  const BEA = { id: B, name: 'Bea', title: 'Champ', signature: 'sig', avatarSquare: `${URL_}/storage/v1/object/public/avatars/sq`, avatarPortrait: null, squareFrame: { x: 1, y: 2, w: 3, h: 4 }, portraitFrame: null, pipStyle: 'star', pronouns: PRONOUN_PRESETS.she, joined: '2026-10-01' };
   const PRESENCE = { names: [{ id: B, name: 'Bea', staff: false }], others: 1 };
   const PLAY_ROW = { ...ACT_ROW, id: SET, kind: 'card', target_act_id: A, payload: { card: 'splat' }, current_payload: { card: 'splat' } };
   const ABOVE_ROW = { play: SPRING, reach: 'thread', target: T, ends_at: '2026-10-02T10:00:00+00:00', act: { ...ACT_ROW, id: SPRING, kind: 'card', payload: { card: 'whoops' } } };
@@ -1906,7 +1929,7 @@ describe('a screen in one call', () => {
     expect(page?.states).toEqual({ [SET]: { state: { n: 1 }, savedAt: '2026-10-01T11:00:00+00:00' } });
     expect(page?.tallies).toEqual({ [SET]: { fire: 2 }, [SPRING]: {} });
     expect(page?.mine).toEqual([{ act: SET, kind: 'fire', character: B }]);
-    expect(page?.characters).toEqual([{ ...BEA, title: '', signature: '', avatarSquare: null, squareFrame: null, pipStyle: 'default' }]);
+    expect(page?.characters).toEqual([{ ...BEA, title: '', signature: '', avatarSquare: null, squareFrame: null, pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS }]);
     expect(await once('board_page', null).api.boardPage('nowhere', 1, [])).toBeNull();
   });
 
@@ -2120,11 +2143,11 @@ describe('reports, appeals and what a page says of a ban', () => {
 
   it('names who judges a board\'s reports through beat_mod_name, and the ban now running through my_bans', async () => {
     const h = harness((r) => {
-      if (r.url.pathname === `${REST}/rpc/beat_mod_name`) return json({ mod: 'The Clerk', board: 'General' });
+      if (r.url.pathname === `${REST}/rpc/beat_mod_name`) return json({ mod: 'The Clerk', pronouns: PRONOUN_PRESETS.he, board: 'General' });
       if (r.url.pathname === `${REST}/my_bans`) return rows([{ ban: 'b1', character: B, until: '2099-01-01T00:00:00+00:00', days: 3, rule: 'Rule 2: No double posting' }]);
       return undefined;
     });
-    expect(await h.api.beatMod(C)).toEqual({ mod: 'The Clerk', board: 'General' });
+    expect(await h.api.beatMod(C)).toEqual({ mod: 'The Clerk', pronouns: PRONOUN_PRESETS.he, board: 'General' });
     expect(h.log.find((r) => r.url.pathname.endsWith('/rpc/beat_mod_name'))?.body).toEqual({ in_board: C });
     expect(await h.api.myBan(B)).toEqual({ ban: 'b1', character: B, until: '2099-01-01T00:00:00+00:00', days: 3, rule: 'Rule 2: No double posting' });
     const q = h.to('my_bans')[0]!.url.searchParams;
