@@ -31,9 +31,7 @@ function Opener({ inModal = false }: { readonly inModal?: boolean }) {
   );
 }
 
-/* These tests look at the page the moment an overlay closes, as under Off, where it is removed at once; the exit at full motion is lift.test.tsx's. */
-beforeEach(() => document.documentElement.setAttribute('data-kb-motion', 'reduce'));
-afterEach(() => { cleanup(); document.documentElement.removeAttribute('data-kb-motion'); });
+afterEach(cleanup);
 
 describe('the overlay', () => {
   test('is a dialog named by its title, over its own smoke, with focus inside', async () => {

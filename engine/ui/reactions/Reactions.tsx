@@ -17,6 +17,7 @@ import { useReactionSend } from './send.ts';
 import '../cards/kit.css';
 import '../glass/meta-tile.css';
 import './reactions.css';
+import { Layers } from '../glass/layer.tsx';
 
 /** A reaction's name for a reader: its key made readable ("raised-hands" is "Raised hands"). */
 export const readable = (key: string): string => {
@@ -152,12 +153,14 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
         </button>
       )}
       {canReact && <span role="status" className="kb-visually-hidden">{said}</span>}
+      <Layers>
       {open && canReact && (
         <Picker
           subject={subject ?? `${authorName}'s post`} as={as} own={own} send={send} busy={busy} refusal={refusal} anchor={pickerAt === 'button' ? button : row}
           onClose={(refocus) => { setOpen(false); if (refocus) button.current?.focus(); }}
         />
       )}
+      </Layers>
     </div>
   );
 }

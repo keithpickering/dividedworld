@@ -44,6 +44,7 @@ import { todoFacts, todoSentence } from './handover-words.ts';
 import { AdminContact } from './AdminContact.tsx';
 import './queue.css';
 import { CalmRegion } from '../glass/Calm.tsx';
+import { Layers } from '../glass/layer.tsx';
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -121,6 +122,7 @@ export function QueueScreen({ now }: { readonly now?: number }) {
             <AdminContact />
           </>
         )}
+      <Layers>
       {ending && (
         <EndCardDialog
           play={ending.play} card={ending.cardName} caster={ending.persona} onClose={() => setEnding(null)}
@@ -137,6 +139,7 @@ export function QueueScreen({ now }: { readonly now?: number }) {
           onRefused={load}
         />
       )}
+      </Layers>
     </div>
   );
 }

@@ -41,7 +41,7 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import type { Character } from '../data/api.ts';
 import { useKayfa } from '../context.tsx';
-import { playIn, playOut } from '../glass/lift.ts';
+import { playIn, playOut } from '../glass/play.ts';
 import { overlay as overlayPreset, useFeel } from '../glass/motion.ts';
 import { usePlayer } from '../player.tsx';
 import { registerHref, signInHref } from '../account/next.ts';
@@ -269,7 +269,7 @@ export function Hud() {
   useEffect(() => { if (handOpen) drawer.current?.focus(); }, [handOpen]);
 
   /*
-   * The hand drawer opens from the hand button and its close plays out (glass/lift.ts, motion.ts `overlay`). It stays on the page, so on a close it is
+   * The hand drawer opens from the hand button and its close plays out (glass/play.ts, motion.ts `overlay`). It stays on the page, so on a close it is
    * kept shown, inert and hidden from a reader, until its exit ends. Under Off it is hidden at once, as it was.
    */
   const feel = useFeel(ui.glass.motion);

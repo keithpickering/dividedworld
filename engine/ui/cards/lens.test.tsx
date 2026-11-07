@@ -17,11 +17,13 @@ import lensCss from './lens.css?raw';
 import type { CardUi, EffectProps } from './types.ts';
 import { LoadedThread } from '../loaded.tsx';
 
+/* These tests close a Lens and open another in the same step and look at the one page that results, as under Off: at full motion the closed one stays, inert, until its exit ends (glass/layer.test.tsx). */
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
   localStorage.clear();
+  document.documentElement.setAttribute('data-kb-motion', 'reduce');
 });
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+afterEach(() => { document.documentElement.removeAttribute('data-kb-motion'); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 /** A phone (40em or less) is also a sheet's width; a tablet (up to 64em) is a sheet's width with a desktop's marks. */
 function width(phone: boolean, tablet = false) {

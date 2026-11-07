@@ -37,6 +37,7 @@ import { RevealOverlay } from './RevealOverlay.tsx';
 import { TurnDialog } from './TurnDialog.tsx';
 import './characters.css';
 import { CalmRegion } from '../glass/Calm.tsx';
+import { Layers } from '../glass/layer.tsx';
 
 type Dialog =
   | { readonly kind: 'turn' | 'reveal' | 'drop' | 'debut'; readonly id: Id };
@@ -411,10 +412,12 @@ export function Characters() {
           )}
       </div>
 
-      {dialog && target && dialog.kind === 'turn' && <TurnDialog character={target} face={faces.get(target.id)} standing={standings[target.id]} nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
-      {dialog && target && dialog.kind === 'reveal' && <RevealOverlay character={target} onClose={() => setDialog(null)} onDone={setFlash} returnFocusTo={returnTo(target.id)} />}
-      {dialog && target && dialog.kind === 'drop' && <DebutDialog character={target} timing="now" nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
-      {dialog && target && dialog.kind === 'debut' && <DebutDialog character={target} timing="tally" nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
+      <Layers>
+      {dialog && target && dialog.kind === 'turn' && <TurnDialog key="turn" character={target} face={faces.get(target.id)} standing={standings[target.id]} nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
+      {dialog && target && dialog.kind === 'reveal' && <RevealOverlay key="reveal" character={target} onClose={() => setDialog(null)} onDone={setFlash} returnFocusTo={returnTo(target.id)} />}
+      {dialog && target && dialog.kind === 'drop' && <DebutDialog key="drop" character={target} timing="now" nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
+      {dialog && target && dialog.kind === 'debut' && <DebutDialog key="debut" character={target} timing="tally" nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
+      </Layers>
     </div>
   );
 }

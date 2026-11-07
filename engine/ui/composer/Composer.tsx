@@ -25,6 +25,7 @@ import { text as textOf } from '../thread/lines.tsx';
 import { draftKey, readDraft, useWhoPosts, writeDraft } from './draft.ts';
 import { Editor, type EditorHandle } from './Editor.tsx';
 import { quoteText } from './text.ts';
+import { Layers } from '../glass/layer.tsx';
 
 export interface ComposerHandle {
   /** Append a quote of an Act to the draft and move focus to the box. */
@@ -189,7 +190,7 @@ function ComposerBody({ thread, latest, since, onPosted, ref, account }: Compose
         <button type="button" className="kb-button kb-composer-reveal" onClick={() => setRevealing(true)}>Reveal…</button>
       </Editor>
       {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
-      {revealing && <RevealModal character={hudCharacter} thread={thread} onClose={() => setRevealing(false)} />}
+      <Layers>{revealing && <RevealModal character={hudCharacter} thread={thread} onClose={() => setRevealing(false)} />}</Layers>
     </form>
   );
 }

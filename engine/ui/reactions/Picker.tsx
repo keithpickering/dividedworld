@@ -14,6 +14,7 @@
  * above the HUD and they are two across. The overlay holds focus and Tab, closes on Esc, Close or a
  * press on the dimmed page, and returns focus to React; a choice made closes it too. The first time it opens, the grid tip is drawn over it (engine/ui/tips).
  */
+import { useIsPresent } from 'motion/react';
 import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent, type RefObject } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { MyCharacter, MyReaction } from '../data/api.ts';
@@ -94,7 +95,9 @@ export function Picker({ subject, as, own, send, busy, refusal: given = null, an
   const columns = KIND_COLUMNS[placed === 'sheet' ? 'sheet' : 'popover'];
   const buttons = () => [...(grid.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])];
 
-  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  /* Alive until its caller closes it: a picker that is leaving (glass/layer.tsx) is still mounted and no longer open. */
+  const present = useIsPresent();
+  useEffect(() => { if (!present) return; alive.current = true; return () => { alive.current = false; }; }, [present]);
   /* The grid tip (tips/store.ts): the first time a picker opens, over it, with the grid in the cut-out; the layer is already open, and the store lets a tip about the open layer's own contents through. */
   useTip('grid', grid, { when: left > 0 });
 

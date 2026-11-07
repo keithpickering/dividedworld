@@ -91,7 +91,7 @@ function width(px: number) {
   Object.defineProperty(document.documentElement, 'clientWidth', { configurable: true, get: () => px });
 }
 
-/* These tests look at the page the moment something closes, as under Off; the hand drawer's exit at full motion is the one test that sets it. */
+/* These tests look at the page the moment the hand drawer closes (it stays mounted and plays its exit imperatively, glass/play.ts), as under Off; its exit at full motion is the one test that sets it. */
 beforeEach(() => { document.documentElement.setAttribute('data-kb-motion', 'reduce'); alerts.unread = 0; alerts.account = null; alerts.subscribed = 0; alerts.reads = 0; localStorage.clear(); sessionStorage.clear(); forgetBoard(); window.history.replaceState(null, '', '/'); });
 afterEach(() => { document.documentElement.removeAttribute('data-kb-motion'); vi.unstubAllGlobals(); vi.restoreAllMocks(); delete (document.documentElement as { clientWidth?: number }).clientWidth; });
 

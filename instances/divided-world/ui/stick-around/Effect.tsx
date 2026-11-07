@@ -26,6 +26,7 @@ import { HoldView } from './HoldView.tsx';
 import { isHeld, releaseSide } from '../../cards/stick-around/hold.ts';
 import { placeBeside, swallowEscAfterRelease, useTakeover } from './takeover.ts';
 import './hold.css';
+import { Layers } from '../../../../engine/ui/glass/layer.tsx';
 
 /* Breaking free, for this visit: the posts the reader got out of. A module's memory lasts until the page is reloaded. */
 const escaped = new Set<string>();
@@ -121,11 +122,13 @@ export function StickAroundEffect({ post, plays, released, reader, release, show
       {createPortal(children, words)}
       <div ref={home} className="kb-hold-home" />
       {held && lifted && <div className="kb-hold-away" style={{ height }} aria-hidden="true" />}
+      <Layers>
       {held && lifted && play && (
         <HoldView
           key={play.id} post={post} play={play} stage={stage} release={release} onBreakFree={breakFree} marks={marks} words={slot}
         />
       )}
+      </Layers>
     </div>
   );
 }

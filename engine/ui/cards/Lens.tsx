@@ -48,6 +48,7 @@ import { backWords, CAUGHT_STATE, caughtWords, endedWords, kindsOf, playsPhrase,
 import { defaultView, inPlayOrder, isBack, markedPlays, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardView } from './types.ts';
 import './lens.css';
+import { Layers } from '../glass/layer.tsx';
 
 /** A play's name, as its row is named and the spin form says it: "Mrs. Hooligan's Whoops!". */
 export const playName = (caster: string, card: string): string => `${caster}'s ${card}`;
@@ -372,6 +373,7 @@ function EndCard({ play, card, caster, store }: { readonly play: Id; readonly ca
   return (
     <>
       <button ref={opener} type="button" className="kb-kit-tile kb-lens-action" aria-haspopup="dialog" onClick={() => setAsking(true)}><span className="kb-kit-tile-label">End this card</span></button>
+      <Layers>
       {asking && (
         <EndCardDialog
           play={play} card={card} caster={caster} onClose={close}
@@ -383,6 +385,7 @@ function EndCard({ play, card, caster, store }: { readonly play: Id; readonly ca
           returnFocusTo={() => (opener.current?.isConnected ? opener.current : document.querySelector<HTMLElement>('.kb-lens [role="tab"][aria-selected="true"]'))}
         />
       )}
+      </Layers>
     </>
   );
 }

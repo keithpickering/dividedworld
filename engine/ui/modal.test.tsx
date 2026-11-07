@@ -2,12 +2,10 @@ import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { readFileSync } from 'node:fs';
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { Modal } from './modal.tsx';
 
-/* These tests look at the page the moment a modal closes, as under Off, where it is removed at once; the exit at full motion is glass/lift.test.tsx's. */
-beforeEach(() => document.documentElement.setAttribute('data-kb-motion', 'reduce'));
-afterEach(() => { cleanup(); document.documentElement.removeAttribute('data-kb-motion'); });
+afterEach(cleanup);
 
 function Host({ onClose = () => {}, fallback }: { readonly onClose?: () => void; readonly fallback?: () => HTMLElement | null }) {
   const [open, setOpen] = useState(false);

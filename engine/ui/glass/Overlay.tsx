@@ -26,6 +26,7 @@
  */
 import { useCallback, useId, useLayoutEffect, useRef, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
+import { motion, useIsPresent } from 'motion/react';
 import { useKayfa } from '../context.tsx';
 import { useModalLayer } from '../modal.tsx';
 import type { GlassSurface } from '../types.ts';
@@ -33,7 +34,7 @@ import { hudTopOf, placePopover } from './place.ts';
 import { CloseCross, DialogBar, FRAME } from './Frame.tsx';
 import { CalmRegion } from './Calm.tsx';
 import { FIELD_PLACED } from './field.ts';
-import { useLift } from './lift.ts';
+import { useLayer } from './layer.tsx';
 import { Smoke, useSurfaceStyle } from './Smoke.tsx';
 import './shell.css';
 
@@ -108,7 +109,11 @@ function place(box: HTMLElement, anchor: HTMLElement, sheetBelow: number): Place
     return 'sheet';
   }
   const a = anchor.getBoundingClientRect();
+  /* Measured without the entrance's transform, which the box wears while it arrives. */
+  const worn = box.style.transform;
+  box.style.transform = 'none';
   const r = box.getBoundingClientRect();
+  box.style.transform = worn;
   /* Placed against the window itself: the anchor's left edge is where the overlay starts. */
   const at = { left: a.left, top: 0, right: a.right, bottom: 0 };
   const p = placePopover({
@@ -125,6 +130,8 @@ function place(box: HTMLElement, anchor: HTMLElement, sheetBelow: number): Place
 export function Overlay({ title, onClose, children, surface, returnFocusTo, label, describedBy, aside, closeAt = 'bar', onBeside, anchor, sheetBelow = 0, onPlace, className, kicker, style, data }: OverlayProps) {
   const id = useId();
   const { overlay, box, closeButton, beside } = useModalLayer({ onClose, returnFocusTo });
+  /* Whether the layer is open: false from the render in which its caller closed it, while its exit plays (layer.tsx). */
+  const present = useIsPresent();
   const calm = useSurfaceStyle(surface);
   const { ui } = useKayfa();
   const besideTold = useRef(onBeside);
@@ -132,6 +139,7 @@ export function Overlay({ title, onClose, children, surface, returnFocusTo, labe
   const besideRef = useCallback((el: HTMLDivElement | null) => { beside.current = el; besideTold.current?.(el); }, [beside]);
 
   useLayoutEffect(() => {
+    if (!present) return;
     const self = {};
     opened.add(self);
     const under = () => overlay.current?.style.setProperty('--kb-glass-overlay-top', `${overlayTop()}px`);
@@ -143,13 +151,13 @@ export function Overlay({ title, onClose, children, surface, returnFocusTo, labe
       opened.delete(self);
       if (opened.size === 0) menuBar()?.removeAttribute('data-kb-dimmed');
     };
-  }, []);
+  }, [present]);
 
   const told = useRef(onPlace);
   told.current = onPlace;
   useLayoutEffect(() => {
     const el = box.current;
-    if (!anchor || !el) return;
+    if (!anchor || !el || !present) return;
     let last: Placed | null = null;
     let frame: number | null = null;
     const now = () => {
@@ -184,18 +192,18 @@ export function Overlay({ title, onClose, children, surface, returnFocusTo, labe
       grown?.disconnect();
       if (frame !== null) cancelAnimationFrame(frame);
     };
-  }, [anchor, box, sheetBelow]);
+  }, [anchor, box, sheetBelow, present]);
 
-  /* Enters from its anchor where it has one, the dim in step; its close plays out on a copy (lift.ts), after the placement above has run. */
-  useLift({ root: overlay, box, kind: 'overlay', anchor, overrides: ui.glass.motion });
+  /* Enters from its anchor where it has one, the dim in step; its close plays out on this same tree (layer.tsx), the origin measured after the placement above has run. */
+  const lifted = useLayer({ box, kind: 'overlay', anchor, overrides: ui.glass.motion });
 
   return createPortal(
-    <div
+    <motion.div
       ref={overlay} className="kb-glass kb-glass-overlay" data-kb-anchored={anchor ? '' : undefined}
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} {...lifted.root}
     >
-      <div
-        ref={box} className={`${FRAME}${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true" data-kb-lift=""
+      <motion.div
+        ref={box} className={`${FRAME}${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true" {...lifted.box}
         aria-labelledby={label === undefined ? id : undefined} aria-label={label} aria-describedby={describedBy} tabIndex={-1}
         style={{ ...calm, ...style, ...(anchor ? { position: 'absolute' } : {}) }}
         {...Object.fromEntries(Object.entries(data ?? {}).map(([k, v]) => [`data-${k}`, v]))}
@@ -212,9 +220,9 @@ export function Overlay({ title, onClose, children, surface, returnFocusTo, labe
           </DialogBar>
           <CalmRegion className="kb-glass-dialog-body">{children}</CalmRegion>
         </Smoke>
-      </div>
+      </motion.div>
       {onBeside && <div ref={besideRef} className="kb-glass-overlay-beside" />}
-    </div>,
+    </motion.div>,
     document.body,
   );
 }
