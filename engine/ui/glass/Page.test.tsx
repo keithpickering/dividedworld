@@ -2,7 +2,7 @@
  * The page shell every glass page sits in: the menu bar, the smoke of its surface, and the content
  * column, which is the page's `main`. A move between glass pages reads as one, as the frame's does.
  */
-import { act, screen, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
@@ -53,7 +53,38 @@ describe('the content, once Part 2 restyled every glass page', () => {
     const { container } = renderInWorld(<Page surface="settings"><p>words</p></Page>, { path: '/settings', seed: signedIn });
     await screen.findByRole('navigation', { name: 'Menu' });
     expect(container.querySelector('.kb-glass-content-panel')).toBeNull();
-    expect(screen.getByRole('main').firstElementChild).toHaveTextContent('words');
-    expect(screen.getByRole('main').firstElementChild?.tagName).toBe('P');
+    /* The content is the keyed screen's (the screen change's), whose first child is the words themselves. */
+    const shown = screen.getByRole('main').firstElementChild!;
+    expect(shown).toHaveClass('kb-glass-screen');
+    expect(shown.firstElementChild).toHaveTextContent('words');
+    expect(shown.firstElementChild?.tagName).toBe('P');
+  });
+});
+
+/* A change between screens (motion.ts `screen`): the old content leaves toward the old tab's side, the new enters from the new tab's. */
+describe('a change between glass screens', () => {
+  beforeEach(() => document.documentElement.setAttribute('data-kb-motion', 'full'));
+  afterEach(() => document.documentElement.removeAttribute('data-kb-motion'));
+  const x = (el: Element) => /translateX\((-?[\d.]+)px\)/u.exec((el as HTMLElement).style.transform)?.[1];
+  const screens = () => ({
+    entering: document.querySelector<HTMLElement>('.kb-glass-screen:not([data-kb-exiting])')!,
+    leaving: document.querySelector<HTMLElement>('.kb-glass-screen[data-kb-exiting]')!,
+  });
+
+  test('to a later tab, the old leaves toward the left and the new enters from the right', async () => {
+    renderInWorld(<Page surface="settings"><p>words</p></Page>, { path: '/alerts', seed: signedIn });
+    await userEvent.click(await within(await screen.findByRole('navigation', { name: 'Menu' })).findByRole('link', { name: 'Settings' }));
+    const { entering, leaving } = screens();
+    expect(leaving).toHaveAttribute('inert');
+    expect(Number(x(entering))).toBeGreaterThan(0);
+    await waitFor(() => expect(Number(x(leaving))).toBeLessThan(0));
+  });
+
+  test('to an earlier tab, the old leaves toward the right and the new enters from the left', async () => {
+    renderInWorld(<Page surface="settings"><p>words</p></Page>, { path: '/settings', seed: signedIn });
+    await userEvent.click(await within(await screen.findByRole('navigation', { name: 'Menu' })).findByRole('link', { name: 'Alerts' }));
+    const { entering, leaving } = screens();
+    expect(Number(x(entering))).toBeLessThan(0);
+    await waitFor(() => expect(Number(x(leaving))).toBeGreaterThan(0));
   });
 });

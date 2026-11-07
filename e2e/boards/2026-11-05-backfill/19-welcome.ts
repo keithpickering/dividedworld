@@ -39,7 +39,7 @@ const manifest: BoardManifest = {
     { id: 'theme', role: 'heading', name: 'THEME', box: 'position', buildShift: PROSE, origin: 'headline', originEdge: 'bottom' },
     { id: 'theme-note', role: 'text', name: 'The 2003 board stays 2003 whichever you choose. Only its colors swap.', box: 'position', buildShift: PROSE, origin: 'headline', originEdge: 'bottom' },
     { id: 'motion', role: 'heading', name: 'MOTION', box: 'position', buildShift: PROSE, origin: 'headline', originEdge: 'bottom' },
-    { id: 'motion-note', role: 'text', name: 'Reduced stops the drifting smoke, the pulses and the orb shine. A card\'s effect stays: Stick Around still snaps you back, only instantly.', box: 'position', buildShift: PROSE, origin: 'headline', originEdge: 'bottom' },
+    { id: 'motion-note', role: 'text', name: 'Off stops every animation. A card\'s effect still happens: Stick Around still snaps you back, only instantly. Smooth and Snappy are two speeds of the same animations.', box: 'position', buildShift: PROSE, origin: 'headline', originEdge: 'bottom' },
     { id: 'size', role: 'heading', name: 'TEXT SIZE', box: 'position', buildShift: PROSE, origin: 'headline', originEdge: 'bottom' },
     { id: 'size-note', role: 'text', name: 'Applies to the board and the glass together. Past 150% the glass folds into one column, and nothing is cut off.', box: 'position', buildShift: PROSE, origin: 'headline', originEdge: 'bottom' },
     { id: 'make', role: 'link', name: 'MAKE YOUR FIRST CHARACTER', box: 'height', buildShift: { ...PROSE, height: -6 }, origin: 'headline', originEdge: 'bottom' },
@@ -74,7 +74,9 @@ export const phone: BoardManifest = {
     { id: 'theme', role: 'text', buildRole: 'heading', name: 'THEME', origin: 'start', box: 'position', type: false, buildShift: { y: -32 } },
     { id: 'theme-note', role: 'text', name: 'The 2003 board stays 2003 whichever you choose. Only its colors swap.', origin: 'start', box: 'position', type: false, buildShift: { y: 32 } },
     { id: 'motion', role: 'text', buildRole: 'heading', name: 'MOTION', origin: 'start', box: 'position', type: false, buildShift: { y: 19 } },
-    { id: 'size', role: 'text', buildRole: 'heading', name: 'TEXT SIZE', origin: 'start', box: 'position', type: false },
+    /* The phone's Motion sentence is held to its own place, and TEXT SIZE is measured from its bottom edge: the build sets it at 17px and the board at 19px, and it wraps within a few percent of its column's width (boards-wrap.spec.ts). Its buildShift is the measured offset of the build's setting (17px type, shorter column) from the board's. */
+    { id: 'motion-note', role: 'text', name: 'Off stops every animation. A card\'s effect still happens: Stick Around still snaps you back, only instantly. Smooth and Snappy are two speeds of the same animations.', origin: 'start', box: 'position', type: false, buildShift: { y: 22.6 } },
+    { id: 'size', role: 'text', buildRole: 'heading', name: 'TEXT SIZE', origin: 'motion-note', originEdge: 'bottom', box: 'position', type: false },
   ],
   also: [
     {

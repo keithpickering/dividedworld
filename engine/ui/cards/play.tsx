@@ -27,6 +27,7 @@ import type { Act, Id } from '../data/api.ts';
 import { PlayForm } from './PlayForm.tsx';
 import type { Plays } from './plays.ts';
 import type { BeyondPost, EffectsAbove } from '../../rules/cards.ts';
+import { Layers } from '../glass/layer.tsx';
 
 /** A post a card may be played on, with what the form says about it. */
 export interface PlayTarget {
@@ -123,6 +124,7 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
     <Ctx.Provider value={controls}>
       {children}
       <p className="kb-visually-hidden" role="status" aria-label="Playing a card">{said}</p>
+      <Layers>
       {form && (
         <PlayForm
           card={form.card}
@@ -137,6 +139,7 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
           }}
         />
       )}
+      </Layers>
     </Ctx.Provider>
   );
 }

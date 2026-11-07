@@ -113,6 +113,71 @@ for (const how of ['Back', 'Esc'] as const) {
 }
 
 /*
+ * The crossing at full motion (the glass polish plan, Task 13): the menu opens and Esc is pressed at once, while the board is still held
+ * under the glass. The crossing reverses from where it is, the board is back with focus where it was, and at no moment is there more
+ * than one main for a keyboard or a reader to reach.
+ */
+test('Esc pressed the moment the menu opens, at full motion, returns to the same post with only one main reachable', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.goto('/b/general');
+  await page.getByRole('link', { name: 'The long one', exact: true }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'The long one' })).toBeVisible();
+  const thread = new URL(page.url()).pathname;
+  const post = page.locator('#post-6');
+  await post.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  await expect.poll(() => post.evaluate((el) => Math.round(el.getBoundingClientRect().top))).toBeLessThan(40);
+  await page.getByRole('region', { name: 'Game HUD' }).getByRole('button', { name: 'Menu' }).click();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('heading', { level: 1, name: 'The long one' })).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe(thread);
+  await expect(page.locator('.kb-world')).toHaveCount(1);
+  await expect(page.getByRole('main')).toHaveCount(1);
+  await expect(post).toBeFocused();
+});
+
+/* At rest the glass world and its screen carry no filter, transform or clip-path: any of them would make it the containing block of the glass's fixed smoke and overlays. */
+for (const feel of ['smooth', 'snappy'] as const) {
+  test(`${feel}: once the crossing has settled the glass world and its screen have no filter, transform or clip-path`, async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await page.goto('/b/general');
+    await page.evaluate((f) => { document.documentElement.setAttribute('data-kb-motion', 'full'); document.documentElement.setAttribute('data-kb-motion-feel', f); }, feel);
+    await page.getByRole('region', { name: 'Game HUD' }).getByRole('button', { name: 'Menu' }).click();
+    await expect(page.locator('.kb-world')).toHaveCount(1);
+    for (const sel of ['.kb-world', '.kb-glass-screen']) {
+      await expect.poll(() => page.locator(sel).evaluate((el) => { const c = getComputedStyle(el); return [c.filter, c.transform, c.clipPath].join('|'); })).toBe('none|none|none');
+    }
+  });
+}
+
+/* Closing from rest animates: the clip never starts from `none` (which Motion cannot interpolate), it starts from the open shape and moves through shapes in between. */
+for (const feel of ['smooth', 'snappy'] as const) {
+  test(`${feel}: Back from a glass page at rest closes by visibly animating its clip-path`, async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await page.goto('/b/general');
+    await page.evaluate((f) => { document.documentElement.setAttribute('data-kb-motion', 'full'); document.documentElement.setAttribute('data-kb-motion-feel', f); }, feel);
+    await page.getByRole('region', { name: 'Game HUD' }).getByRole('button', { name: 'Menu' }).click();
+    await expect(page.locator('.kb-world')).toHaveCount(1);
+    await expect.poll(() => page.locator('.kb-world').evaluate((el) => getComputedStyle(el).clipPath)).toBe('none');
+    await page.evaluate(() => {
+      const w = globalThis as unknown as { __clips: string[] };
+      w.__clips = [];
+      const tick = () => {
+        const el = document.querySelector('[data-kb-world="glass"]');
+        if (el && el.hasAttribute('data-kb-exiting')) w.__clips.push(getComputedStyle(el).clipPath);
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    await page.getByRole('link', { name: 'Back to the board' }).click();
+    await expect(page.locator('.kb-world')).toHaveCount(1);
+    const clips = await page.evaluate(() => (globalThis as unknown as { __clips: string[] }).__clips);
+    expect(clips.length).toBeGreaterThan(2);
+    expect(clips).not.toContain('none');
+    expect(new Set(clips).size).toBeGreaterThan(2);
+  });
+}
+
+/*
  * Every way into the glass keeps the board's place, not only the HUD's Menu (keepBoardPlace,
  * engine/ui/glass/back.ts): the reply box's "Make a character", for an account with none, is a
  * plain link, and Back from where it leads still lands at the post that was in view. And the
@@ -235,6 +300,8 @@ test('Back to a thread that grew while the reader was in the glass holds the new
   const post = await readTo(page, 162);
   await page.getByRole('region', { name: 'Game HUD' }).getByRole('button', { name: 'Menu' }).click();
   await expect(page.getByRole('navigation', { name: 'Menu' })).toBeVisible();
+  /* The reader is away from the board: the crossing has settled and the board's page has left (until then it is held, subscribed, under the glass). */
+  await expect(page.locator('.kb-world')).toHaveCount(1);
   await page.evaluate(async () => {
     const { __kbFake: fake, __kbDemo: demo } = globalThis as E2eWindow;
     fake.seed.post(demo.longThread, demo.characters.spritey, 'Post 171, written while you were away.');

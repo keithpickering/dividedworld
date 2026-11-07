@@ -22,13 +22,14 @@
  * device's alone (`kb-settled-seen:<account>`), a key that is no longer read or written. It is set as the summary shows, so it
  * does not show again after either way out.
  */
-import { useEffect, useState, type CSSProperties, type MouseEvent } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from 'react';
 import { useBoot } from '../boot.tsx';
 import { useKayfa } from '../context.tsx';
 import type { Id } from '../data/api.ts';
 import { micros } from '../data/log-page.ts';
 import { backHref, boardPlace, useBackToBoard } from '../glass/back.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
+import { isLeaving } from '../glass/Held.tsx';
 import { pageEscape, plainClick } from '../glass/keys.ts';
 import { PageHead } from '../glass/PageHead.tsx';
 import { SignInPrompt, useSignedIn } from '../mini.tsx';
@@ -160,11 +161,12 @@ export function SettlementScreen() {
   const { state } = useLog(api, signedIn, session.account);
   const [picked, setPicked] = useState<Id | undefined>(undefined);
   const back = useBackToBoard();
+  const root = useRef<HTMLDivElement>(null);
 
   /* No menu bar here, so the page answers Esc itself, as the bar does elsewhere (MenuBar.tsx). */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!pageEscape(e)) return;
+      if (!pageEscape(e) || isLeaving(root.current)) return;
       e.preventDefault();
       back();
     };
@@ -194,7 +196,7 @@ export function SettlementScreen() {
           ? <Summary data={ready} tab={tab} onTab={setPicked} />
           : <CalmRegion as="p">Nothing has settled for you yet.</CalmRegion>;
   return (
-    <div className="kb-settled">
+    <div ref={root} className="kb-settled">
       {content}
       <CalmRegion className="kb-settled-ways">
         <ButtonRow>

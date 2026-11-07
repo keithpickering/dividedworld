@@ -91,8 +91,9 @@ function width(px: number) {
   Object.defineProperty(document.documentElement, 'clientWidth', { configurable: true, get: () => px });
 }
 
-beforeEach(() => { alerts.unread = 0; alerts.account = null; alerts.subscribed = 0; alerts.reads = 0; localStorage.clear(); sessionStorage.clear(); forgetBoard(); window.history.replaceState(null, '', '/'); });
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); delete (document.documentElement as { clientWidth?: number }).clientWidth; });
+/* These tests look at the page the moment the hand drawer closes (it stays mounted and plays its exit imperatively, glass/play.ts), as under Off; its exit at full motion is the one test that sets it. */
+beforeEach(() => { document.documentElement.setAttribute('data-kb-motion', 'reduce'); alerts.unread = 0; alerts.account = null; alerts.subscribed = 0; alerts.reads = 0; localStorage.clear(); sessionStorage.clear(); forgetBoard(); window.history.replaceState(null, '', '/'); });
+afterEach(() => { document.documentElement.removeAttribute('data-kb-motion'); vi.unstubAllGlobals(); vi.restoreAllMocks(); delete (document.documentElement as { clientWidth?: number }).clientWidth; });
 
 describe('the vignette', () => {
   test('is one aria-hidden element in the frame, below the HUD in the tree and out of the reading order', () => {
@@ -281,6 +282,43 @@ describe('the hand', () => {
     const close = within(sheet).getByRole('button', { name: 'Close the hand' });
     expect(close).toHaveTextContent(/^$/u);
     expect(close.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+  });
+  test('the render that closes the hand drawer already holds it shown, inert and hidden from a reader: it is never hidden, even for a commit', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    setup();
+    await userEvent.click(await screen.findByRole('button', { name: 'Hand, 3 postcards' }));
+    const drawer = document.querySelector<HTMLElement>('.kb-hand-drawer')!;
+    const seen: string[] = [];
+    const watch = new MutationObserver((records) => { for (const r of records) seen.push(`${r.attributeName}:${(r.target as HTMLElement).hasAttribute('hidden')}`); });
+    watch.observe(drawer, { attributes: true });
+    await userEvent.click(screen.getByRole('button', { name: /^Hand, 3 postcards/u }));
+    watch.disconnect();
+    /* A commit that set `hidden` (to be undone by an effect's re-render) would show here, and would measure the drawer at width 0. */
+    expect(seen.filter((s) => s.startsWith('hidden:'))).toEqual([]);
+    expect(drawer).not.toHaveAttribute('hidden');
+    expect(drawer).toHaveAttribute('inert');
+    expect(drawer).toHaveAttribute('aria-hidden', 'true');
+    await waitFor(() => expect(drawer).toHaveAttribute('hidden'), { timeout: 3000 });
+  });
+
+  test('at full motion the closed hand drawer stays shown, inert and hidden from a reader, until its exit ends; under Off it is hidden at once', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    setup();
+    const hand = await screen.findByRole('button', { name: 'Hand, 3 postcards' });
+    await userEvent.click(hand);
+    const drawer = document.querySelector<HTMLElement>('.kb-hand-drawer')!;
+    expect(drawer).not.toHaveAttribute('hidden');
+    await userEvent.click(screen.getByRole('button', { name: /^Hand, 3 postcards/u }));
+    expect(drawer).not.toHaveAttribute('hidden');
+    expect(drawer).toHaveAttribute('inert');
+    expect(drawer).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.queryByRole('region', { name: 'Your hand' })).toBeNull();
+    await waitFor(() => expect(drawer).toHaveAttribute('hidden'), { timeout: 3000 });
+    expect(drawer).not.toHaveAttribute('inert');
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    await userEvent.click(screen.getByRole('button', { name: /^Hand, 3 postcards/u }));
+    await userEvent.click(screen.getByRole('button', { name: /^Hand, 3 postcards/u }));
+    expect(drawer).toHaveAttribute('hidden');
   });
   test('on the Phone board arming a card puts the sheet away, and the card waits armed in the hand', async () => {
     width(390);

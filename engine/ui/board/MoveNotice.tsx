@@ -29,6 +29,7 @@ import { readable } from '../reactions/Reactions.tsx';
 import { Link } from '../router.tsx';
 import { moveLabel, wayOut } from './move-words.ts';
 import './move.css';
+import { Layers } from '../glass/layer.tsx';
 
 /**
  * The Act's label in glass: the long label from the move kind's catalog, and `way`, the segment beside it where there is one (the
@@ -100,7 +101,7 @@ export function MoveNotice({ act }: { readonly act: Id }) {
           </ul>
         )}
       </section>
-      {open && <MoveDetail loaded={loaded} onClose={() => setOpen(false)} returnFocusTo={() => way.current} />}
+      <Layers>{open && <MoveDetail loaded={loaded} onClose={() => setOpen(false)} returnFocusTo={() => way.current} />}</Layers>
     </>
   );
 }

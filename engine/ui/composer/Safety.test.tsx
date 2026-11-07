@@ -185,6 +185,12 @@ describe('words typed while a send is in flight, and a second tab', () => {
     const w = threadWorld();
     openThread(w);
     const box = await replyBox();
+    /*
+     * The box is in the document at the commit, but the composer listens for the other tab from a passive effect, which React
+     * flushes a task later (tens of milliseconds on a busy machine). An event dispatched before then has no listener, and that
+     * effect's first write then clears the key. A tab can only speak to a composer that has finished mounting, so wait for that.
+     */
+    await act(async () => {});
     const key = `kb-draft:${w.me}:${w.thread}`;
     localStorage.setItem(key, JSON.stringify({ text: 'Typed in the other tab', as: w.pipe }));
     act(() => { window.dispatchEvent(new StorageEvent('storage', { key, newValue: localStorage.getItem(key) })); });

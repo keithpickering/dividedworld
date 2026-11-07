@@ -8,6 +8,7 @@
  * plate's old spec, folded in below) close the file.
  */
 import { expect, test, type Page } from '@playwright/test';
+import { settled } from './settled.ts';
 
 /**
  * A card's effect loads the first time a post wears it (instances/divided-world/ui/cards.ts), and until it lands the post shows its words
@@ -176,6 +177,8 @@ test.describe('the Lens\'s size and rows at 1920', () => {
     await page.goto('/?fixture=boards&story=boards-01-lens--lens-author-whoops-who');
     const lens = page.getByRole('dialog', { name: 'Cards on this post' });
     await expect(lens).toBeVisible();
+    /* The Lens enters by the feel (it scales up from its button): it is measured where it will stand, not mid-way. */
+    await settled(page, { loops: true });
     expect((await lens.boundingBox())!.width).toBeCloseTo(460, 0);
     expect(await lens.evaluate((el) => getComputedStyle(el).fontSize)).toBe('20px');
     for (const h of await lens.locator('.kb-kit-tile').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().height))) expect(h).toBeLessThanOrEqual(48);
@@ -210,6 +213,8 @@ for (const [name, story] of [['Whoops!', 'boards-01-lens--lens-whoops-who'], ['S
       await expect(lens).toBeVisible();
       await expect(lens).toHaveAttribute('data-kb-lens', 'dock');
       await expect(lens.locator('.kb-lens-fold')).toHaveAttribute('aria-expanded', 'true');
+      /* The Lens enters by the feel (it scales up from its button): it is measured where it will stand, not mid-way. */
+      await settled(page, { loops: true });
       const l = (await lens.boundingBox())!;
       expect(l.x + l.width).toBeCloseTo(1920 - 16, 0);
       expect(l.y).toBeCloseTo(16, 0);

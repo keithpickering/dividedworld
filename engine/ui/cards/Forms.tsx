@@ -19,6 +19,7 @@ import { FieldCount } from '../glass/FieldCount.tsx';
 import { usePlayer } from '../player.tsx';
 import { ThreadCtx } from '../thread/context.ts';
 import { auraWords, appealTerms, modRole, pointsPlain, rulingWords, shortDate, topCharge, markedAs } from './visit.ts';
+import { Layers } from '../glass/layer.tsx';
 import './visit.css';
 import './forms.css';
 
@@ -284,6 +285,7 @@ export function BanAppeal({ character, ban }: { readonly character: Id; readonly
       <button ref={opener} type="button" className="kb-button kb-ban-appeal" aria-haspopup="dialog" onClick={() => setOpen(true)}>
         Appeal to the Boss · {auraWords(instance.settings.modBots.appealPrice)}
       </button>
+      <Layers>
       {open && (
         <Overlay title="Appeal the ban" surface="log" kicker="Appeal to the Boss" onClose={() => setOpen(false)} returnFocusTo={() => opener.current}>
           {shown === null && <p className="kb-visit-terms" aria-busy="true">Reading the ban.</p>}
@@ -291,6 +293,7 @@ export function BanAppeal({ character, ban }: { readonly character: Id; readonly
           {shown !== null && shown !== 'failed' && <AppealForm infraction={shown.ban} visit={undefined} nameOf={() => ''} ban={shown} />}
         </Overlay>
       )}
+      </Layers>
     </>
   );
 }

@@ -28,3 +28,8 @@ export function useKayfa(): Kayfa {
   if (!k) throw new Error('a screen is rendered inside a KayfaProvider, which the composition root gives it');
   return k;
 }
+
+/** The context where there is one, else null: for a part (the board's Modal) that is also drawn bare in a test or a story. */
+export function useKayfaIfAny(): Kayfa | null {
+  return useContext(KayfaContext);
+}

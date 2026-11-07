@@ -4,6 +4,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { FIXTURE_OVERLAYS, OVERLAYS, PAGES, STORIES, open, type E2eWindow, type Screen } from './glass-screens.ts';
 import { judgeLayout, type LayoutFacts } from './glass-layout.ts';
 import type * as Gatherer from './glass-layout-page.ts';
+import { settled } from './settled.ts';
 
 /**
  * The layout check (docs/plans/2026-11-04-glass-polish-design.md, section 3): every glass screen
@@ -44,6 +45,8 @@ async function setTextSize(page: Page, textSize: (typeof TEXT_SIZES)[number]) {
 }
 
 async function judgeScreen(page: Page, name: string): Promise<string[]> {
+  /* Entrances are over: a box is measured where it rests. */
+  await settled(page);
   await page.addScriptTag({ content: GATHERER });
   const gathered = await page.evaluate((calmAll) => (globalThis as Bundled).kbGlassLayout.gather(calmAll), CALM_ALL);
   const facts: LayoutFacts = { screen: name, ...gathered };
