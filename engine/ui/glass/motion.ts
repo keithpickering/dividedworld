@@ -127,19 +127,19 @@ export function slantedRect(r: Rect): string {
 const BLUR = (px: number) => `blur(${px}px)`;
 
 /** `rested`: the window is at rest (its filter and clip are `none`), so its exit runs from the open shape; else it runs from wherever it is (see the header). */
-export interface CrossingArgs { readonly from: Rect; readonly within: { readonly width: number; readonly height: number }; readonly rested?: boolean }
+export interface CrossingArgs { readonly tab: Rect; readonly within: { readonly width: number; readonly height: number }; readonly rested?: boolean }
 
 /**
- * The crossing: the glass page's window opens from the HUD tab's rect (`from`) to the whole screen
+ * The crossing: the glass page's window opens from the HUD tab's rect (`tab`) to the whole screen
  * (`within`), and the exit closes it back into the rect. Smooth clips it from the rect with straight edges;
  * Snappy clips it from the slanted rect. Esc during either reverses it from where it is, which Motion
  * does when the element's `animate` flips back.
  */
 export function crossing(feel: ActiveFeel, args: CrossingArgs): MotionProps {
   if (!feel) return {};
-  const { from, within, rested = false } = args;
+  const { tab, within, rested = false } = args;
   if (feel.mask === 'skew') {
-    const closed = slantedRect(from);
+    const closed = slantedRect(tab);
     /* Open reaches half the screen's longer side past it on every side: the slant leans each edge by less than that, so nothing of the screen is clipped. */
     const slack = Math.max(within.width, within.height) / 2;
     const open = slantedRect({ x: -slack, y: -slack, width: within.width + 2 * slack, height: within.height + 2 * slack });
@@ -155,7 +155,7 @@ export function crossing(feel: ActiveFeel, args: CrossingArgs): MotionProps {
    * growth, and a scale on top would move the rect it opens from.
    */
   const inset = (top: number, right: number, foot: number, left: number) => `inset(${top}px ${right}px calc(100% - ${foot}px) ${left}px)`;
-  const closed = { opacity: 0, filter: BLUR(feel.blur), clipPath: inset(from.y, within.width - from.x - from.width, from.y + from.height, from.x) };
+  const closed = { opacity: 0, filter: BLUR(feel.blur), clipPath: inset(tab.y, within.width - tab.x - tab.width, tab.y + tab.height, tab.x) };
   const shown = inset(0, 0, within.height, 0);
   return {
     initial: closed,
@@ -173,12 +173,12 @@ export function crossing(feel: ActiveFeel, args: CrossingArgs): MotionProps {
 export interface PinnedExit { readonly scrollY: number; readonly rested: boolean }
 export function crossingPinned(feel: ActiveFeel, args: CrossingArgs): MotionProps {
   if (!feel) return {};
-  const { from, within } = args;
+  const { tab, within } = args;
   const enter = crossing(feel, args);
   const variants: Variants = {
     closed: enter.initial as TargetAndTransition,
     open: enter.animate as TargetAndTransition,
-    leave: ({ scrollY, rested }: PinnedExit) => crossing(feel, { from: { ...from, y: from.y + scrollY }, within, rested }).exit as TargetAndTransition,
+    leave: ({ scrollY, rested }: PinnedExit) => crossing(feel, { tab: { ...tab, y: tab.y + scrollY }, within, rested }).exit as TargetAndTransition,
   };
   return { variants, initial: 'closed', animate: 'open', exit: 'leave' };
 }

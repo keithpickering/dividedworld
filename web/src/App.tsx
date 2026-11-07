@@ -234,7 +234,7 @@ function Shell({ routes }: { readonly routes: readonly Route[] }) {
   const feel = useFeel(instanceUi.glass.motion);
   const within = { width: window.innerWidth, height: window.innerHeight };
   const glassMotion = useMemo(
-    () => (world === 'glass' ? crossingPinned(feel, { from: hudTabRect(within), within }) : {}),
+    () => (world === 'glass' ? crossingPinned(feel, { tab: hudTabRect(within), within }) : {}),
     // The window's size is read when the world changes, not on every render: an exit closes into the box it opened from.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [feel, world],
