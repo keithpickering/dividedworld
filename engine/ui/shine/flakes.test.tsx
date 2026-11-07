@@ -14,10 +14,11 @@ const light = tokensOf(readFileSync(join(process.cwd(), 'engine/ui/tokens.css'),
 
 /* What the cling layer's context was told to draw. */
 const drawn = { fills: new Set<string>(), strokes: new Set<string>(), alphas: [] as number[] };
-const ops = { save: 0, restore: 0, fillRect: 0 };
+const ops = { save: 0, restore: 0, fillRect: 0, cleared: 0 };
 const fakeCtx = new Proxy({}, {
   get: (_t, k) => {
     if (k === 'createRadialGradient') return () => ({ addColorStop() {} });
+    if (k === 'clearRect') return (_x: number, _y: number, w: number, h: number) => { ops.cleared += Math.abs(w * h); };
     if (k === 'save' || k === 'restore' || k === 'fillRect') return () => { ops[k]++; };
     return () => {};
   },
@@ -60,7 +61,7 @@ const layer = () => document.querySelector('canvas[data-kb-shine="cling"]');
 
 beforeEach(() => {
   vi.useFakeTimers();
-  ops.save = 0; ops.restore = 0; ops.fillRect = 0;
+  ops.save = 0; ops.restore = 0; ops.fillRect = 0; ops.cleared = 0;
   fine = true;
   reduceDevice = false;
   clock = 0;
@@ -436,6 +437,23 @@ describe('a fast scroll shakes glitter off', () => {
     expect(shake(SHAKE_SPEED * 10, 0)).toBe(8);
     for (let i = 1; i < 100; i++) shake(SHAKE_SPEED * 10, i);
     expect(cling.falling()).toBe(160);
+  });
+
+  /* The layer covers the viewport; a frame that cleared all of it rastered the whole screen on every frame of a fast scroll
+     (e2e/shine.spec.ts's raster share, p95 4.5 against its bound of 1.5). It clears only the squares it drew in last time. */
+  it('a frame of falling glitter clears only where it drew the frame before, not the whole layer', () => {
+    posts();
+    shake(SHAKE_SPEED * 3, 0);
+    const c = layer() as HTMLCanvasElement;
+    const whole = c.width * c.height;
+    expect(whole).toBeGreaterThan(500_000);
+    cling.tick(0);
+    ops.cleared = 0;
+    let frames = 0;
+    for (let t = 16; cling.falling() && t < 20000; t += 16) { cling.tick(t); frames++; }
+    expect(frames).toBeGreaterThan(10);
+    /* Each frame clears a few px square per flake it drew the frame before: on average under 1% of the layer, where it was all of it. */
+    expect(ops.cleared / frames).toBeLessThan(whole * 0.01);
   });
 
   it('listens to the page\'s scroll only while a sticky post is registered', () => {

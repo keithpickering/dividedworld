@@ -849,7 +849,11 @@ let mouse: { x: number; y: number; speed: number; t: number } | null = null;
 const STALE_MS = 100;
 let lastTick: number | null = null;
 let cr = seededRng('cursor');
-let cleared = true;
+/**
+ * The squares the layer drew in last frame, in device px (x0, y0, x1, y1, four to a flake): the next frame clears only those. The
+ * layer covers the viewport, so clearing all of it each frame rastered the whole screen on every frame of a fast scroll's shake.
+ */
+let dirty: number[] = [];
 
 /* The pointer and motion queries, asked of the browser once and kept current by their change events; the listeners come off with
    the layer (`dispose`) and are made again by the next use. A pointer move asks nothing of the browser. */
@@ -903,8 +907,17 @@ function sizeCanvas(): void {
   if (!canvas) return;
   ratio = Math.min(2, window.devicePixelRatio || 1);
   const w = Math.ceil(innerWidth * ratio), h = Math.ceil(innerHeight * ratio);
-  if (canvas.width !== w) canvas.width = w;
-  if (canvas.height !== h) canvas.height = h;
+  /* Sizing the backing store clears it: nothing drawn is left to clear. */
+  if (canvas.width !== w) { canvas.width = w; dirty = []; }
+  if (canvas.height !== h) { canvas.height = h; dirty = []; }
+}
+
+/** Clears the squares the last frame drew in, and forgets them. */
+function clearDirty(c: CanvasRenderingContext2D): void {
+  if (!dirty.length) return;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  for (let k = 0; k < dirty.length; k += 4) c.clearRect(dirty[k]!, dirty[k + 1]!, dirty[k + 2]! - dirty[k]!, dirty[k + 3]! - dirty[k + 1]!);
+  dirty = [];
 }
 
 function ensure(): void {
@@ -919,7 +932,7 @@ function ensure(): void {
   st.position = 'fixed'; st.left = '0'; st.top = '0'; st.width = '100vw'; st.height = '100vh'; st.pointerEvents = 'none'; st.zIndex = '2147483000';
   document.body.append(canvas);
   ctx = canvas.getContext('2d');
-  cleared = true;
+  dirty = [];
   sizeCanvas();
   addEventListener('resize', sizeCanvas);
   addEventListener('pointermove', onMove);
@@ -1079,6 +1092,9 @@ function paint(c: CanvasRenderingContext2D, f: Flake, x: number, y: number, ph: 
   c.setTransform(cos * d, sin * d, -sin * d, cos * d, x * d, y * d);
   c.fillRect(-f.s / 2, -f.s * 0.42, w, f.s * 0.84);
   c.globalAlpha = 1;
+  /* The rect reaches 0.66 s from its center whatever its turn; a px more for the smoothing. */
+  const r = 0.66 * f.s + 1;
+  dirty.push(Math.floor((x - r) * d), Math.floor((y - r) * d), Math.ceil((x + r) * d), Math.ceil((y + r) * d));
 }
 
 export const cling = {
@@ -1111,14 +1127,14 @@ export const cling = {
     for (const h of hosts.keys()) if (!h.isConnected) hosts.delete(h);
     if (!ctx || !canvas) return;
     if (!carried.length && !falling.length) {
-      if (!cleared) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height); cleared = true; }
+      clearDirty(ctx);
       lastTick = null;
       settle();
       return;
     }
-    cleared = false;
     sizeCanvas();
-    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    clearDirty(ctx);
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     if (mouse) {
       for (const c of carried) { c.ph += dt * (2 + mouse.speed * 0.4); paint(ctx, c.f, mouse.x + c.ox, mouse.y + c.oy, c.ph, 1, c.band, ratio); }
       mouse.speed *= Math.exp(-dt * 8);
@@ -1158,7 +1174,7 @@ export const cling = {
     idleTimer = undefined;
     hosts.clear();
     cr = seededRng('cursor');
-    cleared = true;
+    dirty = [];
     sweepLoose();
   },
 };
