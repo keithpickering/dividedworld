@@ -283,6 +283,24 @@ describe('the hand', () => {
     expect(close).toHaveTextContent(/^$/u);
     expect(close.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
   });
+  test('the render that closes the hand drawer already holds it shown, inert and hidden from a reader: it is never hidden, even for a commit', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    setup();
+    await userEvent.click(await screen.findByRole('button', { name: 'Hand, 3 postcards' }));
+    const drawer = document.querySelector<HTMLElement>('.kb-hand-drawer')!;
+    const seen: string[] = [];
+    const watch = new MutationObserver((records) => { for (const r of records) seen.push(`${r.attributeName}:${(r.target as HTMLElement).hasAttribute('hidden')}`); });
+    watch.observe(drawer, { attributes: true });
+    await userEvent.click(screen.getByRole('button', { name: /^Hand, 3 postcards/u }));
+    watch.disconnect();
+    /* A commit that set `hidden` (to be undone by an effect's re-render) would show here, and would measure the drawer at width 0. */
+    expect(seen.filter((s) => s.startsWith('hidden:'))).toEqual([]);
+    expect(drawer).not.toHaveAttribute('hidden');
+    expect(drawer).toHaveAttribute('inert');
+    expect(drawer).toHaveAttribute('aria-hidden', 'true');
+    await waitFor(() => expect(drawer).toHaveAttribute('hidden'), { timeout: 3000 });
+  });
+
   test('at full motion the closed hand drawer stays shown, inert and hidden from a reader, until its exit ends; under Off it is hidden at once', async () => {
     document.documentElement.setAttribute('data-kb-motion', 'full');
     setup();

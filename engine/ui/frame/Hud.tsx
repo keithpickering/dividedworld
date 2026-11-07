@@ -274,6 +274,12 @@ export function Hud() {
    */
   const feel = useFeel(ui.glass.motion);
   const [drawerLeaving, setDrawerLeaving] = useState(false);
+  /* Marked in the render that closes it (state set while rendering is re-rendered before it commits), so no commit ever hides the drawer that is about to play out, and it is measured where it stands. */
+  const [shownOpen, setShownOpen] = useState(handOpen);
+  if (shownOpen !== handOpen) {
+    setShownOpen(handOpen);
+    setDrawerLeaving(!handOpen && feel !== null);
+  }
   const drawerWas = useRef(handOpen);
   useLayoutEffect(() => {
     if (drawerWas.current === handOpen) return;
@@ -286,7 +292,6 @@ export function Hud() {
       return a && b.width > 0 ? { x: a.left + a.width / 2 - b.left, y: a.top + a.height / 2 - b.top } : undefined;
     };
     if (handOpen) { setDrawerLeaving(false); playIn(el, overlayPreset(feel, place())); return; }
-    setDrawerLeaving(true);
     let over = false;
     const end = () => { if (!over) { over = true; setDrawerLeaving(false); } };
     playOut(el, overlayPreset(feel, place()), end);
