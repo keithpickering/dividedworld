@@ -177,8 +177,8 @@ async function judge(db: Db, getModels: () => Promise<Models>, instance: Instanc
   if (failed || repaired === undefined || verdict === null) throw new Error(failed ?? 'no verdict');
 
   // Only the verdict and the line go to the database: what a ruling does is bounded there.
-  // A group move's increase is bounded by the phase's most days from its landing: the phase is the engine's (the season, the Boss's overrides), so it is computed here and passed.
-  const mostDays = opened.kind === 'move' ? await phaseMostDays(db, tuned.system.roster, settings) : undefined;
+  // A group move's increase (only an increase) is bounded by the phase's most days from its landing: the phase is the engine's (the season, the Boss's overrides), so it is computed here and passed.
+  const mostDays = opened.kind === 'move' && verdict === 'increased' ? await phaseMostDays(db, tuned.system.roster, settings) : undefined;
   const closed = await db.rpc<Closed>('close_appeal', { appeal_act: opened.appeal, verdict, line: repaired.line, staff: opened.staff, ...(mostDays !== undefined ? { most_days: mostDays } : {}) });
   // The punishment ran out while the appeal waited: the database ruled on nothing and gave the price back, and says so plainly.
   if (!closed.closed && closed.refunded && closed.expired) return answer(409, { appeal: opened.appeal, expired: true, error: closed.reason ?? 'That punishment had already run out, so nothing was ruled and your Aura is back.' });

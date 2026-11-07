@@ -12,7 +12,7 @@
 --   open_appeal             also takes such a move. The answer names the move (kind 'move'), the group by name, the board it bars (details.bars), its length in days, its end,
 --                           who made it, and whether an apology ends it; no post (a move is not about one).
 --   close_appeal(appeal, verdict, line, staff, most_days)   gains `most_days`, the phase's moveExpiryMostDays as the Edge Function computes it from the season and the Boss
---                           (null: the instance's own moveExpiryMostDays, else 90; the smaller of the two applies, as the Boss's meeting reads them). On a move:
+--                           (null: the instance's own moveExpiryMostDays setting alone, which must exist; the smaller of the two applies, as the Boss's meeting reads them). On a move:
 --                             overturned  the move ends at once, why `overturned`, by `appeal`; the fee is refunded; a line says so (say_move_end);
 --                             upheld      nothing changes;
 --                             reduced     it ends at its landing plus half its length (the ruling's `until`); if that has passed, the move ends then, why `expired`, by `appeal`;
@@ -323,8 +323,9 @@ begin
     if v = 'overturned' then new_until := now();
     elsif v = 'reduced' then new_until := pun.created_at + length / 2;
     elsif v = 'increased' then
-      most_all := (select (s.value #>> '{}')::numeric from settings s where s.key = 'moveExpiryMostDays' and jsonb_typeof(s.value) = 'number');
-      most := greatest(1, least(coalesce(close_appeal.most_days, most_all, 90), coalesce(most_all, close_appeal.most_days, 90)));
+      -- The instance's setting is the outer limit (setting() raises where it is missing); the phase's number, where the call has one, can only lower it.
+      most_all := (setting('moveExpiryMostDays') #>> '{}')::numeric;
+      most := greatest(1, least(coalesce(close_appeal.most_days, most_all), most_all));
       new_until := own_end + least(length / 2, greatest(interval '0', most * interval '1 day' - length));
     end if;
     if new_until is not null then payload := payload || jsonb_build_object('until', new_until); end if;

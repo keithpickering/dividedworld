@@ -160,6 +160,17 @@ test('a group move\'s appeal with no season to read the phase from, or a context
     assert.equal(d.state.refunds, 0);
     assert.ok(!('most_days' in d.state.closed[0]), context);
   }
+  for (const context of ['none', 'fails'] as const) {
+    const d = fakeDbs({ kind: 'move', context });
+    const out = await go(d, fakeModels(() => ({ verdict: 'increased', line: 'More.' })));
+    assert.equal(out.status, 200, JSON.stringify(out.body));
+    assert.ok(!('most_days' in d.state.closed[0]), context);
+  }
+  for (const verdict of ['upheld', 'reduced', 'overturned']) {
+    const d = fakeDbs({ kind: 'move' });
+    await go(d, fakeModels(() => ({ verdict, line: 'x' })));
+    assert.equal(d.count('meeting_context'), 0, `${verdict} reads no phase`);
+  }
 });
 
 test('an infraction\'s and a ban\'s ruling is sent without the phase, and the Boss\'s context is never read for them', async () => {

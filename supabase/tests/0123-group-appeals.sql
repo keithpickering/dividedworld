@@ -110,6 +110,7 @@ begin
       'predicates', jsonb_build_array(jsonb_build_object('key', 'noAllCaps', 'param', 'none', 'least', null, 'most', null, 'plain', 'no all-caps posts'))));
   perform seed_instance(seed);
   insert into boards (slug, name, description) values ('ga-games', 'Games', 'Talk about games.');
+  insert into settings (key, value) values ('moveExpiryMostDays', '90') on conflict (key) do update set value = '90';
   if current_boss() is distinct from 'ga-boss' then raise exception 'the world: the Boss is %', current_boss(); end if;
   if not exists (select 1 from staff_now where staff = 'ga-mod') then raise exception 'the world: the Mod is not on staff'; end if;
 end $$;
