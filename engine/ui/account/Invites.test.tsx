@@ -1,7 +1,9 @@
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { buildWorld, renderIn } from '../test-world.tsx';
+import { act } from '@testing-library/react';
+import { buildWorld, holdReads, renderIn } from '../test-world.tsx';
+import { LoadedSettings } from '../loaded.tsx';
 import { Invites } from './Invites.tsx';
 
 beforeEach(() => { localStorage.clear(); });
@@ -20,9 +22,33 @@ const rowOf = async (words: RegExp) => {
   if (!row) throw new Error(`no invite row says ${String(words)}`);
   return row;
 };
-const open = (w: ReturnType<typeof world>) => renderIn(w.fake, <Invites />, { path: '/settings?section=account' });
+const open = (w: ReturnType<typeof world>) => renderIn(w.fake, <LoadedSettings />, { path: '/settings?section=account' });
 
 describe('Invites', () => {
+  test('are the page\'s document, whole in the first render, and whether the player is an admin is boot\'s: nothing is read for it', async () => {
+    const w = world(true);
+    await w.fake.createInvite();
+    const boot = await w.fake.boot();
+    const rows = await w.fake.invites();
+    const read = holdReads(w.fake, ['session']);
+    renderIn(w.fake, <Invites invites={rows} />, { path: '/settings?section=account', boot });
+    expect(screen.getByText(/You are an admin: you hold any number of invites\./u)).toBeInTheDocument();
+    expect(within(screen.getByRole('list', { name: 'Your invites' })).getAllByRole('listitem')).toHaveLength(1);
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    expect(read).toEqual([]);
+  });
+
+  test('a write reads the list again through the page\'s load, once', async () => {
+    const w = world();
+    open(w);
+    await userEvent.click(await screen.findByRole('button', { name: 'Make an invite' }));
+    const read = vi.spyOn(w.fake, 'invites');
+    await userEvent.click(await screen.findByRole('button', { name: 'Make an invite' }));
+    expect(await screen.findByText(/You hold 2 of 2 open invites/u)).toBeInTheDocument();
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
   test('says the cap and the expiry before the cap is hit', async () => {
     open(world());
     expect(await screen.findByText(/You hold 0 of 2 open invites/u)).toBeInTheDocument();
@@ -145,7 +171,7 @@ describe('Invites', () => {
   test('the notes "Copied." and the like are said in a region that is on the page before anything is', async () => {
     open(world());
     await screen.findByRole('button', { name: 'Make an invite' });
-    expect(screen.getByRole('status')).toBeEmptyDOMElement();
+    expect(document.querySelector('.kb-invites [role="status"]')).toBeEmptyDOMElement();
   });
 
   test('Make an invite is a busy button while the make is out: aria-busy, its name kept, and a second press makes one invite', async () => {

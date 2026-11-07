@@ -149,6 +149,9 @@ interface Entry { doc: unknown; scrollY: number; at: number }
 type Outcome = { readonly kind: 'doc'; readonly doc: unknown } | { readonly kind: 'failure'; readonly failure: Failure } | { readonly kind: 'aborted' };
 interface Request { readonly full: string; readonly replace?: boolean; readonly state?: unknown; readonly popped: boolean; readonly kb: string | null; readonly initial?: boolean; readonly silent?: boolean; readonly afterAccountChange?: boolean; readonly source?: string }
 
+/** The same route, or two that share one loader (My characters and Edit profile): with the same key they are one document. */
+const sameRoute = (a: RouteLike | null, b: RouteLike): boolean => a === b || (a?.load !== undefined && a.load === b.load);
+
 const keyOf = (route: RouteLike, params: Params, query: URLSearchParams, path: string): string => (route.key ? route.key(params, query) : path + searchOf(query));
 
 /** Starts a route's loader; a loader that throws before it returns a promise is a load that failed. */
@@ -348,7 +351,7 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
       const sh = shownRef.current;
       cancelPending(false);
       const key = found ? keyOf(found.route, found.params, location.query, location.path) : null;
-      const same = !!found && sh.ready && !sh.failure && sh.route === found.route && sh.key === key;
+      const same = !!found && sh.ready && !sh.failure && sameRoute(sh.route, found.route) && sh.key === key;
       if (!found?.route.load || same) {
         leave();
         restore.current = kb ? cache.current.get(kb)?.scrollY ?? null : null;
@@ -380,7 +383,7 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     const sh = shownRef.current;
     const query = new URLSearchParams(url.search);
     const key = found ? keyOf(found.route, found.params, query, url.pathname) : null;
-    const same = !!found && sh.ready && !sh.failure && sh.route === found.route && sh.key === key;
+    const same = !!found && sh.ready && !sh.failure && sameRoute(sh.route, found.route) && sh.key === key;
     if (found?.route.load && !same) {
       startLoad({ full, replace: options?.replace, state: options?.state, popped: false, kb: null, afterAccountChange: options?.afterAccountChange, source: options?.source }, found);
       return;
@@ -398,16 +401,35 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     report('landed');
   }, [w, routeFor, startLoad, cancelPending, leave, remember, commit, report]);
 
+  /*
+   * Reads the shown address again. A page that failed is tried as a move; a page that is shown (its screen has done something that changes
+   * its document, a Turn, an invite) is read again in place, silently: the old page stays drawn until the new document lands, no move is
+   * told, Escape does not stop it, and the address's entry is replaced. A route with no loader has nothing to read, and moves as before.
+   */
   const retry = useCallback(() => {
-    const l = shownRef.current.location;
-    navigate(addressOf(l) + (l.hash ? `#${l.hash}` : ''), { replace: true });
-  }, [navigate]);
+    const sh = shownRef.current;
+    const l = sh.location;
+    const full = addressOf(l) + (l.hash ? `#${l.hash}` : '');
+    const found = routeFor(l.path);
+    if (found?.route.load && sh.ready && !sh.failure) {
+      /* What was read ahead for this address is of before the action: the page is read afresh. */
+      const ahead = prefetchKey(l.path + searchOf(l.query));
+      const early = prefetched.current.get(ahead);
+      if (early) { clearTimeout(early.timer); early.controller.abort(); prefetched.current.delete(ahead); }
+      startLoad({ full, replace: true, state: l.state, popped: false, kb: null, silent: true }, found);
+      return;
+    }
+    navigate(full, { replace: true });
+  }, [navigate, routeFor, startLoad]);
 
   const prefetch = useCallback((to: string) => {
     const url = new URL(to, w.location.href);
     if (url.origin !== w.location.origin) return;
     const found = routeFor(url.pathname);
     if (!found?.route.load) return;
+    /* An address that is the document already shown (a move the router makes without a read) needs nothing read ahead. */
+    const sh = shownRef.current;
+    if (sh.ready && !sh.failure && sameRoute(sh.route, found.route) && sh.key === keyOf(found.route, found.params, url.searchParams, url.pathname)) return;
     const address = url.pathname + url.search;
     if (takePrefetch(address)) return;
     /* Entries answered and left unused for the kept time go, and the oldest past the cap are given up. */

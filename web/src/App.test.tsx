@@ -136,23 +136,25 @@ for (const path of ['/characters', '/characters/edit']) {
   });
 }
 
-test('a signed-in load of /characters asks for the next settlement once', async () => {
+test('a signed-in load of /characters is one myCharactersPage, and the screen reads no settlement of its own', async () => {
   window.history.pushState(null, '', '/characters');
   const fake = createFake({ instance, settings: fallbackSettings });
   seedDemo(fake);
-  const asked = vi.spyOn(fake, 'nextSettlementAt');
+  const asked = vi.spyOn(fake, 'myCharactersPage');
+  const settlement = vi.spyOn(fake, 'nextSettlementAt');
   render(<App api={fake} />);
   await screen.findByRole('heading', { level: 1, name: /^Your characters/u });
   await waitFor(() => expect(asked).toHaveBeenCalled());
   await new Promise((r) => setTimeout(r, 50));
   expect(asked).toHaveBeenCalledTimes(1);
+  expect(settlement).not.toHaveBeenCalled();
 });
 
 test('a signed-in page load mounts its screen once: each of its reads is asked once, not again when the session becomes known', async () => {
   window.history.pushState(null, '', '/standings');
   const fake = createFake({ instance, settings: fallbackSettings });
   seedDemo(fake);
-  const asked = vi.spyOn(fake, 'standingsPage');
+  const asked = vi.spyOn(fake, 'seasonPage');
   render(<App api={fake} />);
   await screen.findByRole('heading', { level: 1 });
   await waitFor(() => expect(asked).toHaveBeenCalled());

@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { StrictMode, useEffect, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { KayfaProvider, type Kayfa } from './context.tsx';
-import { addressOf, Link, RouterProvider, searchOf, useLocation, useNavigate, useNavigation, usePendingFrom, usePrefetch, useRouterAccount, type Location } from './router.tsx';
+import { addressOf, Link, RouterProvider, searchOf, useLocation, useNavigate, useNavigation, usePendingFrom, usePrefetch, useRouterAccount, useRouterInternals, type Location } from './router.tsx';
 import { Routes, type Route } from './routes.tsx';
 
 function Where() {
@@ -304,6 +304,7 @@ const kayfa = { ui: { copy: { siteName: 'Test Board' } } } as unknown as Kayfa;
 let nav: ReturnType<typeof useNavigate>;
 let prefetch: ReturnType<typeof usePrefetch>;
 let navigation: ReturnType<typeof useNavigation>;
+let retry: ReturnType<typeof useRouterInternals>['retry'];
 const log: string[] = [];
 let seenState: unknown;
 
@@ -311,6 +312,7 @@ function Probe() {
   nav = useNavigate();
   prefetch = usePrefetch();
   navigation = useNavigation();
+  retry = useRouterInternals().retry;
   seenState = useLocation().state;
   return null;
 }
@@ -423,6 +425,52 @@ describe('the router loads before it moves', () => {
     expect(load).toHaveBeenCalledTimes(2);
     await answer(calls[1], 'A2');
     expect(screen.getByText('thread a: A2')).toBeInTheDocument();
+  });
+  test('two routes that share one loader and one key are one document: a move between them reads nothing', async () => {
+    const load = vi.fn(() => Promise.resolve('doc'));
+    const key = () => 'one';
+    const routes: Route[] = [
+      { path: '/a', load, key, render: (_, doc) => <p>a {String(doc)}</p> },
+      { path: '/b', load, key, render: (_, doc) => <p>b {String(doc)}</p> },
+    ];
+    window.history.replaceState(null, '', '/a');
+    render(<KayfaProvider value={kayfa}><RouterProvider><Probe /><Routes routes={routes} /></RouterProvider></KayfaProvider>);
+    await screen.findByText('a doc');
+    expect(load).toHaveBeenCalledTimes(1);
+    act(() => nav('/b'));
+    expect(screen.getByText('b doc')).toBeInTheDocument();
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(window.location.pathname).toBe('/b');
+  });
+  test('an address that is the document already shown is not read ahead', async () => {
+    const load = vi.fn(() => Promise.resolve('doc'));
+    const key = () => 'one';
+    const routes: Route[] = [
+      { path: '/a', load, key, render: (_, doc) => <p>a {String(doc)}</p> },
+      { path: '/b', load, key, render: (_, doc) => <p>b {String(doc)}</p> },
+    ];
+    window.history.replaceState(null, '', '/a');
+    render(<KayfaProvider value={kayfa}><RouterProvider><Probe /><Routes routes={routes} /></RouterProvider></KayfaProvider>);
+    await screen.findByText('a doc');
+    act(() => prefetch('/b'));
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+  test('retry of a shown page reads its document again in place: the old page stays until it lands, no move is told, and Escape does not stop it', async () => {
+    const { load, calls } = manualLoader();
+    mount(load);
+    act(() => nav('/t/a'));
+    await answer(calls[0], 'A1');
+    expect(screen.getByText('thread a: A1')).toBeInTheDocument();
+    const entries = window.history.length;
+    act(() => retry());
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('thread a: A1')).toBeInTheDocument();
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    expect(calls[1]!.signal.aborted).toBe(false);
+    await answer(calls[1], 'A2');
+    expect(screen.getByText('thread a: A2')).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/t/a');
+    expect(window.history.length).toBe(entries);
   });
   test('a load that answers null shows the page cannot be found, and so does an address no route matches', async () => {
     const { load, calls } = manualLoader();

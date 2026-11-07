@@ -7,7 +7,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Page } from '../glass/Page.tsx';
 import type { World } from '../story.tsx';
-import { ProfileEdit } from './ProfileEdit.tsx';
+import { LoadedCharacters } from '../loaded.tsx';
 
 /** One character, debuted, with no avatar yet: the board's "No picture yet." */
 const hooligan: World = (fake, instance) => {
@@ -17,7 +17,7 @@ const hooligan: World = (fake, instance) => {
 };
 
 function ProfileEditStory() {
-  return <Page surface="characters"><ProfileEdit /></Page>;
+  return <Page surface="characters"><LoadedCharacters /></Page>;
 }
 
 const meta: Meta<typeof ProfileEditStory> = {

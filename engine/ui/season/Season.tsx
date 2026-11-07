@@ -7,23 +7,25 @@
  *
  * Everything on the News tab is read from Acts already written (`api.seasonNews()`, supabase/migrations/0063_season_news.sql) and is the
  * same for every reader: no item says whose a character is. The player's own characters are marked "yours" here, by this screen, from
- * `myCharacters`, which is asked for whatever the page holds, as Rankings marks them. The glass describes the game; it never speaks as
+ * the player's own characters (`usePlayer`), as Rankings marks them. The page is drawn from `season_page`'s document: a tab, a season, a
+ * page of the rankings or the season choice is another address and so another load, with the tab pressed spinning (web/src/App.tsx). The glass describes the game; it never speaks as
  * The System or a Boss: the Boss's arrival quotes its first words, as words that are its, and links its post on The System's board.
  *
  * The tabs are a tablist of links, `?tab=rankings|news` naming the open one (Rankings by default): Left and Right (and Home and End)
  * move between them as a tablist does, the open tab alone is in the tab order, and the open panel is labelled by its tab.
  * `/rankings` and `/standings` open this page (web/src/App.tsx).
  */
-import { useEffect, useId, useState, type KeyboardEvent } from 'react';
+import { useId, useState, type KeyboardEvent } from 'react';
 import { dayAndTime, figure } from '../characters/format.ts';
 import { useKayfa } from '../context.tsx';
-import { SEASON_NEWS_PAGE, type Id, type MyCharacter, type Season, type SeasonNewsItem, type SeasonResult, type TallyName } from '../data/api.ts';
+import { SEASON_NEWS_PAGE, type Id, type MyCharacter, type Season, type SeasonNewsItem, type SeasonPage, type SeasonResult, type TallyName } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
-import { SignInPrompt, useSignedIn } from '../mini.tsx';
+import { SignInPrompt } from '../mini.tsx';
 import { usePlayer } from '../player.tsx';
 import { RankingsScreen } from '../rankings/Rankings.tsx';
 import { useLocation, useNavigate } from '../router.tsx';
+import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import { GlassLink } from '../glass/Link.tsx';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { finalClass } from '../reveal/statements.ts';
@@ -188,63 +190,44 @@ export function News({ items, mine, season, perPage, more, onMore }: NewsProps) 
   );
 }
 
-type NewsState =
-  | { readonly status: 'loading' }
-  | { readonly status: 'failed' }
-  | { readonly status: 'ready'; readonly key: string; readonly items: readonly SeasonNewsItem[]; readonly mine: readonly MyCharacter[]; readonly more: boolean };
-
-/** The News tab's read: the first page of the news, the player's own characters and the season. */
-function NewsPanel({ season }: { readonly season: Season | null }) {
+/** The News tab: the first page of the news is the document's, and the older pages a press brings are added to it. */
+function NewsPanel({ doc }: { readonly doc: Extract<SeasonPage, { readonly tab: 'news' }> }) {
   const { api, settings } = useKayfa();
-  const { account } = usePlayer().session;
-  const [read, setRead] = useState<NewsState>({ status: 'loading' });
+  const { characters: mine } = usePlayer();
+  const [older, setOlder] = useState<{ readonly doc: typeof doc; readonly items: readonly SeasonNewsItem[]; readonly more: boolean | null } | null>(null);
   const [paging, setPaging] = useState(false);
-  const key = account ?? '';
-  /* Another account signing in reads again, with its own marks: the last account's are never drawn for the next. */
-  const state: NewsState = read.status === 'ready' && read.key !== key ? { status: 'loading' } : read;
-  useEffect(() => {
-    let live = true;
-    Promise.all([api.seasonNews(), api.myCharacters()]).then(
-      ([items, mine]) => { if (live) setRead({ status: 'ready', key, items, mine, more: items.length >= SEASON_NEWS_PAGE }); },
-      () => { if (live) setRead({ status: 'failed' }); },
-    );
-    return () => { live = false; };
-  }, [api, key]);
-  if (state.status === 'loading') return <div aria-busy="true" />;
-  if (state.status === 'failed') return <CalmRegion as="p" className="kb-season-empty">The news could not be loaded. Reload the page to try again.</CalmRegion>;
-  const more = () => {
-    const last = state.items.at(-1);
+  /* Older rows belong to the document they were read after: a new document starts from its own first page. */
+  const held = older?.doc === doc ? older : null;
+  const items = held ? [...doc.news, ...held.items] : doc.news;
+  const more = held?.more ?? doc.news.length >= SEASON_NEWS_PAGE;
+  const onMore = () => {
+    const last = items.at(-1);
     if (!last || paging) return;
     setPaging(true);
     api.seasonNews(last.at).then(
-      (older) => setRead((was) => (was.status !== 'ready' ? was : { ...was, items: [...was.items, ...older.filter((o) => !was.items.some((x) => x.kind === o.kind && x.act === o.act && x.at === o.at && x.name === o.name))], more: older.length >= SEASON_NEWS_PAGE })),
+      (page) => setOlder((was) => {
+        const kept = was?.doc === doc ? was.items : [];
+        const fresh = page.filter((o) => ![...doc.news, ...kept].some((x) => x.kind === o.kind && x.act === o.act && x.at === o.at && x.name === o.name));
+        return { doc, items: [...kept, ...fresh], more: page.length >= SEASON_NEWS_PAGE };
+      }),
       () => { /* the button stays, to try again */ },
     ).finally(() => setPaging(false));
   };
-  return <News items={state.items} mine={state.mine} season={season} perPage={settings.postsPerPage} more={state.more} onMore={more} />;
+  return <News items={items} mine={mine} season={doc.season} perPage={settings.postsPerPage} more={more} onMore={onMore} />;
 }
 
-/** The season page at /season. */
-export function SeasonScreen() {
-  const { api } = useKayfa();
-  const signedIn = useSignedIn(api);
+/** The season page at /season, drawn from its document: whole on the first frame. Signed out, the marker is the sign-in line. */
+export function SeasonScreen({ doc }: { readonly doc: ScreenDoc<SeasonPage> }) {
   const { query } = useLocation();
   const navigate = useNavigate();
   const ids = useId();
-  const [season, setSeason] = useState<Season | null>(null);
+  const signedOut = isSignedOutDoc(doc);
   const tab: SeasonTab = query.get('tab') === 'news' ? 'news' : 'rankings';
   /* A finished season's final table, and the character whose row opens highlighted: from the address, as the Record's Seasons rows and News link them. */
   const asked = Number.parseInt(query.get('season') ?? '', 10);
   const shownSeason = Number.isInteger(asked) && asked >= 1 ? asked : undefined;
   const shownCharacter = shownSeason === undefined ? undefined : query.get('character') ?? undefined;
   const rankingsAt = (page: number) => seasonAt('rankings', page, shownSeason);
-
-  useEffect(() => {
-    if (!signedIn) return undefined;
-    let live = true;
-    void api.season().then((s) => { if (live) setSeason(s); }, () => { /* the heading stays plain */ });
-    return () => { live = false; };
-  }, [api, signedIn]);
 
   const onKey = (e: KeyboardEvent<HTMLElement>, at: number) => {
     const next = e.key === 'ArrowRight' ? (at + 1) % TABS.length : e.key === 'ArrowLeft' ? (at + TABS.length - 1) % TABS.length : e.key === 'Home' ? 0 : e.key === 'End' ? TABS.length - 1 : null;
@@ -254,7 +237,8 @@ export function SeasonScreen() {
     document.getElementById(`${ids}-tab-${TABS[next]!.key}`)?.focus();
   };
 
-  if (signedIn === false) return <div className="kb-season"><CalmRegion className="kb-season-empty"><SignInPrompt /></CalmRegion></div>;
+  if (signedOut) return <div className="kb-season"><CalmRegion className="kb-season-empty"><SignInPrompt /></CalmRegion></div>;
+  const season = doc.season;
   return (
     <div className="kb-season">
       <PageHead
@@ -283,7 +267,7 @@ export function SeasonScreen() {
         )}
       />
       <div role="tabpanel" id={`${ids}-panel`} aria-labelledby={`${ids}-tab-${tab}`} className="kb-season-panel">
-        {tab === 'rankings' ? <RankingsScreen embedded season={shownSeason} character={shownCharacter} href={rankingsAt} /> : signedIn === null ? <div aria-busy="true" /> : <NewsPanel season={season} />}
+        {doc.tab === 'news' ? <NewsPanel doc={doc} /> : <RankingsScreen doc={doc} embedded season={shownSeason} character={shownCharacter} href={rankingsAt} />}
       </div>
     </div>
   );

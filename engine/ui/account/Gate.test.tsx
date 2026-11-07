@@ -7,7 +7,7 @@ import { buildWorld, renderIn } from '../test-world.tsx';
 import { AccountGate } from './OpenAccount.tsx';
 import { safeNext, signInHref } from './next.ts';
 import { clearWhy } from './session.ts';
-import { SettingsScreen } from './Settings.tsx';
+import { LoadedSettings } from '../loaded.tsx';
 import { SignInScreen } from './SignIn.tsx';
 
 beforeEach(() => { localStorage.clear(); clearWhy(); });
@@ -109,7 +109,7 @@ describe('Signing out', () => {
     const me = fake.seed.account('me');
     fake.seed.character(me, 'Pipewrench', 'face');
     fake.signInAs(me);
-    renderIn(fake, <Frame><SettingsScreen /></Frame>, { path: '/settings?section=account' });
+    renderIn(fake, <Frame><LoadedSettings /></Frame>, { path: '/settings?section=account' });
     await waitFor(() => expect(within(screen.getByRole('region', { name: 'Game HUD' })).getByRole('combobox', { name: 'Swap mask' })).toBeInTheDocument());
     localStorage.setItem(`kb-draft:${me}:thread-1`, JSON.stringify({ text: 'half a thought', as: null }));
     await userEvent.click(await screen.findByRole('button', { name: 'Sign out' }));

@@ -80,8 +80,7 @@ export function OpenAccount() {
  * (/contact), since a player stuck here is the one who most needs a way to reach an admin.
  */
 export function AccountGate({ children }: { readonly children: ReactNode }) {
-  const { api } = useKayfa();
-  const session = useSession(api);
+  const session = useSession();
   const { path } = useLocation();
   if (session?.signedIn && !session.account && path !== '/sign-in' && path !== '/register' && path !== CONTACT_PATH) {
     return <div className="kb-acct"><CalmRegion className="kb-acct-panel"><OpenAccount /></CalmRegion></div>;

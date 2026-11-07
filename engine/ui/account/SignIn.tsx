@@ -35,7 +35,7 @@ const NO_ANSWER = 'No answer came back; ask again in a moment.';
 
 export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }) {
   const { api, settings } = useKayfa();
-  const session = useSession(api);
+  const session = useSession();
   const { query } = useLocation();
   const navigate = useNavigate();
   const registering = mode === 'register';

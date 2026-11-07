@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { Page } from '../glass/Page.tsx';
 import { usePlayer } from '../player.tsx';
 import type { Instance } from '../../rules/types.ts';
-import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
+import { buildWorld, holdReads, renderIn, testInstance } from '../test-world.tsx';
+import { LoadedCharacters } from '../loaded.tsx';
 import { Characters } from './Characters.tsx';
 
 beforeEach(() => { localStorage.clear(); });
@@ -32,7 +33,7 @@ function world(options: { readonly per?: number; readonly instance?: Instance } 
 }
 type World = ReturnType<typeof world>;
 
-const open = (w: World) => renderIn(w.fake, <Characters />, { path: '/characters', settings: { charactersPerPlayer: w.per } });
+const open = (w: World) => renderIn(w.fake, <LoadedCharacters />, { path: '/characters', settings: { charactersPerPlayer: w.per } });
 /*
  * On the glass, My characters is the Roster board's: a card per character, and the selected one's
  * panel, which holds what a table row held. So a character's "row" is its panel, reached as a
@@ -71,18 +72,47 @@ describe('My characters', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Your characters (3 of 4)' })).toBeInTheDocument();
   });
 
-  test('the roster reads its standings in one read of the amounts, never a place per character', async () => {
+  test('its whole page is in the first render, from the document, and nothing is read for it', async () => {
     const w = world();
-    const amounts = vi.spyOn(w.fake, 'standingAmounts');
-    const place = vi.spyOn(w.fake, 'standingPlace');
-    const ranking = vi.spyOn(w.fake, 'standingsPage');
+    const boot = await w.fake.boot();
+    const doc = await w.fake.myCharactersPage();
+    const read = holdReads(w.fake, ['session']);
+    renderIn(w.fake, <Characters doc={doc} />, { path: '/characters', settings: { charactersPerPlayer: w.per }, boot });
+    /* No wait: the faces, standings, counts and Turns are the document's. */
+    expect(screen.getByRole('heading', { level: 1, name: 'Your characters (3 of 4)' })).toBeInTheDocument();
+    const r = row('Pipewrench');
+    expect(within(r).getByText('14.20')).toBeInTheDocument();
+    expect(r).toHaveTextContent(/Posts\s*\d+ · joined/u);
+    expect(within(roster()).getAllByTestId('kb-roster-rank')).toHaveLength(2);
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    expect(read).toEqual([]);
+  });
+
+  test('the roster is one document: faces, standings, counts, reveals and Turns come with myCharactersPage, and no read of its own is made', async () => {
+    const w = world();
+    const page = vi.spyOn(w.fake, 'myCharactersPage');
+    const own = ['standingAmounts', 'standingPlace', 'standingsPage', 'characterCounts', 'characters', 'turnsAnnounced', 'nextSettlementAt'] as const;
+    const spies = own.map((n) => vi.spyOn(w.fake, n));
     open(w);
     await ready();
     expect(await within(row('Mrs. Hooligan')).findByText('6.85')).toBeInTheDocument();
-    expect(amounts).toHaveBeenCalledTimes(1);
-    expect([...(amounts.mock.calls[0]?.[0] ?? [])].sort()).toEqual([w.pipe, w.hoolie].sort());
-    expect(place).not.toHaveBeenCalled();
-    expect(ranking).not.toHaveBeenCalled();
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(spies.map((spy) => spy.mock.calls.length)).toEqual(own.map(() => 0));
+  });
+
+  test('Characters to Edit profile makes no read: they are one document', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    const read = holdReads(w.fake, ['session']);
+    const page = vi.spyOn(w.fake, 'myCharactersPage');
+    await userEvent.click(within(row('Mrs. Hooligan')).getByRole('link', { name: 'Edit profile' }));
+    expect(await screen.findByLabelText('Title')).toBeInTheDocument();
+    expect(screen.getByLabelText('Character')).toHaveValue(w.hoolie);
+    expect(window.location.pathname).toBe('/characters/edit');
+    expect(page).not.toHaveBeenCalled();
+    expect(read).toEqual([]);
   });
 
   test('no link or navigation on the page puts a character in the address: Edit profile carries it in history.state', async () => {
@@ -636,17 +666,25 @@ describe('My characters: stale words', () => {
     expect(within(row('Pipewrench')).queryByText('there is nothing to withdraw')).toBeNull();
   });
 
-  test('a failed load is not kept once the characters are read again', async () => {
+  test('a failed load is the glass\'s, and Try again reads the document again', async () => {
     const w = world();
-    const read = vi.spyOn(w.fake, 'characters').mockRejectedValueOnce(new Error('network'));
-    function Again() { const { refresh } = usePlayer(); return <button type="button" onClick={() => void refresh()}>Again</button>; }
-    renderIn(w.fake, <><Characters /><Again /></>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
-    expect(await screen.findByText(/could not be loaded/u)).toBeInTheDocument();
-    /* Another character debuts, so the characters read changes and is read again. */
-    w.fake.seed.settle({ at: w.fake.clock.now(), debut: true });
-    await userEvent.click(screen.getByRole('button', { name: 'Again' }));
-    await waitFor(() => expect(screen.queryByText(/could not be loaded/u)).toBeNull());
-    expect(read).toHaveBeenCalled();
+    vi.spyOn(w.fake, 'myCharactersPage').mockRejectedValueOnce(new Error('network'));
+    open(w);
+    expect(await screen.findByRole('heading', { name: 'The page cannot be displayed' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await ready();
+    expect(screen.queryByRole('heading', { name: 'The page cannot be displayed' })).toBeNull();
+  });
+
+  test('an action reads the page\'s document again, in place, and the roster follows it', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    const page = vi.spyOn(w.fake, 'myCharactersPage');
+    expect(within(row('Pipewrench')).getByRole('button', { name: 'Turn Pipewrench' })).toBeEnabled();
+    await turnIt();
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(await within(row('Pipewrench')).findByText(/Turn waiting/u)).toBeInTheDocument();
   });
 });
 
@@ -702,7 +740,8 @@ describe('My characters on the glass (the Roster board)', () => {
   test('the roster is one tablist with one tab per character, the selected one marked, and the panel is its tabpanel', async () => {
     const w = world();
     await cooldown(w);
-    open(w);
+    /* The player's rows come with boot, as in the app, so the HUD's character is chosen before the page is drawn and no panel swaps for it. */
+    renderIn(w.fake, <LoadedCharacters />, { path: '/characters', settings: { charactersPerPlayer: w.per }, boot: await w.fake.boot() });
     await ready();
     const tabs = within(roster()).getAllByRole('tab');
     expect(tabs).toHaveLength(3);
@@ -765,7 +804,7 @@ describe('My characters on the glass (the Roster board)', () => {
 
   test('opens on the character a navigation carried, else on the HUD\'s', async () => {
     const w = world();
-    renderIn(w.fake, <Characters />, { path: '/characters', state: { character: w.hoolie }, settings: { charactersPerPlayer: w.per } });
+    renderIn(w.fake, <LoadedCharacters />, { path: '/characters', state: { character: w.hoolie }, settings: { charactersPerPlayer: w.per } });
     await ready();
     expect(card('Mrs. Hooligan')).toHaveAttribute('aria-selected', 'true');
     cleanup();
@@ -830,7 +869,7 @@ describe('the class, in its own color, to its own player only', () => {
 });
 
 describe('the Turn modal over My characters (the Turn board)', () => {
-  const page = (w: World) => renderIn(w.fake, <Page surface="characters"><Characters /></Page>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
+  const page = (w: World) => renderIn(w.fake, <Page surface="characters"><LoadedCharacters /></Page>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
 
   test('is a glass overlay on the turn smoke, with the menu bar left in view, dimmed and inert', async () => {
     const w = world();
@@ -906,7 +945,7 @@ describe('the Turn modal over My characters (the Turn board)', () => {
 });
 
 describe('the Reveal over My characters (the glass)', () => {
-  const page = (w: World) => renderIn(w.fake, <Page surface="characters"><Characters /></Page>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
+  const page = (w: World) => renderIn(w.fake, <Page surface="characters"><LoadedCharacters /></Page>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
   const general = (w: World) => w.fake.seed.thread('general', w.stranger, 'The tea thread', 'Who keeps reacting?');
 
   test('is a glass overlay on the turn smoke, with the menu bar left in view, dimmed and inert', async () => {
@@ -963,7 +1002,7 @@ describe('the Reveal over My characters (the glass)', () => {
 describe('the panel\'s pip style (the Roster board)', () => {
   /* Two styles, so a choice can change one. */
   const twoStyles: Instance = { ...testInstance, pipStyles: [...testInstance.pipStyles, { key: 'stars', name: 'Stars', full: 's.svg', empty: 'se.svg' }] };
-  const openTwo = (w: World) => renderIn(w.fake, <Characters />, { path: '/characters', instance: twoStyles, settings: { charactersPerPlayer: w.per } });
+  const openTwo = (w: World) => renderIn(w.fake, <LoadedCharacters />, { path: '/characters', instance: twoStyles, settings: { charactersPerPlayer: w.per } });
   const champ = async () => {
     const w = world({ instance: twoStyles });
     expect((await w.fake.setProfile(w.pipe, 'Champ', 'Belts and all.', 'default')).ok).toBe(true);
@@ -1027,7 +1066,7 @@ describe('the panel\'s pip style (the Roster board)', () => {
 });
 
 describe('the Reveal over My characters: its fields and its foot (the Reveal board)', () => {
-  const page = (w: World) => renderIn(w.fake, <Page surface="characters"><Characters /></Page>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
+  const page = (w: World) => renderIn(w.fake, <Page surface="characters"><LoadedCharacters /></Page>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
   const reveal = async (w: World) => {
     page(w);
     await ready();
@@ -1059,7 +1098,7 @@ describe('the Reveal over My characters: its fields and its foot (the Reveal boa
 });
 
 describe('the Debut dialog\'s foot (the Debut boards)', () => {
-  const page = (w: World) => renderIn(w.fake, <Page surface="characters"><Characters /></Page>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
+  const page = (w: World) => renderIn(w.fake, <Page surface="characters"><LoadedCharacters /></Page>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
 
   test('changing how it debuts says when it debuts, how far off, and that it can be dropped now', async () => {
     const w = world();
@@ -1126,7 +1165,7 @@ function overflowingRow() {
 }
 
 describe('the Turn\'s classes, as a carousel', () => {
-  const openFive = (w: World) => renderIn(w.fake, <Characters />, { path: '/characters', settings: { charactersPerPlayer: w.per }, instance: five });
+  const openFive = (w: World) => renderIn(w.fake, <LoadedCharacters />, { path: '/characters', settings: { charactersPerPlayer: w.per }, instance: five });
   const openTurn = async (name: string) => {
     await userEvent.click(within(row(name)).getByRole('button', { name: `Turn ${name}` }));
     return screen.findByRole('dialog', { name: `Turn ${name}` });
@@ -1206,7 +1245,7 @@ describe('the panel\'s online status', () => {
   test('shows the character\'s state; choosing Hidden hides it, and the player\'s own characters say so after the refresh', async () => {
     const w = world();
     const hide = vi.spyOn(w.fake, 'setPresenceHidden');
-    renderIn(w.fake, <><HudHidden /><Characters /></>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
+    renderIn(w.fake, <><HudHidden /><LoadedCharacters /></>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
     await ready();
     const select = await status();
     expect(select).toHaveValue('shown');

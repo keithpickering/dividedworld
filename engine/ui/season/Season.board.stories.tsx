@@ -9,7 +9,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Page } from '../glass/Page.tsx';
 import type { World } from '../story.tsx';
-import { SeasonScreen } from './Season.tsx';
+import { LoadedSeason } from '../loaded.tsx';
 
 const utc = (month: number, day: number, hour = 8, minute = 17) => Date.UTC(2026, month - 1, day, hour, minute);
 
@@ -58,7 +58,7 @@ const empty: World = (fake) => {
 
 /** The screen at /season?tab=news, in its page shell. */
 function SeasonStory() {
-  return <Page surface="rankings"><SeasonScreen /></Page>;
+  return <Page surface="rankings"><LoadedSeason /></Page>;
 }
 
 const meta: Meta<typeof SeasonStory> = {

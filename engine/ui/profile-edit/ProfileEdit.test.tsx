@@ -1,8 +1,9 @@
-import { cleanup, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { buildWorld, renderIn } from '../test-world.tsx';
+import { buildWorld, holdReads, renderIn } from '../test-world.tsx';
 import { Link } from '../router.tsx';
+import { LoadedCharacters } from '../loaded.tsx';
 import { ProfileEdit } from './ProfileEdit.tsx';
 
 beforeEach(() => { localStorage.clear(); });
@@ -20,7 +21,7 @@ function world() {
 }
 /** Opens the one address the page has; `name` picks a character in the page, as a player does. */
 const open = async (w: ReturnType<typeof world>, name?: string) => {
-  renderIn(w.fake, <ProfileEdit />, { path: '/characters/edit' });
+  renderIn(w.fake, <LoadedCharacters />, { path: '/characters/edit' });
   if (name) await userEvent.selectOptions(await screen.findByLabelText('Character'), name);
 };
 
@@ -37,7 +38,7 @@ describe('profile edit', () => {
 
   test('a character carried from the My characters link in history.state opens first; a stranger\'s id there is ignored', async () => {
     const w = world();
-    renderIn(w.fake, <><Link to="/characters/edit" state={{ character: w.waiting }}>mine</Link><Link to="/characters/edit" state={{ character: w.stranger }}>theirs</Link><ProfileEdit /></>, { path: '/characters' });
+    renderIn(w.fake, <><Link to="/characters/edit" state={{ character: w.waiting }}>mine</Link><Link to="/characters/edit" state={{ character: w.stranger }}>theirs</Link><LoadedCharacters /></>, { path: '/characters' });
     await userEvent.click(await screen.findByRole('link', { name: 'mine' }));
     expect(await screen.findByLabelText('Character')).toHaveValue(w.waiting);
     expect(await screen.findByText(/waiting to debut/iu)).toBeInTheDocument();
@@ -68,7 +69,7 @@ describe('profile edit', () => {
   test('says plainly that a player with no characters has no profile to edit, and links to making one', async () => {
     const fake = buildWorld();
     fake.signInAs(fake.seed.account('lonely'));
-    renderIn(fake, <ProfileEdit />, { path: '/characters/edit' });
+    renderIn(fake, <LoadedCharacters />, { path: '/characters/edit' });
     expect(await screen.findByText(/no characters yet/iu)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Make a character' })).toHaveAttribute('href', '/characters/new');
   });
@@ -134,20 +135,18 @@ describe('profile edit', () => {
     expect(aside).toHaveTextContent('The preview follows what you type. Nothing changes on the board until you save.');
   });
 
-  test('reserves the postbit column and says it is busy until what it shows has been read', async () => {
+  test('its whole page, preview included, is in the first render, from the document, and nothing is read for it', async () => {
     const w = world();
-    let release!: () => void;
-    const real = w.fake.characterCounts.bind(w.fake);
-    vi.spyOn(w.fake, 'characterCounts').mockImplementation(async (id) => { await new Promise<void>((r) => { release = r; }); return real(id); });
-    await open(w);
-    const aside = await screen.findByRole('complementary', { name: 'What everyone will see' });
-    const side = aside.querySelector('.kb-profile-preview-side')!;
-    expect(side).toHaveAttribute('aria-busy', 'true');
-    expect(within(aside).queryByRole('group', { name: 'About Pipewrench' })).toBeNull();
-    await waitFor(() => expect(release).toBeDefined());
-    release();
-    await within(aside).findByRole('group', { name: 'About Pipewrench' });
-    expect(side).not.toHaveAttribute('aria-busy', 'true');
+    const boot = await w.fake.boot();
+    const doc = await w.fake.myCharactersPage();
+    const read = holdReads(w.fake, ['session']);
+    renderIn(w.fake, <ProfileEdit doc={doc} />, { path: '/characters/edit', boot });
+    expect(screen.getByLabelText('Title')).toBeInTheDocument();
+    const aside = screen.getByRole('complementary', { name: 'What everyone will see' });
+    expect(within(aside).getByRole('group', { name: 'About Pipewrench' })).toBeInTheDocument();
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    expect(read).toEqual([]);
   });
 
   test('the preview says the class its player made public, as the thread does, and no more', async () => {

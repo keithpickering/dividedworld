@@ -22,6 +22,15 @@ const ask = async (email: string) => {
 };
 
 describe('Sign in', () => {
+  test('reads the session from the player\'s provider, and asks the backend for it once', async () => {
+    const w = world();
+    const session = vi.spyOn(w.fake, 'session');
+    open(w, 'sign-in');
+    expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
+    expect(session).toHaveBeenCalledTimes(1);
+  });
+
+
   test('says exactly the same words, and shows the same screen, for an address with an account and one without', async () => {
     const a = world();
     const first = open(a, 'sign-in');

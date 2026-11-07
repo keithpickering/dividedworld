@@ -1,7 +1,9 @@
-import { cleanup, screen } from '@testing-library/react';
+import { act, cleanup, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { buildWorld, renderIn } from '../test-world.tsx';
+import { buildWorld, holdReads, renderIn } from '../test-world.tsx';
 import { Contact, ContactScreen, ReachAPerson } from './Contact.tsx';
+import { LoadedContact } from '../loaded.tsx';
 
 beforeEach(() => { localStorage.clear(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -12,7 +14,7 @@ describe('Reach a person, at /contact', () => {
   test('signed out, it says who the admins are for, and shows each way as a row: its label, and a button or the address as the link', async () => {
     const fake = buildWorld();
     fake.seed.contact([{ label: 'Discord', href: 'https://discord.example/u/admin' }, { label: 'Email', href: 'admin@example.test' }]);
-    renderIn(fake, <ContactScreen />, { path: '/contact' });
+    renderIn(fake, <LoadedContact />, { path: '/contact' });
     expect(await screen.findByRole('heading', { level: 1, name: 'Reach a person' })).toBeInTheDocument();
     expect(screen.getByText(LEAD)).toBeInTheDocument();
     const discord = screen.getByRole('link', { name: 'Open the Discord' });
@@ -25,7 +27,7 @@ describe('Reach a person, at /contact', () => {
   test('each way is a row in the Settings idiom: the label in the label column, a secondary button or the address itself as the link in the other', async () => {
     const fake = buildWorld();
     fake.seed.contact([{ label: 'Discord', href: 'https://discord.example/u/admin' }, { label: 'Email', href: 'mailto:admin@example.test' }]);
-    renderIn(fake, <ContactScreen />, { path: '/contact' });
+    renderIn(fake, <LoadedContact />, { path: '/contact' });
     const discord = await screen.findByRole('link', { name: 'Open the Discord' });
     expect(discord).toHaveAttribute('data-kb-kind', 'secondary');
     expect(discord.closest('.kb-acct-row')).toContainElement(screen.getByRole('heading', { level: 2, name: 'Discord' }));
@@ -39,7 +41,7 @@ describe('Reach a person, at /contact', () => {
 
   test('unset, it says so plainly, and it still says what the page is for', async () => {
     const fake = buildWorld();
-    renderIn(fake, <ContactScreen />, { path: '/contact' });
+    renderIn(fake, <LoadedContact />, { path: '/contact' });
     expect(await screen.findByText('This instance\'s admins haven\'t added a way to reach them yet.')).toBeInTheDocument();
     expect(screen.getByText(LEAD)).toBeInTheDocument();
     expect(screen.queryByRole('list')).toBeNull();
@@ -47,7 +49,7 @@ describe('Reach a person, at /contact', () => {
 
   test('is the same for a signed-out visitor, a player and an admin', async () => {
     const make = () => { const f = buildWorld(); f.seed.contact([{ label: 'Chat', href: 'https://chat.example/admin' }]); return f; };
-    const visitor = renderIn(make(), <ContactScreen />, { path: '/contact' });
+    const visitor = renderIn(make(), <LoadedContact />, { path: '/contact' });
     await screen.findByRole('link', { name: 'Open the Chat' });
     const out = visitor.container.innerHTML;
     cleanup();
@@ -55,24 +57,44 @@ describe('Reach a person, at /contact', () => {
     const ann = f.seed.account('ann');
     f.seed.character(ann, 'Annie', 'face');
     f.signInAs(ann);
-    const player = renderIn(f, <ContactScreen />, { path: '/contact' });
+    const player = renderIn(f, <LoadedContact />, { path: '/contact' });
     await screen.findByRole('link', { name: 'Open the Chat' });
     expect(player.container.innerHTML).toBe(out);
     cleanup();
     const g = make();
     const root = g.seed.account('root', { admin: true });
     g.signInAs(root);
-    const admin = renderIn(g, <ContactScreen />, { path: '/contact' });
+    const admin = renderIn(g, <LoadedContact />, { path: '/contact' });
     await screen.findByRole('link', { name: 'Open the Chat' });
     expect(admin.container.innerHTML).toBe(out);
   });
 
-  test('says in plain words when the contact could not be read, and never shows a stale list', async () => {
+  test('a contact that could not be read is the router\'s failure, and never a stale list; Try again reads it', async () => {
     const fake = buildWorld();
-    vi.spyOn(fake, 'adminContact').mockRejectedValue(new Error('not read'));
-    renderIn(fake, <ContactScreen />, { path: '/contact' });
-    expect(await screen.findByRole('alert')).toHaveTextContent('could not be read');
+    fake.seed.contact([{ label: 'Chat', href: 'https://chat.example/admin' }]);
+    vi.spyOn(fake, 'adminContact').mockRejectedValueOnce(new Error('not read'));
+    renderIn(fake, <LoadedContact />, { path: '/contact' });
+    expect(await screen.findByRole('heading', { name: 'The page cannot be displayed' })).toBeInTheDocument();
     expect(screen.queryByText(/haven't added a way/u)).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByRole('link', { name: 'Open the Chat' })).toBeInTheDocument();
+  });
+
+  test('signed out it is one adminContact call, and the page is whole in the first render of its document', async () => {
+    const fake = buildWorld();
+    fake.seed.contact([{ label: 'Chat', href: 'https://chat.example/admin' }]);
+    const read = vi.spyOn(fake, 'adminContact');
+    renderIn(fake, <LoadedContact />, { path: '/contact' });
+    expect(await screen.findByRole('link', { name: 'Open the Chat' })).toBeInTheDocument();
+    expect(read).toHaveBeenCalledTimes(1);
+    cleanup();
+    const doc = await fake.adminContact();
+    const held = holdReads(fake, ['session']);
+    renderIn(fake, <ContactScreen doc={doc} />, { path: '/contact' });
+    expect(screen.getByRole('link', { name: 'Open the Chat' })).toBeInTheDocument();
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    expect(held).toEqual([]);
   });
 
   test('draws only https: and mailto: addresses as links, whatever it was handed', () => {

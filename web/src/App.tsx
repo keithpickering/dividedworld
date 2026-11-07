@@ -3,8 +3,8 @@
  * web/src/data/ are the only places the engine's screens and an instance meet.
  */
 import { AnimatePresence, useIsPresent } from 'motion/react';
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { BoardPage, Boot, Estimate, IndexPage, KayfaApi, ProfilePage, RecordPage, ScreenSettings, Session, ThreadPage } from '../../engine/ui/data/api.ts';
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import type { BoardPage, Boot, ContactLink, Estimate, IndexPage, KayfaApi, MyCharactersPage, MyInvite, ProfilePage, RecordPage, ScreenSettings, SeasonPage, Session, ThreadPage } from '../../engine/ui/data/api.ts';
 import { fallbackSettings } from './data/settings.ts';
 import { BootProvider } from '../../engine/ui/boot.tsx';
 import { CannotDisplay } from '../../engine/ui/frame/Unavailable.tsx';
@@ -30,74 +30,96 @@ import { SettlementOnLoad } from '../../engine/ui/log/Settlement.tsx';
 import { match, RouterProvider, useLocation, useNavigate, useRouterAccount, useRouterInternals } from '../../engine/ui/router.tsx';
 import { effectCards } from '../../engine/ui/cards/plays.ts';
 import { boardKey, loadBoard, loadIndex, loadProfile, loadRecord, loadThread, recordKey, threadKey, type LoadEnv, type ScreenDoc } from '../../engine/ui/screen-docs.ts';
-import { Routes, type Route } from '../../engine/ui/routes.tsx';
+import { Routes, type Failures, type Route } from '../../engine/ui/routes.tsx';
+import { charactersKey, lazyScreen, loadChunk, loadContact, loadMyCharacters, loadSeason, loadSettings, seasonKey, settingsKey } from '../../engine/ui/glass-docs.ts';
+import { GlassCannotDisplay, GlassCannotFind } from '../../engine/ui/glass/Unavailable.tsx';
 import { ThreadScreen } from '../../engine/ui/thread/Thread.tsx';
 import { instance } from '../../instances/divided-world/index.ts';
 import { instanceUi } from '../../instances/divided-world/ui/index.ts';
 
 /*
  * The glass screens, the admin queue and the vending machine load on first use, so the board's first script is the board's
- * (the forum-load plan, Task 15). Each glass route is drawn inside a Suspense whose fallback is an empty block marked
- * aria-busy: the glass page's own `main` is already on screen around it, and says it is loading until the screen lands, as a
- * screen that reads its data does (My characters until the player is read). What lands can move the page (the roster scrolls
- * to the chosen character), so nothing should read the empty page as the screen.
+ * (the forum-load plan, Task 15). Each is made with `lazyScreen`: the lazy component, and `preload`, which a glass route's loader awaits
+ * beside its document (the glass-load plan, Task 11), so a route that has landed never draws a Suspense fallback. The fallback below is
+ * only the net under that: an empty block marked aria-busy, inside the glass page's own `main`.
  */
-const SignInScreen = lazy(() => import('../../engine/ui/account/SignIn.tsx').then((m) => ({ default: m.SignInScreen })));
-const Characters = lazy(() => import('../../engine/ui/characters/Characters.tsx').then((m) => ({ default: m.Characters })));
-const NewCharacter = lazy(() => import('../../engine/ui/characters/NewCharacter.tsx').then((m) => ({ default: m.NewCharacter })));
-const ProfileEdit = lazy(() => import('../../engine/ui/profile-edit/ProfileEdit.tsx').then((m) => ({ default: m.ProfileEdit })));
-const SettingsScreen = lazy(() => import('../../engine/ui/account/Settings.tsx').then((m) => ({ default: m.SettingsScreen })));
-const SeasonScreen = lazy(() => import('../../engine/ui/season/Season.tsx').then((m) => ({ default: m.SeasonScreen })));
-const Vending = lazy(() => import('../../engine/ui/vending/Vending.tsx').then((m) => ({ default: m.Vending })));
-const AlertsScreen = lazy(() => import('../../engine/ui/alerts/Alerts.tsx').then((m) => ({ default: m.AlertsScreen })));
-const UpdatesScreen = lazy(() => import('../../engine/ui/updates/Updates.tsx').then((m) => ({ default: m.UpdatesScreen })));
-const GuideScreen = lazy(() => import('../../engine/ui/guide/Guide.tsx').then((m) => ({ default: m.GuideScreen })));
-const ContactScreen = lazy(() => import('../../engine/ui/contact/Contact.tsx').then((m) => ({ default: m.ContactScreen })));
-const WelcomeScreen = lazy(() => import('../../engine/ui/welcome/Welcome.tsx').then((m) => ({ default: m.WelcomeScreen })));
-const QueueScreen = lazy(() => import('../../engine/ui/admin/Queue.tsx').then((m) => ({ default: m.QueueScreen })));
-const LogScreen = lazy(() => import('../../engine/ui/log/Log.tsx').then((m) => ({ default: m.LogScreen })));
-const SettlementScreen = lazy(() => import('../../engine/ui/log/Settlement.tsx').then((m) => ({ default: m.SettlementScreen })));
+const lazyOf = lazyScreen;
+const SignInScreen = lazyOf(() => import('../../engine/ui/account/SignIn.tsx').then((m) => ({ default: m.SignInScreen })));
+const Characters = lazyOf(() => import('../../engine/ui/characters/Characters.tsx').then((m) => ({ default: m.Characters })));
+const NewCharacter = lazyOf(() => import('../../engine/ui/characters/NewCharacter.tsx').then((m) => ({ default: m.NewCharacter })));
+const ProfileEdit = lazyOf(() => import('../../engine/ui/profile-edit/ProfileEdit.tsx').then((m) => ({ default: m.ProfileEdit })));
+const SettingsScreen = lazyOf(() => import('../../engine/ui/account/Settings.tsx').then((m) => ({ default: m.SettingsScreen })));
+const SeasonScreen = lazyOf(() => import('../../engine/ui/season/Season.tsx').then((m) => ({ default: m.SeasonScreen })));
+const Vending = lazyOf(() => import('../../engine/ui/vending/Vending.tsx').then((m) => ({ default: m.Vending })));
+const AlertsScreen = lazyOf(() => import('../../engine/ui/alerts/Alerts.tsx').then((m) => ({ default: m.AlertsScreen })));
+const UpdatesScreen = lazyOf(() => import('../../engine/ui/updates/Updates.tsx').then((m) => ({ default: m.UpdatesScreen })));
+const GuideScreen = lazyOf(() => import('../../engine/ui/guide/Guide.tsx').then((m) => ({ default: m.GuideScreen })));
+const ContactScreen = lazyOf(() => import('../../engine/ui/contact/Contact.tsx').then((m) => ({ default: m.ContactScreen })));
+const WelcomeScreen = lazyOf(() => import('../../engine/ui/welcome/Welcome.tsx').then((m) => ({ default: m.WelcomeScreen })));
+const QueueScreen = lazyOf(() => import('../../engine/ui/admin/Queue.tsx').then((m) => ({ default: m.QueueScreen })));
+const LogScreen = lazyOf(() => import('../../engine/ui/log/Log.tsx').then((m) => ({ default: m.LogScreen })));
+const SettlementScreen = lazyOf(() => import('../../engine/ui/log/Settlement.tsx').then((m) => ({ default: m.SettlementScreen })));
+
+/** A glass route with no document: its loader is its chunk alone, so its first visit is whole too. */
+const chunkOnly = (screen: { readonly preload: () => Promise<unknown> }) => ({ load: () => loadChunk(screen.preload) });
 
 /**
- * The routes. The five board-world routes load their screen's whole document before they move (the forum-load plan, Task 13), signed out
- * answering a marker with no request; the rest render as they always did. `env` is what a loader needs of the app, read when it runs.
+ * The routes. The board-world routes load their screen's whole document before they move (the forum-load plan, Task 13), and the glass routes
+ * that read do too (the glass-load plan, Task 11), each awaiting its screen's chunk beside it; signed out, a document loader answers a marker
+ * with no request. The glass routes with no document load their chunk alone. `env` is what a loader needs of the app, read when it runs.
  */
 function routesFor(env: LoadEnv): readonly Route[] {
+  /* My characters and Edit profile are one document and so one loader: a move between them reads nothing (the router keeps a document by its loader and key). */
+  const charactersChunks = () => Promise.all([Characters.preload(), ProfileEdit.preload()]);
+  const loadCharacters = () => loadMyCharacters(env, charactersChunks);
   return [
     { path: '/', load: () => loadIndex(env), render: (_, doc) => <IndexScreen doc={doc as ScreenDoc<IndexPage>} /> },
     {
       path: '/b/:slug', load: ({ params, query }) => loadBoard(env, params.slug!, query), key: (params, query) => boardKey(params.slug!, query),
       render: ({ slug }, doc) => <BoardScreen slug={slug!} doc={doc as ScreenDoc<BoardPage>} />,
     },
-    { path: '/characters', render: () => <Characters /> },
-    { path: '/characters/new', render: () => <NewCharacter /> },
-    { path: '/characters/edit', render: () => <ProfileEdit /> },
-    { path: '/season', render: () => <SeasonScreen /> },
+    { path: '/characters', load: loadCharacters, key: charactersKey, render: (_, doc) => <Characters.Component doc={doc as ScreenDoc<MyCharactersPage>} /> },
+    { path: '/characters/new', ...chunkOnly(NewCharacter), render: () => <NewCharacter.Component /> },
+    { path: '/characters/edit', load: loadCharacters, key: charactersKey, render: (_, doc) => <ProfileEdit.Component doc={doc as ScreenDoc<MyCharactersPage>} /> },
+    {
+      path: '/season', load: ({ query }) => loadSeason(env, query, SeasonScreen.preload), key: (_, query) => seasonKey(query),
+      render: (_, doc) => <SeasonScreen.Component doc={doc as ScreenDoc<SeasonPage>} />,
+    },
     /* The standings and the rankings are the season page's Rankings tab (the alerts design, section 7); `?page=` goes with them. */
     { path: '/standings', render: () => <MovedToRankings /> },
     { path: '/rankings', render: () => <MovedToRankings /> },
-    { path: '/vending', render: () => <Vending /> },
-    { path: '/alerts', render: () => <AlertsScreen /> },
-    { path: '/updates', render: () => <UpdatesScreen /> },
-    { path: '/guide', render: () => <GuideScreen /> },
-    { path: '/contact', render: () => <ContactScreen /> },
-    { path: '/welcome', render: () => <WelcomeScreen /> },
-    { path: '/admin/queue', render: () => <QueueScreen /> },
-    { path: '/log', render: () => <LogScreen /> },
-    { path: '/log/settlement', render: () => <SettlementScreen /> },
+    { path: '/vending', ...chunkOnly(Vending), render: () => <Vending.Component /> },
+    /* The screens of the next task read for themselves still; they load their chunk beside the move until their documents come. */
+    { path: '/alerts', ...chunkOnly(AlertsScreen), render: () => <AlertsScreen.Component /> },
+    { path: '/updates', ...chunkOnly(UpdatesScreen), render: () => <UpdatesScreen.Component /> },
+    { path: '/guide', ...chunkOnly(GuideScreen), render: () => <GuideScreen.Component /> },
+    { path: '/contact', load: () => loadContact(env, ContactScreen.preload), render: (_, doc) => <ContactScreen.Component doc={doc as readonly ContactLink[]} /> },
+    { path: '/welcome', ...chunkOnly(WelcomeScreen), render: () => <WelcomeScreen.Component /> },
+    { path: '/admin/queue', ...chunkOnly(QueueScreen), render: () => <QueueScreen.Component /> },
+    { path: '/log', ...chunkOnly(LogScreen), render: () => <LogScreen.Component /> },
+    { path: '/log/settlement', ...chunkOnly(SettlementScreen), render: () => <SettlementScreen.Component /> },
     { path: '/c/:id', load: ({ params }) => loadProfile(env, params.id!), render: ({ id }, doc) => <ProfileScreen id={id!} doc={doc as ScreenDoc<ProfilePage>} /> },
     {
       path: '/c/:id/record', load: ({ params, query }) => loadRecord(env, params.id!, query), key: (params, query) => recordKey(params.id!, query),
       render: ({ id }, doc) => <RecordScreen id={id!} doc={doc as ScreenDoc<RecordPage>} />,
     },
-    { path: '/sign-in', render: () => <SignInScreen mode="sign-in" /> },
-    { path: '/register', render: () => <SignInScreen mode="register" /> },
+    { path: '/sign-in', ...chunkOnly(SignInScreen), render: () => <SignInScreen.Component mode="sign-in" /> },
+    { path: '/register', ...chunkOnly(SignInScreen), render: () => <SignInScreen.Component mode="register" /> },
     /* Invites live in Settings › Account (the glass build's Task 2.4); the old address opens it, so a link to it still works. */
     { path: '/invites', render: () => <Moved to={INVITES} /> },
-    { path: '/settings', render: () => <SettingsScreen /> },
+    {
+      path: '/settings', load: ({ query }) => loadSettings(env, query, SettingsScreen.preload), key: (_, query) => settingsKey(query),
+      render: (_, doc) => <SettingsScreen.Component doc={doc as ScreenDoc<readonly MyInvite[]> | undefined} />,
+    },
     { path: '/t/:thread', load: ({ params, query, hash }) => loadThread(env, params.thread!, query, hash), key: (params) => threadKey(params.thread!), render: ({ thread }, doc) => <ThreadScreen thread={thread!} doc={doc as ScreenDoc<ThreadPage>} /> },
   ];
 }
+
+/** What a glass page shows for a load that failed or an address that is not there: the glass's own plain screens, not the board's. */
+const GLASS_FAILURES: Failures = {
+  display: ({ onRetry }) => <GlassCannotDisplay onRetry={onRetry} />,
+  find: () => <GlassCannotFind />,
+};
 
 /**
  * The routes that are glass pages (the glass build's Task 1.4), each with the surface whose smoke it
@@ -208,7 +230,7 @@ function Shell({ routes }: { readonly routes: readonly Route[] }) {
   const content = (
     <AccountGate>
       <Suspense fallback={<div aria-busy="true" />}>
-        <Routes key={mountedFor.n} routes={routes} />
+        <Routes key={mountedFor.n} routes={routes} {...(surface ? { failures: GLASS_FAILURES } : {})} />
       </Suspense>
       {/* A world that is leaving moves nobody: what a board page does on its own (below) stops with its exit, not at its end (the crossing, below). */}
       <WhilePresent>

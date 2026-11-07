@@ -14,8 +14,6 @@
  * no mail client can still copy. Only an `https:` or `mailto:` address is drawn as a link, whatever it was handed: the server holds the same
  * line, and this is the second wall. Unset, the page says so plainly.
  */
-import { useEffect, useState } from 'react';
-import { useKayfa } from '../context.tsx';
 import { CONTACT_WS, type ContactLink } from '../data/api.ts';
 import { GlassLink } from '../glass/Link.tsx';
 import { GlassButton } from '../glass/Button.tsx';
@@ -38,7 +36,7 @@ const safe = (href: string): boolean =>
   !SPACED.test(href) && (/^https:\/\/[^/?#@]+([/?#]|$)/iu.test(href) || /^mailto:[^@:/?#]+@[^@:/?#]+$/iu.test(href));
 const address = (href: string): string | null => (/^mailto:/iu.test(href) ? href.replace(/^mailto:/iu, '') : null);
 
-/** The page, handed the links read: `null` while they are read, and an empty list for none. */
+/** The page, handed the links read: an empty list for none (`null`, for a story that shows the wait, is drawn busy). */
 export function Contact({ links: given }: { readonly links: readonly ContactLink[] | null }) {
   /* A way that is no link is no row: a label with nothing to press says nothing. */
   const links = given === null ? null : given.filter((l) => safe(l.href));
@@ -67,23 +65,7 @@ export function Contact({ links: given }: { readonly links: readonly ContactLink
   );
 }
 
-/** The page at /contact: it reads the contact once, which is the same for every caller. */
-export function ContactScreen() {
-  const { api } = useKayfa();
-  const [links, setLinks] = useState<readonly ContactLink[] | null>(null);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    let live = true;
-    void api.adminContact().then((l) => { if (live) setLinks(l); }, () => { if (live) setFailed(true); });
-    return () => { live = false; };
-  }, [api]);
-  if (!failed) return <Contact links={links} />;
-  return (
-    <div className="kb-acct kb-contact">
-      <PageHead title="Reach a person" />
-      <CalmRegion className="kb-acct-panel">
-        <p role="alert" className="kb-acct-refusal">The admins&apos; contact could not be read. Reload the page to try again.</p>
-      </CalmRegion>
-    </div>
-  );
+/** The page at /contact, drawn from the contact its route loaded: the same for every caller, signed in or out. */
+export function ContactScreen({ doc }: { readonly doc: readonly ContactLink[] }) {
+  return <Contact links={doc} />;
 }

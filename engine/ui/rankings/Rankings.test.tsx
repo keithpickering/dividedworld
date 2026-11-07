@@ -11,7 +11,13 @@ import { usePlayer } from '../player.tsx';
 import type { Fake } from '../data/fake.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
 import { useLocation } from '../router.tsx';
-import { RankingsScreen } from './Rankings.tsx';
+import { RankingsScreen as RankingsFromDoc } from './Rankings.tsx';
+import { useMemo } from 'react';
+import { useKayfa } from '../context.tsx';
+import { loadSeason, seasonKey } from '../glass-docs.ts';
+import { isSignedOutDoc } from '../screen-docs.ts';
+import { Routes, type Route } from '../routes.tsx';
+import { SignInPrompt } from '../mini.tsx';
 import userEvent from '@testing-library/user-event';
 import { addressOf } from '../router.tsx';
 import { readFileSync } from 'node:fs';
@@ -19,6 +25,21 @@ import { readFileSync } from 'node:fs';
 function Where() {
   const l = useLocation();
   return <output data-testid="where">{addressOf(l)}</output>;
+}
+
+/**
+ * The Rankings tab as the app draws it: the season page's route loads the document (`/rankings` is the same page, as the old address), and the
+ * tab is drawn from it. `season` and `character` are the address's, as the season page passes them.
+ */
+function RankingsScreen({ embedded = false, season, character, href }: { readonly embedded?: boolean; readonly season?: number; readonly character?: string; readonly href?: (page: number) => string } = {}) {
+  const { api } = useKayfa();
+  const routes = useMemo<readonly Route[]>(() => {
+    const env = { api, signedIn: async () => (await api.session()).signedIn };
+    const load = ({ query }: { readonly query: URLSearchParams }) => loadSeason(env, query, () => Promise.resolve());
+    const draw = (_: unknown, doc?: unknown) => (isSignedOutDoc(doc) ? <SignInPrompt /> : <RankingsFromDoc doc={doc as never} embedded={embedded} season={season} character={character} {...(href ? { href } : {})} />);
+    return ['/season', '/rankings'].map((path) => ({ path, load, key: (_: unknown, query: URLSearchParams) => seasonKey(query), render: draw }));
+  }, [api, embedded, season, character, href]);
+  return <Routes routes={routes} />;
 }
 
 const at = (day: number, hour = 12) => Date.UTC(2026, 9, day, hour);
@@ -129,7 +150,8 @@ describe('a finished season', () => {
     const row = rowOf('Name 060');
     expect(row).toHaveAttribute('data-kb-highlight');
     expect(row).toHaveAttribute('aria-current', 'true');
-    expect(within(row).getByText('Yours')).toBeInTheDocument();
+    /* The player's own characters are the provider's (boot's, in the app). */
+    expect(await within(row).findByText('Yours')).toBeInTheDocument();
     expect(bodyRows().filter((r) => r.hasAttribute('data-kb-highlight'))).toHaveLength(1);
     expect(names()[0]).toBe('Name 050');
   });
@@ -148,10 +170,11 @@ describe('a finished season', () => {
     expect(screen.getByRole('combobox', { name: 'Season' })).toHaveValue('');
   });
 
-  test('a season with no final standings says so', async () => {
+  test('a season with no final standings is a document that is not there: the router says nothing is here', async () => {
     const w = finished(3);
     renderIn(w.fake, <RankingsScreen embedded season={7} />, { path: '/season?tab=rankings&season=7' });
-    expect(await screen.findByText('Season 7 has no final standings.')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'The page cannot be found' })).toBeInTheDocument();
+    expect(screen.queryByRole('table')).toBeNull();
   });
 });
 
@@ -163,48 +186,26 @@ function Host() {
 }
 
 describe('a finished season, beyond what the eye sees', () => {
-  test('the season choice keeps keyboard focus when it changes, while the new table loads and after', async () => {
+  test('the season choice keeps keyboard focus when it changes: the old table stays until the new one lands, and the select is never replaced', async () => {
     const w = finished();
     const user = userEvent.setup();
     renderIn(w.fake, <Host />, { path: '/season?tab=rankings&season=1' });
     const select = await screen.findByRole('combobox', { name: 'Season' });
     select.focus();
-    const real = w.fake.standingsPage.bind(w.fake);
-    let answer: (rows: Awaited<ReturnType<typeof real>>) => void = () => {};
-    vi.spyOn(w.fake, 'standingsPage').mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
+    const real = w.fake.seasonPage.bind(w.fake);
+    let answer: () => void = () => {};
+    vi.spyOn(w.fake, 'seasonPage').mockImplementationOnce(async (...args) => { await new Promise<void>((resolve) => { answer = resolve; }); return real(...args); });
     await user.selectOptions(select, 'Season 2 (now)');
-    /* While it loads: the same select, still focused, and the table area says so. */
+    /* While it loads: the same select, still focused, and the table of the season shown until the new one has landed. */
     expect(screen.getByRole('combobox', { name: 'Season' })).toBe(select);
     expect(document.activeElement).toBe(select);
-    /* aria-busy sits on the table area only, never on an ancestor of the focused select; one status node says the loading, then the done. */
-    expect(document.querySelector('.kb-rankings-area[aria-busy="true"]')).not.toBeNull();
-    expect(select.closest('[aria-busy]')).toBeNull();
-    const status = screen.getByRole('status');
-    expect(status).toHaveTextContent('Loading the standings.');
-    await act(async () => { answer(await real(0, 50)); });
+    expect(screen.getByText(/Final standings/u)).toBeInTheDocument();
+    await act(async () => { answer(); });
     await screen.findByRole('table');
-    expect(screen.getByRole('status')).toBe(status);
-    expect(status).toHaveTextContent("Showing Season 2's standings.");
+    expect(screen.queryByText(/Final standings/u)).toBeNull();
+    expect(screen.getByRole('status')).toHaveTextContent("Showing Season 2's standings.");
     expect(screen.getByRole('combobox', { name: 'Season' })).toBe(select);
     expect(document.activeElement).toBe(select);
-  });
-
-  test('an unknown season is what the select shows, not the current one, and the way back is a link to today\'s standings', async () => {
-    const w = finished(3);
-    renderIn(w.fake, <RankingsScreen embedded season={999} />, { path: '/season?tab=rankings&season=999' });
-    expect(await screen.findByText('Season 999 has no final standings.')).toBeInTheDocument();
-    const select = screen.getByRole('combobox', { name: 'Season' });
-    expect(select).toHaveValue('999');
-    expect(within(select).getByRole('option', { name: 'Season 999' })).toBeDisabled();
-    expect(screen.getByRole('link', { name: 'Today\'s standings' })).toHaveAttribute('href', '/season?tab=rankings');
-  });
-
-  test('with no finished season at all, the unknown season still links back to today\'s standings', async () => {
-    const w = world();
-    w.fake.signInAs(w.me);
-    renderIn(w.fake, <RankingsScreen embedded season={999} />, { path: '/season?tab=rankings&season=999' });
-    expect(await screen.findByText('Season 999 has no final standings.')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Today\'s standings' })).toHaveAttribute('href', '/season?tab=rankings');
   });
 
   test('the highlighted row says so in words, not only in color, and is scrolled into view', async () => {
@@ -271,7 +272,7 @@ describe('Rankings', () => {
     w.fake.signInAs(w.me);
     renderIn(w.fake, <RankingsScreen />, { path: '/rankings' });
     await screen.findByRole('table');
-    expect(within(rowOf('Pipewrench')).getByText('Yours')).toBeInTheDocument();
+    expect(await within(rowOf('Pipewrench')).findByText('Yours')).toBeInTheDocument();
     expect(rowOf('Pipewrench')).toHaveTextContent('Heel');
     expect(screen.getAllByText('Yours')).toHaveLength(1);
   });
@@ -312,13 +313,15 @@ describe('Rankings', () => {
     const mine = await recorded(w.me);
     const theirs = await recorded(w.other);
     const own = (c: { readonly name: string }) => c.name === 'myCharacters';
-    expect(mine.some(own)).toBe(true);
-    expect(theirs.some(own)).toBe(true);
     expect(mine.filter((c) => !own(c))).toEqual(theirs.filter((c) => !own(c)));
-    /* The reveals and the Turns are asked about for the page's characters, the player's own among them, in the standings' order. */
+    /* One request for the page, asked the same for every player. */
+    expect(mine.filter((c) => c.name === 'seasonPage').map((c) => c.args)).toEqual([['rankings', null, null, null]]);
+    /* The reveals and the Turns come for the page's characters, the player's own among them, in the standings' order. */
     const page = [w.spritey, w.pipe, w.gloomba, w.quiet];
-    expect(mine.find((c) => c.name === 'classReveals')?.args).toEqual([page]);
-    expect(mine.find((c) => c.name === 'turnsAnnounced')?.args).toEqual([page]);
+    w.fake.signInAs(w.me);
+    const doc = (await w.fake.seasonPage('rankings', null, null, null))!;
+    if (doc.tab !== 'standings') throw new Error('the standings');
+    expect(doc.standings.map((x) => x.character)).toEqual(page);
   });
 
   test('pages fifty to a page with ?page=, linked from one count', async () => {
@@ -344,33 +347,30 @@ describe('Rankings', () => {
     expect(within(pager).getByRole('link', { name: 'Next page' })).toHaveAttribute('href', '/rankings?page=2');
   });
 
-  test('a page change shows neither the old page\'s rows nor its error while the new page loads', async () => {
+  test('a page change is a load: the old page stays until the new one lands', async () => {
     const fake = crowd(120);
     renderIn(fake, <RankingsScreen />, { path: '/rankings' });
     await screen.findByRole('link', { name: 'Name 000' });
     /* Page 2 is asked for and not yet answered. */
-    vi.spyOn(fake, 'standingsPage').mockReturnValueOnce(new Promise(() => {}));
+    const real = fake.seasonPage.bind(fake);
+    let answer: () => void = () => {};
+    const page = vi.spyOn(fake, 'seasonPage').mockImplementationOnce(async (...args) => { await new Promise<void>((resolve) => { answer = resolve; }); return real(...args); });
     await goTo('/rankings?page=2');
+    expect(page).toHaveBeenLastCalledWith('rankings', null, null, 2);
+    expect(screen.getByRole('link', { name: 'Name 000' })).toBeInTheDocument();
+    await act(async () => { answer(); });
+    expect(await screen.findByRole('link', { name: 'Name 050' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Name 000' })).toBeNull();
-    expect(screen.queryByText(/Page 1 of 3/u)).toBeNull();
-    expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
-    expect(screen.getByRole('status')).toHaveTextContent('Loading the standings.');
   });
 
-  test('a failed read is tried again on a page change, and its error does not stay while it is', async () => {
+  test('a failed read is the router\'s: the page cannot be displayed, and Try again reads it again', async () => {
     const fake = crowd(120);
-    const real = fake.standingsPage.bind(fake);
-    let answer: (rows: Awaited<ReturnType<typeof real>>) => void = () => {};
-    const page = vi.spyOn(fake, 'standingsPage')
-      .mockRejectedValueOnce(new Error('the network dropped'))
-      .mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
+    vi.spyOn(fake, 'seasonPage').mockRejectedValueOnce(new Error('the network dropped'));
     renderIn(fake, <RankingsScreen />, { path: '/rankings' });
-    expect(await screen.findByText(/could not be loaded/u)).toBeInTheDocument();
-    await goTo('/rankings?page=2');
-    expect(page).toHaveBeenLastCalledWith(50, 50);
-    expect(screen.queryByText(/could not be loaded/u)).toBeNull();
-    await act(async () => { answer(await real(50, 50)); });
-    expect(await screen.findByRole('link', { name: 'Name 050' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'The page cannot be displayed' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByRole('link', { name: 'Name 000' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'The page cannot be displayed' })).toBeNull();
   });
 
   test('another account signing in reads the page again, with that account\'s own rows', async () => {
@@ -378,7 +378,7 @@ describe('Rankings', () => {
     w.fake.signInAs(w.me);
     renderIn(w.fake, <RankingsScreen />, { path: '/rankings' });
     await screen.findByRole('table');
-    expect(within(rowOf('Pipewrench')).getByText('Yours')).toBeInTheDocument();
+    expect(await within(rowOf('Pipewrench')).findByText('Yours')).toBeInTheDocument();
     await act(async () => { w.fake.signInAs(w.other); });
     await waitFor(() => expect(within(rowOf('Spritey')).queryByText('Yours')).not.toBeNull());
     expect(within(rowOf('Pipewrench')).queryByText('Yours')).toBeNull();
@@ -401,7 +401,7 @@ describe('Rankings', () => {
     }
     renderIn(w.fake, <><RankingsScreen /><Probe /></>, { path: '/rankings' });
     await screen.findByRole('table');
-    expect(within(rowOf('Pipewrench')).getByText('Yours')).toBeInTheDocument();
+    expect(await within(rowOf('Pipewrench')).findByText('Yours')).toBeInTheDocument();
     await act(async () => { w.fake.signInAs(w.other); });
     await waitFor(() => expect(within(rowOf('Spritey')).queryByText('Yours')).not.toBeNull());
     expect(painted.length).toBeGreaterThan(0);
