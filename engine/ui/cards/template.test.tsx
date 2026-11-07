@@ -68,7 +68,9 @@ describe('the card template', () => {
     expect(num(frame!, 'rx')).toBe(outerRadius);
     const canvasRect = at(canvas.x, canvas.y, canvas.w, canvas.h);
     expect(num(canvasRect!, 'rx')).toBe(canvas.r);
-    expect(at(keepClear, keepClear, card.w - 2 * keepClear, card.h - 2 * keepClear)).toBeDefined();
+    const keepRect = at(keepClear, keepClear, card.w - 2 * keepClear, card.h - 2 * keepClear);
+    expect(keepRect).toBeDefined();
+    expect(Number(keepRect!.getAttribute('rx'))).toBe(outerRadius - keepClear);
     const focusRect = at(focus.x, focus.y, focus.w, focus.h);
     expect(focusRect?.getAttribute('stroke-dasharray')).toBeTruthy();
     const plateLine = Array.from(guides!.querySelectorAll('line')).find((l) => num(l, 'y1') === plateTop);
