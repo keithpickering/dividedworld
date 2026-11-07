@@ -24,10 +24,12 @@ $$;
 -- Executable by PUBLIC: a CHECK runs its function as the writer (supabase/tests/0082-constraint-functions.sql). It reads nothing and writes nothing.
 grant execute on function pronouns_hold(jsonb) to public;
 
--- A set with each form lowercased, for storing; it repairs nothing else.
+-- A set with each form lowercased, for storing; it repairs nothing else, and gives back anything that is not an object as it came. Each writer holds the lowered
+-- set, not the one it was given, since lowering can lengthen a word (lower('İ') is two code points) and the column's check holds what is stored.
 create function pronouns_lowered(v jsonb) returns jsonb
 language sql immutable set search_path = public, pg_temp as $$
-  select jsonb_object_agg(e.key, case when jsonb_typeof(e.value) = 'string' then to_jsonb(lower(e.value #>> '{}')) else e.value end) from jsonb_each(v) e
+  select case when jsonb_typeof(v) is distinct from 'object' then v else
+    (select jsonb_object_agg(e.key, case when jsonb_typeof(e.value) = 'string' then to_jsonb(lower(e.value #>> '{}')) else e.value end) from jsonb_each(v) e) end
 $$;
 revoke execute on function pronouns_lowered(jsonb) from public, anon, authenticated;
 
@@ -69,7 +71,7 @@ begin
   if not exists (select 1 from pip_styles s where s.key = coalesce(set_profile.pip_style, 'default')) then
     raise exception 'there is no pip style "%"', pip_style using hint = 'kayfabb.refusal', errcode = '22023';
   end if;
-  if set_profile.pronouns is not null and not pronouns_hold(set_profile.pronouns) then
+  if set_profile.pronouns is not null and not pronouns_hold(pronouns_lowered(set_profile.pronouns)) then
     raise exception 'pronouns are five words of 1 to 12 letters' using hint = 'kayfabb.refusal', errcode = '22023';
   end if;
   insert into character_profiles as p (character, title, signature, pip_style, pronouns)
@@ -105,7 +107,7 @@ begin
   if not exists (select 1 from class_kinds where key = class) then
     raise exception 'there is no class "%"', class using hint = 'kayfabb.refusal', errcode = '22023';
   end if;
-  if create_character.pronouns is not null and not pronouns_hold(create_character.pronouns) then
+  if create_character.pronouns is not null and not pronouns_hold(pronouns_lowered(create_character.pronouns)) then
     raise exception 'pronouns are five words of 1 to 12 letters' using hint = 'kayfabb.refusal', errcode = '22023';
   end if;
   perform debut_options(timing, loudness);
@@ -192,7 +194,7 @@ begin
     when 'pool' then setting_pool(v)
     when 'modBots' then setting_modbots(v)
     when 'warnBar' then setting_warnbar(v)
-    when 'pronouns' then case when not pronouns_hold(v) then 'an object of five words of 1 to 12 letters each (an apostrophe or a hyphen between two letters is allowed) and a plural, true or false' end
+    when 'pronouns' then case when not pronouns_hold(pronouns_lowered(v)) then 'an object of five words of 1 to 12 letters each (an apostrophe or a hyphen between two letters is allowed) and a plural, true or false' end
     when 'modelTiers' then case when not coalesce(jsonb_typeof(v) = 'object'
         and jsonb_typeof(v -> 'strong') = 'string' and btrim(v ->> 'strong', E' \t\n\r\f\v') <> ''
         and jsonb_typeof(v -> 'light') = 'string' and btrim(v ->> 'light', E' \t\n\r\f\v') <> '', false)
@@ -288,7 +290,7 @@ begin
   -- finds the key and does nothing. A persona in firstStaff with no office row is hired as a Mod Bot, cause `seed`; one with a row,
   -- a benched one's included, is left as that row says, so a reseed never rehires.
   unknown := (select string_agg(distinct e ->> 'key', ', ') from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) e
-    where e ? 'pronouns' and not pronouns_hold(e -> 'pronouns'));
+    where e ? 'pronouns' and not pronouns_hold(pronouns_lowered(e -> 'pronouns')));
   if unknown is not null then raise exception 'persona % has pronouns that are not five words of 1 to 12 letters and a plural', unknown using errcode = '22023'; end if;
   with seeded as (
     select e ->> 'key' as staff, e ->> 'name' as name, coalesce(e ->> 'title', '') as title, coalesce(e ->> 'signature', '') as signature,
@@ -411,7 +413,7 @@ begin
   -- writes it over); the board's thread counter is netted by the thread's own, since a board's count is the length of its list and
   -- thread_list never lists this one.
   if jsonb_typeof(payload -> 'developer') = 'object' then
-    if payload -> 'developer' ? 'pronouns' and not pronouns_hold(payload -> 'developer' -> 'pronouns') then
+    if payload -> 'developer' ? 'pronouns' and not pronouns_hold(pronouns_lowered(payload -> 'developer' -> 'pronouns')) then
       raise exception 'the developer has pronouns that are not five words of 1 to 12 letters and a plural' using errcode = '22023';
     end if;
     -- The thread opens on The System's board, so a database with no board is told so before anything is made.

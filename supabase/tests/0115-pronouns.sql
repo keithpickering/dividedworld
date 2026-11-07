@@ -236,8 +236,7 @@ declare made uuid := tests.character(tests.account('pn-dee'), 'Pn Before');
 begin
   if exists (select 1 from character_profiles where character = made) then raise exception 'the fixture makes a character with no profile row'; end if;
   -- The migration's statement, copied as it wrote it: migrations replay into an empty database, so no character exists when the migration's own backfill runs, and
-  -- breaking that statement in 0113 is not seen here. This holds the
-  -- statement's shape only.
+  -- breaking that statement in 0113 is not seen here. This holds the statement's shape only.
   insert into character_profiles (character) select c.id from characters c
   where exists (select 1 from pip_styles where key = 'default') and not exists (select 1 from character_profiles p where p.character = c.id);
   if (select pronouns from character_profiles where character = made) is distinct from
