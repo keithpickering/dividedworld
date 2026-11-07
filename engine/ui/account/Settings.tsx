@@ -32,7 +32,8 @@ import { toastDefaultKinds } from '../alerts/toast-kinds.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import { ReachAPerson } from '../contact/Contact.tsx';
-import { Link, useLocation, useNavigate } from '../router.tsx';
+import { useLocation, useNavigate } from '../router.tsx';
+import { GlassLink } from '../glass/Link.tsx';
 import { Choice, MotionRow, TextSizeRow, ThemeRow, TiltRow, type Option } from './appearanceRows.tsx';
 import { Invites } from './Invites.tsx';
 import { usePreferenceSaves, type TipsChange } from './preferences.ts';
@@ -191,7 +192,7 @@ export function SettingsScreen() {
 
   if (session === null) return <div className="kb-acct" aria-busy="true" />;
   if (!session.signedIn || !account) {
-    return <Frame section={null}><CalmRegion as="p" className="kb-acct-lead"><Link to="/sign-in">Sign in</Link> to change your settings.</CalmRegion></Frame>;
+    return <Frame section={null}><CalmRegion as="p" className="kb-acct-lead"><GlassLink to="/sign-in">Sign in</GlassLink> to change your settings.</CalmRegion></Frame>;
   }
   if (prefs === null) {
     return <Frame section={section}><CalmRegion className="kb-settings-section" aria-busy="true">{refusal && <p role="alert" className="kb-acct-refusal">{refusal}</p>}</CalmRegion></Frame>;

@@ -28,7 +28,8 @@ import { SignInPrompt, useSignedIn } from '../mini.tsx';
 import { usePlayer } from '../player.tsx';
 import { Pips } from '../postbit/Postbit.tsx';
 import { monthYear, shortDate } from '../postbit/dates.ts';
-import { Link, useLocation } from '../router.tsx';
+import { useLocation } from '../router.tsx';
+import { GlassLink } from '../glass/Link.tsx';
 import { ClassChip } from './ClassChip.tsx';
 import { DebutDialog } from './DebutDialog.tsx';
 import { Portrait } from './Portrait.tsx';
@@ -246,7 +247,7 @@ export function Characters() {
           <p className="kb-roster-line kb-turn-note">If its settlement is due, a reveal waits until it has run.</p>
           <ButtonRow>
             <GlassButton data-kb-return="" aria-label={`Change ${c.name}'s Turn`} onClick={() => show({ kind: 'turn', id: c.id })}>Change</GlassButton>
-            <GlassButton aria-label={`Withdraw ${c.name}'s Turn`} disabled={busy === c.id} onClick={() => void withdraw(c)}>Withdraw</GlassButton>
+            <GlassButton aria-label={`Withdraw ${c.name}'s Turn`} busy={busy === c.id} onClick={() => void withdraw(c)}>Withdraw</GlassButton>
           </ButtonRow>
           {problem?.id === c.id && !problem.pip && <p role="alert" className="kb-notice" data-kb-tone="refusal">{problem.text}</p>}
         </div>
@@ -368,7 +369,7 @@ export function Characters() {
       <PageHead size="roster" title="Your characters" count={`(${active.length} of ${per})`} lead="This page is out of character and only you can see it. Classes are shown here and nowhere else unless you reveal them." />
       <div role="status" className="kb-flash">{flash && <CalmRegion as="p" className="kb-notice">{flash}</CalmRegion>}</div>
 
-      {mine.length === 0 && <CalmRegion as="p" className="kb-characters-empty">You have no characters yet. <Link to="/characters/new">Make one</Link> to start playing.</CalmRegion>}
+      {mine.length === 0 && <CalmRegion as="p" className="kb-characters-empty">You have no characters yet. <GlassLink to="/characters/new">Make one</GlassLink> to start playing.</CalmRegion>}
 
       <div className="kb-roster-layout">
           <Carousel
@@ -394,10 +395,10 @@ export function Characters() {
             }}
             after={open > 0 ? (
               <CalmRegion className="kb-roster-new">
-                <Link to="/characters/new" className="kb-roster-new-link">
+                <GlassLink to="/characters/new" className="kb-roster-new-link">
                   <svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><path d="M22 6 V38 M6 22 H38" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
                   <span className="kb-glass-display">New character</span>
-                </Link>
+                </GlassLink>
                 <span className="kb-roster-slots">You have {open} open {open === 1 ? 'slot' : 'slots'}.</span>
               </CalmRegion>
             ) : undefined}

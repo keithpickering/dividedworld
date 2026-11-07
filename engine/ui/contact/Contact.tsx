@@ -17,7 +17,7 @@
 import { useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import { CONTACT_WS, type ContactLink } from '../data/api.ts';
-import { Link } from '../router.tsx';
+import { GlassLink } from '../glass/Link.tsx';
 import { GlassButton } from '../glass/Button.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import '../account/account.css';
@@ -29,7 +29,7 @@ export const CONTACT_PATH = '/contact';
 
 /** The link to the page, in the words every screen that offers it uses. */
 export function ReachAPerson({ className }: { readonly className?: string }) {
-  return <Link to={CONTACT_PATH} className={className}>Reach a person</Link>;
+  return <GlassLink to={CONTACT_PATH} className={className}>Reach a person</GlassLink>;
 }
 
 /** The server's shape (set_admin_contact, 0081), applied again: `https://` with a host, or `mailto:` with exactly one name@host and no query; no space or control character. */

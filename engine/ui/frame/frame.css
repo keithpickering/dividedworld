@@ -1624,3 +1624,51 @@ html[data-kb-float='sheet'] .kb-frame {
 .kb-hud-orbs:hover {
   background: var(--kb-glass-panel-soft);
 }
+
+/*
+ * A HUD control waiting on its load shows the Signal spinner (Hud.tsx). On the avatar it covers the picture, on the orbs it sits at the
+ * link's corner, and on Alerts and Menu it follows the words. The color is the control's own.
+ */
+.kb-hud-wait {
+  display: inline-flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+.kb-hud-wait > .kb-spinner {
+  height: 14px;
+  gap: 2px;
+}
+
+.kb-hud-avatar {
+  position: relative;
+}
+
+.kb-hud-avatar > .kb-hud-wait {
+  position: absolute;
+  inset: 0;
+  justify-content: center;
+  color: var(--kb-glass-text-hi);
+  background: color-mix(in srgb, var(--kb-glass-ground) 70%, transparent);
+}
+
+.kb-hud-avatar > .kb-hud-wait > .kb-spinner {
+  height: 18px;
+  gap: 3px;
+}
+
+.kb-hud-orbs {
+  position: relative;
+}
+
+.kb-hud-orbs > .kb-hud-wait {
+  position: absolute;
+  top: 0;
+  right: 0;
+  color: var(--kb-glass-text-hi);
+}
+
+.kb-hud-menu[data-kb-pending],
+.kb-hud-alerts[data-kb-pending] {
+  cursor: progress;
+}

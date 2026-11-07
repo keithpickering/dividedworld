@@ -360,6 +360,22 @@ describe('Older', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
+  test('Older is a busy button while the page loads: aria-busy, its name kept, and a second press reads one page', async () => {
+    const w = busy();
+    await show(w);
+    await screen.findByRole('button', { name: 'Older' });
+    const orig = w.fake.alerts.bind(w.fake);
+    let release!: () => void;
+    const read = vi.spyOn(w.fake, 'alerts').mockImplementationOnce((...args) => new Promise((resolve) => { release = () => resolve(orig(...args)); }));
+    await userEvent.click(screen.getByRole('button', { name: 'Older' }));
+    const older = screen.getByRole('button', { name: 'Older' });
+    expect(older).toHaveAttribute('aria-busy', 'true');
+    await userEvent.click(older);
+    expect(read).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Older' })).toBeNull());
+  });
+
   test('a page that fails says so and leaves the rows and the control to try again', async () => {
     const w = busy();
     await show(w);

@@ -44,7 +44,8 @@ export function Invites() {
   const [rows, setRows] = useState<readonly MyInvite[] | null>(null);
   const [admin, setAdmin] = useState(false);
   const [shown, setShown] = useState<Shown | null>(null);
-  const [busy, setBusy] = useState(false);
+  /* The write out: 'make' for a new invite, or the invite's id for its Reissue. Only that control spins; another write waits behind it. */
+  const [pending, setPending] = useState<'make' | number | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [note, setNote] = useState('');
   const justShown = useRef(false);
@@ -72,9 +73,9 @@ export function Invites() {
   const atCap = !admin && open >= cap;
   const lifetime = spanWords(settings.inviteLifetime);
 
-  const run = async (make: () => ReturnType<typeof api.createInvite>, reissued: boolean) => {
-    if (busy) return;
-    setBusy(true);
+  const run = async (key: 'make' | number, make: () => ReturnType<typeof api.createInvite>, reissued: boolean) => {
+    if (pending !== null) return;
+    setPending(key);
     setRefusal(null);
     setNote('');
     try {
@@ -90,7 +91,7 @@ export function Invites() {
     } catch {
       setRefusal(LOST_ANSWER);
     } finally {
-      setBusy(false);
+      setPending(null);
     }
     await load().catch(() => undefined);
   };
@@ -131,7 +132,7 @@ export function Invites() {
                 <span title={whenIso(i) ? new Date(whenIso(i)!).toLocaleString('en-US') : undefined}>{whenWords(i)}</span>
               </span>
               <span className="kb-invite-actions">
-                {!i.used && <GlassButton size="s" disabled={busy} aria-label={`Reissue invite ${ordinal.get(i.id)}`} onClick={() => void run(() => api.reissueInvite(i.id), true)}>Reissue</GlassButton>}
+                {!i.used && <GlassButton size="s" busy={pending === i.id} disabled={pending !== null && pending !== i.id} aria-label={`Reissue invite ${ordinal.get(i.id)}`} onClick={() => void run(i.id, () => api.reissueInvite(i.id), true)}>Reissue</GlassButton>}
               </span>
             </li>
           ))}
@@ -139,7 +140,7 @@ export function Invites() {
       )}
 
       <ButtonRow>
-        <GlassButton kind="primary" disabled={busy || atCap} aria-describedby="kb-invite-count" onClick={() => void run(() => api.createInvite(), false)}>Make an invite</GlassButton>
+        <GlassButton kind="primary" busy={pending === 'make'} disabled={atCap || (pending !== null && pending !== 'make')} aria-describedby="kb-invite-count" onClick={() => void run('make', () => api.createInvite(), false)}>Make an invite</GlassButton>
       </ButtonRow>
       {refusal && <p role="alert" className="kb-acct-refusal">{refusal}</p>}
       <p role="status" className="kb-acct-note">{note}</p>

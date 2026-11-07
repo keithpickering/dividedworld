@@ -21,7 +21,7 @@ import { SignInPrompt, useSignedIn } from '../mini.tsx';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import { usePlayer } from '../player.tsx';
-import { Link } from '../router.tsx';
+import { GlassLink } from '../glass/Link.tsx';
 import { AlertIcon } from './AlertIcon.tsx';
 import { rowKey, useAlerts, type AlertsRead } from './useAlerts.ts';
 import { batchWords, targetKey, wordsFor, type Part, type Said, type WordsContext } from './words.ts';
@@ -72,7 +72,7 @@ function Row({ item, said, fresh, character, note, onUnfollow }: RowProps) {
           {said.ways.map((w, i) => (
             <span key={w.to + w.text}>
               {i === 0 && said.detail.length > 0 ? ' ' : i > 0 ? ' · ' : ''}
-              <Link to={w.to} state={w.state}>{w.text}</Link>
+              <GlassLink to={w.to} state={w.state}>{w.text}</GlassLink>
             </span>
           ))}
           {row.kind === 'followed' && row.thread !== null && (
@@ -204,7 +204,7 @@ export function Alerts({ data, older, onOlder, onUnfollow, notes }: AlertsProps)
         )}
         {data.more && (
           <p className="kb-alerts-older">
-            <GlassButton size="s" onClick={() => { known.current = new Set(items.map((i) => i.key)); onOlder(); }} aria-disabled={older === 'loading' || undefined}>Older</GlassButton>
+            <GlassButton size="s" busy={older === 'loading'} onClick={() => { known.current = new Set(items.map((i) => i.key)); onOlder(); }}>Older</GlassButton>
             {older === 'failed' && <span className="kb-alerts-older-failed" role="alert"> The older alerts could not be read. Try again.</span>}
           </p>
         )}

@@ -161,17 +161,41 @@ describe('Sign in', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('that code does not match, or it has expired: ask for a new one');
   });
 
-  test('says it is sending while the server answers, and the form is busy', async () => {
+  test('the send is a busy button while the server answers: aria-busy, its name kept, a second press asks once, and no Sending… line', async () => {
     const w = world();
     let release!: () => void;
     const real = w.fake.requestCode.bind(w.fake);
-    w.fake.requestCode = (email, invite) => new Promise((resolve) => { release = () => resolve(real(email, invite)); });
+    const spy = vi.spyOn(w.fake, 'requestCode').mockImplementation((email, invite) => new Promise((resolve) => { release = () => resolve(real(email, invite)); }));
     open(w, 'sign-in');
     await ask('known@example.test');
-    expect(await screen.findByRole('status')).toHaveTextContent('Sending…');
+    const send = screen.getByRole('button', { name: 'Send a code' });
+    expect(send).toHaveAttribute('aria-busy', 'true');
+    expect(send).toBeEnabled();
     expect(screen.getByRole('form', { name: 'Sign in' })).toHaveAttribute('aria-busy', 'true');
+    await userEvent.click(send);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Sending…')).toBeNull();
     release();
     await screen.findByLabelText('Code from the email');
+  });
+
+  test('the sign-in button is busy while the code is checked, keeps its name, and no Checking the code… line shows', async () => {
+    const w = world();
+    open(w, 'sign-in');
+    await ask('known@example.test');
+    const field = await screen.findByLabelText('Code from the email');
+    let release!: () => void;
+    const real = w.fake.verifyCode.bind(w.fake);
+    const spy = vi.spyOn(w.fake, 'verifyCode').mockImplementation((email, code) => new Promise((resolve) => { release = () => resolve(real(email, code)); }));
+    await userEvent.type(field, TEST_CODE);
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    const signIn = screen.getByRole('button', { name: 'Sign in' });
+    expect(signIn).toHaveAttribute('aria-busy', 'true');
+    await userEvent.click(signIn);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Checking the code…')).toBeNull();
+    release();
+    await waitFor(async () => expect((await w.fake.session()).account).toBe(w.known));
   });
 
   test('a request that gets no answer ends the wait and says so', async () => {

@@ -125,7 +125,7 @@ export function RevealOverlay({ character, onClose, onDone, returnFocusTo }: Rev
         {r.refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{r.refusal}</p>}
         <FormFoot line={revealFooter()}>
           <GlassButton onClick={onClose}>Cancel</GlassButton>
-          <GlassButton type="submit" kind="primary" disabled={!chosen || r.over || r.busy}>{words.button}</GlassButton>
+          <GlassButton type="submit" kind="primary" busy={r.busy} disabled={!chosen || r.over}>{words.button}</GlassButton>
         </FormFoot>
       </form>
     </Overlay>

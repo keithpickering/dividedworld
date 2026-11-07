@@ -14,6 +14,7 @@ import { useContext, useEffect, useId, useRef, useState, type FormEvent } from '
 import { useKayfa } from '../context.tsx';
 import type { Act, Id, MyBan, Visit } from '../data/api.ts';
 import { dayAndTime } from '../characters/format.ts';
+import { GlassButton } from '../glass/Button.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
 import { FieldCount } from '../glass/FieldCount.tsx';
 import { usePlayer } from '../player.tsx';
@@ -140,9 +141,7 @@ export function ReportForm({ post, seq }: { readonly post: Id; readonly seq: num
         {over && <p role="alert" className="kb-notice" data-kb-tone="refusal">A reason is at most {REASON_MAX} characters.</p>}
       </div>
       <div className="kb-lens-section kb-visit-appeal-section">
-        <button type="submit" className="kb-kit-tile kb-visit-appeal" aria-disabled={busy || blank || over || spent ? 'true' : undefined}>
-          <span className="kb-kit-tile-label">Report · {auraWords(price)}</span>
-        </button>
+        <GlassButton type="submit" kind="secondary" className="kb-visit-appeal" busy={busy} aria-disabled={blank || over || spent ? 'true' : undefined}>Report · {auraWords(price)}</GlassButton>
         {left !== null && (
           <p className="kb-visit-terms">{mask.name} has {left} {left === 1 ? 'report' : 'reports'} left today.{spent ? ' Reports open again after midnight UTC.' : ''}</p>
         )}
@@ -249,9 +248,7 @@ export function AppealForm({ infraction, visit, nameOf, ban }: { readonly infrac
         {over && <p role="alert" className="kb-notice" data-kb-tone="refusal">A plea is at most {PLEA_MAX} characters.</p>}
       </div>
       <div className="kb-lens-section kb-visit-appeal-section">
-        <button type="submit" className="kb-kit-tile kb-visit-appeal" aria-disabled={busy || blank || over || (f === null && !ban) ? 'true' : undefined}>
-          <span className="kb-kit-tile-label">Appeal · {auraWords(price)}</span>
-        </button>
+        <GlassButton type="submit" kind="secondary" className="kb-visit-appeal" busy={busy} aria-disabled={blank || over || (f === null && !ban) ? 'true' : undefined}>Appeal · {auraWords(price)}</GlassButton>
       </div>
       {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
       <p role="status" className="kb-visit-result">

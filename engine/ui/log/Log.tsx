@@ -27,7 +27,8 @@ import { SignInPrompt, useSignedIn } from '../mini.tsx';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import { usePlayer } from '../player.tsx';
-import { Link, useLocation } from '../router.tsx';
+import { useLocation } from '../router.tsx';
+import { GlassLink } from '../glass/Link.tsx';
 import { actLink, inOrder, logRows, NO_SHARES, plain, reasonName, SHARES_ARE, signed, utcWhen, type LogData, type LogRow, type Segment, type Words } from './lines.ts';
 import { useLog } from './useLog.ts';
 import { economyNow, paramsOf } from '../economy.ts';
@@ -48,7 +49,7 @@ const openingOf = (state: unknown): LogOpening => {
 };
 
 export function Said({ parts }: { readonly parts: readonly Segment[] }) {
-  return <>{parts.map((p, i) => (typeof p === 'string' ? <span key={i}>{p}</span> : <Link key={i} to={p.href}>{p.text}</Link>))}</>;
+  return <>{parts.map((p, i) => (typeof p === 'string' ? <span key={i}>{p}</span> : <GlassLink key={i} to={p.href}>{p.text}</GlassLink>))}</>;
 }
 
 /** The characters a log has tabs for: the player's own that have debuted or have a line, in the order they debuted, as the boards and the roster list them. */
@@ -252,7 +253,7 @@ export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' 
           </p>
         )}
       </CalmRegion>
-      <CalmRegion as="p" className="kb-log-foot">If a line here looks wrong, that is a bug and not the game. <Link to={CONTACT_PATH}>Tell an admin</Link>.</CalmRegion>
+      <CalmRegion as="p" className="kb-log-foot">If a line here looks wrong, that is a bug and not the game. <GlassLink to={CONTACT_PATH}>Tell an admin</GlassLink>.</CalmRegion>
     </div>
   );
 }

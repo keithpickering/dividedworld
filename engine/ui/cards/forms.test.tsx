@@ -125,6 +125,23 @@ describe('the report form', () => {
     expect(await w.fake.wallet()).toMatchObject({ balance: 475 });
   });
 
+  test('Report is a busy button while the report is out: aria-busy, its name kept, and a second press reports once', async () => {
+    const { w, panel } = await opened();
+    w.fake.seed.judging({ report: 'dismissed' });
+    let release!: () => void;
+    const real = w.fake.fileReport.bind(w.fake);
+    const file = vi.spyOn(w.fake, 'fileReport').mockImplementation((...args) => new Promise((resolve) => { release = () => resolve(real(...args)); }));
+    await userEvent.type(within(panel).getByRole('textbox'), 'it was rude');
+    const report = within(panel).getByRole('button', { name: 'Report · 0.25 Aura' });
+    await userEvent.click(report);
+    expect(report).toHaveAttribute('aria-busy', 'true');
+    expect(within(panel).getByRole('button', { name: 'Report · 0.25 Aura' })).toBe(report);
+    await userEvent.click(report);
+    expect(file).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(within(panel).getByRole('status')).toHaveTextContent('Your report was heard and dismissed.'));
+  });
+
   test('says a visit is on its way, and that a backfire went to the reporter\'s latest post', async () => {
     const a = await opened();
     a.w.fake.seed.judging({ report: 'visit' });
@@ -219,6 +236,23 @@ describe('the appeal form', () => {
     expect(panel).toHaveTextContent('The Clerk hears it, or whoever has taken its place. It is refunded if overturned. It may be upheld, reduced, or increased by up to 2 warn points. One appeal per filing, and your plea is public.');
     expect(within(panel).getByRole('button', { name: 'Appeal · 0.50 Aura' })).toBeInTheDocument();
     expect(within(panel).getByRole('textbox', { name: 'Your plea (public)' })).toHaveAccessibleDescription('0 of 1000');
+  });
+
+  test('Appeal is a busy button while the appeal is out: aria-busy, its name kept, and a second press appeals once', async () => {
+    const { w, panel } = await opened();
+    w.fake.seed.judging({ appeal: 'upheld' });
+    let release!: () => void;
+    const real = w.fake.fileAppeal.bind(w.fake);
+    const file = vi.spyOn(w.fake, 'fileAppeal').mockImplementation((...args) => new Promise((resolve) => { release = () => resolve(real(...args)); }));
+    await userEvent.type(within(panel).getByRole('textbox'), 'It was a different changelog.');
+    const appeal = within(panel).getByRole('button', { name: 'Appeal · 0.50 Aura' });
+    await userEvent.click(appeal);
+    expect(appeal).toHaveAttribute('aria-busy', 'true');
+    expect(within(panel).getByRole('button', { name: 'Appeal · 0.50 Aura' })).toBe(appeal);
+    await userEvent.click(appeal);
+    expect(file).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(within(panel).getByRole('status')).toHaveTextContent('The Clerk heard it and upheld it, so nothing changed.'));
   });
 
   test('sends the plea and lands the ruling in a status region; the Mod\'s line is quoted as its words', async () => {

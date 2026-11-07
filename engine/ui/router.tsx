@@ -10,7 +10,7 @@
  * loader and leaves the page, and the address bar, as they are until the answer lands, then changes them together.
  * It also holds the prefetch answers and the history cache of loaded pages, both in memory only.
  */
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type AnchorHTMLAttributes, type MouseEvent, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type AnchorHTMLAttributes, type MouseEvent, type ReactNode } from 'react';
 
 export interface Location {
   readonly path: string;
@@ -65,8 +65,12 @@ export interface Shown {
 }
 
 export interface Navigation {
-  /** The load a click is waiting on, for the meter and the cursor; null when none is out. */
-  readonly pending: { readonly to: string; readonly startedAt: number } | null;
+  /**
+   * The load a click is waiting on, for the meter and the cursor; null when none is out. `source` names what started it
+   * (a Link's own id, or the name a caller gave `navigate`), so the control pressed can show the wait; null for a
+   * navigation that named none (a Back or Forward, or a `navigate` with no source).
+   */
+  readonly pending: { readonly to: string; readonly startedAt: number; readonly source: string | null } | null;
   /** How many reads a screen has handed to `track` that have not settled. */
   readonly tracking: number;
   /**
@@ -82,13 +86,15 @@ export interface Navigation {
 interface Router {
   readonly location: Location;
   readonly shown: Shown;
-  readonly navigate: (to: string, options?: { readonly replace?: boolean; readonly state?: unknown; readonly afterAccountChange?: boolean }) => void;
+  readonly navigate: (to: string, options?: NavigateOptions) => void;
   readonly retry: () => void;
   readonly prefetch: (to: string) => void;
   readonly navigation: Navigation;
   readonly attach: (routes: readonly RouteLike[]) => void;
   readonly setAccount: (id: string | null) => void;
 }
+
+export interface NavigateOptions { readonly replace?: boolean; readonly state?: unknown; readonly afterAccountChange?: boolean; readonly source?: string }
 
 const RouterContext = createContext<Router | null>(null);
 
@@ -137,11 +143,11 @@ const ENTRY_KEPT_MS = 5 * 60_000;
 const ENTRIES_MAX = 20;
 const PREFETCHES_MAX = 20;
 
-interface Pending { readonly id: number; readonly to: string; readonly controller: AbortController; readonly startedAt: number; account: string | null | undefined; readonly popped: boolean; readonly initial: boolean; readonly silent: boolean; readonly joined: string | null; readonly req: Request }
+interface Pending { readonly id: number; readonly to: string; readonly controller: AbortController; readonly startedAt: number; account: string | null | undefined; readonly popped: boolean; readonly initial: boolean; readonly silent: boolean; readonly joined: string | null; readonly source: string | null; readonly req: Request }
 interface Prefetched { readonly promise: Promise<unknown>; readonly controller: AbortController; readonly timer: ReturnType<typeof setTimeout>; settledAt: number | null }
 interface Entry { doc: unknown; scrollY: number; at: number }
 type Outcome = { readonly kind: 'doc'; readonly doc: unknown } | { readonly kind: 'failure'; readonly failure: Failure } | { readonly kind: 'aborted' };
-interface Request { readonly full: string; readonly replace?: boolean; readonly state?: unknown; readonly popped: boolean; readonly kb: string | null; readonly initial?: boolean; readonly silent?: boolean; readonly afterAccountChange?: boolean }
+interface Request { readonly full: string; readonly replace?: boolean; readonly state?: unknown; readonly popped: boolean; readonly kb: string | null; readonly initial?: boolean; readonly silent?: boolean; readonly afterAccountChange?: boolean; readonly source?: string }
 
 const keyOf = (route: RouteLike, params: Params, query: URLSearchParams, path: string): string => (route.key ? route.key(params, query) : path + searchOf(query));
 
@@ -165,6 +171,8 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
   const shownRef = useRef(shown);
   const entryRef = useRef<string | null>(unwrap(w.history.state).kb);
   const pendingRef = useRef<Pending | null>(null);
+  /* The DOM event inside which the pending load began, if any: the same keydown that began a load (Esc to go Back) must not also stop it. */
+  const startedBy = useRef<Event | undefined>(undefined);
   const routesRef = useRef<readonly RouteLike[]>([]);
   /* undefined until the first account is heard of: that one is the account the first loads ran under. */
   const accountRef = useRef<string | null | undefined>(undefined);
@@ -223,6 +231,7 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     const p = pendingRef.current;
     if (!p) return;
     pendingRef.current = null;
+    startedBy.current = undefined;
     p.controller.abort();
     setPending(null);
     report('cancelled');
@@ -266,8 +275,9 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     const controller = new AbortController();
     const startedAt = Date.now();
     const joined = takePrefetch(address);
-    pendingRef.current = { id, to: req.full, controller, startedAt, account: accountRef.current, popped: req.popped, initial: !!req.initial, silent: !!req.silent, joined: joined ? prefetchKey(address) : null, req };
-    setPending({ to: req.full, startedAt });
+    startedBy.current = w.event;
+    pendingRef.current = { id, to: req.full, controller, startedAt, account: accountRef.current, popped: req.popped, initial: !!req.initial, silent: !!req.silent, joined: joined ? prefetchKey(address) : null, source: req.source ?? null, req };
+    setPending({ to: req.full, startedAt, source: req.source ?? null });
     const promise = joined ?? invoke(found.route, url, found.params, controller.signal);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const outcome = new Promise<Outcome>((resolve) => {
@@ -280,6 +290,7 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
       const p = pendingRef.current;
       if (p?.id !== id || o.kind === 'aborted' || p.account !== accountRef.current) return;
       pendingRef.current = null;
+      startedBy.current = undefined;
       setPending(null);
       report(o.kind === 'doc' ? 'landed' : 'failed');
       land(req, found, o);
@@ -319,6 +330,7 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || !pendingRef.current || pendingRef.current.silent) return;
+      if (startedBy.current === e) return;
       const t = e.target;
       if (t instanceof Element && t.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
       if (w.document.querySelector('[aria-modal="true"], dialog[open]')) return;
@@ -358,7 +370,7 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     return () => w.removeEventListener('popstate', onPop);
   }, [w, routeFor, cancelPending, leave, commit, startLoad, report]);
 
-  const navigate = useCallback((to: string, options?: { readonly replace?: boolean; readonly state?: unknown; readonly afterAccountChange?: boolean }) => {
+  const navigate = useCallback((to: string, options?: NavigateOptions) => {
     // An in-app navigation never leaves the site: an address that resolves elsewhere (a stray `next`,
     // a link built from text) is the index. A <Link> to another site is left to the browser instead.
     let url = new URL(to, w.location.href);
@@ -370,7 +382,7 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     const key = found ? keyOf(found.route, found.params, query, url.pathname) : null;
     const same = !!found && sh.ready && !sh.failure && sh.route === found.route && sh.key === key;
     if (found?.route.load && !same) {
-      startLoad({ full, replace: options?.replace, state: options?.state, popped: false, kb: null, afterAccountChange: options?.afterAccountChange }, found);
+      startLoad({ full, replace: options?.replace, state: options?.state, popped: false, kb: null, afterAccountChange: options?.afterAccountChange, source: options?.source }, found);
       return;
     }
     /* A route with no loader, or a move within its key, moves at once. */
@@ -525,9 +537,10 @@ export function useNavigate(): Router['navigate'] {
 }
 
 /** A link that moves within the app without a reload; a modified click opens as the browser would. */
-export function Link({ to, replace, state, early: readEarly = true, onClick, onPointerEnter, onPointerLeave, onPointerDown, onFocus, onBlur, ...rest }: { readonly to: string; readonly replace?: boolean; readonly state?: unknown; readonly early?: boolean } & AnchorHTMLAttributes<HTMLAnchorElement>) {
+export function Link({ to, replace, state, source, early: readEarly = true, onClick, onPointerEnter, onPointerLeave, onPointerDown, onFocus, onBlur, ...rest }: { readonly to: string; readonly replace?: boolean; readonly state?: unknown; readonly early?: boolean; /** Names this link's load for `usePendingFrom`; the link's own id when none is given. */ readonly source?: string } & AnchorHTMLAttributes<HTMLAnchorElement>) {
   const navigate = useNavigate();
   const prefetch = usePrefetch();
+  const ownSource = useId();
   /* The pointer's rest and the keyboard's focus each wait REST_MS, so holding Tab through a list reads nothing. */
   const pointerRest = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const focusRest = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -546,7 +559,7 @@ export function Link({ to, replace, state, early: readEarly = true, onClick, onP
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || rest.target || rest.download !== undefined) return;
     if (new URL(to, window.location.href).origin !== window.location.origin) return;
     e.preventDefault();
-    navigate(to, { replace, state });
+    navigate(to, { replace, state, source: source ?? ownSource });
   };
   return (
     <a
@@ -562,9 +575,14 @@ export function Link({ to, replace, state, early: readEarly = true, onClick, onP
   );
 }
 
-
 export function useNavigation(): Navigation {
   return useRouter().navigation;
+}
+
+/** True while a load is out that `source` started; false for no source. */
+export function usePendingFrom(source: string | undefined): boolean {
+  const { pending } = useRouter().navigation;
+  return source !== undefined && pending !== null && pending.source === source;
 }
 
 /** Starts the load of an address without moving; a click on it soon after finds the answer. */
