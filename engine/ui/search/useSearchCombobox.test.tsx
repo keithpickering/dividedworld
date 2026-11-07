@@ -375,3 +375,15 @@ describe('review fixes', () => {
 });
 
 beforeEach(() => { /* each test sets up its own timers */ });
+
+describe('onQueryChange (a form that reads the box)', () => {
+  test('hears the typed text, and a chosen suggestion\'s label', async () => {
+    const heard = vi.fn();
+    const { user } = setup({ onQueryChange: heard });
+    await user.type(box(), 'wari');
+    expect(heard).toHaveBeenLastCalledWith('wari');
+    await settle();
+    await user.click(await screen.findByRole('option', { name: 'Waribob' }));
+    expect(heard).toHaveBeenLastCalledWith('Waribob');
+  });
+});

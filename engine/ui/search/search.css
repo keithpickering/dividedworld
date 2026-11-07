@@ -1,0 +1,143 @@
+/*
+ * The /search page (SearchScreen.tsx; the board docs/research/2026-11-07-search/01-search.html): the 2003 panel with the form, and the
+ * results as a classic table. Tokens only. A matched word is bold in a dashed outline on the tag ground, so it reads without color.
+ */
+.kb-search-form {
+  margin-bottom: 0.8em;
+}
+
+.kb-search-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6em 1em;
+  margin-bottom: 0.7em;
+}
+
+.kb-search-field {
+  min-width: 0;
+}
+
+.kb-search-field-wide {
+  flex: 1 1 20em;
+  max-width: 28em;
+}
+
+.kb-search-field .kb-search-input,
+.kb-search-field .kb-select,
+.kb-search-field .kb-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 1.9em;
+}
+
+.kb-search-field:not(.kb-search-field-wide) {
+  flex: 0 1 12em;
+}
+
+.kb-search-choice {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  font-size: var(--kb-size-small);
+}
+
+.kb-search-choice legend {
+  padding: 0;
+  margin-bottom: 3px;
+  font-weight: bold;
+  font-size: var(--kb-size-fine);
+}
+
+.kb-search-choice label {
+  margin-right: 0.8em;
+  white-space: nowrap;
+}
+
+.kb-search-help {
+  margin: 0.4em 0 0;
+}
+
+.kb-search-count {
+  margin: 0.4em 0;
+}
+
+.kb-search-none {
+  margin: 0.8em 0;
+}
+
+.kb-search-snippet {
+  margin-top: 0.25em;
+  font-size: var(--kb-size-small);
+  overflow-wrap: anywhere;
+}
+
+/* The matched word: bold, outlined with a dash, on the ground tags stand on. Never color alone. */
+.kb-search-hit {
+  background: var(--kb-chip-bg);
+  color: inherit;
+  font-weight: bold;
+  outline: 1px dashed var(--kb-fg);
+  outline-offset: 0;
+  padding: 0 1px;
+}
+
+.kb-search-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.kb-search-results td:nth-child(2) {
+  width: 14em;
+}
+
+.kb-search-results td:nth-child(3) {
+  width: 9em;
+  white-space: nowrap;
+}
+
+/* A card's mark on a result: the glass tile as the post draws it (cards/marks.css), smaller, in the flow, and still. */
+.kb-search-marks {
+  display: inline-flex;
+  gap: 0.4rem;
+  margin-inline-start: 0.7rem;
+  vertical-align: middle;
+}
+
+.kb-search-mark.kb-meta-tile {
+  --kb-meta-tile: 1.6rem;
+  cursor: default;
+}
+
+@media (max-width: 40em) {
+  .kb-search-field-wide,
+  .kb-search-field:not(.kb-search-field-wide) {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+
+  .kb-search-results thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .kb-search-results,
+  .kb-search-results tbody,
+  .kb-search-results tr,
+  .kb-search-results td {
+    display: block;
+  }
+
+  .kb-search-results td {
+    width: auto !important;
+    border-top-width: 0;
+  }
+
+  .kb-search-results tr {
+    border-top: 1px solid var(--kb-rule);
+  }
+}

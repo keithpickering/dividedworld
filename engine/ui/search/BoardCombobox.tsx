@@ -8,8 +8,9 @@ import { useSearchCombobox, type ComboOption, type ComboRow, type UseSearchCombo
 import './board-search.css';
 
 export interface BoardComboboxProps<O extends ComboOption = ComboOption> extends UseSearchComboboxOptions<O> {
-  /** The box's accessible name; drawn visually hidden, as the banner has no room for it. */
+  /** The box's accessible name; drawn visually hidden, as the banner has no room for it, unless `showLabel` (a form's own field). */
   readonly label: string;
+  readonly showLabel?: boolean;
   readonly placeholder?: string;
   readonly inputId?: string;
   /** What a row holds. Default: the label and, muted at the right, the detail. */
@@ -24,12 +25,12 @@ function Row<O extends ComboOption>({ row, render, extra }: { readonly row: Comb
   );
 }
 
-export function BoardCombobox<O extends ComboOption = ComboOption>({ label, placeholder, inputId, renderOption, ...hook }: BoardComboboxProps<O>) {
+export function BoardCombobox<O extends ComboOption = ComboOption>({ label, showLabel = false, placeholder, inputId, renderOption, ...hook }: BoardComboboxProps<O>) {
   const view = useSearchCombobox<O>(hook);
   const render = renderOption ?? ((o: O) => (<><span>{o.label}</span>{o.detail && <span className="kb-search-detail">{o.detail}</span>}</>));
   return (
     <div className="kb-search-combo">
-      <label className="kb-visually-hidden" htmlFor={inputId ?? `${view.listProps.id}-input`}>{label}</label>
+      <label className={showLabel ? 'kb-search-label' : 'kb-visually-hidden'} htmlFor={inputId ?? `${view.listProps.id}-input`}>{label}</label>
       <input id={inputId ?? `${view.listProps.id}-input`} type="text" className="kb-input kb-search-input" placeholder={placeholder} {...view.inputProps} />
       {view.open && (
         <div className="kb-search-list" aria-label={label} {...view.listProps}>

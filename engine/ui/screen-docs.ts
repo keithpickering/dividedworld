@@ -7,9 +7,10 @@
  * A route's key names the part of its address that names its document: a move that keeps it (a thread's `#post-142` on a page already
  * shown) is the screen's own, as before.
  */
-import type { BoardPage, IndexPage, KayfaApi, ProfilePage, RecordPage, ThreadPage } from './data/api.ts';
+import type { BoardPage, IndexPage, KayfaApi, PostHit, ProfilePage, RecordPage, SearchPage, ThreadHit, ThreadPage } from './data/api.ts';
 import { recordKind, type RecordKind } from './profile/record.ts';
 import { seqOfHash } from './thread/pages.ts';
+import { isSearching, parseSearch, searchParams, type SearchAsk } from './search/query.ts';
 
 /** What a loader answers signed out: no request was made, and the screen draws the front door or the sign-in line. */
 export const SIGNED_OUT_DOC = Object.freeze({ signedOut: true as const });
@@ -70,4 +71,32 @@ export async function loadProfile(env: LoadEnv, id: string): Promise<ScreenDoc<P
 export async function loadRecord(env: LoadEnv, id: string, query: Query): Promise<ScreenDoc<RecordPage> | null> {
   const kind: RecordKind = recordKind(query.get('kind'));
   return (await env.signedIn()) ? env.api.recordPage(id, kind, recordPageAsked(query)) : SIGNED_OUT_DOC;
+}
+
+/** The `/search` document: what the address asks, the name of the character it filters to, and the page found (none before a search is asked). */
+export interface SearchDoc {
+  readonly ask: SearchAsk;
+  /** The public name of the `author` filter, null where there is none or it names no one the player may see. */
+  readonly authorName: string | null;
+  readonly posts: SearchPage<PostHit> | null;
+  readonly threads: SearchPage<ThreadHit> | null;
+  /** The server refused the search (a date or a word it cannot read); the screen says so and the form stays. */
+  readonly refused: boolean;
+}
+
+/** The address as a search reads it: unknown values are already their defaults, so two addresses that ask the same share a document. */
+export const searchKey = (query: Query): string => String(searchParams(parseSearch(query)));
+
+export async function loadSearch(env: LoadEnv, query: Query): Promise<ScreenDoc<SearchDoc>> {
+  if (!(await env.signedIn())) return SIGNED_OUT_DOC;
+  const ask = parseSearch(query);
+  const author = ask.query.author;
+  const named = author === null ? Promise.resolve([]) : env.api.characters([author]).catch(() => []);
+  const none = { posts: null, threads: null, refused: false };
+  const found = !isSearching(ask.query)
+    ? Promise.resolve(none)
+    : (ask.view === 'threads' ? env.api.searchThreads(ask.query, ask.after).then((threads) => ({ ...none, threads })) : env.api.searchPosts(ask.query, ask.after).then((posts) => ({ ...none, posts })))
+        .catch(() => ({ ...none, refused: true }));
+  const [who, result] = await Promise.all([named, found]);
+  return { ask, authorName: who[0]?.name ?? null, ...result };
 }

@@ -31,6 +31,8 @@ export interface UseSearchComboboxOptions<O extends ComboOption = ComboOption> {
   readonly minChars?: number;
   readonly debounceMs?: number;
   readonly initialQuery?: string;
+  /** The box's text after every change, a typed one or a chosen suggestion's label (a form that reads the box keeps its own copy from this). */
+  readonly onQueryChange?: (query: string) => void;
 }
 
 export interface ComboRow<O extends ComboOption> {
@@ -68,7 +70,7 @@ export function suggestionCount(n: number): string {
 }
 
 export function useSearchCombobox<O extends ComboOption = ComboOption>(options: UseSearchComboboxOptions<O>): ComboView<O> {
-  const { source, onChoose, trailing: trailingFor, allowEmpty = false, minChars = 2, debounceMs = 150, initialQuery = '' } = options;
+  const { source, onChoose, trailing: trailingFor, allowEmpty = false, minChars = 2, debounceMs = 150, initialQuery = '', onQueryChange } = options;
   const base = useId();
   const [query, setQuery] = useState(initialQuery);
   const [groups, setGroups] = useState<readonly ComboGroup<O>[] | null>(null);
@@ -80,8 +82,9 @@ export function useSearchCombobox<O extends ComboOption = ComboOption>(options: 
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flight = useRef<{ seq: number; abort: AbortController | null }>({ seq: 0, abort: null });
   // The caller's source and trailing change identity on every render; the latest is read at the moment it is used.
-  const latest = useRef({ source, trailingFor, onChoose });
-  latest.current = { source, trailingFor, onChoose };
+  const latest = useRef({ source, trailingFor, onChoose, onQueryChange });
+  latest.current = { source, trailingFor, onChoose, onQueryChange };
+  useEffect(() => { latest.current.onQueryChange?.(query); }, [query]);
 
   const eligible = useCallback((q: string) => q.trim().length >= minChars || (allowEmpty && q.trim() === ''), [minChars, allowEmpty]);
 
