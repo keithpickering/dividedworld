@@ -21,6 +21,8 @@
  * - A closer closes the nearest matching opener and, with it, anything opened inside that was
  *   never closed. `[b][i]x[/b]y[/i]` is bold italic `x`, then the text `y[/i]`. A closer with
  *   nothing open to close is text.
+ * - `[video]` and `[youtube]` are taken the same way as `[img]`; the contents must be an address
+ *   engine/bbcode/video.ts has a player for (`[youtube]` also takes a bare id), else only the opener is text.
  * - `[code]` and `[img]` take their contents raw up to the closing tag. With no closing tag,
  *   an attribute, or (for an image) contents that are not an http or https address, only the
  *   opening tag is text, and what follows parses as usual.
@@ -29,9 +31,28 @@
  *   `[/url]` costs nothing, and a properly nested pair costs only the outer link's stray closer,
  *   which stays text. A link that is text (bad target) is not a link and blocks nothing. An image
  *   inside a link is fine: it is a node of its own with a checked source.
+ * - `[quote]` is a real quote only when its name is an Act's UUID. Any other name (at most
+ *   `MAX_QUOTE_NAME` characters), a bare `[quote]` or `[quote user=<uuid>]` is a `counterfeit`: its
+ *   words are the post's own and it names no Act, so the renderer must never draw one as an Act's
+ *   words. A `user=` that is not a UUID, a longer name or an empty one makes the opener text.
+ * - `[spoiler=title]` is a block with a plain-text title (at most `MAX_SPOILER_TITLE` characters,
+ *   "Spoiler" when none or an empty one is given; a longer one makes the opener text). `[ispoiler]`
+ *   is inline and holds inline formatting only: while one is open, the opener of a block tag (`BLOCK`)
+ *   is text, and so is its closer, so a closer inside cannot close a block opened outside. It is
+ *   drawn as a button, so nothing interactive nests in it either: while one is open, a `[url]` opener
+ *   and an `[ispoiler]` opener are text (the same count, `openISpoilers`), and so is `[/url]`. A
+ *   `[/ispoiler]` still closes the open spoiler, else it could never end. An ispoiler's text is never
+ *   auto-linked: the autolink pass skips an `ispoiler` node.
+ * - `[noparse]` is taken raw as `[code]` is, but gives a `noparse` node (a text node by another type, so the autolink pass can skip it): its words are the post's own, shown as written. `[hr]` is a
+ *   leaf with no closer (a `[/hr]` is text), and `[font=name]` takes a name from `FONTS` only, so no free text reaches a style.
  * - A list's `[*]` is an item marker only directly inside `[list]`; elsewhere it is text.
  *   Blank space before the first item is layout and is not kept; words before it become an
  *   item of their own.
+ *
+ * - A bare `http://` or `https://` address in text (not inside a `url`, an inline spoiler, or the raw tags) becomes an
+ *   `autolink` node after the main pass: its `text` is the address as written, its `href` passed `safeHref`. It ends at
+ *   whitespace or a character `safeHref` refuses; trailing `.,;:!?` and a `)` or `]` with no opener in it stay outside.
+ *   Text that fails stays text, so `javascript:` and `data:` are never linked. Its words are kept in the visible text.
  *
  * The work is bounded, because the input is any player's post (design, "Weigh a design at the
  * scale of a busy instance"). The parser is one pass with an explicit stack, never recursion,
@@ -41,16 +62,38 @@
  * `[/code]` or `[/img]` is looked up once and remembered, so no input makes it quadratic.
  */
 
+import { videoOf, YOUTUBE_ID, type Video } from './video.ts';
+
 export type BbNode =
   | { readonly type: 'text'; readonly text: string }
+  | { readonly type: 'autolink'; readonly href: string; readonly text: string }
   | { readonly type: 'bold' | 'italic' | 'underline' | 'strike'; readonly children: readonly BbNode[] }
   | { readonly type: 'color'; readonly color: string; readonly children: readonly BbNode[] }
   | { readonly type: 'size'; readonly size: number; readonly children: readonly BbNode[] }
   | { readonly type: 'url'; readonly href: string; readonly children: readonly BbNode[] }
   | { readonly type: 'img'; readonly src: string }
+  | { readonly type: 'video'; readonly video: Video }
   | { readonly type: 'quote'; readonly act: string; readonly children: readonly BbNode[] }
+  | { readonly type: 'counterfeit'; readonly name: string | null; readonly user: string | null; readonly children: readonly BbNode[] }
+  | { readonly type: 'spoiler'; readonly title: string; readonly children: readonly BbNode[] }
+  | { readonly type: 'ispoiler'; readonly children: readonly BbNode[] }
   | { readonly type: 'code'; readonly text: string }
+  | { readonly type: 'noparse'; readonly text: string }
+  | { readonly type: 'align'; readonly align: 'center' | 'left' | 'right'; readonly children: readonly BbNode[] }
+  | { readonly type: 'hr' }
+  | { readonly type: 'sub' | 'sup' | 'marquee' | 'rainbow'; readonly children: readonly BbNode[] }
+  | { readonly type: 'font'; readonly font: string; readonly children: readonly BbNode[] }
+  | { readonly type: 'glow' | 'shadow'; readonly color: string | null; readonly children: readonly BbNode[] }
+  | { readonly type: 'highlight'; readonly color: string; readonly children: readonly BbNode[] }
   | { readonly type: 'list'; readonly ordered: boolean; readonly items: readonly (readonly BbNode[])[] };
+
+/** Longest typed name on a counterfeit quote, after trimming; a longer one makes the opener text. */
+export const MAX_QUOTE_NAME = 80;
+
+/** Longest title on a `[spoiler=title]`, after trimming; a longer one makes the opener text. */
+export const MAX_SPOILER_TITLE = 80;
+/** The title of a spoiler that was given none. */
+export const DEFAULT_SPOILER_TITLE = 'Spoiler';
 
 /** Deepest nesting of tags; past it a tag is text. Deep enough for quotes of quotes, shallow enough to render by recursion. */
 export const MAX_DEPTH = 32;
@@ -71,6 +114,45 @@ export const NAMED_COLORS: ReadonlySet<string> = new Set([
   'olive', 'yellow', 'navy', 'blue', 'teal', 'aqua', 'orange', 'pink', 'brown', 'gold', 'cyan',
   'magenta', 'violet', 'indigo', 'crimson', 'coral', 'salmon', 'turquoise', 'tan', 'khaki', 'beige',
 ]);
+
+/**
+ * The fonts `[font=name]` takes: each allowed name, lowercase, to the CSS stack the renderer sets. A name is
+ * compared without case; the node holds the key, never the player's string, so no free text reaches a style.
+ */
+export const FONTS: Readonly<Record<string, string>> = {
+  'verdana': 'Verdana, Geneva, sans-serif',
+  'arial': 'Arial, Helvetica, sans-serif',
+  'tahoma': 'Tahoma, Geneva, sans-serif',
+  'trebuchet ms': '"Trebuchet MS", Helvetica, sans-serif',
+  'georgia': 'Georgia, "Times New Roman", serif',
+  'times new roman': '"Times New Roman", Times, serif',
+  'courier new': '"Courier New", Courier, monospace',
+  'comic sans ms': '"Comic Sans MS", "Comic Sans", cursive',
+  'impact': 'Impact, Haettenschweiler, sans-serif',
+};
+
+/** The default color of a `[highlight]`. */
+export const DEFAULT_HIGHLIGHT = 'yellow';
+
+/** What each named color is, as #rrggbb, so a renderer can weigh a color's contrast. */
+const NAMED_HEX: Readonly<Record<string, string>> = {
+  black: '#000000', silver: '#c0c0c0', gray: '#808080', grey: '#808080', white: '#ffffff', maroon: '#800000',
+  red: '#ff0000', purple: '#800080', fuchsia: '#ff00ff', green: '#008000', lime: '#00ff00', olive: '#808000',
+  yellow: '#ffff00', navy: '#000080', blue: '#0000ff', teal: '#008080', aqua: '#00ffff', orange: '#ffa500',
+  pink: '#ffc0cb', brown: '#a52a2a', gold: '#ffd700', cyan: '#00ffff', magenta: '#ff00ff', violet: '#ee82ee',
+  indigo: '#4b0082', crimson: '#dc143c', coral: '#ff7f50', salmon: '#fa8072', turquoise: '#40e0d0', tan: '#d2b48c',
+  khaki: '#f0e68c', beige: '#f5f5dc',
+};
+
+/** A `safeColor` value as #rrggbb (a name looked up, #rgb doubled), or null for anything else. */
+export function colorHex(color: string): string | null {
+  const v = color.toLowerCase();
+  const named = NAMED_HEX[v];
+  if (named) return named;
+  if (/^#[0-9a-f]{6}$/.test(v)) return v;
+  if (/^#[0-9a-f]{3}$/.test(v)) return '#' + [...v.slice(1)].map((c) => c + c).join('');
+  return null;
+}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HEX_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
@@ -157,9 +239,128 @@ const SIMPLE: Readonly<Record<string, 'bold' | 'italic' | 'underline' | 'strike'
   s: 'strike',
 };
 /** The tags the parser knows how to open, for a rule that names one (engine/rules/predicates.ts `noTag`). */
-export const BBCODE_TAGS: readonly string[] = ['b', 'i', 'u', 's', 'color', 'size', 'url', 'img', 'code', 'quote', 'list'];
+export const BBCODE_TAGS: readonly string[] = ['b', 'i', 'u', 's', 'color', 'size', 'url', 'img', 'code', 'quote', 'list', 'spoiler', 'ispoiler', 'video', 'youtube', 'center', 'left', 'right', 'hr', 'sub', 'sup', 'font', 'marquee', 'glow', 'shadow', 'rainbow', 'highlight', 'noparse'];
 const OPENERS: ReadonlySet<string> = new Set(BBCODE_TAGS);
-const CLOSERS = new Set(['b', 'i', 'u', 's', 'color', 'size', 'url', 'quote', 'list']);
+const CLOSERS = new Set(['b', 'i', 'u', 's', 'color', 'size', 'url', 'quote', 'list', 'spoiler', 'ispoiler', 'video', 'youtube', 'center', 'left', 'right', 'sub', 'sup', 'font', 'marquee', 'glow', 'shadow', 'rainbow', 'highlight']);
+/**
+ * The block tags, the ones that cannot stand inside inline text. An `[ispoiler]` holds inline formatting
+ * only, so while one is open the opener and the closer of each of these is text. Tags added later that
+ * are blocks go in this one set.
+ */
+const BLOCK: ReadonlySet<string> = new Set([
+  'quote', 'code', 'list', 'spoiler', 'center', 'left', 'right', 'hr', 'video', 'youtube', 'marquee',
+]);
+
+const SCHEME = /https?:\/\//gi;
+const TRAILING = '.,;:!?';
+
+/**
+ * Split a text node's bare `http(s)://` addresses out as `autolink` nodes, or null when it holds none. One linear scan:
+ * a run (a stretch with no whitespace or character `safeHref` refuses) is measured once however many schemes it holds;
+ * an address whose host part fails is skipped past that host part alone, so `http://http://...` costs one step per
+ * scheme. The address ends at its run's end, less trailing `.,;:!?` and any `)` or `]` with no opener inside it, and
+ * what is left must pass `safeHref`; text that does not is left as written.
+ */
+function splitAddresses(text: string): BbNode[] | null {
+  let parts: BbNode[] | null = null;
+  let from = 0;
+  let runStart = -1;
+  let runEnd = -1;
+  SCHEME.lastIndex = 0;
+  for (let m = SCHEME.exec(text); m; m = SCHEME.exec(text)) {
+    const start = m.index;
+    if (start >= runEnd || start < runStart) {
+      runStart = start;
+      runEnd = start;
+      while (runEnd < text.length && !BAD_URL_CHAR.test(text[runEnd] as string) && !(text[runEnd] === '[' && runEnd > start && tagShaped(text, runEnd))) runEnd++;
+    }
+    const hostFrom = start + m[0].length;
+    let hostEnd = hostFrom;
+    while (hostEnd < runEnd && !'/?#'.includes(text[hostEnd] as string)) hostEnd++;
+    /* With a path, the host part is judged alone first (it holds no scheme, so no two host parts overlap); without one, the
+       host part is the whole run and trailing punctuation goes before it is judged. */
+    /* A run longer than the longest address from here is no address, and is not measured again for each scheme in it. */
+    /* A run that a refused character (not whitespace) ends inside its host part names another host than the one written, so it is no address. */
+    const hostCut = hostEnd === runEnd && runEnd < text.length && !/\s/.test(text[runEnd] as string) && text[runEnd] !== '[';
+    const hostOk = hostCut || runEnd - start > MAX_URL_LENGTH ? false : hostEnd < runEnd ? safeHref(text.slice(start, hostEnd)) !== null : true;
+    const end = hostOk ? trimAddress(text, start, runEnd) : start;
+    const href = hostOk && end > hostFrom ? safeHref(text.slice(start, end)) : null;
+    if (href === null) {
+      SCHEME.lastIndex = hostEnd;
+      continue;
+    }
+    parts ??= [];
+    if (start > from) parts.push({ type: 'text', text: text.slice(from, start) });
+    parts.push({ type: 'autolink', href, text: text.slice(start, end) });
+    from = end;
+    SCHEME.lastIndex = end;
+  }
+  if (!parts) return null;
+  if (from < text.length) parts.push({ type: 'text', text: text.slice(from) });
+  return parts;
+}
+
+/** Whether the `[` at `i` begins something tag-shaped: `[/name]`, or `[name` then `]` or `=` (name is letters or `*`). Reads its own name once. */
+function tagShaped(text: string, i: number): boolean {
+  let j = i + 1;
+  if (text[j] === '/') j++;
+  const nameFrom = j;
+  while (j < text.length && /[A-Za-z*]/.test(text[j] as string)) j++;
+  if (j === nameFrom) return false;
+  const c = text[j];
+  return c === ']' || (c === '=' && text[i + 1] !== '/');
+}
+
+/** Where the address `text[start..end)` ends once trailing `.,;:!?` and a closer with no opener inside it are left outside. */
+function trimAddress(text: string, start: number, end: number): number {
+  let parens = 0;
+  let brackets = 0;
+  for (let i = start; i < end; i++) {
+    const c = text[i];
+    if (c === '(') parens++;
+    else if (c === ')') parens--;
+    else if (c === '[') brackets++;
+    else if (c === ']') brackets--;
+  }
+  /* parens and brackets now count openers less closers; a negative one is closers that opened nowhere in the address. */
+  while (end > start) {
+    const c = text[end - 1] as string;
+    if (TRAILING.includes(c)) end--;
+    else if (c === ')' && parens < 0) { parens++; end--; }
+    else if (c === ']' && brackets < 0) { brackets++; end--; }
+    else break;
+  }
+  return end;
+}
+
+/**
+ * The autolink pass: one iterative walk over the tree, replacing each bare address in a `text` node, except inside a link
+ * (`url`, which would nest an anchor) or an inline spoiler (a button holds nothing interactive). `img`, `code`, `noparse`
+ * and `video` hold no `text` node. Arrays are the parser's own, so they are rewritten in place.
+ */
+function autolinkTree(root: Out): void {
+  const stack: Out[] = [root];
+  while (stack.length > 0) {
+    const arr = stack.pop() as Out;
+    let changed = false;
+    const next: BbNode[] = [];
+    for (const n of arr) {
+      if (n.type === 'text') {
+        const parts = n.text.includes('://') ? splitAddresses(n.text) : null;
+        if (parts) {
+          changed = true;
+          for (const p of parts) next.push(p);
+        } else next.push(n);
+        continue;
+      }
+      next.push(n);
+      if (n.type === 'url' || n.type === 'ispoiler') continue;
+      if ('children' in n) stack.push(n.children as Out);
+      else if (n.type === 'list') for (const item of n.items) stack.push(item as Out);
+    }
+    if (changed) { arr.length = 0; for (const n of next) arr.push(n); }
+  }
+}
 
 function pushText(out: Out, text: string): void {
   if (text.length === 0) return;
@@ -175,6 +376,47 @@ function pushNode(out: Out, node: BbNode): void {
 
 function unquote(v: string): string {
   return v.length >= 2 && v.startsWith('"') && v.endsWith('"') ? v.slice(1, -1) : v;
+}
+
+type QuoteHead =
+  | { readonly kind: 'real'; readonly act: string }
+  | { readonly kind: 'counterfeit'; readonly name: string | null; readonly user: string | null };
+
+/**
+ * What follows `quote` in a quote opener: nothing, `=<name>`, ` user=<id>` or `=<name> user=<id>`,
+ * the name quoted or the words up to whitespace and `user=` (in any case). A name that is an Act id is a real quote (`user=`
+ * dropped, since the author of a real quote always comes from the post); any other name of 1 to
+ * `MAX_QUOTE_NAME` characters is a counterfeit. Null when it is none of these, and the opener is text.
+ */
+function quoteHead(rest: string): QuoteHead | null {
+  let name: string | null = null;
+  let tail: string;
+  if (rest.startsWith('=')) {
+    const v = rest.slice(1);
+    if (v.startsWith('"')) {
+      const j = v.indexOf('"', 1);
+      if (j < 0) return null;
+      name = v.slice(1, j);
+      tail = v.slice(j + 1);
+    } else {
+      /* `user=` after any run of whitespace, in any case, as the tail's own test reads it, so it is never swallowed into the name. */
+      const at = v.search(/\suser=/i);
+      name = at < 0 ? v : v.slice(0, at);
+      tail = at < 0 ? '' : v.slice(at);
+    }
+    name = name.trim();
+    if (name.length === 0 || name.length > MAX_QUOTE_NAME) return null;
+  } else {
+    tail = rest;
+  }
+  let user: string | null = null;
+  if (tail !== '') {
+    const m = /^\s+user=(.*)$/i.exec(tail);
+    if (!m || !UUID.test(m[1] ?? '')) return null;
+    user = (m[1] as string).toLowerCase();
+  }
+  if (name !== null && UUID.test(name)) return { kind: 'real', act: name.toLowerCase() };
+  return { kind: 'counterfeit', name, user };
 }
 
 function isBlank(nodes: readonly BbNode[]): boolean {
@@ -202,7 +444,7 @@ export function parse(input: string): BbNode[] {
       into.push({ type: 'list', ordered: f.ordered === true, items });
     } else if (f.kind === 'bareurl') {
       const only = f.out.length === 1 ? f.out[0] : undefined;
-      const href = closer !== null && only && only.type === 'text' ? safeHref(only.text) : null;
+      const href = closer !== null && only && (only.type === 'text' || only.type === 'noparse') ? safeHref(only.text) : null;
       if (href !== null && only) {
         into.push({ type: 'url', href, children: [only] });
       } else {
@@ -215,11 +457,14 @@ export function parse(input: string): BbNode[] {
 
   /** Links that are open and real, which is what a new link must not nest inside. */
   let openUrls = 0;
+  /** Inline spoilers that are open and real, so a block tag inside one is found without a scan. */
+  let openISpoilers = 0;
 
   const pop = (): Frame => {
     const f = stack.pop() as Frame;
     open.set(f.name, (open.get(f.name) ?? 1) - 1);
     if (f.kind !== 'literal' && f.name === 'url') openUrls--;
+    if (f.kind !== 'literal' && f.name === 'ispoiler') openISpoilers--;
     return f;
   };
 
@@ -245,6 +490,7 @@ export function parse(input: string): BbNode[] {
     f.home = f;
     push(f);
     if (name === 'url') openUrls++;
+    if (name === 'ispoiler') openISpoilers++;
   };
 
   /* A new link while a real one is open closes the open one first (with whatever was opened
@@ -285,6 +531,9 @@ export function parse(input: string): BbNode[] {
   const rawEnds: Record<string, { re: RegExp; missing: boolean; at: number }> = {
     code: { re: /\[\/code\]/gi, missing: false, at: -1 },
     img: { re: /\[\/img\]/gi, missing: false, at: -1 },
+    video: { re: /\[\/video\]/gi, missing: false, at: -1 },
+    youtube: { re: /\[\/youtube\]/gi, missing: false, at: -1 },
+    noparse: { re: /\[\/noparse\]/gi, missing: false, at: -1 },
   };
 
   let pos = 0;
@@ -304,12 +553,16 @@ export function parse(input: string): BbNode[] {
     let name: string;
     let value: string | undefined;
     let isCloser = false;
+    let quoteRest: string | undefined;
     if (body === '*') {
       name = '*';
     } else if (body.startsWith('/')) {
       name = body.slice(1).toLowerCase();
       if (!CLOSERS.has(name)) continue;
       isCloser = true;
+    } else if (/^quote(?=$|=|\s)/i.test(body)) {
+      name = 'quote';
+      quoteRest = body.slice(5);
     } else {
       const eq = body.indexOf('=');
       name = (eq < 0 ? body : body.slice(0, eq)).toLowerCase();
@@ -321,7 +574,11 @@ export function parse(input: string): BbNode[] {
     textStart = close + 1;
     pos = close + 1;
 
-    if (isCloser) {
+    if (openISpoilers > 0 && name !== '*' && (BLOCK.has(name) || name === 'url' || (name === 'ispoiler' && !isCloser))) {
+      /* Opener or closer, a block tag, a link or a nested spoiler inside an inline spoiler is the words as written
+         (the spoiler is a button, and a button holds nothing interactive). */
+      pushText(top().home.out, raw);
+    } else if (isCloser) {
       closeTag(name, raw);
     } else if (name === '*') {
       const home = top().home;
@@ -332,7 +589,7 @@ export function parse(input: string): BbNode[] {
       } else {
         pushText(home.out, raw);
       }
-    } else if (name === 'code' || name === 'img') {
+    } else if (name === 'code' || name === 'img' || name === 'video' || name === 'youtube' || name === 'noparse') {
       const end = rawEnds[name] as { re: RegExp; missing: boolean; at: number };
       const home = top().home;
       let found = -1;
@@ -352,6 +609,18 @@ export function parse(input: string): BbNode[] {
       } else if (name === 'code') {
         home.out.push({ type: 'code', text: input.slice(close + 1, found) });
         textStart = pos = found + '[/code]'.length;
+      } else if (name === 'noparse') {
+        /* Its contents are the post's words as written: one `noparse` node, which the visible text and the renderer treat as a text node and the autolink pass skips. */
+        if (found > close + 1) home.out.push({ type: 'noparse', text: input.slice(close + 1, found) });
+        textStart = pos = found + '[/noparse]'.length;
+      } else if (name === 'video' || name === 'youtube') {
+        /* Same bound on work as an image. A video is whatever `videoOf` recognizes; [youtube] also takes a bare id. */
+        const inner = found - close - 1 <= MAX_URL_LENGTH + 64 ? input.slice(close + 1, found).trim() : '';
+        const video = inner === '' ? null : name === 'youtube' && YOUTUBE_ID.test(inner) ? videoOf(`https://youtu.be/${inner}`) : videoOf(inner);
+        if (video) {
+          home.out.push({ type: 'video', video });
+          textStart = pos = found + name.length + 3;
+        } else pushText(home.out, raw);
       } else if (
         /* A bound on work, not on meaning, so no test can see it: contents this much longer than
            the longest address cannot be one (surrounding blanks are trimmed), and checking them
@@ -391,10 +660,48 @@ export function parse(input: string): BbNode[] {
         } else literalOpen(name, raw);
       }
     } else if (name === 'quote') {
-      if (value !== undefined && UUID.test(value)) {
-        const act = value.toLowerCase();
+      const head = quoteHead(quoteRest ?? '');
+      if (head === null) literalOpen(name, raw);
+      else if (head.kind === 'real') {
+        const act = head.act;
         openReal(name, raw, 'simple', { build: (children) => ({ type: 'quote', act, children }) });
-      } else literalOpen(name, raw);
+      } else {
+        const { name: typed, user } = head;
+        openReal(name, raw, 'simple', { build: (children) => ({ type: 'counterfeit', name: typed, user, children }) });
+      }
+    } else if (name === 'spoiler') {
+      const title = value === undefined ? '' : value.trim();
+      if (title.length > MAX_SPOILER_TITLE) literalOpen(name, raw);
+      else {
+        const shown = title === '' ? DEFAULT_SPOILER_TITLE : title;
+        openReal(name, raw, 'simple', { build: (children) => ({ type: 'spoiler', title: shown, children }) });
+      }
+    } else if (name === 'ispoiler') {
+      if (value === undefined) openReal(name, raw, 'simple', { build: (children) => ({ type: 'ispoiler', children }) });
+      else literalOpen(name, raw);
+    } else if (name === 'center' || name === 'left' || name === 'right') {
+      if (value === undefined) openReal(name, raw, 'simple', { build: (children) => ({ type: 'align', align: name, children }) });
+      else literalOpen(name, raw);
+    } else if (name === 'hr') {
+      /* No closer: it is a rule, whole. A `[/hr]` is not in CLOSERS, so it stays text. */
+      if (value === undefined) top().home.out.push({ type: 'hr' });
+      else pushText(top().home.out, raw);
+    } else if (name === 'sub' || name === 'sup' || name === 'marquee' || name === 'rainbow') {
+      if (value === undefined) openReal(name, raw, 'simple', { build: (children) => ({ type: name, children }) });
+      else literalOpen(name, raw);
+    } else if (name === 'font') {
+      const key = value === undefined ? '' : value.trim().toLowerCase();
+      if (Object.hasOwn(FONTS, key)) openReal(name, raw, 'simple', { build: (children) => ({ type: 'font', font: key, children }) });
+      else literalOpen(name, raw);
+    } else if (name === 'glow' || name === 'shadow' || name === 'highlight') {
+      const c = value === undefined ? null : safeColor(value);
+      if (value !== undefined && c === null) literalOpen(name, raw);
+      else if (name === 'highlight') {
+        const color = c ?? DEFAULT_HIGHLIGHT;
+        openReal(name, raw, 'simple', { build: (children) => ({ type: 'highlight', color, children }) });
+      } else {
+        openReal(name, raw, 'simple', { build: (children) => ({ type: name, color: c, children }) });
+      }
     } else if (name === 'list') {
       if (value === undefined || value === '1') {
         const lead: Out = [];
@@ -408,5 +715,6 @@ export function parse(input: string): BbNode[] {
     const f = pop();
     if (f.kind !== 'literal') finish(f, null);
   }
+  autolinkTree(root.out);
   return root.out;
 }

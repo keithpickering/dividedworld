@@ -123,6 +123,9 @@ function toPreferences(r: Row): Preferences {
 const beyond = (reach: string | undefined, fromPost: string | undefined): Record<string, unknown> =>
   (reach && reach !== 'post' ? { reach, ...(fromPost ? { post: fromPost } : {}) } : {});
 
+/** The characters a body puts words in the mouth of, as the act function reads them (engine/rules/actions.ts): nothing when there are none. */
+const framed = (framing: readonly string[] | undefined): Record<string, unknown> => (framing && framing.length > 0 ? { framing } : {});
+
 function toAct(r: Row): Act {
   return {
     id: r['id'],
@@ -1627,10 +1630,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     createInvite: () => act({ action: 'createInvite' }, (r) => ({ invite: r['invite'], code: r['code'] })),
     reissueInvite: (invite) => act({ action: 'reissueInvite', invite }, (r) => ({ invite: r['invite'], code: r['code'] })),
 
-    startThread: (board, character, title, body) => act({ action: 'startThread', board, character, title, body }, (r) => ({ thread: toNewThread(r['thread'], toAct(r['act'])), act: toAct(r['act']) })),
-    post: (thread, character, body, quote) => act({ action: 'post', thread, character, body, ...(quote ? { quote } : {}) }, toAct),
+    startThread: (board, character, title, body, framing) => act({ action: 'startThread', board, character, title, body, ...framed(framing) }, (r) => ({ thread: toNewThread(r['thread'], toAct(r['act'])), act: toAct(r['act']) })),
+    post: (thread, character, body, quote, framing) => act({ action: 'post', thread, character, body, ...(quote ? { quote } : {}), ...framed(framing) }, toAct),
     edit: (post, character, body) => act({ action: 'edit', post, character, body }, toAct),
-    spin: (origin, character, title, body) => act({ action: 'spin', origin, character, title, body }, withThread),
+    spin: (origin, character, title, body, framing) => act({ action: 'spin', origin, character, title, body, ...framed(framing) }, withThread),
     react: (target, character, kind) => act({ action: 'react', act: target, character, kind }, (r) => ({ act: r['act'], tally: (r['tally'] ?? {}) as Tally })),
     turn: (character, to, loudness, showFrom, showTo) =>
       act({ action: 'turn', character, class: to, loudness, showFrom, showTo }, (r): TurnAsked => ({ class: r['class'], loudness: r['loudness'], showFrom: r['show_from'] === true, showTo: r['show_to'] === true, takesEffectAt: r['takes_effect_at'] ?? null })),

@@ -23,6 +23,7 @@ import type { BoardSummary } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
 import { Icon, type IconName } from '../board/Icons.tsx';
 import { Link, searchOf, useLocation, useNavigation } from '../router.tsx';
+import { Wobble } from '../bbcode/Wobble.tsx';
 import { PlayProvider } from '../cards/play.tsx';
 import { BannerSearch } from '../search/BannerSearch.tsx';
 import { TipsProvider } from '../tips/Tips.tsx';
@@ -92,6 +93,7 @@ export function Frame({ children }: { readonly children: ReactNode }) {
     <TipsProvider>
       <PlayProvider>
         <div className="kb-frame" data-kb-loading={pending ? true : undefined}>
+          <Wobble />
           <header className="kb-banner">
             <Link to="/" className="kb-logo">{ui.copy.siteName}</Link>
             <div className="kb-banner-side">
