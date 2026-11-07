@@ -547,3 +547,104 @@ begin
   if pg_temp.refusal(format('select close_appeal(%L, ''banned'')', ap ->> 'appeal')) is null then raise exception 'a verdict outside the list was taken'; end if;
   if pg_temp.wallet(c) is distinct from w then raise exception 'the doors moved a wallet'; end if;
 end $$;
+
+-- ---- 10. A punishment that has run out is not appealed: nothing is paid or written, and no increase can revive it ----
+do $$
+declare
+  t uuid := tests.thread('Appeals ten');
+  c uuid := pg_temp.player('tenexp');
+  two uuid[] := pg_temp.posts(c, t, 3);
+  old_inf uuid;
+  expired uuid;
+  gone_ban uuid;
+  bc uuid := pg_temp.player('tenban');
+  bposts uuid[] := pg_temp.posts(bc, t, 2);
+  emptied uuid;
+  w0 integer := pg_temp.wallet(c);
+  said text;
+begin
+  -- An infraction past its expiry (planted whole, as infract would have written it, a fortnight ago).
+  perform set_config('kayfabb.warn_writer', 'on', true);
+  insert into acts (character, kind, thread, payload, created_at) values (null, 'infraction', t,
+    jsonb_build_object('character', c, 'band', 'minor', 'points', 2, 'rule_number', null, 'board', (select board from threads where id = t), 'about_act', two[1], 'visit_act', null, 'staff', 'ap-m1',
+                       'expires_at', now() - interval '1 day'), now() - interval '15 days') returning id into expired;
+  perform set_config('kayfabb.warn_writer', '', true);
+  said := pg_temp.refusal(format('select pg_temp.appeal(%L, %L)', c, expired));
+  if said is null or said not like '%already run out%' then raise exception 'an expired infraction was appealed: %', said; end if;
+  -- A ban whose end has passed.
+  perform set_config('kayfabb.warn_writer', 'on', true);
+  insert into acts (character, kind, thread, payload, created_at) values (null, 'ban', t,
+    jsonb_build_object('character', c, 'days', 1, 'until', now() - interval '1 hour', 'infraction_act', expired, 'season', 1), now() - interval '25 hours') returning id into gone_ban;
+  perform set_config('kayfabb.warn_writer', '', true);
+  said := pg_temp.refusal(format('select pg_temp.appeal(%L, %L)', c, gone_ban));
+  if said is null or said not like '%already run out%' then raise exception 'an ended ban was appealed: %', said; end if;
+  -- An infraction a later ban emptied from the bar.
+  old_inf := (infract(bc, 'severe', bposts[1], 'ap-m1') ->> 'infraction')::uuid;
+  perform infract(bc, 'moderate', bposts[2], 'ap-m1');
+  if warn_points(bc) is distinct from 0 then raise exception 'the bar was not emptied'; end if;
+  said := pg_temp.refusal(format('select pg_temp.appeal(%L, %L)', bc, old_inf));
+  if said is null or said not like '%already run out%' then raise exception 'an infraction the bar no longer counts was appealed: %', said; end if;
+  -- An overturned or reduced ban that is over by its ruling is over: it is not appealed again (the one appeal is used in any case).
+  if pg_temp.wallet(c) is distinct from w0 or exists (select 1 from acts where kind = 'appeal' and character in (c, bc) and target_act_id in (expired, gone_ban, old_inf)) then raise exception 'a refusal wrote or spent something'; end if;
+  if exists (select 1 from wallet_events e where e.kind = 'appeal' and e.account = (select owner from characters where id = c)) then raise exception 'a refusal left a wallet event'; end if;
+  -- The live ban of the same character is still appealable.
+  emptied := (select id from acts where kind = 'ban' and payload ->> 'character' = bc::text);
+  if (pg_temp.appeal(bc, emptied) ->> 'appeal') is null then raise exception 'a running ban was refused'; end if;
+end $$;
+
+-- ---- 11. The other refusals, and who hears when no one is left ----
+do $$
+declare
+  t uuid := tests.thread('Appeals eleven');
+  c uuid := pg_temp.player('eleven');
+  hit jsonb := pg_temp.inf(c, t, 'moderate');
+  inf uuid := (hit ->> 'infraction')::uuid;
+  bc uuid := pg_temp.player('elevenban');
+  ban uuid := pg_temp.banned(bc, t);
+  w0 integer := pg_temp.wallet(c);
+  n0 bigint := (select count(*) from acts where kind = 'appeal' and thread = t);
+  e0 bigint := (select count(*) from wallet_events where kind = 'appeal' and account = (select owner from characters where id = c));
+  boss text := current_boss();
+  said text; ap jsonb;
+begin
+  -- The System off: refused, nothing paid.
+  update settings set value = 'false'::jsonb where key = 'systemEnabled';
+  said := pg_temp.refusal(format('select pg_temp.appeal(%L, %L)', c, inf));
+  update settings set value = 'true'::jsonb where key = 'systemEnabled';
+  if said is null or said not like '%no one on duty%' then raise exception 'an appeal was taken with The System off: %', said; end if;
+  -- A ban with no Boss falls to the Mod on the beat.
+  update seasons set boss = null where ends_at is null;
+  if appeal_hearer(ban) is distinct from 'ap-m1' then raise exception 'a ban with no Boss is heard by %', appeal_hearer(ban); end if;
+  -- No Boss and no Mod: no one hears, refused before anything is paid or written.
+  insert into staff_offices (staff, office, cause) values ('ap-m1', 'member', 'admin'), ('ap-m2', 'member', 'admin');
+  if appeal_hearer(inf) is not null or appeal_hearer(ban) is not null then raise exception 'someone hears with no one on staff'; end if;
+  said := pg_temp.refusal(format('select pg_temp.appeal(%L, %L)', c, inf));
+  if said is null or said not like '%no one on duty%' then raise exception 'an appeal with no one to hear it was taken: %', said; end if;
+  if pg_temp.wallet(c) is distinct from w0 or (select count(*) from acts where kind = 'appeal' and thread = t) is distinct from n0
+     or (select count(*) from wallet_events where kind = 'appeal' and account = (select owner from characters where id = c)) is distinct from e0 then raise exception 'a refusal wrote or spent something'; end if;
+  insert into staff_offices (staff, office, cause) values ('ap-m1', 'mod', 'admin'), ('ap-m2', 'mod', 'admin');
+  update seasons set boss = 'ap-boss' where ends_at is null;
+  if current_boss() is distinct from boss then raise exception 'the Boss was not restored'; end if;
+  -- A moderate infraction reduced loses half its points rounded up: 4 becomes 2.
+  ap := pg_temp.appeal(c, inf);
+  perform close_appeal((ap ->> 'appeal')::uuid, 'reduced');
+  if warn_points(c) is distinct from 2 then raise exception 'a reduced moderate infraction counts %', warn_points(c); end if;
+end $$;
+
+-- ---- 12. The fallback lines: with no stock line in the instance's settings the plain default says the ruling ----
+do $$
+declare
+  was jsonb := (select value from settings where key = 'systemLines');
+begin
+  update settings set value = '{}'::jsonb where key = 'systemLines';
+  if appeal_line('appealOverturned', 'ap-m1', 'Bob') is distinct from 'Appeal Mod One heard Bob''s appeal and overturned it.'
+     or appeal_line('appealReduced', 'ap-m1', 'Bob') is distinct from 'Appeal Mod One heard Bob''s appeal and reduced it.'
+     or appeal_line('appealIncreased', 'ap-m1', 'Bob') is distinct from 'Appeal Mod One heard Bob''s appeal and increased it.'
+     or appeal_line('appealUpheld', 'ap-m1', 'Bob') is distinct from 'Appeal Mod One heard Bob''s appeal and upheld it.' then
+    raise exception 'a fallback line is wrong: % / %', appeal_line('appealOverturned', 'ap-m1', 'Bob'), appeal_line('appealUpheld', 'ap-m1', 'Bob');
+  end if;
+  -- A configured line is filled once, tokens only from the allowed two, and cut to 280.
+  update settings set value = jsonb_build_object('appealUpheld', jsonb_build_array('{mod} to {appellant} {boss} {mod}')) where key = 'systemLines';
+  if appeal_line('appealUpheld', 'ap-m1', '{mod}') is distinct from 'Appeal Mod One to {mod} {boss} Appeal Mod One' then raise exception 'a configured line is filled wrongly: %', appeal_line('appealUpheld', 'ap-m1', '{mod}'); end if;
+  if was is not null then update settings set value = was where key = 'systemLines'; end if;
+end $$;

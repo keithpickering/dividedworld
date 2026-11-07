@@ -5,7 +5,7 @@ import { BOSS_PREMISE, MOD_BOT_PREMISE, BOSS_ANSWER_RULES, MOD_BOT_ANSWER_RULES,
 import { instanceProblems } from '../../../engine/rules/instance.ts';
 import { instance } from '../index.ts';
 import { PHASE_CAPS } from '../../../engine/system/phases.ts';
-import { STOCK_LINE_KEYS } from '../../../engine/system/stock.ts';
+import { STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from '../../../engine/system/stock.ts';
 
 test('Divided World\'s System content raises no problem', () => {
   assert.deepEqual(instanceProblems(instance).filter((p) => /Boss|bot|Bot|duty|stock|firstStaff|system/.test(p)), []);
@@ -83,4 +83,12 @@ test('a persona is built on its office: the Boss premise and side-taking rule, o
   assert.ok(!bot.includes(side) && !bot.includes('Never take a side'));
   assert.ok(bot.endsWith(MOD_BOT_ANSWER_RULES));
   assert.equal(MOD_BOT_ANSWER_RULES, BOSS_ANSWER_RULES.replace(side, ''));
+});
+
+test('the four appeal lines use only the tokens an appeal\'s ruling is given', () => {
+  for (const k of ['appealOverturned', 'appealUpheld', 'appealReduced', 'appealIncreased'] as const) {
+    assert.ok(STOCK_LINE_KEYS.includes(k), k);
+    assert.deepEqual([...STOCK_LINE_TOKENS[k]], ['mod', 'appellant']);
+    for (const line of system.stockLines[k]) for (const [, token] of line.matchAll(/\{([^{}]*)\}/g)) assert.ok(['mod', 'appellant'].includes(token!), `${k}: {${token}}`);
+  }
 });

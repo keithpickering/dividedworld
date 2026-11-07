@@ -8,7 +8,7 @@
 --                               Boss; with no Boss, the Mod on the board's beat. Null only when there is no one on staff at all (open_appeal then refuses, and says so).
 --   open_appeal(through, punishment_act, plea)   the player's door. It verifies the caller plays `through`; it does NOT refuse a banned character (a ban is appealed by the
 --                               banned). In this order: acting, the plea (blank, then over 1000), The System on, the punishment (an infraction or ban of THIS character: the same
---                               words for one that is another's and one that is none), someone to hear it, THEN, under the punishment's lock, whether it has been appealed, THEN the
+--                               words for one that is another's and one that is none; and one still in effect, `punishment_running`), someone to hear it, THEN, under the punishment's lock, whether it has been appealed, THEN the
 --                               instance's judgment budget (one count with the reports', under the reports' lock), THEN the price (`appealPrice`, wallet_spend, kind 'appeal') and
 --                               the `appeal` Act. One appeal per punishment: an appeal that was judged, or is open, counts; one refunded for a failed judgment does not, and the
 --                               punishment can be appealed again; one swept for never being judged frees it too, at most three times per punishment (so a client that opens and
@@ -292,6 +292,23 @@ begin
 end $$;
 revoke execute on function punishment_words(uuid) from public, anon, authenticated;
 
+-- Whether a punishment is still in effect: an infraction that has not expired and landed after the character's last ban (the bar still counts it, as warn_points reads it), a
+-- ban that has not run out (its end read through a ruling, as banned_until reads it). An appeal of one that has run out would only change the record, and an increase could
+-- revive an ended ban or put fresh points on an expired infraction.
+create function punishment_running(punishment uuid) returns boolean
+language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce((
+    select case p.kind
+      when 'infraction' then (p.payload ->> 'expires_at')::timestamptz > now()
+        and p.created_at > coalesce((select max(b.created_at) from acts b where b.kind = 'ban' and b.payload ->> 'character' = p.payload ->> 'character'), '-infinity'::timestamptz)
+      else coalesce((select (r.payload ->> 'until')::timestamptz from acts a join acts r on r.kind = 'appeal_ruling' and r.target_act_id = a.id
+                     where a.kind = 'appeal' and a.target_act_id = p.id and r.payload ? 'until' limit 1),
+                    (p.payload ->> 'until')::timestamptz) > now()
+    end
+    from acts p where p.id = punishment_running.punishment and p.kind in ('infraction', 'ban')), false)
+$$;
+revoke execute on function punishment_running(uuid) from public, anon, authenticated;
+
 -- Who hears an appeal of a punishment (see the header). An infraction goes back to the Mod that filed it while that Mod is on staff; if it has left, to the Mod on the board's
 -- beat, and with no Mod at all to the Boss. A ban goes to the season's Boss, and with none to the Mod on the beat.
 create function appeal_hearer(punishment uuid) returns text
@@ -372,6 +389,7 @@ begin
   -- An infraction or a ban of THIS character: the same words for one that is another's and one that is none.
   select * into pun from acts a where a.id = open_appeal.punishment_act and a.kind in ('infraction', 'ban') and a.payload ->> 'character' = open_appeal.through::text;
   if not found then raise exception 'that is not a punishment of this character' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  if not punishment_running(pun.id) then raise exception 'that punishment has already run out' using hint = 'kayfabb.refusal', errcode = '55000'; end if;
   hearer := appeal_hearer(pun.id);
   if hearer is null then raise exception 'there is no one on duty to hear an appeal right now' using hint = 'kayfabb.refusal', errcode = '55000'; end if;
 
