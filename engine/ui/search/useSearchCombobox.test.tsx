@@ -185,7 +185,7 @@ describe('the keys', () => {
   test('Enter on an active option chooses it with its group, fills the box and closes', async () => {
     const { user, onChoose } = await opened();
     await user.keyboard('{ArrowDown}{ArrowDown}{ArrowDown}{Enter}');
-    expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ id: 'c1' }), 'characters');
+    expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ id: 'c1' }), 'characters', 'wari');
     expect(box()).toHaveValue('Waribob');
     expect(box()).toHaveAttribute('aria-expanded', 'false');
   });
@@ -193,14 +193,14 @@ describe('the keys', () => {
   test('Enter on nothing active chooses the trailing row, with no group, and leaves the query alone', async () => {
     const { user, onChoose } = await opened();
     await user.keyboard('{Enter}');
-    expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ id: 'all' }), null);
+    expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ id: 'all' }), null, 'wari');
     expect(box()).toHaveValue('wari');
   });
 
   test('Enter before the first reply still goes to the trailing row', async () => {
     const { user, onChoose } = setup();
     await user.type(box(), 'wa{Enter}');
-    expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ id: 'all', label: 'Search posts for “wa”' }), null);
+    expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ id: 'all', label: 'Search posts for “wa”' }), null, 'wa');
   });
 
   test('Enter with no trailing row and nothing active chooses nothing', async () => {
@@ -222,7 +222,7 @@ describe('the keys', () => {
   test('a click on an option chooses it', async () => {
     const { user, onChoose } = await opened();
     await user.click(screen.getByRole('option', { name: 'Waribob' }));
-    expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ id: 'c1' }), 'characters');
+    expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ id: 'c1' }), 'characters', 'wari');
   });
 
   test('typing again clears the active option', async () => {
@@ -262,7 +262,7 @@ describe('review fixes', () => {
     fireEvent.keyDown(box(), { key: 'ArrowDown' });
     fireEvent.keyDown(box(), { key: 'Enter' });
     expect(onChoose).toHaveBeenCalledTimes(1);
-    expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ id: 'all' }), null);
+    expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ id: 'all' }), null, 'warix');
   });
 
   test('Q-3: a source that throws synchronously says No suggestions', async () => {

@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { axeViolations, describeViolations } from '../a11y.ts';
 import { Page } from '../glass/Page.tsx';
 import { usePlayer } from '../player.tsx';
 import type { Instance } from '../../rules/types.ts';
@@ -521,6 +522,29 @@ describe('Reveal: choosing a thread', () => {
     expect(submit).toBeEnabled();
     await userEvent.type(within(dialog).getByRole('combobox', { name: 'Thread' }), 'x');
     expect(submit).toBeDisabled();
+  });
+
+  test('the open dialog with the Thread list open is axe clean', async () => {
+    const w = world();
+    w.fake.seed.thread('general', w.stranger, 'The tea thread', 'x');
+    open(w);
+    await ready();
+    const dialog = await openReveal();
+    await userEvent.click(within(dialog).getByRole('combobox', { name: 'Thread' }));
+    await offered(dialog);
+    const found = await axeViolations(dialog);
+    expect(describeViolations(found)).toBe('');
+  });
+
+  test('the open dialog with "No threads found." showing is axe clean', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    const dialog = await openReveal();
+    await userEvent.type(within(dialog).getByRole('combobox', { name: 'Thread' }), 'zzzz');
+    expect(await within(dialog).findByText('No threads found.')).toBeInTheDocument();
+    const found = await axeViolations(dialog);
+    expect(describeViolations(found)).toBe('');
   });
 
   test('the board filter lists All boards first, without The System\'s, and narrows the threads', async () => {

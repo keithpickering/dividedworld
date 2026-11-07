@@ -82,21 +82,34 @@ export interface SearchDoc {
   readonly threads: SearchPage<ThreadHit> | null;
   /** The server refused the search (a date or a word it cannot read); the screen says so and the form stays. */
   readonly refused: boolean;
+  /** The search never reached the server (offline, or a server error); the screen says so, and the form stays. */
+  readonly unreached: boolean;
 }
 
 /** The address as a search reads it: unknown values are already their defaults, so two addresses that ask the same share a document. */
 export const searchKey = (query: Query): string => String(searchParams(parseSearch(query)));
+
+/**
+ * Whether a failed search failed to reach the server rather than being refused by it. The supabase adapter's read throws one fixed sentence
+ * ("... could not be read right now; try again") for any error it could not tell apart, and a fetch that never answered is a TypeError; the
+ * browser also says when it is offline. Anything else is the server's (or the fake's) own refusal of an argument.
+ */
+function reachFailure(e: unknown): boolean {
+  if (e instanceof TypeError) return true;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
+  return e instanceof Error && /could not be read right now/.test(e.message);
+}
 
 export async function loadSearch(env: LoadEnv, query: Query): Promise<ScreenDoc<SearchDoc>> {
   if (!(await env.signedIn())) return SIGNED_OUT_DOC;
   const ask = parseSearch(query);
   const author = ask.query.author;
   const named = author === null ? Promise.resolve([]) : env.api.characters([author]).catch(() => []);
-  const none = { posts: null, threads: null, refused: false };
+  const none = { posts: null, threads: null, refused: false, unreached: false };
   const found = !isSearching(ask.query)
     ? Promise.resolve(none)
     : (ask.view === 'threads' ? env.api.searchThreads(ask.query, ask.after).then((threads) => ({ ...none, threads })) : env.api.searchPosts(ask.query, ask.after).then((posts) => ({ ...none, posts })))
-        .catch(() => ({ ...none, refused: true }));
+        .catch((e: unknown) => (reachFailure(e) ? { ...none, unreached: true } : { ...none, refused: true }));
   const [who, result] = await Promise.all([named, found]);
   return { ask, authorName: who[0]?.name ?? null, ...result };
 }

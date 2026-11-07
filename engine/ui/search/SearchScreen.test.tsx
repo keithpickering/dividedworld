@@ -11,7 +11,7 @@ import type { PostHit, SearchCursor, SearchPage, ThreadHit } from '../data/api.t
 import type { CardUi } from '../cards/types.ts';
 import { LoadedSearch } from '../loaded.tsx';
 import { buildWorld, renderIn } from '../test-world.tsx';
-import { forgetWalk } from './walked.ts';
+import { forgetWalk, recordWalk, walkOf } from './walked.ts';
 
 beforeEach(() => { localStorage.clear(); forgetWalk(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -106,7 +106,8 @@ describe('the form', () => {
     expect(await screen.findByRole('combobox', { name: 'Posted by' })).toHaveValue('Spritey');
     await user.type(screen.getByRole('combobox', { name: 'Posted by' }), 'x');
     await user.click(screen.getByRole('button', { name: 'Search' }));
-    await waitFor(() => expect(window.location.search).toBe(''));
+    // Nothing is left to ask, so the form stays and says what is needed (the address keeps the last search).
+    expect(await screen.findByText('Type a word to search for, or choose a board or a character.')).toBeInTheDocument();
   });
 
   test('the Board select lists every board, "All boards" first', async () => {
@@ -218,6 +219,69 @@ describe('the states', () => {
     expect(note.closest('.kb-notice')).toHaveAttribute('data-kb-tone', 'refusal');
     expect(screen.getByRole('search', { name: 'Search the boards' })).toBeInTheDocument();
     expect(screen.queryByRole('table')).toBeNull();
+  });
+});
+
+describe('review fixes', () => {
+  test('Q-2: a search that could not reach the server says so, not that the words were wrong', async () => {
+    open('/search?q=zzz', { posts: new TypeError('Failed to fetch') });
+    const note = await screen.findByText('The search could not reach the server. Check your connection and try again.');
+    expect(note.closest('.kb-notice')).toHaveAttribute('data-kb-tone', 'refusal');
+    expect(screen.queryByText(/Check the dates and the words/)).toBeNull();
+    expect(screen.getByRole('search', { name: 'Search the boards' })).toBeInTheDocument();
+  });
+
+  test('Q-1: a page number is shown only for a page walked in this search, not for one typed into the address', async () => {
+    open('/search?q=green&page=9&after=%7C2026-10-05T00%3A00%3A00.000Z%7Cact-1', { posts: page([hit(9)], { count: 200, next: cursor(9) }) });
+    const nav = await screen.findByRole('navigation', { name: 'Pages of results' });
+    expect(nav).not.toHaveTextContent(/Page 9|of 10/);
+    expect(within(nav).queryByText('9')).toBeNull();
+    expect(within(nav).getByRole('link', { name: 'First page' })).toBeInTheDocument();
+  });
+
+  test('Q-8: the walk is one search\'s: a different search forgets it when it records, and reading writes nothing', () => {
+    recordWalk('q=a', 2, cursor(1));
+    expect(walkOf('q=b').size).toBe(0);
+    expect(walkOf('q=a').get(2)).toEqual(cursor(1));
+    recordWalk('q=b', 2, cursor(7));
+    expect(walkOf('q=a').size).toBe(0);
+    expect(walkOf('q=b').get(2)).toEqual(cursor(7));
+  });
+
+  test('Q-3: after a search is run, focus is on the new page\'s heading, not lost with the old form', async () => {
+    const user = userEvent.setup();
+    open('/search', { posts: page([hit(1)]) });
+    await user.type(await screen.findByRole('combobox', { name: 'Keywords' }), 'green');
+    await user.click(screen.getByRole('button', { name: 'Search' }));
+    await screen.findByRole('link', { name: 'Thread 1' });
+    await waitFor(() => expect(document.body.contains(document.activeElement) && document.activeElement !== document.body).toBe(true));
+    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1, name: 'Search' }));
+  });
+
+  test('Q-4: the results table is native, with no roles repeated on its parts', async () => {
+    open('/search?q=green', { posts: page([hit(1)]) });
+    const table = await screen.findByRole('table');
+    expect(table.querySelectorAll('[role]').length).toBe(0);
+    expect(table.getAttribute('role')).toBeNull();
+  });
+
+  test('Q-5: the snippet claims no cut it cannot know of', async () => {
+    open('/search?q=green', { posts: page([hit(1)]) });
+    const snippet = (await screen.findByRole('table')).querySelector('.kb-search-snippet')!;
+    expect(snippet.textContent).toBe('I throw a green shell at whoever did it');
+  });
+
+  test('Q-6: a search with nothing to look for keeps the form, says what is needed, and moves focus to the message', async () => {
+    const user = userEvent.setup();
+    open('/search');
+    await user.click(await screen.findByRole('button', { name: 'Search' }));
+    const msg = await screen.findByText('Type a word to search for, or choose a board or a character.');
+    expect(msg.closest('[role="alert"], [role="status"]')).not.toBeNull();
+    expect(window.location.search).toBe('');
+    expect(screen.getByRole('search', { name: 'Search the boards' })).toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByRole('combobox', { name: 'Keywords' }));
+    await user.type(screen.getByRole('combobox', { name: 'Keywords' }), 'a');
+    expect(screen.queryByText('Type a word to search for, or choose a board or a character.')).toBeNull();
   });
 });
 

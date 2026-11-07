@@ -18,12 +18,12 @@ export function BannerSearch() {
     <div className="kb-banner-search">
       <BoardCombobox
         label="Search the boards" placeholder="Search" source={source} trailing={searchPostsFor}
-        onChoose={(option, group) => {
+        onChoose={(option, group, typed) => {
           const to = suggestionHref(group, option.id);
           if (to !== null) { navigate(to); return; }
-          // The trailing row stands for the typed words: its label holds them between the quotes.
-          const typed = /“(.*)”$/su.exec(option.label)?.[1] ?? '';
-          navigate(searchHref({ ...parseSearch(new URLSearchParams()), query: { ...parseSearch(new URLSearchParams()).query, q: typed } }));
+          // The trailing row stands for the typed words, which the box hands over.
+          const blank = parseSearch(new URLSearchParams());
+          navigate(searchHref({ ...blank, query: { ...blank.query, q: typed } }));
         }}
       />
     </div>

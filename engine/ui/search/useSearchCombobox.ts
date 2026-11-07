@@ -22,8 +22,8 @@ export type ComboSource<O extends ComboOption = ComboOption> = (query: string, s
 
 export interface UseSearchComboboxOptions<O extends ComboOption = ComboOption> {
   readonly source: ComboSource<O>;
-  /** `groupKey` is null for the trailing row. A chosen suggestion's label fills the box; the trailing row leaves it. */
-  readonly onChoose: (option: O, groupKey: string | null) => void;
+  /** `groupKey` is null for the trailing row; `query` is the words typed (trimmed) when it was chosen. A chosen suggestion's label fills the box; the trailing row leaves it. */
+  readonly onChoose: (option: O, groupKey: string | null, query: string) => void;
   readonly trailing?: (query: string) => O | null;
   /** The source answers an empty query (the Reveal field's newest threads): asked on focus, and on a cleared box. */
   readonly allowEmpty?: boolean;
@@ -155,7 +155,7 @@ export function useSearchCombobox<O extends ComboOption = ComboOption>(options: 
     if (row.groupKey !== null) { setQuery(row.option.label); setGroups(null); setStale(false); setLiveText(''); }
     setDismissed(true);
     setActive(-1);
-    latest.current.onChoose(row.option, row.groupKey);
+    latest.current.onChoose(row.option, row.groupKey, query.trim());
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -192,7 +192,7 @@ export function useSearchCombobox<O extends ComboOption = ComboOption>(options: 
           e.preventDefault();
           cancel();
           setDismissed(true);
-          latest.current.onChoose(trailingOption, null);
+          latest.current.onChoose(trailingOption, null, query.trim());
         }
         return;
       }

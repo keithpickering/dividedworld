@@ -22,9 +22,9 @@ import { Link, useNavigate } from '../router.tsx';
 import { isSignedOutDoc, type ScreenDoc, type SearchDoc } from '../screen-docs.ts';
 import { BoardCombobox } from './BoardCombobox.tsx';
 import { snippetParts } from './highlight.ts';
-import { dayOf, parseSearch, searchHref, searchParams, type SearchAsk } from './query.ts';
+import { dayOf, isSearching, parseSearch, searchHref, searchParams, type SearchAsk } from './query.ts';
 import { charactersSource, searchPostsFor, suggestionHref, suggestSource } from './suggest.ts';
-import { walkOf } from './walked.ts';
+import { recordWalk, walkOf } from './walked.ts';
 import '../glass/meta-tile.css';
 import '../cards/marks.css';
 import '../board/board.css';
@@ -47,18 +47,25 @@ function SearchView({ doc }: { readonly doc: SearchDoc }) {
   const { settings } = useKayfa();
   const { ask } = doc;
   const heading = useRef<HTMLHeadingElement>(null);
-  const first = useRef(true);
-  /* After a search or a page turn, focus goes to the heading, so a keyboard starts the new page at its top. */
+  /*
+   * The page is loaded again, and the screen mounted again, on every search and page turn, so the old form (and the focus in it) is gone. Frame
+   * moves focus only on a change of path, not of query; where focus was lost with the form, it goes to the heading, so a keyboard starts the new
+   * page at its top. Focus anywhere inside the page (a move from another page, which the frame has focused) is left alone.
+   */
   useEffect(() => {
-    if (first.current) { first.current = false; return; }
-    heading.current?.focus();
-  }, [doc]);
+    const there = document.activeElement;
+    if (!there || there === document.body) heading.current?.focus({ preventScroll: true });
+  }, []);
 
   const found = ask.view === 'threads' ? doc.threads : doc.posts;
   const sig = String(searchParams({ ...ask, page: 1, after: null }));
-  const cursors = walkOf(sig);
-  if (ask.page > 1 && ask.after) cursors.set(ask.page, ask.after);
+  const held = walkOf(sig);
+  const walked = ask.page === 1 || sameCursor(held.get(ask.page), ask.after);
+  /* The cursors the pager may link: the ones walked, and the next page's, which this page holds. */
+  const cursors = new Map(held);
   if (found?.next) cursors.set(ask.page + 1, found.next);
+  const next = found?.next ?? null;
+  useEffect(() => { if (next) recordWalk(sig, ask.page + 1, next); }, [sig, ask.page, next]);
   const noun = ask.view === 'threads' ? 'thread' : 'post';
 
   return (
@@ -67,15 +74,16 @@ function SearchView({ doc }: { readonly doc: SearchDoc }) {
       <h1 ref={heading} tabIndex={-1} className="kb-heading">Search</h1>
       <SearchForm key={sig} doc={doc} />
       {doc.refused && <p className="kb-notice" data-kb-tone="refusal">That search could not be run. Check the dates and the words, then try again.</p>}
+      {doc.unreached && <p className="kb-notice" data-kb-tone="refusal">The search could not reach the server. Check your connection and try again.</p>}
       {found && found.count === 0 && <p className="kb-search-none">No {noun}s match. Try fewer words, or another board.</p>}
       {found && found.count > 0 && (
         <>
           <p className="kb-search-count" data-testid="search-count">{countLine(ask, found, settings.searchRankPool)}</p>
-          <Pager ask={ask} found={found} cursors={cursors} where="top" />
+          <Pager ask={ask} found={found} cursors={cursors} walked={walked} where="top" />
           {ask.view === 'threads'
             ? <Results kind="threads" rows={doc.threads!.results} />
             : <Results kind="posts" rows={doc.posts!.results} />}
-          <Pager ask={ask} found={found} cursors={cursors} where="bottom" />
+          <Pager ask={ask} found={found} cursors={cursors} walked={walked} where="bottom" />
         </>
       )}
     </div>
@@ -83,6 +91,8 @@ function SearchView({ doc }: { readonly doc: SearchDoc }) {
 }
 
 /* ----------------------------------------------------------------------------------------------- the count line */
+
+const sameCursor = (a: SearchCursor | undefined, b: SearchCursor | null): boolean => a !== undefined && b !== null && a.rank === b.rank && a.at === b.at && a.act === b.act;
 
 function countLine(ask: SearchAsk, found: { readonly count: number; readonly more: boolean; readonly pooled: boolean }, pool: number) {
   const noun = ask.view === 'threads' ? 'thread' : 'post';
@@ -98,7 +108,7 @@ function countLine(ask: SearchAsk, found: { readonly count: number; readonly mor
 
 /* --------------------------------------------------------------------------------------------------- the pager */
 
-function Pager({ ask, found, cursors, where }: { readonly ask: SearchAsk; readonly found: { readonly count: number; readonly more: boolean; readonly next: SearchCursor | null }; readonly cursors: ReadonlyMap<number, SearchCursor>; readonly where: 'top' | 'bottom' }) {
+function Pager({ ask, found, cursors, walked, where }: { readonly walked: boolean; readonly ask: SearchAsk; readonly found: { readonly count: number; readonly more: boolean; readonly next: SearchCursor | null }; readonly cursors: ReadonlyMap<number, SearchCursor>; readonly where: 'top' | 'bottom' }) {
   const per = ask.query.perPage ?? SEARCH_PER_PAGE;
   const pages = found.more ? null : Math.max(1, Math.ceil(found.count / per));
   if (ask.page === 1 && found.next === null) return null;
@@ -107,12 +117,13 @@ function Pager({ ask, found, cursors, where }: { readonly ask: SearchAsk; readon
     const at = cursors.get(p);
     return at ? searchHref({ ...ask, page: p, after: at }) : null;
   };
-  const numbers = [...new Set([1, ask.page, ...cursors.keys()])].sort((a, b) => a - b);
+  /* A page number is shown for a page walked here; a page reached by an address typed or shared has none, since the search has not counted its way there. */
+  const numbers = [...new Set([1, ...(walked ? [ask.page] : []), ...cursors.keys()])].sort((a, b) => a - b);
   const before = ask.page > 1 ? to(ask.page - 1) : null;
   const after = found.next ? to(ask.page + 1) : null;
   return (
     <nav className="kb-pager kb-small" aria-label={where === 'top' ? 'Pages of results' : 'More pages of results'}>
-      <span className="kb-pager-where">Page {ask.page}{pages !== null ? ` of ${pages}` : ''}</span>
+      {walked && <span className="kb-pager-where">Page {ask.page}{pages !== null ? ` of ${pages}` : ''}</span>}
       {ask.page > 1 && (before ? <Link to={before}><span aria-hidden="true">‹</span> Previous</Link> : <Link to={to(1)!}>First page</Link>)}
       {numbers.map((p) => (p === ask.page
         ? <span key={p} className="kb-pager-here" aria-current="page">{p}</span>
@@ -127,7 +138,7 @@ function Pager({ ask, found, cursors, where }: { readonly ask: SearchAsk; readon
 function Snippet({ text }: { readonly text: string }) {
   return (
     <div className="kb-search-snippet">
-      …{snippetParts(text).map((p, i) => (p.hit ? <mark key={i} className="kb-search-hit">{p.text}</mark> : <span key={i}>{p.text}</span>))}…
+      {snippetParts(text).map((p, i) => (p.hit ? <mark key={i} className="kb-search-hit">{p.text}</mark> : <span key={i}>{p.text}</span>))}
     </div>
   );
 }
@@ -163,27 +174,27 @@ type Rows = { readonly kind: 'posts'; readonly rows: readonly PostHit[] } | { re
 function Results(props: Rows) {
   const posts = props.kind === 'posts';
   return (
-    <table className="kb-table kb-search-results" role="table">
+    <table className="kb-table kb-search-results" >
       <caption className="kb-visually-hidden">{posts ? 'Posts' : 'Threads'} matching the search, best first</caption>
-      <thead role="rowgroup">
-        <tr role="row">
-          <th role="columnheader" scope="col">{posts ? 'Post' : 'Thread'}</th>
-          <th role="columnheader" scope="col">Posted by</th>
-          <th role="columnheader" scope="col">When</th>
+      <thead>
+        <tr>
+          <th scope="col">{posts ? 'Post' : 'Thread'}</th>
+          <th scope="col">Posted by</th>
+          <th scope="col">When</th>
         </tr>
       </thead>
-      <tbody role="rowgroup">
+      <tbody>
         {(props.rows as readonly (PostHit | ThreadHit)[]).map((h) => (
-          <tr role="row" key={h.act} className="kb-search-row-result">
-            <td role="cell">
+          <tr key={h.act} className="kb-search-row-result">
+            <td>
               <Link to={postHref(h)} className="kb-search-title"><b>{h.title}</b></Link>{' '}
               <span className="kb-small kb-muted">in <Link to={`/b/${encodeURIComponent(h.boardSlug)}`}>{h.boardName}</Link> · page {h.page}</span>
               {'matches' in h && <span className="kb-small kb-muted"> · <span>{h.matchesMore ? `${h.matches}+` : h.matches} matching {h.matches === 1 && !h.matchesMore ? 'post' : 'posts'}</span></span>}
               {h.cards.length > 0 && <span className="kb-search-marks">{h.cards.map((c) => <CardMark key={c} card={c} />)}</span>}
               <Snippet text={h.snippet} />
             </td>
-            <td role="cell"><Author hit={h} /></td>
-            <td role="cell" className="kb-small kb-muted"><time dateTime={h.createdAt}>{dateOf(h.createdAt)}</time></td>
+            <td><Author hit={h} /></td>
+            <td className="kb-small kb-muted"><time dateTime={h.createdAt}>{dateOf(h.createdAt)}</time></td>
           </tr>
         ))}
       </tbody>
@@ -221,6 +232,8 @@ function SearchForm({ doc }: { readonly doc: SearchDoc }) {
   const [titlesOnly, setTitlesOnly] = useState(ask.query.titlesOnly);
   const [view, setView] = useState(ask.view);
   const [sort, setSort] = useState<SearchSort | null>(ask.query.sort);
+  const [needed, setNeeded] = useState(false);
+  const form = useRef<HTMLFormElement>(null);
   const keywords = useRef(suggestSource(api));
   const people = useRef(charactersSource(api));
 
@@ -238,12 +251,16 @@ function SearchForm({ doc }: { readonly doc: SearchDoc }) {
     if (v.view === 'threads') params.set('as', 'threads');
     if (v.sort) params.set('sort', v.sort);
     if (ask.query.perPage !== null) params.set('per', String(ask.query.perPage));
-    navigate(searchHref(parseSearch(params)));
+    const next = parseSearch(params);
+    /* Nothing to look for: the form stays, and says what is needed rather than going to a blank page. */
+    if (!isSearching(next.query)) { setNeeded(true); form.current?.querySelector<HTMLInputElement>('input[role="combobox"]')?.focus(); return; }
+    setNeeded(false);
+    navigate(searchHref(next));
   };
   const submit = (e: FormEvent) => { e.preventDefault(); go(); };
 
   return (
-    <form role="search" aria-label="Search the boards" className="kb-box kb-search-form" onSubmit={submit}>
+    <form ref={form} role="search" aria-label="Search the boards" className="kb-box kb-search-form" onSubmit={submit} onChange={() => setNeeded(false)}>
       <h2 className="kb-box-head">Search the boards</h2>
       <div className="kb-search-fields">
         <div className="kb-search-field kb-search-field-wide">
@@ -299,6 +316,7 @@ function SearchForm({ doc }: { readonly doc: SearchDoc }) {
         </div>
         <button type="submit" className="kb-button" data-kb-primary="">Search</button>
       </div>
+      {needed && <p role="alert" className="kb-notice" data-kb-tone="refusal">Type a word to search for, or choose a board or a character.</p>}
       <p className="kb-small kb-muted kb-search-help">Quote a phrase, put - before a word to leave it out, and use or between words to match either.</p>
     </form>
   );

@@ -33,7 +33,7 @@ export function BoardCombobox<O extends ComboOption = ComboOption>({ label, show
       <label className={showLabel ? 'kb-search-label' : 'kb-visually-hidden'} htmlFor={inputId ?? `${view.listProps.id}-input`}>{label}</label>
       <input id={inputId ?? `${view.listProps.id}-input`} type="text" className="kb-input kb-search-input" placeholder={placeholder} {...view.inputProps} />
       {view.open && (
-        <div className="kb-search-list" aria-label={label} {...view.listProps}>
+        <div className="kb-search-list" {...(view.groups.some((g) => g.rows.length > 0) || view.trailing ? { ...view.listProps, 'aria-label': label } : { id: view.listProps.id })}>
           {view.groups.map((g) => (
             <div key={g.key} role="group" aria-labelledby={g.headingId}>
               <div id={g.headingId} className="kb-search-head">{g.label}</div>

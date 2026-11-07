@@ -68,18 +68,17 @@ export function RevealOverlay({ character, onClose, onDone, returnFocusTo }: Rev
         <p className="kb-reveal-line">{words.sentence}</p>
         {words.pendingTurn && <p className="kb-reveal-line kb-reveal-note">{words.pendingTurn}</p>}
         <div className="kb-reveal-where">
-          {/* Typing after a choice makes it no longer the chosen thread; a choice itself fills the box without an input event. */}
-          <div onChange={(e) => { if ((e.target as HTMLInputElement).value !== chosen?.title) setChosen(null); }}>
-            <GlassCombobox
-              key={board}
-              label="Thread"
-              placeholder="Search thread titles"
-              allowEmpty
-              minChars={2}
-              source={source}
-              onChoose={(o) => setChosen({ id: o.id, title: o.label })}
-            />
-          </div>
+          {/* Typing after a choice makes it no longer the chosen thread; a choice itself fills the box with the chosen title, which is not a change. */}
+          <GlassCombobox
+            key={board}
+            label="Thread"
+            placeholder="Search thread titles"
+            allowEmpty
+            minChars={2}
+            source={source}
+            onChoose={(o) => setChosen({ id: o.id, title: o.label })}
+            onQueryChange={(text) => setChosen((c) => (c && text !== c.title ? null : c))}
+          />
           <label className="kb-glass-field">
             <span>Board (optional)</span>
             <select className="kb-glass-select" value={board} onChange={(e) => { setBoard(e.target.value); setChosen(null); }}>

@@ -488,6 +488,22 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
 
   const transport = (r: Res) => r.error !== null && (r.status === 0 || r.status >= 500);
 
+  /**
+   * A read whose arguments the server may refuse (the search reads, through screen_refusal): a refusal carrying the hint is thrown in the
+   * server's own words, so a screen can tell a refused search from one that never reached the server (NOT_READ); anything else is `read`'s.
+   */
+  async function refusableRead(run: () => PromiseLike<unknown>): Promise<Res> {
+    let refused = null as string | null;
+    const r = await read(async () => {
+      const x = (await run()) as Res;
+      if (x.error?.hint === REFUSAL_HINT && x.error.message) refused = x.error.message;
+      return x;
+    }).catch((e: unknown) => {
+      if (refused !== null) throw new Error(refused);
+      throw e;
+    });
+    return r;
+  }
   /** A read, retried once on the request itself when it failed in transport; a second failure throws plain words. */
   async function read(run: () => PromiseLike<unknown>, pastEnd = false): Promise<Res> {
     const once = async (): Promise<Res> => {
@@ -1227,13 +1243,13 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return { boards: rowsOf(d['boards']).map(toBoardSummary), characters: rowsOf(d['characters']).map(faceOf), presence: toPresence(d['presence'] ?? {}), unread: toUnread(d['unread']) };
     },
     async searchPosts(q, after): Promise<SearchPage<PostHit>> {
-      return toSearchPage((await read(() => client.rpc('search_posts', searchArgs(q, after)))).data, toPostHit);
+      return toSearchPage((await refusableRead(() => client.rpc('search_posts', searchArgs(q, after)))).data, toPostHit);
     },
     async searchThreads(q, after): Promise<SearchPage<ThreadHit>> {
-      return toSearchPage((await read(() => client.rpc('search_threads', searchArgs(q, after)))).data, toThreadHit);
+      return toSearchPage((await refusableRead(() => client.rpc('search_threads', searchArgs(q, after)))).data, toThreadHit);
     },
     async suggest(prefix, options): Promise<Suggestions> {
-      const d = (await read(() => client.rpc('search_suggest', {
+      const d = (await refusableRead(() => client.rpc('search_suggest', {
         prefix, kinds: options?.kinds ? [...options.kinds] : null, board: options?.board ?? null, exclude_system: options?.excludeSystem ?? false, most: options?.most ?? null,
       }))).data as Row | null;
       if (!isObject(d)) throw new Error(NOT_READ);

@@ -1934,9 +1934,12 @@ describe('a screen in one call', () => {
     expect(t.next).toEqual({ rank: null, at: '2026-10-01T08:00:00+00:00', act: A });
   });
 
-  it('search_posts: a read the server refuses is thrown in plain words, not an empty page', async () => {
-    const h = harness((r) => (r.url.pathname.endsWith('/rpc/search_posts') ? json({ message: 'a page holds 1 to 50 results' }, 400) : json({}, 404)));
-    await expect(h.api.searchPosts({ q: '', author: null, board: null, fromAt: null, toAt: null, titlesOnly: false, sort: null, perPage: 99 })).rejects.toThrow();
+  it('search_posts: a read the server refuses is thrown in the server\'s words, apart from one that never reached it', async () => {
+    const q = { q: '', author: null, board: null, fromAt: null, toAt: null, titlesOnly: false, sort: null, perPage: 99 } as const;
+    const refused = harness((r) => (r.url.pathname.endsWith('/rpc/search_posts') ? json({ message: 'a page holds 1 to 50 results', hint: 'kayfabb.refusal', code: '22023' }, 400) : json({}, 404)));
+    await expect(refused.api.searchPosts(q)).rejects.toThrow('a page holds 1 to 50 results');
+    const down = harness((r) => (r.url.pathname.endsWith('/rpc/search_posts') ? json({ message: 'upstream' }, 503) : json({}, 404)));
+    await expect(down.api.searchPosts(q)).rejects.toThrow('could not be read right now');
   });
 
   it('search_suggest: sends the prefix and options by name, and maps the three groups', async () => {

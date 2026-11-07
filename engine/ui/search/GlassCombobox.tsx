@@ -28,7 +28,7 @@ export function GlassCombobox<O extends ComboOption = ComboOption>({ label, plac
         <input type="text" className="kb-glass-input" placeholder={placeholder} {...view.inputProps} />
       </label>
       {view.open && (
-        <div className="kb-glass-combo-list" aria-label={label} {...view.listProps}>
+        <div className="kb-glass-combo-list" {...(view.groups.some((g) => g.rows.length > 0) || view.trailing ? { ...view.listProps, 'aria-label': label } : { id: view.listProps.id })}>
           {view.groups.map((g) => (
             <div key={g.key} role="group" aria-labelledby={g.headingId}>
               <div id={g.headingId} className="kb-glass-combo-head">{g.label}</div>

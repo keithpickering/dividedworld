@@ -63,6 +63,21 @@ describe.each(skins)('the %s skin', (name, draw) => {
   });
 });
 
+describe.each([['board', BoardCombobox], ['glass', GlassCombobox]] as const)('the %s skin with only empty groups', (_n, Skin) => {
+  test('shows the empty line, holds no listbox without an option, and is axe clean', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ delay: null, advanceTimers: vi.advanceTimersByTime });
+    const none = async () => [{ key: 'threads', label: 'Threads', options: [], empty: 'No threads found.' }] as readonly ComboGroup[];
+    const view = render(<div className="kb-glass"><Skin label="Thread" source={none} onChoose={() => {}} /></div>);
+    await user.type(screen.getByRole('combobox'), 'zzzz');
+    await act(async () => { await vi.advanceTimersByTimeAsync(150); });
+    expect(screen.getByText('No threads found.')).toBeInTheDocument();
+    expect(screen.queryByRole('listbox')).toBeNull();
+    const found = await axeViolations(view.container);
+    expect(found, describeViolations(found)).toEqual([]);
+  });
+});
+
 describe('the board skin', () => {
   test('shows the trailing row last and Enter chooses it', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
@@ -74,7 +89,7 @@ describe('the board skin', () => {
     const options = screen.getAllByRole('option');
     expect(options.at(-1)).toHaveTextContent('Search posts for “wari”');
     await user.keyboard('{Enter}');
-    expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ id: 'all' }), null);
+    expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ id: 'all' }), null, 'wari');
   });
 });
 

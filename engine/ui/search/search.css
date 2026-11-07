@@ -141,3 +141,16 @@
     border-top: 1px solid var(--kb-rule);
   }
 }
+
+/* The page, a result row and its title link: the layout lives on the form and the table; these name the parts. */
+.kb-search-page {
+  min-width: 0;
+}
+
+.kb-search-row-result {
+  vertical-align: top;
+}
+
+.kb-search-title {
+  overflow-wrap: anywhere;
+}
