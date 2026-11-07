@@ -28,6 +28,7 @@ import { createPlays, inPlayOrder, livePlays, nextEnd, playOf, shownPlays, usePl
 import { drawnInMoment, type CardRules, type Reach } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
 import type { CardPlay, CardUi, CardView, EffectPlace, EffectProps } from './types.ts';
+import { glassInk } from './ink.ts';
 
 const NOT_AUTHOR = 'only the post\'s author saves what is on it';
 /** What a staged page's effect is answered with: it saves nothing and releases nothing, without asking anyone (staged.ts). */
@@ -295,6 +296,11 @@ function StillEffect({ Effect, card, onWords, ...props }: Omit<EffectProps, 'sho
 
 export { useNarrow, useSheet } from '../media.ts';
 
-/** A play's ink, where its card chooses one (`CardUi.tag`), given all of this card's plays on the post in play order. */
-export const inkOf = (ui: { readonly cards: readonly CardUi[] }, play: CardPlay, plays: readonly CardPlay[]): string | undefined =>
-  ui.cards.find((c) => c.key === play.card)?.tag?.(play, plays.filter((o) => o.card === play.card));
+/**
+ * A play's ink, where its card chooses one (`CardUi.tag`), given all of this card's plays on the post in play order: lifted
+ * to read on the glass where it is too dark to (`glassInk`), and none where it cannot be read.
+ */
+export const inkOf = (ui: { readonly cards: readonly CardUi[] }, play: CardPlay, plays: readonly CardPlay[]): string | undefined => {
+  const chosen = ui.cards.find((c) => c.key === play.card)?.tag?.(play, plays.filter((o) => o.card === play.card));
+  return chosen === undefined ? undefined : glassInk(chosen);
+};
