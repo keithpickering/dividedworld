@@ -34,6 +34,7 @@ import { useLocation } from '../router.tsx';
 import { GlassLink } from '../glass/Link.tsx';
 import { actLink, inOrder, logRows, NO_SHARES, plain, reasonName, SHARES_ARE, signed, utcWhen, type LogData, type LogRow, type Segment, type Words } from './lines.ts';
 import { useLog } from './useLog.ts';
+import { ENTERING, useEnterAdded } from '../glass/enter.ts';
 import { economyNow, paramsOf } from '../economy.ts';
 import { untilWords } from '../characters/format.ts';
 import './log.css';
@@ -111,7 +112,7 @@ function Breakdown({ settlement, data, words, tab, id, open, onClose }: { readon
   );
 }
 
-function Row({ row, data, words, tab, open, onToggle }: { readonly row: LogRow; readonly data: LogData; readonly words: Words; readonly tab: Id | null; readonly open: boolean; readonly onToggle: (id: number, to?: boolean) => void }) {
+function Row({ row, data, words, tab, open, onToggle, entering }: { readonly entering?: true; readonly row: LogRow; readonly data: LogData; readonly words: Words; readonly tab: Id | null; readonly open: boolean; readonly onToggle: (id: number, to?: boolean) => void }) {
   const base = useId();
   const breakdown = `${base}-posts`;
   const button = useRef<HTMLButtonElement>(null);
@@ -119,7 +120,7 @@ function Row({ row, data, words, tab, open, onToggle }: { readonly row: LogRow; 
   const close = () => { if (s) onToggle(s.id, false); button.current?.focus(); };
   return (
     <>
-      <tr data-kb-kind={row.kind} data-kb-estimate={row.kind === 'estimate' ? '' : undefined}>
+      <tr data-kb-kind={row.kind} data-kb-estimate={row.kind === 'estimate' ? '' : undefined} {...(entering ? { [ENTERING]: '' } : {})}>
         <td className="kb-log-when" data-kb-label="When (UTC)">{utcWhen(row.at)}</td>
         <td className="kb-log-what" data-kb-label="What">{row.what}</td>
         <td className="kb-log-details" data-kb-label="Details">
@@ -200,6 +201,8 @@ export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' 
   const table = useRef<HTMLTableElement>(null);
   const reading = useRef(false);
   const last = data.log.before === null;
+  /* The lines a press adds enter; lines that arrive any other way do not. */
+  const added = useEnterAdded(table, older === 'loading');
   /* On the phone the character tabs are one row that scrolls (log.css); the current one is kept in view. */
   const tabRow = useRef<HTMLDivElement>(null);
   const currentId = current?.id ?? null;
@@ -244,14 +247,14 @@ export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' 
           </thead>
           <tbody>
             {!settled && rows.length === 0 && <NothingYet name={current?.name ?? null} next={data.nextSettlement} />}
-            {rows.map((r) => <Row key={r.key} row={r} data={data} words={words} tab={current?.id ?? null} open={r.settlement !== undefined && open.has(r.settlement.id)} onToggle={onToggle} />)}
+            {rows.map((r) => <Row key={r.key} entering={added.entering(r.key)} row={r} data={data} words={words} tab={current?.id ?? null} open={r.settlement !== undefined && open.has(r.settlement.id)} onToggle={onToggle} />)}
           </tbody>
         </table>
         {!settled && rows.length > 0 && <p className="kb-log-empty">{nothingSettled(current?.name ?? null, data.nextSettlement)}</p>}
         {settled && rows.length === 0 && <p className="kb-log-empty">Nothing on these pages is {current?.name ?? 'yours'}'s yet.</p>}
         {onOlder && data.log.before !== null && (
           <p className="kb-log-older">
-            <GlassButton size="s" onClick={() => { reading.current = true; onOlder(); }} disabled={older === 'loading'}>Show older lines</GlassButton>
+            <GlassButton size="s" busy={older === 'loading'} onClick={() => { reading.current = true; added.arm(rows.map((r) => r.key)); onOlder(); }}>Show older lines</GlassButton>
             {older === 'failed' && <span className="kb-log-older-failed"> The older lines could not be read. Try again.</span>}
           </p>
         )}

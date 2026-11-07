@@ -10,6 +10,7 @@
  * The reading is the signed-in account's: another account signing in reads afresh, and nothing of the last account's is drawn meanwhile.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigation } from '../router.tsx';
 import { ALERTS_PAGE, type Act, type Alert, type AlertsPage, type Id, type KayfaApi, type MyCharacter } from '../data/api.ts';
 
 export interface AlertsRead {
@@ -88,6 +89,7 @@ async function actsAround(api: KayfaApi, rows: readonly Alert[], held: ReadonlyM
 
 /** The player's Alerts: the document's page, `older()` to read the next page below it, and `dropFollowed` for an Unfollow. */
 export function useAlerts(api: KayfaApi, doc: AlertsPage, mine: readonly MyCharacter[]) {
+  const { track } = useNavigation();
   const [held, setHeld] = useState<Held>(() => heldFrom(doc));
   /* A document read again (a retry, another account's) replaces what was held; an older page read before it is not carried over. */
   const current = held.doc === doc ? held : heldFrom(doc);
@@ -124,7 +126,8 @@ export function useAlerts(api: KayfaApi, doc: AlertsPage, mine: readonly MyChara
     const last = current.rows.at(-1);
     if (!last) return;
     setHeld({ ...current, older: 'loading' });
-    (async () => {
+    /* The read is the router's to count (the meter), and the button is busy while it is out. */
+    track((async () => {
       const page = await api.alerts(last.at);
       const have = new Set(current.rows.map(rowKey));
       const fresh = page.filter((r) => !have.has(rowKey(r)));
@@ -135,7 +138,7 @@ export function useAlerts(api: KayfaApi, doc: AlertsPage, mine: readonly MyChara
         threads.length === 0 ? {} : orElse(api.reading(threads), null),
       ]);
       return { page, fresh, acts, names, openings, reading };
-    })().then(
+    })()).then(
       (got) => setHeld((now) => {
         if (now.doc !== doc) return now;
         /* Merged into the page as it stands now, not as it stood at the click: a row unfollowed meanwhile stays gone. */
@@ -150,7 +153,7 @@ export function useAlerts(api: KayfaApi, doc: AlertsPage, mine: readonly MyChara
       () => setHeld((now) => (now.doc === doc ? { ...now, older: 'failed' } : now)),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps -- withoutUnfollowed reads a ref
-  }, [api, doc, current]);
+  }, [api, doc, current, track]);
 
   /** Takes a followed thread's rows off the list, once it is unfollowed. */
   const dropFollowed = useCallback((thread: Id) => {

@@ -15,10 +15,11 @@
  * one (the newest by default, and the newest too where the named one is not in what was read). Every read is the same for every player but the
  * player's own reactions to the open update, which only say what they already know.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { useKayfa } from '../context.tsx';
 import { UPDATES_PAGE, type Id, type Update, type UpdatesPage } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
+import { ENTERING, useEnterAdded } from '../glass/enter.ts';
 import { PageHead } from '../glass/PageHead.tsx';
 import { UpdateArticle } from './UpdateArticle.tsx';
 import { utcDay } from './time.ts';
@@ -29,7 +30,7 @@ import { Reactions } from '../reactions/Reactions.tsx';
 import { createMine } from '../reactions/mine.ts';
 import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
 import { createTallies } from '../thread/tallies.ts';
-import { useLocation, useNavigate } from '../router.tsx';
+import { useLocation, useNavigate, useNavigation } from '../router.tsx';
 import { GlassLink } from '../glass/Link.tsx';
 import { todoDraft } from '../admin/handover-words.ts';
 import { WriteUpdate } from '../admin/WriteUpdate.tsx';
@@ -48,6 +49,11 @@ export interface UpdatesProps {
   /** Whether an earlier page may be read. */
   readonly more: boolean;
   readonly onMore: () => void;
+  /** True while the earlier page is out: the button is busy. */
+  readonly paging?: boolean;
+  /** The element the archive's rows are found in for their entrance, and which are the ones a press added (`useEnterAdded`). */
+  readonly scope?: RefObject<HTMLElement | null>;
+  readonly entering?: (key: string) => true | undefined;
   /** Whether the player may write one. */
   readonly admin: boolean;
   readonly onWritten: (update: Update) => void;
@@ -113,7 +119,7 @@ function Post({ update, seed }: { readonly update: Update; readonly seed: Seed |
   );
 }
 
-export function Updates({ updates, open, more, onMore, admin, onWritten, initial, handoverGone, handoverProblem, seed = null }: UpdatesProps) {
+export function Updates({ updates, open, more, onMore, paging = false, scope, entering, admin, onWritten, initial, handoverGone, handoverProblem, seed = null }: UpdatesProps) {
   const current = updates.find((u) => u.act === open) ?? updates[0];
   const [writing, setWriting] = useState(initial !== undefined || handoverGone !== undefined || handoverProblem !== undefined);
   useEffect(() => { if (initial !== undefined || handoverGone !== undefined || handoverProblem !== undefined) setWriting(true); }, [initial, handoverGone, handoverProblem]);
@@ -128,10 +134,10 @@ export function Updates({ updates, open, more, onMore, admin, onWritten, initial
             {voice !== undefined && <> The voice is {possessive(voice)}; every fact in it is true.</>}
           </CalmRegion>
           {updates.length > 0 && (
-            <CalmRegion as="nav" aria-label="All updates" className="kb-updates-archive">
+            <CalmRegion as="nav" aria-label="All updates" className="kb-updates-archive" ref={scope as RefObject<HTMLElement>}>
               <ul>
                 {updates.map((u) => (
-                  <li key={u.act}>
+                  <li key={u.act} {...(entering?.(u.act) ? { [ENTERING]: '' } : {})}>
                     <GlassLink to={updatesAt(u.act)} aria-current={u.act === current?.act ? 'page' : undefined}>
                       <b>{u.title}</b>
                       <span>{utcDay(u.at)}</span>
@@ -139,7 +145,7 @@ export function Updates({ updates, open, more, onMore, admin, onWritten, initial
                   </li>
                 ))}
               </ul>
-              {more && <ButtonRow><GlassButton className="kb-updates-more" onClick={onMore}>Show earlier updates</GlassButton></ButtonRow>}
+              {more && <ButtonRow><GlassButton className="kb-updates-more" busy={paging} onClick={onMore}>Show earlier updates</GlassButton></ButtonRow>}
             </CalmRegion>
           )}
         </aside>
@@ -173,6 +179,9 @@ function UpdatesView({ page }: { readonly page: UpdatesPage }) {
   /* The newest page is the document's. What the player added to it (an earlier page, an update just written) is held beside it. */
   const [added, setAdded] = useState<{ readonly older: readonly Update[]; readonly written: readonly Update[]; readonly more: boolean | null }>({ older: [], written: [], more: null });
   const [paging, setPaging] = useState(false);
+  const scope = useRef<HTMLElement>(null);
+  const enter = useEnterAdded(scope, paging);
+  const { track } = useNavigation();
   const updates = useMemo(() => {
     const seen = new Set<Id>();
     return [...added.written, ...page.updates, ...added.older].filter((u) => !seen.has(u.act) && seen.add(u.act));
@@ -193,7 +202,8 @@ function UpdatesView({ page }: { readonly page: UpdatesPage }) {
     const last = updates.at(-1);
     if (!last || paging) return;
     setPaging(true);
-    api.updates(last.at).then(
+    enter.arm(updates.map((u) => u.act));
+    track(api.updates(last.at)).then(
       (older) => setAdded((was) => ({ ...was, older: [...was.older, ...older], more: older.length >= UPDATES_PAGE })),
       () => { /* the button stays, to try again */ },
     ).finally(() => setPaging(false));
@@ -204,7 +214,7 @@ function UpdatesView({ page }: { readonly page: UpdatesPage }) {
   };
   return (
     <Updates
-      updates={updates} open={asked.update} more={more} onMore={onMore} admin={admin} onWritten={written} initial={admin && todo !== undefined ? todoDraft(todo) : undefined}
+      updates={updates} open={asked.update} more={more} onMore={onMore} paging={paging} scope={scope} entering={enter.entering} admin={admin} onWritten={written} initial={admin && todo !== undefined ? todoDraft(todo) : undefined}
       handoverGone={admin && asked.season !== null && todo === undefined ? asked.season : undefined} handoverProblem={admin ? problem : undefined} seed={seed}
     />
   );

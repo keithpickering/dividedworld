@@ -24,6 +24,7 @@ import { PageHead } from '../glass/PageHead.tsx';
 import { usePlayer } from '../player.tsx';
 import { GlassLink } from '../glass/Link.tsx';
 import { AlertIcon } from './AlertIcon.tsx';
+import { ENTERING, useEnterAdded } from '../glass/enter.ts';
 import { rowKey, useAlerts, type AlertsRead } from './useAlerts.ts';
 import { batchWords, targetKey, wordsFor, type Part, type Said, type WordsContext } from './words.ts';
 import './alerts.css';
@@ -59,12 +60,14 @@ interface RowProps {
   readonly character: Id | null;
   readonly note: string | undefined;
   readonly onUnfollow: (thread: Id) => void;
+  /** True in the render that adds the row on a press of Older (found by `useEnterAdded`, which makes it enter). */
+  readonly entering?: true;
 }
 
-function Row({ item, said, fresh, character, note, onUnfollow }: RowProps) {
+function Row({ item, said, fresh, character, note, onUnfollow, entering }: RowProps) {
   const row = item.rows[0]!;
   return (
-    <li className="kb-alerts-row" tabIndex={-1} data-kb-kind={row.kind} data-kb-new={fresh ? '' : undefined} data-kb-key={item.key}>
+    <li className="kb-alerts-row" tabIndex={-1} data-kb-kind={row.kind} data-kb-new={fresh ? '' : undefined} data-kb-key={item.key} {...(entering ? { [ENTERING]: '' } : {})}>
       <AlertIcon kind={row.kind} className="kb-alerts-ico" />
       <div>
         <p className="kb-alerts-line"><Words parts={said.line} /></p>
@@ -130,6 +133,7 @@ export function Alerts({ data, older, onOlder, onUnfollow, notes }: AlertsProps)
    */
   const list = useRef<HTMLDivElement>(null);
   const known = useRef<ReadonlySet<string> | null>(null);
+  const added = useEnterAdded(list, older === 'loading');
   const pending = useRef<{ readonly key: string | null } | null>(null);
   useEffect(() => {
     const root = list.current;
@@ -164,7 +168,7 @@ export function Alerts({ data, older, onOlder, onUnfollow, notes }: AlertsProps)
       {group.map((item) => {
         const first = item.rows[0]!;
         const said = item.rows.length > 1 ? batchWords(item.rows, ctx) : wordsFor(first, ctx);
-        return <Row key={item.key} item={item} said={said} fresh={fresh} character={characterOf(first)} note={first.thread === null ? undefined : notes.get(first.thread)} onUnfollow={(t) => void unfollow(t)} />;
+        return <Row key={item.key} entering={added.entering(item.key)} item={item} said={said} fresh={fresh} character={characterOf(first)} note={first.thread === null ? undefined : notes.get(first.thread)} onUnfollow={(t) => void unfollow(t)} />;
       })}
     </ul>
   );
@@ -205,7 +209,7 @@ export function Alerts({ data, older, onOlder, onUnfollow, notes }: AlertsProps)
         )}
         {data.more && (
           <p className="kb-alerts-older">
-            <GlassButton size="s" busy={older === 'loading'} onClick={() => { known.current = new Set(items.map((i) => i.key)); onOlder(); }}>Older</GlassButton>
+            <GlassButton size="s" busy={older === 'loading'} onClick={() => { known.current = new Set(items.map((i) => i.key)); added.arm(known.current); onOlder(); }}>Older</GlassButton>
             {older === 'failed' && <span className="kb-alerts-older-failed" role="alert"> The older alerts could not be read. Try again.</span>}
           </p>
         )}

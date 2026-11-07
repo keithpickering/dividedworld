@@ -17,6 +17,12 @@ import { LoadedUpdates } from '../loaded.tsx';
 import { UpdatesScreen } from './Updates.tsx';
 import { LoadedThread } from '../loaded.tsx';
 
+const entered = vi.hoisted(() => ({ calls: [] as Element[] }));
+vi.mock('motion/react', async (orig) => ({
+  ...(await orig<typeof import('motion/react')>()),
+  animate: (el: Element) => { entered.calls.push(el); return { then: () => {}, stop: () => {} }; },
+}));
+
 beforeEach(() => { localStorage.clear(); });
 afterEach(() => { vi.restoreAllMocks(); });
 
@@ -193,6 +199,24 @@ describe('the page', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Show earlier updates' }));
     await waitFor(() => expect(within(nav).getAllByRole('link')).toHaveLength(25));
     expect(screen.queryByRole('button', { name: 'Show earlier updates' })).toBeNull();
+  });
+
+  test('Show earlier updates is busy until its page lands, and only the rows it adds enter', async () => {
+    const w = world({ updates: 22 });
+    const orig = w.fake.updates.bind(w.fake);
+    let land!: () => void;
+    vi.spyOn(w.fake, 'updates').mockImplementation((...a) => new Promise((resolve) => { land = () => resolve(orig(...a)); }));
+    show(w.fake);
+    const nav = await screen.findByRole('navigation', { name: 'All updates' });
+    entered.calls.length = 0;
+    await userEvent.click(screen.getByRole('button', { name: 'Show earlier updates' }));
+    expect(screen.getByRole('button', { name: 'Show earlier updates' })).toHaveAttribute('aria-busy', 'true');
+    expect(entered.calls).toHaveLength(0);
+    land();
+    await waitFor(() => expect(within(nav).getAllByRole('link')).toHaveLength(25));
+    await waitFor(() => expect(entered.calls).toHaveLength(5));
+    expect(entered.calls).toEqual(within(nav).getAllByRole('listitem').slice(20));
+    expect(nav.querySelector('[data-kb-entering]')).toBeNull();
   });
 });
 

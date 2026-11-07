@@ -15,6 +15,12 @@ import { LoadedAlerts } from '../loaded.tsx';
 import { loadAlerts } from '../glass-docs.ts';
 import { AlertsScreen } from './Alerts.tsx';
 
+const entered = vi.hoisted(() => ({ calls: [] as Element[] }));
+vi.mock('motion/react', async (orig) => ({
+  ...(await orig<typeof import('motion/react')>()),
+  animate: (el: Element) => { entered.calls.push(el); return { then: () => {}, stop: () => {} }; },
+}));
+
 beforeEach(() => { localStorage.clear(); });
 afterEach(() => { vi.restoreAllMocks(); });
 
@@ -378,6 +384,21 @@ describe('Older', () => {
     expect(read).toHaveBeenCalledTimes(1);
     release();
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Older' })).toBeNull());
+  });
+
+  test('the rows Older adds enter, and the rows already there do not', async () => {
+    const w = busy();
+    await show(w);
+    await screen.findByRole('button', { name: 'Older' });
+    const had = rows().length;
+    const first = rows().map((r) => r.getAttribute('data-kb-key'));
+    entered.calls.length = 0;
+    await userEvent.click(screen.getByRole('button', { name: 'Older' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Older' })).toBeNull());
+    await waitFor(() => expect(entered.calls.length).toBeGreaterThan(0));
+    expect(entered.calls.length).toBe(rows().length - had);
+    for (const el of entered.calls) expect(first).not.toContain(el.getAttribute('data-kb-key'));
+    expect(document.querySelector('[data-kb-entering]')).toBeNull();
   });
 
   test('a page that fails says so and leaves the rows and the control to try again', async () => {

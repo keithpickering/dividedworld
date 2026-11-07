@@ -21,6 +21,12 @@ import { usePlayer } from '../player.tsx';
 import { Link, useRouterAccount } from '../router.tsx';
 import logCss from './log.css?raw';
 
+const entered = vi.hoisted(() => ({ calls: [] as Element[] }));
+vi.mock('motion/react', async (orig) => ({
+  ...(await orig<typeof import('motion/react')>()),
+  animate: (el: Element) => { entered.calls.push(el); return { then: () => {}, stop: () => {} }; },
+}));
+
 const at = (day: number, hour = 12, minute = 0) => Date.UTC(2026, 9, day, hour, minute);
 
 /**
@@ -349,6 +355,30 @@ describe('My log', () => {
     for (const [ids] of acts.mock.calls) for (const id of ids) expect(asked.has(id)).toBe(false);
     /* Show older lines is gone, so focus is on the table it filled, not lost to the page. */
     await waitFor(() => expect(screen.getByRole('table')).toHaveFocus());
+  });
+
+  test('Show older lines is busy until its read lands, and the lines it adds are handed to enterRows', async () => {
+    const { fake, me, pipe } = world();
+    let land!: () => void;
+    const { spy } = await pagedAfterFirst(fake, (f) => ({ ...f, settlements: f.settlements.slice(1), wallet: f.wallet.filter((e) => e.settlement === f.settlements[1]!.id), before: null }));
+    const answer = spy.getMockImplementation()!;
+    spy.mockImplementation((...a) => new Promise((resolve) => { land = () => resolve(answer(...a)); }));
+    await open(fake, me, pipe);
+    await screen.findByRole('table');
+    const before = bodyRows().length;
+    entered.calls.length = 0;
+    fireEvent.click(screen.getByRole('button', { name: 'Show older lines' }));
+    expect(screen.getByRole('button', { name: 'Show older lines' })).toHaveAttribute('aria-busy', 'true');
+    expect(entered.calls).toHaveLength(0);
+    land();
+    await waitFor(() => expect(bodyRows().length).toBeGreaterThan(before));
+    await waitFor(() => expect(entered.calls.length).toBeGreaterThan(0));
+    const rows = entered.calls;
+    expect(rows.length).toBe(bodyRows().length - before);
+    expect(rows.every((r) => r.tagName === 'TR' && r.isConnected)).toBe(true);
+    /* Only the lines the press brought: none of the first page's. */
+    expect(rows.map((r) => r.textContent)).toEqual(bodyRows().slice(before).map((r) => r.textContent));
+    expect(document.querySelector('[data-kb-entering]')).toBeNull();
   });
 
   test('an older page that cannot be read says so and keeps what is shown; a failed estimate leaves the rest of the log', async () => {

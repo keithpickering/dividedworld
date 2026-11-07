@@ -15,16 +15,17 @@
  * move between them as a tablist does, the open tab alone is in the tab order, and the open panel is labelled by its tab.
  * `/rankings` and `/standings` open this page (web/src/App.tsx).
  */
-import { useId, useState, type KeyboardEvent } from 'react';
+import { useId, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import { dayAndTime, figure } from '../characters/format.ts';
 import { useKayfa } from '../context.tsx';
 import { SEASON_NEWS_PAGE, type Id, type MyCharacter, type Season, type SeasonNewsItem, type SeasonPage, type SeasonResult, type TallyName } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
+import { ENTERING, useEnterAdded } from '../glass/enter.ts';
 import { PageHead } from '../glass/PageHead.tsx';
 import { SignInPrompt } from '../mini.tsx';
 import { usePlayer } from '../player.tsx';
 import { RankingsScreen } from '../rankings/Rankings.tsx';
-import { useLocation, useNavigate } from '../router.tsx';
+import { useLocation, useNavigate, useNavigation } from '../router.tsx';
 import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import { GlassLink } from '../glass/Link.tsx';
 import { pageOf, threadHref } from '../thread/pages.ts';
@@ -55,6 +56,11 @@ export interface NewsProps {
   readonly perPage: number;
   readonly more: boolean;
   readonly onMore: () => void;
+  /** True while the earlier page is out: the button is busy. */
+  readonly busy?: boolean;
+  /** The element the rows are found in, for their entrance, and which rows are the ones a press added (`useEnterAdded`). */
+  readonly scope?: RefObject<HTMLDivElement | null>;
+  readonly entering?: (key: string) => true | undefined;
 }
 
 const Yours = () => <span className="kb-rankings-yours kb-glass-skew-tag"><span className="kb-glass-upright">Yours</span></span>;
@@ -152,17 +158,25 @@ function Boss({ item, perPage }: { readonly item: SeasonNewsItem; readonly perPa
 }
 
 /** One feed row: its time, and its words. A tally with debuts and Turns is two rows at one instant. */
-function Row({ at, children }: { readonly at: string; readonly children: React.ReactNode }) {
-  return <li className="kb-season-item"><time dateTime={at}>{dayAndTime(at)}</time><div>{children}</div></li>;
+function Row({ at, children, entering }: { readonly at: string; readonly children: React.ReactNode; readonly entering?: true }) {
+  return <li className="kb-season-item" {...(entering ? { [ENTERING]: '' } : {})}><time dateTime={at}>{dayAndTime(at)}</time><div>{children}</div></li>;
 }
 
-export function News({ items, mine, season, perPage, more, onMore }: NewsProps) {
+/** The keys of the rows an item draws: a settlement or a Boss is one, a tally is a row for its debuts and a row for its Turns. */
+export function newsKeys(item: SeasonNewsItem): string[] {
+  const key = item.act ?? `${item.kind}:${item.at}:${item.name ?? ''}`;
+  if (item.kind === 'results') return [key];
+  if (item.kind === 'tally') return [...(item.debuts.length > 0 ? [`${key}:d`] : []), ...(item.turns.length > 0 ? [`${key}:t`] : [])];
+  return [key];
+}
+
+export function News({ items, mine, season, perPage, more, onMore, busy = false, scope, entering }: NewsProps) {
   const { instance } = useKayfa();
   const className = (key: string) => instance.classes.find((c) => c.key === key)?.name ?? key;
   const own = new Set(mine.map((c) => c.id));
   const boss = season ? items.find((i) => i.kind === 'bossArrived' && i.season === season.number)?.name ?? null : null;
   return (
-    <div className="kb-season-news">
+    <div ref={scope} className="kb-season-news">
       <CalmRegion as="p" className="kb-season-lede">
         {season ? `Season ${season.number} began ${dayAndTime(season.startsAt)}.` : ''}
         {boss !== null && ` The Boss this season is ${boss}.`}
@@ -174,18 +188,18 @@ export function News({ items, mine, season, perPage, more, onMore }: NewsProps) 
           <CalmRegion as="ul" className="kb-season-feed">
             {items.flatMap((item) => {
               const key = item.act ?? `${item.kind}:${item.at}:${item.name ?? ''}`;
-              if (item.kind === 'results') return [<Row key={key} at={item.at}><Results item={item} own={own} className={className} /></Row>];
+              if (item.kind === 'results') return [<Row key={key} at={item.at} entering={entering?.(key)}><Results item={item} own={own} className={className} /></Row>];
               if (item.kind === 'tally') {
                 return [
-                  ...(item.debuts.length > 0 ? [<Row key={`${key}:d`} at={item.at}><Names names={item.debuts} own={own} verb="debuted" className={className} /></Row>] : []),
-                  ...(item.turns.length > 0 ? [<Row key={`${key}:t`} at={item.at}><Names names={item.turns} own={own} verb="turned" className={className} /></Row>] : []),
+                  ...(item.debuts.length > 0 ? [<Row key={`${key}:d`} at={item.at} entering={entering?.(`${key}:d`)}><Names names={item.debuts} own={own} verb="debuted" className={className} /></Row>] : []),
+                  ...(item.turns.length > 0 ? [<Row key={`${key}:t`} at={item.at} entering={entering?.(`${key}:t`)}><Names names={item.turns} own={own} verb="turned" className={className} /></Row>] : []),
                 ];
               }
-              return [<Row key={key} at={item.at}><Boss item={item} perPage={perPage} /></Row>];
+              return [<Row key={key} at={item.at} entering={entering?.(key)}><Boss item={item} perPage={perPage} /></Row>];
             })}
           </CalmRegion>
         )}
-      {more && <ButtonRow><GlassButton className="kb-season-more" onClick={onMore}>Show earlier news</GlassButton></ButtonRow>}
+      {more && <ButtonRow><GlassButton className="kb-season-more" busy={busy} onClick={onMore}>Show earlier news</GlassButton></ButtonRow>}
     </div>
   );
 }
@@ -196,6 +210,9 @@ function NewsPanel({ doc }: { readonly doc: Extract<SeasonPage, { readonly tab: 
   const { characters: mine } = usePlayer();
   const [older, setOlder] = useState<{ readonly doc: typeof doc; readonly items: readonly SeasonNewsItem[]; readonly more: boolean | null } | null>(null);
   const [paging, setPaging] = useState(false);
+  const scope = useRef<HTMLDivElement>(null);
+  const added = useEnterAdded(scope, paging);
+  const { track } = useNavigation();
   /* Older rows belong to the document they were read after: a new document starts from its own first page. */
   const held = older?.doc === doc ? older : null;
   const items = held ? [...doc.news, ...held.items] : doc.news;
@@ -204,7 +221,8 @@ function NewsPanel({ doc }: { readonly doc: Extract<SeasonPage, { readonly tab: 
     const last = items.at(-1);
     if (!last || paging) return;
     setPaging(true);
-    api.seasonNews(last.at).then(
+    added.arm(items.flatMap(newsKeys));
+    track(api.seasonNews(last.at)).then(
       (page) => setOlder((was) => {
         const kept = was?.doc === doc ? was.items : [];
         const fresh = page.filter((o) => ![...doc.news, ...kept].some((x) => x.kind === o.kind && x.act === o.act && x.at === o.at && x.name === o.name));
@@ -213,7 +231,7 @@ function NewsPanel({ doc }: { readonly doc: Extract<SeasonPage, { readonly tab: 
       () => { /* the button stays, to try again */ },
     ).finally(() => setPaging(false));
   };
-  return <News items={items} mine={mine} season={doc.season} perPage={settings.postsPerPage} more={more} onMore={onMore} />;
+  return <News items={items} mine={mine} season={doc.season} perPage={settings.postsPerPage} more={more} onMore={onMore} busy={paging} scope={scope} entering={added.entering} />;
 }
 
 /** The season page at /season, drawn from its document: whole on the first frame. Signed out, the marker is the sign-in line. */

@@ -10,8 +10,15 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { addressOf, useLocation } from '../router.tsx';
 import { SIGNED_OUT_DOC } from '../screen-docs.ts';
 import { buildWorld, holdReads, renderIn } from '../test-world.tsx';
+import { SEASON_NEWS_PAGE } from '../data/api.ts';
 import { firstWords, SeasonScreen } from './Season.tsx';
 import { LoadedSeason } from '../loaded.tsx';
+
+const entered = vi.hoisted(() => ({ calls: [] as Element[] }));
+vi.mock('motion/react', async (orig) => ({
+  ...(await orig<typeof import('motion/react')>()),
+  animate: (el: Element) => { entered.calls.push(el); return { then: () => {}, stop: () => {} }; },
+}));
 
 afterEach(() => { vi.restoreAllMocks(); });
 
@@ -364,6 +371,32 @@ describe('a quotation', () => {
     expect(firstWords('My [b]ledger[/b] is [color=red]closed[/color].')).toBe('My ledger is closed.');
     expect(firstWords('x'.repeat(400))).toHaveLength(281);
     expect(firstWords('x'.repeat(400)).endsWith('…')).toBe(true);
+  });
+});
+
+describe('Show earlier news', () => {
+  test('is busy until its page lands, and the rows it adds enter while the ones there do not', async () => {
+    const w = world();
+    const { boot, doc } = await (async () => ({ boot: await w.fake.boot(), doc: (await w.fake.seasonPage('news', null, null, null))! }))();
+    if (doc.tab !== 'news') throw new Error('not news');
+    /* A full page, so that the button shows; each item a Boss line of its own. */
+    const item = (i: number) => ({ ...doc.news.find((n) => n.kind === 'bossArrived')!, act: `act-${i}`, at: new Date(Date.UTC(2026, 9, 28, 0, 40 - i)).toISOString() });
+    const full = { ...doc, news: Array.from({ length: SEASON_NEWS_PAGE }, (_, i) => item(i)) };
+    let land!: () => void;
+    vi.spyOn(w.fake, 'seasonNews').mockImplementation(() => new Promise((resolve) => { land = () => resolve([item(50), item(51)]); }));
+    renderIn(w.fake, <SeasonScreen doc={full} />, { path: '/season?tab=news', boot });
+    const rows = () => document.querySelectorAll('.kb-season-item');
+    expect(rows()).toHaveLength(SEASON_NEWS_PAGE);
+    entered.calls.length = 0;
+    await userEvent.click(screen.getByRole('button', { name: 'Show earlier news' }));
+    expect(screen.getByRole('button', { name: 'Show earlier news' })).toHaveAttribute('aria-busy', 'true');
+    expect(entered.calls).toHaveLength(0);
+    await act(async () => { land(); });
+    await waitFor(() => expect(rows()).toHaveLength(SEASON_NEWS_PAGE + 2));
+    await waitFor(() => expect(entered.calls).toHaveLength(2));
+    expect(entered.calls).toEqual([...rows()].slice(SEASON_NEWS_PAGE));
+    expect(screen.queryByRole('button', { name: 'Show earlier news' })).toBeNull();
+    expect(document.querySelector('[data-kb-entering]')).toBeNull();
   });
 });
 

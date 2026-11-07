@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Act, Estimate, EffectState, Id, KayfaApi, Log, MyCharacter } from '../data/api.ts';
 import { estimateActIds, type LogDoc } from '../glass-docs.ts';
+import { useNavigation } from '../router.tsx';
 import { actsFollowed, actsNamed, type LogData } from './lines.ts';
 
 /** Two pages as one: the older page's rows after the newer's, each settlement once, and the older page's cursor. */
@@ -126,6 +127,7 @@ interface Held {
  * again for another, and the page starts afresh when it does.
  */
 export function useLog(api: KayfaApi, doc: LogDoc, mine: readonly MyCharacter[], nextSettlement: string | null) {
+  const { track } = useNavigation();
   const [held, setHeld] = useState<Held>(() => heldOf(doc, mine, nextSettlement));
   const current = held.doc === doc ? held : heldOf(doc, mine, nextSettlement);
   if (current !== held) setHeld(current);
@@ -152,11 +154,12 @@ export function useLog(api: KayfaApi, doc: LogDoc, mine: readonly MyCharacter[],
   const older = useCallback(() => {
     if (current.older === 'loading' || current.log.before === null) return;
     setHeld({ ...current, older: 'loading' });
-    api.log(current.log.before).then((page) => around(api, mergeLogs(current.log, page), data)).then(
+    /* The read is the router's to count (the meter), and the button is busy while it is out. */
+    track(api.log(current.log.before).then((page) => around(api, mergeLogs(current.log, page), data))).then(
       (next) => setHeld((now) => (now.doc === doc ? { ...now, log: next.log, acts: next.acts, names: next.names, titles: next.titles, states: next.states, older: 'idle' } : now)),
       () => setHeld((now) => (now.doc === doc ? { ...now, older: 'failed' } : now)),
     );
-  }, [api, doc, current, data]);
+  }, [api, doc, current, data, track]);
 
   return { data, older, olderState: current.older };
 }
