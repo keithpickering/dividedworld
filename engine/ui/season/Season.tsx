@@ -165,7 +165,6 @@ function Row({ at, children, entering }: { readonly at: string; readonly childre
 /** The keys of the rows an item draws: a settlement or a Boss is one, a tally is a row for its debuts and a row for its Turns. */
 export function newsKeys(item: SeasonNewsItem): string[] {
   const key = item.act ?? `${item.kind}:${item.at}:${item.name ?? ''}`;
-  if (item.kind === 'results') return [key];
   if (item.kind === 'tally') return [...(item.debuts.length > 0 ? [`${key}:d`] : []), ...(item.turns.length > 0 ? [`${key}:t`] : [])];
   return [key];
 }
@@ -187,15 +186,18 @@ export function News({ items, mine, season, perPage, more, onMore, busy = false,
         : (
           <CalmRegion as="ul" className="kb-season-feed">
             {items.flatMap((item) => {
-              const key = item.act ?? `${item.kind}:${item.at}:${item.name ?? ''}`;
-              if (item.kind === 'results') return [<Row key={key} at={item.at} entering={entering?.(key)}><Results item={item} own={own} className={className} /></Row>];
+              const keys = newsKeys(item);
+              const row = (key: string, body: React.ReactNode) => <Row key={key} at={item.at} entering={entering?.(key)}>{body}</Row>;
+              if (item.kind === 'results') return [row(keys[0]!, <Results item={item} own={own} className={className} />)];
               if (item.kind === 'tally') {
+                /* newsKeys lists the debuts' row, where there are debuts, then the Turns' row, where there are Turns. */
+                const [debuts, turns] = item.debuts.length > 0 ? [keys[0]!, keys[1]] : [undefined, keys[0]];
                 return [
-                  ...(item.debuts.length > 0 ? [<Row key={`${key}:d`} at={item.at} entering={entering?.(`${key}:d`)}><Names names={item.debuts} own={own} verb="debuted" className={className} /></Row>] : []),
-                  ...(item.turns.length > 0 ? [<Row key={`${key}:t`} at={item.at} entering={entering?.(`${key}:t`)}><Names names={item.turns} own={own} verb="turned" className={className} /></Row>] : []),
+                  ...(debuts !== undefined ? [row(debuts, <Names names={item.debuts} own={own} verb="debuted" className={className} />)] : []),
+                  ...(turns !== undefined ? [row(turns, <Names names={item.turns} own={own} verb="turned" className={className} />)] : []),
                 ];
               }
-              return [<Row key={key} at={item.at} entering={entering?.(key)}><Boss item={item} perPage={perPage} /></Row>];
+              return [row(keys[0]!, <Boss item={item} perPage={perPage} />)];
             })}
           </CalmRegion>
         )}

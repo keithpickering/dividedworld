@@ -97,23 +97,31 @@ export const ENTERING = 'data-kb-entering';
 /**
  * The entrance of the rows a press adds. `arm(keys)` is called at the press with the keys of the rows on the page; `entering(key)` is true in the
  * render that adds a row not among them (put `data-kb-entering` on it); once the read has settled (`reading` false) the marked rows inside `scope`
- * are handed to `enterRows` and the marks cleared. Rows that arrive any other way are never armed for, so they appear plainly.
+ * are handed to `enterRows` and the marks cleared. A row drawn while the read was out arrived another way and appears plainly.
  */
 export function useEnterAdded(scope: RefObject<HTMLElement | null>, reading: boolean) {
   const { ui } = useKayfa();
   const feel = useFeel(ui.glass.motion);
   const [before, setBefore] = useState<ReadonlySet<string> | null>(null);
   const stop = useRef<() => void>(() => {});
+  /* Every key drawn up to the read landing: the page at the press, and whatever else arrived while it was out (a Realtime row, another tab's). */
+  const seen = useRef<Set<string>>(new Set());
   useLayoutEffect(() => {
     if (before === null || reading) return;
     const rows = Array.from(scope.current?.querySelectorAll<HTMLElement>(`[${ENTERING}]`) ?? []);
     for (const el of rows) el.removeAttribute(ENTERING);
     setBefore(null);
+    stop.current();
     stop.current = enterRows(feel, rows);
   }, [before, reading, feel, scope]);
   useEffect(() => () => stop.current(), []);
   return {
-    arm: (keys: Iterable<string>) => setBefore(new Set(keys)),
-    entering: (key: string): true | undefined => (before !== null && !before.has(key) ? true : undefined),
+    arm: (keys: Iterable<string>) => { seen.current = new Set(keys); setBefore(new Set(keys)); },
+    /* While the read is out every row drawn is noted as not the read's; the render it lands in marks only the rows not drawn before. */
+    entering: (key: string): true | undefined => {
+      if (before === null) return undefined;
+      if (reading) { seen.current.add(key); return undefined; }
+      return seen.current.has(key) ? undefined : true;
+    },
   };
 }

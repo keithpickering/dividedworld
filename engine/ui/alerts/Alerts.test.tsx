@@ -393,7 +393,13 @@ describe('Older', () => {
     const had = rows().length;
     const first = rows().map((r) => r.getAttribute('data-kb-key'));
     entered.calls.length = 0;
+    const orig = w.fake.alerts.bind(w.fake);
+    let release!: () => void;
+    vi.spyOn(w.fake, 'alerts').mockImplementationOnce((...args) => new Promise((resolve) => { release = () => resolve(orig(...args)); }));
     await userEvent.click(screen.getByRole('button', { name: 'Older' }));
+    expect(screen.getByRole('button', { name: 'Older' })).toHaveAttribute('aria-busy', 'true');
+    expect(entered.calls).toHaveLength(0);
+    release();
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Older' })).toBeNull());
     await waitFor(() => expect(entered.calls.length).toBeGreaterThan(0));
     expect(entered.calls.length).toBe(rows().length - had);

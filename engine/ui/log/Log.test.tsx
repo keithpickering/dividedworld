@@ -381,6 +381,27 @@ describe('My log', () => {
     expect(document.querySelector('[data-kb-entering]')).toBeNull();
   });
 
+  test('lines that appear while the read is out (another tab) do not enter; only the read\'s own lines do', async () => {
+    const { fake, me, pipe } = world();
+    let land!: () => void;
+    const { spy } = await pagedAfterFirst(fake, (f) => ({ ...f, settlements: f.settlements.slice(1), wallet: f.wallet.filter((e) => e.settlement === f.settlements[1]!.id), before: null }));
+    const answer = spy.getMockImplementation()!;
+    spy.mockImplementation((...a) => new Promise((resolve) => { land = () => resolve(answer(...a)); }));
+    await open(fake, me, pipe);
+    await screen.findByRole('table');
+    fireEvent.click(tab('Mrs. Hooligan'));
+    const had = bodyRows().length;
+    entered.calls.length = 0;
+    fireEvent.click(screen.getByRole('button', { name: 'Show older lines' }));
+    fireEvent.click(tab('All'));
+    const meanwhile = bodyRows();
+    expect(meanwhile.length).toBeGreaterThan(had);
+    land();
+    await waitFor(() => expect(bodyRows().length).toBeGreaterThan(meanwhile.length));
+    await waitFor(() => expect(entered.calls.length).toBeGreaterThan(0));
+    for (const el of meanwhile) expect(entered.calls).not.toContain(el);
+  });
+
   test('an older page that cannot be read says so and keeps what is shown; a failed estimate leaves the rest of the log', async () => {
     const { fake, me, pipe } = world();
     await pagedAfterFirst(fake, () => new Error('lost'));
