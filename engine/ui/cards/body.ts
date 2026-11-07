@@ -53,6 +53,22 @@ export function paintScale(own: number, painted: number): number {
   return Math.min(1, Math.max(LEAST_SCALE, Math.sqrt(Math.max(0, own) / painted)));
 }
 
+/** The least share of the redraw rate a painted box is redrawn at: a line of words in a tall body still shimmers at 15 draws a second. */
+const LEAST_SHARE = 0.25;
+
+/**
+ * The share of the shine loop's rate a shine effect redraws a painted box at (engine/ui/shine/loop.ts `Options.share`, issue #304), so
+ * that painting the whole body changes no more of the screen in a second than the words' own box did at the full rate (`own` and
+ * `painted` are areas, in CSS px squared): their ratio, at most 1. Holding the pixels (`paintScale`) holds what a draw costs to
+ * raster, but every draw still changes the body's whole area on screen, and a software-composited page pays for the area a frame
+ * changes (on CI the whole body at the full rate roughly doubled it, and the busy thread's scroll dropped frames). A post of a line or
+ * two in a tall body would shimmer very slowly by the ratio alone, so the share stops at a quarter.
+ */
+export function paintShare(own: number, painted: number): number {
+  if (!(painted > 0) || !Number.isFinite(own)) return 1;
+  return Math.min(1, Math.max(LEAST_SHARE, Math.max(0, own) / painted));
+}
+
 /** Places `layer` (absolutely positioned in its effect's element) over `box`. */
 export function placeLayer(layer: HTMLElement, box: BodyBox): void {
   layer.style.left = `${box.left}px`;

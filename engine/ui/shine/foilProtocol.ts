@@ -10,7 +10,7 @@
  * Engine code: it names no card and no instance.
  */
 import type { Band } from './band.ts';
-import type { Box, FoilOptions } from './foil.ts';
+import type { Box, FoilOptions, Span } from './foil.ts';
 import type { Light } from './light.ts';
 
 /** What a foil is made from: the options without the canvas factory (a function cannot be sent; the worker's own canvases are OffscreenCanvases). */
@@ -29,6 +29,8 @@ export interface FoilDraw {
   readonly band: Band | null;
   readonly now: number;
   readonly idle: boolean;
+  /** The rows to redraw (foil.ts `Span`), or null for all of them. A message from before spans were sent has none: all of them. */
+  readonly span?: Span | null;
 }
 
 /** What a test or a story may ask the worker to read back. */

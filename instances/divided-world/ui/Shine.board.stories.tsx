@@ -30,8 +30,12 @@ declare global {
   interface Window {
     __kbPoison?: string;
     __kbShine?: {
-      /** Every shiny post on the page, top to bottom: the loop's draws of it, its box in the viewport and its area in device px. */
-      hosts: () => { draws: number; top: number; bottom: number; area: number }[];
+      /**
+       * Every shiny post on the page, top to bottom: the loop's draws of it, the box it paints in the viewport (its width too, in CSS
+       * px) and its area in device px, its words' own box in the viewport, the share of the loop's rate it is drawn at, and how many
+       * canvases it holds that the browser composites now (a canvas handed to the worker counts; one freed to 0 by 0 does not).
+       */
+      hosts: () => { draws: number; top: number; bottom: number; width: number; area: number; own: { top: number; bottom: number; width: number }; share: number; layers: number }[];
       frames: () => number;
       /** The loop's own time in each of its last `n` frames, in milliseconds. */
       work: (n: number) => number[];
@@ -165,8 +169,12 @@ function Busy({ reduced }: Args) {
     const tell = (on: boolean): void => { foilProbe.worker()?.postMessage({ kind: 'story', what: 'raster', on } satisfies StoryAsk); };
     window.__kbShine = {
       hosts: () => [...document.querySelectorAll(SHINY)].map((el) => {
-        const r = painted(el), d = window.devicePixelRatio || 1;
-        return { draws: probe.draws(el), top: r.top, bottom: r.bottom, area: r.width * r.height * d * d };
+        const r = painted(el), o = el.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+        return {
+          draws: probe.draws(el), top: r.top, bottom: r.bottom, width: r.width, area: r.width * r.height * d * d,
+          own: { top: o.top, bottom: o.bottom, width: o.width }, share: probe.share(el),
+          layers: [...el.querySelectorAll('canvas')].filter((c) => foilProbe.idOf(c) !== undefined || (c.width > 0 && c.height > 0)).length,
+        };
       }),
       frames: probe.frames,
       work: (n) => probe.work(n),

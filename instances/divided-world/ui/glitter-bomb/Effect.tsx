@@ -33,6 +33,10 @@
  * marks itself `data-kb-bleed` and glitter.css puts the flakes under everything in the body (its reactions, its signature, an ORIGIN
  * box above the words), not only under the words. The host watches the body's size as well as its own.
  *
+ * How often. The body changes more of the screen in a draw than the words did, so it is redrawn at the share of the loop's rate that
+ * keeps the screen area it changes a second to what the words' box changed (engine/ui/cards/body.ts `paintShare`, issue #304), and a
+ * draw the loop hands a span (the rows on screen) repaints only the lit flakes on those rows (engine/ui/shine/flakes.ts `drawLit`).
+ *
  * Units: the box is CSS px (engine/ui/cards/body.ts `bodyBox`, fractions kept); the canvases are sized to round(box x density)
  * with the density the loop returns (at most 2), and their CSS size is the surface's (100%). A resize builds
  * the flakes again and, because sizing the backing stores clears them, repaints the canvases under the words at once with the last light and the
@@ -45,12 +49,12 @@
 import { useEffect, useRef } from 'react';
 import { motionReduced } from '../../../../engine/ui/appearance.ts';
 import type { EffectProps } from '../../../../engine/ui/cards/types.ts';
-import { bodyBox, bodyOf, paintScale, placeLayer, sameBox, type BodyBox } from '../../../../engine/ui/cards/body.ts';
+import { bodyBox, bodyOf, paintScale, paintShare, placeLayer, sameBox, type BodyBox } from '../../../../engine/ui/cards/body.ts';
 import { bandFor, type Band } from '../../../../engine/ui/shine/band.ts';
 import { burst, cling, dropLoose, drawBurst, drawLoose, landAll, loose, makeFlakes, release, stepBurst, type Flakes } from '../../../../engine/ui/shine/flakes.ts';
 import { watchInView } from '../../../../engine/ui/shine/inView.ts';
 import { REST, type Light } from '../../../../engine/ui/shine/light.ts';
-import { register, unregister, wake } from '../../../../engine/ui/shine/loop.ts';
+import { register, unregister, wake, type Span } from '../../../../engine/ui/shine/loop.ts';
 import './glitter.css';
 
 /** The flakes' inks: the seven rainbow inks (the holographic ones), then silver three times, so a third of the glitter is plain. */
@@ -125,7 +129,8 @@ export function GlitterBombEffect({ post, plays, place, still, children }: Effec
       if (above.width !== w || above.height !== h) { above.width = w; above.height = h; }
     };
     const freeOver = (): void => { if (above.width !== 0 || above.height !== 0) { above.width = 0; above.height = 0; } };
-    const paint = (light: Light, now: number, idle: boolean): boolean => {
+    /* `span`: the rows on screen whose lit flakes are redrawn (the loop's), or null for all of them. */
+    const paint = (light: Light, now: number, idle: boolean, span: Span | null = null): boolean => {
       const u = below.getContext('2d'), l = lit.getContext('2d');
       if (!u || !l) return false;
       const f = band ? ensure() : null;
@@ -148,7 +153,7 @@ export function GlitterBombEffect({ post, plays, place, still, children }: Effec
         f.drawBase(u, band, density);
         based = { f, key };
       }
-      f.drawLit(l, light, band, now, idle, density);
+      f.drawLit(l, light, band, now, idle, density, span);
       looseShown = loose(face).length > 0;
       drawLoose(face, l, light, band, now, idle, density);
       if (busy) {
@@ -199,6 +204,8 @@ export function GlitterBombEffect({ post, plays, place, still, children }: Effec
       /* The body costs what the words' own box did: drawn at a share of the density, its flakes spread over it, as many as the words held. */
       const own = el.getBoundingClientRect();
       scale = paintScale(own.width * own.height, box.w * box.h);
+      /* And redrawn at the share of the rate that changes as much screen a second as the words' box did (`paintShare`). */
+      const share = paintShare(own.width * own.height, box.w * box.h);
       drop();
       if (still) {
         density = Math.min(2, Math.max(1, window.devicePixelRatio || 1)) * scale;
@@ -209,8 +216,8 @@ export function GlitterBombEffect({ post, plays, place, still, children }: Effec
       density = register(el, below, box, Math.min(2, window.devicePixelRatio || 1) * scale, (frame) => {
         if (freed) size();
         last = { light: frame.light, t: frame.t };
-        return paint(frame.light, frame.t, frame.idle);
-      }, { hidden: leave });
+        return paint(frame.light, frame.t, frame.idle, frame.span);
+      }, { hidden: leave, share });
       /* Resizing the backing store clears it, and the loop's next draw waits for the in-view callback: repaint now, with the
          light and band already held, so the post never shows a bare frame. A freed canvas (out of view) stays freed. */
       if (freed) return;

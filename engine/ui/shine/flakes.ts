@@ -24,6 +24,8 @@ import { bandFor, clampInto, toHex, toHexA, toLinear, toSrgb8, type Band, type L
 import { seededRng } from './seeded.ts';
 
 export type Box = { readonly w: number; readonly h: number };
+/** Rows of a box, in CSS px from its top (`top` < `bottom`). */
+export type Span = { readonly top: number; readonly bottom: number };
 
 /** The share of a post's flakes it shows before its burst. */
 const SHOWN_BEFORE = 0.15;
@@ -106,7 +108,12 @@ export interface Flakes {
    * in a frame (0 to 23% over flakes.test.ts's scenes), and what the browser re-rasters each frame of a scroll is that sparse layer.
    */
   drawBase(ctx: CanvasRenderingContext2D, band: Band, density?: number): void;
-  drawLit(ctx: CanvasRenderingContext2D, light: Light, band: Band, now: number, idle: boolean, density?: number): void;
+  /**
+   * `span` (rows in CSS px from the box's top: engine/ui/shine/loop.ts `ShineFrame.span`) paints only the flakes whose square reaches
+   * into those rows, the ones on screen; the rest show the base's unlit color until a draw reaches them. The squares the last draw
+   * painted are cleared all the same, so nothing it lit off the span is left lit at an old light.
+   */
+  drawLit(ctx: CanvasRenderingContext2D, light: Light, band: Band, now: number, idle: boolean, density?: number, span?: Span | null): void;
   /** What `drawBase` paints depends on: the band and the settled count. Equal keys paint the same base. */
   baseKey(band: Band): string;
 }
@@ -210,7 +217,7 @@ export function makeFlakes(opts: FlakesOptions): Flakes {
       baseOf(self, band);
       drawList(ctx, self.settled, REST_LIGHT, band, 0, false, null, density, null, true);
     },
-    drawLit: (ctx, light, band, now, idle, density = 1) => drawLit(self, ctx, light, band, now, idle, density),
+    drawLit: (ctx, light, band, now, idle, density = 1, span = null) => drawLit(self, ctx, light, band, now, idle, density, span),
   };
   return self;
 }
@@ -390,7 +397,7 @@ let litA = new Float64Array(0);
 const litName: string[] = [];
 
 /** The layer over the base: the flakes the light changed, the flakes under a flare, and the flares (`Flakes.drawLit`). */
-function drawLit(f: Inner, ctx: CanvasRenderingContext2D, light: Light, band: Band, now: number, idle: boolean, density: number): void {
+function drawLit(f: Inner, ctx: CanvasRenderingContext2D, light: Light, band: Band, now: number, idle: boolean, density: number, span: Span | null = null): void {
   const list = f.settled, n = list.length;
   const base = baseOf(f, band);
   if (litIdx.length < n) { litIdx = new Int32Array(n); litMark = new Int32Array(n); litA = new Float64Array(n); litStamp = 0; }
@@ -398,8 +405,11 @@ function drawLit(f: Inner, ctx: CanvasRenderingContext2D, light: Light, band: Ba
   const { x: lx, y: ly } = light;
   const flares = band.hi >= 1 && starOf(f) !== null;
   let m = 0, lit = 0;
+  /* A flake reaches FLARE_REACH from its center at most (its flare's square): one centered further off the span paints none of it. */
+  const y0 = span ? span.top - FLARE_REACH : -Infinity, y1 = span ? span.bottom + FLARE_REACH : Infinity;
   for (let i = 0; i < n; i++) {
     const fl = list[i]!;
+    if (fl.y < y0 || fl.y > y1) continue;
     /* Far from the light and not winking: its unlit color, which the base already shows. */
     if ((fl.nx - lx) ** 2 + (fl.ny - ly) ** 2 > UNLIT_D2 && !(idle && fl.tw)) continue;
     const a = litness(fl, lx, ly, now, idle);

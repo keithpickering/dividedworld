@@ -67,11 +67,13 @@ export function serveFoils(scope: FoilScope, hooks: ServeHooks = {}): { canvas(i
     if (canvas.height !== ht) canvas.height = ht;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    if (!d.band) { ctx.clearRect(0, 0, canvas.width, canvas.height); return; }
+    /* Cleared, its foils go too: the next draw is whole, so a span can never paint rows over a cleared canvas (foil.ts). */
+    if (!d.band) { ctx.clearRect(0, 0, canvas.width, canvas.height); release(h); return; }
     release(h, d.key);
     const foil = h.foils.get(d.key) ?? makeFoil(d.spec);
     h.foils.set(d.key, foil);
-    foil.draw(ctx as unknown as CanvasRenderingContext2D, d.box, d.density, d.light, d.band, d.now, d.idle);
+    /* A canvas sized just now holds nothing: the foil sees the new size and draws it whole whatever the span (foil.ts). */
+    foil.draw(ctx as unknown as CanvasRenderingContext2D, d.box, d.density, d.light, d.band, d.now, d.idle, d.span ?? null);
   };
 
   const batch = (t: number, draws: readonly FoilDraw[]): void => {
