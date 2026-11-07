@@ -1,4 +1,4 @@
--- season_page(tab, season, character, page) (supabase/migrations/0117_season_page.sql; the glass-load design, section 7; its plan, Task 6): /season in
+-- season_page(tab, season, character, page) (supabase/migrations/0120_season_page.sql; the glass-load design, section 7; its plan, Task 6): /season in
 -- one read. Each piece equals the matching read made directly: the standings page (and the reveals and Turns of its characters), the news, the
 -- finished seasons, a finished season's results and the page a linked character's row lands on. A season that does not exist is null, and a visitor
 -- is refused.

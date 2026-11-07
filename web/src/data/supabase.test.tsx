@@ -16,6 +16,8 @@ const URL_ = 'https://proj.supabase.co';
 const PUBLISHABLE = 'sb_publishable_test0123456789';
 const FALLBACK: ScreenSettings = {
   postsPerPage: 20,
+  searchLanguage: 'english',
+  searchRankPool: 5000,
   hotReplies: 5,
   editGrace: { unit: 'minute', count: 2 },
   reactionCap: 3,
@@ -113,7 +115,7 @@ describe('what the adapter may request', () => {
       api.characters([B]), api.characterCounts(B), api.characterStats([B]), api.standingAmounts([B]), api.standingPlace(B), api.characterActs(B, ['post'], { offset: 0, limit: 5 }), api.finishedSeasons(), api.resultsPage(1, 2), api.resultPlace(1, B), api.standingsCount(), api.standingsPage(0, 5), api.tallies([A]), api.viewCounts([T]), api.season(),
       api.boardNames(), api.moveNotice(A), api.movesLog('director'), api.movesLog('director', { at: '2026-10-01T10:00:00+00:00', act: A }), api.staffProfile('director'), api.adminQueue(), api.holdMove(1), api.reverseMove(A), api.updates(), api.updates('2026-10-01T10:00:00+00:00'), api.postUpdate('T', 'B', []),
       api.lastSettledAt(), api.classReveals([B]), api.turnsAnnounced([B]), api.nextSettlementAt(), api.myCharacters(), api.wallet(),
-      api.boot(), api.indexPage(), api.boardPage('general', 1, []), api.threadPage(T, { page: 1 }, 20, []), api.profilePage(B), api.recordPage(B, 'all', 1), api.presenceBox({ kind: 'index' }),
+      api.boot(), api.indexPage(), api.boardPage('general', 1, []), api.searchPosts({ q: 'x', author: null, board: null, fromAt: null, toAt: null, titlesOnly: false, sort: null, perPage: null }), api.searchThreads({ q: 'x', author: null, board: null, fromAt: null, toAt: null, titlesOnly: false, sort: null, perPage: null }), api.suggest('ma'), api.threadPage(T, { page: 1 }, 20, []), api.profilePage(B), api.recordPage(B, 'all', 1), api.presenceBox({ kind: 'index' }),
       api.myCharactersPage(), api.seasonPage('news', null, null, null), api.alertsPage(null), api.updatesPage(null, null, null), api.queuePage(), api.logPage(null),
       api.myReactions([A]), api.myCards(), api.reading([T]), api.preferences(), api.invites(), api.isAdmin(), api.session(), api.estimate(),
     ]);
@@ -791,23 +793,29 @@ describe('writes through the act function', () => {
       if (r.url.pathname === '/functions/v1/act') {
         const a = (r.body as { action: string }).action;
         if (a === 'react') return json({ act: A, thread: T, tally: { fire: 1 } });
-        if (a === 'startThread') return json({ thread: { id: T, board: C, title: 'A title', origin_act_id: null, created_at: '2026-10-01T09:00:00+00:00' }, act: ACT_ROW });
+        if (a === 'startThread' || a === 'spin') return json({ thread: { id: T, board: C, title: 'A title', origin_act_id: null, created_at: '2026-10-01T09:00:00+00:00' }, act: ACT_ROW });
         return json(ACT_ROW);
       }
       return undefined;
     });
     expect(await h.api.post(T, B, 'hi', A)).toEqual({ ok: true, value: ACT });
     expect(await h.api.post(T, B, 'hi', null)).toEqual({ ok: true, value: ACT });
+    expect(await h.api.post(T, B, 'hi', null, [C])).toEqual({ ok: true, value: ACT });
     expect(await h.api.edit(A, B, 'new')).toEqual({ ok: true, value: ACT });
     expect(await h.api.react(A, B, 'fire')).toEqual({ ok: true, value: { act: A, tally: { fire: 1 } } });
     const started = await h.api.startThread('general', B, 'A title', 'body');
     expect(started).toEqual({ ok: true, value: { thread: { id: T, board: C, title: 'A title', originActId: null, createdAt: '2026-10-01T09:00:00+00:00', lastAt: ACT.createdAt, lastSeq: 2, firstAct: A, firstCharacter: B, lastAct: A, lastCharacter: B, replies: 0, repliesThisWeek: 0, originThread: null, origin: null }, act: ACT } });
+    await h.api.startThread('general', B, 'A title', 'body', [C]);
+    await h.api.spin(A, B, 'A title', 'body', [C]);
     expect(act(h).map((r) => r.body)).toEqual([
       { action: 'post', thread: T, character: B, body: 'hi', quote: A },
       { action: 'post', thread: T, character: B, body: 'hi' },
+      { action: 'post', thread: T, character: B, body: 'hi', framing: [C] },
       { action: 'edit', post: A, character: B, body: 'new' },
       { action: 'react', act: A, character: B, kind: 'fire' },
       { action: 'startThread', board: 'general', character: B, title: 'A title', body: 'body' },
+      { action: 'startThread', board: 'general', character: B, title: 'A title', body: 'body', framing: [C] },
+      { action: 'spin', origin: A, character: B, title: 'A title', body: 'body', framing: [C] },
     ]);
     for (const r of act(h)) {
       expect(r.method).toBe('POST');
@@ -1909,6 +1917,56 @@ describe('a screen in one call', () => {
     expect(page?.mine).toEqual([{ act: SET, kind: 'fire', character: B }]);
     expect(page?.characters).toEqual([{ ...BEA, title: '', signature: '', avatarSquare: null, squareFrame: null, pipStyle: 'default' }]);
     expect(await once('board_page', null).api.boardPage('nowhere', 1, [])).toBeNull();
+  });
+
+  it('search_posts and search_threads: send the filters by their column names and the cursor as given, and map the page to camelCase', async () => {
+    const hit = { act: A, thread: T, title: 'Mario Kart', board: C, board_slug: 'general', board_name: 'General', seq: 3, page: 2, character: B, name: 'Bea', created_at: '2026-10-01T10:00:00+00:00', snippet: 'a <<banana>> day', cards: ['splat', 7] };
+    const query = { q: 'banana', author: B, board: C, fromAt: '2026-10-01T00:00:00Z', toAt: '2026-10-02T00:00:00Z', titlesOnly: true, sort: 'newest', perPage: 10 } as const;
+    const cursor = { rank: 0.5, at: '2026-10-01T09:00:00+00:00', act: C };
+    const h = once('search_posts', { count: 1001, more: true, pooled: true, results: [hit], next: { rank: 0.25, at: '2026-10-01T08:00:00+00:00', act: A } });
+    const page = await h.api.searchPosts(query, cursor);
+    expect(only(h, 'search_posts')).toEqual({ q: 'banana', author: B, board: C, from_at: '2026-10-01T00:00:00Z', to_at: '2026-10-02T00:00:00Z', titles_only: true, sort: 'newest', after: cursor, per_page: 10 });
+    expect(page).toEqual({
+      count: 1001, more: true, pooled: true, next: { rank: 0.25, at: '2026-10-01T08:00:00+00:00', act: A },
+      results: [{ act: A, thread: T, title: 'Mario Kart', board: C, boardSlug: 'general', boardName: 'General', seq: 3, page: 2, character: B, name: 'Bea', createdAt: '2026-10-01T10:00:00+00:00', snippet: 'a <<banana>> day', cards: ['splat'] }],
+    });
+    const bare = once('search_posts', { count: 0, more: false, pooled: false, results: [], next: null });
+    const none = await bare.api.searchPosts({ ...query, q: '', author: null, board: null, fromAt: null, toAt: null, titlesOnly: false, sort: null, perPage: null });
+    expect(only(bare, 'search_posts')).toEqual({ q: '', author: null, board: null, from_at: null, to_at: null, titles_only: false, sort: null, after: null, per_page: null });
+    expect(none).toEqual({ count: 0, more: false, pooled: false, results: [], next: null });
+    const threads = once('search_threads', { count: 1, more: false, pooled: false, results: [{ ...hit, matches: 100, matches_more: true }, { ...hit, matches: '100+' }, { ...hit, matches: 4 }], next: { at: '2026-10-01T08:00:00+00:00', act: A } });
+    const t = await threads.api.searchThreads(query);
+    expect(only(threads, 'search_threads')).toMatchObject({ q: 'banana', after: null });
+    expect(t.results.map((r) => [r.matches, r.matchesMore])).toEqual([[100, true], [100, true], [4, false]]);
+    expect(t.next).toEqual({ rank: null, at: '2026-10-01T08:00:00+00:00', act: A });
+  });
+
+  it('search_posts: a cursor with no rank (a newest or oldest page) is sent without the key, which search_cursor_ok refuses as null', async () => {
+    const h = once('search_posts', { count: 0, more: false, pooled: false, results: [], next: null });
+    await h.api.searchPosts({ q: 'x', author: null, board: null, fromAt: null, toAt: null, titlesOnly: false, sort: 'newest', perPage: null }, { rank: null, at: '2026-10-01T08:00:00+00:00', act: A });
+    expect((only(h, 'search_posts') as { after: unknown }).after).toEqual({ at: '2026-10-01T08:00:00+00:00', act: A });
+  });
+
+  it('search_posts: a read the server refuses is thrown in the server\'s words, apart from one that never reached it', async () => {
+    const q = { q: '', author: null, board: null, fromAt: null, toAt: null, titlesOnly: false, sort: null, perPage: 99 } as const;
+    const refused = harness((r) => (r.url.pathname.endsWith('/rpc/search_posts') ? json({ message: 'a page holds 1 to 50 results', hint: 'kayfabb.refusal', code: '22023' }, 400) : json({}, 404)));
+    await expect(refused.api.searchPosts(q)).rejects.toThrow('a page holds 1 to 50 results');
+    const down = harness((r) => (r.url.pathname.endsWith('/rpc/search_posts') ? json({ message: 'upstream' }, 503) : json({}, 404)));
+    await expect(down.api.searchPosts(q)).rejects.toThrow('could not be read right now');
+  });
+
+  it('search_suggest: sends the prefix and options by name, and maps the three groups', async () => {
+    const answer = {
+      threads: [{ id: T, title: 'Mario Kart', board: C, board_name: 'General' }], characters: [{ id: B, name: 'Bea' }], boards: [{ id: C, slug: 'general', name: 'General' }],
+    };
+    const h = once('search_suggest', answer);
+    expect(await h.api.suggest('mar', { kinds: ['threads', 'boards'], board: C, excludeSystem: true, most: 3 })).toEqual({
+      threads: [{ id: T, title: 'Mario Kart', board: C, boardName: 'General' }], characters: [{ id: B, name: 'Bea' }], boards: [{ id: C, slug: 'general', name: 'General' }],
+    });
+    expect(only(h, 'search_suggest')).toEqual({ prefix: 'mar', kinds: ['threads', 'boards'], board: C, exclude_system: true, most: 3 });
+    const bare = once('search_suggest', { threads: [], characters: [], boards: [] });
+    await bare.api.suggest('');
+    expect(only(bare, 'search_suggest')).toEqual({ prefix: '', kinds: null, board: null, exclude_system: false, most: null });
   });
 
   it('thread_page: sends the thread, page or seq and per page by name, and maps the document', async () => {

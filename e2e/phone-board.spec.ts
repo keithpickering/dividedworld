@@ -123,13 +123,16 @@ const openReply = async (page: Page) => {
   await open(page, '01-main', '.kb-toolbar', START, 'moment');
   await page.locator('.kb-toolbar').scrollIntoViewIfNeeded();
 };
-const toolbarYs = (page: Page) => page.locator('.kb-toolbar .kb-toolbar-button').evaluateAll((bs) => bs.map((b) => Math.round(b.getBoundingClientRect().y)));
 
-test('the formatting toolbar\'s nine buttons share one row and the page does not scroll sideways at 390', async ({ page }) => {
+const toolbarBox = (page: Page) => page.locator('.kb-toolbar .kb-toolbar-button').evaluateAll((bs) => bs.map((b) => { const r = b.getBoundingClientRect(); return { y: Math.round(r.y), right: Math.round(r.right), width: r.width, text: (b as HTMLElement).scrollWidth }; }));
+
+test('the formatting toolbar\'s twelve buttons wrap to at most two rows, stay inside the screen, and the page does not scroll sideways at 390', async ({ page }) => {
   await openReply(page);
-  const ys = await toolbarYs(page);
-  expect(ys).toHaveLength(9);
-  expect(new Set(ys).size, `the buttons stand at ${ys.join(', ')}`).toBe(1);
+  const boxes = await toolbarBox(page);
+  expect(boxes).toHaveLength(12);
+  expect(new Set(boxes.map((b) => b.y)).size, `the buttons stand at ${boxes.map((b) => b.y).join(', ')}`).toBeLessThanOrEqual(2);
+  expect(Math.max(...boxes.map((b) => b.right))).toBeLessThanOrEqual(390);
+  expect(boxes.every((b) => b.text <= Math.ceil(b.width))).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
@@ -142,16 +145,16 @@ test('the keyboard hint is dropped on a phone and still describes the box', asyn
   expect((await page.locator('textarea[aria-describedby]').first().getAttribute('aria-describedby'))!.split(' ')).toContain(id);
 });
 
-test('poison: buttons that wrap, and a hint that shows, are named', async ({ page }) => {
+test('poison: buttons forced into one wide row, and a hint that shows, are named', async ({ page }) => {
   await page.addInitScript(() => {
     document.addEventListener('DOMContentLoaded', () => {
       const style = document.createElement('style');
-      style.textContent = '.kb-toolbar { flex-wrap: wrap !important } .kb-toolbar .kb-toolbar-button { min-width: 80px !important } .kb-editor-hint { display: block !important }';
+      style.textContent = '.kb-toolbar { flex-wrap: nowrap !important } .kb-toolbar .kb-toolbar-button { min-width: 80px !important; flex: 0 0 auto !important } .kb-editor-hint { display: block !important }';
       document.head.append(style);
     });
   });
   await openReply(page);
-  expect(new Set(await toolbarYs(page)).size).toBeGreaterThan(1);
+  expect(Math.max(...(await toolbarBox(page)).map((b) => b.right))).toBeGreaterThan(390);
   await expect(page.locator('.kb-editor-hint').first()).toHaveCSS('display', 'block');
 });
 

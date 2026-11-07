@@ -1,7 +1,9 @@
 /**
  * The readable band of the shine. Every pixel the shine draws over a post's words must hold 4.5:1 against every ink a
  * post's words use, on both boards, at every light (docs/plans/2026-11-06-shine-design.md section 5). From the inks and
- * the board's ground each board has a luminance band; the shine's colors are moved into it, keeping their hue.
+ * the board's ground each board has a luminance band; the shine's colors are moved into it, keeping their hue. The one
+ * exception is the dark board's glitter glints, the few flakes facing the light, which the owner let leave the band
+ * (section 5, issue #340); flakes.ts draws them and holds them few.
  *
  * Units: the band is in WCAG relative luminance. `clampInto` works IN PLACE on a color in LINEAR light, [r, g, b] each in
  * 0..1 (not sRGB, not 0..255), as the approved bench does; `toLinear` takes a sRGB hex into that space and `toSrgb8` takes
@@ -112,6 +114,12 @@ export function clampInto(c: Rgb, band: Band): Rgb {
 const GRID = 9;
 const SPAN = 1.5;
 
+/** The lights a shine is checked at: a 9 x 9 grid over [-1.5, 1.5] squared, row by row. */
+export const LIGHT_GRID: readonly Light[] = Object.freeze(Array.from({ length: GRID * GRID }, (_, k) => {
+  const i = Math.floor(k / GRID), j = k % GRID;
+  return Object.freeze({ x: -SPAN + (2 * SPAN * i) / (GRID - 1), y: -SPAN + (2 * SPAN * j) / (GRID - 1) });
+}));
+
 /**
  * Every sampled color that fails 4.5:1 against any ink, in words; empty when the shine is readable. For each mode, the
  * sampler is asked for the colors the shine draws at each of a 9 x 9 grid of lights over [-1.5, 1.5] squared.
@@ -127,14 +135,11 @@ export function shineIsReadable(
       failures.push(`${mode}: no tokens to check against`);
       continue;
     }
-    for (let i = 0; i < GRID; i++) {
-      for (let j = 0; j < GRID; j++) {
-        const light = { x: -SPAN + (2 * SPAN * i) / (GRID - 1), y: -SPAN + (2 * SPAN * j) / (GRID - 1) };
-        for (const color of sample(mode, light)) {
-          for (const ink of POST_INK) {
-            const r = ratio(tokens[ink]!, color);
-            if (r < 4.5) failures.push(`${mode}: ${color} is ${r.toFixed(1)}:1 against ${ink} at light (${light.x}, ${light.y})`);
-          }
+    for (const light of LIGHT_GRID) {
+      for (const color of sample(mode, light)) {
+        for (const ink of POST_INK) {
+          const r = ratio(tokens[ink]!, color);
+          if (r < 4.5) failures.push(`${mode}: ${color} is ${r.toFixed(1)}:1 against ${ink} at light (${light.x}, ${light.y})`);
         }
       }
     }

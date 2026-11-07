@@ -26,7 +26,7 @@ import { useKayfa } from '../context.tsx';
 import type { Act, Id, Visit, VisitEnd } from '../data/api.ts';
 import type { Mine } from '../reactions/mine.ts';
 import type { Tallies } from '../thread/tallies.ts';
-import { inkOf, useNarrow, useUntil } from './Effects.tsx';
+import { inkOf, useNarrow, useOnInk, useUntil } from './Effects.tsx';
 import { Callout, useCallout } from './Callout.tsx';
 import { Lens, useLensFor, useLensHost, useLensStore, useResolvedView } from './Lens.tsx';
 import { GhostMark, ReachGhost, type ReachAt } from './PlayActions.tsx';
@@ -104,7 +104,8 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
   const caught = plays.every((p) => p.caught || p.reversed);
   /* The ink is the top-billed play's, where the card chooses one for it (`CardUi.tag` is given the kind's plays in play order). */
   const ordered = useMemo(() => [...plays].sort(inPlayOrder), [plays]);
-  const ink = inkOf(ui, plays[0]!, ordered) ?? art?.color;
+  const onInk = useOnInk();
+  const ink = inkOf(ui, plays[0]!, ordered, onInk) ?? art?.color;
   const progress = view.progress === null ? null : Math.min(1, Math.max(0, view.progress));
   const style = {
     ...(art ? { '--kb-mark-color': art.color } : {}),

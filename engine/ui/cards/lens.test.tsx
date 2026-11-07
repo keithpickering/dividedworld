@@ -7,7 +7,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useEffect } from 'react';
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from 'vitest';
 import type { Id } from '../data/api.ts';
 import type { Fake } from '../data/fake.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
@@ -17,6 +17,7 @@ import { fadeOf, LensProvider, moreBelow, useLensFor, useLensStore } from './Len
 import lensCss from './lens.css?raw';
 import type { CardUi, EffectProps } from './types.ts';
 import { LoadedThread } from '../loaded.tsx';
+import { glassInk } from './ink.ts';
 
 /* These tests close a Lens and open another in the same step and look at the one page that results, as under Off: at full motion the closed one stays, inert, until its exit ends (glass/layer.test.tsx). */
 beforeEach(() => {
@@ -266,8 +267,31 @@ describe('what the Lens says and offers', () => {
     expect(within(row).getByRole('link', { name: 'Go to post' })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`);
   });
 
+  test('an ink too dark for the glass is drawn lifted, on the open tab and the row, so their words and edges read', async () => {
+    width(false);
+    /* The glass's key puts the tab's words on the root (applyGlass); this one writes them in Divided World's dark teal. */
+    document.documentElement.style.setProperty('--kb-glass-ink-neon', '#03141a');
+    onTestFinished(() => { document.documentElement.style.removeProperty('--kb-glass-ink-neon'); });
+    const w = world();
+    const first = w.play('k1', w.spritey, w.second, 1);
+    open(w, cards.map((c) => (c.key === 'k1' ? { ...c, tag: () => '#14030a' } : c)));
+    await userEvent.click(await markOf(2, 'Card 1'));
+    await userEvent.click(whoButton());
+    const lifted = glassInk('#14030a', '#03141a')!;
+    expect(lifted).not.toBe('#14030a');
+    expect(lens().style.getPropertyValue('--kb-lens-ink')).toBe(lifted);
+    expect(lens().querySelector<HTMLElement>(`[data-kb-play="${first}"]`)!.style.getPropertyValue('--kb-play-ink')).toBe(lifted);
+    /* A change of key (high contrast) writes the tab's words in another ink, and the lift is measured again against it. */
+    act(() => { document.documentElement.style.setProperty('--kb-glass-ink-neon', '#000000'); });
+    await waitFor(() => expect(lens().style.getPropertyValue('--kb-lens-ink')).toBe(glassInk('#14030a', '#000000')));
+    expect(glassInk('#14030a', '#000000')).not.toBe(lifted);
+  });
+
   test('a row carries its play\'s ink as a bar, and its note stands above its caster', async () => {
     width(false);
+    /* The glass's key resolves the tab's words on the root, as the app's stylesheet does (web/src/main.tsx); a test page has none. */
+    document.documentElement.style.setProperty('--kb-glass-ink-neon', '#000000');
+    onTestFinished(() => { document.documentElement.style.removeProperty('--kb-glass-ink-neon'); });
     const w = world();
     const first = w.play('k1', w.spritey, w.second, 1);
     open(w, cards.map((c) => (c.key === 'k1' ? { ...c, tag: () => '#ff9f43' } : c)));

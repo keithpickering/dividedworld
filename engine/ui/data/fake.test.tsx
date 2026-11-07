@@ -22,7 +22,7 @@ const settings: Settings = {
   seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite',
   invitesPerPlayer: 2, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 }, reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' }, reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } },
   hints: { least: 10, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } }, toastDefaults: ['quote'],
-  postMaxLength: 50, titleMaxLength: 20, postsPerPage: 2, hotReplies: 10, cardSettings: {}, economy: {}, ...systemSettings,
+  postMaxLength: 50, titleMaxLength: 20, postsPerPage: 2, hotReplies: 10, searchLanguage: 'english', searchRankPool: 5000, cardSettings: {}, economy: {}, ...systemSettings,
 };
 
 const earn = () => [];
@@ -2312,6 +2312,67 @@ describe('live alerts derived from Acts', () => {
     await flush();
     expect(w.heard.bo).toEqual([expect.objectContaining({ kind: 'cardOnYours', character: w.boFace })]);
     expect(w.heard.ana).toEqual([]);
+  });
+});
+
+/* The framed alert (0118, write_framed; the BBCode plan, Tasks 8 and 9): a counterfeit quote's `user=<id>` names a character, and its owner is told. */
+describe('framed alerts', () => {
+  function framedWorld() {
+    const w = world({ postMaxLength: 2000 });
+    const cy = w.fake.seed.account('cy');
+    const cyFace = w.fake.seed.character(cy, 'Cy Face', 'face');
+    const waiting = w.fake.seed.character(cy, 'Waiting', 'heel', { debuted: false });
+    const boss = w.fake.seed.staff('boss', 'The Boss', 'boss');
+    const heard = [] as { kind: string; character: unknown }[];
+    w.fake.signInAs(w.bo);
+    w.fake.subscribeAccount({ onAlert: (a) => heard.push(a) });
+    w.fake.signInAs(w.ana);
+    const named = (...ids: string[]) => ids.map((i) => `[quote=Someone user=${i}]words[/quote]`).join(' ');
+    const framedFor = async (account: string) => { w.fake.signInAs(account); const rows = (await w.fake.alerts()).filter((a) => a.kind === 'framed'); w.fake.signInAs(w.ana); return rows; };
+    return { ...w, cy, cyFace, waiting, boss, heard, named, framedFor };
+  }
+  test('a post that names another player\'s debuted character writes one alert for its owner, about the post, and the owner hears it live', async () => {
+    const w = framedWorld();
+    const body = w.named(w.boFace);
+    const made = must(await w.fake.post(w.thread, w.anaFace, body, null, [w.boFace]));
+    await flush();
+    expect(await w.framedFor(w.bo)).toMatchObject([{ kind: 'framed', act: made.id, character: w.boFace, name: 'Bo Face', sub: null }]);
+    expect(w.heard).toEqual([expect.objectContaining({ kind: 'framed', character: w.boFace })]);
+    expect(await w.framedFor(w.ana)).toEqual([]);
+  });
+  test('a thread start and a spin write them as a post does', async () => {
+    const w = framedWorld();
+    must(await w.fake.startThread('general', w.anaFace, 'Fresh', w.named(w.boFace), [w.boFace]));
+    must(await w.fake.spin(w.opener, w.anaFace, 'Spun', w.named(w.boFace), [w.boFace]));
+    expect(await w.framedFor(w.bo)).toHaveLength(2);
+  });
+  test('none for an undebuted, unknown, unnamed-in-the-body, staff or own-mask target, and the answer is the same ok', async () => {
+    const w = framedWorld();
+    const nowhere = '99999999-9999-4999-8999-999999999999';
+    for (const [framing, body] of [
+      [[w.waiting], w.named(w.waiting)], [[nowhere], w.named(nowhere)], [[w.boFace], 'no quote here'],
+      [[w.boss], w.named(w.boss)], [[w.anaHeel], w.named(w.anaHeel)],
+    ] as const) expect((await w.fake.post(w.thread, w.anaFace, body, null, [...framing])).ok).toBe(true);
+    for (const account of [w.bo, w.cy, w.ana]) expect(await w.framedFor(account)).toEqual([]);
+  });
+  test('the id is found in the body without regard to case', async () => {
+    const w = framedWorld();
+    must(await w.fake.post(w.thread, w.anaFace, `[quote user=${w.boFace.toUpperCase()}]x[/quote]`, null, [w.boFace]));
+    expect(await w.framedFor(w.bo)).toHaveLength(1);
+  });
+  test('only the first five ids count, and a repeat is one alert', async () => {
+    const w = framedWorld();
+    const six = Array.from({ length: 6 }, (_, i) => w.fake.seed.character(w.bo, `Bo ${i}`, 'face'));
+    must(await w.fake.post(w.thread, w.anaFace, w.named(...six), null, six));
+    expect(await w.framedFor(w.bo)).toHaveLength(5);
+    must(await w.fake.post(w.thread, w.anaFace, w.named(w.cyFace), null, [w.cyFace, w.cyFace, w.cyFace]));
+    expect(await w.framedFor(w.cy)).toHaveLength(1);
+  });
+  test('an edit writes none', async () => {
+    const w = framedWorld();
+    const made = must(await w.fake.post(w.thread, w.anaFace, 'plain', null));
+    must(await w.fake.edit(made.id, w.anaFace, w.named(w.boFace)));
+    expect(await w.framedFor(w.bo)).toEqual([]);
   });
 });
 

@@ -477,6 +477,7 @@ describe('Settings, as board 11 draws it', () => {
 describe('Settings › Notifications', () => {
   const WORDS: readonly (readonly [string, string])[] = [
     ['Quotes', 'A post quotes one of your characters.'],
+    ['Words put in your mouth', 'A post quotes one of your characters saying something they did not.'],
     ['Cards on yours', 'A card is played on one of your posts.'],
     ['Cards an admin ended', 'An admin ended a card one of your characters played.'],
     ['Traps that hit', 'A trap struck one of your posts.'],
@@ -577,7 +578,7 @@ describe('Settings › Notifications', () => {
     expect(kindSwitch('Quotes')).not.toBeChecked();
     await waitFor(async () => expect((await w.fake.preferences()).toasts).toEqual([]));
     await userEvent.tab();
-    expect(kindSwitch('Cards on yours')).toHaveFocus();
+    expect(kindSwitch('Words put in your mouth')).toHaveFocus();
   });
 
   test('the kinds that toast reach the HUD at once, with no reload', async () => {

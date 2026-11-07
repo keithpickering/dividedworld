@@ -47,6 +47,7 @@ const ICONS = {
   )],
   home: [16, 14, <path className="s" d="M1.5,7.5 L8,1.5 L14.5,7.5 M3.5,6.5 V12.5 H12.5 V6.5 M7,12.5 V9.5 H9 V12.5" />],
   board: [16, 14, <path className="s" d="M1.5,2.5 H14.5 V12.5 H1.5 Z M4,5.5 H12 M4,7.5 H12 M4,9.5 H9" />],
+  search: [16, 14, <path className="s" d="M6.5,1.5 H8.5 L10.5,3.5 V5.5 L8.5,7.5 H6.5 L4.5,5.5 V3.5 Z M9.5,7.5 L13.5,11.5" />],
   start: [14, 14, <path className="s" d="M2.5,1.5 H9.5 L11.5,3.5 V12.5 H2.5 Z M5,7.5 H9 M7,5.5 V9.5" />],
 } as const satisfies Record<string, readonly [number, number, ReactNode]>;
 

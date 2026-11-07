@@ -29,7 +29,8 @@ import { SendToWelcome } from '../../engine/ui/welcome/Welcome.tsx';
 import { SettlementOnLoad } from '../../engine/ui/log/Settlement.tsx';
 import { match, RouterProvider, useLocation, useNavigate, useRouterAccount, useRouterInternals } from '../../engine/ui/router.tsx';
 import { effectCards } from '../../engine/ui/cards/plays.ts';
-import { boardKey, loadBoard, loadIndex, loadProfile, loadRecord, loadThread, recordKey, threadKey, type LoadEnv, type ScreenDoc } from '../../engine/ui/screen-docs.ts';
+import { boardKey, loadBoard, loadIndex, loadProfile, loadRecord, loadSearch, loadThread, recordKey, searchKey, threadKey, type LoadEnv, type ScreenDoc, type SearchDoc } from '../../engine/ui/screen-docs.ts';
+import { SearchScreen } from '../../engine/ui/search/SearchScreen.tsx';
 import { Routes, type Failures, type Route } from '../../engine/ui/routes.tsx';
 import { ESTIMATE_WAIT_MS, lazyScreen } from '../../engine/ui/glass-docs.ts';
 import { glassRoutes, type GlassScreens } from '../../engine/ui/glass-routes.tsx';
@@ -75,6 +76,8 @@ function routesFor(env: LoadEnv): readonly Route[] {
       render: ({ slug }, doc) => <BoardScreen slug={slug!} doc={doc as ScreenDoc<BoardPage>} />,
     },
     ...glassRoutes(env, screens),
+    /* Search is a board page like the board's: its document (the results of the address) loads before the move, and the form's fields are the address's. */
+    { path: '/search', load: ({ query }) => loadSearch(env, query), key: (_, query) => searchKey(query), render: (_, doc) => <SearchScreen doc={doc as ScreenDoc<SearchDoc>} /> },
     /* The standings and the rankings are the season page's Rankings tab (the alerts design, section 7); `?page=` goes with them. */
     { path: '/standings', render: () => <MovedToRankings /> },
     { path: '/rankings', render: () => <MovedToRankings /> },

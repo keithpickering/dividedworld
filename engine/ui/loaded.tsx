@@ -16,7 +16,8 @@ import { RecordScreen } from './profile/Record.tsx';
 import { effectCards } from './cards/plays.ts';
 import { usePlayer } from './player.tsx';
 import { addressOf, useLocation } from './router.tsx';
-import { boardKey, loadBoard, loadIndex, loadProfile, loadRecord, loadThread, recordKey, threadKey, type LoadEnv, type ScreenDoc } from './screen-docs.ts';
+import { boardKey, loadBoard, loadIndex, loadProfile, loadRecord, loadSearch, loadThread, recordKey, searchKey, threadKey, type LoadEnv, type ScreenDoc, type SearchDoc } from './screen-docs.ts';
+import { SearchScreen } from './search/SearchScreen.tsx';
 import { ThreadScreen } from './thread/Thread.tsx';
 import { Characters } from './characters/Characters.tsx';
 import { NewCharacter } from './characters/NewCharacter.tsx';
@@ -129,3 +130,8 @@ export function LoadedUpdates() { return <Glass paths={UPDATES} />; }
 export function LoadedQueue({ now }: { readonly now?: number } = {}) { return <Glass paths={QUEUE} now={now} />; }
 /** My log at `/log` and the settlement summary at `/log/settlement`, one document. */
 export function LoadedLog() { return <Glass paths={LOG} />; }
+
+export function LoadedSearch() {
+  const { query } = useLocation();
+  return <Loaded<SearchDoc> keyed={searchKey(query)} load={(env) => loadSearch(env, query)}>{(doc) => <SearchScreen doc={doc} />}</Loaded>;
+}
