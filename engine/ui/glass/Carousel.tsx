@@ -185,8 +185,12 @@ export function Carousel<T extends { readonly key: string }>({ role, label, item
 
   const body = (
     <div className="kb-class-rail">
-      <div
-        ref={rowRef} className="kb-class-grid"
+      {/*
+        * The row of a radiogroup is a calm of its own: a card that peeks shows its words in the glow's room past the column, outside
+        * the page's or the dialog's calm. A tablist's own box is that calm already.
+        */}
+      <CalmRegion
+        ref={rowRef} calm={!tabs} className="kb-class-grid"
         data-kb-peek-before={row.peekBefore > 0 || undefined} data-kb-peek-after={row.peekAfter > 0 || undefined} data-kb-eased={eased || undefined}
         style={{
           '--kb-class-peek-before': `${row.peekBefore}px`, '--kb-class-peek-after': `${row.peekAfter}px`,
@@ -197,7 +201,7 @@ export function Carousel<T extends { readonly key: string }>({ role, label, item
         {/* The tablist holds the tabs and is a box of its own (a link is no tab, so New character stands beside it in the row). */}
         {tabs ? <CalmRegion role="tablist" aria-label={label} className="kb-carousel-tablist">{drawn}</CalmRegion> : drawn}
         {after && <div className="kb-carousel-after" data-kb-item="after">{after}</div>}
-      </div>
+      </CalmRegion>
       {row.overflow && (
         <CalmRegion className="kb-class-nav">
           <span className="kb-class-count">{`${row.first}–${row.last} of ${count}`}</span>

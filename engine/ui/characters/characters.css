@@ -513,8 +513,11 @@
   --kb-class-card-width: 216px;
   /* The phone's peek, which its card leaves of the row. */
   --kb-class-peek: 64px;
-  /* The room the row keeps for a card's glow at each end, as above and below it: the largest glow a card here draws reaches 30px past it. */
-  --kb-class-glow: 32px;
+  /*
+   * The room the row keeps for a card's glow at each end, as above and below it: the largest glow a card here draws reaches 30px
+   * past it. On a page it is no more than the column's gutter (a phone's is about 17px), so the row never reaches past the window.
+   */
+  --kb-class-glow: min(32px, var(--kb-glass-gutter, 32px));
 }
 
 /*
