@@ -10,6 +10,7 @@ import { spanWords } from '../../../engine/ui/characters/format.ts';
 import glassData from './glass.json';
 import { cardsUi } from './cards.ts';
 import theme from './theme.css?url';
+import coinUrl from './icon/coin.svg?url';
 import pipFull from './pips/default-full.svg?url';
 import pipEmpty from './pips/default-empty.svg?url';
 import gabe from './avatars/gabe.png?url';
@@ -133,6 +134,8 @@ export const instanceUi: InstanceUi = Object.freeze({
   avatars: Object.freeze({ gabe }),
   glass,
   cards: cardsUi,
+  /* The back of a card wears the favicon's coin (the owner's word, 2026-11-07). */
+  cardBack: { mark: coinUrl },
   onboarding,
   frontDoor,
   /* The Strategy Guide's Markdown and Gabe's hint for each class (guide/); tools/check-guide.mjs holds both to the instance. */

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd" viewBox="0 0 600 900" width="600" height="900">
+  <title>Postcard template</title>
+  <defs>
+    <pattern id="plate-hatch" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
+      <line x1="0" y1="0" x2="0" y2="10" stroke="#b6ff3b" stroke-opacity="0.45" stroke-width="3"/>
+    </pattern>
+  </defs>
+  <g id="art" inkscape:groupmode="layer" inkscape:label="Art">
+    <rect x="30" y="30" width="540" height="840" fill="none" stroke="none" pointer-events="all"/>
+  </g>
+  <g id="guides" inkscape:groupmode="layer" inkscape:label="Guides, locked" sodipodi:insensitive="true" fill="none" stroke="#b6ff3b" stroke-width="1.5">
+    <rect x="0" y="0" width="600" height="900" rx="45" ry="45"/>
+    <rect x="30" y="30" width="540" height="840" rx="15" ry="15"/>
+    <rect x="12" y="12" width="576" height="876" rx="33" ry="33" stroke-dasharray="2 4"/>
+    <rect x="70" y="100" width="460" height="400" stroke-dasharray="8 6"/>
+    <rect x="30" y="600" width="540" height="270" fill="url(#plate-hatch)" stroke="none"/>
+    <line x1="30" y1="600" x2="570" y2="600" stroke-dasharray="8 6"/>
+    <g stroke="none">
+      <text x="36" y="50" text-anchor="start" font-family="monospace" font-size="14" font-weight="700" fill="#b6ff3b">canvas 540x840 at 30,30, radius 15</text>
+      <text x="36" y="68" text-anchor="start" font-family="monospace" font-size="14" font-weight="700" fill="#b6ff3b">frame 600x900, radius 45, border 30</text>
+      <text x="16" y="882" text-anchor="start" font-family="monospace" font-size="14" font-weight="700" fill="#b6ff3b">keep clear 12: no piece crosses this dotted line</text>
+      <text x="76" y="120" text-anchor="start" font-family="monospace" font-size="14" font-weight="700" fill="#b6ff3b">focus zone 460x400 at 70,100 (optional, never a mask)</text>
+      <text x="564" y="620" text-anchor="end" font-family="monospace" font-size="14" font-weight="700" fill="#b6ff3b">plates</text>
+    </g>
+  </g>
+</svg>

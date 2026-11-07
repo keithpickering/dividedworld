@@ -44,7 +44,7 @@ function draw(cards: CardUi[], played: string[]): ReactNode {
   store.add(played.map(play));
   return <KayfaProvider value={kayfa}><PlayerProvider api={kayfa.api}><PostEffects plays={store} post={words} place="thread" nameOf={() => 'x'}><span data-kb-words>hi</span></PostEffects></PlayerProvider></KayfaProvider>;
 }
-const ui = (key: string, Effect: CardUi['Effect']): CardUi => ({ key, art: { color: '#ffd23f', ink: '#1a1300' }, describe: () => `${key}.`, Effect });
+const ui = (key: string, Effect: CardUi['Effect']): CardUi => ({ key, art: { color: '#ffd23f', ink: '#1a1300', canvas: '', mark: '', credit: 'Test' }, describe: () => `${key}.`, Effect });
 
 describe('an effect that loads on first use', () => {
   test('the post\'s words are on screen before it lands, and inside it after', async () => {

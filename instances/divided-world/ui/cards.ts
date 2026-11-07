@@ -11,25 +11,34 @@
 import { lazy } from 'react';
 import type { CardUi } from '../../../engine/ui/cards/types.ts';
 import type { Settings } from '../../../engine/rules/types.ts';
-import stickAroundFace from './cards/stick-around.svg?url';
-import stickAroundMark from './cards/stick-around-mark.svg?url';
-import whoopsFace from './cards/whoops.svg?url';
-import whoopsMark from './cards/whoops-mark.svg?url';
-import trapCardFace from './cards/trap-card.svg?url';
-import trapCardMark from './cards/trap-card-mark.svg?url';
-import forceFieldFace from './cards/force-field.svg?url';
-import forceFieldMark from './cards/force-field-mark.svg?url';
-import bluffFace from './cards/bluff.svg?url';
-import bluffMark from './cards/bluff-mark.svg?url';
-import glitterBombFace from './cards/glitter-bomb.svg?url';
-import glitterBombMark from './cards/glitter-bomb-mark.svg?url';
-import mainEventFace from './cards/main-event.svg?url';
-import mainEventMark from './cards/main-event-mark.svg?url';
-import autocorrectFace from './cards/autocorrect.svg?url';
-import autocorrectMark from './cards/autocorrect-mark.svg?url';
+import stickAroundCanvas from './cards/stick-around/art.svg?url';
+import stickAroundMark from './cards/stick-around/mark.svg?url';
+import stickAroundArt from './cards/stick-around/art.json';
+import whoopsCanvas from './cards/whoops/art.svg?url';
+import whoopsMark from './cards/whoops/mark.svg?url';
+import whoopsArt from './cards/whoops/art.json';
+import trapCardCanvas from './cards/trap-card/art.svg?url';
+import trapCardMark from './cards/trap-card/mark.svg?url';
+import trapCardArt from './cards/trap-card/art.json';
+import forceFieldCanvas from './cards/force-field/art.svg?url';
+import forceFieldMark from './cards/force-field/mark.svg?url';
+import forceFieldArt from './cards/force-field/art.json';
+import bluffCanvas from './cards/bluff/art.svg?url';
+import bluffMark from './cards/bluff/mark.svg?url';
+import bluffArt from './cards/bluff/art.json';
+import glitterBombCanvas from './cards/glitter-bomb/art.svg?url';
+import glitterBombMark from './cards/glitter-bomb/mark.svg?url';
+import glitterBombArt from './cards/glitter-bomb/art.json';
+import mainEventCanvas from './cards/main-event/art.svg?url';
+import mainEventMark from './cards/main-event/mark.svg?url';
+import mainEventArt from './cards/main-event/art.json';
+import autocorrectCanvas from './cards/autocorrect/art.svg?url';
+import autocorrectMark from './cards/autocorrect/mark.svg?url';
+import autocorrectArt from './cards/autocorrect/art.json';
+import feelinFabCanvas from './cards/feelin-fab/art.svg?url';
+import feelinFabMark from './cards/feelin-fab/mark.svg?url';
+import feelinFabArt from './cards/feelin-fab/art.json';
 import { ConfigForm as AutocorrectConfigForm } from '../cards/autocorrect/ConfigForm.tsx';
-import feelinFabFace from './cards/feelin-fab.svg?url';
-import feelinFabMark from './cards/feelin-fab-mark.svg?url';
 import { glitterBomb } from '../cards/glitter-bomb.ts';
 import { mainEvent } from '../cards/main-event.ts';
 import { forceField } from '../cards/force-field.ts';
@@ -58,7 +67,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     key: 'stick-around',
     Effect: StickAroundEffect,
     takeover: true,
-    art: { color: '#2ee6ff', ink: '#03141a', image: stickAroundFace, mark: stickAroundMark, tagline: 'Hold a reader on a post.' },
+    art: { color: '#2ee6ff', ink: '#03141a', canvas: stickAroundCanvas, mark: stickAroundMark, credit: stickAroundArt.credit, tagline: 'Hold a reader on a post.' },
     summary: 'Holds a reader on the post until they check your sentence, or break free.',
     status: 'Holding you on this post',
     describe: (settings: Settings) =>
@@ -66,7 +75,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   },
   {
     key: 'whoops',
-    art: { color: '#ff3d7f', ink: '#14030a', image: whoopsFace, mark: whoopsMark, tagline: 'Splat a post in ink.' },
+    art: { color: '#ff3d7f', ink: '#14030a', canvas: whoopsCanvas, mark: whoopsMark, credit: whoopsArt.credit, tagline: 'Splat a post in ink.' },
     hint: 'Drag across the ink to scrub it off your screen.',
     status: 'Ink on this post',
     summary: 'Splats a post in your ink. Readers scrub it; only the author can wash it.',
@@ -106,7 +115,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
    */
   {
     key: 'trap-card',
-    art: { color: '#ff3d7f', ink: '#14030a', image: trapCardFace, mark: trapCardMark, tagline: 'Catch the next card cast on your post.' },
+    art: { color: '#ff3d7f', ink: '#14030a', canvas: trapCardCanvas, mark: trapCardMark, credit: trapCardArt.credit, tagline: 'Catch the next card cast on your post.' },
     summary: 'Set face down on your post. Catches the next card cast there, and pays you what it cost.',
     /* Shown only for a play that names this card; a Set is a card back, whose words are the engine's ("Face down on this post"). */
     status: 'Set, face down to everyone else',
@@ -115,7 +124,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   },
   {
     key: 'force-field',
-    art: { color: '#2ee6ff', ink: '#03141a', image: forceFieldFace, mark: forceFieldMark, tagline: 'Turn away cards from your post.' },
+    art: { color: '#2ee6ff', ink: '#03141a', canvas: forceFieldCanvas, mark: forceFieldMark, credit: forceFieldArt.credit, tagline: 'Turn away cards from your post.' },
     summary: `Used on your post. Turns away cards up to ${forceField.rarity} for ${spanWords(forceField.lasts!)}.`,
     status: `Turning away cards up to ${forceField.rarity}`,
     describe: (settings: Settings) =>
@@ -123,7 +132,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   },
   {
     key: 'bluff',
-    art: { color: '#d24a2c', ink: '#1a0602', image: bluffFace, mark: bluffMark, tagline: 'A card back that does nothing.' },
+    art: { color: '#d24a2c', ink: '#1a0602', canvas: bluffCanvas, mark: bluffMark, credit: bluffArt.credit, tagline: 'A card back that does nothing.' },
     summary: 'Set face down on your post. Looks like a trap, and does nothing.',
     /* As the Trap Card's: the same words, so neither can be told from the other. */
     status: 'Set, face down to everyone else',
@@ -136,7 +145,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
    */
   {
     key: 'autocorrect',
-    art: { color: '#d24a2c', ink: '#1a0602', image: autocorrectFace, mark: autocorrectMark, tagline: 'Tape over a word, everywhere.' },
+    art: { color: '#d24a2c', ink: '#1a0602', canvas: autocorrectCanvas, mark: autocorrectMark, credit: autocorrectArt.credit, tagline: 'Tape over a word, everywhere.' },
     summary: 'Covers a phrase everywhere it appears in a post with words of your choosing.',
     hint: 'Drag a strip off to read what is under it.',
     status: 'Words taped over',
@@ -165,7 +174,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   {
     key: 'glitter-bomb',
     Effect: GlitterBombEffect,
-    art: { color: '#d24a2c', ink: '#1a0602', image: glitterBombFace, mark: glitterBombMark, tagline: 'Make a character sparkle.' },
+    art: { color: '#d24a2c', ink: '#1a0602', canvas: glitterBombCanvas, mark: glitterBombMark, credit: glitterBombArt.credit, tagline: 'Make a character sparkle.' },
     summary: `Cast on a character. Every post of theirs sparkles for ${spanWords(glitterBomb.lasts!)}.`,
     status: 'Sparkling every post of theirs',
     describe: (settings: Settings) =>
@@ -173,7 +182,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   },
   {
     key: 'main-event',
-    art: { color: '#2ee6ff', ink: '#03141a', image: mainEventFace, mark: mainEventMark, tagline: 'Pin a thread to the top of its board.' },
+    art: { color: '#2ee6ff', ink: '#03141a', canvas: mainEventCanvas, mark: mainEventMark, credit: mainEventArt.credit, tagline: 'Pin a thread to the top of its board.' },
     summary: `Cast on a thread. Pins it to the top of its board for ${spanWords(mainEvent.lasts!)}.`,
     status: "Pinned to its board's top",
     describe: (settings: Settings) =>
@@ -186,7 +195,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   {
     key: 'feelin-fab',
     Effect: FeelinFabEffect,
-    art: { color: '#2ee6ff', ink: '#03141a', image: feelinFabFace, mark: feelinFabMark, tagline: 'Give a post a rainbow.' },
+    art: { color: '#2ee6ff', ink: '#03141a', canvas: feelinFabCanvas, mark: feelinFabMark, credit: feelinFabArt.credit, tagline: 'Give a post a rainbow.' },
     /* Up to the rules' `stack` can be on a post; the status counts the plays there. */
     status: (plays) => `${Math.min(plays.length, feelinFab.stack!)} of ${feelinFab.stack} stacked`,
     hint: "A Feelin' Fab: the more of them on a post, the more it glows.",

@@ -254,7 +254,7 @@ describe('the classes marker', () => {
 describe('the cards marker', () => {
   const whoops: CardUi = {
     key: 'whoops', describe: () => 'Long words with numbers 1.00.', summary: 'Splats a post in your ink.',
-    art: { color: '#ff3d7f', ink: '#14030a', tagline: 'Splat a post in ink.' },
+    art: { color: '#ff3d7f', ink: '#14030a', canvas: '', mark: '', tagline: 'Splat a post in ink.', credit: 'Test' },
   };
   test('lists each card with its rarity, its play, its flavor and what it does', () => {
     page('## Cards\n\n<!-- kayfabb:cards -->', { cards: [whoops] });

@@ -295,3 +295,10 @@ and every screen; the back names no card. No response, payload, Realtime event o
   `--kb-pc-w`; check the armed and forced-colors rules too.
 - The plates over the real art at the slot's size: the name must still read at 86 wide over the busiest canvas.
 - The boards: only 05 and 07 changed, and only their card boxes.
+
+## Amended 2026-11-07: the back's mark
+
+Built in Task 6's review round, at the owner's request (the design's "Amended 2026-11-07" section): `InstanceUi` gains
+an optional `cardBack: { mark }`, `PostcardBack` an optional `mark` it draws centered on the bands, and Divided World
+gives `instances/divided-world/ui/icon/coin.svg`. Tests: a back with a mark draws one hidden image in its canvas and no
+card's key, color or name; a back without one draws none; Divided World's `cardBack.mark` is an SVG.

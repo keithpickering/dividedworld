@@ -16,7 +16,7 @@ const test_card: CardUi = {
     return <div data-testid="effect">{props.children}</div>;
   },
   describe: () => 'A test card.',
-  art: { color: 'currentColor', ink: 'currentColor' },
+  art: { color: 'currentColor', ink: 'currentColor', canvas: '', mark: '', credit: 'Test' },
 };
 const draw = () => renderInWorld(<FrontDoor />, { cards: [test_card] });
 
