@@ -1,7 +1,9 @@
 # Booster packs, the machine's catalog, and the Boss's hand on the machine: plan
 
 Record, written 2026-11-04. The plan for `docs/plans/2026-11-04-booster-packs-design.md`. One build session builds it in
-one PR from `main`, after the design's PR is merged. No issue tracks it.
+one PR from `main`, after the design's PR is merged. No issue tracks it. Amended 2026-11-07: Tasks 5 and 6 build from
+the boards redrawn on the card template, `docs/research/2026-11-07-booster-packs/` (the design's amendment of that date);
+Task 9 builds the clouded card back, and Task 10 the machine's motion, after the glass polish's Phase 3 (#293).
 
 Every task is test first: name the test, record its red run, then write the code. No `check-*.mjs` is added.
 
@@ -222,14 +224,22 @@ Model: sonnet
 Model: sonnet
 
 **Files:** `engine/ui/vending/Vending.tsx`, `Vending.test.tsx`, `Vending.board.stories.tsx`, `vending.css` in the
-instance, and `engine/ui/vending/PackOpening.tsx` (new), with a board story for each of boards 01 to 04.
+instance, and `engine/ui/vending/PackOpening.tsx` (new), with a board story for each of boards 01 to 04, and a manifest
+for each (`e2e/boards/2026-11-07-booster-packs/<NN>-<name>.ts`), taking its board out of `PENDING` in `e2e/boards.spec.ts`.
 
-**The look** is the boards in `docs/research/2026-11-04-booster-packs/`, which the owner confirmed on 2026-11-04 (board
-01 for the machine, 02 to 04 for the reveal). The pack is just another slot, drawn as a foil pack with its name and "5
-CARDS". When a pack is selected, the space beside the slots shows a small row of five card outlines, the last one gold,
-and "Five cards, the last one at least uncommon. It opens as soon as you buy it." The column to the right of the machine
-shows the selected pack's odds as a table, and below it, in plain words, each Boss move in force on the machine. The
-foil, the card back and the rarity gems are placeholders until the owner gives the art.
+**The look** is the boards in `docs/research/2026-11-07-booster-packs/` (board 01 for the machine, 02 and 03 for the
+reveal, and the first three screens of 04 on a phone), redrawn on 2026-11-07 on the card template; the first drawing,
+`docs/research/2026-11-04-booster-packs/`, which the owner confirmed on 2026-11-04, is the record of the choices they keep
+(the design's amendment of 2026-11-07). The pack is just another slot, drawn as a foil pack with the instance's mark, its
+name and "5 CARDS", at the slot's 2:3. When a pack is selected, the space beside the slots shows a small row of five card
+backs (`PostcardBack`), the last one gold, and "Five cards, the last one at least uncommon. It opens as soon as you buy
+it." The column to the right of the machine shows the selected pack's odds as a table, and below it, in plain words,
+each Boss move in force on the machine. The pack's foil and wrapper are a placeholder until the owner gives the art, and
+come from the instance (`InstanceUi.packs`).
+
+Board 04 is one phone board with screens of two tasks (the machine and the reveal here, the admin page in Task 6), so its
+manifest is a `phone` export of board 01's with the reveal's screens as further sides (`also`), as the backfill's
+`e2e/boards/2026-11-05-backfill/14-sign-in.ts` holds its four; Task 6 adds the admin screen's side.
 
 - **Slots come from `api.machine()`** in their order, in place of `facesOf` over every card (`Vending.tsx:199`). Empty
   slots stay sealed as today (`slotsFor`, :55).
@@ -237,9 +247,13 @@ foil, the card back and the rarity gems are placeholders until the owner gives t
   chance in the hit pull.
 - **A sold-out slot** is greyed and says why in plain words: "Sold out" for an admin's choice, or the move's words from
   the design's section 6 for a Pull. A moved price shows the admin's price struck through beside the new one.
-- **Buying a pack opens the reveal**, a modal over the machine (boards 02 to 04 in
-  `docs/research/2026-11-04-booster-packs/`). The torn pack sits at the top, with "N OF 5 TURNED OVER" under it.
-  - **The cards** lie face down in a row, in pull order, drawn as the hand draws a postcard (`Postcard.tsx`).
+- **Buying a pack opens the reveal**, a modal over the machine (boards 02, 03 and 04 in
+  `docs/research/2026-11-07-booster-packs/`). The emptied pack is parked at the top, past the screen's edge with its
+  foot in view, and "N OF 5 TURNED OVER" is under it.
+  - **The cards** lie face down in a row, in pull order, at the fan's size (`PostcardBack`, `size="fan"`, the hit's with
+    `hit`), and turn face up in place (`Postcard`, `size="fan"`).
+  - **The spotlight:** the card last turned is shown above the row at the sheet's size (`size="sheet"`), so each card is
+    read large as it is turned; before the first, it holds the first card's back. The row marks the card shown.
   - **Turning a card:** the player turns them one at a time, by clicking or tapping a card, with "Turn the next card",
     or with Space. A card turns over on its vertical axis.
   - **The hit** is last. Its back is gold. Once turned, it carries a gold tag naming its rarity and card ("RARE · MAIN
@@ -247,14 +261,16 @@ foil, the card back and the rarity gems are placeholders until the owner gives t
   - **"Turn all"** turns every card that is left.
   - **When all five are turned,** the modal offers "Done" and Esc ("Back to the machine"), with the plain line "These five
     are already in your hand." The cards were in the hand from the moment of purchase, so closing early loses nothing.
-  - **On a phone,** the cards are a pile: the top one turns with a tap or a swipe, and a row of five outlines counts down,
-    the last one gold.
-  - **Reduced motion** shows each card turned with no rotation. Turning stays one at a time; "Turn all" is still there.
+  - **On a phone,** the cards are a pile at the sheet's size: the top one turns with a tap or a swipe, and a row of five
+    outlines counts down, the last one gold.
+  - **The motion** is the design's amendment of 2026-11-07, "The reveal's motion", beat by beat, played on the presets
+    Task 10 adds; `PackOpening.tsx` spreads them and holds no duration of its own. Under Off (reduced motion) each card
+    is shown turned with no rotation. Turning stays one at a time; "Turn all" is still there.
   - **A screen reader** hears each card as it is turned, and the whole pack once all are turned.
   - **What is shown** is the answer's `contents`, never a roll on the client. The modal holds focus and returns it to the
     slot.
-- **Rarity is drawn as a gem**, as the card face draws it today: a hollow diamond for common, then cyan for uncommon,
-  gold for rare and pink for legendary. The odds panel uses the same gems.
+- **Rarity is drawn as a gem**, as the card face draws it (`gemOf`): its glyph says the rarity by shape (● common,
+  ◆ uncommon, ★ rare, ✦ legendary) in a rotated tile, never by color alone. The odds panel uses the same gems.
 - **A refusal** (sold out, or a price changed) shows the server's words and refreshes the machine.
 
 **Tests first** (`Vending.test.tsx`):
@@ -274,6 +290,7 @@ Model: sonnet
 
 **Files:**
 - `engine/ui/admin/Machine.tsx` (new), with its test and story.
+- `engine/ui/admin/Queue.tsx`: the admin pages' strip, shared with the machine's page.
 - `engine/ui/glass/nav.ts`: `GLASS_NAV.adminMachine = '/admin/machine'`.
 - `web/src/App.tsx:54`: the route.
 - The admin menu's link beside the queue.
@@ -286,13 +303,14 @@ Model: sonnet
   left in no on-sale pack, as `reversed` by that admin, in the same transaction. That way the floor holds after the
   Pull has landed too.
 
-The page is board 05 in `docs/research/2026-11-04-booster-packs/`: a plain glass table under the admin's menu, with
-one "Save changes" for the page. It lists the slots in grid order. Each row has:
-- the item's name;
-- move up and move down buttons;
-- the availability select;
-- the price field;
-- any Boss move in force, linked to its row in the queue.
+The page is board 05 in `docs/research/2026-11-07-booster-packs/`, and on a phone the fourth screen of board 04: a plain
+glass table under the menu's Admin tab, with one "Save changes" for the page after it. The admin's pages, Moves (the
+queue) and The machine, are reached from each other by a strip of two small buttons under the page's lead, the current
+one filled (`aria-current="page"`); the Admin tab still opens the queue, which gains the same strip (the design's
+amendment of 2026-11-07). The backfill's board 37 draws the queue without it, so the queue's manifest
+(`e2e/boards/2026-11-05-backfill/37-admin-queue.ts`) names the strip as a departure by this design and compares what
+stands below it by the strip's height lower. A manifest for board 05 takes it out of `PENDING`, and board 04's manifest
+gains the admin screen as a side.
 
 **Tests first:**
 - A player is refused, in SQL and on the page (as `Queue.test.tsx` does for the queue).
@@ -318,6 +336,80 @@ Model: inline
 
 Add a dated amendment under `docs/plans/2026-11-02-onboarding-plan.md` Task 11: `card_ledger.kind`'s `granted` is added
 to `card_held` (this plan's Task 2), and is not counted inline.
+
+## Task 9. The card back, clouded (engine UI)
+
+Model: inline
+
+Added 2026-11-07, from the card template design's amendment of that date. It touches no other task and may be built at
+any point; the boards of Tasks 5 and 6 already draw it.
+
+**Files:** `engine/ui/cards/postcard.css`, `engine/ui/cards/postcard.test.tsx`.
+
+**The code** is `BACK_CSS` in `docs/research/2026-11-07-booster-packs/gen.mjs`, word for word, merged into the
+stylesheet's back section: its `.kb-postcard-back` properties join that rule, its canvas background replaces the crossed
+bands of `.kb-postcard-back .kb-postcard-canvas`, its emblem's size, padding, background and shadow replace those of
+`.kb-postcard-emblem` (which only a back draws), and its `[data-hit]` properties join `.kb-postcard-back[data-hit]`. The
+section's comments say what the amendment says. Once it lands, `gen.mjs` drops `BACK_CSS` and reads the stylesheet alone.
+
+**Tests first** (`postcard.test.tsx`, beside "is drawn in the glass's text and field, and gold on a hit"), each red on
+main before the change:
+- The back's canvas draws no crossed bands (no `45deg` gradient in its rule), and its background multiplies a gradient of
+  tokens over the noise (`background-blend-mode: multiply`).
+- The emblem is `66cqw` square and its shadow reads `--kb-back-glow`.
+- `.kb-postcard-back[data-hit]` sets `--kb-back-glow` to `var(--kb-glass-ready)`.
+
+`node tools/check-ui-tokens.mjs` passes, since the noise's only literals are inside `url()`. A screenshot of the backs
+at the four sizes, normal and hit, goes in the PR for the owner's word.
+
+## Task 10. The machine's motion (engine UI)
+
+Model: sonnet
+
+Added 2026-11-07, from the design's amendment "The reveal's motion". It needs the glass polish's Phase 3 (#293) on
+`main`: `engine/ui/glass/motion.ts`, `useFeel()` and the feels' tokens. Build it after Task 5, or with it.
+
+**Files:** `engine/ui/glass/motion.ts` and `motion.test.ts` (the new presets); `engine/ui/vending/PackOpening.tsx`
+(Task 5's reveal, its beats); `engine/ui/vending/Vending.tsx` and `vending.css` (the single buy's flight, in place of
+`kb-vending-drop` and its keyframes, and the hand link's pulse); `instances/divided-world/ui/vending/vending.css` only
+if it styles the drop; `Vending.board.stories.tsx` (a story that plays the reveal at each feel).
+
+**The look in motion** is `docs/research/2026-11-07-booster-packs/motion/prototype.html`, with any timing the owner
+tunes there written back into the design before this task starts. The prototype's curves stand in for Motion's; the
+build uses the presets and Motion's spring.
+
+- **The presets**, each a pure function returning Motion props, `{}` under Off, on the feel's tokens alone:
+  - `toHand(feel, from: Rect, to: Rect, delay)`: the arc from a card's box to the hand link's (through a point above
+    and between them), shrinking to 0.12 and fading, over `screen`, eased (never sprung, so it ends when it says). Where
+    `to` is outside the viewport, it ends at the viewport's edge toward it.
+  - `lift(feel)`: the shared layout's transition between the row and the spotlight, landing over `enter`.
+  - `turn(feel)`: `rotateY` 0 to 180 over `enter` × 1.2, landing; the face and back are two sides with
+    `backface-visibility: hidden`.
+  - `deal(feel, index, delays)`: from the card's place in the fan above the pack's opening, at its tilt, to the slot,
+    landing over `enter`, by `stagger(feel, 5)` at three times its step. The rise out of the opening before it (E4) and
+    the pack's tear and park (E3, E5) are the reveal's own beats on the feel's tokens.
+  - The pack is drawn as two pieces, its body below the tear line and its crimped top above it, from the instance's
+    pack art (`InstanceUi.packs`); the engine gives the tear line, so any pack art tears the same way.
+  - `beat(feel)`: scale 1, 1.05, 1 over `screen`, eased.
+- **The reveal** (`PackOpening.tsx`) plays the entrance E1 to E7, a turn T1 and T2, the hit's beat, Turn all and the
+  exit as the design's amendment writes them, measuring the slot's rect and the hand link's when each beat starts.
+  Each card is one element with a `layoutId` per pull. Any input during a beat completes the running beats (Motion's
+  `animate` to the target at once) and goes on.
+- **The single buy** (`Vending.tsx`): the card drops into the tray (`enter`, landing), rests half of `screen`, then flies
+  by `toHand` from its box to the hand link's, and the link pulses on landing. `DELIVERY_MS` and the fallback timer
+  stay, now read from the feel. Under Off the card is in the hand at once, as today.
+
+**Tests first** (red: no preset, and the drop still uses its keyframes):
+- `motion.test.ts`: under Off each new preset is `{}`; `toHand`'s last keyframe is at the target rect's center (or the
+  viewport's edge toward it, when outside); `deal`'s last delay is within `screen` × 3 for five cards; `turn` under
+  Snappy carries the spring and under Smooth the ease.
+- `Vending.test.tsx`: the single buy's flying card is aimed at the hand link's measured rect (a test double's
+  `getBoundingClientRect`), and `vending.css` has no `@keyframes kb-vending-drop`.
+- `PackOpening` (Task 5's tests, extended): a Space during the entrance turns the first card at once; Done during a turn
+  closes at once with the reveal `inert` from that render; under Off no element of the reveal has a running animation
+  (`document.getAnimations()` empty) after any input.
+- e2e at full motion: buying a pack and pressing Esc at once returns focus to the slot (Phase 3's `focus.spec.ts`
+  helper).
 
 ## Last. The full build and the final review
 
@@ -351,3 +443,8 @@ opening mid-flight, a pulled slot) and of the admin page, for the owner's word.
 - At a busy instance, `machine_now` costs the slots times the open machine moves, never the purchases. `card_held` reads
   `card_ledger` by its `(account, card)` index.
 - No screen still reads a card's price from `economy`, `basePrice` or `priceKey`.
+- The reveal's motion (Task 10): no beat may start before the purchase's answer, or depend on anything but the buyer's own
+  stored pack, so the reveal says nothing to anyone else and a refusal looks like a success until its words appear.
+  Check that input during any beat finishes it at once, and that a long exit never holds focus or input.
+- The flight to the hand measures the link's rect when it starts. Check it on a scrolled phone page, where the link is
+  out of view, and that a second buy while a card is flying sends both.

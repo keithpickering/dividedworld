@@ -66,6 +66,56 @@ export interface PoolSettings {
   readonly chatterCron: string;
 }
 
+/**
+ * The Mod Bots' numbers (`Settings.modBots`; the Mod Bots design, sections 2 to 8). A starting point each: the owner tunes them with a row,
+ * never a deploy. Money is in hundredths of an orb.
+ */
+export interface ModBotSettings {
+  /** The most moves the Boss hands one Mod at a meeting (and the most one Mod holds at once); the code clamps and records a trim. */
+  readonly allowanceMost: number;
+  /** The most days a rule set by a Mod lasts. */
+  readonly ruleDaysMost: number;
+  /** How long a visit lasts before the Mod files, in hours: the range every persona's own strictness is clamped into. */
+  readonly visitHours: { readonly least: number; readonly most: number };
+  /** The most patrols the Boss's meeting schedules for the Mods in a day; the rest are cut from the end. */
+  readonly patrolsPerDay: number;
+  /** How many of a board's recent posts one patrol's judgment reads (a bounded read of public posts). */
+  readonly patrolSample: number;
+  /** What a report costs the reporter: spent on every judged report, whatever the verdict, and refunded only when the judgment fails. */
+  readonly reportPrice: Hundredths;
+  /** The most reports one character may file in a day. */
+  readonly reportsPerDay: number;
+  /** The most Mod judgments (patrols, reports, appeals) the instance pays for in a day. */
+  readonly judgmentsPerDay: number;
+  /** The most filing calls the instance pays for in a day: one a filing, and a second for an old voice's move. Counted from the ledger. */
+  readonly filingLinesPerDay: number;
+  /** What an appeal costs, and is refunded when it is upheld. */
+  readonly appealPrice: Hundredths;
+  /** How long a tail on a character lasts, in hours. */
+  readonly tailHours: number;
+  /** The targeting cap: no more than this many public punishments of one character in this many days. */
+  readonly cap: { readonly punishments: number; readonly days: number };
+  /** When the filing run looks for visits due, as a five-field cron expression in UTC. */
+  readonly filingCron: string;
+  /** How long past its due time a visit may wait before the filing run files it as it stands, in minutes. */
+  readonly filingGraceMinutes: number;
+}
+
+/**
+ * The warn bar's numbers (`Settings.warnBar`; the Mod Bots design, section 5). An infraction adds its band's points when a visit files, drops off
+ * `decay` after it lands, and a bar that reaches `size` brings a timed ban whose length is the season's ladder step.
+ */
+export interface WarnBarSettings {
+  /** What the bar holds: it brings a ban when the points not yet expired reach this many. A whole number, at least 1. */
+  readonly size: number;
+  /** What an infraction of each band adds. Whole numbers from 1 to `size`. */
+  readonly bands: { readonly minor: number; readonly moderate: number; readonly severe: number };
+  /** How long an infraction counts after it lands. */
+  readonly decay: Span;
+  /** The days of a character's first ban in a season, its second, its third; the last step repeats. Whole numbers, at least 1, and at least one step. */
+  readonly banDays: readonly number[];
+}
+
 /** The settings the engine itself reads. A class's own numbers live with the class. */
 export interface Settings {
   /** The most a wallet holds; Aura past it leaves the wallet and stays in the standing. */
@@ -192,6 +242,10 @@ export interface Settings {
    * for, how a day's pick is made, and the numbers the pool's other readers share (notes, cards, priority). A starting point each.
    */
   readonly pool: PoolSettings;
+  /** The Mod Bots' numbers: allowances, rule lengths, visits, patrols, reports, appeals, tails and the targeting cap. */
+  readonly modBots: ModBotSettings;
+  /** The warn bar and the ban ladder: points by band, how long they last, and how long each ban in a season runs. */
+  readonly warnBar: WarnBarSettings;
   /** The longest a board's name may be, in characters, whether The System or a player proposes it. */
   readonly boardNameMaxLength: number;
   /** The most days any move may last, whatever its phase allows. A starting point. */
@@ -582,12 +636,6 @@ export interface Persona extends StaffSeed {
 /** Who does a duty: the season's Boss, the bot on the board's beat, the bot that filed, or a staff member by key. */
 export type DutyAssignee = 'boss' | 'beat' | 'filer' | (string & {});
 
-/** What the old voice is given for a board's description, and what it is told to stop at. */
-export interface OldVoiceFrame {
-  readonly prompt: string;
-  readonly stop: readonly string[];
-}
-
 /** A feed an instance lets The System read for outside material: plain code fetches it; no model searches the web. */
 export interface FeedSource {
   readonly name: string;
@@ -617,8 +665,6 @@ export interface SystemContent {
   readonly realWorld: readonly string[];
   /** Material the community likes, a starting list The System learns more of. */
   readonly wheelhouse: readonly string[];
-  /** The completion prompt for a board's description, and where it stops. */
-  oldVoice(input: { readonly name: string; readonly premise: string }): OldVoiceFrame;
   /** Problems with a board name The System proposes; empty when it is in style. */
   nameStyle(name: string): string[];
   /**

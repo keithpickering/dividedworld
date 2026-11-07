@@ -213,3 +213,26 @@ holds every highlight drawn from them.
 - **Moving Whoops!'s suds onto the page's loop** waits until the Whoops! refinements land.
 - **A gyroscope seen for real.** The bench's tilt pad stood in for one. The gains in section 3 are first numbers, to be
   tuned once the owner has tilted a phone.
+
+## 10. A post's body, drawn at a share of the rate (amended 2026-11-07)
+
+Since keithpickering/dividedworld#295 the shine paints a post's whole body, not only its words' box, and the draw cost
+was held to what the words cost. Every draw still changed the whole body on screen, about twice the words' area across
+a busy thread, and on CI's software-composited Chromium the busy-thread scroll dropped frames. The owner chose, on
+keithpickering/dividedworld#304, to redraw only what is on screen and to redraw big posts less often. This replaces
+section 6's "Idle-shimmer redraws run at 30 frames a second, and light that the reader moves runs at the display's
+rate" for a post whose body is bigger than its words:
+
+- **A share of the rate.** A post is redrawn at the share of the loop's rate that keeps the screen area its draws change
+  in a second to what its words' box changed at the full rate: the words' area over the body's, at most 1 and at least a
+  quarter (`paintShare` in `engine/ui/cards/body.ts`). A post at a half shimmers 15 times a second and follows a moving
+  light 30 times a second. A post of a line in a tall body stops at a quarter: 7.5 and 15. A post whose body is no
+  bigger than its words is drawn as section 6 says. A post's first draw, and a Glitter Bomb's burst, are never slowed.
+  The loop spreads the posts' draws over the frames, so the slowed posts do not all draw on the same one.
+- **Only what is on screen.** A draw redraws only the rows of the body that are on screen, with 120 CSS px above and
+  below (`SPAN_MARGIN` in `engine/ui/shine/loop.ts`). The rest keeps what the post last drew there, never blank: a post's
+  first draw, a draw after it was resized or freed, and a burst are whole. Glitter's settled flakes off screen show their
+  unlit color until a draw reaches them.
+- **How it is held.** `e2e/shine.spec.ts` counts the screen area a scroll's draws change against what the words would
+  change drawn on every frame (at most 1.25 times; before this, 2.29 in that spec's thread), and the rest-rate check
+  holds each post to its share of thirty draws a second.

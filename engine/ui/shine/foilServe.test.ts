@@ -22,7 +22,7 @@ class FakeOffscreen {
     const grad = { addColorStop: () => {} };
     this.ctx = {
       canvas: this, save: note('save'), restore: note('restore'), setTransform: note('setTransform'), translate: () => {}, rotate: () => {},
-      clearRect: note('clearRect'), fillRect: () => {}, beginPath: () => {}, fill: () => {}, ellipse: () => {},
+      clearRect: note('clearRect'), fillRect: () => {}, beginPath: () => {}, fill: () => {}, ellipse: () => {}, rect: () => {}, clip: note('clip'),
       createRadialGradient: () => grad,
       createImageData: (cw: number, ch: number) => ({ width: cw, height: ch, data: new Uint8ClampedArray(cw * ch * 4) }),
       putImageData: () => {}, drawImage: note('drawImage'),
@@ -85,6 +85,35 @@ describe('the foil worker', () => {
     assert.deepEqual(sizes, ['w180', 'w240']);
     assert.deepEqual([c.width, c.height], [240, 120]);
     assert.equal(drawn(c).at(-1), 240, 'drawn at the new size, in the same message');
+  });
+
+  test('a draw\'s span reaches the foil: after a whole draw it is clipped, and a canvas sized in the same task, or a draw with no span, is whole', () => {
+    const { scope, send } = scopeOf();
+    serveFoils(scope);
+    const c = adopt(send, 1);
+    const clips = () => c.calls.filter((x) => x[0] === 'clip').length;
+    const span = { top: 30, bottom: 60 };
+    const tall = { w: 90, h: 450 };
+    send({ kind: 'frame', t: 1, draws: [draw(1, { box: tall, span })] });
+    assert.equal(clips(), 0, 'sized in this task: whole');
+    send({ kind: 'frame', t: 2, draws: [draw(1, { box: tall, span })] });
+    assert.equal(clips(), 1, 'the span is honored');
+    send({ kind: 'frame', t: 3, draws: [draw(1, { box: tall })] });
+    assert.equal(clips(), 1, 'a draw with no span (an older page) is whole');
+    send({ kind: 'frame', t: 4, draws: [draw(1, { box: { w: 90, h: 460 }, span })] });
+    assert.equal(clips(), 1, 'resized: whole');
+  });
+
+  test('a draw after a cleared canvas (a null band) is whole, whatever its span', () => {
+    const { scope, send } = scopeOf();
+    serveFoils(scope);
+    const c = adopt(send, 1);
+    const clips = () => c.calls.filter((x) => x[0] === 'clip').length;
+    const span = { top: 30, bottom: 60 }, tall = { w: 90, h: 450 };
+    send({ kind: 'frame', t: 1, draws: [draw(1, { box: tall })] });
+    send({ kind: 'frame', t: 2, draws: [draw(1, { box: tall, band: null })] });
+    send({ kind: 'frame', t: 3, draws: [draw(1, { box: tall, span })] });
+    assert.equal(clips(), 0, 'the cleared canvas is drawn whole');
   });
 
   test('a null band clears the canvas and draws no foil', () => {

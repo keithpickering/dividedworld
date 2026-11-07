@@ -130,3 +130,8 @@
     display: none;
   }
 }
+
+/* The note a banned mask's composer says (ban.ts): plain words over the box, in the same notice the composer's other notes use. */
+.kb-composer-ban {
+  margin-block: 0.4em;
+}

@@ -6,10 +6,24 @@
  * The reactions list is the instance's whole set: seeding deletes a kind the instance dropped, or refuses when one is in
  * use (supabase/migrations/0091_seed_reaction_kinds.sql).
  */
-import type { Instance } from '../../../engine/rules/types.ts';
+import type { Instance, Weakness } from '../../../engine/rules/types.ts';
 import { DEFAULT_DEVELOPER } from '../../../engine/rules/instance.ts';
 import { MOVE_KINDS } from '../../../engine/system/moves.ts';
+import { BBCODE_TAGS } from '../../../engine/bbcode/parse.ts';
+import { PREDICATES } from '../../../engine/rules/predicates.ts';
 import { DEMAND_KINDS } from '../../../engine/system/demands.ts';
+
+/** What a persona's visits can be talked down with, as the seed carries it in `challenge`: the kind and its number, never a quiz's questions or answers (those travel in `quiz`). */
+function challengeOf(w: Weakness): { kind: string; questions?: number; price?: number } {
+  if (w.kind === 'quiz') return { kind: 'quiz', questions: w.questions.length };
+  if (w.kind === 'bribe') return { kind: 'bribe', price: w.price };
+  return { kind: 'distraction' };
+}
+
+/** A quiz persona's questions with their choices and answers, as `seed_instance` keeps them (0108) in a table no client can read; no other persona has any. */
+function quizOf(w: Weakness): { quiz: { question: string; choices: string[]; answer: string }[] } | Record<string, never> {
+  return w.kind === 'quiz' ? { quiz: w.questions.map((q) => ({ question: q.question, choices: [...q.choices], answer: q.answer })) } : {};
+}
 
 export function instanceSeed(instance: Instance) {
   const dev = instance.developer ?? DEFAULT_DEVELOPER;
@@ -43,7 +57,11 @@ export function instanceSeed(instance: Instance) {
     system: {
       staff: [
         // Every persona alike; seed_instance (0082) debuts the first Boss and the first staff and leaves the rest waiting.
-        ...instance.system.roster.map((p) => ({ key: p.key, name: p.name, title: p.title, signature: p.signature })),
+        // `beats` are the slugs of the kinds of board a persona likes to watch (0103): beat_of falls back to them for a board no Mod's order names.
+        // `visitHours` and `challenge` are what a persona's visits are like (0105): the hours it runs them and what talks it down. A quiz's challenge carries how many
+        // questions it has and never one of them or its answer. The questions and answers travel beside it in `quiz` (0108), which seed_instance writes where no client can read it.
+        ...instance.system.roster.map((p) => ({ key: p.key, name: p.name, title: p.title, signature: p.signature, beats: [...p.beats],
+          visitHours: { least: p.strictness.visitHours.least, most: p.strictness.visitHours.most }, challenge: challengeOf(p.weakness), ...quizOf(p.weakness) })),
       ],
       firstStaff: [...instance.system.firstStaff],
       // The member group every staff character is in, named by the instance.
@@ -54,7 +72,10 @@ export function instanceSeed(instance: Instance) {
       announcementsTitle: instance.system.announcementsTitle,
       // The engine's catalogs of moves and demands (0046), so SQL and TypeScript read one list. This file is the composition
       // root: the engine names no instance, and the SQL names no kind of its own.
-      moves: MOVE_KINDS.map((m) => ({ key: m.key, structural: m.structural, shapesBoard: m.shapesBoard })),
+      moves: MOVE_KINDS.map((m) => ({ key: m.key, structural: m.structural, shapesBoard: m.shapesBoard, offices: [...m.offices] })),
+      // The rule predicates (0102): the keys `rule_breaks` has a branch for, the kind and bounds of each parameter, and the rule in plain
+      // words with `{param}` where the parameter goes (`system_line` fills it).
+      predicates: PREDICATES.map((p) => ({ key: p.key, param: p.param, least: p.bounds?.least ?? null, most: p.bounds?.most ?? null, plain: p.plain('{param}'), ...(p.param === 'tag' ? { tags: [...BBCODE_TAGS] } : {}) })),
       demands: DEMAND_KINDS.map((d) => ({ key: d.key })),
     },
   };

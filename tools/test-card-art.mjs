@@ -1,0 +1,162 @@
+/**
+ * Tests for the guard in tools/check-card-art.mjs.
+ *
+ *   node tools/test-card-art.mjs
+ *
+ * The guard fails a card-art folder (instances/<name>/ui/cards/<key>/) that lacks a file, has the
+ * wrong canvas, a bad manifest, an oversize file, or an SVG that runs or reaches out
+ * (docs/plans/2026-11-05-card-template-plan.md, Task 2). This reads no file in the repository: each
+ * case writes a repository-shaped scratch folder in os.tmpdir() and runs the check over it through
+ * its function and through the command, whose exit code is what the build reads.
+ */
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { cardArtFaults } from './check-card-art.mjs';
+
+const script = path.join(path.dirname(fileURLToPath(import.meta.url)), 'check-card-art.mjs');
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'card-art-'));
+let pass = 0;
+const failures = [];
+
+function check(name, condition, detail = '') {
+  if (condition) {
+    pass++;
+    console.log('  PASS  ' + name);
+  } else {
+    failures.push(name + (detail ? '  <- ' + detail : ''));
+    console.log('  FAIL  ' + name + (detail ? '  <- ' + detail : ''));
+  }
+  return Boolean(condition);
+}
+
+const NS = 'xmlns="http://www.w3.org/2000/svg"';
+const ART = (inner = '', attrs = '') => `<svg ${NS} viewBox="0 0 540 840"${attrs}>${inner}<rect width="540" height="840"/></svg>`;
+const MARK = `<svg ${NS} viewBox="0 0 120 120"><circle cx="60" cy="60" r="50"/></svg>`;
+const JSON_OK = JSON.stringify({ credit: 'An Artist', license: 'CC BY 4.0' });
+
+let n = 0;
+/**
+ * A repository-shaped folder with one clean card folder, then `poison(files)` applied: `files` maps
+ * a name in the card folder to its content, or to null for no file.
+ * @param {(files: Record<string, string | null>) => void} [poison]
+ */
+function repo(poison = () => {}) {
+  /** @type {Record<string, string | null>} */
+  const files = { 'art.svg': ART(), 'mark.svg': MARK, 'art.json': JSON_OK };
+  poison(files);
+  const dir = path.join(root, `r${n++}`);
+  const card = path.join(dir, 'instances/demo/ui/cards/demo-card');
+  fs.mkdirSync(card, { recursive: true });
+  for (const [f, body] of Object.entries(files)) if (body !== null) fs.writeFileSync(path.join(card, f), body);
+  return dir;
+}
+const run = (dir) => spawnSync(process.execPath, [script, '--root', dir], { encoding: 'utf8' });
+
+/** One poison: the function names it (matching `want`), and the command exits 1 saying so. */
+function red(name, poison, want) {
+  const dir = repo(poison);
+  const faults = cardArtFaults(dir);
+  const hit = faults.some((f) => want.test(f));
+  check(name, hit, JSON.stringify(faults));
+  const c = run(dir);
+  check('  and the command exits 1 naming it', c.status === 1 && want.test(c.stderr), `${c.status} ${c.stderr}`);
+}
+/** A file that must pass. */
+function green(name, poison) {
+  const dir = repo(poison);
+  const faults = cardArtFaults(dir);
+  check(name, faults.length === 0, JSON.stringify(faults));
+  const c = run(dir);
+  check('  and the command exits 0', c.status === 0, `${c.status} ${c.stderr}`);
+}
+const art = (inner, attrs) => (f) => { f['art.svg'] = ART(inner, attrs); };
+
+try {
+  green('a clean card folder has no fault', () => {});
+
+  /* ---- the real shape of a repository with none ---- */
+  {
+    const dir = path.join(root, 'empty');
+    fs.mkdirSync(path.join(dir, 'instances/demo/ui/cards'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'instances/demo/ui/cards/stick-around.svg'), '<svg onload="x()"/>');
+    check('no card folder (a plain file in ui/cards/ is ignored) has no fault', cardArtFaults(dir).length === 0);
+    check('  and the command exits 0', run(dir).status === 0);
+    const none = path.join(root, 'no-instances');
+    fs.mkdirSync(none);
+    check('a repository with no instances has no fault', cardArtFaults(none).length === 0);
+  }
+
+  /* ---- (1) files ---- */
+  red('mark.svg missing', (f) => { f['mark.svg'] = null; }, /mark\.svg.*missing/);
+  red('art.json missing', (f) => { f['art.json'] = null; }, /art\.json.*missing/);
+  red('art.svg missing', (f) => { f['art.svg'] = null; }, /art\.svg.*missing/);
+
+  /* ---- (2), (3) canvases ---- */
+  red('a canvas at 0 0 120 110', (f) => { f['art.svg'] = `<svg ${NS} viewBox="0 0 120 110"/>`; }, /art\.svg.*viewBox/);
+  red('a canvas with no viewBox', (f) => { f['art.svg'] = `<svg ${NS}/>`; }, /art\.svg.*viewBox/);
+  red('a mark at 0 0 120 110', (f) => { f['mark.svg'] = `<svg ${NS} viewBox="0 0 120 110"/>`; }, /mark\.svg.*square/);
+  green('a canvas viewBox with any whitespace passes', (f) => { f['art.svg'] = `<svg ${NS} viewBox=" 0\t0  540\n840 "/>`; });
+
+  /* ---- (4) manifest ---- */
+  red('a manifest with an empty credit', (f) => { f['art.json'] = JSON.stringify({ credit: '', license: 'x' }); }, /art\.json.*credit/);
+  red('a manifest with no license', (f) => { f['art.json'] = JSON.stringify({ credit: 'x' }); }, /art\.json.*license/);
+  red('a manifest that is not JSON', (f) => { f['art.json'] = '{credit:'; }, /art\.json.*JSON/);
+
+  /* ---- (5) sizes ---- */
+  red('a canvas of 201 KB', (f) => { f['art.svg'] = ART(`<!--${'a'.repeat(201 * 1024)}-->`); }, /art\.svg.*200 KB/);
+  red('a mark over 20 KB', (f) => { f['mark.svg'] = `<svg ${NS} viewBox="0 0 1 1"><!--${'a'.repeat(21 * 1024)}--></svg>`; }, /mark\.svg.*20 KB/);
+  red('a manifest over 2 KB', (f) => { f['art.json'] = JSON.stringify({ credit: 'x'.repeat(3000), license: 'y' }); }, /art\.json.*2 KB/);
+
+  /* ---- (6) nothing runs or reaches out ---- */
+  red('a canvas holding <SCRIPT>', art('<SCRIPT>alert(1)</SCRIPT>'), /art\.svg.*<script/i);
+  red('a canvas holding <foreignObject>', art('<foreignObject width="1" height="1"/>'), /art\.svg.*foreignObject/i);
+  red('a canvas holding <image href="data:...">', art('<image href="data:image/png;base64,AAAA"/>'), /art\.svg.*<image/i);
+  red('a canvas with onload', art('', ' onload="alert(1)"'), /art\.svg.*on/i);
+  red('a canvas with an ONCLICK attribute in another case', art('<g ONCLICK="x()"/>'), /art\.svg.*on/i);
+  red('a canvas with <style>@import</style>', art('<style>@import "x.css";</style>'), /art\.svg.*@import/i);
+  red('a canvas with fill="url(https://example.com/a#b)"', art('<rect fill="url(https://example.com/a#b)"/>'), /art\.svg.*url\(/);
+  red('a canvas with <use href="https://example.com/a.svg#b"/>', art('<use href="https://example.com/a.svg#b"/>'), /art\.svg.*href/);
+  red('a canvas with xlink:href to a URL', art('<use xlink:href="https://example.com/a.svg#b"/>'), /art\.svg.*href/);
+  red('a mark holding <script>', (f) => { f['mark.svg'] = `<svg ${NS} viewBox="0 0 1 1"><script/></svg>`; }, /mark\.svg.*<script/i);
+  red('a CSS url( outside an attribute', art('<style>.a{fill:url(https://x/y)}</style>'), /art\.svg.*url\(/);
+  {
+    // The reading is linear in the file: a canvas just under its cap, one long run of text with no "=" in it (a
+    // comment, a title), is read in well under a second, not retried from every character of the run.
+    const dir = repo(art(`<!--${'a'.repeat(190 * 1024)}-->`));
+    const t0 = performance.now();
+    const faults = cardArtFaults(dir);
+    const ms = performance.now() - t0;
+    check('a canvas just under its cap, one long run of text, is read in under a second', faults.length === 0 && ms < 1000, `${Math.round(ms)} ms ${JSON.stringify(faults)}`);
+  }
+  green('a fragment fill="url(#g)" passes', art('<defs><linearGradient id="g"/></defs><rect fill="url(#g)"/>'));
+  green('a fragment <use href="#p"/> passes', art('<path id="p" d="M0 0"/><use href="#p"/><use xlink:href="#p"/>'));
+  green('attributes that merely contain "on" later (e.g. d, stroke-linecap) pass', art('<path d="M0 0" stroke-linecap="round" font-size="3"/>'));
+
+  /* ---- the hostile cases beyond the plan's list ---- */
+  red('an entity-encoded href (&#x6a;avascript:)', art('<a href="&#x6a;avascript:alert(1)"/>'), /art\.svg.*(character reference|href)/);
+  red('a decimal-encoded href (&#106;avascript:)', art('<a href="&#106;avascript:alert(1)"/>'), /art\.svg.*(character reference|href)/);
+  red('an encoded fragment-looking href (&#35; is #, but rejected)', art('<use href="&#35;p"/>'), /art\.svg.*character reference/);
+  red('a <set> writing an href', art('<a><set attributeName="href" to="https://x/"/></a>'), /art\.svg.*(<set|<animate)/i);
+  red('an <animate> writing xlink:href', art('<a><animate attributeName="xlink:href" values="https://x/"/></a>'), /art\.svg.*(<set|<animate)/i);
+  red('an <animate> with attributeName spelled in upper case', art('<a><ANIMATE ATTRIBUTENAME="HREF" values="https://x/"/></a>'), /art\.svg.*(<set|<animate)/i);
+  red('an <animate> writing xml:base', art('<a><animate attributeName="xml:base" values="https://x/"/></a>'), /art\.svg.*(<set|<animate)/i);
+  red('a decoy <svg viewBox> inside a comment before the real root', (f) => { f['art.svg'] = `<!-- <svg viewBox="0 0 540 840"> --><svg ${NS} viewBox="0 0 1 1"/>`; }, /art\.svg.*viewBox/);
+  red('a DOCTYPE fault says to delete the line', (f) => { f['art.svg'] = `<!DOCTYPE svg>${ART()}`; }, /art\.svg.*delete the DOCTYPE line/);
+  green('an <animate> of an ordinary attribute passes', art('<rect><animate attributeName="opacity" values="0;1" dur="1s"/></rect>'));
+  red('an xml:base', art('', ' xml:base="https://example.com/"'), /art\.svg.*xml:base/i);
+  red('a <!DOCTYPE with an entity', (f) => { f['art.svg'] = `<!DOCTYPE svg [<!ENTITY u "https://x/">]>${ART('<use href="&u;"/>')}`; }, /art\.svg.*(<!DOCTYPE|<!ENTITY)/i);
+  red('an <!ENTITY alone', art('<!ENTITY u "https://x/">'), /art\.svg.*<!ENTITY/i);
+  red('an href with a leading space before #', art('<use href=" https://x/"/>'), /art\.svg.*href/);
+  red('an unquoted href to a URL', art('<use href=https://x/a.svg />'), /art\.svg.*href/);
+} finally {
+  fs.rmSync(root, { recursive: true, force: true });
+}
+
+console.log(`\n  card art: ${pass} passed, ${failures.length} failed`);
+if (failures.length) {
+  console.error('  test-card-art: FAILED\n    ' + failures.join('\n    '));
+  process.exit(1);
+}

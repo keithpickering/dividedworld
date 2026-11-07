@@ -148,7 +148,7 @@ describe('a staff profile\'s career', () => {
 });
 
 describe('a Mod Bot\'s profile', () => {
-  test('is the same screen with a MODERATOR badge and its own title, and says plainly that its log is empty until it makes its visits', async () => {
+  test('is the same screen with a MODERATOR badge and its own title, and says plainly that its log is empty until it has made a visit', async () => {
     open('bot');
     expect(await screen.findByRole('heading', { level: 1, name: 'Hall Monitor' })).toBeInTheDocument();
     const card = await screen.findByRole('table', { name: 'About Hall Monitor' });
@@ -156,7 +156,7 @@ describe('a Mod Bot\'s profile', () => {
     expect(within(card).getByText('Test Cores')).toBeInTheDocument();
     expect(within(card).queryByText('ADMINISTRATOR')).toBeNull();
     expect(card).toHaveTextContent('Keeper of the Hall');
-    expect(await screen.findByText(/Nothing here yet\. A Mod Bot's moderation log stays empty until Mod Bots start their visits\./u)).toBeInTheDocument();
+    expect(await screen.findByText(/Nothing here yet\. A Mod Bot's log lists its visits, the reports it judged and the appeals it heard, once it has any\./u)).toBeInTheDocument();
     expect(screen.queryByRole('table', { name: 'Moderation log' })).toBeNull();
   });
 });
@@ -236,4 +236,43 @@ describe('a Boss\'s log after a handover', () => {
     expect(text).not.toContain('Waiting Persona');
   });
 
+});
+
+
+describe('a Mod Bot\'s moderation log lists its visits, the reports it judged and the appeals it heard (the Mod Bots design, section 9)', () => {
+  function modWorld() {
+    return open('bot', (fake, w) => {
+      const bot = w.bot;
+      const { seed } = fake;
+      const poster = seed.character(seed.account('poster'), 'Poster', 'face');
+      const { thread } = seed.thread('general', poster, 'A thread', 'post 1');
+      const p = seed.post(thread, poster, 'post 2');
+      const q = seed.post(thread, poster, 'post 3');
+      const v1 = seed.visit(bot, p, { at: Date.now() - 3 * 86_400_000, endsInMs: 3_600_000, charges: [{ cause: 'patrol' }] });
+      seed.visitEnd(v1, { outcome: 'filed', line: 'Filed.', at: Date.now() - 3 * 86_400_000 + 3_600_000 });
+      const inf = seed.infraction(v1, { points: 2, at: Date.now() - 3 * 86_400_000 + 3_600_000 });
+      seed.visit(bot, q, { at: Date.now() - 1000, endsInMs: 3_600_000 });
+      const reporter = seed.character(seed.account('reporter'), 'Reporter', 'heel');
+      const r = seed.report(reporter, p, 'rude', { at: Date.now() - 2 * 86_400_000 });
+      seed.verdict(r, bot, 'dismissed', { line: 'Hmph.', at: Date.now() - 2 * 86_400_000 + 1000 });
+      const a = seed.appeal(poster, inf, 'Please.', { at: Date.now() - 86_400_000 });
+      seed.ruling(a, bot, 'reduced', { line: 'Half.', at: Date.now() - 86_400_000 + 1000 });
+    });
+  }
+
+  test('each row says what the Mod did, linked to the post, and how it ended, newest first', async () => {
+    modWorld();
+    await waitFor(async () => expect((await rows()).length).toBeGreaterThanOrEqual(4));
+    const all = await rows();
+    const text = all.map((r) => r.textContent!.replace(/\s+/gu, ' '));
+    expect(text.map((t) => t.replace(/^[A-Z][a-z]{2} \d+/u, ''))).toEqual([
+      'Visited post #3 (Rule 2: No double posting, minor)open',
+      'Heard an appeal of warn points from post #2reduced',
+      'Judged a report of post #2dismissed',
+      'Visited post #2 (Rule 2: No double posting, minor), on patrolfiled',
+    ]);
+
+    const link = within(all.find((r) => /Judged a report/u.test(r.textContent!))!).getByRole('link', { name: 'post #2' });
+    expect(link).toHaveAttribute('href', expect.stringMatching(/^\/t\/.+\?page=1#post-2$/u));
+  });
 });

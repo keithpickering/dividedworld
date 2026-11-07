@@ -156,7 +156,9 @@ const SIMPLE: Readonly<Record<string, 'bold' | 'italic' | 'underline' | 'strike'
   u: 'underline',
   s: 'strike',
 };
-const OPENERS = new Set(['b', 'i', 'u', 's', 'color', 'size', 'url', 'img', 'code', 'quote', 'list']);
+/** The tags the parser knows how to open, for a rule that names one (engine/rules/predicates.ts `noTag`). */
+export const BBCODE_TAGS: readonly string[] = ['b', 'i', 'u', 's', 'color', 'size', 'url', 'img', 'code', 'quote', 'list'];
+const OPENERS: ReadonlySet<string> = new Set(BBCODE_TAGS);
 const CLOSERS = new Set(['b', 'i', 'u', 's', 'color', 'size', 'url', 'quote', 'list']);
 
 function pushText(out: Out, text: string): void {

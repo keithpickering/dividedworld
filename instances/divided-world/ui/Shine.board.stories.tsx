@@ -5,7 +5,7 @@
  * about five are in view, and the rest wait their turn below. `Still` is the same page under reduced motion.
  *
  * The story page hands e2e/shine.spec.ts the loop's probe as `window.__kbShine`: each shiny post's draws, its place on the page (in
- * document order) and its size in device px, the loop's frame count and whether it runs, the size of every canvas each post holds
+ * document order) and its size in device px, both the box it paints (its first canvas's: the post's whole body, engine/ui/cards/body.ts), the loop's frame count and whether it runs, the size of every canvas each post holds
  * (`held`), and the canvas pixels the 2D contexts have rastered (`raster`, below). The application exposes nothing.
  *
  * A Feelin' Fab is drawn in a worker where the browser can (engine/ui/shine/foilClient.ts), a Glitter Bomb on the page, so every
@@ -30,8 +30,12 @@ declare global {
   interface Window {
     __kbPoison?: string;
     __kbShine?: {
-      /** Every shiny post on the page, top to bottom: the loop's draws of it, its box in the viewport and its area in device px. */
-      hosts: () => { draws: number; top: number; bottom: number; area: number }[];
+      /**
+       * Every shiny post on the page, top to bottom: the loop's draws of it, the box it paints in the viewport (its width too, in CSS
+       * px) and its area in device px, its words' own box in the viewport, the share of the loop's rate it is drawn at, and how many
+       * canvases it holds that the browser composites now (a canvas handed to the worker counts; one freed to 0 by 0 does not).
+       */
+      hosts: () => { draws: number; top: number; bottom: number; width: number; area: number; own: { top: number; bottom: number; width: number }; share: number; layers: number }[];
       frames: () => number;
       /** The loop's own time in each of its last `n` frames, in milliseconds. */
       work: (n: number) => number[];
@@ -39,7 +43,7 @@ declare global {
       workerWork: (n: number) => Promise<{ batches: number; work: number[] }>;
       running: () => boolean;
       /** Every shiny post's box and the size of each canvas inside it, a worker's canvases read from the worker (a transferred canvas's own attributes say nothing). */
-      held: () => Promise<{ top: number; bottom: number; sizes: { w: number; h: number }[] }[]>;
+      held: () => Promise<{ top: number; bottom: number; area: number; own: number; sizes: { w: number; h: number }[]; shine: { w: number; h: number }[] }[]>;
       /**
        * Counting the canvas pixels the 2D contexts raster (shine-probes.ts, on the page and in the worker): `start` patches the contexts
        * (a timed run leaves it off, so the count costs the loop nothing there), `take` gives the page's pixels since the last take (all
@@ -115,19 +119,31 @@ function workerRaster(): Promise<RasterFrame[]> {
   });
 }
 
-/** Every shiny post's box and its canvases' sizes: a canvas handed to the worker is read there, any other from its own attributes. */
-async function held(): Promise<{ top: number; bottom: number; sizes: { w: number; h: number }[] }[]> {
+/**
+ * Every shiny post's painted box, its own box (the words' element, which a post's pixels are held to: engine/ui/cards/body.ts
+ * `paintScale`) and its canvases' sizes: a canvas handed to the worker is read there, any other from its own attributes.
+ */
+async function held(): Promise<{ top: number; bottom: number; area: number; own: number; sizes: { w: number; h: number }[]; shine: { w: number; h: number }[] }[]> {
   const worked = await foilProbe.sizes();
   return [...document.querySelectorAll(SHINY)].map((el) => {
-    const r = el.getBoundingClientRect();
-    const sizes = [...el.querySelectorAll('canvas')].map((c) => {
+    const r = painted(el);
+    const sizeOf = (c: HTMLCanvasElement) => {
       const there = worked.get(c);
       if (there) return there;
       if (foilProbe.idOf(c) !== undefined) throw new Error('a canvas handed to the foil worker is not in the worker\'s list: the buffer check would read its placeholder');
       return { w: c.width, h: c.height };
-    });
-    return { top: r.top, bottom: r.bottom, sizes };
+    };
+    const sizes = [...el.querySelectorAll('canvas')].map(sizeOf);
+    /* The shine effect's own canvases, without another card's drawn inside its words (#41 carries Whoops!'s ink too). */
+    const shine = [...el.querySelectorAll<HTMLCanvasElement>(':scope > canvas.dw-fab-foil, :scope > .dw-glitter-surface > canvas')].map(sizeOf);
+    const o = el.getBoundingClientRect();
+    return { top: r.top, bottom: r.bottom, area: r.width * r.height, own: o.width * o.height, sizes, shine };
   });
+}
+
+/** The box a shiny post paints, its first canvas's: the post's whole body in the thread, not the words' own box (engine/ui/cards/body.ts). */
+function painted(el: Element): DOMRect {
+  return (el.querySelector('canvas') ?? el).getBoundingClientRect();
 }
 
 interface Args { readonly reduced: boolean }
@@ -153,8 +169,12 @@ function Busy({ reduced }: Args) {
     const tell = (on: boolean): void => { foilProbe.worker()?.postMessage({ kind: 'story', what: 'raster', on } satisfies StoryAsk); };
     window.__kbShine = {
       hosts: () => [...document.querySelectorAll(SHINY)].map((el) => {
-        const r = el.getBoundingClientRect(), d = window.devicePixelRatio || 1;
-        return { draws: probe.draws(el), top: r.top, bottom: r.bottom, area: r.width * r.height * d * d };
+        const r = painted(el), o = el.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+        return {
+          draws: probe.draws(el), top: r.top, bottom: r.bottom, width: r.width, area: r.width * r.height * d * d,
+          own: { top: o.top, bottom: o.bottom, width: o.width }, share: probe.share(el),
+          layers: [...el.querySelectorAll('canvas')].filter((c) => foilProbe.idOf(c) !== undefined || (c.width > 0 && c.height > 0)).length,
+        };
       }),
       frames: probe.frames,
       work: (n) => probe.work(n),

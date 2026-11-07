@@ -120,7 +120,7 @@ begin
     begin execute format('delete from %I', t); exception when raise_exception then denied := true; end;
     if not denied then perform set_config('session_replication_role', 'origin', true); raise exception '% was deleted from in replica mode', t; end if;
     denied := false;
-    begin execute format('truncate %s', case t when 'meetings' then 'meetings, model_calls, staff_memory, staff_profiles, queued_moves' else t end); exception when raise_exception then denied := true; end;
+    begin execute format('truncate %s', case t when 'meetings' then 'meetings, model_calls, staff_memory, staff_profiles, queued_moves, staff_orders, patrols, staff_call_records' else t end); exception when raise_exception then denied := true; end;
     if not denied then perform set_config('session_replication_role', 'origin', true); raise exception '% was truncated in replica mode', t; end if;
   end loop;
   perform set_config('session_replication_role', 'origin', true);

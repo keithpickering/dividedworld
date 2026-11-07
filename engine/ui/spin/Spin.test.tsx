@@ -271,7 +271,7 @@ describe('the ORIGIN box', () => {
     renderIn(w.fake, <LoadedThread thread={spun} />, {
       path: `/t/${spun}`,
       cards: [{
-        key: 'whoops', art: { color: '#000000', ink: '#ffffff' }, describe: () => 'x',
+        key: 'whoops', art: { color: '#000000', ink: '#ffffff', canvas: '', mark: '', credit: 'Test' }, describe: () => 'x',
         Effect: ({ plays, reader, place, children }) => <div data-testid="fx" data-plays={plays.map((p) => p.id).join(',')} data-author={String(reader.author)} data-place={place}>{children}</div>,
       }],
     });
@@ -289,7 +289,7 @@ describe('the ORIGIN box', () => {
     renderIn(w.fake, <LoadedThread thread={spun} />, {
       path: `/t/${spun}`,
       cards: [{
-        key: 'whoops', art: { color: '#000000', ink: '#ffffff' }, describe: () => 'x',
+        key: 'whoops', art: { color: '#000000', ink: '#ffffff', canvas: '', mark: '', credit: 'Test' }, describe: () => 'x',
         Effect: ({ children }) => <>{children}</>,
       }],
     });
@@ -546,8 +546,8 @@ describe('the ORIGIN box of a play-spun thread', () => {
   }
   const Lift = ({ children }: EffectProps) => <div data-kb-lift>{children}</div>;
   const momentCards: CardUi[] = [
-    { key: 'whoops', art: { color: '#000000', ink: '#ffffff' }, describe: () => 'x', Effect: Washy },
-    { key: 'stick-around', art: { color: '#000000', ink: '#ffffff' }, describe: () => 'x', Effect: Lift, takeover: true },
+    { key: 'whoops', art: { color: '#000000', ink: '#ffffff', canvas: '', mark: '', credit: 'Test' }, describe: () => 'x', Effect: Washy },
+    { key: 'stick-around', art: { color: '#000000', ink: '#ffffff', canvas: '', mark: '', credit: 'Test' }, describe: () => 'x', Effect: Lift, takeover: true },
   ];
   /* Post 2 is the reader's own: its Whoops! washed 40% and saved, then Stick Around cast on it, and a thread spun from that. */
   async function spunFromHold() {

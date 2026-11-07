@@ -20,8 +20,14 @@
  * with the cell (a column's fringe, a facet's flash, the dark board's opposite stop) once per frame; the per-cell rest keeps
  * the bench's arithmetic in its order, so the bytes are the bench's to the last bit, and foil.test.ts holds them by digest.
  *
- * Units: a box is CSS px {w, h}; a cell is 3 CSS px; `density` is canvas pixels per CSS px; a light is {x, y} in -1.5..1.5;
+ * Units: a box is CSS px {w, h}; a cell is 3 CSS px (or `FoilOptions.cell`); `density` is canvas pixels per CSS px; a light is {x, y} in -1.5..1.5;
  * colors are computed in LINEAR light and written as 8-bit sRGB; `now` is milliseconds, as the page's loop gives it.
+ *
+ * A draw may be handed a span (`Span`: rows in CSS px from the box's top; engine/ui/shine/loop.ts `ShineFrame.span`, issue #304): the
+ * rows of a post's body that are on screen. It then renders only the grid's rows the span covers and one more each side (the smoothed
+ * draw reads a cell beyond the span's edge), puts only those, and draws the grid and the starbursts clipped to the span; the rest of the
+ * canvas keeps the last draw's pixels. That is honored only after a whole draw of this layout on a canvas of this size, so a first
+ * draw, or one after a resize or a release, is whole and nothing is ever left blank.
  *
  * `draw` takes any 2D context: a Feelin' Fab's foil is drawn in a worker on an OffscreenCanvas's (foilServe.ts), or on the page's own canvas
  * where the browser cannot (foilClient.ts), the same bytes and the same draw either way.
@@ -34,6 +40,8 @@ import { seededRng } from './seeded.ts';
 
 export type FoilPattern = 'pearl' | 'bands' | 'prism';
 export type Box = { readonly w: number; readonly h: number };
+/** Rows of a box, in CSS px from its top (`top` < `bottom`). */
+export type Span = { readonly top: number; readonly bottom: number };
 export type FoilCanvas = { width: number; height: number; getContext(kind: '2d'): CanvasRenderingContext2D | null };
 
 export type FoilOptions = {
@@ -46,15 +54,24 @@ export type FoilOptions = {
   readonly stars: number;
   /** The highlight the starbursts are drawn in, sRGB `#rrggbb` (an instance's: the engine names no color). Added over cells, so it only lightens. */
   readonly glint: string;
+  /**
+   * The cell's side in CSS px (default 3). The foil's work is one color a cell, so a coarser cell costs less on a big box: an effect that
+   * paints a box bigger than its words draws it with as many cells as the words' box had (engine/ui/cards/body.ts `paintScale`). The grid
+   * is drawn smoothed to the canvas, so a coarser cell is the same pattern a little softer; the facets and the starbursts keep their size.
+   */
+  readonly cell?: number;
   /** Where canvases come from; tests pass a fake. */
   readonly createCanvas?: (w: number, h: number) => FoilCanvas;
 };
 
 export type Foil = {
-  /** Write every cell's sRGB bytes (r, g, b, 255) into `out`, which holds `ceil(w/3) * ceil(h/3) * 4` of them. */
+  /** The cell's side in CSS px (`FoilOptions.cell`, 3 by default). */
+  readonly cell: number;
+  /** Write every cell's sRGB bytes (r, g, b, 255) into `out`, which holds `ceil(w/cell) * ceil(h/cell) * 4` of them. */
   render(box: Box, light: Light, band: Band, out: Uint8ClampedArray): void;
-  draw(ctx: CanvasRenderingContext2D, box: Box, density: number, light: Light, band: Band, now: number, idle: boolean): void;
-  /** The prism's cell map for a box: the facet each 3px cell belongs to. */
+  /** `span`, when given, redraws only those rows (the header says when it is honored). */
+  draw(ctx: CanvasRenderingContext2D, box: Box, density: number, light: Light, band: Band, now: number, idle: boolean, span?: Span | null): void;
+  /** The prism's cell map for a box: the facet each cell belongs to. */
   facets(box: Box): Uint32Array;
   /** Drop the ImageData, the grid canvas and the cell map; the next draw builds them again. */
   release(): void;
@@ -62,7 +79,8 @@ export type Foil = {
   holds(): boolean;
 };
 
-const CELL = 3;
+/** The cell's side in CSS px unless a foil is given a coarser one (`FoilOptions.cell`). */
+const DEFAULT_CELL = 3;
 const FACET = 17;
 
 type Facet = { x: number; y: number; nx: number; ny: number; ph: number };
@@ -72,6 +90,8 @@ type Layout = {
   /* What no light moves, per cell: the pearl's swirl; the prism's hue before the light and whether the cell is on a seam. */
   swirl?: Float64Array; hue?: Float64Array; seam?: Uint8Array; scratch?: Float64Array; row?: Float64Array;
   small?: FoilCanvas; img?: ImageData;
+  /* The canvas size this layout last drew whole on: a span is honored only on a canvas of that size, which holds that whole draw. */
+  whole?: { readonly cw: number; readonly ch: number };
 };
 
 function defaultCanvas(w: number, h: number): FoilCanvas {
@@ -157,6 +177,7 @@ function finishRow(row: Float64Array, n: number, f: Finish, px: Uint8ClampedArra
 }
 
 export function makeFoil(opts: FoilOptions): Foil {
+  const CELL = opts.cell !== undefined && Number.isFinite(opts.cell) && opts.cell >= DEFAULT_CELL ? opts.cell : DEFAULT_CELL;
   if (!/^#[0-9a-f]{6}$/iu.test(opts.glint)) throw new Error(`foil: the glint needs a #rrggbb color, got ${JSON.stringify(opts.glint)}`);
   const GLINT = toLinear(opts.glint);
   if (opts.palette.length !== 6) throw new Error(`foil: the palette needs six stops, got ${opts.palette.length}`);
@@ -291,7 +312,7 @@ export function makeFoil(opts: FoilOptions): Foil {
    * keep the color in locals and blend the palette inline, and each row ends in one `finishRow` call: a helper called per cell,
    * or one that wrote shared state, cost more than the math.
    */
-  function renderInto(L: Layout, light: Light, band: Band, px: Uint8ClampedArray): void {
+  function renderInto(L: Layout, light: Light, band: Band, px: Uint8ClampedArray, j0 = 0, j1 = L.gh): void {
     const { gw, gh, W, H } = L;
     const lx = light.x, ly = light.y;
     const pattern = opts.pattern;
@@ -312,7 +333,7 @@ export function makeFoil(opts: FoilOptions): Foil {
         const x = (i + 0.5) * CELL, fr = palAt(seed + 0.5 + (x / W) * 0.85 + 0.32 * lx), o = i * 5;
         col[o] = (x / W) * 0.85; col[o + 1] = (x - cxs) ** 2; col[o + 2] = fr[0]!; col[o + 3] = fr[1]!; col[o + 4] = fr[2]!;
       }
-      for (let j = 0; j < gh; j++) {
+      for (let j = j0; j < j1; j++) {
         const y = (j + 0.5) * CELL;
         const rowHue = (y / H) * 0.3, rowD = (y - cys) ** 2;
         for (let i = 0, idx = j * gw; i < gw; i++, idx++) {
@@ -336,7 +357,7 @@ export function makeFoil(opts: FoilOptions): Foil {
       const period = Math.min(W * 0.4, 360);
       const span = W * Math.abs(cosT) + H * Math.abs(sinT);
       const hx = 0.9 * lx, hy = 0.45 * ly, sx = lx * 24, sy = ly * 9;
-      for (let j = 0; j < gh; j++) {
+      for (let j = j0; j < j1; j++) {
         const y = (j + 0.5) * CELL;
         for (let i = 0, idx = j * gw; i < gw; i++, idx++) {
           const x = (i + 0.5) * CELL;
@@ -367,7 +388,7 @@ export function makeFoil(opts: FoilOptions): Foil {
         per[k * 2 + 1] = Math.exp(-((cell.nx - lx) ** 2 + (cell.ny - ly) ** 2) / 0.07) * 0.7;
       }
       const shift = 0.25 * lx, sh = f.dark ? 0.78 : 0.94;
-      for (let j = 0; j < gh; j++) {
+      for (let j = j0; j < j1; j++) {
         for (let i = 0, idx = j * gw; i < gw; i++, idx++) {
           const k = map[idx]! * 2;
           const t = hue[idx]! + per[k]! + shift;
@@ -386,6 +407,7 @@ export function makeFoil(opts: FoilOptions): Foil {
   }
 
   return {
+    cell: CELL,
     render(box, light, band, outPx) {
       if (!usable(box)) return;
       const L = layoutFor(box);
@@ -395,13 +417,13 @@ export function makeFoil(opts: FoilOptions): Foil {
 
     facets: (box) => (usable(box) ? facetsOf(layoutFor(box)) : NONE),
 
-    draw(ctx, box, density, light, band, now, idle) {
+    draw(ctx, box, density, light, band, now, idle, span) {
       if (!usable(box)) return;
       const L = layoutFor(box);
       /* The caller's context comes back as it was: transform, smoothing, alpha and composite are all restored. */
       ctx.save();
       try {
-        paint(ctx, L, density, light, band, now, idle);
+        paint(ctx, L, density, light, band, now, idle, span ?? null);
       } finally {
         ctx.restore();
       }
@@ -417,17 +439,32 @@ export function makeFoil(opts: FoilOptions): Foil {
       layout.swirl !== undefined || layout.hue !== undefined || layout.row !== undefined || layout.scratch !== undefined),
   };
 
-  function paint(ctx: CanvasRenderingContext2D, L: Layout, density: number, light: Light, band: Band, now: number, idle: boolean): void {
+  function paint(ctx: CanvasRenderingContext2D, L: Layout, density: number, light: Light, band: Band, now: number, idle: boolean, span: Span | null): void {
     if (!L.small) L.small = make(L.gw, L.gh);
     const sg = L.small.getContext('2d');
     if (!sg) return;
+    const fresh = !L.img;
     if (!L.img) L.img = sg.createImageData(L.gw, L.gh);
-    renderInto(L, light, band, L.img.data);
-    sg.putImageData(L.img, 0, 0);
-    /* Every cell is opaque, and the grid is drawn over every device pixel of the canvas: nothing needs clearing first, and the
-     * starbursts below are added to this frame's foil, never to the last one's. */
     const cw = ctx.canvas?.width ?? Math.round(L.W * density), ch = ctx.canvas?.height ?? Math.round(L.H * density);
+    /* The grid's rows to redraw: the span's and one either side, when the canvas holds this layout's whole draw at this size. */
+    let j0 = 0, j1 = L.gh;
+    if (span && !fresh && L.whole && L.whole.cw === cw && L.whole.ch === ch && Number.isFinite(span.top) && Number.isFinite(span.bottom)) {
+      j0 = Math.max(0, Math.floor(span.top / CELL) - 1);
+      j1 = Math.min(L.gh, Math.ceil(span.bottom / CELL) + 1);
+      if (j1 <= j0) return;
+    }
+    const part = j0 > 0 || j1 < L.gh;
+    renderInto(L, light, band, L.img.data, j0, j1);
+    if (part) sg.putImageData(L.img, 0, 0, 0, j0, L.gw, j1 - j0); else sg.putImageData(L.img, 0, 0);
+    if (!part) L.whole = { cw, ch };
+    /* Every cell is opaque, and the grid is drawn over every device pixel of the canvas: nothing needs clearing first, and the
+     * starbursts below are added to this frame's foil, never to the last one's. A span's draw is clipped to the span's rows in
+     * device px, the starbursts with it, and the rows outside keep the last draw's foil and starbursts. */
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    if (part) {
+      const y0 = Math.max(0, Math.floor(span!.top * density)), y1 = Math.min(ch, Math.ceil(span!.bottom * density));
+      ctx.beginPath(); ctx.rect(0, y0, cw, y1 - y0); ctx.clip();
+    }
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'low';
     ctx.drawImage(L.small as unknown as CanvasImageSource, 0, 0, L.gw, L.gh, 0, 0, cw, ch);
     ctx.setTransform(density, 0, 0, density, 0, 0);
@@ -454,7 +491,7 @@ export function makeFoil(opts: FoilOptions): Foil {
 /** Every cell's color as `#rrggbb`, for the readable-band check (cells only: the starbursts add white only where the band allows it). */
 export function sampleFoil(foil: Foil, box: Box, light: Light, band: Band): string[] {
   if (!Number.isFinite(box.w) || !Number.isFinite(box.h)) return [];
-  const n = Math.ceil(Math.max(1, Math.round(box.w)) / CELL) * Math.ceil(Math.max(1, Math.round(box.h)) / CELL);
+  const n = Math.ceil(Math.max(1, Math.round(box.w)) / foil.cell) * Math.ceil(Math.max(1, Math.round(box.h)) / foil.cell);
   const px = new Uint8ClampedArray(n * 4);
   foil.render(box, light, band, px);
   const hex = (v: number) => v.toString(16).padStart(2, '0');

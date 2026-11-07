@@ -199,3 +199,134 @@ machine's look. They come in through `Instance.packs`, `Instance.machine` and `I
 - **A hidden slot the Boss may not flash-sale**, such as a holiday pack an admin prepares ahead of time. If it matters,
   the slot gains a checkbox.
 - **The machine's name** is still the owner's to give (`shopName`).
+
+## Amended 2026-11-07: the boards, redrawn on the card template
+
+The owner, once the card template merged: "Let's check on the booster pack plan and see if it has proper design boards, if
+not let's work on them." The boards of 2026-11-04 (`docs/research/2026-11-04-booster-packs/`) were drawn before the card
+template and before the glass polish and the backfill, and nothing of the plan was built yet. Read against main on
+2026-11-07, they could no longer be built from:
+
+- **Every card face was blank.** The template moved each card's art into a folder of its own (`cards/<key>/art.svg`), and
+  the boards still read `cards/<key>.svg`, so each face drew an empty box.
+- **The cards were the old face.** A spot picture with its words under it, and a "?" seal for a back, where the build now
+  draws one 2:3 card at four sizes (layout A, Low name, full art) and a back with the instance's mark (the template's
+  section 8 and its amendment). The plan's Task 5 draws the reveal with `Postcard.tsx`, so the boards and the build would
+  have disagreed on every card.
+- **The menus were out of date.** The machine had the five-tab menu bar; the admin page had a sub-menu (Move queue, The
+  machine, Updates) that no build has.
+- **The machine was not the machine on main.** Its slots were not the template's slot, zoomed as the build zooms it, with
+  the shelf edge's code, price and info control.
+- **The backfill's sizes.** One phone board per batch with its screens side by side (the backfill design, section 1,
+  decision 5): only the reveal had one.
+
+So the boards are redrawn in `docs/research/2026-11-07-booster-packs/`, and the board match reads them in place of the
+first drawing, which stays as the record. Every choice of 2026-11-04 is kept: the pack is just another slot, a pack opens
+with tap to flip, the hit is last and gold-backed, the odds are shown plainly, and the admin page is a plain list.
+`gen.mjs` there renders every face and back with the engine's own `Postcard` and `PostcardBack`, so a board shows the
+template as the build draws it.
+
+**Decided** (the owner chose the recommendation): **the reveal is a spotlight over a row.** The template allows four sizes,
+and five sheets (276 wide) do not fit across 1440. The card last turned is shown large, at the sheet's size, in the middle;
+the pack lies under it in pull order at the fan's size (150 by 225), turned cards face up and the rest face down, the hit's
+back gold. When all five are turned, the hit is in the spotlight with its gold tag. On a phone the pack is a pile at the
+sheet's size, as before. Weighed: five fans in a row the whole time (closest to the first boards, but small for the
+moment at 1440), and five sheets overlapped like a held hand (each card partly hidden until all are turned).
+
+**Decided** (the owner chose the recommendation): **the admin pages share sub-navigation.** The Admin tab stays one tab,
+opening the queue, and the admin's pages (Moves, The machine) are reached from each other by sub-navigation under the
+page's title, so a later admin page has a place to go. The board draws it as a strip of two small buttons under the
+page's lead, at 1440 and on the phone, the current page filled. A rail beside the content, as Settings draws its
+sections, was drawn first and dropped: it would move the queue's whole column right of where the backfill's board 37 has
+it. Write update stays on `/updates`. Weighed: a second menu
+tab (ten tabs, which the backfill's rule tightens or scrolls), and a link from the queue alone.
+
+**Drawn as the template draws it, where the plan said otherwise:** a rarity in the odds table is the card face's own gem,
+its glyph saying the rarity by shape (● common, ◆ uncommon, ★ rare, ✦ legendary, `gemOf` in `engine/ui/cards/faces.ts`)
+in a rotated tile, never a color alone. The plan's Task 5 said hollow and colored diamonds, from the face before the
+template.
+
+## Amended 2026-11-07: the reveal's motion
+
+The owner, on the redrawn boards: "we may want to think about how this screen can animate into view. Glass polish phase
+3 will be merged soon which adds page transitions to glass screens, if we have motion in mind then it's best not to make
+the build session guess at it." Phase 3 (`docs/plans/2026-11-04-glass-polish-design.md`, section 9; #293) gives the glass
+one choreography in two feels, Smooth and Snappy, and Off, written once in `engine/ui/glass/motion.ts` as presets over
+each feel's tokens (`enter`, `exit`, `screen`, `stagger`, `ease`, Snappy's `spring`, `distance`, `blur`, `scale`). The
+reveal is choreographed in those presets and tokens, and adds no setting and no token of its own. Its prototype is
+`docs/research/2026-11-07-booster-packs/motion/prototype.html`: the machine, both buys, and a switch for Smooth, Snappy
+and Off, with the reveal's beats played on Phase 3's default tokens. The owner tunes it, as they tuned Phase 3's story.
+
+**Decided** (the owner chose each recommendation):
+
+- **The pack comes from its slot.** The reveal enters as an overlay anchored on the slot that was bought (Phase 3's
+  `overlay`, from the slot's rect), and the machine behind dims in step (`backdrop`). Weighed: Phase 3's `modal` as it
+  is, which gives the purchase no moment of its own.
+- **A card lifts and flips.** Each card moves between its row slot and the spotlight (a shared layout), and turns over in
+  the spotlight. Weighed: flipping in place in the row while the spotlight crossfades, which reads as two things.
+- **The cards leave into the hand.** Done or Esc sends the five into the machine's Your hand link, which pulses as they
+  land. The owner, on the same question: "ideally we will refactor the machine's animation so it does this too, which is
+  much more advanced than its current rudimentary slide and fade." So **one flight serves both**: a single card bought
+  drops into the tray as today and then flies to the hand by the same path, in place of the fixed `kb-vending-drop`
+  keyframes, which fly every card to one hard-coded offset wherever the hand is. Weighed: Phase 3's `modal` exit.
+- **The prototype and the written choreography** go to the build session together.
+
+**The choreography.** Each beat names the token it runs on. Under Snappy, a beat that lands springs, by the feel's
+`spring`. Under Off, nothing moves: each beat's end state is drawn at once, which is what reduced motion did in the plan
+before.
+
+1. **Entrance**, which starts when the purchase's answer arrives (the reveal shows what was stored; nothing starts
+   before the answer, so a refusal and a success look the same until the words appear, as Phase 3 requires):
+   - E1. The machine dims (`backdrop`, `enter`).
+   - E2. The pack rises from its slot's rect to the middle, growing to its hero size (`overlay` from the slot, over
+     `screen`; Smooth blurs in by `blur`).
+   - E3. The tear: the pack's crimped top rips away along a jagged line, up and to the side, and leaves the screen
+     (`enter` × 1.5). It is gone for good.
+   - E4. The five backs rise out of the opening at the fan's size, fanning a little, the gold hit last (`enter`,
+     landing, staggered by `stagger(feel, 5)` at one and a half times its step). They are not drawn at all until the
+     tear (the owner: "the stack of cards is already visible behind the pack as the latter slides into place while
+     still 'closed'"); from then they lie behind the pack's body until they clear it, then pass in front of it.
+   - E5. The deal and the park: the backs fly from the fan into the row, each settling from its tilt (`enter`,
+     `stagger(feel, 5)` at three times its step), as the emptied pack slides up past the screen's top edge and parks
+     with only its foot in view (`screen`, landing). The parked pack is the reveal's head: the same pack, never faded
+     and redrawn. On the boards it stands where the first drawing had a separate torn strip, which is gone.
+   - E6. The head's words and the buttons land as a screen's head and panels do (`staggerItem`).
+   - E7. The first back lifts into the spotlight, waiting to be turned (`enter`).
+2. **A turn** (a click on the next card, "Turn the next card", or Space):
+   - T1. The card in the spotlight settles back into its row slot, face up, as the next back lifts out of its slot into
+     the spotlight (one shared layout per card, `enter`).
+   - T2. The card turns on its vertical axis (`rotateY`, over `enter` × 1.2, Snappy's spring landing it). The counter
+     moves and the screen reader hears the card when the turn starts, not when it ends.
+   - The hit's beat: before it turns, its gold back pulses once (scale to 1.05 and back, over `screen`). Once turned,
+     its ring goes gold and its halo fades in (`screen`), its sparks burst (`stagger` over the six, `enter` each), and
+     its rarity tag drops in from above (`distance`, landing).
+3. **Turn all**: the backs left in the row turn where they lie, staggered (`stagger(feel, n)` at three times its step),
+   and the hit lifts last, with its beat.
+4. **Input never waits.** A turn, Turn all, Done or Esc pressed while a beat runs finishes every running beat at once
+   and goes on from there (Phase 3: input goes to the entering tree at once). During the entrance, a turn finishes the
+   entrance and turns.
+5. **Exit** (Done, Back to the machine, or Esc at any point): the head's words, the buttons, the tag and the sparks
+   fade (`exit`), and the parked pack slides on up out of view (`exit`), never fading where it stands; the five cards fly to the Your hand link along one arc each, shrinking and fading as they land, staggered
+   by `stagger(feel, 5)` at twice its step (`screen` each); the link pulses once (`enter`); the dim lifts (`exit`). The
+   modal is `inert` from the exit's first frame and focus returns to the slot at once, as Phase 3's modals do. The
+   hand's count moved at the purchase, since the cards were in the hand from then.
+6. **The single buy**: the card drops into the tray on its side (`enter`, landing), rests for half of `screen`, then
+   flies to the hand by the same arc (`screen`), and the link pulses as it lands. The wallet's drain is unchanged.
+7. **On a phone**: the pack rises from its slot as on the 1440 (if the slot has scrolled out of view, from the
+   viewport's edge nearest it), tears and lets the five out as on the 1440, and parks at the top with its foot in view;
+   the deal stacks the five into the pile instead of a row; a turn flips the top card where
+   it lies; the next turn, a tap or a swipe, sends the turned card off the pile toward the swipe's side (left by
+   default; a drag follows the finger and commits past a third of the card's width) and flips the next. The exit flies
+   the cards toward the Your hand link, or toward the viewport's top edge where the link has scrolled away.
+
+**Where it lives.** The flight to the hand, the lift, the turn, the deal and the hit's beat are presets in
+`engine/ui/glass/motion.ts` beside Phase 3's, pure functions of the feel that are empty under Off, so the machine, the
+reveal and any later screen that sends a card to the hand use one choreography. The hit's beat reads only the pack's
+own stored contents, which only the buyer sees ("A response never proves a private fact"): nobody else can watch it.
+
+The owner, on the prototype's first cut: "the decoration at the top of the opened screen is seemingly meant to be the
+bottom edge of the pack itself, but the pack itself simply fades out of existence before this decoration comes in. We
+should either do a more detailed 'pack opens, cards come out, pack slides up', or just get rid of the decoration so the
+foil doesn't fade out and suddenly come back further up." **Decided** (the owner chose the recommendation): the pack
+opens, the cards come out of it, and the emptied pack slides up and parks as the head (E3 to E5 above). Weighed: no
+decoration at the head, with the pack fading once the cards are dealt.

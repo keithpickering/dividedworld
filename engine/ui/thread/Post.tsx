@@ -8,14 +8,15 @@
  * A post is memoized on its Act, its person and its layout, and its reactions read their own tally
  * from the tallies store, so a reaction re-renders the post it is on and nothing else.
  */
-import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { MoveTag } from '../board/MoveNotice.tsx';
 import { PostEffects } from '../cards/Effects.tsx';
-import { PostMarks } from '../cards/Marks.tsx';
+import { PostMarks, type FormAsk } from '../cards/Marks.tsx';
+import { AppealCtx, ViolationNotice } from '../cards/Visit.tsx';
 import { useReachShown } from '../cards/PlayActions.tsx';
 import { EditPost } from '../composer/EditPost.tsx';
-import type { Act, Id } from '../data/api.ts';
+import type { Act, Id, Visit } from '../data/api.ts';
 import { useNarrow } from '../media.ts';
 import { usePlayer } from '../player.tsx';
 import { Postbit, Signature, type PostbitLayout, type PostbitPerson } from '../postbit/Postbit.tsx';
@@ -42,7 +43,7 @@ interface Props {
 /** A post's name for a reader and a screen reader: the character's, the staff's (`UiCopy.staffWord`, for an Act with no character), or "A character" where it cannot be shown. */
 const nameOf = (act: Act, person: PostbitPerson | undefined, staff: string) => (act.character === null ? staff : person?.character.name ?? 'A character');
 
-function Body({ act, name, spoken, person, editing, onDone, marks }: { readonly marks: ReactNode; readonly act: Act; readonly name: string; readonly spoken: string; readonly person: PostbitPerson | undefined; readonly editing: boolean; readonly onDone: () => void }) {
+function Body({ act, name, spoken, person, editing, onDone, marks, visit }: { readonly marks: ReactNode; readonly visit: Visit | undefined; readonly act: Act; readonly name: string; readonly spoken: string; readonly person: PostbitPerson | undefined; readonly editing: boolean; readonly onDone: () => void }) {
   const { summary, tallies, mine, changed, plays, nameOf: casterName } = useThread();
   switch (act.kind) {
     case 'unmask': return <UnmaskLine act={act} name={name} />;
@@ -81,6 +82,7 @@ function Body({ act, name, spoken, person, editing, onDone, marks }: { readonly 
       return (
         <>
           {origin && <Origin summary={summary} />}
+          {!editing && <ViolationNotice visit={visit} />}
           {editing
             ? <EditPost act={act} seq={act.seq!} onDone={onDone} onSaved={changed} />
             : <PostEffects plays={plays} post={act} place="thread" marks={marks} nameOf={casterName} bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteLink={quoteLink} />}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>}
@@ -101,7 +103,9 @@ function Body({ act, name, spoken, person, editing, onDone, marks }: { readonly 
 /** What the post's spin form is open for: the post itself, or a play on it (from its Lens), with what gives focus back when it closes. */
 export interface SpinOrigin { readonly id: Id; readonly label: string | null; readonly opener: HTMLElement | null }
 
-function Actions({ act, editing, onEdit, editButton, spinOrigin, setSpinOrigin }: {
+function Actions({ act, editing, onEdit, editButton, spinOrigin, setSpinOrigin, onReport }: {
+  /** Opens the post's report form; absent where the post cannot be reported by this reader (a staff post, the current mask's own, no mask to report through). */
+  readonly onReport: ((opener: HTMLElement) => void) | null;
   readonly act: Act; readonly editing: boolean; readonly onEdit: () => void; readonly editButton: React.RefObject<HTMLButtonElement | null>;
   readonly spinOrigin: SpinOrigin | null; readonly setSpinOrigin: (o: SpinOrigin | null) => void;
 }) {
@@ -126,6 +130,7 @@ function Actions({ act, editing, onEdit, editButton, spinOrigin, setSpinOrigin }
           >Spin thread</button>
           {mine && !editing && <button ref={editButton} type="button" className="kb-button" data-kb-size="small" onClick={onEdit}>Edit</button>}
           {act.kind === 'post' && history.button}
+          {onReport && <button type="button" className="kb-button" data-kb-size="small" aria-haspopup="dialog" onClick={(e) => onReport(e.currentTarget)}>Report</button>}
         </div>
       </footer>
       <div className="kb-act-panels">
@@ -145,7 +150,7 @@ function Actions({ act, editing, onEdit, editButton, spinOrigin, setSpinOrigin }
 }
 
 export const ActArticle = memo(function ActArticle({ act, person, layout, slid }: Props) {
-  const { thread, perPage, observer, plays, tallies, mine, nameOf: casterName, summary, know } = useThread();
+  const { thread, perPage, observer, plays, tallies, mine, nameOf: casterName, summary, know, visits } = useThread();
   const { ui } = useKayfa();
   const ref = useRef<HTMLElement>(null);
   const narrow = useNarrow();
@@ -169,9 +174,21 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
   }, [editing]);
   const plain = act.kind === 'unmask';
   const [spinOrigin, setSpinOrigin] = useState<SpinOrigin | null>(null);
+  /* A form the post's strip opens its Lens on: Report from the foot links, Appeal from a filed visit's tab (AppealCtx below). */
+  const [ask, setAsk] = useState<FormAsk | null>(null);
+  const asks = useRef(0);
+  const { hudCharacter } = usePlayer();
+  const visit = visits?.get(act.id);
+  const askAppeal = useCallback((infraction: Id, opener: HTMLElement) => setAsk({ n: ++asks.current, form: { kind: 'appeal', infraction, visit }, opener }), [visit]);
+  /* "Report" is on a player's post that is not the current mask's own; never on a staff post (the server refuses one) or where the post's author is not known to be a player. */
+  const reportable = (act.kind === 'post' || act.kind === 'spin') && act.character !== null && person !== undefined && !person.character.staff && hudCharacter !== null && hudCharacter.id !== act.character;
+  const askReport = useCallback((opener: HTMLElement) => setAsk({ n: ++asks.current, form: { kind: 'report', post: act.id, seq }, opener }), [act.id, seq]);
   /* The strip is drawn on the date row, and again by a card that lifts the post out of its thread (Stick Around): the same node, each with its own Lens owner. */
   const marks = act.kind === 'post'
-    ? <PostMarks post={act.id} ghost={act} plays={plays} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} tallies={tallies} mine={mine} onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })} />
+    ? <PostMarks
+        post={act.id} ghost={act} plays={plays} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} tallies={tallies} mine={mine} onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })}
+        visit={visit} author={act.character} thread={thread} onSpinAct={(id, label, opener) => setSpinOrigin({ id, label, opener })} ask={ask}
+      />
     : null;
   /* The character's own live plays, on its postbit, and the armed character card's ghost there (the card mechanic's design, section 7). */
   /* Drawn only where a play or an armed card concerns the character; memoized, so the memo on Postbit still skips a postbit whose character, post and page are unchanged. */
@@ -184,6 +201,7 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
       />
     : null), [shown, act, plays, thread, seq, perPage, casterName, tallies, mine, name, summary.board, summary.title, know]);
   return (
+    <AppealCtx.Provider value={askAppeal}>
     <article
       ref={ref}
       id={`post-${seq}`}
@@ -207,11 +225,12 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
         <Link className="kb-act-number" to={threadHref(thread, pageOf(seq, perPage), seq)} aria-label={`Permalink to post #${seq}`}>#{seq}</Link>
       </header>
       <div className="kb-act-main" data-kb-cell="words">
-        <Body act={act} name={name} spoken={spoken} person={person} editing={editing} onDone={() => setEditing(false)} marks={marks} />
+        <Body act={act} name={name} spoken={spoken} person={person} editing={editing} onDone={() => setEditing(false)} marks={marks} visit={visit} />
         <SpunInto act={act.id} />
       </div>
-      <Actions act={act} editing={editing} onEdit={() => setEditing(true)} editButton={editButton} spinOrigin={spinOrigin} setSpinOrigin={setSpinOrigin} />
+      <Actions act={act} editing={editing} onEdit={() => setEditing(true)} editButton={editButton} spinOrigin={spinOrigin} setSpinOrigin={setSpinOrigin} onReport={reportable ? askReport : null} />
     </article>
+    </AppealCtx.Provider>
   );
 });
 

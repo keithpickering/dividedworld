@@ -57,7 +57,7 @@ function HandSheet() {
         return (
           <div key={face.key} className="kb-hand-board-card" style={{ left: at.left, top: at.top, transform: `rotate(${at.turn}deg)` }}>
             <Postcard as="article" face={face} size="sheet" armed={isArmed} aria-label={`${face.name}, a ${face.tag} postcard${isArmed ? ', armed' : ''}`} aria-describedby={says} />
-            <span id={says} className="kb-visually-hidden">{face.describe}</span>
+            <span id={says} className="kb-visually-hidden">{face.describe}{face.art.credit ? ` Art by ${face.art.credit}.` : ''}</span>
           </div>
         );
       })}

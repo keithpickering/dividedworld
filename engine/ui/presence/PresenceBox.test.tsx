@@ -4,6 +4,7 @@ import type { PresencePlace } from '../data/api.ts';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { usePlayer } from '../player.tsx';
 import { buildWorld, renderIn } from '../test-world.tsx';
+import { axeViolations, describeViolations } from '../a11y.ts';
 import { PresenceBox } from './PresenceBox.tsx';
 
 beforeEach(() => localStorage.clear());
@@ -103,6 +104,60 @@ describe('the presence box', () => {
     expect(box).toHaveTextContent('Pipewrench');
     expect(box).not.toHaveTextContent('Pipewrench Test Cores');
     expect(box).not.toHaveTextContent('Spritey Test Cores');
+  });
+
+  describe('a Mod on a visit (the Mod Bots design, section 9; docs/research/2026-11-06-mod-bots/04-presence.png)', () => {
+    /** The Clerk visits post 2 of the thread, with no post of its own there. */
+    function visiting() {
+      const w = crowd(['Pipewrench']);
+      const clerk = w.fake.seed.staff('clerk', 'The Clerk', 'mod');
+      const post = w.fake.seed.post(w.seeded.thread, w.fake.seed.character(w.fake.seed.account('writer'), 'Writer', 'face'), 'post 2');
+      const visit = w.fake.seed.visit(clerk, post, { at: Date.now(), endsInMs: 3_600_000 });
+      return { ...w, clerk, post, visit };
+    }
+
+    test('is listed with a glass tag, "On a visit · post #2", linking to the post, though it never posted', async () => {
+      const w = visiting();
+      w.show(<PresenceBox place={{ kind: 'thread', thread: w.seeded.thread }} heading={HEADING} />);
+      const box = await screen.findByRole('region', { name: HEADING });
+      const tag = await within(box).findByRole('link', { name: 'On a visit · post #2' });
+      expect(tag).toHaveClass('kb-presence-visit');
+      expect(tag).toHaveAttribute('href', `/t/${w.seeded.thread}?page=1#post-2`);
+      expect(box).toHaveTextContent('The Clerk, Test Cores');
+      /* The tag follows the Mod's name, in the Mod's own entry, and no player's name carries one. */
+      const clerk = within(box).getByRole('link', { name: 'The Clerk' });
+      expect(clerk.parentElement).toContainElement(tag);
+      expect(within(box).getAllByRole('link', { name: /^On a visit/u })).toHaveLength(1);
+    });
+
+    test('is one name where the Mod also posted, and the tag goes when the visit ends', async () => {
+      const w = visiting();
+      w.fake.seed.staffPost(w.clerk, w.seeded.thread, 'Order.');
+      w.show(<PresenceBox place={{ kind: 'thread', thread: w.seeded.thread }} heading={HEADING} />);
+      const box = await screen.findByRole('region', { name: HEADING });
+      await within(box).findByRole('link', { name: 'On a visit · post #2' });
+      expect(within(box).getAllByRole('link', { name: 'The Clerk' })).toHaveLength(1);
+      w.fake.seed.visitEnd(w.visit, { outcome: 'reversed', line: '' });
+      await vi.waitFor(async () => expect(await w.fake.presenceBox({ kind: 'thread', thread: w.seeded.thread })).toMatchObject({ names: expect.not.arrayContaining([expect.objectContaining({ visitPost: expect.anything() })]) }));
+    });
+
+    test('is not in a board\'s or the index\'s box, which name no post', async () => {
+      const w = visiting();
+      expect((await w.fake.presenceBox({ kind: 'index' })).names.some((n) => n.visitPost !== undefined)).toBe(false);
+      const board = (await w.fake.thread(w.seeded.thread))!.board;
+      expect((await w.fake.presenceBox({ kind: 'board', board })).names.some((n) => n.visitPost !== undefined)).toBe(false);
+    });
+
+    test('passes axe, and the tag is a link a keyboard reaches', async () => {
+      const w = visiting();
+      w.show(<PresenceBox place={{ kind: 'thread', thread: w.seeded.thread }} heading={HEADING} />);
+      const box = await screen.findByRole('region', { name: HEADING });
+      const tag = await within(box).findByRole('link', { name: 'On a visit · post #2' });
+      const bad = await axeViolations(box);
+      expect(bad, describeViolations(bad)).toEqual([]);
+      tag.focus();
+      expect(tag).toHaveFocus();
+    });
   });
 
   test('past the window the staff character is gone', async () => {

@@ -46,3 +46,26 @@
     display: inline;
   }
 }
+
+/*
+ * The glass tag on a Mod on a visit (PresenceBox.tsx; docs/research/2026-11-06-mod-bots/04-presence.png): a small dark glass tag with the visit's ink as its edge, after the name. It is in
+ * the line's flow, the height of the names' own links and not broken across lines, so a tag arriving adds no height to a line; the names after it move right by its width, and a
+ * line that no longer fits wraps as any line does.
+ */
+.kb-presence-names a.kb-presence-visit {
+  display: inline-flex;
+  align-items: center;
+  /* The size of the names' own links (24px, WCAG 2.5.8), so the line is no taller for it. */
+  min-height: 1.5rem;
+  margin-inline-start: 0.4em;
+  padding: 0 0.45em;
+  border: 1px solid var(--kb-visit-ink);
+  background: var(--kb-glass-field);
+  color: var(--kb-glass-text-hi);
+  font: bold 0.7rem / 1.2 var(--kb-font-mono);
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  text-transform: uppercase;
+  white-space: nowrap;
+  vertical-align: baseline;
+}

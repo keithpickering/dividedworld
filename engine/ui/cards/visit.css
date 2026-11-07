@@ -1,0 +1,137 @@
+/*
+ * A visit's mark and its Lens tab (Visit.tsx; the Mod Bots design, section 9). Loaded after marks.css and lens.css, whose rules a visit's tie in
+ * specificity and win by coming later. The ink is the instance's token (`--kb-visit-ink`, engine/ui/tokens.css names it with a plain default);
+ * every other color is a glass token. The mark and the tab are glass, drawn on the glass's dark field in either world, so one ink serves both.
+ */
+.kb-mark.kb-visit-mark {
+  --kb-mark-ink: var(--kb-visit-ink);
+  padding-inline: 0.55rem;
+}
+
+.kb-visit-mark .kb-meta-tile-in {
+  gap: 0.3rem;
+}
+
+.kb-visit-watch {
+  flex: none;
+  fill: none;
+  stroke: var(--kb-visit-ink);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.kb-visit-time {
+  color: var(--kb-glass-text-hi);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--kb-glass-control-spacing);
+  white-space: nowrap;
+}
+
+/* The tab: the visit's ink under it and around the Lens, its yellow words in the glass's ready text. */
+.kb-glass-dialog.kb-lens[data-kb-card="visit"],
+.kb-glass-dialog.kb-lens[data-kb-card="report"],
+.kb-glass-dialog.kb-lens[data-kb-card="appeal"] {
+  --kb-lens-ink: var(--kb-visit-ink);
+  --kb-lens-ink-text: var(--kb-glass-ready-text);
+}
+
+/* Both headings, "On a visit" and "Talk it down", sit the same distance from what is above them and from their words. */
+.kb-visit-heading {
+  margin: 0 0 0.4rem;
+  color: var(--kb-glass-text-hi);
+  font-family: var(--kb-glass-font-display);
+  font-size: var(--kb-glass-size-display-xs);
+  font-weight: 400;
+  letter-spacing: var(--kb-glass-control-spacing);
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+
+.kb-visit-heading .kb-lens-who {
+  margin-inline-end: 0.15em;
+}
+
+.kb-visit-facts,
+.kb-visit-terms,
+.kb-visit-ask {
+  margin: 0 0 0.45rem;
+  color: var(--kb-glass-text);
+}
+
+.kb-visit-terms {
+  color: var(--kb-glass-text-2);
+}
+
+.kb-visit-said {
+  font-weight: 700;
+}
+
+/* The quiz's answers, and a bribe's price: one to a row, the width of the Lens, their words centered. */
+.kb-visit-choices {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0 0 0.45rem;
+}
+
+.kb-kit-tile.kb-visit-choice {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  text-align: center;
+}
+
+.kb-visit-choice .kb-kit-tile-label {
+  text-align: center;
+}
+
+.kb-visit-choice[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.kb-visit-choice[aria-pressed="true"] {
+  --kb-tile: var(--kb-visit-ink);
+  opacity: 1;
+}
+
+/* The result is a live region that stays in the page (never display: none) so it exists before it speaks; empty, it takes no room. */
+.kb-visit-result {
+  margin: 0 0 0.3rem;
+  color: var(--kb-glass-text-hi);
+  font-weight: 700;
+}
+
+.kb-visit-result:empty {
+  margin: 0;
+}
+
+.kb-kit-tile.kb-visit-appeal {
+  --kb-tile: var(--kb-visit-ink);
+  margin-bottom: 0.5rem;
+  color: var(--kb-glass-text-hi);
+}
+
+@media (forced-colors: active) {
+  .kb-visit-watch {
+    stroke: ButtonText;
+  }
+}
+
+/* "Talk it down" stands a line below the state's words, as the mock sets it. */
+.kb-visit-talk {
+  margin-top: 0.9rem;
+}
+
+/* The tab's body, its state and its Appeal: plain blocks that stack as the Lens's sections do. */
+.kb-visit {
+  display: block;
+}
+
+.kb-visit-state {
+  margin-top: 0;
+}
+
+.kb-visit-appeal-section {
+  margin-top: 0.7rem;
+}

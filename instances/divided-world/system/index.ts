@@ -1,6 +1,6 @@
 /**
  * Divided World's System content: the roster of personas, who does each duty, the stock lines,
- * the outside feeds, the never-amplified subjects, the wheelhouse, the old voice's frame and the
+ * the outside feeds, the never-amplified subjects, the wheelhouse, and the
  * PPP name style. It reaches the engine as `Instance.system`; the engine never names anything here
  * ("KayfaBB never knows which instance it runs"). The numbers are settings (../settings.ts).
  *
@@ -17,7 +17,6 @@ import { placeholderMonitor } from './personas/placeholder-monitor.ts';
 import { feeds } from './feeds.ts';
 import { stockLines } from './lines.ts';
 import { nameStyle, nameStyleBrief } from './name-style.ts';
-import { oldVoice } from './old-voice.ts';
 import { realWorld } from './real-world.ts';
 import { wheelhouse } from './wheelhouse.ts';
 
@@ -27,13 +26,13 @@ export const system: SystemContent = Object.freeze({
   firstBoss: hypeMan.key,
   announcementsTitle: 'Announcements From The System',
   firstStaff: Object.freeze([placeholderMonitor.key]),
-  // Every duty is the season's Boss's until the Mod Bots session reassigns some (the staff design, section 15).
-  duties: Object.freeze({ meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'boss', chatter: 'boss' } as const),
+  // The Boss's own duties stay the season's Boss's; a visit's filing, a report's verdict and a patrol's finding are the Mod on the board's beat, and an appeal is
+  // the Mod that filed (the Mod Bots plan, Task 7).
+  duties: Object.freeze({ meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'filer', chatter: 'boss', filing: 'beat', reportJudge: 'beat', patrolJudge: 'beat' } as const),
   stockLines,
   feeds,
   realWorld,
   wheelhouse,
-  oldVoice,
   nameStyle,
   nameStyleBrief,
 });

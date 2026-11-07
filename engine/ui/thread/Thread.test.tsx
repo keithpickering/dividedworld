@@ -959,7 +959,7 @@ describe('back from the glass, to a thread that grew meanwhile', { timeout: 15_0
 /** An instance's card, drawing what it is given as data a test can read, around the post's words. */
 function fx(key: string): CardUi {
   return {
-    key, art: { color: '#000000', ink: '#ffffff' }, describe: () => `${key}`,
+    key, art: { color: '#000000', ink: '#ffffff', canvas: '', mark: '', credit: 'Test' }, describe: () => `${key}`,
     Effect: ({ plays, states, released, reader, place, save, release, children }) => (
       <div
         data-testid={`fx-${key}`} data-plays={plays.map((p) => `${p.layer}:${p.message}`).join('|')} data-author={String(reader.author)} data-caster={String(reader.caster)}

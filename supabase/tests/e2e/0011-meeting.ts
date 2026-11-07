@@ -15,6 +15,7 @@ import type { Instance } from '../../../engine/rules/types.ts';
 
 const quiet: Instance = { ...instance, system: { ...instance.system, feeds: [] } };
 const BOSS = instance.system.firstBoss;
+const FAKE_BOSS_DESCRIPTION = 'Puns, plunder and the occasional parrot.';
 const tiers = { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' };
 
 test('a meeting with a fake model queues a rename, writes memory and profile versions and debits the bank, once', async () => {
@@ -33,7 +34,7 @@ test('a meeting with a fake model queues a rename, writes memory and profile ver
     profile: { interests: ['tag teams'], favorites: [], mood: 'smug', signature: 'It is decided.' },
     moves: [{
       kind: 'renameBoard',
-      params: { board, name: 'Pirate Puns Palace', premise: 'Puns, but make them piracy.' },
+      params: { board, name: 'Pirate Puns Palace', premise: 'Puns, but make them piracy.', description: FAKE_BOSS_DESCRIPTION },
       demand: { kind: 'postsOnBoard', params: { board, count: 12 } },
       go_live_at: new Date(Date.now() + 3_600_000).toISOString(),
       expires_in_hours: 72,
@@ -65,7 +66,7 @@ test('a meeting with a fake model queues a rename, writes memory and profile ver
   assert.equal(move.structural, true);
   assert.ok(Date.parse(move.go_live_at) >= Date.now() + 24 * 3_600_000 - 5_000, `a structural move is held a day: ${move.go_live_at}`);
   assert.equal(move.params.name, 'Pirate Puns Palace');
-  assert.equal(move.params.description, 'ur board is now about pirates!!!', 'the old voice wrote the description, cut at the line');
+  assert.equal(move.params.description, FAKE_BOSS_DESCRIPTION, 'the description is the fake Boss\'s own words');
   assert.equal(move.demand.params.count, 12);
   assert.equal(before('staff_memory') - memories!, 1);
   assert.equal(before('staff_profiles') - profiles!, 1);
@@ -79,12 +80,12 @@ test('a meeting with a fake model queues a rename, writes memory and profile ver
   assert.ok(Math.abs(row.bank_before - 3) < 0.01 && Math.abs(row.bank_after - 2) < 0.01);
   assert.equal(row.consecutive_failures, 0);
 
-  // The ledger rows of both model calls name the meeting that was opened before them.
+  // The ledger row of the one model call names the meeting that was opened before it; no completion is asked for.
   const calls = JSON.parse(sql(`select coalesce(json_agg(json_build_object('duty', duty, 'staff', staff, 'outcome', outcome, 'model', model) order by id), '[]') from model_calls where meeting = ${first.meeting}`));
   assert.deepEqual(calls, [
     { duty: 'meeting', staff: BOSS, outcome: 'ok', model: tiers.strong },
-    { duty: 'meeting', staff: BOSS, outcome: 'ok', model: 'self-hosted' },
   ]);
+  assert.ok(!requests.some((u) => u.includes('completions.test')), 'a meeting never calls the completion endpoint');
 
   // The same slot again: nothing more is queued, written or called.
   const calling = requests.length;

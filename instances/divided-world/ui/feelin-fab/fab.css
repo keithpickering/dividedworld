@@ -1,12 +1,20 @@
 /*
  * Feelin' Fab (Effect.tsx): the foil is drawn on a canvas that fills the post, under the words, takes no pointer and no room, so the
  * post reads and lays out as it would bare. The canvas is sized in whole device pixels by Effect.tsx (the box times the loop's
- * density); its CSS size is the post's, here. It holds no color: the foil's palette is in Effect.tsx and its band is read from the
- * board's tokens. The words keep a text shadow in the board's ground.
+ * density), and placed and sized in CSS px by it too, inline, over the box it paints (engine/ui/cards/body.ts): in the thread the post's
+ * whole body, elsewhere the host; the rules here are the host's box, for the moment before the first measure. It holds no color: the
+ * foil's palette is in Effect.tsx and its band is read from the board's tokens. The words keep a text shadow in the board's ground.
+ *
+ * Painting the body (`data-kb-bleed`), the host is no stacking context of its own, so the foil lies in the body's (thread.css's
+ * `.kb-act-main`, isolated) under everything in it, the reactions, the signature and an ORIGIN box too, and over only the body's own
+ * ground; the words stand at the body's level, still under what an effect lays over them (`data-kb-effect-ink`, Whoops!'s ink).
  */
 .dw-fab {
   position: relative;
   isolation: isolate;
+}
+.dw-fab[data-kb-bleed] {
+  isolation: auto;
 }
 .dw-fab-foil {
   position: absolute;
@@ -17,8 +25,14 @@
   z-index: 0;
   pointer-events: none;
 }
+.dw-fab[data-kb-bleed] > .dw-fab-foil {
+  z-index: -1;
+}
 .dw-fab-words {
   position: relative;
   z-index: 1;
   text-shadow: 0 0 2px var(--kb-bg), 0 0 6px var(--kb-bg);
+}
+.dw-fab[data-kb-bleed] > .dw-fab-words {
+  z-index: 0;
 }
