@@ -71,10 +71,10 @@ export function useLayer(
     root: rootOnly ? {} : (backdrop(feel) as Values),
     box: trimmed(kind === 'modal' ? modal(feel) : overlay(feel)),
   }), [feel, kind, rootOnly]);
-  /* The box scales from the anchor: the origin is a point in the box's own frame, measured with the preset's transform off it (at its first render it already wears the preset's `initial`). */
+  /* The box scales from the anchor: the origin is a point in the box's own frame, measured with the preset's transform off it (at its first render it already wears the preset's `initial`). It is measured again as the close starts (`present` turns false), so the exit scales from where the anchor and the box stand then. */
   useLayoutEffect(() => {
     const el = box.current;
-    if (!present || !el) return;
+    if (!el) return;
     const a = anchor?.current?.getBoundingClientRect();
     if (!a || (a.width === 0 && a.height === 0)) { el.style.transformOrigin = ''; return; }
     const was = el.style.transform;

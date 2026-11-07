@@ -110,3 +110,55 @@ describe('a layer mounted without the wrapper', () => {
     expect(dialog('Bare')).toBeNull();
   });
 });
+
+describe('a modal opened as another closes', () => {
+  test('does not take an opener inside the layer that is leaving: focus goes to its fallback', async () => {
+    function Swap() {
+      const [which, setWhich] = useState<'a' | 'b' | null>(null);
+      return (
+        <>
+          <button type="button" onClick={() => setWhich('a')}>Open A</button>
+          <button type="button">Fallback</button>
+          <Layers>
+            {which === 'a' && <Modal key="a" title="Alpha" onClose={() => setWhich(null)}><button type="button" onClick={() => setWhich('b')}>Swap to B</button></Modal>}
+            {which === 'b' && <Modal key="b" title="Beta" onClose={() => setWhich(null)} returnFocusTo={() => screen.getByRole('button', { name: 'Fallback' })}>b</Modal>}
+          </Layers>
+        </>
+      );
+    }
+    renderInWorld(<Swap />, { path: '/characters' });
+    await userEvent.click(screen.getByRole('button', { name: 'Open A' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Swap to B' }));
+    await act(async () => {});
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(dialog('Beta')).toBeNull(), { timeout: 3000 });
+    expect(screen.getByRole('button', { name: 'Fallback' })).toHaveFocus();
+  });
+});
+
+describe('a layer\'s exit origin', () => {
+  test('is measured again at the start of the close, from where the anchor stands then', async () => {
+    let anchorLeft = 10;
+    const spy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const isAnchor = this.tagName === 'BUTTON' && this.textContent === 'Open it';
+      const left = isAnchor ? anchorLeft : 0;
+      const [width, height] = isAnchor ? [20, 20] : [200, 100];
+      return { left, top: 0, right: left + width, bottom: height, width, height, x: left, y: 0, toJSON: () => ({}) } as DOMRect;
+    });
+    try {
+      renderInWorld(<Opener kind="float" />, { path: '/characters' });
+      await userEvent.click(screen.getByRole('button', { name: 'Open it' }));
+      const originOf = (root: Element) => [root, ...Array.from(root.querySelectorAll<HTMLElement>('*'))].map((e) => (e as HTMLElement).style.transformOrigin).find((o) => o) ?? '';
+      const open = originOf(screen.getByRole('dialog', { name: 'Floating' }).closest('[class]')!.parentElement!);
+      anchorLeft = 300;
+      await userEvent.keyboard('{Escape}');
+      await act(async () => {});
+      const layer = leaving()[0]!;
+      expect(open).not.toBe('');
+      expect(originOf(layer)).toBe('310px 10px');
+      expect(originOf(layer)).not.toBe(open);
+      await waitFor(() => expect(leaving()).toHaveLength(0), { timeout: 3000 });
+    } finally { spy.mockRestore(); }
+  });
+});
+

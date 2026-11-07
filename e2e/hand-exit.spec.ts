@@ -41,3 +41,24 @@ test('closing the hand drawer plays its exit from the hand button', async ({ pag
   expect(Math.abs(y - buttonY)).toBeLessThan(2);
   await expect(hand).toBeHidden();
 });
+
+test('reopening the hand drawer during its exit leaves it shown and clean', async ({ page }) => {
+  await page.goto('/b/general');
+  await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
+  await page.evaluate(() => { document.documentElement.setAttribute('data-kb-motion', 'full'); document.documentElement.setAttribute('data-kb-motion-feel', 'smooth'); });
+  const button = page.getByRole('button', { name: /^Hand, \d+ postcards?/ });
+  await button.click();
+  const hand = page.getByRole('region', { name: 'Your hand' });
+  await expect(hand).toBeFocused();
+  await page.waitForTimeout(800);
+  await button.click();
+  await page.waitForTimeout(40);
+  await button.click();
+  await page.waitForTimeout(1200);
+  await expect(hand).toBeVisible();
+  const state = await page.evaluate(() => {
+    const el = document.querySelector<HTMLElement>('.kb-hand-drawer')!;
+    return { opacity: getComputedStyle(el).opacity, inert: el.hasAttribute('inert'), hidden: el.hasAttribute('hidden') };
+  });
+  expect(state).toEqual({ opacity: '1', inert: false, hidden: false });
+});

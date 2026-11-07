@@ -41,7 +41,7 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import type { Character } from '../data/api.ts';
 import { useKayfa } from '../context.tsx';
-import { playIn, playOut } from '../glass/play.ts';
+import { playIn, playOut, type Stop } from '../glass/play.ts';
 import { overlay as overlayPreset, useFeel } from '../glass/motion.ts';
 import { usePlayer } from '../player.tsx';
 import { registerHref, signInHref } from '../account/next.ts';
@@ -281,9 +281,14 @@ export function Hud() {
     setDrawerLeaving(!handOpen && feel !== null);
   }
   const drawerWas = useRef(handOpen);
+  /* The drawer's running play: the next run, and the unmount, stop it, so a superseded exit never clears the entrance that replaced it. */
+  const drawerRun = useRef<Stop | null>(null);
+  useLayoutEffect(() => () => { drawerRun.current?.(); drawerRun.current = null; }, []);
   useLayoutEffect(() => {
     if (drawerWas.current === handOpen) return;
     drawerWas.current = handOpen;
+    drawerRun.current?.();
+    drawerRun.current = null;
     const el = drawer.current;
     if (!el || !feel) { setDrawerLeaving(false); return; }
     const a = handButton.current?.getBoundingClientRect();
@@ -291,10 +296,10 @@ export function Hud() {
       const b = el.getBoundingClientRect();
       return a && b.width > 0 ? { x: a.left + a.width / 2 - b.left, y: a.top + a.height / 2 - b.top } : undefined;
     };
-    if (handOpen) { setDrawerLeaving(false); playIn(el, overlayPreset(feel, place())); return; }
+    if (handOpen) { setDrawerLeaving(false); drawerRun.current = playIn(el, overlayPreset(feel, place())); return; }
     let over = false;
     const end = () => { if (!over) { over = true; setDrawerLeaving(false); } };
-    playOut(el, overlayPreset(feel, place()), end);
+    drawerRun.current = playOut(el, overlayPreset(feel, place()), end);
   }, [handOpen, feel]);
 
   /* Esc on the board: the hand's when it is open, else the menu's. */

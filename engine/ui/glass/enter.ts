@@ -31,7 +31,9 @@ export function entrants(screen: HTMLElement, viewport: number = window.innerHei
     if (rows.length >= MAX_ROWS) break;
     if (taken.has(el) || el.matches(NOT_ROW)) continue;
     const r = el.getBoundingClientRect();
-    if (r.bottom < 0 || r.top > viewport) continue;
+    /* Rows are in document order: the first one below the window ends the search, so a long log is not measured to its end. */
+    if (r.top > viewport) break;
+    if (r.bottom < 0) continue;
     rows.push(el);
   }
   return [...heads, ...panels, ...rows];
@@ -53,7 +55,9 @@ export function enterScreen(feel: ActiveFeel, screen: HTMLElement): () => void {
     const from = p.initial as TargetAndTransition;
     const { transition, transitionEnd: _e, ...to } = p.animate as TargetAndTransition & { transitionEnd?: unknown };
     const frames = Object.fromEntries(Object.keys(to).map((k) => [k, [(from as Record<string, unknown>)[k], (to as Record<string, unknown>)[k]]]));
-    const clear = () => { for (const k of ['opacity', 'transform', 'filter']) el.style.removeProperty(k); };
+    /* What the element wore inline before the entrance (a panel's own transform), put back when it ends, so the entrance only borrows those properties. */
+    const prior = ['opacity', 'transform', 'filter'].map((k) => [k, el.style.getPropertyValue(k), el.style.getPropertyPriority(k)] as const);
+    const clear = () => { for (const [k, v, pr] of prior) { if (v) el.style.setProperty(k, v, pr); else el.style.removeProperty(k); } };
     try {
       const a = animate(el, frames as never, transition as Transition as never);
       a.then(clear, clear);

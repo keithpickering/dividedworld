@@ -2,7 +2,7 @@
  * A screen's entrance (enter.ts): head, then panels, then rows, in that order, at most MAX_ROWS rows however long the page, the last of them
  * starting within the feel's screen duration; nothing under Off.
  */
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { MAX_ROWS, delaysFor, enterScreen, entrants } from './enter.ts';
 import { feelTokens, type ActiveFeel } from './motion.ts';
 
@@ -35,5 +35,24 @@ describe('a screen\'s entrance', () => {
     const stop = enterScreen(null, screenOf(5));
     expect(host.querySelector<HTMLElement>('tr')!.style.opacity).toBe('');
     stop();
+  });
+  test('rows below the fold are not measured: a 2000-row log costs a bounded number of reads', () => {
+    const screen = screenOf(2000);
+    const rows = Array.from(screen.querySelectorAll('tr'));
+    const reads = vi.fn();
+    rows.forEach((tr, i) => {
+      tr.getBoundingClientRect = () => { reads(); const top = i * 40; return { top, bottom: top + 40 } as DOMRect; };
+    });
+    const got = entrants(screen, 800);
+    expect(got.length).toBeLessThanOrEqual(2 + 21);
+    expect(reads.mock.calls.length).toBeLessThanOrEqual(25);
+  });
+  test('a panel with its own inline transform keeps it when its entrance is stopped', () => {
+    const screen = screenOf(1);
+    const panel = screen.querySelector<HTMLElement>('.kb-glass-cut-panel')!;
+    panel.style.transform = 'rotate(3deg)';
+    const stop = enterScreen(feel, screen);
+    stop();
+    expect(panel.style.transform).toBe('rotate(3deg)');
   });
 });

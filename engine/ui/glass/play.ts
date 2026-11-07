@@ -24,24 +24,38 @@ function clear(el: HTMLElement, keys: Iterable<string>) {
   for (const k of keys) el.style.removeProperty(cssOf(k));
 }
 
-/** Plays `p`'s entrance on `el`, from `initial` to `animate`. */
-export function playIn(el: HTMLElement, p: MotionProps): void {
-  if (!p.initial || !p.animate || typeof p.initial === 'string' || typeof p.animate === 'string') return;
+/** Stops a run: it neither clears the element nor ends anything when its animation settles. */
+export type Stop = () => void;
+const NOTHING: Stop = () => {};
+
+/** Plays `p`'s entrance on `el`, from `initial` to `animate`. Returns the run's stop. */
+export function playIn(el: HTMLElement, p: MotionProps): Stop {
+  if (!p.initial || !p.animate || typeof p.initial === 'string' || typeof p.animate === 'string') return NOTHING;
   const from = split(p.initial).values;
   const { values: to, transition } = split(p.animate);
   const { transformOrigin, ...rest } = to;
   if (typeof transformOrigin === 'string') el.style.transformOrigin = transformOrigin;
   const frames = Object.fromEntries(Object.keys(rest).map((k) => [k, [from[k] ?? rest[k], rest[k]]]));
-  const done = () => clear(el, Object.keys(to));
-  try { animate(el, frames as never, transition as never).then(done, done); } catch { done(); }
+  let stopped = false;
+  const done = () => { if (!stopped) clear(el, Object.keys(to)); };
+  try {
+    const a = animate(el, frames as never, transition as never);
+    a.then(done, done);
+    return () => { stopped = true; a.stop(); };
+  } catch { done(); return NOTHING; }
 }
 
-/** Plays `p`'s exit on `el` (from wherever it stands) and calls `end` when it is over. */
-export function playOut(el: HTMLElement, p: MotionProps, end: () => void): void {
-  if (!p.exit || typeof p.exit === 'string') return end();
+/** Plays `p`'s exit on `el` (from wherever it stands) and calls `end` when it is over, unless the run was stopped first. Returns the run's stop. */
+export function playOut(el: HTMLElement, p: MotionProps, end: () => void): Stop {
+  if (!p.exit || typeof p.exit === 'string') { end(); return NOTHING; }
   const { values, transition } = split(p.exit);
   const { transformOrigin, ...rest } = values;
   if (typeof transformOrigin === 'string') el.style.transformOrigin = transformOrigin;
-  const over = () => { clear(el, Object.keys(values)); end(); };
-  try { animate(el, rest as never, transition as never).then(over, over); } catch { over(); }
+  let stopped = false;
+  const over = () => { if (stopped) return; clear(el, Object.keys(values)); end(); };
+  try {
+    const a = animate(el, rest as never, transition as never);
+    a.then(over, over);
+    return () => { stopped = true; a.stop(); };
+  } catch { over(); return NOTHING; }
 }

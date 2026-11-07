@@ -125,14 +125,14 @@ export function QueueScreen({ now }: { readonly now?: number }) {
       <Layers>
       {ending && (
         <EndCardDialog
-          play={ending.play} card={ending.cardName} caster={ending.persona} onClose={() => setEnding(null)}
+          key="end" play={ending.play} card={ending.cardName} caster={ending.persona} onClose={() => setEnding(null)}
           onEnded={async () => { await load(); setEnding(null); document.getElementById('queue-staff-cards')?.focus(); }}
           returnFocusTo={heading('queue-staff-cards')}
         />
       )}
       {asked && (
         <Confirm
-          asked={asked} boards={boards} bosses={bosses}
+          key="confirm" asked={asked} boards={boards} bosses={bosses}
           returnFocusTo={heading(asked.kind === 'hold' ? 'queue-waiting' : 'queue-in-force')}
           onClose={() => setAsked(null)}
           onDone={async () => { await load(); setAsked(null); document.getElementById(asked.kind === 'hold' ? 'queue-waiting' : 'queue-in-force')?.focus(); }}

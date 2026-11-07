@@ -125,7 +125,9 @@ export function useModalLayer({ onClose, returnFocusTo }: Pick<ModalProps, 'onCl
     if (!present) return;
     const layer = overlay.current;
     if (layer) going.delete(layer);
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    /* Not a control inside a layer that is leaving (a dialog that closed as this one opened is still mounted, inert, exiting): there is no opener then, and `returnFocusTo` is the way back. */
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const opener = active?.closest('[data-kb-exiting]') ? null : active;
     entry.overlay = overlay.current;
     stack.push(entry);
     stack.sort((a, b) => a.seq - b.seq);
