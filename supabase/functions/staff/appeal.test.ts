@@ -181,6 +181,21 @@ test('a refund that finds the appeal already ruled says so and does not call it 
   assert.equal(e.state.refunds, 0);
 });
 
+test('a punishment that ran out while the appeal waited is told plainly and is not refunded twice; a retried close reports the ruling\'s own numbers', async () => {
+  const d = fakeDbs({ closeSays: { closed: false, refunded: true, expired: true, reason: 'that punishment had already run out before the appeal was heard' } });
+  const out = await go(d, fakeModels(() => ({ verdict: 'increased', line: 'x' })));
+  assert.equal(out.status, 409);
+  assert.equal(out.body['expired'], true);
+  assert.match(String(out.body['error']), /already run out/);
+  assert.equal(d.state.refunds, 0, 'the database already refunded it');
+  const e = fakeDbs({ closeSays: { closed: false, existing: true, verdict: 'reduced', points_delta: -2, until: '2026-11-08T00:00:00Z', refunded_amount: 0 } });
+  const again = await go(e, fakeModels(() => ({ verdict: 'upheld', line: 'x' })));
+  assert.equal(again.status, 200);
+  assert.equal(again.body['verdict'], 'reduced');
+  assert.equal(again.body['points_delta'], -2);
+  assert.equal(again.body['until'], '2026-11-08T00:00:00Z');
+});
+
 test('the database\'s refusals reach the player in its words, and nothing is judged', async () => {
   const refusal = new DatabaseError('open_appeal: this punishment has already been appealed', '55000', 400, 'this punishment has already been appealed; each punishment is appealed once', 'kayfabb.refusal');
   const d = fakeDbs({ open: refusal });

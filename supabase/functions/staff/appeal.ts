@@ -71,6 +71,8 @@ interface Closed {
   readonly points_delta?: number;
   readonly refunded_amount?: number;
   readonly until?: string;
+  readonly expired?: boolean;
+  readonly reason?: string;
 }
 
 const answer = (status: number, body: Record<string, unknown>): AppealAnswer => ({ status, body });
@@ -166,6 +168,8 @@ async function judge(db: Db, getModels: () => Promise<Models>, instance: Instanc
 
   // Only the verdict and the line go to the database: what a ruling does is bounded there.
   const closed = await db.rpc<Closed>('close_appeal', { appeal_act: opened.appeal, verdict, line: repaired.line, staff: opened.staff });
+  // The punishment ran out while the appeal waited: the database ruled on nothing and gave the price back, and says so plainly.
+  if (!closed.closed && closed.refunded && closed.expired) return answer(409, { appeal: opened.appeal, expired: true, error: closed.reason ?? 'That punishment had already run out, so nothing was ruled and your Aura is back.' });
   if (!closed.closed && closed.refunded) return answer(409, { appeal: opened.appeal, error: 'This appeal was refunded before it was ruled on. Appeal again if you still want it heard.' });
   return answer(200, {
     appeal: opened.appeal, verdict: closed.verdict ?? verdict, line: closed.line ?? repaired.line, points_delta: closed.points_delta ?? 0,

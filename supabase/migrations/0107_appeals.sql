@@ -144,8 +144,9 @@ create table appeal_refunds (
   appeal_act uuid primary key references acts (id),
   amount integer not null check (amount >= 0),
   -- Why: 'failed' (the judgment failed: the punishment can be appealed again), 'stale' (never judged: frees the punishment, at most three times) or 'overturned' (the ruling
-  -- gave it back; the appeal stands as judged).
-  why text not null default 'failed' check (why in ('failed', 'stale', 'overturned')),
+  -- gave it back; the appeal stands as judged) or 'expired' (the punishment ran out while the appeal waited: nothing was ruled, the price is back, and the punishment stays
+  -- used, since it can no longer be appealed anyway).
+  why text not null default 'failed' check (why in ('failed', 'stale', 'overturned', 'expired')),
   at timestamptz not null default now()
 );
 alter table appeal_refunds enable row level security;
@@ -452,7 +453,11 @@ begin
   perform pg_advisory_xact_lock(hashtextextended('kayfabb.appeal.' || ap.id::text, 0));
   select * into ruling from acts a where a.kind = 'appeal_ruling' and a.target_act_id = ap.id;
   if found then
-    return jsonb_build_object('closed', false, 'existing', true, 'ruling_act', ruling.id, 'verdict', ruling.payload ->> 'verdict', 'line', ruling.payload ->> 'line');
+    -- The ruling's own numbers, so a retry after a lost answer reports the true outcome.
+    return jsonb_build_object('closed', false, 'existing', true, 'ruling_act', ruling.id, 'verdict', ruling.payload ->> 'verdict', 'line', ruling.payload ->> 'line',
+      'points_delta', (ruling.payload ->> 'points_delta')::integer,
+      'refunded_amount', coalesce((select f.amount from appeal_refunds f where f.appeal_act = ap.id and f.why = 'overturned'), 0))
+      || case when ruling.payload ? 'until' then jsonb_build_object('until', ruling.payload ->> 'until') else '{}'::jsonb end;
   end if;
   if exists (select 1 from appeal_refunds f where f.appeal_act = ap.id) then
     return jsonb_build_object('closed', false, 'refunded', true);
@@ -461,6 +466,11 @@ begin
     raise exception 'an appeal is answered with overturned, upheld, reduced or increased, not %', coalesce(close_appeal.verdict, 'nothing') using errcode = '22023';
   end if;
   select * into pun from acts a where a.id = ap.target_act_id;
+  -- The punishment ran out while the appeal waited: nothing is left to rule on, and an increase must not revive it. No ruling; the price comes back (the appeal stays used).
+  if not punishment_running(pun.id) then
+    perform refund_appeal(ap.id, 'expired');
+    return jsonb_build_object('closed', false, 'refunded', true, 'expired', true, 'reason', 'that punishment had already run out before the appeal was heard, so nothing was ruled and your Aura is back');
+  end if;
   mod_key := appeal_hearer(pun.id);
   if mod_key is null then raise exception 'no one is on staff to hear an appeal' using errcode = '55000'; end if;
   if close_appeal.staff is not null and close_appeal.staff <> mod_key then

@@ -151,6 +151,73 @@ begin
   if exists (select 1 from acts where kind = 'appeal_ruling' and target_act_id = ap) then raise exception 'a ruling was written for a refunded appeal'; end if;
 end $$;
 
+-- ---- 0b. Two sessions opening an appeal of one punishment at once open one, and charge once; and a ban that runs out while its appeal waits is refunded, not ruled on ----
+do $$
+declare
+  u uuid := gen_random_uuid(); c uuid := gen_random_uuid(); t uuid := gen_random_uuid(); p uuid := gen_random_uuid(); inf uuid;
+  u2 uuid := gen_random_uuid(); c2 uuid := gen_random_uuid(); t2 uuid := gen_random_uuid(); p2 uuid := gen_random_uuid(); inf2 uuid; ban uuid; ap uuid := gen_random_uuid();
+  said text[]; got jsonb;
+begin
+  -- A committed Mod to hear (benched again at the end, so no other file's beat or roster sees it), and a player who can pay twice over.
+  perform tests.commit(format($sql$
+    insert into settings (key, value) values ('warnBar', '{"size": 10, "bands": {"minor": 2, "moderate": 4, "severe": 7}, "decay": {"unit": "day", "count": 14}, "banDays": [1, 3, 7]}') on conflict (key) do nothing;
+    insert into settings (key, value) values ('systemEnabled', 'true') on conflict (key) do nothing;
+    insert into characters (id, name, staff, staff_kind, debuted_at) values (gen_random_uuid(), 'Ap Race Mod', 'ap-race-mod', 'persona', now());
+    insert into staff_offices (staff, office, cause) values ('ap-race-mod', 'mod', 'admin');
+    insert into auth.users (id, email) values (%1$L, 'ap-race2@test.invalid');
+    insert into accounts (id) values (%1$L);
+    insert into wallets (account, balance) values (%1$L, 200);
+    insert into characters (id, owner, name, created_at, debuted_at) values (%2$L, %1$L, 'Ap Racer Two', now(), now());
+    insert into class_history (character, class_key, started_at) values (%2$L, 'alpha', now());
+    insert into threads (id, board, title) select %3$L, b.id, 'Ap race two' from boards b where b.slug = 'general';
+    insert into acts (id, character, kind, thread, payload) values (%4$L, %2$L, 'post', %3$L, '{"body": "A racing post."}');
+    do $d$ begin perform infract(%2$L, 'minor', %4$L, 'ap-race-mod'); end $d$;
+  $sql$, u, c, t, p));
+  inf := (select id from acts where kind = 'infraction' and payload ->> 'character' = c::text);
+  said := tests.race(u, format('select open_appeal(%L, %L, ''One plea.'')', c, inf), u, format('select open_appeal(%L, %L, ''Another plea.'')', c, inf));
+  if (said[1] is null) = (said[2] is null) then raise exception 'two sessions opening one appeal: exactly one should be refused: %', said; end if;
+  if (select count(*) from acts where kind = 'appeal' and target_act_id = inf) is distinct from 1::bigint then raise exception 'two sessions opened % appeals of one punishment', (select count(*) from acts where kind = 'appeal' and target_act_id = inf); end if;
+  if (select count(*) from wallet_events where kind = 'appeal' and account = u) is distinct from 1::bigint or (select balance from wallets where account = u) is distinct from 150 then
+    raise exception 'two sessions charged % times (balance %)', (select count(*) from wallet_events where kind = 'appeal' and account = u), (select balance from wallets where account = u);
+  end if;
+
+  -- A ban that ends two seconds from now, appealed (planted whole), and closed after it has run out: no ruling, the price back, a plain reason. A fresh session, since a
+  -- transaction's clock does not move.
+  perform tests.commit(format($sql$
+    insert into auth.users (id, email) values (%1$L, 'ap-race3@test.invalid');
+    insert into accounts (id) values (%1$L);
+    insert into wallets (account, balance) values (%1$L, 50);
+    insert into characters (id, owner, name, created_at, debuted_at) values (%2$L, %1$L, 'Ap Racer Three', now(), now());
+    insert into class_history (character, class_key, started_at) values (%2$L, 'alpha', now());
+    insert into threads (id, board, title) select %3$L, b.id, 'Ap race three' from boards b where b.slug = 'general';
+    insert into acts (id, character, kind, thread, payload) values (%4$L, %2$L, 'post', %3$L, '{"body": "A post."}');
+    do $d$ begin perform infract(%2$L, 'minor', %4$L, 'ap-race-mod'); end $d$;
+  $sql$, u2, c2, t2, p2));
+  inf2 := (select id from acts where kind = 'infraction' and payload ->> 'character' = c2::text);
+  perform tests.commit(format($sql$
+    set kayfabb.warn_writer = 'on';
+    insert into acts (character, kind, thread, payload) values (null, 'ban', %1$L, jsonb_build_object('character', %2$L::text, 'days', 1, 'until', now() + interval '2 seconds', 'infraction_act', %3$L::text, 'season', 1));
+    reset kayfabb.warn_writer;
+  $sql$, t2, c2, inf2));
+  ban := (select id from acts where kind = 'ban' and payload ->> 'character' = c2::text);
+  perform tests.commit(format($sql$
+    set kayfabb.appeal_writer = 'on';
+    insert into acts (id, character, kind, thread, target_act_id, payload) values (%1$L, %2$L, 'appeal', %3$L, %4$L, '{"plea": "waiting"}');
+    reset kayfabb.appeal_writer;
+    update wallets set balance = 0 where account = %5$L;
+    insert into wallet_events (account, kind, change, balance_after, ref) values (%5$L, 'appeal', -50, 0, %1$L);
+  $sql$, ap, c2, t2, ban, u2));
+  perform pg_sleep(2.6);
+  perform extensions.dblink_connect('apx', current_setting('kayfabb.scratch_url'));
+  select r into got from extensions.dblink('apx', format('select close_appeal(%L, ''upheld'')', ap)) as x(r jsonb);
+  perform extensions.dblink_disconnect('apx');
+  if (got ->> 'closed')::boolean or not (got ->> 'refunded')::boolean or got ->> 'reason' is null or got ->> 'reason' not like '%run out%' then raise exception 'a ban that ran out was not refunded plainly: %', got; end if;
+  if exists (select 1 from acts where kind = 'appeal_ruling' and target_act_id = ap) then raise exception 'a ruling was written on a punishment that had run out'; end if;
+  if (select balance from wallets where account = u2) is distinct from 50 or (select why from appeal_refunds where appeal_act = ap) is distinct from 'expired' then raise exception 'the price did not come back as expired'; end if;
+  if (refund_appeal(ap) ->> 'already') is distinct from 'true' then raise exception 'the expired refund can be repeated'; end if;
+  perform tests.commit($sql$ insert into staff_offices (staff, office, cause) values ('ap-race-mod', 'benched', 'admin'); $sql$);
+end $$;
+
 -- ---- 0. The world: a Boss, two Mods on staff, the settings, players ----
 do $$
 declare
@@ -629,6 +696,45 @@ begin
   ap := pg_temp.appeal(c, inf);
   perform close_appeal((ap ->> 'appeal')::uuid, 'reduced');
   if warn_points(c) is distinct from 2 then raise exception 'a reduced moderate infraction counts %', warn_points(c); end if;
+end $$;
+
+-- ---- 11b. An infraction that stops counting while its appeal waits is refunded, not ruled on; a retried close returns the true outcome ----
+do $$
+declare
+  t uuid := tests.thread('Appeals eleven b');
+  c uuid := pg_temp.player('elevenb');
+  three uuid[] := pg_temp.posts(c, t, 3);
+  hit jsonb := infract(c, 'minor', three[1], 'ap-m1');
+  w0 integer := pg_temp.wallet(c);
+  ap jsonb;
+  closed jsonb;
+  again jsonb;
+  bc uuid := pg_temp.player('elevenbban');
+  ban uuid := pg_temp.banned(bc, t);
+begin
+  ap := pg_temp.appeal(c, (hit ->> 'infraction')::uuid);
+  -- The bar fills and bans while the appeal waits: the minor infraction is no longer counted.
+  perform infract(c, 'severe', three[2], 'ap-m1');
+  perform infract(c, 'moderate', three[3], 'ap-m1');
+  closed := close_appeal((ap ->> 'appeal')::uuid, 'increased');
+  if (closed ->> 'closed')::boolean or not (closed ->> 'refunded')::boolean or closed ->> 'reason' not like '%run out%' then raise exception 'a punishment that ran out was ruled on: %', closed; end if;
+  if exists (select 1 from acts where kind = 'appeal_ruling' and target_act_id = (ap ->> 'appeal')::uuid) or pg_temp.wallet(c) is distinct from w0 or warn_points(c) is distinct from 0 then raise exception 'the expired appeal moved something'; end if;
+  if (select count(*) from acts where kind = 'infraction' and payload ->> 'character' = c::text) is distinct from 3::bigint then raise exception 'an increase revived an expired infraction'; end if;
+  if (select why from appeal_refunds where appeal_act = (ap ->> 'appeal')::uuid) is distinct from 'expired' then raise exception 'the refund is not marked expired'; end if;
+  if appeal_blocks((hit ->> 'infraction')::uuid) is distinct from true then raise exception 'an expired refund freed a punishment that has run out'; end if;
+
+  -- A close retried after a lost answer returns the ruling's own numbers: the points taken off, and a ban's new end.
+  ap := pg_temp.appeal(bc, ban);
+  closed := close_appeal((ap ->> 'appeal')::uuid, 'reduced');
+  again := close_appeal((ap ->> 'appeal')::uuid, 'reduced');
+  if (again ->> 'closed')::boolean or not (again ->> 'existing')::boolean or again ->> 'until' is distinct from closed ->> 'until' or again -> 'points_delta' is distinct from closed -> 'points_delta' then
+    raise exception 'a retried close does not return the ruling''s numbers: % / %', closed, again;
+  end if;
+  c := pg_temp.player('elevenc');
+  hit := pg_temp.inf(c, t, 'moderate');
+  closed := close_appeal((pg_temp.appeal(c, (hit ->> 'infraction')::uuid) ->> 'appeal')::uuid, 'overturned');
+  again := close_appeal((select target_act_id from acts where id = (closed ->> 'ruling_act')::uuid), 'overturned');
+  if (again ->> 'points_delta')::integer is distinct from -4 or (again ->> 'refunded_amount')::integer is distinct from 50 then raise exception 'a retried close does not return points_delta and the refund: %', again; end if;
 end $$;
 
 -- ---- 12. The fallback lines: with no stock line in the instance's settings the plain default says the ruling ----
