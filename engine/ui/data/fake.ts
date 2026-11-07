@@ -232,8 +232,8 @@ export interface SeedMove {
 }
 
 interface SeedAct {
+  readonly at?: number;
   /** For The System's Acts: `tally` (default), `reveal`, or `post` (an Act written with no character, a post the staff's word names). */
-  /** For The System's Acts: `tally` (default) or `reveal`. */
   readonly kind?: 'tally' | 'reveal' | 'post';
   readonly payload?: Readonly<Record<string, unknown>>;
 }
