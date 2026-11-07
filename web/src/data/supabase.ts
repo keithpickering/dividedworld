@@ -1497,7 +1497,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           rows(() => client.from('my_infractions').select('infraction,character,at,band,points,rule_number,rule,mod_name,post,post_seq,thread,expires_at,relief,emptied_at'), 'at', (q) => q, ['infraction']),
           rows(() => client.from('my_bans').select('ban,character,at,days,until,infraction,rule,thread'), 'at', (q) => q, ['ban']),
           /* The staff moves of the player's characters into groups (0122): each with how it ended and the appeal's ruling on it. */
-          rows(() => client.from('my_group_moves').select('move,character,at,thread,seq,group,board,board_name,expires_at,check_at,demand,office,ended_why,ended_by,ended_at,ruling,ruled_at,ruled_until'), 'at', (q) => q, ['move']),
+          rows(() => client.from('my_group_moves').select('move,character,at,thread,seq,group,board,board_name,expires_at,landed_until,check_at,demand,office,ended_why,ended_by,ended_at,ruling,ruled_at,ruled_until'), 'at', (q) => q, ['move']),
           rows(() => client.from('my_reports').select('report,character,at,post,post_seq,thread,verdict,verdict_at,mod_name,refund'), 'at', (q) => q, ['report']),
           rows(() => client.from('my_appeals').select('appeal,character,at,punishment,punishment_kind,post_seq,thread,verdict,ruled_at,points_delta,hearer_name,refund'), 'at', (q) => q, ['appeal']),
         ]);
@@ -1547,7 +1547,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           bans: banRows.map((r): LogBan => ({ ban: r['ban'], character: r['character'], at: r['at'], days: num(r['days']), until: r['until'], infraction: r['infraction'], rule: str(r['rule']), thread: r['thread'] })),
           groupMoves: groupMoveRows.map((r): LogGroupMove => ({
             move: r['move'], character: r['character'], at: r['at'], thread: r['thread'], seq: typeof r['seq'] === 'number' ? r['seq'] : null, group: String(r['group'] ?? ''),
-            board: str(r['board']), boardName: str(r['board_name']), expiresAt: str(r['expires_at']), checkAt: str(r['check_at']), demand: str(r['demand']),
+            board: str(r['board']), boardName: str(r['board_name']), expiresAt: str(r['expires_at']), landedUntil: str(r['landed_until']), checkAt: str(r['check_at']), demand: str(r['demand']),
             office: OFFICES.find((o) => o === r['office']) ?? null,
             endedWhy: MOVE_END_WHYS.find((w) => w === r['ended_why']) ?? null, endedBy: str(r['ended_by']), endedAt: str(r['ended_at']),
             ruling: RULINGS.find((v) => v === r['ruling']) ?? null, ruledAt: str(r['ruled_at']), ruledUntil: str(r['ruled_until']),

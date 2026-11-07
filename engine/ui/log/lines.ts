@@ -348,7 +348,7 @@ function groupRows(data: LogData, words: Words): LogRow[] {
     const to = g.seq === null ? undefined : threadHref(g.thread, pageOf(g.seq, words.postsPerPage), g.seq);
     const linked = (text: string): Segment => (to === undefined ? text : { text, href: to });
     const role = officeRole(words.ui.copy, g.office ?? undefined);
-    const until = g.expiresAt === null ? '' : ` until ${utcDay(g.expiresAt)}`;
+    const until = g.landedUntil === null ? '' : ` until ${utcDay(g.landedUntil)}`;
     const check = g.checkAt === null ? '' : ` It stays if ${name} meets the demand by ${utcDay(g.checkAt)}.`;
     rows.push({
       key: `grouped:${g.move}`, kind: 'grouped', at: g.at, what: `${name} was put in ${group}`,

@@ -1156,6 +1156,8 @@ export interface LogGroupMove {
   readonly boardName: string | null;
   /** When it ends now (`move_expires_at`: an appeal's ruling read in place of the move's own end); null for a move with no end of its own. */
   readonly expiresAt: string | null;
+  /** The end the move's own Act set when it landed; the line that says it landed names this one, and the ruling's line carries any change. */
+  readonly landedUntil: string | null;
   /** A favor's check: it stays if the demand is met by then. */
   readonly checkAt: string | null;
   readonly demand: string | null;

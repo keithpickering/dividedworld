@@ -1624,6 +1624,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
             move: m.id, character: params['character'] as Id, at: iso(m.at), thread: m.thread, seq: m.seq ?? null, group: String(params['group'] ?? ''), board: boardId,
             boardName: boardId ? boards.find((b) => b.id === boardId)?.name ?? null : null,
             expiresAt: typeof ruling?.payload['until'] === 'string' ? ruling.payload['until'] : typeof m.payload['expires_at'] === 'string' ? m.payload['expires_at'] : null,
+            landedUntil: typeof m.payload['expires_at'] === 'string' ? m.payload['expires_at'] : null,
             checkAt: typeof params['checkAt'] === 'string' ? params['checkAt'] : null,
             demand: typeof (m.payload['demand'] as { kind?: unknown } | undefined)?.kind === 'string' ? String((m.payload['demand'] as { kind: string }).kind) : null,
             office: m.payload['office'] === 'mod' ? 'mod' as const : 'boss' as const, endedWhy: (end?.payload['why'] as LogGroupMove['endedWhy'] | undefined) ?? null, endedBy: (end?.payload['by'] as string | undefined) ?? null,

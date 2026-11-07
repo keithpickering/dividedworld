@@ -8,6 +8,8 @@
  * plays on the player's posts by when each happened, the effects' saves by when each was saved, the
  * player's face-down cards by when each sprang or ended, the player's caught plays by when each was played, the card plays an admin ended by when each was ended, and
  * the player's own infractions, bans, reports and appeals by when each was made.
+ * A staff move into a group (`groupMoves`) is paged by when it landed, with its end and its appeal's ruling on the same row: a recent end or ruling dated after its move shows
+ * on the move's page, with its own time on its line, as an appeal's ruling does with `appeals`.
  * The shares are read whole for the settlements read. A source that came back full may hold more at
  * its oldest row's time and before, so the page ends there: it keeps what is newer than the newest of
  * those times (`after`), and the next page reads from that time on, at or before it. A source that

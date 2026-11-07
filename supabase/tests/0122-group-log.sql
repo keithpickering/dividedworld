@@ -3,7 +3,8 @@
 -- 1. my_group_moves gives a player a row for each conferGroup move on their own characters, and no one else's; a visitor reads none.
 -- 2. A row carries what the line needs: the group, the board and its name, the check, the office the move landed under (its stamp), and an expiry read through move_expires_at.
 -- 3. Each end shows (met, expired, reversed, unmet, overturned) with who ended it; a move still running has none.
--- 4. An appeal's ruling on the move shows its verdict, when and the end it set, each of the four verdicts.
+-- 4. An appeal's ruling on the move, through open_appeal and close_appeal (0123), shows its verdict, when and the end it set, each of the four verdicts; a move appealed twice
+--    (the first refunded) is still one row.
 -- 5. A move of another kind is not a row, and a row never names another member of a group.
 
 create function pg_temp.announcements() returns uuid language sql as $$
@@ -29,23 +30,36 @@ begin
   return made;
 end $$;
 
--- A ruling on a move, written as the Mod Bots' bans are (0109): an appeal Act by the player's character, then an appeal_ruling Act by the staff member on it. The appeal guard
--- of 0109 knows only infractions and bans until Task 14 teaches open_appeal a group move, so it is switched off for the two inserts, inside this file's transaction.
-create function pg_temp.ruled(who uuid, m uuid, staff text, verdict text, until_at timestamptz default null) returns uuid language plpgsql as $$
+-- Run a statement as an account (null: the service role); its first column as text, or 'ERROR: ' and the refusal.
+create function pg_temp.as_val(who uuid, stmt text) returns text language plpgsql as $$
 declare
-  ap uuid;
-  ru uuid;
+  r text;
 begin
-  alter table acts disable trigger acts_appeal_guard;
-  perform set_config('kayfabb.appeal_writer', 'on', true);
-  ap := tests.act(who, 'appeal', pg_temp.announcements(), jsonb_build_object('plea', 'I did nothing wrong.'), m);
-  perform set_config('kayfabb.appeal_writer', '', true);
-  perform set_config('kayfabb.staff_writer', 'on', true);
-  ru := tests.act((select id from characters c where c.staff = ruled.staff), 'appeal_ruling', pg_temp.announcements(),
-    jsonb_build_object('appeal_act', ap, 'verdict', verdict, 'points_delta', 0, 'line', 'Ruled.') || case when until_at is not null then jsonb_build_object('until', until_at) else '{}'::jsonb end, ap);
-  perform set_config('kayfabb.staff_writer', '', true);
-  alter table acts enable trigger acts_appeal_guard;
-  return ru;
+  if who is null then perform tests.become_service(); else perform tests.become(who); end if;
+  begin
+    execute stmt into r;
+  exception when others then
+    r := 'ERROR: ' || sqlerrm;
+  end;
+  perform tests.unbecome();
+  return r;
+end $$;
+
+-- The appeal and its ruling through the real doors (0123): the player's open_appeal, the service's close_appeal. Each is an assertion that the door took it.
+create function pg_temp.opened(c uuid, m uuid) returns uuid language plpgsql as $$
+declare r text := pg_temp.as_val(pg_temp.owner(c), format('select open_appeal(%L, %L, %L) ->> %L', c, m, 'I did nothing wrong.', 'appeal'));
+begin
+  if r like 'ERROR:%' then raise exception 'open_appeal refused a group punishment of the character''s own: %', r; end if;
+  return r::uuid;
+end $$;
+create function pg_temp.closed(ap uuid, verdict text) returns void language plpgsql as $$
+declare r text := pg_temp.as_val(null, format('select close_appeal(%L, %L, %L, null, null)', ap, verdict, 'A line.'));
+begin
+  if r like 'ERROR:%' then raise exception 'close_appeal refused: %', r; end if;
+end $$;
+create function pg_temp.ruled(c uuid, m uuid, verdict text) returns void language plpgsql as $$
+begin
+  perform pg_temp.closed(pg_temp.opened(c, m), verdict);
 end $$;
 
 do $$
@@ -75,6 +89,7 @@ begin
       'demands', jsonb_build_array(jsonb_build_object('key', 'postsOnBoard'), jsonb_build_object('key', 'apologyAccepted')),
       'predicates', jsonb_build_array(jsonb_build_object('key', 'noAllCaps', 'param', 'none', 'least', null, 'most', null, 'plain', 'no all-caps posts'))));
   perform seed_instance(seed);
+  insert into settings (key, value) values ('moveExpiryMostDays', '90') on conflict (key) do update set value = '90';
   insert into boards (slug, name, description) values ('gl-general', 'General', 'Talk about anything.');
 end $$;
 
@@ -93,14 +108,13 @@ declare
   m_exp uuid := pg_temp.landed('gl-boss', one, 'trialMembers', interval '8 days', null, null, interval '1 day');
   m_rev uuid := pg_temp.landed('gl-boss', one, 'trialMembers', interval '7 days');
   m_unm uuid := pg_temp.landed('gl-mod', mask, 'teachersPet', interval '6 days', null, apology, interval '9 days', clock_timestamp() - interval '5 days');
-  m_ovr uuid := pg_temp.landed('gl-boss', one, 'trialMembers', interval '5 days');
-  m_red uuid := pg_temp.landed('gl-boss', one, 'trialMembers', interval '4 days', null, null, interval '8 days');
-  m_inc uuid := pg_temp.landed('gl-boss', mask, 'trialMembers', interval '3 days', null, null, interval '4 days');
-  m_upl uuid := pg_temp.landed('gl-mod', mask, 'trialMembers', interval '2 days', null, null, interval '4 days');
+  m_ovr uuid := pg_temp.landed('gl-boss', one, 'trialMembers', interval '5 days', null, null, interval '20 days');
+  m_red uuid := pg_temp.landed('gl-boss', one, 'trialMembers', interval '4 days', null, null, interval '20 days');
+  m_inc uuid := pg_temp.landed('gl-boss', mask, 'trialMembers', interval '3 days', null, null, interval '10 days');
+  m_upl uuid := pg_temp.landed('gl-mod', mask, 'trialMembers', interval '2 days', null, null, interval '10 days');
   r record;
   n integer;
-  red_until timestamptz := clock_timestamp() - interval '1 day';
-  inc_until timestamptz := clock_timestamp() + interval '6 days';
+  first_appeal uuid;
   lost text;
   ann uuid := pg_temp.announcements();
 begin
@@ -113,12 +127,14 @@ begin
   perform end_move(m_exp, 'expired', 'expiry');
   perform end_move(m_rev, 'reversed', 'admin');
   perform end_move(m_unm, 'unmet', 'check');
-  perform end_move(m_ovr, 'overturned', 'appeal');
-  perform pg_temp.ruled(one, m_red, 'gl-boss', 'reduced', red_until);
-  perform end_move(m_red, 'expired', 'appeal');
-  perform pg_temp.ruled(mask, m_inc, 'gl-boss', 'increased', inc_until);
-  perform pg_temp.ruled(mask, m_upl, 'gl-mod', 'upheld');
-  perform pg_temp.ruled(one, m_ovr, 'gl-boss', 'overturned');
+  insert into wallets (account, balance) values (pg_temp.owner(one), 500), (pg_temp.owner(two), 500) on conflict (account) do update set balance = excluded.balance;
+  -- A refunded appeal can be made again, so m_red has two appeals and one ruling; its row must stay one row.
+  first_appeal := pg_temp.opened(one, m_red);
+  perform refund_appeal(first_appeal, 'failed');
+  perform pg_temp.ruled(one, m_red, 'reduced');
+  perform pg_temp.ruled(mask, m_inc, 'increased');
+  perform pg_temp.ruled(mask, m_upl, 'upheld');
+  perform pg_temp.ruled(one, m_ovr, 'overturned');
 
   -- 1. The caller's own characters, both masks, and no one else's.
   perform tests.become(pg_temp.owner(one));
@@ -152,18 +168,19 @@ begin
 
   -- 3. Each end.
   for r in select * from my_group_moves where ended_why is not null loop
-    lost := case r.move when m_met then 'met/demand' when m_exp then 'expired/expiry' when m_rev then 'reversed/admin' when m_unm then 'unmet/check' when m_ovr then 'overturned/appeal' when m_red then 'expired/appeal' end;
-    if lost is distinct from r.ended_why || '/' || r.ended_by or r.ended_at is null then raise exception 'an end is wrong for %: %', r.move, to_jsonb(r); end if;
+    lost := case r.move when m_met then 'met/demand' when m_exp then 'expired/expiry' when m_rev then 'reversed/admin' when m_unm then 'unmet/check' when m_ovr then 'overturned/' end;
+    if lost is null or r.ended_why || '/' || r.ended_by not like lost || '%' or r.ended_at is null then raise exception 'an end is wrong for %: %', r.move, to_jsonb(r); end if;
   end loop;
-  if (select count(*) from my_group_moves where ended_why is not null) is distinct from 6::bigint then raise exception 'the wrong number of ended moves'; end if;
+  if (select count(*) from my_group_moves where ended_why is not null) is distinct from 5::bigint then raise exception 'the wrong number of ended moves'; end if;
 
   -- 4. Rulings, and the expiry read through the ruling.
   select * into r from my_group_moves where move = m_red;
-  if r.ruling is distinct from 'reduced' or r.ruled_until is distinct from red_until or r.ruled_at is null or r.expires_at is distinct from red_until then raise exception 'reduced: %', to_jsonb(r); end if;
+  if (select count(*) from my_group_moves where move = m_red) is distinct from 1::bigint then raise exception 'a move with two appeals is % rows, not one', (select count(*) from my_group_moves where move = m_red); end if;
+  if r.ruling is distinct from 'reduced' or r.ruled_until is null or r.ruled_until >= r.landed_until or r.ruled_at is null or r.expires_at is distinct from r.ruled_until or r.ended_why is not null then raise exception 'reduced: %', to_jsonb(r); end if;
   select * into r from my_group_moves where move = m_inc;
-  if r.ruling is distinct from 'increased' or r.ruled_until is distinct from inc_until or r.expires_at is distinct from inc_until then raise exception 'increased: %', to_jsonb(r); end if;
+  if r.ruling is distinct from 'increased' or r.ruled_until is null or r.ruled_until <= r.landed_until or r.expires_at is distinct from r.ruled_until then raise exception 'increased: %', to_jsonb(r); end if;
   select * into r from my_group_moves where move = m_upl;
-  if r.ruling is distinct from 'upheld' or r.ruled_until is not null or r.expires_at is distinct from move_expires_at(m_upl) then raise exception 'upheld: %', to_jsonb(r); end if;
+  if r.ruling is distinct from 'upheld' or r.expires_at is distinct from move_expires_at(m_upl) or r.expires_at is distinct from r.landed_until then raise exception 'upheld: %', to_jsonb(r); end if;
   select * into r from my_group_moves where move = m_ovr;
   if r.ruling is distinct from 'overturned' or r.ended_why is distinct from 'overturned' then raise exception 'overturned: %', to_jsonb(r); end if;
   perform tests.unbecome();

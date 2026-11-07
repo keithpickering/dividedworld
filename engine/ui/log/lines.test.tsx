@@ -571,7 +571,7 @@ describe('the Mod Bots\' lines', () => {
 describe('the group lines', () => {
   const mine = [char('p', 'Pipewrench', 'face'), char('q', 'Spritey', 'heel')];
   const move = (over: Partial<Log['groupMoves'][number]> = {}): Log['groupMoves'][number] => ({
-    move: 'm1', character: 'p', at: '2099-11-06T12:00:00.000Z', thread: 'ann', seq: 7, group: 'trialMembers', board: 'b1', boardName: 'General', expiresAt: '2099-11-13T12:00:00.000Z', checkAt: null,
+    move: 'm1', character: 'p', at: '2099-11-06T12:00:00.000Z', thread: 'ann', seq: 7, group: 'trialMembers', board: 'b1', boardName: 'General', expiresAt: '2099-11-13T12:00:00.000Z', landedUntil: '2099-11-13T12:00:00.000Z', checkAt: null,
     demand: 'apologyAccepted', office: 'boss', endedWhy: null, endedBy: null, endedAt: null, ruling: null, ruledAt: null, ruledUntil: null, ...over,
   });
   const groupWords: Words = { ...words, instance: { ...testInstance, groups: { ...testInstance.groups, conferred: [
@@ -591,6 +591,11 @@ describe('the group lines', () => {
   test('says no "barred" where no board is, and a Mod\'s role word where a Mod moved it', () => {
     expect(said(rowsOf([move({ board: null, boardName: null })])[0]!)).toBe(`The Boss put Pipewrench in ${name} until Nov 13.`);
     expect(said(rowsOf([move({ office: 'mod' })])[0]!)).toMatch(/^A Mod put Pipewrench/u);
+  });
+
+  test('names the end the move landed with, not the ruled one; the ruling line carries the change', () => {
+    const [put] = rowsOf([move({ expiresAt: '2099-11-10T12:00:00.000Z', ruling: 'reduced', ruledAt: '2099-11-07T00:00:00.000Z', ruledUntil: '2099-11-10T12:00:00.000Z' })]).filter((r) => r.key === 'grouped:m1');
+    expect(said(put!)).toContain('until Nov 13.');
   });
 
   test('a favor says the check it must meet to stay', () => {
