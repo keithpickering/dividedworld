@@ -57,12 +57,33 @@ test('Byline with no id is The System, not a link', () => {
   const { container } = renderInWorld(<Byline character={undefined} id={null} link />);
   expect(container.querySelector('.kb-system-name')).toHaveTextContent('The System');
   expect(screen.queryByRole('link')).toBeNull();
+  expect(container.querySelector('.kb-mini-none')).toHaveTextContent('S');
+});
+
+test('Byline for The System can leave the avatar out, as the index does', () => {
+  const { container } = renderInWorld(<Byline character={undefined} id={null} link avatar={false} />);
+  expect(container.querySelector('.kb-mini')).toBeNull();
+  expect(container.querySelector('.kb-system-name')).toHaveTextContent('The System');
+});
+
+test('Byline hides the avatar from assistive tech: the name is the only accessible text', () => {
+  const { container } = renderInWorld(<Byline character={ann} id="c1" name="Ann" link />);
+  expect(container.querySelector('.kb-mini')).toHaveAttribute('aria-hidden', 'true');
+  expect(container).toHaveTextContent(/^Ann$/u);
+});
+
+test('Byline for a character that has not loaded draws its name\'s first letter', () => {
+  const { container } = renderInWorld(<Byline character={undefined} id="c9" name="A character" link />);
+  expect(container.querySelector('.kb-mini-none')).toHaveTextContent('A');
 });
 
 test('Byline unlinked draws the name as plain text', () => {
   const { container } = renderInWorld(<Byline character={ann} id="c1" name="Ann" link={false} />);
   expect(screen.queryByRole('link')).toBeNull();
   expect(container.querySelector('.kb-byline-name')).toHaveTextContent('Ann');
+  expect(container.querySelector('a')).toBeNull();
+  expect(container.querySelector('.kb-byline-name')!.tagName).toBe('SPAN');
+  expect(container.querySelector('.kb-byline-name')).not.toHaveAttribute('role');
 });
 
 test('Byline with an id whose character has not loaded still links, as "A character"', () => {

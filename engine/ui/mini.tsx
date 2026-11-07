@@ -21,20 +21,20 @@ export function Mini({ character, name }: { readonly character: Character | unde
 
 /**
  * The head of a post-like row, a media object: the avatar and the name. `id` is the character's id, which is
- * given apart from `character` because the character may not be loaded yet while its id is known; absent (or
- * null) it is The System. `link` draws the name as the profile link, false as plain text in the same place.
- * `name` is what to call the character before it loads.
+ * given apart from `character` because the character may not be loaded yet while its id is known; it is required,
+ * and null is The System. `link` draws the name as the profile link, false as plain text in the same place.
+ * `name` is what to call the character before it loads. `avatar` false leaves The System's "S" avatar out (the
+ * index draws its name alone); a character always has its avatar.
  */
-export function Byline({ character, name, link, id }: { readonly character: Character | undefined; readonly name?: string | undefined; readonly link: boolean; readonly id?: string | null | undefined }) {
-  const charId = id ?? null;
-  if (charId === null) {
-    return <><Mini character={undefined} name="S" /><span className="kb-system-name">The System</span></>;
+export function Byline({ character, name, link, id, avatar = true }: { readonly character: Character | undefined; readonly name?: string | undefined; readonly link: boolean; readonly id: string | null; readonly avatar?: boolean }) {
+  if (id === null) {
+    return <>{avatar && <Mini character={undefined} name="S" />}<span className="kb-system-name">The System</span></>;
   }
   const shown = name ?? character?.name ?? 'A character';
   return (
     <>
       <Mini character={character} name={name ?? character?.name ?? 'A'} />
-      {link ? <Link to={`/c/${encodeURIComponent(charId)}`}>{shown}</Link> : <span className="kb-byline-name">{shown}</span>}
+      {link ? <Link to={`/c/${encodeURIComponent(id)}`}>{shown}</Link> : <span className="kb-byline-name">{shown}</span>}
     </>
   );
 }
