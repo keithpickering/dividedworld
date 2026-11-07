@@ -123,7 +123,7 @@ update settings s set value = s.value - coalesce((
     select array_agg(k.price_setting) from card_kinds k where not exists (select 1 from card_kinds r where k.price_setting = any (r.reads))), '{}')
 where s.key = 'economy' and jsonb_typeof(s.value) = 'object';
 
--- screen_settings (0084), whose `cardEconomy` is now the keys the cards read and no prices: a price is a slot's.
+-- screen_settings (0116), whose `cardEconomy` is now the keys the cards read and no prices: a price is a slot's. The two search settings stay (0116).
 create or replace view screen_settings as
   select coalesce(jsonb_object_agg(s.key, s.value), '{}'::jsonb)
          || jsonb_build_object('cardEconomy', (
@@ -134,7 +134,7 @@ create or replace view screen_settings as
   from settings s
   where s.key in ('postsPerPage', 'hotReplies', 'editGrace', 'reactionCap', 'charactersPerPlayer', 'invitesPerPlayer', 'inviteLifetime',
                   'turnCooldown', 'walletCap', 'postMaxLength', 'titleMaxLength', 'registrationMode', 'settlementLength', 'cardSettings',
-                  'presencePollSeconds', 'presenceWindow', 'toastDefaults', 'economy', 'staffGroup');
+                  'presencePollSeconds', 'presenceWindow', 'toastDefaults', 'economy', 'staffGroup', 'searchLanguage', 'searchRankPool');
 
 drop trigger card_kinds_priced on card_kinds;
 drop function card_kinds_priced();
