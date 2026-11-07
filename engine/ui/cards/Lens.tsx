@@ -362,7 +362,7 @@ export function EndCardDialog({ play, card, caster, onClose, onEnded, returnFocu
         {refusal && <p role="alert" className="kb-lens-end-refusal">{refusal}</p>}
         <ButtonRow align="end">
           <GlassButton onClick={onClose}>Cancel</GlassButton>
-          <GlassButton kind="primary" disabled={busy} onClick={() => void submit()}>End it</GlassButton>
+          <GlassButton kind="primary" busy={busy} onClick={() => void submit()}>End it</GlassButton>
         </ButtonRow>
       </div>
     </Overlay>

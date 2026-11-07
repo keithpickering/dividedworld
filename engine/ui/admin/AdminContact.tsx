@@ -142,9 +142,9 @@ export function AdminContact() {
         })}
         <ButtonRow>
           <GlassButton disabled={rows.length >= CONTACT_MOST} onClick={add}>Add a link</GlassButton>
-          <GlassButton type="submit" kind="primary" disabled={busy}>Save how players reach you</GlassButton>
+          <GlassButton type="submit" kind="primary" busy={busy}>Save how players reach you</GlassButton>
         </ButtonRow>
-        <div role="status" className="kb-write-update-status">{busy ? 'Saving…' : saved ? 'Saved. Players see it on the Reach a person page.' : ''}</div>
+        <div role="status" className="kb-write-update-status">{saved ? 'Saved. Players see it on the Reach a person page.' : ''}</div>
         {refusal !== null && named === null && <p role="alert" className="kb-write-update-refusal">{refusal}</p>}
       </form>
     </CalmRegion>

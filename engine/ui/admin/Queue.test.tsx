@@ -165,6 +165,23 @@ describe('holding and reversing', () => {
     expect((await fake.adminQueue()).ended.filter((e) => e.how === 'reversed')).toHaveLength(2);
   });
 
+  test('Hold it is a busy button while the hold is out: aria-busy, its name kept, and a second press holds once', async () => {
+    const { fake } = open();
+    let release!: () => void;
+    const real = fake.holdMove.bind(fake);
+    const hold = vi.spyOn(fake, 'holdMove').mockImplementation((id) => new Promise((resolve) => { release = () => resolve(real(id)); }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Hold/u }));
+    const dialog = await screen.findByRole('dialog', { name: 'Hold this move?' });
+    const button = within(dialog).getByRole('button', { name: 'Hold it' });
+    await userEvent.click(button);
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    expect(within(dialog).getByRole('button', { name: 'Hold it' })).toBe(button);
+    await userEvent.click(button);
+    expect(hold).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
   test('a refusal is shown in the server\'s words in the dialog, and the queue behind it is read again', async () => {
     const { fake } = open();
     await userEvent.click(await screen.findByRole('button', { name: /^Hold/u }));
@@ -281,6 +298,22 @@ describe('a nomination of a successor', () => {
       fake.seed.staff('comptroller', 'Comptroller', 'mod');
       fake.seed.handover({ outgoing: 'old-boss', boss: 'comptroller', at, how: 'rotation', bossWas: 'mod', outgoingOffice: 'member' });
     };
+
+    test('Dismiss is a busy button while the dismissal is out: aria-busy, its name kept, and a second press dismisses once', async () => {
+      const { fake } = open({ build: (fake) => handover(fake) });
+      let release!: () => void;
+      const real = fake.dismissHandoverTodo.bind(fake);
+      const dismiss = vi.spyOn(fake, 'dismissHandoverTodo').mockImplementation((season) => new Promise((resolve) => { release = () => resolve(real(season)); }));
+      const todo = await group(/^To do/u);
+      const button = within(todo).getByRole('button', { name: 'Dismiss the season 2 to-do' });
+      await userEvent.click(button);
+      expect(button).toHaveAttribute('aria-busy', 'true');
+      expect(within(todo).getByRole('button', { name: 'Dismiss the season 2 to-do' })).toBe(button);
+      await userEvent.click(button);
+      expect(dismiss).toHaveBeenCalledTimes(1);
+      release();
+      await waitFor(() => expect(within(todo).queryByRole('button', { name: 'Dismiss the season 2 to-do' })).toBeNull());
+    });
 
     test('a change of Boss is a row above Waiting, with the plain facts, a link to the form for that season, and a Dismiss', async () => {
       open({ build: (fake) => handover(fake) });
@@ -490,16 +523,20 @@ describe('How players reach you, on the admin screen', () => {
     expect((within(row(1)).getByLabelText('Link 1 label') as HTMLInputElement).value).toBe('');
   });
 
-  test('while a save is out, the status says Saving\u2026, and the button is held', async () => {
+  test('while a save is out, the button is busy: aria-busy, its name kept, a second press saves once, and no Saving\u2026 line', async () => {
     const { fake } = open();
     const f = await form();
     let release!: () => void;
     const real = fake.setAdminContact.bind(fake);
-    vi.spyOn(fake, 'setAdminContact').mockImplementation((links) => new Promise((resolve) => { release = () => resolve(real(links)); }));
+    const save = vi.spyOn(fake, 'setAdminContact').mockImplementation((links) => new Promise((resolve) => { release = () => resolve(real(links)); }));
     await fill(1, 'Chat', 'https://chat.example/a');
-    await userEvent.click(within(f).getByRole('button', { name: 'Save how players reach you' }));
-    expect(within(f).getByRole('status')).toHaveTextContent('Saving\u2026');
-    expect(within(f).getByRole('button', { name: 'Save how players reach you' })).toBeDisabled();
+    const button = within(f).getByRole('button', { name: 'Save how players reach you' });
+    await userEvent.click(button);
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    expect(within(f).getByRole('button', { name: 'Save how players reach you' })).toBe(button);
+    await userEvent.click(button);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(within(f).queryByText('Saving\u2026')).toBeNull();
     release();
     await waitFor(() => expect(within(f).getByRole('status')).toHaveTextContent('Saved.'));
   });

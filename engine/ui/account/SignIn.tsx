@@ -162,8 +162,7 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
               </>
             )}
             {alert}
-            <ButtonRow><GlassButton type="submit" kind="primary" disabled={busy !== null}>Send a code</GlassButton></ButtonRow>
-            <p role="status" className="kb-acct-note">{busy === 'sending' ? 'Sending…' : ''}</p>
+            <ButtonRow><GlassButton type="submit" kind="primary" busy={busy !== null}>Send a code</GlassButton></ButtonRow>
           </form>
         ) : (
           <form aria-label="Enter the code" aria-busy={busy !== null} onSubmit={(e) => void verify(e)} noValidate>
@@ -175,12 +174,12 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
             </label>
             {alert}
             <ButtonRow>
-              <GlassButton type="submit" kind="primary" disabled={busy !== null}>Sign in</GlassButton>
-              <GlassButton disabled={busy !== null} onClick={() => void ask(undefined, true)}>Send a new code</GlassButton>
+              <GlassButton type="submit" kind="primary" busy={busy !== null}>Sign in</GlassButton>
+              <GlassButton busy={busy !== null} onClick={() => void ask(undefined, true)}>Send a new code</GlassButton>
               <GlassButton onClick={() => { setStep('email'); setRefusal(null); }}>Use another address</GlassButton>
             </ButtonRow>
             <p role="status" className="kb-acct-note">
-              {busy === 'sending' ? 'Sending…' : busy === 'checking' ? 'Checking the code…' : asked > 0 ? <span key={asked}>Another code was asked for.</span> : ''}
+              {asked > 0 ? <span key={asked}>Another code was asked for.</span> : ''}
             </p>
           </form>
         )}

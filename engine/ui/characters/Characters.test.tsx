@@ -149,6 +149,26 @@ describe('My characters', () => {
     expect((await w.fake.boards()).map((b) => b.lastCharacter)).not.toContain(w.waiting);
   });
 
+  test('Save how it debuts is a busy button while the save is out: aria-busy, its name kept, and a second press saves once', async () => {
+    const w = world();
+    let release!: () => void;
+    const real = w.fake.setDebut.bind(w.fake);
+    const setDebut = vi.spyOn(w.fake, 'setDebut').mockImplementation((...args) => new Promise((resolve) => { release = () => resolve(real(...args)); }));
+    open(w);
+    await ready();
+    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Change how Spritey debuts…' }));
+    const dialog = await screen.findByRole('dialog', { name: /Spritey/u });
+    await userEvent.click(within(dialog).getByRole('radio', { name: /^Silent/u }));
+    const save = within(dialog).getByRole('button', { name: 'Save how Spritey debuts' });
+    await userEvent.click(save);
+    expect(save).toHaveAttribute('aria-busy', 'true');
+    expect(within(dialog).getByRole('button', { name: 'Save how Spritey debuts' })).toBe(save);
+    await userEvent.click(save);
+    expect(setDebut).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(within(row('Spritey')).getByText(/silently/iu)).toBeInTheDocument());
+  });
+
   test('Drop now debuts it at once; Change how it debuts changes only the announcement', async () => {
     const w = world();
     const setDebut = vi.spyOn(w.fake, 'setDebut');
@@ -376,6 +396,43 @@ describe('the Turn', () => {
     expect((await w.fake.myCharacters()).find((c) => c.id === w.pipe)!.pendingTurn).toBeNull();
   });
 
+  test('Confirm Turn is a busy button while the Turn is out: aria-busy, its name kept, and a second press Turns once', async () => {
+    const w = world();
+    let release!: () => void;
+    const real = w.fake.turn.bind(w.fake);
+    const turn = vi.spyOn(w.fake, 'turn').mockImplementation((...args) => new Promise((resolve) => { release = () => resolve(real(...args)); }));
+    open(w);
+    await ready();
+    const dialog = await openTurn();
+    await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
+    const confirm = within(dialog).getByRole('button', { name: 'Confirm Turn' });
+    await userEvent.click(confirm);
+    expect(confirm).toHaveAttribute('aria-busy', 'true');
+    expect(within(dialog).getByRole('button', { name: 'Confirm Turn' })).toBe(confirm);
+    await userEvent.click(confirm);
+    expect(turn).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  test('Withdraw is a busy button while the withdrawal is out: aria-busy, its name kept, and a second press withdraws once', async () => {
+    const w = world();
+    await w.fake.turn(w.pipe, 'heel', 'announced', false, false);
+    let release!: () => void;
+    const real = w.fake.withdrawTurn.bind(w.fake);
+    const withdraw = vi.spyOn(w.fake, 'withdrawTurn').mockImplementation((id) => new Promise((resolve) => { release = () => resolve(real(id)); }));
+    open(w);
+    await ready();
+    const button = within(row('Pipewrench')).getByRole('button', { name: 'Withdraw Pipewrench\'s Turn' });
+    await userEvent.click(button);
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    expect(within(row('Pipewrench')).getByRole('button', { name: 'Withdraw Pipewrench\'s Turn' })).toBe(button);
+    await userEvent.click(button);
+    expect(withdraw).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(within(row('Pipewrench')).queryByText(/Turn waiting/u)).toBeNull());
+  });
+
   test('a Turn the settlement has no window for yet says "at the next settlement"; one with a window says when', async () => {
     const w = world();
     open(w);
@@ -425,6 +482,28 @@ describe('Reveal', () => {
     await userEvent.keyboard('{Escape}');
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(within(row('Pipewrench')).getByRole('button', { name: 'Reveal Pipewrench\'s class' })).toHaveFocus();
+  });
+
+  test('the reveal is a busy button while it is out: aria-busy, its name kept, and a second press reveals once', async () => {
+    const w = world();
+    const { thread } = general(w);
+    let release!: () => void;
+    const real = w.fake.unmask.bind(w.fake);
+    const unmask = vi.spyOn(w.fake, 'unmask').mockImplementation((...args) => new Promise((resolve) => { release = () => resolve(real(...args)); }));
+    open(w);
+    await ready();
+    const dialog = await openReveal();
+    await userEvent.selectOptions(within(dialog).getByLabelText('Board'), 'General');
+    await userEvent.selectOptions(await within(dialog).findByLabelText('Thread'), 'The tea thread');
+    const reveal = within(dialog).getByRole('button', { name: 'Reveal Pipewrench as a Face' });
+    await userEvent.click(reveal);
+    expect(reveal).toHaveAttribute('aria-busy', 'true');
+    expect(within(dialog).getByRole('button', { name: 'Reveal Pipewrench as a Face' })).toBe(reveal);
+    await userEvent.click(reveal);
+    expect(unmask).toHaveBeenCalledTimes(1);
+    expect(unmask).toHaveBeenCalledWith(w.pipe, thread, '');
+    release();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   test('is made in a thread the player chooses, with an optional line of the character\'s words', async () => {

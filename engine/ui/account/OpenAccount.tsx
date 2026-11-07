@@ -63,13 +63,13 @@ export function OpenAccount() {
             <span className="kb-acct-row-label">Invite</span>
             <input className="kb-acct-input" value={invite} onChange={(e) => setInvite(e.target.value)} autoComplete="off" spellCheck={false} />
           </label>
-          <ButtonRow><GlassButton type="submit" kind="primary" disabled={busy}>Open the account</GlassButton></ButtonRow>
+          <ButtonRow><GlassButton type="submit" kind="primary" busy={busy}>Open the account</GlassButton></ButtonRow>
         </>
       )}
       {refusal && <p role="alert" className="kb-acct-refusal">{refusal}</p>}
       <ButtonRow>
-        <GlassButton disabled={busy} onClick={() => void leave()}>Sign out</GlassButton>
-        <GlassButton disabled={busy} onClick={() => void leave('/sign-in')}>Use another address</GlassButton>
+        <GlassButton busy={busy} onClick={() => void leave()}>Sign out</GlassButton>
+        <GlassButton busy={busy} onClick={() => void leave('/sign-in')}>Use another address</GlassButton>
       </ButtonRow>
     </form>
   );

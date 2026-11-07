@@ -247,7 +247,7 @@ export function Characters() {
           <p className="kb-roster-line kb-turn-note">If its settlement is due, a reveal waits until it has run.</p>
           <ButtonRow>
             <GlassButton data-kb-return="" aria-label={`Change ${c.name}'s Turn`} onClick={() => show({ kind: 'turn', id: c.id })}>Change</GlassButton>
-            <GlassButton aria-label={`Withdraw ${c.name}'s Turn`} disabled={busy === c.id} onClick={() => void withdraw(c)}>Withdraw</GlassButton>
+            <GlassButton aria-label={`Withdraw ${c.name}'s Turn`} busy={busy === c.id} onClick={() => void withdraw(c)}>Withdraw</GlassButton>
           </ButtonRow>
           {problem?.id === c.id && !problem.pip && <p role="alert" className="kb-notice" data-kb-tone="refusal">{problem.text}</p>}
         </div>

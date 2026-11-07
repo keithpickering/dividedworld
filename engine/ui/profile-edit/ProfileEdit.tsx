@@ -155,7 +155,7 @@ export function ProfileEdit({ io }: { readonly io?: PictureIo }) {
           </select>
         </label>
         {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
-        <ButtonRow><GlassButton type="submit" kind="primary" disabled={busy}>Save the profile</GlassButton></ButtonRow>
+        <ButtonRow><GlassButton type="submit" kind="primary" busy={busy}>Save the profile</GlassButton></ButtonRow>
         <div role="status">{saved && <p className="kb-notice">{saved}</p>}</div>
       </CalmRegion>
       <CalmRegion><AvatarEditor character={profile} onSaved={setProfile} io={io} /></CalmRegion>

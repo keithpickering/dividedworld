@@ -131,7 +131,7 @@ export function Invites() {
                 <span title={whenIso(i) ? new Date(whenIso(i)!).toLocaleString('en-US') : undefined}>{whenWords(i)}</span>
               </span>
               <span className="kb-invite-actions">
-                {!i.used && <GlassButton size="s" disabled={busy} aria-label={`Reissue invite ${ordinal.get(i.id)}`} onClick={() => void run(() => api.reissueInvite(i.id), true)}>Reissue</GlassButton>}
+                {!i.used && <GlassButton size="s" busy={busy} aria-label={`Reissue invite ${ordinal.get(i.id)}`} onClick={() => void run(() => api.reissueInvite(i.id), true)}>Reissue</GlassButton>}
               </span>
             </li>
           ))}
@@ -139,7 +139,7 @@ export function Invites() {
       )}
 
       <ButtonRow>
-        <GlassButton kind="primary" disabled={busy || atCap} aria-describedby="kb-invite-count" onClick={() => void run(() => api.createInvite(), false)}>Make an invite</GlassButton>
+        <GlassButton kind="primary" busy={busy} disabled={atCap} aria-describedby="kb-invite-count" onClick={() => void run(() => api.createInvite(), false)}>Make an invite</GlassButton>
       </ButtonRow>
       {refusal && <p role="alert" className="kb-acct-refusal">{refusal}</p>}
       <p role="status" className="kb-acct-note">{note}</p>

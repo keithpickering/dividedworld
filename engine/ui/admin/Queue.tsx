@@ -192,7 +192,7 @@ function Replace({ row, roster, bosses, onReplaced }: { readonly row: QueuedMove
         <option value="">Choose a Boss</option>
         {choices.map((b) => <option key={b.staff} value={b.staff}>{b.name}</option>)}
       </select>
-      <ButtonRow><GlassButton size="s" disabled={!pick || busy} aria-label={`Replace the nominated Boss, ${bosses.find((b) => b.staff === row.params['boss'])?.name ?? 'the Boss it names'}`} onClick={() => void submit()}>REPLACE</GlassButton></ButtonRow>
+      <ButtonRow><GlassButton size="s" busy={busy} disabled={!pick} aria-label={`Replace the nominated Boss, ${bosses.find((b) => b.staff === row.params['boss'])?.name ?? 'the Boss it names'}`} onClick={() => void submit()}>REPLACE</GlassButton></ButtonRow>
       {refusal && <p role="alert" className="kb-queue-failure">{refusal}</p>}
       {done && <p role="status" className="kb-small kb-muted">{done}</p>}
     </div>
@@ -240,7 +240,7 @@ function ReplaceDescription({ id, about, saved, save, onSaved, lead }: { readonl
           <>
             <label htmlFor={`${id}-words`}>Replace description<span className="kb-visually-hidden"> of {about}</span></label>
             <textarea id={`${id}-words`} className="kb-queue-select kb-queue-text" rows={3} maxLength={2000} value={words} onChange={(e) => setWords(e.target.value)} />
-            <ButtonRow><GlassButton size="s" disabled={words.trim() === '' || busy} aria-label={`Save the description of ${about}`} onClick={() => void submit()}>SAVE</GlassButton></ButtonRow>
+            <ButtonRow><GlassButton size="s" busy={busy} disabled={words.trim() === ''} aria-label={`Save the description of ${about}`} onClick={() => void submit()}>SAVE</GlassButton></ButtonRow>
           </>
         )}
         {/* Always in the page, filled on change, so a reader of the page is told of it. */}
@@ -311,7 +311,7 @@ function Todos({ rows, onDismissed }: { readonly rows: readonly HandoverTodo[]; 
           <div className="kb-queue-act">
             <ButtonRow>
               <GlassButton to={`/updates?write=handover&season=${t.season}`} aria-label={`Write the announcement for season ${t.season}`}>Write the announcement</GlassButton>
-              <GlassButton disabled={busy !== null} aria-label={`Dismiss the season ${t.season} to-do`} onClick={() => void dismiss(t.season)}>DISMISS</GlassButton>
+              <GlassButton busy={busy !== null} aria-label={`Dismiss the season ${t.season} to-do`} onClick={() => void dismiss(t.season)}>DISMISS</GlassButton>
             </ButtonRow>
           </div>
         </article>
@@ -513,7 +513,7 @@ function Confirm({ asked, boards, bosses, onClose, onDone, onRefused, returnFocu
         {refusal && <p role="alert" className="kb-queue-failure">{refusal}</p>}
         <ButtonRow align="end">
           <GlassButton onClick={onClose}>Cancel</GlassButton>
-          <GlassButton kind="primary" disabled={busy} onClick={() => void submit()}>{hold ? 'Hold it' : 'Reverse it'}</GlassButton>
+          <GlassButton kind="primary" busy={busy} onClick={() => void submit()}>{hold ? 'Hold it' : 'Reverse it'}</GlassButton>
         </ButtonRow>
       </div>
     </Overlay>

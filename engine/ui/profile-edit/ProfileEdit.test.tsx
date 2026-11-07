@@ -96,6 +96,23 @@ describe('profile edit', () => {
     expect((await w.fake.characters([w.pipe]))[0]).toMatchObject({ title: 'Professional Wrench', signature: 'I [b]brought[/b] a wrench.' });
   });
 
+  test('Save the profile is a busy button while the save is out: aria-busy, its name kept, and a second press saves once', async () => {
+    const w = world();
+    let release!: () => void;
+    const real = w.fake.setProfile.bind(w.fake);
+    const setProfile = vi.spyOn(w.fake, 'setProfile').mockImplementation((...args) => new Promise((resolve) => { release = () => resolve(real(...args)); }));
+    await open(w);
+    await userEvent.type(await screen.findByLabelText('Title'), 'Professional Wrench');
+    const save = screen.getByRole('button', { name: 'Save the profile' });
+    await userEvent.click(save);
+    expect(save).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('button', { name: 'Save the profile' })).toBe(save);
+    await userEvent.click(save);
+    expect(setProfile).toHaveBeenCalledTimes(1);
+    release();
+    expect(await screen.findByText('Profile saved.')).toBeInTheDocument();
+  });
+
   test('previews the postbit as the board will draw it, beside the fields, following what is typed and sending nothing', async () => {
     const w = world();
     const setProfile = vi.spyOn(w.fake, 'setProfile');

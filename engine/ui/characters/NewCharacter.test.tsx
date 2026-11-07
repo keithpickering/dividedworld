@@ -111,6 +111,25 @@ describe('New character', () => {
     expect((await w.fake.myCharacters()).find((c) => c.name === 'Spritey')!.debutedAt).not.toBeNull();
   });
 
+  test('Make the character is a busy button while the create is out: aria-busy, its name kept, and a second press makes one character', async () => {
+    const w = world();
+    let release!: () => void;
+    const real = w.fake.createCharacter.bind(w.fake);
+    const create = vi.spyOn(w.fake, 'createCharacter').mockImplementation((...args) => new Promise((resolve) => { release = () => resolve(real(...args)); }));
+    open(w);
+    const f = await form();
+    await userEvent.type(within(f).getByLabelText('Name'), 'Spritey');
+    await userEvent.click(within(f).getByRole('radio', { name: /^Heel/u }));
+    const submit = within(f).getByRole('button', { name: 'Make the character' });
+    await userEvent.click(submit);
+    expect(submit).toHaveAttribute('aria-busy', 'true');
+    expect(within(f).getByRole('button', { name: 'Make the character' })).toBe(submit);
+    await userEvent.click(submit);
+    expect(create).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(window.location.pathname).toBe('/characters'));
+  });
+
   test('shows a refusal in the server\'s words and keeps what was typed', async () => {
     open(world());
     const f = await form();

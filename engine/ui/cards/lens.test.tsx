@@ -936,6 +936,28 @@ describe('End this card', () => {
     expect(w.fake.broadcast.log.some((e) => e.event === 'act')).toBe(true);
   });
 
+  test('End it is a busy button while the end is out: aria-busy, its name kept, and a second press ends once', async () => {
+    width(false);
+    const w = world();
+    w.fake.seed.admin(w.me);
+    w.play('k2');
+    let release!: () => void;
+    const real = w.fake.reverseCard.bind(w.fake);
+    const reverse = vi.spyOn(w.fake, 'reverseCard').mockImplementation((play) => new Promise((resolve) => { release = () => resolve(real(play)); }));
+    open(w);
+    await openKind(2, 'Card 2');
+    await userEvent.click(endButton()!);
+    const dialog = screen.getByRole('dialog', { name: 'End this card?' });
+    const end = within(dialog).getByRole('button', { name: 'End it' });
+    await userEvent.click(end);
+    expect(end).toHaveAttribute('aria-busy', 'true');
+    expect(within(dialog).getByRole('button', { name: 'End it' })).toBe(end);
+    await userEvent.click(end);
+    expect(reverse).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'End this card?' })).toBeNull());
+  });
+
   test('cancel leaves the play as it was, and a refusal\'s words are shown in the dialog', async () => {
     width(false);
     const w = world();

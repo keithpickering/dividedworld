@@ -204,7 +204,7 @@ export function Alerts({ data, older, onOlder, onUnfollow, notes }: AlertsProps)
         )}
         {data.more && (
           <p className="kb-alerts-older">
-            <GlassButton size="s" onClick={() => { known.current = new Set(items.map((i) => i.key)); onOlder(); }} aria-disabled={older === 'loading' || undefined}>Older</GlassButton>
+            <GlassButton size="s" busy={older === 'loading'} onClick={() => { known.current = new Set(items.map((i) => i.key)); onOlder(); }}>Older</GlassButton>
             {older === 'failed' && <span className="kb-alerts-older-failed" role="alert"> The older alerts could not be read. Try again.</span>}
           </p>
         )}

@@ -148,6 +148,23 @@ describe('Invites', () => {
     expect(screen.getByRole('status')).toBeEmptyDOMElement();
   });
 
+  test('Make an invite is a busy button while the make is out: aria-busy, its name kept, and a second press makes one invite', async () => {
+    const w = world();
+    let release!: () => void;
+    const real = w.fake.createInvite.bind(w.fake);
+    const spy = vi.spyOn(w.fake, 'createInvite').mockImplementation(() => new Promise((resolve) => { release = () => resolve(real()); }));
+    open(w);
+    const make = await screen.findByRole('button', { name: 'Make an invite' });
+    await userEvent.click(make);
+    expect(make).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('button', { name: 'Make an invite' })).toBe(make);
+    await userEvent.click(make);
+    expect(spy).toHaveBeenCalledTimes(1);
+    release();
+    await screen.findByText(/You hold 1 of 2 open invites/u);
+    expect(make).not.toHaveAttribute('aria-busy');
+  });
+
   test('a make that gets no answer ends the wait and says so', async () => {
     const w = world();
     w.fake.createInvite = () => Promise.reject(new Error('offline'));

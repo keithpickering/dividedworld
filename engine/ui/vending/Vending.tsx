@@ -182,10 +182,10 @@ function Machine({ faces, picked, onPick, onAbout, onBuy, busy, drop, onLanded, 
           <span className="kb-vending-lcd-price kb-num" aria-hidden="true" data-kb-art>{picked ? orbs(picked.price) : '0.00'}</span>
         </div>
         <div className="kb-vending-aura-in" aria-hidden="true" data-kb-art><span className="kb-vending-aura-slot" /><span className="kb-vending-aura-label" /></div>
-        <button type="button" className="kb-vending-buy" disabled={!picked || busy} onClick={onBuy}>
+        <GlassButton kind="primary" className="kb-vending-buy" busy={busy} disabled={!picked} onClick={onBuy}>
           <span className="kb-vending-buy-word">Buy</span>{' '}
           {picked && <span className="kb-vending-buy-card">{picked.name} · {orbs(picked.price)}</span>}
-        </button>
+        </GlassButton>
       </div>
 
       <div className="kb-vending-tray">
