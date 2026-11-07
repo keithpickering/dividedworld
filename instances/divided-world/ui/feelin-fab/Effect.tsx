@@ -34,8 +34,19 @@
  * gets a fresh element. A development build under React's StrictMode would run the effect twice on one element and the second
  * hand-over is refused after the first transferred it (logged, the post bare); the app does not use StrictMode.
  *
- * Units: the box is CSS px (the host's getBoundingClientRect size); the canvas is sized to round(box x density) with the density the
- * loop returns (at most 2), and its CSS size is the host's through the stylesheet (100%). On the page the effect sizes it; in the
+ * Where. The foil fills the post, not only its words (2026-11-06: "the card effect should apply to the entire post in all cases"): in
+ * the thread the box is the post body's padding box (engine/ui/cards/body.ts, `.kb-act-main`, bar to bar), and the canvas is placed
+ * over it from the host, inline; anywhere else (the ORIGIN box, Stick Around's view) it is the host's own box. Painting the body, the
+ * host marks itself `data-kb-bleed` and fab.css puts the foil under everything in the body (its reactions, its signature, an ORIGIN
+ * box above the words), not only under the words. The host watches the body's size as well as its own.
+ *
+ * How often. The body changes more of the screen in a draw than the words did, so it is redrawn at the share of the loop's rate that
+ * keeps the screen area it changes a second to what the words' box changed (engine/ui/cards/body.ts `paintShare`, issue #304), and a
+ * draw the loop hands a span (the rows on screen) redraws only those rows: in the worker as on the page, the foil itself decides when a
+ * span can be honored (engine/ui/shine/foil.ts), so a canvas just sized, cleared or freed is always drawn whole.
+ *
+ * Units: the box is CSS px (engine/ui/cards/body.ts `bodyBox`); the canvas is sized to round(box x density) with the density the
+ * loop returns (at most 2), and its CSS size is the box's, set inline. On the page the effect sizes it; in the
  * worker the worker does, in the same task as the draw, whenever the box differs. A resize registers again and, because sizing the
  * backing store clears it, repaints at once with the last light and the band already held, rather than waiting for the loop's next draw.
  *
@@ -48,8 +59,9 @@ import { bandFor, type Band } from '../../../../engine/ui/shine/band.ts';
 import { makeFoil, type Foil, type FoilPattern } from '../../../../engine/ui/shine/foil.ts';
 import { adoptFoil, isTransferred, offscreenFoils, type FoilHandle } from '../../../../engine/ui/shine/foilClient.ts';
 import type { FoilSpec } from '../../../../engine/ui/shine/foilProtocol.ts';
+import { bodyBox, bodyOf, paintScale, paintShare, placeLayer, sameBox, type BodyBox } from '../../../../engine/ui/cards/body.ts';
 import { REST, type Light } from '../../../../engine/ui/shine/light.ts';
-import { register, unregister, wake } from '../../../../engine/ui/shine/loop.ts';
+import { register, unregister, wake, type Span } from '../../../../engine/ui/shine/loop.ts';
 import type { EffectProps } from '../../../../engine/ui/cards/types.ts';
 import './fab.css';
 
@@ -60,6 +72,8 @@ export const FAB_STOPS: { readonly light: readonly string[]; readonly dark: read
 });
 /** The starbursts' highlight, in every grade on both boards (the engine names no color; this is Divided World's). It only lightens, inside the band. */
 export const FAB_GLINT = '#ffffff';
+/** The foil's cell in CSS px on a box no bigger than the words (engine/ui/shine/foil.ts's default). */
+const CELL = 3;
 /** How many starbursts a level carries. */
 const TWINKLES = [0, 4, 8, 10] as const;
 /** The most Feelin' Fabs that count: the card's stack. */
@@ -68,7 +82,7 @@ const PATTERN: readonly (FoilPattern | '')[] = ['', 'pearl', 'bands', 'prism'];
 
 type Board = 'light' | 'dark';
 
-export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
+export function FeelinFabEffect({ post, plays, place, still, children }: EffectProps) {
   const host = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const level = Math.max(1, Math.min(MOST, plays.length));
@@ -87,13 +101,18 @@ export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
         if (isTransferred(cv)) return;
       }
     }
-    const specs: Partial<Record<Board, FoilSpec>> = {};
-    const foils: Partial<Record<Board, Foil>> = {};
-    const release = (): void => { for (const f of Object.values(foils)) f?.release(); };
+    /* By board and cell (`${board}:${cell}`): a board change or a resize that coarsens the cell makes the foil afresh. */
+    const specs = new Map<string, FoilSpec>();
+    const foils = new Map<string, Foil>();
+    const release = (): void => { for (const f of foils.values()) f.release(); };
+    /* The foil's cell, coarser on a body bigger than the words, so the foil works as many cells as the words' box had (body.ts `paintScale`). */
+    let cell = CELL;
+    /* The size painted (what the loop and the drawing are handed) and where it stands from the host (the layer's placement). */
     let box = { w: 0, h: 0 };
+    let placed: BodyBox = { left: 0, top: 0, w: 0, h: 0 };
     let density = 1;
-    /* The board whose foil is in use; the other is let go once, when this changes, and its reference dropped. */
-    let current: Board | null = null;
+    /* The board and cell whose foil is in use; the others are let go once, when this changes, and their references dropped. */
+    let current: string | null = null;
     /* True while the backing store is freed (out of view); the next draw sizes it again. */
     let freed = false;
     /* The last light and time drawn, for a synchronous repaint after a resize cleared the canvas. */
@@ -106,26 +125,30 @@ export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
     /* The band as last read; null until read, and again after a board that could not be read. Draws use it and never read. */
     let band: Band | null = null;
     /* In the worker: the draw is posted, with the band read here (a null band clears the canvas there). */
-    const post = (handle: FoilHandle, light: Light, now: number, idle: boolean): void => {
+    const post = (handle: FoilHandle, light: Light, now: number, idle: boolean, span: Span | null): void => {
       const board: Board = band && band.hi < 0.5 ? 'dark' : 'light';
-      const spec = (specs[board] ??= { seed, pattern, palette: FAB_STOPS[board], stars: TWINKLES[level]!, glint: FAB_GLINT });
-      handle.draw(spec, board, box, density, light, band, now, idle);
+      const key = `${board}:${cell}`;
+      let spec = specs.get(key);
+      if (!spec) { spec = { seed, pattern, palette: FAB_STOPS[board], stars: TWINKLES[level]!, glint: FAB_GLINT, cell }; specs.set(key, spec); }
+      handle.draw(spec, key, box, density, light, band, now, idle, span);
     };
-    const paint = (light: Light, now: number, idle: boolean): void => {
-      if (remote) { post(remote, light, now, idle); return; }
+    /* `span`: the rows on screen to redraw (the loop's), or null for all of them. */
+    const paint = (light: Light, now: number, idle: boolean, span: Span | null = null): void => {
+      if (remote) { post(remote, light, now, idle, span); return; }
       const ctx = cv.getContext('2d');
       if (!ctx) return;
-      if (!band) { ctx.clearRect(0, 0, cv.width, cv.height); return; }
+      /* Cleared, the foils go too, so the next draw is whole and no span paints rows over the cleared canvas (foil.ts). */
+      if (!band) { ctx.clearRect(0, 0, cv.width, cv.height); release(); return; }
       const board: Board = band.hi < 0.5 ? 'dark' : 'light';
-      /* A board change lets the other board's foil go, once: only the one in use holds buffers. */
-      if (board !== current) {
-        const other: Board = board === 'dark' ? 'light' : 'dark';
-        foils[other]?.release();
-        delete foils[other];
-        current = board;
+      const key = `${board}:${cell}`;
+      /* A board or cell change lets the other foils go, once: only the one in use holds buffers. */
+      if (key !== current) {
+        for (const [k, f] of [...foils]) if (k !== key) { f.release(); foils.delete(k); }
+        current = key;
       }
-      const foil = (foils[board] ??= makeFoil({ seed, pattern, palette: FAB_STOPS[board], stars: TWINKLES[level]!, glint: FAB_GLINT }));
-      foil.draw(ctx, box, density, light, band, now, idle);
+      let foil = foils.get(key);
+      if (!foil) { foil = makeFoil({ seed, pattern, palette: FAB_STOPS[board], stars: TWINKLES[level]!, glint: FAB_GLINT, cell }); foils.set(key, foil); }
+      foil.draw(ctx, box, density, light, band, now, idle, span);
     };
     const size = (): void => {
       cv.width = Math.round(box.w * density);
@@ -137,37 +160,56 @@ export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
       if (remote) remote.free(); else { release(); cv.width = cv.height = 0; }
       freed = true;
     };
-    const measure = (): { w: number; h: number } => { const r = el.getBoundingClientRect(); return { w: r.width, h: r.height }; };
+    /* The body this paints, found again at each measure (a takeover moves the words), and watched for its size as the host is. */
+    let body: HTMLElement | null = null;
+    const measure = (): BodyBox => {
+      const now = bodyOf(el, place);
+      if (now !== body) {
+        if (body) resize?.unobserve(body);
+        if (now) resize?.observe(now);
+        body = now;
+        el.toggleAttribute('data-kb-bleed', body !== null);
+      }
+      return bodyBox(el, body);
+    };
     const setup = (): void => {
       band = readBand();
-      box = measure();
+      placed = measure();
+      box = { w: placed.w, h: placed.h };
+      placeLayer(cv, placed);
+      /* The body is drawn at the share of the density that costs what the words' own box did (engine/ui/cards/body.ts `paintScale`). */
+      const own = el.getBoundingClientRect();
+      const scale = paintScale(own.width * own.height, box.w * box.h);
+      /* And redrawn at the share of the rate that changes as much screen a second as the words' box did (`paintShare`). */
+      const share = paintShare(own.width * own.height, box.w * box.h);
+      /* In quarter px, so a resize by a pixel or two keeps the foil it has. */
+      cell = Math.max(CELL, Math.round((CELL / scale) * 4) / 4);
       if (still) {
-        density = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+        density = Math.min(2, Math.max(1, window.devicePixelRatio || 1)) * scale;
         size();
         paint(REST, 0, false);
         return;
       }
-      density = register(el, cv, box, window.devicePixelRatio || 1, (frame) => {
+      density = register(el, cv, box, Math.min(2, window.devicePixelRatio || 1) * scale, (frame) => {
         if (freed) { if (!remote) size(); freed = false; }
         last = { light: frame.light, t: frame.t };
-        paint(frame.light, frame.t, frame.idle);
+        paint(frame.light, frame.t, frame.idle, frame.span);
         return false;
-      }, { hidden: leave });
+      }, { hidden: leave, share });
       /* Resizing the backing store clears it, and the loop's next draw waits for the in-view callback: repaint now, with the
          light and band already held, so the post never shows a bare frame. A freed canvas (out of view) stays freed. */
       if (freed) return;
       if (!remote) size();
       if (last) paint(last.light, last.t, false);
     };
-    setup();
 
-    /* A resize registers again at the new size; the loop draws it fresh. */
+    /* A resize (of the host or of the body it paints) registers again at the new size; the loop draws it fresh. */
     const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(() => {
-      const now = measure();
-      if (now.w === box.w && now.h === box.h) return;
+      if (sameBox(measure(), placed)) return;
       setup();
     }) : null;
     resize?.observe(el);
+    setup();
 
     /* The board switched (the player's choice on the root, or the device's color scheme) while nothing was drawing. */
     const boardChanged = (): void => { band = readBand(); if (still) paint(REST, 0, false); else wake(el); };
@@ -183,8 +225,9 @@ export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
       if (!still) unregister(el);
       remote?.drop();
       release();
+      el.removeAttribute('data-kb-bleed');
     };
-  }, [level, seed, still]);
+  }, [level, seed, still, place]);
 
   return (
     <div ref={host} className="dw-fab" data-kb-fab="" data-kb-level={level}>

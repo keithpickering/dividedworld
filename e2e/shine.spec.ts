@@ -4,8 +4,9 @@ import { expect, test, type Page } from '@playwright/test';
  * The shine loop on a busy page, as Chromium runs it (docs/plans/2026-11-06-shine-plan.md, Task 11; the design's section 6): a thread of
  * seventeen posts, sixteen of them shiny (instances/divided-world/ui/Shine.board.stories.tsx), about five in view at 1200 x 900.
  * Scrolled top to bottom over three seconds with a moving mouse, the page keeps its frames (the 95th percentile of the gap between
- * animation frames is under 20 ms) and no shiny post fully out of view is drawn. At rest with shimmer each post in view is drawn on
- * every second frame, about thirty a second; with every shiny post scrolled away the loop stops within three of its own frames (the observer's
+ * animation frames is under 20 ms) and no shiny post fully out of view is drawn. At rest with shimmer a post whose painted body is no
+ * bigger than its words is drawn on every second frame, about thirty a second, and a bigger one at its share of that (engine/ui/cards/
+ * body.ts `paintShare`, issue #304); with every shiny post scrolled away the loop stops within three of its own frames (the observer's
  * word comes after the frame that scrolled, the loop's next frame finds nothing in view and stops); and under
  * reduced motion the loop runs no frame after the first draw.
  *
@@ -15,7 +16,10 @@ import { expect, test, type Page } from '@playwright/test';
  * this sample and in the two before it (`LAG`). `outOfViewDraws` is checked on planted samples below, red where it should be.
  *
  * The frame gap sees the page, not the loop: a loop that costs 3 ms of a 16.7 ms frame passes it. So the loop's own time in each frame
- * (`probe.work`, around its step) is read too, and its 95th percentile bounded by `WORK_BUDGET`. And buffers out of view are released:
+ * (`probe.work`, around its step) is read too, and its 95th percentile bounded by `WORK_BUDGET`. The frame gap itself is logged, not
+ * asserted (the owner, 2026-11-07, keithpickering/dividedworld#318): on CI it missed its 20 ms bound in about half the timed scrolls
+ * before and after #295 alike, by the load the shard's other worker puts on the runner's two cores, while the loop and the worker held
+ * their budgets in every run (docs/research/2026-11-07-shine-busy-scroll). It is in each run's `shine-data` line with its control. And buffers out of view are released:
  * with the page scrolled to the bottom every shiny post fully out of view (beyond a margin) has canvases of width and height 0, and few
  * posts hold any. And what the canvases raster is counted (the story's `raster`, around the page's 2D contexts): a frame of the scroll
  * rasters under `RASTER_SHARE` of the shiny posts in view, the check a fast machine's frame gap cannot make. The story's poisons make those
@@ -28,6 +32,20 @@ import { expect, test, type Page } from '@playwright/test';
  * transferred canvas's own attributes say nothing); a frame's rastered pixels are the page's plus the worker's batch with the same `t`.
  * The poison `slow` (25 ms in a Glitter Bomb post's draw on the page), `slow-worker` (25 ms in every batch of the worker) and `keep` (one
  * Fab's canvas, in the worker, ignores being freed) make those checks red.
+ *
+ * And the screen the shine changes is counted (`redrawn`): a post paints its whole body, which is bigger than its words, and on a
+ * software-composited page (CI's headless Chromium) a frame costs the screen area its draws change. Over the scroll, the on-screen area
+ * of every post's draws, summed, stays within `REDRAWN_SHARE` of what its words' boxes would change were each drawn on every frame (the
+ * rate a moving light draws a post with no body to paint). With the whole body redrawn on every frame (9e513e4, the head before issue
+ * #304), it was about twice that, and the frame gap missed its bound on CI. `redrawn` is checked on planted samples below.
+ *
+ * And every timed run logs what it worked against, as one `shine-data` line of JSON, so a slow run can be told apart from a slow shine
+ * and the shine's cost can be followed as posts grow taller and effects stack (issue #304): the scroll's distance and speed, the
+ * shiny posts and canvases on screen and the share of the viewport those canvases cover (what a software compositor draws every frame
+ * of a scroll, redrawn or not), the screen the draws changed, a fixed piece of work timed on the page's thread just before (how loaded
+ * the machine was), and a control: the same scroll of the same page with every shine canvas hidden, so the loop draws nothing and
+ * nothing of the shine is composited. A control that drops frames as the run did says the machine or the layout cost them, not the
+ * shine. Nothing here is asserted; it is read from CI's log.
  *
  * Draws and frames are the loop's own, handed over by the story as `window.__kbShine`.
  */
@@ -62,11 +80,14 @@ const THROTTLE = Number(process.env.KB_CPU_THROTTLE ?? 1);
  * else).
  */
 const RASTER_SHARE = 1.5;
+/** The on-screen area a scroll's draws change, over what the posts' words would change drawn on every frame: at most this. */
+const REDRAWN_SHARE = 1.25;
 /** Out of view "beyond a margin": a post this many px past the viewport's edge has freed its canvases. */
 const FREED_MARGIN = 300;
 
-interface Sample { t: number; draws: number[]; top: number[]; bottom: number[]; height: number }
-interface Held { top: number; bottom: number; sizes: { w: number; h: number }[] }
+interface Box1 { top: number; bottom: number; width: number }
+interface Sample { t: number; draws: number[]; top: number[]; bottom: number[]; height: number; painted?: Box1[]; own?: Box1[]; layers?: number[]; scrollY?: number }
+interface Held { top: number; bottom: number; area?: number; own?: number; sizes: { w: number; h: number }[]; shine?: { w: number; h: number }[] }
 
 /** The shiny posts that hold canvas buffers while fully out of view by more than `margin`, and how many posts hold any at all. */
 export function heldOutOfView(posts: readonly Held[], height: number, margin = FREED_MARGIN): { held: number[]; holding: number; inView: number } {
@@ -89,6 +110,27 @@ export function outOfViewDraws(samples: readonly Sample[], lag = LAG): { frame: 
     });
   });
   return bad;
+}
+
+/** A box's area inside the viewport's rows, in CSS px squared. */
+const onScreen = (b: Box1, height: number): number => Math.max(0, Math.min(b.bottom, height) - Math.max(b.top, 0)) * b.width;
+
+/**
+ * The screen the shine changed over a run: for each sample after the first, the on-screen area of each post drawn since the one before
+ * (its painted box), summed; and what the words would have changed, every post in view drawn on every frame (its words' box). A host
+ * drawn more than once between two samples counts each draw.
+ */
+export function redrawn(samples: readonly Sample[]): { changed: number; words: number } {
+  let changed = 0, words = 0;
+  samples.forEach((s, k) => {
+    if (k === 0) return;
+    s.draws.forEach((d, h) => {
+      const drew = d - samples[k - 1]!.draws[h]!;
+      if (drew > 0) changed += drew * onScreen(s.painted![h]!, s.height);
+      words += onScreen(s.own![h]!, s.height);
+    });
+  });
+  return { changed, words };
 }
 
 const percentile = (xs: readonly number[], p: number): number => {
@@ -141,7 +183,11 @@ async function scrollRun(page: Page): Promise<Run> {
       const tick = (t: number) => {
         t0 ||= t;
         const hs = kb.hosts();
-        out.push({ t, draws: hs.map((h) => h.draws), top: hs.map((h) => h.top), bottom: hs.map((h) => h.bottom), height: window.innerHeight });
+        out.push({
+          t, draws: hs.map((h) => h.draws), top: hs.map((h) => h.top), bottom: hs.map((h) => h.bottom), height: window.innerHeight,
+          painted: hs.map((h) => ({ top: h.top, bottom: h.bottom, width: h.width })), own: hs.map((h) => h.own),
+          layers: hs.map((h) => h.layers), scrollY: window.scrollY,
+        });
         const p = Math.min(1, (t - t0) / ms);
         window.scrollTo(0, p * max);
         if (p < 1) { requestAnimationFrame(tick); return; }
@@ -156,6 +202,63 @@ async function scrollRun(page: Page): Promise<Run> {
   return run;
 }
 
+/** A fixed piece of work on the page's thread, in ms: how loaded the machine is just now (the same page, the same work, every run). */
+const calibrate = (page: Page): Promise<number> => page.evaluate(() => {
+  const t0 = performance.now();
+  let x = 0;
+  for (let i = 0; i < 3e6; i++) x += Math.sqrt(i) * Math.sin(i);
+  (window as { __kbSink?: number }).__kbSink = x;
+  return performance.now() - t0;
+});
+
+/**
+ * The control: the same scroll with every shine canvas hidden (`display: none`, so none is composited and the loop, told they left
+ * view, draws nothing), its frame gaps' 95th percentile and median and its frame count; the canvases are shown again after.
+ */
+async function controlRun(page: Page): Promise<{ gap: number; median: number; frames: number }> {
+  await page.evaluate(() => { window.scrollTo(0, 0); for (const c of document.querySelectorAll<HTMLElement>('[data-kb-fab] canvas, [data-kb-glitter] canvas')) c.style.display = 'none'; });
+  await page.waitForTimeout(500);
+  const run = page.evaluate((ms) => new Promise<number[]>((done) => {
+    const ts: number[] = [], max = document.documentElement.scrollHeight - window.innerHeight;
+    let t0 = 0;
+    const tick = (t: number) => {
+      t0 ||= t;
+      ts.push(t);
+      const p = Math.min(1, (t - t0) / ms);
+      window.scrollTo(0, p * max);
+      if (p < 1) requestAnimationFrame(tick); else done(ts);
+    };
+    requestAnimationFrame(tick);
+  }), 3000);
+  for (let i = 0; i < 60; i += 1) { await page.mouse.move(100 + (i * 17) % 1000, 100 + (i * 41) % 700); await page.waitForTimeout(45); }
+  const ts = await run;
+  await page.evaluate(() => { for (const c of document.querySelectorAll<HTMLElement>('[data-kb-fab] canvas, [data-kb-glitter] canvas')) c.style.display = ''; });
+  const gaps = ts.slice(1).map((t, k) => t - ts[k]!);
+  return { gap: percentile(gaps, 0.95), median: percentile(gaps, 0.5), frames: ts.length };
+}
+
+/** What a run worked against (the header's `shine-data`): means over its frames, the viewport's share in [0, 1]. */
+function conditions(r: Run): Record<string, number> {
+  const s = r.samples, n = s.length, vh = s[0]!.height, vw = 1200;
+  let posts = 0, layers = 0, cover = 0;
+  for (const f of s) {
+    f.draws.forEach((_, h) => {
+      const area = onScreen(f.painted![h]!, f.height);
+      if (area <= 0) return;
+      posts++;
+      layers += f.layers![h]!;
+      cover += area * f.layers![h]!;
+    });
+  }
+  const scrolled = (s[n - 1]!.scrollY ?? 0) - (s[0]!.scrollY ?? 0);
+  const red = redrawn(s);
+  return {
+    scrollPx: Math.round(scrolled), pxPerFrame: +(scrolled / Math.max(1, n - 1)).toFixed(1),
+    postsInView: +(posts / n).toFixed(2), layersInView: +(layers / n).toFixed(2), layerCover: +(cover / n / (vw * vh)).toFixed(3),
+    redrawn: +(red.changed / Math.max(1, red.words)).toFixed(3),
+  };
+}
+
 /** A timed run's three measures: the 95th percentile of the gap between animation frames, of the loop's own time in a frame, and of the foil worker's own time in a batch. */
 const measure = (r: Run) => {
   /* A worker that drew nothing would read as a cheap one: the run is refused, not passed. */
@@ -166,10 +269,13 @@ const measure = (r: Run) => {
     frames: r.samples.length, loopFrames: r.work.length, batches: r.workerWork.length,
   };
 };
+/** The frame gap a timed run is logged against, in ms: not asserted (the header, #318). */
 const GAP_BOUND = 20;
-/** A timed run holds when its gaps hold; a run holds the loop when its own time does, and the worker when its own time per batch does. */
+/** A timed run holds the loop when its own time does, and the worker when its own time per batch does; its gaps are logged against GAP_BOUND. */
 const holds = (m: { gap: number; work: number; worker: number }) => ({ gap: m.gap < GAP_BOUND, work: m.work < WORK_BUDGET, worker: m.worker < WORK_BUDGET });
 const holdsAll = (m: { gap: number; work: number; worker: number }) => { const h = holds(m); return h.gap && h.work && h.worker; };
+/** What a run is gated on: the loop's and the worker's budgets. */
+const holdsBudgets = (m: { gap: number; work: number; worker: number }) => { const h = holds(m); return h.work && h.worker; };
 
 /**
  * A scroll like `scrollRun`'s with the canvas count on: each frame's rastered pixels (the page's plus the worker's batch with the same `t`)
@@ -230,10 +336,42 @@ test.describe('the planted samples, red where they should be', () => {
     expect(heldOutOfView([post(2000, 300), post(2000, 0), post(100, 300), post(1100, 300), post(-500, 300, 0)], 900))
       .toEqual({ held: [0, 4], holding: 3, inView: 1 });
   });
+  test('a post whose body is twice its words, drawn on every frame, changes twice the screen they would: over the bound', () => {
+    const box = (top: number, h: number): Box1 => ({ top, bottom: top + h, width: 100 });
+    const seq = (every: number): Sample[] => Array.from({ length: 41 }, (_, k) => ({
+      t: k * 16, draws: [Math.floor(k / every)], top: [100], bottom: [300], height: 900, painted: [box(100, 200)], own: [box(100, 100)],
+    }));
+    const full = redrawn(seq(1)), half = redrawn(seq(2));
+    expect(full.changed / full.words).toBeCloseTo(2, 5);
+    expect(full.changed / full.words).toBeGreaterThan(REDRAWN_SHARE);
+    expect(half.changed / half.words).toBeCloseTo(1, 5);
+    expect(half.changed / half.words).toBeLessThan(REDRAWN_SHARE);
+  });
+  test('only the part of a post on screen counts, and a post out of view counts for neither', () => {
+    const s = (draws: number, top: number): Sample => ({ t: 0, draws: [draws], top: [top], bottom: [top + 400], height: 900, painted: [{ top, bottom: top + 400, width: 10 }], own: [{ top, bottom: top + 400, width: 10 }] });
+    expect(redrawn([s(0, 700), s(1, 700)])).toEqual({ changed: 2000, words: 2000 });
+    expect(redrawn([s(0, 2000), s(0, 2000)])).toEqual({ changed: 0, words: 0 });
+  });
   test('the frames of the loop\'s lag, and a post in view, are not named', () => {
     const seq = [frame([1], [800]), frame([2], [950]), frame([3], [960]), frame([3], [970]), frame([3], [980]), frame([4], [100])];
     expect(outOfViewDraws(seq)).toEqual([]);
   });
+});
+
+/**
+ * A post paints its whole body (engine/ui/cards/body.ts), but costs no more pixels for it: each canvas holds no more device pixels than
+ * the post's own box (its words' element) at the page's density did, or, where the words are a line or two, the body at half that
+ * density (`paintScale`'s floor). On CI the whole body at full density doubled the loop's and the foil worker's time and dropped frames.
+ */
+test('a shiny post\'s canvases hold no more pixels than its words\' box did at the page\'s density, or the body at half of it', async ({ page }) => {
+  await open(page, 'full');
+  const d = await page.evaluate(() => Math.min(2, window.devicePixelRatio || 1));
+  /* The posts in view, which have drawn (one out of view may keep a canvas's 300 by 150 default until it is first drawn). */
+  const posts = (await held(page)).filter((p) => inView(p) && p.shine!.some((c) => c.w > 0));
+  expect(posts.length, 'posts in view hold their buffers').toBeGreaterThan(2);
+  const over = posts.flatMap((p, i) => p.shine!.filter((c) => c.w * c.h > Math.max(p.own! * d * d, p.area! * (d / 2) ** 2) * 1.05 + 4 * (c.w + c.h))
+    .map((c) => `post ${i}: a ${c.w}x${c.h} canvas, its words ${Math.round(p.own!)} px squared, its body ${Math.round(p.area!)}`));
+  expect(over).toEqual([]);
 });
 
 test.describe('a busy thread', () => {
@@ -252,15 +390,18 @@ test.describe('a busy thread', () => {
     expect(heldOutOfView(await held(page), 900).holding, 'at the top the posts in view hold their buffers (the buffer check can see one)').toBeGreaterThanOrEqual(visible);
     /* The first run down the page is a warm-up (the script compiled, each post's buffers and flakes made for the first time) and is not timed.
        A software-drawn headless Chromium drops a frame now and then, and a gap is a whole frame or two (16.7 or 33.3 ms), so one drop too many
-       moves the 95th percentile from 16.8 to 33.3: the frame-gap bound is met if one of three timed runs meets it. Every run must draw nothing
-       out of view. The loop's own time is the check that sees the loop (a loop that costs 3 ms of a frame passes the gap): its 95th percentile
-       must be under WORK_BUDGET in a timed run too, and so must the foil worker's own time per batch (which the loop cannot see). A loop that
-       costs more than a frame meets neither bound in any run. */
+       moves the 95th percentile from 16.8 to 33.3: up to three timed runs are made until one meets the gap's bound too, so a slow runner's
+       log holds more of them, but the gap is not asserted (the header, #318). Every run must draw nothing out of view. The loop's own time
+       is the check that sees the loop: its 95th percentile must be under WORK_BUDGET in a timed run, and the foil worker's own time per
+       batch (which the loop cannot see) in the same run. A loop that costs more than a frame meets neither budget in any run. */
     const runs: ReturnType<typeof measure>[] = [];
+    const data: Record<string, unknown>[] = [];
     for (let attempt = 0; attempt < 4 && !runs.slice(1).some(holdsAll); attempt += 1) {
+      const cpu = await calibrate(page);
       const run = await scrollRun(page), samples = run.samples;
       const m = measure(run);
       runs.push(m);
+      if (attempt > 0) data.push({ run: attempt, cpuMs: +cpu.toFixed(1), gap: +m.gap.toFixed(1), median: +m.median.toFixed(1), frames: m.frames, loop: +m.work.toFixed(2), worker: +m.worker.toFixed(2), ...conditions(run) });
       console.log(`scroll ${attempt === 0 ? 'warm-up' : attempt}: ${m.frames} frames, gap p95 ${m.gap.toFixed(1)} ms, median ${m.median.toFixed(1)} ms, max ${m.max.toFixed(1)} ms; loop ${m.loopFrames} frames, own time p95 ${m.work.toFixed(2)} ms; worker ${m.batches} batches, own time p95 ${m.worker.toFixed(2)} ms`);
       expect(samples.length, 'the scroll was sampled across three seconds').toBeGreaterThan(60);
       const last = samples[samples.length - 1]!, firstS = samples[0]!;
@@ -270,24 +411,34 @@ test.describe('a busy thread', () => {
         last.draws.forEach((d, h) => expect(d, `post ${h} was drawn once it came into view`).toBeGreaterThan(0));
       }
       expect(outOfViewDraws(samples)).toEqual([]);
+      if (attempt > 0) {
+        const r = redrawn(samples);
+        console.log(`redrawn: the screen the shine changed, over what the words would change drawn every frame: ${(r.changed / r.words).toFixed(2)} (bound ${REDRAWN_SHARE})`);
+        expect(r.changed / r.words, 'the screen area the scroll\'s draws change, over the words\' at every frame').toBeLessThan(REDRAWN_SHARE);
+      }
     }
     const timed = runs.slice(1);
-    const passed = timed.findIndex(holdsAll);
+    /* The control, before anything is asserted, so a run that fails is logged with it. */
+    const cpu = await calibrate(page), control = await controlRun(page);
+    for (const d of data) console.log(`shine-data ${JSON.stringify({ ...d, throttle: THROTTLE, controlGap: +control.gap.toFixed(1), controlMedian: +control.median.toFixed(1), controlFrames: control.frames, controlCpuMs: +cpu.toFixed(1) })}`);
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    const passed = timed.findIndex(holdsBudgets);
+    const gapMet = timed.some(holdsAll);
+    console.log(`frame gap (logged, not asserted, #318): ${gapMet ? 'a timed run met' : 'no timed run met'} ${GAP_BOUND} ms; p95s ${timed.map((m) => m.gap.toFixed(1)).join(', ')}; control ${control.gap.toFixed(1)}`);
     if (passed >= 0) {
       console.log(`passed in timed run ${passed + 1} of ${timed.length}: gap p95 ${timed[passed]!.gap.toFixed(1)} ms (bound ${GAP_BOUND}), loop own time p95 ${timed[passed]!.work.toFixed(2)} ms (budget ${WORK_BUDGET}), worker own time p95 ${timed[passed]!.worker.toFixed(2)} ms (budget ${WORK_BUDGET})`);
     } else {
-      /* No run met both: name each, with what it missed. */
+      /* No run met both budgets: name each, with what it missed. */
       const missed = timed.map((m, k) => {
         const h = holds(m);
-        const what = [!h.gap && 'gap', !h.work && 'loop time', !h.worker && 'worker time'].filter(Boolean).join(' and ');
+        const what = [!h.work && 'loop time', !h.worker && 'worker time'].filter(Boolean).join(' and ');
         return `run ${k + 1} missed ${what}: gap p95 ${m.gap.toFixed(1)} ms (bound ${GAP_BOUND}), loop own time p95 ${m.work.toFixed(2)} ms, worker own time p95 ${m.worker.toFixed(2)} ms (budget ${WORK_BUDGET})`;
       });
-      console.log(`no timed run of ${timed.length} met both bounds; ${missed.join('; ')}`);
+      console.log(`no timed run of ${timed.length} met both budgets; ${missed.join('; ')}`);
     }
     expect(Math.min(...timed.map((m) => m.work)), `the loop's own time, 95th percentile, under ${WORK_BUDGET} ms`).toBeLessThan(WORK_BUDGET);
     expect(Math.min(...timed.map((m) => m.worker)), `the foil worker's own time per batch, 95th percentile, under ${WORK_BUDGET} ms`).toBeLessThan(WORK_BUDGET);
-    expect(Math.min(...timed.map((m) => m.gap)), 'the frame gap, 95th percentile (the backstop)').toBeLessThan(GAP_BOUND);
-    expect(passed, 'one run met both').toBeGreaterThanOrEqual(0);
+    expect(passed, 'one timed run met both budgets').toBeGreaterThanOrEqual(0);
 
     /* At the bottom, the posts far out of view have let their buffers go, and few posts hold any. */
     await frames(page, 10);
@@ -315,13 +466,14 @@ test.describe('a busy thread', () => {
     expect(p95, 'canvas pixels rastered a frame, over the shiny posts in view (95th percentile)').toBeLessThan(RASTER_SHARE);
   });
 
-  test('poisoned: a Glitter Bomb draw that takes 25 ms on the page turns the loop-time check and the frame-gap check red', async ({ page }) => {
+  test('poisoned: a Glitter Bomb draw that takes 25 ms on the page turns the loop-time check red', async ({ page }) => {
     test.setTimeout(120_000);
     await open(page, 'full', 'slow');
     await scrollRun(page);
     const m = measure(await scrollRun(page));
     console.log(`poisoned scroll: gap p95 ${m.gap.toFixed(1)} ms (bound ${GAP_BOUND}), loop own time p95 ${m.work.toFixed(2)} ms, worker own time p95 ${m.worker.toFixed(2)} ms (budget ${WORK_BUDGET})`);
-    expect(holds(m), 'the loop-time and frame-gap checks are red').toMatchObject({ gap: false, work: false });
+    expect(holds(m).work, 'the loop-time check is red').toBe(false);
+    expect(holdsBudgets(m), 'and so a run is refused').toBe(false);
   });
 
   test('poisoned: a foil worker that takes 25 ms a batch turns the worker-time check red', async ({ page }) => {
@@ -342,7 +494,7 @@ test.describe('a busy thread', () => {
     expect(r.held).toEqual([0]);
   });
 
-  test('at rest with shimmer, each post in view is drawn about thirty times a second', async ({ page }) => {
+  test('at rest with shimmer, each post in view is drawn about thirty times a second, or its share of that when its body is bigger than its words', async ({ page }) => {
     await open(page, 'full');
     await page.mouse.move(600, 450);
     /* The light eases to the pointer and settles; only then is a draw the idle cadence's. */
@@ -352,15 +504,18 @@ test.describe('a busy thread', () => {
     await page.waitForTimeout(2000);
     const b = await hosts(page), fb = await page.evaluate(() => window.__kbShine!.frames());
     const secs = (Date.now() - t0) / 1000, loopFrames = fb - fa;
-    const rates = b.map((h, i) => ({ view: inView(h), rate: (h.draws - a[i]!.draws) / secs, per: (h.draws - a[i]!.draws) / loopFrames }));
+    const rates = b.map((h, i) => ({ view: inView(h), share: h.share, rate: (h.draws - a[i]!.draws) / secs, per: (h.draws - a[i]!.draws) / loopFrames }));
     const shown = rates.filter((r) => r.view);
-    console.log(`rest: ${shown.length} in view, ${loopFrames} frames in ${secs.toFixed(2)} s, draws a second ${shown.map((r) => r.rate.toFixed(1)).join(' ')}`);
+    console.log(`rest: ${shown.length} in view, ${loopFrames} frames in ${secs.toFixed(2)} s, draws a second (share) ${shown.map((r) => `${r.rate.toFixed(1)} (${r.share.toFixed(2)})`).join(' ')}`);
     expect(shown.length).toBeGreaterThanOrEqual(3);
+    expect(shown.some((r) => r.share < 1), 'a post in view paints a body bigger than its words').toBe(true);
     for (const r of shown) {
-      expect(r.per, 'a draw on every second frame').toBeGreaterThan(0.45);
-      expect(r.per).toBeLessThan(0.55);
-      expect(r.rate).toBeGreaterThan(20);
-      expect(r.rate).toBeLessThan(36);
+      /* A post's idle draws are its share of one on every second frame: give or take one draw in the two seconds. */
+      const slack = 1.5 / loopFrames;
+      expect(r.per, 'a draw on every second frame, times its share').toBeGreaterThan(0.5 * r.share * 0.9 - slack);
+      expect(r.per).toBeLessThan(0.5 * r.share * 1.1 + slack);
+      expect(r.rate).toBeGreaterThan(20 * r.share);
+      expect(r.rate).toBeLessThan(36 * r.share);
     }
     for (const r of rates.filter((x) => !x.view)) expect(r.rate, 'a post out of view draws nothing').toBe(0);
   });
