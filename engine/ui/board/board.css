@@ -69,7 +69,17 @@
 :root[data-kb-text-size] .kb-thread-list th:nth-child(1) { width: 48px; }
 :root[data-kb-text-size] .kb-thread-list th:nth-child(2) { width: auto; }
 :root[data-kb-text-size] .kb-thread-list th:nth-child(3),
-:root[data-kb-text-size] .kb-thread-list th:nth-child(4) { width: 5.5em; }
+:root[data-kb-text-size] .kb-thread-list th:nth-child(4) { width: 6em; }
+
+/*
+ * Nor at a tablet's width, where a twelfth of the table is narrower than the head's longest word ("Replies": seven of the head's
+ * monospaced letters, 4.2em, and the cell's padding, 1.5em), which a fixed table clips. A fixed table reads a percentage inside max()
+ * as no width at all, so the floor is a width of its own, under the width (64em, 1024px) where a twelfth of the column falls below it.
+ */
+@media (max-width: 64em) {
+  .kb-thread-list th:nth-child(3),
+  .kb-thread-list th:nth-child(4) { width: 6em; }
+}
 
 .kb-thread-last {
   width: 23.33%;
