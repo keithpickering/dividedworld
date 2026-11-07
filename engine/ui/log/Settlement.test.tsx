@@ -81,8 +81,8 @@ describe('the settlement\'s summary', () => {
     expect(screen.getByRole('heading', { name: 'Why, in plain words · scored as a Heel' })).toBeInTheDocument();
     const lines = within(screen.getByRole('list', { name: 'Why, in plain words · scored as a Heel' })).getAllByRole('listitem').map((li) => li.textContent);
     expect(lines).toEqual([
-      'Drew heat: excited, negative reactions to its posts and cards+3.30',
-      'Shrugged off: calm, positive reactions to its posts and cards−0.05',
+      "Drew heat: excited, negative reactions to the character's posts and cards+3.30",
+      "Shrugged off: calm, positive reactions to the character's posts and cards−0.05",
     ]);
     /* 2.90 + 3.25 is past the cap: the summary says what the log says. */
     expect(screen.getByText('Your wallet holds at most 6.00, so 0.15 of this was not added.')).toBeInTheDocument();

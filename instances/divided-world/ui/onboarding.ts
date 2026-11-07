@@ -13,7 +13,7 @@ export const onboarding: OnboardingUi = Object.freeze({
   tips: Object.freeze({
     'tour-plate': {
       title: 'This is your mask',
-      line: 'It is the character you are posting as. The tag beside its name is its class, and no other player can see it unless you reveal it. Swap masks here, or press the picture to see all of yours.',
+      line: 'It is the character you are posting as. The tag beside the name is the class, which no other player can see unless you reveal it. Swap masks here, or press the picture to see all of yours.',
     },
     'tour-orbs': {
       title: 'These are your orbs',

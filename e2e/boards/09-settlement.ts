@@ -55,17 +55,17 @@ const manifest: BoardManifest = {
     {
       id: 'line-heat', role: 'text', within: 'wallet', box: 'position', buildShift: { y: 58 },
       name: 'Drew heat: 6 heat reactions on 2 posts. The live estimate said up to +0.30; the shared vote and halving made it +0.20.',
-      buildName: 'Drew heat: excited, negative reactions to its posts and cards',
+      buildName: 'Drew heat: excited, negative reactions to the character\'s posts and cards',
     },
     {
       id: 'line-thunder', role: 'text', within: 'wallet', box: 'none',
       name: 'Stole thunder: your Whoops! on Spritey\'s post #41 drew more reactions than the post.',
-      buildName: 'Stole the thunder: its Salty card on another\'s post drew more votes than the post this window',
+      buildName: 'Stole the thunder: a Salty card the character played on another\'s post drew more votes than the post this window',
     },
     {
       id: 'line-shrug', role: 'text', within: 'wallet', box: 'none',
       name: 'The polite shrug: 1 calm reaction on your post #43.',
-      buildName: 'Shrugged off: calm, positive reactions to its posts and cards',
+      buildName: 'Shrugged off: calm, positive reactions to the character\'s posts and cards',
     },
 
     { id: 'rank', role: 'region', name: 'Rank up', type: false, buildShift: { y: 58 } },

@@ -28,7 +28,7 @@ describe('a state or status is a short status, never a sentence', () => {
     assert.equal(wordsProblems('status', 'Top: yellow').length, 1);
   });
   test('the drafted words pass', () => {
-    for (const ok of ['Holding you on this post', 'Not holding you · you wrote it', 'Not holding you · you played it', 'Done holding you', 'Broke free this visit', '41% washed for you', '3 strips, 1 peeled', 'Turning away cards up to uncommon', 'Sparkling every post of theirs', "Pinned to its board's top", '2 of 3 stacked', 'Set, face down to everyone else', 'Face down on this post', 'Washed clean', 'Ended by an admin']) {
+    for (const ok of ['Holding you on this post', 'Not holding you · you wrote it', 'Not holding you · you played it', 'Done holding you', 'Broke free this visit', '41% washed for you', '3 strips, 1 peeled', 'Turning away cards up to uncommon', 'Sparkling every post by that character', "Pinned to its board's top", '2 of 3 stacked', 'Set, face down to everyone else', 'Face down on this post', 'Washed clean', 'Ended by an admin']) {
       assert.deepEqual(wordsProblems('state', ok), [], ok);
     }
     assert.deepEqual(wordsProblems('state', 'Washed clean.'), []);
