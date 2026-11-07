@@ -115,6 +115,17 @@ describe('the banner: the board\'s own', () => {
     expect(screen.queryByRole('button', { name: 'Sign out' })).toBeNull();
     expect(screen.getByRole('main')).toHaveTextContent('page');
   });
+  test('each nav link carries its aria-hidden icon and keeps its name', async () => {
+    setup();
+    const nav = screen.getByRole('navigation', { name: 'Main' });
+    await waitFor(() => expect(within(nav).getAllByRole('link')).toHaveLength(3));
+    for (const name of ['Index', 'General', 'The System']) {
+      const link = within(nav).getByRole('link', { name });
+      const icons = link.querySelectorAll('svg');
+      expect(icons).toHaveLength(1);
+      expect(icons[0]).toHaveAttribute('aria-hidden', 'true');
+    }
+  });
   test('the links are a row of their own under the name, as the Main board draws them, and the phone\'s Boards button stays in the banner', async () => {
     setup();
     const banner = screen.getByRole('banner');

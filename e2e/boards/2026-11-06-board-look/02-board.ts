@@ -16,9 +16,11 @@
  *    mark so a play landing never moves the board, and the crumb sits a little lower under the bar than the board draws it: the crumb is held
  *    at +8px, the name at +44, the words and Start a thread at +47 and +44, and the table at +43, each held to where it now stands. The
  *    board's name is held by its place alone (the build's is the width of its words).
- *  - A row's title and its last post's links are each held to the 24px target (WCAG 2.5.8), so a row stands up to 3px taller than the board draws
- *    it, and the table (which holds a 4px row more than its height says) is 12px taller; the parts inside it are compared as offsets from the
- *    table's corner, and everything under it is held at the table's growth (the key at +53, Users browsing at +52, the footer at +58).
+ *  - A row's title and its last post's links are each held to the 24px target (WCAG 2.5.8), so a row stands up to 3px taller than the board
+ *    draws it, and the table (which holds a 4px row more than its height says) is 12px taller; the parts inside it are compared as offsets from
+ *    the table's corner, and everything under it is held at the table's growth (the key at +53, Users browsing at +52, the footer at +58). The
+ *    key's words stand at +53 and not the table's +55 because the key sits under the table's last row: the build's gap under the table is 1.2px
+ *    smaller than the board's 14px, and its row 2px shorter (measured: table bottom +55.4, key box top +54.2, its words +53.1).
  *  - A title is compared by its place and type, not its height (the 24px target); the page numbers of a row are held by their words alone,
  *    since each is a 1.4em target, which spaces them more widely than the board's.
  *  - The story's times are read against the real clock ("9 days ago", then a date), so no time is a landmark here.

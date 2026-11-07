@@ -48,3 +48,33 @@ test('poison: a stylesheet that resizes an icon is named by its box', async ({ p
   await page.addStyleTag({ content: '.kb-icon { width: 30px; height: 25px; }' });
   expect((await sizes(page, '.kb-thread-flags svg'))[0]).not.toEqual([24, 20]);
 });
+
+/**
+ * Under forced colors the browser replaces the page's colors with the user's palette, and a folder's tones must not collapse into one:
+ * a new folder, an old one and a hot one stay told apart by their fills (the sheet's paper is the new folder's mark, the front's fill tells
+ * new from old, the flame's tells hot).
+ */
+test.describe('forced colors', () => {
+  test.use({ forcedColors: 'active' });
+
+  test('a new, an old and a hot folder keep distinct fills', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto(STORY);
+    await expect(page.getByRole('link', { name: 'The long one', exact: true })).toBeVisible();
+    const fill = (selector: string) => page.locator(selector).first().evaluate((e) => getComputedStyle(e).fill);
+    const newFront = await fill('.kb-thread-flags svg .front-new');
+    const oldFront = await fill('.kb-thread-flags svg .front');
+    const back = await fill('.kb-thread-flags svg .back');
+    const flame = await fill('.kb-thread-flags svg .hot');
+    const system = (name: string) => page.evaluate((c) => { const d = document.createElement('i'); d.style.color = c; document.body.append(d); const v = getComputedStyle(d).color; d.remove(); return v; }, name);
+    const [canvas, text, highlight] = [await system('Canvas'), await system('CanvasText'), await system('Highlight')];
+    expect(new Set([canvas, text, highlight]).size).toBe(3);
+    expect(newFront).not.toEqual(oldFront);
+    expect(flame).not.toEqual(oldFront);
+    expect(flame).not.toEqual(newFront);
+    /* Each state is a system color, so the user's palette keeps them apart. */
+    expect({ newFront, oldFront, back, flame }).toEqual({ newFront: text, oldFront: canvas, back: canvas, flame: highlight });
+    const ink = await page.locator('.kb-thread-flags svg path').first().evaluate((e) => getComputedStyle(e).stroke);
+    expect(ink).toEqual(text);
+  });
+});

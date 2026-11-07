@@ -140,6 +140,23 @@ describe('the folder icons and the legend', () => {
     expect(legend.querySelectorAll('svg')).toHaveLength(3);
   });
 
+  test('the legend says "1 reply" in the singular when the setting is 1', async () => {
+    renderInWorld(<LoadedBoard slug="general" />, { settings: { hotReplies: 1 }, seed: (f) => world(f) });
+    await screen.findByRole('link', { name: 'Thread 001' });
+    const legend = document.querySelector('.kb-thread-legend') as HTMLElement;
+    expect(legend).toHaveTextContent('Hot: 1 reply this week');
+    expect(legend).not.toHaveTextContent('1 replies');
+  });
+
+  test('Start a thread carries its icon, aria-hidden, and its name is unchanged', async () => {
+    renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f) });
+    const button = await screen.findByRole('button', { name: 'Start a thread', expanded: false });
+    const icons = button.querySelectorAll('svg');
+    expect(icons).toHaveLength(1);
+    expect(icons[0]).toHaveAttribute('aria-hidden', 'true');
+    expect(button.textContent).toBe('Start a thread');
+  });
+
   test('the legend names no card and no pin', async () => {
     renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f) });
     await screen.findByRole('link', { name: 'Thread 001' });
@@ -574,6 +591,22 @@ describe('pinned threads and the banner', () => {
     const list = document.querySelector('.kb-thread-list tbody:not([data-kb-pinned])') as HTMLElement;
     expect(within(list).getAllByRole('row')).toHaveLength(20);
     expect(screen.getAllByText('Page 1 of 2').length).toBeGreaterThan(0);
+  });
+
+  test('the 4px gap under the pins is a presentation row, hidden from the reading order, and absent with no pins', async () => {
+    await open();
+    await waitFor(() => expect(pinned()).not.toBeNull());
+    const gap = pinned()!.querySelector('tr.kb-thread-gap') as HTMLElement;
+    expect(gap).not.toBeNull();
+    expect(gap).toHaveAttribute('role', 'presentation');
+    expect(gap).toHaveAttribute('aria-hidden', 'true');
+    expect(within(pinned()!).getAllByRole('row')).toHaveLength(1);
+  });
+
+  test('with no pins there is no gap row', async () => {
+    renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f) });
+    await screen.findByRole('link', { name: 'Thread 001' });
+    expect(document.querySelector('.kb-thread-gap')).toBeNull();
   });
 
   test('the pager\'s total is unchanged, and page 2 shows no pin, its own thread in its bump place', async () => {

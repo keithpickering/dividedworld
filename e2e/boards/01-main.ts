@@ -28,8 +28,9 @@
  * where it draws 18px, 13.75px nav, crumb and pager where it draws 11px, bold Verdana names with the rank under them, and a
  * 12.5px post line in the muted ink where it draws 10px (engine/ui/tokens.css). What the larger words move is held by
  * `buildShift`, as measured. The boards' bar's links each carry their 16 by 14 icon in the build (the board-look plan, Task 5), which this
- * older board does not draw: the first link is 7px taller than the board's 13px line, and the next two stand 24.7px and 49.2px further from
- * it than the type scale alone moved them (12.4 and 28.2), an icon and its gap each, held as measured.
+ * older board does not draw: the first link is 7px taller than the board's 13px line, and the next two stand 22px and 44px further from
+ * it than before the icons (12.4 and 28.2 from the type scale alone, so 34.4 and 72.2 now): each link before them is 22px wider, its 16px
+ * icon and its 6px gap, measured by hiding the icons and the gap on the same page.
  */
 import type { BoardManifest, Landmark } from '../board-match.ts';
 
@@ -102,8 +103,8 @@ const manifest: BoardManifest = {
      */
     { id: 'nav', role: 'navigation', name: 'Main', box: 'height', type: false, buildShift: { y: 33, height: 9.4 } },
     { id: 'nav-index', role: 'link', name: 'Index', within: 'nav', box: 'height', type: false, buildShift: { y: 36, height: 7 } },
-    { id: 'nav-general', role: 'link', name: 'General', within: 'nav', origin: 'nav-index', box: 'position', type: false, buildShift: { x: 37.1 } },
-    { id: 'nav-system', role: 'link', name: 'The System', within: 'nav', origin: 'nav-index', box: 'position', type: false, buildShift: { x: 77.4 } },
+    { id: 'nav-general', role: 'link', name: 'General', within: 'nav', origin: 'nav-index', box: 'position', type: false, buildShift: { x: 34.4 } },
+    { id: 'nav-system', role: 'link', name: 'The System', within: 'nav', origin: 'nav-index', box: 'position', type: false, buildShift: { x: 72.2 } },
 
     /*
      * The breadcrumb over the thread's head, by its type: the board's words lead from the instance
