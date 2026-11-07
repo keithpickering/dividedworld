@@ -24,8 +24,8 @@ export type GlassButtonProps = AsButton | AsLink;
  * measure comes from the control tokens (tokens.css) and its kind from the fills the glass's
  * primary, secondary and quiet controls have always had (parts.css). The label is held upright
  * inside the skew, in one grid cell with the spinner, so the width is the label's whether or not
- * it is busy. A link with `to` is busy, too, while the load it started is out. A link that is disabled is an anchor with no href: it goes nowhere and leaves
- * the tab order.
+ * it is busy. A link with `to` is busy, too, while the load it started is out. A link that is
+ * disabled is an anchor with no href: it goes nowhere and leaves the tab order.
  */
 export function GlassButton(props: GlassButtonProps) {
   const { kind = 'secondary', size = 'm', children, className } = props;
@@ -39,7 +39,7 @@ export function GlassButton(props: GlassButtonProps) {
     const { kind: _k, size: _s, children: _c, className: _n, busy: _b, to, disabled, onClick, state, replace, early, ...anchor } = props;
     if (disabled === true || anchor['aria-disabled'] === true || anchor['aria-disabled'] === 'true') {
       const { href: _h, target: _t, rel: _r, download: _d, tabIndex: _i, ...rest } = anchor;
-      return <a {...rest} role="link" aria-disabled="true" className={cls} data-kb-kind={kind} data-kb-size={size}>{label}</a>;
+      return <a {...rest} role="link" aria-disabled="true" className={cls} data-kb-kind={kind} data-kb-size={size}><span className="kb-glass-upright"><span className="kb-glass-label">{children}</span></span></a>;
     }
     const press = (e: MouseEvent<HTMLAnchorElement>) => {
       if (busy) { e.preventDefault(); return; }

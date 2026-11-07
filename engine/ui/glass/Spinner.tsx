@@ -7,9 +7,9 @@
  */
 import './spinner.css';
 
-export function Spinner({ className }: { readonly className?: string }) {
+export function Spinner() {
   return (
-    <span className={`kb-spinner${className ? ` ${className}` : ''}`} aria-hidden="true">
+    <span className="kb-spinner" aria-hidden="true">
       <i /><i /><i /><i />
     </span>
   );

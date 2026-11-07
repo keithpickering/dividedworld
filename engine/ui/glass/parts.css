@@ -219,7 +219,7 @@
  * as wide as its label whether or not it waits. The label fades out and the spinner in over 180 ms;
  * a press does nothing (Button.tsx), and the control keeps focus because it is not disabled.
  */
-.kb-glass-button > .kb-glass-upright { display: inline-grid; align-items: center; justify-items: center; }
+.kb-glass-button.kb-glass-skew > .kb-glass-upright { display: inline-grid; align-items: center; justify-items: center; }
 .kb-glass-button .kb-glass-label { grid-area: 1 / 1; opacity: 1; transition: opacity 180ms ease-in-out; }
 .kb-glass-button .kb-spinner { grid-area: 1 / 1; opacity: 0; transition: opacity 180ms ease-in-out; }
 .kb-glass-button[aria-busy='true'] { cursor: progress; }

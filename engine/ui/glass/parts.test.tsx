@@ -319,6 +319,22 @@ describe('the busy button', () => {
     expect(container.querySelector('.kb-spinner')).toHaveAttribute('aria-hidden', 'true');
   });
 
+  test('a busy submit button does not submit on a click or on Enter in a field', async () => {
+    const onSubmit = vi.fn((e: { preventDefault: () => void }) => e.preventDefault());
+    renderInWorld(<form onSubmit={onSubmit}><input aria-label="Name" /><GlassButton type="submit" busy>Save</GlassButton></form>);
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), 'x{Enter}');
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  test('a busy button focused takes Enter and Space and calls nothing', async () => {
+    const onClick = vi.fn();
+    renderInWorld(<GlassButton busy onClick={onClick}>Send it</GlassButton>);
+    screen.getByRole('button', { name: 'Send it' }).focus();
+    await userEvent.keyboard('{Enter} ');
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
   test('a button at rest has no aria-busy and a press lands', () => {
     const onClick = vi.fn();
     renderInWorld(<GlassButton onClick={onClick}>Send it</GlassButton>);
@@ -333,7 +349,7 @@ describe('the busy button', () => {
     const upright = container.querySelector('.kb-glass-upright')!;
     expect([...upright.children].map((c) => c.className)).toEqual(['kb-glass-label', 'kb-spinner']);
     const css = sheet('parts.css');
-    expect(declsOf(css, '.kb-glass-button > .kb-glass-upright')['display']).toBe('inline-grid');
+    expect(declsOf(css, '.kb-glass-button.kb-glass-skew > .kb-glass-upright')['display']).toBe('inline-grid');
     expect(declsOf(css, '.kb-glass-button .kb-glass-label')['grid-area']).toBe('1 / 1');
     expect(declsOf(css, '.kb-glass-button .kb-spinner')['grid-area']).toBe('1 / 1');
     expect(declsOf(css, ".kb-glass-button[aria-busy='true']")['cursor']).toBe('progress');
@@ -371,6 +387,37 @@ describe('a busy link button', () => {
     await act(async () => { resolve('doc'); });
     expect(screen.queryByRole('link', { name: 'Open it' })).toBeNull();
     expect(screen.getByText('there')).toBeInTheDocument();
+  });
+
+  /* A route with a loader the test answers by hand, and a button toward it. */
+  function mountLink() {
+    let resolve: (d: unknown) => void = () => undefined;
+    let reject: (e: unknown) => void = () => undefined;
+    const load = vi.fn(() => new Promise<unknown>((res, rej) => { resolve = res; reject = rej; }));
+    const routes: Route[] = [
+      { path: '/', render: () => <p>here</p> },
+      { path: '/t/:id', load, key: (p) => p.id!, render: () => <p>there</p> },
+    ];
+    window.history.replaceState(null, '', '/');
+    /* The button sits outside the routes, as a menu bar's does, so a failure screen does not take it away. */
+    render(<KayfaProvider value={kayfa}><RouterProvider><GlassButton to="/t/a">Open it</GlassButton><Routes routes={routes} /></RouterProvider></KayfaProvider>);
+    return { reject: (e: unknown) => reject(e) };
+  }
+
+  test('a load cancelled with Escape leaves the button on screen and not busy', async () => {
+    mountLink();
+    await userEvent.click(screen.getByRole('link', { name: 'Open it' }));
+    expect(screen.getByRole('link', { name: 'Open it' })).toHaveAttribute('aria-busy', 'true');
+    await userEvent.keyboard('{Escape}');
+    expect(screen.getByRole('link', { name: 'Open it' })).not.toHaveAttribute('aria-busy');
+  });
+
+  test('a load that fails leaves the button on screen and not busy', async () => {
+    const { reject } = mountLink();
+    await userEvent.click(screen.getByRole('link', { name: 'Open it' }));
+    expect(screen.getByRole('link', { name: 'Open it' })).toHaveAttribute('aria-busy', 'true');
+    await act(async () => { reject(new Error('down')); });
+    expect(screen.getByRole('link', { name: 'Open it' })).not.toHaveAttribute('aria-busy');
   });
 
   test('a busy link with no pending load still does not navigate', async () => {
