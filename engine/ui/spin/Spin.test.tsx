@@ -47,7 +47,7 @@ describe('the Spin thread link', () => {
     const said = w.fake.seed.thread('announcements', null, 'The tally', 'Settled.');
     document.body.innerHTML = '';
     openThread({ ...w, thread: said.thread });
-    expect(spinLink(await screen.findByRole('article', { name: /^Post 1 by The staff/u }))).toBeInTheDocument();
+    expect(spinLink(await screen.findByRole('article', { name: /^Post 1 by the staff/u }))).toBeInTheDocument();
   });
 
   test('opens a small form that names the origin and the HUD\'s character, and is off with the next press', async () => {

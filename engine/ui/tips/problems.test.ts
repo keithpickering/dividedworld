@@ -171,4 +171,16 @@ describe('instanceUiProblems', () => {
       assert.deepEqual(instanceUiProblems(poisoned, rules), [`the copy has no ${key}`]);
     }
   });
+  test('refuses a copy key that is missing, and one that is not a string', () => {
+    for (const key of ['roleWord', 'staffWord', 'gameWord', 'staffBoardTag']) {
+      const missing = ui(good);
+      delete (missing.copy as Record<string, unknown>)[key];
+      assert.deepEqual(instanceUiProblems(missing, rules), [`the copy has no ${key}`]);
+      for (const value of [7, null, ['The staff'], {}]) {
+        const odd = ui(good);
+        (odd.copy as Record<string, unknown>)[key] = value;
+        assert.deepEqual(instanceUiProblems(odd, rules), [`the copy has no ${key}`]);
+      }
+    }
+  });
 });

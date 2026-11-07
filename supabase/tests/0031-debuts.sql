@@ -375,7 +375,7 @@ begin
   end if;
   -- Players still post nothing on The System's board, a reveal included.
   perform tests.become(ann);
-  if pg_temp.refusal(format('select unmask(%L, %L, %L)', dropped, u.thread, '')) is distinct from 'only The System posts here; spin a thread from what it said' then raise exception 'a player unmasked on The System''s board'; end if;
+  if pg_temp.refusal(format('select unmask(%L, %L, %L)', dropped, u.thread, '')) is distinct from 'only the staff post here; spin a thread from what they said' then raise exception 'a player unmasked on The System''s board'; end if;
   -- Scheduled: with its class; announced plainly; silent.
   sched := (create_character('Debuts Unmasked', 'alpha', 'tally', 'with_class') ->> 'id')::uuid;
   plain := (create_character('Debuts Plainly', 'alpha', 'tally', 'announced') ->> 'id')::uuid;

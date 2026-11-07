@@ -30,6 +30,7 @@
  * re-renders the posts it lands on and not the page.
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { lowerFirst } from '../copy-words.ts';
 import { billPost, drawnOf } from '../cards/billing.ts';
 import { CalloutProvider } from '../cards/Callout.tsx';
 import { LensProvider } from '../cards/Lens.tsx';
@@ -386,7 +387,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
       /* New posts only: an unmask or a tally still appears, and is not announced. */
       if (a.kind !== 'post' || announcedIds.current.has(a.id)) return;
       announcedIds.current.add(a.id);
-      const name = a.character === null ? ui.copy.staffWord : people.current.get(a.character)?.character.name ?? 'a character';
+      const name = a.character === null ? lowerFirst(ui.copy.staffWord) : people.current.get(a.character)?.character.name ?? 'a character';
       setLines((l) => [...l, { key: ++lineKey.current, text: `New post by ${name}` }].slice(-ANNOUNCED));
     };
     const listener: ThreadListener = {

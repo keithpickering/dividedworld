@@ -182,7 +182,7 @@ describe('on a thread of the staff board', () => {
     fake.signInAs(me);
     renderIn(fake, <LoadedThread thread={sys.thread} />, { path: `/t/${sys.thread}` });
     for (const n of [2, 3]) {
-      const article = await screen.findByRole('article', { name: new RegExp(`^Post ${n} by The staff`, 'u') });
+      const article = await screen.findByRole('article', { name: new RegExp(`^Post ${n} by the staff`, 'u') });
       expect(within(article).getByRole('button', { name: /React/u })).toBeInTheDocument();
       expect(within(article).getByRole('button', { name: 'Spin thread' })).toBeInTheDocument();
     }

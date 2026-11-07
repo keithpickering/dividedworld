@@ -22,12 +22,13 @@ import { playOf, reachesOf, type BeyondPost, type CardTarget, type Play } from '
 import { usePlay, type PlayTarget } from './play.tsx';
 import { livePlays, usePlays, type Plays } from './plays.ts';
 import type { Id } from '../data/api.ts';
+import { lowerFirst } from '../copy-words.ts';
 
 /** The post a play lands on, as the hand and the form name it. */
 function useTarget(act: Act): PlayTarget | null {
   const { thread, perPage, summary, plays, nameOf, know } = useThread();
   if (act.kind !== 'post' || act.seq === null) return null;
-  return { post: act, title: summary.title, author: nameOf(act.character), to: threadHref(thread, pageOf(act.seq, perPage), act.seq), plays, know: know ?? (async () => {}) };
+  return { post: act, title: summary.title, author: act.character === null ? lowerFirst(nameOf(null)) : nameOf(act.character), to: threadHref(thread, pageOf(act.seq, perPage), act.seq), plays, know: know ?? (async () => {}) };
 }
 
 /** What the ghost mark is named by its card's play: "Play Whoops! on post 41", "Set Trap Card face down on post 41", "Use Force Field on post 41". */

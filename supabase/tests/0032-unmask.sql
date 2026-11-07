@@ -59,7 +59,7 @@ begin
   waiting := (create_character('Not Yet Here', 'alpha', 'tally') ->> 'id')::uuid;
   if pg_temp.refusal(format('select unmask(%L, %L, %L)', b, t, '')) is distinct from 'you do not play that character' then raise exception 'another player''s character was unmasked'; end if;
   if pg_temp.refusal(format('select unmask(%L, %L, %L)', waiting, t, '')) is distinct from 'that character debuts at the next settlement' then raise exception 'a waiting character was unmasked'; end if;
-  if pg_temp.refusal(format('select unmask(%L, %L, %L)', a, on_system, '')) is distinct from 'only The System posts here; spin a thread from what it said' then raise exception 'a reveal was made on The System''s board'; end if;
+  if pg_temp.refusal(format('select unmask(%L, %L, %L)', a, on_system, '')) is distinct from 'only the staff post here; spin a thread from what they said' then raise exception 'a reveal was made on The System''s board'; end if;
   if pg_temp.refusal(format('select unmask(%L, %L, %L)', a, gen_random_uuid(), '')) is distinct from 'there is no such thread' then raise exception 'a reveal in no thread'; end if;
   if pg_temp.refusal(format('select unmask(%L, %L, %L)', a, t, repeat('x', 201))) is distinct from 'the message is at most 200 characters' then raise exception 'a message of 201 characters was taken'; end if;
   if pg_temp.refusal(format('select unmask(%L, %L, %L)', a, t, repeat('🔥', 200))) is not null then raise exception 'a message of 200 characters, counted as characters, is taken'; end if;

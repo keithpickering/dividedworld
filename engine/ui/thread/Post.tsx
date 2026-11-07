@@ -24,6 +24,7 @@ import { Origin } from '../spin/Origin.tsx';
 import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
 import { SpunInto } from '../spin/SpunInto.tsx';
 import { Reactions } from '../reactions/Reactions.tsx';
+import { lowerFirst } from '../copy-words.ts';
 import { useKayfa } from '../context.tsx';
 import { ThreadCtx, useThread, type ThreadContext } from './context.ts';
 import { AnnounceLine, LastEdited, MoveEndLine, MoveKeepLine, SystemPost, UnmaskLine, quoteLink, text, useHistory, when } from './lines.tsx';
@@ -41,7 +42,7 @@ interface Props {
 /** A post's name for a reader and a screen reader: the character's, the staff's (`UiCopy.staffWord`, for an Act with no character), or "A character" where it cannot be shown. */
 const nameOf = (act: Act, person: PostbitPerson | undefined, staff: string) => (act.character === null ? staff : person?.character.name ?? 'A character');
 
-function Body({ act, name, person, editing, onDone, marks }: { readonly marks: ReactNode; readonly act: Act; readonly name: string; readonly person: PostbitPerson | undefined; readonly editing: boolean; readonly onDone: () => void }) {
+function Body({ act, name, spoken, person, editing, onDone, marks }: { readonly marks: ReactNode; readonly act: Act; readonly name: string; readonly spoken: string; readonly person: PostbitPerson | undefined; readonly editing: boolean; readonly onDone: () => void }) {
   const { summary, tallies, mine, changed, plays, nameOf: casterName } = useThread();
   switch (act.kind) {
     case 'unmask': return <UnmaskLine act={act} name={name} />;
@@ -50,7 +51,7 @@ function Body({ act, name, person, editing, onDone, marks }: { readonly marks: R
       return (
         <>
           <AnnounceLine act={act} name={name} />
-          <Reactions act={act.id} author={act.character} authorName={name} tallies={tallies} mine={mine} />
+          <Reactions act={act.id} author={act.character} authorName={spoken} tallies={tallies} mine={mine} />
         </>
       );
     case 'move_end': return <MoveEndLine act={act} />;
@@ -61,7 +62,7 @@ function Body({ act, name, person, editing, onDone, marks }: { readonly marks: R
         <>
           <MoveTag kind={text(act.payload.kind)} />
           <BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} />
-          <Reactions act={act.id} author={act.character} authorName={name} tallies={tallies} mine={mine} />
+          <Reactions act={act.id} author={act.character} authorName={spoken} tallies={tallies} mine={mine} />
           {person && <Signature text={person.character.signature} />}
         </>
       );
@@ -71,7 +72,7 @@ function Body({ act, name, person, editing, onDone, marks }: { readonly marks: R
       return (
         <>
           <SystemPost act={act} />
-          <Reactions act={act.id} author={null} authorName={name} tallies={tallies} mine={mine} />
+          <Reactions act={act.id} author={null} authorName={spoken} tallies={tallies} mine={mine} />
         </>
       );
     default: {
@@ -84,7 +85,7 @@ function Body({ act, name, person, editing, onDone, marks }: { readonly marks: R
             ? <EditPost act={act} seq={act.seq!} onDone={onDone} onSaved={changed} />
             : <PostEffects plays={plays} post={act} place="thread" marks={marks} nameOf={casterName} bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteLink={quoteLink} />}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>}
           <LastEdited act={act} />
-          <Reactions act={act.id} author={act.character} authorName={name} tallies={tallies} mine={mine} />
+          <Reactions act={act.id} author={act.character} authorName={spoken} tallies={tallies} mine={mine} />
           {person && <Signature text={person.character.signature} />}
         </>
       );
@@ -156,6 +157,8 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
     return () => observer.unobserve(el);
   }, [observer]);
   const name = nameOf(act, person, ui.copy.staffWord);
+  /* The name as it reads inside a sentence: the staff's word is set for a name slot ("The staff"), so it is lowered here ("Post 3 by the staff"). */
+  const spoken = act.character === null ? lowerFirst(name) : name;
   const [editing, setEditing] = useState(false);
   const editButton = useRef<HTMLButtonElement>(null);
   /* After an edit is saved or cancelled, focus goes back to the Edit button. */
@@ -193,7 +196,7 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
       data-kb-postbit={layout}
       data-kb-arrived={slid ? 'slide' : undefined}
     >
-      <h2 id={`post-${seq}-title`} className="kb-visually-hidden">Post {seq} by {name}</h2>
+      <h2 id={`post-${seq}-title`} className="kb-visually-hidden">Post {seq} by {spoken}</h2>
       {/* The author first, then the post's line: the order the board is read in, side by side or stacked. */}
       {!plain && (person
         ? <Postbit person={person} layout={layout} marks={characterMarks} />
@@ -204,7 +207,7 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
         <Link className="kb-act-number" to={threadHref(thread, pageOf(seq, perPage), seq)} aria-label={`Permalink to post #${seq}`}>#{seq}</Link>
       </header>
       <div className="kb-act-main" data-kb-cell="words">
-        <Body act={act} name={name} person={person} editing={editing} onDone={() => setEditing(false)} marks={marks} />
+        <Body act={act} name={name} spoken={spoken} person={person} editing={editing} onDone={() => setEditing(false)} marks={marks} />
         <SpunInto act={act.id} />
       </div>
       <Actions act={act} editing={editing} onEdit={() => setEditing(true)} editButton={editButton} spinOrigin={spinOrigin} setSpinOrigin={setSpinOrigin} />
