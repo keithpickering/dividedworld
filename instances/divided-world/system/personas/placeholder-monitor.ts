@@ -16,14 +16,18 @@ export const placeholderMonitor: Persona = {
   title,
   signature: 'Walk, do not post. (Placeholder Mod Bot.)',
   beats: ['general'],
-  petRules: [],
-  strictness: { visitHours: { least: 2, most: 12 }, bands: ['small'] },
-  // A quiz: the placeholder has to be weak to something, and the questions are dumb on purpose.
+  petRules: ['noAllCaps', 'noTag', 'repliesOnly'],
+  strictness: { visitHours: { least: 3, most: 8 }, bands: ['minor', 'moderate'] },
+  // DRAFT for the owner: the questions are light forum and fan-game trivia, with the right answer in different places.
   weakness: {
     kind: 'quiz',
     questions: [
       { question: 'What color is the orb?', choices: ['Orb-colored', 'Beige', 'Taxes'], answer: 'Orb-colored' },
-      { question: 'How many Bosses is it legal to have at once?', choices: ['One', 'Several', 'Yes'], answer: 'One' },
+      { question: 'How many Bosses is it legal to have at once?', choices: ['Several', 'One', 'Yes'], answer: 'One' },
+      { question: 'What is the polite way to reply to a thread that has been quiet for a year?', choices: ['Start a new thread', 'Reply anyway', 'Bring a cake', 'Wait for it to apologize'], answer: 'Start a new thread' },
+      { question: 'In a Mario fan game, what do you collect 100 of for an extra life?', choices: ['Stars', 'Keys', 'Coins', 'Mushrooms'], answer: 'Coins' },
+      { question: 'What does a Hall Monitor never do in a thread?', choices: ['Run', 'Post', 'Sigh', 'Hum', 'Stamp'], answer: 'Run' },
+      { question: 'What goes on the lanyard?', choices: ['The pass', 'A snack', 'A pet rule', 'Nothing, it is for show'], answer: 'The pass' },
     ],
   },
   voice: 'chat',

@@ -92,3 +92,47 @@ test('the four appeal lines use only the tokens an appeal\'s ruling is given', (
     for (const line of system.stockLines[k]) for (const [, token] of line.matchAll(/\{([^{}]*)\}/g)) assert.ok(['mod', 'appellant'].includes(token!), `${k}: {${token}}`);
   }
 });
+
+// Task 14 (Mod Bots): Divided World's staff content.
+test('every persona\'s pet rules are known predicates, and its visit hours sit inside the settings\' range', async () => {
+  const { predicate } = await import('../../../engine/rules/predicates.ts');
+  const { defaults: settings } = await import('../settings.ts');
+  for (const p of system.roster) {
+    for (const k of p.petRules) assert.ok(predicate(k) !== undefined, `${p.key}: ${k}`);
+    assert.ok(p.strictness.visitHours.least >= settings.modBots.visitHours.least && p.strictness.visitHours.most <= settings.modBots.visitHours.most, p.key);
+  }
+  const bot = system.roster.find((p) => system.firstStaff.includes(p.key))!;
+  assert.ok(bot.petRules.length >= 2, 'the Mod Bot lobbies for something');
+});
+
+test('the Mod Bot\'s quiz has five questions, every answer one of its choices, and the answers do not all sit in one place', () => {
+  const bot = system.roster.find((p) => system.firstStaff.includes(p.key))!;
+  assert.equal(bot.weakness.kind, 'quiz');
+  if (bot.weakness.kind !== 'quiz') return;
+  const qs = bot.weakness.questions;
+  assert.ok(qs.length >= 5);
+  for (const q of qs) {
+    assert.ok(q.choices.includes(q.answer), q.question);
+    assert.ok(q.choices.length >= 2 && q.choices.length <= 8, q.question);
+    assert.equal(new Set(q.choices).size, q.choices.length, q.question);
+    assert.ok(q.choices.every((c) => c === c.trim()), q.question);
+  }
+  assert.ok(new Set(qs.map((q) => q.choices.indexOf(q.answer))).size >= 3, 'answers are spread over the positions');
+});
+
+test('every persona\'s weakness is a quiz, a bribe or a distraction the engine accepts', () => {
+  assert.deepEqual(instanceProblems(instance), []);
+});
+
+test('the Mod Bot stock lines: several each, and every token is one the key allows', () => {
+  for (const k of ['ruleSet', 'visitArrived', 'visitFiled', 'reportDismissed', 'reportBackfired', 'appealOverturned', 'appealUpheld', 'appealReduced', 'appealIncreased'] as const) {
+    assert.ok(system.stockLines[k].length >= 5, `${k} has several lines`);
+    for (const line of system.stockLines[k]) for (const t of line.matchAll(/\{(\w+)\}/g)) assert.ok(STOCK_LINE_TOKENS[k].includes(t[1]!), `${k}: {${t[1]}}`);
+  }
+});
+
+test('the theme names the visit mark\'s ink', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../ui/theme.css', import.meta.url), 'utf8');
+  assert.ok((css.match(/--kb-visit-ink:/g) ?? []).length >= 3, 'light, device-dark and chosen-dark');
+});

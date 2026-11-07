@@ -38,6 +38,8 @@
   --kb-salty: #3f8fd2;
   --kb-pepperoni: #d24a2c;
   --kb-gold: #d4a017;
+  /* The visit mark's ink, the instance's yellow (the Mod Bots design); a DRAFT shade, the owner's to tune. */
+  --kb-visit-ink: #8a6d00;
   /*
    * The glass's violet laid toward the window's corners and up from the foot, over the whole window: over the '03 board's posts too, so
    * the HUD and the board are not a sandwich (the owner, 2026-11-05: "bridge the HUD/settings and the '03 board"), but held to half its
@@ -56,6 +58,7 @@
   :root:not([data-kb-mode="light"]) {
     --kb-fg: #fff;
     --kb-bg: #000;
+    --kb-visit-ink: #f5d442;
     --kb-rule: #fff;
     --kb-muted: #aaa;
     --kb-link: #fff;
@@ -81,6 +84,7 @@
 :root[data-kb-mode="dark"] {
   --kb-fg: #fff;
   --kb-bg: #000;
+  --kb-visit-ink: #f5d442;
   --kb-rule: #fff;
   --kb-muted: #aaa;
   --kb-link: #fff;
