@@ -19,8 +19,8 @@
  *
  * On a resize inside a width class the raster is kept and drawn stretched (`mask-size: 100% 100%`,
  * Smoke.tsx): the noise is blurred, so a small stretch is invisible, and re-rasterizing a layer on
- * every frame of a window drag would cost more than the stretch shows (on a phone, the address bar
- * hiding resizes the window by a hundred pixels many times a scroll). Past a stretch of 15% across
+ * every frame of a window drag would cost more than the stretch shows. A phone's address bar showing
+ * and hiding is not a resize here at all: the field's height is the large viewport's (viewport.ts). Past a stretch of 15% across
  * or 25% down, once the window has been still for `RESIZE_MS`, the set is made again at the new
  * size, and the old one is revoked only when the new one is whole, so no frame is without smoke.
  *
@@ -35,6 +35,7 @@
  */
 import { useEffect, useSyncExternalStore } from 'react';
 import type { FieldLayer } from '../types.ts';
+import { largeViewportHeight } from './viewport.ts';
 
 /** A size in CSS pixels. */
 export interface Size { readonly width: number; readonly height: number }
@@ -268,9 +269,14 @@ export const fieldRasters = createRasters();
 /** The viewport's width class, pixel ratio and size, kept current. */
 export interface FieldEnv { readonly narrow: boolean; readonly dpr: number; readonly view: Size }
 
-/** The size windows are drawn to: the layout viewport, which a scrollbar's width is not part of. */
+/**
+ * The size windows are drawn to: the layout viewport's width, which a scrollbar's width is not part of, and the large viewport's
+ * height (viewport.ts). The layers' mask is drawn at 100% of their height, so a field as tall as `innerHeight` squashed and
+ * stretched its clouds whenever a phone's address bar turned. Drawn to the large viewport, anchored at the window's top, the field
+ * holds still, and while the bar shows its foot is cut off by the window's own `overflow: hidden` rather than squeezed.
+ */
 function viewport(): Size {
-  return { width: document.documentElement.clientWidth || window.innerWidth, height: window.innerHeight };
+  return { width: document.documentElement.clientWidth || window.innerWidth, height: largeViewportHeight() };
 }
 
 function envNow(): FieldEnv {

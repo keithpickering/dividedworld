@@ -9,6 +9,7 @@
  */
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { useWhoPosts } from '../composer/draft.ts';
+import { framingArgs } from '../composer/text.ts';
 import { useKayfa } from '../context.tsx';
 import type { Id } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
@@ -98,7 +99,7 @@ export function SpinForm({ origin, label: named, onClose, draft, onDraft, apolog
     setRefusal(null);
     try {
       let answer;
-      try { answer = await (apology ? api.apologize(origin, character, title, body) : api.spin(origin, character, title, body)); } catch { await look(null, character); return; }
+      try { answer = await (apology ? api.apologize(origin, character, title, body, ...framingArgs(body)) : api.spin(origin, character, title, body, ...framingArgs(body))); } catch { await look(null, character); return; }
       if (answer.ok) went(answer.value.thread.id);
       else if (answer.uncertain) await look(answer.error, character);
       else setRefusal(answer.error);

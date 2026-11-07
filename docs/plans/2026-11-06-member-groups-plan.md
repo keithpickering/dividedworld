@@ -61,6 +61,8 @@ and a task disagree, this paragraph wins.
   column. The verdicts mean what they mean on a ban: **reduced** ends at the move's landing plus half its length (it may
   end at once); **increased** adds half its length, never past the phase's `moveExpiryMostDays` from landing. Task 14's
   text below is superseded where it says otherwise.
+- *Renumbered on merging `main`.* The groups migrations landed as 0119–0128 (tests 0121–0129), after `main`'s
+  0116–0118 (tweener standings, search, BBCode tags); the numbers 0116–0125 in this plan name them as first written.
 
 ## Task 1: groups in the engine (engine)
 

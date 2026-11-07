@@ -29,11 +29,11 @@ test('the seed carries every setting, class, reaction, card and board of the ins
   assert.deepEqual(seed.boards, instance.boards.map((b) => ({ ...b, system: b.system === true })));
   assert.deepEqual(seed.boards.filter((b) => b.system).map((b) => b.slug), ['announcements'], 'one board is The System\'s, said in the seed');
   assert.deepEqual(seed.pipStyles, instance.pipStyles, 'the pip styles a profile may name');
-  assert.equal(seed.classes.length, 5);
+  assert.equal(seed.classes.length, instance.classes.length);
   assert.equal(seed.reactions.length, 16);
 });
 
-test('the seed carries the groups: the ladder with its rung indexes and conditions, then the conferred groups with their tones (0116)', () => {
+test('the seed carries the groups: the ladder with its rung indexes and conditions, then the conferred groups with their tones (0119)', () => {
   const { groups } = instanceSeed(instance);
   const ladder = groups.filter((g) => g.source === 'ladder');
   assert.deepEqual(ladder.map((g) => [g.key, 'rung' in g ? g.rung : null, 'condition' in g ? g.condition : null]),

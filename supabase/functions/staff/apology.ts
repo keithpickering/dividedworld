@@ -1,7 +1,7 @@
 /**
  * The judge of apologies, as a job of the filing run (member groups, Task 7; the Mod Bots' runPatrols is its twin). Edge Function staff/index.ts chains it after the filings
  * and the patrols, with no function, cron or schedule of its own. The engine's side (the prompt, the shape of the answer, its repair) is engine/system/apology.ts; the
- * database's is `pending_apologies()` and `rule_apology()` (supabase/migrations/0118_bars_apologies.sql).
+ * database's is `pending_apologies()` and `rule_apology()` (supabase/migrations/0121_bars_apologies.sql).
  *
  * For each waiting apology: the move's staff member (a Mod, or the Boss whose move it was; duty `apologyJudge` is the instance's `filer`) judges it with one light-tier
  * call, ledgered with `staff` set. The answer is repaired (a verdict outside the list is rejected naming `oneOf`, a ruling over the word bound is trimmed and the trim written

@@ -21,7 +21,7 @@ begin
   if n <> 0 then raise exception 'another player read an account'; end if;
   select count(*) into n from characters_public where id = mask and name = 'Pipewrench';
   if n <> 1 then raise exception 'the public projection should show the character by name'; end if;
-  -- And nothing else but the month it debuted in (and, from 0104, its warn bar and ban, which are public Acts; from 0116, its group, computed from public facts): a creation time to the microsecond would show
+  -- And nothing else but the month it debuted in (and, from 0104, its warn bar and ban, which are public Acts; from 0119, its group, computed from public facts): a creation time to the microsecond would show
   -- which masks were made in one sitting, which is to say whose (0030 adds the month, never the time).
   if (select string_agg(column_name::text, ',' order by ordinal_position) from information_schema.columns
       where table_schema = 'public' and table_name = 'characters_public') is distinct from 'id,name,joined,staff,office,warn_points,banned_until,group' then
@@ -98,7 +98,7 @@ begin
       -- my_cards_ended (0092) reads the owner to keep each caller to the ended plays cast through, or landed on, their own characters;
       -- 0094-card-end.sql holds that it shows nobody else's and names no owner.
       and not (u.view_name = 'my_cards_ended' and (u.table_name, u.column_name) = ('characters', 'owner'))
-      -- my_infractions, my_bans, my_reports and my_appeals (0111), and my_group_moves (0122, the same for the moves into groups), read the owner to keep each caller to the punishments, reports and appeals of their own
+      -- my_infractions, my_bans, my_reports and my_appeals (0111), and my_group_moves (0125, the same for the moves into groups), read the owner to keep each caller to the punishments, reports and appeals of their own
       -- characters; 0113-mod-screens.sql holds that each shows nobody else's and names no owner or account.
       and not (u.view_name in ('my_infractions', 'my_bans', 'my_reports', 'my_appeals', 'my_reports_left', 'my_group_moves') and (u.table_name, u.column_name) = ('characters', 'owner'))
   loop

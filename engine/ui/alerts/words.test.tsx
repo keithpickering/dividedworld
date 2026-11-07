@@ -41,6 +41,20 @@ describe('a quote', () => {
   });
 });
 
+describe('a framed alert', () => {
+  const quoting = act('q', { seq: 43 });
+  const r = row({ kind: 'framed', act: 'q', character: 'c1', name: 'Pipewrench', title: 'who keeps splatting my posts' });
+  test('says someone put words in the character\'s mouth, plainly, with the thread and the post as a quote\'s', () => {
+    expect(said(r, ctx([quoting]))).toEqual({
+      line: 'Someone put words in Pipewrench\'s mouth', detail: 'In who keeps splatting my posts, post #43.',
+      ways: [{ text: 'Go to the post', to: '/t/t1?page=3#post-43' }], who: 'Pipewrench',
+    });
+  });
+  test('falls back to the thread when the post could not be read', () => {
+    expect(said(r, ctx()).ways).toEqual([{ text: 'Go to the thread', to: '/t/t1' }]);
+  });
+});
+
 describe('a card on yours', () => {
   test('on a post: the card, the post and its number, the post as the way', () => {
     const play = act('p', { kind: 'card', targetActId: 'post4', payload: { card: 'whoops', reach: 'post' } });

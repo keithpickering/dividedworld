@@ -9,7 +9,7 @@
 import { useMemo } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Character, Id, IndexPage } from '../data/api.ts';
-import { Ago, Who } from '../mini.tsx';
+import { Ago, Byline } from '../mini.tsx';
 import { FrontDoor } from '../front-door/FrontDoor.tsx';
 import { spanWords } from '../characters/format.ts';
 import { PresenceBox } from '../presence/PresenceBox.tsx';
@@ -55,9 +55,7 @@ export function IndexScreen({ doc }: { readonly doc: ScreenDoc<IndexPage> }) {
                     <>
                       <span className="kb-board-sep" aria-hidden="true"> · </span>
                       <span className="kb-board-last-label">last: </span>
-                      {b.lastCharacter
-                        ? <Who character={who} name={who?.name ?? 'A'}><Link to={`/c/${encodeURIComponent(b.lastCharacter)}`}>{who?.name ?? 'A character'}</Link></Who>
-                        : <span className="kb-system-name">{ui.copy.staffWord}</span>}
+                      <Byline character={who} id={b.lastCharacter} name={who?.name} link avatar={false} />
                       <span className="kb-board-sep" aria-hidden="true">, </span>
                       <br />
                       {b.lastThread

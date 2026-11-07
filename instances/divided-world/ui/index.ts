@@ -81,6 +81,9 @@ const REASONS: Readonly<Record<string, string | ((n: Readonly<Record<string, num
   'technician.respected': 'Respected: calm, positive reactions to its posts and cards',
   'technician.evergreen': 'Evergreen: calm, positive reactions that came or went on an older post of its own',
   'technician.draggedIn': 'Dragged in: excited, negative reactions to its posts and cards',
+  'tweener.splitTheRoom': 'Split the room: hype and heat on its post or card, paid on the smaller side, each player counted once by where they lean',
+  'tweener.stirredThePot': 'Stirred the pot: hype and heat drawn to another\'s post by players who came after its card, paid on the smaller side',
+  'tweener.shrugged': 'Shrugged off: calm or bored reactions to its posts and cards',
 };
 
 /** Every reason this instance's classes write, for the test that holds their words to the numbers in force. */
@@ -128,6 +131,7 @@ export const instanceUi: InstanceUi = Object.freeze({
     heel: { color: '#c0392b', pattern: 'repeating-linear-gradient(45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'Earns heat: excited, negative reactions, and a Salty card that outdraws the post it lands on.', hurtsBy: () => 'Hurt by the polite shrug, calm and positive.', marks: { label: 'Earns from heat, hurt by the calm', earns: ['excitedNegative'], hurts: ['calmPositive'] } },
     jabroni: { color: '#d4ac0d', pattern: 'repeating-linear-gradient(0deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'Anti-comedy: posts built to bomb. Earns from bored, negative reactions and from Salty cards others land on its posts.', hurtsBy: () => 'Hurt by being taken sincerely, excited and positive.', marks: { label: 'Earns from the groan, hurt by hype', earns: ['boredNegative'], hurts: ['excitedPositive'] } },
     technician: { color: '#1e8449', pattern: 'repeating-linear-gradient(0deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px), repeating-linear-gradient(90deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'The respected regular. Earns from calm, positive reactions to its posts and cards, and more when an old post of its own still draws them.', hurtsBy: () => 'Hurt by heat: excited, negative reactions.', marks: { label: 'Earns from the calm, hurt by heat', earns: ['calmPositive'], hurts: ['excitedNegative'] } },
+    tweener: { color: '#d63ab8', pattern: 'repeating-linear-gradient(45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px), repeating-linear-gradient(-45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'Splits the room. Earns when a post or card draws hype and heat in equal measure, and when its card sets someone else\'s post arguing.', hurtsBy: () => 'Hurt by the shrug: calm or bored reactions.', marks: { label: 'Earns from a room split between hype and heat, hurt by the shrug', splits: ['excitedNegative', 'excitedPositive'], hurts: ['boredNegative', 'calmPositive'] } },
     lurker: { color: '#7f8c8d', pattern: 'radial-gradient(rgb(0 0 0 / 0.3) 1px, transparent 1.5px) 0 0 / 5px 5px', description: () => `Reads the room. Earns by reacting early in the direction a post ends up, by spinning threads others reply to, and from reactions to its cards.`, hurtsBy: (e, span) => `Hurt by ${num(e, 'lurker.postsAllowed') === 0 ? 'posting at all' : `posting more than ${times(num(e, 'lurker.postsAllowed'))} in one settlement window (${spanWords(span)})`}.`, marks: { label: 'Earns by calling where any post ends up', calls: ['excitedNegative', 'excitedPositive', 'boredNegative', 'calmPositive'] } },
   }),
   reasonWords: (reason: string, params: Readonly<Record<string, number>>) => {
@@ -147,7 +151,7 @@ export const instanceUi: InstanceUi = Object.freeze({
     // What the log and the machine's group label call the shop, in plain words; the sign draws one of `marquees`.
     shopName: 'Vending Machine',
     // The sign's names, one picked each time the Vending screen opens (decoration; none claims anything untrue; at most 20 characters each).
-    marquees: Object.freeze(['[MACHINE NAME]', 'AURA-MATIC 3000', 'VEND-ETTA', 'THE CARD SHARK', 'POSTCARD PALACE', 'COIN-OP KAYFABE', 'MERCH TABLE', 'CHEAP POP', 'FINISHER FRIDGE', 'GIMMICK DISPENSER', 'HEAT LAMP', 'NO FOOD, ONLY CARDS']),
+    marquees: Object.freeze(['FRESH BEEF', 'HAVE U SEEN LUIGI?', 'FAT WARIOS PLZ', 'HAHA, GACHA!', 'FORK IT OVER', 'RIZZY DRINKS', 'YOU EARNED IT', 'GO OFF, JOKER', 'NO SCALPING', 'JUST THIS ONCE', "LET 'EM HAVE IT", 'TCG-WHIZ', 'I CHOOSE YOU!', 'DO NOT SHAKE', 'LOST THE GAME', 'HAPPY TO HELP', 'JUST GLAD 2B HERE', 'WATCHIN U EAT', 'ORB FREAK', '<3 OF THE CARDS', 'YOUR BEST VEND', '[404 NOT FOUND]']),
     // The Settings board's words for Motion (docs/research/2026-10-29-two-worlds/11-settings.html).
     reducedMotionCard: 'Stick Around still snaps you back, only instantly.',
     /* What the glass calls a Mod Bot where the Lens names its role (the Mod Bots design, section 9). */

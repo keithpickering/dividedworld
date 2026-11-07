@@ -10,6 +10,7 @@ import { sameYear } from './postbit/dates.ts';
 import { Link } from './router.tsx';
 import { usePlayer } from './player.tsx';
 import { useBoot } from './boot.tsx';
+import { useKayfa } from './context.tsx';
 import './mini.css';
 
 /** A character's square avatar, or its initial where it has none. Decoration: the name beside it says who. */
@@ -22,11 +23,33 @@ export function Mini({ character, name }: { readonly character: Character | unde
 }
 
 /**
+/**
  * A mini avatar and its name, one unit: an inline flex box that centers the avatar on the name's capitals (mini.css measures the
  * nudge on Verdana's metrics), so the two never part across a line. The name is the caller's own link or words.
  */
 export function Who({ character, name, children }: { readonly character: Character | undefined; readonly name: string; readonly children: ReactNode }) {
   return <span className="kb-who"><Mini character={character} name={name} />{children}</span>;
+}
+
+/**
+ * The head of a post-like row, a media object: the avatar and the name, one `Who` unit. `id` is the character's id,
+ * which is given apart from `character` because the character may not be loaded yet while its id is known; it is
+ * required, and null is the staff (the instance's `staffWord`). `link` draws the name as the profile link, false as
+ * plain text in the same place. `name` is what to call the character before it loads. `avatar` false leaves the staff's
+ * "S" avatar out (the index draws its name alone); a character always has its avatar.
+ */
+export function Byline({ character, name, link, id, avatar = true }: { readonly character: Character | undefined; readonly name?: string | undefined; readonly link: boolean; readonly id: string | null; readonly avatar?: boolean }) {
+  const { ui } = useKayfa();
+  if (id === null) {
+    const staff = <span className="kb-system-name">{ui.copy.staffWord}</span>;
+    return avatar ? <Who character={undefined} name="S">{staff}</Who> : staff;
+  }
+  const shown = name ?? character?.name ?? 'A character';
+  return (
+    <Who character={character} name={name ?? character?.name ?? 'A'}>
+      {link ? <Link to={`/c/${encodeURIComponent(id)}`}>{shown}</Link> : <span className="kb-byline-name">{shown}</span>}
+    </Who>
+  );
 }
 
 /**

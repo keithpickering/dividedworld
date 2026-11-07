@@ -178,6 +178,13 @@ export interface Settings {
   /** A thread is HOT when it has had at least this many replies in the last 7 days. */
   readonly hotReplies: number;
   /**
+   * The text search configuration a post's words are stemmed in (a name Postgres's pg_ts_config holds: `english`, `simple`), so the engine assumes no language. Changing it
+   * rebuilds the search index in the background (supabase/migrations/0117_search.sql).
+   */
+  readonly searchLanguage: string;
+  /** How many of the newest matches a relevance search ranks (100 to 100,000); a common word fills it at once, which bounds the work at any size. */
+  readonly searchRankPool: number;
+  /**
    * How long after a character's last poll it stays listed in "Who is online" and "Users browsing":
    * a mask arrives on its first poll and leaves only by aging out this long after its last, so a
    * swap of masks is never shown as one leaving as another arrives.
@@ -454,6 +461,24 @@ export interface HeldVote {
   readonly endsUp: Quadrant | null;
 }
 
+/**
+ * One other player's vote on an Act as it stood: its weight times each quadrant's share. It names no player, and a
+ * player with no vote there is not in a list of them.
+ */
+export type Standing = Readonly<Record<Quadrant, number>>;
+
+/** One of a character's Acts a vote moved on in the window, and the votes on it at the window's start and at its end. */
+export interface ActStanding {
+  readonly act: string;
+  readonly actKind: ActKind;
+  /** The time of the latest reaction in the window that moved a vote on the Act. */
+  readonly at: number;
+  /** Each other player's vote at the window's start. */
+  readonly before: readonly Standing[];
+  /** Each other player's vote at the window's end. */
+  readonly now: readonly Standing[];
+}
+
 /** A card the character played, and how it drew against the post it landed on, in the window. */
 export interface PlayedCard {
   readonly act: string;
@@ -475,6 +500,14 @@ export interface PlayedCard {
   readonly targetVotes: number;
   /** Votes on the target post after the card was played (each counted once per player and alignment, for that player's earliest card of this alignment there), by quadrant, from other players. */
   readonly targetAfter: Readonly<Record<Quadrant, number>>;
+  /**
+   * The votes, at the window's end, of the players whose first reaction to the target came after this play, the caster's
+   * and the target author's players left out; `at` is the latest of those reactions. Null on a play that does not hold the
+   * target for its player (their earliest play there, of any alignment, an earlier window's included), and where no such
+   * player reacted. (A play beyond a post has no target post and is never a PlayedCard.) Like the standings' lists, it is
+   * ordered by the votes' own numbers, never by player. There is no `before`: every player it drew arrived in the window.
+   */
+  readonly drawnAfter: { readonly at: number; readonly now: readonly Standing[] } | null;
 }
 
 /** A card another player played on one of the character's posts. */
@@ -514,6 +547,8 @@ export interface ClassInput {
   readonly cardsPlayed: readonly PlayedCard[];
   readonly cardsLanded: readonly LandedCard[];
   readonly threadsSpun: readonly SpunThread[];
+  /** The character's own Acts with a vote moved in the window, each with every other player's vote there. */
+  readonly standings: readonly ActStanding[];
 }
 
 /**

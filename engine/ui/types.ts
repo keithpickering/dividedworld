@@ -57,11 +57,20 @@ export interface ClassLook {
   readonly marks?: ClassMarks;
 }
 
+/** The map's cells in the React picker's order: Heat and Hype on top, Groan and Calm below (the class cards and the guide draw it; a split must sit side by side in one row). */
+export const MAP: readonly Quadrant[] = ['excitedNegative', 'excitedPositive', 'boredNegative', 'calmPositive'];
+
 export interface ClassMarks {
   readonly label: string;
   readonly earns?: readonly Quadrant[];
   readonly hurts?: readonly Quadrant[];
   readonly calls?: readonly Quadrant[];
+  /**
+   * Two quadrants the class earns from together, by their balance: drawn as two cells each half-filled
+   * toward the other and joined by a bar. The pair must sit side by side on the map (one row of
+   * `MAP` above), and neither is also in `earns`, `hurts` or `calls`.
+   */
+  readonly splits?: readonly [Quadrant, Quadrant];
 }
 
 /**
@@ -413,10 +422,16 @@ export interface FrontDoorPost {
   readonly by: string;
   /** BBCode; `{{setting:<path>}}` is filled from the instance's settings, as the guide's are. */
   readonly body: string;
-  /** Counts shown on the post, by reaction key. Static: nothing can be pressed. */
+  /** The counts the post starts with, by reaction key; a visitor's own reactions are added on their screen alone. */
   readonly reactions: Readonly<Record<string, number>>;
-  /** Cards played on the post, drawn by each card's `CardUi.Effect`: its key, who cast it (a cast key), and its config (a seeded card's seed included). */
-  readonly plays?: readonly { readonly card: string; readonly by: string; readonly config: Readonly<Record<string, unknown>> }[];
+  /**
+   * Cards played on the post, each shown by its card's mark and drawn by its `CardUi.Effect`: its key, who cast it (a cast key), its
+   * config (a seeded card's seed included), its layer where the card stacks (1 when none is given), and the counts its play starts with.
+   */
+  readonly plays?: readonly {
+    readonly card: string; readonly by: string; readonly config: Readonly<Record<string, unknown>>;
+    readonly layer?: number; readonly reactions?: Readonly<Record<string, number>>;
+  }[];
 }
 
 /**

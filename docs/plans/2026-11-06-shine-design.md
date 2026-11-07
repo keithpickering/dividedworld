@@ -154,6 +154,30 @@ with a heavy halo on the words (bends the 4.5:1 rule rather than meets it).
 This replaces `stopsAreReadable` and `GLITTER_ALPHA`'s layer rule. The palettes still pass alone, and the band now
 holds every highlight drawn from them.
 
+**Amended 2026-11-07: the dark board's glints leave the band** (issue #340, the owner choosing its option 3). Held to the
+letter on the dark board, the band ends at 0.048, at most about 2:1 against the ground for any flake, and Glitter Bomb
+read as faint dust (the owner: "I would love to see it brighter, more like real glitter in its shading onscreen"). The
+decision now reads: every pixel of the shine holds 4.5:1 against every ink a post's words use, on both boards, **except
+the dark board's glitter glints**: the flares over the few settled flakes facing the light, lit past `GLINT_MIN`, which
+come and go as the light moves or a flake winks.
+
+- **The glint.** It is added to what is under it, in the flake's own hue at full brightness (each ink saturated as at
+  the ceiling, then its largest channel at 1), with the instance's glint (Divided World's white) over its heart at half
+  its size, as real glitter flashes white at its center and colored at its edge.
+- **The settled field stays inside.** Every flake's own color, lit or not, is clamped as before; so are the burst over
+  the words, the puff, the cling layer and loose glitter (flakes carried off by the pointer and dropped on a post), which
+  are not a post's own settled glints. A flare in those keeps the in-band tint it had.
+- **Not under reduced motion.** There the light rests, so a glint would never pass, and the accessible path would carry a
+  lasting patch out of the band under the words. Under reduced motion a flare keeps the in-band tint.
+- **The check.** The readable-band check samples everything but the glints. A second check, `glintsAreFew`
+  (`engine/ui/shine/flakes.ts`), holds that at every light of the grid and every moment of a 20-second idle walk at most
+  3% of a post's settled flakes glint, or 16 of them on a short post where that is more (a few hundred flakes put a
+  handful past a share by chance alone). Today the most crowded light glints about 1.6% of a tall post and at most 12
+  flakes of a short one, over posts from 120 by 60 to 988 by 300 px. Its self-tests drive it red with a post whose
+  flakes all face one light, and with 17 flakes facing one on a short post. `engine/ui/shine/flakes.glint.test.ts` holds
+  that a glint is out of the band, in its flake's hue and added, and that nothing else is: the flakes' own fills, loose
+  glitter, and every flare under reduced motion.
+
 ## 6. A busy page
 
 - **One loop for the page**, in the suds' shape: hosts register a canvas, a box and a density, and one animation loop
@@ -236,3 +260,35 @@ rate" for a post whose body is bigger than its words:
 - **How it is held.** `e2e/shine.spec.ts` counts the screen area a scroll's draws change against what the words would
   change drawn on every frame (at most 1.25 times; before this, 2.29 in that spec's thread), and the rest-rate check
   holds each post to its share of thirty draws a second.
+
+## 11. Glitter Bomb's burst, seen from above (amended 2026-11-07)
+
+The owner, trying Glitter Bomb on a deployed preview, asked for five changes. Four replace parts of section 2; the fifth
+is held by section 5.
+
+- **When it goes off.** It went off when the post was barely in view. It now waits for the reader to be looking at the
+  spot: the burst point must be in the middle three fifths of the view's height and stay there 300 ms by the loop's
+  clock. A scroll that only passes it fires nothing. This replaces section 2's "comes 40% into view".
+- **Seen from above the whole time.** The flakes flew up the screen and fell down it, as if seen from the side, then were
+  pulled back over the post; the settled glitter is seen from above. Now every flake is thrown out from the burst point
+  along the post toward its resting place, fast at first and slowing, wandering a little off its line, while it rises
+  toward the reader and settles back (drawn up to about twice its size at its highest). Nothing falls down the screen.
+  It still lands inside two seconds, under the words.
+- **Its own spot each load.** The seed is now the play's and the post's ids and a draw made for the post's mount, so each
+  load bursts from its own spot and leaves its own glitter around it, and a post that leaves view and returns keeps
+  what it had. A play's moment (`still`) is still the public seed alone. This replaces section 2's "every reader sees the
+  same glitter on the same post"; nothing private enters the seed.
+- **A fast scroll shakes glitter off.** A touch reader has no pointer to pick glitter up. A scroll of the page faster than
+  2,200 CSS px a second shakes a few flakes off each post on screen (up to 8 a post a frame, 160 falling on the page).
+  They are thrown the way the page moved and fall on the page-fixed layer, outside the post's box, landing on whatever
+  post is under them or fading, as a dropped flake does. Like a mouse's pickup, a shaken flake is a copy and the post
+  keeps its own: taking it would repaint the post's whole base on every frame of a fast scroll, which multiplied the
+  pixels rastered a frame by more than ten in `e2e/shine.spec.ts`. A mouse's scroll wheel shakes too. Reduced motion
+  shakes nothing.
+- **Brighter on the dark board, inside the band.** The dark board's band ends at a luminance of 0.048 (section 5), so the
+  glitter there cannot be much brighter without breaking 4.5:1 under the words. Inside it, each ink is now taken at the
+  ceiling with its chroma pushed (a lit flake mixed toward white came out a flat gray once scaled back under the
+  ceiling), an unlit flake shows 42% of that rather than 5%, and a flake facing the light flares in its own hue, drawn
+  over it rather than added. Going brighter than the band is the owner's question, not this amendment's: section 5's
+  "held everywhere" stands until the owner says otherwise. (The owner answered the same day, in issue #340: the glints
+  now leave the band and are added, in their hue at full brightness; section 5's amendment.)

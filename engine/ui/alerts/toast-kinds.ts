@@ -1,6 +1,6 @@
 /**
  * Which alert kinds toast (the alerts plan, Task 10; the alerts design, section 8). The engine's defaults, which an instance may override and the
- * player's own choice (Settings › Notifications, Task 11) overrides in turn: on for quotes, cards on yours, traps, rulings, settlements and updates;
+ * player's own choice (Settings › Notifications, Task 11) overrides in turn: on for quotes, words put in a character's mouth, cards on yours, traps, rulings, settlements and updates;
  * off for followed threads, hints and season news. A kind that does not toast still counts and still has its row in Alerts.
  *
  * One place decides it: the HUD asks `toastsOn` through `useToastKinds`, which reads where `prefs` and `defaults` come from.
@@ -14,7 +14,7 @@ import { onToastChoice } from './toast-choice.ts';
 export type ToastDefaults = Readonly<Record<AlertKind, boolean>>;
 
 export const TOAST_DEFAULTS: ToastDefaults = {
-  quote: true, cardOnYours: true, cardEnded: true, trapStruck: true, trapSprang: true, ruling: true, settlement: true, update: true,
+  quote: true, framed: true, cardOnYours: true, cardEnded: true, trapStruck: true, trapSprang: true, ruling: true, settlement: true, update: true,
   followed: false, hint: false, seasonNews: false,
 };
 

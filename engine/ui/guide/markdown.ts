@@ -277,7 +277,7 @@ type Kind = 'aura' | 'count' | 'span' | 'map';
  * decide here (null: not a number or a span, not for prose), and a path the guide names can never be one the page cannot say.
  */
 const KINDS: { readonly [K in keyof ScreenSettings]-?: Kind | null } = {
-  postsPerPage: 'count', hotReplies: 'count', editGrace: 'span', reactionCap: 'count', charactersPerPlayer: 'count', invitesPerPlayer: 'count',
+  postsPerPage: 'count', searchLanguage: null, searchRankPool: 'count', hotReplies: 'count', editGrace: 'span', reactionCap: 'count', charactersPerPlayer: 'count', invitesPerPlayer: 'count',
   inviteLifetime: 'span', turnCooldown: 'span', walletCap: 'aura', postMaxLength: 'count', titleMaxLength: 'count', registrationMode: null,
   settlementLength: 'span', presencePollSeconds: 'count', presenceWindow: 'span', cardSettings: 'map', cardEconomy: 'map', economy: 'map', toastDefaults: null, groups: null, toastMs: 'count',
 };

@@ -49,7 +49,11 @@ a,
   text-underline-offset: 0.15em;
 }
 
-a:visited {
+/*
+ * At an element's weight, as the plain link rule is: a rule that names a link by its class sets its color, visited or not (the glass
+ * menu's tabs; engine/ui/glass/links.test.tsx). A bare `a:visited` outranked every one-class rule.
+ */
+a:where(:visited) {
   color: var(--kb-link-visited);
 }
 

@@ -22,13 +22,17 @@ import { usePlayer } from '../player.tsx';
 import { useMeet } from './Callout.tsx';
 import { useHoldScreen } from '../tips/Tips.tsx';
 import { useLensStore } from './Lens.tsx';
+import { useStaged } from '../staged.ts';
 import { MomentView, useShownMoment } from './Moment.tsx';
 import { createPlays, inPlayOrder, livePlays, nextEnd, playOf, shownPlays, usePlays, type Plays } from './plays.ts';
 import { drawnInMoment, type CardRules, type Reach } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
 import type { CardPlay, CardUi, CardView, EffectPlace, EffectProps } from './types.ts';
+import { glassInk } from './ink.ts';
 
 const NOT_AUTHOR = 'only the post\'s author saves what is on it';
+/** What a staged page's effect is answered with: it saves nothing and releases nothing, without asking anyone (staged.ts). */
+export const SAMPLE = 'this is a sample post';
 
 /**
  * Wraps a post's words in the effect of each card played on it, in play order, and in the effects of the live plays above it (the
@@ -62,17 +66,20 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
    * post's player answers for what is on it (#85); casting and releasing stay with the masks that can act.
    */
   const author = writingCharacters.find((c) => c.id === post.character) ?? null;
+  const staged = useStaged();
   const save = useCallback<EffectProps['save']>(async (play, state) => {
+    if (staged) return { ok: false, error: SAMPLE };
     if (!author) return { ok: false, error: NOT_AUTHOR };
     const saved = await api.saveEffect(play, author.id, state);
     if (saved.ok) plays.setStates({ [play]: { state, savedAt: saved.value.savedAt } });
     return saved;
-  }, [api, author, plays]);
+  }, [api, author, plays, staged]);
   const release = useCallback<EffectProps['release']>(async (play) => {
+    if (staged) return { ok: false, error: SAMPLE };
     const released = await api.releaseEffect(play);
     if (released.ok) plays.setReleased([play]);
     return released;
-  }, [api, plays]);
+  }, [api, plays, staged]);
   /* The layers above the post, each its own reach's plays still live, redrawn at the soonest end (useUntil). */
   const above = [
     { reach: 'board' as const, drawn: board === null ? [] : onBoard.plays, of: onBoard },
@@ -289,6 +296,11 @@ function StillEffect({ Effect, card, onWords, ...props }: Omit<EffectProps, 'sho
 
 export { useNarrow, useSheet } from '../media.ts';
 
-/** A play's ink, where its card chooses one (`CardUi.tag`), given all of this card's plays on the post in play order. */
-export const inkOf = (ui: { readonly cards: readonly CardUi[] }, play: CardPlay, plays: readonly CardPlay[]): string | undefined =>
-  ui.cards.find((c) => c.key === play.card)?.tag?.(play, plays.filter((o) => o.card === play.card));
+/**
+ * A play's ink, where its card chooses one (`CardUi.tag`), given all of this card's plays on the post in play order: lifted
+ * to read on the glass where it is too dark to (`glassInk`), and none where it cannot be read.
+ */
+export const inkOf = (ui: { readonly cards: readonly CardUi[] }, play: CardPlay, plays: readonly CardPlay[]): string | undefined => {
+  const chosen = ui.cards.find((c) => c.key === play.card)?.tag?.(play, plays.filter((o) => o.card === play.card));
+  return chosen === undefined ? undefined : glassInk(chosen);
+};

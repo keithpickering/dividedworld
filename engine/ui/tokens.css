@@ -93,6 +93,16 @@
   --kb-meter-hi: #fff;
   --kb-meter-dark: #404040;
   --kb-meter-fill: #0a246a;
+  /* A highlight's ink (bbcode.css): black or white, whichever reads better on the color a player gave, in either mode, so neither follows the page's. */
+  --kb-ink-black: #000;
+  --kb-ink-white: #fff;
+  /* Rainbow text (bbcode.css): six stops, each at least 4.5:1 on the page's ground (contrast.test.tsx), so the words read at every stop. */
+  --kb-rainbow-1: #c00000;
+  --kb-rainbow-2: #a04a00;
+  --kb-rainbow-3: #737300;
+  --kb-rainbow-4: #007a00;
+  --kb-rainbow-5: #0050c8;
+  --kb-rainbow-6: #7a00b8;
 
   /*
    * The member group's rank bar (postbit/GroupBar.tsx, the member groups design): a 2003 rank image under the name. Its color is the
@@ -219,6 +229,12 @@
     --kb-meter-hi: #b0b0b0;
     --kb-meter-dark: #000;
     --kb-meter-fill: #7fb2ff;
+    --kb-rainbow-1: #ff6b6b;
+    --kb-rainbow-2: #ffa94d;
+    --kb-rainbow-3: #ffe14d;
+    --kb-rainbow-4: #5ee06a;
+    --kb-rainbow-5: #6bb5ff;
+    --kb-rainbow-6: #d291ff;
     --kb-sheet-bg: #1c1c1c;
     --kb-sheet-fg: #e8e8e8;
     --kb-sheet-link: #fff;
@@ -248,6 +264,12 @@
   --kb-meter-hi: #b0b0b0;
   --kb-meter-dark: #000;
   --kb-meter-fill: #7fb2ff;
+  --kb-rainbow-1: #ff6b6b;
+  --kb-rainbow-2: #ffa94d;
+  --kb-rainbow-3: #ffe14d;
+  --kb-rainbow-4: #5ee06a;
+  --kb-rainbow-5: #6bb5ff;
+  --kb-rainbow-6: #d291ff;
   --kb-sheet-bg: #1c1c1c;
   --kb-sheet-fg: #e8e8e8;
   --kb-sheet-link: #fff;

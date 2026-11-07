@@ -47,7 +47,7 @@ import { feelinFab } from '../cards/feelin-fab.ts';
 /** A span in words: "a week", "3 days". */
 const spanWords = (s: { readonly unit: string; readonly count: number }) => (s.unit === 'day' && s.count === 7 ? 'a week' : s.count === 1 ? `a ${s.unit}` : `${s.count} ${s.unit}s`);
 import { ConfigForm as WhoopsConfigForm } from '../cards/whoops/ConfigForm.tsx';
-import { luminance } from '../cards/whoops/splat.ts';
+import { rgbOf } from '../cards/whoops/splat.ts';
 
 /** A price of a whole number of hundredths, as the shop says it: "1.00". */
 const orbs = (hundredths: number) => (hundredths / 100).toFixed(2);
@@ -89,16 +89,16 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     /*
      * Each play's tag and chip takes the color it splatted for its border and glow (the plays-on-a-post design, section 5):
      * the tag on top is the most drawn play, not always the top ink. An ink the card cannot read keeps the alignment's.
+     * A Mod Bot's ink may be a color's name, so the tag is given as the hex the splat draws (the engine reads hex).
      */
     tag: (play) => {
       const ink = play.config.color;
       if (typeof ink !== 'string') return undefined;
       try {
-        luminance(ink);
+        return `#${rgbOf(ink).map((c) => c.toString(16).padStart(2, '0')).join('')}`;
       } catch {
         return undefined;
       }
-      return ink;
     },
     describe: (settings: Settings) => {
       const e = settings.economy;

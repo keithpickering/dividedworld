@@ -13,7 +13,7 @@ const instance: Instance = {
   settings: {
     walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 6, settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', invitesPerPlayer: 3, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 }, reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' }, reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } }, hints: { least: 10, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } }, toastDefaults: ['quote'],
     settlementLength: { unit: 'day', count: 1 }, seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite',
-    postMaxLength: 50, titleMaxLength: 10, postsPerPage: 20, hotReplies: 10, cardSettings: {}, economy: { 'splat.price': 100 }, ...systemSettings,
+    postMaxLength: 50, titleMaxLength: 10, postsPerPage: 20, hotReplies: 10, searchLanguage: 'english', searchRankPool: 5000, cardSettings: {}, economy: { 'splat.price': 100 }, ...systemSettings,
   },
   ranks: [{ name: 'Rookie', from: 0 }], groups: testGroups, pipStyles: [{ key: 'default', name: 'Default', full: '●', empty: '○' }], boards: [{ slug: 'general', name: 'General', description: '' }],
   copy: { announcementsThreadTitle: 'S{season} Promos' },
@@ -37,6 +37,22 @@ test('each action is decided into the SQL function that writes it, with that fun
     { ok: true, rpc: 'apologize', args: { in_move: other, through: id, title: 'Sorry', body: 'I was wrong.' } });
   assert.deepEqual(decide({ action: 'react', act: other, character: id, kind: 'fire' }, instance),
     { ok: true, rpc: 'react', args: { target: other, through: id, reaction: 'fire' } });
+});
+
+test('framing passes through on a post, a thread start, a spin and an apology: the first five distinct ids, and nothing when there are none', () => {
+  const six = [id, other, '33333333-3333-4333-8333-333333333333', '44444444-4444-4444-8444-444444444444', '55555555-5555-4555-8555-555555555555', '66666666-6666-4666-8666-666666666666'];
+  assert.deepEqual(decide({ action: 'post', thread: other, character: id, body: 'R.', framing: [other, other, id] }, instance),
+    { ok: true, rpc: 'post', args: { in_thread: other, through: id, body: 'R.', quoting: null, framing: [other, id] } });
+  assert.deepEqual(decide({ action: 'startThread', board: 'general', character: id, title: 'T', body: 'B', framing: six }, instance),
+    { ok: true, rpc: 'start_thread', args: { board_slug: 'general', through: id, title: 'T', body: 'B', framing: six.slice(0, 5) } });
+  assert.deepEqual(decide({ action: 'spin', origin: other, character: id, title: 'S', body: '', framing: [id] }, instance),
+    { ok: true, rpc: 'spin', args: { origin: other, through: id, title: 'S', body: '', framing: [id] } });
+  assert.deepEqual(decide({ action: 'apologize', move: other, character: id, title: 'Sorry', body: 'B', framing: [id, id] }, instance),
+    { ok: true, rpc: 'apologize', args: { in_move: other, through: id, title: 'Sorry', body: 'B', framing: [id] } });
+  assert.deepEqual(decide({ action: 'post', thread: other, character: id, body: 'R.', framing: [] }, instance),
+    { ok: true, rpc: 'post', args: { in_thread: other, through: id, body: 'R.', quoting: null } });
+  assert.match(refusal({ action: 'post', thread: other, character: id, body: 'R.', framing: ['nope'] }) ?? '', /^framing:/);
+  assert.match(refusal({ action: 'post', thread: other, character: id, body: 'R.', framing: 'x' }) ?? '', /^framing:/);
 });
 
 test('a request that is not one of the actions is refused', () => {

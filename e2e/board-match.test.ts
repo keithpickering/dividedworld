@@ -117,6 +117,18 @@ describe('compareBoard: the rest of the rules', () => {
     expect(compareBoard(board, moved('line', { width: 30 }), across).map((m) => m.field)).toEqual(['width']);
   });
 
+  test('center compares the box\'s horizontal center and its y, so a box whose width follows its words holds its place however long the words are', () => {
+    const center = manifest(lm('line', { box: 'center' }));
+    // Same center (400), width 600 on the board and 400 in the build: x moves by 100 and no mismatch is named.
+    expect(compareBoard(board, moved('line', { x: 100, width: -200 }), center)).toEqual([]);
+    expect(compareBoard(board, moved('line', { height: 90 }), center)).toEqual([]);
+    // Poisoned: the center is 20px off.
+    const off = compareBoard(board, moved('line', { x: 20 }), center);
+    expect(off.map((m) => m.field)).toEqual(['center-x']);
+    expect(off[0]!.message).toContain('center-x is 420 in the build, 400 on the board');
+    expect(compareBoard(board, moved('line', { y: 20 }), center).map((m) => m.field)).toEqual(['y']);
+  });
+
   test('position compares x and y only; height compares y and height only; none compares no box', () => {
     const wide = moved('line', { width: 200, height: 50 });
     expect(compareBoard(board, wide, manifest(lm('line', { box: 'position' })))).toEqual([]);

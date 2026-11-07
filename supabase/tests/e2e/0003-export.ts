@@ -193,9 +193,9 @@ test('an instance exported and imported into a fresh database is the same instan
       -- its queue entry, so that the catalogs, the queue and the moves in force are carried across with the Acts that name them.
       insert into move_kinds (key, structural) values ('renameBoard', true) on conflict (key) do nothing;
       insert into demand_kinds (key) values ('postsOnBoard') on conflict (key) do nothing;
-      -- A move kind whose words SQL fills with a derived token (0117), so the column is carried across.
+      -- A move kind whose words SQL fills with a derived token (0120), so the column is carried across.
       insert into move_kinds (key, structural, derived) values ('conferGroup', false, '{groupName}') on conflict (key) do update set derived = excluded.derived;
-      -- The member groups (0116): a rung and a conferred group, carried across with the rest of the instance's catalogs.
+      -- The member groups (0119): a rung and a conferred group, carried across with the rest of the instance's catalogs.
       insert into group_kinds (key, name, color, source, rung, condition, at_least) values ('expPosts', 'Exported Posts', '#7a7a7a', 'ladder', 98, 'posts', 1) on conflict (key) do nothing;
       insert into group_kinds (key, name, color, stripe, source, tone) values ('expTrial', 'Exported Trial', '#d2691e', true, 'conferred', 'punishment') on conflict (key) do nothing;
       moved := (write_staff_act('exp-boss', 'move', t, null, jsonb_build_object('kind', 'renameBoard', 'body', 'The System has spoken.', 'expires_at', now() + interval '2 days',
@@ -208,7 +208,7 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural, landed_act, cause_act)
       select max(m.id), 'exp-boss', 'renameBoard', '{"board": "x", "name": "Exported Palace"}', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', gen, 'count', 2)), 'Because the toast was cold.',
              now() - interval '1 day', now() + interval '2 days', true, kept, p from meetings m;
-      -- An apology to the move in force (0117), carried across with the Acts it names.
+      -- An apology to the move in force (0120), carried across with the Acts it names.
       insert into apologies (move_act, apology_act, character, state) values (kept, p, b, 'pending');
       -- A Mod's order from that meeting (0103), and a visit by the Mod on the post with its open row (0105), one failed attempt to draw a visit and one to file it, so the
       -- tables the Mod Bots add are carried across with the Acts that name them. The order hands out nothing: an
@@ -502,7 +502,7 @@ test('an instance exported and imported into a fresh database is the same instan
 
     // The jobs that run the instance are there, each scheduled from the imported settings: the
     // settlement's, the view count's, the Boss's meeting and the pool's chatter.
-    assert.equal(psqlOn(fresh.toString(), `select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'kayfabb-%'`), 'kayfabb-chatter,kayfabb-meet,kayfabb-settle,kayfabb-staff,kayfabb-system-tick,kayfabb-view-counts');
+    assert.equal(psqlOn(fresh.toString(), `select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'kayfabb-%'`), 'kayfabb-chatter,kayfabb-meet,kayfabb-search-rebuild,kayfabb-settle,kayfabb-staff,kayfabb-system-tick,kayfabb-view-counts');
 
     // And a second import onto what is no longer a fresh instance is refused, naming why.
     const twice = await run('import-instance.mjs', ['--from', dir, '--to', fresh.toString(), '--storage', newStore.url]);

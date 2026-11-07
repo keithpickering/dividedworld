@@ -70,7 +70,7 @@ interface World {
   mods?: { key: string; allowance: number; granted: number | null; boards: string[]; order: string | null }[];
   /** The rules in force as meeting_context() lists them (0103). */
   rules?: { board: string | null; predicate: string; param: unknown; number: number }[];
-  /** The groups as meeting_context() lists them (0119): the conferred catalog, and the characters that are capped or held. */
+  /** The groups as meeting_context() lists them (0122): the conferred catalog, and the characters that are capped or held. */
   groups?: { conferred: { key: string; name: string; tone: string }[]; characters: { id: string; capped: boolean; held: boolean }[] };
   /** What the apply says it returned from the Mods (default: nothing is said). */
   applyThrows?: boolean;
