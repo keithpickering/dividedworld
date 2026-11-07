@@ -12,7 +12,7 @@ import { GlassButton } from '../glass/Button.tsx';
 import { FieldCount } from '../glass/FieldCount.tsx';
 import { FormFoot } from '../glass/FormFoot.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
-import { GlassCombobox } from '../search/GlassCombobox.tsx';
+import { GlassCombobox } from '../glass/GlassCombobox.tsx';
 import type { ComboSource } from '../search/useSearchCombobox.ts';
 import { revealFooter } from './footers.ts';
 import { PreviewBox } from './PreviewBox.tsx';

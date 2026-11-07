@@ -4,7 +4,7 @@
  * `kb-glass-field` with a `kb-glass-input`, and a list in the glass tokens.
  */
 import type { ReactNode } from 'react';
-import { useSearchCombobox, type ComboOption, type ComboRow, type UseSearchComboboxOptions } from './useSearchCombobox.ts';
+import { useSearchCombobox, type ComboOption, type ComboRow, type UseSearchComboboxOptions } from '../search/useSearchCombobox.ts';
 import './glass-search.css';
 
 export interface GlassComboboxProps<O extends ComboOption = ComboOption> extends UseSearchComboboxOptions<O> {

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { axeViolations, describeViolations } from '../a11y.ts';
 import { BoardCombobox } from './BoardCombobox.tsx';
-import { GlassCombobox } from './GlassCombobox.tsx';
+import { GlassCombobox } from '../glass/GlassCombobox.tsx';
 import type { ComboGroup, ComboOption } from './useSearchCombobox.ts';
 
 afterEach(() => { cleanup(); vi.useRealTimers(); });
