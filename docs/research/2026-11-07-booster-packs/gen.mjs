@@ -31,7 +31,8 @@ try {
 const { renderToStaticMarkup } = await import('react-dom/server');
 const { createElement: h } = await import('react');
 /* A file the bundler served from the repository's root is read from this folder, three levels down. */
-const local = (html) => html.replaceAll('src="/instances/', 'src="../../../instances/');
+/* React's server renderer hoists a `<link rel="preload">` for each image; a board has no head to hoist it to, so it is dropped. */
+const local = (html) => html.replace(/<link rel="preload" as="image"[^>]*\/>/g, '').replaceAll('src="/instances/', 'src="../../../instances/');
 const face = (key, size, style = {}) => local(renderToStaticMarkup(h(Postcard, { face: faces[key], size, style })));
 const back = (size, hit = false, style = {}) => local(renderToStaticMarkup(h(PostcardBack, { size, hit, mark: coin, style })));
 
@@ -290,10 +291,7 @@ const bossMoves = (size = 21) => `<h2 class="sec" style="color: #ff9cc0; font-si
 /** "In this pack": five card backs at the slot's size, the last one the hit's gold. */
 const inPack = (zoom) => `<div aria-hidden="true" style="display: flex; gap: 6px">${[0, 1, 2, 3, 4].map((i) => `<span style="zoom: ${zoom}; display: block">${back('slot', i === 4)}</span>`).join('')}</div>`;
 
-page({
-  file: '01-machine.html', name: 'The machine, a Booster selected', w: 1440, h: 1080,
-  note: 'The machine as the build lays it out on main (its slots, shelf edges and info controls at the zoomed slot size), stocked from the admin\'s order: the Booster in A1, selected, its contents and odds shown plainly; Whoops! pulled by the Boss (A2); Glitter Bomb marked up (E1); Main Event hidden, so it draws no slot; E2 sealed.',
-  body: frame(1440, 1080, `
+const MACHINE = `
   ${smoke(1440, 1080, [[40, 110, 360, 640], [1060, 110, 340, 920]])}
   ${menu(TABS, 'VENDING MACHINE')}
   <main>
@@ -337,7 +335,12 @@ page({
     <p class="note" style="margin-top: 12px; font-size: 19px; line-height: 1.4">Main Event isn't sold on its own. Within a rarity, every card is equally likely.</p>
     <div style="margin-top: 30px; padding-top: 24px; border-top: 1px solid rgba(241,236,255,.22)">${bossMoves(20)}</div>
   </aside>
-  </main>`),
+  </main>`;
+
+page({
+  file: '01-machine.html', name: 'The machine, a Booster selected', w: 1440, h: 1080,
+  note: 'The machine as the build lays it out on main (its slots, shelf edges and info controls at the zoomed slot size), stocked from the admin\'s order: the Booster in A1, selected, its contents and odds shown plainly; Whoops! pulled by the Boss (A2); Glitter Bomb marked up (E1); Main Event hidden, so it draws no slot; E2 sealed.',
+  body: frame(1440, 1080, MACHINE),
 });
 
 /* ==== 02, 03: the reveal ==== */
@@ -521,4 +524,6 @@ page({
 </div>`,
 });
 
-console.log('wrote 01-machine, 02-reveal, 03-hit, 04-phone, 05-admin');
+await import('./motion/prototype.mjs').then((m) => m.write({ MACHINE, FACE_CSS, CSS, FONTS, smoke, face, back, pack, torn, faces, PACK, ESC, root, here }));
+
+console.log('wrote 01-machine, 02-reveal, 03-hit, 04-phone, 05-admin, motion/prototype.html');

@@ -26,3 +26,9 @@ engine's (`BACK_CSS`).
 
 The pack's wrapper and foil are a placeholder, with the instance's mark (its favicon's coin, as the card back carries it);
 the pack's art is the owner's to give, and is the instance's, as a card's art is.
+
+`motion/prototype.html` plays the reveal's motion and the single buy's flight to the hand, with a switch for the glass's
+feels (Smooth, Snappy, Off) and a slow-motion box, on the timings of the glass polish's Phase 3. `gen.mjs` writes it too,
+through `motion/prototype.mjs`, with every card's art inlined so the one file opens anywhere. The choreography it plays
+is written in the design's amendment "The reveal's motion"; the build follows that and the presets, not the prototype's
+code.

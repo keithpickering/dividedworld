@@ -245,3 +245,74 @@ tab (ten tabs, which the backfill's rule tightens or scrolls), and a link from t
 its glyph saying the rarity by shape (● common, ◆ uncommon, ★ rare, ✦ legendary, `gemOf` in `engine/ui/cards/faces.ts`)
 in a rotated tile, never a color alone. The plan's Task 5 said hollow and colored diamonds, from the face before the
 template.
+
+## Amended 2026-11-07: the reveal's motion
+
+The owner, on the redrawn boards: "we may want to think about how this screen can animate into view. Glass polish phase
+3 will be merged soon which adds page transitions to glass screens, if we have motion in mind then it's best not to make
+the build session guess at it." Phase 3 (`docs/plans/2026-11-04-glass-polish-design.md`, section 9; #293) gives the glass
+one choreography in two feels, Smooth and Snappy, and Off, written once in `engine/ui/glass/motion.ts` as presets over
+each feel's tokens (`enter`, `exit`, `screen`, `stagger`, `ease`, Snappy's `spring`, `distance`, `blur`, `scale`). The
+reveal is choreographed in those presets and tokens, and adds no setting and no token of its own. Its prototype is
+`docs/research/2026-11-07-booster-packs/motion/prototype.html`: the machine, both buys, and a switch for Smooth, Snappy
+and Off, with the reveal's beats played on Phase 3's default tokens. The owner tunes it, as they tuned Phase 3's story.
+
+**Decided** (the owner chose each recommendation):
+
+- **The pack comes from its slot.** The reveal enters as an overlay anchored on the slot that was bought (Phase 3's
+  `overlay`, from the slot's rect), and the machine behind dims in step (`backdrop`). Weighed: Phase 3's `modal` as it
+  is, which gives the purchase no moment of its own.
+- **A card lifts and flips.** Each card moves between its row slot and the spotlight (a shared layout), and turns over in
+  the spotlight. Weighed: flipping in place in the row while the spotlight crossfades, which reads as two things.
+- **The cards leave into the hand.** Done or Esc sends the five into the machine's Your hand link, which pulses as they
+  land. The owner, on the same question: "ideally we will refactor the machine's animation so it does this too, which is
+  much more advanced than its current rudimentary slide and fade." So **one flight serves both**: a single card bought
+  drops into the tray as today and then flies to the hand by the same path, in place of the fixed `kb-vending-drop`
+  keyframes, which fly every card to one hard-coded offset wherever the hand is. Weighed: Phase 3's `modal` exit.
+- **The prototype and the written choreography** go to the build session together.
+
+**The choreography.** Each beat names the token it runs on. Under Snappy, a beat that lands springs, by the feel's
+`spring`. Under Off, nothing moves: each beat's end state is drawn at once, which is what reduced motion did in the plan
+before.
+
+1. **Entrance**, which starts when the purchase's answer arrives (the reveal shows what was stored; nothing starts
+   before the answer, so a refusal and a success look the same until the words appear, as Phase 3 requires):
+   - E1. The machine dims (`backdrop`, `enter`).
+   - E2. The pack rises from its slot's rect to the middle, growing to its hero size (`overlay` from the slot, over
+     `screen`; Smooth blurs in by `blur`).
+   - E3. The pack's top tears away and travels up to the head, where it stays as the reveal's mark (`enter`).
+   - E4. The deal: five backs fly out of the pack into the row, each settling from a slight tilt, staggered by
+     `stagger(feel, 5)` at three times its step, the gold hit last (`enter` each). The pack's body sinks and fades
+     (`exit`, `distance`).
+   - E5. The head and the buttons land as a screen's head and panels do (`staggerItem`).
+   - E6. The first back lifts into the spotlight, waiting to be turned (`enter`).
+2. **A turn** (a click on the next card, "Turn the next card", or Space):
+   - T1. The card in the spotlight settles back into its row slot, face up, as the next back lifts out of its slot into
+     the spotlight (one shared layout per card, `enter`).
+   - T2. The card turns on its vertical axis (`rotateY`, over `enter` × 1.2, Snappy's spring landing it). The counter
+     moves and the screen reader hears the card when the turn starts, not when it ends.
+   - The hit's beat: before it turns, its gold back pulses once (scale to 1.05 and back, over `screen`). Once turned,
+     its ring goes gold and its halo fades in (`screen`), its sparks burst (`stagger` over the six, `enter` each), and
+     its rarity tag drops in from above (`distance`, landing).
+3. **Turn all**: the backs left in the row turn where they lie, staggered (`stagger(feel, n)` at three times its step),
+   and the hit lifts last, with its beat.
+4. **Input never waits.** A turn, Turn all, Done or Esc pressed while a beat runs finishes every running beat at once
+   and goes on from there (Phase 3: input goes to the entering tree at once). During the entrance, a turn finishes the
+   entrance and turns.
+5. **Exit** (Done, Back to the machine, or Esc at any point): the head, the buttons, the tag and the sparks fade
+   (`exit`); the five cards fly to the Your hand link along one arc each, shrinking and fading as they land, staggered
+   by `stagger(feel, 5)` at twice its step (`screen` each); the link pulses once (`enter`); the dim lifts (`exit`). The
+   modal is `inert` from the exit's first frame and focus returns to the slot at once, as Phase 3's modals do. The
+   hand's count moved at the purchase, since the cards were in the hand from then.
+6. **The single buy**: the card drops into the tray on its side (`enter`, landing), rests for half of `screen`, then
+   flies to the hand by the same arc (`screen`), and the link pulses as it lands. The wallet's drain is unchanged.
+7. **On a phone**: the pack rises from its slot as on the 1440 (if the slot has scrolled out of view, from the
+   viewport's edge nearest it); the deal stacks the five into the pile instead of a row; a turn flips the top card where
+   it lies; the next turn, a tap or a swipe, sends the turned card off the pile toward the swipe's side (left by
+   default; a drag follows the finger and commits past a third of the card's width) and flips the next. The exit flies
+   the cards toward the Your hand link, or toward the viewport's top edge where the link has scrolled away.
+
+**Where it lives.** The flight to the hand, the lift, the turn, the deal and the hit's beat are presets in
+`engine/ui/glass/motion.ts` beside Phase 3's, pure functions of the feel that are empty under Off, so the machine, the
+reveal and any later screen that sends a card to the hand use one choreography. The hit's beat reads only the pack's
+own stored contents, which only the buyer sees ("A response never proves a private fact"): nobody else can watch it.

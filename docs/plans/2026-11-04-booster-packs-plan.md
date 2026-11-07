@@ -2,7 +2,8 @@
 
 Record, written 2026-11-04. The plan for `docs/plans/2026-11-04-booster-packs-design.md`. One build session builds it in
 one PR from `main`, after the design's PR is merged. No issue tracks it. Amended 2026-11-07: Tasks 5 and 6 build from
-the boards redrawn on the card template, `docs/research/2026-11-07-booster-packs/` (the design's amendment of that date).
+the boards redrawn on the card template, `docs/research/2026-11-07-booster-packs/` (the design's amendment of that date);
+Task 9 builds the clouded card back, and Task 10 the machine's motion, after the glass polish's Phase 3 (#293).
 
 Every task is test first: name the test, record its red run, then write the code. No `check-*.mjs` is added.
 
@@ -261,7 +262,9 @@ manifest is a `phone` export of board 01's with the reveal's screens as further 
     are already in your hand." The cards were in the hand from the moment of purchase, so closing early loses nothing.
   - **On a phone,** the cards are a pile at the sheet's size: the top one turns with a tap or a swipe, and a row of five
     outlines counts down, the last one gold.
-  - **Reduced motion** shows each card turned with no rotation. Turning stays one at a time; "Turn all" is still there.
+  - **The motion** is the design's amendment of 2026-11-07, "The reveal's motion", beat by beat, played on the presets
+    Task 10 adds; `PackOpening.tsx` spreads them and holds no duration of its own. Under Off (reduced motion) each card
+    is shown turned with no rotation. Turning stays one at a time; "Turn all" is still there.
   - **A screen reader** hears each card as it is turned, and the whole pack once all are turned.
   - **What is shown** is the answer's `contents`, never a roll on the client. The modal holds focus and returns it to the
     slot.
@@ -358,6 +361,52 @@ main before the change:
 `node tools/check-ui-tokens.mjs` passes, since the noise's only literals are inside `url()`. A screenshot of the backs
 at the four sizes, normal and hit, goes in the PR for the owner's word.
 
+## Task 10. The machine's motion (engine UI)
+
+Model: sonnet
+
+Added 2026-11-07, from the design's amendment "The reveal's motion". It needs the glass polish's Phase 3 (#293) on
+`main`: `engine/ui/glass/motion.ts`, `useFeel()` and the feels' tokens. Build it after Task 5, or with it.
+
+**Files:** `engine/ui/glass/motion.ts` and `motion.test.ts` (the new presets); `engine/ui/vending/PackOpening.tsx`
+(Task 5's reveal, its beats); `engine/ui/vending/Vending.tsx` and `vending.css` (the single buy's flight, in place of
+`kb-vending-drop` and its keyframes, and the hand link's pulse); `instances/divided-world/ui/vending/vending.css` only
+if it styles the drop; `Vending.board.stories.tsx` (a story that plays the reveal at each feel).
+
+**The look in motion** is `docs/research/2026-11-07-booster-packs/motion/prototype.html`, with any timing the owner
+tunes there written back into the design before this task starts. The prototype's curves stand in for Motion's; the
+build uses the presets and Motion's spring.
+
+- **The presets**, each a pure function returning Motion props, `{}` under Off, on the feel's tokens alone:
+  - `toHand(feel, from: Rect, to: Rect, delay)`: the arc from a card's box to the hand link's (through a point above
+    and between them), shrinking to 0.12 and fading, over `screen`, eased (never sprung, so it ends when it says). Where
+    `to` is outside the viewport, it ends at the viewport's edge toward it.
+  - `lift(feel)`: the shared layout's transition between the row and the spotlight, landing over `enter`.
+  - `turn(feel)`: `rotateY` 0 to 180 over `enter` × 1.2, landing; the face and back are two sides with
+    `backface-visibility: hidden`.
+  - `deal(feel, index, delays)`: from the pack's middle at 0.32 and -8deg to the slot, landing over `enter`, by
+    `stagger(feel, 5)` at three times its step.
+  - `beat(feel)`: scale 1, 1.05, 1 over `screen`, eased.
+- **The reveal** (`PackOpening.tsx`) plays the entrance E1 to E6, a turn T1 and T2, the hit's beat, Turn all and the
+  exit as the design's amendment writes them, measuring the slot's rect and the hand link's when each beat starts.
+  Each card is one element with a `layoutId` per pull. Any input during a beat completes the running beats (Motion's
+  `animate` to the target at once) and goes on.
+- **The single buy** (`Vending.tsx`): the card drops into the tray (`enter`, landing), rests half of `screen`, then flies
+  by `toHand` from its box to the hand link's, and the link pulses on landing. `DELIVERY_MS` and the fallback timer
+  stay, now read from the feel. Under Off the card is in the hand at once, as today.
+
+**Tests first** (red: no preset, and the drop still uses its keyframes):
+- `motion.test.ts`: under Off each new preset is `{}`; `toHand`'s last keyframe is at the target rect's center (or the
+  viewport's edge toward it, when outside); `deal`'s last delay is within `screen` × 3 for five cards; `turn` under
+  Snappy carries the spring and under Smooth the ease.
+- `Vending.test.tsx`: the single buy's flying card is aimed at the hand link's measured rect (a test double's
+  `getBoundingClientRect`), and `vending.css` has no `@keyframes kb-vending-drop`.
+- `PackOpening` (Task 5's tests, extended): a Space during the entrance turns the first card at once; Done during a turn
+  closes at once with the reveal `inert` from that render; under Off no element of the reveal has a running animation
+  (`document.getAnimations()` empty) after any input.
+- e2e at full motion: buying a pack and pressing Esc at once returns focus to the slot (Phase 3's `focus.spec.ts`
+  helper).
+
 ## Last. The full build and the final review
 
 `npm run build:ci` and `npm run typecheck`, with their output. Then shots of the machine (the pack slot, its info, the
@@ -390,3 +439,8 @@ opening mid-flight, a pulled slot) and of the admin page, for the owner's word.
 - At a busy instance, `machine_now` costs the slots times the open machine moves, never the purchases. `card_held` reads
   `card_ledger` by its `(account, card)` index.
 - No screen still reads a card's price from `economy`, `basePrice` or `priceKey`.
+- The reveal's motion (Task 10): no beat may start before the purchase's answer, or depend on anything but the buyer's own
+  stored pack, so the reveal says nothing to anyone else and a refusal looks like a success until its words appear.
+  Check that input during any beat finishes it at once, and that a long exit never holds focus or input.
+- The flight to the hand measures the link's rect when it starts. Check it on a scrolled phone page, where the link is
+  out of view, and that a second buy while a card is flying sends both.
