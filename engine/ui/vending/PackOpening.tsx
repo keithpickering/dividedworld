@@ -32,7 +32,7 @@
  *  - On a phone the entrance is the 1440's (the pack rises from its slot, or from the window's edge nearest it, tears, and lets the five out, not drawn until the
  *    tear), but the deal stacks the five into the pile (`deal` toward the stage's place) and not into a row. The exit and turns below follow.
  *  - On a phone the cards are a pile: a turned card is sent off toward the swipe's side (a drag follows the finger and commits past a third of the card's
- *    width) as the next is flipped, and the exit flies the card on top toward the hand link, or the window's top edge where the link is out of view.
+ *    width) as the next is flipped, and the exit flies the five (the turned card on top and the backs under it) toward the hand link, or the window's top edge where the link is out of view.
  *  - Under Off nothing moves: no wrapper, no rotation, no second piece of the pack. Each beat's end state is drawn at once.
  *
  * The modal is the glass's layer (`useModalLayer`): focus moves inside when it opens and is held there, Esc closes it, and focus goes back to where
@@ -424,9 +424,16 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
 
   /* On a phone the pile is the control: a tap on it, or a swipe across it, turns the next card (a drag short of a third of the card's width springs back). */
   const drag = useRef<number | null>(null);
+  /* When a pointer gesture last turned a card: the click the browser sends after the same tap must not turn a second (a keyboard's click comes with no gesture and always turns). */
+  const pointerTurnAt = useRef(-Infinity);
+  const onTurnClick = () => {
+    if (isPhone() && performance.now() - pointerTurnAt.current < 500) return;
+    turnNext();
+  };
   const onPileDown = (e: ReactPointerEvent) => { drag.current = e.clientX; };
   const onPileMove = (e: ReactPointerEvent) => {
     const from = drag.current;
+    if (e.buttons === 0) return;
     const top = spotAt.current >= 0 && flipped.current.has(spotAt.current) ? cardNode(spotAt.current) : null;
     if (from === null || !top || !feel || !isPhone()) return;
     const dx = e.clientX - from;
@@ -439,11 +446,21 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
     const moved = e.clientX - from;
     const width = box.current?.querySelector('.kb-opening-spot')?.getBoundingClientRect().width || 276;
     if (Math.abs(moved) < 10 || Math.abs(moved) >= width / 3) {
+      pointerTurnAt.current = performance.now();
       turnNext(moved > 0 ? 1 : -1);
       return;
     }
+    springBack();
+  };
+  const springBack = () => {
     const top = spotAt.current >= 0 ? cardNode(spotAt.current) : null;
     if (top && feel) animate(top, { x: 0, rotate: 0 }, landing(feel, feel.enter) as never);
+  };
+  /* The page took the gesture (a scroll under `touch-action: pan-y`): the card springs back and the drag is gone. */
+  const onPileCancel = () => {
+    if (drag.current === null) return;
+    drag.current = null;
+    springBack();
   };
 
   /* ---- what is drawn ---- */
@@ -472,7 +489,7 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
         {...(stage === 'entering' && size === 'fan' ? { initial: { opacity: 0 } } : {})}
       >
         {i === turned
-          ? <button type="button" className="kb-opening-turn" aria-label={`Turn card ${i + 1}`} onClick={() => turnNext()}>{inner}</button>
+          ? <button type="button" className="kb-opening-turn" aria-label={`Turn card ${i + 1}`} onClick={onTurnClick}>{inner}</button>
           : inner}
       </motion.div>
     );
@@ -521,7 +538,7 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
           </ol>
         </div>
 
-        <div className="kb-opening-stage" onPointerDown={onPileDown} onPointerMove={onPileMove} onPointerUp={onPileUp}>
+        <div className="kb-opening-stage" onPointerDown={onPileDown} onPointerMove={onPileMove} onPointerUp={onPileUp} onPointerCancel={onPileCancel}>
           {hitShown && (feel ? (
             <>
               <motion.span className="kb-opening-glow" aria-hidden="true" initial={{ opacity: 0 }} animate={{ opacity: 1, transition: eased(feel, feel.screen) }} />

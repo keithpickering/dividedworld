@@ -7,6 +7,7 @@ import type { CardUi } from '../cards/types.ts';
 import type { Fake } from '../data/fake.ts';
 import { testInstance, renderIn, buildWorld } from '../test-world.tsx';
 import * as motionPresets from '../glass/motion.ts';
+import { feelTokens } from '../glass/motion-tokens.ts';
 import { Vending } from './Vending.tsx';
 
 /* The flight to the hand is watched, not replaced: `toHand` still runs, and the test reads what it was asked. */
@@ -391,8 +392,8 @@ describe('the cascade, backwards', () => {
   });
 });
 
-/* The Smooth feel's delivery of a single card: the drop (enter), the rest (half of screen) and the flight (screen). */
-const deliveryMs = 380 + 420 / 2 + 420;
+/* The Smooth feel's delivery of a single card: the drop, the rest and the flight, as the preset says. */
+const deliveryMs = motionPresets.deliveryMs({ name: 'smooth', ...feelTokens('smooth') });
 
 describe('the drop and the flight, under full motion', () => {
   test('the card enters the tray, the hand still counts what it held, and the count moves when the card lands', async () => {
@@ -421,9 +422,35 @@ describe('the drop and the flight, under full motion', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' })); await Promise.resolve(); });
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     expect(screen.getByRole('link', { name: 'Your hand 2 → 3' })).toBeInTheDocument();
-    await act(async () => { await vi.advanceTimersByTimeAsync(1500 + 400); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(deliveryMs + 400); });
     expect(document.querySelector('.kb-vending-drop')).toBeNull();
     expect(screen.getByRole('link', { name: 'Your hand 3 → 4' })).toBeInTheDocument();
+  });
+});
+
+describe('a second buy while a card is flying (booster packs plan, Task 10)', () => {
+  test('the hand counts each card as it lands: both flying, the first landed, the second landed; no flight lost and none stuck', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    document.documentElement.setAttribute('data-kb-motion-feel', 'smooth');
+    const fake = seeded(562);
+    open(fake);
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }));
+    const count = () => document.querySelector('.kb-vending-hand-count');
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' }));
+    await waitFor(() => expect(document.querySelectorAll('.kb-vending-drop')).toHaveLength(1));
+    /* Partway through the first card's delivery, the second is bought. */
+    await new Promise((r) => setTimeout(r, 700));
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' }));
+    await waitFor(() => expect(document.querySelectorAll('.kb-vending-drop')).toHaveLength(2));
+    /* The hand holds four; neither has landed, so it reads the two it held. */
+    expect(count()).toHaveTextContent('2 → 3');
+    /* The first lands (the second is still on its way): three, and one card still flying. */
+    await waitFor(() => expect(count()).toHaveTextContent('3 → 4'), { timeout: 3000 });
+    expect(document.querySelectorAll('.kb-vending-drop')).toHaveLength(1);
+    /* The second lands: all four, nothing flying, and the count is not past what the hand holds. */
+    await waitFor(() => expect(count()).toHaveTextContent('4 → 5'), { timeout: 3000 });
+    expect(document.querySelector('.kb-vending-drop')).toBeNull();
+    expect((await fake.myCards()).find((c) => c.card === 'whoops')?.held).toBe(3);
   });
 });
 

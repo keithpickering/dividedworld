@@ -46,3 +46,40 @@ test('a Space in the middle of the entrance finishes it and turns the first card
   await expect(slot).toBeFocused();
   await expect(page.locator('.kb-opening-layer')).toHaveCount(0, { timeout: 5000 });
 });
+
+test('on a phone, full motion: each tap or swipe on the pile turns exactly one card, through all five', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/?fixture=boards&story=boards-booster-packs--machine');
+  await page.evaluate(() => { document.documentElement.setAttribute('data-kb-motion', 'full'); document.documentElement.setAttribute('data-kb-motion-feel', 'smooth'); });
+  await expect(page.locator('html')).toHaveAttribute('data-kb-layout', 'phone');
+  await page.getByRole('button', { name: /^Buy Booster, 3\.00 orbs/ }).click();
+  await page.getByRole('button', { name: 'Buy Booster · 3.00' }).click();
+  await expect(page.locator('.kb-opening')).toHaveAttribute('data-kb-stage', 'ready', { timeout: 6000 });
+  const count = page.locator('.kb-opening-count');
+  const pile = page.locator('.kb-opening-spot');
+  /* A finger across the pile on the card on top: down, a drag past a third of the card's width, up. */
+  const swipe = async () => {
+    const box = (await pile.boundingBox())!;
+    const y = box.y + box.height / 2;
+    const x = box.x + box.width * 0.8;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x - box.width * 0.2, y, { steps: 4 });
+    await page.mouse.move(x - box.width * 0.5, y, { steps: 4 });
+    await page.mouse.up();
+  };
+  const tap = async () => {
+    const box = (await pile.boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  };
+  /* The first card by a tap on its button, the second by a swipe, then taps and swipes on whatever card is on top of the pile. */
+  const gestures = [tap, swipe, tap, swipe, tap];
+  for (const [n, gesture] of gestures.entries()) {
+    await gesture();
+    await expect(count).toHaveText(n === 4 ? /5 of 5/iu : new RegExp(`${n + 1} of 5 turned over`, 'iu'));
+    /* One card per gesture: the count does not go on past it once the beat has played. */
+    await page.waitForTimeout(700);
+    await expect(count).toHaveText(n === 4 ? /5 of 5/iu : new RegExp(`${n + 1} of 5 turned over`, 'iu'));
+  }
+  await expect(page.locator('.kb-opening-tag')).toBeVisible();
+});

@@ -158,6 +158,9 @@ function Flying({ face, feel, hand, onLanded }: { readonly face: CardFace; reado
     const el = outer.current;
     if (!el) return;
     let live = true;
+    let done = false;
+    /* Told once: by the flight's end, or by this card's own fallback if the end is never reported (so a second buy never holds this card back). */
+    const land = () => { if (live && !done) { done = true; landed.current(); } };
     let flight: { readonly stop: () => void; readonly then: (f: () => void) => unknown } | undefined;
     const start = setTimeout(() => {
       const from = rectOf(el.getBoundingClientRect());
@@ -166,10 +169,11 @@ function Flying({ face, feel, hand, onLanded }: { readonly face: CardFace; reado
       const to = link ? rectOf(link) : { x: from.x + from.width / 2, y: -1, width: 0, height: 0 };
       const { transition, ...values } = toHand(feel, from, to, 0).animate as { transition: never } & Record<string, never>;
       flight = animate(el, values, transition);
-      if (tilt.current) animate(tilt.current, { rotate: 0 }, transition);
-      flight.then(() => { if (live) landed.current(); });
+      if (tilt.current) { const { times: _times, ...straight } = transition as Record<string, unknown>; animate(tilt.current, { rotate: 0 }, straight as never); }
+      flight.then(land);
     }, feel.enter + feel.screen / 2);
-    return () => { live = false; clearTimeout(start); flight?.stop(); };
+    const fallback = setTimeout(land, deliveryMs(feel) + 400);
+    return () => { live = false; clearTimeout(start); clearTimeout(fallback); flight?.stop(); };
     // One flight per card: it reads the feel and the link as they stand when it starts.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

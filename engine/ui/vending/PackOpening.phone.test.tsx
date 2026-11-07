@@ -3,7 +3,7 @@
  * five out as on the 1440 (not drawn at all until the tear), and the deal stacks the five into the pile instead of a row. Motion's `animate` is stood in for by a recorder
  * that finishes at once, so the beats' order and targets are what is asserted, not their pixels.
  */
-import { screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { CardRules } from '../../rules/cards.ts';
 import { facesOf } from '../cards/faces.ts';
@@ -101,5 +101,76 @@ describe('the entrance on a phone', () => {
     expect(calls).toEqual([]);
     expect(screen.getByRole('dialog')).not.toHaveAttribute('data-kb-stage');
     expect(document.querySelector('.kb-opening-spot')).not.toBeNull();
+  });
+});
+
+describe('the pile under a feel', () => {
+  beforeEach(() => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    document.documentElement.setAttribute('data-kb-motion-feel', 'smooth');
+  });
+  const counter = () => document.querySelector('.kb-opening-count')!;
+  const ready = () => waitFor(() => expect(screen.getByRole('dialog')).toHaveAttribute('data-kb-stage', 'ready'), { timeout: 4000 });
+  /** The card on top of the pile: the one standing in the spotlight. */
+  const top = async (i: number) => {
+    await waitFor(() => expect(document.querySelector(`.kb-opening-spot [data-kb-pull="${i}"]`)).not.toBeNull());
+    return document.querySelector(`.kb-opening-spot [data-kb-pull="${i}"]`)!;
+  };
+  /** A finger on `el`: down, up, and the click the browser sends after it. */
+  const tap = (el: Element, from = 100, to = 100) => {
+    fireEvent.pointerDown(el, { clientX: from, buttons: 1 });
+    fireEvent.pointerUp(el, { clientX: to });
+    fireEvent.click(el, { detail: 1 });
+  };
+
+  test('a tap on the real button turns one card, not two; Enter on it turns one', async () => {
+    open();
+    await ready();
+    const first = (await top(0)).querySelector('button')!;
+    expect(first).toHaveAccessibleName('Turn card 1');
+    tap(first);
+    expect(counter()).toHaveTextContent('1 of 5 turned over');
+  });
+
+  test('Enter or Space on the real button (a click with no pointer) turns one card', async () => {
+    open();
+    await ready();
+    fireEvent.click((await top(0)).querySelector('button')!, { detail: 0 });
+    expect(counter()).toHaveTextContent('1 of 5 turned over');
+  });
+
+  test('a swipe on whatever card is on top turns one card, after each of the first four turns', async () => {
+    open();
+    await ready();
+    for (let j = 1; j <= 5; j++) {
+      /* Before the second turn the first card is still on top, turned; each turn after it sends that card off and lifts the next. */
+      const card = await top(Math.max(0, j - 2));
+      expect(card.closest('.kb-opening-stage')).not.toBeNull();
+      tap(card, 300, j % 2 ? 400 : 200);
+      expect(counter()).toHaveTextContent(j === 5 ? '5 of 5' : `${j} of 5 turned over`);
+    }
+  });
+
+  test('a pointer cancelled mid-drag springs the card back and clears the drag; a move with no finger down does nothing', async () => {
+    open();
+    await ready();
+    const card = await top(0);
+    tap(card);
+    expect(counter()).toHaveTextContent('1 of 5 turned over');
+    const stage = document.querySelector('.kb-opening-stage')!;
+    calls.length = 0;
+    fireEvent.pointerMove(stage, { clientX: 50, buttons: 0 });
+    expect(calls.filter((c) => 'x' in c.target)).toEqual([]);
+    fireEvent.pointerDown(stage, { clientX: 300, buttons: 1 });
+    fireEvent.pointerMove(stage, { clientX: 250, buttons: 1 });
+    expect(calls.at(-1)?.target).toMatchObject({ x: -50 });
+    fireEvent.pointerCancel(stage);
+    expect(calls.at(-1)?.target).toMatchObject({ x: 0, rotate: 0 });
+    /* The drag is gone: a later move does not follow, and a lone up turns nothing. */
+    calls.length = 0;
+    fireEvent.pointerMove(stage, { clientX: 100, buttons: 1 });
+    fireEvent.pointerUp(stage, { clientX: 100 });
+    expect(calls.filter((c) => 'x' in c.target)).toEqual([]);
+    expect(counter()).toHaveTextContent('1 of 5 turned over');
   });
 });
