@@ -28,11 +28,11 @@ test('collapse turns each run of whitespace into one space and trims the ends', 
   assert.equal(collapse(''), '');
 });
 
-/* The characters bbcode_plain_url_ok refuses are written out in supabase/migrations/0116_search.sql, because Postgres has no \p{Cf}. This reads that class back out of the
+/* The characters bbcode_plain_url_ok refuses are written out in supabase/migrations/0117_search.sql, because Postgres has no \p{Cf}. This reads that class back out of the
    migration and holds it, over every code point, to the parser's own answer (an image address with the character in it is refused exactly when the parser's BAD_URL_CHAR
    matches it, \p{Cf} among them), and to /\p{Cf}/u itself, so a new Unicode release in Node that adds a format character fails here until the migration carries it. */
 function sqlRefusedClass(): Set<number> {
-  const sql = readFileSync(new URL('../../supabase/migrations/0116_search.sql', import.meta.url), 'utf8');
+  const sql = readFileSync(new URL('../../supabase/migrations/0117_search.sql', import.meta.url), 'utf8');
   const fn = sql.slice(sql.indexOf('function bbcode_plain_url_ok'));
   const at = fn.indexOf("if s ~ '[");
   assert.ok(at >= 0, 'the refused-character class is not where the test looks');

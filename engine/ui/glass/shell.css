@@ -530,13 +530,16 @@
 /*
  * A float (Float.tsx): placed fixed in the window by the float itself. The wrapper is unclipped and carries the glow
  * (a drop shadow in the owner's `--kb-float-glow`), which the dialog's chamfer would cut from a box-shadow; it takes no
- * pointer of its own, so only the dialog is in the page's way. It stands under the overlays (50).
+ * pointer of its own, so only the dialog is in the page's way. It stands under the overlays (50). It wears `.kb-glass` for the glass's
+ * tokens, not its ground (base.css), so it paints nothing: a ground here filled the chamfer's cut corners, cast the glow as a rectangle,
+ * and stayed on the page while the dialog faded out on close.
  */
 .kb-float {
   position: fixed;
   z-index: 40;
   width: max-content;
   max-width: calc(100vw - 8px);
+  background: none;
   pointer-events: none;
   filter: drop-shadow(0 0 10px color-mix(in srgb, var(--kb-float-glow, var(--kb-glass-neon)) 60%, transparent));
 }
