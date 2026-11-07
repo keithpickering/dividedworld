@@ -192,8 +192,8 @@ test('on a phone at 100% text, a roster card is 280px tall with its Turn line 10
 
 /*
  * Choose a class as a carousel (docs/plans/2026-10-30-technician-design.md, section 3; the plan's
- * Task 4), on Divided World's five classes: Face, Heel (Pipewrench's, marked Now), Jabroni,
- * Technician, Lurker. As many full cards as fit, the next peeking, a count and arrows; one
+ * Task 4), on Divided World's six classes: Face, Heel (Pipewrench's, marked Now), Jabroni,
+ * Technician, Tweener, Lurker. As many full cards as fit, the next peeking, a count and arrows; one
  * radiogroup the arrow keys move through, the row following the choice.
  */
 async function openTurnAt(page: Page, width: number, height = 1000) {
@@ -221,14 +221,14 @@ async function inView(dialog: ReturnType<Page['locator']>) {
   });
 }
 
-test('at 1440 the Turn shows four whole class cards and a peek, counted 1–4 of 5', async ({ page }) => {
+test('at 1440 the Turn shows four whole class cards and a peek, counted 1–4 of 6', async ({ page }) => {
   const dialog = await openTurnAt(page, 1440);
-  await expect(classGroup(dialog).getByText('1–4 of 5')).toBeVisible();
-  expect(await inView(dialog)).toEqual({ whole: ['face', 'heel', 'jabroni', 'technician'], part: ['lurker'] });
-  /* The accessibility tree holds every class, the peeking Lurker's among them: role queries leave out what it leaves out. */
+  await expect(classGroup(dialog).getByText('1–4 of 6')).toBeVisible();
+  expect(await inView(dialog)).toEqual({ whole: ['face', 'heel', 'jabroni', 'technician'], part: ['tweener'] });
+  /* The accessibility tree holds every class, the peeking Tweener's and the unseen Lurker's among them: role queries leave out what it leaves out. */
   const snapshot = await classGroup(dialog).ariaSnapshot();
-  for (const name of ['Face', 'Jabroni', 'Technician', 'Lurker']) expect(snapshot).toContain(`radio "${name}"`);
-  await expect(classGroup(dialog).getByRole('radio')).toHaveCount(4);
+  for (const name of ['Face', 'Jabroni', 'Technician', 'Tweener', 'Lurker']) expect(snapshot).toContain(`radio "${name}"`);
+  await expect(classGroup(dialog).getByRole('radio')).toHaveCount(5);
   await expect(classGroup(dialog).getByRole('button', { name: 'Earlier classes' })).toBeDisabled();
   await expect(classGroup(dialog).getByRole('button', { name: 'More classes' })).toBeEnabled();
 });
@@ -241,11 +241,28 @@ test('the arrow keys move the choice through every class, and the row follows it
   await page.keyboard.press('ArrowRight');
   await expect(group.getByRole('radio', { name: 'Technician' })).toBeChecked();
   await page.keyboard.press('ArrowRight');
+  await expect(group.getByRole('radio', { name: 'Tweener' })).toBeChecked();
+  await expect.poll(async () => (await inView(dialog)).whole).toContain('tweener');
+  await page.keyboard.press('ArrowRight');
   await expect(group.getByRole('radio', { name: 'Lurker' })).toBeChecked();
   await expect.poll(async () => (await inView(dialog)).whole).toContain('lurker');
-  await expect(group.getByText('2–5 of 5')).toBeVisible();
+  await expect(group.getByText('3–6 of 6')).toBeVisible();
   await expect(group.getByRole('button', { name: 'More classes' })).toBeDisabled();
   await expect(group.getByRole('button', { name: 'Earlier classes' })).toBeEnabled();
+});
+
+/* The Tweener, the fifth card, is reached by the arrows too (the Tweener plan's Task 6): one step brings it whole, the next the Lurker. */
+test('the More classes arrow brings the Tweener whole, then the Lurker', async ({ page }) => {
+  const dialog = await openTurnAt(page, 1440);
+  const group = classGroup(dialog);
+  await group.getByRole('button', { name: 'More classes' }).click();
+  await expect.poll(async () => (await inView(dialog)).whole).toContain('tweener');
+  await expect(group.getByText('2–5 of 6')).toBeVisible();
+  await group.getByRole('button', { name: 'More classes' }).click();
+  await expect.poll(async () => (await inView(dialog)).whole).toContain('lurker');
+  await expect(group.getByRole('button', { name: 'More classes' })).toBeDisabled();
+  await group.getByRole('radio', { name: 'Tweener' }).check();
+  await expect(group.getByRole('radio', { name: 'Tweener' })).toBeChecked();
 });
 
 /** Presses "More classes" and says whether the row has moved its whole card's step on the very next frame. */
@@ -288,7 +305,7 @@ test('the Technician\'s name, the longest, keeps clear of its radio', async ({ p
 test('on a phone the Turn shows one class card and a peek, a swipe snaps to the next, and the page never scrolls sideways', async ({ page }) => {
   const dialog = await openTurnAt(page, 390, 844);
   const group = classGroup(dialog);
-  await expect(group.getByText('1–1 of 5')).toBeVisible();
+  await expect(group.getByText('1–1 of 6')).toBeVisible();
   expect(await inView(dialog)).toEqual({ whole: ['face'], part: ['heel'] });
   const row = group.locator('.kb-class-grid');
   await row.scrollIntoViewIfNeeded();
@@ -297,8 +314,25 @@ test('on a phone the Turn shows one class card and a peek, a swipe snaps to the 
   // Past half a card, as a swipe carries: mandatory snapping settles on the nearer card.
   await page.mouse.wheel(200, 0);
   await expect.poll(async () => (await inView(dialog)).whole).toEqual(['heel']);
-  await expect(group.getByText('2–2 of 5')).toBeVisible();
+  await expect(group.getByText('2–2 of 6')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+});
+
+test('on a phone the arrow keys carry the choice to the Tweener and the row follows it', async ({ page }) => {
+  const dialog = await openTurnAt(page, 390, 844);
+  const group = classGroup(dialog);
+  await group.getByRole('radio', { name: 'Technician' }).focus();
+  await page.keyboard.press('Space');
+  await page.keyboard.press('ArrowRight');
+  await expect(group.getByRole('radio', { name: 'Tweener' })).toBeChecked();
+  await expect.poll(async () => (await inView(dialog)).whole).toEqual(['tweener']);
+  await expect(group.getByText('5–5 of 6')).toBeVisible();
+  await group.getByRole('button', { name: 'Earlier classes' }).click();
+  await expect.poll(async () => (await inView(dialog)).whole).toEqual(['technician']);
+  await group.getByRole('button', { name: 'More classes' }).click();
+  await expect.poll(async () => (await inView(dialog)).whole).toEqual(['tweener']);
+  await group.getByRole('button', { name: 'More classes' }).click();
+  await expect.poll(async () => (await inView(dialog)).whole).toEqual(['lurker']);
 });
 
 test('a Turn reopened on a pending Lurker opens with the Lurker in view', async ({ page }) => {
@@ -320,6 +354,9 @@ test('an arrow that reaches its end hands focus to the other arrow, never droppi
   const group = classGroup(dialog);
   const more = group.getByRole('button', { name: 'More classes' });
   await more.focus();
+  await page.keyboard.press('Enter');
+  /* Six classes take two steps to the end; the second waits for the first's glide to land. */
+  await expect.poll(async () => (await inView(dialog)).whole).toContain('tweener');
   await page.keyboard.press('Enter');
   await expect(more).toBeDisabled();
   await expect(group.getByRole('button', { name: 'Earlier classes' })).toBeFocused();
@@ -344,23 +381,23 @@ async function showing(dialog: ReturnType<Page['locator']>, key: string) {
 
 test('the fade covers only a peeking card, at its start and its end, and never a card snapped whole on a phone', async ({ page }) => {
   const dialog = await openTurnAt(page, 1440);
-  // At the start the Lurker peeks: the fade is as wide as it shows. At the end the Face does.
-  const lurker = await showing(dialog, 'lurker');
-  expect(lurker).toBeGreaterThan(20);
-  expect(await fades(dialog)).toEqual({ before: 0, after: lurker });
+  // At the start the Tweener peeks: the fade is as wide as it shows. At the end the Heel does (the Face is two cards back, out of view).
+  const peek = await showing(dialog, 'tweener');
+  expect(peek).toBeGreaterThan(20);
+  expect(await fades(dialog)).toEqual({ before: 0, after: peek });
   await classGroup(dialog).getByRole('radio', { name: 'Lurker' }).check();
   await expect.poll(async () => (await fades(dialog)).after).toBe(0);
-  expect((await fades(dialog)).before).toBe(await showing(dialog, 'face'));
+  expect((await fades(dialog)).before).toBe(await showing(dialog, 'heel'));
 
   const phone = await openTurnAt(page, 390, 844);
   const group = classGroup(phone);
-  await expect(group.getByText('1–1 of 5')).toBeVisible();
+  await expect(group.getByText('1–1 of 6')).toBeVisible();
   const row = group.locator('.kb-class-grid');
   await row.scrollIntoViewIfNeeded();
   const box = (await row.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.wheel(200, 0);
-  await expect(group.getByText('2–2 of 5')).toBeVisible();
+  await expect(group.getByText('2–2 of 6')).toBeVisible();
   // Snapped to the Heel, nothing of the Face shows: no fade at its start; the Jabroni peeks at its end.
   await expect.poll(async () => (await fades(phone)).before).toBe(0);
   // The status text and `before` settle the moment the Heel is the first card shown, while the snap is still gliding;
