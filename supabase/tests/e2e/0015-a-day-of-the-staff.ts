@@ -144,7 +144,7 @@ test('the Boss is named and a mod quoted, the season is handed over, and the poo
   assert.equal(annMarks.length, 1);
   assert.equal(annMarks[0]!.id, modPick.card);
   assert.ok(annMarks[0]!.payload.caught, 'the play was caught');
-  const base = Number(sql(`select value ->> 'whoops.price' from settings where key = 'economy'`));
+  const base = Number(sql(`select price from machine_slots where card = 'whoops'`));
   assert.equal(sql(`select string_agg(change::text, ',') from wallet_events where account = '${account('Staffday Ann')}' and kind = 'trapSystem'`), String(base), 'Ann was paid the base price, made new');
   assert.equal(sql(`select count(*) from wallet_events where account = '${account('Staffday Bo')}' and kind = 'trapSystem'`), '0', 'Bo\'s uncaught Whoops! paid nobody');
   assert.equal(sql(`select count(*) from wallet_events where kind = 'trap' and account = '${account('Staffday Ann')}'`), '0', 'and nothing was taken from a wallet');

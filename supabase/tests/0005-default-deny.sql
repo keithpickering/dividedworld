@@ -11,7 +11,9 @@ declare
   readable text[] := array['class_kinds', 'reaction_kinds', 'card_kinds', 'boards', 'threads', 'acts',
                            'characters_public', 'acts_public', 'accounts', 'characters', 'class_history', 'reaction_tallies',
                            'seasons', 'season_results', 'seasons_finished', 'settlements', 'standings', 'ledger', 'wallets', 'wallet_events',
-                           'card_ledger', 'my_cards', 'effect_state', 'my_invites', 'pending_turns', 'effect_releases',
+                           'card_ledger', 'my_cards', 'effect_state',
+                           -- The machine (0115): its slots as players see them, a pack's pulls, and a buyer's own packs. The slots table itself is nobody's to read.
+                           'machine_now', 'pack_kinds', 'packs', 'my_packs', 'my_invites', 'pending_turns', 'effect_releases',
                            'reading', 'my_reactions', 'thread_view_counts',
                            'pip_styles', 'account_preferences', 'character_profiles',
                            'class_reveals', 'turns_announced',
@@ -64,13 +66,15 @@ declare
                            -- The screens' reads (0111): the report's judge, and the two functions the log's views call, each a public fact about any id (a view's functions run as its reader).
                            'beat_mod_name(uuid)', 'punishment_words(uuid)', 'infraction_relief(uuid)',
                            -- Pure predicates a CHECK calls, granted to PUBLIC by 0080 so a direct writer is not refused (each reads no table).
-                           'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])'];
+                           'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])',
+                           -- The pulls check on pack_kinds (0115), granted to PUBLIC like them, and the count of a hand, which the ledger's policy cuts to the caller's own cards (my_cards calls it).
+                           'pack_pulls_problem(jsonb)', 'card_held(uuid,text)'];
   -- What a visitor (anon) may execute, on purpose; each is also in the list above.
   visitor_callable text[] := array['move_progress(uuid)', 'staff_career(text)',
                            -- The contact (0081): the player who most needs a person is often one who cannot sign in. One setting, the same for every caller.
                            'admin_contact()',
                            -- The same three CHECK predicates, which PUBLIC (so anon too) may execute by 0080; pure, reading no table.
-                           'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])'];
+                           'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])', 'pack_pulls_problem(jsonb)'];
 begin
   for r in select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
            where n.nspname = 'public' and c.relkind = 'S'
@@ -78,7 +82,7 @@ begin
   loop bad := bad || format(E'\n  sequence %s', r.relname); end loop;
   for r in select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
            where n.nspname = 'public' and c.relkind in ('r', 'v', 'm', 'p')
-             and (has_table_privilege('anon', c.oid, 'select,insert,update,delete,truncate,references,trigger') and not c.relname in ('screen_settings', 'staff_now', 'staff_office_now', 'staff_profile_now', 'boards_now', 'moves_log')
+             and (has_table_privilege('anon', c.oid, 'select,insert,update,delete,truncate,references,trigger') and not c.relname in ('screen_settings', 'staff_now', 'staff_office_now', 'staff_profile_now', 'boards_now', 'moves_log', 'machine_now', 'pack_kinds')
                   -- screen_settings (0030) is a view a visitor reads: the sign-up page must know whether the instance asks for an invite.
                   -- staff_now (0043) is the other, and staff_office_now (0082) its source: the staff are known to be staff, signed in or not.
                   -- staff_profile_now (0044) is the third: a Boss's in-character profile is a public page.

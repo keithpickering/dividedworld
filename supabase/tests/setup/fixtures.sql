@@ -33,7 +33,7 @@ insert into settings (key, value) values
   ('reachRarity', '{"character": "uncommon", "thread": "rare", "board": "legendary"}'),
   ('reachLasts', '{"character": {"unit": "day", "count": 7}, "thread": {"unit": "day", "count": 1}, "board": {"unit": "day", "count": 1}}'),
   ('cardSettings', '{"whoops.clean": 95}'),
-  ('economy', '{"sweetie.price": 100, "splat.price": 100, "blot.price": 100}'),
+  ('economy', '{}'),
   -- The Promos thread's title is the one word The System needs (0099). The three older keys stay in this row because the e2e files that load it
   -- onto the migrations before 0099 (e2e/0008, 0010, 0014) meet the check those migrations kept; 0099 stops asking for them.
   ('copy', '{"announcementsThreadTitle": "Season {season}: Promos", "turnsThreadTitle": "Season {season}: Turns", "revealTitle": "Season {season}: The Reveal", "revealBody": "Every mask, season {season}."}');
@@ -41,9 +41,21 @@ insert into class_kinds (key, name) values ('alpha', 'Alpha'), ('beta', 'Beta');
 insert into reaction_kinds (key, emoji, quadrant) values
   ('up', '⬆️', 'excitedPositive'), ('boo', '👻', 'excitedNegative'),
   ('calm', '🌊', 'calmPositive'), ('meh', '😑', 'boredNegative'), ('wow', '🎆', 'excitedPositive');
-insert into card_kinds (key, name, alignment, price_setting) values ('sweetie', 'Sweetie', 'sweet', 'sweetie.price'), ('splat', 'Splat', 'salty', 'splat.price');
--- A card that stacks three to a post, each play drawn from a seed the server chooses.
-insert into card_kinds (key, name, alignment, price_setting, stack, seeded) values ('blot', 'Blot', 'salty', 'blot.price', 3, true);
+-- Three cards: sweetie and splat, and a card that stacks three to a post, each play drawn from a seed the server chooses. A card's price is its
+-- slot's from 0115, on sale here at one orb; before it, the economy's (card_kinds.price_setting). The e2e files that load these onto the migrations
+-- before 0115 (e2e/0010, 0014) meet the older shape, so this meets whichever it finds.
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'card_kinds' and column_name = 'price_setting') then
+    update settings set value = '{"sweetie.price": 100, "splat.price": 100, "blot.price": 100}' where key = 'economy';
+    insert into card_kinds (key, name, alignment, price_setting) values ('sweetie', 'Sweetie', 'sweet', 'sweetie.price'), ('splat', 'Splat', 'salty', 'splat.price');
+    insert into card_kinds (key, name, alignment, price_setting, stack, seeded) values ('blot', 'Blot', 'salty', 'blot.price', 3, true);
+  else
+    insert into card_kinds (key, name, alignment) values ('sweetie', 'Sweetie', 'sweet'), ('splat', 'Splat', 'salty');
+    insert into card_kinds (key, name, alignment, stack, seeded) values ('blot', 'Blot', 'salty', 3, true);
+    insert into machine_slots (position, card, availability, price) values (1, 'sweetie', 'onSale', 100), (2, 'splat', 'onSale', 100), (3, 'blot', 'onSale', 100);
+  end if;
+end $$;
 insert into boards (slug, name, is_system) values ('general', 'General', false), ('the-system', 'The System', true);
 insert into seasons (number, starts_at) values (1, '2000-01-01T00:00:00Z');
 insert into pip_styles (key, name, full_image, empty_image) values ('default', 'Default', 'full.svg', 'empty.svg'), ('stars', 'Stars', 'star.svg', 'hollow.svg');
@@ -68,6 +80,14 @@ begin
   insert into characters (owner, name, created_at, debuted_at) values (owner, name, at, at) returning characters.id into id;
   insert into class_history (character, class_key, started_at) values (id, class_key, at);
   return id;
+end $$;
+
+-- The slot that sells a card.
+create function tests.slot(card text) returns uuid language plpgsql security definer set search_path = public, pg_temp as $$
+declare found uuid;
+begin
+  select s.id into found from machine_slots s where s.card = slot.card;
+  return found;
 end $$;
 
 create function tests.thread(title text default 'A thread') returns uuid language sql as $$

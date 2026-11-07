@@ -81,9 +81,7 @@ begin
   perform tests.post(other, t, 'Other''s second post.');
   perform tests.post(one, t, 'One''s post.');
   -- A Cast card (sweetie) and a Set card (bluffy, the engine's test set), two of each in Ann's hand.
-  update settings set value = value || '{"bluffy.price": 25}' where key = 'economy';
-  insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap, ward, lasts)
-    values ('bluffy', 'Bluffy', 'pepperoni', 'bluffy.price', 'common', 'set', null, false, null) on conflict (key) do nothing;
+  insert into card_kinds (key, name, alignment, rarity, play, trap, ward, lasts) values ('bluffy', 'Bluffy', 'pepperoni', 'common', 'set', null, false, null) on conflict (key) do nothing;
   insert into card_ledger (account, card, kind, price) values (ann, 'sweetie', 'bought', 0), (ann, 'sweetie', 'bought', 0), (ann, 'bluffy', 'bought', 0), (ann, 'bluffy', 'bought', 0);
   insert into wallets (account, balance) values (ann, 600);
   perform tests.post(two, t, 'Mask Two''s own post.');
