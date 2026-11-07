@@ -43,6 +43,7 @@ export interface PostcardProps extends Omit<HTMLAttributes<HTMLElement>, 'childr
  */
 export function cardLabel(face: CardFace, size: PostcardSize): string {
   /* The play's word is drawn after the tag, and the gem's rarity is its title: both said in words, after what is drawn before them. */
+  if (face.unknown) return face.name;
   const said = `${face.name}, ${face.tag}, ${playWord(face.play)}`;
   const shown = size === 'fan' && face.tagline ? `${said}. ${face.tagline}` : said;
   return `${shown}, ${face.rarity} postcard`;
@@ -58,7 +59,7 @@ export function Postcard({ face, size, price = null, as: As = 'span', armed = fa
       style={vars}
       data-size={size}
       data-kb-card={face.key}
-      data-kb-alignment={face.alignment}
+      data-kb-alignment={face.unknown ? undefined : face.alignment}
       data-armed={armed ? '' : undefined}
       data-kb-art={size === 'slot' ? '' : undefined}
     >
@@ -74,7 +75,7 @@ export function Postcard({ face, size, price = null, as: As = 'span', armed = fa
       <span className="kb-postcard-plate" aria-hidden="true" data-kb-art><span className="kb-postcard-name">{face.name}</span></span>
       {' '}
       {/* The alignment and how it is played, as two badges on the top border; the slot holds neither. */}
-      {size !== 'slot' && (
+      {size !== 'slot' && !face.unknown && (
         <>
           <span className="kb-postcard-badges" aria-hidden="true" data-kb-art>
             <span className="kb-postcard-tag">{face.tag}</span>
@@ -85,7 +86,7 @@ export function Postcard({ face, size, price = null, as: As = 'span', armed = fa
         </>
       )}
       {/* How rare it is, as a gem whose shape says it (the card mechanic's design, sections 1 and 2). */}
-      <span className="kb-postcard-gem" aria-hidden="true" data-kb-rarity={face.rarity} data-kb-gem={gemOf(face.rarity)} title={rarityName(face.rarity)} />
+      {!face.unknown && <span className="kb-postcard-gem" aria-hidden="true" data-kb-rarity={face.rarity} data-kb-gem={gemOf(face.rarity)} title={rarityName(face.rarity)} />}
       {' '}
       {size === 'fan' && face.tagline && <span className="kb-postcard-line" aria-hidden="true" data-kb-art>{face.tagline}</span>}
       {size === 'sheet' && <span className="kb-postcard-line" aria-hidden="true" data-kb-art>{face.summary}</span>}

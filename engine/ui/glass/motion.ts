@@ -308,7 +308,11 @@ function reach(to: Rect): { readonly x: number; readonly y: number } {
   return { x: w > 0 ? Math.min(w, Math.max(0, x)) : x, y: h > 0 ? Math.min(h, Math.max(0, y)) : y };
 }
 
-/** How far down the fan's middle card the arc's top stands above the straight line, px. */
+/**
+ * Geometry of the flight, not feel tokens (the plan fixes 0.12 for the landing size): how far above the straight line the arc's top stands, how far it swings to
+ * the side, and what a card shrinks to in the hand. The timing is the feel's alone.
+ * How far down the fan's middle card the arc's top stands above the straight line, px.
+ */
 const ARC_RISE = 120;
 const ARC_SIDE = 60;
 /** What a card shrinks to as it lands in the hand. */
@@ -356,11 +360,12 @@ export const tilt = (index: number, count = 5): number => (index - (count - 1) /
 
 /**
  * The deal: a card flies from its place in the fan to its slot, settling from its tilt, landing over `enter`, started by `stagger(feel, 5)` (`delays`) at three
- * times its step. The caller sets the card at the fan (measured when the beat starts) and animates it to this target.
+ * times its step. The caller sets the card at the fan (measured when the beat starts) and animates it to this target. `to` is where the card settles when that is
+ * not its slot (a phone's pile: offsets from the card's slot, and the scale it grows to); without it the card settles into its slot.
  */
-export function deal(feel: ActiveFeel, index: number, delays: readonly number[]): MotionProps {
+export function deal(feel: ActiveFeel, index: number, delays: readonly number[], to: { readonly x: number; readonly y: number; readonly scale: number } = { x: 0, y: 0, scale: 1 }): MotionProps {
   if (!feel) return {};
-  return { animate: { x: 0, y: 0, rotate: 0, scale: 1, transition: landing(feel, feel.enter, (delays[index] ?? 0) * 3) } };
+  return { animate: { x: to.x, y: to.y, rotate: 0, scale: to.scale, transition: landing(feel, feel.enter, (delays[index] ?? 0) * 3) } };
 }
 
 /** The hit's beat: its gold back pulses once, scale 1, 1.05, 1, over `screen`, eased. */

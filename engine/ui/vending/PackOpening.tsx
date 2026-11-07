@@ -23,10 +23,14 @@
  *    the card turns on its vertical axis (T2, `turn`). The hit pulses first (`beat`), and once turned its halo, sparks and tag land. Turn all turns the backs
  *    left where they lie, staggered, and the hit lifts last with its beat.
  *  - Input never waits: a turn, Turn all, Done or Esc pressed while a beat runs finishes every running beat at once (Motion's `animate` to the target in no
- *    time) and goes on from there. During the entrance, a turn finishes the entrance and turns.
+ *    time) and goes on from there. During the entrance, a turn finishes the entrance and turns. The imperative beats are snapped and the next layout lift is
+ *    instant; a layout lift (the shared layout between the row and the spotlight) already in flight when the input arrives is not snapped, since Motion's layout
+ *    animation has no `complete()`, and finishes within `enter`.
  *  - Exit: the words, buttons, tag and sparks fade, the parked pack slides on up out of view, and the cards fly to the Your hand link along one arc each
  *    (`toHand`), staggered at twice the step; the link pulses and the dim lifts. The layer is `inert` from the exit's first frame and focus is back on the
  *    slot at once (`useLayer`, `useModalLayer`); only the picture is still playing.
+ *  - On a phone the entrance is the 1440's (the pack rises from its slot, or from the window's edge nearest it, tears, and lets the five out, not drawn until the
+ *    tear), but the deal stacks the five into the pile (`deal` toward the stage's place) and not into a row. The exit and turns below follow.
  *  - On a phone the cards are a pile: a turned card is sent off toward the swipe's side (a drag follows the finger and commits past a third of the card's
  *    width) as the next is flipped, and the exit flies the card on top toward the hand link, or the window's top edge where the link is out of view.
  *  - Under Off nothing moves: no wrapper, no rotation, no second piece of the pack. Each beat's end state is drawn at once.
@@ -68,7 +72,7 @@ export interface PackOpeningProps {
 const SPARKS = [[-12, 10, 18], [108, 5, 14], [115, 72, 20], [-11, 80, 12], [105, 100, 10], [-7, 43, 9]] as const;
 
 /** A card as it is said when it is turned: "Whoops!, Salty Cast, common". */
-export const saidOf = (face: CardFace): string => `${face.name}, ${face.tag} ${playWord(face.play)}, ${face.rarity}`;
+export const saidOf = (face: CardFace): string => face.unknown ? face.name : `${face.name}, ${face.tag} ${playWord(face.play)}, ${face.rarity}`;
 
 /** A beat that has been finished by an input: whatever it still had to do is not done. */
 class Stop extends Error {}
@@ -295,10 +299,16 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
       y: hero.y - hero.height * 0.29 + Math.abs(i - 2) * 10 - (homes[i]!.y + homes[i]!.height / 2),
       scale: 1, rotate: tilt(i, count),
     });
+    const pile = node('.kb-opening-stage')?.getBoundingClientRect();
+    const pileAt = (i: number) => {
+      const h = homes[i]!;
+      if (!pile || pile.width === 0 || h.width === 0) return { x: 0, y: 0, scale: 1 };
+      return { x: pile.x + pile.width / 2 + (i - 2) * 2 - (h.x + h.width / 2), y: pile.y + pile.height / 2 - (h.y + h.height / 2), scale: pile.width / h.width };
+    };
     /* Before the first frame: the pack at its slot, the cards shut inside it and not drawn. */
     animate(pack, { x: slotAt.x, y: slotAt.y, scale: slotAt.scale }, NOW);
     animate(packIn, { opacity: 1, filter: `blur(${f.blur}px)` }, NOW);
-    cardNodes.forEach((c, i) => { if (c && !phoneNow) animate(c, { ...shut(i), opacity: 0 }, NOW); });
+    cardNodes.forEach((c, i) => { if (c) animate(c, { ...shut(i), opacity: 0 }, NOW); });
 
     const r = begin((quiet) => {
       /* Finished: the pack parked, its top gone, the five in the row and the first in the spotlight, the head landed. */
@@ -318,19 +328,18 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
         go(r, packIn, { filter: 'blur(0px)' }, eased(f, f.screen) as Beat),
       ]);
       /* E3: the crimped top rips away along the tear, up and to the side, and is gone for good. The cards wait inside. */
-      cardNodes.forEach((c) => { if (c && !phoneNow) animate(c, { opacity: 1 }, NOW); });
+      cardNodes.forEach((c) => { if (c) animate(c, { opacity: 1 }, NOW); });
       await go(r, top, { x: [0, 40, 180], y: [0, -60, -340], rotate: [0, 18, 40], opacity: [1, 1, 0] }, { ...eased(f, f.enter * 1.5), times: [0, 0.4, 1] } as Beat);
       /* E4: the five backs rise out of the opening, fanning, the gold hit last; once clear of the pack they pass in front of it. */
       const d = stagger(f, count);
-      if (!phoneNow) {
-        await Promise.all(cardNodes.map((c, i) => go(r, c, fanned(i), landing(f, f.enter, (d[i] ?? 0) * 1.5) as Beat)));
-      }
+      await Promise.all(cardNodes.map((c, i) => go(r, c, fanned(i), landing(f, f.enter, (d[i] ?? 0) * 1.5) as Beat)));
       setFront(true);
       /* E5: the deal, from the fan into the row, as the emptied pack slides up and parks. E6: the head and the buttons land. */
       setHeadIn(true);
       const parked = go(r, pack, { x: 0, y: 0, scale: 1 }, landing(f, f.screen, (d[2] ?? 0) * 3) as Beat);
-      const dealt = phoneNow ? [] : cardNodes.map((c, i) => {
-        const { target, transition } = split(deal(f, i, d));
+      /* On a phone the five are dealt into the pile (the stage's place, at the sheet's size, a little askew) and not into a row. */
+      const dealt = cardNodes.map((c, i) => {
+        const { target, transition } = split(deal(f, i, d, phoneNow ? pileAt(i) : undefined));
         return go(r, c, { ...target }, transition);
       });
       await Promise.all([parked, ...dealt]);
@@ -475,12 +484,15 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
   };
   const { exit: _dimExit, ...dim } = lifted.root as Values;
 
+  /* The hit's ring goes gold over `screen` (opening.css transitions the card's shadow by these); under Off they are not set and it switches at once. */
+  const ringStyle = (feel ? { '--kb-opening-screen': `${feel.screen}ms`, '--kb-opening-ease': feel.ease } : undefined) as CSSProperties | undefined;
   const packStyle = { '--kb-pack-w': 'var(--kb-parked-w)' } as CSSProperties;
 
   return createPortal(
     <motion.div ref={overlay} className="kb-opening-layer" {...dim}>
       <motion.div
         ref={box} className="kb-opening" role="dialog" aria-modal="true" aria-label={`Opening ${withArticle(name)}`} tabIndex={-1}
+        style={ringStyle}
         data-kb-hit={hitShown ? '' : undefined} data-kb-stage={feel ? stage : undefined} data-kb-stack={feel ? (front ? 'front' : 'behind') : undefined} onKeyDown={onKeyDown}
       >
         {feel === null ? (
@@ -517,18 +529,18 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
                 <motion.span
                   key={i} className="kb-opening-spark" aria-hidden="true" style={{ left: `${x}%`, top: `${y}%`, width: s, height: s }}
                   initial={{ opacity: 0, scale: 0, rotate: 0 }}
-                  animate={{ opacity: 1, scale: [0, 1.4, 1], rotate: 90, transition: { ...eased(feel, feel.enter, (stagger(feel, SPARKS.length)[i] ?? 0) * 2), times: [0, 0.5, 1] } }}
+                  animate={{ opacity: 1, scale: [0, 1.4, 1], rotate: 90, transition: { ...eased(feel, feel.enter, (stagger(feel, SPARKS.length)[i] ?? 0)), times: [0, 0.5, 1] } }}
                 />
               ))}
               <motion.div className="kb-opening-tag-drop" initial={{ opacity: 0, y: -feel.distance }} animate={{ opacity: 1, y: 0, transition: landing(feel, feel.enter) }}>
-                <p className="kb-opening-tag"><b>{shown ? `${rarityName(shown.rarity)} · ${shown.name}` : ''}</b></p>
+                <p className="kb-opening-tag"><b>{shown ? (shown.unknown ? shown.name : `${rarityName(shown.rarity)} · ${shown.name}`) : ''}</b></p>
               </motion.div>
             </>
           ) : (
             <>
               <span className="kb-opening-glow" aria-hidden="true" />
               {SPARKS.map(([x, y, s], i) => <span key={i} className="kb-opening-spark" aria-hidden="true" style={{ left: `${x}%`, top: `${y}%`, width: s, height: s }} />)}
-              <p className="kb-opening-tag"><b>{shown ? `${rarityName(shown.rarity)} · ${shown.name}` : ''}</b></p>
+              <p className="kb-opening-tag"><b>{shown ? (shown.unknown ? shown.name : `${rarityName(shown.rarity)} · ${shown.name}`) : ''}</b></p>
             </>
           ))}
           <div className="kb-opening-spot" data-kb-hit={hitShown ? '' : undefined}>
@@ -551,6 +563,7 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
                 <li
                   key={`${c.key}-${i}`} className="kb-opening-card" data-kb-slot="" data-kb-hit={hit ? '' : undefined} data-kb-now={i < turned && i === shownIndex ? '' : undefined}
                   aria-label={lone ? undefined : label}
+                  {...(phone && stage === 'entering' ? { style: { zIndex: count - i } } : {})}
                 >
                   {spot !== i && cardBox(i, 'fan')}
                 </li>

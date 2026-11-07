@@ -809,7 +809,12 @@ describe('buying a pack opens the reveal', () => {
     expect(document.querySelector('.kb-vending-outcome[role="status"]')).toHaveTextContent('its 5 cards are in your hand');
     expect(screen.getByRole('dialog').querySelector('.kb-opening-count')!).toHaveTextContent('0 of 5 turned over');
     for (let i = 0; i < 5; i++) fireEvent.click(screen.getByRole('button', { name: /^Turn the next card$/u }));
-    expect(within(screen.getByRole('list', { name: 'The pack, in the order it was pulled' })).getAllByRole('listitem')[4]).toHaveAccessibleName(/A card this machine no longer has/u);
+    const ghost = within(screen.getByRole('list', { name: 'The pack, in the order it was pulled' })).getAllByRole('listitem')[4]!;
+    /* It claims no rarity, alignment or way to play it: the name says only what is true, and the face draws no gem or tag. */
+    expect(ghost).toHaveAccessibleName(/^Card 5: A card this machine no longer has(, the card shown)?$/u);
+    expect(ghost.querySelector('.kb-postcard-gem, .kb-postcard-tag, .kb-postcard-play')).toBeNull();
+    expect(ghost.querySelector('.kb-postcard')).not.toHaveAttribute('data-kb-alignment');
+    expect(screen.getByRole('dialog').querySelector('.kb-opening-tag')).toHaveTextContent(/^A card this machine no longer has$/u);
     expect(screen.getByRole('dialog')).toHaveTextContent('All five are in your hand');
   });
 

@@ -3,6 +3,8 @@
  * bought pack, face down in pull order, turned one at a time. What it shows is the cards it is given (the purchase's answer), never a roll of its
  * own. Every card is already in the hand, so closing early loses nothing.
  */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { useState } from 'react';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -329,6 +331,18 @@ describe('the reveal\'s motion', () => {
     expect(document.querySelectorAll('[data-kb-pull]')).toHaveLength(5);
     expect(document.querySelector('.kb-opening-spot')).toContainElement(card(1) as HTMLElement);
     expect(row().getAllByRole('listitem')[0]).toContainElement(card(0) as HTMLElement);
+  });
+
+  test('the hit\'s ring goes gold over `screen`: the feel sets the duration as a custom property, the stylesheet transitions the card\'s shadow by it, and Off sets none (it switches at once)', () => {
+    open();
+    expect(dialog().style.getPropertyValue('--kb-opening-screen')).toBe('420ms');
+    expect(dialog().style.getPropertyValue('--kb-opening-ease')).not.toBe('');
+    const css = readFileSync(resolve(process.cwd(), 'engine/ui/vending/opening.css'), 'utf8');
+    expect(css).toMatch(/\.kb-opening-spot \.kb-postcard\[data-size='sheet'\]\s*\{[^}]*transition:\s*box-shadow var\(--kb-opening-screen, 0ms\) var\(--kb-opening-ease/u);
+    cleanupOpen();
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    open();
+    expect(dialog().style.getPropertyValue('--kb-opening-screen')).toBe('');
   });
 
   test('a Space during the entrance finishes it and turns the first card at once', () => {

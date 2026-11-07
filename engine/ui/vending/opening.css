@@ -236,6 +236,11 @@
   font-weight: 800;
 }
 
+.kb-opening-spot .kb-postcard[data-size='sheet'] {
+  /* The hit's ring goes gold over `screen`, which the reveal sets from the feel; under Off it is not set and the ring switches at once. */
+  transition: box-shadow var(--kb-opening-screen, 0ms) var(--kb-opening-ease, linear);
+}
+
 .kb-opening-spot[data-kb-hit] .kb-postcard[data-size='sheet'] {
   box-shadow: 0 0 0 2px var(--kb-glass-ready), 0 0 46px color-mix(in srgb, var(--kb-glass-ready) 75%, transparent), 0 30px 50px color-mix(in srgb, var(--kb-glass-ground) 90%, transparent);
 }
@@ -385,6 +390,21 @@
 
 :where(:root[data-kb-layout='phone']) .kb-opening-row {
   display: none;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-opening[data-kb-stage='entering'] .kb-opening-row {
+  /* While the entrance plays the five are drawn, collapsed to a point under the pile: the deal measures them there and stacks them into the pile. */
+  position: relative;
+  display: block;
+  height: 0;
+  margin: 0;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-opening[data-kb-stage='entering'] .kb-opening-card[data-kb-slot] {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  margin-left: -75px;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-opening-actions {

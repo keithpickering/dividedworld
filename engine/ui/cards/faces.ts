@@ -41,6 +41,8 @@ export interface CardFace {
   readonly rarity: Rarity;
   /** How it is played: its word on the face ("Set"). */
   readonly play: Play;
+  /** A card the instance no longer has: its face is plain, claiming no alignment, rarity or way to play (its `alignment`, `tag`, `rarity` and `play` are placeholders, never drawn or said). */
+  readonly unknown?: true;
 }
 
 /** The corner gem's shape for each rarity, so a rarity is told by its shape and its name, never by color alone. */

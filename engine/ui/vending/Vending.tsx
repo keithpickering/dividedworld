@@ -120,10 +120,10 @@ interface Outcome {
   readonly text: string;
 }
 
-/** A card the pack gave that this instance does not know (the log says "a card" too): shown plainly, on the plain face, and counted. */
+/** A card the pack gave that this instance does not know (the log says "a card" too): shown plainly, on the plain face (no gem, tag or play word: it claims no rarity or alignment, and is said as its name alone), and counted. */
 const unknownFace = (key: string, like: CardFace | undefined): CardFace => ({
-  key, name: 'A card this machine no longer has', alignment: 'sweet', tag: 'Sweet', extra: 0, stack: 1, tagline: '', summary: '', describe: '',
-  art: like?.art ?? { color: 'var(--kb-glass-neon)', ink: 'var(--kb-glass-ink-neon)' }, rarity: 'common', play: like?.play ?? 'set',
+  key, name: 'A card this machine no longer has', alignment: 'sweet', tag: '', extra: 0, stack: 1, tagline: '', summary: '', describe: '',
+  art: like?.art ?? { color: 'var(--kb-glass-neon)', ink: 'var(--kb-glass-ink-neon)' }, rarity: 'common', play: like?.play ?? 'set', unknown: true,
 });
 
 /** A card bought on its own, on its way to the hand: its place in the order bought and its card. */
