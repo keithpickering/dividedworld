@@ -79,7 +79,7 @@ export function instanceSeed(instance: Instance) {
       announcementsTitle: instance.system.announcementsTitle,
       // The engine's catalogs of moves and demands (0046), so SQL and TypeScript read one list. This file is the composition
       // root: the engine names no instance, and the SQL names no kind of its own.
-      moves: MOVE_KINDS.map((m) => ({ key: m.key, structural: m.structural, shapesBoard: m.shapesBoard, offices: [...m.offices] })),
+      moves: MOVE_KINDS.map((m) => ({ key: m.key, structural: m.structural, shapesBoard: m.shapesBoard, offices: [...m.offices], derived: [...(m.derived ?? [])] })),
       // The rule predicates (0102): the keys `rule_breaks` has a branch for, the kind and bounds of each parameter, and the rule in plain
       // words with `{param}` where the parameter goes (`system_line` fills it).
       predicates: PREDICATES.map((p) => ({ key: p.key, param: p.param, least: p.bounds?.least ?? null, most: p.bounds?.most ?? null, plain: p.plain('{param}'), ...(p.param === 'tag' ? { tags: [...BBCODE_TAGS] } : {}) })),

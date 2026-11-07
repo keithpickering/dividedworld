@@ -146,20 +146,33 @@ declare
   bossc uuid;
   mv uuid;
   kept jsonb;
+  ghost jsonb := jsonb_build_object('key', 'ghostGroup', 'name', 'Ghost Group', 'color', '#101010', 'source', 'conferred', 'tone', 'favor');
+  meeting bigint;
+  got text;
 begin
-  perform seed_instance(pg_temp.payload(pg_temp.groups()));
+  perform seed_instance(pg_temp.payload(pg_temp.groups() || jsonb_build_array(ghost)));
   insert into move_kinds (key, structural) values ('conferGroup', false) on conflict do nothing;
+  insert into demand_kinds (key) values ('postsOnBoard') on conflict do nothing;
   insert into characters (name, staff, staff_kind, debuted_at) values ('Gr3 Mod', 'gr3-mod', 'persona', now()) returning id into bossc;
+  -- A pending queued favor naming teachersPet, queued validly (a Boss's, through the guard): the Boss of the open season, a character who has debuted, a check between go-live and expiry.
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Gr3 Boss', 'gr3-boss', 'persona', now());
+  update seasons set boss = 'gr3-boss' where ends_at is null;
+  insert into meetings (started_at, slot, finished_at, outcome) values (now(), clock_timestamp(), now(), 'ok') returning id into meeting;
+  insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural)
+  values (meeting, 'gr3-boss', 'conferGroup', jsonb_build_object('character', a::text, 'group', 'teachersPet', 'checkAt', (now() + interval '1 day')::text),
+    jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', (select id from boards where slug = 'general'), 'count', 1)),
+    'a favor', now() + interval '1 hour', now() + interval '3 days', false);
   perform set_config('kayfabb.staff_writer', 'on', true);
   mv := tests.act(bossc, 'move', t, jsonb_build_object('kind', 'conferGroup', 'params', jsonb_build_object('character', a::text, 'group', 'trialMembers'), 'demand', null, 'expires_at', null));
-  -- The new seed lists neither trialMembers (a move names it) nor teachersPet (nothing does).
+  -- The new seed lists none of trialMembers (a landed move names it), teachersPet (a queued, unlanded move names it) and ghostGroup (nothing does).
   kept := (select jsonb_agg(g) from jsonb_array_elements(pg_temp.groups()) g where g ->> 'key' not in ('trialMembers', 'teachersPet'));
   perform seed_instance(pg_temp.payload(kept));
   if not exists (select 1 from group_kinds where key = 'trialMembers') then raise exception 'a group a move names lost its row'; end if;
-  if exists (select 1 from group_kinds where key = 'teachersPet') then raise exception 'a group no move names was kept'; end if;
+  if not exists (select 1 from group_kinds where key = 'teachersPet') then raise exception 'a group a queued, unlanded move names lost its row'; end if;
+  if exists (select 1 from group_kinds where key = 'ghostGroup') then raise exception 'a group no move names was kept'; end if;
   -- A payload with no `groups` key leaves the groups as they are.
   perform seed_instance(pg_temp.payload());
-  if (select count(*) from group_kinds) is distinct from 5 then raise exception 'a seed without groups changed them: %', (select count(*) from group_kinds); end if;
+  if (select count(*) from group_kinds) is distinct from 6 then raise exception 'a seed without groups changed them: %', (select count(*) from group_kinds); end if;
 end $$;
 
 -- ---- An instance may reorder its rungs: a reseed with two swapped lands whole ----

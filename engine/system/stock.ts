@@ -5,7 +5,7 @@
  *
  * Each key's lines are a list, one chosen at random, so a stock line wears thin more slowly.
  */
-export const STOCK_LINE_KEYS = ['moveLanded', 'moveMet', 'moveExpired', 'moveReversed', 'moveSuperseded', 'bossFarewell', 'bossArrival', 'boardDescription', 'ruleSet', 'visitArrived', 'visitFiled', 'reportDismissed', 'reportBackfired', 'appealOverturned', 'appealUpheld', 'appealReduced', 'appealIncreased'] as const;
+export const STOCK_LINE_KEYS = ['moveLanded', 'moveMet', 'moveExpired', 'moveReversed', 'moveSuperseded', 'moveUnmet', 'moveOverturned', 'bossFarewell', 'bossArrival', 'boardDescription', 'ruleSet', 'visitArrived', 'visitFiled', 'reportDismissed', 'reportBackfired', 'appealOverturned', 'appealUpheld', 'appealReduced', 'appealIncreased'] as const;
 export type StockLineKey = (typeof STOCK_LINE_KEYS)[number];
 
 /**
@@ -18,6 +18,8 @@ export const STOCK_LINE_TOKENS: Readonly<Record<StockLineKey, readonly string[]>
   moveExpired: ['move'],
   moveReversed: ['move'],
   moveSuperseded: ['move'],
+  moveUnmet: ['move'],
+  moveOverturned: ['move'],
   bossFarewell: ['boss'],
   bossArrival: ['boss'],
   boardDescription: ['board'],
