@@ -498,3 +498,39 @@ test('the database failing before anything is read fails the run loudly, and a b
   await assert.rejects(run(fakeDb({ failOn: { filings_due: 'always' } }), fakeModels(() => ({ words: 'x' }))), /connection dropped/);
   await assert.rejects(runFilings(fakeDb().db, fakeModels(() => ({})).models, dividedWorld, 'not a time', clock), /slot is not a time/);
 });
+
+/* ---- a filing's move may confer a group (member groups plan, Task 13) ---- */
+
+const WHO = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd1';
+const confer = (over: Record<string, unknown> = {}) => ({ kind: 'conferGroup', params: { character: WHO, group: 'trial', board: GAMES }, expires_in_hours: 48, why: 'Needs a cooling off.', ...over });
+
+test('a filing whose answer carries a conferGroup queues it with the apology demand, spends one allowance, and files', async () => {
+  const d = fakeDb({ visits: [due(V1, P1)] });
+  const m = fakeModels(() => ({ words: 'Cool off.', move: confer({ demand: { kind: 'postsOnBoard', params: {} } }) }));
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  assert.match(m.chats[0]!.system, /trial \(Trial Members\)/);
+  assert.deepEqual(d.of('apply_mod_move')[0]!.move, { kind: 'conferGroup', params: { character: WHO, group: 'trial', board: GAMES }, expires_in_hours: 48, why: 'Needs a cooling off.', demand: { kind: 'apologyAccepted', params: {} } });
+  assert.equal(d.state.moves.length, 1);
+  assert.equal(d.state.allowance.get(MON), 1);
+  assert.deepEqual(d.of('file_visit'), [{ visit_act: V1, line: 'Cool off.' }]);
+});
+
+test('a filing by a Mod with no allowance drops the conferGroup, reads no groups, and still files', async () => {
+  const d = fakeDb({ visits: [due(V1, P1)], standing: { [MON]: mod(0) } });
+  const m = fakeModels(() => ({ words: 'Cool off.', move: confer() }));
+  await run(d, m);
+  assert.equal(d.count('mod_group_context'), 0);
+  assert.equal(d.count('apply_mod_move'), 0);
+  assert.equal(d.state.records[0]!.record.dropped[0].predicate, 'allowance');
+  assert.equal(d.of('file_visit').length, 1);
+});
+
+test('the groups are read once per Mod per run, and again after a move is queued', async () => {
+  const quiet = fakeDb({ visits: [due(V1, P1), due(V2, P2)] });
+  await run(quiet, fakeModels(() => ({ words: 'Fine.' })));
+  assert.equal(quiet.count('mod_group_context'), 1);
+  const moved = fakeDb({ visits: [due(V1, P1), due(V2, P2)] });
+  await run(moved, fakeModels(() => ({ words: 'Cool off.', move: confer() })));
+  assert.equal(moved.count('mod_group_context'), 2, 'a queued move holds its character, so the next filing reads again');
+});

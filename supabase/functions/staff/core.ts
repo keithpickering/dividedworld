@@ -222,6 +222,8 @@ export async function runFilings(db: Db, models: Models, instance: Instance, slo
   const roster = tuned.system.roster;
   const known = new Map<string, Known>();
   const rulesOf = new Map<string, readonly RuleLine[]>();
+  // The groups a Mod may confer, read once per Mod per run and read again after any move is queued (a queued move holds its character against every Mod).
+  const groupsOf = new Map<string, ModGroups | null>();
 
   const learn = async (staff: string): Promise<Known> => {
     const have = known.get(staff);
@@ -267,7 +269,11 @@ export async function runFilings(db: Db, models: Models, instance: Instance, slo
       const read = await db.rpc<ThreadRead>('pool_thread', { in_thread: v.thread, most: settings.pool.chatterThreadPosts, chars: settings.digestExcerptChars, also: v.post });
       const post = read.posts.find((p) => p.act === v.post) ?? { name: 'a character', body: '' };
       const charges = v.charges.map((c) => ({ rule: c.rule ?? 'a breach of the rules', band: c.band, cause: c.cause }));
-      const groups = await readModGroups(db, standing);
+      let groups = groupsOf.get(v.staff);
+      if (groups === undefined) {
+        groups = await readModGroups(db, standing);
+        groupsOf.set(v.staff, groups);
+      }
       const moveContext = (): ModMoveContext => ({
         allowance: standing.allowance, beat: standing.beat.map((b) => b.id), ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours,
         ...(groups ? { groups: groups.facts } : {}),
@@ -337,6 +343,7 @@ export async function runFilings(db: Db, models: Models, instance: Instance, slo
     let queued: FilingRecord['move'];
     if (move) {
       queued = await db.rpc<NonNullable<FilingRecord['move']>>('apply_mod_move', { staff: v.staff, move, cause_act: v.visit });
+      if (queued.queued) groupsOf.clear();
       if (queued.queued && mod.standing) mod.standing.allowance = Math.max(0, mod.standing.allowance - 1);
     }
     const filed = await db.rpc<{ filed: boolean }>('file_visit', line === null ? { visit_act: v.visit } : { visit_act: v.visit, line });

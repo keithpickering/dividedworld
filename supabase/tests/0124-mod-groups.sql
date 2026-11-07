@@ -149,6 +149,8 @@ begin
   if (r ->> 'queued')::boolean is not false then raise exception 'a board off the beat is refused: %', r; end if;
   r := apply_mod_move('gm-m1', mv, cause3);
   if (r ->> 'queued')::boolean is not false or r ->> 'reason' not like '%already in a group%' then raise exception 'a held character is refused: %', r; end if;
+  -- Every refusal above left the Mod's allowance where the one queued move left it.
+  if order_unspent('gm-m1') is distinct from 2 then raise exception 'a refusal spent an allowance: %', order_unspent('gm-m1'); end if;
   -- Another Mod, another beat: its own punishment queues too.
   r := apply_mod_move('gm-m2', mv || jsonb_build_object('params', mv -> 'params' || jsonb_build_object('character', other, 'board', general)), cause2);
   if (r ->> 'queued')::boolean is not true then raise exception 'setup: %', r; end if;
@@ -179,6 +181,11 @@ begin
      or exists (select 1 from jsonb_array_elements(r) e where e ->> 'id' = plain::text) then
     raise exception 'exactly the held and the capped are listed: %', r;
   end if;
+  -- The Boss's meeting and a Mod's call read one list.
+  if meeting_context() -> 'groups' is distinct from mod_group_context() then
+    raise exception 'meeting_context and mod_group_context disagree: % vs %', meeting_context() -> 'groups', mod_group_context();
+  end if;
+  if r is distinct from group_move_bars() then raise exception 'group_move_bars: %', group_move_bars(); end if;
   perform tests.become(pg_temp.ann());
   got := pg_temp.refusal('select mod_group_context()');
   perform tests.unbecome();
