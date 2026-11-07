@@ -30,8 +30,11 @@ declare global {
   interface Window {
     __kbPoison?: string;
     __kbShine?: {
-      /** Every shiny post on the page, top to bottom: the loop's draws of it, its box in the viewport and its area in device px. */
-      hosts: () => { draws: number; top: number; bottom: number; area: number }[];
+      /**
+       * Every shiny post on the page, top to bottom: the loop's draws of it, the box it paints in the viewport (its width too, in CSS
+       * px) and its area in device px, its words' own box in the viewport, and the share of the loop's rate it is drawn at.
+       */
+      hosts: () => { draws: number; top: number; bottom: number; width: number; area: number; own: { top: number; bottom: number; width: number }; share: number }[];
       frames: () => number;
       /** The loop's own time in each of its last `n` frames, in milliseconds. */
       work: (n: number) => number[];
@@ -57,8 +60,10 @@ const SHINY = '[data-kb-fab], [data-kb-glitter]';
  * Story-only poisons for e2e/shine.spec.ts, which plants each to see its check go red (a guard never red is not known to work).
  * `window.__kbPoison` is set by the spec before the page loads (the app rewrites its address, so a query would not survive). Nothing
  * but this story reads the flag, and without it nothing is patched.
- *  - `'slow'`: the second Glitter Bomb post's first canvas costs 25 ms every time it is drawn on (a busy-wait in `getContext`, which the
- *    effect calls on each paint). A Feelin' Fab is no longer drawn on the page, so the page-side cost is planted on a Glitter Bomb.
+ *  - `'slow'`: every Glitter Bomb post's first canvas costs 25 ms every time it is drawn on (a busy-wait in `getContext`, which the
+ *    effect calls on each paint). A Feelin' Fab is no longer drawn on the page, so the page-side cost is planted on a Glitter Bomb. It
+ *    was one post's until its body was drawn at a share of the rate (issue #304): one post drawn on a frame in three or four no longer
+ *    held the frame gap's 95th percentile, though it still held the loop's own time; every glitter post in view holds both.
  *  - `'slow-worker'`: every batch the foil worker draws takes 25 ms more (shine-probe.worker.ts).
  *  - `'keep'`: the first shiny post's canvas ignores being freed (a width or height of 0), in the worker where its canvas lives.
  */
@@ -67,7 +72,7 @@ function plant(poison: string | null): () => void {
     const proto = HTMLCanvasElement.prototype, get = proto.getContext;
     proto.getContext = function (this: HTMLCanvasElement, ...a: Parameters<typeof get>) {
       const host = this.closest('[data-kb-glitter]');
-      if (host !== null && host === document.querySelectorAll('[data-kb-glitter]')[1] && host.querySelector('canvas') === this) {
+      if (host !== null && host.querySelector('canvas') === this) {
         for (const until = performance.now() + 25; performance.now() < until;) { /* busy */ }
       }
       return get.apply(this, a);
@@ -165,8 +170,11 @@ function Busy({ reduced }: Args) {
     const tell = (on: boolean): void => { foilProbe.worker()?.postMessage({ kind: 'story', what: 'raster', on } satisfies StoryAsk); };
     window.__kbShine = {
       hosts: () => [...document.querySelectorAll(SHINY)].map((el) => {
-        const r = painted(el), d = window.devicePixelRatio || 1;
-        return { draws: probe.draws(el), top: r.top, bottom: r.bottom, area: r.width * r.height * d * d };
+        const r = painted(el), o = el.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+        return {
+          draws: probe.draws(el), top: r.top, bottom: r.bottom, width: r.width, area: r.width * r.height * d * d,
+          own: { top: o.top, bottom: o.bottom, width: o.width }, share: probe.share(el),
+        };
       }),
       frames: probe.frames,
       work: (n) => probe.work(n),

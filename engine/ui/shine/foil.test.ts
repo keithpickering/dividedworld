@@ -198,6 +198,7 @@ function fakeCanvas(calls: Call[], name: string, w = 0, h = 0, getNull = false):
     clearRect: (...a: unknown[]) => calls.push([`${name}.clearRect`, ...a]),
     fillRect: () => {}, fillStyle: '', createRadialGradient: () => ({ addColorStop: () => {} }),
     beginPath: () => {}, ellipse: () => {}, fill: () => {}, translate: () => {}, rotate: () => {},
+    rect: (...a: unknown[]) => calls.push([`${name}.rect`, ...a]), clip: () => calls.push([`${name}.clip`]),
     save: () => calls.push([`${name}.save`]), restore: () => calls.push([`${name}.restore`]),
   };
   const canvas = { name, width: w, height: h, getContext: () => (getNull ? null : ctx) } as unknown as Fake;
@@ -397,3 +398,77 @@ describe('draw, against a fake context', () => {
   });
 });
 
+
+/*
+ * A draw handed a span (engine/ui/shine/loop.ts `ShineFrame.span`, issue #304) redraws only the rows of the box on screen: it renders
+ * the grid's rows the span covers (and one more each side, so the smoothing at the span's edge reads fresh cells), puts only those, and
+ * draws the grid clipped to the span. What is outside keeps the last draw's pixels, so a span is honored only after a whole draw of
+ * this layout on a canvas of this size: a first draw, or one after a resize or a release, is whole.
+ */
+describe('a draw with a span', () => {
+  const box = { w: 300, h: 600 };
+  const gw = 100, gh = 200;
+  function setup(pattern: (typeof PATTERNS)[number] = 'prism') {
+    const calls: Call[] = [];
+    const foil = makeFoil({ seed: 's', pattern, palette: PALETTES.light, stars: 8, glint: GLINT, createCanvas: (w, h) => fakeCanvas(calls, 'g', w, h) });
+    const canvas = fakeCanvas(calls, 'ctx', 600, 1200);
+    const ctx = canvas.getContext('2d') as unknown as CanvasRenderingContext2D;
+    return { calls, foil, canvas, ctx };
+  }
+  const puts = (calls: Call[]) => calls.filter((c) => c[0] === 'g.putImageData');
+
+  test('after a whole draw, it renders and puts only the span\'s rows and one either side, and clips the canvas draw to the span', () => {
+    for (const pattern of PATTERNS) {
+      const { calls, foil, ctx } = setup(pattern);
+      foil.draw(ctx, box, 2, REST, bands.light, 0, false);
+      const whole = puts(calls)[0]!;
+      assert.deepEqual(whole.slice(2), [0, 0], `${pattern}: the first draw puts the whole grid`);
+      calls.length = 0;
+      const light = { x: 0.6, y: -0.4 };
+      foil.draw(ctx, box, 2, light, bands.light, 0, false, { top: 150, bottom: 300 });
+      const put = puts(calls)[0]!;
+      /* Rows 150/3 - 1 = 49 to 300/3 + 1 = 101: 52 rows of the grid. */
+      assert.deepEqual(put.slice(2), [0, 0, 0, 49, gw, 52], `${pattern}: only the span's rows are put`);
+      const want = new Uint8ClampedArray(gw * gh * 4);
+      foil.render(box, light, bands.light, want);
+      const img = put[1] as Uint8ClampedArray, before = whole[1] as Uint8ClampedArray;
+      const row = (a: Uint8ClampedArray, j: number) => a.subarray(j * gw * 4, (j + 1) * gw * 4);
+      for (const j of [49, 75, 100]) assert.deepEqual(row(img, j), row(want, j), `${pattern}: row ${j} is this light's`);
+      for (const j of [0, 48, 101, 199]) assert.deepEqual(row(img, j), row(before, j), `${pattern}: row ${j} is left as it was`);
+      const clip = calls.findIndex((c) => c[0] === 'ctx.clip'), drawn = calls.findIndex((c) => c[0] === 'ctx.drawImage');
+      assert.ok(clip >= 0 && clip < drawn, `${pattern}: clipped before the grid is drawn`);
+      assert.deepEqual(calls.filter((c) => c[0] === 'ctx.rect')[0]!.slice(1), [0, 300, 600, 300], `${pattern}: the clip is the span, in device px`);
+    }
+  });
+
+  test('a span on the first draw, after a resize, or after a release is ignored: the draw is whole', () => {
+    const { calls, foil, canvas, ctx } = setup();
+    const span = { top: 150, bottom: 300 };
+    foil.draw(ctx, box, 2, REST, bands.light, 0, false, span);
+    assert.deepEqual(puts(calls)[0]!.slice(2), [0, 0], 'the first draw');
+    assert.ok(!calls.some((c) => c[0] === 'ctx.clip'));
+    calls.length = 0;
+    canvas.width = 640;
+    foil.draw(ctx, box, 2, REST, bands.light, 0, false, span);
+    assert.deepEqual(puts(calls)[0]!.slice(2), [0, 0], 'after the canvas was resized');
+    calls.length = 0;
+    foil.release();
+    foil.draw(ctx, box, 2, REST, bands.light, 0, false, span);
+    assert.deepEqual(puts(calls)[0]!.slice(2), [0, 0], 'after a release');
+    calls.length = 0;
+    foil.draw(ctx, box, 2, REST, bands.light, 0, false, span);
+    assert.deepEqual(puts(calls)[0]!.slice(2), [0, 0, 0, 49, gw, 52], 'and then it is honored');
+  });
+
+  test('a span that covers the whole box, or none at all, draws whole', () => {
+    const { calls, foil, ctx } = setup();
+    foil.draw(ctx, box, 2, REST, bands.light, 0, false);
+    calls.length = 0;
+    foil.draw(ctx, box, 2, REST, bands.light, 0, false, { top: 0, bottom: 600 });
+    assert.deepEqual(puts(calls)[0]!.slice(2), [0, 0]);
+    assert.ok(!calls.some((c) => c[0] === 'ctx.clip'));
+    calls.length = 0;
+    foil.draw(ctx, box, 2, REST, bands.light, 0, false, null);
+    assert.deepEqual(puts(calls)[0]!.slice(2), [0, 0]);
+  });
+});

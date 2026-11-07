@@ -16,7 +16,7 @@ import type { Act } from '../../../../engine/ui/data/api.ts';
 import type { CardPlay, EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { bandOf, POST_INK } from '../../../../engine/ui/shine/band.ts';
 import { light as pageLight, REST } from '../../../../engine/ui/shine/light.ts';
-import { probe } from '../../../../engine/ui/shine/loop.ts';
+import { probe, SPAN_MARGIN } from '../../../../engine/ui/shine/loop.ts';
 import { foilProbe, IDLE_MS, setFoilWorker } from '../../../../engine/ui/shine/foilClient.ts';
 
 /* The foil is a spy that remembers how it was made; the band is the root's board, as bandFor would read it from the tokens. */
@@ -195,6 +195,33 @@ describe("Feelin' Fab", () => {
     cleanup();
     render(<FeelinFabEffect {...props(1)} />);
     expect(canvas().width).toBe(Math.round(301 * 2));
+  });
+
+  /* Issue #304: a body bigger than the words is redrawn at the share of the rate that changes as much screen a second as the words'
+     box did (engine/ui/cards/body.ts `paintShare`), and a draw redraws only the rows the loop says are on screen. */
+  const inBody = (w: number, h: number) => {
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-act-main') ? w : 0; });
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-act-main') ? h : 0; });
+  };
+  test('in a post body four times its words\' area, the foil is redrawn at a quarter of the rate; with no body, at the full rate', () => {
+    inBody(300, 480);
+    const r = render(<div className="kb-act-main"><FeelinFabEffect {...props(1)} /></div>);
+    expect(probe.share(box())).toBe(0.25);
+    r.unmount();
+    render(<FeelinFabEffect {...props(1)} />);
+    expect(probe.share(box())).toBe(1);
+  });
+
+  test('a draw hands the foil the rows the loop says are on screen; the first draw is whole', () => {
+    size = { w: 300, h: 2000 };
+    render(<FeelinFabEffect {...props(1)} />);
+    void see(canvas(), true);
+    frames(6);
+    const calls = made.flatMap((f) => f.draw.mock.calls);
+    expect(calls.length).toBeGreaterThan(1);
+    expect(calls[0]![7] ?? null, 'the first draw is whole').toBeNull();
+    expect(calls.slice(1).some((c) => c[7] !== null && typeof c[7] === 'object'), 'a later draw redraws a span').toBe(true);
+    for (const c of calls.slice(1)) if (c[7]) expect(c[7]).toEqual({ top: 0, bottom: window.innerHeight + SPAN_MARGIN });
   });
 
   test('a resize registers again at the new size, and the post is redrawn', () => {

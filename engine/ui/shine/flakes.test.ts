@@ -332,6 +332,36 @@ describe('flakes', () => {
     assert.deepEqual(calls, [[0, 0, 988, 600]]);
   });
 
+  /* A lit layer handed a span (engine/ui/shine/loop.ts `ShineFrame.span`, issue #304) repaints only the flakes on screen: those whose
+     square reaches into the span's rows. The base under them is whole, so a flake left out shows its unlit color until it is redrawn. */
+  test('the lit layer with a span paints the lit flakes whose square reaches into the span, and none further off', () => {
+    const f = makeFlakes({ seed: 'look', box: BOX, inks: GLITTER, holo: HOLO, density: 70, glint: GLINT, star: {} as CanvasImageSource });
+    landEverything(f);
+    const light = { x: f.settled[3]!.nx, y: f.settled[3]!.ny }, band = { lo: 0.1, hi: 1 };
+    const span = { top: 100, bottom: 180 };
+    const all = tracked(2), part = tracked(2);
+    f.drawLit(all.ctx, light, band, 5, true, 2);
+    f.drawLit(part.ctx, light, band, 5, true, 2, span);
+    /* A rect's center, in CSS px (the canvas is at density 2). */
+    const centerY = (l: string) => l.split(' ').slice(2).map((p) => Number(p.split(',')[1])).reduce((a, b) => a + b, 0) / 8;
+    const rects = (lines: string[]) => lines.filter((l) => l.startsWith('rect '));
+    const inPart = new Set(rects(part.lines));
+    /* A lit flake's square reaches 13.7 px at most (a flare's), and a flake under that flare is painted with it: two reaches off the span. */
+    const reach = 28;
+    let kept = 0;
+    for (const l of rects(all.lines)) {
+      const y = centerY(l);
+      if (y >= span.top && y <= span.bottom) { assert.ok(inPart.has(l), `a lit flake in the span is painted: ${l}`); kept++; }
+    }
+    assert.ok(kept > 0, 'the scene has lit flakes in the span');
+    for (const l of inPart) {
+      assert.ok(rects(all.lines).includes(l), `painted as the whole layer paints it: ${l}`);
+      const y = centerY(l);
+      assert.ok(y >= span.top - reach && y <= span.bottom + reach, `a flake off the span is not painted: ${l}`);
+    }
+    assert.ok(inPart.size < rects(all.lines).length, 'flakes off the span are left out');
+  });
+
   test('a redraw costs no save per flake, and a fill color is set once per color, not per flake', () => {
     const f = makeFlakes({ seed: 'look', box: BOX, inks: GLITTER, holo: HOLO, density: 70, glint: GLINT, star: {} as CanvasImageSource });
     landEverything(f);

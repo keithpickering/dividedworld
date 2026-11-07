@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { paintScale } from './body.ts';
+import { paintScale, paintShare } from './body.ts';
 
 describe('paintScale', () => {
   test('a box no bigger than the words is drawn at full density', () => {
@@ -22,5 +22,29 @@ describe('paintScale', () => {
   });
   test('an empty box is drawn at full density (it holds no pixels)', () => {
     assert.equal(paintScale(0, 0), 1);
+  });
+});
+
+/**
+ * The share of the redraw rate a shine effect's painted box is redrawn at (`paintShare`): the screen area its redraws change in a second
+ * stays what its words' box changed at the full rate, down to a floor of a quarter of the rate for a post of a line or two.
+ */
+describe('paintShare', () => {
+  test('a box no bigger than the words is redrawn at the full rate', () => {
+    assert.equal(paintShare(1000, 1000), 1);
+    assert.equal(paintShare(1000, 400), 1);
+  });
+  test('a body twice the words\' area is redrawn at half the rate: the same area a second', () => {
+    assert.equal(paintShare(1000, 2000), 0.5);
+    const s = paintShare(924 * 65, 943 * 135);
+    assert.ok(Math.abs(943 * 135 * s - 924 * 65) < 1e-6);
+  });
+  test('a line of words in a tall body is redrawn at no less than a quarter of the rate', () => {
+    assert.equal(paintShare(924 * 22, 943 * 276), 0.25);
+    assert.equal(paintShare(0, 1000), 0.25);
+  });
+  test('an empty or unmeasured box is redrawn at the full rate', () => {
+    assert.equal(paintShare(0, 0), 1);
+    assert.equal(paintShare(Number.NaN, 1000), 1);
   });
 });

@@ -15,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Act } from '../../../../engine/ui/data/api.ts';
 import type { CardPlay, EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { light as pageLight } from '../../../../engine/ui/shine/light.ts';
-import { probe } from '../../../../engine/ui/shine/loop.ts';
+import { probe, SPAN_MARGIN } from '../../../../engine/ui/shine/loop.ts';
 import { boardStoryIds } from '../../../../e2e/board-stories.ts';
 
 const spies = vi.hoisted(() => ({ clingOver: vi.fn(), clingRegister: vi.fn(), clingUnregister: vi.fn() }));
@@ -317,6 +317,31 @@ describe('Glitter Bomb holds its band and frees its canvases', () => {
     await act(async () => { document.documentElement.setAttribute('data-kb-mode', 'dark'); await Promise.resolve(); });
     frames(2, 5000);
     expect(b, 'a board change paints the base again').toHaveBeenCalledTimes(bases + 1);
+  });
+
+  /* Issue #304: a body bigger than the words is redrawn at a share of the rate (engine/ui/cards/body.ts `paintShare`), and the lit
+     layer repaints only the flakes on the rows the loop says are on screen. */
+  test('in a post body four times its words\' area, the glitter is redrawn at a quarter of the rate', () => {
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-act-main') ? 300 : 0; });
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-act-main') ? 480 : 0; });
+    const r = render(<div className="kb-act-main"><GlitterBombEffect {...props()} /></div>);
+    expect(probe.share(box())).toBe(0.25);
+    r.unmount();
+    render(<GlitterBombEffect {...props()} />);
+    expect(probe.share(box())).toBe(1);
+  });
+
+  test('the lit layer is handed the rows the loop says are on screen', async () => {
+    const real = await vi.importActual<typeof import('../../../../engine/ui/shine/flakes.ts')>('../../../../engine/ui/shine/flakes.ts');
+    const lit: ReturnType<typeof vi.fn>[] = [];
+    makeFlakes.mockImplementation((o) => { const f = real.makeFlakes(o); lit.push(vi.spyOn(f, 'drawLit')); return f; });
+    size = { w: 300, h: 2000 };
+    render(<GlitterBombEffect {...props()} />);
+    see(1); frames(200);
+    const calls = lit.flatMap((l) => l.mock.calls);
+    const spans = calls.map((c) => c[6] ?? null).filter((x) => x !== null);
+    expect(spans.length, 'some draws redraw a span').toBeGreaterThan(0);
+    for (const x of spans) expect(x).toEqual({ top: 0, bottom: window.innerHeight + SPAN_MARGIN });
   });
 
   const boardChange = (mode: string) => act(async () => { document.documentElement.setAttribute('data-kb-mode', mode); await Promise.resolve(); });

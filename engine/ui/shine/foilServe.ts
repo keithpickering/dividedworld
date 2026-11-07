@@ -71,7 +71,8 @@ export function serveFoils(scope: FoilScope, hooks: ServeHooks = {}): { canvas(i
     release(h, d.key);
     const foil = h.foils.get(d.key) ?? makeFoil(d.spec);
     h.foils.set(d.key, foil);
-    foil.draw(ctx as unknown as CanvasRenderingContext2D, d.box, d.density, d.light, d.band, d.now, d.idle);
+    /* A canvas sized just now holds nothing: the foil sees the new size and draws it whole whatever the span (foil.ts). */
+    foil.draw(ctx as unknown as CanvasRenderingContext2D, d.box, d.density, d.light, d.band, d.now, d.idle, d.span ?? null);
   };
 
   const batch = (t: number, draws: readonly FoilDraw[]): void => {
