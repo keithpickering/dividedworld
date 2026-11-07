@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, test } from 'vitest';
 import { BbCode } from './render.tsx';
 import { TextLayer, type TextRun } from './layers.tsx';
@@ -270,6 +270,38 @@ describe('layout and effects', () => {
     for (let i = 1; i <= 6; i++) expect(body).toContain(`var(--kb-rainbow-${i})`);
     expect(body).toMatch(/background-clip:\s*text/u);
     expect(sheet).toMatch(/@media \(forced-colors: active\)\s*\{[^@]*\.kb-bb-rainbow\s*\{[^}]*background(-image)?:\s*none/u);
+  });
+
+  test('a marquee has a Pause / Play button that toggles it and carries the paused hook', async () => {
+    show('[marquee]news[/marquee]');
+    const btn = within(out().querySelector('.kb-bb-marquee')!).getByRole('button', { name: 'Pause' });
+    expect(btn).toHaveAttribute('type', 'button');
+    expect(btn).toHaveAttribute('aria-pressed', 'false');
+    expect(out().querySelector('.kb-bb-marquee')).not.toHaveAttribute('data-paused');
+    fireEvent.click(btn);
+    const play = within(out()).getByRole('button', { name: 'Play' });
+    expect(play).toHaveAttribute('aria-pressed', 'true');
+    expect(out().querySelector('.kb-bb-marquee')).toHaveAttribute('data-paused', '');
+    fireEvent.click(play);
+    expect(out().querySelector('.kb-bb-marquee')).not.toHaveAttribute('data-paused');
+    expect(describeViolations(await axeViolations(out()))).toBe('');
+    const sheet = await css();
+    expect(sheet).toMatch(/\.kb-bb-marquee\[data-paused\][^{]*\{[^}]*animation-play-state:\s*paused/u);
+    // Nothing moves under reduced motion, so the button is hidden there.
+    expect(sheet).toMatch(/prefers-reduced-motion: reduce\)\s*\{[^@]*\.kb-bb-marquee-toggle\s*\{[^}]*display:\s*none/u);
+    expect(sheet).toMatch(/\[data-kb-motion="reduce"\][^{]*\.kb-bb-marquee-toggle\s*\{[^}]*display:\s*none/u);
+  });
+
+  test('inside a rainbow, anything that paints its own color or background resets the transparent fill', async () => {
+    show('[rainbow][highlight]x[/highlight][ispoiler]y[/ispoiler][color=red]z[/color][/rainbow]');
+    const mark = out().querySelector('.kb-bb-rainbow mark.kb-bb-highlight');
+    expect(mark).toHaveTextContent('x');
+    expect(out().querySelector('.kb-bb-rainbow button.kb-bb-ispoiler')).not.toBeNull();
+    const sheet = await css();
+    const m = /\.kb-bb-rainbow\s+:where\(([^)]*)\)[^{]*\{([^}]*)\}/u.exec(sheet)!;
+    expect(m).not.toBeNull();
+    for (const sel of ['mark', 'button', 'a', '[style*="color"]']) expect(m[1]).toContain(sel);
+    expect(m[2]).toMatch(/-webkit-text-fill-color:\s*currentcolor/u);
   });
 
   test('text layers draw inside every container', () => {

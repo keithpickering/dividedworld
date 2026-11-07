@@ -85,6 +85,22 @@ function ISpoiler({ children }: { readonly children: ReactNode }) {
   );
 }
 
+/**
+ * A marquee: a moving line with a Pause / Play button before it, so the movement can be stopped from the keyboard or by touch
+ * (WCAG 2.2.2). The state is the reader's alone. Under reduced motion nothing moves, so CSS hides the button.
+ */
+function Marquee({ children }: { readonly children: ReactNode }) {
+  const [paused, setPaused] = useState(false);
+  return (
+    <div className="kb-bb-marquee" data-paused={paused ? '' : undefined}>
+      <button type="button" className="kb-bb-marquee-toggle" aria-pressed={paused} onClick={() => setPaused(!paused)}>
+        {paused ? 'Play' : 'Pause'}
+      </button>
+      <span className="kb-bb-marquee-run">{children}</span>
+    </div>
+  );
+}
+
 /** The ink for a highlight: black or white, whichever has the higher contrast on the color, as a token so a theme cannot lose it. */
 function inkOn(color: string): string {
   const hex = colorHex(color);
@@ -147,7 +163,7 @@ function node(n: BbNode, key: number, quoteLink: BbCodeProps['quoteLink'], layer
     case 'sup': return <sup key={key}>{nodes(n.children, quoteLink, layered)}</sup>;
     case 'font': return <span key={key} style={{ fontFamily: FONTS[n.font] }}>{nodes(n.children, quoteLink, layered)}</span>;
     case 'marquee':
-      return <div key={key} className="kb-bb-marquee"><span className="kb-bb-marquee-run">{nodes(n.children, quoteLink, layered)}</span></div>;
+      return <Marquee key={key}>{nodes(n.children, quoteLink, layered)}</Marquee>;
     case 'glow': {
       const c = n.color ?? 'var(--kb-fg)';
       return <span key={key} className="kb-bb-glow" style={{ textShadow: `0 0 0.2em ${c}, 0 0 0.45em ${c}` }}>{nodes(n.children, quoteLink, layered)}</span>;

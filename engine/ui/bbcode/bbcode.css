@@ -55,6 +55,11 @@
   }
 }
 
+/* The fill is transparent and inherited, so anything inside that paints its own color or background (a highlight, a spoiler bar, a color, a link, a layer's element) takes its own color back. */
+.kb-bb-rainbow :where(mark, button, a, code, [style*="color"], [style*="background"]) {
+  -webkit-text-fill-color: currentcolor;
+}
+
 @media (forced-colors: active) {
   .kb-bb-rainbow {
     background-image: none;
@@ -78,8 +83,19 @@
 }
 
 .kb-bb-marquee:hover .kb-bb-marquee-run,
-.kb-bb-marquee:focus-within .kb-bb-marquee-run {
+.kb-bb-marquee:focus-within .kb-bb-marquee-run,
+.kb-bb-marquee[data-paused] .kb-bb-marquee-run {
   animation-play-state: paused;
+}
+
+/* The Pause / Play button holds the line still from the keyboard or by touch. Nothing moves under reduced motion, so it is hidden there. */
+.kb-bb-marquee-toggle {
+  display: block;
+  font: inherit;
+  font-size: var(--kb-size-small);
+  margin: 0 0 0.2em;
+  padding: 0 0.4em;
+  cursor: pointer;
 }
 
 @keyframes kb-bb-marquee {
@@ -95,6 +111,10 @@
     width: auto;
   }
 
+  :root:not([data-kb-motion="full"]) .kb-bb-marquee-toggle {
+    display: none;
+  }
+
   :root:not([data-kb-motion="full"]) .kb-bb-marquee {
     white-space: pre-wrap;
     overflow: visible;
@@ -105,6 +125,10 @@
   animation: none;
   min-width: 0;
   width: auto;
+}
+
+:root[data-kb-motion="reduce"] .kb-bb-marquee-toggle {
+  display: none;
 }
 
 :root[data-kb-motion="reduce"] .kb-bb-marquee {
