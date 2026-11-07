@@ -91,28 +91,34 @@ describe('profile edit', () => {
     expect(within(group).getByRole('radio', { name: /^it\/its/u })).toBeChecked();
     await userEvent.click(within(group).getByRole('radio', { name: /^Custom/u }));
     const save = screen.getByRole('button', { name: 'Save the profile' });
+    expect(save).toBeEnabled();
+    await userEvent.clear(screen.getByLabelText('Subject'));
     expect(save).toBeDisabled();
     await userEvent.type(screen.getByLabelText('Subject'), 'abcdefghijklm');
     expect(screen.getByText('the subject has 13 characters; at most 12')).toBeInTheDocument();
     expect(save).toBeDisabled();
     await userEvent.clear(screen.getByLabelText('Subject'));
-    for (const [label, v] of [['Subject', 'Xe'], ['Object', 'xem'], ['Possessive adjective', 'xyr'], ['Possessive', 'xyrs'], ['Reflexive', 'xemself']] as const) await userEvent.type(screen.getByLabelText(label), v);
+    for (const [label, v] of [['Subject', 'Xe'], ['Object', 'xem'], ['Possessive adjective', 'xyr'], ['Possessive', 'xyrs'], ['Reflexive', 'xemself']] as const) { await userEvent.clear(screen.getByLabelText(label)); await userEvent.type(screen.getByLabelText(label), v); }
     expect(save).toBeEnabled();
     await userEvent.click(save);
     await waitFor(() => expect(setProfile).toHaveBeenCalledWith(w.pipe, '', '', 'default', { ...xe, subject: 'Xe' }));
     expect((await w.fake.characters([w.pipe]))[0]!.pronouns).toEqual(xe);
   });
 
-  test('opens on a stored set: she/her is chosen, and a custom set shows its fields', async () => {
-    const w = world();
+  test('opens on a stored custom set with its fields filled, and saves it untouched as it was', async () => {
     const fake = buildWorld();
     const me = fake.seed.account('me2');
-    const gloomba = fake.seed.character(me, 'Gloomba', 'face', { pronouns: PRONOUN_PRESETS.she });
+    const xe = { subject: 'xe', object: 'xem', determiner: 'xyr', possessive: 'xyrs', reflexive: 'xemself', plural: false };
+    const gloomba = fake.seed.character(me, 'Gloomba', 'face', { pronouns: xe });
     fake.signInAs(me);
+    const setProfile = vi.spyOn(fake, 'setProfile');
     renderIn(fake, <ProfileEdit />, { path: '/characters/edit' });
     expect(await screen.findByLabelText('Title')).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: /^she\/her/u })).toBeChecked();
-    expect(gloomba).toBeTruthy();
+    expect(screen.getByRole('radio', { name: /^Custom/u })).toBeChecked();
+    expect(screen.getByLabelText('Subject')).toHaveValue('xe');
+    expect(screen.getByLabelText('Reflexive')).toHaveValue('xemself');
+    await userEvent.click(screen.getByRole('button', { name: 'Save the profile' }));
+    await waitFor(() => expect(setProfile).toHaveBeenCalledWith(gloomba, '', '', 'default', xe));
   });
 
   test('edits the title, the signature and the pip style', async () => {

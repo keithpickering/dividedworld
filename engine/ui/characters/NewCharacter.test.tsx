@@ -111,6 +111,8 @@ describe('New character', () => {
     const submit = within(f).getByRole('button', { name: 'Make the character' });
     expect(submit).toBeEnabled();
     await userEvent.click(within(f).getByRole('radio', { name: /^Custom/u }));
+    expect(submit).toBeEnabled();
+    await userEvent.clear(within(f).getByLabelText('Subject'));
     expect(submit).toBeDisabled();
     await userEvent.type(within(f).getByLabelText('Subject'), 'abcdefghijklm');
     expect(within(f).getByText('the subject has 13 characters; at most 12')).toBeInTheDocument();
