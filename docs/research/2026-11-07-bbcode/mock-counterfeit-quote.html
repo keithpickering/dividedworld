@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Counterfeit Quote</title>
+<!--
+  Record, written 2026-11-07. Mockup for the BBCode design: a quote with no post behind it
+  ([quote=Name]) drawn as a near-copy of the real quote block, trying to pass itself off.
+  The real block is the one engine/ui/bbcode/bbcode.css draws today (.kb-quote). Each variant
+  below is one way to make the copy subtly wrong. None is underlined like a link: the real
+  quote's cite is a link to the post, the counterfeit's is plain text, and that difference is
+  the cue a screen reader gets too ("An accessible path costs what the obstacle costs").
+-->
+<style>
+  :root { --fg:#000; --bg:#fff; --mute:#555; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#fff; --bg:#000; --mute:#aaa; } }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:13px/1.45 Verdana, Geneva, sans-serif; }
+  h1 { font:bold 18px "Courier New", Courier, monospace; margin:0 0 4px; }
+  h2 { font:bold 15px "Courier New", Courier, monospace; margin:28px 0 6px; border-bottom:2px solid var(--fg); }
+  p.note { margin:0 0 10px; max-width:62em; }
+  a { color:var(--fg); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:20px; }
+  .post { border:1px solid var(--fg); }
+  .post-head { border-bottom:1px solid var(--fg); padding:4px 8px; font:bold 12px "Courier New", monospace; display:flex; justify-content:space-between; }
+  .post-body { padding:8px; white-space:pre-wrap; }
+  .label { font:bold 12px "Courier New", monospace; margin:0 0 4px; }
+  .why { font-size:11px; color:var(--mute); margin:6px 0 0; }
+
+  /* The real one, exactly as bbcode.css has it. */
+  .kb-quote { border:1px solid var(--fg); margin:0.4em 0; padding:0.3em 2%; }
+  .kb-quote-from { display:block; font-size:0.86em; font-style:normal; color:var(--mute); }
+  .kb-quote-body { white-space:pre-wrap; }
+
+  /* A: wobble. The border is redrawn through an SVG displacement filter, so the lines waver a pixel. */
+  .fake-a { border:0; position:relative; }
+  .fake-a::before { content:""; position:absolute; inset:0; border:1px solid var(--fg); filter:url(#wobble); pointer-events:none; }
+
+  /* B: misregistered. Two borders a pixel apart, the way a cheap reprint misses its plate. */
+  .fake-b { border:1px solid var(--fg); box-shadow:1px 1px 0 0 var(--mute); }
+
+  /* C: pasted in. A barely rotated clipping with one torn corner. */
+  .fake-c { transform:rotate(-0.35deg); clip-path:polygon(0 0, 100% 0, 100% calc(100% - 7px), calc(100% - 4px) 100%, calc(100% - 9px) calc(100% - 2px), calc(100% - 14px) 100%, 0 100%); }
+
+  /* D: wrong ink. Everything is right except that the rule is a shade off and the cite is a hair too big. */
+  .fake-d { border-color:color-mix(in srgb, var(--fg) 78%, var(--bg)); }
+  .fake-d .kb-quote-from { font-size:0.9em; letter-spacing:0.02em; }
+
+  /* E: all of it, turned down: wobble + misregistration, no rotation. */
+  .fake-e { border:0; position:relative; box-shadow:none; }
+  .fake-e::before { content:""; position:absolute; inset:0; border:1px solid var(--fg); filter:url(#wobble-soft); pointer-events:none; }
+  .fake-e::after { content:""; position:absolute; inset:1px -1px -1px 1px; border:1px solid var(--mute); opacity:.5; filter:url(#wobble-soft); pointer-events:none; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="wobble"><feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="7"/><feDisplacementMap in="SourceGraphic" scale="3"/></filter>
+  <filter id="wobble-soft"><feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="1" seed="3"/><feDisplacementMap in="SourceGraphic" scale="2"/></filter>
+</svg>
+
+<h1>Counterfeit quote</h1>
+<p class="note"><code>[quote=Name]…[/quote]</code> quotes nobody's post. It is drawn as a copy of the real quote that is trying to pass, and is a little off. Each variant is one kind of "off". The real quote's cite is a link to the post; the counterfeit's cite is the name the player typed, as plain text, never underlined. The real quote is the first box, at the same width as the rest.</p>
+
+<h2>The real quote beside each counterfeit</h2>
+<div class="grid">
+  <div>
+    <p class="label">REAL: [quote=&lt;Act id&gt;]</p>
+    <div class="post"><div class="post-head"><span>Boshi</span><span>#41</span></div>
+      <div class="post-body"><blockquote class="kb-quote"><cite class="kb-quote-from"><a href="#">Post #38</a></cite><div class="kb-quote-body">I never said the Star Road was closed.</div></blockquote>He literally did.</div></div>
+    <p class="why">Today's block, unchanged. Its cite is a link to the post.</p>
+  </div>
+  <div>
+    <p class="label">A: WOBBLE</p>
+    <div class="post"><div class="post-head"><span>Boshi</span><span>#41</span></div>
+      <div class="post-body"><blockquote class="kb-quote fake-a"><cite class="kb-quote-from">Geno</cite><div class="kb-quote-body">I never said the Star Road was closed.</div></blockquote>He literally did.</div></div>
+    <p class="why">The border wavers by a pixel or two, like a hand-traced copy. Readable at a glance once you know.</p>
+  </div>
+  <div>
+    <p class="label">B: MISREGISTERED</p>
+    <div class="post"><div class="post-head"><span>Boshi</span><span>#41</span></div>
+      <div class="post-body"><blockquote class="kb-quote fake-b"><cite class="kb-quote-from">Geno</cite><div class="kb-quote-body">I never said the Star Road was closed.</div></blockquote>He literally did.</div></div>
+    <p class="why">A ghost of the border, one pixel down and right. The cheapest to draw and the hardest to miss.</p>
+  </div>
+  <div>
+    <p class="label">C: PASTED IN</p>
+    <div class="post"><div class="post-head"><span>Boshi</span><span>#41</span></div>
+      <div class="post-body"><blockquote class="kb-quote fake-c"><cite class="kb-quote-from">Geno</cite><div class="kb-quote-body">I never said the Star Road was closed.</div></blockquote>He literally did.</div></div>
+    <p class="why">Tilted a third of a degree with a torn corner, like a clipping glued onto the page.</p>
+  </div>
+  <div>
+    <p class="label">D: WRONG INK</p>
+    <div class="post"><div class="post-head"><span>Boshi</span><span>#41</span></div>
+      <div class="post-body"><blockquote class="kb-quote fake-d"><cite class="kb-quote-from">Geno</cite><div class="kb-quote-body">I never said the Star Road was closed.</div></blockquote>He literally did.</div></div>
+    <p class="why">The subtlest: the rule is a shade lighter and the cite a hair larger. Only a side-by-side shows it.</p>
+  </div>
+  <div>
+    <p class="label">E: WOBBLE + GHOST, SOFT</p>
+    <div class="post"><div class="post-head"><span>Boshi</span><span>#41</span></div>
+      <div class="post-body"><blockquote class="kb-quote fake-e"><cite class="kb-quote-from">Geno</cite><div class="kb-quote-body">I never said the Star Road was closed.</div></blockquote>He literally did.</div></div>
+    <p class="why">A and B together, both turned down. Off in a way you feel before you can say why.</p>
+  </div>
+</div>
+</body>
+</html>

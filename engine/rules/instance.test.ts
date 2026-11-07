@@ -50,6 +50,8 @@ const settings: Settings = {
   memoryWheelhouse: 30,
   memoryRealWorld: 30,
   pool: { weekly: 20, holdback: 0.2, threadsWeekly: 1, cardRarityMost: 'common', priorityDays: 28, notesRead: 12, chatterThreadPosts: 8, strengths: { named: 5, quoted: 5, legacy: 5, successorStumbles: 5, oldFlame: 5, homeTurf: 2, seasonTurn: 2, hotOnBeat: 2 }, chatterCron: '37 17 * * *' },
+  modBots: { allowanceMost: 3, ruleDaysMost: 7, visitHours: { least: 2, most: 12 }, patrolsPerDay: 6, patrolSample: 5, reportPrice: 25, reportsPerDay: 3, judgmentsPerDay: 60, filingLinesPerDay: 60, appealPrice: 50, tailHours: 24, cap: { punishments: 3, days: 7 }, filingCron: '*/5 * * * *', filingGraceMinutes: 10 },
+  warnBar: { size: 10, bands: { minor: 2, moderate: 4, severe: 7 }, decay: { unit: 'day', count: 14 }, banDays: [1, 3, 7] },
   boardNameMaxLength: 60,
   moveExpiryMostDays: 42,
   demandCheckMinutes: 5,
@@ -77,12 +79,11 @@ const system: SystemContent = {
   staffGroup: { name: 'Test Cores' },
   firstBoss: 'boss-a',
   firstStaff: ['bot-a'],
-  duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'beat', chatter: 'boss' },
+  duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'beat', chatter: 'boss', filing: 'beat', reportJudge: 'beat', patrolJudge: 'beat' },
   stockLines: Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as SystemContent['stockLines'],
   feeds: [],
   realWorld: ['politics'],
   wheelhouse: ['games'],
-  oldVoice: ({ name }) => ({ prompt: `Board: ${name}\nDescription:`, stop: ['\n'] }),
   nameStyle: () => [],
   nameStyleBrief: 'any name',
   announcementsTitle: 'Announcements',
@@ -356,7 +357,7 @@ test('a duty assigned to a staff key that does not exist is a problem; a key tha
 test('a duty left unassigned is a problem, one for each', () => {
   const { appeal: _a, ...rest } = system.duties;
   assert.match(said(withSystem({ duties: rest as SystemContent['duties'] })), /duty "appeal" is assigned to no one/);
-  assert.equal(DUTIES.length, 6);
+  assert.equal(DUTIES.length, 9);
 });
 
 test('a standing order with no stock line is a problem, and so is one with an empty list', () => {
@@ -426,6 +427,10 @@ test('a quiz needs a question, and each question\'s answer must be one of its ch
   assert.match(said(quiz([])), /quiz.*at least one question/);
   assert.match(said(quiz([{ question: 'Q?', choices: ['a'], answer: 'a' }])), /quiz.*at least two choices/);
   assert.match(said(quiz([{ question: 'Q?', choices: ['a', 'a'], answer: 'a' }])), /quiz.*twice/);
+  assert.match(said(quiz([{ question: ' ', choices: ['a', 'b'], answer: 'a' }])), /quiz.*no question to ask/);
+  assert.match(said(quiz([{ question: 'Q?', choices: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'], answer: 'a' }])), /quiz.*more than eight choices/);
+  assert.match(said(quiz([{ question: 'Q? ', choices: ['a', 'b'], answer: 'a' }])), /quiz.*space at the start or the end of its question/);
+  assert.match(said(quiz([{ question: 'Q?', choices: ['a', ' b'], answer: 'a' }])), /quiz.*choice with a space/);
   assert.deepEqual(instanceProblems(quiz([{ question: 'Q?', choices: ['a', 'b'], answer: 'b' }])), []);
 });
 
@@ -477,7 +482,7 @@ test('the name style must also be said in words for the meeting\'s prompt', () =
 
 test('nameStyle must be a function', () => {
   assert.match(said(withSystem({ nameStyle: 'PPP' as never })), /nameStyle/);
-  assert.match(said(withSystem({ oldVoice: undefined as never })), /oldVoice/);
+  assert.doesNotMatch(said(withSystem({ nameStyleBrief: 'x' })), /oldVoice/, 'a whole system names no oldVoice problem');
 });
 
 test('no system content at all is a problem, not a crash', () => {
@@ -538,6 +543,14 @@ test('the new settings are checked like the others', () => {
   }
   assert.match(bad('modelTiers', { strong: 'a' }), /modelTiers/);
   assert.match(bad('modelTiers', { strong: 'a', light: '' }), /modelTiers/);
+  // The warn bar: a band above the bar's size is a problem, as is an empty ladder, a ladder step below one day and a decay that is no span.
+  const wb = settings.warnBar;
+  assert.match(bad('warnBar', { ...wb, bands: { ...wb.bands, severe: wb.size + 1 } }), /warnBar.*bands\.severe/);
+  assert.match(bad('warnBar', { ...wb, size: 0 }), /warnBar.*size/);
+  assert.match(bad('warnBar', { ...wb, banDays: [] }), /warnBar.*banDays/);
+  assert.match(bad('warnBar', { ...wb, banDays: [1, 0] }), /warnBar.*banDays/);
+  assert.match(bad('warnBar', { ...wb, decay: { unit: 'year', count: 1 } }), /warnBar.*decay/);
+  assert.deepEqual(settingsProblems({ ...settings, warnBar: { ...wb, bands: { ...wb.bands, severe: wb.size }, decay: { unit: 'minute', count: 1 } } }), [], 'a band may fill the bar, and a decay may be minutes');
   assert.deepEqual(settingsProblems({ ...settings, microEventDailyCalls: 0, rosterRecentExcluded: 0, inheritanceGraceDays: 0 }), [], 'zero is allowed where it means none');
 });
 
@@ -643,8 +656,10 @@ test('a strike names a card the instance has, at or below the trap\'s rarity', (
   assert.match(instanceProblems(withCards(striker('splat'), { key: 'splat', rarity: 'rare' })).join('\n'), /card "striker" strikes with "splat", which is rare, rarer than the trap \(uncommon\)/);
 });
 
-test('no card springs on a visit, until the staff build wires visits', () => {
-  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'visit' }, outcome: { do: 'nullify' } } })).join('\n'), /card "splat" springs on a visit, which is not wired until the staff build adds Mod Bot visits/);
+test('a card may spring on a visit, and nullify it; a payout or a strike on one is refused', () => {
+  assert.deepEqual(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'visit' }, outcome: { do: 'nullify' } } })), []);
+  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'visit' }, outcome: { do: 'payout' } } })).join('\n'), /card "splat" pays out on a visit; it pays out only on a cast/);
+  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'visit' }, outcome: { do: 'strike', card: 'splat' } } })).join('\n'), /card "splat" strikes on a visit; a strike lays its card on a reply or a quote/);
 });
 
 test('no card is a Keep, until Keep is designed', () => {

@@ -31,7 +31,7 @@ beforeEach(() => {
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-const cards: CardUi[] = [{ key: 'sparkle', art: { color: '#ffd23f', ink: '#1a1300' }, describe: () => 'Sparkle.', Effect: ({ children }) => <div>{children}</div> }];
+const cards: CardUi[] = [{ key: 'sparkle', art: { color: '#ffd23f', ink: '#1a1300', canvas: '', mark: '', credit: 'Test' }, describe: () => 'Sparkle.', Effect: ({ children }) => <div>{children}</div> }];
 
 async function open(withCards = false) {
   const fake = createFake({ instance, now: () => Date.now() });

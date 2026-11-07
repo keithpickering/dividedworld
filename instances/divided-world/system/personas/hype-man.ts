@@ -19,13 +19,13 @@ export const hypeMan: Persona = {
   signature: 'THE BIGGEST SIGNATURE IN HISTORY. (Placeholder Boss.)',
   startingHobby: 'pro wrestling pay-per-views (fake ones, with cards that never end)',
   temperament: 'A hype-man who treats every thread as a main event and every post as a promo.',
-  // DRAFT for the owner: the bot fields below are placeholders, there so every persona has every field.
+  // DRAFT for the owner: strictness, weakness (a bribe), pet rules and what persuades it are drafts, and the rest are placeholders so every persona has every field.
   beats: ['general'],
-  petRules: [],
-  strictness: { visitHours: { least: 2, most: 12 }, bands: ['small'] },
-  weakness: { kind: 'distraction' },
+  petRules: ['minLength', 'requiredWord', 'noAllCaps'],
+  strictness: { visitHours: { least: 2, most: 4 }, bands: ['moderate', 'severe'] },
+  weakness: { kind: 'bribe', price: 150 },
   voice: 'chat',
-  persuadedBy: 'DRAFT: a sincere argument made in its own style.',
+  persuadedBy: 'DRAFT: a promo cut with real energy that makes its own case sound like the main event.',
   persona: persona({
     name,
     title,

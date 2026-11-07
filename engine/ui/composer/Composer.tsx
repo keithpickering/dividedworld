@@ -16,12 +16,15 @@
  */
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type FormEvent, type Ref } from 'react';
 import { parse } from '../../bbcode/parse.ts';
+import { dayAndTime } from '../characters/format.ts';
+import { BanAppeal } from '../cards/Forms.tsx';
 import { RevealModal } from '../characters/RevealModal.tsx';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
 import { Link } from '../router.tsx';
 import { text as textOf } from '../thread/lines.tsx';
+import { useBannedUntil } from './ban.ts';
 import { draftKey, readDraft, useWhoPosts, writeDraft } from './draft.ts';
 import { Editor, type EditorHandle } from './Editor.tsx';
 import { quoteText } from './text.ts';
@@ -75,6 +78,7 @@ function ComposerBody({ thread, latest, since, onPosted, ref, account }: Compose
   const [revealing, setRevealing] = useState(false);
   const hud = hudCharacter?.id ?? null;
   const who = useWhoPosts(hud, text.trim() !== '', kept?.as ?? null);
+  const bannedUntil = useBannedUntil(hudCharacter);
 
   const { adopt } = who;
   const as = who.as;
@@ -144,7 +148,7 @@ function ComposerBody({ thread, latest, since, onPosted, ref, account }: Compose
 
   const submit = async (e?: FormEvent) => {
     e?.preventDefault();
-    if (busy || blank || over) return;
+    if (busy || blank || over || bannedUntil !== null) return;
     if (who.changed) { who.confirm(); return; }
     const sent = text;
     const character = hudCharacter.id;
@@ -166,6 +170,12 @@ function ComposerBody({ thread, latest, since, onPosted, ref, account }: Compose
     <form className="kb-composer kb-box" aria-labelledby={`composer-head-${thread}`} onSubmit={(e) => void submit(e)} noValidate>
       <div className="kb-box-head" id={`composer-head-${thread}`}>Reply</div>
       <p className="kb-composer-as kb-small" id={`composer-as-${thread}`}>Posting as <strong>{hudCharacter.name}</strong></p>
+      {bannedUntil !== null && (
+        <p className="kb-notice kb-composer-ban" role="status">
+          <strong>{hudCharacter.name}</strong> is banned until {dayAndTime(bannedUntil)}. The ban ends by itself then, and it holds only this character: switch to another in the HUD to post as it.
+          {' '}<BanAppeal character={hudCharacter.id} />
+        </p>
+      )}
       <div className="kb-composer-now-region" role="status">
         {who.changed && (
           <p className="kb-notice kb-composer-now">
@@ -184,7 +194,7 @@ function ComposerBody({ thread, latest, since, onPosted, ref, account }: Compose
         onQuote={latest ? () => quote(latest.id, latest.body) : undefined}
         onSubmit={() => void submit()}
       >
-        <button type="submit" className="kb-button" data-kb-primary="" disabled={busy || blank || over}>
+        <button type="submit" className="kb-button" data-kb-primary="" disabled={busy || blank || over || bannedUntil !== null}>
           {who.changed ? `Confirm posting as ${hudCharacter.name}` : again ? 'Send again anyway' : 'Send'}
         </button>
         <button type="button" className="kb-button kb-composer-reveal" onClick={() => setRevealing(true)}>Reveal…</button>

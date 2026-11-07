@@ -17,6 +17,11 @@
  *    first run measured. The count of the move in force is the build's own world's (5 of 12), not the board's 7.
  *  - The build also draws the Mod Bots' cards group between In force and Ended (a heading and its empty line), which the board does not draw; Ended is
  *    held from In force's REVERSE with that group's height as its shift. Ended's head carries its count in the build (the board's carries none).
+ *  - A waiting rename also carries Replace description, a button under HOLD (shut until pressed, so the row keeps the board's width and wrapping), which
+ *    the board does not draw; the row centers HOLD higher by half of it, so HOLD stands 22px higher than it did, and In force 22px lower from HOLD's bottom (HOLD's own shift is smaller, the head's larger). On the phone the
+ *    button stands under HOLD in the column, so In force stands 48px lower from HOLD's bottom.
+ *  - The build also draws the Boards group (each board with its description and a shut Replace description) between Ended and How players reach you, which
+ *    the board does not draw; How players reach you is held from Ended's bottom with that group's height as its shift.
  *  - The warning's color is the glass's lighter text token for it (contrast on the smoke), so the countdown's type is not compared.
  *  - The labels of the contact rows are the glass's label size, 20px, where the board draws 19px.
  *  - A button's measure is the glass's own, so a button is compared by its place and not its size.
@@ -41,11 +46,11 @@ const manifest: BoardManifest = {
     at('todo-empty', 'text', 'Nothing to do.', { origin: 'todo-head' }),
     at('waiting-head', 'heading', 'WAITING TO LAND 1', { buildName: 'Waiting to land 1', buildSize: 40, origin: 'todo-empty', originEdge: 'bottom' }),
     at('countdown', 'text', 'IN 17 HOURS', { origin: 'waiting-head', type: false, buildShift: { y: 23.2 } }),
-    at('hold', 'button', 'HOLD', { buildName: 'Hold: Small Soldiers Situation Room', origin: 'waiting-head', buildShift: { y: 31.6 } }),
-    at('force-head', 'heading', 'IN FORCE 1', { buildName: 'In force 1', buildSize: 40, origin: 'hold', originEdge: 'bottom', buildShift: { y: 37.6 } }),
+    at('hold', 'button', 'HOLD', { buildName: 'Hold: Small Soldiers Situation Room', origin: 'waiting-head', buildShift: { y: 9.6 } }),
+    at('force-head', 'heading', 'IN FORCE 1', { buildName: 'In force 1', buildSize: 40, origin: 'hold', originEdge: 'bottom', buildShift: { y: 59.6 } }),
     at('reverse', 'button', 'REVERSE', { buildName: 'Reverse: Pointless Toast Palace', origin: 'force-head' }),
     at('ended', 'text', '· the last 30 days, with how each ended ›', { origin: 'reverse', originEdge: 'bottom', buildShift: { x: 23, y: 151.5 } }),
-    at('reach-head', 'heading', 'HOW PLAYERS REACH YOU', { buildName: 'How players reach you', buildSize: 40, origin: 'ended', originEdge: 'bottom', buildShift: { x: -17.4, y: 16.4 } }),
+    at('reach-head', 'heading', 'HOW PLAYERS REACH YOU', { buildName: 'How players reach you', buildSize: 40, origin: 'ended', originEdge: 'bottom', buildShift: { x: -17.4, y: 560.9 } }),
     at('reach-note', 'text', 'Players read these on the Reach a person page, which they can open signed out. Up to 5 links, each a label and an address: a web address that starts with https://, or an email address.', { origin: 'reach-head', type: false }),
     at('label-1', 'text', 'LABEL', { nth: 0, origin: 'reach-note', originEdge: 'bottom', buildSize: 20 }),
     at('address-1', 'text', 'ADDRESS', { nth: 0, origin: 'reach-note', originEdge: 'bottom', buildSize: 20 }),
@@ -95,7 +100,7 @@ export const phone: BoardManifest = {
     on('countdown', 'text', 'IN 17 HOURS', { origin: 'waiting-head', buildShift: { y: 11 } }),
     on('why', 'text', 'Changes back when 8 different characters post there, or Nov 14.', { buildName: "Why, in The Director's words: “Games has gone soft. Time for discipline.”", origin: 'waiting-head', box: 'none' }),
     on('hold', 'button', 'HOLD', { buildName: 'Hold: Small Soldiers Situation Room', origin: 'why', originEdge: 'bottom' }),
-    on('force-head', 'heading', 'IN FORCE 1', { buildName: 'In force 1', origin: 'hold', originEdge: 'bottom' }),
+    on('force-head', 'heading', 'IN FORCE 1', { buildName: 'In force 1', origin: 'hold', originEdge: 'bottom', buildShift: { y: 48 } }),
     on('since', 'text', 'SINCE OCT 30', { buildName: 'SINCE OCT 28', origin: 'force-head', buildShift: { y: 11 } }),
     on('progress', 'text', '7 of 12', { buildName: '5 of 12, counted Oct 29, 12:00 PM', origin: 'force-head', box: 'none' }),
     on('reverse', 'button', 'REVERSE', { buildName: 'Reverse: Pointless Toast Palace', origin: 'progress', originEdge: 'bottom' }),

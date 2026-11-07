@@ -429,7 +429,7 @@ describe('the log\'s card lines (the cards plan\'s Task 6)', () => {
     return { fake, me, rival, pipe, hoo, glo, g1, p2, h3 };
   }
   /* Whoops!'s look, as an instance gives the log a save worth a line (CardUi.logSave). */
-  const cards = [{ key: 'whoops', describe: () => '', art: { color: '#000', ink: '#fff', image: '' }, logSave: (state: unknown) => ((state as { clean?: boolean }).clean ? { what: 'Washed clean', said: 'The layer is washed clean, for every reader.' } : undefined) }];
+  const cards = [{ key: 'whoops', describe: () => '', art: { color: '#000', ink: '#fff', canvas: '', mark: '', credit: 'Test' }, logSave: (state: unknown) => ((state as { clean?: boolean }).clean ? { what: 'Washed clean', said: 'The layer is washed clean, for every reader.' } : undefined) }];
   const show = (fake: Fake, me: string, hud: string) => { localStorage.clear(); localStorage.setItem(hudKey(me), hud); return renderIn(fake, <LogScreen />, { path: '/log', cards: cards as never }); };
   const rowsOf = async () => { await screen.findByRole('table'); return bodyRows().map(cells); };
 
@@ -670,5 +670,106 @@ describe('the breakdown', () => {
     }
     /* Nothing under Wallet but the settlement's own balance. */
     expect(breakdown.querySelectorAll('[data-kb-column="wallet"]:not(:empty)')).toHaveLength(0);
+  });
+});
+
+describe('My log: the Mod Bots\' lines (the design, section 9)', () => {
+  /** The Clerk filed a visit on Pipewrench's post, a ban followed, and Pipewrench reported Gloomba's post; each is the player's own. */
+  function modded() {
+    const w = world();
+    const clerk = w.fake.seed.staff('clerk', 'The Clerk', 'mod');
+    const visit = w.fake.seed.visit(clerk, w.p2, { at: at(30, 9), endsInMs: 3_600_000 });
+    w.fake.seed.visitEnd(visit, { outcome: 'filed', line: 'Filed.', at: at(30, 12) });
+    const inf = w.fake.seed.infraction(visit, { points: 2, at: at(30, 12) });
+    const gp = w.fake.seed.post(w.thread, w.glo, 'Gloomba again.', { at: at(30, 13) });
+    /* Through the door, as a player reports: it is paid from the wallet, and the log reads what was paid from the wallet's event. */
+    void w.fake.fileReport(w.pipe, gp, 'rude');
+    return { ...w, clerk, visit, inf };
+  }
+
+  test('says each in plain words in the character\'s tab, and nothing of the rival\'s', async () => {
+    const { fake, me, pipe, hoo } = modded();
+    open(fake, me, pipe);
+    await screen.findByRole('table');
+    const text = bodyRows().map((r) => cells(r).join(' | ')).join('\n');
+    expect(text).toContain('Warn points: 2 points');
+    expect(text).toContain('The Clerk\'s visit to your post #2 filed Rule 2: No double posting: 2 warn points for Pipewrench, dropping off');
+    expect(text).toContain('You reported a post');
+    expect(text).toContain('Pipewrench reported post #4, for 0.25 Aura. The report is public. The Clerk dismissed it. The 0.25 Aura was spent.');
+    /* The other mask's tab has none of them. */
+    await userEvent.click(tab('Mrs. Hooligan'));
+    expect(bodyRows().map((r) => cells(r).join(' ')).join('\n')).not.toContain('Warn points');
+    void hoo;
+  });
+
+  test('a report whose judgment failed shows the refunded line, and the same for an appeal', async () => {
+    const { fake, me, pipe, glo, thread } = modded();
+    const gp = fake.seed.post(thread, glo, 'Gloomba once more.', { at: at(30, 16) });
+    fake.seed.judging({ report: 'failed' });
+    void fake.fileReport(pipe, gp, 'rude');
+    open(fake, me, pipe);
+    await screen.findByRole('table');
+    const text = bodyRows().map((r) => cells(r).join(' | ')).join('\n');
+    expect(text).toMatch(/could not hear it, so your Aura came back \(0\.25\), and you can make it again\./u);
+  });
+
+  test('an appeal and its ruling are a line of their own, and the player reads only their own characters\' lines', async () => {
+    const { fake, me, pipe, clerk, inf } = modded();
+    void fake.fileAppeal(pipe, inf, 'It was a mistake.');
+    void clerk;
+    open(fake, me, pipe);
+    await screen.findByRole('table');
+    expect(bodyRows().map((r) => cells(r).join(' | ')).join('\n')).toContain('Pipewrench appealed the warn points from your post #2, for 0.50 Aura. The plea is public. The Clerk upheld it. Nothing changed.');
+    /* The rival's view of the same world holds none of these lines. */
+    fake.signInAs(fake.seed.account('rival2'));
+    expect((await fake.log()).infractions).toEqual([]);
+    expect((await fake.log()).reports).toEqual([]);
+    expect((await fake.log()).appeals).toEqual([]);
+  });
+});
+
+
+describe('My log: the way out of a ban', () => {
+  function banned() {
+    const w = world();
+    const clerk = w.fake.seed.staff('clerk', 'The Clerk', 'mod');
+    const visit = w.fake.seed.visit(clerk, w.p2, { at: Date.now() - 4 * 3_600_000, endsInMs: 3_600_000 });
+    const inf = w.fake.seed.infraction(visit, { points: 10, band: 'severe' });
+    const ban = w.fake.seed.ban(w.pipe, Date.now() + 86_400_000, { infraction: inf, days: 1 });
+    return { ...w, ban };
+  }
+
+  test('the ban\'s line offers "Appeal to the Boss", which opens the form and sends the ban\'s Act; once appealed the offer is gone', async () => {
+    const { fake, me, pipe, ban } = banned();
+    open(fake, me, pipe);
+    await screen.findByRole('table');
+    await userEvent.click(await screen.findByRole('button', { name: 'Appeal to the Boss · 0.50 Aura' }));
+    const form = await screen.findByRole('dialog', { name: 'Appeal the ban' });
+    await userEvent.type(await within(form).findByRole('textbox', { name: 'Your plea (public)' }), 'I have learned.');
+    await userEvent.click(within(form).getByRole('button', { name: 'Appeal · 0.50 Aura' }));
+    await waitFor(() => expect(within(form).getByRole('status')).toHaveTextContent('The Boss heard it'));
+    expect((await fake.log()).appeals[0]).toMatchObject({ punishment: ban, punishmentKind: 'ban' });
+  });
+
+  test('an appeal whose judgment failed leaves the offer, as its own line says you can appeal again', async () => {
+    const { fake, me, pipe, ban } = banned();
+    fake.seed.judging({ appeal: 'failed' });
+    void fake.fileAppeal(pipe, ban, 'Please.');
+    open(fake, me, pipe);
+    await screen.findByRole('table');
+    expect(await screen.findByRole('button', { name: 'Appeal to the Boss · 0.50 Aura' })).toBeInTheDocument();
+    expect(document.body).toHaveTextContent('No one could hear it, so your Aura came back and you can appeal again.');
+  });
+
+  test('is on no one else\'s log', async () => {
+    const { fake } = banned();
+    const stranger = fake.seed.account('stranger');
+    fake.seed.character(stranger, 'Stranger', 'face');
+    fake.signInAs(stranger);
+    open(fake, stranger, null);
+    await screen.findByRole('heading', { level: 1, name: 'My log' });
+    await waitFor(() => expect(document.querySelector('[aria-busy="true"]')).toBeNull());
+    expect(screen.queryByRole('button', { name: /^Appeal to the Boss/u })).toBeNull();
+    expect((await fake.log()).bans).toEqual([]);
   });
 });

@@ -17,6 +17,9 @@ import type { CardArt, CardUi } from './types.ts';
 /** A post long enough that any length-based price has reached its most. */
 const VERY_LONG = 1_000_000;
 
+/** The art a face carries: a card with no `CardUi` has only the color and ink of the glass's tokens. */
+export type FaceArt = Pick<CardArt, 'color' | 'ink'> & Partial<Pick<CardArt, 'canvas' | 'mark' | 'credit' | 'tagline'>>;
+
 export interface CardFace {
   readonly key: string;
   readonly name: string;
@@ -29,7 +32,7 @@ export interface CardFace {
   readonly extra: number;
   /** How many of it one post takes (1 unless the rules say more). */
   readonly stack: number;
-  readonly art: CardArt;
+  readonly art: FaceArt;
   readonly tagline: string;
   /** The card's rules in one sentence, for a large face; the full `describe` where the instance gave none. */
   readonly summary: string;
@@ -67,7 +70,7 @@ export const alignmentTag = (alignment: Alignment): string => alignment.charAt(0
 export const priceOf = (face: Pick<CardFace, 'price' | 'extra'>): string => `${orbs(face.price)}${face.extra > 0 ? '+' : ''}`;
 
 /** The face a card with no `CardUi` has: the tokens' own, no picture. */
-const PLAIN: CardArt = { color: 'var(--kb-glass-neon)', ink: 'var(--kb-glass-ink-neon)' };
+const PLAIN: FaceArt = { color: 'var(--kb-glass-neon)', ink: 'var(--kb-glass-ink-neon)' };
 
 function extraOf(rules: CardRules, settings: Settings): number {
   try {

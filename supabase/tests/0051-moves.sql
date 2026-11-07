@@ -9,6 +9,8 @@ declare made uuid;
 begin
   select id into made from characters where staff = 'mv-boss';
   if made is null then insert into characters (name, staff, staff_kind, debuted_at) values ('Mv Boss', 'mv-boss', 'persona', now()) returning id into made; end if;
+  -- The queue holds a move to the office that makes it (0103): this Boss is the open season's.
+  update seasons set boss = 'mv-boss' where ends_at is null and boss is distinct from 'mv-boss';
   return made;
 end $$;
 create function pg_temp.announcements() returns uuid language plpgsql as $$
@@ -235,7 +237,7 @@ begin
   begin insert into queued_moves (meeting, staff, kind, params, why, go_live_at, expires_at, structural) values (meeting, 'mv-boss', 'shout', row_, 'w', at, at + interval '1 day', true); raise exception 'a move outside move_kinds was queued';
   exception when check_violation then null; end;
   begin insert into queued_moves (meeting, staff, kind, params, why, go_live_at, expires_at, structural) values (meeting, 'nobody', 'renameBoard', row_, 'w', at, at + interval '1 day', true); raise exception 'a move by no staff member was queued';
-  exception when foreign_key_violation then null; end;
+  exception when foreign_key_violation or check_violation then null; end;  -- (the guard now refuses first: no office is made by no one)
 
   -- A demand whose params cannot be checked is refused at the door, as a landed move's is: a row the tick could never land would fail every minute.
   begin insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural) values (meeting, 'mv-boss', 'renameBoard', row_, '{"kind": "postsOnBoard", "params": {"count": 1}}', 'w', at, at + interval '1 day', true); raise exception 'a queued demand with no board was queued';

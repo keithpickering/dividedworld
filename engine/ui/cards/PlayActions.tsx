@@ -57,7 +57,7 @@ export function GhostMark({ act }: { readonly act: Act }) {
       onClick={() => play.openForm(rules.key, target)}
     >
       <span className="kb-meta-tile-in" aria-hidden="true">
-        {(face.art.mark ?? face.art.image) && <img className="kb-mark-icon kb-ghost-icon" src={face.art.mark ?? face.art.image} alt="" draggable={false} />}
+        {face.art.mark && <img className="kb-mark-icon kb-ghost-icon" src={face.art.mark} alt="" draggable={false} />}
         <span className="kb-mark-plus">+</span>
       </span>
     </button>
@@ -123,7 +123,7 @@ export function ReachGhost({ at }: { readonly at: ReachAt }) {
       onClick={() => play.openForm(rules.key, target)}
     >
       <span className="kb-meta-tile-in" aria-hidden="true">
-        {(face.art.mark ?? face.art.image) && <img className="kb-mark-icon kb-ghost-icon" src={face.art.mark ?? face.art.image} alt="" draggable={false} />}
+        {face.art.mark && <img className="kb-mark-icon kb-ghost-icon" src={face.art.mark} alt="" draggable={false} />}
         <span className="kb-mark-plus">+</span>
       </span>
     </button>

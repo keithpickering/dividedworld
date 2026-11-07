@@ -268,11 +268,12 @@
 }
 
 /*
- * A cell is a slot over its shelf edge. The slot is the postcard's face in a fixed box: the face is laid out at the card's
- * own size (postcard.css, 92 by 128) and scaled down as a whole (`zoom`, which the layout check reads as the browser lays it
- * out, where a transform would leave its type size and its box at two scales; Firefox has supported `zoom` since 126, May 2024, and the project names no older floor), so its name is as the full card lays
- * it out and never cut or tagged over its art. The shelf edge, where a real machine prices its rows, holds the code and
- * price and the info control. The two are siblings, since a button holds no button.
+ * A cell is a slot over its shelf edge. The slot is the postcard's face in a fixed box: the face is laid out at the
+ * card's own size (postcard.css, 86 by 129, the card template's slot) and scaled down as a whole (`zoom`, which the
+ * layout check reads as the browser lays it out, where a transform would leave its type size and its box at two scales;
+ * Firefox has supported `zoom` since 126, May 2024, and the project names no older floor), so its name is as the full
+ * card lays it out and never cut or tagged over its art. The shelf edge, where a real machine prices its rows, holds the
+ * code and price and the info control. The two are siblings, since a button holds no button.
  */
 .kb-vending-cell {
   --kb-slot-scale: 0.58;
@@ -328,8 +329,8 @@ button.kb-vending-slot {
   flex: 0 0 auto;
   zoom: var(--kb-slot-scale);
   box-sizing: border-box;
-  width: 92px;
-  height: 128px;
+  width: 86px;
+  height: 129px;
   border-radius: 6px;
   display: flex;
   align-items: center;

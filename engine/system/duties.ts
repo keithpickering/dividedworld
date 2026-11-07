@@ -6,7 +6,7 @@
 import type { DutyAssignee, SystemContent } from '../rules/types.ts';
 import type { Tier } from './model.ts';
 
-export const DUTIES = ['meeting', 'standingOrderLine', 'microEvent', 'renameJudge', 'appeal', 'chatter'] as const;
+export const DUTIES = ['meeting', 'standingOrderLine', 'microEvent', 'renameJudge', 'appeal', 'chatter', 'filing', 'reportJudge', 'patrolJudge'] as const;
 export type Duty = (typeof DUTIES)[number];
 
 export interface DutySpec {
@@ -23,6 +23,11 @@ export const DUTY_SPECS: Readonly<Record<Duty, DutySpec>> = {
   appeal: { mode: 'chat', tier: 'light' },
   // A pool post (the staff roster plan, Task 10): chat for a persona whose voice is `chat`, a raw completion for one whose voice is the old voice (which answers its words alone). Always the light tier.
   chatter: { mode: 'chat', tier: 'light' },
+  // The Mod Bots' calls (the Mod Bots design, sections 6 to 8). A visit's filing line is a chat call for a persona on the chat voice and a raw completion for one on the old voice (its move,
+  // where it has an allowance, is then a chat call); a report's verdict and a patrol's finding are chat calls. Always the light tier.
+  filing: { mode: 'chat', tier: 'light' },
+  reportJudge: { mode: 'chat', tier: 'light' },
+  patrolJudge: { mode: 'chat', tier: 'light' },
 };
 
 /**

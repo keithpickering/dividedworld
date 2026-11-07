@@ -16,7 +16,7 @@ const whoops: CardRules = {
   playPrice: (_s, t) => Math.min(200, Math.floor((t.reach === 'post' ? t.length : 0) / 5)), canApply: () => ok, validateConfig: (c) => ({ ok: true, value: c }),
 };
 const shop: Instance = { ...testInstance, cards: [stick, whoops], settings: { ...testInstance.settings, economy: { 'stick.price': 100, 'whoops.price': 100 } } };
-const art = { color: '#2ee6ff', ink: '#03141a' };
+const art = { color: '#2ee6ff', ink: '#03141a', canvas: '', mark: '', credit: 'Test' };
 const faces: CardUi[] = [
   { key: 'stick', art, describe: () => 'A Sweet card. Holds each reader on a post.' },
   { key: 'whoops', art: { ...art, color: '#ff3d7f' }, describe: () => 'A Salty card. Splats a post in your ink.' },

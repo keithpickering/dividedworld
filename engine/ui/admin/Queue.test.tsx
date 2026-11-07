@@ -35,7 +35,7 @@ describe('the admin queue', () => {
     await group(/^Ended/u);
     await screen.findByRole('form', { name: 'How players reach you' });
     const order = [...document.querySelectorAll('[data-kb-group], .kb-admin-contact')].map((el) => el.getAttribute('data-kb-group') ?? 'contact');
-    expect(order).toEqual(['todo', 'waiting', 'in-force', 'staff-cards', 'ended', 'contact']);
+    expect(order).toEqual(['todo', 'waiting', 'in-force', 'staff-cards', 'ended', 'boards', 'contact']);
     const contact = document.querySelector('.kb-admin-contact')!;
     expect(contact.tagName).toBe('SECTION');
     expect(contact.querySelector('h2')).toHaveTextContent('How players reach you');
@@ -107,6 +107,16 @@ describe('the admin queue', () => {
     expect(ended).toHaveTextContent('Reversed by an admin.');
     expect(ended).toHaveTextContent('Held by an admin');
     expect(ended).toHaveTextContent('It never landed.');
+  });
+
+  test('a rule refused when it came to land is not waiting: it is with the ended, saying why and that it will not land', async () => {
+    open({ build: (fake, w) => { fake.seed.queueMove('director', { board: w.second, name: 'Clashing Hall', goLiveAt: fake.clock.now() - 60_000, refusal: { at: fake.clock.now() - 30_000, text: 'Rule 1 bans the word "toast", which this rule would require' } }); } });
+    const waiting = await group(/^Waiting to land/u);
+    expect(waiting).not.toHaveTextContent('Clashing Hall');
+    expect(waiting).not.toHaveTextContent(/tried again/u);
+    const ended = (await group(/^Ended/u)).querySelector('details')!;
+    await userEvent.click(ended.querySelector('summary')!);
+    expect(ended).toHaveTextContent('Refused when it came to land: Rule 1 bans the word "toast", which this rule would require. It will not land.');
   });
 
   test('speaks plainly and never as the Boss: the Boss\'s why is quoted and named as its words', async () => {
@@ -221,7 +231,7 @@ describe('a nomination of a successor', () => {
     /* What was chosen is done: the pick is empty and the button waits, and the line in plain words names who will follow. */
     expect(within(waiting).getByRole('combobox', { name: 'Put another Boss in its place' })).toHaveValue('');
     expect(within(waiting).getByRole('button', { name: 'Replace the nominated Boss, Hype Man' })).toBeDisabled();
-    expect(within(waiting).getByRole('status')).toHaveTextContent('Replaced. Hype Man will follow.');
+    expect(within(waiting).getAllByRole('status').map((n) => n.textContent)).toContain('Replaced. Hype Man will follow.');
     expect(waiting).toHaveTextContent('An admin put this Boss in the nomination\'s place on');
   });
 
@@ -510,7 +520,7 @@ describe('How players reach you, on the admin screen', () => {
       expect(g).toHaveTextContent('Whoops! by Hall Monitor');
       expect(g).toHaveTextContent('Played on Pipewrench in Cards thread.');
       expect(within(g).getAllByRole('button', { name: /^End:/u })).toHaveLength(1);
-      expect(screen.getAllByRole('region').map((r) => r.getAttribute('data-kb-group')).filter((g) => g !== null).slice(-3)).toEqual(['in-force', 'staff-cards', 'ended']);
+      expect(screen.getAllByRole('region').map((r) => r.getAttribute('data-kb-group')).filter((g) => g !== null).slice(-4)).toEqual(['in-force', 'staff-cards', 'ended', 'boards']);
     });
 
     test('END asks first, in plain words; ending calls reverseCard, the card leaves the group and enters Ended', async () => {
@@ -540,5 +550,62 @@ describe('How players reach you, on the admin screen', () => {
       expect(await within(dialog).findByRole('alert')).toHaveTextContent('that card has already worn off');
       expect(screen.getByRole('dialog')).toBeInTheDocument();
     });
+  });
+});
+
+describe('replacing a description', () => {
+  test('a waiting rename takes an admin\'s words, shows them beside the Boss\'s, and a second save replaces the first', async () => {
+    const { fake } = open();
+    const waiting = await group(/^Waiting to land/u);
+    /* Shut at first, beside HOLD, so the row is the board's; one press opens it. */
+    expect(within(waiting).queryByRole('textbox', { name: /^Replace description/u })).toBeNull();
+    await userEvent.click(within(waiting).getByRole('button', { name: /^Replace description of/u }));
+    const field = within(waiting).getByRole('textbox', { name: /^Replace description/u });
+    const save = within(waiting).getByRole('button', { name: /^Save the description of/u });
+    expect(save).toBeDisabled();
+    await userEvent.type(field, 'Order restored.');
+    await userEvent.click(save);
+    await waitFor(() => expect(waiting).toHaveTextContent('“Order restored.”'));
+    expect(waiting).toHaveTextContent('Description: “Commando Elite members only. Gorgonites will be processed.”');
+    expect(within(waiting).getByRole('status')).toHaveTextContent('Saved. It lands with the rename.');
+    expect(waiting).not.toHaveTextContent('This is the description now');
+    expect((await fake.adminQueue()).waiting[0]!.adminDescription).toBe('Order restored.');
+    await userEvent.type(within(waiting).getByRole('textbox', { name: /^Replace description/u }), 'Order, again.');
+    await userEvent.click(within(waiting).getByRole('button', { name: /^Save the description of/u }));
+    await waitFor(() => expect(waiting).toHaveTextContent('“Order, again.”'));
+    expect(waiting).not.toHaveTextContent('Order restored.');
+  });
+
+  test('a nomination has no description to replace', async () => {
+    open({ build: (fake) => { fake.seed.staff('the-clerk', 'The Clerk', 'boss', { title: 'Keeper of Forms' }); fake.seed.queueSuccessor('director', 'the-clerk', { goLiveAt: fake.clock.now() + 3_600_000 }); } });
+    const waiting = await group(/^Waiting to land/u);
+    expect(within(waiting).getAllByRole('button', { name: /^Replace description of/u })).toHaveLength(1);
+  });
+
+  test('the Boards group lists each board with its description now, and a board\'s description is replaced at once', async () => {
+    const { fake } = open();
+    const boards = await group(/^Boards/u);
+    const first = (await fake.boards())[0]!;
+    const card = within(boards).getByRole('article', { name: first.name });
+    expect(card).toHaveTextContent(`Description: “${first.description}”`);
+    await userEvent.click(within(card).getByRole('button', { name: /^Replace description of/u }));
+    await userEvent.type(within(card).getByRole('textbox', { name: /^Replace description/u }), 'Words from an admin.');
+    await userEvent.click(within(card).getByRole('button', { name: `Save the description of ${first.name}` }));
+    await waitFor(() => expect(card).toHaveTextContent('Description: “Words from an admin.”'));
+    expect(within(card).getByRole('status')).toHaveTextContent('Saved. This is the description now.');
+    expect(within(card).getByRole('alert')).toBeEmptyDOMElement();
+    expect((await fake.boards())[0]!.description).toBe('Words from an admin.');
+  });
+
+  test('a refusal is shown in the server\'s words', async () => {
+    const { fake } = open();
+    const boards = await group(/^Boards/u);
+    const first = (await fake.boards())[0]!;
+    const card = within(boards).getByRole('article', { name: first.name });
+    await userEvent.click(within(card).getByRole('button', { name: /^Replace description of/u }));
+    await userEvent.type(within(card).getByRole('textbox', { name: /^Replace description/u }), '   x');
+    vi.spyOn(fake, 'describeBoard').mockResolvedValueOnce({ ok: false, error: 'there is no such board' });
+    await userEvent.click(within(card).getByRole('button', { name: `Save the description of ${first.name}` }));
+    expect(await within(card).findByRole('alert')).toHaveTextContent('there is no such board');
   });
 });

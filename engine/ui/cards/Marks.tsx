@@ -21,15 +21,18 @@
  *
  * `PostMarks` is the strip with what a mark opens: the Lens (Lens.tsx), on the mark's tab; "+N" opens the first kind it hides.
  */
-import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type CSSProperties } from 'react';
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { Act, Id } from '../data/api.ts';
+import type { Act, Id, Visit, VisitEnd } from '../data/api.ts';
 import type { Mine } from '../reactions/mine.ts';
 import type { Tallies } from '../thread/tallies.ts';
 import { inkOf, useNarrow, useUntil } from './Effects.tsx';
 import { Callout, useCallout } from './Callout.tsx';
 import { Lens, useLensFor, useLensHost, useLensStore, useResolvedView } from './Lens.tsx';
 import { GhostMark, ReachGhost, type ReachAt } from './PlayActions.tsx';
+import type { LensForm } from './Forms.tsx';
+import { VisitMark } from './Visit.tsx';
+import { VISIT_KIND } from './visit.ts';
 import { MARKS_NARROW, MARKS_WIDE, backWords, kindsOf, markName, moreName, sumOf } from './marks.ts';
 import { inPlayOrder, isBack, markedPlays, shownPlays, usePlays, type Plays } from './plays.ts';
 import type { CardPlay } from './types.ts';
@@ -97,7 +100,7 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
   const ownArt = ownFace ? ui.cards.find((c) => c.key === ownFace)?.art : undefined;
   const name = back ? backWords(plays[0]!, nameOf?.(plays[0]!.caster) ?? 'someone', instance.settings.setLasts, (k) => instance.cards.find((c) => c.key === k)?.name ?? k).name : rules?.name ?? kind;
   const art = back && !revealed ? undefined : cardUi?.art;
-  const icon = art?.mark ?? art?.image;
+  const icon = art?.mark;
   const caught = plays.every((p) => p.caught || p.reversed);
   /* The ink is the top-billed play's, where the card chooses one for it (`CardUi.tag` is given the kind's plays in play order). */
   const ordered = useMemo(() => [...plays].sort(inPlayOrder), [plays]);
@@ -121,7 +124,7 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
     >
       <span className="kb-meta-tile-in" aria-hidden="true">
         {back && !revealed ? <span className="kb-card-back" /> : icon ? <img className="kb-mark-icon" src={icon} alt="" draggable={false} /> : <span className="kb-mark-swatch" />}
-        {ownArt && (ownArt.mark ?? ownArt.image) && <img className="kb-mark-face" src={ownArt.mark ?? ownArt.image} alt="" draggable={false} data-kb-face={ownFace} />}
+        {ownArt && ownArt.mark && <img className="kb-mark-face" src={ownArt.mark} alt="" draggable={false} data-kb-face={ownFace} />}
         {plays.length > 1 && <span className="kb-mark-count">×{plays.length}</span>}
       </span>
       {progress !== null && <span className="kb-mark-edge" aria-hidden="true" />}
@@ -164,6 +167,13 @@ function useKindPlays(billed: readonly CardPlay[]): ReadonlyMap<string, readonly
   }, [billed]);
 }
 
+/** A form a post's strip opens its Lens on: each ask has its own `n`, so pressing the same control again asks again, and the control that asked, which the Lens gives focus back to. */
+export interface FormAsk {
+  readonly n: number;
+  readonly form: LensForm;
+  readonly opener: HTMLElement;
+}
+
 export interface MarkStripProps {
   /** The post the marks are on (the id its plays are kept under). */
   readonly post: Id;
@@ -183,10 +193,12 @@ export interface MarkStripProps {
   readonly compare?: boolean;
   /** A character's name, for a card back's (who set it). */
   readonly nameOf?: (character: Id | null) => string;
+  /** The post's visit, if it has one: its mark is first in the strip, ahead of the card kinds (Visit.tsx), and takes a place of the room the cards have. */
+  readonly visit?: { readonly visit: Visit; readonly mod: string };
 }
 
 /** One mark per kind of card played on the post, "+N" for the kinds past the strip's room, and the ghost mark while an armed card can land here. */
-export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, reachAt, where = reachAt?.reach ?? 'post', compare = true, nameOf }: MarkStripProps) {
+export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, reachAt, where = reachAt?.reach ?? 'post', compare = true, nameOf, visit }: MarkStripProps) {
   const here = usePlays(plays, post);
   const narrow = useNarrow();
   /* A strip a takeover hosts (Stick Around's view) offers no ghost mark: its play form would open under the view. */
@@ -220,11 +232,13 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, re
   latest.current = onOpen;
   const press = useCallback<Open>((kind, opener) => latest.current(kind, opener), []);
   const kinds = kindsOf(billed);
-  const room = narrow ? MARKS_NARROW : MARKS_WIDE;
+  /* The visit's mark takes one of the strip's places, so a strip is no wider with a visit than without. */
+  const room = (narrow ? MARKS_NARROW : MARKS_WIDE) - (visit ? 1 : 0);
   const shown = kinds.length > room ? kinds.slice(0, room) : kinds;
   const hidden = kinds.slice(shown.length);
   return (
     <span className="kb-marks" ref={strip}>
+      {visit && <VisitMark visit={visit.visit} mod={visit.mod} expanded={open === VISIT_KIND} onOpen={press} />}
       {shown.map((kind) => (
         <Mark key={kind} post={post} kind={kind} plays={byKind.get(kind)!} store={plays} tallies={tallies} postTotal={postTotal} compare={compare} expanded={open === kind} lensOpen={open !== null} onOpen={press} nameOf={nameOf} where={where} />
       ))}
@@ -240,15 +254,24 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, re
  * first kind it hides, and the same mark again closes it. One Lens is open on a page, so a strip subscribes to whether it is
  * the one and is redrawn for its own opening and closing alone.
  */
-export function PostMarks({ post, plays, to, nameOf, tallies, mine, ghost, reachAt, where = reachAt?.reach ?? 'post', compare = true, moments = true, onSpin }: {
+export function PostMarks({ post, plays, to, nameOf, tallies, mine, ghost, reachAt, where = reachAt?.reach ?? 'post', compare = true, moments = true, onSpin, visit, author = null, thread, onSpinAct, ask = null }: {
   readonly post: Id; readonly ghost?: Act; readonly reachAt?: ReachAt; readonly where?: string; readonly compare?: boolean; readonly plays: Plays; readonly to: string | null; readonly nameOf: (character: Id | null) => string;
   /** Whether a play's Lens row offers As it landed: not in an ORIGIN box that already draws the play's moment. */
   readonly moments?: boolean;
   readonly tallies: Tallies; readonly mine: Mine;
   /** Spin a thread from a play: the Lens has closed, and the post opens its spin form for it, giving focus back to `opener` when the form closes. */
   readonly onSpin: (play: CardPlay, name: string, opener: HTMLElement) => void;
+  /** The post's latest visit, with the post's author and thread (Visit.tsx): a mark ahead of the cards' and a tab in the Lens. */
+  readonly visit?: Visit | undefined; readonly author?: Id | null; readonly thread?: Id;
+  /** Spin a thread from one of the visit's Acts: the Lens has closed. */
+  readonly onSpinAct?: (act: Id, name: string, opener: HTMLElement) => void;
+  /** A form the post asked for (Report in its foot links, Appeal in its visit's tab): this strip's Lens opens on it, each new ask (`n`) once. */
+  readonly ask?: FormAsk | null;
 }) {
   const owner = useId();
+  /* The end the Lens read for the visit, so the mark and the tab follow a visit that ended after the page was read (a try that worked). */
+  const [seen, setSeen] = useState<VisitEnd | null>(null);
+  const current = useMemo(() => (visit && seen && visit.end === null ? { ...visit, end: seen } : visit), [visit, seen]);
   const store = useLensStore();
   const open = useLensFor(store, owner);
   const anchor = useRef<HTMLSpanElement>(null);
@@ -256,11 +279,20 @@ export function PostMarks({ post, plays, to, nameOf, tallies, mine, ghost, reach
   useEffect(() => () => { if (store.get()?.owner === owner) store.close(); }, [store, owner]);
   const onOpen = useCallback<Open>((kind, opener) => store.toggle({ owner, card: kind, opener }), [store, owner]);
   const strip = useCallback(() => anchor.current, []);
+  /* A form asked for: only the strip on the post's date row opens it (a card that lifts the post out of its thread draws the same strip again, and its Lens is its own). */
+  const asked = useRef(0);
+  useEffect(() => {
+    if (ask === null || ask.n === asked.current) return;
+    asked.current = ask.n;
+    if (anchor.current?.closest('header.kb-act-meta') == null) return;
+    store.toggle({ owner, card: ask.form.kind, opener: ask.opener });
+  }, [ask, store, owner]);
+  const form = ask !== null && open?.card === ask.form.kind ? ask.form : undefined;
   return (
     <span className="kb-marks-anchor" ref={anchor}>
-      <MarkStrip post={post} plays={plays} tallies={tallies} ghost={ghost} reachAt={reachAt} where={where} compare={compare} open={open?.card ?? null} onOpen={onOpen} nameOf={nameOf} />
+      <MarkStrip post={post} plays={plays} tallies={tallies} ghost={ghost} reachAt={reachAt} where={where} compare={compare} open={open?.card ?? null} onOpen={onOpen} nameOf={nameOf} visit={current ? { visit: current, mod: nameOf(current.mod) } : undefined} />
       <Layers>
-      {open && <Lens open={open} store={store} post={post} plays={plays} tallies={tallies} mine={mine} compare={compare} to={to} nameOf={nameOf} strip={strip} onSpin={onSpin} where={where} moments={moments} />}
+      {open && <Lens open={open} store={store} post={post} plays={plays} tallies={tallies} mine={mine} compare={compare} to={to} nameOf={nameOf} strip={strip} onSpin={onSpin} where={where} moments={moments} visit={current && thread ? { visit: current, thread, author, onSpinAct, onEnded: setSeen } : undefined} form={form} />}
       </Layers>
     </span>
   );

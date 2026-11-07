@@ -36,7 +36,7 @@ import { LensProvider } from '../cards/Lens.tsx';
 import { createPlays, effectCards, hydrate, readEffects } from '../cards/plays.ts';
 import { Composer, SystemBoardNote, type ComposerHandle } from '../composer/Composer.tsx';
 import { useKayfa } from '../context.tsx';
-import type { Act, Id, ThreadListener, ThreadPage, ThreadSummary } from '../data/api.ts';
+import type { Act, Id, ThreadListener, ThreadPage, ThreadSummary, Visit } from '../data/api.ts';
 import { pageList, useIsAdmin } from '../mini.tsx';
 import { useBoot } from '../boot.tsx';
 import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
@@ -153,6 +153,12 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     await Promise.all(wanted.map((id) => asked.current.get(id)));
   }, [api]);
 
+  /* Each post's latest visit as the pages read so far carried it (Visit.tsx); a visit that changed on a page read again redraws the posts. */
+  const visitsHeld = useRef(new Map<Id, Visit>());
+  const [visitTick, setVisitTick] = useState(0);
+  const mounted = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+
   /* A character's name as the thread knows it: read before the posts that name it are drawn. */
   const nameOf = useCallback((id: Id | null) => (id === null ? 'The System' : people.current.get(id)?.character.name ?? 'A character'), []);
 
@@ -183,6 +189,13 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     const spun = new Map<Id, Spun>();
     for (const id of ids) { loader.seed(id, from.get(id) ?? []); spun.set(id, loader.peek(id)!); }
     for (const post of posts) billPost(plays, post, spun, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!)));
+    let moved = false;
+    for (const v of page.visits) {
+      const was = visitsHeld.current.get(v.post);
+      if (!was || was.id !== v.id || was.end?.act !== v.end?.act) moved = true;
+      visitsHeld.current.set(v.post, v);
+    }
+    if (moved && mounted.current) setVisitTick((n) => n + 1);
   }, [api, tallies, mine, plays]);
 
   /* The first page: from the document, before the first render, so the first frame is whole. */
@@ -536,9 +549,10 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   const quote = useCallback((a: Act) => composer.current?.quote(a.id, text(a.currentPayload.body)), []);
   const changed = useCallback((a: Act) => dispatch({ type: 'live', act: a }), []);
   const canReply = systemBoard === false;
+  const visits = useMemo<ReadonlyMap<Id, Visit>>(() => new Map(visitsHeld.current), [visitTick]); // eslint-disable-line react-hooks/exhaustive-deps
   const context = useMemo<ThreadContext | null>(
-    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, mine, plays, nameOf, know: ensurePeople, observer, quote: canReply ? quote : null, changed } : null),
-    [thread, P, feed.summary, tallies, mine, plays, nameOf, ensurePeople, observer, canReply, quote, changed],
+    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, mine, plays, visits, nameOf, know: ensurePeople, observer, quote: canReply ? quote : null, changed } : null),
+    [thread, P, feed.summary, tallies, mine, plays, visits, nameOf, ensurePeople, observer, canReply, quote, changed],
   );
   const shown = useMemo(() => ordered(feed.shown), [feed.shown]);
 

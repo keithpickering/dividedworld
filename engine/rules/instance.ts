@@ -129,6 +129,58 @@ function poolRule(v: unknown): string | null {
   return null;
 }
 
+/**
+ * The Mod Bots' settings (`Settings.modBots`): exactly the fields of ModBotSettings, each held as its own words say. Mirrors `setting_modbots`
+ * in supabase/migrations/0103_orders.sql, and supabase/tests/0079-settings-held.sql lists its poisons and goods.
+ */
+const MOD_BOTS_WHOLE = { allowanceMost: 1, ruleDaysMost: 1, patrolsPerDay: 0, reportPrice: 0, reportsPerDay: 1, judgmentsPerDay: 1, filingLinesPerDay: 1, appealPrice: 0, tailHours: 1, filingGraceMinutes: 1 } as const;
+/** The most a patrol's judgment reads: a bounded read. */
+export const PATROL_SAMPLE_MOST = 25;
+const MOD_BOTS_KEYS = [...Object.keys(MOD_BOTS_WHOLE), 'patrolSample', 'visitHours', 'cap', 'filingCron'].sort();
+function modBotsRule(v: unknown): string | null {
+  const shape = `an object giving allowanceMost, ruleDaysMost, reportsPerDay, judgmentsPerDay, filingLinesPerDay, tailHours and filingGraceMinutes (whole numbers, at least 1), patrolsPerDay, reportPrice and appealPrice (whole numbers, at least 0), patrolSample (a whole number from 1 to ${PATROL_SAMPLE_MOST}), visitHours (least and most, whole hours, at least 1, most not below least), cap (punishments and days, whole numbers, at least 1) and filingCron (a five-field cron expression, each field inside its range)`;
+  const object = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
+  if (!object(v)) return shape;
+  const extra = Object.keys(v).find((k) => !MOD_BOTS_KEYS.includes(k));
+  if (extra !== undefined) return `${shape}; "${extra}" is not one of its fields`;
+  for (const [k, least] of Object.entries(MOD_BOTS_WHOLE)) if (!isWhole(v[k], least)) return `${shape}; "${k}" is not`;
+  if (!isWhole(v.patrolSample, 1) || (v.patrolSample as number) > PATROL_SAMPLE_MOST) return `${shape}; "patrolSample" is not`;
+  const pair = (name: 'visitHours' | 'cap', a: string, b: string): string | null => {
+    const o = v[name];
+    if (!object(o) || Object.keys(o).length !== 2 || !isWhole(o[a], 1) || !isWhole(o[b], 1)) return `${shape}; "${name}" is not`;
+    return null;
+  };
+  const hours = pair('visitHours', 'least', 'most');
+  if (hours) return hours;
+  const vh = v.visitHours as { least: number; most: number };
+  if (vh.most < vh.least) return `${shape}; "visitHours" is not`;
+  const cap = pair('cap', 'punishments', 'days');
+  if (cap) return cap;
+  if (!isCron(v.filingCron)) return `${shape}; "filingCron" is not`;
+  return null;
+}
+
+/**
+ * The warn bar's settings (`Settings.warnBar`): a bar of whole points, three bands each from 1 to the bar's size, a decay span (minutes allowed, so
+ * a test can set it short) and a ladder of ban days. Mirrors `setting_warnbar` in supabase/migrations/0104_warn_bar.sql, and
+ * supabase/tests/0079-settings-held.sql lists its poisons and goods.
+ */
+const WARN_BAR_BANDS = ['minor', 'moderate', 'severe'] as const;
+function warnBarRule(v: unknown): string | null {
+  const shape = 'an object giving size (a whole number, at least 1), bands (minor, moderate and severe, whole numbers from 1 to size), decay (a span: a unit of minute, day, week or month and a whole count from 1 to 1000) and banDays (a list of one or more whole numbers of days, each at least 1)';
+  const object = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
+  if (!object(v)) return shape;
+  const extra = Object.keys(v).find((k) => !['size', 'bands', 'decay', 'banDays'].includes(k));
+  if (extra !== undefined) return `${shape}; "${extra}" is not one of its fields`;
+  if (!isWhole(v.size, 1)) return `${shape}; "size" is not`;
+  const bands = v.bands;
+  if (!object(bands) || Object.keys(bands).length !== WARN_BAR_BANDS.length) return `${shape}; "bands" is not`;
+  for (const b of WARN_BAR_BANDS) if (!isWhole(bands[b], 1) || (bands[b] as number) > v.size) return `${shape}; "bands.${b}" is not`;
+  if (!isSpan(v.decay, GRACE_UNITS)) return `${shape}; "decay" is not`;
+  if (!Array.isArray(v.banDays) || v.banDays.length < 1 || !v.banDays.every((d) => isWhole(d, 1))) return `${shape}; "banDays" is not`;
+  return null;
+}
+
 /** Every setting the engine reads, each with what it must be. */
 const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | null } = {
   walletCap: (v) => (isWhole(v, 1) ? null : 'a whole number of hundredths, at least 1'),
@@ -175,6 +227,8 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   memoryWheelhouse: whole(1, 'subjects'),
   memoryRealWorld: whole(1, 'subjects'),
   pool: poolRule,
+  modBots: modBotsRule,
+  warnBar: warnBarRule,
   boardNameMaxLength: whole(1, 'characters'),
   moveExpiryMostDays: whole(1, 'days'),
   moveExpiryLeastHours: whole(1, 'hours'),
@@ -337,12 +391,11 @@ function playProblems(c: CardRules, cards: readonly CardRules[]): string[] {
   if (trap !== undefined) {
     const on = (trap.trigger as { on?: unknown } | undefined)?.on;
     if (!TRIGGERS.includes(on as never)) out.push(`${who} springs on ${JSON.stringify(on)}; a trap springs on ${TRIGGERS.join(', ')}`);
-    else if (on === 'visit') out.push(`${who} springs on a visit, which is not wired until the staff build adds Mod Bot visits`);
     else if (on === 'reaction' && !QUADRANTS.includes((trap.trigger as { quadrant?: never }).quadrant!)) out.push(`${who} springs on a reaction of ${JSON.stringify((trap.trigger as { quadrant?: unknown }).quadrant)}, which is no quadrant; it names one of ${QUADRANTS.join(', ')}`);
     const outcome = trap.outcome as { do?: unknown; card?: unknown } | undefined;
     if (!OUTCOMES.includes(outcome?.do as never)) out.push(`${who} does ${JSON.stringify(outcome?.do)} when it springs; a trap does ${OUTCOMES.join(', ')}`);
     else if (outcome!.do === 'payout' && on !== 'cast' && TRIGGERS.includes(on as never)) out.push(`${who} pays out on a ${String(on)}; it pays out only on a cast, since only a cast is paid for`);
-    else if (outcome!.do === 'strike' && (on === 'cast' || on === 'reaction')) out.push(`${who} strikes on a ${on}; a strike lays its card on a reply or a quote, until cards reach characters`);
+    else if (outcome!.do === 'strike' && (on === 'cast' || on === 'reaction' || on === 'visit')) out.push(`${who} strikes on a ${on}; a strike lays its card on a reply or a quote, until cards reach characters`);
     else if (outcome!.do === 'strike') {
       const struck = cards.find((k) => k.key === outcome!.card);
       if (!struck) out.push(`${who} strikes with ${JSON.stringify(outcome!.card)}, which the instance does not have`);
@@ -422,6 +475,10 @@ function systemProblems(instance: Instance): string[] {
       if (!Array.isArray(w.questions) || !w.questions.length) out.push(`${who} has a quiz with no question; a quiz needs at least one question`);
       else w.questions.forEach((q: QuizQuestion, i: number) => {
         const at = `${who}'s quiz question ${i + 1}`;
+        if (typeof q.question !== 'string' || !q.question.trim() || q.question.length > 280) out.push(`${at} has no question to ask; a question is text of at most 280 characters`);
+        if (Array.isArray(q.choices) && (q.choices.length > 8 || q.choices.some((c) => typeof c !== 'string' || !c.trim() || c.length > 200))) out.push(`${at} has more than eight choices, or a choice that is blank or over 200 characters`);
+        if (typeof q.question === 'string' && q.question !== q.question.trim()) out.push(`${at} has a space at the start or the end of its question`);
+        if (Array.isArray(q.choices) && q.choices.some((c) => typeof c === 'string' && c !== c.trim())) out.push(`${at} has a choice with a space at the start or the end`);
         if (!Array.isArray(q.choices) || q.choices.length < 2) out.push(`${at} has fewer than two choices; it needs at least two choices`);
         else if (new Set(q.choices).size !== q.choices.length) out.push(`${at} lists a choice twice`);
         if (!Array.isArray(q.choices) || !q.choices.includes(q.answer)) out.push(`${at} has the answer ${JSON.stringify(q.answer)}, which is not one of its choices`);
@@ -460,7 +517,7 @@ function systemProblems(instance: Instance): string[] {
     }
   }
   for (const key of Object.keys(sys.stockLines ?? {})) if (!(STOCK_LINE_KEYS as readonly string[]).includes(key)) out.push(`stock line "${key}" is for no standing order`);
-  for (const key of ['nameStyle', 'oldVoice'] as const) if (typeof sys[key] !== 'function') out.push(`system.${key} is not a function`);
+  if (typeof sys.nameStyle !== 'function') out.push('system.nameStyle is not a function');
   if (typeof sys.nameStyleBrief !== 'string' || sys.nameStyleBrief.trim() === '') out.push('system.nameStyleBrief is empty; the meeting\'s prompt needs the name style in words');
   if (typeof sys.announcementsTitle !== 'string' || sys.announcementsTitle.trim() === '') out.push('system.announcementsTitle is empty; the seed makes The System\'s announcements thread from it, and with none no move can land');
   for (const key of ['feeds', 'realWorld', 'wheelhouse'] as const) if (!Array.isArray(sys[key])) out.push(`the instance has no system.${key} list`);

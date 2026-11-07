@@ -308,7 +308,10 @@ declare
 begin
   insert into characters (name, staff, staff_kind, debuted_at) values ('Tk Retired Boss', 'tk-boss-retired', 'persona', now());
   update characters set retired_at = now() where staff = 'tk-boss-retired';
+  -- It was the Boss when it queued the move (the queue refuses a move from anyone who holds no office that makes it), and retired since.
+  update seasons set boss = 'tk-boss-retired' where ends_at is null;
   bad := pg_temp.queued('Bad Boss Bay', now() - interval '2 hours', false, 'tk-boss-retired');
+  update seasons set boss = 'tk-boss' where ends_at is null;
   good := pg_temp.queued('Good Boss Bay', now() - interval '1 hour');
   ran := system_tick();
   if (ran ->> 'landed')::integer <> 1 or (ran ->> 'failed')::integer <> 1 then raise exception 'the tick counted %', ran; end if;
@@ -349,7 +352,7 @@ end $$;
 do $$
 declare
   src text := regexp_replace((select prosrc from pg_proc where proname = 'system_tick' and pronamespace = 'public'::regnamespace), '\s+', ' ', 'g');
-  due text := 'select q.id, q.staff, q.kind, q.params, q.demand, q.expires_at from queued_moves q where q.landed_act is null and q.held_at is null and q.go_live_at <= now() order by q.go_live_at, q.id for update skip locked';
+  due text := 'select q.id, q.staff, q.kind, q.params, q.demand, q.expires_at, q.admin_description from queued_moves q where q.landed_act is null and q.held_at is null and q.refused_at is null and q.go_live_at <= now() order by q.go_live_at, q.id for update skip locked';
   open_ text := 'select o.move_act, a.character, a.thread, a.payload from open_moves o join acts a on a.id = o.move_act order by o.landed_at, o.move_act';
   demand_ text := 'select o.move_act, a.thread, a.payload from open_moves o join acts a on a.id = o.move_act where jsonb_typeof(a.payload -> ''demand'') = ''object'' and (o.checked_at is null or o.checked_at <= now() - check_every) order by o.checked_at nulls first, o.move_act limit cap';
   m bigint;

@@ -87,6 +87,11 @@ export interface UiCopy {
    * none), such as "a card that holds you in place still does, only instantly."
    */
   readonly reducedMotionCard: string;
+  /**
+   * What the glass calls a Mod Bot's role where a screen names it, as it begins a sentence or a by-line ("A Moderator"): the Lens's visit tab
+   * credits a Mod's acts with it. Absent, the engine's plain "A Mod" stands (engine/ui/cards/visit.ts).
+   */
+  readonly modRole?: string;
   /** Words where the instance names a thing in an alert; absent, the engine's plain words stand (engine/ui/alerts/words.ts). */
   readonly alerts?: AlertCopy;
 }
@@ -344,6 +349,12 @@ export interface InstanceUi {
   readonly avatars?: Readonly<Record<string, string>>;
   /** How each card draws and describes itself, one per card key the instance sells; a card with none is shown as its tag alone (engine/ui/cards/types.ts). */
   readonly cards: readonly CardUi[];
+  /**
+   * The instance's mark for a card's back: a URL the bundler resolved, drawn at the center of the back's crossed bands
+   * (`PostcardBack`). It is the instance's, never a card's, so a back still says nothing about the card it is. Without it the back
+   * is the glass's bands alone.
+   */
+  readonly cardBack?: { readonly mark: string };
   /** The instance's onboarding words, in its developer persona's voice (docs/plans/2026-11-02-onboarding-plan.md, Task 4). */
   readonly onboarding: OnboardingUi;
   /** The instance's Strategy Guide: its prose, and Gabe's hint for each class (docs/plans/2026-11-02-onboarding-plan.md, Task 8). */

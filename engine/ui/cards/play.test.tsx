@@ -58,8 +58,8 @@ function Ink({ config, onChange, id }: ConfigFormProps) {
   );
 }
 const cards: CardUi[] = [
-  { key: 'whoops', art: { color: '#ff3d7f', ink: '#14030a', mark: '/whoops-mark.svg' }, ConfigForm: Ink, describe: () => 'Splats a post.', surcharge: () => 'Long post, +0.25 per 500 characters' },
-  { key: 'stick-around', art: { color: '#2ee6ff', ink: '#03141a' }, describe: () => 'Holds a reader.' },
+  { key: 'whoops', art: { color: '#ff3d7f', ink: '#14030a', canvas: '', mark: '/whoops-mark.svg', credit: 'Test' }, ConfigForm: Ink, describe: () => 'Splats a post.', surcharge: () => 'Long post, +0.25 per 500 characters' },
+  { key: 'stick-around', art: { color: '#2ee6ff', ink: '#03141a', canvas: '', mark: '', credit: 'Test' }, describe: () => 'Holds a reader.' },
 ];
 
 class Observer {
