@@ -242,7 +242,7 @@ describe('the classes marker', () => {
     const classes = sectionOf('Classes');
     expect(within(classes).getByText('Top row excited, bottom row calm; left negative, right positive.')).toBeInTheDocument();
     const legend = within(classes).getByRole('list', { name: 'The marks' });
-    expect(within(legend).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['+earns', '−hurts', 'earns by calling where a post ends up']);
+    expect(within(legend).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['+earns', '−hurts', 'earns by calling where a post ends up', 'earns from the balance between two (the smaller side)']);
   });
 
   test('wears the class\'s own colors, by its key', () => {

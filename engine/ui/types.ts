@@ -57,11 +57,20 @@ export interface ClassLook {
   readonly marks?: ClassMarks;
 }
 
+/** The map's cells in the React picker's order: Heat and Hype on top, Groan and Calm below (the class cards and the guide draw it; a split must sit side by side in one row). */
+export const MAP: readonly Quadrant[] = ['excitedNegative', 'excitedPositive', 'boredNegative', 'calmPositive'];
+
 export interface ClassMarks {
   readonly label: string;
   readonly earns?: readonly Quadrant[];
   readonly hurts?: readonly Quadrant[];
   readonly calls?: readonly Quadrant[];
+  /**
+   * Two quadrants the class earns from together, by their balance: drawn as two cells each half-filled
+   * toward the other and joined by a bar. The pair must sit side by side on the map (one row of
+   * ClassCards.tsx's `MAP`), and neither is also in `earns`, `hurts` or `calls`.
+   */
+  readonly splits?: readonly [Quadrant, Quadrant];
 }
 
 /**

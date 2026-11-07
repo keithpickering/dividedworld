@@ -63,6 +63,17 @@ describe('instanceUiProblems', () => {
     const problems = instanceUiProblems(withLooks({ ...looks(), face: { description: () => 'The crowd favorite. Earns from cheers. Hurt by boos.', hurtsBy: () => 'Hurt by boos.' } }), rules);
     assert.deepEqual(problems, ['the class "face" has a description that still says "Hurt by"; what hurts it belongs in hurtsBy']);
   });
+  test("refuses a class whose splits is not a pair of side-by-side quadrants of the instance, none also earned, hurt or called", () => {
+    const withSplits = (marks: unknown) => instanceUiProblems({ ...ui(good), classLooks: { ...looks(), heel: { description: () => 'Earns heat.', hurtsBy: () => 'Hurt by the polite shrug.', marks } } as unknown as InstanceUi['classLooks'] }, rules);
+    assert.deepEqual(withSplits({ label: 'x', splits: ['excitedNegative', 'excitedPositive'] }), []);
+    assert.deepEqual(withSplits({ label: 'x', splits: ['boredNegative', 'calmPositive'] }), []);
+    assert.deepEqual(withSplits({ label: 'x', splits: ['excitedNegative', 'calmPositive'] }), ['the class "heel" splits excitedNegative and calmPositive, which do not sit side by side in one row of the map']);
+    assert.deepEqual(withSplits({ label: 'x', splits: ['boredNegative', 'boredNegative'] }), ['the class "heel" splits boredNegative with itself, and a split needs two quadrants']);
+    assert.deepEqual(withSplits({ label: 'x', splits: ['excitedNegative', 'excitedPositive'], hurts: ['excitedPositive'] }), ['the class "heel" splits excitedPositive and also hurts it']);
+    assert.deepEqual(withSplits({ label: 'x', splits: ['excitedNegative', 'excitedPositive'], earns: ['excitedNegative'] }), ['the class "heel" splits excitedNegative and also earns it']);
+    assert.deepEqual(withSplits({ label: 'x', splits: ['excitedNegative', 'excitedPositive'], calls: ['excitedNegative'] }), ['the class "heel" splits excitedNegative and also calls it']);
+    assert.deepEqual(withSplits({ label: 'x', splits: ['excitedNegative', 'sleepy'] }), ['the class "heel" splits "sleepy", which is not a quadrant the instance has']);
+  });
   test("refuses a card's status that is a sentence or runs past six words, naming the card (the Lens's roles)", () => {
     const withCards = (list: unknown[]) => ({ ...ui(good), cards: [{ key: 'whoops', status: 'Ink on this post' }, ...list] as unknown as readonly CardUi[] });
     const eight = 'Turning away every card up to the rarity';

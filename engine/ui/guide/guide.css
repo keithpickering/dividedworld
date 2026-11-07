@@ -436,6 +436,13 @@
   font-size: 1.625rem;
 }
 
+/* The split bar on the guide's gap (4px) between the top cells, 3.125rem each: centered on the first row. */
+.kb-guide-class .kb-class-split-bar {
+  top: 1.35rem;
+  left: 3.125rem;
+  height: 0.425rem;
+}
+
 .kb-guide-class-name {
   margin: 0;
   font-size: 1.375rem;
@@ -556,6 +563,14 @@
 :where(:root[data-kb-layout='phone']) .kb-guide-class .kb-class-marks {
   grid-template-columns: repeat(2, 1.5rem);
   gap: 2px;
+}
+
+/* The phone's marks are 1.5rem cells with a 2px gap: the bar moves with them. */
+:where(:root[data-kb-layout='phone']) .kb-guide-class .kb-class-split-bar {
+  top: 0.5rem;
+  left: 1.5rem;
+  width: 2px;
+  height: 0.5rem;
 }
 
 /* In rem, 24px at 100% text, so the cell grows with the text it holds and the mark stays on its fill or ground. */

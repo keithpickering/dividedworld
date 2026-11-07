@@ -700,6 +700,30 @@
   border: 1.5px dotted var(--kb-class-fill);
 }
 
+/* Earned from the balance of two side-by-side cells: each half-filled toward its partner, joined by the bar below. */
+.kb-class-mark[data-kb-mark='splits'] {
+  border: 1.5px solid var(--kb-class-fill);
+}
+
+.kb-class-mark[data-kb-mark='splits'][data-kb-toward='right'] {
+  background: linear-gradient(90deg, transparent 50%, var(--kb-class-fill) 50%);
+}
+
+.kb-class-mark[data-kb-mark='splits'][data-kb-toward='left'] {
+  background: linear-gradient(90deg, var(--kb-class-fill) 50%, transparent 50%);
+}
+
+/* On the gap between the top row's cells, centered on the first row; its length is the gap, its thickness a fifth of a cell. */
+.kb-class-split-bar {
+  position: absolute;
+  top: 0.675rem;
+  left: 1.75rem;
+  width: 4px;
+  height: 0.4rem;
+  background: var(--kb-class-fill);
+  pointer-events: none;
+}
+
 .kb-class-description,
 .kb-class-hurt {
   font-size: var(--kb-glass-size-body);
