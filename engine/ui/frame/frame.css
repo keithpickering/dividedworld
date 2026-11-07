@@ -122,6 +122,17 @@
   color: var(--kb-nav-fg);
 }
 
+/* A board link is its 16 by 14 icon (Icons.tsx), drawn in the link's ink, then its name; its item is as tall as the link, so the bar is. */
+.kb-nav li {
+  display: flex;
+}
+
+.kb-nav a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .kb-nav a:hover {
   color: var(--kb-nav-hover);
 }

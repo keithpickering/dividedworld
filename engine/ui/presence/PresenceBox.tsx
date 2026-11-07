@@ -14,6 +14,7 @@ import { useId, type ReactNode } from 'react';
 import type { Presence, PresencePlace } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
 import { useKayfa } from '../context.tsx';
+import { Icon } from '../board/Icons.tsx';
 import { StaffGroup } from '../postbit/StaffBadge.tsx';
 import { Link } from '../router.tsx';
 import { usePresence } from './presence.ts';
@@ -59,13 +60,14 @@ export function PresenceBox({ place, heading, note, snapshot }: PresenceBoxProps
       <table className="kb-table kb-presence-table" role="presentation">
         <tbody>
           <tr>
-            <td className="kb-bar">
+            <td className="kb-bar" colSpan={2}>
               <h2 id={id} className="kb-presence-head">
                 {lead ? <><span className="kb-presence-wide">{heading}</span><span className="kb-presence-narrow">{lead[1]![0]!.toUpperCase()}{lead[1]!.slice(1)}</span></> : heading}
               </h2>
             </td>
           </tr>
           <tr>
+            <td className="kb-presence-icon" aria-hidden="true"><Icon name="who" /></td>
             <td>
               <p className="kb-presence-names">
                 {items.length === 0 && others === 0 ? 'No characters right now.' : items.flatMap((item, i) => (i === 0 ? [item] : [', ', item]))}

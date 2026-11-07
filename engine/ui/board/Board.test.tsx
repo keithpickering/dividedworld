@@ -56,7 +56,7 @@ describe('NEW comes from the player\'s own reading rows', () => {
     fake.markRead(seeded.ids[0]!, 2, null);
     await screen.findByRole('link', { name: 'Thread 001' });
     const row = rowOf('Thread 001');
-    expect(within(row).getByText('NEW')).toBeInTheDocument();
+    expect(within(row).getByText(/^New\b/)).toBeInTheDocument();
     expect(within(row).getByRole('link', { name: /^First unread post in / })).toHaveAttribute('href', `/t/${seeded.ids[0]}?page=1#post-3`);
   });
 
@@ -67,7 +67,8 @@ describe('NEW comes from the player\'s own reading rows', () => {
     fake.markRead(seeded.ids[0]!, 3, null);
     await screen.findByRole('link', { name: 'Thread 001' });
     const row = rowOf('Thread 001');
-    expect(within(row).queryByText('NEW')).toBeNull();
+    expect(within(row).getByText('No new posts')).toBeInTheDocument();
+    expect(within(row).queryByText('New')).toBeNull();
     expect(within(row).queryByRole('link', { name: /^First unread post in / })).toBeNull();
   });
 
@@ -85,7 +86,7 @@ describe('NEW comes from the player\'s own reading rows', () => {
     const { seeded } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f) });
     await screen.findByRole('link', { name: 'Thread 001' });
     const row = rowOf('Thread 001');
-    expect(within(row).getByText('NEW')).toBeInTheDocument();
+    expect(within(row).getByText('New')).toBeInTheDocument();
     expect(within(row).getByRole('link', { name: /^First unread post in / })).toHaveAttribute('href', `/t/${seeded.ids[0]}?page=1#post-1`);
   });
 
@@ -95,6 +96,54 @@ describe('NEW comes from the player\'s own reading rows', () => {
     });
     await screen.findByRole('link', { name: 'Plain thread' });
     expect(rowOf('Plain thread')).not.toHaveTextContent(/\byou\b|\byours\b|\bmine\b/i);
+  });
+});
+
+describe('the folder icons and the legend', () => {
+  test('a row that is new and hot draws one folder with the flame and one name, and the NEW and HOT chips are gone', async () => {
+    renderInWorld(<LoadedBoard slug="general" />, {
+      seed: (f) => { const w = world(f); replies(f, w.ids[0]!, w.spritey, 3, f.clock.now() - 2 * DAY); return w; },
+    });
+    await screen.findByRole('link', { name: 'Thread 001' });
+    const row = rowOf('Thread 001');
+    expect(within(row).getByText('New, hot')).toBeInTheDocument();
+    const svgs = row.querySelectorAll('.kb-thread-flags svg');
+    expect(svgs).toHaveLength(1);
+    expect(svgs[0]).toHaveAttribute('aria-hidden', 'true');
+    expect(svgs[0]).toHaveAttribute('width', '24');
+    expect(svgs[0]).toHaveAttribute('height', '20');
+    expect(svgs[0]).toHaveAttribute('viewBox', '0 0 24 20');
+    expect(svgs[0]!.querySelector('.hot')).not.toBeNull();
+    expect(row.querySelector('.kb-flag')).toBeNull();
+  });
+
+  test('a read, quiet thread is the empty folder named "No new posts", and a hot read one is named "Hot"', async () => {
+    const { fake, seeded } = renderInWorld(<LoadedBoard slug="general" />, {
+      seed: (f) => { const w = world(f, { threads: 2 }); replies(f, w.ids[1]!, w.spritey, 3, f.clock.now() - 2 * DAY); return w; },
+    });
+    fake.markRead(seeded.ids[0]!, 1, null);
+    fake.markRead(seeded.ids[1]!, 4, null);
+    await screen.findByRole('link', { name: 'Thread 001' });
+    expect(within(rowOf('Thread 001')).getByText('No new posts')).toBeInTheDocument();
+    expect(rowOf('Thread 001').querySelector('svg .paper')).toBeNull();
+    expect(within(rowOf('Thread 002')).getByText('Hot')).toBeInTheDocument();
+  });
+
+  test('the legend is one row under the list, and its Hot number is the setting', async () => {
+    renderInWorld(<LoadedBoard slug="general" />, { settings: { hotReplies: 7 }, seed: (f) => world(f) });
+    await screen.findByRole('link', { name: 'Thread 001' });
+    const legend = document.querySelector('.kb-thread-legend') as HTMLElement;
+    expect(legend).not.toBeNull();
+    expect(legend).toHaveTextContent('New posts');
+    expect(legend).toHaveTextContent('No new posts');
+    expect(legend).toHaveTextContent('Hot: 7 replies this week');
+    expect(legend.querySelectorAll('svg')).toHaveLength(3);
+  });
+
+  test('the legend names no card and no pin', async () => {
+    renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f) });
+    await screen.findByRole('link', { name: 'Thread 001' });
+    expect((document.querySelector('.kb-thread-legend') as HTMLElement).textContent).not.toMatch(/pin|card/i);
   });
 });
 
@@ -114,12 +163,13 @@ describe('the row', () => {
     renderIn(fake, <LoadedBoard slug="general" />);
     await screen.findByRole('link', { name: 'Thread 002' });
     const hot = rowOf('Thread 002');
-    expect(within(hot).getByText('HOT')).toBeInTheDocument();
+    expect(within(hot).getByText('New, hot')).toBeInTheDocument();
+    expect(hot.querySelector('svg .hot')).not.toBeNull();
     expect(hot).toHaveTextContent('44');
     expect(within(hot).getByText('3', { selector: '.kb-thread-replies .kb-num' })).toBeInTheDocument();
-    expect(within(rowOf('Thread 001')).queryByText('HOT')).toBeNull();
-    expect(within(rowOf('Thread 003')).queryByText('HOT')).toBeNull();
-    expect(within(rowOf('Thread 004')).queryByText('HOT')).toBeNull();
+    expect(rowOf('Thread 001').querySelector('svg .hot')).toBeNull();
+    expect(rowOf('Thread 003').querySelector('svg .hot')).toBeNull();
+    expect(rowOf('Thread 004').querySelector('svg .hot')).toBeNull();
     const row = rowOf('Spun thread');
     expect(row).toHaveTextContent('spun from');
     expect(within(row).getByRole('link', { name: /Thread 001/ })).toHaveAttribute('href', `/t/${w.ids[0]}?page=1#post-2`);
@@ -395,7 +445,7 @@ describe('a signed-out visitor', () => {
     renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { signedIn: false }) });
     expect(await screen.findByRole('heading', { level: 1, name: 'How do we explain this' })).toBeInTheDocument();
     expect(screen.queryByText(/The board is for players\./u)).toBeNull();
-    expect(screen.queryByText('NEW')).toBeNull();
+    expect(screen.queryByText('New')).toBeNull();
     expect(screen.queryByRole('form', { name: 'Start a thread' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Start a thread' })).toBeNull();
     expect(screen.queryByRole('table')).toBeNull();

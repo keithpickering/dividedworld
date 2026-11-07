@@ -21,6 +21,7 @@ import { useBoot } from '../boot.tsx';
 import { useKayfa } from '../context.tsx';
 import type { BoardSummary } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
+import { Icon, type IconName } from '../board/Icons.tsx';
 import { Link, searchOf, useLocation, useNavigation } from '../router.tsx';
 import { PlayProvider } from '../cards/play.tsx';
 import { TipsProvider } from '../tips/Tips.tsx';
@@ -72,9 +73,9 @@ export function Frame({ children }: { readonly children: ReactNode }) {
 
   const badges = ui.copy.badges ?? [];
   const here = searchOf(query);
-  const links: readonly { readonly to: string; readonly label: string }[] = [
-    { to: '/', label: 'Index' },
-    ...shownBoards.map((b) => ({ to: `/b/${b.slug}`, label: b.name })),
+  const links: readonly { readonly to: string; readonly label: string; readonly icon?: IconName }[] = [
+    { to: '/', label: 'Index', icon: 'home' },
+    ...shownBoards.map((b) => ({ to: `/b/${b.slug}`, label: b.name, icon: 'board' as const })),
     ...(session.signedIn ? [] : [{ to: signInHref(path, here), label: 'Sign in' }]),
   ];
 
@@ -93,7 +94,7 @@ export function Frame({ children }: { readonly children: ReactNode }) {
           <nav id={navId} className="kb-nav" aria-label="Main" data-kb-open={open || undefined}>
             <ul>
               {links.map((l) => (
-                <li key={l.to}><Link to={l.to} onClick={() => setOpen(false)}>{l.label}</Link></li>
+                <li key={l.to}><Link to={l.to} onClick={() => setOpen(false)}>{l.icon && <Icon name={l.icon} />}{l.label}</Link></li>
               ))}
             </ul>
           </nav>

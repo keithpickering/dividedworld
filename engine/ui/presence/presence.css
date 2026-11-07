@@ -14,6 +14,15 @@
   padding-block: 0.15rem;
 }
 
+/* The names' icon column: the pair of heads (Icons.tsx), 24 by 20, centered on the first line. */
+.kb-table td.kb-presence-icon {
+  box-sizing: border-box;
+  width: 48px;
+  padding: 6px;
+  text-align: center;
+  vertical-align: middle;
+}
+
 .kb-presence-me {
   font-style: italic;
 }
@@ -24,6 +33,11 @@
 }
 
 @media (max-width: 40em) {
+  /* A phone's box is one column of names, as the board's phone drawing has it. */
+  .kb-table td.kb-presence-icon {
+    display: none;
+  }
+
   .kb-presence-wide {
     display: none;
   }

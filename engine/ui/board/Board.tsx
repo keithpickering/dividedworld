@@ -31,6 +31,7 @@ import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import { MoveNotice } from './MoveNotice.tsx';
 import { PresenceBox } from '../presence/PresenceBox.tsx';
 import { NewThread } from './NewThread.tsx';
+import { Icon, folderIcon, folderState } from './Icons.tsx';
 import './board.css';
 
 /** Threads to a page of a board's list. */
@@ -175,6 +176,7 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
             </tbody>
           </table>
           </div>
+          <Legend hot={settings.hotReplies} />
           {pager('bottom')}
         </>
       )}
@@ -238,7 +240,29 @@ function Pinned({ loaded, plays, tallies, mine, nameOf, perPage, hot, onSpin }: 
           mark={<PostMarks post={p.thread.id} where="thread" plays={plays} compare={false} to={threadHref(p.thread.id, 1)} nameOf={nameOf} tallies={tallies} mine={mine} onSpin={(play, label, opener) => onSpin({ id: play.id, label, opener })} />}
         />
       ))}
+      {/* A 4px row in the third gray splits the pins from the rest; it is paint, so it is out of the reading order. */}
+      <tr role="presentation" aria-hidden="true" className="kb-thread-gap"><td role="presentation" colSpan={5} /></tr>
     </tbody>
+  );
+}
+
+/**
+ * The key under the list: the folders, in plain words, on a row in the third gray. "Hot" takes its number from the setting. The pin has no
+ * line here: a mark in the legend would say what pressing it says, and break the illusion in the board's own world. It is layout, not data.
+ */
+function Legend({ hot }: { readonly hot: number }) {
+  return (
+    <table className="kb-table kb-thread-legend" role="presentation">
+      <tbody>
+        <tr>
+          <td className="kb-legend">
+            <span><Icon name="new" /> New posts</span>
+            <span><Icon name="old" /> No new posts</span>
+            <span><Icon name="hot" /> Hot: {hot} {hot === 1 ? 'reply' : 'replies'} this week</span>
+          </td>
+        </tr>
+      </tbody>
+    </table>
   );
 }
 
@@ -257,8 +281,8 @@ function ThreadRow({ t, loaded, perPage, hot, mark = null }: { readonly t: Threa
   return (
     <tr role="row" className="kb-thread-row" data-kb-new={isNew ? '' : undefined} data-kb-hot={isHot ? '' : undefined}>
       <td role="cell" className="kb-thread-flags">
-        {isNew && <span className="kb-flag kb-flag-new">NEW</span>}
-        {isHot && <span className="kb-flag kb-flag-hot">HOT</span>}
+        <Icon name={folderIcon(isNew, isHot)} />
+        <span className="kb-visually-hidden">{folderState(isNew, isHot)}</span>
       </td>
       <td role="cell" className="kb-thread-main">
         <Link to={threadHref(t.id, 1)} className="kb-thread-title"><b>{t.title}</b></Link>

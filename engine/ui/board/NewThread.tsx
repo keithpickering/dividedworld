@@ -7,6 +7,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { useKayfa } from '../context.tsx';
 import { usePlayer } from '../player.tsx';
+import { Icon } from './Icons.tsx';
 import { Link, useNavigate } from '../router.tsx';
 
 export function NewThread({ board }: { readonly board: string }) {
@@ -48,7 +49,9 @@ export function NewThread({ board }: { readonly board: string }) {
 
   return (
     <div className="kb-new-thread-wrap">
-      <button type="button" className="kb-button kb-new-thread-toggle" aria-expanded={open} aria-controls={`${id}-form`} onClick={() => setOpen(!open)}>Start a thread</button>
+      <button type="button" className="kb-button kb-new-thread-toggle" aria-expanded={open} aria-controls={`${id}-form`} onClick={() => setOpen(!open)}>
+        <Icon name="start" />Start a thread
+      </button>
       <form id={`${id}-form`} ref={form} hidden={!open} className="kb-box kb-new-thread" aria-labelledby={`${id}-head`} onSubmit={(e) => void submit(e)} noValidate>
         <h2 className="kb-box-head" id={`${id}-head`}>Start a thread</h2>
         {!hudCharacter ? (

@@ -27,7 +27,9 @@
  * were drawn, held by `buildSize`), so the build sets 15px Verdana words where the board draws 12px, a 22.5px Courier New title
  * where it draws 18px, 13.75px nav, crumb and pager where it draws 11px, bold Verdana names with the rank under them, and a
  * 12.5px post line in the muted ink where it draws 10px (engine/ui/tokens.css). What the larger words move is held by
- * `buildShift`, as measured.
+ * `buildShift`, as measured. The boards' bar's links each carry their 16 by 14 icon in the build (the board-look plan, Task 5), which this
+ * older board does not draw: the first link is 7px taller than the board's 13px line, and the next two stand 24.7px and 49.2px further from
+ * it than the type scale alone moved them (12.4 and 28.2), an icon and its gap each, held as measured.
  */
 import type { BoardManifest, Landmark } from '../board-match.ts';
 
@@ -99,9 +101,9 @@ const manifest: BoardManifest = {
      * frame, 9.4px more in the bar's own height).
      */
     { id: 'nav', role: 'navigation', name: 'Main', box: 'height', type: false, buildShift: { y: 33, height: 9.4 } },
-    { id: 'nav-index', role: 'link', name: 'Index', within: 'nav', box: 'height', type: false, buildShift: { y: 36 } },
-    { id: 'nav-general', role: 'link', name: 'General', within: 'nav', origin: 'nav-index', box: 'position', type: false, buildShift: { x: 12.4 } },
-    { id: 'nav-system', role: 'link', name: 'The System', within: 'nav', origin: 'nav-index', box: 'position', type: false, buildShift: { x: 28.2 } },
+    { id: 'nav-index', role: 'link', name: 'Index', within: 'nav', box: 'height', type: false, buildShift: { y: 36, height: 7 } },
+    { id: 'nav-general', role: 'link', name: 'General', within: 'nav', origin: 'nav-index', box: 'position', type: false, buildShift: { x: 37.1 } },
+    { id: 'nav-system', role: 'link', name: 'The System', within: 'nav', origin: 'nav-index', box: 'position', type: false, buildShift: { x: 77.4 } },
 
     /*
      * The breadcrumb over the thread's head, by its type: the board's words lead from the instance

@@ -40,47 +40,54 @@
 
 .kb-thread-flags-head,
 .kb-thread-flags {
-  width: 6%;
+  width: 48px;
 }
 
 .kb-thread-main {
-  width: 52%;
+  width: auto;
   overflow-wrap: anywhere;
 }
 
 .kb-thread-replies,
 .kb-thread-views {
-  width: 8%;
-  text-align: right;
+  width: 8.33%;
+  text-align: center;
   font-variant-numeric: tabular-nums;
 }
 
 /* A fixed table takes its widths from its header row: say them there too. */
-.kb-thread-list th:nth-child(1) { width: 6%; }
-.kb-thread-list th:nth-child(2) { width: 52%; }
+.kb-thread-list th { box-sizing: border-box; }
+.kb-thread-list th:nth-child(1) { width: 48px; }
+.kb-thread-list th:nth-child(2) { width: auto; }
 .kb-thread-list th:nth-child(3),
-.kb-thread-list th:nth-child(4) { width: 9%; text-align: right; }
-.kb-thread-list th:nth-child(5) { width: 24%; }
+.kb-thread-list th:nth-child(4) { width: 8.33%; text-align: center; }
+.kb-thread-list th:nth-child(5) { width: 23.33%; }
 
 /*
  * At a larger text size the percentages above are too narrow for the head's words ("Status", "Replies"), which a fixed table never
  * wraps; the three narrow columns ask for the room their words take, in ems of the text, and the title's column gives it up.
  */
-:root[data-kb-text-size] .kb-thread-list th:nth-child(1) { width: 5em; }
+:root[data-kb-text-size] .kb-thread-list th:nth-child(1) { width: 48px; }
 :root[data-kb-text-size] .kb-thread-list th:nth-child(2) { width: auto; }
 :root[data-kb-text-size] .kb-thread-list th:nth-child(3),
 :root[data-kb-text-size] .kb-thread-list th:nth-child(4) { width: 5.5em; }
 
 .kb-thread-last {
-  width: 24%;
+  width: 23.33%;
   overflow-wrap: anywhere;
 }
 
 .kb-thread-title,
 .kb-thread-last a {
-  /* A target of 24px at the least (WCAG 2.2, 2.5.8): the rows' links sit close together. */
-  display: inline-block;
-  padding-block: 0.3rem;
+  /* A target of 24px at the least (WCAG 2.2, 2.5.8): the rows' links sit close together. A box of its own that is 24px high, not padding around the line. */
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.5rem;
+}
+
+/* The thread's title is the board's 16px bold name (the index's board link is the same). */
+.kb-thread-title {
+  font-size: 1rem;
 }
 
 .kb-thread-last-label,
@@ -88,22 +95,53 @@
   display: none;
 }
 
-.kb-flag {
-  display: inline-block;
-  margin: 0 0.2em 0.2em 0;
-  padding: 0 0.3em;
-  border: 1px solid var(--kb-rule);
-  font: bold var(--kb-size-small) / 1.3 var(--kb-font-mono);
-  white-space: nowrap;
+/* The status cell holds one 24 by 20 folder (Icons.tsx), centered; its words are visually hidden. */
+.kb-thread-list td.kb-thread-flags {
+  text-align: center;
+  vertical-align: middle;
+  padding-inline: 6px;
 }
 
-.kb-flag-new {
-  background: var(--kb-fg);
-  color: var(--kb-bg);
+/* The status column is 48px across, its padding in it: a fixed table takes the head's width as the cell's whole. */
+.kb-thread-list th:nth-child(1),
+.kb-thread-list td.kb-thread-flags {
+  box-sizing: border-box;
+}
+
+/* The 4px row that splits the pinned threads from the rest. */
+.kb-table .kb-thread-gap > td {
+  background: var(--kb-row-3);
+  padding: 0;
+  height: 4px;
+}
+
+/* The legend: one row in the third gray, each folder beside its words. */
+.kb-thread-legend {
+  margin-top: 0.8rem;
+}
+
+.kb-table td.kb-legend {
+  background: var(--kb-row-3);
+  font-size: var(--kb-size-fine);
+  vertical-align: middle;
+}
+
+.kb-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 22px;
 }
 
 .kb-thread-meta {
   margin-top: 0.2em;
+}
+
+/* The starter's link is a 24px target of its own too, below the title's (WCAG 2.5.8: two close targets under 24px fail). */
+.kb-thread-started a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.5rem;
 }
 
 .kb-thread-pages a,
@@ -197,7 +235,13 @@
     padding-right: 0.4em;
   }
 
-  .kb-thread-flags:empty {
+  .kb-thread-gap {
+    display: block;
+    height: 4px;
+    background: var(--kb-row-3);
+  }
+
+  .kb-thread-gap > td {
     display: none;
   }
 

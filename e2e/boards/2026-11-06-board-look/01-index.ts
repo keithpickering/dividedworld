@@ -10,8 +10,6 @@
  *  - The build's nav is named Main (its aria-label), the board's Boards.
  *  - The board's host, "dw.gripe", stands at the banner's right with the meter; the build's tagline of that name stands beside the name and
  *    the build's own address (the page's host) is what stands at the right, so the tagline is compared by its type alone.
- *  - The boards' bar draws no icons until the folder icons and nav icons (the plan's Task 5) do, so the board links after the first are compared by their y and height, not their x.
- *  - Who is online has no icon column until the folder icons (the plan's Task 5) draw it: its names are compared from the cell's own corner.
  *  - The kind of box the board draws around the credit is a footer, found by its role (its words hold the badges').
  *  - A board's last post holds its name link and its time link each at the 24px target (WCAG 2.5.8) without overlap, so its row stands
  *    about 12px taller than the board's line height draws it; what follows is within the match's tolerance.
@@ -28,8 +26,8 @@ const manifest: BoardManifest = {
     { id: 'tagline', role: 'text', name: 'dw.gripe', box: 'none' },
     { id: 'nav', role: 'navigation', name: 'Boards', buildName: 'Main', type: false },
     { id: 'nav-index', role: 'link', name: 'Index', within: 'nav', box: 'position' },
-    { id: 'nav-general', role: 'link', name: 'General', within: 'nav', box: 'height' },
-    { id: 'nav-system', role: 'link', name: 'Staff Announcements', buildName: 'The System', within: 'nav', box: 'height', type: false },
+    { id: 'nav-general', role: 'link', name: 'General', within: 'nav', box: 'position' },
+    { id: 'nav-system', role: 'link', name: 'Staff Announcements', buildName: 'The System', within: 'nav', box: 'position', type: false },
     { id: 'title', role: 'heading', name: 'Index' },
     { id: 'boards', role: 'table', name: 'Boards', type: false },
     { id: 'head-board', role: 'columnheader', name: 'Board', within: 'boards' },
@@ -43,7 +41,7 @@ const manifest: BoardManifest = {
     { id: 'last-time', role: 'link', name: 'Oct 6, 2026', buildName: 'Oct 6, 2026 — latest post in General', within: 'boards', box: 'position' },
     { id: 'none-yet', role: 'text', name: 'None yet', within: 'boards', box: 'none' },
     { id: 'online', role: 'heading', name: 'Who is online' },
-    { id: 'online-note', role: 'text', name: 'Characters active in the past 5 minutes', box: 'height' },
+    { id: 'online-note', role: 'text', name: 'Characters active in the past 5 minutes', box: 'position' },
     { id: 'footer', role: 'contentinfo', name: '', box: 'position', type: false },
   ],
 };
