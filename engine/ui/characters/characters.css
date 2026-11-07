@@ -1520,6 +1520,11 @@
   grid-column: 1 / -1;
 }
 
+/* The picker's live sentence, set a little apart from the choices it reads. */
+.kb-pronoun-preview {
+  margin-top: 0.75em;
+}
+
 .kb-pronoun-problem {
   margin: 6px 0 0;
   color: var(--kb-glass-hurt);
