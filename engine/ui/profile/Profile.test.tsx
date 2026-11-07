@@ -165,7 +165,7 @@ describe('what the profile says of a class: only what its player made public', (
   test('a Turn announced after the reveal makes the statement out of date', async () => {
     const fake = buildWorld();
     const w = world(fake);
-    const sys = fake.seed.thread('the-system', null, 'Turns', '');
+    const sys = fake.seed.thread('announcements', null, 'Turns', '');
     fake.seed.reveal(w.pipe, w.thread, { class: 'heel', at: OCT3 });
     fake.seed.announceTurn(w.pipe, sys.thread, { at: OCT20 });
     open(w.pipe, fake);
@@ -177,7 +177,7 @@ describe('what the profile says of a class: only what its player made public', (
   test('the public record lists every reveal, and an announced Turn names the old class only if it was announced with it', async () => {
     const fake = buildWorld();
     const w = world(fake);
-    const sys = fake.seed.thread('the-system', null, 'Turns', '');
+    const sys = fake.seed.thread('announcements', null, 'Turns', '');
     fake.seed.reveal(w.pipe, w.thread, { class: 'face', at: OCT3 });
     // A tally written before #23 still says since when; the record never dates the old class.
     fake.seed.announceTurn(w.pipe, sys.thread, { at: OCT20, was: 'face', since: '2026-10-01T12:00:00Z' });
@@ -236,7 +236,7 @@ describe('the public record on the profile', () => {
 describe('past seasons, announced Turns and the size of the season', () => {
   function withReveals(fake: Fake) {
     const w = world(fake);
-    const sys = fake.seed.thread('the-system', null, 'Turns', '');
+    const sys = fake.seed.thread('announcements', null, 'Turns', '');
     const tally = fake.seed.announceTurn(w.pipe, sys.thread, { at: OCT20 });
     fake.seed.seasonResults(1, [{ character: w.pipe, place: 2, standing: 120 }], { at: OCT20 + DAY });
     return { ...w, sys: sys.thread, tally };

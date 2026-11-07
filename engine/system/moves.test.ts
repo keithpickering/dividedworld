@@ -9,7 +9,7 @@ test('the catalog holds renameBoard, structural, with a long plain label', () =>
   assert.deepEqual(MOVE_KINDS.map((k) => [k.key, k.structural]), [['renameBoard', true], ['nameSuccessor', true]]);
   assert.deepEqual(ASKABLE_MOVE_KINDS.map((k) => k.key), ['renameBoard'], 'a successor is named in its own answer, never among the moves');
   assert.deepEqual(MOVE_KINDS.map((k) => k.shapesBoard), [true, false]);
-  assert.equal(moveKind('renameBoard')?.label, 'THE SYSTEM RENAMED THIS BOARD');
+  assert.equal(moveKind('renameBoard')?.label, '{role} renamed this board');
   assert.equal(moveKind('shout'), undefined);
 });
 
@@ -27,8 +27,8 @@ test('renameBoard params are held to their shape; a string over its outer bound 
 });
 
 test('the log line reads in plain words with nothing unfilled', () => {
-  const words = moveKind('renameBoard')!.template(rename);
-  assert.equal(words, 'The System renamed a board to "Pointless Toast Palace". Its subject is now: Toast, and only toast.');
+  const words = moveKind('renameBoard')!.template(rename, 'The Boss');
+  assert.equal(words, 'The Boss renamed a board to "Pointless Toast Palace". Its subject is now: Toast, and only toast.');
   assert.doesNotMatch(words, /[{}]|undefined/);
 });
 

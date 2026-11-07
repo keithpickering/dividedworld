@@ -49,7 +49,7 @@ const SEASONED_WELCOME = '2026-10-01T00:00:00.000Z';
 export const TEST_CODE = '123456';
 
 const CODE_MESSAGE = 'If this address can sign in here, a code and a link to sign in are on their way to it. A new login needs an invite where this instance asks for one. If nothing comes in a few minutes, ask again.';
-const SYSTEM_BOARD = 'only The System posts here; spin a thread from what it said';
+const SYSTEM_BOARD = 'only the staff post here; spin a thread from what they said';
 const MINUTE = 60_000;
 const DAY = 86_400_000;
 export const START = Date.UTC(2026, 9, 29, 12);
@@ -138,7 +138,7 @@ export interface Seed {
    */
   announceTurn(character: Id, thread: Id, options?: { was?: string; class?: string; since?: string; at?: number }): Id;
   /**
-   * A character's announce Act (0100) in the Promos thread of the season open at `at` (else now), which this opens on The System's board where the
+   * A character's announce Act (0100) in the Promos thread of the season open at `at` (else now), which this opens on the staff board where the
    * season has none. A debut names no `was`, and one that names its `class` is that class's reveal. Throws on a debut naming `was`; unlike the
    * guard, it does not check that `class` is the one the character holds, so a seed states what the board shows.
    */
@@ -2269,7 +2269,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const systemBoard = (thread: Id) => {
     const found = threadAndBoard(thread);
     if (isRefusal(found)) throw new Error(found.error);
-    if (!found.board.isSystem) throw new Error('The System\'s Acts are on its board');
+    if (!found.board.isSystem) throw new Error('an Act with no character is on the staff board');
     return found.t;
   };
   const systemAct = (thread: Id, o: SeedAct, body: string): ActRec => {
@@ -2388,7 +2388,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const board = boards.find((b) => b.slug === slug);
       if (!board) throw new Error(`no board ${slug}`);
       if (character === null) {
-        if (!board.isSystem) throw new Error('The System\'s Acts are on its board');
+        if (!board.isSystem) throw new Error('an Act with no character is on the staff board');
         const t = openThread(board.id, title, null, o.at);
         return { thread: t.id, act: systemAct(t.id, o, body).id };
       }
@@ -2557,7 +2557,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const demand = moveDemand(m);
       const id = write({
         character: boss, kind: 'move', thread: announcements(),
-        payload: { kind: 'renameBoard', body: m.body ?? 'The System has spoken.', params: moveParams(m), ...(demand ? { demand } : {}), expires_at: iso(m.expiresAt ?? at + 3 * DAY) }, at,
+        payload: { kind: 'renameBoard', body: m.body ?? 'This board has a new name.', params: moveParams(m), ...(demand ? { demand } : {}), expires_at: iso(m.expiresAt ?? at + 3 * DAY) }, at,
       }).id;
       if (m.uncounted) uncounted.add(id);
       return id;

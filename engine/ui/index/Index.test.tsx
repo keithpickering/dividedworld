@@ -18,7 +18,7 @@ describe('the index', () => {
         const spritey = f.seed.character(f.seed.account('other'), 'Spritey', 'face', { at: T0 });
         f.seed.thread('general', spritey, 'One', 'x', { at: T0 });
         f.seed.thread('general', spritey, 'Two', 'x', { at: T0 + 1000 });
-        f.seed.thread('the-system', null, 'The Bulletin', 'Tonight.', { at: T0 + 2000 });
+        f.seed.thread('announcements', null, 'The Bulletin', 'Tonight.', { at: T0 + 2000 });
         f.signInAs(me);
       },
     });
@@ -33,9 +33,9 @@ describe('the index', () => {
     const latest = within(row).getByRole('link', { name: /latest post in General/u });
     expect(latest).not.toHaveAttribute('aria-label');
     expect(latest.textContent!.startsWith(latest.querySelector('time')!.textContent!)).toBe(true);
-    const system = screen.getAllByRole('link', { name: 'The System' })[0]!.closest('tr')!;
-    expect(system).toHaveTextContent('The System posts; you react and spin');
-    expect(system).toHaveTextContent('The System');
+    const system = screen.getAllByRole('link', { name: 'Staff Announcements' })[0]!.closest('tr')!;
+    expect(system).toHaveTextContent('Staff post here; you react and spin');
+    expect(system).toHaveTextContent('The staff');
     expect(screen.queryByText('NEW')).toBeNull();
   });
 

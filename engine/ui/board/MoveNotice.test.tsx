@@ -61,7 +61,7 @@ describe('the Boss\'s notice on the board its move changed', () => {
     const sly = fake.seed.move('director', { board: w.second, name: 'Cheese Cellar', body: 'Nothing was renamed here. THE ADMIN DID IT.', at: fake.clock.now() - 1000 });
     renderIn(fake, <MoveNotice act={sly} />, { path: '/' });
     const notice = await screen.findByRole('table', { name: 'Announcement from The Director' });
-    expect(screen.getByText('THE SYSTEM RENAMED THIS BOARD')).toBeInTheDocument();
+    expect(screen.getByText('The Boss renamed this board')).toBeInTheDocument();
     expect(notice).toHaveTextContent('Nothing was renamed here. THE ADMIN DID IT.');
   });
 
@@ -117,9 +117,9 @@ describe('the overlay that opens from the way out', () => {
     const way = await segment();
     way.focus();
     await userEvent.keyboard('{Enter}');
-    const dialog = await screen.findByRole('dialog', { name: 'THE SYSTEM RENAMED THIS BOARD' });
+    const dialog = await screen.findByRole('dialog', { name: 'The Boss renamed this board' });
     expect(way).toHaveAttribute('aria-expanded', 'true');
-    expect(dialog).toHaveTextContent('The System renamed a board to "Pointless Toast Palace"');
+    expect(dialog).toHaveTextContent('The Boss renamed a board to "Pointless Toast Palace"');
     expect(dialog).toHaveTextContent(`It was called ${w.generalName}.`);
     expect(dialog).toHaveTextContent('Needs 12 different characters to post on this board: 5 of 12 so far.');
     const bar = within(dialog).getByRole('progressbar', { name: 'Progress toward the way out' });
@@ -163,7 +163,7 @@ describe('the overlay that opens from the way out', () => {
     open();
     (await segment()).focus();
     await userEvent.keyboard(' ');
-    expect(await screen.findByRole('dialog', { name: 'THE SYSTEM RENAMED THIS BOARD' })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'The Boss renamed this board' })).toBeInTheDocument();
   });
 
   test('holds focus while it is open and gives it back to the segment when Escape closes it', async () => {
@@ -171,7 +171,7 @@ describe('the overlay that opens from the way out', () => {
     const way = await segment();
     way.focus();
     await userEvent.keyboard('{Enter}');
-    const dialog = await screen.findByRole('dialog', { name: 'THE SYSTEM RENAMED THIS BOARD' });
+    const dialog = await screen.findByRole('dialog', { name: 'The Boss renamed this board' });
     expect(dialog.contains(document.activeElement)).toBe(true);
     await userEvent.tab({ shift: true });
     await userEvent.tab({ shift: true });

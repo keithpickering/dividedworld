@@ -10,7 +10,7 @@
  *  - The note's words are the build's ("past seasons" where the board says "season reveal posts"); it is held by its place alone.
  *  - A row's words and dates are the story's (a date reads "9 days ago" for a while and then a date), so no row is compared.
  *  - The kinds' buttons are held by their words, place and size: the current one (All) is no link, so Posts and Seasons stand for the row's ends.
- *  - The build's nav is named Main and its staff board The System until the plan's Task 11 gives it its name, as in 02-board.
+ *  - The build's nav is named Main, as in 02-board.
  */
 import type { BoardManifest } from '../../board-match.ts';
 

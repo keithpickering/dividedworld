@@ -6,10 +6,9 @@
  * (engine/ui/board/MoveNotice.board.stories.tsx) draws them.
  *
  * Departures, each a decision:
- *  - The glass label's words are the build's, the plan's Task 11's to change: "THE SYSTEM RENAMED THIS BOARD" where the board draws "The Boss renamed this
- *    board" (the build sets the label in capitals), held by its place; Way out's count is the build's own words and held by its place alone. The glass
+ *  - The glass label reads "The Boss renamed this board", as the board draws it (the build sets it in capitals), held by its place; Way out's count is the build's own words and held by its place alone. The glass
  *    is the glass's own face (Barlow Condensed), held by neither type nor size.
- *  - The build's nav is named Main and its staff board The System until the plan's Task 11 gives it its name ("Staff Announcements"), as in 02-board; the
+ *  - The build's nav is named Main, as in 02-board; the
  *    host and tagline are not repeated, and the HUD is drawn for place only and is 01-main's.
  *  - The build's nav reads the renamed board's name (Pointless Toast Palace) where the board draws General, so its links are not compared; the notice stands
  *    43.9px lower with the board's name (the card banner keeps the room of a card's mark, as in 02-board), Start a thread and the thread 2.5px and 1.2px further

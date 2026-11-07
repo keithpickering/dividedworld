@@ -5,7 +5,7 @@
  * read at 414px (the screen's width and the 24px between screens) to the window's left.
  *
  * Departures, each a decision:
- *  - The label's words are the build's (Task 11 changes them), as in 11-move-notice; on the phone each of its segments keeps its words whole and Way out wraps
+ *  - The label's words are the board's (the build sets them in capitals), as in 11-move-notice; on the phone each of its segments keeps its words whole and Way out wraps
  *    under the label, which the glass's own face sets, so the label is held by its place and its width, not its type.
  *  - The label is in the flow on the phone, over the frame's top edge by 14px, so a label that wraps pushes the notice down and never covers its band: the notice
  *    stands 90.4px lower and 14.5px taller (the label's own line or two above it, and the band's room for it), its band and the Boss's link 14.2px lower in it, and

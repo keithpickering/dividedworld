@@ -25,7 +25,7 @@ import { ClassChip } from './ClassChip.tsx';
 import { Portrait } from './Portrait.tsx';
 import { dayAndTime, figure, spanWords, withArticle } from './format.ts';
 import { PreviewBox } from './PreviewBox.tsx';
-import { turnNamedWords, turnPreview } from './previews.ts';
+import { turnPreview } from './previews.ts';
 import './characters.css';
 
 export interface TurnDialogProps {
@@ -123,7 +123,7 @@ export function TurnDialog({ character, face, standing, nextSettlement, onClose,
             </label>
             <label className="kb-choice-option" data-kb-chosen={loudness === 'announced' || undefined}>
               <input type="radio" name="turn-loudness" checked={loudness === 'announced'} onChange={() => setLoudness('announced')} />
-              <span><b>Announced.</b> The System posts that {character.name} has Turned.</span>
+              <span><b>Announced.</b> {character.name}&apos;s own Promo says it has Turned.</span>
             </label>
             {/*
               The board's third tile, lit where the post names a class: the two names an announced
@@ -133,11 +133,11 @@ export function TurnDialog({ character, face, standing, nextSettlement, onClose,
               <legend className="kb-visually-hidden">Name in the post</legend>
               <label className="kb-turn-toggle" data-kb-chosen={showFrom || undefined}>
                 <input type="checkbox" checked={showFrom} onChange={(e) => setNamed({ ...named, was: e.target.checked })} />
-                <span><b>Name the old class.</b> Adds “{turnNamedWords({ was: now, to: '' }).old}” to the post.</span>
+                <span><b>Name the old class.</b> Adds “{now}” to the post.</span>
               </label>
               <label className="kb-turn-toggle" data-kb-chosen={showTo || undefined}>
                 <input type="checkbox" checked={showTo} onChange={(e) => setNamed({ ...named, to: e.target.checked })} />
-                <span><b>Name the new class.</b> {to ? `Adds “${turnNamedWords({ was: now, to: nameOf(to) }).new}” to the post, and reveals it.` : 'Adds the class you choose to the post, and reveals it.'}</span>
+                <span><b>Name the new class.</b> {to ? `Adds “${nameOf(to)}” to the post, and reveals it.` : 'Adds the class you choose to the post, and reveals it.'}</span>
               </label>
             </fieldset>
           </fieldset>

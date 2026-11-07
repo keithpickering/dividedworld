@@ -61,7 +61,7 @@ const manifest: BoardManifest = {
     { id: 'nav', role: 'navigation', name: 'Main', box: 'height', type: false, buildShift: { y: 33, height: 9.4 } },
     { id: 'nav-index', role: 'link', name: 'Index', within: 'nav', box: 'height', type: false, buildShift: { y: 36, height: 7 } },
     { id: 'nav-general', role: 'link', name: 'General', within: 'nav', origin: 'nav-index', box: 'position', type: false, buildShift: { x: 34.4 } },
-    { id: 'nav-system', role: 'link', name: 'The System', within: 'nav', origin: 'nav-index', box: 'position', type: false, buildShift: { x: 72.2 } },
+    { id: 'nav-system', role: 'link', name: 'The System', buildName: 'Staff Announcements', within: 'nav', origin: 'nav-index', box: 'position', type: false, buildShift: { x: 72.2 } },
 
     /*
      * The thread's own landmarks (the crumb, the title and its pager, and each post's author, rank, post line, permalink and actions) are

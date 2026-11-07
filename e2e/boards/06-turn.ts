@@ -39,7 +39,7 @@ const manifest: BoardManifest = {
   press: [
     { role: 'button', name: 'Turn Pipewrench' },
     { role: 'radio', name: 'Face' },
-    { role: 'checkbox', name: 'Name the old class. Adds “from Heel” to the post.' },
+    { role: 'checkbox', name: 'Name the old class. Adds “Heel” to the post.' },
   ],
   landmarks: [
     /*
@@ -103,8 +103,8 @@ const manifest: BoardManifest = {
     { id: 'name-old', role: 'text', name: 'ANNOUNCED WITH OLD CLASS', buildName: 'Name the old class.', within: 'loud', box: 'position', origin: 'loud' },
     { id: 'preview-head', role: 'text', name: 'What everyone will see', within: 'dialog', box: 'size' },
     /* The preview's words are the type scale's (the glass polish, design section 7): 15px where the board draws 12px, so "The System" is 1.25 times as wide. */
-    { id: 'preview-by', role: 'text', name: 'The System', within: 'dialog', box: 'size', buildSize: 15, buildShift: { width: 19.8 } },
-    { id: 'preview-line', role: 'text', name: 'Pipewrench has Turned. Now a Face. Before this, Pipewrench was a Heel.', buildName: 'Pipewrench has Turned from Heel', within: 'dialog', box: 'none', buildSize: 15 },
+    { id: 'preview-by', role: 'text', name: 'The System', buildName: 'Pipewrench', buildNth: -1, within: 'dialog', box: 'size', buildSize: 15, buildShift: { width: 19.8 } },
+    { id: 'preview-line', role: 'text', name: 'Pipewrench has Turned. Now a Face. Before this, Pipewrench was a Heel.', buildName: 'Pipewrench has Turned, leaving Heel.', within: 'dialog', box: 'none', buildSize: 15 },
 
     /*
      * The foot: Cancel and Confirm Turn are GlassButtons in one ButtonRow (the glass polish, design section 2, and the owner's correction that Reveal's

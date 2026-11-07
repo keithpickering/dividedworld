@@ -18,7 +18,7 @@ function world(fake: Fake, posts = 45) {
   for (let i = 1; i < posts; i++) fake.seed.post(thread, spritey, `post number ${i + 1}`, { at: T0 + i * 60_000 });
   fake.seed.card(spritey, act, 'whoops', { at: T0 + DAY });
   fake.seed.reveal(spritey, thread, { class: 'face', at: T0 + 2 * DAY });
-  const sys = fake.seed.thread('the-system', null, 'Turns', '');
+  const sys = fake.seed.thread('announcements', null, 'Turns', '');
   fake.seed.announceTurn(spritey, sys.thread, { at: T0 + 3 * DAY });
   fake.signInAs(me);
   return { spritey, thread };

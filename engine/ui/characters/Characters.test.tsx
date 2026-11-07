@@ -257,10 +257,9 @@ describe('the Turn', () => {
     expect(within(dialog).getByText(/takes effect at the next settlement/iu)).toBeInTheDocument();
 
     await userEvent.click(within(dialog).getByRole('checkbox', { name: /Name the old class/u }));
-    expect(preview).toHaveTextContent('Pipewrench has Turned from Face');
+    expect(preview).toHaveTextContent('Pipewrench has Turned, leaving Face.');
     await userEvent.click(within(dialog).getByRole('checkbox', { name: /Name the new class/u }));
     expect(preview).toHaveTextContent('Pipewrench has Turned from Face to Heel');
-    expect(preview).toHaveTextContent('Pipewrench revealed: Heel');
 
     await userEvent.click(within(dialog).getByRole('radio', { name: /^Silent/u }));
     expect(preview).toHaveTextContent(/Nobody is told/u);
@@ -302,7 +301,7 @@ describe('the Turn', () => {
     expect(within(loud).getByRole('checkbox', { name: /^Name the new class/u })).not.toBeChecked();
   });
 
-  /* A name quotes the words it adds to The System's post; the preview below is the post, so the two are held together. */
+  /* A name quotes the words it adds to the character's own Promo; the preview below is the post, so the two are held together. */
   test('says in each name the words it adds to the post, and the preview then shows them', async () => {
     const w = world();
     open(w);
@@ -327,7 +326,6 @@ describe('the Turn', () => {
     await userEvent.click(now);
     expect(preview).toHaveTextContent(quoted(now));
     expect(now.closest('label')).toHaveTextContent(/reveals/u);
-    expect(preview).toHaveTextContent('Pipewrench revealed: Heel');
   });
 
   test('cannot be confirmed until a class is chosen', async () => {
@@ -710,7 +708,7 @@ describe('My characters on the glass (the Roster board)', () => {
 
   test('a character that Turned, announced with its old class, says what it was', async () => {
     const w = world();
-    const turns = w.fake.seed.thread('the-system', null, 'Season 1: Who Turned', 'Every Turn.');
+    const turns = w.fake.seed.thread('announcements', null, 'Season 1: Who Turned', 'Every Turn.');
     w.fake.seed.announceTurn(w.pipe, turns.thread, { was: 'heel' });
     open(w);
     await ready();
@@ -973,7 +971,7 @@ describe('the Reveal over My characters: its fields and its foot (the Reveal boa
   test('says in one plain line, beside Cancel and the reveal, what will happen', async () => {
     const dialog = await reveal(world());
     const foot = dialog.querySelector('.kb-glass-form-foot')!;
-    expect(foot.children[0]).toHaveTextContent('The reveal is checked by The System and posted at once.');
+    expect(foot.children[0]).toHaveTextContent('The reveal is checked by the game and posted at once.');
     expect(within(foot as HTMLElement).getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
     expect(within(foot as HTMLElement).getByRole('button', { name: 'Reveal Pipewrench as a Face' })).toBeInTheDocument();
   });

@@ -2,7 +2,7 @@
  * A move in force, on the board it changed (the system plan, Task 12; mock-s1-move-notice.html C): the Boss's `move` Act drawn as a
  * period table under the board's description (a light band reading "Announcement from The Director", the Boss's words, its top reactions;
  * the board look's Task 10, docs/research/2026-11-06-board-look/11-move-notice.html), its top three reactions small, and on its corner
- * the Act's label in glass, as a card's mark breaks a post's frame: the long label ("THE SYSTEM RENAMED THIS BOARD"), then a plain
+ * the Act's label in glass, as a card's mark breaks a post's frame: the long label ("The Boss renamed this board", in capitals), then a plain
  * segment, "WAY OUT: 7 OF 12 POSTERS", which opens a glass overlay with the detail.
  *
  * Two voices, kept apart. The notice's words are the Boss's, in character, and may bluff (the fiction may lie). The glass is
@@ -36,9 +36,10 @@ import './move.css';
  * board's notice has it; a move's post in a thread has the label alone, so a page of announcements reads no progress per post).
  */
 export function MoveTag({ kind, way }: { readonly kind: string; readonly way?: ReactNode }) {
+  const { ui } = useKayfa();
   return (
     <span className="kb-move-tag" data-kb-move-kind={kind}>
-      <span className="kb-move-label">{moveLabel(kind)}</span>
+      <span className="kb-move-label">{moveLabel(kind, ui.copy.roleWord)}</span>
       {way}
     </span>
   );
@@ -68,7 +69,7 @@ function useNotice(act: Id): Loaded | 'failed' | 'none' | null {
 }
 
 export function MoveNotice({ act }: { readonly act: Id }) {
-  const { instance } = useKayfa();
+  const { instance, ui } = useKayfa();
   const loaded = useNotice(act);
   const [open, setOpen] = useState(false);
   const way = useRef<HTMLButtonElement>(null);
@@ -76,7 +77,7 @@ export function MoveNotice({ act }: { readonly act: Id }) {
   if (loaded === null || loaded === 'none') return null;
   if (loaded === 'failed') return <p className="kb-notice" data-kb-tone="refusal">The notice about this board could not be loaded. Reload the page to try again.</p>;
   const { notice, boss } = loaded;
-  const name = boss?.name ?? 'The System';
+  const name = boss?.name ?? ui.copy.roleWord;
   const emoji = (kind: string) => instance.reactions.find((r) => r.key === kind)?.emoji ?? readable(kind);
   return (
     <>
@@ -121,6 +122,7 @@ export function MoveNotice({ act }: { readonly act: Id }) {
 
 /** The overlay: what was done and when, the demand in words, a progress bar, the expiry, and that an admin can reverse it. Plain. */
 function MoveDetail({ loaded, onClose, returnFocusTo }: { readonly loaded: Loaded; readonly onClose: () => void; readonly returnFocusTo: () => HTMLElement | null }) {
+  const { ui } = useKayfa();
   const { notice, boards } = loaded;
   const kind = moveKind(notice.kind);
   const demand = notice.demand;
@@ -130,11 +132,11 @@ function MoveDetail({ loaded, onClose, returnFocusTo }: { readonly loaded: Loade
   const was = boards.find((b) => b.id === notice.params['board'])?.was ?? null;
   const unit = known && readProgress ? (readProgress.of === 1 ? demandKind(demand.kind)!.unit.one : demandKind(demand.kind)!.unit.many).toLowerCase() : '';
   return (
-    <Overlay title={moveLabel(notice.kind)} surface="log" kicker="This board" className="kb-move-overlay" onClose={onClose} returnFocusTo={returnFocusTo}>
+    <Overlay title={moveLabel(notice.kind, ui.copy.roleWord)} surface="log" kicker="This board" className="kb-move-overlay" onClose={onClose} returnFocusTo={returnFocusTo}>
       <div className="kb-move-detail">
         <h3>What was done</h3>
         <p>
-          {kind ? kind.template(notice.params) : moveLabel(notice.kind)}
+          {kind ? kind.template(notice.params, ui.copy.roleWord) : moveLabel(notice.kind, ui.copy.roleWord)}
           {was !== null && <> It was called {was}.</>} It landed {dayAndTime(notice.landedAt)}.
         </p>
         <h3>The way out</h3>

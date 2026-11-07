@@ -24,13 +24,12 @@ import { Origin } from '../spin/Origin.tsx';
 import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
 import { SpunInto } from '../spin/SpunInto.tsx';
 import { Reactions } from '../reactions/Reactions.tsx';
+import { useKayfa } from '../context.tsx';
 import { ThreadCtx, useThread, type ThreadContext } from './context.ts';
 import { AnnounceLine, LastEdited, MoveEndLine, MoveKeepLine, SystemPost, UnmaskLine, quoteLink, text, useHistory, when } from './lines.tsx';
 import { pageOf, threadHref } from './pages.ts';
 
 export { ThreadCtx, type ThreadContext };
-
-const SYSTEM = 'The System';
 
 interface Props {
   readonly act: Act;
@@ -39,8 +38,8 @@ interface Props {
   readonly slid: boolean;
 }
 
-/** A post's name for a reader and a screen reader: the character's, The System's, or "A character" where it cannot be shown. */
-const nameOf = (act: Act, person: PostbitPerson | undefined) => (act.character === null ? SYSTEM : person?.character.name ?? 'A character');
+/** A post's name for a reader and a screen reader: the character's, the staff's (`UiCopy.staffWord`, for an Act with no character), or "A character" where it cannot be shown. */
+const nameOf = (act: Act, person: PostbitPerson | undefined, staff: string) => (act.character === null ? staff : person?.character.name ?? 'A character');
 
 function Body({ act, name, person, editing, onDone, marks }: { readonly marks: ReactNode; readonly act: Act; readonly name: string; readonly person: PostbitPerson | undefined; readonly editing: boolean; readonly onDone: () => void }) {
   const { summary, tallies, mine, changed, plays, nameOf: casterName } = useThread();
@@ -146,6 +145,7 @@ function Actions({ act, editing, onEdit, editButton, spinOrigin, setSpinOrigin }
 
 export const ActArticle = memo(function ActArticle({ act, person, layout, slid }: Props) {
   const { thread, perPage, observer, plays, tallies, mine, nameOf: casterName, summary, know } = useThread();
+  const { ui } = useKayfa();
   const ref = useRef<HTMLElement>(null);
   const narrow = useNarrow();
   const seq = act.seq!;
@@ -155,7 +155,7 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
     observer.observe(el);
     return () => observer.unobserve(el);
   }, [observer]);
-  const name = nameOf(act, person);
+  const name = nameOf(act, person, ui.copy.staffWord);
   const [editing, setEditing] = useState(false);
   const editButton = useRef<HTMLButtonElement>(null);
   /* After an edit is saved or cancelled, focus goes back to the Edit button. */

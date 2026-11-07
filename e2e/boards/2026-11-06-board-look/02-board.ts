@@ -6,8 +6,7 @@
  * them. The HUD is drawn for place only and is 01-main's.
  *
  * Departures, each a decision:
- *  - The build's nav is named Main (its aria-label), the board's Boards; the staff board is the build's The System until it gets its name
- *    (the plan's Task 11), as in 01-index.
+ *  - The build's nav is named Main (its aria-label), the board's Boards.
  *  - The board's host and tagline are as in 01-index, and are not repeated here.
  *  - The story's backend clock stands at Oct 29, so a thread is hot on replies this week only if it has them within it: the threads are dated a
  *    week before the clock where the board draws Oct 5 and 6. The quiet thread's "spun from"
@@ -37,10 +36,10 @@ const manifest: BoardManifest = {
     { id: 'nav', role: 'navigation', name: 'Boards', buildName: 'Main', type: false },
     { id: 'nav-index', role: 'link', name: 'Index', within: 'nav' },
     { id: 'nav-general', role: 'link', name: 'General', within: 'nav' },
-    { id: 'nav-system', role: 'link', name: 'Staff Announcements', buildName: 'The System', within: 'nav', box: 'position', type: false },
+    { id: 'nav-system', role: 'link', name: 'Staff Announcements', within: 'nav', box: 'position', type: false },
     { id: 'crumb-index', role: 'link', name: 'Index', nth: 1, buildNth: 1, buildShift: { y: 8 } },
     { id: 'title', role: 'heading', name: 'General', box: 'position', buildShift: { y: 44 } },
-    { id: 'about', role: 'text', name: 'Anything and everything. The staff are watching.', buildName: 'Anything and everything. The System is watching.', box: 'position', buildShift: { y: 47 } },
+    { id: 'about', role: 'text', name: 'Anything and everything. The staff are watching.', box: 'position', buildShift: { y: 47 } },
     { id: 'start', role: 'button', name: 'Start a thread', box: 'position', buildShift: { y: 44 } },
     { id: 'threads', role: 'table', name: 'Threads on General, most recently posted first', type: false, buildShift: { y: 43, height: 12 } },
     { id: 'head-thread', role: 'columnheader', name: 'Thread', within: 'threads', origin: 'threads' },

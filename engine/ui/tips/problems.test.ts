@@ -23,7 +23,7 @@ const looks = (): Record<string, unknown> => ({
   face: { description: () => 'The crowd favorite. Earns from cheers.', hurtsBy: () => 'Hurt by boos.' },
   heel: { description: () => 'Earns heat.', hurtsBy: () => 'Hurt by the polite shrug.' },
 });
-const copy = { siteName: 'S', siteTagline: 't', shopName: 'Shop', reducedMotionCard: 'x' };
+const copy = { siteName: 'S', siteTagline: 't', roleWord: 'The Boss', staffWord: 'The staff', gameWord: 'the game', staffBoardTag: 'Staff post here; you react and spin', shopName: 'Shop', reducedMotionCard: 'x' };
 const ui = (onboarding: unknown, frontDoor: unknown = goodDoor(), marquees?: unknown, badges?: unknown) => ({
   onboarding: onboarding as OnboardingUi, frontDoor: frontDoor as FrontDoorUi, cards, classLooks: looks() as unknown as InstanceUi['classLooks'],
   copy: { ...copy, ...(marquees === undefined ? {} : { marquees: marquees as readonly string[] }), ...(badges === undefined ? {} : { badges: badges as InstanceUi['copy']['badges'] }) },
@@ -163,5 +163,12 @@ describe('instanceUiProblems', () => {
   });
   test('refuses a marquee over 20 characters, naming it', () => {
     assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), ['X'.repeat(21)]), rules), [`the marquee "${'X'.repeat(21)}" is 21 characters, over the 20 the sign holds`]);
+  });
+  test('refuses a copy that names no one who speaks for the board', () => {
+    for (const key of ['roleWord', 'staffWord', 'gameWord', 'staffBoardTag']) {
+      const poisoned = ui(good);
+      (poisoned.copy as Record<string, unknown>)[key] = ' ';
+      assert.deepEqual(instanceUiProblems(poisoned, rules), [`the copy has no ${key}`]);
+    }
   });
 });

@@ -88,6 +88,7 @@
 }
 
 .kb-move-label {
+  text-transform: uppercase;
   padding-left: 14px;
   font-style: italic;
   font-weight: 800;

@@ -6,7 +6,7 @@
  *
  * Departures, each a decision:
  *  - The labels' words are the build's: "Favorite Members" and "Current Mood" where the board draws "Favorite members" and "Current mood" (each fact's words
- *    are kept); the build's nav is named Main and its staff board The System until the plan's Task 11, as in 02-board.
+ *    are kept); the build's nav is named Main, as in 02-board.
  *  - The story's world is the move world's (engine/ui/board/move-world.ts): its log's four rows rename General and Off Topic (the board draws General for all
  *    four) and their dates are the clock's; its Posts and Joined are the world's. A log row is held by its place and its end, never by its words or date.
  *  - The crumb and the title stand 8.1px and 35.6px lower than the board draws them, and the About table 38.6px lower and 7.4px shorter, as in 08-profile; the log's
@@ -24,7 +24,7 @@ const manifest: BoardManifest = {
   landmarks: [
     { id: 'logo', role: 'text', buildRole: 'link', name: 'DIVIDED WORLD', buildName: 'Divided World' },
     { id: 'nav', role: 'navigation', name: 'Boards', buildName: 'Main', type: false },
-    { id: 'nav-system', role: 'link', name: 'Staff Announcements', buildName: 'The System', within: 'nav', box: 'position', type: false, buildShift: { x: 95.1 } },
+    { id: 'nav-system', role: 'link', name: 'Staff Announcements', within: 'nav', box: 'position', type: false, buildShift: { x: 95.1 } },
     { id: 'crumb-index', role: 'link', name: 'Index', nth: 1, buildNth: 1, buildShift: { y: 8.1 } },
     { id: 'title', role: 'heading', name: 'The Director', box: 'position', buildShift: { y: 35.6 } },
     { id: 'about', role: 'table', name: 'About The Director', type: false, buildShift: { y: 38.6, height: -7.4 } },

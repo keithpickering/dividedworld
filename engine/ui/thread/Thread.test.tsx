@@ -361,11 +361,11 @@ describe('the postbit in a thread', () => {
     expect(bit).toHaveTextContent('Revealed: Heel (Oct 3)');
   });
 
-  test('The System has a name and no postbit', async () => {
+  test('a null-character Act has the staff word for a name (staffWord) and no postbit', async () => {
     const w = world(1);
-    const sys = w.fake.seed.thread('the-system', null, 'Tally', 'Tonight, the board turns.');
+    const sys = w.fake.seed.thread('announcements', null, 'Tally', 'Tonight, the board turns.');
     renderIn(w.fake, <LoadedThread thread={sys.thread} />, { path: `/t/${sys.thread}` });
-    const article = await screen.findByRole('article', { name: /^Post 1 by The System/u });
+    const article = await screen.findByRole('article', { name: /^Post 1 by The staff/u });
     expect(within(article).queryByRole('group')).toBeNull();
     expect(article).toHaveTextContent('Tonight, the board turns.');
   });
@@ -447,10 +447,10 @@ describe('Acts that are not posts', () => {
 
   test('The System\'s tally lists debuts and announced Turns by name and class', async () => {
     const w = world(1);
-    const sys = w.fake.seed.thread('the-system', null, 'Tally', '');
+    const sys = w.fake.seed.thread('announcements', null, 'Tally', '');
     w.fake.seed.post(sys.thread, null, '', { payload: { debuts: [{ character: w.spritey, name: 'Spritey', class: 'face' }, { character: w.pipe, name: 'Pipewrench' }], turns: [{ character: w.pipe, name: 'Pipewrench', loudness: 'announced', was: 'face', class: 'heel' }] } });
     renderIn(w.fake, <LoadedThread thread={sys.thread} />, { path: `/t/${sys.thread}` });
-    const line = await screen.findByRole('article', { name: /^Post 2 by The System/u });
+    const line = await screen.findByRole('article', { name: /^Post 2 by The staff/u });
     expect(line).toHaveTextContent('Spritey debuts as Face');
     expect(line).toHaveTextContent('Pipewrench debuts');
     expect(line).toHaveTextContent('Pipewrench has Turned from Face to Heel');
@@ -1142,7 +1142,7 @@ describe('the announcer', () => {
     deliver(() => tapped().onAct?.(live(w.thread, 0, w.pipe, { kind: 'card', seq: null, targetActId: w.ids[1]!, payload: { card: 'whoops' }, currentPayload: { card: 'whoops' } })));
     deliver(() => tapped().onAct?.(live(w.thread, 6, w.pipe, { kind: 'unmask', payload: { class: 'heel', message: '' }, currentPayload: { class: 'heel', message: '' } })));
     deliver(() => tapped().onAct?.(live(w.thread, 7, null, { kind: 'tally', payload: { body: 'x' }, currentPayload: { body: 'x' } })));
-    await screen.findByRole('article', { name: /^Post 7 by The System/u });
+    await screen.findByRole('article', { name: /^Post 7 by The staff/u });
     expect(post(6)).toBeInTheDocument();
     expect(await within(post(2)).findByRole('button', { name: 'Whoops!, 1 play. Opens the cards on this post.' })).toBeInTheDocument();
     expect(announcer()).toBeEmptyDOMElement();

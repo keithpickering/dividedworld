@@ -73,6 +73,17 @@ export interface UiCopy {
   /** The banner's name, and the line under it. */
   readonly siteName: string;
   readonly siteTagline: string;
+  /**
+   * Who speaks for the board, in the instance's words, so the engine names no one. `roleWord` is the role that runs the board and
+   * signs its moves ("The Boss"); `staffWord` is the staff as a whole, the name of an unsigned Act's author and of the index's
+   * last post by one ("The staff"); `gameWord` is the game in the glass's plain voice, in the middle of a sentence ("the game":
+   * "checked by the game"); `staffBoardTag` is the tag on the staff's board in the index ("Staff post here; you react and spin").
+   * Each is non-empty text; `instanceUiProblems` refuses one that is not.
+   */
+  readonly roleWord: string;
+  readonly staffWord: string;
+  readonly gameWord: string;
+  readonly staffBoardTag: string;
   /** What the shop is called, in plain words: the log's line and the machine's group label say it. */
   readonly shopName: string;
   /**

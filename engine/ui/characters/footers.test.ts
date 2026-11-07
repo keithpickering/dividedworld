@@ -11,17 +11,17 @@ const base = { name: 'Waiting Wanda', className: 'Face' } as const;
 
 test('New character says what making the character does, for each of the six ways it can debut', () => {
   const said = (timing: 'now' | 'tally', loudness: 'silent' | 'announced' | 'with_class', o: { name?: string; className?: string } = {}) => newCharacterFooter({ ...base, ...o, timing, loudness });
-  assert.equal(said('now', 'announced'), 'Waiting Wanda is on the board as soon as you make it, and The System announces it. Its class stays yours alone.');
+  assert.equal(said('now', 'announced'), 'Waiting Wanda is on the board as soon as you make it, and its own Promo announces it. Its class stays yours alone.');
   assert.equal(said('now', 'silent'), 'Waiting Wanda is on the board as soon as you make it. Nobody is told, and its first post is its entrance. Its class stays yours alone.');
-  assert.equal(said('now', 'with_class'), "Waiting Wanda is on the board as soon as you make it, and The System announces it as a Face. That stays public, and can't be taken back.");
-  assert.equal(said('tally', 'announced'), 'Waiting Wanda waits, seen by no one but you, and debuts at the next settlement, announced by The System. Its class stays yours alone.');
+  assert.equal(said('now', 'with_class'), "Waiting Wanda is on the board as soon as you make it, and its own Promo announces it as a Face. That stays public, and can't be taken back.");
+  assert.equal(said('tally', 'announced'), 'Waiting Wanda waits, seen by no one but you, and debuts at the next settlement, announced in its own Promo. Its class stays yours alone.');
   assert.equal(said('tally', 'silent'), 'Waiting Wanda waits, seen by no one but you, and appears at the next settlement without a word. Its class stays yours alone.');
   assert.equal(said('tally', 'with_class'), "Waiting Wanda waits, seen by no one but you, and debuts at the next settlement, announced as a Face. That stays public, and can't be taken back.");
 });
 
 test('New character names no one yet and no class yet without breaking the sentence', () => {
-  assert.equal(newCharacterFooter({ name: '  ', className: '', timing: 'now', loudness: 'announced' }), 'Your character is on the board as soon as you make it, and The System announces it. Its class stays yours alone.');
-  assert.equal(newCharacterFooter({ name: 'Wanda', className: '', timing: 'now', loudness: 'with_class' }), "Wanda is on the board as soon as you make it, and The System announces it with the class you choose. That stays public, and can't be taken back.");
+  assert.equal(newCharacterFooter({ name: '  ', className: '', timing: 'now', loudness: 'announced' }), 'Your character is on the board as soon as you make it, and its own Promo announces it. Its class stays yours alone.');
+  assert.equal(newCharacterFooter({ name: 'Wanda', className: '', timing: 'now', loudness: 'with_class' }), "Wanda is on the board as soon as you make it, and its own Promo announces it with the class you choose. That stays public, and can't be taken back.");
   assert.equal(newCharacterFooter({ name: 'Wanda', className: 'Underdog', timing: 'tally', loudness: 'with_class' }), "Wanda waits, seen by no one but you, and debuts at the next settlement, announced as an Underdog. That stays public, and can't be taken back.");
 });
 
@@ -32,7 +32,7 @@ test('the Debut dialog says when the character debuts and that it can be dropped
 });
 
 test('the Reveal modal says one thing', () => {
-  assert.equal(revealFooter(), 'The reveal is checked by The System and posted at once.');
+  assert.equal(revealFooter('the game'), 'The reveal is checked by the game and posted at once.');
 });
 
 test('untilWords counts a time off in the largest two units, never under a minute', () => {

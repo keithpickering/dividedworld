@@ -46,13 +46,13 @@ export const ManyThreadsPageTwo: Story = {
   },
 };
 export const TheSystemsBoard: Story = {
-  args: { slug: 'the-system' },
+  args: { slug: 'announcements' },
   parameters: {
     world: ((fake, instance) => {
       const w = players(fake, instance);
       fake.seed.thread(w.system, null, 'The Bulletin', 'Tonight.', { at: T0 });
     }) satisfies World,
-    path: '/b/the-system',
+    path: '/b/announcements',
   },
 };
 export const SignedOut: Story = { parameters: { world: (() => {}) satisfies World, path: '/b/general' } };

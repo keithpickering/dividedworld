@@ -119,6 +119,11 @@ export const instanceUi: InstanceUi = Object.freeze({
   copy: Object.freeze({
     siteName: 'Divided World',
     siteTagline: 'dw.gripe',
+    // Who speaks for the board: the glass names no one but these (the board look design, section 7).
+    roleWord: 'The Boss',
+    staffWord: 'The staff',
+    gameWord: 'the game',
+    staffBoardTag: 'Staff post here; you react and spin',
     // The footer's 80 by 15 badges: pairs of short words, decoration in the footer's pixel face (Silkscreen, fonts/).
     badges: Object.freeze([Object.freeze(['Game', 'On'] as const), Object.freeze(['Masks', 'On'] as const), Object.freeze(['Kilter', 'Off'] as const)]),
     // What the log and the machine's group label call the shop, in plain words; the sign draws one of `marquees`.

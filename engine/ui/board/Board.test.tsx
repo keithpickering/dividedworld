@@ -277,17 +277,17 @@ describe('the row', () => {
   });
 });
 
-describe('The System\'s board', () => {
+describe('the staff board', () => {
   test('is read-only: no new-thread form, and a plain note says why', async () => {
-    renderInWorld(<LoadedBoard slug="the-system" />, {
-      seed: (f) => { const w = world(f); f.seed.thread('the-system', null, 'The Bulletin', 'Tonight.', { at: T0 }); return w; },
+    renderInWorld(<LoadedBoard slug="announcements" />, {
+      seed: (f) => { const w = world(f); f.seed.thread('announcements', null, 'The Bulletin', 'Tonight.', { at: T0 }); return w; },
     });
     await screen.findByRole('link', { name: 'The Bulletin' });
     expect(screen.queryByRole('form', { name: 'Start a thread' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Start a thread' })).toBeNull();
     expect(screen.queryByRole('textbox', { name: 'Title' })).toBeNull();
-    expect(screen.getByText(/only The System posts here/i)).toBeInTheDocument();
-    expect(rowOf('The Bulletin')).toHaveTextContent('The System');
+    expect(screen.getByText(/only the staff post here/i)).toBeInTheDocument();
+    expect(rowOf('The Bulletin')).toHaveTextContent('The staff');
   });
 
   test('the ordinary board has a "Start a thread" button that opens the form in place, above the list, with focus on the title', async () => {
@@ -609,7 +609,7 @@ describe('a move in force on the board', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Pointless Toast Palace' })).toBeInTheDocument();
     expect(screen.getByText('Welcome to the Pointless Toast Palace. Please butter responsibly.')).toBeInTheDocument();
     const notice = await screen.findByRole('table', { name: 'Announcement from The Director' });
-    expect(screen.getByText('THE SYSTEM RENAMED THIS BOARD')).toBeInTheDocument();
+    expect(screen.getByText('The Boss renamed this board')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^WAY OUT: 5 OF 12 POSTERS/u })).toBeInTheDocument();
     expect(within(notice).getByRole('list', { name: 'Reactions' }).querySelectorAll('li')).toHaveLength(3);
     expect(seeded.inForce).toBeTruthy();

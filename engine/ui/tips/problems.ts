@@ -20,6 +20,10 @@ export const BADGES_MAX = 6;
 
 export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 'frontDoor' | 'cards' | 'classLooks'>, instance: Pick<Instance, 'reactions' | 'ranks' | 'classes' | 'cards' | 'settings'>): string[] {
   const out: string[] = [];
+  for (const key of ['roleWord', 'staffWord', 'gameWord', 'staffBoardTag'] as const) {
+    const word: unknown = ui.copy?.[key];
+    if (typeof word !== 'string' || word.trim() === '') out.push(`the copy has no ${key}`);
+  }
   const marquees: unknown = ui.copy?.marquees;
   if (marquees !== undefined) {
     if (!Array.isArray(marquees) || marquees.length === 0) out.push('the copy has a marquees list with nothing in it');

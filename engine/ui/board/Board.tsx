@@ -13,6 +13,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useKayfa } from '../context.tsx';
+import { lowerFirst } from '../copy-words.ts';
 import type { Act, Board, BoardPage, Character, Id, PinnedThread, ThreadSummary } from '../data/api.ts';
 import { useUntil } from '../cards/Effects.tsx';
 import { LensProvider } from '../cards/Lens.tsx';
@@ -135,7 +136,7 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
   const pages = Math.max(1, Math.ceil(total / THREADS_PER_PAGE));
   const pager = (where: 'top' | 'bottom') => pages > 1 && <Pager slug={slug} page={page} pages={pages} where={where} />;
 
-  const nameOf = (id: Id | null) => (id === null ? 'The System' : characters.get(id)?.name ?? 'A character');
+  const nameOf = (id: Id | null) => (id === null ? ui.copy.staffWord : characters.get(id)?.name ?? 'A character');
   return (
     <div className="kb-board" data-kb-board={board.slug}>
       <LensProvider admin={admin}>
@@ -151,7 +152,7 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
       <p className="kb-board-description kb-muted">{board.description}</p>
       {board.moveAct !== null && <MoveNotice key={board.moveAct} act={board.moveAct} />}
       {board.isSystem
-        ? <p className="kb-board-readonly kb-small">Only The System posts here. You can react to what it says, and spin a thread from it.</p>
+        ? <p className="kb-board-readonly kb-small">Only {lowerFirst(ui.copy.staffWord)} post here. You can react to what they say, and spin a thread from it.</p>
         : <NewThread key={board.slug} board={board.slug} />}
       {threads.length === 0 && state.pins.length === 0 ? (
         <p className="kb-board-empty">No threads here yet.</p>
@@ -267,6 +268,7 @@ function Legend({ hot }: { readonly hot: number }) {
 }
 
 function ThreadRow({ t, loaded, perPage, hot, mark = null }: { readonly t: ThreadSummary; readonly loaded: Loaded; readonly perPage: number; readonly hot: number; readonly mark?: React.ReactNode }) {
+  const { ui } = useKayfa();
   const { reading, views, characters } = loaded;
   const read = reading[t.id] ?? 0;
   const isNew = read < t.lastSeq;
@@ -295,7 +297,7 @@ function ThreadRow({ t, loaded, perPage, hot, mark = null }: { readonly t: Threa
         <div className="kb-thread-meta kb-small">
           <span className="kb-thread-started">
             <Who character={t.firstCharacter ? characters.get(t.firstCharacter) : undefined} name={starter ?? 'S'}>
-              {t.firstCharacter ? <Link to={`/c/${encodeURIComponent(t.firstCharacter)}`}>{starter ?? 'A character'}</Link> : <span className="kb-system-name">The System</span>}
+              {t.firstCharacter ? <Link to={`/c/${encodeURIComponent(t.firstCharacter)}`}>{starter ?? 'A character'}</Link> : <span className="kb-system-name">{ui.copy.staffWord}</span>}
             </Who>
           </span>
           {isNew && (
@@ -317,7 +319,7 @@ function ThreadRow({ t, loaded, perPage, hot, mark = null }: { readonly t: Threa
         <span className="kb-thread-sep" aria-hidden="true"> · </span>
         <span className="kb-thread-last-label">last: </span>
         <Who character={t.lastCharacter ? characters.get(t.lastCharacter) : undefined} name={last ?? 'S'}>
-          {t.lastCharacter ? <Link to={`/c/${encodeURIComponent(t.lastCharacter)}`}>{last ?? 'A character'}</Link> : <span className="kb-system-name">The System</span>}
+          {t.lastCharacter ? <Link to={`/c/${encodeURIComponent(t.lastCharacter)}`}>{last ?? 'A character'}</Link> : <span className="kb-system-name">{ui.copy.staffWord}</span>}
         </Who>
         <span className="kb-thread-sep" aria-hidden="true">, </span>
         <br />

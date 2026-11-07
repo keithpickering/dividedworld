@@ -11,7 +11,7 @@
  *    by their height and is compared from its own band. The avatar is decoration (the name beside it says who) and is not compared.
  *  - The words and numbers are the story's: its Aura, rank and counts are not the board's (a rank and its Aura agree in the build; the board's
  *    1.85 is a Main Eventer's), so a fact is held by its label and its place, never by its value; Place's link and the class fact's words are the same.
- *  - The build's nav is named Main and its staff board The System until the plan's Task 11 gives it its name, as in 02-board; the host and tagline are not repeated.
+ *  - The build's nav is named Main, as in 02-board; the host and tagline are not repeated.
  *  - The story's times are read against the real clock, so no time is a landmark; a record row is held by its place and its words.
  */
 import type { BoardManifest } from '../../board-match.ts';
@@ -25,7 +25,7 @@ const manifest: BoardManifest = {
     { id: 'nav', role: 'navigation', name: 'Boards', buildName: 'Main', type: false },
     { id: 'nav-index', role: 'link', name: 'Index', within: 'nav' },
     { id: 'nav-general', role: 'link', name: 'General', within: 'nav' },
-    { id: 'nav-system', role: 'link', name: 'Staff Announcements', buildName: 'The System', within: 'nav', box: 'position', type: false },
+    { id: 'nav-system', role: 'link', name: 'Staff Announcements', within: 'nav', box: 'position', type: false },
     { id: 'crumb-index', role: 'link', name: 'Index', nth: 1, buildNth: 1, buildShift: { y: 8.1 } },
     { id: 'title', role: 'heading', name: 'Spritey', buildShift: { y: 35.6 } },
     { id: 'about', role: 'table', name: 'About Spritey', type: false, buildShift: { y: 38.6, height: -33.4 } },

@@ -40,7 +40,7 @@ function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b',
     characters: vi.fn(async (ids: readonly string[]) => ids.map((id) => pub(id, id))),
     boards: async () => {
       if (!signedIn) throw new Error('reads answer only for a session');
-      return [{ id: 'g', slug: 'general', name: 'General' }, { id: 's', slug: 'the-system', name: 'The System' }];
+      return [{ id: 'g', slug: 'general', name: 'General' }, { id: 's', slug: 'announcements', name: 'The System' }];
     },
     nextSettlementAt: async () => '2026-10-31T08:17:00Z',
     /* The frame holds the page's tips (engine/ui/tips/Tips.tsx), which read the account's state; these have them off. */

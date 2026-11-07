@@ -154,7 +154,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   }, [api]);
 
   /* A character's name as the thread knows it: read before the posts that name it are drawn. */
-  const nameOf = useCallback((id: Id | null) => (id === null ? 'The System' : people.current.get(id)?.character.name ?? 'A character'), []);
+  const nameOf = useCallback((id: Id | null) => (id === null ? ui.copy.staffWord : people.current.get(id)?.character.name ?? 'A character'), [ui.copy.staffWord]);
 
   /*
    * A page document taken into the stores: its authors, the plays on its posts and above them with their saved states, the player's releases
@@ -386,7 +386,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
       /* New posts only: an unmask or a tally still appears, and is not announced. */
       if (a.kind !== 'post' || announcedIds.current.has(a.id)) return;
       announcedIds.current.add(a.id);
-      const name = a.character === null ? 'The System' : people.current.get(a.character)?.character.name ?? 'a character';
+      const name = a.character === null ? ui.copy.staffWord : people.current.get(a.character)?.character.name ?? 'a character';
       setLines((l) => [...l, { key: ++lineKey.current, text: `New post by ${name}` }].slice(-ANNOUNCED));
     };
     const listener: ThreadListener = {
@@ -437,7 +437,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
       },
     };
     return api.subscribeThread(thread, listener);
-  }, [api, thread, ensurePeople, tallies, plays, effects]);
+  }, [api, thread, ensurePeople, tallies, plays, effects, ui.copy.staffWord]);
 
   /*
    * The window between the server reading the document and the subscription above being set up: a post written in it is neither in the

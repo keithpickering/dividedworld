@@ -5,8 +5,6 @@
  * draws them. The HUD is drawn for place only and is 01-main's.
  *
  * Departures, each a decision:
- *  - The staff board is the build's The System, named so until the staff board gets its name, description and tag (the board-look plan,
- *    Task 11), so its name, its description and its tag are compared by the build's own words and, where a word differs, by place only.
  *  - The build's nav is named Main (its aria-label), the board's Boards.
  *  - The board's host, "dw.gripe", stands at the banner's right with the meter; the build's tagline of that name stands beside the name and
  *    the build's own address (the page's host) is what stands at the right, so the tagline is compared by its type alone.
@@ -27,16 +25,16 @@ const manifest: BoardManifest = {
     { id: 'nav', role: 'navigation', name: 'Boards', buildName: 'Main', type: false },
     { id: 'nav-index', role: 'link', name: 'Index', within: 'nav', box: 'position' },
     { id: 'nav-general', role: 'link', name: 'General', within: 'nav', box: 'position' },
-    { id: 'nav-system', role: 'link', name: 'Staff Announcements', buildName: 'The System', within: 'nav', box: 'position', type: false },
+    { id: 'nav-system', role: 'link', name: 'Staff Announcements', within: 'nav', box: 'position', type: false },
     { id: 'title', role: 'heading', name: 'Index' },
     { id: 'boards', role: 'table', name: 'Boards', type: false },
     { id: 'head-board', role: 'columnheader', name: 'Board', within: 'boards' },
     { id: 'head-threads', role: 'columnheader', name: 'Threads', within: 'boards' },
     { id: 'head-last', role: 'columnheader', name: 'Last post', within: 'boards' },
     { id: 'general', role: 'link', name: 'General', within: 'boards' },
-    { id: 'general-about', role: 'text', name: 'Anything and everything. The staff are watching.', buildName: 'Anything and everything. The System is watching.', within: 'boards', box: 'position' },
-    { id: 'system', role: 'link', name: 'Staff Announcements', buildName: 'The System', within: 'boards', box: 'height', type: false },
-    { id: 'system-tag', role: 'text', name: 'Staff post here; you react and spin', buildName: 'The System posts; you react and spin', within: 'boards', box: 'none', type: false },
+    { id: 'general-about', role: 'text', name: 'Anything and everything. The staff are watching.', within: 'boards', box: 'position' },
+    { id: 'system', role: 'link', name: 'Staff Announcements', within: 'boards', box: 'height', type: false },
+    { id: 'system-tag', role: 'text', name: 'Staff post here; you react and spin', within: 'boards', box: 'none', type: false },
     { id: 'last-who', role: 'link', name: 'Mrs. Hooligan', within: 'boards', box: 'position' },
     { id: 'last-time', role: 'link', name: 'Oct 6, 2026', buildName: 'Oct 6, 2026 — latest post in General', within: 'boards', box: 'position' },
     { id: 'none-yet', role: 'text', name: 'None yet', within: 'boards', box: 'none' },
