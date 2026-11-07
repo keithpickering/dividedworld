@@ -18,6 +18,8 @@ export interface ThreadContext {
   readonly visits?: ReadonlyMap<Id, Visit>;
   /** A character's name as the thread knows it, for a card tag's caster: "A character" where it could not be read, The System's for none. */
   readonly nameOf: (character: Id | null) => string;
+  /** A character's square picture URL as the thread knows it (read with the same people as `nameOf`), null for none or an unknown character. */
+  readonly faceOf: (character: Id | null) => string | null;
   /**
    * Read these characters so the thread can name them (a card tag's caster is named before it is drawn). A play the player
    * makes on a post is added after its caster is known, since a tag is not redrawn when a name arrives; a thread drawn

@@ -53,7 +53,7 @@ function OnePost() {
       mine.merge(act.id, await api.myReactions([act.id]));
       setRead({
         act, person,
-        context: { thread, perPage: settings.postsPerPage, summary, tallies, mine, plays: createPlays(), nameOf: () => 'A character', observer: null, quote: null, changed: () => {} },
+        context: { thread, perPage: settings.postsPerPage, summary, tallies, mine, plays: createPlays(), nameOf: () => 'A character', faceOf: () => null, observer: null, quote: null, changed: () => {} },
       });
     })();
   }, [api, settings, thread, seq, tallies, mine]);

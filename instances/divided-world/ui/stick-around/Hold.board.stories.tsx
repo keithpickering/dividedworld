@@ -69,7 +69,7 @@ function HeldPost({ stage, long = false, inked = false }: { readonly stage: Hold
       }
       setRead({
         act, person,
-        context: { thread, perPage: settings.postsPerPage, summary, tallies, mine, plays, nameOf: () => 'Gloomba', observer: null, quote: null, changed: () => {} },
+        context: { thread, perPage: settings.postsPerPage, summary, tallies, mine, plays, nameOf: () => 'Gloomba', faceOf: () => null, observer: null, quote: null, changed: () => {} },
       });
     })();
   }, [api, settings, ui, thread, seq, tallies, mine, long, inked]);

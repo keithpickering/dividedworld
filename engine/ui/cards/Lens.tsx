@@ -456,7 +456,7 @@ const NAMES_SHOWN = 3;
 function Who({ plays, nameOf, inkOfPlay, card, unfolded, onToggle, ...row }: Omit<RowProps, 'play' | 'caster' | 'ink'> & {
   /** The ink of each play, as the marks draw it. */
   readonly inkOfPlay: (play: CardPlay) => string | undefined;
-  readonly plays: readonly CardPlay[]; readonly nameOf: (character: Id | null) => string; readonly unfolded: boolean; readonly onToggle: () => void;
+  readonly plays: readonly CardPlay[]; readonly nameOf: (character: Id | null) => string; readonly faceOf: (character: Id | null) => string | null; readonly unfolded: boolean; readonly onToggle: () => void;
 }) {
   const id = useId();
   const casters = [...new Set(plays.map((p) => nameOf(p.caster)))];
@@ -488,6 +488,8 @@ export interface LensProps {
   readonly compare: boolean;
   readonly to: string | null;
   readonly nameOf: (character: Id | null) => string;
+  /** A character's picture URL, or null for none. */
+  readonly faceOf: (character: Id | null) => string | null;
   /** The strip of marks the Lens opened from: where the mark of its kind (or the "+N" that hides it) is found again if the mark that opened it has left the page. */
   readonly strip?: () => HTMLElement | null;
   /** Spin a thread from a play: the Lens has closed. */
@@ -503,7 +505,7 @@ export interface LensProps {
   readonly form?: LensForm | undefined;
 }
 
-export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, strip, onSpin, where = 'post', moments = true, visit, form }: LensProps) {
+export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, faceOf, strip, onSpin, where = 'post', moments = true, visit, form }: LensProps) {
   const { instance, ui } = useKayfa();
   const here = usePlays(plays, post);
   const narrow = useSheet();
@@ -674,7 +676,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
           <div className="kb-lens-section kb-lens-act"><Kit card={name} controls={view.controls} ink={ink} /></div>
         )}
         {!onVisit && !onForm && <Who
-          plays={rowPlays} inkOfPlay={(p) => inkOf(ui, p, [...ofKind].sort(inPlayOrder))} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} card={name} view={view} tallies={tallies} mine={mine} compare={compare} to={to} moments={moments} store={plays} admin={admin} now={now}
+          plays={rowPlays} inkOfPlay={(p) => inkOf(ui, p, [...ofKind].sort(inPlayOrder))} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} faceOf={faceOf} card={name} view={view} tallies={tallies} mine={mine} compare={compare} to={to} moments={moments} store={plays} admin={admin} now={now}
           onSpin={(play, spinName) => { store.close(); onSpin(play, spinName, open.opener); }}
         />}
       </div>
