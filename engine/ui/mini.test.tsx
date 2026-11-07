@@ -1,7 +1,8 @@
 import { render, screen } from '@testing-library/react';
-import { expect, test } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 import { Ago, ago, useSignedIn, Who } from './mini.tsx';
 import { useKayfa } from './context.tsx';
+import { widthOf } from './test-width.ts';
 import { renderInWorld } from './test-world.tsx';
 
 test('Ago says how long ago against a clock it is given, like ago()', () => {
@@ -46,4 +47,37 @@ test('Who is one unit: the mini avatar (hidden from assistive tech) and the name
   expect(unit.firstElementChild).toHaveClass('kb-mini');
   expect(unit.firstElementChild).toHaveAttribute('aria-hidden', 'true');
   expect(unit.firstElementChild).toHaveTextContent('S');
+});
+
+afterEach(() => vi.unstubAllGlobals());
+
+/* The year drops only on a phone and only in the current year, against the clock the page reads (`now`, else Date.now()), so no test depends on the calendar date. */
+test('a date in the current year drops its year at 390 and keeps it at 1440', () => {
+  const now = Date.parse('2026-11-07T12:00:00Z');
+  const at = '2026-10-05T12:00:00Z';
+  widthOf(390);
+  const phone = render(<Ago at={at} now={now} />);
+  expect(phone.container.querySelector('time')).toHaveTextContent(/^Oct 5$/u);
+  phone.unmount();
+  widthOf(1440);
+  render(<Ago at={at} now={now} />);
+  expect(screen.getByText('Oct 5, 2026')).toBeInTheDocument();
+});
+
+test('a date from an earlier year keeps its year on a phone', () => {
+  widthOf(390);
+  render(<Ago at="2025-10-05T12:00:00Z" now={Date.parse('2026-11-07T12:00:00Z')} />);
+  expect(screen.getByText('Oct 5, 2025')).toBeInTheDocument();
+});
+
+test('the year is against the clock the page is given, so the calendar date is never the test\'s', () => {
+  widthOf(390);
+  render(<Ago at="2026-10-05T12:00:00Z" now={Date.parse('2027-01-20T12:00:00Z')} />);
+  expect(screen.getByText('Oct 5, 2026')).toBeInTheDocument();
+});
+
+test('a relative time is the same on a phone', () => {
+  widthOf(390);
+  render(<Ago at="2026-10-29T11:58:00Z" now={Date.parse('2026-10-29T12:00:00Z')} />);
+  expect(screen.getByText('2 min ago')).toBeInTheDocument();
 });

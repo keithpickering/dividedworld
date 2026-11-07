@@ -12,6 +12,7 @@
 import { memo, type CSSProperties, type ReactNode } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { useKayfa } from '../context.tsx';
+import { useNarrow } from '../media.ts';
 import type { Character } from '../data/api.ts';
 import { rankIndex } from '../../rules/ranks.ts';
 import { monthYear, shortDate } from './dates.ts';
@@ -70,6 +71,9 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
 }) {
   const { instance, ui } = useKayfa();
   const { character: c } = person;
+  /* A stacked postbit, chosen or forced on a phone, drops Posts and Joined: the profile carries them a tap away (the board look design, section 3). */
+  const narrow = useNarrow();
+  const counts = layout === 'side' && !narrow;
   const index = rankIndex(instance.ranks, person.standing);
   const rank = instance.ranks[index]?.name ?? '';
   const className = (key: string | undefined) => (key === undefined ? undefined : instance.classes.find((k) => k.key === key)?.name ?? key);
@@ -90,10 +94,12 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
             {instance.ranks.length > 0 && <Pips ranks={instance.ranks.length} index={index} name={rank} style={pipImages} />}
           </span>
         )}
-        <span className="kb-postbit-counts kb-small kb-muted">
-          <span>Posts: {person.posts}</span>
-          {joined && <span>Joined {joined}</span>}
-        </span>
+        {counts && (
+          <span className="kb-postbit-counts kb-small kb-muted">
+            <span>Posts: {person.posts}</span>
+            {joined && <span>Joined {joined}</span>}
+          </span>
+        )}
         {!c.staff && person.revealed && (
           <span className="kb-postbit-class kb-small">
             <span>Revealed: {className(person.revealed.class)} ({shortDate(person.revealed.at)})</span>

@@ -312,12 +312,14 @@ function ThreadRow({ t, loaded, perPage, hot, mark = null }: { readonly t: Threa
         </div>
       </td>
       <td role="cell" className="kb-thread-replies kb-num"><span className="kb-num">{t.replies}</span><span className="kb-thread-unit"> replies</span></td>
-      <td role="cell" className="kb-thread-views kb-num"><span className="kb-num">{views[t.id] ?? 0}</span><span className="kb-thread-unit"> views</span></td>
+      <td role="cell" className="kb-thread-views kb-num"><span className="kb-thread-sep" aria-hidden="true"> · </span><span className="kb-num">{views[t.id] ?? 0}</span><span className="kb-thread-unit"> views</span></td>
       <td role="cell" className="kb-thread-last kb-small">
+        <span className="kb-thread-sep" aria-hidden="true"> · </span>
         <span className="kb-thread-last-label">last: </span>
         <Who character={t.lastCharacter ? characters.get(t.lastCharacter) : undefined} name={last ?? 'S'}>
           {t.lastCharacter ? <Link to={`/c/${encodeURIComponent(t.lastCharacter)}`}>{last ?? 'A character'}</Link> : <span className="kb-system-name">The System</span>}
         </Who>
+        <span className="kb-thread-sep" aria-hidden="true">, </span>
         <br />
         <Link to={threadHref(t.id, pagesInThread, t.lastSeq)} className="kb-thread-last-link kb-muted"><Ago at={t.lastAt} /><span className="kb-visually-hidden"> — latest post in {t.title}</span></Link>
       </td>

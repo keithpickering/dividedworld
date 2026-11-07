@@ -16,6 +16,7 @@ import { PostMarks } from '../cards/Marks.tsx';
 import { useReachShown } from '../cards/PlayActions.tsx';
 import { EditPost } from '../composer/EditPost.tsx';
 import type { Act, Id } from '../data/api.ts';
+import { useNarrow } from '../media.ts';
 import { usePlayer } from '../player.tsx';
 import { Postbit, Signature, type PostbitLayout, type PostbitPerson } from '../postbit/Postbit.tsx';
 import { Link } from '../router.tsx';
@@ -146,6 +147,7 @@ function Actions({ act, editing, onEdit, editButton, spinOrigin, setSpinOrigin }
 export const ActArticle = memo(function ActArticle({ act, person, layout, slid }: Props) {
   const { thread, perPage, observer, plays, tallies, mine, nameOf: casterName, summary, know } = useThread();
   const ref = useRef<HTMLElement>(null);
+  const narrow = useNarrow();
   const seq = act.seq!;
   useEffect(() => {
     const el = ref.current;
@@ -197,7 +199,7 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
         ? <Postbit person={person} layout={layout} marks={characterMarks} />
         : <div className="kb-postbit-system"><span className="kb-postbit-name">{name}</span></div>)}
       <header className="kb-act-meta" data-kb-cell="line">
-        <time dateTime={act.createdAt} title={when(act.createdAt)}>{when(act.createdAt)}</time>
+        <time dateTime={act.createdAt} title={when(act.createdAt)}>{when(act.createdAt, narrow)}</time>
         {marks}
         <Link className="kb-act-number" to={threadHref(thread, pageOf(seq, perPage), seq)} aria-label={`Permalink to post #${seq}`}>#{seq}</Link>
       </header>

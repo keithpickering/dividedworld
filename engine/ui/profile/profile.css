@@ -67,6 +67,66 @@
 }
 
 @media (max-width: 40em) {
+  /*
+   * The record on a phone (the board look's Task 8, docs/research/2026-11-06-board-look/10-phone.html): each row's date stacks above its
+   * words, where the When column broke every date in two, and the six kinds fit one row. The table's elements are blocks, its grid the gap
+   * between rows, and the head stays for assistive tech, clipped.
+   */
+  .kb-record-table {
+    display: grid;
+    gap: 1px;
+    padding: 1px;
+    width: auto;
+  }
+
+  .kb-record-table tbody {
+    display: grid;
+    gap: 1px;
+  }
+
+  .kb-record-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    clip-path: inset(50%);
+  }
+
+  .kb-record-table thead th:nth-child(n) {
+    display: block;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .kb-record-table tbody > tr {
+    display: block;
+    padding: 8px 10px;
+    background: var(--kb-row-1);
+  }
+
+  .kb-record-table tbody > tr:nth-child(even) {
+    background: var(--kb-row-2);
+  }
+
+  .kb-table.kb-record-table tbody > tr > td {
+    display: block;
+    padding: 0;
+    background: none;
+  }
+
+  .kb-table.kb-record-table tbody > tr > td:first-child {
+    margin-bottom: 2px;
+    color: var(--kb-muted);
+  }
+
+  .kb-record-kinds {
+    flex-wrap: nowrap;
+    gap: 0.5em;
+  }
+
   .kb-profile-avatar {
     flex-basis: 5em;
     width: 5em;

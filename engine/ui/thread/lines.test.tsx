@@ -8,7 +8,7 @@ import { describe, expect, test } from 'vitest';
 import { useKayfa } from '../context.tsx';
 import type { Act } from '../data/api.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
-import { AnnounceLine } from './lines.tsx';
+import { AnnounceLine, when } from './lines.tsx';
 
 const lines: readonly { readonly what: 'debut' | 'turn'; readonly was?: string; readonly class?: string; readonly says: string }[] = [
   { what: 'debut', says: 'Spritey debuts.' },
@@ -55,4 +55,12 @@ describe('the announce line', () => {
     renderIn(fake, <Line act={act} name="Spritey" />, { path: '/' });
     await waitFor(() => expect(screen.getByText('Spritey has Turned from Heel to ghost.')).toBeInTheDocument());
   });
+});
+
+describe('the post line\'s date', () => {
+  const at = '2026-10-29T21:14:00Z';
+  const now = Date.parse('2026-11-07T12:00:00Z');
+  test('keeps its year at 1440', () => expect(when(at)).toMatch(/^Oct 29, 2026, \d+:14 [AP]M$/u));
+  test('a phone drops this year\'s, against the clock it is given', () => expect(when(at, true, now)).toMatch(/^Oct 29, \d+:14 [AP]M$/u));
+  test('a phone keeps another year\'s', () => expect(when('2025-10-29T21:14:00Z', true, now)).toMatch(/^Oct 29, 2025, \d+:14 [AP]M$/u));
 });

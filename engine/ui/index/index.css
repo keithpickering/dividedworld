@@ -44,17 +44,28 @@
   font: bold var(--kb-size-small) / 1.3 var(--kb-font-mono);
 }
 
+.kb-board-sep {
+  display: none;
+}
+
 @media (max-width: 40em) {
-  /* A card per board on a phone: the cards' own rules, not the table's frame and grid. */
+  /*
+   * A phone folds each board into a row of the same ruled table (docs/research/2026-11-06-board-look/03-phone.html): its name, its words,
+   * and one line of "3 threads · last: Mrs. Hooligan, Oct 6". The table's elements are blocks, so the counts flow as one text.
+   */
   .kb-board-list {
-    border: 0;
-    background: none;
+    display: grid;
+    gap: 1px;
+    padding: 1px;
+    width: auto;
   }
 
-  .kb-board-list,
-  .kb-board-list tbody,
-  .kb-board-list tr,
-  .kb-board-list td {
+  .kb-board-list tbody {
+    display: grid;
+    gap: 1px;
+  }
+
+  .kb-board-list tr {
     display: block;
     width: auto;
   }
@@ -67,30 +78,55 @@
     clip-path: inset(50%);
   }
 
-  .kb-board-row {
-    border: 1px solid var(--kb-rule);
-    padding: 0.4em 3%;
+  .kb-board-list tbody > .kb-board-row {
+    padding: 8px 10px;
+    background: var(--kb-row-1);
   }
 
-  .kb-board-row + .kb-board-row {
-    border-top: 0;
+  .kb-board-list tbody > .kb-board-row:nth-child(even) {
+    background: var(--kb-row-2);
   }
 
-  .kb-board-list td {
-    border: 0;
-    padding: 0.1em 0;
+  .kb-table.kb-board-list .kb-board-row > td {
+    display: block;
     width: auto;
+    padding: 0;
+    background: none;
+    border: 0;
     text-align: left;
   }
 
-  .kb-board-threads,
-  .kb-board-last {
-    display: inline-block;
-    margin-right: 0.8em;
+  .kb-table.kb-board-list .kb-board-row > td.kb-board-main {
+    margin-bottom: 2px;
+  }
+
+  .kb-table.kb-board-list .kb-board-row > td.kb-board-threads,
+  .kb-table.kb-board-list .kb-board-row > td.kb-board-last {
+    display: inline;
+    color: var(--kb-muted);
+    font-size: var(--kb-size-small);
+    line-height: 1.6;
+  }
+
+  .kb-board-threads {
+    white-space: nowrap;
+  }
+
+  .kb-board-threads > span.kb-num {
+    color: var(--kb-fg);
   }
 
   .kb-board-unit,
-  .kb-board-last-label {
+  .kb-board-last-label,
+  .kb-board-sep {
     display: inline;
+  }
+
+  .kb-board-last br {
+    display: none;
+  }
+
+  .kb-board-last > a {
+    white-space: nowrap;
   }
 }

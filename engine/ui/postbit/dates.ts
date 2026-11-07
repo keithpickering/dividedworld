@@ -17,3 +17,8 @@ export function shortDate(iso: string): string {
   if (Number.isNaN(d.getTime())) return '';
   return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
 }
+
+/** Whether a date is in the current year, in the reader's zone, by the clock the page reads (`nowMs`, Date.now() where the page gives none). */
+export function sameYear(d: Date, nowMs = Date.now()): boolean {
+  return d.getFullYear() === new Date(nowMs).getFullYear();
+}

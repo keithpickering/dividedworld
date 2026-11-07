@@ -51,12 +51,14 @@ export function IndexScreen({ doc }: { readonly doc: ScreenDoc<IndexPage> }) {
                 </td>
                 <td role="cell" className="kb-board-threads kb-num"><span className="kb-num">{b.threadCount}</span><span className="kb-board-unit"> threads</span></td>
                 <td role="cell" className="kb-board-last">
-                  {b.lastAt === null ? <span>None yet</span> : (
+                  {b.lastAt === null ? <><span className="kb-board-sep" aria-hidden="true"> · </span><span>None yet</span></> : (
                     <>
+                      <span className="kb-board-sep" aria-hidden="true"> · </span>
                       <span className="kb-board-last-label">last: </span>
                       {b.lastCharacter
                         ? <Who character={who} name={who?.name ?? 'A'}><Link to={`/c/${encodeURIComponent(b.lastCharacter)}`}>{who?.name ?? 'A character'}</Link></Who>
                         : <span className="kb-system-name">The System</span>}
+                      <span className="kb-board-sep" aria-hidden="true">, </span>
                       <br />
                       {b.lastThread
                         ? <Link to={`/t/${b.lastThread}`} className="kb-muted"><Ago at={b.lastAt} /><span className="kb-visually-hidden"> — latest post in {b.name}</span></Link>

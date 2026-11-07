@@ -108,3 +108,25 @@
   padding-top: 8px;
   color: var(--kb-muted);
 }
+
+/*
+ * On a phone (the board look's Task 8, docs/research/2026-11-06-board-look/07-phone.html) the nine formatting buttons fit one row, tracked
+ * a little tighter than at a desk, and the box drops the keyboard hint: a phone has no Ctrl or Command key. The hint stays the box's
+ * description for assistive tech (`aria-describedby` reads a hidden element's words).
+ */
+@media (max-width: 40em) {
+  .kb-toolbar {
+    flex-wrap: nowrap;
+    gap: 3px;
+  }
+
+  .kb-toolbar .kb-toolbar-button {
+    min-width: 0;
+    padding-inline: 5px;
+    letter-spacing: 0.02em;
+  }
+
+  .kb-editor-hint {
+    display: none;
+  }
+}
