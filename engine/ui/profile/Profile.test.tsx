@@ -29,6 +29,21 @@ function world(fake: Fake) {
 
 const open = (id: string, w?: Fake) => (w ? renderIn(w, <LoadedProfile id={id} />, { path: `/c/${id}` }) : null);
 
+describe('the pronouns line', () => {
+  test('a default character shows it/its, a custom set shows xe/xem, quietly under the title', async () => {
+    const fake = buildWorld();
+    const me = fake.seed.account('me');
+    const plain = fake.seed.character(fake.seed.account('a'), 'Plain', 'face');
+    const xe = fake.seed.character(fake.seed.account('b'), 'Xenia', 'face', { pronouns: { subject: 'xe', object: 'xem', determiner: 'xyr', possessive: 'xyrs', reflexive: 'xemself', plural: false } });
+    fake.signInAs(me);
+    const first = renderIn(fake, <LoadedProfile id={plain} />, { path: `/c/${plain}` });
+    expect(await screen.findByText('it/its')).toHaveClass('kb-profile-pronouns', 'kb-muted');
+    first.unmount();
+    renderIn(fake, <LoadedProfile id={xe} />, { path: `/c/${xe}` });
+    expect(await screen.findByText('xe/xem')).toHaveClass('kb-profile-pronouns', 'kb-muted');
+  });
+});
+
 describe('the public profile', () => {
   test('its facts: name, title, rank, exact standing and when it settled, place, counts, month joined, signature', async () => {
     const fake = buildWorld();

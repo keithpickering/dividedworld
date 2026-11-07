@@ -1486,3 +1486,66 @@
   background: color-mix(in srgb, var(--kb-glass-neon) 18%, transparent);
   box-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 70%, transparent);
 }
+
+/* ---- pronouns (PronounPicker.tsx) ---- */
+
+.kb-pronouns {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* The five cards share a row and wrap; each is drawn as a class card is, a bordered panel lit when chosen. */
+.kb-pronoun-cards {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9em), 1fr));
+}
+
+.kb-pronoun-card {
+  position: relative;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-height: 52px;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  background: var(--kb-glass-panel-soft);
+  border: 1px solid color-mix(in srgb, var(--kb-glass-text) 35%, transparent);
+  font-size: var(--kb-glass-size-body);
+  font-weight: 700;
+  color: var(--kb-glass-text-2);
+  cursor: pointer;
+}
+
+.kb-pronoun-card input {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--kb-glass-neon);
+}
+
+.kb-pronoun-card[data-kb-chosen] {
+  border: 2px solid var(--kb-glass-neon);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--kb-glass-neon) 45%, transparent);
+  background: color-mix(in srgb, var(--kb-glass-neon) 8%, var(--kb-glass-panel-soft));
+}
+
+.kb-pronoun-card:hover {
+  border-color: var(--kb-glass-neon);
+}
+
+.kb-pronoun-custom {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12em), 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.kb-pronoun-verbs {
+  grid-column: 1 / -1;
+}
+
+.kb-pronoun-problem {
+  margin: 6px 0 0;
+  color: var(--kb-glass-hurt);
+}

@@ -8,6 +8,7 @@ import type { Instance } from '../../rules/types.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { NewCharacter } from './NewCharacter.tsx';
 import type { ClassLook } from '../types.ts';
+import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 
 beforeEach(() => { localStorage.clear(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -88,7 +89,7 @@ describe('New character', () => {
     await userEvent.click(within(f).getByRole('radio', { name: /^Heel/u }));
     await userEvent.click(within(f).getByRole('radio', { name: /^Debut at the settlement/u }));
     await userEvent.click(submit);
-    await waitFor(() => expect(create).toHaveBeenCalledWith('Spritey', 'heel', 'tally', 'announced'));
+    await waitFor(() => expect(create).toHaveBeenCalledWith('Spritey', 'heel', 'tally', 'announced', PRONOUN_PRESETS.it));
     await waitFor(() => expect(window.location.pathname).toBe('/characters'));
     const mine = await w.fake.myCharacters();
     expect(mine.find((c) => c.name === 'Spritey')).toMatchObject({ debutedAt: null, class: 'heel' });
@@ -96,6 +97,27 @@ describe('New character', () => {
     /* My characters opens on the new one: the navigation carries it in history.state, never in the address. */
     expect(window.location.search + window.location.hash).toBe('');
     expect((window.history.state as { state: unknown }).state).toEqual({ character: mine.find((c) => c.name === 'Spritey')!.id });
+  });
+
+  test('starts on the instance\'s pronouns, makes the character with the ones chosen, and a bad custom set disables it', async () => {
+    const w = world();
+    const create = vi.spyOn(w.fake, 'createCharacter');
+    open(w);
+    const f = await form();
+    expect(within(f).getByRole('radio', { name: /^it\/its/u })).toBeChecked();
+    await userEvent.type(within(f).getByLabelText('Name'), 'Gloomba');
+    await userEvent.click(within(f).getByRole('radio', { name: /^Heel/u }));
+    await userEvent.click(within(f).getByRole('radio', { name: /^she\/her/u }));
+    const submit = within(f).getByRole('button', { name: 'Make the character' });
+    expect(submit).toBeEnabled();
+    await userEvent.click(within(f).getByRole('radio', { name: /^Custom/u }));
+    expect(submit).toBeDisabled();
+    await userEvent.type(within(f).getByLabelText('Subject'), 'abcdefghijklm');
+    expect(within(f).getByText('the subject has 13 characters; at most 12')).toBeInTheDocument();
+    await userEvent.click(within(f).getByRole('radio', { name: /^she\/her/u }));
+    await userEvent.click(submit);
+    await waitFor(() => expect(create).toHaveBeenCalledWith('Gloomba', 'heel', 'now', 'announced', PRONOUN_PRESETS.she));
+    expect((await w.fake.myCharacters()).find((c) => c.name === 'Gloomba')!.pronouns).toEqual(PRONOUN_PRESETS.she);
   });
 
   test('drops at once, silently, with only the loudness changed', async () => {
@@ -107,7 +129,7 @@ describe('New character', () => {
     await userEvent.click(within(f).getByRole('radio', { name: /^Face/u }));
     await userEvent.click(within(f).getByRole('radio', { name: /^Silent/u }));
     await userEvent.click(within(f).getByRole('button', { name: 'Make the character' }));
-    await waitFor(() => expect(create).toHaveBeenCalledWith('Spritey', 'face', 'now', 'silent'));
+    await waitFor(() => expect(create).toHaveBeenCalledWith('Spritey', 'face', 'now', 'silent', PRONOUN_PRESETS.it));
     expect((await w.fake.myCharacters()).find((c) => c.name === 'Spritey')!.debutedAt).not.toBeNull();
   });
 

@@ -15,6 +15,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { BoardName, Character, CharacterCounts, MoveLogRow, MovesCursor, StaffProfile as StaffProfileData } from '../data/api.ts';
 import { careerText, type Career } from '../../system/career.ts';
+import { pronounLabel } from '../../rules/pronouns.ts';
 import { BbCode } from '../bbcode/render.tsx';
 import { MoveSentence } from '../board/MoveSentence.tsx';
 import { endedWords } from '../board/move-words.ts';
@@ -58,6 +59,7 @@ export function StaffProfile({ character: c }: { readonly character: Character }
           <Avatar character={c} />
           <div className="kb-profile-facts">
             <p className="kb-profile-title"><StaffBadge character={c} />{c.title && <span className="kb-muted"> {c.title}</span>}</p>
+            <p className="kb-profile-pronouns kb-muted">{pronounLabel(c.pronouns)}</p>
             {said === 'failed' && <p className="kb-notice" data-kb-tone="refusal">Its profile could not be loaded. Reload the page to try again.</p>}
             {data && (
               <table className="kb-table kb-staff-table" aria-label={`About ${c.name}, in its own words`}>

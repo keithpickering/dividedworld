@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { buildWorld, renderIn } from '../test-world.tsx';
 import { Link } from '../router.tsx';
+import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import { ProfileEdit } from './ProfileEdit.tsx';
 
 beforeEach(() => { localStorage.clear(); });
@@ -80,6 +81,40 @@ describe('profile edit', () => {
     expect(screen.queryByLabelText('Title')).toBeNull();
   });
 
+  test('starts on the stored pronouns, saves a new set with the rest, and a bad custom set disables saving', async () => {
+    const w = world();
+    const xe = { subject: 'xe', object: 'xem', determiner: 'xyr', possessive: 'xyrs', reflexive: 'xemself', plural: false };
+    const setProfile = vi.spyOn(w.fake, 'setProfile');
+    await open(w);
+    await screen.findByLabelText('Title');
+    const group = screen.getByRole('group', { name: 'Pronouns' });
+    expect(within(group).getByRole('radio', { name: /^it\/its/u })).toBeChecked();
+    await userEvent.click(within(group).getByRole('radio', { name: /^Custom/u }));
+    const save = screen.getByRole('button', { name: 'Save the profile' });
+    expect(save).toBeDisabled();
+    await userEvent.type(screen.getByLabelText('Subject'), 'abcdefghijklm');
+    expect(screen.getByText('the subject has 13 characters; at most 12')).toBeInTheDocument();
+    expect(save).toBeDisabled();
+    await userEvent.clear(screen.getByLabelText('Subject'));
+    for (const [label, v] of [['Subject', 'Xe'], ['Object', 'xem'], ['Possessive adjective', 'xyr'], ['Possessive', 'xyrs'], ['Reflexive', 'xemself']] as const) await userEvent.type(screen.getByLabelText(label), v);
+    expect(save).toBeEnabled();
+    await userEvent.click(save);
+    await waitFor(() => expect(setProfile).toHaveBeenCalledWith(w.pipe, '', '', 'default', { ...xe, subject: 'Xe' }));
+    expect((await w.fake.characters([w.pipe]))[0]!.pronouns).toEqual(xe);
+  });
+
+  test('opens on a stored set: she/her is chosen, and a custom set shows its fields', async () => {
+    const w = world();
+    const fake = buildWorld();
+    const me = fake.seed.account('me2');
+    const gloomba = fake.seed.character(me, 'Gloomba', 'face', { pronouns: PRONOUN_PRESETS.she });
+    fake.signInAs(me);
+    renderIn(fake, <ProfileEdit />, { path: '/characters/edit' });
+    expect(await screen.findByLabelText('Title')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /^she\/her/u })).toBeChecked();
+    expect(gloomba).toBeTruthy();
+  });
+
   test('edits the title, the signature and the pip style', async () => {
     const w = world();
     const setProfile = vi.spyOn(w.fake, 'setProfile');
@@ -91,7 +126,7 @@ describe('profile edit', () => {
     expect(screen.getByLabelText('Pip style')).toHaveValue('default');
     expect(within(screen.getByLabelText('Pip style')).getAllByRole('option').map((o) => o.textContent)).toEqual(['Default']);
     await userEvent.click(screen.getByRole('button', { name: 'Save the profile' }));
-    await waitFor(() => expect(setProfile).toHaveBeenCalledWith(w.pipe, 'Professional Wrench', 'I [b]brought[/b] a wrench.', 'default'));
+    await waitFor(() => expect(setProfile).toHaveBeenCalledWith(w.pipe, 'Professional Wrench', 'I [b]brought[/b] a wrench.', 'default', PRONOUN_PRESETS.it));
     expect(await screen.findByText('Profile saved.')).toBeInTheDocument();
     expect((await w.fake.characters([w.pipe]))[0]).toMatchObject({ title: 'Professional Wrench', signature: 'I [b]brought[/b] a wrench.' });
   });

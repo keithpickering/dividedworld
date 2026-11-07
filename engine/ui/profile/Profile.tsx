@@ -15,6 +15,7 @@ import { useMemo } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { useKayfa } from '../context.tsx';
 import type { Character, CharacterCounts, ClassReveal, Id, ProfilePage, StandingPlace, TurnAnnounced } from '../data/api.ts';
+import { pronounLabel } from '../../rules/pronouns.ts';
 import { rankIndex } from '../../rules/ranks.ts';
 import { dayAndTime, figure } from '../characters/format.ts';
 import { Ago } from '../mini.tsx';
@@ -78,6 +79,7 @@ function Profile({ character: c, doc }: { readonly character: Character; readonl
         <Avatar character={c} />
         <div className="kb-profile-facts">
           {c.title && <p className="kb-profile-title kb-muted">{c.title}</p>}
+          <p className="kb-profile-pronouns kb-muted">{pronounLabel(c.pronouns)}</p>
           {data && (
             <>
               {data.standing && instance.ranks.length > 0 && (

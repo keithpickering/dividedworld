@@ -19,6 +19,8 @@ import { PageHead } from '../glass/PageHead.tsx';
 import { SignInPrompt, useSignedIn } from '../mini.tsx';
 import { usePlayer } from '../player.tsx';
 import { Link, useLocation } from '../router.tsx';
+import { PronounPicker, pronounsHold } from '../characters/PronounPicker.tsx';
+import type { PronounSet } from '../../rules/pronouns.ts';
 import { AvatarEditor } from './Cropper.tsx';
 import { ProfilePreview } from './ProfilePreview.tsx';
 import type { PictureIo } from './crops.ts';
@@ -47,6 +49,7 @@ export function ProfileEdit({ io }: { readonly io?: PictureIo }) {
   const [title, setTitle] = useState('');
   const [signature, setSignature] = useState('');
   const [pip, setPip] = useState('default');
+  const [pronouns, setPronouns] = useState<PronounSet | null>(null);
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [saved, setSaved] = useState('');
@@ -54,6 +57,7 @@ export function ProfileEdit({ io }: { readonly io?: PictureIo }) {
   const live = mine !== null && mine.debutedAt !== null && mine.retiredAt === null;
   useEffect(() => {
     setProfile(null);
+    setPronouns(null);
     setSaved('');
     setRefusal(null);
     if (!live || id === null) return;
@@ -62,7 +66,7 @@ export function ProfileEdit({ io }: { readonly io?: PictureIo }) {
       if (!current) return;
       const c = found[0] ?? null;
       setProfile(c);
-      if (c) { setTitle(c.title); setSignature(c.signature); setPip(c.pipStyle); }
+      if (c) { setTitle(c.title); setSignature(c.signature); setPip(c.pipStyle); setPronouns(c.pronouns); }
     }, () => { if (current) setProfile('failed'); });
     return () => { current = false; };
   }, [api, id, live]);
@@ -114,12 +118,12 @@ export function ProfileEdit({ io }: { readonly io?: PictureIo }) {
   if (profile === null) return shell(<div aria-busy="true" />);
 
   const save = async () => {
-    if (busy) return;
+    if (busy || pronouns === null || !pronounsHold(pronouns)) return;
     setBusy(true);
     setRefusal(null);
     setSaved('');
     try {
-      const answer = await api.setProfile(id, title, signature, pip);
+      const answer = await api.setProfile(id, title, signature, pip, pronouns);
       if (!answer.ok) { setRefusal(answer.error); return; }
       setProfile(answer.value);
       setSaved('Profile saved.');
@@ -153,8 +157,9 @@ export function ProfileEdit({ io }: { readonly io?: PictureIo }) {
             {instance.pipStyles.map((p) => <option key={p.key} value={p.key}>{p.name}</option>)}
           </select>
         </label>
+        {pronouns && <PronounPicker key={profile.id} name={mine.name} value={pronouns} onChange={setPronouns} />}
         {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
-        <ButtonRow><GlassButton type="submit" kind="primary" disabled={busy}>Save the profile</GlassButton></ButtonRow>
+        <ButtonRow><GlassButton type="submit" kind="primary" disabled={busy || pronouns === null || !pronounsHold(pronouns)}>Save the profile</GlassButton></ButtonRow>
         <div role="status">{saved && <p className="kb-notice">{saved}</p>}</div>
       </CalmRegion>
       <CalmRegion><AvatarEditor character={profile} onSaved={setProfile} io={io} /></CalmRegion>

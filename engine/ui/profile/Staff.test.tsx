@@ -1,8 +1,9 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { seedMoves } from '../board/move-world.ts';
 import { MOVES_LOG_PAGE } from '../data/api.ts';
+import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ProfileScreen } from './Profile.tsx';
 import { LoadedProfile } from '../loaded.tsx';
@@ -20,6 +21,17 @@ function open(who: 'director' | 'bot' | 'spritey', build?: (fake: ReturnType<typ
 
 const log = () => screen.findByRole('table', { name: 'Moderation log, newest first' });
 const rows = async () => within(await log()).getAllByRole('row').filter((r) => within(r).queryAllByRole('cell').length > 0);
+
+describe('a staff profile\'s pronouns', () => {
+  test('shows the default set under the title, and a persona\'s own', async () => {
+    const { fake } = open('director');
+    expect(await screen.findByText('it/its')).toHaveClass('kb-profile-pronouns', 'kb-muted');
+    cleanup();
+    const sage = fake.seed.staff('sage', 'Sage', 'mod', { pronouns: PRONOUN_PRESETS.they });
+    renderIn(fake, <LoadedProfile id={sage} />, { path: `/c/${sage}` });
+    expect(await screen.findByText('they/them')).toHaveClass('kb-profile-pronouns', 'kb-muted');
+  });
+});
 
 describe('a Boss\'s profile', () => {
   test('is the ordinary profile with an admin\'s fields: name, an ADMINISTRATOR badge, its title and the table the Boss wrote about itself', async () => {
