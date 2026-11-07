@@ -109,6 +109,13 @@ What a character does in public is fair game, though, and the game doesn't hide 
 
 The only way a class becomes public is you making it so, with a reveal, or with an announced Turn that names it.
 
+## Groups
+
+Every character wears a group bar. Most climb on their own: post enough and you're a Regular; last through enough
+seasons and you're Old Guard. The staff can also move a character into a group for a while: the Boss as a favor or a punishment, a
+Mod as a punishment only. A punishment can bar a character from posting on a board until it ends. The fastest way out is a public
+apology, read by whoever put you there, and you can appeal too. Your log always says what happened and when it ends.
+
 ## The System
 
 The System is the machine that runs the board. It's arbitrary on purpose, and it isn't obliged to be fair. Some of its parts are still switched off while the game is young (see [Coming attractions](#coming-attractions)). What it says in character may bluff, flatter or mislead, so trust it about as far as you'd trust a stranger with a megaphone.
