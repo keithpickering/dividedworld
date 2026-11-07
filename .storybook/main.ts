@@ -4,11 +4,14 @@
  * instance's look and words.
  */
 import type { StorybookConfig } from '@storybook/react-vite';
+import { themePreviewPlugin } from '../tools/theme-preview.mjs';
 
 const config: StorybookConfig = {
   framework: '@storybook/react-vite',
   stories: ['../engine/ui/**/*.stories.tsx', '../instances/*/ui/**/*.stories.tsx'],
   addons: ['@storybook/addon-a11y'],
+  /* A theme imported as `theme.css?preview` is its preview module (tools/theme-preview.mjs). */
+  viteFinal: (config) => ({ ...config, plugins: [themePreviewPlugin(), ...(config.plugins ?? [])] }),
 };
 
 export default config;

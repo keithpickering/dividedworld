@@ -5,15 +5,16 @@ import { expect, test, type Browser, type Page } from '@playwright/test';
 import { boardIds, boardsToRun, compareBoard, compareSides, phoneSizeProblems, screensWithoutBoards, type BoardManifest, type Mismatch, type Snapshot } from './board-match.ts';
 import { FIXTURE_OVERLAYS, OVERLAYS, PAGES, STORIES } from './glass-screens.ts';
 import { loadFaces } from './fonts.ts';
+import { START } from '../engine/ui/data/fake.ts';
 import { pressControls, routeBoardFonts, settledSnapshot, snapshotPage, standInFaces } from './board-snapshot.ts';
 
 /**
  * The board match, end to end: each board the two-worlds session drew (docs/research/2026-10-29-two-worlds/), the
  * alerts session (docs/research/2026-11-02-alerts/) and the later sessions (docs/research/2026-11-04-cosmetics/,
- * 2026-11-05-card-template/, 2026-11-05-backfill/ and 2026-11-07-booster-packs/) opened beside the app at the same size, and the manifest's landmarks compared (e2e/board-match.ts).
+ * 2026-11-05-card-template/, 2026-11-05-backfill/, 2026-11-06-board-look/ and 2026-11-07-booster-packs/) opened beside the app at the same size, and the manifest's landmarks compared (e2e/board-match.ts).
  * The list of boards is the folder's, so a board with no manifest fails by name unless PENDING says
  * which plan, and which task of it, builds it; a board in PENDING that has a manifest fails too, so the
- * map cannot go stale. The task that builds a board takes it out of PENDING in the same change that
+ * map cannot go stale; COLORS_ONLY lists the boards that never have one, and one that gains a manifest fails. The task that builds a board takes it out of PENDING in the same change that
  * writes its manifest (e2e/boards/<NN>-<name>.ts, a default-exported BoardManifest; for a board in a folder after the
  * first two, e2e/boards/<folder>/<NN>-<name>.ts, and its id is <folder>/<NN>-<name>). A manifest may also export `phone`, a
  * BoardManifest for the same board's phone drawing, compared at 390 by 844 (PHONE_SIZE); that phone board has no manifest file of
@@ -37,8 +38,9 @@ const here = path.dirname(fileURLToPath(import.meta.url));
  * The boards' folders, in the order the sessions drew them. The two-worlds boards are a record and are not edited; the alerts
  * design's (docs/plans/2026-11-02-alerts-design.md) are drawn over them and revise some of what they show, which the old boards'
  * manifests say where they compare it. The folders after them are the cosmetics and card template designs (built later, so every board
- * of theirs is pending), the backfill's, and the booster packs boards redrawn on the card template (2026-11-07; the first drawing,
- * docs/research/2026-11-04-booster-packs/, is a record and is not compared). A board in the first BARE_FOLDERS folders has its file name as its id, so no
+ * of theirs is pending), the backfill's and the board look's (each of whose boards is pending until the task that builds it writes its
+ * manifest; a dark board has none, since it is compared on colors only by web/contrast.test.tsx), and the booster packs boards redrawn on
+ * the card template (2026-11-07; the first drawing, docs/research/2026-11-04-booster-packs/, is a record and is not compared). A board in the first BARE_FOLDERS folders has its file name as its id, so no
  * two of them may hold the same one (checked below); a board in a later folder is <folder>/<file name>, since two of them draw a
  * 05-admin.html. A `.src.html` is a generator's source, not a board.
  */
@@ -48,6 +50,7 @@ const BOARD_FOLDERS = [
   path.join(here, '..', 'docs', 'research', '2026-11-04-cosmetics'),
   path.join(here, '..', 'docs', 'research', '2026-11-05-card-template'),
   path.join(here, '..', 'docs', 'research', '2026-11-05-backfill'),
+  path.join(here, '..', 'docs', 'research', '2026-11-06-board-look'),
   path.join(here, '..', 'docs', 'research', '2026-11-07-booster-packs'),
 ];
 const BARE_FOLDERS = 2;
@@ -71,6 +74,26 @@ const PENDING: Readonly<Record<string, string>> = {
   '2026-11-07-booster-packs/03-hit': 'docs/plans/2026-11-04-booster-packs-plan.md, Task 5',
   '2026-11-07-booster-packs/04-phone': 'docs/plans/2026-11-04-booster-packs-plan.md, Tasks 5 and 6',
   '2026-11-07-booster-packs/05-admin': 'docs/plans/2026-11-04-booster-packs-plan.md, Task 6',
+};
+
+/**
+ * The boards that never have a manifest, each with why: a dark twin is held to its colors by web/contrast.test.tsx, and a reference
+ * drawing is looked at. Kept apart from PENDING so a never-board cannot sit unnoticed among the ones a task will build; one that gains a
+ * manifest fails, and so does one that is also pending.
+ */
+const COLORS_ONLY: Readonly<Record<string, string>> = {
+  '2026-11-06-board-look/00-look': 'the tribute looks reference (Task 17 switches one board to each look), never a manifest',
+  '2026-11-06-board-look/01-index-dark': 'the dark twin of the board before it, held to its colors by web/contrast.test.tsx, never a manifest',
+  '2026-11-06-board-look/02-board-dark': 'the dark twin of the board before it, held to its colors by web/contrast.test.tsx, never a manifest',
+  '2026-11-06-board-look/04-thread-dark': 'the dark twin of the board before it, held to its colors by web/contrast.test.tsx, never a manifest',
+  '2026-11-06-board-look/05-reply-dark': 'the dark twin of the board before it, held to its colors by web/contrast.test.tsx, never a manifest',
+  '2026-11-06-board-look/06-new-thread-dark': 'the dark twin of the board before it, held to its colors by web/contrast.test.tsx, never a manifest',
+  '2026-11-06-board-look/08-profile-dark': 'the dark twin of the board before it, held to its colors by web/contrast.test.tsx, never a manifest',
+  '2026-11-06-board-look/09-record-dark': 'the dark twin of the board before it, held to its colors by web/contrast.test.tsx, never a manifest',
+  '2026-11-06-board-look/11-move-notice-dark': 'the dark twin of the board before it, held to its colors by web/contrast.test.tsx, never a manifest',
+  '2026-11-06-board-look/14-staff-dark': 'the dark twin of the board before it, held to its colors by web/contrast.test.tsx, never a manifest',
+  '2026-11-06-board-look/16-not-found-dark': 'the dark twin of the board before it, held to its colors by web/contrast.test.tsx, never a manifest',
+  '2026-11-06-board-look/17-cannot-display-dark': 'the dark twin of the board before it, held to its colors by web/contrast.test.tsx, never a manifest',
 };
 
 /** Where each board's file is, by its id; a bare id two of the first folders share is a problem the first test reports. */
@@ -98,16 +121,16 @@ for (const id of manifestIds) {
   if (phone) phoneOf.set(id, phone);
 }
 const phoneIds = [...phoneOf.values()].map((p) => p.board);
-const { run, problems } = boardsToRun(folder, manifestIds, PENDING, phoneIds);
+const { run, problems } = boardsToRun(folder, manifestIds, PENDING, phoneIds, COLORS_ONLY);
 problems.push(...phoneSizeProblems([...phoneOf].map(([parent, phone]) => ({ parent, size: phone.size }))));
 
-test('every board has a manifest or is pending, and the pending map is not stale', () => {
+test('every board has a manifest or is pending, and the pending map is not stale, and a colors-only board has none', () => {
   expect([...shared, ...problems]).toEqual([]);
 });
 
 test('every glass screen names the board it is held to, or says why it has none', () => {
   const screens = [...PAGES, ...OVERLAYS, ...FIXTURE_OVERLAYS, ...STORIES];
-  expect(screensWithoutBoards(screens, boards.map((b) => b.id), PENDING)).toEqual([]);
+  expect(screensWithoutBoards(screens, boards.map((b) => b.id), PENDING, COLORS_ONLY)).toEqual([]);
 });
 
 const escapeHtml = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -144,6 +167,8 @@ function reportPage(board: string, mismatches: readonly Mismatch[], error?: stri
 async function compareSide(browser: Browser, baseURL: string | undefined, id: string, manifest: BoardManifest, folder: string): Promise<string[]> {
   const context = await browser.newContext({ baseURL, viewport: manifest.size, deviceScaleFactor: 1, reducedMotion: 'reduce', timezoneId: 'UTC', bypassCSP: true });
   try {
+    /* The build's dates drop this year's year and count days ago against the browser's clock: pinned to the fixture's own moment, a board's words hold past 2026. */
+    await context.clock.setFixedTime(START);
     await standInFaces(context);
     const boardPage = await context.newPage();
     const buildPage = await context.newPage();

@@ -209,7 +209,7 @@ describe('Write an update', () => {
   });
 
   describe('opened from a handover (`initial`)', () => {
-    const initial = { title: 'Season 4 opens with Comptroller', words: 'Season 4\'s Boss: Comptroller (was a Moderator).\n\nHype Man is now a member.' };
+    const initial = { title: 'Season 4 opens with Comptroller', words: 'Season 4: The Boss is Comptroller (was a Moderator).\n\nHype Man is now a member.' };
 
     test('opens filled in, says the lines are for the admin to replace, and holds the post until they are', async () => {
       renderIn(world(), <WriteUpdate initial={initial} />, { instance });

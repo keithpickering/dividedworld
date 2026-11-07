@@ -21,7 +21,16 @@ export interface ThemeOption {
   readonly name: string;
   readonly href: string;
   readonly modes: 'both' | 'light' | 'dark';
+  /**
+   * The tokens the picker's miniature draws, per mode, read from the theme's own file at build time (the instance imports it as
+   * `theme.css?preview`, tools/theme-preview.mjs), so a preview never drifts from its theme. A theme that holds one mode only fills
+   * that mode.
+   */
+  readonly preview: { readonly light?: ThemePreview; readonly dark?: ThemePreview };
 }
+
+/** A theme's tokens for one mode, resolved to literals (no `var()`), by token name: `--kb-head-bg`, `--kb-row-1` and the rest of tools/theme-preview.mjs's list. */
+export type ThemePreview = Readonly<Record<string, string>>;
 
 /** A class's look on the reveal's bar and a badge: a color, and a pattern for those who cannot tell colors apart. */
 export interface ClassLook {
@@ -73,6 +82,17 @@ export interface UiCopy {
   /** The banner's name, and the line under it. */
   readonly siteName: string;
   readonly siteTagline: string;
+  /**
+   * Who speaks for the board, in the instance's words, so the engine names no one. `roleWord` is the role that runs the board and
+   * signs its moves ("The Boss"); `staffWord` is the staff as a whole, the name of an unsigned Act's author and of the index's
+   * last post by one ("The staff"); `gameWord` is the game in the glass's plain voice, in the middle of a sentence ("the game":
+   * "checked by the game"); `staffBoardTag` is the tag on the staff's board in the index ("Staff post here; you react and spin").
+   * Each is non-empty text; `instanceUiProblems` refuses one that is not.
+   */
+  readonly roleWord: string;
+  readonly staffWord: string;
+  readonly gameWord: string;
+  readonly staffBoardTag: string;
   /** What the shop is called, in plain words: the log's line and the machine's group label say it. */
   readonly shopName: string;
   /**
@@ -81,6 +101,13 @@ export interface UiCopy {
    * list, an empty entry and a long one.
    */
   readonly marquees?: readonly string[];
+  /**
+   * The footer's 80 by 15 badges, each a pair of short words (the first on the dark half, the second on the light), drawn in the
+   * instance's own pixel face (`--kb-font-badge`) and hidden from assistive tech: decoration the instance may joke in, never a claim.
+   * Absent, the footer holds the credit alone. A pair is at most 12 characters in all, which is what 80 pixels hold; `instanceUiProblems`
+   * refuses an empty list, a pair that is not two words and a pair too wide.
+   */
+  readonly badges?: readonly (readonly [string, string])[];
   /**
    * How a card's effect still happens with motion Off, in Settings' Motion sentence after "A card's
    * effect still happens: ", naming the instance's own card the way its players know it (the engine names

@@ -49,8 +49,7 @@ describe('New character', () => {
     await userEvent.click(within(f).getByRole('radio', { name: /^Debut at the settlement/u }));
     expect(preview).toHaveTextContent(/simply appears after the next settlement/u);
     await userEvent.click(within(f).getByRole('radio', { name: /^Announced, with its class/u }));
-    expect(preview).toHaveTextContent('Spritey debuts as Heel');
-    expect(preview).toHaveTextContent('Spritey revealed: Heel');
+    expect(preview).toHaveTextContent('Spritey debuts as a Heel.');
   });
 
   test('opens with Drop now chosen, and announced', async () => {
@@ -168,9 +167,9 @@ describe('New character\'s head, name and foot', () => {
     open(world());
     const f = await form();
     const line = () => f.querySelector('.kb-glass-form-foot-line')!;
-    expect(line()).toHaveTextContent('Your character is on the board as soon as you make it, and The System announces it. Its class stays yours alone.');
+    expect(line()).toHaveTextContent('Your character is on the board as soon as you make it, and its own Promo announces it. Its class stays yours alone.');
     await userEvent.type(within(f).getByLabelText('Name'), 'Waiting Wanda');
-    expect(line()).toHaveTextContent('Waiting Wanda is on the board as soon as you make it, and The System announces it. Its class stays yours alone.');
+    expect(line()).toHaveTextContent('Waiting Wanda is on the board as soon as you make it, and its own Promo announces it. Its class stays yours alone.');
     await userEvent.click(within(f).getByRole('radio', { name: /^Silent/u }));
     expect(line()).toHaveTextContent('Waiting Wanda is on the board as soon as you make it. Nobody is told, and its first post is its entrance. Its class stays yours alone.');
     await userEvent.click(within(f).getByRole('radio', { name: /^Debut at the settlement/u }));

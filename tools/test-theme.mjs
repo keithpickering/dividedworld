@@ -10,7 +10,7 @@
  * change no test, so each is planted here and must fire, and the real tree runs last so a guard
  * gone quiet over nothing fails here.
  */
-import { themeFaults, themeHrefFaults, treeFiles } from './check-theme.mjs';
+import { gamePieceFaults, themeFaults, themeHrefFaults, treeFiles } from './check-theme.mjs';
 
 let pass = 0;
 const failures = [];
@@ -72,12 +72,31 @@ const GOOD = `/* a theme */
   check('--kb-board-max: 960px is clean', fires(GOOD.replace('--kb-line: 1.45;', '--kb-line: 1.45; --kb-board-max: 960px;')).length === 0);
 }
 
+/* ---- an outside image can watch who reads a page ---- */
+{
+  const r = fires(GOOD.replace(':root { --kb-fg: #000;', ':root { --kb-banner-bg: url(https://example.com/x.gif); --kb-fg: #000;'));
+  check('--kb-banner-bg: url(https://example.com/x.gif) fires', r.length === 1 && /url\(/.test(r[0]?.why ?? '') && /banner-bg/.test(r[0]?.why ?? ''), JSON.stringify(r));
+  check('a url() hidden in a layer, in uppercase, or with a space is still refused',
+    [`linear-gradient(#fff, #eee), url(x.png)`, `URL(x.png)`, `url (x.png)`, `image-set(url("x.png") 1x)`].every((v) => fires(`:root { --kb-head-bg: ${v}; }`).length === 1));
+  check('a CSS escape in a function name is refused: browsers decode \\75rl( into url(',
+  [String.raw`\75rl(x.png)`, String.raw`u\72l(x.png)`, String.raw`\55RL(x.png)`, String.raw`linear-gradient(#fff, #eee), \75 rl(x.png)`, String.raw`i\6d age-set("x.png" 1x)`, String.raw`#fff \
+`].every((v) => fires(`:root { --kb-head-bg: ${v}; }`).length === 1),
+  JSON.stringify([String.raw`\75rl(x.png)`, String.raw`u\72l(x.png)`, String.raw`\55RL(x.png)`].map((v) => fires(`:root { --kb-head-bg: ${v}; }`).length)));
+check('a backslash inside a quoted string is not an escape in a function name and is let through',
+  fires(`:root { --kb-font-x: "a\\"b"; }`).length === 0);
+check('image(), cross-fade(), -webkit-cross-fade() and element() fetch or copy a picture and are refused',
+  ['image(x.png)', 'IMAGE (x.png)', 'cross-fade(#fff, #000)', '-webkit-cross-fade(#fff, #000)', 'element(#a)', 'linear-gradient(#fff, #eee), image("x.png")'].every((v) => fires(`:root { --kb-head-bg: ${v}; }`).length === 1));
+check('a trailing !important does not hide a fetch', fires(`:root { --kb-head-bg: url(x.png) !important; }`).length === 1);
+check('in the dark blocks too', fires(`${GOOD}`.replace('--kb-fg: #fff; }\n}', '--kb-fg: #fff; --kb-nav-bg: url(//x.test/a.png); }\n}')).length === 1);
+  check('a gradient is clean', fires(`:root { --kb-head-bg: linear-gradient(#fff, #2b2b2b); }`).length === 0);
+}
+
 /* ---- clean ---- */
 check('a theme in the contract\'s shape is clean', fires(GOOD).length === 0, JSON.stringify(fires(GOOD)));
 check('an empty theme is clean', fires('/* nothing yet */').length === 0);
 check('a comment holding a rule is not a rule', fires(`/* .kb-hud { display: none } */\n${GOOD}`).length === 0);
 check('a selector list formatted over lines, with extra spaces, is the same selector', fires(`:root   {\n --kb-fg: #000;\n}`).length === 0);
-check('a value holding a semicolon in a string or url() is one declaration', fires(`:root { --kb-x: url("data:image/svg+xml;utf8,<svg/>"); --kb-fg: #000; }`).length === 0);
+check('a value holding a semicolon in a string is one declaration', fires(`:root { --kb-x: "a;b"; --kb-fg: #000; }`).length === 0);
 
 /* ---- selectors ---- */
 check('a class rule fires', fires(`${GOOD}\n.kb-box { border: 0; }`).length === 1);
@@ -141,11 +160,43 @@ check('an href to a stylesheet that breaks the contract fires, through the same 
   themeFaults({ 'instances/divided-world/ui/x.css': `.kb-hud { display: none }` }).length === 1);
 check('an instance with no themes list is clean (the engine has its own house theme)', hrefs(`export const instanceUi = {};`).length === 0);
 
+/* ---- a theme in ui/themes/ is a theme ---- */
+{
+  const TH = 'instances/divided-world/ui/themes/hot-rod.css';
+  check('a stylesheet under ui/themes/ is checked: .kb-hud { display: none } in it fires', themeFaults({ [TH]: `.kb-hud { display: none }` }).length === 1);
+  check('a stylesheet under ui/themes/ is checked: a url() in a token fires', themeFaults({ [TH]: `:root { --kb-head-bg: url(x.png); }` }).length === 1);
+  check('a stylesheet under ui/themes/ that keeps the contract is clean', themeFaults({ [TH]: GOOD }).length === 0);
+  check('a stylesheet one folder deeper than ui/themes/ is not a theme', themeFaults({ 'instances/divided-world/ui/themes/x/y.css': `.kb-hud { display: none }` }).length === 0);
+  const themed = { ...TREE, [TH]: GOOD };
+  check('an href imported from a ui/themes/ stylesheet in the tree is clean',
+    themeHrefFaults({ [INDEX]: IDX(`import t from './themes/hot-rod.css?url';`, `{ key: 'hot-rod', name: 'Hot Rod', href: t, modes: 'dark' }`), ...themed }).length === 0);
+  check('an href imported from a ui/themes/ stylesheet the tree lacks fires',
+    themeHrefFaults({ [INDEX]: IDX(`import t from './themes/gone.css?url';`, `{ key: 'x', name: 'X', href: t }`), ...TREE }).length === 1);
+}
+
+/* ---- the game's own pieces are the same in every theme ---- */
+{
+  const real = treeFiles();
+  const HOUSE = 'instances/divided-world/ui/theme.css';
+  const themes = Object.keys(real).filter((f) => /\/ui\/themes\/[^/]+\.css$/.test(f));
+  const piece = (files) => gamePieceFaults(files);
+  check('the real house theme and four tributes agree on the game pieces', themes.length === 4 && piece(real).length === 0, JSON.stringify(piece(real)));
+  for (const t of themes) {
+    const poisoned = { ...real, [t]: real[t].replaceAll('--kb-orb-3: #2ecc71', '--kb-orb-3: #2ecc72') };
+    const r = piece(poisoned);
+    check(`one orb changed in ${t.split('/').pop()} fires`, r.length >= 1 && r.every((f) => f.file === t && /--kb-orb-3/.test(f.why)), JSON.stringify(r));
+  }
+  const gone = { ...real, [themes[0]]: real[themes[0]].replaceAll(/^\s*--kb-gold:.*$/gm, '') };
+  check('a theme that leaves a game piece out fires (the engine default would show gray)', piece(gone).some((f) => /--kb-gold/.test(f.why) && /does not set/.test(f.why)), JSON.stringify(piece(gone)));
+  const sweet = { ...real, [HOUSE]: real[HOUSE].replaceAll('--kb-sweet: #e86fa8', '--kb-sweet: #e86fa9') };
+  check('the house theme changing a piece fires in the tributes', piece(sweet).length >= 4, JSON.stringify(piece(sweet)));
+}
+
 /* ---- the real tree ---- */
 {
   const files = treeFiles();
   check('the real tree holds at least one theme and one ui index', Object.keys(files).some((f) => f.endsWith('.css')) && Object.keys(files).some((f) => f.endsWith('/ui/index.ts')));
-  const r = [...themeFaults(files), ...themeHrefFaults(files)];
+  const r = [...themeFaults(files), ...themeHrefFaults(files), ...gamePieceFaults(files)];
   check('the real tree is clean', r.length === 0, JSON.stringify(r));
 }
 
