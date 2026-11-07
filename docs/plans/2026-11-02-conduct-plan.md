@@ -139,6 +139,13 @@ Resend: mail is tested against a fake sender.
   - An SQL test checks `decide_report` enqueues `reportRead` for every outcome, the same template each time.
   - The poison is a `reportRead` facts object that carries the outcome, which the test plants and expects the template
     renderer to refuse as an unknown slot.
+- **The glass in email** (amended 2026-11-07, `docs/plans/2026-11-07-glass-mail-design.md`):
+  - Each template is a `Mail` of the shell's blocks (`engine/mail/types.ts`), not a plain-text string.
+  - `Mailer.send` takes `html` beside `text`. Both are rendered from that one `Mail`, by `renderHtml` with the deployed
+    instance's `mailTheme` and by `renderText`.
+  - The slots fill the blocks' fields, and the renderer escapes them. The admin's note goes in a `facts` row, and the
+    author's words in a `quote` block.
+  - The tests above also cover the HTML part.
 
 ## Task 4: what a bar shows, and what it doesn't
 
