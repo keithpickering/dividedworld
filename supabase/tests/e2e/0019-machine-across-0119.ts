@@ -1,6 +1,6 @@
 /**
  * An instance that already holds a catalog keeps every card's price when the machine arrives (the booster packs plan, Task 2): migrating
- * across supabase/migrations/0117_machine.sql writes a slot for each card in `card_kinds`, ordered by key, on sale, at the price its economy
+ * across supabase/migrations/0119_machine.sql writes a slot for each card in `card_kinds`, ordered by key, on sale, at the price its economy
  * setting held; takes the price keys out of the economy row and leaves the numbers the cards read; drops the column, the check and the trigger
  * that priced a card; and leaves a hand as it was. Every card is put on sale at its old price, and an admin hides any the instance's catalog hides (Main Event) on the machine's page; the Booster's slot is added by the next seed, at the end of the grid after the cards, and the seed changes no slot. On a
  * database of its own, made here beside the scratch one tools/test-sql.mjs made, from the migrations before 0119.
@@ -27,7 +27,7 @@ test('every card gets a slot at its old price, the economy loses its price keys 
   psqlOn(server.toString(), `create database ${name};`);
   try {
     const all = fs.readdirSync(migrations).filter((f) => f.endsWith('.sql')).sort();
-    assert.ok(all.includes('0117_machine.sql'), 'the migration this holds is there');
+    assert.ok(all.includes('0119_machine.sql'), 'the migration this holds is there');
     psqlOn(db.toString(), fs.readFileSync(path.join(root, 'supabase/tests/setup/auth-shim.sql'), 'utf8'));
     for (const m of all.filter((f) => f < '0119')) psqlOn(db.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
     // Before: three cards planted out of key order, each priced by the economy, one reading a number of its own, a class's number beside them,

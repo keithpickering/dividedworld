@@ -14,7 +14,7 @@
  * The machine's three moves (booster packs design, section 6) are small moves over the Vending Machine's slots: `pullSlot` sells a card's slot out, `repriceSlot` sets a
  * price to a percent of the admin's, `flashSale` opens a hidden slot for a window. Their numbers are the economy's `machine.*` (`machineLimits`), checked here
  * for the params, in the meeting for what the machine holds (the slot, the pulls in force, one move per slot) and again in SQL at the queue and at landing
- * (supabase/migrations/0119_machine_moves.sql). A pull and a markup punish and carry a demand; a markdown and a flash sale are favors and carry none
+ * (supabase/migrations/0121_machine_moves.sql). A pull and a markup punish and carry a demand; a markdown and a flash sale are favors and carry none
  * (`MoveKind.demand`). What the machine shows is computed from the move Acts (`machine_now`), so ending a move brings the slot back with nothing rewritten.
  *
  * A move reads to a player in plain words (the label on the glass, the line in the log), never in the Director's: the fiction
@@ -45,7 +45,7 @@ export type Office = 'boss' | 'mod';
 /**
  * The numbers the Boss's three moves on the machine are held to, from the instance's economy (`machine.*`, engine/rules/packs.ts holds the
  * starting values). A key the economy lacks is the engine's default, so a database that predates a key still has a bound. SQL holds the same
- * bounds (`machine_move_problem`, supabase/migrations/0119_machine_moves.sql) and reads them from the same row.
+ * bounds (`machine_move_problem`, supabase/migrations/0121_machine_moves.sql) and reads them from the same row.
  */
 export interface MachineLimits {
   /** The most slots pulled at once. */

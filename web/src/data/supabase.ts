@@ -313,7 +313,7 @@ function toPresence(v: Row): Presence {
 const toSeason = (r: Row): Season => ({ id: r['id'], number: r['number'], startsAt: r['starts_at'], endsAt: r['ends_at'] ?? null, turnsThread: r['turns_thread'] ?? null, revealAct: r['reveal_act'] ?? null });
 const toClassReveal = (r: Row): ClassReveal => ({ act: r['act'], character: r['character'], class: r['class'], at: r['at'], via: r['via'], thread: r['thread'] });
 const toTurn = (r: Row): TurnAnnounced => ({ act: r['act'], character: r['character'], at: r['at'], was: r['was'] ?? null });
-/** A slot of machine_now (0117_machine.sql): a card's or a pack's, never both; a hidden slot is not in the view. */
+/** A slot of machine_now (0119_machine.sql): a card's or a pack's, never both; a hidden slot is not in the view. */
 const SLOT_MOVES: readonly SlotMove['kind'][] = ['pullSlot', 'repriceSlot', 'flashSale'];
 /** The move on a slot as machine_now's `move` carries it (0121), or none: a kind this client does not know is no move it can word. */
 const toSlotMove = (v: unknown): SlotMove | null => {

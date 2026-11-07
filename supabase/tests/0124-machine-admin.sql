@@ -1,4 +1,4 @@
--- The machine's admin page (supabase/migrations/0121_machine_admin.sql; docs/plans/2026-11-04-booster-packs-plan.md, Task 6; the design's section 7).
+-- The machine's admin page (supabase/migrations/0123_machine_admin.sql; docs/plans/2026-11-04-booster-packs-plan.md, Task 6; the design's section 7).
 --
 -- 1. A player and a visitor are refused by all three calls (admin_machine, set_slot, move_slot), and nothing they asked for is written.
 -- 2. admin_machine lists every slot, hidden ones too, in grid order, at the admin's price, with the Boss's move in force on each.

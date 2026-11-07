@@ -1,4 +1,4 @@
--- The Vending Machine's catalog, packs and the hand (supabase/migrations/0117_machine.sql; docs/plans/2026-11-04-booster-packs-plan.md, Task 2):
+-- The Vending Machine's catalog, packs and the hand (supabase/migrations/0119_machine.sql; docs/plans/2026-11-04-booster-packs-plan.md, Task 2):
 -- slots with a price and an availability, packs rolled when they are bought, and one function that counts a hand. As the service role
 -- the act Edge Function calls them as, and as a player where the player reads.
 

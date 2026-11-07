@@ -1,4 +1,4 @@
--- The Boss's three moves on the machine (supabase/migrations/0119_machine_moves.sql; docs/plans/2026-11-04-booster-packs-plan.md, Task 4).
+-- The Boss's three moves on the machine (supabase/migrations/0121_machine_moves.sql; docs/plans/2026-11-04-booster-packs-plan.md, Task 4).
 --
 -- 1. A Pull shows its slot sold out in machine_now, and the slot comes back at its expiry, when its demand is met, and when an admin reverses it.
 --    (Poison: machine_now ignoring whether a move has ended. The test is red on "a slot is back" when the view reads every move Act and not the ones in force.)

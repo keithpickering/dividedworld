@@ -1113,7 +1113,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   let logOrder = 0;
   const recordWallet = (account: Id, at: number, e: Omit<WalletEvent, 'at'>) => { walletEvents.push({ account, order: ++logOrder, ms: at, event: { ...e, at: iso(at) } }); };
   /*
-   * The Vending Machine's slots (machine_slots, 0117_machine.sql), seeded from the instance in its order and changed only by `seed.slot`, as the
+   * The Vending Machine's slots (machine_slots, 0119_machine.sql), seeded from the instance in its order and changed only by `seed.slot`, as the
    * database keeps an admin's choices. Their ids are their own count, so the ids of everything else are as they were. A pack is rolled with a
    * fixed-seed generator: the fake is deterministic, and a test that wants other cards seeds the hand.
    */
@@ -1246,7 +1246,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** `wallet_spend`'s refusal of a price the wallet does not hold, or nothing. */
   const covers = (account: AccountRec, amount: number): Refusal | null => (account.wallet < amount ? refuse(`that costs ${amount}, and your wallet holds ${account.wallet}`) : null);
 
-  /** `buy_card` (0117_machine.sql): the slot's card at the price the screen showed, from the settled wallet, and one more of it in the hand. */
+  /** `buy_card` (0119_machine.sql): the slot's card at the price the screen showed, from the settled wallet, and one more of it in the hand. */
   function buyCard(shown: Slot): Answer<Bought> {
     const bad = request({ action: 'buyCard', slot: shown.id, price: shown.price });
     if (bad) return bad;
@@ -1261,7 +1261,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok({ card, balance: left, held: account.cards[card]! });
   }
 
-  /** `buy_pack` (0117_machine.sql): the same checks, then the roll; the cards it gave, in pull order, are in the hand. */
+  /** `buy_pack` (0119_machine.sql): the same checks, then the roll; the cards it gave, in pull order, are in the hand. */
   function buyPack(shown: Slot): Answer<Opened> {
     const bad = request({ action: 'buyPack', slot: shown.id, price: shown.price });
     if (bad) return bad;
