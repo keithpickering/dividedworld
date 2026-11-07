@@ -452,8 +452,8 @@ create index post_search_newest on post_search (created_at desc, act desc);
 create index post_search_board_newest on post_search (board, created_at desc, act desc);       -- the board's posts in time order: the keyset walk of a board filter
 create index post_search_first_newest on post_search (created_at desc, act desc) where first;  -- the same for titles only
 create index post_search_first_board_newest on post_search (board, created_at desc, act desc) where first;
+create index post_search_thread_words on post_search using gin (thread, words);          -- a thread and a word: the walk's probe of a thread for a rare word reads that thread's matches alone, not its rows between
 create index post_search_character on post_search (character, created_at desc);
-create index post_search_thread on post_search (thread);
 
 -- The stemming language the index is written in: the instance's setting, and the language-neutral `simple` before an instance is seeded.
 create function search_lang() returns regconfig
@@ -697,7 +697,10 @@ end $$;
 
 -- The walk by time that newest and oldest page threads and count by, with a bound. A thread is found at its key: the match no other match of its thread is newer than (oldest first: older than),
 -- so walking the matches in time order and keeping the keys finds each thread once, at one place, with no pool: a thread is reached however many newer matches other threads have. The test of a
--- key is a probe of post_search by thread (post_search_thread_at). What bounds the walk is the matches it reads, never the keys it finds: a word in many posts of few threads has many matches that
+-- key is a probe of post_search by thread (post_search_thread_at), made only where a thread can hold more than one match (never for titles only: a thread has one first post, so each match is its key).
+-- The probe starts at the match and reads toward the thread's newest post (oldest first: toward its oldest) and ends at the first row that matches, so it reads the rows between the match and its
+-- thread's next match in that direction: one for a word in every post, a gap for a rarer one, and for a thread's key the rows between it and the thread's end, which only that match reads. Across a
+-- walk each thread's rows are read about once, never a thread's worth for every match tested. What bounds the walk is the matches it reads, never the keys it finds: a word in many posts of few threads has many matches that
 -- are no key, and a walk that waited for the keys would read them all. So the text below reads at most `budget` matches (and one more, to know there were more), and the keys among them are what
 -- a page keeps.
 create function search_walk_sql(q text, author uuid, board uuid, from_at timestamptz, to_at timestamptz, titles_only boolean, newest boolean, after_at timestamptz, after_act uuid, budget integer)
@@ -706,8 +709,11 @@ language plpgsql stable security invoker set search_path = public, pg_temp as $$
 declare
   tsq tsquery := case when btrim(coalesce(q, '')) = '' then null else websearch_to_tsquery(search_lang(), q) end;
 begin
-  return format('select w.act, w.thread, w.board, w.title, w."character", w.created_at, not exists (select 1 from post_search k where k.thread = w.thread and %s and (k.created_at, k.act) %s (w.created_at, w.act)) as is_key from (%s) w',
-                array_to_string(array['true'] || search_match_conds('k', tsq, author, from_at, to_at, titles_only), ' and '), case when coalesce(newest, true) then '>' else '<' end,
+  return format('select w.act, w.thread, w.board, w.title, w."character", w.created_at, %s as is_key from (%s) w',
+                case when coalesce(titles_only, false) then 'true'     -- titles only: a thread has one first post, so every match is its thread's key and nothing is probed
+                     else format('(select 1 from post_search k where k.thread = w.thread and %s and (k.created_at, k.act) %s (w.created_at, w.act) order by k.created_at %s, k.act %s limit 1) is null',
+                                 array_to_string(array['true'] || search_match_conds('k', tsq, author, from_at, to_at, titles_only), ' and '),
+                                 case when coalesce(newest, true) then '>' else '<' end, case when coalesce(newest, true) then 'asc' else 'desc' end, case when coalesce(newest, true) then 'asc' else 'desc' end) end,
                 search_matches_sql(q, author, board, from_at, to_at, titles_only, newest, after_at, after_act, greatest(coalesce(budget, 0), 0) + 1));
 end $$;
 
