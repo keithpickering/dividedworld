@@ -29,6 +29,7 @@ import {
 } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id, PlayMoment, Visit, VisitEnd } from '../data/api.ts';
+import { Avatar } from '../glass/Avatar.tsx';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Float, type FloatPlace } from '../glass/Float.tsx';
 import { CloseCross, DialogBar } from '../glass/Frame.tsx';
@@ -283,6 +284,8 @@ function Spun({ play }: { readonly play: Id }) {
 interface RowProps {
   readonly play: CardPlay;
   readonly caster: string;
+  /** The caster's square picture, or none. */
+  readonly face: string | null;
   /** The play's ink (`CardUi.tag`), drawn as the bar at the row's left edge where the card chooses one. */
   readonly ink?: string | undefined;
   readonly card: string;
@@ -399,7 +402,7 @@ function EndCard({ play, card, caster, store }: { readonly play: Id; readonly ca
 const endable = (play: CardPlay, now: number): boolean =>
   !play.faceDown && play.caught === undefined && !play.reversed && !(play.ends !== undefined && Date.parse(play.ends) <= now);
 
-function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, moments, onSpin, store, admin, now }: RowProps) {
+function PlayRow({ play, caster, face, ink, card, view, tallies, mine, compare, to, moments, onSpin, store, admin, now }: RowProps) {
   const { characters } = usePlayer();
   const name = playName(caster, card);
   const note = view.notes[play.id];
@@ -430,7 +433,10 @@ function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, mo
   return (
     <li className="kb-lens-row" data-kb-play={play.id} style={ink ? ({ '--kb-play-ink': ink } as CSSProperties) : undefined}>
       {note && <p className="kb-lens-note">{note}</p>}
-      <p className="kb-lens-by"><span className="kb-lens-who kb-glass-display">{caster}</span> · {play.faceDown ? 'set face down' : 'played'} <time dateTime={play.playedAt}>{when(play.playedAt)}</time></p>
+      <div className="kb-lens-row-head">
+        <Avatar className="kb-lens-row-avatar" src={face} name={caster} />
+        <p className="kb-lens-by"><span className="kb-lens-who kb-glass-display">{caster}</span> · {play.faceDown ? 'set face down' : 'played'} <time dateTime={play.playedAt}>{when(play.playedAt)}</time></p>
+      </div>
       {play.message && <blockquote className="kb-lens-message">“{play.message}”</blockquote>}
       {more && <p className="kb-lens-more">More reactions than the post</p>}
       {yours && <p className="kb-lens-yours">Your play</p>}
@@ -453,23 +459,32 @@ function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, mo
 const NAMES_SHOWN = 3;
 
 /** Whether Who is unfolded is the Lens's, so it stays as it is when the tab changes and starts folded with the next Lens. */
-function Who({ plays, nameOf, inkOfPlay, card, unfolded, onToggle, ...row }: Omit<RowProps, 'play' | 'caster' | 'ink'> & {
+function Who({ plays, nameOf, faceOf, inkOfPlay, card, unfolded, onToggle, ...row }: Omit<RowProps, 'play' | 'caster' | 'face' | 'ink'> & {
   /** The ink of each play, as the marks draw it. */
   readonly inkOfPlay: (play: CardPlay) => string | undefined;
   readonly plays: readonly CardPlay[]; readonly nameOf: (character: Id | null) => string; readonly faceOf: (character: Id | null) => string | null; readonly unfolded: boolean; readonly onToggle: () => void;
 }) {
   const id = useId();
-  const casters = [...new Set(plays.map((p) => nameOf(p.caster)))];
-  const shown = casters.slice(0, NAMES_SHOWN).join(', ');
-  const rest = casters.length - NAMES_SHOWN;
+  /* Each caster once by id, with the first play of each, so two characters that share a name each get a face; the words dedupe by name. */
+  const firsts = plays.filter((p, i) => plays.findIndex((q) => q.caster === p.caster) === i);
+  const names = [...new Set(plays.map((p) => nameOf(p.caster)))];
+  const shown = names.slice(0, NAMES_SHOWN).join(', ');
+  const rest = names.length - NAMES_SHOWN;
   return (
     <div className="kb-lens-section kb-lens-who-section">
       <button type="button" className="kb-lens-fold" aria-expanded={unfolded} aria-controls={id} onClick={onToggle}>
         <span className="kb-lens-fold-sign" aria-hidden="true" />
+        <span className="kb-lens-faces" aria-hidden="true">
+          {firsts.slice(0, NAMES_SHOWN).map((p) => (
+            <span key={p.caster ?? 'staff'} className="kb-lens-face-ink" style={inkOfPlay(p) ? ({ '--kb-play-ink': inkOfPlay(p) } as CSSProperties) : undefined}>
+              <Avatar className="kb-lens-face" src={faceOf(p.caster)} name={nameOf(p.caster)} />
+            </span>
+          ))}
+        </span>
         {playsPhrase(plays.length)} · {shown}{rest > 0 ? ` and ${rest} more` : ''}
       </button>
       <ul id={id} className="kb-lens-rows" hidden={!unfolded}>
-        {unfolded && plays.map((p) => <PlayRow key={p.id} {...row} card={card} play={p} ink={inkOfPlay(p)} caster={nameOf(p.caster)} />)}
+        {unfolded && plays.map((p) => <PlayRow key={p.id} {...row} card={card} play={p} ink={inkOfPlay(p)} caster={nameOf(p.caster)} face={faceOf(p.caster)} />)}
       </ul>
     </div>
   );

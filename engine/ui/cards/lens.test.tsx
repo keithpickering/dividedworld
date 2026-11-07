@@ -234,6 +234,104 @@ describe('what the Lens says and offers', () => {
     expect(rows()).toEqual([]);
   });
 
+  describe('the faces in Who', () => {
+    /** Pipewrench has a picture, Spritey and Gloomba have none. */
+    function faced() {
+      const w = world();
+      w.fake.seed.avatar(w.pipe, { square: 'data:image/webp;base64,AAAA' });
+      return w;
+    }
+    const squares = (root: ParentNode) => [...root.querySelectorAll<HTMLElement>('.kb-lens-row-avatar')];
+
+    test('folded, the button holds one face per distinct caster, up to three, in the words\' order, and its name is unchanged', async () => {
+      width(false);
+      const w = faced();
+      w.play('k2', w.spritey);
+      w.play('k2', w.gloomba);
+      w.play('k2', w.spritey);
+      w.play('k2', w.pipe);
+      open(w);
+      await userEvent.click(await markOf(2, 'Card 2'));
+      const who = whoButton();
+      expect(who).toHaveAccessibleName('4 plays · Pipewrench, Spritey, Gloomba');
+      const faces = [...who.querySelectorAll<HTMLElement>('.kb-lens-face')];
+      expect(faces.map((f) => f.textContent)).toEqual(['', 'S', 'G']);
+      expect(faces[0]!.querySelector('img')).toHaveAttribute('src', 'data:image/webp;base64,AAAA');
+      faces.forEach((f) => expect(f).toHaveAttribute('aria-hidden', 'true'));
+    });
+
+    test('a fourth distinct caster gets no face in the fold', async () => {
+      width(false);
+      const w = faced();
+      const fourth = w.fake.seed.character(w.me, 'Fourth', 'face');
+      [w.spritey, w.gloomba, w.pipe, fourth].forEach((c) => w.play('k2', c));
+      open(w);
+      await userEvent.click(await markOf(2, 'Card 2'));
+      expect(whoButton().querySelectorAll('.kb-lens-face')).toHaveLength(3);
+    });
+
+    test('unfolded, each row has a square: the picture, or the first letter', async () => {
+      width(false);
+      const w = faced();
+      const a = w.play('k2', w.spritey);
+      const b = w.play('k2', w.pipe);
+      open(w);
+      await userEvent.click(await markOf(2, 'Card 2'));
+      await userEvent.click(whoButton());
+      const row = (id: Id) => lens().querySelector<HTMLElement>(`[data-kb-play="${id}"]`)!;
+      const first = row(a).querySelector<HTMLElement>('.kb-lens-row-head .kb-lens-row-avatar')!;
+      expect(first).toHaveAttribute('aria-hidden', 'true');
+      expect(first).toHaveTextContent('S');
+      expect(first.querySelector('img')).toBeNull();
+      const second = row(b).querySelector<HTMLElement>('.kb-lens-row-head .kb-lens-row-avatar')!;
+      expect(second.querySelector('img')).toHaveAttribute('src', 'data:image/webp;base64,AAAA');
+      expect(row(a).querySelector('.kb-lens-row-head .kb-lens-by')).not.toBeNull();
+    });
+
+    test('a staff play\'s square is the first letter of the staff word', async () => {
+      width(false);
+      const w = world();
+      const clerk = w.fake.seed.staff('clerk', 'The Clerk', 'mod');
+      const id = w.play('k2', clerk);
+      open(w);
+      await userEvent.click(await markOf(2, 'Card 2'));
+      await userEvent.click(whoButton());
+      const row = lens().querySelector<HTMLElement>(`[data-kb-play="${id}"]`)!;
+      const name = row.querySelector('.kb-lens-who')!.textContent!;
+      expect(row.querySelector('.kb-lens-row-avatar')).toHaveTextContent([...name][0]!);
+    });
+
+    test('each row\'s square, and each face in the fold, carries its play\'s ink', async () => {
+      width(false);
+      const w = faced();
+      const a = w.play('k2', w.spritey);
+      w.play('k2', w.gloomba);
+      open(w, cards.map((c) => (c.key === 'k2' ? { ...c, tag: () => '#ff9f43' } : c)));
+      await userEvent.click(await markOf(2, 'Card 2'));
+      const ink = (el: Element) => el.closest<HTMLElement>('[style*="--kb-play-ink"]')?.style.getPropertyValue('--kb-play-ink');
+      const faces = [...whoButton().querySelectorAll('.kb-lens-face')];
+      expect(faces).toHaveLength(2);
+      faces.forEach((f) => expect(ink(f)).toBe('#ff9f43'));
+      await userEvent.click(whoButton());
+      expect(squares(lens())).toHaveLength(2);
+      squares(lens()).forEach((s) => expect(ink(s)).toBe('#ff9f43'));
+      expect(ink(lens().querySelector(`[data-kb-play="${a}"] .kb-lens-row-avatar`)!)).toBe('#ff9f43');
+    });
+
+    test('two characters that share a name show two faces and one name in the words', async () => {
+      width(false);
+      const w = world();
+      const twin = w.fake.seed.character(w.me, 'Spritey', 'heel');
+      w.play('k2', w.spritey);
+      w.play('k2', twin);
+      open(w);
+      await userEvent.click(await markOf(2, 'Card 2'));
+      const who = whoButton();
+      expect(who).toHaveAccessibleName('2 plays · Spritey');
+      expect(who.querySelectorAll('.kb-lens-face')).toHaveLength(2);
+    });
+  });
+
   test('a card whose rules stack lists its rows by layer, top first, whatever was billed first', async () => {
     width(false);
     const w = world();
