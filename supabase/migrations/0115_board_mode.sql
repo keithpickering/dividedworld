@@ -3,8 +3,8 @@
 -- column mixed the two ('system', 'light' and 'dark' were the house theme in a mode), so each row is rewritten once here: system becomes
 -- default with mode system, light and dark become default with that mode, any other key stays with mode system. The theme check is a
 -- name pattern that already admits 'default'; only the column's own default changes. set_preferences is dropped and made again with
--- `mode` after tilt, as 0098 did for tilt, because two signatures would make every call ambiguous; its body is 0098's with the one new
--- choice. preferences_answer and boot() (0097, 0098) carry the key, and the grants are restated.
+-- `mode` after tilt, as 0098 did for tilt, because two signatures would make every call ambiguous; its body is 0112's (0098's with
+-- Snappy motion) with the one new choice. preferences_answer and boot() (0097, 0098) carry the key, and the grants are restated.
 
 alter table account_preferences add column mode text not null default 'system' check (mode in ('system', 'light', 'dark'));
 update account_preferences set mode = case when theme in ('light', 'dark') then theme else 'system' end,
@@ -35,7 +35,7 @@ declare
 begin
   if theme is not null and theme !~ '^[a-z][a-z0-9-]{0,39}$' then raise exception 'a theme is named in lowercase words joined by hyphens' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   if postbit is not null and postbit not in ('side', 'stacked') then raise exception 'the postbit is side or stacked' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
-  if motion is not null and motion not in ('system', 'reduce', 'full') then raise exception 'motion follows the system, or is reduced or full' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if motion is not null and motion not in ('system', 'reduce', 'full', 'snappy') then raise exception 'motion follows the system, or is off, smooth or snappy' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   if smoke is not null and smoke not in ('full', 'low', 'off') then raise exception 'the smoke is full, low or off' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   if contrast is not null and contrast not in ('standard', 'high') then raise exception 'contrast is standard or high' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   if text_size is not null and text_size not in (100, 125, 150, 200) then raise exception 'text size is 100, 125, 150 or 200 percent' using hint = 'kayfabb.refusal', errcode = '22023'; end if;

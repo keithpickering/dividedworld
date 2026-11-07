@@ -35,8 +35,8 @@ test('stored themes system, light, dark and an instance\'s own become a theme an
     psqlOn(db.toString(), `
       do $$
       begin
-        insert into account_preferences (account, theme) values
-          (tests.account('mode-s'), 'system'), (tests.account('mode-l'), 'light'), (tests.account('mode-d'), 'dark'), (tests.account('mode-o'), 'dusk');
+        insert into account_preferences (account, theme, motion) values
+          (tests.account('mode-s'), 'system', 'system'), (tests.account('mode-l'), 'light', 'reduce'), (tests.account('mode-d'), 'dark', 'snappy'), (tests.account('mode-o'), 'dusk', 'full');
       end $$;`);
     assert.equal(psqlOn(db.toString(), `select string_agg(theme, ',' order by theme) from account_preferences`), 'dark,dusk,light,system');
 
@@ -48,6 +48,8 @@ test('stored themes system, light, dark and an instance\'s own become a theme an
     assert.equal(after('mode-l'), 'default,light', 'light is the default theme in light');
     assert.equal(after('mode-d'), 'default,dark', 'dark is the default theme in dark');
     assert.equal(after('mode-o'), 'dusk,system', 'an instance\'s own theme stays, with the device\'s mode');
+    // The motion beside each theme, Snappy (0112) among them, is left as it was.
+    assert.equal(psqlOn(db.toString(), `select string_agg(motion, ',' order by u.email) from account_preferences p join auth.users u on u.id = p.account`), 'snappy,reduce,full,system');
   } finally {
     psqlOn(server.toString(), `drop database if exists ${name} with (force);`);
   }
