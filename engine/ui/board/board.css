@@ -235,6 +235,11 @@
     padding-right: 0.4em;
   }
 
+  /* A narrow phone wraps the mark under the title, where its tile would straddle into the starter's 24px target below (WCAG 2.5.8): it takes its own room there. */
+  .kb-thread-main .kb-thread-pin-mark {
+    margin-block: 0;
+  }
+
   .kb-thread-gap {
     display: block;
     height: 4px;
