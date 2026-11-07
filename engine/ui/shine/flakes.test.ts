@@ -15,8 +15,10 @@ const HOLO = 7;
 /* Divided World's glint (the engine may not import the instance, so the tests carry a copy). */
 const GLINT = '#ffffff';
 const BOX = { w: 988, h: 300 };
-/* Digest of what `draw` painted for `shot()` before the draw was restructured to one transform per flake. */
-const LOOK = 'ef2c407d43c607a7ce58c815efdec0b3a104d064d6e3ecb51b6cf81eaa6a8ed1';
+/* Digest of what `draw` painted for `shot()` before the draw was restructured to one transform per flake. Repinned 2026-11-07, when
+   the dark board's flakes went to their inks at the ceiling with tinted flares (the owner: "almost imperceptible in dark mode"); the
+   light board's two scenes were checked to paint the same lines, byte for byte, before and after. */
+const LOOK = '7e92bbb1a01692c2e5ccb74c5e58628e1a5754261479fe787cf863ad608f70ea';
 /* A box wide enough that one post alone has more burst flakes than the page-wide cap holds. */
 const HUGE = { w: 1400, h: 300 };
 const make = (seed = 'p1', box = BOX): Flakes => makeFlakes({ seed, box, inks: GLITTER, holo: HOLO, density: 70, glint: GLINT });
@@ -106,10 +108,12 @@ function tracked(density = 1) {
   return { ctx: ctx as unknown as CanvasRenderingContext2D, n, lines, matrix: () => m, digest: () => createHash('sha256').update([...lines].sort().join('\n')).digest('hex') };
 }
 
-/* Digests of what `drawBurst` painted for `burstShot()` before it was restructured to one transform per flake. */
-const BURST_LIGHT = 'fa65bbf1abf6d450f0477a6349f3f37c1a7d6147f2f97afabae1cea87599e77e';
+/* Digests of what `drawBurst` painted for `burstShot()` before it was restructured to one transform per flake. Repinned 2026-11-07,
+   when the burst was turned to be seen from above the whole time (the owner: keep "that same camera angle"). */
+const BURST_LIGHT = 'b1488eb8c9d1b667a736554d711d1648752f749191bf40a912ea2e025f6d5cd2';
 /* (Pinned with the dark post bursting on its own: before the cap rose it shared the page with the light shot's burst above and flew only the 530 flakes left of 1,500.) */
-const BURST_DARK_FLAKES = 'f543e0dd4bc0e30128c0102fb60fafe64e4ef4b76e6a57ce761bf571339cdfe3';
+/* Repinned 2026-11-07 with BURST_LIGHT, and for the dark board's inks at the ceiling. */
+const BURST_DARK_FLAKES = 'a2ecf0062e70a3f550d8c547878901ba08f11942a27500c26fc49533e1b05a5c';
 function burstShot(band: { lo: number; hi: number }, onlyFlakes: boolean): { digest: string; t: ReturnType<typeof tracked>; flying: number } {
   const f = makeFlakes({ seed: 'burst-look', box: { w: 400, h: 200 }, inks: GLITTER, holo: HOLO, density: 70, glint: GLINT, star: {} as CanvasImageSource });
   burst(f, 0);
@@ -472,6 +476,42 @@ describe('the burst', () => {
     assert.equal(new Set(f.settled).size, f.total, 'each flake landed once');
   });
 
+  /* The owner, 2026-11-07: the burst should keep the camera above the post the whole time, as the settled glitter has it. */
+  test('seen from above: a flake in the air keeps near the line from the burst point to its place and never falls down the screen', () => {
+    const f = make('above', { w: 600, h: 300 });
+    burst(f, 0);
+    const parts = (f as unknown as { parts: Array<{ f: { x: number; y: number }; x: number; y: number }> }).parts.slice();
+    const from = new Map(parts.map((b) => [b, { x: b.x, y: b.y }]));
+    let worst = 0;
+    for (let t = 16; t <= 1900; t += 16) {
+      stepBurst(f, t);
+      for (const b of (f as unknown as { parts: typeof parts }).parts) {
+        const a = from.get(b)!, dx = b.f.x - a.x, dy = b.f.y - a.y, len = Math.hypot(dx, dy) || 1;
+        /* How far off the straight line from where it left to where it rests, and how far past either end. */
+        const along = ((b.x - a.x) * dx + (b.y - a.y) * dy) / len;
+        const off = Math.abs((b.x - a.x) * dy - (b.y - a.y) * dx) / len;
+        worst = Math.max(worst, off, -along, along - len);
+      }
+    }
+    assert.ok(worst <= 40.5, `a flake strayed ${worst.toFixed(1)} px off its line`);
+    assert.equal(f.flying, 0);
+  });
+
+  test('a flake in the air is nearer the reader, so it is drawn larger than it lies on the post, and its own size again as it lands', () => {
+    const f = make('near', { w: 400, h: 200 });
+    burst(f, 0);
+    const size = (t: ReturnType<typeof tracked>) => t.lines.filter((l) => l.startsWith('rect ')).map((l) => {
+      const [a, , , d] = l.split(' ').slice(2).map((p) => p.split(',').map(Number) as [number, number]);
+      return Math.hypot(d![0] - a![0], d![1] - a![1]);
+    });
+    stepBurst(f, 400);
+    const mid = tracked(1);
+    drawBurst(mid.ctx, f, bands.light, 400);
+    const own = (f as unknown as { parts: Array<{ f: { s: number } }> }).parts.map((b) => b.f.s * 0.84);
+    const grown = size(mid).filter((h, i) => h > own[i]! * 1.2).length;
+    assert.ok(grown > size(mid).length * 0.5, `${grown} of ${size(mid).length} drawn larger mid-flight`);
+  });
+
   test('a second burst does nothing', () => {
     const f = make();
     burst(f, 0);
@@ -578,6 +618,61 @@ const rgbaHex = (c: string): string => {
   assert.match(c, /^#[0-9a-f]{8}$/u, 'a stop with alpha is #rrggbbaa');
   return c.slice(0, 7);
 };
+
+/* The owner, 2026-11-07: the glitter is almost imperceptible on the dark board. The band holds (section 5 of the shine design), so
+   within it each ink is taken at the ceiling, saturated, and a flake facing the light flares in its own hue there. */
+describe('the dark board', () => {
+  const chroma = (hex: string) => { const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)); return Math.max(r!, g!, b!) - Math.min(r!, g!, b!); };
+  const L = (hex: string) => luminanceOf(toLinear(hex));
+
+  test('a flake facing the light is its ink at the ceiling, in color, not a gray; one facing away is a share of that, not black', () => {
+    const f = make('jewel', { w: 300, h: 150 });
+    landEverything(f);
+    const band = bands.dark;
+    for (const k of f.settled.filter((x) => x.ink < HOLO).slice(0, 40)) {
+      const lit = tracked(1), unlit = tracked(1);
+      f.draw(lit.ctx, { x: k.nx, y: k.ny }, band, 0, false);
+      f.draw(unlit.ctx, { x: 99, y: 99 }, band, 0, false);
+      const at = (t: ReturnType<typeof tracked>) => t.lines.find((l) => l.startsWith('rect ') && l.endsWith(rectOf(k)))!.split(' ')[1]!;
+      const on = at(lit), off = at(unlit);
+      assert.ok(L(on) >= band.hi * 0.9 && L(on) <= band.hi + 0.004, `${on} lit sits at the ceiling ${band.hi}`);
+      assert.ok(chroma(on) >= 40, `${on} lit keeps its color`);
+      assert.ok(L(off) >= band.hi * 0.3, `${off} unlit still shows`);
+    }
+  });
+
+  test('a flake facing the light flares in its own hue, drawn over it and not added, and the flare stays under the ceiling', () => {
+    const g = globalThis as unknown as { OffscreenCanvas?: unknown };
+    const stops: string[] = [];
+    g.OffscreenCanvas = class {
+      getContext() {
+        return new Proxy({}, { get: (_t, k: string) => (k === 'createRadialGradient' ? () => ({ addColorStop: (_o: number, c: string) => stops.push(c) }) : () => undefined), set: () => true });
+      }
+    };
+    try {
+      const f = make('tint', { w: 300, h: 150 });
+      landEverything(f);
+      /* A ceiling of its own, so no sprite an earlier test asked for without a canvas is cached here. */
+      const band = { lo: 0, hi: 0.061 };
+      const k = f.settled.find((x) => x.ink < HOLO)!;
+      const t = tracked(1);
+      f.draw(t.ctx, { x: k.nx, y: k.ny }, band, 0, false);
+      const flares = t.lines.filter((l) => l.startsWith('img '));
+      assert.ok(flares.length >= 1, 'a flare on the dark board');
+      assert.ok(flares.every((l) => l.startsWith('img source-over ')), `drawn over, never added: ${flares[0]}`);
+      assert.ok(stops.length > 0);
+      for (const c of stops) assert.ok(L(c.slice(0, 7)) <= band.hi + 0.004 && chroma(c.slice(0, 7)) > 0, `${c}: a hue under the ceiling`);
+    } finally { delete g.OffscreenCanvas; }
+  });
+});
+
+/** The rect a settled flake is drawn as, at density 1, as `tracked` writes its corners. */
+function rectOf(k: { x: number; y: number; s: number; rot: number }): string {
+  const c = Math.cos(k.rot), s = Math.sin(k.rot), r3 = (x: number) => String(+x.toFixed(3));
+  const at = (x: number, y: number) => `${r3(c * x - s * y + k.x)},${r3(s * x + c * y + k.y)}`;
+  const x0 = -k.s / 2, y0 = -k.s * 0.42, x1 = x0 + k.s, y1 = y0 + k.s * 0.84;
+  return [at(x0, y0), at(x1, y0), at(x1, y1), at(x0, y1)].join(' ');
+}
 
 describe('everything over the words stays in the band', () => {
   test('the burst: every flake color it draws, and the sampler, hold 4.5:1 on both boards at several moments', () => {

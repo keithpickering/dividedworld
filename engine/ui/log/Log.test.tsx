@@ -31,7 +31,7 @@ function world() {
   const pipe = seed.character(me, 'Pipewrench', 'heel', { at: at(2) });
   const hoo = seed.character(me, 'Mrs. Hooligan', 'face', { at: at(3) });
   const glo = seed.character(rival, 'Gloomba', 'heel', { at: at(4) });
-  const turns = seed.thread('the-system', null, 'Season 1: Who Turned', 'Every Turn.', { at: at(2) });
+  const turns = seed.thread('announcements', null, 'Season 1: Who Turned', 'Every Turn.', { at: at(2) });
   const { thread } = seed.thread('general', glo, 'a thread', 'Opening.', { at: at(27) });
   const p2 = seed.post(thread, pipe, 'Pipewrench speaks.', { at: at(28, 10) });
   const h3 = seed.post(thread, hoo, 'Mrs. Hooligan speaks.', { at: at(28, 11) });
@@ -106,7 +106,7 @@ describe('My log', () => {
     expect(rows[2]![2]).toBe('Jobber to Midcarder. Standing 0.50 to 3.25 this season.');
     expect(rows[3]![2]).toMatch(/^Scored as a Heel for Oct 27: drew heat \+0\.50\./u);
     expect(rows[3]!.slice(3)).toEqual(['+0.50', '2.90']);
-    /* The Turn's line links the announcement, on The System's board. */
+    /* The Turn's line links the announcement, on the staff board. */
     expect(within(bodyRows()[1]!).getByRole('link', { name: 'Season 1: Who Turned' })).toHaveAttribute('href', expect.stringMatching(/^\/t\//u));
   });
 
@@ -372,7 +372,7 @@ describe('My log', () => {
     vi.spyOn(fake, 'characters').mockRejectedValue(new Error('lost'));
     open(fake, me, pipe);
     await screen.findByRole('table');
-    expect(bodyRows().map(cells)[1]![2]).toBe('Pipewrench is a Face now. Announced with its old class in The System\'s board.');
+    expect(bodyRows().map(cells)[1]![2]).toBe('Pipewrench is a Face now. Announced with its old class in the board.');
   });
 
   test('a tab with nothing on the pages read says so, rather than an empty table', async () => {

@@ -79,6 +79,7 @@ export function Classes() {
           <li><span className="kb-class-mark" data-kb-mark="earns" aria-hidden="true">+</span>earns</li>
           <li><span className="kb-class-mark" data-kb-mark="hurts" aria-hidden="true">−</span>hurts</li>
           <li><span className="kb-class-mark" data-kb-mark="calls" aria-hidden="true" />earns by calling where a post ends up</li>
+          <li><span className="kb-class-mark" data-kb-mark="splits" data-kb-toward="right" aria-hidden="true" />earns from the balance between two (the smaller side)</li>
         </ul>
       </div>
       {instance.classes.map((c) => {

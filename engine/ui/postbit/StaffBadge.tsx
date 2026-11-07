@@ -19,14 +19,20 @@ export function StaffGroup({ name }: { readonly name: string }) {
   return <span className="kb-staff-group"><span className="kb-staff-orb" aria-hidden="true" />{name}</span>;
 }
 
+/** Whether the badge draws anything: the profile's Staff row is left out when it would be empty. */
+export function showsStaffBadge(character: Character, group: string | undefined): boolean {
+  const office = character.office;
+  if (!character.staff || office === 'developer') return false;
+  return Boolean(group) || office === 'boss' || office === 'mod';
+}
+
 /** Nothing for a character who is not staff, and none for the developer persona, whose posts are on the Updates page and in no thread. */
 export function StaffBadge({ character }: { readonly character: Character }) {
   const { settings } = useKayfa();
   const office = character.office;
-  if (!character.staff || office === 'developer') return null;
   const group = settings.staffGroup?.name;
+  if (!showsStaffBadge(character, group)) return null;
   const title = office === 'boss' || office === 'mod' ? OFFICE_TITLE[office] : null;
-  if (!group && !title) return null;
   return (
     <span className="kb-staff-badge" data-kb-staff={office ?? 'member'}>
       {group && <StaffGroup name={group} />}

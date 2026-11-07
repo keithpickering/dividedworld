@@ -51,10 +51,10 @@ const SEASONED_WELCOME = '2026-10-01T00:00:00.000Z';
 export const TEST_CODE = '123456';
 
 const CODE_MESSAGE = 'If this address can sign in here, a code and a link to sign in are on their way to it. A new login needs an invite where this instance asks for one. If nothing comes in a few minutes, ask again.';
-const SYSTEM_BOARD = 'only The System posts here; spin a thread from what it said';
+const SYSTEM_BOARD = 'only the staff post here; spin a thread from what they said';
 const MINUTE = 60_000;
 const DAY = 86_400_000;
-const START = Date.UTC(2026, 9, 29, 12);
+export const START = Date.UTC(2026, 9, 29, 12);
 
 export interface LiveEvent {
   readonly topic: string;
@@ -147,7 +147,7 @@ export interface Seed {
    */
   announceTurn(character: Id, thread: Id, options?: { was?: string; class?: string; since?: string; at?: number }): Id;
   /**
-   * A character's announce Act (0100) in the Promos thread of the season open at `at` (else now), which this opens on The System's board where the
+   * A character's announce Act (0100) in the Promos thread of the season open at `at` (else now), which this opens on the staff board where the
    * season has none. A debut names no `was`, and one that names its `class` is that class's reveal. Throws on a debut naming `was`; unlike the
    * guard, it does not check that `class` is the one the character holds, so a seed states what the board shows.
    */
@@ -270,8 +270,8 @@ export interface SeedMove {
 
 interface SeedAct {
   readonly at?: number;
-  /** For The System's Acts: `tally` (default) or `reveal`. */
-  readonly kind?: 'tally' | 'reveal';
+  /** For The System's Acts: `tally` (default), `reveal`, or `post` (an Act written with no character, a post the staff's word names). */
+  readonly kind?: 'tally' | 'reveal' | 'post';
   readonly payload?: Readonly<Record<string, unknown>>;
 }
 
@@ -2029,7 +2029,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (said.length > 280) return refuse('a reason is at most 280 characters', 'reason');
       const p = acts.get(post);
       if (!p || (p.kind !== 'post' && p.kind !== 'spin')) return refuse('there is no such post to report');
-      if (characters.get(p.character ?? '')?.staff) return refuse('a post by The System is not reported');
+      if (characters.get(p.character ?? '')?.staff) return refuse('a post by the staff is not reported');
       const mod = [...characters.values()].find((c) => c.staff?.office === 'mod' && c.debutedAt !== null && c.retiredAt === null);
       if (!mod) return refuse('there is no one on duty to hear a report right now');
       if (reportsLeftNow(through) <= 0) return refuse(`this character has made its ${settings.modBots.reportsPerDay} reports for today`);
@@ -2550,6 +2550,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (p.smoke !== undefined && !['full', 'low', 'off'].includes(p.smoke)) return refuse('the smoke is full, low or off');
       if (p.contrast !== undefined && p.contrast !== 'standard' && p.contrast !== 'high') return refuse('contrast is standard or high');
       if (p.textSize !== undefined && ![100, 125, 150, 200].includes(p.textSize)) return refuse('text size is 100, 125, 150 or 200 percent');
+      if (p.mode !== undefined && p.mode !== 'system' && p.mode !== 'light' && p.mode !== 'dark') return refuse('the mode follows the device, or is light or dark');
       if (p.tilt !== undefined && p.tilt !== 'off' && p.tilt !== 'on') return refuse('tilt is off or on');
       /* As set_preferences (0064) keeps the toasts: the kinds of alert there are, each once in the order first named, null for the defaults. */
       let toasts = account.prefs.toasts;
@@ -2778,7 +2779,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const systemBoard = (thread: Id) => {
     const found = threadAndBoard(thread);
     if (isRefusal(found)) throw new Error(found.error);
-    if (!found.board.isSystem) throw new Error('The System\'s Acts are on its board');
+    if (!found.board.isSystem) throw new Error('an Act with no character is on the staff board');
     return found.t;
   };
   const systemAct = (thread: Id, o: SeedAct, body: string): ActRec => {
@@ -2897,7 +2898,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const board = boards.find((b) => b.slug === slug);
       if (!board) throw new Error(`no board ${slug}`);
       if (character === null) {
-        if (!board.isSystem) throw new Error('The System\'s Acts are on its board');
+        if (!board.isSystem) throw new Error('an Act with no character is on the staff board');
         const t = openThread(board.id, title, null, o.at);
         return { thread: t.id, act: systemAct(t.id, o, body).id };
       }
@@ -3076,7 +3077,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const demand = moveDemand(m);
       const id = write({
         character: boss, kind: 'move', thread: announcements(),
-        payload: { kind: 'renameBoard', body: m.body ?? 'The System has spoken.', params: moveParams(m), ...(demand ? { demand } : {}), expires_at: iso(m.expiresAt ?? at + 3 * DAY) }, at,
+        payload: { kind: 'renameBoard', body: m.body ?? 'This board has a new name.', params: moveParams(m), ...(demand ? { demand } : {}), expires_at: iso(m.expiresAt ?? at + 3 * DAY) }, at,
       }).id;
       if (m.uncounted) uncounted.add(id);
       return id;

@@ -10,7 +10,7 @@ test('the catalog holds renameBoard, structural, with a long plain label', () =>
   assert.deepEqual(MOVE_KINDS.map((k) => [k.key, k.structural]), [['renameBoard', true], ['nameSuccessor', true], ['setRule', false], ['pullSlot', false], ['repriceSlot', false], ['flashSale', false]]);
   assert.deepEqual(ASKABLE_MOVE_KINDS.map((k) => k.key), ['renameBoard', 'setRule', 'pullSlot', 'repriceSlot', 'flashSale'], 'a successor is named in its own answer, never among the moves');
   assert.deepEqual(MOVE_KINDS.map((k) => k.shapesBoard), [true, false, false, false, false, false]);
-  assert.equal(moveKind('renameBoard')?.label, 'THE SYSTEM RENAMED THIS BOARD');
+  assert.equal(moveKind('renameBoard')?.label, '{role} renamed this board');
   assert.equal(moveKind('shout'), undefined);
 });
 
@@ -28,8 +28,8 @@ test('renameBoard params are held to their shape; a string over its outer bound 
 });
 
 test('the log line reads in plain words with nothing unfilled', () => {
-  const words = moveKind('renameBoard')!.template(rename);
-  assert.equal(words, 'The System renamed a board to "Pointless Toast Palace". Its subject is now: Toast, and only toast.');
+  const words = moveKind('renameBoard')!.template(rename, 'The Boss');
+  assert.equal(words, 'The Boss renamed a board to "Pointless Toast Palace". Its subject is now: Toast, and only toast.');
   assert.doesNotMatch(words, /[{}]|undefined/);
 });
 
@@ -80,7 +80,7 @@ const rule = { board, predicate: 'noDoublePost', param: null, band: 'minor' };
 
 test('setRule is a small move, askable, and keeps its params whole', () => {
   const k = moveKind('setRule')!;
-  assert.deepEqual([k.structural, k.shapesBoard, k.askable, k.label, k.plain], [false, false, true, 'SET A RULE', 'a rule']);
+  assert.deepEqual([k.structural, k.shapesBoard, k.askable, k.label, k.plain], [false, false, true, 'Set a rule', 'a rule']);
   assert.deepEqual(k.uuids, ['board']);
   const ok = moveParamsProblems('setRule', rule);
   assert.ok(ok.ok && ok.trims.length === 0, JSON.stringify(ok));
@@ -122,13 +122,13 @@ test('setRule is refused naming what failed: the predicate, its param, the band,
 
 test('a setRule reads in plain words with nothing unfilled, for the log and for the admin queue', () => {
   const k = moveKind('setRule')!;
-  const words = k.template(rule);
+  const words = k.template(rule, 'The Boss');
   assert.match(words, /no double posting/);
   assert.doesNotMatch(words, /[{}]|undefined|null/);
   assert.deepEqual(k.parts(rule, 'General', 'plan'), ['Set a rule on ', { board, name: 'General' }, ': no double posting']);
   assert.deepEqual(k.parts(rule, 'General', 'done'), ['Set a rule on ', { board, name: 'General' }, ': no double posting']);
   assert.deepEqual(k.parts({ ...rule, board: null, predicate: 'minLength', param: 20 }, null, 'plan'), ['Set a house rule for every board: posts of at least 20 characters']);
-  assert.match(k.template({ ...rule, board: null }), /every board/);
+  assert.match(k.template({ ...rule, board: null }, 'The Boss'), /every board/);
 });
 
 

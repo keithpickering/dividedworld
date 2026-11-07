@@ -54,6 +54,7 @@ export function Toolbar({ onTool, onQuote }: ToolbarProps) {
           key={e.tool}
           type="button"
           className="kb-button kb-toolbar-button"
+          data-kb-size="small"
           aria-label={e.name}
           tabIndex={i === active ? 0 : -1}
           onFocus={() => setActive(i)}

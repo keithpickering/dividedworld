@@ -18,6 +18,8 @@ import type { Box } from './glass-text.ts';
  *      inside an element that scrolls on purpose;
  *   3. a mismatched row: two GlassButtons in one ButtonRow, or two adjacent controls in one flex
  *      line, whose heights (to within 1px, on one line: a control alone on its line may be taller for a wrapped label) or computed type sizes differ;
+ *      a board form's Chrome primary (`.kb-button[data-kb-primary]`, Send and Start thread) is its form's one larger button by the board look's
+ *      design (docs/plans/2026-11-06-board-look-design.md, section 3; board 05-reply), so it is left out and the controls either side of it are compared;
  *   4. a cut control: a control whose box crosses into the cut corner of the clip-path polygon of
  *      the panel it sits in;
  *   5. text outside the calm: a text block on the glass of a surface that is `calmAll` (the
@@ -82,7 +84,12 @@ export interface BlockFact extends Located {
   readonly surface?: string;
 }
 
-export interface ControlInRow extends Located { readonly fontSize: number; readonly glass: boolean }
+export interface ControlInRow extends Located {
+  readonly fontSize: number;
+  readonly glass: boolean;
+  /** The board's Chrome primary (`.kb-button[data-kb-primary]`): its form's one larger button, by the board look's design (section 3), so it is not held to its row-mates. */
+  readonly primary?: boolean;
+}
 
 /** A `ButtonRow` (its GlassButtons are compared with each other) or one line of a flex container (adjacent controls are). */
 export interface RowFact { readonly path: string; readonly kind: 'button-row' | 'flex-line'; readonly controls: readonly ControlInRow[] }
@@ -180,7 +187,8 @@ export function judgeLayout(facts: LayoutFacts): string[] {
 
   /* 3. a mismatched row */
   for (const row of facts.rows) {
-    const cs = row.kind === 'button-row' ? row.controls.filter((c) => c.glass) : row.controls;
+    /* A board primary is left out of its line, so the controls either side of it are held to each other. */
+    const cs = row.kind === 'button-row' ? row.controls.filter((c) => c.glass) : row.controls.filter((c) => c.primary !== true);
     for (let i = 1; i < cs.length; i++) {
       const a = cs[i - 1]!;
       const b = cs[i]!;

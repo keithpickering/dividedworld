@@ -209,13 +209,15 @@
     { "family": "Barlow Condensed", "file": "fonts/BarlowCondensed-Bold.woff2", "weight": 700, "style": "normal", "ink": 0.9 },
     { "family": "Barlow Condensed", "file": "fonts/BarlowCondensed-ExtraBold.woff2", "weight": 800, "style": "normal", "ink": 0.91 },
     { "family": "Barlow Condensed", "file": "fonts/BarlowCondensed-BoldItalic.woff2", "weight": 700, "style": "italic", "ink": 0.9 },
-    { "family": "Barlow Condensed", "file": "fonts/BarlowCondensed-ExtraBoldItalic.woff2", "weight": 800, "style": "italic", "ink": 0.91 }
+    { "family": "Barlow Condensed", "file": "fonts/BarlowCondensed-ExtraBoldItalic.woff2", "weight": 800, "style": "italic", "ink": 0.91 },
+    { "family": "Silkscreen", "file": "fonts/Silkscreen-Regular.woff2", "weight": 400, "style": "normal", "ink": 0.62 }
   ],
   "classes": {
     "face": { "fill": "#3db8ff", "ink": "#03141a", "large": "#8fd6ff" },
     "heel": { "fill": "#ff3d57", "ink": "#14030a", "large": "#ff959f" },
     "jabroni": { "fill": "#ffd93d", "ink": "#1a1403", "large": "#ffe27a" },
     "technician": { "fill": "#2ef0a0", "ink": "#03141a", "large": "#7dffc8" },
+    "tweener": { "fill": "#ff4fd8", "ink": "#1a0316", "large": "#ffa3ec" },
     "lurker": { "fill": "#b97aff", "ink": "#12051f", "large": "#d4b0ff" }
   },
   "orbs": {

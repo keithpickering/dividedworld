@@ -357,9 +357,10 @@ function reading(fact: TextFact, role: ColorRole, s: SurfaceCeilings, at: string
  * (cards/Hand.board.stories.tsx; the tag itself is glass and is read): in the board's own ground
  * and type, opaque, which the board's rules and axe hold, not the glass's; and the post Stick Around
  * lifts into its full-screen view, still the board's 2003 post, white, with the release and the bar
- * (the glass's, read) around it.
+ * (the glass's, read) around it; and Settings › The board's miniature of the board's first screen in the chosen theme's
+ * own colors (account/ThemePicker.tsx), decoration that a screen reader skips (its tiles carry the names).
  */
-export const BOARD = '.kb-preview-post, .kb-profile-preview-post, .kb-hand-board-post-bar, .kb-hand-board-post-foot, .kb-hold-post';
+export const BOARD = '.kb-preview-post, .kb-profile-preview-post, .kb-hand-board-post-bar, .kb-hand-board-post-foot, .kb-hold-post, .kb-tp-big';
 /**
  * The instance's drawn art, marked `data-kb-art` by the engine screen that leaves it a place (the Vending
  * Machine's sign and the codes printed on its slots): decoration, hidden from a screen reader, with no

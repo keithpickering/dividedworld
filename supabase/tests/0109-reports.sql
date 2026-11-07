@@ -3,7 +3,7 @@
 -- 1. open_report: a player's door. It spends reportPrice (wallet_events kind 'report') and writes a public `report` Act naming the reporter, with the reason, on the post, taking
 --    no seq. It answers with what the judgment needs (the beat Mod, the board, the reporter's public name) and no account.
 -- 2. It refuses, writing and spending nothing: a character the caller does not play (the same words as one that does not exist), a banned character, a blank or over-long reason,
---    a post by The System, no such post, a short wallet. It refuses past reportsPerDay for THAT character only (the player's other masks report on), a refunded report not counted.
+--    a post by the staff, no such post, a short wallet. It refuses past reportsPerDay for THAT character only (the player's other masks report on), a refunded report not counted.
 -- 3. The daily judgment budget (judgmentsPerDay, one instance-wide count of the ledger) is checked before anything is paid, and refuses in the same words whoever asks.
 -- 4. A report across one's own masks is allowed, and answers as any other.
 -- 5. close_report writes the verdict by the Mod on the board's beat, once: twice closes once. A visit verdict starts a visit with cause 'report'; a charge naming no rule in force
@@ -216,11 +216,13 @@ begin
   if pg_temp.refusal(format('select open_report(%L, %L, %L)', ann_a, p, U&'\200B\3000')) is null then raise exception 'an invisible reason was taken'; end if;
   if pg_temp.refusal(format('select open_report(%L, %L, %L)', ann_a, p, repeat('x', 281))) is null then raise exception 'a 281-character reason was taken'; end if;
   if pg_temp.refusal(format('select open_report(%L, %L, %L)', ann_a, gen_random_uuid(), 'Why.')) is null then raise exception 'a report of no post was taken'; end if;
-  -- A post by The System is not reported.
+  -- A post by the staff is not reported.
   perform tests.unbecome();
   staff_post := (write_staff_act('rp-m1', 'post', t, null, jsonb_build_object('body', 'The Mod speaks.')) ->> 'id')::uuid;
   perform tests.become(annu);
-  if pg_temp.refusal(format('select open_report(%L, %L, %L)', ann_a, staff_post, 'Why.')) is null then raise exception 'a post by the Mod was reported'; end if;
+  -- In the engine's neutral words (0114): the player reads the refusal as the backend wrote it, and the engine names no instance's cast.
+  said := pg_temp.refusal(format('select open_report(%L, %L, %L)', ann_a, staff_post, 'Why.'));
+  if said is distinct from '55000: a post by the staff is not reported' then raise exception 'a post by the Mod was reported, or refused in other words: %', said; end if;
   perform tests.unbecome();
   if (select count(*) from acts where kind = 'report') is distinct from n0 or pg_temp.wallet(pg_temp.ann()) is distinct from a0 then raise exception 'a refusal wrote or spent'; end if;
   -- A short wallet is refused, and the Act it was about to write is not left behind.

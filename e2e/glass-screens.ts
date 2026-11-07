@@ -76,6 +76,7 @@ export const PAGES: readonly Screen[] = [
     name: 'Updates, with Write an update open', board: '2026-11-05-backfill/38-write-update', path: '/updates', asAdmin: true,
     then: async (page) => { await page.getByRole('button', { name: 'Write an update' }).click(); await expect(page.getByRole('form', { name: 'Write an update' })).toBeVisible(); },
   },
+  { name: 'Settings › The board', board: '2026-11-06-board-look/19-theme-picker', path: '/settings?section=board' },
   { name: 'Settings › Account, with the invites', board: '2026-11-05-backfill/33-settings-account', path: '/settings?section=account' },
   { name: 'Sign in', board: '2026-11-05-backfill/14-sign-in', path: '/sign-in', signedOut: true },
   { name: 'Register', board: '2026-11-05-backfill/15-register', path: '/register?invite=ab12cd34', signedOut: true },

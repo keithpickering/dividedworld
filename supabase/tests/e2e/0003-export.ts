@@ -130,8 +130,8 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into presence (character, place_kind, place, board, place_since, online_since, seen_at) values (b, 'thread', t, (select board from threads where id = t), now(), now(), now());
       insert into presence_hidden (character) values (a);
       perform count_thread_views();
-      -- Tilt turned on (0093) and motion snappy (0112), so a value other than each column's default must survive the round trip.
-      insert into account_preferences (account, theme, postbit, motion, smoke, contrast, text_size, tilt, cards_met, alerts_seen_at, settlement_seen, toasts, welcomed_at, tips, tips_seen) values (ann, 'dark', 'stacked', 'snappy', 'low', 'high', 150, 'on', '{whoops,stick-around}', now() - interval '1 hour', now() - interval '2 hours', '{quote,hint}', now() - interval '3 hours', 'off', '{tour-plate,grid}');
+      -- Tilt turned on (0093), motion snappy (0112) and a mode chosen beside a theme (0115), so values other than the columns' defaults must survive the round trip.
+      insert into account_preferences (account, theme, postbit, motion, smoke, contrast, text_size, tilt, mode, cards_met, alerts_seen_at, settlement_seen, toasts, welcomed_at, tips, tips_seen) values (ann, 'dusk', 'stacked', 'snappy', 'low', 'high', 150, 'on', 'light', '{whoops,stick-around}', now() - interval '1 hour', now() - interval '2 hours', '{quote,hint}', now() - interval '3 hours', 'off', '{tour-plate,grid}');
       insert into character_profiles (character, title, signature, avatar_square, avatar_portrait, square_frame, portrait_frame)
       values (a, 'Exported', '[b]sig[/b]', 'exp-sq.webp', 'exp-pt.webp', '{"x": 0, "y": 0, "w": 1, "h": 0.5}', '{"x": 0, "y": 0, "w": 0.5, "h": 1}');
       -- An original 0025 handed to the sweep: a row the export carries, naming a file it does not.

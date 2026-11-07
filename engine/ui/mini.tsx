@@ -3,8 +3,10 @@
  * "2 min ago" with its exact time on hover, and the "sign in" prompt a signed-out visitor sees
  * instead of boards (the API needs a session for reads).
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { Character, KayfaApi } from './data/api.ts';
+import { useNarrow } from './media.ts';
+import { sameYear } from './postbit/dates.ts';
 import { Link } from './router.tsx';
 import { usePlayer } from './player.tsx';
 import { useBoot } from './boot.tsx';
@@ -19,8 +21,19 @@ export function Mini({ character, name }: { readonly character: Character | unde
   );
 }
 
-/** "just now", "2 min ago", "3 hr ago", "yesterday", "5 days ago", then a date. */
-export function ago(iso: string, nowMs = Date.now()): string {
+/**
+ * A mini avatar and its name, one unit: an inline flex box that centers the avatar on the name's capitals (mini.css measures the
+ * nudge on Verdana's metrics), so the two never part across a line. The name is the caller's own link or words.
+ */
+export function Who({ character, name, children }: { readonly character: Character | undefined; readonly name: string; readonly children: ReactNode }) {
+  return <span className="kb-who"><Mini character={character} name={name} />{children}</span>;
+}
+
+/**
+ * "just now", "2 min ago", "3 hr ago", "yesterday", "5 days ago", then a date. On a phone (`dropYear`) a date in the current year, by
+ * `nowMs`, is "Oct 5" and not "Oct 5, 2026": the 2003 board's phone folds its rows to one line, and a date never breaks.
+ */
+export function ago(iso: string, nowMs = Date.now(), dropYear = false): string {
   const diff = Math.max(0, nowMs - Date.parse(iso));
   const minute = 60_000;
   if (diff < minute) return 'just now';
@@ -29,11 +42,13 @@ export function ago(iso: string, nowMs = Date.now()): string {
   const days = Math.floor(diff / (24 * 60 * minute));
   if (days === 1) return 'yesterday';
   if (days < 14) return `${days} days ago`;
-  return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', dropYear && sameYear(d, nowMs) ? { month: 'short', day: 'numeric' } : { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
 export function Ago({ at, now }: { readonly at: string; readonly now?: number }) {
-  return <time dateTime={at} title={new Date(at).toLocaleString('en-US')}>{ago(at, now)}</time>;
+  const narrow = useNarrow();
+  return <time dateTime={at} title={new Date(at).toLocaleString('en-US')}>{ago(at, now, narrow)}</time>;
 }
 
 /**

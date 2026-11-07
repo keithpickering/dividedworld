@@ -28,10 +28,10 @@ export interface RevealOverlayProps {
 const PAGE = 20;
 
 export function RevealOverlay({ character, onClose, onDone, returnFocusTo }: RevealOverlayProps) {
-  const { api } = useKayfa();
+  const { api, ui } = useKayfa();
   const r = useReveal(character);
   const { setRefusal } = r;
-  const words = revealWords(character, r.className);
+  const words = revealWords(character, r.className, ui.copy.gameWord);
   const [boards, setBoards] = useState<readonly Board[]>([]);
   const [board, setBoard] = useState('');
   const [threads, setThreads] = useState<readonly ThreadSummary[]>([]);
@@ -123,7 +123,7 @@ export function RevealOverlay({ character, onClose, onDone, returnFocusTo }: Rev
         <PreviewBox preview={revealPreview({ name: character.name, className: r.className, message: r.message, threadTitle: title })} />
         {r.over && <p role="alert" className="kb-notice" data-kb-tone="refusal">The message is at most {MAX} characters.</p>}
         {r.refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{r.refusal}</p>}
-        <FormFoot line={revealFooter()}>
+        <FormFoot line={revealFooter(ui.copy.gameWord)}>
           <GlassButton onClick={onClose}>Cancel</GlassButton>
           <GlassButton type="submit" kind="primary" disabled={!chosen || r.over || r.busy}>{words.button}</GlassButton>
         </FormFoot>

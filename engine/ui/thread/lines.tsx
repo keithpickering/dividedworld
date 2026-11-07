@@ -8,12 +8,17 @@ import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { Debuts, RevealPost, TallyPost } from '../reveal/Reveal.tsx';
 
+import { sameYear } from '../postbit/dates.ts';
 import { Link } from '../router.tsx';
 import { useThread } from './context.ts';
 import { useLocated } from './locate.tsx';
 import { pageOf, threadHref } from './pages.ts';
 
-export const when = (iso: string) => new Date(iso).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+/** "Oct 29, 2026, 9:14 PM"; on a phone (`dropYear`) a date in the current year, by `nowMs`, is "Oct 29, 9:14 PM". */
+export const when = (iso: string, dropYear = false, nowMs = Date.now()) => {
+  const d = new Date(iso);
+  return d.toLocaleString('en-US', { ...(dropYear && sameYear(d, nowMs) ? {} : { year: 'numeric' as const }), month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+};
 
 export const text = (v: unknown): string => (typeof v === 'string' ? v : '');
 
@@ -55,7 +60,7 @@ export function useHistory(post: Id): { readonly button: ReactNode; readonly pan
   const [open, setOpen] = useState(false);
   const id = `history-${post}`;
   return {
-    button: <button type="button" className="kb-link-button" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>History</button>,
+    button: <button type="button" className="kb-button" data-kb-size="small" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>History</button>,
     panel: <div id={id}>{open && <Versions post={post} />}</div>,
   };
 }

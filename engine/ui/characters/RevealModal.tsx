@@ -6,6 +6,7 @@
  */
 import type { Id, MyCharacter } from '../data/api.ts';
 import { Modal } from '../modal.tsx';
+import { useKayfa } from '../context.tsx';
 import { MAX, revealWords, useReveal } from './reveal.ts';
 
 export interface RevealModalProps {
@@ -18,8 +19,9 @@ export interface RevealModalProps {
 }
 
 export function RevealModal({ character, thread, onClose, onDone, returnFocusTo }: RevealModalProps) {
+  const { ui } = useKayfa();
   const r = useReveal(character);
-  const words = revealWords(character, r.className);
+  const words = revealWords(character, r.className, ui.copy.gameWord);
 
   const submit = async () => {
     const outcome = await r.submit(thread, 'this thread');

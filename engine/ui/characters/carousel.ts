@@ -1,6 +1,6 @@
 /**
  * The class cards' carousel, as numbers: which cards a row shows whole at a scroll position, for
- * its count ("1–4 of 5"). Pure, so it is tested without layout; ClassCards.tsx reads the four
+ * its count ("1–4 of 6"). Pure, so it is tested without layout; ClassCards.tsx reads the four
  * lengths from the row. Nothing here knows how many classes an instance has.
  */
 

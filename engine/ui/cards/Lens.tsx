@@ -53,6 +53,7 @@ import { VISIT_KIND, tabName, visitState } from './visit.ts';
 import './lens.css';
 import './visit.css';
 import { Layers } from '../glass/layer.tsx';
+import { useStaged } from '../staged.ts';
 
 /** A play's name, as its row is named and the spin form says it: "Mrs. Hooligan's Whoops!". */
 export const playName = (caster: string, card: string): string => `${caster}'s ${card}`;
@@ -406,6 +407,8 @@ function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, mo
   const yours = play.caster !== null && characters.some((c) => c.id === play.caster);
   /* In a Lens a takeover hosts, the page is inert behind it: the spin form opens there, where it cannot be used. */
   const hosted = useLensHost() !== document.body;
+  /* A staged page's play is made up: no thread is spun from it, and none can be (staged.ts). */
+  const staged = useStaged();
   /* The foot is a grid of two columns whose wrappers take no box (lens.css), so how many tiles it holds (the React meta tile among the kit tiles) is read from the page: an odd last one spans both. */
   const foot = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -434,7 +437,7 @@ function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, mo
       <div ref={foot} className="kb-lens-row-foot">
         <Reactions act={play.id} author={play.caster} authorName={caster} subject={name} tallies={tallies} mine={mine} pickerAt="button" />
         <div className="kb-lens-actions">
-          {hosted
+          {staged ? null : hosted
             ? <p className="kb-lens-note">Spin a thread from this play once you are free of the hold.</p>
             : <button type="button" className="kb-kit-tile kb-lens-action" onClick={() => onSpin(play, name)}><span className="kb-kit-tile-label">Spin thread</span></button>}
           {moments && !play.reach && <AsItLanded play={play.id} />}
@@ -442,7 +445,7 @@ function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, mo
           {to && <Link className="kb-kit-tile kb-lens-action" to={to}><span className="kb-kit-tile-label">Go to post</span></Link>}
         </div>
       </div>
-      <Spun play={play.id} />
+      {!staged && <Spun play={play.id} />}
     </li>
   );
 }

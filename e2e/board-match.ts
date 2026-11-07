@@ -16,8 +16,8 @@
  * lacks (the manifest is wrong), a `buildName` that matches nothing in the build.
  */
 
-/** How a landmark's box is compared: `full` (the default), x and y only, y and height only, width and height only, x and width only (`across`), or not at all. */
-export type BoxMode = 'full' | 'position' | 'height' | 'size' | 'across' | 'none';
+/** How a landmark's box is compared: `full` (the default), x and y only, y and height only, width and height only, x and width only (`across`), horizontal center and y (`center`, for a box whose width follows its words), or not at all. */
+export type BoxMode = 'full' | 'position' | 'height' | 'size' | 'across' | 'center' | 'none';
 
 export interface Landmark {
   /** Names the landmark in a snapshot and a report; unique in its manifest. */
@@ -172,6 +172,14 @@ function compareBox(id: string, mode: BoxMode, board: Box, build: Box, origin?: 
   if (mode === 'full' || mode === 'size') fields.push({ name: 'width', tolerance: SIZE_TOLERANCE }, { name: 'height', tolerance: SIZE_TOLERANCE });
   if (mode === 'height') fields.push({ name: 'height', tolerance: SIZE_TOLERANCE });
   const measured = origin === undefined ? '' : `, measured from ${origin}`;
+  if (mode === 'center') {
+    const centers: { name: string; board: number; build: number; tolerance: number }[] = [
+      { name: 'center-x', board: board.x + board.width / 2, build: build.x + build.width / 2, tolerance: POSITION_TOLERANCE },
+      { name: 'y', board: board.y, build: build.y, tolerance: POSITION_TOLERANCE },
+    ];
+    return centers.filter((f) => Math.abs(f.board - f.build) > f.tolerance)
+      .map((f) => mismatch(id, f.name, String(f.board), String(f.build), `more than ${f.tolerance}px apart${measured}`));
+  }
   return fields.filter((f) => Math.abs(board[f.name] - build[f.name]) > f.tolerance)
     .map((f) => mismatch(id, f.name, String(board[f.name]), String(build[f.name]), `more than ${f.tolerance}px apart${measured}`));
 }
@@ -293,12 +301,16 @@ export function boardIds(
  * own: `phones` lists the ids those exports name. A phone board counts as having a manifest (so it needs no PENDING entry, and
  * is a stale one if it has it), is not run on its own, since its parent's test runs it, and is a problem if it also has a
  * manifest file of its own or names no board in the folder.
+ *
+ * `colorsOnly` is the boards no task ever gives a manifest (a dark twin, compared on colors by web/contrast.test.tsx, or a reference
+ * drawing): they are neither run nor waiting, and one that gains a manifest, or is also pending, is a problem.
  */
 export function boardsToRun(
   folder: readonly string[],
   manifests: readonly string[],
   pending: Readonly<Record<string, string>>,
   phones: readonly string[] = [],
+  colorsOnly: Readonly<Record<string, string>> = {},
 ): { run: string[]; pending: string[]; problems: string[] } {
   const boards = folder.filter(isBoardFile).map((f) => f.slice(0, -'.html'.length)).sort();
   const has = new Set([...manifests, ...phones]);
@@ -308,7 +320,12 @@ export function boardsToRun(
   const waiting: string[] = [];
   for (const b of boards) {
     const part = pending[b];
-    if (has.has(b)) {
+    const only = colorsOnly[b];
+    if (only !== undefined) {
+      /* A colors-only board (a dark twin, a reference) is held by web/contrast.test.tsx and is never compared by landmarks. */
+      if (has.has(b)) problems.push(`${b} is a colors-only board (${only}) and has a manifest: a colors-only board never has one`);
+      if (part !== undefined) problems.push(`${b} is in both PENDING and COLORS_ONLY: it is one or the other`);
+    } else if (has.has(b)) {
       if (!phone.has(b)) run.push(b);
       if (phone.has(b) && manifests.includes(b)) problems.push(`${b} is a phone export's board and has a manifest file of its own: keep one`);
       if (part !== undefined) problems.push(`${b} has a manifest and is still in PENDING (${part}): remove it from the map`);
@@ -316,6 +333,7 @@ export function boardsToRun(
     else problems.push(`${b} has no manifest and is not in PENDING: write e2e/boards/${b}.ts, or name the part that builds it`);
   }
   for (const name of Object.keys(pending)) if (!boards.includes(name)) problems.push(`PENDING names ${name}, which is no board file in the folder`);
+  for (const name of Object.keys(colorsOnly)) if (!boards.includes(name)) problems.push(`COLORS_ONLY names ${name}, which is no board file in the folder`);
   for (const name of manifests) if (!boards.includes(name)) problems.push(`e2e/boards/${name}.ts is a manifest for no board file in the folder`);
   for (const name of new Set(phones.filter((n, i) => phones.indexOf(n) !== i))) problems.push(`${name} is the phone board of more than one manifest: a phone board has one parent`);
   for (const name of phones) if (!boards.includes(name)) problems.push(`a phone export names ${name}, which is no board file in the folder`);
@@ -341,8 +359,9 @@ export function screensWithoutBoards(
   screens: readonly { readonly name: string; readonly board?: string | { readonly none: string } }[],
   ids: readonly string[],
   pending: Readonly<Record<string, string>>,
+  colorsOnly: Readonly<Record<string, string>> = {},
 ): string[] {
-  const known = new Set([...ids, ...Object.keys(pending)]);
+  const known = new Set([...ids, ...Object.keys(pending), ...Object.keys(colorsOnly)]);
   const problems: string[] = [];
   for (const { name, board } of screens) {
     /* The type requires a board; an entry that reaches here without one is an untyped one (a cast, or a spec's own literal), which is what this catches. */

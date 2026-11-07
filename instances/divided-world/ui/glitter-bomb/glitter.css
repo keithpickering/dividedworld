@@ -42,6 +42,15 @@
 .dw-glitter-flash {
   z-index: 0;
 }
+/* The point the burst watches (Effect.tsx): one px on the burst point, placed there inline; the middle until the flakes are made. */
+.dw-glitter-origin {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
 .dw-glitter-words {
   position: relative;
   z-index: 1;

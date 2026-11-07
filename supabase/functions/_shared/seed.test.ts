@@ -33,9 +33,9 @@ test('the seed carries every setting, class, reaction, card and board of the ins
   assert.deepEqual(seed.machine.find((m) => 'pack' in m), { pack: 'booster', availability: 'onSale', price: 300 });
   assert.deepEqual(seed.machine.find((m) => 'card' in m && m.card === 'main-event'), { card: 'main-event', availability: 'hidden', price: 300 });
   assert.deepEqual(seed.boards, instance.boards.map((b) => ({ ...b, system: b.system === true })));
-  assert.deepEqual(seed.boards.filter((b) => b.system).map((b) => b.slug), ['the-system'], 'one board is The System\'s, said in the seed');
+  assert.deepEqual(seed.boards.filter((b) => b.system).map((b) => b.slug), ['announcements'], 'one board is The System\'s, said in the seed');
   assert.deepEqual(seed.pipStyles, instance.pipStyles, 'the pip styles a profile may name');
-  assert.equal(seed.classes.length, 5);
+  assert.equal(seed.classes.length, instance.classes.length);
   assert.equal(seed.reactions.length, 16);
 });
 

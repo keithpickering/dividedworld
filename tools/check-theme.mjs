@@ -10,7 +10,7 @@
  * makes the text vanish. Both look right in the house colors and change no test, so the file is read
  * on every build rather than trusted.
  *
- * Read: every `instances/<name>/ui/*.css`. After comments are removed it may hold only
+ * Read: every `instances/<name>/ui/*.css` and `instances/<name>/ui/themes/*.css`. After comments are removed it may hold only
  *
  *   :root { … }                                     light
  *   :root[data-kb-mode="dark"] { … }                dark, as a player who chose it gets it
@@ -25,9 +25,18 @@
  * positive, so it is refused, and 0 or less hides the text it sizes. A theme may add a size token the
  * engine does not name; the engine ignores it.
  *
+ * No token's value may name `url(`, `image-set(`, `src(`, `image(`, `cross-fade(` or `element(`: an image a theme fetches
+ * can watch who reads a page, so a theme draws with gradients and colors, and any art is the instance's own file (the
+ * screens design, section 12). Spelling cannot be matched closed, since CSS decodes `\75rl(` and `u\72l(` into `url(`, so
+ * a backslash in a value outside a quoted string is refused outright; a quoted string is let through, as it names no function.
+ *
  * Also read: each instance's `ui/index.ts`. Every `href` in its `themes` list must be an identifier
- * imported from a `*.css?url` file that sits in that instance's own ui/ folder and is in the tree, so
+ * imported from a `*.css?url` file that sits in that instance's own ui/ folder (or its ui/themes/) and is in the tree, so
  * the file the page loads as a theme is a file this check has read.
+ *
+ * And the game's own pieces (GAME_PIECE_TOKENS: orbs, sweet, salty, pepperoni, gold, the badge font, the pips) must be the house
+ * theme's value in each theme of `ui/themes/`, in the mode that theme shows: only one sheet loads, so a theme that drifts or
+ * leaves one out changes the game's pieces for every player who picks it.
  *
  * Read from git, so an untracked scratch file neither fails the build nor makes it pass. The
  * detection is exported and pure so tools/test-theme.mjs drives every branch red.
@@ -41,12 +50,19 @@ import ts from 'typescript';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-export const THEME_FILE = /^instances\/([^/]+)\/ui\/[^/]+\.css$/;
+export const THEME_FILE = /^instances\/([^/]+)\/ui\/(?:themes\/)?[^/]+\.css$/;
 export const UI_INDEX = /^instances\/([^/]+)\/ui\/index\.ts$/;
 
 const SELECTORS = new Set([':root', ':root[data-kb-mode="dark"]', ':root[data-kb-mode="light"]']);
 const DEVICE_QUERY = '@media(prefers-color-scheme:dark)';
 const DEVICE_SELECTOR = ':root:not([data-kb-mode="light"])';
+/* A fetch: url( in any spelling, image-set()/src() which take a bare string as a url, and image()/cross-fade()/element(),
+   which name or copy a picture. Case-blind, space before the paren allowed. A CSS escape in the name (\75rl) is caught by ESCAPE. */
+const FETCHES = /(?<![a-z0-9_])(?:url|image-set|-webkit-image-set|src|image|cross-fade|-webkit-cross-fade|element|-moz-element)\s*\(/i;
+/* Browsers decode a backslash escape in a function name (`\75rl(` is `url(`), so no pattern on the spelling can be closed:
+   a backslash anywhere in a value outside a quoted string is refused instead, and no token a theme needs has one. */
+const ESCAPE = /\\/;
+const withoutStrings = (v) => v.replace(/"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'/g, '""');
 const SIZE_TOKEN = /^--kb-(size-[a-z0-9-]+|line|board-max)$/;
 
 /** A stylesheet with its comments blanked to spaces, so lines keep their numbers; strings are skipped whole. */
@@ -119,12 +135,63 @@ function declarationFaults(body, at, lineOf, file, out) {
     const value = colon === -1 ? '' : decl.slice(colon + 1).replace(/!\s*important\s*$/i, '').trim();
     if (!/^--kb-[a-z0-9-]+$/.test(name)) {
       out.push({ file, line, why: `"${name.slice(0, 40)}" is not a --kb-* custom property; a theme sets tokens and nothing else` });
+    } else if (ESCAPE.test(withoutStrings(value))) {
+      out.push({ file, line, why: `${name}: has a backslash outside a quoted string; an escape can spell url() and fetch an image, so a theme value has none` });
+    } else if (FETCHES.test(value)) {
+      out.push({ file, line, why: `${name}: names url(), and a theme's art must be the instance's own file, never a fetch; an outside image can watch who reads a page` });
     } else if (SIZE_TOKEN.test(name)) {
       const m = value.match(/^(\d*\.?\d+)([a-z%]*)$/i);
       if (!m) out.push({ file, line, why: `${name}: ${value} is not a plain positive number with an optional unit, so it cannot be shown to size text above zero` });
       else if (!(parseFloat(m[1]) > 0)) out.push({ file, line, why: `${name}: ${value} is not above zero, which hides the text it sizes` });
     }
   }
+}
+
+/** A rule body's declarations in order, as `[name, value]`; the value keeps its text, minus a trailing `!important`. */
+function declarationsOf(body) {
+  const out = [];
+  let i = 0;
+  while (i < body.length) {
+    const semi = scanTo(body, i, [';']);
+    const end = semi === -1 ? body.length : semi;
+    const decl = body.slice(i, end);
+    i = end + 1;
+    const colon = decl.indexOf(':');
+    if (colon === -1) continue;
+    out.push([decl.slice(0, colon).trim(), decl.slice(colon + 1).replace(/!\s*important\s*$/i, '').trim()]);
+  }
+  return out;
+}
+
+/**
+ * The tokens of a theme's blocks, by the mode the browser shows them in, each a Map of name to value in file order (a later
+ * declaration wins, as in the browser): `root` is `:root`; `light` is `:root[data-kb-mode="light"]`; `dark` is the device-dark
+ * query's block and `:root[data-kb-mode="dark"]` together. The theme preview (tools/theme-preview.mjs) reads a theme through
+ * this, so the picker's miniature and the contract this file holds are one parse. A block outside the contract is not read here;
+ * `themeFaults` is what refuses it.
+ * @param {string} raw the stylesheet's text
+ */
+export function themeBlocks(raw) {
+  const text = withoutComments(raw);
+  const blocks = { root: new Map(), light: new Map(), dark: new Map() };
+  const rules = (from, to, inMedia) => {
+    let i = from;
+    while (i < to) {
+      const stop = scanTo(text, i, ['{', ';', '}']);
+      if (stop === -1 || stop >= to || text[stop] !== '{') { i = stop === -1 || stop >= to ? to : stop + 1; continue; }
+      const close = closeOf(text, stop);
+      if (close === -1 || close >= to) return;
+      const sel = squash(text.slice(i, stop)).replace(/\s*([\[\]=])\s*/g, '$1');
+      if (!inMedia && sel.startsWith('@')) rules(stop + 1, close, true);
+      else {
+        const target = inMedia ? blocks.dark : sel === ':root' ? blocks.root : sel === ':root[data-kb-mode="dark"]' ? blocks.dark : sel === ':root[data-kb-mode="light"]' ? blocks.light : null;
+        if (target) for (const [name, value] of declarationsOf(text.slice(stop + 1, close))) target.set(name, value);
+      }
+      i = close + 1;
+    }
+  };
+  rules(0, text.length, false);
+  return blocks;
 }
 
 /**
@@ -223,7 +290,7 @@ export function themeHrefFaults(files) {
           const target = imported.get(ident.text);
           const ownUi = `instances/${home[1]}/ui/`;
           if (target === undefined) out.push({ file, line: lineOf(ident), why: `href ${ident.text} is not imported from a *.css?url file` });
-          else if (!(target.startsWith(ownUi) && !target.slice(ownUi.length).includes('/') && THEME_FILE.test(target))) out.push({ file, line: lineOf(ident), why: `href ${ident.text} is ${target}, which is not a stylesheet in this instance's ui/ folder` });
+          else if (!(target.startsWith(ownUi) && THEME_FILE.test(target))) out.push({ file, line: lineOf(ident), why: `href ${ident.text} is ${target}, which is not a stylesheet in this instance's ui/ folder` });
           else if (!Object.hasOwn(files, target)) out.push({ file, line: lineOf(ident), why: `href ${ident.text} is ${target}, which the tree does not hold` });
         }
         return;
@@ -231,6 +298,49 @@ export function themeHrefFaults(files) {
       ts.forEachChild(node, visit);
     };
     visit(source);
+  }
+  return out;
+}
+
+/**
+ * The game's own pieces: the tokens that are the same in every theme by design (the board look design, section 9: "The game's
+ * own pieces (orbs, cards, reactions, marks) keep theirs"). Only one theme sheet loads (engine/ui/appearance.ts) and the engine's
+ * tokens.css defaults these to gray, so each theme repeats them, and this is the one list that says which. A token a theme
+ * restyles on purpose (the badge colors, the chips, the buttons) is not on it.
+ */
+export const GAME_PIECE_TOKENS = [
+  '--kb-orb-1', '--kb-orb-2', '--kb-orb-3', '--kb-orb-4', '--kb-orb-5', '--kb-orb-6',
+  '--kb-orb-shine', '--kb-orb-rim', '--kb-orb-loss',
+  '--kb-sweet', '--kb-salty', '--kb-pepperoni', '--kb-gold',
+  '--kb-font-badge', '--kb-pip', '--kb-pip-empty',
+];
+
+/**
+ * Every theme in an instance's ui/themes/ whose game pieces differ from the house theme's (ui/theme.css) in the mode it shows,
+ * or lack one: a theme with a dark block is dark only, read as `:root` under the dark block; one without is light only, read as
+ * `:root` under the light block. The house theme's own mode is the one it is compared in.
+ * @param {Record<string, string>} files repository path to text
+ */
+export function gamePieceFaults(files) {
+  const out = [];
+  const effective = (raw) => {
+    const b = themeBlocks(raw);
+    const dark = b.dark.size > 0;
+    return { dark, tokens: new Map([...b.root, ...(dark ? b.dark : b.light)]) };
+  };
+  for (const [file, raw] of Object.entries(files)) {
+    const m = file.match(/^instances\/([^/]+)\/ui\/themes\/[^/]+\.css$/);
+    if (!m) continue;
+    const houseRaw = files[`instances/${m[1]}/ui/theme.css`];
+    if (houseRaw === undefined) { out.push({ file, line: 1, why: `the instance has no ui/theme.css to hold the game's pieces against` }); continue; }
+    const mine = effective(raw);
+    const hb = themeBlocks(houseRaw);
+    const house = new Map([...hb.root, ...(mine.dark ? hb.dark : hb.light)]);
+    for (const name of GAME_PIECE_TOKENS) {
+      if (!house.has(name)) out.push({ file: `instances/${m[1]}/ui/theme.css`, line: 1, why: `${name} is a game piece and the house theme does not set it` });
+      else if (!mine.tokens.has(name)) out.push({ file, line: 1, why: `${name} is a game piece and this theme does not set it, so the engine's gray default shows` });
+      else if (mine.tokens.get(name) !== house.get(name)) out.push({ file, line: 1, why: `${name} is ${mine.tokens.get(name)} here and ${house.get(name)} in the house theme; the game's own pieces keep their colors in every theme` });
+    }
   }
   return out;
 }
@@ -252,7 +362,7 @@ function main() {
     console.error('  theme: no instance theme was read, which cannot be right; refusing to report a pass on nothing');
     process.exit(1);
   }
-  const faults = [...themeFaults(files), ...themeHrefFaults(files)];
+  const faults = [...themeFaults(files), ...themeHrefFaults(files), ...gamePieceFaults(files)];
   if (faults.length) {
     console.error(`  theme: ${faults.length} departure(s) from the theme contract:`);
     for (const f of faults) console.error(`    ${f.file}:${f.line}  ${f.why}`);

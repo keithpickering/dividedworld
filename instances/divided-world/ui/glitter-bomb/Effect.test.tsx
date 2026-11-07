@@ -1,9 +1,9 @@
 /**
  * Glitter Bomb's effect on the flakes (docs/plans/2026-11-06-shine-plan.md, Task 10; the design's sections 2, 3, 5, 6 and 8): the
  * character's posts glitter while the card is up. Three canvases go around the words: under them the settled flakes unlit, painted
- * only when what they depend on changes, and over that what the light changes; over the words the burst; none takes the pointer; the burst fires once per mount, the first time the post is 40% in view, and never
- * under reduced motion or `still`; the flakes are seeded from public ids only; a post out of view gives its flakes back and builds
- * them again, landed, when it returns. The flakes themselves are the engine's (their tests are there); here the engine's functions
+ * only when what they depend on changes, and over that what the light changes; over the words the burst; none takes the pointer; the burst fires once per mount, once its burst point has stayed in the
+ * middle of the view for 300 ms, and never under reduced motion or `still`; the flakes are seeded from public ids and this mount's own
+ * draw; a post out of view gives its flakes back and builds them again, the same, landed, when it returns. The flakes themselves are the engine's (their tests are there); here the engine's functions
  * are spies over the real ones, so what the Effect hands them and when is what is read.
  */
 import fs from 'node:fs';
@@ -80,11 +80,16 @@ class FakeObserver {
   disconnect() { this.entry.seen.clear(); }
   takeRecords() { return []; }
 }
-/** The post comes into view with `ratio` of it showing (0 is out of view): the loop's any-overlap observer and the burst's 40% one hear it. */
-const see = (ratio: number, fill?: number) => act(() => {
-  const geometry = fill === undefined ? {} : { intersectionRect: { height: fill * 800 }, rootBounds: { height: 800 } };
-  for (const o of observers) for (const el of o.seen) o.cb([{ target: el, isIntersecting: ratio > 0, intersectionRatio: ratio, ...geometry } as IntersectionObserverEntry], o as unknown as IntersectionObserver);
+/** The post comes into view with `ratio` of it showing (0 is out of view): the loop's observer hears it, not the burst point's. */
+const see = (ratio: number) => act(() => {
+  for (const o of observers) if (!o.opts?.rootMargin) for (const el of o.seen) o.cb([{ target: el, isIntersecting: ratio > 0, intersectionRatio: ratio } as IntersectionObserverEntry], o as unknown as IntersectionObserver);
 });
+/** The burst point comes into the middle of the view (`true`) or leaves it: only the burst's own observer hears it. */
+const aim = (on: boolean) => act(() => {
+  for (const o of observers) if (o.opts?.rootMargin) for (const el of o.seen) o.cb([{ target: el, isIntersecting: on, intersectionRatio: on ? 1 : 0 } as IntersectionObserverEntry], o as unknown as IntersectionObserver);
+});
+/** The post in view and its burst point held in the middle long enough: the burst fires on the frames from `from`. */
+const fire = (from = 0) => { see(1); aim(true); frames(22, from); };
 let resizes: { cb: () => void; watching: Set<Element> }[] = [];
 class FakeResize {
   readonly entry = { cb: undefined as unknown as () => void, watching: new Set<Element>() };
@@ -149,7 +154,10 @@ describe('Glitter Bomb', () => {
     /* The same order in the document: the canvases on one surface (placed over the box the post paints) before the words; the old layer and its alpha are gone. */
     const order = [...box().children].map((el) => el.className);
     expect(order).toEqual(['dw-glitter-surface', 'dw-glitter-words']);
-    expect([...box().querySelector('.dw-glitter-surface')!.children].map((el) => el.className)).toEqual(['dw-glitter-under', 'dw-glitter-flash', 'dw-glitter-over']);
+    expect([...box().querySelector('.dw-glitter-surface')!.children].map((el) => el.className)).toEqual(['dw-glitter-under', 'dw-glitter-flash', 'dw-glitter-over', 'dw-glitter-origin']);
+    /* The point the burst watches takes no pointer and is hidden from assistive tech. */
+    expect(box().querySelector('.dw-glitter-origin')).toHaveAttribute('aria-hidden', 'true');
+    expect(rule('.dw-glitter-origin')).toMatch(/pointer-events:\s*none/u);
     expect(rule('.dw-glitter-surface')).toMatch(/pointer-events:\s*none/u);
     expect(rule('.dw-glitter-surface')).not.toMatch(/z-index/u);
     expect(box().querySelector('.dw-glint, .dw-glitter-sparkle')).toBeNull();
@@ -162,13 +170,23 @@ describe('Glitter Bomb', () => {
     expect(GLITTER_GLINT).toMatch(/^#[0-9a-f]{6}$/u);
   });
 
-  test('the seed is public ids only: the play and the post', () => {
+  test('the seed is public ids, the play and the post, then a draw of this mount\'s own, so each load bursts from its own spot', () => {
     render(<GlitterBombEffect {...props()} />);
     see(1);
     frames(2);
     expect(makeFlakes).toHaveBeenCalledTimes(1);
     const opts = makeFlakes.mock.calls[0]![0];
-    expect(opts.seed).toBe('g1:p1');
+    expect(opts.seed).toMatch(/^g1:p1:[0-9a-z]+$/u);
+    const first = lastFlakes().origin;
+    cleanup();
+    render(<GlitterBombEffect {...props()} />);
+    see(1); frames(2, 100);
+    expect(makeFlakes.mock.calls[1]![0].seed).not.toBe(opts.seed);
+    expect(lastFlakes().origin).not.toEqual(first);
+    /* A play's moment is the public seed alone, the same on every device. */
+    cleanup();
+    render(<GlitterBombEffect {...props(true)} />);
+    expect(makeFlakes.mock.calls.at(-1)![0].seed).toBe('g1:p1');
     expect(opts.inks).toEqual(GLITTER_INKS);
     expect(opts.holo).toBe(GLITTER_HOLO);
     expect(opts.glint).toBe(GLITTER_GLINT);
@@ -176,43 +194,45 @@ describe('Glitter Bomb', () => {
     expect(read('Effect.tsx')).not.toMatch(/\.character|\.caster|owner|\.on\b/u);
   });
 
-  test('before the post is 40% in view the flakes sit settled; the burst fires the first time it is, and once per mount', () => {
+  test('the flakes sit settled until the burst point has stayed in the middle of the view for 300 ms; then it fires, once per mount', () => {
     render(<GlitterBombEffect {...props()} />);
     see(0.2);
     frames(3);
     const first = lastFlakes();
     expect(burst).not.toHaveBeenCalled();
+    /* The post is in view, but the burst point has not reached the middle of it. */
+    see(1);
+    frames(30, 100);
     expect(first.fired).toBe(false);
-    see(0.5);
-    frames(2, 100);
+    /* It reaches the middle and leaves before 300 ms: a scroll that only passes it fires nothing. */
+    aim(true); frames(10, 1000); aim(false); frames(30, 1200);
+    expect(first.fired).toBe(false);
+    /* It stays: the burst goes off 300 ms later by the loop's clock, and not before. */
+    aim(true);
+    frames(18, 2000);
+    expect(first.fired).toBe(false);
+    frames(3, 2288);
     expect(burst.mock.calls.filter(([f]) => f === first)).toHaveLength(1);
     expect(first.fired).toBe(true);
     expect(first.flying).toBeGreaterThan(0);
-    frames(10, 200);
+    frames(10, 2400);
     expect(drawBurst).toHaveBeenCalled();
-    /* It lands, and leaving and coming back at 40% again does not fire it a second time. */
-    frames(140, 300);
+    /* It lands, and leaving and coming back does not fire it a second time. */
+    frames(140, 2600);
     expect(first.flying).toBe(0);
-    see(0.1); see(0.9); frames(5, 3000);
+    see(0.1); see(0.9); aim(true); frames(30, 6000);
     expect(burst.mock.calls.filter(([f]) => f === first)).toHaveLength(1);
     expect(burst.mock.calls.filter(([f]) => f !== first && f.flying > 0)).toHaveLength(0);
   });
 
-  test('a post taller than 2.5 viewports still bursts: its visible height fills 40% of the viewport though its own ratio stays 0.3', () => {
+  test('the point the burst watches stands on the burst point, and is watched against the middle of the view', () => {
     render(<GlitterBombEffect {...props()} />);
-    see(0.1, 0.1);
-    frames(3);
-    const first = lastFlakes();
-    expect(first.fired).toBe(false);
-    see(0.3, 0.5);
-    frames(2, 100);
-    expect(burst.mock.calls.filter(([f]) => f === first)).toHaveLength(1);
-    expect(first.flying).toBeGreaterThan(0);
-  });
-
-  test('the burst second observer is at 40%', () => {
-    render(<GlitterBombEffect {...props()} />);
-    expect(observers.some((o) => Array.isArray(o.opts?.threshold) && o.opts.threshold.includes(0.4) && o.seen.has(box()))).toBe(true);
+    see(1); frames(2);
+    const spot = box().querySelector<HTMLElement>('.dw-glitter-origin')!;
+    const { origin } = lastFlakes();
+    expect(spot.style.left).toBe(`${origin.x}px`);
+    expect(spot.style.top).toBe(`${origin.y}px`);
+    expect(observers.some((o) => o.opts?.rootMargin === '-20% 0px -20% 0px' && o.seen.has(spot))).toBe(true);
   });
 
   test('under reduced motion there is no burst: every flake is placed at once, and nothing is drawn over the words', () => {
@@ -272,8 +292,7 @@ describe('Glitter Bomb', () => {
 
   test('out of view the flakes are released and dropped, and a return builds them again from the seed, landed, with no second burst', () => {
     render(<GlitterBombEffect {...props()} />);
-    see(1);
-    frames(2);
+    fire();
     const first = lastFlakes();
     expect(first.fired).toBe(true);
     expect(first.flying).toBeGreaterThan(0);
@@ -291,6 +310,7 @@ describe('Glitter Bomb', () => {
     expect(again.settled.length).toBe(again.total);
     expect(again.total).toBe(first.total);
     expect(again.settled.map((x) => [x.x, x.y])).toEqual(expect.arrayContaining(first.settled.slice(0, 20).map((x) => [x.x, x.y])));
+    expect(makeFlakes.mock.calls[1]![0].seed).toBe(makeFlakes.mock.calls[0]![0].seed);
     expect(landAll).toHaveBeenCalledWith(again);
     expect(burst.mock.calls.filter(([f]) => f === again)).toHaveLength(0);
     expect(flakesModule.burstProbe.inFlight()).toBe(0);
@@ -396,11 +416,11 @@ describe('Glitter Bomb holds its band and frees its canvases', () => {
     expect(over().width).toBe(0);
     see(0.2); frames(3);
     expect(over().width).toBe(0);
-    see(0.5); frames(3, 100);
+    fire(100);
     expect(lastFlakes().flying).toBeGreaterThan(0);
     expect(over().width).toBe(300);
     expect(over().height).toBe(120);
-    frames(160, 300);
+    frames(160, 600);
     expect(lastFlakes().flying).toBe(0);
     expect(over().width).toBe(0);
     expect(over().height).toBe(0);
@@ -413,7 +433,7 @@ describe('Glitter Bomb holds its band and frees its canvases', () => {
 
   test('out of view every backing store is freed, and the return sizes the canvases under the words again (the over one only if a burst runs)', () => {
     render(<GlitterBombEffect {...props()} />);
-    see(1); frames(3);
+    fire();
     expect(under().width).toBe(300);
     expect(flash().width).toBe(300);
     expect(over().width).toBe(300);
@@ -467,22 +487,23 @@ describe('Glitter Bomb holds its band and frees its canvases', () => {
     expect(makeFlakes).not.toHaveBeenCalled();
   });
 
-  test('once the burst has fired the 40% watcher is stopped: no more threshold callbacks are handled', () => {
+  test('once the burst has fired the burst point\'s watcher is stopped: no more of its callbacks are handled', () => {
     render(<GlitterBombEffect {...props()} />);
-    const mine = observers.find((o) => Array.isArray(o.opts?.threshold) && o.opts.threshold.includes(0.4))!;
-    see(0.5); frames(3);
+    const mine = observers.find((o) => o.opts?.rootMargin)!;
+    expect(mine.seen.size).toBe(1);
+    fire();
     expect(burst).toHaveBeenCalledTimes(1);
-    expect(mine.seen.has(box())).toBe(false);
+    expect(mine.seen.size).toBe(0);
   });
 
   test('reduced motion turned on mid-burst lands what is in the air at rest and frees the over canvas', async () => {
     render(<GlitterBombEffect {...props()} />);
-    see(1); frames(3);
+    fire();
     const f = lastFlakes();
     expect(f.flying).toBeGreaterThan(0);
     expect(over().width).toBe(300);
     await act(async () => { document.documentElement.setAttribute('data-kb-motion', 'reduce'); await Promise.resolve(); });
-    frames(3, 200);
+    frames(3, 600);
     expect(release).toHaveBeenCalledWith(f);
     expect(f.flying).toBe(0);
     expect(f.settled.length).toBe(f.total);
@@ -516,7 +537,7 @@ describe('Glitter Bomb teardown', () => {
     expect(scheme.removeEventListener.mock.calls[0]).toEqual(scheme.addEventListener.mock.calls[0]);
   });
 
-  test('a StrictMode mount (mount, cleanup, mount) leaves one registration, one resize watch, one 40% watch and no leaked flakes', () => {
+  test('a StrictMode mount (mount, cleanup, mount) leaves one registration, one resize watch, one burst-point watch and no leaked flakes', () => {
     const r = render(<StrictMode><GlitterBombEffect {...props()} /></StrictMode>);
     const host = box();
     expect(observers.reduce((n, o) => n + o.seen.size, 0)).toBe(2);

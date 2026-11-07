@@ -43,8 +43,8 @@ describe('Divided World\'s onboarding words', () => {
 describe('Divided World\'s Vending Machine words', () => {
   test('the shop is named plainly, and the sign has the design\'s twelve names, in order, each within the check', () => {
     expect(instanceUi.copy.shopName).toBe('Vending Machine');
-    expect(instanceUi.copy.marquees).toHaveLength(12);
-    expect(instanceUi.copy.marquees![0]).toBe('[MACHINE NAME]');
+    expect(instanceUi.copy.marquees).toHaveLength(22);
+    expect(instanceUi.copy.marquees![0]).toBe('FRESH BEEF');
     expect(instanceUiProblems(instanceUi, instance)).toEqual([]);
   });
 });
@@ -119,7 +119,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   test('the numbers a reason\'s earnings carry are the ones its words declare, so a settled line is said with its own', () => {
     const lurker = instance.classes.find((c) => c.key === 'lurker')!;
     const earned = lurker.earn({
-      character: 'lu', from: 0, to: 1, posts: [1, 2, 3, 4, 5].map((n) => ({ act: `p${n}`, at: n })), received: [], given: [], held: [], cardsPlayed: [], cardsLanded: [],
+      character: 'lu', from: 0, to: 1, posts: [1, 2, 3, 4, 5].map((n) => ({ act: `p${n}`, at: n })), received: [], given: [], held: [], cardsPlayed: [], cardsLanded: [], standings: [],
       threadsSpun: [{ act: 's1', thread: 't', at: 1, fromOthers: true, repliersBefore: 0, repliersNow: economy['lurker.spunThreadRepliers']! }],
     }, instance.settings);
     const reasons = Object.keys(wordsRead).filter((k) => k.includes('.'));

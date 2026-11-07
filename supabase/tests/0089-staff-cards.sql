@@ -283,7 +283,7 @@ end $$;
 
 -- ---- A trap set by staff springs on a player's reply without refusing it, and the staff flag closes behind it ----
 -- The poison, planted and observed: with both `set_config('kayfabb.staff_writer', 'on', true)` lines removed from spring_traps in 0086
--- (the flag left closed), this block fails at the player's reply with `a staff character acts only through The System` raised by
+-- (the flag left closed), this block fails at the player's reply with `a staff character acts only through the game's own moves` raised by
 -- acts_well_formed() inside spring_traps' insert of the spring (psql line 330 of the file as then run); restored, it passes.
 do $$
 declare
@@ -314,7 +314,7 @@ begin
   -- The flag is shut again: a staff character still cannot be written as, by anything that did not open it.
   if coalesce(current_setting('kayfabb.staff_writer', true), '') = 'on' then raise exception 'the staff flag was left open after a spring'; end if;
   said := pg_temp.refused(format('insert into acts (character, kind, thread, payload) values (%L, ''post'', %L, ''{"body": "Passing as staff."}'')', mod, t));
-  if said is null or said !~ 'a staff character acts only through The System' then raise exception 'a write passed as staff after a spring: %', said; end if;
+  if said is null or said !~ 'a staff character acts only through the game''s own moves' then raise exception 'a write passed as staff after a spring: %', said; end if;
   -- The struck post's author is alerted that a trap struck (trapStruck goes to the struck post's author, a player, whoever set the
   -- trap); the staff setter has no owner, so nothing is written for it.
   if (select count(*) from alerts where kind = 'trapStruck' and account = bob

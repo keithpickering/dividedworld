@@ -42,14 +42,18 @@ begin
   insert into reactions (act, reactor_account, reactor_character, kind, slot, created_at) values (p, bob, b, 'up', 1, w2 + interval '1 hour');
   -- A card played on the Act in an earlier window, so the settlement can tell which card a vote counts for.
   insert into acts (character, kind, thread, target_act_id, payload, created_at) values (b, 'card', t, p, '{"card": "sweetie"}', w1 + interval '2 hours');
-  -- Another player's vote on the same Act, paid but not touched this window, stays home.
+  -- Another player's vote on the same Act, paid earlier and not reacted again this window: carried too (0116, design section 9), since the
+  -- Tweener's balance reads every player's reaction on an Act the window touches.
   insert into paid_votes (account, act, weight, shares, settlement) values (ann, p, 1, whole, (select max(id) from settlements));
   input := settlement_input(w2, w3);
   if not exists (select 1 from jsonb_array_elements(input -> 'acts') x where x ->> 'kind' = 'card' and x ->> 'target' = p::text) then
     raise exception 'settlement_input should carry the cards played on an Act its reactions touch, an earlier window''s included';
   end if;
-  if input -> 'paid' is distinct from jsonb_build_array(jsonb_build_object('player', bob, 'act', p, 'weight', 1, 'shares', whole)) then
-    raise exception 'settlement_input should carry what was paid for the votes it touches: %', input -> 'paid';
+  -- Compared as a set: the rows come in account order, and the accounts are random.
+  if (select jsonb_agg(x order by x ->> 'player') from jsonb_array_elements(input -> 'paid') x) is distinct from
+     (select jsonb_agg(x order by x ->> 'player') from jsonb_array_elements(jsonb_build_array(
+       jsonb_build_object('player', ann, 'act', p, 'weight', 1, 'shares', whole), jsonb_build_object('player', bob, 'act', p, 'weight', 1, 'shares', whole))) x) then
+    raise exception 'settlement_input should carry what every reactor was paid on the Acts it touches: %', input -> 'paid';
   end if;
 
   -- A later window's shares are stored at the weight the vote was given; a new weight is refused.

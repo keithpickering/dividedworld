@@ -49,8 +49,7 @@ describe('New character', () => {
     await userEvent.click(within(f).getByRole('radio', { name: /^Debut at the settlement/u }));
     expect(preview).toHaveTextContent(/simply appears after the next settlement/u);
     await userEvent.click(within(f).getByRole('radio', { name: /^Announced, with its class/u }));
-    expect(preview).toHaveTextContent('Spritey debuts as Heel');
-    expect(preview).toHaveTextContent('Spritey revealed: Heel');
+    expect(preview).toHaveTextContent('Spritey debuts as a Heel.');
   });
 
   test('opens with Drop now chosen, and announced', async () => {
@@ -168,9 +167,9 @@ describe('New character\'s head, name and foot', () => {
     open(world());
     const f = await form();
     const line = () => f.querySelector('.kb-glass-form-foot-line')!;
-    expect(line()).toHaveTextContent('Your character is on the board as soon as you make it, and The System announces it. Its class stays yours alone.');
+    expect(line()).toHaveTextContent('Your character is on the board as soon as you make it, and its own Promo announces it. Its class stays yours alone.');
     await userEvent.type(within(f).getByLabelText('Name'), 'Waiting Wanda');
-    expect(line()).toHaveTextContent('Waiting Wanda is on the board as soon as you make it, and The System announces it. Its class stays yours alone.');
+    expect(line()).toHaveTextContent('Waiting Wanda is on the board as soon as you make it, and its own Promo announces it. Its class stays yours alone.');
     await userEvent.click(within(f).getByRole('radio', { name: /^Silent/u }));
     expect(line()).toHaveTextContent('Waiting Wanda is on the board as soon as you make it. Nobody is told, and its first post is its entrance. Its class stays yours alone.');
     await userEvent.click(within(f).getByRole('radio', { name: /^Debut at the settlement/u }));
@@ -227,16 +226,16 @@ describe('New character\'s class cards', () => {
   });
 });
 
-/* The carousel's five classes (the Technician plan's Task 4), in an instance of the test's own, since a test in engine/ui may not import one. */
+/* The carousel's six classes (the Technician plan's Task 4, the Tweener plan's Task 6), in an instance of the test's own, since a test in engine/ui may not import one. */
 describe('New character\'s classes', () => {
   test('offers every class in the instance\'s order, in one group, nothing chosen', async () => {
-    const five: Instance = { ...testInstance, classes: ['Face', 'Heel', 'Jabroni', 'Technician', 'Lurker'].map((name) => ({ key: name.toLowerCase(), name, earn: () => [] })) };
-    const fake = buildWorld({ charactersPerPlayer: 3 }, five);
+    const six: Instance = { ...testInstance, classes: ['Face', 'Heel', 'Jabroni', 'Technician', 'Tweener', 'Lurker'].map((name) => ({ key: name.toLowerCase(), name, earn: () => [] })) };
+    const fake = buildWorld({ charactersPerPlayer: 3 }, six);
     fake.signInAs(fake.seed.account('me'));
-    renderIn(fake, <NewCharacter />, { path: '/characters/new', settings: { charactersPerPlayer: 3 }, instance: five });
+    renderIn(fake, <NewCharacter />, { path: '/characters/new', settings: { charactersPerPlayer: 3 }, instance: six });
     const f = await form();
     const radios = within(within(f).getByRole('group', { name: /class/iu })).getAllByRole('radio');
-    expect(radios.map((r) => r.getAttribute('value'))).toEqual(['face', 'heel', 'jabroni', 'technician', 'lurker']);
+    expect(radios.map((r) => r.getAttribute('value'))).toEqual(six.classes.map((c) => c.key));
     expect(new Set(radios.map((r) => r.getAttribute('name'))).size).toBe(1);
     expect(radios.filter((r) => (r as HTMLInputElement).checked)).toEqual([]);
   });

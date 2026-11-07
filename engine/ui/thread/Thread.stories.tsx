@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useState } from 'react';
 import type { Instance } from '../../rules/types.ts';
+import { userEvent, within } from 'storybook/test';
 import { useKayfa } from '../context.tsx';
 import type { Fake } from '../data/fake.ts';
 import type { World } from '../story.tsx';
@@ -51,6 +52,13 @@ const short: World = (fake, instance) => {
 };
 
 export const ShortThread: Story = { args: { title: 'Who keeps reacting to my posts?' }, parameters: { world: short, path: '/t/x' } };
+
+/** A post's small Chrome buttons with History open: the pressed button (aria-expanded) beside its three siblings. */
+export const PostActionsHistoryOpen: Story = {
+  args: { title: 'Who keeps reacting to my posts?' },
+  parameters: { world: short, path: '/t/x' },
+  play: async ({ canvasElement }) => { await userEvent.click((await within(canvasElement).findAllByRole('button', { name: 'History' }))[0]!); },
+};
 
 export const LongThreadPageThree: Story = {
   args: { title: 'The long one' },
