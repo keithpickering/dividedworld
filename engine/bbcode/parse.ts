@@ -42,12 +42,17 @@
  *   drawn as a button, so nothing interactive nests in it either: while one is open, a `[url]` opener
  *   and an `[ispoiler]` opener are text (the same count, `openISpoilers`), and so is `[/url]`. A
  *   `[/ispoiler]` still closes the open spoiler, else it could never end. An ispoiler's text is never
- *   auto-linked: the autolink pass (Task 5) must skip text inside an `ispoiler` node.
+ *   auto-linked: the autolink pass skips an `ispoiler` node.
  * - `[noparse]` is taken raw as `[code]` is, but gives a `noparse` node (a text node by another type, so the autolink pass can skip it): its words are the post's own, shown as written. `[hr]` is a
  *   leaf with no closer (a `[/hr]` is text), and `[font=name]` takes a name from `FONTS` only, so no free text reaches a style.
  * - A list's `[*]` is an item marker only directly inside `[list]`; elsewhere it is text.
  *   Blank space before the first item is layout and is not kept; words before it become an
  *   item of their own.
+ *
+ * - A bare `http://` or `https://` address in text (not inside a `url`, an inline spoiler, or the raw tags) becomes an
+ *   `autolink` node after the main pass: its `text` is the address as written, its `href` passed `safeHref`. It ends at
+ *   whitespace or a character `safeHref` refuses; trailing `.,;:!?` and a `)` or `]` with no opener in it stay outside.
+ *   Text that fails stays text, so `javascript:` and `data:` are never linked. Its words are kept in the visible text.
  *
  * The work is bounded, because the input is any player's post (design, "Weigh a design at the
  * scale of a busy instance"). The parser is one pass with an explicit stack, never recursion,
@@ -61,6 +66,7 @@ import { videoOf, YOUTUBE_ID, type Video } from './video.ts';
 
 export type BbNode =
   | { readonly type: 'text'; readonly text: string }
+  | { readonly type: 'autolink'; readonly href: string; readonly text: string }
   | { readonly type: 'bold' | 'italic' | 'underline' | 'strike'; readonly children: readonly BbNode[] }
   | { readonly type: 'color'; readonly color: string; readonly children: readonly BbNode[] }
   | { readonly type: 'size'; readonly size: number; readonly children: readonly BbNode[] }
@@ -244,6 +250,104 @@ const CLOSERS = new Set(['b', 'i', 'u', 's', 'color', 'size', 'url', 'quote', 'l
 const BLOCK: ReadonlySet<string> = new Set([
   'quote', 'code', 'list', 'spoiler', 'center', 'left', 'right', 'hr', 'video', 'youtube', 'marquee',
 ]);
+
+const SCHEME = /https?:\/\//gi;
+const TRAILING = '.,;:!?';
+
+/**
+ * Split a text node's bare `http(s)://` addresses out as `autolink` nodes, or null when it holds none. One linear scan:
+ * a run (a stretch with no whitespace or character `safeHref` refuses) is measured once however many schemes it holds;
+ * an address whose host part fails is skipped past that host part alone, so `http://http://...` costs one step per
+ * scheme. The address ends at its run's end, less trailing `.,;:!?` and any `)` or `]` with no opener inside it, and
+ * what is left must pass `safeHref`; text that does not is left as written.
+ */
+function splitAddresses(text: string): BbNode[] | null {
+  let parts: BbNode[] | null = null;
+  let from = 0;
+  let runStart = -1;
+  let runEnd = -1;
+  SCHEME.lastIndex = 0;
+  for (let m = SCHEME.exec(text); m; m = SCHEME.exec(text)) {
+    const start = m.index;
+    if (start >= runEnd || start < runStart) {
+      runStart = start;
+      runEnd = start;
+      while (runEnd < text.length && !BAD_URL_CHAR.test(text[runEnd] as string)) runEnd++;
+    }
+    const hostFrom = start + m[0].length;
+    let hostEnd = hostFrom;
+    while (hostEnd < runEnd && !'/?#'.includes(text[hostEnd] as string)) hostEnd++;
+    /* With a path, the host part is judged alone first (it holds no scheme, so no two host parts overlap); without one, the
+       host part is the whole run and trailing punctuation goes before it is judged. */
+    /* A run longer than the longest address from here is no address, and is not measured again for each scheme in it. */
+    const hostOk = runEnd - start > MAX_URL_LENGTH ? false : hostEnd < runEnd ? safeHref(text.slice(start, hostEnd)) !== null : true;
+    const end = hostOk ? trimAddress(text, start, runEnd) : start;
+    const href = hostOk && end > hostFrom ? safeHref(text.slice(start, end)) : null;
+    if (href === null) {
+      SCHEME.lastIndex = hostEnd;
+      continue;
+    }
+    parts ??= [];
+    if (start > from) parts.push({ type: 'text', text: text.slice(from, start) });
+    parts.push({ type: 'autolink', href, text: text.slice(start, end) });
+    from = end;
+    SCHEME.lastIndex = end;
+  }
+  if (!parts) return null;
+  if (from < text.length) parts.push({ type: 'text', text: text.slice(from) });
+  return parts;
+}
+
+/** Where the address `text[start..end)` ends once trailing `.,;:!?` and a closer with no opener inside it are left outside. */
+function trimAddress(text: string, start: number, end: number): number {
+  let parens = 0;
+  let brackets = 0;
+  for (let i = start; i < end; i++) {
+    const c = text[i];
+    if (c === '(') parens++;
+    else if (c === ')') parens--;
+    else if (c === '[') brackets++;
+    else if (c === ']') brackets--;
+  }
+  /* parens and brackets now count openers less closers; a negative one is closers that opened nowhere in the address. */
+  while (end > start) {
+    const c = text[end - 1] as string;
+    if (TRAILING.includes(c)) end--;
+    else if (c === ')' && parens < 0) { parens++; end--; }
+    else if (c === ']' && brackets < 0) { brackets++; end--; }
+    else break;
+  }
+  return end;
+}
+
+/**
+ * The autolink pass: one iterative walk over the tree, replacing each bare address in a `text` node, except inside a link
+ * (`url`, which would nest an anchor) or an inline spoiler (a button holds nothing interactive). `img`, `code`, `noparse`
+ * and `video` hold no `text` node. Arrays are the parser's own, so they are rewritten in place.
+ */
+function autolinkTree(root: Out): void {
+  const stack: Out[] = [root];
+  while (stack.length > 0) {
+    const arr = stack.pop() as Out;
+    let changed = false;
+    const next: BbNode[] = [];
+    for (const n of arr) {
+      if (n.type === 'text') {
+        const parts = n.text.includes('://') ? splitAddresses(n.text) : null;
+        if (parts) {
+          changed = true;
+          for (const p of parts) next.push(p);
+        } else next.push(n);
+        continue;
+      }
+      next.push(n);
+      if (n.type === 'url' || n.type === 'ispoiler') continue;
+      if ('children' in n) stack.push(n.children as Out);
+      else if (n.type === 'list') for (const item of n.items) stack.push(item as Out);
+    }
+    if (changed) { arr.length = 0; for (const n of next) arr.push(n); }
+  }
+}
 
 function pushText(out: Out, text: string): void {
   if (text.length === 0) return;
@@ -598,5 +702,6 @@ export function parse(input: string): BbNode[] {
     const f = pop();
     if (f.kind !== 'literal') finish(f, null);
   }
+  autolinkTree(root.out);
   return root.out;
 }

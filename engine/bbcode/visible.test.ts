@@ -80,3 +80,13 @@ test('every new container is transparent, and a rule is one separator', () => {
   assert.equal(seen('a[hr]b'), 'a\nb');
   assert.equal(seen('x[noparse][b]y[/b][/noparse]z'), 'x[b]y[/b]z');
 });
+
+test('an autolink\'s words are the post\'s own, with an offset of their own', () => {
+  const tree = parse('see https://x.example/a. ok');
+  const { text, offsets } = visibleWalk(tree);
+  assert.equal(text, 'see https://x.example/a. ok');
+  const link = tree.find((n) => n.type === 'autolink')!;
+  assert.equal(offsets.get(link), 4);
+  assert.equal(offsets.size, 3);
+  assert.equal(seen('[ispoiler]https://x.example[/ispoiler] https://y.example'), 'https://x.example https://y.example');
+});

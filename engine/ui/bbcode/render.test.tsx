@@ -291,6 +291,21 @@ describe('layout and effects', () => {
     expect(screen.getByTestId('lay2').querySelector('b[data-covers]')).toHaveAttribute('data-covers', 'cat');
   });
 
+  test('a bare address is a link a reader\'s link is, its words kept; a text layer covers it', () => {
+    show('see https://x.example/a?q=1#f. ok [ispoiler]https://s.example[/ispoiler]');
+    const links = out().querySelectorAll('a');
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveAttribute('href', 'https://x.example/a?q=1#f');
+    expect(links[0]).toHaveAttribute('rel', 'noopener noreferrer nofollow ugc');
+    expect(links[0]).toHaveAttribute('referrerpolicy', 'no-referrer');
+    expect(links[0]).toHaveTextContent('https://x.example/a?q=1#f');
+    expect(out()).toHaveTextContent('see https://x.example/a?q=1#f. ok https://s.example');
+    expect(out().querySelector('button a')).toBeNull();
+    const run: TextRun = { start: 4, end: 21, key: 'r', z: 0, mode: 'replace', render: ({ text, key }) => <b key={key} data-covers={text}>dogs</b> };
+    render(<RouterProvider><div data-testid="lay3"><TextLayer runs={[run]}><BbCode text="see https://x.example/a ok" /></TextLayer></div></RouterProvider>);
+    expect(screen.getByTestId('lay3').querySelector('b[data-covers]')).toHaveAttribute('data-covers', 'https://x.example/a'.slice(0, 17));
+  });
+
   test('all of them are axe clean', async () => {
     show('[center]a[/center][hr][sub]b[/sub][sup]c[/sup][font=Georgia]d[/font][marquee]e[/marquee][glow=red]f[/glow][shadow]g[/shadow][rainbow]h[/rainbow][highlight]i[/highlight][noparse][b]j[/b][/noparse]');
     expect(describeViolations(await axeViolations(out()))).toBe('');

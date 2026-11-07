@@ -34,7 +34,7 @@ export function visibleWalk(nodes: readonly BbNode[]): { text: string; offsets: 
     if ('sep' in step) { text += SEPARATOR; continue; }
     const n = step.node;
     switch (n.type) {
-      case 'text': case 'noparse':
+      case 'text': case 'noparse': case 'autolink':
         offsets.set(n, text.length);
         text += n.text;
         break;
