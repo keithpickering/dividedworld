@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { SIZES, TEMPLATE, templateSvg, templateVars, type PostcardSize } from './template.ts';
 
 const sizes = Object.keys(SIZES) as PostcardSize[];
+/** The guides' one neutral color, the board's green (docs/research/2026-11-05-card-template/01-layouts.html). */
+const GUIDE = '#b6ff3b';
 
 describe('the card template', () => {
   it('is 2:3 in whole pixels at every size', () => {
@@ -48,7 +50,7 @@ describe('the card template', () => {
 
   it("draws the artist's template", async () => {
     const { card, outerRadius, canvas, keepClear, focus, plateTop } = TEMPLATE;
-    const svg = templateSvg();
+    const svg = templateSvg(GUIDE);
     const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
     expect(doc.querySelector('parsererror')).toBeNull();
     expect(doc.documentElement.getAttribute('viewBox')).toBe(`0 0 ${card.w} ${card.h}`);

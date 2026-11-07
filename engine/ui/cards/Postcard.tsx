@@ -1,6 +1,7 @@
 /**
- * A postcard's face, drawn the one way wherever a card is shown (the glass plan, section 5: 150 by
- * 225 with a 9px corner, a 1.5px ring in the card's own color with its glow): in the Vending
+ * A postcard's face, drawn the one way wherever a card is shown (the card template design, docs/plans/2026-11-05-card-template-design.md:
+ * one 2:3 card at four sizes, a 30-unit border all the way round, a canvas holding the card's art, a ring in the card's own color with
+ * its glow, and the pieces of layout A over it): in the Vending
  * Machine's slot, fanned through the HUD's seam, in the Phone board's sheet, and large on the hand's
  * sheet. The card's color and ink come from its art (`CardArt`, the instance's data) as two custom
  * properties and the stylesheet reads nothing else, so a card the instance never drew is the glass's
@@ -14,7 +15,7 @@
  */
 import type { CSSProperties, ElementType, HTMLAttributes, Ref } from 'react';
 import { gemOf, playWord, priceOf, rarityName, type CardFace } from './faces.ts';
-import type { PostcardSize } from './template.ts';
+import { templateVars, type PostcardSize } from './template.ts';
 import './postcard.css';
 
 /** Where the card is drawn: its size and which parts of the face it holds. */
@@ -47,7 +48,8 @@ export function cardLabel(face: CardFace, size: PostcardSize): string {
 }
 
 export function Postcard({ face, size, as: As = 'span', armed = false, className, style, ...rest }: PostcardProps) {
-  const vars = { '--kb-card-color': face.art.color, '--kb-card-ink': face.art.ink, ...(size !== 'sheet' ? { '--kb-name-chars': face.name.length } : {}), ...style } as CSSProperties;
+  const vars = { ...templateVars(size), '--kb-card-color': face.art.color, '--kb-card-ink': face.art.ink, '--kb-name-chars': face.name.length, ...style } as CSSProperties;
+  const { canvas, credit } = face.art;
   return (
     <As
       {...rest}
@@ -59,23 +61,29 @@ export function Postcard({ face, size, as: As = 'span', armed = false, className
       data-armed={armed ? '' : undefined}
       data-kb-art={size === 'slot' ? '' : undefined}
     >
-      <span className="kb-postcard-glow" aria-hidden="true" />
-      {face.art.canvas ? <img className="kb-postcard-art" src={face.art.canvas} alt="" aria-hidden="true" draggable={false} /> : null}
+      {/* The canvas: the card's ground, a glow in its color and its art, clipped to the canvas's corners. Nothing in it is a word. */}
+      <span className="kb-postcard-canvas" aria-hidden="true">
+        {canvas ? <img className="kb-postcard-art" src={canvas} alt="" aria-hidden="true" draggable={false} /> : null}
+      </span>
       {/*
         * WCAG 2.5.3 (Label in Name): a button's visible words must appear, in order and together, in its
         * name (`cardLabel`). So the name is drawn before the tag and the tagline in the markup, with a space
         * between (every part is placed, so the order is not the eye's), and every word stays real text.
         */}
-      <span className="kb-postcard-name" aria-hidden="true" data-kb-art>{face.name}</span>
+      <span className="kb-postcard-plate" aria-hidden="true" data-kb-art><span className="kb-postcard-name">{face.name}</span></span>
       {' '}
-      {size !== 'slot' && <span className="kb-postcard-tag" aria-hidden="true" data-kb-art>{face.tag}</span>}
-      {' '}
-      {/* How it is played, in its word, and how rare it is, as a gem whose shape says it (the card mechanic's design, sections 1 and 2). */}
-      {/* In a slot the word is drawn by CSS from its attribute: the slot's button is named by its own words (Vending.tsx), which say the play after the price. */}
-      {size === 'slot'
-        ? <span className="kb-postcard-play" aria-hidden="true" data-kb-art data-kb-word={playWord(face.play)} />
-        : <span className="kb-postcard-play" aria-hidden="true" data-kb-art>{playWord(face.play)}</span>}
-      {' '}
+      {/* The alignment and how it is played, as two badges on the top border; the slot holds neither. */}
+      {size !== 'slot' && (
+        <>
+          <span className="kb-postcard-badges" aria-hidden="true" data-kb-art>
+            <span className="kb-postcard-tag">{face.tag}</span>
+            {' '}
+            <span className="kb-postcard-play">{playWord(face.play)}</span>
+          </span>
+          {' '}
+        </>
+      )}
+      {/* How rare it is, as a gem whose shape says it (the card mechanic's design, sections 1 and 2). */}
       <span className="kb-postcard-gem" aria-hidden="true" data-kb-rarity={face.rarity} data-kb-gem={gemOf(face.rarity)} title={rarityName(face.rarity)} />
       {' '}
       {size === 'sheet' && (
@@ -85,10 +93,37 @@ export function Postcard({ face, size, as: As = 'span', armed = false, className
       {size === 'sheet' && <span className="kb-postcard-line" aria-hidden="true" data-kb-art>{face.summary}</span>}
       {size === 'sheet' && (
         <span className="kb-postcard-foot" aria-hidden="true" data-kb-art>
-          <span>Postcard</span>
-          <span>{face.stack > 1 ? `Stacks ${face.stack} deep` : 'One per post'}</span>
+          <span>Postcard · {face.stack > 1 ? `Stacks ${face.stack} deep` : 'One per post'}</span>
+          {credit ? <span className="kb-postcard-credit">Art · {credit}</span> : null}
         </span>
       )}
+    </As>
+  );
+}
+
+export interface PostcardBackProps extends Omit<HTMLAttributes<HTMLElement>, 'children'> {
+  readonly size: PostcardSize;
+  /** The hit pull's back, in the machine's gold. */
+  readonly hit?: boolean;
+  readonly as?: ElementType;
+  readonly ref?: Ref<HTMLElement>;
+}
+
+/**
+ * A card face down: the same frame and silhouette as a face at any size, with the glass's crossed bands on the canvas and no
+ * card's color, key or name, so a back says nothing about the card it is (the design's section 8). The caller names it, as it
+ * names a face.
+ */
+export function PostcardBack({ size, hit = false, as: As = 'span', className, style, ...rest }: PostcardBackProps) {
+  return (
+    <As
+      {...rest}
+      className={`kb-postcard kb-postcard-back${className ? ` ${className}` : ''}`}
+      style={{ ...templateVars(size), ...style } as CSSProperties}
+      data-size={size}
+      data-hit={hit ? '' : undefined}
+    >
+      <span className="kb-postcard-canvas" aria-hidden="true" />
     </As>
   );
 }
