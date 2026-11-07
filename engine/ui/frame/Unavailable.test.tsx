@@ -15,8 +15,8 @@ function displayed(onRetry: () => void = () => {}) {
 /* The list's items as their whole text, since an item holds a button or a link. */
 const items = () => screen.getAllByRole('listitem').map((li) => li.textContent);
 
-function notFound() {
-  return renderIn(buildWorld(), <main><CannotFind address={ADDRESS} /></main>, { path: '/' });
+function notFound(address = '/t/3f2a9c1e') {
+  return renderIn(buildWorld(), <main><CannotFind address={address} /></main>, { path: '/' });
 }
 
 describe('CannotDisplay', () => {
@@ -50,6 +50,12 @@ describe('CannotDisplay', () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
+  test('the page is a sheet in its own colors, with the way out named', () => {
+    const { container } = displayed();
+    expect(container.querySelector('.kb-unavailable-sheet h1')?.textContent).toBe('The page cannot be displayed');
+    expect(screen.getByRole('group', { name: 'The page cannot be displayed' })).toBeTruthy();
+  });
+
   test('axe finds no violation', async () => {
     const { container } = displayed();
     const found = await axeViolations(container);
@@ -58,26 +64,31 @@ describe('CannotDisplay', () => {
 });
 
 describe('CannotFind', () => {
-  test('the heading is the page\'s h1 and reads exactly', () => {
-    notFound();
-    expect(screen.getByRole('heading', { level: 1, name: 'The page cannot be found' })).toBeTruthy();
+  test.each([
+    ['/t/x', 'The thread you requested does not exist.'],
+    ['/b/nowhere', 'The board you requested does not exist.'],
+    ['/c/nobody', 'The character you requested does not exist.'],
+    ['/c/nobody/record?page=2', 'The character you requested does not exist.'],
+    ['/nope', 'There is no page at this address.'],
+    ['/', 'There is no page at this address.'],
+  ])('%s names what was asked for, as the page\'s h1', (address, message) => {
+    notFound(address);
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(message);
   });
 
-  test('its paragraphs, list and footer read exactly, with the address', () => {
-    notFound();
-    expect(screen.getByText('The page you are looking for might have been removed, had its name changed, or never existed.')).toBeTruthy();
-    expect(screen.getByText('Please try the following:')).toBeTruthy();
-    expect(items()).toEqual([
-      'If you typed the page address, make sure that it is spelled correctly.',
-      'Open the index, and then look for links to the page you want.',
-      "Click your browser's Back button to try another link.",
-    ]);
-    expect(screen.getByText(`Page not found: ${ADDRESS}`)).toBeTruthy();
+  test('the box is the forum\'s Information box: a band, the message, the way out and the address in a foot cell', () => {
+    const { container } = notFound('/t/x');
+    const table = screen.getByRole('table', { name: 'Information' });
+    expect(table.querySelector('td.kb-bar')?.textContent).toBe('Information');
+    expect(screen.getByText('If you followed a link here, it may be mistyped or out of date.')).toBeTruthy();
+    const foot = container.querySelector('td.kb-unavailable-address');
+    expect(foot?.textContent).toBe('Address: /t/x');
   });
 
-  test('"index" is a link to /', () => {
-    notFound();
-    expect(screen.getByRole('link', { name: 'index' }).getAttribute('href')).toBe('/');
+  test('the whole sentence is the link to the index', () => {
+    notFound('/t/x');
+    const link = screen.getByRole('link', { name: 'Click here to return to the index' });
+    expect(link.getAttribute('href')).toBe('/');
   });
 
   test('axe finds no violation', async () => {

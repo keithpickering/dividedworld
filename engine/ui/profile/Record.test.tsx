@@ -226,6 +226,6 @@ describe('the full public record', () => {
     const fake = buildWorld();
     world(fake);
     open(fake, 'nope');
-    expect(await screen.findByRole('heading', { level: 1, name: 'The page cannot be found' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'The character you requested does not exist.' })).toBeInTheDocument();
   });
 });

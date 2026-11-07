@@ -559,9 +559,9 @@ describe('a signed-out visitor', () => {
 
 describe('a board that is not there', () => {
   test('is the router\'s "cannot be found" (no document), which links back to the index', async () => {
-    renderInWorld(<LoadedBoard slug="nowhere" />, { seed: (f) => world(f) });
-    expect(await screen.findByRole('heading', { level: 1, name: 'The page cannot be found' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'index' })).toHaveAttribute('href', '/');
+    renderInWorld(<LoadedBoard slug="nowhere" />, { seed: (f) => world(f), path: '/b/nowhere' });
+    expect(await screen.findByRole('heading', { level: 1, name: 'The board you requested does not exist.' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Click here to return to the index' })).toHaveAttribute('href', '/');
   });
 });
 

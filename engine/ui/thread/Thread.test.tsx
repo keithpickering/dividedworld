@@ -219,9 +219,9 @@ describe('pages and permalinks', () => {
 
   test('a thread that is not there is the router\'s "cannot be found" (no document), which leads back', async () => {
     const w = world(3);
-    renderIn(w.fake, <LoadedThread thread="00000000-0000-4000-8000-00000000ffff" />);
-    expect(await screen.findByRole('heading', { level: 1, name: 'The page cannot be found' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'index' })).toHaveAttribute('href', '/');
+    renderIn(w.fake, <LoadedThread thread="00000000-0000-4000-8000-00000000ffff" />, { path: '/t/00000000-0000-4000-8000-00000000ffff' });
+    expect(await screen.findByRole('heading', { level: 1, name: 'The thread you requested does not exist.' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Click here to return to the index' })).toHaveAttribute('href', '/');
   });
 
   test('a visitor who is not signed in sees the front door', async () => {

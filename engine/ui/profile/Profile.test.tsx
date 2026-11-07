@@ -114,8 +114,8 @@ describe('the public profile', () => {
     const fake = buildWorld();
     const w = world(fake);
     open(w.waiting, fake);
-    expect(await screen.findByRole('heading', { level: 1, name: 'The page cannot be found' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'index' })).toHaveAttribute('href', '/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'The character you requested does not exist.' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Click here to return to the index' })).toHaveAttribute('href', '/');
     expect(await fake.profilePage(w.waiting)).toBeNull();
   });
 

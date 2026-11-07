@@ -1,20 +1,82 @@
 /*
- * The two error pages (Unavailable.tsx): the frame's type and rules, the body in Verdana 13px and the heading in bold
- * 16px, the glyph a gray page drawn in CSS. The colors are the tokens' (engine/ui/tokens.css), so the dark theme reads
- * as the board's own dark theme does; the house theme is black on white.
+ * The two error pages (Unavailable.tsx). Not found is the forum's Information box: the period table (base.css) with a light band,
+ * the message as the page's h1 and the address in a foot cell on the count ground. Cannot be displayed is the browser's own page,
+ * a sheet inside the frame: white in light and charcoal in dark, in its own colors and not the theme's, so a dark-mode reader
+ * gets no white flash. Its glyph is a gray page with its corner folded, drawn in CSS.
  */
 .kb-unavailable {
   box-sizing: border-box;
-  width: min(96%, var(--kb-board-max));
-  margin: 24px auto;
-  padding: 0 0 0 72px;
-  position: relative;
-  min-height: 96px;
+  margin: 0 0 14px;
   color: var(--kb-fg);
-  background: var(--kb-bg);
   font-family: var(--kb-font-body);
   font-size: var(--kb-size-body);
   line-height: var(--kb-line);
+}
+
+.kb-unavailable-info .kb-bar {
+  font-weight: bold;
+}
+
+.kb-table td.kb-unavailable-message {
+  padding: 14px 16px;
+}
+
+.kb-unavailable-message h1 {
+  margin: 0 0 10px;
+  font: bold var(--kb-size-body) / 1.45 var(--kb-font-body);
+}
+
+.kb-unavailable-message p {
+  margin: 0 0 10px;
+}
+
+.kb-unavailable-message a {
+  color: var(--kb-link);
+}
+
+.kb-table td.kb-unavailable-address {
+  background: var(--kb-row-3);
+  color: var(--kb-muted);
+  font-size: var(--kb-size-small);
+  overflow-wrap: anywhere;
+}
+
+/* The sheet: the browser's page, in the browser's colors. */
+.kb-unavailable-sheet {
+  --kb-sheet-bg: #fff;
+  --kb-sheet-fg: #000;
+  --kb-sheet-link: #000;
+  --kb-sheet-rule: #000;
+  --kb-sheet-muted: #555;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: 0 16px;
+  padding: 26px 32px 22px;
+  background: var(--kb-sheet-bg);
+  color: var(--kb-sheet-fg);
+  border: 1px solid var(--kb-frame);
+  font-family: Verdana, Tahoma, Geneva, 'DejaVu Sans', sans-serif;
+  font-size: var(--kb-size-body);
+  line-height: 1.5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-kb-mode="light"]) .kb-unavailable-sheet {
+    --kb-sheet-bg: #1c1c1c;
+    --kb-sheet-fg: #e8e8e8;
+    --kb-sheet-link: #fff;
+    --kb-sheet-rule: #8a8a8a;
+    --kb-sheet-muted: #b0b0b0;
+  }
+}
+
+[data-kb-mode="dark"] .kb-unavailable-sheet {
+  --kb-sheet-bg: #1c1c1c;
+  --kb-sheet-fg: #e8e8e8;
+  --kb-sheet-link: #fff;
+  --kb-sheet-rule: #8a8a8a;
+  --kb-sheet-muted: #b0b0b0;
 }
 
 /*
@@ -26,13 +88,11 @@
   --kb-glyph-edge: 2px;
   --kb-glyph-cut: 12px;
   --kb-glyph-cut-in: calc(var(--kb-glyph-cut) - var(--kb-glyph-edge) * 0.5858);
-  position: absolute;
-  left: 16px;
-  top: 4px;
   width: 40px;
   height: 48px;
   isolation: isolate;
-  background: var(--kb-muted);
+  position: relative;
+  background: var(--kb-sheet-muted);
   clip-path: polygon(0 0, calc(100% - var(--kb-glyph-cut)) 0, 100% var(--kb-glyph-cut), 100% 100%, 0 100%);
 }
 
@@ -41,51 +101,45 @@
   position: absolute;
   z-index: -1;
   inset: var(--kb-glyph-edge);
-  background: var(--kb-bg);
+  background: var(--kb-sheet-bg);
   clip-path: polygon(0 0, calc(100% - var(--kb-glyph-cut-in)) 0, 100% var(--kb-glyph-cut-in), 100% 100%, 0 100%);
 }
 
 /* Forced colors would turn both the edge and the page Canvas; the system colors keep the edge. */
 @media (forced-colors: active) {
+  .kb-unavailable-sheet { border-color: CanvasText; }
   .kb-unavailable-glyph { background: CanvasText !important; }
   .kb-unavailable-glyph::after { background: Canvas !important; }
 }
 
-.kb-unavailable h1 {
-  margin: 0 0 6px;
-  font-family: var(--kb-font-body);
-  font-size: var(--kb-size-heading);
-  font-weight: bold;
-  line-height: 1.2;
+.kb-unavailable-sheet h1 {
+  margin: 0 0 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--kb-sheet-rule);
+  font: bold 19px / 1.3 Verdana, Tahoma, Geneva, 'DejaVu Sans', sans-serif;
 }
 
-.kb-unavailable-rule {
-  border: 0;
-  border-top: 1px solid var(--kb-rule);
-  margin: 6px 0 10px;
-  height: 0;
-}
-
-.kb-unavailable p {
+.kb-unavailable-sheet p {
   margin: 0 0 10px;
 }
 
-.kb-unavailable ul {
+.kb-unavailable-sheet ul {
   margin: 0 0 10px;
-  padding-left: 24px;
+  padding-left: 1.3em;
 }
 
-.kb-unavailable li {
+.kb-unavailable-sheet li {
   margin: 0 0 4px;
 }
 
-.kb-unavailable a {
-  color: var(--kb-link);
+.kb-unavailable-sheet a {
+  color: var(--kb-sheet-link);
 }
 
 .kb-unavailable-retry {
   font: inherit;
-  color: var(--kb-link);
+  line-height: normal;
+  color: var(--kb-sheet-link);
   background: none;
   border: 0;
   padding: 0;
@@ -93,19 +147,23 @@
   cursor: pointer;
 }
 
-.kb-unavailable-footer {
-  color: var(--kb-muted);
-  margin-bottom: 0;
+.kb-unavailable-sheet .kb-unavailable-footer {
+  border-top: 1px solid var(--kb-sheet-rule);
+  padding-top: 8px;
+  margin: 4px 0 0;
+  color: var(--kb-sheet-muted);
+  font-size: var(--kb-size-small);
+  overflow-wrap: anywhere;
 }
 
+/* On the phone the glyph sits above the heading. */
 @media (max-width: 480px) {
-  .kb-unavailable {
-    padding-left: 0;
-    padding-top: 64px;
+  .kb-unavailable-sheet {
+    grid-template-columns: 1fr;
+    padding: 18px 16px;
   }
 
   .kb-unavailable-glyph {
-    left: 0;
-    top: 0;
+    margin-bottom: 10px;
   }
 }
