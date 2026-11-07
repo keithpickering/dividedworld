@@ -4,7 +4,7 @@
  */
 import { parse, type BbNode } from '../../bbcode/parse.ts';
 
-export type Tool = 'bold' | 'italic' | 'underline' | 'strike' | 'link' | 'image' | 'code' | 'list';
+export type Tool = 'bold' | 'italic' | 'underline' | 'strike' | 'link' | 'image' | 'code' | 'list' | 'spoiler' | 'video';
 
 export interface Edited {
   readonly text: string;
@@ -33,6 +33,19 @@ export function applyTool(tool: Tool, text: string, start: number, end: number):
     const at = start + '[url='.length;
     return { text: `${text.slice(0, start)}[url=]${selected}[/url]${text.slice(end)}`, start: at, end: at };
   }
+  if (tool === 'spoiler') {
+    const selected = text.slice(start, end);
+    if (selected !== '' && !selected.includes('\n')) return wrap(text, start, end, '[ispoiler]', '[/ispoiler]');
+    /* Anything else is the toggle; the cursor waits where its text goes. */
+    const at = start + '[spoiler='.length;
+    return { text: `${text.slice(0, start)}[spoiler=]${selected}[/spoiler]${text.slice(end)}`, start: at, end: at };
+  }
+  if (tool === 'video') {
+    if (/^https?:\/\/\S+$/u.test(text.slice(start, end))) return wrap(text, start, end, '[video]', '[/video]');
+    /* Words selected are not a video: they stay, and the bare tag goes in after them. */
+    const at = end + '[video]'.length;
+    return { text: `${text.slice(0, end)}[video][/video]${text.slice(end)}`, start: at, end: at };
+  }
   if (tool === 'list') {
     const selected = text.slice(start, end);
     if (selected === '') {
@@ -44,6 +57,15 @@ export function applyTool(tool: Tool, text: string, start: number, end: number):
   }
   const [open, close] = TAGS[tool];
   return wrap(text, start, end, open, close);
+}
+
+/**
+ * The selection wrapped as a counterfeit quote of a character: `[quote=<name> user=<id>]`. A name with a space or `=` is quoted so the parser reads it whole;
+ * one with a `"` in it is left bare (the parser's quoted form cannot hold one), which reads back whole unless it begins with one.
+ */
+export function quoteSomeone(text: string, start: number, end: number, character: { readonly id: string; readonly name: string }): Edited {
+  const name = /[\s=]/u.test(character.name) && !character.name.includes('"') ? `"${character.name}"` : character.name;
+  return wrap(text, start, end, `[quote=${name} user=${character.id}]`, '[/quote]');
 }
 
 /**

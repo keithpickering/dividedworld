@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { axeViolations, describeViolations } from '../a11y.ts';
 import { openThread, replyBox, threadWorld } from './support.tsx';
 
 beforeEach(() => {
@@ -200,7 +201,7 @@ describe('the quick reply', () => {
 });
 
 describe('the toolbar', () => {
-  const tools = ['Bold', 'Italic', 'Underline', 'Strikethrough', 'Link', 'Image', 'Quote the last post shown', 'Code', 'List'];
+  const tools = ['Bold', 'Italic', 'Underline', 'Strikethrough', 'Link', 'Image', 'Video', 'Spoiler', 'Quote someone…', 'Quote the last post shown', 'Code', 'List'];
 
   test('has a labeled button for each tool, as one stop on the Tab order that the arrow keys move along', async () => {
     const w = threadWorld();
@@ -425,5 +426,161 @@ describe('editing', () => {
     await userEvent.click(within(mine).getByRole('button', { name: 'Italic' }));
     expect(box).toHaveValue('[i]post[/i] 2');
     expect(within(mine).queryByRole('button', { name: 'Quote the last post shown' })).toBeNull();
+  });
+});
+
+describe('the new tools, the shortcuts and the paste offer', () => {
+  const pick = async (text: string, from: number, to: number) => {
+    const box = (await say(text)) as HTMLTextAreaElement;
+    box.setSelectionRange(from, to);
+    return box;
+  };
+
+  test('Spoiler and Video press into the box', async () => {
+    const w = threadWorld();
+    openThread(w);
+    const box = await pick('the butler did it', 4, 10);
+    await userEvent.click(screen.getByRole('button', { name: 'Spoiler' }));
+    expect(box).toHaveValue('the [ispoiler]butler[/ispoiler] did it');
+    box.setSelectionRange(0, 0);
+    await userEvent.click(screen.getByRole('button', { name: 'Video' }));
+    expect(box).toHaveValue('[video][/video]the [ispoiler]butler[/ispoiler] did it');
+    expect(box.selectionStart).toBe('[video]'.length);
+  });
+
+  describe('Quote someone…', () => {
+    test('opens a dialog; choosing a character wraps the selection as that character and returns focus to the box', async () => {
+      const w = threadWorld();
+      openThread(w);
+      const box = await pick('I never said this', 0, 17);
+      await userEvent.click(screen.getByRole('button', { name: 'Quote someone…' }));
+      const dialog = await screen.findByRole('dialog', { name: /Quote someone/u });
+      await userEvent.type(within(dialog).getByRole('combobox'), 'Spri');
+      await userEvent.click(await within(dialog).findByRole('option', { name: /Spritey/u }));
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(box).toHaveValue(`[quote=Spritey user=${w.spritey}]I never said this[/quote]`);
+      expect(box).toHaveFocus();
+    });
+
+    test('Escape closes it with nothing inserted and focus back in the box', async () => {
+      const w = threadWorld();
+      openThread(w);
+      const box = await pick('keep me', 0, 7);
+      await userEvent.click(screen.getByRole('button', { name: 'Quote someone…' }));
+      await screen.findByRole('dialog', { name: /Quote someone/u });
+      await userEvent.keyboard('{Escape}');
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(box).toHaveValue('keep me');
+      expect(box).toHaveFocus();
+    });
+
+    test('passes axe with the dialog open', async () => {
+      const w = threadWorld();
+      openThread(w);
+      await pick('x', 0, 1);
+      await userEvent.click(screen.getByRole('button', { name: 'Quote someone…' }));
+      const dialog = await screen.findByRole('dialog', { name: /Quote someone/u });
+      const bad = await axeViolations(dialog);
+      expect(bad, describeViolations(bad)).toEqual([]);
+    });
+  });
+
+  describe('shortcuts', () => {
+    test.each([['b', '[b]word[/b]'], ['i', '[i]word[/i]'], ['u', '[u]word[/u]'], ['k', '[url=]word[/url]']])('Ctrl+%s applies the tool and the browser\'s own is prevented', async (key, want) => {
+      const w = threadWorld();
+      openThread(w);
+      const box = await pick('word', 0, 4);
+      const stopped = fireEvent.keyDown(box, { key, ctrlKey: true });
+      expect(stopped).toBe(false);
+      expect(box).toHaveValue(want);
+    });
+    test('Command works as Control does, and a bare letter types', async () => {
+      const w = threadWorld();
+      openThread(w);
+      const box = await pick('word', 0, 4);
+      expect(fireEvent.keyDown(box, { key: 'b' })).toBe(true);
+      expect(box).toHaveValue('word');
+      expect(fireEvent.keyDown(box, { key: 'B', metaKey: true })).toBe(false);
+      expect(box).toHaveValue('[b]word[/b]');
+    });
+  });
+
+  describe('paste to embed', () => {
+    const YT = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+    const offer = () => screen.queryByText(/Embed this video\?|Show this image\?/u);
+
+    test('a pasted video link stays as written and offers; Embed wraps it in place as one insertion', async () => {
+      const w = threadWorld();
+      openThread(w);
+      const box = await say(`watch ${YT} now`);
+      expect(offer()).toBeNull();
+      await userEvent.clear(box);
+      await userEvent.paste('before ');
+      await userEvent.paste(YT);
+      expect(box).toHaveValue(`before ${YT}`);
+      const line = (await screen.findByText('Embed this video?')).closest('[role="status"]') as HTMLElement;
+      const bad = await axeViolations(line.closest('.kb-editor')!);
+      expect(bad, describeViolations(bad)).toEqual([]);
+      await userEvent.click(within(line).getByRole('button', { name: 'Embed' }));
+      expect(box).toHaveValue(`before [video]${YT}[/video]`);
+      expect(offer()).toBeNull();
+    });
+
+    test('typing dismisses it, and nothing is converted', async () => {
+      const w = threadWorld();
+      openThread(w);
+      const box = await replyBox();
+      await userEvent.click(box);
+      await userEvent.paste(YT);
+      await screen.findByText('Embed this video?');
+      await userEvent.keyboard('!');
+      expect(offer()).toBeNull();
+      expect(box).toHaveValue(`${YT}!`);
+    });
+
+    test('Keep as link dismisses it and leaves the text', async () => {
+      const w = threadWorld();
+      openThread(w);
+      const box = await replyBox();
+      await userEvent.click(box);
+      await userEvent.paste(YT);
+      await userEvent.click(await screen.findByRole('button', { name: 'Keep as link' }));
+      expect(offer()).toBeNull();
+      expect(box).toHaveValue(YT);
+    });
+
+    test('an https image address offers to show it', async () => {
+      const w = threadWorld();
+      openThread(w);
+      const box = await replyBox();
+      await userEvent.click(box);
+      await userEvent.paste('  https://example.test/a/pic.JPG  ');
+      await screen.findByText('Show this image?');
+      await userEvent.click(screen.getByRole('button', { name: 'Embed' }));
+      expect(box).toHaveValue('  [img]https://example.test/a/pic.JPG[/img]  ');
+    });
+
+    test('a pasted sentence, a plain page link and an http image offer nothing', async () => {
+      const w = threadWorld();
+      openThread(w);
+      const box = await replyBox();
+      await userEvent.click(box);
+      for (const text of ['look at this https://example.test/pic.png please', 'https://example.test/page', 'http://example.test/pic.png']) {
+        await userEvent.clear(box);
+        await userEvent.paste(text);
+        expect(offer()).toBeNull();
+      }
+    });
+
+    test('if the link has moved or changed, Embed is not offered any longer', async () => {
+      const w = threadWorld();
+      openThread(w);
+      const box = await replyBox();
+      await userEvent.click(box);
+      await userEvent.paste(YT);
+      await screen.findByText('Embed this video?');
+      await userEvent.type(box, 'x', { initialSelectionStart: 0, initialSelectionEnd: 0 });
+      expect(offer()).toBeNull();
+    });
   });
 });

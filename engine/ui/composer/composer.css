@@ -41,6 +41,17 @@
   margin-right: auto;
 }
 
+.kb-editor-offer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5em;
+}
+
+.kb-editor-offer:not(:empty) {
+  padding-top: 0.4em;
+}
+
 .kb-editor-note:empty {
   display: none;
 }

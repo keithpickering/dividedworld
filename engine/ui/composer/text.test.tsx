@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import { applyTool, diffRange, framedIn, quoteText } from './text.ts';
+import { parse } from '../../bbcode/parse.ts';
+import { applyTool, diffRange, framedIn, quoteSomeone, quoteText } from './text.ts';
 
 describe('what a toolbar press does to the text', () => {
   test('wraps the selection and keeps it selected inside the tags', () => {
@@ -21,6 +22,17 @@ describe('what a toolbar press does to the text', () => {
   test('a list: each selected line is an item', () => {
     expect(applyTool('list', 'one\ntwo', 0, 7).text).toBe('[list]\n[*]one\n[*]two\n[/list]');
     expect(applyTool('list', '', 0, 0).text).toBe('[list]\n[*]\n[/list]');
+  });
+  test('a spoiler: a selection within one line is the inline one; anything else is the toggle with its text to fill in', () => {
+    expect(applyTool('spoiler', 'the butler did it', 4, 10)).toEqual({ text: 'the [ispoiler]butler[/ispoiler] did it', start: 14, end: 20 });
+    expect(applyTool('spoiler', 'ab', 1, 1)).toEqual({ text: 'a[spoiler=][/spoiler]b', start: 10, end: 10 });
+    expect(applyTool('spoiler', 'one\ntwo', 0, 7)).toEqual({ text: '[spoiler=]one\ntwo[/spoiler]', start: 9, end: 9 });
+  });
+  test('a video: a selected address is the video; otherwise a bare tag with the cursor inside', () => {
+    expect(applyTool('video', 'see https://youtu.be/dQw4w9WgXcQ now', 4, 32).text).toBe('see [video]https://youtu.be/dQw4w9WgXcQ[/video] now');
+    expect(applyTool('video', 'ab', 1, 1)).toEqual({ text: 'a[video][/video]b', start: 8, end: 8 });
+    expect(applyTool('video', 'some words', 0, 4)).toEqual({ text: 'some[video][/video] words', start: 11, end: 11 });
+    expect(applyTool('video', 'https://a.test/x\nhttps://a.test/y', 0, 33)).toEqual({ text: 'https://a.test/x\nhttps://a.test/y[video][/video]', start: 40, end: 40 });
   });
   test('a quote text is the whole post by its Act, appended on a line of its own', () => {
     expect(quoteText('', 'id1', 'words')).toBe('[quote=id1]words[/quote]\n');
@@ -59,5 +71,21 @@ describe('framedIn: the characters a draft puts words in the mouth of', () => {
   test('names at most five', () => {
     const ids = Array.from({ length: 7 }, (_, i) => `aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa${i}`);
     expect(framedIn(ids.map((i) => `[quote user=${i}]x[/quote]`).join(''))).toEqual(ids.slice(0, 5));
+  });
+});
+
+describe('quoteSomeone', () => {
+  const ID = '11111111-1111-4111-8111-111111111111';
+  test('wraps the selection and keeps it selected inside the tags', () => {
+    expect(quoteSomeone('I said so', 0, 9, { id: ID, name: 'Ana' })).toEqual({ text: `[quote=Ana user=${ID}]I said so[/quote]`, start: 53, end: 62 });
+    expect(quoteSomeone('', 0, 0, { id: ID, name: 'Ana' }).text).toBe(`[quote=Ana user=${ID}][/quote]`);
+  });
+  test.each(['Ana', 'Ana Bo', 'a=b', 'Say "hi"', 'x y=z', 'Mr. "Q" user'])('parses back to exactly the character named %s', (name) => {
+    const done = quoteSomeone('words', 0, 5, { id: ID, name });
+    expect(parse(done.text)).toEqual([expect.objectContaining({ type: 'counterfeit', name, user: ID })]);
+  });
+  test('quotes a name only when it holds a space or an equals sign', () => {
+    expect(quoteSomeone('x', 0, 1, { id: ID, name: 'Ana' }).text).toContain('[quote=Ana user=');
+    expect(quoteSomeone('x', 0, 1, { id: ID, name: 'Ana Bo' }).text).toContain('[quote="Ana Bo" user=');
   });
 });
