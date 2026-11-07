@@ -231,7 +231,9 @@ begin
   if not exists (select 1 from pg_indexes where tablename = 'post_search' and indexdef like '%gin (words)%') then raise exception 'no GIN index on words'; end if;
   if not exists (select 1 from pg_indexes where tablename = 'post_search' and indexdef like '%(created_at DESC, act DESC)%') then raise exception 'no (created_at desc, act desc) index'; end if;
   if not exists (select 1 from pg_indexes where tablename = 'post_search' and indexdef like '%character%, created_at DESC)%') then raise exception 'no (character, created_at desc) index'; end if;
-  if not exists (select 1 from pg_indexes where tablename = 'post_search' and indexdef like '%(thread)%') then raise exception 'no (thread) index'; end if;
+  if not exists (select 1 from pg_indexes where tablename = 'post_search' and indexdef like '%(thread, created_at DESC, act DESC)%') then raise exception 'no (thread, created_at desc, act desc) index'; end if;
+  if not exists (select 1 from pg_indexes where tablename = 'post_search' and indexdef like '%gin (board, words) WHERE first%') then raise exception 'no partial GIN index on (board, words) where first'; end if;
+  if not exists (select 1 from pg_indexes where tablename = 'post_search' and indexdef like '%gin (words) WHERE first%') then raise exception 'no partial GIN index on words where first'; end if;
   if not exists (select 1 from pg_indexes where tablename = 'threads' and indexdef like '%gin_trgm_ops%' and indexdef like '%fold_text(title)%') then raise exception 'no trigram index on thread titles'; end if;
   if not exists (select 1 from pg_indexes where tablename = 'characters' and indexdef like '%gin_trgm_ops%' and indexdef like '%fold_text(name)%') then raise exception 'no trigram index on character names'; end if;
 
@@ -907,12 +909,23 @@ create function pg_temp.max_limit(plan jsonb) returns numeric language sql as $$
 create function pg_temp.max_limit_read(plan jsonb) returns numeric language sql as $$
   select max((n ->> 'Actual Rows')::numeric) from jsonb_path_query(plan, '$.**') n where jsonb_typeof(n) = 'object' and n ->> 'Node Type' = 'Limit' $$;
 
--- The rows of post_search a plan read (BOUND-2): each scan node's Actual Rows times its Actual Loops, summed over every scan of post_search (the walk's probe by thread is one, run once for
--- each match it tests). `explain (analyze)` runs the statement, so these are the rows that really came up. The Limit checks above read the rows a Limit passed up, which a filter under the
--- Limit (a board, titles only) does not bound.
+-- The rows of post_search a plan read (BOUND-2): for each scan node of post_search, the rows it passed up (Actual Rows), the rows its filter removed (Rows Removed by Filter) and, for a bitmap heap
+-- scan, the rows its recheck removed (Rows Removed by Index Recheck: the heap rows a lossy bitmap fetched and dropped), times Actual Loops, summed over every scan of post_search (the walk's probe by
+-- thread is one, run once for each match it tests). A row a scan fetched and then dropped was read; counting only the rows passed up would let a plan read the whole table through a filter and
+-- pass. `explain (analyze)` runs the statement, so these are the rows that really came. The Limit checks above read the rows a Limit passed up, which a filter under the Limit (a board, titles
+-- only) does not bound.
+-- A bitmap index scan names its index and no relation, and passes up the entries it found (its Actual Rows: every posting of the word it matched, before the heap is touched), so a BitmapAnd
+-- that reads a word's postings across the whole instance and keeps the heap at M would pass on the heap rows alone. Those entries are counted too, for the indexes of post_search (read from
+-- pg_indexes when the check runs, so an index added later is covered), times Actual Loops. The two are not summed: an entry the bitmap found and the heap row it led to are one row read twice,
+-- and summing would hold a plan that is right to twice the allowance. The rows read are the larger of what the plan's heap scans read (above) and what its bitmap index scans found.
 create function pg_temp.rows_read(plan jsonb) returns numeric language sql as $$
-  select coalesce(sum((n ->> 'Actual Rows')::numeric * (n ->> 'Actual Loops')::numeric), 0) from jsonb_path_query(plan, '$.**') n
-  where jsonb_typeof(n) = 'object' and n ->> 'Relation Name' = 'post_search' and n ->> 'Node Type' in ('Seq Scan', 'Index Scan', 'Index Only Scan', 'Bitmap Heap Scan') $$;
+  select greatest(
+    coalesce(sum(((n ->> 'Actual Rows')::numeric + coalesce((n ->> 'Rows Removed by Filter')::numeric, 0) + coalesce((n ->> 'Rows Removed by Index Recheck')::numeric, 0)) * (n ->> 'Actual Loops')::numeric)
+      filter (where n ->> 'Relation Name' = 'post_search' and n ->> 'Node Type' in ('Seq Scan', 'Index Scan', 'Index Only Scan', 'Bitmap Heap Scan')), 0),
+    coalesce(sum((n ->> 'Actual Rows')::numeric * (n ->> 'Actual Loops')::numeric)
+      filter (where n ->> 'Node Type' = 'Bitmap Index Scan' and n ->> 'Index Name' in (select indexname from pg_indexes where tablename = 'post_search')), 0))
+  from jsonb_path_query(plan, '$.**') n
+  where jsonb_typeof(n) = 'object' $$;
 create function pg_temp.explain_run(stmt text) returns jsonb language plpgsql as $$
 declare plan jsonb;
 begin
@@ -1015,9 +1028,9 @@ begin
       seqs := pg_temp.seq_scans(plan);
       if seqs is not null then raise exception 'a sequential scan on % in the plan of: %', seqs, s; end if;
       if pg_temp.index_scans(plan, 'post_search') = 0 then raise exception 'the plan does not read post_search through an index (the check would be vacuous): %', s; end if;
-      if s like '%not exists%' and pg_temp.index_scans(plan, 'post_search') < 2 then raise exception 'the thread key''s probe does not read post_search through an index: %', s; end if;
+      if s like '%order by k.created_at%' and pg_temp.index_scans(plan, 'post_search') < 2 then raise exception 'the thread key''s probe does not read post_search through an index: %', s; end if;
       if pg_temp.max_limit(plan) > greatest(pool + 1, 1001) then raise exception 'a limit above the pool and one in: %', s; end if;
-      if s like '%not exists%' and pg_temp.max_limit(plan) > pool + 1 then raise exception 'a walk by time reads more than the pool and one in: %', s; end if;
+      if s like '% as is_key %' and pg_temp.max_limit(plan) > pool + 1 then raise exception 'a walk by time reads more than the pool and one in: %', s; end if;
       if s like '% limit ' || pool and pg_temp.max_limit(plan) > pool then raise exception 'relevance would rank more than the pool in: %', s; end if;
     end loop;
   end loop;
@@ -1044,11 +1057,22 @@ begin
     if pg_temp.index_scans(plan, 'post_search') = 0 then raise exception 'the plan does not read post_search through an index: %', s; end if;
   end loop;
 
-  -- BOUND-2: a filtered search reads the filter's own matches, never the whole instance's. Each shape is run for real (`explain (analyze)`) and the rows of post_search it read are held to M, the
-  -- number of rows that meet the filter (the word, the board, titles only), plus, for a walk, one probe of the match's thread for each match it tests (`pool + 1` at most, a probe returns at most a row).
-  -- A plan may read fewer (a keyset walk stops at its limit); it may not read the rows the filter would have dropped. The boards are 10% and 1% of the threads, and the common word is in 100,000 posts
-  -- of 200,000: a plan that reads the word's matches across the filter reads 100,000, one that reads a board's posts and drops those without the word reads 20,000 where M is 10,000.
-  -- Titles only runs unfiltered too: 1,000 threads carry the word in their title, and a plan that reads the word's body matches across it reads 100,000.
+  -- BOUND-2: a filtered search reads the filter's own matches, never the whole instance's. Each shape is run for real (`explain (analyze)`) and the rows of post_search it read (rows_read: every
+  -- row a scan fetched, kept or dropped) are held to an allowance of M, the number of rows that meet the filter (the word, the board, titles only), and what the planner may rightly add:
+  --   * 2 * M + 256 for the matches. Two ways to find a board's matches are both right: the board-and-word GIN reads M, and the board's own index with the word as a filter reads the board's posts,
+  --     M / d for a word in a share d of them; the planner takes the second when the word is dense (here d is a half: 20,000 rows for 10,000 matches, and which one it takes flips with the sample
+  --     ANALYZE draws), so 2 * M. The 256 is what a planner rather reads whole than looks up in a second index (a rare word's 10 matches elsewhere, a board's 20 or 200 first posts): about two
+  --     pages of rows, a constant that grows with nothing. What it never reads is the word's matches in every board (100,000 for the common word) or the instance's posts: the board indexes
+  --     (post_search_board_words, post_search_board_newest) and the first-post ones keep it from that, and they are not all that holds it inside 2 * M: dropping post_search_board_words alone
+  --     leaves the board's posts to post_search_board_newest, which reads at most the dense word's M / d, inside the allowance by design.
+  --   * for a walk, also its probes: one for each match it tests, `least(M, pool + 1)` of them, except titles only, which has none (a thread has one first post, so each match is its key). A probe
+  --     starts at the match and ends at the first match of its thread in the walk's direction. The fixture's plans read that range through post_search_thread_at: alone for the common word (the next
+  --     match is the next row), and for the rare word ANDed with post_search_board_words on the word, as a bitmap. Its allowance, per probe: 2 for the common word, which is in every post of its threads, so the next match is the next row (a probe that read a thread's rows, 100 here, would read
+  --     390,000 for the pool); 100 for the rare word, whose 10 matches are 10 posts apart in one thread of 100 posts, where the planner may read a short thread's range rather than look up its
+  --     10 matches. At a busy instance a probe reads the gap to its thread's next match or that thread's matches, whichever the planner finds fewer, and across a walk about each thread's rows once.
+  -- A plan may read fewer (a keyset walk stops at its limit); it may not read the rows the filter would have dropped. The boards are 10% and 1% of the threads, and the common word is in 100,000
+  -- posts of 200,000. Titles only runs unfiltered too: 1,000 threads carry the word in their title, and a plan that reads the word's body matches across it reads 100,000. Each of these is red
+  -- when its index is gone (a planted poison: the title probe back to the older `exists` form, the board indexes dropped, the first-post indexes dropped).
   foreach w in array array['common', 'zyxwv'] loop
     for fb, ft in select * from (values (board10, false), (board10, true), (null::uuid, true), (board1, false), (board1, true)) as v(b, t) loop
       m_rows := (select count(*) from post_search p
@@ -1063,7 +1087,7 @@ begin
       ] loop
         plan := pg_temp.explain_run(s);
         read_n := pg_temp.rows_read(plan);
-        allowed := m_rows + case when s like '%not exists%' then pool + 1 else 0 end;
+        allowed := 2 * m_rows + 256 + case when s like '%order by k.created_at%' then least(m_rows, pool + 1) * case when w = 'common' then 2 else 100 end else 0 end;
         worst := greatest(worst, read_n);
         bounded_shapes := bounded_shapes + 1;
         if read_n > allowed then raise exception 'a filtered search read % rows of post_search, and the filter has % matches (% allowed): %', read_n, m_rows, allowed, s; end if;
