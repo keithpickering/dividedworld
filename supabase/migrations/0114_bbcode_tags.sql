@@ -634,3 +634,326 @@ begin
 end $$;
 revoke execute on function search_reindex() from public, anon, authenticated;
 select search_reindex();
+
+
+-- ============================================================================ Task 8: the framed alert, in the database ====
+--
+-- The framed alert (design section 1, "The framed alert"; plan Task 8): a counterfeit quote names a character (`[quote=Name user=<id>]`), and that character's owner is told. It is its own
+-- written kind, not `quote` ("your post was quoted" would be false), and it never bluffs: the alert says only that a post holds words put in a character's mouth, about that post.
+--
+--   framed         An alert kind, written by write_framed (below) in the transaction of the post, thread start or spin that holds the counterfeit, to the owner of the character the body names, about
+--                  that Act, with the character, as `quote`'s is. No sub. An edit writes none, as an edit writes no `quote` alert: edit_post is not touched.
+--   write_framed(body, framing, about, acting)
+--                  For each distinct id among the first 5 of `framing` (in the order named), if it is a debuted character (characters.debuted_at is not null) and `body` contains `user=<id>`, case
+--                  ignored, it calls write_alert (0061), which skips a staff character (no owner) and the acting account's own masks. Any other id is skipped silently. It returns nothing, and
+--                  neither it nor the three callers answer differently for an id that is unknown, undebuted, unnamed, staff or the poster's own: no refusal, no field. What it adds for an owned,
+--                  debuted, named character is one indexed insert and one outbox row, the cost write_alert's own header already accepts for `quote` (a staff, undebuted or own-mask target is seen
+--                  only by the account that knows). At most 5 ids are looked at whatever the body holds, so a post's cost is bounded. It is not security definer: its callers are, and write_alert is
+--                  no API role's. No API role may execute it.
+--
+-- What changed, each redefined whole from its latest definition (everything else is as that migration wrote it):
+--   - alerts_kind_check (0092) gains 'framed'. account_preferences_toasts_check (0092) gains it.
+--   - set_preferences (0112) and settings_held (0113) list it among the kinds a toast choice and the toastDefaults setting may name. (settings_held does concern alerts: it validates
+--     toastDefaults against the same list.)
+--   - post, start_thread and spin (all 0105) gain `framing uuid[] default '{}'` and call write_framed after the Act is written. Each is dropped and created whole, since the
+--     signature changes: with the default, a call that names no `framing` reads as before, and no overload is left beside the new one. Their grants are restated for the new signatures.
+--
+-- Ways out: nothing here adds a state a player can be put in; an alert is read and cleared as every alert is.
+
+alter table alerts drop constraint alerts_kind_check;
+alter table alerts add constraint alerts_kind_check check (kind in ('quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'cardEnded', 'framed'));
+
+alter table account_preferences drop constraint account_preferences_toasts_check;
+alter table account_preferences add constraint account_preferences_toasts_check
+  check (toasts is null or toasts <@ array['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'settlement', 'followed', 'update', 'seasonNews', 'cardEnded', 'framed']);
+
+-- set_preferences (0112), with `framed` among the kinds a toast may name. Everything else as 0112 wrote it.
+create or replace function set_preferences(theme text default null, postbit text default null, motion text default null,
+  smoke text default null, contrast text default null, text_size integer default null, tilt text default null,
+  toasts text[] default null, toasts_default boolean default false) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  caller uuid := signed_in_account();
+  kept account_preferences%rowtype;
+  known text[] := array['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'settlement', 'followed', 'update', 'seasonNews', 'cardEnded', 'framed'];
+  bad text;
+  once text[];
+begin
+  if theme is not null and theme !~ '^[a-z][a-z0-9-]{0,39}$' then raise exception 'a theme is named in lowercase words joined by hyphens' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if postbit is not null and postbit not in ('side', 'stacked') then raise exception 'the postbit is side or stacked' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if motion is not null and motion not in ('system', 'reduce', 'full', 'snappy') then raise exception 'motion follows the system, or is off, smooth or snappy' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if smoke is not null and smoke not in ('full', 'low', 'off') then raise exception 'the smoke is full, low or off' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if contrast is not null and contrast not in ('standard', 'high') then raise exception 'contrast is standard or high' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if text_size is not null and text_size not in (100, 125, 150, 200) then raise exception 'text size is 100, 125, 150 or 200 percent' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if tilt is not null and tilt not in ('off', 'on') then raise exception 'tilt is off or on' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if toasts is not null and coalesce(toasts_default, false) then raise exception 'the toasts are chosen or put back to the defaults, not both' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if toasts is not null then
+    select string_agg(coalesce(k, '(blank)'), ', ' order by first) into bad from (select k, min(n) as first from unnest(toasts) with ordinality t(k, n) where k is null or not k = any (known) group by k) u;
+    if bad is not null then raise exception 'not a kind of alert: %', bad using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+    -- Repaired, not refused: the same kind named twice is the kind once, in the order it was first named.
+    select coalesce(array_agg(k order by first), '{}') into once from (select k, min(n) as first from unnest(toasts) with ordinality t(k, n) group by k) d;
+  end if;
+  insert into account_preferences as p (account, theme, postbit, motion, smoke, contrast, text_size, tilt, toasts)
+  values (caller, coalesce(theme, 'system'), coalesce(postbit, 'side'), coalesce(motion, 'system'),
+    coalesce(smoke, 'full'), coalesce(contrast, 'standard'), coalesce(text_size, 100), coalesce(tilt, 'off'), once)
+  on conflict (account) do update set theme = coalesce(set_preferences.theme, p.theme), postbit = coalesce(set_preferences.postbit, p.postbit),
+    motion = coalesce(set_preferences.motion, p.motion), smoke = coalesce(set_preferences.smoke, p.smoke),
+    contrast = coalesce(set_preferences.contrast, p.contrast), text_size = coalesce(set_preferences.text_size, p.text_size),
+    tilt = coalesce(set_preferences.tilt, p.tilt),
+    toasts = case when coalesce(set_preferences.toasts_default, false) then null when set_preferences.toasts is not null then once else p.toasts end
+  returning * into kept;
+  return preferences_answer(kept);
+end $$;
+
+revoke execute on function set_preferences(text, text, text, text, text, integer, text, text[], boolean) from public, anon;
+grant execute on function set_preferences(text, text, text, text, text, integer, text, text[], boolean) to authenticated;
+
+-- settings_held (0113), with `framed` among the kinds toastDefaults may name. Everything else as 0113 wrote it.
+create or replace function settings_held() returns trigger
+language plpgsql set search_path = public, pg_temp as $$
+declare
+  v jsonb := new.value;
+  why text;
+  shape text;
+  phase text;
+  pkey text;
+  kinds text[] := array['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'settlement', 'followed', 'update', 'seasonNews', 'cardEnded', 'framed'];
+begin
+  why := case new.key
+    when 'walletCap' then case when not setting_whole(v, 1) then 'a whole number of hundredths, at least 1' end
+    when 'vote' then case when not setting_whole(v, 1) then 'a whole number of hundredths, at least 1' end
+    when 'halving' then case when not coalesce(jsonb_typeof(v) = 'number' and setting_positive(v) and (v #>> '{}')::numeric <= 1, false)
+      then 'a fraction above 0 and at most 1' end
+    when 'reactionCap' then case when not setting_whole(v, 1) then 'a whole number, at least 1' end
+    when 'charactersPerPlayer' then case when not setting_whole(v, 1) then 'a whole number, at least 1' end
+    when 'settlementCron' then case when not setting_cron(v) then 'a five-field cron expression, each field inside its range' end
+    when 'viewCountCron' then case when not setting_cron(v) then 'a five-field cron expression, each field inside its range' end
+    when 'meetingCron' then case when not setting_cron(v) then 'a five-field cron expression, each field inside its range' end
+    -- The spans the earlier triggers hold, but let through with a field missing.
+    when 'settlementLength' then case when not setting_span(v, array['day', 'week', 'month']) then 'a span: a unit of day, week or month and a whole count from 1 to 1000' end
+    when 'seasonLength' then case when not setting_span(v, array['day', 'week', 'month']) then 'a span: a unit of day, week or month and a whole count from 1 to 1000' end
+    when 'turnCooldown' then case when not setting_span(v, array['day', 'week', 'month']) then 'a span: a unit of day, week or month and a whole count from 1 to 1000' end
+    when 'inviteLifetime' then case when not setting_span(v, array['day', 'week', 'month']) then 'a span: a unit of day, week or month and a whole count from 1 to 1000' end
+    when 'setLasts' then case when not setting_span(v, array['day', 'week', 'month']) then 'a span: a unit of day, week or month and a whole count from 1 to 1000' end
+    when 'editGrace' then case when not setting_span(v, array['minute', 'day', 'week', 'month']) then 'a span: a unit of minute, day, week or month and a whole count from 1 to 1000' end
+    when 'presenceWindow' then case when not setting_span(v, array['minute', 'day', 'week', 'month']) then 'a span: a unit of minute, day, week or month and a whole count from 1 to 1000' end
+    when 'registrationMode' then case when v not in ('"open"', '"invite"', '"closed"') then '"open", "invite" or "closed"' end
+    when 'postMaxLength' then case when not setting_whole(v, 1) then 'a whole number of characters, at least 1' end
+    when 'titleMaxLength' then case when not setting_whole(v, 1) then 'a whole number of characters, at least 1' end
+    when 'postsPerPage' then case when not setting_whole(v, 1) then 'a whole number of posts, at least 1' end
+    when 'hotReplies' then case when not setting_whole(v, 1) then 'a whole number of replies, at least 1' end
+    when 'presenceNames' then case when not setting_whole(v, 1) then 'a whole number of names, at least 1' end
+    when 'presencePollSeconds' then case when not setting_whole(v, 10, 300) then 'a whole number of seconds from 10 to 300' end
+    when 'cardSettings' then case when not setting_named_numbers(v) then 'an object of named numbers' end
+    when 'systemEnabled' then case when jsonb_typeof(v) is distinct from 'boolean' then 'true or false' end
+    when 'hints' then case when not coalesce(jsonb_typeof(v) = 'object'
+        and setting_whole(v -> 'least', 1)
+        and jsonb_typeof(v -> 'share') = 'number' and (v ->> 'share')::numeric > 0.5 and (v ->> 'share')::numeric <= 1
+        and jsonb_typeof(v -> 'split') = 'number' and setting_positive(v -> 'split') and (v ->> 'split')::numeric <= 0.5
+        and setting_span(v -> 'window', array['minute', 'day', 'week', 'month']), false)
+      then 'an object giving least (a whole number of reactions, at least 1), share (above 0.5, at most 1), split (above 0, at most 0.5) and window (a span: a unit of minute, day, week or month and a whole count from 1 to 1000)' end
+    when 'toastDefaults' then case when not coalesce(jsonb_typeof(v) = 'array'
+        and not exists (select 1 from jsonb_array_elements(v) e where jsonb_typeof(e) <> 'string' or (e #>> '{}') <> all (kinds))
+        and (select count(*) = count(distinct e) from jsonb_array_elements(v) e), false)
+      then 'a list of the kinds of alert that toast (' || array_to_string(kinds, ', ') || '), each named once' end
+    when 'phases' then null  -- below: it needs a loop
+    when 'inheritanceGraceDays' then case when not setting_whole(v, 0) then 'a whole number of days, at least 0' end
+    when 'rosterRecentExcluded' then case when not setting_whole(v, 0) then 'a whole number of Bosses, at least 0' end
+    when 'structuralHoldHours' then case when not setting_whole(v, 1) then 'a whole number of hours, at least 1' end
+    when 'microEventDailyCalls' then case when not setting_whole(v, 0) then 'a whole number of calls, at least 0' end
+    when 'digestThreads' then case when not setting_whole(v, 1, 25) then 'a whole number of threads, at least 1 and at most 25' end
+    when 'digestExcerpts' then case when not setting_whole(v, 1, 20) then 'a whole number of posts, at least 1 and at most 20' end
+    when 'digestExcerptChars' then case when not setting_whole(v, 1, 1000) then 'a whole number of characters, at least 1 and at most 1000' end
+    when 'memoryOpinions' then case when not setting_whole(v, 1) then 'a whole number of opinions, at least 1' end
+    when 'memoryGrudges' then case when not setting_whole(v, 1) then 'a whole number of grudges, at least 1' end
+    when 'memoryWheelhouse' then case when not setting_whole(v, 1) then 'a whole number of subjects, at least 1' end
+    when 'memoryRealWorld' then case when not setting_whole(v, 1) then 'a whole number of subjects, at least 1' end
+    when 'boardNameMaxLength' then case when not setting_whole(v, 1) then 'a whole number of characters, at least 1' end
+    when 'moveExpiryMostDays' then case when not setting_whole(v, 1) then 'a whole number of days, at least 1' end
+    when 'moveExpiryLeastHours' then case when not setting_whole(v, 1) then 'a whole number of hours, at least 1' end
+    when 'demandCheckMinutes' then case when not setting_whole(v, 1, 1440) then 'a whole number of minutes, at least 1 and at most 1440' end
+    when 'demandChecksPerTick' then case when not setting_whole(v, 1, 1000) then 'a whole number of moves, at least 1 and at most 1000' end
+    when 'searchLanguage' then case when not coalesce(jsonb_typeof(v) = 'string' and exists (select 1 from pg_ts_config c where c.cfgname = v #>> '{}'), false)
+      then 'the name of a text search configuration this database holds (english or simple, for example)' end
+    when 'searchRankPool' then case when not setting_whole(v, 100, 100000) then 'a whole number of matches from 100 to 100,000' end
+    when 'pool' then setting_pool(v)
+    when 'modBots' then setting_modbots(v)
+    when 'warnBar' then setting_warnbar(v)
+    when 'modelTiers' then case when not coalesce(jsonb_typeof(v) = 'object'
+        and jsonb_typeof(v -> 'strong') = 'string' and btrim(v ->> 'strong', E' \t\n\r\f\v') <> ''
+        and jsonb_typeof(v -> 'light') = 'string' and btrim(v ->> 'light', E' \t\n\r\f\v') <> '', false)
+      then 'an object naming a model id for "strong" and for "light"' end
+    else null
+  end;
+  if new.key = 'phases' then
+    shape := 'an object of honeymoon, reign and meltdown, each holding its numbers (honeymoon and meltdown also their days) as whole numbers, at least 1';
+    if jsonb_typeof(v) <> 'object' then raise exception 'phases is %', shape using errcode = '23514'; end if;
+    foreach phase in array array['honeymoon', 'reign', 'meltdown'] loop
+      if jsonb_typeof(v -> phase) is distinct from 'object' then raise exception 'phases is %; "%" is missing', shape, phase using errcode = '23514'; end if;
+      foreach pkey in array case when phase = 'reign' then array['weeklyMoves', 'bankCap', 'moveExpiryMostDays']
+                                 else array['days', 'weeklyMoves', 'bankCap', 'moveExpiryMostDays'] end loop
+        if not setting_whole(v -> phase -> pkey, 1) then raise exception 'phases is %; "%.%" is not', shape, phase, pkey using errcode = '23514'; end if;
+      end loop;
+      select k into pkey from jsonb_object_keys(v -> phase) k
+        where k <> all (case when phase = 'reign' then array['weeklyMoves', 'bankCap', 'moveExpiryMostDays']
+                             else array['days', 'weeklyMoves', 'bankCap', 'moveExpiryMostDays'] end) limit 1;
+      if pkey is not null then raise exception 'phases is %; "%.%" is not a number a phase holds', shape, phase, pkey using errcode = '23514'; end if;
+    end loop;
+  end if;
+  if why is not null then raise exception '% is %', new.key, why using errcode = '23514'; end if;
+  return new;
+end $$;
+
+-- write_framed: see the header. Called by post, start_thread and spin after the Act is written.
+create function write_framed(body text, framing uuid[], about uuid, acting uuid) returns void
+language plpgsql set search_path = public, pg_temp as $$
+declare
+  named uuid;
+begin
+  if body is null or framing is null then return; end if;
+  for named in select t.id from unnest(framing[1:5]) with ordinality t(id, n) where t.id is not null group by t.id order by min(t.n) loop
+    if exists (select 1 from characters c where c.id = named and c.debuted_at is not null)
+       and position('user=' || lower(named::text) in lower(body)) > 0 then
+      perform write_alert(named, 'framed', null, about, acting);
+    end if;
+  end loop;
+end $$;
+revoke execute on function write_framed(text, uuid[], uuid, uuid) from public, anon, authenticated, service_role;
+
+-- post (0105), with `framing`, and the framed alerts written after the quote's alert and before the rules are checked. Everything else as 0105 wrote it.
+drop function post(uuid, uuid, text, uuid);
+CREATE FUNCTION public.post(in_thread uuid, through uuid, body text, quoting uuid DEFAULT NULL::uuid, framing uuid[] DEFAULT '{}'::uuid[])
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  on_board uuid;
+  written uuid;
+  sprung jsonb;
+  candidate uuid;
+  maybe uuid[];
+  parked uuid[];
+  locked uuid[];
+  passes uuid[];
+  setters uuid[];
+begin
+  perform acting(through);
+  perform not_banned(through);
+  perform within('body', body, 'postMaxLength');
+  select board into on_board from threads where id = in_thread;
+  if on_board is null then raise exception 'there is no such thread' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  perform not_the_systems(on_board);
+  if quoting is not null and not exists (select 1 from acts where id = quoting) then raise exception 'there is no such Act to quote' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  -- What this post may pass: the thread's waiting backs on others' posts (the partial index), those that have sprung apart, since a
+  -- sprung back is neither locked nor probed for a lock (a spring is public, and acts_one_spring finds it by index).
+  select coalesce(array_agg(w.play) filter (where not w.sprung), '{}'), coalesce(array_agg(w.play) filter (where w.sprung), '{}') into maybe, parked
+  from (select r.play, exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = r.play::text) as sprung
+        from face_down_reply r join face_down f on f.play = r.play join acts p on p.id = f.post
+        where r.thread = in_thread and r.passed_by is null and p.character is distinct from through) w;
+  -- Plus the quoted post's live, unsprung back, passed or not.
+  maybe := maybe || array(select f.play from face_down f
+                          where f.post = quoting and f.ends_at > now() and f.play <> all (maybe)
+                            and not exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = f.play::text));
+  -- Step 3: those backs with their reply rows, in `play` order, in one statement. A reply row is read as locked: a post that passed a
+  -- back while this waited has stamped it, and it is not this post's to pass. spring_traps then finds each row already held.
+  select coalesce(array_agg(b.play), '{}'), coalesce(array_agg(b.play) filter (where b.waits and b.poster is distinct from through), '{}'),
+         coalesce(array_agg(b.setter), '{}')
+    into locked, passes, setters
+  from (select f.play, s.character as setter, p.character as poster, (r.passed_by is null and r.thread = in_thread) as waits
+        from face_down f join face_down_reply r on r.play = f.play join acts s on s.id = f.play join acts p on p.id = f.post
+        where f.play = any (maybe)
+        order by f.play for update of f, r) b;
+  -- Step 4: the thread whose seq the insert takes.
+  perform 1 from threads where id = in_thread for no key update;
+  -- Step 5: the poster's count row and every setter's, by character, each made first where it is missing.
+  insert into character_post_counts (character)
+  select distinct c from unnest(setters || through) c order by c on conflict do nothing;
+  perform 1 from character_post_counts where character = any (setters || through) order by character for update;
+  insert into acts (character, kind, thread, target_act_id, payload)
+  values (through, 'post', in_thread, quoting, jsonb_build_object('body', body)) returning id into written;
+  -- Only a back this post locked springs (the header's note on `held`).
+  if quoting is not null then sprung := spring_traps('quote', quoting, written, held => locked); end if;
+  -- Locked and read as waiting in step 3, so no other post can have stamped them.
+  update face_down_reply set passed_by = written, passed_at = now() where play = any (passes);
+  -- The sprung ones are stamped without waiting: a post that locked one in step 3 (it read the back unsprung) may hold the row and
+  -- wait on this post's thread or count row, so a wait here could cross. A row held by another is skipped and stays waiting; the next
+  -- post by another character stamps it.
+  if cardinality(parked) > 0 then
+    update face_down_reply set passed_by = written, passed_at = now()
+    where play in (select r.play from face_down_reply r where r.play = any (parked) and r.passed_by is null order by r.play for update skip locked);
+  end if;
+  if sprung is null then
+    for candidate in
+      select f.post from face_down f join acts p on p.id = f.post
+      where f.play = any (passes)
+      group by f.post, p.seq order by p.seq desc
+    loop
+      sprung := spring_traps('reply', candidate, written, held => locked);
+      exit when sprung is not null;
+    end loop;
+  end if;
+  if quoting is not null then perform write_alert((select a.character from acts a where a.id = quoting), 'quote', null, written, auth.uid()); end if;
+  perform write_framed(body, framing, written, auth.uid());
+  perform draw_visits(written);
+  return act_projection(written) || case when sprung is not null then jsonb_build_object('sprung', sprung) else '{}'::jsonb end;
+end $function$;
+
+-- start_thread (0105), with `framing`. Everything else as 0105 wrote it.
+drop function start_thread(text, uuid, text, text);
+CREATE FUNCTION public.start_thread(board_slug text, through uuid, title text, body text, framing uuid[] DEFAULT '{}'::uuid[])
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  on_board uuid;
+  made uuid;
+  written uuid;
+begin
+  perform acting(through);
+  perform not_banned(through);
+  perform within('title', title, 'titleMaxLength');
+  perform within('body', body, 'postMaxLength');
+  select id into on_board from boards where slug = board_slug;
+  if on_board is null then raise exception 'there is no such board' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  perform not_the_systems(on_board);
+  insert into threads (board, title) values (on_board, title) returning id into made;
+  insert into acts (character, kind, thread, payload) values (through, 'post', made, jsonb_build_object('body', body)) returning id into written;
+  perform write_framed(body, framing, written, auth.uid());
+  perform draw_visits(written);
+  return jsonb_build_object('thread', thread_projection(made), 'act', act_projection(written));
+end $function$;
+
+-- spin (0105), with `framing`. Everything else as 0105 wrote it.
+drop function spin(uuid, uuid, text, text);
+CREATE FUNCTION public.spin(origin uuid, through uuid, title text, body text DEFAULT ''::text, framing uuid[] DEFAULT '{}'::uuid[])
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  on_board uuid;
+  made uuid;
+  written uuid;
+begin
+  perform acting(through);
+  perform not_banned(through);
+  perform within('title', title, 'titleMaxLength');
+  perform within('body', coalesce(body, ''), 'postMaxLength', true);
+  select case when b.is_system then players_board() else b.id end into on_board
+  from acts a join threads t on t.id = a.thread join boards b on b.id = t.board where a.id = origin and a.kind <> 'edit';
+  if on_board is null then raise exception 'there is no such Act to spin from' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  insert into threads (board, title, origin_act_id) values (on_board, title, origin) returning id into made;
+  insert into acts (character, kind, thread, target_act_id, payload)
+  values (through, 'spin', made, origin, jsonb_build_object('title', title, 'body', coalesce(body, ''))) returning id into written;
+  perform write_framed(body, framing, written, auth.uid());
+  perform draw_visits(written);
+  return jsonb_build_object('thread', thread_projection(made), 'act', act_projection(written));
+end $function$;
+
+revoke execute on function start_thread(text, uuid, text, text, uuid[]), post(uuid, uuid, text, uuid, uuid[]), spin(uuid, uuid, text, text, uuid[]) from public, anon;
+grant execute on function start_thread(text, uuid, text, text, uuid[]), post(uuid, uuid, text, uuid, uuid[]), spin(uuid, uuid, text, text, uuid[]) to authenticated;

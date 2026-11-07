@@ -13,7 +13,7 @@
  * board moves exist today, and none of them does), in the same change as that build ("No player is ever stuck").
  */
 
-export const WRITTEN_KINDS = ['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'cardEnded'] as const;
+export const WRITTEN_KINDS = ['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'cardEnded', 'framed'] as const;
 export const DERIVED_KINDS = ['settlement', 'followed'] as const;
 export const EVERYONE_KINDS = ['update', 'seasonNews'] as const;
 
