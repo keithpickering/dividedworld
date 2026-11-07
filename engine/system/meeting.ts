@@ -487,6 +487,7 @@ export interface RepairedAnswer {
 
 export type RepairResult = ({ readonly ok: true } & RepairedAnswer) | { readonly ok: false; readonly path: string; readonly predicate: string; readonly trims: readonly Trim[] };
 
+const machineKindKey = (key: string): boolean => key === 'pullSlot' || key === 'repriceSlot' || key === 'flashSale';
 const record = (v: unknown): Record<string, unknown> => (typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 
 /** Every character id the answer names, in its memory and its profile: what the meeting asks the database about before it repairs. */
@@ -581,10 +582,26 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     }
     // The kind's shape. A description the Boss gave is bounded and trimmed there; a missing or blank one is not the Boss's
     // to lose a move over, so it is checked with a placeholder and left out, and the stock description stands in later.
-    const offered = record(m['params']);
+    const offered = { ...record(m['params']) };
     const blank = typeof offered['description'] !== 'string' || offered['description'].trim() === '';
+    // A machine move's whole number one past its bound (201 of at most 200, 49 of at least 50, 49 hours of at most 48) is the ordinary overshoot: it is clamped to the
+    // bound and recorded, never a lost answer. A fraction, a non-number and exactly 100 percent are not repairs, and stay for moveParamsProblems to refuse by name.
+    const clamps: Trim[] = [];
+    const bounded = (name: string, least: number, most: number): void => {
+      const v = offered[name];
+      if (typeof v !== 'number' || !Number.isInteger(v) || (v >= least && v <= most)) return;
+      const to = v < least ? least : most;
+      clamps.push({ path: name, predicate: v < least ? `atLeast(${least})` : `atMost(${most})`, before: v, after: to });
+      offered[name] = to;
+    };
+    if (kind.key === 'repriceSlot') bounded('percent', limits.repriceLeast, limits.repriceMost);
+    if (kind.key === 'flashSale') bounded('hours', limits.flashHoursLeast, limits.flashHoursMost);
     const params = moveParamsProblems(kind.key, blank ? { ...offered, description: '-' } : offered, limits);
     if (!params.ok) return drop(`${path}.params.${params.path}`, params.predicate);
+    // A slot id in capitals is the same slot (moveParamsProblems lowercases it, as Postgres writes uuids): the lookup uses the lowercase, and the change is recorded.
+    if (machineKindKey(kind.key) && typeof offered['slot'] === 'string' && offered['slot'] !== (params.value as Record<string, unknown>)['slot']) {
+      clamps.push({ path: 'slot', predicate: 'lowercaseUuid', before: 1, after: 1 });
+    }
     const given = { ...(params.value as Record<string, unknown>) };
     if (blank) delete given['description'];
     if (kind.key === 'renameBoard') {
@@ -603,7 +620,7 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
       if (clash) return drop(`${path}.params`, `compliantPost(${clash})`);
     }
     // The machine's moves name a slot of the machine as the meeting read it. A move that cannot land as it stands is dropped here, spending nothing.
-    const machineKind = kind.key === 'pullSlot' || kind.key === 'repriceSlot' || kind.key === 'flashSale';
+    const machineKind = machineKindKey(kind.key);
     if (machineKind) {
       const slot = slots.get(String(given['slot']));
       if (!slot) return drop(`${path}.params.slot`, 'isSlot');
@@ -649,7 +666,7 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
       why: m['why'] as string,
       structural: kind.structural,
     });
-    trims.push(...params.trims.map((t) => ({ ...t, path: `${path}.params.${t.path}` })), ...demand.trims.map((t) => ({ ...t, path: `${path}.demand.${t.path}` })));
+    trims.push(...[...clamps, ...params.trims].map((t) => ({ ...t, path: `${path}.params.${t.path}` })), ...demand.trims.map((t) => ({ ...t, path: `${path}.demand.${t.path}` })));
   });
   const affordable = Math.max(0, Math.floor(c.bank));
   const moves = cut('moves', kept, affordable);

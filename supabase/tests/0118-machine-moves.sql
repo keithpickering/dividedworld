@@ -445,3 +445,87 @@ begin
   perform pg_temp.expect(ctx::text not like '%' || pg_temp.ann()::text || '%', 'the context names no account');
   perform end_move(pulled, 'reversed', 'admin');
 end $$;
+
+-- ---- 10. A price that would overflow an integer is clamped, and the view does not raise for everyone ----
+do $$
+declare
+  big uuid;
+  s machine_now;
+begin
+  insert into card_kinds (key, name, alignment, rarity) values ('mv-big', 'Big One', 'sweet', 'common');
+  insert into machine_slots (position, card, availability, price) values (9120, 'mv-big', 'onSale', 2000000000) returning id into big;
+  perform pg_temp.landed('repriceSlot', jsonb_build_object('slot', big, 'percent', 200), pg_temp.demand(9), now() + interval '1 day');
+  select * into s from machine_now m where m.slot = big;
+  perform pg_temp.expect(s.price = 2147483647, 'a moved price past the largest integer is that integer: ' || coalesce(to_jsonb(s)::text, 'no row'));
+  perform pg_temp.expect((select count(*) from machine_now) > 0, 'the machine still reads for everyone');
+  perform end_move(m.move_act, 'reversed', 'admin') from machine_moves_open m;
+end $$;
+
+-- ---- 11. Several moves due in one tick: the machine as each finds it, so exactly the ones the machine can take land ----
+do $$
+declare
+  q1 bigint;
+  q2 bigint;
+  qs bigint[] := '{}';
+  q bigint;
+  r queued_moves;
+  landed_n integer;
+begin
+  -- Two moves on one slot, one tick: the first lands, the second meets it and is refused for good, with the reason.
+  q1 := pg_temp.queue('repriceSlot', jsonb_build_object('slot', pg_temp.slot('A'), 'percent', 150), pg_temp.demand(50));
+  q2 := pg_temp.queue('repriceSlot', jsonb_build_object('slot', pg_temp.slot('A'), 'percent', 160), pg_temp.demand(50));
+  perform system_tick();
+  perform pg_temp.expect((select count(*) from queued_moves where id in (q1, q2) and landed_act is not null) = 1, 'exactly one of two moves on a slot landed');
+  select * into r from queued_moves where id in (q1, q2) and landed_act is null;
+  perform pg_temp.expect(r.refused_at is not null and r.failed_at is not null and r.failure like '%already has a move in force%', 'the other was refused with its reason: ' || to_jsonb(r)::text);
+  perform pg_temp.expect((select count(*) from machine_moves_open where slot = pg_temp.slot('A')) = 1, 'one move is in force on the slot');
+  perform end_move(m.move_act, 'reversed', 'admin') from machine_moves_open m;
+
+  -- pullMost + 1 pulls due at once, one tick: pullMost land, the rest are refused with the reason.
+  perform pg_temp.expect(machine_limit('pullMost') = 2, 'pullMost is 2');
+  foreach q in array array[
+    pg_temp.queue('pullSlot', pg_temp.slot_param('A'), pg_temp.demand(50)),
+    pg_temp.queue('pullSlot', pg_temp.slot_param('B'), pg_temp.demand(50)),
+    pg_temp.queue('pullSlot', pg_temp.slot_param('C'), pg_temp.demand(50))] loop
+    qs := qs || q;
+  end loop;
+  perform system_tick();
+  select count(*) into landed_n from queued_moves where id = any (qs) and landed_act is not null;
+  perform pg_temp.expect(landed_n = 2, 'exactly pullMost pulls landed: ' || landed_n);
+  perform pg_temp.expect((select count(*) from queued_moves where id = any (qs) and landed_act is null and refused_at is not null and failure like '%at most 2 slots are pulled at once%') = 1, 'the rest were refused with the reason');
+  perform pg_temp.expect((select count(*) from machine_moves_open where kind = 'pullSlot') = 2, 'two pulls are in force');
+  perform end_move(m.move_act, 'reversed', 'admin') from machine_moves_open m;
+end $$;
+
+-- ---- 12. A meeting's answer with a machine move the queue would refuse applies the rest and records the skipped one ----
+do $$
+declare
+  m bigint;
+  r jsonb;
+  rec jsonb;
+  pl jsonb;
+  good jsonb;
+  bad jsonb;
+begin
+  update seasons set boss = 'mv-boss' where ends_at is null;
+  insert into settings (key, value) values ('structuralHoldHours', '24') on conflict (key) do update set value = excluded.value;
+  insert into move_bank (staff, balance, as_of) values ('mv-boss', 5, now()) on conflict (staff) do update set balance = 5, as_of = now();
+  good := jsonb_build_object('kind', 'repriceSlot', 'params', jsonb_build_object('slot', pg_temp.slot('B'), 'percent', 60),
+    'go_live_at', now(), 'expires_in_hours', 48, 'why', 'Cheap.');
+  -- A percent past the economy's bound: the queue's guard refuses it, so the meeting skips it.
+  bad := jsonb_build_object('kind', 'repriceSlot', 'params', jsonb_build_object('slot', pg_temp.slot('C'), 'percent', 900), 'demand', pg_temp.demand(),
+    'go_live_at', now(), 'expires_in_hours', 48, 'why', 'Dear.');
+  pl := jsonb_build_object('boss', 'mv-boss', 'weekly_moves', 5, 'bank_cap', 10,
+    'memory', jsonb_build_object('hobby', jsonb_build_object('name', 'pie', 'since', 'today', 'from', 'a friend'), 'opinions', '[]'::jsonb, 'grudges', '[]'::jsonb,
+      'wheelhouse', '[]'::jsonb, 'realWorld', '[]'::jsonb, 'marks', '[]'::jsonb),
+    'profile', jsonb_build_object('interests', jsonb_build_array('pie'), 'favorites', '[]'::jsonb, 'mood', 'smug', 'signature', 'Done.'),
+    'moves', jsonb_build_array(bad, good, bad || jsonb_build_object('params', jsonb_build_object('slot', 'not-a-slot', 'percent', 150))),
+    'record', '{}'::jsonb);
+  m := (begin_meeting(clock_timestamp()) ->> 'meeting')::bigint;
+  r := apply_meeting(m, pl);
+  perform pg_temp.expect(r ->> 'status' = 'applied' and (r ->> 'queued')::integer = 1, 'the meeting applied with the one good move: ' || r::text);
+  perform pg_temp.expect((select count(*) from queued_moves where meeting = m) = 1 and (select params ->> 'percent' from queued_moves where meeting = m) = '60', 'only the good move was queued');
+  select record into rec from meetings where id = m;
+  perform pg_temp.expect(jsonb_array_length(rec -> 'machineSkipped') = 2 and rec #>> '{machineSkipped,0,index}' = '0' and rec #>> '{machineSkipped,0,why}' like '%a reprice is at most 200 percent%'
+    and rec #>> '{machineSkipped,1,index}' = '2', 'the skipped ones are on the record: ' || rec::text);
+end $$;

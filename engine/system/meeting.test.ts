@@ -430,11 +430,37 @@ test('a reprice is on a slot that is on sale, packs included; its percent is hel
     machineMove('repriceSlot', { slot: SLOT_PACK, percent: 80 }), machineMove('repriceSlot', { slot: SLOT_OUT, percent: 80 }), machineMove('repriceSlot', { slot: SLOT_HIDDEN, percent: 80 }),
     machineMove('repriceSlot', { slot: SLOT_B, percent: 250 }), machineMove('repriceSlot', { slot: SLOT_C, percent: 100 }),
   ]);
-  assert.deepEqual(r.moves.map((m) => m.params['slot']), [SLOT_PACK]);
+  assert.deepEqual(r.moves.map((m) => [m.params['slot'], m.params['percent']]), [[SLOT_PACK, 80], [SLOT_B, 200]]);
   dropped(r, 'moves[1].params.slot', 'onSaleSlot');
   dropped(r, 'moves[2].params.slot', 'onSaleSlot');
-  dropped(r, 'moves[3].params.percent', 'atMost(200)');
+  // A percent over its bound is clamped to it and recorded (the ordinary overshoot), never a lost answer; 100 changes nothing and is dropped.
+  assert.ok(r.trims.some((t) => t.path === 'moves[3].params.percent' && t.predicate === 'atMost(200)' && t.before === 250 && t.after === 200), JSON.stringify(r.trims));
   dropped(r, 'moves[4].params.percent', 'notOneHundred');
+});
+
+test('a percent or hours one past its bound is clamped to the bound and recorded; a fraction stays refused', () => {
+  const up = plan([machineMove('repriceSlot', { slot: SLOT_A, percent: 201 })]);
+  assert.equal(up.moves[0]!.params['percent'], 200);
+  assert.ok(up.trims.some((t) => t.path === 'moves[0].params.percent' && t.predicate === 'atMost(200)' && t.before === 201 && t.after === 200), JSON.stringify(up.trims));
+  const down = plan([machineMove('repriceSlot', { slot: SLOT_A, percent: 49 }, { demand: undefined })]);
+  assert.equal(down.moves[0]!.params['percent'], 50);
+  assert.equal(down.moves[0]!.demand, null);
+  assert.ok(down.trims.some((t) => t.path === 'moves[0].params.percent' && t.predicate === 'atLeast(50)' && t.before === 49 && t.after === 50), JSON.stringify(down.trims));
+  const long = plan([machineMove('flashSale', { slot: SLOT_HIDDEN, hours: 49 }, { demand: undefined })]);
+  assert.equal(long.moves[0]!.params['hours'], 48);
+  assert.equal(long.moves[0]!.expiresInHours, 48);
+  assert.ok(long.trims.some((t) => t.path === 'moves[0].params.hours' && t.predicate === 'atMost(48)' && t.before === 49 && t.after === 48), JSON.stringify(long.trims));
+  const short = plan([machineMove('flashSale', { slot: SLOT_HIDDEN, hours: 23 }, { demand: undefined })]);
+  assert.equal(short.moves[0]!.params['hours'], 24);
+  dropped(plan([machineMove('repriceSlot', { slot: SLOT_A, percent: 120.5 })]), 'moves[0].params.percent', 'isWhole');
+  dropped(plan([machineMove('flashSale', { slot: SLOT_HIDDEN, hours: 30.5 }, { demand: undefined })]), 'moves[0].params.hours', 'isWhole');
+});
+
+test('a slot id in capitals is found, lowercased, and the change is recorded', () => {
+  const r = plan([machineMove('pullSlot', { slot: SLOT_A.toUpperCase() })]);
+  assert.equal(r.moves.length, 1, JSON.stringify(r.trims));
+  assert.equal(r.moves[0]!.params['slot'], SLOT_A);
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].params.slot' && t.predicate === 'lowercaseUuid'), JSON.stringify(r.trims));
 });
 
 test('a markup must carry a demand and a markdown carries none: a demand given to a markdown is dropped, a markup without one is dropped', () => {
@@ -463,7 +489,7 @@ test('a flash sale is on a hidden slot, one at a time; it lasts its hours, whate
   assert.equal(r.moves[0]!.demand, null);
   assert.ok(r.trims.some((t) => t.path === 'moves[0].expires_in_hours' && t.before === 100 && t.after === 30), JSON.stringify(r.trims));
   dropped(r, 'moves[1].params.slot', 'hiddenSlot');
-  dropped(r, 'moves[2].params.hours', 'atMost(48)');
+  dropped(r, 'moves[2].params.slot', 'oneMovePerSlot');
   const two = SHELF.concat(facts('51000000-0000-4000-8000-000000000033', { card: 'second', availability: 'hidden', pullable: false }));
   const second = plan([machineMove('flashSale', { slot: SLOT_HIDDEN, hours: 24 }, { demand: undefined }), machineMove('flashSale', { slot: '51000000-0000-4000-8000-000000000033', hours: 24 }, { demand: undefined })], withMachine(two));
   assert.equal(second.moves.length, 1);
