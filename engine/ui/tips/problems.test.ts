@@ -72,7 +72,7 @@ describe('instanceUiProblems', () => {
     assert.deepEqual(withSplits({ label: 'x', splits: ['excitedNegative', 'excitedPositive'], hurts: ['excitedPositive'] }), ['the class "heel" splits excitedPositive and also hurts it']);
     assert.deepEqual(withSplits({ label: 'x', splits: ['excitedNegative', 'excitedPositive'], earns: ['excitedNegative'] }), ['the class "heel" splits excitedNegative and also earns it']);
     assert.deepEqual(withSplits({ label: 'x', splits: ['excitedNegative', 'excitedPositive'], calls: ['excitedNegative'] }), ['the class "heel" splits excitedNegative and also calls it']);
-    assert.deepEqual(withSplits({ label: 'x', splits: ['excitedNegative', 'sleepy'] }), ['the class "heel" splits "sleepy", which is not a quadrant the instance has']);
+    assert.deepEqual(withSplits({ label: 'x', splits: ['excitedNegative', 'sleepy'] }), ['the class "heel" splits "sleepy", which is not a quadrant']);
   });
   test("refuses a card's status that is a sentence or runs past six words, naming the card (the Lens's roles)", () => {
     const withCards = (list: unknown[]) => ({ ...ui(good), cards: [{ key: 'whoops', status: 'Ink on this post' }, ...list] as unknown as readonly CardUi[] });

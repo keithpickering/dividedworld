@@ -68,7 +68,7 @@ export interface ClassMarks {
   /**
    * Two quadrants the class earns from together, by their balance: drawn as two cells each half-filled
    * toward the other and joined by a bar. The pair must sit side by side on the map (one row of
-   * ClassCards.tsx's `MAP`), and neither is also in `earns`, `hurts` or `calls`.
+   * `MAP` above), and neither is also in `earns`, `hurts` or `calls`.
    */
   readonly splits?: readonly [Quadrant, Quadrant];
 }

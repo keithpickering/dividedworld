@@ -106,7 +106,7 @@ function splitsProblems(key: string, marks: ClassMarks | undefined): string[] {
   const [a, b] = splits;
   const known = QUADRANTS as readonly string[];
   const unknown = splits.filter((q) => !known.includes(q));
-  if (unknown.length > 0) return unknown.map((q) => `the class "${key}" splits "${q}", which is not a quadrant the instance has`);
+  if (unknown.length > 0) return unknown.map((q) => `the class "${key}" splits "${q}", which is not a quadrant`);
   if (a === b) return [`the class "${key}" splits ${a} with itself, and a split needs two quadrants`];
   const out: string[] = [];
   const [i, j] = [MAP.indexOf(a), MAP.indexOf(b)];
