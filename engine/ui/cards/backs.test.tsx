@@ -28,7 +28,7 @@ const instance: Instance = { ...testInstance, cards: [blot, snare, bluffy], sett
 function Splash({ children }: EffectProps) {
   return <div data-testid="splash">{children}</div>;
 }
-const art = (color: string) => ({ color, ink: '#000', mark: `/${color}.svg` });
+const art = (color: string) => ({ color, ink: '#000', canvas: '', mark: `/${color}.svg`, credit: 'Test' });
 const cards: CardUi[] = [
   { key: 'blot', art: art('pink'), describe: () => 'Splats.', Effect: Splash },
   { key: 'snare', art: art('red'), describe: () => 'Catches a cast.' },

@@ -58,6 +58,19 @@ describe('Divided World\'s Strategy Guide', () => {
 });
 
 describe('Divided World\'s InstanceUi covers its rules', () => {
+  /* The bundler resolves a small SVG to a data URI and a larger one to a file ending .svg; either is an SVG the card draws. */
+  const SVG_URL = /\.svg$|^data:image\/svg\+xml/u;
+  test('every card of the rules has art from its folder: a canvas and a mark that are SVGs, and a credit', () => {
+    expect(instance.cards.length).toBeGreaterThan(0);
+    for (const rules of instance.cards) {
+      const art = instanceUi.cards?.find((u) => u.key === rules.key)?.art;
+      expect(art, `${rules.key} has a CardUi`).toBeDefined();
+      expect(art!.canvas, `${rules.key} canvas`).toMatch(SVG_URL);
+      expect(art!.mark, `${rules.key} mark`).toMatch(SVG_URL);
+      expect(art!.credit.length, `${rules.key} credit`).toBeGreaterThan(0);
+    }
+  });
+
   test('every class has a look, a description and a hurtsBy', () => {
     for (const c of instance.classes) {
       expect(instanceUi.classLooks[c.key], c.key).toBeDefined();
@@ -139,7 +152,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     }
     /* Stick Around's mark is a bolder drawing than its face, for a 22px icon; Whoops!'s face is already one blot, so its mark is the same drawing. */
     const stick = instanceUi.cards.find((c) => c.key === 'stick-around')!.art;
-    expect(stick.mark).not.toBe(stick.image);
+    expect(stick.mark).not.toBe(stick.canvas);
     expect(instanceUi.cards.find((c) => c.key === 'whoops')!.hint).toBe('Drag across the ink to scrub it off your screen.');
   });
   test('Autocorrect draws its strips and its form, says its rules from the settings, and its log says what a play covered and what was peeled', () => {

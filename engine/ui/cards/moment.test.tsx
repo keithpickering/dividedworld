@@ -37,7 +37,7 @@ const Wrap = (key: string) => function Effect({ children, still, states, show, p
   useEffect(() => { show({ progress: null, state: `${key} as it stood (${plays.length})`, yours: false, controls: [], notes: {} }); }, [show, plays.length]);
   return <div data-kb-wrap={key}>{children}</div>;
 };
-const ui = (key: string, extra: Partial<CardUi> = {}): CardUi => ({ key, art: { color: '#ffd23f', ink: '#1a1300' }, describe: () => `${key}.`, Effect: Wrap(key), ...extra });
+const ui = (key: string, extra: Partial<CardUi> = {}): CardUi => ({ key, art: { color: '#ffd23f', ink: '#1a1300', canvas: '', mark: '', credit: 'Test' }, describe: () => `${key}.`, Effect: Wrap(key), ...extra });
 const cards: CardUi[] = [ui('smear'), ui('ripple'), ui('holdy', { takeover: true }), ui('tagger'), ui('shieldy'), ui('sparkly'), ui('lifty', { takeover: true })];
 
 const at = (minutes: number) => new Date(Date.UTC(2026, 10, 3, 12, minutes)).toISOString();

@@ -429,7 +429,7 @@ describe('the log\'s card lines (the cards plan\'s Task 6)', () => {
     return { fake, me, rival, pipe, hoo, glo, g1, p2, h3 };
   }
   /* Whoops!'s look, as an instance gives the log a save worth a line (CardUi.logSave). */
-  const cards = [{ key: 'whoops', describe: () => '', art: { color: '#000', ink: '#fff', image: '' }, logSave: (state: unknown) => ((state as { clean?: boolean }).clean ? { what: 'Washed clean', said: 'The layer is washed clean, for every reader.' } : undefined) }];
+  const cards = [{ key: 'whoops', describe: () => '', art: { color: '#000', ink: '#fff', canvas: '', mark: '', credit: 'Test' }, logSave: (state: unknown) => ((state as { clean?: boolean }).clean ? { what: 'Washed clean', said: 'The layer is washed clean, for every reader.' } : undefined) }];
   const show = (fake: Fake, me: string, hud: string) => { localStorage.clear(); localStorage.setItem(hudKey(me), hud); return renderIn(fake, <LogScreen />, { path: '/log', cards: cards as never }); };
   const rowsOf = async () => { await screen.findByRole('table'); return bodyRows().map(cells); };
 

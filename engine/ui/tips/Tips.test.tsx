@@ -318,7 +318,7 @@ describe('the spotlight', () => {
 });
 
 describe('the card callouts join the tips', () => {
-  const art = { color: 'red', ink: 'white', mark: '/mark.svg' };
+  const art = { color: 'red', ink: 'white', canvas: '', mark: '/mark.svg', credit: 'Test' };
   const cards: CardUi[] = [{ key: 'k1', describe: () => 'Does a thing.', summary: 'Does a thing.', art, hint: 'Do the first thing.' }];
   const instance = { ...testInstance, cards: [{ ...testInstance.cards[0]!, key: 'k1', name: 'Card 1' }] };
   function world() {

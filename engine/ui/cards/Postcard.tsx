@@ -60,7 +60,7 @@ export function Postcard({ face, size, as: As = 'span', armed = false, className
       data-kb-art={size === 'slot' ? '' : undefined}
     >
       <span className="kb-postcard-glow" aria-hidden="true" />
-      {face.art.image ? <img className="kb-postcard-art" src={face.art.image} alt="" aria-hidden="true" draggable={false} /> : null}
+      {face.art.canvas ? <img className="kb-postcard-art" src={face.art.canvas} alt="" aria-hidden="true" draggable={false} /> : null}
       {/*
         * WCAG 2.5.3 (Label in Name): a button's visible words must appear, in order and together, in its
         * name (`cardLabel`). So the name is drawn before the tag and the tagline in the markup, with a space

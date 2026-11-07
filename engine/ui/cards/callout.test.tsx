@@ -21,7 +21,7 @@ afterEach(() => { vi.restoreAllMocks(); });
 
 const KEYS = ['k1', 'k2', 'k3'] as const;
 const instance = { ...testInstance, cards: KEYS.map((key, i) => ({ ...testInstance.cards[0]!, key, name: `Card ${i + 1}` })) };
-const art = { color: 'red', ink: 'white', mark: '/mark.svg' };
+const art = { color: 'red', ink: 'white', canvas: '', mark: '/mark.svg', credit: 'Test' };
 const cardUi = (key: string, extra: Partial<CardUi> = {}): CardUi => ({ key, describe: () => 'Does a thing.', summary: 'Does a thing.', art, ...extra });
 
 /** An effect that reports its first use when a button in its words is pressed. */

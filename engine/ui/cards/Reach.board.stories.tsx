@@ -34,7 +34,7 @@ const RUMBLE: CardRules = {
   key: 'kb-test-rumble', name: 'Rumble', alignment: 'salty', rarity: 'legendary', reaches: ['board'], lasts: { unit: 'day', count: 1 },
   priceKey: 'kb-test-rumble.price', playPrice: () => 0, validateConfig: (c) => ok(c), canApply: (t, e, _config, now) => landsOn({ key: 'kb-test-rumble', reaches: ['board'] }, t, e, now),
 };
-const RUMBLE_UI: CardUi = { key: 'kb-test-rumble', art: { color: 'var(--kb-glass-neon)', ink: 'var(--kb-glass-ink-neon)', tagline: 'Shake a board.' }, describe: () => 'The engine\'s test board card.' };
+const RUMBLE_UI: CardUi = { key: 'kb-test-rumble', art: { color: 'var(--kb-glass-neon)', ink: 'var(--kb-glass-ink-neon)', canvas: '', mark: '', tagline: 'Shake a board.', credit: 'Test' }, describe: () => 'The engine\'s test board card.' };
 
 const DAY = 86_400_000;
 

@@ -151,7 +151,7 @@ describe('the ghost tip', () => {
 
 const KEYS = ['k1', 'k2'] as const;
 const instance = { ...testInstance, cards: KEYS.map((key, i) => ({ ...testInstance.cards[0]!, key, name: `Card ${i + 1}` })) };
-const art = { color: 'red', ink: 'white', mark: '/mark.svg' };
+const art = { color: 'red', ink: 'white', canvas: '', mark: '/mark.svg', credit: 'Test' };
 const cardUi = (key: string): CardUi => ({ key, describe: () => 'Does a thing.', summary: 'Does a thing.', art, hint: `Hint of ${key}.` });
 const FIRST = 'The line of first-card.';
 

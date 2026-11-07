@@ -21,7 +21,7 @@ const VIEW: CardView = { progress: 0.5, state: 'Half done', yours: true, control
 
 /* An effect that says `view` once drawn, and whose `show` the test can reach. */
 const ui = (key: string, view: CardView, seen: EffectProps['show'][] = []): CardUi => ({
-  key, describe: () => key, art: { color: 'red', ink: 'white' },
+  key, describe: () => key, art: { color: 'red', ink: 'white', canvas: '', mark: '', credit: 'Test' },
   Effect: ({ show, children }) => {
     useEffect(() => { seen.push(show); show(view); }, [show]);
     return <div data-testid={key}>{children}</div>;
@@ -63,7 +63,7 @@ describe('PostEffects gives each effect a show bound to its post and card', () =
 
 /* An effect that draws the marks it is given, before the words. */
 const drawing = (key: string, extra: Partial<CardUi> = {}): CardUi => ({
-  key, describe: () => key, art: { color: 'red', ink: 'white' }, ...extra,
+  key, describe: () => key, art: { color: 'red', ink: 'white', canvas: '', mark: '', credit: 'Test' }, ...extra,
   Effect: ({ marks, children }) => <div data-testid={key}>{marks}{children}</div>,
 });
 const depth = (el: HTMLElement) => { let n = 0; for (let p = el.parentElement; p; p = p.parentElement) n++; return n; };

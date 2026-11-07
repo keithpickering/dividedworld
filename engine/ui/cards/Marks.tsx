@@ -96,7 +96,7 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
   const ownArt = ownFace ? ui.cards.find((c) => c.key === ownFace)?.art : undefined;
   const name = back ? backWords(plays[0]!, nameOf?.(plays[0]!.caster) ?? 'someone', instance.settings.setLasts, (k) => instance.cards.find((c) => c.key === k)?.name ?? k).name : rules?.name ?? kind;
   const art = back && !revealed ? undefined : cardUi?.art;
-  const icon = art?.mark ?? art?.image;
+  const icon = art?.mark;
   const caught = plays.every((p) => p.caught || p.reversed);
   /* The ink is the top-billed play's, where the card chooses one for it (`CardUi.tag` is given the kind's plays in play order). */
   const ordered = useMemo(() => [...plays].sort(inPlayOrder), [plays]);
@@ -120,7 +120,7 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
     >
       <span className="kb-meta-tile-in" aria-hidden="true">
         {back && !revealed ? <span className="kb-card-back" /> : icon ? <img className="kb-mark-icon" src={icon} alt="" draggable={false} /> : <span className="kb-mark-swatch" />}
-        {ownArt && (ownArt.mark ?? ownArt.image) && <img className="kb-mark-face" src={ownArt.mark ?? ownArt.image} alt="" draggable={false} data-kb-face={ownFace} />}
+        {ownArt && ownArt.mark && <img className="kb-mark-face" src={ownArt.mark} alt="" draggable={false} data-kb-face={ownFace} />}
         {plays.length > 1 && <span className="kb-mark-count">×{plays.length}</span>}
       </span>
       {progress !== null && <span className="kb-mark-edge" aria-hidden="true" />}

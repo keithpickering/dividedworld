@@ -12,7 +12,7 @@ const ok = { ok: true as const, value: undefined };
 const settings = { economy: { 'a.price': 100, 'b.price': 250 } } as unknown as Settings;
 const plain: CardRules = { key: 'a', name: 'A card', alignment: 'sweet', rarity: 'common', priceKey: 'a.price', playPrice: () => 0, canApply: () => ok, validateConfig: (c) => ({ ok: true, value: c }) };
 const longer: CardRules = { ...plain, key: 'b', name: 'B card', alignment: 'salty', rarity: 'common', priceKey: 'b.price', stack: 3, playPrice: (_s, t) => Math.min(200, t.reach === 'post' ? t.length : 0) };
-const ui: CardUi = { key: 'b', art: { color: '#f00', ink: '#000', tagline: 'Short.' }, summary: 'One sentence.', describe: () => 'In full.' };
+const ui: CardUi = { key: 'b', art: { color: '#f00', ink: '#000', canvas: '', mark: '', tagline: 'Short.', credit: 'Test' }, summary: 'One sentence.', describe: () => 'In full.' };
 
 describe('what every screen knows of a card', () => {
   test('its price is the rules\' own, said in orbs, with a plus where playing it on a long post costs more', () => {
@@ -31,7 +31,7 @@ describe('what every screen knows of a card', () => {
   });
 
   test('a card with a description and no summary reads its description on a large face', () => {
-    expect(faceOf(plain, { key: 'a', art: { color: '#0f0', ink: '#000' }, describe: () => 'Whole.' }, settings).summary).toBe('Whole.');
+    expect(faceOf(plain, { key: 'a', art: { color: '#0f0', ink: '#000', canvas: '', mark: '', credit: 'Test' }, describe: () => 'Whole.' }, settings).summary).toBe('Whole.');
   });
 
   test('a rule that prices nothing is not a card the machine sells: the face throws, as the rules\' price does', () => {
@@ -41,6 +41,18 @@ describe('what every screen knows of a card', () => {
   test('every card the instance sells, in its order, matched to its art by key', () => {
     expect(facesOf([plain, longer], [ui], settings).map((f) => [f.key, f.tagline])).toEqual([['a', ''], ['b', 'Short.']]);
     expect(alignmentTag('pepperoni')).toBe('Pepperoni');
+  });
+});
+
+describe('a card\'s art on its face', () => {
+  test('carries a CardUi\'s canvas, mark and credit; a card with no CardUi has the plain color and ink and none of them', () => {
+    const art = { color: '#f00', ink: '#000', canvas: '/b.svg', mark: '/b-mark.svg', credit: 'Someone', tagline: 'Short.' };
+    expect(faceOf(longer, { ...ui, art }, settings).art).toMatchObject({ canvas: '/b.svg', mark: '/b-mark.svg', credit: 'Someone' });
+    const bare = faceOf(plain, undefined, settings).art;
+    expect(bare).toEqual({ color: 'var(--kb-glass-neon)', ink: 'var(--kb-glass-ink-neon)' });
+    expect(bare.canvas).toBeUndefined();
+    expect(bare.mark).toBeUndefined();
+    expect(bare.credit).toBeUndefined();
   });
 });
 
