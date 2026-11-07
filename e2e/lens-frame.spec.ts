@@ -180,5 +180,18 @@ for (const { label, width, height, place } of VIEWPORTS) {
       await expect(lens).toHaveAttribute('data-kb-more', 'false');
       await expect(fade).toBeHidden();
     });
+
+    /*
+     * The float's wrapper carries the glass's class for its tokens, and with it the glass's ground (base.css `:where(.kb-glass)`): painted, it was a black
+     * rectangle behind the Lens that filled the chamfer's cut corners, cast the glow as a rectangle, and stayed on the page while the panel faded out on close.
+     */
+    test('its wrapper paints no ground of its own: only the panel is drawn', async ({ page }) => {
+      await openLens(page);
+      const wrap = await page.evaluate(() => {
+        const s = getComputedStyle(document.querySelector<HTMLElement>('.kb-float')!);
+        return { color: s.backgroundColor, image: s.backgroundImage };
+      });
+      expect(wrap).toEqual({ color: 'rgba(0, 0, 0, 0)', image: 'none' });
+    });
   });
 }
