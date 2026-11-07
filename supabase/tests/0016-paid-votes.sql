@@ -49,7 +49,10 @@ begin
   if not exists (select 1 from jsonb_array_elements(input -> 'acts') x where x ->> 'kind' = 'card' and x ->> 'target' = p::text) then
     raise exception 'settlement_input should carry the cards played on an Act its reactions touch, an earlier window''s included';
   end if;
-  if input -> 'paid' is distinct from jsonb_build_array(jsonb_build_object('player', ann, 'act', p, 'weight', 1, 'shares', whole), jsonb_build_object('player', bob, 'act', p, 'weight', 1, 'shares', whole)) then
+  -- Compared as a set: the rows come in account order, and the accounts are random.
+  if (select jsonb_agg(x order by x ->> 'player') from jsonb_array_elements(input -> 'paid') x) is distinct from
+     (select jsonb_agg(x order by x ->> 'player') from jsonb_array_elements(jsonb_build_array(
+       jsonb_build_object('player', ann, 'act', p, 'weight', 1, 'shares', whole), jsonb_build_object('player', bob, 'act', p, 'weight', 1, 'shares', whole))) x) then
     raise exception 'settlement_input should carry what every reactor was paid on the Acts it touches: %', input -> 'paid';
   end if;
 
