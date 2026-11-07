@@ -27,6 +27,12 @@ function world(fake: Fake) {
   return { me, other, spritey, pipe, waiting, thread, act };
 }
 
+/** The value cell of a fact's row, found by its row header. */
+const fact = (within_: HTMLElement, label: string): HTMLElement => {
+  const th = within(within_).getByRole('rowheader', { name: label });
+  return th.closest('tr')!.querySelector('td:not(.kb-about-avatar)') as HTMLElement;
+};
+
 const open = (id: string, w?: Fake) => (w ? renderIn(w, <LoadedProfile id={id} />, { path: `/c/${id}` }) : null);
 
 describe('the public profile', () => {
@@ -35,17 +41,53 @@ describe('the public profile', () => {
     const w = world(fake);
     open(w.spritey, fake);
     expect(await screen.findByRole('heading', { level: 1, name: 'Spritey' })).toBeInTheDocument();
-    const facts = screen.getByRole('region', { name: 'About Spritey' });
+    const facts = screen.getByRole('table', { name: 'About Spritey' });
     await waitFor(() => expect(facts).toHaveTextContent('Midcarder'));
     expect(within(facts).getByRole('img', { name: 'Rank 2 of 3: Midcarder' })).toBeInTheDocument();
-    expect(facts).toHaveTextContent('3.50');
-    expect(facts).toHaveTextContent(/settled Oct 29/u);
-    expect(facts).toHaveTextContent('Place 1');
-    expect(facts).toHaveTextContent('Posts: 5');
-    expect(facts).toHaveTextContent('Threads spun: 0');
-    expect(facts).toHaveTextContent('Cards played: 1');
-    expect(facts).toHaveTextContent('Joined Oct 2026');
-    expect(within(facts).getByRole('link', { name: 'season standings' })).toHaveAttribute('href', '/season?tab=rankings');
+    expect(fact(facts, 'Aura this season')).toHaveTextContent('3.50');
+    expect(fact(facts, 'Aura this season')).toHaveTextContent(/settled Oct 29/u);
+    expect(fact(facts, 'Place')).toHaveTextContent(/^1 of 2/u);
+    expect(fact(facts, 'Posts')).toHaveTextContent(/^5$/u);
+    expect(fact(facts, 'Threads spun')).toHaveTextContent(/^0$/u);
+    expect(fact(facts, 'Cards played')).toHaveTextContent(/^1$/u);
+    expect(fact(facts, 'Joined')).toHaveTextContent(/^Oct 2026$/u);
+    expect(within(fact(facts, 'Place')).getByRole('link', { name: 'season standings' })).toHaveAttribute('href', '/season?tab=rankings');
+  });
+
+  test('each fact is a row of a table under an "About" band, its label a row header (Title, Rank, Aura this season, Place, Posts, Threads spun, Cards played, Joined, in that order)', async () => {
+    const fake = buildWorld();
+    const w = world(fake);
+    await fake.setProfile(w.pipe, 'Level editor guy', '[i]posting in pencil[/i]', 'default');
+    open(w.pipe, fake);
+    const facts = await screen.findByRole('table', { name: 'About Pipewrench' });
+    await waitFor(() => expect(facts).toHaveTextContent('Level editor guy'));
+    await waitFor(() => expect(facts).toHaveTextContent('Aura this season'));
+    const table = facts;
+    expect(within(table).getByRole('columnheader', { name: 'About Pipewrench' })).toBeInTheDocument();
+    /* The table is named once, by its band, with no caption beside it. */
+    expect(table.querySelector('caption')).toBeNull();
+    expect(table.querySelector('td.kb-about-avatar')).toHaveAttribute('role', 'presentation');
+    const labels = within(table).getAllByRole('rowheader').map((h) => h.textContent);
+    expect(labels).toEqual(['Title', 'Rank', 'Aura this season', 'Place', 'Posts', 'Threads spun', 'Cards played', 'Joined']);
+    for (const h of within(table).getAllByRole('rowheader')) expect(h.closest('tr')!.querySelector('td:not(.kb-about-avatar)')).not.toBeNull();
+    expect(fact(facts, 'Title')).toHaveTextContent('Level editor guy');
+    /* The signature closes the card, in a row of its own under the facts. */
+    const rows = within(table).getAllByRole('row');
+    expect(rows[rows.length - 1]).toHaveTextContent('posting in pencil');
+  });
+
+  test('a fact absent stays absent: no Title row without a title, no Class row without a reveal, no Place before anything settled', async () => {
+    const fake = buildWorld();
+    const account = fake.seed.account('x');
+    const c = fake.seed.character(account, 'Fresh', 'face');
+    fake.signInAs(account);
+    open(c, fake);
+    const facts = await screen.findByRole('table', { name: 'About Fresh' });
+    await waitFor(() => expect(facts).toHaveTextContent('Nothing has settled for it yet'));
+    const labels = within(facts).getAllByRole('rowheader').map((h) => h.textContent);
+    expect(labels).not.toContain('Title');
+    expect(labels).not.toContain('Class');
+    expect(labels).not.toContain('Place');
   });
 
   test('a title and a signature, as the character set them', async () => {
@@ -53,7 +95,7 @@ describe('the public profile', () => {
     const w = world(fake);
     await fake.setProfile(w.pipe, 'Professional Wrench', '[i]i fix things[/i]', 'default');
     open(w.pipe, fake);
-    const facts = await screen.findByRole('region', { name: 'About Pipewrench' });
+    const facts = await screen.findByRole('table', { name: 'About Pipewrench' });
     expect(facts).toHaveTextContent('Professional Wrench');
     expect((await within(facts).findByText('i fix things')).tagName).toBe('EM');
   });
@@ -64,7 +106,7 @@ describe('the public profile', () => {
     const c = fake.seed.character(account, 'Fresh', 'face');
     fake.signInAs(account);
     open(c, fake);
-    const facts = await screen.findByRole('region', { name: 'About Fresh' });
+    const facts = await screen.findByRole('table', { name: 'About Fresh' });
     await waitFor(() => expect(facts).toHaveTextContent('Nothing has settled for it yet'));
   });
 
@@ -72,8 +114,8 @@ describe('the public profile', () => {
     const fake = buildWorld();
     const w = world(fake);
     open(w.waiting, fake);
-    expect(await screen.findByRole('heading', { level: 1, name: 'The page cannot be found' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'index' })).toHaveAttribute('href', '/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'The character you requested does not exist.' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Click here to return to the index' })).toHaveAttribute('href', '/');
     expect(await fake.profilePage(w.waiting)).toBeNull();
   });
 
@@ -84,6 +126,19 @@ describe('the public profile', () => {
     open(w.spritey, fake);
     expect(await screen.findByRole('heading', { level: 1, name: 'How do we explain this' })).toBeInTheDocument();
     expect(screen.queryByText(/The board is for players\./u)).toBeNull();
+  });
+});
+
+describe('the profile\'s record table', () => {
+  test('names its roles outright, so the phone\'s block layout cannot drop them', async () => {
+    const fake = buildWorld();
+    const w = world(fake);
+    open(w.pipe, fake);
+    const region = await screen.findByRole('region', { name: 'Public record' });
+    const table = await waitFor(() => { const t = region.querySelector('table'); expect(t).not.toBeNull(); return t!; });
+    expect(table).toHaveAttribute('role', 'table');
+    expect(table.querySelectorAll('thead[role="rowgroup"], tbody[role="rowgroup"]')).toHaveLength(2);
+    expect(table.querySelectorAll('tr:not([role="row"]), th:not([role="columnheader"]), td:not([role="cell"])')).toHaveLength(0);
   });
 });
 
@@ -102,7 +157,7 @@ describe('what the profile says of a class: only what its player made public', (
     const w = world(fake);
     fake.seed.reveal(w.pipe, w.thread, { class: 'heel', at: OCT3 });
     open(w.pipe, fake);
-    const facts = await screen.findByRole('region', { name: 'About Pipewrench' });
+    const facts = await screen.findByRole('table', { name: 'About Pipewrench' });
     await waitFor(() => expect(facts).toHaveTextContent('Revealed: Heel (Oct 3)'));
     expect(facts).not.toHaveTextContent('Has Turned since');
   });
@@ -110,11 +165,11 @@ describe('what the profile says of a class: only what its player made public', (
   test('a Turn announced after the reveal makes the statement out of date', async () => {
     const fake = buildWorld();
     const w = world(fake);
-    const sys = fake.seed.thread('the-system', null, 'Turns', '');
+    const sys = fake.seed.thread('announcements', null, 'Turns', '');
     fake.seed.reveal(w.pipe, w.thread, { class: 'heel', at: OCT3 });
     fake.seed.announceTurn(w.pipe, sys.thread, { at: OCT20 });
     open(w.pipe, fake);
-    const facts = await screen.findByRole('region', { name: 'About Pipewrench' });
+    const facts = await screen.findByRole('table', { name: 'About Pipewrench' });
     await waitFor(() => expect(facts).toHaveTextContent('Revealed: Heel (Oct 3)'));
     expect(facts).toHaveTextContent('Has Turned since (Oct 20)');
   });
@@ -122,7 +177,7 @@ describe('what the profile says of a class: only what its player made public', (
   test('the public record lists every reveal, and an announced Turn names the old class only if it was announced with it', async () => {
     const fake = buildWorld();
     const w = world(fake);
-    const sys = fake.seed.thread('the-system', null, 'Turns', '');
+    const sys = fake.seed.thread('announcements', null, 'Turns', '');
     fake.seed.reveal(w.pipe, w.thread, { class: 'face', at: OCT3 });
     // A tally written before #23 still says since when; the record never dates the old class.
     fake.seed.announceTurn(w.pipe, sys.thread, { at: OCT20, was: 'face', since: '2026-10-01T12:00:00Z' });
@@ -144,7 +199,12 @@ describe('the public record on the profile', () => {
     open(w.spritey, fake);
     const record = await screen.findByRole('region', { name: 'Public record' });
     await waitFor(() => expect(within(record).getAllByRole('row').length).toBeGreaterThan(1));
-    const body = within(record).getAllByRole('row').slice(1);
+    /* One table: the band ("Public record"), the heads (When, What), then at most five rows. */
+    const rows = within(record).getAllByRole('row');
+    expect(within(record).getAllByRole('table')).toHaveLength(1);
+    expect(within(rows[0]!).getByRole('heading', { level: 2, name: 'Public record' })).toBeInTheDocument();
+    expect(within(rows[1]!).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['When', 'What']);
+    const body = rows.slice(2);
     expect(body.length).toBeLessThanOrEqual(5);
     expect(body[0]).toHaveTextContent('Played Whoops!');
     expect(within(record).getByRole('link', { name: 'See the full record' })).toHaveAttribute('href', `/c/${w.spritey}/record`);
@@ -176,7 +236,7 @@ describe('the public record on the profile', () => {
 describe('past seasons, announced Turns and the size of the season', () => {
   function withReveals(fake: Fake) {
     const w = world(fake);
-    const sys = fake.seed.thread('the-system', null, 'Turns', '');
+    const sys = fake.seed.thread('announcements', null, 'Turns', '');
     const tally = fake.seed.announceTurn(w.pipe, sys.thread, { at: OCT20 });
     fake.seed.seasonResults(1, [{ character: w.pipe, place: 2, standing: 120 }], { at: OCT20 + DAY });
     return { ...w, sys: sys.thread, tally };
@@ -186,8 +246,8 @@ describe('past seasons, announced Turns and the size of the season', () => {
     const fake = buildWorld();
     const w = world(fake);
     open(w.spritey, fake);
-    const facts = await screen.findByRole('region', { name: 'About Spritey' });
-    await waitFor(() => expect(facts).toHaveTextContent('Place 1 of 2'));
+    const facts = await screen.findByRole('table', { name: 'About Spritey' });
+    await waitFor(() => expect(fact(facts, 'Place')).toHaveTextContent(/^1 of 2/u));
   });
 
   test('a past season is a row of the record that links to its row on Rankings', async () => {
@@ -227,9 +287,9 @@ describe('past seasons, announced Turns and the size of the season', () => {
     const doc = (await fake.profilePage(w.spritey))!;
     const read = holdReads(fake, ['session']);
     renderIn(fake, <ProfileScreen id={w.spritey} doc={doc} />, { path: `/c/${w.spritey}`, boot });
-    const facts = screen.getByRole('region', { name: 'About Spritey' });
+    const facts = screen.getByRole('table', { name: 'About Spritey' });
     expect(facts).toHaveTextContent('Midcarder');
-    expect(facts).toHaveTextContent('Posts: 5');
+    expect(fact(facts, 'Posts')).toHaveTextContent(/^5$/u);
     expect(screen.getByRole('region', { name: 'Public record' })).toHaveTextContent('Posted:');
     expect(document.querySelector('[aria-busy="true"]')).toBeNull();
     await act(async () => { await new Promise((r) => setTimeout(r, 20)); });

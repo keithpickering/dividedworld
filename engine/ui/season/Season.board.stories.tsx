@@ -29,7 +29,7 @@ const news: World = (fake, instance) => {
 
   const board = instance.boards.find((b) => !b.system) ?? instance.boards[0]!;
   const system = instance.boards.find((b) => b.system) ?? board;
-  const announcements = seed.thread(system.slug, null, 'Announcements', 'The System is open.', { at: utc(10, 1) });
+  const announcements = seed.thread(system.slug, null, 'Announcements', 'The board is open.', { at: utc(10, 1) });
   const said = seed.thread(board.slug, spritey, 'for the record', 'Here it is.', { at: utc(10, 12) });
   const revealed = seed.reveal(spritey, said.thread, { at: utc(10, 12, 9), class: cls(0) });
   const hooliganSaid = seed.thread(board.slug, hooligan, 'lurkers rule', 'Quiet.', { at: utc(10, 14) });

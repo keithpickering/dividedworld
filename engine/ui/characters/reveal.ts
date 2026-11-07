@@ -15,9 +15,9 @@ import { withArticle } from './format.ts';
 export const MAX = 200;
 
 /** The dialog's own words, which both shells show. */
-export function revealWords(character: MyCharacter, className: string) {
+export function revealWords(character: MyCharacter, className: string, gameWord: string) {
   return {
-    sentence: `${character.name} is ${withArticle(className)}. This shows everyone that, as checked by The System, as ${character.name}'s own post. Anyone can react to it or spin a thread from it, and this can't be taken back.`,
+    sentence: `${character.name} is ${withArticle(className)}. This shows everyone that, as checked by ${gameWord}, as ${character.name}'s own post. Anyone can react to it or spin a thread from it, and this can't be taken back.`,
     pendingTurn: character.pendingTurn ? `${character.name} has a Turn waiting. This reveals the class it holds now, ${className}, as of today. If its settlement is due, a reveal waits until it has run.` : null,
     button: `Reveal ${character.name} as ${withArticle(className)}`,
   };

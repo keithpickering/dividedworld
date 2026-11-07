@@ -199,6 +199,22 @@ describe('the layout judgment', () => {
     expect(refusals({ rows: [pair(48)] })).toHaveLength(1);
   });
 
+  test('a form\'s board primary stands larger than the small buttons beside it, and those are still held to each other across it', () => {
+    /* The reply box's foot as board 05-reply draws it (the board look design, section 3): Preview and Reveal… small, Send the form's one primary, larger. */
+    const foot = 'form.kb-composer > div.kb-editor > div.kb-editor-foot';
+    const line = (revealHeight: number, revealSize: number) => ({
+      path: foot, kind: 'flex-line' as const,
+      controls: [
+        { path: `${foot} > button.kb-button:nth-child(4)`, rect: { x: 0, y: 0, width: 70, height: 24 }, fontSize: 12.5, glass: false },
+        { path: `${foot} > button.kb-button:nth-child(5)`, rect: { x: 76, y: 0, width: 70, height: 28.1 }, fontSize: 13.8, glass: false, primary: true },
+        { path: `${foot} > button.kb-button.kb-composer-reveal:nth-child(6)`, rect: { x: 152, y: 0, width: 70, height: revealHeight }, fontSize: revealSize, glass: false },
+      ],
+    });
+    expect(refusals({ rows: [line(24, 12.5)] })).toEqual([]);
+    /* Reveal… drawn at Send's size beside a small Preview is the mismatch the row check exists for, the primary between them or not. */
+    expect(refusals({ rows: [line(28.1, 13.8)] }).map((r) => r.split(':')[0])).toEqual(['mismatched row', 'mismatched row']);
+  });
+
   test('refuses a button whose top-right corner lies in its panel\'s 24px chamfer', () => {
     const panel = clean.controls[0]!.panel!;
     const out = refusals({ controls: [{ path: 'main:nth-child(1) > section:nth-child(4) > button:nth-child(1)', rect: { x: 420, y: 200, width: 80, height: 40 }, panel }] });

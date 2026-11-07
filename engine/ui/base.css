@@ -23,7 +23,7 @@ html {
 
 body {
   margin: 0;
-  background: var(--kb-bg);
+  background: var(--kb-page-bg);
   color: var(--kb-fg);
   font: var(--kb-size-body) / var(--kb-line) var(--kb-font-body);
   caret-color: var(--kb-fg);
@@ -35,7 +35,7 @@ body {
 }
 
 * {
-  scrollbar-color: var(--kb-muted) var(--kb-bg);
+  scrollbar-color: var(--kb-scrollbar-thumb) var(--kb-scrollbar-track);
 }
 
 p {
@@ -112,23 +112,61 @@ h1 {
   font-size: var(--kb-size-small);
 }
 
-/* The classic table: 1px rules on every cell. */
+/*
+ * The period table (the board-look design): drawn as `cellspacing="1"` was, a 1px gap between cells that is the grid, the table's
+ * own ground, with its outer edge the frame. A cell has no border of its own; the head is a band, the rows alternate, a count
+ * cell and a section heading have grounds of their own. Every ground is a token whose default is the page's, so a theme that sets
+ * none draws the black-and-white board's 1px rules (e2e/table-defaults.spec.ts).
+ */
 .kb-table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 1px;
+  background: var(--kb-grid);
+  border: 1px solid var(--kb-frame);
 }
 
 .kb-table th {
   font: bold var(--kb-size-small) / 1.3 var(--kb-font-mono);
   text-align: left;
-  border: 1px solid var(--kb-rule);
-  padding: 0.3em 0.6em;
+  background: var(--kb-head-bg);
+  color: var(--kb-head-fg);
+  text-shadow: var(--kb-head-shadow);
+  padding: 0.45em 0.75em;
+}
+
+.kb-table th:focus-visible,
+.kb-table th :focus-visible {
+  outline-color: var(--kb-head-focus);
 }
 
 .kb-table td {
-  border: 1px solid var(--kb-rule);
-  padding: 0.4em 0.6em;
+  background: var(--kb-row-1);
+  padding: 0.55em 0.65em;
   vertical-align: top;
+}
+
+.kb-table :where(tbody > tr:nth-child(even)) > td {
+  background: var(--kb-row-2);
+}
+
+/* A count (threads, replies, views): its own ground, figures in columns. */
+.kb-table td.kb-num {
+  background: var(--kb-row-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A section's heading (Who is online, Users browsing): an h2 in a cell on the light band. */
+.kb-table td.kb-bar {
+  background: var(--kb-bar-bg);
+  color: var(--kb-bar-fg);
+  text-shadow: var(--kb-bar-shadow);
+  font: bold var(--kb-size-body) / 1.3 var(--kb-font-mono);
+}
+
+.kb-table td.kb-bar > h2 {
+  margin: 0;
+  font: inherit;
 }
 
 .kb-box {
@@ -144,8 +182,7 @@ h1 {
   padding: 0.3em 1%;
 }
 
-/* Controls: square, ruled, the board's own font. */
-.kb-button,
+/* Text boxes: square, ruled, the board's own font. */
 .kb-input,
 .kb-select,
 .kb-textarea {
@@ -157,26 +194,108 @@ h1 {
   padding: 0.25em 0.5em;
 }
 
+/*
+ * The Chrome button (board-look plan, Task 4): a 2003 Photoshop button over real text. Its face, edge, label, glow, case and
+ * radius are tokens a theme sets; with none set it is today's bordered box. The label's case is only drawn (text-transform), so
+ * the accessible name keeps the copy's own. Pressed is a state, never a class: aria-expanded="true" (a toggle whose form is
+ * open) aria-pressed (Preview while it shows) or aria-current (the current one of a row) draws it pressed in.
+ */
 .kb-button {
-  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5em;
+  box-sizing: border-box;
   min-height: 1.9em;
+  padding: 0.35em 0.9em;
+  font: var(--kb-button-weight) var(--kb-size-small) / 1.2 var(--kb-font-body);
+  letter-spacing: var(--kb-button-tracking);
+  text-transform: var(--kb-button-case);
+  text-decoration: none;
+  color: var(--kb-button-fg);
+  text-shadow: var(--kb-button-fg-shadow);
+  background: var(--kb-button-bg);
+  border: 1px solid var(--kb-button-edge);
+  border-radius: var(--kb-button-radius);
+  box-shadow: var(--kb-button-shadow);
+  cursor: pointer;
 }
 
-.kb-button:hover:not(:disabled) {
-  background: var(--kb-fg);
-  color: var(--kb-bg);
+.kb-button[data-kb-size='small'] {
+  /* A target of at least 24px at the default root size (WCAG 2.5.8): Quote, Spin and History, and the toolbar's buttons, stand side by side. */
+  min-height: 1.5rem;
+  padding: 0.25em 0.6em;
+  font-size: var(--kb-size-fine);
+  letter-spacing: var(--kb-button-tracking-small);
+  gap: 0.4em;
+}
+
+.kb-button:hover:not(:disabled, [aria-disabled='true']) {
+  color: var(--kb-button-hover-fg);
+  background: var(--kb-button-hover-bg);
+}
+
+/* A form's one primary button: larger than the buttons beside it, on the primary face. */
+.kb-button[data-kb-primary] {
+  color: var(--kb-button-primary-fg);
+  background: var(--kb-button-primary-bg);
+  font-weight: bold;
+  text-shadow: var(--kb-button-primary-fg-shadow);
+  /* Today's second pixel, drawn inside the first, unless a theme sets its own. */
+  box-shadow: var(--kb-button-primary-shadow);
+  padding-inline: 1.3em;
+}
+
+.kb-button[data-kb-primary]:hover:not(:disabled, [aria-disabled='true']) {
+  color: var(--kb-button-primary-hover-fg);
+  background: var(--kb-button-primary-hover-bg);
+}
+
+.kb-button[aria-expanded='true'],
+.kb-button[aria-pressed='true'],
+.kb-button[aria-current]:not([aria-current='false']) {
+  box-shadow: var(--kb-button-pressed-shadow);
+  /* The factor is a token so the contrast check (engine/ui/contrast.ts) holds the face and label at the dimmer ground too. */
+  filter: brightness(var(--kb-button-pressed-brightness));
+}
+
+/*
+ * Forced colors (Windows High Contrast) paints no background or shadow, so the two things those say are said in lines: the primary
+ * button by a second pixel of border, a pressed one by an outline drawn inside its edge. Before the focus ring below, which wins on a
+ * focused button.
+ */
+@media (forced-colors: active) {
+  .kb-button[data-kb-primary] {
+    border-width: 2px;
+  }
+
+  .kb-button[aria-expanded='true'],
+  .kb-button[aria-pressed='true'],
+  .kb-button[aria-current]:not([aria-current='false']) {
+    outline: 2px solid Highlight;
+    outline-offset: -4px;
+  }
+}
+
+/* The board's ring, outside the edge so it is held on the ground the button stands on (PAIRS checks it at 3:1 there). */
+.kb-button:focus-visible {
+  outline: 2px solid var(--kb-focus);
+  outline-offset: 2px;
 }
 
 .kb-button:disabled {
   cursor: not-allowed;
-  color: var(--kb-muted);
-  border-color: var(--kb-muted);
 }
 
-.kb-button[data-kb-primary] {
-  font-weight: bold;
-  /* The second pixel is drawn inside the first, so a primary button is as tall as the buttons beside it. */
-  box-shadow: inset 0 0 0 1px currentColor;
+/* aria-disabled keeps focus where a disabled attribute would drop it (Characters, Follow), so it draws the same; its cursor is its own (thread.css). */
+.kb-button:disabled,
+.kb-button[aria-disabled='true'] {
+  color: var(--kb-muted);
+  background: var(--kb-button-bg);
+  border-color: var(--kb-muted);
+  text-shadow: none;
+  box-shadow: none;
+  filter: none;
 }
 
 .kb-textarea {

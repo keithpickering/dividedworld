@@ -1,15 +1,16 @@
 /*
- * Divided World's house theme: the 2003 board in black and white, light and dark, with color only
- * on the game's pieces (the screens' design, section 12; PRODUCT.md). It sets the tokens
- * engine/ui/tokens.css names, in the shape every theme follows: light on :root, dark under the
- * device's prefers-color-scheme unless the player chose light, and again for a player who chose
- * dark. The orbs are the six from the owner's TTYD pen (docs/research/2026-10-29-screens/).
+ * Divided World's house theme, the Silver house: the 2003 board in black, white and grays, light and dark, with color
+ * only on the game's pieces (the board-look design; PRODUCT.md). It sets the tokens engine/ui/tokens.css names, in the
+ * shape every theme follows: light on :root, dark under the device's prefers-color-scheme unless the player chose
+ * light, and again for a player who chose dark. The gradients are the Silver band behind the column heads, the section
+ * bars, the banner, the boards' bar and the Chrome buttons (docs/research/2026-11-06-board-look/gen.mjs). The orbs are
+ * the six from the owner's TTYD pen (docs/research/2026-10-29-screens/).
  */
 :root {
   --kb-fg: #000;
-  --kb-bg: #fff;
+  --kb-bg: #d9d9d9;
   --kb-rule: #000;
-  --kb-muted: #555;
+  --kb-muted: #454545;
   --kb-link: #000;
   --kb-link-visited: #3a3a3a;
   --kb-focus: #000;
@@ -45,26 +46,86 @@
    */
   --kb-visit-ink: #f5d442;
   /*
-   * The glass's violet laid toward the window's corners and up from the foot, over the whole window: over the '03 board's posts too, so
-   * the HUD and the board are not a sandwich (the owner, 2026-11-05: "bridge the HUD/settings and the '03 board"), but held to half its
-   * strength there (--kb-vignette-column) so it does not encroach on the posts. So 0.32 at the gutters is 0.16 over the column, and the
-   * foot 0.28 is 0.14. On white it is a shade; the dark blocks below give it more, so that on black it reads as a glow, 0.55 and
-   * 0.45 in the gutters and half of that over the posts. The numbers are the owner's to tune.
+   * The glass's violet laid toward the window's corners and up from the foot, over the whole window: over the '03
+   * board's foot too, so the HUD and the board are not a sandwich (the owner, 2026-11-05: "bridge the HUD/settings and
+   * the '03 board"); the corner glow lies in the gutters, clear to the column's edge, and there is no mask (the owner,
+   * 2026-11-07). On white it is a shade; the dark blocks below give it more, so that on black it reads as a glow, 0.55 and
+   * 0.45. The numbers are the owner's to tune.
    */
   --kb-vignette-color: #1e083c;
   --kb-vignette-edge: 0.32;
   --kb-vignette-foot-color: #3c1478;
-  --kb-vignette-foot: 0.28;
-  --kb-vignette-column: 0.5;
+  --kb-vignette-foot: 0.08;
+
+  /* The Silver skin (board-look plan, Task 1): the bands, the rows, the Chrome buttons, the inputs and the icons. */
+  --kb-grid: #8a8a8a;
+  --kb-frame: #4a4a4a;
+  --kb-row-1: #f7f7f7;
+  --kb-row-2: #ebebeb;
+  --kb-row-3: #dedede;
+  --kb-head-bg: linear-gradient(#6a6a6a, #474747 50%, #383838 51%, #2b2b2b);
+  --kb-head-fg: #fff;
+  --kb-head-focus: #fff;
+  --kb-head-shadow: 0 1px 0 #000;
+  --kb-bar-bg: linear-gradient(#ffffff, #e2e2e2 50%, #d4d4d4 51%, #c6c6c6);
+  --kb-bar-fg: #000;
+  --kb-bar-shadow: 0 1px 0 #fff;
+  --kb-banner-bg: linear-gradient(#ffffff, #cfcfcf);
+  --kb-size-logo: 1.9375rem;
+  --kb-size-logo-phone: 1.375rem;
+  --kb-logo-spacing: 0.09em;
+  --kb-logo-leading: 1;
+  --kb-logo-fg: #111;
+  --kb-logo-shadow: 1px 1px 0 #fff, 2px 2px 0 #9a9a9a;
+  --kb-nav-bg: linear-gradient(#5e5e5e, #3a3a3a);
+  --kb-nav-fg: #fff;
+  --kb-nav-hover: #fff;
+  --kb-link-hover: #4a4a4a;
+  --kb-icon-ink: #1a1a1a;
+  --kb-icon-back: #b8b8b8;
+  --kb-icon-front: #f0f0f0;
+  --kb-icon-new: #6e6e6e;
+  --kb-icon-hi: #fff;
+  --kb-icon-line: #8a8a8a;
+  --kb-icon-hot: #4a4a4a;
+  --kb-input-bg: #fff;
+  --kb-input-edge: #7a7a7a;
+  --kb-input-shadow: inset 1px 1px 2px rgb(0 0 0 / 0.18);
+  --kb-button-bg: linear-gradient(#fcfcfc 0%, #d8d8d8 48%, #b4b4b4 52%, #e6e6e6 100%);
+  --kb-button-edge: #3a3a3a;
+  --kb-button-fg: #111;
+  --kb-button-fg-shadow: 0 1px 0 rgb(255 255 255 / 0.9), 0 0 5px rgb(255 255 255 / 0.7);
+  --kb-button-case: lowercase;
+  --kb-button-shadow: inset 0 1px 0 rgb(255 255 255 / 0.55), inset 0 -1px 0 rgb(0 0 0 / 0.25), 1px 2px 3px rgb(0 0 0 / 0.35);
+  --kb-button-primary-shadow: var(--kb-button-shadow);
+  --kb-button-primary-fg-shadow: 0 1px 0 #000, 0 0 5px rgb(255 255 255 / 0.35);
+  --kb-button-weight: bold;
+  --kb-button-tracking: 0.06em;
+  --kb-button-tracking-small: 0.04em;
+  --kb-button-radius: 0;
+  --kb-button-primary-bg: linear-gradient(#6a6a6a, #474747 50%, #383838 51%, #2b2b2b);
+  --kb-button-primary-fg: #fff;
+  --kb-button-hover-bg: linear-gradient(#ffffff 0%, #ececec 48%, #cacaca 52%, #f4f4f4 100%);
+  --kb-button-hover-fg: #111;
+  --kb-button-primary-hover-bg: linear-gradient(#727272, #555555 50%, #444444 51%, #383838);
+  --kb-button-primary-hover-fg: #fff;
+  --kb-badge-a: #3a3a3a;
+  --kb-badge-a-fg: #fff;
+  --kb-badge-b: #e8e8e8;
+  --kb-badge-b-fg: #000;
+  --kb-tag-bg: #fff;
+  --kb-mini-bg: #fff;
+  --kb-mini-rule: #000;
+  --kb-font-badge: Silkscreen, "Courier New", monospace;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-kb-mode="light"]) {
-    --kb-fg: #fff;
-    --kb-bg: #000;
+    --kb-fg: #e8e8e8;
+    --kb-bg: #141414;
     --kb-visit-ink: #f5d442;
     --kb-rule: #fff;
-    --kb-muted: #aaa;
+    --kb-muted: #b0b0b0;
     --kb-link: #fff;
     --kb-link-visited: #cfcfcf;
     --kb-focus: #fff;
@@ -75,22 +136,74 @@
     --kb-orb-loss: rgb(0 0 0 / 0.55);
     --kb-pip: #fff;
     --kb-pip-empty: #555;
-    --kb-chip-bg: #000;
+    --kb-chip-bg: #1a1a1a;
     --kb-chip-own: #fff;
     --kb-vignette-color: #3c1478;
     --kb-vignette-edge: 0.55;
     --kb-vignette-foot-color: #5a1fb0;
     --kb-vignette-foot: 0.45;
-    --kb-vignette-column: 0.5;
+
+    --kb-grid: #4a4a4a;
+    --kb-frame: #000;
+    --kb-row-1: #262626;
+    --kb-row-2: #1f1f1f;
+    --kb-row-3: #2e2e2e;
+    --kb-head-bg: linear-gradient(#5a5a5a, #3c3c3c 50%, #2c2c2c 51%, #202020);
+    --kb-head-fg: #fff;
+    --kb-head-shadow: 0 1px 0 #000;
+    --kb-bar-bg: linear-gradient(#3e3e3e, #333 50%, #2a2a2a 51%, #232323);
+    --kb-bar-fg: #fff;
+    --kb-bar-shadow: 0 1px 0 #000;
+    --kb-banner-bg: linear-gradient(#323232, #121212);
+    --kb-logo-fg: #f2f2f2;
+    --kb-logo-shadow: 1px 1px 0 #000, 2px 2px 0 #555;
+    --kb-nav-bg: linear-gradient(#3a3a3a, #262626);
+    --kb-nav-fg: #fff;
+    --kb-link-hover: #cfcfcf;
+    --kb-icon-ink: #000;
+    --kb-icon-back: #8c8c8c;
+    --kb-icon-front: #d8d8d8;
+    --kb-icon-new: #555;
+    --kb-icon-hi: #f4f4f4;
+    --kb-icon-line: #8a8a8a;
+    --kb-icon-hot: #bdbdbd;
+    --kb-input-bg: #151515;
+    --kb-input-edge: #5e5e5e;
+    --kb-input-shadow: inset 1px 1px 2px rgb(0 0 0 / 0.6);
+    --kb-button-bg: linear-gradient(#6a6a6a 0%, #454545 48%, #2a2a2a 52%, #3c3c3c 100%);
+    --kb-button-edge: #000;
+    --kb-button-fg: #fff;
+    --kb-button-fg-shadow: 0 1px 0 #000, 0 0 5px rgb(255 255 255 / 0.35);
+    --kb-button-case: lowercase;
+    --kb-button-shadow: inset 0 1px 0 rgb(255 255 255 / 0.55), inset 0 -1px 0 rgb(0 0 0 / 0.25), 1px 2px 3px rgb(0 0 0 / 0.35);
+    --kb-button-primary-shadow: var(--kb-button-shadow);
+    --kb-button-primary-fg-shadow: 0 1px 0 #000, 0 0 5px rgb(255 255 255 / 0.35);
+    --kb-button-weight: bold;
+    --kb-button-tracking: 0.06em;
+    --kb-button-tracking-small: 0.04em;
+    --kb-button-radius: 0;
+    --kb-button-primary-bg: linear-gradient(#5a5a5a, #3c3c3c 50%, #2c2c2c 51%, #202020);
+    --kb-button-primary-fg: #fff;
+    --kb-button-hover-bg: linear-gradient(#6e6e6e 0%, #505050 48%, #363636 52%, #484848 100%);
+    --kb-button-hover-fg: #fff;
+    --kb-button-primary-hover-bg: linear-gradient(#6e6e6e, #505050 50%, #3c3c3c 51%, #2e2e2e);
+    --kb-button-primary-hover-fg: #fff;
+    --kb-badge-a: #e8e8e8;
+    --kb-badge-a-fg: #000;
+    --kb-badge-b: #2a2a2a;
+    --kb-badge-b-fg: #e8e8e8;
+    --kb-tag-bg: #1a1a1a;
+    --kb-mini-bg: #1a1a1a;
+    --kb-mini-rule: #e8e8e8;
   }
 }
 
 :root[data-kb-mode="dark"] {
-  --kb-fg: #fff;
-  --kb-bg: #000;
+  --kb-fg: #e8e8e8;
+  --kb-bg: #141414;
   --kb-visit-ink: #f5d442;
   --kb-rule: #fff;
-  --kb-muted: #aaa;
+  --kb-muted: #b0b0b0;
   --kb-link: #fff;
   --kb-link-visited: #cfcfcf;
   --kb-focus: #fff;
@@ -101,11 +214,63 @@
   --kb-orb-loss: rgb(0 0 0 / 0.55);
   --kb-pip: #fff;
   --kb-pip-empty: #555;
-  --kb-chip-bg: #000;
+  --kb-chip-bg: #1a1a1a;
   --kb-chip-own: #fff;
   --kb-vignette-color: #3c1478;
   --kb-vignette-edge: 0.55;
   --kb-vignette-foot-color: #5a1fb0;
   --kb-vignette-foot: 0.45;
-  --kb-vignette-column: 0.5;
+
+  --kb-grid: #4a4a4a;
+  --kb-frame: #000;
+  --kb-row-1: #262626;
+  --kb-row-2: #1f1f1f;
+  --kb-row-3: #2e2e2e;
+  --kb-head-bg: linear-gradient(#5a5a5a, #3c3c3c 50%, #2c2c2c 51%, #202020);
+  --kb-head-fg: #fff;
+  --kb-head-shadow: 0 1px 0 #000;
+  --kb-bar-bg: linear-gradient(#3e3e3e, #333 50%, #2a2a2a 51%, #232323);
+  --kb-bar-fg: #fff;
+  --kb-bar-shadow: 0 1px 0 #000;
+  --kb-banner-bg: linear-gradient(#323232, #121212);
+  --kb-logo-fg: #f2f2f2;
+  --kb-logo-shadow: 1px 1px 0 #000, 2px 2px 0 #555;
+  --kb-nav-bg: linear-gradient(#3a3a3a, #262626);
+  --kb-nav-fg: #fff;
+  --kb-link-hover: #cfcfcf;
+  --kb-icon-ink: #000;
+  --kb-icon-back: #8c8c8c;
+  --kb-icon-front: #d8d8d8;
+  --kb-icon-new: #555;
+  --kb-icon-hi: #f4f4f4;
+  --kb-icon-line: #8a8a8a;
+  --kb-icon-hot: #bdbdbd;
+  --kb-input-bg: #151515;
+  --kb-input-edge: #5e5e5e;
+  --kb-input-shadow: inset 1px 1px 2px rgb(0 0 0 / 0.6);
+  --kb-button-bg: linear-gradient(#6a6a6a 0%, #454545 48%, #2a2a2a 52%, #3c3c3c 100%);
+  --kb-button-edge: #000;
+  --kb-button-fg: #fff;
+  --kb-button-fg-shadow: 0 1px 0 #000, 0 0 5px rgb(255 255 255 / 0.35);
+  --kb-button-case: lowercase;
+  --kb-button-shadow: inset 0 1px 0 rgb(255 255 255 / 0.55), inset 0 -1px 0 rgb(0 0 0 / 0.25), 1px 2px 3px rgb(0 0 0 / 0.35);
+  --kb-button-primary-shadow: var(--kb-button-shadow);
+  --kb-button-primary-fg-shadow: 0 1px 0 #000, 0 0 5px rgb(255 255 255 / 0.35);
+  --kb-button-weight: bold;
+  --kb-button-tracking: 0.06em;
+  --kb-button-tracking-small: 0.04em;
+  --kb-button-radius: 0;
+  --kb-button-primary-bg: linear-gradient(#5a5a5a, #3c3c3c 50%, #2c2c2c 51%, #202020);
+  --kb-button-primary-fg: #fff;
+  --kb-button-hover-bg: linear-gradient(#6e6e6e 0%, #505050 48%, #363636 52%, #484848 100%);
+  --kb-button-hover-fg: #fff;
+  --kb-button-primary-hover-bg: linear-gradient(#6e6e6e, #505050 50%, #3c3c3c 51%, #2e2e2e);
+  --kb-button-primary-hover-fg: #fff;
+  --kb-badge-a: #e8e8e8;
+  --kb-badge-a-fg: #000;
+  --kb-badge-b: #2a2a2a;
+  --kb-badge-b-fg: #e8e8e8;
+  --kb-tag-bg: #1a1a1a;
+  --kb-mini-bg: #1a1a1a;
+  --kb-mini-rule: #e8e8e8;
 }

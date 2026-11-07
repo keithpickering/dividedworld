@@ -113,7 +113,9 @@ export function usePreferenceSaves(account: string | null, supplied?: Preference
 
   const change = useCallback((patch: SinglePatch) => {
     const key = Object.keys(patch)[0] as keyof PreferencesPatch;
-    const asked = (patch as PreferencesPatch)[key];
+    const asked = patch as PreferencesPatch;
+    /* A refusal puts back the patch's one setting if it still shows what was asked, and no other. */
+    const putBack = (now: Preferences, then: Preferences): Preferences => (now[key] === asked[key] ? { ...now, [key]: then[key] } : now);
     const mine = ++queued.current;
     const madeFor = account;
     if (madeFor === null || current.current === null) return;
@@ -132,12 +134,12 @@ export function usePreferenceSaves(account: string | null, supplied?: Preference
         if (key === 'toasts') announceToastChoice(r.value.toasts);
         return;
       }
-      if (current.current![key] === asked) show({ ...current.current!, [key]: confirmed.current![key] });
+      show(putBack(current.current!, confirmed.current!));
       setRefusal({ account: madeFor, text: r.error });
     }).catch(() => {
       /* Nothing in the line may end it: a choice after a throw is still sent, and it is said and put back as a lost answer is. */
       if (showing.current !== madeFor) return;
-      if (current.current && confirmed.current && current.current[key] === asked) show({ ...current.current, [key]: confirmed.current[key] });
+      if (current.current && confirmed.current) show(putBack(current.current, confirmed.current));
       setRefusal({ account: madeFor, text: LOST_ANSWER });
     });
   }, [api, ui, account, commit]);

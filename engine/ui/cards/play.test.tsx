@@ -386,6 +386,21 @@ describe('the play form', () => {
     expect(theirs).not.toHaveTextContent('You play both');
   });
 
+  test('a play on a staff post names it in lower case mid-sentence: "on the staff\'s post #1"', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    const sys = w.fake.seed.thread('announcements', null, 'Tally', 'the staff speak', { kind: 'post' });
+    for (const i of [2, 3, 4]) w.fake.seed.post(sys.thread, null, `staff ${i}`, { kind: 'post' });
+    await open({ ...w, thread: sys.thread });
+    const form = await playHere(user, 1);
+    expect(form).toHaveTextContent("the staff's post #1");
+    expect(form).not.toHaveTextContent("The staff's post");
+    await user.type(within(form).getByRole('textbox', { name: 'Your message' }), 'hello');
+    await user.click(within(form).getByRole('button', { name: 'Play as Pipewrench' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent("Played Whoops! on the staff's post #1.");
+  });
+
   test('playing lands the play as a tag on its post, takes a card out of the hand, drains the wallet and puts the card away', async () => {
     const user = userEvent.setup();
     const w = world();
