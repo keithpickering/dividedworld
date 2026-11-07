@@ -73,7 +73,7 @@ declare
                            -- 0118: the helpers bbcode_plain calls for the tags it learned (quote heads, video addresses); each reads nothing but its arguments.
                            'bbcode_plain_trim(text)', 'bbcode_plain_quote_head(text)', 'bbcode_plain_pct(text)', 'bbcode_plain_query_v(text)', 'bbcode_plain_ipv4_number(text)', 'bbcode_plain_punycode_ok(text)', 'bbcode_plain_host_ok(text)', 'bbcode_plain_video_ok(text)',
                            'search_lang()', 'search_words(text,text)', 'search_words(text,text,regconfig)',
-                           -- The search reads (0116): three screens' reads, security invoker and stable, and the functions they call. The two definers say only a public fact of their arguments: the Updates thread's id,
+                           -- The search reads (0117): three screens' reads, security invoker and stable, and the functions they call. The two definers say only a public fact of their arguments: the Updates thread's id,
                            -- and the id and name of a debuted character a prefix finds (all characters_public shows of one; `characters` is owner-only).
                            'search_posts(text,uuid,uuid,timestampwithtimezone,timestampwithtimezone,boolean,text,jsonb,integer)', 'search_threads(text,uuid,uuid,timestampwithtimezone,timestampwithtimezone,boolean,text,jsonb,integer)',
                            'search_suggest(text,text[],uuid,boolean,integer)', 'search_suggest_threads(text,uuid,boolean,integer)', 'suggest_characters(text,integer)',
