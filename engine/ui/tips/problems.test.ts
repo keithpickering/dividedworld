@@ -148,6 +148,12 @@ describe('instanceUiProblems', () => {
     assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), undefined, [['Game', ' ']]), rules), ['the badge 1 is not a pair of words']);
     assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), undefined, [['Masks', 'On'], ['Kilterrr', 'Offffff']]), rules), ['the badge "Kilterrr Offffff" is 16 characters, over the 12 an 80 by 15 badge holds']);
   });
+  test('refuses more than 6 badges, and a pair listed twice', () => {
+    const six = ['A', 'B', 'C', 'D', 'E', 'F'].map((w) => [w, 'On']);
+    assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), undefined, six), rules), []);
+    assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), undefined, [...six, ['G', 'On']]), rules), ['the copy has 7 badges, over the 6 a footer row holds']);
+    assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), undefined, [['Game', 'On'], ['Kilter', 'Off'], ['Game', 'On']]), rules), ['the badge 3 repeats the badge 1 ("Game On")']);
+  });
   test('refuses an empty marquee list', () => {
     assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), []), rules), ['the copy has a marquees list with nothing in it']);
   });

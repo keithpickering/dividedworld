@@ -123,7 +123,7 @@
 }
 
 .kb-nav a:hover {
-  color: var(--kb-link-hover);
+  color: var(--kb-nav-hover);
 }
 
 /* The bar has its own ground, which the page's focus color may not stand out on: the ring is the bar's own ink. */
@@ -162,6 +162,7 @@
 
 .kb-badges {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   gap: 4px;
   margin-top: 8px;

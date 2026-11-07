@@ -105,6 +105,8 @@
   --kb-row-3: var(--kb-bg);
   --kb-head-bg: var(--kb-bg);
   --kb-head-fg: var(--kb-fg);
+  /* The ring on the column-title band, which has a ground of its own that the page's focus color may not stand out on. */
+  --kb-head-focus: var(--kb-focus);
   --kb-head-shadow: none;
   --kb-bar-bg: var(--kb-bg);
   --kb-bar-fg: var(--kb-fg);
@@ -114,6 +116,7 @@
   --kb-logo-shadow: none;
   --kb-nav-bg: var(--kb-bg);
   --kb-nav-fg: var(--kb-link);
+  --kb-nav-hover: var(--kb-nav-fg);
   --kb-link-hover: var(--kb-link);
   --kb-input-bg: var(--kb-bg);
   --kb-input-edge: var(--kb-rule);

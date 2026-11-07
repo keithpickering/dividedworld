@@ -237,6 +237,12 @@ export const PAIRS: readonly (readonly [string, string, number, string])[] = [
   ['--kb-head-fg', '--kb-head-bg', 4.5, 'column head text on the head band'],
   ['--kb-bar-fg', '--kb-bar-bg', 4.5, 'section heading on the light band'],
   ['--kb-nav-fg', '--kb-nav-bg', 4.5, 'links on the boards\' bar'],
+  ['--kb-nav-hover', '--kb-nav-bg', 4.5, 'hovered links on the boards\' bar'],
+  /* The ring is not text but must be seen (3:1) on each ground a focusable thing can stand on. The bar's ring is its own ink, held above. */
+  ...(['--kb-row-1', '--kb-row-2', '--kb-row-3'] as const).map((row, i): [string, string, number, string] => ['--kb-focus', row, 3, `the focus ring on table row ${i + 1}`]),
+  ['--kb-head-focus', '--kb-head-bg', 3, 'the focus ring on the column-title band'],
+  ['--kb-focus', '--kb-bar-bg', 3, 'the focus ring on the light band'],
+  ['--kb-focus', '--kb-banner-bg', 3, 'the focus ring on the banner'],
   ['--kb-logo-fg', '--kb-banner-bg', 3, 'the logo on the banner (large text)'],
   ['--kb-button-fg', '--kb-button-bg', 4.5, 'a Chrome button\'s label'],
   ['--kb-button-primary-fg', '--kb-button-primary-bg', 4.5, 'a primary Chrome button\'s label'],

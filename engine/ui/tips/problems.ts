@@ -15,6 +15,8 @@ import { wordsProblems } from '../cards/lens-words.ts';
 export const MARQUEE_MAX = 20;
 /** The most characters a footer badge's two words hold between them: 80 pixels of the pixel face at 8px. */
 export const BADGE_MAX = 12;
+/** The most badges the footer shows: a row of them wraps (engine/ui/frame/frame.css), but a footer of a dozen is a wall. */
+export const BADGES_MAX = 6;
 
 export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 'frontDoor' | 'cards' | 'classLooks'>, instance: Pick<Instance, 'reactions' | 'ranks' | 'classes' | 'cards' | 'settings'>): string[] {
   const out: string[] = [];
@@ -32,10 +34,14 @@ export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 
   if (badges !== undefined) {
     if (!Array.isArray(badges) || badges.length === 0) out.push('the copy has a badges list with nothing in it');
     else {
+      if (badges.length > BADGES_MAX) out.push(`the copy has ${badges.length} badges, over the ${BADGES_MAX} a footer row holds`);
+      const seen = new Map<string, number>();
       badges.forEach((b: unknown, i) => {
         const pair = Array.isArray(b) && b.length === 2 && b.every((w: unknown) => typeof w === 'string' && w.trim() !== '') ? (b as [string, string]) : null;
         if (pair === null) out.push(`the badge ${i + 1} is not a pair of words`);
+        else if (seen.has(`${pair[0]} ${pair[1]}`)) out.push(`the badge ${i + 1} repeats the badge ${seen.get(`${pair[0]} ${pair[1]}`)} ("${pair[0]} ${pair[1]}")`);
         else if (`${pair[0]} ${pair[1]}`.length > BADGE_MAX) out.push(`the badge "${pair[0]} ${pair[1]}" is ${`${pair[0]} ${pair[1]}`.length} characters, over the ${BADGE_MAX} an 80 by 15 badge holds`);
+        if (pair !== null && !seen.has(`${pair[0]} ${pair[1]}`)) seen.set(`${pair[0]} ${pair[1]}`, i + 1);
       });
     }
   }

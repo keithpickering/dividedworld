@@ -25,10 +25,10 @@
 }
 
 .kb-board-last > a {
-  /* A target of 24px at the least (WCAG 2.2, 2.5.8): the padding is the target, the margin takes it back out of the line so a row is as tall as its words. */
-  display: inline-block;
-  padding-block: 0.3rem;
-  margin-block: -0.3rem;
+  /* A target of 24px at the least (WCAG 2.2, 2.5.8) that sits below the name's link without reaching into it: a box of its own, in a line of its own, not padding pulled up by a negative margin. */
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.5rem;
 }
 
 .kb-board-unit,

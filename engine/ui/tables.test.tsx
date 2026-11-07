@@ -69,7 +69,11 @@ describe('the period table (board-look plan, Task 3)', () => {
     expect(rules(frame, '.kb-logo').join(';')).toMatch(/color:\s*var\(--kb-logo-fg\)[^]*text-shadow:\s*var\(--kb-logo-shadow\)/);
     expect(rules(frame, '.kb-nav').join(';')).toMatch(/background:\s*var\(--kb-nav-bg\)/);
     expect(rules(frame, '.kb-nav a:focus-visible').join(';')).toMatch(/outline-color:\s*var\(--kb-nav-fg\)/);
+    expect(rules(frame, '.kb-nav a:hover').join(';')).toMatch(/color:\s*var\(--kb-nav-hover\)/);
     expect(rules(frame, '.kb-nav a:visited').join(';')).toMatch(/color:\s*var\(--kb-nav-fg\)/);
+  });
+  test('the badges wrap rather than run past the page', () => {
+    expect(rules(frame, '.kb-badges').join(';')).toMatch(/flex-wrap:\s*wrap/);
   });
   test('the badges are 80 by 15 at 100% text, in rem, on the badge tokens, in the instance\'s own face', () => {
     const badge = rules(frame, '.kb-badge').join(';');

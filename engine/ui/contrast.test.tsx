@@ -21,37 +21,39 @@ describe('color contrast of the engine tokens, light and dark', () => {
 /* The period skin's tokens (docs/plans/2026-11-06-board-look-plan.md, Task 1). */
 const THEME_LIGHT = (extra: string) => `${engine}\n:root { ${extra} }`;
 const fails = (css: string) => contrastFailures(css);
+/* A failure about the head band's text; the ring on the band is its own pair, held below. */
+const headMsg = (x: string) => /head/u.test(x) && !/focus ring/u.test(x);
 
 describe('the skin tokens: gradients are read stop by stop', () => {
   test('a head band running #fff to #2b2b2b under a #fff head text fails on the light stop', () => {
     const f = fails(THEME_LIGHT('--kb-head-bg: linear-gradient(#fff, #2b2b2b); --kb-head-fg: #fff;'));
-    expect(f.some((x) => x.startsWith('light: ') && /head/u.test(x) && /1\.00:1/u.test(x))).toBe(true);
+    expect(f.some((x) => x.startsWith('light: ') && headMsg(x) && /1\.00:1/u.test(x))).toBe(true);
   });
   test('the same band under dark text fails on the dark stop, and a band both ends carry passes', () => {
-    expect(fails(THEME_LIGHT('--kb-head-bg: linear-gradient(#fff, #2b2b2b); --kb-head-fg: #000;')).some((x) => /head/u.test(x))).toBe(true);
-    expect(fails(THEME_LIGHT('--kb-head-bg: linear-gradient(to bottom, #fff 0%, #ddd 100%); --kb-head-fg: #000;')).filter((x) => /head/u.test(x))).toEqual([]);
+    expect(fails(THEME_LIGHT('--kb-head-bg: linear-gradient(#fff, #2b2b2b); --kb-head-fg: #000;')).some((x) => headMsg(x))).toBe(true);
+    expect(fails(THEME_LIGHT('--kb-head-bg: linear-gradient(to bottom, #fff 0%, #ddd 100%); --kb-head-fg: #000;')).filter((x) => headMsg(x))).toEqual([]);
   });
   test('layers are read too: every comma-separated layer, gradient or plain color', () => {
     const band = 'linear-gradient(#fff, #eee), repeating-linear-gradient(45deg, #ddd 0 2px, #2b2b2b 2px 4px), #fff';
-    expect(fails(THEME_LIGHT(`--kb-head-bg: ${band}; --kb-head-fg: #000;`)).some((x) => /head/u.test(x))).toBe(true);
-    expect(fails(THEME_LIGHT('--kb-head-bg: radial-gradient(circle at 50% 0%, #fff, #eee), #fff; --kb-head-fg: #000;')).filter((x) => /head/u.test(x))).toEqual([]);
+    expect(fails(THEME_LIGHT(`--kb-head-bg: ${band}; --kb-head-fg: #000;`)).some((x) => headMsg(x))).toBe(true);
+    expect(fails(THEME_LIGHT('--kb-head-bg: radial-gradient(circle at 50% 0%, #fff, #eee), #fff; --kb-head-fg: #000;')).filter((x) => headMsg(x))).toEqual([]);
   });
   test('a value it cannot parse fails the check rather than passing', () => {
     for (const bad of ['url(x.png)', 'linear-gradient(red, blue)', 'linear-gradient(#fff, rgb(0 0 0 / 0.5))', 'linear-gradient(#fff', 'conic-gradient(#fff, banana)']) {
       const f = fails(THEME_LIGHT(`--kb-head-bg: ${bad}; --kb-head-fg: #000;`));
-      expect(f.some((x) => /head/u.test(x) && /cannot (be )?read/u.test(x)), bad).toBe(true);
+      expect(f.some((x) => headMsg(x) && /cannot (be )?read/u.test(x)), bad).toBe(true);
     }
   });
   test('a text color that is a gradient fails too', () => {
-    expect(fails(THEME_LIGHT('--kb-head-fg: linear-gradient(#000, #111);')).some((x) => /head/u.test(x) && /cannot (be )?read/u.test(x))).toBe(true);
+    expect(fails(THEME_LIGHT('--kb-head-fg: linear-gradient(#000, #111);')).some((x) => headMsg(x) && /cannot (be )?read/u.test(x))).toBe(true);
   });
   test('rgb() without alpha is read', () => {
-    expect(fails(THEME_LIGHT('--kb-head-bg: linear-gradient(rgb(255 255 255), rgb(255, 255, 255)); --kb-head-fg: #000;')).filter((x) => /head/u.test(x))).toEqual([]);
+    expect(fails(THEME_LIGHT('--kb-head-bg: linear-gradient(rgb(255 255 255), rgb(255, 255, 255)); --kb-head-fg: #000;')).filter((x) => headMsg(x))).toEqual([]);
   });
   test('var() in a value is followed, to its fallback when unset, and a loop fails', () => {
-    expect(fails(THEME_LIGHT('--kb-head-bg: var(--kb-bg); --kb-head-fg: var(--kb-fg);')).filter((x) => /head/u.test(x))).toEqual([]);
-    expect(fails(THEME_LIGHT('--kb-head-bg: var(--kb-nope, #fff); --kb-head-fg: #000;')).filter((x) => /head/u.test(x))).toEqual([]);
-    expect(fails(THEME_LIGHT('--kb-head-bg: var(--kb-head-bg); --kb-head-fg: #000;')).some((x) => /head/u.test(x) && /cannot (be )?read/u.test(x))).toBe(true);
+    expect(fails(THEME_LIGHT('--kb-head-bg: var(--kb-bg); --kb-head-fg: var(--kb-fg);')).filter((x) => headMsg(x))).toEqual([]);
+    expect(fails(THEME_LIGHT('--kb-head-bg: var(--kb-nope, #fff); --kb-head-fg: #000;')).filter((x) => headMsg(x))).toEqual([]);
+    expect(fails(THEME_LIGHT('--kb-head-bg: var(--kb-head-bg); --kb-head-fg: #000;')).some((x) => headMsg(x) && /cannot (be )?read/u.test(x))).toBe(true);
   });
   test('the logo and the badges are held at 3:1, not 4.5:1', () => {
     expect(fails(THEME_LIGHT('--kb-banner-bg: #fff; --kb-logo-fg: #949494;')).filter((x) => /logo/u.test(x))).toEqual([]);
@@ -67,12 +69,28 @@ describe('the skin tokens: gradients are read stop by stop', () => {
     bad('--kb-input-bg: #222;', /input|text box/u);
     bad('--kb-row-2: #222;', /row/u);
   });
+  test('a hovered link on the boards\' bar is held on the bar, not only on the page', () => {
+    /* The Silver bar is #5e5e5e to #3a3a3a, and a gray hover that reads on the page is about 1:1 on it. */
+    const bar = '--kb-nav-bg: linear-gradient(#5e5e5e, #3a3a3a); --kb-nav-fg: #fff;';
+    expect(fails(THEME_LIGHT(`${bar} --kb-nav-hover: #4a4a4a;`)).some((x) => /^light: hovered links on the boards' bar/u.test(x) && /1\.\d\d:1/u.test(x))).toBe(true);
+    expect(fails(THEME_LIGHT(`${bar} --kb-nav-hover: #fff;`)).filter((x) => /nav|bar/u.test(x))).toEqual([]);
+    expect(fails(THEME_LIGHT(bar)).filter((x) => /nav|bar/u.test(x))).toEqual([]);
+  });
+  test('the focus ring is held at 3:1 on every band it can land on', () => {
+    const bad = (css: string, word: RegExp) => expect(fails(THEME_LIGHT(css)).some((x) => word.test(x)), css).toBe(true);
+    bad('--kb-focus: #000; --kb-row-1: #222;', /focus ring on table row 1/u);
+    bad('--kb-focus: #000; --kb-row-3: #222;', /focus ring on table row 3/u);
+    bad('--kb-focus: #000; --kb-head-bg: linear-gradient(#6a6a6a, #2b2b2b); --kb-head-focus: #000;', /focus ring on the column-title band/u);
+    bad('--kb-focus: #000; --kb-bar-bg: #222;', /focus ring on the light band/u);
+    bad('--kb-focus: #000; --kb-banner-bg: #222;', /focus ring on the banner/u);
+    expect(fails(THEME_LIGHT('--kb-focus: #000;')).filter((x) => /focus/u.test(x))).toEqual([]);
+  });
 });
 
 /* Each "passes" below also shows the pair was read: it is in PAIRS, and its worst ratio is the number the stops give. */
 const checked = (fg: string, bg: string) => expect(PAIRS.some((p) => p[0] === fg && p[1] === bg), `${fg} on ${bg} is in PAIRS`).toBe(true);
 const worst = (css: string, fg: string, bg: string) => worstRatio(tokensOf(THEME_LIGHT(css)).light, fg, bg);
-const headFails = (css: string) => fails(THEME_LIGHT(css)).filter((x) => x.startsWith('light: ') && /head/u.test(x));
+const headFails = (css: string) => fails(THEME_LIGHT(css)).filter((x) => x.startsWith('light: ') && headMsg(x));
 
 describe('the skin tokens: every stop, layer and var() is really read', () => {
   test('a failing MIDDLE stop of a three-stop gradient fails, and the same gradient with a passing middle is clean', () => {
@@ -132,7 +150,7 @@ describe('the skin tokens: the defaults draw today\'s board', () => {
     '--kb-grid': '--kb-rule', '--kb-frame': '--kb-rule',
     '--kb-row-1': '--kb-bg', '--kb-row-2': '--kb-bg', '--kb-row-3': '--kb-bg',
     '--kb-head-bg': '--kb-bg', '--kb-head-fg': '--kb-fg', '--kb-bar-bg': '--kb-bg', '--kb-bar-fg': '--kb-fg',
-    '--kb-banner-bg': '--kb-bg', '--kb-logo-fg': '--kb-fg', '--kb-nav-bg': '--kb-bg', '--kb-nav-fg': '--kb-link',
+    '--kb-banner-bg': '--kb-bg', '--kb-logo-fg': '--kb-fg', '--kb-nav-bg': '--kb-bg', '--kb-nav-fg': '--kb-link', '--kb-nav-hover': '--kb-nav-fg', '--kb-head-focus': '--kb-focus',
     '--kb-link-hover': '--kb-link', '--kb-input-bg': '--kb-bg', '--kb-input-edge': '--kb-rule',
     '--kb-button-bg': '--kb-bg', '--kb-button-edge': '--kb-rule', '--kb-button-fg': '--kb-fg',
     '--kb-button-primary-bg': '--kb-fg', '--kb-button-primary-fg': '--kb-bg',

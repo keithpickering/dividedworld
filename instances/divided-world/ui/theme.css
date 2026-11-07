@@ -61,6 +61,7 @@
   --kb-row-3: #dedede;
   --kb-head-bg: linear-gradient(#6a6a6a, #474747 50%, #383838 51%, #2b2b2b);
   --kb-head-fg: #fff;
+  --kb-head-focus: #fff;
   --kb-head-shadow: 0 1px 0 #000;
   --kb-bar-bg: linear-gradient(#ffffff, #e2e2e2 50%, #d4d4d4 51%, #c6c6c6);
   --kb-bar-fg: #000;
@@ -74,6 +75,7 @@
   --kb-logo-shadow: 1px 1px 0 #fff, 2px 2px 0 #9a9a9a;
   --kb-nav-bg: linear-gradient(#5e5e5e, #3a3a3a);
   --kb-nav-fg: #fff;
+  --kb-nav-hover: #fff;
   --kb-link-hover: #4a4a4a;
   --kb-icon-ink: #1a1a1a;
   --kb-icon-back: #b8b8b8;
