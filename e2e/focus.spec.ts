@@ -149,6 +149,34 @@ for (const feel of ['smooth', 'snappy'] as const) {
   });
 }
 
+/* Closing from rest animates: the clip never starts from `none` (which Motion cannot interpolate), it starts from the open shape and moves through shapes in between. */
+for (const feel of ['smooth', 'snappy'] as const) {
+  test(`${feel}: Back from a glass page at rest closes by visibly animating its clip-path`, async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await page.goto('/b/general');
+    await page.evaluate((f) => { document.documentElement.setAttribute('data-kb-motion', 'full'); document.documentElement.setAttribute('data-kb-motion-feel', f); }, feel);
+    await page.getByRole('region', { name: 'Game HUD' }).getByRole('button', { name: 'Menu' }).click();
+    await expect(page.locator('.kb-world')).toHaveCount(1);
+    await expect.poll(() => page.locator('.kb-world').evaluate((el) => getComputedStyle(el).clipPath)).toBe('none');
+    await page.evaluate(() => {
+      const w = globalThis as unknown as { __clips: string[] };
+      w.__clips = [];
+      const tick = () => {
+        const el = document.querySelector('[data-kb-world="glass"]');
+        if (el && el.hasAttribute('data-kb-exiting')) w.__clips.push(getComputedStyle(el).clipPath);
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    await page.getByRole('link', { name: 'Back to the board' }).click();
+    await expect(page.locator('.kb-world')).toHaveCount(1);
+    const clips = await page.evaluate(() => (globalThis as unknown as { __clips: string[] }).__clips);
+    expect(clips.length).toBeGreaterThan(2);
+    expect(clips).not.toContain('none');
+    expect(new Set(clips).size).toBeGreaterThan(2);
+  });
+}
+
 /*
  * Every way into the glass keeps the board's place, not only the HUD's Menu (keepBoardPlace,
  * engine/ui/glass/back.ts): the reply box's "Make a character", for an account with none, is a

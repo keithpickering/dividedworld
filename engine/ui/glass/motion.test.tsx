@@ -108,7 +108,7 @@ describe('the presets', () => {
 })
 
 describe('the crossing of a pinned world', () => {
-  const exitOf = (p: ReturnType<typeof crossingPinned>, scrollY: number) => ((p.variants as Record<string, (n: number) => Record<string, unknown>>).leave!)(scrollY);
+  const exitOf = (p: ReturnType<typeof crossingPinned>, scrollY: number, rested = false) => ((p.variants as Record<string, (n: { scrollY: number; rested: boolean }) => Record<string, unknown>>).leave!)({ scrollY, rested });
 
   it('closes (Snappy) into the rect as the window sees it, wherever the world was scrolled', () => {
     const p = crossingPinned(snappy, { from: rect, within });
@@ -123,10 +123,45 @@ describe('the crossing of a pinned world', () => {
     expect(exitOf(p, 300).clipPath).toBe('inset(320px 890px calc(100% - 360px) 10px)');
   });
 
+  it('exits from rest by keyframes that start at the open shape (Snappy polygon, Smooth inset) and, un-rested, by a plain target from where the enter had got to', () => {
+    const open = (f: ActiveFeel) => (crossing(f, { from: rect, within }).animate as { clipPath: string }).clipPath;
+    for (const f of [smooth, snappy]) {
+      const p = crossingPinned(f, { from: rect, within });
+      const rested = exitOf(p, 0, true);
+      expect((rested.clipPath as string[])[0]).toBe(open(f));
+      expect((rested.clipPath as string[])[1]).toBe(exitOf(p, 0, false).clipPath);
+      expect(typeof exitOf(p, 0, false).clipPath).toBe('string');
+    }
+    expect((exitOf(crossingPinned(snappy, { from: rect, within }), 0, true).clipPath as string[])[0]).toContain('polygon(');
+    expect((exitOf(crossingPinned(smooth, { from: rect, within }), 0, true).clipPath as string[])[0]).toMatch(/^inset\(0px 0px/u);
+    expect(exitOf(crossingPinned(smooth, { from: rect, within }), 0, true).filter).toEqual(['blur(0px)', exitOf(crossingPinned(smooth, { from: rect, within }), 0, false).filter]);
+    expect(typeof exitOf(crossingPinned(smooth, { from: rect, within }), 0, false).filter).toBe('string');
+    /* The scroll offset moves the closed shape of both exits alike. */
+    expect((exitOf(crossingPinned(smooth, { from: rect, within }), 300, true).clipPath as string[])[1]).toBe('inset(320px 890px calc(100% - 360px) 10px)');
+  });
+
   it('enters and exits as the plain crossing does, and is empty under Off', () => {
     const p = crossingPinned(smooth, { from: rect, within });
     expect((p.variants as Record<string, unknown>).closed).toEqual(crossing(smooth, { from: rect, within }).initial);
     expect(crossingPinned(null, { from: rect, within })).toEqual({});
+  });
+});
+
+describe('the rest state is Motion\'s own', () => {
+  const end = (t: unknown) => (t as { transitionEnd?: Record<string, string> }).transitionEnd;
+  it('the crossing\'s open carries transitionEnd none for the filter and clip-path it animates', () => {
+    expect(end(crossing(smooth, { from: rect, within }).animate)).toEqual({ filter: 'none', clipPath: 'none' });
+    expect(end(crossing(snappy, { from: rect, within }).animate)).toEqual({ clipPath: 'none' });
+  });
+  it('every resting target that animates a filter or clip-path carries it', () => {
+    const v = (p: { variants?: Record<string, unknown> }) => p.variants!.center;
+    expect(end(v(screen(smooth)))).toEqual({ filter: 'none' });
+    expect(end(v(screen(snappy)))).toEqual({ clipPath: 'none' });
+    expect(end(v(swap(smooth)))).toEqual({ filter: 'none' });
+    expect(end(v(swap(snappy)))).toEqual({ clipPath: 'none' });
+    expect(end(overlay(smooth).animate)).toEqual({ filter: 'none' });
+    expect(end(modal(smooth).animate)).toEqual({ filter: 'none' });
+    expect(end(staggerItem(smooth, [0], 0).animate)).toEqual({ filter: 'none' });
   });
 });
 

@@ -17,8 +17,8 @@ import { ProfileScreen } from '../../engine/ui/profile/Profile.tsx';
 import { RecordScreen } from '../../engine/ui/profile/Record.tsx';
 import { Frame } from '../../engine/ui/frame/Frame.tsx';
 import { keepBoardPlace } from '../../engine/ui/glass/back.ts';
-import { Leaving } from '../../engine/ui/glass/Held.tsx';
-import { crossingPinned, useFeel } from '../../engine/ui/glass/motion.ts';
+import { Leaving, useRest } from '../../engine/ui/glass/Held.tsx';
+import { crossingPinned, useFeel, type PinnedExit } from '../../engine/ui/glass/motion.ts';
 import { hudTabRect } from '../../engine/ui/frame/hud-tab.ts';
 import { applyGlass, installGlassFonts, type GlassSurface } from '../../engine/ui/glass/index.ts';
 import { Page as GlassPage } from '../../engine/ui/glass/Page.tsx';
@@ -246,15 +246,16 @@ function Shell({ routes }: { readonly routes: readonly Route[] }) {
     const stalled = setTimeout(release, BOARD_HOLD_LIMIT_MS);
     return () => { opened.current.delete(release); clearTimeout(stalled); };
   }, []);
-  /* An exit reads the offset from the window's scroll as it starts: the leaving world is pinned that far up (Held.tsx). */
-  const scrolled = window.scrollY;
+  /* An exit reads the window's scroll as it starts (the leaving world is pinned that far up, Held.tsx) and whether the world had come to rest (motion.ts, header). */
+  const { exitRested, onRest } = useRest(world);
+  const leave: PinnedExit = { scrollY: window.scrollY, rested: exitRested };
   return (
-    <AnimatePresence initial={false} custom={scrolled}>
+    <AnimatePresence initial={false} custom={leave}>
       {surface
         ? (
           <Leaving
-            key="glass" pin custom={scrolled} className="kb-world" data-kb-world="glass" {...glassMotion}
-            onAnimationComplete={(def) => { if (def === 'open') for (const release of [...opened.current]) release(); }}
+            key="glass" pin custom={leave} className="kb-world" data-kb-world="glass" {...glassMotion}
+            onAnimationComplete={(def) => { if (def === 'open') { onRest(); for (const release of [...opened.current]) release(); } }}
           >
             <GlassPage surface={surface} menu={!NO_MENU.has(path)}>{content}</GlassPage>
           </Leaving>

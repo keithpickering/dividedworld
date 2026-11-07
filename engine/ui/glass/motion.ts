@@ -15,6 +15,17 @@
  * the direction as `custom` on `AnimatePresence` AND on the child, `<AnimatePresence custom={dir}>
  * <motion.div key={at} custom={dir} {...screen(feel)} />`. +1 means the tab (or character) chosen lies
  * after the one being left: the new content enters from the +1 side and the old leaves toward -1.
+ *
+ * The rest state is Motion's own. A preset's resting target (`animate`, `center`, `open`) that animates a `filter` or a `clipPath` carries
+ * `transitionEnd: { filter: 'none', clipPath: 'none' }` for those properties, so Motion itself writes `none` when the animation ends (and
+ * renders it at mount under `initial={false}`): a filter makes an element the containing block of the glass's fixed smoke and overlays, so
+ * nothing may be left on at rest, and no caller guesses when the last frame lands. The cost is that an exit from rest starts from `none`, which
+ * Motion cannot interpolate into a clip-path (`none` -> `polygon(...)` zeroes the shape; `none` -> `inset(calc(...))` has the wrong timing). So
+ * `crossing` and `crossingPinned` take whether the element has `rested`: an exit that starts from rest runs keyframes `[the open shape, the
+ * closed shape]`, and an exit that reverses a half-done enter is a plain target, which Motion runs from the value the enter had reached. The
+ * owner of the `AnimatePresence` knows which (`useRest`, Held.tsx: set when the resting definition completes, cleared when a new child starts to
+ * enter) and passes it as `custom` with the scroll offset: `{ scrollY, rested }`. A filter needs none of this: Motion takes `none` -> `blur(8px)`
+ * from `blur(0px)`.
  */
 import { useMemo, useSyncExternalStore } from 'react';
 import type { TargetAndTransition, Transition, Variants } from 'motion/react';
@@ -102,15 +113,18 @@ export function slantedRect(r: Rect): string {
 
 const BLUR = (px: number) => `blur(${px}px)`;
 
+/** `rested`: the window is at rest (its filter and clip are `none`), so its exit runs from the open shape; else it runs from wherever it is (see the header). */
+export interface CrossingArgs { readonly from: Rect; readonly within: { readonly width: number; readonly height: number }; readonly rested?: boolean }
+
 /**
  * The crossing: the glass page's window opens from the HUD tab's rect (`from`) to the whole screen
  * (`within`), and the exit closes it back into the rect. Smooth clips it from the rect with straight edges;
  * Snappy clips it from the slanted rect. Esc during either reverses it from where it is, which Motion
  * does when the element's `animate` flips back.
  */
-export function crossing(feel: ActiveFeel, args: { readonly from: Rect; readonly within: { readonly width: number; readonly height: number } }): MotionProps {
+export function crossing(feel: ActiveFeel, args: CrossingArgs): MotionProps {
   if (!feel) return {};
-  const { from, within } = args;
+  const { from, within, rested = false } = args;
   if (feel.mask === 'skew') {
     const closed = slantedRect(from);
     /* Open reaches half the screen's longer side past it on every side: the slant leans each edge by less than that, so nothing of the screen is clipped. */
@@ -118,8 +132,8 @@ export function crossing(feel: ActiveFeel, args: { readonly from: Rect; readonly
     const open = slantedRect({ x: -slack, y: -slack, width: within.width + 2 * slack, height: within.height + 2 * slack });
     return {
       initial: { clipPath: closed, opacity: 0 },
-      animate: { clipPath: open, opacity: 1, transition: landing(feel, feel.screen) },
-      exit: { clipPath: closed, opacity: 0, transition: eased(feel, feel.screen) },
+      animate: { clipPath: open, opacity: 1, transition: landing(feel, feel.screen), transitionEnd: { clipPath: 'none' } },
+      exit: { clipPath: rested ? [open, closed] : closed, opacity: 0, transition: eased(feel, feel.screen) },
     };
   }
   /*
@@ -129,27 +143,29 @@ export function crossing(feel: ActiveFeel, args: { readonly from: Rect; readonly
    */
   const inset = (top: number, right: number, foot: number, left: number) => `inset(${top}px ${right}px calc(100% - ${foot}px) ${left}px)`;
   const closed = { opacity: 0, filter: BLUR(feel.blur), clipPath: inset(from.y, within.width - from.x - from.width, from.y + from.height, from.x) };
+  const shown = inset(0, 0, within.height, 0);
   return {
     initial: closed,
-    animate: { opacity: 1, filter: 'none', clipPath: inset(0, 0, within.height, 0), transition: landing(feel, feel.screen) },
-    exit: { ...closed, transition: eased(feel, feel.screen) },
+    animate: { opacity: 1, filter: BLUR(0), clipPath: shown, transition: landing(feel, feel.screen), transitionEnd: { filter: 'none', clipPath: 'none' } },
+    exit: { ...closed, ...(rested ? { filter: [BLUR(0), closed.filter], clipPath: [shown, closed.clipPath] } : {}), transition: eased(feel, feel.screen) },
   };
 }
 
 /**
  * The crossing for a world that is pinned where it stood when it leaves (engine/ui/glass/Held.tsx): the same props as `crossing`, as variants
- * (`closed`, `open`, `leave`), with the exit's `custom` the window's scroll offset. A pinned world sits `scrollY` px above the window's top,
- * so its exit closes into the rect shifted down by that much, which is the HUD's rect in the window. The caller passes the offset as `custom` on
- * `AnimatePresence` (read as the exit starts) and on the child.
+ * (`closed`, `open`, `leave`), with the exit's `custom` `{ scrollY, rested }`: the window's scroll offset and whether the world is at rest (see the header). A
+ * pinned world sits `scrollY` px above the window's top, so its exit closes into the rect shifted down by that much, which is the HUD's rect in
+ * the window. The caller passes `custom` on `AnimatePresence` (read as the exit starts) and on the child.
  */
-export function crossingPinned(feel: ActiveFeel, args: { readonly from: Rect; readonly within: { readonly width: number; readonly height: number } }): MotionProps {
+export interface PinnedExit { readonly scrollY: number; readonly rested: boolean }
+export function crossingPinned(feel: ActiveFeel, args: CrossingArgs): MotionProps {
   if (!feel) return {};
   const { from, within } = args;
   const enter = crossing(feel, args);
   const variants: Variants = {
     closed: enter.initial as TargetAndTransition,
     open: enter.animate as TargetAndTransition,
-    leave: (scrollY: number) => crossing(feel, { from: { ...from, y: from.y + scrollY }, within }).exit as TargetAndTransition,
+    leave: ({ scrollY, rested }: PinnedExit) => crossing(feel, { from: { ...from, y: from.y + scrollY }, within, rested }).exit as TargetAndTransition,
   };
   return { variants, initial: 'closed', animate: 'open', exit: 'leave' };
 }
@@ -164,12 +180,12 @@ export function screen(feel: ActiveFeel): MotionProps {
   const variants: Variants = feel.mask === 'skew'
     ? {
         enter: (d: Dir) => ({ x: d * feel.distance, clipPath: WIPE_HIDDEN }),
-        center: { x: 0, clipPath: WIPE_SHOWN, transition: landing(feel, feel.screen) },
+        center: { x: 0, clipPath: WIPE_SHOWN, transition: landing(feel, feel.screen), transitionEnd: { clipPath: 'none' } },
         exit: (d: Dir) => ({ x: -d * feel.distance, opacity: 0, transition: eased(feel, feel.screen) }),
       }
     : {
         enter: (d: Dir) => ({ x: d * feel.distance, opacity: 0, scale: feel.scale, filter: BLUR(feel.blur) }),
-        center: { x: 0, opacity: 1, scale: 1, filter: 'none', transition: landing(feel, feel.screen) },
+        center: { x: 0, opacity: 1, scale: 1, filter: BLUR(0), transition: landing(feel, feel.screen), transitionEnd: { filter: 'none' } },
         exit: (d: Dir) => ({ x: -d * feel.distance, opacity: 0, scale: feel.scale, filter: BLUR(feel.blur), transition: eased(feel, feel.screen) }),
       };
   return { variants, initial: 'enter', animate: 'center', exit: 'exit' };
@@ -190,7 +206,7 @@ export function overlay(feel: ActiveFeel, anchor?: { readonly x: number; readonl
   }
   return {
     initial: { opacity: 0, scale: feel.scale, filter: BLUR(feel.blur), transformOrigin },
-    animate: { opacity: 1, scale: 1, filter: 'none', transformOrigin, transition: landing(feel, feel.enter) },
+    animate: { opacity: 1, scale: 1, filter: BLUR(0), transformOrigin, transition: landing(feel, feel.enter), transitionEnd: { filter: 'none' } },
     exit: { opacity: 0, scale: feel.scale, filter: BLUR(feel.blur), transformOrigin, transition: eased(feel) },
   };
 }
@@ -207,7 +223,7 @@ export function modal(feel: ActiveFeel): MotionProps {
   }
   return {
     initial: { opacity: 0, y: feel.distance, scale: feel.scale, filter: BLUR(feel.blur) },
-    animate: { opacity: 1, y: 0, scale: 1, filter: 'none', transition: landing(feel, feel.enter) },
+    animate: { opacity: 1, y: 0, scale: 1, filter: BLUR(0), transition: landing(feel, feel.enter), transitionEnd: { filter: 'none' } },
     exit: { opacity: 0, y: feel.distance / 2, scale: feel.scale, filter: BLUR(feel.blur), transition: eased(feel) },
   };
 }
@@ -236,7 +252,7 @@ export function staggerItem(feel: ActiveFeel, delays: readonly number[], index: 
   const delay = delays[index] ?? 0;
   return {
     initial: { opacity: 0, y: feel.distance / 2, filter: BLUR(feel.blur) },
-    animate: { opacity: 1, y: 0, filter: 'none', transition: landing(feel, feel.enter, delay) },
+    animate: { opacity: 1, y: 0, filter: BLUR(0), transition: landing(feel, feel.enter, delay), transitionEnd: { filter: 'none' } },
   };
 }
 
@@ -250,12 +266,12 @@ export function swap(feel: ActiveFeel): MotionProps {
   const variants: Variants = feel.mask === 'skew'
     ? {
         enter: (d: Dir) => ({ y: d * feel.distance, clipPath: WIPE_HIDDEN }),
-        center: { y: 0, clipPath: WIPE_SHOWN, transition: landing(feel, feel.enter) },
+        center: { y: 0, clipPath: WIPE_SHOWN, transition: landing(feel, feel.enter), transitionEnd: { clipPath: 'none' } },
         exit: (d: Dir) => ({ y: -d * feel.distance / 2, opacity: 0, transition: eased(feel) }),
       }
     : {
         enter: (d: Dir) => ({ y: d * feel.distance, opacity: 0, scale: feel.scale, filter: BLUR(feel.blur) }),
-        center: { y: 0, opacity: 1, scale: 1, filter: 'none', transition: landing(feel, feel.enter) },
+        center: { y: 0, opacity: 1, scale: 1, filter: BLUR(0), transition: landing(feel, feel.enter), transitionEnd: { filter: 'none' } },
         exit: (d: Dir) => ({ y: -d * feel.distance / 2, opacity: 0, filter: BLUR(feel.blur), transition: eased(feel) }),
       };
   return { variants, initial: 'enter', animate: 'center', exit: 'exit' };

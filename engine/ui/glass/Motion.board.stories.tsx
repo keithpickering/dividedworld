@@ -50,7 +50,7 @@ function Crossing({ feel }: { feel: ReturnType<typeof useFeel> }) {
     <Demo title="The crossing" replay={<GlassButton size="s" onClick={() => setOpen(!open)}>{open ? 'Back to the board' : 'Open the menu'}</GlassButton>}>
       <div style={{ position: 'absolute', left: TAB.x, top: TAB.y, width: TAB.width, height: TAB.height, border: '1px solid var(--kb-glass-pale)', display: 'grid', placeItems: 'center' }}>HUD tab</div>
       <AnimatePresence>
-        {open && <motion.div key="window" {...crossing(feel, { from: TAB, within: STAGE_SIZE })} style={{ ...CARD, position: 'absolute', inset: 0 }}>The glass page’s window, opened from the tab.</motion.div>}
+        {open && <motion.div key="window" {...crossing(feel, { from: TAB, within: STAGE_SIZE, rested: true })} style={{ ...CARD, position: 'absolute', inset: 0 }}>The glass page’s window, opened from the tab.</motion.div>}
       </AnimatePresence>
     </Demo>
   );

@@ -851,6 +851,14 @@ describe('the crossing', () => {
     await userEvent.click(within(screen.getByRole('navigation', { name: 'Menu' })).getByRole('link', { name: 'Back to the board' }));
     const leaving = worlds().find((w) => w.dataset.kbWorld === 'glass')!;
     expect(leaving.style.top).toBe('-300px');
+    /* The scroll reaches the exit itself: the clip closes into the HUD's rect in the window's coordinates, 300px lower than the pinned world's own
+       (the window's foot less 72 is where the rect stands with no HUD to read, 696px; scrolled it is 996px), so the clip passes the unscrolled end. */
+    let deepest = 0;
+    const watch = new MutationObserver(() => { deepest = Math.max(deepest, Number(/^inset\((-?[\d.]+)px/u.exec(leaving.style.clipPath)?.[1] ?? 0)); });
+    watch.observe(leaving, { attributes: true, attributeFilter: ['style'] });
+    await waitFor(() => expect(worlds().map((w) => w.dataset.kbWorld)).toEqual(['board']), { timeout: 3000 });
+    watch.disconnect();
+    expect(deepest).toBeGreaterThan(window.innerHeight - 72);
     Object.defineProperty(window, 'scrollY', { value: 0, configurable: true, writable: true });
   });
 

@@ -23,3 +23,9 @@ export function hudTabRect(within: { readonly width: number; readonly height: nu
   if (now) last = now;
   return now ?? last ?? { x: within.width / 2 - 100, y: within.height - 72, width: 200, height: 56 };
 }
+
+/** For tests: forgets the published reader and the last box kept, as a fresh page load has. */
+export function resetHudTabForTests(): void {
+  read = null;
+  last = null;
+}

@@ -8,19 +8,34 @@
  * It must be the direct child of the `AnimatePresence` (or sit under it with nothing between), since presence is read from context.
  */
 import { motion, usePresence, type HTMLMotionProps } from 'motion/react';
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { RouterHold } from '../router.tsx';
 
 /**
  * Whether `node` is in a tree that is leaving (held for an exit, so `inert`). A document-level key handler inside either world asks this first:
  * input goes to the tree that is arriving from the first frame, and a held tree answers nothing.
  */
-/** How many frames a tree that mounted at rest is set to `none` for: Motion writes its values at mount on a frame of its own. */
-const SETTLE_FRAMES = 8;
-
 export const isLeaving = (node: Element | null | undefined): boolean => !!node?.closest('[inert]');
 
-export function Leaving({ pin = false, holdUntil, children, onAnimationStart, onAnimationComplete, ...props }: Omit<HTMLMotionProps<'div'>, 'children'> & {
+/**
+ * Whether the tree an `AnimatePresence` holds has come to rest, for the exit it is about to run (motion.ts, header: an exit from rest starts from
+ * the open shape, a reversal from where the enter had got to). `at` names the child now present (its key). `onRest` goes on that child's
+ * `onAnimationComplete`, called once its resting definition (`open`, `center`) has completed; a child that mounts under `initial={false}` is at
+ * rest from the first render. `exitRested` is what the child that leaves when `at` next changes had reached, fixed in the render that changes
+ * `at`, so it is the right `custom` for that render's `AnimatePresence`. A new child starts un-rested.
+ */
+export function useRest(at: string): { readonly exitRested: boolean; readonly onRest: () => void } {
+  const [s, setS] = useState({ at, rested: true, exitRested: true });
+  let now = s;
+  if (s.at !== at) {
+    now = { at, rested: false, exitRested: s.rested };
+    setS(now);
+  }
+  const onRest = useCallback(() => setS((p) => (p.at !== at || p.rested ? p : { ...p, rested: true })), [at]);
+  return { exitRested: now.exitRested, onRest };
+}
+
+export function Leaving({ pin = false, holdUntil, children, ...props }: Omit<HTMLMotionProps<'div'>, 'children'> & {
   readonly pin?: boolean;
   /** Keeps a leaving tree under the one arriving until `release` is called (or the returned cleanup runs): for a tree with no exit of its own. */
   readonly holdUntil?: (release: () => void) => () => void;
@@ -28,35 +43,10 @@ export function Leaving({ pin = false, holdUntil, children, onAnimationStart, on
 }) {
   const [present, safeToRemove] = usePresence(holdUntil !== undefined);
   const el = useRef<HTMLDivElement>(null);
-  const isPresent = useRef(present);
-  isPresent.current = present;
   useEffect(() => {
     if (present || !holdUntil) return;
     return holdUntil(() => safeToRemove?.());
   }, [present, holdUntil, safeToRemove]);
-  /*
-   * At rest a tree carries no filter and no clip-path: an enter ends on `blur(0px)` and a clip that shows everything (Motion cannot end on
-   * `none`, it interpolates to it), and a filter makes the tree the containing block of the glass's fixed smoke and overlays. When the
-   * resting definition (`open`, `center`) has completed, the style is set to `none` directly; Motion keeps its own values, so a later exit or
-   * reversal still animates from them. Motion writes its last frame just after it reports the end, so the next frame sets it again. The
-   * transform is `none` at rest on its own. A tree that mounts already at rest (`initial={false}`) never reports an end: it is set the same
-   * way once mounted, if no animation has started by then.
-   */
-  const animating = useRef(false);
-  const rest = () => {
-    const node = el.current;
-    if (!node || !isPresent.current) return;
-    node.style.filter = 'none';
-    node.style.clipPath = 'none';
-  };
-  const settle = () => { rest(); requestAnimationFrame(() => { if (!animating.current) rest(); }); };
-  useEffect(() => {
-    let frame = 0;
-    let n = 0;
-    const again = () => { if (!animating.current) rest(); if (++n < SETTLE_FRAMES) frame = requestAnimationFrame(again); };
-    frame = requestAnimationFrame(again);
-    return () => cancelAnimationFrame(frame);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   /* Lifted out where it stood: the window's scroll, as the tree last drew it, becomes its offset. Before paint, ahead of any scroll to the top. */
   useLayoutEffect(() => {
     if (!pin || !el.current) return;
@@ -68,12 +58,6 @@ export function Leaving({ pin = false, holdUntil, children, onAnimationStart, on
       ref={el}
       {...props}
       {...marks}
-      onAnimationStart={(def) => { animating.current = true; onAnimationStart?.(def); }}
-      onAnimationComplete={(def) => {
-        animating.current = false;
-        if (def === 'open' || def === 'center') settle();
-        onAnimationComplete?.(def);
-      }}
     >
       <RouterHold held={!present}>{children}</RouterHold>
     </motion.div>
