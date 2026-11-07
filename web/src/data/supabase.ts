@@ -31,7 +31,7 @@
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { DEFAULT_PREFERENCES, LOST_ANSWER, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
-import { readLogPage, type LedgerRow, type ShareRow } from '../../../engine/ui/data/log-page.ts';
+import { readLogPage, type LedgerRow, type LogRange, type LogRead, type ShareRow } from '../../../engine/ui/data/log-page.ts';
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
 import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
 import { RECORD_PAGE } from '../../../engine/ui/profile/record.ts';
@@ -42,7 +42,7 @@ import type {
   Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEnded, CardEvent, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd, FaceDownPass,
   Alert, ContactLink, EffectState, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
-  Boot, BoardPage, IndexPage, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson,
+  Boot, BoardPage, IndexPage, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
   AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
 } from '../../../engine/ui/data/api.ts';
 
@@ -421,6 +421,89 @@ function toMyCharacter(r: Row): MyCharacter {
   };
 }
 
+/** One row of `finished_seasons`; a row with no number is no row. */
+const toFinished = (x: Row): SeasonFinished[] => (typeof x?.['number'] === 'number'
+  ? [{ number: x['number'], startsAt: String(x['starts_at']), endsAt: String(x['ends_at']), resultsAt: String(x['results_at']), characters: num(x['characters']) }] : []);
+
+/** One row of `standings_page`, or of the season page's standings. */
+const toStanding = (x: Row): Standing => ({ character: x['character'], name: x['name'], standing: num(x['standing']), place: num(x['place']) });
+
+/** One row of `my_alerts`; a kind this build does not know (a newer server's) is no line, rather than a line a screen cannot word. */
+function toAlert(a: Row): Alert[] {
+  return (ALERT_KINDS as readonly string[]).includes(String(a['kind']))
+    ? [{
+      kind: a['kind'] as AlertKind, sub: str(a['sub']), act: str(a['act']), character: str(a['character']), at: String(a['at']),
+      thread: str(a['thread']), name: str(a['name']), title: str(a['title']), count: typeof a['count'] === 'number' ? a['count'] : null,
+    }]
+    : [];
+}
+
+/** What `admin_queue` answers, as `adminQueue()` and the Updates and queue pages carry it. */
+function toAdminQueue(v: unknown): AdminQueue {
+  const q = isObject(v) ? v : {};
+  const more = (isObject(q['more']) ? q['more'] : {}) as Row;
+  return {
+    cap: num(q['cap']), waiting: rowsOf(q['waiting']).map(toQueued), inForce: rowsOf(q['inForce']).map(toInForce), ended: rowsOf(q['ended']).map(toEnded),
+    staffCards: rowsOf(q['staffCards']).map(toStaffCard),
+    more: { waiting: more['waiting'] === true, inForce: more['inForce'] === true, staffCards: more['staffCards'] === true, ended: more['ended'] === true },
+    roster: rowsOf(q['roster']).flatMap((r) => (typeof r['staff'] === 'string' ? [{ staff: r['staff'], name: String(r['name'] ?? r['staff']) }] : [])),
+    todos: rowsOf(q['todos']).flatMap((r) => (typeof r['boss'] === 'string' ? [toTodo(r)] : [])),
+  };
+}
+
+/** One of the roster rows `boss_roster_names` answers. */
+const toBosses = (v: unknown): { readonly staff: string; readonly name: string }[] => rowsOf(v).flatMap((x) => (typeof x['staff'] === 'string' ? [{ staff: x['staff'], name: String(x['name'] ?? x['staff']) }] : []));
+
+/** The log's rows as `readLogPage` reads them, from the rows of the player's views (`log`) or of `log_page`'s sources: both name their columns the same. */
+function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'playsOnMine' | 'saves' | 'setEnds' | 'setPasses' | 'caught' | 'ended' | 'infractions' | 'bans' | 'reports' | 'appeals', Row[]>>, shareRows: Row[]): LogRead {
+  const ledger = src['ledger'].map((r): LedgerRow => ({
+    settlement: num(r['settlement']), startsAt: r['starts_at'], endsAt: r['ends_at'], sharesKept: r['shares_kept'] !== false,
+    character: r['character'], reason: r['reason'], amount: num(r['amount']), ...((p) => (p ? { params: p } : {}))(numbers(r['params'])),
+  }));
+  const shares: ShareRow[] = [...shareRows].sort((a, b) => num(b['settlement']) - num(a['settlement']))
+    .map((r) => ({ settlement: num(r['settlement']), character: r['character'], reason: r['reason'], act: r['act'], quadrant: r['quadrant'] ?? null, amount: num(r['amount']) }));
+  return {
+    ledger,
+    shares,
+    wallet: src['wallet'].map((r): WalletEvent => ({
+      settlement: typeof r['settlement'] === 'number' ? r['settlement'] : null, kind: r['kind'], change: num(r['change']), overflow: num(r['overflow']),
+      floored: num(r['floored']), balanceAfter: num(r['balance_after']), ref: r['ref'] ?? null, at: r['at'],
+    })),
+    cards: src['cards'].map((r): CardEvent => ({
+      card: r['card'], kind: r['kind'], act: r['act'] ?? null, price: num(r['price']), at: r['at'],
+      ...(typeof r['springs'] === 'boolean' ? { springs: r['springs'] } : {}),
+    })),
+    playsOnMine: src['playsOnMine'].map((r) => ({ play: r['play'], post: r['post'], at: r['at'], reach: r['reach'], targetName: r['target_name'] ?? null, targetCharacter: r['target_character'] ?? null })),
+    saves: src['saves'].map((r) => ({ play: r['play'], post: r['post'], savedAt: r['saved_at'] })),
+    setEnds: src['setEnds'].map((r): FaceDownEnd => ({ play: r['play'], card: r['card'], post: r['post'], spring: r['spring'] ?? null, endedAt: r['ended_at'] })),
+    setPasses: src['setPasses'].map((r): FaceDownPass => ({ play: r['play'], card: r['card'], post: r['post'], passedAt: r['passed_at'], endsAt: r['ends_at'] })),
+    caught: src['caught'].map((r): CaughtPlay => ({
+      play: r['play'], card: r['card'], post: r['post'], trap: r['trap'], spring: r['spring'], price: num(r['price']),
+      boughtPrice: r['bought_price'] === null || r['bought_price'] === undefined ? null : num(r['bought_price']), at: r['at'],
+    })),
+    ended: src['ended'].map((r): CardEnded => ({
+      cardEnd: r['card_end'], play: r['play'], card: r['card'], at: r['at'], side: r['side'], reach: r['reach'],
+      targetName: r['target_name'] ?? null, postAuthorName: r['post_author_name'] ?? null, casterName: r['caster_name'] ?? null, character: r['character'],
+    })),
+    infractions: src['infractions'].map((r): LogInfraction => ({
+      infraction: r['infraction'], character: r['character'], at: r['at'], band: BANDS.find((b) => b === r['band']) ?? 'minor', points: num(r['points']),
+      ruleNumber: typeof r['rule_number'] === 'number' ? r['rule_number'] : null, rule: str(r['rule']), mod: str(r['mod_name']), post: r['post'],
+      postSeq: typeof r['post_seq'] === 'number' ? r['post_seq'] : null, thread: r['thread'], expiresAt: r['expires_at'], relief: num(r['relief']), emptiedAt: str(r['emptied_at']),
+    })),
+    bans: src['bans'].map((r): LogBan => ({ ban: r['ban'], character: r['character'], at: r['at'], days: num(r['days']), until: r['until'], infraction: r['infraction'], rule: str(r['rule']), thread: r['thread'] })),
+    reports: src['reports'].map((r): LogReport => ({
+      report: r['report'], character: r['character'], at: r['at'], post: r['post'], postSeq: typeof r['post_seq'] === 'number' ? r['post_seq'] : null, thread: r['thread'],
+      verdict: VERDICTS.find((v) => v === r['verdict']) ?? null, verdictAt: str(r['verdict_at']), mod: str(r['mod_name']), refund: r['refund'] === 'failed' || r['refund'] === 'stale' ? r['refund'] : null,
+    })),
+    appeals: src['appeals'].map((r): LogAppeal => ({
+      appeal: r['appeal'], character: r['character'], at: r['at'], punishment: r['punishment'], punishmentKind: r['punishment_kind'] === 'ban' ? 'ban' : 'infraction',
+      postSeq: typeof r['post_seq'] === 'number' ? r['post_seq'] : null, thread: r['thread'], verdict: RULINGS.find((v) => v === r['verdict']) ?? null, ruledAt: str(r['ruled_at']),
+      pointsDelta: typeof r['points_delta'] === 'number' ? r['points_delta'] : null, hearer: str(r['hearer_name']),
+      refund: r['refund'] === 'failed' || r['refund'] === 'stale' || r['refund'] === 'expired' ? r['refund'] : null,
+    })),
+  };
+}
+
 function toEstimate(r: Row): Estimate {
   const lines = (Array.isArray(r['lines']) ? r['lines'] : []).map((l: Row): EstimateLine => ({
     character: l['character'],
@@ -716,6 +799,52 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     return { thread: toNewThread(r['thread'], a), act: a };
   };
 
+  /* The views the log is read from, one range of them: what `log` reads, and what `logPage` reads again for a page that would not move. */
+  const readLogViews = async (range: LogRange): Promise<LogRead> => {
+    /*
+     * One view's rows: a page long at or before the cursor, newest first by `column` then `page`'s order; or every row at one
+     * instant, a page of rows at a time, in `whole`'s order, which holds still from one page of rows to the next. Typed
+     * loosely, since supabase-js's builder types are too deep to pass through a generic.
+     */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    type Q = any;
+    /* Each view is named where it is read, so the reads guard (tools/check-web-reads.mjs) reads which view each is. */
+    const rows = (from: () => Q, column: string, page: (q: Q) => Q, whole: readonly string[]): Promise<Row[]> => {
+      if (!('at' in range)) return list(() => page((range.before ? from().lte(column, range.before) : from()).order(column, { ascending: false })).limit(range.limit));
+      return every((start, end) => whole.reduce((q: Q, c) => q.order(c, { ascending: true }), from().eq(column, range.at)).range(start, end));
+    };
+    const [ledgerRows, walletRows, cardRows, playRows, saveRows, endRows, passRows, caughtRows, endedRows, infractionRows, banRows, reportRows, appealRows] = await Promise.all([
+      rows(() => client.from('my_ledger').select('settlement,starts_at,ends_at,character,reason,amount,shares_kept,params'), 'ends_at',
+        (q) => q.order('character', { ascending: true }).order('reason', { ascending: true }), ['settlement', 'character', 'reason']),
+      rows(() => client.from('my_wallet_events').select('settlement,kind,change,overflow,floored,balance_after,ref,at'), 'at', (q) => q, ['settlement', 'kind', 'ref', 'change', 'overflow', 'floored', 'balance_after']),
+      rows(() => client.from('my_card_ledger').select('card,kind,act,price,at,springs'), 'at', (q) => q, ['card', 'kind', 'act', 'price']),
+      rows(() => client.from('my_posts_played_on').select('play,post,at,reach,target_name,target_character'), 'at', (q) => q, ['play']),
+      rows(() => client.from('my_posts_played_on').select('play,post,saved_at').not('saved_at', 'is', null), 'saved_at', (q) => q, ['play']),
+      /* The player's own cards set face down, by when each sprang or ended (0054); one still live has no end yet. */
+      rows(() => client.from('my_face_down').select('play,card,post,spring,ended_at').not('ended_at', 'is', null), 'ended_at', (q) => q, ['play']),
+      /* The player's own cards a reply passed by without springing, by when it did (0078); the log names the reply traps among them. */
+      rows(() => client.from('my_face_down').select('play,card,post,ends_at,passed_at').not('passed_at', 'is', null).is('spring', null), 'passed_at', (q) => q, ['play']),
+      rows(() => client.from('my_caught').select('play,card,post,trap,spring,price,bought_price,at'), 'at', (q) => q, ['play']),
+      /* The card plays an admin ended that the player cast or that landed on theirs (0092); a third party's reversal is in no one's view but its own. */
+      rows(() => client.from('my_cards_ended').select('card_end,play,card,at,side,reach,target_name,post_author_name,caster_name,character'), 'at', (q) => q, ['card_end']),
+      /* The Mod Bots' lines (0111): the warn points, bans, reports and appeals of the player's own characters; each view answers from the caller's own rows alone. */
+      rows(() => client.from('my_infractions').select('infraction,character,at,band,points,rule_number,rule,mod_name,post,post_seq,thread,expires_at,relief,emptied_at'), 'at', (q) => q, ['infraction']),
+      rows(() => client.from('my_bans').select('ban,character,at,days,until,infraction,rule,thread'), 'at', (q) => q, ['ban']),
+      rows(() => client.from('my_reports').select('report,character,at,post,post_seq,thread,verdict,verdict_at,mod_name,refund'), 'at', (q) => q, ['report']),
+      rows(() => client.from('my_appeals').select('appeal,character,at,punishment,punishment_kind,post_seq,thread,verdict,ruled_at,points_delta,hearer_name,refund'), 'at', (q) => q, ['appeal']),
+    ]);
+    const ids = [...new Set(ledgerRows.map((r) => num(r['settlement'])))];
+    /* Paged within each chunk of settlements, then merged in the read's own order. A settlement's rows all come from
+       one chunk, already in the server's order (its collation for the text keys), so the merge is a stable sort
+       by settlement alone, newest first, which keeps that order inside each settlement. The log files each share
+       under its line (engine/ui/data/log-page.ts), so no screen sees the order across settlements; the sort keeps
+       the read's promise of each source newest first, as one query answered it. */
+    const shareRows = ids.length === 0 ? [] : await byChunks(ids, (part) => every((start, end) => client.from('my_ledger_shares').select('settlement,character,reason,act,quadrant,amount').in('settlement', part)
+      .order('settlement', { ascending: false }).order('character', { ascending: true }).order('reason', { ascending: true }).order('act', { ascending: true }).order('quadrant', { ascending: true })
+      .range(start, end)));
+    return toLogRead({ ledger: ledgerRows, wallet: walletRows, cards: cardRows, playsOnMine: playRows, saves: saveRows, setEnds: endRows, setPasses: passRows, caught: caughtRows, ended: endedRows, infractions: infractionRows, bans: banRows, reports: reportRows, appeals: appealRows }, shareRows);
+  };
+
   const api: KayfaApi = {
     session: currentSession,
     onSession(listener) {
@@ -839,17 +968,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       };
     },
     async adminQueue(): Promise<AdminQueue> {
-      const v = (await read(() => client.rpc('admin_queue'))).data;
-      const q = v && typeof v === 'object' && !Array.isArray(v) ? (v as Row) : {};
-      const rows = (x: unknown): Row[] => (Array.isArray(x) ? (x as Row[]) : []);
-      const more = (q['more'] && typeof q['more'] === 'object' ? q['more'] : {}) as Row;
-      return {
-        cap: num(q['cap']), waiting: rows(q['waiting']).map(toQueued), inForce: rows(q['inForce']).map(toInForce), ended: rows(q['ended']).map(toEnded),
-        staffCards: rows(q['staffCards']).map(toStaffCard),
-        more: { waiting: more['waiting'] === true, inForce: more['inForce'] === true, staffCards: more['staffCards'] === true, ended: more['ended'] === true },
-        roster: rows(q['roster']).flatMap((r) => (typeof r['staff'] === 'string' ? [{ staff: r['staff'], name: String(r['name'] ?? r['staff']) }] : [])),
-        todos: rows(q['todos']).flatMap((r) => (typeof r['boss'] === 'string' ? [toTodo(r)] : [])),
-      };
+      return toAdminQueue((await read(() => client.rpc('admin_queue'))).data);
     },
     async dismissHandoverTodo(season) {
       const a = await rpcWrite(() => client.rpc('dismiss_handover_todo', { season_number: season }));
@@ -863,8 +982,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     /* The seasons whose results landed (`finished_seasons`, 0099): public, newest first. */
     async finishedSeasons() {
       const r = await read(() => client.rpc('finished_seasons'));
-      return rowsOf(r.data).flatMap((x): SeasonFinished[] => (typeof x?.['number'] === 'number'
-        ? [{ number: x['number'], startsAt: String(x['starts_at']), endsAt: String(x['ends_at']), resultsAt: String(x['results_at']), characters: num(x['characters']) }] : []));
+      return rowsOf(r.data).flatMap(toFinished);
     },
     /* A page of a finished season's final table (`results_page`, 0099): 50 rows. */
     async resultsPage(season, page) {
@@ -914,8 +1032,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     /* The Boss list is the database's roster (`boss_roster_names`, 0082, an admin's read): a waiting persona's name is in no public view. */
     async bosses() {
-      const r = (await read(() => client.rpc('boss_roster_names'))).data;
-      return (Array.isArray(r) ? (r as Row[]) : []).flatMap((x) => (typeof x['staff'] === 'string' ? [{ staff: x['staff'], name: String(x['name'] ?? x['staff']) }] : []));
+      return toBosses((await read(() => client.rpc('boss_roster_names'))).data);
     },
     /* The names anyone may read: staff in characters_public, which holds only the debuted. */
     async staffNames() {
@@ -1104,7 +1221,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (limit <= 0) return [];
       const r = await read(() => client.rpc('standings_page', { page_offset: Math.max(0, Math.floor(offset)), page_limit: rowLimit(limit) }));
       const rows = Array.isArray(r.data) ? (r.data as Row[]) : [];
-      return rows.map((x): Standing => ({ character: x['character'], name: x['name'], standing: num(x['standing']), place: num(x['place']) }));
+      return rows.map(toStanding);
     },
     async standingAmounts(ids) {
       const out: Record<Id, number> = Object.fromEntries(ids.map((id) => [id, 0]));
@@ -1346,6 +1463,62 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         reveals, turns, seasons, acts: rowsOf(d['acts']).map(toAct), windowFrom: from, targets: rowsOf(d['targets']).map(toAct), unread: toUnread(d['unread']),
       };
     },
+    async myCharactersPage(): Promise<MyCharactersPage> {
+      const d = (await read(() => client.rpc('my_characters_page'))).data as Row | null;
+      if (!isObject(d)) throw new Error(NOT_READ);
+      const mine = rowsOf(d['characters']);
+      const debuted = mine.filter((c) => isObject(c['face']));
+      return {
+        characters: mine.map(toMyCharacter), faces: debuted.map((c) => faceOf(c['face'])),
+        counts: Object.fromEntries(mine.map((c) => [c['id'], toCounts(c['counts'])])),
+        standings: Object.fromEntries(debuted.map((c) => [c['id'], num(c['standing'])])),
+        reveals: merged(mine.flatMap((c) => rowsOf(c['reveals'])), 'at', 'act').map(toClassReveal),
+        turns: merged(mine.flatMap((c) => rowsOf(c['turns'])), 'at', 'act').map(toTurn),
+        nextSettlementAt: str(d['nextSettlementAt']),
+      };
+    },
+    async seasonPage(tab, season, character, page): Promise<SeasonPage | null> {
+      const d = (await read(() => client.rpc('season_page', { in_tab: tab, in_season: season, in_character: character !== null && idOk(character) ? character : null, in_page: page }))).data as Row | null;
+      if (!isObject(d)) return null;
+      const now = isObject(d['season']) ? toSeason(d['season']) : null;
+      if ('news' in d) return { tab: 'news', season: now, news: rowsOf(d['news']).map(toSeasonNews) };
+      const finished = rowsOf(d['finished']).flatMap(toFinished);
+      if ('results' in d) return { tab: 'results', season: now, finished, page: num(d['page'], 1), place: typeof d['place'] === 'number' ? d['place'] : null, results: rowsOf(d['results']).flatMap(toResult) };
+      return {
+        tab: 'standings', season: now, finished, page: num(d['page'], 1), standings: rowsOf(d['standings']).map(toStanding), size: num(d['size']),
+        reveals: rowsOf(d['reveals']).map(toClassReveal), turns: rowsOf(d['turns']).map(toTurn),
+      };
+    },
+    async alertsPage(before): Promise<AlertsPage> {
+      const d = (await read(() => client.rpc('alerts_page', { in_before: before }))).data as Row | null;
+      if (!isObject(d)) throw new Error(NOT_READ);
+      const reading: Record<Id, number> = {};
+      for (const r of rowsOf(d['reading'])) reading[r['thread']] = num(r['furthest_seq']);
+      return {
+        alerts: rowsOf(d['alerts']).flatMap(toAlert), seenAt: str(d['seenAt']), openedAt: str(d['openedAt']), acts: rowsOf(d['acts']).map(toAct),
+        people: rowsOf(d['people']).map(faceOf), openings: rowsOf(d['openings']).map(toAct), reading,
+      };
+    },
+    async updatesPage(update, before, handoverSeason): Promise<UpdatesPage> {
+      const d = (await read(() => client.rpc('updates_page', { in_update: update !== null && idOk(update) ? update : null, in_before: before, in_handover_season: handoverSeason }))).data as Row | null;
+      if (!isObject(d)) throw new Error(NOT_READ);
+      const updates = rowsOf(d['updates']).map(toUpdate);
+      /* The open Update is the one asked for, else the newest: the tallies were read for it alone. */
+      const open = update ?? updates[0]?.act;
+      return {
+        updates, tallies: toTallies(open === undefined ? [] : [open], rowsOf(d['tallies'])), mine: rowsOf(d['mine']).map(toMyReaction),
+        ...(isObject(d['queue']) ? { queue: toAdminQueue(d['queue']) } : {}),
+      };
+    },
+    async queuePage(): Promise<QueuePage | null> {
+      const d = (await read(() => client.rpc('queue_page'))).data as Row | null;
+      if (!isObject(d)) return null;
+      return {
+        queue: toAdminQueue(d['queue']),
+        boardNames: rowsOf(d['boardNames']).map((b): BoardName => ({ id: b['id'], slug: b['slug'], name: b['name'], was: b['was'] ?? b['name'] })),
+        bosses: toBosses(d['bosses']), contact: toContact(d['contact']),
+      };
+    },
     async presenceBox(place): Promise<Presence> {
       const at = place.kind === 'thread' ? place.thread : place.kind === 'board' ? place.board : null;
       const d = (await read(() => client.rpc('presence_box', { in_kind: place.kind, in_place: at }))).data as Row | null;
@@ -1412,13 +1585,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async alerts(before) {
       const r = await read(() => client.rpc('my_alerts', { before: before ?? null, most: ALERTS_PAGE }));
-      return (Array.isArray(r.data) ? (r.data as Row[]) : [])
-        /* A kind this build does not know (a newer server's) is no line, rather than a line a screen cannot word. */
-        .filter((a) => (ALERT_KINDS as readonly string[]).includes(String(a['kind'])))
-        .map((a): Alert => ({
-          kind: a['kind'] as AlertKind, sub: str(a['sub']), act: str(a['act']), character: str(a['character']), at: String(a['at']),
-          thread: str(a['thread']), name: str(a['name']), title: str(a['title']), count: typeof a['count'] === 'number' ? a['count'] : null,
-        }));
+      return rowsOf(r.data).flatMap(toAlert);
     },
     async accountOpenedAt() {
       /* The caller's own, through a function and not the accounts table, which a screen never reads (0066). */
@@ -1449,95 +1616,24 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
      * page of rows at a time in an order that holds still. Every view answers from the caller's own rows alone.
      */
     log(before) {
-      return readLogPage(async (range) => {
-        /*
-         * One view's rows: a page long at or before the cursor, newest first by `column` then `page`'s order; or every row at one
-         * instant, a page of rows at a time, in `whole`'s order, which holds still from one page of rows to the next. Typed
-         * loosely, since supabase-js's builder types are too deep to pass through a generic.
-         */
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        type Q = any;
-        /* Each view is named where it is read, so the reads guard (tools/check-web-reads.mjs) reads which view each is. */
-        const rows = (from: () => Q, column: string, page: (q: Q) => Q, whole: readonly string[]): Promise<Row[]> => {
-          if (!('at' in range)) return list(() => page((range.before ? from().lte(column, range.before) : from()).order(column, { ascending: false })).limit(range.limit));
-          return every((start, end) => whole.reduce((q: Q, c) => q.order(c, { ascending: true }), from().eq(column, range.at)).range(start, end));
-        };
-        const [ledgerRows, walletRows, cardRows, playRows, saveRows, endRows, passRows, caughtRows, endedRows, infractionRows, banRows, reportRows, appealRows] = await Promise.all([
-          rows(() => client.from('my_ledger').select('settlement,starts_at,ends_at,character,reason,amount,shares_kept,params'), 'ends_at',
-            (q) => q.order('character', { ascending: true }).order('reason', { ascending: true }), ['settlement', 'character', 'reason']),
-          rows(() => client.from('my_wallet_events').select('settlement,kind,change,overflow,floored,balance_after,ref,at'), 'at', (q) => q, ['settlement', 'kind', 'ref', 'change', 'overflow', 'floored', 'balance_after']),
-          rows(() => client.from('my_card_ledger').select('card,kind,act,price,at,springs'), 'at', (q) => q, ['card', 'kind', 'act', 'price']),
-          rows(() => client.from('my_posts_played_on').select('play,post,at,reach,target_name,target_character'), 'at', (q) => q, ['play']),
-          rows(() => client.from('my_posts_played_on').select('play,post,saved_at').not('saved_at', 'is', null), 'saved_at', (q) => q, ['play']),
-          /* The player's own cards set face down, by when each sprang or ended (0054); one still live has no end yet. */
-          rows(() => client.from('my_face_down').select('play,card,post,spring,ended_at').not('ended_at', 'is', null), 'ended_at', (q) => q, ['play']),
-          /* The player's own cards a reply passed by without springing, by when it did (0078); the log names the reply traps among them. */
-          rows(() => client.from('my_face_down').select('play,card,post,ends_at,passed_at').not('passed_at', 'is', null).is('spring', null), 'passed_at', (q) => q, ['play']),
-          rows(() => client.from('my_caught').select('play,card,post,trap,spring,price,bought_price,at'), 'at', (q) => q, ['play']),
-          /* The card plays an admin ended that the player cast or that landed on theirs (0092); a third party's reversal is in no one's view but its own. */
-          rows(() => client.from('my_cards_ended').select('card_end,play,card,at,side,reach,target_name,post_author_name,caster_name,character'), 'at', (q) => q, ['card_end']),
-          /* The Mod Bots' lines (0111): the warn points, bans, reports and appeals of the player's own characters; each view answers from the caller's own rows alone. */
-          rows(() => client.from('my_infractions').select('infraction,character,at,band,points,rule_number,rule,mod_name,post,post_seq,thread,expires_at,relief,emptied_at'), 'at', (q) => q, ['infraction']),
-          rows(() => client.from('my_bans').select('ban,character,at,days,until,infraction,rule,thread'), 'at', (q) => q, ['ban']),
-          rows(() => client.from('my_reports').select('report,character,at,post,post_seq,thread,verdict,verdict_at,mod_name,refund'), 'at', (q) => q, ['report']),
-          rows(() => client.from('my_appeals').select('appeal,character,at,punishment,punishment_kind,post_seq,thread,verdict,ruled_at,points_delta,hearer_name,refund'), 'at', (q) => q, ['appeal']),
-        ]);
-        const ledger = ledgerRows.map((r): LedgerRow => ({
-          settlement: num(r['settlement']), startsAt: r['starts_at'], endsAt: r['ends_at'], sharesKept: r['shares_kept'] !== false,
-          character: r['character'], reason: r['reason'], amount: num(r['amount']), ...((p) => (p ? { params: p } : {}))(numbers(r['params'])),
-        }));
-        const ids = [...new Set(ledger.map((l) => l.settlement))];
-        /* Paged within each chunk of settlements, then merged in the read's own order. A settlement's rows all come from
-           one chunk, already in the server's order (its collation for the text keys), so the merge is a stable sort
-           by settlement alone, newest first, which keeps that order inside each settlement. The log files each share
-           under its line (engine/ui/data/log-page.ts), so no screen sees the order across settlements; the sort keeps
-           the read's promise of each source newest first, as one query answered it. */
-        const shareRows = ids.length === 0 ? [] : await byChunks(ids, (part) => every((start, end) => client.from('my_ledger_shares').select('settlement,character,reason,act,quadrant,amount').in('settlement', part)
-          .order('settlement', { ascending: false }).order('character', { ascending: true }).order('reason', { ascending: true }).order('act', { ascending: true }).order('quadrant', { ascending: true })
-          .range(start, end)));
-        const shares: ShareRow[] = [...shareRows].sort((a, b) => num(b['settlement']) - num(a['settlement']))
-          .map((r) => ({ settlement: num(r['settlement']), character: r['character'], reason: r['reason'], act: r['act'], quadrant: r['quadrant'] ?? null, amount: num(r['amount']) }));
-        return {
-          ledger,
-          shares,
-          wallet: walletRows.map((r): WalletEvent => ({
-            settlement: typeof r['settlement'] === 'number' ? r['settlement'] : null, kind: r['kind'], change: num(r['change']), overflow: num(r['overflow']),
-            floored: num(r['floored']), balanceAfter: num(r['balance_after']), ref: r['ref'] ?? null, at: r['at'],
-          })),
-          cards: cardRows.map((r): CardEvent => ({
-            card: r['card'], kind: r['kind'], act: r['act'] ?? null, price: num(r['price']), at: r['at'],
-            ...(typeof r['springs'] === 'boolean' ? { springs: r['springs'] } : {}),
-          })),
-          playsOnMine: playRows.map((r) => ({ play: r['play'], post: r['post'], at: r['at'], reach: r['reach'], targetName: r['target_name'] ?? null, targetCharacter: r['target_character'] ?? null })),
-          saves: saveRows.map((r) => ({ play: r['play'], post: r['post'], savedAt: r['saved_at'] })),
-          setEnds: endRows.map((r): FaceDownEnd => ({ play: r['play'], card: r['card'], post: r['post'], spring: r['spring'] ?? null, endedAt: r['ended_at'] })),
-          setPasses: passRows.map((r): FaceDownPass => ({ play: r['play'], card: r['card'], post: r['post'], passedAt: r['passed_at'], endsAt: r['ends_at'] })),
-          caught: caughtRows.map((r): CaughtPlay => ({
-            play: r['play'], card: r['card'], post: r['post'], trap: r['trap'], spring: r['spring'], price: num(r['price']),
-            boughtPrice: r['bought_price'] === null || r['bought_price'] === undefined ? null : num(r['bought_price']), at: r['at'],
-          })),
-          ended: endedRows.map((r): CardEnded => ({
-            cardEnd: r['card_end'], play: r['play'], card: r['card'], at: r['at'], side: r['side'], reach: r['reach'],
-            targetName: r['target_name'] ?? null, postAuthorName: r['post_author_name'] ?? null, casterName: r['caster_name'] ?? null, character: r['character'],
-          })),
-          infractions: infractionRows.map((r): LogInfraction => ({
-            infraction: r['infraction'], character: r['character'], at: r['at'], band: BANDS.find((b) => b === r['band']) ?? 'minor', points: num(r['points']),
-            ruleNumber: typeof r['rule_number'] === 'number' ? r['rule_number'] : null, rule: str(r['rule']), mod: str(r['mod_name']), post: r['post'],
-            postSeq: typeof r['post_seq'] === 'number' ? r['post_seq'] : null, thread: r['thread'], expiresAt: r['expires_at'], relief: num(r['relief']), emptiedAt: str(r['emptied_at']),
-          })),
-          bans: banRows.map((r): LogBan => ({ ban: r['ban'], character: r['character'], at: r['at'], days: num(r['days']), until: r['until'], infraction: r['infraction'], rule: str(r['rule']), thread: r['thread'] })),
-          reports: reportRows.map((r): LogReport => ({
-            report: r['report'], character: r['character'], at: r['at'], post: r['post'], postSeq: typeof r['post_seq'] === 'number' ? r['post_seq'] : null, thread: r['thread'],
-            verdict: VERDICTS.find((v) => v === r['verdict']) ?? null, verdictAt: str(r['verdict_at']), mod: str(r['mod_name']), refund: r['refund'] === 'failed' || r['refund'] === 'stale' ? r['refund'] : null,
-          })),
-          appeals: appealRows.map((r): LogAppeal => ({
-            appeal: r['appeal'], character: r['character'], at: r['at'], punishment: r['punishment'], punishmentKind: r['punishment_kind'] === 'ban' ? 'ban' : 'infraction',
-            postSeq: typeof r['post_seq'] === 'number' ? r['post_seq'] : null, thread: r['thread'], verdict: RULINGS.find((v) => v === r['verdict']) ?? null, ruledAt: str(r['ruled_at']),
-            pointsDelta: typeof r['points_delta'] === 'number' ? r['points_delta'] : null, hearer: str(r['hearer_name']),
-            refund: r['refund'] === 'failed' || r['refund'] === 'stale' || r['refund'] === 'expired' ? r['refund'] : null,
-          })),
-        };
-      }, before ?? null);
+      return readLogPage(readLogViews, before ?? null);
+    },
+    /* The log page in one read (`log_page`, 0123): the first range of the views comes from the document, and a page that would not move reads its one instant by the views as `log` does. */
+    async logPage(before): Promise<LogPage> {
+      const d = (await read(() => client.rpc('log_page', { in_before: before ?? null }))).data as Row | null;
+      if (!isObject(d)) throw new Error(NOT_READ);
+      const sources: Row = isObject(d['sources']) ? d['sources'] : {};
+      const first = toLogRead({
+        ledger: rowsOf(sources['ledger']), wallet: rowsOf(sources['wallet']), cards: rowsOf(sources['cards']), playsOnMine: rowsOf(sources['playsOnMine']), saves: rowsOf(sources['saves']),
+        setEnds: rowsOf(sources['setEnds']), setPasses: rowsOf(sources['setPasses']), caught: rowsOf(sources['caught']), ended: rowsOf(sources['ended']),
+        infractions: rowsOf(sources['infractions']), bans: rowsOf(sources['bans']), reports: rowsOf(sources['reports']), appeals: rowsOf(sources['appeals']),
+      }, rowsOf(d['shares']));
+      const log = await readLogPage((range) => ('at' in range ? readLogViews(range) : first), before ?? null);
+      return {
+        log, acts: rowsOf(d['acts']).map(toAct), states: toStates(rowsOf(d['states'])), people: rowsOf(d['people']).map(faceOf),
+        threads: rowsOf(d['threads']).map(toThread), boards: rowsOf(d['boards']).map(toBoard), standings: Object.fromEntries(rowsOf(d['standings']).map((r) => [r['character'], num(r['standing'])])),
+        turns: rowsOf(d['turns']).map(toTurn), season: isObject(d['season']) ? toSeason(d['season']) : null,
+      };
     },
     estimate() {
       if (lastEstimate && Date.now() < lastEstimate.until) return Promise.resolve(lastEstimate.answer);
