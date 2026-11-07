@@ -2651,6 +2651,17 @@ describe('a screen in one call is what the separate calls answer', () => {
     expect(boFace).toBeTruthy();
   });
 
+  test('updatesPage opens the newest update when the one asked for is not on the page, as the server does', async () => {
+    const { fake, ana, anaFace } = world();
+    fake.seed.admin(ana);
+    fake.signInAs(ana);
+    const update = must(await fake.postUpdate('Traps bite', 'Two fixes.', []));
+    must(await fake.react(update.act, anaFace, 'fire'));
+    const newest = await fake.updatesPage(null, null, null);
+    expect(Object.keys(newest.tallies)).toEqual([update.act]);
+    expect(await fake.updatesPage('00000000-0000-4000-8000-000000000000', null, null)).toEqual(newest);
+  });
+
   test('queuePage and updatesPage carry an admin\'s queue, and only an admin\'s', async () => {
     const { fake, ana } = world();
     fake.seed.admin(ana);

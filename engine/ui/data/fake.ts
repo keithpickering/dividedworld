@@ -2411,7 +2411,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     updatesPage(update, before, handoverSeason): UpdatesPage {
       const updates = core.updates(before);
-      const open = update ?? updates[0]?.act ?? null;
+      const open = update !== null && updates.some((u) => u.act === update) ? update : updates[0]?.act ?? null;
       return {
         updates, tallies: core.tallies(open === null ? [] : [open]), mine: core.myReactions(open === null ? [] : [open]),
         ...(handoverSeason !== null && core.isAdmin() ? { queue: core.adminQueue() } : {}),
