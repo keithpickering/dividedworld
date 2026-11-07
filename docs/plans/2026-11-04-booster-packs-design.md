@@ -199,3 +199,49 @@ machine's look. They come in through `Instance.packs`, `Instance.machine` and `I
 - **A hidden slot the Boss may not flash-sale**, such as a holiday pack an admin prepares ahead of time. If it matters,
   the slot gains a checkbox.
 - **The machine's name** is still the owner's to give (`shopName`).
+
+## Amended 2026-11-07: the boards, redrawn on the card template
+
+The owner, once the card template merged: "Let's check on the booster pack plan and see if it has proper design boards, if
+not let's work on them." The boards of 2026-11-04 (`docs/research/2026-11-04-booster-packs/`) were drawn before the card
+template and before the glass polish and the backfill, and nothing of the plan was built yet. Read against main on
+2026-11-07, they could no longer be built from:
+
+- **Every card face was blank.** The template moved each card's art into a folder of its own (`cards/<key>/art.svg`), and
+  the boards still read `cards/<key>.svg`, so each face drew an empty box.
+- **The cards were the old face.** A spot picture with its words under it, and a "?" seal for a back, where the build now
+  draws one 2:3 card at four sizes (layout A, Low name, full art) and a back with the instance's mark (the template's
+  section 8 and its amendment). The plan's Task 5 draws the reveal with `Postcard.tsx`, so the boards and the build would
+  have disagreed on every card.
+- **The menus were out of date.** The machine had the five-tab menu bar; the admin page had a sub-menu (Move queue, The
+  machine, Updates) that no build has.
+- **The machine was not the machine on main.** Its slots were not the template's slot, zoomed as the build zooms it, with
+  the shelf edge's code, price and info control.
+- **The backfill's sizes.** One phone board per batch with its screens side by side (the backfill design, section 1,
+  decision 5): only the reveal had one.
+
+So the boards are redrawn in `docs/research/2026-11-07-booster-packs/`, and the board match reads them in place of the
+first drawing, which stays as the record. Every choice of 2026-11-04 is kept: the pack is just another slot, a pack opens
+with tap to flip, the hit is last and gold-backed, the odds are shown plainly, and the admin page is a plain list.
+`gen.mjs` there renders every face and back with the engine's own `Postcard` and `PostcardBack`, so a board shows the
+template as the build draws it.
+
+**Decided** (the owner chose the recommendation): **the reveal is a spotlight over a row.** The template allows four sizes,
+and five sheets (276 wide) do not fit across 1440. The card last turned is shown large, at the sheet's size, in the middle;
+the pack lies under it in pull order at the fan's size (150 by 225), turned cards face up and the rest face down, the hit's
+back gold. When all five are turned, the hit is in the spotlight with its gold tag. On a phone the pack is a pile at the
+sheet's size, as before. Weighed: five fans in a row the whole time (closest to the first boards, but small for the
+moment at 1440), and five sheets overlapped like a held hand (each card partly hidden until all are turned).
+
+**Decided** (the owner chose the recommendation): **the admin pages share sub-navigation.** The Admin tab stays one tab,
+opening the queue, and the admin's pages (Moves, The machine) are reached from each other by sub-navigation under the
+page's title, so a later admin page has a place to go. The board draws it as a strip of two small buttons under the
+page's lead, at 1440 and on the phone, the current page filled. A rail beside the content, as Settings draws its
+sections, was drawn first and dropped: it would move the queue's whole column right of where the backfill's board 37 has
+it. Write update stays on `/updates`. Weighed: a second menu
+tab (ten tabs, which the backfill's rule tightens or scrolls), and a link from the queue alone.
+
+**Drawn as the template draws it, where the plan said otherwise:** a rarity in the odds table is the card face's own gem,
+its glyph saying the rarity by shape (● common, ◆ uncommon, ★ rare, ✦ legendary, `gemOf` in `engine/ui/cards/faces.ts`)
+in a rotated tile, never a color alone. The plan's Task 5 said hollow and colored diamonds, from the face before the
+template.

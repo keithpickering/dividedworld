@@ -1,7 +1,8 @@
 # Booster packs, the machine's catalog, and the Boss's hand on the machine: plan
 
 Record, written 2026-11-04. The plan for `docs/plans/2026-11-04-booster-packs-design.md`. One build session builds it in
-one PR from `main`, after the design's PR is merged. No issue tracks it.
+one PR from `main`, after the design's PR is merged. No issue tracks it. Amended 2026-11-07: Tasks 5 and 6 build from
+the boards redrawn on the card template, `docs/research/2026-11-07-booster-packs/` (the design's amendment of that date).
 
 Every task is test first: name the test, record its red run, then write the code. No `check-*.mjs` is added.
 
@@ -222,14 +223,22 @@ Model: sonnet
 Model: sonnet
 
 **Files:** `engine/ui/vending/Vending.tsx`, `Vending.test.tsx`, `Vending.board.stories.tsx`, `vending.css` in the
-instance, and `engine/ui/vending/PackOpening.tsx` (new), with a board story for each of boards 01 to 04.
+instance, and `engine/ui/vending/PackOpening.tsx` (new), with a board story for each of boards 01 to 04, and a manifest
+for each (`e2e/boards/2026-11-07-booster-packs/<NN>-<name>.ts`), taking its board out of `PENDING` in `e2e/boards.spec.ts`.
 
-**The look** is the boards in `docs/research/2026-11-04-booster-packs/`, which the owner confirmed on 2026-11-04 (board
-01 for the machine, 02 to 04 for the reveal). The pack is just another slot, drawn as a foil pack with its name and "5
-CARDS". When a pack is selected, the space beside the slots shows a small row of five card outlines, the last one gold,
-and "Five cards, the last one at least uncommon. It opens as soon as you buy it." The column to the right of the machine
-shows the selected pack's odds as a table, and below it, in plain words, each Boss move in force on the machine. The
-foil, the card back and the rarity gems are placeholders until the owner gives the art.
+**The look** is the boards in `docs/research/2026-11-07-booster-packs/` (board 01 for the machine, 02 and 03 for the
+reveal, and the first three screens of 04 on a phone), redrawn on 2026-11-07 on the card template; the first drawing,
+`docs/research/2026-11-04-booster-packs/`, which the owner confirmed on 2026-11-04, is the record of the choices they keep
+(the design's amendment of 2026-11-07). The pack is just another slot, drawn as a foil pack with the instance's mark, its
+name and "5 CARDS", at the slot's 2:3. When a pack is selected, the space beside the slots shows a small row of five card
+backs (`PostcardBack`), the last one gold, and "Five cards, the last one at least uncommon. It opens as soon as you buy
+it." The column to the right of the machine shows the selected pack's odds as a table, and below it, in plain words,
+each Boss move in force on the machine. The pack's foil and wrapper are a placeholder until the owner gives the art, and
+come from the instance (`InstanceUi.packs`).
+
+Board 04 is one phone board with screens of two tasks (the machine and the reveal here, the admin page in Task 6), so its
+manifest is a `phone` export of board 01's with the reveal's screens as further sides (`also`), as the backfill's
+`e2e/boards/2026-11-05-backfill/14-sign-in.ts` holds its four; Task 6 adds the admin screen's side.
 
 - **Slots come from `api.machine()`** in their order, in place of `facesOf` over every card (`Vending.tsx:199`). Empty
   slots stay sealed as today (`slotsFor`, :55).
@@ -237,9 +246,12 @@ foil, the card back and the rarity gems are placeholders until the owner gives t
   chance in the hit pull.
 - **A sold-out slot** is greyed and says why in plain words: "Sold out" for an admin's choice, or the move's words from
   the design's section 6 for a Pull. A moved price shows the admin's price struck through beside the new one.
-- **Buying a pack opens the reveal**, a modal over the machine (boards 02 to 04 in
-  `docs/research/2026-11-04-booster-packs/`). The torn pack sits at the top, with "N OF 5 TURNED OVER" under it.
-  - **The cards** lie face down in a row, in pull order, drawn as the hand draws a postcard (`Postcard.tsx`).
+- **Buying a pack opens the reveal**, a modal over the machine (boards 02, 03 and 04 in
+  `docs/research/2026-11-07-booster-packs/`). The torn pack sits at the top, with "N OF 5 TURNED OVER" under it.
+  - **The cards** lie face down in a row, in pull order, at the fan's size (`PostcardBack`, `size="fan"`, the hit's with
+    `hit`), and turn face up in place (`Postcard`, `size="fan"`).
+  - **The spotlight:** the card last turned is shown above the row at the sheet's size (`size="sheet"`), so each card is
+    read large as it is turned; before the first, it holds the first card's back. The row marks the card shown.
   - **Turning a card:** the player turns them one at a time, by clicking or tapping a card, with "Turn the next card",
     or with Space. A card turns over on its vertical axis.
   - **The hit** is last. Its back is gold. Once turned, it carries a gold tag naming its rarity and card ("RARE · MAIN
@@ -247,14 +259,14 @@ foil, the card back and the rarity gems are placeholders until the owner gives t
   - **"Turn all"** turns every card that is left.
   - **When all five are turned,** the modal offers "Done" and Esc ("Back to the machine"), with the plain line "These five
     are already in your hand." The cards were in the hand from the moment of purchase, so closing early loses nothing.
-  - **On a phone,** the cards are a pile: the top one turns with a tap or a swipe, and a row of five outlines counts down,
-    the last one gold.
+  - **On a phone,** the cards are a pile at the sheet's size: the top one turns with a tap or a swipe, and a row of five
+    outlines counts down, the last one gold.
   - **Reduced motion** shows each card turned with no rotation. Turning stays one at a time; "Turn all" is still there.
   - **A screen reader** hears each card as it is turned, and the whole pack once all are turned.
   - **What is shown** is the answer's `contents`, never a roll on the client. The modal holds focus and returns it to the
     slot.
-- **Rarity is drawn as a gem**, as the card face draws it today: a hollow diamond for common, then cyan for uncommon,
-  gold for rare and pink for legendary. The odds panel uses the same gems.
+- **Rarity is drawn as a gem**, as the card face draws it (`gemOf`): its glyph says the rarity by shape (● common,
+  ◆ uncommon, ★ rare, ✦ legendary) in a rotated tile, never by color alone. The odds panel uses the same gems.
 - **A refusal** (sold out, or a price changed) shows the server's words and refreshes the machine.
 
 **Tests first** (`Vending.test.tsx`):
@@ -274,6 +286,7 @@ Model: sonnet
 
 **Files:**
 - `engine/ui/admin/Machine.tsx` (new), with its test and story.
+- `engine/ui/admin/Queue.tsx`: the admin pages' strip, shared with the machine's page.
 - `engine/ui/glass/nav.ts`: `GLASS_NAV.adminMachine = '/admin/machine'`.
 - `web/src/App.tsx:54`: the route.
 - The admin menu's link beside the queue.
@@ -286,13 +299,14 @@ Model: sonnet
   left in no on-sale pack, as `reversed` by that admin, in the same transaction. That way the floor holds after the
   Pull has landed too.
 
-The page is board 05 in `docs/research/2026-11-04-booster-packs/`: a plain glass table under the admin's menu, with
-one "Save changes" for the page. It lists the slots in grid order. Each row has:
-- the item's name;
-- move up and move down buttons;
-- the availability select;
-- the price field;
-- any Boss move in force, linked to its row in the queue.
+The page is board 05 in `docs/research/2026-11-07-booster-packs/`, and on a phone the fourth screen of board 04: a plain
+glass table under the menu's Admin tab, with one "Save changes" for the page after it. The admin's pages, Moves (the
+queue) and The machine, are reached from each other by a strip of two small buttons under the page's lead, the current
+one filled (`aria-current="page"`); the Admin tab still opens the queue, which gains the same strip (the design's
+amendment of 2026-11-07). The backfill's board 37 draws the queue without it, so the queue's manifest
+(`e2e/boards/2026-11-05-backfill/37-admin-queue.ts`) names the strip as a departure by this design and compares what
+stands below it by the strip's height lower. A manifest for board 05 takes it out of `PENDING`, and board 04's manifest
+gains the admin screen as a side.
 
 **Tests first:**
 - A player is refused, in SQL and on the page (as `Queue.test.tsx` does for the queue).

@@ -1,0 +1,623 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>The machine, for an admin: the booster packs board</title>
+<!-- A board of the booster packs design (docs/plans/2026-11-04-booster-packs-design.md), redrawn on 2026-11-07 after the card
+     template merged (docs/plans/2026-11-05-card-template-design.md), 1440 by 1180. The machine's admin page under the menu's Admin tab, its two pages (Moves, the queue, and The machine) in a strip under the lead: the slots in grid order with move up and down, availability, price, and any Boss move in force linked to its row in the queue; one Save changes for the page. Every card face and back is the
+     engine's own Postcard and PostcardBack, rendered by gen.mjs in this folder with the engine's stylesheet. A reference for
+     the look, not code to copy. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&amp;display=swap" rel="stylesheet">
+<style>/*
+ * The glass's token names, with plain defaults: black ground, white text, system fonts. An instance's
+ * glass.json sets them (engine/ui/glass/apply.ts puts its standard or high key on a glass root), and
+ * tools/check-glass-contrast.mjs holds each value to its ratio. With this file, engine/ui/tokens.css,
+ * the two files in engine/ui/ that may hold a color or a font family (tools/check-ui-tokens.mjs).
+ *
+ * The names are the glass plan's closed list (docs/plans/2026-10-30-glass-to-the-boards-plan.md,
+ * section 4). A screen reads these and no literal; the instance's own colors never reach the engine.
+ */
+:root {
+  /* Surfaces: the opaque ground the smoke is laid over, and the panels and fields on it. */
+  --kb-glass-ground: #000;
+  --kb-glass-panel-soft: rgb(0 0 0 / 0.72);
+  --kb-glass-panel: rgb(0 0 0 / 0.82);
+  --kb-glass-panel-strong: rgb(0 0 0 / 0.88);
+  --kb-glass-sheet: rgb(0 0 0 / 0.92);
+  --kb-glass-field: #111;
+  --kb-glass-field-2: #0a0a0a;
+  --kb-glass-card: #050505;
+
+  /* Text. */
+  --kb-glass-text: #eee;
+  --kb-glass-text-2: #ddd;
+  --kb-glass-text-hi: #fff;
+  --kb-glass-pale: #eee;
+  /* The edge of the persona's tour tip and its arrow (the spotlight, engine/ui/tips/tips.css): a non-text boundary, so it carries no contrast tag. */
+  --kb-glass-violet: #fff;
+  --kb-glass-neon-text: #fff;
+  --kb-glass-neon: #fff;
+  --kb-glass-sweet: #fff;
+  --kb-glass-ready: #fff;
+  --kb-glass-ready-text: #fff;
+  --kb-glass-salty: #fff;
+  --kb-glass-salty-text: #fff;
+  --kb-glass-estimate: #fff;
+  --kb-glass-loss: #fff;
+  --kb-glass-over: #fff;
+  --kb-glass-hurt: #fff;
+
+  /* The ink set on a bright fill. */
+  --kb-glass-ink-neon: #000;
+  --kb-glass-ink-salty: #000;
+  --kb-glass-ink-ready: #000;
+
+  --kb-glass-font-display: sans-serif;
+  --kb-glass-font-body: sans-serif;
+
+  /* The size steps, in px, as the boards set them. */
+  --kb-glass-size-label: 20px;
+  --kb-glass-size-body: 21px;
+  --kb-glass-size-lead: 24px;
+  --kb-glass-size-title: 34px;
+  --kb-glass-size-display-xs: 20px;
+  --kb-glass-size-display-s: 26px;
+  --kb-glass-size-display-m: 40px;
+  --kb-glass-size-display-l: 52px;
+  --kb-glass-size-display-xl: 96px;
+  --kb-glass-size-phone-small: 16px;
+  --kb-glass-size-phone-body: 17px;
+  --kb-glass-size-phone-display: 20px;
+
+  /* The calm: how much of the ground a region lays over the smoke, and the blur of its edge (the boards' Gaussian). */
+  --kb-glass-calm-opacity: 0.85;
+  --kb-glass-calm-feather: 60px;
+
+  /* The skewed controls (Button.tsx): m and s, the Main layout's measure and then the phone layout's (parts.css swaps them on the element). */
+  --kb-glass-control-m-height: 48px;
+  --kb-glass-control-m-pad: 22px;
+  --kb-glass-control-m-size: var(--kb-glass-size-body);
+  --kb-glass-control-s-height: 36px;
+  --kb-glass-control-s-pad: 16px;
+  --kb-glass-control-s-size: var(--kb-glass-size-label);
+  --kb-glass-control-m-height-phone: 40px;
+  --kb-glass-control-m-pad-phone: 16px;
+  --kb-glass-control-m-size-phone: var(--kb-glass-size-phone-body);
+  --kb-glass-control-s-height-phone: 32px;
+  --kb-glass-control-s-pad-phone: 12px;
+  --kb-glass-control-s-size-phone: var(--kb-glass-size-phone-small);
+  --kb-glass-control-spacing: 2px;
+  /* The gap between controls in a row. */
+  --kb-glass-control-gap: 10px;
+}
+
+:root{--kb-glass-skew-tag:-12deg;--kb-glass-ground:#07050d;--kb-glass-panel-soft:rgba(10, 6, 20, 0.72);--kb-glass-panel:rgba(10, 6, 20, 0.82);--kb-glass-panel-strong:rgba(10, 6, 20, 0.88);--kb-glass-sheet:rgba(9, 5, 18, 0.92);--kb-glass-field:#160d2a;--kb-glass-field-2:#120b22;--kb-glass-card:#0b0914;--kb-glass-text:#f1ecff;--kb-glass-text-2:#e4def7;--kb-glass-text-hi:#ffffff;--kb-glass-pale:#c9f8ff;--kb-glass-violet:#a78bfa;--kb-glass-neon-text:#9ef4ff;--kb-glass-neon:#19e3ff;--kb-glass-sweet:#2ee6ff;--kb-glass-ready:#ffd93d;--kb-glass-ready-text:#ffe27a;--kb-glass-salty:#ff3d7f;--kb-glass-salty-text:#ff9cc0;--kb-glass-estimate:#ffc48a;--kb-glass-loss:#ff8ab0;--kb-glass-over:#ff8a96;--kb-glass-hurt:#ff8fb1;--kb-glass-ink-neon:#03141a;--kb-glass-ink-salty:#14030a;--kb-glass-ink-ready:#1a1403;--kb-glass-font-display:"Anton", sans-serif;--kb-glass-font-body:"Barlow Condensed", sans-serif}
+/*
+ * A postcard's face (Postcard.tsx), drawn to the card template (docs/plans/2026-11-05-card-template-design.md, template.ts): one 2:3
+ * card at four sizes, the Vending Machine's slot (86 by 129), the Phone board's card (104 by 156), the HUD's fan (150 by 225) and the
+ * hand's sheet (276 by 414), layout A of docs/research/2026-11-05-card-template/01-layouts.html. The card's own lengths come from
+ * --kb-pc-w and the others template.ts writes (templateVars): never `cqw` on the card's own box, where a container unit measures the
+ * page and not the card. Every piece inside the card is placed in `cqw`, a share of the card's width, because the card is their
+ * container, so the same face is right at every size. A smaller size drops pieces and never reshapes the art.
+ *
+ * The card's own color and ink arrive as --kb-card-color and --kb-card-ink (the instance's art, `CardArt`); every other color is a
+ * glass token. The two plates' backgrounds are single tokens, never a gradient, so the contrast guard can read them (tools/check-
+ * glass-contrast.mjs): their opacity is held so their words meet contrast over pure white, the brightest art can be.
+ *
+ * The armed card pulses (the board's `armed`) and stops under reduced motion with its brightest ring shown, as every motion here does.
+ */
+.kb-postcard {
+  --kb-card-color: var(--kb-glass-neon);
+  --kb-card-ink: var(--kb-glass-ink-neon);
+  position: relative;
+  display: block;
+  box-sizing: border-box;
+  width: var(--kb-pc-w);
+  aspect-ratio: 2 / 3;
+  padding: 0;
+  border: 0;
+  border-radius: var(--kb-pc-radius);
+  color: var(--kb-glass-text-hi);
+  text-align: left;
+  font: inherit;
+  background: var(--kb-glass-card);
+  box-shadow: 0 0 0 1.5px var(--kb-card-color), 0 0 14px color-mix(in srgb, var(--kb-card-color) 50%, transparent);
+  /* A card is a drawing of one size: its words never outgrow it, whatever the text size (cqw is a share of the card's own width). */
+  container-type: inline-size;
+}
+
+button.kb-postcard {
+  cursor: pointer;
+}
+
+.kb-postcard[data-size='fan'] {
+  box-shadow: 0 0 0 1.5px var(--kb-card-color), 0 0 22px color-mix(in srgb, var(--kb-card-color) 55%, transparent), 0 18px 30px color-mix(in srgb, var(--kb-glass-ground) 90%, transparent);
+}
+
+.kb-postcard[data-size='sheet'] {
+  box-shadow: 0 0 0 2px var(--kb-card-color), 0 0 30px color-mix(in srgb, var(--kb-card-color) 60%, transparent), 0 30px 50px color-mix(in srgb, var(--kb-glass-ground) 90%, transparent);
+}
+
+/*
+ * The canvas, inset by the border: the only clip. Under the art, the card's ground and a soft glow in its color, so art with a
+ * transparent ground shows both; over it, a 1px inner hairline in the card's color at 50%.
+ */
+.kb-postcard-canvas {
+  position: absolute;
+  inset: var(--kb-pc-border);
+  z-index: 0;
+  overflow: hidden;
+  border-radius: var(--kb-pc-canvas-radius);
+  background: radial-gradient(circle at 50% 36%, color-mix(in srgb, var(--kb-card-color) 32%, transparent), transparent 62%), var(--kb-glass-card);
+}
+
+.kb-postcard-canvas::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kb-card-color) 50%, transparent);
+  pointer-events: none;
+}
+
+.kb-postcard-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ---- the pieces, each inside the keep-clear line (2cqw in from the edge) ---- */
+
+/* Alignment and play: parallelograms on the top border at the left, at the glass's tag skew. */
+.kb-postcard-badges {
+  position: absolute;
+  z-index: 3;
+  left: 6cqw;
+  top: 2.2cqw;
+  display: flex;
+  gap: 1.6cqw;
+}
+
+.kb-postcard-tag,
+.kb-postcard-play {
+  display: inline-block;
+  transform: skewX(var(--kb-glass-skew-tag));
+  padding: 0.12em 0.6em;
+  font-family: var(--kb-glass-font-body);
+  font-size: clamp(8px, 7.2cqw, 18px);
+  font-style: italic;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.kb-postcard-tag {
+  background: var(--kb-card-color);
+  color: var(--kb-card-ink);
+  box-shadow: 0 0 0 1.5px var(--kb-glass-card), 0 0 10px color-mix(in srgb, var(--kb-card-color) 60%, transparent);
+}
+
+.kb-postcard-play {
+  background: var(--kb-glass-card);
+  color: var(--kb-card-color);
+  box-shadow: inset 0 0 0 1.5px var(--kb-card-color), 0 0 0 1.5px var(--kb-glass-card);
+}
+
+/* The gem on its point at the top right: its glyph says the rarity by shape. Its tips sit on the keep-clear line. */
+.kb-postcard-gem {
+  --kb-gem: max(12cqw, 13px);
+  position: absolute;
+  z-index: 3;
+  right: calc(2.2cqw + 0.2071 * var(--kb-gem));
+  top: calc(2.2cqw + 0.2071 * var(--kb-gem));
+  width: var(--kb-gem);
+  height: var(--kb-gem);
+  display: grid;
+  place-items: center;
+  transform: rotate(45deg);
+  background: var(--kb-glass-card);
+  box-shadow: inset 0 0 0 max(1.5px, 0.8cqw) var(--kb-card-color), 0 0 10px color-mix(in srgb, var(--kb-card-color) 60%, transparent);
+}
+
+.kb-postcard-gem::before {
+  content: attr(data-kb-gem);
+  transform: rotate(-45deg);
+  color: var(--kb-card-color);
+  font-family: var(--kb-glass-font-body);
+  font-size: clamp(7px, 6.5cqw, 16px);
+  line-height: 1;
+}
+
+/* The name plate, skewed, across the art's lower third, the card's color as a stripe at its left edge; the name counter-skewed inside. */
+.kb-postcard-plate {
+  position: absolute;
+  z-index: 2;
+  left: 4.5cqw;
+  top: 89cqw;
+  width: 80cqw;
+  height: 15cqw;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  transform: skewX(var(--kb-glass-skew-tag));
+  background: var(--kb-glass-panel);
+  box-shadow: inset 1.2cqw 0 0 var(--kb-card-color);
+  backdrop-filter: blur(3px);
+  /* The display face sits high in its box: a touch more at the top centers its capitals. */
+  padding: 0.8cqw 4cqw 0 6.5cqw;
+}
+
+.kb-postcard-name {
+  display: block;
+  min-width: 0;
+  transform: skewX(calc(-1 * var(--kb-glass-skew-tag)));
+  font-family: var(--kb-glass-font-display);
+  font-size: max(7px, min(11.5cqw, calc(145cqw / var(--kb-name-chars, 8))));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 400;
+  line-height: 0.95;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-shadow: 0 0 3cqw color-mix(in srgb, var(--kb-card-color) 80%, transparent), 0 1px 0 var(--kb-glass-ground);
+}
+
+.kb-postcard[data-size='slot'] .kb-postcard-plate { top: auto; bottom: 7cqw; width: calc(100% - 9cqw); height: 20cqw; }
+/* instances/divided-world/ui/index.test.tsx reads this rule to hold the longest name legible at the slot. */
+.kb-postcard[data-size='slot'] .kb-postcard-name { font-size: max(7px, min(15cqw, calc(165cqw / var(--kb-name-chars, 8)))); }
+.kb-postcard[data-size='phone'] .kb-postcard-plate { top: auto; bottom: 8cqw; width: calc(100% - 9cqw); height: 18cqw; }
+.kb-postcard[data-size='phone'] .kb-postcard-name { font-size: max(7px, min(13.5cqw, calc(165cqw / var(--kb-name-chars, 8)))); }
+
+/* The text plate, chamfered at two corners by the glass's cut. */
+.kb-postcard-line {
+  position: absolute;
+  z-index: 2;
+  left: 9cqw;
+  right: 9cqw;
+  top: 108cqw;
+  bottom: 9cqw;
+  box-sizing: border-box;
+  overflow: hidden;
+  padding: 3cqw 4cqw;
+  clip-path: polygon(0 0, calc(100% - 4cqw) 0, 100% 4cqw, 100% 100%, 4cqw 100%, 0 calc(100% - 4cqw));
+  background: var(--kb-glass-panel-soft);
+  backdrop-filter: blur(4px);
+  color: var(--kb-glass-text-2);
+  font-family: var(--kb-glass-font-body);
+  font-size: clamp(9px, 7.4cqw, 17px);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+/* The sheet's plate holds the longest summary in the game whole (four lines): it runs down to the foot band, and its words are 6cqw (16.6px on the sheet). */
+.kb-postcard[data-size='sheet'] .kb-postcard-line { top: 106cqw; bottom: 7cqw; padding: 2.5cqw 4cqw; font-size: 6cqw; line-height: 1.3; }
+
+/* The plate's 1px edge, all the way round, the chamfers included: a ring cut from the plate's own outline (even-odd), its inner line 1px in from every edge (on a 45° cut that is 0.414px further along each side). */
+.kb-postcard-line::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--kb-card-color) 55%, transparent);
+  clip-path: polygon(evenodd,
+    0 0, calc(100% - 4cqw) 0, 100% 4cqw, 100% 100%, 4cqw 100%, 0 calc(100% - 4cqw), 0 0,
+    1px 1px, 1px calc(100% - 4cqw - 0.414px), calc(4cqw + 0.414px) calc(100% - 1px), calc(100% - 1px) calc(100% - 1px), calc(100% - 1px) calc(4cqw + 0.414px), calc(100% - 4cqw - 0.414px) 1px, 1px 1px);
+}
+
+/*
+ * The bottom border's one row: the foot line at the left and the price at the right, laid out side by side, so the foot ends where
+ * the price begins whatever the price's width ("0.20", "1.00+"), and the foot gives way, never the price.
+ */
+.kb-postcard-base {
+  position: absolute;
+  z-index: 3;
+  left: 7cqw;
+  right: 6cqw;
+  bottom: 2cqw;
+  display: flex;
+  align-items: flex-end;
+  gap: 3cqw;
+}
+
+/* The price on the bottom border at the right, in the machine's gold. */
+.kb-postcard-price {
+  flex: none;
+  margin-bottom: 0.2cqw;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  transform: skewX(var(--kb-glass-skew-tag));
+  padding: 0.12em 0.6em;
+  background: var(--kb-glass-card);
+  box-shadow: inset 0 0 0 1.5px var(--kb-glass-ready), 0 0 10px color-mix(in srgb, var(--kb-glass-ready) 45%, transparent);
+  font-family: var(--kb-glass-font-body);
+  font-size: clamp(9px, 7cqw, 18px);
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.kb-postcard-orb {
+  flex: none;
+  width: 0.95em;
+  height: 0.95em;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 30%, var(--kb-glass-ready-text), var(--kb-glass-ready) 52%, var(--kb-glass-ground));
+}
+
+/* The foot line, taking what the price leaves. */
+.kb-postcard-foot {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 3cqw;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5cqw;
+  font-family: var(--kb-glass-font-body);
+  font-size: clamp(9px, 3cqw, 10px);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--kb-glass-neon-text);
+}
+
+.kb-postcard-foot > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.kb-postcard-foot > :first-child { flex: none; }
+.kb-postcard-credit { color: var(--kb-glass-text-2); font-style: italic; letter-spacing: 0.06em; }
+.kb-postcard[data-kb-alignment='salty'] .kb-postcard-foot { color: var(--kb-glass-salty-text); }
+
+/* ---- the back: the same frame, the glass's crossed bands on its field, in no card's color ---- */
+.kb-postcard-back {
+  --kb-card-color: var(--kb-glass-text-hi);
+}
+
+.kb-postcard-back .kb-postcard-canvas {
+  background:
+    linear-gradient(45deg, transparent 40%, var(--kb-card-color) 40% 60%, transparent 60%),
+    linear-gradient(-45deg, transparent 40%, var(--kb-card-color) 40% 60%, transparent 60%),
+    var(--kb-glass-field);
+}
+
+/* The instance's mark on the back, as a TCG back's emblem: half the card's width, on a dark disc so it reads over the bands. */
+.kb-postcard-emblem {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 50cqw;
+  height: 50cqw;
+  box-sizing: border-box;
+  transform: translate(-50%, -50%);
+  padding: 4cqw;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--kb-glass-field) 92%, transparent);
+  box-shadow: 0 0 0 1px var(--kb-card-color), 0 0 4cqw 1cqw var(--kb-glass-field);
+}
+
+.kb-postcard-emblem img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* The hit pull's back is the machine's gold. */
+.kb-postcard-back[data-hit] {
+  --kb-card-color: var(--kb-glass-ready);
+}
+
+/* ---- armed ---- */
+.kb-postcard[data-armed] {
+  box-shadow: 0 0 0 2px var(--kb-card-color), 0 0 26px color-mix(in srgb, var(--kb-card-color) 75%, transparent), 0 22px 34px color-mix(in srgb, var(--kb-glass-ground) 90%, transparent);
+  animation: kb-postcard-armed 1.8s ease-in-out infinite;
+}
+
+@keyframes kb-postcard-armed {
+  50% { box-shadow: 0 0 0 2px var(--kb-glass-text-hi), 0 0 44px var(--kb-card-color), 0 22px 34px color-mix(in srgb, var(--kb-glass-ground) 90%, transparent); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-kb-motion='full']) .kb-postcard[data-armed] { animation: none; }
+}
+
+:root[data-kb-motion='reduce'] .kb-postcard[data-armed] { animation: none; }
+
+/* Forced colors drop the ring and its glow, which are shadows: the armed card is ringed in the system's Highlight instead. */
+@media (forced-colors: active) {
+  /* A card's shadows are dropped too, so its edge and its gem's are drawn in the system's text color. */
+  .kb-postcard,
+  .kb-postcard-back { outline: 1px solid CanvasText; }
+  .kb-postcard-gem { outline: 1px solid CanvasText; }
+  .kb-postcard[data-armed]::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 3px solid Highlight;
+    border-radius: inherit;
+    pointer-events: none;
+  }
+}
+
+/* A card that is a button answers a pointer by lighting (e2e/glass-hover.spec.ts). */
+button.kb-postcard:hover {
+  filter: brightness(1.15);
+}
+
+
+body{margin:0}
+a{color:inherit}a:hover{color:inherit;text-decoration:none}
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #ffffff;outline-offset:3px}
+.tab{display:flex;align-items:center;min-height:52px;padding:0 20px;white-space:nowrap;transform:skewX(-10deg);text-decoration:none;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#e4def7}
+.many .tab{padding:0 13px;letter-spacing:1.5px}
+.most .tab{padding:0 10px;letter-spacing:1px}
+.tab b{display:inline-block;transform:skewX(10deg);font-weight:800}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:52px;padding:0 26px;transform:skewX(-10deg);text-decoration:none;border:1px solid rgba(241,236,255,.6);background:none;cursor:pointer;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#f1ecff}
+.btn b{display:inline-block;transform:skewX(10deg);font-weight:800}
+.btn.primary{background:#19e3ff;border-color:#19e3ff;color:#03141a;box-shadow:0 0 18px rgba(25,227,255,.6)}
+.btn.gold{background:#ffd93d;border-color:#ffd93d;color:#1a1403;box-shadow:0 0 18px rgba(255,217,61,.55)}
+.btn.sm{min-height:44px;padding:0 16px;font-size:19px}
+.btns{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+.lead{margin:0;max-width:680px;font:600 21px/1.5 'Barlow Condensed',sans-serif;color:#f1ecff}
+.note{margin:0;font:500 21px/1.5 'Barlow Condensed',sans-serif;color:#e4def7}
+.lnk{font:700 21px 'Barlow Condensed',sans-serif;color:#c9f8ff;text-decoration-thickness:2px;text-underline-offset:4px}
+.sec{margin:0;font:800 20px 'Barlow Condensed',sans-serif;letter-spacing:3px}
+.piece{--cut:22px;--edge:rgba(201,248,255,.55);--ground:rgba(7,5,13,.94);position:relative;isolation:isolate;background:var(--edge);clip-path:polygon(0 0,calc(100% - var(--cut)) 0,100% var(--cut),100% 100%,var(--cut) 100%,0 calc(100% - var(--cut)))}
+.piece::before{content:'';position:absolute;z-index:-1;inset:1.5px;background:var(--ground);clip-path:polygon(0 0,calc(100% - var(--cut) + .62px) 0,100% calc(var(--cut) - .62px),100% 100%,calc(var(--cut) - .62px) 100%,0 calc(100% - var(--cut) + .62px))}
+.sel,.num{box-sizing:border-box;height:52px;padding:0 14px;background:rgba(18,12,36,.9);border:1px solid #19e3ff;color:#f1ecff;font:700 21px 'Barlow Condensed',sans-serif}
+.num{width:110px;text-align:right}
+.gem{display:inline-grid;place-items:center;flex:none;width:22px;height:22px;transform:rotate(45deg);background:#0b0914;box-shadow:inset 0 0 0 1.5px var(--g)}
+.gem::before{content:attr(data-gem);transform:rotate(-45deg);color:var(--g);font:16px/1 'Barlow Condensed',sans-serif}
+.odds{width:100%;border-collapse:collapse;font:600 21px 'Barlow Condensed',sans-serif;color:#f1ecff}
+.odds th{padding:16px 0 8px;text-align:left;font:800 19px 'Barlow Condensed',sans-serif;letter-spacing:2.5px;color:#9ef4ff;border-bottom:1px solid rgba(201,248,255,.4)}
+.odds td{padding:7px 0;border-bottom:1px solid rgba(241,236,255,.14)}
+.odds td:last-child{text-align:right;font-weight:800}
+.odds .who{display:flex;align-items:center;gap:12px}
+.tag{display:inline-block;transform:skewX(-12deg);padding:2px 10px;font:italic 800 17px/1.3 'Barlow Condensed',sans-serif;letter-spacing:1.5px;white-space:nowrap}
+.tag b{display:inline-block;transform:skewX(12deg);font-weight:800}
+.reveal-row{display:flex;gap:24px;align-items:flex-start}
+.turned{position:relative}
+.turned.now::after{content:'';position:absolute;left:10%;right:10%;bottom:-14px;height:4px;background:#19e3ff;box-shadow:0 0 12px rgba(25,227,255,.8)}
+.turned.hit.now::after{background:#ffd93d;box-shadow:0 0 12px rgba(255,217,61,.8)}
+.spark{position:absolute;width:16px;height:16px;background:#ffd93d;clip-path:polygon(50% 0,62% 38%,100% 50%,62% 62%,50% 100%,38% 62%,0 50%,38% 38%)}
+.raretag{position:absolute;left:50%;transform:translateX(-50%) skewX(-12deg);background:#ffd93d;color:#1a1403;font:800 22px 'Barlow Condensed',sans-serif;letter-spacing:3px;padding:6px 18px;white-space:nowrap;box-shadow:0 0 18px rgba(255,217,61,.6)}
+.raretag b{display:inline-block;transform:skewX(12deg)}
+.adm-head th{padding-bottom:12px}
+</style>
+</head>
+<body>
+<div style="width: 1440px; height: 1180px; position: relative; overflow: hidden; background: #07050d; color: #f1ecff; font-family: 'Barlow Condensed', sans-serif">
+
+  <svg aria-hidden="true" width="1440" height="1180" style="position: absolute; left: 0; top: 0">
+    <defs>
+      <filter id="sA" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.0022 0.004" numOctaves="5" seed="23"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.74"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="sB" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.003 0.005" numOctaves="4" seed="61"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.85  0 0 0 0 1  0 2 0 0 -1.0"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="60"></feGaussianBlur></filter>
+      <mask id="calm" maskUnits="userSpaceOnUse" x="0" y="0" width="1440" height="1180">
+        <rect width="1440" height="1180" fill="#ffffff"></rect>
+        <rect x="40" y="100" width="1360" height="1040" fill="#000000" opacity="0.85" filter="url(#soft)"></rect>
+      </mask>
+    </defs>
+    <g mask="url(#calm)">
+      <rect width="1440" height="1180" filter="url(#sA)" opacity="0.95"></rect>
+      <rect width="1440" height="1180" filter="url(#sB)" opacity="0.5"></rect>
+    </g>
+  </svg>
+  <nav aria-label="Menu" class="many most" style="position: absolute; left: 0; right: 0; top: 0; height: 84px; z-index: 5; display: flex; align-items: center; gap: 2px; padding: 0 28px; background: rgba(7,5,13,.9); border-bottom: 1px solid rgba(201,248,255,.5); box-shadow: 0 1px 16px rgba(25,227,255,.35)">
+    <a href="#" class="tab" aria-keyshortcuts="Escape" style="border: 1px solid #ffffff; color: #ffffff; margin-right: 18px"><b><kbd style="display: inline-block; margin-right: 10px; padding: 0 6px; border: 1px solid #ffffff; font: 800 20px/1.25 'Barlow Condensed', sans-serif; letter-spacing: 1px">ESC</kbd>BACK TO THE BOARD</b></a>
+    <a href="#" class="tab"><b>ALERTS</b></a>
+    <a href="#" class="tab"><b>VENDING MACHINE</b></a>
+    <a href="#" class="tab"><b>MY CHARACTERS</b></a>
+    <a href="#" class="tab"><b>SEASON</b></a>
+    <a href="#" class="tab"><b>MY LOG</b></a>
+    <a href="#" class="tab"><b>GUIDE</b></a>
+    <a href="#" class="tab"><b>UPDATES</b></a>
+    <a href="#" class="tab"><b>SETTINGS</b></a>
+    <a href="#" class="tab" aria-current="page" style="background: rgba(25,227,255,.16); box-shadow: inset 0 -3px 0 #19e3ff; color: #ffffff"><b>ADMIN</b></a>
+  </nav>
+  <main>
+  <h1 style="position: absolute; left: 64px; top: 120px; margin: 0; font: 112px/1 Anton, Impact, sans-serif; letter-spacing: 1px; text-shadow: 0 0 30px rgba(25,227,255,.35)">THE MACHINE</h1>
+  <p class="lead" style="position: absolute; left: 64px; top: 238px; max-width: 900px">The slots in the order players see them. A hidden slot draws nothing; a sold-out slot shows greyed. What a pack can roll is set in the code, with the cards.</p>
+  <nav aria-label="Admin pages" style="position: absolute; left: 64px; top: 322px"><ul class="btns" style="margin: 0; padding: 0; list-style: none; gap: 10px"><li><a href="#" class="btn sm"><b>MOVES</b></a></li><li><a href="#" class="btn sm primary" aria-current="page"><b>THE MACHINE</b></a></li></ul></nav>
+  <form style="position: absolute; left: 64px; top: 404px; width: 1312px">
+    <table style="width: 100%; border-collapse: collapse; color: #f1ecff">
+      <thead><tr class="adm-head" style="font: 800 19px 'Barlow Condensed', sans-serif; letter-spacing: 2.5px; color: #19e3ff; text-align: left">
+        <th style="width: 90px">SLOT</th><th style="width: 150px">ORDER</th><th style="width: 260px">ITEM</th><th style="width: 200px">AVAILABILITY</th><th style="width: 170px">PRICE</th><th>THE BOSS</th>
+      </tr></thead>
+      <tbody>
+        <tr style="border-top: 1px solid rgba(241,236,255,.14)">
+          <td style="padding: 8px 0; font: 800 21px 'Barlow Condensed', sans-serif; color: #ffd93d">A1</td>
+          <td><span style="display: flex; gap: 8px"><button class="btn sm" aria-label="Move up" disabled style="width: 44px; padding: 0; opacity: .35; cursor: default"><b>&uarr;</b></button><button class="btn sm" aria-label="Move down" style="width: 44px; padding: 0; "><b>&darr;</b></button></span></td>
+          <th scope="row" style="text-align: left; font: 700 21px/1.15 'Barlow Condensed', sans-serif">Booster<br><span style="font-weight: 500; font-size: 18px; color: #e4def7">pack &middot; 5 cards</span></th>
+          <td><select class="sel" aria-label="Booster: availability"><option>On sale</option></select></td>
+          <td><input class="num" aria-label="Booster: price" value="3.00"></td>
+          <td><span class="note" style="font-size: 19px"></span></td>
+        </tr>
+        <tr style="border-top: 1px solid rgba(241,236,255,.14)">
+          <td style="padding: 8px 0; font: 800 21px 'Barlow Condensed', sans-serif; color: #ffd93d">A2</td>
+          <td><span style="display: flex; gap: 8px"><button class="btn sm" aria-label="Move up" style="width: 44px; padding: 0; "><b>&uarr;</b></button><button class="btn sm" aria-label="Move down" style="width: 44px; padding: 0; "><b>&darr;</b></button></span></td>
+          <th scope="row" style="text-align: left; font: 700 21px/1.15 'Barlow Condensed', sans-serif">Whoops!<br><span style="font-weight: 500; font-size: 18px; color: #e4def7">common</span></th>
+          <td><select class="sel" aria-label="Whoops!: availability"><option>On sale</option></select></td>
+          <td><input class="num" aria-label="Whoops!: price" value="1.00"></td>
+          <td><span class="tag" style="border: 1px solid #ff3d7f; color: #ff9cc0"><b>PULLED BY THE BOSS &middot; TO NOV 9</b></span> <a href="#" class="lnk" style="margin-left: 10px; font-size: 19px; white-space: nowrap">In the queue</a></td>
+        </tr>
+        <tr style="border-top: 1px solid rgba(241,236,255,.14)">
+          <td style="padding: 8px 0; font: 800 21px 'Barlow Condensed', sans-serif; color: #ffd93d">B1</td>
+          <td><span style="display: flex; gap: 8px"><button class="btn sm" aria-label="Move up" style="width: 44px; padding: 0; "><b>&uarr;</b></button><button class="btn sm" aria-label="Move down" style="width: 44px; padding: 0; "><b>&darr;</b></button></span></td>
+          <th scope="row" style="text-align: left; font: 700 21px/1.15 'Barlow Condensed', sans-serif">Stick Around<br><span style="font-weight: 500; font-size: 18px; color: #e4def7">common</span></th>
+          <td><select class="sel" aria-label="Stick Around: availability"><option>On sale</option></select></td>
+          <td><input class="num" aria-label="Stick Around: price" value="1.00"></td>
+          <td><span class="note" style="font-size: 19px"></span></td>
+        </tr>
+        <tr style="border-top: 1px solid rgba(241,236,255,.14)">
+          <td style="padding: 8px 0; font: 800 21px 'Barlow Condensed', sans-serif; color: #ffd93d">B2</td>
+          <td><span style="display: flex; gap: 8px"><button class="btn sm" aria-label="Move up" style="width: 44px; padding: 0; "><b>&uarr;</b></button><button class="btn sm" aria-label="Move down" style="width: 44px; padding: 0; "><b>&darr;</b></button></span></td>
+          <th scope="row" style="text-align: left; font: 700 21px/1.15 'Barlow Condensed', sans-serif">Autocorrect<br><span style="font-weight: 500; font-size: 18px; color: #e4def7">common</span></th>
+          <td><select class="sel" aria-label="Autocorrect: availability"><option>On sale</option></select></td>
+          <td><input class="num" aria-label="Autocorrect: price" value="1.00"></td>
+          <td><span class="note" style="font-size: 19px"></span></td>
+        </tr>
+        <tr style="border-top: 1px solid rgba(241,236,255,.14)">
+          <td style="padding: 8px 0; font: 800 21px 'Barlow Condensed', sans-serif; color: #ffd93d">C1</td>
+          <td><span style="display: flex; gap: 8px"><button class="btn sm" aria-label="Move up" style="width: 44px; padding: 0; "><b>&uarr;</b></button><button class="btn sm" aria-label="Move down" style="width: 44px; padding: 0; "><b>&darr;</b></button></span></td>
+          <th scope="row" style="text-align: left; font: 700 21px/1.15 'Barlow Condensed', sans-serif">Bluff<br><span style="font-weight: 500; font-size: 18px; color: #e4def7">common</span></th>
+          <td><select class="sel" aria-label="Bluff: availability"><option>On sale</option></select></td>
+          <td><input class="num" aria-label="Bluff: price" value="0.25"></td>
+          <td><span class="note" style="font-size: 19px"></span></td>
+        </tr>
+        <tr style="border-top: 1px solid rgba(241,236,255,.14)">
+          <td style="padding: 8px 0; font: 800 21px 'Barlow Condensed', sans-serif; color: #ffd93d">C2</td>
+          <td><span style="display: flex; gap: 8px"><button class="btn sm" aria-label="Move up" style="width: 44px; padding: 0; "><b>&uarr;</b></button><button class="btn sm" aria-label="Move down" style="width: 44px; padding: 0; "><b>&darr;</b></button></span></td>
+          <th scope="row" style="text-align: left; font: 700 21px/1.15 'Barlow Condensed', sans-serif">Feelin' Fab<br><span style="font-weight: 500; font-size: 18px; color: #e4def7">common</span></th>
+          <td><select class="sel" aria-label="Feelin' Fab: availability"><option>On sale</option></select></td>
+          <td><input class="num" aria-label="Feelin' Fab: price" value="0.20"></td>
+          <td><span class="note" style="font-size: 19px"></span></td>
+        </tr>
+        <tr style="border-top: 1px solid rgba(241,236,255,.14)">
+          <td style="padding: 8px 0; font: 800 21px 'Barlow Condensed', sans-serif; color: #ffd93d">D1</td>
+          <td><span style="display: flex; gap: 8px"><button class="btn sm" aria-label="Move up" style="width: 44px; padding: 0; "><b>&uarr;</b></button><button class="btn sm" aria-label="Move down" style="width: 44px; padding: 0; "><b>&darr;</b></button></span></td>
+          <th scope="row" style="text-align: left; font: 700 21px/1.15 'Barlow Condensed', sans-serif">Trap Card<br><span style="font-weight: 500; font-size: 18px; color: #e4def7">uncommon</span></th>
+          <td><select class="sel" aria-label="Trap Card: availability"><option>On sale</option></select></td>
+          <td><input class="num" aria-label="Trap Card: price" value="1.50"></td>
+          <td><span class="note" style="font-size: 19px"></span></td>
+        </tr>
+        <tr style="border-top: 1px solid rgba(241,236,255,.14)">
+          <td style="padding: 8px 0; font: 800 21px 'Barlow Condensed', sans-serif; color: #ffd93d">D2</td>
+          <td><span style="display: flex; gap: 8px"><button class="btn sm" aria-label="Move up" style="width: 44px; padding: 0; "><b>&uarr;</b></button><button class="btn sm" aria-label="Move down" style="width: 44px; padding: 0; "><b>&darr;</b></button></span></td>
+          <th scope="row" style="text-align: left; font: 700 21px/1.15 'Barlow Condensed', sans-serif">Force Field<br><span style="font-weight: 500; font-size: 18px; color: #e4def7">uncommon</span></th>
+          <td><select class="sel" aria-label="Force Field: availability"><option>On sale</option></select></td>
+          <td><input class="num" aria-label="Force Field: price" value="1.50"></td>
+          <td><span class="note" style="font-size: 19px"></span></td>
+        </tr>
+        <tr style="border-top: 1px solid rgba(241,236,255,.14)">
+          <td style="padding: 8px 0; font: 800 21px 'Barlow Condensed', sans-serif; color: #ffd93d">E1</td>
+          <td><span style="display: flex; gap: 8px"><button class="btn sm" aria-label="Move up" style="width: 44px; padding: 0; "><b>&uarr;</b></button><button class="btn sm" aria-label="Move down" style="width: 44px; padding: 0; "><b>&darr;</b></button></span></td>
+          <th scope="row" style="text-align: left; font: 700 21px/1.15 'Barlow Condensed', sans-serif">Glitter Bomb<br><span style="font-weight: 500; font-size: 18px; color: #e4def7">uncommon</span></th>
+          <td><select class="sel" aria-label="Glitter Bomb: availability"><option>On sale</option></select></td>
+          <td><input class="num" aria-label="Glitter Bomb: price" value="1.50"></td>
+          <td><span class="tag" style="border: 1px solid #ff3d7f; color: #ff9cc0"><b>MARKED UP &times;1.5 &middot; 2.25 TO NOV 8</b></span> <a href="#" class="lnk" style="margin-left: 10px; font-size: 19px; white-space: nowrap">In the queue</a></td>
+        </tr>
+        <tr style="border-top: 1px solid rgba(241,236,255,.14)">
+          <td style="padding: 8px 0; font: 800 21px 'Barlow Condensed', sans-serif; color: #ffd93d">&ndash;</td>
+          <td><span style="display: flex; gap: 8px"><button class="btn sm" aria-label="Move up" style="width: 44px; padding: 0; "><b>&uarr;</b></button><button class="btn sm" aria-label="Move down" disabled style="width: 44px; padding: 0; opacity: .35; cursor: default"><b>&darr;</b></button></span></td>
+          <th scope="row" style="text-align: left; font: 700 21px/1.15 'Barlow Condensed', sans-serif">Main Event<br><span style="font-weight: 500; font-size: 18px; color: #e4def7">rare</span></th>
+          <td><select class="sel" aria-label="Main Event: availability"><option>Hidden</option></select></td>
+          <td><input class="num" aria-label="Main Event: price" value="3.00"></td>
+          <td><span class="note" style="font-size: 19px">Only in packs. The Boss may flash-sale it.</span></td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="btns" style="margin-top: 26px; padding-top: 22px; border-top: 1px solid rgba(241,236,255,.22)"><button class="btn primary"><b>SAVE CHANGES</b></button><span class="note" style="font-size: 20px">Players see a saved price at once. A Boss move in force reads the new price.</span></div>
+  </form>
+  </main>
+</div>
+</body>
+</html>
