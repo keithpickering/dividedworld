@@ -49,7 +49,7 @@ import { isLeaving } from '../glass/Held.tsx';
 import { publishHudTab } from './hud-tab.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { useBoot } from '../boot.tsx';
-import { Link, searchOf, useLocation, useNavigate, useRouterInternals } from '../router.tsx';
+import { Link, searchOf, useLocation, useNavigate, useNavigation, useRouterInternals } from '../router.tsx';
 import { usePendingControl } from '../glass/claims.tsx';
 import { Spinner } from '../glass/Spinner.tsx';
 import { Hand } from '../cards/Hand.tsx';
@@ -88,6 +88,9 @@ export function Hud() {
   const player = usePlayer();
   const location = useLocation();
   const navigate = useNavigate();
+  /* A load out when Esc is pressed is the router's to stop (router.tsx); this Esc does not start another. */
+  const loadOut = useRef(false);
+  loadOut.current = useNavigation().pending !== null;
   /* The links and Menu each name their load, so the control pressed shows the wait (the HUD sits on the board, outside any page's claims, so the claim is a no-op here). */
   const avatarWait = usePendingControl();
   const orbsWait = usePendingControl();
@@ -329,7 +332,7 @@ export function Hud() {
         handButton.current?.focus();
         return;
       }
-      if (!pageEscape(e)) return;
+      if (!pageEscape(e) || loadOut.current) return;
       e.preventDefault();
       navigate(GLASS_NAV.characters, { source: menuSource });
     };

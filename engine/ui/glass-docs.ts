@@ -7,7 +7,7 @@
  *
  * Nothing here writes: a loader runs on a hover as well as a press, and a hover is not a visit.
  */
-import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
+import { createElement, lazy, useState, type ComponentProps, type ComponentType } from 'react';
 import type { KayfaApi, Act, AlertsPage, ContactLink, Estimate, Id, LogPage, MyCharactersPage, MyInvite, QueuePage, SeasonPage, UpdatesPage } from './data/api.ts';
 import { SIGNED_OUT_DOC, type LoadEnv, type ScreenDoc } from './screen-docs.ts';
 
@@ -19,7 +19,7 @@ export type Preload = () => Promise<unknown>;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- a screen of any props: the component keeps its own
 export interface LazyScreen<C extends ComponentType<any>> {
-  readonly Component: LazyExoticComponent<C>;
+  readonly Component: ComponentType<ComponentProps<C>>;
   readonly preload: Preload;
 }
 
@@ -30,8 +30,19 @@ export interface LazyScreen<C extends ComponentType<any>> {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- as above
 export function lazyScreen<C extends ComponentType<any>>(importer: () => Promise<{ readonly default: C }>): LazyScreen<C> {
   let chunk: Promise<{ readonly default: C }> | null = null;
-  const once = () => (chunk ??= importer().catch((error: unknown) => { chunk = null; throw error; }));
-  return { Component: lazy(once), preload: () => once() };
+  let loaded: C | null = null;
+  const once = () => (chunk ??= importer().then((m) => { loaded = m.default; return m; }, (error: unknown) => { chunk = null; throw error; }));
+  const Lazy = lazy(once);
+  /*
+   * A lazy component suspends on its first render even when its import has long landed (React reads the promise a tick later), and React
+   * holds a fallback's reveal for 300 ms: a screen whose load landed would open empty and fill in a third of a second after. So a screen
+   * whose chunk is in is drawn directly, chosen once per mount so it never remounts when the chunk lands later.
+   */
+  function Screen(props: ComponentProps<C>) {
+    const [Impl] = useState<ComponentType<ComponentProps<C>>>(() => (loaded ?? Lazy) as ComponentType<ComponentProps<C>>);
+    return createElement(Impl, props);
+  }
+  return { Component: Screen, preload: () => once() };
 }
 
 /** The chunk and the document side by side: the load lands when both have, and fails when either does. */

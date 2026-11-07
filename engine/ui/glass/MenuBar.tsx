@@ -111,6 +111,9 @@ function Bar() {
   const back = useBackToBoard(backControl.source);
   /* A load out that no control here or on the page draws (a Back or Forward, a `navigate` with no source) is drawn at the bar's end. */
   const { pending } = useNavigation();
+  /* A load out when Esc is pressed is the router's to stop (router.tsx); this Esc does not start another. */
+  const loadOut = useRef(false);
+  loadOut.current = pending !== null;
   const waitAtEnd = useUnclaimed(pending ? pending.source : undefined);
   const list = useRef<HTMLUListElement>(null);
   const transition: Transition = feel ? (feel.spring ? { type: 'spring', stiffness: feel.spring.stiffness, damping: feel.spring.damping } : { duration: feel.screen / 1000, ease: bezier(feel.ease) }) : { duration: 0 };
@@ -132,7 +135,7 @@ function Bar() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!pageEscape(e) || isLeaving(bar.current)) return;
+      if (!pageEscape(e) || loadOut.current || isLeaving(bar.current)) return;
       e.preventDefault();
       back();
     };
