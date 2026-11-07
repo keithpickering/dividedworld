@@ -808,10 +808,13 @@
 }
 
 .kb-tp-tiles {
+  --kb-tp-gap: 12px;
   display: grid;
-  /* Five across where they fit (board 19), and fewer, in more rows, where a name would not: the column is never narrower than the longest name at the size in force. */
-  grid-template-columns: repeat(auto-fit, minmax(max(calc((100% - 48px) / 5), calc(var(--kb-glass-size-label) * 4.4 + 18px)), 1fr));
-  gap: 12px;
+  /* Five across where they fit (board 19), and fewer, in more rows, where a line would not: the column is never narrower than a tile's longest
+     line at the size in force ("Light and dark", 5.02em of the label size, and "Blue Steel", less) and the tile's 18px of padding and border.
+     A tile's lines never wrap (below), so a line within a pixel of the column's edge cannot take a second line and drop every row under it. */
+  grid-template-columns: repeat(auto-fit, minmax(max(calc((100% - 4 * var(--kb-tp-gap)) / 5), calc(var(--kb-glass-size-label) * 5.1 + 18px)), 1fr));
+  gap: var(--kb-tp-gap);
   margin-top: 16px;
 }
 
@@ -860,6 +863,11 @@
 .kb-tp-tile:has(> input:focus-visible) {
   outline: 3px solid var(--kb-glass-text-hi);
   outline-offset: 3px;
+}
+
+.kb-tp-tile > b,
+.kb-tp-tile > span:last-child {
+  white-space: nowrap;
 }
 
 .kb-tp-tile > b {
@@ -956,8 +964,9 @@
 }
 
 :where(:root[data-kb-layout='phone']) .kb-tp-tiles {
-  grid-template-columns: repeat(auto-fit, minmax(max(calc((100% - 16px) / 3), calc(var(--kb-glass-size-phone-small) * 3.9 + 14px)), 1fr));
-  gap: 8px;
+  --kb-tp-gap: 8px;
+  /* Three across, and the same floor: the longest line at the phone's size and the tile's 14px of padding and border. */
+  grid-template-columns: repeat(auto-fit, minmax(max(calc((100% - 2 * var(--kb-tp-gap)) / 3), calc(var(--kb-glass-size-phone-small) * 5.1 + 14px)), 1fr));
 }
 
 :where(:root[data-kb-layout='phone']) .kb-tp-tile {
