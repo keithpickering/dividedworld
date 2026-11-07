@@ -20,6 +20,98 @@
 .kb-bb-size-6 { font-size: 2em; }
 .kb-bb-size-7 { font-size: 2.5em; }
 
+/* Layout. Alignment and the rule are blocks; the rule is the board's own 1px. */
+.kb-bb-align-center { text-align: center; }
+.kb-bb-align-left { text-align: left; }
+.kb-bb-align-right { text-align: right; }
+
+.kb-bb-hr {
+  border: 0;
+  border-top: 1px solid var(--kb-rule);
+  margin: 0.6em 0;
+}
+
+/* Effects. A glow or a shadow is set inline in the given color, else the page's ink. */
+.kb-bb-glow,
+.kb-bb-shadow {
+  /* The shadow is drawn by the style attribute; the class names the effect. */
+  text-shadow: inherit;
+}
+
+.kb-bb-highlight {
+  padding: 0 0.15em;
+}
+
+/* Rainbow: a gradient clipped to the words, where the browser can; elsewhere the words keep their color. Each stop is a token held to 4.5:1. */
+@supports (background-clip: text) or (-webkit-background-clip: text) {
+  .kb-bb-rainbow {
+    background-image: linear-gradient(90deg, var(--kb-rainbow-1), var(--kb-rainbow-2), var(--kb-rainbow-3), var(--kb-rainbow-4), var(--kb-rainbow-5), var(--kb-rainbow-6));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+}
+
+@media (forced-colors: active) {
+  .kb-bb-rainbow {
+    background-image: none;
+    -webkit-text-fill-color: currentcolor;
+    color: inherit;
+  }
+}
+
+/* Marquee: the run is drawn across its block and starts over. It stops under the pointer or the keyboard, so it can be read. */
+.kb-bb-marquee {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.kb-bb-marquee-run {
+  display: inline-block;
+  min-width: 100%;
+  width: max-content;
+  animation: kb-bb-marquee 12s linear infinite;
+}
+
+.kb-bb-marquee:hover .kb-bb-marquee-run,
+.kb-bb-marquee:focus-within .kb-bb-marquee-run {
+  animation-play-state: paused;
+}
+
+@keyframes kb-bb-marquee {
+  from { transform: translateX(100%); }
+  to { transform: translateX(-100%); }
+}
+
+/* Still: the device asks for less motion and the player has not chosen full motion, or the player chose reduced. The words rest where they start and wrap. */
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-kb-motion="full"]) .kb-bb-marquee-run {
+    animation: none;
+    min-width: 0;
+    width: auto;
+  }
+
+  :root:not([data-kb-motion="full"]) .kb-bb-marquee {
+    white-space: pre-wrap;
+    overflow: visible;
+  }
+}
+
+:root[data-kb-motion="reduce"] .kb-bb-marquee-run {
+  animation: none;
+  min-width: 0;
+  width: auto;
+}
+
+:root[data-kb-motion="reduce"] .kb-bb-marquee {
+  white-space: pre-wrap;
+  overflow: visible;
+}
+
 .kb-bb-img {
   max-width: 100%;
   height: auto;

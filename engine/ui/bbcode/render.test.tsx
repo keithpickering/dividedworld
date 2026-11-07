@@ -193,3 +193,96 @@ describe('an inline spoiler nests nothing interactive', () => {
     for (const b of bodies) expect(b).not.toMatch(/outline/u);
   });
 });
+
+describe('layout and effects', () => {
+  const css = async () => {
+    const { readFileSync } = await import('node:fs');
+    return readFileSync('engine/ui/bbcode/bbcode.css', 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+  };
+
+  test('align is a block with its class; hr is a rule; sub and sup are their elements', () => {
+    show('[align=center]a[/align][align=right]b[/align][hr][sub]c[/sub][sup]d[/sup]');
+    expect(out().querySelector('div.kb-bb-align-center')).toHaveTextContent('a');
+    expect(out().querySelector('div.kb-bb-align-right')).toHaveTextContent('b');
+    expect(out().querySelector('hr.kb-bb-hr')).not.toBeNull();
+    expect(out().querySelector('sub')).toHaveTextContent('c');
+    expect(out().querySelector('sup')).toHaveTextContent('d');
+  });
+
+  test('a font is a family from the list on a span, never the player\'s string', () => {
+    show('[font=Impact]a[/font][font=Papyrus]b[/font]');
+    const span = out().querySelector<HTMLElement>('span[style]')!;
+    expect(span.style.fontFamily).toContain('Impact');
+    expect(out().querySelectorAll('span[style]')).toHaveLength(1);
+    expect(out().textContent).toBe('a[font=Papyrus]b[/font]');
+  });
+
+  test('glow and shadow are text-shadows, in the given color or else the page\'s ink', () => {
+    show('[glow=red]a[/glow][shadow]b[/shadow][glow]c[/glow]');
+    const spans = [...out().querySelectorAll<HTMLElement>('span.kb-bb-glow, span.kb-bb-shadow')];
+    expect(spans.map((s) => s.className)).toEqual(['kb-bb-glow', 'kb-bb-shadow', 'kb-bb-glow']);
+    expect(spans[0]!.getAttribute('style')).toMatch(/text-shadow:[^;]*red/u);
+    expect(spans[1]!.getAttribute('style')).toContain('var(--kb-fg)');
+    expect(spans[2]!.getAttribute('style')).toContain('var(--kb-fg)');
+  });
+
+  test('highlight takes black ink on yellow and white ink on navy, whichever reads better', () => {
+    show('[highlight]a[/highlight][highlight=navy]b[/highlight][highlight=#ffeeaa]c[/highlight][highlight=#112]d[/highlight]');
+    const marks = [...out().querySelectorAll<HTMLElement>('mark.kb-bb-highlight')];
+    const inks = marks.map((m) => /color:\s*var\((--kb-ink-\w+)\)/u.exec(m.getAttribute('style')!.replace(/background[^;]*;?/u, ''))?.[1]);
+    expect(inks).toEqual(['--kb-ink-black', '--kb-ink-white', '--kb-ink-black', '--kb-ink-white']);
+    expect(marks[0]!.style.backgroundColor).toBe('yellow');
+    expect(marks[1]!.style.backgroundColor).toBe('navy');
+  });
+
+  test('the ink tokens are black and white in both modes', async () => {
+    const { readFileSync } = await import('node:fs');
+    const tokens = readFileSync('engine/ui/tokens.css', 'utf8');
+    expect(tokens).toMatch(/--kb-ink-black:\s*#000;/u);
+    expect(tokens).toMatch(/--kb-ink-white:\s*#fff;/u);
+  });
+
+  test('a marquee is a block with a run inside it, and the run is the words', () => {
+    show('[marquee]news[/marquee]');
+    const box = out().querySelector('div.kb-bb-marquee')!;
+    expect(box.querySelector('span.kb-bb-marquee-run')).toHaveTextContent('news');
+  });
+
+  test('a marquee moves by default, pauses on hover and focus, and is still when motion is reduced, whatever else', async () => {
+    const sheet = await css();
+    expect(sheet).toMatch(/@keyframes kb-bb-marquee/u);
+    expect(sheet).toMatch(/\.kb-bb-marquee-run\s*\{[^}]*animation:[^}]*kb-bb-marquee/u);
+    expect(sheet).toMatch(/\.kb-bb-marquee:hover[^{]*\{[^}]*animation-play-state:\s*paused/u);
+    expect(sheet).toMatch(/\.kb-bb-marquee:focus-within[^{]*\{[^}]*animation-play-state:\s*paused/u);
+    // Still for the device's setting unless the player chose full motion, and for the player's choice of reduced.
+    expect(sheet).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{[^@]*:not\(\[data-kb-motion="full"\]\)[^{]*\.kb-bb-marquee-run\s*\{[^}]*animation:\s*none/u);
+    expect(sheet).toMatch(/\[data-kb-motion="reduce"\][^{]*\.kb-bb-marquee-run\s*\{[^}]*animation:\s*none/u);
+    // Full motion is only ever the exemption from the device's setting, so it moves whatever the system says.
+    for (const m of sheet.matchAll(/[^{}]*data-kb-motion="full"[^{}]*/gu)) expect(m[0]).toContain(':not([data-kb-motion="full"])');
+  });
+
+  test('rainbow is a gradient from the six tokens clipped to the text, plain under forced colors', async () => {
+    show('[rainbow]hue[/rainbow]');
+    expect(out().querySelector('span.kb-bb-rainbow')).toHaveTextContent('hue');
+    const sheet = await css();
+    const body = /\.kb-bb-rainbow\s*\{([^}]*)\}/u.exec(sheet)![1]!;
+    for (let i = 1; i <= 6; i++) expect(body).toContain(`var(--kb-rainbow-${i})`);
+    expect(body).toMatch(/background-clip:\s*text/u);
+    expect(sheet).toMatch(/@media \(forced-colors: active\)\s*\{[^@]*\.kb-bb-rainbow\s*\{[^}]*background(-image)?:\s*none/u);
+  });
+
+  test('text layers draw inside every container', () => {
+    const run: TextRun = { start: 0, end: 4, key: 'r', z: 0, mode: 'replace', render: ({ text, key }) => <b key={key} data-covers={text}>dogs</b> };
+    const wrap = (t: string) => render(<RouterProvider><div data-testid="lay"><TextLayer runs={[run]}><BbCode text={t} /></TextLayer></div></RouterProvider>);
+    for (const t of ['[align=center]cats[/align]', '[marquee]cats[/marquee]', '[sub]cats[/sub]', '[font=Arial]cats[/font]', '[glow]cats[/glow]', '[rainbow]cats[/rainbow]', '[highlight]cats[/highlight]']) {
+      const { unmount } = wrap(t);
+      expect(screen.getByTestId('lay').querySelector('b[data-covers]'), t).toHaveAttribute('data-covers', 'cats');
+      unmount();
+    }
+  });
+
+  test('all of them are axe clean', async () => {
+    show('[align=center]a[/align][hr][sub]b[/sub][sup]c[/sup][font=Georgia]d[/font][marquee]e[/marquee][glow=red]f[/glow][shadow]g[/shadow][rainbow]h[/rainbow][highlight]i[/highlight][noparse][b]j[/b][/noparse]');
+    expect(describeViolations(await axeViolations(out()))).toBe('');
+  });
+});

@@ -13,9 +13,10 @@
  * the quote is still a quote, without a link.
  */
 import { Fragment, memo, useMemo, useState, type ReactNode } from 'react';
-import { parse, type BbNode } from '../../bbcode/parse.ts';
+import { colorHex, FONTS, parse, type BbNode } from '../../bbcode/parse.ts';
 import { visibleWalk } from '../../bbcode/visible.ts';
 import { stretchesOf, useTextLayers, type Stretch } from './layers.tsx';
+import { inkOn as bestInk } from '../contrast.ts';
 import { Link } from '../router.tsx';
 import { Video } from './Video.tsx';
 import './bbcode.css';
@@ -84,6 +85,12 @@ function ISpoiler({ children }: { readonly children: ReactNode }) {
   );
 }
 
+/** The ink for a highlight: black or white, whichever has the higher contrast on the color, as a token so a theme cannot lose it. */
+function inkOn(color: string): string {
+  const hex = colorHex(color);
+  return hex === null || bestInk(hex) === 'black' ? 'var(--kb-ink-black)' : 'var(--kb-ink-white)';
+}
+
 function nodes(list: readonly BbNode[], quoteLink: BbCodeProps['quoteLink'], layered?: Layered): ReactNode[] {
   return list.map((n, i) => node(n, i, quoteLink, layered));
 }
@@ -132,6 +139,22 @@ function node(n: BbNode, key: number, quoteLink: BbCodeProps['quoteLink'], layer
       );
     case 'ispoiler': return <ISpoiler key={key}>{nodes(n.children, quoteLink, layered)}</ISpoiler>;
     case 'code': return <pre key={key} className="kb-bb-code"><code>{n.text}</code></pre>;
+    case 'align': return <div key={key} className={`kb-bb-align-${n.align}`}>{nodes(n.children, quoteLink, layered)}</div>;
+    case 'hr': return <hr key={key} className="kb-bb-hr" />;
+    case 'sub': return <sub key={key}>{nodes(n.children, quoteLink, layered)}</sub>;
+    case 'sup': return <sup key={key}>{nodes(n.children, quoteLink, layered)}</sup>;
+    case 'font': return <span key={key} style={{ fontFamily: FONTS[n.font] }}>{nodes(n.children, quoteLink, layered)}</span>;
+    case 'marquee':
+      return <div key={key} className="kb-bb-marquee"><span className="kb-bb-marquee-run">{nodes(n.children, quoteLink, layered)}</span></div>;
+    case 'glow': {
+      const c = n.color ?? 'var(--kb-fg)';
+      return <span key={key} className="kb-bb-glow" style={{ textShadow: `0 0 0.2em ${c}, 0 0 0.45em ${c}` }}>{nodes(n.children, quoteLink, layered)}</span>;
+    }
+    case 'shadow':
+      return <span key={key} className="kb-bb-shadow" style={{ textShadow: `0.08em 0.08em 0.1em ${n.color ?? 'var(--kb-fg)'}` }}>{nodes(n.children, quoteLink, layered)}</span>;
+    case 'rainbow': return <span key={key} className="kb-bb-rainbow">{nodes(n.children, quoteLink, layered)}</span>;
+    case 'highlight':
+      return <mark key={key} className="kb-bb-highlight" style={{ backgroundColor: n.color, color: inkOn(n.color) }}>{nodes(n.children, quoteLink, layered)}</mark>;
     case 'list': {
       const items = n.items.map((item, i) => <li key={i}>{nodes(item, quoteLink, layered)}</li>);
       return n.ordered ? <ol key={key}>{items}</ol> : <ul key={key}>{items}</ul>;

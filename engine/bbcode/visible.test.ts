@@ -70,3 +70,13 @@ test('a video leaves one separator and none of its words', () => {
   assert.equal(seen('x[video]https://youtu.be/dQw4w9WgXcQ[/video]y'), 'x\ny');
   assert.equal(seen('x[youtube]dQw4w9WgXcQ[/youtube]y'), 'x\ny');
 });
+
+test('every new container is transparent, and a rule is one separator', () => {
+  assert.equal(seen('a[align=center]b[/align]c'), 'abc');
+  assert.equal(seen('a[sub]b[/sub][sup]c[/sup]d'), 'abcd');
+  assert.equal(seen('a[font=Arial]b[/font]c'), 'abc');
+  assert.equal(seen('a[marquee]b[/marquee][glow=red]c[/glow][shadow]d[/shadow]'), 'abcd');
+  assert.equal(seen('a[rainbow]b[/rainbow][highlight]c[/highlight]'), 'abc');
+  assert.equal(seen('a[hr]b'), 'a\nb');
+  assert.equal(seen('x[noparse][b]y[/b][/noparse]z'), 'x[b]y[/b]z');
+});

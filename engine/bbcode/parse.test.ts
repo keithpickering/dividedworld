@@ -683,3 +683,68 @@ test('a link or another [ispoiler] opened inside [ispoiler] is text, since the s
 test('an empty [ispoiler] is an empty spoiler node', () => {
   assert.deepEqual(parse('[ispoiler][/ispoiler]'), [ispoiler()]);
 });
+
+test('align takes center, left or right; anything else is text', () => {
+  for (const a of ['center', 'left', 'right'] as const) {
+    assert.deepEqual(parse(`[align=${a}]x[/align]`), [{ type: 'align', align: a, children: [text('x')] }]);
+  }
+  assert.deepEqual(parse('[align=CENTER]x[/align]'), [{ type: 'align', align: 'center', children: [text('x')] }]);
+  assertLiteral(['[align]x[/align]', '[align=justify]x[/align]', '[align=center x]x[/align]']);
+});
+
+test('hr stands alone, and its closer is text', () => {
+  assert.deepEqual(parse('[hr]'), [{ type: 'hr' }]);
+  assert.deepEqual(parse('a[hr]b'), [text('a'), { type: 'hr' }, text('b')]);
+  assert.deepEqual(parse('[hr][/hr]'), [{ type: 'hr' }, text('[/hr]')]);
+  assertLiteral(['[hr=1]', '[/hr]']);
+});
+
+test('sub, sup, marquee and rainbow are containers without an attribute', () => {
+  for (const t of ['sub', 'sup', 'marquee', 'rainbow'] as const) {
+    assert.deepEqual(parse(`[${t}]x[/${t}]`), [{ type: t, children: [text('x')] }]);
+    assertLiteral([`[${t}=1]x[/${t}]`]);
+  }
+});
+
+test('font takes a name from the list, without regard to case; any other font is text', () => {
+  assert.deepEqual(parse('[font=Verdana]x[/font]'), [{ type: 'font', font: 'verdana', children: [text('x')] }]);
+  assert.deepEqual(parse('[font=times new roman]x[/font]'), [{ type: 'font', font: 'times new roman', children: [text('x')] }]);
+  assert.deepEqual(parse('[font="Comic Sans MS"]x[/font]'), [{ type: 'font', font: 'comic sans ms', children: [text('x')] }]);
+  for (const f of ['Verdana', 'Arial', 'Tahoma', 'Trebuchet MS', 'Georgia', 'Times New Roman', 'Courier New', 'Comic Sans MS', 'Impact']) {
+    assert.equal(parse(`[font=${f}]x[/font]`)[0]?.type, 'font', f);
+  }
+  assertLiteral(['[font=Papyrus]x[/font]', '[font]x[/font]', '[font=Arial, evil]x[/font]', '[font=Arial;x]x[/font]']);
+});
+
+test('glow and shadow take an optional safe color', () => {
+  assert.deepEqual(parse('[glow]x[/glow]'), [{ type: 'glow', color: null, children: [text('x')] }]);
+  assert.deepEqual(parse('[glow=Red]x[/glow]'), [{ type: 'glow', color: 'red', children: [text('x')] }]);
+  assert.deepEqual(parse('[shadow=#0af]x[/shadow]'), [{ type: 'shadow', color: '#0af', children: [text('x')] }]);
+  assert.deepEqual(parse('[shadow]x[/shadow]'), [{ type: 'shadow', color: null, children: [text('x')] }]);
+  assertLiteral(['[glow=url(x)]x[/glow]', '[shadow=notacolor]x[/shadow]']);
+});
+
+test('highlight takes an optional safe color, yellow by default', () => {
+  assert.deepEqual(parse('[highlight]x[/highlight]'), [{ type: 'highlight', color: 'yellow', children: [text('x')] }]);
+  assert.deepEqual(parse('[highlight=navy]x[/highlight]'), [{ type: 'highlight', color: 'navy', children: [text('x')] }]);
+  assertLiteral(['[highlight=expression(x)]x[/highlight]']);
+});
+
+test('noparse is its contents, as one text node', () => {
+  assert.deepEqual(parse('[noparse][b]x[/b][/noparse]'), [text('[b]x[/b]')]);
+  assert.deepEqual(parse('a[NOPARSE][i]x[/NoParse]b'), [text('a[i]xb')]);
+  assert.deepEqual(parse('a[noparse][url=javascript:x]y[/url][/noparse]b'), [text('a[url=javascript:x]y[/url]b')]);
+  // No closer, or an attribute: only the opener is text, and the rest parses as usual.
+  assert.deepEqual(parse('[noparse][b]x[/b]'), [text('[noparse]'), { type: 'bold', children: [text('x')] }]);
+  assert.deepEqual(parse('[noparse=1][b]x[/b][/noparse]'), [text('[noparse=1]'), { type: 'bold', children: [text('x')] }, text('[/noparse]')]);
+});
+
+test('a layout tag is text, with its closer, inside an inline spoiler; the inline effects are not', () => {
+  const t = parse('[ispoiler][align=center]x[/align][marquee]y[/marquee][hr][/ispoiler]');
+  assert.deepEqual(t, [{ type: 'ispoiler', children: [text('[align=center]x[/align][marquee]y[/marquee][hr]')] }]);
+  assert.deepEqual(parse('[ispoiler][glow]x[/glow][/ispoiler]')[0], { type: 'ispoiler', children: [{ type: 'glow', color: null, children: [text('x')] }] });
+});
+
+test('the new tags are named for a rule that names one', () => {
+  for (const t of ['align', 'hr', 'sub', 'sup', 'font', 'marquee', 'glow', 'shadow', 'rainbow', 'highlight', 'noparse']) assert.ok(BBCODE_TAGS.includes(t), t);
+});

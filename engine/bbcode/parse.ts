@@ -43,6 +43,8 @@
  *   and an `[ispoiler]` opener are text (the same count, `openISpoilers`), and so is `[/url]`. A
  *   `[/ispoiler]` still closes the open spoiler, else it could never end. An ispoiler's text is never
  *   auto-linked: the autolink pass (Task 5) must skip text inside an `ispoiler` node.
+ * - `[noparse]` is taken raw as `[code]` is, but gives a `text` node: its words are the post's own, shown as written. `[hr]` is a
+ *   leaf with no closer (a `[/hr]` is text), and `[font=name]` takes a name from `FONTS` only, so no free text reaches a style.
  * - A list's `[*]` is an item marker only directly inside `[list]`; elsewhere it is text.
  *   Blank space before the first item is layout and is not kept; words before it become an
  *   item of their own.
@@ -70,6 +72,12 @@ export type BbNode =
   | { readonly type: 'spoiler'; readonly title: string; readonly children: readonly BbNode[] }
   | { readonly type: 'ispoiler'; readonly children: readonly BbNode[] }
   | { readonly type: 'code'; readonly text: string }
+  | { readonly type: 'align'; readonly align: 'center' | 'left' | 'right'; readonly children: readonly BbNode[] }
+  | { readonly type: 'hr' }
+  | { readonly type: 'sub' | 'sup' | 'marquee' | 'rainbow'; readonly children: readonly BbNode[] }
+  | { readonly type: 'font'; readonly font: string; readonly children: readonly BbNode[] }
+  | { readonly type: 'glow' | 'shadow'; readonly color: string | null; readonly children: readonly BbNode[] }
+  | { readonly type: 'highlight'; readonly color: string; readonly children: readonly BbNode[] }
   | { readonly type: 'list'; readonly ordered: boolean; readonly items: readonly (readonly BbNode[])[] };
 
 /** Longest typed name on a counterfeit quote, after trimming; a longer one makes the opener text. */
@@ -99,6 +107,45 @@ export const NAMED_COLORS: ReadonlySet<string> = new Set([
   'olive', 'yellow', 'navy', 'blue', 'teal', 'aqua', 'orange', 'pink', 'brown', 'gold', 'cyan',
   'magenta', 'violet', 'indigo', 'crimson', 'coral', 'salmon', 'turquoise', 'tan', 'khaki', 'beige',
 ]);
+
+/**
+ * The fonts `[font=name]` takes: each allowed name, lowercase, to the CSS stack the renderer sets. A name is
+ * compared without case; the node holds the key, never the player's string, so no free text reaches a style.
+ */
+export const FONTS: Readonly<Record<string, string>> = {
+  'verdana': 'Verdana, Geneva, sans-serif',
+  'arial': 'Arial, Helvetica, sans-serif',
+  'tahoma': 'Tahoma, Geneva, sans-serif',
+  'trebuchet ms': '"Trebuchet MS", Helvetica, sans-serif',
+  'georgia': 'Georgia, "Times New Roman", serif',
+  'times new roman': '"Times New Roman", Times, serif',
+  'courier new': '"Courier New", Courier, monospace',
+  'comic sans ms': '"Comic Sans MS", "Comic Sans", cursive',
+  'impact': 'Impact, Haettenschweiler, sans-serif',
+};
+
+/** The default color of a `[highlight]`. */
+export const DEFAULT_HIGHLIGHT = 'yellow';
+
+/** What each named color is, as #rrggbb, so a renderer can weigh a color's contrast. */
+const NAMED_HEX: Readonly<Record<string, string>> = {
+  black: '#000000', silver: '#c0c0c0', gray: '#808080', grey: '#808080', white: '#ffffff', maroon: '#800000',
+  red: '#ff0000', purple: '#800080', fuchsia: '#ff00ff', green: '#008000', lime: '#00ff00', olive: '#808000',
+  yellow: '#ffff00', navy: '#000080', blue: '#0000ff', teal: '#008080', aqua: '#00ffff', orange: '#ffa500',
+  pink: '#ffc0cb', brown: '#a52a2a', gold: '#ffd700', cyan: '#00ffff', magenta: '#ff00ff', violet: '#ee82ee',
+  indigo: '#4b0082', crimson: '#dc143c', coral: '#ff7f50', salmon: '#fa8072', turquoise: '#40e0d0', tan: '#d2b48c',
+  khaki: '#f0e68c', beige: '#f5f5dc',
+};
+
+/** A `safeColor` value as #rrggbb (a name looked up, #rgb doubled), or null for anything else. */
+export function colorHex(color: string): string | null {
+  const v = color.toLowerCase();
+  const named = NAMED_HEX[v];
+  if (named) return named;
+  if (/^#[0-9a-f]{6}$/.test(v)) return v;
+  if (/^#[0-9a-f]{3}$/.test(v)) return '#' + [...v.slice(1)].map((c) => c + c).join('');
+  return null;
+}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HEX_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
@@ -185,16 +232,16 @@ const SIMPLE: Readonly<Record<string, 'bold' | 'italic' | 'underline' | 'strike'
   s: 'strike',
 };
 /** The tags the parser knows how to open, for a rule that names one (engine/rules/predicates.ts `noTag`). */
-export const BBCODE_TAGS: readonly string[] = ['b', 'i', 'u', 's', 'color', 'size', 'url', 'img', 'code', 'quote', 'list', 'spoiler', 'ispoiler', 'video', 'youtube'];
+export const BBCODE_TAGS: readonly string[] = ['b', 'i', 'u', 's', 'color', 'size', 'url', 'img', 'code', 'quote', 'list', 'spoiler', 'ispoiler', 'video', 'youtube', 'align', 'hr', 'sub', 'sup', 'font', 'marquee', 'glow', 'shadow', 'rainbow', 'highlight', 'noparse'];
 const OPENERS: ReadonlySet<string> = new Set(BBCODE_TAGS);
-const CLOSERS = new Set(['b', 'i', 'u', 's', 'color', 'size', 'url', 'quote', 'list', 'spoiler', 'ispoiler', 'video', 'youtube']);
+const CLOSERS = new Set(['b', 'i', 'u', 's', 'color', 'size', 'url', 'quote', 'list', 'spoiler', 'ispoiler', 'video', 'youtube', 'align', 'sub', 'sup', 'font', 'marquee', 'glow', 'shadow', 'rainbow', 'highlight']);
 /**
  * The block tags, the ones that cannot stand inside inline text. An `[ispoiler]` holds inline formatting
  * only, so while one is open the opener and the closer of each of these is text. Tags added later that
  * are blocks go in this one set.
  */
 const BLOCK: ReadonlySet<string> = new Set([
-  'quote', 'code', 'list', 'spoiler', 'center', 'left', 'right', 'hr', 'video', 'youtube', 'marquee',
+  'quote', 'code', 'list', 'spoiler', 'align', 'center', 'left', 'right', 'hr', 'video', 'youtube', 'marquee',
 ]);
 
 function pushText(out: Out, text: string): void {
@@ -368,6 +415,7 @@ export function parse(input: string): BbNode[] {
     img: { re: /\[\/img\]/gi, missing: false, at: -1 },
     video: { re: /\[\/video\]/gi, missing: false, at: -1 },
     youtube: { re: /\[\/youtube\]/gi, missing: false, at: -1 },
+    noparse: { re: /\[\/noparse\]/gi, missing: false, at: -1 },
   };
 
   let pos = 0;
@@ -423,7 +471,7 @@ export function parse(input: string): BbNode[] {
       } else {
         pushText(home.out, raw);
       }
-    } else if (name === 'code' || name === 'img' || name === 'video' || name === 'youtube') {
+    } else if (name === 'code' || name === 'img' || name === 'video' || name === 'youtube' || name === 'noparse') {
       const end = rawEnds[name] as { re: RegExp; missing: boolean; at: number };
       const home = top().home;
       let found = -1;
@@ -443,6 +491,10 @@ export function parse(input: string): BbNode[] {
       } else if (name === 'code') {
         home.out.push({ type: 'code', text: input.slice(close + 1, found) });
         textStart = pos = found + '[/code]'.length;
+      } else if (name === 'noparse') {
+        /* Its contents are the post's words as written: one text node, which the tree and the visible text treat as any other. */
+        pushText(home.out, input.slice(close + 1, found));
+        textStart = pos = found + '[/noparse]'.length;
       } else if (name === 'video' || name === 'youtube') {
         /* Same bound on work as an image. A video is whatever `videoOf` recognizes; [youtube] also takes a bare id. */
         const inner = found - close - 1 <= MAX_URL_LENGTH + 64 ? input.slice(close + 1, found).trim() : '';
@@ -509,6 +561,31 @@ export function parse(input: string): BbNode[] {
     } else if (name === 'ispoiler') {
       if (value === undefined) openReal(name, raw, 'simple', { build: (children) => ({ type: 'ispoiler', children }) });
       else literalOpen(name, raw);
+    } else if (name === 'align') {
+      const a = value === undefined ? '' : value.toLowerCase();
+      if (a === 'center' || a === 'left' || a === 'right') {
+        openReal(name, raw, 'simple', { build: (children) => ({ type: 'align', align: a, children }) });
+      } else literalOpen(name, raw);
+    } else if (name === 'hr') {
+      /* No closer: it is a rule, whole. A `[/hr]` is not in CLOSERS, so it stays text. */
+      if (value === undefined) top().home.out.push({ type: 'hr' });
+      else pushText(top().home.out, raw);
+    } else if (name === 'sub' || name === 'sup' || name === 'marquee' || name === 'rainbow') {
+      if (value === undefined) openReal(name, raw, 'simple', { build: (children) => ({ type: name, children }) });
+      else literalOpen(name, raw);
+    } else if (name === 'font') {
+      const key = value === undefined ? '' : value.trim().toLowerCase();
+      if (Object.hasOwn(FONTS, key)) openReal(name, raw, 'simple', { build: (children) => ({ type: 'font', font: key, children }) });
+      else literalOpen(name, raw);
+    } else if (name === 'glow' || name === 'shadow' || name === 'highlight') {
+      const c = value === undefined ? null : safeColor(value);
+      if (value !== undefined && c === null) literalOpen(name, raw);
+      else if (name === 'highlight') {
+        const color = c ?? DEFAULT_HIGHLIGHT;
+        openReal(name, raw, 'simple', { build: (children) => ({ type: 'highlight', color, children }) });
+      } else {
+        openReal(name, raw, 'simple', { build: (children) => ({ type: name, color: c, children }) });
+      }
     } else if (name === 'list') {
       if (value === undefined || value === '1') {
         const lead: Out = [];
