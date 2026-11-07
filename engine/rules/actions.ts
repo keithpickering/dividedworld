@@ -13,6 +13,7 @@
  * the two never disagree on an emoji.
  */
 import type { Instance } from './types.ts';
+import { normalizePronouns, pronounProblems, type PronounSet } from './pronouns.ts';
 import { REACHES, basePrice, casterMessage, listed, reachesOf, type Play, type Reach } from './cards.ts';
 
 /**
@@ -117,6 +118,18 @@ type Decided = Omit<Extract<Decision, { ok: true }>, 'ok'>;
  * or at the `tally`, `silent`, `announced`, or announced `with_class`; what a request leaves out is
  * the default given, where there is one.
  */
+/** A character's pronouns, if the request names any: lowered as every writer stores them, or refused in pronounProblems' words; none is null, which create_character reads as the instance's default. */
+const pronouns = (r: Fields): PronounSet | null => {
+  const v = r.pronouns;
+  if (v === undefined || v === null) return null;
+  const lowered = typeof v === 'object' && !Array.isArray(v)
+    ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, typeof x === 'string' ? x.trim().toLowerCase() : x]))
+    : v;
+  const problems = pronounProblems(lowered);
+  if (problems.length) throw new Refused('pronouns', problems.join('; '));
+  return normalizePronouns(lowered as unknown as PronounSet);
+};
+
 const debut = (r: Fields, defaults?: { timing: string; loudness: string }): { timing: string; loudness: string } => {
   const timing = r.timing ?? defaults?.timing;
   if (timing !== 'now' && timing !== 'tally') throw new Refused('timing', 'a character drops now or debuts at the tally');
@@ -211,7 +224,7 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
     if (typeof kind !== 'string' || !instance.classes.some((c) => c.key === kind)) throw new Refused('class', `there is no class ${JSON.stringify(kind)}`);
     const name = text({ name: typeof r.name === 'string' ? r.name.replace(/^ +| +$/g, '') : r.name }, 'name', NAME_MAX_LENGTH);
     if (NAME_HIDDEN.test(name)) throw new Refused('name', 'can hold letters, marks, digits, symbols and single spaces, nothing hidden');
-    return { rpc: 'create_character', args: { name, class: kind, ...debut(r, { timing: 'now', loudness: 'announced' }) } };
+    return { rpc: 'create_character', args: { name, class: kind, ...debut(r, { timing: 'now', loudness: 'announced' }), pronouns: pronouns(r) } };
   },
   setDebut: (r) => ({ rpc: 'set_debut', args: { through: id(r, 'character'), ...debut(r) } }),
   createInvite: () => ({ rpc: 'create_invite', args: {} }),
