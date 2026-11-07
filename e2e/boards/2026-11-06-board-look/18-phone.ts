@@ -26,7 +26,7 @@ const manifest: BoardManifest = {
     name: 'cannot-display',
     build: { story: 'boards-17-cannot-display--cannot-display-page' },
     landmarks: [
-      { id: 'title', role: 'heading', name: 'The page cannot be displayed', buildShift: { x: SCREEN, y: 14.8 } },
+      { id: 'title', role: 'heading', name: 'The page cannot be displayed', buildShift: { x: SCREEN, y: 14.8 }, buildSize: 18.7501 },
       { id: 'try-again', role: 'button', name: 'Try again', buildShift: { x: SCREEN, y: 14.8 } },
     ],
   }],

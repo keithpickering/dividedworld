@@ -3,6 +3,9 @@
  * 17-cannot-display-dark.html is the same page in the dark mode and is compared on colors only; the sheet's own colors, which are not theme tokens, are held by engine/ui/frame/unavailable-contrast.test.tsx): a white sheet inside the frame
  * (charcoal in dark, its own colors and not the theme's) with the CSS glyph, "The page cannot be displayed", its words, the ways out (Try again, the index, the
  * browser's Back) and the address, as the story `Boards/17 Cannot display` (engine/ui/frame/CannotDisplay.board.stories.tsx) draws them.
+ *
+ * Departure: the heading is the board's heading token (--kb-size-heading, 18.75px), where the board draws 19px, since no font size on the
+ * board's layout is fixed in px (engine/ui/glass/board.test.tsx); 18-phone holds the same.
  */
 import type { BoardManifest } from '../../board-match.ts';
 
@@ -12,7 +15,7 @@ const manifest: BoardManifest = {
   build: { story: 'boards-17-cannot-display--cannot-display-page' },
   landmarks: [
     { id: 'sheet', role: 'group', name: 'The page cannot be displayed', type: false },
-    { id: 'title', role: 'heading', name: 'The page cannot be displayed' },
+    { id: 'title', role: 'heading', name: 'The page cannot be displayed', buildSize: 18.7501 },
     { id: 'try-again', role: 'button', name: 'Try again' },
     { id: 'index', role: 'link', name: 'back to the index' },
     { id: 'address', role: 'text', name: 'Cannot load dw.gripe/t/3f2a9c1e' },

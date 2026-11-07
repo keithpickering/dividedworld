@@ -116,7 +116,7 @@
   margin: 0 0 8px;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--kb-sheet-rule);
-  font: bold 19px / 1.3 Verdana, Tahoma, Geneva, 'DejaVu Sans', sans-serif;
+  font: bold var(--kb-size-heading) / 1.3 Verdana, Tahoma, Geneva, 'DejaVu Sans', sans-serif;
 }
 
 .kb-unavailable-sheet p {
