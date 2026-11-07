@@ -40,7 +40,7 @@ import type { Career } from '../../../engine/system/career.ts';
 import type {
   AdminQueue, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEnded, CardEvent, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd, FaceDownPass,
-  Alert, ContactLink, EffectState, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
+  Alert, ContactLink, EffectState, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
   Boot, BoardPage, IndexPage, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson,
   AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
@@ -184,6 +184,32 @@ function toSeasonNews(r: Row): SeasonNewsItem {
 function toSeasonRecord(r: Row): SeasonRecordRow[] {
   return typeof r?.['season'] === 'number' ? [{ season: r['season'], place: num(r['place']), standing: num(r['standing']), at: String(r['at']) }] : [];
 }
+
+/** A search cursor as the search reads return it; one with no time or Act is no cursor. */
+function toSearchCursor(v: unknown): SearchCursor | null {
+  return isObject(v) && typeof v['at'] === 'string' && typeof v['act'] === 'string'
+    ? { rank: typeof v['rank'] === 'number' ? v['rank'] : null, at: v['at'], act: v['act'] }
+    : null;
+}
+function toPostHit(r: Row): PostHit {
+  return {
+    act: r['act'], thread: r['thread'], title: str(r['title']) ?? '', board: r['board'], boardSlug: str(r['board_slug']) ?? '', boardName: str(r['board_name']) ?? '',
+    seq: num(r['seq']), page: num(r['page'], 1), character: r['character'] ?? null, name: str(r['name']), createdAt: r['created_at'], snippet: str(r['snippet']) ?? '',
+    cards: Array.isArray(r['cards']) ? r['cards'].filter((c): c is string => typeof c === 'string') : [],
+  };
+}
+/** `matches` is a count to 100; `matches_more` (or the text "100+") says there were others. */
+function toThreadHit(r: Row): ThreadHit {
+  const m = r['matches'];
+  return { ...toPostHit(r), matches: typeof m === 'number' ? m : parseInt(String(m), 10) || 0, matchesMore: r['matches_more'] === true || (typeof m === 'string' && m.endsWith('+')) };
+}
+function toSearchPage<T>(d: unknown, hit: (r: Row) => T): SearchPage<T> {
+  if (!isObject(d)) throw new Error(NOT_READ);
+  return { count: num(d['count']), more: d['more'] === true, pooled: d['pooled'] === true, results: rowsOf(d['results']).map(hit), next: toSearchCursor(d['next']) };
+}
+const searchArgs = (q: SearchQuery, after: SearchCursor | null | undefined) => ({
+  q: q.q, author: q.author, board: q.board, from_at: q.fromAt, to_at: q.toAt, titles_only: q.titlesOnly, sort: q.sort, after: after ?? null, per_page: q.perPage,
+});
 
 function toThread(r: Row): ThreadSummary {
   return {
@@ -1199,6 +1225,23 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const d = (await read(() => client.rpc('index_page'))).data as Row | null;
       if (!isObject(d)) throw new Error(NOT_READ);
       return { boards: rowsOf(d['boards']).map(toBoardSummary), characters: rowsOf(d['characters']).map(faceOf), presence: toPresence(d['presence'] ?? {}), unread: toUnread(d['unread']) };
+    },
+    async searchPosts(q, after): Promise<SearchPage<PostHit>> {
+      return toSearchPage((await read(() => client.rpc('search_posts', searchArgs(q, after)))).data, toPostHit);
+    },
+    async searchThreads(q, after): Promise<SearchPage<ThreadHit>> {
+      return toSearchPage((await read(() => client.rpc('search_threads', searchArgs(q, after)))).data, toThreadHit);
+    },
+    async suggest(prefix, options): Promise<Suggestions> {
+      const d = (await read(() => client.rpc('search_suggest', {
+        prefix, kinds: options?.kinds ? [...options.kinds] : null, board: options?.board ?? null, exclude_system: options?.excludeSystem ?? false, most: options?.most ?? null,
+      }))).data as Row | null;
+      if (!isObject(d)) throw new Error(NOT_READ);
+      return {
+        threads: rowsOf(d['threads']).map((t) => ({ id: t['id'], title: str(t['title']) ?? '', board: t['board'], boardName: str(t['board_name']) ?? '' })),
+        characters: rowsOf(d['characters']).map((c) => ({ id: c['id'], name: str(c['name']) ?? '' })),
+        boards: rowsOf(d['boards']).map((b) => ({ id: b['id'], slug: str(b['slug']) ?? '', name: str(b['name']) ?? '' })),
+      };
     },
     async boardPage(slug, page, effectCards): Promise<BoardPage | null> {
       const d = (await read(() => client.rpc('board_page', { in_slug: slug, in_page: page, effect_cards: [...effectCards] }))).data as Row | null;

@@ -46,11 +46,116 @@ export const SPUN_FROM_MAX = 200;
 
 export type Answer<T> = { readonly ok: true; readonly value: T } | Refusal;
 
+/* ---------------------------------------------------------------- search ---- */
+
+/** The most matches a search counts: it counts to one past this, so `more` says whether there are others. */
+export const SEARCH_COUNT_CAP = 1000;
+/** The most posts of one thread a thread-result counts before it says "100+". */
+export const SEARCH_MATCHES_CAP = 100;
+/** A page of results: 1 to `SEARCH_PER_PAGE_MAX`, `SEARCH_PER_PAGE` when not asked. */
+export const SEARCH_PER_PAGE = 20;
+export const SEARCH_PER_PAGE_MAX = 50;
+/** The most card marks a post result carries. */
+export const SEARCH_CARDS_MAX = 8;
+
+export type SearchSort = 'relevance' | 'newest' | 'oldest';
+
+/** The filters of a search (search_posts, search_threads). An empty `q` is every post the other filters leave. */
+export interface SearchQuery {
+  readonly q: string;
+  /** A character; one that has not debuted finds nothing, the answer a random id gets. */
+  readonly author: Id | null;
+  readonly board: Id | null;
+  /** ISO times, inclusive; null for none. */
+  readonly fromAt: string | null;
+  readonly toAt: string | null;
+  readonly titlesOnly: boolean;
+  /** Null is the default: relevance with keywords, newest without. */
+  readonly sort: SearchSort | null;
+  /** Null is `SEARCH_PER_PAGE`. */
+  readonly perPage: number | null;
+}
+
+/** Where the next page starts: the rank (null for newest and oldest), the time and the Act of the last result shown. */
+export interface SearchCursor {
+  readonly rank: number | null;
+  readonly at: string;
+  readonly act: Id;
+}
+
+/**
+ * A page of results. `count` stops at one past `SEARCH_COUNT_CAP` and `more` says it did (so the line reads "More than 1,000"); `pooled` says a
+ * relevance search ranked only the newest `searchRankPool` matches; `next` is the cursor of the following page, null on the last.
+ */
+export interface SearchPage<T> {
+  readonly count: number;
+  readonly more: boolean;
+  readonly pooled: boolean;
+  readonly results: readonly T[];
+  readonly next: SearchCursor | null;
+}
+
+/** One post that matched. `snippet` carries `<<` and `>>` around the matched words (`snippetParts`). */
+export interface PostHit {
+  readonly act: Id;
+  readonly thread: Id;
+  readonly title: string;
+  readonly board: Id;
+  readonly boardSlug: string;
+  readonly boardName: string;
+  readonly seq: number;
+  /** The page of the thread the post is on. */
+  readonly page: number;
+  readonly character: Id | null;
+  readonly name: string | null;
+  readonly createdAt: string;
+  readonly snippet: string;
+  /** The keys of the cards live on the post, at most `SEARCH_CARDS_MAX`. */
+  readonly cards: readonly string[];
+}
+
+/** One thread that matched, once, with its best snippet. `matches` counts its matching posts to `SEARCH_MATCHES_CAP`; `matchesMore` says there were others. */
+export interface ThreadHit {
+  readonly act: Id;
+  readonly thread: Id;
+  readonly title: string;
+  readonly board: Id;
+  readonly boardSlug: string;
+  readonly boardName: string;
+  readonly seq: number;
+  readonly page: number;
+  readonly character: Id | null;
+  readonly name: string | null;
+  readonly createdAt: string;
+  readonly snippet: string;
+  readonly cards: readonly string[];
+  readonly matches: number;
+  readonly matchesMore: boolean;
+}
+
+/** What suggest may be asked: the groups wanted (all three when omitted), a board to keep to, whether to leave out The System's board, and how many of each (1 to 10, default 5). */
+export interface SuggestOptions {
+  readonly kinds?: readonly ('threads' | 'characters' | 'boards')[];
+  readonly board?: Id | null;
+  readonly excludeSystem?: boolean;
+  readonly most?: number;
+}
+
+export interface Suggestions {
+  readonly threads: readonly { readonly id: Id; readonly title: string; readonly board: Id; readonly boardName: string }[];
+  readonly characters: readonly { readonly id: Id; readonly name: string }[];
+  readonly boards: readonly { readonly id: Id; readonly slug: string; readonly name: string }[];
+}
+
 /* ---------------------------------------------------------------- the instance ---- */
 
 /** The instance settings a screen reads (the screen_settings view): none of them a private fact. */
 export interface ScreenSettings {
   readonly postsPerPage: number;
+  /** The text search configuration the search index is built in (`searchLanguage`); a screen never needs it but the view holds it. */
+  readonly searchLanguage: string;
+  /** How many of the newest matches a relevance search ranks (`searchRankPool`): the count line says "ranked among the newest N" from it. */
+  readonly searchRankPool: number;
   /** A thread is HOT with at least this many replies in the last seven days. */
   readonly hotReplies: number;
   readonly editGrace: Span;
@@ -1615,6 +1720,12 @@ export interface KayfaApi {
   indexPage(): Promise<IndexPage>;
   /** A board's page in one read; null where the board does not exist. `effectCards` names the cards the instance draws an effect for. */
   boardPage(slug: string, page: number, effectCards: readonly string[]): Promise<BoardPage | null>;
+  /** The posts that match a search, a page at a time; `after` is the previous page's `next`. Refused (rejects) on an argument out of range, as the server refuses it. */
+  searchPosts(q: SearchQuery, after?: SearchCursor | null): Promise<SearchPage<PostHit>>;
+  /** The threads that match a search, each once with its best snippet, paged as `searchPosts` is. */
+  searchThreads(q: SearchQuery, after?: SearchCursor | null): Promise<SearchPage<ThreadHit>>;
+  /** Suggestions for a prefix of 2 to 100 characters; an empty prefix with only threads asked lists the newest threads. */
+  suggest(prefix: string, options?: SuggestOptions): Promise<Suggestions>;
   /** A thread's page in one read, at a page or around a seq (the seq wins); null where the thread does not exist. Also the read for a next page and a gap. A null `perPage` is the instance's own postsPerPage, which the server reads (a first load does not know it yet). */
   threadPage(thread: Id, at: { readonly page?: number | null; readonly seq?: number | null }, perPage: number | null, effectCards: readonly string[]): Promise<ThreadPage | null>;
   /** How a visit went (`VisitStory`), read when its Lens tab opens: its thread and post are the page's. */
