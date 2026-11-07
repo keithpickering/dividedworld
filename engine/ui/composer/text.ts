@@ -2,6 +2,8 @@
  * What a toolbar press does to the draft: pure functions from the text and the selection to the new
  * text and the selection after. The box applies the result; nothing here touches the page.
  */
+import { parse, type BbNode } from '../../bbcode/parse.ts';
+
 export type Tool = 'bold' | 'italic' | 'underline' | 'strike' | 'link' | 'image' | 'code' | 'list';
 
 export interface Edited {
@@ -43,6 +45,27 @@ export function applyTool(tool: Tool, text: string, start: number, end: number):
   const [open, close] = TAGS[tool];
   return wrap(text, start, end, open, close);
 }
+
+/**
+ * The characters a draft puts words in the mouth of: the distinct `user` ids of its counterfeit quotes (a quote with a typed name, or none, and `user=<id>`), in the
+ * order they are named, at most `FRAMED_MOST`. A real quote of an Act, and a counterfeit that names no character, add none. The server looks at no more than five.
+ */
+export const FRAMED_MOST = 5;
+export function framedIn(draft: string): string[] {
+  const found = new Set<string>();
+  const walk = (nodes: readonly BbNode[]) => {
+    for (const n of nodes) {
+      if (found.size >= FRAMED_MOST) return;
+      if (n.type === 'counterfeit' && n.user !== null) found.add(n.user);
+      if ('children' in n) walk(n.children);
+    }
+  };
+  walk(parse(draft));
+  return [...found];
+}
+
+/** The trailing `framing` argument of a send: the draft's framed characters, or no argument at all when it frames none. */
+export const framingArgs = (draft: string): [readonly string[]] | [] => { const f = framedIn(draft); return f.length > 0 ? [f] : []; };
 
 /** The draft with a quote of an Act appended on a line of its own: the whole post, by its Act. */
 export function quoteText(draft: string, act: string, body: string): string {

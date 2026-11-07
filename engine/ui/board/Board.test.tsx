@@ -377,6 +377,19 @@ describe('the new-thread form', () => {
     expect(window.location.href).not.toContain(listed[0]!.firstCharacter ?? 'never');
   });
 
+  test('sends the characters its first post\'s counterfeit quotes name as framing', async () => {
+    let spritey = '';
+    const { fake } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => { const w = world(f, { threads: 0 }); spritey = w.spritey; return w; } });
+    const started = vi.spyOn(fake, 'startThread');
+    const form = await openForm();
+    await waitFor(() => expect(within(form).getByText('Pipewrench')).toBeInTheDocument());
+    await userEvent.type(within(form).getByRole('textbox', { name: 'Title' }), 'Framed');
+    await userEvent.click(within(form).getByRole('textbox', { name: 'First post' }));
+    await userEvent.paste(`[quote=Spritey user=${spritey}]Nope.[/quote]`);
+    await userEvent.click(within(form).getByRole('button', { name: 'Start thread' }));
+    await waitFor(() => expect(started).toHaveBeenCalledWith(expect.any(String), expect.any(String), 'Framed', expect.stringContaining('Nope.'), [spritey]));
+  });
+
   test('a refusal shows the server\'s words and keeps the draft', async () => {
     renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 0 }) });
     const form = await openForm();

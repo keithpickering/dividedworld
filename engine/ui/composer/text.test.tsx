@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { applyTool, diffRange, quoteText } from './text.ts';
+import { applyTool, diffRange, framedIn, quoteText } from './text.ts';
 
 describe('what a toolbar press does to the text', () => {
   test('wraps the selection and keeps it selected inside the tags', () => {
@@ -37,5 +37,27 @@ describe('diffRange', () => {
     }
     expect(diffRange('hi', '[b]hi[/b]')).toEqual({ start: 0, end: 2, insert: '[b]hi[/b]' });
     expect(diffRange('abc\n', 'abc\n[quote=1]q[/quote]\n')).toEqual({ start: 4, end: 4, insert: '[quote=1]q[/quote]\n' });
+  });
+});
+
+describe('framedIn: the characters a draft puts words in the mouth of', () => {
+  const A = '11111111-1111-4111-8111-111111111111';
+  const B = '22222222-2222-4222-8222-222222222222';
+  const ACT = '33333333-3333-4333-8333-333333333333';
+  test('is the distinct user ids of its counterfeits, in the order named', () => {
+    expect(framedIn(`[quote=Ana user=${A}]a[/quote] and [quote=Bo user=${B}]b[/quote]`)).toEqual([A, B]);
+  });
+  test('names a repeated id once, and finds one inside another quote', () => {
+    expect(framedIn(`[quote user=${A}]x[/quote][quote=Ana user=${A}]y[/quote]`)).toEqual([A]);
+    expect(framedIn(`[quote=Bo user=${B}][quote=Ana user=${A}]in[/quote][/quote]`)).toEqual([B, A]);
+  });
+  test('ignores a real quote of an Act, a hand-typed counterfeit with no user, and plain text', () => {
+    expect(framedIn(`[quote=${ACT}]real[/quote]`)).toEqual([]);
+    expect(framedIn('[quote=Ana]typed by hand[/quote]')).toEqual([]);
+    expect(framedIn('no tags, though user=' + A)).toEqual([]);
+  });
+  test('names at most five', () => {
+    const ids = Array.from({ length: 7 }, (_, i) => `aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa${i}`);
+    expect(framedIn(ids.map((i) => `[quote user=${i}]x[/quote]`).join(''))).toEqual(ids.slice(0, 5));
   });
 });

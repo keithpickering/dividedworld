@@ -53,6 +53,17 @@ describe('the quick reply', () => {
     expect(localStorage.getItem(draftKey(w))).toBeNull();
   });
 
+  test('sends the characters its counterfeit quotes name as framing, and sends none when it has none', async () => {
+    const w = threadWorld();
+    const posted = vi.spyOn(w.fake, 'post');
+    openThread(w);
+    await say(`[quote=Spritey user=${w.spritey}]I never said this.[/quote] [quote=Spritey user=${w.spritey}]Nor this.[/quote]`);
+    await userEvent.click(send());
+    await waitFor(() => expect(posted).toHaveBeenCalledTimes(1));
+    expect(posted.mock.calls[0]).toEqual([w.thread, w.pipe, expect.stringContaining('I never said'), null, [w.spritey]]);
+    await waitFor(async () => expect(((await w.fake.alerts()).filter((a) => a.kind === 'framed'))).toEqual([]));
+  });
+
   test('a swap of the HUD\'s character mid-draft blocks the send until it is confirmed', async () => {
     const w = threadWorld();
     const posted = vi.spyOn(w.fake, 'post');

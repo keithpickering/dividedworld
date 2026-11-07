@@ -792,23 +792,29 @@ describe('writes through the act function', () => {
       if (r.url.pathname === '/functions/v1/act') {
         const a = (r.body as { action: string }).action;
         if (a === 'react') return json({ act: A, thread: T, tally: { fire: 1 } });
-        if (a === 'startThread') return json({ thread: { id: T, board: C, title: 'A title', origin_act_id: null, created_at: '2026-10-01T09:00:00+00:00' }, act: ACT_ROW });
+        if (a === 'startThread' || a === 'spin') return json({ thread: { id: T, board: C, title: 'A title', origin_act_id: null, created_at: '2026-10-01T09:00:00+00:00' }, act: ACT_ROW });
         return json(ACT_ROW);
       }
       return undefined;
     });
     expect(await h.api.post(T, B, 'hi', A)).toEqual({ ok: true, value: ACT });
     expect(await h.api.post(T, B, 'hi', null)).toEqual({ ok: true, value: ACT });
+    expect(await h.api.post(T, B, 'hi', null, [C])).toEqual({ ok: true, value: ACT });
     expect(await h.api.edit(A, B, 'new')).toEqual({ ok: true, value: ACT });
     expect(await h.api.react(A, B, 'fire')).toEqual({ ok: true, value: { act: A, tally: { fire: 1 } } });
     const started = await h.api.startThread('general', B, 'A title', 'body');
     expect(started).toEqual({ ok: true, value: { thread: { id: T, board: C, title: 'A title', originActId: null, createdAt: '2026-10-01T09:00:00+00:00', lastAt: ACT.createdAt, lastSeq: 2, firstAct: A, firstCharacter: B, lastAct: A, lastCharacter: B, replies: 0, repliesThisWeek: 0, originThread: null, origin: null }, act: ACT } });
+    await h.api.startThread('general', B, 'A title', 'body', [C]);
+    await h.api.spin(A, B, 'A title', 'body', [C]);
     expect(act(h).map((r) => r.body)).toEqual([
       { action: 'post', thread: T, character: B, body: 'hi', quote: A },
       { action: 'post', thread: T, character: B, body: 'hi' },
+      { action: 'post', thread: T, character: B, body: 'hi', framing: [C] },
       { action: 'edit', post: A, character: B, body: 'new' },
       { action: 'react', act: A, character: B, kind: 'fire' },
       { action: 'startThread', board: 'general', character: B, title: 'A title', body: 'body' },
+      { action: 'startThread', board: 'general', character: B, title: 'A title', body: 'body', framing: [C] },
+      { action: 'spin', origin: A, character: B, title: 'A title', body: 'body', framing: [C] },
     ]);
     for (const r of act(h)) {
       expect(r.method).toBe('POST');

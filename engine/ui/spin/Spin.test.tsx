@@ -86,6 +86,20 @@ describe('the Spin thread link', () => {
     expect(made.title).toBe('About post two');
   });
 
+  test('sends the characters its opening post\'s counterfeit quotes name as framing', async () => {
+    const w = threadWorld(3);
+    const spun = vi.spyOn(w.fake, 'spin');
+    openThread(w);
+    const article = await screen.findByRole('article', { name: /^Post 2 /u });
+    await userEvent.click(spinLink(article));
+    const form = within(article).getByRole('form', { name: 'Spin a thread from post 2' });
+    await userEvent.type(within(form).getByLabelText('Thread title'), 'Framed spin');
+    await userEvent.click(within(form).getByLabelText('Your opening post (optional)'));
+    await userEvent.paste(`[quote=Spritey user=${w.spritey}]Nope.[/quote]`);
+    await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
+    await waitFor(() => expect(spun).toHaveBeenCalledWith(w.ids[1], w.pipe, 'Framed spin', expect.stringContaining('Nope.'), [w.spritey]));
+  });
+
   test('a swap of the HUD\'s character mid-form needs the press again, like the reply box', async () => {
     const w = threadWorld(3);
     const spun = vi.spyOn(w.fake, 'spin');

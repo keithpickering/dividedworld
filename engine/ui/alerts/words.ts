@@ -138,6 +138,13 @@ export function wordsFor(row: Alert, ctx: WordsContext): Said {
         detail: row.title ? ['In ', { em: row.title }, act && act.seq !== null ? `, post #${act.seq}.` : '.'] : [],
         ways: postWay(act, row, ctx), who,
       };
+    case 'framed':
+      /* Out of character and true: a post holds words put in this character's mouth. It never says who wrote them, or whether the character said them. */
+      return {
+        line: [`Someone put words in ${row.name ?? 'your character'}'s mouth`],
+        detail: row.title ? ['In ', { em: row.title }, act && act.seq !== null ? `, post #${act.seq}.` : '.'] : [],
+        ways: postWay(act, row, ctx), who,
+      };
     case 'cardOnYours': {
       const on = cardOn(row, ctx);
       if (!on) return { line: ['A card was played on something of yours'], detail: inTitle(row), ways: threadWay(row), who };

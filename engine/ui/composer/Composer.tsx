@@ -27,7 +27,7 @@ import { text as textOf } from '../thread/lines.tsx';
 import { useBannedUntil } from './ban.ts';
 import { draftKey, readDraft, useWhoPosts, writeDraft } from './draft.ts';
 import { Editor, type EditorHandle } from './Editor.tsx';
-import { quoteText } from './text.ts';
+import { framingArgs, quoteText } from './text.ts';
 import { Layers } from '../glass/layer.tsx';
 
 export interface ComposerHandle {
@@ -157,7 +157,7 @@ function ComposerBody({ thread, latest, since, onPosted, ref, account }: Compose
     setRefusal(null);
     try {
       let answer;
-      try { answer = await api.post(thread, character, sent, firstQuote(sent)); } catch { await look(null, from, sent, character); return; }
+      try { answer = await api.post(thread, character, sent, firstQuote(sent), ...framingArgs(sent)); } catch { await look(null, from, sent, character); return; }
       if (answer.ok) landed(answer.value, sent);
       else if (answer.uncertain) await look(answer.error, from, sent, character);
       else setRefusal(answer.error);
