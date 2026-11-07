@@ -146,9 +146,7 @@
  * never a waste of time to play a card even if someone wrote a single line with no avatar/sig"): 8em, whether a postbit stands beside it
  * or the post is stacked. A line of the game's (an unmask, a move's end) is no post and keeps its own height.
  */
-.kb-act:is([data-kb-kind="post"], [data-kb-kind="spin"]) > .kb-act-main {
-  min-height: 8em;
-}
+/* EXPERIMENT (throwaway, #304): no min-height. */
 
 .kb-act-main [data-kb-effect-ink] {
   z-index: 1;
