@@ -1,6 +1,6 @@
 /**
  * The carousel: one row of cards, as many as fit at the theme's card width, the next peeking under
- * a fade, with arrows and a count ("1–4 of 5") while the row overflows. How many show comes from
+ * a fade, with arrows and a count ("1–4 of 6") while the row overflows. How many show comes from
  * the width, never from how many items there are. The row scrolls the chosen card whole into view,
  * gliding, or at once under reduced motion. A card scrolled out of view is never hidden or inert,
  * so a screen reader reaches every one (docs/plans/2026-11-04-glass-polish-design.md, section 4).

@@ -11,7 +11,7 @@
  *
  * The cards are one row, a carousel (docs/plans/2026-10-30-technician-design.md, section 3): as
  * many as fit at the theme's card width, the next peeking under a fade, with arrows and a count
- * ("1–4 of 5") while the row overflows. How many show comes from the width, never from how many
+ * ("1–4 of 6") while the row overflows. How many show comes from the width, never from how many
  * classes there are. It stays one radiogroup: the arrow keys move the choice through every class,
  * and the row scrolls the chosen card whole into view, gliding, or at once under reduced motion. A
  * card scrolled out of view is never hidden or inert, so a screen reader hears every class. The
