@@ -14,6 +14,11 @@
 --    refunded all the same. refund_stale_reports refunds a report whose judgment never came, and no other. Two sessions refunding at once refund once.
 -- 8. The doors: close_report, refund_report and the budget are the service's, open_report the player's, and a client cannot write a report or a verdict.
 
+-- The quota and the budget count reports since 00:00 UTC. Section 7b backdates a report past the sweep's age and expects it to still be today's, which is impossible in the
+-- first two minutes of a UTC day; so in that window wait it out here (a statement of its own: every later block's now() is taken after it).
+select pg_sleep(greatest(0, extract(epoch from (date_trunc('day', now() at time zone 'utc') + interval '2 minutes 5 seconds') - (clock_timestamp() at time zone 'utc'))))
+  where clock_timestamp() at time zone 'utc' < date_trunc('day', now() at time zone 'utc') + interval '2 minutes';
+
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
 begin
   execute stmt;
@@ -524,6 +529,8 @@ declare
   old uuid;
   annu uuid := pg_temp.ann();
   was jsonb := (select value from settings where key = 'modBots');
+  -- The sweep's age and the backdate that passes it: 10 and 11 minutes, or 1 and 2 early in the UTC day so the backdated report is still today's (it counts toward today's quota).
+  sweep_min integer := case when now() - day_start >= interval '12 minutes' then 10 else 1 end;
 begin
   update wallets set balance = 500 where account in (annu, pg_temp.bob());
   -- The budget leaves room for two more reports than the ledger and the unanswered reports already hold. Two are opened (nothing judged yet); the third is refused.
@@ -560,9 +567,9 @@ begin
   update settings set value = jsonb_set(value, '{reportsPerDay}', '2') where key = 'modBots';
   q1 := pg_temp.report(qc, p, 'Quota one.');
   perform set_config('kayfabb.report_writer', 'on', true);
-  insert into acts (character, kind, thread, target_act_id, payload, created_at) values (qc, 'report', t, p, '{"reason": "never judged"}', now() - interval '1 hour') returning id into old;
+  insert into acts (character, kind, thread, target_act_id, payload, created_at) values (qc, 'report', t, p, '{"reason": "never judged"}', now() - make_interval(mins => sweep_min + 1)) returning id into old;
   perform set_config('kayfabb.report_writer', '', true);
-  if refund_stale_reports(10) is distinct from 1 then raise exception 'the sweep did not take the old report'; end if;
+  if refund_stale_reports(sweep_min) is distinct from 1 then raise exception 'the sweep did not take the old report'; end if;
   if (select why from report_refunds where report_act = old) is distinct from 'stale' then raise exception 'the sweep''s refund is not marked stale: %', (select why from report_refunds where report_act = old); end if;
   perform tests.become(annu);
   said := pg_temp.refusal(format('select open_report(%L, %L, %L)', qc, p, 'Quota three.'));
