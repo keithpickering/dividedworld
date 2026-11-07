@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { tokensOf } from '../contrast.ts';
 import { ratio, MODES } from '../contrast.ts';
 import { bandOf, luminanceOf, POST_INK, shineIsReadable, toLinear } from './band.ts';
-import { burst, burstProbe, drawBurst, GLINT_SHARE, glintsAreFew, glintShare, landAll, makeFlakes, MAX_IN_FLIGHT, release, sampleBurst, sampleCling, sampleFlakes, stepBurst, type Flakes } from './flakes.ts';
+import { burst, burstProbe, drawBurst, GLINT_FLOOR, GLINT_SHARE, glintsAreFew, glintShare, landAll, makeFlakes, MAX_IN_FLIGHT, release, sampleBurst, sampleCling, sampleFlakes, stepBurst, type Flakes } from './flakes.ts';
 
 /* The bench's GLITTER inks (docs/research/2026-11-06-shine-bench/01-bench.html): seven rainbow inks, then silver for the
    holographic flakes from index 7. They are the reference inks for these tests, copied as literals. */
@@ -187,12 +187,19 @@ describe('flakes', () => {
   });
 
   /* The dark board's glints leave the band (section 5, issue #340); this is what holds them to a few flakes at once. */
-  test('glints are few: at every light and moment, at most GLINT_SHARE of the flakes glint', () => {
+  test('glints are few: at every light and moment, at most GLINT_SHARE of the flakes glint (GLINT_FLOOR on a short post), at every size', () => {
+    const nows = Array.from({ length: 80 }, (_, k) => k * 250);
+    /* A short post's few hundred flakes are where chance crowds a light most; a tall one's thousands where a share is tested. */
+    for (const box of [{ w: 120, h: 60 }, { w: 200, h: 100 }, { w: 300, h: 80 }, { w: 400, h: 120 }, BOX]) {
+      for (const seed of ['g1', 'g2', 'g3', 'g4']) {
+        const f = make(seed, box);
+        landEverything(f);
+        assert.deepEqual(glintsAreFew(f, nows).slice(0, 3), [], `${box.w}x${box.h} ${seed}`);
+      }
+    }
+    /* And the light the post's own flakes crowd toward does glint some, so the check is not passing on nothing. */
     const f = make();
     landEverything(f);
-    const nows = Array.from({ length: 80 }, (_, k) => k * 250);
-    assert.deepEqual(glintsAreFew(f, nows).slice(0, 5), []);
-    /* And the light the post's own flakes crowd toward does glint some, so the check is not passing on nothing. */
     assert.ok(Math.max(...nows.map((now) => glintShare(f, { x: 0, y: 0 }, now))) > 0);
   });
 
@@ -204,6 +211,20 @@ describe('flakes', () => {
     assert.ok(failures.length > 0);
     assert.ok(failures.every((m) => m.includes('at light (0.375, -0.75)')), failures[0]);
     assert.ok(glintShare(f, { x: 0.375, y: -0.75 }, 0) > GLINT_SHARE);
+  });
+
+  test('POISON: a short post with GLINT_FLOOR + 1 flakes facing one light is named; with GLINT_FLOOR, it passes', () => {
+    for (const [extra, named] of [[1, true], [0, false]] as const) {
+      const f = make('floor', { w: 200, h: 100 });
+      landEverything(f);
+      const list = (f as unknown as { settled: Array<{ nx: number; ny: number; tw: number }> }).settled;
+      /* Every flake far off the grid's lights and not winking, then GLINT_FLOOR (+ 1) of them aimed at one. */
+      for (const k of list) { k.nx = 9; k.ny = 9; k.tw = 0; }
+      for (const k of list.slice(0, GLINT_FLOOR + extra)) { k.nx = 0.375; k.ny = -0.75; }
+      assert.ok(GLINT_SHARE * list.length < GLINT_FLOOR, 'a post short enough that the floor is the cap');
+      const failures = glintsAreFew(f, [0]);
+      assert.equal(failures.length > 0, named, failures[0]);
+    }
   });
 
   test('drawing paints each settled flake once; a flare is drawn where the band reaches white, and on the dark board only with a canvas for its hue', () => {

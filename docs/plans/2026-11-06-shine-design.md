@@ -165,12 +165,18 @@ come and go as the light moves or a flake winks.
   the ceiling, then its largest channel at 1), with the instance's glint (Divided World's white) over its heart at half
   its size, as real glitter flashes white at its center and colored at its edge.
 - **The settled field stays inside.** Every flake's own color, lit or not, is clamped as before; so are the burst over
-  the words, the puff and the cling layer, which are not the settled glints this decision lets out.
+  the words, the puff, the cling layer and loose glitter (flakes carried off by the pointer and dropped on a post), which
+  are not a post's own settled glints. A flare in those keeps the in-band tint it had.
+- **Not under reduced motion.** There the light rests, so a glint would never pass, and the accessible path would carry a
+  lasting patch out of the band under the words. Under reduced motion a flare keeps the in-band tint.
 - **The check.** The readable-band check samples everything but the glints. A second check, `glintsAreFew`
   (`engine/ui/shine/flakes.ts`), holds that at every light of the grid and every moment of a 20-second idle walk at most
-  3% of a post's settled flakes glint (about 1.4% at the most crowded light today); its self-test drives it red with a
-  post whose flakes all face one light. `engine/ui/shine/flakes.glint.test.ts` holds that a glint is out of the band, in
-  its flake's hue and added, and that nothing else the settled field draws is.
+  3% of a post's settled flakes glint, or 16 of them on a short post where that is more (a few hundred flakes put a
+  handful past a share by chance alone). Today the most crowded light glints about 1.6% of a tall post and at most 12
+  flakes of a short one, over posts from 120 by 60 to 988 by 300 px. Its self-tests drive it red with a post whose
+  flakes all face one light, and with 17 flakes facing one on a short post. `engine/ui/shine/flakes.glint.test.ts` holds
+  that a glint is out of the band, in its flake's hue and added, and that nothing else is: the flakes' own fills, loose
+  glitter, and every flare under reduced motion.
 
 ## 6. A busy page
 

@@ -20,7 +20,8 @@
  * - The dark board (a band that ends far short of white): each ink is taken at the ceiling, saturated (`ceilingOf`), and a
  *   flake facing the light glints: its flare is added, in its own hue at full brightness with the instance's glint at its
  *   heart (`glintOf`). The glints alone leave the band (docs/plans/2026-11-06-shine-design.md section 5, issue #340), and
- *   `glintsAreFew` holds them to a few flakes at any light; the settled field, the burst and the cling layer stay inside.
+ *   `glintsAreFew` holds them to a few flakes at any light; the settled field, the burst, the cling layer and loose glitter stay
+ *   inside, and under reduced motion, where the light rests, a flare is drawn in the band as well.
  *
  * Units: a box is CSS px {w, h}; `density` is px squared per flake; a light is {x, y} in -1.5..1.5; `now` is milliseconds, as
  * the page's loop gives it; colors are computed in LINEAR light and written as `#rrggbb`. A flake's `nx, ny` is its tilt, in the
@@ -289,8 +290,12 @@ const DARK_FLOOR = 0.42;
  * a flake whose tilt is within 0.093 of the light, about one flake in two hundred of a post's at a light inside the tilt disk.
  */
 export const GLINT_MIN = 0.75;
-/** The share of a post's settled flakes that may glint at once, at any light and any moment: `glintsAreFew`'s cap. */
+/**
+ * `glintsAreFew`'s cap: at any light and any moment, at most this share of a post's settled flakes glint, or `GLINT_FLOOR` of
+ * them where that is more (a short post's few hundred flakes put a handful past a share by chance alone).
+ */
 export const GLINT_SHARE = 0.03;
+export const GLINT_FLOOR = 16;
 /** How much of the glint's square the instance's glint fills at its heart, over the flake's own hue. */
 const GLINT_CORE = 0.5;
 
@@ -331,8 +336,14 @@ function darkInk(f: Flake, a: number, hi: number, lx: number, ly: number): Reado
  * the band by design (section 5): only `drawFlares` paints it, over a flake lit past `GLINT_MIN`.
  */
 const glintLin: Rgb = [0, 0, 0];
-function glintOf(f: Flake, lx: number, ly: number): string {
-  const all = brightOf(f.pal), n = Math.max(1, Math.min(f.pal.holo, all.length));
+function glintOf(f: Flake, lx: number, ly: number): string { return tintOf(f, lx, ly, brightOf(f.pal)); }
+/**
+ * The color a dark-board flare is drawn in where it may not glint (a loose flake, or under reduced motion): its hue at the
+ * ceiling, drawn over it, so it stays in the band. Into `glintLin` as `glintOf` does.
+ */
+function ceilTintOf(f: Flake, hi: number, lx: number, ly: number): string { return tintOf(f, lx, ly, ceilingOf(f.pal, hi)); }
+function tintOf(f: Flake, lx: number, ly: number, all: readonly Rgb[]): string {
+  const n = Math.max(1, Math.min(f.pal.holo, all.length));
   const c = f.ink >= f.pal.holo ? all[Math.round(holoT(f, lx, ly) * n) % n]! : all[f.ink]!;
   glintLin[0] = c[0]; glintLin[1] = c[1]; glintLin[2] = c[2];
   return hexFor(glintLin);
@@ -383,6 +394,7 @@ const flareA: number[] = [];
 function drawList(
   ctx: CanvasRenderingContext2D, all: readonly Flake[], light: Light, band: Band, now: number, idle: boolean,
   star: CanvasImageSource | null, density = 1, pick: { readonly idx: Int32Array; readonly n: number; readonly a?: Float64Array; readonly name?: string[] } | null = null, unlit = false,
+  glints = true,
 ): void {
   /* `pick` draws only those of `all`, in its order, with each one's litness and color when its caller has them already; `unlit`
      draws every flake at no light (the base layer: no flare). */
@@ -420,29 +432,32 @@ function drawList(
   }
   ctx.setTransform(d, 0, 0, d, 0, 0);
   if (!flareAt.length) return;
-  drawFlares(ctx, list, band, lx, ly, star);
+  drawFlares(ctx, list, band, lx, ly, star, glints && !motionReduced());
 }
 
 /**
- * The flares over the flakes `drawList` found facing the light, added to what is under them. Where the band reaches white (the
- * light board) a flare is the glint's sprite, and adding it stays in the band. On the dark board each one is a glint, the one
- * thing the shine draws out of the band there (section 5, issue #340): the flake's own hue at full brightness (`glintOf`), with
- * the instance's glint over its heart at `GLINT_CORE` of its size, as real glitter flashes white at its center and colored at
- * its edge. `glintsAreFew` holds how many there are. Anywhere else none is drawn.
+ * The flares over the flakes `drawList` found facing the light. Where the band reaches white (the light board) a flare is the
+ * glint's sprite, added, and that stays in the band. On the dark board, where `glints` allows it, each one is a glint, the one
+ * thing the shine draws out of the band there (section 5, issue #340): added, in the flake's own hue at full brightness
+ * (`glintOf`), with the instance's glint over its heart at `GLINT_CORE` of its size, as real glitter flashes white at its center
+ * and colored at its edge; `glintsAreFew` holds how many there are. Only a post's settled flakes glint, and only while motion is
+ * full, since a reduced-motion light rests and a glint there would never pass: elsewhere on the dark board a flare is drawn over
+ * its flake, not added, in its hue at the ceiling (`ceilTintOf`), a mix of colors under the ceiling. Anywhere else none is drawn.
  */
-function drawFlares(ctx: CanvasRenderingContext2D, list: readonly Flake[], band: Band, lx: number, ly: number, star: CanvasImageSource | null): void {
+function drawFlares(ctx: CanvasRenderingContext2D, list: readonly Flake[], band: Band, lx: number, ly: number, star: CanvasImageSource | null, glints: boolean): void {
   const white = band.hi >= 1;
   if (white ? !star : band.lo !== 0) return;
-  ctx.globalCompositeOperation = 'lighter';
+  const added = white || glints;
+  if (added) ctx.globalCompositeOperation = 'lighter';
   for (let j = 0; j < flareAt.length; j++) {
     const f = list[flareAt[j]!]!;
     const alpha = (flareA[j]! - GLINT_MIN) / (1 - GLINT_MIN);
     if (alpha < 0.03) continue;
-    const sprite = white ? star : spriteOf(glintOf(f, lx, ly), glintLin);
+    const sprite = white ? star : spriteOf(glints ? glintOf(f, lx, ly) : ceilTintOf(f, band.hi, lx, ly), glintLin);
     if (!sprite) continue;
     const z = 7 + f.s * 4;
     ctx.globalAlpha = alpha; ctx.drawImage(sprite, f.x - z / 2, f.y - z / 2, z, z);
-    if (!white && star) {
+    if (!white && glints && star) {
       const c = z * GLINT_CORE;
       ctx.drawImage(star, f.x - c / 2, f.y - c / 2, c, c);
     }
@@ -610,14 +625,16 @@ export function glintShare(flakes: Flakes, light: Light, now: number): number {
 
 /**
  * The check that the dark board's glints stay few (section 5): at every light of `LIGHT_GRID` and every moment in `nows`, at most
- * `GLINT_SHARE` of the post's settled flakes glint. Every light and moment past it, in words; empty when they are few.
+ * `GLINT_SHARE` of the post's settled flakes glint, or `GLINT_FLOOR` of them where that is more. Every light and moment past it,
+ * in words; empty when they are few.
  */
 export function glintsAreFew(flakes: Flakes, nows: readonly number[]): string[] {
   const failures: string[] = [];
+  const n = (flakes as Inner).settled.length, cap = Math.max(GLINT_SHARE * n, GLINT_FLOOR);
   for (const light of LIGHT_GRID) {
     for (const now of nows) {
-      const share = glintShare(flakes, light, now);
-      if (share > GLINT_SHARE) failures.push(`${(share * 100).toFixed(1)}% of the flakes glint at light (${light.x}, ${light.y}) at ${now} ms`);
+      const share = glintShare(flakes, light, now), k = Math.round(share * n);
+      if (k > cap) failures.push(`${k} of ${n} flakes (${(share * 100).toFixed(1)}%) glint at light (${light.x}, ${light.y}) at ${now} ms`);
     }
   }
   return failures;
@@ -842,10 +859,11 @@ export function loose(host: object): Flake[] {
   return list;
 }
 
-/** Paints a host's loose flakes, as `draw` paints its settled ones. */
+/** Paints a host's loose flakes, as `draw` paints its settled ones, but with no glint out of the band on the dark board. */
 export function drawLoose(host: object, ctx: CanvasRenderingContext2D, light: Light, band: Band, now: number, idle: boolean, density = 1): void {
   const list = looseByHost.get(host);
-  if (list?.length) drawList(ctx, list, light, band, now, idle, starSprite(list[0]!.pal), density);
+  /* Loose flakes flare as settled ones do, but never glint out of the band: that is a post's own settled flakes' alone. */
+  if (list?.length) drawList(ctx, list, light, band, now, idle, starSprite(list[0]!.pal), density, null, false, false);
 }
 
 function addLoose(host: object, f: Flake): void {
