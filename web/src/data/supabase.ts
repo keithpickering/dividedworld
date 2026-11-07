@@ -586,6 +586,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     portraitFrame: toFrame(p?.['portrait_frame']),
     pipStyle: p?.['pip_style'] ?? 'default',
     joined: c['joined'] ?? '',
+    ...(typeof c['warn_points'] === 'number' && c['warn_points'] > 0 ? { warnPoints: c['warn_points'] } : {}),
     ...(typeof c['staff'] === 'string' ? { staff: c['staff'], ...(toOffice(c['office']) ? { office: toOffice(c['office'])! } : {}) } : {}),
   });
 
