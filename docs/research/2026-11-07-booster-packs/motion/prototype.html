@@ -901,15 +901,16 @@ async function buyPack() {
   const packAt = { x: 630, y: 260, s: 1 }, parkAt = { x: 630, y: 46 - 270, s: 1 };
   const pk = $('#pack'), top = $('#packTop'), cardsBox = $('#cards'), head = $('#head'), foot = $('#foot');
   for (const el of [head, foot]) { el.style.opacity = 0; }
-  /* The five lie inside the pack, behind its body, until the tear lets them out. */
+  /* The five are drawn only once the pack is open: until then they are inside it and nothing of them shows, even as the pack rises over them. */
   const inside = (i) => ({ x: packAt.x + 15 + (i - 2) * 2, y: packAt.y + 40, s: 150 / 276 });
-  [...document.querySelectorAll('.card')].forEach((c, i) => { c.style.opacity = 1; c.style.transform = at(inside(i)); });
+  [...document.querySelectorAll('.card')].forEach((c, i) => { c.style.opacity = 0; c.style.transform = at(inside(i)); });
   cardsBox.style.zIndex = 1; top.style.transform = 'none'; top.style.opacity = 1; pk.style.opacity = 1;
   /* E1, E2: the board dims (backdrop), and the pack rises from its slot to the middle (overlay, anchored on the slot). */
   play($('#dim'), [{ opacity: 0 }, { opacity: 1 }], f ? { duration: f.enter, easing: f.ease } : {});
   const from = `translate(${slot.x}px, ${slot.y}px) scale(${slot.w / 180})`;
   await play(pk, [{ transform: from, filter: `blur(${f ? f.blur : 0}px) drop-shadow(0 6px 14px rgba(7,5,13,.8))` }, { transform: at(packAt), filter: 'blur(0px) drop-shadow(0 6px 14px rgba(7,5,13,.8))' }], f ? { duration: f.screen, easing: landing(f) } : {});
-  /* E3: the tear. The crimped top rips away up and to the side and leaves the screen; it is gone for good. */
+  /* E3: the tear. The crimped top rips away up and to the side and leaves the screen; it is gone for good. The cards wait inside, behind the body. */
+  document.querySelectorAll('.card').forEach((c) => { c.style.opacity = 1; });
   await play(top, [{ transform: 'translate(0, 0) rotate(0deg)', opacity: 1 }, { transform: 'translate(40px, -60px) rotate(18deg)', opacity: 1, offset: 0.4 }, { transform: 'translate(180px, -340px) rotate(40deg)', opacity: 0 }], f ? { duration: f.enter * 1.5, easing: f.ease } : {});
   /* E4: the cards rise out of the opening, fanning a little, the gold hit last; once clear of the pack they pass in front of it. */
   const d = f ? stagger(f, 5).map((x) => x * 3) : [0, 0, 0, 0, 0];

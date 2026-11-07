@@ -283,8 +283,9 @@ before.
    - E3. The tear: the pack's crimped top rips away along a jagged line, up and to the side, and leaves the screen
      (`enter` × 1.5). It is gone for good.
    - E4. The five backs rise out of the opening at the fan's size, fanning a little, the gold hit last (`enter`,
-     landing, staggered by `stagger(feel, 5)` at one and a half times its step). They lie behind the pack's body
-     until they clear it, then pass in front of it.
+     landing, staggered by `stagger(feel, 5)` at one and a half times its step). They are not drawn at all until the
+     tear (the owner: "the stack of cards is already visible behind the pack as the latter slides into place while
+     still 'closed'"); from then they lie behind the pack's body until they clear it, then pass in front of it.
    - E5. The deal and the park: the backs fly from the fan into the row, each settling from its tilt (`enter`,
      `stagger(feel, 5)` at three times its step), as the emptied pack slides up past the screen's top edge and parks
      with only its foot in view (`screen`, landing). The parked pack is the reveal's head: the same pack, never faded
