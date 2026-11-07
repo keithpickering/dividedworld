@@ -1922,7 +1922,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (said.length > 280) return refuse('a reason is at most 280 characters', 'reason');
       const p = acts.get(post);
       if (!p || (p.kind !== 'post' && p.kind !== 'spin')) return refuse('there is no such post to report');
-      if (characters.get(p.character ?? '')?.staff) return refuse('a post by The System is not reported');
+      if (characters.get(p.character ?? '')?.staff) return refuse('a post by the staff is not reported');
       const mod = [...characters.values()].find((c) => c.staff?.office === 'mod' && c.debutedAt !== null && c.retiredAt === null);
       if (!mod) return refuse('there is no one on duty to hear a report right now');
       if (reportsLeftNow(through) <= 0) return refuse(`this character has made its ${settings.modBots.reportsPerDay} reports for today`);

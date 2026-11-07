@@ -92,3 +92,67 @@ begin
   end if;
   return new;
 end $$;
+
+-- open_report (0107), its refusal of a staff post in the same neutral words: "a post by The System" is "a post by the staff", as the fake
+-- backend says it (engine/ui/data/fake.ts). The signature, security settings, search path and grants are 0107's, and so is every other line.
+create or replace function open_report(through uuid, post uuid, reason text) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  caller uuid;
+  p record;
+  bots jsonb := coalesce((select s.value from settings s where s.key = 'modBots'), '{}'::jsonb);
+  price integer := coalesce((bots ->> 'reportPrice')::integer, 25);
+  per_day integer := coalesce((bots ->> 'reportsPerDay')::integer, 3);
+  budget integer := coalesce((bots ->> 'judgmentsPerDay')::integer, 60);
+  day_start timestamptz := date_trunc('day', now() at time zone 'utc') at time zone 'utc';
+  said text := btrim(coalesce(reason, ''));
+  mod_key text;
+  rid uuid;
+  board record;
+  me text;
+begin
+  caller := acting(through);
+  perform not_banned(through);
+  if regexp_replace(said, '[\s ​-‍⁠　﻿]', '', 'g') = '' then
+    raise exception 'say why you are reporting this post' using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  if char_length(said) > 280 then
+    raise exception 'a reason is at most 280 characters' using hint = 'kayfabb.refusal', errcode = '22001';
+  end if;
+  if not coalesce((select s.value = 'true'::jsonb from settings s where s.key = 'systemEnabled'), false) then
+    raise exception 'there is no one on duty to hear a report right now' using hint = 'kayfabb.refusal', errcode = '55000';
+  end if;
+  select a.id, a.thread, t.board, c.staff is not null as by_staff into p
+  from acts a join threads t on t.id = a.thread join characters c on c.id = a.character where a.id = open_report.post and a.kind in ('post', 'spin');
+  if not found then raise exception 'there is no such post to report' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  if p.by_staff then raise exception 'a post by the staff is not reported' using hint = 'kayfabb.refusal', errcode = '55000'; end if;
+  mod_key := beat_of(p.board);
+  if mod_key is null then raise exception 'there is no one on duty to hear a report right now' using hint = 'kayfabb.refusal', errcode = '55000'; end if;
+
+  -- The checks and the write are one decision: one lock for the instance, taken before the count of the day is read.
+  perform pg_advisory_xact_lock(hashtextextended('kayfabb.reports', 0));
+  -- The instance's budget first, and before anything is paid: one count (the ledger's judgments and the reports in flight), and the same words for everyone.
+  if judgment_load_today() >= budget then
+    raise exception 'the Mods have heard all the reports they will today; reports open again after midnight UTC' using hint = 'kayfabb.refusal', errcode = '55000';
+  end if;
+  -- This character's quota, and only this character's: a report refunded for a failed judgment is not one of the day's (the player may report again); one swept for
+  -- never being judged is.
+  if (select count(*) from acts r where r.kind = 'report' and r.character = open_report.through and r.created_at >= day_start
+        and not exists (select 1 from report_refunds f where f.report_act = r.id and f.why = 'failed')) >= per_day then
+    raise exception 'this character has made its % reports for today', per_day using hint = 'kayfabb.refusal', errcode = '55000';
+  end if;
+
+  perform set_config('kayfabb.report_writer', 'on', true);
+  insert into acts (character, kind, thread, target_act_id, payload)
+  values (through, 'report', p.thread, open_report.post, jsonb_build_object('reason', said)) returning id into rid;
+  perform set_config('kayfabb.report_writer', '', true);
+  perform wallet_spend(caller, price, 'report', rid);
+
+  select b.id, b.name, b.premise into board from boards_now b where b.id = p.board;
+  select c.name into me from characters c where c.id = through;
+  return jsonb_build_object('report', rid, 'post', open_report.post, 'thread', p.thread, 'staff', mod_key, 'price', price, 'reason', said,
+    'board', jsonb_build_object('id', board.id, 'name', board.name, 'premise', board.premise),
+    'reporter', jsonb_build_object('id', through, 'name', me));
+end $$;
+revoke execute on function open_report(uuid, uuid, text) from public, anon;
+grant execute on function open_report(uuid, uuid, text) to authenticated, service_role;
