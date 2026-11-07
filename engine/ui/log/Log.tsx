@@ -20,6 +20,7 @@
  */
 import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useKayfa } from '../context.tsx';
+import { BanAppeal } from '../cards/Forms.tsx';
 import type { Id, LogSettlement } from '../data/api.ts';
 import { CONTACT_PATH } from '../contact/Contact.tsx';
 import { SignInPrompt, useSignedIn } from '../mini.tsx';
@@ -116,6 +117,7 @@ function Row({ row, data, words, tab, open, onToggle }: { readonly row: LogRow; 
         <td className="kb-log-what" data-kb-label="What">{row.what}</td>
         <td className="kb-log-details" data-kb-label="Details">
           <Said parts={row.details} />
+          {row.appealBan && <p className="kb-log-ban-appeal"><BanAppeal character={row.appealBan.character} ban={row.appealBan} /></p>}
           {s?.sharesKept && (
             <div className="kb-log-posts-row">
               <GlassButton

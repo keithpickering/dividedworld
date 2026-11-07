@@ -20,7 +20,7 @@
  */
 import { rankIndex } from '../../rules/ranks.ts';
 import type { Instance } from '../../rules/types.ts';
-import type { Act, Estimate, EstimateLine, Id, Log, LogLine, LogSettlement, MyCharacter, Season, TurnAnnounced, WalletEvent } from '../data/api.ts';
+import type { Act, MyBan, Estimate, EstimateLine, Id, Log, LogLine, LogSettlement, MyCharacter, Season, TurnAnnounced, WalletEvent } from '../data/api.ts';
 import { micros } from '../data/log-page.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { paramsOf } from '../economy.ts';
@@ -35,7 +35,7 @@ export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 
   /* The bot-card-options design, section 3: an admin ended a card play. */
   | 'ended'
   /* The Mod Bots design, sections 5 to 9: warn points filed, a ban, a report made and an appeal made, each of the player's own characters. */
-  | 'infraction' | 'ban' | 'report' | 'appeal';
+  | 'infraction' | 'ban' | 'report' | 'appeal' | 'bribe';
 
 /** One row of the log. */
 export interface LogRow {
@@ -53,6 +53,8 @@ export interface LogRow {
   readonly characters: readonly Id[];
   /** A settlement's row: the settlement, for its breakdown. */
   readonly settlement?: LogSettlement;
+  /** A ban's line while it runs and has not been appealed: the ban, which the line's "Appeal to the Boss" names (Forms.tsx's `BanAppeal`). */
+  readonly appealBan?: MyBan;
 }
 
 /** What the log is drawn from: the player's own reads, and the public Acts and threads its lines name. */
@@ -317,7 +319,7 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
   rows.push(...cardRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...modRows(data, words).filter((r) => inTab(r.characters)));
 
-  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, played: 4, onMine: 4, saved: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, passed: 4, caught: 4, struck: 4, wardEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4 };
+  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, played: 4, onMine: 4, saved: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, passed: 4, caught: 4, struck: 4, wardEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4 };
   rows.sort((a, b) => micros(b.at) - micros(a.at) || ORDER[a.kind] - ORDER[b.kind]);
   return [...estimateRows(data, words, tab), ...rows];
 }
@@ -331,8 +333,6 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
  * A post is named by its number in its thread, linked, and "your" where the row is the player's own.
  */
 function modRows(data: LogData, words: Words): LogRow[] {
-  const { instance } = words;
-  const bots = instance.settings.modBots;
   const now = Date.now();
   const nameOf = (id: Id) => data.mine.find((c) => c.id === id)?.name ?? 'one of your characters';
   const post = (thread: Id, seq: number | null, own: boolean): Segment => (seq === null ? (own ? 'your post' : 'a post') : { text: `${own ? 'your ' : ''}post #${seq}`, href: threadHref(thread, pageOf(seq, words.postsPerPage), seq) });
@@ -357,38 +357,59 @@ function modRows(data: LogData, words: Words): LogRow[] {
       key: `ban:${b.ban}`, kind: 'ban', at: b.at, what: `${nameOf(b.character)} was banned`,
       details: [`${nameOf(b.character)}'s warn bar filled${b.rule ? ` with ${b.rule}` : ''}, so it was banned for ${plural(b.days, 'day', 'days')} and the bar was emptied. It can read but not post, react or play cards. The ban ${over ? 'ended by itself' : 'ends by itself'} ${utcWhen(b.until)} UTC. Your other characters are not banned.`],
       aura: 0, wallet: null, characters: [b.character],
+      ...(!over && !data.log.appeals.some((a) => a.punishment === b.ban) ? { appealBan: { ban: b.ban, character: b.character, until: b.until, days: b.days, rule: b.rule } } : {}),
     });
   }
 
+  /* What a report or an appeal cost, and what came back, are the wallet's own events (`my_wallet_events`, kinds report, appeal and refund, `ref` the Act): the amounts paid then, never today's prices. */
+  const paid = (kind: 'report' | 'appeal', act: Id): number | null => { const e = data.log.wallet.find((w) => w.kind === kind && w.ref === act); return e ? -e.change : null; };
+  const back = (act: Id): number => data.log.wallet.filter((w) => w.kind === 'refund' && w.ref === act).reduce((n, w) => n + w.change, 0);
+  const forPrice = (n: number | null) => (n === null ? '' : `, for ${plain(n)} Aura`);
+
   for (const r of data.log.reports) {
-    const price = bots.reportPrice;
-    const back = r.refund !== null;
+    const price = paid('report', r.report);
+    const gone = back(r.report);
+    const spent = price === null ? '' : ` The ${plain(price)} Aura was spent.`;
     const verdict = r.verdict === null
-      ? (back ? ` ${r.mod ?? 'The Mod'} could not hear it, so your ${plain(price)} Aura came back.` : ' It has not been answered yet. If it cannot be, your Aura comes back by itself.')
+      ? (r.refund !== null ? ` ${r.mod ?? 'The Mod'} could not hear it, so your Aura came back${gone > 0 ? ` (${plain(gone)})` : ''}, and you can make it again.` : ' It has not been answered yet. If it cannot be, your Aura comes back by itself.')
       : r.verdict === 'visit' ? ` ${r.mod ?? 'The Mod'} judged it and sent a visit.`
-      : r.verdict === 'dismissed' ? ` ${r.mod ?? 'The Mod'} dismissed it. The ${plain(price)} Aura was spent.`
-      : ` ${r.mod ?? 'The Mod'} judged it a backfire: a visit went to ${nameOf(r.character)}'s latest post. The ${plain(price)} Aura was spent.`;
+      : r.verdict === 'dismissed' ? ` ${r.mod ?? 'The Mod'} dismissed it.${spent}`
+      : ` ${r.mod ?? 'The Mod'} judged it a backfire: a visit went to ${nameOf(r.character)}'s latest post.${spent}`;
     rows.push({
       key: `report:${r.report}`, kind: 'report', at: r.at, what: 'You reported a post',
-      details: [`${nameOf(r.character)} reported `, post(r.thread, r.postSeq, false), `, for ${plain(price)} Aura. The report is public.${verdict}`],
-      aura: back ? 0 : -price, wallet: null, characters: [r.character],
+      details: [`${nameOf(r.character)} reported `, post(r.thread, r.postSeq, false), `${forPrice(price)}. The report is public.${verdict}`],
+      aura: -(price ?? 0) + gone, wallet: null, characters: [r.character],
     });
   }
 
   for (const a of data.log.appeals) {
-    const price = bots.appealPrice;
+    const price = paid('appeal', a.appeal);
+    const gone = back(a.appeal);
     const what = a.punishmentKind === 'ban' ? 'the ban' : 'the warn points';
-    const refunded = a.refund !== null || a.verdict === 'overturned';
+    const came = price === null ? '' : `, and the ${plain(price)} Aura came back`;
     const ruling = a.verdict === null
-      ? (a.refund !== null ? ` No one could hear it, so your ${plain(price)} Aura came back and you can appeal again.` : ' It has not been ruled on yet. If it cannot be, your Aura comes back by itself.')
-      : a.verdict === 'overturned' ? ` ${a.hearer ?? 'The hearer'} overturned it${a.pointsDelta ? `: ${plural(-a.pointsDelta, 'point', 'points')} came off` : ''}, and the ${plain(price)} Aura came back.`
+      ? (a.refund !== null ? ' No one could hear it, so your Aura came back and you can appeal again.' : ' It has not been ruled on yet. If it cannot be, your Aura comes back by itself.')
+      : a.verdict === 'overturned' ? ` ${a.hearer ?? 'The hearer'} overturned it${a.pointsDelta ? `: ${plural(-a.pointsDelta, 'point', 'points')} came off` : ''}${came}.`
       : a.verdict === 'upheld' ? ` ${a.hearer ?? 'The hearer'} upheld it. Nothing changed.`
       : a.verdict === 'reduced' ? ` ${a.hearer ?? 'The hearer'} reduced it${a.pointsDelta ? `: ${plural(-a.pointsDelta, 'point', 'points')} came off` : ''}.`
       : ` ${a.hearer ?? 'The hearer'} increased it${a.pointsDelta ? `: ${plural(a.pointsDelta, 'more point', 'more points')} landed` : ''}.`;
     rows.push({
       key: `appeal:${a.appeal}`, kind: 'appeal', at: a.at, what: 'You made an appeal',
-      details: [`${nameOf(a.character)} appealed ${what} from `, post(a.thread, a.postSeq, true), `, for ${plain(price)} Aura. The plea is public.${ruling}`],
-      aura: refunded ? 0 : -price, wallet: null, characters: [a.character],
+      details: [`${nameOf(a.character)} appealed ${what} from `, post(a.thread, a.postSeq, true), `${forPrice(price)}. The plea is public.${ruling}`],
+      aura: -(price ?? 0) + gone, wallet: null, characters: [a.character],
+    });
+  }
+
+  /* A bribe that talked a visit down: the wallet's own event, named by the interception it paid for and the visit's Mod, read as public Acts. */
+  for (const w of data.log.wallet) {
+    if (w.kind !== 'bribe') continue;
+    const attempt = w.ref ? data.acts.get(w.ref) : undefined;
+    const visit = typeof attempt?.payload.visit_act === 'string' ? data.acts.get(attempt.payload.visit_act) : undefined;
+    const mod = visit?.character ? data.names.get(visit.character) : undefined;
+    rows.push({
+      key: `bribe:${w.ref ?? w.at}`, kind: 'bribe', at: w.at, what: 'You paid a bribe',
+      details: [`You paid ${plain(-w.change)} Aura to talk down ${mod ? `${mod}'s` : 'a'} visit.`],
+      aura: w.change, wallet: w.balanceAfter, characters: attempt?.character && data.mine.some((c) => c.id === attempt.character) ? [attempt.character] : [],
     });
   }
   return rows;
@@ -668,6 +689,7 @@ export function actsNamed(log: Log, estimate: Estimate | null, turns: readonly T
   for (const e of log.setPasses) ids.add(e.post);
   for (const c of log.caught) { ids.add(c.play); ids.add(c.post); }
   for (const e of log.ended) ids.add(e.play);
+  for (const w of log.wallet) if (w.kind === 'bribe' && w.ref) ids.add(w.ref);
   return [...ids];
 }
 
@@ -679,6 +701,7 @@ export function actsFollowed(acts: ReadonlyMap<Id, Act>): Id[] {
   const ids = new Set<Id>();
   for (const a of acts.values()) {
     if ((a.kind === 'card' || a.kind === 'spring' || a.kind === 'set') && a.targetActId) ids.add(a.targetActId);
+    if (a.kind === 'intercept' && typeof a.payload.visit_act === 'string') ids.add(a.payload.visit_act);
     for (const key of ['spring', 'caught', 'by'] as const) {
       const v = a.payload[key];
       if (typeof v === 'string' && (a.kind === 'spring' || (a.kind === 'card' && key === 'spring'))) ids.add(v);

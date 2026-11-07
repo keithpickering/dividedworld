@@ -19,7 +19,7 @@ declare
                            'staff_now', 'staff_office_now', 'staff_profile_now', 'boards_now', 'moves_log', 'face_down', 'my_face_down', 'my_caught', 'my_cards_ended', 'play_reach', 'play_moments', 'play_moment_layers',
                            'alerts', 'thread_follows', 'my_followed_threads', 'thread_open',
                            -- The log's lines for the Mod Bots (0109): each the caller's own characters' rows.
-                           'my_infractions', 'my_bans', 'my_reports', 'my_appeals'];
+                           'my_infractions', 'my_bans', 'my_reports', 'my_appeals', 'my_reports_left'];
   callable text[] := array['react(uuid,uuid,text)', 'start_thread(text,uuid,text,text)', 'post(uuid,uuid,text,uuid)',
                            'edit_post(uuid,uuid,text)', 'spin(uuid,uuid,text,text)', 'whoami()', 'card_target(uuid)', 'card_of_play(uuid)', 'turn(uuid,text,text)', 'withdraw_turn(uuid)', 'create_invite()', 'reissue_invite(bigint)', 'open_account(text)', 'create_character(text,text,text,text)', 'set_debut(uuid,text,text)',
                            'next_settlement_at(timestampwithtimezone)', 'release_effect(uuid)', 'mark_read(uuid,integer,uuid)', 'set_preferences(text,text,text,text,text,integer,text,text[],boolean)', 'meet_card(text)', 'see_welcome()', 'see_tip(text)', 'skip_tips()', 'restore_tips()', 'resume_tips()', 'replay_tour()', 'my_account_opened()', 'see_alerts(timestampwithtimezone)', 'see_settlement(timestampwithtimezone)', 'follow_thread(uuid,boolean)', 'following_thread(uuid)', 'my_alerts(timestampwithtimezone,integer)', 'my_alerts_unread()', 'my_settlement_moved(bigint)', 'set_profile(uuid,text,text,text)', 'is_admin()', 'retire_character(uuid)', 'restore_character(uuid)', 'span_interval(jsonb)',
@@ -59,8 +59,8 @@ declare
                            -- An appeal (0107): the punished character's door, which verifies the caller plays the character (and does not refuse a banned one: a ban is appealed by the banned).
                            -- Its ruling, its refund, its sweep and its helpers are the service's.
                            'open_appeal(uuid,uuid,text)',
-                           -- The screens' reads (0109): the report quota, and the two functions the log's views call, each a public fact about any id (a view's functions run as its reader).
-                           'reports_left_today(uuid)', 'punishment_words(uuid)', 'infraction_relief(uuid)',
+                           -- The screens' reads (0109): the report's judge, and the two functions the log's views call, each a public fact about any id (a view's functions run as its reader).
+                           'beat_mod_name(uuid)', 'punishment_words(uuid)', 'infraction_relief(uuid)',
                            -- Pure predicates a CHECK calls, granted to PUBLIC by 0080 so a direct writer is not refused (each reads no table).
                            'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])'];
   -- What a visitor (anon) may execute, on purpose; each is also in the list above.

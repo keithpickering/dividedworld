@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type FormEvent, type Ref } from 'react';
 import { parse } from '../../bbcode/parse.ts';
 import { dayAndTime } from '../characters/format.ts';
+import { BanAppeal } from '../cards/Forms.tsx';
 import { RevealModal } from '../characters/RevealModal.tsx';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
@@ -171,6 +172,7 @@ function ComposerBody({ thread, latest, since, onPosted, ref, account }: Compose
       {bannedUntil !== null && (
         <p className="kb-notice kb-composer-ban" role="status">
           <strong>{hudCharacter.name}</strong> is banned until {dayAndTime(bannedUntil)}. The ban ends by itself then, and it holds only this character: switch to another in the HUD to post as it.
+          {' '}<BanAppeal character={hudCharacter.id} />
         </p>
       )}
       <div className="kb-composer-now-region" role="status">

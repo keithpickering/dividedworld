@@ -40,7 +40,7 @@ export const AppealCtx = createContext<OpenAppeal | null>(null);
  * ("The System acts; it never destroys what a player wrote"). Nothing for a visit that has not filed.
  */
 export function ViolationNotice({ visit }: { readonly visit: Visit | undefined }) {
-  const words = visit?.end?.outcome === 'filed' ? noticeWords(visit.charges) : null;
+  const words = visit?.end?.outcome === 'filed' ? noticeWords(visit.charges, visit.ruling) : null;
   return words === null ? null : <p className="kb-violation">{words}</p>;
 }
 

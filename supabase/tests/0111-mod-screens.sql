@@ -2,10 +2,11 @@
 --
 -- 1. my_infractions, my_bans, my_reports and my_appeals return the caller's own characters' rows and nobody else's: a second player reads none of the first's, and a visitor reads none.
 -- 2. Each says which Act did what, when it drops off and how it ended, and names no account.
--- 3. reports_left_today counts a character's reports since UTC midnight against reportsPerDay, a failed refund giving one back to its owner's own screen and to nobody else's.
+-- 3. my_reports_left counts each of the caller's characters' reports since UTC midnight against reportsPerDay, a failed refund freeing a slot, and shows nobody else's; beat_mod_name
+--    names the Mod on a board's beat; thread_page's visits carry the ruling of an appeal heard on their infraction.
 -- 4. presence_box lists a Mod on an open visit in the thread, once, with its post's number, whether or not it posted; a visit that ended lists none.
 -- 5. moves_log lists a Mod's visits, the reports it judged and the appeals it heard, each with how it ended; every row it had before is still there.
--- 6. The doors: the four views and reports_left_today are a signed-in player's, and no client can write what they read.
+-- 6. The doors: the four views my_reports_left and beat_mod_name are a signed-in player's, and no client can write what they read.
 
 create function pg_temp.say(by_character uuid, in_thread uuid, body text) returns uuid language plpgsql as $$
 declare made jsonb;
@@ -154,7 +155,7 @@ begin
   if exists (select 1 from information_schema.columns where table_name in ('my_infractions', 'my_bans', 'my_reports', 'my_appeals') and column_name in ('owner', 'account', 'class')) then raise exception 'a log view names an account or a class'; end if;
 end $$;
 
--- ---- 3. reports_left_today ----
+-- ---- 3. my_reports_left: the quota of the caller's own characters, a failed refund freeing a slot ----
 do $$
 declare
   ann uuid := pg_temp.player('cat');
@@ -163,34 +164,77 @@ declare
   p uuid := pg_temp.say(bob, t, 'a post to report');
   p2 uuid := pg_temp.say(bob, t, 'another');
   rp jsonb;
-  left_for_ann integer;
-  seen_by_bob integer;
+  mine integer;
 begin
   perform tests.become((select owner from characters where id = ann));
-  if reports_left_today(ann) is distinct from 3 then raise exception 'a fresh character has % reports, not 3', reports_left_today(ann); end if;
+  if (select "left" from my_reports_left where character = ann) is distinct from 3 then raise exception 'a fresh character has % reports, not 3', (select "left" from my_reports_left where character = ann); end if;
   perform tests.unbecome();
   rp := pg_temp.report(ann, p);
   perform pg_temp.report(ann, p2);
   perform tests.become((select owner from characters where id = ann));
-  if reports_left_today(ann) is distinct from 1 then raise exception 'two reports left % of 3', reports_left_today(ann); end if;
+  if (select "left" from my_reports_left where character = ann) is distinct from 1 then raise exception 'two reports left % of 3', (select "left" from my_reports_left where character = ann); end if;
   perform tests.unbecome();
-  -- The judgment of the first failed: its price goes back, and its owner's screen counts it free. Another player's screen counts the public Acts.
+  -- The judgment of the first failed: its price goes back and its slot is free again.
   perform refund_report((rp ->> 'report')::uuid);
   perform tests.become((select owner from characters where id = ann));
-  left_for_ann := reports_left_today(ann);
+  mine := (select "left" from my_reports_left where character = ann);
   perform tests.unbecome();
+  if mine is distinct from 2 then raise exception 'a refunded report did not free its slot: %', mine; end if;
+  -- Another player reads none of ann's rows, only their own.
   perform tests.become((select owner from characters where id = bob));
-  seen_by_bob := reports_left_today(ann);
-  perform tests.unbecome();
-  if left_for_ann is distinct from 2 then raise exception 'a refunded report was not given back to its owner: %', left_for_ann; end if;
-  if seen_by_bob is distinct from 1 then raise exception 'a stranger saw the refund: %', seen_by_bob; end if;
-  -- A character that is none gets the filled quota; a visitor is refused.
-  perform tests.become((select owner from characters where id = bob));
-  if reports_left_today(gen_random_uuid()) is distinct from 3 then raise exception 'a character that is none has another quota'; end if;
+  if exists (select 1 from my_reports_left where character = ann) or (select count(*) from my_reports_left) is distinct from 1::bigint then raise exception 'bob reads a quota that is not his'; end if;
   perform tests.unbecome();
   perform tests.become_anon();
-  if pg_temp.refusal(format('select reports_left_today(%L)', ann)) is null then raise exception 'a visitor read a quota'; end if;
+  if pg_temp.refusal('select count(*) from my_reports_left') is null then raise exception 'a visitor read a quota'; end if;
   perform tests.unbecome();
+  if exists (select 1 from pg_proc where proname = 'reports_left_today') then raise exception 'the old quota function is still there'; end if;
+end $$;
+
+-- ---- 3b. beat_mod_name: the public name of the Mod on a board's beat, and the board's ----
+do $$
+declare
+  c uuid := pg_temp.player('ivy');
+  gen uuid := (select id from boards where slug = 'general');
+  got jsonb;
+begin
+  perform tests.become((select owner from characters where id = c));
+  got := beat_mod_name(gen);
+  perform tests.unbecome();
+  if got ->> 'mod' is distinct from 'Screens Mod One' or got ->> 'board' is null then raise exception 'the beat Mod is wrong: %', got; end if;
+  if beat_mod_name(gen_random_uuid()) is not null then raise exception 'a board that is none has a beat Mod'; end if;
+  perform tests.become_anon();
+  if pg_temp.refusal(format('select beat_mod_name(%L)', gen)) is null then raise exception 'a visitor read a beat'; end if;
+  perform tests.unbecome();
+end $$;
+
+-- ---- 3c. thread_page's visits carry the ruling of the appeal heard on the infraction a visit filed ----
+do $$
+declare
+  c uuid := pg_temp.player('jon');
+  t uuid := tests.thread('Screens three c');
+  p uuid := pg_temp.say(c, t, 'a post to be filed');
+  v uuid;
+  inf uuid;
+  ap jsonb;
+  page jsonb;
+begin
+  v := (start_visit(p, 'ms-m1', jsonb_build_object('rule_number', 2, 'board', (select board from threads where id = t), 'band', 'minor', 'cause', 'rule', 'about_act', p, 'rule', 'Rule 2: No double posting')) ->> 'visit')::uuid;
+  perform file_visit(v, 'Filed.');
+  inf := (select id from acts where kind = 'infraction' and payload ->> 'visit_act' = v::text);
+  perform tests.become((select owner from characters where id = c));
+  page := thread_page(t, 1, null, 20, '{}');
+  perform tests.unbecome();
+  if (select x ->> 'ruling' from jsonb_array_elements(page -> 'visits') x where x ->> 'visit' = v::text) is not null then raise exception 'a visit with no appeal carries a ruling'; end if;
+  ap := pg_temp.appeal(c, inf, 'Please.');
+  perform tests.become((select owner from characters where id = c));
+  page := thread_page(t, 1, null, 20, '{}');
+  perform tests.unbecome();
+  if (select x ->> 'ruling' from jsonb_array_elements(page -> 'visits') x where x ->> 'visit' = v::text) is not null then raise exception 'an appeal with no ruling carries one'; end if;
+  perform close_appeal((ap ->> 'appeal')::uuid, 'overturned', 'Fine.', 'ms-m1');
+  perform tests.become((select owner from characters where id = c));
+  page := thread_page(t, 1, null, 20, '{}');
+  perform tests.unbecome();
+  if (select x ->> 'ruling' from jsonb_array_elements(page -> 'visits') x where x ->> 'visit' = v::text) is distinct from 'overturned' then raise exception 'the ruling is not on the visit: %', page -> 'visits'; end if;
 end $$;
 
 -- ---- 4. presence_box lists a Mod on an open visit, once, with its post ----
@@ -264,7 +308,8 @@ do $$
 declare
   ann uuid := pg_temp.player('hal');
 begin
-  if has_function_privilege('anon', 'reports_left_today(uuid)', 'execute') or not has_function_privilege('authenticated', 'reports_left_today(uuid)', 'execute') then raise exception 'reports_left_today is not a signed-in player''s'; end if;
+  if has_function_privilege('anon', 'beat_mod_name(uuid)', 'execute') or not has_function_privilege('authenticated', 'beat_mod_name(uuid)', 'execute') then raise exception 'beat_mod_name is not a signed-in player''s'; end if;
+  if has_table_privilege('anon', 'my_reports_left', 'select') or not has_table_privilege('authenticated', 'my_reports_left', 'select') then raise exception 'my_reports_left is not a signed-in player''s'; end if;
   if has_table_privilege('anon', 'my_infractions', 'select') or has_table_privilege('anon', 'my_bans', 'select') or has_table_privilege('anon', 'my_reports', 'select') or has_table_privilege('anon', 'my_appeals', 'select') then raise exception 'a visitor can read a log view'; end if;
   if not has_table_privilege('authenticated', 'my_infractions', 'select') or not has_table_privilege('authenticated', 'my_appeals', 'select') then raise exception 'a player cannot read a log view'; end if;
   if has_table_privilege('authenticated', 'my_infractions', 'insert') or has_table_privilege('authenticated', 'my_reports', 'update') or has_table_privilege('authenticated', 'my_bans', 'delete') then raise exception 'a player can write a log view'; end if;

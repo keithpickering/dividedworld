@@ -39,3 +39,8 @@
 .kb-mod-form .kb-glass-field-count {
   color: var(--kb-glass-text-2);
 }
+
+/* "Appeal to the Boss" on a banned note or a ban's line: the board's own button, a line of room from the words before it. */
+.kb-ban-appeal {
+  margin-inline-start: 0.3em;
+}

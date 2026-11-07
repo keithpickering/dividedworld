@@ -10,11 +10,14 @@
  * "N reports left today" is asked for that mask alone, in the player's own session, and shown only to them; an appeal goes through the infraction's own character, which the tab
  * offered Appeal to only where it is the HUD's mask.
  */
-import { useEffect, useId, useState, type FormEvent } from 'react';
+import { useContext, useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { Act, Id, Visit } from '../data/api.ts';
+import type { Act, Id, MyBan, Visit } from '../data/api.ts';
+import { dayAndTime } from '../characters/format.ts';
+import { Overlay } from '../glass/Overlay.tsx';
 import { FieldCount } from '../glass/FieldCount.tsx';
 import { usePlayer } from '../player.tsx';
+import { ThreadCtx } from '../thread/context.ts';
 import { auraWords, appealTerms, modRole, pointsPlain, rulingWords, shortDate, topCharge, markedAs } from './visit.ts';
 import './visit.css';
 import './forms.css';
@@ -34,6 +37,21 @@ export const formTabName = (f: LensForm): string => (f.kind === REPORT_KIND ? `R
 const REASON_MAX = 280;
 const PLEA_MAX = 1000;
 
+/** A ban's ruling in a plain clause (open_appeal's, close_appeal's rules: overturned ends it, reduced halves it, increased runs it half again). */
+export function banRulingWords(verdict: string): string {
+  switch (verdict) {
+    case 'overturned': return 'overturned it, so the ban has ended';
+    case 'upheld': return 'upheld it, so nothing changed';
+    case 'reduced': return 'reduced it to half its length';
+    case 'increased': return 'increased it, so it runs half its length longer';
+    default: return 'ruled on it';
+  }
+}
+
+/** The terms of an appeal of a ban, in the glass's plain words: the Boss hears it. */
+export const banAppealTerms = (days: number): string =>
+  `The Boss hears it. It is refunded if overturned. It may be upheld, cut to half of its ${days === 1 ? '1 day' : `${days} days`}, or lengthened by half. One appeal per ban, and your plea is public.`;
+
 /** The Mod's own words, quoted. */
 const quoted = (line: string) => (line.trim() === '' ? null : <span className="kb-visit-said">“{line}”</span>);
 
@@ -46,6 +64,8 @@ export function ReportForm({ post, seq }: { readonly post: Id; readonly seq: num
   const [refusal, setRefusal] = useState<string | null>(null);
   const [result, setResult] = useState<{ readonly verdict: string; readonly line: string } | null>(null);
   const [left, setLeft] = useState<number | null>(null);
+  const [judge, setJudge] = useState<{ readonly mod: string; readonly board: string } | null>(null);
+  const board = useContext(ThreadCtx)?.summary.board ?? null;
   const ids = useId();
   const price = instance.settings.modBots.reportPrice;
   const maskId = mask?.id ?? null;
@@ -58,6 +78,14 @@ export function ReportForm({ post, seq }: { readonly post: Id; readonly seq: num
     void Promise.resolve(api.reportsLeft(maskId)).then((n) => { if (live) setLeft(n); }, () => { if (live) setLeft(null); });
     return () => { live = false; };
   }, [api, maskId]);
+
+  /* Who judges it: the Mod on this board's beat, a public name. */
+  useEffect(() => {
+    if (board === null) return;
+    let live = true;
+    void Promise.resolve(api.beatMod(board)).then((j) => { if (live) setJudge(j); }, () => undefined);
+    return () => { live = false; };
+  }, [api, board]);
 
   if (!mask) {
     return <div className="kb-visit"><p className="kb-visit-terms">None of your characters can report yet.</p></div>;
@@ -97,7 +125,7 @@ export function ReportForm({ post, seq }: { readonly post: Id; readonly seq: num
     <form className="kb-visit kb-mod-form" onSubmit={(e) => void submit(e)} aria-label={`Report post #${seq}`}>
       <div className="kb-lens-section kb-visit-state">
         <p className="kb-visit-facts">
-          Your report is public: it names {mask.name}, and anyone can react to it. {role} on this board&apos;s beat judges it now: a visit, dismissed, or it backfires onto {mask.name}&apos;s latest post.
+          Your report is public: it names {mask.name}, and anyone can react to it. {judge ? <>{judge.mod}, on {judge.board}&apos;s beat, judges it now:</> : <>{role} on this board&apos;s beat judges it now:</>} a visit, dismissed, or it backfires onto {mask.name}&apos;s latest post.
           If the Mod cannot judge it, your Aura comes back.
         </p>
       </div>
@@ -143,7 +171,7 @@ function said(act: Act): Said | null {
   };
 }
 
-export function AppealForm({ infraction, visit, nameOf }: { readonly infraction: Id; readonly visit: Visit | undefined; readonly nameOf: (c: Id | null) => string }) {
+export function AppealForm({ infraction, visit, nameOf, ban }: { readonly infraction: Id; readonly visit: Visit | undefined; readonly nameOf: (c: Id | null) => string; readonly ban?: MyBan }) {
   const { api, instance, ui } = useKayfa();
   const player = usePlayer();
   const [facts, setFacts] = useState<Said | null | 'failed'>(null);
@@ -156,27 +184,29 @@ export function AppealForm({ infraction, visit, nameOf }: { readonly infraction:
   const role = modRole(ui.copy);
 
   useEffect(() => {
+    if (ban) return undefined;
     let live = true;
     void Promise.resolve(api.act(infraction)).then((a) => { if (live) setFacts(a ? said(a) ?? 'failed' : 'failed'); }, () => { if (live) setFacts('failed'); });
     return () => { live = false; };
-  }, [api, infraction]);
+  }, [api, infraction, ban]);
 
-  const mod = visit ? nameOf(visit.mod) : role;
+  const f: Said | null = facts === 'failed' ? null : facts;
+  const mod = ban ? 'The Boss' : visit ? nameOf(visit.mod) : role;
   const top = visit ? topCharge(visit.charges) : null;
-  const rule = top ? top.rule ?? markedAs(top) : facts !== null && facts !== 'failed' && facts.ruleNumber !== null ? `Rule ${facts.ruleNumber}` : 'a rule';
+  const rule = top ? top.rule ?? markedAs(top) : f !== null && f.ruleNumber !== null ? `Rule ${f.ruleNumber}` : 'a rule';
   const over = [...plea].length > PLEA_MAX;
   const blank = plea.trim() === '';
 
-  if (facts === 'failed') {
+  if (!ban && facts === 'failed') {
     return <div className="kb-visit"><p role="alert" className="kb-visit-terms">This punishment could not be read. Close this and open the visit again.</p></div>;
   }
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (busy || blank || over || facts === null) return;
+    if (busy || blank || over || (f === null && !ban)) return;
     setBusy(true);
     setRefusal(null);
     try {
-      const a = await api.fileAppeal(facts.character, infraction, plea);
+      const a = await api.fileAppeal(ban ? ban.character : f!.character, ban ? ban.ban : infraction, plea);
       if (!a.ok) { setRefusal(a.error); return; }
       setResult({ verdict: a.value.verdict, line: a.value.line });
       setPlea('');
@@ -189,15 +219,24 @@ export function AppealForm({ infraction, visit, nameOf }: { readonly infraction:
   };
 
   return (
-    <form className="kb-visit kb-mod-form" onSubmit={(e) => void submit(e)} aria-label="Appeal" aria-busy={facts === null ? 'true' : undefined}>
+    <form className="kb-visit kb-mod-form" onSubmit={(e) => void submit(e)} aria-label="Appeal" aria-busy={facts === null && !ban ? 'true' : undefined}>
       <div className="kb-lens-section kb-visit-state">
-        <p className="kb-visit-facts">
-          {facts === null
-            ? 'Reading the punishment.'
-            : <>The punishment: {rule}, a {facts.band} breach, {pointsPlain(facts.points)} on {nameOf(facts.character)}&apos;s warn bar
-              {facts.expiresAt !== '' ? (Date.parse(facts.expiresAt) > Date.now() ? `, dropping off ${shortDate(facts.expiresAt)}` : `, dropped off ${shortDate(facts.expiresAt)}`) : ''}.</>}
-        </p>
-        <p className="kb-visit-terms">{appealTerms(mod, { points: facts === null ? 0 : facts.points })}</p>
+        {ban ? (
+          <>
+            <p className="kb-visit-facts">The punishment: a ban of {ban.days === 1 ? '1 day' : `${ban.days} days`}{ban.rule ? `, after ${ban.rule}` : ''}. It ends by itself {dayAndTime(ban.until)}.</p>
+            <p className="kb-visit-terms">{banAppealTerms(ban.days)}</p>
+          </>
+        ) : (
+          <>
+            <p className="kb-visit-facts">
+              {f === null
+                ? 'Reading the punishment.'
+                : <>The punishment: {rule}, a {f.band} breach, {pointsPlain(f.points)} on {nameOf(f.character)}&apos;s warn bar
+                  {f.expiresAt !== '' ? (Date.parse(f.expiresAt) > Date.now() ? `, dropping off ${shortDate(f.expiresAt)}` : `, dropped off ${shortDate(f.expiresAt)}`) : ''}.</>}
+            </p>
+            <p className="kb-visit-terms">{appealTerms(mod, { points: f === null ? 0 : f.points })}</p>
+          </>
+        )}
       </div>
       <div className="kb-lens-section kb-mod-field">
         <h3 className="kb-visit-heading"><label htmlFor={`${ids}-plea`}>Your plea (public)</label></h3>
@@ -209,7 +248,7 @@ export function AppealForm({ infraction, visit, nameOf }: { readonly infraction:
         {over && <p role="alert" className="kb-notice" data-kb-tone="refusal">A plea is at most {PLEA_MAX} characters.</p>}
       </div>
       <div className="kb-lens-section kb-visit-appeal-section">
-        <button type="submit" className="kb-kit-tile kb-visit-appeal" aria-disabled={busy || blank || over || facts === null ? 'true' : undefined}>
+        <button type="submit" className="kb-kit-tile kb-visit-appeal" aria-disabled={busy || blank || over || (f === null && !ban) ? 'true' : undefined}>
           <span className="kb-kit-tile-label">Appeal · {auraWords(price)}</span>
         </button>
       </div>
@@ -217,8 +256,41 @@ export function AppealForm({ infraction, visit, nameOf }: { readonly infraction:
       <p role="status" className="kb-visit-result">
         {result !== null && (result.verdict === null
           ? <>Your appeal was made, and it is public. Its ruling will be in the thread.</>
-          : <>{mod} heard it and {rulingWords(result.verdict)}.{result.line.trim() !== '' && <> {mod} said: {quoted(result.line)}</>}</>)}
+          : <>{mod} heard it and {ban ? banRulingWords(result.verdict) : rulingWords(result.verdict)}.{result.line.trim() !== '' && <> {mod} said: {quoted(result.line)}</>}</>)}
       </p>
     </form>
+  );
+}
+
+/**
+ * "Appeal to the Boss · 0.50 Aura" for a banned character: the way out of a ban beside "it ends by itself" (the composer's note, the ban's line in the log). It opens the appeal form
+ * in a ban mode over the page: the Boss hears it, with the ban's end and the terms. The ban's Act is what an appeal names (`my_bans`): `ban` where the caller already holds it (the log's
+ * line), else read for `character` when the form opens. Shown only where the screen is the banned character's own player's (the composer, the player's own log).
+ */
+export function BanAppeal({ character, ban }: { readonly character: Id; readonly ban?: MyBan }) {
+  const { api, instance } = useKayfa();
+  const [open, setOpen] = useState(false);
+  const [read, setRead] = useState<MyBan | null | 'failed'>(ban ?? null);
+  const opener = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open || ban) return;
+    let live = true;
+    void Promise.resolve(api.myBan(character)).then((b) => { if (live) setRead(b ?? 'failed'); }, () => { if (live) setRead('failed'); });
+    return () => { live = false; };
+  }, [api, character, open, ban]);
+  const shown = ban ?? read;
+  return (
+    <>
+      <button ref={opener} type="button" className="kb-button kb-ban-appeal" aria-haspopup="dialog" onClick={() => setOpen(true)}>
+        Appeal to the Boss · {auraWords(instance.settings.modBots.appealPrice)}
+      </button>
+      {open && (
+        <Overlay title="Appeal the ban" surface="log" kicker="Appeal to the Boss" onClose={() => setOpen(false)} returnFocusTo={() => opener.current}>
+          {shown === null && <p className="kb-visit-terms" aria-busy="true">Reading the ban.</p>}
+          {shown === 'failed' && <p role="alert" className="kb-visit-terms">This ban could not be read, or it has ended. Close this and try again.</p>}
+          {shown !== null && shown !== 'failed' && <AppealForm infraction={shown.ban} visit={undefined} nameOf={() => ''} ban={shown} />}
+        </Overlay>
+      )}
+    </>
   );
 }

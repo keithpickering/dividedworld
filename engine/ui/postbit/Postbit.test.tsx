@@ -203,9 +203,10 @@ describe('the warn meter and BANNED (the Mod Bots design, section 9)', () => {
     expect([svg.getAttribute('width'), svg.getAttribute('height'), svg.getAttribute('viewBox')]).toEqual(['84', '16', '0 0 84 16']);
     /* The tube is white with a black outline, the bulb and the fill are the house red token, and the fill reaches 6 of 10 of the tube. */
     const [tube, fill, bulb] = [...svg.querySelectorAll('rect, circle')] as SVGElement[];
-    expect([tube!.getAttribute('fill'), tube!.getAttribute('stroke')]).toEqual(['#fff', '#000']);
-    expect(fill!.getAttribute('style')).toContain('var(--kb-warn-fill, #d01818)');
-    expect(bulb!.getAttribute('style')).toContain('var(--kb-warn-fill, #d01818)');
+    expect(tube!.getAttribute('style')).toContain('var(--kb-warn-tube)');
+    expect(tube!.getAttribute('style')).toContain('var(--kb-warn-outline)');
+    expect(fill!.getAttribute('style')).toContain('var(--kb-warn-fill)');
+    expect(bulb!.getAttribute('style')).toContain('var(--kb-warn-fill)');
     const tubeLength = Number(tube!.getAttribute('width')) - 1;
     expect(Number(fill!.getAttribute('width'))).toBeCloseTo(tubeLength * 0.6, 1);
   });

@@ -79,8 +79,10 @@
   --kb-salty: #777;
   --kb-pepperoni: #777;
   --kb-gold: #777;
-  /* The warn meter's red (postbit/WarnMeter.tsx): the thermometer's fill and bulb; its tube and outline are the board's white and black in either mode. */
+  /* The warn meter's red (postbit/WarnMeter.tsx): the thermometer's fill and bulb; its tube and outline are a white and a black that hold in either mode. */
   --kb-warn-fill: #d01818;
+  --kb-warn-tube: #fff;
+  --kb-warn-outline: #000;
   /* A visit's ink (cards/visit.css): its mark's border and stopwatch and its Lens tab's underline. Drawn on the glass's dark field in either mode, so one value serves both. */
   --kb-visit-ink: #f5d442;
   /* The loading meter's well (engine/ui/frame/Loading.tsx): a game piece's own colors, the 2003 progress bar. */

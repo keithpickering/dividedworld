@@ -385,3 +385,8 @@
   grid-template-columns: minmax(0, 1fr) auto;
 }
 
+
+/* "Appeal to the Boss" on a running ban's line (cards/Forms.tsx): a line of its own under the words. */
+.kb-log-ban-appeal {
+  margin: 0.4em 0 0;
+}

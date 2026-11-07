@@ -237,6 +237,8 @@ export interface Visit {
   readonly charges: readonly VisitCharge[];
   readonly challenge: VisitChallenge;
   readonly end: VisitEnd | null;
+  /** The ruling of the appeal heard on the infraction it filed (`thread_page`'s visits); absent where none was heard. */
+  readonly ruling?: AppealVerdict;
 }
 
 /** What a visit's filing put on its author: the infraction Act's own facts. */
@@ -800,7 +802,8 @@ export interface LogSettlement {
 /** A change to the player's wallet (`my_wallet_events`): a settlement's credit with what the cap and the floor cut off, a purchase, a play, a trap's payout, and The System's payout for a staff card a trap caught. */
 export interface WalletEvent {
   readonly settlement: number | null;
-  readonly kind: 'settlement' | 'purchase' | 'play' | 'trap' | 'trapSystem';
+  /* `report`, `refund`, `appeal` and `bribe` are the Mod Bots' (0105 to 0107): a report's or an appeal's price (its `ref` the Act), the price going back, and a bribe that talked a visit down (its `ref` the interception). */
+  readonly kind: 'settlement' | 'purchase' | 'play' | 'trap' | 'trapSystem' | 'report' | 'refund' | 'appeal' | 'bribe';
   readonly change: number;
   /** What the cap held back of a settlement's credit. */
   readonly overflow: number;
@@ -1071,6 +1074,15 @@ export interface LogBan {
   readonly infraction: Id;
   readonly rule: string | null;
   readonly thread: Id;
+}
+
+/** A ban running on one of the player's characters: its Act (what an appeal names), when it ends, how long it was and the rule that filled the bar. */
+export interface MyBan {
+  readonly ban: Id;
+  readonly character: Id;
+  readonly until: string;
+  readonly days: number;
+  readonly rule: string | null;
 }
 
 /** A report one of the player's characters made. */
@@ -1598,6 +1610,10 @@ export interface KayfaApi {
   fileAppeal(through: Id, punishment: Id, plea: string): Promise<Answer<AppealResult>>;
   /** How many reports this character may still make today (UTC). Shown only to the player of that character; null where it could not be read. */
   reportsLeft(character: Id): Promise<number | null>;
+  /** The public name of the Mod on a board's beat, who judges its reports, and the board's name; null where no Mod is on staff. */
+  beatMod(board: Id): Promise<{ readonly mod: string; readonly board: string } | null>;
+  /** The ban now running on one of the player's characters (`my_bans`), for the appeal to the Boss; null where it is not banned. */
+  myBan(character: Id): Promise<MyBan | null>;
   /** A character's profile page in one read; null where the character is not shown. */
   profilePage(character: Id): Promise<ProfilePage | null>;
   /** A page of a character's record in one read; null where the character is not shown. */

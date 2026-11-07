@@ -25,6 +25,10 @@ describe('the notice\'s words', () => {
     expect(noticeWords([charge({ rule: null, ruleNumber: null })])).toBe('This post was found in violation of the board\'s premise.');
     expect(noticeWords([charge({ rule: null, ruleNumber: null, cause: 'tail' })])).toBe('This post was found in violation of Obstruction.');
   });
+  test('says an appeal overturned the finding, and says nothing more for the others', () => {
+    expect(noticeWords([charge()], 'overturned')).toBe('This post was found in violation of Rule 2: No double posting. On appeal, that finding was overturned.');
+    for (const r of ['upheld', 'reduced', 'increased', undefined]) expect(noticeWords([charge()], r)).toBe('This post was found in violation of Rule 2: No double posting.');
+  });
   test('says what a backfired report\'s charge was, and nothing where there is no charge', () => {
     expect(noticeWords([charge({ rule: null, ruleNumber: null, cause: 'backfire' })])).toBe('This post was found to be a waste of the staff\'s time.');
     expect(noticeWords([])).toBeNull();
@@ -76,6 +80,29 @@ describe('a post a visit filed on', () => {
     open(w);
     await article(2);
     expect(document.querySelector('.kb-violation')).toBeNull();
+  });
+
+  test('says on the notice that an appeal overturned the finding, with the post\'s words still under it; an upheld appeal leaves the notice as it was', async () => {
+    const w = world();
+    const visit = w.fake.seed.visit(w.clerk, w.second, { at: Date.now() - 4 * 3_600_000, endsInMs: 3_600_000 });
+    w.fake.seed.visitEnd(visit, { outcome: 'filed', line: 'Filed.' });
+    const inf = w.fake.seed.infraction(visit, { points: 2 });
+    const appeal = w.fake.seed.appeal(w.spritey, inf, 'Please.');
+    w.fake.seed.ruling(appeal, w.clerk, 'overturned');
+    open(w);
+    const post = await article(2);
+    expect(post.querySelector('.kb-violation')).toHaveTextContent('This post was found in violation of Rule 2: No double posting. On appeal, that finding was overturned.');
+    expect(within(post).getByText('Third time this week.')).toBeInTheDocument();
+  });
+
+  test('keeps the notice as it was on an upheld appeal', async () => {
+    const w = world();
+    const visit = w.fake.seed.visit(w.clerk, w.second, { at: Date.now() - 4 * 3_600_000, endsInMs: 3_600_000 });
+    w.fake.seed.visitEnd(visit, { outcome: 'filed', line: 'Filed.' });
+    const inf = w.fake.seed.infraction(visit, { points: 2 });
+    w.fake.seed.ruling(w.fake.seed.appeal(w.spritey, inf, 'Please.'), w.clerk, 'upheld');
+    open(w);
+    expect((await article(2)).querySelector('.kb-violation')?.textContent).toBe('This post was found in violation of Rule 2: No double posting.');
   });
 
   test('puts the warn meter in the author\'s postbit once the infraction has landed, and none before', async () => {

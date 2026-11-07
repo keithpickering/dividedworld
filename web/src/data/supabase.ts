@@ -43,7 +43,7 @@ import type {
   Alert, ContactLink, EffectState, SeasonNewsItem, SeasonResult, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
   Boot, BoardPage, IndexPage, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson,
-  AppealResult, AppealVerdict, InterceptResult, LogAppeal, LogBan, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
+  AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
 } from '../../../engine/ui/data/api.ts';
 
 export interface SupabaseApiOptions {
@@ -321,6 +321,7 @@ function toVisit(v: Row): Visit {
   return {
     id: v['visit'], post: v['post'], mod: v['mod'], at: str(v['at']) ?? '', endsAt: str(v['ends_at']) ?? '', line: str(v['line']) ?? '',
     charges: rowsOf(v['charges']).map(toCharge), challenge: toChallenge(isObject(v['challenge']) ? v['challenge'] : {}), end,
+    ...(RULINGS.find((r) => r === v['ruling']) ? { ruling: RULINGS.find((r) => r === v['ruling'])! } : {}),
   };
 }
 /** effect_state rows, as effectStates() answers them. */
@@ -1276,11 +1277,26 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     async reportsLeft(character): Promise<number | null> {
       if (!idOk(character)) return null;
       try {
-        const r = await read(() => client.rpc('reports_left_today', { who: character }));
-        return typeof r.data === 'number' ? r.data : null;
+        /* my_reports_left (0109): the caller's own characters' quotas, by open_report's own rule; a character that is not theirs has no row. */
+        const r = (await list(() => client.from('my_reports_left').select('left').eq('character', character).limit(1)))[0];
+        return typeof r?.['left'] === 'number' ? r['left'] : null;
       } catch {
         return null;
       }
+    },
+    async beatMod(board): Promise<{ readonly mod: string; readonly board: string } | null> {
+      if (!idOk(board)) return null;
+      try {
+        const d = (await read(() => client.rpc('beat_mod_name', { in_board: board }))).data;
+        return isObject(d) && typeof d['mod'] === 'string' && typeof d['board'] === 'string' ? { mod: d['mod'], board: d['board'] } : null;
+      } catch {
+        return null;
+      }
+    },
+    async myBan(character): Promise<MyBan | null> {
+      if (!idOk(character)) return null;
+      const r = (await list(() => client.from('my_bans').select('ban,character,until,days,rule').eq('character', character).gt('until', new Date().toISOString()).order('until', { ascending: false }).limit(1)))[0];
+      return r ? { ban: r['ban'], character: r['character'], until: r['until'], days: num(r['days']), rule: str(r['rule']) } : null;
     },
     async profilePage(character): Promise<ProfilePage | null> {
       if (!idOk(character)) return null;

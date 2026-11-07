@@ -195,7 +195,7 @@ export interface Seed {
   /** The ban a full bar writes (`infract`): the character is banned until `until` (an Act of no character, as the server writes it), and its bar is emptied. */
   ban(character: Id, until: number, options?: { days?: number; infraction?: Id; at?: number }): Id;
   /** What the next report or appeal is answered with (the Mod's judgment, which the fake does not make): a report's verdict, an appeal's ruling. The defaults are `dismissed` and `upheld`. */
-  judging(answers: { readonly report?: ReportVerdict; readonly appeal?: AppealVerdict }): void;
+  judging(answers: { readonly report?: ReportVerdict | 'failed'; readonly appeal?: AppealVerdict }): void;
   /** A saved card effect on a thread's play, heard by its subscribers. */
   effect(thread: Id, play: Id): void;
   /**
@@ -514,7 +514,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       charges: [...(v.payload.charges as Record<string, unknown>[]), ...joins].map((x): VisitCharge => ({ rule: (x.rule as string | undefined) ?? null, ruleNumber: (x.rule_number as number | null | undefined) ?? null, band: x.band as VisitBand, cause: x.cause as VisitCharge['cause'] })),
       challenge: c.kind === 'quiz' && quiz ? { kind: 'quiz', question: quiz.question, choices: quiz.choices } : c.kind === 'bribe' ? { kind: 'bribe', price: c.price ?? 0 } : { kind: 'distraction' },
       end: end ? visitEndOf(end) : null,
+      ...((r) => (r ? { ruling: r } : {}))(rulingOnVisit(v.id)),
     };
+  }
+  /** The verdict of the appeal heard on the infraction a visit filed (thread_page's `ruling`), or undefined. */
+  function rulingOnVisit(visit: Id): AppealVerdict | undefined {
+    const inf = [...acts.values()].find((a) => a.kind === 'infraction' && a.payload.visit_act === visit);
+    const appeal = inf ? [...acts.values()].find((a) => a.kind === 'appeal' && a.target === inf.id) : undefined;
+    const ruling = appeal ? [...acts.values()].find((a) => a.kind === 'appeal_ruling' && a.target === appeal.id) : undefined;
+    return ruling?.payload.verdict as AppealVerdict | undefined;
   }
   /** Each of these posts' latest visit (`vis` in thread_page). */
   const visitsOn = (posts: readonly Id[]): Visit[] => posts.flatMap((p) => {
@@ -1086,7 +1094,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * What a wallet debit refuses, in the words of `wallet_spend` (0006_cards.sql): the amounts are hundredths, as the server says them.
    * Returns the balance left, or the refusal.
    */
-  function spend(account: AccountRec, amount: number, what: 'purchase' | 'play', ref: Id | null): number | Refusal {
+  function spend(account: AccountRec, amount: number, what: 'purchase' | 'play' | 'report' | 'appeal' | 'bribe', ref: Id | null): number | Refusal {
     const short = covers(account, amount);
     if (short) return short;
     /* As wallet_spend: a price of nothing moves nothing, and writes no event. */
@@ -1095,6 +1103,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     recordWallet(account.id, stamp ?? now(), { settlement: null, kind: what, change: -amount, overflow: 0, floored: 0, balanceAfter: account.wallet, ref });
     return account.wallet;
   }
+  /** A price going back (`refund_report`, an overturned appeal): the wallet and its event, as the server writes them. */
+  function giveBack(account: AccountRec, amount: number, ref: Id): void {
+    if (amount === 0) return;
+    account.wallet += amount;
+    recordWallet(account.id, stamp ?? now(), { settlement: null, kind: 'refund', change: amount, overflow: 0, floored: 0, balanceAfter: account.wallet, ref });
+  }
+  /** The reports whose judgment failed and were refunded: they do not count toward the day's quota (open_report). */
+  const refundedReports = new Set<Id>();
   /** `wallet_spend`'s refusal of a price the wallet does not hold, or nothing. */
   const covers = (account: AccountRec, amount: number): Refusal | null => (account.wallet < amount ? refuse(`that costs ${amount}, and your wallet holds ${account.wallet}`) : null);
 
@@ -1492,6 +1508,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const shown = listed.slice(0, settings.presenceNames);
       return { names: shown.map(({ id, name, staff, visitPost }) => ({ id, name, staff, ...(visitPost !== undefined ? { visitPost } : {}) })), others: listed.length - shown.length };
   }
+  /** The rule an infraction was filed under, in the glass's words (punishment_words). */
+  function ruleOf(inf: ActRec): string | null {
+    const visit = typeof inf.payload.visit_act === 'string' ? acts.get(inf.payload.visit_act) : undefined;
+    const charges = (visit?.payload.charges ?? []) as { rule?: string; rule_number?: number | null }[];
+    const found = charges.find((c) => c.rule_number === (inf.payload.rule_number ?? null) && c.rule)?.rule;
+    return found ?? (typeof inf.payload.rule_number === 'number' ? `Rule ${inf.payload.rule_number}` : 'the board\'s premise');
+  }
   /**
    * The log's Mod Bots sources as the views read them (my_infractions, my_bans, my_reports, my_appeals, 0109): the rows of the account's own characters, each as the view says
    * it. A seeded infraction names its Mod by `staff`, a key the fake may not hold a character for, so `mod` is then null, as the view's join is.
@@ -1506,12 +1529,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const seqOf = (post: unknown): number | null => (typeof post === 'string' ? acts.get(post)?.seq ?? null : null);
     const named = (id: Id | null): string | null => (id === null ? null : characters.get(id)?.name ?? null);
     const rulingOn = (target: Id) => all.find((r) => r.kind === 'appeal_ruling' && all.some((a) => a.id === r.target && a.kind === 'appeal' && a.target === target));
-    const ruleWords = (inf: ActRec): string | null => {
-      const visit = typeof inf.payload.visit_act === 'string' ? acts.get(inf.payload.visit_act) : undefined;
-      const charges = (visit?.payload.charges ?? []) as { rule?: string; rule_number?: number | null }[];
-      const found = charges.find((c) => c.rule_number === (inf.payload.rule_number ?? null) && c.rule)?.rule;
-      return found ?? (typeof inf.payload.rule_number === 'number' ? `Rule ${inf.payload.rule_number}` : 'the board\'s premise');
-    };
+    const ruleWords = ruleOf;
     const refundOf = (_id: Id): null => null;
     return {
       infractions: newest(all.filter((i) => i.kind === 'infraction' && owned(i.payload.character) && fits(i.at)).map((i) => ({ ms: i.at, order: i.order, i })))
@@ -1549,11 +1567,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     };
   }
   /** What the next report and appeal are answered with: the Mod's judgment, which the fake does not make (`Seed.judging`). */
-  const judged: { report: ReportVerdict; appeal: AppealVerdict } = { report: 'dismissed', appeal: 'upheld' };
+  const judged: { report: ReportVerdict | 'failed'; appeal: AppealVerdict } = { report: 'dismissed', appeal: 'upheld' };
   /** reports_left_today (0109): the day's quota (UTC) less the character's reports since midnight; the fake refunds none. */
   const reportsLeftNow = (character: Id): number => {
     const midnight = Math.floor(now() / 86_400_000) * 86_400_000;
-    return Math.max(0, settings.modBots.reportsPerDay - [...acts.values()].filter((a) => a.kind === 'report' && a.character === character && a.at >= midnight).length);
+    return Math.max(0, settings.modBots.reportsPerDay - [...acts.values()].filter((a) => a.kind === 'report' && a.character === character && a.at >= midnight && !refundedReports.has(a.id)).length);
   };
   const core: Sync<KayfaApi> = {
     session: () => sessionNow(),
@@ -1835,6 +1853,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const challenge = v.payload.challenge as { kind: string; price?: number };
       const quiz = visitQuizzes.get(visit);
       let worked: boolean;
+      let bribed = 0;
       if (challenge.kind === 'quiz') {
         const said = (answer ?? '').trim();
         if (said === '') return refuse('pick an answer');
@@ -1844,10 +1863,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         const account = me()!;
         const short = covers(account, challenge.price ?? 0);
         if (short) return short;
-        account.wallet -= challenge.price ?? 0;
+        bribed = challenge.price ?? 0;
         worked = true;
       } else return refuse('this Mod is moved by a card played on the thread, not by an answer or a payment');
       const written = write({ character: through, kind: 'intercept', thread: v.thread, target: v.target, payload: { visit_act: visit, kind: challenge.kind, succeeded: worked, ...(challenge.kind === 'quiz' ? { answer: (answer ?? '').trim() } : {}) } });
+      if (bribed > 0) spend(me()!, bribed, 'bribe', written.id);
       let tailUntil: string | null = null;
       if (worked) write({ character: null, kind: 'visit_end', thread: v.thread, target: visit, payload: { visit_act: visit, outcome: 'intercepted', by_act: written.id, line: `${who.name} got past ${characters.get(v.character!)?.name ?? 'the Mod'}'s ${challenge.kind === 'quiz' ? 'quiz' : 'price'}.` } });
       else tailUntil = iso(now() + 24 * 3_600_000);
@@ -1870,8 +1890,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const account = me()!;
       const short = covers(account, settings.modBots.reportPrice);
       if (short) return short;
-      account.wallet -= settings.modBots.reportPrice;
       const report = write({ character: through, kind: 'report', thread: p.thread, target: post, payload: { reason: said } });
+      spend(account, settings.modBots.reportPrice, 'report', report.id);
+      /* A judgment that failed: the price goes back, the report stays with no verdict, and it can be made again (staff/report.ts). */
+      if (judged.report === 'failed') {
+        giveBack(account, settings.modBots.reportPrice, report.id);
+        refundedReports.add(report.id);
+        return refuse('The Mod could not hear this report. Your Aura has been refunded, and you can make it again.');
+      }
       const verdict = judged.report;
       const visit = verdict === 'visit' ? seed.visit(mod.id, post, { charges: [{ cause: 'report' }] }) : null;
       const line = verdict === 'visit' ? 'Noted. A visit is on its way.' : verdict === 'dismissed' ? 'Dismissed. Do not waste the staff\'s time.' : 'That report is a waste of the staff\'s time, and it will be remembered.';
@@ -1894,18 +1920,32 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const account = me()!;
       const short = covers(account, settings.modBots.appealPrice);
       if (short) return short;
-      account.wallet -= settings.modBots.appealPrice;
       const appeal = write({ character: through, kind: 'appeal', thread: pun.thread, target: punishment, payload: { plea: said } });
+      spend(account, settings.modBots.appealPrice, 'appeal', appeal.id);
       const verdict = judged.appeal;
       const points = pun.kind === 'infraction' ? Number(pun.payload.points) : 0;
       const delta = verdict === 'overturned' ? -points : verdict === 'reduced' ? -Math.ceil(points / 2) : verdict === 'increased' ? points : 0;
       const line = `${hearer.name} has heard it: ${verdict}.`;
       write({ character: hearer.id, kind: 'appeal_ruling', thread: pun.thread, target: appeal.id, payload: { appeal_act: appeal.id, verdict, points_delta: delta, line } });
       const refunded = verdict === 'overturned' ? settings.modBots.appealPrice : 0;
-      account.wallet += refunded;
+      giveBack(account, refunded, appeal.id);
       return ok<AppealResult>({ appeal: appeal.id, verdict, line, pointsDelta: delta, refunded });
     },
     reportsLeft: (character) => reportsLeftNow(character),
+    beatMod(board) {
+      const mod = [...characters.values()].find((c) => c.staff?.office === 'mod' && c.debutedAt !== null && c.retiredAt === null);
+      const b = boards.find((x) => x.id === board);
+      return mod && b ? { mod: mod.name, board: boardNow(b).name } : null;
+    },
+    myBan(character) {
+      const mine = characters.get(character);
+      const account = me();
+      if (!account || mine?.owner !== account.id) return null;
+      const ban = [...acts.values()].filter((a) => a.kind === 'ban' && a.payload.character === character && Date.parse(String(a.payload.until)) > now()).sort((a, b) => b.at - a.at)[0];
+      if (!ban) return null;
+      const inf = acts.get(String(ban.payload.infraction_act));
+      return { ban: ban.id, character, until: String(ban.payload.until), days: Number(ban.payload.days), rule: inf ? ruleOf(inf) : null };
+    },
     threads(board, page) {
       const all = [...threads.values()].filter((t) => t.board === board && listed(t)).map(summary)
         .sort((x, y) => Date.parse(y.lastAt) - Date.parse(x.lastAt) || y.id.localeCompare(x.id));

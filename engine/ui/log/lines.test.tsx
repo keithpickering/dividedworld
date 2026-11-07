@@ -478,36 +478,73 @@ describe('the Mod Bots\' lines', () => {
     expect(said(row!)).toBe('Spritey\'s warn bar filled with Rule 2: No double posting, so it was banned for 3 days and the bar was emptied. It can read but not post, react or play cards. The ban ends by itself Nov 2 · 12:15 UTC. Your other characters are not banned.');
   });
 
+  test('a running ban that no appeal names carries the ban for "Appeal to the Boss"; an ended one or an appealed one does not', () => {
+    const ban = { ban: 'b1', character: 'p', at: '2099-10-30T12:15:00.000Z', days: 3, until: '2099-11-02T12:15:00.000Z', infraction: 'i1', rule: null, thread: T };
+    expect(rowsOf({ bans: [ban] })[0]!.appealBan).toEqual({ ban: 'b1', character: 'p', until: ban.until, days: 3, rule: null });
+    expect(rowsOf({ bans: [{ ...ban, until: '2000-01-02T00:00:00.000Z' }] })[0]!.appealBan).toBeUndefined();
+    const appeal = { appeal: 'a1', character: 'p', at: '2099-10-30T13:00:00.000Z', punishment: 'b1', punishmentKind: 'ban', postSeq: 41, thread: T, verdict: null, ruledAt: null, pointsDelta: null, hearer: null, refund: null } as const;
+    expect(rowsOf({ bans: [ban], appeals: [appeal] }).find((r) => r.kind === 'ban')!.appealBan).toBeUndefined();
+  });
+
   test('a ban that has ended says it ended by itself', () => {
     const [row] = rowsOf({ bans: [{ ban: 'b1', character: 'p', at: '2000-01-01T00:00:00.000Z', days: 1, until: '2000-01-02T00:00:00.000Z', infraction: 'i1', rule: null, thread: T }] });
     expect(said(row!)).toContain('The ban ended by itself Jan 2 · 00:00 UTC.');
     expect(said(row!)).toContain('warn bar filled, so');
   });
 
+  /** A wallet event of the Mod Bots' kinds, as `my_wallet_events` reads it. */
+  const paid = (kind: 'report' | 'appeal' | 'refund' | 'bribe', ref: string, change: number): Log['wallet'][number] =>
+    ({ settlement: null, kind, change, overflow: 0, floored: 0, balanceAfter: 100, ref, at: '2099-10-29T17:00:00.000Z' });
+
   test('a report says the verdict, what it cost and that it is public; an unanswered one says what happens next; a refunded one says its Aura came back', () => {
     const base = { report: 'r1', character: 'q', at: '2099-10-29T17:00:00.000Z', post: 'p42', postSeq: 42, thread: T, verdict: null, verdictAt: null, mod: null, refund: null } as const;
-    const dismissed = rowsOf({ reports: [{ ...base, verdict: 'dismissed', verdictAt: '2099-10-29T17:00:03.000Z', mod: 'The Clerk' }] })[0]!;
+    const dismissed = rowsOf({ wallet: [paid('report', 'r1', -25)], reports: [{ ...base, verdict: 'dismissed', verdictAt: '2099-10-29T17:00:03.000Z', mod: 'The Clerk' }] })[0]!;
     expect(dismissed).toMatchObject({ kind: 'report', aura: -25, characters: ['q'] });
     expect(said(dismissed)).toBe('Pipewrench reported post #42, for 0.25 Aura. The report is public. The Clerk dismissed it. The 0.25 Aura was spent.');
     expect(said(rowsOf({ reports: [{ ...base, verdict: 'visit', mod: 'The Clerk' }] })[0]!)).toContain('The Clerk judged it and sent a visit.');
     expect(said(rowsOf({ reports: [{ ...base, verdict: 'backfire', mod: 'The Clerk' }] })[0]!)).toContain('a visit went to Pipewrench\'s latest post');
     expect(said(rowsOf({ reports: [base] })[0]!)).toContain('It has not been answered yet. If it cannot be, your Aura comes back by itself.');
-    const refunded = rowsOf({ reports: [{ ...base, refund: 'failed' }] })[0]!;
+    const refunded = rowsOf({ wallet: [paid('refund', 'r1', 25), paid('report', 'r1', -25)], reports: [{ ...base, refund: 'failed' }] })[0]!;
     expect(refunded.aura).toBe(0);
-    expect(said(refunded)).toContain('could not hear it, so your 0.25 Aura came back.');
+    expect(said(refunded)).toContain('could not hear it, so your Aura came back (0.25), and you can make it again.');
   });
 
   test('an appeal says what it was of, the ruling, the points and the price', () => {
     const base = { appeal: 'a1', character: 'p', at: '2099-10-30T13:00:00.000Z', punishment: 'i1', punishmentKind: 'infraction', postSeq: 41, thread: T, verdict: null, ruledAt: null, pointsDelta: null, hearer: null, refund: null } as const;
-    const overturned = rowsOf({ appeals: [{ ...base, verdict: 'overturned', pointsDelta: -2, hearer: 'The Clerk' }] })[0]!;
+    const overturned = rowsOf({ wallet: [paid('appeal', 'a1', -50), paid('refund', 'a1', 50)], appeals: [{ ...base, verdict: 'overturned', pointsDelta: -2, hearer: 'The Clerk' }] })[0]!;
     expect(overturned).toMatchObject({ kind: 'appeal', aura: 0 });
     expect(said(overturned)).toBe('Spritey appealed the warn points from your post #41, for 0.50 Aura. The plea is public. The Clerk overturned it: 2 points came off, and the 0.50 Aura came back.');
-    const upheld = rowsOf({ appeals: [{ ...base, verdict: 'upheld', hearer: 'The Clerk' }] })[0]!;
+    const upheld = rowsOf({ wallet: [paid('appeal', 'a1', -50)], appeals: [{ ...base, verdict: 'upheld', hearer: 'The Clerk' }] })[0]!;
     expect(upheld.aura).toBe(-50);
     expect(said(upheld)).toContain('The Clerk upheld it. Nothing changed.');
     expect(said(rowsOf({ appeals: [{ ...base, verdict: 'increased', pointsDelta: 2, hearer: 'The Clerk' }] })[0]!)).toContain('increased it: 2 more points landed.');
     expect(said(rowsOf({ appeals: [{ ...base, punishmentKind: 'ban', verdict: 'reduced', hearer: 'The Boss' }] })[0]!)).toContain('appealed the ban from your post #41');
     expect(said(rowsOf({ appeals: [base] })[0]!)).toContain('It has not been ruled on yet. If it cannot be, your Aura comes back by itself.');
+  });
+
+  test('the Aura is what the wallet\'s events say was paid, never today\'s price (the settings now say 25 and 50)', () => {
+    const report = { report: 'r1', character: 'q', at: '2099-10-29T17:00:00.000Z', post: 'p42', postSeq: 42, thread: T, verdict: 'dismissed', verdictAt: null, mod: 'The Clerk', refund: null } as const;
+    const row = rowsOf({ wallet: [paid('report', 'r1', -10)], reports: [report] })[0]!;
+    expect(row.aura).toBe(-10);
+    expect(said(row)).toContain('for 0.10 Aura. The report is public. The Clerk dismissed it. The 0.10 Aura was spent.');
+    const appeal = { appeal: 'a1', character: 'p', at: '2099-10-30T13:00:00.000Z', punishment: 'i1', punishmentKind: 'infraction', postSeq: 41, thread: T, verdict: 'upheld', ruledAt: null, pointsDelta: null, hearer: 'The Clerk', refund: null } as const;
+    const a = rowsOf({ wallet: [paid('appeal', 'a1', -30)], appeals: [appeal] })[0]!;
+    expect(a.aura).toBe(-30);
+    expect(said(a)).toContain('for 0.30 Aura.');
+    /* A price the wallet has no event for (a free one) is not guessed at. */
+    expect(said(rowsOf({ reports: [report] })[0]!)).not.toMatch(/Aura/u);
+  });
+
+  test('a bribe says what was paid and to talk down whose visit, from the wallet\'s event and the public Acts', () => {
+    const act = (id: string, kind: Act['kind'], character: string, payload: Act['payload']): Act =>
+      ({ id, kind, character, thread: T, targetActId: null, seq: null, createdAt: '2099-10-29T17:00:00.000Z', payload, currentPayload: payload, editedAt: null, shownEditedAt: null });
+    const attempt = act('att1', 'intercept', 'q', { visit_act: 'v1', kind: 'bribe', succeeded: true });
+    const visit = act('v1', 'visit', 'm', {});
+    const rows = logRows(data({ log: { ...empty, wallet: [paid('bribe', 'att1', -30)] }, mine: mineBoth, acts: new Map([attempt, visit].map((x) => [x.id, x])), names: new Map([['m', 'The Clerk']]) }), words, 600, null);
+    const row = rows.find((r) => r.kind === 'bribe')!;
+    expect(said(row)).toBe('You paid 0.30 Aura to talk down The Clerk\'s visit.');
+    expect(row).toMatchObject({ aura: -30, characters: ['q'] });
+    expect(rows.find((r) => r.kind === 'bribe' && r.characters[0] === 'q')).toBeDefined();
   });
 
   test('each is in the tab of its own character, and in All; one character\'s lines are not in another\'s tab', () => {

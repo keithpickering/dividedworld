@@ -2080,11 +2080,43 @@ describe('reports, appeals and what a page says of a ban', () => {
     expect(h.log.filter((r) => r.url.pathname === '/functions/v1/staff/appeal').map((r) => r.body)).toEqual([{ through: B, punishment: PUNISHMENT, plea: 'please' }]);
   });
 
-  it('reads the reports a character has left today through reports_left_today, and null where it cannot', async () => {
-    const h = harness((r) => (r.url.pathname === `${REST}/rpc/reports_left_today` ? json(2) : undefined));
+  it('reads the reports a character has left today from my_reports_left, and null where it has no row or cannot be read', async () => {
+    const h = harness((r) => (r.url.pathname === `${REST}/my_reports_left` ? rows([{ left: 2 }]) : undefined));
     expect(await h.api.reportsLeft(B)).toBe(2);
-    expect(h.log.find((r) => r.url.pathname.endsWith('/rpc/reports_left_today'))?.body).toEqual({ who: B });
+    expect(h.to('my_reports_left')[0]?.url.searchParams.get('character')).toBe(`eq.${B}`);
+    expect(await harness((r) => (r.url.pathname === `${REST}/my_reports_left` ? rows([]) : undefined)).api.reportsLeft(B)).toBeNull();
     expect(await harness(() => json({ message: 'no' }, 500)).api.reportsLeft(B)).toBeNull();
+  });
+
+  it('names who judges a board\'s reports through beat_mod_name, and the ban now running through my_bans', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname === `${REST}/rpc/beat_mod_name`) return json({ mod: 'The Clerk', board: 'General' });
+      if (r.url.pathname === `${REST}/my_bans`) return rows([{ ban: 'b1', character: B, until: '2099-01-01T00:00:00+00:00', days: 3, rule: 'Rule 2: No double posting' }]);
+      return undefined;
+    });
+    expect(await h.api.beatMod(C)).toEqual({ mod: 'The Clerk', board: 'General' });
+    expect(h.log.find((r) => r.url.pathname.endsWith('/rpc/beat_mod_name'))?.body).toEqual({ in_board: C });
+    expect(await h.api.myBan(B)).toEqual({ ban: 'b1', character: B, until: '2099-01-01T00:00:00+00:00', days: 3, rule: 'Rule 2: No double posting' });
+    const q = h.to('my_bans')[0]!.url.searchParams;
+    expect([q.get('character'), q.get('until')?.startsWith('gt.'), q.get('limit')]).toEqual([`eq.${B}`, true, '1']);
+    expect(await harness(() => json(null)).api.beatMod(C)).toBeNull();
+  });
+
+  it('carries the ruling of an appeal heard on a visit\'s infraction, and none where the page says none or says nonsense', async () => {
+    const doc = (ruling: unknown) => ({ summary: THREAD_ROW, page: 1, acts: [], plays: [], above: [], visits: [{ visit: 'v1', post: A, mod: B, at: '2026-10-01T10:00:00+00:00', ends_at: '2026-10-01T12:00:00+00:00', line: 'x', charges: [], challenge: { kind: 'distraction' }, end: null, ...(ruling === undefined ? {} : { ruling }) }] });
+    const run = async (ruling: unknown) => (await harness((r) => (r.url.pathname === `${REST}/rpc/thread_page` ? json(doc(ruling)) : undefined)).api.threadPage(T, { page: 1 }, 20, []))?.visits[0];
+    expect((await run('overturned'))?.ruling).toBe('overturned');
+    expect((await run('upheld'))?.ruling).toBe('upheld');
+    expect((await run(null))?.ruling).toBeUndefined();
+    expect((await run('nonsense'))?.ruling).toBeUndefined();
+    expect((await run(undefined))?.ruling).toBeUndefined();
+  });
+
+  it('says a failed, refunded judgment in the server\'s words, and that it may be made again', async () => {
+    const words = 'The Mod could not hear this report. Your Aura has been refunded, and you can make it again.';
+    const h = harness((r) => (r.url.pathname === '/functions/v1/staff' ? json({ report: 'r1', error: words }, 502) : undefined));
+    const a = await h.api.fileReport(B, POST, 'x');
+    expect(a).toMatchObject({ ok: false, error: words });
   });
 
   it('carries a character\'s ban only while it holds, a presence name\'s visit post, and a Mod\'s visits and judgments in its log', async () => {

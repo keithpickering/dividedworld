@@ -82,8 +82,23 @@ describe('the report form', () => {
     const tabs = within(panel).getAllByRole('tab');
     expect(tabs.map((t) => t.textContent)).toEqual(['Report post #2']);
     expect(tabs[0]).toHaveFocus();
-    expect(panel).toHaveTextContent('Your report is public: it names Pipewrench, and anyone can react to it. A Moderator on this board\'s beat judges it now: a visit, dismissed, or it backfires onto Pipewrench\'s latest post.');
+    await waitFor(() => expect(panel).toHaveTextContent('Your report is public: it names Pipewrench, and anyone can react to it. The Clerk, on General\'s beat, judges it now: a visit, dismissed, or it backfires onto Pipewrench\'s latest post.'));
     expect(panel).toHaveTextContent('If the Mod cannot judge it, your Aura comes back.');
+  });
+
+  test('a judgment that failed says plainly that the Aura came back and the report can be made again, and keeps the reason', async () => {
+    const { w, panel } = await opened();
+    w.fake.seed.judging({ report: 'failed' });
+    await userEvent.type(within(panel).getByRole('textbox'), 'it was rude');
+    await userEvent.click(within(panel).getByRole('button', { name: /^Report ·/u }));
+    expect(await within(panel).findByRole('alert')).toHaveTextContent('The Mod could not hear this report. Your Aura has been refunded, and you can make it again.');
+    expect(within(panel).getByRole('textbox')).toHaveValue('it was rude');
+    expect(await w.fake.wallet()).toMatchObject({ balance: 500 });
+    /* The refunded report does not use a slot: it can be made again. */
+    await waitFor(() => expect(panel).toHaveTextContent('Pipewrench has 3 reports left today.'));
+    w.fake.seed.judging({ report: 'dismissed' });
+    await userEvent.click(within(panel).getByRole('button', { name: /^Report ·/u }));
+    await waitFor(() => expect(within(panel).getByRole('status')).toHaveTextContent('heard and dismissed'));
   });
 
   test('has the reason field with its count, the price from the settings, and the reports the mask has left today', async () => {
@@ -247,3 +262,51 @@ describe('the appeal form', () => {
   });
 });
 
+
+
+describe('the appeal to the Boss of a ban (the design, section 5: "No player is ever stuck")', () => {
+  /** Pipewrench, the reader's mask, is banned for a day after a filed visit's infraction filled the bar. */
+  function banned() {
+    const w = world();
+    const visit = w.fake.seed.visit(w.clerk, w.mine, { at: Date.now() - 4 * 3_600_000, endsInMs: 3_600_000 });
+    w.fake.seed.visitEnd(visit, { outcome: 'filed', line: 'Filed.' });
+    const inf = w.fake.seed.infraction(visit, { points: 10, band: 'severe' });
+    const ban = w.fake.seed.ban(w.pipe, Date.now() + 86_400_000, { infraction: inf, days: 1 });
+    return { ...w, ban };
+  }
+
+  test('the banned composer offers "Appeal to the Boss · 0.50 Aura", which opens the form with the ban\'s end and terms, and sends it with the ban\'s Act', async () => {
+    const w = banned();
+    open(w);
+    const entry = await screen.findByRole('button', { name: 'Appeal to the Boss · 0.50 Aura' });
+    await userEvent.click(entry);
+    const form = await screen.findByRole('dialog', { name: 'Appeal the ban' });
+    expect(await within(form).findByRole('form', { name: 'Appeal' })).toHaveTextContent(/The punishment: a ban of 1 day, after Rule 2: No double posting\. It ends by itself .+\./u);
+    expect(form).toHaveTextContent('The Boss hears it. It is refunded if overturned. It may be upheld, cut to half of its 1 day, or lengthened by half. One appeal per ban, and your plea is public.');
+    w.fake.seed.judging({ appeal: 'reduced' });
+    await userEvent.type(within(form).getByRole('textbox', { name: 'Your plea (public)' }), 'I have learned.');
+    await userEvent.click(within(form).getByRole('button', { name: 'Appeal · 0.50 Aura' }));
+    await waitFor(() => expect(within(form).getByRole('status')).toHaveTextContent('The Boss heard it and reduced it to half its length.'));
+    expect((await w.fake.log()).appeals[0]).toMatchObject({ punishment: w.ban, punishmentKind: 'ban', verdict: 'reduced', character: w.pipe });
+    expect(await w.fake.wallet()).toMatchObject({ balance: 450 });
+  });
+
+  test('is not offered to a mask that is not banned, nor on another player\'s screen', async () => {
+    const w = banned();
+    w.fake.signInAs(w.other);
+    open(w);
+    await article(2);
+    expect(screen.queryByRole('button', { name: /^Appeal to the Boss/u })).toBeNull();
+    expect(await w.fake.myBan(w.pipe)).toBeNull();
+  });
+
+  test('passes axe', async () => {
+    const w = banned();
+    open(w);
+    await userEvent.click(await screen.findByRole('button', { name: /^Appeal to the Boss/u }));
+    const form = await screen.findByRole('dialog', { name: 'Appeal the ban' });
+    await within(form).findByRole('form', { name: 'Appeal' });
+    const bad = await axeViolations(form);
+    expect(bad, describeViolations(bad)).toEqual([]);
+  });
+});
