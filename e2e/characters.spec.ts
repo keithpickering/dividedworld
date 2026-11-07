@@ -207,8 +207,8 @@ async function openTurnAt(page: Page, width: number, height = 1000) {
 }
 const classGroup = (dialog: ReturnType<Page['locator']>) => dialog.getByRole('group', { name: 'Turn to' });
 /** Which of the row's cards lie whole inside it, and which only partly, by their class key. */
-async function inView(dialog: ReturnType<Page['locator']>) {
-  return classGroup(dialog).locator('.kb-class-grid').evaluate((row) => {
+async function inView(dialog: ReturnType<Page['locator']>, group = classGroup(dialog)) {
+  return group.locator('.kb-class-grid').evaluate((row) => {
     const r = row.getBoundingClientRect();
     const whole: string[] = [];
     const part: string[] = [];
@@ -403,4 +403,22 @@ test('the fade covers only a peeking card, at its start and its end, and never a
   // The status text and `before` settle the moment the Heel is the first card shown, while the snap is still gliding;
   // the Jabroni's peek grows with the scroll, so wait for the glide to land before reading how much of it shows.
   await expect.poll(async () => (await fades(phone)).after).toBeGreaterThan(40);
+});
+
+/*
+ * New character's phone row has a card of calc(100% - 64px) of a 355px row, 291.375px: not a whole number of pixels,
+ * which the Turn's happens to be. The count and the fade must read the real boxes, not a rounded width.
+ */
+test('on a phone, choosing the Tweener on New character counts 5–5 of 6 and fades none of it', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/characters/new');
+  await expect(page.getByRole('heading', { level: 1, name: 'New character' })).toBeVisible();
+  const group = page.getByRole('group', { name: 'Class' });
+  await group.getByRole('radio', { name: 'Tweener' }).check({ force: true });
+  await expect(group.getByText('5–5 of 6')).toBeVisible();
+  const row = group.locator('.kb-class-grid');
+  await expect.poll(async () => (await inView(group, group)).whole).toEqual(['tweener']);
+  // The glide has landed; the fade at the row's start is none, since the Technician lies wholly out of view.
+  await expect.poll(async () => row.evaluate((el) => (el.hasAttribute('data-kb-peek-before') ? parseFloat(getComputedStyle(el).getPropertyValue('--kb-class-peek-before')) : 0))).toBe(0);
+  await expect(group.getByText('5–5 of 6')).toBeVisible();
 });

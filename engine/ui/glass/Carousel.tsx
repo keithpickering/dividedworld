@@ -56,19 +56,27 @@ export interface CarouselProps<T extends { readonly key: string }> {
 interface RowState { readonly overflow: boolean; readonly first: number; readonly last: number; readonly before: boolean; readonly after: boolean; readonly peekBefore: number; readonly peekAfter: number }
 const STILL: RowState = { overflow: false, first: 0, last: 0, before: false, after: false, peekBefore: 0, peekAfter: 0 };
 
-/** The row's cards, its card width and the gap between them, as laid out now. */
-function measure(row: HTMLElement): { cards: HTMLElement[]; card: number; gap: number } {
+/**
+ * The row's cards, its card width and the step from one card's start to the next, as laid out now, in the
+ * row's own CSS pixels (the units of its `scrollLeft` and `clientWidth`). The width is the computed one,
+ * never `offsetWidth`: a card's width is often a fraction (a phone's `calc(100% - 64px)` is 291.375px), and
+ * a rounded width puts every card after the first off by its rounding. Nor is it a bounding box, which is
+ * in viewport pixels and so is scaled by the Turn dialog's `zoom`. Where layout reports no width (a test's
+ * DOM), `offsetWidth` stands in.
+ */
+function measure(row: HTMLElement): { cards: HTMLElement[]; card: number; step: number } {
   const cards = [...row.querySelectorAll<HTMLElement>('[data-kb-item]')];
-  const gap = parseFloat(getComputedStyle(row).columnGap);
-  return { cards, card: cards[0]?.offsetWidth ?? 0, gap: Number.isFinite(gap) ? gap : 0 };
+  const columnGap = parseFloat(getComputedStyle(row).columnGap);
+  const laid = cards[0] ? parseFloat(getComputedStyle(cards[0]).width) : 0;
+  const card = Number.isFinite(laid) ? laid : cards[0]?.offsetWidth ?? 0;
+  return { cards, card, step: card + (Number.isFinite(columnGap) ? columnGap : 0) };
 }
 
 function read(row: HTMLElement): RowState {
-  const { cards, card, gap } = measure(row);
+  const { cards, card, step } = measure(row);
   const { scrollLeft, clientWidth, scrollWidth } = row;
   if (scrollWidth <= clientWidth + 1 || card <= 0) return STILL;
-  const { first, last } = shownRange(scrollLeft, clientWidth, card, gap, cards.length);
-  const step = card + gap;
+  const { first, last } = shownRange(scrollLeft, clientWidth, card, step - card, cards.length);
   /* What of the card before the first whole one shows (its end past the viewport's start), and of the card after the last. */
   const peekBefore = first > 1 ? Math.max(0, Math.round((first - 2) * step + card - scrollLeft)) : 0;
   const peekAfter = last < cards.length ? Math.max(0, Math.round(scrollLeft + clientWidth - last * step)) : 0;
@@ -132,8 +140,8 @@ export function Carousel<T extends { readonly key: string }>({ role, label, item
   const move = (direction: 1 | -1) => {
     const el = rowRef.current;
     if (!el) return;
-    const { card, gap } = measure(el);
-    el.scrollBy({ left: direction * (card + gap), behavior: motionReduced() ? 'auto' : 'smooth' });
+    const { step } = measure(el);
+    el.scrollBy({ left: direction * step, behavior: motionReduced() ? 'auto' : 'smooth' });
   };
 
   /* A tablist's keys: the arrows wrap, Home and End go to the ends; focus moves with the choice. */

@@ -1078,6 +1078,31 @@ describe('the Turn\'s classes, as a carousel', () => {
     expect(new Set(radios.map((r) => r.getAttribute('name'))).size).toBe(1);
   });
 
+  test('counts and fades by the cards\' real sub-pixel width: the phone\'s 291.375px cards, scrolled to the fifth, read "5–5" with no fade before it', async () => {
+    const w = world({ instance: six });
+    openSix(w);
+    await ready();
+    // The phone's row: 355px wide, cards calc(100% - 64px) = 291.375px, 14px apart. offsetWidth rounds a card to 291; the computed width does not.
+    const CARD = 291.375;
+    const STEP = CARD + 14;
+    const SCROLLED = 4 * STEP; // 1221.5: the fifth card (the Tweener) at the row's start
+    const grid = (el: HTMLElement) => el.classList.contains('kb-class-grid');
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function (this: HTMLElement) { return grid(this) ? six.classes.length * STEP - 14 : 0; });
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return grid(this) ? 355 : 0; });
+    vi.spyOn(HTMLElement.prototype, 'scrollLeft', 'get').mockImplementation(function (this: HTMLElement) { return grid(this) ? SCROLLED : 0; });
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-class-card') ? Math.round(CARD) : 0; });
+    // The computed box is what layout reports, fractions and all.
+    const computed = window.getComputedStyle.bind(window);
+    vi.spyOn(window, 'getComputedStyle').mockImplementation((el: Element, pseudo?: string | null) => {
+      if (el.classList.contains('kb-class-card')) return { width: `${CARD}px` } as CSSStyleDeclaration;
+      if (el.classList.contains('kb-class-grid')) return { columnGap: '14px' } as CSSStyleDeclaration;
+      return computed(el, pseudo);
+    });
+    const dialog = await openTurn('Mrs. Hooligan');
+    expect(await within(dialog).findByText(`5–5 of ${six.classes.length}`)).toBeInTheDocument();
+    expect(dialog.querySelector('.kb-class-grid')).not.toHaveAttribute('data-kb-peek-before');
+  });
+
   test('hides no class from the accessibility tree while the row overflows', async () => {
     const w = world({ instance: six });
     openSix(w);
