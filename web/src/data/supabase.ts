@@ -1503,8 +1503,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const d = (await read(() => client.rpc('updates_page', { in_update: update !== null && idOk(update) ? update : null, in_before: before, in_handover_season: handoverSeason }))).data as Row | null;
       if (!isObject(d)) throw new Error(NOT_READ);
       const updates = rowsOf(d['updates']).map(toUpdate);
-      /* The open Update is the one asked for, else the newest: the tallies were read for it alone. */
-      const open = update ?? updates[0]?.act;
+      /* The open Update is the one asked for when it is on the page, else the newest of the page (as Updates.tsx shows it): the tallies were read for it alone. */
+      const open = update !== null && updates.some((u) => u.act === update) ? update : updates[0]?.act;
       return {
         updates, tallies: toTallies(open === undefined ? [] : [open], rowsOf(d['tallies'])), mine: rowsOf(d['mine']).map(toMyReaction),
         ...(isObject(d['queue']) ? { queue: toAdminQueue(d['queue']) } : {}),

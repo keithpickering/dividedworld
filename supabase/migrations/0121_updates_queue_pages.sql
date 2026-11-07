@@ -5,7 +5,7 @@
 -- and, for an admin who followed a handover link, the queue's to-do list.
 --   updates   updates(in_before, 20): UPDATES_PAGE rows, newest first, each as the adapter's updates() reads it (`in_before` is the page's cursor).
 --   tallies   reaction_tallies' (act, kind, count) rows of the open update's Act; `mine` the caller's own my_reactions (act, kind, character)
---             rows of it. The open update is `in_update` (an update's Act id, the address's `?update=`), else the newest update of the page.
+--             rows of it. The open update is `in_update` (an update's Act id, the address's `?update=`) when it is among the page's updates, else the newest update of the page.
 --   queue     admin_queue(), only when in_handover_season is given and the caller is an admin; the key is absent otherwise.
 -- queue_page: the admin queue screen (engine/ui/admin/Queue.tsx). Null unless the caller is an admin (the screen then says "The admin queue is for
 -- admins", as it does today); otherwise
@@ -30,7 +30,8 @@ begin atomic
     select to_jsonb(u) - 'ordinality' as j, u.ordinality as o
     from updates(in_before, 20) with ordinality as u
   ), open as (
-    select coalesce(in_update, (select (up.j ->> 'act')::uuid from up order by up.o limit 1)) as act
+    -- The one asked for when it is among the page's updates, else the newest of the page (Updates.tsx: `updates.find(open) ?? updates[0]`).
+    select coalesce((select (up.j ->> 'act')::uuid from up where (up.j ->> 'act')::uuid = in_update), (select (up.j ->> 'act')::uuid from up order by up.o limit 1)) as act
   )
   select jsonb_build_object(
     'updates', coalesce((select jsonb_agg(up.j order by up.o) from up), '[]'::jsonb),

@@ -2063,7 +2063,7 @@ describe('a screen in one call', () => {
     const plain = once('updates_page', { updates: [], tallies: [], mine: [] });
     const bare = await plain.api.updatesPage(C, null, null);
     expect(only(plain, 'updates_page')).toEqual({ in_update: C, in_before: null, in_handover_season: null });
-    expect(bare).toEqual({ updates: [], tallies: { [C]: {} }, mine: [] });
+    expect(bare).toEqual({ updates: [], tallies: {}, mine: [] });
     expect('queue' in bare).toBe(false);
   });
 

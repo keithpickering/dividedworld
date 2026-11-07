@@ -62,6 +62,15 @@ begin
   -- An update named: its tallies and the caller's marks.
   doc := updates_page(u1, null, null);
   if doc -> 'tallies' is distinct from (select jsonb_agg(to_jsonb(t) order by t.kind) from (select act, kind, count from reaction_tallies where act = u1) t) or doc #>> '{mine,0,kind}' is distinct from 'wow' then raise exception 'the named update: %', doc; end if;
+  -- An update named that is not on the page (an older one, or none at all): the newest of the page is open, as Updates.tsx shows it, and its reactions are read.
+  doc := updates_page(gen_random_uuid(), null, null);
+  if doc -> 'tallies' is distinct from (select jsonb_agg(to_jsonb(t) order by t.kind) from (select act, kind, count from reaction_tallies where act = u3) t) or doc #>> '{mine,0,kind}' is distinct from 'up' then
+    raise exception 'an update off the page opens the newest: %', doc;
+  end if;
+  doc := updates_page(u1, now() + interval '1 day', null);
+  if doc -> 'tallies' is distinct from (select jsonb_agg(to_jsonb(t) order by t.kind) from (select act, kind, count from reaction_tallies where act = u1) t) then raise exception 'an update on the page is open: %', doc -> 'tallies'; end if;
+  doc := updates_page(u1, now(), null);
+  if doc -> 'tallies' is distinct from '[]'::jsonb or doc -> 'mine' is distinct from '[]'::jsonb then raise exception 'an update off an empty page opens nothing: %', doc; end if;
   -- An update with no reaction: empty lists, not null.
   doc := updates_page(u2, null, null);
   if doc -> 'tallies' is distinct from '[]'::jsonb or doc -> 'mine' is distinct from '[]'::jsonb then raise exception 'no reactions are empty lists: %', doc; end if;

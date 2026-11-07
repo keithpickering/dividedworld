@@ -21,7 +21,7 @@ declare
   base timestamptz := now() - interval '10 hours';
   t1 uuid := tests.thread('Al Ann started this');
   t2 uuid := tests.thread('Al Bob started this');
-  o1 uuid; o2 uuid; q0 uuid; q1 uuid; q2 uuid; q3 uuid; r1 uuid;
+  o1 uuid; o2 uuid; pp uuid; cplay uuid; cend uuid; q0 uuid; q1 uuid; q2 uuid; q3 uuid; r1 uuid;
   seen timestamptz := now() - interval '3 hours';
   doc jsonb;
   later jsonb;
@@ -38,7 +38,13 @@ begin
   q2 := tests.act(b1, 'post', t1, '{"body": "q2"}', q1, base + interval '2 minutes');
   q3 := tests.act(b1, 'post', t1, '{"body": "q3"}', q2, base + interval '3 minutes');
   r1 := tests.post(b1, t2, 'r1 quotes nothing', base + interval '4 minutes');
-  insert into alerts (account, kind, act, character, at) values (ann, 'quote', q3, a1, base + interval '1 hour'), (ann, 'quote', r1, a1, base + interval '2 hours');
+  -- An admin ended a card Ann's character played on a post of Bob's: the card_end, the play and the post are three rounds.
+  pp := tests.post(b1, t2, 'pp', base + interval '5 minutes');
+  cplay := tests.act(a1, 'card', t2, '{"card": "splat"}', pp, base + interval '6 minutes');
+  perform set_config('kayfabb.card_end_writer', 'on', true);
+  cend := tests.act(null::uuid, 'card_end', t2, '{"why": "reversed", "by": "admin"}', cplay, base + interval '7 minutes');
+  perform set_config('kayfabb.card_end_writer', 'off', true);
+  insert into alerts (account, kind, act, character, at) values (ann, 'quote', q3, a1, base + interval '1 hour'), (ann, 'quote', r1, a1, base + interval '2 hours'), (ann, 'cardEnded', cend, a1, base + interval '3 hours');
   -- Bob has an alert of his own that Ann must never see.
   insert into alerts (account, kind, act, character, at) values (bob, 'quote', o1, b1, base + interval '90 minutes');
   -- Ann has read her thread to its opening; Bob has posted since (a followed-thread alert), and she has read the other thread through.
@@ -53,38 +59,49 @@ begin
   end if;
   if (doc ->> 'seenAt')::timestamptz is distinct from seen then raise exception 'seenAt is the caller''s: %', doc -> 'seenAt'; end if;
   if (doc ->> 'openedAt')::timestamptz is distinct from my_account_opened() then raise exception 'openedAt: %', doc -> 'openedAt'; end if;
-  -- The Acts: the alerts' own, and the quoted ones to depth three. (A shared suite may hold news alerts, which name Acts too, so the expected set
-  -- is built from the page's own alerts in three plain steps, and the chain of this file's alert is checked by name.)
+  -- The Acts, as today's actsAround reads them (useAlerts.ts): the alerts' own, the Act each one targets, and the third round only for a card an admin
+  -- ended (the card_end, its play, the post it landed on). A shared suite may hold news alerts, which name Acts too, so the expected set is built from the
+  -- page's own alerts in plain steps.
   want := (
     with d1 as (select (x ->> 'act')::uuid as id from jsonb_array_elements(doc -> 'alerts') x where x ->> 'act' is not null),
          d2 as (select a.target_act_id as id from acts_public a where a.id in (select id from d1) and a.target_act_id is not null),
-         d3 as (select a.target_act_id as id from acts_public a where a.id in (select id from d2) and a.target_act_id is not null)
+         e1 as (select (x ->> 'act')::uuid as id from jsonb_array_elements(doc -> 'alerts') x where x ->> 'kind' = 'cardEnded' and x ->> 'act' is not null),
+         e2 as (select a.target_act_id as id from acts_public a where a.id in (select id from e1) and a.target_act_id is not null),
+         e3 as (select a.target_act_id as id from acts_public a where a.id in (select id from e2) and a.target_act_id is not null)
     select coalesce(jsonb_agg(to_jsonb(a) order by a.created_at, a.id::text collate "C"), '[]'::jsonb)
-    from acts_public a where a.id in (select id from d1 union select id from d2 union select id from d3));
+    from acts_public a where a.id in (select id from d1 union select id from d2 union select id from e3));
   if doc -> 'acts' is distinct from want then raise exception 'acts: %', (select array_agg(x ->> 'id') from jsonb_array_elements(doc -> 'acts') x); end if;
-  if not (select bool_and(exists (select 1 from jsonb_array_elements(doc -> 'acts') x where x ->> 'id' = i::text)) from unnest(array[q3, q2, q1, r1]) i) then raise exception 'the chain q3, q2, q1 and r1 are read'; end if;
-  if exists (select 1 from jsonb_array_elements(doc -> 'acts') x where x ->> 'id' = q0::text) then raise exception 'a fourth-level quote is absent'; end if;
-  -- Their authors, as the faces carry them.
+  if not (select bool_and(exists (select 1 from jsonb_array_elements(doc -> 'acts') x where x ->> 'id' = i::text)) from unnest(array[q3, q2, r1, cend, cplay, pp]) i) then raise exception 'q3, its quote, r1 and the ended card''s three Acts are read'; end if;
+  if exists (select 1 from jsonb_array_elements(doc -> 'acts') x where x ->> 'id' in (q1::text, q0::text)) then raise exception 'a third round is taken only for an ended card: the quote''s third and fourth levels are absent'; end if;
+  -- Only the authors of the posts the ended cards landed on (today's `authors`), with the columns characters() reads and no others.
   if doc -> 'people' is distinct from (
       select coalesce(jsonb_agg(to_jsonb(cp) || jsonb_build_object('profile', (
         select to_jsonb(p) from (
           select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style
           from character_profiles r where r.character = cp.id) p)) order by cp.name), '[]'::jsonb)
-      from characters_public cp where cp.id in (select (x ->> 'character')::uuid from jsonb_array_elements(doc -> 'acts') x where x ->> 'character' is not null)) then
+      from (select c.id, c.name, c.joined, c.staff, c.office from characters_public c
+            where c.id in (select a.character from acts_public a where a.id in (
+              select a2.target_act_id from acts_public a2 where a2.id in (select a3.target_act_id from acts_public a3 where a3.id in (
+                select (x ->> 'act')::uuid from jsonb_array_elements(doc -> 'alerts') x where x ->> 'kind' = 'cardEnded'))))) cp) then
     raise exception 'people: %', doc -> 'people';
   end if;
-  if not exists (select 1 from jsonb_array_elements(doc -> 'people') x where x ->> 'id' = b1::text) then raise exception 'Bob wrote the quoted posts'; end if;
+  if jsonb_array_length(doc -> 'people') is distinct from 1 or doc #>> '{people,0,id}' is distinct from b1::text then raise exception 'Bob wrote the post the ended card landed on, and he alone: %', doc -> 'people'; end if;
+  if doc -> 'people' -> 0 ?| array['warn_points', 'banned_until'] then raise exception 'a face holds the columns characters() reads: %', doc -> 'people' -> 0; end if;
+  if (select array_agg(k order by k) from jsonb_object_keys(doc -> 'people' -> 0) k) is distinct from array['id', 'joined', 'name', 'office', 'profile', 'staff'] then raise exception 'a face''s keys: %', doc -> 'people' -> 0; end if;
   -- The opening Acts of the alerts' threads, and the caller's reading of them.
+  -- Only for the followed threads (today's startedAmong), not for a quote's or a card's thread.
   if doc -> 'openings' is distinct from (select coalesce(jsonb_agg(to_jsonb(a) order by a.thread::text collate "C"), '[]'::jsonb) from acts_public a
-       where a.seq = 1 and a.thread in (select (x ->> 'thread')::uuid from jsonb_array_elements(doc -> 'alerts') x where x ->> 'thread' is not null)) then
+       where a.seq = 1 and a.thread in (select (x ->> 'thread')::uuid from jsonb_array_elements(doc -> 'alerts') x where x ->> 'kind' = 'followed' and x ->> 'thread' is not null)) then
     raise exception 'openings: %', doc -> 'openings';
   end if;
-  if not exists (select 1 from jsonb_array_elements(doc -> 'openings') x where x ->> 'id' = o1::text) then raise exception 'Ann''s thread''s opening is read: %', doc -> 'openings'; end if;
+  if not exists (select 1 from jsonb_array_elements(doc -> 'openings') x where x ->> 'id' = o1::text) then raise exception 'Ann''s followed thread''s opening is read: %', doc -> 'openings'; end if;
+  if exists (select 1 from jsonb_array_elements(doc -> 'openings') x where x ->> 'id' = o2::text) then raise exception 'the opening of a thread that only a quote names is not read: %', doc -> 'openings'; end if;
   if doc -> 'reading' is distinct from (select coalesce(jsonb_agg(to_jsonb(r) order by r.thread::text collate "C"), '[]'::jsonb) from (
-       select thread, furthest_seq from reading where thread in (select (x ->> 'thread')::uuid from jsonb_array_elements(doc -> 'alerts') x where x ->> 'thread' is not null)) r)
+       select thread, furthest_seq from reading where thread in (select (x ->> 'thread')::uuid from jsonb_array_elements(doc -> 'alerts') x where x ->> 'kind' = 'followed' and x ->> 'thread' is not null)) r)
      or not exists (select 1 from jsonb_array_elements(doc -> 'reading') x where x ->> 'thread' = t1::text and x ->> 'furthest_seq' = '1') then
     raise exception 'reading: %', doc -> 'reading';
   end if;
+  if exists (select 1 from jsonb_array_elements(doc -> 'reading') x where x ->> 'thread' = t2::text) then raise exception 'reading is of the followed threads only: %', doc -> 'reading'; end if;
   if doc::text like '%"furthest_seq": 5%' then raise exception 'another player''s reading is in the page: %', doc -> 'reading'; end if;
   -- `before` pages: the same cut as my_alerts.
   cut := (select min(at) from my_alerts(null, 30) a where a.kind = 'quote');

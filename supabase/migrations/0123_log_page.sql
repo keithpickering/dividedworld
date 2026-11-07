@@ -17,8 +17,8 @@
 --             engine/ui/log/lines.ts: the post a card, spring or set landed on, the spring a card came from, what a spring caught or was
 --             sprung by, the visit an intercept answered). Computed over every row read, not only the rows the client's page keeps.
 --   states    effect_state (play, state, saved_at) of the saved plays.
---   people    the characters those Acts name, and the targets of plays that carry no name, other than the caller's own, as boot's faces are
---             (characters_public with character_profiles nested).
+--   people    the characters those Acts name, and the targets of plays that carry no name, other than the caller's own, as boot's faces are but with
+--             only the columns the adapter's characters() reads (id, name, joined, staff, office; character_profiles nested).
 --   threads   thread_open rows of the Turns' threads and of plays reaching a thread; boards: boards_now rows (id, slug, name, description,
 --             is_system, move_act) of plays reaching a board.
 --   standings current_standings of the caller's characters; turns: their turns_announced rows, oldest first; season: current_season.
@@ -159,7 +159,7 @@ begin atomic
           select to_jsonb(p) from (
             select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style
             from character_profiles r where r.character = cp.id) p)) as face
-        from characters_public cp where cp.id in (select p.id from pe p)) f), '[]'::jsonb),
+        from (select c.id, c.name, c.joined, c.staff, c.office from characters_public c where c.id in (select p.id from pe p)) cp) f), '[]'::jsonb),
     'threads', coalesce((select jsonb_agg(to_jsonb(t) order by t.created_at, t.id::text collate "C") from thread_open t where t.id in (select h.id from th h)), '[]'::jsonb),
     'boards', coalesce((select jsonb_agg(to_jsonb(b) order by b.id::text collate "C") from (
       select n.id, n.slug, n.name, n.description, n.is_system, n.move_act from boards_now n
