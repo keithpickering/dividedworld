@@ -1,6 +1,7 @@
 /**
  * A move in force, on the board it changed (the system plan, Task 12; mock-s1-move-notice.html C): the Boss's `move` Act drawn as a
- * 2003 notice under the board's description ("ANNOUNCEMENT from The Director: ..."), its top three reactions small, and on its corner
+ * period table under the board's description (a light band reading "Announcement from The Director", the Boss's words, its top reactions;
+ * the board look's Task 10, docs/research/2026-11-06-board-look/11-move-notice.html), its top three reactions small, and on its corner
  * the Act's label in glass, as a card's mark breaks a post's frame: the long label ("THE SYSTEM RENAMED THIS BOARD"), then a plain
  * segment, "WAY OUT: 7 OF 12 POSTERS", which opens a glass overlay with the detail.
  *
@@ -16,7 +17,7 @@
  * progress is the count the tick stored (a primary-key probe, whatever the board holds), so the overlay says when it was counted, and says
  * plainly when the tick has not counted the demand yet, with no number.
  */
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { demandAsk, demandKind, demandWords } from '../../system/demands.ts';
 import { moveKind } from '../../system/moves.ts';
 import { BbCode } from '../bbcode/render.tsx';
@@ -71,6 +72,7 @@ export function MoveNotice({ act }: { readonly act: Id }) {
   const loaded = useNotice(act);
   const [open, setOpen] = useState(false);
   const way = useRef<HTMLButtonElement>(null);
+  const band = useId();
   if (loaded === null || loaded === 'none') return null;
   if (loaded === 'failed') return <p className="kb-notice" data-kb-tone="refusal">The notice about this board could not be loaded. Reload the page to try again.</p>;
   const { notice, boss } = loaded;
@@ -78,7 +80,7 @@ export function MoveNotice({ act }: { readonly act: Id }) {
   const emoji = (kind: string) => instance.reactions.find((r) => r.key === kind)?.emoji ?? readable(kind);
   return (
     <>
-      <section className="kb-move-notice" aria-label={`Announcement from ${name}`}>
+      <div className="kb-move-notice">
         <MoveTag
           kind={notice.kind}
           way={(
@@ -87,19 +89,31 @@ export function MoveNotice({ act }: { readonly act: Id }) {
             </button>
           )}
         />
-        <p className="kb-move-from"><b>ANNOUNCEMENT from {boss ? <Link to={`/c/${encodeURIComponent(boss.id)}`}>{name}</Link> : name}:</b></p>
-        <BbCode text={notice.body} />
-        {notice.reactions.length > 0 && (
-          <ul className="kb-chips kb-move-reactions" aria-label="Reactions">
-            {notice.reactions.map((r) => (
-              <li key={r.kind} className="kb-chip" data-kb-reaction={r.kind}>
-                <span className="kb-visually-hidden">{readable(r.kind)}, {r.count}</span>
-                <span aria-hidden="true">{emoji(r.kind)} {r.count}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+        <table className="kb-table kb-move-table" role="table" aria-labelledby={band}>
+          <thead role="rowgroup">
+            <tr role="row">
+              <td role="cell" className="kb-bar"><span id={band} className="kb-move-from">Announcement from {boss ? <Link to={`/c/${encodeURIComponent(boss.id)}`}>{name}</Link> : name}</span></td>
+            </tr>
+          </thead>
+          <tbody role="rowgroup">
+            <tr role="row">
+              <td role="cell" className="kb-move-words">
+                <BbCode text={notice.body} />
+                {notice.reactions.length > 0 && (
+                  <ul className="kb-chips kb-move-reactions" aria-label="Reactions">
+                    {notice.reactions.map((r) => (
+                      <li key={r.kind} className="kb-chip" data-kb-reaction={r.kind}>
+                        <span className="kb-visually-hidden">{readable(r.kind)}, {r.count}</span>
+                        <span className="kb-move-tile" aria-hidden="true"><span className="kb-move-emoji">{emoji(r.kind)}</span> <b>{r.count}</b></span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       {open && <MoveDetail loaded={loaded} onClose={() => setOpen(false)} returnFocusTo={() => way.current} />}
     </>
   );

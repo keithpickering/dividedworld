@@ -181,3 +181,10 @@
   background: var(--kb-fg);
   color: var(--kb-bg);
 }
+
+/* A staff character's badges (the board look's Task 10): the group's chip over the office's title, each on its line, as the board draws them. */
+.kb-postbit .kb-staff-badge {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}

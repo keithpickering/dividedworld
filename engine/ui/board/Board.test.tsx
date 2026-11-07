@@ -608,9 +608,9 @@ describe('a move in force on the board', () => {
     const { seeded } = renderInWorld(<LoadedBoard slug="general" />, { seed: withMoves });
     expect(await screen.findByRole('heading', { level: 1, name: 'Pointless Toast Palace' })).toBeInTheDocument();
     expect(screen.getByText('Welcome to the Pointless Toast Palace. Please butter responsibly.')).toBeInTheDocument();
-    const notice = await screen.findByRole('region', { name: 'Announcement from The Director' });
-    expect(notice).toHaveTextContent('THE SYSTEM RENAMED THIS BOARD');
-    expect(within(notice).getByRole('button', { name: /^WAY OUT: 5 OF 12 POSTERS/u })).toBeInTheDocument();
+    const notice = await screen.findByRole('table', { name: 'Announcement from The Director' });
+    expect(screen.getByText('THE SYSTEM RENAMED THIS BOARD')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^WAY OUT: 5 OF 12 POSTERS/u })).toBeInTheDocument();
     expect(within(notice).getByRole('list', { name: 'Reactions' }).querySelectorAll('li')).toHaveLength(3);
     expect(seeded.inForce).toBeTruthy();
   });
@@ -618,7 +618,7 @@ describe('a move in force on the board', () => {
   test('a board whose moves have all ended has its own name back and no notice', async () => {
     renderInWorld(<LoadedBoard slug="off-topic" />, { seed: withMoves });
     expect(await screen.findByRole('heading', { level: 1, name: 'Off Topic' })).toBeInTheDocument();
-    expect(screen.queryByRole('region', { name: /^Announcement from/u })).toBeNull();
+    expect(screen.queryByRole('table', { name: /^Announcement from/u })).toBeNull();
   });
 
   test('the old name returns the moment the move ends, and the notice goes with it', async () => {
@@ -627,7 +627,7 @@ describe('a move in force on the board', () => {
     fake.seed.endMove(w.inForce, { why: 'reversed', by: 'admin' });
     renderIn(fake, <LoadedBoard slug="general" />, { path: '/b/general' });
     expect(await screen.findByRole('heading', { level: 1, name: 'General' })).toBeInTheDocument();
-    expect(screen.queryByRole('region', { name: /^Announcement from/u })).toBeNull();
+    expect(screen.queryByRole('table', { name: /^Announcement from/u })).toBeNull();
   });
 });
 

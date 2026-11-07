@@ -194,6 +194,21 @@ describe('a staff character\'s postbit', () => {
     expect(bit.querySelector('.kb-postbit-rank')).toBeNull();
   });
 
+  test('draws no pips whatever the ranks are, and shows its name, badges, title, avatar, Posts and Joined', () => {
+    widthOf(1440);
+    show(person({ standing: 650 }, { name: 'The Director', title: 'Head of Board Operations', staff: 'director', office: 'boss' }));
+    const bit = screen.getByRole('group', { name: 'About The Director' });
+    expect(bit.querySelector('.kb-pips')).toBeNull();
+    expect(bit.querySelector('.kb-pip')).toBeNull();
+    expect(bit.querySelector('.kb-postbit-rank-name')).toBeNull();
+    expect(within(bit).getByRole('link', { name: 'The Director' })).toBeInTheDocument();
+    expect(within(bit).getByText('ADMINISTRATOR')).toBeInTheDocument();
+    expect(bit).toHaveTextContent('Head of Board Operations');
+    expect(bit.querySelector('.kb-postbit-avatar')).not.toBeNull();
+    expect(bit).toHaveTextContent('Posts: 212');
+    expect(bit).toHaveTextContent('Joined Oct 2026');
+  });
+
   test('a Mod Bot wears MODERATOR', () => {
     show(person({}, { name: 'Hall Monitor', staff: 'hall-monitor', office: 'mod' }));
     const bit = screen.getByRole('group', { name: 'About Hall Monitor' });
