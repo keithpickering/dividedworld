@@ -4,6 +4,7 @@
  * They say nothing about any real instance, and `instance.test.ts` builds its own to test these.
  */
 import type { Settings, SystemContent } from './types.ts';
+import type { GroupsContent } from './groups.ts';
 import { STOCK_LINE_KEYS } from '../system/stock.ts';
 import { DEFAULT_STRENGTHS } from '../system/pool.ts';
 
@@ -48,4 +49,10 @@ export const testSystem: SystemContent = {
   feeds: [], realWorld: [], wheelhouse: [],
   nameStyle: () => [],
   nameStyleBrief: 'any name',
+};
+
+/** A small valid `groups` for test fakes of an `Instance`: a default rung and a staff rung. */
+export const testGroups: GroupsContent = {
+  ladder: [{ key: 'members', name: 'Members', color: '#7a7a7a', when: { kind: 'default' } }, { key: 'staff', name: 'Staff', color: '#d4a017', when: { kind: 'staff' } }],
+  conferred: [],
 };

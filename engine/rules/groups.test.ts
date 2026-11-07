@@ -39,7 +39,18 @@ test('each poison is named in words', () => {
     ['a duplicate key', { ...good, conferred: [{ key: 'old', name: 'X', color: '#111111', tone: 'favor' }] }, /key "old".*twice/],
     ['a short color', { ...good, ladder: [{ ...base!, color: '#fff' }, posty!, old!, crew!] }, /color.*#fff/],
     ['a 33-character name', { ...good, ladder: [{ ...base!, name: 'x'.repeat(33) }, posty!, old!, crew!] }, /name of 33 characters/],
+    ['an unknown condition kind', { ...good, ladder: [base!, { ...posty!, when: { kind: 'sparkly' } as never }, old!, crew!] }, /condition kind "sparkly"/],
+    ['a fractional atLeast', { ...good, ladder: [base!, { ...posty!, when: { kind: 'posts', atLeast: 1.5 } }, old!, crew!] }, /atLeast 1.5/],
+    ['an empty ladder', { ...good, ladder: [] }, /0 default rungs/],
+    ['a bad name on a conferred group', { ...good, conferred: [{ key: 'trial', name: '', color: '#d2691e', tone: 'punishment' }] }, /group "trial" has a name of 0 characters/],
+    ['an empty key', { ...good, conferred: [{ key: '', name: 'Blank', color: '#d2691e', tone: 'favor' }] }, /empty key/],
+    ['a missing when', { ...good, ladder: [base!, { ...posty!, when: undefined } as never, old!, crew!] }, /rung "posty" has no condition/],
     ['a zero atLeast', { ...good, ladder: [base!, { ...posty!, when: { kind: 'posts', atLeast: 0 } }, old!, crew!] }, /atLeast/],
   ];
   for (const [name, content, re] of poisons) assert.match(groupsProblems(content).join('\n'), re, name);
+});
+
+test('earnedGroup refuses a rung whose kind it has no case for, naming it', () => {
+  const odd = [ladder[0]!, { ...ladder[1]!, when: { kind: 'sparkly' } as never }];
+  assert.throws(() => earnedGroup(odd, { posts: 0, seasons: 0, staff: false }), /sparkly/);
 });
