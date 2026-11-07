@@ -142,6 +142,10 @@ describe('the count line', () => {
     open('/search?q=shell', { posts: page([hit(1)], { count: 1001, more: true, pooled: true }) }, { searchRankPool: 1200 });
     expect(await line()).toBe('More than 1,200 posts match; ranked among the newest 1,200. Sort by newest to see them all.');
   });
+  test('pooled threads: only a relevance search is pooled, and it says to sort by newest to see them all (newest and oldest have no pool)', async () => {
+    open('/search?q=shell&as=threads', { threads: page([thit(1)], { count: 1001, more: true, pooled: true }) }, { searchRankPool: 5000 });
+    expect(await line()).toBe('More than 5,000 posts match; ranked among the newest 5,000. Sort by newest to see them all.');
+  });
   test('threads count threads', async () => {
     open('/search?q=shell&as=threads', { threads: page([thit(1)], { count: 7 }) });
     expect(await line()).toBe('7 threads match, best first.');

@@ -1680,15 +1680,17 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return tokens.slice(start, start + 30).join(' ').replace(/[\p{L}\p{N}]+/gu, (w) => (words.includes(foldText(w)) ? `<<${w}>>` : w));
   }
   function searchPage<T>(q: SearchQuery, after: SearchCursor | null | undefined, group: boolean, make: (row: SearchRow, matches: number, words: readonly string[]) => T): SearchPage<T> {
-    if (after != null && !(typeof after === 'object' && typeof after.at === 'string' && /^\d{4}-\d{2}-\d{2}[T ][0-9:.]+(Z|[+-][0-9:]+)?$/.test(after.at)
-      && typeof after.act === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(after.act)
-      && (after.rank == null || (typeof after.rank === 'number' && Number.isFinite(after.rank))))) throw new Error('that is not a cursor this search gave');
     const { rows, words, sort, perPage } = searchKeep(q);
+    /* search_cursor_ok: a time and an id that cast, a rank that is a finite number (a relevance search needs it; a time-ordered one takes one or none). */
+    if (after != null && !(typeof after === 'object' && typeof after.at === 'string' && /^\d{4}-\d{2}-\d{2}[T ][0-9:.]+(Z|[+-][0-9:]+)?$/.test(after.at) && !Number.isNaN(Date.parse(after.at))
+      && new Date(after.at).toISOString().slice(0, 10) === after.at.slice(0, 10)
+      && typeof after.act === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(after.act)
+      && (sort === 'relevance' ? typeof after.rank === 'number' && Number.isFinite(after.rank) : after.rank == null || (typeof after.rank === 'number' && Number.isFinite(after.rank))))) throw new Error('that is not a cursor this search gave');
     const pool = settings.searchRankPool;
     const relevant = sort === 'relevance';
-    /* Posts ranked by relevance, and threads however they are sorted, are found among a pool of the newest `pool` matches (the oldest, for oldest first). */
-    const pooled = (relevant || group) && rows.length >= pool;
-    const ranked = relevant || group ? [...rows].sort(searchCmp(sort === 'oldest' ? 'oldest' : 'newest')).slice(0, pool) : rows;
+    /* A search by relevance ranks the newest `pool` of its matches, and says so only when more matched than that; newest and oldest page by time and have no pool, posts and threads alike. */
+    const pooled = relevant && rows.length > pool;
+    const ranked = relevant ? [...rows].sort(searchCmp('newest')).slice(0, pool) : rows;
     if (!relevant) for (const r of rows) r.rank = 0;
     const order = searchCmp(sort);
     const per = new Map<Id, SearchRow[]>();
@@ -1696,7 +1698,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const sorted = [...ranked].sort(order);
     const seenThreads = new Set<Id>();
     const candidates = group ? sorted.filter((r) => (seenThreads.has(r.thread.id) ? false : (seenThreads.add(r.thread.id), true))) : sorted;
-    const total = group ? candidates.length : rows.length;
+    /* The count is of every match, or of every thread that has one, whatever the sort (the SQL's walk to 1,001); a pooled relevance search still counts past its pool. */
+    const total = group ? per.size : rows.length;
     const past = after ? candidates.filter((r) => order(r, { act: after.act, at: Date.parse(after.at), rank: after.rank ?? 0 } as SearchRow) > 0) : candidates;
     const shown = past.slice(0, perPage);
     const last = shown[shown.length - 1];

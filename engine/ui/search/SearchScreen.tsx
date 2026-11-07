@@ -96,11 +96,8 @@ const sameCursor = (a: SearchCursor | undefined, b: SearchCursor | null): boolea
 
 function countLine(ask: SearchAsk, found: { readonly count: number; readonly more: boolean; readonly pooled: boolean }, pool: number) {
   const noun = ask.view === 'threads' ? 'thread' : 'post';
-  if (found.pooled) {
-    return ask.view === 'threads'
-      ? `More than ${count(pool)} posts match; threads are found among the newest ${count(pool)}.`
-      : `More than ${count(pool)} posts match; ranked among the newest ${count(pool)}. Sort by newest to see them all.`;
-  }
+  /* Only a relevance search is pooled, threads as well as posts: newest and oldest have no pool, so the way to see them all is to sort by newest. */
+  if (found.pooled) return `More than ${count(pool)} posts match; ranked among the newest ${count(pool)}. Sort by newest to see them all.`;
   const order = ORDER[effectiveSort(ask)];
   if (found.more) return <><b>More than {count(SEARCH_COUNT_CAP)} {noun}s</b> match, {order}.</>;
   return found.count === 1 ? <><b>1 {noun}</b> matches, {order}.</> : <><b>{count(found.count)} {noun}s</b> match, {order}.</>;
@@ -237,15 +234,15 @@ function SearchForm({ doc }: { readonly doc: SearchDoc }) {
   const keywords = useRef(suggestSource(api));
   const people = useRef(charactersSource(api));
 
-  const latest = useRef({ q, author, board, from, to, titlesOnly, view, sort });
-  latest.current = { q, author, board, from, to, titlesOnly, view, sort };
+  const latest = useRef({ q, author, board, since: from, to, titlesOnly, view, sort });
+  latest.current = { q, author, board, since: from, to, titlesOnly, view, sort };
   const go = () => {
     const v = latest.current;
     const params = new URLSearchParams();
     if (v.q.trim() !== '') params.set('q', v.q);
     if (v.author) params.set('author', v.author.id);
     if (v.board) params.set('board', v.board);
-    if (v.from) params.set('from', v.from);
+    if (v.since) params.set('from', v.since);
     if (v.to) params.set('to', v.to);
     if (v.titlesOnly) params.set('in', 'titles');
     if (v.view === 'threads') params.set('as', 'threads');

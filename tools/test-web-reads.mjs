@@ -10,7 +10,7 @@
  * planted here with a private name and must fire, each allowed name must stay clean, and the last
  * case runs the guard over the real tree, so a guard that has gone quiet over nothing fails here.
  */
-import { readFaults, treeFiles, ALLOWED_READS, ALLOWED_RPCS, ALLOWED_COUNTS } from './check-web-reads.mjs';
+import { readFaults, treeFiles, ALLOWED_READS, ALLOWED_RPCS, ALLOWED_COUNTS, SCREEN_HELPERS } from './check-web-reads.mjs';
 
 let pass = 0;
 const failures = [];
@@ -77,6 +77,11 @@ check('supabase-js imported in web/src/data/ is clean', fires(`import { createCl
 /* ---- what is allowed ---- */
 for (const t of ALLOWED_READS) check(`.from('${t}').select() is clean`, fires(`client.from('${t}').select('*').eq('x', 1);`).length === 0);
 for (const f of ALLOWED_RPCS) check(`.rpc('${f}') is clean`, fires(`client.rpc('${f}', {});`).length === 0);
+// The search screens' three reads are allowed; the functions behind them are not (the web never calls them, so a call to one is a fault).
+for (const f of ['search_posts', 'search_threads', 'search_suggest']) check(`.rpc('${f}') is allowed (a search read)`, ALLOWED_RPCS.includes(f));
+for (const f of ['search_matches', 'search_matches_sql', 'search_match_conds', 'search_suggest_threads', 'suggest_characters', 'search_cursor_ok', 'search_cursor_cast', 'search_updates_thread', 'search_lang', 'fold_text', 'bbcode_plain', 'search_thread_matches', 'search_post_cards'])
+  check(`.rpc('${f}') fires (a helper of the search reads, never called by the web)`, fires(`client.rpc('${f}', {});`).length === 1);
+for (const f of SCREEN_HELPERS) check(`.rpc('${f}') fires: a screen function's helper is not a function the web calls`, fires(`client.rpc('${f}', {});`).length === 1);
 check('a REST path to an allowed view is clean', fires(`fetch(url + '/rest/v1/acts_public?select=*');`).length === 0);
 check('a function call (act, account, estimate, avatar) is clean', fires(`client.functions.invoke('act', { body }); fetch(url + '/functions/v1/estimate');`).length === 0);
 check('a .from() on something that is not a client chain, an Array.from, is clean', fires(`const xs = Array.from(set); const b = Buffer.from('reactions');`).length === 0);

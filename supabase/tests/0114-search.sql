@@ -320,6 +320,7 @@ declare
   board_a uuid;
   board_b uuid;
   t1 uuid; t2 uuid; t3 uuid; t4 uuid; t5 uuid;
+  ok_t uuid; ax_a uuid; ax_b uuid;
   p1 uuid; p2 uuid; p3 uuid; p4 uuid; p5 uuid; p6 uuid; p7 uuid;
   j jsonb;
   want uuid[];
@@ -479,6 +480,85 @@ begin
   if (pg_temp.sp(q => 'pangolin')) -> 'pooled' <> 'false'::jsonb then raise exception 'pooled stayed on with a larger pool'; end if;
   perform tests.unbecome();
 
+  -- Q-5: `pooled` says more than the pool matched, not that the pool is exactly full. Pool 100: a word in exactly 100 posts is not pooled, in 101 it is (posts and threads, by relevance).
+  update settings set value = '100' where key = 'searchRankPool';
+  insert into threads (board, title) values (board_a, 'Okapi crossing') returning id into ok_t;
+  insert into acts (character, kind, thread, payload, created_at)
+  select quincy, 'post', ok_t, jsonb_build_object('body', 'Okapis wander ' || g), base + interval '13 days' + g * interval '1 second' from generate_series(1, 100) g;
+  perform tests.become(ann);
+  if (select count(*) from post_search where words @@ websearch_to_tsquery('english', 'okapi')) <> 100 then raise exception 'the okapi fixture is not 100 posts'; end if;
+  j := pg_temp.sp(q => 'okapi');
+  if (j ->> 'pooled')::boolean or (j ->> 'count')::integer <> 100 then raise exception 'exactly a pool of matches was called pooled (posts): %', j - 'results'; end if;
+  j := pg_temp.st(q => 'okapi');
+  if (j ->> 'pooled')::boolean then raise exception 'exactly a pool of matches was called pooled (threads): %', j - 'results'; end if;
+  perform tests.unbecome();
+  insert into acts (character, kind, thread, payload, created_at) values (quincy, 'post', ok_t, '{"body": "One more okapi."}', base + interval '13 days 1 hour');
+  perform tests.become(ann);
+  if not (pg_temp.sp(q => 'okapi') ->> 'pooled')::boolean then raise exception 'a pool and one more match was not called pooled (posts)'; end if;
+  if not (pg_temp.st(q => 'okapi') ->> 'pooled')::boolean then raise exception 'a pool and one more match was not called pooled (threads)'; end if;
+  if cardinality(pg_temp.walk('posts', 'okapi', null, null, 'relevance', 30)) <> 100 then raise exception 'relevance ranks more or less than the pool of 100'; end if;
+  perform tests.unbecome();
+
+  -- SPEC-1: newest and oldest page threads by time and have no pool. Pool 100; one thread (axolotl A) holds a single match, older than 150 newer matches in another (axolotl B):
+  -- under a pool of the newest 100 matches the first thread would be unreachable. Newest and oldest find both and count both; relevance ranks the pool and counts both.
+  insert into threads (board, title) values (board_a, 'Axolotl A') returning id into ax_a;
+  insert into threads (board, title) values (board_a, 'Axolotl B') returning id into ax_b;
+  insert into acts (character, kind, thread, payload, created_at) values (quincy, 'post', ax_a, '{"body": "Axolotls regenerate."}', base + interval '14 days');
+  insert into acts (character, kind, thread, payload, created_at)
+  select quincy, 'post', ax_b, jsonb_build_object('body', 'Axolotls swim ' || g), base + interval '15 days' + g * interval '1 second' from generate_series(1, 150) g;
+  perform tests.become(ann);
+  j := pg_temp.st(q => 'axolotl', sort => 'newest');
+  if pg_temp.threads_of(j) is distinct from array[ax_b, ax_a] then raise exception 'newest threads under a pool of 100: % (a thread older than the pool''s worth of newer matches is lost)', pg_temp.threads_of(j); end if;
+  if (j ->> 'count')::integer <> 2 or (j ->> 'pooled')::boolean then raise exception 'newest thread count or pooled: %', j - 'results'; end if;
+  if (j -> 'results' -> 0 ->> 'matches')::integer <> 100 or not (j -> 'results' -> 0 ->> 'matches_more')::boolean or (j -> 'results' -> 1 ->> 'matches')::integer <> 1 then raise exception 'matches under newest: %', j -> 'results'; end if;
+  j := pg_temp.st(q => 'axolotl', sort => 'oldest');
+  if pg_temp.threads_of(j) is distinct from array[ax_a, ax_b] or (j ->> 'count')::integer <> 2 or (j ->> 'pooled')::boolean then raise exception 'oldest threads: %', j - 'results'; end if;
+  if pg_temp.walk('threads', 'axolotl', null, null, 'newest', 1) is distinct from array[ax_b, ax_a] then raise exception 'newest thread walk by 1'; end if;
+  if pg_temp.walk('threads', 'axolotl', null, null, 'oldest', 1) is distinct from array[ax_a, ax_b] then raise exception 'oldest thread walk by 1'; end if;
+  j := pg_temp.st(q => 'axolotl');
+  if (j ->> 'count')::integer <> 2 or not (j ->> 'pooled')::boolean then raise exception 'relevance thread count (all threads) or pooled: %', j - 'results'; end if;
+  -- A range that holds only the old thread's match.
+  if pg_temp.threads_of(pg_temp.st(q => 'axolotl', sort => 'newest', to_at => base + interval '14 days 1 hour')) is distinct from array[ax_a] then raise exception 'newest threads under a range'; end if;
+  perform tests.unbecome();
+  update settings set value = '5000' where key = 'searchRankPool';
+
+  -- SPEC-4: ties. Posts of one instant (same created_at, told apart by Act id), in three threads, and an older one; walked by 1 to 4 under each sort. Identical words, so relevance ties too.
+  declare
+    tq uuid[];
+    tie_at timestamptz := base + interval '20 days';
+    q1 tsquery := websearch_to_tsquery('english', 'quokka');
+    want_p uuid[]; want_t uuid[];
+    sort_name text;
+  begin
+    for i in 1..3 loop
+      insert into threads (board, title) values (board_a, 'Tie ' || i) returning id into ok_t;
+      tq := tq || ok_t;
+      insert into acts (character, kind, thread, payload, created_at) values (quincy, 'post', ok_t, '{"body": "Quokkas bounce."}', tie_at), (sylvia, 'post', ok_t, '{"body": "Quokkas bounce."}', tie_at);
+    end loop;
+    insert into acts (character, kind, thread, payload, created_at) values (quincy, 'post', tq[1], '{"body": "Quokkas bounce."}', tie_at - interval '1 day');
+    if (select count(distinct created_at) from post_search where words @@ q1) <> 2 or (select count(*) from post_search where words @@ q1 and created_at = tie_at) <> 6 then raise exception 'the tie fixture has no ties'; end if;
+    perform tests.become(ann);
+    foreach sort_name in array array['newest', 'oldest', 'relevance'] loop
+      perform tests.unbecome();
+      select coalesce(array_agg(x.act order by case when sort_name = 'relevance' then x.rank end desc nulls last, case when sort_name = 'oldest' then x.created_at end asc, case when sort_name <> 'oldest' then x.created_at end desc,
+                                                case when sort_name = 'oldest' then x.act end asc, case when sort_name <> 'oldest' then x.act end desc), '{}') into want_p
+      from (select s.act, s.created_at, ts_rank_cd(s.words, q1, 1)::float8 as rank from post_search s where s.words @@ q1) x;
+      select coalesce(array_agg(k.thread order by case when sort_name = 'relevance' then k.rank end desc nulls last, case when sort_name = 'oldest' then k.created_at end asc, case when sort_name <> 'oldest' then k.created_at end desc,
+                                                case when sort_name = 'oldest' then k.act end asc, case when sort_name <> 'oldest' then k.act end desc), '{}') into want_t
+      from (select distinct on (s.thread) s.thread, s.act, s.created_at, ts_rank_cd(s.words, q1, 1)::float8 as rank from post_search s where s.words @@ q1
+            order by s.thread, case when sort_name = 'relevance' then ts_rank_cd(s.words, q1, 1)::float8 end desc nulls last,
+                     case when sort_name = 'oldest' then s.created_at end asc, case when sort_name <> 'oldest' then s.created_at end desc,
+                     case when sort_name = 'oldest' then s.act end asc, case when sort_name <> 'oldest' then s.act end desc) k;
+      perform tests.become(ann);
+      for i in 1..4 loop
+        if pg_temp.walk('posts', 'quokka', null, null, sort_name, i) is distinct from want_p then raise exception 'tied posts, % by %: % want %', sort_name, i, pg_temp.walk('posts', 'quokka', null, null, sort_name, i), want_p; end if;
+        if pg_temp.walk('threads', 'quokka', null, null, sort_name, i) is distinct from want_t then raise exception 'tied threads, % by %: % want %', sort_name, i, pg_temp.walk('threads', 'quokka', null, null, sort_name, i), want_t; end if;
+      end loop;
+      if cardinality(want_p) <> 7 or cardinality(want_t) <> 3 then raise exception 'the tie fixture is not 7 posts in 3 threads'; end if;
+    end loop;
+    perform tests.unbecome();
+  end;
+
   -- 11. An author who has not debuted, a retired id, a random id: one answer.
   declare
     shy uuid;
@@ -561,6 +641,11 @@ begin
     sg := search_suggest('mairo', null, null, false, 5);
     if not exists (select 1 from jsonb_array_elements(sg -> 'threads') e where e ->> 'id' = mt::text and e ->> 'board_name' = 'Search A' and e ->> 'board' = board_a::text) then raise exception '"mairo" did not find the Mario Kart thread: %', sg; end if;
     if not exists (select 1 from jsonb_array_elements(sg -> 'boards') e where e ->> 'id' = mario_board::text and e ->> 'slug' = 'mario-land' and e ->> 'name' = 'Mario Land') then raise exception '"mairo" did not find the Mario Land board: %', sg; end if;
+    -- Q-3: called by itself, the threads function reads the 0.3 threshold the screen read does (it carries the setting), and reads the same threads.
+    if not exists (select 1 from search_suggest_threads('mairo', null, false, 5) s where s.id = mt) then raise exception 'search_suggest_threads called directly did not find "mairo" (the default trigram threshold)'; end if;
+    if (select array_agg(s.id order by s.id) from search_suggest_threads('mairo', null, false, 5) s) is distinct from (select array_agg((e ->> 'id')::uuid order by (e ->> 'id')::uuid) from jsonb_array_elements(sg -> 'threads') e) then
+      raise exception 'search_suggest_threads and search_suggest read different threads';
+    end if;
     sg := search_suggest('MAR', null, null, false, 5);
     if not exists (select 1 from jsonb_array_elements(sg -> 'threads') e where e ->> 'id' = mbt::text) then raise exception '"MAR" did not find a thread with the word at its middle: %', sg; end if;
     -- Accents fold both ways; the plain "Mario" is first of the characters for its own name, ahead of the nearer-by.
@@ -626,11 +711,22 @@ begin
                                    'after => ''"x"''::jsonb', 'after => ''{}''::jsonb', 'after => ''[]''::jsonb', 'after => ''{"at": "nope", "act": "x"}''::jsonb',
                                    'after => ''{"at": "2026-01-01T00:00:00Z", "act": "not-a-uuid"}''::jsonb',
                                    'after => ''{"at": "2026-01-01T00:00:00Z", "act": "00000000-0000-0000-0000-000000000000", "rank": "high"}''::jsonb',
-                                   'after => ''{"act": "00000000-0000-0000-0000-000000000000"}''::jsonb']) loop
+                                   'after => ''{"act": "00000000-0000-0000-0000-000000000000"}''::jsonb',
+                                   -- Q-1: a cursor of the right shape whose values do not cast is a refusal, not a raw Postgres error; a relevance search needs the rank.
+                                   'after => ''{"at": "2026-13-45T00:00:00Z", "act": "00000000-0000-0000-0000-000000000000"}''::jsonb',
+                                   'after => ''{"at": "2026-02-30T00:00:00Z", "act": "00000000-0000-0000-0000-000000000000"}''::jsonb',
+                                   'after => ''{"at": "2026-01-01T25:00:00Z", "act": "00000000-0000-0000-0000-000000000000"}''::jsonb',
+                                   'after => ''{"at": "2026-01-01T00:00:00+99:99", "act": "00000000-0000-0000-0000-000000000000"}''::jsonb',
+                                   'after => ''{"rank": 1e400, "at": "2026-01-01T00:00:00Z", "act": "00000000-0000-0000-0000-000000000000"}''::jsonb',
+                                   'sort => ''newest'', after => ''{"rank": 1e400, "at": "2026-01-01T00:00:00Z", "act": "00000000-0000-0000-0000-000000000000"}''::jsonb',
+                                   'q => ''x'', after => ' || good_cursor,
+                                   'q => ''x'', sort => ''relevance'', after => ' || good_cursor,
+                                   'q => ''x'', after => ''{"rank": null, "at": "2026-01-01T00:00:00Z", "act": "00000000-0000-0000-0000-000000000000"}''::jsonb']) loop
       got := pg_temp.hint_of(format('select pg_temp.%s(%s)', fn, bad));
       if got is distinct from '22023/kayfabb.refusal' then raise exception '%: % was not refused as a refusal: %', fn, bad, got; end if;
     end loop;
     for bad in select unnest(array['per_page => 1', 'per_page => 50', 'sort => ''newest''', 'q => repeat(''a'', 200)', 'from_at => now() - interval ''1 day'', to_at => now()', 'after => ' || good_cursor,
+                                   'sort => ''relevance'', after => ' || good_cursor, 'q => ''x'', sort => ''newest'', after => ' || good_cursor, 'q => ''x'', sort => ''oldest'', after => ' || good_cursor,
                                    'sort => ''relevance'', q => ''x'', after => ''{"rank": 0.5, "at": "2026-01-01T00:00:00Z", "act": "00000000-0000-0000-0000-000000000000"}''::jsonb']) loop
       got := pg_temp.hint_of(format('select pg_temp.%s(%s)', fn, bad));
       if got is not null then raise exception '%: % was refused: %', fn, bad, got; end if;
@@ -663,26 +759,33 @@ begin
   -- What they are: invokers and stable; the reads, the suggested threads and the cursor check in a SQL-standard body (so a screen's dependencies are recorded); the matches are built as text and
   -- run, in plpgsql, invoker and stable too; the two definers pin their search_path.
   for fn in select p.oid::regprocedure::text from pg_proc p where p.pronamespace = 'public'::regnamespace
-            and p.proname in ('search_posts', 'search_threads', 'search_suggest', 'search_suggest_threads', 'search_cursor_ok') and (p.prosecdef or p.prosqlbody is null or p.provolatile = 'v') loop
+            and p.proname in ('search_posts', 'search_threads', 'search_suggest', 'search_cursor_ok') and (p.prosecdef or p.prosqlbody is null or p.provolatile = 'v') loop
     raise exception '% is a definer, volatile, or not SQL-standard bodied', fn;
   end loop;
   for fn in select p.oid::regprocedure::text from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname in ('search_matches', 'search_matches_sql') and (p.prosecdef or p.provolatile <> 's') loop
     raise exception '% is a definer or not stable', fn;
   end loop;
   if (select count(*) from pg_proc p where p.pronamespace = 'public'::regnamespace
-      and p.proname in ('search_posts', 'search_threads', 'search_suggest', 'search_matches', 'search_matches_sql', 'search_suggest_threads', 'search_cursor_ok', 'search_updates_thread', 'suggest_characters')) is distinct from 9 then
+      and p.proname in ('search_posts', 'search_threads', 'search_suggest', 'search_matches', 'search_matches_sql', 'search_suggest_threads', 'search_cursor_ok', 'search_updates_thread', 'suggest_characters',
+                        'search_cursor_cast', 'search_match_conds', 'search_thread_matches', 'search_post_cards')) is distinct from 13 then
     raise exception 'a search function is missing';
   end if;
   if not exists (select 1 from pg_proc p where p.proname = 'search_updates_thread' and p.prosecdef and p.provolatile = 's' and exists (select 1 from unnest(p.proconfig) c where c like 'search_path=%pg_temp')) then
     raise exception 'search_updates_thread is not a stable definer with a pinned search_path';
   end if;
   if exists (select 1 from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname in ('search_posts', 'search_threads', 'search_suggest') and p.provolatile <> 's') then raise exception 'a search read is not stable'; end if;
+  -- Q-3: the suggested threads are an invoker, stable, with a pinned search_path and the trigram threshold (a string body, so the scale test can read its plan; a function with settings is not inlined).
+  if not exists (select 1 from pg_proc p where p.proname = 'search_suggest_threads' and not p.prosecdef and p.provolatile = 's' and exists (select 1 from unnest(p.proconfig) c where c like 'search_path=%pg_temp')
+                 and exists (select 1 from unnest(p.proconfig) c where c like 'pg_trgm.word_similarity_threshold=%0.3%')) then
+    raise exception 'search_suggest_threads is not a stable invoker with a pinned search_path and the trigram threshold';
+  end if;
   if not exists (select 1 from pg_proc p where p.proname = 'suggest_characters' and p.prosecdef and p.provolatile = 's'
                  and exists (select 1 from unnest(p.proconfig) c where c like 'search_path=%pg_temp')) then raise exception 'suggest_characters is not a stable definer with a pinned search_path'; end if;
   for fn in select unnest(array['search_posts(text,uuid,uuid,timestamptz,timestamptz,boolean,text,jsonb,integer)', 'search_threads(text,uuid,uuid,timestamptz,timestamptz,boolean,text,jsonb,integer)',
-                                'search_suggest(text,text[],uuid,boolean,integer)', 'suggest_characters(text,integer)', 'search_matches(text,uuid,uuid,timestamptz,timestamptz,boolean,boolean,timestamptz,uuid,integer)',
-                                'search_suggest_threads(text,uuid,boolean,integer)', 'search_cursor_ok(jsonb)', 'search_updates_thread()',
-                                'search_matches_sql(text,uuid,uuid,timestamptz,timestamptz,boolean,boolean,timestamptz,uuid,integer)']) loop
+                                'search_suggest(text,text[],uuid,boolean,integer)', 'suggest_characters(text,integer)', 'search_matches(text,uuid,uuid,timestamptz,timestamptz,boolean,boolean,timestamptz,uuid,integer,boolean)',
+                                'search_suggest_threads(text,uuid,boolean,integer)', 'search_cursor_ok(jsonb,boolean)', 'search_updates_thread()', 'search_cursor_cast(jsonb)',
+                                'search_match_conds(text,tsquery,uuid,timestamptz,timestamptz,boolean)', 'search_thread_matches(uuid,tsquery,uuid,timestamptz,timestamptz,boolean)', 'search_post_cards(uuid)',
+                                'search_matches_sql(text,uuid,uuid,timestamptz,timestamptz,boolean,boolean,timestamptz,uuid,integer,boolean)']) loop
     if not has_function_privilege('authenticated', fn::regprocedure, 'execute') or has_function_privilege('anon', fn::regprocedure, 'execute') then raise exception '% is not for signed-in players alone', fn; end if;
   end loop;
 end
@@ -727,6 +830,9 @@ declare
   n bigint;
   j jsonb;
   tdone timestamptz;
+  t0 timestamptz;
+  cur jsonb;
+  seen uuid[] := '{}';
 begin
   insert into boards (slug, name) values ('scale', 'Scale') returning id into scale_board;
   insert into threads (id, board, title, created_at, next_seq, last_at, replies)
@@ -768,12 +874,24 @@ begin
       search_matches_sql(w, null, a_board, null, null, false, true, null, null, 21),
       search_matches_sql(w, a_char, a_board, base, now(), false, false, base + interval '1 day', gen_random_uuid(), 21),
       search_matches_sql(w, null, null, null, null, true, true, null, null, 21),
-      search_matches_sql(w, null, null, null, null, false, true, base + interval '2 days', gen_random_uuid(), 21)
+      search_matches_sql(w, null, null, null, null, false, true, base + interval '2 days', gen_random_uuid(), 21),
+      -- SPEC-1: the thread keys (a thread's newest or oldest match) that newest and oldest page by, and count, with no pool: the same shapes, keyed.
+      search_matches_sql(w, null, null, null, null, false, true, null, null, 21, true),
+      search_matches_sql(w, null, null, null, null, false, false, null, null, 21, true),
+      search_matches_sql(w, null, null, null, null, false, true, null, null, 1001, true),
+      search_matches_sql(w, null, null, null, null, false, false, null, null, 1001, true),
+      search_matches_sql(w, a_char, null, null, null, false, true, null, null, 21, true),
+      search_matches_sql(w, null, a_board, null, null, false, true, null, null, 21, true),
+      search_matches_sql(w, a_char, a_board, base, now(), false, false, base + interval '1 day', gen_random_uuid(), 21, true),
+      search_matches_sql(w, null, null, null, null, true, true, null, null, 21, true),
+      search_matches_sql(w, null, null, null, null, false, true, base + interval '2 days', gen_random_uuid(), 21, true),
+      search_matches_sql(w, null, null, null, null, false, false, base + interval '2 days', gen_random_uuid(), 21, true)
     ] loop
       plan := pg_temp.plan_of(s);
       seqs := pg_temp.seq_scans(plan);
       if seqs is not null then raise exception 'a sequential scan on % in the plan of: %', seqs, s; end if;
       if pg_temp.index_scans(plan, 'post_search') = 0 then raise exception 'the plan does not read post_search through an index (the check would be vacuous): %', s; end if;
+      if s like '%not exists%' and pg_temp.index_scans(plan, 'post_search') < 2 then raise exception 'the thread key''s probe does not read post_search through an index: %', s; end if;
       if pg_temp.max_limit(plan) > greatest(pool, 1001) then raise exception 'a limit above the pool in: %', s; end if;
       if s like '% limit ' || pool and pg_temp.max_limit(plan) > pool then raise exception 'relevance would rank more than the pool in: %', s; end if;
     end loop;
@@ -788,7 +906,12 @@ begin
     search_matches_sql(null, a_char, null, null, null, false, true, null, null, 1001),
     search_matches_sql(null, null, a_board, null, null, false, true, null, null, 21),
     search_matches_sql(null, null, null, base, now(), false, true, null, null, 21),
-    search_matches_sql(null, null, null, null, null, true, true, null, null, 21)
+    search_matches_sql(null, null, null, null, null, true, true, null, null, 21),
+    search_matches_sql(null, null, null, null, null, false, true, null, null, 21, true),
+    search_matches_sql(null, null, null, null, null, false, false, null, null, 1001, true),
+    search_matches_sql(null, a_char, null, null, null, false, true, null, null, 21, true),
+    search_matches_sql(null, null, a_board, null, null, false, true, null, null, 21, true),
+    search_matches_sql(null, null, null, base, now(), false, true, null, null, 21, true)
   ] loop
     plan := pg_temp.plan_of(s);
     seqs := pg_temp.seq_scans(plan);
@@ -798,7 +921,7 @@ begin
 
   -- The suggestions: threads (a prefix, none, a board, the system board left out) and characters, whose body is the definer's own string.
   set local plan_cache_mode = force_generic_plan;   -- the suggestions run inside a SQL function, planned without the prefix
-  prepare s_th(text, uuid, boolean, integer) as select * from search_suggest_threads($1, $2, $3, $4);
+  execute format('prepare s_th(text, uuid, boolean, integer) as %s', (select p.prosrc from pg_proc p where p.proname = 'search_suggest_threads' and p.pronamespace = 'public'::regnamespace));
   foreach s in array array[
     'execute s_th(''scale'', null, false, 5)', 'execute s_th(''mairo'', null, true, 5)', 'execute s_th(''MAR'', null, false, 10)', 'execute s_th('''', null, false, 5)',
     format('execute s_th(''thread 1'', %L, true, 5)', scale_board), format('execute s_th('''', %L, true, 5)', scale_board)
@@ -806,8 +929,29 @@ begin
     plan := pg_temp.plan_of(s);
     seqs := pg_temp.seq_scans(plan);
     if seqs is not null then raise exception 'a sequential scan on % in the plan of: %', seqs, s; end if;
+    if pg_temp.index_scans(plan, 'threads') = 0 then raise exception 'the suggested threads do not read threads through an index (the check would be vacuous): %', s; end if;
   end loop;
   deallocate s_th;
+  -- SPEC-2: what a thread result adds to its match, read in its own plan: how many of the thread's posts match (counted to 100, a probe of post_search by thread) and the card plays on the post (acts by target).
+  execute format('prepare s_tm(uuid, tsquery, uuid, timestamptz, timestamptz, boolean) as %s', (select p.prosrc from pg_proc p where p.proname = 'search_thread_matches' and p.pronamespace = 'public'::regnamespace));
+  foreach s in array array[
+    'execute s_tm(''00000000-0000-4000-8000-000000000002'', to_tsquery(''english'', ''common''), null, null, null, false)',
+    'execute s_tm(''00000000-0000-4000-8000-000000000002'', null, null, null, null, false)',
+    format('execute s_tm(''00000000-0000-4000-8000-000000000002'', to_tsquery(''english'', ''common''), %L, %L, %L, true)', a_char, base, now()),
+    'execute s_tm(''00000000-0000-4000-8000-000000000002'', to_tsquery(''english'', ''zyxwv''), null, null, null, true)'
+  ] loop
+    plan := pg_temp.plan_of(s);
+    seqs := pg_temp.seq_scans(plan);
+    if seqs is not null then raise exception 'a sequential scan on % in the plan of: %', seqs, s; end if;
+    if pg_temp.index_scans(plan, 'post_search') = 0 then raise exception 'the matches of a thread do not read post_search through an index: %', s; end if;
+  end loop;
+  deallocate s_tm;
+  execute format('prepare s_pc(uuid) as %s', (select p.prosrc from pg_proc p where p.proname = 'search_post_cards' and p.pronamespace = 'public'::regnamespace));
+  plan := pg_temp.plan_of('execute s_pc(''00000000-0000-4000-a000-000000000001'')');
+  seqs := pg_temp.seq_scans(plan);
+  if seqs is not null then raise exception 'a sequential scan on % in the plan of the cards of a post', seqs; end if;
+  if pg_temp.index_scans(plan, 'acts') = 0 then raise exception 'the cards of a post do not read acts through an index (the check would be vacuous)'; end if;
+  deallocate s_pc;
   execute format('prepare s_ch(text, integer) as %s', (select p.prosrc from pg_proc p where p.proname = 'suggest_characters' and p.pronamespace = 'public'::regnamespace));
   foreach s in array array['execute s_ch(''mario'', 5)', 'execute s_ch(''mairo'', 3)', 'execute s_ch(''sc'', 10)', 'execute s_ch(''Scale char'', 10)'] loop
     plan := pg_temp.plan_of(s);
@@ -830,6 +974,25 @@ begin
   j := search_threads('common', null, null, null, null, false, null, null, 50);
   -- The newest 5,000 posts are two and a half rounds of the threads, and the even posts that hold the word are in the odd threads alone.
   if (j ->> 'count')::integer <> 1000 or (j ->> 'more')::boolean or not (j ->> 'pooled')::boolean then raise exception 'threads for the common word: %', j - 'results'; end if;
+  -- SPEC-1: newest and oldest page threads by time with no pool: every thread that holds the word is reached (the 1,000 odd threads, though the newest 5,000 matches are in 100 of them... two and a half rounds),
+  -- 20 pages of 50, no repeat, the last with no next. Timed: the first page, a deep one (the last: the walk past the last thread's key reads the matches that are no thread's newest), the count.
+  foreach s in array array['newest', 'oldest'] loop
+    cur := null; seen := '{}';
+    for n in 1..20 loop
+      t0 := clock_timestamp();
+      j := search_threads('common', null, null, null, null, false, s, cur, 50);
+      if n in (1, 20) then raise notice 'scale: search_threads common % page % in %', s, n, clock_timestamp() - t0; end if;
+      if (j ->> 'count')::integer <> 1000 or (j ->> 'more')::boolean or (j ->> 'pooled')::boolean then raise exception 'threads for the common word, %, page %: %', s, n, j - 'results'; end if;
+      if jsonb_array_length(j -> 'results') <> 50 then raise exception 'threads for the common word, %, page % holds % results', s, n, jsonb_array_length(j -> 'results'); end if;
+      if exists (select 1 from jsonb_array_elements(j -> 'results') r where (r ->> 'thread')::uuid = any (seen)) then raise exception 'a thread repeated on page % (%)', n, s; end if;
+      seen := seen || (select array_agg((r ->> 'thread')::uuid) from jsonb_array_elements(j -> 'results') r);
+      cur := j -> 'next';
+      if (n < 20) = (cur is null or cur = 'null'::jsonb) then raise exception 'the cursor after page % (%): %', n, s, cur; end if;
+    end loop;
+  end loop;
+  t0 := clock_timestamp();
+  j := search_threads('common', null, null, null, null, false, 'newest', null, 1);
+  raise notice 'scale: search_threads common newest (page of 1: the count is most of it) in %', clock_timestamp() - t0;
   j := search_suggest('mairo', null, null, false, 5);
   if jsonb_array_length(j -> 'characters') <> 5 or j -> 'characters' -> 0 ->> 'name' <> 'Mario' then raise exception 'the characters named Mario (one before, four here, five asked for): %', j -> 'characters'; end if;
   perform tests.unbecome();

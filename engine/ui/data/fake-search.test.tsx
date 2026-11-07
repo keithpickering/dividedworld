@@ -148,6 +148,19 @@ describe('search_posts in the fake: sort, pool and cursor', () => {
     expect(newest.results).toHaveLength(9);
     expect((await f.searchPosts(ask({ q: 'pear 1', perPage: 50 }))).pooled).toBe(false);
   });
+  test('pooled is true only when more than the pool match: exactly a pool of posts is not pooled', async () => {
+    const seed = (n: number) => {
+      const f = createFake({ instance });
+      const a = f.seed.account('a');
+      const c = f.seed.character(a, 'Cee', 'face');
+      const t = f.seed.thread('general', c, 'Pile', 'pear 0', { at: T0 });
+      for (let i = 1; i < n; i++) f.seed.post(t.thread, c, `pear ${i}`, { at: T0 + i * H });
+      f.signInAs(a);
+      return f;
+    };
+    expect(await seed(5).searchPosts(ask({ q: 'pear', perPage: 50 }))).toMatchObject({ count: 5, pooled: false });
+    expect(await seed(6).searchPosts(ask({ q: 'pear', perPage: 50 }))).toMatchObject({ count: 6, pooled: true });
+  });
   test.each(['relevance', 'newest', 'oldest'] as const)('the cursor walks a %s result set with no repeat and no gap', async (sort) => {
     const f = createFake({ instance: { ...instance, settings: { ...settings, searchRankPool: 100 } } });
     const a = f.seed.account('a');
@@ -223,15 +236,40 @@ describe('search_threads in the fake', () => {
 });
 
 describe('search_threads in the fake: the pool', () => {
-  test('threads are found among the newest searchRankPool (5) matches whatever the sort, and say so', async () => {
-    const f = createFake({ instance });
+  const seedLime = (pool: number, n: number) => {
+    const f = createFake({ instance: { ...instance, settings: { ...settings, searchRankPool: pool } } });
     const a = f.seed.account('a');
     const c = f.seed.character(a, 'Cee', 'face');
-    for (let i = 0; i < 8; i++) f.seed.thread('general', c, `Th${i}`, 'lime', { at: T0 + i * H });
+    for (let i = 0; i < n; i++) f.seed.thread('general', c, `Th${i}`, 'lime', { at: T0 + i * H });
     f.signInAs(a);
-    for (const sort of ['relevance', 'newest', 'oldest'] as const) expect(await f.searchThreads(ask({ q: 'lime', sort, perPage: 50 }))).toMatchObject({ count: 5, pooled: true });
-    expect((await f.searchThreads(ask({ q: 'lime', sort: 'newest', perPage: 50 }))).results.map((r) => r.title)).toEqual(['Th7', 'Th6', 'Th5', 'Th4', 'Th3']);
-    expect((await f.searchThreads(ask({ q: 'lime', sort: 'oldest', perPage: 50 }))).results.map((r) => r.title)).toEqual(['Th0', 'Th1', 'Th2', 'Th3', 'Th4']);
+    return f;
+  };
+  test('by relevance threads are found among the newest searchRankPool (5) matches and say so; newest and oldest have no pool and reach every thread', async () => {
+    const f = seedLime(5, 8);
+    const ranked = await f.searchThreads(ask({ q: 'lime', sort: 'relevance', perPage: 50 }));
+    expect(ranked).toMatchObject({ count: 8, pooled: true });
+    expect(ranked.results.map((r) => r.title).sort()).toEqual(['Th3', 'Th4', 'Th5', 'Th6', 'Th7']);
+    for (const sort of ['newest', 'oldest'] as const) expect(await f.searchThreads(ask({ q: 'lime', sort, perPage: 50 }))).toMatchObject({ count: 8, pooled: false });
+    expect((await f.searchThreads(ask({ q: 'lime', sort: 'newest', perPage: 50 }))).results.map((r) => r.title)).toEqual(['Th7', 'Th6', 'Th5', 'Th4', 'Th3', 'Th2', 'Th1', 'Th0']);
+    expect((await f.searchThreads(ask({ q: 'lime', sort: 'oldest', perPage: 50 }))).results.map((r) => r.title)).toEqual(['Th0', 'Th1', 'Th2', 'Th3', 'Th4', 'Th5', 'Th6', 'Th7']);
+  });
+  test('a thread whose matches are all older than a pool of newer ones in another is reached by newest and counted', async () => {
+    const f = createFake({ instance: { ...instance, settings: { ...settings, searchRankPool: 5 } } });
+    const a = f.seed.account('a');
+    const c = f.seed.character(a, 'Cee', 'face');
+    f.seed.thread('general', c, 'Old', 'kiwi', { at: T0 });
+    const busy = f.seed.thread('general', c, 'Busy', 'kiwi', { at: T0 + H });
+    for (let i = 2; i < 12; i++) f.seed.post(busy.thread, c, 'kiwi', { at: T0 + i * H });
+    f.signInAs(a);
+    const newest = await f.searchThreads(ask({ q: 'kiwi', sort: 'newest', perPage: 1 }));
+    expect(newest).toMatchObject({ count: 2, pooled: false });
+    expect(newest.results.map((r) => r.title)).toEqual(['Busy']);
+    expect((await f.searchThreads(ask({ q: 'kiwi', sort: 'newest', perPage: 1 }), newest.next)).results.map((r) => r.title)).toEqual(['Old']);
+    expect((await f.searchThreads(ask({ q: 'kiwi', sort: 'oldest', perPage: 50 }))).results.map((r) => r.title)).toEqual(['Old', 'Busy']);
+  });
+  test('pooled is true only when more than the pool match: exactly a pool of matches is not', async () => {
+    expect((await seedLime(5, 5).searchThreads(ask({ q: 'lime', perPage: 50 }))).pooled).toBe(false);
+    expect((await seedLime(5, 6).searchThreads(ask({ q: 'lime', perPage: 50 }))).pooled).toBe(true);
   });
 });
 
@@ -277,6 +315,11 @@ describe('the fake keeps the SQL\'s refusals and edges (0112_search.sql)', () =>
       await expect(search(ask({ fromAt: new Date(T0 + 1).toISOString(), toAt: at }))).rejects.toThrow(/range ends before/);
       await expect(search(ask({}), good)).resolves.toBeDefined();
       for (const bad of [{ ...good, at: 'yesterday' }, { ...good, act: 'nope' }, { ...good, rank: 'high' }, { at: good.at }] as never[]) await expect(search(ask({}), bad)).rejects.toThrow(/not a cursor/);
+      /* A time or a rank that has the shape and does not cast, and a relevance search's cursor without the rank, are refused too (the SQL's search_cursor_ok). */
+      for (const bad of [{ ...good, at: '2026-13-45T00:00:00Z' }, { ...good, at: '2026-02-30T00:00:00Z' }, { ...good, rank: Infinity }] as never[]) await expect(search(ask({}), bad)).rejects.toThrow(/not a cursor/);
+      await expect(search(ask({ q: 'mario' }), { at: good.at, act: good.act } as never)).rejects.toThrow(/not a cursor/);
+      await expect(search(ask({ q: 'mario', sort: 'newest' }), { at: good.at, act: good.act } as never)).resolves.toBeDefined();
+      await expect(search(ask({ sort: 'relevance' }), { at: good.at, act: good.act } as never)).resolves.toBeDefined();
     }
   });
   test('to_at is exclusive, from_at inclusive', async () => {

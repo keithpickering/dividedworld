@@ -21,7 +21,9 @@ begin
       ('links closed',           '[url]x[/url]'),
       ('links, one unclosed',    '[url]a[/url][url]b'),
       ('images',                 '[img]http://a.example/x[/img]'),
-      ('links with an address',  '[url]http://a.example/x[/url]')
+      ('links with an address',  '[url]http://a.example/x[/url]'),
+      ('links, blanks and brackets', E'[url] \t[ \n[ \u3000[/url]'),
+      ('links, one open to the next', E'[url]  [  [  ')
     ) as v (name, unit)
   loop
     t0 := clock_timestamp();

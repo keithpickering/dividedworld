@@ -5,7 +5,7 @@
  *   1. `prosqlbody` is not null: a SQL-standard body (`begin atomic`), whose dependencies Postgres records. A plpgsql or
  *      string body records none, and a dependency nobody can read is one nobody can check;
  *   2. it is `security invoker` and `stable`: it reads as the caller, under the caller's policies, and writes nothing;
- *   3. every relation it depends on, and every `public` function, is one a screen may read (ALLOWED_READS, ALLOWED_RPCS in
+ *   3. every relation it depends on, and every `public` function, is one a screen may read (ALLOWED_READS, ALLOWED_RPCS and SCREEN_HELPERS in
  *      tools/check-web-reads.mjs, the list the web app's own reads answer to), and every such function is itself stable or
  *      immutable, so a screen function never reaches a write (`here`, `mark_read`);
  *   4. `authenticated` can execute it and `anon` cannot.
@@ -17,7 +17,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sql } from './psql-db.ts';
 // @ts-expect-error the guard's lists live in a plain .mjs
-import { ALLOWED_READS, ALLOWED_RPCS } from '../../../tools/check-web-reads.mjs';
+import { ALLOWED_READS, ALLOWED_RPCS, SCREEN_HELPERS } from '../../../tools/check-web-reads.mjs';
 
 /** Runs one SQL text, in one session, and returns psql's unaligned output. */
 export type Query = (text: string) => string;
@@ -54,9 +54,9 @@ export async function screenFaults(db: Query): Promise<string[]> {
       union all select s.proname, 'it depends on relation ' || n.nspname || '.' || c.relname || ', which is not in ALLOWED_READS'
         from deps d join screens s on s.oid = d.screen join pg_class c on d.kind = 'pg_class' and c.oid = d.refobjid join pg_namespace n on n.oid = c.relnamespace
         where n.nspname <> 'pg_catalog' and not (n.nspname = 'public' and c.relname = any (${lit(ALLOWED_READS)}))
-      union all select s.proname, 'it depends on function ' || f.proname || ', which is not in ALLOWED_RPCS'
+      union all select s.proname, 'it depends on function ' || f.proname || ', which is not in ALLOWED_RPCS or SCREEN_HELPERS'
         from deps d join screens s on s.oid = d.screen join pg_proc f on d.kind = 'pg_proc' and f.oid = d.refobjid
-        where f.pronamespace = 'public'::regnamespace and f.oid <> s.oid and not (f.proname = any (${lit(ALLOWED_RPCS)}))
+        where f.pronamespace = 'public'::regnamespace and f.oid <> s.oid and not (f.proname = any (${lit([...ALLOWED_RPCS, ...SCREEN_HELPERS])}))
       union all select s.proname, 'it depends on function ' || f.proname || ', which is volatile and may write'
         from deps d join screens s on s.oid = d.screen join pg_proc f on d.kind = 'pg_proc' and f.oid = d.refobjid
         where f.pronamespace = 'public'::regnamespace and f.oid <> s.oid and f.provolatile = 'v'
