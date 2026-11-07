@@ -1127,3 +1127,133 @@ test('a card with no target and no reach is still refused, not guessed at', () =
   const b = base();
   assert.throws(() => settle({ ...b, acts: [...b.acts, { id: 'k9', character: 'bob-1', kind: 'card', at: FROM + 7 * H, thread: 't1', card: 'splat' }] }, instance), /has no target/);
 });
+
+/* ---- a character's standings, and the crowd a card drew (the Tweener plan, Task 1) ---- */
+
+const noVote = { excitedPositive: 0, excitedNegative: 0, calmPositive: 0, boredNegative: 0 };
+const bySize = <T>(xs: readonly T[]) => [...xs].sort((a, b) => (JSON.stringify(a) < JSON.stringify(b) ? -1 : 1));
+/** Every class input the spy was given, whatever character it was for. */
+const spy = (key = 'quiet'): { rules: ClassRules; inputs: ClassInput[] } => {
+  const inputs: ClassInput[] = [];
+  return { inputs, rules: { key, name: key, earn: (i) => { inputs.push(i); return []; } } };
+};
+const standingOn = (inputs: readonly ClassInput[], act: string) => inputs.flatMap((i) => i.standings).find((s) => s.act === act);
+const sugar = { key: 'sugar', name: 'Sugar', alignment: 'sweet' as const, rarity: 'common' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
+
+test('a standing holds every other player\'s vote before the window and now, each at its weight', () => {
+  const { rules, inputs } = spy('fan');
+  const b = base();
+  const earlier = post('e1', 'ann-fan', FROM - 10 * H);
+  settle({
+    ...b,
+    acts: [...b.acts, earlier],
+    reactions: [...b.reactions, react('e1', 'bob', 'bob-1', 'fire', FROM - 5 * H), react('e1', 'cat', 'cat-1', 'tomato', FROM + 2 * H)],
+    paid: [{ player: 'bob', act: 'e1', weight: 1, shares: { ...noVote, excitedPositive: 1 } }],
+  }, withClasses(rules));
+  const s = standingOn(inputs, 'e1');
+  assert.equal(s?.actKind, 'post');
+  assert.equal(s?.at, FROM + 2 * H);
+  assert.deepEqual(s?.before, [{ ...noVote, excitedPositive: 1 }]);
+  assert.deepEqual(bySize(s?.now ?? []), bySize([{ ...noVote, excitedPositive: 1 }, { ...noVote, excitedNegative: 1 }]));
+});
+
+test('a player whose reactions on an Act are a fire and a tomato stands as half and half in one Standing', () => {
+  const { rules, inputs } = spy();
+  const b = base();
+  settle({ ...b, acts: [...b.acts, post('x1', 'bob-1', FROM + 1 * H)], reactions: [...b.reactions, react('x1', 'cat', 'cat-1', 'fire', FROM + 5 * H), react('x1', 'cat', 'cat-1', 'tomato', FROM + 6 * H)] }, withClasses(rules));
+  const s = standingOn(inputs, 'x1');
+  assert.deepEqual(s?.before, []);
+  assert.deepEqual(s?.now, [{ ...noVote, excitedPositive: 0.5, excitedNegative: 0.5 }]);
+});
+
+test('a halved vote stands at its halved weight', () => {
+  const { rules, inputs } = spy('fan');
+  settle(base(), withClasses(rules));
+  // Bob voted on p1, then on the author's second Act p2, which weighs half.
+  assert.deepEqual(standingOn(inputs, 'p2')?.now, [{ ...noVote, excitedPositive: 0.5 }]);
+  assert.deepEqual(standingOn(inputs, 'p1')?.now.find((v) => v.excitedPositive === 1), { ...noVote, excitedPositive: 1 });
+});
+
+test('the author\'s own player\'s reactions are in no standing', () => {
+  const { rules, inputs } = spy('fan');
+  const b = base();
+  settle({ ...b, acts: [...b.acts, post('x1', 'ann-fan', FROM + 1 * H)], reactions: [...b.reactions, react('x1', 'ann', 'ann-quiet', 'fire', FROM + 5 * H), react('p1', 'ann', 'ann-quiet', 'fire', FROM + 5 * H)] }, withClasses(rules));
+  assert.equal(standingOn(inputs, 'x1'), undefined);
+  assert.equal(standingOn(inputs, 'p1')?.now.length, 2);
+});
+
+test('the estimate sees two reactions by one player as two Standings at a whole vote each', () => {
+  const { rules, inputs } = spy('fan');
+  const b = base();
+  estimateForOwner({ ...b, acts: [...b.acts, post('x1', 'ann-fan', FROM + 1 * H)], reactions: [...b.reactions, react('x1', 'cat', 'cat-1', 'fire', FROM + 5 * H), react('x1', 'cat', 'cat-1', 'tomato', FROM + 6 * H)] }, withClasses(rules), 'ann');
+  assert.deepEqual(bySize(standingOn(inputs, 'x1')?.now ?? []), bySize([{ ...noVote, excitedPositive: 1 }, { ...noVote, excitedNegative: 1 }]));
+});
+
+/** Ann's post p1; Cat plays a card on it at FROM + 5H; Dee reacted before it; Bob and Eve first react after it. */
+function crowd(): SettlementInput {
+  return {
+    window: { id: 'w1', from: FROM, to: TO },
+    characters: [
+      { id: 'ann-1', player: 'ann', classes: [{ class: 'quiet', from: 0 }] },
+      { id: 'bob-1', player: 'bob', classes: [{ class: 'quiet', from: 0 }] },
+      { id: 'cat-1', player: 'cat', classes: [{ class: 'quiet', from: 0 }] },
+      { id: 'dee-1', player: 'dee', classes: [{ class: 'quiet', from: 0 }] },
+      { id: 'eve-1', player: 'eve', classes: [{ class: 'quiet', from: 0 }] },
+    ],
+    acts: [post('p1', 'ann-1', FROM + 1 * H), { id: 'k1', character: 'cat-1', kind: 'card', at: FROM + 5 * H, thread: 't1', target: 'p1', card: 'sugar' }],
+    reactions: [
+      react('p1', 'dee', 'dee-1', 'fire', FROM + 3 * H),
+      react('p1', 'bob', 'bob-1', 'fire', FROM + 7 * H),
+      react('p1', 'eve', 'eve-1', 'tomato', FROM + 9 * H),
+      react('p1', 'dee', 'dee-1', 'tea', FROM + 10 * H),
+      react('p1', 'cat', 'cat-1', 'fire', FROM + 11 * H),
+    ],
+  };
+}
+const crowdWorld = (rules: ClassRules): Instance => ({ ...withClasses(rules), cards: [...instance.cards, sugar] });
+const playOf = (inputs: readonly ClassInput[], act: string) => inputs.flatMap((i) => i.cardsPlayed).find((c) => c.act === act)!;
+
+test('a card draws the players whose first reaction came after it, at their vote now, and not one who reacted before and moved', () => {
+  const { rules, inputs } = spy();
+  settle(crowd(), crowdWorld(rules));
+  const drawn = playOf(inputs, 'k1').drawnAfter;
+  assert.equal(drawn?.at, FROM + 9 * H);
+  assert.deepEqual(bySize(drawn?.now ?? []), bySize([{ ...noVote, excitedPositive: 1 }, { ...noVote, excitedNegative: 1 }]));
+});
+
+test('a second card by the same player on the same post, of another alignment, draws nothing', () => {
+  const { rules, inputs } = spy();
+  const b = crowd();
+  settle({ ...b, acts: [...b.acts, { id: 'k2', character: 'cat-1', kind: 'card', at: FROM + 6 * H, thread: 't1', target: 'p1', card: 'splat' }] }, crowdWorld(rules));
+  assert.notEqual(playOf(inputs, 'k1').drawnAfter, null);
+  assert.equal(playOf(inputs, 'k2').drawnAfter, null);
+});
+
+test('a card nobody first reacted after draws nothing', () => {
+  const { rules, inputs } = spy();
+  const b = crowd();
+  settle({ ...b, reactions: b.reactions.filter((r) => r.player === 'dee' || r.player === 'cat') }, crowdWorld(rules));
+  assert.equal(playOf(inputs, 'k1').drawnAfter, null);
+});
+
+test('the estimate leaves the caster\'s own later reaction out of the crowd a card drew', () => {
+  const { rules, inputs } = spy();
+  estimateForOwner(crowd(), crowdWorld(rules), 'cat');
+  const drawn = playOf(inputs, 'k1').drawnAfter;
+  // Bob's fire, Eve's tomato and Dee's tea after the play (each estimate reaction is a voter of its own); Cat's own fire at 11H is not one.
+  assert.deepEqual(bySize(drawn?.now ?? []), bySize([{ ...noVote, excitedPositive: 1 }, { ...noVote, excitedNegative: 1 }, { ...noVote, calmPositive: 1 }]));
+});
+
+test('a play held by the same player\'s earlier-window play, of any alignment, draws nothing', () => {
+  const { rules, inputs } = spy();
+  const b = crowd();
+  settle({ ...b, acts: [b.acts[0]!, { id: 'k0', character: 'cat-1', kind: 'card', at: FROM - 5 * H, thread: 't1', target: 'p1', card: 'splat' }, b.acts[1]!] }, crowdWorld(rules));
+  assert.equal(playOf(inputs, 'k1').drawnAfter, null);
+});
+
+test('the lists in a standing and a drawn crowd are in one order that names no player', () => {
+  const { rules, inputs } = spy();
+  settle(crowd(), crowdWorld(rules));
+  const drawn = playOf(inputs, 'k1').drawnAfter!.now;
+  assert.deepEqual(drawn, [{ ...noVote, excitedNegative: 1 }, { ...noVote, excitedPositive: 1 }]);
+});

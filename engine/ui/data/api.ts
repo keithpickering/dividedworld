@@ -1848,7 +1848,7 @@ export interface KayfaApi {
 
   /*
    * Acting, as one of the player's characters. `framing`, on a post, a thread start and a spin, is the ids the body's counterfeit quotes name
-   * (`framedIn`, composer/text.ts); each debuted character of another player that the body names is told (the `framed` alert, 0117).
+   * (`framedIn`, composer/text.ts); each debuted character of another player that the body names is told (the `framed` alert, 0118).
    */
   startThread(board: string, character: Id, title: string, body: string, framing?: readonly Id[]): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
   post(thread: Id, character: Id, body: string, quote: Id | null, framing?: readonly Id[]): Promise<Answer<Act>>;

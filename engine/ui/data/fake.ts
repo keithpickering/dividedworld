@@ -971,7 +971,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
 
   /**
-   * write_framed (0117): for each distinct id among the first 5 of `framing`, a debuted character whose id the body holds as `user=<id>` (case ignored)
+   * write_framed (0118): for each distinct id among the first 5 of `framing`, a debuted character whose id the body holds as `user=<id>` (case ignored)
    * is told through write_alert's rules, which skip a staff character (no owner) and the acting account's own masks. Any other id is skipped silently.
    */
   function writeFramed(body: string, framing: readonly Id[] | undefined, act: ActRec) {
@@ -1644,7 +1644,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /*
    * search_posts, search_threads and search_suggest over the fake's own Acts, on a small scale and with a plain word match: a whole word,
    * case and accents apart, every word needed and `-word` leaving a post out (no stemming, phrases or `or`). The caps, the pool, the
-   * cursor and the ordering are the SQL's (supabase/migrations/0116_search.sql); only the matching is cruder.
+   * cursor and the ordering are the SQL's (supabase/migrations/0117_search.sql); only the matching is cruder.
    */
   const foldText = (s: string): string => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
   const wordsOf = (s: string): string[] => foldText(s).match(/[\p{L}\p{N}]+/gu) ?? [];

@@ -3,7 +3,7 @@
  * languages ("Two lists that must agree are one list"). `plain` is `collapse(visibleText(parse(body)))`,
  * which engine/bbcode/plain.test.ts holds against the engine's walk (engine/bbcode/visible.ts over
  * engine/bbcode/parse.ts). tools/bbcode-plain.mjs makes supabase/tests/0117-bbcode-plain.sql from the
- * same list, which holds the database's `bbcode_plain` (supabase/migrations/0116_search.sql) to the
+ * same list, which holds the database's `bbcode_plain` (supabase/migrations/0117_search.sql) to the
  * same words, and tools/check-bbcode-plain.mjs holds that file to exactly what the list makes.
  *
  * The list is JSON after the marker line below, so tools/bbcode-plain.mjs can read it without a

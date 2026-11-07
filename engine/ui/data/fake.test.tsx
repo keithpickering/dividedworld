@@ -2314,7 +2314,7 @@ describe('live alerts derived from Acts', () => {
   });
 });
 
-/* The framed alert (0117, write_framed; the BBCode plan, Tasks 8 and 9): a counterfeit quote's `user=<id>` names a character, and its owner is told. */
+/* The framed alert (0118, write_framed; the BBCode plan, Tasks 8 and 9): a counterfeit quote's `user=<id>` names a character, and its owner is told. */
 describe('framed alerts', () => {
   function framedWorld() {
     const w = world({ postMaxLength: 2000 });

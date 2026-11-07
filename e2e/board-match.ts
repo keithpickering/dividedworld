@@ -16,8 +16,8 @@
  * lacks (the manifest is wrong), a `buildName` that matches nothing in the build.
  */
 
-/** How a landmark's box is compared: `full` (the default), x and y only, y and height only, width and height only, x and width only (`across`), or not at all. */
-export type BoxMode = 'full' | 'position' | 'height' | 'size' | 'across' | 'none';
+/** How a landmark's box is compared: `full` (the default), x and y only, y and height only, width and height only, x and width only (`across`), horizontal center and y (`center`, for a box whose width follows its words), or not at all. */
+export type BoxMode = 'full' | 'position' | 'height' | 'size' | 'across' | 'center' | 'none';
 
 export interface Landmark {
   /** Names the landmark in a snapshot and a report; unique in its manifest. */
@@ -172,6 +172,14 @@ function compareBox(id: string, mode: BoxMode, board: Box, build: Box, origin?: 
   if (mode === 'full' || mode === 'size') fields.push({ name: 'width', tolerance: SIZE_TOLERANCE }, { name: 'height', tolerance: SIZE_TOLERANCE });
   if (mode === 'height') fields.push({ name: 'height', tolerance: SIZE_TOLERANCE });
   const measured = origin === undefined ? '' : `, measured from ${origin}`;
+  if (mode === 'center') {
+    const centers: { name: string; board: number; build: number; tolerance: number }[] = [
+      { name: 'center-x', board: board.x + board.width / 2, build: build.x + build.width / 2, tolerance: POSITION_TOLERANCE },
+      { name: 'y', board: board.y, build: build.y, tolerance: POSITION_TOLERANCE },
+    ];
+    return centers.filter((f) => Math.abs(f.board - f.build) > f.tolerance)
+      .map((f) => mismatch(id, f.name, String(f.board), String(f.build), `more than ${f.tolerance}px apart${measured}`));
+  }
   return fields.filter((f) => Math.abs(board[f.name] - build[f.name]) > f.tolerance)
     .map((f) => mismatch(id, f.name, String(board[f.name]), String(build[f.name]), `more than ${f.tolerance}px apart${measured}`));
 }

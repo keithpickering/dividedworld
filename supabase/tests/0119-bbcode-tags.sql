@@ -1,6 +1,6 @@
--- The BBCode tags in the database (supabase/migrations/0117_bbcode_tags.sql, Task 7; docs/plans/2026-11-07-bbcode-tags-plan.md).
+-- The BBCode tags in the database (supabase/migrations/0118_bbcode_tags.sql, Task 7; docs/plans/2026-11-07-bbcode-tags-plan.md).
 --
--- bbcode_plain's walk of every tag is held by the fixtures (0116) and its cost by 0117; this file holds what only the database does:
+-- bbcode_plain's walk of every tag is held by the fixtures (0117) and its cost by 0118; this file holds what only the database does:
 -- 1. A post written now is indexed by the new walk: a spoiler's words match and its tag and title do not, a counterfeit quote's words match and a real quote's do not.
 -- 2. The reindex (search_reindex(), which the migration runs once) rewrites every row from its post's current version: a row left as the old walk wrote it (the
 --    tags and a counterfeit quote's name as words) is made as the new walk writes it, an empty row is filled, and an edited post is indexed by its edit.
@@ -70,7 +70,7 @@ begin
     raise exception 'an API role can run the reindex';
   end if;
   if not has_function_privilege('authenticated', 'bbcode_plain(text)', 'execute') or has_function_privilege('anon', 'bbcode_plain(text)', 'execute') then
-    raise exception 'bbcode_plain is not granted as 0116 left it';
+    raise exception 'bbcode_plain is not granted as 0117 left it';
   end if;
   if has_function_privilege('anon', 'bbcode_plain_video_ok(text)', 'execute') or not has_function_privilege('authenticated', 'bbcode_plain_video_ok(text)', 'execute') then
     raise exception 'a helper of bbcode_plain is not granted as bbcode_plain is';

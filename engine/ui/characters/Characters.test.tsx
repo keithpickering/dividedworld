@@ -1115,51 +1115,79 @@ describe('the class cards\' radios', () => {
 
 /*
  * Choose a class as a carousel (the Technician plan's Task 4). A test in engine/ui may not import an
- * instance, so this is an instance of five classes in Divided World's order, which is what the
+ * instance, so this is an instance of six classes in Divided World's order, which is what the
  * engine must draw with no count of its own. jsdom lays nothing out, so the row is given the Turn
  * board's lengths: 216px cards in a 972px row, overflowing.
  */
-const five: Instance = {
+const six: Instance = {
   ...testInstance,
-  classes: ['Face', 'Heel', 'Jabroni', 'Technician', 'Lurker'].map((name) => ({ key: name.toLowerCase(), name, earn: () => [] })),
+  classes: ['Face', 'Heel', 'Jabroni', 'Technician', 'Tweener', 'Lurker'].map((name) => ({ key: name.toLowerCase(), name, earn: () => [] })),
 };
+/** Every class's key in the instance's order, and those the held Heel leaves to turn to: the tests read them, never a literal list. */
+const sixKeys = six.classes.map((c) => c.key);
+const sixTurnTo = sixKeys.filter((k) => k !== 'heel');
 function overflowingRow() {
   const grid = (el: HTMLElement) => el.classList.contains('kb-class-grid');
-  vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function (this: HTMLElement) { return grid(this) ? 5 * 216 : 0; });
+  vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function (this: HTMLElement) { return grid(this) ? six.classes.length * 216 : 0; });
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return grid(this) ? 972 : 0; });
   vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-class-card') ? 216 : 0; });
 }
 
 describe('the Turn\'s classes, as a carousel', () => {
-  const openFive = (w: World) => renderIn(w.fake, <Characters />, { path: '/characters', settings: { charactersPerPlayer: w.per }, instance: five });
+  const openSix = (w: World) => renderIn(w.fake, <Characters />, { path: '/characters', settings: { charactersPerPlayer: w.per }, instance: six });
   const openTurn = async (name: string) => {
     await userEvent.click(within(row(name)).getByRole('button', { name: `Turn ${name}` }));
     return screen.findByRole('dialog', { name: `Turn ${name}` });
   };
 
   test('draws every class in the instance\'s order, the one held marked Now, the rest radios of one group', async () => {
-    const w = world({ instance: five });
-    openFive(w);
+    const w = world({ instance: six });
+    openSix(w);
     await ready();
     const dialog = await openTurn('Mrs. Hooligan');
     const group = within(dialog).getByRole('group', { name: 'Turn to' });
     const cards = [...group.querySelectorAll<HTMLElement>('.kb-class-card')];
-    expect(cards.map((c) => c.dataset.kbClass)).toEqual(['face', 'heel', 'jabroni', 'technician', 'lurker']);
+    expect(cards.map((c) => c.dataset.kbClass)).toEqual(sixKeys);
     expect(within(cards[1]!).getByText('Now')).toBeInTheDocument();
     const radios = within(group).getAllByRole('radio');
-    expect(radios.map((r) => r.getAttribute('value'))).toEqual(['face', 'jabroni', 'technician', 'lurker']);
+    expect(radios.map((r) => r.getAttribute('value'))).toEqual(sixTurnTo);
     expect(new Set(radios.map((r) => r.getAttribute('name'))).size).toBe(1);
   });
 
+  test('counts and fades by the cards\' real sub-pixel width: the phone\'s 291.375px cards, scrolled to the fifth, read "5–5" with no fade before it', async () => {
+    const w = world({ instance: six });
+    openSix(w);
+    await ready();
+    // The phone's row: 355px wide, cards calc(100% - 64px) = 291.375px, 14px apart. offsetWidth rounds a card to 291; the computed width does not.
+    const CARD = 291.375;
+    const STEP = CARD + 14;
+    const SCROLLED = 4 * STEP; // 1221.5: the fifth card (the Tweener) at the row's start
+    const grid = (el: HTMLElement) => el.classList.contains('kb-class-grid');
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function (this: HTMLElement) { return grid(this) ? six.classes.length * STEP - 14 : 0; });
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return grid(this) ? 355 : 0; });
+    vi.spyOn(HTMLElement.prototype, 'scrollLeft', 'get').mockImplementation(function (this: HTMLElement) { return grid(this) ? SCROLLED : 0; });
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-class-card') ? Math.round(CARD) : 0; });
+    // The computed box is what layout reports, fractions and all.
+    const computed = window.getComputedStyle.bind(window);
+    vi.spyOn(window, 'getComputedStyle').mockImplementation((el: Element, pseudo?: string | null) => {
+      if (el.classList.contains('kb-class-card')) return { width: `${CARD}px` } as CSSStyleDeclaration;
+      if (el.classList.contains('kb-class-grid')) return { columnGap: '14px' } as CSSStyleDeclaration;
+      return computed(el, pseudo);
+    });
+    const dialog = await openTurn('Mrs. Hooligan');
+    expect(await within(dialog).findByText(`5–5 of ${six.classes.length}`)).toBeInTheDocument();
+    expect(dialog.querySelector('.kb-class-grid')).not.toHaveAttribute('data-kb-peek-before');
+  });
+
   test('hides no class from the accessibility tree while the row overflows', async () => {
-    const w = world({ instance: five });
-    openFive(w);
+    const w = world({ instance: six });
+    openSix(w);
     await ready();
     overflowingRow();
     const dialog = await openTurn('Mrs. Hooligan');
-    await within(dialog).findByText('1–4 of 5');
+    await within(dialog).findByText(`1–4 of ${six.classes.length}`);
     // getAllByRole leaves out what the accessibility tree leaves out (aria-hidden, display, visibility).
-    expect(within(within(dialog).getByRole('group', { name: 'Turn to' })).getAllByRole('radio').map((r) => r.getAttribute('value'))).toEqual(['face', 'jabroni', 'technician', 'lurker']);
+    expect(within(within(dialog).getByRole('group', { name: 'Turn to' })).getAllByRole('radio').map((r) => r.getAttribute('value'))).toEqual(sixTurnTo);
     for (const card of dialog.querySelectorAll<HTMLElement>('.kb-class-card')) {
       for (let el: HTMLElement | null = card; el && el !== dialog; el = el.parentElement) {
         expect(el.hidden || el.inert || el.getAttribute('aria-hidden') === 'true', card.dataset.kbClass).toBe(false);
@@ -1168,12 +1196,12 @@ describe('the Turn\'s classes, as a carousel', () => {
   });
 
   test('names its arrows and its count while the row overflows, "Earlier classes" disabled at the start', async () => {
-    const w = world({ instance: five });
-    openFive(w);
+    const w = world({ instance: six });
+    openSix(w);
     await ready();
     overflowingRow();
     const dialog = await openTurn('Mrs. Hooligan');
-    expect(await within(dialog).findByText('1–4 of 5')).toBeInTheDocument();
+    expect(await within(dialog).findByText(`1–4 of ${six.classes.length}`)).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Earlier classes' })).toBeDisabled();
     expect(within(dialog).getByRole('button', { name: 'More classes' })).toBeEnabled();
     // The arrows are buttons, never a form's submit.
@@ -1181,21 +1209,21 @@ describe('the Turn\'s classes, as a carousel', () => {
   });
 
   test('draws no arrows and no count when every class fits', async () => {
-    const w = world({ instance: five });
-    openFive(w);
+    const w = world({ instance: six });
+    openSix(w);
     await ready();
     const dialog = await openTurn('Mrs. Hooligan');
     expect(within(dialog).queryByRole('button', { name: 'More classes' })).toBeNull();
-    expect(within(dialog).queryByText(/ of 5$/u)).toBeNull();
+    expect(within(dialog).queryByText(/ of \d+$/u)).toBeNull();
   });
 
   test('still opens with focus on the first class card, before the arrows', async () => {
-    const w = world({ instance: five });
-    openFive(w);
+    const w = world({ instance: six });
+    openSix(w);
     await ready();
     overflowingRow();
     const dialog = await openTurn('Mrs. Hooligan');
-    await within(dialog).findByText('1–4 of 5');
+    await within(dialog).findByText(`1–4 of ${six.classes.length}`);
     expect(within(dialog).getAllByRole('radio')[0]).toHaveFocus();
   });
 });

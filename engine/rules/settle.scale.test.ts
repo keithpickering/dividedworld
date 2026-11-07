@@ -20,6 +20,8 @@ const counting: ClassRules = {
     ...i.held.map((g) => ({ reason: 'busy.held', amount: g.rank <= 3 ? 1 : 0, act: g.act })),
     ...i.cardsPlayed.map((c) => ({ reason: 'busy.card', amount: c.votes - c.targetVotes, act: c.act })),
     ...i.threadsSpun.map((t) => ({ reason: 'busy.spun', amount: t.repliersNow - t.repliersBefore, act: t.act })),
+    ...i.standings.map((s) => ({ reason: 'busy.standing', amount: s.before.length + s.now.length, act: s.act })),
+    ...i.cardsPlayed.map((c) => ({ reason: 'busy.drawn', amount: c.drawnAfter?.now.length ?? 0, act: c.act })),
   ],
 };
 const kinds = ['fire', 'tomato', 'tea', 'zzz'] as const;

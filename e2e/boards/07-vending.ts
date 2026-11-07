@@ -67,8 +67,9 @@ const manifest: BoardManifest = {
      */
     { id: 'hand', role: 'link', name: 'Your hand 3 → 4', buildName: 'Your hand 2 → 3', box: 'none', type: false },
 
-    /* The machine's sign carries one of the instance's marquees, the first in the fixture; its drawing is the instance's art, and its type is fitted to its name. */
-    { id: 'sign', role: 'text', name: '[Machine name]', buildName: 'FRESH BEEF', type: false, box: 'across' },
+    /* The machine's sign carries one of the instance's marquees, the first in the fixture; its drawing is the instance's art, and its type is fitted to its name.
+       Its width follows the marquee's name, so its center is compared (`center`), not its x and width. */
+    { id: 'sign', role: 'text', name: '[Machine name]', buildName: 'FRESH BEEF', type: false, box: 'center' },
 
     /* The slots: the two cards, A2 picked, and the four sealed. Their box is compared; their type is not, because a slot's
        visible words are the machine's printing, the instance's art (the postcard's face and a code the stylesheet writes out),

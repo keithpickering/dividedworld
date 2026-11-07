@@ -39,10 +39,10 @@ test('no ruling has a build yet, so none has a sub-key', () => {
 });
 
 test('the kinds in TypeScript are the kinds the toast choice accepts, in the column\'s check, set_preferences and the toastDefaults setting (the lists are one list)', () => {
-  const whole = fs.readFileSync(path.join(import.meta.dirname, '../../supabase/migrations/0117_bbcode_tags.sql'), 'utf8');
-  /* The latest redefinition of all three is 0117's Task 8 section (0092 added cardEnded the same way). */
+  const whole = fs.readFileSync(path.join(import.meta.dirname, '../../supabase/migrations/0118_bbcode_tags.sql'), 'utf8');
+  /* The latest redefinition of all three is 0118's Task 8 section (0092 added cardEnded the same way). */
   const at = whole.indexOf('Task 8: the framed alert');
-  assert.ok(at > 0, '0117 has no Task 8 section');
+  assert.ok(at > 0, '0118 has no Task 8 section');
   const sql = whole.slice(at);
   const lists = [...sql.matchAll(/array\[((?:'[A-Za-z]+',?\s*)+)\]/g)].map((m) => [...m[1]!.matchAll(/'([A-Za-z]+)'/g)].map((k) => k[1]!).sort());
   /* The section redefines the check, set_preferences and settings_held with framed added; its other arrays are spans and setting keys. */

@@ -2,7 +2,7 @@
 --
 -- ============================================================================ Task 7: search's plain words follow ====
 --
---   bbcode_plain(body)   redefined whole (0116), so that it mirrors engine/bbcode/visible.ts over engine/bbcode/parse.ts as Tasks 1 to 5 left them. What the parser now reads
+--   bbcode_plain(body)   redefined whole (0117), so that it mirrors engine/bbcode/visible.ts over engine/bbcode/parse.ts as Tasks 1 to 5 left them. What the parser now reads
 --                        and the plain words follow, tag for tag:
 --                          - [quote=...]: a name that is an Act id is a real quote (words dropped, one separator); any other name of 1 to 80 characters (UTF-16 units, after
 --                            trimming), `[quote]` bare and `[quote user=<id>]` are counterfeits, whose words are the post's own; a malformed `user=` or an empty or longer name makes the
@@ -17,7 +17,7 @@
 --                          - [hr]: one separator, no closer (a [/hr] is text). [noparse]: taken raw, its contents are the words as written, and a lone noparse can be a bare link's whole target.
 --                          - An autolink keeps its words, so it changes nothing here.
 --                        Helpers added: bbcode_plain_trim, bbcode_plain_quote_head, bbcode_plain_pct, bbcode_plain_query_v, bbcode_plain_ipv4_number, bbcode_plain_punycode_ok,
---                        bbcode_plain_host_ok, bbcode_plain_video_ok. bbcode_plain_u16len and bbcode_plain_url_ok are 0116's and stay; bbcode_plain keeps its signature and its grants.
+--                        bbcode_plain_host_ok, bbcode_plain_video_ok. bbcode_plain_u16len and bbcode_plain_url_ok are 0117's and stay; bbcode_plain keeps its signature and its grants.
 --
 --   The reindex   Every post_search row whose words change is rewritten once (a row already current is left alone), in this migration, from its post's current version by search_words_of (the same call the language rebuild makes; search_reindex() holds
 --                 the one UPDATE), so a post that
@@ -316,9 +316,9 @@ $$;
 
 -- ------------------------------------------------------------------------------------------------ bbcode_plain ----
 --
--- Redefined whole from 0116. What changed: the tag lists (openers, closers, the ones that keep a count), the five tags taken raw (code, img, video, youtube, noparse; the next closer
--- of each found once from the end, as 0116 did for two), the opener rules of the new tags, the quote head, the inline spoiler's blocked tags, and a bare link whose one node is a
--- noparse. Everything else, the stack, the one output array, the unwinding and the cost, is 0116's.
+-- Redefined whole from 0117. What changed: the tag lists (openers, closers, the ones that keep a count), the five tags taken raw (code, img, video, youtube, noparse; the next closer
+-- of each found once from the end, as 0117 did for two), the opener rules of the new tags, the quote head, the inline spoiler's blocked tags, and a bare link whose one node is a
+-- noparse. Everything else, the stack, the one output array, the unwinding and the cost, is 0117's.
 
 create or replace function bbcode_plain(body text) returns text
 language plpgsql immutable parallel safe set search_path = public, pg_temp as $$
@@ -617,7 +617,7 @@ begin
 end
 $$;
 
--- The helpers and bbcode_plain are called by the index's trigger and the search reads, never by the API's anonymous or digest roles (0116 granted bbcode_plain the same way).
+-- The helpers and bbcode_plain are called by the index's trigger and the search reads, never by the API's anonymous or digest roles (0117 granted bbcode_plain the same way).
 revoke execute on function bbcode_plain(text), bbcode_plain_trim(text), bbcode_plain_quote_head(text), bbcode_plain_pct(text), bbcode_plain_query_v(text), bbcode_plain_ipv4_number(text),
   bbcode_plain_punycode_ok(text), bbcode_plain_host_ok(text), bbcode_plain_video_ok(text) from public, anon;
 grant execute on function bbcode_plain(text), bbcode_plain_trim(text), bbcode_plain_quote_head(text), bbcode_plain_pct(text), bbcode_plain_query_v(text), bbcode_plain_ipv4_number(text),
@@ -663,7 +663,7 @@ select search_reindex();
 --
 -- What changed, each redefined whole from its latest definition (everything else is as that migration wrote it):
 --   - alerts_kind_check (0092) gains 'framed'. account_preferences_toasts_check (0092) gains it.
---   - set_preferences (0115) and settings_held (0116) list it among the kinds a toast choice and the toastDefaults setting may name. (settings_held does concern alerts: it validates
+--   - set_preferences (0115) and settings_held (0117) list it among the kinds a toast choice and the toastDefaults setting may name. (settings_held does concern alerts: it validates
 --     toastDefaults against the same list.)
 --   - post, start_thread and spin (all 0105) gain `framing uuid[] default '{}'` and call write_framed after the Act is written. Each is dropped and created whole, since the
 --     signature changes: with the default, a call that names no `framing` reads as before, and no overload is left beside the new one. Their grants are restated for the new signatures.
@@ -719,7 +719,7 @@ end $$;
 revoke execute on function set_preferences(text, text, text, text, text, integer, text, text, text[], boolean) from public, anon;
 grant execute on function set_preferences(text, text, text, text, text, integer, text, text, text[], boolean) to authenticated;
 
--- settings_held (0116), with `framed` among the kinds toastDefaults may name. Everything else as 0116 wrote it.
+-- settings_held (0117), with `framed` among the kinds toastDefaults may name. Everything else as 0117 wrote it.
 create or replace function settings_held() returns trigger
 language plpgsql set search_path = public, pg_temp as $$
 declare
