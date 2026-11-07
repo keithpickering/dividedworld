@@ -18,6 +18,13 @@ test('a quote, code, a link and an image leave one separator and none of their w
   assert.equal(seen('x[img]https://a.example/c.png[/img]y'), 'x\ny');
 });
 
+test('a counterfeit quote is the post\'s own words; a real quote is one separator', () => {
+  assert.equal(seen('a[quote=Geno]b c[/quote]d'), 'ab cd');
+  assert.equal(seen('a[quote]b[/quote]d'), 'abd');
+  assert.equal(seen(`a[quote=Geno user=${ACT}]b[/quote]d`), 'abd');
+  assert.equal(seen(`a[quote=${ACT}]b[/quote]d`), 'a\nd');
+});
+
 test('a list\'s items are kept apart, and from the words around it', () => {
   assert.equal(seen('intro[list][*]one[*]two[/list]outro'), 'intro\none\ntwo\noutro');
   assert.equal(seen('x[list=1][*]one[*]two[/list]y'), 'x\none\ntwo\ny');

@@ -29,6 +29,10 @@
  *   `[/url]` costs nothing, and a properly nested pair costs only the outer link's stray closer,
  *   which stays text. A link that is text (bad target) is not a link and blocks nothing. An image
  *   inside a link is fine: it is a node of its own with a checked source.
+ * - `[quote]` is a real quote only when its name is an Act's UUID. Any other name (at most
+ *   `MAX_QUOTE_NAME` characters), a bare `[quote]` or `[quote user=<uuid>]` is a `counterfeit`: its
+ *   words are the post's own and it names no Act, so the renderer must never draw one as an Act's
+ *   words. A `user=` that is not a UUID, a longer name or an empty one makes the opener text.
  * - A list's `[*]` is an item marker only directly inside `[list]`; elsewhere it is text.
  *   Blank space before the first item is layout and is not kept; words before it become an
  *   item of their own.
@@ -49,8 +53,12 @@ export type BbNode =
   | { readonly type: 'url'; readonly href: string; readonly children: readonly BbNode[] }
   | { readonly type: 'img'; readonly src: string }
   | { readonly type: 'quote'; readonly act: string; readonly children: readonly BbNode[] }
+  | { readonly type: 'counterfeit'; readonly name: string | null; readonly user: string | null; readonly children: readonly BbNode[] }
   | { readonly type: 'code'; readonly text: string }
   | { readonly type: 'list'; readonly ordered: boolean; readonly items: readonly (readonly BbNode[])[] };
+
+/** Longest typed name on a counterfeit quote, after trimming; a longer one makes the opener text. */
+export const MAX_QUOTE_NAME = 80;
 
 /** Deepest nesting of tags; past it a tag is text. Deep enough for quotes of quotes, shallow enough to render by recursion. */
 export const MAX_DEPTH = 32;
@@ -175,6 +183,46 @@ function pushNode(out: Out, node: BbNode): void {
 
 function unquote(v: string): string {
   return v.length >= 2 && v.startsWith('"') && v.endsWith('"') ? v.slice(1, -1) : v;
+}
+
+type QuoteHead =
+  | { readonly kind: 'real'; readonly act: string }
+  | { readonly kind: 'counterfeit'; readonly name: string | null; readonly user: string | null };
+
+/**
+ * What follows `quote` in a quote opener: nothing, `=<name>`, ` user=<id>` or `=<name> user=<id>`,
+ * the name quoted or the words up to ` user=`. A name that is an Act id is a real quote (`user=`
+ * dropped, since the author of a real quote always comes from the post); any other name of 1 to
+ * `MAX_QUOTE_NAME` characters is a counterfeit. Null when it is none of these, and the opener is text.
+ */
+function quoteHead(rest: string): QuoteHead | null {
+  let name: string | null = null;
+  let tail: string;
+  if (rest.startsWith('=')) {
+    const v = rest.slice(1);
+    if (v.startsWith('"')) {
+      const j = v.indexOf('"', 1);
+      if (j < 0) return null;
+      name = v.slice(1, j);
+      tail = v.slice(j + 1);
+    } else {
+      const at = v.indexOf(' user=');
+      name = at < 0 ? v : v.slice(0, at);
+      tail = at < 0 ? '' : v.slice(at);
+    }
+    name = name.trim();
+    if (name.length === 0 || name.length > MAX_QUOTE_NAME) return null;
+  } else {
+    tail = rest;
+  }
+  let user: string | null = null;
+  if (tail !== '') {
+    const m = /^\s+user=(.*)$/i.exec(tail);
+    if (!m || !UUID.test(m[1] ?? '')) return null;
+    user = (m[1] as string).toLowerCase();
+  }
+  if (name !== null && UUID.test(name)) return { kind: 'real', act: name.toLowerCase() };
+  return { kind: 'counterfeit', name, user };
 }
 
 function isBlank(nodes: readonly BbNode[]): boolean {
@@ -304,12 +352,16 @@ export function parse(input: string): BbNode[] {
     let name: string;
     let value: string | undefined;
     let isCloser = false;
+    let quoteRest: string | undefined;
     if (body === '*') {
       name = '*';
     } else if (body.startsWith('/')) {
       name = body.slice(1).toLowerCase();
       if (!CLOSERS.has(name)) continue;
       isCloser = true;
+    } else if (/^quote(?=$|=|\s)/i.test(body)) {
+      name = 'quote';
+      quoteRest = body.slice(5);
     } else {
       const eq = body.indexOf('=');
       name = (eq < 0 ? body : body.slice(0, eq)).toLowerCase();
@@ -391,10 +443,15 @@ export function parse(input: string): BbNode[] {
         } else literalOpen(name, raw);
       }
     } else if (name === 'quote') {
-      if (value !== undefined && UUID.test(value)) {
-        const act = value.toLowerCase();
+      const head = quoteHead(quoteRest ?? '');
+      if (head === null) literalOpen(name, raw);
+      else if (head.kind === 'real') {
+        const act = head.act;
         openReal(name, raw, 'simple', { build: (children) => ({ type: 'quote', act, children }) });
-      } else literalOpen(name, raw);
+      } else {
+        const { name: typed, user } = head;
+        openReal(name, raw, 'simple', { build: (children) => ({ type: 'counterfeit', name: typed, user, children }) });
+      }
     } else if (name === 'list') {
       if (value === undefined || value === '1') {
         const lead: Out = [];

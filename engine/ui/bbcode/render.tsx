@@ -100,6 +100,13 @@ function node(n: BbNode, key: number, quoteLink: BbCodeProps['quoteLink'], layer
           <div className="kb-quote-body">{nodes(n.children, quoteLink)}</div>
         </blockquote>
       );
+    case 'counterfeit':
+      /* Minimal for now: the head, the look and the wobble are built with the quote heads (plan, Task 10). */
+      return (
+        <blockquote key={key} className="kb-quote" data-kb-counterfeit="">
+          <div className="kb-quote-body">{nodes(n.children, quoteLink, layered)}</div>
+        </blockquote>
+      );
     case 'code': return <pre key={key} className="kb-bb-code"><code>{n.text}</code></pre>;
     case 'list': {
       const items = n.items.map((item, i) => <li key={i}>{nodes(item, quoteLink, layered)}</li>);

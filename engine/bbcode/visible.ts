@@ -5,8 +5,9 @@
  * screens, and the renderer's text layers (engine/ui/bbcode/layers.tsx) take runs over the same
  * offsets, so both sides agree on where a word is because both read this one walk.
  *
- * What counts. The text inside bold, italic, underline, strike, color, size and list items is the
- * post's own. A quote holds another post's words, code holds text that is not prose, a link's words
+ * What counts. The text inside bold, italic, underline, strike, color, size, list items and a
+ * counterfeit quote (a name typed by hand or an id, not an Act) is the
+ * post's own. A real quote holds another post's words, code holds text that is not prose, a link's words
  * are its target's name and an image has none: each leaves one `\n` in its place and none of its
  * words, so no word is joined across it. Each list item starts with a `\n`, and a list ends with one,
  * so its items are kept apart from each other and from the words around it.
@@ -37,7 +38,7 @@ export function visibleWalk(nodes: readonly BbNode[]): { text: string; offsets: 
         offsets.set(n, text.length);
         text += n.text;
         break;
-      case 'bold': case 'italic': case 'underline': case 'strike': case 'color': case 'size':
+      case 'bold': case 'italic': case 'underline': case 'strike': case 'color': case 'size': case 'counterfeit':
         pushAll(n.children.map((node) => ({ node })));
         break;
       case 'list': {

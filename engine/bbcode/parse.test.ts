@@ -168,8 +168,54 @@ test('a quote names an Act by id', () => {
   assert.deepEqual(parse(`[quote="${ACT.toUpperCase()}"]hi[/quote]`), [{ type: 'quote', act: ACT, children: [text('hi')] }]);
 });
 
-test('a quote that does not name an Act by a well-formed id becomes text', () => {
-  assertLiteral(['[quote]hi[/quote]', '[quote=12]hi[/quote]', '[quote=Some Name]hi[/quote]', `[quote=${ACT}x]hi[/quote]`, '[quote="><script>"]hi[/quote]']);
+const USER = '1b4e28ba-2fa1-11d2-883f-0016d3cca427';
+const fake = (name: string | null, user: string | null, ...children: BbNode[]): BbNode => ({ type: 'counterfeit', name, user, children });
+
+test('a quote with a name that is not an Act id is a counterfeit', () => {
+  assert.deepEqual(parse('[quote=Geno]hi[/quote]'), [fake('Geno', null, text('hi'))]);
+  assert.deepEqual(parse('[quote="Geno Wario"]hi[/quote]'), [fake('Geno Wario', null, text('hi'))]);
+  assert.deepEqual(parse('[quote=Geno Wario]hi[/quote]'), [fake('Geno Wario', null, text('hi'))]);
+  assert.deepEqual(parse('[quote=12]hi[/quote]'), [fake('12', null, text('hi'))]);
+  assert.deepEqual(parse(`[quote=${ACT}x]hi[/quote]`), [fake(`${ACT}x`, null, text('hi'))]);
+  assert.deepEqual(parse('[quote="><script>"]hi[/quote]'), [fake('><script>', null, text('hi'))]);
+});
+
+test('a counterfeit may name a character by id, with or without a typed name', () => {
+  assert.deepEqual(parse(`[quote=Geno user=${USER.toUpperCase()}]hi[/quote]`), [fake('Geno', USER, text('hi'))]);
+  assert.deepEqual(parse(`[quote="Geno Wario" user=${USER}]hi[/quote]`), [fake('Geno Wario', USER, text('hi'))]);
+  assert.deepEqual(parse(`[quote user=${USER}]hi[/quote]`), [fake(null, USER, text('hi'))]);
+  assert.deepEqual(parse('[quote]hi[/quote]'), [fake(null, null, text('hi'))]);
+});
+
+test('a name that is an Act id is a real quote, and user= is dropped', () => {
+  assert.deepEqual(parse(`[quote=${ACT} user=${USER}]hi[/quote]`), [{ type: 'quote', act: ACT, children: [text('hi')] }]);
+  assert.deepEqual(parse(`[quote="${ACT.toUpperCase()}" user=${USER}]hi[/quote]`), [{ type: 'quote', act: ACT, children: [text('hi')] }]);
+});
+
+test('a name over 80 characters, a malformed user= or an empty name makes the opener and its closer text', () => {
+  assert.deepEqual(parse(`[quote=${'n'.repeat(80)}]x[/quote]`), [fake('n'.repeat(80), null, text('x'))]);
+  assertLiteral([
+    `[quote=${'n'.repeat(81)}]x[/quote]`,
+    `[quote="${'n'.repeat(81)}"]x[/quote]`,
+    '[quote=Geno user=notauuid]x[/quote]',
+    '[quote user=notauuid]x[/quote]',
+    `[quote=${ACT} user=notauuid]x[/quote]`,
+    `[quote user=${USER}x]x[/quote]`,
+    '[quote=]x[/quote]',
+    '[quote="Geno"x]x[/quote]',
+  ]);
+});
+
+test('a counterfeit inside a counterfeit, and inside a real quote', () => {
+  assert.deepEqual(parse('[quote=A]x[quote=B]y[/quote]z[/quote]'), [fake('A', null, text('x'), fake('B', null, text('y')), text('z'))]);
+  assert.deepEqual(parse(`[quote=${ACT}][quote]y[/quote][/quote]`), [{ type: 'quote', act: ACT, children: [fake(null, null, text('y'))] }]);
+});
+
+test('counterfeits are capped by MAX_DEPTH like every tag', () => {
+  const tree = parse('[quote=A]'.repeat(MAX_DEPTH + 5) + 'core' + '[/quote]'.repeat(MAX_DEPTH + 5));
+  assert.ok(depthOf(tree) <= MAX_DEPTH);
+  assert.ok(allText(tree).includes('core'));
+  assert.equal(allText(tree).split('[quote=A]').length - 1, 5);
 });
 
 test('quotes survive nesting inside quotes and other tags', () => {
@@ -465,7 +511,8 @@ test('a color must be a whole hex value or name, with nothing around it', () => 
 });
 
 test('a quote id must be a whole UUID, with nothing around it', () => {
-  assertLiteral([`[quote=zz${ACT}]x[/quote]`, `[quote=${ACT}zz]x[/quote]`]);
+  assert.deepEqual(parse(`[quote=${ACT}zz]x[/quote]`), [fake(`${ACT}zz`, null, text('x'))]);
+  assert.deepEqual(parse(`[quote=zz${ACT}]x[/quote]`), [fake(`zz${ACT}`, null, text('x'))]);
 });
 
 test('a code or img tag with an attribute never reads its contents raw', () => {
