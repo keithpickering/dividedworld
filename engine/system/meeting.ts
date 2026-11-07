@@ -205,6 +205,17 @@ export interface PromptFacts {
   readonly groups?: { readonly conferred: readonly ConferredGroup[] };
 }
 
+/**
+ * Why no group move may name this character now, or null: capped (punished as often as staff may in the window) or held (a group move already in force or queued on it).
+ * The Boss's meeting and a Mod's call read the same two sets (`meeting_context().groups`, `mod_group_context()`), so both drop the same characters, the same way.
+ * `who` is a lowercase id.
+ */
+export function groupMoveBar(groups: { readonly capped: ReadonlySet<string>; readonly held: ReadonlySet<string> }, who: string): 'underPunishmentCap' | 'inNoGroupMove' | null {
+  if (groups.capped.has(who)) return 'underPunishmentCap';
+  if (groups.held.has(who)) return 'inNoGroupMove';
+  return null;
+}
+
 /** A group a move may confer, as the meeting is shown it: the key a move names, the name players read, and whether it punishes or favors. */
 export interface ConferredGroup {
   readonly key: string;
@@ -573,8 +584,9 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
       if (!tone) return drop(`${path}.params.group`, 'conferredGroup');
       const who = String(given['character']).toLowerCase();
       if (!UUID.test(who) || !c.isPublic(who)) return drop(`${path}.params.character`, 'publicCharacter');
-      if (c.groups.capped.has(who)) return drop(`${path}.params.character`, 'underPunishmentCap');
-      if (c.groups.held.has(who) || grouped.has(who)) return drop(`${path}.params.character`, 'inNoGroupMove');
+      const barred = groupMoveBar(c.groups, who);
+      if (barred) return drop(`${path}.params.character`, barred);
+      if (grouped.has(who)) return drop(`${path}.params.character`, 'inNoGroupMove');
       given['character'] = who;
       favor = tone === 'favor';
       if (given['board'] !== undefined) {

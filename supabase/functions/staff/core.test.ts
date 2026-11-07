@@ -38,7 +38,8 @@ interface World {
   modBots?: Record<string, unknown>;
   failOn?: Record<string, number | 'always'>;
   /** Visits the tick files while the model is thinking (the race). */
-  tickFiles?: string[];
+  tickFiles?: string[];  /** What `mod_group_context` answers. */
+  groups?: { conferred: { key: string; name: string; tone: string }[]; characters: { id: string; capped: boolean; held: boolean }[] };
 }
 const mod = (allowance: number, over: Partial<Standing> = {}): Standing => ({ office: 'mod', allowance, order: 'Crack down on bumping in Games.', beat: [{ id: GAMES, name: 'Games' }], ...over });
 
@@ -74,6 +75,7 @@ function fakeDb(w: World = {}) {
           const s = standing[String(args.staff)] ?? { office: null, allowance: 0, order: null, beat: [] };
           return { ...s, allowance: state.allowance.get(String(args.staff)) ?? 0 } as T;
         }
+        case 'mod_group_context': return (w.groups ?? { conferred: [{ key: 'trial', name: 'Trial Members', tone: 'punishment' }, { key: 'vip', name: 'VIPs', tone: 'favor' }], characters: [] }) as T;
         case 'rules_in_force': return [{ board: GAMES, number: 2, predicate: 'noDoublePost', param: null, band: 'moderate' }, { board: null, number: 1, predicate: 'noAllCaps', param: null, band: 'minor' }] as T;
         case 'staff_career': return { led: [], offices: [{ office: 'mod', since: '2026-10-01T00:00:00Z', until: null, cause: 'seed' }] } as T;
         case 'staff_memory_latest': return null as T;

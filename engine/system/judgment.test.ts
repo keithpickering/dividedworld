@@ -100,6 +100,66 @@ test('an expiry past the most days a Mod\'s rule lasts is clamped with a trim, a
   assert.deepEqual(part.trims, []);
 });
 
+/* ---- a Mod's conferGroup (member groups plan, Task 13) ---- */
+
+const WHO = '33333333-3333-4333-8333-333333333333';
+const HELD = '44444444-4444-4444-8444-444444444444';
+const CAPPED = '55555555-5555-4555-8555-555555555555';
+const groupCtx: ModMoveContext = {
+  ...ctx,
+  groups: { conferred: new Map([['trial', 'punishment'], ['vip', 'favor']]), capped: new Set([CAPPED]), held: new Set([HELD]) },
+};
+const conferral = { kind: 'conferGroup', params: { character: WHO, group: 'trial', board: GAMES }, expires_in_hours: 48, why: 'Needs a cooling off.' };
+
+test('a Mod\'s conferGroup passes, with the demand set to the apology whatever the model wrote', () => {
+  const out = repairModMove({ ...conferral, params: { ...conferral.params, character: WHO.toUpperCase(), board: GAMES.toUpperCase(), checkAt: null } }, groupCtx);
+  assert.equal(out.dropped, null);
+  assert.deepEqual(out.move, { ...conferral, demand: { kind: 'apologyAccepted', params: {} } });
+  assert.deepEqual(out.trims, [{ path: 'move.demand', predicate: 'setByCode(apologyAccepted)', before: 0, after: 1 }]);
+  const wrote = repairModMove({ ...conferral, demand: { kind: 'postsOnBoard', params: { board: GAMES, posts: 9 } } }, groupCtx);
+  assert.deepEqual(wrote.move?.demand, { kind: 'apologyAccepted', params: {} });
+  const right = repairModMove({ ...conferral, demand: { kind: 'apologyAccepted', params: {} } }, groupCtx);
+  assert.deepEqual(right.trims, [], 'a demand already the apology costs no trim');
+});
+
+test('a Mod\'s conferGroup is dropped for a key outside the catalog, a favor, no board, a board off the beat', () => {
+  const at = (params: Record<string, unknown>, c: ModMoveContext = groupCtx) => repairModMove({ ...conferral, params: { ...conferral.params, ...params } }, c);
+  assert.deepEqual(at({ group: 'nonesuch' }).dropped, { path: 'move.params.group', predicate: 'conferredGroup' });
+  assert.deepEqual(at({ group: 'vip' }).dropped, { path: 'move.params.group', predicate: 'punishmentOnly' });
+  assert.deepEqual(at({ board: undefined }).dropped, { path: 'move.params.board', predicate: 'required' });
+  assert.deepEqual(at({ board: OTHER }).dropped, { path: 'move.params.board', predicate: 'onBeat' });
+  assert.deepEqual(at({}, ctx).dropped, { path: 'move.params.group', predicate: 'conferredGroup' }, 'a call that was told no catalog confers nothing');
+  assert.equal(at({ board: OTHER }).move, null);
+});
+
+test('a Mod\'s conferGroup is dropped for a capped or a held character, and a check it was given is cut', () => {
+  const at = (character: string) => repairModMove({ ...conferral, params: { ...conferral.params, character } }, groupCtx);
+  assert.deepEqual(at(CAPPED).dropped, { path: 'move.params.character', predicate: 'underPunishmentCap' });
+  assert.deepEqual(at(HELD.toUpperCase()).dropped, { path: 'move.params.character', predicate: 'inNoGroupMove' });
+  const checked = repairModMove({ ...conferral, params: { ...conferral.params, checkAt: '2030-01-01T00:00:00Z' } }, groupCtx);
+  assert.equal(checked.dropped, null);
+  assert.equal('checkAt' in (checked.move?.params ?? {}), false);
+  assert.ok(checked.trims.some((t) => t.predicate === 'punishmentHasNoCheck'));
+});
+
+test('a Mod with no allowance has a conferGroup dropped for the allowance', () => {
+  assert.deepEqual(repairModMove(conferral, { ...groupCtx, allowance: 0 }).dropped, { path: 'move', predicate: 'allowance' });
+});
+
+test('the Mod\'s prompt lists the conferred punishments by key and name, with the rule, and the schema offers them', () => {
+  const conferred = [{ key: 'trial', name: 'Trial Members', tone: 'punishment' as const }, { key: 'vip', name: 'VIPs', tone: 'favor' as const }];
+  const text = filingPrompt(filing({ conferred })).system;
+  assert.match(text, /trial \(Trial Members\)/);
+  assert.ok(!text.includes('VIPs'), 'a favor is not a Mod\'s to confer, so it is not listed');
+  assert.match(text, /one board, on your beat, and an apology you will judge/);
+  assert.ok(!modPrompt(base).includes('conferGroup'), 'no catalog, no conferGroup in the prompt');
+  const schema = filingPrompt(filing({ conferred })).schema as any;
+  assert.deepEqual(schema.properties.move.properties.params.properties.group.enum, ['trial']);
+  assert.deepEqual(schema.properties.move.properties.kind.enum, ['setRule', 'conferGroup']);
+  const plain = filingPrompt(filing()).schema as any;
+  assert.deepEqual(plain.properties.move.properties.kind.enum, ['setRule']);
+});
+
 test('an expiry given as digits is read as a number, with a recorded trim', () => {
   const out = repairModMove({ ...good, expires_in_hours: ' 48 ' }, ctx);
   assert.equal(out.move?.expires_in_hours, 48);

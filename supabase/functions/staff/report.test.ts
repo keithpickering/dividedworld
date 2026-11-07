@@ -24,6 +24,8 @@ interface World {
   closedBeforeRefund?: boolean;
   failOn?: Record<string, 'always'>;
   closeSays?: Record<string, unknown>;
+  /** What `mod_group_context` answers. */
+  groups?: { conferred: { key: string; name: string; tone: string }[]; characters: { id: string; capped: boolean; held: boolean }[] };
 }
 
 function fakeDbs(w: World = {}) {
@@ -44,6 +46,7 @@ function fakeDbs(w: World = {}) {
         }
         case 'instance_settings':
           return { economy: dividedWorld.settings.economy, systemEnabled: w.enabled ?? true } as T;
+        case 'mod_group_context': return (w.groups ?? { conferred: [{ key: 'trial', name: 'Trial Members', tone: 'punishment' }, { key: 'vip', name: 'VIPs', tone: 'favor' }], characters: [] }) as T;
         case 'mod_standing': return (w.standing ?? { office: 'mod', allowance: 2, order: 'Crack down on bumping.', beat: [{ id: GAMES, name: 'Games' }] }) as T;
         case 'rules_in_force': return [{ board: GAMES, number: 2, predicate: 'noDoublePost', param: null, band: 'moderate' }, { board: null, number: 1, predicate: 'noAllCaps', param: null, band: 'minor' }] as T;
         case 'staff_career': return { led: [], offices: [{ office: 'mod', since: '2026-10-01T00:00:00Z', until: null, cause: 'seed' }] } as T;

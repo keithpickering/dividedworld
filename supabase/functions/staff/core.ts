@@ -54,6 +54,7 @@ import {
   type ModMoveContext,
   type RuleLine,
 } from '../../../engine/system/judgment.ts';
+import type { ConferredGroup } from '../../../engine/system/meeting.ts';
 import type { Memory } from '../../../engine/system/memory.ts';
 import type { Models } from '../../../engine/system/model.ts';
 import type { Trim } from '../../../engine/system/validate.ts';
@@ -84,6 +85,35 @@ interface DueVisit {
   readonly ends_at: string;
   readonly board: { readonly id: string; readonly name: string; readonly premise: string };
   readonly charges: readonly Charge[];
+}
+
+/** What a Mod's call is told about groups (`mod_group_context`): the catalog for the prompt, and the same catalog and the characters no group move may name for the repair. */
+export interface ModGroups {
+  readonly conferred: readonly ConferredGroup[];
+  readonly facts: NonNullable<ModMoveContext['groups']>;
+}
+
+/**
+ * The groups a Mod's call may confer, read for a call that has a move to make (an allowance and a beat); none otherwise, so a call with nothing to spend reads nothing.
+ * A read the database cannot answer costs the call its group move only: the Mod's setRule still stands.
+ */
+export async function readModGroups(db: Db, standing: Pick<Standing, 'allowance' | 'beat'>): Promise<ModGroups | null> {
+  if (!(standing.allowance >= 1) || standing.beat.length === 0) return null;
+  try {
+    const read = await db.rpc<{ conferred: ConferredGroup[]; characters: { id: string; capped: boolean; held: boolean }[] }>('mod_group_context', {});
+    const characters = read.characters ?? [];
+    return {
+      conferred: read.conferred ?? [],
+      facts: {
+        conferred: new Map((read.conferred ?? []).map((g) => [g.key, g.tone])),
+        capped: new Set(characters.filter((c) => c.capped).map((c) => c.id.toLowerCase())),
+        held: new Set(characters.filter((c) => c.held).map((c) => c.id.toLowerCase())),
+      },
+    };
+  } catch (e) {
+    if (stopsTheRun(e) || !(e instanceof DatabaseError)) throw e;
+    return null;
+  }
 }
 
 export interface Standing {
@@ -237,10 +267,15 @@ export async function runFilings(db: Db, models: Models, instance: Instance, slo
       const read = await db.rpc<ThreadRead>('pool_thread', { in_thread: v.thread, most: settings.pool.chatterThreadPosts, chars: settings.digestExcerptChars, also: v.post });
       const post = read.posts.find((p) => p.act === v.post) ?? { name: 'a character', body: '' };
       const charges = v.charges.map((c) => ({ rule: c.rule ?? 'a breach of the rules', band: c.band, cause: c.cause }));
-      const moveContext = (): ModMoveContext => ({ allowance: standing.allowance, beat: standing.beat.map((b) => b.id), ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours });
+      const groups = await readModGroups(db, standing);
+      const moveContext = (): ModMoveContext => ({
+        allowance: standing.allowance, beat: standing.beat.map((b) => b.id), ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours,
+        ...(groups ? { groups: groups.facts } : {}),
+      });
       const input = (): FilingInput => ({
         persona, order: standing.order, career: mod.career!, memory: mod.memory, notes: mod.notes, rules, allowance: standing.allowance, beat: standing.beat,
         ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours, names: (id) => mod.names[id] ?? 'a character',
+        ...(groups ? { conferred: groups.conferred } : {}),
         board: v.board, thread: { title: read.title, posts: read.posts.map((p) => ({ name: p.name, body: p.body })) }, post: { name: post.name, body: post.body }, charges,
         limits: { threadPosts: settings.pool.chatterThreadPosts, excerptChars: settings.digestExcerptChars, titleMaxLength: settings.titleMaxLength },
       });

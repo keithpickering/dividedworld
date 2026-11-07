@@ -35,7 +35,8 @@ interface World {
   modBots?: Record<string, unknown>;
   /** The posts whose patrol visit the database refuses at the cap. */
   capped?: string[];
-  failOn?: Record<string, 'always'>;
+  failOn?: Record<string, 'always'>;  /** What `mod_group_context` answers. */
+  groups?: { conferred: { key: string; name: string; tone: string }[]; characters: { id: string; capped: boolean; held: boolean }[] };
 }
 
 function fakeDb(w: World = {}) {
@@ -66,6 +67,7 @@ function fakeDb(w: World = {}) {
           return { id: next.id, meeting: 1, staff: next.staff, at: '2026-11-07T09:00:00.000Z' } as T;
         }
         case 'mod_standing': return (standing[String(args.staff)] ?? { office: null, allowance: 0, order: null, beat: [] }) as T;
+        case 'mod_group_context': return (w.groups ?? { conferred: [{ key: 'trial', name: 'Trial Members', tone: 'punishment' }, { key: 'vip', name: 'VIPs', tone: 'favor' }], characters: [] }) as T;
         case 'rules_in_force': return [{ board: GAMES, number: 2, predicate: 'noDoublePost', param: null, band: 'moderate' }, { board: null, number: 1, predicate: 'noAllCaps', param: null, band: 'minor' }] as T;
         case 'board_premises': return (args.boards as string[]).map((id) => ({ id, name: 'Games', premise: 'Talk about games.' })) as T;
         case 'staff_career': return { led: [], offices: [{ office: 'mod', since: '2026-10-01T00:00:00Z', until: null, cause: 'seed' }] } as T;
@@ -295,7 +297,7 @@ test('masks: the prompt holds no owner, class or reactor, and the run reads noth
   const c = m.chats[0]!;
   for (const text of [c.system, c.messages[0]!.content]) assert.ok(!/\bowner|\breactor|\bclass\b|\bclasses\b|\baccount\b|\bplayer behind/i.test(text), text.slice(0, 200));
   const allowed = new Set(['instance_settings', 'refund_stale_reports', 'refund_stale_appeals', 'judgment_load_today', 'claim_patrol', 'mod_standing', 'rules_in_force', 'board_premises', 'staff_career', 'staff_memory_latest',
-    'staff_memory_at', 'staff_notes_recent', 'pool_names', 'patrol_sample', 'record_patrol_call', 'patrol_record', 'start_visit', 'apply_mod_move']);
+    'staff_memory_at', 'staff_notes_recent', 'pool_names', 'patrol_sample', 'record_patrol_call', 'patrol_record', 'start_visit', 'apply_mod_move', 'mod_group_context']);
   assert.deepEqual([...new Set(d.calls.map((x) => x.fn))].filter((f) => !allowed.has(f)), [], 'a call outside the reviewed list');
   // No argument names an account, an owner or a character: posts and boards only.
   for (const call of d.calls) assert.ok(!/owner|account|reactor/i.test(JSON.stringify(call.args)), call.fn);
@@ -335,4 +337,39 @@ test('the patrol run beside the filings: its own failure is answered as failed, 
     const wire: Db = { async rpc<T>(fn: string): Promise<T> { if (fn === 'instance_settings') throw new TransportError('no answer'); throw new Error('x'); } };
     await assert.rejects(runPatrolsAfterFilings(wire, m, dividedWorld, () => NOW, NOW, 'slot'), TransportError);
   } finally { console.error = quiet; }
+});
+
+/* ---- a Mod's patrol confers a group (member groups plan, Task 13) ---- */
+
+const WHO = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd1';
+const confer = (over: Record<string, unknown> = {}) => ({ kind: 'conferGroup', params: { character: WHO, group: 'trial', board: GAMES }, expires_in_hours: 48, why: 'Needs a cooling off.', ...over });
+
+test('a patrol\'s conferGroup is told the catalog, queued with the apology demand after the first visit, and spends the allowance as the database does', async () => {
+  const d = fakeDb({ standing: { [MON]: mod(2) } });
+  const m = fakeModels(() => ({ findings: [find(P1)], move: confer({ demand: { kind: 'postsOnBoard', params: {} } }) }));
+  await run(d, m);
+  assert.equal(d.count('mod_group_context'), 1);
+  assert.match(m.chats[0]!.system, /trial \(Trial Members\)/);
+  assert.ok(!m.chats[0]!.system.includes('VIPs'));
+  assert.equal(d.state.moves.length, 1);
+  assert.deepEqual([d.state.moves[0]!.staff, d.state.moves[0]!.cause], [MON, V(1)]);
+  assert.deepEqual(d.state.moves[0]!.move, { kind: 'conferGroup', params: { character: WHO, group: 'trial', board: GAMES }, expires_in_hours: 48, why: 'Needs a cooling off.', demand: { kind: 'apologyAccepted', params: {} } });
+});
+
+test('a patrol with no allowance reads no groups and queues no move, the conferGroup dropped for the allowance', async () => {
+  const d = fakeDb({ standing: { [MON]: mod(0) } });
+  const m = fakeModels(() => ({ findings: [find(P1)], move: confer() }));
+  await run(d, m);
+  assert.equal(d.count('mod_group_context'), 0);
+  assert.equal(d.state.moves.length, 0);
+  assert.deepEqual(d.state.records[0]!.record.dropped, [{ path: 'move', predicate: 'allowance' }]);
+});
+
+test('a patrol\'s conferGroup on a capped or held character is dropped, and its visit still starts', async () => {
+  const d = fakeDb({ standing: { [MON]: mod(2) }, groups: { conferred: [{ key: 'trial', name: 'Trial Members', tone: 'punishment' }], characters: [{ id: WHO.toUpperCase(), capped: true, held: false }] } });
+  const m = fakeModels(() => ({ findings: [find(P1)], move: confer() }));
+  await run(d, m);
+  assert.equal(d.state.visits.length, 1);
+  assert.equal(d.state.moves.length, 0);
+  assert.deepEqual(d.state.records[0]!.record.dropped, [{ path: 'move.params.character', predicate: 'underPunishmentCap' }]);
 });

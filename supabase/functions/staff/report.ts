@@ -33,7 +33,7 @@ import type { Trim } from '../../../engine/system/validate.ts';
 import { DatabaseError, TransportError, sessionRefused, type Db } from '../_shared/rpc.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { AnswerRejected } from '../_shared/models/index.ts';
-import { learnMod, said } from './core.ts';
+import { learnMod, readModGroups, said } from './core.ts';
 import { playerDoor, type DoorAnswer, type DoorDeps } from './door.ts';
 
 export type ReportAnswer = DoorAnswer;
@@ -120,8 +120,13 @@ async function judge(db: Db, getModels: () => Promise<Models>, instance: Instanc
   const rules = await db.rpc<RuleLine[]>('rules_in_force', { board: opened.board.id });
   const read = await db.rpc<ThreadRead>('pool_thread', { in_thread: opened.thread, most: settings.pool.chatterThreadPosts, chars: settings.digestExcerptChars, also: opened.post });
   const post = read.posts.find((p) => p.act === opened.post) ?? { name: 'a character', body: '' };
-  const context = { allowance: standing.allowance, beat: standing.beat.map((b) => b.id), ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours, rules };
+  const groups = await readModGroups(db, standing);
+  const context = {
+    allowance: standing.allowance, beat: standing.beat.map((b) => b.id), ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours, rules,
+    ...(groups ? { groups: groups.facts } : {}),
+  };
   const frame = reportPrompt({
+    ...(groups ? { conferred: groups.conferred } : {}),
     persona: mod.persona, order: standing.order, career: mod.career, memory: mod.memory, notes: mod.notes, rules, allowance: standing.allowance, beat: standing.beat,
     ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours, names: (id) => mod.names[id] ?? 'a character',
     board: opened.board, thread: { title: read.title, posts: read.posts.map((p) => ({ name: p.name, body: p.body })) }, post: { name: post.name, body: post.body },
