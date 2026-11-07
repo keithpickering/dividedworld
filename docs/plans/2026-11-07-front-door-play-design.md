@@ -64,6 +64,13 @@ owner's to approve in review.
 - **The layers.** `StagedCtx` and the stores are the engine's. The cast, posts, plays and counts are the instance's
   (`FrontDoorUi`), which gains an optional `reactions` per play.
 
+## Feelin' Fab and tilt
+
+**Checked, nothing to change.** The owner asked whether the Fab's shine would ask a visitor's phone for its tilt. It does not.
+The tilt choice starts off (`engine/ui/shine/tilt.ts`) and only an account's preferences turn it on. The browser is asked only
+from a tap: the shine tip's action or the Settings row. A visitor's tips store holds no account, so the shine tip never shows.
+On a visitor's phone, the shine follows scrolling and the pointer.
+
 ## Open
 
 None.
