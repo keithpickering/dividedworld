@@ -172,6 +172,12 @@
   position: relative;
 }
 
+.kb-glass-menu-rule {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
 .kb-glass-menu-underline {
   position: absolute;
   inset: auto 0 0 0;

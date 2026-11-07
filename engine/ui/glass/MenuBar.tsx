@@ -182,8 +182,12 @@ export function MenuBar() {
             {shown.map((t) => (
               <li key={t.label}>
                 <Link to={t.to} className="kb-glass-menu-tab kb-glass-skew" aria-current={t.current(path) ? 'page' : undefined}><span className="kb-glass-upright">{t.label}</span></Link>
-                {/* One element for the whole bar: it glides to the tab chosen (the layoutId), and under Off it is simply there. It sits in the item, not the skewed link, so its box is measured straight. */}
-                {t.current(path) && <motion.span layoutId="kb-glass-menu-underline" className="kb-glass-menu-underline" aria-hidden="true" transition={feel ? (feel.spring ? { type: 'spring', stiffness: feel.spring.stiffness, damping: feel.spring.damping } : { duration: feel.screen / 1000, ease: bezier(feel.ease) }) : { duration: 0 }} />}
+                {/* One element for the whole bar: it glides to the tab chosen (the layoutId), and under Off it is simply there. It sits in the item, not the skewed link, so its box is measured straight; its holder wears the link's skew, so the rule is drawn as the boards draw it, 3px along the foot of the skewed tab. */}
+                {t.current(path) && (
+                  <span className="kb-glass-menu-rule kb-glass-skew" aria-hidden="true">
+                    <motion.span layoutId="kb-glass-menu-underline" className="kb-glass-menu-underline" transition={feel ? (feel.spring ? { type: 'spring', stiffness: feel.spring.stiffness, damping: feel.spring.damping } : { duration: feel.screen / 1000, ease: bezier(feel.ease) }) : { duration: 0 }} />
+                  </span>
+                )}
               </li>
             ))}
           </ul>
