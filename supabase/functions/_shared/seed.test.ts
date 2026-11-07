@@ -38,8 +38,8 @@ test('the seed carries the groups: the ladder with its rung indexes and conditio
   const ladder = groups.filter((g) => g.source === 'ladder');
   assert.deepEqual(ladder.map((g) => [g.key, 'rung' in g ? g.rung : null, 'condition' in g ? g.condition : null]),
     instance.groups.ladder.map((r, i) => [r.key, i, r.when.kind]), 'lowest first, each rung numbered by its place');
-  assert.deepEqual(groups.find((g) => g.key === 'regulars'), { key: 'regulars', name: 'Regulars', color: '#2f6fb0', stripe: false, source: 'ladder', rung: 1, condition: 'posts', atLeast: 100 });
-  assert.deepEqual(groups.find((g) => g.key === 'trialMembers'), { key: 'trialMembers', name: 'Trial Members', color: '#d2691e', stripe: true, source: 'conferred', tone: 'punishment' });
+  assert.deepEqual(groups.find((g) => g.key === 'regulars'), { key: 'regulars', name: 'Regulars', badge: 'Regular', color: '#2f6fb0', stripe: false, source: 'ladder', rung: 1, condition: 'posts', atLeast: 100 });
+  assert.deepEqual(groups.find((g) => g.key === 'trialMembers'), { key: 'trialMembers', name: 'Trial Members', badge: 'Trial Member', color: '#d2691e', stripe: true, source: 'conferred', tone: 'punishment' });
   assert.equal(groups.length, instance.groups.ladder.length + instance.groups.conferred.length);
 });
 

@@ -20,7 +20,7 @@ $$;
 
 create function pg_temp.groups() returns jsonb language sql as $$
   select jsonb_build_array(
-    jsonb_build_object('key', 'members', 'name', 'Members', 'color', '#7a7a7a', 'source', 'ladder', 'rung', 0, 'condition', 'default'),
+    jsonb_build_object('key', 'members', 'name', 'Members', 'badge', 'Member', 'color', '#7a7a7a', 'source', 'ladder', 'rung', 0, 'condition', 'default'),
     jsonb_build_object('key', 'regulars', 'name', 'Regulars', 'color', '#2f6fb0', 'source', 'ladder', 'rung', 1, 'condition', 'posts', 'atLeast', 100),
     jsonb_build_object('key', 'oldGuard', 'name', 'Old Guard', 'color', '#9c6b30', 'source', 'ladder', 'rung', 2, 'condition', 'seasons', 'atLeast', 2),
     jsonb_build_object('key', 'personalityCores', 'name', 'Personality Cores', 'color', '#d4a017', 'source', 'ladder', 'rung', 3, 'condition', 'staff'),
@@ -199,9 +199,10 @@ begin
   perform tests.become(ann);
   select settings -> 'groups' into seen from screen_settings;
   if jsonb_array_length(seen) is distinct from 6 then raise exception 'screen_settings carries all six groups: %', seen; end if;
-  if seen -> 0 is distinct from jsonb_build_object('key', 'members', 'name', 'Members', 'color', '#7a7a7a', 'stripe', false, 'staff', false) then
+  if seen -> 0 is distinct from jsonb_build_object('key', 'members', 'name', 'Members', 'badge', 'Member', 'color', '#7a7a7a', 'stripe', false, 'staff', false) then
     raise exception 'the lowest rung comes first with its look: %', seen -> 0;
   end if;
+  if seen -> 1 ? 'badge' then raise exception 'a group with no badge carries none: %', seen -> 1; end if;
   if (seen -> 5 ->> 'key') is distinct from 'trialMembers' or (seen -> 5 -> 'stripe') is distinct from 'true'::jsonb then raise exception 'conferred groups follow the ladder, by key: %', seen; end if;
   if (select count(*) from jsonb_array_elements(seen) g where (g ->> 'staff')::boolean) is distinct from 1 or (select g ->> 'key' from jsonb_array_elements(seen) g where (g ->> 'staff')::boolean) is distinct from 'personalityCores' then raise exception 'screen_settings marks the staff rung, and only it: %', seen; end if;
   if pg_temp.refusal($q$select * from group_kinds$q$) is null then raise exception 'a signed-in player read group_kinds'; end if;

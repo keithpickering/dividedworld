@@ -27,7 +27,7 @@ const settings: Settings = {
 };
 
 /* What screen_settings's groups holds (0116) for the test instance: the ladder lowest first, then the conferred groups. */
-const screenGroups = [...testGroups.ladder.map((g) => ({ key: g.key, name: g.name, color: g.color, stripe: g.stripe === true, staff: g.when.kind === 'staff' })), ...testGroups.conferred.map((g) => ({ key: g.key, name: g.name, color: g.color, stripe: g.stripe === true, staff: false }))];
+const screenGroups = [...testGroups.ladder.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: g.when.kind === 'staff' })), ...testGroups.conferred.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: false }))];
 
 const earn = () => [];
 

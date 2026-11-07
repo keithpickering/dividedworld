@@ -7,7 +7,15 @@
  */
 
 /** How a group looks wherever it is shown: a stable key, a name, a #rrggbb color and an optional stripe. */
-export interface GroupLook { readonly key: string; readonly name: string; readonly color: string; readonly stripe?: boolean }
+export interface GroupLook {
+  readonly key: string;
+  /** The group's name, plural ("Regulars"): the words that name the group. */
+  readonly name: string;
+  /** What the rank bar says, singular ("Regular"): a member holds one. The bar falls back to `name` when absent. */
+  readonly badge?: string;
+  readonly color: string;
+  readonly stripe?: boolean;
+}
 /** What a character must hold to be in a rung. */
 export type Condition = { readonly kind: 'default' } | { readonly kind: 'posts'; readonly atLeast: number } | { readonly kind: 'seasons'; readonly atLeast: number } | { readonly kind: 'staff' };
 /** A group earned by climbing: its look and the condition that puts a character in it. */
@@ -39,6 +47,9 @@ export function groupsProblems(content: GroupsContent): string[] {
     if (typeof g.key !== 'string' || g.key === '') out.push(`a group has an empty key (named ${JSON.stringify(g.name)})`);
     if (!COLOR.test(g.color)) out.push(`group "${g.key}" has color ${JSON.stringify(g.color)}; a color is #rrggbb`);
     if (typeof g.name !== 'string' || g.name.length < 1 || g.name.length > 32) out.push(`group "${g.key}" has a name of ${typeof g.name === 'string' ? g.name.length : 0} characters; a name is 1 to 32 characters`);
+  }
+  for (const g of [...ladder, ...conferred]) {
+    if (g.badge !== undefined && (typeof g.badge !== 'string' || g.badge.length < 1 || g.badge.length > 32)) out.push(`group "${g.key}" has a badge of ${typeof g.badge === 'string' ? g.badge.length : 0} characters; a badge is 1 to 32 characters`);
   }
   for (const c of conferred) {
     if (c.tone !== 'punishment' && c.tone !== 'favor') out.push(`conferred group "${c.key}" has tone ${JSON.stringify(c.tone)}; a tone is punishment or favor`);

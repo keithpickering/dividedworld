@@ -29,6 +29,11 @@ test('the condition kinds are the four SQL has a case for', () => {
 
 test('whole content has no problems', () => assert.deepEqual(groupsProblems(good), []));
 
+test('a badge of 1 to 32 characters, or none, is whole', () => {
+  assert.deepEqual(groupsProblems({ ...good, ladder: [{ ...ladder[0]!, badge: 'x'.repeat(32) }, ...ladder.slice(1)] }), []);
+  assert.deepEqual(groupsProblems({ ...good, ladder: [{ ...ladder[0]!, badge: 'x' }, ...ladder.slice(1)] }), []);
+});
+
 test('each poison is named in words', () => {
   const [base, posty, old, crew] = ladder;
   const poisons: [string, GroupsContent, RegExp][] = [
@@ -39,6 +44,8 @@ test('each poison is named in words', () => {
     ['a duplicate key', { ...good, conferred: [{ key: 'old', name: 'X', color: '#111111', tone: 'favor' }] }, /key "old".*twice/],
     ['a short color', { ...good, ladder: [{ ...base!, color: '#fff' }, posty!, old!, crew!] }, /color.*#fff/],
     ['a 33-character name', { ...good, ladder: [{ ...base!, name: 'x'.repeat(33) }, posty!, old!, crew!] }, /name of 33 characters/],
+    ['a 33-character badge', { ...good, ladder: [{ ...base!, badge: 'x'.repeat(33) }, posty!, old!, crew!] }, /group "base" has a badge of 33 characters/],
+    ['an empty badge', { ...good, conferred: [{ key: 'trial', name: 'Trial', badge: '', color: '#d2691e', tone: 'punishment' }] }, /group "trial" has a badge of 0 characters/],
     ['an unknown condition kind', { ...good, ladder: [base!, { ...posty!, when: { kind: 'sparkly' } as never }, old!, crew!] }, /condition kind "sparkly"/],
     ['a fractional atLeast', { ...good, ladder: [base!, { ...posty!, when: { kind: 'posts', atLeast: 1.5 } }, old!, crew!] }, /atLeast 1.5/],
     ['an empty ladder', { ...good, ladder: [] }, /0 default rungs/],

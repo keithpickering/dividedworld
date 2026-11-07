@@ -86,7 +86,7 @@ export interface ScreenSettings {
    * character's `group` names, its name, a #rrggbb color and whether it is drawn striped. Public. The staff rung is a group like any other: a
    * staff character's `group` names it, and its name is the one the postbit's bar, the profile's Group row and the presence chip show.
    */
-  readonly groups: readonly { readonly key: string; readonly name: string; readonly color: string; readonly stripe: boolean; /** True for the ladder's staff rung (`group_kinds.condition` = 'staff'), the group every staff character is in. */ readonly staff: boolean }[];
+  readonly groups: readonly { readonly key: string; readonly name: string; /** What the rank bar says, singular; absent where the group has none and the bar says `name`. */ readonly badge?: string; readonly color: string; readonly stripe: boolean; /** True for the ladder's staff rung (`group_kinds.condition` = 'staff'), the group every staff character is in. */ readonly staff: boolean }[];
   /** The alert kinds that toast for a player who has not chosen (`Settings.toastDefaults`). */
   readonly toastDefaults: readonly AlertKind[];
   /** How long a toast stays, in milliseconds, where a world sets it (the boards fixture holds its toasts); absent, the HUD's six seconds. */

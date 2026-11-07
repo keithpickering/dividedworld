@@ -23,6 +23,8 @@
 create table group_kinds (
   key text primary key check (key ~ '^[A-Za-z][A-Za-z0-9]{0,39}$'),
   name text not null check (char_length(name) between 1 and 32),
+  -- What the rank bar says, singular ("Regular" for the group Regulars); null where the bar says the name.
+  badge text check (badge is null or char_length(badge) between 1 and 32),
   color text not null check (color ~ '^#[0-9a-fA-F]{6}$'),
   stripe boolean not null default false,
   source text not null check (source in ('ladder', 'conferred')),
@@ -109,7 +111,7 @@ create or replace view my_characters as
   left join pending_turns p on p.character = c.id
   where c.owner = auth.uid();
 
--- screen_settings (0084), also carrying `groups`: every group's key, name, color and stripe, the ladder lowest first and then the conferred ones. Public.
+-- screen_settings (0084), also carrying `groups`: every group's key, name, badge (where it has one), color and stripe, the ladder lowest first and then the conferred ones. Public.
 create or replace view screen_settings as
   select coalesce(jsonb_object_agg(s.key, s.value), '{}'::jsonb)
          || jsonb_build_object('cardEconomy', (
@@ -118,7 +120,7 @@ create or replace view screen_settings as
               where x.key = 'economy' and jsonb_typeof(x.value) = 'object'
                 and e.key in (select k.price_setting from card_kinds k union select unnest(k.reads) from card_kinds k)))
          || jsonb_build_object('groups', (
-              select coalesce(jsonb_agg(jsonb_build_object('key', g.key, 'name', g.name, 'color', g.color, 'stripe', g.stripe)
+              select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object('key', g.key, 'name', g.name, 'badge', g.badge, 'color', g.color, 'stripe', g.stripe))
                                         order by g.source = 'conferred', coalesce(g.rung, 0), g.key), '[]'::jsonb) from group_kinds g)) as settings
   from settings s
   where s.key in ('postsPerPage', 'hotReplies', 'editGrace', 'reactionCap', 'charactersPerPlayer', 'invitesPerPlayer', 'inviteLifetime',
@@ -456,11 +458,11 @@ begin
     where not exists (select 1 from jsonb_array_elements(payload -> 'groups') e where e ->> 'key' = k.key)
       and not exists (select 1 from acts a where a.kind = 'move' and a.payload ->> 'kind' = 'conferGroup' and a.payload #>> '{params,group}' = k.key)
       and not exists (select 1 from queued_moves q where q.kind = 'conferGroup' and q.params ->> 'group' = k.key);
-    insert into group_kinds (key, name, color, stripe, source, rung, condition, at_least, tone)
-    select e ->> 'key', e ->> 'name', e ->> 'color', coalesce((e ->> 'stripe')::boolean, false), e ->> 'source', (e ->> 'rung')::integer,
+    insert into group_kinds (key, name, badge, color, stripe, source, rung, condition, at_least, tone)
+    select e ->> 'key', e ->> 'name', e ->> 'badge', e ->> 'color', coalesce((e ->> 'stripe')::boolean, false), e ->> 'source', (e ->> 'rung')::integer,
       e ->> 'condition', (e ->> 'atLeast')::integer, e ->> 'tone'
     from jsonb_array_elements(payload -> 'groups') e
-    on conflict (key) do update set name = excluded.name, color = excluded.color, stripe = excluded.stripe, source = excluded.source, rung = excluded.rung,
+    on conflict (key) do update set name = excluded.name, badge = excluded.badge, color = excluded.color, stripe = excluded.stripe, source = excluded.source, rung = excluded.rung,
       condition = excluded.condition, at_least = excluded.at_least, tone = excluded.tone;
   end if;
   -- A card's play, rarity, trap, ward and time up (0054), and its reaches (0055), checked as instanceProblems checks them, each

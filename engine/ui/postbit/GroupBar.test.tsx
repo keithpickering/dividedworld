@@ -23,6 +23,15 @@ describe('the group bar', () => {
     expect(bar).not.toHaveAttribute('data-kb-stripe');
   });
 
+  test('says the singular badge when the group has one, and the name when it has none', () => {
+    const { unmount } = renderInWorld(<GroupBar look={{ ...look, badge: 'Regular' }} />);
+    expect(screen.getByText('Regular').className).toContain('kb-group-bar');
+    expect(screen.queryByText('Regulars')).toBeNull();
+    unmount();
+    renderInWorld(<GroupBar look={look} />);
+    expect(screen.getByText('Regulars')).toBeInTheDocument();
+  });
+
   test('a striped group says so, for the stylesheet to draw the stripes', () => {
     renderInWorld(<GroupBar look={{ ...look, key: 'trialMembers', name: 'Trial Members', stripe: true }} />);
     expect(screen.getByText('Trial Members')).toHaveAttribute('data-kb-stripe', '');

@@ -18,9 +18,9 @@ const person = (over: Partial<PostbitPerson> = {}, c: Partial<Character> = {}): 
 const show = (p: PostbitPerson, layout: 'side' | 'stacked' = 'side') => renderInWorld(<Postbit person={p} layout={layout} />, { settings: { groups: GROUPS } });
 /* The groups the screens hold (screen_settings.groups): the ladder lowest first, then the groups a move confers. */
 const GROUPS = [
-  { key: 'members', name: 'Members', color: '#7a7a7a', stripe: false, staff: false },
+  { key: 'members', name: 'Members', badge: 'Member', color: '#7a7a7a', stripe: false, staff: false },
   { key: 'cores', name: 'Test Cores', color: '#d4a017', stripe: false, staff: true },
-  { key: 'trialMembers', name: 'Trial Members', color: '#d2691e', stripe: true, staff: false },
+  { key: 'trialMembers', name: 'Trial Members', badge: 'Trial Member', color: '#d2691e', stripe: true, staff: false },
 ];
 /** Whether `a` comes before `b` in the document. */
 const before = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
@@ -303,7 +303,7 @@ describe('the group bar on the postbit', () => {
   test('a member shows its group\'s bar under the name and over the title, the pips and the warn meter', () => {
     show(person({}, { group: 'members', warnPoints: 4 }));
     const bit = screen.getByRole('group', { name: 'About Pipewrench' });
-    const bar = within(bit).getByText('Members');
+    const bar = within(bit).getByText('Member');
     expect(bar.className).toContain('kb-group-bar');
     expect(bar).not.toHaveAttribute('data-kb-stripe');
     expect(before(within(bit).getByRole('link', { name: 'Pipewrench' }), bar)).toBe(true);
@@ -316,7 +316,8 @@ describe('the group bar on the postbit', () => {
   test('a Trial Member\'s bar is striped, and BANNED sits under it with the title', () => {
     show(person({}, { group: 'trialMembers', bannedUntil: '2099-01-01T00:00:00Z' }));
     const bit = screen.getByRole('group', { name: 'About Pipewrench' });
-    const bar = within(bit).getByText('Trial Members');
+    const bar = within(bit).getByText('Trial Member');
+    expect(within(bit).queryByText('Trial Members')).toBeNull();
     expect(bar).toHaveAttribute('data-kb-stripe', '');
     expect(before(bar, within(bit).getByText('BANNED'))).toBe(true);
   });
