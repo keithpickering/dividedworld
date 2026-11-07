@@ -144,6 +144,8 @@ for (const feel of ['smooth', 'snappy'] as const) {
     await page.goto('/b/general');
     await page.evaluate((f) => { document.documentElement.setAttribute('data-kb-motion', 'full'); document.documentElement.setAttribute('data-kb-motion-feel', f); }, feel);
     await page.getByRole('region', { name: 'Game HUD' }).getByRole('button', { name: 'Menu' }).click();
+    /* The world changes when the load lands, not at the press: wait for the glass, then for the board to have left. */
+    await expect(page.locator('[data-kb-world="glass"]')).toBeAttached();
     await expect(page.locator('.kb-world')).toHaveCount(1);
     for (const sel of ['.kb-world', '.kb-glass-screen']) {
       await expect.poll(() => page.locator(sel).evaluate((el) => { const c = getComputedStyle(el); return [c.filter, c.transform, c.clipPath].join('|'); })).toBe('none|none|none');
@@ -158,6 +160,8 @@ for (const feel of ['smooth', 'snappy'] as const) {
     await page.goto('/b/general');
     await page.evaluate((f) => { document.documentElement.setAttribute('data-kb-motion', 'full'); document.documentElement.setAttribute('data-kb-motion-feel', f); }, feel);
     await page.getByRole('region', { name: 'Game HUD' }).getByRole('button', { name: 'Menu' }).click();
+    /* The world changes when the load lands, not at the press: wait for the glass, then for the board to have left. */
+    await expect(page.locator('[data-kb-world="glass"]')).toBeAttached();
     await expect(page.locator('.kb-world')).toHaveCount(1);
     await expect.poll(() => page.locator('.kb-world').evaluate((el) => getComputedStyle(el).clipPath)).toBe('none');
     await page.evaluate(() => {
@@ -171,8 +175,11 @@ for (const feel of ['smooth', 'snappy'] as const) {
       requestAnimationFrame(tick);
     });
     await page.getByRole('link', { name: 'Back to the board' }).click();
-    await expect(page.locator('.kb-world')).toHaveCount(1);
-    const clips = await page.evaluate(() => (globalThis as unknown as { __clips: string[] }).__clips);
+    /* The glass has left: the exit ran, and the clips were read while it did (it starts when the board's load lands, not at the press). */
+    await expect(page.locator('[data-kb-world="glass"]')).toHaveCount(0);
+    const sampled = await page.evaluate(() => (globalThis as unknown as { __clips: string[] }).__clips);
+    /* The frame that marks the exit may be drawn before Motion's first write of the clip (the open shape, as `none` is); the clip never stays `none`. */
+    const clips = sampled.slice(sampled.findIndex((c) => c !== 'none'));
     expect(clips.length).toBeGreaterThan(2);
     expect(clips).not.toContain('none');
     expect(new Set(clips).size).toBeGreaterThan(2);
