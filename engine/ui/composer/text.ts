@@ -65,7 +65,11 @@ export function applyTool(tool: Tool, text: string, start: number, end: number):
  */
 export function quoteSomeone(text: string, start: number, end: number, character: { readonly id: string; readonly name: string }): Edited {
   const name = /[\s=]/u.test(character.name) && !character.name.includes('"') ? `"${character.name}"` : character.name;
-  return wrap(text, start, end, `[quote=${name} user=${character.id}]`, '[/quote]');
+  const named = `[quote=${name} user=${character.id}]`;
+  /* A name the parser would not read back as exactly this counterfeit (a `]` ends the tag early, a `[` or a lone leading `"` makes the opener text, an Act id reads as a real quote) is left out: the head names the character from the id. */
+  const back = parse(`${named}x[/quote]`);
+  const whole = back.length === 1 && back[0]!.type === 'counterfeit' && back[0]!.name === character.name && back[0]!.user === character.id;
+  return wrap(text, start, end, whole ? named : `[quote user=${character.id}]`, '[/quote]');
 }
 
 /**

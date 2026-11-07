@@ -84,6 +84,15 @@ describe('quoteSomeone', () => {
     const done = quoteSomeone('words', 0, 5, { id: ID, name });
     expect(parse(done.text)).toEqual([expect.objectContaining({ type: 'counterfeit', name, user: ID })]);
   });
+  const UUID = '22222222-2222-4222-8222-222222222222';
+  test.each(['Bob]', 'Mr. [Redacted]', '"Bob" Smith', '[x', UUID, 'a]b c'])('a name that cannot round-trip (%s) is left out, and the counterfeit still frames the character', (name) => {
+    const done = quoteSomeone('words', 0, 5, { id: ID, name });
+    const nodes = parse(done.text);
+    expect(nodes).toEqual([expect.objectContaining({ type: 'counterfeit', user: ID, children: [{ type: 'text', text: 'words' }] })]);
+    const q = nodes[0] as { name: string | null };
+    expect(q.name === null || q.name === name).toBe(true);
+    expect(done.text.slice(done.start, done.end)).toBe('words');
+  });
   test('quotes a name only when it holds a space or an equals sign', () => {
     expect(quoteSomeone('x', 0, 1, { id: ID, name: 'Ana' }).text).toContain('[quote=Ana user=');
     expect(quoteSomeone('x', 0, 1, { id: ID, name: 'Ana Bo' }).text).toContain('[quote="Ana Bo" user=');

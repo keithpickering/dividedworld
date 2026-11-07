@@ -56,6 +56,14 @@ function embeddable(pasted: string): { readonly url: string; readonly kind: 'vid
 /** A pasted address still where it landed: `at` is its offset in the box. */
 interface Offer { readonly url: string; readonly kind: 'video' | 'image'; readonly at: number }
 
+/** The Mac keeps Control for its own text editing; its shortcut key is Command. Read when a key is pressed, never at load. */
+const onMac = () => {
+  try {
+    const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+    return /mac|iphone|ipad/iu.test(nav.userAgentData?.platform ?? navigator.platform ?? '');
+  } catch { return false; }
+};
+
 const SHORTCUTS: Record<string, Tool> = { b: 'bold', i: 'italic', u: 'underline', k: 'link' };
 
 export function Editor({ label, value, onChange, max, onQuote, onSubmit, describedBy, submitVerb = 'sends', note, autoFocus, children, ref }: EditorProps) {
@@ -129,8 +137,12 @@ export function Editor({ label, value, onChange, max, onQuote, onSubmit, describ
     chosen.current = character;
     setSomeone(null);
   };
+  /* True from the dialog opening until its close has been dealt with, so a mount (which also runs the effect below) returns focus to nobody. */
+  const wasOpen = useRef(false);
   useEffect(() => {
     if (someone !== null) return;
+    if (!wasOpen.current) return;
+    wasOpen.current = false;
     const el = box.current;
     if (!el) return;
     const character = chosen.current;
@@ -150,6 +162,7 @@ export function Editor({ label, value, onChange, max, onQuote, onSubmit, describ
   const openSomeone = () => {
     const el = box.current;
     picked.current = { start: el?.selectionStart ?? 0, end: el?.selectionEnd ?? 0 };
+    wasOpen.current = true;
     setSomeone(picked.current);
   };
 
@@ -158,6 +171,8 @@ export function Editor({ label, value, onChange, max, onQuote, onSubmit, describ
     const found = embeddable(text);
     if (!found) { setOffer(null); return; }
     pasting.current = true;
+    /* A paste that fires no change (blocked or cut short) must not swallow the next real edit. */
+    setTimeout(() => { pasting.current = false; }, 0);
     setOffer({ ...found, at: e.currentTarget.selectionStart + text.indexOf(found.url) });
   };
   const embed = () => {
@@ -172,7 +187,9 @@ export function Editor({ label, value, onChange, max, onQuote, onSubmit, describ
   const keep = () => { setOffer(null); box.current?.focus(); };
 
   const keys = (e: KeyboardEvent) => {
-    const shortcut = (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey ? SHORTCUTS[e.key.toLowerCase()] : undefined;
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+    const mod = onMac() ? e.metaKey : e.ctrlKey || e.metaKey;
+    const shortcut = mod && !e.altKey && !e.shiftKey ? SHORTCUTS[e.key.toLowerCase()] : undefined;
     if (shortcut) { e.preventDefault(); tool(shortcut); return; }
     if (onSubmit && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); onSubmit(); }
   };

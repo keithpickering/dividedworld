@@ -1,7 +1,8 @@
-import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { axeViolations, describeViolations } from '../a11y.ts';
+import { Editor } from './Editor.tsx';
 import { openThread, replyBox, threadWorld } from './support.tsx';
 
 beforeEach(() => {
@@ -581,6 +582,61 @@ describe('the new tools, the shortcuts and the paste offer', () => {
       await screen.findByText('Embed this video?');
       await userEvent.type(box, 'x', { initialSelectionStart: 0, initialSelectionEnd: 0 });
       expect(offer()).toBeNull();
+    });
+  });
+});
+
+describe('the Editor on its own', () => {
+  const mount = () => render(<><button type="button">before</button><Editor label="Box" value="hello" onChange={() => {}} max={100} /></>);
+
+  test('mounting leaves focus where it was and the caret untouched', async () => {
+    const view = render(<button type="button">before</button>);
+    const before = screen.getByRole('button', { name: 'before' });
+    before.focus();
+    view.rerender(<><button type="button">before</button><Editor label="Box" value="hello" onChange={() => {}} max={100} /></>);
+    await act(async () => { await Promise.resolve(); });
+    expect(before).toHaveFocus();
+    const box = screen.getByRole('textbox', { name: 'Box' }) as HTMLTextAreaElement;
+    expect(box.selectionStart).toBe(0);
+    expect(box.selectionEnd).toBe(0);
+  });
+
+  test('a paste that fires no change does not swallow the next edit', async () => {
+    const YT = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+    let v = '';
+    const view = render(<Editor label="Box" value={v} onChange={(n) => { v = n; }} max={100} />);
+    const box = screen.getByRole('textbox', { name: 'Box' });
+    fireEvent.paste(box, { clipboardData: { getData: () => YT } });
+    await screen.findByText('Embed this video?');
+    await act(async () => { await new Promise((r) => setTimeout(r, 5)); });
+    fireEvent.change(box, { target: { value: 'x' } });
+    expect(screen.queryByText('Embed this video?')).toBeNull();
+    view.unmount();
+  });
+
+  describe('shortcuts and platform', () => {
+    const platform = (p: string) => vi.spyOn(navigator, 'platform', 'get').mockReturnValue(p);
+    const word = () => {
+      mount();
+      const box = screen.getByRole('textbox', { name: 'Box' }) as HTMLTextAreaElement;
+      box.setSelectionRange(0, 5);
+      return box;
+    };
+    test('while an input method is composing, nothing happens', () => {
+      const box = word();
+      expect(fireEvent.keyDown(box, { key: 'b', ctrlKey: true, isComposing: true })).toBe(true);
+      expect(fireEvent.keyDown(box, { key: 'b', ctrlKey: true, keyCode: 229 })).toBe(true);
+    });
+    test('on a Mac Control+B is left to the system and Command+B bolds', () => {
+      platform('MacIntel');
+      const box = word();
+      expect(fireEvent.keyDown(box, { key: 'b', ctrlKey: true })).toBe(true);
+      expect(fireEvent.keyDown(box, { key: 'b', metaKey: true })).toBe(false);
+    });
+    test('elsewhere Control+B bolds', () => {
+      platform('Win32');
+      const box = word();
+      expect(fireEvent.keyDown(box, { key: 'b', ctrlKey: true })).toBe(false);
     });
   });
 });
