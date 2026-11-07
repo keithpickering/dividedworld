@@ -138,6 +138,11 @@
   .kb-move-way {
     white-space: nowrap;
   }
+
+  /* No rule at Way out's start: when it wraps under the label the rule would stand at the start of a line of its own (15-phone draws none). */
+  .kb-move-way {
+    border-left: 0;
+  }
 }
 
 /* The tag standing on a post in a thread: the same tile, at the right of the post's own box. */

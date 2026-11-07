@@ -167,3 +167,20 @@ test('with the clock in 2027, post 41\'s date reads with its year (the pin is wh
   await open(page, '01-main', '.kb-postbit', Date.UTC(2027, 0, 5, 12), 'moment');
   await expect(POST_41_WHEN(page)).toHaveText('Oct 29, 2026, 9:14 PM');
 });
+
+test('the move notice\'s Way out keeps a 24px target, clear of the band\'s words and with no divider of its own, at 390', async ({ page }) => {
+  await open(page, 'boards-11-move-notice--move-notice', '.kb-move-way');
+  const m = await page.evaluate(() => {
+    const way = document.querySelector('.kb-move-way')!;
+    const w = way.getBoundingClientRect();
+    const range = document.createRange();
+    range.selectNodeContents(document.querySelector('.kb-move-notice .kb-bar')!);
+    const text = range.getBoundingClientRect();
+    return { w: w.width, h: w.height, wayBottom: w.bottom, textTop: text.top, border: getComputedStyle(way).borderLeftWidth };
+  });
+  expect(m.w).toBeGreaterThanOrEqual(24);
+  expect(m.h).toBeGreaterThanOrEqual(24);
+  expect(m.wayBottom).toBeLessThanOrEqual(m.textTop);
+  /* Way out can wrap under the label here, where a rule at its start would divide nothing from nothing: the phone draws none. */
+  expect(m.border).toBe('0px');
+});

@@ -19,7 +19,7 @@ function open(who: 'director' | 'bot' | 'spritey', build?: (fake: ReturnType<typ
 }
 
 const careerCell = async () => (await screen.findByRole('rowheader', { name: 'Career' })).closest('tr')!;
-const log = () => screen.findByRole('table', { name: 'Moderation log, newest first' });
+const log = () => screen.findByRole('table', { name: 'Moderation log' });
 const rows = async () => within(await log()).getAllByRole('row').filter((r) => r.parentElement?.tagName === 'TBODY');
 
 describe('a Boss\'s profile', () => {
@@ -66,7 +66,11 @@ describe('a Boss\'s profile', () => {
     expect(table.contains(card)).toBe(false);
     expect(card.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['When', 'What it did', 'How it ended']);
-    expect(within(table).getByRole('heading', { level: 2, name: 'Moderation log' })).toBeInTheDocument();
+    /* One name, once: the table is named by its own heading, and there is no region around it. */
+    const h = within(table).getByRole('heading', { level: 2, name: 'Moderation log' });
+    expect(table).toHaveAttribute('aria-labelledby', h.id);
+    expect(screen.queryByRole('region')).toBeNull();
+    expect(screen.getAllByText(/Moderation log/u)).toHaveLength(1);
     expect(screen.getAllByRole('table')).toHaveLength(2);
     /* The phone lays the table out in blocks, so its roles are named outright. */
     expect(table).toHaveAttribute('role', 'table');
@@ -153,7 +157,7 @@ describe('a Mod Bot\'s profile', () => {
     expect(within(card).queryByText('ADMINISTRATOR')).toBeNull();
     expect(card).toHaveTextContent('Keeper of the Hall');
     expect(await screen.findByText(/Nothing here yet\. A Mod Bot's moderation log stays empty until Mod Bots start their visits\./u)).toBeInTheDocument();
-    expect(screen.queryByRole('table', { name: 'Moderation log, newest first' })).toBeNull();
+    expect(screen.queryByRole('table', { name: 'Moderation log' })).toBeNull();
   });
 });
 

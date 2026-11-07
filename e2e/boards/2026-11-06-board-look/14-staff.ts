@@ -37,7 +37,7 @@ const manifest: BoardManifest = {
     { id: 'fact-career', role: 'rowheader', name: 'Career', within: 'about', origin: 'about' },
     { id: 'fact-posts', role: 'rowheader', name: 'Posts', within: 'about', origin: 'about' },
     { id: 'fact-joined', role: 'rowheader', name: 'Joined', within: 'about', origin: 'about' },
-    { id: 'log', role: 'table', name: 'The Director’s moves, newest first', buildName: 'Moderation log, newest first', type: false, box: 'position', buildShift: { y: 26.2 } },
+    { id: 'log', role: 'table', name: 'The Director’s moves, newest first', buildName: 'Moderation log', type: false, box: 'position', buildShift: { y: 26.2 } },
     { id: 'log-band', role: 'heading', name: 'Moderation log', within: 'log', origin: 'log' },
     { id: 'log-when', role: 'columnheader', name: 'When', within: 'log', origin: 'log' },
     { id: 'log-did', role: 'columnheader', name: 'What it did', within: 'log', origin: 'log' },

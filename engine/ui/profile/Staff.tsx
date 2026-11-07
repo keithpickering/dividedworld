@@ -172,8 +172,9 @@ function ModerationLog({ staff, bot }: { readonly staff: string; readonly bot: b
     }, () => setState('failed'));
   }, [api, staff, older]);
 
+  const heading = useId();
   return (
-    <section className="kb-staff-log" aria-label="Moderation log">
+    <div className="kb-staff-log">
       {(rows === null || rows.length === 0 || state === 'failed') && <h2 className="kb-heading">Moderation log</h2>}
       {state === 'failed' && <p className="kb-notice" data-kb-tone="refusal">The moderation log could not be loaded. Reload the page to try again.</p>}
       {rows === null && state !== 'failed' && <p className="kb-muted" aria-busy="true">Loading the log…</p>}
@@ -181,9 +182,9 @@ function ModerationLog({ staff, bot }: { readonly staff: string; readonly bot: b
         <p>{bot ? 'Nothing here yet. A Mod Bot\'s moderation log stays empty until Mod Bots start their visits.' : 'Nothing here yet. It has not made a move.'}</p>
       )}
       {rows !== null && rows.length > 0 && (
-        <table className="kb-table kb-modlog" role="table" aria-label="Moderation log, newest first">
+        <table className="kb-table kb-modlog" role="table" aria-labelledby={heading}>
           <thead role="rowgroup">
-            <tr role="row" className="kb-record-band"><td role="cell" className="kb-bar" colSpan={3}><h2>Moderation log</h2></td></tr>
+            <tr role="row" className="kb-record-band"><td role="cell" className="kb-bar" colSpan={3}><h2 id={heading}>Moderation log</h2></td></tr>
             <tr role="row"><th role="columnheader" scope="col">When</th><th role="columnheader" scope="col">What it did</th><th role="columnheader" scope="col">How it ended</th></tr>
           </thead>
           <tbody role="rowgroup">
@@ -203,6 +204,6 @@ function ModerationLog({ staff, bot }: { readonly staff: string; readonly bot: b
           {older && <button type="button" className="kb-link-button" disabled={state === 'paging'} onClick={more}>Older ›</button>}
         </p>
       )}
-    </section>
+    </div>
   );
 }
