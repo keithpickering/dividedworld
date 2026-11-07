@@ -1,14 +1,14 @@
 /**
  * Alerts, drawn as a story against the board `docs/research/2026-11-02-alerts/02-alerts.html` (the alerts plan, Task 9): the player's alerts in the
  * pause menu, newest first, with the divider "new since you last looked" at the account's mark and Earlier under it, and the filters by character.
- * The page is the screen itself (`AlertsScreen`) in the glass's page shell, as the route /alerts puts it (web/src/App.tsx), signed in as a player
+ * The page is the screen itself (`LoadedAlerts`, the screen under its route's loader) in the glass's page shell, as the route /alerts puts it (web/src/App.tsx), signed in as a player
  * with three characters. The rows are the board's kinds, read from a world on the fake backend, so their words are the engine's own words:
  * a quote, a followed thread, a card on a post, a hint and a ruling after the mark; a settlement, an update, and the Boss's arrival before it.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Page } from '../glass/Page.tsx';
 import type { World } from '../story.tsx';
-import { AlertsScreen } from './Alerts.tsx';
+import { LoadedAlerts } from '../loaded.tsx';
 
 const utc = (day: number, hour: number, minute = 0) => Date.UTC(2026, 10, day, hour, minute);
 
@@ -42,7 +42,7 @@ const alerts: World = (fake, instance) => {
 
 /** The screen at /alerts, in its page shell. */
 function AlertsStory() {
-  return <Page surface="settings"><AlertsScreen /></Page>;
+  return <Page surface="settings"><LoadedAlerts /></Page>;
 }
 
 const meta: Meta<typeof AlertsStory> = {

@@ -10,9 +10,15 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { hudKey } from '../player.tsx';
-import { buildWorld, renderIn } from '../test-world.tsx';
+import { buildWorld, holdReads, renderIn } from '../test-world.tsx';
 import { utcWhen } from './lines.ts';
+import { LoadedLog } from '../loaded.tsx';
+import { loadLog, logKey, type LogDoc } from '../glass-docs.ts';
+import { Routes, type Route } from '../routes.tsx';
+import { isSignedOutDoc } from '../screen-docs.ts';
 import { LogScreen } from './Log.tsx';
+import { usePlayer } from '../player.tsx';
+import { Link, useRouterAccount } from '../router.tsx';
 import logCss from './log.css?raw';
 
 const at = (day: number, hour = 12, minute = 0) => Date.UTC(2026, 9, day, hour, minute);
@@ -52,10 +58,11 @@ function world() {
   return { fake, me, rival, pipe, hoo, glo, p2, h3, thread };
 }
 
-function open(fake: Fake, me: string, hud: string | null, path = '/log') {
+/* Boot is read as the app's first load reads it: the player's characters and the next settlement are the frame's when the page is drawn. */
+async function open(fake: Fake, me: string, hud: string | null, path = '/log') {
   localStorage.clear();
   if (hud) localStorage.setItem(hudKey(me), hud);
-  return renderIn(fake, <LogScreen />, { path });
+  return renderIn(fake, <LoadedLog />, { path, boot: await fake.boot() });
 }
 
 const bodyRows = () => within(screen.getByRole('table')).getAllByRole('row').slice(1);
@@ -74,7 +81,7 @@ afterEach(() => {
 describe('My log', () => {
   test('opens on the HUD\'s character, with a tab for All and each character, and says it is true', async () => {
     const { fake, me, pipe } = world();
-    open(fake, me, pipe);
+    await open(fake, me, pipe);
     expect(await screen.findByRole('heading', { level: 1, name: 'My log' })).toBeInTheDocument();
     const tabs = within(screen.getByRole('navigation', { name: 'Whose log' })).getAllByRole('button').map((b) => b.textContent);
     /* In the order the characters debuted, as the boards and the roster list them. */
@@ -90,7 +97,7 @@ describe('My log', () => {
 
   test('draws each settlement as the board does, its Turn and rank change beside it, newest first, in UTC', async () => {
     const { fake, me, pipe } = world();
-    open(fake, me, pipe);
+    await open(fake, me, pipe);
     await screen.findByRole('table', { name: 'Pipewrench\'s log, newest first' });
     const rows = bodyRows().map(cells);
     expect(rows.map((r) => [r[0], r[1]])).toEqual([
@@ -112,7 +119,7 @@ describe('My log', () => {
 
   test('Show posts names the breakdown it controls, closed as well as open', async () => {
     const { fake, me, pipe } = world();
-    open(fake, me, pipe);
+    await open(fake, me, pipe);
     const button = await screen.findByRole('button', { name: 'Show posts' });
     const id = button.getAttribute('aria-controls');
     expect(id).toBeTruthy();
@@ -128,7 +135,7 @@ describe('My log', () => {
       { character: pipe, reason: 'heel.shrugged', amount: -5 }, { character: pipe, reason: 'heel.stoleThunder', amount: 20 }, { character: pipe, reason: 'heel.drewHeat', amount: 20 },
     ] });
     fake.signInAs(me);
-    open(fake, me, pipe);
+    await open(fake, me, pipe);
     await screen.findByRole('table');
     expect(bodyRows().map(cells)[0]![2]).toMatch(/^Scored as a Heel for Oct 28: drew heat \+0\.20, stole the thunder \+0\.20, shrugged off −0\.05\./u);
   });
@@ -142,7 +149,7 @@ describe('My log', () => {
     fake.signInAs(me);
     localStorage.clear();
     localStorage.setItem(hudKey(me), pipe);
-    renderIn(fake, <LogScreen />, { path: '/log', settings: { economy: { 'heel.postsAllowed': 3 } } });
+    renderIn(fake, <LoadedLog />, { path: '/log', settings: { economy: { 'heel.postsAllowed': 3 } } });
     await screen.findByRole('table');
     const [newer, older] = await screen.findAllByRole('button', { name: 'Show posts' });
     await userEvent.click(older!);
@@ -153,7 +160,7 @@ describe('My log', () => {
 
   test('puts the open window\'s estimate first, labeled as one, with "up to" and no reactor', async () => {
     const { fake, me, hoo } = world();
-    open(fake, me, hoo);
+    await open(fake, me, hoo);
     await screen.findByRole('table', { name: 'Mrs. Hooligan\'s log, newest first' });
     const [first] = bodyRows();
     expect(first).toHaveAttribute('data-kb-estimate');
@@ -165,7 +172,7 @@ describe('My log', () => {
 
   test('All holds every character\'s lines, each settlement once, its Aura the sum of the player\'s', async () => {
     const { fake, me, pipe } = world();
-    open(fake, me, pipe);
+    await open(fake, me, pipe);
     await screen.findByRole('table', { name: 'Pipewrench\'s log, newest first' });
     fireEvent.click(tab('All'));
     expect(tab('All')).toHaveAttribute('aria-pressed', 'true');
@@ -179,7 +186,7 @@ describe('My log', () => {
 
   test('a character\'s tab holds only that character\'s lines', async () => {
     const { fake, me, hoo } = world();
-    open(fake, me, hoo);
+    await open(fake, me, hoo);
     await screen.findByRole('table', { name: 'Mrs. Hooligan\'s log, newest first' });
     expect(bodyRows().map(cells).map((r) => r[1])).toEqual(['Estimate', 'Settlement']);
     expect(screen.getByRole('table').textContent).not.toContain('Pipewrench');
@@ -194,7 +201,7 @@ describe('My log', () => {
     fake.seed.wallet(me, 2);
     fake.seed.settle({ at: at(28, 8, 17), ledger: [{ character: pipe, reason: 'heel.shrugged', amount: -5 }] });
     fake.signInAs(me);
-    open(fake, me, pipe);
+    await open(fake, me, pipe);
     await screen.findByRole('table');
     const [loss, gain] = bodyRows().map(cells);
     expect(loss![2]).toContain('Your wallet cannot go below 0.00, so 0.03 of this loss was not taken.');
@@ -216,7 +223,7 @@ describe('My log', () => {
 
   test('before the first settlement the table keeps its head and draws one row: when it comes, "Nothing yet", and what its first line will be', async () => {
     const { fake, me, hoo, next } = nothingYet();
-    open(fake, me, hoo);
+    await open(fake, me, hoo);
     const table = await screen.findByRole('table');
     expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['When (UTC)', 'What', 'Details', 'Aura', 'Wallet']);
     expect(bodyRows()).toHaveLength(1);
@@ -228,27 +235,18 @@ describe('My log', () => {
   });
 
   /*
-   * The tabs are drawn from the log's own reads and the open one from the HUD's character, which the player context reads on its own (player.tsx): either can
-   * arrive first. A player context slower than the log leaves the page on All for a moment (nothing to scroll to but All's tab), then on the HUD's character, so
-   * what the page scrolls into view is the tab that is current when it is current, and a test waits for that rather than for the table.
+   * The tabs are drawn from the document and the open one from the HUD's character, which is the frame's (boot), so both are known when the page is drawn:
+   * the tab that is current at the first frame is the one scrolled into view.
    */
-  test('the character tabs are one row that scrolls on the phone, and the current one is scrolled into view, whichever read arrives first', async () => {
+  test('the character tabs are one row that scrolls on the phone, and the current one is scrolled into view', async () => {
     const { fake, me, hoo } = nothingYet();
-    const real = fake.wallet.bind(fake);
-    /* The player context is slower than the log: the HUD's character is not known when the table first stands, and is not until the test lets it be. */
-    let release!: () => void;
-    const gate = new Promise<void>((r) => { release = r; });
-    vi.spyOn(fake, 'wallet').mockImplementation(async () => { await gate; return real(); });
     const into = vi.fn();
     scrolled = into;
     Element.prototype.scrollIntoView = into;
-    open(fake, me, hoo);
+    await open(fake, me, hoo);
     await screen.findByRole('table');
     const named = () => (into.mock.contexts as HTMLElement[]).map((e) => e.textContent);
-    /* The effect that scrolls runs after the commit the table stands in, which the query can resolve before. */
-    await waitFor(() => expect(named()[0], 'the first read to arrive scrolls the tab that is current then').toBe('All'));
-    release();
-    await waitFor(() => expect(named().at(-1)).toBe('Mrs. Hooligan'));
+    expect(named()[0], 'the first frame scrolls the tab that is current').toBe('Mrs. Hooligan');
     expect(into).toHaveBeenLastCalledWith({ block: 'nearest', inline: 'center' });
     into.mockClear();
     fireEvent.click(tab('All'));
@@ -260,13 +258,13 @@ describe('My log', () => {
 
   test('on All it says "you", and where no settlement is set it names no time and leaves the row\'s when empty', async () => {
     const { fake, me, hoo } = nothingYet();
-    open(fake, me, hoo);
+    await open(fake, me, hoo);
     await screen.findByRole('table');
     fireEvent.click(tab('All'));
     expect(cells(bodyRows()[0]!)[2]).toBe('Nothing has settled for you yet. A line comes here when a settlement scores one of your characters; the next is in 7 h 42 min.');
     cleanup();
     const none = nothingYet(null);
-    open(none.fake, none.me, none.pipe);
+    await open(none.fake, none.me, none.pipe);
     await screen.findByRole('table');
     expect(cells(bodyRows()[0]!)).toEqual(['—', 'Nothing yet', 'Nothing has settled for Pipewrench yet. A line comes here when a settlement scores it.', '', '—']);
   });
@@ -277,7 +275,7 @@ describe('My log', () => {
     const th = fake.seed.thread('general', hoo, 'a thread', 'Opening.', { at: at(27) });
     const post = fake.seed.post(th.thread, hoo, 'Mrs. Hooligan speaks.', { at: at(28, 11) });
     fake.seed.estimate(me, { lines: [{ character: hoo, reason: 'face.cheered', amount: 10, act: post, quadrant: 'excitedPositive', at: at(29, 11, 5) }] });
-    open(fake, me, hoo);
+    await open(fake, me, hoo);
     await screen.findByRole('table');
     expect(bodyRows().length).toBeGreaterThan(0);
     expect(screen.queryByText('Nothing yet')).toBeNull();
@@ -286,12 +284,12 @@ describe('My log', () => {
 
   test('a settlement that is due names no time either, and one settled leaves no empty row', async () => {
     const due = nothingYet(Date.now() - 60_000);
-    open(due.fake, due.me, due.pipe);
+    await open(due.fake, due.me, due.pipe);
     await screen.findByRole('table');
     expect(cells(bodyRows()[0]!)[2]).toBe('Nothing has settled for Pipewrench yet. A line comes here when a settlement scores it.');
     cleanup();
     const { fake, me, pipe } = world();
-    open(fake, me, pipe);
+    await open(fake, me, pipe);
     await screen.findByRole('table');
     expect(screen.queryByText('Nothing yet')).toBeNull();
   });
@@ -300,25 +298,34 @@ describe('My log', () => {
     const { fake, me, pipe, hoo } = world();
     const reveals = vi.spyOn(fake, 'classReveals');
     const turns = vi.spyOn(fake, 'turnsAnnounced');
-    open(fake, me, pipe);
+    await open(fake, me, pipe);
     await screen.findByRole('table');
     fireEvent.click(tab('All'));
     const text = document.body.textContent ?? '';
     expect(text).not.toContain('Gloomba');
     expect(text).not.toMatch(/tomato|reacted by/iu);
-    /* A class it names is the player's own: no reveal is read, and the announced Turns asked about are the player's characters' alone. */
+    /* A class it names is the player's own: no reveal is read, and the announced Turns are the document's, of the player's characters alone. */
     expect(reveals).not.toHaveBeenCalled();
-    for (const [ids] of turns.mock.calls) expect([...ids].sort()).toEqual([pipe, hoo].sort());
+    expect(turns).not.toHaveBeenCalled();
+    const doc = await fake.logPage(null);
+    expect(new Set(doc.turns.map((t) => t.character))).toEqual(new Set([pipe]));
+    expect(doc.standings).toEqual(expect.objectContaining({ [pipe]: expect.any(Number) }));
+    expect(Object.keys(doc.standings).sort()).toEqual([pipe, hoo].sort());
   });
+
+  /** The first page cut to its newest settlement, as the document holds it; an older page is read by `log(before)` as before. */
+  async function pagedAfterFirst(fake: Fake, older: (first: Awaited<ReturnType<Fake['log']>>) => Awaited<ReturnType<Fake['log']>> | Error) {
+    const page = await fake.logPage(null);
+    const first = page.log;
+    vi.spyOn(fake, 'logPage').mockResolvedValue({ ...page, log: { ...first, settlements: first.settlements.slice(0, 1), wallet: first.wallet.filter((e) => e.settlement === first.settlements[0]!.id), before: first.settlements[0]!.endsAt } });
+    const spy = vi.spyOn(fake, 'log').mockImplementation(async () => { const got = older(first); if (got instanceof Error) throw got; return got; });
+    return { first, page, spy };
+  }
 
   test('reads an older page from the last one\'s cursor, and adds its lines below', async () => {
     const { fake, me, pipe } = world();
-    const real = fake.log.bind(fake);
-    const first = await real();
-    const spy = vi.spyOn(fake, 'log').mockImplementation(async (before) => (before
-      ? { ...first, settlements: first.settlements.slice(1), wallet: first.wallet.filter((e) => e.settlement === first.settlements[1]!.id), before: null }
-      : { ...first, settlements: first.settlements.slice(0, 1), wallet: first.wallet.filter((e) => e.settlement === first.settlements[0]!.id), before: first.settlements[0]!.endsAt }));
-    open(fake, me, pipe);
+    const { first, spy } = await pagedAfterFirst(fake, (f) => ({ ...f, settlements: f.settlements.slice(1), wallet: f.wallet.filter((e) => e.settlement === f.settlements[1]!.id), before: null }));
+    await open(fake, me, pipe);
     await screen.findByRole('table');
     expect(bodyRows().map(cells).filter((r) => r[1] === 'Settlement').map((r) => r[0])).toEqual(['Oct 29 · 08:17']);
     fireEvent.click(screen.getByRole('button', { name: 'Show older lines' }));
@@ -327,23 +334,18 @@ describe('My log', () => {
     expect(screen.queryByRole('button', { name: 'Show older lines' })).toBeNull();
   });
 
-  test('an older page reads only what is new to it: the player\'s own state once, and no Act a page before named', async () => {
+  test('an older page reads only what is new to it: nothing of the player\'s own, and no Act the document named', async () => {
     const { fake, me, pipe } = world();
-    const real = fake.log.bind(fake);
-    const first = await real();
-    vi.spyOn(fake, 'log').mockImplementation(async (before) => (before
-      ? { ...first, settlements: first.settlements.slice(1), wallet: [], before: null }
-      : { ...first, settlements: first.settlements.slice(0, 1), before: first.settlements[0]!.endsAt }));
+    const { page } = await pagedAfterFirst(fake, (f) => ({ ...f, settlements: f.settlements.slice(1), wallet: [], before: null }));
     const mine = vi.spyOn(fake, 'myCharacters');
     const acts = vi.spyOn(fake, 'actsById');
-    open(fake, me, pipe);
+    await open(fake, me, pipe);
     await screen.findByRole('table');
-    const asked = new Set(acts.mock.calls.flatMap(([ids]) => [...ids]));
-    const mineCalls = mine.mock.calls.length;
+    const asked = new Set([...page.acts.map((a) => a.id), ...acts.mock.calls.flatMap(([ids]) => [...ids])]);
     acts.mockClear();
     fireEvent.click(screen.getByRole('button', { name: 'Show older lines' }));
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Show older lines' })).toBeNull());
-    expect(mine.mock.calls.length).toBe(mineCalls);
+    expect(mine).not.toHaveBeenCalled();
     for (const [ids] of acts.mock.calls) for (const id of ids) expect(asked.has(id)).toBe(false);
     /* Show older lines is gone, so focus is on the table it filled, not lost to the page. */
     await waitFor(() => expect(screen.getByRole('table')).toHaveFocus());
@@ -351,14 +353,9 @@ describe('My log', () => {
 
   test('an older page that cannot be read says so and keeps what is shown; a failed estimate leaves the rest of the log', async () => {
     const { fake, me, pipe } = world();
-    const real = fake.log.bind(fake);
-    const first = await real();
-    vi.spyOn(fake, 'log').mockImplementation(async (before) => {
-      if (before) throw new Error('lost');
-      return { ...first, before: first.settlements[0]!.endsAt };
-    });
+    await pagedAfterFirst(fake, () => new Error('lost'));
     vi.spyOn(fake, 'estimate').mockRejectedValue(new Error('lost'));
-    open(fake, me, pipe);
+    await open(fake, me, pipe);
     await screen.findByRole('table');
     expect(bodyRows().map(cells)[0]![1]).toBe('Settlement');
     fireEvent.click(screen.getByRole('button', { name: 'Show older lines' }));
@@ -366,19 +363,19 @@ describe('My log', () => {
     expect(bodyRows().length).toBeGreaterThan(0);
   });
 
-  test('a read that only names something (a character, a thread) failing leaves the log, in plain words', async () => {
+  test('a document that names nothing beside its lines leaves the log, in plain words', async () => {
     const { fake, me, pipe } = world();
-    vi.spyOn(fake, 'thread').mockRejectedValue(new Error('lost'));
-    vi.spyOn(fake, 'characters').mockRejectedValue(new Error('lost'));
-    open(fake, me, pipe);
+    const page = await fake.logPage(null);
+    vi.spyOn(fake, 'logPage').mockResolvedValue({ ...page, threads: [], people: [], boards: [] });
+    await open(fake, me, pipe);
     await screen.findByRole('table');
-    expect(bodyRows().map(cells)[1]![2]).toBe('Pipewrench is a Face now. Announced with its old class in The System\'s board.');
+    expect(bodyRows().map(cells)[1]![2]).toMatch(/^Pipewrench is a Face now\. Announced with its old class/u);
   });
 
   test('a tab with nothing on the pages read says so, rather than an empty table', async () => {
     const { fake, me, pipe } = world();
     fake.seed.character(me, 'Spritey', 'face', { at: at(5) });
-    open(fake, me, pipe);
+    await open(fake, me, pipe);
     await screen.findByRole('table');
     fireEvent.click(tab('Spritey'));
     expect(screen.getByText('Nothing on these pages is Spritey\'s yet.')).toBeInTheDocument();
@@ -387,27 +384,107 @@ describe('My log', () => {
   test('signed out, asks the player to sign in and reads nothing', async () => {
     const { fake, me, pipe } = world();
     fake.signInAs(null);
-    const spy = vi.spyOn(fake, 'log');
-    open(fake, me, pipe);
+    const spy = vi.spyOn(fake, 'logPage');
+    const estimate = vi.spyOn(fake, 'estimate');
+    localStorage.setItem(hudKey(me), pipe);
+    renderIn(fake, <LoadedLog />, { path: '/log' });
     expect(await screen.findByRole('link', { name: /sign in/iu })).toBeInTheDocument();
     expect(spy).not.toHaveBeenCalled();
+    expect(estimate).not.toHaveBeenCalled();
   });
 
   test('another account signing in reads its own log, never the last one\'s, not for a moment', async () => {
     const { fake, me, rival, pipe } = world();
-    open(fake, me, pipe);
+    /* The app tells the router whose session this is (web/src/App.tsx), which empties the document held for the last account. */
+    function Account() { useRouterAccount(usePlayer().session.account); return null; }
+    localStorage.setItem(hudKey(me), pipe);
+    renderIn(fake, <><LoadedLog /><Account /></>, { path: '/log', boot: await fake.boot() });
     await screen.findByRole('table');
+    expect(document.body.textContent).toContain('Pipewrench');
     /* The next account's log is slow to come: nothing of the last one's is drawn meanwhile. */
-    const real = fake.log.bind(fake);
+    const real = fake.logPage.bind(fake);
     let release!: () => void;
     const gate = new Promise<void>((r) => { release = r; });
-    vi.spyOn(fake, 'log').mockImplementation(async (b) => { await gate; return real(b); });
+    vi.spyOn(fake, 'logPage').mockImplementation(async (b) => { await gate; return real(b); });
     act(() => fake.signInAs(rival));
     await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
     expect(document.body.textContent).not.toContain('Pipewrench');
+    expect(screen.queryByRole('table')).toBeNull();
     release();
-    await waitFor(() => expect(screen.getByText('Nothing has settled for Gloomba yet. A line comes here when a settlement scores it.')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/^Nothing has settled for Gloomba yet\. A line comes here when a settlement scores it/u)).toBeInTheDocument());
     expect(document.body.textContent).not.toContain('Pipewrench');
+  });
+});
+
+describe('My log is its document', () => {
+  test('is whole in its first render, from the document: the lines, the tabs, the estimate and its words; nothing is read', async () => {
+    const { fake, me, hoo } = world();
+    localStorage.setItem(hudKey(me), hoo);
+    const boot = await fake.boot();
+    const estimate = await fake.estimate();
+    const page = await fake.logPage(null);
+    const estimateActs = await fake.actsById(estimate.lines.flatMap((l) => (l.act ? [l.act] : [])));
+    const read = holdReads(fake, ['session']);
+    renderIn(fake, <LogScreen doc={{ page, estimate, estimateActs }} />, { path: '/log', boot });
+    expect(screen.getByRole('table', { name: 'Mrs. Hooligan\'s log, newest first' })).toBeInTheDocument();
+    expect(within(screen.getByRole('navigation', { name: 'Whose log' })).getAllByRole('button')).toHaveLength(3);
+    expect(cells(bodyRows()[0]!)[2]).toMatch(/^A Hype reaction on your post #3\./u);
+    expect(bodyRows().map(cells).some((r) => r[1] === 'Settlement')).toBe(true);
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(read).toEqual([]);
+  });
+
+  test('the route reads one logPage and one estimate, and none of the reads they replace', async () => {
+    const { fake, me, pipe } = world();
+    const page = vi.spyOn(fake, 'logPage');
+    const estimate = vi.spyOn(fake, 'estimate');
+    const own = ['log', 'myCharacters', 'standingAmounts', 'season', 'turnsAnnounced', 'nextSettlementAt', 'effectStates'] as const;
+    const spies = own.map((n) => vi.spyOn(fake, n));
+    await open(fake, me, pipe);
+    await screen.findByRole('table');
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(page).toHaveBeenCalledWith(null);
+    expect(estimate).toHaveBeenCalledTimes(1);
+    expect(spies.map((spy) => spy.mock.calls.length)).toEqual(own.map(() => 0));
+  });
+
+  test('an estimate that is late fills in when it lands, with the Acts its lines name; the page does not wait for it', async () => {
+    const { fake, me, hoo } = world();
+    localStorage.setItem(hudKey(me), hoo);
+    const real = fake.estimate.bind(fake);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    vi.spyOn(fake, 'estimate').mockImplementation(async () => { await gate; return real(); });
+    const boot = await fake.boot();
+    const doc = await loadLog({ api: fake, signedIn: () => true }, () => Promise.resolve());
+    expect(isSignedOutDoc(doc)).toBe(false);
+    expect((doc as LogDoc).estimate).toBeNull();
+    renderIn(fake, <LogScreen doc={doc as LogDoc} />, { path: '/log', boot });
+    expect(screen.getByRole('table')).toBeInTheDocument();
+    expect(bodyRows().some((r) => r.hasAttribute('data-kb-estimate'))).toBe(false);
+    release();
+    await waitFor(() => expect(bodyRows()[0]).toHaveAttribute('data-kb-estimate'));
+    await waitFor(() => expect(cells(bodyRows()[0]!)[2]).toMatch(/^A Hype reaction on your post #3\./u));
+  }, 10_000);
+
+  test('a hover on the Log tab makes one log_page, and writes nothing: no see_* call, no mark read', async () => {
+    const { fake, me, pipe } = world();
+    localStorage.setItem(hudKey(me), pipe);
+    const env = { api: fake, signedIn: () => true };
+    const routes: Route[] = [
+      { path: '/', render: () => <Link to="/log">Log tab</Link> },
+      { path: '/log', load: () => loadLog(env, () => Promise.resolve()), key: logKey, render: (_, doc) => <LogScreen doc={doc as LogDoc} /> },
+    ];
+    const page = vi.spyOn(fake, 'logPage');
+    const writes = (['seeAlerts', 'seeSettlement', 'seeWelcome', 'markRead'] as const).map((n) => vi.spyOn(fake, n));
+    renderIn(fake, <Routes routes={routes} />, { path: '/', boot: await fake.boot() });
+    await userEvent.hover(screen.getByRole('link', { name: 'Log tab' }));
+    await waitFor(() => expect(page).toHaveBeenCalledTimes(1));
+    await new Promise((r) => setTimeout(r, 150));
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(writes.map((w) => w.mock.calls.length)).toEqual([0, 0, 0, 0]);
+    expect(window.location.pathname).toBe('/');
   });
 });
 
@@ -430,13 +507,13 @@ describe('the log\'s card lines (the cards plan\'s Task 6)', () => {
   }
   /* Whoops!'s look, as an instance gives the log a save worth a line (CardUi.logSave). */
   const cards = [{ key: 'whoops', describe: () => '', art: { color: '#000', ink: '#fff', canvas: '', mark: '', credit: 'Test' }, logSave: (state: unknown) => ((state as { clean?: boolean }).clean ? { what: 'Washed clean', said: 'The layer is washed clean, for every reader.' } : undefined) }];
-  const show = (fake: Fake, me: string, hud: string) => { localStorage.clear(); localStorage.setItem(hudKey(me), hud); return renderIn(fake, <LogScreen />, { path: '/log', cards: cards as never }); };
+  const show = async (fake: Fake, me: string, hud: string) => { localStorage.clear(); localStorage.setItem(hudKey(me), hud); return renderIn(fake, <LoadedLog />, { path: '/log', cards: cards as never, boot: await fake.boot() }); };
   const rowsOf = async () => { await screen.findByRole('table'); return bodyRows().map(cells); };
 
   test('a card bought: from the machine, at its price, in every tab, with the wallet after', async () => {
     const { fake, me, pipe, hoo } = cardWorld();
     fake.seed.buy(me, 'whoops', { at: at(28, 12) });
-    show(fake, me, pipe);
+    await show(fake, me, pipe);
     expect(await rowsOf()).toEqual([['Oct 28 · 12:00', 'You bought Whoops!', 'From the Shop, for 1.00.', '−1.00', '2.00']]);
     fireEvent.click(tab('Mrs. Hooligan'));
     expect(bodyRows().map(cells)[0]![1]).toBe('You bought Whoops!');
@@ -446,7 +523,7 @@ describe('the log\'s card lines (the cards plan\'s Task 6)', () => {
   test('a card played: as which character, on whose post, and what the post added past the card, paid for at the machine', async () => {
     const { fake, me, pipe, g1 } = cardWorld();
     fake.seed.card(pipe, g1, 'whoops', { at: at(28, 13), paid: 25 });
-    show(fake, me, pipe);
+    await show(fake, me, pipe);
     const [row] = await rowsOf();
     expect(row).toEqual(['Oct 28 · 13:00', 'You played Whoops!', 'As Pipewrench, on Gloomba\'s post #1. The card was paid for at the machine; this post added 0.25.', '−0.25', '2.75']);
     expect(within(bodyRows()[0]!).getByRole('link', { name: 'Gloomba\'s post #1' })).toHaveAttribute('href', expect.stringMatching(/#post-1$/u));
@@ -455,14 +532,14 @@ describe('the log\'s card lines (the cards plan\'s Task 6)', () => {
   test('a play that cost nothing past the card says so, and leaves the wallet it cannot see unsaid', async () => {
     const { fake, me, pipe, g1 } = cardWorld();
     fake.seed.card(pipe, g1, 'whoops', { at: at(28, 13), paid: 0 });
-    show(fake, me, pipe);
+    await show(fake, me, pipe);
     expect((await rowsOf())[0]!.slice(2)).toEqual(['As Pipewrench, on Gloomba\'s post #1. The card was paid for at the machine; this play cost nothing more.', '0.00', '—']);
   });
 
   test('a play on one of the player\'s own characters\' posts says so, and is in both characters\' tabs', async () => {
     const { fake, me, pipe, hoo, h3 } = cardWorld();
     fake.seed.card(pipe, h3, 'whoops', { at: at(28, 13), paid: 0 });
-    show(fake, me, pipe);
+    await show(fake, me, pipe);
     expect((await rowsOf())[0]![2]).toBe('As Pipewrench, on Mrs. Hooligan\'s post #3, a post of one of your own characters. The card was paid for at the machine; this play cost nothing more.');
     fireEvent.click(tab('Mrs. Hooligan'));
     expect(bodyRows().map(cells)[0]![1]).toBe('You played Whoops!');
@@ -472,7 +549,7 @@ describe('the log\'s card lines (the cards plan\'s Task 6)', () => {
   test('a play on the player\'s post by someone else: who played what, with the caster\'s message, in the post\'s character\'s tab', async () => {
     const { fake, me, pipe, hoo, glo, p2 } = cardWorld();
     fake.seed.card(glo, p2, 'whoops', { at: at(28, 14), message: 'you dropped your ink' });
-    show(fake, me, pipe);
+    await show(fake, me, pipe);
     expect((await rowsOf())[0]).toEqual(['Oct 28 · 14:00', 'A card on your post', 'Gloomba played Whoops! on your post #2, with the message “you dropped your ink”.', '0.00', '—']);
     fireEvent.click(tab('Mrs. Hooligan'));
     expect(screen.queryByRole('table')?.textContent ?? '').not.toContain('Gloomba played');
@@ -483,11 +560,11 @@ describe('the log\'s card lines (the cards plan\'s Task 6)', () => {
     const { fake, me, pipe, glo, p2 } = cardWorld();
     const play = fake.seed.card(glo, p2, 'whoops', { at: at(28, 14) });
     must(await fake.saveEffect(play, pipe, { strokes: [], clean: false }));
-    const first = show(fake, me, pipe);
+    const first = await show(fake, me, pipe);
     expect((await rowsOf()).map((r) => r[1])).toEqual(['A card on your post']);
     first.unmount();
     must(await fake.saveEffect(play, pipe, { strokes: [], clean: true }));
-    show(fake, me, pipe);
+    await show(fake, me, pipe);
     const rows = await rowsOf();
     expect(rows.map((r) => r[1])).toContain('Washed clean');
     expect(rows.find((r) => r[1] === 'Washed clean')![2]).toBe('Gloomba\'s Whoops! on your post #2. The layer is washed clean, for every reader.');
@@ -500,7 +577,7 @@ describe('the log\'s card lines (the cards plan\'s Task 6)', () => {
     fake.seed.buy(me, 'whoops', { at: at(28, 12) });
     fake.seed.card(pipe, g1, 'whoops', { at: at(28, 13), paid: 25 });
     fake.seed.card(pipe, p2, 'whoops', { at: at(28, 14), paid: 50 });
-    show(fake, me, pipe);
+    await show(fake, me, pipe);
     const rows = (await rowsOf()).map((r) => [r[1], r[3], r[4]]);
     expect(rows).toEqual([
       ['You played Whoops!', '−0.50', '2.25'],
@@ -514,9 +591,9 @@ describe('the log\'s card lines (the cards plan\'s Task 6)', () => {
     const { fake, me, pipe, glo, p2, g1 } = cardWorld();
     fake.seed.card(glo, p2, 'retired-card', { at: at(28, 14), message: '   ' });
     const mine = fake.seed.card(pipe, g1, 'whoops', { at: at(28, 15), paid: 0 });
-    const real = fake.actsById.bind(fake);
-    vi.spyOn(fake, 'actsById').mockImplementation(async (ids) => (await real(ids)).filter((a) => a.id !== mine));
-    show(fake, me, pipe);
+    const page = await fake.logPage(null);
+    vi.spyOn(fake, 'logPage').mockResolvedValue({ ...page, acts: page.acts.filter((a) => a.id !== mine) });
+    await show(fake, me, pipe);
     const rows = await rowsOf();
     const text = rows.map((r) => r.join(' ')).join(' ');
     expect(text).not.toMatch(/undefined|retired-card|null/u);
@@ -529,7 +606,7 @@ describe('the log\'s card lines (the cards plan\'s Task 6)', () => {
     fake.signInAs(me);
     const play = fake.seed.card(glo, p2, 'whoops', { at: at(28, 14) });
     must(await fake.releaseEffect(play));
-    show(fake, me, pipe);
+    await show(fake, me, pipe);
     expect((await rowsOf()).map((r) => r[1])).toEqual(['A card on your post']);
   });
 });
@@ -567,7 +644,7 @@ describe('the breakdown', () => {
 
   test('opens and closes from the keyboard, with focus kept on Show posts and returned to it from inside', async () => {
     const { fake, me, pipe } = split();
-    open(fake, me, pipe);
+    await open(fake, me, pipe);
     await screen.findByRole('table');
     const button = within(bodyRows()[0]!).getByRole('button', { name: 'Show posts' });
     const user = userEvent.setup();
@@ -594,7 +671,7 @@ describe('the breakdown', () => {
 
   test('each reason\'s shares, as drawn, add up to its total as drawn', async () => {
     const { fake, me, pipe } = split();
-    open(fake, me, pipe);
+    await open(fake, me, pipe);
     await screen.findByRole('table');
     fireEvent.click(within(bodyRows()[0]!).getByRole('button', { name: 'Show posts' }));
     const reasons = document.querySelectorAll<HTMLElement>('.kb-log-breakdown:not([hidden]) .kb-log-reason');
@@ -613,7 +690,7 @@ describe('the breakdown', () => {
 
   test('it says what a share is, and that a reason with no post was scored over the whole window', async () => {
     const { fake, me, pipe } = split();
-    open(fake, me, pipe);
+    await open(fake, me, pipe);
     await screen.findByRole('table');
     fireEvent.click(within(bodyRows()[0]!).getByRole('button', { name: 'Show posts' }));
     const breakdown = document.querySelector<HTMLElement>('.kb-log-breakdown:not([hidden])')!;
@@ -650,7 +727,7 @@ describe('the breakdown', () => {
 
   test('each nested row is its words, then its amount in the Aura column, then an empty Wallet cell', async () => {
     const { fake, me, pipe } = split();
-    open(fake, me, pipe);
+    await open(fake, me, pipe);
     await screen.findByRole('table');
     fireEvent.click(within(bodyRows()[0]!).getByRole('button', { name: 'Show posts' }));
     const breakdown = document.querySelector<HTMLElement>('.kb-log-breakdown:not([hidden])')!;
@@ -689,7 +766,7 @@ describe('My log: the Mod Bots\' lines (the design, section 9)', () => {
 
   test('says each in plain words in the character\'s tab, and nothing of the rival\'s', async () => {
     const { fake, me, pipe, hoo } = modded();
-    open(fake, me, pipe);
+    await open(fake, me, pipe);
     await screen.findByRole('table');
     const text = bodyRows().map((r) => cells(r).join(' | ')).join('\n');
     expect(text).toContain('Warn points: 2 points');
@@ -707,7 +784,7 @@ describe('My log: the Mod Bots\' lines (the design, section 9)', () => {
     const gp = fake.seed.post(thread, glo, 'Gloomba once more.', { at: at(30, 16) });
     fake.seed.judging({ report: 'failed' });
     void fake.fileReport(pipe, gp, 'rude');
-    open(fake, me, pipe);
+    await open(fake, me, pipe);
     await screen.findByRole('table');
     const text = bodyRows().map((r) => cells(r).join(' | ')).join('\n');
     expect(text).toMatch(/could not hear it, so your Aura came back \(0\.25\), and you can make it again\./u);
@@ -717,7 +794,7 @@ describe('My log: the Mod Bots\' lines (the design, section 9)', () => {
     const { fake, me, pipe, clerk, inf } = modded();
     void fake.fileAppeal(pipe, inf, 'It was a mistake.');
     void clerk;
-    open(fake, me, pipe);
+    await open(fake, me, pipe);
     await screen.findByRole('table');
     expect(bodyRows().map((r) => cells(r).join(' | ')).join('\n')).toContain('Pipewrench appealed the warn points from your post #2, for 0.50 Aura. The plea is public. The Clerk upheld it. Nothing changed.');
     /* The rival's view of the same world holds none of these lines. */
@@ -741,7 +818,7 @@ describe('My log: the way out of a ban', () => {
 
   test('the ban\'s line offers "Appeal to the Boss", which opens the form and sends the ban\'s Act; once appealed the offer is gone', async () => {
     const { fake, me, pipe, ban } = banned();
-    open(fake, me, pipe);
+    await open(fake, me, pipe);
     await screen.findByRole('table');
     await userEvent.click(await screen.findByRole('button', { name: 'Appeal to the Boss · 0.50 Aura' }));
     const form = await screen.findByRole('dialog', { name: 'Appeal the ban' });
@@ -755,7 +832,7 @@ describe('My log: the way out of a ban', () => {
     const { fake, me, pipe, ban } = banned();
     fake.seed.judging({ appeal: 'failed' });
     void fake.fileAppeal(pipe, ban, 'Please.');
-    open(fake, me, pipe);
+    await open(fake, me, pipe);
     await screen.findByRole('table');
     expect(await screen.findByRole('button', { name: 'Appeal to the Boss · 0.50 Aura' })).toBeInTheDocument();
     expect(document.body).toHaveTextContent('No one could hear it, so your Aura came back and you can appeal again.');
@@ -766,7 +843,7 @@ describe('My log: the way out of a ban', () => {
     const stranger = fake.seed.account('stranger');
     fake.seed.character(stranger, 'Stranger', 'face');
     fake.signInAs(stranger);
-    open(fake, stranger, null);
+    await open(fake, stranger, null);
     await screen.findByRole('heading', { level: 1, name: 'My log' });
     await waitFor(() => expect(document.querySelector('[aria-busy="true"]')).toBeNull());
     expect(screen.queryByRole('button', { name: /^Appeal to the Boss/u })).toBeNull();

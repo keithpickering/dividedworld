@@ -35,7 +35,10 @@ import { demandNeeds } from '../board/move-words.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { useKayfa } from '../context.tsx';
 import { EndCardDialog } from '../cards/Lens.tsx';
-import type { AdminQueue, Answer, BoardName, BoardSummary, HandoverTodo, MoveEnded, MoveInForce, QueuedMove, StaffCardPlay } from '../data/api.ts';
+import { useBoot } from '../boot.tsx';
+import type { Answer, BoardName, BoardSummary, HandoverTodo, MoveEnded, MoveInForce, QueuedMove, QueuePage, StaffCardPlay } from '../data/api.ts';
+import { isNotAdminDoc, type NotAdminDoc } from '../glass-docs.ts';
+import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
@@ -65,66 +68,72 @@ type Roster = { readonly staff: string; readonly name: string };
 
 type Asked = { readonly kind: 'hold'; readonly row: QueuedMove } | { readonly kind: 'reverse'; readonly row: MoveInForce };
 
-export function QueueScreen({ now }: { readonly now?: number }) {
+/** The queue at /admin/queue, drawn from the route's document. A caller who is not an admin (or not signed in) has no page: the line says so. */
+export function QueueScreen({ doc, now }: { readonly doc: ScreenDoc<QueuePage> | NotAdminDoc; readonly now?: number }) {
+  if (isSignedOutDoc(doc) || isNotAdminDoc(doc)) {
+    return (
+      <div className="kb-queue">
+        <PageHead title="The System's moves" />
+        <CalmRegion as="p" className="kb-queue-lead">The admin queue is for admins.</CalmRegion>
+      </div>
+    );
+  }
+  return <Queue page={doc} now={now} />;
+}
+
+function Queue({ page, now }: { readonly page: QueuePage; readonly now?: number }) {
   const { api } = useKayfa();
-  const [admin, setAdmin] = useState<boolean | null>(null);
-  const [queue, setQueue] = useState<AdminQueue | null>(null);
-  const [boards, setBoards] = useState<readonly BoardName[]>([]);
-  const [summaries, setSummaries] = useState<readonly BoardSummary[]>([]);
-  const [bosses, setBosses] = useState<readonly Roster[]>([]);
+  /* The page is the document's; after an action it is read again, once (`queuePage`), and the read replaces it. */
+  const [read, setRead] = useState<{ readonly of: QueuePage; readonly page: QueuePage | null } | null>(null);
+  const held = read !== null && read.of === page ? read.page : null;
   const [failed, setFailed] = useState(false);
   const [asked, setAsked] = useState<Asked | null>(null);
   const [ending, setEnding] = useState<StaffCardPlay | null>(null);
   const clock = now ?? Date.now();
+  const boot = useBoot();
+  /* The boards (with their descriptions) are boot's; a screen with no boot reads them once. */
+  const [summaries, setSummaries] = useState<readonly BoardSummary[]>(boot?.boards ?? []);
+  /* An admin who has stopped being one has no page to read again: the page as it stood is kept. */
+  const shown = held ?? page;
+  const { queue, boardNames: boards, bosses, contact } = shown;
 
   const load = useCallback(async () => {
     try {
-      /* The roster's names make a nomination read as a name; a roster that cannot be read leaves keys, and the replacing choice empty. */
-      const [q, names, roster, all] = await Promise.all([api.adminQueue(), api.boardNames(), api.bosses().catch((): readonly Roster[] => []), api.boards().catch((): readonly BoardSummary[] => [])]);
-      setQueue(q);
-      setBoards(names);
-      setSummaries(all);
-      setBosses(roster);
+      const next = await api.queuePage();
+      setRead({ of: page, page: next });
       setFailed(false);
     } catch {
       setFailed(true);
     }
-  }, [api]);
-
+  }, [api, page]);
   useEffect(() => {
+    if (boot) { setSummaries(boot.boards); return undefined; }
     let live = true;
-    void api.isAdmin().then((a) => { if (live) setAdmin(a); }, () => { if (live) setAdmin(false); });
+    void api.boards().then((all) => { if (live) setSummaries(all); }, () => { /* no board to describe */ });
     return () => { live = false; };
-  }, [api]);
-  useEffect(() => { if (admin) void load(); }, [admin, load]);
+  }, [api, boot]);
+
+  /* A board's description changed: the boards are read again beside the queue (boot's are as the page loaded). */
+  const described = useCallback(async () => {
+    await Promise.all([load(), api.boards().then(setSummaries, () => { /* the list stays as it was */ })]);
+  }, [api, load]);
 
   const heading = (id: string) => () => document.getElementById(id);
 
-  if (admin === null) return <div className="kb-queue" aria-busy="true" />;
   return (
     <div className="kb-queue">
       <PageHead title="The System's moves" />
-      {!admin
-        ? <CalmRegion as="p" className="kb-queue-lead">The admin queue is for admins.</CalmRegion>
-        : (
-          <>
-            <CalmRegion as="p" className="kb-queue-lead">
-              Moves that reshape a board wait here before they land, and land unless you hold them. Anything in force can be reversed. Players never see a held move.
-            </CalmRegion>
-            {failed && <CalmRegion as="p" className="kb-queue-note" role="alert">The queue could not be read. Reload the page to try again.</CalmRegion>}
-            {queue && (
-              <>
-                <Todos rows={queue.todos} onDismissed={load} />
-                <Waiting rows={queue.waiting} more={queue.more.waiting} boards={boards} bosses={bosses} roster={queue.roster} now={clock} onHold={(row) => setAsked({ kind: 'hold', row })} onReplaced={load} />
-                <InForce rows={queue.inForce} more={queue.more.inForce} boards={boards} bosses={bosses} onReverse={(row) => setAsked({ kind: 'reverse', row })} />
-                <StaffCards rows={queue.staffCards} more={queue.more.staffCards} onEnd={setEnding} />
-                <Ended rows={queue.ended} more={queue.more.ended} boards={boards} bosses={bosses} />
-                <Boards rows={summaries} onDescribed={load} />
-              </>
-            )}
-            <AdminContact />
-          </>
-        )}
+      <CalmRegion as="p" className="kb-queue-lead">
+        Moves that reshape a board wait here before they land, and land unless you hold them. Anything in force can be reversed. Players never see a held move.
+      </CalmRegion>
+      {failed && <CalmRegion as="p" className="kb-queue-note" role="alert">The queue could not be read. Reload the page to try again.</CalmRegion>}
+      <Todos rows={queue.todos} onDismissed={load} />
+      <Waiting rows={queue.waiting} more={queue.more.waiting} boards={boards} bosses={bosses} roster={queue.roster} now={clock} onHold={(row) => setAsked({ kind: 'hold', row })} onReplaced={load} />
+      <InForce rows={queue.inForce} more={queue.more.inForce} boards={boards} bosses={bosses} onReverse={(row) => setAsked({ kind: 'reverse', row })} />
+      <StaffCards rows={queue.staffCards} more={queue.more.staffCards} onEnd={setEnding} />
+      <Ended rows={queue.ended} more={queue.more.ended} boards={boards} bosses={bosses} />
+      <Boards rows={summaries} onDescribed={described} />
+      <AdminContact initial={contact} />
       <Layers>
       {ending && (
         <EndCardDialog

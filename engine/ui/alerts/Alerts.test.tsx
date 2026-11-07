@@ -8,9 +8,11 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { ALERTS_PAGE, type Alert } from '../data/api.ts';
-import { buildWorld, renderIn } from '../test-world.tsx';
+import { buildWorld, holdReads, renderIn } from '../test-world.tsx';
 
 const must = <T,>(a: { readonly ok: boolean; readonly value?: T }) => { expect(a.ok).toBe(true); return a.value as T; };
+import { LoadedAlerts } from '../loaded.tsx';
+import { loadAlerts } from '../glass-docs.ts';
 import { AlertsScreen } from './Alerts.tsx';
 
 beforeEach(() => { localStorage.clear(); });
@@ -53,7 +55,8 @@ function world(o: { mark?: number | null; cards?: number; joinedAt?: number } = 
 /** Sets the account's mark before the page opens, as an earlier visit would have. */
 async function show(w: ReturnType<typeof world>, path = '/alerts') {
   if (w.mark !== null) await w.fake.seeAlerts(iso(w.mark));
-  return renderIn(w.fake, <AlertsScreen />, { path });
+  /* Boot is read as the app's first load reads it, so the player's characters are the frame's before the page is drawn. */
+  return renderIn(w.fake, <LoadedAlerts />, { path, boot: await w.fake.boot() });
 }
 const rows = () => screen.getAllByRole('listitem').filter((li) => li.classList.contains('kb-alerts-row'));
 const rowWith = (text: RegExp | string) => rows().find((r) => (typeof text === 'string' ? r.textContent!.includes(text) : text.test(r.textContent!)))!;
@@ -191,7 +194,7 @@ describe('opening the page', () => {
     await screen.findByText('A settlement is in');
     await waitFor(async () => expect((await w.fake.preferences()).alertsSeenAt).toBe(iso(T0 + 9 * H)));
     first.unmount();
-    renderIn(w.fake, <AlertsScreen />, { path: '/alerts' });
+    renderIn(w.fake, <LoadedAlerts />, { path: '/alerts' });
     expect(await screen.findByText(/Nothing is new since you last looked/u)).toBeInTheDocument();
   });
 });
@@ -254,6 +257,7 @@ describe('a followed thread', () => {
   test('started by one of the player\'s characters: tagged with it, says so, and shows under its filter', async () => {
     const w = world();
     const opening = vi.spyOn(w.fake, 'openingActs');
+    const page = vi.spyOn(w.fake, 'alertsPage');
     await show(w);
     await screen.findByText('A settlement is in');
     const row = rowWith('new posts in');
@@ -261,8 +265,9 @@ describe('a followed thread', () => {
     expect(row).toHaveTextContent('You follow it because Pipewrench started it.');
     await userEvent.click(within(screen.getByRole('navigation', { name: 'Whose alerts' })).getByRole('button', { name: 'Mrs. Hooligan' }));
     expect(screen.queryByText(/new posts in/u)).toBeNull();
-    // One read for all the followed rows on the page, never one per row.
-    expect(opening).toHaveBeenCalledTimes(1);
+    // The followed rows' first posts are the document's: one read of it, none of its own.
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(opening).not.toHaveBeenCalled();
   });
 
   test('followed by choice, a thread someone else started stays "Followed" and says nothing about who started it', async () => {
@@ -271,14 +276,13 @@ describe('a followed thread', () => {
     w.fake.seed.post(ink.thread, w.boFace, 'Defending it.', { at: T0 + 5.6 * H });
     w.fake.signInAs(w.me);
     must(await w.fake.follow(ink.thread, true));
-    const opening = vi.spyOn(w.fake, 'openingActs');
+    const page = vi.spyOn(w.fake, 'alertsPage');
     await show(w);
     await screen.findByText('A settlement is in');
     const row = rowWith('best ink color');
     expect(within(row).getByText('Followed')).toHaveClass('kb-alerts-who');
     expect(row).not.toHaveTextContent('because');
-    expect(opening).toHaveBeenCalledTimes(1);
-    expect(opening.mock.calls[0]![0]).toHaveLength(2);
+    expect(page).toHaveBeenCalledTimes(1);
     await userEvent.click(within(screen.getByRole('navigation', { name: 'Whose alerts' })).getByRole('button', { name: 'Pipewrench' }));
     expect(screen.queryByText(/best ink color/u)).toBeNull();
   });
@@ -326,8 +330,8 @@ describe('a followed thread', () => {
 describe('a followed row with no title', () => {
   test('names its Unfollow "this thread"', async () => {
     const w = world();
-    const real = await w.fake.alerts();
-    vi.spyOn(w.fake, 'alerts').mockResolvedValue(real.map((r) => (r.kind === 'followed' ? { ...r, title: null } : r)));
+    const real = await w.fake.alertsPage(null);
+    vi.spyOn(w.fake, 'alertsPage').mockResolvedValue({ ...real, alerts: real.alerts.map((r) => (r.kind === 'followed' ? { ...r, title: null } : r)) });
     await show(w);
     await screen.findByText('A settlement is in');
     expect(within(rowWith('new posts in')).getByRole('button', { name: 'Unfollow this thread' })).toBeInTheDocument();
@@ -397,12 +401,11 @@ const filler = (n: number, pipe: string): Alert => ({ kind: 'hint', sub: `f${n}`
 describe('a page that is left or changed while it loads', () => {
   test('a row unfollowed while Older loads does not come back with the page', async () => {
     const w = world({ mark: null });
-    const real = await w.fake.alerts();
-    const followed = real.find((r) => r.kind === 'followed')!;
+    const real = await w.fake.alertsPage(null);
+    const followed = real.alerts.find((r) => r.kind === 'followed')!;
     const page = deferred<readonly Alert[]>();
-    vi.spyOn(w.fake, 'alerts')
-      .mockResolvedValueOnce([...real, ...Array.from({ length: ALERTS_PAGE - real.length }, (_, i) => filler(i + 1, w.pipe))])
-      .mockReturnValueOnce(page.promise);
+    vi.spyOn(w.fake, 'alertsPage').mockResolvedValueOnce({ ...real, alerts: [...real.alerts, ...Array.from({ length: ALERTS_PAGE - real.alerts.length }, (_, i) => filler(i + 1, w.pipe))] });
+    vi.spyOn(w.fake, 'alerts').mockReturnValueOnce(page.promise);
     await show(w);
     await screen.findByText('A settlement is in');
     await userEvent.click(screen.getByRole('button', { name: 'Older' }));
@@ -413,73 +416,76 @@ describe('a page that is left or changed while it loads', () => {
     expect(screen.queryByText(/new posts in/u)).toBeNull();
     expect(rows().filter((r) => r.getAttribute('data-kb-key')!.includes('f99'))).toHaveLength(1);
   });
-
-  test('a page left before it was read does not move the mark', async () => {
-    const w = world({ mark: null });
-    const page = deferred<readonly Alert[]>();
-    const real = await w.fake.alerts();
-    const read = vi.spyOn(w.fake, 'alerts').mockReturnValueOnce(page.promise);
-    const see = vi.spyOn(w.fake, 'seeAlerts');
-    const shown = await show(w);
-    await waitFor(() => expect(read).toHaveBeenCalled());
-    shown.unmount();
-    page.release(real);
-    await new Promise((r) => setTimeout(r, 50));
-    expect(see).not.toHaveBeenCalled();
-  });
 });
 
 describe('a page that cannot read everything', () => {
-  test('without the mark there is no divider and the mark is not moved', async () => {
-    const w = world({ mark: null });
-    vi.spyOn(w.fake, 'preferences').mockRejectedValue(new Error('offline'));
-    const see = vi.spyOn(w.fake, 'seeAlerts');
-    await show(w);
-    await screen.findByText('A settlement is in');
-    expect(rows()).toHaveLength(8);
-    expect(screen.queryByRole('heading', { level: 2 })).toBeNull();
-    expect(see).not.toHaveBeenCalled();
-  });
-
   test('without the player\'s characters there are no filters, and the rows are all there', async () => {
     const w = world();
     vi.spyOn(w.fake, 'myCharacters').mockRejectedValue(new Error('offline'));
-    await show(w);
+    renderIn(w.fake, <LoadedAlerts />, { path: '/alerts' });
     await screen.findByText('A settlement is in');
     expect(screen.queryByRole('navigation', { name: 'Whose alerts' })).toBeNull();
     expect(rows()).toHaveLength(8);
   });
 
-  test('without the first posts a followed row is tagged "Followed"', async () => {
+  test('a document without the first posts is a followed row tagged "Followed"', async () => {
     const w = world();
-    vi.spyOn(w.fake, 'openingActs').mockRejectedValue(new Error('offline'));
+    const real = await w.fake.alertsPage(null);
+    vi.spyOn(w.fake, 'alertsPage').mockResolvedValue({ ...real, openings: [] });
     await show(w);
     await screen.findByText('A settlement is in');
     expect(within(rowWith('new posts in')).getByText('Followed')).toHaveClass('kb-alerts-who');
     expect(rowWith('new posts in')).not.toHaveTextContent('because');
   });
 
-  test('without the Acts or the reading places the page still renders, linking the threads', async () => {
+  test('a document without the Acts or the reading places still renders, linking the threads', async () => {
     const w = world();
-    vi.spyOn(w.fake, 'actsById').mockRejectedValue(new Error('offline'));
-    vi.spyOn(w.fake, 'reading').mockRejectedValue(new Error('offline'));
+    const real = await w.fake.alertsPage(null);
+    vi.spyOn(w.fake, 'alertsPage').mockResolvedValue({ ...real, acts: [], people: [], reading: {} });
     await show(w);
     await screen.findByText('A settlement is in');
     expect(rows()).toHaveLength(8);
-    expect(within(rowWith('new posts in')).getByRole('link', { name: 'Go to the thread' })).toHaveAttribute('href', `/t/${w.thread}`);
+    expect(within(rowWith('new posts in')).getByRole('link', { name: 'First unread post' })).toHaveAttribute('href', expect.stringContaining(`/t/${w.thread}`));
   });
 });
 
 describe('what is announced', () => {
-  test('a page being read is a status, "Reading your alerts"', async () => {
+  test('the page is whole in its first render, from its document: no status, no empty busy block, and nothing read', async () => {
     const w = world();
-    const page = deferred<readonly Alert[]>();
-    vi.spyOn(w.fake, 'alerts').mockReturnValueOnce(page.promise);
-    await show(w);
-    expect(await screen.findByRole('status')).toHaveTextContent('Reading your alerts');
-    page.release([]);
-    await screen.findByText(/Nothing here yet/u);
+    const boot = await w.fake.boot();
+    const doc = await w.fake.alertsPage(null);
+    const read = holdReads(w.fake, ['session', 'seeAlerts']);
+    renderIn(w.fake, <AlertsScreen doc={doc} />, { path: '/alerts', boot });
+    expect(screen.getByText('A settlement is in')).toBeInTheDocument();
+    expect(within(screen.getByRole('navigation', { name: 'Whose alerts' })).getAllByRole('button')).toHaveLength(3);
+    expect(rowWith('new posts in')).toHaveTextContent('You follow it because Pipewrench started it.');
     expect(screen.queryByRole('status')).toBeNull();
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(read).toEqual([]);
+  });
+
+  test('the page reads its one document and nothing else of its own', async () => {
+    const w = world();
+    const page = vi.spyOn(w.fake, 'alertsPage');
+    const own = ['alerts', 'preferences', 'accountOpenedAt', 'myCharacters', 'actsById', 'characters', 'openingActs', 'reading'] as const;
+    const spies = own.map((n) => vi.spyOn(w.fake, n));
+    await show(w);
+    await screen.findByText('A settlement is in');
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(page).toHaveBeenCalledWith(null);
+    expect(spies.map((spy) => spy.mock.calls.length)).toEqual(own.map(() => 0));
+  });
+
+  test('the mark moves after the page has landed; loading the document alone writes nothing', async () => {
+    const w = world({ mark: null });
+    const see = vi.spyOn(w.fake, 'seeAlerts');
+    const doc = await loadAlerts({ api: w.fake, signedIn: () => true }, () => Promise.resolve());
+    expect(see).not.toHaveBeenCalled();
+    renderIn(w.fake, <AlertsScreen doc={doc as never} />, { path: '/alerts', boot: await w.fake.boot() });
+    await screen.findByText('A settlement is in');
+    await waitFor(() => expect(see).toHaveBeenCalledTimes(1));
+    expect(see).toHaveBeenCalledWith(iso(T0 + 9 * H));
   });
 });
 
@@ -502,7 +508,7 @@ describe('where focus goes', () => {
     const { thread } = fake.seed.thread('general', pipe, 'Mine', 'opening', { at: T0 });
     fake.seed.post(thread, spritey, 'a reply', { at: T0 + H });
     fake.signInAs(me);
-    renderIn(fake, <AlertsScreen />, { path: '/alerts' });
+    renderIn(fake, <LoadedAlerts />, { path: '/alerts' });
     await userEvent.click(await screen.findByRole('button', { name: /^Unfollow/u }));
     await screen.findByText(/Nothing here yet/u);
     expect(document.activeElement).toBe(screen.getByRole('group', { name: 'Your alerts' }));
@@ -541,24 +547,23 @@ describe('the states', () => {
   test('with nothing yet it says so and what fills the page', async () => {
     const fake = buildWorld();
     fake.signInAs(fake.seed.account('me'));
-    renderIn(fake, <AlertsScreen />, { path: '/alerts' });
+    renderIn(fake, <LoadedAlerts />, { path: '/alerts' });
     expect(await screen.findByText(/Nothing here yet/u)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Older' })).toBeNull();
   });
 
-  test('a read that fails says so in plain words, with Try again', async () => {
+  test('a read that fails is the glass\'s, and Try again reads the document again', async () => {
     const w = world();
-    vi.spyOn(w.fake, 'alerts').mockRejectedValueOnce(new Error('offline'));
+    vi.spyOn(w.fake, 'alertsPage').mockRejectedValueOnce(new Error('offline'));
     await show(w);
-    expect(await screen.findByRole('alert')).toHaveTextContent('Your alerts could not be read.');
+    expect(await screen.findByRole('heading', { name: 'The page cannot be displayed' })).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByText('A settlement is in')).toBeInTheDocument();
-    expect(screen.queryByText(/could not be read/u)).toBeNull();
   });
 
   test('a visitor is asked to sign in', async () => {
     const fake: Fake = buildWorld();
-    renderIn(fake, <AlertsScreen />, { path: '/alerts' });
+    renderIn(fake, <LoadedAlerts />, { path: '/alerts' });
     expect(await screen.findByRole('link', { name: 'Sign in' })).toBeInTheDocument();
   });
 });

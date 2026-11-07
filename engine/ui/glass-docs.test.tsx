@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from 'vitest';
 import type { KayfaApi } from './data/api.ts';
 import { SIGNED_OUT_DOC } from './screen-docs.ts';
-import { charactersKey, lazyScreen, loadChunk, loadContact, loadMyCharacters, loadSeason, loadSettings, seasonAsked, seasonKey, settingsKey } from './glass-docs.ts';
+import { alertsKey, charactersKey, ESTIMATE_WAIT_MS, isNotAdminDoc, lazyScreen, loadAlerts, loadChunk, loadContact, loadLog, loadMyCharacters, loadQueue, loadSeason, loadSettings, loadUpdates, logKey, NOT_ADMIN_DOC, queueKey, seasonAsked, seasonKey, settingsKey, updatesAsked, updatesKey } from './glass-docs.ts';
 
 const q = (s: string) => new URLSearchParams(s);
 const deferred = <T = void>() => {
@@ -134,5 +134,126 @@ describe('lazyScreen', () => {
     await expect(screen.preload()).rejects.toThrow('offline');
     await screen.preload();
     expect(importer).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('the alerts, updates, queue and log keys', () => {
+  test('alerts, the queue and the log each have one key; the log and the settlement summary share it', () => {
+    expect(alertsKey()).toBe('/alerts');
+    expect(queueKey()).toBe('/admin/queue');
+    expect(logKey()).toBe('/log');
+  });
+
+  test('updates are keyed by the open update, the writer asked for and its season; an address that asks the same thing keys the same', () => {
+    expect(updatesKey(q(''))).toBe(updatesKey(q('foo=bar')));
+    expect(updatesKey(q('update=a'))).not.toBe(updatesKey(q('')));
+    expect(updatesKey(q('update=a'))).not.toBe(updatesKey(q('update=b')));
+    expect(updatesKey(q('write=handover&season=2'))).not.toBe(updatesKey(q('write=handover&season=3')));
+    expect(updatesKey(q('write=handover&season=2'))).not.toBe(updatesKey(q('')));
+  });
+
+  test('a handover season is asked only with the writer, and only a whole number from 1', () => {
+    expect(updatesAsked(q('update=a'))).toEqual({ update: 'a', write: null, season: null });
+    expect(updatesAsked(q('season=2'))).toEqual({ update: null, write: null, season: null });
+    expect(updatesAsked(q('write=handover&season=2'))).toEqual({ update: null, write: 'handover', season: 2 });
+    expect(updatesAsked(q('write=handover&season=0')).season).toBeNull();
+    expect(updatesAsked(q('write=handover&season=3.5')).season).toBeNull();
+    expect(updatesAsked(q('write=handover&season=abc')).season).toBeNull();
+  });
+});
+
+describe('the alerts, updates, queue and log loaders', () => {
+  const chunk = () => Promise.resolve();
+
+  test('signed out, each answers the marker with no request, and the chunk is still loaded', async () => {
+    const read = vi.fn();
+    const env = { api: apiOf({ alertsPage: read, updatesPage: read, queuePage: read, logPage: read, estimate: read }), signedIn: signed(false) };
+    const preload = vi.fn(chunk);
+    expect(await loadAlerts(env, preload)).toBe(SIGNED_OUT_DOC);
+    expect(await loadUpdates(env, q(''), preload)).toBe(SIGNED_OUT_DOC);
+    expect(await loadQueue(env, preload)).toBe(SIGNED_OUT_DOC);
+    expect(await loadLog(env, preload)).toBe(SIGNED_OUT_DOC);
+    expect(read).not.toHaveBeenCalled();
+    expect(preload).toHaveBeenCalledTimes(4);
+  });
+
+  test('alerts read the newest page, and updates read what the address names', async () => {
+    const alertsPage = vi.fn(() => Promise.resolve({ alerts: [] }));
+    const updatesPage = vi.fn(() => Promise.resolve({ updates: [] }));
+    const env = { api: apiOf({ alertsPage, updatesPage }), signedIn: signed(true) };
+    await loadAlerts(env, chunk);
+    expect(alertsPage).toHaveBeenCalledWith(null);
+    await loadUpdates(env, q('update=a&write=handover&season=2'), chunk);
+    expect(updatesPage).toHaveBeenLastCalledWith('a', null, 2);
+    await loadUpdates(env, q('update=a&season=2'), chunk);
+    expect(updatesPage).toHaveBeenLastCalledWith('a', null, null);
+  });
+
+  test('the queue answers the page for an admin and a marker of its own for anyone else, which is no "can\'t be found"', async () => {
+    const page = { queue: {} };
+    const queuePage = vi.fn().mockResolvedValueOnce(page).mockResolvedValueOnce(null);
+    const env = { api: apiOf({ queuePage }), signedIn: signed(true) };
+    expect(await loadQueue(env, chunk)).toBe(page);
+    const other = await loadQueue(env, chunk);
+    expect(other).toBe(NOT_ADMIN_DOC);
+    expect(isNotAdminDoc(other)).toBe(true);
+    expect(isNotAdminDoc(page)).toBe(false);
+    expect(queuePage).toHaveBeenCalledTimes(2);
+  });
+
+  test('nothing a loader reads writes: no see_*, no mark read', async () => {
+    const write = vi.fn();
+    const api = apiOf({
+      alertsPage: () => Promise.resolve({}), updatesPage: () => Promise.resolve({}), queuePage: () => Promise.resolve({}),
+      logPage: () => Promise.resolve({ acts: [] }), estimate: () => Promise.resolve({ lines: [] }),
+      seeAlerts: write, seeSettlement: write, seeWelcome: write, markRead: write,
+    });
+    const env = { api, signedIn: signed(true) };
+    await Promise.all([loadAlerts(env, chunk), loadUpdates(env, q(''), chunk), loadQueue(env, chunk), loadLog(env, chunk)]);
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  test('the log reads its page beside the estimate, and the estimate\'s Acts the page did not name', async () => {
+    const logPage = vi.fn(() => Promise.resolve({ acts: [{ id: 'a1' }] }));
+    const estimate = vi.fn(() => Promise.resolve({ lines: [{ act: 'a1' }, { act: 'a2' }, { act: null }, { act: 'a2' }] }));
+    const actsById = vi.fn((ids: readonly string[]) => Promise.resolve(ids.map((id) => ({ id }))));
+    const doc = await loadLog({ api: apiOf({ logPage, estimate, actsById }), signedIn: signed(true) }, chunk);
+    expect(logPage).toHaveBeenCalledWith(null);
+    expect(estimate).toHaveBeenCalledTimes(1);
+    expect(actsById).toHaveBeenCalledWith(['a2']);
+    expect(doc).toMatchObject({ estimate: { lines: expect.any(Array) }, estimateActs: [{ id: 'a2' }] });
+  });
+
+  test('a failed estimate leaves the log without one, and a slow one is not waited for past its bound', async () => {
+    const logPage = () => Promise.resolve({ acts: [] });
+    expect(await loadLog({ api: apiOf({ logPage, estimate: () => Promise.reject(new Error('lost')) }), signedIn: signed(true) }, chunk)).toEqual({ page: { acts: [] }, estimate: null });
+    vi.useFakeTimers();
+    try {
+      const slow = deferred<{ lines: [] }>();
+      const landed = vi.fn();
+      const env = { api: apiOf({ logPage, estimate: () => slow.promise }), signedIn: signed(true) };
+      const doc = loadLog(env, chunk).then((d) => { landed(d); return d; });
+      await vi.advanceTimersByTimeAsync(ESTIMATE_WAIT_MS - 1);
+      expect(landed).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(2);
+      const d = await doc;
+      expect(d).toMatchObject({ estimate: null });
+      expect((d as { estimateLater?: Promise<unknown> }).estimateLater).toBeInstanceOf(Promise);
+      slow.resolve({ lines: [] });
+      expect(await (d as { estimateLater: Promise<unknown> }).estimateLater).toEqual({ lines: [] });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('a chunk and the document of the log are awaited together', async () => {
+    const gate = deferred();
+    let landed = false;
+    void loadLog({ api: apiOf({ logPage: () => Promise.resolve({ acts: [] }), estimate: () => Promise.resolve({ lines: [] }) }), signedIn: signed(true) }, () => gate.promise).then(() => { landed = true; });
+    await settled();
+    expect(landed).toBe(false);
+    gate.resolve();
+    await settled();
+    expect(landed).toBe(true);
   });
 });

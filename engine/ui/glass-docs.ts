@@ -8,7 +8,7 @@
  * Nothing here writes: a loader runs on a hover as well as a press, and a hover is not a visit.
  */
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
-import type { Id, MyCharactersPage, MyInvite, SeasonPage, ContactLink } from './data/api.ts';
+import type { Act, AlertsPage, ContactLink, Estimate, Id, LogPage, MyCharactersPage, MyInvite, QueuePage, SeasonPage, UpdatesPage } from './data/api.ts';
 import { SIGNED_OUT_DOC, type LoadEnv, type ScreenDoc } from './screen-docs.ts';
 
 /** What a glass loader needs of the app: the api, and whether a player is signed in now. */
@@ -107,3 +107,84 @@ export function loadSettings(env: GlassEnv, query: Query, preload: Preload): Pro
   return beside(preload, async () => ((await env.signedIn()) ? env.api.invites() : SIGNED_OUT_DOC));
 }
 
+
+/** The Alerts page: the newest rows and what their words need. Opening it writes nothing here: the mark moves once the page has landed (`seeAlerts`). */
+export const alertsKey = (): string => '/alerts';
+
+export function loadAlerts(env: GlassEnv, preload: Preload): Promise<ScreenDoc<AlertsPage>> {
+  return beside(preload, async () => ((await env.signedIn()) ? env.api.alertsPage(null) : SIGNED_OUT_DOC));
+}
+
+/** What `/updates`'s address asks: the open update, whether the handover writer is asked for, and its season (only with the writer). */
+export interface UpdatesAsked {
+  readonly update: Id | null;
+  readonly write: string | null;
+  readonly season: number | null;
+}
+
+export function updatesAsked(query: Query): UpdatesAsked {
+  const write = query.get('write');
+  const season = Number(query.get('season'));
+  return { update: query.get('update'), write, season: write === 'handover' && Number.isInteger(season) && season > 0 ? season : null };
+}
+
+export const updatesKey = (query: Query): string => {
+  const a = updatesAsked(query);
+  return `${a.update ?? ''}|${a.write ?? ''}|${a.season ?? ''}`;
+};
+
+export function loadUpdates(env: GlassEnv, query: Query, preload: Preload): Promise<ScreenDoc<UpdatesPage>> {
+  const a = updatesAsked(query);
+  return beside(preload, async () => ((await env.signedIn()) ? env.api.updatesPage(a.update, null, a.season) : SIGNED_OUT_DOC));
+}
+
+/** What the queue's loader answers a caller who is not an admin: the address exists, so the screen says the queue is for admins (not "can't be found"). */
+export const NOT_ADMIN_DOC = Object.freeze({ notAdmin: true as const });
+export type NotAdminDoc = typeof NOT_ADMIN_DOC;
+export const isNotAdminDoc = (doc: unknown): doc is NotAdminDoc => typeof doc === 'object' && doc !== null && (doc as { notAdmin?: unknown }).notAdmin === true;
+
+export const queueKey = (): string => '/admin/queue';
+
+/** Signed out, or signed in and not an admin: the screen draws "The admin queue is for admins." */
+export function loadQueue(env: GlassEnv, preload: Preload): Promise<QueuePage | NotAdminDoc | typeof SIGNED_OUT_DOC> {
+  return beside(preload, async () => {
+    if (!(await env.signedIn())) return SIGNED_OUT_DOC;
+    return (await env.api.queuePage()) ?? NOT_ADMIN_DOC;
+  });
+}
+
+/** How long the log's estimate is waited for beside its page before the page draws without it (boot's first load waits the same). */
+export const ESTIMATE_WAIT_MS = 600;
+
+/** The log's document: its page, and the live estimate if it landed in time (else `estimateLater`, which settles when it does). */
+export interface LogDoc {
+  readonly page: LogPage;
+  readonly estimate: Estimate | null;
+  /** The Acts the estimate's lines name that the page did not (`log_page` does not know the estimate), read with it. */
+  readonly estimateActs?: readonly Act[];
+  readonly estimateLater?: Promise<Estimate | null>;
+}
+
+/** The Acts an estimate's lines name beyond those held. */
+export const estimateActIds = (estimate: Estimate, held: ReadonlySet<Id>): Id[] => [...new Set(estimate.lines.flatMap((l) => (l.act && !held.has(l.act) ? [l.act] : [])))];
+
+/** My log and the settlement summary are one document, so a move between them loads nothing. */
+export const logKey = (): string => '/log';
+
+export function loadLog(env: GlassEnv, preload: Preload): Promise<ScreenDoc<LogDoc>> {
+  return beside(preload, async () => {
+    if (!(await env.signedIn())) return SIGNED_OUT_DOC;
+    /* The estimate is read beside the page, and only waited for a little: it fills in when it lands. */
+    const asked = Promise.resolve(env.api.estimate()).then((e): Estimate | null => e, () => null);
+    const page = await env.api.logPage(null);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const waited = await Promise.race([asked, new Promise<'late'>((resolve) => { timer = setTimeout(() => resolve('late'), ESTIMATE_WAIT_MS); })]);
+    clearTimeout(timer);
+    if (waited === 'late') return { page, estimate: null, estimateLater: asked };
+    if (waited === null) return { page, estimate: null };
+    /* The estimate's lines name Acts the page was not asked about: read with it, so the first frame has their words. A read that fails leaves those lines in plain words. */
+    const want = estimateActIds(waited, new Set(page.acts.map((a) => a.id)));
+    const estimateActs = want.length === 0 ? [] : await env.api.actsById(want).catch((): readonly Act[] => []);
+    return { page, estimate: waited, estimateActs };
+  });
+}

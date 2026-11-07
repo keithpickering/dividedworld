@@ -8,7 +8,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Page } from '../glass/Page.tsx';
 import type { World } from '../story.tsx';
-import { UpdatesScreen } from './Updates.tsx';
+import { LoadedUpdates } from '../loaded.tsx';
 
 const utc = (month: number, day: number, hour = 8) => Date.UTC(2026, month - 1, day, hour);
 
@@ -49,7 +49,7 @@ const updates: World = (fake, instance) => {
 
 /** The screen at /updates, in its page shell. */
 function UpdatesStory() {
-  return <Page surface="settings"><UpdatesScreen /></Page>;
+  return <Page surface="settings"><LoadedUpdates /></Page>;
 }
 
 const meta: Meta<typeof UpdatesStory> = {

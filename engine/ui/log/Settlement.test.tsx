@@ -11,9 +11,11 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { hudKey } from '../player.tsx';
 import { useLocation } from '../router.tsx';
-import { buildWorld, renderIn } from '../test-world.tsx';
-import { LogScreen } from './Log.tsx';
-import { SettlementOnLoad, SettlementScreen, startLoad } from './Settlement.tsx';
+import { buildWorld, holdReads, renderIn } from '../test-world.tsx';
+import { LoadedLog } from '../loaded.tsx';
+import { loadLog } from '../glass-docs.ts';
+import { SettlementScreen } from './Settlement.tsx';
+import { SettlementOnLoad, startLoad } from './Settlement.tsx';
 
 const at = (day: number, hour = 12, minute = 0) => Date.UTC(2026, 9, day, hour, minute);
 
@@ -52,10 +54,10 @@ function Where() {
 /** The account's settlement mark, as the account keeps it (not the device). */
 const seenOf = async (fake: Fake) => (await fake.preferences()).settlementSeen;
 
-function openSummary(fake: Fake, me: string, hud: string) {
+async function openSummary(fake: Fake, me: string, hud: string) {
   localStorage.clear();
   localStorage.setItem(hudKey(me), hud);
-  return renderIn(fake, <><SettlementScreen /><Where /></>, { path: '/log/settlement' });
+  return renderIn(fake, <><LoadedLog /><Where /></>, { path: '/log/settlement', ...((await fake.session()).signedIn ? { boot: await fake.boot() } : {}) });
 }
 
 afterEach(() => { vi.restoreAllMocks(); localStorage.clear(); });
@@ -63,7 +65,7 @@ afterEach(() => { vi.restoreAllMocks(); localStorage.clear(); });
 describe('the settlement\'s summary', () => {
   test('says when it settled, the wallet before and after, and each reason in the log\'s words with its amount', async () => {
     const { fake, me, pipe } = world();
-    openSummary(fake, me, pipe);
+    await openSummary(fake, me, pipe);
     expect(await screen.findByRole('heading', { level: 1, name: 'While you were away' })).toBeInTheDocument();
     expect(screen.getByText('Settled Oct 29 · 08:17 UTC')).toBeInTheDocument();
     const tabs = within(screen.getByRole('navigation', { name: 'Your characters' })).getAllByRole('button');
@@ -87,7 +89,7 @@ describe('the settlement\'s summary', () => {
 
   test('shows the rank change and the Turn that took effect, as the log\'s lines do', async () => {
     const { fake, me, pipe } = world();
-    openSummary(fake, me, pipe);
+    await openSummary(fake, me, pipe);
     const rank = await screen.findByRole('region', { name: 'Rank up' });
     expect(within(rank).getByText('Jobber')).toBeInTheDocument();
     expect(within(rank).getByText('Midcarder')).toBeInTheDocument();
@@ -101,17 +103,17 @@ describe('the settlement\'s summary', () => {
 
   test('each line is the log\'s line for the same reason: the same name and the same amount', async () => {
     const { fake, me, pipe } = world();
-    openSummary(fake, me, pipe);
+    await openSummary(fake, me, pipe);
     const lines = within(await screen.findByRole('list', { name: /^Why, in plain words/u })).getAllByRole('listitem')
       .map((li) => `${li.querySelector('[data-kb-reason]')!.textContent!.split(':')[0]!.toLowerCase()} ${li.querySelector('[data-kb-amount]')!.textContent}`);
-    const view = renderIn(fake, <LogScreen />, { path: '/log' });
+    const view = renderIn(fake, <LoadedLog />, { path: '/log', boot: await fake.boot() });
     const row = await within(view.container).findByText(/^Scored as a Heel for Oct 28/u);
     for (const line of lines) expect(row.textContent).toContain(line);
   });
 
   test('a character with nothing in the window says so, and the wallet is the account\'s whatever the tab', async () => {
     const { fake, me, pipe } = world();
-    openSummary(fake, me, pipe);
+    await openSummary(fake, me, pipe);
     fireEvent.click(await screen.findByRole('button', { name: 'Mrs. Hooligan' }));
     expect(screen.getByText('Nothing was settled for Mrs. Hooligan in this window.')).toBeInTheDocument();
     expect(within(screen.getByRole('region', { name: 'Wallet' })).getByText('+3.10')).toBeInTheDocument();
@@ -120,16 +122,16 @@ describe('the settlement\'s summary', () => {
 
   test('Open my log opens the log on this settlement\'s row, open, for the character shown; Back to the board leaves', async () => {
     const { fake, me, pipe } = world();
-    openSummary(fake, me, pipe);
+    await openSummary(fake, me, pipe);
     const settled = (await fake.log()).settlements[0]!;
+    expect(await screen.findByRole('link', { name: 'Back to the board' })).toHaveAttribute('href', '/');
     fireEvent.click(await screen.findByRole('link', { name: 'Open my log' }));
     expect(where).toEqual({ path: '/log', state: { open: settled.id, character: pipe } });
-    expect(screen.getByRole('link', { name: 'Back to the board' })).toHaveAttribute('href', '/');
   });
 
   test('Open my log follows the tab picked', async () => {
     const { fake, me, pipe, hoo } = world();
-    openSummary(fake, me, pipe);
+    await openSummary(fake, me, pipe);
     const settled = (await fake.log()).settlements[0]!;
     fireEvent.click(await screen.findByRole('button', { name: 'Mrs. Hooligan' }));
     fireEvent.click(screen.getByRole('link', { name: 'Open my log' }));
@@ -144,7 +146,7 @@ describe('the settlement\'s summary', () => {
     fake.seed.react(rival, glo, posts[0]!, 'tomato');
     const reveals = vi.spyOn(fake, 'classReveals');
     const turns = vi.spyOn(fake, 'turnsAnnounced');
-    openSummary(fake, me, pipe);
+    await openSummary(fake, me, pipe);
     await screen.findByRole('heading', { level: 1, name: 'While you were away' });
     const text = document.body.textContent ?? '';
     expect(text).not.toContain('Gloomba');
@@ -156,7 +158,7 @@ describe('the settlement\'s summary', () => {
   test('Esc goes back to the board, as Back does', async () => {
     const { fake, me, pipe } = world();
     window.history.replaceState(null, '', '/');
-    openSummary(fake, me, pipe);
+    await openSummary(fake, me, pipe);
     await screen.findByRole('heading', { level: 1, name: 'While you were away' });
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(where.path).toBe('/'));
@@ -165,7 +167,7 @@ describe('the settlement\'s summary', () => {
   test('Esc is not the page\'s while its tree is leaving (inert, held for an exit)', async () => {
     const { fake, me, pipe } = world();
     window.history.replaceState(null, '', '/log/settlement');
-    openSummary(fake, me, pipe);
+    await openSummary(fake, me, pipe);
     await screen.findByRole('heading', { level: 1, name: 'While you were away' });
     document.body.firstElementChild!.setAttribute('inert', '');
     fireEvent.keyDown(document, { key: 'Escape' });
@@ -178,6 +180,39 @@ describe('the settlement\'s summary', () => {
  * The page is drawn with no menu bar (web/src/App.tsx's NO_MENU), and a touch screen has no Esc: every state of it carries
  * Back to the board, the ready state's own link, so none is a dead end (#90).
  */
+describe('the summary is the log\'s document', () => {
+  test('is whole in its first render from the document, and marks the settlement seen once it is drawn, not before', async () => {
+    const { fake, me, pipe } = world();
+    localStorage.setItem(hudKey(me), pipe);
+    const boot = await fake.boot();
+    const estimate = await fake.estimate();
+    const page = await fake.logPage(null);
+    const see = vi.spyOn(fake, 'seeSettlement');
+    const doc = await loadLog({ api: fake, signedIn: () => true }, () => Promise.resolve());
+    expect(see).not.toHaveBeenCalled();
+    const read = holdReads(fake, ['session', 'seeSettlement']);
+    renderIn(fake, <SettlementScreen doc={{ page, estimate }} />, { path: '/log/settlement', boot });
+    expect(screen.getByRole('region', { name: 'Wallet' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open my log' })).toBeInTheDocument();
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    await waitFor(() => expect(see).toHaveBeenCalledTimes(1));
+    expect(read).toEqual([]);
+    void doc;
+  });
+
+  test('the log and the summary are one document: a move from one to the other reads nothing', async () => {
+    const { fake, me, pipe } = world();
+    await openSummary(fake, me, pipe);
+    await screen.findByRole('link', { name: 'Open my log' });
+    const page = vi.spyOn(fake, 'logPage');
+    const estimate = vi.spyOn(fake, 'estimate');
+    fireEvent.click(screen.getByRole('link', { name: 'Open my log' }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'My log' })).toBeInTheDocument();
+    expect(page).not.toHaveBeenCalled();
+    expect(estimate).not.toHaveBeenCalled();
+  });
+});
+
 describe('every state of the summary\'s page has Back to the board', () => {
   const backIn = async () => {
     const link = await screen.findByRole('link', { name: 'Back to the board' });
@@ -188,21 +223,13 @@ describe('every state of the summary\'s page has Back to the board', () => {
     return link;
   };
 
-  test('loading', async () => {
+  test('a load that fails is the router\'s failure, which reads the document again on Try again', async () => {
     const { fake, me, pipe } = world();
-    vi.spyOn(fake, 'log').mockReturnValue(new Promise(() => {}));
-    openSummary(fake, me, pipe);
-    await backIn();
-    expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
-    expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
-  });
-
-  test('failed', async () => {
-    const { fake, me, pipe } = world();
-    vi.spyOn(fake, 'log').mockRejectedValue(new Error('down'));
-    openSummary(fake, me, pipe);
-    expect(await screen.findByText('The settlement could not be loaded. Reload the page to try again.')).toBeInTheDocument();
-    await backIn();
+    vi.spyOn(fake, 'logPage').mockRejectedValueOnce(new Error('down'));
+    await openSummary(fake, me, pipe);
+    expect(await screen.findByRole('heading', { name: 'The page cannot be displayed' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByRole('link', { name: 'Open my log' })).toBeInTheDocument();
   });
 
   test('empty', async () => {
@@ -210,7 +237,7 @@ describe('every state of the summary\'s page has Back to the board', () => {
     const me = fake.seed.account('me');
     const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
     fake.signInAs(me);
-    openSummary(fake, me, pipe);
+    await openSummary(fake, me, pipe);
     expect(await screen.findByText('Nothing has settled for you yet.')).toBeInTheDocument();
     await backIn();
   });
@@ -218,7 +245,7 @@ describe('every state of the summary\'s page has Back to the board', () => {
   test('signed out', async () => {
     const { fake, me, pipe } = world();
     fake.signInAs(null);
-    openSummary(fake, me, pipe);
+    await openSummary(fake, me, pipe);
     expect(await screen.findByRole('link', { name: 'Sign in' })).toBeInTheDocument();
     await backIn();
   });
@@ -228,7 +255,7 @@ describe('every state of the summary\'s page has Back to the board', () => {
     const me = fake.seed.account('me');
     const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
     fake.signInAs(me);
-    openSummary(fake, me, pipe);
+    await openSummary(fake, me, pipe);
     await screen.findByText('Nothing has settled for you yet.');
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(where.path).toBe('/'));
@@ -289,7 +316,7 @@ describe('the summary on the first load after a settlement', () => {
 
   test('opened by its address, the summary marks its settlement seen, so a load after does not open it again', async () => {
     const { fake, me, pipe } = world();
-    openSummary(fake, me, pipe);
+    await openSummary(fake, me, pipe);
     await screen.findByRole('heading', { level: 1, name: 'While you were away' });
     await waitFor(async () => expect(await seenOf(fake)).toBe(new Date(at(29, 8, 17)).toISOString()));
   });

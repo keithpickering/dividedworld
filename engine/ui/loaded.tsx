@@ -24,7 +24,12 @@ import type { PictureIo } from './profile-edit/crops.ts';
 import { SeasonScreen } from './season/Season.tsx';
 import { ContactScreen } from './contact/Contact.tsx';
 import { SettingsScreen } from './account/Settings.tsx';
-import { charactersKey, loadContact, loadMyCharacters, loadSeason, loadSettings, seasonKey, settingsKey, type GlassEnv } from './glass-docs.ts';
+import { AlertsScreen } from './alerts/Alerts.tsx';
+import { UpdatesScreen } from './updates/Updates.tsx';
+import { QueueScreen } from './admin/Queue.tsx';
+import { LogScreen } from './log/Log.tsx';
+import { SettlementScreen } from './log/Settlement.tsx';
+import { alertsKey, charactersKey, loadAlerts, loadContact, loadLog, loadMyCharacters, loadQueue, loadSeason, loadSettings, loadUpdates, logKey, queueKey, seasonKey, settingsKey, updatesKey, type GlassEnv } from './glass-docs.ts';
 import { Routes, type Route } from './routes.tsx';
 
 function Loaded<T>({ keyed, load, children }: { readonly keyed: string; readonly load: (env: LoadEnv) => Promise<ScreenDoc<T> | null>; readonly children: (doc: ScreenDoc<T>) => ReactNode }) {
@@ -118,5 +123,43 @@ export function LoadedSettings() {
   const routes = useMemo<readonly Route[]>(() => [
     { path: '/settings', load: ({ query }) => loadSettings(env, query, noChunk), key: (_, query) => settingsKey(query), render: (_, doc) => <SettingsScreen doc={doc as Parameters<typeof SettingsScreen>[0]['doc']} /> },
   ], [env]);
+  return <Routes routes={routes} />;
+}
+
+export function LoadedAlerts() {
+  const env = useGlassEnv();
+  const routes = useMemo<readonly Route[]>(() => [
+    { path: '/alerts', load: () => loadAlerts(env, noChunk), key: alertsKey, render: (_, doc) => <AlertsScreen doc={doc as Parameters<typeof AlertsScreen>[0]['doc']} /> },
+  ], [env]);
+  return <Routes routes={routes} />;
+}
+
+export function LoadedUpdates() {
+  const env = useGlassEnv();
+  const routes = useMemo<readonly Route[]>(() => [
+    { path: '/updates', load: ({ query }) => loadUpdates(env, query, noChunk), key: (_, query) => updatesKey(query), render: (_, doc) => <UpdatesScreen doc={doc as Parameters<typeof UpdatesScreen>[0]['doc']} /> },
+  ], [env]);
+  return <Routes routes={routes} />;
+}
+
+/** The admin queue; `now` fixes the clock the countdowns are read against. */
+export function LoadedQueue({ now }: { readonly now?: number } = {}) {
+  const env = useGlassEnv();
+  const routes = useMemo<readonly Route[]>(() => [
+    { path: '/admin/queue', load: () => loadQueue(env, noChunk), key: queueKey, render: (_, doc) => <QueueScreen doc={doc as Parameters<typeof QueueScreen>[0]['doc']} now={now} /> },
+  ], [env, now]);
+  return <Routes routes={routes} />;
+}
+
+/** My log at `/log` and the settlement summary at `/log/settlement`, one document. */
+export function LoadedLog() {
+  const env = useGlassEnv();
+  const routes = useMemo<readonly Route[]>(() => {
+    const load = () => loadLog(env, noChunk);
+    return [
+      { path: '/log', load, key: logKey, render: (_, doc) => <LogScreen doc={doc as Parameters<typeof LogScreen>[0]['doc']} /> },
+      { path: '/log/settlement', load, key: logKey, render: (_, doc) => <SettlementScreen doc={doc as Parameters<typeof SettlementScreen>[0]['doc']} /> },
+    ];
+  }, [env]);
   return <Routes routes={routes} />;
 }

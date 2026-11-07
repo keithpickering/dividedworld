@@ -2,7 +2,8 @@ import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { seedMoves } from '../board/move-world.ts';
-import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
+import { buildWorld, holdReads, renderIn, testInstance } from '../test-world.tsx';
+import { LoadedQueue } from '../loaded.tsx';
 import { QueueScreen } from './Queue.tsx';
 
 beforeEach(() => localStorage.clear());
@@ -11,7 +12,7 @@ function open(options: { readonly as?: 'admin' | 'player'; readonly build?: (fak
   const fake = buildWorld();
   const w = seedMoves(fake, testInstance, { signIn: options.as === 'player' ? 'player' : 'admin' });
   options.build?.(fake, w);
-  renderIn(fake, <QueueScreen now={fake.clock.now()} />, { path: '/admin/queue' });
+  renderIn(fake, <LoadedQueue now={fake.clock.now()} />, { path: '/admin/queue' });
   return { fake, w };
 }
 
@@ -194,6 +195,49 @@ describe('holding and reversing', () => {
   });
 });
 
+describe('the page is its document', () => {
+  test('is whole in its first render, from the document, with the boards from boot: nothing is read', async () => {
+    const fake = buildWorld();
+    seedMoves(fake, testInstance, { signIn: 'admin' });
+    const boot = await fake.boot();
+    const doc = await fake.queuePage();
+    const read = holdReads(fake, ['session']);
+    renderIn(fake, <QueueScreen doc={doc!} now={fake.clock.now()} />, { path: '/admin/queue', boot });
+    expect(screen.getByRole('region', { name: /^Waiting to land/u })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: /^In force/u })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: /^Boards/u }).querySelectorAll('article').length).toBeGreaterThan(0);
+    expect(screen.getByRole('form', { name: 'How players reach you' })).toBeInTheDocument();
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(read).toEqual([]);
+  });
+
+  test('the route reads queuePage once, and none of the four reads it replaced', async () => {
+    const fake = buildWorld();
+    seedMoves(fake, testInstance, { signIn: 'admin' });
+    const page = vi.spyOn(fake, 'queuePage');
+    const own = ['adminQueue', 'boardNames', 'bosses', 'adminContact', 'isAdmin'] as const;
+    const spies = own.map((n) => vi.spyOn(fake, n));
+    renderIn(fake, <LoadedQueue now={fake.clock.now()} />, { path: '/admin/queue', boot: await fake.boot() });
+    await group(/^Waiting to land/u);
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(spies.map((spy) => spy.mock.calls.length)).toEqual(own.map(() => 0));
+  });
+
+  test('an action reads queuePage once more, in place', async () => {
+    const fake = buildWorld();
+    seedMoves(fake, testInstance, { signIn: 'admin' });
+    renderIn(fake, <LoadedQueue now={fake.clock.now()} />, { path: '/admin/queue', boot: await fake.boot() });
+    const waiting = await group(/^Waiting to land/u);
+    const page = vi.spyOn(fake, 'queuePage');
+    await userEvent.click(within(waiting).getByRole('button', { name: /^Hold/u }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /^Hold/u }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(page).toHaveBeenCalledTimes(1);
+    expect((await fake.adminQueue()).waiting).toHaveLength(0);
+  });
+});
+
 describe('who may see it', () => {
   test('a player is told plainly that it is for admins, and the queue is not asked for', async () => {
     open({ as: 'player' });
@@ -206,10 +250,14 @@ describe('who may see it', () => {
     const fake = buildWorld();
     seedMoves(fake, testInstance, { signIn: 'player' });
     const asked = vi.spyOn(fake, 'adminQueue');
-    renderIn(fake, <QueueScreen now={fake.clock.now()} />, { path: '/admin/queue' });
+    const page = vi.spyOn(fake, 'queuePage');
+    renderIn(fake, <LoadedQueue now={fake.clock.now()} />, { path: '/admin/queue' });
     expect(await screen.findByText('The admin queue is for admins.')).toBeInTheDocument();
     await new Promise((r) => setTimeout(r, 50));
     expect(asked).not.toHaveBeenCalled();
+    /* The address exists, so it is not "can't be found": the line is the page's, from one queuePage read that answered null. */
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/can.t be found/u)).toBeNull();
     expect(screen.queryByRole('alert')).toBeNull();
   });
 });
@@ -643,7 +691,7 @@ describe('replacing a description', () => {
     const { fake } = open();
     const boards = await group(/^Boards/u);
     const first = (await fake.boards())[0]!;
-    const card = within(boards).getByRole('article', { name: first.name });
+    const card = await within(boards).findByRole('article', { name: first.name });
     expect(card).toHaveTextContent(`Description: “${first.description}”`);
     await userEvent.click(within(card).getByRole('button', { name: /^Replace description of/u }));
     await userEvent.type(within(card).getByRole('textbox', { name: /^Replace description/u }), 'Words from an admin.');
@@ -658,7 +706,7 @@ describe('replacing a description', () => {
     const { fake } = open();
     const boards = await group(/^Boards/u);
     const first = (await fake.boards())[0]!;
-    const card = within(boards).getByRole('article', { name: first.name });
+    const card = await within(boards).findByRole('article', { name: first.name });
     await userEvent.click(within(card).getByRole('button', { name: /^Replace description of/u }));
     await userEvent.type(within(card).getByRole('textbox', { name: /^Replace description/u }), '   x');
     vi.spyOn(fake, 'describeBoard').mockResolvedValueOnce({ ok: false, error: 'there is no such board' });

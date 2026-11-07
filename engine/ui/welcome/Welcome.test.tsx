@@ -19,6 +19,19 @@ const page = (o: { readonly signed?: boolean } = {}) =>
   renderInWorld(<WelcomeScreen />, { path: '/welcome', instance, avatars: { gabe: 'gabe.png' }, ...(o.signed === false ? {} : { seed: signedIn }) });
 
 describe('the welcome page', () => {
+  test('its rows are drawn from boot\'s preferences: the account\'s preferences are not read, and the welcome is marked seen once it is drawn', async () => {
+    const fake = buildWorld(undefined, instance);
+    signedIn(fake);
+    const boot = await fake.boot();
+    const prefs = vi.spyOn(fake, 'preferences');
+    const seen = vi.spyOn(fake, 'seeWelcome');
+    renderIn(fake, <WelcomeScreen />, { path: '/welcome', boot });
+    const before = await screen.findByRole('region', { name: 'Before you start' });
+    expect(await within(before).findAllByRole('radiogroup')).toHaveLength(3);
+    expect(prefs).not.toHaveBeenCalled();
+    await waitFor(() => expect(seen).toHaveBeenCalledTimes(1));
+  });
+
   test('is headed Welcome, with the letter in Gabe\'s name, his tagline and his picture drawn from the instance\'s avatars', async () => {
     page();
     expect(await screen.findByRole('heading', { level: 1, name: 'Welcome' })).toBeInTheDocument();

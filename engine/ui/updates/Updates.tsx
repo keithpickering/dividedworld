@@ -17,12 +17,14 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useKayfa } from '../context.tsx';
-import { UPDATES_PAGE, type Id, type Update } from '../data/api.ts';
+import { UPDATES_PAGE, type Id, type Update, type UpdatesPage } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import { UpdateArticle } from './UpdateArticle.tsx';
 import { utcDay } from './time.ts';
-import { SignInPrompt, useSignedIn } from '../mini.tsx';
+import { SignInPrompt, useIsAdmin } from '../mini.tsx';
+import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
+import { updatesAsked } from '../glass-docs.ts';
 import { Reactions } from '../reactions/Reactions.tsx';
 import { createMine } from '../reactions/mine.ts';
 import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
@@ -55,23 +57,45 @@ export interface UpdatesProps {
   readonly handoverGone?: number;
   /** The address asked for a handover's writer, and what it asked cannot be shown: said plainly (the to-do list could not be read, or no season was named). */
   readonly handoverProblem?: string;
+  /** The document's reactions on the update it opened (the open one, when it is the one the document read them for). */
+  readonly seed?: (Seed & { readonly act: Id }) | null;
 }
 
-function Post({ update }: { readonly update: Update }) {
+/** What the document read of the open update's reactions: its tallies and the player's own. */
+interface Seed {
+  readonly tallies: UpdatesPage['tallies'];
+  readonly mine: UpdatesPage['mine'];
+}
+
+function Post({ update, seed }: { readonly update: Update; readonly seed: Seed | null }) {
   const { api } = useKayfa();
-  const tallies = useMemo(() => createTallies(), []);
-  const mine = useMemo(() => createMine(), []);
+  /* The open update's reactions are the page's document, held before the first frame; one the document did not read for (an older one, after
+     "Show earlier updates") is read here, as before. */
+  const tallies = useMemo(() => {
+    const t = createTallies();
+    if (seed) for (const [act, tally] of Object.entries(seed.tallies)) t.merge(act, tally);
+    return t;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seeded once, as the Post is keyed by its update
+  }, []);
+  const mine = useMemo(() => {
+    const m = createMine();
+    if (seed) m.merge(update.act, seed.mine.filter((r) => r.act === update.act));
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- as above
+  }, []);
   const drafts = useSpinDrafts();
   const [spinning, setSpinning] = useState(false);
 
-  /* This update's reactions: the counts everyone sees, the player's own, and the counts as they change. */
+  /* The counts as they change; the first counts and the player's own are the document's (or, for an update it did not read for, read here). */
   useEffect(() => {
     let live = true;
     const off = api.subscribeThread(update.thread, { onTally(act, t) { if (act === update.act) tallies.merge(act, t); } });
-    void api.tallies([update.act]).then((t) => { if (live) for (const [act, tally] of Object.entries(t)) tallies.merge(act, tally); }, () => { /* the chips stay as they were */ });
-    void api.myReactions([update.act]).then((r) => { if (live) mine.merge(update.act, r); }, () => { /* the player's own marks stay as they were */ });
+    if (seed === null) {
+      void api.tallies([update.act]).then((t) => { if (live) for (const [act, tally] of Object.entries(t)) tallies.merge(act, tally); }, () => { /* the chips stay as they were */ });
+      void api.myReactions([update.act]).then((r) => { if (live) mine.merge(update.act, r); }, () => { /* the player's own marks stay as they were */ });
+    }
     return () => { live = false; off(); };
-  }, [api, update.act, update.thread, tallies, mine]);
+  }, [api, update.act, update.thread, tallies, mine, seed]);
 
   return (
     <UpdateArticle update={update}>
@@ -89,7 +113,7 @@ function Post({ update }: { readonly update: Update }) {
   );
 }
 
-export function Updates({ updates, open, more, onMore, admin, onWritten, initial, handoverGone, handoverProblem }: UpdatesProps) {
+export function Updates({ updates, open, more, onMore, admin, onWritten, initial, handoverGone, handoverProblem, seed = null }: UpdatesProps) {
   const current = updates.find((u) => u.act === open) ?? updates[0];
   const [writing, setWriting] = useState(initial !== undefined || handoverGone !== undefined || handoverProblem !== undefined);
   useEffect(() => { if (initial !== undefined || handoverGone !== undefined || handoverProblem !== undefined) setWriting(true); }, [initial, handoverGone, handoverProblem]);
@@ -128,72 +152,58 @@ export function Updates({ updates, open, more, onMore, admin, onWritten, initial
               {writing && <WriteUpdate key={initial?.title ?? ''} onWritten={onWritten} initial={initial} />}
             </CalmRegion>
           )}
-          {current ? <Post key={current.act} update={current} /> : <CalmRegion as="p" className="kb-updates-empty">Nothing here yet. When the developers post an update, it is here, and in everyone&apos;s alerts.</CalmRegion>}
+          {current ? <Post key={current.act} update={current} seed={seed !== null && seed.act === current.act ? seed : null} /> : <CalmRegion as="p" className="kb-updates-empty">Nothing here yet. When the developers post an update, it is here, and in everyone&apos;s alerts.</CalmRegion>}
         </div>
       </div>
     </div>
   );
 }
 
-type State =
-  | { readonly status: 'loading' }
-  | { readonly status: 'failed' }
-  | { readonly status: 'ready'; readonly updates: readonly Update[]; readonly more: boolean };
+/** Updates at /updates, drawn from the route's document: the newest page, the open update's reactions and, for an admin who followed a handover link, the queue's to-do. */
+export function UpdatesScreen({ doc }: { readonly doc: ScreenDoc<UpdatesPage> }) {
+  if (isSignedOutDoc(doc)) return <div className="kb-updates"><CalmRegion className="kb-updates-empty"><SignInPrompt /></CalmRegion></div>;
+  return <UpdatesView page={doc} />;
+}
 
-/** Updates at /updates. */
-export function UpdatesScreen() {
+function UpdatesView({ page }: { readonly page: UpdatesPage }) {
   const { api } = useKayfa();
-  const signedIn = useSignedIn(api);
   const { query } = useLocation();
   const navigate = useNavigate();
-  const [state, setState] = useState<State>({ status: 'loading' });
-  const [admin, setAdmin] = useState(false);
+  const admin = useIsAdmin(api, true);
+  /* The newest page is the document's. What the player added to it (an earlier page, an update just written) is held beside it. */
+  const [added, setAdded] = useState<{ readonly older: readonly Update[]; readonly written: readonly Update[]; readonly more: boolean | null }>({ older: [], written: [], more: null });
   const [paging, setPaging] = useState(false);
-  /* `?write=handover&season=N` (from the admin queue's to-do): the writer opens on that handover's facts. Read once the page knows the reader is an admin. */
-  const asked = Number(query.get('season'));
-  const season = query.get('write') === 'handover' && Number.isInteger(asked) && asked > 0 ? asked : null;
-  const [handover, setHandover] = useState<{ readonly season: number; readonly draft: { readonly title: string; readonly words: string } | null; readonly failed?: true } | null>(null);
-  useEffect(() => {
-    if (!admin || season === null) { setHandover(null); return undefined; }
-    let live = true;
-    api.adminQueue().then(
-      (q) => { const todo = q.todos.find((t) => t.season === season); if (live) setHandover({ season, draft: todo === undefined ? null : todoDraft(todo) }); },
-      () => { if (live) setHandover({ season, draft: null, failed: true }); },
-    );
-    return () => { live = false; };
-  }, [api, admin, season]);
+  const updates = useMemo(() => {
+    const seen = new Set<Id>();
+    return [...added.written, ...page.updates, ...added.older].filter((u) => !seen.has(u.act) && seen.add(u.act));
+  }, [page.updates, added]);
+  const more = added.more ?? page.updates.length >= UPDATES_PAGE;
+  /* `?write=handover&season=N` (from the admin queue's to-do): the writer opens on that handover's facts, read with the document. */
+  const asked = updatesAsked(query);
+  const todo = asked.season === null ? undefined : page.queue?.todos.find((t) => t.season === asked.season);
+  const asksHandover = asked.write === 'handover';
+  const problem = asksHandover && asked.season === null ? 'The address names no season, so there is no handover to write about. Open the to-do from the admin queue.' : undefined;
+  /* The reactions the document read are of the update it opened: the one asked for when it is among its updates, else the newest. */
+  const opened = page.updates.find((u) => u.act === asked.update) ?? page.updates[0];
+  const seed = opened === undefined ? null : { act: opened.act, tallies: page.tallies, mine: page.mine };
 
-  useEffect(() => {
-    if (!signedIn) return undefined;
-    let live = true;
-    api.updates().then(
-      (updates) => { if (live) setState({ status: 'ready', updates, more: updates.length >= UPDATES_PAGE }); },
-      () => { if (live) setState({ status: 'failed' }); },
-    );
-    api.isAdmin().then((a) => { if (live) setAdmin(a); }, () => { /* no form offered */ });
-    return () => { live = false; };
-  }, [api, signedIn]);
-
-  if (signedIn === false) return <div className="kb-updates"><CalmRegion className="kb-updates-empty"><SignInPrompt /></CalmRegion></div>;
-  if (signedIn === null || state.status === 'loading') return <div className="kb-updates" aria-busy="true" />;
-  if (state.status === 'failed') return <div className="kb-updates"><CalmRegion as="p" className="kb-updates-empty">The updates could not be loaded. Reload the page to try again.</CalmRegion></div>;
-
-  const asksHandover = query.get('write') === 'handover';
-  const problem = asksHandover && season === null ? 'The address names no season, so there is no handover to write about. Open the to-do from the admin queue.'
-    : handover?.failed === true ? 'The to-do list could not be loaded, so the handover\'s facts are not here. Reload the page to try again.' : undefined;
-
-  const more = () => {
-    const last = state.updates.at(-1);
+  const onMore = () => {
+    const last = updates.at(-1);
     if (!last || paging) return;
     setPaging(true);
     api.updates(last.at).then(
-      (older) => setState((was) => (was.status !== 'ready' ? was : { status: 'ready', updates: [...was.updates, ...older.filter((u) => !was.updates.some((x) => x.act === u.act))], more: older.length >= UPDATES_PAGE })),
+      (older) => setAdded((was) => ({ ...was, older: [...was.older, ...older], more: older.length >= UPDATES_PAGE })),
       () => { /* the button stays, to try again */ },
     ).finally(() => setPaging(false));
   };
   const written = (update: Update) => {
-    setState((was) => (was.status !== 'ready' ? was : { ...was, updates: [update, ...was.updates.filter((u) => u.act !== update.act)] }));
+    setAdded((was) => ({ ...was, written: [update, ...was.written.filter((u) => u.act !== update.act)] }));
     navigate(updatesAt(update.act));
   };
-  return <Updates updates={state.updates} open={query.get('update')} more={state.more} onMore={more} admin={admin} onWritten={written} initial={handover?.draft ?? undefined} handoverGone={handover !== null && handover.draft === null && handover.failed !== true ? handover.season : undefined} handoverProblem={problem} />;
+  return (
+    <Updates
+      updates={updates} open={asked.update} more={more} onMore={onMore} admin={admin} onWritten={written} initial={admin && todo !== undefined ? todoDraft(todo) : undefined}
+      handoverGone={admin && asked.season !== null && todo === undefined ? asked.season : undefined} handoverProblem={admin ? problem : undefined} seed={seed}
+    />
+  );
 }

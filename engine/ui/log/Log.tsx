@@ -23,7 +23,10 @@ import { useKayfa } from '../context.tsx';
 import { BanAppeal } from '../cards/Forms.tsx';
 import type { Id, LogSettlement } from '../data/api.ts';
 import { CONTACT_PATH } from '../contact/Contact.tsx';
-import { SignInPrompt, useSignedIn } from '../mini.tsx';
+import { SignInPrompt } from '../mini.tsx';
+import { useBoot } from '../boot.tsx';
+import type { LogDoc } from '../glass-docs.ts';
+import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import { usePlayer } from '../player.tsx';
@@ -258,34 +261,27 @@ export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' 
   );
 }
 
-/** My log at /log: the newest page, the HUD's character's tab unless the navigation chose one, and a settlement open where it asked. */
-export function LogScreen() {
+/** My log at /log: the document's newest page, the HUD's character's tab unless the navigation chose one, and a settlement open where it asked. */
+export function LogScreen({ doc }: { readonly doc: ScreenDoc<LogDoc> }) {
+  if (isSignedOutDoc(doc)) return <div className="kb-log"><CalmRegion className="kb-log-empty"><SignInPrompt /></CalmRegion></div>;
+  return <LogPageView doc={doc} />;
+}
+
+function LogPageView({ doc }: { readonly doc: LogDoc }) {
   const { api } = useKayfa();
-  const signedIn = useSignedIn(api);
-  const { session, hudCharacter } = usePlayer();
+  const { hudCharacter, characters } = usePlayer();
+  const boot = useBoot();
   const { state: carried } = useLocation();
   const opening = openingOf(carried);
-  const { state, older } = useLog(api, signedIn, session.account);
+  const { data, older, olderState } = useLog(api, doc, characters, boot?.nextSettlementAt ?? null);
   /* Undefined until the player picks: the navigation's choice, else the HUD's character. */
   const [picked, setPicked] = useState<Id | null | undefined>(undefined);
   const [open, setOpen] = useState<ReadonlySet<number>>(() => new Set(opening.open === undefined ? [] : [opening.open]));
-  /* Another account's log starts on its own tab with nothing open. */
-  const account = session.account;
-  const last = useRef(account);
-  useEffect(() => {
-    if (last.current === account) return;
-    last.current = account;
-    setPicked(undefined);
-    setOpen(new Set());
-  }, [account]);
-  if (signedIn === false) return <div className="kb-log"><CalmRegion className="kb-log-empty"><SignInPrompt /></CalmRegion></div>;
-  if (signedIn === null || state.status === 'loading') return <div className="kb-log" aria-busy="true" />;
-  if (state.status === 'failed') return <div className="kb-log"><CalmRegion as="p" className="kb-log-empty">Your log could not be loaded. Reload the page to try again.</CalmRegion></div>;
   const tab = picked !== undefined ? picked : (opening.character ?? hudCharacter?.id ?? null);
   const toggle = (id: number, to?: boolean) => setOpen((now) => {
     const next = new Set(now);
     if (to ?? !now.has(id)) next.add(id); else next.delete(id);
     return next;
   });
-  return <Log data={state.data} tab={tab} onTab={setPicked} open={open} onToggle={toggle} onOlder={older} older={state.older} />;
+  return <Log data={data} tab={tab} onTab={setPicked} open={open} onToggle={toggle} onOlder={older} older={olderState} />;
 }

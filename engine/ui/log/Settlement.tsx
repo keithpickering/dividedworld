@@ -32,7 +32,9 @@ import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { isLeaving } from '../glass/Held.tsx';
 import { pageEscape, plainClick } from '../glass/keys.ts';
 import { PageHead } from '../glass/PageHead.tsx';
-import { SignInPrompt, useSignedIn } from '../mini.tsx';
+import { SignInPrompt } from '../mini.tsx';
+import type { LogDoc } from '../glass-docs.ts';
+import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import { Orbs } from '../orbs/Orbs.tsx';
 import { usePlayer } from '../player.tsx';
 import { useNavigate } from '../router.tsx';
@@ -154,12 +156,16 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
   );
 }
 
+/** A document for a screen that is signed out and so draws none of it. */
+const EMPTY_DOC: LogDoc = { estimate: null, page: { log: { settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], infractions: [], bans: [], reports: [], appeals: [], before: null }, acts: [], states: {}, people: [], threads: [], boards: [], standings: {}, turns: [], season: null } };
+
 /** The summary at /log/settlement: the newest settlement of the player's, the HUD's character's tab first; Esc goes back. */
-export function SettlementScreen() {
+export function SettlementScreen({ doc }: { readonly doc: ScreenDoc<LogDoc> }) {
+  const signedOut = isSignedOutDoc(doc);
   const { api } = useKayfa();
-  const signedIn = useSignedIn(api);
-  const { session, hudCharacter } = usePlayer();
-  const { state } = useLog(api, signedIn, session.account);
+  const { session, hudCharacter, characters } = usePlayer();
+  const boot = useBoot();
+  const { data } = useLog(api, signedOut ? EMPTY_DOC : doc, characters, boot?.nextSettlementAt ?? null);
   const [picked, setPicked] = useState<Id | undefined>(undefined);
   const back = useBackToBoard();
   const root = useRef<HTMLDivElement>(null);
@@ -175,7 +181,8 @@ export function SettlementScreen() {
     return () => document.removeEventListener('keydown', onKey);
   }, [back]);
 
-  const newest = state.status === 'ready' ? state.data.log.settlements[0] : undefined;
+  /* Seen once the summary is drawn: a write on landing, never part of the load, so a hover on the Log tab marks nothing. */
+  const newest = signedOut ? undefined : data.log.settlements[0];
   useEffect(() => {
     if (newest && session.account) void api.seeSettlement(newest.endsAt).catch(() => { /* unmarked, it shows again on a later load: no harm */ });
   }, [api, newest, session.account]);
@@ -185,17 +192,13 @@ export function SettlementScreen() {
    * state without it would be a dead end (#90). Open my log joins it once there is a settlement to open.
    */
   const tab = picked ?? hudCharacter?.id ?? null;
-  const ready = state.status === 'ready' && newest ? state.data : undefined;
+  const ready = newest ? data : undefined;
   const opening: LogOpening | undefined = ready && newest ? { open: newest.id, character: shownTab(ready, tab)?.id } : undefined;
-  const content = signedIn === false
+  const content = signedOut
     ? <CalmRegion><SignInPrompt /></CalmRegion>
-    : signedIn === null || state.status === 'loading'
-      ? <div className="kb-settled-wait" aria-busy="true" />
-      : state.status === 'failed'
-        ? <CalmRegion as="p">The settlement could not be loaded. Reload the page to try again.</CalmRegion>
-        : ready
-          ? <Summary data={ready} tab={tab} onTab={setPicked} />
-          : <CalmRegion as="p">Nothing has settled for you yet.</CalmRegion>;
+    : ready
+      ? <Summary data={ready} tab={tab} onTab={setPicked} />
+      : <CalmRegion as="p">Nothing has settled for you yet.</CalmRegion>;
   return (
     <div ref={root} className="kb-settled">
       {content}

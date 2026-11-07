@@ -31,13 +31,15 @@ const rowNamed = (words: string, rows: number): number | null => {
   return Number.isInteger(n) && n >= 1 && n <= rows ? n : null;
 };
 
-export function AdminContact() {
+const rowsOf = (links: readonly ContactLink[], from: number): readonly Row[] => (links.length === 0 ? [{ key: from, label: '', href: '' }] : links.map((l, i) => ({ key: from + i, label: l.label, href: l.href })));
+
+/** The form, started from the links the page read (the queue's document); it holds its own rows and what the server stored from there on. */
+export function AdminContact({ initial }: { readonly initial: readonly ContactLink[] }) {
   const { api } = useKayfa();
   const id = useId();
-  const [rows, setRows] = useState<readonly Row[] | null>(null);
-  const [next, setNext] = useState(1);
-  const [stored, setStored] = useState<readonly ContactLink[] | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [rows, setRows] = useState<readonly Row[]>(() => rowsOf(initial, 0));
+  const [next, setNext] = useState(() => rowsOf(initial, 0).length);
+  const [stored, setStored] = useState<readonly ContactLink[]>(initial);
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -53,18 +55,10 @@ export function AdminContact() {
   });
 
   const show = (links: readonly ContactLink[], from: number) => {
-    const made = links.length === 0 ? [{ key: from, label: '', href: '' }] : links.map((l, i) => ({ key: from + i, label: l.label, href: l.href }));
+    const made = rowsOf(links, from);
     setRows(made);
     setNext(from + made.length);
   };
-  useEffect(() => {
-    let live = true;
-    void api.adminContact().then((links) => { if (live) { setStored(links); show(links, 0); } }, () => { if (live) setFailed(true); });
-    return () => { live = false; };
-  }, [api]); /* read once, when the screen opens */
-
-  if (failed) return <CalmRegion as="section" className="kb-admin-contact" aria-labelledby={`${id}-head`}><h2 id={`${id}-head`} className="kb-queue-group-head kb-glass-display">How players reach you</h2><p role="alert" className="kb-queue-note">The contact could not be read. Reload the page to try again.</p></CalmRegion>;
-  if (rows === null) return <section className="kb-admin-contact" aria-busy="true" />;
 
   const edit = () => { setRefusal(null); setSaved(false); };
   const setRow = (key: number, part: 'label' | 'href', value: string) => { edit(); setRows(rows.map((r) => (r.key === key ? { ...r, [part]: value } : r))); };
@@ -110,7 +104,7 @@ export function AdminContact() {
   };
 
   const named = refusal === null ? null : rowNamed(refusal, rows.length);
-  const empty = stored !== null && stored.length === 0;
+  const empty = stored.length === 0;
   return (
     <CalmRegion as="section" className="kb-admin-contact" aria-labelledby={`${id}-head`}>
       <h2 id={`${id}-head`} className="kb-queue-group-head kb-glass-display">How players reach you</h2>

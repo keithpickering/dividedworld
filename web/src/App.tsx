@@ -4,7 +4,7 @@
  */
 import { AnimatePresence, useIsPresent } from 'motion/react';
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { BoardPage, Boot, ContactLink, Estimate, IndexPage, KayfaApi, MyCharactersPage, MyInvite, ProfilePage, RecordPage, ScreenSettings, SeasonPage, Session, ThreadPage } from '../../engine/ui/data/api.ts';
+import type { AlertsPage, BoardPage, Boot, ContactLink, Estimate, IndexPage, KayfaApi, MyCharactersPage, MyInvite, ProfilePage, QueuePage, RecordPage, ScreenSettings, SeasonPage, Session, ThreadPage, UpdatesPage } from '../../engine/ui/data/api.ts';
 import { fallbackSettings } from './data/settings.ts';
 import { BootProvider } from '../../engine/ui/boot.tsx';
 import { CannotDisplay } from '../../engine/ui/frame/Unavailable.tsx';
@@ -31,7 +31,7 @@ import { match, RouterProvider, useLocation, useNavigate, useRouterAccount, useR
 import { effectCards } from '../../engine/ui/cards/plays.ts';
 import { boardKey, loadBoard, loadIndex, loadProfile, loadRecord, loadThread, recordKey, threadKey, type LoadEnv, type ScreenDoc } from '../../engine/ui/screen-docs.ts';
 import { Routes, type Failures, type Route } from '../../engine/ui/routes.tsx';
-import { charactersKey, lazyScreen, loadChunk, loadContact, loadMyCharacters, loadSeason, loadSettings, seasonKey, settingsKey } from '../../engine/ui/glass-docs.ts';
+import { alertsKey, charactersKey, ESTIMATE_WAIT_MS, lazyScreen, loadAlerts, loadChunk, loadContact, loadLog, loadMyCharacters, loadQueue, loadSeason, loadSettings, loadUpdates, logKey, queueKey, seasonKey, settingsKey, updatesKey, type LogDoc, type NotAdminDoc } from '../../engine/ui/glass-docs.ts';
 import { GlassCannotDisplay, GlassCannotFind } from '../../engine/ui/glass/Unavailable.tsx';
 import { ThreadScreen } from '../../engine/ui/thread/Thread.tsx';
 import { instance } from '../../instances/divided-world/index.ts';
@@ -72,6 +72,9 @@ function routesFor(env: LoadEnv): readonly Route[] {
   /* My characters and Edit profile are one document and so one loader: a move between them reads nothing (the router keeps a document by its loader and key). */
   const charactersChunks = () => Promise.all([Characters.preload(), ProfileEdit.preload()]);
   const loadCharacters = () => loadMyCharacters(env, charactersChunks);
+  /* My log and the settlement summary are one document and so one loader. */
+  const logChunks = () => Promise.all([LogScreen.preload(), SettlementScreen.preload()]);
+  const loadLogDoc = () => loadLog(env, logChunks);
   return [
     { path: '/', load: () => loadIndex(env), render: (_, doc) => <IndexScreen doc={doc as ScreenDoc<IndexPage>} /> },
     {
@@ -89,15 +92,17 @@ function routesFor(env: LoadEnv): readonly Route[] {
     { path: '/standings', render: () => <MovedToRankings /> },
     { path: '/rankings', render: () => <MovedToRankings /> },
     { path: '/vending', ...chunkOnly(Vending), render: () => <Vending.Component /> },
-    /* The screens of the next task read for themselves still; they load their chunk beside the move until their documents come. */
-    { path: '/alerts', ...chunkOnly(AlertsScreen), render: () => <AlertsScreen.Component /> },
-    { path: '/updates', ...chunkOnly(UpdatesScreen), render: () => <UpdatesScreen.Component /> },
+    { path: '/alerts', load: () => loadAlerts(env, AlertsScreen.preload), key: alertsKey, render: (_, doc) => <AlertsScreen.Component doc={doc as ScreenDoc<AlertsPage>} /> },
+    {
+      path: '/updates', load: ({ query }) => loadUpdates(env, query, UpdatesScreen.preload), key: (_, query) => updatesKey(query),
+      render: (_, doc) => <UpdatesScreen.Component doc={doc as ScreenDoc<UpdatesPage>} />,
+    },
     { path: '/guide', ...chunkOnly(GuideScreen), render: () => <GuideScreen.Component /> },
     { path: '/contact', load: () => loadContact(env, ContactScreen.preload), render: (_, doc) => <ContactScreen.Component doc={doc as readonly ContactLink[]} /> },
     { path: '/welcome', ...chunkOnly(WelcomeScreen), render: () => <WelcomeScreen.Component /> },
-    { path: '/admin/queue', ...chunkOnly(QueueScreen), render: () => <QueueScreen.Component /> },
-    { path: '/log', ...chunkOnly(LogScreen), render: () => <LogScreen.Component /> },
-    { path: '/log/settlement', ...chunkOnly(SettlementScreen), render: () => <SettlementScreen.Component /> },
+    { path: '/admin/queue', load: () => loadQueue(env, QueueScreen.preload), key: queueKey, render: (_, doc) => <QueueScreen.Component doc={doc as ScreenDoc<QueuePage> | NotAdminDoc} /> },
+    { path: '/log', load: loadLogDoc, key: logKey, render: (_, doc) => <LogScreen.Component doc={doc as ScreenDoc<LogDoc>} /> },
+    { path: '/log/settlement', load: loadLogDoc, key: logKey, render: (_, doc) => <SettlementScreen.Component doc={doc as ScreenDoc<LogDoc>} /> },
     { path: '/c/:id', load: ({ params }) => loadProfile(env, params.id!), render: ({ id }, doc) => <ProfileScreen id={id!} doc={doc as ScreenDoc<ProfilePage>} /> },
     {
       path: '/c/:id/record', load: ({ params, query }) => loadRecord(env, params.id!, query), key: (params, query) => recordKey(params.id!, query),
@@ -302,7 +307,7 @@ function useGlass() {
 const FIXED_CHANCE: { readonly random?: () => number } = new URLSearchParams(window.location.search).get('fixture') === 'boards' ? { random: () => 0 } : {};
 
 /** How long after boot and the first load the estimate is waited for before the page draws without it. */
-export const ESTIMATE_WAIT_MS = 600;
+export { ESTIMATE_WAIT_MS };
 
 /** What the first load read: the session, boot (a session's), the instance's settings, and the estimate if it landed in time. */
 interface FirstLoad {

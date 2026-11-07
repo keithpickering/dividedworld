@@ -11,8 +11,9 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { addressOf, useLocation } from '../router.tsx';
 import type { Instance } from '../../rules/types.ts';
-import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
+import { buildWorld, holdReads, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
+import { LoadedUpdates } from '../loaded.tsx';
 import { UpdatesScreen } from './Updates.tsx';
 import { LoadedThread } from '../loaded.tsx';
 
@@ -46,7 +47,7 @@ function world(o: { updates?: number } = {}) {
   return { fake, me, other, admin, pipe, spritey, old, mid, newest };
 }
 
-const show = (fake: Fake, path = '/updates') => renderIn(fake, <UpdatesScreen />, { path, instance, avatars: AVATARS });
+const show = (fake: Fake, path = '/updates') => renderIn(fake, <LoadedUpdates />, { path, instance, avatars: AVATARS });
 const article = () => screen.getByRole('article');
 
 describe('the persona\'s picture', () => {
@@ -58,38 +59,51 @@ describe('the persona\'s picture', () => {
 });
 
 describe('the page', () => {
-  test('is a heading, the persona, a dated headline, prose and a plain What changed list, for the newest update', async () => {
+  test('is whole in its first render, from its document: the articles, the archive, the open update\'s reactions, and nothing read', async () => {
     const w = world();
-    show(w.fake);
-    expect(await screen.findByRole('heading', { level: 1, name: 'Updates' })).toBeInTheDocument();
-    const post = await screen.findByRole('article', { name: 'Traps now bite board cards' });
-    expect(within(post).getByRole('heading', { level: 2, name: 'Traps now bite board cards' })).toBeInTheDocument();
-    // The persona: avatar, name, tagline.
-    expect(within(post).getByText('Gabe')).toBeInTheDocument();
-    expect(within(post).getByText('Made this. Sorry.')).toBeInTheDocument();
-    expect(post.querySelector('img')).toHaveAttribute('src', '/avatars/gabe.png');
-    // A dated headline: the time element carries the instant, in UTC.
-    const time = within(post).getByText(/NOV 2/iu);
-    expect(time.tagName).toBe('TIME');
-    expect(time).toHaveAttribute('datetime', new Date(at(2)).toISOString());
-    expect(time).toHaveTextContent(/Nov 2 · 08:00 UTC/iu);
-    // Prose, a paragraph to a blank line.
-    expect(within(post).getByText('Somebody played Main Event on a pinned thread.')).toBeInTheDocument();
-    expect(within(post).getByText('The trap was right to be offended.')).toBeInTheDocument();
-    // The plain list, each change a label and its words.
-    expect(within(post).getByRole('heading', { level: 3, name: 'What changed' })).toBeInTheDocument();
-    /* The h3 names the list, so the list carries no label of its own (it would be announced twice). */
-    expect(within(post).queryByRole('list', { name: 'What changed' })).toBeNull();
-    const items = within(post.querySelector('ul.kb-updates-changes') as HTMLElement).getAllByRole('listitem');
-    expect(items.map((li) => li.textContent)).toEqual(['Trap Card can now catch a card played on a thread or a board.', 'Fixed: the log names what a card was played on.', 'No label on this one.']);
-    expect(items[0]!.querySelector('b')).toHaveTextContent('Trap Card');
-    expect(items[2]!.querySelector('b')).toBeNull();
+    must(await w.fake.react(w.newest, w.pipe, 'tea'));
+    const boot = await w.fake.boot();
+    const doc = await w.fake.updatesPage(null, null, null);
+    const read = holdReads(w.fake, ['session']);
+    renderIn(w.fake, <UpdatesScreen doc={doc} />, { path: '/updates', instance, avatars: AVATARS, boot });
+    expect(screen.getByRole('article', { name: 'Traps now bite board cards' })).toBeInTheDocument();
+    expect(within(screen.getByRole('navigation', { name: 'All updates' })).getAllByRole('link')).toHaveLength(3);
+    expect(screen.getByRole('button', { name: /Tea, 1, including yours/u })).toBeInTheDocument();
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(read).toEqual([]);
   });
 
-  test('says in its lede that the voice is the persona\'s and every fact in it is true', async () => {
+  test('reads one updatesPage for the address and none of its old reads; the admin is boot\'s', async () => {
     const w = world();
+    const page = vi.spyOn(w.fake, 'updatesPage');
+    const own = ['updates', 'tallies', 'myReactions', 'isAdmin', 'adminQueue'] as const;
+    const spies = own.map((n) => vi.spyOn(w.fake, n));
+    renderIn(w.fake, <LoadedUpdates />, { path: '/updates?update=' + w.mid, instance, avatars: AVATARS, boot: await w.fake.boot() });
+    await screen.findByRole('article', { name: 'Washes 20% faster' });
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(page).toHaveBeenCalledWith(w.mid, null, null);
+    expect(spies.map((spy) => spy.mock.calls.length)).toEqual(own.map(() => 0));
+  });
+
+  test('a handover address asks for its season in the same read', async () => {
+    const w = world();
+    const page = vi.spyOn(w.fake, 'updatesPage');
+    renderIn(w.fake, <LoadedUpdates />, { path: '/updates?write=handover&season=2', instance, avatars: AVATARS });
+    await screen.findByRole('article', { name: 'Traps now bite board cards' });
+    expect(page).toHaveBeenCalledWith(null, null, 2);
+  });
+
+  test('an older update opened after Show earlier updates is not the one the document read reactions for, so its own are read', async () => {
+    const w = world({ updates: 22 });
+    const ancient = w.fake.seed.update({ title: 'Ancient', body: 'x', at: at(1) - 100 * 3_600_000 });
+    must(await w.fake.react(ancient, w.pipe, 'tea'));
     show(w.fake);
-    expect(await screen.findByText(/The voice is Gabe's; every fact in it is true\./u)).toBeInTheDocument();
+    await screen.findByRole('navigation', { name: 'All updates' });
+    await userEvent.click(screen.getByRole('button', { name: 'Show earlier updates' }));
+    await userEvent.click(await screen.findByRole('link', { name: /Ancient/u }));
+    expect(await screen.findByRole('article', { name: 'Ancient' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /Tea, 1, including yours/u })).toBeInTheDocument();
   });
 
   test('beside it, the archive (all updates, the open one included) lists every update newest first with its date; the open one is the current page', async () => {
@@ -106,7 +120,7 @@ describe('the page', () => {
   test('an archive link opens that update in the article, and an address names one', async () => {
     const w = world();
     function Where() { return <p data-testid="where">{addressOf(useLocation())}</p>; }
-    renderIn(w.fake, <><UpdatesScreen /><Where /></>, { path: '/updates', instance, avatars: AVATARS });
+    renderIn(w.fake, <><LoadedUpdates /><Where /></>, { path: '/updates', instance, avatars: AVATARS });
     await userEvent.click(await screen.findByRole('link', { name: /Washes 20% faster/u }));
     expect(await screen.findByRole('article', { name: 'Washes 20% faster' })).toBeInTheDocument();
     expect(screen.getByTestId('where')).toHaveTextContent(`/updates?update=${w.mid}`);
@@ -141,7 +155,7 @@ describe('the page', () => {
     const me = fake.seed.account('me');
     fake.seed.update({ title: 'Plain', body: 'Words.', at: at(2) });
     fake.signInAs(me);
-    renderIn(fake, <UpdatesScreen />, { path: '/updates' });
+    renderIn(fake, <LoadedUpdates />, { path: '/updates' });
     const post = await screen.findByRole('article', { name: 'Plain' });
     expect(within(post).getByText('The developers')).toBeInTheDocument();
     expect(post.querySelector('img')).toBeNull();
@@ -151,12 +165,12 @@ describe('the page', () => {
   test('with no update yet it says so plainly, and a visitor is asked to sign in', async () => {
     const fake = buildWorld(undefined, instance);
     fake.signInAs(fake.seed.account('me'));
-    renderIn(fake, <UpdatesScreen />, { path: '/updates', instance });
+    renderIn(fake, <LoadedUpdates />, { path: '/updates', instance });
     expect(await screen.findByText(/Nothing here yet/u)).toBeInTheDocument();
     expect(screen.queryByRole('article')).toBeNull();
     document.body.innerHTML = '';
     fake.signInAs(null);
-    renderIn(fake, <UpdatesScreen />, { path: '/updates', instance });
+    renderIn(fake, <LoadedUpdates />, { path: '/updates', instance });
     expect(await screen.findByRole('link', { name: 'Sign in' })).toBeInTheDocument();
   });
 
@@ -174,7 +188,8 @@ describe('the page', () => {
 describe('React and Spin a thread', () => {
   test('React is one plain button that reacts as the HUD\'s character; the reactions are meta tiles', async () => {
     const w = world();
-    show(w.fake);
+    /* The player's characters are the frame's (boot), so the HUD's character is there when the page is drawn. */
+    renderIn(w.fake, <LoadedUpdates />, { path: '/updates', instance, avatars: AVATARS, boot: await w.fake.boot() });
     const post = await screen.findByRole('article', { name: 'Traps now bite board cards' });
     const reactions = post.querySelector('.kb-reactions')!;
     expect(reactions).toHaveAttribute('data-kb-over-ink');
@@ -213,7 +228,7 @@ describe('React and Spin a thread', () => {
   test('Spin a thread opens the spin form for the update, as the HUD\'s character, and goes to the new thread, whose origin is the update', async () => {
     const w = world();
     function Where() { return <p data-testid="where">{useLocation().path}</p>; }
-    renderIn(w.fake, <><UpdatesScreen /><Where /></>, { path: '/updates', instance, avatars: AVATARS });
+    renderIn(w.fake, <><LoadedUpdates /><Where /></>, { path: '/updates', instance, avatars: AVATARS });
     const post = await screen.findByRole('article', { name: 'Traps now bite board cards' });
     await userEvent.click(within(post).getByRole('button', { name: 'Spin a thread on the board' }));
     const form = await screen.findByRole('form', { name: /^Spin a thread from the update/u });
@@ -244,7 +259,7 @@ describe('React and Spin a thread', () => {
     const fake = buildWorld(undefined, instance);
     fake.seed.update({ title: 'Quiet', body: 'x', at: at(2) });
     fake.signInAs(fake.seed.account('nobody'));
-    renderIn(fake, <UpdatesScreen />, { path: '/updates', instance });
+    renderIn(fake, <LoadedUpdates />, { path: '/updates', instance });
     const post = await screen.findByRole('article', { name: 'Quiet' });
     expect(within(post).queryByRole('button', { name: 'React' })).toBeNull();
     await userEvent.click(within(post).getByRole('button', { name: 'Spin a thread on the board' }));
@@ -330,12 +345,14 @@ describe('opened from a handover to-do', () => {
     expect(screen.getByText(/no to-do for season 9/u)).toBeInTheDocument();
   });
 
-  test('a to-do list that could not be read says so, and does not claim there is no to-do', async () => {
+  test('a to-do list that could not be read fails the page, which the glass says plainly and reads again', async () => {
     const w = handedOver();
-    vi.spyOn(w.fake, 'adminQueue').mockRejectedValue(new Error('offline'));
+    vi.spyOn(w.fake, 'updatesPage').mockRejectedValueOnce(new Error('offline'));
     show(w.fake, '/updates?write=handover&season=2');
-    expect(await screen.findByText(/to-do list could not be loaded/u)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'The page cannot be displayed' })).toBeInTheDocument();
     expect(screen.queryByText(/no to-do for season/u)).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByRole('form', { name: 'Write an update' })).toBeInTheDocument();
   });
 
   test.each(['abc', '0', '-1', '3.5'])('season=%s says plainly that the address names no season', async (bad) => {

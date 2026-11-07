@@ -15,9 +15,10 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { Alert, Id } from '../data/api.ts';
+import type { Alert, AlertsPage, Id } from '../data/api.ts';
 import { utcWhen } from '../log/lines.ts';
-import { SignInPrompt, useSignedIn } from '../mini.tsx';
+import { SignInPrompt } from '../mini.tsx';
+import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import { usePlayer } from '../player.tsx';
@@ -213,12 +214,16 @@ export function Alerts({ data, older, onOlder, onUnfollow, notes }: AlertsProps)
   );
 }
 
-/** Alerts at /alerts: the newest page, with the mark moved to its newest row. */
-export function AlertsScreen() {
+/** Alerts at /alerts: the document's newest page, with the mark moved to its newest row once it is drawn. */
+export function AlertsScreen({ doc }: { readonly doc: ScreenDoc<AlertsPage> }) {
+  if (isSignedOutDoc(doc)) return <div className="kb-alerts"><CalmRegion className="kb-alerts-empty"><SignInPrompt /></CalmRegion></div>;
+  return <AlertsPageView page={doc} />;
+}
+
+function AlertsPageView({ page }: { readonly page: AlertsPage }) {
   const { api } = useKayfa();
-  const signedIn = useSignedIn(api);
-  const { session } = usePlayer();
-  const { state, older, dropFollowed, retry } = useAlerts(api, signedIn, session.account);
+  const { characters } = usePlayer();
+  const { data, older, onOlder, dropFollowed } = useAlerts(api, page, characters);
   const [notes, setNotes] = useState<ReadonlyMap<Id, string>>(new Map());
   const note = (thread: Id, text: string | null) => setNotes((was) => { const next = new Map(was); if (text === null) next.delete(thread); else next.set(thread, text); return next; });
   const unfollow = async (thread: Id): Promise<boolean> => {
@@ -230,18 +235,5 @@ export function AlertsScreen() {
     } catch { note(thread, 'That did not go through. Try again.'); }
     return false;
   };
-  if (signedIn === false) return <div className="kb-alerts"><CalmRegion className="kb-alerts-empty"><SignInPrompt /></CalmRegion></div>;
-  if (signedIn === null || state.status === 'loading') return <div className="kb-alerts" role="status"><p className="kb-visually-hidden">Reading your alerts</p></div>;
-  if (state.status === 'failed') {
-    return (
-      <div className="kb-alerts">
-        <PageHead title="Alerts" />
-        <CalmRegion as="p" className="kb-alerts-empty" role="alert">
-          Your alerts could not be read. Nothing is lost; they are still in your log and on the board.{' '}
-          <button type="button" className="kb-alerts-unfollow" onClick={retry}>Try again</button>
-        </CalmRegion>
-      </div>
-    );
-  }
-  return <Alerts data={state.data} older={state.older} onOlder={older} onUnfollow={unfollow} notes={notes} />;
+  return <Alerts data={data} older={older} onOlder={onOlder} onUnfollow={unfollow} notes={notes} />;
 }
