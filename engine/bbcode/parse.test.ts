@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MAX_DEPTH, MAX_TAG, MAX_URL_LENGTH, parse, safeHref, safeImageSrc } from './parse.ts';
+import { BBCODE_TAGS, MAX_DEPTH, MAX_TAG, MAX_URL_LENGTH, parse, safeHref, safeImageSrc } from './parse.ts';
 import type { BbNode } from './parse.ts';
 
 const text = (t: string): BbNode => ({ type: 'text', text: t });
@@ -621,4 +621,51 @@ test('a block tag is a tag again once the [ispoiler] is closed', () => {
 
 test('[ispoiler] works inside [spoiler]', () => {
   assert.deepEqual(parse('[spoiler]a[ispoiler]b[/ispoiler][/spoiler]'), [spoiler('Spoiler', text('a'), ispoiler(text('b')))]);
+});
+
+// ---- video ----
+
+const YT = 'dQw4w9WgXcQ';
+const ytVideo = {
+  provider: 'youtube', id: YT, src: `https://www.youtube-nocookie.com/embed/${YT}`, url: `https://youtu.be/${YT}`,
+};
+
+test('[video] with a recognized URL is a video; [youtube] takes a URL or a bare id', () => {
+  assert.deepEqual(parse(`[video]https://youtu.be/${YT}[/video]`), [{ type: 'video', video: ytVideo }]);
+  assert.deepEqual(parse(`[VIDEO] https://youtu.be/${YT} [/VIDEO]`), [{ type: 'video', video: ytVideo }]);
+  assert.deepEqual(parse(`[youtube]https://youtu.be/${YT}[/youtube]`), [{ type: 'video', video: ytVideo }]);
+  assert.deepEqual(parse(`[youtube]${YT}[/youtube]`), [{ type: 'video', video: ytVideo }]);
+  assert.deepEqual(parse(`a[video]https://vimeo.com/12[/video]b`).map((n) => n.type), ['text', 'video', 'text']);
+});
+
+test('a bare id is for [youtube] only; a URL no provider matches leaves only the opener as text', () => {
+  assert.deepEqual(parse(`[video]${YT}[/video]`), [text(`[video]${YT}[/video]`)]);
+  assert.deepEqual(parse(`[youtube]short[/youtube]`), [text('[youtube]short[/youtube]')]);
+  assertLiteral([
+    '[video]https://example.com/page[/video]', '[video]javascript:alert(1)[/video]', '[video]http://a.example/x.mp4[/video]',
+    '[video]https://youtube.com.evil.example/watch?v=dQw4w9WgXcQ[/video]', '[video][/video]', '[video=x]https://youtu.be/dQw4w9WgXcQ[/video]',
+  ]);
+  assert.deepEqual(parse('[video]nope [b]b[/b][/video]'), [text('[video]nope '), { type: 'bold', children: [text('b')] }, text('[/video]')]);
+});
+
+test('[video] with no closer is text, and the rest still parses', () => {
+  assert.deepEqual(parse(`[video]https://youtu.be/${YT} [b]x[/b]`), [text(`[video]https://youtu.be/${YT} `), { type: 'bold', children: [text('x')] }]);
+  assert.deepEqual(parse('[video]'), [text('[video]')]);
+});
+
+test('a video is a block: inside an inline spoiler it is text', () => {
+  assert.deepEqual(parse(`[ispoiler][video]https://youtu.be/${YT}[/video][/ispoiler]`), [
+    { type: 'ispoiler', children: [text(`[video]https://youtu.be/${YT}[/video]`)] },
+  ]);
+});
+
+test('video and youtube are listed tags', () => {
+  assert.ok(BBCODE_TAGS.includes('video') && BBCODE_TAGS.includes('youtube'));
+});
+
+test('many unclosed [video] openers cost one search, not one each', () => {
+  const t0 = Date.now();
+  parse('[video]https://youtu.be/dQw4w9WgXcQ'.repeat(35_000));
+  parse('[video]' + 'x'.repeat(5000) + '[youtube]'.repeat(10_000) + '[/video]');
+  assert.ok(Date.now() - t0 < 2000);
 });

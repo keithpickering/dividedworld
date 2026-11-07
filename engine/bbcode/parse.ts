@@ -21,6 +21,8 @@
  * - A closer closes the nearest matching opener and, with it, anything opened inside that was
  *   never closed. `[b][i]x[/b]y[/i]` is bold italic `x`, then the text `y[/i]`. A closer with
  *   nothing open to close is text.
+ * - `[video]` and `[youtube]` are taken the same way as `[img]`; the contents must be an address
+ *   engine/bbcode/video.ts has a player for (`[youtube]` also takes a bare id), else only the opener is text.
  * - `[code]` and `[img]` take their contents raw up to the closing tag. With no closing tag,
  *   an attribute, or (for an image) contents that are not an http or https address, only the
  *   opening tag is text, and what follows parses as usual.
@@ -49,6 +51,8 @@
  * `[/code]` or `[/img]` is looked up once and remembered, so no input makes it quadratic.
  */
 
+import { videoOf, YOUTUBE_ID, type Video } from './video.ts';
+
 export type BbNode =
   | { readonly type: 'text'; readonly text: string }
   | { readonly type: 'bold' | 'italic' | 'underline' | 'strike'; readonly children: readonly BbNode[] }
@@ -56,6 +60,7 @@ export type BbNode =
   | { readonly type: 'size'; readonly size: number; readonly children: readonly BbNode[] }
   | { readonly type: 'url'; readonly href: string; readonly children: readonly BbNode[] }
   | { readonly type: 'img'; readonly src: string }
+  | { readonly type: 'video'; readonly video: Video }
   | { readonly type: 'quote'; readonly act: string; readonly children: readonly BbNode[] }
   | { readonly type: 'counterfeit'; readonly name: string | null; readonly user: string | null; readonly children: readonly BbNode[] }
   | { readonly type: 'spoiler'; readonly title: string; readonly children: readonly BbNode[] }
@@ -176,9 +181,9 @@ const SIMPLE: Readonly<Record<string, 'bold' | 'italic' | 'underline' | 'strike'
   s: 'strike',
 };
 /** The tags the parser knows how to open, for a rule that names one (engine/rules/predicates.ts `noTag`). */
-export const BBCODE_TAGS: readonly string[] = ['b', 'i', 'u', 's', 'color', 'size', 'url', 'img', 'code', 'quote', 'list', 'spoiler', 'ispoiler'];
+export const BBCODE_TAGS: readonly string[] = ['b', 'i', 'u', 's', 'color', 'size', 'url', 'img', 'code', 'quote', 'list', 'spoiler', 'ispoiler', 'video', 'youtube'];
 const OPENERS: ReadonlySet<string> = new Set(BBCODE_TAGS);
-const CLOSERS = new Set(['b', 'i', 'u', 's', 'color', 'size', 'url', 'quote', 'list', 'spoiler', 'ispoiler']);
+const CLOSERS = new Set(['b', 'i', 'u', 's', 'color', 'size', 'url', 'quote', 'list', 'spoiler', 'ispoiler', 'video', 'youtube']);
 /**
  * The block tags, the ones that cannot stand inside inline text. An `[ispoiler]` holds inline formatting
  * only, so while one is open the opener and the closer of each of these is text. Tags added later that
@@ -357,6 +362,8 @@ export function parse(input: string): BbNode[] {
   const rawEnds: Record<string, { re: RegExp; missing: boolean; at: number }> = {
     code: { re: /\[\/code\]/gi, missing: false, at: -1 },
     img: { re: /\[\/img\]/gi, missing: false, at: -1 },
+    video: { re: /\[\/video\]/gi, missing: false, at: -1 },
+    youtube: { re: /\[\/youtube\]/gi, missing: false, at: -1 },
   };
 
   let pos = 0;
@@ -411,7 +418,7 @@ export function parse(input: string): BbNode[] {
       } else {
         pushText(home.out, raw);
       }
-    } else if (name === 'code' || name === 'img') {
+    } else if (name === 'code' || name === 'img' || name === 'video' || name === 'youtube') {
       const end = rawEnds[name] as { re: RegExp; missing: boolean; at: number };
       const home = top().home;
       let found = -1;
@@ -431,6 +438,14 @@ export function parse(input: string): BbNode[] {
       } else if (name === 'code') {
         home.out.push({ type: 'code', text: input.slice(close + 1, found) });
         textStart = pos = found + '[/code]'.length;
+      } else if (name === 'video' || name === 'youtube') {
+        /* Same bound on work as an image. A video is whatever `videoOf` recognizes; [youtube] also takes a bare id. */
+        const inner = found - close - 1 <= MAX_URL_LENGTH + 64 ? input.slice(close + 1, found).trim() : '';
+        const video = inner === '' ? null : name === 'youtube' && YOUTUBE_ID.test(inner) ? videoOf(`https://youtu.be/${inner}`) : videoOf(inner);
+        if (video) {
+          home.out.push({ type: 'video', video });
+          textStart = pos = found + name.length + 3;
+        } else pushText(home.out, raw);
       } else if (
         /* A bound on work, not on meaning, so no test can see it: contents this much longer than
            the longest address cannot be one (surrounding blanks are trimmed), and checking them

@@ -17,6 +17,7 @@ import { parse, type BbNode } from '../../bbcode/parse.ts';
 import { visibleWalk } from '../../bbcode/visible.ts';
 import { stretchesOf, useTextLayers, type Stretch } from './layers.tsx';
 import { Link } from '../router.tsx';
+import { Video } from './Video.tsx';
 import './bbcode.css';
 
 export interface BbCodeProps {
@@ -107,6 +108,7 @@ function node(n: BbNode, key: number, quoteLink: BbCodeProps['quoteLink'], layer
       /* The parser keeps what the player wrote, http: included; the page's img-src is https only (web/headers.ts), so an http: image would be a broken picture. A link to it is what can be shown. */
       if (/^http:/i.test(n.src)) return <a key={key} href={n.src} rel={REL} referrerPolicy="no-referrer">image: {n.src}</a>;
       return <img key={key} className="kb-bb-img" src={n.src} alt={altFor(n.src)} loading="lazy" referrerPolicy="no-referrer" />;
+    case 'video': return <Video key={key} video={n.video} />;
     case 'quote':
       return (
         <blockquote key={key} className="kb-quote">

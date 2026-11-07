@@ -65,3 +65,8 @@ test('a spoiler\'s and an inline spoiler\'s words are the post\'s own', () => {
   assert.equal(seen('a[ispoiler]b[/ispoiler]c'), 'abc');
   assert.equal(seen('[spoiler][ispoiler][b]x[/b][/ispoiler] y[/spoiler]'), 'x y');
 });
+
+test('a video leaves one separator and none of its words', () => {
+  assert.equal(seen('x[video]https://youtu.be/dQw4w9WgXcQ[/video]y'), 'x\ny');
+  assert.equal(seen('x[youtube]dQw4w9WgXcQ[/youtube]y'), 'x\ny');
+});
