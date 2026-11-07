@@ -115,17 +115,24 @@ test('a failed load says so, and Try again loads it', async ({ page }) => {
   await expect(page.getByRole('heading', { name: "This screen didn't load" })).toHaveCount(0);
 });
 
-test('with Motion Off, the spinner stands still', async ({ page }) => {
-  await page.goto(`/characters?${LATENCY}`);
-  await page.waitForFunction(() => '__kbFake' in globalThis);
-  await page.evaluate(async () => { await (globalThis as E2eWindow).__kbFake.setPreferences({ motion: 'reduce' }); });
-  await page.reload();
-  await expect(roster(page).first()).toBeVisible();
-  await expect(page.locator('html')).toHaveAttribute('data-kb-motion', 'reduce');
-  await logTab(page).click();
-  const bars = logTab(page).locator('.kb-spinner > i');
-  await expect(bars.first()).toBeVisible();
-  expect(await bars.count()).toBe(4);
-  const still = await bars.evaluateAll((els) => els.map((e) => ({ name: getComputedStyle(e).animationName, running: e.getAnimations().length })));
-  for (const b of still) { expect(b.name).toBe('none'); expect(b.running).toBe(0); }
-});
+/* The spinner's bars exist only while the load is out, so the wait is long and every read of them is one evaluate. */
+const SLOW = 'latency=1500';
+const barsNow = (page: Page) => logTab(page).locator('.kb-spinner > i').evaluateAll((els) => els.map((e) => ({ name: getComputedStyle(e).animationName, running: e.getAnimations().length })));
+
+for (const motion of ['reduce', 'full'] as const) {
+  test(`with Motion ${motion === 'reduce' ? 'Off' : 'on'}, the spinner's bars ${motion === 'reduce' ? 'stand still' : 'move'}`, async ({ page }) => {
+    await page.goto(`/characters?${SLOW}`);
+    await page.waitForFunction(() => '__kbFake' in globalThis);
+    await page.evaluate(async (m) => { await (globalThis as E2eWindow).__kbFake.setPreferences({ motion: m }); }, motion);
+    await page.reload();
+    await expect(roster(page).first()).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('data-kb-motion', motion);
+    await logTab(page).click();
+    await expect(logTab(page).locator('.kb-spinner > i')).toHaveCount(4);
+    const bars = await barsNow(page);
+    expect(bars).toHaveLength(4);
+    for (const b of bars) {
+      if (motion === 'reduce') { expect(b.name).toBe('none'); expect(b.running).toBe(0); } else { expect(b.name).not.toBe('none'); expect(b.running).toBeGreaterThan(0); }
+    }
+  });
+}

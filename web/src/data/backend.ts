@@ -52,7 +52,7 @@ function withLatency(api: KayfaApi, params: URLSearchParams | null): KayfaApi {
  * first call of each named rpc (the api method's name in snake case, `log_page` for `logPage`) is refused as a dropped request is, and
  * every call after it is answered, so a test can watch a screen fail and then Try again.
  */
-function withFailure(api: KayfaApi, params: URLSearchParams | null): KayfaApi {
+export function withFailure(api: KayfaApi, params: URLSearchParams | null): KayfaApi {
   const raw = params?.get('fail') ?? null;
   if (raw === null) return api;
   const left = new Set(raw.split(',').map((n) => n.trim()).filter(Boolean));
