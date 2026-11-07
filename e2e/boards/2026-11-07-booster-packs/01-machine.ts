@@ -72,9 +72,9 @@ export default manifest;
 /*
  * Booster packs board 04, the phone (docs/research/2026-11-07-booster-packs/04-phone.html): four screens at 390 by 844 side by side on one page. A phone board
  * has one parent and is compared at 390 by 844 (e2e/boards.spec.ts), so this export is the whole board: the machine is its own side, and the reveal's two
- * screens are further sides (`also`), each its own build against the same page; the fourth, the admin page, is the machine's admin task's (the plan's Task 6).
+ * screens are further sides (`also`), each its own build against the same page; the fourth, the machine's admin page, is the third side (the plan's Task 6).
  * The board page is opened at 390 wide with its screens at x = 20, 430, 840 and 1250; each landmark of a screen is found as that screen's nth and measured
- * from that screen's menu bar, or, for a reveal (it has none), from its dialog's corner (`origin`), so a screen's place on the page is never compared.
+ * from that screen's menu bar (the admin screen's bar is the page's nth navigation, 1), or, for a reveal (it has none), from its dialog's corner (`origin`), so a screen's place on the page is never compared.
  *
  * What the phone board draws that the build does not follow, by decision:
  *  - The board draws the machine "scrolled to the selected Booster": the menu bar, then the pick, what is in the pack, Buy and the odds. The build is the
@@ -91,6 +91,14 @@ export default manifest;
  *  - The board's Turn the next card is "TAP FOR THE NEXT CARD" and its hint "Tap the card, or swipe it away, to turn the next one."; the build's button says
  *    "Turn the next card" at every width (a tap on the pile or a swipe turns it too), and its hint adds that all five are already in the hand. The board's phone
  *    has no key cap on Close.
+ *  - The admin screen (`The machine, for an admin`; the story is engine/ui/admin/Machine.board.stories.tsx) is held as board 05 holds the 1440 page
+ *    (e2e/boards/2026-11-07-booster-packs/05-admin.ts), each part from a part above it, with its departures: the board's phone has no lead under the title (the
+ *    1440 board's lead does not appear on it), so the lead is not compared; the board draws "seven more slots, then Save changes" and no Save, so only the first three
+ *    slots (Booster, Whoops!, Stick Around) are held. The strip's buttons are the glass's phone control (The machine 12px narrower than the board's), the
+ *    first row stands 16px lower under the strip, and the third 37px lower under the second (the Whoops! row's tag line is taller in the build), and the move
+ *    arrows and the price stand 18, 24 and 17px to the left of the board's, 10px lower, for the glass's control measure. The title stands 17px lower under the bar
+ *    and the strip 178px under the title, for the lead the build draws between them. A slot's name in the build reads "Move up" as "<slot>: move up", as board 05 names it. The glass's controls are
+ *    its own measure, so a control is held by its place and not its size, and the title's type is the glass's.
  */
 const PHONE = '2026-11-07-booster-packs/04-phone';
 
@@ -147,6 +155,23 @@ export const phone: BoardManifest = {
         at('tag', 'text', 'RARE · MAIN EVENT', 'dialog', { height: 3 }, { within: 'dialog', box: 'height' }),
         at('done', 'button', 'DONE', 'dialog', { height: -8 }, { within: 'dialog', box: 'height' }),
         at('hint', 'text', 'These five are already in your hand.', 'dialog', { y: 53, height: 25 }, { buildName: 'These five are already in your hand. Main Event isn\'t sold on its own; this is one of the ways to get it.', within: 'dialog', box: 'height' }),
+      ],
+    },
+    {
+      name: 'The machine, for an admin',
+      build: { story: 'boards-00-admin-machine--admin-machine-phone' },
+      landmarks: [
+        ...bar(1),
+        at('title', 'heading', 'THE MACHINE', 'menu', { y: 17 }, { buildName: 'The machine', originEdge: 'bottom' }),
+        at('moves', 'link', 'MOVES', 'title', { y: 178 }, { buildName: 'Moves', originEdge: 'bottom' }),
+        at('machine', 'link', 'THE MACHINE', 'title', { x: -12, y: 178 }, { buildName: 'The machine', originEdge: 'bottom' }),
+        ...[['a1', 'A1', 'Booster', 'moves'], ['a2', 'A2', 'Whoops!', 'a1-code'], ['b1', 'B1', 'Stick Around', 'a2-code']].flatMap(([k, code, card, from], i) => [
+          at(`${k}-code`, 'text', code, from, k === 'a1' ? { y: 16 } : k === 'b1' ? { y: 37 } : {}, { originEdge: 'bottom' }),
+          at(`${k}-up`, 'button', 'Move up', `${k}-code`, { x: -18, y: 10 }, { buildName: `${card}: move up`, nth: i, buildNth: 0 }),
+          at(`${k}-down`, 'button', 'Move down', `${k}-code`, { x: -24, y: 10 }, { buildName: `${card}: move down`, nth: i, buildNth: 0 }),
+          at(`${k}-availability`, 'combobox', `${card}: availability`, `${k}-code`),
+          at(`${k}-price`, 'textbox', `${card}: price`, `${k}-code`, { x: -17 }),
+        ]),
       ],
     },
   ],

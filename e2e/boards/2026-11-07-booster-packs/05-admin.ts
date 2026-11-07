@@ -2,7 +2,7 @@
  * Board 05 of the booster packs boards, the machine's admin page (docs/research/2026-11-07-booster-packs/05-admin.html, 1440 by 1180): the title and lead, the
  * admin pages' strip (Moves, The machine) under the lead with The machine filled, a plain table of the ten slots in grid order, and one Save changes under a
  * rule. The build is the story `Boards/00 Admin machine` (engine/ui/admin/Machine.board.stories.tsx): the instance's own machine with the board's two Boss
- * moves, a Pull of Whoops! and a markup of Glitter Bomb. The phone drawing, the fourth screen of board 04, is exported as `phone`.
+ * moves, a Pull of Whoops! and a markup of Glitter Bomb. The phone drawing, the fourth screen of board 04, is a side of board 04's manifest (`phone.also`, e2e/boards/2026-11-07-booster-packs/01-machine.ts).
  *
  * Every part is held from a part above it, the first from the strip's bottom edge and the rest of a row from its slot's code, so a wrapped line never moves
  * what follows it.
