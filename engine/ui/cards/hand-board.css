@@ -52,13 +52,13 @@
 
 .kb-hand-board-card {
   width: 276px;
-  height: 480px;
+  height: 414px;
 }
 
 .kb-hand-board-sealed {
   box-sizing: border-box;
   width: 276px;
-  height: 480px;
+  height: 414px;
   border-radius: 14px;
   background: var(--kb-glass-panel-soft);
   border: 2px dashed color-mix(in srgb, var(--kb-glass-ready) 55%, transparent);
