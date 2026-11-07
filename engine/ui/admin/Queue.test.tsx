@@ -35,7 +35,7 @@ describe('the admin queue', () => {
     await group(/^Ended/u);
     await screen.findByRole('form', { name: 'How players reach you' });
     const order = [...document.querySelectorAll('[data-kb-group], .kb-admin-contact')].map((el) => el.getAttribute('data-kb-group') ?? 'contact');
-    expect(order).toEqual(['todo', 'waiting', 'in-force', 'staff-cards', 'ended', 'contact']);
+    expect(order).toEqual(['todo', 'waiting', 'in-force', 'staff-cards', 'ended', 'boards', 'contact']);
     const contact = document.querySelector('.kb-admin-contact')!;
     expect(contact.tagName).toBe('SECTION');
     expect(contact.querySelector('h2')).toHaveTextContent('How players reach you');
