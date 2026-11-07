@@ -28,8 +28,8 @@ export const tweener: ClassRules = {
       .map((s): Earning => ({ reason: 'tweener.splitTheRoom', amount: settings.vote * 2 * (smallerSide(s.now) - smallerSide(s.before)), act: s.act, at: s.at }))
       .filter((e) => !nothing(e.amount)),
     ...input.cardsPlayed
-      .filter((c) => c.onOthers && c.drawnAfter)
-      .map((c): Earning => ({ reason: 'tweener.stirredThePot', amount: settings.vote * 2 * smallerSide(c.drawnAfter!.now), act: c.act, at: c.drawnAfter!.at }))
+      .flatMap((c) => (c.onOthers && c.drawnAfter ? [{ card: c, drawn: c.drawnAfter }] : []))
+      .map(({ card, drawn }): Earning => ({ reason: 'tweener.stirredThePot', amount: settings.vote * 2 * smallerSide(drawn.now), act: card.act, at: drawn.at }))
       .filter((e) => !nothing(e.amount)),
     ...input.received
       .filter((r) => SHRUG.includes(r.quadrant))

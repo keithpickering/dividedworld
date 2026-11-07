@@ -647,3 +647,41 @@ test('Tweener\'s lines scale with the vote', () => {
   assert.deepEqual(at(20), at(10).map((a) => a * 2));
   assert.equal(at(10).length, 3);
 });
+
+const twWorld = (): Pick<SettlementInput, 'characters'> => ({
+  characters: [
+    { id: 'tw', player: 'pt', classes: [{ class: 'tweener', from: -1 }] },
+    { id: 'tw2', player: 'pt', classes: [{ class: 'face', from: -1 }] },
+    ...['a', 'b', 'c', 'd', 'e'].map((id) => ({ id, player: `p-${id}`, classes: [{ class: 'heel', from: -1 }] })),
+  ],
+});
+const twPaid = (r: ReturnType<typeof settle>, reason: string) => r.entries.filter((e) => e.character === 'tw' && e.reason === reason).reduce((t, e) => t + e.amount, 0);
+const twBy = (who: string, kind: string, at: number, act: string) => ({ act, player: `p-${who}`, character: who, kind, at });
+test('settled whole: a Tweener\'s post drawing hype and heat pays twice the smaller side, then only the difference when it grows; a hedger counts nothing', () => {
+  const acts = [{ id: 'tp', character: 'tw', kind: 'post' as const, at: 1 * H, thread: 't' }];
+  const w1 = settle({
+    window: { id: 'w1', from: 0, to: 24 * H }, ...twWorld(), acts,
+    reactions: [twBy('a', 'fire', 2 * H, 'tp'), twBy('b', 'tomato', 3 * H, 'tp'), twBy('c', 'fire', 4 * H, 'tp'), twBy('c', 'tomato', 4 * H, 'tp')],
+  }, world);
+  assert.equal(twPaid(w1, 'tweener.splitTheRoom'), 2 * settings.vote, 'one of each side is 1, and the player hedging both ways adds nothing to either');
+  const w2 = settle({
+    window: D2, ...twWorld(), acts, paid: upTo(w1),
+    reactions: [twBy('a', 'fire', 2 * H, 'tp'), twBy('b', 'tomato', 3 * H, 'tp'), twBy('c', 'fire', 4 * H, 'tp'), twBy('c', 'tomato', 4 * H, 'tp'), twBy('d', 'fire', 25 * H, 'tp'), twBy('e', 'tomato', 26 * H, 'tp')],
+  }, world);
+  assert.equal(twPaid(w2, 'tweener.splitTheRoom'), 2 * settings.vote, 'the smaller side grew from 1 to 2: only the difference is paid');
+});
+test('settled whole: a Tweener\'s card pays twice the smaller side of the players who arrived after it, never its own player\'s or the author\'s', () => {
+  const r = settle({
+    window: { id: 'w', from: 0, to: 24 * H }, ...twWorld(),
+    acts: [
+      { id: 'p1', character: 'a', kind: 'post', at: 1 * H, thread: 't' },
+      { id: 'k1', character: 'tw', kind: 'card', at: 2 * H, thread: 't', target: 'p1', card: 'whoops' },
+    ],
+    reactions: [
+      twBy('b', 'fire', 3 * H, 'p1'), twBy('c', 'tomato', 4 * H, 'p1'),
+      { act: 'p1', player: 'pt', character: 'tw2', kind: 'tomato', at: 5 * H },
+      { act: 'p1', player: 'p-a', character: 'a', kind: 'fire', at: 5 * H },
+    ],
+  }, world);
+  assert.equal(twPaid(r, 'tweener.stirredThePot'), 2 * settings.vote);
+});
