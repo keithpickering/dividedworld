@@ -639,11 +639,14 @@ begin
   end loop;
 
   -- 3b. Favors: a favor is a group conferred with a check (`params.checkAt`) and the demand it reads. It is not ended `met` by the pass above: a favor met is kept to its
-  -- expiry. At its check, one whose demand is not met is stripped, `unmet`, and the Boss says so. The moves in force that carry a check are a handful; one past its check is read
-  -- at most once in `demandCheckMinutes` (a met one is not read again every minute), the least recently checked first, and none once the budget is spent.
+  -- expiry. At its check, one whose demand is not met is stripped, `unmet`, and the Boss says so. A demand that cannot be evaluated (progress carries an `error`) is no evidence:
+  -- the favor is left and read again at the next turn. The moves in force that carry a check are a handful; one past its check is read at most once in `demandCheckMinutes`, the
+  -- least recently checked first, and none once the budget is spent. One already recorded met (open_moves.progress) is not read again: a demand only ever grows, and the favor
+  -- is kept to its expiry.
   for inforce in
     select o.move_act, a.payload from open_moves o join acts a on a.id = o.move_act
     where a.payload ->> 'kind' = 'conferGroup' and a.payload #> '{params,checkAt}' is not null and (o.checked_at is null or o.checked_at <= now() - check_every)
+      and coalesce((o.progress ->> 'met')::boolean, false) is not true
     order by o.checked_at nulls first, o.move_act
   loop
     if clock_timestamp() > budget_ends then out_of_time := true; exit; end if;
@@ -653,8 +656,11 @@ begin
         update open_moves set checked_at = now() where move_act = inforce.move_act;
         checked := checked + 1;
         counted := demand_progress_or_error(inforce.move_act);
-        update open_moves set progress = counted where move_act = inforce.move_act;
-        if not coalesce((counted ->> 'met')::boolean, false) then
+        if not (counted ? 'error') then update open_moves set progress = counted where move_act = inforce.move_act; end if;
+        if counted ? 'error' then
+          failed := failed + 1;
+          raise warning 'system_tick: favor % could not be read at its check: % ', inforce.move_act, counted ->> 'error';
+        elsif not coalesce((counted ->> 'met')::boolean, false) then
           did_end := (end_move(inforce.move_act, 'unmet', 'check') ->> 'ended')::boolean;
           if did_end then unmet := unmet + 1; perform say_move_end(inforce.move_act, 'unmet'); end if;
         end if;
@@ -746,6 +752,9 @@ begin
     -- only by a punishment, and it is a board of the players. A punishment that bars a board carries the apology that lifts it, and nothing else carries that demand. A favor
     -- carries the check the tick reads and the demand it reads; a punishment carries none. A character has one such move at a time, and a punishment waits out the cap.
     if new.kind = 'conferGroup' then
+      -- One form of the ids for every reader (the landed-Act count, the index), as a rule's board is kept in lowercase.
+      if jsonb_typeof(new.params -> 'character') = 'string' then new.params := jsonb_set(new.params, '{character}', to_jsonb(lower(new.params ->> 'character'))); end if;
+      if jsonb_typeof(new.params -> 'board') = 'string' then new.params := jsonb_set(new.params, '{board}', to_jsonb(lower(new.params ->> 'board'))); end if;
       select c.id, c.name, c.staff into target from characters_public c
       where c.id = case when lower(new.params ->> 'character') ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (new.params ->> 'character')::uuid end;
       if target.id is null then raise exception 'a group move names a member who has debuted' using errcode = '23514'; end if;

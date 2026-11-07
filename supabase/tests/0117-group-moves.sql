@@ -213,6 +213,7 @@ declare
   who uuid := pg_temp.who('Capped');
   other uuid := pg_temp.who('Windowed');
   mixed uuid := pg_temp.who('Queued');
+  shouted uuid := pg_temp.who('Shouted');
   got text;
 begin
   perform pg_temp.landed('gm-boss', who, 'trialMembers', interval '2 days', null, pg_temp.posts_on(games), null, interval '1 day', 'expired');
@@ -237,6 +238,21 @@ begin
   if staff_punishments(other, 7) is distinct from 3 then raise exception 'a queued unheld punishment is counted: %', staff_punishments(other, 7); end if;
   update queued_moves set held_at = now(), held_by = tests.account('gm-holder2') where params ->> 'character' = other::text;
   if staff_punishments(other, 7) is distinct from 2 then raise exception 'a held punishment is counted: %', staff_punishments(other, 7); end if;
+
+  -- The guard keeps one form of the ids, as a rule's board is kept: an uppercase character and board are stored in lowercase, so every reader (the landed-Act count, the index) finds the move.
+  perform pg_temp.landed('gm-boss', shouted, 'trialMembers', interval '2 days', null, pg_temp.posts_on(games), null, interval '1 day', 'expired');
+  perform pg_temp.landed('gm-m2', shouted, 'trialMembers', interval '3 days', null, pg_temp.posts_on(games), null, interval '1 day', 'expired');
+  got := pg_temp.queue('gm-boss', jsonb_build_object('character', upper(shouted::text), 'group', 'trialMembers', 'board', upper(games::text)), pg_temp.apology());
+  if got is not null then raise exception 'an uppercase character and board were refused: %', got; end if;
+  if (select q.params ->> 'character' from queued_moves q where lower(q.params ->> 'character') = shouted::text) is distinct from shouted::text
+     or (select q.params ->> 'board' from queued_moves q where lower(q.params ->> 'character') = shouted::text) is distinct from games::text then
+    raise exception 'the guard kept the ids as given: %', (select q.params from queued_moves q where lower(q.params ->> 'character') = shouted::text);
+  end if;
+  -- That move lands as the tick writes it (the queued params as stored), and it counts with the two before it: a fourth is refused.
+  perform pg_temp.landed('gm-boss', (select (q.params ->> 'character')::uuid from queued_moves q where lower(q.params ->> 'character') = shouted::text), 'trialMembers', interval '1 day', null, pg_temp.posts_on(games), null, interval '1 day', 'expired');
+  update queued_moves set landed_act = (select a.id from acts a where a.kind = 'move' and a.payload #>> '{params,character}' = shouted::text order by a.created_at desc limit 1) where lower(params ->> 'character') = shouted::text;
+  got := pg_temp.queue('gm-boss', jsonb_build_object('character', upper(shouted::text), 'group', 'trialMembers'), pg_temp.posts_on(games));
+  if got is distinct from 'Gm Shouted has been punished 3 times in 7 days, the most staff may' then raise exception 'an uppercase-named punishment is not counted toward the cap: %', got; end if;
 
   -- An overturned one is not counted (as an infraction an appeal overturned is not).
   perform pg_temp.landed('gm-boss', mixed, 'trialMembers', interval '1 day', null, pg_temp.posts_on(games), null, interval '1 day', 'overturned');
@@ -321,6 +337,8 @@ declare
   met uuid := pg_temp.who('Met');
   unmet uuid := pg_temp.who('Unmet');
   early uuid := pg_temp.who('Early');
+  erring uuid := pg_temp.who('Erring');
+  m_err uuid;
   poster uuid := pg_temp.who('Poster');
   m_exp uuid;
   m_met uuid;
@@ -344,6 +362,9 @@ begin
   perform tests.post(poster, games_thread, 'Posting on Games.', now() - interval '1 hour');
   m_unmet := pg_temp.landed('gm-boss', unmet, 'teachersPet', interval '3 hours', null, pg_temp.posts_on(pg_temp.board('gm-general')), interval '2 hours', interval '2 days');
   m_early := pg_temp.landed('gm-boss', early, 'teachersPet', interval '1 hour', null, pg_temp.posts_on(games), interval '5 hours', interval '2 days');
+  -- A favor whose demand cannot be evaluated at its check is not stripped on that evidence; it is read again.
+  insert into demand_kinds (key) values ('poisonKind');
+  m_err := pg_temp.landed('gm-boss', erring, 'teachersPet', interval '3 hours', null, jsonb_build_object('kind', 'poisonKind', 'params', '{}'::jsonb), interval '2 hours', interval '2 days');
   before_n := (select count(*) from acts where kind = 'post' and payload ->> 'body' = 'Withdrawn, moving a member into "Teacher''s Pet".');
   perform system_tick();
   if not exists (select 1 from open_moves where move_act = m_met) then raise exception 'a favor met by its check was ended'; end if;
@@ -351,6 +372,7 @@ begin
   if (select payload ->> 'why' || '/' || (payload ->> 'by') from acts where kind = 'move_end' and target_act_id = m_unmet) is distinct from 'unmet/check' then
     raise exception 'the unmet favor ended as %', (select payload from acts where kind = 'move_end' and target_act_id = m_unmet);
   end if;
+  if not exists (select 1 from open_moves where move_act = m_err) then raise exception 'a favor whose demand failed to evaluate was stripped'; end if;
   if not exists (select 1 from open_moves where move_act = m_early) then raise exception 'a favor before its check was ended'; end if;
   if exists (select 1 from open_moves where move_act = m_exp) then raise exception 'the expiry pass no longer ends an expired move'; end if;
   if (select payload ->> 'why' from acts where kind = 'move_end' and target_act_id = m_exp) is distinct from 'expired' then raise exception 'an expired move ended as something else'; end if;
