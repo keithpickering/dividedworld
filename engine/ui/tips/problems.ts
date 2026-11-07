@@ -8,7 +8,7 @@
 import type { Instance } from '../../rules/types.ts';
 import { MAP, type ClassMarks, type InstanceUi } from '../types.ts';
 import type { CardPlay, CardUi } from '../cards/types.ts';
-import { QUADRANTS } from '../../rules/types.ts';
+import { QUADRANTS, type Quadrant } from '../../rules/types.ts';
 import { ACTION_TIPS, TIP_KEYS } from './keys.ts';
 import { wordsProblems } from '../cards/lens-words.ts';
 
@@ -101,17 +101,18 @@ function classLookProblems(looks: InstanceUi['classLooks'] | undefined, instance
 
 /** A class's `splits` mark: two different quadrants of the map, side by side in one row, and in none of its other marks. */
 function splitsProblems(key: string, marks: ClassMarks | undefined): string[] {
-  const splits = marks?.splits;
+  const splits: unknown = marks?.splits;
   if (splits === undefined) return [];
-  const [a, b] = splits;
+  if (!Array.isArray(splits) || splits.length !== 2) return [`the class "${key}" has a splits that is not a pair of quadrants`];
+  const [a, b] = splits as [Quadrant, Quadrant];
   const known = QUADRANTS as readonly string[];
-  const unknown = splits.filter((q) => !known.includes(q));
+  const unknown = (splits as string[]).filter((q) => !known.includes(q));
   if (unknown.length > 0) return unknown.map((q) => `the class "${key}" splits "${q}", which is not a quadrant`);
   if (a === b) return [`the class "${key}" splits ${a} with itself, and a split needs two quadrants`];
   const out: string[] = [];
   const [i, j] = [MAP.indexOf(a), MAP.indexOf(b)];
   if (Math.floor(i / 2) !== Math.floor(j / 2) || Math.abs(i - j) !== 1) out.push(`the class "${key}" splits ${a} and ${b}, which do not sit side by side in one row of the map`);
-  for (const q of splits) for (const field of ['earns', 'hurts', 'calls'] as const) if (marks?.[field]?.includes(q)) out.push(`the class "${key}" splits ${q} and also ${field} it`);
+  for (const q of splits as Quadrant[]) for (const field of ['earns', 'hurts', 'calls'] as const) if (marks?.[field]?.includes(q)) out.push(`the class "${key}" splits ${q} and also ${field} it`);
   return out;
 }
 

@@ -72,6 +72,10 @@ describe('instanceUiProblems', () => {
     assert.deepEqual(withSplits({ label: 'x', splits: ['excitedNegative', 'excitedPositive'], hurts: ['excitedPositive'] }), ['the class "heel" splits excitedPositive and also hurts it']);
     assert.deepEqual(withSplits({ label: 'x', splits: ['excitedNegative', 'excitedPositive'], earns: ['excitedNegative'] }), ['the class "heel" splits excitedNegative and also earns it']);
     assert.deepEqual(withSplits({ label: 'x', splits: ['excitedNegative', 'excitedPositive'], calls: ['excitedNegative'] }), ['the class "heel" splits excitedNegative and also calls it']);
+    assert.deepEqual(withSplits({ label: 'x', splits: ['excitedNegative', 'boredNegative'] }), ['the class "heel" splits excitedNegative and boredNegative, which do not sit side by side in one row of the map']);
+    assert.deepEqual(withSplits({ label: 'x', splits: 'excitedNegative' }), ['the class "heel" has a splits that is not a pair of quadrants']);
+    assert.deepEqual(withSplits({ label: 'x', splits: ['excitedNegative'] }), ['the class "heel" has a splits that is not a pair of quadrants']);
+    assert.deepEqual(withSplits({ label: 'x', splits: ['excitedNegative', 'excitedPositive', 'boredNegative'] }), ['the class "heel" has a splits that is not a pair of quadrants']);
     assert.deepEqual(withSplits({ label: 'x', splits: ['excitedNegative', 'sleepy'] }), ['the class "heel" splits "sleepy", which is not a quadrant']);
   });
   test("refuses a card's status that is a sentence or runs past six words, naming the card (the Lens's roles)", () => {

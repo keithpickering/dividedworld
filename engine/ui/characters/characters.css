@@ -717,8 +717,9 @@
 .kb-class-split-bar {
   position: absolute;
   top: 0.675rem;
-  left: 1.75rem;
-  width: 4px;
+  /* Overlaps the cells' edges by 2px a side, so no hairline shows at the seam. */
+  left: calc(1.75rem - 2px);
+  width: 8px;
   height: 0.4rem;
   background: var(--kb-class-fill);
   pointer-events: none;
@@ -1509,4 +1510,25 @@
 .kb-choice-option[data-kb-chosen]:hover {
   background: color-mix(in srgb, var(--kb-glass-neon) 18%, transparent);
   box-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 70%, transparent);
+}
+
+/* Forced colors repaint a plain background, so the split's bar and half-fills keep the system's: ButtonText, as the fill is the class's color elsewhere. */
+@media (forced-colors: active) {
+  .kb-class-split-bar {
+    forced-color-adjust: none;
+    background: ButtonText;
+  }
+
+  .kb-class-mark[data-kb-mark='splits'] {
+    forced-color-adjust: none;
+    border-color: ButtonText;
+  }
+
+  .kb-class-mark[data-kb-mark='splits'][data-kb-toward='right'] {
+    background: linear-gradient(90deg, transparent 50%, ButtonText 50%);
+  }
+
+  .kb-class-mark[data-kb-mark='splits'][data-kb-toward='left'] {
+    background: linear-gradient(90deg, ButtonText 50%, transparent 50%);
+  }
 }
