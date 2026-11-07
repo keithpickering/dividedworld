@@ -7,6 +7,7 @@
  * (tools/check-glass-contrast.mjs holds that), so swapping the key re-colors the glass and
  * moves nothing. `applyGlass` marks the key on the root (`data-kb-glass-key`) for the stylesheet.
  */
+import { FEELS, feelTokens } from './motion-tokens.ts';
 import type { ClassLargeDraw, GlassControls, GlassControlsInput, GlassSurface, GlassTheme } from '../types.ts';
 
 /** The skewed controls' measure where a theme gives none (the values tokens.css names as plain defaults). */
@@ -57,6 +58,12 @@ export function glassVars(glass: GlassTheme, key: GlassKeyName): Record<string, 
   }
   out['--kb-glass-control-spacing'] = `${c.spacing}px`;
   out['--kb-glass-control-gap'] = `${c.gap}px`;
+  /* Each feel's durations and easing, for the stylesheet's own transitions: the defaults under the instance's overrides. */
+  for (const feel of FEELS) {
+    const t = feelTokens(feel, glass.motion);
+    for (const k of ['enter', 'exit', 'screen', 'stagger'] as const) out[`--kb-motion-${feel}-${k}`] = `${t[k]}ms`;
+    out[`--kb-motion-${feel}-ease`] = t.ease;
+  }
   glass.orbs.gradients.forEach((g, i) => {
     out[`--kb-glass-orb-${i + 1}-highlight`] = g.highlight;
     out[`--kb-glass-orb-${i + 1}-color`] = g.color;

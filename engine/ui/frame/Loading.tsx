@@ -75,7 +75,8 @@ export function Loading({ host = globalThis.location?.host ?? '', hostless = fal
   const opening = pending ? `Opening ${host}${shortenPath(pending.to)}`.replace(/…?$/u, '…') : host;
   return (
     <span className="kb-address">
-      {hostless ? <span className="kb-visually-hidden">{opening}</span> : <span className="kb-address-text">{opening}</span>}
+      {/* With the search box where the host stood, the host line is read aloud only; while a load is out, "Opening ..." shows beside the meter. */}
+      <span className={hostless && !pending ? 'kb-address-text kb-visually-hidden' : 'kb-address-text'}>{opening}</span>
       <span className="kb-meter" role="progressbar" aria-label="Loading the page" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(value)}>
         <span className="kb-meter-fill" style={{ width: `${value}%` }} />
       </span>

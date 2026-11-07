@@ -1030,10 +1030,10 @@ describe('the Reveal over My characters: its fields and its foot (the Reveal boa
     return screen.findByRole('dialog', { name: 'Reveal Pipewrench\'s class' });
   };
 
-  test('Thread and the board filter are one row of two fields, and the character\'s words count on their own line, the hint at its left', async () => {
+  test('The board filter and Thread are one row of two fields, in the board\'s places, and the character\'s words count on their own line, the hint at its left', async () => {
     const dialog = await reveal(world());
     const where = dialog.querySelector('.kb-reveal-where')!;
-    expect([...where.querySelectorAll('label')].map((f) => f.querySelector('input,select')!.getAttribute('role') ?? f.querySelector('select')!.tagName)).toEqual(['combobox', 'SELECT']);
+    expect([...where.querySelectorAll('label')].map((f) => f.querySelector('input,select')!.getAttribute('role') ?? f.querySelector('select')!.tagName)).toEqual(['SELECT', 'combobox']);
     expect(within(dialog).getByRole('combobox', { name: 'Thread' })).toBeInTheDocument();
     expect(within(dialog).getByRole('combobox', { name: 'Board (optional)' })).toBeInTheDocument();
     const words = within(dialog).getByLabelText(/In the character.s words/u);

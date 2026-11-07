@@ -45,7 +45,7 @@ const manifest: BoardManifest = {
     part('board-label', 'text', 'BOARD', { ...UNDER, buildShift: DOWN.fields }),
     part('board', 'combobox', '', { ...UNDER, type: false, buildName: 'Board (optional)', buildShift: DOWN.selects }),
     part('thread-label', 'text', 'THREAD', { ...UNDER, buildShift: DOWN.fields }),
-    part('thread', 'combobox', '', { ...UNDER, type: false, buildName: 'Thread', nth: 1, buildShift: DOWN.selects }),
+    part('thread', 'combobox', '', { ...UNDER, type: false, buildName: 'Thread', nth: 1, buildNth: 0, buildShift: DOWN.selects }),
     part('words-label', 'text', "IN THE CHARACTER'S WORDS (OPTIONAL)", { ...UNDER, buildShift: DOWN.words }),
     part('hint', 'text', 'Plain text.', { ...UNDER, type: false, buildShift: DOWN.count }),
     part('count', 'text', '21 of 200', { ...UNDER, type: false, buildShift: DOWN.count }),

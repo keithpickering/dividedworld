@@ -103,7 +103,7 @@ describe('the foil client', () => {
     const m = w.of('frame')[0]!.message as { t: number; draws: { id: number; spec: unknown; key: string; box: unknown; density: number; light: unknown; band: unknown; now: number; idle: boolean }[] };
     expect(m.t).toBe(16);
     expect(m.draws.map((d) => d.id)).toEqual([...w.of('adopt').map((x) => x.message.id as number)]);
-    expect(m.draws[0]).toEqual({ id: m.draws[0]!.id, spec, key: 'light', box: { w: 90, h: 45 }, density: 2, light: { x: 0.1, y: -0.2 }, band: BAND, now: 16, idle: false });
+    expect(m.draws[0]).toEqual({ id: m.draws[0]!.id, spec, key: 'light', box: { w: 90, h: 45 }, density: 2, light: { x: 0.1, y: -0.2 }, band: BAND, now: 16, idle: false, span: null });
     a.draw(...drawArgs(32));
     await flushMicrotasks();
     expect(w.of('frame'), 'the first batch is not acknowledged yet').toHaveLength(1);
@@ -185,6 +185,25 @@ describe('the foil client', () => {
     expect(w.of('frame'), 'nothing waits: nothing is posted').toHaveLength(2);
     a.draw(...L(80, 5)); await flushMicrotasks();
     expect(w.of('frame'), 'idle again: the next draw goes at once').toHaveLength(3);
+  });
+
+  it('a waiting draw replaced by a newer one keeps both spans: their union, or whole when either was whole', async () => {
+    supported();
+    const a = adoptFoil(document.createElement('canvas')), b = adoptFoil(document.createElement('canvas'));
+    const w = FakeWorker.made[0]!;
+    const S = (t: number, span: { top: number; bottom: number } | null) => [spec, 'light', { w: 90, h: 900 }, 2, { x: t, y: 0 }, BAND, t, false, span] as const;
+    a.draw(...S(16, null)); b.draw(...S(16, null));
+    await flushMicrotasks();
+    /* The worker is slow: a's newer draws are a span each, b's a whole one and then a span. */
+    a.draw(...S(32, { top: 100, bottom: 200 })); b.draw(...S(32, null)); await flushMicrotasks();
+    a.draw(...S(48, { top: 300, bottom: 400 })); b.draw(...S(48, { top: 0, bottom: 50 })); await flushMicrotasks();
+    w.ack();
+    const m = w.of('frame')[1]!.message as { draws: { id: number; now: number; span: { top: number; bottom: number } | null }[] };
+    const ids = w.of('adopt').map((x) => x.message.id as number);
+    const of = (id: number) => m.draws.find((d) => d.id === id)!;
+    expect(of(ids[0]!).now, 'still the latest light').toBe(48);
+    expect(of(ids[0]!).span, 'the rows both waiting draws asked for').toEqual({ top: 100, bottom: 400 });
+    expect(of(ids[1]!).span, 'a whole draw replaced by a span stays whole').toBeNull();
   });
 
   it('free and drop go at once while a batch is in flight, and take the canvas\'s waiting draw with them: it is not resurrected on the ack', async () => {

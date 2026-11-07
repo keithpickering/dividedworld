@@ -1619,7 +1619,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /*
    * search_posts, search_threads and search_suggest over the fake's own Acts, on a small scale and with a plain word match: a whole word,
    * case and accents apart, every word needed and `-word` leaving a post out (no stemming, phrases or `or`). The caps, the pool, the
-   * cursor and the ordering are the SQL's (supabase/migrations/0112_search.sql); only the matching is cruder.
+   * cursor and the ordering are the SQL's (supabase/migrations/0113_search.sql); only the matching is cruder.
    */
   const foldText = (s: string): string => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
   const wordsOf = (s: string): string[] => foldText(s).match(/[\p{L}\p{N}]+/gu) ?? [];
@@ -2577,7 +2577,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!account) return refuse('sign in with an account first');
       if (p.theme !== undefined && !/^[a-z][a-z0-9-]{0,39}$/.test(p.theme)) return refuse('a theme is named in lowercase words joined by hyphens');
       if (p.postbit !== undefined && p.postbit !== 'side' && p.postbit !== 'stacked') return refuse('the postbit is side or stacked');
-      if (p.motion !== undefined && p.motion !== 'system' && p.motion !== 'reduce' && p.motion !== 'full') return refuse('motion follows the system, or is reduced or full');
+      if (p.motion !== undefined && p.motion !== 'system' && p.motion !== 'reduce' && p.motion !== 'full' && p.motion !== 'snappy') return refuse('motion follows the system, or is off, smooth or snappy');
       if (p.smoke !== undefined && !['full', 'low', 'off'].includes(p.smoke)) return refuse('the smoke is full, low or off');
       if (p.contrast !== undefined && p.contrast !== 'standard' && p.contrast !== 'high') return refuse('contrast is standard or high');
       if (p.textSize !== undefined && ![100, 125, 150, 200].includes(p.textSize)) return refuse('text size is 100, 125, 150 or 200 percent');

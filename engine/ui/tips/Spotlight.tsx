@@ -12,7 +12,8 @@
 import { Fragment, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
-import { useMotionReduced } from '../appearance.ts';
+import { useKayfaIfAny } from '../context.tsx';
+import { bezier, useFeel } from '../glass/motion.ts';
 import { useModalLayer } from '../modal.tsx';
 import type { TipStep } from './store.ts';
 import './tips.css';
@@ -85,7 +86,9 @@ const sameFrame = (a: Frame, b: Frame) => a.x === b.x && a.y === b.y && a.w === 
 export function Spotlight({ tipKey, title, line, step, target, persona, action, onGotIt, onSkip }: SpotlightProps) {
   const heading = useId();
   const words = useId();
-  const reduced = useMotionReduced();
+  /* The fade takes the feel's time and ease, so the Motion setting moves it; under Off it is not there. */
+  const feel = useFeel(useKayfaIfAny()?.ui.glass.motion);
+  const reduced = feel === null;
   const { overlay, box, closeButton } = useModalLayer({ onClose: onSkip });
   const gotIt = useRef<HTMLButtonElement>(null);
   const [frame, setFrame] = useState<Frame>(() => measure(target));
@@ -151,7 +154,7 @@ export function Spotlight({ tipKey, title, line, step, target, persona, action, 
       data-kb-fade={reduced ? 'none' : 'in'}
       initial={reduced ? false : { opacity: 0 }}
       animate={{ opacity: 1 }}
-      transition={{ duration: reduced ? 0 : 0.32, ease: [0.16, 1, 0.3, 1] }}
+      transition={{ duration: feel ? feel.enter / 1000 : 0, ease: bezier(feel?.ease ?? 'cubic-bezier(0.22, 1, 0.36, 1)') }}
     >
       <div className="kb-tips-dim" aria-hidden="true" style={{ clipPath: `path(evenodd, 'M0 0H${vw}V${vh}H0Z M${x} ${y}H${x + w}V${y + h}H${x}Z')` }} />
       <div className="kb-tips-ring" aria-hidden="true" style={{ left: x, top: y, width: w, height: h }} />

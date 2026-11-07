@@ -68,6 +68,13 @@ export function RevealOverlay({ character, onClose, onDone, returnFocusTo }: Rev
         <p className="kb-reveal-line">{words.sentence}</p>
         {words.pendingTurn && <p className="kb-reveal-line kb-reveal-note">{words.pendingTurn}</p>}
         <div className="kb-reveal-where">
+          <label className="kb-glass-field">
+            <span>Board</span>
+            <select className="kb-glass-select" aria-label="Board (optional)" value={board} onChange={(e) => { setBoard(e.target.value); setChosen(null); }}>
+              <option value="">All boards</option>
+              {boards.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </label>
           {/* Typing after a choice makes it no longer the chosen thread; a choice itself fills the box with the chosen title, which is not a change. */}
           <GlassCombobox
             key={board}
@@ -79,13 +86,6 @@ export function RevealOverlay({ character, onClose, onDone, returnFocusTo }: Rev
             onChoose={(o) => setChosen({ id: o.id, title: o.label })}
             onQueryChange={(text) => setChosen((c) => (c && text !== c.title ? null : c))}
           />
-          <label className="kb-glass-field">
-            <span>Board (optional)</span>
-            <select className="kb-glass-select" value={board} onChange={(e) => { setBoard(e.target.value); setChosen(null); }}>
-              <option value="">All boards</option>
-              {boards.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
-          </label>
         </div>
         <div className="kb-reveal-words">
           <label className="kb-glass-field">

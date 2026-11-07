@@ -1,5 +1,5 @@
 /**
- * Holds the plain words to one list: supabase/tests/0115-bbcode-plain.sql must be exactly what
+ * Holds the plain words to one list: supabase/tests/0116-bbcode-plain.sql must be exactly what
  * tools/bbcode-plain.mjs makes from engine/bbcode/plain.fixtures.ts, the list engine/bbcode/
  * plain.test.ts holds `visibleText` to. So a fixture the database's `bbcode_plain` is not tested
  * on, one tested on other words than the engine gives, and a test edited by hand each fail the

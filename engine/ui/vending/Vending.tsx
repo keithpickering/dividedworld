@@ -49,6 +49,7 @@ import { usePlayer } from '../player.tsx';
 import { Link, searchOf, useLocation } from '../router.tsx';
 import './vending.css';
 import { CalmRegion } from '../glass/Calm.tsx';
+import { Layers } from '../glass/layer.tsx';
 
 /* The refusal's words are the cards' (the play form says them too); the Vending Machine's tests and callers still reach them here. */
 export { plainRefusal };
@@ -347,6 +348,7 @@ export function Vending() {
         onLanded={() => change(account, () => ({ drop: null }))}
       />
 
+      <Layers>
       {aboutFace && (
         <Overlay title={aboutFace.name} surface="vending" className="kb-vending-about-dialog" onClose={() => setAbout(null)} returnFocusTo={() => aboutButton.current}>
           <div className="kb-vending-about-body" data-kb-alignment={aboutFace.alignment}>
@@ -355,6 +357,7 @@ export function Vending() {
           </div>
         </Overlay>
       )}
+      </Layers>
 
       {faces.length < slotsFor(faces.length) && (
         <CalmRegion className="kb-vending-empty-line">

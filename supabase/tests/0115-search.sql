@@ -1,4 +1,4 @@
--- The search index (supabase/migrations/0112_search.sql; docs/plans/2026-11-07-search-design.md sections 2, 3, 4 and 6; its plan, Task 2).
+-- The search index (supabase/migrations/0113_search.sql; docs/plans/2026-11-07-search-design.md sections 2, 3, 4 and 6; its plan, Task 2).
 --
 -- 1. A post, a spin and a Mod Bot's post each get a post_search row; a card play, a tally, a reveal and an announce get none.
 -- 2. A thread's first post carries its thread's title at weight A, so a title and a post match in one index; a later post does not.
@@ -486,7 +486,7 @@ begin
   insert into acts (character, kind, thread, payload, created_at)
   select quincy, 'post', ok_t, jsonb_build_object('body', 'Okapis wander ' || g), base + interval '13 days' + g * interval '1 second' from generate_series(1, 100) g;
   perform tests.become(ann);
-  if (select count(*) from post_search where words @@ websearch_to_tsquery('english', 'okapi')) <> 100 then raise exception 'the okapi fixture is not 100 posts'; end if;
+  if (select count(*) from post_search where words @@ websearch_to_tsquery('english', 'okapi')) is distinct from 100 then raise exception 'the okapi fixture is not 100 posts'; end if;
   j := pg_temp.sp(q => 'okapi');
   if (j ->> 'pooled')::boolean or (j ->> 'count')::integer <> 100 then raise exception 'exactly a pool of matches was called pooled (posts): %', j - 'results'; end if;
   j := pg_temp.st(q => 'okapi');
@@ -579,7 +579,7 @@ begin
       insert into acts (character, kind, thread, payload, created_at) values (quincy, 'post', ok_t, '{"body": "Quokkas bounce."}', tie_at), (sylvia, 'post', ok_t, '{"body": "Quokkas bounce."}', tie_at);
     end loop;
     insert into acts (character, kind, thread, payload, created_at) values (quincy, 'post', tq[1], '{"body": "Quokkas bounce."}', tie_at - interval '1 day');
-    if (select count(distinct created_at) from post_search where words @@ q1) <> 2 or (select count(*) from post_search where words @@ q1 and created_at = tie_at) <> 6 then raise exception 'the tie fixture has no ties'; end if;
+    if (select count(distinct created_at) from post_search where words @@ q1) is distinct from 2 or (select count(*) from post_search where words @@ q1 and created_at = tie_at) is distinct from 6 then raise exception 'the tie fixture has no ties'; end if;
     perform tests.become(ann);
     foreach sort_name in array array['newest', 'oldest', 'relevance'] loop
       perform tests.unbecome();
@@ -1025,7 +1025,7 @@ begin
   -- BOUND-1: no walk by time reads more than the pool's worth of matches, however many there are (100,000 here, the thread keys among the newest 1,000), read in the plan that runs.
   execute 'explain (analyze, format json) ' || search_walk_sql('common', null, null, null, null, false, true, null, null, pool) into plan;
   if pg_temp.max_limit_read(plan) > pool + 1 then raise exception 'a walk read more than the pool and one: %', plan; end if;
-  if (select count(*) from search_walk('common', null, null, null, null, false, true, null, null, 100000, pool) w where not w.stop) <> 1000 or (select count(*) from search_walk('common', null, null, null, null, false, true, null, null, 100000, pool) w where w.stop) <> 1 then
+  if (select count(*) from search_walk('common', null, null, null, null, false, true, null, null, 100000, pool) w where not w.stop) is distinct from 1000 or (select count(*) from search_walk('common', null, null, null, null, false, true, null, null, 100000, pool) w where w.stop) is distinct from 1 then
     raise exception 'a walk of the common word did not find the 1,000 keys among the first % matches and stop', pool; end if;
   -- Newest and oldest page threads by time: every thread that holds the word is reached by Next with no repeat, 20 pages of 50 and then the stretches of matches that are no thread's key, each a page of at most
   -- `pool` matches read (here 100,000 matches in 20 stretches). Timed: the first page, a deep one (the last of the threads), the empty stretches' last page, and the count (a page of 1: the count is most of it).
