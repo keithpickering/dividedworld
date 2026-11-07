@@ -89,7 +89,7 @@ interface Row {
 }
 
 /** The visit's Acts as rows, in the order they happened: the report and its verdict, the visit's start, each attempt, the end, the appeal and its ruling. */
-function rowsOf(visit: Visit, story: VisitStory, name: (c: Id | null) => string): readonly Row[] {
+function rowsOf(visit: Visit, story: VisitStory, name: (c: Id | null) => string, modPronouns: PronounSet): readonly Row[] {
   const out: Row[] = [];
   const mod = name(visit.mod);
   if (story.report) out.push({ act: story.report.id, at: story.report.createdAt, character: story.report.character, did: 'reported this post', quote: said(story.report.payload['reason'] as string | undefined), label: `${name(story.report.character)}'s report` });
@@ -97,7 +97,7 @@ function rowsOf(visit: Visit, story: VisitStory, name: (c: Id | null) => string)
     const v = story.verdict.payload['verdict'];
     out.push({
       act: story.verdict.id, at: story.verdict.createdAt, character: story.verdict.character, staff: true, quote: said(story.verdict.payload['line'] as string | undefined), label: `${mod}'s verdict`,
-      did: v === 'visit' ? 'judged the report: it sent a visit' : v === 'dismissed' ? 'judged the report: dismissed it' : 'judged the report: it backfired on the reporter',
+      did: v === 'visit' ? `judged the report: ${words(modPronouns).they} sent a visit` : v === 'dismissed' ? 'judged the report: dismissed it' : 'judged the report: it backfired on the reporter',
     });
   }
   out.push({ act: visit.id, at: visit.at, character: visit.mod, staff: true, did: 'began the visit', quote: visit.line, label: `${mod}'s visit` });
@@ -309,7 +309,7 @@ export function VisitPanel({ visit, thread, author, nameOf, modPronouns, tallies
   const marked = top ? markedAs(top) : 'a rule';
   const timeIsUp = Date.parse(visit.endsAt) <= now;
   const charges = visit.charges.map((c) => chargeWords(c, bands[c.band])).join('; ');
-  const rows = useMemo(() => (story ? rowsOf(visit, story, name) : []), [visit, story, name]);
+  const rows = useMemo(() => (story ? rowsOf(visit, story, name, modPronouns) : []), [visit, story, name, modPronouns]);
   const appealable = state === 'filed' && inf !== null && mask !== null && mask.id === inf.character && story?.appeal === null && stillCounts(inf, now);
   const appealWaiting = story?.appeal && !story.ruling;
 

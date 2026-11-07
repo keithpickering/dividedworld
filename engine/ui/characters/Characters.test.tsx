@@ -615,6 +615,17 @@ describe('A pending Turn and a reveal', () => {
     expect(within(dialog).getByText(/This reveals the class she holds now, /u)).toBeInTheDocument();
   });
 
+  test('the reveal dialog\'s pending-Turn line agrees with a they/them character: "the class they hold now"', async () => {
+    const w = world();
+    const wobbly = w.fake.seed.character(w.me, 'Wobbly', 'face', { at: T0, pronouns: PRONOUN_PRESETS.they });
+    expect((await w.fake.turn(wobbly, 'heel', 'announced', false, false)).ok).toBe(true);
+    open(w);
+    await ready();
+    await userEvent.click(within(row('Wobbly')).getByRole('button', { name: 'Reveal Wobbly\'s class' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Reveal Wobbly\'s class' });
+    expect(within(dialog).getByText(/This reveals the class they hold now, /u)).toBeInTheDocument();
+  });
+
   test('a character without a pending Turn is told nothing of the kind', async () => {
     const w = world();
     open(w);

@@ -216,6 +216,14 @@ describe('a nomination of a successor', () => {
     expect(within(waiting).getByRole('button', { name: 'Hold: the naming of a successor' })).toBeInTheDocument();
   });
 
+  test('holding a they/them Boss\'s nomination says "their next meeting"', async () => {
+    open({ build: (f) => { f.seed.staff('the-clerk', 'The Clerk', 'boss', { pronouns: PRONOUN_PRESETS.they }); f.seed.staff('hype-man', 'Hype Man', 'boss'); f.seed.queueSuccessor('the-clerk', 'hype-man', { goLiveAt: f.clock.now() + 20 * 3_600_000, why: 'Fine.' }); } });
+    const waiting = await group(/^Waiting to land/u);
+    await userEvent.click(within(waiting).getByRole('button', { name: 'Hold: the naming of a successor' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Hold this move?' });
+    expect(dialog).toHaveTextContent('The Boss chooses their next move at their next meeting, and learns of the hold only then.');
+  });
+
   test('offers REPLACE with the roster\'s other personas (a Mod Bot too, since the Boss may come from any office), never the Boss that wrote it nor the one it names; replacing changes the nomination and reads the queue again', async () => {
     const { fake } = open({ build: (f) => { nominate(f); } });
     const waiting = await group(/^Waiting to land/u);

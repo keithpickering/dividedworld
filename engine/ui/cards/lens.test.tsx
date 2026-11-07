@@ -1344,7 +1344,7 @@ describe('a visit\'s tab', () => {
       expect(rows).toHaveLength(4);
       expect(rows[0]).toHaveTextContent('Gloomba · reported this post');
       expect(rows[0]).toHaveTextContent('“Third time this week.”');
-      expect(rows[1]).toHaveTextContent('The Clerk · A Moderator · judged the report: it sent a visit');
+      expect(rows[1]).toHaveTextContent('The Clerk · A Moderator · judged the report: they sent a visit');
       expect(rows[1]).toHaveTextContent('“Noted. Inspecting.”');
       expect(rows[2]).toHaveTextContent('began the visit');
       expect(rows[2]).toHaveTextContent('“Routine inspection.”');
