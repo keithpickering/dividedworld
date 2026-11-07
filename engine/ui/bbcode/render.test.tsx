@@ -1,12 +1,12 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, test } from 'vitest';
-import { BbCode } from './render.tsx';
+import { BbCode, type QuoteOf } from './render.tsx';
 import { TextLayer, type TextRun } from './layers.tsx';
 import { axeViolations, describeViolations } from '../a11y.ts';
 import { RouterProvider } from '../router.tsx';
 
-const show = (text: string, quoteLink?: (act: string) => React.ReactNode) =>
-  render(<RouterProvider><div data-testid="out"><BbCode text={text} quoteLink={quoteLink} /></div></RouterProvider>);
+const show = (text: string, quoteHead?: (q: QuoteOf) => React.ReactNode) =>
+  render(<RouterProvider><div data-testid="out"><BbCode text={text} quoteHead={quoteHead} /></div></RouterProvider>);
 const out = () => screen.getByTestId('out');
 
 describe('the BBCode renderer', () => {
@@ -86,7 +86,7 @@ describe('the BBCode renderer', () => {
 
   test('a quote is a blockquote around its words with the link the thread gives it', () => {
     const act = '11111111-1111-4111-8111-111111111111';
-    show(`[quote=${act}]said this[/quote]after`, (id) => <a href={`#post-${id.slice(0, 2)}`}>Quoted post</a>);
+    show(`[quote=${act}]said this[/quote]after`, (q) => <a href={`#post-${q.kind === 'real' ? q.act.slice(0, 2) : ''}`}>Quoted post</a>);
     const q = out().querySelector('blockquote')!;
     expect(q).toHaveTextContent('said this');
     expect(q.querySelector('a')).toHaveAttribute('href', '#post-11');
@@ -96,6 +96,40 @@ describe('the BBCode renderer', () => {
   test('a quote with no resolver is still a blockquote, and says it quotes an earlier post', () => {
     show('[quote=11111111-1111-4111-8111-111111111111]x[/quote]');
     expect(out().querySelector('blockquote')).toHaveTextContent('x');
+    expect(out().querySelector('cite')).toHaveTextContent('Quoting an earlier post');
+  });
+
+  describe('a counterfeit quote', () => {
+    const user = '22222222-2222-4222-8222-222222222222';
+    test('with no head given shows its typed name and letter, as plain text and never a link', () => {
+      show('[quote=Geno]I never said that.[/quote]');
+      const q = out().querySelector('blockquote')!;
+      expect(q).toHaveAttribute('data-kb-counterfeit');
+      expect(q.querySelector('cite')).toHaveTextContent('G' + 'Geno');
+      expect(q.querySelector('cite .kb-byline-name')).toHaveTextContent('Geno');
+      expect(q.querySelector('a')).toBeNull();
+      expect(q).toHaveTextContent('I never said that.');
+    });
+
+    test('with no name says "Quote" and has no avatar; with only user= says "Someone"', () => {
+      show('[quote]a[/quote][quote user=' + user + ']b[/quote]');
+      const [bare, someone] = [...out().querySelectorAll('cite')];
+      expect(bare).toHaveTextContent(/^Quote$/u);
+      expect(bare!.querySelector('.kb-mini')).toBeNull();
+      expect(someone).toHaveTextContent(/^Someone$/u);
+    });
+
+    test('is handed to the screen\'s head with the typed name and the user', () => {
+      const seen: QuoteOf[] = [];
+      show(`[quote="Geno Wario" user=${user}]x[/quote]`, (q) => { seen.push(q); return 'head'; });
+      expect(seen).toEqual([{ kind: 'counterfeit', user, name: 'Geno Wario' }]);
+    });
+
+    test('is axe clean beside a real quote', async () => {
+      show('[quote=11111111-1111-4111-8111-111111111111]x[/quote][quote=Geno]y[/quote]');
+      const found = await axeViolations(out());
+      expect(describeViolations(found)).toBe('');
+    });
   });
 
   test('nesting deep enough for the parser\'s cap renders', () => {

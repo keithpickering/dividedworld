@@ -156,6 +156,27 @@
   padding: 0.3em 2%;
 }
 
+/* A counterfeit quote: the same box, its border redrawn through the wobble filter (Wobble.tsx, mounted once by the frame). */
+.kb-quote[data-kb-counterfeit] {
+  border: 0;
+  position: relative;
+}
+
+.kb-quote[data-kb-counterfeit]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--kb-rule);
+  filter: url(#kb-wobble);
+  pointer-events: none;
+}
+
+/* Under forced colors the filter's line may be lost; a plain dashed border keeps the difference. */
+@media (forced-colors: active) {
+  .kb-quote[data-kb-counterfeit] { border: 1px dashed CanvasText; }
+  .kb-quote[data-kb-counterfeit]::before { content: none; }
+}
+
 .kb-quote-from {
   display: block;
   font-size: var(--kb-size-small);

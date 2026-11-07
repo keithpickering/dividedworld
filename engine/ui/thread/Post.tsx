@@ -25,7 +25,7 @@ import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
 import { SpunInto } from '../spin/SpunInto.tsx';
 import { Reactions } from '../reactions/Reactions.tsx';
 import { ThreadCtx, useThread, type ThreadContext } from './context.ts';
-import { AnnounceLine, LastEdited, MoveEndLine, MoveKeepLine, SystemPost, UnmaskLine, quoteLink, text, useHistory, when } from './lines.tsx';
+import { AnnounceLine, LastEdited, MoveEndLine, MoveKeepLine, SystemPost, UnmaskLine, quoteHead, text, useHistory, when } from './lines.tsx';
 import { pageOf, threadHref } from './pages.ts';
 
 export { ThreadCtx, type ThreadContext };
@@ -61,7 +61,7 @@ function Body({ act, name, person, editing, onDone, marks, visit }: { readonly m
       return (
         <>
           <MoveTag kind={text(act.payload.kind)} />
-          <BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} />
+          <BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} />
           <Reactions act={act.id} author={act.character} authorName={name} tallies={tallies} mine={mine} />
           {person && <Signature text={person.character.signature} />}
         </>
@@ -84,7 +84,7 @@ function Body({ act, name, person, editing, onDone, marks, visit }: { readonly m
           {!editing && <ViolationNotice visit={visit} />}
           {editing
             ? <EditPost act={act} seq={act.seq!} onDone={onDone} onSaved={changed} />
-            : <PostEffects plays={plays} post={act} place="thread" marks={marks} nameOf={casterName} bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteLink={quoteLink} />}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>}
+            : <PostEffects plays={plays} post={act} place="thread" marks={marks} nameOf={casterName} bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} />}><BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} /></PostEffects>}
           <LastEdited act={act} />
           <Reactions act={act.id} author={act.character} authorName={name} tallies={tallies} mine={mine} />
           {person && <Signature text={person.character.signature} />}

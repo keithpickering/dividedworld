@@ -5,7 +5,7 @@
  */
 import { useId, useLayoutEffect, useImperativeHandle, useRef, useState, type KeyboardEvent, type ReactNode, type Ref } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
-import { quoteLink } from '../thread/lines.tsx';
+import { quoteHead } from '../thread/lines.tsx';
 import { Toolbar } from './Toolbar.tsx';
 import { applyTool, diffRange, type Tool } from './text.ts';
 import './composer.css';
@@ -127,7 +127,7 @@ export function Editor({ label, value, onChange, max, onQuote, onSubmit, describ
       <div id={previewId}>
         {preview && (
           <section className="kb-editor-preview" aria-label="Preview">
-            {value.trim() === '' ? <p className="kb-muted">Nothing to preview yet.</p> : <BbCode text={value} quoteLink={quoteLink} />}
+            {value.trim() === '' ? <p className="kb-muted">Nothing to preview yet.</p> : <BbCode text={value} quoteHead={quoteHead} />}
           </section>
         )}
       </div>
