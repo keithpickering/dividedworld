@@ -6,12 +6,14 @@
  * The rules of a reveal are reveal.ts's, shared with the board's dialog (RevealModal.tsx).
  */
 import { useEffect, useRef, useState } from 'react';
+import { useBoot } from '../boot.tsx';
 import { useKayfa } from '../context.tsx';
 import type { Board, MyCharacter, ThreadSummary } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { FieldCount } from '../glass/FieldCount.tsx';
 import { FormFoot } from '../glass/FormFoot.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
+import { Spinner } from '../glass/Spinner.tsx';
 import { revealFooter } from './footers.ts';
 import { PreviewBox } from './PreviewBox.tsx';
 import { revealPreview } from './previews.ts';
@@ -32,7 +34,12 @@ export function RevealOverlay({ character, onClose, onDone, returnFocusTo }: Rev
   const r = useReveal(character);
   const { setRefusal } = r;
   const words = revealWords(character, r.className);
-  const [boards, setBoards] = useState<readonly Board[]>([]);
+  /* The boards are boot's, read once for the frame: the overlay opens with them in its first render. Only where boot is not there (a story, a screen before boot) are they read. */
+  const boot = useBoot();
+  const [read, setRead] = useState<readonly Board[]>([]);
+  const boards = (boot ? boot.boards : read).filter((x) => !x.isSystem);
+  /* A read a press starts in the open overlay spins its control: the threads of a chosen board, and the older page. */
+  const [listing, setListing] = useState(false);
   const [board, setBoard] = useState('');
   const [threads, setThreads] = useState<readonly ThreadSummary[]>([]);
   const [total, setTotal] = useState<number | null>(null);
@@ -41,11 +48,13 @@ export function RevealOverlay({ character, onClose, onDone, returnFocusTo }: Rev
   /* The board whose threads are listed now, so a page asked for under another one is dropped. */
   const listed = useRef('');
 
+  const hasBoot = boot !== null;
   useEffect(() => {
+    if (hasBoot) return undefined;
     let live = true;
-    void api.boards().then((b) => { if (live) setBoards(b.filter((x) => !x.isSystem)); }, () => { if (live) setRefusal('The boards could not be loaded. Close this and try again.'); });
+    void api.boards().then((b) => { if (live) setRead(b); }, () => { if (live) setRefusal('The boards could not be loaded. Close this and try again.'); });
     return () => { live = false; };
-  }, [api, setRefusal]);
+  }, [api, hasBoot, setRefusal]);
 
   useEffect(() => {
     setThreads([]);
@@ -53,9 +62,11 @@ export function RevealOverlay({ character, onClose, onDone, returnFocusTo }: Rev
     setChosen('');
     setMore(false);
     listed.current = board;
+    setListing(false);
     if (!board) return;
     let live = true;
-    void api.threads(board, { offset: 0, limit: PAGE }).then((t) => { if (live) { setThreads(t.threads); setTotal(t.total); } }, () => { if (live) setRefusal('That board’s threads could not be loaded. Choose it again.'); });
+    setListing(true);
+    void api.threads(board, { offset: 0, limit: PAGE }).then((t) => { if (live) { setThreads(t.threads); setTotal(t.total); } }, () => { if (live) setRefusal('That board’s threads could not be loaded. Choose it again.'); }).finally(() => { if (live) setListing(false); });
     return () => { live = false; };
   }, [api, board, setRefusal]);
 
@@ -66,6 +77,7 @@ export function RevealOverlay({ character, onClose, onDone, returnFocusTo }: Rev
   const older = async () => {
     const of = board;
     setMore(true);
+    setListing(true);
     try {
       const t = await api.threads(of, { offset: threads.length, limit: PAGE });
       if (listed.current !== of) return;
@@ -74,7 +86,7 @@ export function RevealOverlay({ character, onClose, onDone, returnFocusTo }: Rev
     } catch {
       if (listed.current === of) setRefusal('Older threads could not be loaded. Try again.');
     } finally {
-      if (listed.current === of) setMore(false);
+      if (listed.current === of) { setMore(false); setListing(false); }
     }
   };
 
@@ -107,11 +119,12 @@ export function RevealOverlay({ character, onClose, onDone, returnFocusTo }: Rev
               <option value="">{board ? 'Choose a thread' : 'Choose a board first'}</option>
               {threads.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
             </select>
+            {listing && <Spinner />}
           </label>
         </div>
         {board && total === 0 && <p className="kb-reveal-line">No threads on this board yet; choose another board.</p>}
         {total !== null && threads.length < total && (
-          <ButtonRow><GlassButton size="s" disabled={more} onClick={() => void older()}>Show older threads</GlassButton></ButtonRow>
+          <ButtonRow><GlassButton size="s" busy={more} onClick={() => void older()}>Show older threads</GlassButton></ButtonRow>
         )}
         <div className="kb-reveal-words">
           <label className="kb-glass-field">

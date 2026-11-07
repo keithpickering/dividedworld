@@ -47,12 +47,14 @@ export interface PlayFormProps {
   readonly onClose: () => void;
   /** The play is on the post. */
   readonly onPlayed: () => void;
+  /** The post as `actsById` answered when the form was asked for (play.tsx reads it before the form opens): the form starts from its newest copy. */
+  readonly seen?: readonly Act[];
 }
 
 /** Where the message's counter starts to speak: its last stretch before the limit. */
 const MESSAGE_NEAR = MESSAGE_MOST - 20;
 
-export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
+export function PlayForm({ card, target, onClose, onPlayed, seen = [] }: PlayFormProps) {
   const { api, instance, settings: screen, ui } = useKayfa();
   /* Priced as the server will charge (withCardEconomy): a surcharge an admin has tuned is the one shown. */
   const priced = useMemo(() => withCardEconomy(instance.settings, screen.cardEconomy), [instance.settings, screen.cardEconomy]);
@@ -80,7 +82,7 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
   const accountNow = useRef(account);
   accountNow.current = account;
   /* The post as it stands: its edits change its length and so its price, and the click's copy is only where it starts. */
-  const [live, setLive] = useState(target.post);
+  const [live, setLive] = useState(() => seen.reduce<Act | null>((held, a) => (a.id === target.post?.id && a.kind === 'post' ? (held ? newer(held, a) : a) : held), target.post));
   const post = live !== null && target.post !== null && live.id === target.post.id ? live : target.post;
   const postId = target.post?.id ?? null;
   const postThread = target.post?.thread ?? null;
@@ -88,7 +90,6 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
     if (postId === null || postThread === null) return;
     let open = true;
     const take = (a: Act) => { if (open && a.id === postId && a.kind === 'post') setLive((held) => (held ? newer(held, a) : a)); };
-    try { void api.actsById([postId]).then((read) => { for (const a of read) take(a); }, () => { /* the live edits still arrive */ }); } catch { /* ditto */ }
     const stop = api.subscribeThread(postThread, { onAct: take });
     return () => { open = false; stop(); };
   }, [api, postId, postThread]);

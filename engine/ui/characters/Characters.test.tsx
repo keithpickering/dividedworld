@@ -514,6 +514,28 @@ describe('Reveal', () => {
     expect(within(row('Pipewrench')).getByRole('button', { name: 'Reveal Pipewrench\'s class' })).toHaveFocus();
   });
 
+  test('with boot, the overlay opens at once with its boards and reads none; a board\'s threads spin beside the select until they land', async () => {
+    const w = world();
+    general(w);
+    const boot = await w.fake.boot();
+    const doc = await w.fake.myCharactersPage();
+    const boards = vi.spyOn(w.fake, 'boards');
+    renderIn(w.fake, <Characters doc={doc} />, { path: '/characters', settings: { charactersPerPlayer: w.per }, boot });
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Reveal Pipewrench\'s class' }));
+    const dialog = screen.getByRole('dialog', { name: 'Reveal Pipewrench\'s class' });
+    /* The first render holds its boards: no wait, no read of them. */
+    expect(within(dialog).getByRole('option', { name: 'General' })).toBeInTheDocument();
+    expect(boards).not.toHaveBeenCalled();
+    let release!: () => void;
+    const real = w.fake.threads.bind(w.fake);
+    vi.spyOn(w.fake, 'threads').mockImplementation((...args) => new Promise((resolve) => { release = () => resolve(real(...args)); }));
+    await userEvent.selectOptions(within(dialog).getByLabelText('Board'), 'General');
+    expect(dialog.querySelector('.kb-reveal-where .kb-spinner')).not.toBeNull();
+    release();
+    await within(dialog).findByRole('option', { name: 'The tea thread' });
+    expect(dialog.querySelector('.kb-reveal-where .kb-spinner')).toBeNull();
+  });
+
   test('the reveal is a busy button while it is out: aria-busy, its name kept, and a second press reveals once', async () => {
     const w = world();
     const { thread } = general(w);
