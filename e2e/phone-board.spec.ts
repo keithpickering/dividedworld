@@ -71,14 +71,20 @@ test('a record row\'s date stacks above its words, and the six kinds fit one row
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
-test('the record table keeps its table, row and cell semantics in the accessibility tree at 390', async ({ page }) => {
+test('the record table carries its roles as attributes under the phone layout at 390', async ({ page }) => {
   await open(page, 'boards-10-record--record', '.kb-record-table td');
-  const table = page.getByRole('table');
-  await expect(table).toHaveCount(1);
-  const rows = table.getByRole('row');
-  expect(await rows.count()).toBeGreaterThan(2);
-  await expect(table.getByRole('columnheader')).toHaveCount(2);
-  expect(await table.getByRole('cell').count()).toBe(2 * (await rows.count() - 1));
+  /* Chromium keeps table semantics under display:grid, so the accessibility tree cannot tell; the role attributes are what the phone layout needs. */
+  const layout = await page.evaluate(() => {
+    const t = document.querySelector('.kb-record-table')!;
+    return { table: getComputedStyle(t).display, tr: getComputedStyle(t.querySelector('tbody tr')!).display };
+  });
+  expect(layout, 'the phone layout is active').toEqual({ table: 'grid', tr: 'block' });
+  const pairs = [['table', 'table[role=table]'], ['thead', 'thead[role=rowgroup]'], ['tbody', 'tbody[role=rowgroup]'], ['tr', 'tr[role=row]'], ['th', 'th[role=columnheader]'], ['td', 'td[role=cell]']] as const;
+  const counts = await page.evaluate((ps) => ps.map(([bare, withRole]) => [bare, document.querySelectorAll(`.kb-record-table ${bare}`).length + (bare === 'table' ? document.querySelectorAll('table.kb-record-table').length : 0), document.querySelectorAll(withRole === 'table[role=table]' ? 'table.kb-record-table[role=table]' : `.kb-record-table ${withRole}`).length]), pairs);
+  for (const [bare, n, withRole] of counts) {
+    expect(n, `${bare} elements in the record table`).toBeGreaterThan(0);
+    expect(withRole, `${bare} elements carrying their role`).toBe(n);
+  }
 });
 
 test('poison: counts that each take a line are named as not sharing one', async ({ page }) => {
