@@ -12,7 +12,7 @@
  * record are not idempotent (`record_staff_call` and `record_patrol_call` number each call they are sent, and `claim_patrol` hands out the next patrol each time it is asked): `file_visit` finds a visit already ended and `apply_mod_move` finds the move of its cause, so a repeat of either writes nothing a second time and is sent again.
  */
 import { runFilings } from './core.ts';
-import { runPatrols } from './patrol.ts';
+import { runPatrolsAfterFilings } from './patrol.ts';
 import { appealDoor } from './appeal.ts';
 import { reportDoor } from './report.ts';
 import { chooseInstance } from '../_shared/instance.ts';
@@ -48,6 +48,8 @@ Deno.serve(async (request) => {
   // The schedule sends the minute it fired; a call without one is refused rather than guessed.
   if (typeof body.slot !== 'string' || Number.isNaN(Date.parse(body.slot))) return json(400, { error: 'slot: the scheduled minute, as a time' });
   const slot = body.slot;
+  // One clock for the whole invocation: the filings and the patrols share the run's time.
+  const begun = Date.now();
   try {
     const db = postgrest({ url: env.url, key: env.secret, safeToRepeat: (fn) => !WRITES.has(fn) });
     const instance = chooseInstance(Deno.env.get('KAYFABB_PROFILE'));
@@ -56,10 +58,7 @@ Deno.serve(async (request) => {
     const modelsNow = models((name) => Deno.env.get(name), ledgerWriter(db), { tiers });
     const outcome = await runFilings(db, modelsNow, instance, slot);
     // The patrols due, after the filings and on their own: a patrol's failure costs the filings nothing, and a filing run's failure is thrown before any patrol is claimed.
-    const patrols = await runPatrols(db, modelsNow, instance).catch((e) => {
-      console.error('patrols failed', slot, e instanceof Error ? e.message : 'unknown');
-      return { status: 'failed' as const };
-    });
+    const patrols = await runPatrolsAfterFilings(db, modelsNow, instance, Date.now, begun, slot);
     if (patrols.status === 'ok') {
       const odd = patrols.patrols.filter((p) => p.status !== 'judged' || p.trims.length > 0 || p.dropped.length > 0 || p.capped > 0);
       if (odd.length) console.warn('patrols with a skip, a failure, a trim, a drop or a cap', slot, JSON.stringify(odd.map((p) => ({ patrol: p.patrol, staff: p.staff, status: p.status, why: p.why, trims: p.trims, dropped: p.dropped, capped: p.capped }))));

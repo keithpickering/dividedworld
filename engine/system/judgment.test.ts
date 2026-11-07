@@ -519,7 +519,7 @@ test('a finding naming a post that is not in the sample is dropped and named; so
   assert.deepEqual(r.dropped.map((d) => `${d.path}:${d.predicate}`), ['findings[0].post:inSample', 'findings[2].post:uniquePost', 'findings[3]:isObject', 'findings[4].post:inSample', 'findings[5].charge:required']);
 });
 
-test('findings past the sample\'s size are cut from the end, with a trim', () => {
+test('findings can never outnumber the sample: a post not in it, or named twice, is dropped', () => {
   const small: PatrolContext = { ...pctx, sample: pctx.sample.slice(0, 2) };
   const r = repairPatrol({ findings: [finding(P1, { rule: 'premise', band: 'minor' }), finding(P2, { rule: 'premise', band: 'minor' }), finding(P3, { rule: 'premise', band: 'minor' })] }, small);
   assert.deepEqual(r.findings.map((f) => f.post), [P1, P2]);
@@ -527,7 +527,8 @@ test('findings past the sample\'s size are cut from the end, with a trim', () =>
   const many = Array.from({ length: 5 }, () => finding(P1, { rule: 'premise', band: 'minor' }));
   const cut = repairPatrol({ findings: many }, { ...pctx, sample: [pctx.sample[0]!] });
   assert.equal(cut.findings.length, 1);
-  assert.ok(cut.trims.some((t) => t.path === 'findings' && t.predicate === 'atMost(1)' && t.before === 5 && t.after === 1), JSON.stringify(cut.trims));
+  assert.deepEqual(cut.dropped.map((d) => d.predicate), ['uniquePost', 'uniquePost', 'uniquePost', 'uniquePost']);
+  assert.deepEqual(cut.trims, []);
 });
 
 test('the Mod\'s one move rides on a patrol as on a filing: a bad move costs no finding', () => {

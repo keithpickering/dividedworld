@@ -52,6 +52,57 @@ begin
   return (started ->> 'visit')::uuid;
 end $$;
 
+-- ---- 0a. The races (first: the committed rows must not meet this file's own locks) ----
+-- Two patrol visits at once for a character one punishment under the cap: exactly one starts (committed rows: the race runs in sessions of its own).
+do $$
+declare
+  u uuid := gen_random_uuid(); c uuid := gen_random_uuid(); t uuid := gen_random_uuid();
+  p uuid[] := array[gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), gen_random_uuid()];
+  said text[];
+  started integer;
+begin
+  perform tests.commit(format($sql$
+    insert into characters (name, staff, staff_kind, debuted_at) values ('Pt Race Mod', 'pt-race', 'persona', now());
+    insert into auth.users (id, email) values (%1$L, 'pt-capr@test.invalid');
+    insert into accounts (id) values (%1$L);
+    insert into characters (id, owner, name, created_at, debuted_at) values (%2$L, %1$L, 'Pt Cap Racer', now(), now());
+    insert into class_history (character, class_key, started_at) values (%2$L, 'alpha', now());
+    insert into threads (id, board, title) select %3$L, b.id, 'Pt cap race' from boards b where b.slug = 'general';
+    insert into acts (id, character, kind, thread, payload) values (%4$L, %2$L, 'post', %3$L, '{"body": "One."}'), (%5$L, %2$L, 'post', %3$L, '{"body": "Two."}'),
+      (%6$L, %2$L, 'post', %3$L, '{"body": "Three."}'), (%7$L, %2$L, 'post', %3$L, '{"body": "Four."}');
+    do $d$ begin
+      perform start_visit(%4$L, 'pt-race', jsonb_build_object('rule_number', null, 'board', (select board from threads where id = %3$L), 'band', 'minor', 'cause', 'patrol', 'about_act', %4$L::text, 'rule', 'the premise'));
+      perform start_visit(%5$L, 'pt-race', jsonb_build_object('rule_number', null, 'board', (select board from threads where id = %3$L), 'band', 'minor', 'cause', 'patrol', 'about_act', %5$L::text, 'rule', 'the premise'));
+    end $d$;
+  $sql$, u, c, t, p[1], p[2], p[3], p[4]));
+  if (select staff_punishments(c, 7)) is distinct from 2 then raise exception 'the race did not start at cap minus one: %', (select staff_punishments(c, 7)); end if;
+  said := tests.race_service(
+    format('select start_visit(%L, ''pt-race'', jsonb_build_object(''rule_number'', null, ''board'', (select board from threads where id = %L), ''band'', ''minor'', ''cause'', ''patrol'', ''about_act'', %L::text, ''rule'', ''the premise''))', p[3], t, p[3]),
+    format('select start_visit(%L, ''pt-race'', jsonb_build_object(''rule_number'', null, ''board'', (select board from threads where id = %L), ''band'', ''minor'', ''cause'', ''patrol'', ''about_act'', %L::text, ''rule'', ''the premise''))', p[4], t, p[4]));
+  if said[1] is not null and said[1] like 'ERROR%' or said[2] is not null and said[2] like 'ERROR%' then raise exception 'a racing visit failed: %', said; end if;
+  select count(*) into started from acts v where v.kind = 'visit' and v.target_act_id in (p[3], p[4]);
+  if started is distinct from 1 then raise exception 'two patrol visits at cap minus one started % visits', started; end if;
+  perform tests.commit(format($sql$ do $d$ declare v uuid; begin for v in select id from acts where kind = 'visit' and target_act_id in (%L, %L, %L, %L) loop perform end_visit(v, 'reversed', null, 'Race over.'); end loop; end $d$ $sql$, p[1], p[2], p[3], p[4]));
+end $$;
+
+-- Two sessions claiming the one due patrol claim it once (committed rows: the race runs in sessions of its own).
+do $$
+declare
+  m bigint;
+  said text[];
+  got int;
+begin
+  perform tests.commit($sql$
+    insert into meetings (slot, started_at, finished_at, outcome) values ('2001-01-01T09:00:00Z', now(), now(), 'ok');
+    insert into patrols (meeting, n, staff, at) select id, 1, 'pt-race', now() - interval '1 minute' from meetings where slot = '2001-01-01T09:00:00Z';
+  $sql$);
+  said := tests.race_service('select claim_patrol()', 'select claim_patrol()');
+  if said[1] is not null and said[1] like 'ERROR%' or said[2] is not null and said[2] like 'ERROR%' then raise exception 'a racing claim failed: %', said; end if;
+  select count(*) into got from patrols where meeting = (select id from meetings where slot = '2001-01-01T09:00:00Z') and ran_at is not null;
+  if got is distinct from 1 then raise exception 'the patrol was claimed % times', got; end if;
+  perform tests.commit($sql$ update patrols set ran_at = now() where ran_at is null $sql$);
+end $$;
+
 -- ---- 0. The world: a Boss, two Mods, two boards, players, and the settings ----
 do $$
 declare
@@ -198,25 +249,6 @@ begin
   if (select ran_at from patrols where id = due_id) is null then raise exception 'a claimed patrol has no ran_at'; end if;
   if claim_patrol() is not null then raise exception 'a claimed patrol, or one not yet due, was claimed'; end if;
   if (select ran_at from patrols where meeting = m and n = 2) is not null then raise exception 'a patrol not yet due was claimed'; end if;
-end $$;
-
--- Two sessions claiming the one due patrol claim it once (committed rows: the race runs in sessions of its own).
-do $$
-declare
-  m bigint;
-  said text[];
-  got int;
-begin
-  perform tests.commit($sql$
-    insert into meetings (slot, started_at, finished_at, outcome) values ('2001-01-01T09:00:00Z', now(), now(), 'ok');
-    insert into characters (name, staff, staff_kind, debuted_at) values ('Pt Race Mod', 'pt-race', 'persona', now());
-    insert into patrols (meeting, n, staff, at) select id, 1, 'pt-race', now() - interval '1 minute' from meetings where slot = '2001-01-01T09:00:00Z';
-  $sql$);
-  said := tests.race_service('select claim_patrol()', 'select claim_patrol()');
-  if said[1] is not null and said[1] like 'ERROR%' or said[2] is not null and said[2] like 'ERROR%' then raise exception 'a racing claim failed: %', said; end if;
-  select count(*) into got from patrols where meeting = (select id from meetings where slot = '2001-01-01T09:00:00Z') and ran_at is not null;
-  if got is distinct from 1 then raise exception 'the patrol was claimed % times', got; end if;
-  perform tests.commit($sql$ update patrols set ran_at = now() where ran_at is null $sql$);
 end $$;
 
 -- ---- 4. patrol_record and record_patrol_call ----

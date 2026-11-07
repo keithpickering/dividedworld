@@ -84,11 +84,25 @@ function visitCharge(f: PatrolFinding, rules: readonly RuleLine[], boardName: st
   return { rule_number: null, board: f.board, band: f.charge.band, cause: 'patrol', about_act: f.post, rule: `the premise of ${boardName}`, patrol_id: patrol };
 }
 
-export async function runPatrols(db: Db, models: Models, instance: Instance, clock: () => number = Date.now): Promise<PatrolOutcome> {
+/**
+ * The patrol run beside the filings, as the Edge Function calls it: a patrol's own failure is logged and answered as `failed` (it costs the filings, already done, nothing), but an
+ * error that stops the run (a ledger row that could not be written, a transport failure to the database) is rethrown so the invocation answers 500 as the filings do.
+ */
+export async function runPatrolsAfterFilings(db: Db, models: Models, instance: Instance, clock: () => number, started: number, slot: string): Promise<PatrolOutcome | { readonly status: 'failed' }> {
+  try {
+    return await runPatrols(db, models, instance, clock, started);
+  } catch (e) {
+    if (stopsTheRun(e)) throw e;
+    console.error('patrols failed', slot, e instanceof Error ? e.message : 'unknown');
+    return { status: 'failed' };
+  }
+}
+
+/** `started` is when the whole invocation began (one clock for the filings and the patrols), so together they stay inside the function's time. */
+export async function runPatrols(db: Db, models: Models, instance: Instance, clock: () => number = Date.now, started: number = clock()): Promise<PatrolOutcome> {
   const tuned = await withDatabaseSettings(instance, db);
   const settings = tuned.settings;
   if (!settings.systemEnabled) return { status: 'off' };
-  const started = clock();
   const roster = tuned.system.roster;
   const rulesOf = new Map<string, readonly RuleLine[]>();
   const records: PatrolRecord[] = [];

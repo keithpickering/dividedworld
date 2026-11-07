@@ -732,7 +732,7 @@ export const PATROL_RULE: Rule = {
 /**
  * A patrol's answer: the findings (none is a whole answer: a Mod that sees nothing wrong says so), each naming a post of the sample (a post that is not in it, or a
  * second finding of one post, is dropped and named: nothing is invented), with a charge repaired as a report's is against the rules of that post's board (a rule not in
- * force becomes the premise at the minor band). Findings past the sample's size are cut from the end with a trim. The Mod's one move is repaired as a filing's is, and
+ * force becomes the premise at the minor band). A finding is a distinct post of the sample, so findings can never outnumber it: the sample's size is the bound. The Mod's one move is repaired as a filing's is, and
  * a bad move costs no finding.
  */
 export function repairPatrol(raw: unknown, ctx: PatrolContext): RepairedPatrol {
@@ -743,7 +743,6 @@ export function repairPatrol(raw: unknown, ctx: PatrolContext): RepairedPatrol {
   const asked = raw['findings'];
   if (asked !== undefined && asked !== null && !Array.isArray(asked)) dropped.push({ path: 'findings', predicate: 'isArray' });
   const list: unknown[] = Array.isArray(asked) ? asked : [];
-  const room = ctx.sample.length;
   list.forEach((f, i) => {
     const path = `findings[${i}]`;
     if (!isObject(f)) return void dropped.push({ path, predicate: 'isObject' });
@@ -751,16 +750,11 @@ export function repairPatrol(raw: unknown, ctx: PatrolContext): RepairedPatrol {
     const post = named === null ? undefined : ctx.sample.find((p) => p.act.toLowerCase() === named);
     if (!post) return void dropped.push({ path: `${path}.post`, predicate: 'inSample' });
     if (findings.some((x) => x.post === post.act)) return void dropped.push({ path: `${path}.post`, predicate: 'uniquePost' });
-    if (findings.length >= room) return void dropped.push({ path: `${path}.post`, predicate: 'inSample' });
     const inner: Dropped[] = [];
     const charge = repairCharge(f['charge'], ctx.rulesOf(post.board), inner);
     dropped.push(...inner.map((d) => ({ path: `${path}.${d.path}`, predicate: d.predicate })));
     findings.push({ post: post.act, board: post.board, charge });
   });
-  if (list.length > room && findings.length === room) {
-    // The ones past the sample's size were dropped above as not in the sample; the trim says how many findings were asked for.
-    trims.push({ path: 'findings', predicate: `atMost(${room})`, before: list.length, after: room });
-  }
   const moved = repairModMove(raw['move'], ctx);
   trims.push(...moved.trims);
   if (moved.dropped) dropped.push(moved.dropped);

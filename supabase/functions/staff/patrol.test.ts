@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PATROLS_PER_RUN, runPatrols } from './patrol.ts';
+import { PATROLS_PER_RUN, runPatrols, runPatrolsAfterFilings } from './patrol.ts';
+import { RUN_BUDGET_MS } from './core.ts';
+import { TransportError } from '../_shared/rpc.ts';
 import { DatabaseError, type Db } from '../_shared/rpc.ts';
 import { instance as dividedWorld } from '../_shared/instance.ts';
 import { AnswerRejected, LedgerWriteFailed } from '../_shared/models/index.ts';
@@ -306,4 +308,31 @@ test('the oldVoice persona is judged in structure like any other: a patrol is a 
   await run(d, m, withVoice);
   assert.equal(m.chats.length, 1);
   assert.equal(d.state.visits.length, 1);
+});
+
+test('one clock for the invocation: filings that used the run\'s time leave the patrols none, and nothing is claimed', async () => {
+  const d = fakeDb();
+  const m = fakeModels(() => ({ findings: [] }));
+  const out = await runPatrols(d.db, m.models, dividedWorld, () => NOW, NOW - RUN_BUDGET_MS - 1);
+  assert.ok(out.status === 'ok' && out.patrols.length === 0);
+  assert.equal(d.count('claim_patrol'), 0);
+  assert.equal(m.chats.length, 0);
+  const e = fakeDb();
+  await runPatrols(e.db, fakeModels(() => ({ findings: [] })).models, dividedWorld, () => NOW, NOW - 1000);
+  assert.equal(e.count('claim_patrol'), 2);
+});
+
+test('the patrol run beside the filings: its own failure is answered as failed, but an error that stops the run is rethrown', async () => {
+  const quiet = console.error;
+  console.error = () => {};
+  try {
+    const m = fakeModels(() => ({ findings: [] })).models;
+    const soft = fakeDb({ failOn: { claim_patrol: 'always' } });
+    assert.deepEqual(await runPatrolsAfterFilings(soft.db, m, dividedWorld, () => NOW, NOW, 'slot'), { status: 'failed' });
+    const ledger = fakeDb();
+    const down = fakeModels(() => new LedgerWriteFailed('the ledger is down')).models;
+    await assert.rejects(runPatrolsAfterFilings(ledger.db, down, dividedWorld, () => NOW, NOW, 'slot'), LedgerWriteFailed);
+    const wire: Db = { async rpc<T>(fn: string): Promise<T> { if (fn === 'instance_settings') throw new TransportError('no answer'); throw new Error('x'); } };
+    await assert.rejects(runPatrolsAfterFilings(wire, m, dividedWorld, () => NOW, NOW, 'slot'), TransportError);
+  } finally { console.error = quiet; }
 });

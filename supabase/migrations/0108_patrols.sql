@@ -11,7 +11,7 @@
 --                                 it reads acts_public, characters_public and thread_list only, so the database itself refuses it who owns a character, a class and who reacted.
 --                                 It takes the beat's boards, not the Mod: the digest role cannot read the orders (mod_standing, which the staff function already read, names them).
 --   board_premises(boards)        the name and the premise of each board as the players see them now (the patrol's prompt is told them).
---   claim_patrol()                the service's: the oldest due patrol (at <= now, ran_at null) is claimed in one statement (ran_at set, skip locked), so a retry or two runs
+--   claim_patrol()                (select ... for update skip locked, then the update, inside one function: atomic per call.) the service's: the oldest due patrol (at <= now, ran_at null) is claimed in one statement (ran_at set, skip locked), so a retry or two runs
 --                                 never judge it twice. A patrol lost to a crash after its claim is a lost sampling, never a double judgment.
 --   patrol_record(patrol, sampled, outcome)   what the patrol read and what came of it, on its row.
 --   record_patrol_call(patrol, staff, record)   the call's record (trims, drops), keyed by the patrol: `staff_call_records` gains `cause_patrol`, and `cause_act` may be null
@@ -23,6 +23,9 @@
 --                                 (the charge carries `patrol_id`), once per post. Nothing is shown to anyone. The count and the visit are one decision under the character's lock.
 --
 -- The cap counts patrol and backfire visits filed or still open (so visits in flight count, and one later talked down frees its slot), less any whose infraction an appeal overturned.
+--
+-- A backfire racing a patrol may put the cap one over: a backfire (close_report) does not take the cap lock, only a patrol's finding does. staff_punishments' scan of visits_open
+-- is bounded by the visits open at once (a few hours' worth), never by the instance's history.
 --
 -- Masks. The cap counts public punishments of one character; the sample and the record read public play; no function here reads an owner, a class or a reactor.
 -- Ways out. A character at the cap has nothing to escape: staff cannot choose it until the window passes. A patrol is never anyone's state.
