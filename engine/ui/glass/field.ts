@@ -77,8 +77,8 @@ export function rasterSize(size: Size, dpr: number): { readonly width: number; r
 
 const hex = (n: number) => Math.round(n * 1000) / 1000;
 
-/** The SVG of a layer: its noise, turned to white with the layer's alpha row, blurred, in sRGB (the guard's numbers are sRGB). */
-function svgOf(layer: FieldLayer, size: Size, pixels: { readonly width: number; readonly height: number }): string {
+/** The SVG of a layer (exported as `fieldLayerSvg`): its noise, turned to white with the layer's alpha row, blurred, in sRGB (the guard's numbers are sRGB). */
+export function fieldLayerSvg(layer: FieldLayer, size: Size, pixels: { readonly width: number; readonly height: number }): string {
   const matrix = [0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, ...layer.alpha.map(hex)].join(' ');
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${pixels.width}" height="${pixels.height}" viewBox="0 0 ${size.width} ${size.height}">`
     + '<filter id="f" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">'
@@ -95,7 +95,7 @@ function svgOf(layer: FieldLayer, size: Size, pixels: { readonly width: number; 
 export const rasterize: Rasterize = async (layer, size, dpr) => {
   if (typeof Image !== 'function' || typeof document === 'undefined') throw new Error('this browser cannot rasterize the field');
   const pixels = rasterSize(size, dpr);
-  const url = URL.createObjectURL(new Blob([svgOf(layer, size, pixels)], { type: 'image/svg+xml' }));
+  const url = URL.createObjectURL(new Blob([fieldLayerSvg(layer, size, pixels)], { type: 'image/svg+xml' }));
   try {
     /* The SVG's own width and height are the pixels, so the image is drawn straight to the canvas at that size; no bitmap in between to be closed. */
     const img = new Image();

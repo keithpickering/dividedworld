@@ -8,6 +8,8 @@ import type { StorybookConfig } from '@storybook/react-vite';
 const config: StorybookConfig = {
   framework: '@storybook/react-vite',
   stories: ['../engine/ui/**/*.stories.tsx', '../instances/*/ui/**/*.stories.tsx'],
+  /* The instance's public files, so a story can load what the site serves at its root (the mail stories' images and fonts). */
+  staticDirs: ['../instances/divided-world/ui/public'],
   addons: ['@storybook/addon-a11y'],
 };
 

@@ -10,8 +10,15 @@ import axe from 'axe-core';
 
 export const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'] as const;
 
-export async function axeViolations(element: Element, options: { readonly contrast?: boolean } = {}): Promise<axe.Result[]> {
+export interface AxeOptions {
+  readonly contrast?: boolean;
+  /** False leaves what a frame holds unread (jsdom cannot address one to axe); the frame element itself is still checked. */
+  readonly frames?: boolean;
+}
+
+export async function axeViolations(element: Element, options: AxeOptions = {}): Promise<axe.Result[]> {
   const result = await axe.run(element, {
+    iframes: options.frames !== false,
     runOnly: { type: 'tag', values: [...WCAG_TAGS] },
     rules: { 'color-contrast': { enabled: options.contrast === true } },
   });
