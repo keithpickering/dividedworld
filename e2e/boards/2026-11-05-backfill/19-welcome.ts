@@ -63,8 +63,8 @@ export default manifest;
  * Held by decision: the HUD (not compared here) wraps "Mrs. Hooligan" onto two lines on the phone where board 22 draws it on one (the plan's
  * "wraps or shrinks to fit before it truncates"; the phone's row cannot hold the whole name on one line beside the bell, Menu and Hand); the welcome's parts are compared from the Before you start heading (the board draws the page scrolled to it, the build from its
  * top), the options wrap one row more in the build's 326px column than the board's 358px, so the label stands 32px higher and the notes 32 and 19px
- * lower (`buildShift`, as the first run measured); the theme row is the tiles, three across (the board look's Task 16), so its sentence is not on this page and
- * Motion and Text size stand 77px and 89px higher than the board draws them; the guide is compared from its top (the build is one long article, the board draws Classes alone);
+ * lower (`buildShift`, as the first run measured); the theme row is the tiles, three across (the board look's Task 16), five of them in two rows with Divided World's five themes (Task 17), so its sentence
+ * is not on this page and Motion and Text size stand 53px and 41px lower than the board draws them; the guide is compared from its top (the build is one long article, the board draws Classes alone);
  * and the tour's tip stands 36px lower and 46px shorter than the board's (its docking above the build's own HUD, and its kicker and step on one line).
  */
 const PHONE = '2026-11-05-backfill/22-onboarding-phone';
@@ -77,8 +77,8 @@ export const phone: BoardManifest = {
     { id: 'menu', role: 'navigation', name: 'Menu', nth: 0, type: false, box: 'size' },
     { id: 'start', role: 'heading', name: 'BEFORE YOU START', buildSize: 26, box: 'none' },
     { id: 'theme', role: 'text', buildRole: 'heading', name: 'THEME', origin: 'start', box: 'position', type: false, buildShift: { y: -32 } },
-    { id: 'motion', role: 'text', buildRole: 'heading', name: 'MOTION', origin: 'start', box: 'position', type: false, buildShift: { y: -76.6 } },
-    { id: 'size', role: 'text', buildRole: 'heading', name: 'TEXT SIZE', origin: 'start', box: 'position', type: false, buildShift: { y: -88.8 } },
+    { id: 'motion', role: 'text', buildRole: 'heading', name: 'MOTION', origin: 'start', box: 'position', type: false, buildShift: { y: 53 } },
+    { id: 'size', role: 'text', buildRole: 'heading', name: 'TEXT SIZE', origin: 'start', box: 'position', type: false, buildShift: { y: 40.8 } },
   ],
   also: [
     {

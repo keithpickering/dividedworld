@@ -94,6 +94,8 @@
    * theme gives the look. A background token may hold a gradient or layers of them, never a url() (tools/check-theme.mjs), and
    * contrast.ts reads every stop of it.
    */
+  /* The page's ground: --kb-bg unless a theme tiles it (a layered gradient, drawn from shapes). --kb-bg stays one plain color. */
+  --kb-page-bg: var(--kb-bg);
   --kb-grid: var(--kb-rule);
   --kb-frame: var(--kb-rule);
   --kb-row-1: var(--kb-bg);

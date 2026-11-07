@@ -65,7 +65,8 @@ const SCOPE: readonly (readonly [string, string])[] = [
   ['--tp-head', '--kb-head-bg'], ['--tp-headfg', '--kb-head-fg'], ['--tp-r1', '--kb-row-1'], ['--tp-r2', '--kb-row-2'], ['--tp-r3', '--kb-row-3'],
   ['--tp-button', '--kb-button-bg'], ['--tp-button-edge', '--kb-button-edge'], ['--tp-button-fg', '--kb-button-fg'],
 ];
-const scoped = (p: ThemePreview): CSSProperties => Object.fromEntries(SCOPE.flatMap(([own, token]) => (p[token] === undefined ? [] : [[own, p[token]]]))) as CSSProperties;
+/* The page is drawn from the theme's page ground when it gives one (a tiled page), else from its plain background. */
+const scoped = (p: ThemePreview): CSSProperties => Object.fromEntries([...SCOPE.flatMap(([own, token]) => (p[token] === undefined ? [] : [[own, p[token]]])), ...(p['--kb-page-bg'] === undefined ? [] : [['--tp-page', p['--kb-page-bg']]])]) as CSSProperties;
 
 /** The sample threads the miniature lists: plain words, the board's own title and the new-thread mark on the first two. */
 const SAMPLE: readonly { readonly title: string; readonly by: string; readonly replies: string; readonly fresh: boolean }[] = [

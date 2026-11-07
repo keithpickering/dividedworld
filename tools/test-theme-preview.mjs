@@ -62,6 +62,7 @@ check('previewFaults reads exactly the files check-theme.mjs calls themes (so a 
   const bad = house.replace(/^\s*--kb-head-bg:.*$/gm, '');
   return ['instances/a/ui/theme.css', 'instances/a/ui/themes/x.css', 'instances/a/ui/deep/x/y.css', 'engine/ui/base.css'].every((f) => (previewFaults({ [f]: bad }).length > 0) === THEME_FILE.test(f));
 })());
+check('a theme under ui/themes/ that lacks a required token is refused by name', previewFaults({ 'instances/a/ui/themes/x.css': house.replace(/^\s*--kb-head-bg:.*$/gm, '') }).some((x) => /--kb-head-bg/.test(JSON.stringify(x))));
 check('a stylesheet that is not a theme file is not read', previewFaults({ 'engine/ui/base.css': 'x{}' }).length === 0);
 
 console.log(`\n${pass} passed, ${failures.length} failed`);

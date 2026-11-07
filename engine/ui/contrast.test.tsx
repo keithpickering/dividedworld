@@ -44,6 +44,17 @@ describe('the skin tokens: gradients are read stop by stop', () => {
       expect(f.some((x) => headMsg(x) && /cannot (be )?read/u.test(x)), bad).toBe(true);
     }
   });
+  test('a transparent stop lets the layers under it show: they are all read, and a layer left unbacked fails', () => {
+    const grid = 'repeating-linear-gradient(90deg, #8aa6ff 0 3px, transparent 3px 4px), linear-gradient(#3a5be0, #0a1468)';
+    expect(backgroundStops(grid)).toEqual(['#8aa6ff', '#3a5be0', '#0a1468']);
+    /* The stripe is a stop like any: lettering must hold on it, and on the band under it. */
+    expect(fails(THEME_LIGHT(`--kb-head-bg: ${grid}; --kb-head-fg: #22d4ff;`)).some((x) => headMsg(x))).toBe(true);
+    expect(fails(THEME_LIGHT(`--kb-head-bg: ${grid.replace('#8aa6ff', '#2a45c8')}; --kb-head-fg: #fff;`)).filter((x) => headMsg(x))).toEqual([]);
+    /* Nothing under the last layer: the page shows through, and what it is is not known. */
+    expect(() => backgroundStops('linear-gradient(#fff, transparent)')).toThrow(/transparent/u);
+    expect(() => backgroundStops('linear-gradient(#fff, #eee), repeating-linear-gradient(90deg, #ddd 0 3px, transparent 3px 4px)')).toThrow(/transparent/u);
+    expect(() => backgroundStops('linear-gradient(transparent, transparent)')).toThrow();
+  });
   test('a text color that is a gradient fails too', () => {
     expect(fails(THEME_LIGHT('--kb-head-fg: linear-gradient(#000, #111);')).some((x) => headMsg(x) && /cannot (be )?read/u.test(x))).toBe(true);
   });
@@ -149,7 +160,7 @@ describe('the skin tokens: every stop, layer and var() is really read', () => {
 describe('the skin tokens: the defaults draw today\'s board', () => {
   const seen = tokensOf(engine);
   const MAP: Record<string, string> = {
-    '--kb-grid': '--kb-rule', '--kb-frame': '--kb-rule',
+    '--kb-page-bg': '--kb-bg', '--kb-grid': '--kb-rule', '--kb-frame': '--kb-rule',
     '--kb-row-1': '--kb-bg', '--kb-row-2': '--kb-bg', '--kb-row-3': '--kb-bg',
     '--kb-head-bg': '--kb-bg', '--kb-head-fg': '--kb-fg', '--kb-bar-bg': '--kb-bg', '--kb-bar-fg': '--kb-fg',
     '--kb-banner-bg': '--kb-bg', '--kb-logo-fg': '--kb-fg', '--kb-nav-bg': '--kb-bg', '--kb-nav-fg': '--kb-link', '--kb-nav-hover': '--kb-nav-fg', '--kb-head-focus': '--kb-focus',
@@ -174,6 +185,18 @@ describe('the skin tokens: the defaults draw today\'s board', () => {
   test('the tokens that already existed keep their values', () => {
     expect(seen.light).toMatchObject({ '--kb-fg': '#000', '--kb-bg': '#fff', '--kb-rule': '#000', '--kb-link': '#000', '--kb-muted': '#555' });
     expect(seen.dark).toMatchObject({ '--kb-fg': '#fff', '--kb-bg': '#000', '--kb-rule': '#fff', '--kb-link': '#fff', '--kb-muted': '#aaa' });
+  });
+});
+
+describe('the page\'s own ground (--kb-page-bg) is held as the page is', () => {
+  const pageFails = (css: string) => fails(THEME_LIGHT(css)).filter((x) => /page/u.test(x));
+  test('text is held on every stop of a tiled page, and a tile under the text color fails', () => {
+    const tiled = 'repeating-linear-gradient(0deg, #000 0 14px, transparent 14px 20px), repeating-linear-gradient(90deg, #000 0 20px, transparent 20px 26px), #0a1448';
+    expect(pageFails(`--kb-fg: #fff; --kb-muted: #fff; --kb-link: #fff; --kb-page-bg: ${tiled};`)).toEqual([]);
+    expect(pageFails(`--kb-fg: #fff; --kb-muted: #fff; --kb-link: #fff; --kb-page-bg: ${tiled.replace('#0a1448', '#cccccc')};`).length).toBeGreaterThan(0);
+  });
+  test('a page ground it cannot read fails closed', () => {
+    expect(pageFails('--kb-page-bg: url(x.png);').some((x) => /cannot (be )?read/u.test(x))).toBe(true);
   });
 });
 

@@ -181,27 +181,34 @@ const WORD = '(?:to|in|from|at|circle|ellipse|closest-side|closest-corner|farthe
 const NUM = '[-+]?\\d*\\.?\\d+(?:deg|grad|rad|turn|%|px|em|rem)?';
 /* A whole argument made only of these words and numbers holds no color, so `circle banana` is not skipped but fails. */
 const NO_COLOR = new RegExp(`^(?:${WORD}|${NUM})(?:\\s+(?:${WORD}|${NUM}))*$`, 'iu');
-const COLOR = /^(#[0-9a-f]{3,6}|rgba?\([^)]*\))(?:\s+[-+]?\d*\.?\d+(?:%|px|em|rem|deg|turn)?){0,2}$/iu;
+const COLOR = /^(#[0-9a-f]{3,6}|rgba?\([^)]*\)|transparent)(?:\s+[-+]?\d*\.?\d+(?:%|px|em|rem|deg|turn)?){0,2}$/iu;
 
 /**
  * Every color a background value paints, stop by stop: a plain color, a gradient (linear, radial, conic, repeating) or
- * layers of them separated by commas. A value that holds anything else (a url(), a named color, a color with alpha, a
+ * layers of them separated by commas; a `transparent` stop is skipped, and is refused in the last layer, which has nothing
+ * under it to read. A value that holds anything else (a url(), a named color, a color with alpha, a
  * gradient it cannot take apart) throws, so the check fails on it rather than passing over it.
  */
 export function backgroundStops(value: string): string[] {
   const stops: string[] = [];
-  for (const layer of splitTop(value)) {
+  const layers = splitTop(value);
+  layers.forEach((layer, i) => {
     if (layer === '') throw new Error(`an empty layer in ${value}`);
     const g = GRADIENT.exec(layer);
-    if (!g) { parseColor(layer); stops.push(layer); continue; }
+    if (!g) { parseColor(layer); stops.push(layer); return; }
     const before = stops.length;
+    let clear = false;
     for (const arg of splitTop(g[1]!)) {
       const c = COLOR.exec(arg);
-      if (c) { parseColor(c[1]!); stops.push(c[1]!); }
+      /* `transparent` paints nothing: the layers under it show, and they are read as stops of their own. */
+      if (c && c[1]!.toLowerCase() === 'transparent') clear = true;
+      else if (c) { parseColor(c[1]!); stops.push(c[1]!); }
       else if (!NO_COLOR.test(arg)) throw new Error(`not a color stop this check can read: ${arg}`);
     }
     if (stops.length - before < 1) throw new Error(`a gradient with no color stop: ${layer}`);
-  }
+    /* Nothing is under the last layer but the page, whose color is not known here, so it may not be see-through. */
+    if (clear && i === layers.length - 1) throw new Error(`the last layer lets the page show through (transparent), so the lettering on it cannot be held: ${layer}`);
+  });
   return stops;
 }
 
@@ -211,6 +218,10 @@ export const PAIRS: readonly (readonly [string, string, number, string])[] = [
   ['--kb-muted', '--kb-bg', 4.5, 'muted text'],
   ['--kb-link', '--kb-bg', 4.5, 'links'],
   ['--kb-link-visited', '--kb-bg', 4.5, 'visited links'],
+  /* The page's ground may be a tiled background (--kb-page-bg); --kb-bg stays one plain color, which the shine and the text read as one. */
+  ['--kb-fg', '--kb-page-bg', 4.5, 'body text on the page ground'],
+  ['--kb-muted', '--kb-page-bg', 4.5, 'muted text on the page ground'],
+  ['--kb-link', '--kb-page-bg', 4.5, 'links on the page ground'],
   ['--kb-fg', '--kb-hud-bg', 4.5, 'text on the HUD'],
   ['--kb-muted', '--kb-hud-bg', 4.5, 'muted text on the HUD'],
   ['--kb-link', '--kb-hud-bg', 4.5, 'links on the HUD'],

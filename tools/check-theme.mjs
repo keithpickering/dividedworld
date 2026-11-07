@@ -10,7 +10,7 @@
  * makes the text vanish. Both look right in the house colors and change no test, so the file is read
  * on every build rather than trusted.
  *
- * Read: every `instances/<name>/ui/*.css`. After comments are removed it may hold only
+ * Read: every `instances/<name>/ui/*.css` and `instances/<name>/ui/themes/*.css`. After comments are removed it may hold only
  *
  *   :root { … }                                     light
  *   :root[data-kb-mode="dark"] { … }                dark, as a player who chose it gets it
@@ -31,7 +31,7 @@
  * a backslash in a value outside a quoted string is refused outright; a quoted string is let through, as it names no function.
  *
  * Also read: each instance's `ui/index.ts`. Every `href` in its `themes` list must be an identifier
- * imported from a `*.css?url` file that sits in that instance's own ui/ folder and is in the tree, so
+ * imported from a `*.css?url` file that sits in that instance's own ui/ folder (or its ui/themes/) and is in the tree, so
  * the file the page loads as a theme is a file this check has read.
  *
  * Read from git, so an untracked scratch file neither fails the build nor makes it pass. The
@@ -46,7 +46,7 @@ import ts from 'typescript';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-export const THEME_FILE = /^instances\/([^/]+)\/ui\/[^/]+\.css$/;
+export const THEME_FILE = /^instances\/([^/]+)\/ui\/(?:themes\/)?[^/]+\.css$/;
 export const UI_INDEX = /^instances\/([^/]+)\/ui\/index\.ts$/;
 
 const SELECTORS = new Set([':root', ':root[data-kb-mode="dark"]', ':root[data-kb-mode="light"]']);
@@ -286,7 +286,7 @@ export function themeHrefFaults(files) {
           const target = imported.get(ident.text);
           const ownUi = `instances/${home[1]}/ui/`;
           if (target === undefined) out.push({ file, line: lineOf(ident), why: `href ${ident.text} is not imported from a *.css?url file` });
-          else if (!(target.startsWith(ownUi) && !target.slice(ownUi.length).includes('/') && THEME_FILE.test(target))) out.push({ file, line: lineOf(ident), why: `href ${ident.text} is ${target}, which is not a stylesheet in this instance's ui/ folder` });
+          else if (!(target.startsWith(ownUi) && THEME_FILE.test(target))) out.push({ file, line: lineOf(ident), why: `href ${ident.text} is ${target}, which is not a stylesheet in this instance's ui/ folder` });
           else if (!Object.hasOwn(files, target)) out.push({ file, line: lineOf(ident), why: `href ${ident.text} is ${target}, which the tree does not hold` });
         }
         return;

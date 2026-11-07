@@ -6,7 +6,7 @@
  * The themes checked are the ones each instance's `InstanceUi.themes` list names, since that list is what a player
  * can pick (engine/ui/appearance.ts). tools/check-theme.mjs holds every href in that list to a `*.css?url` import
  * of a file in the instance's own ui/ folder, so each href is matched here to that file's text through the same
- * `?url` transform; a theme whose text cannot be found fails rather than going unchecked.
+ * `?url` transform (a theme sits in the instance's ui/ or its ui/themes/); a theme whose text cannot be found fails rather than going unchecked.
  */
 import { describe, expect, test } from 'vitest';
 import { contrastFailures, darkBlocksDisagree, tokensOf, type Mode } from '../engine/ui/contrast.ts';
@@ -14,8 +14,8 @@ import type { InstanceUi, ThemeOption } from '../engine/ui/types.ts';
 import engine from '../engine/ui/tokens.css?raw';
 
 const uis = import.meta.glob<InstanceUi>('../instances/*/ui/index.ts', { eager: true, import: 'instanceUi' });
-const raws = import.meta.glob<string>('../instances/*/ui/*.css', { eager: true, query: '?raw', import: 'default' });
-const urls = import.meta.glob<string>('../instances/*/ui/*.css', { eager: true, query: '?url', import: 'default' });
+const raws = import.meta.glob<string>(['../instances/*/ui/*.css', '../instances/*/ui/themes/*.css'], { eager: true, query: '?raw', import: 'default' });
+const urls = import.meta.glob<string>(['../instances/*/ui/*.css', '../instances/*/ui/themes/*.css'], { eager: true, query: '?url', import: 'default' });
 
 /** The modes a page can show a theme in: a theme fixed to one mode is shown only in it (appearance.ts). */
 const MODES: Record<ThemeOption['modes'], readonly Mode[]> = {

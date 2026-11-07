@@ -809,7 +809,8 @@
 
 .kb-tp-tiles {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  /* Five across where they fit (board 19), and fewer, in more rows, where a name would not: the column is never narrower than the longest name at the size in force. */
+  grid-template-columns: repeat(auto-fit, minmax(max(calc((100% - 48px) / 5), calc(var(--kb-glass-size-label) * 4.4 + 18px)), 1fr));
   gap: 12px;
   margin-top: 16px;
 }
@@ -840,6 +841,16 @@
   border: 2px solid var(--kb-glass-neon);
   background: color-mix(in srgb, var(--kb-glass-neon) 8%, var(--kb-glass-panel-soft));
   box-shadow: 0 0 18px color-mix(in srgb, var(--kb-glass-neon) 35%, transparent);
+}
+
+/* A tile answers a pointer: the neon's edge and a wash of it; the chosen one lights its glow more (e2e/glass-hover.spec.ts). */
+.kb-tp-tile:hover {
+  border-color: var(--kb-glass-neon);
+  background: color-mix(in srgb, var(--kb-glass-neon) 14%, var(--kb-glass-panel-soft));
+}
+
+.kb-tp-tile:has(> input:checked):hover {
+  box-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 60%, transparent);
 }
 
 .kb-tp-tile:has(> input:focus-visible) {
@@ -941,7 +952,7 @@
 }
 
 :where(:root[data-kb-layout='phone']) .kb-tp-tiles {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(max(calc((100% - 16px) / 3), calc(var(--kb-glass-size-phone-small) * 3.9 + 14px)), 1fr));
   gap: 8px;
 }
 

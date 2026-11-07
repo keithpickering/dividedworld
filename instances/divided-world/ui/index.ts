@@ -11,6 +11,14 @@ import glassData from './glass.json';
 import { cardsUi } from './cards.ts';
 import theme from './theme.css?url';
 import themePreview from './theme.css?preview';
+import blueSteel from './themes/blue-steel.css?url';
+import blueSteelPreview from './themes/blue-steel.css?preview';
+import midnight from './themes/midnight.css?url';
+import midnightPreview from './themes/midnight.css?preview';
+import hotRod from './themes/hot-rod.css?url';
+import hotRodPreview from './themes/hot-rod.css?preview';
+import fanSite from './themes/fan-site.css?url';
+import fanSitePreview from './themes/fan-site.css?preview';
 import pipFull from './pips/default-full.svg?url';
 import pipEmpty from './pips/default-empty.svg?url';
 import gabe from './avatars/gabe.png?url';
@@ -89,7 +97,15 @@ export const wordsRead: Readonly<Record<string, readonly string[]>> = Object.fre
 });
 
 export const instanceUi: InstanceUi = Object.freeze({
-  themes: Object.freeze([{ key: 'house', name: 'House', href: theme, modes: 'both' as const, preview: themePreview }]),
+  /* The house theme, then four tributes (themes/): each a stylesheet of tokens, the picker's miniature read from the same file. */
+  themes: Object.freeze([
+    { key: 'house', name: 'House', href: theme, modes: 'both' as const, preview: themePreview },
+    { key: 'blue-steel', name: 'Blue Steel', href: blueSteel, modes: 'light' as const, preview: blueSteelPreview },
+    { key: 'midnight', name: 'Midnight', href: midnight, modes: 'dark' as const, preview: midnightPreview },
+    { key: 'hot-rod', name: 'Hot Rod', href: hotRod, modes: 'dark' as const, preview: hotRodPreview },
+    // Fan Site's name is open (the board look design, Open); it ships as "Fan Site" until the owner names it.
+    { key: 'fan-site', name: 'Fan Site', href: fanSite, modes: 'dark' as const, preview: fanSitePreview },
+  ]),
   // Placeholders until the owner names them.
   quadrantLabels: Object.freeze({
     excitedNegative: 'Heat',

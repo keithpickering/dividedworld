@@ -160,6 +160,20 @@ check('an href to a stylesheet that breaks the contract fires, through the same 
   themeFaults({ 'instances/divided-world/ui/x.css': `.kb-hud { display: none }` }).length === 1);
 check('an instance with no themes list is clean (the engine has its own house theme)', hrefs(`export const instanceUi = {};`).length === 0);
 
+/* ---- a theme in ui/themes/ is a theme ---- */
+{
+  const TH = 'instances/divided-world/ui/themes/hot-rod.css';
+  check('a stylesheet under ui/themes/ is checked: .kb-hud { display: none } in it fires', themeFaults({ [TH]: `.kb-hud { display: none }` }).length === 1);
+  check('a stylesheet under ui/themes/ is checked: a url() in a token fires', themeFaults({ [TH]: `:root { --kb-head-bg: url(x.png); }` }).length === 1);
+  check('a stylesheet under ui/themes/ that keeps the contract is clean', themeFaults({ [TH]: GOOD }).length === 0);
+  check('a stylesheet one folder deeper than ui/themes/ is not a theme', themeFaults({ 'instances/divided-world/ui/themes/x/y.css': `.kb-hud { display: none }` }).length === 0);
+  const themed = { ...TREE, [TH]: GOOD };
+  check('an href imported from a ui/themes/ stylesheet in the tree is clean',
+    themeHrefFaults({ [INDEX]: IDX(`import t from './themes/hot-rod.css?url';`, `{ key: 'hot-rod', name: 'Hot Rod', href: t, modes: 'dark' }`), ...themed }).length === 0);
+  check('an href imported from a ui/themes/ stylesheet the tree lacks fires',
+    themeHrefFaults({ [INDEX]: IDX(`import t from './themes/gone.css?url';`, `{ key: 'x', name: 'X', href: t }`), ...TREE }).length === 1);
+}
+
 /* ---- the real tree ---- */
 {
   const files = treeFiles();

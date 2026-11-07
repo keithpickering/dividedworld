@@ -23,7 +23,7 @@ html {
 
 body {
   margin: 0;
-  background: var(--kb-bg);
+  background: var(--kb-page-bg);
   color: var(--kb-fg);
   font: var(--kb-size-body) / var(--kb-line) var(--kb-font-body);
   caret-color: var(--kb-fg);

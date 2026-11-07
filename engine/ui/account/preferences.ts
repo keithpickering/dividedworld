@@ -26,8 +26,6 @@ import { pagePreferences } from './pagePreferences.ts';
 
 /** A patch of exactly one setting: `change` saves one at a time, so it takes one. */
 export type SinglePatch = { readonly [K in keyof PreferencesPatch]-?: { readonly [P in K]: Required<PreferencesPatch>[K] } }[keyof PreferencesPatch];
-/** The one choice that is two settings: a theme and the mode it is in, saved together and put back together. */
-export type LookPatch = { readonly theme: Preferences['theme']; readonly mode: Preferences['mode'] };
 
 export type TipsChange = 'skip' | 'resume' | 'restore' | 'replay';
 
@@ -39,7 +37,7 @@ export interface SavedPreferences {
   /** Whether the last thing done was saved to the account. */
   readonly saved: boolean;
   /** Choose one setting: shown and applied at once, saved in its turn. */
-  readonly change: (patch: SinglePatch | LookPatch) => void;
+  readonly change: (patch: SinglePatch) => void;
   /**
    * Change the tips (Settings' Tips row), in its turn behind the choices before it: `skip` turns them off, `resume` on with nothing forgotten,
    * `restore` on with the tips seen and the cards met forgotten, `replay` on with the HUD tour's steps forgotten (and the welcome marked seen).
@@ -113,16 +111,11 @@ export function usePreferenceSaves(account: string | null, supplied?: Preference
     setRead({ account: who, prefs: next });
   }, []);
 
-  const change = useCallback((patch: SinglePatch | LookPatch) => {
-    const keys = Object.keys(patch) as (keyof PreferencesPatch)[];
-    const key = keys[0]!;
+  const change = useCallback((patch: SinglePatch) => {
+    const key = Object.keys(patch)[0] as keyof PreferencesPatch;
     const asked = patch as PreferencesPatch;
-    /* A refusal puts back each key of the patch that still shows what was asked, and no other. */
-    const putBack = (now: Preferences, then: Preferences): Preferences => {
-      let next = now;
-      for (const k of keys) if (now[k] === asked[k]) next = { ...next, [k]: then[k] };
-      return next;
-    };
+    /* A refusal puts back the patch's one setting if it still shows what was asked, and no other. */
+    const putBack = (now: Preferences, then: Preferences): Preferences => (now[key] === asked[key] ? { ...now, [key]: then[key] } : now);
     const mine = ++queued.current;
     const madeFor = account;
     if (madeFor === null || current.current === null) return;
@@ -135,7 +128,7 @@ export function usePreferenceSaves(account: string | null, supplied?: Preference
       try { r = await api.setPreferences(patch as PreferencesPatch); } catch { r = { ok: false, error: LOST_ANSWER }; }
       if (showing.current !== madeFor) return;
       if (r.ok) {
-        for (const k of keys) confirmed.current = { ...confirmed.current!, [k]: r.value[k] };
+        confirmed.current = { ...confirmed.current!, [key]: r.value[key] };
         if (queued.current === mine) setSaved(madeFor);
         /* The HUD read the choice when it mounted; it hears this one as the account has it. */
         if (key === 'toasts') announceToastChoice(r.value.toasts);
