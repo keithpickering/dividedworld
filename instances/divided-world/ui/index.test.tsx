@@ -119,7 +119,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   test('the numbers a reason\'s earnings carry are the ones its words declare, so a settled line is said with its own', () => {
     const lurker = instance.classes.find((c) => c.key === 'lurker')!;
     const earned = lurker.earn({
-      character: 'lu', from: 0, to: 1, posts: [1, 2, 3, 4, 5].map((n) => ({ act: `p${n}`, at: n })), received: [], given: [], held: [], cardsPlayed: [], cardsLanded: [],
+      character: 'lu', from: 0, to: 1, posts: [1, 2, 3, 4, 5].map((n) => ({ act: `p${n}`, at: n })), received: [], given: [], held: [], cardsPlayed: [], cardsLanded: [], standings: [],
       threadsSpun: [{ act: 's1', thread: 't', at: 1, fromOthers: true, repliersBefore: 0, repliersNow: economy['lurker.spunThreadRepliers']! }],
     }, instance.settings);
     const reasons = Object.keys(wordsRead).filter((k) => k.includes('.'));

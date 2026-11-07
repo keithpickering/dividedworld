@@ -236,6 +236,9 @@
           "technician": {
             "large": 0.2335
           },
+          "tweener": {
+            "large": 0.145
+          },
           "lurker": {
             "large": 0.1409
           }
@@ -307,6 +310,9 @@
           },
           "technician": {
             "large": 0.2335
+          },
+          "tweener": {
+            "large": 0.145
           },
           "lurker": {
             "large": 0.1409
@@ -757,6 +763,9 @@
           },
           "technician": {
             "large": 0.2335
+          },
+          "tweener": {
+            "large": 0.145
           },
           "lurker": {
             "large": 0.1409

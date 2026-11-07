@@ -700,6 +700,31 @@
   border: 1.5px dotted var(--kb-class-fill);
 }
 
+/* Earned from the balance of two side-by-side cells: each half-filled toward its partner, joined by the bar below. */
+.kb-class-mark[data-kb-mark='splits'] {
+  border: 1.5px solid var(--kb-class-fill);
+}
+
+.kb-class-mark[data-kb-mark='splits'][data-kb-toward='right'] {
+  background: linear-gradient(90deg, transparent 50%, var(--kb-class-fill) 50%);
+}
+
+.kb-class-mark[data-kb-mark='splits'][data-kb-toward='left'] {
+  background: linear-gradient(90deg, var(--kb-class-fill) 50%, transparent 50%);
+}
+
+/* On the gap between the top row's cells, centered on the first row; its length is the gap, its thickness a fifth of a cell. */
+.kb-class-split-bar {
+  position: absolute;
+  top: 0.675rem;
+  /* Overlaps the cells' edges by 2px a side, so no hairline shows at the seam. */
+  left: calc(1.75rem - 2px);
+  width: 8px;
+  height: 0.4rem;
+  background: var(--kb-class-fill);
+  pointer-events: none;
+}
+
 .kb-class-description,
 .kb-class-hurt {
   font-size: var(--kb-glass-size-body);
@@ -1485,4 +1510,25 @@
 .kb-choice-option[data-kb-chosen]:hover {
   background: color-mix(in srgb, var(--kb-glass-neon) 18%, transparent);
   box-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 70%, transparent);
+}
+
+/* Forced colors repaint a plain background, so the split's bar and half-fills keep the system's: ButtonText, as the fill is the class's color elsewhere. */
+@media (forced-colors: active) {
+  .kb-class-split-bar {
+    forced-color-adjust: none;
+    background: ButtonText;
+  }
+
+  .kb-class-mark[data-kb-mark='splits'] {
+    forced-color-adjust: none;
+    border-color: ButtonText;
+  }
+
+  .kb-class-mark[data-kb-mark='splits'][data-kb-toward='right'] {
+    background: linear-gradient(90deg, transparent 50%, ButtonText 50%);
+  }
+
+  .kb-class-mark[data-kb-mark='splits'][data-kb-toward='left'] {
+    background: linear-gradient(90deg, ButtonText 50%, transparent 50%);
+  }
 }
