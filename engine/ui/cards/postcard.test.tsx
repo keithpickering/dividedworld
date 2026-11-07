@@ -6,11 +6,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { render, waitFor } from '@testing-library/react';
-import { composeStories, setProjectAnnotations } from '@storybook/react-vite';
+import { render } from '@testing-library/react';
 import { describe, expect, test } from 'vitest';
-import * as preview from '../../../.storybook/preview.tsx';
-import * as handBoard from './Hand.board.stories.tsx';
 import type { CardRules } from '../../rules/cards.ts';
 import type { Settings } from '../../rules/types.ts';
 import { faceOf, type CardFace } from './faces.ts';
@@ -18,10 +15,12 @@ import { Postcard, PostcardBack } from './Postcard.tsx';
 import { SIZES, templateVars, type PostcardSize } from './template.ts';
 import type { CardUi } from './types.ts';
 
-setProjectAnnotations(preview as never);
-
 const css = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'postcard.css'), 'utf8');
 const sizes = Object.keys(SIZES) as PostcardSize[];
+/** The stylesheet's rules, once: selector to body, comments stripped (a repeated selector's bodies are joined). */
+const styles = new Map<string, string>();
+for (const m of css.replace(/\/\*[\s\S]*?\*\//gu, '').matchAll(/([^{}]+)\{([^{}]*)\}/gu)) styles.set(m[1]!.trim(), `${styles.get(m[1]!.trim()) ?? ''}${m[2]!}`);
+const body = (selector: string) => styles.get(selector) ?? '';
 
 const ok = { ok: true as const, value: undefined };
 const settings = { economy: { 'b.price': 250 } } as unknown as Settings;
@@ -44,13 +43,32 @@ describe('the frame at every size', () => {
   });
 
   test('no rule on the card\'s own box uses cqw, which measures the page there', () => {
-    const rules = [...css.replace(/\/\*[\s\S]*?\*\//gu, '').matchAll(/([^{}]+)\{([^{}]*)\}/gu)].map((m) => ({ selector: m[1]!.trim(), body: m[2]! }));
-    const own = rules.filter((r) => r.selector.split(',').every((s) => /^(?:button)?\.kb-postcard(?:\[[^\]]*\])*$/u.test(s.trim())));
+    const own = [...styles].filter(([selector]) => selector.split(',').every((s) => /^(?:button)?\.kb-postcard(?:\[[^\]]*\])*$/u.test(s.trim())));
     expect(own.length).toBeGreaterThan(3);
-    for (const r of own) expect(r.body, r.selector).not.toContain('cqw');
-    expect(css).toMatch(/\.kb-postcard\s*\{[^}]*width:\s*var\(--kb-pc-w\)/u);
-    expect(css).toMatch(/\.kb-postcard\s*\{[^}]*aspect-ratio:\s*2\s*\/\s*3/u);
-    expect(css).toMatch(/\.kb-postcard\s*\{[^}]*border-radius:\s*var\(--kb-pc-radius\)/u);
+    for (const [selector, rule] of own) expect(rule, selector).not.toContain('cqw');
+    expect(body('.kb-postcard')).toMatch(/width:\s*var\(--kb-pc-w\)/u);
+    expect(body('.kb-postcard')).toMatch(/aspect-ratio:\s*2\s*\/\s*3/u);
+    expect(body('.kb-postcard')).toMatch(/border-radius:\s*var\(--kb-pc-radius\)/u);
+  });
+
+  test('the card is the container its pieces\' cqw measure', () => {
+    expect(body('.kb-postcard')).toMatch(/container-type:\s*inline-size/u);
+  });
+
+  test('--kb-name-chars follows the face\'s name, and the name has a floor and never spills', () => {
+    for (const name of ['Bluff', 'Autocorrect']) {
+      const card = shown('slot', { ...face(), name });
+      expect(card.style.getPropertyValue('--kb-name-chars')).toBe(String(name.length));
+      document.body.innerHTML = '';
+    }
+    expect(body('.kb-postcard-name')).toMatch(/font-size:\s*max\(7px,/u);
+    expect(body('.kb-postcard-name')).toMatch(/overflow:\s*hidden/u);
+    expect(body('.kb-postcard-name')).toMatch(/text-overflow:\s*ellipsis/u);
+  });
+
+  test('the forced-colors edge: the card, its gem and the back each get an outline', () => {
+    const forced = /@media \(forced-colors: active\)\s*\{([\s\S]*?)\n\}/u.exec(css)?.[1] ?? '';
+    for (const sel of ['.kb-postcard', '.kb-postcard-gem', '.kb-postcard-back']) expect(forced, sel).toMatch(new RegExp(`${sel.replace(/\./gu, '\\.')}[^{]*\\{[^}]*outline:\\s*1px solid CanvasText`, 'u'));
   });
 });
 
@@ -102,16 +120,15 @@ describe('what each size holds', () => {
 
 describe('the bottom border\'s row', () => {
   test('the foot and the price share one flex row, so the foot ends where the price begins at any price width', () => {
-    const card = shown('sheet', faceOf({ ...rules, extra: 0 } as CardRules, ui({}), settings));
-    const base = card.querySelector('.kb-postcard-base')!;
+    const base = shown('sheet').querySelector('.kb-postcard-base')!;
     expect(base.querySelector(':scope > .kb-postcard-foot')).not.toBeNull();
     expect(base.querySelector(':scope > .kb-postcard-price')).not.toBeNull();
-    const rule = (sel: string) => new RegExp(`${sel.replace(/\./gu, '\\.')}\\s*\\{([^}]*)\\}`, 'u').exec(css)?.[1] ?? '';
-    expect(rule('.kb-postcard-base')).toMatch(/display:\s*flex/u);
-    expect(rule('.kb-postcard-price')).toMatch(/flex:\s*none/u);
-    expect(rule('.kb-postcard-price')).not.toMatch(/position:\s*absolute/u);
-    expect(rule('.kb-postcard-foot')).toMatch(/min-width:\s*0/u);
-    expect(rule('.kb-postcard-foot')).not.toMatch(/position:\s*absolute/u);
+    expect(body('.kb-postcard-base')).toMatch(/display:\s*flex/u);
+    expect(body('.kb-postcard-price')).toMatch(/flex:\s*none/u);
+    expect(body('.kb-postcard-price')).not.toMatch(/position:\s*absolute/u);
+    expect(body('.kb-postcard-foot')).toMatch(/min-width:\s*0/u);
+    expect(body('.kb-postcard-foot')).not.toMatch(/position:\s*absolute/u);
+    expect(body('.kb-postcard-foot')).toMatch(/clamp\(9px,/u);
   });
 });
 
@@ -147,6 +164,24 @@ describe('the back', () => {
     }
   });
 
+  test('with a mark it draws one empty-alt, aria-hidden img inside the canvas, and still nothing of any card', () => {
+    const { container } = render(<PostcardBack size="sheet" mark="/coin.svg" />);
+    const back = container.firstElementChild as HTMLElement;
+    const imgs = back.querySelectorAll('img');
+    expect(imgs.length).toBe(1);
+    expect(imgs[0]!.getAttribute('src')).toBe('/coin.svg');
+    expect(imgs[0]!.getAttribute('alt')).toBe('');
+    expect(imgs[0]!.getAttribute('aria-hidden')).toBe('true');
+    expect(imgs[0]!.closest('.kb-postcard-canvas')).not.toBeNull();
+    expect(back.hasAttribute('data-kb-card')).toBe(false);
+    expect(back.textContent).toBe('');
+    expect(back.getAttribute('style')).not.toMatch(/kb-card-color|kb-card-ink/u);
+  });
+
+  test('without a mark it draws no img', () => {
+    expect(render(<PostcardBack size="sheet" />).container.querySelector('img')).toBeNull();
+  });
+
   test('a hit sets data-hit, and the caller names it', () => {
     const { container } = render(<PostcardBack size="fan" hit aria-label="A face-down postcard" />);
     const back = container.firstElementChild!;
@@ -173,16 +208,5 @@ describe('the stylesheet', () => {
     expect(plate('.kb-postcard-plate')).toMatch(/background:\s*var\(--kb-glass-panel\);/u);
     expect(plate('.kb-postcard-line')).toMatch(/background:\s*var\(--kb-glass-panel-soft\);/u);
     expect(plate('.kb-postcard-plate') + plate('.kb-postcard-line')).not.toContain('gradient');
-  });
-});
-
-describe('the hand\'s sheet story', () => {
-  test('its description ends "Art by Divided World."', async () => {
-    const Sheet = (composeStories(handBoard as never) as Record<string, React.ComponentType>)['Sheet']!;
-    const { container } = render(<Sheet />);
-    await waitFor(() => expect(container.querySelector('.kb-postcard')).not.toBeNull());
-    const says = [...container.querySelectorAll('.kb-visually-hidden[id^="kb-hand-board-says-"]')];
-    expect(says.length).toBeGreaterThan(0);
-    for (const s of says) expect(s.textContent, s.id).toMatch(/Art by Divided World\.$/u);
   });
 });

@@ -309,6 +309,12 @@ export interface InstanceUi {
   readonly avatars?: Readonly<Record<string, string>>;
   /** How each card draws and describes itself, one per card key the instance sells; a card with none is shown as its tag alone (engine/ui/cards/types.ts). */
   readonly cards: readonly CardUi[];
+  /**
+   * The instance's mark for a card's back: a URL the bundler resolved, drawn at the center of the back's crossed bands
+   * (`PostcardBack`). It is the instance's, never a card's, so a back still says nothing about the card it is. Without it the back
+   * is the glass's bands alone.
+   */
+  readonly cardBack?: { readonly mark: string };
   /** The instance's onboarding words, in its developer persona's voice (docs/plans/2026-11-02-onboarding-plan.md, Task 4). */
   readonly onboarding: OnboardingUi;
   /** The instance's Strategy Guide: its prose, and Gabe's hint for each class (docs/plans/2026-11-02-onboarding-plan.md, Task 8). */

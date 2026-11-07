@@ -1,17 +1,16 @@
 /**
- * A postcard's face, drawn the one way wherever a card is shown (the card template design, docs/plans/2026-11-05-card-template-design.md:
- * one 2:3 card at four sizes, a 30-unit border all the way round, a canvas holding the card's art, a ring in the card's own color with
- * its glow, and the pieces of layout A over it): in the Vending
- * Machine's slot, fanned through the HUD's seam, in the Phone board's sheet, and large on the hand's
- * sheet. The card's color and ink come from its art (`CardArt`, the instance's data) as two custom
- * properties and the stylesheet reads nothing else, so a card the instance never drew is the glass's
- * own neon.
+ * A postcard's face, drawn the one way wherever a card is shown (the card template design,
+ * docs/plans/2026-11-05-card-template-design.md): one 2:3 card at four sizes, a 30-unit border all the way round, a canvas holding
+ * the card's art, a ring in the card's own color with its glow, and the pieces of layout A over it. It is shown in the Vending
+ * Machine's slot, fanned through the HUD's seam, in the Phone board's card, and large on the hand's sheet. The card's color and ink
+ * come from its art (`CardArt`, the instance's data) as two custom properties and the stylesheet reads nothing else, so a card the
+ * instance never drew is the glass's own neon.
  *
- * It draws the face and nothing that acts: the caller gives it a `button` (a slot, a card in the
- * hand) or an `article` (the sheet) and the name that element carries, and everything drawn here
- * is for the eye (aria-hidden), since the name and the rules are said once, in words, by the
- * element around it. A card in the machine's slot is the machine's printing (`data-kb-art`, outside
- * the rendered type measurement as the machine's other printing is). `armed` is the state a play waits in, and pulses unless motion is reduced.
+ * It draws the face and nothing that acts: the caller gives it a `button` (a slot, a card in the hand) or an `article` (the sheet)
+ * and the name that element carries, and everything drawn here is for the eye (aria-hidden), since the name and the rules are said
+ * once, in words, by the element around it. A card in the machine's slot is the machine's printing (`data-kb-art`, outside the
+ * rendered type measurement as the machine's other printing is). `armed` is the state a play waits in, and pulses unless motion is
+ * reduced.
  */
 import type { CSSProperties, ElementType, HTMLAttributes, Ref } from 'react';
 import { gemOf, playWord, priceOf, rarityName, type CardFace } from './faces.ts';
@@ -106,6 +105,8 @@ export interface PostcardBackProps extends Omit<HTMLAttributes<HTMLElement>, 'ch
   readonly size: PostcardSize;
   /** The hit pull's back, in the machine's gold. */
   readonly hit?: boolean;
+  /** The instance's mark (`InstanceUi.cardBack`), drawn at the back's center; without it the back is the glass's bands alone. */
+  readonly mark?: string;
   readonly as?: ElementType;
   readonly ref?: Ref<HTMLElement>;
 }
@@ -115,7 +116,7 @@ export interface PostcardBackProps extends Omit<HTMLAttributes<HTMLElement>, 'ch
  * card's color, key or name, so a back says nothing about the card it is (the design's section 8). The caller names it, as it
  * names a face.
  */
-export function PostcardBack({ size, hit = false, as: As = 'span', className, style, ...rest }: PostcardBackProps) {
+export function PostcardBack({ size, hit = false, mark, as: As = 'span', className, style, ...rest }: PostcardBackProps) {
   return (
     <As
       {...rest}
@@ -124,7 +125,9 @@ export function PostcardBack({ size, hit = false, as: As = 'span', className, st
       data-size={size}
       data-hit={hit ? '' : undefined}
     >
-      <span className="kb-postcard-canvas" aria-hidden="true" />
+      <span className="kb-postcard-canvas" aria-hidden="true">
+        {mark ? <span className="kb-postcard-emblem"><img src={mark} alt="" aria-hidden="true" draggable={false} /></span> : null}
+      </span>
     </As>
   );
 }

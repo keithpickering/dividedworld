@@ -10,6 +10,7 @@ import { QUADRANTS } from '../../../engine/rules/types.ts';
 import { instanceUiProblems } from '../../../engine/ui/tips/problems.ts';
 import { TIP_KEYS } from '../../../engine/ui/tips/keys.ts';
 import { instance } from '../index.ts';
+import { SIZES } from '../../../engine/ui/cards/template.ts';
 import { logRows } from '../../../engine/ui/log/lines.ts';
 import type { Act, Log } from '../../../engine/ui/data/api.ts';
 import { instanceUi, REASON_KEYS, wordsRead } from './index.ts';
@@ -69,6 +70,20 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
       expect(art!.mark, `${rules.key} mark`).toMatch(SVG_URL);
       expect(art!.credit.length, `${rules.key} credit`).toBeGreaterThan(0);
     }
+  });
+
+  test('the card back wears the instance\'s mark, an SVG', () => {
+    expect(instanceUi.cardBack?.mark).toMatch(SVG_URL);
+  });
+
+  /* The slot's name is laid out at no more than 165cqw over its length (engine/ui/cards/postcard.css), so the longest name sets the smallest type a card's name has. */
+  test('the longest card name stays legible at the slot', () => {
+    const css = fs.readFileSync(path.join(process.cwd(), 'engine/ui/cards/postcard.css'), 'utf8');
+    const m = /data-size='slot'\] \.kb-postcard-name \{ font-size: max\(7px, min\(([\d.]+)cqw, calc\(([\d.]+)cqw/u.exec(css);
+    expect(m, 'the slot\'s name rule').not.toBeNull();
+    const [share, fit] = [Number(m![1]), Number(m![2])];
+    const longest = Math.max(...instance.cards.map((c) => c.name.length));
+    expect((Math.min(share, fit / longest) * SIZES.slot) / 100).toBeGreaterThanOrEqual(10);
   });
 
   test('every class has a look, a description and a hurtsBy', () => {
