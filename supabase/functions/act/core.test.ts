@@ -320,7 +320,7 @@ test('a spring, and a strike\'s card, go out live as Acts of their own', async (
 
 // A card beyond a post (docs/plans/2026-11-01-card-reach-plan.md, Task 3): the engine's test card, beside the instance's.
 const sparkle = { ...instance.cards.find((c) => c.key === 'stick-around')!, key: 'sparkle', name: 'Sparkle', rarity: 'uncommon' as const, play: 'cast' as const,
-  reaches: ['character' as const], lasts: { unit: 'day' as const, count: 7 }, 
+  reaches: ['character' as const], lasts: { unit: 'day' as const, count: 7 },
   canApply: (t: Parameters<typeof landsOn>[1], e: Parameters<typeof landsOn>[2]) => landsOn({ key: 'sparkle', reaches: ['character'] }, t, e) };
 const reaching = { ...instance, cards: [...instance.cards, sparkle] };
 

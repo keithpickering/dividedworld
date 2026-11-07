@@ -34,3 +34,17 @@ test('rollPack draws a rarity, then a card of it, per pull, in pull order', () =
 test('rollPack with random always just under 1 returns the last eligible card of the last rarity', () => {
   assert.deepEqual(rollPack(pack, cards, () => 0.9999999999), ['e', 'f']);
 });
+
+test('a rarity with no eligible card is dropped from a pull\'s odds and its roll alike', () => {
+  const thin: PackRules = { key: 't', pulls: [{ weights: { common: 1, legendary: 1 } }] };
+  assert.deepEqual(packOdds(thin, cards)[0]!.map((r) => [r.rarity, r.chance]), [['common', 1]]);
+  assert.deepEqual(rollPack(thin, cards, script(0.99, 0.0)), ['a']);
+});
+
+test('rollPack with random 0 picks the first card of the first rarity', () => {
+  assert.deepEqual(rollPack(pack, cards, () => 0), ['a', 'c']);
+});
+
+test('rollPack refuses a pull with no card to give', () => {
+  assert.throws(() => rollPack({ key: 'x', pulls: [{ weights: { legendary: 1 } }] }, cards, () => 0), /no card to give/u);
+});
