@@ -3,7 +3,7 @@
  *
  *   node tools/test-bbcode-plain.mjs
  *
- * The guard holds supabase/tests/0116-bbcode-plain.sql to exactly what tools/bbcode-plain.mjs makes
+ * The guard holds supabase/tests/0117-bbcode-plain.sql to exactly what tools/bbcode-plain.mjs makes
  * from engine/bbcode/plain.fixtures.ts. A fixture dropped from the SQL test, one whose plain words
  * were changed in the SQL test only, one added to the fixtures only, and a line of the SQL test
  * edited by hand that is not an assertion must each fire; the real pair must stay clean.

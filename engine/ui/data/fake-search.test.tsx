@@ -1,6 +1,6 @@
 /**
  * The fake's search: the same filters, sorts, cursor and caps as search_posts, search_threads and search_suggest (the SQL's own tests
- * are supabase/tests/0115-search.sql), on a small scale. A `.test.tsx` for the reason fake.test.tsx is: it runs under jsdom.
+ * are supabase/tests/0116-search.sql), on a small scale. A `.test.tsx` for the reason fake.test.tsx is: it runs under jsdom.
  */
 import { describe, expect, test } from 'vitest';
 import type { Instance, Settings } from '../../rules/types.ts';
@@ -320,7 +320,7 @@ describe('search_suggest in the fake', () => {
   });
 });
 
-describe('the fake keeps the SQL\'s refusals and edges (0113_search.sql)', () => {
+describe('the fake keeps the SQL\'s refusals and edges (0116_search.sql)', () => {
   const good = { rank: null, at: new Date(T0).toISOString(), act: '00000000-0000-4000-8000-000000000000' };
   test('search_posts and search_threads refuse a long q, an unknown sort, an empty range and a malformed cursor', async () => {
     const w = world();
