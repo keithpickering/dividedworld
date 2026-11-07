@@ -9,6 +9,7 @@ import { applyAppearance } from '../appearance.ts';
 import { buildWorld, renderIn, testGlass } from '../test-world.tsx';
 import { onToastChoice } from '../alerts/toast-choice.ts';
 import { SettingsScreen } from './Settings.tsx';
+import { ThemeRow } from './appearanceRows.tsx';
 
 const MARKS = ['data-kb-mode', 'data-kb-motion', 'data-kb-smoke-level', 'data-kb-contrast', 'data-kb-text-size', 'data-kb-glass-key'];
 beforeEach(() => { localStorage.clear(); for (const m of MARKS) document.documentElement.removeAttribute(m); });
@@ -156,6 +157,15 @@ describe('Settings, as board 11 draws it', () => {
     await userEvent.click(radio('Posts', 'Stacked'));
     expect(await screen.findByRole('alert')).toHaveTextContent('the postbit is side or stacked');
     expect(radio('Posts', 'Side by side')).toBeChecked();
+  });
+
+  test('a theme row given no stored mode shows the device\'s, and a theme of its own is chosen with that mode', async () => {
+    const w = world();
+    const chosen: { theme: string; mode: string }[] = [];
+    renderIn(w.fake, <ThemeRow value={{ theme: 'default' }} onChange={(v) => chosen.push(v)} />, { path: '/settings' });
+    expect(await screen.findByRole('radio', { name: 'Follow my device' })).toBeChecked();
+    await userEvent.click(screen.getByRole('radio', { name: 'White on black' }));
+    expect(chosen).toEqual([{ theme: 'default', mode: 'dark' }]);
   });
 
   test('a save that gets no answer puts the choice back and says so', async () => {

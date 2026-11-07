@@ -636,14 +636,14 @@ describe('the account', () => {
   test('preferences have defaults and are set whole or in part', async () => {
     const { fake } = world();
     const glass = { smoke: 'full', contrast: 'standard', textSize: 100, tilt: 'off', cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] } as const;
-    expect(await fake.preferences()).toEqual({ theme: 'system', postbit: 'side', motion: 'system', ...glass });
-    expect(await fake.setPreferences({ motion: 'reduce' })).toEqual({ ok: true, value: { theme: 'system', postbit: 'side', motion: 'reduce', ...glass } });
+    expect(await fake.preferences()).toEqual({ theme: 'default', mode: 'system', postbit: 'side', motion: 'system', ...glass });
+    expect(await fake.setPreferences({ motion: 'reduce' })).toEqual({ ok: true, value: { theme: 'default', mode: 'system', postbit: 'side', motion: 'reduce', ...glass } });
     expect(await fake.setPreferences({ theme: 'Loud!' })).toEqual(refused('a theme is named in lowercase words joined by hyphens'));
   });
   test('the glass\'s three preferences are set and kept as the server keeps them, and refused in its words', async () => {
     const { fake } = world();
-    expect(await fake.setPreferences({ smoke: 'off' })).toEqual({ ok: true, value: { theme: 'system', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'standard', textSize: 100, tilt: 'off', cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] } });
-    expect(await fake.setPreferences({ contrast: 'high', textSize: 200 })).toEqual({ ok: true, value: { theme: 'system', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', textSize: 200, tilt: 'off', cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] } });
+    expect(await fake.setPreferences({ smoke: 'off' })).toEqual({ ok: true, value: { theme: 'default', mode: 'system', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'standard', textSize: 100, tilt: 'off', cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] } });
+    expect(await fake.setPreferences({ contrast: 'high', textSize: 200 })).toEqual({ ok: true, value: { theme: 'default', mode: 'system', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', textSize: 200, tilt: 'off', cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] } });
     /* A fresh read is what the next load sees. */
     expect(await fake.preferences()).toMatchObject({ smoke: 'off', contrast: 'high', textSize: 200 });
     expect(await fake.setPreferences({ smoke: 'thick' as never })).toEqual(refused('the smoke is full, low or off'));

@@ -1,6 +1,6 @@
 -- A theme and a mode, held apart (supabase/migrations/0103_board_mode.sql; board-look plan Task 15): the mode defaults to the device's, is kept,
--- refused by name when it is none of the three, read by the account alone and carried in boot(); and the migration's one rewrite of the old
--- mixed theme column turns system, light and dark into the default theme in a mode, and leaves any other key with the device's mode.
+-- refused by name when it is none of the three, read by the account alone and carried in boot(). The migration's rewrite of the old mixed theme column
+-- is proved on rows as they were by e2e/0017-mode-across-0103.ts.
 
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
 begin
@@ -34,22 +34,4 @@ begin
   said := set_preferences(motion => 'reduce');
   if said ->> 'mode' is distinct from 'system' then raise exception 'another account starts at system: %', said; end if;
   perform tests.unbecome();
-end $$;
-
--- The migration's rewrite, run on rows as the old column held them. This statement is the migration's, word for word; it is here because a
--- replay from zero has no rows for it to rewrite.
-do $$
-declare
-  a uuid[] := array[tests.account('mode-s'), tests.account('mode-l'), tests.account('mode-d'), tests.account('mode-o')];
-  want text[][] := array[['default', 'system'], ['default', 'light'], ['default', 'dark'], ['dusk', 'system']];
-  i integer;
-begin
-  insert into account_preferences (account, theme, mode) values (a[1], 'system', 'system'), (a[2], 'light', 'system'), (a[3], 'dark', 'system'), (a[4], 'dusk', 'system');
-  update account_preferences set mode = case when theme in ('light', 'dark') then theme else 'system' end,
-    theme = case when theme in ('system', 'light', 'dark') then 'default' else theme end;
-  for i in 1..4 loop
-    if (select (theme, mode) from account_preferences where account = a[i]) is distinct from (want[i][1], want[i][2]) then
-      raise exception 'row % was rewritten to %', i, (select (theme, mode) from account_preferences where account = a[i]);
-    end if;
-  end loop;
 end $$;
