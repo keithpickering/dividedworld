@@ -16,7 +16,10 @@ import { expect, test, type Page } from '@playwright/test';
  * this sample and in the two before it (`LAG`). `outOfViewDraws` is checked on planted samples below, red where it should be.
  *
  * The frame gap sees the page, not the loop: a loop that costs 3 ms of a 16.7 ms frame passes it. So the loop's own time in each frame
- * (`probe.work`, around its step) is read too, and its 95th percentile bounded by `WORK_BUDGET`. And buffers out of view are released:
+ * (`probe.work`, around its step) is read too, and its 95th percentile bounded by `WORK_BUDGET`. The frame gap itself is logged, not
+ * asserted (the owner, 2026-11-07, keithpickering/dividedworld#318): on CI it missed its 20 ms bound in about half the timed scrolls
+ * before and after #295 alike, by the load the shard's other worker puts on the runner's two cores, while the loop and the worker held
+ * their budgets in every run (docs/research/2026-11-07-shine-busy-scroll). It is in each run's `shine-data` line with its control. And buffers out of view are released:
  * with the page scrolled to the bottom every shiny post fully out of view (beyond a margin) has canvases of width and height 0, and few
  * posts hold any. And what the canvases raster is counted (the story's `raster`, around the page's 2D contexts): a frame of the scroll
  * rasters under `RASTER_SHARE` of the shiny posts in view, the check a fast machine's frame gap cannot make. The story's poisons make those
@@ -27,7 +30,7 @@ import { expect, test, type Page } from '@playwright/test';
  * Shine.board.stories.tsx): the loop's own time is the page's, and the worker's own time per batch (`WORK_BUDGET` too: the worker keeps
  * the display's rate only if a frame's foils fit in a frame) is read from the worker; a Fab canvas's size is read from the worker (a
  * transferred canvas's own attributes say nothing); a frame's rastered pixels are the page's plus the worker's batch with the same `t`.
- * The poison `slow` (25 ms in every Glitter Bomb post's draw on the page), `slow-worker` (25 ms in every batch of the worker) and `keep` (one
+ * The poison `slow` (25 ms in a Glitter Bomb post's draw on the page), `slow-worker` (25 ms in every batch of the worker) and `keep` (one
  * Fab's canvas, in the worker, ignores being freed) make those checks red.
  *
  * And the screen the shine changes is counted (`redrawn`): a post paints its whole body, which is bigger than its words, and on a
@@ -266,10 +269,13 @@ const measure = (r: Run) => {
     frames: r.samples.length, loopFrames: r.work.length, batches: r.workerWork.length,
   };
 };
+/** The frame gap a timed run is logged against, in ms: not asserted (the header, #318). */
 const GAP_BOUND = 20;
-/** A timed run holds when its gaps hold; a run holds the loop when its own time does, and the worker when its own time per batch does. */
+/** A timed run holds the loop when its own time does, and the worker when its own time per batch does; its gaps are logged against GAP_BOUND. */
 const holds = (m: { gap: number; work: number; worker: number }) => ({ gap: m.gap < GAP_BOUND, work: m.work < WORK_BUDGET, worker: m.worker < WORK_BUDGET });
 const holdsAll = (m: { gap: number; work: number; worker: number }) => { const h = holds(m); return h.gap && h.work && h.worker; };
+/** What a run is gated on: the loop's and the worker's budgets. */
+const holdsBudgets = (m: { gap: number; work: number; worker: number }) => { const h = holds(m); return h.work && h.worker; };
 
 /**
  * A scroll like `scrollRun`'s with the canvas count on: each frame's rastered pixels (the page's plus the worker's batch with the same `t`)
@@ -384,10 +390,10 @@ test.describe('a busy thread', () => {
     expect(heldOutOfView(await held(page), 900).holding, 'at the top the posts in view hold their buffers (the buffer check can see one)').toBeGreaterThanOrEqual(visible);
     /* The first run down the page is a warm-up (the script compiled, each post's buffers and flakes made for the first time) and is not timed.
        A software-drawn headless Chromium drops a frame now and then, and a gap is a whole frame or two (16.7 or 33.3 ms), so one drop too many
-       moves the 95th percentile from 16.8 to 33.3: the frame-gap bound is met if one of three timed runs meets it. Every run must draw nothing
-       out of view. The loop's own time is the check that sees the loop (a loop that costs 3 ms of a frame passes the gap): its 95th percentile
-       must be under WORK_BUDGET in a timed run too, and so must the foil worker's own time per batch (which the loop cannot see). A loop that
-       costs more than a frame meets neither bound in any run. */
+       moves the 95th percentile from 16.8 to 33.3: up to three timed runs are made until one meets the gap's bound too, so a slow runner's
+       log holds more of them, but the gap is not asserted (the header, #318). Every run must draw nothing out of view. The loop's own time
+       is the check that sees the loop: its 95th percentile must be under WORK_BUDGET in a timed run, and the foil worker's own time per
+       batch (which the loop cannot see) in the same run. A loop that costs more than a frame meets neither budget in any run. */
     const runs: ReturnType<typeof measure>[] = [];
     const data: Record<string, unknown>[] = [];
     for (let attempt = 0; attempt < 4 && !runs.slice(1).some(holdsAll); attempt += 1) {
@@ -416,22 +422,23 @@ test.describe('a busy thread', () => {
     const cpu = await calibrate(page), control = await controlRun(page);
     for (const d of data) console.log(`shine-data ${JSON.stringify({ ...d, throttle: THROTTLE, controlGap: +control.gap.toFixed(1), controlMedian: +control.median.toFixed(1), controlFrames: control.frames, controlCpuMs: +cpu.toFixed(1) })}`);
     await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-    const passed = timed.findIndex(holdsAll);
+    const passed = timed.findIndex(holdsBudgets);
+    const gapMet = timed.some(holdsAll);
+    console.log(`frame gap (logged, not asserted, #318): ${gapMet ? 'a timed run met' : 'no timed run met'} ${GAP_BOUND} ms; p95s ${timed.map((m) => m.gap.toFixed(1)).join(', ')}; control ${control.gap.toFixed(1)}`);
     if (passed >= 0) {
       console.log(`passed in timed run ${passed + 1} of ${timed.length}: gap p95 ${timed[passed]!.gap.toFixed(1)} ms (bound ${GAP_BOUND}), loop own time p95 ${timed[passed]!.work.toFixed(2)} ms (budget ${WORK_BUDGET}), worker own time p95 ${timed[passed]!.worker.toFixed(2)} ms (budget ${WORK_BUDGET})`);
     } else {
-      /* No run met both: name each, with what it missed. */
+      /* No run met both budgets: name each, with what it missed. */
       const missed = timed.map((m, k) => {
         const h = holds(m);
-        const what = [!h.gap && 'gap', !h.work && 'loop time', !h.worker && 'worker time'].filter(Boolean).join(' and ');
+        const what = [!h.work && 'loop time', !h.worker && 'worker time'].filter(Boolean).join(' and ');
         return `run ${k + 1} missed ${what}: gap p95 ${m.gap.toFixed(1)} ms (bound ${GAP_BOUND}), loop own time p95 ${m.work.toFixed(2)} ms, worker own time p95 ${m.worker.toFixed(2)} ms (budget ${WORK_BUDGET})`;
       });
-      console.log(`no timed run of ${timed.length} met both bounds; ${missed.join('; ')}`);
+      console.log(`no timed run of ${timed.length} met both budgets; ${missed.join('; ')}`);
     }
     expect(Math.min(...timed.map((m) => m.work)), `the loop's own time, 95th percentile, under ${WORK_BUDGET} ms`).toBeLessThan(WORK_BUDGET);
     expect(Math.min(...timed.map((m) => m.worker)), `the foil worker's own time per batch, 95th percentile, under ${WORK_BUDGET} ms`).toBeLessThan(WORK_BUDGET);
-    expect(Math.min(...timed.map((m) => m.gap)), 'the frame gap, 95th percentile (the backstop)').toBeLessThan(GAP_BOUND);
-    expect(passed, 'one run met both').toBeGreaterThanOrEqual(0);
+    expect(passed, 'one timed run met both budgets').toBeGreaterThanOrEqual(0);
 
     /* At the bottom, the posts far out of view have let their buffers go, and few posts hold any. */
     await frames(page, 10);
@@ -459,13 +466,14 @@ test.describe('a busy thread', () => {
     expect(p95, 'canvas pixels rastered a frame, over the shiny posts in view (95th percentile)').toBeLessThan(RASTER_SHARE);
   });
 
-  test('poisoned: Glitter Bomb draws that take 25 ms each on the page turn the loop-time check and the frame-gap check red', async ({ page }) => {
+  test('poisoned: a Glitter Bomb draw that takes 25 ms on the page turns the loop-time check red', async ({ page }) => {
     test.setTimeout(120_000);
     await open(page, 'full', 'slow');
     await scrollRun(page);
     const m = measure(await scrollRun(page));
     console.log(`poisoned scroll: gap p95 ${m.gap.toFixed(1)} ms (bound ${GAP_BOUND}), loop own time p95 ${m.work.toFixed(2)} ms, worker own time p95 ${m.worker.toFixed(2)} ms (budget ${WORK_BUDGET})`);
-    expect(holds(m), 'the loop-time and frame-gap checks are red').toMatchObject({ gap: false, work: false });
+    expect(holds(m).work, 'the loop-time check is red').toBe(false);
+    expect(holdsBudgets(m), 'and so a run is refused').toBe(false);
   });
 
   test('poisoned: a foil worker that takes 25 ms a batch turns the worker-time check red', async ({ page }) => {
