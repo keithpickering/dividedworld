@@ -186,6 +186,7 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
       className="kb-act"
       aria-labelledby={`post-${seq}-title`}
       data-kb-seq={seq}
+      data-kb-parity={seq % 2 === 0 ? 'even' : 'odd'}
       data-kb-kind={act.kind}
       data-kb-postbit={layout}
       data-kb-arrived={slid ? 'slide' : undefined}

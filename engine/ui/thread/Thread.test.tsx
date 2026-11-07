@@ -302,6 +302,15 @@ describe('the thread\'s crumb, post cells and bottom row (the board look, Task 6
     expect(second.querySelector('.kb-postbit')!.parentElement).toBe(second);
   });
 
+  test('a post\'s row color follows its seq, not its place on the page: an odd page opened at 41 starts on odd', async () => {
+    const w = world(45);
+    open(w, '', '?page=3');
+    await screen.findByRole('article', { name: /^Post 41 /u });
+    expect(post(41)).toHaveAttribute('data-kb-parity', 'odd');
+    expect(post(42)).toHaveAttribute('data-kb-parity', 'even');
+    expect(post(45)).toHaveAttribute('data-kb-parity', 'odd');
+  });
+
   test('Unfollow shares the bottom pager\'s row, after it', async () => {
     const w = world(45);
     open(w, '', '?page=3');

@@ -123,7 +123,7 @@ async function cellProblems(page: Page): Promise<string[]> {
           line: css(line)!.backgroundColor, words: css(words)!.backgroundColor, actions: css(actions)!.backgroundColor, bit: css(p.querySelector('.kb-postbit'))!.backgroundColor,
           /* The line is a band of its own: as wide as the words, above them. */
           bandWidth: l.width - w.width, bandAbove: w.top - l.bottom, actionsBelow: a.top - w.bottom,
-          spacer: css(p)!.borderBottomWidth, spacerColor: css(p)!.borderBottomColor,
+          spacer: css(p)!.borderTopWidth, spacerColor: css(p)!.borderTopColor,
         };
       }),
     };
@@ -138,8 +138,8 @@ async function cellProblems(page: Page): Promise<string[]> {
     if (post.actionsBelow > 1.5) out.push(`post ${n}: the actions are ${post.actionsBelow}px below the words`);
   }
   if (read.row1 === read.row2) out.push('the two row grays are one color');
-  if (a!.spacer !== '4px') out.push(`the spacer row is ${a!.spacer}, not 4px`);
-  if (a!.spacerColor !== read.row3) out.push(`the spacer row is ${a!.spacerColor}, not ${read.row3}`);
+  if (b!.spacer !== '4px') out.push(`the spacer row is ${b!.spacer}, not 4px`);
+  if (b!.spacerColor !== read.row3) out.push(`the spacer row is ${b!.spacerColor}, not ${read.row3}`);
   return out;
 }
 
@@ -159,9 +159,10 @@ test.describe('the cells', () => {
 
   test('poison: an even post that keeps the odd gray, a words cell of another color and a 3px spacer are each named', async ({ page }) => {
     await openCells(page);
-    await page.addStyleTag({ content: '[data-kb-cell="words"] { background: rgb(255, 0, 0) !important } #post-42 { background: var(--kb-row-1) !important } #post-41 { border-bottom-width: 3px !important }' });
+    await page.addStyleTag({ content: '#post-41 [data-kb-cell="words"] { background: rgb(255, 0, 0) !important } #post-42 { --kb-post-bg: var(--kb-row-1) !important } #post-42 { border-top-width: 3px !important }' });
     const problems = await cellProblems(page);
     expect(problems.join('\n')).toMatch(/post 41: the cells are .* not all/u);
+    expect(problems.join('\n')).toMatch(/post 42: the cells are .* not all/u);
     expect(problems.join('\n')).toMatch(/the spacer row is 3px, not 4px/u);
   });
 });

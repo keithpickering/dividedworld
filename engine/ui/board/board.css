@@ -20,8 +20,8 @@
 .kb-new-thread .kb-field {
   display: flex;
   flex-direction: column;
-  gap: 0.2em;
-  margin: 0.5em 0;
+  gap: 4px;
+  margin: 0 0 12px;
 }
 
 .kb-new-thread .kb-input,
@@ -31,7 +31,7 @@
 }
 
 .kb-new-thread-as {
-  margin: 0 0 0.4em;
+  margin: 0 0 10px;
 }
 
 .kb-thread-list {
@@ -170,6 +170,7 @@
   padding: 0.1em 0.4em;
   font-variant-numeric: tabular-nums;
   text-align: center;
+  border: 1px solid var(--kb-rule);
   font-weight: bold;
 }
 
@@ -182,10 +183,6 @@
   color: var(--kb-head-fg);
   text-shadow: var(--kb-head-shadow);
   border: 1px solid var(--kb-frame);
-}
-
-:where(.kb-board, .kb-thread) .kb-pager-here:focus-visible {
-  outline-color: var(--kb-head-focus);
 }
 
 /*
