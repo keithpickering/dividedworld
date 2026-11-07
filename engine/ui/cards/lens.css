@@ -314,7 +314,7 @@
 }
 
 .kb-lens-face .kb-avatar-none {
-  font-size: 0.8rem;
+  font-size: var(--kb-glass-size-display-xs);
   color: var(--kb-lens-ink-text);
 }
 
