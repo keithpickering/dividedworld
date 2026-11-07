@@ -28,9 +28,6 @@ const ALLOWED = new Set<string>([
   ...Object.values(C),
   ...[0.38, 0.18, 0.07].map((a) => blend(C.neon, C.ground, a)),
   ...[0.35, 0.55].map((a) => blend(C.violet, C.ground, a)),
-  // The Gmail-only blend identity: `screen` and `difference` do nothing over black. It sits in the
-  // `u + .body` rules, which only Gmail matches, and is never painted as a color.
-  '#000',
 ].map((h) => h.toLowerCase()));
 
 const mail: Mail = {
@@ -98,10 +95,20 @@ test('hrefs are https, mailto or a declared slot; others throw naming the block'
   assert.throws(bad('{{ .ConfirmationURL }} x', slots), /button block 3/); // not exactly a slot
   bad('mailto:a@b.test')();
   bad('https://x.test/?a=1&b="2"')();
+  // an href that starts https: may still not carry a template action of its own (Supabase's Go template)
+  assert.throws(bad('https://x.test/?t={{ .Other }}', slots), /button block 3: holds "\{\{"/);
+});
+
+test('a block of a type the shell does not know throws, naming it', () => {
+  assert.throws(() => renderHtml(theme, { ...mail, blocks: [{ type: 'bogus' } as never] }), /block 1.*bogus/);
 });
 
 test('every hex in the output is a theme color or a blend of two', () => {
-  const hexes = [...html.matchAll(/(?<![&\w])#[0-9a-fA-F]{3,8}\b/g)].map((m) => m[0].toLowerCase());
+  // The Gmail-only blend identity (#000: `screen` and `difference` do nothing over black) lives in the
+  // two `u + .body` rules, which only Gmail matches; they are cut out before the scan, so #000 anywhere
+  // else is a stray color.
+  const scanned = html.replace(/u \+ \.body \.g[sd]\{background:#000;[^}]*\}/g, '');
+  const hexes = [...scanned.matchAll(/(?<![&\w])#[0-9a-fA-F]{3,8}\b/g)].map((m) => m[0].toLowerCase());
   assert.ok(hexes.length > 10);
   for (const h of hexes) assert.ok(ALLOWED.has(h), `stray color ${h}`);
   // every seam blend really is present

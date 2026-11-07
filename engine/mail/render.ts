@@ -64,6 +64,7 @@ function checkTheme(t: MailTheme): void {
 function checkHref(href: string, where: string, slots: readonly string[]): string {
   if (!/^(https:|mailto:)/.test(href) && !slots.includes(href)) throw new Error(`${where}: href ${JSON.stringify(href)} is not https:, mailto: or a declared slot`);
   if (/[\u0000-\u001f\u007f]/.test(href)) throw new Error(`${where}: href holds a control character`);
+  guard(href, where, slots);
   return esc(href);
 }
 
