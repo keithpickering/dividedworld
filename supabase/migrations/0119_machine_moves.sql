@@ -13,13 +13,13 @@
 --                                 landing (the machine as it is then: the slot, its availability, the card in a pack on sale, the pulls in force, one move per slot, one flash
 --                                 sale at a time). A move failing it at landing is refused for good with the reason (`queued_moves.refused_at`, as a rule is): it is never an
 --                                 Act, so it is never applied and there is nothing to reverse.
---   machine_now (0115)            also applies the moves in force and carries them (`move`, last): a Pull makes a slot sold out; a Reprice sets round(price * percent / 100),
+--   machine_now (0117)            also applies the moves in force and carries them (`move`, last): a Pull makes a slot sold out; a Reprice sets round(price * percent / 100),
 --                                 at least 1; a Flash sale lists its hidden slot as on sale. An admin's sold out or hidden wins over a Pull and a Reprice, and the moved price is the
 --                                 admin's CURRENT price times the factor. `move` is {kind, act, ends, demand, progress, was, percent, hours}: the demand as the move's Act holds it and
 --                                 its stored progress as move_progress (0053) reads it, `was` the admin's price.
 --   queued_moves_guard (0106)     also refuses a machine move whose params, demand or bounds are wrong.
 --   system_tick (0105)            also refuses at landing a machine move the machine can no longer take, under the machine's one lock (pg_advisory_xact_lock(hashtext('kayfabb.machine'))),
---                                 the same one 0119's admin functions take, so the Boss's landings and an admin's pack change run one at a time ("packs are the floor").
+--                                 the same one 0121's admin functions take, so the Boss's landings and an admin's pack change run one at a time ("packs are the floor").
 --   meeting_context (0103)        also carries `machine`: the slots (hidden ones too, for a flash sale), whether a pull could land, the Boss's move on each.
 --
 --   apply_meeting (0110)          also skips and records (`machineSkipped`, as `rulesSkipped` records a rule) a machine move the queue's guard would refuse for what its params, demand
@@ -182,7 +182,7 @@ begin
     if holder is null or not exists (select 1 from move_kinds k where k.key = new.kind and holder = any (k.offices)) then
       raise exception 'a % move is not one a % makes', new.kind, coalesce(holder, 'staff member with no office') using errcode = '23514';
     end if;
-    -- The Boss's three moves on the machine (0117): the params, the demand and the bounds, from the move and the economy alone. What the machine looks like when
+    -- The Boss's three moves on the machine (0119): the params, the demand and the bounds, from the move and the economy alone. What the machine looks like when
     -- the move lands is checked then, by the tick, which refuses a move that cannot (a meeting that read the machine a day earlier is not failed for it).
     if new.kind in ('pullSlot', 'repriceSlot', 'flashSale') then
       if jsonb_typeof(new.params -> 'slot') = 'string' then new.params := jsonb_set(new.params, '{slot}', to_jsonb(lower(new.params ->> 'slot'))); end if;
@@ -306,7 +306,7 @@ begin
     for due in
       select q.id, q.staff, q.kind, q.params, q.demand, q.expires_at, q.admin_description from queued_moves q where q.landed_act is null and q.held_at is null and q.refused_at is null and q.go_live_at <= now() order by q.go_live_at, q.id for update skip locked
     loop
-      -- A machine move is checked against the machine as it is now, so it waits for the machine's one lock (0119's admin functions take it to take a pack off sale or
+      -- A machine move is checked against the machine as it is now, so it waits for the machine's one lock (0121's admin functions take it to take a pack off sale or
       -- reorder), taken here and not inside the block below so that a timeout is not swallowed as a failed move. Without it a Pull landing as an admin took the last pack
       -- holding its card off sale could each miss the other and leave a Pull with no pack on sale. The tick holds only queued_moves rows (and Acts it inserts) when it
       -- waits here, and those functions never lock those rows, so there is no cycle. Taken only when a machine move is about to be checked, and held to the end of
@@ -321,7 +321,7 @@ begin
             continue;
           end if;
         end if;
-        -- The machine's moves are checked against the machine as it is now (0117): a slot an admin has since changed, a card no pack on sale can give, a pull too many.
+        -- The machine's moves are checked against the machine as it is now (0119): a slot an admin has since changed, a card no pack on sale can give, a pull too many.
         -- Refused for good with the reason, as a rule is, and never applied: it is no Act, so nothing was put on the machine and nothing needs reversing.
         if due.kind in ('pullSlot', 'repriceSlot', 'flashSale') then
           clash := machine_move_problem(due.kind, due.params, due.demand, (select q.go_live_at from queued_moves q where q.id = due.id), due.expires_at, true);
@@ -484,7 +484,7 @@ $$;
 
 -- ----------------------------------------------------------------------------------------------- the machine ----
 
--- machine_now (0115), the moves laid over it. A slot an admin made sold out stays so, and a hidden one stays hidden unless a flash sale is open on it, whatever a Pull or a Reprice
+-- machine_now (0117), the moves laid over it. A slot an admin made sold out stays so, and a hidden one stays hidden unless a flash sale is open on it, whatever a Pull or a Reprice
 -- says: the admin's word wins. A Reprice moves the price of a slot that is on sale, from the admin's price as it is now. `move` is added last, so readers of the columns before it
 -- keep working. One row per slot (the newest move, should two ever be in force).
 create or replace view machine_now as
@@ -504,8 +504,8 @@ create or replace view machine_now as
   left join (select distinct on (m.slot) m.* from machine_moves_open m where m.slot is not null order by m.slot, m.landed_at desc, m.move_act desc) mv on mv.slot = s.id
   where s.availability <> 'hidden' or mv.kind = 'flashSale';
 
--- buy_card and buy_pack (0115), writing whether the price was one the Boss moved: a Reprice in force on the slot whose result differs from the admin's price. Read from the slot as
--- slot_for_sale returned it, and written in the purchase's own insert (an Act-like row is never updated, "Append-only"). Everything else as 0115 wrote them.
+-- buy_card and buy_pack (0117), writing whether the price was one the Boss moved: a Reprice in force on the slot whose result differs from the admin's price. Read from the slot as
+-- slot_for_sale returned it, and written in the purchase's own insert (an Act-like row is never updated, "Append-only"). Everything else as 0117 wrote them.
 create or replace function buy_card(who uuid, slot uuid, price integer) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare

@@ -184,7 +184,7 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
     if (!said.ok) throw new Refused('message', said.why);
     return { rpc: 'unmask', args: { through: id(r, 'character'), in_thread: id(r, 'thread'), message: said.value } };
   },
-  // A purchase names the slot and the price the screen showed (supabase/migrations/0115_machine.sql): the database holds the slot and
+  // A purchase names the slot and the price the screen showed (supabase/migrations/0117_machine.sql): the database holds the slot and
   // refuses, in plain words, a price that is no longer its own, so an admin's change between the look and the press is never charged unseen.
   buyCard: (r) => ({ rpc: 'buy_card', args: { slot: id(r, 'slot'), price: shownPrice(r) }, asService: true }),
   buyPack: (r) => ({ rpc: 'buy_pack', args: { slot: id(r, 'slot'), price: shownPrice(r) }, asService: true }),

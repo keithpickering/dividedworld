@@ -1366,7 +1366,7 @@ describe('the log', () => {
       wallet: [{ settlement: 9, kind: 'settlement', change: 15, overflow: 0, floored: 0, balanceAfter: 472, ref: null, at: '2026-10-30T08:17:02.123456+00:00' }],
       /* A Bluff's row keeps its `springs` (0075); a row that is not a card set face down carries none. */
       cards: [{ card: 'whoops', kind: 'played', act: C, price: 25, at: '2026-10-29T21:52:00+00:00' }, { card: 'bluffy', kind: 'played', act: SET, price: 0, at: '2026-10-29T18:00:00+00:00', springs: false },
-        /* A purchase keeps whether the Boss had moved its price (0117); a pulled row keeps its pack (0115), and no other row carries either. */
+        /* A purchase keeps whether the Boss had moved its price (0119); a pulled row keeps its pack (0117), and no other row carries either. */
         { card: 'whoops', kind: 'bought', act: null, price: 150, at: '2026-10-29T17:30:00+00:00', repriced: true },
         { card: 'bluffy', kind: 'pulled', act: null, price: 0, at: '2026-10-29T17:00:00+00:00', pack: PACK }],
       packs: [{ pack: PACK, kind: 'booster', price: 450, repriced: true, contents: ['bluffy', 'whoops'], at: '2026-10-29T17:00:00+00:00' }],

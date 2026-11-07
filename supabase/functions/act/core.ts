@@ -153,7 +153,7 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
     if (who === SIGN_IN || !who) return SIGN_IN;
     let args: Record<string, unknown> = { ...decision.args, who };
     // A play's prices are settings: read as the rows hold them now, not as the code was deployed. A purchase's is its slot's, which the
-    // database holds and compares with the price the screen showed (machine_now, 0115_machine.sql); it is sent as it was shown.
+    // database holds and compares with the price the screen showed (machine_now, 0117_machine.sql); it is sent as it was shown.
     const tuned = decision.needsTarget ? await withDatabaseSettings(instance, dbs.service) : instance;
     if (decision.needsTarget) {
       // The target as its rules see it (card_target_reach, 0055): a post, a character, a thread or a board, with its own effects and

@@ -1,4 +1,4 @@
--- The Boss's three moves on the machine (supabase/migrations/0117_machine_moves.sql; docs/plans/2026-11-04-booster-packs-plan.md, Task 4).
+-- The Boss's three moves on the machine (supabase/migrations/0119_machine_moves.sql; docs/plans/2026-11-04-booster-packs-plan.md, Task 4).
 --
 -- 1. A Pull shows its slot sold out in machine_now, and the slot comes back at its expiry, when its demand is met, and when an admin reverses it.
 --    (Poison: machine_now ignoring whether a move has ended. The test is red on "a slot is back" when the view reads every move Act and not the ones in force.)
@@ -116,7 +116,7 @@ declare
   acts_held text;
 begin
   begin
-    -- The landing waits for the machine's one lock (the admin functions' own, 0119): an admin mid-way through taking a pack off sale holds it, and a Pull checked now
+    -- The landing waits for the machine's one lock (the admin functions' own, 0121): an admin mid-way through taking a pack off sale holds it, and a Pull checked now
     -- could miss that change. A landing that would otherwise succeed times out instead (55P03, not swallowed as a failed move) and the row is untouched.
     q := pg_temp.queue('pullSlot', pg_temp.slot_param('A'), pg_temp.demand());
     perform extensions.dblink_connect('machine_lock', current_setting('kayfabb.scratch_url'));
@@ -561,7 +561,7 @@ begin
 end $$;
 
 -- ---- 13. A purchase records whether the Boss had moved its price, and the player's own log reads it with the pack ----
--- (Poison: buy_card and buy_pack left as 0115 wrote them. The test is red on "bought at a markup" when nothing writes the flag.)
+-- (Poison: buy_card and buy_pack left as 0117 wrote them. The test is red on "bought at a markup" when nothing writes the flag.)
 do $$
 declare
   player uuid := pg_temp.ann();

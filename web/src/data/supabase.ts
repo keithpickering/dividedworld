@@ -285,9 +285,9 @@ function toPresence(v: Row): Presence {
 const toSeason = (r: Row): Season => ({ id: r['id'], number: r['number'], startsAt: r['starts_at'], endsAt: r['ends_at'] ?? null, turnsThread: r['turns_thread'] ?? null, revealAct: r['reveal_act'] ?? null });
 const toClassReveal = (r: Row): ClassReveal => ({ act: r['act'], character: r['character'], class: r['class'], at: r['at'], via: r['via'], thread: r['thread'] });
 const toTurn = (r: Row): TurnAnnounced => ({ act: r['act'], character: r['character'], at: r['at'], was: r['was'] ?? null });
-/** A slot of machine_now (0115_machine.sql): a card's or a pack's, never both; a hidden slot is not in the view. */
+/** A slot of machine_now (0117_machine.sql): a card's or a pack's, never both; a hidden slot is not in the view. */
 const SLOT_MOVES: readonly SlotMove['kind'][] = ['pullSlot', 'repriceSlot', 'flashSale'];
-/** The move on a slot as machine_now's `move` carries it (0117), or none: a kind this client does not know is no move it can word. */
+/** The move on a slot as machine_now's `move` carries it (0119), or none: a kind this client does not know is no move it can word. */
 const toSlotMove = (v: unknown): SlotMove | null => {
   if (!isObject(v)) return null;
   const kind = SLOT_MOVES.find((k) => k === v['kind']);
@@ -310,7 +310,7 @@ const toSlot = (r: Row): Slot[] => {
     price: num(r['price']), move: toSlotMove(r['move']),
   }];
 };
-/** A slot as admin_machine carries it (0119), or none: a row whose availability is not one of the three is dropped, never shown as something else. */
+/** A slot as admin_machine carries it (0121), or none: a row whose availability is not one of the three is dropped, never shown as something else. */
 const toAdminSlot = (r: Row): AdminSlot[] => {
   const availability = (['onSale', 'soldOut', 'hidden'] as const).find((a) => a === r['availability']);
   if (!availability) return [];
@@ -1536,7 +1536,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
             (q) => q.order('character', { ascending: true }).order('reason', { ascending: true }), ['settlement', 'character', 'reason']),
           rows(() => client.from('my_wallet_events').select('settlement,kind,change,overflow,floored,balance_after,ref,at'), 'at', (q) => q, ['settlement', 'kind', 'ref', 'change', 'overflow', 'floored', 'balance_after']),
           rows(() => client.from('my_card_ledger').select('card,kind,act,price,at,springs,pack,repriced'), 'at', (q) => q, ['card', 'kind', 'act', 'price', 'pack']),
-          /* The packs the player bought (0115): kind, price, the Boss's markup and the cards in pull order; the pulled rows above name each by `pack`. */
+          /* The packs the player bought (0117): kind, price, the Boss's markup and the cards in pull order; the pulled rows above name each by `pack`. */
           rows(() => client.from('my_packs').select('id,pack,price,repriced,contents,bought_at'), 'bought_at', (q) => q, ['id']),
           rows(() => client.from('my_posts_played_on').select('play,post,at,reach,target_name,target_character'), 'at', (q) => q, ['play']),
           rows(() => client.from('my_posts_played_on').select('play,post,saved_at').not('saved_at', 'is', null), 'saved_at', (q) => q, ['play']),

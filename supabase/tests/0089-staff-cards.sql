@@ -36,7 +36,7 @@ begin
     ('grandie', 'Grandie', 'sweet', 'legendary', 'cast', null, false, null),
     ('shield', 'Shield', 'sweet', 'uncommon', 'use', null, true, interval '7 days'),
     ('hook', 'Hook', 'salty', 'uncommon', 'set', '{"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "blot"}}', false, null);
-  -- What each is worth to a trap that catches a staff Cast of it is its slot's price (place_cast, 0115).
+  -- What each is worth to a trap that catches a staff Cast of it is its slot's price (place_cast, 0117).
   insert into machine_slots (position, card, availability, price) values
     (21, 'snare', 'onSale', 150), (22, 'catcher', 'onSale', 100), (23, 'bluffy', 'onSale', 25), (24, 'grandie', 'onSale', 100), (25, 'shield', 'onSale', 150), (26, 'hook', 'onSale', 100);
 end $$;

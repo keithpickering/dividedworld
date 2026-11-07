@@ -72,7 +72,7 @@ begin
       'patrol_sample(uuid[],integer)',
       -- Pure predicates a CHECK calls, granted to PUBLIC by 0080 so a direct writer is not refused; each reads no table.
       'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])',
-      -- The same kind for a pack's pulls (0115): pure, reading no table.
+      -- The same kind for a pack's pulls (0117): pure, reading no table.
       'pack_pulls_problem(jsonb)']) x) then
     raise exception 'the functions the digest role may execute are not the reviewed eighteen: %', fns;
   end if;

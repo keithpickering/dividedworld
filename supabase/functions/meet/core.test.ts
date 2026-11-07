@@ -69,7 +69,7 @@ interface World {
   mods?: { key: string; allowance: number; granted: number | null; boards: string[]; order: string | null }[];
   /** The rules in force as meeting_context() lists them (0103). */
   rules?: { board: string | null; predicate: string; param: unknown; number: number }[];
-  /** The machine's slots as meeting_context() lists them (0117); absent: an older database that holds no machine. */
+  /** The machine's slots as meeting_context() lists them (0119); absent: an older database that holds no machine. */
   machine?: unknown[];
   /** What the apply says it returned from the Mods (default: nothing is said). */
   applyThrows?: boolean;

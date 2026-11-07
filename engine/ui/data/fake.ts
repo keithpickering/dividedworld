@@ -1105,7 +1105,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   let logOrder = 0;
   const recordWallet = (account: Id, at: number, e: Omit<WalletEvent, 'at'>) => { walletEvents.push({ account, order: ++logOrder, ms: at, event: { ...e, at: iso(at) } }); };
   /*
-   * The Vending Machine's slots (machine_slots, 0115_machine.sql), seeded from the instance in its order and changed only by `seed.slot`, as the
+   * The Vending Machine's slots (machine_slots, 0117_machine.sql), seeded from the instance in its order and changed only by `seed.slot`, as the
    * database keeps an admin's choices. Their ids are their own count, so the ids of everything else are as they were. A pack is rolled with a
    * fixed-seed generator: the fake is deterministic, and a test that wants other cards seeds the hand.
    */
@@ -1117,9 +1117,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const machine = (): Slot[] => slotRecs.filter((r) => r.availability !== 'hidden').sort((x, y) => x.position - y.position).map((r): Slot => ({
     id: r.id, position: r.position, item: r.item, rarity: rarityOf(r.item), availability: r.availability as Slot['availability'], price: r.price, move: r.move,
   }));
-  /** A price as the server's refusals say it: hundredths of an orb as orbs (`orbs`, 0115). */
+  /** A price as the server's refusals say it: hundredths of an orb as orbs (`orbs`, 0117). */
   const orbsOf = (hundredths: number): string => (hundredths / 100).toFixed(2);
-  /** What is wrong with a slot's availability and price (`machine_apply_slot`, 0119), in the server's words, and which of the two. */
+  /** What is wrong with a slot's availability and price (`machine_apply_slot`, 0121), in the server's words, and which of the two. */
   function slotWords(availability: unknown, price: unknown): { readonly error: string; readonly field: 'availability' | 'price' } | null {
     if (availability !== 'onSale' && availability !== 'soldOut' && availability !== 'hidden') return { error: 'a slot is on sale, sold out or hidden', field: 'availability' };
     if (typeof price !== 'number' || !Number.isInteger(price) || price < 1) return { error: 'a price is at least 0.01', field: 'price' };
@@ -1139,7 +1139,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     return 'pack' in rec.item && was === 'onSale' && availability !== 'onSale';
   }
-  /** `card_in_open_pack` (0117): whether a pack on sale can still give the card. */
+  /** `card_in_open_pack` (0119): whether a pack on sale can still give the card. */
   function cardInOpenPack(card: string): boolean {
     const rarity = instance.cards.find((c) => c.key === card)?.rarity;
     if (!rarity) return false;
@@ -1167,7 +1167,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     return ended;
   }
-  /** `slot_for_sale` (0115): the slot as the machine shows it now, from the slot alone and in the same words for every caller, or a refusal. */
+  /** `slot_for_sale` (0117): the slot as the machine shows it now, from the slot alone and in the same words for every caller, or a refusal. */
   function slotForSale(shown: Slot, wants: 'card' | 'pack'): SlotRec | Refusal {
     const seen = slotRecs.find((r) => r.id === shown.id && r.availability !== 'hidden');
     if (!seen) return refuse('the machine has no such slot');
@@ -1177,7 +1177,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (shown.price !== seen.price) return refuse(`the price is now ${orbsOf(seen.price)}, not ${orbsOf(shown.price)}`);
     return seen;
   }
-  /** Whether a purchase is at a price the Boss moved: a Reprice in force whose result is not the admin's price (as buy_card and buy_pack, 0117, write it). */
+  /** Whether a purchase is at a price the Boss moved: a Reprice in force whose result is not the admin's price (as buy_card and buy_pack, 0119, write it). */
   const movedPrice = (seen: SlotRec): boolean => seen.move?.kind === 'repriceSlot' && seen.price !== seen.move.was;
   const recordCard = (account: Id, at: number, e: Omit<CardEvent, 'at'>) => { cardLedger.push({ account, order: ++logOrder, ms: at, event: { ...e, at: iso(at) } }); };
 
@@ -1238,7 +1238,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** `wallet_spend`'s refusal of a price the wallet does not hold, or nothing. */
   const covers = (account: AccountRec, amount: number): Refusal | null => (account.wallet < amount ? refuse(`that costs ${amount}, and your wallet holds ${account.wallet}`) : null);
 
-  /** `buy_card` (0115_machine.sql): the slot's card at the price the screen showed, from the settled wallet, and one more of it in the hand. */
+  /** `buy_card` (0117_machine.sql): the slot's card at the price the screen showed, from the settled wallet, and one more of it in the hand. */
   function buyCard(shown: Slot): Answer<Bought> {
     const bad = request({ action: 'buyCard', slot: shown.id, price: shown.price });
     if (bad) return bad;
@@ -1253,7 +1253,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok({ card, balance: left, held: account.cards[card]! });
   }
 
-  /** `buy_pack` (0115_machine.sql): the same checks, then the roll; the cards it gave, in pull order, are in the hand. */
+  /** `buy_pack` (0117_machine.sql): the same checks, then the roll; the cards it gave, in pull order, are in the hand. */
   function buyPack(shown: Slot): Answer<Opened> {
     const bad = request({ action: 'buyPack', slot: shown.id, price: shown.price });
     if (bad) return bad;

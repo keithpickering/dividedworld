@@ -1,6 +1,6 @@
 -- The screens price cards as the server does (#86; supabase/migrations/0039_card_economy.sql; the glass cleanup's design,
 -- section 4): screen_settings carries `cardEconomy`, the live economy row cut to the keys the cards read (their `reads`;
--- a card's price is its slot's, 0115), so an admin's tuning shows at once, and none of the classes' numbers.
+-- a card's price is its slot's, 0117), so an admin's tuning shows at once, and none of the classes' numbers.
 
 do $$
 declare

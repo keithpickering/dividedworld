@@ -1,4 +1,4 @@
--- The machine's admin page (supabase/migrations/0119_machine_admin.sql; docs/plans/2026-11-04-booster-packs-plan.md, Task 6; the design's section 7).
+-- The machine's admin page (supabase/migrations/0121_machine_admin.sql; docs/plans/2026-11-04-booster-packs-plan.md, Task 6; the design's section 7).
 --
 -- 1. A player and a visitor are refused by all three calls (admin_machine, set_slot, move_slot), and nothing they asked for is written.
 -- 2. admin_machine lists every slot, hidden ones too, in grid order, at the admin's price, with the Boss's move in force on each.
@@ -86,7 +86,7 @@ end $$;
 
 create function pg_temp.slot(name text) returns uuid language sql as $$ select id from w where w.name = slot.name $$;
 create function pg_temp.row_of(name text) returns machine_slots language sql as $$ select s from machine_slots s where s.id = pg_temp.slot(name) $$;
--- A landed Pull as the tick writes it, whatever the floor says (landing is checked by the tick, 0117; the ending under test is the admin's).
+-- A landed Pull as the tick writes it, whatever the floor says (landing is checked by the tick, 0119; the ending under test is the admin's).
 create function pg_temp.pulled(name text) returns uuid language plpgsql as $$
 begin
   return (write_staff_act('ma-boss', 'move', pg_temp.announcements(), null,

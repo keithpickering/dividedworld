@@ -108,7 +108,7 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into card_ledger (account, card, kind, price) values (ann, 'expcatch', 'bought', 0), (bob, 'blot', 'bought', 0);
       perform set_card(ann, 'expcatch', a, p, '{}', 0);
       perform play_card(bob, 'blot', b, p, '{}', 0, '');
-      -- A pack bought from its slot (0115): the pack's kind, its slot, the packs row with the pulls as they stood, and a pulled row per card.
+      -- A pack bought from its slot (0117): the pack's kind, its slot, the packs row with the pulls as they stood, and a pulled row per card.
       insert into card_kinds (key, name, alignment, rarity) values ('exppull', 'Exported Pull', 'sweet', 'common');
       insert into pack_kinds (key, pulls, leaves) values ('exppack', '[{"weights": {"common": 1}}, {"weights": {"common": 1}}]', '{}');
       insert into machine_slots (position, pack, availability, price) values (9500, 'exppack', 'onSale', 250);

@@ -97,7 +97,7 @@ interface Context {
   /** The rules in force (0103), so a rule that would leave no compliant post is dropped here; absent from an older database. */
   readonly rules?: readonly RuleInForce[];
   /**
-   * The machine's slots in grid order (0117): the admin's price and availability (hidden ones too, for a flash sale), whether a pull could land, and the Boss's
+   * The machine's slots in grid order (0119): the admin's price and availability (hidden ones too, for a flash sale), whether a pull could land, and the Boss's
    * move in force on each. Nothing about a purchase or a buyer. Absent from an older database, where the Boss has no machine to move.
    */
   readonly machine?: readonly MachineSlotFacts[];

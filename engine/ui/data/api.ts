@@ -768,9 +768,9 @@ export interface Bought {
 }
 
 /**
- * One slot of the Vending Machine as every player sees it (`machine_now`, 0115_machine.sql): its place in the grid, what it sells,
+ * One slot of the Vending Machine as every player sees it (`machine_now`, 0117_machine.sql): its place in the grid, what it sells,
  * whether it is for sale, and the price now, in hundredths. A hidden slot is not here, unless a flash sale has opened it. `move` is the Boss's
- * move in force on it (0117_machine_moves.sql), already applied to `availability` and `price`; null where it has none.
+ * move in force on it (0119_machine_moves.sql), already applied to `availability` and `price`; null where it has none.
  */
 export interface Slot {
   readonly id: Id;
@@ -807,7 +807,7 @@ export interface SlotMove {
 }
 
 /**
- * A slot as an admin reads it (`admin_machine`, 0119_machine_admin.sql): every slot, a hidden one too, at the admin's own availability and price (the Boss's move
+ * A slot as an admin reads it (`admin_machine`, 0121_machine_admin.sql): every slot, a hidden one too, at the admin's own availability and price (the Boss's move
  * over it is beside them, never folded in). `move` is the Boss's machine move in force on it, enough to name it and to find it in the queue.
  */
 export interface AdminSlot {
