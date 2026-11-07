@@ -38,7 +38,11 @@
  * - `[spoiler=title]` is a block with a plain-text title (at most `MAX_SPOILER_TITLE` characters,
  *   "Spoiler" when none or an empty one is given; a longer one makes the opener text). `[ispoiler]`
  *   is inline and holds inline formatting only: while one is open, the opener of a block tag (`BLOCK`)
- *   is text, and so is its closer, so a closer inside cannot close a block opened outside.
+ *   is text, and so is its closer, so a closer inside cannot close a block opened outside. It is
+ *   drawn as a button, so nothing interactive nests in it either: while one is open, a `[url]` opener
+ *   and an `[ispoiler]` opener are text (the same count, `openISpoilers`), and so is `[/url]`. A
+ *   `[/ispoiler]` still closes the open spoiler, else it could never end. An ispoiler's text is never
+ *   auto-linked: the autolink pass (Task 5) must skip text inside an `ispoiler` node.
  * - A list's `[*]` is an item marker only directly inside `[list]`; elsewhere it is text.
  *   Blank space before the first item is layout and is not kept; words before it become an
  *   item of their own.
@@ -404,8 +408,9 @@ export function parse(input: string): BbNode[] {
     textStart = close + 1;
     pos = close + 1;
 
-    if (openISpoilers > 0 && name !== '*' && BLOCK.has(name)) {
-      /* Opener or closer, a block tag inside an inline spoiler is the words as written. */
+    if (openISpoilers > 0 && name !== '*' && (BLOCK.has(name) || name === 'url' || (name === 'ispoiler' && !isCloser))) {
+      /* Opener or closer, a block tag, a link or a nested spoiler inside an inline spoiler is the words as written
+         (the spoiler is a button, and a button holds nothing interactive). */
       pushText(top().home.out, raw);
     } else if (isCloser) {
       closeTag(name, raw);

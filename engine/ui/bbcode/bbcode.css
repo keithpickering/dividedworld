@@ -77,7 +77,7 @@
 .kb-bb-ispoiler[aria-expanded="true"] {
   color: inherit;
   background: transparent;
-  outline: 1px dotted var(--kb-rule);
+  border-bottom: 1px dotted var(--kb-rule);
 }
 
 /* A video: a 16:9 box with a Play button; the player takes the box's place. */
@@ -141,5 +141,10 @@
 .kb-bb-video-from {
   margin: 0.2em 0 0;
   font-size: var(--kb-size-small);
+  overflow-wrap: anywhere;
+}
+
+/* The video's address under its box, so a player that will not load still gives the reader where it lives; a long address breaks anywhere. */
+.kb-bb-video-link {
   overflow-wrap: anywhere;
 }

@@ -172,3 +172,24 @@ describe('the BBCode renderer', () => {
     });
   });
 });
+
+describe('an inline spoiler nests nothing interactive', () => {
+  test('a link or a spoiler inside one is words, not an <a> or a button in the button', () => {
+    const { container } = render(<BbCode text="[ispoiler][url=https://x.y]a[/url][/ispoiler] [ispoiler][ispoiler]a[/ispoiler]b[/ispoiler]" />);
+    expect(container.querySelector('button a, button button')).toBeNull();
+    expect(container.querySelectorAll('button')).toHaveLength(2);
+  });
+
+  test('an empty one renders without error', () => {
+    const { container } = render(<BbCode text="[ispoiler][/ispoiler]" />);
+    expect(container.querySelectorAll('button')).toHaveLength(1);
+  });
+
+  test('an open one keeps the board focus ring: no rule on it draws or removes an outline', async () => {
+    const { readFileSync } = await import('node:fs');
+    const css = readFileSync('engine/ui/bbcode/bbcode.css', 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+    const bodies = [...css.matchAll(/([^{}]*\.kb-bb-ispoiler[^{}]*)\{([^}]*)\}/gu)].map((m) => m[2]!);
+    expect(bodies.length).toBeGreaterThan(0);
+    for (const b of bodies) expect(b).not.toMatch(/outline/u);
+  });
+});

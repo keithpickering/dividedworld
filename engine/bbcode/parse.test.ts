@@ -669,3 +669,17 @@ test('many unclosed [video] openers cost one search, not one each', () => {
   parse('[video]' + 'x'.repeat(5000) + '[youtube]'.repeat(10_000) + '[/video]');
   assert.ok(Date.now() - t0 < 2000);
 });
+
+test('a link or another [ispoiler] opened inside [ispoiler] is text, since the spoiler is a button', () => {
+  assert.deepEqual(parse('[ispoiler][url=https://x.y]a[/url][/ispoiler]'), [ispoiler(text('[url=https://x.y]a[/url]'))]);
+  assert.deepEqual(parse('[ispoiler][url]https://x.y[/url][/ispoiler]'), [ispoiler(text('[url]https://x.y[/url]'))]);
+  assert.deepEqual(parse('[ispoiler][ispoiler]a[/ispoiler]b[/ispoiler]'), [ispoiler(text('[ispoiler]a')), text('b[/ispoiler]')]);
+  assert.deepEqual(parse('[url=https://x.y]a[ispoiler]b[/ispoiler]c[/url]'), [
+    { type: 'url', href: 'https://x.y', children: [text('a'), ispoiler(text('b')), text('c')] },
+  ]);
+  assert.deepEqual(parse('[ispoiler]a[/ispoiler][url=https://x.y]b[/url]'), [ispoiler(text('a')), { type: 'url', href: 'https://x.y', children: [text('b')] }]);
+});
+
+test('an empty [ispoiler] is an empty spoiler node', () => {
+  assert.deepEqual(parse('[ispoiler][/ispoiler]'), [ispoiler()]);
+});
