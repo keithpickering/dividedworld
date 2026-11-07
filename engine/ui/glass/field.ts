@@ -20,7 +20,7 @@
  * On a resize inside a width class the raster is kept and drawn stretched (`mask-size: 100% 100%`,
  * Smoke.tsx): the noise is blurred, so a small stretch is invisible, and re-rasterizing a layer on
  * every frame of a window drag would cost more than the stretch shows. A phone's address bar showing
- * and hiding is not a resize here at all: the field's height is the large viewport's (below). Past a stretch of 15% across
+ * and hiding is not a resize here at all: the field's height is the large viewport's (viewport.ts). Past a stretch of 15% across
  * or 25% down, once the window has been still for `RESIZE_MS`, the set is made again at the new
  * size, and the old one is revoked only when the new one is whole, so no frame is without smoke.
  *
@@ -35,6 +35,7 @@
  */
 import { useEffect, useSyncExternalStore } from 'react';
 import type { FieldLayer } from '../types.ts';
+import { largeViewportHeight } from './viewport.ts';
 
 /** A size in CSS pixels. */
 export interface Size { readonly width: number; readonly height: number }
@@ -268,32 +269,14 @@ export const fieldRasters = createRasters();
 /** The viewport's width class, pixel ratio and size, kept current. */
 export interface FieldEnv { readonly narrow: boolean; readonly dpr: number; readonly view: Size }
 
-/*
- * The element laid out at the large viewport's height (`100lvh`), made once and kept: the one reading of that height a script has.
- * A phone's browser shows and hides its address bar as the page scrolls, and `innerHeight` follows it, by about 56px each time;
- * the layers' mask is drawn at 100% of their height, so a field sized to `innerHeight` squashed and stretched its clouds on every
- * scroll that turned the bar (seen on Android's Chrome). The large viewport is the height with the bar hidden,
- * which does not change as it moves, so the field is drawn to that, anchored at the viewport's top, and while the bar shows its
- * bottom is cut off by the window's own `overflow: hidden` rather than squeezed. A browser without `lvh` lays the probe out at
- * `100vh`, which most phone browsers already hold at the large viewport; where nothing is laid out (jsdom) the probe's height is 0.
- * Either way the larger of it and the inner height is used, so the field never falls short of the window.
+/**
+ * The size windows are drawn to: the layout viewport's width, which a scrollbar's width is not part of, and the large viewport's
+ * height (viewport.ts). The layers' mask is drawn at 100% of their height, so a field as tall as `innerHeight` squashed and
+ * stretched its clouds whenever a phone's address bar turned. Drawn to the large viewport, anchored at the window's top, the field
+ * holds still, and while the bar shows its foot is cut off by the window's own `overflow: hidden` rather than squeezed.
  */
-let probe: HTMLElement | null = null;
-function largeViewportHeight(): number {
-  if (!document.body) return 0;
-  if (!probe || !probe.isConnected) {
-    probe = document.createElement('div');
-    probe.setAttribute('data-kb-field-probe', '');
-    probe.setAttribute('aria-hidden', 'true');
-    probe.style.cssText = 'position:fixed;top:0;left:0;width:0;height:100vh;height:100lvh;visibility:hidden;pointer-events:none;';
-    document.body.appendChild(probe);
-  }
-  return probe.getBoundingClientRect().height;
-}
-
-/** The size windows are drawn to: the layout viewport's width, which a scrollbar's width is not part of, and the large viewport's height. */
 function viewport(): Size {
-  return { width: document.documentElement.clientWidth || window.innerWidth, height: Math.max(largeViewportHeight(), window.innerHeight) };
+  return { width: document.documentElement.clientWidth || window.innerWidth, height: largeViewportHeight() };
 }
 
 function envNow(): FieldEnv {

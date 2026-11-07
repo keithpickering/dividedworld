@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { KayfaProvider, type Kayfa } from '../context.tsx';
 import { testGlass } from '../test-world.tsx';
 import { DOCK_INSET, dockWidth, Float, placeFloat } from './Float.tsx';
+import { PROBE_ATTRIBUTE } from './viewport.ts';
 
 const rectOf = (r: { top: number; left: number; right: number; bottom: number }) => () => ({ ...r, x: r.left, y: r.top, width: r.right - r.left, height: r.bottom - r.top, toJSON: () => r }) as DOMRect;
 let height = 300;
@@ -187,6 +188,47 @@ describe('placing again', () => {
     await frame();
     expect(scroll).toHaveBeenCalledTimes(2);
     expect(scroll).toHaveBeenLastCalledWith(0, 650 - (500 - 8));
+  });
+
+  test('a phone\'s address bar turning neither resizes a sheet nor scrolls the page: its room is the large viewport\'s', async () => {
+    const scroll = vi.fn();
+    window.scrollBy = scroll as unknown as typeof window.scrollBy;
+    /* The large viewport is 856 high; the bar shows, so the window is 800 and the HUD (100 high) stands from 700. */
+    const real = Element.prototype.getBoundingClientRect;
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      return this.hasAttribute(PROBE_ATTRIBUTE) ? new DOMRect(0, 0, 0, 856) : real.call(this);
+    });
+    /* What the Lens holds is taller than its room, so the sheet is as tall as the room: 55% of the large viewport above the HUD. */
+    height = 600;
+    const s = stage({ anchor: { top: 620, left: 300, right: 330, bottom: 650 } });
+    mount(s, true);
+    const room = Math.floor((856 - 100 - 4) * 0.55);
+    const wrap = document.querySelector<HTMLElement>('.kb-float')!;
+    const box = wrap.firstElementChild as HTMLElement;
+    expect(box.style.maxHeight).toBe(`${room}px`);
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(document.documentElement.style.getPropertyValue('--kb-float-bottom')).toBe(`${100 + room}px`);
+    /* The bar hides: the window is 856, and the HUD, the anchor and the post move down with the window's foot and top. */
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 856 });
+    document.querySelector<HTMLElement>('.kb-hud')!.getBoundingClientRect = rectOf({ top: 756, left: 0, right: 1000, bottom: 856 });
+    s.anchor.getBoundingClientRect = rectOf({ top: 620, left: 300, right: 330, bottom: 650 });
+    window.dispatchEvent(new Event('resize'));
+    await frame();
+    expect(box.style.maxHeight).toBe(`${room}px`);
+    expect(document.documentElement.style.getPropertyValue('--kb-float-bottom')).toBe(`${100 + room}px`);
+    expect(scroll).toHaveBeenCalledTimes(1);
+  });
+
+  test('a sheet is never taller than the room the window shows above the HUD', () => {
+    /* A large viewport far past the window (a reading the window cannot show): the sheet still stops 4px under the window's top. */
+    const real = Element.prototype.getBoundingClientRect;
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      return this.hasAttribute(PROBE_ATTRIBUTE) ? new DOMRect(0, 0, 0, 2000) : real.call(this);
+    });
+    height = 1200;
+    const s = stage();
+    placeFloat(s.wrap, s.box, s.anchor, true);
+    expect(s.box.style.maxHeight).toBe(`${700 - 4}px`);
   });
 
   test('nothing moved, nothing is placed: a scroll with the anchor and the float where they were leaves the placement alone', async () => {
