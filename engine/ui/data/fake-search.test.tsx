@@ -320,7 +320,7 @@ describe('search_suggest in the fake', () => {
   });
 });
 
-describe('the fake keeps the SQL\'s refusals and edges (0116_search.sql)', () => {
+describe('the fake keeps the SQL\'s refusals and edges (0117_search.sql)', () => {
   const good = { rank: null, at: new Date(T0).toISOString(), act: '00000000-0000-4000-8000-000000000000' };
   test('search_posts and search_threads refuse a long q, an unknown sort, an empty range and a malformed cursor', async () => {
     const w = world();
