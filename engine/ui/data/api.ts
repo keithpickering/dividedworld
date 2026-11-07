@@ -51,6 +51,8 @@ export type Answer<T> = { readonly ok: true; readonly value: T } | Refusal;
 
 /** The instance settings a screen reads (the screen_settings view): none of them a private fact. */
 export interface ScreenSettings {
+  /** The pronouns a new character starts with (`Settings.pronouns`, the setting `pronouns`): public, as a title is. */
+  readonly pronouns: PronounSet;
   readonly postsPerPage: number;
   /** A thread is HOT with at least this many replies in the last seven days. */
   readonly hotReplies: number;

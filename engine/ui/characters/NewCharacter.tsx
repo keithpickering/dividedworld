@@ -20,7 +20,7 @@ import { usePlayer } from '../player.tsx';
 import { useNavigate } from '../router.tsx';
 import { ClassCards } from './ClassCards.tsx';
 import { PronounPicker, pronounsHold } from './PronounPicker.tsx';
-import { ENGINE_DEFAULT_PRONOUNS, type PronounSet } from '../../rules/pronouns.ts';
+import type { PronounSet } from '../../rules/pronouns.ts';
 import { DebutChoice } from './DebutChoice.tsx';
 import { newCharacterFooter } from './footers.ts';
 import './characters.css';
@@ -38,8 +38,8 @@ export function NewCharacter() {
   const [cls, setCls] = useState<string | null>(null);
   const [timing, setTiming] = useState<DebutTiming>('now');
   const [loudness, setLoudness] = useState<DebutLoudness>('announced');
-  /* The instance's default (`Settings.pronouns`) is not yet in ScreenSettings (the screen_settings view does not carry it; a plan gap), so until it does the engine's it/its stands. */
-  const [pronouns, setPronouns] = useState<PronounSet>((settings as { readonly pronouns?: PronounSet }).pronouns ?? ENGINE_DEFAULT_PRONOUNS);
+  /* The instance's default (`Settings.pronouns`), which the screen settings carry. */
+  const [pronouns, setPronouns] = useState<PronounSet>(settings.pronouns);
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
 

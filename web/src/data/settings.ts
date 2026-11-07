@@ -4,6 +4,7 @@
  * hotReplies until it is seeded again).
  */
 import type { ScreenSettings } from '../../../engine/ui/data/api.ts';
+import { ENGINE_DEFAULT_PRONOUNS } from '../../../engine/rules/pronouns.ts';
 import { defaults } from '../../../instances/divided-world/settings.ts';
 import { system } from '../../../instances/divided-world/system/index.ts';
 
@@ -25,6 +26,8 @@ export const fallbackSettings: ScreenSettings = Object.freeze({
   presencePollSeconds: defaults.presencePollSeconds,
   presenceWindow: defaults.presenceWindow,
   toastDefaults: defaults.toastDefaults,
+  /* Until the view holds the setting pronouns, a new character starts on the engine's it/its. */
+  pronouns: ENGINE_DEFAULT_PRONOUNS,
   /* The group's name is the instance's; the database holds it as the setting staffGroup once seeded (0084 shows it to the screens). */
   staffGroup: { name: system.staffGroup.name },
   /* None held: every price is the compiled economy's until the view says otherwise. */

@@ -39,12 +39,13 @@ declare
   he jsonb := '{"subject": "he", "object": "him", "determiner": "his", "possessive": "his", "reflexive": "himself", "plural": false}';
 begin
   seed := jsonb_build_object(
-    'settings', jsonb_build_object('systemEnabled', true, 'structuralHoldHours', 24,
+    'settings', jsonb_build_object('systemEnabled', true, 'structuralHoldHours', 24, 'rosterRecentExcluded', 0, 'inheritanceGraceDays', 3, 'pronouns', she,
+      'seasonLength', jsonb_build_object('unit', 'day', 'count', 1),
       'warnBar', jsonb_build_object('size', 10, 'bands', jsonb_build_object('minor', 2, 'moderate', 4, 'severe', 7), 'decay', jsonb_build_object('unit', 'day', 'count', 14), 'banDays', jsonb_build_array(1, 3, 7)),
       'modBots', jsonb_build_object('allowanceMost', 3, 'ruleDaysMost', 7, 'visitHours', jsonb_build_object('least', 3, 'most', 5), 'patrolsPerDay', 6, 'patrolSample', 5,
         'reportPrice', 25, 'reportsPerDay', 3, 'judgmentsPerDay', 60, 'filingLinesPerDay', 60, 'appealPrice', 50, 'tailHours', 24,
         'cap', jsonb_build_object('punishments', 3, 'days', 7), 'filingCron', '*/5 * * * *', 'filingGraceMinutes', 10),
-      'systemLines', jsonb_build_object('moveLanded', jsonb_build_array('It is done: {move}.'), 'ruleSet', jsonb_build_array('On {board}: {rule}.'),
+      'systemLines', jsonb_build_object('moveLanded', jsonb_build_array('It is done: {move}.'), 'bossFarewell', jsonb_build_array('Farewell from {boss}.'), 'bossArrival', jsonb_build_array('Hello from {boss}.'), 'ruleSet', jsonb_build_array('On {board}: {rule}.'),
         'visitArrived', jsonb_build_array('{mod} is looking at this post under {rule}.'),
         'visitFiled', jsonb_build_array('{mod} filed this post under {rule}.'),
         'appealUpheld', jsonb_build_array('{mod} turns {appellant} down.')),
@@ -58,7 +59,7 @@ begin
           'visitHours', jsonb_build_object('least', 3, 'most', 5), 'challenge', jsonb_build_object('kind', 'bribe', 'price', 50))),
       'firstStaff', jsonb_build_array('ps-m1'),
       'moves', jsonb_build_array(jsonb_build_object('key', 'setRule', 'structural', false, 'shapesBoard', false, 'offices', jsonb_build_array('boss', 'mod')),
-                                 jsonb_build_object('key', 'renameBoard', 'structural', true)),
+                                 jsonb_build_object('key', 'renameBoard', 'structural', true), jsonb_build_object('key', 'nameSuccessor', 'structural', true)),
       'demands', jsonb_build_array(jsonb_build_object('key', 'postsOnBoard')),
       'predicates', jsonb_build_array(jsonb_build_object('key', 'noAllCaps', 'param', 'none', 'least', null, 'most', null, 'plain', 'no all-caps posts'))));
   perform seed_instance(seed);
@@ -156,4 +157,53 @@ begin
   got := to_jsonb((select x from updates() x limit 1));
   perform tests.unbecome();
   if got ->> 'name' is distinct from 'Pn Gabe' or got #>> '{pronouns,subject}' is distinct from 'he' then raise exception 'an update does not hand its persona''s pronouns: %', got; end if;
+end $$;
+
+-- ---- 3. A move in force and a move that ended carry the Boss's set; the screens' settings carry the instance's default ----
+do $$
+declare
+  admin uuid := (select id from auth.users where email = 'ps-admin@test.invalid');
+  g uuid := (select id from boards where slug = 'general');
+  landed uuid;
+  ended uuid;
+  q jsonb;
+begin
+  landed := (write_staff_act('ps-boss', 'move', (select value #>> '{}' from settings where key = 'systemAnnouncements')::uuid, null,
+    jsonb_build_object('kind', 'renameBoard', 'body', 'Landed.', 'params', jsonb_build_object('board', g, 'name', 'Pn Landed', 'premise', 'p', 'description', 'd'))) ->> 'id')::uuid;
+  ended := (write_staff_act('ps-boss', 'move', (select value #>> '{}' from settings where key = 'systemAnnouncements')::uuid, null,
+    jsonb_build_object('kind', 'renameBoard', 'body', 'Landed.', 'params', jsonb_build_object('board', g, 'name', 'Pn Ended', 'premise', 'p', 'description', 'd'))) ->> 'id')::uuid;
+  perform end_move(ended, 'met', 'demand');
+  perform tests.become(admin);
+  q := admin_queue();
+  perform tests.unbecome();
+  if not exists (select 1 from jsonb_array_elements(q -> 'inForce') j where j ->> 'act' = landed::text and j #>> '{bossPronouns,subject}' = 'she' and j ->> 'boss' = 'Pn Screens Boss') then
+    raise exception 'a move in force does not hand the Boss''s pronouns: %', q -> 'inForce';
+  end if;
+  if not exists (select 1 from jsonb_array_elements(q -> 'ended') j where j ->> 'act' = ended::text and j #>> '{bossPronouns,subject}' = 'she' and j ->> 'boss' = 'Pn Screens Boss') then
+    raise exception 'a move that ended does not hand the Boss''s pronouns: %', q -> 'ended';
+  end if;
+  -- The instance's default is a setting the screens read, public: in the screen settings and in boot, which carries them.
+  if (select s.settings #>> '{pronouns,subject}' from screen_settings s) is distinct from 'she' then raise exception 'screen_settings does not carry the default pronouns: %', (select s.settings from screen_settings s); end if;
+  perform tests.become((select id from auth.users where email = 'ps-ann@test.invalid'));
+  if boot() #>> '{settings,pronouns,subject}' is distinct from 'she' then raise exception 'boot''s settings do not carry the default pronouns: %', boot() -> 'settings'; end if;
+  perform tests.unbecome();
+end $$;
+
+-- ---- 4. A handover to-do carries the new Boss's set and the outgoing Boss's ----
+do $$
+declare
+  admin uuid := (select id from auth.users where email = 'ps-admin@test.invalid');
+  todo jsonb;
+begin
+  update seasons set starts_at = now() - interval '60 days' where ends_at is null;
+  perform reveal_season((select starts_at from seasons where ends_at is null) + interval '1 day');
+  perform tests.become(admin);
+  todo := admin_queue() -> 'todos' -> 0;
+  perform tests.unbecome();
+  if todo is null then raise exception 'the handover made no to-do'; end if;
+  if todo ->> 'outgoing' is distinct from 'ps-boss' or todo #>> '{outgoingPronouns,subject}' is distinct from 'she' then raise exception 'the to-do does not hand the outgoing Boss''s pronouns: %', todo; end if;
+  if todo #>> '{bossPronouns,subject}' is distinct from (select p.pronouns ->> 'subject' from characters c join character_profiles p on p.character = c.id where c.staff = todo ->> 'boss')
+     or todo #>> '{bossPronouns,subject}' is null then
+    raise exception 'the to-do does not hand the new Boss''s pronouns: %', todo;
+  end if;
 end $$;

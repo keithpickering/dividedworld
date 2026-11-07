@@ -554,3 +554,19 @@ create or replace view updates_read as
          p.pronouns
   from acts a join characters c on c.id = a.character left join character_profiles p on p.character = c.id
   where a.kind = 'update';
+
+-- ------------------------------------------------------------------------------------------------ screen_settings ----
+
+-- screen_settings (0084), also holding the instance's default pronouns (the setting `pronouns`, 0113): the New character screen starts its picker on them, and boot carries the view whole.
+-- A setting, public. The view is as written there otherwise; its grants stay as they were.
+create or replace view screen_settings as
+  select coalesce(jsonb_object_agg(s.key, s.value), '{}'::jsonb)
+         || jsonb_build_object('cardEconomy', (
+              select coalesce(jsonb_object_agg(e.key, e.value), '{}'::jsonb)
+              from settings x cross join lateral jsonb_each(x.value) e
+              where x.key = 'economy' and jsonb_typeof(x.value) = 'object'
+                and e.key in (select k.price_setting from card_kinds k union select unnest(k.reads) from card_kinds k))) as settings
+  from settings s
+  where s.key in ('postsPerPage', 'hotReplies', 'editGrace', 'reactionCap', 'charactersPerPlayer', 'invitesPerPlayer', 'inviteLifetime',
+                  'turnCooldown', 'walletCap', 'postMaxLength', 'titleMaxLength', 'registrationMode', 'settlementLength', 'cardSettings',
+                  'presencePollSeconds', 'presenceWindow', 'toastDefaults', 'economy', 'staffGroup', 'pronouns');

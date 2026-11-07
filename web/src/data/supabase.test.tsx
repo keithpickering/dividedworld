@@ -16,6 +16,7 @@ const REST = ['', 'rest', 'v1'].join('/');
 const URL_ = 'https://proj.supabase.co';
 const PUBLISHABLE = 'sb_publishable_test0123456789';
 const FALLBACK: ScreenSettings = {
+  pronouns: ENGINE_DEFAULT_PRONOUNS,
   postsPerPage: 20,
   hotReplies: 5,
   editGrace: { unit: 'minute', count: 2 },
@@ -687,6 +688,12 @@ describe('reads and their rows', () => {
     const h = harness(() => rows([{ settings: { cardEconomy: { 'whoops.price': 250, 'whoops.perLength': 40 } } }]));
     expect((await h.api.settings()).cardEconomy).toEqual({ 'whoops.price': 250, 'whoops.perLength': 40 });
     expect((await harness(() => rows([{ settings: { walletCap: 900 } }])).api.settings()).cardEconomy).toEqual({});
+  });
+
+  it('maps the instance\'s default pronouns from the view, and falls back to the engine\'s it/its', async () => {
+    const she = { subject: 'she', object: 'her', determiner: 'her', possessive: 'hers', reflexive: 'herself', plural: false };
+    expect((await harness(() => rows([{ settings: { pronouns: she } }])).api.settings()).pronouns).toEqual(she);
+    expect((await harness(() => rows([{ settings: {} }])).api.settings()).pronouns).toEqual(ENGINE_DEFAULT_PRONOUNS);
   });
 
   it('fills a missing settings key from the instance fallback and uses what the view holds', async () => {

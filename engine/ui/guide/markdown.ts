@@ -278,7 +278,7 @@ type Kind = 'aura' | 'count' | 'span' | 'map';
  */
 const KINDS: { readonly [K in keyof ScreenSettings]-?: Kind | null } = {
   postsPerPage: 'count', hotReplies: 'count', editGrace: 'span', reactionCap: 'count', charactersPerPlayer: 'count', invitesPerPlayer: 'count',
-  inviteLifetime: 'span', turnCooldown: 'span', walletCap: 'aura', postMaxLength: 'count', titleMaxLength: 'count', registrationMode: null,
+  inviteLifetime: 'span', turnCooldown: 'span', walletCap: 'aura', postMaxLength: 'count', titleMaxLength: 'count', registrationMode: null, pronouns: null,
   settlementLength: 'span', presencePollSeconds: 'count', presenceWindow: 'span', cardSettings: 'map', cardEconomy: 'map', economy: 'map', toastDefaults: null, staffGroup: null, toastMs: 'count',
 };
 

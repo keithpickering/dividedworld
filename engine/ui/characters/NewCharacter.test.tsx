@@ -120,6 +120,16 @@ describe('New character', () => {
     expect((await w.fake.myCharacters()).find((c) => c.name === 'Gloomba')!.pronouns).toEqual(PRONOUN_PRESETS.she);
   });
 
+  test('starts on the screen settings\' pronouns when the instance sets them', async () => {
+    const w = world();
+    /* The backend's own screen settings carry it (the fake, as the screen_settings read does), and the screen starts there. */
+    expect((await buildWorld({ pronouns: PRONOUN_PRESETS.she }).settings()).pronouns).toEqual(PRONOUN_PRESETS.she);
+    renderIn(w.fake, <NewCharacter />, { path: '/characters/new', settings: { charactersPerPlayer: w.per, pronouns: PRONOUN_PRESETS.she } });
+    const f = await form();
+    expect(within(f).getByRole('radio', { name: /^she\/her/u })).toBeChecked();
+    expect(within(f).getByRole('radio', { name: /^it\/its/u })).not.toBeChecked();
+  });
+
   test('drops at once, silently, with only the loudness changed', async () => {
     const w = world();
     const create = vi.spyOn(w.fake, 'createCharacter');
