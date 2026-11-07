@@ -25,6 +25,7 @@ declare
   seen timestamptz := now() - interval '3 hours';
   doc jsonb;
   later jsonb;
+  want jsonb;
   cut timestamptz;
   why text;
 begin
@@ -52,30 +53,36 @@ begin
   end if;
   if (doc ->> 'seenAt')::timestamptz is distinct from seen then raise exception 'seenAt is the caller''s: %', doc -> 'seenAt'; end if;
   if (doc ->> 'openedAt')::timestamptz is distinct from my_account_opened() then raise exception 'openedAt: %', doc -> 'openedAt'; end if;
-  -- The Acts: the alerts' own, and the quoted ones to depth three.
-  if (select array_agg(x ->> 'id' order by x ->> 'id') from jsonb_array_elements(doc -> 'acts') x) is distinct from (select array_agg(i::text order by i::text) from unnest(array[q3, q2, q1, r1]) i) then
-    raise exception 'acts: %', (select array_agg(x ->> 'id') from jsonb_array_elements(doc -> 'acts') x);
-  end if;
+  -- The Acts: the alerts' own, and the quoted ones to depth three. (A shared suite may hold news alerts, which name Acts too, so the expected set
+  -- is built from the page's own alerts in three plain steps, and the chain of this file's alert is checked by name.)
+  want := (
+    with d1 as (select (x ->> 'act')::uuid as id from jsonb_array_elements(doc -> 'alerts') x where x ->> 'act' is not null),
+         d2 as (select a.target_act_id as id from acts_public a where a.id in (select id from d1) and a.target_act_id is not null),
+         d3 as (select a.target_act_id as id from acts_public a where a.id in (select id from d2) and a.target_act_id is not null)
+    select coalesce(jsonb_agg(to_jsonb(a) order by a.created_at, a.id::text collate "C"), '[]'::jsonb)
+    from acts_public a where a.id in (select id from d1 union select id from d2 union select id from d3));
+  if doc -> 'acts' is distinct from want then raise exception 'acts: %', (select array_agg(x ->> 'id') from jsonb_array_elements(doc -> 'acts') x); end if;
+  if not (select bool_and(exists (select 1 from jsonb_array_elements(doc -> 'acts') x where x ->> 'id' = i::text)) from unnest(array[q3, q2, q1, r1]) i) then raise exception 'the chain q3, q2, q1 and r1 are read'; end if;
   if exists (select 1 from jsonb_array_elements(doc -> 'acts') x where x ->> 'id' = q0::text) then raise exception 'a fourth-level quote is absent'; end if;
-  if doc -> 'acts' is distinct from (select jsonb_agg(to_jsonb(a) order by a.created_at, a.id::text collate "C") from acts_public a where a.id in (q3, q2, q1, r1)) then
-    raise exception 'the acts are the acts_public rows: %', doc -> 'acts';
-  end if;
   -- Their authors, as the faces carry them.
   if doc -> 'people' is distinct from (
-      select jsonb_agg(to_jsonb(cp) || jsonb_build_object('profile', (
+      select coalesce(jsonb_agg(to_jsonb(cp) || jsonb_build_object('profile', (
         select to_jsonb(p) from (
           select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style
-          from character_profiles r where r.character = cp.id) p)) order by cp.name)
-      from characters_public cp where cp.id = b1) then
+          from character_profiles r where r.character = cp.id) p)) order by cp.name), '[]'::jsonb)
+      from characters_public cp where cp.id in (select (x ->> 'character')::uuid from jsonb_array_elements(doc -> 'acts') x where x ->> 'character' is not null)) then
     raise exception 'people: %', doc -> 'people';
   end if;
+  if not exists (select 1 from jsonb_array_elements(doc -> 'people') x where x ->> 'id' = b1::text) then raise exception 'Bob wrote the quoted posts'; end if;
   -- The opening Acts of the alerts' threads, and the caller's reading of them.
-  if (select array_agg(x ->> 'id' order by x ->> 'id') from jsonb_array_elements(doc -> 'openings') x) is distinct from (select array_agg(i::text order by i::text) from unnest(array[o1, o2]) i) then
+  if doc -> 'openings' is distinct from (select coalesce(jsonb_agg(to_jsonb(a) order by a.thread::text collate "C"), '[]'::jsonb) from acts_public a
+       where a.seq = 1 and a.thread in (select (x ->> 'thread')::uuid from jsonb_array_elements(doc -> 'alerts') x where x ->> 'thread' is not null)) then
     raise exception 'openings: %', doc -> 'openings';
   end if;
-  if doc -> 'openings' is distinct from (select jsonb_agg(to_jsonb(a) order by a.thread::text collate "C") from acts_public a where a.id in (o1, o2)) then raise exception 'openings are the acts_public rows'; end if;
-  if doc -> 'reading' is distinct from (select jsonb_agg(to_jsonb(r) order by r.thread::text collate "C") from (select thread, furthest_seq from reading where thread in (t1, t2)) r)
-     or jsonb_array_length(doc -> 'reading') is distinct from 2 then
+  if not exists (select 1 from jsonb_array_elements(doc -> 'openings') x where x ->> 'id' = o1::text) then raise exception 'Ann''s thread''s opening is read: %', doc -> 'openings'; end if;
+  if doc -> 'reading' is distinct from (select coalesce(jsonb_agg(to_jsonb(r) order by r.thread::text collate "C"), '[]'::jsonb) from (
+       select thread, furthest_seq from reading where thread in (select (x ->> 'thread')::uuid from jsonb_array_elements(doc -> 'alerts') x where x ->> 'thread' is not null)) r)
+     or not exists (select 1 from jsonb_array_elements(doc -> 'reading') x where x ->> 'thread' = t1::text and x ->> 'furthest_seq' = '1') then
     raise exception 'reading: %', doc -> 'reading';
   end if;
   if doc::text like '%"furthest_seq": 5%' then raise exception 'another player''s reading is in the page: %', doc -> 'reading'; end if;
