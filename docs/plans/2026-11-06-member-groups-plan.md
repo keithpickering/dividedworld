@@ -34,8 +34,8 @@ and a task disagree, this paragraph wins.
 
 - *Numbers and latest definitions.* Migrations and SQL tests start at 0116. The latest definitions are:
   `queued_moves_guard` and `apply_mod_move` in 0106; `apply_meeting` and `staff_punishments` in 0110; `meeting_context`,
-  `beat_of` and `mod_allowance` in 0103; `system_tick` and `start_thread` and `spin` in 0105; `seed_instance` in 0108;
-  `characters_public` and `edit_post` in 0104; `post` in 0114; `write_staff_act`, `open_appeal`, `close_appeal` and
+  `beat_of` and `mod_allowance` in 0103; `system_tick`, `post`, `start_thread` and `spin` in 0105; `seed_instance` in
+  0108; `characters_public` and `edit_post` in 0104; `write_staff_act`, `open_appeal`, `close_appeal` and
   `refund_appeal` in 0109; `moves_log` in 0111. The board look is on `main`, with Silver in
   `instances/divided-world/ui/theme.css` and four tribute themes beside it: the bar's shape tokens must read in each.
 - *Names that moved.* `acts_move_end_payload` is a check constraint on `acts` (0051), dropped and re-added with
@@ -48,7 +48,7 @@ and a task disagree, this paragraph wins.
 - *What carries `group` to the screens (Task 3).* Besides `characters_public`, every function that builds a character
   object by explicit keys gains `group`: `thread_page`, `profile_page`, `record_page`, `presence_box` and `my_characters`
   (latest 0111), and `toCharacter` in `web/src/data/supabase.ts`.
-- *Settings.* `apologyEveryHours`, `apologyJudgeBatch` and `apologyRulingMaxWords` live under `Settings.groups`, with
+- *Settings.* `apologyEveryHours`, `apologyJudgeBatch` and `apologyRulingMaxWords` live under `Settings.apology` (not `groups`, which `ScreenSettings` uses for the group looks), with
   their defaults in `instances/divided-world/settings.ts`, validated in `engine/rules/instance.ts` and in SQL's
   `settings_held`/`setting_valid` lists, in Task 6's migration.
 - *The duty.* `apologyJudge` joins `DUTIES` and `DUTY_DEFAULTS` in `engine/system/duties.ts`; the instance assigns it
