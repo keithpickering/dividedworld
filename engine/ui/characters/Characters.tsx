@@ -95,7 +95,7 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
   const [savingPip, setSavingPip] = useState<{ readonly id: Id; readonly style: string } | null>(null);
   const [savingHidden, setSavingHidden] = useState<{ readonly id: Id; readonly hidden: boolean } | null>(null);
   const [problem, setProblem] = useState<{ readonly id: Id; readonly text: string; readonly pip?: boolean } | null>(null);
-  const [refocus, setRefocus] = useState<{ readonly id: Id; readonly from: MyCharactersPage } | null>(null);
+  const [refocus, setRefocus] = useState<{ readonly id: Id; readonly was: MyCharactersPage } | null>(null);
   const [picked, setPicked] = useState<Id | null>(() => carried(location.state));
 
   const mine = useMemo(() => [...page.characters].sort(joined), [page.characters]);
@@ -115,7 +115,7 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
      the keyboard was on is replaced when the new document lands: focus that fell to the page then goes to the panel's new main control. A focus
      that is somewhere else by then (the player moved on) is left alone. */
   useEffect(() => {
-    if (refocus === null || page === refocus.from) return;
+    if (refocus === null || page === refocus.was) return;
     setRefocus(null);
     const at = document.activeElement;
     if (at !== null && at !== document.body) return;
@@ -135,7 +135,7 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
   };
   const target = dialog ? mine.find((c) => c.id === dialog.id) ?? null : null;
   /* The dialogs have saved and refreshed the HUD's rows; the page's own document is read again in place. */
-  const done = (message: string) => { setFlash(message); if (dialog) setRefocus({ id: dialog.id, from: page }); setDialog(null); reload(); };
+  const done = (message: string) => { setFlash(message); if (dialog) setRefocus({ id: dialog.id, was: page }); setDialog(null); reload(); };
   /* Words from an earlier action are not left standing under a new one. */
   const show = (next: Dialog) => { setFlash(''); setProblem(null); setDialog(next); };
 
@@ -149,7 +149,7 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
       await player.refresh();
       reload();
       setFlash(`${c.name}'s Turn is withdrawn.`);
-      setRefocus({ id: c.id, from: page });
+      setRefocus({ id: c.id, was: page });
     } catch {
       setProblem({ id: c.id, text: 'That could not be sent. Check your connection and try again.' });
     } finally {
