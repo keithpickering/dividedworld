@@ -41,7 +41,8 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 
 /** The files the guard reads. */
 export const SOURCE = /^engine\/ui\/.*\.(css|ts|tsx)$/;
-const EXEMPT = /^engine\/ui\/tokens\.css$|^engine\/ui\/glass\/tokens\.css$|\.test\.tsx?$/;
+/* A board story (*.board.stories.tsx) draws a reference board's own test themes as data, like a test's expectation, so it is read as one. */
+const EXEMPT = /^engine\/ui\/tokens\.css$|^engine\/ui\/glass\/tokens\.css$|\.test\.tsx?$|\.board\.stories\.tsx$/;
 
 /** CSS's named colors (CSS Color 4), lowercased. */
 const NAMED = new Set(('aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue blueviolet brown burlywood '

@@ -122,7 +122,7 @@ function Profile({ character: c, doc }: { readonly character: Character; readonl
             <table className="kb-table kb-record-table" role="table">
               <caption className="kb-visually-hidden">Latest rows of the public record, newest first</caption>
               <thead role="rowgroup">
-                <tr role="row" className="kb-record-band"><td role="cell" className="kb-bar" colSpan={2}><h2>Public record</h2></td></tr>
+                <tr role="row"><td role="cell" className="kb-bar" colSpan={2}><h2>Public record</h2></td></tr>
                 <tr role="row"><th role="columnheader" scope="col">When</th><th role="columnheader" scope="col">What</th></tr>
               </thead>
               <tbody role="rowgroup">

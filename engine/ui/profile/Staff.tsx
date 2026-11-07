@@ -184,7 +184,7 @@ function ModerationLog({ staff, bot }: { readonly staff: string; readonly bot: b
       {rows !== null && rows.length > 0 && (
         <table className="kb-table kb-modlog" role="table" aria-labelledby={heading}>
           <thead role="rowgroup">
-            <tr role="row" className="kb-record-band"><td role="cell" className="kb-bar" colSpan={3}><h2 id={heading}>Moderation log</h2></td></tr>
+            <tr role="row"><td role="cell" className="kb-bar" colSpan={3}><h2 id={heading}>Moderation log</h2></td></tr>
             <tr role="row"><th role="columnheader" scope="col">When</th><th role="columnheader" scope="col">What it did</th><th role="columnheader" scope="col">How it ended</th></tr>
           </thead>
           <tbody role="rowgroup">

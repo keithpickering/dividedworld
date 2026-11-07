@@ -1,5 +1,5 @@
 /**
- * The sheet of "The page cannot be displayed" carries its own colors (--kb-sheet-* in unavailable.css), not the theme's, so
+ * The sheet of "The page cannot be displayed" carries its own colors (--kb-sheet-* in engine/ui/tokens.css), not the theme's, so
  * engine/ui/contrast.test.tsx and web/contrast.test.tsx, which hold the theme's token pairs, never see them. This holds the
  * sheet's own pairs, light and dark, each read as the browser reads it: the dark blocks laid over the light ones. The text
  * pairs need 4.5:1 and the rule 3:1, as engine/ui/contrast.ts holds the theme's.
@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { ratio } from '../contrast.ts';
 
-const css = readFileSync(join(process.cwd(), 'engine/ui/frame/unavailable.css'), 'utf8');
+const css = readFileSync(join(process.cwd(), 'engine/ui/tokens.css'), 'utf8');
 
 const PAIRS: readonly (readonly [string, string, number])[] = [
   ['--kb-sheet-fg', '--kb-sheet-bg', 4.5],
@@ -24,7 +24,7 @@ function sheetVars(source: string, dark: boolean): Record<string, string> {
   const stripped = source.replace(/\/\*[\s\S]*?\*\//gu, '');
   for (const m of stripped.matchAll(/([^{}]*?)\{([^{}]*)\}/gu)) {
     const selector = m[1]!.replace(/@media[^{]*$/u, '').trim();
-    if (!/\.kb-unavailable-sheet$/u.test(selector)) continue;
+    if (!/^:root(\[data-kb-mode="dark"\]|:not\(\[data-kb-mode="light"\]\))?$/u.test(selector)) continue;
     const isDark = /data-kb-mode="dark"|:not\(\[data-kb-mode="light"\]\)/u.test(selector);
     if (isDark && !dark) continue;
     for (const d of m[2]!.matchAll(/(--kb-sheet-[a-z-]+)\s*:\s*([^;]+);/gu)) out[d[1]!] = d[2]!.trim();

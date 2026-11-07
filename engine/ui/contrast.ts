@@ -265,7 +265,7 @@ const PRESSED_PAIRS: readonly (readonly [string, string, string])[] = [
   ['--kb-button-primary-hover-fg', '--kb-button-primary-hover-bg', 'a pressed primary Chrome button\'s label under the pointer'],
 ];
 
-const dim = (color: string, factor: number): string => `rgb(${parseColor(color).map((c) => Math.round(Math.min(255, c * factor))).join(' ')})`;
+const dim = (color: string, factor: number): string => `#${parseColor(color).map((c) => Math.round(Math.min(255, c * factor)).toString(16).padStart(2, '0')).join('')}`;
 
 /** The worst ratio of `fg` over every stop of `bg`; throws on a value that cannot be read. */
 export function worstRatio(tokens: Tokens, fg: string, bg: string): number {

@@ -165,6 +165,14 @@
   --kb-size-badge: 0.5rem;
   /* The footer badges' pixel face: the instance serves it (its glass fonts) and names it here; until it does, the board's mono. */
   --kb-font-badge: var(--kb-font-mono);
+
+  /* The cannot-display sheet is the browser's own page, so it takes its own colors, not the theme's (engine/ui/frame/unavailable.css). A theme has no reason to set them. */
+  --kb-sheet-bg: #fff;
+  --kb-sheet-fg: #000;
+  --kb-sheet-link: #000;
+  --kb-sheet-rule: #000;
+  --kb-sheet-muted: #555;
+  --kb-font-sheet: Verdana, Tahoma, Geneva, 'DejaVu Sans', sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -189,6 +197,11 @@
     --kb-meter-hi: #b0b0b0;
     --kb-meter-dark: #000;
     --kb-meter-fill: #7fb2ff;
+    --kb-sheet-bg: #1c1c1c;
+    --kb-sheet-fg: #e8e8e8;
+    --kb-sheet-link: #fff;
+    --kb-sheet-rule: #8a8a8a;
+    --kb-sheet-muted: #b0b0b0;
   }
 }
 
@@ -213,4 +226,9 @@
   --kb-meter-hi: #b0b0b0;
   --kb-meter-dark: #000;
   --kb-meter-fill: #7fb2ff;
+  --kb-sheet-bg: #1c1c1c;
+  --kb-sheet-fg: #e8e8e8;
+  --kb-sheet-link: #fff;
+  --kb-sheet-rule: #8a8a8a;
+  --kb-sheet-muted: #b0b0b0;
 }

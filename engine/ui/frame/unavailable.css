@@ -43,11 +43,6 @@
 
 /* The sheet: the browser's page, in the browser's colors. */
 .kb-unavailable-sheet {
-  --kb-sheet-bg: #fff;
-  --kb-sheet-fg: #000;
-  --kb-sheet-link: #000;
-  --kb-sheet-rule: #000;
-  --kb-sheet-muted: #555;
   box-sizing: border-box;
   display: grid;
   grid-template-columns: 48px 1fr;
@@ -56,27 +51,9 @@
   background: var(--kb-sheet-bg);
   color: var(--kb-sheet-fg);
   border: 1px solid var(--kb-frame);
-  font-family: Verdana, Tahoma, Geneva, 'DejaVu Sans', sans-serif;
+  font-family: var(--kb-font-sheet);
   font-size: var(--kb-size-body);
   line-height: 1.5;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-kb-mode="light"]) .kb-unavailable-sheet {
-    --kb-sheet-bg: #1c1c1c;
-    --kb-sheet-fg: #e8e8e8;
-    --kb-sheet-link: #fff;
-    --kb-sheet-rule: #8a8a8a;
-    --kb-sheet-muted: #b0b0b0;
-  }
-}
-
-[data-kb-mode="dark"] .kb-unavailable-sheet {
-  --kb-sheet-bg: #1c1c1c;
-  --kb-sheet-fg: #e8e8e8;
-  --kb-sheet-link: #fff;
-  --kb-sheet-rule: #8a8a8a;
-  --kb-sheet-muted: #b0b0b0;
 }
 
 /*
@@ -116,7 +93,7 @@
   margin: 0 0 8px;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--kb-sheet-rule);
-  font: bold var(--kb-size-heading) / 1.3 Verdana, Tahoma, Geneva, 'DejaVu Sans', sans-serif;
+  font: bold var(--kb-size-heading) / 1.3 var(--kb-font-sheet);
 }
 
 .kb-unavailable-sheet p {

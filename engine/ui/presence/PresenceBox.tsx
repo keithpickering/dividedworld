@@ -57,11 +57,11 @@ export function PresenceBox({ place, heading, note, snapshot }: PresenceBoxProps
   return (
     <section className="kb-presence" aria-labelledby={id}>
       {/* A period table of one column: the heading is an h2 in a cell on the light band, the names under it. It is layout, not data. */}
-      <table className="kb-table kb-presence-table" role="presentation">
+      <table className="kb-table" role="presentation">
         <tbody>
           <tr>
             <td className="kb-bar" colSpan={2}>
-              <h2 id={id} className="kb-presence-head">
+              <h2 id={id}>
                 {lead ? <><span className="kb-presence-wide">{heading}</span><span className="kb-presence-narrow">{lead[1]![0]!.toUpperCase()}{lead[1]!.slice(1)}</span></> : heading}
               </h2>
             </td>
