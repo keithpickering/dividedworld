@@ -326,7 +326,7 @@ async function onePick(r: PickRun): Promise<PickRecord> {
         const frame = chatterPrompt({
           premise: POOL_PREMISE, persona, pronouns: pronounsOr(persona.pronouns, instanceSet), career, memory, notes, thread,
           quoting: quotedPost,
-          trigger: p.trigger, offeredCards: offered, startThread: startsThread, limits, names: (id) => { const f = faces[id]; return f ? taggedName(f.name, pronounsOr(f.pronouns, instanceSet)) : 'a character'; },
+          trigger: p.trigger, offeredCards: offered, startThread: startsThread, limits, names: (id) => { const f = faces[id]; return f ? taggedName(clip(f.name, 60), pronounsOr(f.pronouns, instanceSet)) : 'a character'; },
         });
         const out = await models.chat({
           duty: 'chatter', tier: DUTY_SPECS.chatter.tier, staff: p.staff, system: frame.system, messages: [{ role: 'user', content: frame.message }],

@@ -212,7 +212,7 @@ export function renderDigest(digest: Digest, memory: Memory | null, feed: readon
   );
   section(
     'Top posts',
-    digest.excerpts.slice(0, E).map((e) => `${name(e.character)} (${e.reactions} reactions): ${clip(line(e.text), C)}`),
+    digest.excerpts.slice(0, E).map((e) => `${name(e.character)}, ${e.reactions} reactions: ${clip(line(e.text), C)}`),
     'No post drew attention.',
   );
   section('Outside', feed.slice(0, F).map((f) => `- ${clip(line(f), CLIPS.feedItem)}`), 'Nothing from outside.');

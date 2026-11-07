@@ -289,7 +289,7 @@ function modsText(f: PromptFacts): string {
     const w = pronounWords(mod.pronouns);
     out.push(
       '',
-      `## ${taggedName(oneLineText(mod.name, 64), mod.pronouns)} (key ${mod.key})`,
+      `## ${oneLineText(mod.name, 64)} (${pronounLabel(mod.pronouns)}, key ${mod.key})`,
       `Temperament: ${oneLineText(mod.temperament, 200)}. Likes boards of: ${mod.beats.length ? mod.beats.map((b) => oneLineText(b, 40)).join(', ') : 'no kind in particular'}. Lobbies for rules: ${mod.petRules.length ? mod.petRules.map((r) => oneLineText(r, 40)).join(', ') : 'none'}.`,
       career.length ? `Career: ${career.join(' ')}` : `${w.They} ${w.has} held no office before.`,
       mod.granted === null

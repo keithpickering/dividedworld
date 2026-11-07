@@ -40,7 +40,7 @@ test('a digest renders as plain text with each section and the characters by nam
   assert.ok(text.includes('1. Mario (she/her): 120'));
   assert.ok(text.includes('Mario (she/her) quoted Luigi (they/them) 2 times.'));
   assert.ok(text.includes('5 in all: fire 4, skull 1.'));
-  assert.ok(text.includes('Luigi (they/them) (7 reactions): It was me all along'));
+  assert.ok(text.includes('Luigi (they/them), 7 reactions: It was me all along'));
   assert.ok(text.includes('Opinion of Mario (she/her): 3. funny'));
   assert.ok(text.includes('- A feed item'));
   assert.ok(!/[<>]|\{|\}/.test(text.replace(/## /g, '')), 'plain text, no markup or json');

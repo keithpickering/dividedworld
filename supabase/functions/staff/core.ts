@@ -182,7 +182,7 @@ export async function learnMod(db: Db, roster: readonly Persona[], settings: Pic
   const notes = await db.rpc<string[]>('staff_notes_recent', { of_staff: staff, since: since ? new Date(Date.parse(since)).toISOString() : null, most: settings.pool.notesRead });
   const mentioned = memory ? [...memory.opinions.map((o) => o.character), ...memory.grudges.map((g) => g.character)] : [];
   const faces = mentioned.length ? await db.rpc<Record<string, { name: string; pronouns: PronounSet | null }>>('character_faces', { ids: mentioned }) : {};
-  const names = Object.fromEntries(Object.entries(faces).map(([id, f]) => [id, taggedName(f.name, pronounsOr(f.pronouns, fallback))]));
+  const names = Object.fromEntries(Object.entries(faces).map(([id, f]) => [id, taggedName(f.name.slice(0, 60), pronounsOr(f.pronouns, fallback))]));
   return { persona, standing, career, memory, notes, names, pronouns: own };
 }
 

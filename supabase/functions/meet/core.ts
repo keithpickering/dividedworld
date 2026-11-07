@@ -231,7 +231,7 @@ export async function runMeeting(
       bank,
       mods,
       // A name for a character a memory mentions: the digest's own names, and 'someone' for any other.
-      characterName: (id) => { const c = digest.characters.find((x) => x.id === id); return c ? taggedName(c.name, c.pronouns) : 'someone'; },
+      characterName: (id) => { const c = digest.characters.find((x) => x.id === id); return c ? taggedName(c.name.slice(0, 60), c.pronouns) : 'someone'; },
       successorAllowed,
       career,
       notes: bossNotes,

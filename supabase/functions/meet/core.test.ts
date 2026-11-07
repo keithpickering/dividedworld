@@ -199,6 +199,18 @@ test('every character the model is shown carries its pronouns, a character with 
   assert.match(m.chats[0]!.system, /Your pronouns are \w+\/\w+ \(/, 'the Boss is told its own');
 });
 
+test('the Boss\'s own pronouns: its file\'s, else settings.pronouns (a database without one is refused, so the it-set is learnMod\'s)', async () => {
+  const she = { subject: 'she', object: 'her', determiner: 'her', possessive: 'hers', reflexive: 'herself', plural: false };
+  const told = async (own: unknown, instanceDefault: unknown) => {
+    const inst = { ...quiet, settings: { ...quiet.settings, pronouns: instanceDefault }, system: { ...quiet.system, roster: quiet.system.roster.map((p) => (p.key === BOSS ? { ...p, pronouns: own } : p)) } } as unknown as Instance;
+    const m = fakeModels(answer([rename(0)]));
+    await run(fakeDb().db, m.models, inst, SLOT, clock, noFeeds);
+    return m.chats[0]!.system;
+  };
+  assert.match(await told(undefined, she), /Your pronouns are she\/her \(she, her, her, hers, herself\)\./, 'settings.pronouns when the file names none');
+  assert.match(await told({ ...she, subject: 'xe', object: 'xem', determiner: 'xyr', possessive: 'xyrs', reflexive: 'xemself' }, she), /Your pronouns are xe\/xem/, 'its file\'s first');
+});
+
 test('a rename whose name fails the style is dropped, not rewritten', async () => {
   const d = fakeDb();
   const m = fakeModels(answer([rename(0, { params: { board: BOARD, name: 'General Discussion', premise: 'Talk.' } }), rename(1)]));

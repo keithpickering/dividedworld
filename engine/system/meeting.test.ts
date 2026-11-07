@@ -341,10 +341,10 @@ test('a Mod\'s section is written with its own pronouns: they/them reads "Their 
   };
   const facts = { boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: true, roster: [{ key: 'mod-x', name: 'Xe', pronouns: PRONOUN_PRESETS.he }], notes: [], career: { led: [], offices: [] }, characterName: () => 'someone' };
   const they = meetingSystemPrompt({ ...facts, mods: [mod] });
-  assert.ok(they.includes('## Sir Patrols-a-Lot (they/them) (key mod-one)'), 'the heading');
+  assert.ok(they.includes('## Sir Patrols-a-Lot (they/them, key mod-one)'), 'the heading');
   for (const line of ['They have held no office before.', 'You last handed them 3 moves; they spent 2', 'Their beat now: Mario Fan Games', 'Your standing order to them: Crack down', 'Their memory: hobby birdwatching', 'Their notes since their last memory (their own thoughts;']) assert.ok(they.includes(line), line);
   const it = meetingSystemPrompt({ ...facts, mods: [{ ...mod, pronouns: PRONOUN_PRESETS.it }] });
-  for (const line of ['## Sir Patrols-a-Lot (it/its) (key mod-one)', 'It has held no office before.', 'You last handed it 3 moves; it spent 2', 'Its beat now: Mario Fan Games', 'Its notes since its last memory (its own thoughts;']) assert.ok(it.includes(line), line);
+  for (const line of ['## Sir Patrols-a-Lot (it/its, key mod-one)', 'It has held no office before.', 'You last handed it 3 moves; it spent 2', 'Its beat now: Mario Fan Games', 'Its notes since its last memory (its own thoughts;']) assert.ok(it.includes(line), line);
   assert.ok(they.includes(`${testSystem.roster[0]!.persona}\n\nYour pronouns are she/her (she, her, her, hers, herself).`), 'the self line follows the persona');
   assert.ok(they.includes('mod-x (Xe, he/him)'), 'the successors\' roster');
   const section = they.slice(they.indexOf('## Sir Patrols-a-Lot'), they.indexOf('The season is in its last week'));

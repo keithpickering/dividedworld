@@ -295,8 +295,8 @@ const clip = (s: string, n: number): string => {
 export function memoryLines(memory: Memory | null, names: (id: string) => string): string[] {
   if (memory === null) return [];
   const out = [`Your hobby: ${clip(memory.hobby.name, 80)}.`];
-  for (const o of memory.opinions.slice(0, 8)) out.push(`Opinion of ${clip(names(o.character), 60)}: ${o.score}. ${clip(o.note, 120)}`);
-  for (const g of memory.grudges.slice(0, 5)) out.push(`Grudge against ${clip(names(g.character), 60)}. ${clip(g.note, 120)}`);
+  for (const o of memory.opinions.slice(0, 8)) out.push(`Opinion of ${names(o.character)}: ${o.score}. ${clip(o.note, 120)}`);
+  for (const g of memory.grudges.slice(0, 5)) out.push(`Grudge against ${names(g.character)}. ${clip(g.note, 120)}`);
   return out;
 }
 

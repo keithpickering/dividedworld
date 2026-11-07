@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { FILINGS_PER_RUN, runFilings } from './core.ts';
+import { FILINGS_PER_RUN, learnMod, runFilings } from './core.ts';
 import { DatabaseError, type Db } from '../_shared/rpc.ts';
 import { instance as dividedWorld } from '../_shared/instance.ts';
 import { AnswerRejected, LedgerWriteFailed, models as realModels } from '../_shared/models/index.ts';
@@ -495,4 +495,34 @@ test('through the real model layer: each call is a ledger row naming the filing 
 test('the database failing before anything is read fails the run loudly, and a bad slot is refused', async () => {
   await assert.rejects(run(fakeDb({ failOn: { filings_due: 'always' } }), fakeModels(() => ({ words: 'x' }))), /connection dropped/);
   await assert.rejects(runFilings(fakeDb().db, fakeModels(() => ({})).models, dividedWorld, 'not a time', clock), /slot is not a time/);
+});
+
+/* ------------------------------------------------------------------------------- the Mod's own pronouns and the names it is shown ---- */
+
+test('learnMod: a persona\'s own pronouns are its file\'s, else settings.pronouns, else it/its; a memory opinion\'s name is tagged from character_faces and cut before the tag', async () => {
+  const she = { subject: 'she', object: 'her', determiner: 'her', possessive: 'hers', reflexive: 'herself', plural: false };
+  const OPINED = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  const LONG = 'L'.repeat(80);
+  const db: Db = {
+    async rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
+      switch (fn) {
+        case 'mod_standing': return { office: 'mod', allowance: 1, order: null, beat: [] } as T;
+        case 'staff_career': return { led: [], offices: [] } as T;
+        case 'staff_memory_latest': return { hobby: { name: 'h', since: 's', from: 'f' }, opinions: [{ character: OPINED, score: 1, note: 'n' }], grudges: [], wheelhouse: [], realWorld: [], marks: [] } as T;
+        case 'staff_memory_at': return null as T;
+        case 'staff_notes_recent': return [] as T;
+        case 'character_faces': return { [OPINED]: { name: LONG, pronouns: null } } as T;
+        default: throw new Error(`unexpected ${fn}`);
+      }
+    },
+  };
+  const base = dividedWorld.system.roster[0]!;
+  const pool = dividedWorld.settings.pool;
+  const withOwn = (own: unknown) => [{ ...base, pronouns: own }] as unknown as typeof dividedWorld.system.roster;
+  assert.deepEqual((await learnMod(db, withOwn(undefined), { pool, pronouns: she }, base.key)).pronouns, she, 'settings.pronouns');
+  const known = await learnMod(db, withOwn(undefined), { pool }, base.key);
+  assert.equal(known.pronouns.subject, 'it', 'the engine\'s it-set');
+  assert.equal(known.names[OPINED], `${'L'.repeat(60)} (it/its)`, 'cut to 60 before the tag, the missing profile taking the default');
+  const tagged = await learnMod(db, withOwn(undefined), { pool, pronouns: she }, base.key);
+  assert.equal(tagged.names[OPINED], `${'L'.repeat(60)} (she/her)`);
 });
