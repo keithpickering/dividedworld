@@ -1174,7 +1174,8 @@ begin
       -- The pool and the walk (a limit of the pool, 5,001) may read the author's own posts, A: the bound a filtered search is held to is the filter's own rows, as a
       -- board's is its matches (M), and whether the planner walks or sorts for a limit this near A's matches turns on its sample of the word (CI's Postgres sorted).
       -- The page and the count stay held to their limits, which is what a search by a prolific author pays on every request.
-      if ok_n > 1001 then allowed := greatest(allowed, 40000 + 256); end if;
+      -- A walk adds its per-match probes to that, as every walk's allowance above does (3 rows a match).
+      if ok_n > 1001 then allowed := greatest(allowed, 40000 + 256 + case when s like '%order by k.created_at%' then 3 * ok_n else 0 end); end if;
       bounded_shapes := bounded_shapes + 1;
       worst := greatest(worst, read_n);
       raise notice 'prolific: % rows read (% allowed) for limit %', read_n, allowed, ok_n;
