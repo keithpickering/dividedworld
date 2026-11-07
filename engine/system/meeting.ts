@@ -358,7 +358,7 @@ export function inheritedText(due: readonly InheritedMove[], graceDays: number):
 export interface ReferenceIds {
   readonly boards: readonly { readonly id: string; readonly name: string }[];
   readonly threads: readonly { readonly id: string; readonly title: string }[];
-  readonly characters: readonly { readonly id: string; readonly name: string }[];
+  readonly characters: readonly { readonly id: string; readonly name: string; /** The name of the group it is in now (`character_groups`), when known. */ readonly group?: string }[];
 }
 
 /** How many of each id the meeting hands the model: the lists are bounded here, whatever the instance holds. */
@@ -373,7 +373,7 @@ export function referenceText(ids: ReferenceIds): string {
     '# Ids you may use',
     ...part('Boards', ids.boards.slice(0, REFERENCE_MOST.boards).map((b) => `- ${oneLine(b.name, 80)}: ${b.id}`), 'No board.'),
     ...part('Hot threads', ids.threads.slice(0, REFERENCE_MOST.threads).map((t) => `- ${oneLine(t.title, 80)}: ${t.id}`), 'No thread.'),
-    ...part('Characters', ids.characters.slice(0, REFERENCE_MOST.characters).map((c) => `- ${oneLine(c.name, 64)}: ${c.id}`), 'No character.'),
+    ...part('Characters', ids.characters.slice(0, REFERENCE_MOST.characters).map((c) => `- ${oneLine(c.name, 64)}${c.group ? ` (${oneLine(c.group, 40)})` : ''}: ${c.id}`), 'No character.'),
   ].join('\n');
 }
 
@@ -575,7 +575,6 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
       if (!UUID.test(who) || !c.isPublic(who)) return drop(`${path}.params.character`, 'publicCharacter');
       if (c.groups.capped.has(who)) return drop(`${path}.params.character`, 'underPunishmentCap');
       if (c.groups.held.has(who) || grouped.has(who)) return drop(`${path}.params.character`, 'inNoGroupMove');
-      grouped.add(who);
       given['character'] = who;
       favor = tone === 'favor';
       if (given['board'] !== undefined) {
@@ -648,6 +647,7 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
         given['checkAt'] = half;
       }
     }
+    if (kind.key === 'conferGroup') grouped.add(String(given['character']));
     kept.push({
       kind: kind.key,
       params: given,

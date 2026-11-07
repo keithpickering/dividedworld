@@ -1,10 +1,31 @@
 -- Task 8 of the member groups plan: the meeting confers groups.
+--   mod_cap()            the targeting cap, {punishments, days}: the modBots setting's `cap`, else the one default. Read by the conferGroup guard (0117), start_visit and meeting_context.
+--   character_groups     the name of the group each given character is in now, for the meeting's reference list; service role only. Public facts (a character's group is on its postbit).
 --   meeting_context      (0103) also carries `groups`: the conferred catalog {key, name, tone}, and the characters that are held (a group move in force on them, or queued and not
---                        held: the guard's one-at-a-time rule) or capped (staff_punishments at the modBots cap), each with the group it is in now. The meeting can't choose either.
+--                        held: the guard's one-at-a-time rule) or capped (staff_punishments at the modBots cap), (the group each is in is read by character_groups for the ids the meeting shows). The meeting can't choose either.
 --                        Every fact is public (a group move is a public Act; the cap counts public Acts); nothing reads an owner, a class or a reactor.
 --   apply_meeting        (0110) also keeps a favor's `checkAt` between its go-live and its expiry as the queue lands them: the answer's check was set from the meeting's clock,
 --                        and a meeting applied later would otherwise queue a check the guard refuses (which would fail the whole meeting). A check outside the window is
 --                        moved to half the favor's expiry from its go-live. Everything else as 0110 wrote it.
+
+create function mod_cap() returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce((select st.value -> 'cap' from settings st where st.key = 'modBots'), '{"punishments": 3, "days": 7}'::jsonb)
+$$;
+revoke execute on function mod_cap() from public, anon, authenticated;
+grant execute on function mod_cap() to service_role;
+
+create function character_groups(ids jsonb) returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', c.id, 'group', coalesce(g.name, group_now(c.id))) order by c.id), '[]'::jsonb)
+  from characters_public c
+  left join group_kinds g on g.key = group_now(c.id)
+  where jsonb_typeof(character_groups.ids) = 'array' and c.id in (
+    select t.v::uuid from jsonb_array_elements_text(character_groups.ids) t(v)
+    where t.v ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+$$;
+revoke execute on function character_groups(jsonb) from public, anon, authenticated;
+grant execute on function character_groups(jsonb) to service_role;
 
 create or replace function meeting_context() returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
@@ -32,7 +53,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
     -- Only those two kinds are listed, which a busy instance keeps to a handful; every other character is in its earned group and free to be chosen.
     'groups', jsonb_build_object(
       'conferred', coalesce((select jsonb_agg(jsonb_build_object('key', g.key, 'name', g.name, 'tone', g.tone) order by g.tone desc, g.key) from group_kinds g where g.source = 'conferred'), '[]'),
-      'characters', coalesce((select jsonb_agg(jsonb_build_object('id', x.id, 'group', group_now(x.id), 'capped', x.capped, 'held', x.held) order by x.id)
+      'characters', coalesce((select jsonb_agg(jsonb_build_object('id', x.id, 'capped', x.capped, 'held', x.held) order by x.id)
         from (select k.id, k.held, k.capped from (
             select c.id, h.id is not null as held,
               staff_punishments(c.id, cap.days) >= cap.punishments as capped
@@ -42,8 +63,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
                        union
                        select distinct lower(q.params ->> 'character')::uuid from queued_moves q
                         where q.kind = 'conferGroup' and q.landed_act is null and q.held_at is null and q.refused_at is null) h on h.id = c.id
-            cross join (select coalesce((select (x.value #>> '{cap,punishments}')::integer from settings x where x.key = 'modBots'), 3) as punishments,
-                               coalesce((select (x.value #>> '{cap,days}')::integer from settings x where x.key = 'modBots'), 7) as days) cap
+            cross join (select (mod_cap() ->> 'punishments')::integer as punishments, (mod_cap() ->> 'days')::integer as days) cap
             where c.staff is null
               and (h.id is not null
                    or c.id in (select (i.payload ->> 'character')::uuid from acts i
@@ -315,4 +335,75 @@ begin
       'patrolsWritten', jsonb_build_object('written', pat_n, 'skipped', pat_skipped)));
   return jsonb_build_object('status', 'applied', 'meeting', apply_meeting.meeting, 'queued', spent, 'bank_before', bal, 'bank_after', bal2 - spent - handed,
     'returned', returned, 'handed', handed);
+end $$;
+
+-- start_visit (0110), reading the cap from mod_cap(). Everything else as 0110 wrote it.
+create or replace function start_visit(post_act uuid, staff text, charge jsonb) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  p record;
+  ch jsonb;
+  open_visit uuid;
+  held jsonb;
+  top text;
+  same boolean;
+  ends timestamptz;
+  written uuid;
+  joined uuid;
+  sprung jsonb;
+  cap jsonb;
+  patrol bigint;
+begin
+  select a.id, a.thread, t.board, a.character as author, c.staff is not null as by_staff into p
+  from acts a join threads t on t.id = a.thread join characters c on c.id = a.character where a.id = post_act and a.kind in ('post', 'spin');
+  if not found then raise exception 'there is no such post to visit' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  if p.by_staff then return null; end if;
+  if jsonb_typeof(charge) is distinct from 'object' or charge ->> 'band' is null or charge ->> 'band' not in ('minor', 'moderate', 'severe') or charge ->> 'cause' is null or charge ->> 'cause' not in ('rule', 'report', 'patrol', 'tail', 'backfire') then
+    raise exception 'a charge names its band and its cause' using errcode = '22023';
+  end if;
+  ch := jsonb_strip_nulls(jsonb_build_object('predicate', charge -> 'predicate', 'rule', charge -> 'rule')) || jsonb_build_object(
+    'rule_number', coalesce(charge -> 'rule_number', 'null'::jsonb), 'board', coalesce(charge ->> 'board', p.board::text), 'band', charge ->> 'band', 'cause', charge ->> 'cause',
+    'about_act', coalesce(charge ->> 'about_act', post_act::text));
+  -- One decision per post at a time: two charges drawn at once meet here, and the second joins.
+  perform pg_advisory_xact_lock(hashtextextended('kayfabb.visit:' || post_act::text, 0));
+  -- The targeting cap (the Mod Bots design, section 8): a patrol's finding is refused for a character that staff has already punished `cap.punishments` times in `cap.days`
+  -- (staff_punishments, from public Acts: patrol findings and backfires that landed or are still open). Nothing is shown to anyone; the drop is recorded on the patrol's
+  -- row, once per post. Only a patrol's choice meets it: a rule break, a player's report and a tail are never refused. The character's own lock makes the count and the
+  -- visit one decision, so two patrols at once do not both pass a cap with room for one.
+  if ch ->> 'cause' = 'patrol' then
+    perform pg_advisory_xact_lock(hashtextextended('kayfabb.cap:' || p.author::text, 0));
+    cap := mod_cap();
+    if staff_punishments(p.author, (cap ->> 'days')::integer) >= (cap ->> 'punishments')::integer then
+      if charge ->> 'patrol_id' ~ '^[0-9]{1,18}$' then
+        patrol := (charge ->> 'patrol_id')::bigint;
+        update patrols x set dropped = x.dropped || jsonb_build_array(jsonb_build_object('post', post_act, 'why', 'cap', 'staff', start_visit.staff))
+        where x.id = patrol and not x.dropped @> jsonb_build_array(jsonb_build_object('post', post_act::text, 'why', 'cap'));
+      end if;
+      return jsonb_build_object('visit', null, 'capped', true);
+    end if;
+  end if;
+  -- The open row is taken for update: a filing (or any end) holding it makes this wait, and then it finds the visit gone and decides afresh, never joining a visit that
+  -- has ended.
+  select o.visit_act into open_visit from visits_open o where o.post = post_act for update;
+  same := visit_charge_repeats(post_act, ch);
+  if same then
+    return case when open_visit is not null then jsonb_build_object('visit', open_visit, 'joined', false) else jsonb_build_object('visit', null, 'repeat', true) end;
+  end if;
+  if open_visit is not null then
+    -- A second charge joins; the band the visit holds is the highest of its charges.
+    held := visit_charges(open_visit);
+    top := (select c ->> 'band' from jsonb_array_elements(held || jsonb_build_array(ch)) c
+            order by case c ->> 'band' when 'severe' then 3 when 'moderate' then 2 else 1 end desc limit 1);
+    joined := (write_staff_act(staff, 'visit_join', p.thread, open_visit, jsonb_build_object('charge', ch, 'band', top)) ->> 'id')::uuid;
+    return jsonb_build_object('visit', open_visit, 'joined', true, 'join', joined);
+  end if;
+  ends := now() + visit_window(post_act, staff);
+  written := (write_staff_act(staff, 'visit', p.thread, post_act, jsonb_build_object(
+    'charges', jsonb_build_array(ch), 'ends_at', ends, 'challenge', visit_challenge(post_act, staff), 'line', visit_line('visitArrived', staff, jsonb_build_array(ch)))) ->> 'id')::uuid;
+  -- A trap set on the post springs when a visit starts on it, and the sprung trap ends the visit (trapped, by the spring): its Acts stay.
+  sprung := spring_traps('visit', post_act, written);
+  if sprung is not null then
+    perform end_visit(written, 'trapped', (sprung ->> 'id')::uuid, 'A trap set on this post sprang as the visit began, and the visit ended.');
+  end if;
+  return jsonb_build_object('visit', written, 'joined', false, 'ends_at', ends) || case when sprung is not null then jsonb_build_object('sprung', sprung) else '{}'::jsonb end;
 end $$;

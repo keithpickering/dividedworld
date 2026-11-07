@@ -800,7 +800,7 @@ begin
         raise exception 'that character is already in a group a move put it in' using errcode = '23514';
       end if;
       if grp.tone = 'punishment' then
-        cap := coalesce((select s.value -> 'cap' from settings s where s.key = 'modBots'), '{"punishments": 3, "days": 7}'::jsonb);
+        cap := mod_cap();
         if staff_punishments(target.id, (cap ->> 'days')::integer) >= (cap ->> 'punishments')::integer then
           raise exception '% has been punished % times in % days, the most staff may', target.name, cap ->> 'punishments', cap ->> 'days' using errcode = '23514';
         end if;

@@ -158,13 +158,13 @@ begin
   r := meeting_context() -> 'groups' -> 'characters';
   if jsonb_array_length(r) is distinct from 3 then raise exception 'exactly the held (in force, queued) and the capped are listed: %', r; end if;
   entry := (select e from jsonb_array_elements(r) e where e ->> 'id' = held::text);
-  if entry is distinct from jsonb_build_object('id', held, 'group', group_now(held), 'capped', false, 'held', true) or entry ->> 'group' is distinct from 'teachersPet' then
+  if entry is distinct from jsonb_build_object('id', held, 'capped', false, 'held', true) then
     raise exception 'a character in force: %', entry;
   end if;
   entry := (select e from jsonb_array_elements(r) e where e ->> 'id' = queued::text);
-  if entry is distinct from jsonb_build_object('id', queued, 'group', group_now(queued), 'capped', false, 'held', true) then raise exception 'a character queued and unheld: %', entry; end if;
+  if entry is distinct from jsonb_build_object('id', queued, 'capped', false, 'held', true) then raise exception 'a character queued and unheld: %', entry; end if;
   entry := (select e from jsonb_array_elements(r) e where e ->> 'id' = capped::text);
-  if entry is distinct from jsonb_build_object('id', capped, 'group', group_now(capped), 'capped', true, 'held', false) then raise exception 'a capped character: %', entry; end if;
+  if entry is distinct from jsonb_build_object('id', capped, 'capped', true, 'held', false) then raise exception 'a capped character: %', entry; end if;
   if exists (select 1 from jsonb_array_elements(r) e where e ->> 'id' in (freed::text, windowed::text, plain::text, staffc::text)) then
     raise exception 'a held-by-admin move, two punishments in the window, a lapsed favor or a staff character is listed: %', r;
   end if;
@@ -173,11 +173,27 @@ begin
   if got is null then raise exception 'the guard let a listed capped character through'; end if;
   got := pg_temp.queue('gm-boss', jsonb_build_object('character', held, 'group', 'trialMembers'), pg_temp.posts_on(games));
   if got is null then raise exception 'the guard let a listed held character through'; end if;
+  -- The reference list's groups: character_groups names the group each shown character is in now (a rung's or a conferred group's name), by id, for ids that are characters.
+  r := character_groups(jsonb_build_array(held, plain, gen_random_uuid(), 'not a uuid', null));
+  if (select e ->> 'group' from jsonb_array_elements(r) e where e ->> 'id' = held::text) is distinct from 'Teacher''s Pet'
+     or (select e ->> 'group' from jsonb_array_elements(r) e where e ->> 'id' = plain::text) is distinct from 'Members'
+     or jsonb_array_length(r) is distinct from 2 then
+    raise exception 'character_groups: %', r;
+  end if;
+  if character_groups('"x"') is distinct from '[]'::jsonb then raise exception 'character_groups of a non-list'; end if;
+  -- One cap in one place: mod_cap reads the setting, and falls back to the one default when the setting is not there.
+  if mod_cap() is distinct from '{"punishments": 3, "days": 7}'::jsonb then raise exception 'mod_cap: %', mod_cap(); end if;
+  delete from settings where key = 'modBots';
+  if mod_cap() is distinct from '{"punishments": 3, "days": 7}'::jsonb then raise exception 'mod_cap with no setting: %', mod_cap(); end if;
+  got := pg_temp.refusal('select staff_punishments(' || quote_literal(capped::text) || '::uuid, (mod_cap() ->> ''days'')::integer)');
+  if got is not null then raise exception 'mod_cap is unusable: %', got; end if;
   -- Only the service role reads it (as before).
   perform tests.become(pg_temp.ann());
   got := pg_temp.refusal('select meeting_context()');
-  perform tests.unbecome();
   if got is null then raise exception 'a player read the meeting''s context'; end if;
+  got := pg_temp.refusal('select character_groups(''[]'')');
+  perform tests.unbecome();
+  if got is null then raise exception 'a player read character_groups'; end if;
 end $$;
 
 -- ---- 2. apply_meeting lands a conferGroup move with its checkAt ----

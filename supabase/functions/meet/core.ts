@@ -101,7 +101,7 @@ interface Context {
    */
   readonly groups?: {
     readonly conferred: readonly { readonly key: string; readonly name: string; readonly tone: 'punishment' | 'favor' }[];
-    readonly characters: readonly { readonly id: string; readonly group: string; readonly capped: boolean; readonly held: boolean }[];
+    readonly characters: readonly { readonly id: string; readonly capped: boolean; readonly held: boolean }[];
   };
 }
 
@@ -241,6 +241,11 @@ export async function runMeeting(
       roster: tuned.system.roster.filter((b) => successors.has(b.key)).map((b) => ({ key: b.key, name: b.name })),
     });
     const notes = skipped.map((f) => `The feed "${f.name}" could not be read today (${f.why}).`);
+    // The group each shown character is in now, by name, for the reference list: one read for the ids the list holds.
+    const shown = digest.characters.filter((c) => !c.staff).slice(0, REFERENCE_MOST.characters);
+    const groupOf = new Map(
+      (shown.length ? await db.rpc<{ id: string; group: string }[]>('character_groups', { ids: shown.map((c) => c.id) }) : []).map((g) => [g.id.toLowerCase(), g.group]),
+    );
     const message = [
       renderDigest(digest, memory, titles),
       ...(due.length ? ['', ...inheritedText(due, settings.inheritanceGraceDays)] : []),
@@ -249,7 +254,7 @@ export async function runMeeting(
       referenceText({
         boards: context.boards,
         threads: digest.threads.map((t) => ({ id: t.thread, title: t.title })),
-        characters: digest.characters.filter((c) => !c.staff).map((c) => ({ id: c.id, name: c.name })).slice(0, REFERENCE_MOST.characters),
+        characters: shown.map((c) => ({ id: c.id, name: c.name, group: groupOf.get(c.id.toLowerCase()) })),
       }),
       '',
       'Hold your meeting.',

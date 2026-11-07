@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { systemSettings, testSystem } from '../rules/test-system.ts';
 import { DEMAND_KINDS } from './demands.ts';
-import { DEMAND_ID_ROLES, MEETING_RULE, inheritedText, meetingSystemPrompt, namedCharacters, repairAnswer, ruleSchema, type InheritedMove, type RepairContext } from './meeting.ts';
+import { DEMAND_ID_ROLES, MEETING_RULE, inheritedText, meetingSystemPrompt, namedCharacters, referenceText, repairAnswer, ruleSchema, type InheritedMove, type RepairContext } from './meeting.ts';
 import { noteMost } from './memory.ts';
 import { phaseAt } from './phases.ts';
 
@@ -463,4 +463,20 @@ test('the prompt lists the conferred groups with their tones and the rules for c
   assert.match(text, /capped \(punished[^\n]*or held \(already in a group move\) cannot be chosen/);
   assert.match(text, /a Mod may be handed setRule and conferGroup punishments on its beat/);
   assert.ok(!/Group moves\./.test(meetingSystemPrompt(facts)), 'no conferred groups, no section');
+});
+
+
+test('the reference list names the group each character is in now beside its name; a character with none shown is listed as before', () => {
+  const text = referenceText({ boards: [], threads: [], characters: [{ id: ANN, name: 'Ann the Great', group: 'Trial Members' }, { id: BOB, name: 'Bob' }] });
+  assert.match(text, new RegExp(`- Ann the Great \\(Trial Members\\): ${ANN}`));
+  assert.match(text, new RegExp(`- Bob: ${BOB}`));
+});
+
+test('a first group move dropped for its board does not reserve its character: a valid second move on the same character stands', () => {
+  const bad = groupMove({ character: ANN, group: 'trialMembers', board: OTHER_BOARD }, apology);
+  const good = groupMove({ character: ANN, group: 'trialMembers' }, posts);
+  const r = repairedGroup([bad, good]);
+  assert.equal(r.moves.length, 1);
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].params.board' && t.predicate === 'isBoard'));
+  assert.ok(!r.trims.some((t) => t.path === 'moves[1].params.character'), JSON.stringify(r.trims));
 });

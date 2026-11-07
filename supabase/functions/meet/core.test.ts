@@ -71,7 +71,7 @@ interface World {
   /** The rules in force as meeting_context() lists them (0103). */
   rules?: { board: string | null; predicate: string; param: unknown; number: number }[];
   /** The groups as meeting_context() lists them (0119): the conferred catalog, and the characters that are capped or held. */
-  groups?: { conferred: { key: string; name: string; tone: string }[]; characters: { id: string; group: string; capped: boolean; held: boolean }[] };
+  groups?: { conferred: { key: string; name: string; tone: string }[]; characters: { id: string; capped: boolean; held: boolean }[] };
   /** What the apply says it returned from the Mods (default: nothing is said). */
   applyThrows?: boolean;
 }
@@ -94,6 +94,7 @@ function fakeDb(w: World = {}) {
           return { season: { startsAt: NOW - 30 * DAY, endsAt: NOW + (w.endsIn ?? 60 * DAY) }, boss: w.boss ?? BOSS, lastSlot: '2026-10-31T09:23:00.000Z', boards: [{ id: BOARD, name: 'Mario Fan Games' }, { id: BOARD2, name: 'Off Topic' }], successors: w.successors ?? dividedWorld.system.roster.map((b) => b.key).filter((k) => k !== (w.boss ?? BOSS)), ...(w.inheritanceDue ? { inheritanceDue: w.inheritanceDue } : {}), ...(w.mods ? { mods: w.mods } : {}), ...(w.rules ? { rules: w.rules } : {}), ...(w.groups ? { groups: w.groups } : {}) } as T;
         case 'system_digest':
           return { since: args.since, until: args.until, threads: [{ thread: HOT, title: 'Pineapple', board: 'Mario Fan Games', posts: 4, heat: 1, controversy: 0.5, length: 9 }], standings: [], moves: [], quotes: [], bossReactions: [], excerpts: [], characters: [{ id: ANN, name: 'Ann the Great', staff: false }] } as T;
+        case 'character_groups': return (args.ids as string[]).map((id) => ({ id, group: id === ANN ? 'Trial Members' : 'Members' })) as T;
         case 'staff_notes_recent': return (w.notes ?? []) as T;
         case 'staff_career': return (w.career ?? { led: [], offices: [] }) as T;
         case 'staff_memory_at': return (w.memories?.[String(args.staff)] ? (w.memoryAt ?? '2026-10-31T09:23:00.000Z') : null) as T;
@@ -676,7 +677,7 @@ test('no judgment reads who owns a mask: the meeting reads no owner, class or re
 test('the context\'s groups reach the prompt and the repair: a favor gets its check, a punishment its apology, a capped or held character is dropped', async () => {
   const groups = {
     conferred: [{ key: 'trialMembers', name: 'Trial Members', tone: 'punishment' }, { key: 'teachersPet', name: 'Teacher\'s Pet', tone: 'favor' }],
-    characters: [{ id: BOB, group: 'members', capped: true, held: false }, { id: HELD, group: 'teachersPet', capped: false, held: true }],
+    characters: [{ id: BOB, capped: true, held: false }, { id: HELD, capped: false, held: true }],
   };
   const d = fakeDb({ groups, publicIds: [ANN, BOB, HELD] });
   const demand = { kind: 'postsOnBoard', params: { board: BOARD, count: 5 } };
@@ -702,4 +703,14 @@ test('a database with no groups in its context (an older one) drops every group 
   assert.equal(out.status, 'ok', JSON.stringify(out));
   assert.equal(d.state.applied[0]!.payload.moves.length, 0);
   assert.ok(out.trims.some((t: any) => t.path === 'moves[0].params.group' && t.predicate === 'conferredGroup'));
+});
+
+
+test('the Boss is shown each reference character\'s group now, read for the ids it is shown', async () => {
+  const d = fakeDb({});
+  const m = fakeModels(answer([rename(0)]));
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'ok', JSON.stringify(out));
+  assert.ok(m.chats[0]!.messages[0]!.content.includes(`- Ann the Great (Trial Members): ${ANN}`), m.chats[0]!.messages[0]!.content);
+  assert.deepEqual(d.calls.find((c) => c.fn === 'character_groups')!.args, { ids: [ANN] });
 });
