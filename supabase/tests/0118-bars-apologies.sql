@@ -9,6 +9,7 @@
 --    a second apology while one waits, or within apologyEveryHours of one accepted, rejected or waiting, is refused, and one after a `returned` (or after the day) is allowed.
 -- 5. rule_apology (service role): returned sets the row only; accepted and rejected write the ruling as a post by the move's staff character in the apology's thread, with the
 --    payload {ruling, apology}; a second ruling on a ruled row is refused; an accepted one meets the demand, so system_tick ends the move `met` and lifts the bar.
+-- 5b. A ruling on a move whose staff persona has since been benched sets the row all the same, and writes no post.
 -- 6. pending_apologies (service role): the pending rows, oldest first, at most apologyJudgeBatch; a player cannot call either.
 
 create function pg_temp.announcements() returns uuid language sql as $$
@@ -79,7 +80,7 @@ declare
 begin
   seed := jsonb_build_object(
     'settings', jsonb_build_object('systemEnabled', true,
-      'groups', jsonb_build_object('apologyEveryHours', 24, 'apologyJudgeBatch', 2, 'apologyRulingMaxWords', 80),
+      'apology', jsonb_build_object('apologyEveryHours', 24, 'apologyJudgeBatch', 2, 'apologyRulingMaxWords', 80),
       'systemLines', jsonb_build_object('moveLanded', jsonb_build_array('It is done: {move}.'), 'moveMet', jsonb_build_array('Met, {move}.')),
       'systemMoveWords', jsonb_build_object('conferGroup', 'moving a member into "{groupName}"')),
     'groups', jsonb_build_array(
@@ -88,7 +89,8 @@ begin
       jsonb_build_object('key', 'teachersPet', 'name', 'Teacher''s Pet', 'color', '#c2408f', 'source', 'conferred', 'tone', 'favor')),
     'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'ba-boss',
-      'staff', jsonb_build_array(jsonb_build_object('key', 'ba-boss', 'name', 'Bar Boss', 'title', 'Boss', 'signature', 'Hi', 'beats', '[]'::jsonb)),
+      'staff', jsonb_build_array(jsonb_build_object('key', 'ba-boss', 'name', 'Bar Boss', 'title', 'Boss', 'signature', 'Hi', 'beats', '[]'::jsonb),
+        jsonb_build_object('key', 'ba-mod', 'name', 'Bar Mod', 'title', 'Mod', 'signature', 'Hi', 'beats', '[]'::jsonb)),
       'firstStaff', '[]'::jsonb,
       'moves', jsonb_build_array(
         jsonb_build_object('key', 'conferGroup', 'structural', false, 'shapesBoard', false, 'offices', jsonb_build_array('boss', 'mod'), 'derived', jsonb_build_array('groupName'))),
@@ -393,4 +395,33 @@ begin
   if got is null or got not like 'ERROR:%' then raise exception 'a player read the pending apologies: %', got; end if;
   got := pg_temp.as_val(acct[1], format('select rule_apology(%s, %L, %L)', ids[1], 'accepted', 'Mine now.'));
   if got is null or got not like 'ERROR:%' then raise exception 'a player ruled on an apology: %', got; end if;
+end $$;
+
+-- ---- 5b. A benched staff persona writes no ruling, and the row is still set ----
+do $$
+declare
+  games uuid := pg_temp.board('ba-games');
+  f uuid := tests.account('ba-f');
+  sorry uuid := tests.character(f, 'Bn Sorry');
+  mod_c uuid := (select id from characters where staff = 'ba-mod');
+  m uuid;
+  id_ bigint;
+  ap_thread uuid;
+  posts_before bigint;
+  got text;
+  row_ record;
+begin
+  update characters set debuted_at = now() - interval '1 day' where id = mod_c;
+  m := pg_temp.landed('ba-mod', sorry, 'trialMembers', interval '1 hour', games, pg_temp.apology());
+  got := pg_temp.as_val(f, format('select apologize(%L, %L, %L, %L)', m, sorry, 'Sorry', 'To a benched Mod.'));
+  if got like 'ERROR:%' then raise exception 'apologize to a Mod''s move: %', got; end if;
+  select x.id, a.thread into id_, ap_thread from apologies x join acts a on a.id = x.apology_act where x.move_act = m;
+  insert into staff_offices (staff, office, cause) values ('ba-mod', 'benched', 'admin');
+  if (select office from staff_office_now where staff = 'ba-mod') is distinct from 'benched' then raise exception 'the persona is benched'; end if;
+  posts_before := (select count(*) from acts where thread = ap_thread);
+  got := pg_temp.as_val(null, format('select rule_apology(%s, %L, %L)', id_, 'accepted', 'Forgiven, from the bench.'));
+  if got like 'ERROR:%' then raise exception 'a ruling for a benched persona was refused: %', got; end if;
+  select * into row_ from apologies where id = id_;
+  if row_.state is distinct from 'accepted' or row_.ruling_act is not null then raise exception 'the row is set and has no ruling Act: %', to_jsonb(row_); end if;
+  if (select count(*) from acts where thread = ap_thread) is distinct from posts_before then raise exception 'a benched persona wrote a ruling post'; end if;
 end $$;

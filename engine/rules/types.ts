@@ -118,10 +118,10 @@ export interface WarnBarSettings {
 }
 
 /**
- * The member groups' numbers (`Settings.groups`; the member groups design, section 5). A barred character apologizes to the move that bars it; these bound how
+ * The member groups' numbers (`Settings.apology`; the member groups design, section 5). A barred character apologizes to the move that bars it; these bound how
  * often, how many the judge hears at once, and how long its ruling runs. Not the groups themselves, which are `Instance.groups`.
  */
-export interface GroupsSettings {
+export interface ApologySettings {
   /** The hours a character waits between apologies to one move, once the last was accepted, rejected or is still waiting. A whole number, at least 1. */
   readonly apologyEveryHours: number;
   /** The most apologies one run of the apology judge hears; the rest wait for the next run. A whole number, at least 1. */
@@ -261,7 +261,7 @@ export interface Settings {
   /** The warn bar and the ban ladder: points by band, how long they last, and how long each ban in a season runs. */
   readonly warnBar: WarnBarSettings;
   /** The apology's numbers: how often a barred character may apologize, how many the judge hears at once, how long a ruling runs. */
-  readonly groups: GroupsSettings;
+  readonly apology: ApologySettings;
   /** The longest a board's name may be, in characters, whether The System or a player proposes it. */
   readonly boardNameMaxLength: number;
   /** The most days any move may last, whatever its phase allows. A starting point. */

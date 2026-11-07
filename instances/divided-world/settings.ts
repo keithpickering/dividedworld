@@ -106,7 +106,7 @@ export const defaults: Settings = deepFreeze<Settings>({
    * The apology (the member groups design, section 5): a barred character may apologize to one move once a day, the judge hears ten at a run, and its ruling is
    * at most 80 words.
    */
-  groups: { apologyEveryHours: 24, apologyJudgeBatch: 10, apologyRulingMaxWords: 80 },
+  apology: { apologyEveryHours: 24, apologyJudgeBatch: 10, apologyRulingMaxWords: 80 },
   /** A board's name is at most 60 characters, whoever proposes it. */
   boardNameMaxLength: 60,
   /** A starting point: no move runs longer than six weeks. */

@@ -7,7 +7,7 @@
 --                           beside not_the_systems. A spin's board is the board its thread opens on. post and start_thread are 0105's, edit_post is 0104's, otherwise unchanged.
 --                           spin's body moved whole into spin_written (below), so that an apology writes exactly what a spin writes; spin is acting, the ban's refusal, then spin_written.
 --   spin_written(origin, through, title, body, check_bar)   the spin of 0105, with the bar as its one switch: apologize writes the same thread and Act, skipping only the bar.
---   setting_groups / settings_held   the `groups` setting (apologyEveryHours, apologyJudgeBatch, apologyRulingMaxWords), each a whole number, at least 1; engine/rules/instance.ts mirrors it.
+--   setting_apology / settings_held   the `apology` setting (apologyEveryHours, apologyJudgeBatch, apologyRulingMaxWords), each a whole number, at least 1; engine/rules/instance.ts mirrors it.
 --   apologize(move, through, title, body)   a barred character's way out: the spin of the move Act (onto the board it bars, if that is where the spin opens), and a `pending` row in
 --                           apologies (0117). One waiting at a time per move (a unique index and a lock), and one per character and move per apologyEveryHours unless the last was `returned`.
 --   rule_apology(apology, verdict, ruling)   service role. accepted and rejected post the ruling as the move's staff character in the apology's thread, payload {ruling, apology};
@@ -211,9 +211,9 @@ end $function$;
 
 -- ----------------------------------------------------------------------------------------------------- settings ----
 
--- The `groups` setting: exactly the fields of GroupsSettings (engine/rules/types.ts), each a whole number, at least 1 (`groupsRule` in engine/rules/instance.ts).
+-- The `apology` setting: exactly the fields of ApologySettings (engine/rules/types.ts), each a whole number, at least 1 (`apologyRule` in engine/rules/instance.ts).
 -- supabase/tests/0079-settings-held.sql lists its poisons and goods.
-create function setting_groups(v jsonb) returns text
+create function setting_apology(v jsonb) returns text
 language plpgsql immutable set search_path = public, pg_temp as $$
 declare
   shape constant text := 'an object giving apologyEveryHours (the hours between a character''s apologies to one move), apologyJudgeBatch (the most apologies one run of the judge hears) and apologyRulingMaxWords (the most words of a ruling), each a whole number, at least 1';
@@ -227,9 +227,9 @@ begin
   end loop;
   return null;
 end $$;
-revoke execute on function setting_groups(jsonb) from public, anon, authenticated;
+revoke execute on function setting_apology(jsonb) from public, anon, authenticated;
 
--- settings_held (0104), also holding `groups`. Everything else as 0104 wrote it.
+-- settings_held (0104), also holding `apology`. Everything else as 0104 wrote it.
 create or replace function settings_held() returns trigger
 language plpgsql set search_path = public, pg_temp as $$
 declare
@@ -297,7 +297,7 @@ begin
     when 'pool' then setting_pool(v)
     when 'modBots' then setting_modbots(v)
     when 'warnBar' then setting_warnbar(v)
-    when 'groups' then setting_groups(v)
+    when 'apology' then setting_apology(v)
     when 'modelTiers' then case when not coalesce(jsonb_typeof(v) = 'object'
         and jsonb_typeof(v -> 'strong') = 'string' and btrim(v ->> 'strong', E' \t\n\r\f\v') <> ''
         and jsonb_typeof(v -> 'light') = 'string' and btrim(v ->> 'light', E' \t\n\r\f\v') <> '', false)
@@ -323,13 +323,13 @@ begin
   return new;
 end $$;
 
--- A number of the `groups` setting, the engine's default where the row is not there (a database seeded before this migration).
-create function group_setting(name text) returns integer
+-- A number of the `apology` setting, the engine's default where the row is not there (a database seeded before this migration).
+create function apology_setting(name text) returns integer
 language sql stable security definer set search_path = public, pg_temp as $$
-  select coalesce((select (s.value ->> name)::integer from settings s where s.key = 'groups'),
+  select coalesce((select (s.value ->> name)::integer from settings s where s.key = 'apology'),
                   case name when 'apologyEveryHours' then 24 when 'apologyJudgeBatch' then 10 when 'apologyRulingMaxWords' then 80 end)
 $$;
-revoke execute on function group_setting(text) from public, anon, authenticated;
+revoke execute on function apology_setting(text) from public, anon, authenticated;
 
 -- ------------------------------------------------------------------------------------------------- the apologies ----
 
@@ -341,7 +341,7 @@ create unique index apologies_one_pending on apologies (move_act) where state = 
 create function apologize(in_move uuid, through uuid, title text, body text) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
-  every integer := group_setting('apologyEveryHours');
+  every integer := apology_setting('apologyEveryHours');
   next_at timestamptz;
   made jsonb;
 begin
@@ -418,7 +418,7 @@ create function pending_apologies() returns table (
   join acts a on a.id = x.apology_act join characters c on c.id = x.character
   where x.state = 'pending'
   order by x.created_at, x.id
-  limit group_setting('apologyJudgeBatch')
+  limit apology_setting('apologyJudgeBatch')
 $$;
 revoke execute on function pending_apologies() from public, anon, authenticated;
 grant execute on function pending_apologies() to service_role;

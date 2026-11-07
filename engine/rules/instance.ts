@@ -183,16 +183,16 @@ function warnBarRule(v: unknown): string | null {
 }
 
 /**
- * The member groups' settings (`Settings.groups`): exactly the fields of GroupsSettings, each a whole number, at least 1. Mirrors `setting_groups` in
+ * The member groups' settings (`Settings.apology`): exactly the fields of ApologySettings, each a whole number, at least 1. Mirrors `setting_apology` in
  * supabase/migrations/0118_bars_apologies.sql, and supabase/tests/0079-settings-held.sql lists its poisons and goods.
  */
-const GROUPS_KEYS = ['apologyEveryHours', 'apologyJudgeBatch', 'apologyRulingMaxWords'] as const;
-function groupsRule(v: unknown): string | null {
+const APOLOGY_KEYS = ['apologyEveryHours', 'apologyJudgeBatch', 'apologyRulingMaxWords'] as const;
+function apologyRule(v: unknown): string | null {
   const shape = 'an object giving apologyEveryHours (the hours between a character\'s apologies to one move), apologyJudgeBatch (the most apologies one run of the judge hears) and apologyRulingMaxWords (the most words of a ruling), each a whole number, at least 1';
   if (typeof v !== 'object' || v === null || Array.isArray(v)) return shape;
-  const extra = Object.keys(v).find((k) => !(GROUPS_KEYS as readonly string[]).includes(k));
+  const extra = Object.keys(v).find((k) => !(APOLOGY_KEYS as readonly string[]).includes(k));
   if (extra !== undefined) return `${shape}; "${extra}" is not one of its fields`;
-  for (const k of GROUPS_KEYS) if (!isWhole((v as Record<string, unknown>)[k], 1)) return `${shape}; "${k}" is not`;
+  for (const k of APOLOGY_KEYS) if (!isWhole((v as Record<string, unknown>)[k], 1)) return `${shape}; "${k}" is not`;
   return null;
 }
 
@@ -244,7 +244,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   pool: poolRule,
   modBots: modBotsRule,
   warnBar: warnBarRule,
-  groups: groupsRule,
+  apology: apologyRule,
   boardNameMaxLength: whole(1, 'characters'),
   moveExpiryMostDays: whole(1, 'days'),
   moveExpiryLeastHours: whole(1, 'hours'),
