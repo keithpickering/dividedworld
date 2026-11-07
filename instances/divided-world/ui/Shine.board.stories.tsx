@@ -39,7 +39,7 @@ declare global {
       workerWork: (n: number) => Promise<{ batches: number; work: number[] }>;
       running: () => boolean;
       /** Every shiny post's box and the size of each canvas inside it, a worker's canvases read from the worker (a transferred canvas's own attributes say nothing). */
-      held: () => Promise<{ top: number; bottom: number; sizes: { w: number; h: number }[] }[]>;
+      held: () => Promise<{ top: number; bottom: number; area: number; own: number; sizes: { w: number; h: number }[]; shine: { w: number; h: number }[] }[]>;
       /**
        * Counting the canvas pixels the 2D contexts raster (shine-probes.ts, on the page and in the worker): `start` patches the contexts
        * (a timed run leaves it off, so the count costs the loop nothing there), `take` gives the page's pixels since the last take (all
@@ -115,18 +115,25 @@ function workerRaster(): Promise<RasterFrame[]> {
   });
 }
 
-/** Every shiny post's box and its canvases' sizes: a canvas handed to the worker is read there, any other from its own attributes. */
-async function held(): Promise<{ top: number; bottom: number; sizes: { w: number; h: number }[] }[]> {
+/**
+ * Every shiny post's painted box, its own box (the words' element, which a post's pixels are held to: engine/ui/cards/body.ts
+ * `paintScale`) and its canvases' sizes: a canvas handed to the worker is read there, any other from its own attributes.
+ */
+async function held(): Promise<{ top: number; bottom: number; area: number; own: number; sizes: { w: number; h: number }[]; shine: { w: number; h: number }[] }[]> {
   const worked = await foilProbe.sizes();
   return [...document.querySelectorAll(SHINY)].map((el) => {
     const r = painted(el);
-    const sizes = [...el.querySelectorAll('canvas')].map((c) => {
+    const sizeOf = (c: HTMLCanvasElement) => {
       const there = worked.get(c);
       if (there) return there;
       if (foilProbe.idOf(c) !== undefined) throw new Error('a canvas handed to the foil worker is not in the worker\'s list: the buffer check would read its placeholder');
       return { w: c.width, h: c.height };
-    });
-    return { top: r.top, bottom: r.bottom, sizes };
+    };
+    const sizes = [...el.querySelectorAll('canvas')].map(sizeOf);
+    /* The shine effect's own canvases, without another card's drawn inside its words (#41 carries Whoops!'s ink too). */
+    const shine = [...el.querySelectorAll<HTMLCanvasElement>(':scope > canvas.dw-fab-foil, :scope > .dw-glitter-surface > canvas')].map(sizeOf);
+    const o = el.getBoundingClientRect();
+    return { top: r.top, bottom: r.bottom, area: r.width * r.height, own: o.width * o.height, sizes, shine };
   });
 }
 

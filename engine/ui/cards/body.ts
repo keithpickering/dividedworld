@@ -38,6 +38,21 @@ export function sameBox(a: BodyBox, b: BodyBox): boolean {
   return near(a.left, b.left) && near(a.top, b.top) && near(a.w, b.w) && near(a.h, b.h);
 }
 
+/** The least share of the density a painted box is drawn at: a line of words in a tall body is drawn no softer than this. */
+const LEAST_SCALE = 0.5;
+
+/**
+ * The share of its density a shine effect draws a painted box at, so that painting the whole body costs no more pixels than the
+ * words' own box did at full density (`own` and `painted` are areas, in CSS px squared): the square root of their ratio, at most 1.
+ * The cost of a canvas grows with its pixels, the loop's and the worker's time with it, and a busy page's frames with that (on CI the
+ * whole body at full density doubled both and dropped frames). A post of a line or two in a tall body would be drawn very soft by the
+ * ratio alone, so the share stops at half: such a post costs a little more than its words did, never more than its body at half density.
+ */
+export function paintScale(own: number, painted: number): number {
+  if (painted <= 0) return 1;
+  return Math.min(1, Math.max(LEAST_SCALE, Math.sqrt(Math.max(0, own) / painted)));
+}
+
 /** Places `layer` (absolutely positioned in its effect's element) over `box`. */
 export function placeLayer(layer: HTMLElement, box: BodyBox): void {
   layer.style.left = `${box.left}px`;

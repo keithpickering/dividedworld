@@ -54,7 +54,7 @@ import { bandFor, type Band } from '../../../../engine/ui/shine/band.ts';
 import { makeFoil, type Foil, type FoilPattern } from '../../../../engine/ui/shine/foil.ts';
 import { adoptFoil, isTransferred, offscreenFoils, type FoilHandle } from '../../../../engine/ui/shine/foilClient.ts';
 import type { FoilSpec } from '../../../../engine/ui/shine/foilProtocol.ts';
-import { bodyBox, bodyOf, placeLayer, sameBox, type BodyBox } from '../../../../engine/ui/cards/body.ts';
+import { bodyBox, bodyOf, paintScale, placeLayer, sameBox, type BodyBox } from '../../../../engine/ui/cards/body.ts';
 import { REST, type Light } from '../../../../engine/ui/shine/light.ts';
 import { register, unregister, wake } from '../../../../engine/ui/shine/loop.ts';
 import type { EffectProps } from '../../../../engine/ui/cards/types.ts';
@@ -67,6 +67,8 @@ export const FAB_STOPS: { readonly light: readonly string[]; readonly dark: read
 });
 /** The starbursts' highlight, in every grade on both boards (the engine names no color; this is Divided World's). It only lightens, inside the band. */
 export const FAB_GLINT = '#ffffff';
+/** The foil's cell in CSS px on a box no bigger than the words (engine/ui/shine/foil.ts's default). */
+const CELL = 3;
 /** How many starbursts a level carries. */
 const TWINKLES = [0, 4, 8, 10] as const;
 /** The most Feelin' Fabs that count: the card's stack. */
@@ -94,15 +96,18 @@ export function FeelinFabEffect({ post, plays, place, still, children }: EffectP
         if (isTransferred(cv)) return;
       }
     }
-    const specs: Partial<Record<Board, FoilSpec>> = {};
-    const foils: Partial<Record<Board, Foil>> = {};
-    const release = (): void => { for (const f of Object.values(foils)) f?.release(); };
+    /* By board and cell (`${board}:${cell}`): a board change or a resize that coarsens the cell makes the foil afresh. */
+    const specs = new Map<string, FoilSpec>();
+    const foils = new Map<string, Foil>();
+    const release = (): void => { for (const f of foils.values()) f.release(); };
+    /* The foil's cell, coarser on a body bigger than the words, so the foil works as many cells as the words' box had (body.ts `paintScale`). */
+    let cell = CELL;
     /* The size painted (what the loop and the drawing are handed) and where it stands from the host (the layer's placement). */
     let box = { w: 0, h: 0 };
     let placed: BodyBox = { left: 0, top: 0, w: 0, h: 0 };
     let density = 1;
-    /* The board whose foil is in use; the other is let go once, when this changes, and its reference dropped. */
-    let current: Board | null = null;
+    /* The board and cell whose foil is in use; the others are let go once, when this changes, and their references dropped. */
+    let current: string | null = null;
     /* True while the backing store is freed (out of view); the next draw sizes it again. */
     let freed = false;
     /* The last light and time drawn, for a synchronous repaint after a resize cleared the canvas. */
@@ -117,8 +122,10 @@ export function FeelinFabEffect({ post, plays, place, still, children }: EffectP
     /* In the worker: the draw is posted, with the band read here (a null band clears the canvas there). */
     const post = (handle: FoilHandle, light: Light, now: number, idle: boolean): void => {
       const board: Board = band && band.hi < 0.5 ? 'dark' : 'light';
-      const spec = (specs[board] ??= { seed, pattern, palette: FAB_STOPS[board], stars: TWINKLES[level]!, glint: FAB_GLINT });
-      handle.draw(spec, board, box, density, light, band, now, idle);
+      const key = `${board}:${cell}`;
+      let spec = specs.get(key);
+      if (!spec) { spec = { seed, pattern, palette: FAB_STOPS[board], stars: TWINKLES[level]!, glint: FAB_GLINT, cell }; specs.set(key, spec); }
+      handle.draw(spec, key, box, density, light, band, now, idle);
     };
     const paint = (light: Light, now: number, idle: boolean): void => {
       if (remote) { post(remote, light, now, idle); return; }
@@ -126,14 +133,14 @@ export function FeelinFabEffect({ post, plays, place, still, children }: EffectP
       if (!ctx) return;
       if (!band) { ctx.clearRect(0, 0, cv.width, cv.height); return; }
       const board: Board = band.hi < 0.5 ? 'dark' : 'light';
-      /* A board change lets the other board's foil go, once: only the one in use holds buffers. */
-      if (board !== current) {
-        const other: Board = board === 'dark' ? 'light' : 'dark';
-        foils[other]?.release();
-        delete foils[other];
-        current = board;
+      const key = `${board}:${cell}`;
+      /* A board or cell change lets the other foils go, once: only the one in use holds buffers. */
+      if (key !== current) {
+        for (const [k, f] of [...foils]) if (k !== key) { f.release(); foils.delete(k); }
+        current = key;
       }
-      const foil = (foils[board] ??= makeFoil({ seed, pattern, palette: FAB_STOPS[board], stars: TWINKLES[level]!, glint: FAB_GLINT }));
+      let foil = foils.get(key);
+      if (!foil) { foil = makeFoil({ seed, pattern, palette: FAB_STOPS[board], stars: TWINKLES[level]!, glint: FAB_GLINT, cell }); foils.set(key, foil); }
       foil.draw(ctx, box, density, light, band, now, idle);
     };
     const size = (): void => {
@@ -163,13 +170,18 @@ export function FeelinFabEffect({ post, plays, place, still, children }: EffectP
       placed = measure();
       box = { w: placed.w, h: placed.h };
       placeLayer(cv, placed);
+      /* The body is drawn at the share of the density that costs what the words' own box did (engine/ui/cards/body.ts `paintScale`). */
+      const own = el.getBoundingClientRect();
+      const scale = paintScale(own.width * own.height, box.w * box.h);
+      /* In quarter px, so a resize by a pixel or two keeps the foil it has. */
+      cell = Math.max(CELL, Math.round((CELL / scale) * 4) / 4);
       if (still) {
-        density = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+        density = Math.min(2, Math.max(1, window.devicePixelRatio || 1)) * scale;
         size();
         paint(REST, 0, false);
         return;
       }
-      density = register(el, cv, box, window.devicePixelRatio || 1, (frame) => {
+      density = register(el, cv, box, Math.min(2, window.devicePixelRatio || 1) * scale, (frame) => {
         if (freed) { if (!remote) size(); freed = false; }
         last = { light: frame.light, t: frame.t };
         paint(frame.light, frame.t, frame.idle);

@@ -205,6 +205,37 @@ function fakeCanvas(calls: Call[], name: string, w = 0, h = 0, getNull = false):
   return canvas;
 }
 
+describe('a coarser cell (FoilOptions.cell)', () => {
+  /* A body twice the words' area is drawn with as many cells as the words had (engine/ui/cards/body.ts `paintScale`): the work is a cell's. */
+  test('a foil of cell 6 works a quarter of the cells of one of cell 3, each in the band, and the default is 3', () => {
+    const box = { w: 300, h: 120 };
+    for (const pattern of PATTERNS) {
+      for (const mode of ['light', 'dark'] as const) {
+        const fine = makeFoil({ seed: 's', pattern, palette: PALETTES[mode], stars: 8, glint: GLINT });
+        const coarse = makeFoil({ seed: 's', pattern, palette: PALETTES[mode], stars: 8, glint: GLINT, cell: 6 });
+        assert.equal(fine.cell, 3);
+        assert.equal(coarse.cell, 6);
+        const a = sampleFoil(fine, box, REST, bands[mode]), b = sampleFoil(coarse, box, REST, bands[mode]);
+        assert.equal(a.length, 100 * 40);
+        assert.equal(b.length, 50 * 20);
+      }
+      /* The coarse cells are as readable under every ink as the fine ones: the check every foil passes. */
+      const coarse = new Map<string, ReturnType<typeof makeFoil>>();
+      const failures = shineIsReadable(tokens, (mode, light) => {
+        const band = bandOf(tokens[mode]);
+        if (!coarse.has(mode)) coarse.set(mode, makeFoil({ seed: 'play:post', pattern, palette: PALETTES[modeOf(band)], stars: 8, glint: GLINT, cell: 6 }));
+        return new Set(sampleFoil(coarse.get(mode)!, { w: 240, h: 120 }, light, band));
+      });
+      assert.deepEqual(failures.slice(0, 3), [], `${pattern}`);
+    }
+  });
+  test('a cell under 3, or one that is not a number, is 3', () => {
+    for (const cell of [1, 0, -2, Number.NaN, Number.POSITIVE_INFINITY]) {
+      assert.equal(makeFoil({ seed: 's', pattern: 'pearl', palette: PALETTES.light, stars: 0, glint: GLINT, cell }).cell, 3, String(cell));
+    }
+  });
+});
+
 describe('draw, against a fake context', () => {
   function run(mode: Board, now: number, idle: boolean, light = REST) {
     const calls: Call[] = [];

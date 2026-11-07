@@ -45,7 +45,7 @@
 import { useEffect, useRef } from 'react';
 import { motionReduced } from '../../../../engine/ui/appearance.ts';
 import type { EffectProps } from '../../../../engine/ui/cards/types.ts';
-import { bodyBox, bodyOf, placeLayer, sameBox, type BodyBox } from '../../../../engine/ui/cards/body.ts';
+import { bodyBox, bodyOf, paintScale, placeLayer, sameBox, type BodyBox } from '../../../../engine/ui/cards/body.ts';
 import { bandFor, type Band } from '../../../../engine/ui/shine/band.ts';
 import { burst, cling, dropLoose, drawBurst, drawLoose, landAll, loose, makeFlakes, release, stepBurst, type Flakes } from '../../../../engine/ui/shine/flakes.ts';
 import { watchInView } from '../../../../engine/ui/shine/inView.ts';
@@ -85,6 +85,8 @@ export function GlitterBombEffect({ post, plays, place, still, children }: Effec
     let box = { w: 0, h: 0 };
     let placed: BodyBox = { left: 0, top: 0, w: 0, h: 0 };
     let density = 1;
+    /* The share of the density the body is drawn at, and of the flakes it holds per px squared (engine/ui/cards/body.ts `paintScale`). */
+    let scale = 1;
 
     /* The band where this post sits, or null when the board's tokens cannot be read (nothing is drawn then). */
     const readBand = (): Band | null => {
@@ -112,7 +114,7 @@ export function GlitterBombEffect({ post, plays, place, still, children }: Effec
     const ensure = (): Flakes | null => {
       if (flakes) return flakes;
       if (box.w <= 0 || box.h <= 0) return null;
-      flakes = makeFlakes({ seed, box, inks: GLITTER_INKS, holo: GLITTER_HOLO, density: AREA, glint: GLITTER_GLINT });
+      flakes = makeFlakes({ seed, box, inks: GLITTER_INKS, holo: GLITTER_HOLO, density: AREA / (scale * scale), glint: GLITTER_GLINT });
       if (fired) landAll(flakes);
       if (!still) unclung = cling.register(face, { sticky: true, flakes, landed: redraw });
       return flakes;
@@ -194,14 +196,17 @@ export function GlitterBombEffect({ post, plays, place, still, children }: Effec
       placed = measure();
       box = { w: placed.w, h: placed.h };
       placeLayer(face, placed);
+      /* The body costs what the words' own box did: drawn at a share of the density, its flakes spread over it, as many as the words held. */
+      const own = el.getBoundingClientRect();
+      scale = paintScale(own.width * own.height, box.w * box.h);
       drop();
       if (still) {
-        density = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+        density = Math.min(2, Math.max(1, window.devicePixelRatio || 1)) * scale;
         size();
         paint(REST, 0, false);
         return;
       }
-      density = register(el, below, box, window.devicePixelRatio || 1, (frame) => {
+      density = register(el, below, box, Math.min(2, window.devicePixelRatio || 1) * scale, (frame) => {
         if (freed) size();
         last = { light: frame.light, t: frame.t };
         return paint(frame.light, frame.t, frame.idle);

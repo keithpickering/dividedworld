@@ -555,8 +555,9 @@ describe("Feelin' Fab drawing in a worker", () => {
     expect(posted().length).toBeGreaterThanOrEqual(1);
     const d = posted()[0]!.draws[0]!;
     expect(d.id).toBe(foilProbe.idOf(canvas()));
-    expect(d.spec).toEqual({ seed: 'p1:f1,f2', pattern: 'bands', palette: FAB_STOPS.light, stars: 8, glint: FAB_GLINT });
-    expect(d.key).toBe('light');
+    /* With no post body (no thread here) the box is the words', so the foil keeps its 3px cell; the key is the board and the cell. */
+    expect(d.spec).toEqual({ seed: 'p1:f1,f2', pattern: 'bands', palette: FAB_STOPS.light, stars: 8, glint: FAB_GLINT, cell: 3 });
+    expect(d.key).toBe('light:3');
     expect(d.box).toEqual({ w: 300, h: 120 });
     expect(d.density).toBe(1.5);
     expect(d.band).toEqual({ lo: 0.59, hi: 1 });
@@ -571,7 +572,7 @@ describe("Feelin' Fab drawing in a worker", () => {
     void see(canvas(), true);
     await run(2);
     const d = posted()[0]!.draws[0]!;
-    expect([d.key, d.spec.palette, d.band]).toEqual(['dark', FAB_STOPS.dark, { lo: 0, hi: 0.048 }]);
+    expect([d.key, d.spec.palette, d.band]).toEqual(['dark:3', FAB_STOPS.dark, { lo: 0, hi: 0.048 }]);
   });
 
   test('a board whose tokens cannot be read posts a draw with no band, which clears the canvas and leaves the words bare', async () => {

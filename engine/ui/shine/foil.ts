@@ -20,7 +20,7 @@
  * with the cell (a column's fringe, a facet's flash, the dark board's opposite stop) once per frame; the per-cell rest keeps
  * the bench's arithmetic in its order, so the bytes are the bench's to the last bit, and foil.test.ts holds them by digest.
  *
- * Units: a box is CSS px {w, h}; a cell is 3 CSS px; `density` is canvas pixels per CSS px; a light is {x, y} in -1.5..1.5;
+ * Units: a box is CSS px {w, h}; a cell is 3 CSS px (or `FoilOptions.cell`); `density` is canvas pixels per CSS px; a light is {x, y} in -1.5..1.5;
  * colors are computed in LINEAR light and written as 8-bit sRGB; `now` is milliseconds, as the page's loop gives it.
  *
  * `draw` takes any 2D context: a Feelin' Fab's foil is drawn in a worker on an OffscreenCanvas's (foilServe.ts), or on the page's own canvas
@@ -46,15 +46,23 @@ export type FoilOptions = {
   readonly stars: number;
   /** The highlight the starbursts are drawn in, sRGB `#rrggbb` (an instance's: the engine names no color). Added over cells, so it only lightens. */
   readonly glint: string;
+  /**
+   * The cell's side in CSS px (default 3). The foil's work is one color a cell, so a coarser cell costs less on a big box: an effect that
+   * paints a box bigger than its words draws it with as many cells as the words' box had (engine/ui/cards/body.ts `paintScale`). The grid
+   * is drawn smoothed to the canvas, so a coarser cell is the same pattern a little softer; the facets and the starbursts keep their size.
+   */
+  readonly cell?: number;
   /** Where canvases come from; tests pass a fake. */
   readonly createCanvas?: (w: number, h: number) => FoilCanvas;
 };
 
 export type Foil = {
-  /** Write every cell's sRGB bytes (r, g, b, 255) into `out`, which holds `ceil(w/3) * ceil(h/3) * 4` of them. */
+  /** The cell's side in CSS px (`FoilOptions.cell`, 3 by default). */
+  readonly cell: number;
+  /** Write every cell's sRGB bytes (r, g, b, 255) into `out`, which holds `ceil(w/cell) * ceil(h/cell) * 4` of them. */
   render(box: Box, light: Light, band: Band, out: Uint8ClampedArray): void;
   draw(ctx: CanvasRenderingContext2D, box: Box, density: number, light: Light, band: Band, now: number, idle: boolean): void;
-  /** The prism's cell map for a box: the facet each 3px cell belongs to. */
+  /** The prism's cell map for a box: the facet each cell belongs to. */
   facets(box: Box): Uint32Array;
   /** Drop the ImageData, the grid canvas and the cell map; the next draw builds them again. */
   release(): void;
@@ -62,7 +70,8 @@ export type Foil = {
   holds(): boolean;
 };
 
-const CELL = 3;
+/** The cell's side in CSS px unless a foil is given a coarser one (`FoilOptions.cell`). */
+const DEFAULT_CELL = 3;
 const FACET = 17;
 
 type Facet = { x: number; y: number; nx: number; ny: number; ph: number };
@@ -157,6 +166,7 @@ function finishRow(row: Float64Array, n: number, f: Finish, px: Uint8ClampedArra
 }
 
 export function makeFoil(opts: FoilOptions): Foil {
+  const CELL = opts.cell !== undefined && Number.isFinite(opts.cell) && opts.cell >= DEFAULT_CELL ? opts.cell : DEFAULT_CELL;
   if (!/^#[0-9a-f]{6}$/iu.test(opts.glint)) throw new Error(`foil: the glint needs a #rrggbb color, got ${JSON.stringify(opts.glint)}`);
   const GLINT = toLinear(opts.glint);
   if (opts.palette.length !== 6) throw new Error(`foil: the palette needs six stops, got ${opts.palette.length}`);
@@ -386,6 +396,7 @@ export function makeFoil(opts: FoilOptions): Foil {
   }
 
   return {
+    cell: CELL,
     render(box, light, band, outPx) {
       if (!usable(box)) return;
       const L = layoutFor(box);
@@ -454,7 +465,7 @@ export function makeFoil(opts: FoilOptions): Foil {
 /** Every cell's color as `#rrggbb`, for the readable-band check (cells only: the starbursts add white only where the band allows it). */
 export function sampleFoil(foil: Foil, box: Box, light: Light, band: Band): string[] {
   if (!Number.isFinite(box.w) || !Number.isFinite(box.h)) return [];
-  const n = Math.ceil(Math.max(1, Math.round(box.w)) / CELL) * Math.ceil(Math.max(1, Math.round(box.h)) / CELL);
+  const n = Math.ceil(Math.max(1, Math.round(box.w)) / foil.cell) * Math.ceil(Math.max(1, Math.round(box.h)) / foil.cell);
   const px = new Uint8ClampedArray(n * 4);
   foil.render(box, light, band, px);
   const hex = (v: number) => v.toString(16).padStart(2, '0');

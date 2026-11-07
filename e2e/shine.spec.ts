@@ -66,7 +66,7 @@ const RASTER_SHARE = 1.5;
 const FREED_MARGIN = 300;
 
 interface Sample { t: number; draws: number[]; top: number[]; bottom: number[]; height: number }
-interface Held { top: number; bottom: number; sizes: { w: number; h: number }[] }
+interface Held { top: number; bottom: number; area?: number; own?: number; sizes: { w: number; h: number }[]; shine?: { w: number; h: number }[] }
 
 /** The shiny posts that hold canvas buffers while fully out of view by more than `margin`, and how many posts hold any at all. */
 export function heldOutOfView(posts: readonly Held[], height: number, margin = FREED_MARGIN): { held: number[]; holding: number; inView: number } {
@@ -234,6 +234,22 @@ test.describe('the planted samples, red where they should be', () => {
     const seq = [frame([1], [800]), frame([2], [950]), frame([3], [960]), frame([3], [970]), frame([3], [980]), frame([4], [100])];
     expect(outOfViewDraws(seq)).toEqual([]);
   });
+});
+
+/**
+ * A post paints its whole body (engine/ui/cards/body.ts), but costs no more pixels for it: each canvas holds no more device pixels than
+ * the post's own box (its words' element) at the page's density did, or, where the words are a line or two, the body at half that
+ * density (`paintScale`'s floor). On CI the whole body at full density doubled the loop's and the foil worker's time and dropped frames.
+ */
+test('a shiny post\'s canvases hold no more pixels than its words\' box did at the page\'s density, or the body at half of it', async ({ page }) => {
+  await open(page, 'full');
+  const d = await page.evaluate(() => Math.min(2, window.devicePixelRatio || 1));
+  /* The posts in view, which have drawn (one out of view may keep a canvas's 300 by 150 default until it is first drawn). */
+  const posts = (await held(page)).filter((p) => inView(p) && p.shine!.some((c) => c.w > 0));
+  expect(posts.length, 'posts in view hold their buffers').toBeGreaterThan(2);
+  const over = posts.flatMap((p, i) => p.shine!.filter((c) => c.w * c.h > Math.max(p.own! * d * d, p.area! * (d / 2) ** 2) * 1.05 + 4 * (c.w + c.h))
+    .map((c) => `post ${i}: a ${c.w}x${c.h} canvas, its words ${Math.round(p.own!)} px squared, its body ${Math.round(p.area!)}`));
+  expect(over).toEqual([]);
 });
 
 test.describe('a busy thread', () => {

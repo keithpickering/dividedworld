@@ -141,14 +141,18 @@ test.describe('the foil in a real page', () => {
     expect(await layoutProblems(page, 0)).toEqual([]);
   });
 
-  test('the canvas is painted, at the post body\'s size times the device\'s density', async ({ page }) => {
+  test('the canvas is painted, at the post body\'s size times the device\'s density, scaled to cost what the words did', async ({ page }) => {
     await open(page, 'three-light');
     const { painted } = await paint(page, 0);
     await settle(page);
     const size = await page.evaluate(() => {
-      const cell = document.querySelector('[data-kb-fab]')!.closest<HTMLElement>('.kb-act-main')!;
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
-      return { w: Math.round(cell.clientWidth * dpr), h: Math.round(cell.clientHeight * dpr) };
+      const host = document.querySelector('[data-kb-fab]')!;
+      const cell = host.closest<HTMLElement>('.kb-act-main')!;
+      /* The body is drawn at the share of the density that costs what the words' box did, no less than half (engine/ui/cards/body.ts `paintScale`). */
+      const own = host.getBoundingClientRect(), body = cell.clientWidth * cell.clientHeight;
+      const scale = Math.min(1, Math.max(0.5, Math.sqrt((own.width * own.height) / body)));
+      const d = Math.min(2, window.devicePixelRatio || 1) * scale;
+      return { w: Math.round(cell.clientWidth * d), h: Math.round(cell.clientHeight * d) };
     });
     const now = await paint(page, 0);
     expect(now.w).toBe(size.w);
