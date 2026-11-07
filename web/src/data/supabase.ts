@@ -42,7 +42,7 @@ import type {
   Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEnded, CardEvent, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd, FaceDownPass,
   Alert, ContactLink, EffectState, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
-  Boot, BoardPage, IndexPage, Opened, Slot, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson,
+  Boot, BoardPage, IndexPage, Opened, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson,
   AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
 } from '../../../engine/ui/data/api.ts';
 
@@ -286,12 +286,24 @@ const toSeason = (r: Row): Season => ({ id: r['id'], number: r['number'], starts
 const toClassReveal = (r: Row): ClassReveal => ({ act: r['act'], character: r['character'], class: r['class'], at: r['at'], via: r['via'], thread: r['thread'] });
 const toTurn = (r: Row): TurnAnnounced => ({ act: r['act'], character: r['character'], at: r['at'], was: r['was'] ?? null });
 /** A slot of machine_now (0115_machine.sql): a card's or a pack's, never both; a hidden slot is not in the view. */
+const SLOT_MOVES: readonly SlotMove['kind'][] = ['pullSlot', 'repriceSlot', 'flashSale'];
+/** The move on a slot as machine_now's `move` carries it (0117), or none: a kind this client does not know is no move it can word. */
+const toSlotMove = (v: unknown): SlotMove | null => {
+  if (!isObject(v)) return null;
+  const kind = SLOT_MOVES.find((k) => k === v['kind']);
+  if (!kind || typeof v['act'] !== 'string') return null;
+  const demand = toDemand(v['demand']);
+  return {
+    kind, act: v['act'], ends: orNull(v['ends']), demand, progress: demand ? toProgress(v['progress']) : null,
+    was: num(v['was']), percent: v['percent'] == null ? null : num(v['percent']), hours: v['hours'] == null ? null : num(v['hours']),
+  };
+};
 const toSlot = (r: Row): Slot => ({
   id: r['slot'], position: num(r['position']),
   item: typeof r['card'] === 'string' ? { card: r['card'] } : { pack: String(r['pack'] ?? '') },
   rarity: str(r['rarity']) as Slot['rarity'],
   availability: r['availability'] === 'soldOut' ? 'soldOut' : 'onSale',
-  price: num(r['price']), move: null,
+  price: num(r['price']), move: toSlotMove(r['move']),
 });
 const toHeldCard = (r: Row): HeldCard => ({ card: r['card'], held: num(r['held']) });
 const toMyReaction = (r: Row): MyReaction => ({ act: r['act'], kind: r['kind'], character: r['character'] });
@@ -1166,7 +1178,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return (await list(() => client.from('my_cards').select('card,held'))).map(toHeldCard);
     },
     async machine() {
-      return (await list(() => client.from('machine_now').select('slot,position,card,pack,rarity,availability,price').order('position', { ascending: true }))).map(toSlot);
+      return (await list(() => client.from('machine_now').select('slot,position,card,pack,rarity,availability,price,move').order('position', { ascending: true }))).map(toSlot);
     },
     async reading(threads) {
       const out: Record<Id, number> = {};

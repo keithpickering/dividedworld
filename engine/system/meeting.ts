@@ -30,9 +30,9 @@ import { careerText, type Career } from './career.ts';
 import { DEMAND_KINDS, demandProblems } from './demands.ts';
 import { MEMORY_RULE, noteMost, recentNotes, repairMemory, type Memory } from './memory.ts';
 import { PREDICATES, ruleConflict, type RuleInForce } from '../rules/predicates.ts';
-import { ASKABLE_MOVE_KINDS, UUID, moveKind, moveParamsProblems } from './moves.ts';
+import { ASKABLE_MOVE_KINDS, UUID, machineLimits, moveKind, moveParamsProblems, type MachineLimits } from './moves.ts';
 import type { PhaseAt } from './phases.ts';
-import { repair, type Rule, type Trim } from './validate.ts';
+import { repair, type Repaired, type Rule, type Trim } from './validate.ts';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -102,7 +102,8 @@ export const MEETING_RULE: Rule = {
         fields: {
           kind: { type: 'string', maxLength: 60 },
           params: paramsRule(),
-          demand: demandRule(),
+          // Optional: a favor (a markdown, a flash sale) carries none. A move that needs one and has none is dropped, naming the path.
+          demand: { ...demandRule(), optional: true },
           go_live_at: { type: 'string', maxLength: 64 },
           expires_in_hours: { type: 'number' },
           why: { type: 'string', maxLength: WHY_MOST, minLength: 1 },
@@ -187,7 +188,7 @@ export interface ModFacts {
 export interface PromptFacts {
   readonly boss: Persona;
   readonly system: Pick<SystemContent, 'nameStyleBrief' | 'realWorld'>;
-  readonly settings: Pick<Settings, 'structuralHoldHours' | 'boardNameMaxLength' | 'moveExpiryLeastHours' | 'reactionCap' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'moveExpiryMostDays' | 'pool' | 'modBots'>;
+  readonly settings: Pick<Settings, 'structuralHoldHours' | 'boardNameMaxLength' | 'moveExpiryLeastHours' | 'reactionCap' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'moveExpiryMostDays' | 'pool' | 'modBots'> & { readonly economy?: Readonly<Record<string, number>> };
   /** The Mod Bots on staff, in the order the roster lists them. */
   readonly mods: readonly ModFacts[];
   /** A character's name by id, for the memories shown; 'someone' for an id it does not know. */
@@ -214,6 +215,7 @@ export function meetingSystemPrompt(f: PromptFacts): string {
     (k) => `- ${k.key}: ${k.label.toLowerCase()}. Made by ${k.offices.map((o) => (o === 'boss' ? 'the Boss' : 'a Mod Bot')).join(' or ')}. params: ${fieldsOf(k.params)}.${k.key === 'setRule' ? ` A rule never refuses a post; breaking one draws a visit. board is a board's id, or left out for every board. param is ${PREDICATES.map((p) => `${p.key} (${p.param === 'none' ? 'none' : p.param === 'count' ? `a whole number ${p.bounds!.least} to ${p.bounds!.most}` : p.param === 'word' ? 'one word' : 'a BBCode tag'}): ${p.plain('N')}`).join('; ')}.` : ''}${k.structural ? ` It waits at least ${s.structuralHoldHours} hours in the admin queue before it lands, and an admin can hold it.` : ''}`,
   );
   const demands = DEMAND_KINDS.map((d) => `- ${d.key}: params: ${fieldsOf(d.params)}.`);
+  const m = machineLimits(s.economy);
   const career = careerText(f.career);
   const notes = recentNotes(f.notes, s.pool.notesRead);
   return [
@@ -232,7 +234,14 @@ export function meetingSystemPrompt(f: PromptFacts): string {
       `A move's go_live_at is a time (ISO 8601) from now to a day from now; a structural move is held at least ${s.structuralHoldHours} hours whatever you ask. Its expires_in_hours is from ${s.moveExpiryLeastHours} hours to ${Math.min(phase.numbers.moveExpiryMostDays, s.moveExpiryMostDays) * 24} hours. Its why is one line, at most ${WHY_MOST} characters, in your own words; the admins read it.`,
     ].join('\n'),
     [
-      'Every move carries a demand the characters can meet, and the move ends when it is met or when it expires. The demands you may set (anything else drops the move):',
+      `The vending machine. Three of your moves act on its slots, which you name by the ids under "The machine" below. A move on the machine lasts at most ${m.moveDaysMost} days, and a slot has one move at a time.`,
+      `- pullSlot: params {slot}. Sells a slot out until the move ends. The slot is on sale, holds a single card, and that card can still come out of a pack on sale (packs are the floor: you never pull a pack). You may have at most ${m.pullMost} slots pulled at once.`,
+      `- repriceSlot: params {slot, percent}. Sets an on-sale slot's price (a pack's too) to a percent of the price the admins set: ${m.repriceLeast} to ${m.repriceMost} percent, never 100.`,
+      `- flashSale: params {slot, hours}. Puts a slot the admins hid on sale for hours (params.hours, ${m.flashHoursLeast} to ${m.flashHoursMost} hours; its expiry is that window), then it is hidden again. One flash sale at a time.`,
+      'A pullSlot and a repriceSlot above 100 percent punish, and carry a demand. A repriceSlot below 100 percent and a flashSale are favors: each carries no demand (leave "demand" out; one you give is dropped). An admin\'s sold out or hidden always wins over you. You read the machine\'s slots, prices and your moves in force, never who buys what.',
+    ].join('\n'),
+    [
+      'Every other move carries a demand the characters can meet, and the move ends when it is met or when it expires. The demands you may set (anything else drops the move):',
       ...demands,
       `Use only the ids you are given below for boards, threads and characters. A count is a whole number of at least 1. A reaction threshold (a quadrant's count, a crossQuote's reactions) is at least ${s.reactionCap + 1}.`,
     ].join('\n'),
@@ -328,14 +337,36 @@ export function inheritedText(due: readonly InheritedMove[], graceDays: number):
   ];
 }
 
+/**
+ * A slot of the machine as the meeting reads it (`meeting_context().machine`): what a player sees of it, plus the admin's own word on it (a hidden slot
+ * is the one a flash sale may open) and the Boss's move in force on it. `price` is the admin's, in hundredths of an orb. `pullable` is the database's
+ * answer to "an on-sale single whose card an on-sale pack can still give". It holds no purchase and nothing about a buyer.
+ */
+export interface MachineSlotFacts {
+  readonly id: string;
+  readonly position: number;
+  readonly card: string | null;
+  readonly pack: string | null;
+  readonly availability: 'onSale' | 'soldOut' | 'hidden';
+  readonly price: number;
+  readonly pullable: boolean;
+  /** The Boss's move in force on it, if any. */
+  readonly move: { readonly kind: string; readonly act: string } | null;
+}
+
 export interface ReferenceIds {
   readonly boards: readonly { readonly id: string; readonly name: string }[];
   readonly threads: readonly { readonly id: string; readonly title: string }[];
   readonly characters: readonly { readonly id: string; readonly name: string }[];
+  /** The machine's slots, in grid order; left out where the database does not hold a machine. */
+  readonly machine?: readonly MachineSlotFacts[];
 }
 
 /** How many of each id the meeting hands the model: the lists are bounded here, whatever the instance holds. */
-export const REFERENCE_MOST = { boards: 50, threads: 25, characters: 80 } as const;
+export const REFERENCE_MOST = { boards: 50, threads: 25, characters: 80, machine: 60 } as const;
+
+const orbs = (hundredths: number): string => (hundredths / 100).toFixed(2);
+const AVAILABILITY_WORDS = { onSale: 'on sale', soldOut: 'sold out', hidden: 'hidden' } as const;
 
 const oneLine = (s: string, n: number): string => s.replace(/\s+/g, ' ').trim().slice(0, n);
 
@@ -347,6 +378,16 @@ export function referenceText(ids: ReferenceIds): string {
     ...part('Boards', ids.boards.slice(0, REFERENCE_MOST.boards).map((b) => `- ${oneLine(b.name, 80)}: ${b.id}`), 'No board.'),
     ...part('Hot threads', ids.threads.slice(0, REFERENCE_MOST.threads).map((t) => `- ${oneLine(t.title, 80)}: ${t.id}`), 'No thread.'),
     ...part('Characters', ids.characters.slice(0, REFERENCE_MOST.characters).map((c) => `- ${oneLine(c.name, 64)}: ${c.id}`), 'No character.'),
+    ...(ids.machine && ids.machine.length
+      ? [
+          '',
+          '## The machine',
+          'Its slots, in order, with the price the admins set. Your moves in force are shown on their slots. No purchase is shown, and none is known to you.',
+          ...ids.machine.slice(0, REFERENCE_MOST.machine).map(
+            (x) => `- ${oneLine(x.card ?? x.pack ?? 'a slot', 64)} (${x.card === null ? 'pack' : 'card'}), ${orbs(x.price)}, ${AVAILABILITY_WORDS[x.availability]}${x.pullable ? ', can be pulled' : ''}${x.move ? `, your ${oneLine(x.move.kind, 20)} in force` : ''}: ${x.id}`,
+          ),
+        ]
+      : []),
   ].join('\n');
 }
 
@@ -356,7 +397,8 @@ export interface PlannedMove {
   readonly kind: string;
   /** A rename's `description` is the Boss's own words; it is absent when the Boss gave none, and the stock description stands in. */
   readonly params: Readonly<Record<string, unknown>>;
-  readonly demand: { readonly kind: string; readonly params: Readonly<Record<string, unknown>> };
+  /** Null for a favor, which carries none. */
+  readonly demand: { readonly kind: string; readonly params: Readonly<Record<string, unknown>> } | null;
   /** Epoch milliseconds, clamped (and, for a structural move, raised to the hold). */
   readonly goLiveAt: number;
   readonly expiresInHours: number;
@@ -385,7 +427,7 @@ export const DEMAND_ID_ROLES: Readonly<Record<string, 'board' | 'thread' | 'char
 
 export interface RepairContext {
   /** Only the settings the repair reads, so a caller (or a test) need not hold an instance's whole set. */
-  readonly settings: Pick<Settings, 'structuralHoldHours' | 'boardNameMaxLength' | 'moveExpiryLeastHours' | 'reactionCap' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'moveExpiryMostDays' | 'modBots'>;
+  readonly settings: Pick<Settings, 'structuralHoldHours' | 'boardNameMaxLength' | 'moveExpiryLeastHours' | 'reactionCap' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'moveExpiryMostDays' | 'modBots'> & { readonly economy?: Readonly<Record<string, number>> };
   readonly system: Pick<SystemContent, 'nameStyle'>;
   /** The season's Boss. */
   readonly boss: string;
@@ -412,6 +454,8 @@ export interface RepairContext {
   readonly successors: ReadonlySet<string>;
   /** The moves the Boss inherits and was shown (`meeting_context().inheritanceDue`), when it was shown any: an answer naming another is dropped. Omitted: any move is accepted here and the database holds the line. */
   readonly inheritable?: ReadonlySet<string>;
+  /** The machine's slots (`meeting_context().machine`). Omitted, no slot can be named, so a machine move is dropped. */
+  readonly machine?: readonly MachineSlotFacts[];
 }
 
 /** An order to one Mod, repaired: boards that are boards and its own, an allowance within what it may hold and the bank pays. */
@@ -508,15 +552,27 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
   // Moves: what is not allowed is dropped first, then the bank cuts from the end, so a dropped move costs the Boss nothing.
   const phaseLeast = s.moveExpiryLeastHours;
   const expiryMost = Math.min(c.phase.numbers.moveExpiryMostDays, s.moveExpiryMostDays) * 24;
+  // The machine's three moves (Booster packs design, section 6): the numbers are the economy's, and what is in force on the machine is counted with what this answer
+  // keeps, so a slot is moved once, pulls stay at their most and one flash sale runs at a time. The database checks the same at landing.
+  const limits = machineLimits(s.economy);
+  const machineExpiryMost = Math.min(expiryMost, limits.moveDaysMost * 24);
+  const slots = new Map((c.machine ?? []).map((x) => [x.id, x]));
+  const moved = new Set((c.machine ?? []).filter((x) => x.move !== null).map((x) => x.id));
+  let pulls = (c.machine ?? []).filter((x) => x.move?.kind === 'pullSlot').length;
+  let flashing = (c.machine ?? []).some((x) => x.move?.kind === 'flashSale');
   const kept: PlannedMove[] = [];
   (a['moves'] as Record<string, unknown>[]).forEach((m, i) => {
     const path = `moves[${i}]`;
     const kind = moveKind(String(m['kind']));
     if (!kind || !kind.askable) return drop(`${path}.kind`, `oneOf(${ASKABLE_MOVE_KINDS.map((k) => k.key).join(', ')})`);
-    const demand = demandProblems(m['demand'], s.reactionCap);
+    // A favor carries no demand: one given is set aside (recorded), the move is whole without it. Every other move needs one it can meet.
+    const wantsDemand = kind.demand(record(m['params'])) === 'required';
+    const given0 = m['demand'];
+    const strayDemand = !wantsDemand && given0 !== undefined && given0 !== null;
+    const demand: Repaired = wantsDemand ? demandProblems(given0, s.reactionCap) : { ok: true, value: null, trims: [] };
     if (!demand.ok) return drop(`${path}.${demand.path}`, demand.predicate);
     // A demand names things that exist: a board of the meeting's list, a thread the model was given, a character public now.
-    const named = (demand.value as { params: Record<string, unknown> }).params;
+    const named = wantsDemand ? (demand.value as { params: Record<string, unknown> }).params : {};
     for (const [name, role] of Object.entries(DEMAND_ID_ROLES)) {
       if (!(name in named)) continue;
       const id = String(named[name]);
@@ -527,7 +583,7 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     // to lose a move over, so it is checked with a placeholder and left out, and the stock description stands in later.
     const offered = record(m['params']);
     const blank = typeof offered['description'] !== 'string' || offered['description'].trim() === '';
-    const params = moveParamsProblems(kind.key, blank ? { ...offered, description: '-' } : offered);
+    const params = moveParamsProblems(kind.key, blank ? { ...offered, description: '-' } : offered, limits);
     if (!params.ok) return drop(`${path}.params.${params.path}`, params.predicate);
     const given = { ...(params.value as Record<string, unknown>) };
     if (blank) delete given['description'];
@@ -546,6 +602,18 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
       const clash = ruleConflict(c.rules, given['board'] === null ? null : String(given['board']), String(given['predicate']), given['param']);
       if (clash) return drop(`${path}.params`, `compliantPost(${clash})`);
     }
+    // The machine's moves name a slot of the machine as the meeting read it. A move that cannot land as it stands is dropped here, spending nothing.
+    const machineKind = kind.key === 'pullSlot' || kind.key === 'repriceSlot' || kind.key === 'flashSale';
+    if (machineKind) {
+      const slot = slots.get(String(given['slot']));
+      if (!slot) return drop(`${path}.params.slot`, 'isSlot');
+      if (kind.key === 'pullSlot' && !(slot.pullable && slot.availability === 'onSale' && slot.card !== null)) return drop(`${path}.params.slot`, 'pullable');
+      if (kind.key === 'repriceSlot' && slot.availability !== 'onSale') return drop(`${path}.params.slot`, 'onSaleSlot');
+      if (kind.key === 'flashSale' && slot.availability !== 'hidden') return drop(`${path}.params.slot`, 'hiddenSlot');
+      if (moved.has(slot.id)) return drop(`${path}.params.slot`, 'oneMovePerSlot');
+      if (kind.key === 'pullSlot' && pulls >= limits.pullMost) return drop(`${path}.params.slot`, `pullsAtMost(${limits.pullMost})`);
+      if (kind.key === 'flashSale' && flashing) return drop(`${path}.params.slot`, 'oneFlashAtATime');
+    }
     // Times. A go-live that is not a time is now; one outside now..a day is moved to the nearer end.
     let goLive = Date.parse(String(m['go_live_at']));
     const asked = Number.isNaN(goLive) ? c.now : goLive;
@@ -559,12 +627,23 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
       }
     }
     const hours = m['expires_in_hours'] as number;
-    const expires = Math.min(Math.max(hours, phaseLeast), expiryMost);
-    if (expires !== hours) trims.push({ path: `${path}.expires_in_hours`, predicate: `between(${phaseLeast}, ${expiryMost})`, before: hours, after: expires });
+    // A flash sale lasts its hours, whatever expiry was asked: the window is the move's whole life. Every machine move is held to machine.moveDaysMost besides.
+    const most = machineKind ? machineExpiryMost : expiryMost;
+    if (kind.key === 'flashSale' && Number(given['hours']) > most) return drop(`${path}.params.hours`, `atMost(${most})`);
+    const expires = kind.key === 'flashSale' ? Number(given['hours']) : Math.min(Math.max(hours, phaseLeast), most);
+    if (expires !== hours) {
+      trims.push({ path: `${path}.expires_in_hours`, predicate: kind.key === 'flashSale' ? 'equalsHours' : `between(${phaseLeast}, ${most})`, before: hours, after: expires });
+    }
+    if (machineKind) {
+      moved.add(String(given['slot']));
+      if (kind.key === 'pullSlot') pulls++;
+      if (kind.key === 'flashSale') flashing = true;
+    }
+    if (strayDemand) trims.push({ path: `${path}.demand`, predicate: 'noDemand', before: 1, after: 0 });
     kept.push({
       kind: kind.key,
       params: given,
-      demand: demand.value as PlannedMove['demand'],
+      demand: wantsDemand ? (demand.value as PlannedMove['demand']) : null,
       goLiveAt: goLive,
       expiresInHours: expires,
       why: m['why'] as string,

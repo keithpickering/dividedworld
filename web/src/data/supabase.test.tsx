@@ -887,6 +887,24 @@ describe('buying and playing a card', () => {
     expect(asked.url.searchParams.get('order')).toBe('position.asc');
   });
 
+  it('reads the Boss\'s move on a slot as the machine carries it: its kind, end, demand, stored count and the admin\'s price; a favor has no demand and no count', async () => {
+    const pulled = await slotOf({
+      ...SLOT_CARD, availability: 'soldOut',
+      move: { kind: 'pullSlot', act: T, ends: '2026-11-09T12:00:00+00:00', was: 250, percent: null, hours: null,
+              demand: { kind: 'distinctCharactersOnBoard', params: { board: C, count: 12 } }, progress: { done: 7, of: 12, met: false, checkedAt: '2026-11-07T10:00:00+00:00' } },
+    });
+    expect(pulled.move).toEqual({
+      kind: 'pullSlot', act: T, ends: '2026-11-09T12:00:00+00:00', was: 250, percent: null, hours: null,
+      demand: { kind: 'distinctCharactersOnBoard', params: { board: C, count: 12 } }, progress: { done: 7, of: 12, met: false, checkedAt: '2026-11-07T10:00:00+00:00' },
+    });
+    const down = await slotOf({ ...SLOT_CARD, price: 125, move: { kind: 'repriceSlot', act: T, ends: '2026-11-09T12:00:00+00:00', was: 250, percent: 50, hours: null, demand: null, progress: null } });
+    expect(down.move).toMatchObject({ kind: 'repriceSlot', was: 250, percent: 50, demand: null, progress: null });
+    const flash = await slotOf({ ...SLOT_CARD, move: { kind: 'flashSale', act: T, ends: null, was: 250, percent: null, hours: 24, demand: null, progress: null } });
+    expect(flash.move).toMatchObject({ kind: 'flashSale', hours: 24, ends: null });
+    /* A kind this client has no words for is no move it shows. */
+    expect((await slotOf({ ...SLOT_CARD, move: { kind: 'shrinkSlot', act: T } })).move).toBeNull();
+  });
+
   it('buys through the act function, naming the slot and the price it showed, and reads the wallet and count the function answers', async () => {
     const h = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ card: 'whoops', balance: 462, held: 3 }) : undefined));
     const slot = await slotOf(SLOT_CARD);

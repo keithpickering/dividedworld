@@ -299,7 +299,7 @@ begin
   -- 1. Landing: only while The System is on, and only where there is a thread to say it in.
   if enabled and ann is not null then
     for due in
-      select q.id, q.staff, q.kind, q.params, q.demand, q.go_live_at, q.expires_at, q.admin_description from queued_moves q where q.landed_act is null and q.held_at is null and q.refused_at is null and q.go_live_at <= now() order by q.go_live_at, q.id for update skip locked
+      select q.id, q.staff, q.kind, q.params, q.demand, q.expires_at, q.admin_description from queued_moves q where q.landed_act is null and q.held_at is null and q.refused_at is null and q.go_live_at <= now() order by q.go_live_at, q.id for update skip locked
     loop
       begin
         -- Two rules that conflict may have waited together; the one that lands second meets the first. It is refused for good, with the reason.
@@ -313,7 +313,7 @@ begin
         -- The machine's moves are checked against the machine as it is now (0117): a slot an admin has since changed, a card no pack on sale can give, a pull too many.
         -- Refused for good with the reason, as a rule is, and never applied: it is no Act, so nothing was put on the machine and nothing needs reversing.
         if due.kind in ('pullSlot', 'repriceSlot', 'flashSale') then
-          clash := machine_move_problem(due.kind, due.params, due.demand, due.go_live_at, due.expires_at, true);
+          clash := machine_move_problem(due.kind, due.params, due.demand, (select q.go_live_at from queued_moves q where q.id = due.id), due.expires_at, true);
           if clash is not null then
             update queued_moves set failed_at = now(), failure = left('that machine move cannot land: ' || clash, 500), refused_at = now() where id = due.id;
             continue;

@@ -767,8 +767,8 @@ export interface Bought {
 
 /**
  * One slot of the Vending Machine as every player sees it (`machine_now`, 0115_machine.sql): its place in the grid, what it sells,
- * whether it is for sale, and the price now, in hundredths. A hidden slot is not here. `move` is the Boss's move on it, none until
- * the machine's moves exist (the booster packs plan, Task 4).
+ * whether it is for sale, and the price now, in hundredths. A hidden slot is not here, unless a flash sale has opened it. `move` is the Boss's
+ * move in force on it (0117_machine_moves.sql), already applied to `availability` and `price`; null where it has none.
  */
 export interface Slot {
   readonly id: Id;
@@ -778,7 +778,30 @@ export interface Slot {
   readonly rarity: Rarity | null;
   readonly availability: 'onSale' | 'soldOut';
   readonly price: number;
-  readonly move: null;
+  readonly move: SlotMove | null;
+}
+
+/**
+ * The Boss's move on a slot, as `machine_now` carries it: what a player's screen needs to say plainly what happened and how it ends. The words come from the
+ * engine's catalogs by `kind` (engine/system/moves.ts) and `demand` (engine/system/demands.ts, with `progress`), never from the Boss's text. The slot's
+ * `availability` and `price` already have the move in them; `was` is the admin's price, which a Reprice moves and a screen strikes through.
+ */
+export interface SlotMove {
+  readonly kind: 'pullSlot' | 'repriceSlot' | 'flashSale';
+  /** The move's Act. */
+  readonly act: Id;
+  /** When it ends on its own (ISO 8601); every machine move has an expiry. */
+  readonly ends: string | null;
+  /** The demand that ends it early, for a Pull and a markup; null for a markdown and a flash sale, which carry none. */
+  readonly demand: Demand | null;
+  /** The tick's stored count of that demand; null where there is no demand. */
+  readonly progress: DemandProgress | null;
+  /** The admin's price, in hundredths. */
+  readonly was: number;
+  /** A Reprice's percent of `was`; null for the other two. */
+  readonly percent: number | null;
+  /** A flash sale's window in hours; null for the other two. */
+  readonly hours: number | null;
 }
 
 /** A pack opened: its id, the cards it gave in pull order, and the settled wallet after it (`buy_pack`'s answer). */
