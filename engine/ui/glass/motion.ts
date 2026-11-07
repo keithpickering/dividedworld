@@ -101,6 +101,19 @@ export function wipe(pct: number): string {
   const s = WIPE_SLANT;
   return `polygon(-50% -50%, calc(${pct}% + ${s}) -50%, calc(${pct}% - ${s}) 150%, -50% 150%)`;
 }
+/**
+ * The same wipe as a mask, for a dialog's box: the box wears the frame's chamfer as its own clip-path, which a clip-path wipe would replace, and a
+ * mask composes with it. A hard edge at `pct` percent of a gradient that leans along the glass's skew; the gradient line reaches every corner of the
+ * box at 0% and 100%, so -1 shows none of it and 101 shows all of it. Both ends have one shape, so Motion interpolates the stop.
+ */
+export function wipeMask(pct: number): string {
+  return `linear-gradient(calc(90deg + var(--kb-glass-skew)), #000 ${pct}%, transparent ${pct}%)`;
+}
+const MASK_HIDDEN = wipeMask(-1);
+const MASK_SHOWN = wipeMask(101);
+/** Both spellings of the property: the prefixed one is the only one older WebKit reads. */
+const masked = (v: string | string[]) => ({ maskImage: v, WebkitMaskImage: v });
+const MASK_REST = masked('none') as Record<string, string>;
 const WIPE_HIDDEN = wipe(WIPE_HIDDEN_AT);
 const WIPE_SHOWN = wipe(WIPE_SHOWN_AT);
 
@@ -193,15 +206,15 @@ export function screen(feel: ActiveFeel): MotionProps {
 
 type Dir = 1 | -1;
 
-/** An overlay (Overlay, Float, the hand drawer): enters from its `anchor` (px from the element's own top-left), centered where none. */
+/** An overlay (Overlay, Float, the hand drawer): under Snappy it wipes in by a mask (`wipeMask`), so a dialog's chamfer stays; enters from its `anchor` (px from the element's own top-left), centered where none. */
 export function overlay(feel: ActiveFeel, anchor?: { readonly x: number; readonly y: number }): MotionProps {
   if (!feel) return {};
   const transformOrigin = anchor ? `${anchor.x}px ${anchor.y}px` : '50% 50%';
   if (feel.mask === 'skew') {
     return {
-      initial: { clipPath: WIPE_HIDDEN, y: feel.distance / 2, transformOrigin },
-      animate: { clipPath: WIPE_SHOWN, y: 0, transformOrigin, transition: landing(feel, feel.enter) },
-      exit: { clipPath: WIPE_HIDDEN, opacity: 0, transformOrigin, transition: eased(feel) },
+      initial: { ...masked(MASK_HIDDEN), y: feel.distance / 2, transformOrigin },
+      animate: { ...masked(MASK_SHOWN), y: 0, transformOrigin, transition: landing(feel, feel.enter), transitionEnd: MASK_REST },
+      exit: { ...masked([MASK_SHOWN, MASK_HIDDEN]), opacity: 0, transformOrigin, transition: eased(feel) },
     };
   }
   return {
@@ -216,9 +229,9 @@ export function modal(feel: ActiveFeel): MotionProps {
   if (!feel) return {};
   if (feel.mask === 'skew') {
     return {
-      initial: { clipPath: WIPE_HIDDEN, y: feel.distance },
-      animate: { clipPath: WIPE_SHOWN, y: 0, transition: landing(feel, feel.enter) },
-      exit: { clipPath: WIPE_HIDDEN, opacity: 0, y: feel.distance / 2, transition: eased(feel) },
+      initial: { ...masked(MASK_HIDDEN), y: feel.distance },
+      animate: { ...masked(MASK_SHOWN), y: 0, transition: landing(feel, feel.enter), transitionEnd: MASK_REST },
+      exit: { ...masked([MASK_SHOWN, MASK_HIDDEN]), opacity: 0, y: feel.distance / 2, transition: eased(feel) },
     };
   }
   return {

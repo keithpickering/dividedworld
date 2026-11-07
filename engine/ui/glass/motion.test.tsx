@@ -5,7 +5,7 @@
  */
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { wipe, backdrop, crossing, crossingPinned, currentFeel, feelTokens, modal, overlay, screen, stagger, staggerItem, swap, useFeel, type ActiveFeel } from './motion.ts';
+import { wipe, wipeMask, backdrop, crossing, crossingPinned, currentFeel, feelTokens, modal, overlay, screen, stagger, staggerItem, swap, useFeel, type ActiveFeel } from './motion.ts';
 
 const rect = { x: 10, y: 20, width: 100, height: 40 };
 const within = { width: 1000, height: 700 };
@@ -28,11 +28,30 @@ describe('the presets', () => {
   });
 
   it('carry a clip-path under Snappy, and under Smooth only the crossing does (a window opening from the HUD tab)', () => {
-    const { backdrop: _b, item: _i, ...shapes } = presets(snappy);
+    const { backdrop: _b, item: _i, overlay: _o, overlayCentered: _oc, modal: _m, ...shapes } = presets(snappy);
     for (const [name, p] of Object.entries(shapes)) expect(JSON.stringify(p), name).toContain('clipPath');
     const { crossing: _c, ...rest } = presets(smooth);
     for (const [name, p] of Object.entries(rest)) expect(JSON.stringify(p), name).not.toContain('clipPath');
     expect(JSON.stringify(_c)).toContain('clipPath');
+  });
+
+  it('wipe Snappy\'s dialogs by a mask, never a clip-path (the box\'s chamfer is its own clip-path), slanted along the skew', () => {
+    for (const p of [overlay(snappy, { x: 4, y: 8 }), overlay(snappy), modal(snappy)]) {
+      const json = JSON.stringify(p);
+      expect(json).not.toContain('clipPath');
+      expect(json).toContain('maskImage');
+      expect(json).toContain('WebkitMaskImage');
+      expect(json).toContain('var(--kb-glass-skew)');
+      const from = (p.initial as { maskImage: string }).maskImage;
+      const to = (p.animate as { maskImage: string }).maskImage;
+      expect(from).toBe(wipeMask(-1));
+      expect(to).toBe(wipeMask(101));
+      /* The exit starts from the shown keyframe, so it plays from rest (where the mask is none). */
+      expect((p.exit as { maskImage: string[] }).maskImage).toEqual([to, from]);
+      expect((p.exit as { WebkitMaskImage: string[] }).WebkitMaskImage).toEqual([to, from]);
+      expect((p.animate as { transitionEnd: Record<string, string> }).transitionEnd).toMatchObject({ maskImage: 'none', WebkitMaskImage: 'none' });
+    }
+    for (const p of [overlay(smooth), modal(smooth)]) expect(JSON.stringify(p)).not.toContain('Mask');
   });
 
   it('slant Snappy\'s clip along the glass\'s skew', () => {

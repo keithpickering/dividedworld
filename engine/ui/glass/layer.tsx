@@ -11,10 +11,8 @@
  *
  * Under Off the feel is `null`, the presets are `{}`, no exit has anything to play, and the layer is removed at once.
  *
- * The presets' `clipPath` (Snappy's wipe) is not played on a dialog's box: the box wears the frame's chamfer as its own clip-path
- * (`.kb-glass-cut-dialog`), which an animated clip-path would replace for the length of the wipe and, at its end, for good. A wrapper to take the
- * wipe instead cannot stand where the box does: the box is placed and measured by script (place.ts, Float.tsx) and sized by its own width rules,
- * so a wrapper would be a second box. Snappy's dialogs rise and fade by the rest of the preset.
+ * Snappy's wipe is a mask on the box (motion.ts `wipeMask`), not a clip-path: the box wears the frame's chamfer as its own clip-path, and a mask composes
+ * with it. The origin the preset names is left to `useLayer`, which measures it from the anchor.
  */
 import { AnimatePresence, useIsPresent } from 'motion/react';
 import { useLayoutEffect, useMemo, type ReactNode, type RefObject } from 'react';
@@ -27,10 +25,10 @@ export function Layers({ children }: { readonly children?: ReactNode }) {
 }
 
 type Values = Record<string, unknown>;
-/** A preset's target without the properties a dialog's box leaves to its stylesheet and its placement (see the header). */
+/** A preset's target without the origin, which the box's placement decides (see `useLayer`). */
 const bare = (t: unknown): unknown => {
   if (!t || typeof t !== 'object') return t;
-  const { clipPath: _clip, transformOrigin: _origin, ...rest } = t as Values;
+  const { transformOrigin: _origin, ...rest } = t as Values;
   return rest;
 };
 const trimmed = (p: MotionProps): MotionProps => ({ ...p, initial: bare(p.initial), animate: bare(p.animate), exit: bare(p.exit) }) as MotionProps;
