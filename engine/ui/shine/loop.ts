@@ -16,7 +16,7 @@
  * area its draws change in a second stays what its words' box changed at the full rate (engine/ui/cards/body.ts `paintShare`). Each
  * host keeps a credit that its share fills every frame it is in view (at most `CREDIT_CAP`): a moved draw spends 1 and an idle draw 2,
  * so a full host draws a moving light every frame and shimmers every second frame, as before, and the hosts' credits start spread
- * out, so hosts at a share do not all draw on the same frames. A fresh draw, and a draw while the host has something in flight (a
+ * out, so hosts at a share do not all draw on the same frames. A full host keeps no credit: it draws as it always did. A fresh draw, and a draw while the host has something in flight (a
  * burst), are never held back and spend nothing.
  *
  * A moved or idle draw also says which rows of the canvas are on screen (`ShineFrame.span`: the viewport and `SPAN_MARGIN` above and
@@ -163,11 +163,13 @@ function step(t: number): void {
       r.since++;
       const moved = r.drawn === null || sum(r.cur, r.drawn) > MOVED * (shimmer ? r.since : 1);
       const urgent = r.fresh || r.busy;
-      /* A draw that is only the light moving, or the shimmer, waits for the host's credit; a fresh or busy one never does. */
-      const movedNow = moved && (urgent || r.credit >= 1);
-      const idle = shimmer && !moved && !urgent && frameCount % IDLE_EVERY === 0 && r.credit >= IDLE_COST;
+      /* A draw that is only the light moving, or the shimmer, waits for the host's credit; a fresh or busy one never does, and a
+         full host keeps no credit at all, so it draws exactly as it did before shares. */
+      const held = r.share < 1 && !urgent;
+      const movedNow = moved && (!held || r.credit >= 1);
+      const idle = shimmer && !moved && !urgent && frameCount % IDLE_EVERY === 0 && (!held || r.credit >= IDLE_COST);
       if (!(movedNow || urgent || idle)) continue;
-      if (!urgent) r.credit -= idle ? IDLE_COST : 1;
+      if (held) r.credit -= idle ? IDLE_COST : 1;
       r.fresh = false;
       r.since = 0;
       r.drawn = r.cur;

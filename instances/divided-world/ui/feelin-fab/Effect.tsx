@@ -137,7 +137,8 @@ export function FeelinFabEffect({ post, plays, place, still, children }: EffectP
       if (remote) { post(remote, light, now, idle, span); return; }
       const ctx = cv.getContext('2d');
       if (!ctx) return;
-      if (!band) { ctx.clearRect(0, 0, cv.width, cv.height); return; }
+      /* Cleared, the foils go too, so the next draw is whole and no span paints rows over the cleared canvas (foil.ts). */
+      if (!band) { ctx.clearRect(0, 0, cv.width, cv.height); release(); return; }
       const board: Board = band.hi < 0.5 ? 'dark' : 'light';
       const key = `${board}:${cell}`;
       /* A board or cell change lets the other foils go, once: only the one in use holds buffers. */

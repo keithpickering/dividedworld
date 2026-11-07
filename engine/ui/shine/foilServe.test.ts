@@ -104,6 +104,18 @@ describe('the foil worker', () => {
     assert.equal(clips(), 1, 'resized: whole');
   });
 
+  test('a draw after a cleared canvas (a null band) is whole, whatever its span', () => {
+    const { scope, send } = scopeOf();
+    serveFoils(scope);
+    const c = adopt(send, 1);
+    const clips = () => c.calls.filter((x) => x[0] === 'clip').length;
+    const span = { top: 30, bottom: 60 }, tall = { w: 90, h: 450 };
+    send({ kind: 'frame', t: 1, draws: [draw(1, { box: tall })] });
+    send({ kind: 'frame', t: 2, draws: [draw(1, { box: tall, band: null })] });
+    send({ kind: 'frame', t: 3, draws: [draw(1, { box: tall, span })] });
+    assert.equal(clips(), 0, 'the cleared canvas is drawn whole');
+  });
+
   test('a null band clears the canvas and draws no foil', () => {
     const { scope, send } = scopeOf();
     serveFoils(scope);

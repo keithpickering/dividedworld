@@ -411,6 +411,21 @@ describe('the shine loop', () => {
       expect(idle).toBeLessThanOrEqual(201);
     });
 
+    it('a full host is never held by a credit: a light that moves on odd frames and then rests shimmers on every even frame after', () => {
+      shimmer();
+      /* Many full hosts, so their spread starting credits cover the range; each must draw exactly as a host with no credit would. */
+      const hosts = Array.from({ length: 12 }, () => ({ host: {}, c: canvas(), seen: [] as { f: ShineFrame; n: number }[] }));
+      const moves = hosts.map((h) => scrolled(h.host, h.c, undefined, h.seen));
+      for (let i = 1; i <= 40; i++) {
+        if (i > 1 && i < 12 && i % 2 === 1) for (const m of moves) m.move(-40);
+        flush(i * 16);
+      }
+      for (const h of hosts) {
+        const frames = new Set(h.seen.map((x) => x.n));
+        for (let n = 14; n <= 40; n += 2) expect(frames.has(n), `frame ${n}`).toBe(true);
+      }
+    });
+
     it('a fresh draw and a busy one are never held back by a share', () => {
       still();
       const host = {}, c = canvas();
