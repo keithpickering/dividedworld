@@ -438,6 +438,24 @@ export interface HeldVote {
   readonly endsUp: Quadrant | null;
 }
 
+/**
+ * One other player's vote on an Act as it stood: its weight times each quadrant's share. It names no player, and a
+ * player with no vote there is not in a list of them.
+ */
+export type Standing = Readonly<Record<Quadrant, number>>;
+
+/** One of a character's Acts a vote moved on in the window, and the votes on it at the window's start and at its end. */
+export interface ActStanding {
+  readonly act: string;
+  readonly actKind: ActKind;
+  /** The time of the latest reaction in the window that moved a vote on the Act. */
+  readonly at: number;
+  /** Each other player's vote at the window's start. */
+  readonly before: readonly Standing[];
+  /** Each other player's vote at the window's end. */
+  readonly now: readonly Standing[];
+}
+
 /** A card the character played, and how it drew against the post it landed on, in the window. */
 export interface PlayedCard {
   readonly act: string;
@@ -459,6 +477,13 @@ export interface PlayedCard {
   readonly targetVotes: number;
   /** Votes on the target post after the card was played (each counted once per player and alignment, for that player's earliest card of this alignment there), by quadrant, from other players. */
   readonly targetAfter: Readonly<Record<Quadrant, number>>;
+  /**
+   * The votes, at the window's end, of the players whose first reaction to the target came after this play, the caster's
+   * and the target author's players left out; `at` is the latest of those reactions. Null on a play that does not hold the
+   * target for its player (their earliest play there, of any alignment, an earlier window's included), on a play beyond a
+   * post, and where no such player reacted. There is no `before`: every player it drew arrived in the window.
+   */
+  readonly drawnAfter: { readonly at: number; readonly now: readonly Standing[] } | null;
 }
 
 /** A card another player played on one of the character's posts. */
@@ -498,6 +523,8 @@ export interface ClassInput {
   readonly cardsPlayed: readonly PlayedCard[];
   readonly cardsLanded: readonly LandedCard[];
   readonly threadsSpun: readonly SpunThread[];
+  /** The character's own Acts with a vote moved in the window, each with every other player's vote there. */
+  readonly standings: readonly ActStanding[];
 }
 
 /**

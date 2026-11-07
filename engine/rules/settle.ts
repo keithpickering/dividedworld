@@ -46,8 +46,8 @@
  */
 import { payVotes, shareVotes, type PaidVote } from './votes.ts';
 import type {
-  Alignment, ClassInput, ClassRules, GivenReaction, HeldVote, InputAct, InputCharacter, InputReaction, Instance,
-  LandedCard, PlayedCard, Quadrant, ReceivedReaction, SettlementInput, SpunThread, UnscoredTarget,
+  ActStanding, Alignment, ClassInput, ClassRules, GivenReaction, HeldVote, InputAct, InputCharacter, InputReaction, Instance,
+  LandedCard, PlayedCard, Quadrant, ReceivedReaction, SettlementInput, SpunThread, Standing, UnscoredTarget,
 } from './types.ts';
 import { QUADRANTS } from './types.ts';
 
@@ -201,10 +201,10 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   /* Each Act's reactors by first reaction, each player's shares there and the mask that says
      each, and the Act's lean: one pass over the reactions, which are in time order. */
   const zero = (): Record<Quadrant, number> => ({ excitedPositive: 0, excitedNegative: 0, calmPositive: 0, boredNegative: 0 });
-  const onAct = new Map<string, { first: Map<string, number>; lean: Record<Quadrant, number>; of: Map<string, { shares: Record<Quadrant, number>; voice: Partial<Record<Quadrant, { character: string; at: number }>> }> }>();
+  const onAct = new Map<string, { first: Map<string, number>; owner: Map<string, string>; lean: Record<Quadrant, number>; of: Map<string, { shares: Record<Quadrant, number>; voice: Partial<Record<Quadrant, { character: string; at: number }>> }> }>();
   for (const r of shared) {
-    const a = onAct.get(r.act) ?? { first: new Map(), lean: zero(), of: new Map() };
-    if (!a.first.has(r.player)) a.first.set(r.player, r.at);
+    const a = onAct.get(r.act) ?? { first: new Map(), owner: new Map(), lean: zero(), of: new Map() };
+    if (!a.first.has(r.player)) { a.first.set(r.player, r.at); a.owner.set(r.player, r.owner); }
     a.lean[r.quadrant] += r.share;
     const p = a.of.get(r.player) ?? { shares: zero(), voice: {} };
     p.shares[r.quadrant] += r.share;
@@ -297,6 +297,33 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     list.push({ act: v.act, quadrant: v.quadrant, at: v.at, share: v.share });
     given.set(v.character, list);
   }
+  /* Each Act a vote moved on in the window, with every other player's vote there at the window's start and end: one pass
+     over the window's votes and the paid votes of the Acts they touched, indexed by Act. The paid votes are what earlier
+     windows paid (weight x shares); `payVotes` returned what this window changed, which replaces them. With the shared
+     vote off (the estimate) nothing is paid, so each earlier reaction is a voter of its own at a whole vote. */
+  const asVote = (weight: number, shares: Readonly<Record<Quadrant, number>>): Standing => ({
+    excitedPositive: weight * shares.excitedPositive, excitedNegative: weight * shares.excitedNegative, calmPositive: weight * shares.calmPositive, boredNegative: weight * shares.boredNegative,
+  });
+  const paidBefore = group(sharedVote ? input.paid ?? [] : [], (p) => p.act);
+  const reactedBefore = sharedVote ? new Map<string, typeof reactions>() : group(reactions.filter((r) => r.at < window.from), (r) => r.act);
+  const paidNow = group(paidOnActs, (p) => p.act);
+  const standings = new Map<string, ActStanding[]>();
+  /** Each touched Act's votes now, by voter, which the cards below read for the players they drew. */
+  const nowOn = new Map<string, Map<string, Standing>>();
+  for (const [act, vs] of group(windowVotes, (v) => v.act)) {
+    const target = actOf(act);
+    const author = playerOf(target.character);
+    const before = new Map<string, Standing>();
+    for (const p of paidBefore.get(act) ?? []) if (p.player !== author) before.set(p.player, asVote(p.weight, p.shares));
+    for (const r of reactedBefore.get(act) ?? []) before.set(r.player, { ...zero(), [r.quadrant]: 1 });
+    const now = new Map(before);
+    for (const p of paidNow.get(act) ?? []) now.set(p.player, asVote(p.weight, p.shares));
+    const inOrder = (m: Map<string, Standing>) => [...m].sort((x, y) => cmp(x[0], y[0])).map(([, v]) => v);
+    const list = standings.get(target.character) ?? [];
+    list.push({ act, actKind: target.kind, at: Math.max(...vs.map((v) => v.at)), before: inOrder(before), now: inOrder(now) });
+    standings.set(target.character, list);
+    nowOn.set(act, now);
+  }
   const played = new Map<string, PlayedCard[]>();
   const landed = new Map<string, LandedCard[]>();
   /* Each target's earliest card per player and alignment, an earlier window's included: the card
@@ -336,6 +363,13 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     const k = `${c.target}\u0000${playerOf(c.character)}\u0000${readsAs(c)}`;
     if (!holder.has(k)) holder.set(k, c.id);
   }
+  /* The play that holds a target for a player in the crowd it drew: their earliest play there, of any alignment, an
+     earlier window's included (`holder` holds one per alignment, which the lift needs). */
+  const earliest = new Map<string, string>();
+  for (const c of [...acts.values()].filter((a) => isPlay(a) && a.reach === undefined && a.target && a.card && alignmentOf.has(a.card))) {
+    const k = `${c.target}\u0000${playerOf(c.character)}`;
+    if (!earliest.has(k)) earliest.set(k, c.id);
+  }
   // A play beyond a post has no target post to outdraw, and lands on no post (the card mechanic's design, section 7): its own
   // reactions reach its caster through `received`, as any Act's do, and no rule here reads it.
   for (const a of windowActs.filter((x) => isPlay(x) && x.reach === undefined)) {
@@ -354,7 +388,20 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     const list = played.get(a.character) ?? [];
     // Sums of share differences, tidied as the leaning is, so float dust never decides an outdraw.
     for (const q of QUADRANTS) after[q] = tidy(after[q]);
-    list.push({ act: a.id, card: a.card!, alignment, readsAs: readsAs(a), at: a.at, target: target.id, onOthers, votes: tidy(votesOn.get(a.id) ?? 0), targetVotes: tidy(votesOn.get(target.id) ?? 0), targetAfter: after });
+    /* The players whose first reaction to the target came after the play, neither the caster's nor the author's (onAct holds
+       no reaction of the author's own player), each at their vote now. */
+    let drawnAt = -Infinity;
+    const drawnNow: Standing[] = [];
+    if (earliest.get(`${target.id}\u0000${player}`) === a.id) {
+      const votes = nowOn.get(target.id);
+      for (const [voterKey, firstAt] of onAct.get(target.id)?.first ?? []) {
+        if (firstAt <= a.at || onAct.get(target.id)!.owner.get(voterKey) === player || !votes?.has(voterKey)) continue;
+        drawnNow.push(votes.get(voterKey)!);
+        drawnAt = Math.max(drawnAt, firstAt);
+      }
+    }
+    const drawnAfter = drawnNow.length ? { at: drawnAt, now: drawnNow } : null;
+    list.push({ act: a.id, card: a.card!, alignment, readsAs: readsAs(a), at: a.at, target: target.id, onOthers, votes: tidy(votesOn.get(a.id) ?? 0), targetVotes: tidy(votesOn.get(target.id) ?? 0), targetAfter: after, drawnAfter });
     played.set(a.character, list);
     if (onOthers && target.character !== null) {
       const on = landed.get(target.character) ?? [];
@@ -401,9 +448,10 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
         cardsPlayed: inside(played.get(c.id)).sort(byTime),
         cardsLanded: inside(landed.get(c.id)).sort(byTime),
         threadsSpun: inside(spun.get(c.id)).sort(byTime),
+        standings: inside(standings.get(c.id)).sort(byTime),
       };
       const empty = !classInput.posts.length && !classInput.received.length && !classInput.given.length && !classInput.held.length
-        && !classInput.cardsPlayed.length && !classInput.cardsLanded.length && !classInput.threadsSpun.length;
+        && !classInput.cardsPlayed.length && !classInput.cardsLanded.length && !classInput.threadsSpun.length && !classInput.standings.length;
       if (empty) continue;
       for (const e of classOf.get(stretch.class)!.earn(classInput, settings)) {
         if (!Number.isFinite(e.amount)) throw new Error(`settle: class ${stretch.class} returned ${e.amount} for ${e.reason}`);
