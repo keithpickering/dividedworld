@@ -41,7 +41,7 @@ describe('the public profile', () => {
     const w = world(fake);
     open(w.spritey, fake);
     expect(await screen.findByRole('heading', { level: 1, name: 'Spritey' })).toBeInTheDocument();
-    const facts = screen.getByRole('region', { name: 'About Spritey' });
+    const facts = screen.getByRole('table', { name: 'About Spritey' });
     await waitFor(() => expect(facts).toHaveTextContent('Midcarder'));
     expect(within(facts).getByRole('img', { name: 'Rank 2 of 3: Midcarder' })).toBeInTheDocument();
     expect(fact(facts, 'Aura this season')).toHaveTextContent('3.50');
@@ -59,11 +59,14 @@ describe('the public profile', () => {
     const w = world(fake);
     await fake.setProfile(w.pipe, 'Level editor guy', '[i]posting in pencil[/i]', 'default');
     open(w.pipe, fake);
-    const facts = await screen.findByRole('region', { name: 'About Pipewrench' });
+    const facts = await screen.findByRole('table', { name: 'About Pipewrench' });
     await waitFor(() => expect(facts).toHaveTextContent('Level editor guy'));
     await waitFor(() => expect(facts).toHaveTextContent('Aura this season'));
-    const table = within(facts).getByRole('table');
+    const table = facts;
     expect(within(table).getByRole('columnheader', { name: 'About Pipewrench' })).toBeInTheDocument();
+    /* One name for the card: the region's; the band names the column, with no caption beside it. */
+    expect(table.querySelector('caption')).toBeNull();
+    expect(table.querySelector('td.kb-about-avatar')).toHaveAttribute('role', 'presentation');
     const labels = within(table).getAllByRole('rowheader').map((h) => h.textContent);
     expect(labels).toEqual(['Title', 'Rank', 'Aura this season', 'Place', 'Posts', 'Threads spun', 'Cards played', 'Joined']);
     for (const h of within(table).getAllByRole('rowheader')) expect(h.closest('tr')!.querySelector('td:not(.kb-about-avatar)')).not.toBeNull();
@@ -79,7 +82,7 @@ describe('the public profile', () => {
     const c = fake.seed.character(account, 'Fresh', 'face');
     fake.signInAs(account);
     open(c, fake);
-    const facts = await screen.findByRole('region', { name: 'About Fresh' });
+    const facts = await screen.findByRole('table', { name: 'About Fresh' });
     await waitFor(() => expect(facts).toHaveTextContent('Nothing has settled for it yet'));
     const labels = within(facts).getAllByRole('rowheader').map((h) => h.textContent);
     expect(labels).not.toContain('Title');
@@ -92,7 +95,7 @@ describe('the public profile', () => {
     const w = world(fake);
     await fake.setProfile(w.pipe, 'Professional Wrench', '[i]i fix things[/i]', 'default');
     open(w.pipe, fake);
-    const facts = await screen.findByRole('region', { name: 'About Pipewrench' });
+    const facts = await screen.findByRole('table', { name: 'About Pipewrench' });
     expect(facts).toHaveTextContent('Professional Wrench');
     expect((await within(facts).findByText('i fix things')).tagName).toBe('EM');
   });
@@ -103,7 +106,7 @@ describe('the public profile', () => {
     const c = fake.seed.character(account, 'Fresh', 'face');
     fake.signInAs(account);
     open(c, fake);
-    const facts = await screen.findByRole('region', { name: 'About Fresh' });
+    const facts = await screen.findByRole('table', { name: 'About Fresh' });
     await waitFor(() => expect(facts).toHaveTextContent('Nothing has settled for it yet'));
   });
 
@@ -154,7 +157,7 @@ describe('what the profile says of a class: only what its player made public', (
     const w = world(fake);
     fake.seed.reveal(w.pipe, w.thread, { class: 'heel', at: OCT3 });
     open(w.pipe, fake);
-    const facts = await screen.findByRole('region', { name: 'About Pipewrench' });
+    const facts = await screen.findByRole('table', { name: 'About Pipewrench' });
     await waitFor(() => expect(facts).toHaveTextContent('Revealed: Heel (Oct 3)'));
     expect(facts).not.toHaveTextContent('Has Turned since');
   });
@@ -166,7 +169,7 @@ describe('what the profile says of a class: only what its player made public', (
     fake.seed.reveal(w.pipe, w.thread, { class: 'heel', at: OCT3 });
     fake.seed.announceTurn(w.pipe, sys.thread, { at: OCT20 });
     open(w.pipe, fake);
-    const facts = await screen.findByRole('region', { name: 'About Pipewrench' });
+    const facts = await screen.findByRole('table', { name: 'About Pipewrench' });
     await waitFor(() => expect(facts).toHaveTextContent('Revealed: Heel (Oct 3)'));
     expect(facts).toHaveTextContent('Has Turned since (Oct 20)');
   });
@@ -243,7 +246,7 @@ describe('past seasons, announced Turns and the size of the season', () => {
     const fake = buildWorld();
     const w = world(fake);
     open(w.spritey, fake);
-    const facts = await screen.findByRole('region', { name: 'About Spritey' });
+    const facts = await screen.findByRole('table', { name: 'About Spritey' });
     await waitFor(() => expect(fact(facts, 'Place')).toHaveTextContent(/^1 of 2/u));
   });
 
@@ -284,7 +287,7 @@ describe('past seasons, announced Turns and the size of the season', () => {
     const doc = (await fake.profilePage(w.spritey))!;
     const read = holdReads(fake, ['session']);
     renderIn(fake, <ProfileScreen id={w.spritey} doc={doc} />, { path: `/c/${w.spritey}`, boot });
-    const facts = screen.getByRole('region', { name: 'About Spritey' });
+    const facts = screen.getByRole('table', { name: 'About Spritey' });
     expect(facts).toHaveTextContent('Midcarder');
     expect(fact(facts, 'Posts')).toHaveTextContent(/^5$/u);
     expect(screen.getByRole('region', { name: 'Public record' })).toHaveTextContent('Posted:');

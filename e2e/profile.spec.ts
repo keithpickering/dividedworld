@@ -32,7 +32,7 @@ test('a profile and its record have no horizontal scroll at 320px wide', async (
   await page.goto('/season?tab=rankings');
   await page.getByRole('link', { name: 'Pipewrench' }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'Pipewrench' })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'About Pipewrench' })).toContainText('Threads spun');
+  await expect(page.getByRole('table', { name: 'About Pipewrench' })).toContainText('Threads spun');
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
   await page.getByRole('link', { name: 'See the full record' }).click();
   await expect(page.getByRole('table')).toBeVisible();

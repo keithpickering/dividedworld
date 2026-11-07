@@ -119,7 +119,7 @@ describe('the full public record', () => {
     await waitFor(() => expect(dataRows()).toHaveLength(1));
     expect(dataRows()[0]).toHaveTextContent('Played Whoops!');
     expect(screen.getByRole('link', { name: 'Posts' })).not.toHaveAttribute('aria-current');
-    expect(screen.getByText('Cards', { selector: '[aria-current="true"]' })).toBeInTheDocument();
+    expect(screen.getByText('Cards', { selector: '[aria-current="page"]' })).toBeInTheDocument();
   });
 
   test('the kinds are small Chrome buttons, and the current one alone is pressed (aria-current)', async () => {
@@ -127,7 +127,9 @@ describe('the full public record', () => {
     const w = world(fake);
     open(fake, w.spritey, '?kind=post');
     const nav = await screen.findByRole('navigation', { name: 'Kind of row' });
-    const kinds = [...nav.children];
+    expect(within(nav).getAllByRole('list')).toHaveLength(1);
+    expect(within(nav).getAllByRole('listitem')).toHaveLength(6);
+    const kinds = within(nav).getAllByRole('listitem').map((li) => li.firstElementChild!);
     expect(kinds).toHaveLength(6);
     for (const k of kinds) {
       expect(k).toHaveClass('kb-button');
@@ -135,6 +137,7 @@ describe('the full public record', () => {
     }
     const current = kinds.filter((k) => k.hasAttribute('aria-current'));
     expect(current.map((k) => k.textContent)).toEqual(['Posts']);
+    expect(current[0]).toHaveAttribute('aria-current', 'page');
     expect(current[0]!.tagName).not.toBe('A');
     expect(kinds.filter((k) => k.tagName === 'A')).toHaveLength(5);
   });

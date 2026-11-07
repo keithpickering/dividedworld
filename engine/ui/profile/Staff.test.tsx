@@ -158,7 +158,7 @@ describe('an ordinary character\'s profile', () => {
   test('has no badge and no moderation log', async () => {
     open('spritey');
     await screen.findByRole('heading', { level: 1, name: 'Spritey' });
-    await waitFor(() => expect(screen.getByRole('region', { name: 'About Spritey' })).toHaveTextContent('Threads spun'));
+    await waitFor(() => expect(screen.getByRole('table', { name: 'About Spritey' })).toHaveTextContent('Threads spun'));
     expect(screen.queryByText('ADMINISTRATOR')).toBeNull();
     expect(screen.queryByText('MODERATOR')).toBeNull();
     expect(screen.queryByText(/Moderation log/u)).toBeNull();

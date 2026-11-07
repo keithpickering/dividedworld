@@ -247,7 +247,7 @@ for (const scheme of ['light', 'dark'] as const) {
       test('a profile and its record have none, reached through a character link', async ({ page }) => {
         await page.goto('/season?tab=rankings');
         await page.getByRole('link', { name: 'Pipewrench' }).click();
-        await expect(page.getByRole('region', { name: 'About Pipewrench' })).toBeVisible();
+        await expect(page.getByRole('table', { name: 'About Pipewrench' })).toBeVisible();
         expect(await pageViolations(page)).toEqual([]);
         await page.getByRole('link', { name: 'See the full record' }).click();
         await expect(page.getByRole('table')).toBeVisible();

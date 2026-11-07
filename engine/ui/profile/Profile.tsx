@@ -99,14 +99,13 @@ function Profile({ character: c, doc }: { readonly character: Character; readonl
     <div className="kb-profile">
       <p className="kb-crumb"><Link to="/">Index</Link> › {c.name}</p>
       <h1 className="kb-heading kb-profile-name">{c.name}</h1>
-      <section className="kb-profile-card" aria-label={`About ${c.name}`}>
-        <table className="kb-table kb-about" role="table" data-kb-lead={lead} style={{ '--kb-about-lead': Math.max(1, lead) } as CSSProperties}>
-          <caption className="kb-visually-hidden">About {c.name}</caption>
-          <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col" colSpan={3}>About {c.name}</th></tr></thead>
+      <section className="kb-profile-card">
+        <table className="kb-table kb-about" role="table" aria-labelledby="kb-about-band" data-kb-lead={lead} style={{ '--kb-about-lead': Math.max(1, lead) } as CSSProperties}>
+          <thead role="rowgroup"><tr role="row"><th id="kb-about-band" role="columnheader" scope="col" colSpan={3}>About {c.name}</th></tr></thead>
           <tbody role="rowgroup">
             {facts.map((f, i) => (
               <tr key={f.key} role="row" data-kb-fact={f.key} data-kb-lead-row={f.lead ? '' : undefined}>
-                {i === 0 && <td role="cell" className="kb-about-avatar" rowSpan={facts.length + (signed ? 1 : 0)}><Avatar character={c} /></td>}
+                {i === 0 && <td role="presentation" className="kb-about-avatar" rowSpan={facts.length + (signed ? 1 : 0)}><Avatar character={c} /></td>}
                 <th role="rowheader" scope="row" className="kb-about-label">{f.label}</th>
                 <td role="cell" className="kb-about-value">{f.value}</td>
               </tr>
