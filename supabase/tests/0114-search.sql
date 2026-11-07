@@ -1,6 +1,6 @@
 -- The search index (supabase/migrations/0112_search.sql; docs/plans/2026-11-07-search-design.md sections 2, 3, 4 and 6; its plan, Task 2).
 --
--- 1. A post, a spin and a Mod Bot's post each get a post_search row; a card play, a tally and a reveal get none.
+-- 1. A post, a spin and a Mod Bot's post each get a post_search row; a card play, a tally, a reveal and an announce get none.
 -- 2. A thread's first post carries its thread's title at weight A, so a title and a post match in one index; a later post does not.
 -- 3. An edit changes what the post matches, and a second edit again; an older edit written late does not undo a newer one; only the current version is indexed.
 -- 4. A quoted post's words do not match the quoter (bbcode_plain, not raw BBCode).
@@ -42,6 +42,7 @@ declare
   botpost uuid;
   before_count bigint;
   card uuid;
+  announced uuid;
   e1 uuid;
   quoted uuid;
   quoter uuid;
@@ -80,8 +81,10 @@ begin
   card := tests.act(b, 'card', t1, '{}', first_post);
   perform tests.act(null, 'tally', t1);
   perform tests.act(null, 'reveal', t1);
-  if (select count(*) from post_search) is distinct from before_count then raise exception 'a card play, a tally or a reveal got a search row'; end if;
+  announced := tests.act(a, 'announce', t1, '{"what": "debut"}');
+  if (select count(*) from post_search) is distinct from before_count then raise exception 'a card play, a tally, a reveal or an announce got a search row'; end if;
   if exists (select 1 from post_search where act = card) then raise exception 'a card play got a search row'; end if;
+  if exists (select 1 from post_search where act = announced) then raise exception 'an announce got a search row'; end if;
 
   -- 2. Titles at weight A, on a thread's first post alone (seq 1), so the title matches there and nowhere else.
   if not pg_temp.matches(first_post, 'walrus') then raise exception 'the first post of a thread does not match its title'; end if;
@@ -240,5 +243,597 @@ begin
   select count(*) into seen from screen_settings s where s.settings ? 'searchRankPool' and s.settings ? 'searchLanguage';
   perform tests.unbecome();
   if seen <> 1 then raise exception 'the screens do not read searchLanguage and searchRankPool'; end if;
+end
+$test$;
+
+-- ------------------------------------------------------------------------------------------------- Task 3: the reads ----
+--
+-- 9.  search_posts: each filter alone and together (text, author, board, time range, titles only); each sort (relevance equals ts_rank_cd's order); the Updates thread is never found and an
+--     unlisted thread is; a snippet is the post's plain words with <<, >> around the match and no HTML; the post's page in its thread; the marks of the cards live on it, at most 8.
+-- 10. The cursor walks a result set, whatever the sort, with no repeat and no gap; the count stops at 1,001 and `more` says past 1,000; a pool lowered to its least sets `pooled` and bounds what
+--     relevance reaches; the pool's flag is off when the pool was not full.
+-- 11. An author who is not a debuted character finds exactly what a random id finds, which is nothing.
+-- 12. search_threads: one result for each thread with its matches counted to 100; the same filters, sorts and cursor.
+-- 13. search_suggest: "mairo" and "MAR" find Mario; a character who has not debuted is never suggested; an accent folds; an empty prefix lists the newest threads; the system board can be left out;
+--     suggest_characters shows what characters_public shows and nothing that changes with who asks or who owns.
+-- 14. Every refusal, with the refusal hint and 22023; a visitor is refused; the functions are invokers and stable, the one definer pins its search_path.
+-- The plans of what a search runs are read in the scale test (this file's last block).
+
+create function pg_temp.sp(q text default null, author uuid default null, board uuid default null, from_at timestamptz default null, to_at timestamptz default null,
+                           titles_only boolean default false, sort text default null, after jsonb default null, per_page integer default null) returns jsonb
+language sql as $$ select search_posts(q, author, board, from_at, to_at, titles_only, sort, after, per_page) $$;
+create function pg_temp.st(q text default null, author uuid default null, board uuid default null, from_at timestamptz default null, to_at timestamptz default null,
+                           titles_only boolean default false, sort text default null, after jsonb default null, per_page integer default null) returns jsonb
+language sql as $$ select search_threads(q, author, board, from_at, to_at, titles_only, sort, after, per_page) $$;
+-- The acts, or the threads, of a result page in order.
+create function pg_temp.acts_of(j jsonb) returns uuid[] language sql as $$
+  select coalesce(array_agg((r ->> 'act')::uuid order by o), '{}') from jsonb_array_elements(j -> 'results') with ordinality as t(r, o) $$;
+create function pg_temp.threads_of(j jsonb) returns uuid[] language sql as $$
+  select coalesce(array_agg((r ->> 'thread')::uuid order by o), '{}') from jsonb_array_elements(j -> 'results') with ordinality as t(r, o) $$;
+-- Every page of a search in order by following `next`, one `per` at a time (posts or threads); fails if a page repeats a result or the walk does not end.
+create function pg_temp.walk(kind text, q text, author uuid, board uuid, sort text, per integer, titles boolean default false) returns uuid[] language plpgsql as $$
+declare
+  got uuid[] := '{}';
+  page jsonb;
+  after jsonb := null;
+  ids uuid[];
+  guard integer := 0;
+begin
+  loop
+    page := case when kind = 'posts' then pg_temp.sp(q => q, author => author, board => board, sort => sort, after => after, per_page => per, titles_only => titles)
+                 else pg_temp.st(q => q, author => author, board => board, sort => sort, after => after, per_page => per, titles_only => titles) end;
+    ids := case when kind = 'posts' then pg_temp.acts_of(page) else pg_temp.threads_of(page) end;
+    if exists (select 1 from unnest(ids) i where i = any (got)) then raise exception 'a page repeated a result (% % %)', kind, q, sort; end if;
+    got := got || ids;
+    after := page -> 'next';
+    exit when after is null or after = 'null'::jsonb;
+    guard := guard + 1;
+    if guard > 5000 then raise exception 'the walk does not end'; end if;
+  end loop;
+  return got;
+end $$;
+create function pg_temp.hint_of(stmt text) returns text language plpgsql as $$
+declare hint text;
+begin
+  execute stmt;
+  return null;
+exception when others then
+  get stacked diagnostics hint = pg_exception_hint;
+  return sqlstate || '/' || coalesce(hint, '');
+end $$;
+
+-- The setting the reads use, at its ordinary value, the language they were written for, and every row in it.
+update settings set value = '5000' where key = 'searchRankPool';
+update settings set value = '"english"' where key = 'searchLanguage';
+do $rebuild$ begin loop exit when search_rebuild_step() = 0 and not exists (select 1 from search_rebuild); end loop; end $rebuild$;
+
+create table pg_temp.world (k text primary key, v uuid, at timestamptz);
+
+do $test$
+declare
+  base timestamptz := now() - interval '30 days';
+  ann uuid := tests.account('searcher');
+  other uuid := tests.account('other searcher');
+  quincy uuid := tests.character(ann, 'Quincy');
+  rosalind uuid := tests.character(ann, 'Rosalind');
+  sylvia uuid := tests.character(other, 'Sylvia');
+  board_a uuid;
+  board_b uuid;
+  t1 uuid; t2 uuid; t3 uuid; t4 uuid; t5 uuid;
+  p1 uuid; p2 uuid; p3 uuid; p4 uuid; p5 uuid; p6 uuid; p7 uuid;
+  j jsonb;
+  want uuid[];
+  r jsonb;
+  c1 uuid; c2 uuid;
+  i integer;
+begin
+  insert into boards (slug, name) values ('search-a', 'Search A') returning id into board_a;
+  insert into boards (slug, name) values ('search-b', 'Search B') returning id into board_b;
+  insert into threads (board, title) values (board_a, 'Marmot migration') returning id into t1;
+  insert into threads (board, title) values (board_b, 'Quiet corner') returning id into t2;
+  insert into threads (board, title) values (board_a, 'Hidden burrow') returning id into t3;
+  insert into threads (board, title) values (board_a, 'Updates') returning id into t4;
+  insert into unlisted_threads (thread) values (t3);
+  insert into settings (key, value) values ('updatesThread', to_jsonb(t4::text));
+
+  p1 := tests.post(quincy,   t1, 'Marmots love running through meadows.', base + interval '1 day');
+  p2 := tests.post(rosalind, t1, 'Dingos prefer paddling in meadows.', base + interval '2 days');
+  p3 := tests.post(quincy,   t1, 'The [b]marmot[/b] sat [quote=' || p2 || ']Dingos prefer paddling in meadows.[/quote] quietly.', base + interval '6 days');
+  p4 := tests.post(quincy,   t2, 'Meadows are quiet places.', base + interval '3 days');
+  p5 := tests.post(sylvia,   t2, 'Marmots hide in burrows, marmots everywhere, marmots marmots.', base + interval '4 days');
+  p6 := tests.post(rosalind, t3, 'Secret marmots dwell here.', base + interval '7 days');
+  p7 := tests.post(quincy,   t4, 'Marmots in the updates.', base + interval '8 days');
+  insert into pg_temp.world values ('board_a', board_a, null), ('board_b', board_b, null), ('quincy', quincy, null), ('rosalind', rosalind, null), ('sylvia', sylvia, null),
+    ('t1', t1, null), ('t2', t2, null), ('t3', t3, null), ('t4', t4, null), ('p1', p1, null), ('p2', p2, null), ('p3', p3, null), ('p4', p4, null), ('p5', p5, null), ('p6', p6, null),
+    ('p7', p7, null), ('ann', ann, null), ('other', other, null);
+
+  -- Every read below is the signed-in player's.
+  perform tests.become(ann);
+
+  -- The threads a search reads are the threads thread_open holds: every thread but the Updates thread, the unlisted ones included.
+  if exists (select o.id from thread_open o except select t.id from threads t where t.id <> t4) or exists (select t.id from threads t where t.id <> t4 except select o.id from thread_open o) then
+    raise exception 'thread_open and the threads a search reads are not the same set';
+  end if;
+  if not exists (select 1 from thread_open o where o.id = t3) or exists (select 1 from thread_open o where o.id = t4) then raise exception 'the fixture''s unlisted or Updates thread is not as thread_open holds them'; end if;
+
+  -- 9. The text alone: the unlisted thread's post is found, the Updates thread's is not; newest, oldest and relevance.
+  j := pg_temp.sp(q => 'marmot', sort => 'newest');
+  if pg_temp.acts_of(j) is distinct from array[p6, p3, p5, p1] then raise exception 'newest: % (the Updates thread must not be found, the unlisted thread must)', pg_temp.acts_of(j); end if;
+  if (j ->> 'count')::integer <> 4 or (j ->> 'more')::boolean or (j ->> 'pooled')::boolean or j -> 'next' <> 'null'::jsonb then raise exception 'count, more, pooled or next wrong: %', j - 'results'; end if;
+  if pg_temp.acts_of(pg_temp.sp(q => 'marmot', sort => 'oldest')) is distinct from array[p1, p5, p3, p6] then raise exception 'oldest wrong'; end if;
+  perform tests.unbecome();
+  select coalesce(array_agg(x.act order by x.rank desc, x.created_at desc, x.act desc), '{}') into want
+  from (select s.act, s.created_at, ts_rank_cd(s.words, websearch_to_tsquery('english', 'marmot'), 1)::float8 as rank from post_search s
+        where s.words @@ websearch_to_tsquery('english', 'marmot') and s.thread <> t4) x;
+  perform tests.become(ann);
+  j := pg_temp.sp(q => 'marmot');
+  if pg_temp.acts_of(j) is distinct from want then raise exception 'relevance (the default with a query) is not ts_rank_cd''s order: % want %', pg_temp.acts_of(j), want; end if;
+  if pg_temp.acts_of(pg_temp.sp(q => 'marmot', sort => 'relevance')) is distinct from want then raise exception 'sort relevance differs from the default'; end if;
+  if pg_temp.acts_of(pg_temp.sp(q => 'marmot')) is not distinct from pg_temp.acts_of(pg_temp.sp(q => 'marmot', sort => 'newest')) then
+    raise exception 'the fixture cannot tell relevance from newest';
+  end if;
+  -- Stemming (marmots / marmot), a phrase, an exclusion and "or" as people type them.
+  if pg_temp.acts_of(pg_temp.sp(q => 'marmots', sort => 'newest')) is distinct from array[p6, p3, p5, p1] then raise exception 'the query is not stemmed'; end if;
+  if pg_temp.acts_of(pg_temp.sp(q => '"dingos prefer"', sort => 'newest')) is distinct from array[p2] then raise exception 'a quoted phrase did not match (a quote''s words must not match the quoter): %', pg_temp.acts_of(pg_temp.sp(q => '"dogs prefer"', sort => 'newest')); end if;
+  if pg_temp.acts_of(pg_temp.sp(q => 'marmot -burrows', sort => 'newest')) is distinct from array[p3, p1] then raise exception 'an exclusion did not exclude (the title of a first post counts: Hidden burrow): %', pg_temp.acts_of(pg_temp.sp(q => 'marmot -burrows', sort => 'newest')); end if;
+  if pg_temp.acts_of(pg_temp.sp(q => 'burrows or paddling', sort => 'newest')) is distinct from array[p6, p5, p2] then raise exception '"or" did not widen (p6 holds burrow in its thread''s title)'; end if;
+  if (pg_temp.sp(q => 'the')) -> 'count' <> '0'::jsonb or (pg_temp.sp(q => '!!!')) -> 'count' <> '0'::jsonb then raise exception 'a query of only stop words or symbols found something'; end if;
+
+  -- Each filter alone, and together. Without a query the order is newest.
+  if pg_temp.acts_of(pg_temp.sp(author => quincy)) is distinct from array[p3, p4, p1] then raise exception 'author alone: %', pg_temp.acts_of(pg_temp.sp(author => quincy)); end if;
+  if pg_temp.acts_of(pg_temp.sp(q => 'marmot', author => quincy, sort => 'newest')) is distinct from array[p3, p1] then raise exception 'author with a query'; end if;
+  if pg_temp.acts_of(pg_temp.sp(board => board_b)) is distinct from array[p5, p4] then raise exception 'board alone: %', pg_temp.acts_of(pg_temp.sp(board => board_b)); end if;
+  if pg_temp.acts_of(pg_temp.sp(q => 'marmot', board => board_a, sort => 'newest')) is distinct from array[p6, p3, p1] then raise exception 'board with a query'; end if;
+  if pg_temp.acts_of(pg_temp.sp(from_at => base + interval '3 days', to_at => base + interval '6 days')) is distinct from array[p5, p4] then
+    raise exception 'a range is [from, to): %', pg_temp.acts_of(pg_temp.sp(from_at => base + interval '3 days', to_at => base + interval '6 days')); end if;
+  if pg_temp.acts_of(pg_temp.sp(from_at => base + interval '6 days', board => board_a)) is distinct from array[p6, p3] then raise exception 'from alone (the Updates thread must stay out)'; end if;
+  if pg_temp.acts_of(pg_temp.sp(to_at => base + interval '2 days')) is distinct from array[p1] then raise exception 'to alone'; end if;
+  if pg_temp.acts_of(pg_temp.sp(q => 'marmot', from_at => base + interval '3 days', to_at => base + interval '6 days 1 hour', sort => 'newest')) is distinct from array[p3, p5] then raise exception 'range with a query'; end if;
+  if pg_temp.acts_of(pg_temp.sp(q => 'marmot', author => quincy, board => board_a, from_at => base, to_at => base + interval '7 days', sort => 'oldest')) is distinct from array[p1, p3] then
+    raise exception 'every filter together: %', pg_temp.acts_of(pg_temp.sp(q => 'marmot', author => quincy, board => board_a, from_at => base, to_at => base + interval '7 days', sort => 'oldest')); end if;
+  if pg_temp.acts_of(pg_temp.sp(author => quincy, board => board_b, sort => 'oldest')) is distinct from array[p4] then raise exception 'author and board, oldest'; end if;
+  if (pg_temp.sp(author => sylvia, board => board_a)) -> 'count' <> '0'::jsonb then raise exception 'a filter that matches nothing found something'; end if;
+
+  -- Titles only: the first post of a thread, matched in its title; without a query, the first posts.
+  if pg_temp.acts_of(pg_temp.sp(q => 'marmot', titles_only => true)) is distinct from array[p1] then raise exception 'titles only: %', pg_temp.acts_of(pg_temp.sp(q => 'marmot', titles_only => true)); end if;
+  if pg_temp.acts_of(pg_temp.sp(q => 'quiet', titles_only => true)) is distinct from array[p4] then raise exception 'titles only matched a body (quietly) or missed a title'; end if;
+  if pg_temp.acts_of(pg_temp.sp(titles_only => true, board => board_a)) is distinct from array[p6, p1] then raise exception 'titles only without a query: %', pg_temp.acts_of(pg_temp.sp(titles_only => true, board => board_a)); end if;
+
+  -- A result: its thread, board, page, author, snippet.
+  j := pg_temp.sp(q => 'marmot', sort => 'newest');
+  r := j -> 'results' -> 1;  -- p3
+  if r ->> 'act' <> p3::text or r ->> 'thread' <> t1::text or r ->> 'title' <> 'Marmot migration' or r ->> 'board' <> board_a::text or r ->> 'board_slug' <> 'search-a' or r ->> 'board_name' <> 'Search A'
+     or (r ->> 'seq')::integer <> 3 or (r ->> 'page')::integer <> 1 or r ->> 'character' <> quincy::text or r ->> 'name' <> 'Quincy' or (r ->> 'created_at')::timestamptz <> base + interval '6 days' then
+    raise exception 'a result is missing a field or has a wrong one: %', r;
+  end if;
+  if regexp_replace(r ->> 'snippet', '\s+', ' ', 'g') not like '%<<marmot>> sat quietly%' or r ->> 'snippet' ~ '\[|\]|Dingos|paddling' then
+    raise exception 'the snippet is not the plain words with markers (no tags, no quote): %', r ->> 'snippet';
+  end if;
+  if (j -> 'results' -> 3) ->> 'snippet' not like '<<Marmots>> love running%' then raise exception 'the first snippet: %', (j -> 'results' -> 3) ->> 'snippet'; end if;
+  if (select count(*) from jsonb_array_elements(j -> 'results') e where e::text ~ '<b>|</b>|<mark>|&lt;') > 0 then raise exception 'a snippet holds HTML'; end if;
+  if (pg_temp.sp(author => quincy, per_page => 1)) -> 'results' -> 0 ->> 'snippet' <> 'The marmot sat quietly.' then raise exception 'a snippet with no query is the post''s beginning: %', (pg_temp.sp(author => quincy, per_page => 1)) -> 'results' -> 0 ->> 'snippet'; end if;
+  if jsonb_typeof(r -> 'cards') <> 'array' or jsonb_array_length(r -> 'cards') <> 0 then raise exception 'a post with no card shows cards: %', r -> 'cards'; end if;
+  perform tests.unbecome();
+
+  -- Cards: the keys of the plays live on the post, at most 8; a face-down card shows no key, a play an admin ended is gone.
+  perform tests.act(rosalind, 'card', t1, '{"card": "sweetie"}', p1, base + interval '9 days');
+  c1 := tests.act(sylvia, 'card', t1, '{"card": "splat"}', p1, base + interval '9 days 1 hour');
+  perform set_config('kayfabb.card_end_writer', 'on', true);
+  perform tests.act(null, 'card_end', t1, '{"by": "admin", "why": "reversed"}', c1);
+  perform set_config('kayfabb.card_end_writer', 'off', true);
+  perform tests.act(quincy, 'set', t1, '{}', p1, base + interval '9 days 2 hours');
+  perform tests.become(ann);
+  if (pg_temp.sp(q => 'marmot', board => board_a, sort => 'oldest')) -> 'results' -> 0 -> 'cards' <> '["sweetie"]'::jsonb then
+    raise exception 'cards: %', (pg_temp.sp(q => 'marmot', board => board_a, sort => 'oldest')) -> 'results' -> 0 -> 'cards'; end if;
+  perform tests.unbecome();
+  for i in 1..10 loop perform tests.act(rosalind, 'card', t1, jsonb_build_object('card', 'extra' || lpad(i::text, 2, '0')), p1, base + interval '10 days' + i * interval '1 minute'); end loop;
+  perform tests.become(ann);
+  if jsonb_array_length((pg_temp.sp(q => 'marmot', board => board_a, sort => 'oldest')) -> 'results' -> 0 -> 'cards') <> 8 then raise exception 'cards are at most 8'; end if;
+  perform tests.unbecome();
+
+  -- 10. The cursor, whatever the sort and the page size: no repeat, no gap.
+  perform tests.become(ann);
+  for i in 1..3 loop
+    if pg_temp.walk('posts', 'marmot', null, null, 'newest', i) is distinct from array[p6, p3, p5, p1] then raise exception 'newest walk by %', i; end if;
+    if pg_temp.walk('posts', 'marmot', null, null, 'oldest', i) is distinct from array[p1, p5, p3, p6] then raise exception 'oldest walk by %', i; end if;
+    if pg_temp.walk('posts', 'marmot', null, null, 'relevance', i) is distinct from want then raise exception 'relevance walk by %: % want %', i, pg_temp.walk('posts', 'marmot', null, null, 'relevance', i), want; end if;
+    if pg_temp.walk('posts', null, quincy, null, null, i) is distinct from array[p3, p4, p1] then raise exception 'filter-only walk by %', i; end if;
+    if pg_temp.walk('posts', 'marmot', null, null, 'newest', i, true) is distinct from array[p1] then raise exception 'titles-only walk by %', i; end if;
+  end loop;
+  if (pg_temp.sp(q => 'marmot', sort => 'newest', per_page => 2)) -> 'next' = 'null'::jsonb then raise exception 'a page with more after it has no next'; end if;
+  if (pg_temp.sp(q => 'marmot', sort => 'newest', per_page => 4)) -> 'next' <> 'null'::jsonb then raise exception 'the last page has a next'; end if;
+  if jsonb_array_length((pg_temp.sp(q => 'marmot', sort => 'newest', per_page => 3)) -> 'results') <> 3 then raise exception 'per_page is not honored'; end if;
+  perform tests.unbecome();
+
+  -- The count stops at 1,001; a broad word is the post's page in its thread (postsPerPage 20).
+  insert into threads (board, title) values (board_a, 'Pangolin parade') returning id into t5;
+  insert into acts (character, kind, thread, payload, created_at)
+  select quincy, 'post', t5, jsonb_build_object('body', 'Pangolins parade number ' || g), base + interval '11 days' + g * interval '1 second' from generate_series(1, 1100) g;
+  insert into pg_temp.world values ('t5', t5, null);
+  perform tests.become(ann);
+  j := pg_temp.sp(q => 'pangolin', sort => 'newest');
+  if (j ->> 'count')::integer <> 1001 or not (j ->> 'more')::boolean then raise exception 'the count did not stop at 1,001: %', j - 'results'; end if;
+  if jsonb_array_length(j -> 'results') <> 20 then raise exception 'the default page is not 20 results'; end if;
+  j := pg_temp.sp(q => 'pangolin', sort => 'oldest', per_page => 50);
+  if (j -> 'results' -> 40 ->> 'seq')::integer <> 41 or (j -> 'results' -> 40 ->> 'page')::integer <> 3 or (j -> 'results' -> 19 ->> 'page')::integer <> 1 or (j -> 'results' -> 20 ->> 'page')::integer <> 2 then
+    raise exception 'a post''s page in its thread: % % %', j -> 'results' -> 19 ->> 'page', j -> 'results' -> 20 ->> 'page', j -> 'results' -> 40 ->> 'page'; end if;
+  if (pg_temp.sp(q => 'pangolin', sort => 'newest', per_page => 50, from_at => base + interval '11 days 1000 seconds')) -> 'count' <> '101'::jsonb then raise exception 'the count under a range'; end if;
+  -- The cursor reaches past the first thousand.
+  j := pg_temp.sp(q => 'pangolin', sort => 'newest', per_page => 50, after => (select (pg_temp.sp(q => 'pangolin', sort => 'newest', per_page => 50)) -> 'next'));
+  if j -> 'results' -> 0 ->> 'seq' is distinct from '1050' then raise exception 'the second page of newest starts at seq %', j -> 'results' -> 0 ->> 'seq'; end if;
+  if cardinality(pg_temp.walk('posts', 'pangolin', null, null, 'newest', 50)) <> 1100 then raise exception 'a walk past the count did not reach every post'; end if;
+  -- The pool: lowered to its least (100), relevance reaches only the newest 100 and says so; newest and oldest are not pooled; a pool that was not full is not flagged.
+  perform tests.unbecome();
+  update settings set value = '100' where key = 'searchRankPool';
+  perform tests.become(ann);
+  j := pg_temp.sp(q => 'pangolin');
+  if not (j ->> 'pooled')::boolean then raise exception 'a full pool did not set pooled: %', j - 'results'; end if;
+  if (j ->> 'count')::integer <> 1001 then raise exception 'the count is of matches, not of the pool'; end if;
+  if cardinality(pg_temp.walk('posts', 'pangolin', null, null, 'relevance', 30)) <> 100 then raise exception 'relevance reached % results, the pool is 100', cardinality(pg_temp.walk('posts', 'pangolin', null, null, 'relevance', 30)); end if;
+  if exists (select 1 from unnest(pg_temp.walk('posts', 'pangolin', null, null, 'relevance', 30)) a join acts x on x.id = a where x.seq <= 1000) then raise exception 'the pool is not the newest matches'; end if;
+  if (pg_temp.sp(q => 'pangolin', sort => 'newest')) -> 'pooled' <> 'false'::jsonb or (pg_temp.sp(q => 'pangolin', sort => 'oldest')) -> 'pooled' <> 'false'::jsonb then raise exception 'newest or oldest is pooled'; end if;
+  if (pg_temp.sp(q => 'marmot')) -> 'pooled' <> 'false'::jsonb then raise exception 'a pool that was not full set pooled'; end if;
+  perform tests.unbecome();
+  update settings set value = '5000' where key = 'searchRankPool';
+  perform tests.become(ann);
+  if (pg_temp.sp(q => 'pangolin')) -> 'pooled' <> 'false'::jsonb then raise exception 'pooled stayed on with a larger pool'; end if;
+  perform tests.unbecome();
+
+  -- 11. An author who has not debuted, a retired id, a random id: one answer.
+  declare
+    shy uuid;
+    asked jsonb[];
+    none jsonb;
+    ids uuid[];
+  begin
+    -- A character who posted and then lost its debut (posting needs one), so the index holds a post by a character characters_public does not show.
+    shy := tests.character(ann, 'Shyone');
+    insert into acts (character, kind, thread, payload, created_at) values (shy, 'post', t1, '{"body": "Marmots, said the shy one."}', base + interval '12 days');
+    update characters set debuted_at = null where id = shy;
+    if exists (select 1 from characters_public where id = shy) then raise exception 'the fixture''s character still shows'; end if;
+    perform tests.become(ann);
+    asked := array[pg_temp.sp(author => shy), pg_temp.sp(author => gen_random_uuid()), pg_temp.sp(author => '00000000-0000-0000-0000-000000000000'),
+                   pg_temp.sp(q => 'marmot', author => shy), pg_temp.sp(q => 'marmot', author => gen_random_uuid())];
+    none := pg_temp.sp(author => gen_random_uuid());
+    for i in 1..5 loop
+      if asked[i] -> 'count' <> '0'::jsonb or asked[i] -> 'results' <> '[]'::jsonb then raise exception 'an author who is no debuted character found something: %', asked[i]; end if;
+    end loop;
+    if asked[1] is distinct from asked[2] or asked[1] is distinct from none or asked[4] is distinct from asked[5] then raise exception 'an undebuted author and a random id answer differently'; end if;
+    if (pg_temp.st(author => shy)) is distinct from (pg_temp.st(author => gen_random_uuid())) then raise exception 'search_threads answers an undebuted author differently'; end if;
+    -- And the same posts are found by their words, under no author.
+    if not exists (select 1 from acts a where a.character = shy and a.id = any (pg_temp.acts_of(pg_temp.sp(q => 'shy', sort => 'newest')))) then raise exception 'the undebuted character''s post is not found by its words'; end if;
+    perform tests.unbecome();
+  end;
+
+  -- 12. search_threads.
+  perform tests.become(ann);
+  -- The shy character's post (day 12) is the newest match in t1.
+  j := pg_temp.st(q => 'marmot', sort => 'newest');
+  if pg_temp.threads_of(j) is distinct from array[t1, t3, t2] then raise exception 'threads, newest, by each thread''s newest match: %', pg_temp.threads_of(j); end if;
+  if (j ->> 'count')::integer <> 3 or (j ->> 'more')::boolean or (j ->> 'pooled')::boolean then raise exception 'thread count: %', j - 'results'; end if;
+  if (j -> 'results' -> 0 ->> 'matches')::integer <> 3 or (j -> 'results' -> 0 ->> 'matches_more')::boolean or (j -> 'results' -> 1 ->> 'matches')::integer <> 1 then raise exception 'matches: %', j -> 'results'; end if;
+  if j -> 'results' -> 0 ->> 'title' <> 'Marmot migration' or j -> 'results' -> 0 ->> 'board_slug' <> 'search-a' or j -> 'results' -> 0 ->> 'snippet' not like '%<<%' then raise exception 'a thread result: %', j -> 'results' -> 0; end if;
+  if pg_temp.threads_of(pg_temp.st(q => 'marmot', sort => 'oldest')) is distinct from array[t1, t2, t3] then raise exception 'threads, oldest: %', pg_temp.threads_of(pg_temp.st(q => 'marmot', sort => 'oldest')); end if;
+  perform tests.unbecome();
+  select coalesce(array_agg(x.thread order by x.rank desc, x.created_at desc, x.act desc), '{}') into want
+  from (select distinct on (s.thread) s.thread, s.act, s.created_at, ts_rank_cd(s.words, websearch_to_tsquery('english', 'marmot'), 1)::float8 as rank
+        from post_search s where s.words @@ websearch_to_tsquery('english', 'marmot') and s.thread <> t4
+        order by s.thread, rank desc, s.created_at desc, s.act desc) x;
+  perform tests.become(ann);
+  if pg_temp.threads_of(pg_temp.st(q => 'marmot')) is distinct from want then raise exception 'threads by relevance are not each thread''s best match in rank order: % want %', pg_temp.threads_of(pg_temp.st(q => 'marmot')), want; end if;
+  for i in 1..3 loop
+    if pg_temp.walk('threads', 'marmot', null, null, 'newest', i) is distinct from array[t1, t3, t2] then raise exception 'thread newest walk by %', i; end if;
+    if pg_temp.walk('threads', 'marmot', null, null, 'oldest', i) is distinct from array[t1, t2, t3] then raise exception 'thread oldest walk by %', i; end if;
+    if pg_temp.walk('threads', 'marmot', null, null, 'relevance', i) is distinct from want then raise exception 'thread relevance walk by %', i; end if;
+  end loop;
+  if pg_temp.threads_of(pg_temp.st(author => rosalind)) is distinct from array[t3, t1] then raise exception 'threads by author: %', pg_temp.threads_of(pg_temp.st(author => rosalind)); end if;
+  if pg_temp.threads_of(pg_temp.st(q => 'marmot', board => board_b)) is distinct from array[t2] then raise exception 'threads by board'; end if;
+  if pg_temp.threads_of(pg_temp.st(q => 'marmot', titles_only => true)) is distinct from array[t1] then raise exception 'threads, titles only'; end if;
+  if (pg_temp.st(q => 'marmot', titles_only => true)) -> 'results' -> 0 ->> 'matches' <> '1' then raise exception 'titles only counts a post that is not the title''s'; end if;
+  if pg_temp.threads_of(pg_temp.st(q => 'marmot', sort => 'newest', from_at => base + interval '5 days', to_at => base + interval '7 days 1 hour')) is distinct from array[t3, t1] then raise exception 'threads by range: %', pg_temp.threads_of(pg_temp.st(q => 'marmot', sort => 'newest', from_at => base + interval '5 days', to_at => base + interval '7 days 1 hour')); end if;
+  j := pg_temp.st(q => 'pangolin');
+  if (j ->> 'count')::integer <> 1 or (j -> 'results' -> 0 ->> 'matches')::integer <> 100 or not (j -> 'results' -> 0 ->> 'matches_more')::boolean then raise exception 'matches are counted to 100 then 100+: %', j; end if;
+  perform tests.unbecome();
+
+  -- 13. Suggest.
+  declare
+    mario uuid := tests.character(ann, 'Mario');
+    zoe uuid := tests.character(other, 'Zoë');
+    undebuted uuid;
+    mt uuid; mbt uuid; sys_t uuid;
+    sg jsonb;
+    sys_board uuid := (select id from boards where is_system);
+    mario_board uuid;
+    newest uuid[];
+    own text[];
+    own2 jsonb;
+  begin
+    insert into characters (owner, name, created_at) values (other, 'Marietta', now()) returning id into undebuted;
+    insert into threads (board, title) values (board_a, 'Mario Kart tournament') returning id into mt;
+    insert into threads (board, title) values (board_b, 'Super Mario Bros') returning id into mbt;
+    insert into threads (board, title) values (sys_board, 'Mario at the system desk') returning id into sys_t;
+    insert into boards (slug, name) values ('mario-land', 'Mario Land') returning id into mario_board;
+    perform tests.become(ann);
+    foreach sg in array array[search_suggest('mairo', null, null, false, 5), search_suggest('MAR', null, null, false, 5), search_suggest('mar', '{characters}', null, false, 5), search_suggest('  Mari', null, null, false, 5)] loop
+      if not exists (select 1 from jsonb_array_elements(sg -> 'characters') e where e ->> 'id' = mario::text and e ->> 'name' = 'Mario') then raise exception 'the suggestions did not find Mario: %', sg; end if;
+      if exists (select 1 from jsonb_array_elements(sg -> 'characters') e where e ->> 'id' = undebuted::text or e ->> 'name' = 'Marietta') then raise exception 'a character who has not debuted was suggested: %', sg; end if;
+    end loop;
+    sg := search_suggest('mairo', null, null, false, 5);
+    if not exists (select 1 from jsonb_array_elements(sg -> 'threads') e where e ->> 'id' = mt::text and e ->> 'board_name' = 'Search A' and e ->> 'board' = board_a::text) then raise exception '"mairo" did not find the Mario Kart thread: %', sg; end if;
+    if not exists (select 1 from jsonb_array_elements(sg -> 'boards') e where e ->> 'id' = mario_board::text and e ->> 'slug' = 'mario-land' and e ->> 'name' = 'Mario Land') then raise exception '"mairo" did not find the Mario Land board: %', sg; end if;
+    sg := search_suggest('MAR', null, null, false, 5);
+    if not exists (select 1 from jsonb_array_elements(sg -> 'threads') e where e ->> 'id' = mbt::text) then raise exception '"MAR" did not find a thread with the word at its middle: %', sg; end if;
+    -- Accents fold both ways; the plain "Mario" is first of the characters for its own name, ahead of the nearer-by.
+    if not exists (select 1 from jsonb_array_elements(search_suggest('zoe', '{characters}', null, false, 5) -> 'characters') e where e ->> 'id' = zoe::text and e ->> 'name' = 'Zoë') then raise exception 'an accent did not fold'; end if;
+    if not exists (select 1 from jsonb_array_elements(search_suggest('ZOË', '{characters}', null, false, 5) -> 'characters') e where e ->> 'id' = zoe::text) then raise exception 'an accent in the prefix did not fold'; end if;
+    -- Only the kinds asked for, and `most` each.
+    sg := search_suggest('mar', '{boards}', null, false, 5);
+    if sg -> 'threads' <> '[]'::jsonb or sg -> 'characters' <> '[]'::jsonb or jsonb_array_length(sg -> 'boards') < 1 then raise exception 'kinds: %', sg; end if;
+    if jsonb_array_length(search_suggest('mar', '{threads}', null, false, 1) -> 'threads') <> 1 then raise exception 'most 1'; end if;
+    if jsonb_array_length(search_suggest('mar', '{threads}', null, false, 2) -> 'threads') <> 2 then raise exception 'most 2'; end if;
+    -- The system board is left out when asked; a board narrows the threads.
+    if not exists (select 1 from jsonb_array_elements(search_suggest('mario at', '{threads}', null, false, 5) -> 'threads') e where e ->> 'id' = sys_t::text) then raise exception 'a thread of the system board was not found'; end if;
+    if exists (select 1 from jsonb_array_elements(search_suggest('mario at', '{threads}', null, true, 5) -> 'threads') e where e ->> 'id' = sys_t::text) then raise exception 'exclude_system kept a thread of the system board'; end if;
+    if exists (select 1 from jsonb_array_elements(search_suggest('the sys', '{boards}', null, true, 5) -> 'boards') e where e ->> 'id' = sys_board::text) then raise exception 'exclude_system kept the system board'; end if;
+    if not exists (select 1 from jsonb_array_elements(search_suggest('the sys', '{boards}', null, false, 5) -> 'boards') e where e ->> 'id' = sys_board::text) then raise exception 'the system board was not found by name'; end if;
+    if search_suggest('mario', '{threads}', board_a, false, 5) -> 'threads' -> 0 ->> 'id' <> mt::text or exists (select 1 from jsonb_array_elements(search_suggest('mario', '{threads}', board_a, false, 5) -> 'threads') e where e ->> 'board' <> board_a::text) then
+      raise exception 'a board did not narrow the threads, or the best match is not first: %', search_suggest('mario', '{threads}', board_a, false, 5); end if;
+    -- The Updates thread is not suggested; a pattern character is only itself.
+    if exists (select 1 from jsonb_array_elements(search_suggest('updates', '{threads}', null, false, 10) -> 'threads') e where e ->> 'id' = t4::text) then raise exception 'the Updates thread was suggested'; end if;
+    if search_suggest('%%', null, null, false, 10) <> '{"threads": [], "characters": [], "boards": []}'::jsonb then raise exception 'a %% is a pattern in a prefix: %', search_suggest('%%', null, null, false, 10); end if;
+    if search_suggest('zzzzqq', null, null, false, 10) <> '{"threads": [], "characters": [], "boards": []}'::jsonb then raise exception 'a prefix nothing starts with found something'; end if;
+    -- An empty prefix with threads: the newest threads.
+    select coalesce(array_agg(x.id order by x.last_at desc nulls last, x.id desc), '{}') into newest
+    from (select t.id, t.last_at from threads t where t.id <> t4 and t.board <> sys_board order by t.last_at desc nulls last, t.id desc limit 4) x;
+    if (select coalesce(array_agg((e ->> 'id')::uuid order by o), '{}') from jsonb_array_elements(search_suggest('', '{threads}', null, true, 4) -> 'threads') with ordinality t(e, o)) is distinct from newest then
+      raise exception 'the empty prefix did not list the newest threads: % want %', search_suggest('', '{threads}', null, true, 4), newest; end if;
+    if search_suggest(null, '{threads}', board_b, false, 10) -> 'threads' -> 0 ->> 'board' <> board_b::text then raise exception 'the empty prefix ignores the board'; end if;
+    -- suggest_characters: id and name of the debuted, what characters_public shows, the same for any caller and any owner.
+    if exists (select 1 from suggest_characters('mar', 10) s where s.id = undebuted) then raise exception 'suggest_characters returned a character who has not debuted'; end if;
+    if exists (select 1 from suggest_characters('', 10)) then raise exception 'an empty prefix found characters'; end if;
+    if (select count(*) from suggest_characters('mar', 10) s where not exists (select 1 from characters_public c where c.id = s.id and c.name = s.name)) is distinct from 0 then raise exception 'suggest_characters shows what characters_public does not'; end if;
+    if (select array_agg(s.id order by s.name, s.id) from suggest_characters('mar', 10) s) is distinct from (select array_agg(c.id order by c.name, c.id) from characters_public c where fold_text(c.name) like 'mar%') then
+      raise exception 'suggest_characters differs from the characters a prefix starts'; end if;
+    own := (select array_agg(row(s.id, s.name)::text order by s.name, s.id) from suggest_characters('mar', 10) s);
+    perform tests.unbecome();
+    perform tests.become(other);
+    if own is distinct from (select array_agg(row(s.id, s.name)::text order by s.name, s.id) from suggest_characters('mar', 10) s) then raise exception 'suggest_characters changes with who asks'; end if;
+    perform tests.unbecome();
+    perform tests.become(ann);
+    own2 := search_suggest('mar', '{characters}', null, false, 5);
+    perform tests.unbecome();
+    perform tests.become(other);
+    if own2 is distinct from search_suggest('mar', '{characters}', null, false, 5) then raise exception 'the suggested characters change with who asks (or who owns)'; end if;
+    perform tests.unbecome();
+  end;
+end
+$test$;
+
+-- 14. Refusals, a visitor, and what the functions are.
+do $test$
+declare
+  who uuid := tests.account('refused');
+  fn text;
+  bad text;
+  got text;
+  q201 text := 'repeat(''a'', 201)';
+  good_cursor text := $c$'{"at": "2026-01-01T00:00:00+00:00", "act": "00000000-0000-0000-0000-000000000000"}'::jsonb$c$;
+begin
+  perform tests.become(who);
+  for fn in select unnest(array['sp', 'st']) loop
+    for bad in select unnest(array['per_page => 0', 'per_page => 51', 'per_page => -1', 'sort => ''bogus''', 'sort => ''''', 'q => ' || q201,
+                                   'from_at => now(), to_at => now() - interval ''1 second''', 'from_at => now(), to_at => now()',
+                                   'after => ''"x"''::jsonb', 'after => ''{}''::jsonb', 'after => ''[]''::jsonb', 'after => ''{"at": "nope", "act": "x"}''::jsonb',
+                                   'after => ''{"at": "2026-01-01T00:00:00Z", "act": "not-a-uuid"}''::jsonb',
+                                   'after => ''{"at": "2026-01-01T00:00:00Z", "act": "00000000-0000-0000-0000-000000000000", "rank": "high"}''::jsonb',
+                                   'after => ''{"act": "00000000-0000-0000-0000-000000000000"}''::jsonb']) loop
+      got := pg_temp.hint_of(format('select pg_temp.%s(%s)', fn, bad));
+      if got is distinct from '22023/kayfabb.refusal' then raise exception '%: % was not refused as a refusal: %', fn, bad, got; end if;
+    end loop;
+    for bad in select unnest(array['per_page => 1', 'per_page => 50', 'sort => ''newest''', 'q => repeat(''a'', 200)', 'from_at => now() - interval ''1 day'', to_at => now()', 'after => ' || good_cursor,
+                                   'sort => ''relevance'', q => ''x'', after => ''{"rank": 0.5, "at": "2026-01-01T00:00:00Z", "act": "00000000-0000-0000-0000-000000000000"}''::jsonb']) loop
+      got := pg_temp.hint_of(format('select pg_temp.%s(%s)', fn, bad));
+      if got is not null then raise exception '%: % was refused: %', fn, bad, got; end if;
+    end loop;
+  end loop;
+  for bad in select unnest(array[
+      'search_suggest(null, ''{}'', null, false, 5)', 'search_suggest(''ab'', ''{x}'', null, false, 5)', 'search_suggest(''ab'', ''{threads,x}'', null, false, 5)', 'search_suggest(''ab'', null, null, false, 0)',
+      'search_suggest(''ab'', null, null, false, 11)', 'search_suggest(''a'', null, null, false, 5)', 'search_suggest(''a'', ''{threads}'', null, false, 5)', 'search_suggest(repeat(''a'', 101), null, null, false, 5)',
+      'search_suggest('''', null, null, false, 5)', 'search_suggest('''', ''{characters}'', null, false, 5)', 'search_suggest('''', ''{threads,boards}'', null, false, 5)', 'search_suggest(null, null, null, false, 5)',
+      'search_suggest('' a '', ''{threads}'', null, false, 5)', 'search_suggest(''ab'', ''{null}'', null, false, 5)']) loop
+    got := pg_temp.hint_of('select ' || bad);
+    if got is distinct from '22023/kayfabb.refusal' then raise exception '% was not refused as a refusal: %', bad, got; end if;
+  end loop;
+  for bad in select unnest(array['search_suggest(''ab'', null, null, false, 10)', 'search_suggest(repeat(''a'', 100), null, null, false, 1)', 'search_suggest('''', ''{threads}'', null, true, null)',
+                                 'search_suggest(null, ''{threads}'', null, true, 3)', 'search_suggest('' ab '', ''{boards,characters}'', null, null, 2)']) loop
+    got := pg_temp.hint_of('select ' || bad);
+    if got is not null then raise exception '% was refused: %', bad, got; end if;
+  end loop;
+  perform tests.unbecome();
+
+  -- A visitor reads no thread, and so searches none.
+  perform tests.become_anon();
+  for bad in select unnest(array['search_posts(null, null, null, null, null, false, null, null, null)', 'search_threads(null, null, null, null, null, false, null, null, null)',
+                                 'search_suggest(''ab'', null, null, false, 5)', 'suggest_characters(''ab'', 5)', 'search_matches(null, null, null, null, null, false, true, null, null, 5)']) loop
+    got := pg_temp.hint_of('select * from ' || case when bad like 'suggest_characters%' or bad like 'search_matches%' then bad else '(select ' || bad || ') x' end);
+    if got is distinct from '42501/' then raise exception 'a visitor could run %: %', bad, got; end if;
+  end loop;
+  perform tests.unbecome();
+
+  -- What they are: invokers and stable; the reads, the suggested threads and the cursor check in a SQL-standard body (so a screen's dependencies are recorded); the matches are built as text and
+  -- run, in plpgsql, invoker and stable too; the two definers pin their search_path.
+  for fn in select p.oid::regprocedure::text from pg_proc p where p.pronamespace = 'public'::regnamespace
+            and p.proname in ('search_posts', 'search_threads', 'search_suggest', 'search_suggest_threads', 'search_cursor_ok') and (p.prosecdef or p.prosqlbody is null or p.provolatile = 'v') loop
+    raise exception '% is a definer, volatile, or not SQL-standard bodied', fn;
+  end loop;
+  for fn in select p.oid::regprocedure::text from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname in ('search_matches', 'search_matches_sql') and (p.prosecdef or p.provolatile <> 's') loop
+    raise exception '% is a definer or not stable', fn;
+  end loop;
+  if (select count(*) from pg_proc p where p.pronamespace = 'public'::regnamespace
+      and p.proname in ('search_posts', 'search_threads', 'search_suggest', 'search_matches', 'search_matches_sql', 'search_suggest_threads', 'search_cursor_ok', 'search_updates_thread', 'suggest_characters')) is distinct from 9 then
+    raise exception 'a search function is missing';
+  end if;
+  if not exists (select 1 from pg_proc p where p.proname = 'search_updates_thread' and p.prosecdef and p.provolatile = 's' and exists (select 1 from unnest(p.proconfig) c where c like 'search_path=%pg_temp')) then
+    raise exception 'search_updates_thread is not a stable definer with a pinned search_path';
+  end if;
+  if exists (select 1 from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname in ('search_posts', 'search_threads', 'search_suggest') and p.provolatile <> 's') then raise exception 'a search read is not stable'; end if;
+  if not exists (select 1 from pg_proc p where p.proname = 'suggest_characters' and p.prosecdef and p.provolatile = 's'
+                 and exists (select 1 from unnest(p.proconfig) c where c like 'search_path=%pg_temp')) then raise exception 'suggest_characters is not a stable definer with a pinned search_path'; end if;
+  for fn in select unnest(array['search_posts(text,uuid,uuid,timestamptz,timestamptz,boolean,text,jsonb,integer)', 'search_threads(text,uuid,uuid,timestamptz,timestamptz,boolean,text,jsonb,integer)',
+                                'search_suggest(text,text[],uuid,boolean,integer)', 'suggest_characters(text,integer)', 'search_matches(text,uuid,uuid,timestamptz,timestamptz,boolean,boolean,timestamptz,uuid,integer)',
+                                'search_suggest_threads(text,uuid,boolean,integer)', 'search_cursor_ok(jsonb)', 'search_updates_thread()',
+                                'search_matches_sql(text,uuid,uuid,timestamptz,timestamptz,boolean,boolean,timestamptz,uuid,integer)']) loop
+    if not has_function_privilege('authenticated', fn::regprocedure, 'execute') or has_function_privilege('anon', fn::regprocedure, 'execute') then raise exception '% is not for signed-in players alone', fn; end if;
+  end loop;
+end
+$test$;
+
+-- 15. The scale test. 200,000 posts over 2,000 threads, 2,000 characters; a common word in half of the posts and a rare one in ten. Written straight into acts, threads, characters and post_search
+-- (with the Act triggers off for the insert, since the writers' rules are tested elsewhere and a trigger a row is minutes), then analyzed, as a busy instance's tables are. The plans are read, not
+-- timed: with sequential scans turned off, a plan that still has one has no index to use, so a loaded machine cannot trip this. What is held: no sequential scan on post_search, acts, threads or
+-- characters in any plan of the matches (each sort, with and without the filters, the count and the pool) or of the suggestions, and that a relevance search's ranked rows never exceed the pool.
+-- The matches are read as the text search_matches_sql builds and search_matches runs (the planner sees the word); the suggested threads, which run inside a SQL function, as a generic plan of a
+-- prepared statement, which is how that function plans them.
+create function pg_temp.plan_of(stmt text) returns jsonb language plpgsql as $$
+declare plan jsonb;
+begin
+  execute 'explain (format json) ' || stmt into plan;
+  return plan;
+end $$;
+create function pg_temp.seq_scans(plan jsonb) returns text language sql as $$
+  select string_agg(distinct n ->> 'Relation Name', ', ') from jsonb_path_query(plan, '$.**') n
+  where jsonb_typeof(n) = 'object' and n ->> 'Node Type' = 'Seq Scan' and n ->> 'Relation Name' in ('post_search', 'acts', 'threads', 'characters') $$;
+create function pg_temp.index_scans(plan jsonb, rel text) returns bigint language sql as $$
+  select count(*) from jsonb_path_query(plan, '$.**') n where jsonb_typeof(n) = 'object' and n ->> 'Relation Name' = rel and n ->> 'Node Type' in ('Index Scan', 'Index Only Scan', 'Bitmap Heap Scan') $$;
+create function pg_temp.max_limit(plan jsonb) returns numeric language sql as $$
+  select max((n ->> 'Plan Rows')::numeric) from jsonb_path_query(plan, '$.**') n where jsonb_typeof(n) = 'object' and n ->> 'Node Type' = 'Limit' $$;
+
+do $test$
+declare
+  base timestamptz := now() - interval '100 days';
+  started timestamptz := clock_timestamp();
+  scale_board uuid;
+  probe_words text[] := array['common', 'zyxwv'];
+  w text;
+  plan jsonb;
+  seqs text;
+  stmt text;
+  pool constant integer := 5000;
+  shapes text[];
+  s text;
+  who uuid;
+  a_char uuid;
+  a_board uuid;
+  n bigint;
+  j jsonb;
+  tdone timestamptz;
+begin
+  insert into boards (slug, name) values ('scale', 'Scale') returning id into scale_board;
+  insert into threads (id, board, title, created_at, next_seq, last_at, replies)
+  select ('00000000-0000-4000-8000-' || lpad(g::text, 12, '0'))::uuid, scale_board, 'Scale thread ' || g || case when g % 100 = 0 then ' marmot' else '' end, base + g * interval '1 minute', 101, base + interval '100 days', 99
+  from generate_series(1, 2000) g;
+  create temp table scale_owners on commit drop as select g, tests.account('scale owner ' || g) as id from generate_series(0, 399) g;
+  insert into characters (id, owner, name, created_at, debuted_at)
+  select ('00000000-0000-4000-9000-' || lpad(gs.k::text, 12, '0'))::uuid, o.id, 'Scale character ' || gs.k || case when gs.k % 500 = 0 then ' Mario' else '' end, base, base
+  from generate_series(1, 2000) as gs(k) join scale_owners o on o.g = gs.k % 400;
+  alter table acts disable trigger user;
+  insert into acts (id, character, kind, thread, payload, seq, created_at)
+  select ('00000000-0000-4000-a000-' || lpad(g::text, 12, '0'))::uuid,
+         ('00000000-0000-4000-9000-' || lpad((g % 2000 + 1)::text, 12, '0'))::uuid, 'post',
+         ('00000000-0000-4000-8000-' || lpad((g % 2000 + 1)::text, 12, '0'))::uuid,
+         jsonb_build_object('body', 'Post ' || g || ' about topic' || (g % 997) || case when g % 2 = 0 then ' common' else '' end || case when g % 20000 = 0 then ' zyxwv' else '' end),
+         (g - 1) / 2000 + 1, base + g * interval '1 second'
+  from generate_series(1, 200000) g;
+  alter table acts enable trigger user;
+  insert into post_search (act, thread, character, created_at, words)
+  select a.id, a.thread, a.character, a.created_at, to_tsvector('english', a.payload ->> 'body') from acts a join threads t on t.id = a.thread and t.board = scale_board;
+  analyze post_search; analyze acts; analyze threads; analyze characters;
+  raise notice 'scale: % posts in % threads written in %', (select count(*) from post_search p join threads t on t.id = p.thread where t.board = scale_board), 2000, clock_timestamp() - started;
+  if (select count(*) from post_search p join threads t on t.id = p.thread where t.board = scale_board) is distinct from 200000 then raise exception 'the scale fixture is not 200,000 posts'; end if;
+  if (select count(*) from post_search where words @@ to_tsquery('english', 'zyxwv')) is distinct from 10 then raise exception 'the rare word is not in ten posts'; end if;
+  if (select count(*) from post_search where words @@ to_tsquery('english', 'common')) < 100000 then raise exception 'the common word is not in half the posts'; end if;
+  a_char := '00000000-0000-4000-9000-000000000007'::uuid;
+  a_board := scale_board;
+
+  set local enable_seqscan = off;
+  -- The text of what a search runs, with the arguments written into it (search_matches_sql): the plan a search gets.
+  foreach w in array probe_words loop
+    -- text alone; newest, oldest; the page of 21, the pool, the count; with each filter and all of them; titles only; a cursor.
+    foreach s in array array[
+      search_matches_sql(w, null, null, null, null, false, true, null, null, 21),
+      search_matches_sql(w, null, null, null, null, false, false, null, null, 21),
+      search_matches_sql(w, null, null, null, null, false, true, null, null, pool),
+      search_matches_sql(w, null, null, null, null, false, true, null, null, 1001),
+      search_matches_sql(w, a_char, null, null, null, false, true, null, null, 21),
+      search_matches_sql(w, null, a_board, null, null, false, true, null, null, 21),
+      search_matches_sql(w, a_char, a_board, base, now(), false, false, base + interval '1 day', gen_random_uuid(), 21),
+      search_matches_sql(w, null, null, null, null, true, true, null, null, 21),
+      search_matches_sql(w, null, null, null, null, false, true, base + interval '2 days', gen_random_uuid(), 21)
+    ] loop
+      plan := pg_temp.plan_of(s);
+      seqs := pg_temp.seq_scans(plan);
+      if seqs is not null then raise exception 'a sequential scan on % in the plan of: %', seqs, s; end if;
+      if pg_temp.index_scans(plan, 'post_search') = 0 then raise exception 'the plan does not read post_search through an index (the check would be vacuous): %', s; end if;
+      if pg_temp.max_limit(plan) > greatest(pool, 1001) then raise exception 'a limit above the pool in: %', s; end if;
+      if s like '% limit ' || pool and pg_temp.max_limit(plan) > pool then raise exception 'relevance would rank more than the pool in: %', s; end if;
+    end loop;
+  end loop;
+  -- Without a text query: the filters alone, each way.
+  foreach s in array array[
+    search_matches_sql(null, null, null, null, null, false, true, null, null, 21),
+    search_matches_sql(null, null, null, null, null, false, true, null, null, 1001),
+    search_matches_sql(null, null, null, null, null, false, false, null, null, 21),
+    search_matches_sql(null, a_char, null, null, null, false, true, null, null, 21),
+    search_matches_sql(null, a_char, null, null, null, false, false, null, null, 21),
+    search_matches_sql(null, a_char, null, null, null, false, true, null, null, 1001),
+    search_matches_sql(null, null, a_board, null, null, false, true, null, null, 21),
+    search_matches_sql(null, null, null, base, now(), false, true, null, null, 21),
+    search_matches_sql(null, null, null, null, null, true, true, null, null, 21)
+  ] loop
+    plan := pg_temp.plan_of(s);
+    seqs := pg_temp.seq_scans(plan);
+    if seqs is not null then raise exception 'a sequential scan on % in the plan of: %', seqs, s; end if;
+    if pg_temp.index_scans(plan, 'post_search') = 0 then raise exception 'the plan does not read post_search through an index: %', s; end if;
+  end loop;
+
+  -- The suggestions: threads (a prefix, none, a board, the system board left out) and characters, whose body is the definer's own string.
+  set local plan_cache_mode = force_generic_plan;   -- the suggestions run inside a SQL function, planned without the prefix
+  prepare s_th(text, uuid, boolean, integer) as select * from search_suggest_threads($1, $2, $3, $4);
+  foreach s in array array[
+    'execute s_th(''scale'', null, false, 5)', 'execute s_th(''mairo'', null, true, 5)', 'execute s_th(''MAR'', null, false, 10)', 'execute s_th('''', null, false, 5)',
+    format('execute s_th(''thread 1'', %L, true, 5)', scale_board), format('execute s_th('''', %L, true, 5)', scale_board)
+  ] loop
+    plan := pg_temp.plan_of(s);
+    seqs := pg_temp.seq_scans(plan);
+    if seqs is not null then raise exception 'a sequential scan on % in the plan of: %', seqs, s; end if;
+  end loop;
+  deallocate s_th;
+  execute format('prepare s_ch(text, integer) as %s', (select p.prosrc from pg_proc p where p.proname = 'suggest_characters' and p.pronamespace = 'public'::regnamespace));
+  foreach s in array array['execute s_ch(''mario'', 5)', 'execute s_ch(''mairo'', 3)', 'execute s_ch(''sc'', 10)', 'execute s_ch(''Scale char'', 10)'] loop
+    plan := pg_temp.plan_of(s);
+    seqs := pg_temp.seq_scans(plan);
+    if seqs is not null then raise exception 'a sequential scan on % in the plan of: %', seqs, s; end if;
+  end loop;
+  deallocate s_ch;
+  reset plan_cache_mode;
+  reset enable_seqscan;
+
+  -- The reads themselves, over the scale tables: the answers are what the fixture says they are.
+  who := tests.account('scale reader');
+  perform tests.become(who);
+  j := search_posts('zyxwv', null, null, null, null, false, null, null, 20);
+  if (j ->> 'count')::integer <> 10 or jsonb_array_length(j -> 'results') <> 10 or (j ->> 'pooled')::boolean then raise exception 'the rare word: %', j - 'results'; end if;
+  j := search_posts('common', null, null, null, null, false, null, null, 20);
+  if (j ->> 'count')::integer <> 1001 or not (j ->> 'more')::boolean or not (j ->> 'pooled')::boolean or jsonb_array_length(j -> 'results') <> 20 or (j -> 'next') is null then raise exception 'the common word: %', j - 'results'; end if;
+  j := search_posts('common', null, null, null, null, false, 'newest', null, 50);
+  if j -> 'results' -> 0 ->> 'seq' <> '100' then raise exception 'the newest common post is not the last one written: %', j -> 'results' -> 0; end if;
+  j := search_threads('common', null, null, null, null, false, null, null, 50);
+  -- The newest 5,000 posts are two and a half rounds of the threads, and the even posts that hold the word are in the odd threads alone.
+  if (j ->> 'count')::integer <> 1000 or (j ->> 'more')::boolean or not (j ->> 'pooled')::boolean then raise exception 'threads for the common word: %', j - 'results'; end if;
+  j := search_suggest('mairo', null, null, false, 5);
+  if jsonb_array_length(j -> 'characters') <> 5 or j -> 'characters' -> 0 ->> 'name' <> 'Mario' then raise exception 'the characters named Mario (one before, four here, five asked for): %', j -> 'characters'; end if;
+  perform tests.unbecome();
+  tdone := clock_timestamp();
+  raise notice 'scale: whole block in %', tdone - started;
 end
 $test$;

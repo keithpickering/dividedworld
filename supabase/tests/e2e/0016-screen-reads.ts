@@ -31,13 +31,16 @@ const lit = (xs: readonly string[]) => `array[${xs.map((x) => `'${x.replaceAll("
  */
 const NOT_SCREEN_FUNCTIONS = ['standings_page'];
 
+/** The search reads (0112) are screen functions without the `_page` name: one call, a SQL-standard body, an invoker, stable, reading what a screen may. */
+export const SEARCH_READS = ['search_posts', 'search_threads', 'search_suggest'];
+
 /** One line per fault, `function: predicate`, over every screen function visible to the session `db` runs in. */
 export async function screenFaults(db: Query): Promise<string[]> {
   const out = db(`
     with screens as (
       select p.oid, p.proname, p.prosqlbody, p.prosecdef, p.provolatile
       from pg_proc p
-      where p.pronamespace = 'public'::regnamespace and (p.proname = 'boot' or p.proname like '%\\_page') and p.proname <> all (${lit(NOT_SCREEN_FUNCTIONS)})
+      where p.pronamespace = 'public'::regnamespace and (p.proname = 'boot' or p.proname like '%\\_page' or p.proname = any (${lit(SEARCH_READS)})) and p.proname <> all (${lit(NOT_SCREEN_FUNCTIONS)})
     ),
     deps as (
       select distinct s.oid as screen, d.refclassid::regclass::text as kind, d.refobjid
@@ -92,6 +95,14 @@ const poisons: { name: string; create: string; why: RegExp }[] = [
 test('every screen function is an invoker, stable, SQL-bodied function that reads only what a screen may and that anon cannot call', async () => {
   const faults = await screenFaults(real);
   assert.deepEqual(faults, [], faults.join('\n'));
+});
+
+test('the guard reads the search functions as screens, and they write nothing', async () => {
+  const listed = sql(`select string_agg(proname, ',' order by proname) from pg_proc where pronamespace = 'public'::regnamespace and proname = any (${lit(SEARCH_READS)}) and prosqlbody is not null and not prosecdef and provolatile = 's'`);
+  assert.equal(listed, [...SEARCH_READS].sort().join(','), 'the three search reads are SQL-bodied, invokers and stable');
+  const before = sql(`select (select count(*) from acts) || ',' || (select count(*) from post_search) || ',' || (select count(*) from search_rebuild)`);
+  sql(`select search_posts('a', null, null, null, null, false, null, null, 5), search_threads('a', null, null, null, null, false, null, null, 5), search_suggest('ab', null, null, false, 5)`);
+  assert.equal(sql(`select (select count(*) from acts) || ',' || (select count(*) from post_search) || ',' || (select count(*) from search_rebuild)`), before, 'a search wrote a row');
 });
 
 for (const p of poisons) {

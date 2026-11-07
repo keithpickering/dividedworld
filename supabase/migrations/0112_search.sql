@@ -154,7 +154,15 @@ begin
         elsif k = 'sep' then
           oc := fstart + 1; out[oc] := E'\n';         -- drop its words, back to where it began
         else -- bareurl: a link only when closed, around nothing but text that is one good address; its opener is the piece before its start
-          if cl is not null and not f_nodey[sp + 1] and bbcode_plain_url_ok(array_to_string(out[fstart + 1 : oc], ''), array['http','https','mailto'], true) then
+          -- Its words are joined piece by piece and given up past the longest address: a slice of out would copy the whole array each time, and the words past that length cannot be an address.
+          contents := '';
+          if cl is not null and not f_nodey[sp + 1] then
+            for j in fstart + 1..oc loop
+              contents := contents || out[j];
+              if length(contents) > 2048 then exit; end if;
+            end loop;
+          end if;
+          if cl is not null and not f_nodey[sp + 1] and bbcode_plain_url_ok(contents, array['http','https','mailto'], true) then
             oc := fstart; out[oc] := E'\n';
           elsif cl is not null then
             oc := oc + 1; out[oc] := cl;
@@ -212,7 +220,8 @@ begin
     elsif nm = 'img' then
       j := nxt_img[t];
       if val is null and j > 0 and cum[j - 1] - cum[t] <= max_raw then
-        contents := array_to_string(toks[t + 1 : j - 1], '');
+        contents := '';                               -- joined token by token, since a slice of toks would copy the whole array each time; the check above bounds it
+        for idx in t + 1..j - 1 loop contents := contents || toks[idx]; end loop;
         if bbcode_plain_u16len(contents) <= max_raw and bbcode_plain_url_ok(contents, array['http','https'], false) then
           oc := oc + 1; out[oc] := E'\n'; f_nodey[f_home[sp]] := true; t := j + 1; continue;
         end if;
@@ -537,3 +546,354 @@ grant execute on function search_rebuild_step(integer) to service_role;
 -- expression runs with the writer's privileges), and by the suggest list; none is a visitor's or the digest role's.
 revoke execute on function fold_text(text), search_lang(), search_words(text, text), search_words(text, text, regconfig) from public, anon;
 grant execute on function fold_text(text), search_lang(), search_words(text, text), search_words(text, text, regconfig) to authenticated, service_role;
+
+-- ------------------------------------------------------------------------------------------------- Task 3: the reads ----
+--
+-- Design sections 1, 5, 6, 7 and 9; the plan's Task 3. Three reads, search_posts, search_threads and search_suggest, each `language sql stable security invoker`, so each reads as the
+-- caller under the caller's policies and writes nothing, and each answers from public facts alone (a post's words, its author character, its time, its thread and board, a thread's title,
+-- a debuted character's name, a board's name): no result, count, order, refusal or timing reads an account, an owner or a class. An argument out of range is refused through
+-- screen_refusal (0094) before anything is read.
+--
+-- The threads are those thread_open holds: every thread but the Updates thread (the unlisted ones included, design section 1). thread_open itself is not read here, because it is a view of
+-- a dozen joins no search needs and the planner cannot drop (it would read every thread, and characters and acts with them); `threads` is read with its one rule, and the test holds the two
+-- to the same set.
+--
+-- Why the matching is built as text. A SQL function's body is planned once, without its arguments' values, so the planner cannot tell a common word (walk the newest posts, which find
+-- twenty matches at once) from a rare one (read the few matches through the GIN index and sort them); a generic plan sorts every match of a common word, measured at 0.7 s for 200,000 posts.
+-- So the one place a match is found, search_matches, builds its query as text with the arguments written into it as literals (search_matches_sql, which holds every condition), and runs it:
+-- the planner then sees the word and its statistics, and chooses for it, and a condition on an argument that is null is simply not written. Every value is written through format's %L (a
+-- typed literal), the tsquery is made by websearch_to_tsquery before it is written, and the limit is an integer, so nothing a caller writes is ever part of the text. The function is
+-- stable and security invoker, so a search reads as the caller. The text is a function of its own so that supabase/tests/0114-search.sql can read the plan of exactly what runs.
+--
+-- The cursor is {rank, at, act}: the rank (0 unless the search is by relevance), the time and the id of the last result shown. Newest and oldest page by (at, act) inside search_matches,
+-- so page 40 costs what page 1 does. Relevance takes the newest `searchRankPool` matches, ranks them by ts_rank_cd (document length normalized) and pages through that list by
+-- (rank, at, act); `pooled` says the pool was full, so older matches were not ranked. The count is of at most 1,001 matches, `more` is true past 1,000.
+-- A result's cursor can hold any time and id a caller wrote, and the worst a forged one does is show a page of public posts from where it points.
+
+-- Whether a cursor has the shape a search gives: an object with a time, an id and, if it has one, a numeric rank. Nothing else about it is checked; see above.
+create function search_cursor_ok(c jsonb) returns boolean
+language sql immutable parallel safe set search_path = public, pg_temp
+begin atomic
+  select coalesce(jsonb_typeof(search_cursor_ok.c) = 'object'
+    and jsonb_typeof(search_cursor_ok.c -> 'at') = 'string' and (search_cursor_ok.c ->> 'at') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9:.]+(Z|[+-][0-9:]+)?$'
+    and jsonb_typeof(search_cursor_ok.c -> 'act') = 'string' and (search_cursor_ok.c ->> 'act') ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    and (not search_cursor_ok.c ? 'rank' or jsonb_typeof(search_cursor_ok.c -> 'rank') = 'number'), false);
+end;
+
+-- The Updates thread, the glass's and not the board's: the one thread a search leaves out (thread_open leaves it out the same way). `settings` is not a table a player reads, so this reads it as its
+-- owner and says only that, which the Updates page shows anyone; null before an instance opens one.
+create function search_updates_thread() returns uuid
+language sql stable security definer set search_path = public, pg_temp as $$
+  select (u.value #>> '{}')::uuid from settings u where u.key = 'updatesThread'
+$$;
+
+-- Newest threads first, whatever a search is asked for ("newest" with an empty prefix in the suggest list): the index a global walk reads.
+create index threads_last_at on threads (last_at desc nulls last, id desc);
+
+-- The text of the query that finds the matches of a search, newest first (`newest`) or oldest first, from after the cursor (after_at, after_act) when it is given, at most `lim`. A row is a post
+-- or a spin that a text query (if there is one) matches in the words of its current version, by the author (if one is given), in the board (if one is given), in the time range
+-- [from_at, to_at), in a thread that is not the Updates thread; with `titles_only`, the first post of its thread alone and only where the query is in the title (weight A).
+create function search_matches_sql(q text, author uuid, board uuid, from_at timestamptz, to_at timestamptz, titles_only boolean, newest boolean, after_at timestamptz, after_act uuid, lim integer)
+returns text
+language plpgsql stable security invoker set search_path = public, pg_temp as $$
+declare
+  tsq tsquery := case when btrim(coalesce(q, '')) = '' then null else websearch_to_tsquery(search_lang(), q) end;
+  dir text := case when coalesce(newest, true) then 'desc' else 'asc' end;
+  updates uuid := search_updates_thread();
+  conds text[] := array['true'];
+begin
+  if tsq is not null and numnode(tsq) = 0 then
+    conds := conds || 'false'::text;                  -- only stop words or symbols: no lexeme to find, so nothing is found
+  elsif tsq is not null then
+    conds := conds || format('p.words @@ %L::tsquery', tsq::text);
+    if titles_only then conds := conds || format('ts_filter(p.words, %L) @@ %L::tsquery', '{a}', tsq::text); end if;
+  end if;
+  if author is not null then conds := conds || format('p."character" = %L::uuid', author); end if;
+  if from_at is not null then conds := conds || format('p.created_at >= %L::timestamptz', from_at); end if;
+  if to_at is not null then conds := conds || format('p.created_at < %L::timestamptz', to_at); end if;
+  if after_at is not null then
+    conds := conds || format('(p.created_at, p.act) %s (%L::timestamptz, %L::uuid)', case when dir = 'desc' then '<' else '>' end, after_at,
+                             coalesce(after_act, case when dir = 'desc' then 'ffffffff-ffff-ffff-ffff-ffffffffffff' else '00000000-0000-0000-0000-000000000000' end::uuid));
+  end if;
+  if updates is not null then conds := conds || format('p.thread <> %L::uuid', updates); end if;
+  if board is not null then conds := conds || format('t.board = %L::uuid', board); end if;
+  if titles_only then conds := conds || 'exists (select 1 from acts f where f.id = p.act and f.seq = 1)'::text; end if;
+  return format('select p.act, p.thread, t.board, t.title, p."character", p.created_at, p.words from post_search p join threads t on t.id = p.thread where %s order by p.created_at %s, p.act %s limit %s',
+                array_to_string(conds, ' and '), dir, dir, greatest(coalesce(lim, 0), 0)::integer);
+end $$;
+
+create function search_matches(p_q text, p_author uuid, p_board uuid, p_from_at timestamptz, p_to_at timestamptz, p_titles_only boolean, p_newest boolean, p_after_at timestamptz, p_after_act uuid, p_lim integer)
+returns table (act uuid, thread uuid, board uuid, title text, "character" uuid, created_at timestamptz, words tsvector)
+language plpgsql stable security invoker set search_path = public, pg_temp as $$
+begin
+  return query execute search_matches_sql(p_q, p_author, p_board, p_from_at, p_to_at, p_titles_only, p_newest, p_after_at, p_after_act, p_lim);
+end $$;
+
+-- A thread's page of a post, as the thread screen counts it: the post's seq over the instance's postsPerPage.
+
+-- search_posts: see above. `author` is a character, never a player, and one that is not a debuted character finds nothing, as a character nobody holds does (both read characters_public).
+create function search_posts(q text, author uuid, board uuid, from_at timestamptz, to_at timestamptz, titles_only boolean, sort text, after jsonb, per_page integer) returns jsonb
+language sql stable security invoker set search_path = public, pg_temp
+begin atomic
+  select case
+    when char_length(coalesce(search_posts.q, '')) > 200 then screen_refusal('a search is at most 200 characters')
+    when search_posts.sort is not null and search_posts.sort not in ('relevance', 'newest', 'oldest') then screen_refusal('sort is relevance, newest or oldest')
+    when coalesce(search_posts.per_page, 20) not between 1 and 50 then screen_refusal('a page holds 1 to 50 results')
+    when search_posts.from_at >= search_posts.to_at then screen_refusal('the range ends before it begins')
+    when search_posts.after is not null and not search_cursor_ok(search_posts.after) then screen_refusal('that is not a cursor this search gave')
+  end;
+
+  with
+  k as materialized (select btrim(coalesce(search_posts.q, '')) <> '' as has_q),
+  cfg as materialized (
+    select coalesce(search_posts.per_page, 20) as pp,
+           coalesce((select (x.settings ->> 'searchRankPool')::integer from screen_settings x limit 1), 5000) as pool,
+           coalesce((select (x.settings ->> 'postsPerPage')::integer from screen_settings x limit 1), 20) as thread_pp,
+           case when coalesce(search_posts.sort, 'relevance') = 'relevance' then case when k.has_q then 'relevance' else 'newest' end else search_posts.sort end as s
+    from k
+  ),
+  tsq as materialized (select case when (select k.has_q from k) then websearch_to_tsquery(search_lang(), search_posts.q) end as t),
+  au as materialized (
+    select case when search_posts.author is null then null
+                when exists (select 1 from characters_public c where c.id = search_posts.author) then search_posts.author
+                else '00000000-0000-0000-0000-000000000000'::uuid end as id
+  ),
+  c as materialized (
+    select (search_posts.after ->> 'rank')::float8 as rank, (search_posts.after ->> 'at')::timestamptz as at, (search_posts.after ->> 'act')::uuid as act where search_posts.after is not null
+  ),
+  m as materialized (
+    select * from search_matches(search_posts.q, (select au.id from au), search_posts.board, search_posts.from_at, search_posts.to_at, coalesce(search_posts.titles_only, false),
+      (select cfg.s <> 'oldest' from cfg),
+      case when (select cfg.s from cfg) <> 'relevance' then (select c.at from c) end,
+      case when (select cfg.s from cfg) <> 'relevance' then (select c.act from c) end,
+      case when (select cfg.s from cfg) = 'relevance' then (select cfg.pool from cfg) else (select cfg.pp from cfg) + 1 end)
+  ),
+  cnt as materialized (
+    select count(*) as n from search_matches(search_posts.q, (select au.id from au), search_posts.board, search_posts.from_at, search_posts.to_at, coalesce(search_posts.titles_only, false),
+      true, null::timestamptz, null::uuid, 1001)
+  ),
+  ranked as materialized (
+    select m.*, case when (select cfg.s from cfg) = 'relevance' then ts_rank_cd(m.words, (select tsq.t from tsq), 1)::float8 else 0::float8 end as rank from m
+  ),
+  page as materialized (
+    select r.*, row_number() over (order by r.rank desc, case when cfg.s = 'oldest' then r.created_at end asc, case when cfg.s <> 'oldest' then r.created_at end desc,
+                                            case when cfg.s = 'oldest' then r.act end asc, case when cfg.s <> 'oldest' then r.act end desc) as n
+    from ranked r, cfg
+    where cfg.s <> 'relevance' or not exists (select 1 from c) or (r.rank, r.created_at, r.act) < ((select c.rank from c), (select c.at from c), (select c.act from c))
+    order by n limit (select cfg.pp from cfg) + 1
+  ),
+  shown as materialized (select p.* from page p where p.n <= (select cfg.pp from cfg)),
+  people as materialized (select cp.id, cp.name from characters_public cp where cp.id in (select s.character from shown s)),
+  places as materialized (select b.id, b.slug, b.name from boards_now b where b.id in (select s.board from shown s))
+  select jsonb_build_object(
+    'count', (select cnt.n from cnt),
+    'more', (select cnt.n from cnt) > 1000,
+    'pooled', (select cfg.s from cfg) = 'relevance' and (select count(*) from m) >= (select cfg.pool from cfg),
+    'results', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'act', s.act, 'thread', s.thread, 'title', s.title, 'board', s.board, 'board_slug', pl.slug, 'board_name', pl.name,
+        'seq', a.seq, 'page', greatest(1, ceil(a.seq::numeric / (select cfg.thread_pp from cfg)))::integer,
+        'character', s.character, 'name', pe.name, 'created_at', s.created_at,
+        'snippet', case when (select tsq.t from tsq) is null then left(regexp_replace(bbcode_plain(a.current_payload ->> 'body'), '\s+', ' ', 'g'), 200)
+                        else ts_headline(search_lang(), bbcode_plain(a.current_payload ->> 'body'), (select tsq.t from tsq),
+                                         'StartSel=<<,StopSel=>>,MaxFragments=1,MaxWords=30,MinWords=12') end,
+        'cards', coalesce((
+          select jsonb_agg(l.card order by l.created_at, l.id)
+          from (select o.payload ->> 'card' as card, o.created_at, o.id from acts_public o
+                where o.kind in ('card', 'spring') and o.target_act_id = s.act and coalesce(o.payload ->> 'reach', 'post') = 'post'
+                  and not exists (select 1 from acts_public e where e.kind = 'card_end' and e.target_act_id = o.id)
+                order by o.created_at, o.id limit 8) l), '[]'::jsonb)
+      ) order by s.n)
+      from shown s join acts_public a on a.id = s.act left join people pe on pe.id = s.character left join places pl on pl.id = s.board), '[]'::jsonb),
+    'next', (select jsonb_build_object('rank', p.rank, 'at', p.created_at, 'act', p.act) from page p
+             where p.n = (select cfg.pp from cfg) and exists (select 1 from page x where x.n = (select cfg.pp from cfg) + 1))
+  );
+end;
+
+-- search_threads: the same filters and rules, one result for each thread: its best match (the most relevant post, the newest or the oldest) with its snippet and how many of its posts match
+-- (`matches`, counted to 100, with `matches_more` true past it). Threads are found among the pool of matches (the newest `searchRankPool`, the oldest for oldest first), whatever the sort,
+-- so a thread's work is bounded as a post's is; `pooled` says the pool was full. The count is of threads, to 1,001. The cursor is the best match's {rank, at, act}.
+create function search_threads(q text, author uuid, board uuid, from_at timestamptz, to_at timestamptz, titles_only boolean, sort text, after jsonb, per_page integer) returns jsonb
+language sql stable security invoker set search_path = public, pg_temp
+begin atomic
+  select case
+    when char_length(coalesce(search_threads.q, '')) > 200 then screen_refusal('a search is at most 200 characters')
+    when search_threads.sort is not null and search_threads.sort not in ('relevance', 'newest', 'oldest') then screen_refusal('sort is relevance, newest or oldest')
+    when coalesce(search_threads.per_page, 20) not between 1 and 50 then screen_refusal('a page holds 1 to 50 results')
+    when search_threads.from_at >= search_threads.to_at then screen_refusal('the range ends before it begins')
+    when search_threads.after is not null and not search_cursor_ok(search_threads.after) then screen_refusal('that is not a cursor this search gave')
+  end;
+
+  with
+  k as materialized (select btrim(coalesce(search_threads.q, '')) <> '' as has_q),
+  cfg as materialized (
+    select coalesce(search_threads.per_page, 20) as pp,
+           coalesce((select (x.settings ->> 'searchRankPool')::integer from screen_settings x limit 1), 5000) as pool,
+           coalesce((select (x.settings ->> 'postsPerPage')::integer from screen_settings x limit 1), 20) as thread_pp,
+           case when coalesce(search_threads.sort, 'relevance') = 'relevance' then case when k.has_q then 'relevance' else 'newest' end else search_threads.sort end as s
+    from k
+  ),
+  tsq as materialized (select case when (select k.has_q from k) then websearch_to_tsquery(search_lang(), search_threads.q) end as t),
+  au as materialized (
+    select case when search_threads.author is null then null
+                when exists (select 1 from characters_public c where c.id = search_threads.author) then search_threads.author
+                else '00000000-0000-0000-0000-000000000000'::uuid end as id
+  ),
+  c as materialized (
+    select (search_threads.after ->> 'rank')::float8 as rank, (search_threads.after ->> 'at')::timestamptz as at, (search_threads.after ->> 'act')::uuid as act where search_threads.after is not null
+  ),
+  m as materialized (
+    select * from search_matches(search_threads.q, (select au.id from au), search_threads.board, search_threads.from_at, search_threads.to_at, coalesce(search_threads.titles_only, false),
+      (select cfg.s <> 'oldest' from cfg), null::timestamptz, null::uuid, (select cfg.pool from cfg))
+  ),
+  ranked as materialized (
+    select m.*, case when (select cfg.s from cfg) = 'relevance' then ts_rank_cd(m.words, (select tsq.t from tsq), 1)::float8 else 0::float8 end as rank from m
+  ),
+  best as materialized (
+    select distinct on (r.thread) r.*
+    from ranked r, cfg
+    order by r.thread, r.rank desc, case when cfg.s = 'oldest' then r.created_at end asc, case when cfg.s <> 'oldest' then r.created_at end desc,
+                              case when cfg.s = 'oldest' then r.act end asc, case when cfg.s <> 'oldest' then r.act end desc
+  ),
+  page as materialized (
+    select b.*, row_number() over (order by b.rank desc, case when cfg.s = 'oldest' then b.created_at end asc, case when cfg.s <> 'oldest' then b.created_at end desc,
+                                            case when cfg.s = 'oldest' then b.act end asc, case when cfg.s <> 'oldest' then b.act end desc) as n
+    from best b, cfg
+    where not exists (select 1 from c)
+       or case cfg.s when 'relevance' then (b.rank, b.created_at, b.act) < ((select c.rank from c), (select c.at from c), (select c.act from c))
+                     when 'newest' then (b.created_at, b.act) < ((select c.at from c), (select c.act from c))
+                     else (b.created_at, b.act) > ((select c.at from c), (select c.act from c)) end
+    order by n limit (select cfg.pp from cfg) + 1
+  ),
+  shown as materialized (select p.* from page p where p.n <= (select cfg.pp from cfg)),
+  people as materialized (select cp.id, cp.name from characters_public cp where cp.id in (select s.character from shown s)),
+  places as materialized (select b.id, b.slug, b.name from boards_now b where b.id in (select s.board from shown s))
+  select jsonb_build_object(
+    'count', least((select count(*) from best), 1001),
+    'more', (select count(*) from best) > 1000,
+    'pooled', (select count(*) from m) >= (select cfg.pool from cfg),
+    'results', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'thread', s.thread, 'title', s.title, 'board', s.board, 'board_slug', pl.slug, 'board_name', pl.name,
+        'act', s.act, 'seq', a.seq, 'page', greatest(1, ceil(a.seq::numeric / (select cfg.thread_pp from cfg)))::integer,
+        'character', s.character, 'name', pe.name, 'created_at', s.created_at,
+        'snippet', case when (select tsq.t from tsq) is null then left(regexp_replace(bbcode_plain(a.current_payload ->> 'body'), '\s+', ' ', 'g'), 200)
+                        else ts_headline(search_lang(), bbcode_plain(a.current_payload ->> 'body'), (select tsq.t from tsq),
+                                         'StartSel=<<,StopSel=>>,MaxFragments=1,MaxWords=30,MinWords=12') end,
+        'matches', least(h.n, 100), 'matches_more', h.n > 100
+      ) order by s.n)
+      from shown s join acts_public a on a.id = s.act left join people pe on pe.id = s.character left join places pl on pl.id = s.board
+      cross join lateral (
+        select count(*) as n from (
+          select 1 from post_search p2
+          where p2.thread = s.thread
+            and ((select tsq.t from tsq) is null or p2.words @@ (select tsq.t from tsq))
+            and (not coalesce(search_threads.titles_only, false) or (select tsq.t from tsq) is null or ts_filter(p2.words, '{a}') @@ (select tsq.t from tsq))
+            and ((select au.id from au) is null or p2.character = (select au.id from au))
+            and p2.created_at >= coalesce(search_threads.from_at, '-infinity') and p2.created_at < coalesce(search_threads.to_at, 'infinity')
+            and (not coalesce(search_threads.titles_only, false) or exists (select 1 from acts_public f where f.id = p2.act and f.seq = 1))
+          limit 101) z) h), '[]'::jsonb),
+    'next', (select jsonb_build_object('rank', p.rank, 'at', p.created_at, 'act', p.act) from page p
+             where p.n = (select cfg.pp from cfg) and exists (select 1 from page x where x.n = (select cfg.pp from cfg) + 1))
+  );
+end;
+
+-- ---------------------------------------------------------------------------------------------------------- suggest ----
+--
+-- Threads by title, characters by name and boards by name, as one types: a prefix of 2 to 100 characters (folded to lower case without accents), matched where the folded text starts with
+-- it, or where one of its words is near it by trigrams (word_similarity of at least 0.3, so "mairo" finds "Mario" and "mar" finds "Super Mario"), best match first, then newest.
+-- An empty prefix with kinds = {threads} lists the newest threads: the Reveal field's empty state. `most` is 1 to 10 for each kind.
+
+-- The threads a prefix finds. Inlined like search_matches, for the same reason (supabase/tests/0114-search.sql reads its plan).
+create function search_suggest_threads(prefix text, board uuid, exclude_system boolean, most integer)
+returns table (id uuid, title text, board uuid)
+language sql stable security invoker
+begin atomic
+  with p as materialized (
+    select fold_text(btrim(coalesce(search_suggest_threads.prefix, ''))) as fp,
+           replace(replace(replace(fold_text(btrim(coalesce(search_suggest_threads.prefix, ''))), '\', '\\'), '%', '\%'), '_', '\_') || '%' as pat
+  )
+  select h.id, h.title, h.board
+  from (
+    (select t.id, t.title, t.board
+     from threads t join boards bb on bb.id = t.board
+     where (select p.fp from p) <> ''
+       and (fold_text(t.title) like (select p.pat from p) or (select p.fp from p) operator(extensions.<%) fold_text(t.title))
+       and t.id is distinct from search_updates_thread()
+       and (search_suggest_threads.board is null or t.board = search_suggest_threads.board)
+       and (not coalesce(search_suggest_threads.exclude_system, false) or not bb.is_system)
+     order by extensions.word_similarity((select p.fp from p), fold_text(t.title)) desc, t.last_at desc nulls last, t.id desc
+     limit search_suggest_threads.most)
+    union all
+    (select t.id, t.title, t.board
+     from threads t join boards bb on bb.id = t.board
+     where (select p.fp from p) = ''
+       and t.id is distinct from search_updates_thread()
+       and (search_suggest_threads.board is null or t.board = search_suggest_threads.board)
+       and (not coalesce(search_suggest_threads.exclude_system, false) or not bb.is_system)
+     order by t.last_at desc nulls last, t.id desc
+     limit search_suggest_threads.most)
+  ) h;
+end;
+
+-- The characters a prefix finds: only the id and the name of the characters that have debuted, which is all characters_public shows of one; `characters` is owner-only (0001), so this reads
+-- it as its owner and returns nothing that depends on who owns a character. The string body is the plan a test reads. $1 is the prefix, $2 how many.
+create function suggest_characters(prefix text, most integer) returns table (id uuid, name text)
+language sql stable security definer set search_path = public, pg_temp set pg_trgm.word_similarity_threshold = '0.3' as $$
+  with p as materialized (
+    select fold_text(btrim(coalesce($1, ''))) as fp,
+           replace(replace(replace(fold_text(btrim(coalesce($1, ''))), '\', '\\'), '%', '\%'), '_', '\_') || '%' as pat
+  )
+  select c.id, c.name
+  from characters c
+  where c.debuted_at is not null and (select p.fp from p) <> ''
+    and (fold_text(c.name) like (select p.pat from p) or (select p.fp from p) operator(extensions.<%) fold_text(c.name))
+  order by extensions.word_similarity((select p.fp from p), fold_text(c.name)) desc, c.name, c.id
+  limit $2
+$$;
+
+create function search_suggest(prefix text, kinds text[], board uuid, exclude_system boolean, most integer) returns jsonb
+language sql stable security invoker set search_path = public, pg_temp set pg_trgm.word_similarity_threshold = '0.3'
+begin atomic
+  select case
+    when search_suggest.kinds is not null and (cardinality(search_suggest.kinds) = 0 or not coalesce(search_suggest.kinds <@ array['threads', 'characters', 'boards'], false))
+      then screen_refusal('kinds are threads, characters and boards')
+    when coalesce(search_suggest.most, 5) not between 1 and 10 then screen_refusal('a list holds 1 to 10 suggestions')
+    when char_length(btrim(coalesce(search_suggest.prefix, ''))) > 100 then screen_refusal('a prefix is at most 100 characters')
+    when char_length(btrim(coalesce(search_suggest.prefix, ''))) = 1 then screen_refusal('a prefix is at least 2 characters')
+    when char_length(btrim(coalesce(search_suggest.prefix, ''))) = 0 and search_suggest.kinds is distinct from array['threads'] then screen_refusal('only the threads list takes an empty prefix')
+  end;
+
+  with p as materialized (
+    select fold_text(btrim(coalesce(search_suggest.prefix, ''))) as fp,
+           replace(replace(replace(fold_text(btrim(coalesce(search_suggest.prefix, ''))), '\', '\\'), '%', '\%'), '_', '\_') || '%' as pat,
+           coalesce(search_suggest.most, 5) as n,
+           coalesce(search_suggest.kinds, array['threads', 'characters', 'boards']) as k
+  ),
+  found as materialized (
+    select t.* from p, search_suggest_threads(search_suggest.prefix, search_suggest.board, search_suggest.exclude_system, p.n) t where p.k @> array['threads']
+  ),
+  board_names as materialized (select b.id, b.name from boards_now b where b.id in (select f.board from found f))
+  select jsonb_build_object(
+    'threads', case when (select p.k @> array['threads'] from p) then coalesce((
+      select jsonb_agg(jsonb_build_object('id', t.id, 'title', t.title, 'board', t.board, 'board_name', (select bn.name from board_names bn where bn.id = t.board)))
+      from found t), '[]'::jsonb) else '[]'::jsonb end,
+    'characters', case when (select p.k @> array['characters'] from p) then coalesce((
+      select jsonb_agg(jsonb_build_object('id', c.id, 'name', c.name))
+      from suggest_characters(search_suggest.prefix, (select p.n from p)) c), '[]'::jsonb) else '[]'::jsonb end,
+    'boards', case when (select p.k @> array['boards'] from p) then coalesce((
+      select jsonb_agg(jsonb_build_object('id', x.id, 'slug', x.slug, 'name', x.name) order by x.rank desc, x.created_at desc, x.id)
+      from (select b.id, b.slug, b.name, b.created_at, extensions.word_similarity((select p.fp from p), fold_text(b.name)) as rank
+            from boards_now b
+            where (select p.fp from p) <> '' and (not coalesce(search_suggest.exclude_system, false) or not b.is_system)
+              and (fold_text(b.name) like (select p.pat from p) or (select p.fp from p) operator(extensions.<%) fold_text(b.name))
+            order by rank desc, b.created_at desc, b.id limit (select p.n from p)) x), '[]'::jsonb) else '[]'::jsonb end
+  );
+end;
+
+revoke execute on function search_updates_thread(), search_cursor_ok(jsonb), search_matches_sql(text, uuid, uuid, timestamptz, timestamptz, boolean, boolean, timestamptz, uuid, integer), search_matches(text, uuid, uuid, timestamptz, timestamptz, boolean, boolean, timestamptz, uuid, integer),
+  search_posts(text, uuid, uuid, timestamptz, timestamptz, boolean, text, jsonb, integer), search_threads(text, uuid, uuid, timestamptz, timestamptz, boolean, text, jsonb, integer),
+  search_suggest_threads(text, uuid, boolean, integer), suggest_characters(text, integer), search_suggest(text, text[], uuid, boolean, integer) from public, anon;
+grant execute on function search_updates_thread(), search_cursor_ok(jsonb), search_matches_sql(text, uuid, uuid, timestamptz, timestamptz, boolean, boolean, timestamptz, uuid, integer), search_matches(text, uuid, uuid, timestamptz, timestamptz, boolean, boolean, timestamptz, uuid, integer),
+  search_posts(text, uuid, uuid, timestamptz, timestamptz, boolean, text, jsonb, integer), search_threads(text, uuid, uuid, timestamptz, timestamptz, boolean, text, jsonb, integer),
+  search_suggest_threads(text, uuid, boolean, integer), suggest_characters(text, integer), search_suggest(text, text[], uuid, boolean, integer) to authenticated, service_role;

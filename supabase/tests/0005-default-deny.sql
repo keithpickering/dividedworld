@@ -69,7 +69,13 @@ declare
                            'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])',
                            -- The search index's words (0112): the folded text an index of names and titles is written with, the stemming language and the words of a text, each reading nothing but a
                            -- setting and its arguments; the search reads (security invoker) call them.
-                           'fold_text(text)', 'search_lang()', 'search_words(text,text)', 'search_words(text,text,regconfig)'];
+                           'fold_text(text)', 'bbcode_plain(text)', 'bbcode_plain_u16len(text)', 'bbcode_plain_url_ok(text,text[],boolean)', 'search_lang()', 'search_words(text,text)', 'search_words(text,text,regconfig)',
+                           -- The search reads (0112): three screens' reads, security invoker and stable, and the functions they call. The two definers say only a public fact of their arguments: the Updates thread's id,
+                           -- and the id and name of a debuted character a prefix finds (all characters_public shows of one; `characters` is owner-only).
+                           'search_posts(text,uuid,uuid,timestampwithtimezone,timestampwithtimezone,boolean,text,jsonb,integer)', 'search_threads(text,uuid,uuid,timestampwithtimezone,timestampwithtimezone,boolean,text,jsonb,integer)',
+                           'search_suggest(text,text[],uuid,boolean,integer)', 'search_suggest_threads(text,uuid,boolean,integer)', 'suggest_characters(text,integer)',
+                           'search_matches(text,uuid,uuid,timestampwithtimezone,timestampwithtimezone,boolean,boolean,timestampwithtimezone,uuid,integer)',
+                           'search_matches_sql(text,uuid,uuid,timestampwithtimezone,timestampwithtimezone,boolean,boolean,timestampwithtimezone,uuid,integer)', 'search_cursor_ok(jsonb)', 'search_updates_thread()'];
   -- What a visitor (anon) may execute, on purpose; each is also in the list above.
   visitor_callable text[] := array['move_progress(uuid)', 'staff_career(text)',
                            -- The contact (0081): the player who most needs a person is often one who cannot sign in. One setting, the same for every caller.
