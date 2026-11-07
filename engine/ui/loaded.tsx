@@ -1,5 +1,5 @@
 /**
- * The five board screens given the document their route would load, for the places that render a screen without a route: a screen's test and
+ * The board screens given the document their route would load, for the places that render a screen without a route: a screen's test and
  * a story (the forum-load plan, Task 13). The app itself never uses these: its routes load (web/src/App.tsx), and the router draws the screen
  * from the document. Each reads what a first load reads (the session, the document, boot), draws nothing until they have landed, and
  * reads the document again when the address names another (a board's page), as a route does; a screen with no such document is "cannot find".
@@ -16,7 +16,8 @@ import { RecordScreen } from './profile/Record.tsx';
 import { effectCards } from './cards/plays.ts';
 import { usePlayer } from './player.tsx';
 import { addressOf, useLocation } from './router.tsx';
-import { boardKey, loadBoard, loadIndex, loadProfile, loadRecord, loadThread, recordKey, threadKey, type LoadEnv, type ScreenDoc } from './screen-docs.ts';
+import { boardKey, loadBoard, loadIndex, loadProfile, loadRecord, loadSearch, loadThread, recordKey, searchKey, threadKey, type LoadEnv, type ScreenDoc, type SearchDoc } from './screen-docs.ts';
+import { SearchScreen } from './search/SearchScreen.tsx';
 import { ThreadScreen } from './thread/Thread.tsx';
 
 function Loaded<T>({ keyed, load, children }: { readonly keyed: string; readonly load: (env: LoadEnv) => Promise<ScreenDoc<T> | null>; readonly children: (doc: ScreenDoc<T>) => ReactNode }) {
@@ -62,4 +63,9 @@ export function LoadedProfile({ id }: { readonly id: string }) {
 export function LoadedRecord({ id }: { readonly id: string }) {
   const { query } = useLocation();
   return <Loaded<RecordPage> keyed={recordKey(id, query)} load={(env) => loadRecord(env, id, query)}>{(doc) => <RecordScreen id={id} doc={doc} />}</Loaded>;
+}
+
+export function LoadedSearch() {
+  const { query } = useLocation();
+  return <Loaded<SearchDoc> keyed={searchKey(query)} load={(env) => loadSearch(env, query)}>{(doc) => <SearchScreen doc={doc} />}</Loaded>;
 }

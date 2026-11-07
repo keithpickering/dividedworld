@@ -26,6 +26,8 @@ const settings: Settings = {
   titleMaxLength: 120,
   postsPerPage: 20,
   hotReplies: 10,
+  searchLanguage: 'english',
+  searchRankPool: 5000,
   cardSettings: { 'splat.clean': 95 },
   economy: { 'a.bonus': 5, 'splat.price': 100 },
   settlementLength: { unit: 'day', count: 1 },
@@ -141,6 +143,21 @@ test('a thread\'s page and what makes it hot are whole numbers, at least 1', () 
     for (const bad of [0, 2.5, '20', null, Number.NaN]) {
       assert.match(settingsProblems({ ...settings, [key]: bad as number }).join('\n'), new RegExp(`setting "${key}"`), `${String(bad)}`);
     }
+  }
+});
+
+test('the search language names a text search configuration and the rank pool is a whole number from 100 to 100,000', () => {
+  for (const key of ['searchLanguage', 'searchRankPool'] as const) {
+    const { [key]: _gone, ...without } = settings;
+    assert.match(settingsProblems(without as Settings).join('\n'), new RegExp(`setting "${key}" is missing`));
+  }
+  assert.deepEqual(settingsProblems({ ...settings, searchLanguage: 'simple', searchRankPool: 100 }), []);
+  assert.deepEqual(settingsProblems({ ...settings, searchRankPool: 100_000 }), []);
+  for (const bad of ['', 5, null, ' english', 'English', 'a b', 'english;']) {
+    assert.match(settingsProblems({ ...settings, searchLanguage: bad as never }).join('\n'), /setting "searchLanguage" is .*text search configuration/, JSON.stringify(bad));
+  }
+  for (const bad of [99, 100_001, 2.5, '5000', null, Number.NaN, -1]) {
+    assert.match(settingsProblems({ ...settings, searchRankPool: bad as never }).join('\n'), /setting "searchRankPool" is .*; it must be a whole number of matches from 100 to 100,000/, String(bad));
   }
 });
 

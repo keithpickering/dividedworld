@@ -38,6 +38,10 @@ export const defaults: Settings = deepFreeze<Settings>({
   postsPerPage: 20,
   /** HOT: ten replies in the last 7 days. */
   hotReplies: 10,
+  /** The community writes in English; the stemming follows (a Postgres text search configuration, so `simple` is there for a language it has none for). */
+  searchLanguage: 'english',
+  /** A relevance search ranks the newest 5,000 matches: a common word fills that at once, so a busy instance pays for 5,000 rows, never for millions. */
+  searchRankPool: 5000,
   /** Switched off: The System holds no meeting and lands no move until Task 13 of its plan turns it on, after the screens that show a move's way out exist. */
   systemEnabled: false,
   /** A character a player makes starts with it/its, as every character did before pronouns; its player changes it on the character's page. */

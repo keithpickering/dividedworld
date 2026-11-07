@@ -5,7 +5,7 @@
 -- Case is not held (the rule does not hold it); every writer (set_profile, create_character, the setting's fallback and the seed) stores the set lowercased, as the
 -- client does (`normalizePronouns`).
 --
--- Written here: the hold; `settings_held` (0104) holding the instance's default, `pronouns`; the column, backfilled with the it-set for every character that has no profile
+-- Written here: the hold; `settings_held` (0116) holding the instance's default, `pronouns`; the column, backfilled with the it-set for every character that has no profile
 -- row; `profile_projection` (0025) carrying it; `set_profile` (0019), a fifth argument that keeps the stored set when null; `create_character` (0067), a last argument that,
 -- when null, takes the setting and else the it-set, and a profile row made with the character; and `seed_instance` (0108), a persona's or the developer's set written to a new
 -- profile and rewritten on every seed that names it. The signatures of set_profile and create_character change, so each is dropped and made again, and its grant renewed.
@@ -126,7 +126,7 @@ end $$;
 revoke execute on function create_character(text, text, text, text, jsonb) from public, anon;
 grant execute on function create_character(text, text, text, text, jsonb) to authenticated;
 
--- settings_held (0104), also holding `pronouns`. Everything else as 0104 wrote it.
+-- settings_held (0116, which holds the two search settings), also holding `pronouns`. Everything else as 0116 wrote it.
 create or replace function settings_held() returns trigger
 language plpgsql set search_path = public, pg_temp as $$
 declare
@@ -191,6 +191,9 @@ begin
     when 'moveExpiryLeastHours' then case when not setting_whole(v, 1) then 'a whole number of hours, at least 1' end
     when 'demandCheckMinutes' then case when not setting_whole(v, 1, 1440) then 'a whole number of minutes, at least 1 and at most 1440' end
     when 'demandChecksPerTick' then case when not setting_whole(v, 1, 1000) then 'a whole number of moves, at least 1 and at most 1000' end
+    when 'searchLanguage' then case when not coalesce(jsonb_typeof(v) = 'string' and exists (select 1 from pg_ts_config c where c.cfgname = v #>> '{}'), false)
+      then 'the name of a text search configuration this database holds (english or simple, for example)' end
+    when 'searchRankPool' then case when not setting_whole(v, 100, 100000) then 'a whole number of matches from 100 to 100,000' end
     when 'pool' then setting_pool(v)
     when 'modBots' then setting_modbots(v)
     when 'warnBar' then setting_warnbar(v)

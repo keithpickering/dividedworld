@@ -12,6 +12,7 @@ import { testGlass } from '../test-world.tsx';
 import { boardPlace, forgetBoard, keepBoardPlace } from '../glass/back.ts';
 import { boardSwitch } from '../glass/board.ts';
 import { Link, useLocation } from '../router.tsx';
+import { axeViolations, describeViolations } from '../a11y.ts';
 import { Frame } from './Frame.tsx';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 
@@ -51,6 +52,11 @@ function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b',
     subscribeReach: () => () => {},
     actsById: async () => [],
     thread: async () => null,
+    suggest: vi.fn(async () => ({
+      threads: [{ id: 't-1', title: 'Wario Ware tier list', board: 'g', boardName: 'General' }],
+      characters: [{ id: 'c-9', name: 'Waribob' }],
+      boards: [{ id: 'g', slug: 'general', name: 'General' }],
+    })),
   } as unknown as KayfaApi;
   const kayfa = {
     api,
@@ -112,7 +118,7 @@ describe('the banner: the board\'s own', () => {
     setup();
     expect(screen.getByRole('banner')).toHaveTextContent('Divided World');
     const nav = screen.getByRole('navigation', { name: 'Main' });
-    await waitFor(() => expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(['Index', 'General', 'The System']));
+    await waitFor(() => expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(['Index', 'General', 'The System', 'Search']));
     expect(within(nav).getByRole('link', { name: 'General' })).toHaveAttribute('href', '/b/general');
     expect(screen.queryByRole('button', { name: 'Sign out' })).toBeNull();
     expect(screen.getByRole('main')).toHaveTextContent('page');
@@ -120,8 +126,8 @@ describe('the banner: the board\'s own', () => {
   test('each nav link carries its aria-hidden icon and keeps its name', async () => {
     setup();
     const nav = screen.getByRole('navigation', { name: 'Main' });
-    await waitFor(() => expect(within(nav).getAllByRole('link')).toHaveLength(3));
-    for (const name of ['Index', 'General', 'The System']) {
+    await waitFor(() => expect(within(nav).getAllByRole('link')).toHaveLength(4));
+    for (const name of ['Index', 'General', 'The System', 'Search']) {
       const link = within(nav).getByRole('link', { name });
       const icons = link.querySelectorAll('svg');
       expect(icons).toHaveLength(1);
@@ -844,5 +850,88 @@ describe('the frame while a page opens', () => {
     await screen.findByText('slow page');
     expect(main()).not.toHaveAttribute('aria-busy');
     expect(frame()).not.toHaveAttribute('data-kb-loading');
+  });
+});
+
+describe('search in the banner (the search plan, Task 6)', () => {
+  const banner = () => screen.getByRole('banner');
+  const hostLine = () => document.querySelector('.kb-tagline');
+  beforeEach(() => { window.history.replaceState(null, '', '/'); });
+
+  test('signed in, the banner holds the search box under the host line (which stays), and the boards bar ends in Search with its magnifier', async () => {
+    setup();
+    expect(await within(banner()).findByRole('combobox', { name: 'Search the boards' })).toBeInTheDocument();
+    expect(hostLine()).toHaveTextContent('dw.gripe');
+    const nav = screen.getByRole('navigation', { name: 'Main' });
+    const link = await within(nav).findByRole('link', { name: 'Search' });
+    expect(link).toHaveAttribute('href', '/search');
+    expect(link.parentElement).toBe(within(nav).getAllByRole('listitem').at(-1));
+    expect(link.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+  });
+  test('on /search the box is gone (the page has its own keyword field) and the host line shows', async () => {
+    window.history.replaceState(null, '', '/search');
+    setup();
+    expect(await within(screen.getByRole('navigation', { name: 'Main' })).findByRole('link', { name: 'Search' })).toHaveAttribute('aria-current', 'page');
+    expect(within(banner()).queryByRole('combobox')).toBeNull();
+    expect(hostLine()).toHaveTextContent('dw.gripe');
+    expect(within(screen.getByRole('navigation', { name: 'Main' })).getByRole('link', { name: 'Search' })).toHaveAttribute('aria-current', 'page');
+  });
+  test('signed out there is no box and no link', async () => {
+    setup(false);
+    await act(async () => {});
+    expect(within(banner()).queryByRole('combobox')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Search' })).toBeNull();
+    expect(hostLine()).toHaveTextContent('dw.gripe');
+  });
+  test('suggests threads, characters and boards, and a choice goes where it says', async () => {
+    const user = userEvent.setup();
+    const { api } = setup();
+    await user.type(await within(banner()).findByRole('combobox'), 'wari');
+    await screen.findByRole('option', { name: /Wario Ware tier list/ });
+    expect(api.suggest).toHaveBeenCalledWith('wari', expect.objectContaining({ most: 5 }));
+    expect(screen.getByRole('option', { name: /Search posts for/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('option', { name: /Wario Ware tier list/ }));
+    expect(here()).toBe('/t/t-1');
+  });
+  test('a board goes to the board, a character opens a search of their posts', async () => {
+    const user = userEvent.setup();
+    setup();
+    const box = await within(banner()).findByRole('combobox');
+    await user.type(box, 'wari');
+    await user.click(await screen.findByRole('option', { name: /^General$/ }));
+    expect(here()).toBe('/b/general');
+    await user.clear(box);
+    await user.type(box, 'wari');
+    await user.click(await screen.findByRole('option', { name: /Waribob/ }));
+    expect(here()).toBe('/search?author=c-9');
+  });
+  test('Enter searches posts for what was typed', async () => {
+    const user = userEvent.setup();
+    setup();
+    await user.type(await within(banner()).findByRole('combobox'), 'green shell{Enter}');
+    expect(here()).toBe('/search?q=green+shell');
+  });
+  test('a Search button beside the box does what Enter does: it searches for the typed words, or opens the plain page', async () => {
+    const user = userEvent.setup();
+    setup();
+    const form = await within(banner()).findByRole('search');
+    await user.type(within(form).getByRole('combobox'), 'green shell');
+    await user.click(within(form).getByRole('button', { name: 'Search' }));
+    expect(here()).toBe('/search?q=green+shell');
+  });
+  test('the Search button with nothing typed opens the plain search page', async () => {
+    const user = userEvent.setup();
+    setup();
+    await user.click(await within(await within(banner()).findByRole('search')).findByRole('button', { name: 'Search' }));
+    expect(here()).toBe('/search');
+  });
+  test('the banner is axe clean with its list open', async () => {
+    const user = userEvent.setup();
+    const { unmount } = setup();
+    await user.type(await within(banner()).findByRole('combobox'), 'wari');
+    await screen.findByRole('option', { name: /Wario Ware tier list/ });
+    const found = await axeViolations(banner());
+    expect(found, describeViolations(found)).toEqual([]);
+    unmount();
   });
 });

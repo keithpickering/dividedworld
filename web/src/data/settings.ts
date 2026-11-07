@@ -10,6 +10,8 @@ import { system } from '../../../instances/divided-world/system/index.ts';
 
 export const fallbackSettings: ScreenSettings = Object.freeze({
   postsPerPage: defaults.postsPerPage,
+  searchLanguage: defaults.searchLanguage,
+  searchRankPool: defaults.searchRankPool,
   hotReplies: defaults.hotReplies,
   editGrace: defaults.editGrace,
   reactionCap: defaults.reactionCap,
