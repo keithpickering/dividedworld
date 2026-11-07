@@ -13,6 +13,7 @@
  * hold when the reader leaves the thread and comes back to it inside the one session, which asks the backend again.
  */
 import { expect, test, type Page } from '@playwright/test';
+import { settled } from './settled.ts';
 
 const STORY = '/?fixture=boards&story=boards-08-hold--live-long-post';
 const MOMENT = '/?fixture=boards&moment=08-hold';
@@ -31,8 +32,14 @@ const ready = async (page: Page) => { await page.evaluate(() => document.fonts.r
  * Playwright's checks that a button can be pressed are skipped by that, so the page makes them itself before each press: the button
  * has a box, is not hidden or transparent (it or an ancestor), and is the element at its center, not something laid over it. The
  * first press that fails them stops the loop and returns what was wrong, naming the cover; a spec asserts the result is null.
+ * A view that has let the reader go stays in the DOM, inert and marked `data-kb-exiting`, until its exit ends (engine/ui/glass/layer.tsx): that one is
+ * not a button a reader can press, so it is not looked for, as a screen reader does not find it either.
  */
 async function pressBreakFreeUntilFree(page: Page): Promise<string | null> {
+  /* The view enters once, from opacity 0, and holds at 1 for every press after (measured per frame across the loop: one mount, no
+   * remount, no dip). A press made in the first frames of that entrance would read a button that is not yet visible, which is the
+   * test being early, not the view flashing out; so the entrance is waited for, the armed ring's endless loop aside. */
+  await settled(page, { loops: true });
   return page.evaluate(() => new Promise<string | null>((done) => {
     let presses = 0;
     const name = (el: Element | null) => (el ? `${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ''}${typeof el.className === 'string' && el.className ? `.${el.className.trim().split(/\s+/u).join('.')}` : ''}` : 'nothing');
@@ -53,7 +60,7 @@ async function pressBreakFreeUntilFree(page: Page): Promise<string | null> {
       return null;
     };
     const press = () => {
-      const button = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"][aria-label="Stick Around"] button')].find((b) => b.textContent === 'Break free');
+      const button = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"][aria-label="Stick Around"] button')].find((b) => b.textContent === 'Break free' && !b.closest('[data-kb-exiting]'));
       if (!button) { done(null); return; }
       if (presses >= 60) { done('the reader is still held after 60 presses'); return; }
       const wrong = fault(button);
@@ -277,6 +284,23 @@ test('Whoops!\' ink under the hold keeps its canvas and a reader\'s scrubbing ac
    * settling while they scrub: a stream of wheel events from the page itself, at the page's pace and not the test's round trips.
    */
   await page.evaluate(() => { (window as unknown as { kbBusy: number }).kbBusy = window.setInterval(() => window.dispatchEvent(new WheelEvent('wheel')), 40); });
+  /*
+   * The story's rows enter by a stagger: the canvas is read where it will stand, not mid-way. The armed hold's ring loops for as long as it
+   * is armed, so loops are not waited on; and the canvas's own place is then watched until it has not moved for ten frames.
+   */
+  await settled(page, { loops: true });
+  await canvas.evaluate((c) => new Promise<void>((done) => {
+    let last = '';
+    let still = 0;
+    const frame = () => {
+      const r = c.getBoundingClientRect();
+      const now = `${r.x},${r.y},${r.width},${r.height}`;
+      still = now === last ? still + 1 : 0;
+      last = now;
+      if (still >= 10) done(); else requestAnimationFrame(frame);
+    };
+    frame();
+  }));
   const box = (await canvas.boundingBox())!;
   const y = Math.min(box.y + box.height / 2, 900);
   await page.mouse.move(box.x + box.width * 0.2, y);

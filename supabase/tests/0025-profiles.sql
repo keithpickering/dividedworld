@@ -32,7 +32,7 @@ begin
   said := set_preferences(null, 'side', null);
   if said is distinct from '{"theme": "dark", "motion": "reduce", "postbit": "side", "smoke": "full", "contrast": "standard", "text_size": 100, "tilt": "off", "cards_met": [], "alerts_seen_at": null, "settlement_seen": null, "toasts": null, "welcomed_at": null, "tips": "on", "tips_seen": []}'::jsonb then raise exception 'a preference left out is kept: %', said; end if;
   if pg_temp.refusal($q$select set_preferences(null, 'sideways', null)$q$) is distinct from 'the postbit is side or stacked' then raise exception 'a postbit that is neither'; end if;
-  if pg_temp.refusal($q$select set_preferences(null, null, 'fast')$q$) is distinct from 'motion follows the system, or is reduced or full' then raise exception 'a motion that is none of them'; end if;
+  if pg_temp.refusal($q$select set_preferences(null, null, 'fast')$q$) is distinct from 'motion follows the system, or is off, smooth or snappy' then raise exception 'a motion that is none of them'; end if;
   if pg_temp.refusal($q$select set_preferences('Not A Theme!', null, null)$q$) is distinct from 'a theme is named in lowercase words joined by hyphens' then raise exception 'a theme name that is not one'; end if;
 
   -- A profile: set by the character's player.

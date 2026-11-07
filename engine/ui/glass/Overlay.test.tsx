@@ -247,7 +247,7 @@ describe('a popover overlay (the React picker\'s)', () => {
 describe('placing a popover overlay', () => {
   const rect = (left: number, top: number, width: number, height: number) =>
     ({ left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}) }) as DOMRect;
-  const geo: { anchor: DOMRect; hud: DOMRect | null; height: number } = { anchor: rect(0, 0, 0, 0), hud: null, height: 452 };
+  const geo: { anchor: DOMRect; hud: DOMRect | null; height: number; entering: number } = { anchor: rect(0, 0, 0, 0), hud: null, height: 452, entering: 1 };
   const observers: { cb: ResizeObserverCallback }[] = [];
   let anchorReads = 0;
 
@@ -270,6 +270,7 @@ describe('placing a popover overlay', () => {
     geo.anchor = rect(224, 160, 300, 24);
     geo.hud = null;
     geo.height = 452;
+    geo.entering = 1;
     anchorReads = 0;
     observers.length = 0;
     windowOf(900, 700);
@@ -283,10 +284,16 @@ describe('placing a popover overlay', () => {
       if (this.dataset.testid === 'row') { anchorReads += 1; return geo.anchor; }
       if (this.classList.contains('kb-hud')) return geo.hud ?? rect(0, 0, 0, 0);
       if (this.getAttribute('role') === 'dialog') {
-        return this.getAttribute('data-kb-place') === 'sheet' ? rect(0, 0, window.innerWidth, geo.height + 200) : rect(0, 0, 540, geo.height);
+        /* An entrance that a style cannot undo (Motion runs it as an animation) leaves the rect scaled whatever the box's own transform says. */
+        const s = geo.entering;
+        return this.getAttribute('data-kb-place') === 'sheet' ? rect(0, 0, window.innerWidth * s, (geo.height + 200) * s) : rect(0, 0, 540 * s, geo.height * s);
       }
       return rect(0, 0, 0, 0);
     });
+    /* The box's layout size, which no transform changes (jsdom has no layout). */
+    const layout = (get: (sheet: boolean) => number) => function (this: HTMLElement) { return this.getAttribute('role') === 'dialog' ? get(this.getAttribute('data-kb-place') === 'sheet') : 0; };
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(layout((sheet) => (sheet ? window.innerWidth : 540)));
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(layout((sheet) => (sheet ? geo.height + 200 : geo.height)));
   });
   afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
@@ -308,6 +315,14 @@ describe('placing a popover overlay', () => {
     expect(d).toHaveAttribute('data-kb-place', 'below');
     expect(px(d.style.top)).toBe(184 + 30);
     expect(px(d.style.left)).toBe(224);
+  });
+
+  /* The picker was left past the window's right edge by up to its entrance's shrink: it was measured while the entrance's scale was on it, and no later placement came. */
+  test('is pulled back inside the window\'s right edge by its layout width, whatever its entrance has scaled it to', async () => {
+    geo.entering = 0.985;
+    geo.anchor = rect(600, 160, 100, 24);
+    const d = await openIt();
+    expect(px(d.style.left)).toBe(900 - 4 - 540);
   });
 
   test('is pulled back inside the window\'s right edge', async () => {

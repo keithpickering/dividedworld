@@ -14,6 +14,10 @@
  */
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
+import { motion, useIsPresent } from 'motion/react';
+import { useKayfaIfAny } from './context.tsx';
+import { isLeaving } from './glass/Held.tsx';
+import { focusFell, useLayer } from './glass/layer.tsx';
 import './modal.css';
 
 export interface ModalProps {
@@ -44,6 +48,8 @@ const stack: Entry[] = [];
 let sequence = 0;
 let saved: { readonly overflow: string; readonly paddingRight: string } | null = null;
 const wasInert = new Map<Element, boolean>();
+/* The overlays of layers that are leaving (glass/layer.tsx): held inert by their own render, so what the stack leaves alone neither marks nor lifts. */
+const going = new WeakSet<Element>();
 
 const isTop = (entry: Entry) => stack[stack.length - 1] === entry;
 
@@ -60,7 +66,7 @@ export const topModalHolds = (el: Node | null): boolean => el !== null && (stack
 function settle() {
   const top = stack[stack.length - 1]?.overlay ?? null;
   if (stack.length === 0) {
-    for (const [el, was] of wasInert) if (!was) el.removeAttribute('inert');
+    for (const [el, was] of wasInert) if (!was && !going.has(el)) el.removeAttribute('inert');
     wasInert.clear();
     if (saved) { document.body.style.overflow = saved.overflow; document.body.style.paddingRight = saved.paddingRight; saved = null; }
     return;
@@ -73,6 +79,7 @@ function settle() {
     if (bar > 0 && document.documentElement.clientWidth > 0) document.body.style.paddingRight = `calc(${getComputedStyle(document.body).paddingRight} + ${bar}px)`;
   }
   for (const el of Array.from(document.body.children)) {
+    if (going.has(el)) continue;
     if (el === top) {
       if (wasInert.has(el) && !wasInert.get(el)) el.removeAttribute('inert');
       continue;
@@ -111,9 +118,16 @@ export function useModalLayer({ onClose, returnFocusTo }: Pick<ModalProps, 'onCl
   const overlay = useRef<HTMLDivElement>(null);
   const beside = useRef<HTMLElement>(null);
   const [entry] = useState<Entry>(() => ({ seq: ++sequence, overlay: null }));
+  /* A layer under `Layers` that its caller has closed stays mounted while it exits: it is not open from that render on (glass/layer.tsx). */
+  const present = useIsPresent();
 
   useLayoutEffect(() => {
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!present) return;
+    const layer = overlay.current;
+    if (layer) going.delete(layer);
+    /* Not a control inside a layer that is leaving (a dialog that closed as this one opened is still mounted, inert, exiting): there is no opener then, and `returnFocusTo` is the way back. */
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const opener = active?.closest('[data-kb-exiting]') ? null : active;
     entry.overlay = overlay.current;
     stack.push(entry);
     stack.sort((a, b) => a.seq - b.seq);
@@ -123,26 +137,27 @@ export function useModalLayer({ onClose, returnFocusTo }: Pick<ModalProps, 'onCl
     open.current = true;
     return () => {
       open.current = false;
+      if (layer) going.add(layer);
       stack.splice(stack.indexOf(entry), 1);
       settle();
       /*
        * After the commit that closes it: the control that opened it may be replaced by that same commit. Only where focus
        * fell to the page, as it does when what held it leaves with the dialog: a control the same commit opened and
-       * focused (a play's panel closes as the spin form it asked for opens) keeps it.
+       * focused (a play's panel closes as the spin form it asked for opens) keeps it. A layer that is leaving is still on the page,
+       * holding focus until the browser lets go of what is inert, so focus inside it is as good as fallen.
        */
       queueMicrotask(() => {
-        const now = document.activeElement;
-        if (now && now !== document.body && now.isConnected) return;
+        if (!focusFell(layer)) return;
         if (opener?.isConnected && opener !== document.body) opener.focus();
         else latest.current.returnFocusTo?.()?.focus();
       });
     };
-  }, []);
+  }, [present]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const dialog = box.current;
-      if (!dialog || !isTop(entry)) return;
+      if (!dialog || !isTop(entry) || isLeaving(dialog)) return;
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
@@ -179,16 +194,18 @@ export function useModalLayer({ onClose, returnFocusTo }: Pick<ModalProps, 'onCl
 export function Modal({ title, onClose, children, returnFocusTo }: ModalProps) {
   const id = useId();
   const { overlay, box, closeButton } = useModalLayer({ onClose, returnFocusTo });
+  /* Rises as the glass's modal does, the dim in step; its close plays out on this same tree, held inert until it ends (glass/layer.tsx). */
+  const lifted = useLayer({ box, kind: 'modal', overrides: useKayfaIfAny()?.ui.glass.motion });
   return createPortal(
-    <div ref={overlay} className="kb-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div ref={box} className="kb-modal" role="dialog" aria-modal="true" aria-labelledby={id} tabIndex={-1}>
+    <motion.div ref={overlay} className="kb-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} {...lifted.root}>
+      <motion.div ref={box} className="kb-modal" role="dialog" aria-modal="true" aria-labelledby={id} tabIndex={-1} {...lifted.box}>
         <div className="kb-modal-bar">
           <h2 id={id} className="kb-modal-head">{title}</h2>
           <button ref={closeButton} type="button" className="kb-button kb-modal-close" onClick={onClose}>Close</button>
         </div>
         {children}
-      </div>
-    </div>,
+      </motion.div>
+    </motion.div>,
     document.body,
   );
 }

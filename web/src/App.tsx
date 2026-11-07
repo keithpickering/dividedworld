@@ -2,6 +2,7 @@
  * The app: the backend, the instance, its look and words, and the screens, put together. This and
  * web/src/data/ are the only places the engine's screens and an instance meet.
  */
+import { AnimatePresence, useIsPresent } from 'motion/react';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { BoardPage, Boot, Estimate, IndexPage, KayfaApi, ProfilePage, RecordPage, ScreenSettings, Session, ThreadPage } from '../../engine/ui/data/api.ts';
 import { fallbackSettings } from './data/settings.ts';
@@ -16,6 +17,9 @@ import { ProfileScreen } from '../../engine/ui/profile/Profile.tsx';
 import { RecordScreen } from '../../engine/ui/profile/Record.tsx';
 import { Frame } from '../../engine/ui/frame/Frame.tsx';
 import { keepBoardPlace } from '../../engine/ui/glass/back.ts';
+import { Leaving, useRest } from '../../engine/ui/glass/Held.tsx';
+import { crossingPinned, useFeel, type PinnedExit } from '../../engine/ui/glass/motion.ts';
+import { hudTabRect } from '../../engine/ui/frame/hud-tab.ts';
 import { applyGlass, installGlassFonts, type GlassSurface } from '../../engine/ui/glass/index.ts';
 import { Page as GlassPage } from '../../engine/ui/glass/Page.tsx';
 import { IndexScreen } from '../../engine/ui/index/Index.tsx';
@@ -177,6 +181,11 @@ function Appearance({ api, boot }: { readonly api: KayfaApi; readonly boot: Boot
   return null;
 }
 
+/** Draws its children only while the tree it is in is present: a world that is leaving (held for its exit) keeps its screen but stops acting. */
+function WhilePresent({ children }: { readonly children: ReactNode }) {
+  return useIsPresent() ? <>{children}</> : null;
+}
+
 /**
  * A glass page in the glass's shell, every other page in the board's frame. A move between a glass
  * route and a board route swaps one shell for the other, so the screen inside remounts: that is on
@@ -204,14 +213,63 @@ function Shell({ routes }: { readonly routes: readonly Route[] }) {
       <Suspense fallback={<div aria-busy="true" />}>
         <Routes key={mountedFor.n} routes={routes} />
       </Suspense>
-      {/* The first load of a board page after a settlement the device has not seen opens its summary (engine/ui/log/Settlement.tsx). */}
-      <SettlementOnLoad active={!surface} />
-      {/* A new account, with no character and the welcome unseen, is sent to it from its first board page (engine/ui/welcome/Welcome.tsx). */}
-      <SendToWelcome active={!surface} />
+      {/* A world that is leaving moves nobody: what a board page does on its own (below) stops with its exit, not at its end (the crossing, below). */}
+      <WhilePresent>
+        {/* The first load of a board page after a settlement the device has not seen opens its summary (engine/ui/log/Settlement.tsx). */}
+        <SettlementOnLoad active={!surface} />
+        {/* A new account, with no character and the welcome unseen, is sent to it from its first board page (engine/ui/welcome/Welcome.tsx). */}
+        <SendToWelcome active={!surface} />
+      </WhilePresent>
     </AccountGate>
   );
-  return surface ? <GlassPage surface={surface} menu={!NO_MENU.has(path)}>{content}</GlassPage> : <Frame>{content}</Frame>;
+  const world = surface ? 'glass' : 'board';
+  /*
+   * The crossing (the glass polish design, section 9): the two worlds sit under one AnimatePresence, keyed, so a move from one to the other
+   * holds the leaving world for the exit and draws the arriving one at once. The glass opens from the HUD's tab to the window and closes
+   * back into it; the board does not move (its hold only keeps it under the glass until the glass has opened). The tab's box is read in
+   * the render that changes the world, from the HUD that is still mounted, and an exit uses the box its world last rendered with.
+   * Esc or Back mid-crossing flips the keys: the world that was leaving is present again, the same element, and Motion animates both
+   * from where they are. Under Off the presets are empty, no element has an exit, and the old world is gone in the same commit.
+   *
+   * What is subscribed or polled lives below the screens, in the world that leaves; it is held (not unmounted) for the exit, and the
+   * arriving world mounts its own as the world always did, so nothing is subscribed twice by the crossing for longer than the exit.
+   */
+  const feel = useFeel(instanceUi.glass.motion);
+  const within = { width: window.innerWidth, height: window.innerHeight };
+  const glassMotion = useMemo(
+    () => (world === 'glass' ? crossingPinned(feel, { tab: hudTabRect(within), within }) : {}),
+    // The window's size is read when the world changes, not on every render: an exit closes into the box it opened from.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [feel, world],
+  );
+  /* The board keeps under the glass until the glass has opened, whatever its spring takes; a stalled enter lets go after a while. */
+  const opened = useRef(new Set<() => void>());
+  const holdBoard = useCallback((release: () => void) => {
+    opened.current.add(release);
+    const stalled = setTimeout(release, BOARD_HOLD_LIMIT_MS);
+    return () => { opened.current.delete(release); clearTimeout(stalled); };
+  }, []);
+  /* An exit reads the window's scroll as it starts (the leaving world is pinned that far up, Held.tsx) and whether the world had come to rest (motion.ts, header). */
+  const { exitRested, onRest } = useRest(world);
+  const leave: PinnedExit = { scrollY: window.scrollY, rested: exitRested };
+  return (
+    <AnimatePresence initial={false} custom={leave}>
+      {surface
+        ? (
+          <Leaving
+            key="glass" pin custom={leave} className="kb-world" data-kb-world="glass" {...glassMotion}
+            onAnimationComplete={(def) => { if (def === 'open') { onRest(); for (const release of [...opened.current]) release(); } }}
+          >
+            <GlassPage surface={surface} menu={!NO_MENU.has(path)}>{content}</GlassPage>
+          </Leaving>
+        )
+        : <Leaving key="board" pin holdUntil={feel ? holdBoard : undefined} className="kb-world" data-kb-world="board"><Frame>{content}</Frame></Leaving>}
+    </AnimatePresence>
+  );
 }
+
+/** The longest the board is held under a glass whose enter has not ended (a tab in the background pauses animation frames). */
+const BOARD_HOLD_LIMIT_MS = 2000;
 
 /** The instance's glass on the page: its standard key's tokens and colors on the root, and its fonts. */
 function useGlass() {

@@ -38,6 +38,7 @@ import { inPlayOrder, isBack, markedPlays, shownPlays, usePlays, type Plays } fr
 import type { CardPlay } from './types.ts';
 import '../glass/meta-tile.css';
 import './marks.css';
+import { Layers } from '../glass/layer.tsx';
 
 export { MARKS_NARROW, MARKS_WIDE, kindsOf };
 
@@ -290,7 +291,9 @@ export function PostMarks({ post, plays, to, nameOf, tallies, mine, ghost, reach
   return (
     <span className="kb-marks-anchor" ref={anchor}>
       <MarkStrip post={post} plays={plays} tallies={tallies} ghost={ghost} reachAt={reachAt} where={where} compare={compare} open={open?.card ?? null} onOpen={onOpen} nameOf={nameOf} visit={current ? { visit: current, mod: nameOf(current.mod) } : undefined} />
+      <Layers>
       {open && <Lens open={open} store={store} post={post} plays={plays} tallies={tallies} mine={mine} compare={compare} to={to} nameOf={nameOf} strip={strip} onSpin={onSpin} where={where} moments={moments} visit={current && thread ? { visit: current, thread, author, onSpinAct, onEnded: setSeen } : undefined} form={form} />}
+      </Layers>
     </span>
   );
 }

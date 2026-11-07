@@ -27,3 +27,28 @@ for (const name of ['light', 'dark', 'still']) {
     await expect.poll(() => painted(page)).toBeGreaterThan(0);
   });
 }
+
+/**
+ * The glitter fills the post's body, as every card's effect does (the owner, 2026-11-06: "the card effect should apply to the entire
+ * post in all cases"): in the thread each of its canvases is the body's box (`.kb-act-main`, its padding box, bar to bar), not only the
+ * words' own, and a flake that falls lands anywhere on it.
+ */
+test('the glitter\'s canvases fill the post\'s body', async ({ page }) => {
+  await page.goto(STORY('light'));
+  await expect.poll(() => page.locator(HOST).count()).toBeGreaterThan(0);
+  await page.locator(HOST).first().scrollIntoViewIfNeeded();
+  await expect.poll(() => page.evaluate(() => window.__kbShineDraws?.(0) ?? -1)).toBeGreaterThan(0);
+  const problems = await page.locator(HOST).first().evaluate((host) => {
+    const cell = host.closest<HTMLElement>('.kb-act-main');
+    if (!cell) return ['the post has no body'];
+    const b = cell.getBoundingClientRect();
+    const body = { left: b.left + cell.clientLeft, top: b.top + cell.clientTop, width: cell.clientWidth, height: cell.clientHeight };
+    return [...host.querySelectorAll<HTMLCanvasElement>('canvas.dw-glitter-under, canvas.dw-glitter-flash')].flatMap((cv) => {
+      const r = cv.getBoundingClientRect();
+      return [r.left - body.left, r.top - body.top, r.width - body.width, r.height - body.height].some((d) => Math.abs(d) > 1)
+        ? [`${cv.className} is ${Math.round(r.width)}x${Math.round(r.height)} at ${Math.round(r.left)},${Math.round(r.top)}, the body is ${body.width}x${body.height} at ${Math.round(body.left)},${Math.round(body.top)}`]
+        : [];
+    });
+  });
+  expect(problems).toEqual([]);
+});

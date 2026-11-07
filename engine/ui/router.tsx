@@ -498,6 +498,18 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
   return <RouterContext.Provider value={value}>{children}</RouterContext.Provider>;
 }
 
+/**
+ * Holds the router as it was: while `held`, everything below reads the location and the page it read last before it was held, so a
+ * screen that is leaving (an exit animation) keeps drawing the page it was and not the one that replaced it. Released, it reads the
+ * live router again. The held value is taken during render, as the render that holds it is the one that starts the exit.
+ */
+export function RouterHold({ held, children }: { readonly held: boolean; readonly children: ReactNode }) {
+  const live = useContext(RouterContext);
+  const kept = useRef(live);
+  if (!held) kept.current = live;
+  return <RouterContext.Provider value={held ? kept.current : live}>{children}</RouterContext.Provider>;
+}
+
 function useRouter(): Router {
   const r = useContext(RouterContext);
   if (!r) throw new Error('a screen is rendered inside a RouterProvider');

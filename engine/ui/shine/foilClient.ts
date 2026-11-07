@@ -11,7 +11,8 @@
  * that follow join it, so one `frame` message carries them all and the worker sizes and draws a frame's canvases in one task. One batch
  * is in flight at a time: the worker acknowledges each, and while one is unacknowledged a canvas's newer draw replaces its waiting one
  * (latest wins) and the batch goes on the ack, so a slow worker falls behind by frames dropped, never by a backlog that keeps painting
- * stale light. A `free` or `drop` goes at once and takes the canvas's waiting draw out, so no draw can reach the worker after the canvas
+ * stale light. The newer draw keeps the rows the one it replaces asked for (the union of their spans, or all of them when either asked
+ * for all), so a whole draw dropped for a newer span's never leaves rows the canvas had not drawn. A `free` or `drop` goes at once and takes the canvas's waiting draw out, so no draw can reach the worker after the canvas
  * was let go and size it again.
  *
  * `offscreenFoils()` says whether the browser can do this at all (a worker, an OffscreenCanvas, and a canvas element that can hand
@@ -26,13 +27,13 @@
  * Engine code: it names no card and no instance.
  */
 import type { Band } from './band.ts';
-import type { Box } from './foil.ts';
+import type { Box, Span } from './foil.ts';
 import type { FoilDraw, FoilSpec, FromWorker, ProbeAsk } from './foilProtocol.ts';
 import type { Light } from './light.ts';
 
 export interface FoilHandle {
   /** Queue this canvas's draw in the frame's batch; `now` is the frame's timestamp. */
-  draw(spec: FoilSpec, key: string, box: Box, density: number, light: Light, band: Band | null, now: number, idle: boolean): void;
+  draw(spec: FoilSpec, key: string, box: Box, density: number, light: Light, band: Band | null, now: number, idle: boolean, span?: Span | null): void;
   /** The canvas leaves view: the worker releases its foils and sets it to 0 by 0. The next draw sizes it again. */
   free(): void;
   /** The canvas is done with. The last drop ends the worker. */
@@ -135,6 +136,10 @@ function idleSoon(): void {
   idle = setTimeout(() => { if (live.size === 0) end(w); }, IDLE_MS);
 }
 
+/** The rows two draws redraw between them: null (all of them) when either is null. */
+const union = (a: Span | null, b: Span | null): Span | null =>
+  a && b ? { top: Math.min(a.top, b.top), bottom: Math.max(a.bottom, b.bottom) } : null;
+
 export function adoptFoil(canvas: HTMLCanvasElement): FoilHandle {
   if (adopted.has(canvas)) throw new Error('foil: this canvas was already handed to the worker; a transferred canvas cannot be transferred again, so give the host a new element');
   /* The worker first, then the transfer, and nothing is recorded until both worked: a failure leaves the canvas as it was, so the host can draw it on the page. */
@@ -148,9 +153,10 @@ export function adoptFoil(canvas: HTMLCanvasElement): FoilHandle {
   send({ kind: 'adopt', id, canvas: offscreen }, [offscreen]);
 
   return {
-    draw(spec, key, box, density, light, band, now, idle) {
+    draw(spec, key, box, density, light, band, now, idle, span = null) {
       if (!live.has(id) || !worker) return;
-      pending.set(id, { id, spec, key, box, density, light, band, now, idle });
+      const was = pending.get(id);
+      pending.set(id, { id, spec, key, box, density, light, band, now, idle, span: was ? union(was.span ?? null, span) : span });
       if (!scheduled) { scheduled = true; queueMicrotask(flush); }
     },
     free() {

@@ -14,12 +14,15 @@
  * Which card is selected is the page's own: it opens on the character a navigation carried in
  * history.state (New character's, the profile editor's), else on the HUD's, and no address names it.
  */
-import { useEffect, useId, useMemo, useState } from 'react';
+import { AnimatePresence, motion, useIsPresent } from 'motion/react';
+import { useEffect, useId, useMemo, useState, type ComponentProps } from 'react';
 import { rankIndex } from '../../rules/ranks.ts';
 import { useKayfa } from '../context.tsx';
 import type { Character, CharacterCounts, Id, MyCharacter } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Carousel, carouselPanelId, carouselTabId } from '../glass/Carousel.tsx';
+import { Leaving } from '../glass/Held.tsx';
+import { swap, useFeel } from '../glass/motion.ts';
 import { PageHead } from '../glass/PageHead.tsx';
 import { SignInPrompt, useSignedIn } from '../mini.tsx';
 import { usePlayer } from '../player.tsx';
@@ -34,6 +37,7 @@ import { RevealOverlay } from './RevealOverlay.tsx';
 import { TurnDialog } from './TurnDialog.tsx';
 import './characters.css';
 import { CalmRegion } from '../glass/Calm.tsx';
+import { Layers } from '../glass/layer.tsx';
 
 type Dialog =
   | { readonly kind: 'turn' | 'reveal' | 'drop' | 'debut'; readonly id: Id };
@@ -42,6 +46,14 @@ const LOUD = { silent: 'silently', announced: 'announced', with_class: 'announce
 
 /** Where focus goes when the control that opened a dialog has been replaced by the dialog's own result. */
 const returnTo = (id: Id) => () => document.querySelector<HTMLElement>(`[data-kb-character="${id}"] [data-kb-return]`);
+
+/** The roster's panel. While it is the one leaving (a swap to another character) it gives up its id, so the one arriving is what the tabs control. */
+function PanelRegion({ id, ...props }: ComponentProps<'section'>) {
+  const present = useIsPresent();
+  return <CalmRegion as="section" id={present ? id : undefined} {...props} />;
+}
+/** The panel as a motion element: it is the tabpanel itself, directly after the roster, so a swap adds no wrapper between them. */
+const MotionPanel = motion.create(PanelRegion);
 
 /** The order they joined, a character still waiting to debut after every one that has. */
 const joined = (a: MyCharacter, b: MyCharacter) => (a.debutedAt ?? '￿').localeCompare(b.debutedAt ?? '￿') || a.name.localeCompare(b.name);
@@ -78,6 +90,16 @@ export function Characters() {
   const debutedIds = useMemo(() => mine.filter((c) => c.debutedAt !== null).map((c) => c.id), [mine]);
   const key = debutedIds.join(',');
   const selected = mine.find((c) => c.id === picked) ?? mine.find((c) => c.id === player.hudCharacter?.id) ?? mine[0] ?? null;
+
+  /* Another character chosen: the panel swaps (motion.ts `swap`), the old one leaving upward when the one chosen is after it in the roster's order, downward when before. */
+  const feel = useFeel(ui.glass.motion);
+  const at = selected ? mine.findIndex((c) => c.id === selected.id) : -1;
+  const [seen, setSeen] = useState(at);
+  const [dir, setDir] = useState<1 | -1>(1);
+  if (at !== seen) {
+    if (at >= 0 && seen >= 0) setDir(at > seen ? 1 : -1);
+    setSeen(at);
+  }
 
   useEffect(() => {
     /* Asked once the account's characters are read, so a load asks with them and not again when they arrive. */
@@ -267,7 +289,7 @@ export function Characters() {
     const posts = counts?.id === c.id ? counts.counts.posts : null;
     const before = was.get(c.id);
     return (
-      <CalmRegion as="section" id={carouselPanelId(rosterId)} role="tabpanel" className="kb-roster-panel kb-glass-cut-panel" aria-labelledby={`${carouselTabId(rosterId, c.id)}-name`} data-kb-character={c.id}>
+      <Leaving key={c.id} tag={MotionPanel} custom={dir} {...swap(feel)} id={carouselPanelId(rosterId)} role="tabpanel" className="kb-roster-panel kb-glass-cut-panel" aria-labelledby={`${carouselTabId(rosterId, c.id)}-name`} data-kb-character={c.id}>
         <div className="kb-roster-panel-head">
           <p className="kb-roster-selected">Selected</p>
           <h2 className="kb-roster-panel-name kb-glass-display">{c.name}</h2>
@@ -337,7 +359,7 @@ export function Characters() {
           {live && <GlassButton aria-label={`Reveal ${c.name}'s class`} onClick={() => show({ kind: 'reveal', id: c.id })}>Reveal…</GlassButton>}
         </div>
         <p className="kb-roster-line kb-roster-most">{per} characters at most. To free a slot, ask an admin to retire one; every Act it made stays on the board.</p>
-      </CalmRegion>
+      </Leaving>
     );
   };
 
@@ -380,7 +402,9 @@ export function Characters() {
               </CalmRegion>
             ) : undefined}
           />
-        {selected && panel(selected)}
+        <AnimatePresence initial={false} custom={dir}>
+          {selected && panel(selected)}
+        </AnimatePresence>
           {open === 0 && (
             <CalmRegion as="p" className="kb-characters-new">
               You play {active.length} of {per} characters, the most there are. There is no way to free a slot yet; an admin can retire a character on request, and keeps every Act it made.
@@ -388,10 +412,12 @@ export function Characters() {
           )}
       </div>
 
-      {dialog && target && dialog.kind === 'turn' && <TurnDialog character={target} face={faces.get(target.id)} standing={standings[target.id]} nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
-      {dialog && target && dialog.kind === 'reveal' && <RevealOverlay character={target} onClose={() => setDialog(null)} onDone={setFlash} returnFocusTo={returnTo(target.id)} />}
-      {dialog && target && dialog.kind === 'drop' && <DebutDialog character={target} timing="now" nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
-      {dialog && target && dialog.kind === 'debut' && <DebutDialog character={target} timing="tally" nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
+      <Layers>
+      {dialog && target && dialog.kind === 'turn' && <TurnDialog key="turn" character={target} face={faces.get(target.id)} standing={standings[target.id]} nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
+      {dialog && target && dialog.kind === 'reveal' && <RevealOverlay key="reveal" character={target} onClose={() => setDialog(null)} onDone={setFlash} returnFocusTo={returnTo(target.id)} />}
+      {dialog && target && dialog.kind === 'drop' && <DebutDialog key="drop" character={target} timing="now" nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
+      {dialog && target && dialog.kind === 'debut' && <DebutDialog key="debut" character={target} timing="tally" nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
+      </Layers>
     </div>
   );
 }

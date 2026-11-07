@@ -23,7 +23,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useIsPresent } from 'motion/react';
 import { useKayfa } from '../context.tsx';
 import type { Act, Alert, Id, KayfaApi } from '../data/api.ts';
-import { useMotionReduced } from '../appearance.ts';
+import { bezier, useFeel, type ActiveFeel } from '../glass/motion.ts';
 import { Link } from '../router.tsx';
 import { AlertIcon } from './AlertIcon.tsx';
 import { useToastKinds } from './toast-kinds.ts';
@@ -108,7 +108,8 @@ export interface ToastsProps {
 export function Toasts({ arrivals, hold, returnFocus }: ToastsProps) {
   const { api, instance, ui, settings } = useKayfa();
   const keepsOnToast = useToastKinds();
-  const reduced = useMotionReduced();
+  /* A toast's entrance and exit take the feel's times and ease, so the Motion setting moves them; under Off there is no motion. */
+  const feel = useFeel(ui.glass.motion);
   const [queue, setQueue] = useState<readonly Toast[]>([]);
   const taken = useRef(new Set<string>());
   const order = useRef(0);
@@ -187,7 +188,7 @@ export function Toasts({ arrivals, hold, returnFocus }: ToastsProps) {
         )}
         <AnimatePresence initial={false}>
           {shown.map((t) => (
-            <Card key={t.id} toast={t} reduced={reduced} held={hold} left={left.current} onDismiss={dismiss} onGone={drop} />
+            <Card key={t.id} toast={t} feel={feel} held={hold} left={left.current} onDismiss={dismiss} onGone={drop} />
           ))}
         </AnimatePresence>
       </div>
@@ -198,7 +199,7 @@ export function Toasts({ arrivals, hold, returnFocus }: ToastsProps) {
 
 interface CardProps {
   readonly toast: Toast;
-  readonly reduced: boolean;
+  readonly feel: ActiveFeel;
   /** The hand is open: the clock stands still. */
   readonly held: boolean;
   readonly left: Map<string, number>;
@@ -206,7 +207,7 @@ interface CardProps {
   readonly onGone: (id: string) => void;
 }
 
-function Card({ toast, reduced, held, left, onDismiss, onGone }: CardProps) {
+function Card({ toast, feel, held, left, onDismiss, onGone }: CardProps) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const el = useRef<HTMLElement>(null);
@@ -253,15 +254,15 @@ function Card({ toast, reduced, held, left, onDismiss, onGone }: CardProps) {
     </>
   );
   /* Reduced motion: a plain element, appearing and leaving where it stands. */
-  if (reduced) return <article {...props}>{body}</article>;
+  if (!feel) return <article {...props}>{body}</article>;
   return (
     <motion.article
       {...props}
       layout="position"
-      initial={{ opacity: 0, y: 28 }}
+      initial={{ opacity: 0, y: feel.distance * 1.75 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -10, transition: { duration: 0.2 } }}
-      transition={{ duration: 0.28, ease: 'easeOut' }}
+      exit={{ opacity: 0, y: -feel.distance / 1.6, transition: { duration: feel.exit / 1000, ease: bezier(feel.ease) } }}
+      transition={{ duration: feel.enter / 1000, ease: bezier(feel.ease) }}
     >
       {body}
     </motion.article>

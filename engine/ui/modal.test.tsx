@@ -267,3 +267,20 @@ describe('two modals open', () => {
     expect(document.body.style.overflow).toBe('');
   });
 });
+
+describe('a modal that is leaving', () => {
+  test('answers no key: Esc inside a tree held inert does not close it', async () => {
+    const log: string[] = [];
+    render(<Host onClose={() => log.push('closed')} />);
+    await userEvent.click(opener());
+    const dialog = screen.getByRole('dialog');
+    /* A world held for its exit is inert (glass/Held.tsx); the modal's capture handler asks first. */
+    const layer = dialog.parentElement!;
+    layer.setAttribute('inert', '');
+    dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(log).toEqual([]);
+    layer.removeAttribute('inert');
+    dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(log).toEqual(['closed']);
+  });
+});
