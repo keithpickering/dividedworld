@@ -42,6 +42,8 @@ declare
                            'my_characters_page()',
                            -- The Season screen, Rankings and News (0117).
                            'season_page(text,integer,uuid,integer)',
+                           -- The Alerts screen (0119).
+                           'alerts_page(timestampwithtimezone)',
                            -- The refusal a SQL-standard screen function raises through (0094).
                            'screen_refusal(text)',
                            -- Cards beyond a post (0055): a target's effects for the act function, and a page's plays above its posts and its board's pins.
