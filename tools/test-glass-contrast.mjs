@@ -19,8 +19,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CLASS_LARGE, OVERLAYS, OVERLAY_READINGS, OVERLAY_RULES, SURFACES, calmOf, ceilingsFile, ceilingsStale, classLargeFaults, contrastRatio, glassCeilings, glassFaults, luminance, overlayCeilings, overlayRuleFaults, overlayWorst, readClassLarge, readScrim, recipeWorsts, treeGlass } from './check-glass-contrast.mjs';
-import * as G from './check-glass-contrast.mjs';
+import { CLASS_LARGE, OVERLAYS, OVERLAY_READINGS, OVERLAY_RULES, SURFACES, calmOf, ceilingsFile, ceilingsStale, classLargeFaults, contrastRatio, glassCeilings, glassFaults, luminance, overlayCeilings, overlayRuleFaults, overlayWorst, PLATE_READINGS, plateFaults, plateReadFaults, readClassLarge, readPlates, readScrim, recipeWorsts, treeGlass } from './check-glass-contrast.mjs';
 
 let pass = 0;
 const failures = [];
@@ -538,14 +537,14 @@ const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s ===
 /* ---- the card's two plates (engine/ui/cards/postcard.css) ---- */
 {
   const cardCss = fs.readFileSync(new URL('../engine/ui/cards/postcard.css', import.meta.url), 'utf8');
-  const plates = G.readPlates ? G.readPlates(cardCss) : {};
-  const faultsOfPlates = (g, readings = plates) => (G.plateFaults ? G.plateFaults(g, readings) : []);
-  const readFaults = (readings) => (G.plateReadFaults ? G.plateReadFaults(readings) : []);
+  const plates = readPlates(cardCss);
+  const faultsOfPlates = (g, readings = plates) => plateFaults(g, readings);
+  const readFaults = (readings) => plateReadFaults(readings);
 
-  check('the guard reads both plates from the real stylesheet', plates.name?.base === '--kb-glass-panel' && plates.text?.base === '--kb-glass-panel-soft', JSON.stringify(plates));
-  check('the real stylesheet\'s plates are readable', G.plateReadFaults !== undefined && readFaults(plates).length === 0, text(readFaults(plates)));
-  check('the real glass passes the plates, in every key', G.plateFaults !== undefined && faultsOfPlates(real).length === 0, text(faultsOfPlates(real)));
-  check('the real guard\'s own readings of the real stylesheet agree', JSON.stringify(G.PLATE_READINGS) === JSON.stringify(plates), JSON.stringify(G.PLATE_READINGS));
+  check('the guard reads both plates from the real stylesheet', plates.name?.base === '--kb-glass-panel' && plates.text?.base === '--kb-glass-panel-soft' && plates.name?.rules?.length === 1 && plates.text?.rules?.length === 1, JSON.stringify(plates));
+  check('the real stylesheet\'s plates are readable', readFaults(plates).length === 0, text(readFaults(plates)));
+  check('the real glass passes the plates, in every key', faultsOfPlates(real).length === 0, text(faultsOfPlates(real)));
+  check('the real guard\'s own readings of the real stylesheet agree', JSON.stringify(PLATE_READINGS) === JSON.stringify(plates), JSON.stringify(PLATE_READINGS));
 
   /* The poison: a plate drawn in rgb(0 0 0 / 0.3) lets white art through to the text. Over white it is rgb(179,179,179). */
   const thinName = fresh();
@@ -567,12 +566,28 @@ const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s ===
   delete noToken.keys.standard['--kb-glass-panel'];
   check('a plate\'s token missing from a key is an error', named(faultsOfPlates(noToken), 'plate name', '--kb-glass-panel', 'standard key').length === 1, text(faultsOfPlates(noToken)));
 
+  /* A translucent text token passes as opaque and fails once it is composited over the plate: #ffffff at 0.4 on rgb(54,52,60)... */
+  const ghost = fresh();
+  ghost.keys.standard['--kb-glass-text-2'].value = 'rgba(255, 255, 255, 0.4)';
+  const ghostFaults = faultsOfPlates(ghost);
+  check('a translucent text token is composited over the plate before it is read', named(ghostFaults, 'plate text', '--kb-glass-text-2', 'standard key', 'needs 4.5:1').length === 1, text(ghostFaults));
+
+  /* A later rule that overrides the plate's background is the plate's too. */
+  const overridden = readPlates(cardCss + "\n.kb-postcard[data-size='slot'] .kb-postcard-plate { background: var(--kb-glass-thin); }\n.kb-postcard-plate[data-armed] { background: var(--kb-glass-panel); }\n.kb-postcard-plate::before { background: red; }\n");
+  check('an override of the plate\'s background, size-specific or a variant, is read; a pseudo-element\'s is not', overridden.name?.rules?.length === 3 && overridden.name.rules.every((r) => r.base !== null) && overridden.name?.base === '--kb-glass-panel', JSON.stringify(overridden.name));
+  const thinGlass = fresh();
+  for (const k of ['standard', 'high']) thinGlass.keys[k]['--kb-glass-thin'] = { value: 'rgb(0 0 0 / 0.3)', tags: [] };
+  const overFaults = faultsOfPlates(thinGlass, overridden);
+  check('a size-specific override with a thin token fails the plate, naming the token and the rule', named(overFaults, 'plate name', '--kb-glass-thin', "[data-size='slot']", 'needs 3:1').length === 2, text(overFaults));
+  const murky = readPlates(cardCss + "\n.kb-postcard[data-size='phone'] .kb-postcard-line { background: linear-gradient(red, blue); }\n");
+  check('an override whose background is no single token is unreadable', named(readFaults(murky), 'plate text', 'single').length === 1 && named(readFaults(murky), 'plate name').length === 0, text(readFaults(murky)));
+
   /* Unreadable: the guard fails by name rather than passing over a rule it cannot find. */
-  const lost = G.readPlates ? G.readPlates(cardCss.replace('.kb-postcard-plate {', '.kb-postcard-badge {')) : {};
+  const lost = readPlates(cardCss.replace('.kb-postcard-plate {', '.kb-postcard-badge {'));
   check('a name plate rule missing from the stylesheet is unreadable', named(readFaults(lost), 'plate name', '.kb-postcard-plate', 'cannot find').length === 1 && named(readFaults(lost), 'plate text').length === 0, text(readFaults(lost)));
-  const gradient = G.readPlates ? G.readPlates(cardCss.replace('background: var(--kb-glass-panel-soft);', 'background: linear-gradient(var(--kb-glass-panel-soft), transparent);')) : {};
+  const gradient = readPlates(cardCss.replace('background: var(--kb-glass-panel-soft);', 'background: linear-gradient(var(--kb-glass-panel-soft), transparent);'));
   check('a text plate whose background is no longer a single token is unreadable', named(readFaults(gradient), 'plate text', 'cannot find').length === 1, text(readFaults(gradient)));
-  check('no stylesheet at all is unreadable for both plates', readFaults(G.readPlates ? G.readPlates(null) : {}).length === 2, text(readFaults(G.readPlates ? G.readPlates(null) : {})));
+  check('no stylesheet at all is unreadable for both plates', readFaults(readPlates(null)).length === 2, text(readFaults(readPlates(null))));
 }
 
 /* ---- main(): the script itself, run against a scratch tree ---- */

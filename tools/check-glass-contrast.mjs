@@ -413,10 +413,27 @@ export const PLATE_RULES = {
   text: { css: 'engine/ui/cards/postcard.css', selector: '.kb-postcard-line', text: '--kb-glass-text-2', need: 4.5 },
 };
 
-/** What the guard reads of the card's stylesheet: each plate's background token, or null where its rule or single-token background is not found. Comments are dropped first, the card's rules carry them. */
+/**
+ * What the guard reads of the card's stylesheet: for each plate, `{ base, rules }`. `rules` is every rule whose selector ends in the plate's
+ * class (a size's `.kb-postcard[data-size='slot'] .kb-postcard-plate`, a second bare rule, an attribute or state variant, never a pseudo-element)
+ * and sets a `background`, each as `{ selector, base }` with `base` the `var(--token)` or null where it is anything else. `base` is the plate's
+ * own bare rule's token, null where that rule is missing. Comments are dropped first, the card's rules carry them.
+ */
 export function readPlates(css, rules = PLATE_RULES) {
   const bare = css === null ? null : css.replace(/\/\*[\s\S]*?\*\//g, '');
-  return Object.fromEntries(Object.entries(rules).map(([p, rule]) => [p, { base: bare === null ? null : readPanelBase(bare, rule.selector) }]));
+  const found = [];
+  if (bare !== null) {
+    for (const m of bare.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const bg = m[2].match(/(?:^|;)\s*background(?:-color)?\s*:\s*([^;]*)/);
+      if (!bg) continue;
+      const token = bg[1].trim().match(/^var\((--[\w-]+)\)$/);
+      for (const selector of m[1].split(',').map((x) => x.trim())) found.push({ selector, base: token ? token[1] : null });
+    }
+  }
+  return Object.fromEntries(Object.entries(rules).map(([p, rule]) => {
+    const ends = new RegExp(`(?<![\\w-])${escapeRe(rule.selector)}(?:\\[[^\\]]*\\]|:(?!:)[\\w-]+(?:\\([^)]*\\))?)*$`);
+    return [p, { base: found.find((f) => f.selector === rule.selector)?.base ?? null, rules: found.filter((f) => ends.test(f.selector)) }];
+  }));
 }
 
 const plateReadings = () => {
@@ -430,31 +447,36 @@ const plateReadings = () => {
 };
 export const PLATE_READINGS = plateReadings();
 
-/** Every plate whose rule the guard cannot read. */
+/** Every plate whose rule the guard cannot read, and every override of its background that is not a single token. */
 export function plateReadFaults(readings = PLATE_READINGS, rules = PLATE_RULES) {
   const out = [];
   for (const [p, rule] of Object.entries(rules)) {
     if (readings[p]?.base == null) out.push({ where: `plate ${p}`, why: `cannot find ${rule.selector}'s background: var(--token) in ${rule.css}; the token is what the plate's worst pixel (over white art) is read from` });
+    for (const r of readings[p]?.rules ?? []) {
+      if (r.base === null) out.push({ where: `plate ${p}`, why: `${r.selector} sets a background that is not a single var(--token) in ${rule.css}; the guard reads each background the plate can be drawn in` });
+    }
   }
   return out;
 }
 
-/** Every departure of one glass's plates from their contrast, as `{ where, why }`. */
+/** Every departure of one glass's plates from their contrast, as `{ where, why }`: each background token the stylesheet draws a plate in, in every key. */
 export function plateFaults(glass, readings = PLATE_READINGS, rules = PLATE_RULES) {
   const out = [];
   for (const [p, rule] of Object.entries(rules)) {
-    const base = readings[p]?.base;
-    if (base == null) continue;
     const where = `plate ${p}`;
-    for (const keyName of Object.keys(glass.keys ?? {})) {
-      const key = glass.keys[keyName];
-      const bg = parseColor(key[base]?.value);
-      const fg = parseColor(key[rule.text]?.value);
-      if (!bg) { out.push({ where, why: `${keyName} key: ${base} is missing or not a color, and the plate is drawn in it` }); continue; }
-      if (!fg) { out.push({ where, why: `${keyName} key: ${rule.text} is missing or not a color, and the plate draws it` }); continue; }
-      const under = mix([bg.r, bg.g, bg.b], bg.a, [255, 255, 255]);
-      const r = contrastRatio([fg.r, fg.g, fg.b], under);
-      if (r < rule.need) out.push({ where, why: `${keyName} key: ${rule.text} ${key[rule.text].value} on ${base} ${key[base].value} over white ${rgbText(under)} is ${fmt(r, rule.need)}, needs ${rule.need}:1` });
+    for (const { selector, base } of readings[p]?.rules ?? []) {
+      if (base == null) continue;
+      for (const keyName of Object.keys(glass.keys ?? {})) {
+        const key = glass.keys[keyName];
+        const bg = parseColor(key[base]?.value);
+        const fg = parseColor(key[rule.text]?.value);
+        if (!bg) { out.push({ where, why: `${keyName} key: ${base} (${selector}) is missing or not a color, and the plate is drawn in it` }); continue; }
+        if (!fg) { out.push({ where, why: `${keyName} key: ${rule.text} is missing or not a color, and the plate draws it` }); continue; }
+        const under = mix([bg.r, bg.g, bg.b], bg.a, [255, 255, 255]);
+        const text = mix([fg.r, fg.g, fg.b], fg.a, under);
+        const r = contrastRatio(text, under);
+        if (r < rule.need) out.push({ where, why: `${keyName} key: ${rule.text} ${key[rule.text].value} on ${base} ${key[base].value} (${selector}) over white ${rgbText(under)} is ${fmt(r, rule.need)}, needs ${rule.need}:1` });
+      }
     }
   }
   return out;
