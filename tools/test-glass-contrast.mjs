@@ -20,6 +20,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CLASS_LARGE, OVERLAYS, OVERLAY_READINGS, OVERLAY_RULES, SURFACES, calmOf, ceilingsFile, ceilingsStale, classLargeFaults, contrastRatio, glassCeilings, glassFaults, luminance, overlayCeilings, overlayRuleFaults, overlayWorst, readClassLarge, readScrim, recipeWorsts, treeGlass } from './check-glass-contrast.mjs';
+import * as G from './check-glass-contrast.mjs';
 
 let pass = 0;
 const failures = [];
@@ -534,6 +535,46 @@ const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s ===
   check('the ceilings file for an instance has overlays.tips', glassCeilings(real).overlays?.tips?.scrim === 72);
 }
 
+/* ---- the card's two plates (engine/ui/cards/postcard.css) ---- */
+{
+  const cardCss = fs.readFileSync(new URL('../engine/ui/cards/postcard.css', import.meta.url), 'utf8');
+  const plates = G.readPlates ? G.readPlates(cardCss) : {};
+  const faultsOfPlates = (g, readings = plates) => (G.plateFaults ? G.plateFaults(g, readings) : []);
+  const readFaults = (readings) => (G.plateReadFaults ? G.plateReadFaults(readings) : []);
+
+  check('the guard reads both plates from the real stylesheet', plates.name?.base === '--kb-glass-panel' && plates.text?.base === '--kb-glass-panel-soft', JSON.stringify(plates));
+  check('the real stylesheet\'s plates are readable', G.plateReadFaults !== undefined && readFaults(plates).length === 0, text(readFaults(plates)));
+  check('the real glass passes the plates, in every key', G.plateFaults !== undefined && faultsOfPlates(real).length === 0, text(faultsOfPlates(real)));
+  check('the real guard\'s own readings of the real stylesheet agree', JSON.stringify(G.PLATE_READINGS) === JSON.stringify(plates), JSON.stringify(G.PLATE_READINGS));
+
+  /* The poison: a plate drawn in rgb(0 0 0 / 0.3) lets white art through to the text. Over white it is rgb(179,179,179). */
+  const thinName = fresh();
+  thinName.keys.standard['--kb-glass-panel'].value = 'rgb(0 0 0 / 0.3)';
+  const nameFaults = faultsOfPlates(thinName);
+  check('a name plate drawn in rgb(0 0 0 / 0.3) fails 3:1, naming the plate, the token and the ratio', named(nameFaults, 'plate name', '--kb-glass-panel', 'standard key', 'rgb(0 0 0 / 0.3)', '2.10:1', 'needs 3:1').length === 1, text(nameFaults));
+  const thinText = fresh();
+  thinText.keys.high['--kb-glass-panel-soft'].value = 'rgb(0 0 0 / 0.3)';
+  const textFaults = faultsOfPlates(thinText);
+  check('a text plate drawn in rgb(0 0 0 / 0.3) fails 4.5:1, naming the plate, the token and the ratio', named(textFaults, 'plate text', '--kb-glass-panel-soft', 'high key', 'rgb(0 0 0 / 0.3)', 'needs 4.5:1').length === 1, text(textFaults));
+  check('glassFaults carries the plate faults', named(glassFaults(thinName), 'plate name').length === 1, text(glassFaults(thinName)));
+  /* The name is large type: a plate that holds 3:1 but not 4.5:1 passes as the name plate and fails as the text plate. */
+  const middling = fresh();
+  middling.keys.standard['--kb-glass-panel'].value = 'rgb(110 110 110)';
+  middling.keys.standard['--kb-glass-panel-soft'].value = 'rgb(110 110 110)';
+  const mid = faultsOfPlates(middling);
+  check('the name plate holds 3:1 where the text plate needs 4.5:1', named(mid, 'plate name').length === 0 && named(mid, 'plate text', 'needs 4.5:1').length === 1, text(mid));
+  const noToken = fresh();
+  delete noToken.keys.standard['--kb-glass-panel'];
+  check('a plate\'s token missing from a key is an error', named(faultsOfPlates(noToken), 'plate name', '--kb-glass-panel', 'standard key').length === 1, text(faultsOfPlates(noToken)));
+
+  /* Unreadable: the guard fails by name rather than passing over a rule it cannot find. */
+  const lost = G.readPlates ? G.readPlates(cardCss.replace('.kb-postcard-plate {', '.kb-postcard-badge {')) : {};
+  check('a name plate rule missing from the stylesheet is unreadable', named(readFaults(lost), 'plate name', '.kb-postcard-plate', 'cannot find').length === 1 && named(readFaults(lost), 'plate text').length === 0, text(readFaults(lost)));
+  const gradient = G.readPlates ? G.readPlates(cardCss.replace('background: var(--kb-glass-panel-soft);', 'background: linear-gradient(var(--kb-glass-panel-soft), transparent);')) : {};
+  check('a text plate whose background is no longer a single token is unreadable', named(readFaults(gradient), 'plate text', 'cannot find').length === 1, text(readFaults(gradient)));
+  check('no stylesheet at all is unreadable for both plates', readFaults(G.readPlates ? G.readPlates(null) : {}).length === 2, text(readFaults(G.readPlates ? G.readPlates(null) : {})));
+}
+
 /* ---- main(): the script itself, run against a scratch tree ---- */
 {
   const here = path.dirname(fileURLToPath(import.meta.url));
@@ -545,7 +586,7 @@ const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s ===
   // output buffer.
   const stage = (dir) => git(dir, 'add', '-A', '-f', '--', '.', ':(exclude)node_modules');
   /** A scratch repository with the guard, the engine's types, and the given glass (null for none), staged. */
-  const scratch = ({ glass, types = true, ceilings = null, apply = null, typesText = null, tipsCss = null }) => {
+  const scratch = ({ glass, types = true, ceilings = null, apply = null, typesText = null, tipsCss = null, cardCss = null }) => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'glass-contrast-'));
     git(dir, 'init', '-q');
     fs.mkdirSync(path.join(dir, 'tools'), { recursive: true });
@@ -557,6 +598,8 @@ const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s ===
     fs.writeFileSync(path.join(dir, 'engine', 'ui', 'types.ts'), types ? (typesText ?? fs.readFileSync(path.join(repo, 'engine', 'ui', 'types.ts'), 'utf8')) : 'export type Nothing = never;\n');
     fs.mkdirSync(path.join(dir, 'engine', 'ui', 'tips'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'engine', 'ui', 'tips', 'tips.css'), tipsCss ?? fs.readFileSync(path.join(repo, 'engine', 'ui', 'tips', 'tips.css'), 'utf8'));
+    fs.mkdirSync(path.join(dir, 'engine', 'ui', 'cards'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'engine', 'ui', 'cards', 'postcard.css'), cardCss ?? fs.readFileSync(path.join(repo, 'engine', 'ui', 'cards', 'postcard.css'), 'utf8'));
     fs.mkdirSync(path.join(dir, 'engine', 'ui', 'glass'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'engine', 'ui', 'glass', 'apply.ts'), apply ?? fs.readFileSync(path.join(repo, 'engine', 'ui', 'glass', 'apply.ts'), 'utf8'));
     if (glass) {
@@ -602,6 +645,16 @@ const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s ===
   check('the scratch types with a second overlay differ from the real ones', typed !== realTypes);
   const ruleless = run(make({ glass: real, typesText: typed }));
   check('the script refuses a GlassOverlay it has no rule for', ruleless.status === 1 && /toast/.test(ruleless.stderr) && /no rule/.test(ruleless.stderr), ruleless.stderr.slice(0, 400));
+
+  const realCard = fs.readFileSync(path.join(repo, 'engine', 'ui', 'cards', 'postcard.css'), 'utf8');
+  const noPlate = realCard.replace('.kb-postcard-plate {', '.kb-postcard-badge {');
+  check('the scratch card stylesheet with the name plate renamed differs from the real one', noPlate !== realCard);
+  const unplated = run(make({ glass: real, cardCss: noPlate }));
+  check('the script refuses a postcard.css whose name plate rule is missing, naming the plate', unplated.status === 1 && /plate name/.test(unplated.stderr) && /cannot find/.test(unplated.stderr), unplated.stderr.slice(0, 400));
+  const thinPlate = fresh();
+  thinPlate.keys.standard['--kb-glass-panel-soft'].value = 'rgb(0 0 0 / 0.3)';
+  const thin = run(make({ glass: thinPlate }));
+  check('the script refuses a text plate drawn in rgb(0 0 0 / 0.3), naming the instance, the plate and the token', thin.status === 1 && /x: plate text/.test(thin.stderr) && /--kb-glass-panel-soft/.test(thin.stderr), thin.stderr.slice(0, 400));
 
   const missing = run(make({ glass: real }));
   check('a missing ceilings file exits 1, naming --write', missing.status === 1 && /does not exist/.test(missing.stderr) && /--write/.test(missing.stderr), missing.stderr);

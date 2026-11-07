@@ -399,6 +399,67 @@ export function overlayWorst(glass, keyName, percent, base) {
   return { rgb, scrim, luminance: luminance(rgb) };
 }
 
+/* ---- the card's plates ---- */
+
+/**
+ * The postcard's two plates (engine/ui/cards/postcard.css) draw a glass token over art, and the art can be white. Each is held to its text
+ * over the plate's token composited on pure white, in every key the glass has: the name plate under --kb-glass-text-hi at 3:1 (the name is
+ * large display type), the text plate under --kb-glass-text-2 at 4.5:1. A plate's background is a single `var(--token)`, never a gradient,
+ * so this can read it. Unlike the overlays these are not in `GlassOverlay`: a card is not a sheet over the page.
+ */
+/** @type {Record<string, { css: string, selector: string, text: string, need: number }>} */
+export const PLATE_RULES = {
+  name: { css: 'engine/ui/cards/postcard.css', selector: '.kb-postcard-plate', text: '--kb-glass-text-hi', need: 3 },
+  text: { css: 'engine/ui/cards/postcard.css', selector: '.kb-postcard-line', text: '--kb-glass-text-2', need: 4.5 },
+};
+
+/** What the guard reads of the card's stylesheet: each plate's background token, or null where its rule or single-token background is not found. Comments are dropped first, the card's rules carry them. */
+export function readPlates(css, rules = PLATE_RULES) {
+  const bare = css === null ? null : css.replace(/\/\*[\s\S]*?\*\//g, '');
+  return Object.fromEntries(Object.entries(rules).map(([p, rule]) => [p, { base: bare === null ? null : readPanelBase(bare, rule.selector) }]));
+}
+
+const plateReadings = () => {
+  const out = {};
+  for (const css of new Set(Object.values(PLATE_RULES).map((r) => r.css))) {
+    const file = path.join(repoRoot, css);
+    const rules = Object.fromEntries(Object.entries(PLATE_RULES).filter(([, r]) => r.css === css));
+    Object.assign(out, readPlates(fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null, rules));
+  }
+  return out;
+};
+export const PLATE_READINGS = plateReadings();
+
+/** Every plate whose rule the guard cannot read. */
+export function plateReadFaults(readings = PLATE_READINGS, rules = PLATE_RULES) {
+  const out = [];
+  for (const [p, rule] of Object.entries(rules)) {
+    if (readings[p]?.base == null) out.push({ where: `plate ${p}`, why: `cannot find ${rule.selector}'s background: var(--token) in ${rule.css}; the token is what the plate's worst pixel (over white art) is read from` });
+  }
+  return out;
+}
+
+/** Every departure of one glass's plates from their contrast, as `{ where, why }`. */
+export function plateFaults(glass, readings = PLATE_READINGS, rules = PLATE_RULES) {
+  const out = [];
+  for (const [p, rule] of Object.entries(rules)) {
+    const base = readings[p]?.base;
+    if (base == null) continue;
+    const where = `plate ${p}`;
+    for (const keyName of Object.keys(glass.keys ?? {})) {
+      const key = glass.keys[keyName];
+      const bg = parseColor(key[base]?.value);
+      const fg = parseColor(key[rule.text]?.value);
+      if (!bg) { out.push({ where, why: `${keyName} key: ${base} is missing or not a color, and the plate is drawn in it` }); continue; }
+      if (!fg) { out.push({ where, why: `${keyName} key: ${rule.text} is missing or not a color, and the plate draws it` }); continue; }
+      const under = mix([bg.r, bg.g, bg.b], bg.a, [255, 255, 255]);
+      const r = contrastRatio([fg.r, fg.g, fg.b], under);
+      if (r < rule.need) out.push({ where, why: `${keyName} key: ${rule.text} ${key[rule.text].value} on ${base} ${key[base].value} over white ${rgbText(under)} is ${fmt(r, rule.need)}, needs ${rule.need}:1` });
+    }
+  }
+  return out;
+}
+
 /** Every departure of one glass's overlay sheets from the contract, as `{ where, why }`. */
 export function overlayFaults(glass, readings = OVERLAY_READINGS, rules = OVERLAY_RULES) {
   const out = [];
@@ -459,7 +520,7 @@ const fontFor = (glass, size) => (glass.fonts ?? []).find((f) => f.family === si
  * `glass` is the parsed glass.json (a GlassTheme); it is left untyped here because naming the type
  * would pull the rules' sources into the tools' type check.
  */
-export function glassFaults(glass, classLarge = CLASS_LARGE?.entries ?? {}, overlays = OVERLAY_READINGS) {
+export function glassFaults(glass, classLarge = CLASS_LARGE?.entries ?? {}, overlays = OVERLAY_READINGS, plates = PLATE_READINGS) {
   const out = [];
   const fault = (where, why) => out.push({ where, why });
   const standard = glass.keys?.standard ?? {};
@@ -646,6 +707,7 @@ export function glassFaults(glass, classLarge = CLASS_LARGE?.entries ?? {}, over
     }
   }
   out.push(...overlayFaults(glass, overlays));
+  out.push(...plateFaults(glass, plates));
   return out;
 }
 
@@ -732,7 +794,7 @@ function main() {
   }
   let faults = 0;
   /* The engine's list is the engine's, read once whatever the instances. */
-  for (const f of [...overlayRuleFaults(), ...overlayReadFaults()]) {
+  for (const f of [...overlayRuleFaults(), ...overlayReadFaults(), ...plateReadFaults()]) {
     if (faults++ === 0) console.error('  glass-contrast: the glass fails its contrast:');
     console.error(`    engine: ${f.where}: ${f.why}`);
   }
