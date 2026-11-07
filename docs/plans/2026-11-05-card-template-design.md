@@ -205,3 +205,23 @@ favicon's vector, `instances/divided-world/ui/icon/coin.svg`. The back still say
 mark is the instance's, the same on every back. A hit's back keeps its gold ring and bands, with the same mark on them.
 The mark's back (`.kb-card-back`, a post's face-down tile) is unchanged by this amendment. Bluff's art, a red held-up
 card with a question mark, stays clear of the back either way.
+
+## Amended 2026-11-07: the back is a cloud, and its mark glows
+
+The owner, on the booster packs boards redrawn that day: "I think we can do without the X shape on the card back. Let's
+make the coin a bit larger on there, give it an outer glow and a cloudy multicolor background, like we use for the
+glass." So section 8's back changes, at every size:
+
+- **No crossed bands.** The canvas is a still cloud in the glass's look: two layers of fractal noise (the smoke's own
+  kind, `GlassTheme.smoke.field`, frozen), white with alpha, tinted by a gradient of the glass's tokens multiplied over
+  them (violet, the neon, violet, then the salty pink at the foot), so the clouds take the colors and the field between
+  them stays dark. The engine names no color: the noise is a monochrome SVG in a `url()`, and every color is a token. It
+  is still, never the page's drifting smoke, so a back reads the same in the hand, the reveal and a screenshot, and costs
+  one shared image however many backs are drawn.
+- **The mark is larger and glows.** Two thirds of the card's width (it was half), with no disc under it since the mark
+  draws its own rim, and an outer glow in the neon: a thin ring, a close glow and a wide one.
+- **The hit's back** keeps its gold ring, and its clouds (gold, pink, gold) and glow are the machine's gold.
+
+The back still says nothing about the card it is: the cloud, the mark and the colors are the same on every back. The
+mark's back (`.kb-card-back`, a post's face-down tile) is unchanged. The booster packs plan's Task 9 builds it; the
+booster packs boards (`docs/research/2026-11-07-booster-packs/`) draw it.

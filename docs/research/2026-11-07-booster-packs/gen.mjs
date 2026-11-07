@@ -35,11 +35,50 @@ const local = (html) => html.replaceAll('src="/instances/', 'src="../../../insta
 const face = (key, size, style = {}) => local(renderToStaticMarkup(h(Postcard, { face: faces[key], size, style })));
 const back = (size, hit = false, style = {}) => local(renderToStaticMarkup(h(PostcardBack, { size, hit, mark: coin, style })));
 
+/*
+ * The card back as the owner amended it on 2026-11-07 (docs/plans/2026-11-05-card-template-design.md, the amendment of that
+ * date; docs/plans/2026-11-04-booster-packs-plan.md, Task 9, builds it into engine/ui/cards/postcard.css word for word): no
+ * crossed bands, a still cloud in the glass's colors, and the instance's mark larger, with an outer glow. Laid over the
+ * engine's stylesheet here until that task lands.
+ */
+const BACK_CSS = `/* The back's cloud: two layers of the glass's noise, white with alpha, tinted by a gradient of the glass's own colors
+   multiplied over them, so the clouds take the colors and the field between them stays dark. */
+.kb-postcard-back {
+  --kb-back-tint: linear-gradient(160deg, var(--kb-glass-violet) 0%, var(--kb-glass-neon) 45%, var(--kb-glass-violet) 72%, var(--kb-glass-salty) 100%);
+  --kb-back-glow: var(--kb-glass-neon);
+}
+
+.kb-postcard-back .kb-postcard-canvas {
+  background-image:
+    var(--kb-back-tint),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 540 840' preserveAspectRatio='none'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0045 0.006' numOctaves='4' seed='23'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 1.9 0 0 0 -0.62'/%3E%3CfeGaussianBlur stdDeviation='5'/%3E%3C/filter%3E%3Crect width='540' height='840' filter='url(%23n)'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 540 840' preserveAspectRatio='none'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.009 0.012' numOctaves='3' seed='61'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 1.6 0 0 0 -0.75'/%3E%3CfeGaussianBlur stdDeviation='4'/%3E%3C/filter%3E%3Crect width='540' height='840' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 100% 100%;
+  background-blend-mode: multiply, normal, normal;
+  background-color: var(--kb-glass-field);
+}
+
+/* The instance's mark, two thirds of the card's width, glowing; the mark draws its own rim, so no disc is laid under it. */
+.kb-postcard-back .kb-postcard-emblem {
+  width: 66cqw;
+  height: 66cqw;
+  padding: 0;
+  background: none;
+  box-shadow: 0 0 0 max(1px, 0.6cqw) var(--kb-back-glow), 0 0 6cqw 1.5cqw color-mix(in srgb, var(--kb-back-glow) 90%, transparent), 0 0 18cqw 5cqw color-mix(in srgb, var(--kb-back-glow) 45%, transparent);
+}
+
+/* The hit's back: its clouds and its glow in the machine's gold. */
+.kb-postcard-back[data-hit] {
+  --kb-back-tint: linear-gradient(160deg, var(--kb-glass-ready) 0%, var(--kb-glass-salty) 55%, var(--kb-glass-ready) 100%);
+  --kb-back-glow: var(--kb-glass-ready);
+}`;
+
 /* The engine's stylesheet for a face, over the glass's tokens with the instance's values, the way the app's root sets them. */
 const glass = JSON.parse(read('instances/divided-world/ui/glass.json')).keys.standard;
 const FACE_CSS = `${read('engine/ui/glass/tokens.css')}
 :root{--kb-glass-skew-tag:-12deg;${Object.entries(glass).map(([k, v]) => `${k}:${v.value}`).join(';')}}
-${read('engine/ui/cards/postcard.css')}`;
+${read('engine/ui/cards/postcard.css')}
+${BACK_CSS}`;
 
 const CSS = `
 body{margin:0}

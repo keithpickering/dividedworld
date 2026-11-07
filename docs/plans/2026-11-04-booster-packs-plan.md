@@ -333,6 +333,31 @@ Model: inline
 Add a dated amendment under `docs/plans/2026-11-02-onboarding-plan.md` Task 11: `card_ledger.kind`'s `granted` is added
 to `card_held` (this plan's Task 2), and is not counted inline.
 
+## Task 9. The card back, clouded (engine UI)
+
+Model: inline
+
+Added 2026-11-07, from the card template design's amendment of that date. It touches no other task and may be built at
+any point; the boards of Tasks 5 and 6 already draw it.
+
+**Files:** `engine/ui/cards/postcard.css`, `engine/ui/cards/postcard.test.tsx`.
+
+**The code** is `BACK_CSS` in `docs/research/2026-11-07-booster-packs/gen.mjs`, word for word, merged into the
+stylesheet's back section: its `.kb-postcard-back` properties join that rule, its canvas background replaces the crossed
+bands of `.kb-postcard-back .kb-postcard-canvas`, its emblem's size, padding, background and shadow replace those of
+`.kb-postcard-emblem` (which only a back draws), and its `[data-hit]` properties join `.kb-postcard-back[data-hit]`. The
+section's comments say what the amendment says. Once it lands, `gen.mjs` drops `BACK_CSS` and reads the stylesheet alone.
+
+**Tests first** (`postcard.test.tsx`, beside "is drawn in the glass's text and field, and gold on a hit"), each red on
+main before the change:
+- The back's canvas draws no crossed bands (no `45deg` gradient in its rule), and its background multiplies a gradient of
+  tokens over the noise (`background-blend-mode: multiply`).
+- The emblem is `66cqw` square and its shadow reads `--kb-back-glow`.
+- `.kb-postcard-back[data-hit]` sets `--kb-back-glow` to `var(--kb-glass-ready)`.
+
+`node tools/check-ui-tokens.mjs` passes, since the noise's only literals are inside `url()`. A screenshot of the backs
+at the four sizes, normal and hit, goes in the PR for the owner's word.
+
 ## Last. The full build and the final review
 
 `npm run build:ci` and `npm run typecheck`, with their output. Then shots of the machine (the pack slot, its info, the

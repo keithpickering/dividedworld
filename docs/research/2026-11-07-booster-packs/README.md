@@ -19,5 +19,10 @@ It renders each card face and back with the engine's own `Postcard` and `Postcar
 through Vite, from Divided World's cards, and inlines the engine's stylesheet over the instance's glass values, so a board
 shows the card template exactly as the build draws it on the day it was run. Run again, it follows the cards' art.
 
+The card backs are drawn as the owner amended them on 2026-11-07 (the card template design's amendment of that date): a
+still cloud in the glass's colors in place of the crossed bands, and the instance's mark larger, with an outer glow; gold
+on the hit. Until the booster packs plan's Task 9 puts that into the engine's stylesheet, `gen.mjs` lays it over the
+engine's (`BACK_CSS`).
+
 The pack's wrapper and foil are a placeholder, with the instance's mark (its favicon's coin, as the card back carries it);
 the pack's art is the owner's to give, and is the instance's, as a card's art is.
