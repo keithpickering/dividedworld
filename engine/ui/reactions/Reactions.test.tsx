@@ -847,6 +847,24 @@ describe('on a staged page (the front door)', () => {
     expect(landed).not.toHaveBeenCalled();
   });
 
+  test('holds the cap itself, as the server would: two presses in one tick with one reaction left land one', async () => {
+    const { tallies, mine } = staged();
+    act(() => { tallies.merge('front-door:0', { tomato: 1, tea: 1, zzz: 1 }); mine.add({ act: 'front-door:0', kind: 'zzz', character: 'x' }); mine.add({ act: 'front-door:0', kind: 'fire', character: 'x' }); });
+    const tomato = screen.getByRole('button', { name: /^Tomato, 1/ });
+    const tea = screen.getByRole('button', { name: /^Tea, 1/ });
+    await act(async () => { fireEvent.click(tomato); fireEvent.click(tea); });
+    expect(mine.get('front-door:0')).toHaveLength(3);
+    expect((tallies.get('front-door:0').tomato ?? 0) + (tallies.get('front-door:0').tea ?? 0)).toBe(3);
+  });
+
+  test('a kind already the visitor\'s is not counted again', async () => {
+    const { tallies, mine } = staged();
+    const fire = screen.getByRole('button', { name: 'Fire, 2. React' });
+    await act(async () => { fireEvent.click(fire); fireEvent.click(fire); });
+    expect(tallies.get('front-door:0')).toEqual({ fire: 3 });
+    expect(mine.get('front-door:0')).toHaveLength(1);
+  });
+
   test('the picker is described by what is left alone, and a pick lands locally', async () => {
     const { called } = staged();
     await userEvent.click(await screen.findByRole('button', { name: 'React' }));

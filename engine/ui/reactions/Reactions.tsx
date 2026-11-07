@@ -44,10 +44,13 @@ interface Props {
   readonly pickerAt?: 'row' | 'button';
 }
 
-/** A staged page's send: the kind is the reader's, its count grows by one, on this screen alone; a kind already theirs is not sent again. */
+/**
+ * A staged page's send: the kind is the reader's, its count grows by one, on this screen alone. It holds the cap and the one-of-a-kind
+ * rule itself, as the server does in play, since two presses in one tick are both decided on what the last render knew.
+ */
 const STAGED_READER = 'staged:reader';
-const stagedSend = (act: Id, tallies: Tallies, mine: Mine) => async (kind: string): Promise<SendAnswer> => {
-  if (!mine.add({ act, kind, character: STAGED_READER })) return 'busy';
+const stagedSend = (act: Id, tallies: Tallies, mine: Mine, cap: number) => async (kind: string): Promise<SendAnswer> => {
+  if (mine.get(act).length >= cap || !mine.add({ act, kind, character: STAGED_READER })) return 'busy';
   tallies.merge(act, { [kind]: (tallies.get(act)[kind] ?? 0) + 1 });
   return 'sent';
 };
@@ -74,7 +77,7 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
   const canReact = !theirs && (staged || as !== null);
   /* One send for the row and its picker: one lock for the Act (send.ts). A staged page's is answered here, and sends nothing. */
   const sent = useReactionSend({ act, as, tallies, mine });
-  const { send, busy } = staged ? { send: stagedSend(act, tallies, mine), busy: false } : sent;
+  const { send, busy } = staged ? { send: stagedSend(act, tallies, mine, settings.reactionCap), busy: false } : sent;
   /* A picker is for the character it was opened for: another character in the HUD closes it, and what was said of a reaction as the last one goes. */
   const asId = as?.id;
   useEffect(() => { setOpen(false); setSaid(''); }, [asId]);
