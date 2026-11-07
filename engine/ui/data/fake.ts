@@ -36,7 +36,7 @@ import type {
   AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, AccountListener, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
-  Boot, BoardPage, IndexPage, Opened, ProfilePage, RecordPage, Slot, ThreadPage, ThreadPerson,
+  Boot, BoardPage, IndexPage, Opened, AdminSlot, ProfilePage, RecordPage, Slot, SlotMove, ThreadPage, ThreadPerson,
   AppealResult, AppealVerdict, LogAppeal, LogBan, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
   Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
@@ -130,9 +130,11 @@ export interface Seed {
   buy(account: Id, card: string, options?: { at?: number }): void;
   /**
    * An admin's change to the slot that sells a card or a pack (`item`): whether it is for sale, hidden or sold out, and its price in hundredths.
-   * The machine reads it at once, as the database's rows are read at the next look.
+   * The machine reads it at once, as the database's rows are read at the next look. `move` is the Boss's move the slot shows (`Slot.move`):
+   * the fake applies no move, so it only says what the machine shows beside it, and a test that draws a pulled slot seeds the availability
+   * and price the move would have made as well (the database's `machine_now` has the move already applied to both).
    */
-  slot(item: { readonly card: string } | { readonly pack: string }, change: { availability?: 'onSale' | 'soldOut' | 'hidden'; price?: number }): void;
+  slot(item: { readonly card: string } | { readonly pack: string }, change: { availability?: 'onSale' | 'soldOut' | 'hidden'; price?: number; move?: SlotMove | null }): void;
   /** A character's Turn asked by its player, waiting for the next settlement; refused in the server's words like any other. */
   turn(character: Id, to: string, options?: { loudness?: 'silent' | 'announced'; showFrom?: boolean; showTo?: boolean }): void;
   /** What the account's next estimate holds; its times are the ask's. */
@@ -1106,13 +1108,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * database keeps an admin's choices. Their ids are their own count, so the ids of everything else are as they were. A pack is rolled with a
    * fixed-seed generator: the fake is deterministic, and a test that wants other cards seeds the hand.
    */
-  interface SlotRec { readonly id: Id; readonly position: number; readonly item: Slot['item']; availability: 'onSale' | 'soldOut' | 'hidden'; price: number }
-  const slotRecs: SlotRec[] = instance.machine.map((m, i): SlotRec => ({ id: `00000000-0000-4000-9000-${(i + 1).toString(16).padStart(12, '0')}`, position: i + 1, item: m.item, availability: m.availability, price: m.price }));
+  interface SlotRec { readonly id: Id; position: number; readonly item: Slot['item']; availability: 'onSale' | 'soldOut' | 'hidden'; price: number; move: SlotMove | null }
+  const slotRecs: SlotRec[] = instance.machine.map((m, i): SlotRec => ({ id: `00000000-0000-4000-9000-${(i + 1).toString(16).padStart(12, '0')}`, position: i + 1, item: m.item, availability: m.availability, price: m.price, move: null }));
   let rolls = 0x9e3779b9;
   const random = (): number => { rolls = (rolls + 0x6d2b79f5) | 0; let t = Math.imul(rolls ^ (rolls >>> 15), 1 | rolls); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
   const rarityOf = (item: Slot['item']): Slot['rarity'] => ('card' in item ? instance.cards.find((c) => c.key === item.card)?.rarity ?? null : null);
-  const machine = (): Slot[] => slotRecs.filter((r) => r.availability !== 'hidden').map((r): Slot => ({
-    id: r.id, position: r.position, item: r.item, rarity: rarityOf(r.item), availability: r.availability as Slot['availability'], price: r.price, move: null,
+  const machine = (): Slot[] => slotRecs.filter((r) => r.availability !== 'hidden').sort((x, y) => x.position - y.position).map((r): Slot => ({
+    id: r.id, position: r.position, item: r.item, rarity: rarityOf(r.item), availability: r.availability as Slot['availability'], price: r.price, move: r.move,
   }));
   /** A price as the server's refusals say it: hundredths of an orb as orbs (`orbs`, 0115). */
   const orbsOf = (hundredths: number): string => (hundredths / 100).toFixed(2);
@@ -2160,6 +2162,36 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     buyCard: lossy(buyCard),
     buyPack: lossy(buyPack),
     machine: () => machine(),
+    adminMachine() {
+      if (!me()?.admin) throw new Error('only an admin reads the machine');
+      /* The admin's own availability and price: a seeded move is already applied to the slot's (see `seed.slot`), so a Pull reads on sale again here and `was` is the price. */
+      return [...slotRecs].sort((x, y) => x.position - y.position).map((r): AdminSlot => ({
+        id: r.id, position: r.position, item: r.item, rarity: rarityOf(r.item), availability: r.move?.kind === 'pullSlot' && r.availability === 'soldOut' ? 'onSale' : r.availability,
+        price: r.move ? r.move.was : r.price, move: r.move ? { kind: r.move.kind, act: r.move.act, ends: r.move.ends, percent: r.move.percent, hours: r.move.hours } : null,
+      }));
+    },
+    setSlot(slot, availability, price) {
+      if (!me()?.admin) return refuse('only an admin changes the machine');
+      if (availability !== 'onSale' && availability !== 'soldOut' && availability !== 'hidden') return refuse('a slot is on sale, sold out or hidden');
+      if (!Number.isInteger(price) || price < 1) return refuse('a price is at least 0.01');
+      if (price > 100000000) return refuse('a price is at most 1000000.00');
+      const rec = slotRecs.find((r) => r.id === slot);
+      if (!rec) return refuse('the machine has no such slot');
+      rec.availability = availability;
+      rec.price = price;
+      return ok({ slot, ended: 0 });
+    },
+    moveSlot(slot, direction) {
+      if (!me()?.admin) return refuse('only an admin moves a slot');
+      if (direction !== 'up' && direction !== 'down') return refuse('a slot moves up or down');
+      const grid = [...slotRecs].sort((x, y) => x.position - y.position);
+      const at = grid.findIndex((r) => r.id === slot);
+      if (at < 0) return refuse('the machine has no such slot');
+      const other = grid[direction === 'up' ? at - 1 : at + 1];
+      if (!other) return ok({ slot, moved: false });
+      [grid[at]!.position, other.position] = [other.position, grid[at]!.position];
+      return ok({ slot, moved: true });
+    },
     playCard: lossy(playCard),
     setCard: lossy(setCard),
     useCard: lossy(useCard),
@@ -2888,6 +2920,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!rec) throw new Error(`the machine has no slot for ${JSON.stringify(item)}`);
       if (change.availability) rec.availability = change.availability;
       if (change.price !== undefined) rec.price = change.price;
+      if (change.move !== undefined) rec.move = change.move;
     },
     turn(character, to, o) { accepted(as(ownerOf(character), () => turn(character, to, o?.loudness ?? 'silent', o?.showFrom ?? false, o?.showTo ?? false))); },
     estimate(account, e) {

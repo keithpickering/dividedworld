@@ -905,6 +905,35 @@ describe('buying and playing a card', () => {
     expect((await slotOf({ ...SLOT_CARD, move: { kind: 'shrinkSlot', act: T } })).move).toBeNull();
   });
 
+  it('drops a row whose availability it does not know, rather than showing it on sale', async () => {
+    const h = harness((r) => (r.url.pathname === `${REST}/machine_now` ? rows([SLOT_CARD, { ...SLOT_CARD, slot: C, position: 3, card: 'stick', availability: 'hidden' }, { ...SLOT_CARD, slot: B, position: 4, card: 'bluff', availability: 'someday' }, { ...SLOT_CARD, slot: T, position: 5, card: 'trap', availability: null }]) : undefined));
+    expect((await h.api.machine()).map((s) => s.id)).toEqual([A]);
+  });
+
+  it('reads the machine as an admin (hidden slots too, the admin\'s price, the move in force) and saves and moves a slot through the admin functions', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/rpc/admin_machine')) return json([
+        { slot: A, position: 1, card: null, pack: 'booster', rarity: null, availability: 'onSale', price: 300, move: null },
+        { slot: B, position: 2, card: 'whoops', pack: null, rarity: 'common', availability: 'onSale', price: 100, move: { kind: 'pullSlot', act: T, ends: '2026-11-09T12:00:00+00:00', percent: null, hours: null } },
+        { slot: C, position: 3, card: 'main', pack: null, rarity: 'rare', availability: 'hidden', price: 300, move: { kind: 'shrinkSlot', act: T } },
+        { slot: C, position: 4, card: 'x', pack: null, rarity: 'rare', availability: 'closed', price: 300, move: null },
+      ]);
+      if (r.url.pathname.endsWith('/rpc/set_slot')) return json({ slot: B, ended: 1 });
+      if (r.url.pathname.endsWith('/rpc/move_slot')) return json({ slot: B, moved: false });
+      return json({}, 404);
+    });
+    const slots = await h.api.adminMachine();
+    expect(slots.map((s) => [s.id, s.availability, s.price, s.move?.kind ?? null])).toEqual([[A, 'onSale', 300, null], [B, 'onSale', 100, 'pullSlot'], [C, 'hidden', 300, null]]);
+    expect(slots[0]!.item).toEqual({ pack: 'booster' });
+    expect(slots[1]!.move).toEqual({ kind: 'pullSlot', act: T, ends: '2026-11-09T12:00:00+00:00', percent: null, hours: null });
+    expect(await h.api.setSlot(B, 'soldOut', 125)).toEqual({ ok: true, value: { slot: B, ended: 1 } });
+    expect(h.to('rpc/set_slot')[0]?.body).toEqual({ slot: B, availability: 'soldOut', price: 125 });
+    expect(await h.api.moveSlot(B, 'up')).toEqual({ ok: true, value: { slot: B, moved: false } });
+    expect(h.to('rpc/move_slot')[0]?.body).toEqual({ slot: B, direction: 'up' });
+    const refused = harness((r) => (r.url.pathname.endsWith('/rpc/set_slot') ? json({ message: 'only an admin changes the machine', hint: 'kayfabb.refusal' }, 403) : undefined));
+    expect(await refused.api.setSlot(B, 'onSale', 100)).toEqual({ ok: false, error: 'only an admin changes the machine' });
+  });
+
   it('buys through the act function, naming the slot and the price it showed, and reads the wallet and count the function answers', async () => {
     const h = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ card: 'whoops', balance: 462, held: 3 }) : undefined));
     const slot = await slotOf(SLOT_CARD);

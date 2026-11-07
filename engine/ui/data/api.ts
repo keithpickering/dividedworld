@@ -804,6 +804,22 @@ export interface SlotMove {
   readonly hours: number | null;
 }
 
+/**
+ * A slot as an admin reads it (`admin_machine`, 0119_machine_admin.sql): every slot, a hidden one too, at the admin's own availability and price (the Boss's move
+ * over it is beside them, never folded in). `move` is the Boss's machine move in force on it, enough to name it and to find it in the queue.
+ */
+export interface AdminSlot {
+  readonly id: Id;
+  readonly position: number;
+  readonly item: { readonly card: string } | { readonly pack: string };
+  /** A card's rarity; null for a pack. */
+  readonly rarity: Slot['rarity'];
+  readonly availability: 'onSale' | 'soldOut' | 'hidden';
+  /** The admin's price, in hundredths of an orb. */
+  readonly price: number;
+  readonly move: Pick<SlotMove, 'kind' | 'act' | 'ends' | 'percent' | 'hours'> | null;
+}
+
 /** A pack opened: its id, the cards it gave in pull order, and the settled wallet after it (`buy_pack`'s answer). */
 export interface Opened {
   readonly pack: Id;
@@ -1641,6 +1657,15 @@ export interface KayfaApi {
   myCards(): Promise<readonly HeldCard[]>;
   /** The Vending Machine's slots as everyone sees them now, in grid order: public, the same for every caller, a hidden slot absent. */
   machine(): Promise<readonly Slot[]>;
+  /** Every slot of the machine, hidden ones too, in grid order, as an admin sees them. An admin's alone; anyone else is refused (the call throws). */
+  adminMachine(): Promise<readonly AdminSlot[]>;
+  /**
+   * Saves a slot's availability and price (`set_slot`). A price is at least 1 (hundredths of an orb). Taking a pack off sale ends, as reversed by the admin, every
+   * Pull whose card is then in no pack on sale; `ended` counts them. An admin's alone.
+   */
+  setSlot(slot: Id, availability: AdminSlot['availability'], price: number): Promise<Answer<{ readonly slot: Id; readonly ended: number }>>;
+  /** Swaps a slot with its neighbor in the grid (`move_slot`); the first slot up and the last slot down answer `moved: false` and change nothing. An admin's alone. */
+  moveSlot(slot: Id, direction: 'up' | 'down'): Promise<Answer<{ readonly slot: Id; readonly moved: boolean }>>;
   /** Which of these plays the player has released themselves from (Stick Around's certification): the player's own rows, never counted or broadcast. */
   myReleases(plays: readonly Id[]): Promise<readonly Id[]>;
   /** The furthest seq read in each thread asked about; a thread never read is absent. */

@@ -178,6 +178,20 @@ describe('holding and reversing', () => {
 });
 
 describe('who may see it', () => {
+  test('carries the admin pages\' strip under its lead: Moves is the current page, and The machine is a link to it', async () => {
+    open();
+    const strip = await screen.findByRole('navigation', { name: 'Admin pages' });
+    expect(within(strip).getByRole('link', { name: 'Moves' })).toHaveAttribute('aria-current', 'page');
+    expect(within(strip).getByRole('link', { name: 'The machine' })).toHaveAttribute('href', '/admin/machine');
+    expect(within(strip).getByRole('link', { name: 'The machine' })).not.toHaveAttribute('aria-current');
+  });
+
+  test('a player sees no strip', async () => {
+    open({ as: 'player' });
+    await screen.findByText('The admin queue is for admins.');
+    expect(screen.queryByRole('navigation', { name: 'Admin pages' })).toBeNull();
+  });
+
   test('a player is told plainly that it is for admins, and the queue is not asked for', async () => {
     open({ as: 'player' });
     expect(await screen.findByText('The admin queue is for admins.')).toBeInTheDocument();

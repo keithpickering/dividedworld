@@ -69,6 +69,8 @@ export const PAGES: readonly Screen[] = [
   { name: 'Settings', board: '11-settings', path: '/settings' },
   /* The admin queue, with the form for how players reach the admins (AdminContact), read as an admin. */
   { name: 'The admin queue', board: '2026-11-05-backfill/37-admin-queue', path: '/admin/queue', asAdmin: true },
+  /* The machine's admin page, read as an admin: the strip under its lead, the slots, one Save changes. */
+  { name: 'The machine\'s admin page', board: '2026-11-07-booster-packs/05-admin', path: '/admin/machine', asAdmin: true },
   /* Updates as an admin with Write an update open, and its preview of what everyone will see. */
   {
     name: 'Updates, with Write an update open', board: '2026-11-05-backfill/38-write-update', path: '/updates', asAdmin: true,
@@ -194,6 +196,19 @@ export const STORIES: readonly Screen[] = [
   SETTLEMENT,
   { name: 'My log before anything has settled, in its story', board: '2026-11-05-backfill/30-log-empty', path: '/?fixture=boards&story=boards-12-log--empty' },
   { name: 'My log with a settlement\'s posts open, in its story', board: '2026-11-05-backfill/31-log-open', path: '/?fixture=boards&story=boards-12-log--open' },
+  /* The booster packs boards' stories (engine/ui/vending/Packs.board.stories.tsx): the machine with the Booster picked, and the reveal after buying it, three cards turned. */
+  { name: 'The machine with a Booster picked, in its story', board: '2026-11-07-booster-packs/01-machine', path: '/?fixture=boards&story=boards-booster-packs--machine', then: async (page) => { await page.getByRole('button', { name: /^Buy Booster, / }).click(); } },
+  {
+    name: 'The Booster\'s reveal, three cards turned, in its story',
+    board: '2026-11-07-booster-packs/02-reveal',
+    path: '/?fixture=boards&story=boards-booster-packs--machine',
+    then: async (page) => {
+      await page.getByRole('button', { name: /^Buy Booster, / }).click();
+      await page.getByRole('button', { name: 'Buy Booster · 3.00' }).click();
+      await expect(page.getByRole('dialog', { name: 'Opening a Booster' })).toBeVisible();
+      for (let i = 0; i < 3; i++) await page.getByRole('button', { name: 'Turn the next card' }).click();
+    },
+  },
   /* The Lens, on each tab with Who unfolded, for a reader and for the post's author: glass type over the 2003 post. */
   { name: 'The Lens on Whoops!, Who unfolded, in its story', board: '2026-11-05-backfill/28-lens', path: '/?fixture=boards&story=boards-01-lens--lens-whoops-who', then: lensOpen },
   /* Five kinds on the post (Whoops!, Stick Around, Glitter Bomb, Autocorrect, Force Field): the tab strip scrolls, and board 28's manifest holds it. */

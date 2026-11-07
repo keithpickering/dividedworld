@@ -42,7 +42,7 @@ import type {
   Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEnded, CardEvent, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd, FaceDownPass,
   Alert, ContactLink, EffectState, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
-  Boot, BoardPage, IndexPage, Opened, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson,
+  Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson,
   AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
 } from '../../../engine/ui/data/api.ts';
 
@@ -298,13 +298,31 @@ const toSlotMove = (v: unknown): SlotMove | null => {
     was: num(v['was']), percent: v['percent'] == null ? null : num(v['percent']), hours: v['hours'] == null ? null : num(v['hours']),
   };
 };
-const toSlot = (r: Row): Slot => ({
-  id: r['slot'], position: num(r['position']),
-  item: typeof r['card'] === 'string' ? { card: r['card'] } : { pack: String(r['pack'] ?? '') },
-  rarity: str(r['rarity']) as Slot['rarity'],
-  availability: r['availability'] === 'soldOut' ? 'soldOut' : 'onSale',
-  price: num(r['price']), move: toSlotMove(r['move']),
-});
+/** A slot as machine_now carries it, or none: a row whose availability is not one a screen can word (the view holds no hidden slot) is dropped, never shown on sale. */
+const toSlot = (r: Row): Slot[] => {
+  const availability = r['availability'] === 'onSale' ? 'onSale' : r['availability'] === 'soldOut' ? 'soldOut' : null;
+  if (availability === null) return [];
+  return [{
+    id: r['slot'], position: num(r['position']),
+    item: typeof r['card'] === 'string' ? { card: r['card'] } : { pack: String(r['pack'] ?? '') },
+    rarity: str(r['rarity']) as Slot['rarity'],
+    availability,
+    price: num(r['price']), move: toSlotMove(r['move']),
+  }];
+};
+/** A slot as admin_machine carries it (0119), or none: a row whose availability is not one of the three is dropped, never shown as something else. */
+const toAdminSlot = (r: Row): AdminSlot[] => {
+  const availability = (['onSale', 'soldOut', 'hidden'] as const).find((a) => a === r['availability']);
+  if (!availability) return [];
+  const m = isObject(r['move']) ? r['move'] : null;
+  const kind = m ? SLOT_MOVES.find((k) => k === m['kind']) : undefined;
+  return [{
+    id: r['slot'], position: num(r['position']),
+    item: typeof r['card'] === 'string' ? { card: r['card'] } : { pack: String(r['pack'] ?? '') },
+    rarity: str(r['rarity']) as Slot['rarity'], availability, price: num(r['price']),
+    move: m && kind && typeof m['act'] === 'string' ? { kind, act: m['act'], ends: orNull(m['ends']), percent: m['percent'] == null ? null : num(m['percent']), hours: m['hours'] == null ? null : num(m['hours']) } : null,
+  }];
+};
 const toHeldCard = (r: Row): HeldCard => ({ card: r['card'], held: num(r['held']) });
 const toMyReaction = (r: Row): MyReaction => ({ act: r['act'], kind: r['kind'], character: r['character'] });
 const toPlayAbove = (x: Row): PlayAbove => ({ play: x['play'], reach: x['reach'], target: x['target'], endsAt: x['ends_at'], act: toAct(x['act']) });
@@ -1178,7 +1196,19 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return (await list(() => client.from('my_cards').select('card,held'))).map(toHeldCard);
     },
     async machine() {
-      return (await list(() => client.from('machine_now').select('slot,position,card,pack,rarity,availability,price,move').order('position', { ascending: true }))).map(toSlot);
+      return (await list(() => client.from('machine_now').select('slot,position,card,pack,rarity,availability,price,move').order('position', { ascending: true }))).flatMap(toSlot);
+    },
+    async adminMachine() {
+      const v = (await read(() => client.rpc('admin_machine'))).data;
+      return (Array.isArray(v) ? (v as Row[]) : []).flatMap(toAdminSlot);
+    },
+    async setSlot(slot, availability, price) {
+      const a = await rpcWrite(() => client.rpc('set_slot', { slot, availability, price }));
+      return a.ok ? { ok: true, value: { slot: a.value['slot'], ended: num(a.value['ended']) } } : a;
+    },
+    async moveSlot(slot, direction) {
+      const a = await rpcWrite(() => client.rpc('move_slot', { slot, direction }));
+      return a.ok ? { ok: true, value: { slot: a.value['slot'], moved: a.value['moved'] === true } } : a;
     },
     async reading(threads) {
       const out: Record<Id, number> = {};

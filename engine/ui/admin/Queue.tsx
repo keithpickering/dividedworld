@@ -42,6 +42,7 @@ import { PageHead } from '../glass/PageHead.tsx';
 import { shortDate } from '../postbit/dates.ts';
 import { todoFacts, todoSentence } from './handover-words.ts';
 import { AdminContact } from './AdminContact.tsx';
+import { AdminPages } from './AdminPages.tsx';
 import './queue.css';
 import { CalmRegion } from '../glass/Calm.tsx';
 import { Layers } from '../glass/layer.tsx';
@@ -111,6 +112,7 @@ export function QueueScreen({ now }: { readonly now?: number }) {
             <CalmRegion as="p" className="kb-queue-lead">
               Moves that reshape a board wait here before they land, and land unless you hold them. Anything in force can be reversed. Players never see a held move.
             </CalmRegion>
+            <AdminPages current="moves" />
             {failed && <CalmRegion as="p" className="kb-queue-note" role="alert">The queue could not be read. Reload the page to try again.</CalmRegion>}
             {queue && (
               <>

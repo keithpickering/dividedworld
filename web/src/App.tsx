@@ -55,6 +55,7 @@ const GuideScreen = lazy(() => import('../../engine/ui/guide/Guide.tsx').then((m
 const ContactScreen = lazy(() => import('../../engine/ui/contact/Contact.tsx').then((m) => ({ default: m.ContactScreen })));
 const WelcomeScreen = lazy(() => import('../../engine/ui/welcome/Welcome.tsx').then((m) => ({ default: m.WelcomeScreen })));
 const QueueScreen = lazy(() => import('../../engine/ui/admin/Queue.tsx').then((m) => ({ default: m.QueueScreen })));
+const MachineScreen = lazy(() => import('../../engine/ui/admin/Machine.tsx').then((m) => ({ default: m.MachineScreen })));
 const LogScreen = lazy(() => import('../../engine/ui/log/Log.tsx').then((m) => ({ default: m.LogScreen })));
 const SettlementScreen = lazy(() => import('../../engine/ui/log/Settlement.tsx').then((m) => ({ default: m.SettlementScreen })));
 
@@ -83,6 +84,7 @@ function routesFor(env: LoadEnv): readonly Route[] {
     { path: '/contact', render: () => <ContactScreen /> },
     { path: '/welcome', render: () => <WelcomeScreen /> },
     { path: '/admin/queue', render: () => <QueueScreen /> },
+    { path: '/admin/machine', render: () => <MachineScreen /> },
     { path: '/log', render: () => <LogScreen /> },
     { path: '/log/settlement', render: () => <SettlementScreen /> },
     { path: '/c/:id', load: ({ params }) => loadProfile(env, params.id!), render: ({ id }, doc) => <ProfileScreen id={id!} doc={doc as ScreenDoc<ProfilePage>} /> },
@@ -128,6 +130,7 @@ const GLASS: Readonly<Record<string, GlassSurface>> = {
   /* Alerts stands on the same page smoke as Updates, for the same reason: no surface of its own. */
   '/alerts': 'settings',
   '/admin/queue': 'settings',
+  '/admin/machine': 'settings',
   '/log': 'log',
   '/log/settlement': 'settlement',
 };
